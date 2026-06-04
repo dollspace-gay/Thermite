@@ -1,0 +1,10 @@
+{
+  "uuid": "ffb6fa63-dfa2-43a5-8c6e-5717b978e9f2",
+  "issue_uuid": "d54793df-dddb-4907-a7da-771611f19c12",
+  "author": "Yffe",
+  "content": "Seeds the external anchor the acto-critic needs (goal.md verification model). Scope NOW: (1) conformance/sum.th and conformance/binary_search.th verbatim from thermite-design.md Appendix A and section 4.1. (2) conformance/sum.cert.json = the DETERMINISTIC SUBSET of Appendix A's certificate (level L3, contract_quality.{tautology=false,vacuous_precondition=false,mutants_killed='17/18',survivor=...}, effects=[pure], slag=false). solver_time_ms is EXCLUDED from cert-oracle comparison (non-deterministic). (3) conformance/README.md documenting the corpus contract + provenance + forward-declaration convention.\n\nDEFERRED (do NOT fabricate now): tests/golden/lower/*.verus.rs (exact Verus syntax not pinned until .design/lower/verus-lowering.md exists -> author alongside issue #4); binary_search mutation fields (mutator set not defined until issue #12/v0.3); full cert JSON schema (pinned by .design/forge/certificate-manifest.md). Convention: each golden-cert field becomes a LIVE cert-oracle assertion when the component that produces it ships. Until then the oracle compares the fields present.",
+  "created_at": "2026-06-04T18:11:34.901568321Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJlHTln1ybPxWwmBU+KrsO1kjEPh8rEPrfVZCvq+eJQKye2xbah/dtkFd1ntidIEQctAA8d0+yiKHq85/jGn2Dw=="
+}

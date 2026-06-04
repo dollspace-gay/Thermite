@@ -21,8 +21,10 @@
 //! | REQ-3 (Result discipline; crate error type born with first fallible fn) | SHIPPED | `LowerError` is declared in `lower.rs` with `lower`; `pub use`d below. |
 //! | REQ-6 (scaffold compiles clean) | SHIPPED | no stubs, no `mod` pointing at a missing file; `cargo build --workspace` is green. |
 
+pub mod effects;
 pub mod l1;
 pub mod lower;
 
+pub use effects::{check_effects, subsumes};
 pub use l1::lower_l1;
 pub use lower::{lower, LowerError};

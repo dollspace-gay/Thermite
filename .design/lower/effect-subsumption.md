@@ -220,12 +220,12 @@ are crafted unit fixtures, hand-derived from §4.1 (R-CHAR-3).
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (effect lattice) | NOT-STARTED | blocked on #4; no `effects.rs` (only the empty `thermite-lower/src/lib.rs` scaffold root). `enum EffectRow` / `enum Effect` exist in `thermite-syntax/src/ast.rs` (prereq SHIPPED); the lattice is defined over them in Architecture. |
-| REQ-2 (subsumption accept relation) | NOT-STARTED | blocked on #4; no `subsumes` fn. The subset-inclusion rule + `effects(Pure) = {}` is pinned. |
-| REQ-3 (check entry point + call graph) | NOT-STARTED | blocked on #4; no `check_effects` walk. `FnItem.contract.fx` / `SpecFnItem` (no `fx`) exist in `ast.rs`; combinator classification via `thermite-spec::lookup` (prereqs SHIPPED). |
-| REQ-4 (structured rejection, `LowerError`) | NOT-STARTED | blocked on #4; `thermite-lower` has no error enum yet (born with `lower`, `.design/scaffold/workspace.md` REQ-3). `EffectNotSubsumed` variant pinned. |
-| REQ-5 (maximal-row / slag boundary) | NOT-STARTED | blocked on #4; boundary recorded — maximal-row triage is forge's vacuity stage (#6), not this component. |
-| REQ-6 (runtime sandbox deferred to #21) | NOT-STARTED | blocked on #4 (and the sandbox on #21); boundary recorded — v0.1 ships compile-time subsumption only, no syscall sandbox (R-SPEC-5). |
+| REQ-1 (effect lattice) | SHIPPED | `enum EffectKind` (the 8 atoms) + `fn effects` (powerset projection of `EffectRow`) in `effects.rs`; consumer `subsumes`/`missing_atoms`; asserted by `tests/effects.rs::lattice_law_*` (AC-1). |
+| REQ-2 (subsumption accept relation) | SHIPPED | `pub fn subsumes` in `effects.rs` (`effects(callee) ⊆ effects(caller)`; `Pure` subsumes only `Pure`); consumer `check_effects::check_call`; asserted by `lattice_law_table` + `crafted_accepts` (AC-1/AC-3). |
+| REQ-3 (check entry point + call graph) | SHIPPED | `pub fn check_effects` in `effects.rs` builds a name→`fx` map over `FnItem`s (`SpecFnItem`/`thermite_spec::lookup` combinators noted pure) and walks each body's `Expr` tree (`check_block`/`check_expr`) per `Call`/`MethodCall`; consumer `tests/effects.rs` + the `pub use` lowering-pipeline surface; asserted by `corpus_accepts` (AC-2) + `crafted_rejects` (AC-4). |
+| REQ-4 (structured rejection, `LowerError`) | SHIPPED | `LowerError::EffectNotSubsumed { caller, callee, missing, span }` in `lower.rs` (`Display` arm + `effect_atom_name`); produced by `check_call`; `missing` = `effects(callee) \ effects(caller)`; asserted by `reject_*` (AC-4). |
+| REQ-5 (maximal-row / slag boundary) | SHIPPED | boundary recorded — `effects.rs` enforces subsumption only; no maximal-row judgement in the file (that is forge's vacuity stage #6). |
+| REQ-6 (runtime sandbox deferred to #21) | SHIPPED | boundary recorded — `effects.rs` returns `Result<(), Vec<LowerError>>` with NO codegen / NO syscall-sandbox path (AC-6); the sandbox stays deferred to #21 (R-SPEC-5). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

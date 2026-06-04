@@ -80,6 +80,19 @@ pub enum LowerError {
     /// A construct the v0.1 lowering does not cover (e.g. a `Type` or `Expr`
     /// shape outside the corpus mapping tables). Carries a human description.
     Unsupported { what: String, span: Span },
+    /// A call site where the caller's `fx` row does NOT subsume the callee's
+    /// (`.design/lower/effect-subsumption.md` REQ-4; `thermite-design.md` §4.1
+    /// "a caller's row must subsume every callee's row"). `missing` names the
+    /// atomic effects the callee has that the caller's row lacks
+    /// (`effects(callee) \ effects(caller)`), so the diagnostic tells the agent
+    /// exactly which effect to add to the caller's row (or remove from the
+    /// callee). Produced by `effects::check_effects`; NEVER a panic (R-CODE-2).
+    EffectNotSubsumed {
+        caller: String,
+        callee: String,
+        missing: Vec<thermite_syntax::ast::Effect>,
+        span: Span,
+    },
 }
 
 impl std::fmt::Display for LowerError {
@@ -103,7 +116,42 @@ impl std::fmt::Display for LowerError {
                 span.start,
                 span.end()
             ),
+            LowerError::EffectNotSubsumed {
+                caller,
+                callee,
+                missing,
+                span,
+            } => {
+                let atoms: Vec<String> = missing.iter().map(effect_atom_name).collect();
+                write!(
+                    f,
+                    "effect row of `{caller}` does not subsume callee `{callee}` at byte {}..{}: \
+                     missing effect(s) [{}] (add them to `{caller}`'s `fx` row or remove them from `{callee}`)",
+                    span.start,
+                    span.end(),
+                    atoms.join(", ")
+                )
+            }
         }
+    }
+}
+
+/// The surface atom name of an `Effect` for an `EffectNotSubsumed` diagnostic
+/// (REQ-4). v0.1 subsumption is path-insensitive (`.design/lower/effect-subsumption.md`
+/// OQ-1), so the carrier atoms (`read`/`write`/`net`) are reported by KIND
+/// without their (empty) path argument — the agent's fix is to add the effect
+/// kind to the caller's row.
+fn effect_atom_name(effect: &thermite_syntax::ast::Effect) -> String {
+    use thermite_syntax::ast::Effect;
+    match effect {
+        Effect::Read(_) => "read".to_string(),
+        Effect::Write(_) => "write".to_string(),
+        Effect::Net(_) => "net".to_string(),
+        Effect::Alloc => "alloc".to_string(),
+        Effect::Time => "time".to_string(),
+        Effect::Rand => "rand".to_string(),
+        Effect::Panic => "panic".to_string(),
+        Effect::Diverge => "diverge".to_string(),
     }
 }
 

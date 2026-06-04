@@ -2,11 +2,12 @@
   "uuid": "6f5179f2-82e9-4a97-853a-8477e45fd5f2",
   "display_id": 34,
   "title": "Harden acto-* agent specs: branch/changelog/scratch/class-fix discipline",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T20:34:15.370812585Z",
-  "updated_at": "2026-06-04T20:34:17.548372872Z",
+  "updated_at": "2026-06-04T20:36:24.176913787Z",
+  "closed_at": "2026-06-04T20:36:24.176913787Z",
   "labels": [
     "chore"
   ]

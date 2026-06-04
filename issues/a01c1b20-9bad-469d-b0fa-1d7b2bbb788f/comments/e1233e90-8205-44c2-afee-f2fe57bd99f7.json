@@ -1,0 +1,10 @@
+{
+  "uuid": "e1233e90-8205-44c2-afee-f2fe57bd99f7",
+  "issue_uuid": "a01c1b20-9bad-469d-b0fa-1d7b2bbb788f",
+  "author": "Yffe",
+  "content": "[action] Loop 4: L3 lowering SHIPPED (lower.rs + combinator Verus forms); both corpus programs verify in real verus via general shape-keyed templates (critic-proved general). #4 still open: L1 (l1.rs) + effects (effects.rs) remain. main at cc8214c, unpushed.",
+  "created_at": "2026-06-04T22:18:30.976024244Z",
+  "kind": "note",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAfEoegBdX1VpZ4Zc1ukqzcWoiqrURo3K9X95+SabRYwxlAb4xsXvv0CG9C802XmOQOb21+DVw3VDrtXuvLHssDA=="
+}

@@ -15,8 +15,8 @@ fn thermite_contract_violation(kind: &str, text: &str) -> ! {
     panic!("thermite L1 contract violation [{kind}]: {text}");
 }
 
-/// Always-active check (NOT `debug_assert!`, which is stripped in release; §6
-/// demands every build profile).
+/// Always-active check — a plain `if !(cond)`, NOT a debug-only assertion macro
+/// (those are stripped in release; §6 demands the check in every build profile).
 macro_rules! thermite_check {
     ($kind:literal, $text:literal, $cond:expr) => {
         if !($cond) {

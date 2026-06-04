@@ -1,0 +1,10 @@
+{
+  "uuid": "ae22b512-753a-441c-bf5c-4c32a31df37f",
+  "issue_uuid": "3e3ba456-fa4e-4afa-9826-58c81b5ae62b",
+  "author": "Yffe",
+  "content": "Root cause confirmed: depth guard in parse_expr is correctly placed (all nested-expr re-entries route through it), but MAX_EXPR_DEPTH=256 exceeds the 2 MiB test-thread native stack. Empirically a debug build overflows the C stack at ~135-140 ladder levels (~10 frames/level), so the depth-256 guard never fires before SIGABRT. Plan: lower MAX_EXPR_DEPTH 256->64 in parser.rs (single file), ~2x margin below the overflow point; deep nesting now returns the structured ExpressionTooDeep diagnostic. Un-ignore divergence_deep_nesting_no_panic after green gauntlet. No assertions/fixtures touched.",
+  "created_at": "2026-06-04T19:42:46.685486108Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMFdFqCQZD/dxW9HV5Ir+O8b8sXfbgz58SYc5esIA8MHbNT8fFfTjr+AFhcpLr5J4wQwgIrtdAWEvd8D0u2LhCQ=="
+}

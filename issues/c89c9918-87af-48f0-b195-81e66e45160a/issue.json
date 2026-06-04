@@ -6,8 +6,9 @@
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:48:17.770832410Z",
-  "updated_at": "2026-06-04T17:48:19.280561616Z",
+  "updated_at": "2026-06-04T17:48:21.314968580Z",
   "labels": [
     "chore"
-  ]
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5"
 }

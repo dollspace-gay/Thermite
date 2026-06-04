@@ -1,0 +1,10 @@
+{
+  "uuid": "f5eac781-df76-4f71-90d2-da27ff1a5ca9",
+  "issue_uuid": "d20260be-d51c-40f0-b142-b327977f366f",
+  "author": "Yffe",
+  "content": "Failing test at thermite-syntax/tests/divergence_grammar.rs::divergence_if_else_in_tail_position_is_expr. Input `{ if x==0 {1} else {2} }` yields Block{stmts:[Stmt::If..], tail:None} instead of tail Some(Expr::If). parse_block unconditionally routes TokKind::If to parse_if_stmt; the value-position if-expr (surface-grammar.md decision 2, ast.md REQ-6) is never built. The fn body has no value.",
+  "created_at": "2026-06-04T19:29:01.993183571Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA75tBm2r65Y1sbBovOMcGgSlUB+cTYxmf41nWbcMmXJDauGVHwYnqLjketPgZP1Z83jg1DAxI8qKRRONh/I7VDw=="
+}

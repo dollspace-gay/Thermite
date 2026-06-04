@@ -727,6 +727,17 @@ impl<'a> Parser<'a> {
     /// Parse a `loop`/`while` with mandatory `inv`+ then exactly one `dec`
     /// (parser.md REQ-2; §4.1).
     fn parse_loop(&mut self) -> PResult<LoopNode> {
+        // Bound recursion: a `loop`/`while` body is a `Block`
+        // (surface-grammar.md REQ-3), and a `Block` may contain a nested
+        // `loop`/`while` statement, so `parse_block` -> this fn -> `parse_block`
+        // is a cycle that — like the if-tail cycle (#31) — never saw the #29
+        // expr-only guard. Guarding this re-entry caps deep loop nesting to a
+        // structured diagnostic instead of a native stack overflow (parser.md
+        // AC-4; #32 — the last unguarded block-nesting vector).
+        self.guard_recursion(Self::parse_loop_inner)
+    }
+
+    fn parse_loop_inner(&mut self) -> PResult<LoopNode> {
         let start = self.peek_span();
         let kind = if self.eat(&TokKind::Loop) {
             LoopKind::Loop

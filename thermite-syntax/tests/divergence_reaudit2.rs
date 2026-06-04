@@ -76,7 +76,6 @@ fn in_fn(inner: &str) -> String {
 ///
 /// Tracking: #32
 #[test]
-#[ignore = "divergence: parse_block<->parse_loop loop-body recursion unguarded; SIGABRTs on deep nesting"]
 fn divergence_deep_nested_loop_no_panic() {
     // Build `loop inv true dec 0 { loop inv true dec 0 { ... 0 } }`.
     let mut body = String::from("0");
@@ -103,7 +102,6 @@ fn divergence_deep_nested_loop_no_panic() {
 ///
 /// Tracking: #32
 #[test]
-#[ignore = "divergence: parse_block<->parse_loop while-body recursion unguarded; SIGABRTs on deep nesting"]
 fn divergence_deep_nested_while_no_panic() {
     let mut body = String::from("0");
     for _ in 0..DEPTH {

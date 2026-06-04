@@ -1,0 +1,10 @@
+{
+  "uuid": "ea4b8581-d2d0-450c-84b0-6eeeab84ae2c",
+  "issue_uuid": "cf1d16d4-64d3-4807-b221-090de267777c",
+  "author": "Yffe",
+  "content": "ACToR harness installed and smoke-tested. Files: goal.md; tooling/spec-discipline.py; tooling/anti-pattern-gate.py; tooling/spec-routes.toml (16 routes = v0.1 module map); .claude/agents/acto-{doc-author,builder,critic,fixer}.md; .design/00-index.md; settings.json merged (+spec-discipline on PostToolUse:Read and PreToolUse:Write|Edit, +anti-pattern-gate on PreToolUse:Write|Edit); .gitignore updated.\n\nVerification (6/6 passed):\n1. spec-discipline BLOCKS gated edit when design doc missing -> instructs acto-doc-author (exit 2)\n2. spec-discipline ignores non-gated files (exit 0)\n3. spec-discipline BLOCKS unrouted gated file -> instructs add route (exit 2)\n4. anti-pattern-gate BLOCKS .unwrap() in gated file (exit 2)\n5. anti-pattern-gate ALLOWS clean content (exit 0)\n6. PostToolUse Read records goal.md in .crosslink/.spec-reads.json (exit 0)\nsettings.json parses; spec-routes.toml parses (16 routes); both hooks py_compile clean.\n\nGreenfield adaptation vs canonical vibe-fork: upstream-read requirement replaced by design-doc(mandatory)+optional golden/conformance reference; R-DEV upstream-mirror family replaced by R-SPEC design-contract family; critic anchors on conformance corpus + Verus golden files. Reuses Thermite's existing crosslink hooks unchanged. Gates are LIVE this session. Not yet committed (awaiting user).",
+  "created_at": "2026-06-04T18:09:49.123925516Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9BR0KlX7F871L+PJQBkpkIZfBXCvtWn4CDJ5Wc8UUGXkQCD95vw7zBfPvm/k1i3pajvju8PMME0pNmHwvraLDg=="
+}

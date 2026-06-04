@@ -1,0 +1,10 @@
+{
+  "uuid": "561def49-b1cd-440c-a185-7fa9958867f0",
+  "display_id": 13,
+  "title": "Add tautology and precondition-satisfiability checks to the certification gate",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:43.529869967Z",
+  "updated_at": "2026-06-04T17:47:43.529869967Z"
+}

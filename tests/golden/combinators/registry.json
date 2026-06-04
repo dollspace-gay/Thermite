@@ -1,0 +1,14 @@
+{
+  "note": "Hand-derived from thermite-design.md §4.2 + the conformance corpus (R-CHAR-3) — the FROZEN v0.1 SpecTherm combinator set. arg_kinds ∈ {Slice, Index, Pred, Value}; result ∈ {Bool, Usize}. The SMT trigger strings and the Verus (L3) / executable (L1) forms are DEFERRED to issue #4 (lowering) where the lowerer consumes them; they are intentionally NOT in this registry yet.",
+  "frozen": true,
+  "combinators": [
+    { "name": "sorted",         "arity": 1, "arg_kinds": ["Slice"],                "result": "Bool",  "source": "thermite-design.md §4.2" },
+    { "name": "forall_in",      "arity": 2, "arg_kinds": ["Slice", "Pred"],        "result": "Bool",  "source": "thermite-design.md §4.2" },
+    { "name": "exists_in",      "arity": 2, "arg_kinds": ["Slice", "Pred"],        "result": "Bool",  "source": "thermite-design.md §4.2" },
+    { "name": "count_where",    "arity": 2, "arg_kinds": ["Slice", "Pred"],        "result": "Usize", "source": "thermite-design.md §4.2" },
+    { "name": "permutation_of", "arity": 2, "arg_kinds": ["Slice", "Slice"],       "result": "Bool",  "source": "thermite-design.md §4.2" },
+    { "name": "disjoint",       "arity": 2, "arg_kinds": ["Slice", "Slice"],       "result": "Bool",  "source": "thermite-design.md §4.2" },
+    { "name": "forall_below",   "arity": 3, "arg_kinds": ["Slice", "Index", "Pred"], "result": "Bool", "source": "thermite-design.md §4.2" },
+    { "name": "forall_from",    "arity": 3, "arg_kinds": ["Slice", "Index", "Pred"], "result": "Bool", "source": "corpus binary_search.th — suffix-dual of forall_below, admitted under §4.2's open '…'" }
+  ]
+}

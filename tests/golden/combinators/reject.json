@@ -1,0 +1,9 @@
+{
+  "note": "Each program PARSES cleanly (thermite-syntax accepts the syntax — combinator calls are generic call exprs) but the thermite-spec validator must REJECT it with the named SpecError variant, because it steps outside the SpecTherm cage (§4.2). Hand-derived (R-CHAR-3). The `expected` variant names mirror .design/spec/spectherm-combinators.md REQ-4; the builder may rename variants but the REJECT outcome + the cause must hold.",
+  "cases": [
+    { "name": "unknown_combinator",   "expected": "UnknownCombinator", "program": "fn f(xs: &[u32]) -> u32 req frobnicate(xs) ens result == 0 fx pure { 0 }", "why": "frobnicate is not a registered combinator and not a declared spec fn — an arbitrary free-function call is forbidden in a contract (§4.2 locked cage)." },
+    { "name": "wrong_arity",          "expected": "WrongArity",        "program": "fn f(xs: &[u32]) -> u32 req sorted(xs, xs) ens result == 0 fx pure { 0 }", "why": "sorted has arity 1; called with 2 args." },
+    { "name": "wrong_arg_kind",       "expected": "WrongArgKind",      "program": "fn f(xs: &[u32]) -> u32 req true ens forall_in(xs, 5) fx pure { 0 }", "why": "forall_in's 2nd arg must be a predicate closure (Pred); a literal 5 is not a closure." },
+    { "name": "forall_below_wrong_arity", "expected": "WrongArity",   "program": "fn f(xs: &[u32]) -> u32 req true ens forall_below(xs, |x| x < 5) fx pure { 0 }", "why": "forall_below has arity 3 (Slice, Index, Pred); called with 2 (missing the Index)." }
+  ]
+}

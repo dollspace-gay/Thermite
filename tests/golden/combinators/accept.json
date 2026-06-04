@@ -1,0 +1,14 @@
+{
+  "note": "Valid SpecTherm — each program PARSES (thermite-syntax) and the thermite-spec validator must ACCEPT it (no SpecError). Covers all 8 registered combinators in contract positions + a spec-fn call in a contract. Hand-derived from §4.2 + the corpus (R-CHAR-3); expected behavior is 'validates clean', never copied from validator output.",
+  "cases": [
+    { "name": "sorted_in_req",        "combinator": "sorted",         "program": "fn f(xs: &[u32]) -> u32 req sorted(xs) ens result == 0 fx pure { 0 }" },
+    { "name": "forall_in_in_ens",     "combinator": "forall_in",      "program": "fn f(xs: &[u32], n: u32) -> u32 req true ens forall_in(xs, |x| x != n) fx pure { 0 }" },
+    { "name": "exists_in_in_ens",     "combinator": "exists_in",      "program": "fn f(xs: &[u32], n: u32) -> u32 req true ens exists_in(xs, |x| x == n) fx pure { 0 }" },
+    { "name": "count_where_in_ens",   "combinator": "count_where",    "program": "fn f(xs: &[u32]) -> usize req true ens count_where(xs, |x| x == 0) <= xs.len() fx pure { 0 }" },
+    { "name": "permutation_of_in_req","combinator": "permutation_of", "program": "fn f(xs: &[u32], ys: &[u32]) -> u32 req permutation_of(xs, ys) ens result == 0 fx pure { 0 }" },
+    { "name": "disjoint_in_req",      "combinator": "disjoint",       "program": "fn f(xs: &[u32], ys: &[u32]) -> u32 req disjoint(xs, ys) ens result == 0 fx pure { 0 }" },
+    { "name": "forall_below_in_ens",  "combinator": "forall_below",   "program": "fn f(xs: &[u32], i: usize) -> u32 req true ens forall_below(xs, i, |x| x < 5) fx pure { 0 }" },
+    { "name": "forall_from_in_ens",   "combinator": "forall_from",    "program": "fn f(xs: &[u32], i: usize) -> u32 req true ens forall_from(xs, i, |x| x > 5) fx pure { 0 }" },
+    { "name": "spec_fn_call_in_ens",  "combinator": "(spec fn call)", "program": "spec fn sz(xs: &[u32]) -> usize dec xs.len() { xs.len() } fn f(xs: &[u32]) -> usize req true ens result == sz(xs) fx pure { 0 }" }
+  ]
+}

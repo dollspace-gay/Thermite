@@ -2,11 +2,12 @@
   "uuid": "7c63ca93-10fb-4322-8e31-298b17c10e91",
   "display_id": 32,
   "title": "Divergence: parse_block<->parse_loop loop-body recursion unguarded — deep loop/while nesting SIGABRTs (AC-4)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T20:00:28.174309412Z",
-  "updated_at": "2026-06-04T20:00:31.815087782Z",
+  "updated_at": "2026-06-04T20:05:23.526893465Z",
+  "closed_at": "2026-06-04T20:05:23.526893465Z",
   "labels": [
     "blocker"
   ]

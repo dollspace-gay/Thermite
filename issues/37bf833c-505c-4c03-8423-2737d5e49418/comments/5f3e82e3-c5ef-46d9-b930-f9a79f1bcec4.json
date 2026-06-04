@@ -1,0 +1,10 @@
+{
+  "uuid": "5f3e82e3-c5ef-46d9-b930-f9a79f1bcec4",
+  "issue_uuid": "37bf833c-505c-4c03-8423-2737d5e49418",
+  "author": "Yffe",
+  "content": "SHIPPED — all three components of #4 done and critic-verified. (1) L3 lowering [lower.rs + combinator Verus forms]: emitted Verus for both corpus programs VERIFIES in real verus via GENERAL shape-keyed proof-aid templates (critic proved generality on renamed programs; no per-program hardcoding). (2) L1 runtime checks [l1.rs + combinator L1 forms]: emitted L1 compiles+runs, always-active checks fire on violation incl under release; critic NO DIVERGENCE. (3) Effect subsumption [effects.rs]: compile-time fx-row subsumption; critic found #38 (while-condition callee escaped the walk) -> fixed by walking every reachable Expr position; pinned test green.\n\nAlso fixed the verus-test portability bug the user hit: verus tests now skip-loudly when verus is absent instead of panicking, AND CI installs the pinned verus release (URL corrected + verified end-to-end) so the L3 gate actually runs in CI.\n\nCommits: 3e5daba/cc8214c (L3) -> e3c398e/57008d0 (verus skip) -> 6b02abb/c0b1d8a/cb3caa4/a8d45f5 (L1) -> 83afe1b (CI verus) -> 5b0967f/a595a5f/95d12b9 (effects + #38). Final: cargo test --workspace all green (57 thermite-lower+thermite-spec tests, both corpus programs verify at L3 in real verus), clippy -D warnings + fmt clean. Not pushed. Deferred per design: SMT triggers refinement, the ladder degrade L3->L2->L1 + cert manifest (issue #5 forge check), runtime effect sandbox (issue #21).",
+  "created_at": "2026-06-04T23:07:31.466702228Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9GKi+RGCKOWMh8bKZXffCL+Fmh5dhKV7yaGo2XvsEWpVz0sFVascPnK9bLsFUBwp58aHsVSpJ9QW+E9OEx5EBg=="
+}

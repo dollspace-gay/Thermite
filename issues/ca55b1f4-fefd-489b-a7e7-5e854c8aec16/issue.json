@@ -2,11 +2,12 @@
   "uuid": "ca55b1f4-fefd-489b-a7e7-5e854c8aec16",
   "display_id": 26,
   "title": "thermite-syntax addressing: oracle string binary_search.loop#1.inv#2 vs verbatim corpus order. spec-routes.toml conformance_ops and the issue-#3 brief say binary_search.loop#1.inv#2 resolves to forall_from(haystack, hi, |x| x > needle), but under 1-based source-order numbering of conformance/binary_search.th the SECOND inv is forall_below(...) and forall_from(...) is inv#3. design 4.3's own example uses loop#1.inv#2 without saying which invariant. Need the conformance/address/ fixture pinned to one reading before the parser builder (#3) runs. .design/syntax/semantic-addressing.md AC-1 currently commits to scheme-authoritative (inv#2=forall_below, inv#3=forall_from); amend the doc if the oracle string is authoritative instead.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T18:57:10.084720291Z",
-  "updated_at": "2026-06-04T18:57:11.476870736Z",
+  "updated_at": "2026-06-04T19:03:01.034722695Z",
+  "closed_at": "2026-06-04T19:03:01.034722695Z",
   "labels": [
     "blocker"
   ]

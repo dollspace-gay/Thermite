@@ -36,7 +36,9 @@
 
 use std::collections::BTreeMap;
 
-use thermite_syntax::ast::{Block, Effect, EffectRow, Expr, IndexArg, Item, Program, Stmt};
+use thermite_syntax::ast::{
+    Block, Effect, EffectRow, Expr, IndexArg, Item, LoopKind, Program, Stmt,
+};
 use thermite_syntax::lexer::Span;
 
 use crate::lower::LowerError;
@@ -293,6 +295,25 @@ fn check_block<'a>(
                 }
             }
             Stmt::Loop(l) => {
+                // A `while <cond> { .. }` evaluates `<cond>` at runtime before
+                // each iteration; `lower.rs` lowers it (`LoopKind::While(c)` arm),
+                // so a `Call` in the condition is a reachable callee and MUST be
+                // checked (§4.1: a caller subsumes EVERY callee's row). The
+                // `loop` keyword has no condition. The `invs`/`dec` clauses are
+                // SPEC/contract positions (§4.2 spec sublanguage is pure by
+                // construction), so they are NOT walked — matching `check_expr`'s
+                // documented "Loop/spec clauses are NOT walked" discipline.
+                if let LoopKind::While(cond) = &l.kind {
+                    check_expr(
+                        cond,
+                        caller_fx,
+                        caller_name,
+                        caller_span,
+                        resolve,
+                        d,
+                        errors,
+                    );
+                }
                 check_block(
                     &l.body,
                     caller_fx,
@@ -320,8 +341,9 @@ fn check_block<'a>(
 
 /// Walk an expression tree, checking every `Call`/`MethodCall` whose callee
 /// resolves to a declared `FnItem` against the caller's row (REQ-2/REQ-3).
-/// `depth` bounds the recursion (AC-5). Loop/spec clauses are NOT walked: `fx`
-/// applies to runtime execution (a `fn` body), and contract/spec positions are
+/// `depth` bounds the recursion (AC-5). A `while` LOOP CONDITION is runtime
+/// code and IS walked (in the `Stmt::Loop` arm of `check_block`); the loop's
+/// `inv`/`dec` SPEC clauses are NOT walked, since contract/spec positions are
 /// pure by construction (§4.2).
 fn check_expr<'a>(
     expr: &'a Expr,

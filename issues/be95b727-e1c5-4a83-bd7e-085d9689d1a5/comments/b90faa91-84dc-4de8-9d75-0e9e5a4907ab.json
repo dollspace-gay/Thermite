@@ -1,0 +1,10 @@
+{
+  "uuid": "b90faa91-84dc-4de8-9d75-0e9e5a4907ab",
+  "issue_uuid": "be95b727-e1c5-4a83-bd7e-085d9689d1a5",
+  "author": "Yffe",
+  "content": "Failing test at thermite-syntax/tests/divergence_final.rs::divergence_value_less_trailing_if_is_statement_not_tail_expr demonstrates the divergence.\n\nAuthority: .design/syntax/surface-grammar.md decision #2 ('the expression form ... must have a value; the statement form does not') + OQ-3 ('the corpus only uses the statement form'). Discriminator is value-ness, not source position.\n\nCorpus conformance/binary_search.th ends its loop body with 'if haystack[mid] < needle { lo = mid + 1; } else { hi = mid; }' — both branches are assignment statements (Block tail: None), producing no value, so by the design this is the STATEMENT form. The #30 if-tail refactor (parse_block + parse_if_parts) promotes it to a tail Expr::If purely because it has an else and nothing follows. Result: lp.body.tail = Some(Expr::If{..}) on a value-less construct.\n\nMasked because conformance/parse/binary_search.facts.json is representation-agnostic and pins no stmt-vs-tail fact. Root cause: tail-promotion in parse_block must additionally require that at least one branch produces a value (tail.is_some()) before hoisting to Expr::If; otherwise it is Stmt::If.",
+  "created_at": "2026-06-04T20:21:12.947852785Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAxFrgncDYtbtyDJTguw4PEb9LlKviWP+5mYjinXM1P5b3wYSU735jlbOV8n6iFtYCtSRuxhMKA/lf5YC+4YfhAA=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "24a3b5b7-33ed-4e6a-a115-6fb527be9a1e",
+  "issue_uuid": "a01c1b20-9bad-469d-b0fa-1d7b2bbb788f",
+  "author": "Yffe",
+  "content": "Source: thermite-syntax lex_int strips '_' and accumulates into Token::Int(u128); AST Expr::IntLit(u128) (ast.rs) carries no raw text, so thermite-lower cannot reproduce separators. Numerically 1000000 == 1_000_000 — NO contract weakening, verus verifies (R-DEFER-9 satisfied). Diverges only from REQ-3's cosmetic parenthetical 'underscores preserved verbatim'; AMENDED REQ-8/AC verify emitted output (passes) and require contract equivalence (holds). Owner: thermite-syntax (representation), not thermite-lower. Low priority per goal.md S8. No failing test filed: there is no soundness divergence to pin (R-CHAR-3 — would be a tautological/cosmetic assertion).",
+  "created_at": "2026-06-04T22:16:22.039332275Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHiEGxa3tgVBk2wsgrNDpxHiheBNmYIx3eKyD0FJI8X8XxbbzG0bXJxK/s8OJZwz2N5Ev+TkwG6cEfoMdwMgOCg=="
+}

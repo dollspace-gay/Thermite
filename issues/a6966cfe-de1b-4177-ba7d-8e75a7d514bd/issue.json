@@ -1,0 +1,10 @@
+{
+  "uuid": "a6966cfe-de1b-4177-ba7d-8e75a7d514bd",
+  "display_id": 16,
+  "title": "Implement crates.io boundary modules with L1-enforced FFI contracts",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:56.575752726Z",
+  "updated_at": "2026-06-04T17:47:56.575752726Z"
+}

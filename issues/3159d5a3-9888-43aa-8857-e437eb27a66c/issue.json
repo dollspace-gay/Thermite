@@ -2,11 +2,12 @@
   "uuid": "3159d5a3-9888-43aa-8857-e437eb27a66c",
   "display_id": 28,
   "title": "Divergence: thermite-syntax parse_type rejects unit return `()` (surface-grammar.md decision 4 / REQ-8)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T19:27:06.083435329Z",
-  "updated_at": "2026-06-04T19:27:07.671174771Z",
+  "updated_at": "2026-06-04T19:38:38.130951419Z",
+  "closed_at": "2026-06-04T19:38:38.130951419Z",
   "labels": [
     "blocker"
   ]

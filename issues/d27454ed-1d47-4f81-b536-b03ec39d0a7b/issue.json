@@ -2,11 +2,12 @@
   "uuid": "d27454ed-1d47-4f81-b536-b03ec39d0a7b",
   "display_id": 1,
   "title": "Set up the Thermite toolchain workspace and CI",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:46:13.747400538Z",
-  "updated_at": "2026-06-04T17:46:56.584558178Z",
+  "updated_at": "2026-06-04T18:38:08.585960784Z",
+  "closed_at": "2026-06-04T18:38:08.585960784Z",
   "labels": [
     "feature"
   ],

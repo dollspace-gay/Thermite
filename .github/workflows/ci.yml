@@ -33,13 +33,18 @@ jobs:
         run: |
           set -euo pipefail
           VERUS_VER="0.2026.05.24.ecee80a"
+          # Asset name is verus-<VER>-x86-linux.zip; the tag path uses a literal
+          # slash (release/<VER>), NOT %2F (verified against the releases API).
           curl -fsSL -o /tmp/verus.zip \
-            "https://github.com/verus-lang/verus/releases/download/release%2F${VERUS_VER}/verus-x86-linux.zip"
+            "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
           mkdir -p "$HOME/verus-dist"
           unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
-          echo "VERUS_BIN=$HOME/verus-dist/verus-x86-linux/verus" >> "$GITHUB_ENV"
-          echo "$HOME/verus-dist/verus-x86-linux" >> "$GITHUB_PATH"
-          "$HOME/verus-dist/verus-x86-linux/verus" --version
+          # Locate the verus binary regardless of the zip's internal dir name.
+          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
+          test -n "$VERUS_BIN_PATH"
+          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
+          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
+          "$VERUS_BIN_PATH" --version
 
       - name: cargo build
         run: cargo build --workspace

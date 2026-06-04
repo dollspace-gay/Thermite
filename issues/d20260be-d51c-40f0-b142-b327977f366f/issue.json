@@ -2,11 +2,12 @@
   "uuid": "d20260be-d51c-40f0-b142-b327977f366f",
   "display_id": 30,
   "title": "Divergence: thermite-syntax parse_block never builds tail Expr::If — if/else in value position lost as Stmt::If (surface-grammar.md REQ-5/decision 2, ast.md REQ-6)",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T19:27:18.657603090Z",
-  "updated_at": "2026-06-04T19:27:20.228854337Z",
+  "updated_at": "2026-06-04T19:38:41.053025856Z",
+  "closed_at": "2026-06-04T19:38:41.053025856Z",
   "labels": [
     "blocker"
   ]

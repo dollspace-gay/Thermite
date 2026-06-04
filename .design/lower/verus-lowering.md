@@ -114,14 +114,25 @@ they are the lowering contract the builder reproduces, not guesses.
   the golden files (REQ-8) and are part of the contract. Derived from §6 (L3 is a
   real SMT proof), R-DEFER-9, Appendix A.
 
-- **REQ-8 (golden-file contract):** `tests/golden/lower/sum.verus.rs` and
-  `tests/golden/lower/binary_search.verus.rs` are the lowerer's EXACT expected
-  output for the two corpus programs (byte-diffable, R-CHAR-3 — hand-authored
-  from this design, never regenerated from the lowerer), AND each MUST pass
-  `verus <file>` with `verification results:: N verified, 0 errors`. The
-  divergence the critic pins is `emitted Verus source ≠ golden file` (`goal.md`
-  "Verus/Kani/Z3 golden files"). Derived from `goal.md` verification model (A),
-  R-CHAR-3.
+- **REQ-8 (golden-file contract — VERIFY, don't byte-match):** The lowerer's
+  verification target is: the emitted Verus, run through the real `verus`
+  binary, passes with `verification results:: N verified, 0 errors`, AND the
+  emitted `requires`/`ensures`/`invariant`/`decreases` are equivalent to the
+  corpus contracts (no weakening — R-DEFER-9). `tests/golden/lower/{sum,
+  binary_search}.verus.rs` are the verus-verified REFERENCE (known-good output,
+  hand-authored from this design, R-CHAR-3 — never regenerated from the lowerer)
+  proving L3 is achievable for the corpus. **The lowerer is NOT required to
+  byte-match the hand-authored PROOF AIDS** (`lemma_sum_push`'s induction, the
+  `binary_search` case-split): reproducing them verbatim would force per-program
+  HARDCODING — over-fitting / a cheat the critic must reject. Instead the lowerer
+  emits its OWN proof aids via GENERAL shape-keyed templates (REQ-7) so the
+  emitted output verifies. The MECHANICAL lowering (signature, contracts, types,
+  body, combinator calls) should match the golden's corresponding lines; the
+  proof-aid section need only make `verus` succeed and must be shape-general.
+  The divergences the critic pins are: `verus(emitted) ≠ 0 errors`; an emitted
+  contract `≠` the corpus contract; or a proof aid that is per-program HARDCODED
+  rather than derived from program shape. Derived from `goal.md` verification
+  model (A), R-CHAR-3, R-DEFER-9.
 
 - **REQ-9 (`LowerError`, no panics):** `lower` returns `Result<String,
   LowerError>`; `LowerError` is `thermite-lower`'s OWN error enum, born with this
@@ -135,18 +146,21 @@ they are the lowering contract the builder reproduces, not guesses.
 
 ## Acceptance criteria
 
-- **AC-1 (`sum` golden lowers + verifies):** `lower(parse("conformance/sum.th"))`
-  equals `tests/golden/lower/sum.verus.rs` byte-for-byte, and
-  `verus tests/golden/lower/sum.verus.rs` exits 0 with `5 verified, 0 errors`
-  (the `spec_sum`, `lemma_sum_push`, `sum`, and the two in-body assert obligations
-  — confirmed during authoring). (REQ-1..REQ-8)
+- **AC-1 (`sum` lowers + VERIFIES):** running the real `verus` binary on
+  `lower(parse("conformance/sum.th"))` exits 0 with `N verified, 0 errors`; the
+  emitted `requires`/`ensures`/`invariant`/`decreases` are equivalent to
+  `sum.th`'s contracts (R-DEFER-9, no weakening); the emitted mechanical lowering
+  (signature/types/body/combinator calls) matches the corresponding lines of
+  `tests/golden/lower/sum.verus.rs`; the emitted proof aids are shape-general
+  (REQ-7), NOT per-program hardcoded. (`sum.verus.rs` itself verifies `5
+  verified, 0 errors` — the reference.) (REQ-1..REQ-8)
 
-- **AC-2 (`binary_search` golden lowers + verifies):**
-  `lower(parse("conformance/binary_search.th"))` equals
-  `tests/golden/lower/binary_search.verus.rs` byte-for-byte, and
-  `verus tests/golden/lower/binary_search.verus.rs` exits 0 with
-  `2 verified, 0 errors` (the four combinator `spec fn`s plus `binary_search` —
-  confirmed during authoring). (REQ-1..REQ-8)
+- **AC-2 (`binary_search` lowers + VERIFIES):** running `verus` on
+  `lower(parse("conformance/binary_search.th"))` exits 0 with `N verified, 0
+  errors`; emitted contracts equivalent to `binary_search.th`'s; mechanical
+  lowering matches `tests/golden/lower/binary_search.verus.rs`'s corresponding
+  lines; proof aids shape-general, not hardcoded. (`binary_search.verus.rs`
+  itself verifies `2 verified, 0 errors` — the reference.) (REQ-1..REQ-8)
 
 - **AC-3 (combinator Verus(L3) forms verify in isolation, non-vacuous):** Each
   pinned combinator `spec fn` body (REQ-6) compiles under `verus` and is

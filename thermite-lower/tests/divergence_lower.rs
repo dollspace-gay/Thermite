@@ -268,7 +268,9 @@ fn divergence_no_template_program_emits_no_aids() {
         );
     }
     let Some((ok, output)) = verify("identity", &emitted) else {
-        eprintln!("SKIP divergence_no_template_program_emits_no_aids verus check: verus not available");
+        eprintln!(
+            "SKIP divergence_no_template_program_emits_no_aids verus check: verus not available"
+        );
         return;
     };
     assert!(

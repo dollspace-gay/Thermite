@@ -1,0 +1,10 @@
+{
+  "uuid": "adf1588f-7b35-4cc6-898a-58e635895398",
+  "issue_uuid": "cf1d16d4-64d3-4807-b221-090de267777c",
+  "author": "Yffe",
+  "content": "Adapting the vibe-fork/ACToR harness (proven in ferrotorch/ferrolearn/ferray) to Thermite's GREENFIELD spec-driven context. No upstream to translate, so the critic's external anchor becomes: (a) conformance corpus of hand-certified .th programs (cert oracle), (b) Verus/Kani/Z3 golden files for lowering components. Authority chain: design-doc -> component-design -> impl -> conformance/golden verification.\n\nFile manifest (pre-declared):\n- goal.md (binding contract; R-SPEC replaces R-DEV upstream-mirror family)\n- tooling/spec-discipline.py (rewrite of translate-discipline.py: reads = goal.md + design doc + optional route reference)\n- tooling/anti-pattern-gate.py (ferray gate re-pointed to thermite-*/forge)\n- tooling/spec-routes.toml (routes -> design docs -> conformance/golden refs; doubles as module map)\n- .claude/agents/acto-{doc-author,builder,critic,fixer}.md\n- .design/00-index.md\n- .claude/settings.json (merge: + spec-discipline on PostToolUse:Read and PreToolUse:Write|Edit, + anti-pattern-gate on PreToolUse:Write|Edit)\n- .gitignore (+ .crosslink/.spec-reads.json)\n\nReuses Thermite's existing crosslink hooks (work-check/prompt-guard/session-start/heartbeat/pre-web/post-edit) unchanged. State file: .crosslink/.spec-reads.json. Gated crates: thermite-*, forge.",
+  "created_at": "2026-06-04T18:02:34.435161115Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAmgydxJoDIYgp8aMNSo0xAMRNMrIu2XbtYIf4Fhw10rY1Ayxg8vJixQat2JPQeNsamY5b9wdXCQ0JE+BapcsKDg=="
+}

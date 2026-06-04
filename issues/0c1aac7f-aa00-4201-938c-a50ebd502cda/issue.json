@@ -2,11 +2,12 @@
   "uuid": "0c1aac7f-aa00-4201-938c-a50ebd502cda",
   "display_id": 35,
   "title": "Divergence: thermite-spec validator walks fn BODY through cage; corpus binary_search.th fails AC-2 (Some() rejected)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T21:03:10.874241415Z",
-  "updated_at": "2026-06-04T21:03:13.754261925Z",
+  "updated_at": "2026-06-04T21:10:17.804478339Z",
+  "closed_at": "2026-06-04T21:10:17.804478339Z",
   "labels": [
     "blocker"
   ]

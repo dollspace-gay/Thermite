@@ -1,0 +1,10 @@
+{
+  "uuid": "1f06f26f-fefe-4397-b676-8c42b4f4a619",
+  "issue_uuid": "6e4b47cf-0485-4c93-ba4a-475ff55cbb16",
+  "author": "Yffe",
+  "content": "Fixed: restored U+2192 arrow in conformance/sum.cert.json survivor field to match thermite-design.md Appendix A verbatim. Verification (the cert-oracle check itself): cert survivor value now byte-identical to the design's survivor value (python re-extraction: MATCH). JSON parses. Applied directly by orchestrator (one-byte, orchestrator-owned corpus artifact; full acto-fixer dispatch would be ceremony per S4/S8). Re-audit done inline via byte-exact comparison to authority.",
+  "created_at": "2026-06-04T18:17:44.172727408Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/aep0sQ763Le90cjxIw8SQSUXvzGJVPx29331qCL4+cNlu1XGVbf4Xy+zT0wk53aE4wuyMO+I5sIdYeoeh1eCw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "d2c67b7c-abde-4217-b1e3-aa3e09d8489d",
+  "issue_uuid": "7c63ca93-10fb-4322-8e31-298b17c10e91",
+  "author": "Yffe",
+  "content": "Pinning the unguarded loop-body recursion as failing #[ignore]d tests in thermite-syntax/tests/divergence_reaudit2.rs (critic role: tests only, no production fix). Two probes (nested loop, nested while) confirmed to SIGABRT under --ignored; one control (nested statement-if) confirmed to PASS, isolating the gap to the parse_block<->parse_loop cycle. Committing the tests as the audit artifact; the fixer must route the loop body re-entry through guard_recursion.",
+  "created_at": "2026-06-04T20:01:22.488198562Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA3UvL0DCfu7tE+2KB0zZrlNQCGIvG2/52x5S1uM8WBnh5Be6v5Ahp44oiFM01qRBJE/PeUyZKgQE4XWxnfarKBg=="
+}

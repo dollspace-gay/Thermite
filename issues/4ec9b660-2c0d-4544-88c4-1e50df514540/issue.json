@@ -1,0 +1,10 @@
+{
+  "uuid": "4ec9b660-2c0d-4544-88c4-1e50df514540",
+  "display_id": 12,
+  "title": "Add mutation scoring with a frozen deterministic mutator set",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:39.369935561Z",
+  "updated_at": "2026-06-04T17:47:39.369935561Z"
+}

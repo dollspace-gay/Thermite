@@ -28,28 +28,43 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn verus_bin() -> PathBuf {
+/// Resolve verus: `VERUS_BIN` env, then PATH, then `~/.local/bin/verus`. `None`
+/// if genuinely absent → verus-dependent probes SKIP LOUDLY (the suite runs
+/// without verus, e.g. CI); generality is still proved wherever verus exists.
+fn verus_bin() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("VERUS_BIN") {
+        let pb = PathBuf::from(p);
+        if pb.exists() {
+            return Some(pb);
+        }
+    }
     if let Ok(out) = Command::new("which").arg("verus").output() {
         if out.status.success() {
             let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
             if !p.is_empty() {
-                return PathBuf::from(p);
+                return Some(PathBuf::from(p));
             }
         }
     }
-    let home = std::env::var("HOME").expect("HOME set");
-    PathBuf::from(home).join(".local/bin/verus")
+    if let Ok(home) = std::env::var("HOME") {
+        let cand = PathBuf::from(home).join(".local/bin/verus");
+        if cand.exists() {
+            return Some(cand);
+        }
+    }
+    None
 }
 
-fn run_verus(file: &Path) -> (bool, String) {
-    let out = Command::new(verus_bin())
+fn run_verus(file: &Path) -> Option<(bool, String)> {
+    let bin = verus_bin()?;
+    let out = Command::new(bin)
         .arg(file)
         .current_dir(std::env::temp_dir())
         .output()
-        .expect("spawning verus must not fail");
+        .ok()?;
     let mut combined = String::from_utf8_lossy(&out.stdout).to_string();
     combined.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.success(), combined)
+    Some((out.status.success(), combined))
 }
 
 fn lower_str(src: &str) -> String {
@@ -62,7 +77,8 @@ fn lower_str(src: &str) -> String {
     thermite_lower::lower(&parsed.program).expect("probe program must lower")
 }
 
-fn verify(tag: &str, emitted: &str) -> (bool, String) {
+/// `None` if verus is unavailable (caller SKIPs the L3 check loudly).
+fn verify(tag: &str, emitted: &str) -> Option<(bool, String)> {
     let tmp = std::env::temp_dir().join(format!("divergence_{tag}.rs"));
     std::fs::write(&tmp, emitted).expect("write temp");
     run_verus(&tmp)
@@ -138,7 +154,10 @@ fn divergence_push_lemma_shape_derives_new_specfn_name() {
 #[test]
 fn divergence_renamed_accumulator_fold_verifies() {
     let emitted = lower_str(TALLY);
-    let (ok, output) = verify("tally", &emitted);
+    let Some((ok, output)) = verify("tally", &emitted) else {
+        eprintln!("SKIP divergence_renamed_accumulator_fold_verifies: verus not available");
+        return;
+    };
     assert!(
         ok && output.contains("verified, 0 errors"),
         "REQ-8: a renamed-but-structurally-identical accumulator-fold program \
@@ -205,7 +224,10 @@ fn divergence_coverage_split_shape_derives_new_names() {
 #[test]
 fn divergence_renamed_coverage_search_verifies() {
     let emitted = lower_str(SEARCH);
-    let (ok, output) = verify("locate", &emitted);
+    let Some((ok, output)) = verify("locate", &emitted) else {
+        eprintln!("SKIP divergence_renamed_coverage_search_verifies: verus not available");
+        return;
+    };
     assert!(
         ok && output.contains("verified, 0 errors"),
         "REQ-8: a renamed-but-structurally-identical coverage search must VERIFY \
@@ -245,7 +267,10 @@ fn divergence_no_template_program_emits_no_aids() {
              found `{token}`:\n{emitted}"
         );
     }
-    let (ok, output) = verify("identity", &emitted);
+    let Some((ok, output)) = verify("identity", &emitted) else {
+        eprintln!("SKIP divergence_no_template_program_emits_no_aids verus check: verus not available");
+        return;
+    };
     assert!(
         ok && output.contains("verified, 0 errors"),
         "a trivial fn must lower + verify cleanly. exit_success={ok}\n{output}\n{emitted}"

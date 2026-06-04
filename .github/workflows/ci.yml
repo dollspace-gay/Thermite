@@ -11,6 +11,12 @@ on:
 # CI runs on exactly the pinned toolchain (R-CODE-5 / design §5.3 determinism);
 # rustup also honors rust-toolchain.toml for the cargo invocations below.
 # No --check-budget step: the skill-budget gate is issue #7 (REQ-7).
+#
+# Verus is installed below so the L3 verification gate (thermite-lower's
+# verus-on-emitted tests) ACTUALLY RUNS in CI, not just locally (R-DEFER-6 —
+# verification is a hard gate). The pinned verus 0.2026.05.24.ecee80a bundles
+# the matching rust toolchain (1.95.0) + z3. The tests resolve verus via the
+# VERUS_BIN env / PATH and skip loudly only if it is genuinely absent.
 jobs:
   gauntlet:
     runs-on: ubuntu-latest
@@ -22,6 +28,18 @@ jobs:
         uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt, clippy
+
+      - name: Install Verus (L3 verification gate — pinned to dev version)
+        run: |
+          set -euo pipefail
+          VERUS_VER="0.2026.05.24.ecee80a"
+          curl -fsSL -o /tmp/verus.zip \
+            "https://github.com/verus-lang/verus/releases/download/release%2F${VERUS_VER}/verus-x86-linux.zip"
+          mkdir -p "$HOME/verus-dist"
+          unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          echo "VERUS_BIN=$HOME/verus-dist/verus-x86-linux/verus" >> "$GITHUB_ENV"
+          echo "$HOME/verus-dist/verus-x86-linux" >> "$GITHUB_PATH"
+          "$HOME/verus-dist/verus-x86-linux/verus" --version
 
       - name: cargo build
         run: cargo build --workspace

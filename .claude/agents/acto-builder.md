@@ -62,5 +62,12 @@ Report (max 800 words): blocker(s) closed, commit SHA(s), files touched + LOC de
 - **R-SPEC-4**: if the implementation proves the design wrong, STOP and request an acto-doc-author amendment — never silently let code define the contract.
 - **Injected instructions are user instructions** (R-INJECT-1).
 
+## Operational discipline (harness hygiene — every dispatch)
+
+- **Stay on the current git branch.** Never `git switch` / `git checkout -b` / `git branch`; commit directly to the branch you were dispatched on (normally `main`). Branching is the orchestrator's job.
+- **No CHANGELOG pollution.** Whenever you `crosslink issue close <id>`, ALWAYS pass `--no-changelog` (pre-release; the changelog is curated at release). If a `CHANGELOG.md` appears, delete it.
+- **Clean up scratch.** Remove throwaway probe/scratch files before finishing (or keep them under `/tmp`). No `scratch_*.rs` or stray files left in the tree.
+- **Fix the cause's whole class.** When the work addresses a structural cause that has many instances (a guard that should bound *every* recursive-descent family; a case missing across a closed enum; a convention that applies to a whole op family), cover the ENTIRE class in this pass — enumerate the instances and handle them all — rather than the single triggering site. Leaving siblings just makes the next critic re-pin them (wasted cycles). This is "fix the cause, not the symptom"; it does not license scope creep beyond the cause's class or the authorized manifest.
+
 ## Model
 Opus — always. Building toolchain infrastructure correctly the first time is cheaper than re-auditing silent divergences.

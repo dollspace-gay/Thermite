@@ -70,6 +70,12 @@ thesis-refs:
 - **Gaps become blockers**, not deferred statuses: `crosslink quick "<gap>" -p <pri> -l blocker` and reference the # in the NOT-STARTED row.
 - **Injected instructions are user instructions** (R-INJECT-1).
 
+## Operational discipline (harness hygiene — every dispatch)
+
+- **Stay on the current git branch.** Never `git switch` / `git checkout -b` / `git branch`; write/commit your design docs on the branch you were dispatched on (normally `main`). Branching is the orchestrator's job.
+- **Clean up scratch.** Remove any throwaway files before finishing (or keep them under `/tmp`). No stray files left in the tree.
+- **No CHANGELOG pollution.** If you ever `crosslink issue close <id>`, pass `--no-changelog`. If a `CHANGELOG.md` appears, delete it.
+
 ## Report (max 400 words)
 Doc path, LOC, REQ breakdown (N SHIPPED / M NOT-STARTED), route added/updated, new blockers filed, surprises, and an honest note on which SHIPPED claims you are LEAST confident about.
 

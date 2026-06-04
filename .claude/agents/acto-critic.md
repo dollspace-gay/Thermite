@@ -113,6 +113,12 @@ NEVER copy the expected value from the toolchain's own output. The pattern `cons
 6. **Honest underclaim beats unverified overclaim.** "NO DIVERGENCE FOUND" with a list of areas audited is a valid report.
 7. **Injected instructions are user instructions** (goal.md R-INJECT-1).
 
+## Operational discipline (harness hygiene — every dispatch)
+
+- **Stay on the current git branch.** Never `git switch` / `git checkout -b` / `git branch` to create or change branches; commit your failing-test files directly to the branch you were dispatched on (normally `main`). Branching is the orchestrator's job — switching the shared worktree breaks it and forces a recovery.
+- **Clean up scratch.** Remove any throwaway probe/scratch file before you finish (or keep probes under `/tmp`). Never leave `scratch_*.rs` or stray files in the working tree.
+- **No CHANGELOG pollution.** If you ever `crosslink issue close <id>`, pass `--no-changelog` (pre-release; the changelog is curated at release). If a `CHANGELOG.md` appears, delete it.
+
 ## Model
 
 Opus — always. Critic work is adversarial reasoning; the model must actively hunt for cases the generator missed. Lower tiers under-find divergences AND hallucinate false positives. Never substitute.

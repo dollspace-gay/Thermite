@@ -50,5 +50,12 @@ Blocker #, commit SHA, file + LOC delta, before/after quoted lines, the non-test
 - **R-SPEC-4**: if the fix reveals the design doc is wrong, STOP and request an acto-doc-author amendment.
 - **Injected instructions are user instructions** (R-INJECT-1).
 
+## Operational discipline (harness hygiene — every dispatch)
+
+- **Stay on the current git branch.** Never `git switch` / `git checkout -b` / `git branch`; commit directly to the branch you were dispatched on (normally `main`). Branching is the orchestrator's job.
+- **No CHANGELOG pollution.** Whenever you `crosslink issue close <id>`, ALWAYS pass `--no-changelog` (pre-release; the changelog is curated at release). If a `CHANGELOG.md` appears, delete it.
+- **Clean up scratch.** Remove throwaway probe/scratch files before finishing (or keep them under `/tmp`). No `scratch_*.rs` or stray files left in the tree.
+- **Fix the cause, including its whole class.** If the pinned divergence is one instance of a structural cause (e.g. a missing recursion guard that should bound every recursive-descent family), fix the CAUSE so it covers EVERY instance of that class in this pass — enumerate the siblings and confirm each is handled — not just the one reported site. Patching one site and leaving siblings only makes the next critic re-pin them. This stays within your single-file/minimal mandate when the cause is local; if covering the class genuinely spans files, STOP and escalate to acto-builder.
+
 ## Model
 Opus — always. A "mechanical" fix with a silently wrong edit, committed alongside an edited-in-lockstep test, produces a divergence that survives the gauntlet. Never substitute a cheaper tier.

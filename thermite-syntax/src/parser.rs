@@ -65,21 +65,31 @@ pub enum SyntaxError {
     ExpressionTooDeep { limit: usize, span: Span },
 }
 
-/// The maximum expression nesting depth the recursive-descent ladder will
-/// follow before returning an `ExpressionTooDeep` diagnostic. Bounding the
-/// recursion keeps external input from overflowing the native stack and
-/// aborting the process (parser.md AC-4). The limit is a fixed constant
-/// (determinism, goal.md R-CODE-5), comfortably above any human-authored
-/// nesting yet well below the stack budget for a debug build.
+/// The maximum recursive-descent nesting depth the parser will follow before
+/// returning an `ExpressionTooDeep` diagnostic. Bounding the recursion keeps
+/// external input from overflowing the native stack and aborting the process
+/// (parser.md AC-4). The limit is a fixed constant (determinism, goal.md
+/// R-CODE-5), comfortably above any human-authored nesting yet well below the
+/// stack budget for a debug build.
+///
+/// This single bound guards EVERY recursive-descent family, not just the
+/// expression ladder: nested expressions (`parse_expr`), nested types
+/// (`parse_type` on `Option<Option<...>>`), nested patterns (`parse_pattern`
+/// covering both the slice `[[...]]` and enum `Some(Some(...))` cycles), and the
+/// tail-position `if/else` cycle (`parse_block`/`parse_if_parts`). Each family
+/// re-enters its recursion through a guarded entry point, so a single shared
+/// counter caps them all (a divergence the #29 expr-only guard missed).
 ///
 /// The value MUST sit below the native-stack overflow point: each nesting level
-/// descends the full ladder (`parse_expr`→`parse_or`→…→`parse_primary` plus the
-/// paren re-entry, ~10 frames/level), so a deep grouping overflows the C stack
-/// long before a large count would. Empirically, on a 2 MiB thread (the Rust
-/// test-thread default) a debug build overflows between ~135 and ~140 levels;
-/// 64 leaves a ~2× margin to cover debug/release and platform variance while
-/// staying far above any plausible hand-authored nesting.
-const MAX_EXPR_DEPTH: usize = 64;
+/// descends a chain of frames (the full ladder `parse_expr`->...->`parse_primary`
+/// plus paren re-entry for expressions, ~10 frames/level; fewer for types and
+/// patterns), so deep nesting overflows the C stack long before a large count
+/// would. Empirically, on a 2 MiB thread (the Rust test-thread default) a debug
+/// build overflows between ~135 and ~140 levels; 64 leaves a ~2x margin to cover
+/// debug/release and platform variance while staying far above any plausible
+/// hand-authored nesting (the re-audit confirmed depth-63 parses, depth-70
+/// errors, and depth-40 reasonable nesting still parses).
+const MAX_RECURSION_DEPTH: usize = 64;
 
 impl SyntaxError {
     /// Construct a stray-character diagnostic (used by the lexer).
@@ -188,9 +198,10 @@ struct Parser<'a> {
     pos: usize,
     items: Vec<Item>,
     errors: Vec<SyntaxError>,
-    /// Current expression-nesting recursion depth (guards the precedence ladder
-    /// against stack overflow on deeply nested input — parser.md AC-4).
-    expr_depth: usize,
+    /// Current recursive-descent nesting depth (guards every recursive family —
+    /// expressions, types, patterns, and the if-tail cycle — against stack
+    /// overflow on deeply nested input — parser.md AC-4).
+    recursion_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -201,8 +212,36 @@ impl<'a> Parser<'a> {
             pos: 0,
             items: Vec::new(),
             errors: lex_errors,
-            expr_depth: 0,
+            recursion_depth: 0,
         }
+    }
+
+    // ---- recursion-depth guard (parser.md AC-4) ----------------------------
+
+    /// Bound the recursive-descent nesting depth: run `inner` one level deeper,
+    /// returning a structured `ExpressionTooDeep` diagnostic (never a stack
+    /// overflow / process abort) once the shared counter hits
+    /// `MAX_RECURSION_DEPTH` (parser.md AC-4 / REQ-4; goal.md R-CODE-2).
+    ///
+    /// A SINGLE shared counter caps EVERY recursive family — expressions
+    /// (`parse_expr`), types (`parse_type`), patterns (`parse_pattern`), and the
+    /// `parse_block`/`parse_if_parts` if-tail cycle. The #29 fix incremented the
+    /// counter only inside `parse_expr`, so the type/pattern/if-tail recursions
+    /// bypassed it and still overflowed the C stack on deep input (#31); routing
+    /// each family's recursive entry through this guard closes that gap. The
+    /// counter is decremented on every exit path, so siblings (e.g. successive
+    /// type arguments) do not accumulate depth.
+    fn guard_recursion<T>(&mut self, inner: impl FnOnce(&mut Self) -> PResult<T>) -> PResult<T> {
+        if self.recursion_depth >= MAX_RECURSION_DEPTH {
+            return Err(SyntaxError::ExpressionTooDeep {
+                limit: MAX_RECURSION_DEPTH,
+                span: self.peek_span(),
+            });
+        }
+        self.recursion_depth += 1;
+        let result = inner(self);
+        self.recursion_depth -= 1;
+        result
     }
 
     // ---- cursor primitives -------------------------------------------------
@@ -664,6 +703,16 @@ impl<'a> Parser<'a> {
     /// form (`Stmt::If`) or — when it has an `else` and sits in tail position —
     /// the expression form (`Expr::If`), per surface-grammar.md decision 2.
     fn parse_if_parts(&mut self) -> PResult<(Expr, Block, Option<Block>)> {
+        // Bound recursion: a tail-position `if x { <nest> } else { 0 }` re-enters
+        // `parse_block` -> this fn -> `parse_block` ..., a cycle the #29
+        // expr-only guard never saw (only the condition routes through
+        // `parse_expr`). Guarding the cycle's re-entry point caps it so deep
+        // tail-`if` nesting returns a diagnostic, never aborts (parser.md AC-4;
+        // #31 — the construct the #30 fix introduced).
+        self.guard_recursion(Self::parse_if_parts_inner)
+    }
+
+    fn parse_if_parts_inner(&mut self) -> PResult<(Expr, Block, Option<Block>)> {
         self.consume(&TokKind::If, "`if`")?;
         let cond = self.parse_expr()?;
         let then = self.parse_block()?;
@@ -735,17 +784,8 @@ impl<'a> Parser<'a> {
         // diagnostic instead of overflowing the native stack (parser.md AC-4).
         // Every nested expression re-enters the ladder through `parse_expr`
         // (parenthesised grouping, call args, closure bodies, match arms), so
-        // this single guard caps the whole precedence ladder.
-        if self.expr_depth >= MAX_EXPR_DEPTH {
-            return Err(SyntaxError::ExpressionTooDeep {
-                limit: MAX_EXPR_DEPTH,
-                span: self.peek_span(),
-            });
-        }
-        self.expr_depth += 1;
-        let result = self.parse_or();
-        self.expr_depth -= 1;
-        result
+        // this guard caps the whole precedence ladder via the shared counter.
+        self.guard_recursion(Self::parse_or)
     }
 
     fn parse_or(&mut self) -> PResult<Expr> {
@@ -1040,6 +1080,15 @@ impl<'a> Parser<'a> {
     // ---- patterns ----------------------------------------------------------
 
     fn parse_pattern(&mut self) -> PResult<Pattern> {
+        // Bound recursion: slice patterns (`[[...]]` via `parse_slice_pattern`)
+        // and enum/tuple-struct patterns (`Some(Some(...))` via
+        // `parse_path_pattern`) both re-enter `parse_pattern`, so a single guard
+        // here caps both cycles (parser.md AC-4; #31 — the #29 expr-only guard
+        // never saw the pattern path).
+        self.guard_recursion(Self::parse_pattern_inner)
+    }
+
+    fn parse_pattern_inner(&mut self) -> PResult<Pattern> {
         match self.peek().clone() {
             TokKind::Ident(name) if name == "_" => {
                 self.bump();
@@ -1125,6 +1174,14 @@ impl<'a> Parser<'a> {
     // ---- types -------------------------------------------------------------
 
     fn parse_type(&mut self) -> PResult<Type> {
+        // Bound recursion: `Name<T>` and `&[T]`/`&T` re-enter `parse_type`, so a
+        // deeply nested `Option<Option<...>>` would overflow the native stack
+        // without this guard (parser.md AC-4; #31 — the #29 expr-only guard
+        // never saw the type path).
+        self.guard_recursion(Self::parse_type_inner)
+    }
+
+    fn parse_type_inner(&mut self) -> PResult<Type> {
         match self.peek().clone() {
             // `()` is the ONE sanctioned unit-type spelling (surface-grammar.md
             // decision 4 / REQ-8): written explicitly in a return position.

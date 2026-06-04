@@ -66,7 +66,6 @@ fn parse_returns_on_bounded_stack(src: String) -> bool {
 ///
 /// Tracking: #31
 #[test]
-#[ignore = "divergence: parse_type generic recursion unguarded; SIGABRTs on deep nesting; tracking #31"]
 fn divergence_deep_generic_type_no_panic() {
     let mut g = String::from("u32");
     for _ in 0..DEPTH {
@@ -94,7 +93,6 @@ fn divergence_deep_generic_type_no_panic() {
 ///
 /// Tracking: #31
 #[test]
-#[ignore = "divergence: parse_slice_pattern/parse_pattern recursion unguarded; SIGABRTs on deep nesting; tracking #31"]
 fn divergence_deep_slice_pattern_no_panic() {
     let mut p = String::from("_");
     for _ in 0..DEPTH {
@@ -122,7 +120,6 @@ fn divergence_deep_slice_pattern_no_panic() {
 ///
 /// Tracking: #31
 #[test]
-#[ignore = "divergence: parse_path_pattern/parse_pattern recursion unguarded; SIGABRTs on deep nesting; tracking #31"]
 fn divergence_deep_enum_pattern_no_panic() {
     let mut p = String::from("x");
     for _ in 0..DEPTH {
@@ -156,7 +153,6 @@ fn divergence_deep_enum_pattern_no_panic() {
 ///
 /// Tracking: #31
 #[test]
-#[ignore = "divergence: parse_block/parse_if_parts if-tail recursion unguarded; SIGABRTs on deep nesting; tracking #31"]
 fn divergence_deep_if_tail_no_panic() {
     let mut s = String::from("x");
     for _ in 0..DEPTH {

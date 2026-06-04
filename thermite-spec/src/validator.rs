@@ -36,6 +36,18 @@ use crate::combinators::{self, ArgKind, CombinatorSig};
 /// recursive path unbounded).
 const MAX_RECURSION_DEPTH: usize = 64;
 
+/// The bounded set of built-in `MethodCall` names a CAGED position admits
+/// (REQ-3(c): "the bounded built-in `MethodCall`s the grammar admits (e.g.
+/// `xs.len()`)"). Any method name outside this set in a contract position is a
+/// `ForbiddenCall` (REQ-4 (iv)) — the §4.2 cage is closed.
+///
+/// v0.1 set = `len` only: it is the single method the conformance corpus uses
+/// in any contract position (`haystack.len()` in `binary_search.th`; `xs.len()`
+/// in `sum.th`'s `req`/`inv`/`dec`). No other built-in method is added — per
+/// REQ-1's frozen-set discipline and anti-goal §11, the set grows only by
+/// design amendment from a corpus need, never speculatively.
+const BUILTIN_METHODS: &[&str] = &["len"];
+
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so
 /// diagnostics are crisp (pillar 4); `Display`-able. The validator NEVER panics
@@ -182,11 +194,17 @@ impl Validator {
                     for clause in &f.contract.ens {
                         self.walk_clause(clause);
                     }
-                    self.walk_block(&f.body, f.span);
+                    // REQ-3: a `fn` BODY is executable surface code, NOT a
+                    // contract position. We traverse it STRUCTURALLY only — to
+                    // find nested `LoopNode`s and cage each loop's `invs`/`dec`
+                    // (the only contract positions inside a body). The body's
+                    // other expressions (`return Some(mid)`, `haystack[mid]`,
+                    // assignments, …) are surface code and are NOT cage-checked.
+                    self.scan_block_for_loops(&f.body);
                 }
                 Item::SpecFn(s) => {
                     // A `spec fn` body is itself a contract-position expression
-                    // tree (REQ-3); its `dec` measure is a clause too.
+                    // tree (REQ-3) — fully caged; its `dec` measure is a clause.
                     self.walk_clause(&s.dec);
                     self.walk_block(&s.body, s.span);
                 }
@@ -218,11 +236,117 @@ impl Validator {
         self.walk_expr(&clause.expr, span);
     }
 
-    /// Walk a block: any `loop`/`while` it contains is a contract carrier
-    /// (`invs`/`dec`); other statements may hold sub-expressions but a `fn` body
-    /// is not itself a contract position — we only descend to surface nested
-    /// loop contracts. (A `spec fn` body, however, IS validated as a contract
-    /// expression via its tail / statement expressions.)
+    /// STRUCTURAL traversal of a (non-caged) `fn` body block (REQ-3): descend
+    /// through statements / nested blocks / `if` / `loop` ONLY to FIND nested
+    /// `LoopNode`s and cage each loop's `invs`/`dec` (recursively, for loops
+    /// nested in loops). The block's own expressions — calls like `Some(mid)`,
+    /// `return None`, assignments, `haystack[mid]` — are executable surface code
+    /// and are NOT cage-checked here. This is the counterpart to the caged
+    /// `walk_block` (used for `spec fn` bodies and caged sub-expressions): same
+    /// shape walk, but it cage-checks NOTHING except the loop contract clauses it
+    /// discovers.
+    fn scan_block_for_loops(&mut self, block: &Block) {
+        for stmt in &block.stmts {
+            self.scan_stmt_for_loops(stmt);
+        }
+        if let Some(tail) = &block.tail {
+            self.scan_expr_for_loops(tail);
+        }
+    }
+
+    /// STRUCTURAL traversal of a `fn`-body statement: cage the `invs`/`dec` of
+    /// any nested loop (the only contract positions in a body) and keep
+    /// descending through control flow to find deeper loops. Surface expressions
+    /// are descended into ONLY to reach nested loops (e.g. a `loop` inside an
+    /// `if` block), never cage-checked.
+    fn scan_stmt_for_loops(&mut self, stmt: &Stmt) {
+        match stmt {
+            Stmt::Loop(loop_node) => {
+                // The loop's `invs`/`dec` ARE contract positions — cage them.
+                for inv in &loop_node.invs {
+                    self.walk_clause(inv);
+                }
+                self.walk_clause(&loop_node.dec);
+                // The loop BODY is still executable surface code: scan it
+                // structurally for further nested loops, do not cage it.
+                self.scan_block_for_loops(&loop_node.body);
+            }
+            Stmt::Let { init, .. } => self.scan_expr_for_loops(init),
+            Stmt::Assign { target, value } => {
+                self.scan_expr_for_loops(target);
+                self.scan_expr_for_loops(value);
+            }
+            Stmt::Return(Some(e)) | Stmt::Expr(e) => self.scan_expr_for_loops(e),
+            Stmt::Return(None) => {}
+            Stmt::If { cond, then, else_ } => {
+                self.scan_expr_for_loops(cond);
+                self.scan_block_for_loops(then);
+                if let Some(else_block) = else_ {
+                    self.scan_block_for_loops(else_block);
+                }
+            }
+        }
+    }
+
+    /// STRUCTURAL traversal of a `fn`-body expression: descend ONLY into the
+    /// sub-expressions/blocks that can themselves contain a nested `loop` (an
+    /// `if`/`match` arm body), so a loop nested inside an expression is still
+    /// found and its contract caged. The expression itself is surface code and
+    /// is NOT cage-checked.
+    fn scan_expr_for_loops(&mut self, expr: &Expr) {
+        match expr {
+            Expr::If { cond, then, else_ } => {
+                self.scan_expr_for_loops(cond);
+                self.scan_block_for_loops(then);
+                self.scan_block_for_loops(else_);
+            }
+            Expr::Match { scrutinee, arms } => {
+                self.scan_expr_for_loops(scrutinee);
+                for MatchArm { body, .. } in arms {
+                    self.scan_expr_for_loops(body);
+                }
+            }
+            Expr::Call { args, .. } => {
+                for arg in args {
+                    self.scan_expr_for_loops(arg);
+                }
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                self.scan_expr_for_loops(receiver);
+                for arg in args {
+                    self.scan_expr_for_loops(arg);
+                }
+            }
+            Expr::Field { receiver, .. } => self.scan_expr_for_loops(receiver),
+            Expr::Binary { lhs, rhs, .. } => {
+                self.scan_expr_for_loops(lhs);
+                self.scan_expr_for_loops(rhs);
+            }
+            Expr::Index { base, index } => {
+                self.scan_expr_for_loops(base);
+                match index {
+                    IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => {
+                        self.scan_expr_for_loops(e)
+                    }
+                    IndexArg::Range(lo, hi) => {
+                        self.scan_expr_for_loops(lo);
+                        self.scan_expr_for_loops(hi);
+                    }
+                }
+            }
+            Expr::Cast { expr: inner, .. } | Expr::Ref { expr: inner, .. } => {
+                self.scan_expr_for_loops(inner)
+            }
+            Expr::Closure { body, .. } => self.scan_expr_for_loops(body),
+            // Leaves — no nested loop possible.
+            Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+        }
+    }
+
+    /// Walk a CAGED block (a `spec fn` body, or a block nested inside a caged
+    /// expression such as an `if`'s arm): every statement expression and the
+    /// tail expression IS a contract-position expression and is cage-checked.
+    /// Any `loop`/`while` it contains carries its own `invs`/`dec` clauses.
     fn walk_block(&mut self, block: &Block, span: Span) {
         self.descend(span, |s| {
             for stmt in &block.stmts {
@@ -278,11 +402,28 @@ impl Validator {
             // forbidden.
             Expr::Call { callee, args } => self.walk_call(callee, args, span),
 
-            // (c) bounded built-in method calls (e.g. `xs.len()`); the receiver
-            // and args are recursed into. A method call is structurally a
-            // built-in (the grammar admits only a closed set), so we accept the
-            // shape and validate operands.
-            Expr::MethodCall { receiver, args, .. } => {
+            // (c) bounded built-in method calls. REQ-3(c) admits only "the
+            // bounded built-in `MethodCall`s the grammar admits (e.g.
+            // `xs.len()`)" — NOT an arbitrary method name. A non-allowlisted
+            // method name in a caged position is forbidden (REQ-4 (iv) ->
+            // `ForbiddenCall`). The allowlist is `BUILTIN_METHODS`; a permitted
+            // method's receiver and args are recursed into.
+            Expr::MethodCall {
+                receiver,
+                name,
+                args,
+            } => {
+                if !BUILTIN_METHODS.contains(&name.as_str()) {
+                    self.errors.push(SpecError::ForbiddenCall {
+                        detail: format!(
+                            "`.{name}()` is not a bounded built-in method permitted in a \
+                             contract (only {BUILTIN_METHODS:?})"
+                        ),
+                        span,
+                    });
+                }
+                // Recurse operands regardless so deep/forbidden nested content
+                // still surfaces (REQ-5), even on a rejected method name.
                 self.walk_expr(receiver, span);
                 for arg in args {
                     self.walk_expr(arg, span);

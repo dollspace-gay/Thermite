@@ -50,7 +50,6 @@ fn parse_clean(src: &str) -> thermite_syntax::Program {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "divergence: corpus binary_search.th fails AC-2 (fn-body Some() rejected as combinator); tracking blocker filed"]
 fn divergence_corpus_binary_search_validates_clean() {
     // AC-2 expected value: Ok(()) for the hand-certified corpus program.
     let src = include_str!("../../conformance/binary_search.th");
@@ -64,7 +63,6 @@ fn divergence_corpus_binary_search_validates_clean() {
 }
 
 #[test]
-#[ignore = "divergence: enum constructor call in fn body wrongly cage-checked; tracking blocker filed"]
 fn divergence_enum_ctor_in_fn_body_is_not_a_contract_position() {
     // §4.1: `Some`/`None` are sanctioned built-in constructors. A `fn` BODY is
     // not a contract position (REQ-3 enumerates the positions; a fn body is not
@@ -98,7 +96,6 @@ fn divergence_enum_ctor_in_fn_body_is_not_a_contract_position() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "divergence: arbitrary method-call name in contract silently accepted (cage leak); tracking blocker filed"]
 fn divergence_unknown_method_call_in_contract_is_rejected() {
     // REQ-3(c)/REQ-4(iv): `xs.frobnicate()` is not a grammar built-in method;
     // the cage must reject it (expected: a ForbiddenCall, the REQ-4(iv) variant).

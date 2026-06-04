@@ -1,0 +1,10 @@
+{
+  "uuid": "819f901a-05be-4d70-8042-47f93a78ee43",
+  "display_id": 27,
+  "title": "Completeness gap: conformance/parse/sum.facts.json and recover_per_item.* not yet authored (parser oracle incomplete)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:06:28.102102450Z",
+  "updated_at": "2026-06-04T19:06:28.102102450Z"
+}

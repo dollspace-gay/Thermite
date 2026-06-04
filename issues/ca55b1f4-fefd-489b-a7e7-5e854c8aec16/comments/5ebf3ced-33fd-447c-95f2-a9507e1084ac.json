@@ -1,0 +1,10 @@
+{
+  "uuid": "5ebf3ced-33fd-447c-95f2-a9507e1084ac",
+  "issue_uuid": "ca55b1f4-fefd-489b-a7e7-5e854c8aec16",
+  "author": "Yffe",
+  "content": "Filed by acto-doc-author while authoring .design/syntax/semantic-addressing.md. Documented in that doc's OQ-1 + AC-1 NOTE. Releasing lock — this is an orchestrator/critic decision before the #3 builder runs, not doc-author work.",
+  "created_at": "2026-06-04T18:58:24.541218179Z",
+  "kind": "note",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAYJI/zbIT0Hd62H4sK/Cc9pKiq2gF8lnH6JgXEHOuuFUpF1kvEnHlfhkbLpmEyWd1M+XwTx5KrCR097R1B3nzAA=="
+}

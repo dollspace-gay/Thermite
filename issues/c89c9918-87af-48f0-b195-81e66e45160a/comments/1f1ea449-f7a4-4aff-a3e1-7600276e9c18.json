@@ -1,0 +1,10 @@
+{
+  "uuid": "1f1ea449-f7a4-4aff-a3e1-7600276e9c18",
+  "issue_uuid": "c89c9918-87af-48f0-b195-81e66e45160a",
+  "author": "Yffe",
+  "content": "Items intentionally cut from the v0.1 kernel during planning, parked here so they are not lost: (1) Runtime effect sandbox that kills fx-violating syscalls at the OS boundary (design 4.1) — v0.1 does compile-time fx subsumption only. (2) True MIR-level lowering (design 3/13) — v0.1 transpiles to Verus source instead. (3) Lean-style incremental goal-state holes forge goal/fill (design 5.1) — needs a research spike; v0.1 ships whole-item forge check. Revisit each when its enabling milestone lands.",
+  "created_at": "2026-06-04T17:49:32.030202915Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA3Owzbcf193iv5NocxLKZ5PwLlgQYzIlXLR0dDwa2ase+7Bqo1Hj5g65mD+8aX1VeRWB5BnGZJZlt69qobxCMBw=="
+}

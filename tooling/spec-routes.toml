@@ -1,0 +1,144 @@
+# spec-routes.toml — the Thermite route table (single source of truth).
+#
+# Each route maps a toolchain source file to the design doc that governs it
+# and, where one exists, the golden/conformance reference that is the
+# external truth for its behavior. The spec-discipline.py hook reads this
+# file to enforce "read goal.md + the design doc (+ a reference) before
+# editing the file".
+#
+# Schema:
+#   [[route]]
+#   crate_pattern   = "<repo-relative path or glob>"   # required
+#   design          = ".design/<area>/<doc>.md"        # required; must exist
+#   reference       = ["conformance/<name>.th", ...]   # optional; if non-empty,
+#                                                       #   >=1 must be Read
+#   conformance_ops = ["<corpus program names>"]        # informational
+#
+# A file with no matching route BLOCKS until a route is added (R-XLATE-2).
+# A route whose design doc doesn't exist BLOCKS until acto-doc-author
+# authors it (R-XLATE-3).
+#
+# NOTE: This table doubles as the intended v0.1 module map. The crate/file
+# layout below is the target for scaffold issue #1; adjust these routes if
+# #1 settles on different paths. Routes are seeded for the v0.1 kernel
+# (crosslink milestone #1); v0.2-v0.5 routes are added as the loop reaches
+# them.
+
+# ---------------------------------------------------------------------
+# thermite-syntax — lexer, recovering parser, AST, semantic addressing
+#   (issues #1 scaffold, #3 parser)
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-syntax/src/lexer.rs"
+design = ".design/syntax/lexer.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/syntax/parser.md"
+reference = ["conformance/parse"]
+conformance_ops = ["binary_search", "sum", "recover_per_item"]
+
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/syntax/ast.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/address.rs"
+design = ".design/syntax/semantic-addressing.md"
+reference = ["conformance/address"]
+conformance_ops = ["binary_search.loop#1.inv#2"]
+
+# ---------------------------------------------------------------------
+# thermite-spec — the SpecTherm combinator registry (issue #2)
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-spec/src/combinators.rs"
+design = ".design/spec/spectherm-combinators.md"
+reference = ["tests/golden/combinators"]
+conformance_ops = ["forall_in", "forall_below", "forall_from", "sorted", "permutation_of", "disjoint", "count_where", "exists_in"]
+
+[[route]]
+crate_pattern = "thermite-spec/src/grammar.rs"
+design = ".design/spec/surface-grammar.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
+# thermite-lower — Thermite AST -> Verus source; L1 runtime checks
+#   (issue #4)
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/lower/verus-lowering.md"
+reference = ["tests/golden/lower"]
+conformance_ops = ["sum", "binary_search"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/lower/l1-runtime-checks.md"
+reference = ["tests/golden/l1"]
+conformance_ops = ["sum"]
+
+[[route]]
+crate_pattern = "thermite-lower/src/effects.rs"
+design = ".design/lower/effect-subsumption.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
+# forge — the CLI / verification driver (issues #5, #6, #8)
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "forge/src/cli.rs"
+design = ".design/forge/cli.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/forge/check.md"
+reference = ["conformance"]
+conformance_ops = ["sum", "binary_search"]
+
+[[route]]
+crate_pattern = "forge/src/manifest.rs"
+design = ".design/forge/certificate-manifest.md"
+reference = ["conformance"]
+conformance_ops = ["sum"]
+
+[[route]]
+crate_pattern = "forge/src/vacuity.rs"
+design = ".design/forge/vacuity-triage.md"
+reference = ["conformance/vacuity"]
+conformance_ops = ["tautology_reject", "ens_is_true_reject", "missing_result_reject"]
+
+[[route]]
+crate_pattern = "forge/src/slag.rs"
+design = ".design/forge/slag.md"
+reference = ["conformance/slag"]
+conformance_ops = ["simd_sum"]
+
+[[route]]
+crate_pattern = "forge/src/cache.rs"
+design = ".design/forge/proof-cache.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
+# thermite-skill — THERMITE.skill.md generator + 6k-token budget gate
+#   (issue #7)
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-skill/src/generate.rs"
+design = ".design/skill/skill-generator.md"
+reference = []
+conformance_ops = []

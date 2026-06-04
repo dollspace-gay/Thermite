@@ -1,0 +1,22 @@
+fn binary_search(haystack: &[u32], needle: u32) -> Option<usize>
+  req sorted(haystack)
+  ens match result {
+        Some(i) => i < haystack.len() && haystack[i] == needle,
+        None    => forall_in(haystack, |x| x != needle),
+      }
+  fx  pure
+{
+  let mut lo: usize = 0;
+  let mut hi: usize = haystack.len();
+  loop
+    inv lo <= hi && hi <= haystack.len()
+    inv forall_below(haystack, lo, |x| x < needle)
+    inv forall_from(haystack, hi, |x| x > needle)
+    dec hi - lo
+  {
+    if lo == hi { return None; }
+    let mid = lo + (hi - lo) / 2;
+    if haystack[mid] == needle { return Some(mid); }
+    if haystack[mid] < needle  { lo = mid + 1; } else { hi = mid; }
+  }
+}

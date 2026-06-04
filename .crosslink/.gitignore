@@ -1,0 +1,11 @@
+# Multi-agent collaboration (machine-local)
+agent.json
+repo-id
+.hub-cache/
+.knowledge-cache/
+keys/
+integrations/
+
+# Machine-local overrides
+hook-config.local.json
+rules.local/

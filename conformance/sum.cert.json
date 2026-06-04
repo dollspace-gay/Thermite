@@ -1,0 +1,12 @@
+{
+  "item": "sum",
+  "level": "L3",
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false,
+    "mutants_killed": "17/18",
+    "survivor": "mutant#11: `i = i + 1` → `i = i + 2` survives ens but killed by inv#2"
+  },
+  "effects": ["pure"],
+  "slag": false
+}

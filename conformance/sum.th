@@ -1,0 +1,28 @@
+spec fn spec_sum(xs: &[u32]) -> u64
+  dec xs.len()
+{
+  match xs {
+    []          => 0,
+    [head, ..t] => head as u64 + spec_sum(t),
+  }
+}
+
+fn sum(xs: &[u32]) -> u64
+  req xs.len() <= 1_000_000
+  ens result == spec_sum(xs)
+  ens result <= xs.len() as u64 * u32::MAX as u64
+  fx  pure
+{
+  let mut acc: u64 = 0;
+  let mut i: usize = 0;
+  while i < xs.len()
+    inv i <= xs.len()
+    inv acc == spec_sum(&xs[..i])
+    inv acc <= i as u64 * u32::MAX as u64
+    dec xs.len() - i
+  {
+    acc = acc + xs[i] as u64;   // overflow: discharged from inv#3 + req
+    i = i + 1;
+  }
+  acc
+}

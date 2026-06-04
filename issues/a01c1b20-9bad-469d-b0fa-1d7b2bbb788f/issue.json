@@ -1,0 +1,10 @@
+{
+  "uuid": "a01c1b20-9bad-469d-b0fa-1d7b2bbb788f",
+  "display_id": 37,
+  "title": "Observation: int-literal digit separators dropped (thermite-syntax lexer u128); REQ-3 'underscores preserved verbatim' unmet but numerically faithful",
+  "status": "open",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T22:16:06.110502459Z",
+  "updated_at": "2026-06-04T22:16:06.110502459Z"
+}

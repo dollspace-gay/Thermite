@@ -25,10 +25,11 @@ compilable to a runtime check … the L1 fallback rung always exists for every
 contract"). It is also what `#[slag]` blocks fall back to (§8: "The contract is
 still mandatory and is enforced at L1").
 
-This doc is GREENFIELD / FORWARD-LOOKING. Only the empty
-`thermite-lower/src/lib.rs` scaffold root exists (no `l1.rs`). Every REQ is
-**NOT-STARTED**, blocked on issue **#4**. Golden references live at
-`tests/golden/l1/`.
+This component is SHIPPED (issue **#4** L1 stage): `thermite-lower/src/l1.rs`
+implements `lower_l1` and every REQ is **SHIPPED** (REQ-status table below).
+The golden reference lives at `tests/golden/l1/sum.l1.rs`; the emitter is
+verified by EXECUTION (compile + run via `rustc`, checks fire on violation) in
+`thermite-lower/tests/l1_conformance.rs`, not by strict byte-match.
 
 ## Requirements
 
@@ -296,13 +297,13 @@ must compile and run under `rustc`.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (L1 check-emission entry point) | NOT-STARTED | blocked on #4; no `l1.rs` (only the empty `thermite-lower/src/lib.rs` scaffold root). The `sum` L1 shape is pinned in Architecture. |
-| REQ-2 (always-active check primitive) | NOT-STARTED | blocked on #4; no emitter. The always-active (non-`debug_assert`) `thermite_check!` form is pinned, per §6. |
-| REQ-3 (combinator L1 executable forms) | NOT-STARTED | blocked on #4; the #2 registry (`static REGISTRY` in `combinators.rs`) carries only the structural facet — the L1 runnable forms land here. All 8 pinned in Architecture. |
-| REQ-4 (`spec fn` → executable fn) | NOT-STARTED | blocked on #4; no emitter. `struct SpecFnItem` exists in `ast.rs` (prereq SHIPPED); the `spec_sum` executable form is pinned. |
-| REQ-5 (`dec`/termination L1 scope) | NOT-STARTED | blocked on #4; no emitter. Boundary recorded — L1 asserts `inv` per iteration, does not certify termination (§6). |
-| REQ-6 (golden L1 contract) | NOT-STARTED | blocked on #4; `tests/golden/l1/` does not exist. The `sum.l1.rs` shape is pinned for the orchestrator to hand-author (R-CHAR-3). |
-| REQ-7 (`fx`/effect at L1 deferred to #21) | NOT-STARTED | blocked on #4 (and the sandbox itself on #21); boundary recorded — no runtime sandbox emitted in v0.1, effects enforced at compile time by `effects.rs`. |
+| REQ-1 (L1 check-emission entry point) | SHIPPED | `pub fn lower_l1` in `thermite-lower/src/l1.rs` emits each `FnItem` with `req` on entry, loop `inv` per iteration, `ens` against the bound `result` on exit; verified by `sum_l1_compiles_and_runs` in `thermite-lower/tests/l1_conformance.rs` (compile+run via `rustc`). |
+| REQ-2 (always-active check primitive) | SHIPPED | `emit_check_macro` writes the `thermite_check!` macro (a plain `if !(cond)`, NOT `debug_assert!`) + `thermite_contract_violation` handler; asserted by `no_debug_assert_in_emission` (AC-2) + `negative_fixture_fires_violation`. |
+| REQ-3 (combinator L1 executable forms) | SHIPPED | `emit_combinator_l1_defs` reads `thermite_spec::CombinatorSig.l1` (the 8 frozen runnable forms); a combinator call lowers via `lower_expr_exec`; all 8 unit-tested over concrete slices by `combinator_l1_forms_run` (AC-3). |
+| REQ-4 (`spec fn` → executable fn) | SHIPPED | `lower_spec_fn_l1`/`slice_fold_body_l1` emit the slice-length-branch recursion over `&[u32]`; `spec_sum(&[1,2,3]) == 6` exercised in the `sum_l1_compiles_and_runs` positive harness (AC-4). |
+| REQ-5 (`dec`/termination L1 scope) | SHIPPED | `lower_loop_l1` emits `inv` checks only, no `dec` runtime check (OQ-3); `no_syscall_sandbox_and_no_dec_guarantee` confirms no `thermite_check!("dec",..)` (AC-5). |
+| REQ-6 (golden L1 contract) | SHIPPED | `tests/golden/l1/sum.l1.rs` compiles+runs under `rustc`; the emitter's output is execution-equivalent (compiles, runs, `sum(&[1,2,3])==6`, checks fire) — verified by `sum_l1_compiles_and_runs` (verify-by-execution, AC-1). |
+| REQ-7 (`fx`/effect at L1 deferred to #21) | SHIPPED | no `fx` runtime check emitted; `no_syscall_sandbox_and_no_dec_guarantee` confirms no syscall-sandbox scaffolding (REQ-7/AC-5; sandbox itself remains on #21). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

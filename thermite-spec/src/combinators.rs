@@ -25,6 +25,7 @@
 //! | REQ-1 (frozen combinator set) | SHIPPED | `static REGISTRY: [CombinatorSig; 8]` — the 8 frozen combinators; consumed by `validator::validate` via `lookup`; asserted field-for-field against `tests/golden/combinators/registry.json` in `tests/combinators_conformance.rs`. |
 //! | REQ-2 (registry data shape — structural facet) | SHIPPED | `struct CombinatorSig { name, arity, arg_kinds, result }`, `enum ArgKind { Slice, Index, Pred, Value }`, `enum ResultKind { Bool, Usize }`; static table + `lookup(name)`. Lowering facet is #4 scope (named seam above). |
 //! | REQ-6 (combinator Verus(L3) bodies — lowering facet) | SHIPPED — verus-lowering.md REQ-6 | `CombinatorSig.verus_l3` carries each combinator's frozen Verus `spec fn` definition (frozen `#[trigger]`); consumed by `thermite-lower::lower::emit_combinator_defs` (the #4 consumer that closes the OQ-2 seam, R-DEFER-1). The four corpus forms verify in `thermite-lower/tests/lower_conformance.rs` via real `verus`. |
+//! | REQ-3 (combinator L1 executable forms — lowering facet) | SHIPPED — l1-runtime-checks.md REQ-3 | `CombinatorSig.l1` carries each combinator's frozen runnable Rust `fn` (a real `&[u32]` loop, no `vstd`/`Seq`), mirroring the `verus_l3` seam (OQ-2). Consumed by `thermite_lower::l1::lower_l1`/`emit_combinator_l1_defs` (the #4 L1 consumer, R-DEFER-1); each form unit-tested over concrete slices in `thermite-lower/tests/l1_conformance.rs` (AC-3). |
 
 /// The KIND of a positional argument a combinator expects (REQ-2). The validator
 /// uses these to check each call argument's shape against the registry entry.
@@ -81,6 +82,22 @@ pub struct CombinatorSig {
     /// against the real `verus` binary by the four corpus forms in
     /// `thermite-lower/tests/lower_conformance.rs` and in isolation (AC-3).
     pub verus_l3: &'static str,
+    /// The frozen executable (L1) runtime-check form for this combinator (the
+    /// L1 half of the OQ-2 lowering-facet seam, closed by issue #4). This is the
+    /// EXACT runnable Rust `fn <name>(...) -> ... { ... }` text
+    /// `thermite-lower::l1` emits into a self-contained L1 file when a contract
+    /// references this combinator. Unlike `verus_l3` (a `spec fn` over `Seq<T>`
+    /// with frozen triggers) this is an ordinary Rust loop over real `&[u32]`
+    /// slices — no `vstd`, no `Seq`, no proof — the executable mirror of the L3
+    /// quantifier (`forall_in` short-circuits on the first `!p`, exactly the
+    /// bounded `forall|i| .. ==> p(s[i])`). The arg-kinds map to the parameter
+    /// list (`Slice`→`&[u32]`, `Index`→`usize`, `Pred`→`impl Fn(u32) -> bool`,
+    /// `Value`→scalar). Pinned in `.design/lower/l1-runtime-checks.md`
+    /// Architecture (§4.2 "compilable to a runtime check"; §6 "the L1 fallback
+    /// rung always exists"); consumed by `thermite_lower::l1::lower_l1`
+    /// (R-DEFER-1) and unit-tested over concrete slices in
+    /// `thermite-lower/tests/l1_conformance.rs` (AC-3).
+    pub l1: &'static str,
 }
 
 /// The FROZEN v0.1 SpecTherm combinator set (REQ-1). Closed: adding, removing,
@@ -96,6 +113,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice],
         result: ResultKind::Bool,
         verus_l3: "spec fn sorted(s: Seq<u32>) -> bool {\n    forall|i: int, j: int| 0 <= i <= j < s.len() ==> s[i] <= s[j]\n}",
+        l1: "fn sorted(s: &[u32]) -> bool {\n    let mut i = 1;\n    while i < s.len() {\n        if s[i - 1] > s[i] {\n            return false;\n        }\n        i += 1;\n    }\n    true\n}",
     },
     CombinatorSig {
         name: "forall_in",
@@ -103,6 +121,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Pred],
         result: ResultKind::Bool,
         verus_l3: "spec fn forall_in(s: Seq<u32>, p: spec_fn(u32) -> bool) -> bool {\n    forall|i: int| 0 <= i < s.len() ==> #[trigger] p(s[i])\n}",
+        l1: "fn forall_in(s: &[u32], p: impl Fn(u32) -> bool) -> bool {\n    let mut i = 0;\n    while i < s.len() {\n        if !p(s[i]) {\n            return false;\n        }\n        i += 1;\n    }\n    true\n}",
     },
     CombinatorSig {
         name: "exists_in",
@@ -110,6 +129,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Pred],
         result: ResultKind::Bool,
         verus_l3: "spec fn exists_in(s: Seq<u32>, p: spec_fn(u32) -> bool) -> bool {\n    exists|i: int| 0 <= i < s.len() && #[trigger] p(s[i])\n}",
+        l1: "fn exists_in(s: &[u32], p: impl Fn(u32) -> bool) -> bool {\n    let mut i = 0;\n    while i < s.len() {\n        if p(s[i]) {\n            return true;\n        }\n        i += 1;\n    }\n    false\n}",
     },
     CombinatorSig {
         name: "count_where",
@@ -117,6 +137,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Pred],
         result: ResultKind::Usize,
         verus_l3: "spec fn count_where(s: Seq<u32>, p: spec_fn(u32) -> bool) -> nat\n    decreases s.len()\n{\n    if s.len() == 0 { 0 } else { (if p(s[0]) { 1nat } else { 0nat }) + count_where(s.drop_first(), p) }\n}",
+        l1: "fn count_where(s: &[u32], p: impl Fn(u32) -> bool) -> usize {\n    let mut i = 0;\n    let mut c = 0;\n    while i < s.len() {\n        if p(s[i]) {\n            c += 1;\n        }\n        i += 1;\n    }\n    c\n}",
     },
     CombinatorSig {
         name: "permutation_of",
@@ -124,6 +145,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Slice],
         result: ResultKind::Bool,
         verus_l3: "spec fn permutation_of(a: Seq<u32>, b: Seq<u32>) -> bool {\n    a.to_multiset() == b.to_multiset()\n}",
+        l1: "fn permutation_of(a: &[u32], b: &[u32]) -> bool {\n    if a.len() != b.len() {\n        return false;\n    }\n    let mut va = a.to_vec();\n    let mut vb = b.to_vec();\n    va.sort_unstable();\n    vb.sort_unstable();\n    va == vb\n}",
     },
     CombinatorSig {
         name: "disjoint",
@@ -131,6 +153,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Slice],
         result: ResultKind::Bool,
         verus_l3: "spec fn disjoint(a: Seq<u32>, b: Seq<u32>) -> bool {\n    forall|i: int, j: int|\n        (0 <= i < a.len() && 0 <= j < b.len()) ==> #[trigger] a[i] != #[trigger] b[j]\n}",
+        l1: "fn disjoint(a: &[u32], b: &[u32]) -> bool {\n    let mut i = 0;\n    while i < a.len() {\n        let mut j = 0;\n        while j < b.len() {\n            if a[i] == b[j] {\n                return false;\n            }\n            j += 1;\n        }\n        i += 1;\n    }\n    true\n}",
     },
     CombinatorSig {
         name: "forall_below",
@@ -138,6 +161,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Index, ArgKind::Pred],
         result: ResultKind::Bool,
         verus_l3: "spec fn forall_below(s: Seq<u32>, n: int, p: spec_fn(u32) -> bool) -> bool {\n    forall|i: int| 0 <= i < n && i < s.len() ==> #[trigger] p(s[i])\n}",
+        l1: "fn forall_below(s: &[u32], n: usize, p: impl Fn(u32) -> bool) -> bool {\n    let mut i = 0;\n    while i < n && i < s.len() {\n        if !p(s[i]) {\n            return false;\n        }\n        i += 1;\n    }\n    true\n}",
     },
     CombinatorSig {
         name: "forall_from",
@@ -145,6 +169,7 @@ static REGISTRY: [CombinatorSig; 8] = [
         arg_kinds: &[ArgKind::Slice, ArgKind::Index, ArgKind::Pred],
         result: ResultKind::Bool,
         verus_l3: "spec fn forall_from(s: Seq<u32>, n: int, p: spec_fn(u32) -> bool) -> bool {\n    forall|i: int| n <= i < s.len() ==> #[trigger] p(s[i])\n}",
+        l1: "fn forall_from(s: &[u32], n: usize, p: impl Fn(u32) -> bool) -> bool {\n    let mut i = n;\n    while i < s.len() {\n        if !p(s[i]) {\n            return false;\n        }\n        i += 1;\n    }\n    true\n}",
     },
 ];
 

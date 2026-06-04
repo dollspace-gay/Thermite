@@ -1,0 +1,10 @@
+{
+  "uuid": "49ee9f7b-396e-4e19-ba83-e1d4d93a9a4d",
+  "issue_uuid": "627da4f1-eaf5-4b9a-acc8-fc63fead3a12",
+  "author": "Yffe",
+  "content": "forge CLI v0.1 subset (design Appendix B): forge new (manifest+lockfile+skill pin), forge check [item] (run ladder, structured per-obligation JSON results). Parse Verus/Z3 output into the stable JSON schema (design 5.1): each obligation -> {address, status, level, solver_time_ms, counterexample?}. Counterexamples come from the solver, never just 'failed'. Reserve a suggested_move slot. forge goal/fill (incremental holes) are OUT of v0.1 scope.",
+  "created_at": "2026-06-04T17:49:28.966571793Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1+sZA2I/GZrrIxuXoKG+izvoex2wt8o12f0wGbAI13DnaMLYfqVQFP82n5EDNeCMGogv9poXWD5y/0StrGTgAA=="
+}

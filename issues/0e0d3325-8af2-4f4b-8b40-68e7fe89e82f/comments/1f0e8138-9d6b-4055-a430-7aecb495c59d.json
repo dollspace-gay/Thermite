@@ -1,0 +1,10 @@
+{
+  "uuid": "1f0e8138-9d6b-4055-a430-7aecb495c59d",
+  "issue_uuid": "0e0d3325-8af2-4f4b-8b40-68e7fe89e82f",
+  "author": "Yffe",
+  "content": "Fixed in f0ceb12 (single file: thermite-syntax/src/parser.rs). Root cause: the #29 depth bound lived only in parse_expr; four families recursed without routing through it. Generalised to one shared guard_recursion helper + unified recursion_depth/MAX_RECURSION_DEPTH (kept 64). Guarded re-entries: parse_expr, parse_type (Option<...>), parse_pattern (covers both [[...]] slice and Some(Some(..)) enum cycles), parse_if_parts (parse_block<->parse_if_parts tail-if). On limit returns the existing structured SyntaxError::ExpressionTooDeep — never aborts. All four divergence_reaudit tests now return on a 2 MiB stack and are un-ignored; the existing divergence_grammar deep-paren test and depth-40 reasonable nesting still parse. Gauntlet: cargo test -p thermite-syntax 16 passed / 0 failed / 0 ignored (9 conformance + 3 divergence_grammar + 4 divergence_reaudit); clippy --all-targets -D warnings PASS; fmt --all --check PASS. Touched neither test assertions nor any conformance/ fixture (only the four #[ignore] attrs removed).",
+  "created_at": "2026-06-04T19:56:49.943467172Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABARb96+DRdGcLnmJquG78eghn17Q/9743W390pgFS286knN27QwzbbwRy31/xYLYI4SVU+QL6EASBFGyNr+4haBA=="
+}

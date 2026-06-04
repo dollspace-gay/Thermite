@@ -2,11 +2,12 @@
   "uuid": "37bf833c-505c-4c03-8423-2737d5e49418",
   "display_id": 4,
   "title": "Lower Thermite to Verus-annotated Rust and verify at L3 and L1",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:47:06.418749644Z",
-  "updated_at": "2026-06-04T18:47:47.461363479Z",
+  "updated_at": "2026-06-04T23:07:54.166082129Z",
+  "closed_at": "2026-06-04T23:07:54.166082129Z",
   "labels": [
     "feature"
   ],

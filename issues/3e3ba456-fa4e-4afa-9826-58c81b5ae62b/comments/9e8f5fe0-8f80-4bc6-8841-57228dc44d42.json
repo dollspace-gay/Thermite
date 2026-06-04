@@ -1,0 +1,10 @@
+{
+  "uuid": "9e8f5fe0-8f80-4bc6-8841-57228dc44d42",
+  "issue_uuid": "3e3ba456-fa4e-4afa-9826-58c81b5ae62b",
+  "author": "Yffe",
+  "content": "Delivered in commit 2a8e3e3. Root cause: MAX_EXPR_DEPTH=256 exceeded the 2 MiB test-thread native stack (debug build overflows at ~135-140 ladder levels, ~10 frames/level), so the guard never fired before SIGABRT. Fix: lowered MAX_EXPR_DEPTH 256->64 in thermite-syntax/src/parser.rs (single file) — 1500 nested parens now return the structured ExpressionTooDeep diagnostic instead of aborting (parser.md AC-4 / REQ-4, goal.md R-CODE-2). All nested-expr re-entry points (parse_primary paren case, parse_call_args, parse_index_arg, parse_closure, parse_match, parse_if_expr) confirmed routed through the guarded parse_expr. Un-ignored divergence_deep_nesting_no_panic. Gauntlet: cargo test 12 passed/0 failed/0 ignored; clippy PASS; fmt PASS. No test assertions or conformance/ fixtures touched. Hand back for acto-critic re-audit.",
+  "created_at": "2026-06-04T19:43:23.685027348Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHNinpN5XzCXA+B8V54bnM0DDgEK6HnO6y3DT3w/iv3xj1cLcIxVvZ3YZmjuv4Rx1iWeOWiXm66OdItmaQrUqDA=="
+}

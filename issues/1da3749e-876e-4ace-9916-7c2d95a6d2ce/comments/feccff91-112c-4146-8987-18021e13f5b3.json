@@ -1,0 +1,10 @@
+{
+  "uuid": "feccff91-112c-4146-8987-18021e13f5b3",
+  "issue_uuid": "1da3749e-876e-4ace-9916-7c2d95a6d2ce",
+  "author": "Yffe",
+  "content": "Failing test at thermite-spec/tests/divergence_spec.rs::divergence_unknown_method_call_in_contract_is_rejected (run with --include-ignored). 'req xs.frobnicate()' validates clean (Ok(())). Root cause: validator.rs walk_expr_inner Expr::MethodCall arm accepts ANY method name structurally, only recursing into receiver+args; it never checks the method name against the bounded built-in set. The oracle accept fixtures only exercise xs.len(), so this cage leak is invisible to existing fixtures (over-fitting). Authority: .design/spec/spectherm-combinators.md REQ-3(c) ('the bounded built-in MethodCalls the grammar admits, e.g. xs.len()') + REQ-4(iv) (forbidden parsed construct -> ForbiddenCall); thermite-design.md §4.2 (locks the cage).",
+  "created_at": "2026-06-04T21:03:54.853538267Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAx6OHfgXHT/ehNwOW4IOw5bHY1OmuYyn9kqEXJdNmUR73luu1OnQGonHWKv99a42TQqUfZ6zXcx+wW3OMwQABCw=="
+}

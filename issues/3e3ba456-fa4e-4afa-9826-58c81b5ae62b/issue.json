@@ -1,0 +1,10 @@
+{
+  "uuid": "3e3ba456-fa4e-4afa-9826-58c81b5ae62b",
+  "display_id": 29,
+  "title": "Divergence: thermite-syntax parser stack-overflows (SIGABRT) on deeply nested expressions — violates parser.md AC-4 no-panic",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:27:12.177425492Z",
+  "updated_at": "2026-06-04T19:27:12.177425492Z"
+}

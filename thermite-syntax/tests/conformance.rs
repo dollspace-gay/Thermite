@@ -95,6 +95,7 @@ fn render_type(ty: &Type) -> String {
         }
         Type::Slice(inner) => format!("[{}]", render_type(inner)),
         Type::Generic { name, arg } => format!("{name}<{}>", render_type(arg)),
+        Type::Unit => "()".to_string(),
     }
 }
 

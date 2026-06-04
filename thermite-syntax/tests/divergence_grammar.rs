@@ -28,7 +28,6 @@ use thermite_syntax::parse;
 ///
 /// Tracking: #28
 #[test]
-#[ignore = "divergence: parse_type rejects unit return `()`; tracking #28"]
 fn divergence_unit_return_type_accepted() {
     let src = "fn f(x: u32) -> () req true ens result == result fx pure { }";
     let r = parse(src);
@@ -65,7 +64,7 @@ fn divergence_unit_return_type_accepted() {
 ///
 /// Tracking: #29
 #[test]
-#[ignore = "divergence: recursive descent stack-overflows (SIGABRT) on deep nesting; tracking #29"]
+#[ignore = "divergence: deep-nesting stack overflow; tracking #29 (depth guard at parse_expr entry is bypassed by the paren-grouping re-entry path)"]
 fn divergence_deep_nesting_no_panic() {
     // 1500 balanced parens around `x`: a deeply nested but otherwise well-formed
     // grouping expression. Far below any token-count limit; the failure mode is
@@ -103,7 +102,6 @@ fn divergence_deep_nesting_no_panic() {
 ///
 /// Tracking: #30
 #[test]
-#[ignore = "divergence: if/else in value position lost as Stmt::If, no tail Expr::If; tracking #30"]
 fn divergence_if_else_in_tail_position_is_expr() {
     let src = "fn f(x: u32) -> u32 req true ens result == x fx pure { if x == 0 { 1 } else { 2 } }";
     let r = parse(src);

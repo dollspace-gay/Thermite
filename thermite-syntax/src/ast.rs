@@ -309,10 +309,13 @@ pub enum PrimType {
 }
 
 /// A type (ast.md REQ-7). `&[u32]` is `Ref` of `Slice`; `Option<usize>` is a
-/// single-arg `Generic`.
+/// single-arg `Generic`. `Unit` is the `()` type — the ONE sanctioned unit
+/// spelling, written explicitly in a return position (surface-grammar.md
+/// decision 4; §4.4 "All conversions explicit").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Prim(PrimType),
+    Unit,
     Ref { mutable: bool, inner: Box<Type> },
     Slice(Box<Type>),
     Generic { name: Ident, arg: Box<Type> },

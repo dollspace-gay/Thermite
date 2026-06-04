@@ -59,7 +59,19 @@ pub enum SyntaxError {
     },
     /// Unexpected end of input while a production was still open.
     UnexpectedEof { expected: String, span: Span },
+    /// An expression nested past the parser's recursion-depth limit. Surfaced
+    /// as a structured diagnostic so external input can never overflow the
+    /// C stack and abort the process (parser.md AC-4 / REQ-4; goal.md R-CODE-2).
+    ExpressionTooDeep { limit: usize, span: Span },
 }
+
+/// The maximum expression nesting depth the recursive-descent ladder will
+/// follow before returning an `ExpressionTooDeep` diagnostic. Bounding the
+/// recursion keeps external input from overflowing the native stack and
+/// aborting the process (parser.md AC-4). The limit is a fixed constant
+/// (determinism, goal.md R-CODE-5), comfortably above any human-authored
+/// nesting yet well below the stack budget for a debug build.
+const MAX_EXPR_DEPTH: usize = 256;
 
 impl SyntaxError {
     /// Construct a stray-character diagnostic (used by the lexer).
@@ -80,7 +92,8 @@ impl SyntaxError {
             | SyntaxError::Unexpected { span, .. }
             | SyntaxError::MissingClause { span, .. }
             | SyntaxError::ClauseOrder { span, .. }
-            | SyntaxError::UnexpectedEof { span, .. } => *span,
+            | SyntaxError::UnexpectedEof { span, .. }
+            | SyntaxError::ExpressionTooDeep { span, .. } => *span,
         }
     }
 }
@@ -116,6 +129,11 @@ impl std::fmt::Display for SyntaxError {
             SyntaxError::UnexpectedEof { expected, span } => write!(
                 f,
                 "expected {expected}, found end of input at byte {}",
+                span.start
+            ),
+            SyntaxError::ExpressionTooDeep { limit, span } => write!(
+                f,
+                "expression nested deeper than the limit of {limit} at byte {}",
                 span.start
             ),
         }
@@ -162,6 +180,9 @@ struct Parser<'a> {
     pos: usize,
     items: Vec<Item>,
     errors: Vec<SyntaxError>,
+    /// Current expression-nesting recursion depth (guards the precedence ladder
+    /// against stack overflow on deeply nested input — parser.md AC-4).
+    expr_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -172,6 +193,7 @@ impl<'a> Parser<'a> {
             pos: 0,
             items: Vec::new(),
             errors: lex_errors,
+            expr_depth: 0,
         }
     }
 
@@ -545,11 +567,34 @@ impl<'a> Parser<'a> {
                     stmts.push(Stmt::Loop(self.parse_loop()?));
                 }
                 TokKind::If => {
-                    // `if` can be a statement or (if it has an else and is in
-                    // tail position) an expression. Parse the statement form;
-                    // it covers the corpus `if lo == hi { return None; }`.
-                    let stmt = self.parse_if_stmt()?;
-                    stmts.push(stmt);
+                    // `if` is both a statement and an expression
+                    // (surface-grammar.md decision 2). It is the block's TAIL
+                    // VALUE when it has an `else` AND nothing follows it before
+                    // the closing `}` (ast.md REQ-6 `Expr::If`). Otherwise it is
+                    // the statement form (corpus `if lo == hi { return None; }`).
+                    let (cond, then, else_) = self.parse_if_parts()?;
+                    if let Some(else_block) = else_ {
+                        if self.check(&TokKind::RBrace) {
+                            // Value position: the if/else is the block tail.
+                            tail = Some(Box::new(Expr::If {
+                                cond: Box::new(cond),
+                                then,
+                                else_: else_block,
+                            }));
+                            break;
+                        }
+                        stmts.push(Stmt::If {
+                            cond,
+                            then,
+                            else_: Some(else_block),
+                        });
+                    } else {
+                        stmts.push(Stmt::If {
+                            cond,
+                            then,
+                            else_: None,
+                        });
+                    }
                 }
                 _ => {
                     // Expression statement, assignment, or trailing tail expr.
@@ -606,7 +651,11 @@ impl<'a> Parser<'a> {
         Ok(Stmt::Return(Some(expr)))
     }
 
-    fn parse_if_stmt(&mut self) -> PResult<Stmt> {
+    /// Parse the shared shape `if EXPR Block ('else' Block)?`, returning its
+    /// parts. The caller (`parse_block`) decides whether this is the statement
+    /// form (`Stmt::If`) or — when it has an `else` and sits in tail position —
+    /// the expression form (`Expr::If`), per surface-grammar.md decision 2.
+    fn parse_if_parts(&mut self) -> PResult<(Expr, Block, Option<Block>)> {
         self.consume(&TokKind::If, "`if`")?;
         let cond = self.parse_expr()?;
         let then = self.parse_block()?;
@@ -615,7 +664,7 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        Ok(Stmt::If { cond, then, else_ })
+        Ok((cond, then, else_))
     }
 
     /// Parse a `loop`/`while` with mandatory `inv`+ then exactly one `dec`
@@ -674,7 +723,21 @@ impl<'a> Parser<'a> {
     // ---- expressions (precedence ladder, surface-grammar.md) ---------------
 
     fn parse_expr(&mut self) -> PResult<Expr> {
-        self.parse_or()
+        // Bound recursion depth so deeply nested input surfaces a structured
+        // diagnostic instead of overflowing the native stack (parser.md AC-4).
+        // Every nested expression re-enters the ladder through `parse_expr`
+        // (parenthesised grouping, call args, closure bodies, match arms), so
+        // this single guard caps the whole precedence ladder.
+        if self.expr_depth >= MAX_EXPR_DEPTH {
+            return Err(SyntaxError::ExpressionTooDeep {
+                limit: MAX_EXPR_DEPTH,
+                span: self.peek_span(),
+            });
+        }
+        self.expr_depth += 1;
+        let result = self.parse_or();
+        self.expr_depth -= 1;
+        result
     }
 
     fn parse_or(&mut self) -> PResult<Expr> {
@@ -1055,6 +1118,13 @@ impl<'a> Parser<'a> {
 
     fn parse_type(&mut self) -> PResult<Type> {
         match self.peek().clone() {
+            // `()` is the ONE sanctioned unit-type spelling (surface-grammar.md
+            // decision 4 / REQ-8): written explicitly in a return position.
+            TokKind::LParen => {
+                self.bump();
+                self.consume(&TokKind::RParen, "`)` to close the unit type `()`")?;
+                Ok(Type::Unit)
+            }
             TokKind::Amp => {
                 self.bump();
                 let mutable = self.eat(&TokKind::Mut);

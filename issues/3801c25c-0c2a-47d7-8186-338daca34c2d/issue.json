@@ -1,0 +1,10 @@
+{
+  "uuid": "3801c25c-0c2a-47d7-8186-338daca34c2d",
+  "display_id": 38,
+  "title": "Divergence: effects::check_block skips `while` loop CONDITION — callee in while-cond escapes fx subsumption (§4.1)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T23:01:06.643453157Z",
+  "updated_at": "2026-06-04T23:01:06.643453157Z"
+}

@@ -7,8 +7,10 @@ on:
 
 # The full gauntlet (REQ-5). Each command is a separate, must-pass step:
 # a non-zero exit fails CI (R-DEFER-6 — verification is a hard gate). The
-# toolchain version is pinned by rust-toolchain.toml, which the setup action
-# respects. No --check-budget step: the skill-budget gate is issue #7 (REQ-7).
+# installer is pinned to the SAME version as rust-toolchain.toml (1.95.0) so
+# CI runs on exactly the pinned toolchain (R-CODE-5 / design §5.3 determinism);
+# rustup also honors rust-toolchain.toml for the cargo invocations below.
+# No --check-budget step: the skill-budget gate is issue #7 (REQ-7).
 jobs:
   gauntlet:
     runs-on: ubuntu-latest
@@ -16,8 +18,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install toolchain (pinned by rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@stable
+      - name: Install toolchain (pinned to rust-toolchain.toml channel)
+        uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt, clippy
 
       - name: cargo build
         run: cargo build --workspace

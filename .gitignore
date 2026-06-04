@@ -37,3 +37,11 @@
 # ACToR harness read-state (per-worktree)
 .crosslink/.spec-reads.json
 tooling/__pycache__/
+
+# Rust build artifacts
+target/
+
+# Stray per-crate crosslink caches (hooks invoked from a crate cwd create these;
+# the crosslink-managed block above only anchors the repo-root .crosslink/.cache/)
+**/.crosslink/.cache/
+.crosslink/.last-hydrated-ref

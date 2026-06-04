@@ -615,13 +615,20 @@ impl<'a> Parser<'a> {
                 }
                 TokKind::If => {
                     // `if` is both a statement and an expression
-                    // (surface-grammar.md decision 2). It is the block's TAIL
-                    // VALUE when it has an `else` AND nothing follows it before
-                    // the closing `}` (ast.md REQ-6 `Expr::If`). Otherwise it is
-                    // the statement form (corpus `if lo == hi { return None; }`).
+                    // (surface-grammar.md decision 2). The discriminator is
+                    // VALUE-NESS, not source position: "the expression form ...
+                    // must have a value; the statement form does not." (OQ-3:
+                    // "the corpus only uses the statement form".) It is the
+                    // block's TAIL VALUE only when it (a) has an `else`, (b)
+                    // produces a value — its then-branch block has a tail expr,
+                    // `then.tail.is_some()` — AND (c) nothing follows it before
+                    // the closing `}` (ast.md REQ-6 `Expr::If`). A value-LESS
+                    // trailing `if/else` (both branches statement-only, e.g.
+                    // corpus `if .. { lo = mid + 1; } else { hi = mid; }`) is the
+                    // STATEMENT form and leaves the block `tail: None`.
                     let (cond, then, else_) = self.parse_if_parts()?;
                     if let Some(else_block) = else_ {
-                        if self.check(&TokKind::RBrace) {
+                        if self.check(&TokKind::RBrace) && then.tail.is_some() {
                             // Value position: the if/else is the block tail.
                             tail = Some(Box::new(Expr::If {
                                 cond: Box::new(cond),

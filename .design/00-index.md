@@ -13,17 +13,27 @@ Docs are authored on demand as the ACToR loop reaches each component (they
 do not all exist yet — a missing doc is a hook block, not an error). Status
 key: **planned** (routed, doc not yet authored) · **draft** · **stable**.
 
+**Build order & dependencies (v0.1, leaf-first per R-DEFER-7).**
+`thermite-syntax` (#3) and `thermite-spec` (#2) are **independent leaves** —
+the parser parses combinator calls as generic call expressions and does NOT
+depend on the registry. `thermite-lower` (#4) depends on **both** (#2 for
+combinator L3/L1 forms, #3 for the AST). `forge` (#5/#6/#8) depends on the
+libs; `thermite-skill` (#7) depends on the grammar + registry. Practical
+order: scaffold (#1, done) → #3 / #2 (either first; #3 is the current loop) →
+#4 → #5/#6 → #7/#8. #2 is best built just before #4 so its registry ships
+with a consumer (R-DEFER-1).
+
 ## v0.1 Kernel (crosslink milestone #1)
 
-### thermite-syntax — lexer, parser, AST, semantic addressing
+### thermite-syntax — surface grammar, lexer, parser, AST, semantic addressing (issue #3)
+- `syntax/surface-grammar.md` — the canonical surface grammar (fn/req/ens/fx/loop/inv/dec/spec fn/#[slag]); the parser is its executable form (planned)
 - `syntax/lexer.md` — token grammar (planned)
-- `syntax/parser.md` — recovering recursive-descent parser, per-item recovery (planned)
+- `syntax/parser.md` — recovering recursive-descent parser, per-item recovery; parses combinator calls as generic call expressions (registry-free) (planned)
 - `syntax/ast.md` — AST shape, mandatory `req`/`ens`/`fx` (planned)
 - `syntax/semantic-addressing.md` — stable `loop#1.inv#2` addressing (planned)
 
-### thermite-spec — SpecTherm combinator registry
-- `spec/surface-grammar.md` — canonical surface grammar, source of the skill (planned)
-- `spec/spectherm-combinators.md` — frozen combinators + triggers + L3/L1 forms (planned)
+### thermite-spec — SpecTherm combinator registry (issue #2)
+- `spec/spectherm-combinators.md` — frozen combinators + triggers + L3/L1 forms; enforces the "fixed combinator set" semantic rule (§4.2). Built just before thermite-lower (#4), its first consumer (planned)
 
 ### thermite-lower — Thermite AST → Verus source
 - `lower/verus-lowering.md` — req→requires, ens→ensures, inv/dec, spec fn (planned)

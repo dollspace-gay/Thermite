@@ -60,7 +60,10 @@ conformance_ops = []
 
 # ---------------------------------------------------------------------
 # thermite-syntax — lexer, recovering parser, AST, semantic addressing
-#   (issues #1 scaffold, #3 parser)
+#   (issues #1 scaffold, #3 parser). Owns the SURFACE grammar (the whole
+#   language: fn/req/ens/fx/loop/inv/dec/spec fn/#[slag]); the parser is the
+#   grammar's executable form, spec'd by .design/syntax/ + the conformance
+#   corpus. Registry-free (does not depend on thermite-spec).
 # ---------------------------------------------------------------------
 
 [[route]]
@@ -89,6 +92,13 @@ conformance_ops = ["binary_search.loop#1.inv#2"]
 
 # ---------------------------------------------------------------------
 # thermite-spec — the SpecTherm combinator registry (issue #2)
+#   Built just before thermite-lower (#4) — its first in-workspace consumer.
+#   The parser (#3) does NOT depend on this crate: it parses combinator calls
+#   as generic call expressions; the "only a fixed combinator set" rule
+#   (design §4.2) is a SEMANTIC check enforced here, not a grammar rule. So
+#   #2 and #3 are independent leaves and #4 depends on both. The SURFACE
+#   grammar is a thermite-syntax concern (governed by .design/syntax/), not a
+#   thermite-spec one — there is no thermite-spec/src/grammar.rs route.
 # ---------------------------------------------------------------------
 
 [[route]]
@@ -96,12 +106,6 @@ crate_pattern = "thermite-spec/src/combinators.rs"
 design = ".design/spec/spectherm-combinators.md"
 reference = ["tests/golden/combinators"]
 conformance_ops = ["forall_in", "forall_below", "forall_from", "sorted", "permutation_of", "disjoint", "count_where", "exists_in"]
-
-[[route]]
-crate_pattern = "thermite-spec/src/grammar.rs"
-design = ".design/spec/surface-grammar.md"
-reference = []
-conformance_ops = []
 
 # ---------------------------------------------------------------------
 # thermite-lower — Thermite AST -> Verus source; L1 runtime checks

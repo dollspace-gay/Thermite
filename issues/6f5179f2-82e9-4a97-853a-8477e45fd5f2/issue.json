@@ -6,5 +6,8 @@
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T20:34:15.370812585Z",
-  "updated_at": "2026-06-04T20:34:15.370812585Z"
+  "updated_at": "2026-06-04T20:34:17.548372872Z",
+  "labels": [
+    "chore"
+  ]
 }

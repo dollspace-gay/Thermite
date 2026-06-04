@@ -1,0 +1,10 @@
+{
+  "uuid": "71848a08-5f06-4ea4-8d42-316d6f935a66",
+  "issue_uuid": "be95b727-e1c5-4a83-bd7e-085d9689d1a5",
+  "author": "Yffe",
+  "content": "PLAN: commit the failing pinned test thermite-syntax/tests/divergence_final.rs to main (un-#[ignore]d, the failing test IS the block per goal.md R-DEFER-3). Critic does not fix; the fixer must add a value-ness condition (tail.is_some() in at least one branch) to the parse_block tail-promotion before hoisting if/else to Expr::If, otherwise emit Stmt::If.",
+  "created_at": "2026-06-04T20:21:43.093184613Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAnNf55Q6uANNb+UmJOWF3lnlrwdIxRyetUOngS5XptkxsEHf9dkIatPNAURBdLAheQbGZZxF8VxyYlMv9quetAA=="
+}

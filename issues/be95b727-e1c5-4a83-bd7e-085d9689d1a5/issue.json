@@ -2,11 +2,12 @@
   "uuid": "be95b727-e1c5-4a83-bd7e-085d9689d1a5",
   "display_id": 33,
   "title": "Divergence: parse_block tail-promotion encodes value-less trailing if/else as Expr::If (corpus binary_search.loop#1)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T20:20:56.809533451Z",
-  "updated_at": "2026-06-04T20:20:58.779397526Z",
+  "updated_at": "2026-06-04T20:25:04.282974099Z",
+  "closed_at": "2026-06-04T20:25:04.282974099Z",
   "labels": [
     "blocker"
   ]

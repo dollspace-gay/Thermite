@@ -465,15 +465,15 @@ runs; each was confirmed to pass `verus` during authoring of this doc.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (file frame + signature lowering) | NOT-STARTED | blocked on #4; no `lower.rs` (only the empty `thermite-lower/src/lib.rs` scaffold root). Verified target signature forms pinned in Architecture. |
-| REQ-2 (type lowering) | NOT-STARTED | blocked on #4; no emitter. The `Type` mapping table is pinned; `enum Type` exists in `thermite-syntax/src/ast.rs` (prereq SHIPPED). |
-| REQ-3 (expression lowering) | NOT-STARTED | blocked on #4; no emitter. `enum Expr` / `enum BinOp` / `enum IndexArg` exist in `ast.rs` (prereq SHIPPED). |
-| REQ-4 (statement + loop lowering) | NOT-STARTED | blocked on #4; no emitter. `enum Stmt` / `struct LoopNode` / `enum LoopKind` exist in `ast.rs` (prereq SHIPPED). |
-| REQ-5 (spec-context `Seq` lowering) | NOT-STARTED | blocked on #4; no emitter. The `&[T]`→`Seq`/`@`/`subrange` mapping is verified (the naive `&[u32]` spec-fn form fails `verus`; the `Seq` form passes). |
-| REQ-6 (combinator Verus(L3) defs + triggers) | NOT-STARTED | blocked on #4; the #2 registry (`static REGISTRY` in `combinators.rs`) carries only the structural facet — the Verus(L3) bodies land here. The four corpus forms are verified; pinned in Architecture. |
-| REQ-7 (proof-aid emission) | NOT-STARTED | blocked on #4; no emitter. The `sum` (`lemma_sum_push` + `nonlinear_arith` + invariant-lift + `=~=`) and `binary_search` (loop-exit case-split) aids are verified and pinned. |
-| REQ-8 (golden-file contract) | NOT-STARTED | blocked on #4; `tests/golden/lower/` does not exist. The two verified Verus files are pinned verbatim in Architecture for the orchestrator to hand-author (R-CHAR-3). |
-| REQ-9 (`LowerError`, no panics) | NOT-STARTED | blocked on #4; `thermite-lower` has no error enum yet (`.design/scaffold/workspace.md` REQ-3 defers it to the first fallible fn, which is `lower`). |
+| REQ-1 (file frame + signature lowering) | SHIPPED | `lower` in `lower.rs` emits the `use vstd::prelude::*; verus! { .. } fn main() {}` frame; `lower_fn`/`lower_spec_fn` build `-> (result: T)`, `requires`/`ensures`, `decreases`; consumer `thermite_lower::lower`; verified by `lower_conformance::sum_emitted_verifies` (`verus`: 5 verified, 0 errors). |
+| REQ-2 (type lowering) | SHIPPED | `lower_type` in `lower.rs`; consumer `lower_fn`/`emit_params`; asserted by `lower_conformance::corpus_node_substrings`. |
+| REQ-3 (expression lowering) | SHIPPED | `lower_expr` (exec) + `precedence`/`lower_binary_operand` (grouping); consumer `lower_block_with_fn_aids`; verified by both corpus programs. |
+| REQ-4 (statement + loop lowering) | SHIPPED | `lower_stmt`/`lower_loop` emit every `inv`→`invariant` + `dec`→`decreases`; `while`/`loop` preserved; consumer `lower_fn_body`. |
+| REQ-5 (spec-context `Seq` lowering) | SHIPPED | `lower_expr` w/ `Ctx::Spec` + `lower_spec_arg`/`lower_index` (`xs@`/`subrange`/`@[i as int]`); `spec_sum` Seq recursion via `seq_fold_body`; verified by `sum_emitted_verifies`. |
+| REQ-6 (combinator Verus(L3) defs + triggers) | SHIPPED | `CombinatorSig.verus_l3` in `thermite-spec/src/combinators.rs` (all 8 frozen forms); consumer `emit_combinator_defs` in `lower.rs` (closes OQ-2, R-DEFER-1); verified by `combinator_forms_compile_under_verus` (`verus`: 2 verified, 0 errors incl. non-vacuity). |
+| REQ-7 (proof-aid emission) | SHIPPED | shape-keyed templates in `lower.rs`: `push_lemma_for` (a), `lift_immutable_preconds` (b), `accumulator_aid`/`match_acc_invariant` (c), `extensionality_at_exit` (d), `complementary_coverage_split` (e); NO per-program hardcoding; both corpus programs verify. |
+| REQ-8 (golden-file contract — VERIFY) | SHIPPED | `lower_conformance.rs` runs the real `verus` binary on emitted output (`sum`: 5 verified; `binary_search`: 2 verified; 0 errors each) and asserts the emitted contracts equal the corpus contracts (no weakening). Goldens used as the verified reference, not byte-matched (amended REQ-8). |
+| REQ-9 (`LowerError`, no panics) | SHIPPED | `enum LowerError` (span-bearing via `thermite_syntax::lexer::Span`, `Display`) born in `lower.rs`; `lower` returns `Result`; no `unwrap`/`expect`/`panic!` in `src/`; `unknown_combinator_is_err_not_panic` exercises the API surface. |
 
 ## Open questions (for the orchestrator before the builder runs)
 

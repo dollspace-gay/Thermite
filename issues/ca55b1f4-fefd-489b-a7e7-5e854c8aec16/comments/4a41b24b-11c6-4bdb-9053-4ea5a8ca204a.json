@@ -1,0 +1,10 @@
+{
+  "uuid": "4a41b24b-11c6-4bdb-9053-4ea5a8ca204a",
+  "issue_uuid": "ca55b1f4-fefd-489b-a7e7-5e854c8aec16",
+  "author": "Yffe",
+  "content": "RESOLVED (orchestrator): adopt the scheme-authoritative reading — 1-based source order counting ALL invariants. For binary_search.loop#1: inv#1 = 'lo <= hi && hi <= haystack.len()', inv#2 = 'forall_below(haystack, lo, |x| x < needle)', inv#3 = 'forall_from(haystack, hi, |x| x > needle)'. semantic-addressing.md AC-1/AC-2 are correct as written. The thermite-design.md §4.3 'forge edit ... inv#2 --replace forall_from(...)' example is an ERRATUM (it labels inv#2 but quotes inv#3's content); §4.3's own prose 'the second invariant' agrees with source-order. The conformance/address/ fixtures will pin this reading. Thesis erratum flagged to the user (not silently patched). OQ-2 (spec-fn dec: no inner address in v0.1) and OQ-3 (nested loops: flat within-function numbering) confirmed as the doc has them.",
+  "created_at": "2026-06-04T19:02:55.037865272Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA60vCZj8iQRsxTvCyi5481fuiqwM74kBMFwhAnodjuHvxMBmRrT4NkNJktkFHSd2rah6qWYrhdBuZMvVBhKl0Bg=="
+}

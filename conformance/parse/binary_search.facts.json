@@ -1,0 +1,23 @@
+{
+  "source": "conformance/binary_search.th",
+  "note": "Hand-derived structural facts from the verbatim corpus + thermite-design.md §4 (goal.md R-CHAR-3). Representation-agnostic: asserts counts/kinds the parser must produce, not a specific AST encoding.",
+  "parses_ok": true,
+  "error_count": 0,
+  "items": [
+    {
+      "name": "binary_search",
+      "kind": "fn",
+      "params": [
+        { "name": "haystack", "type": "&[u32]" },
+        { "name": "needle", "type": "u32" }
+      ],
+      "ret": "Option<usize>",
+      "req_count": 1,
+      "ens_count": 1,
+      "fx": "pure",
+      "loops": [
+        { "addr": "loop#1", "surface_keyword": "loop", "inv_count": 3, "has_dec": true }
+      ]
+    }
+  ]
+}

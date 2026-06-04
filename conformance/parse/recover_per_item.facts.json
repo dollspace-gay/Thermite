@@ -1,0 +1,23 @@
+{
+  "source": "conformance/parse/recover_per_item.th",
+  "note": "Per-item recovery oracle (thermite-design.md §4.3: 'a syntax error inside one item cannot cascade into the next; items are parsed independently — recovery is per-item by construction'). The first item `broken` omits the MANDATORY `ens` clause, which is a PARSE error (§4.1: a mandatory contract clause's absence is a parse error, never an implicit default). The parser must report that error AND still recover to parse the well-formed second item `ok`.",
+  "parses_ok": false,
+  "min_error_count": 1,
+  "errors": [
+    { "item": "broken", "kind": "missing-mandatory-clause", "clause": "ens" }
+  ],
+  "recovered_items": ["ok"],
+  "recovered_item_facts": [
+    {
+      "name": "ok",
+      "kind": "fn",
+      "params": [
+        { "name": "x", "type": "u32" }
+      ],
+      "ret": "u32",
+      "req_count": 1,
+      "ens_count": 1,
+      "fx": "pure"
+    }
+  ]
+}

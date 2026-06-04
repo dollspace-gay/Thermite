@@ -1,0 +1,17 @@
+{
+  "source": "conformance/binary_search.th",
+  "note": "Hand-derived from thermite-design.md §4.3 + the verbatim corpus, NEVER from address.rs output (goal.md R-CHAR-3). Resolves blocker #26: 1-based source order, all invariants counted.",
+  "addresses": [
+    { "addr": "binary_search", "kind": "fn" },
+    { "addr": "binary_search.loop#1", "kind": "loop" },
+    { "addr": "binary_search.loop#1.inv#1", "kind": "inv", "text": "lo <= hi && hi <= haystack.len()" },
+    { "addr": "binary_search.loop#1.inv#2", "kind": "inv", "text": "forall_below(haystack, lo, |x| x < needle)" },
+    { "addr": "binary_search.loop#1.inv#3", "kind": "inv", "text": "forall_from(haystack, hi, |x| x > needle)" },
+    { "addr": "binary_search.loop#1.dec", "kind": "dec", "text": "hi - lo" }
+  ],
+  "must_error": [
+    "binary_search.loop#9",
+    "binary_search.loop#1.inv#7",
+    "no_such_fn"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "source": "conformance/sum.th",
+  "note": "Hand-derived structural facts from the verbatim corpus + thermite-design.md Appendix A / §4.2 (goal.md R-CHAR-3). spec fns (§4.2) are total/terminating and carry a `dec` measure but NO req/ens/fx clauses.",
+  "parses_ok": true,
+  "error_count": 0,
+  "items": [
+    {
+      "name": "spec_sum",
+      "kind": "spec fn",
+      "params": [
+        { "name": "xs", "type": "&[u32]" }
+      ],
+      "ret": "u64",
+      "has_dec": true,
+      "has_contract_clauses": false
+    },
+    {
+      "name": "sum",
+      "kind": "fn",
+      "params": [
+        { "name": "xs", "type": "&[u32]" }
+      ],
+      "ret": "u64",
+      "req_count": 1,
+      "ens_count": 2,
+      "fx": "pure",
+      "loops": [
+        { "addr": "loop#1", "surface_keyword": "while", "inv_count": 3, "has_dec": true }
+      ]
+    }
+  ]
+}

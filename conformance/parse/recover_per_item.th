@@ -1,0 +1,14 @@
+fn broken(x: u32) -> u32
+  req true
+  fx  pure
+{
+  x
+}
+
+fn ok(x: u32) -> u32
+  req true
+  ens result == x
+  fx  pure
+{
+  x
+}

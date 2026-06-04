@@ -1,0 +1,18 @@
+{
+  "source": "conformance/sum.th",
+  "note": "Hand-derived from thermite-design.md §4.3 + the verbatim corpus (goal.md R-CHAR-3). The `while` is the first loop construct, so it is loop#1 (while and loop share the loop#N namespace). spec_sum has no addressable inner blocks in v0.1 (its top-level `dec` is a spec-fn measure, not a loop dec — semantic-addressing.md OQ-2).",
+  "addresses": [
+    { "addr": "spec_sum", "kind": "spec fn" },
+    { "addr": "sum", "kind": "fn" },
+    { "addr": "sum.loop#1", "kind": "loop", "surface_keyword": "while" },
+    { "addr": "sum.loop#1.inv#1", "kind": "inv", "text": "i <= xs.len()" },
+    { "addr": "sum.loop#1.inv#2", "kind": "inv", "text": "acc == spec_sum(&xs[..i])" },
+    { "addr": "sum.loop#1.inv#3", "kind": "inv", "text": "acc <= i as u64 * u32::MAX as u64" },
+    { "addr": "sum.loop#1.dec", "kind": "dec", "text": "xs.len() - i" }
+  ],
+  "must_error": [
+    "sum.loop#2",
+    "sum.loop#1.inv#4",
+    "spec_sum.loop#1"
+  ]
+}

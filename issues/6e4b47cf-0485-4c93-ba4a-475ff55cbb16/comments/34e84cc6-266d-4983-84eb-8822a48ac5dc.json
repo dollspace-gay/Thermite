@@ -1,0 +1,10 @@
+{
+  "uuid": "34e84cc6-266d-4983-84eb-8822a48ac5dc",
+  "issue_uuid": "6e4b47cf-0485-4c93-ba4a-475ff55cbb16",
+  "author": "Yffe",
+  "content": "Authority (thermite-design.md Appendix A, json cert excerpt, survivor field):\n  \"survivor\": \"mutant#11: `i = i + 1` → `i = i + 2` survives ens but killed by inv#2\"\n  The arrow is U+2192 (bytes 0xE2 0x86 0x92), confirmed via od -c.\n\nActual (conformance/sum.cert.json line 8):\n  \"survivor\": \"mutant#11: `i = i + 1` -> `i = i + 2` survives ens but killed by inv#2\"\n  The arrow is ASCII hyphen+greater-than (0x2D 0x3E).\n\nWhy divergence: survivor is a deterministic string field. The design states it VERBATIM (it is neither solver_time_ms-style non-deterministic, so not excludable, nor a value the toolchain author may choose). Per goal.md R-CHAR-3 the golden cert's expected values must trace to thermite-design.md byte-for-byte; substituting the glyph creates a false anchor. A faithful mutation scorer reproducing the design's prose would emit U+2192 and FAIL the golden match; conversely accepting '->' silently certifies a string the design never wrote. grep -c confirms: design has 0 occurrences of survivor's '->' (uses U+2192), cert has 0 occurrences of '→'.\n\nAll other sum.cert.json fields verified faithful: item=sum, level=L3, tautology=false, vacuous_precondition=false, mutants_killed=17/18, effects=[pure], slag=false. solver_time_ms omission justified (non-deterministic, design §5.3). Both sum.th and binary_search.th are character-identical to design Appendix A / §4.1 (diff clean). binary_search.cert.json deferral is design-correct (no cert given in design).",
+  "created_at": "2026-06-04T18:16:05.956264685Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGXF6/UhXfIaeq/u2Zad55AWmVKEuinDjZ5hEh9tGhBftcWhFP3xoc6bBiouFzlNo+wcLY8vhNSgTyfgOKLWTCQ=="
+}

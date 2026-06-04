@@ -1,0 +1,10 @@
+{
+  "uuid": "d1ee2715-5af8-4ff3-bbbd-2069728b5fd8",
+  "issue_uuid": "6199e0d6-6933-4707-9cac-c7f62115ace1",
+  "author": "Yffe",
+  "content": "Canonical spec source from which THERMITE.skill.md is generated (#7). Two deliverables: (1) formal grammar for surface syntax per design 4 (fn with mandatory req/ens/fx, loop with mandatory inv/dec, spec fn, #[slag] attr, explicit {} blocks, no significant whitespace, no macros/traits/lifetimes). (2) SpecTherm combinator registry (design 4.2/7): forall_in, forall_below, forall_from, exists_in, count_where, sorted, permutation_of, disjoint, ... each with a FROZEN SMT trigger and both a Verus definition (L3) and an executable form (L1). Registry is the single source of truth for both lowering (#4) and the skill (#7).",
+  "created_at": "2026-06-04T17:49:24.680002202Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAwZtoMDog0Ryh7ILMNTsizk7T4Y9cqz5BI2at4nP2LinUFqD7jg1J8p34zbTBPl5IeHXZvVLiZoVRk+RvGwblCw=="
+}

@@ -107,6 +107,12 @@ design = ".design/spec/spectherm-combinators.md"
 reference = ["tests/golden/combinators"]
 conformance_ops = ["forall_in", "forall_below", "forall_from", "sorted", "permutation_of", "disjoint", "count_where", "exists_in"]
 
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/spec/spectherm-combinators.md"
+reference = ["tests/golden/combinators"]
+conformance_ops = ["accept", "reject"]
+
 # ---------------------------------------------------------------------
 # thermite-lower — Thermite AST -> Verus source; L1 runtime checks
 #   (issue #4)

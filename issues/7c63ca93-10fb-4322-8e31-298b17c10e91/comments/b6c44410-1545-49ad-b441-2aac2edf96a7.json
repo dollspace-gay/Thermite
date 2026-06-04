@@ -1,0 +1,10 @@
+{
+  "uuid": "b6c44410-1545-49ad-b441-2aac2edf96a7",
+  "issue_uuid": "7c63ca93-10fb-4322-8e31-298b17c10e91",
+  "author": "Yffe",
+  "content": "Failing tests at thermite-syntax/tests/divergence_reaudit2.rs::divergence_deep_nested_loop_no_panic and ::divergence_deep_nested_while_no_panic demonstrate the divergence. The #31 fix (f0ceb12) routed parse_expr/parse_type/parse_pattern/parse_if_parts through guard_recursion, but the loop-body cycle parse_block -> parse_loop (Loop/While arm) -> parse_block (line 770) routes through NEITHER guard. 1500-deep 'loop inv true dec 0 { ... }' and 'while true inv true dec 0 { ... }' both SIGABRT (signal 6) on a 2 MiB stack. Authority: parser.md AC-4 (no input causes a panic) + surface-grammar.md REQ-3 (loop/while body is a Block, nested loops are well-formed v0.1 grammar). Control test control_deep_nested_if_stmt_returns PASSES, confirming the statement-if path IS bounded (via guarded parse_if_parts) — the gap is loops only. Root cause: guard_recursion must wrap the parse_loop body re-entry (or parse_block) in the owning crate.",
+  "created_at": "2026-06-04T20:00:47.038231987Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1SXi7/uSfOCi0Ih3PWai1/AXU/gifNyA3J9J7bThysd272YEVqYT4jnS42IvUMcOQvMS76lQ3c56O+4uuNjeCA=="
+}

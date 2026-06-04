@@ -1,0 +1,10 @@
+{
+  "uuid": "bd175a7e-df7e-477a-b714-25989e21e3bd",
+  "issue_uuid": "d27454ed-1d47-4f81-b536-b03ec39d0a7b",
+  "author": "Yffe",
+  "content": "Scaffold via ACToR loop: doc-author (.design/scaffold/workspace.md = crate topology + dep direction + MSRV/edition + CI gauntlet) -> builder (workspace Cargo.toml, per-crate Cargo.toml + minimal lib.rs/main.rs, rust-toolchain, CI; add lib.rs/main.rs routes to spec-routes.toml; empty workspace must pass cargo build/test/clippy -D warnings/fmt) -> critic (audit vs doc + goal.md) -> fixer/builder. doc-author step is forced by the spec-discipline gate (lib.rs is a gated path needing a design doc).",
+  "created_at": "2026-06-04T18:22:20.985206384Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAdPkQ3vWWzbdnmU6mGUbfIT4WapABnh2QamwySI6q+dqt3x9M+yhzs33jkQW5PtIR05bgs706Wtl66H3ijZy0Aw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "0e0d3325-8af2-4f4b-8b40-68e7fe89e82f",
+  "display_id": 31,
+  "title": "Divergence: thermite-syntax parser #29 depth guard incomplete — parse_type/parse_pattern/if-tail recursion still SIGABRTs on deep nesting",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:48:58.959930881Z",
+  "updated_at": "2026-06-04T19:48:58.959930881Z"
+}

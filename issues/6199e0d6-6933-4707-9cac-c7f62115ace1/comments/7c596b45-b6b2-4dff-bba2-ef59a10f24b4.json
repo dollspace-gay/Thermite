@@ -1,0 +1,10 @@
+{
+  "uuid": "7c596b45-b6b2-4dff-bba2-ef59a10f24b4",
+  "issue_uuid": "6199e0d6-6933-4707-9cac-c7f62115ace1",
+  "author": "Yffe",
+  "content": "Doc .design/spec/spectherm-combinators.md authored. Scope: registry (8 combinators: sorted, forall_in, exists_in, count_where, permutation_of, disjoint, forall_below + corpus-required forall_from) + SpecTherm validator (consumes registry, enforces §4.2 over AST contract positions, recursion-bounded from the start). Triggers/Verus/L1 forms DEFERRED to #4. OQ resolutions: OQ-1 ship full 8 AND author accept-fixtures for all 8 (no untested registry rows); OQ-2 registry struct extensible for #4; OQ-3 shallow arg-kind checks (Pred=closure strict, Slice/Value shallow) — deeper type checking deferred (untyped AST). Next: author tests/golden/combinators/ oracle (hand-derived), critic-verify, then builder.",
+  "created_at": "2026-06-04T20:43:25.806485759Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA6RLDMw2nuRmNpOB+IvIHeMJLB2tD+61ueMgj83+x0VkqtVjGcIY/fNzW5wc8L4gKsPf/asKwmtRG+DQ0sGvtCw=="
+}

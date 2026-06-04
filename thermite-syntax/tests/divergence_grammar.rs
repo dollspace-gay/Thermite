@@ -64,7 +64,6 @@ fn divergence_unit_return_type_accepted() {
 ///
 /// Tracking: #29
 #[test]
-#[ignore = "divergence: deep-nesting stack overflow; tracking #29 (depth guard at parse_expr entry is bypassed by the paren-grouping re-entry path)"]
 fn divergence_deep_nesting_no_panic() {
     // 1500 balanced parens around `x`: a deeply nested but otherwise well-formed
     // grouping expression. Far below any token-count limit; the failure mode is

@@ -71,7 +71,15 @@ pub enum SyntaxError {
 /// aborting the process (parser.md AC-4). The limit is a fixed constant
 /// (determinism, goal.md R-CODE-5), comfortably above any human-authored
 /// nesting yet well below the stack budget for a debug build.
-const MAX_EXPR_DEPTH: usize = 256;
+///
+/// The value MUST sit below the native-stack overflow point: each nesting level
+/// descends the full ladder (`parse_expr`→`parse_or`→…→`parse_primary` plus the
+/// paren re-entry, ~10 frames/level), so a deep grouping overflows the C stack
+/// long before a large count would. Empirically, on a 2 MiB thread (the Rust
+/// test-thread default) a debug build overflows between ~135 and ~140 levels;
+/// 64 leaves a ~2× margin to cover debug/release and platform variance while
+/// staying far above any plausible hand-authored nesting.
+const MAX_EXPR_DEPTH: usize = 64;
 
 impl SyntaxError {
     /// Construct a stray-character diagnostic (used by the lexer).

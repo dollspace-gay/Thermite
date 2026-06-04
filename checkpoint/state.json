@@ -1,0 +1,24 @@
+{
+  "next_display_id": 1,
+  "next_comment_id": 1,
+  "display_id_map": {},
+  "locks": {
+    "1": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-04T17:46:18.439104271Z"
+    }
+  },
+  "issues": {},
+  "unsigned_event_warnings": [
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 1,
+      "timestamp": "2026-06-04T17:46:18.439104271Z"
+    }
+  ],
+  "watermark": {
+    "timestamp": "2026-06-04T17:46:18.439104271Z",
+    "agent_id": "Yffe",
+    "agent_seq": 1
+  }
+}

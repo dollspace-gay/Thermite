@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The full gauntlet (REQ-5). Each command is a separate, must-pass step:
+# a non-zero exit fails CI (R-DEFER-6 — verification is a hard gate). The
+# toolchain version is pinned by rust-toolchain.toml, which the setup action
+# respects. No --check-budget step: the skill-budget gate is issue #7 (REQ-7).
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build
+        run: cargo build --workspace
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo fmt
+        run: cargo fmt --all --check

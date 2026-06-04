@@ -1,0 +1,17 @@
+[package]
+name = "forge"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# REQ-1: forge is the sole binary crate (the CLI).
+[[bin]]
+name = "forge"
+path = "src/main.rs"
+
+# REQ-2: depends on all three libs + thermite-skill.
+[dependencies]
+thermite-syntax = { path = "../thermite-syntax" }
+thermite-spec = { path = "../thermite-spec" }
+thermite-lower = { path = "../thermite-lower" }
+thermite-skill = { path = "../thermite-skill" }

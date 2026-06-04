@@ -25,6 +25,40 @@
 # them.
 
 # ---------------------------------------------------------------------
+# scaffold — workspace crate roots (issue #1)
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-syntax/src/lib.rs"
+design = ".design/scaffold/workspace.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-spec/src/lib.rs"
+design = ".design/scaffold/workspace.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/lib.rs"
+design = ".design/scaffold/workspace.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/main.rs"
+design = ".design/scaffold/workspace.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-skill/src/lib.rs"
+design = ".design/scaffold/workspace.md"
+reference = []
+conformance_ops = []
+
+# ---------------------------------------------------------------------
 # thermite-syntax — lexer, recovering parser, AST, semantic addressing
 #   (issues #1 scaffold, #3 parser)
 # ---------------------------------------------------------------------

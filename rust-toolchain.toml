@@ -1,0 +1,7 @@
+# Pinned toolchain for bit-reproducible builds/format/codegen (REQ-4, R-CODE-5,
+# design §5.3). A concrete stable channel, not a floating `stable`/`nightly`,
+# aligned to the installed toolchain. Verus/Kani (issues #4/#9) arrive as
+# out-of-process transpilation targets and do not require a nightly pin here.
+[toolchain]
+channel = "1.95.0"
+components = ["rustfmt", "clippy"]

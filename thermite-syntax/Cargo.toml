@@ -1,0 +1,8 @@
+[package]
+name = "thermite-syntax"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# Leaf crate (REQ-2): no intra-workspace dependencies.
+[dependencies]

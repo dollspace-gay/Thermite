@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = [
+    "thermite-syntax",
+    "thermite-spec",
+    "thermite-lower",
+    "forge",
+    "thermite-skill",
+]
+
+# Shared metadata for every member crate (REQ-1, REQ-4). Each crate inherits
+# these via `<key>.workspace = true` in its own Cargo.toml. The pinned edition
+# and MSRV floor are the determinism contract (R-CODE-5, design §5.3); the exact
+# toolchain channel is pinned in rust-toolchain.toml.
+[workspace.package]
+edition = "2021"
+rust-version = "1.85"

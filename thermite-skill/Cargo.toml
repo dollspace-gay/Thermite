@@ -1,0 +1,10 @@
+[package]
+name = "thermite-skill"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# REQ-2: depends on thermite-spec (combinator registry) + thermite-syntax (grammar).
+[dependencies]
+thermite-syntax = { path = "../thermite-syntax" }
+thermite-spec = { path = "../thermite-spec" }

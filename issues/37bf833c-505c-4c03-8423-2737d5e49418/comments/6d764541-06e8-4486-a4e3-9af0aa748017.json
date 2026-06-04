@@ -1,0 +1,10 @@
+{
+  "uuid": "6d764541-06e8-4486-a4e3-9af0aa748017",
+  "issue_uuid": "37bf833c-505c-4c03-8423-2737d5e49418",
+  "author": "Yffe",
+  "content": "L3 LOWERING SHIPPED (the hard centerpiece of #4). thermite-lower/src/lower.rs emits Verus from the AST; the EMITTED output for both corpus programs VERIFIES in the real verus binary (sum: 5 verified 0 errors; binary_search: 2 verified 0 errors). thermite-spec/src/combinators.rs extended with the 8 Verus(L3) forms (closes the #2 deferral; R-DEFER-1 consumer = the lowerer). Commits: 80cca29 (oracle+docs) -> 8f4b4cb (verify-not-byte-match amendment) -> 3e5daba (lowerer) -> cc8214c (critic generality probes).\n\nThe OQ-2 challenge (general proof-aid templates, NOT per-program hardcoding) was MET HONESTLY: acto-critic grep-confirmed zero program-identity coupling and proved generality by lowering RENAMED variants (a tally-fold emitting lemma_tally_push; a renamed coverage-search) that verify in real verus. 5 shape-keyed templates: overflow->nonlinear_arith, immutable-precond lift, recursive-spec-fn unfold lemma, accumulator-extensionality, complementary-quantifier coverage case-split.\n\nREMAINING in #4 (not yet done): l1.rs (L1 runtime-check lowering) and effects.rs (compile-time fx subsumption). #4 stays open. Observation #37 filed (underscore literals dropped by thermite-syntax AST; numerically faithful, low-pri). Gauntlet: thermite-lower 5+6 tests, thermite-spec 19, clippy/fmt/workspace green. Not pushed.",
+  "created_at": "2026-06-04T22:18:04.819723089Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAdvWPkJ2V6b2776imGDQfhMqtU5IKZzeqZgO+ufpO0MnIVdfPXfpw7vyDWw4MRH6h4pUZcCvlyFxEOeJzNU8GDQ=="
+}

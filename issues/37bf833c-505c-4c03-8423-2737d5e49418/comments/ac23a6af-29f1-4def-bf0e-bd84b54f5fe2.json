@@ -1,0 +1,10 @@
+{
+  "uuid": "ac23a6af-29f1-4def-bf0e-bd84b54f5fe2",
+  "issue_uuid": "37bf833c-505c-4c03-8423-2737d5e49418",
+  "author": "Yffe",
+  "content": "L1 RUNTIME-CHECK LOWERING SHIPPED (the L1 rung of #4; sibling to the already-shipped L3 lower.rs). thermite-lower/src/l1.rs: lower_l1 emits a self-contained runnable Rust file — always-active thermite_check! macro (plain if !(cond), NOT debug_assert; design 6) + thermite_contract_violation handler, executable spec fns (spec_sum slice-length recursion over &[u32]), the combinator L1 forms USED, and each fn with req on entry / loop inv per iteration / ens vs bound result on exit. thermite-spec/src/combinators.rs extended with the CombinatorSig.l1 field (8 frozen runnable Rust bodies, mirroring verus_l3; R-DEFER-1 consumer = l1.rs). VERIFIED BY EXECUTION via rustc (not byte-match): positive sum(&[1,2,3])==6 with checks passing; negative corrupted-body fires the always-active violation handler (observable, non-zero exit). 8 combinator L1 fns unit-tested over concrete slices (AC-3). Gauntlet: thermite-lower 18 passed (7 new l1_conformance) + thermite-spec 19 (l1 field did not break #2), clippy/fmt/workspace-build clean. Commit c0b1d8a. #4 STAYS OPEN: acto-critic re-audit + effects.rs (effect-subsumption) remain.",
+  "created_at": "2026-06-04T22:43:29.887536074Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAYmg0nMOfxo/CQFc3dDGUhDwxh8Gjgkj8o5SlXzXA42sjRbEqXgtw+2eHyn7uo4HkB711/pKDym/eCikwpRVGBA=="
+}

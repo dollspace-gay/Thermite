@@ -1,0 +1,10 @@
+{
+  "uuid": "17ad9261-524a-46f6-ab85-c8d6eb760869",
+  "issue_uuid": "3801c25c-0c2a-47d7-8186-338daca34c2d",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_effects.rs::divergence_while_condition_callee_is_checked demonstrates the divergence.\n\nRoot: effects.rs check_block's `Stmt::Loop(l)` arm walks ONLY `&l.body` and never inspects `l.kind`. `LoopKind::While(Box<Expr>)` carries the loop condition expression, which can contain an `Expr::Call` to an effectful fn. lower.rs DOES lower the while condition (LoopKind::While(c) arm), so the call site is reachable codegen.\n\nAuthority: thermite-design.md §4.1 'a caller's row must subsume EVERY callee's row, checked at compile time'. A `fx pure` caller running `while effectful() {}` (effectful fx {alloc}) is currently ACCEPTED (false accept) instead of rejected with missing:[Alloc].\n\nFix is the generator's: extend the Stmt::Loop arm to also check_expr the While condition. Critic does not fix.",
+  "created_at": "2026-06-04T23:01:24.314915406Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/yuQg4zu1sluwABcphN0E9qrwJsGrD3n0CgcfUYgdcmXFir768lxtdBkQS1IFYwSbcGu4WYvCH+KRvGrowqhAA=="
+}

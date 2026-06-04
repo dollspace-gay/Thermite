@@ -6,3 +6,9 @@ rust-version.workspace = true
 
 # Leaf crate (REQ-2): no intra-workspace dependencies.
 [dependencies]
+
+# Test-only: the conformance tests read the hand-authored JSON oracle fixtures
+# under `conformance/`. Production code (`src/`) has no serde dependency.
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

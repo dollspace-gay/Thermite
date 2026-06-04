@@ -1,0 +1,10 @@
+{
+  "uuid": "6e4b47cf-0485-4c93-ba4a-475ff55cbb16",
+  "display_id": 24,
+  "title": "Divergence: sum.cert.json survivor string uses ASCII '->' but design Appendix A specifies Unicode arrow '->'(U+2192)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T18:15:49.325417513Z",
+  "updated_at": "2026-06-04T18:15:49.325417513Z"
+}

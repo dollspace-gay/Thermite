@@ -1,0 +1,10 @@
+{
+  "uuid": "5a19cff1-5341-4c72-a8a6-69eaa1e47e29",
+  "issue_uuid": "6199e0d6-6933-4707-9cac-c7f62115ace1",
+  "author": "Yffe",
+  "content": "SHIPPED via the ACToR loop. thermite-spec implemented: the frozen 8-combinator SpecTherm registry + the SpecTherm validator (enforces §4.2's locked cage over contract positions: req/ens, every loop inv/dec, spec-fn bodies — fn bodies are NOT caged; recursion bounded from commit one). Verified against the critic-verified tests/golden/combinators oracle + the conformance corpus. Commits: 7fa9ea0 (doc+oracle) -> a06bf16 (build) -> eae38c3 (#35/#36 fix) -> 70cb181 (regression pins); validator.rs route 8c46449.\n\nLoop: doc-author -> oracle(critic-verified NO DIVERGENCE) -> builder -> critic(found #35/#36) -> fixer -> critic(NO DIVERGENCE). TWO divergences cleared: #35 (cardinal — validator over-caged fn bodies, so binary_search.th's  was wrongly rejected; corpus failed AC-2) and #36 (MethodCall accepted any method, not just the {len} built-in allowlist). Both pinned by failing tests, oracle never tampered (R-CHAR-3). Converged in 2 divergences vs loop-2's 6 — the tighter brief + hardened specs meant recursion was bounded from the start (no #29/#31/#32-style whack-a-mole).\n\nFinal: cargo test -p thermite-spec = 19 passed, 0 ignored (registry-match + 9 accept + 4 reject + 2 never-panic + 4 traversal-position + allowlist pins); workspace build + clippy -D warnings + fmt green. SMT triggers + Verus(L3)/L1 forms deferred to #4 (registry struct extensible). Not pushed.",
+  "created_at": "2026-06-04T21:17:19.917875262Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA87CcT+Hz1xwZUhdcXWW8FB5Lw3kU8MOV5PBQv0WXwZ4/uLFRm2EVK/L/GcfiBzkrsgDN6XCC2pkf4vFep4ifDw=="
+}

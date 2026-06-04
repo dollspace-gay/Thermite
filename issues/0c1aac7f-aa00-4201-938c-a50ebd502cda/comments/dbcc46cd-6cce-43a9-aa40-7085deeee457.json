@@ -1,0 +1,10 @@
+{
+  "uuid": "dbcc46cd-6cce-43a9-aa40-7085deeee457",
+  "issue_uuid": "0c1aac7f-aa00-4201-938c-a50ebd502cda",
+  "author": "Yffe",
+  "content": "Failing tests at thermite-spec/tests/divergence_spec.rs::divergence_corpus_binary_search_validates_clean and ::divergence_enum_ctor_in_fn_body_is_not_a_contract_position demonstrate the divergence (run with --include-ignored). Root cause: Validator::walk_block -> walk_stmt -> walk_expr applies the SpecTherm cage to ordinary fn-BODY statement expressions, but REQ-3 enumerates contract positions as Contract.req/ens, LoopNode.invs/dec, SpecFnItem.body only -- a fn body is NOT a contract position (only its nested loop inv/dec are). The body stmt 'return Some(mid);' is Expr::Call{callee:Path([Some])} and is rejected as UnknownCombinator. walk_block's own doc-comment says a fn body is not a contract position but the code does not honor it. Authority: .design/spec/spectherm-combinators.md AC-2 + REQ-3; goal.md (corpus is hand-certified external truth).",
+  "created_at": "2026-06-04T21:03:46.286158047Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA4uJV4hqIvhGs7OtrSGWCpENOuE3nZuPWtDQQlmUysgdbJ0kl6X9KZPUf455ULIjajYU0F18R82kpN5Hlu0wJAA=="
+}

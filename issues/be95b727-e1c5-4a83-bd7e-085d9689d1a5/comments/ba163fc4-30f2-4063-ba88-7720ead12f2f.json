@@ -1,0 +1,10 @@
+{
+  "uuid": "ba163fc4-30f2-4063-ba88-7720ead12f2f",
+  "issue_uuid": "be95b727-e1c5-4a83-bd7e-085d9689d1a5",
+  "author": "Yffe",
+  "content": "FIXED in parse_block (thermite-syntax/src/parser.rs). The trailing-if/else -> tail Expr::If promotion is now gated on VALUE-NESS, not position: condition changed from 'if self.check(&TokKind::RBrace)' to 'if self.check(&TokKind::RBrace) && then.tail.is_some()'. A value-less trailing if/else (both branches statement-only, e.g. corpus binary_search.loop#1 'if .. { lo = mid + 1; } else { hi = mid; }') now falls through to the existing Stmt::If arm, leaving the loop body tail: None.\n\nAuthority: .design/syntax/surface-grammar.md decision #2 + OQ-3 (discriminator is value-ness). Value-ness signal = then-branch block tail.is_some() (branch type-agreement is a downstream/forge concern).\n\nGauntlet (thermite-syntax, 0 ignored): cargo test = 20 passed (9 conformance + 3 grammar + 4 reaudit + 3 reaudit2 + 1 final), 0 failed, 0 ignored. #33 PASS, #30 PASS. clippy -D warnings PASS. fmt --check PASS. Touched neither test assertions nor conformance/ fixtures.",
+  "created_at": "2026-06-04T20:24:48.381657664Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKrZS5LWUvjuTh+WYqIcSw2ZMADdeUnpEehFlOh+o03MpUY61MXeL5F6Tk5K0K2s7xfyOfcI7sF+8BLADjIfbAg=="
+}

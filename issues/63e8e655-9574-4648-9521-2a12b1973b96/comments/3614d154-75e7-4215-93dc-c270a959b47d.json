@@ -1,0 +1,10 @@
+{
+  "uuid": "3614d154-75e7-4215-93dc-c270a959b47d",
+  "issue_uuid": "63e8e655-9574-4648-9521-2a12b1973b96",
+  "author": "Yffe",
+  "content": "SHIPPED via the full ACToR loop. thermite-syntax implemented: lexer + AST + recovering parser + semantic addressing, verified against the hand-authored, critic-verified conformance/parse + conformance/address oracle. Commits: 32533e4 (build) -> 5bb910e (#28/#30) -> 2a8e3e3 (#29) -> f0ceb12 (#31) -> 90cef82 (#32) -> 358ec3c (#33). Plus oracle fixtures 53aa402, pinned tests a419e00.\n\nThe loop ran builder -> critic x5. The critic pinned and the fixers cleared SIX real divergences (all backed by failing tests, oracle never tampered per R-CHAR-3): #28 unit-return type rejected; #29 deep-expr stack overflow; #30 if/else-in-tail dropped to statement; #31 unbounded recursion in type/pattern/if; #32 unbounded recursion in loop bodies; #33 (regression from #30) value-less trailing if/else wrongly promoted to tail expr. The no-panic contract (parser.md AC-4) now holds across all probed recursion vectors via a single shared guard_recursion/MAX_RECURSION_DEPTH=64.\n\nFinal state: cargo test -p thermite-syntax = 20 passed, 0 ignored (9 conformance + 11 divergence/regression); workspace build + clippy -D warnings + fmt all green. Design docs .design/syntax/{surface-grammar,lexer,ast,parser,semantic-addressing}.md (REQ-status SHIPPED). Not pushed (human pushes).",
+  "created_at": "2026-06-04T20:26:30.491402916Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAB9nvmnMnRkP/dAwkJP3Di22Jzdns4fJLJEZx37zQ6aG3h/BkeJTWdGF6vpJyGoedb0+qBZG6Yuo1YDqvNxA+DQ=="
+}

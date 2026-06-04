@@ -1,0 +1,10 @@
+{
+  "uuid": "8c1e3c0c-cc40-4dcb-8c1f-bc48ee42eaa9",
+  "issue_uuid": "7c63ca93-10fb-4322-8e31-298b17c10e91",
+  "author": "Yffe",
+  "content": "Fixed: routed the parse_block<->parse_loop body cycle through guard_recursion. Split parse_loop into a guarded outer (self.guard_recursion(Self::parse_loop_inner)) and parse_loop_inner holding the original body, mirroring the parse_if_parts/parse_if_parts_inner pattern from #31. MAX_RECURSION_DEPTH=64 unchanged. Both probes now return SyntaxError::ExpressionTooDeep instead of SIGABRT. Converge check: grepped every parse_block caller — fn/spec-fn bodies (non-recursive, one per item), parse_if_parts_inner (guarded), parse_loop_inner (NOW guarded), parse_if_expr (reached only via guarded parse_expr ladder). All recursive families (expr/type/pattern/if-tail/loop-body) guarded; no further gap. Gauntlet: cargo test 19 passed / 0 failed / 0 ignored; clippy -D warnings PASS; fmt --check PASS. Touched neither test assertions nor conformance fixtures (only removed two #[ignore]s).",
+  "created_at": "2026-06-04T20:05:03.155044137Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAUv1AXjsWj2ezyM8mT3hxIqwv5v+Oau6KNlvk5dSITRMPULmXx7Nlc7IyCw/aDjCwHK92sEAQxw1ghJ0kw60tBg=="
+}

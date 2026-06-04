@@ -6,9 +6,12 @@
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:47:18.653494900Z",
-  "updated_at": "2026-06-04T17:47:21.471448839Z",
+  "updated_at": "2026-06-04T17:48:42.959250889Z",
   "labels": [
     "feature"
+  ],
+  "blockers": [
+    "6199e0d6-6933-4707-9cac-c7f62115ace1"
   ],
   "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5"
 }

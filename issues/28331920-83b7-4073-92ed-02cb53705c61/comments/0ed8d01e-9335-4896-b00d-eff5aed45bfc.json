@@ -1,0 +1,10 @@
+{
+  "uuid": "0ed8d01e-9335-4896-b00d-eff5aed45bfc",
+  "issue_uuid": "28331920-83b7-4073-92ed-02cb53705c61",
+  "author": "Yffe",
+  "content": "SHIPPED — §9 boundary-composition lowering: verified-to-the-boundary is now an achievable STATUS, not just a #17 label. closure.rs reachable_in_file_fns (reuses the private CallGraph DFS); check.rs item_subprogram weaves a caller's transitively-reachable in-file fns (regular callees REAL body; boundary/slag callees as external_body signatures); lower.rs lower_external_body_fn emits #[verifier::external_body] + requires/ensures, GATED strictly on boundary.is_some()||slag.is_some(). A caller proves THROUGH the assumed contract -> L3 + scope to_boundary (was L0); the boundary fn itself stays L1+flag (scope orthogonal to level). HONESTY GATE (R-DEFER-9): external_body ONLY for declared boundary/slag — a lying REGULAR fn (standalone or woven as a dependency) is still CAUGHT (L0 counterexample, never laundered); critic-proven (lowered-string external_body count=1, only on the boundary fn). Soundness: a caller must discharge the callee's req + prove its own ens (req-violating/over-claiming -> counterexample). Loop: doc-author -> builder (stopped at manifest boundary -> authorized closure.rs) -> critic NO DIVERGENCE. Live: caller->L3+to_boundary; ext_id->L1; bad(req true)->L0; liar(regular)->L0. Commit 5931ec3. workspace tests 0 failed, clippy/fmt clean. corpus L3 end-to-end (no external_body), goldens stable. Note: over-claiming-caller behaves correctly (L0) but not yet pinned in the oracle (coverage gap). Not pushed.",
+  "created_at": "2026-06-05T17:38:13.989085459Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABABmoNJXMdqEbP2ArGBr1aEX40+6jgWMFDWx0oX7dZAHhj+C7HCERk0TUMmDcM0nk++s0GR7RJbQVXn7IkLH8QDw=="
+}

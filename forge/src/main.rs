@@ -30,6 +30,7 @@ mod kani;
 mod manifest;
 mod mutation;
 mod profile;
+mod repair;
 mod slag;
 mod strengthen;
 mod vacuity;

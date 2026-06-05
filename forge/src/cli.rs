@@ -41,6 +41,7 @@ use crate::manifest::{
     ProjectScope,
 };
 use crate::mutation::MUTATION_FLOOR;
+use crate::repair::{self, RepairItem, RepairOutcome, RepairReport};
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
 /// document describing failed obligations). Distinct from an environment error
@@ -188,6 +189,19 @@ enum Command {
     /// stable `--json` document or a human summary. The default-config path is the
     /// reproducible trust statement (OQ-3).
     Audit { file: PathBuf, json: bool },
+    /// `forge repair <file> [item]` — the background L1/L2 → L3 upgrade loop
+    /// (issue #18; `.design/forge/proof-repair.md` REQ-1). Re-derives the per-item
+    /// certs at the default budget, finds the SUB-L3 items, and for a TIMEOUT item
+    /// ONLY escalates the verus `--rlimit` along the frozen bounded ladder
+    /// (`repair::REPAIR_LADDER`) to try to recover L3 — NEVER retrying a
+    /// counterexample / reject (the anti-cheat, REQ-2). A one-shot re-runnable pass
+    /// (OQ-4: daemon/orchestration is #20). The optional `item` restricts repair to
+    /// a single function.
+    Repair {
+        file: PathBuf,
+        item: Option<String>,
+        json: bool,
+    },
 }
 
 /// The assurance rung `forge check` targets (`.design/lower/l2-kani.md` REQ-7,
@@ -356,6 +370,41 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 .ok_or_else(|| ForgeError::Usage("`forge audit` requires a <file>".to_string()))?;
             Ok(Command::Audit { file, json })
         }
+        "repair" => {
+            // `forge repair <file> [item] [--json]` (#18;
+            // `.design/forge/proof-repair.md` REQ-1). The first positional is the
+            // file (required); an OPTIONAL second positional restricts repair to a
+            // single item. Like `forge audit`, it runs at the pinned default budget
+            // (the exploratory `--rlimit`/`--mutation-floor` levers are NOT exposed
+            // — the ESCALATION ladder is the frozen `repair::REPAIR_LADDER`, REQ-3).
+            let mut file: Option<PathBuf> = None;
+            let mut item: Option<String> = None;
+            let mut json = false;
+            for arg in iter {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_none() {
+                            file = Some(PathBuf::from(positional));
+                        } else if item.is_none() {
+                            item = Some(positional.to_string());
+                        } else {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge repair` takes at most <file> [item]; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage("`forge repair` requires a <file> [item]".to_string())
+            })?;
+            Ok(Command::Repair { file, item, json })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -366,7 +415,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>] | forge audit <file> [--json]"
+     [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -400,6 +449,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             mutation_floor,
         } => run_check(&file, json, level, rlimit, mutation_floor),
         Command::Audit { file, json } => run_audit(&file, json),
+        Command::Repair { file, item, json } => run_repair(&file, item.as_deref(), json),
     }
 }
 
@@ -538,6 +588,146 @@ fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Run `forge repair`: the background L1/L2 → L3 upgrade loop (#18;
+/// `.design/forge/proof-repair.md` REQ-1/REQ-6). Drives `repair::repair_file`
+/// (re-derive the sub-L3 certs at the default budget, escalate the bounded ladder
+/// for TIMEOUT items ONLY, report the rest), then renders the per-item repair
+/// report. A one-shot, deterministic, re-runnable pass (OQ-4 reading (a)).
+///
+/// The exit code (REQ-5 parallel): SUCCESS iff every repaired item upgraded to L3
+/// AND no item remains a hard fail (a no-op corpus is vacuously success); else the
+/// verification-failure code (a still-sub-L3 or not-repairable item means the
+/// project does not fully certify). An ENVIRONMENT failure (verus absent /
+/// unparseable) propagates as a `ForgeError` (REQ-7), never a silent success.
+fn run_repair(file: &Path, item: Option<&str>, json: bool) -> Result<ExitCode, ForgeError> {
+    let report = repair::repair_file(file, item)?;
+
+    if json {
+        let doc = serde_json::to_string_pretty(&repair_report_json(&report)).map_err(|e| {
+            ForgeError::VerusOutput {
+                detail: format!("failed to serialize repair report JSON: {e}"),
+            }
+        })?;
+        println!("{doc}");
+    } else {
+        print!("{}", render_repair(&report));
+    }
+
+    // SUCCESS iff every sub-L3 item was upgraded (or there were none to repair).
+    // A still-sub-L3 or not-repairable residue is a non-zero exit (the project
+    // does not fully certify), parallel to `forge check`'s headline.
+    if report.all_upgraded() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Build the `--json` document for a repair report (#18; §5.1 structured output).
+/// `RepairReport` is a runtime aggregate (not a serde schema type), so the JSON is
+/// hand-built here — the stable surface a calling agent reads.
+fn repair_report_json(report: &RepairReport) -> serde_json::Value {
+    use serde_json::json;
+    let items: Vec<serde_json::Value> = report
+        .items
+        .iter()
+        .map(|i| match &i.outcome {
+            RepairOutcome::UpgradedToL3 { budget } => json!({
+                "item": i.item,
+                "outcome": "upgraded_to_l3",
+                "budget": budget,
+            }),
+            RepairOutcome::StillSubL3 {
+                level,
+                profile,
+                suggested_move,
+                detail,
+            } => json!({
+                "item": i.item,
+                "outcome": "still_sub_l3",
+                "level": level_str(*level),
+                "total_instantiations": profile.as_ref().map(|p| p.total_instantiations),
+                "suggested_move": suggested_move.as_ref().map(|m| json!({
+                    "kind": m.kind, "detail": m.detail,
+                })),
+                "detail": detail,
+            }),
+            RepairOutcome::NotRepairable {
+                level,
+                cause,
+                detail,
+            } => json!({
+                "item": i.item,
+                "outcome": "not_repairable",
+                "level": level_str(*level),
+                "cause": cause,
+                "detail": detail,
+            }),
+        })
+        .collect();
+    json!({
+        "total_checked": report.total_checked,
+        "repaired": items,
+    })
+}
+
+/// Render the repair report as human-readable text (#18; REQ-6, §5.1 "every
+/// message is a prompt"). One line per sub-L3 item: `upgraded to L3 (budget=N)` /
+/// `still <level> — <#11 repair prompt>` / `counterexample/reject — not repairable
+/// (not retried)`. A no-op (the corpus, AC-1) prints the "nothing to repair" line.
+fn render_repair(report: &RepairReport) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "repair: {} item(s) checked, {} sub-L3 item(s) to repair\n",
+        report.total_checked,
+        report.items.len()
+    ));
+    if report.is_noop() {
+        out.push_str("nothing to repair — every item already certifies at L3\n");
+        return out;
+    }
+    for item in &report.items {
+        out.push_str(&render_repair_item(item));
+    }
+    out
+}
+
+/// Render one item's repair outcome line (#18; REQ-6).
+fn render_repair_item(item: &RepairItem) -> String {
+    match &item.outcome {
+        RepairOutcome::UpgradedToL3 { budget } => {
+            format!("  {} — upgraded to L3 (budget={budget})\n", item.item)
+        }
+        RepairOutcome::StillSubL3 {
+            level,
+            profile: _,
+            suggested_move,
+            detail,
+        } => {
+            let prompt = suggested_move
+                .as_ref()
+                .map(|m| format!("{} — {}", m.kind, m.detail))
+                .unwrap_or_else(|| detail.clone());
+            format!(
+                "  {} — still {} (not proved at the ladder cap) — repair prompt: {prompt}\n",
+                item.item,
+                level_str(*level),
+            )
+        }
+        RepairOutcome::NotRepairable {
+            level,
+            cause,
+            detail,
+        } => format!(
+            "  {} — {} {} — not repairable (not retried; more budget never makes a false \
+             contract true): {detail}\n",
+            item.item,
+            level_str(*level),
+            cause,
+        ),
     }
 }
 

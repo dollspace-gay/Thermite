@@ -53,8 +53,10 @@ ladder + degrade (`degrade.rs`), the #11 solver profile = the repair prompt
 (`profile.rs`), the #8 proof cache (`cache.rs`), the `--rlimit` budget seam
 (`check::check_file_with_rlimit`), and the lower.rs shape-keyed proof-aid templates
 — but the repair loop, the escalation ladder, the anti-cheat gating, and the prompt
-surfacing do not. This doc is forward-looking; **all REQs are NOT-STARTED, blocked
-on #18.**
+surfacing did not until #18. **All REQs are now SHIPPED (issue #18);** see the REQ
+status table below. OQ-1/OQ-2/OQ-4 are ratified per their RECOMMENDATIONs (hermetic
+loop logic + live anti-cheat; escalated verifies uncached in v0.5; `forge repair` is
+a one-shot re-runnable CLI pass, no daemon).
 
 OUT OF SCOPE (boundaries): the multi-agent Forge orchestration is **#20**; the
 critic-model spec-review slot is **#19**; the solver profile itself is **#11**
@@ -413,22 +415,24 @@ pattern.
 
 ## REQ status
 
-All REQs are NOT-STARTED. `forge/src/repair.rs` does not exist; there is no
-`Command::Repair` in `cli.rs` (`parse_args` matches only `new`/`check`/`audit`);
-there is no route for it in `tooling/spec-routes.toml`. The pieces repair COMPOSES
-(#10 ladder + degrade, #11 profile = prompt, #8 cache, the `--rlimit` seam, the
-lower.rs proof-aid templates) all ship, but the repair loop, the escalation ladder,
-the anti-cheat gating, and the prompt surfacing do not. Open prereq blocker: **#18**.
+All REQs are SHIPPED (issue #18). `forge/src/repair.rs` exists (the repair loop +
+the bounded escalation ladder + the anti-cheat gate); `cli.rs` has the
+`Command::Repair` arm (`parse_args` matches `repair`; the `usage` string lists it)
++ `run_repair`/`render_repair`; `main.rs` declares `mod repair;`. The pieces repair
+COMPOSES all ship and are reused: the #10 ladder's `VerusTimeout` degrade reason +
+#11's `VerusOutcome`-classified `VerusTimeout` reject = the timeout trigger, the #11
+`SolverProfile`/`suggested_move` = the surfaced prompt, the `--rlimit` seam
+(`check::check_file_with_rlimit`) = the escalated re-verify.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (`forge repair [item]` upgrade loop) | NOT-STARTED | open prereq blocker #18. No `forge/src/repair.rs`; `enum Command in cli.rs` has no `Repair` arm (`parse_args` matches `new`/`check`/`audit` only; `usage` string omits `repair`); nothing identifies sub-L3 items and re-verifies them at escalated budget. The re-verify entry it would call (`pub fn check_file_with_rlimit in check.rs`) and the `--rlimit` seam ship, but no caller drives an escalation ladder. |
-| REQ-2 (anti-cheat: only a TIMEOUT is retried; falsity NEVER upgraded) | NOT-STARTED | open prereq blocker #18. The classification that distinguishes the two ships and is grounded (`enum VerusOutcome { Proved, Timeout, Counterexample }` in `check.rs`; profile PRESENT = Timeout, ABSENT = Counterexample), and `Certificate.reject` / `lowered_assurance` / `degrade_reason` record a `VerusTimeout` vs a counterexample/vacuity/weak-contract verdict — but no consumer routes a TIMEOUT into an escalation and a Counterexample/reject into a report-only hard fail. The distinction is not yet load-bearing for an UP-ladder because the up-ladder does not exist. |
-| REQ-3 (bounded escalation ladder) | NOT-STARTED | open prereq blocker #18. The `--rlimit <FLOAT>` budget seam ships (`check::check_file_with_rlimit`, `cli.rs`'s `--rlimit` flag, `DEFAULT_RLIMIT = 30.0`), and `--rlimit 1` is the documented timeout-forcing lever, but there is no fixed geometric escalation ladder constant and no bounded retry loop over it. |
-| REQ-4 (cache-backed re-verify, per item) | NOT-STARTED | open prereq blocker #18. The #8 cache ships (`pub fn cache_key`/`load`/`store in cache.rs`, per-item content-addressed) and `check.rs` documents the non-default-rlimit cache bypass + the never-cache-a-timeout rule, but no repair pass rides the cache at escalated budgets (the escalated-budget caching question is OQ-2). |
-| REQ-5 (determinism of the achieved level after repair) | NOT-STARTED | open prereq blocker #18. The inputs would be deterministic given a pinned ladder + the pinned seed (`DEFAULT_SOLVER_SEED in check.rs`), and #11's classification is deterministic, but the repair loop that would produce a deterministic achieved-level does not exist. |
-| REQ-6 (the repair report — per sub-L3 item) | NOT-STARTED | open prereq blocker #18. The #11 prompt material ships (`Certificate.solver_profile` + `Certificate.suggested_move`, set by `Certificate::timeout` via `profile::suggested_move`; `pub fn render_prompts in profile.rs`), but there is no repair report rendering an upgraded-to-L3 (+ budget) vs still-sub-L3 (+ prompt) per-item outcome, and no `run_repair` in `cli.rs`. |
-| REQ-7 (subprocess failures never silently degrade a repair verdict) | NOT-STARTED | open prereq blocker #18. `run_verus` already surfaces `ForgeError::{VerusAbsent,VerusOutput}` (R-CODE-4 honored at the driver), but no repair loop exists to (correctly) treat those as an error rather than a still-sub-L3 verdict or a silent upgrade — the invariant is unenforced because the loop is absent. |
+| REQ-1 (`forge repair [item]` upgrade loop) | SHIPPED | `pub fn repair_file in repair.rs` re-derives the certs at `DEFAULT_RLIMIT`, classifies via `classify_sub_l3`, and for a `SubL3Status::Timeout` drives `escalate` along `REPAIR_LADDER`, upgrading to L3 on the first proving rung (recording the budget) else surfacing the prompt. Consumer: `fn run_repair in cli.rs` (the `Command::Repair` arm). Hermetic test `escalation_upgrades_at_the_proving_budget`. |
+| REQ-2 (anti-cheat: only a TIMEOUT is retried; falsity NEVER upgraded) | SHIPPED | `fn classify_sub_l3 in repair.rs` returns `SubL3Status::Timeout` ONLY for a `VerusTimeout` reject / a `lowered_assurance` `VerusTimeout` degrade; a counterexample / vacuity / weak-contract reject / bare-`L0` returns `NotRepairable`. `fn repair_item` calls `escalate` (and thus the verify closure) ONLY on `Timeout`; a `NotRepairable` short-circuits with the closure UNUSED. Hermetic `counterexample_is_never_retried` (asserts 0 closure calls) + `rejects_are_never_retried`; LIVE `counterexample_is_never_upgraded` in `repair_conformance.rs` (the grounded `inc` stays L0 / not-repairable through real verus). |
+| REQ-3 (bounded escalation ladder) | SHIPPED | `pub const REPAIR_LADDER: [f64; 4] = [2.0, 4.0, 8.0, 16.0] in repair.rs` (multipliers of `DEFAULT_RLIMIT`); `fn escalate` iterates it and STOPS at the cap → at most `REPAIR_LADDER.len()` re-verifies, always terminates. Hermetic test `escalation_is_bounded_and_terminates` (asserts exactly the rung-count of attempts). |
+| REQ-4 (cache-backed re-verify, per item) | SHIPPED | each rung calls `check::check_file_with_rlimit` at a NON-default budget; per the `check.rs` rule a non-default `--rlimit` bypasses the cache (a budget-dependent verdict is never cached as the canonical proof). OQ-2 reading (a) ratified for the v0.5 kernel: escalated verifies are uncached, no #8 cache-key change. Evidence: the `verify` closure in `repair_file`. |
+| REQ-5 (determinism of the achieved level after repair) | SHIPPED | `REPAIR_LADDER` is a frozen const + the per-rung verdict is `check::classify_verus_outcome` under the pinned `DEFAULT_SOLVER_SEED`, so the achieved level + the recorded winning budget are deterministic (R-CODE-5). Hermetic test `escalation_is_deterministic` (two runs, equal budget). |
+| REQ-6 (the repair report — per sub-L3 item) | SHIPPED | `pub struct RepairReport`/`RepairItem` + `enum RepairOutcome { UpgradedToL3 { budget }, StillSubL3 { level, profile, suggested_move, detail }, NotRepairable { level, cause, detail } } in repair.rs`; an already-L3 item is a NO-OP (not in `items`). Rendered by `fn render_repair`/`render_repair_item` + `repair_report_json in cli.rs`. LIVE no-op `corpus_sum_is_a_repair_noop` (empty repair set). |
+| REQ-7 (subprocess failures never silently degrade a repair verdict) | SHIPPED | `fn escalate`'s verify closure returns `Result<RepairVerdict, ForgeError>`; an environment failure propagates via `?` out of `repair_file`, NEVER a still-sub-L3 verdict and NEVER an upgrade (R-CODE-4). Hermetic test `environment_error_propagates`. |
 
 ## Open questions
 

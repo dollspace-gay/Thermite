@@ -1,0 +1,10 @@
+{
+  "uuid": "d1fe9829-2c34-4015-ae67-ef4b487f15c8",
+  "issue_uuid": "3a00a691-8b43-4e72-891d-a46442670a5d",
+  "author": "Yffe",
+  "content": "Closing as redundant with #10 (the degrade-ladder tracking issue). The doc-author filed this as a prereq blocker, but #10 IS the work item; the NOT-STARTED REQs are blocked on #10 itself. S8 noise.",
+  "created_at": "2026-06-05T06:28:32.414444096Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABABXdPgrzH4xM74Z2u3gVv52hpbgqfPxXG2XTIgsSqX3ioB8i3L9/wWkTWgOlF1WMX/1omZYPsTcrUThkc5NlDAg=="
+}

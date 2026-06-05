@@ -45,7 +45,7 @@
 //! | REQ-3 (artifact form: library + optional `--entry` runner) | SHIPPED | `build_file(path, None)` → `CrateType::Rlib`; `build_file(path, Some(fn))` → `CrateType::Bin` with `synthesize_entry_main`'s deterministic runner. Verified by `sum_runs` (exe prints `6`). |
 //! | REQ-4 (L1 checks baked in, all profiles) | SHIPPED | the artifact is `lower_l1`'s output verbatim (the always-active `thermite_check!`, NOT `debug_assert!`); `build_file` never strips it. Verified by `ens_violation_fires_at_runtime` (the runtime check fires). |
 //! | REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `BuildManifest` composes the artifact path + `CrateType`, the achieved assurance string, the per-fn `fx` rows (`effects_of`), and the `Reproducibility` block (pinned rustc identity + `SOURCE_DATE_EPOCH`). Consumer: `cli::run_build` (human + `--json`). |
-//! | REQ-6 (#57 hook: runnable exe + fx rows) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (e.g. `sum` → `["pure"]`); v0.1 installs no sandbox (R-SPEC-5). Verified by `sum_runs` (`fx == ["pure"]`). |
+//! | REQ-6 (#57 hook: runnable exe + fx rows + the seccomp sandbox) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (e.g. `sum` → `["pure"]`); `synthesize_entry_main` now injects the #57 `sandbox::emit_sandbox_prelude` (the fx-derived seccomp filter) as the FIRST statements of the generated `main` (`SandboxConfig`, on by default for `--entry`), recording the installed allowlist in `BuildManifest::sandbox`. Verified by `sum_runs` (`fx == ["pure"]`) + `sandbox_conformance` (pure runs clean, the openat probe killed/allowed). |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -56,6 +56,7 @@ use thermite_syntax::{FnItem, Item, PrimType, Program, Type};
 use crate::check::{unique_scratch_dir, ScratchDir};
 use crate::cli::ForgeError;
 use crate::manifest::effects_of;
+use crate::sandbox::{self, SandboxMode};
 
 /// The pinned `SOURCE_DATE_EPOCH` for every `forge build` rustc invocation
 /// (REQ-5, §5.3). A fixed `0` makes the codegen reproducible modulo the residual
@@ -92,6 +93,44 @@ impl CrateType {
             CrateType::Bin => "bin",
         }
     }
+}
+
+/// The #57 sandbox configuration for a `forge build --entry` (REQ-4/REQ-6). The
+/// sandbox is ON BY DEFAULT for `--entry` (`--no-sandbox` opts out); the self-test
+/// probe is injected ONLY under `--sandbox-self-test`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SandboxConfig {
+    /// Whether to inject the seccomp prelude (`SandboxMode::On` by default for
+    /// `--entry`; `SandboxMode::Off` under `--no-sandbox`).
+    pub mode: SandboxMode,
+    /// Whether to inject the `--sandbox-self-test` `openat` probe AFTER the prelude
+    /// (test-only demonstrability device; never in a production runner).
+    pub self_test: bool,
+}
+
+impl Default for SandboxConfig {
+    /// The `--entry` default (REQ-4): sandbox ON, no self-test probe.
+    fn default() -> Self {
+        SandboxConfig {
+            mode: SandboxMode::On,
+            self_test: false,
+        }
+    }
+}
+
+/// The #57 sandbox record on the [`BuildManifest`] (REQ-5): what the runnable
+/// binary is confined to. Recorded for the audit surface (§9) — the installed
+/// syscall allowlist, derived from the entry's transitive `fx`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct SandboxRecord {
+    /// `true` iff the seccomp prelude was injected (REQ-4: on by default for
+    /// `--entry`, suppressed by `--no-sandbox` / a library build).
+    pub installed: bool,
+    /// The transitive `fx` tokens the allowlist was derived from (REQ-2), sorted.
+    pub transitive_fx: Vec<String>,
+    /// The installed x86_64 syscall allowlist (REQ-3), sorted ascending. Empty when
+    /// no prelude was injected.
+    pub syscall_allowlist: Vec<u32>,
 }
 
 /// One function's per-fn row in the [`BuildManifest`] (REQ-5/REQ-6): its name and
@@ -144,6 +183,10 @@ pub struct BuildManifest {
     pub entry: Option<String>,
     /// The per-fn `fx` rows (REQ-5/REQ-6) in source order — the #57 seccomp input.
     pub functions: Vec<BuildFunction>,
+    /// The #57 sandbox record (REQ-5): the installed syscall allowlist, derived
+    /// from the entry's transitive `fx`. `installed == false` for a library build /
+    /// `--no-sandbox`.
+    pub sandbox: SandboxRecord,
     /// The reproducibility block (REQ-5, §5.3).
     pub reproducibility: Reproducibility,
 }
@@ -166,12 +209,14 @@ pub struct BuildManifest {
 pub fn build_file(
     path: impl AsRef<Path>,
     entry: Option<&str>,
+    sandbox: SandboxConfig,
 ) -> Result<BuildManifest, ForgeError> {
     let path = path.as_ref();
-    // The full compiled source (lower_l1 + any --entry runner) — the SAME
-    // byte-deterministic emission the reproducibility check (AC-6) asserts is
-    // stable (`emit_source` is this build's source-of-truth, REQ-5).
-    let source = emit_source(path, entry)?;
+    // The full compiled source (lower_l1 + any --entry runner + the #57 sandbox
+    // prelude) — the SAME byte-deterministic emission the reproducibility check
+    // (AC-6) asserts is stable (`emit_source` is this build's source-of-truth,
+    // REQ-5).
+    let source = emit_source(path, entry, sandbox)?;
     let program = parse_program(path)?;
 
     // REQ-3: a `--entry` produced the deterministic generated runner inside
@@ -187,8 +232,27 @@ pub fn build_file(
     let crate_name = crate_name_for(path);
     let artifact = invoke_rustc(&crate_name, &source, crate_type)?;
 
-    // REQ-5/REQ-6: the build record — per-fn `fx` rows + reproducibility.
+    // REQ-5/REQ-6: the build record — per-fn `fx` rows + the #57 sandbox record +
+    // reproducibility. The sandbox is only INSTALLED for an `--entry` runner with
+    // `SandboxMode::On`; a library build / `--no-sandbox` records `installed: false`
+    // with an empty allowlist.
     let functions = build_functions(&program);
+    let sandbox_record = match (entry, sandbox.mode) {
+        (Some(name), SandboxMode::On) => {
+            let fx = sandbox::transitive_fx(&program, name);
+            let allowlist = sandbox::syscall_allowlist(&fx);
+            SandboxRecord {
+                installed: true,
+                transitive_fx: fx.into_iter().collect(),
+                syscall_allowlist: allowlist,
+            }
+        }
+        _ => SandboxRecord {
+            installed: false,
+            transitive_fx: Vec::new(),
+            syscall_allowlist: Vec::new(),
+        },
+    };
     let reproducibility = Reproducibility {
         rustc: resolve_rustc_version()?,
         source_date_epoch: SOURCE_DATE_EPOCH.to_string(),
@@ -204,6 +268,7 @@ pub fn build_file(
         assurance: ASSURANCE_L1.to_string(),
         entry: entry_name,
         functions,
+        sandbox: sandbox_record,
         reproducibility,
     })
 }
@@ -233,13 +298,17 @@ fn parse_program(path: &Path) -> Result<Program, ForgeError> {
 /// reproducibility test asserts they are byte-identical across two calls (forge
 /// owns the emission determinism, independent of any rustc nondeterminism). The
 /// `--entry` runner is appended deterministically (`synthesize_entry_main`).
-pub fn emit_source(path: impl AsRef<Path>, entry: Option<&str>) -> Result<String, ForgeError> {
+pub fn emit_source(
+    path: impl AsRef<Path>,
+    entry: Option<&str>,
+    sandbox: SandboxConfig,
+) -> Result<String, ForgeError> {
     let path = path.as_ref();
     let program = parse_program(path)?;
     let mut source = thermite_lower::lower_l1(&program).map_err(ForgeError::Lower)?;
     if let Some(name) = entry {
         let f = find_entry_fn(&program, name)?;
-        source.push_str(&synthesize_entry_main(f)?);
+        source.push_str(&synthesize_entry_main(&program, f, sandbox)?);
     }
     Ok(source)
 }
@@ -282,21 +351,40 @@ fn find_entry_fn<'a>(program: &'a Program, name: &str) -> Result<&'a FnItem, For
     }
 }
 
-/// Synthesize a deterministic `fn main` that calls the entry fn with fixed sample
-/// inputs per its parameter types (REQ-3, R-CODE-5 — NO wall-clock / rand). The
-/// synthesis convention (v0.1 fixed literals; a richer `--input` convention is
-/// future work, OQ-1):
+/// Synthesize a deterministic `fn main` that (under the #57 sandbox) installs the
+/// seccomp prelude FIRST, then calls the entry fn with fixed sample inputs per its
+/// parameter types (REQ-3, R-CODE-5 — NO wall-clock / rand). The synthesis
+/// convention (v0.1 fixed literals; a richer `--input` convention is future work,
+/// OQ-1):
 ///
 /// - `&[u32]` / `&[u64]` / `&[usize]` → `&[1, 2, 3]` (typed) — the corpus `sum`
 ///   case (`sum(&[1,2,3]) == 6`, the hand-derived value).
 /// - `u32` / `u64` / `usize` → `1`.
 /// - `bool` → `true`.
 ///
-/// The result is `println!`'d so the runtime is observable; for the `sum` corpus
-/// this prints `sum(&[1u32, 2, 3]) = 6` (the oracle's `expect_run_contains: "6"`).
-/// A parameter type with no deterministic synthesis is a structured error
-/// (R-CODE-2), never a panic.
-fn synthesize_entry_main(f: &FnItem) -> Result<String, ForgeError> {
+/// The generated `main` structure (#57; `.design/forge/runtime-sandbox.md`
+/// Architecture, the prelude-injection point):
+///
+/// ```text
+/// fn main() {
+///     <seccomp prelude>          // SandboxMode::On (default for --entry); REQ-1/REQ-4
+///     <openat self-test probe>   // --sandbox-self-test ONLY; REQ-6
+///     let r = entry(<args>);     // runs UNDER the filter; the L1 thermite_check! still PANICS
+///     println!("entry(args) = {r:?}");
+/// }
+/// ```
+///
+/// The seccomp prelude is the FIRST statement(s) so the entry (and any boundary/slag
+/// body it reaches) runs UNDER the filter; the allowlist is the entry's transitive
+/// `fx` projection (REQ-2/REQ-3). The result is `println!`'d so the runtime is
+/// observable; for the `sum` corpus this prints `sum(&[1u32, 2, 3]) = 6` (the
+/// oracle's `expect_run_contains: "6"`). A parameter type with no deterministic
+/// synthesis is a structured error (R-CODE-2), never a panic.
+fn synthesize_entry_main(
+    program: &Program,
+    f: &FnItem,
+    sandbox: SandboxConfig,
+) -> Result<String, ForgeError> {
     let mut args: Vec<String> = Vec::with_capacity(f.params.len());
     for p in &f.params {
         args.push(synthesize_arg(&p.ty).ok_or_else(|| {
@@ -309,11 +397,33 @@ fn synthesize_entry_main(f: &FnItem) -> Result<String, ForgeError> {
         })?);
     }
     let arglist = args.join(", ");
+
+    // REQ-1/REQ-4: the #57 seccomp prelude is the FIRST statement of `main` (so the
+    // entry runs UNDER the filter), with the allowlist derived from the entry's
+    // transitive `fx` (REQ-2/REQ-3). `SandboxMode::Off` (`--no-sandbox`) emits none.
+    let prelude = match sandbox.mode {
+        SandboxMode::On => {
+            let fx = sandbox::transitive_fx(program, &f.name);
+            let allowlist = sandbox::syscall_allowlist(&fx);
+            sandbox::emit_sandbox_prelude(&allowlist)
+        }
+        SandboxMode::Off => String::new(),
+    };
+    // REQ-6: the `--sandbox-self-test` probe is injected AFTER the prelude (so the
+    // filter is already installed) and BEFORE the entry call (so the kill is
+    // observed before any entry output). Never emitted without the flag.
+    let probe = if sandbox.self_test {
+        sandbox::emit_probe()
+    } else {
+        String::new()
+    };
+
     // The runner binds the result and prints it; the `thermite_check!`s inside the
-    // fn fire BEFORE the tail returns on a violation (REQ-4). `{r:?}` covers every
-    // primitive return type (u32/u64/usize/bool/()).
+    // fn fire BEFORE the tail returns on a violation (REQ-4) — and the baseline
+    // allowlist permits that PANIC/abort path, so a contract violation PANICS rather
+    // than being seccomp-killed. `{r:?}` covers every primitive return type.
     Ok(format!(
-        "\nfn main() {{\n    let r = {name}({arglist});\n    println!(\"{name}({arglist}) = {{r:?}}\");\n}}\n",
+        "\nfn main() {{\n{prelude}{probe}    let r = {name}({arglist});\n    println!(\"{name}({arglist}) = {{r:?}}\");\n}}\n",
         name = f.name
     ))
 }

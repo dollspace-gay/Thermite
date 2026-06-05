@@ -44,6 +44,7 @@ use crate::manifest::{
 use crate::mutation::MUTATION_FLOOR;
 use crate::repair::{self, RepairItem, RepairOutcome, RepairReport};
 use crate::review::{self, ReviewArtifact};
+use crate::sandbox::SandboxMode;
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
 /// document describing failed obligations). Distinct from an environment error
@@ -294,6 +295,11 @@ enum Command {
         file: PathBuf,
         entry: Option<String>,
         json: bool,
+        /// The #57 sandbox configuration (REQ-4/REQ-6): `--sandbox` (the default for
+        /// `--entry`) / `--no-sandbox` (opt out) + `--sandbox-self-test` (inject the
+        /// `openat` probe). A library build (no `--entry`) ignores it (an rlib has
+        /// no `main` to inject into).
+        sandbox: build::SandboxConfig,
     },
 }
 
@@ -557,15 +563,19 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })
         }
         "build" => {
-            // `forge build <file> [--entry <fn>] [--json]` (#56;
-            // `.design/forge/build.md` REQ-1/REQ-3). The first positional is the
-            // file (required in v0.1 — no project-default item yet). `--entry <fn>`
-            // names the fn the generated deterministic runner exercises (its value
-            // is a separate token; a missing value is a Usage error); without it the
-            // default library (`rlib`) artifact is produced.
+            // `forge build <file> [--entry <fn>] [--json] [--sandbox|--no-sandbox]
+            // [--sandbox-self-test]` (#56/#57; `.design/forge/build.md` REQ-1/REQ-3 +
+            // `.design/forge/runtime-sandbox.md` REQ-4/REQ-6). The first positional is
+            // the file (required in v0.1). `--entry <fn>` names the fn the generated
+            // deterministic runner exercises (a missing value is a Usage error);
+            // without it the default library (`rlib`) is produced. The #57 sandbox is
+            // ON BY DEFAULT for `--entry`; `--no-sandbox` opts out; `--sandbox` is the
+            // explicit-default form; `--sandbox-self-test` injects the `openat` probe.
             let mut file: Option<PathBuf> = None;
             let mut entry: Option<String> = None;
             let mut json = false;
+            let mut sandbox_mode = build::SandboxConfig::default().mode;
+            let mut self_test = false;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
@@ -580,6 +590,9 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         })?;
                         entry = Some(value.to_string());
                     }
+                    "--sandbox" => sandbox_mode = SandboxMode::On,
+                    "--no-sandbox" => sandbox_mode = SandboxMode::Off,
+                    "--sandbox-self-test" => self_test = true,
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -598,7 +611,15 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     "`forge build` requires a <file> [--entry <fn>] in v0.1".to_string(),
                 )
             })?;
-            Ok(Command::Build { file, entry, json })
+            Ok(Command::Build {
+                file,
+                entry,
+                json,
+                sandbox: build::SandboxConfig {
+                    mode: sandbox_mode,
+                    self_test,
+                },
+            })
         }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
@@ -612,7 +633,7 @@ fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
      [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
-     [--json]"
+     [--json] [--no-sandbox] [--sandbox-self-test]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -653,7 +674,12 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             reviewer,
         } => run_review(&file, item.as_deref(), json, reviewer.as_deref()),
-        Command::Build { file, entry, json } => run_build(&file, entry.as_deref(), json),
+        Command::Build {
+            file,
+            entry,
+            json,
+            sandbox,
+        } => run_build(&file, entry.as_deref(), json, sandbox),
     }
 }
 
@@ -902,18 +928,28 @@ fn run_review(
 /// hook — and the reproducibility block) as human text or (under `--json`) the
 /// structured document.
 ///
+/// The #57 runtime sandbox is ON BY DEFAULT for `--entry` (`SandboxConfig::default`);
+/// `--no-sandbox` opts out and `--sandbox-self-test` injects the `openat` probe. The
+/// installed allowlist is recorded in `BuildManifest::sandbox`.
+///
 /// `forge build` does NOT itself RUN the produced `--entry` executable: running is
 /// left to the consumer / the conformance test (which exercises the runtime
-/// `thermite_check!` behavior directly). This keeps `forge build` a pure
-/// build-and-report step; observing the runtime check fire is the test's job
-/// (`build_conformance::ens_violation_fires_at_runtime`).
+/// `thermite_check!` + seccomp behavior directly). This keeps `forge build` a pure
+/// build-and-report step; observing the runtime check fire / the seccomp kill is the
+/// test's job (`build_conformance::ens_violation_fires_at_runtime`,
+/// `sandbox_conformance`).
 ///
 /// Exit code: a successful build exits 0. A front-of-pipeline failure (parse /
 /// spec / effects / lowering), an absent/failing rustc, or an IO error propagates
 /// as a `ForgeError` (the environment exit code, REQ-2 / R-CODE-4), never a silent
 /// success.
-fn run_build(file: &Path, entry: Option<&str>, json: bool) -> Result<ExitCode, ForgeError> {
-    let manifest = build::build_file(file, entry)?;
+fn run_build(
+    file: &Path,
+    entry: Option<&str>,
+    json: bool,
+    sandbox: build::SandboxConfig,
+) -> Result<ExitCode, ForgeError> {
+    let manifest = build::build_file(file, entry, sandbox)?;
     if json {
         let doc = serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::RustcOutput {
             detail: format!("failed to serialize the build manifest JSON: {e}"),
@@ -948,6 +984,18 @@ fn render_build(manifest: &BuildManifest) -> String {
     out.push_str("functions:\n");
     for f in &manifest.functions {
         out.push_str(&format!("  {} fx=[{}]\n", f.name, f.fx.join(", ")));
+    }
+    // #57: the runtime sandbox record — the installed syscall allowlist derived from
+    // the entry's transitive `fx` (the §9 audit surface for what the binary is
+    // confined to). A library build / `--no-sandbox` records `installed: false`.
+    if manifest.sandbox.installed {
+        out.push_str(&format!(
+            "sandbox: seccomp installed (transitive fx=[{}]; {} syscalls allowlisted)\n",
+            manifest.sandbox.transitive_fx.join(", "),
+            manifest.sandbox.syscall_allowlist.len()
+        ));
+    } else {
+        out.push_str("sandbox: none (library build or --no-sandbox)\n");
     }
     out.push_str("reproducibility:\n");
     out.push_str(&format!("  rustc: {}\n", manifest.reproducibility.rustc));
@@ -1529,6 +1577,58 @@ mod tests {
             parse_args(&argv(&["check", "a.th", "--level"])),
             Err(ForgeError::Usage(_))
         ));
+    }
+
+    // #57 (`.design/forge/runtime-sandbox.md` REQ-4/REQ-6): the sandbox is ON BY
+    // DEFAULT for `forge build` (no flag → SandboxMode::On, no self-test);
+    // `--no-sandbox` opts out; `--sandbox-self-test` injects the probe.
+    #[test]
+    fn parses_build_sandbox_flags() {
+        // Default: sandbox on, no self-test.
+        assert_eq!(
+            parse_args(&argv(&["build", "a.th", "--entry", "f"])).ok(),
+            Some(Command::Build {
+                file: PathBuf::from("a.th"),
+                entry: Some("f".to_string()),
+                json: false,
+                sandbox: build::SandboxConfig {
+                    mode: SandboxMode::On,
+                    self_test: false,
+                },
+            })
+        );
+        // --no-sandbox opts out.
+        assert_eq!(
+            parse_args(&argv(&["build", "a.th", "--entry", "f", "--no-sandbox"]))
+                .ok()
+                .and_then(|c| match c {
+                    Command::Build { sandbox, .. } => Some(sandbox),
+                    _ => None,
+                }),
+            Some(build::SandboxConfig {
+                mode: SandboxMode::Off,
+                self_test: false,
+            })
+        );
+        // --sandbox-self-test injects the probe (and the default mode stays on).
+        assert_eq!(
+            parse_args(&argv(&[
+                "build",
+                "a.th",
+                "--entry",
+                "f",
+                "--sandbox-self-test"
+            ]))
+            .ok()
+            .and_then(|c| match c {
+                Command::Build { sandbox, .. } => Some(sandbox),
+                _ => None,
+            }),
+            Some(build::SandboxConfig {
+                mode: SandboxMode::On,
+                self_test: true,
+            })
+        );
     }
 
     // AC-1: no args / unknown verb / missing positional → Usage error, never a

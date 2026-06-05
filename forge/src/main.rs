@@ -28,6 +28,7 @@ mod manifest;
 mod profile;
 mod slag;
 mod vacuity;
+mod vacuity_solver;
 
 use std::process::ExitCode;
 

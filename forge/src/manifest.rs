@@ -45,6 +45,12 @@
 //! |---|---|---|
 //! | `solver_profile: Option<SolverProfile>` | SHIPPED | `Certificate.solver_profile` (additive, `#[serde(default, skip_serializing_if)]` so the frozen golden `sum.cert.json` still deserializes — R-SPEC-2). `Some` ONLY on a timeout cert built by `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the parsed profile + a profile-derived `suggested_move`); `None` on a proved cert and a counterexample cert. Produced by `profile::parse_profile`/`profile::suggested_move`, set by `check::classify_verus_outcome`. DIAGNOSTIC + non-deterministic (§5.3): EXCLUDED from `oracle_subset` (`.design/forge/solver-profiles.md` REQ-6/REQ-7). |
 //! | `suggested_move` populated | SHIPPED | the reserved #5 slot is now CONSTRUCTED in production on a timeout cert (`Certificate::timeout`) from `profile::suggested_move` — the §5.1 "trigger hints" content. Still `None` on every non-timeout cert. |
+//!
+//! ## #13 producer (SOLVER-vacuity reject sets a `contract_quality` bool true)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `Certificate::rejected_vacuity` | SHIPPED | builds a `Level::L0` reject cert (like `Certificate::rejected`) that ALSO sets the SOLVER-confirmed `contract_quality.{tautology,vacuous_precondition}` bool the detection corresponds to (`.design/forge/solver-vacuity.md` REQ-6, OQ-1). NO schema change (R-SPEC-2) — it only makes the EXISTING Appendix A bools' `true` real (solver-confirmed) rather than #6's syntactic `false`. Produced by `vacuity_solver::solver_vacuity_check`, consumed by `check::check_file`. |
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
@@ -426,6 +432,29 @@ impl Certificate {
             solver_profile: None,
             suggested_move: None,
         }
+    }
+
+    /// Build a NON-certified certificate for a SOLVER-vacuity reject (#13;
+    /// `.design/forge/solver-vacuity.md` REQ-5/REQ-6). Like [`Certificate::rejected`]
+    /// (`Level::L0`, the structured `reject` cause, one failed obligation naming
+    /// it), but it ALSO sets the SOLVER-confirmed `contract_quality` bool that the
+    /// detected degeneracy corresponds to (REQ-6, OQ-1): a `"SemanticTautology"`
+    /// reject sets `contract_quality.tautology = true`; a `"VacuousPrecondition"`
+    /// reject sets `contract_quality.vacuous_precondition = true`. `set_tautology` /
+    /// `set_vacuous_precondition` are the two existing Appendix A bools — NO schema
+    /// change (R-SPEC-2); #13 only makes the `true` detection real (solver-confirmed)
+    /// rather than the #6-syntactic `false`. Consumed by `check::gate_fn`.
+    pub fn rejected_vacuity(
+        item: impl Into<String>,
+        effects: Vec<String>,
+        reason: RejectReason,
+        set_tautology: bool,
+        set_vacuous_precondition: bool,
+    ) -> Self {
+        let mut cert = Certificate::rejected(item, effects, false, reason);
+        cert.contract_quality.tautology = set_tautology;
+        cert.contract_quality.vacuous_precondition = set_vacuous_precondition;
+        cert
     }
 
     /// The DETERMINISTIC, currently-producible oracle subset (REQ-3/REQ-6,

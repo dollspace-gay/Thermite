@@ -489,14 +489,40 @@ conformance_ops = ["tautology", "vacuous", "corpus_sum", "corpus_binary_search"]
   (binary_search) lowers to a sound arbitrary binder (a `proof fn` param of type
   `Option<usize>` ranges over `None` + every `Some(i)`).
 
+## Resolved during implementation (#13)
+
+- **OQ-3 / OQ-4 (resolved):** a verus TIMEOUT / non-success-without-VIR-error on a
+  harness maps to `Failed` → CLEAN (the conservative reading — an inconclusive
+  query never rejects, never reads as a tautology); a verus-absent / unparseable /
+  VIR error surfaces a `ForgeError` (never a silent clean). The arbitrary-`result`
+  binder is sound for `u32`, `u64`, and `Option<usize>` (binary_search) — all
+  confirmed PROVING/FAILING on real verus as grounded.
+- **CHECK-ORDER (resolved; a soundness precedence, NOT a §7 listing change):** the
+  UNSAT-PRECONDITION check runs BEFORE the tautology check, the reverse of §7's
+  step-2/step-3 listing. The two are not independent — an unsatisfiable `req` makes
+  EVERY `ensures` vacuously provable, so the tautology harness ALSO proves on a
+  vacuous-`req` contract (a false premise proves anything). Running tautology first
+  would MISLABEL a vacuous precondition as a `SemanticTautology`; the genuine root
+  cause is the unsat `req`. So vacuity is checked first and reported as
+  `VacuousPrecondition`; the tautology check then runs only on a SATISFIABLE
+  precondition, where a proved `ens`-for-arbitrary-result is a genuine tautology.
+  This is an ordering precedence WITHIN the SOLVER stage; both checks and both
+  causes are unchanged. Pinned in `vacuity_solver::solver_vacuity_check`.
+- **GATE-PLACEMENT (resolved; OQ-2-adjacent):** the two queries run INSIDE the
+  proof-cache MISS branch (after the cache lookup, before the L3 proof), so the
+  deterministic #13 verdict (reject or clean) is CACHED with the item. A later
+  cache HIT serves the stored cert WITHOUT re-spawning verus — preserving the
+  proof-cache cache-hit verus-free invariant (`proof-cache.md` AC-1). A #13 reject
+  cert is cached like a counterexample cert (a settled, deterministic verdict).
+
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (tautology harness builder) | NOT-STARTED | open prereq blocker #13. `forge/src/vacuity_solver.rs` does not exist; no assume-req/arbitrary-result/assert-ens harness builder is wired (grounded shape PROVES on `result >= 0`/`u32`, FAILS on `sum`'s ens). |
-| REQ-2 (vacuity harness builder) | NOT-STARTED | open prereq blocker #13. No assume-req/assert-false harness builder exists (grounded shape PROVES on `x>0 && x<0`, FAILS on `sum`'s `req`). |
-| REQ-3 (verdict interpretation, R-CODE-4) | NOT-STARTED | open prereq blocker #13. No PROVED→vacuous / FAILED→clean / environment→handled interpretation function exists. |
-| REQ-4 (value-add over #6) | NOT-STARTED | open prereq blocker #13. `tautology.th`/`vacuous.th` currently certify L3 with both bools `false` (PASS #6) — the semantic detection #13 must add is absent. |
-| REQ-5 (gate wiring, verdict-in-cert) | NOT-STARTED | open prereq blocker #13. `check::check_file` runs only #6's `gate_fn` then the L3 proof; no #13 solver-vacuity stage between them. |
-| REQ-6 (graduate the two bools to solver-confirmed) | NOT-STARTED | open prereq blocker #13. `Certificate::graduate_triage_clean` sets the bools to #6-syntactic-`false` only; no SOLVER-confirmed graduation / `true` detection producer exists. |
-| REQ-7 (determinism + one query/check) | NOT-STARTED | open prereq blocker #13. No solver-vacuity queries run in the gate; the pinned-seed single-query cost is not yet incurred. |
+| REQ-1 (tautology harness builder) | SHIPPED | `vacuity_solver::build_tautology_harness` lowers the real `FnItem` (+ spec fns) via `thermite_lower::lower` and rebuilds `proof fn taut_check(<params>, result: <RET>) requires ..; ensures ..; { }` (`extract_lowered_fn` reuses the verbatim `requires`/`ensures`). Consumer: `check::check_file`. Grounded: PROVES on `result >= 0`/`u32`, FAILS on `sum`'s ens. |
+| REQ-2 (vacuity harness builder) | SHIPPED | `vacuity_solver::build_vacuity_harness` reuses the same extraction → `proof fn vac_check(<params>) requires ..; { assert(false); }`. Consumer: `check::check_file`. Grounded: PROVES on `x>5 && x<3`, FAILS on `sum`'s `req`. |
+| REQ-3 (verdict interpretation, R-CODE-4) | SHIPPED | `vacuity_solver::interpret_summary`: PROVED (`success && errors==0`) → DETECTED; FAILED → CLEAN; VIR error → `ForgeError::VerusOutput`; `run_harness` surfaces verus-absent / unparseable as `ForgeError`, never a silent clean. |
+| REQ-4 (value-add over #6) | SHIPPED | the `semantic_tautology` / `vacuous_precondition` fixtures PASS `vacuity::triage` (no #6 syntactic cause) yet `solver_vacuity_check` rejects them with the SOLVER causes — asserted by `forge/tests/solver_vacuity_conformance.rs` against `conformance/solver-vacuity/cases.json`. |
+| REQ-5 (gate wiring, verdict-in-cert) | SHIPPED | `check::check_file` calls `vacuity_solver::solver_vacuity_check` after #6 `gate_fn` returns `ProceedToL3` (inside the cache-miss branch, before L3); a `Detected` → `Certificate::rejected_vacuity` (`Level::L0` + cause), a `Clean` proceeds to L3. |
+| REQ-6 (graduate the two bools to solver-confirmed) | SHIPPED | `Certificate::rejected_vacuity` sets `contract_quality.tautology`/`vacuous_precondition = true` on the matching detection; a `Clean` reaches the L3 path whose `graduate_triage_clean` keeps both live-`false`, now solver-confirmed. |
+| REQ-7 (determinism + one query/check) | SHIPPED | `run_harness` passes the pinned `seed` + `rlimit`; exactly two verus queries per `fn` (vacuity then tautology), short-circuiting on the first detection. |

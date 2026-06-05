@@ -55,6 +55,14 @@
 //! | solver-profiles REQ-2 (capture on rlimit-hit) | SHIPPED | `invoke_verus` ALWAYS passes `--profile` + `--rlimit <rlimit>` (the pinned generous `DEFAULT_RLIMIT = 30.0`, so the corpus still PROVES L3); `--profile` emits the Z3 instantiation report on STDERR ONLY on an rlimit-hit. |
 //! | solver-profiles REQ-5 (three-way classification) | SHIPPED | `classify_verus_outcome` is the deterministic three-way split: `Proved` (`success && errors==0` → L3, no profile) / `Timeout` (an error WITH a `profile::parse_profile` report present on stderr → attach the `SolverProfile`) / `Counterexample` (an error WITHOUT a profile → the #5 witness path, which ALSO absorbs the incompleteness-unknown FAST-`unknown` edge — OQ-1). Consumer: `assemble_certificate`. |
 //! | solver-profiles REQ-7 (timeout cert level, distinct) | SHIPPED | the `Timeout` outcome → `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the profile + a `profile::suggested_move` hint), DISTINCT from a counterexample-L0 (no profile, a `postcondition not satisfied` reason). v0.1 does not auto-degrade (#10). `--rlimit` is exposed via `cli.rs`; `check_file_with_rlimit` threads it; a non-default budget bypasses the proof cache (a timeout is never cached as proved). |
+//!
+//! ## #13 gate (SOLVER-backed tautology + vacuous-precondition checks, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | solver-vacuity REQ-5 (gate AFTER #6, before L3) | SHIPPED | `check_file_with_rlimit`'s per-item loop calls `vacuity_solver::solver_vacuity_check(f, &spec_items, seed, rlimit)` AFTER `gate_fn` returns `ProceedToL3` and BEFORE the L3 lower/`run_verus`; a `Detected` short-circuits to `Certificate::rejected_vacuity` (verdict-in-cert, no L3 proof) and a `Clean` falls through to the existing L3 path. |
+//! | solver-vacuity REQ-6 (graduate the two bools to solver-confirmed) | SHIPPED | a `SemanticTautology` detection sets `contract_quality.tautology = true`, a `VacuousPrecondition` sets `vacuous_precondition = true` (via `Certificate::rejected_vacuity`); a `Clean` reaches the L3 path whose `graduate_triage_clean` keeps both live-`false`, now solver-confirmed. |
+//! | solver-vacuity REQ-3/REQ-7 (R-CODE-4 + determinism) | SHIPPED | a harness environment/internal verus failure propagates as a `ForgeError` from `solver_vacuity_check` (the `?`), never a silent clean; the two queries run under the same pinned `seed` + `rlimit` as the L3 path. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -214,14 +222,66 @@ pub fn check_file_with_rlimit(
                 // HIT: skip verus entirely (REQ-3, AC-1 — the decisive solver-skip).
                 // The stored cert is the canonical fresh verify; mark it served from
                 // cache (`cached: true`) — provenance only, oracle fields unchanged
-                // (REQ-2: a hit is oracle-equal to a fresh verify).
+                // (REQ-2: a hit is oracle-equal to a fresh verify). A #13
+                // SOLVER-vacuity reject was cached just like a proof verdict, so a
+                // HIT serves it WITHOUT re-running the two harness queries (the cache
+                // hit is a verus-free path end-to-end).
                 certs.push(stored.with_cached(true));
                 continue;
             }
         }
 
-        // MISS (or a non-default rlimit bypassing the cache): the solver runs
-        // (REQ-3). Assemble the cert exactly as the non-cached path always has.
+        // #13 SOLVER-vacuity gate (`.design/forge/solver-vacuity.md` REQ-5): on a
+        // cache MISS, AFTER #6's free structural triage passed (`ProceedToL3`,
+        // above) and BEFORE the item's own L3 proof (a contract that survives the
+        // syntactic checks may still be SEMANTICALLY degenerate — the §7
+        // cheapest-first ordering). The two checks reuse the existing contract
+        // lowering + verus driver to detect a semantic tautology (`ens` holds for
+        // an arbitrary result) or an unsatisfiable precondition. A `Detected`
+        // short-circuits to a non-certified `Certificate::rejected_vacuity`
+        // (verdict-in-cert, the matching `contract_quality` bool SOLVER-confirmed
+        // `true`) WITHOUT running the L3 proof on a known-degenerate contract; a
+        // `Clean` falls through to the existing L3 path where `graduate_triage_clean`
+        // keeps both bools live-`false`, now solver-confirmed (REQ-6). An
+        // environment / internal verus failure on a harness query surfaces a
+        // `ForgeError` (R-CODE-4), never a silent clean. The gate runs INSIDE the
+        // cache-miss branch so the deterministic #13 verdict is CACHED with the item
+        // (OQ-2): a later HIT serves the cached reject / clean cert without a verus
+        // spawn (the cache-hit verus-free invariant, proof-cache.md AC-1).
+        if let Item::Fn(f) = item {
+            if let crate::vacuity_solver::SolverVacuityVerdict::Detected { cause } =
+                crate::vacuity_solver::solver_vacuity_check(f, &spec_items, seed, rlimit)?
+            {
+                let (taut, vac) = match cause {
+                    crate::vacuity_solver::SolverVacuityCause::SemanticTautology => (true, false),
+                    crate::vacuity_solver::SolverVacuityCause::VacuousPrecondition => (false, true),
+                };
+                let cert = Certificate::rejected_vacuity(
+                    f.name.clone(),
+                    effects_of(&f.contract.fx),
+                    RejectReason {
+                        cause: cause.tag().to_string(),
+                        detail: cause.detail(),
+                    },
+                    taut,
+                    vac,
+                );
+                // A #13 reject is a SETTLED, deterministic verdict (a function of the
+                // lowered contract + seed + versions), so it is cached like a
+                // counterexample cert: a re-check serves the HIT without re-running
+                // the harness queries. Best-effort store (a write failure never fails
+                // the verdict — R-CODE-2), at the canonical budget only.
+                if use_cache {
+                    let _ = cache::store(&cache_dir, &key, &cert);
+                }
+                certs.push(cert.with_cached(false));
+                continue;
+            }
+        }
+
+        // CLEAN (or a `spec fn`, which carries no contract to check): the solver
+        // runs the real L3 proof (REQ-3). Assemble the cert exactly as the
+        // non-cached path always has.
         let verus = run_verus(&sub, &lowered, seed, rlimit)?;
         let cert = assemble_certificate(item, &verus);
         // A non-slag `fn` that reached the L3 path passed triage — graduate the

@@ -247,3 +247,18 @@ crate_pattern = "forge/src/strengthen.rs"
 design = ".design/forge/strengthening-probes.md"
 reference = ["conformance/strengthening"]
 conformance_ops = ["weak_loose_bound", "sum"]
+
+# v0.4 — crates.io FFI boundary modules (issue #16)
+#   The boundary fn syntax also touches ast.rs/parser.rs (governed by their docs
+#   + ffi-boundary.md); the L1 wrapper may live in l1.rs or boundary.rs.
+[[route]]
+crate_pattern = "thermite-lower/src/boundary.rs"
+design = ".design/boundary/ffi-boundary.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/boundary.rs"
+design = ".design/boundary/ffi-boundary.md"
+reference = ["conformance/boundary"]
+conformance_ops = ["foreign_id"]

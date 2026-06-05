@@ -135,6 +135,8 @@ forge goal <item>                  print goal state for an item
 forge fill <hole-addr> <code>      fill a hole; returns new goal state
 forge edit <addr> --replace <code> semantic edit by stable address
 forge check [item]                 run the ladder; per-obligation results
+forge build [item] --entry <fn>    lower to Rust + rustc -> a native binary whose
+                                   contract checks fire at runtime, fx-sandboxed
 forge battery [item]               run vacuity battery + mutation scoring
 forge audit                        full slag + boundary + assurance inventory
 forge skill                        emit the canonical THERMITE.skill.md
@@ -163,7 +165,10 @@ BODY only. A `#[slag]` function's CONTRACT is still mandatory and enforced at
 runtime, so its certificate carries level L1 with a `slag: true` flag — L1
 because the contract is L1-checked at the call site, slag because the body is
 unproven. Slag exempts PROVING, never STATING and CHECKING. The `fx` effect row
-is likewise always enforced, independent of the proof level.
+is enforced two ways, independent of the proof level: caller/callee subsumption
+at compile time, and — in a `forge build` binary — a seccomp syscall sandbox
+derived from the row, so code that exceeds its declared effects is killed at the
+syscall boundary (a `#[slag]`/boundary body included).
 
 ## 5. Slag rules
 

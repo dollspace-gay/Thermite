@@ -10,11 +10,15 @@ thesis-refs:
   - thermite-design.md §5.3 (content-addressed per-item cache — an edit to f cannot invalidate g's certificate unless g references f)
   - thermite-design.md §13  (v0.5 — multi-agent Forge sessions)
 crosslink: #20 (the final kernel/roadmap issue; v0.5). builds on #8 (per-item proof cache).
-status-note: ALL REQs NOT-STARTED, blocked on #20. The cache PRIMITIVES this contract
-  rests on (atomic store, miss-on-torn load, per-item locality keys) ALREADY ship under #8;
-  what is NOT-STARTED is the multi-agent SESSION MODEL — the concurrency oracle, the
-  demonstration tests, and (optionally) a `forge session` surface — that turns those
-  primitives into a stated, tested multi-agent guarantee.
+status-note: ALL REQs SHIPPED under #20. The cache PRIMITIVES this contract rests on
+  (atomic store, miss-on-torn load, per-item locality keys) shipped under #8/#49; #20
+  ASSERTED + TESTED the multi-agent SESSION MODEL over them — the concurrency suite
+  `forge/tests/concurrency.rs` (7 tests: N-agent process-level correctness + uncorrupted
+  cache, same-key convergence, distinct-key non-interference, multi-agent locality with the
+  §9 negative control, torn-entry fault injection, concurrent==serial determinism).
+  `cache::store` was CONFIRMED already-atomic (no cache.rs change needed). Per OQ-1 (DECIDED
+  minimal) NO `forge session` command ships and `forge/src/session.rs` is not created —
+  concurrent `forge check` invocations are safe by construction.
 -->
 
 ## Summary
@@ -245,13 +249,13 @@ documentation + the demonstration tests regardless of whether the optional comma
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (atomic cache store) | NOT-STARTED | open issue #20 (v0.5). The PRIMITIVE already ships — `pub fn store in cache.rs` writes a `temp_sibling` then `std::fs::rename`s over `entry_path` (atomic publish), consumed by `check::check_file_with_options`. What is NOT-STARTED is the multi-agent contract over it: no concurrency test asserts the atomicity holds across concurrent `forge` PROCESSES, and there is no `conformance/concurrency/` oracle. The stated guarantee is unverified for the N-agent case until #20's AC-1/AC-2 land. |
-| REQ-2 (torn/corrupt load → MISS) | NOT-STARTED | open issue #20. The PRIMITIVE ships — `pub fn load in cache.rs` returns `None` on unreadable/unparseable/inconsistent entries (`is_internally_consistent in cache.rs`), tested by `cache::tests::corrupt_entry_is_a_miss`. NOT-STARTED: no test covers the *torn/partial-write* shape specifically under concurrency (AC-4), the multi-agent failure mode #20 must demonstrate. |
-| REQ-3 (concurrent same-key convergence) | NOT-STARTED | open issue #20. No test spawns concurrent same-key `cache::store` and asserts convergence to one consistent entry (AC-2). The mechanism exists (`rename` is all-or-nothing over a content-addressed key) but the guarantee is unstated and untested. |
-| REQ-4 (different-key non-interference) | NOT-STARTED | open issue #20. No test spawns concurrent distinct-key stores and asserts disjoint, non-clobbering entries (AC-3, AC-6). The mechanism exists (`entry_path in cache.rs` + per-pid `temp_sibling`) but is undemonstrated for the multi-agent case. |
-| REQ-5 (multi-agent locality — no cross-invalidation) | NOT-STARTED | open issue #20. Per-item locality holds via `cache::cache_key` over `item_subprogram`'s own lowered source (single-item locality is tested by `check::tests::cache_key_is_local_to_the_item`), but the multi-agent framing — edit by agent A leaves agent B's key/HIT untouched, with the §9 contract-reference exception as a negative control — has no AC-5/AC-6 test and no session-level statement. |
-| REQ-6 (session semantics — no central coordinator) | NOT-STARTED | open issue #20. There is no `forge/src/session.rs` (`ls forge/src/session.rs` → not found) and no documented session model in the toolchain. The semantics (concurrent invocations safe; shared cache; no daemon) are stated only here; #20 must land them as tested guarantees (AC-1) and, optionally (OQ-1), a read-only `forge session status` surface. |
-| REQ-7 (determinism under concurrency — concurrent == serial) | NOT-STARTED | open issue #20. `cache::cache_key` is a pure function of its inputs (`cache::tests::cache_key_is_pure`) and the per-item verdict is interleaving-independent, but no test asserts that N concurrent `forge check` runs produce the same oracle-stable cert set as a serial run (AC-7). |
+| REQ-1 (atomic cache store) | SHIPPED | The primitive `pub fn store in cache.rs` writes a `temp_sibling` then `std::fs::rename`s over `entry_path` (atomic publish), consumed by `check::check_file_with_options`. #20 ASSERTS + TESTS the multi-agent contract over it: `concurrency::n_concurrent_agents_produce_correct_uncorrupted_certs` spawns N=8 concurrent `forge check` PROCESSES over a shared `FORGE_CACHE_DIR` and verifies every `<key>.json` parses (no torn entry — `parse_all_entries` panics on a torn file) and zero `.tmp` siblings survive. NO cache.rs change was needed (store was confirmed already-atomic by reading it). |
+| REQ-2 (torn/corrupt load → MISS) | SHIPPED | The primitive `pub fn load in cache.rs` returns `None` on unparseable/inconsistent entries (`is_internally_consistent in cache.rs`). #20 tests the *torn/partial-write* shape under concurrency: `concurrency::torn_entry_degrades_to_a_miss_and_reverifies` truncates every `<key>.json` to a half-written prefix and asserts a subsequent `forge check` re-verifies to the correct L3 (a MISS, `cached:false`), never a crash or wrong verdict; `concurrency::torn_entry_under_concurrent_access_is_safe` proves it under N=8 concurrent agents (AC-4). |
+| REQ-3 (concurrent same-key convergence) | SHIPPED | `concurrency::concurrent_same_item_converges_to_a_consistent_cache` spawns N=8 concurrent `forge check` PROCESSES over the SAME item sharing one cache dir; every agent agrees on the L3 verdict, the concurrent cache key SET equals a serial run's exact set (atomic `rename` — no torn merge), and zero `.tmp` siblings remain (AC-2). |
+| REQ-4 (different-key non-interference) | SHIPPED | `concurrency::concurrent_distinct_items_do_not_interfere` spawns N=8 concurrent PROCESSES over DISTINCT items; afterward every item's entry parses, and re-checking each item is a HIT — so no store clobbered or evicted a different key (AC-3, AC-6). The mechanism is `entry_path in cache.rs` + per-pid `temp_sibling`. |
+| REQ-5 (multi-agent locality — no cross-invalidation) | SHIPPED | `concurrency::editing_a_does_not_move_bs_key` proves (via cache HIT/MISS behavior, which keys on exactly the content address) that editing agent A's body leaves agent B a HIT (B's key did not move) while A is a MISS; `concurrency::editing_a_referenced_dependency_does_move_bs_key` is the §9 negative control — when B references `dep`, editing `dep`'s contract makes B a MISS (correct cross-invalidation, §5.3 exception) (AC-5). |
+| REQ-6 (session semantics — no central coordinator) | SHIPPED | The session model is DEFINED + TESTED as N independent `forge check` invocations over a shared `FORGE_CACHE_DIR` (`check::resolve_cache_dir`) with no daemon: `concurrency::n_concurrent_agents_produce_correct_uncorrupted_certs` demonstrates N=8 concurrent agents are safe by construction (AC-1). Per OQ-1 (DECIDED minimal) NO `forge session` command ships — concurrent invocations are safe without one; the guarantee + tests are the deliverable, so `forge/src/session.rs` is intentionally NOT created. |
+| REQ-7 (determinism under concurrency — concurrent == serial) | SHIPPED | `concurrency::n_concurrent_agents_produce_correct_uncorrupted_certs` asserts every agent's per-item oracle subset equals a single serial run's, the serial oracle cross-checks the EXTERNAL golden (`conformance/sum.cert.json` L3/pure + the `binary_search` L3 oracle, R-CHAR-3), and the concurrent cache key SET equals the serial set — interleaving moves no verdict (AC-7). |
 
 ## Open questions
 

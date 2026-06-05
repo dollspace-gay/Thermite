@@ -41,13 +41,31 @@ This doc is GREENFIELD / FORWARD-LOOKING: no lexer code exists. Every REQ is
   user values). Derived from §4.1 (the mandatory keywords), §4.2 (`spec`), and
   `surface-grammar.md`.
 
-- **REQ-3 (integer literals with `_` separators):** An integer literal is a
-  run of ASCII digits with optional interior `_` separators; `1_000_000` lexes
-  to one integer-literal token whose numeric value is `1000000` (the `_` are
-  removed). A trailing/leading `_` adjacent to the digit run is not part of the
-  literal. No type suffix is lexed (the corpus uses `as u64` casts, never
-  `0u64`). Derived from Appendix A (`1_000_000`) and §4.4 ("All conversions
-  explicit").
+- **REQ-3 (integer literals with `_` separators — value AND verbatim raw):** An
+  integer literal is a run of ASCII digits with optional interior `_`
+  separators. The integer-literal token carries **both** a numeric `value` and
+  the **verbatim raw source slice**:
+  - **value** — the `_` separators are removed, so `1_000_000` has numeric value
+    `1000000`. The value semantics are the v0.1-original behavior and are
+    **UNCHANGED** by this amendment.
+  - **raw** — the exact source substring the token spans, separators included,
+    so `1_000_000` has raw `"1_000_000"`. This is the verbatim text used for
+    Expr-level round-trip / display fidelity (`ast.md` REQ-6).
+
+  The token shape is therefore `TokKind::Int { value: u128, raw: String }` (a
+  struct variant; with two fields a struct variant is clearer than a tuple). A
+  trailing/leading `_` adjacent to the digit run is **not** part of the literal:
+  it is excluded from BOTH the value and the raw (the raw ends at the last
+  digit, matching the existing `last_digit` span end in `lex_int`). No type
+  suffix is lexed (the corpus uses `as u64` casts, never `0u64`). The raw is
+  exactly the span's source slice (`source[span.start .. span.start+span.len]`),
+  keeping `raw` and `span` consistent. Derived from Appendix A (`1_000_000`) and
+  §4.4 ("All conversions explicit").
+
+  This amendment (crosslink #37) is a DELIBERATE design enhancement, not a bug
+  fix: the prior value-only `TokKind::Int(u128)` already MET REQ-3's value
+  contract and verbatim text was already preserved at `Clause.text`; #37 ALSO
+  preserves it on the token (and, downstream, on the Expr node) for round-trip.
 
 - **REQ-4 (`#[slag(...)]` attribute tokenization):** The attribute introducer
   `#[`, the inner `slag`/`reason`/`owner`/`review` identifiers, `=`, the
@@ -91,8 +109,17 @@ This doc is GREENFIELD / FORWARD-LOOKING: no lexer code exists. Every REQ is
   `conformance/binary_search.th` produces a token stream with zero error
   diagnostics; the inline comments and all whitespace are absent from the
   stream. (REQ-1, REQ-5)
-- **AC-2 (`1_000_000` value):** The integer literal in `sum.th` lexes to a
-  single integer-literal token with numeric value `1000000`. (REQ-3)
+- **AC-2 (`1_000_000` value, UNCHANGED):** The integer literal in `sum.th`
+  (`req xs.len() <= 1_000_000`, Appendix A) lexes to a single integer-literal
+  token whose **value** is `1000000` (the `_` removed). This value behavior is
+  the original, UNCHANGED contract; the existing lexer test
+  `int_literal_underscores_strip_to_value` continues to assert it. (REQ-3)
+- **AC-2b (`1_000_000` raw preserved — NEW, #37):** The same `sum.th` integer
+  token ALSO carries `raw == "1_000_000"` — the exact source substring including
+  the `_` separators, equal to the span's source slice. A literal with no
+  separators (`0`) has `raw == "0"`. A trailing-`_` form (`1_`) lexes to value
+  `1` and raw `"1"` (the trailing `_` is in neither value nor raw, ending at the
+  last digit). (REQ-3)
 - **AC-3 (maximal munch):** In `binary_search.th`, `<=`, `==`, `->`, `=>`,
   `&&`, `::` (`u32::MAX` in `sum.th`), and `..` (`&xs[..i]` in `sum.th`,
   `[head, ..t]` in `sum.th`) each lex as exactly one token. (REQ-6)
@@ -113,12 +140,22 @@ A single-pass, hand-written scanner over the source `&str` producing
 `Vec<Token>` (or an iterator), each `Token { kind, span }`. No significant
 whitespace means the scanner skips `[ \t\r\n]+` and `//`-to-EOL between tokens
 and emits nothing for them (REQ-5). Maximal munch (REQ-6) is implemented by
-checking the longest operator prefix first at each position. Integer literals
-strip `_` while accumulating the value (REQ-3). The scanner is the lexical layer
-of `surface-grammar.md`; its keyword set is exactly that grammar's keyword
-terminals (REQ-2). It is registry-free — it does not know SpecTherm combinators
-exist; `forall_in`, `sorted`, `len` are all plain identifiers (`goal.md`: the
-parser/frontend is REGISTRY-FREE).
+checking the longest operator prefix first at each position.
+
+Integer literals (REQ-3) accumulate the numeric `value` while skipping `_`
+(`lex_int` in `lexer.rs` already does this via `value.saturating_mul(10)...`),
+and additionally capture the **verbatim raw** as the source slice from the start
+to `last_digit` — i.e. the same byte range the token's `Span::new(i, last_digit
+- i)` already records. The raw and the span are by construction the same
+substring, so `raw` is derivable from `source[span]`; storing it on the token
+(`TokKind::Int { value, raw }`) lets the parser build the Expr node without
+re-borrowing the source. The "trailing/leading `_` not part of the literal" rule
+is preserved by ending both value and raw at `last_digit`.
+
+The scanner is the lexical layer of `surface-grammar.md`; its keyword set is
+exactly that grammar's keyword terminals (REQ-2). It is registry-free — it does
+not know SpecTherm combinators exist; `forall_in`, `sorted`, `len` are all plain
+identifiers (`goal.md`: the parser/frontend is REGISTRY-FREE).
 
 Spans (REQ-7) feed both diagnostics and `parser.md`'s per-item resync, which
 seeks the next top-level-item-boundary token (`fn`/`spec`/`#[`) after an error.
@@ -130,8 +167,11 @@ Errors are `SyntaxError` values (REQ-8), the crate's own error type
 
 `cargo test -p thermite-syntax` over lexer unit fixtures derived from the corpus:
 token-stream snapshots for `sum.th` / `binary_search.th` (AC-1, AC-3, AC-4), the
-`1_000_000` value assertion (AC-2), a `#[slag]` fixture (AC-5, `conformance/slag`),
-and a stray-character negative fixture (AC-6). Expected token streams are
+`1_000_000` value assertion (AC-2, existing
+`int_literal_underscores_strip_to_value`), a NEW raw-preservation assertion that
+the `1_000_000` token's `raw == "1_000_000"` and `0`'s `raw == "0"` (AC-2b), a
+`#[slag]` fixture (AC-5, `conformance/slag`), and a stray-character negative
+fixture (AC-6). Expected token streams (including the raw string) are
 hand-derived from the grammar / corpus, never copied from the lexer's own output
 (R-CHAR-3).
 
@@ -141,7 +181,8 @@ hand-derived from the grammar / corpus, never copied from the lexer's own output
 |---|---|---|
 | REQ-1 (token set) | SHIPPED | `enum TokKind` in `lexer.rs` enumerates exactly keywords/ident/int/bool/str/`#[`/punct/eof; consumed by `parser.rs`. |
 | REQ-2 (keywords closed set) | SHIPPED | `keyword_kind` in `lexer.rs` maps the 17 reserved words; effect/slag names fall through to `Ident` (test `int_literal`/parse facts). |
-| REQ-3 (int literals with `_`) | SHIPPED | `lex_int` strips `_`; test `int_literal_underscores_strip_to_value` asserts `1_000_000` → `Int(1000000)`. |
+| REQ-3 — VALUE (int literals with `_` stripped) | SHIPPED | `lex_int` in `lexer.rs` strips `_` into `value`; `TokKind::Int` carries the numeric value; test `int_literal_underscores_strip_to_value` asserts `1_000_000` → value `1000000`. Consumer: `parse_primary`/pattern-literal in `parser.rs` (`TokKind::Int(v) => Expr::IntLit(v)`). |
+| REQ-3 — RAW (verbatim source slice on the token, #37) | NOT-STARTED | crosslink #37. The token is still value-only `TokKind::Int(u128)` (`Int(value)` in `lexer.rs`); `lex_int` discards the raw `source[i..last_digit]` slice. Needs reshape to `TokKind::Int { value, raw }` so `1_000_000` lexes to value `1000000` AND raw `"1_000_000"` (AC-2b). |
 | REQ-4 (`#[slag]` tokenization) | SHIPPED | `HashBracket` token + `lex_string`; consumed by `parse_slag` in `parser.rs`. |
 | REQ-5 (comments + whitespace insignificant) | SHIPPED | `skip_trivia` in `lexer.rs` drops `[ \t\r\n]+` and `//`-EOL; corpus parses clean (0 errors). |
 | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators first; corpus `<=`/`==`/`->`/`=>`/`::`/`..` lex as single tokens (parse facts pass). |

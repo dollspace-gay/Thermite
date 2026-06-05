@@ -2,12 +2,11 @@
   "uuid": "22e5583a-0a7e-43d2-84b4-2c6a36dadb94",
   "display_id": 53,
   "title": "check::run_verus leaks verus's compiled-binary temp sibling (unbounded disk under sustained verification)",
-  "status": "closed",
+  "status": "open",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-05T11:06:28.634761813Z",
-  "updated_at": "2026-06-05T17:50:20.539084400Z",
-  "closed_at": "2026-06-05T17:50:20.539084400Z",
+  "updated_at": "2026-06-05T17:51:46.878613515Z",
   "labels": [
     "bug"
   ]

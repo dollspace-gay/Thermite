@@ -40,7 +40,7 @@
 //! | REQ-6 (graduate the two bools to solver-confirmed) | SHIPPED | a `Detected` sets the matching `contract_quality` bool `true` on the reject cert via `Certificate::rejected_vacuity`; a `Clean` proceeds to the L3 path whose `graduate_triage_clean` keeps both bools live-`false` (now solver-confirmed). |
 //! | REQ-7 (determinism + one query/check) | SHIPPED | `run_harness` passes the pinned `seed` + `rlimit` to verus (`check::DEFAULT_SOLVER_SEED`/`DEFAULT_RLIMIT`); the verdict is deterministic for a fixed toolchain + seed (R-CODE-5). At most two verus queries per `fn` (vacuity then tautology, short-circuiting on the first detection) — the documented §11 accepted cost. |
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use thermite_syntax::{FnItem, Item, Program};
@@ -457,9 +457,21 @@ fn lowering_shape_error(what: &str) -> ForgeError {
 // ---------------------------------------------------------------------------
 
 /// Run one harness through verus and classify the outcome (REQ-3/REQ-7). Writes
-/// the harness to a temp file with a valid crate-name stem, spawns verus with the
-/// pinned `seed` + `rlimit` + `--output-json`, parses the `verification-results`
-/// summary, and maps it via [`interpret_summary`]. Cleans up the temp file.
+/// the harness to a `<stem>.rs` file with a valid crate-name stem INSIDE a per-run
+/// scratch DIRECTORY, spawns verus there with the pinned `seed` + `rlimit` +
+/// `--output-json`, parses the `verification-results` summary, and maps it via
+/// [`interpret_summary`].
+///
+/// Cleanup is WHOLESALE (blocker #53): verus compiles the harness `.rs` into a
+/// ~4.3M binary SIBLING in its working directory, and a SUCCEEDING harness query
+/// (a tautology fn / an unsat-`req` fn — the rejected cases the #13 gate runs on
+/// every fn) leaves that binary orphaned. So the run gets its OWN scratch dir
+/// (source + compiled binary + any artifact all land inside, via `current_dir`)
+/// and the [`crate::check::ScratchDir`] Drop guard removes it WHOLESALE on EVERY
+/// exit path — success, a clean FAILED, OR a `?` early-return on an environment/IO
+/// error. Reuses `check.rs`'s #53 guard (DRY — the identical fix). Cleanup is
+/// best-effort (`Drop` does a `let _ = remove_dir_all`), never a panic (R-CODE-2):
+/// a removal failure must not mask the real verus result.
 ///
 /// R-CODE-4: every environment / internal failure surfaces a `ForgeError` and is
 /// NEVER read as either "tautology" or "clean":
@@ -481,26 +493,43 @@ fn run_harness(
     seed: u64,
     rlimit: f64,
 ) -> Result<HarnessOutcome, ForgeError> {
+    // The `.rs` still needs a valid crate-name stem (the gotcha — verus derives the
+    // crate name from the file stem and rejects a `.`); `forge_vacsolver_<label>_check`
+    // is alphanumeric+`_` only, so verus's crate-name derivation succeeds.
     let stem = format!("forge_vacsolver_{label}_check");
-    let tmp = unique_temp_path(&stem);
+    let scratch = crate::check::ScratchDir {
+        path: crate::check::unique_scratch_dir(&stem),
+    };
+    std::fs::create_dir_all(&scratch.path).map_err(|e| ForgeError::Io {
+        path: scratch.path.display().to_string(),
+        source: e,
+    })?;
+    let tmp = scratch.path.join(format!("{stem}.rs"));
     std::fs::write(&tmp, harness).map_err(|e| ForgeError::Io {
         path: tmp.display().to_string(),
         source: e,
     })?;
 
-    let result = invoke_verus_on_harness(&tmp, seed, rlimit);
+    // The `?` here still cleans up: `scratch` is dropped on the early-return, taking
+    // the source + verus's compiled-binary sibling + any artifact wholesale (#53).
+    let result = invoke_verus_on_harness(&scratch.path, &tmp, seed, rlimit);
 
-    // Best-effort cleanup; never mask the real result on a cleanup failure.
-    let _ = std::fs::remove_file(&tmp);
+    // `scratch` also drops at the end of this scope on the success/clean path.
+    drop(scratch);
 
     result
 }
 
-/// Spawn verus on a harness temp file and classify (REQ-3/REQ-7). Split from
-/// [`run_harness`] so the temp file is always cleaned up. Mirrors
+/// Spawn verus on a harness `.rs` file inside the per-run scratch directory and
+/// classify (REQ-3/REQ-7). Split from [`run_harness`] so the scratch dir is always
+/// cleaned up regardless of outcome. `cwd` is the per-run scratch directory
+/// (blocker #53): verus's working-directory artifacts — most notably the ~4.3M
+/// compiled-binary sibling a SUCCEEDING harness leaves — land THERE, so the
+/// caller's [`crate::check::ScratchDir`] guard removes them wholesale. Mirrors
 /// `check::invoke_verus`'s spawn + exit-status discipline (R-CODE-4) for the
 /// single-query vacuity harness.
 fn invoke_verus_on_harness(
+    cwd: &Path,
     tmp: &Path,
     seed: u64,
     rlimit: f64,
@@ -512,7 +541,7 @@ fn invoke_verus_on_harness(
         .arg("--smt-option")
         .arg(format!("smt.random_seed={seed}"))
         .arg(tmp)
-        .current_dir(std::env::temp_dir())
+        .current_dir(cwd)
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -588,18 +617,6 @@ fn parse_harness_summary(stdout: &str) -> Option<HarnessSummary> {
 /// unbounded solver output). Mirrors `check::first_lines`.
 fn first_lines(text: &str, n: usize) -> String {
     text.lines().take(n).collect::<Vec<_>>().join("\n")
-}
-
-/// Build a unique temp path with the given valid stem and a `.rs` extension
-/// (process id + a monotonic counter — NOT wall-clock, R-CODE-5). Mirrors
-/// `check::unique_temp_path`; the scratch path is not a certificate input, so its
-/// per-run variation does not violate determinism.
-fn unique_temp_path(stem: &str) -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-    let pid = std::process::id();
-    std::env::temp_dir().join(format!("{stem}_{pid}_{n}.rs"))
 }
 
 #[cfg(test)]

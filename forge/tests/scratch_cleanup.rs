@@ -160,3 +160,49 @@ fn error_path_leaves_no_scratch_orphan() {
         "a reported verification failure exits with the verification-failure code"
     );
 }
+
+// ---- #53 (reopened): the #13 vacuity-solver harness path leaves no orphan -----
+
+#[test]
+fn vacuity_harness_success_leaves_no_scratch_orphan() {
+    if !verus_present() {
+        eprintln!(
+            "SKIP: verus not available — blocker #53 scratch-cleanup (vacuity-solver harness \
+             success path) not run."
+        );
+        return;
+    }
+    // The IDENTICAL #53 leak lived in `vacuity_solver.rs`'s verus invocation: the
+    // #13 gate runs a tautology + a vacuity harness on every fn BEFORE L3, each its
+    // own verus query. When a harness SUCCEEDS (a tautology fn / an unsat-`req` fn —
+    // the REJECTED cases) verus compiles + leaves the ~4.3M binary sibling orphaned
+    // in the working dir. A TAUTOLOGY fixture (the `conformance/solver-vacuity`
+    // oracle's `semantic_tautology`: `ens result >= 0` holds for ANY u32) makes the
+    // tautology harness PROVE → the leak-prone success path. The scratch dir + that
+    // compiled binary must STILL be removed wholesale.
+    //
+    // The fixture parses/validates/effect-checks/lowers cleanly and PASSES #6's free
+    // structural triage, so the #13 solver gate runs its harness queries (the leak
+    // surface). It is written OUTSIDE the per-run isolated TMPDIR the leak check
+    // inspects (its own `.th` is not a `forge_*` scratch entry).
+    let fixture = std::env::temp_dir().join(format!("th53_taut_{}.th", std::process::id()));
+    std::fs::write(
+        &fixture,
+        "fn f(x: u32) -> u32\n  req x > 0\n  ens result >= 0\n  fx  pure\n{\n  x\n}\n",
+    )
+    .expect("write tautology fixture");
+
+    let code = assert_no_scratch_leak(
+        &fixture,
+        "tautology fn (vacuity-solver harness SUCCEEDS — the leak case)",
+    );
+
+    let _ = std::fs::remove_file(&fixture);
+    // A #13 SemanticTautology reject is a non-certified cert (Level::L0), so the run
+    // exits with the verification-failure code — not an environment error.
+    assert_eq!(
+        code,
+        Some(1),
+        "a SemanticTautology reject is a non-certified (failure-code) verdict, not an env error"
+    );
+}

@@ -941,8 +941,8 @@ fn crate_stem(path: &Path) -> String {
 /// `remove_dir_all(&crate_dir)` — so the kani path does NOT share this leak. The
 /// shared cause's class ("an external-tool invocation must run in a scratch dir
 /// removed wholesale, even on error") is now uniform across both rungs.
-struct ScratchDir {
-    path: PathBuf,
+pub(crate) struct ScratchDir {
+    pub(crate) path: PathBuf,
 }
 
 impl Drop for ScratchDir {
@@ -1049,7 +1049,7 @@ fn invoke_verus(cwd: &Path, tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusR
 /// §check.md REQ-2 "determinism is in the INPUT, not the path"). The directory
 /// (not a bare `.rs` file) is what gets removed wholesale, taking the `.rs`
 /// source AND verus's compiled-binary sibling with it.
-fn unique_scratch_dir(stem: &str) -> PathBuf {
+pub(crate) fn unique_scratch_dir(stem: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);

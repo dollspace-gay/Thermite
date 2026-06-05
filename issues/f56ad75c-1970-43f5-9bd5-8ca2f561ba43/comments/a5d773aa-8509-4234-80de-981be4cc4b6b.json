@@ -1,0 +1,10 @@
+{
+  "uuid": "a5d773aa-8509-4234-80de-981be4cc4b6b",
+  "issue_uuid": "f56ad75c-1970-43f5-9bd5-8ca2f561ba43",
+  "author": "Yffe",
+  "content": "Implement L2 Kani-backed bounded checking. thermite-lower/src/l2.rs: lower_l2 emits a #[kani::proof] #[kani::unwind(K)] harness per fn, REUSING the L1 executable lowering (spec_sum recursion, combinator loops, expr/stmt forms) for body+spec fns since Kani checks executable Rust. Type-driven bound inference (REQ-2 headline): infer_symbolic_input keys on the Param's Type — &[T]→symbolic [T;N] array + len<=N, scalar→kani::any() — SHAPE-keyed never name-keyed. SLICE_BOUND N=4. unwind_bound SHAPE-keyed on loop kind: while→N+1 (sum=5), unconditional loop→N+2 (binary_search=6). forge/src/kani.rs: run_kani writes a temp cargo crate, spawns real cargo-kani --output-format terse, checks exit status, parses SUCCESSFUL→L2 / FAILED→counterexample / no-summary→KaniOutput err; ENOENT→KaniAbsent. forge check --level l2 runs check_l2_file; default stays L3 (no auto-degrade, #10). Verified vs real cargo kani 0.67.0.",
+  "created_at": "2026-06-05T04:08:07.352735282Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAcyqKOuJjmuzY1GfPe7P/nGiSMt6gGpkon7I1s7bfOodbWvI5vPfLC/Kwwjkc5XKXtbQblCxjLLQx4O+gMr+CCw=="
+}

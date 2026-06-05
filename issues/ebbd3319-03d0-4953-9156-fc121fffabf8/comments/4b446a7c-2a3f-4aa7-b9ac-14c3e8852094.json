@@ -1,0 +1,10 @@
+{
+  "uuid": "4b446a7c-2a3f-4aa7-b9ac-14c3e8852094",
+  "issue_uuid": "ebbd3319-03d0-4953-9156-fc121fffabf8",
+  "author": "Yffe",
+  "content": "First increment (REQ-5): port effects::subsumes to a Verus-verified u8-bitset core in a new thermite-verified crate. Empirical b-vs-c resolution: mechanism (b) delegation/linking is infeasible for v1 (install vstd/builtin inherit workspace.lints, cfg(verus_keep_ghost), renamed verus_builtin crate, ensures-clause exec body is verus-driver-only) -> land mechanism (c): verus!{} proof behind cfg(verus_keep_ghost) + plain-Rust mirror (subsumes_masks/spec_subsumes_mask) that effects::subsumes delegates to, anchored by an exhaustive 65536-pair impl==spec equivalence test. Gauntlet step tests/verus_verify.rs runs real verus --no-cheating --crate-type=lib -> 8 verified, 0 errors; broken body -> 7 verified 1 errors (non-vacuous). 14 effects tests + L3 corpus preserved. Epic #60 stays open for the remaining 7 Tier-1 targets (REQ-2).",
+  "created_at": "2026-06-05T21:29:11.938182951Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA0uj2XAadO+u498jWWWpuG8QwBHO8A2pKpZF5DIXmS0buFAABSmfKqZH6H7COqF1/qWlxE2gR+kj3YJXmSkmmCg=="
+}

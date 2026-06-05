@@ -33,6 +33,13 @@
 //! | REQ-5 (level determination, v0.1) | SHIPPED | `level_from_summary`: `Level::L3` iff `success && errors == 0`, else the run is a reported non-L3 failure. |
 //! | REQ-6 (verus-absent = environment error) | SHIPPED | `run_verus` maps spawn `ErrorKind::NotFound` to `ForgeError::VerusAbsent`. |
 //! | REQ-7 (determinism) | SHIPPED | pinned seed (`DEFAULT_SOLVER_SEED` / lockfile) passed to verus; `solver_time_ms` is the only wall-clock field and is excluded from the oracle (`manifest::Certificate::oracle_eq`). |
+//!
+//! ## #6 gate (structural vacuity triage + `#[slag]`, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | vacuity-triage REQ-6 (gate BEFORE L3) | SHIPPED | `gate_fn` runs `vacuity::triage` on each `Item::Fn` BEFORE `thermite_lower::lower` + `run_verus`; a `VacuityVerdict::Rejected` short-circuits to a non-certified `Certificate::rejected` (no lowering, no verus); a pass calls `Certificate::graduate_triage_clean` (the two §7.1 `contract_quality` bools go live-`false`). |
+//! | slag REQ-2/REQ-5 (L1 short-circuit) | SHIPPED | `gate_fn` for a `slag.is_some()` item runs `slag::validate` (invalid → `Certificate::rejected`), then `vacuity::triage` (a/b/c — slag exempts (d) inside `triage`), then `Certificate::slag_l1` (`Level::L1`, `slag: true`, `slag_meta`) WITHOUT invoking verus. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -41,7 +48,7 @@ use std::time::Instant;
 use thermite_syntax::{Item, Program};
 
 use crate::cli::ForgeError;
-use crate::manifest::{effects_of, Certificate, Level, ObligationResult};
+use crate::manifest::{effects_of, Certificate, Level, ObligationResult, RejectReason};
 
 /// The pinned default solver seed (§5.3) used when no project lockfile supplies
 /// one. Determinism (R-CODE-5) lives in the INPUT (this fixed seed + the
@@ -102,12 +109,137 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
 
     let mut certs = Vec::with_capacity(parsed.program.items.len());
     for item in &parsed.program.items {
+        // #6 gate: structural vacuity triage + `#[slag]` short-circuit run BEFORE
+        // the L3 proof ("a function does not certify until its contract
+        // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),
+        // so the gate applies only to `Item::Fn` — a `spec fn` proceeds to the
+        // normal well-formedness path unchanged.
+        if let Item::Fn(f) = item {
+            match gate_fn(f) {
+                // A valid `#[slag]` item certifies L1 by fiat (no verus run,
+                // `.design/forge/slag.md` REQ-2): the L1 runtime-check codegen is
+                // thermite-lower's `l1.rs` job at build time, not here.
+                GateOutcome::SlagL1(cert) => {
+                    certs.push(cert);
+                    continue;
+                }
+                // A triage / slag-validation reject: the item does NOT certify
+                // (verdict-in-cert, not a `ForgeError`; vacuity-triage.md REQ-5
+                // OQ-1). No lowering, no verus.
+                GateOutcome::Rejected(cert) => {
+                    certs.push(cert);
+                    continue;
+                }
+                // A non-slag item that passed all four triage checks proceeds to
+                // the normal L3 path; the cert graduates the two §7.1
+                // `contract_quality` bools to live-`false` (REQ-6).
+                GateOutcome::ProceedToL3 => {}
+            }
+        }
+
         let sub = item_subprogram(item, &spec_items);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
         let verus = run_verus(&sub, &lowered, seed)?;
-        certs.push(assemble_certificate(item, &verus));
+        let cert = assemble_certificate(item, &verus);
+        // A non-slag `fn` that reached the L3 path passed triage — graduate the
+        // §7.1 `contract_quality` bools to asserted live-`false` (REQ-6 / AC-7). A
+        // `spec fn` carries no contract, so triage does not apply and the bools
+        // stay forward-declared.
+        let cert = if matches!(item, Item::Fn(_)) {
+            cert.graduate_triage_clean()
+        } else {
+            cert
+        };
+        certs.push(cert);
     }
     Ok(certs)
+}
+
+/// The result of the #6 contract-certification gate for one `fn`
+/// (`.design/forge/check.md`; `vacuity-triage.md` REQ-6; `slag.md` REQ-5).
+enum GateOutcome {
+    /// A valid `#[slag]` item: certify L1 by fiat (no verus run) — the cert.
+    SlagL1(Certificate),
+    /// A triage / slag-validation reject: the item does not certify — the cert.
+    Rejected(Certificate),
+    /// A non-slag item that passed all four triage checks: run the normal L3 path.
+    ProceedToL3,
+}
+
+/// Run the #6 gate for one `fn` (slag-validate → triage → L1-vs-L3 fork). The two
+/// components COMPOSE per `.design/forge/slag.md`:
+///
+/// ```text
+/// #[slag]?  ──no──▶ triage(a,b,c,d)  ──reject──▶ Rejected
+///   │ yes              │ pass
+///   │                  ▼
+///   │               ProceedToL3 (graduate contract_quality)
+///   ▼
+/// slag::validate  ──Err──▶ Rejected (contract-cert failure, no L1/L3)
+///   │ Ok(meta)
+///   ▼
+/// triage(a,b,c)   ──reject──▶ Rejected (slag exempts proving, not stating, §8)
+///   │ pass (d skipped because slag present)
+///   ▼
+/// SlagL1 (level L1, slag:true, slag_meta)
+/// ```
+fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
+    let effects = effects_of(&f.contract.fx);
+
+    if let Some(slag_attr) = f.slag.as_ref() {
+        // Slag path: validate the mandatory fields FIRST (it gates whether rule
+        // (d) is justified). Invalid fields → reject (the item does not certify).
+        let meta = match crate::slag::validate(slag_attr) {
+            Ok(meta) => meta,
+            Err(err) => {
+                return GateOutcome::Rejected(Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    true,
+                    RejectReason {
+                        cause: err.tag().to_string(),
+                        detail: err.detail(),
+                    },
+                ));
+            }
+        };
+        // Valid fields: triage STILL applies (a)/(b)/(c) — slag exempts only (d)
+        // (slag.md REQ-3, §8). `vacuity::triage` reads `f.slag` itself and skips
+        // (d) because it is present.
+        match crate::vacuity::triage(f) {
+            crate::vacuity::VacuityVerdict::Rejected { cause } => {
+                GateOutcome::Rejected(Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    true,
+                    RejectReason {
+                        cause: cause.tag().to_string(),
+                        detail: cause.detail(),
+                    },
+                ))
+            }
+            // Valid + triage clean → certify L1 by fiat (no verus).
+            crate::vacuity::VacuityVerdict::Passed => {
+                GateOutcome::SlagL1(Certificate::slag_l1(f.name.clone(), effects, meta))
+            }
+        }
+    } else {
+        // Non-slag path: run all four triage checks.
+        match crate::vacuity::triage(f) {
+            crate::vacuity::VacuityVerdict::Rejected { cause } => {
+                GateOutcome::Rejected(Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    false,
+                    RejectReason {
+                        cause: cause.tag().to_string(),
+                        detail: cause.detail(),
+                    },
+                ))
+            }
+            crate::vacuity::VacuityVerdict::Passed => GateOutcome::ProceedToL3,
+        }
+    }
 }
 
 /// Build the per-item sub-`Program` that isolates `item`'s verification (§5.3).

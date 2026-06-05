@@ -20,11 +20,18 @@
 //! |---|---|---|
 //! | REQ-1 (stable schema, Appendix A) | SHIPPED | `struct Certificate { item, level, solver_time_ms, contract_quality, effects, slag, obligations, suggested_move }` mirrors Appendix A field order; consumed by `check::check_file` in `check.rs`. |
 //! | REQ-2 (fields #5 produces now) | SHIPPED | `Certificate::new` sets `item`/`level`/`effects`/`slag`/`obligations` from real pipeline data; `effects_of` maps `EffectRow` to the `["pure"]` row; called by `check::assemble_certificate`. |
-//! | REQ-3 (forward-declared fields) | SHIPPED | `ContractQuality::forward_declared` returns honest non-asserted #5 values (`tautology=false`, `vacuous_precondition=false`, `mutants_killed="0/0"`, `survivor=None`); `oracle_subset` excludes them. |
+//! | REQ-3 (forward-declared fields) | SHIPPED | `ContractQuality::forward_declared` returns honest non-asserted #5 values (`tautology=false`, `vacuous_precondition=false`, `mutants_killed="0/0"`, `survivor=None`); `oracle_subset` excludes them. #6 graduates the two §7.1 bools to LIVE `false` via `Certificate::graduate_triage_clean`, consumed by `check::check_file` on a triage-passing item; `mutants_killed`/`survivor` stay #12-forward-declared. |
 //! | REQ-4 (`suggested_move` reserved) | SHIPPED | `Certificate::new` sets `suggested_move: None`; `SuggestedMove` is the reserved (currently un-constructed in production) slot type, serialized as `null`/omitted. |
 //! | REQ-5 (per-obligation results) | SHIPPED | `struct ObligationResult { name, status, location, diagnostic }` + `enum ObligationStatus`; the `obligations` field; consumed by `check::assemble_certificate` + `cli::render_human`. |
 //! | REQ-6 (`solver_time_ms` excluded) | SHIPPED | `solver_time_ms: u64` present (Appendix A); `Certificate::oracle_subset` omits it (and `contract_quality`), and `cli::render_human` labels it non-deterministic. |
 //! | REQ-7 (serde_json serialization) | SHIPPED | `#[derive(Serialize, Deserialize)]`; `Level` serializes to `"L0".."L3"`; `cli::run_check` serializes via `serde_json::to_string_pretty`; deterministic field order from struct declaration order. |
+//!
+//! ## #6 additive schema (slag-triage, this iteration)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `SlagMeta` (cert metadata) | SHIPPED | `struct SlagMeta { reason, owner, review }`; `Certificate.slag_meta: Option<SlagMeta>` (additive, `skip_serializing_if`); produced by `slag::validate`, set by `Certificate::slag_l1`, consumed by `check::check_file` for a valid `#[slag]` item (`slag.md` REQ-4, OQ-1 ratified). |
+//! | `RejectReason` (verdict-in-cert) | SHIPPED | `struct RejectReason { cause, detail }`; `Certificate.reject: Option<RejectReason>` (additive); a triage / slag reject is `Certificate::rejected` (`Level::L0` + cause), consumed by `check::check_file` + `cli::run_check` (exit non-zero) (`vacuity-triage.md` REQ-5, OQ-1: verdict-in-cert NOT a `ForgeError`). |
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
@@ -152,6 +159,41 @@ pub struct SuggestedMove {
     pub detail: String,
 }
 
+/// The validated `#[slag]` metadata carried into a certificate (§8;
+/// `.design/forge/slag.md` REQ-4). Produced by `slag::validate` once all three
+/// mandatory fields are confirmed present + non-empty; recorded on the cert so a
+/// reviewer can audit the fiat-trusted block (`slag: true` is the inventory flag,
+/// these are the justification).
+///
+/// ADDITIVE schema field (`slag.md` OQ-1, ratified): Appendix A's certificate has
+/// `slag: bool` only — `slag_meta` is a faithful superset, serialized only when
+/// present (`#[serde(skip_serializing_if)]`), so the golden `sum.cert.json`
+/// (which omits it) still deserializes (R-SPEC-2 — no frozen field renamed).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlagMeta {
+    /// Why the body is fiat-trusted (non-empty after trim — `slag.rs` REQ-1).
+    pub reason: String,
+    /// The accountable owner (non-empty after trim).
+    pub owner: String,
+    /// The review status / requirement (non-empty after trim).
+    pub review: String,
+}
+
+/// The structured reason a certificate is NOT certified (`.design/forge/vacuity-triage.md`
+/// REQ-5; `slag.md` REQ-5). A triage / slag-validation failure is a CONTRACT-
+/// certification failure surfaced INSIDE the certificate (§7 "a function does not
+/// certify until its contract certifies"), not a `ForgeError` — the cert is a
+/// valid document describing WHY the item did not certify. `check.rs` records
+/// this on a non-certified (`Level::L0`) cert and exits non-zero.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RejectReason {
+    /// A short machine-readable cause tag (the §7.1 verdict variant name, e.g.
+    /// `"EnsIsTrivial"`, or a slag cause `"SlagFieldMissing"`).
+    pub cause: String,
+    /// A human-readable detail naming the offending clause / field.
+    pub detail: String,
+}
+
 /// The certificate `forge check` emits for one item (`thermite-design.md` §5.1,
 /// Appendix A). Field declaration order is the deterministic serialization order
 /// (REQ-7) and mirrors Appendix A: `item`, `level`, `solver_time_ms`,
@@ -174,8 +216,20 @@ pub struct Certificate {
     pub contract_quality: ContractQuality,
     /// The item's effect row (REQ-2: `["pure"]` for the corpus).
     pub effects: Vec<String>,
-    /// Whether the item is `#[slag]` — always `false` in #5 (slag is #6/§8).
+    /// Whether the item is `#[slag]` — `true` for a valid `#[slag]` item (#6/§8),
+    /// `false` otherwise. Set by `check.rs` after `slag::validate` succeeds.
     pub slag: bool,
+    /// The validated `#[slag]` metadata (#6 additive field; `slag.md` REQ-4).
+    /// `Some` only on a valid slag item; `#[serde(default)]` + skip-if-none so
+    /// the frozen golden cert (which omits it) still deserializes (R-SPEC-2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slag_meta: Option<SlagMeta>,
+    /// The structured reason this item did NOT certify (#6 additive field;
+    /// vacuity-triage.md REQ-5 / slag.md REQ-5). `Some` only on a triage / slag
+    /// reject; `#[serde(default)]` + skip-if-none so a clean golden cert
+    /// deserializes unchanged (R-SPEC-2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reject: Option<RejectReason>,
     /// Per-obligation results parsed from verus (REQ-5; #5 additive field).
     /// `#[serde(default)]` so a golden cert that does not enumerate the
     /// per-obligation array (the golden asserts only the item-level summary,
@@ -206,7 +260,75 @@ impl Certificate {
             contract_quality: ContractQuality::forward_declared(),
             effects,
             slag: false,
+            slag_meta: None,
+            reject: None,
             obligations,
+            suggested_move: None,
+        }
+    }
+
+    /// Graduate the two §7.1 structural-triage `contract_quality` bools to their
+    /// #6-LIVE `false` values on an item that PASSED triage
+    /// (`.design/forge/vacuity-triage.md` REQ-6 / AC-7). The syntactic triage has
+    /// confirmed the contract is not a syntactic tautology and its precondition is
+    /// not syntactically vacuous, so these are ASSERTED `false` (no longer
+    /// forward-declared placeholders). The SOLVER-derived truth of these fields
+    /// (a genuine non-syntactic tautology / unsat precondition) stays
+    /// forward-declared for #13; `mutants_killed`/`survivor` stay #12.
+    pub fn graduate_triage_clean(mut self) -> Self {
+        self.contract_quality.tautology = false;
+        self.contract_quality.vacuous_precondition = false;
+        self
+    }
+
+    /// Build a valid-`#[slag]` certificate (`.design/forge/slag.md` REQ-2/REQ-4):
+    /// `Level::L1` (contract runtime-enforced; body fiat-trusted), `slag: true`,
+    /// the validated metadata, and a single discharged obligation recording the
+    /// proof-exempt-by-fiat fact (NOT a verus obligation — no proof was run). The
+    /// triage bools graduate to live-`false` (a slag item still passes (a)/(b)/(c)
+    /// triage before this is built).
+    pub fn slag_l1(item: impl Into<String>, effects: Vec<String>, meta: SlagMeta) -> Self {
+        Certificate {
+            item: item.into(),
+            level: Level::L1,
+            solver_time_ms: 0,
+            contract_quality: ContractQuality::forward_declared(),
+            effects,
+            slag: true,
+            slag_meta: Some(meta),
+            reject: None,
+            obligations: vec![ObligationResult::discharged(
+                "contract enforced at L1 (slag); proof exempt by fiat",
+            )],
+            suggested_move: None,
+        }
+        .graduate_triage_clean()
+    }
+
+    /// Build a NON-certified certificate for a triage / slag-validation reject
+    /// (`.design/forge/vacuity-triage.md` REQ-5 / `slag.md` REQ-5). The item did
+    /// not certify (`Level::L0`); the cert is a valid document carrying the
+    /// structured `reject` cause + a single failed obligation naming it. `slag`
+    /// records whether the rejected item carried a `#[slag]` attribute (its
+    /// metadata is NOT carried — the item did not certify).
+    pub fn rejected(
+        item: impl Into<String>,
+        effects: Vec<String>,
+        slag: bool,
+        reason: RejectReason,
+    ) -> Self {
+        let obligation =
+            ObligationResult::failed(reason.cause.clone(), None, Some(reason.detail.clone()));
+        Certificate {
+            item: item.into(),
+            level: Level::L0,
+            solver_time_ms: 0,
+            contract_quality: ContractQuality::forward_declared(),
+            effects,
+            slag,
+            slag_meta: None,
+            reject: Some(reason),
+            obligations: vec![obligation],
             suggested_move: None,
         }
     }
@@ -392,6 +514,87 @@ mod tests {
         let a = serialize(&cert);
         let b = serialize(&cert);
         assert_eq!(a, b);
+    }
+
+    // #6 AC: the additive `slag_meta`/`reject` fields are ABSENT on a plain #5
+    // cert and on the golden — so the golden `sum.cert.json` still deserializes
+    // (R-SPEC-2). A None `slag_meta`/`reject` must not serialize.
+    #[test]
+    fn slag_and_reject_fields_are_additive_and_skipped_when_none() {
+        let cert = Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![]);
+        assert!(cert.slag_meta.is_none());
+        assert!(cert.reject.is_none());
+        let json = serialize(&cert);
+        assert!(
+            !json.contains("slag_meta"),
+            "None slag_meta omitted:\n{json}"
+        );
+        assert!(!json.contains("reject"), "None reject omitted:\n{json}");
+        // The frozen golden cert (no slag_meta/reject) deserializes unchanged.
+        let golden_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("conformance")
+            .join("sum.cert.json");
+        let golden_src = std::fs::read_to_string(&golden_path);
+        assert!(golden_src.is_ok(), "read golden: {golden_src:?}");
+        if let Ok(src) = golden_src {
+            let golden: Result<Certificate, _> = serde_json::from_str(&src);
+            assert!(golden.is_ok(), "golden deserializes: {golden:?}");
+            if let Ok(g) = golden {
+                assert!(g.slag_meta.is_none());
+                assert!(g.reject.is_none());
+            }
+        }
+    }
+
+    // #6 AC-1/AC-4 (slag.md): a valid slag cert is L1, slag:true, carries the
+    // metadata, and is NOT a verus obligation. Expected level/flag trace to
+    // `slag.md` REQ-2/REQ-4 (R-CHAR-3), not forge's output.
+    #[test]
+    fn slag_l1_cert_shape() {
+        let meta = SlagMeta {
+            reason: "vendored".to_string(),
+            owner: "agent:forge-7".to_string(),
+            review: "required".to_string(),
+        };
+        let cert = Certificate::slag_l1("simd_sum", vec!["pure".to_string()], meta.clone());
+        assert_eq!(cert.level, Level::L1);
+        assert!(cert.slag);
+        assert_eq!(cert.slag_meta, Some(meta));
+        // The triage bools graduated to live-false even on the slag path.
+        assert!(!cert.contract_quality.tautology);
+        assert!(!cert.contract_quality.vacuous_precondition);
+        let json = serialize(&cert);
+        assert!(json.contains("slag_meta"), "slag cert carries metadata");
+    }
+
+    // #6 (vacuity-triage REQ-5): a triage reject is a NON-certified (L0) cert
+    // carrying the structured cause, not a ForgeError.
+    #[test]
+    fn rejected_cert_carries_cause_and_is_not_l3() {
+        let reason = RejectReason {
+            cause: "EnsIsTrivial".to_string(),
+            detail: "ens#0 is the literal `true`".to_string(),
+        };
+        let cert = Certificate::rejected("f", vec!["pure".to_string()], false, reason);
+        assert_eq!(cert.level, Level::L0);
+        assert_ne!(cert.level, Level::L3);
+        assert_eq!(
+            cert.reject.as_ref().map(|r| r.cause.as_str()),
+            Some("EnsIsTrivial")
+        );
+        assert_eq!(cert.obligations.len(), 1);
+        assert_eq!(cert.obligations[0].status, ObligationStatus::Failed);
+    }
+
+    // #6 (vacuity-triage AC-7): a triage-passing item graduates the two bools to
+    // asserted live-false.
+    #[test]
+    fn graduate_triage_clean_sets_live_false() {
+        let cert = Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![])
+            .graduate_triage_clean();
+        assert!(!cert.contract_quality.tautology);
+        assert!(!cert.contract_quality.vacuous_precondition);
     }
 
     // effects_of covers the whole Effect enum, not just `pure` (R-DEFER-8: fix

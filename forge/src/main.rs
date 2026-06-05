@@ -23,6 +23,8 @@
 mod check;
 mod cli;
 mod manifest;
+mod slag;
+mod vacuity;
 
 use std::process::ExitCode;
 

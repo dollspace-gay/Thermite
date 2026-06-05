@@ -16,7 +16,7 @@
 //! | REQ-2 (hand-rolled arg parsing) | SHIPPED | `parse_args` is a `match` over the verb + positionals + the single `--json` flag; no `clap` dependency in `forge/Cargo.toml`. |
 //! | REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError` wraps `Vec<SyntaxError>`/`Vec<SpecError>`/`Vec<LowerError>`/`LowerError` and carries `VerusAbsent`/`VerusSpawn`/`VerusOutput`/`Io`/`Usage`; `Display` forwards each inner error's diagnostic (no information lost). |
 //! | REQ-4 (human + `--json` output) | SHIPPED | `render_human` / `serde_json::to_string_pretty` of the cert array; `run_check` picks the rendering from `--json`; diagnostics go to stderr so `--json` stdout is a clean document. |
-//! | REQ-5 (typed exit codes) | SHIPPED | `Outcome` → `ExitCode`: verified (all L3) → 0, reported verification failure → `EXIT_VERIFICATION_FAILURE`, environment/usage/IO → `EXIT_ENVIRONMENT`. |
+//! | REQ-5 (typed exit codes) | SHIPPED | `cert_is_certified` → `ExitCode`: every item certified (each `L3`, or `L1`+valid-`#[slag]`, with no `reject`) → 0; any #6 triage / slag reject or un-discharged proof → `EXIT_VERIFICATION_FAILURE`; environment/usage/IO → `EXIT_ENVIRONMENT`. |
 //! | REQ-6 (no panics; Result discipline) | SHIPPED | every fallible path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]`; verus exit status inspected in `check.rs`. |
 //! | REQ-7 (`forge new` scaffold) | SHIPPED | `scaffold_project` writes `forge.toml` + `forge.lock` (pinned seed, §5.3) + `THERMITE.skill.pin`; refuses a non-empty target (`ForgeError::Usage`). |
 
@@ -242,14 +242,26 @@ fn run_check(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
         }
     }
 
-    // Aggregate outcome (REQ-5): all items L3 → success; any non-L3 → reported
-    // verification failure.
-    let all_l3 = certs.iter().all(|c| c.level == Level::L3);
-    if all_l3 {
+    // Aggregate outcome (REQ-5): every item must CERTIFY. An item certifies iff
+    // it carries no `reject` cause AND its level is a certified rung — `L3` (the
+    // verus path) OR `L1` (a valid `#[slag]` item, deliberately L1-by-fiat;
+    // `.design/forge/slag.md` REQ-2). A `#6` triage / slag-validation reject
+    // (`Level::L0` + a `reject` cause) is a reported contract-certification
+    // FAILURE — non-zero, but a valid cert document on stdout (verdict-in-cert).
+    let all_certified = certs.iter().all(cert_is_certified);
+    if all_certified {
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
     }
+}
+
+/// `true` iff a certificate represents a CERTIFIED item (`.design/forge/check.md`;
+/// `slag.md` REQ-2). No structural / slag-validation reject cause, and a certified
+/// assurance rung: `L3` (proved) or `L1` (a valid `#[slag]` item, runtime-enforced
+/// by fiat). `L0` (a triage reject or an un-discharged proof) is NOT certified.
+fn cert_is_certified(cert: &Certificate) -> bool {
+    cert.reject.is_none() && matches!(cert.level, Level::L3 | Level::L1)
 }
 
 /// Render a [`Certificate`] as human-readable text (REQ-4, §5.1 "rendered to
@@ -266,6 +278,17 @@ fn render_human(cert: &Certificate) -> String {
     out.push_str(&format!("level: {}\n", level_str(level)));
     out.push_str(&format!("effects: [{}]\n", effects.join(", ")));
     out.push_str(&format!("slag: {slag}\n"));
+    // #6: a valid `#[slag]` item carries its audit metadata (§8 visibility).
+    if let Some(meta) = &cert.slag_meta {
+        out.push_str(&format!(
+            "slag_meta: reason={:?}, owner={:?}, review={:?}\n",
+            meta.reason, meta.owner, meta.review
+        ));
+    }
+    // #6: a triage / slag-validation reject names its structured cause.
+    if let Some(reject) = &cert.reject {
+        out.push_str(&format!("reject: {} — {}\n", reject.cause, reject.detail));
+    }
     out.push_str(&format!(
         "solver_time_ms: {} (non-deterministic; not part of the cert oracle)\n",
         cert.solver_time_ms

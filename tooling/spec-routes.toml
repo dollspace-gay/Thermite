@@ -290,3 +290,12 @@ crate_pattern = "forge/src/review.rs"
 design = ".design/forge/spec-review.md"
 reference = ["conformance/review"]
 conformance_ops = ["sum", "vacuous"]
+
+# v0.5 — multi-agent Forge sessions (issue #20)
+#   The concurrency-safety primitive (atomic cache) is emergent from #8; #20 is
+#   chiefly the guarantee + the concurrency test suite. session.rs is optional.
+[[route]]
+crate_pattern = "forge/src/session.rs"
+design = ".design/forge/multi-agent.md"
+reference = []
+conformance_ops = []

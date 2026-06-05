@@ -67,7 +67,7 @@
 //! | `lowered_assurance: bool` (degrade flag) | SHIPPED | `Certificate.lowered_assurance` (additive, `#[serde(default)]` so the frozen golden `sum.cert.json` still deserializes — R-SPEC-2). `true` ONLY on a cert the #10 ladder produced by degrading a verus TIMEOUT to L2/L1; set by `Certificate::into_degraded`, produced by `degrade::run_ladder`, consumed by `check::ladder_for_timeout` + `cli::render_assurance`. VERDICT-relevant (it qualifies the level as "lowered, not proved") so NOT oracle-excluded; the corpus never degrades so the golden keeps the default `false`. |
 //! | `degrade_reason: Option<RejectReason>` | SHIPPED | `Certificate.degrade_reason` (additive, `#[serde(default, skip_serializing_if)]`). `Some` ONLY on a `lowered_assurance` cert — the `VerusTimeout` reason carried from the timed-out L3 attempt (REQ-4). Set by `Certificate::into_degraded`; DIAGNOSTIC, EXCLUDED from `oracle_subset`. |
 //! | `Level: Ord` (ladder ordering) | SHIPPED | `#[derive(PartialOrd, Ord)]` on `enum Level` makes the declaration order `L0 < L1 < L2 < L3` the `Ord` the aggregate's min-over-functions uses (`.design/forge/degrade-ladder.md` REQ-6). |
-//! | `AssuranceManifest` + `ProjectAssurance` (the aggregate) | SHIPPED | `AssuranceManifest::aggregate(&[Certificate])` computes the per-fn `FunctionAssurance` rows + the project headline `ProjectAssurance::{Certified(min), Failed}` (REQ-5/REQ-6); a non-certifying fn (`cert_certifies` false) caps the project at `Failed` (a non-rung, REQ-2). Render-time aggregate (OQ-4 (b)). Consumed by `cli::run_check`/`render_assurance`. |
+//! | `AssuranceManifest` + `ProjectAssurance` (the aggregate) | SHIPPED | `AssuranceManifest::aggregate(&[Certificate])` computes the per-fn `FunctionAssurance` rows + the project headline `ProjectAssurance::{Certified(min), Failed}` (REQ-5/REQ-6); a non-certifying fn (`cert_certifies` false) caps the project at `Failed` (a non-rung, REQ-2). Render-time aggregate (OQ-4 (b)). Consumed by `cli::run_check`/`render_assurance`. VERUS-ANCHORED (epic #60, REQ-10 / `.design/verified/self-verification.md` Target D): the project-level min-over-functions is anchored to the proved fold-min `thermite_verified::aggregate_level` (D1: ≤ every fn — the §5.2 no-over-claim bound; D2: attained == exactly the min) by the in-module `tests::verus_anchor` block (Option B, forge binary-only) enumerating ALL `Level` lists up to length 4 (341 lists), asserting `aggregate(certs).project == Certified(proved_min)` AND headline ≤ every level. |
 //!
 //! ## #17 additive schema (the §9 end-to-end vs to-the-boundary scope, this iteration)
 //!
@@ -1561,5 +1561,154 @@ mod tests {
             effects_of(&row),
             vec!["read(x)", "write(y)", "net(z)", "alloc", "time", "rand", "panic", "diverge"]
         );
+    }
+
+    // =======================================================================
+    // REQ-10 (Target D) — the Verus-anchor for the project LEVEL AGGREGATION min
+    // (`.design/verified/self-verification.md` REQ-10 / AC-10c, mechanism (c)).
+    //
+    // PLACEMENT DEVIATION (Option B, orchestrator-authorized): the design doc names
+    // a `manifest::verus_anchor` block (forge is binary-only, so an external test
+    // cannot reach `AssuranceManifest::aggregate`/`Certificate`). Nested in the
+    // existing `tests` module so the anti-pattern gate's `#[cfg(test)]` exemption
+    // covers it. `thermite-verified` is a forge DEV-dependency.
+    //
+    // AC-10c — the EXHAUSTIVE `Level`-list equivalence: enumerate ALL per-fn `Level`
+    // lists up to length 4 over the 4 levels (plus the empty list) and assert, for
+    // each, that `AssuranceManifest::aggregate(certs).project` agrees with the VERUS-
+    // PROVED fold-min `thermite_verified::aggregate_level`. The production `aggregate`
+    // splits two ORTHOGONAL axes (REQ-2/REQ-6): a NON-certifying fn (a plain `L0`
+    // cert carries no rung — `cert_certifies` is false) caps the project at `Failed`,
+    // independent of the min; when EVERY fn certifies (the list is empty or over the
+    // certifying rungs L1/L2/L3) the headline is `Certified(min)`. The anchor binds
+    // the LEVEL MIN (D's §5.2 no-over-claim story) on the all-certifying lists —
+    // `Certified(proved_min)` AND headline ≤ every level — and ALSO confirms the
+    // orthogonal `Failed`-cap fires IFF an `L0` is present (so the enumeration is
+    // exhaustive over the full 4-level alphabet, not just the certifying subset).
+    // Expected = the proved fold-min (R-CHAR-3, never forge's own output) — binding
+    // the production min to the proved D1 (≤ every fn) + D2 (attained == the min).
+    // =======================================================================
+    mod verus_anchor {
+        use super::*;
+        use thermite_verified::{aggregate_level, Level as VLevel};
+
+        /// The 4 production levels in rank order (`L0 < L1 < L2 < L3`), each paired
+        /// with the verus-proved `thermite_verified::Level` mirror. The pairing IS
+        /// the representation bridge the anchor binds (R-CHAR-3 — the design's
+        /// lattice, not forge output).
+        const LEVELS: &[(Level, VLevel)] = &[
+            (Level::L0, VLevel::L0),
+            (Level::L1, VLevel::L1),
+            (Level::L2, VLevel::L2),
+            (Level::L3, VLevel::L3),
+        ];
+
+        /// Map a proved `thermite_verified::Level` back to the production `Level`
+        /// via the lattice bridge. Total over the 4-level alphabet.
+        fn prod_of(v: VLevel) -> Level {
+            match v {
+                VLevel::L0 => Level::L0,
+                VLevel::L1 => Level::L1,
+                VLevel::L2 => Level::L2,
+                VLevel::L3 => Level::L3,
+            }
+        }
+
+        /// Build a per-fn cert list from a production-level list. Each cert is
+        /// `Certificate::new` (no reject); a plain `L0` cert does NOT certify
+        /// (`cert_certifies` is false for `L0`), so a list containing `L0` exercises
+        /// the orthogonal `Failed`-cap path, while a list over the certifying rungs
+        /// (L1/L2/L3) exercises the min-over-functions path the D anchor binds.
+        fn level_certs(levels: &[Level]) -> Vec<Certificate> {
+            levels
+                .iter()
+                .enumerate()
+                .map(|(i, &lvl)| {
+                    Certificate::new(format!("f{i}"), lvl, vec!["pure".to_string()], 0, vec![])
+                })
+                .collect()
+        }
+
+        /// One enumerated `(Level, VLevel)` list element (the production level
+        /// paired with its verus mirror).
+        type LevelPair = (Level, VLevel);
+
+        /// Recursively enumerate every [`LevelPair`] list up to `max_len`
+        /// (inclusive, plus the empty list) and call `visit` on each. The 4-level
+        /// alphabet over lengths 0..=4 is `1 + 4 + 16 + 64 + 256 = 341` lists.
+        fn for_each_list(
+            max_len: usize,
+            acc: &mut Vec<LevelPair>,
+            visit: &mut dyn FnMut(&[LevelPair]),
+        ) {
+            visit(acc);
+            if acc.len() == max_len {
+                return;
+            }
+            for &pair in LEVELS {
+                acc.push(pair);
+                for_each_list(max_len, acc, visit);
+                acc.pop();
+            }
+        }
+
+        /// AC-10c — over EVERY `Level` list (length 0..=4) the production
+        /// `AssuranceManifest::aggregate` project headline agrees with the VERUS-
+        /// PROVED `aggregate_level`: on an all-certifying list (empty or over
+        /// L1/L2/L3) it is `Certified(proved_min)` AND ≤ every per-fn level (the
+        /// §5.2 / R-DEFER-9 over-claim bound, proved D1); on a list with an `L0`
+        /// (non-certifying) it is the orthogonal `Failed`-cap. 0 mismatches over the
+        /// full finite domain.
+        #[test]
+        fn aggregate_project_min_matches_proved_aggregate_level_over_all_level_lists() {
+            let mut checked = 0usize;
+            let mut min_anchored = 0usize;
+            let mut acc: Vec<(Level, VLevel)> = Vec::new();
+            let mut visit = |list: &[(Level, VLevel)]| {
+                let prod_levels: Vec<Level> = list.iter().map(|&(p, _)| p).collect();
+                let v_levels: Vec<VLevel> = list.iter().map(|&(_, v)| v).collect();
+
+                // R-CHAR-3: the EXPECTED min is the verus-proved fold, mapped back to
+                // a production `Level` via the lattice bridge.
+                let expected_min = prod_of(aggregate_level(&v_levels));
+
+                let certs = level_certs(&prod_levels);
+                let m = AssuranceManifest::aggregate(&certs);
+
+                if prod_levels.contains(&Level::L0) {
+                    // ORTHOGONAL `Failed`-cap: a non-certifying (L0) fn caps the
+                    // project regardless of the min (REQ-2/REQ-6).
+                    assert_eq!(
+                        m.project,
+                        ProjectAssurance::Failed,
+                        "an L0 fn must cap the project at Failed for {prod_levels:?}"
+                    );
+                } else {
+                    // The min-over-functions path the D anchor binds.
+                    assert_eq!(
+                        m.project,
+                        ProjectAssurance::Certified(expected_min),
+                        "aggregate project min != proved aggregate_level for {prod_levels:?}"
+                    );
+                    // D1 OBSERVABLE: the headline is ≤ every per-fn level.
+                    for &lvl in &prod_levels {
+                        assert!(
+                            expected_min <= lvl,
+                            "project min {expected_min:?} must be <= every fn level (got {lvl:?})"
+                        );
+                    }
+                    min_anchored += 1;
+                }
+                checked += 1;
+            };
+            for_each_list(4, &mut acc, &mut visit);
+            // 1 + 4 + 16 + 64 + 256 = 341 lists over the 4-level alphabet (0..=4).
+            assert_eq!(checked, 341, "all Level lists up to length 4 enumerated");
+            // The min-anchored subset (no L0) is 1 + 3 + 9 + 27 + 81 = 121 lists.
+            assert_eq!(
+                min_anchored, 121,
+                "the all-certifying (no-L0) lists bind the proved min"
+            );
+        }
     }
 }

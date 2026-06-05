@@ -73,13 +73,16 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 (self-verification architecture) | SHIPPED | the `verus!{}` body in `verus_core` (verified by `verus`, Thermite's L3 rung §6); mechanism (c) recorded (b empirically infeasible); verified by `tests/verus_verify.rs` (`verus --no-cheating` → 0 errors). |
-//! | REQ-2 (remaining Tier-1 targets + porting pattern) | NOT-STARTED | epic #60. The remaining FIVE Tier-1 fns (`cache_key`, `triage`, `kill_ratio`/`meets_floor`, `is_strictly_stronger`, the boundary gate) remain plain Rust, ported one at a time via mechanism (c). |
+//! | REQ-2 (remaining Tier-1 targets + porting pattern) | SHIPPED | epic #60. The FINITE-domain Tier-1 fns are now EXHAUSTED: the boundary gate (REQ-9), the project-level min (REQ-10), and the mutation floor (REQ-11) are ported + anchored via mechanism (c). The remaining soundness-relevant fns (`cache_key` — SHA-256, a cryptographic assumption; `triage`/`generate` — AST-walks over unbounded programs; `is_strictly_stronger` — structural contract comparison) are categorically OUT of the finite-domain fragment (the HONEST Tier-1 coverage boundary, `.design/verified/self-verification.md` "Tier-1 coverage boundary"), not deferred. |
 //! | REQ-3 (Tier-2/Tier-3 boundaries) | SHIPPED | this crate has NO I/O and NO `external_body` — the Tier-1 cores (`subsumes`/`ladder_action`/`io_allow`) carry real `ensures`, no Tier-3 floor is reached. AC-5: a grep shows zero `external_body`/`external` in `src/`. |
 //! | REQ-4 (honesty — genuine proof) | SHIPPED | `verus --no-cheating` (no `assume`/`admit`/`external_body`); the `ensures result == spec_subsumes(..)` is non-vacuous (negating the body → `7 verified, 1 errors`, `tests/verus_verify.rs::broken_subsumes_fails_verification`). The REQ-7 anti-cheat `ensures` and the REQ-8 `pure_has_no_io`/`monotone` lemmas are each non-vacuous (the equivalence tests catch a broken mirror; a mutated verus spec fails — Grounding A/B). |
 //! | REQ-5 (FIRST increment — `subsumes` verified + delegated/matched) | SHIPPED | `verus_core::subsumes` proved; `subsumes_masks` (plain mirror) consumed by `thermite_lower::effects::subsumes`; the lattice laws (reflexive / Pure-subsumes-only-Pure / top-subsumes-all) are three `proof fn`s; the 14 `effects` tests still pass (behavior preserved). |
 //! | REQ-6 (CI-able verus-verify gauntlet step) | SHIPPED | `tests/verus_verify.rs` runs the real `verus --no-cheating src/lib.rs` (skip-loud if verus absent, like `lower_conformance`) and asserts `verified, 0 errors`; a core fn that fails to verify is a HARD test failure (R-DEFER-6). |
 //! | REQ-7 (degrade anti-cheat verified + anchored) | SHIPPED | `verus_core::ladder_action_l3`/`ladder_action_l2` proved (the anti-cheat `ensures` `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` + the L2 analog + the global `anti_cheat_holds_for_all_verdicts` proof); the plain mirrors [`ladder_action_l3_tag`]/[`ladder_action_l2_tag`] are consumed by `forge::degrade::ladder_action_l3`/`ladder_action_l2` (its in-module `verus_anchor` equivalence test); `run_ladder` BRANCHES on the proved decision. |
 //! | REQ-8 (seccomp allowlist soundness verified + anchored) | SHIPPED | `verus_core::io_allow` proved (`pure_has_no_io`, `non_widening_atoms_have_no_io`, `monotone`, `io_allow_within_io_bits`); the plain mirror [`io_allow`] is anchored to `forge::sandbox::syscall_allowlist` over all 256 fx-masks by the `sandbox::verus_anchor` test (the 5 sensitive syscalls only, OQ-6). |
+//! | REQ-9 (boundary HONESTY gate — Target C) | SHIPPED | `verus_core::should_emit_external_body` proved (`r == has_boundary \|\| has_slag` + the §9 corollary `(!has_boundary && !has_slag) ==> !r` + the global `regular_fn_never_external_body` proof); the plain mirror [`should_emit_external_body`] is consumed by `thermite_lower::lower::lower_fn`'s gate, anchored by the OBSERVABLE-dispatch test `thermite-lower/tests/boundary_gate_verified.rs` (emitted `#[verifier::external_body]` IFF the proved predicate, over the 4 (boundary,slag) combos). |
+//! | REQ-10 (project LEVEL AGGREGATION — Target D) | SHIPPED | `verus_core::aggregate_level` (the `Seq<Level>` fold-min seeded at L3) proved with `aggregate_le_all` (D1: ≤ every fn) + `aggregate_is_attained` (D2: == the min); the plain mirror [`aggregate_level`] (+ [`Level`]/[`min2`]/[`rank`]) anchors `forge::manifest::AssuranceManifest::aggregate` over all 341 `Level` lists (len 0..=4) by `manifest::tests::verus_anchor`. |
+//! | REQ-11 (mutation FLOOR gate — Target E, #48) | SHIPPED | `verus_core::meets_floor_60` (INTEGER cross-multiply `scored > 0 && killed*100 >= scored*60`, `u128` widening, NO float) proved with the #48 `scored == 0 ==> !r` `ensures` + the global `zero_scored_never_passes` proof; the plain mirror [`meets_floor_60`] anchors `forge::mutation::MutationScore::meets_floor` over the `0..=20 × 0..=20` f64↔integer grid by `mutation::tests::verus_anchor` (OQ-E: 0 divergences — the cross-multiply is the exact rational test). |
 
 /// The number of atomic effect kinds (`thermite_syntax::ast::Effect` →
 /// `thermite_lower::effects::EffectKind`): Read=0, Write=1, Net=2, Alloc=3,
@@ -274,15 +277,133 @@ pub fn io_allow(fx: u8) -> u32 {
     out
 }
 
+// ===========================================================================
+// REQ-9 (Target C) — the boundary HONESTY gate (the §9 composition anti-cheat).
+// ===========================================================================
+
+/// The boundary/slag external_body honesty gate (REQ-9): a fn is emitted as a
+/// `#[verifier::external_body]` assumable signature IFF it carries a declared
+/// trust boundary — `#[boundary]` (`has_boundary`) OR `#[slag]` (`has_slag`).
+/// BYTE-IDENTICAL to the `verus_core::should_emit_external_body` exec body the
+/// Verus prover discharges against the disjunction `ensures` PLUS the soundness
+/// COROLLARY `(!has_boundary && !has_slag) ==> !r` — a REGULAR fn (neither flag)
+/// is NEVER laundered into an assumed-L3 signature (§9, R-DEFER-9).
+///
+/// `thermite_lower::lower::lower_fn` takes the external_body arm IFF this predicate
+/// is `true` (the production consumer, R-DEFER-1); the OBSERVABLE-dispatch
+/// equivalence test (`thermite-lower/tests/boundary_gate_verified.rs`) anchors the
+/// emitted source's `#[verifier::external_body]` substring to this predicate over
+/// the 4 `(has_boundary, has_slag)` combinations.
+///
+/// NON-VACUITY: this returns `false` for `(false, false)` (a regular fn is fully
+/// proved, never external_body), so the gate is genuinely constraining (not `true`).
+#[must_use]
+pub fn should_emit_external_body(has_boundary: bool, has_slag: bool) -> bool {
+    has_boundary || has_slag
+}
+
+// ===========================================================================
+// REQ-10 (Target D) — the project LEVEL AGGREGATION min (the §5.2 no-over-claim).
+// ===========================================================================
+
+/// The assurance level lattice (REQ-10), mirroring `forge::manifest::Level`. The
+/// rank order `L0 < L1 < L2 < L3` (`rank` 0..3) is the `Ord` the project-level
+/// fold-min ranges over: the project is never claimed stronger than its weakest
+/// certifying fn (§5.2). BYTE-IDENTICAL discriminant order to `forge`'s `Level`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Level {
+    /// L0 — unverified / `#[slag]` escape hatch.
+    L0,
+    /// L1 — executable runtime check.
+    L1,
+    /// L2 — bounded model check (Kani).
+    L2,
+    /// L3 — SMT proof: holds for all inputs.
+    L3,
+}
+
+/// The rank discriminant of a [`Level`] (REQ-10): `L0=0 .. L3=3`. The `min2`
+/// fold and the production `Level: Ord` agree on this order. Mirrors
+/// `verus_core::rank`.
+#[must_use]
+pub fn rank(l: Level) -> u8 {
+    match l {
+        Level::L0 => 0,
+        Level::L1 => 1,
+        Level::L2 => 2,
+        Level::L3 => 3,
+    }
+}
+
+/// The weaker of two levels by [`rank`] (REQ-10): ties to `a`. Mirrors
+/// `verus_core::min2`. NON-VACUITY: `min2(L3, L1) == L1` (picks the WEAKER, never
+/// an over-claim), so a MAX-picking mutant fails `aggregate_le_all` (Grounding D).
+#[must_use]
+pub fn min2(a: Level, b: Level) -> Level {
+    if rank(a) <= rank(b) {
+        a
+    } else {
+        b
+    }
+}
+
+/// The project-level fold-min over a per-fn level list (REQ-10): the weakest
+/// level, seeded at `L3` so the EMPTY list folds to `L3` (mirroring
+/// `min().unwrap_or(Level::L3)` in `manifest::aggregate`). BYTE-IDENTICAL fold to
+/// the verus-proved `aggregate_level(Seq<Level>)` the Verus prover discharges
+/// against `aggregate_le_all` (≤ every fn — the §5.2 over-claim bound) and
+/// `aggregate_is_attained` (== the min). `forge::manifest::AssuranceManifest::aggregate`
+/// is anchored to this over the exhaustive `Level` lists (its `verus_anchor` test).
+#[must_use]
+pub fn aggregate_level(levels: &[Level]) -> Level {
+    let mut acc = Level::L3;
+    let mut i = 0;
+    while i < levels.len() {
+        acc = min2(acc, levels[i]);
+        i += 1;
+    }
+    acc
+}
+
+// ===========================================================================
+// REQ-11 (Target E) — the mutation FLOOR gate (#48 anti-Goodhart, §7).
+// ===========================================================================
+
+/// The mutation kill-ratio floor gate at the default 60% floor (REQ-11), in
+/// INTEGER cross-multiply form (NO f64 — verus reasons poorly about floats):
+/// `scored > 0 && killed * 100 >= scored * 60`. BYTE-IDENTICAL to the
+/// `verus_core::meets_floor_60` exec body the Verus prover discharges against the
+/// load-bearing #48 anti-Goodhart `ensures` `scored == 0 ==> !r` — a `0/0` score
+/// (no scoreable mutant) NEVER passes the floor (a contract that cannot be
+/// mutation-validated is gated `WeakContract`, not a vacuous pass).
+///
+/// `forge::mutation::MutationScore::meets_floor` (the f64 production gate at the
+/// default `MUTATION_FLOOR = 0.60`) is anchored to this over a bounded grid by its
+/// `verus_anchor` test (OQ-E — the f64↔integer agreement is the test's job; the
+/// proved property is the integer #48 gate).
+///
+/// `u128` widening: `killed * 100` / `scored * 60` cannot overflow for any
+/// `usize` count (matching the exec form's overflow obligation).
+///
+/// NON-VACUITY: this returns `false` for `(0, 0)` (the #48 gate) AND for `(1, 2)`
+/// (`100 >= 120` is false — 50% is below 60%), so it is genuinely constraining.
+#[must_use]
+pub fn meets_floor_60(killed: usize, scored: usize) -> bool {
+    let k = killed as u128;
+    let s = scored as u128;
+    s > 0 && k * 100 >= s * 60
+}
+
 // ---------------------------------------------------------------------------
-// The Verus-verified core (REQ-1/REQ-4/REQ-5/REQ-7/REQ-8). Compiled ONLY by the
-// real `verus` driver, which sets `cfg(verus_keep_ghost)`; a normal `cargo build`
-// skips it entirely (the `verus!{}` macro + `ensures` syntax is verus-driver-only).
-// The proof is run by `tests/verus_verify.rs` (`verus --no-cheating src/lib.rs`).
+// The Verus-verified core (REQ-1/REQ-4/REQ-5/REQ-7/REQ-8/REQ-9/REQ-10/REQ-11).
+// Compiled ONLY by the real `verus` driver, which sets `cfg(verus_keep_ghost)`; a
+// normal `cargo build` skips it entirely (the `verus!{}` macro + `ensures` syntax
+// is verus-driver-only). The proof is run by `tests/verus_verify.rs`
+// (`verus --no-cheating src/lib.rs`).
 //
 // AC-5: NO `#[verifier::external_body]` / `external` appears here — every core fn
-// (`subsumes`/`ladder_action_*`/`io_allow`) carries a real `ensures`, not a Tier-3
-// I/O shim.
+// (`subsumes`/`ladder_action_*`/`io_allow`/`should_emit_external_body`/
+// `aggregate_level`/`meets_floor_60`) carries a real `ensures`, not a Tier-3 shim.
 // ---------------------------------------------------------------------------
 #[cfg(verus_keep_ghost)]
 mod verus_core {
@@ -546,6 +667,181 @@ mod verus_core {
         ensures (io_allow(fx) & !0x1Fu32) == 0u32,
     {
         assert((io_allow(fx) & !0x1Fu32) == 0u32) by (bit_vector);
+    }
+
+    // =======================================================================
+    // REQ-9 (Target C) — the boundary HONESTY gate (a REGULAR fn never gets
+    // external_body, so a lying regular body can never be laundered to L3, §9).
+    // =======================================================================
+
+    /// The spec disjunction `has_boundary || has_slag` (the gate's intended
+    /// answer). Mirrors the plain-Rust `should_emit_external_body`. NON-vacuous:
+    /// false at `(false, false)`.
+    pub open spec fn spec_should_emit_external_body(has_boundary: bool, has_slag: bool) -> bool {
+        has_boundary || has_slag
+    }
+
+    /// The boundary/slag external_body honesty gate, PROVED to compute the
+    /// disjunction AND the soundness corollary for ALL inputs (REQ-9, R-DEFER-9):
+    /// **(1)** `r == spec_should_emit_external_body(..)`, and **(2)** the corollary
+    /// `(!has_boundary && !has_slag) ==> !r` — a REGULAR fn is NEVER emitted
+    /// external_body. Byte-identical to the plain-Rust `should_emit_external_body`.
+    pub fn should_emit_external_body(has_boundary: bool, has_slag: bool) -> (r: bool)
+        ensures
+            r == spec_should_emit_external_body(has_boundary, has_slag),
+            (!has_boundary && !has_slag) ==> !r,
+    {
+        has_boundary || has_slag
+    }
+
+    /// The GLOBAL §9 honesty corollary: NO regular fn (neither flag) is ever
+    /// emitted as `#[verifier::external_body]`, over the WHOLE 2×2 bool square
+    /// (REQ-9). A lying regular body can never be laundered into an assumed-L3
+    /// signature — the load-bearing composition anti-cheat.
+    proof fn regular_fn_never_external_body()
+        ensures
+            forall|b: bool, s: bool| #[trigger] spec_should_emit_external_body(b, s) ==>
+                (b || s),
+            forall|b: bool, s: bool|
+                (!b && !s) ==> !(#[trigger] spec_should_emit_external_body(b, s)),
+    {
+        assert(forall|b: bool, s: bool| #[trigger] spec_should_emit_external_body(b, s) ==>
+            (b || s));
+        assert(forall|b: bool, s: bool|
+            (!b && !s) ==> !(#[trigger] spec_should_emit_external_body(b, s)));
+    }
+
+    // =======================================================================
+    // REQ-10 (Target D) — the project LEVEL AGGREGATION min (no over-claim, §5.2).
+    // =======================================================================
+
+    /// The assurance level lattice (mirrors the plain `Level` + `forge`'s `Level`).
+    pub enum Level { L0, L1, L2, L3 }
+
+    /// The rank discriminant `L0=0 .. L3=3` (mirrors the plain `rank`). The order
+    /// the fold-min ranges over: a smaller rank is a WEAKER level.
+    pub open spec fn rank(l: Level) -> int {
+        match l {
+            Level::L0 => 0,
+            Level::L1 => 1,
+            Level::L2 => 2,
+            Level::L3 => 3,
+        }
+    }
+
+    /// The weaker of two levels by `rank` (mirrors the plain `min2`); ties to `a`.
+    /// NON-vacuous: a MAX-picking mutant (`rank(a) >= rank(b)`) breaks
+    /// `aggregate_le_all` (Grounding D).
+    pub open spec fn min2(a: Level, b: Level) -> Level {
+        if rank(a) <= rank(b) { a } else { b }
+    }
+
+    /// The project-level fold-min over a `Seq<Level>` (REQ-10), seeded at `L3` so
+    /// the EMPTY seq folds to `L3` (mirroring `min().unwrap_or(Level::L3)`). The
+    /// recursion folds the LAST element into the prefix's fold; mirrors the plain
+    /// `aggregate_level` (which iterates left-to-right — `min2` is commutative-
+    /// enough that the fold value is the same: the unique minimum).
+    pub open spec fn aggregate_level(levels: Seq<Level>) -> Level
+        decreases levels.len(),
+    {
+        if levels.len() == 0 {
+            Level::L3
+        } else {
+            min2(aggregate_level(levels.drop_last()), levels.last())
+        }
+    }
+
+    /// SOUNDNESS lemma D1 — `aggregate_level(levels)` is ≤ EVERY element by `rank`
+    /// (REQ-10): the project level is never claimed stronger than its weakest fn
+    /// (§5.2 / R-DEFER-9 over-claim bound). Proved by induction on `drop_last`.
+    /// NON-vacuous: a MAX-picking `min2` makes this fail (Grounding D).
+    proof fn aggregate_le_all(levels: Seq<Level>, i: int)
+        requires 0 <= i < levels.len(),
+        ensures rank(aggregate_level(levels)) <= rank(levels[i]),
+        decreases levels.len(),
+    {
+        let n = levels.len();
+        if i == n - 1 {
+            // The last element is folded directly by `min2` at the top.
+            assert(aggregate_level(levels) == min2(aggregate_level(levels.drop_last()), levels.last()));
+            assert(levels.last() == levels[n - 1]);
+        } else {
+            // `i` lives in the prefix; recurse, then `min2` only lowers the rank.
+            assert(levels.drop_last().len() == n - 1);
+            assert(0 <= i < levels.drop_last().len());
+            assert(levels.drop_last()[i] == levels[i]);
+            aggregate_le_all(levels.drop_last(), i);
+            assert(aggregate_level(levels) == min2(aggregate_level(levels.drop_last()), levels.last()));
+        }
+    }
+
+    /// SOUNDNESS lemma D2 — `aggregate_level(levels)` is ATTAINED at some index
+    /// (REQ-10): D1 + D2 ⟹ it is EXACTLY the min, not merely a lower bound.
+    /// Proved by induction: either the tail's attaining index, or the last element.
+    proof fn aggregate_is_attained(levels: Seq<Level>)
+        requires levels.len() > 0,
+        ensures exists|j: int| 0 <= j < levels.len() && aggregate_level(levels) == levels[j],
+        decreases levels.len(),
+    {
+        let n = levels.len();
+        let pre = levels.drop_last();
+        if n == 1 {
+            assert(aggregate_level(levels) == min2(aggregate_level(pre), levels.last()));
+            assert(aggregate_level(pre) == Level::L3);
+            // min2(L3, x) == x (L3 is the top rank), so the fold is the last elem.
+            assert(rank(Level::L3) == 3);
+            assert(aggregate_level(levels) == levels[0]);
+        } else {
+            aggregate_is_attained(pre);
+            let jp = choose|j: int| 0 <= j < pre.len() && aggregate_level(pre) == pre[j];
+            assert(0 <= jp < pre.len() && aggregate_level(pre) == pre[jp]);
+            assert(pre[jp] == levels[jp]);
+            assert(aggregate_level(levels) == min2(aggregate_level(pre), levels.last()));
+            // The min is whichever of the prefix-min / the last element is weaker;
+            // both are elements of `levels`.
+            if rank(aggregate_level(pre)) <= rank(levels.last()) {
+                assert(aggregate_level(levels) == aggregate_level(pre));
+                assert(aggregate_level(levels) == levels[jp]);
+            } else {
+                assert(aggregate_level(levels) == levels.last());
+                assert(levels.last() == levels[n - 1]);
+            }
+        }
+    }
+
+    // =======================================================================
+    // REQ-11 (Target E) — the mutation FLOOR gate (#48 anti-Goodhart, INTEGER).
+    // =======================================================================
+
+    /// The integer cross-multiply floor spec at the default 60% floor (REQ-11):
+    /// `scored > 0 && killed * 100 >= scored * 60`. Mirrors the plain
+    /// `meets_floor_60`. NON-vacuous: false at `scored == 0` (#48) AND at 50%.
+    pub open spec fn spec_meets_floor_60(killed: nat, scored: nat) -> bool {
+        scored > 0 && killed * 100 >= scored * 60
+    }
+
+    /// The mutation floor gate, PROVED to compute the integer cross-multiply AND
+    /// the #48 anti-Goodhart corollary for ALL inputs (REQ-11, R-DEFER-9):
+    /// `r == spec_meets_floor_60(..)` and `scored == 0 ==> !r` (a `0/0` score
+    /// NEVER passes). The `u128` widening discharges the multiply-overflow
+    /// obligation (`killed`/`scored` are `usize`-bounded; `* 100` / `* 60` fit
+    /// `u128`). Byte-identical in shape to the plain-Rust `meets_floor_60`.
+    pub fn meets_floor_60(killed: u128, scored: u128) -> (r: bool)
+        requires killed <= 0xFFFF_FFFF_FFFF_FFFF, scored <= 0xFFFF_FFFF_FFFF_FFFF,
+        ensures
+            r == spec_meets_floor_60(killed as nat, scored as nat),
+            scored == 0 ==> !r,
+    {
+        scored > 0 && killed * 100 >= scored * 60
+    }
+
+    /// The GLOBAL #48 anti-Goodhart corollary: a `0/0` score (no scoreable mutant)
+    /// NEVER passes the floor, over ALL `killed` (REQ-11). A contract that cannot
+    /// be mutation-validated is gated, never a vacuous pass.
+    proof fn zero_scored_never_passes()
+        ensures forall|k: nat| !(#[trigger] spec_meets_floor_60(k, 0nat)),
+    {
+        assert(forall|k: nat| !(#[trigger] spec_meets_floor_60(k, 0nat)));
     }
 
     }

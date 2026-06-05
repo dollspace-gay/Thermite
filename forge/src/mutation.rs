@@ -29,7 +29,7 @@
 //! | REQ-2 (deterministic order + seed + cap) | SHIPPED | a pre-order walk in a fixed family order, capped by `pub const MUTANT_CAP`; selection is the first `MUTANT_CAP` mutants in enumeration order. The seam takes the pinned `check::DEFAULT_SOLVER_SEED` (recorded in the run; the enumeration is seed-stable). Consumer: `check::mutation_score`. |
 //! | REQ-3 (re-lower + re-verify vs same contract) | SHIPPED | `pub fn generate` clones the original `FnItem` and mutates only `body`; `check::mutation_score` weaves each mutant via `item_subprogram` + `thermite_lower::lower` and runs the existing `run_verus`. The `req`/`ens`/`inv`/`dec` are the original's, unchanged. |
 //! | REQ-4 (KILLED vs SURVIVED) | SHIPPED | `pub fn classify_mutant` maps a `MutantOutcome`: `Proved` → SURVIVED, `Killed` (counterexample / timeout) → KILLED; a lowering failure is DROPPED (not scored). Consumer: `check::mutation_score`. |
-//! | REQ-5 (kill ratio + floor gate, default 60%) | SHIPPED | `pub struct MutationScore` carries `killed`/`scored`/`survivor`; `pub fn MutationScore::kill_ratio` + `pub const MUTATION_FLOOR: f64 = 0.60`; `pub fn MutationScore::meets_floor`. A `0/0` score (no scoreable mutant) is BELOW the floor (`kill_ratio == 0.0`), not a vacuous pass — a contract that cannot be mutation-validated is gated `WeakContract` (#48, anti-Goodhart). The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Consumer: `check::mutation_score` + the floor gate in `check::check_file_with_options`. |
+//! | REQ-5 (kill ratio + floor gate, default 60%) | SHIPPED | `pub struct MutationScore` carries `killed`/`scored`/`survivor`; `pub fn MutationScore::kill_ratio` + `pub const MUTATION_FLOOR: f64 = 0.60`; `pub fn MutationScore::meets_floor`. A `0/0` score (no scoreable mutant) is BELOW the floor (`kill_ratio == 0.0`), not a vacuous pass — a contract that cannot be mutation-validated is gated `WeakContract` (#48, anti-Goodhart). The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Consumer: `check::mutation_score` + the floor gate in `check::check_file_with_options`. VERUS-ANCHORED (epic #60, REQ-11 / `.design/verified/self-verification.md` Target E): the f64 `meets_floor(0.60)` is anchored to the proved INTEGER cross-multiply `thermite_verified::meets_floor_60` (the #48 `scored == 0 ⟹ !pass` is verus-proved integer-only) by the in-module `tests::verus_anchor` f64↔integer grid (`0..=20 × 0..=20`, Option B); the grid AGREES on every cell (OQ-E: 0 divergences — the cross-multiply is the exact rational test, the f64 boundary is conformance-tested not masked). |
 //! | REQ-6 (graduate `mutants_killed`/`survivor`) | SHIPPED | `MutationScore::mutants_killed_string` builds the `"K/N"` form; `check` sets it via `Certificate::with_mutation_score` / `Certificate::rejected_weak_contract`. |
 //! | REQ-7 (gate AFTER L3, reuse proof cache) | SHIPPED | `check::mutation_score` runs only on a `VerusOutcome::Proved` real body and content-addresses each mutant via `cache::cache_key`/`load`/`store`. |
 //! | REQ-8 (deterministic kill ratio) | SHIPPED | `generate` is a pure function of the AST + the frozen table; each mutant verdict is the deterministic verus run the L3 path + cache rely on, so `mutants_killed` is deterministic (asserted by the same-input-twice conformance double-run). `mutants_killed`/`survivor` stay oracle-EXCLUDED (OQ-1). |
@@ -994,5 +994,92 @@ mod tests {
             "a comparison `if` records a negate-condition mutant: {:?}",
             mutants.iter().map(|m| &m.desc).collect::<Vec<_>>()
         );
+    }
+
+    // =======================================================================
+    // REQ-11 (Target E) — the Verus-anchor for the mutation FLOOR gate (#48 anti-
+    // Goodhart, `.design/verified/self-verification.md` REQ-11 / AC-11c, mechanism
+    // (c)).
+    //
+    // PLACEMENT DEVIATION (Option B, orchestrator-authorized): the design doc names
+    // a `mutation::verus_anchor` block (forge is binary-only). Nested in the
+    // existing `tests` module so the anti-pattern gate's `#[cfg(test)]` exemption
+    // covers it. `thermite-verified` is a forge DEV-dependency.
+    //
+    // AC-11c — the f64↔INTEGER grid: over `killed ∈ 0..=20`, `scored ∈ 0..=20`,
+    // assert the PRODUCTION f64 `MutationScore { killed, scored, survivor: None }
+    // .meets_floor(0.60)` equals the VERUS-PROVED integer
+    // `thermite_verified::meets_floor_60(killed, scored)` for every grid point.
+    // Expected = the proved integer spec (R-CHAR-3, never forge's own f64 output).
+    // The verus proof is over the INTEGER property `scored == 0 ⟹ !pass` + the
+    // cross-multiply; the f64↔integer agreement is THIS test's job (OQ-E).
+    //
+    // OQ-E (the f64 boundary subtlety): f64 `0.60` is NOT exactly 3/5, so a ratio
+    // EXACTLY on the boundary (e.g. 12/20 == 0.60) could in principle diverge by a
+    // rounding ULP between the f64 `>=` and the integer cross-multiply. The grid is
+    // RUN here (not assumed); if ANY cell diverges it is reported, NOT masked
+    // (R-DEFER-9). The empirical expectation (from the cross-multiply being the
+    // exact rational test) is 0 divergences on 0..=20.
+    // =======================================================================
+    mod verus_anchor {
+        use super::*;
+        use thermite_verified::meets_floor_60;
+
+        /// AC-11c — the f64↔integer grid over `0..=20 × 0..=20` at the default 0.60
+        /// floor: the PRODUCTION f64 `meets_floor(0.60)` agrees with the VERUS-
+        /// PROVED integer `meets_floor_60` at EVERY grid point. In particular the
+        /// `(0, 0)` point reads `false` on BOTH sides (the #48 anti-Goodhart gate —
+        /// a `0/0` score never passes). Any divergence is asserted-OUT (and would be
+        /// reported honestly, OQ-E), never silently masked.
+        #[test]
+        fn meets_floor_f64_matches_proved_integer_spec_over_grid() {
+            let mut checked = 0usize;
+            let mut divergences: Vec<(usize, usize, bool, bool)> = Vec::new();
+            for killed in 0usize..=20 {
+                for scored in 0usize..=20 {
+                    let score = MutationScore {
+                        killed,
+                        scored,
+                        survivor: None,
+                    };
+                    // R-CHAR-3: the EXPECTED verdict is the verus-proved INTEGER spec.
+                    let expected = meets_floor_60(killed, scored);
+                    let produced = score.meets_floor(MUTATION_FLOOR);
+                    if produced != expected {
+                        divergences.push((killed, scored, produced, expected));
+                    }
+                    checked += 1;
+                }
+            }
+            // OQ-E: report ANY divergence explicitly (do not delete the cell).
+            assert!(
+                divergences.is_empty(),
+                "f64↔integer floor-gate divergences (killed, scored, f64_pass, \
+                 integer_pass) — OQ-E boundary divergence, report honestly: {divergences:?}"
+            );
+            assert_eq!(checked, 21 * 21, "the full 0..=20 × 0..=20 grid enumerated");
+        }
+
+        /// AC-11b/d (the #48 property made OBSERVABLE on BOTH representations): a
+        /// `0/0` score (no scoreable mutant) reads `false` on the production f64 gate
+        /// AND on the verus-proved integer spec — the anti-Goodhart gate holds in the
+        /// production impl regardless of the f64 representation (the load-bearing #48
+        /// invariant). Expected = the proved `scored == 0 ⟹ !pass` (R-CHAR-3).
+        #[test]
+        fn zero_scored_never_passes_on_both_representations() {
+            let empty = MutationScore {
+                killed: 0,
+                scored: 0,
+                survivor: None,
+            };
+            assert!(
+                !empty.meets_floor(MUTATION_FLOOR),
+                "#48: a 0/0 score must NOT pass the production f64 floor"
+            );
+            assert!(
+                !meets_floor_60(0, 0),
+                "#48: a 0/0 score must NOT pass the proved integer spec"
+            );
+        }
     }
 }

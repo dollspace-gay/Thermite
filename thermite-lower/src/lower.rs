@@ -48,7 +48,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | composition REQ-1 (assumable-signature emission, boundary/slag only) | SHIPPED | `lower_fn` dispatches a `f.boundary.is_some() \|\| f.slag.is_some()` fn to `lower_external_body_fn`, which emits `#[verifier::external_body]` + the SAME `lower_fn_signature` (unweakened `requires`/`ensures`) + a synthetic `{ unimplemented!() }` body verus never checks. THE HONESTY GATE: external_body iff the syntactic `#[boundary]`/`#[slag]` flag — a regular fn ALWAYS takes the fully-proved-body arm. Consumer: `forge::check::item_subprogram` weaves a boundary/slag dep through this arm. Verified: `forge`'s `composition_conformance::direct_boundary_caller_verifies_through_the_contract` (caller L3) + `lying_regular_fn_is_caught_never_laundered_to_l3` (a regular lie is CAUGHT — verus `postcondition not satisfied`). The `#[verifier::external_body]` lives in the lowered verus STRING (a generated foreign-fn artifact), never in this `.rs` source. |
+//! | composition REQ-1 (assumable-signature emission, boundary/slag only) | SHIPPED | `lower_fn` dispatches a `f.boundary.is_some() \|\| f.slag.is_some()` fn to `lower_external_body_fn`, which emits `#[verifier::external_body]` + the SAME `lower_fn_signature` (unweakened `requires`/`ensures`) + a synthetic `{ unimplemented!() }` body verus never checks. THE HONESTY GATE: external_body iff the syntactic `#[boundary]`/`#[slag]` flag — a regular fn ALWAYS takes the fully-proved-body arm. The 2-bool decision is DELEGATED to the Verus-verified `thermite_verified::should_emit_external_body` (epic #60, REQ-9 / `.design/verified/self-verification.md` Target C, mechanism (c)): its `ensures` proves the disjunction AND the §9 corollary `(!boundary && !slag) ==> !r`, anchored by the OBSERVABLE-dispatch test `tests/boundary_gate_verified.rs` (the emitted `#[verifier::external_body]` substring over the 4 (boundary,slag) combos). Consumer: `forge::check::item_subprogram` weaves a boundary/slag dep through this arm. Verified: `forge`'s `composition_conformance::direct_boundary_caller_verifies_through_the_contract` (caller L3) + `lying_regular_fn_is_caught_never_laundered_to_l3` (a regular lie is CAUGHT — verus `postcondition not satisfied`). The `#[verifier::external_body]` lives in the lowered verus STRING (a generated foreign-fn artifact), never in this `.rs` source. |
 
 use std::fmt::Write as _;
 
@@ -491,8 +491,14 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
 fn lower_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
     // THE HONESTY GATE: external_body iff a declared trust boundary
     // (`#[boundary]`/`#[slag]`), NEVER a regular fn. Emitted only into a CALLER's
-    // sub-program as a woven dependency (forge's `item_subprogram`).
-    if f.boundary.is_some() || f.slag.is_some() {
+    // sub-program as a woven dependency (forge's `item_subprogram`). The 2-bool
+    // decision is DELEGATED to the Verus-verified `should_emit_external_body`
+    // (epic #60, REQ-9 / Target C, mechanism (c)): its `ensures` proves the
+    // disjunction AND the §9 soundness corollary `(!boundary && !slag) ==> !r` —
+    // a regular fn is NEVER laundered into an assumed-L3 external_body signature
+    // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this OBSERVABLE
+    // dispatch (the emitted `#[verifier::external_body]` substring) to the proof.
+    if thermite_verified::should_emit_external_body(f.boundary.is_some(), f.slag.is_some()) {
         return lower_external_body_fn(f, nat_fns);
     }
 

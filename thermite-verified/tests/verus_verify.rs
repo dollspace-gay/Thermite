@@ -211,3 +211,43 @@ fn broken_io_allow_xor_fails_monotone() {
         "        (if fx_has(fx, 0) { widen(0) } else { 0u32 })\n        ^ (if fx_has(fx, 1) { widen(1) } else { 0u32 })",
     );
 }
+
+/// AC-9b (non-vacuity, REQ-9 / Target C): mutating the `should_emit_external_body`
+/// exec body to `true` (a REGULAR fn WOULD get external_body — the exact §9
+/// laundering R-DEFER-9 forbids) makes the soundness corollary
+/// `(!has_boundary && !has_slag) ==> !r` fail. The boundary HONESTY gate is
+/// genuinely constraining (a regular fn is NEVER laundered to an assumed-L3 sig).
+#[test]
+fn broken_should_emit_external_body_true_fails() {
+    assert_mutation_fails(
+        "should_emit_external_body_true",
+        "            (!has_boundary && !has_slag) ==> !r,\n    {\n        has_boundary || has_slag\n    }",
+        "            (!has_boundary && !has_slag) ==> !r,\n    {\n        true\n    }",
+    );
+}
+
+/// AC-10b (non-vacuity, REQ-10 / Target D): mutating `min2` to pick the MAX
+/// (`rank(a) >= rank(b)` instead of `<=` — an OVER-CLAIM: the project would be as
+/// strong as its STRONGEST fn) makes `aggregate_le_all` (D1, "≤ every fn") fail.
+/// The no-over-claim min is genuinely constraining (§5.2).
+#[test]
+fn broken_aggregate_max_fails_le_all() {
+    assert_mutation_fails(
+        "aggregate_max",
+        "    pub open spec fn min2(a: Level, b: Level) -> Level {\n        if rank(a) <= rank(b) { a } else { b }\n    }",
+        "    pub open spec fn min2(a: Level, b: Level) -> Level {\n        if rank(a) >= rank(b) { a } else { b }\n    }",
+    );
+}
+
+/// AC-11b (non-vacuity — the #48 property, REQ-11 / Target E): dropping the
+/// `scored > 0` guard from the exec body (so a `0/0` score passes:
+/// `0 * 100 >= 0 * 60`) makes the `scored == 0 ==> !r` anti-Goodhart `ensures`
+/// fail. The #48 floor gate is genuinely constraining (a `0/0` never passes).
+#[test]
+fn broken_meets_floor_drops_scored_guard_fails() {
+    assert_mutation_fails(
+        "meets_floor_drops_guard",
+        "        scored == 0 ==> !r,\n    {\n        scored > 0 && killed * 100 >= scored * 60\n    }",
+        "        scored == 0 ==> !r,\n    {\n        killed * 100 >= scored * 60\n    }",
+    );
+}

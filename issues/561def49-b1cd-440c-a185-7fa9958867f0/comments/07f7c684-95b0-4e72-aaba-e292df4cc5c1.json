@@ -1,0 +1,10 @@
+{
+  "uuid": "07f7c684-95b0-4e72-aaba-e292df4cc5c1",
+  "issue_uuid": "561def49-b1cd-440c-a185-7fa9958867f0",
+  "author": "Yffe",
+  "content": "SHIPPED — solver-backed tautology + unsat-precondition checks (§7 steps 2-3). vacuity_solver.rs: tautology harness (assume req + universally-quantified arbitrary result param + assert ens; verus proves -> ens holds for any result -> tautology) + vacuity harness (assume req + assert false; proves -> req unsat), both REUSING thermite_lower::lower's verbatim requires/ensures (byte-identical to the L3 proof). Wired in check_file after #6 triage, before L3 (in the cache-miss branch). Detection -> Certificate::rejected_vacuity (L0 + RejectReason + the contract_quality bool true). VACUITY-FIRST ordering (an unsat req makes the tautology harness also prove via false premise; checking vacuity first reports the true root cause). OQ-3: only verus SUCCESS flags; fail/timeout/error -> not-flagged (never false reject, never silent-clean; R-CODE-4). Critic NO DIVERGENCE: false-positive guard cleared (4 fresh constraining contracts -> L3, arbitrary-result genuinely unconstrained incl Option<usize>), true-positives caught, vacuity-first ratified, generality clean, corpus L3. contract_quality.{tautology,vacuous_precondition} now FULLY live. Commits 9d2d80b + 6c58877 (critic chars). workspace green, clippy/fmt clean. Mutation=#12, strengthening=#14. Not pushed.",
+  "created_at": "2026-06-05T05:18:31.909666718Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA4XtHHyPY9sx8hne5yHD3R0Yq5NxHuxHp1yyaToTiXAM0vnDiZW9Y39P2huXWvNVO4OwMsvqYd3ko89wE9ME8CA=="
+}

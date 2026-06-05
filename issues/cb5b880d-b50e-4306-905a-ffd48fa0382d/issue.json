@@ -2,11 +2,12 @@
   "uuid": "cb5b880d-b50e-4306-905a-ffd48fa0382d",
   "display_id": 61,
   "title": "README: note the soundness-critical core is now Verus-self-verified (#60)",
-  "status": "open",
+  "status": "closed",
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-05T22:48:12.740351913Z",
-  "updated_at": "2026-06-05T22:48:15.104665768Z",
+  "updated_at": "2026-06-05T22:49:01.926155080Z",
+  "closed_at": "2026-06-05T22:49:01.926155080Z",
   "labels": [
     "docs"
   ]

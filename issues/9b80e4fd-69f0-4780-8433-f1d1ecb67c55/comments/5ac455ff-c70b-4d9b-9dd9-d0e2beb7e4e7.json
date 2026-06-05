@@ -1,0 +1,10 @@
+{
+  "uuid": "5ac455ff-c70b-4d9b-9dd9-d0e2beb7e4e7",
+  "issue_uuid": "9b80e4fd-69f0-4780-8433-f1d1ecb67c55",
+  "author": "Yffe",
+  "content": "Implement forge §7.1 structural vacuity triage (vacuity.rs: checks a/b/c/d + VacuityVerdict) + the #[slag] escape hatch (slag.rs: field validation -> SlagMeta), wired into check::check_file BEFORE the L3 verus proof. manifest.rs gains additive slag_meta/RejectReason; contract_quality.{tautology,vacuous_precondition} graduate to live-false on a triage pass. Verified vs conformance/vacuity/triage.json + conformance/slag/slag.json; corpus sum/binary_search still L3. Not closing #6 (critic re-audits).",
+  "created_at": "2026-06-05T01:49:54.519641618Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAErUMW0+O5F+IvOh4fHYSeaO/Nu+GEj6v9B9F3fQsCUgEPTstR6K1BEGMpT81tKHD0iVFMl+VPAKyq/XNWs+0AA=="
+}

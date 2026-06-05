@@ -1,0 +1,10 @@
+{
+  "uuid": "40f4f8fa-9dff-487f-8b37-2f879f741e8b",
+  "issue_uuid": "c822771e-0e6b-4bf7-9479-20273473b392",
+  "author": "Yffe",
+  "content": "SHIPPED — per-item content-addressed proof cache + bit-reproducible verification. cache_key = sha256(lowered Verus source + pinned seed + verus version + thermite version). forge check consults the cache per-item before run_verus (HIT -> cached cert + skip solver; MISS -> verify + store). Additive cached:bool cert field. Critic NO DIVERGENCE (soundness-critical): key completeness; the BODY-EDIT-NO-STALE-PASS test (changed body re-verifies L0, never stale L3); version-keying; determinism; the decisive solver-skip (cache serves L3 with verus off PATH). Commit 1dc7c54. forge 71, workspace 177, clippy/fmt clean. Not pushed.",
+  "created_at": "2026-06-05T03:36:30.487373968Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAfny579zEk7gC2lFxoSfM78PLgklwirPOXKuz4C6aDvuyqEhSB48sEmW8mEwub6lBpP0k5dMBTURTkdafamGOCw=="
+}

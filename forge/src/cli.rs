@@ -28,8 +28,9 @@ use thermite_lower::LowerError;
 use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
-use crate::check::{self, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
+use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::manifest::{Certificate, Level, ObligationStatus};
+use crate::mutation::MUTATION_FLOOR;
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
 /// document describing failed obligations). Distinct from an environment error
@@ -154,7 +155,7 @@ impl ForgeError {
 enum Command {
     /// `forge new <name>`.
     New { name: String },
-    /// `forge check [<file>] [--json] [--level l2|l3] [--rlimit <FLOAT>]`.
+    /// `forge check [<file>] [--json] [--level l2|l3] [--rlimit <FLOAT>] [--mutation-floor <FLOAT>]`.
     Check {
         file: PathBuf,
         json: bool,
@@ -164,6 +165,11 @@ enum Command {
         /// the generous pinned [`DEFAULT_RLIMIT`]; a LOW value forces the timeout
         /// path so the three-way classification is testable.
         rlimit: f64,
+        /// The mutation kill-ratio floor (#12; `.design/forge/mutation-scoring.md`
+        /// REQ-5). Defaults to [`MUTATION_FLOOR`] (0.60); an item that proves L3
+        /// but scores below this floor does NOT certify (`WeakContract` reject). A
+        /// LOW value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
+        mutation_floor: f64,
     },
 }
 
@@ -207,6 +213,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut json = false;
             let mut level = CheckLevel::L3;
             let mut rlimit = DEFAULT_RLIMIT;
+            let mut mutation_floor = MUTATION_FLOOR;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
@@ -230,6 +237,31 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             return Err(ForgeError::Usage(format!(
                                 "`--rlimit` must be a finite positive number (got `{value}`); \
                                  verus rejects rlimit <= 0"
+                            )));
+                        }
+                    }
+                    "--mutation-floor" => {
+                        // `--mutation-floor <FLOAT>` — the §7 step-4 kill-ratio floor
+                        // (#12; `.design/forge/mutation-scoring.md` REQ-5). The value
+                        // is a separate token; a missing / non-numeric / out-of-[0,1]
+                        // value is a Usage error, never a silent default. A LOW value
+                        // (e.g. `0.2`) flips a weak contract back to certified (AC-3).
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--mutation-floor` requires a FLOAT value (the §7 kill-ratio \
+                                 floor, 0.0..=1.0)"
+                                    .to_string(),
+                            )
+                        })?;
+                        mutation_floor = value.parse::<f64>().map_err(|_| {
+                            ForgeError::Usage(format!(
+                                "`--mutation-floor` value `{value}` is not a number"
+                            ))
+                        })?;
+                        if !(mutation_floor.is_finite() && (0.0..=1.0).contains(&mutation_floor)) {
+                            return Err(ForgeError::Usage(format!(
+                                "`--mutation-floor` must be a finite ratio in 0.0..=1.0 (got \
+                                 `{value}`)"
                             )));
                         }
                     }
@@ -276,6 +308,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 json,
                 level,
                 rlimit,
+                mutation_floor,
             })
         }
         other => Err(ForgeError::Usage(format!(
@@ -287,7 +320,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
-    "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>]"
+    "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
+     [--mutation-floor <FLOAT>]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -318,7 +352,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             level,
             rlimit,
-        } => run_check(&file, json, level, rlimit),
+            mutation_floor,
+        } => run_check(&file, json, level, rlimit, mutation_floor),
     }
 }
 
@@ -330,6 +365,7 @@ fn run_check(
     json: bool,
     level: CheckLevel,
     rlimit: f64,
+    mutation_floor: f64,
 ) -> Result<ExitCode, ForgeError> {
     // The DEFAULT (no flag) stays the L3 verus path; `--level l2` is an EXPLICIT
     // choice that runs the Kani bounded model check instead — never an automatic
@@ -337,11 +373,21 @@ fn run_check(
     // `--rlimit` (#11) tunes the L3 verus resource budget; the L2 Kani path does
     // not consume it.
     let certs = match level {
-        // The DEFAULT budget routes through `check_file` (the public default-rlimit
-        // entry); an explicit `--rlimit` routes through `check_file_with_rlimit`
-        // (#11 — the timeout-forcing lever).
-        CheckLevel::L3 if rlimit == DEFAULT_RLIMIT => check::check_file(file)?,
-        CheckLevel::L3 => check::check_file_with_rlimit(file, rlimit)?,
+        // The canonical config (default rlimit + default mutation floor #12) routes
+        // through `check_file` (the public default entry, the only one that serves /
+        // populates the shared proof cache). An explicit `--rlimit` (#11, the
+        // timeout-forcing lever) or `--mutation-floor` (#12, the AC-3 floor-flip
+        // lever) routes through `check_file_with_options` (cache-bypassed).
+        CheckLevel::L3 if rlimit == DEFAULT_RLIMIT && mutation_floor == MUTATION_FLOOR => {
+            check::check_file(file)?
+        }
+        CheckLevel::L3 => check::check_file_with_options(
+            file,
+            CheckOptions {
+                rlimit,
+                mutation_floor,
+            },
+        )?,
         CheckLevel::L2 => check::check_l2_file(file)?,
     };
 
@@ -523,6 +569,7 @@ mod tests {
                 json: false,
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
+                mutation_floor: MUTATION_FLOOR,
             })
         );
         assert_eq!(
@@ -532,6 +579,7 @@ mod tests {
                 json: true,
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
+                mutation_floor: MUTATION_FLOOR,
             })
         );
     }
@@ -549,6 +597,7 @@ mod tests {
                 json: false,
                 level: CheckLevel::L3,
                 rlimit: 1.0,
+                mutation_floor: MUTATION_FLOOR,
             })
         );
         // Default when the flag is absent.
@@ -559,6 +608,7 @@ mod tests {
                 json: false,
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
+                mutation_floor: MUTATION_FLOOR,
             })
         );
         // Missing value, non-numeric, and non-positive are Usage errors.
@@ -576,6 +626,47 @@ mod tests {
         ));
     }
 
+    // #12 (`.design/forge/mutation-scoring.md` REQ-5): `--mutation-floor <FLOAT>`
+    // parses into `Check.mutation_floor`; the DEFAULT (no flag) is `MUTATION_FLOOR`
+    // (0.60); a missing / non-numeric / out-of-[0,1] value is a Usage error (the
+    // AC-3 floor-flip lever uses a LOW value like `0.2`).
+    #[test]
+    fn parses_mutation_floor_flag() {
+        assert_eq!(
+            parse_args(&argv(&["check", "a.th", "--mutation-floor", "0.2"])).ok(),
+            Some(Command::Check {
+                file: PathBuf::from("a.th"),
+                json: false,
+                level: CheckLevel::L3,
+                rlimit: DEFAULT_RLIMIT,
+                mutation_floor: 0.2,
+            })
+        );
+        // Default when the flag is absent.
+        assert_eq!(
+            parse_args(&argv(&["check", "a.th"]))
+                .ok()
+                .and_then(|c| match c {
+                    Command::Check { mutation_floor, .. } => Some(mutation_floor),
+                    _ => None,
+                }),
+            Some(MUTATION_FLOOR)
+        );
+        // Missing value, non-numeric, and out-of-range are Usage errors.
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--mutation-floor"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--mutation-floor", "nope"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--mutation-floor", "1.5"])),
+            Err(ForgeError::Usage(_))
+        ));
+    }
+
     // REQ-7 (`.design/lower/l2-kani.md`): `--level l2` selects the Kani path; the
     // DEFAULT (no flag) is L3; an unknown / missing value is a Usage error.
     #[test]
@@ -587,6 +678,7 @@ mod tests {
                 json: false,
                 level: CheckLevel::L2,
                 rlimit: DEFAULT_RLIMIT,
+                mutation_floor: MUTATION_FLOOR,
             })
         );
         assert_eq!(
@@ -596,6 +688,7 @@ mod tests {
                 json: false,
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
+                mutation_floor: MUTATION_FLOOR,
             })
         );
         assert!(matches!(

@@ -457,6 +457,53 @@ impl Certificate {
         cert
     }
 
+    /// Graduate the mutation-scoring `contract_quality` fields on a CERTIFIED
+    /// (kill-ratio-met) item (#12; `.design/forge/mutation-scoring.md` REQ-6). The
+    /// item proved L3 AND its frozen mutant set met the floor, so the cert records
+    /// the real `"<killed>/<scored>"` kill ratio (graduated from the forward-
+    /// declared `"0/0"`) and a representative `survivor` (the first surviving
+    /// mutant's description, or `None` when every scored mutant was killed). NO
+    /// schema field is added or renamed (R-SPEC-2) — this only makes the two
+    /// EXISTING Appendix A `contract_quality` fields LIVE. Consumed by
+    /// `check::check_file_with_options`'s post-L3 mutation stage.
+    pub fn with_mutation_score(mut self, mutants_killed: String, survivor: Option<String>) -> Self {
+        self.contract_quality.mutants_killed = mutants_killed;
+        self.contract_quality.survivor = survivor;
+        self
+    }
+
+    /// Build a NON-certified certificate for a WEAK-CONTRACT reject (#12;
+    /// `.design/forge/mutation-scoring.md` REQ-5/REQ-6). The item's REAL body
+    /// proved L3, but its frozen mutant set scored BELOW the floor — the contract
+    /// under-constrains the body (mutants survive). Like [`Certificate::rejected`]
+    /// (`Level::L0`, the structured `reject` cause, one failed obligation naming
+    /// it), but it ALSO records the real `mutants_killed` ratio and the surviving-
+    /// mutant `survivor` — the §7 "precise strengthening prompt". The `cause` is
+    /// `"WeakContract"` (a distinct tag namespace from #6/#13's vacuity causes), so
+    /// a cert reader can tell an under-constraining contract from a degenerate one.
+    /// Consumed by `check::check_file_with_options`.
+    pub fn rejected_weak_contract(
+        item: impl Into<String>,
+        effects: Vec<String>,
+        mutants_killed: String,
+        survivor: String,
+    ) -> Self {
+        let reason = RejectReason {
+            cause: "WeakContract".to_string(),
+            detail: format!(
+                "§7 step 4: the contract under-constrains the body — mutation kill ratio \
+                 {mutants_killed} is below the floor; mutant `{survivor}` survived (verus \
+                 proved the deliberately-wrong body against this contract), so the contract \
+                 does not distinguish it from the real body — strengthen the `ens` to pin \
+                 the behavior `{survivor}` changes"
+            ),
+        };
+        // Reuse the triage-clean reject shape (the item PASSED #6 + #13 + L3; the
+        // only defect is contract strength), then record the mutation fields.
+        Certificate::rejected(item, effects, false, reason)
+            .with_mutation_score(mutants_killed, Some(survivor))
+    }
+
     /// The DETERMINISTIC, currently-producible oracle subset (REQ-3/REQ-6,
     /// `.design/forge/check.md` AC-1): `(item, level, effects, slag)`. The
     /// forward-declared `contract_quality.*` and the non-deterministic
@@ -758,6 +805,61 @@ mod tests {
             .graduate_triage_clean();
         assert!(!cert.contract_quality.tautology);
         assert!(!cert.contract_quality.vacuous_precondition);
+    }
+
+    // #12 (mutation-scoring REQ-6): `with_mutation_score` graduates the two
+    // forward-declared fields to LIVE on a certified item; the oracle subset is
+    // unchanged (the fields stay oracle-excluded). Expected behavior traces to
+    // `mutation-scoring.md` REQ-6 (R-CHAR-3), not forge's output.
+    #[test]
+    fn with_mutation_score_graduates_fields_and_stays_oracle_excluded() {
+        let base = Certificate::new("sum", Level::L3, vec!["pure".to_string()], 0, vec![]);
+        // Forward-declared default before scoring.
+        assert_eq!(base.contract_quality.mutants_killed, "0/0");
+        assert!(base.contract_quality.survivor.is_none());
+
+        let scored = base.clone().with_mutation_score("17/18".to_string(), None);
+        assert_eq!(scored.contract_quality.mutants_killed, "17/18");
+        assert!(scored.contract_quality.survivor.is_none());
+        // The kill ratio is oracle-EXCLUDED: a graduated cert is oracle-equal to the
+        // forward-declared one (OQ-1 — the ratio is verus-version-sensitive).
+        assert!(oracle_eq(&base, &scored));
+        assert_eq!(base.level, scored.level);
+    }
+
+    // #12 (mutation-scoring REQ-5/REQ-6): a `WeakContract` reject is a NON-certified
+    // (L0) cert carrying the `"WeakContract"` cause, the real kill ratio, and a
+    // surviving-mutant `survivor` (the §7 strengthening prompt). Expected cause/level
+    // trace to `mutation-scoring.md` REQ-5 (R-CHAR-3), not forge's output.
+    #[test]
+    fn rejected_weak_contract_carries_cause_ratio_and_survivor() {
+        let cert = Certificate::rejected_weak_contract(
+            "f",
+            vec!["pure".to_string()],
+            "1/3".to_string(),
+            "insert early `return 0` at body head".to_string(),
+        );
+        assert_eq!(cert.level, Level::L0);
+        assert_ne!(cert.level, Level::L3);
+        assert_eq!(
+            cert.reject.as_ref().map(|r| r.cause.as_str()),
+            Some("WeakContract")
+        );
+        assert_eq!(cert.contract_quality.mutants_killed, "1/3");
+        assert_eq!(
+            cert.contract_quality.survivor.as_deref(),
+            Some("insert early `return 0` at body head")
+        );
+        // The detail names the surviving mutant (the precise prompt §7 describes).
+        let detail = cert
+            .reject
+            .as_ref()
+            .map(|r| r.detail.clone())
+            .unwrap_or_default();
+        assert!(
+            detail.contains("insert early `return 0` at body head"),
+            "detail names the survivor: {detail}"
+        );
     }
 
     // effects_of covers the whole Effect enum, not just `pure` (R-DEFER-8: fix

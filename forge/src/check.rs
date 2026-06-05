@@ -106,6 +106,31 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
     check_file_with_rlimit(path, DEFAULT_RLIMIT)
 }
 
+/// The tunable knobs `cli` threads into the per-item L3 pipeline (the verus
+/// resource budget #11, and the mutation kill-ratio floor #12). A single struct
+/// keeps the public `check_file*` entries stable while the cli passes both levers
+/// (R-SPEC-3 — no new positional contract per knob). `Default` is the pinned
+/// canonical configuration ([`DEFAULT_RLIMIT`] + [`mutation::MUTATION_FLOOR`]),
+/// the values `check_file` uses.
+#[derive(Debug, Clone, Copy)]
+pub struct CheckOptions {
+    /// The verus `--rlimit` SMT resource budget (#11).
+    pub rlimit: f64,
+    /// The mutation kill-ratio floor (#12; `.design/forge/mutation-scoring.md`
+    /// REQ-5). An item that proves L3 but scores BELOW this floor does NOT certify
+    /// (`WeakContract` reject). Default [`mutation::MUTATION_FLOOR`] (0.60).
+    pub mutation_floor: f64,
+}
+
+impl Default for CheckOptions {
+    fn default() -> Self {
+        CheckOptions {
+            rlimit: DEFAULT_RLIMIT,
+            mutation_floor: crate::mutation::MUTATION_FLOOR,
+        }
+    }
+}
+
 /// `check_file` with an explicit verus `--rlimit` (#11;
 /// `.design/forge/solver-profiles.md` REQ-5). [`check_file`] delegates here with
 /// the pinned generous [`DEFAULT_RLIMIT`]; `cli::run_check` passes the
@@ -117,6 +142,25 @@ pub fn check_file_with_rlimit(
     path: impl AsRef<Path>,
     rlimit: f64,
 ) -> Result<Vec<Certificate>, ForgeError> {
+    check_file_with_options(
+        path,
+        CheckOptions {
+            rlimit,
+            ..CheckOptions::default()
+        },
+    )
+}
+
+/// `check_file` with the full [`CheckOptions`] lever set (#11 rlimit + #12
+/// mutation floor). [`check_file`] / [`check_file_with_rlimit`] delegate here;
+/// `cli::run_check` passes the `--rlimit` and `--mutation-floor` flag values so a
+/// non-default floor (e.g. `0.2`) flips the §7 step-4 gate (AC-3). The corpus
+/// certifies at the default floor, so the cert-oracle is unperturbed.
+pub fn check_file_with_options(
+    path: impl AsRef<Path>,
+    options: CheckOptions,
+) -> Result<Vec<Certificate>, ForgeError> {
+    let rlimit = options.rlimit;
     let path = path.as_ref();
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
         path: path.display().to_string(),
@@ -215,7 +259,15 @@ pub fn check_file_with_rlimit(
         // — neither served from nor written to it. This keeps the cache key
         // (`cache::cache_key`, four inputs) unchanged while staying sound (a
         // timeout verdict is never cached as if proved).
-        let use_cache = rlimit == DEFAULT_RLIMIT;
+        // #12: a NON-default `--mutation-floor` (the AC-3 floor-flip lever) is also a
+        // verdict-changing knob NOT in the cache key (the same lowered source can
+        // certify under a low floor and reject `WeakContract` under the default), so
+        // a non-default floor likewise BYPASSES the cache — neither served nor
+        // written. The canonical-config run (default rlimit + default floor) is the
+        // only one that populates / serves the shared `target/` cache, keeping the
+        // four-input `cache::cache_key` unchanged while staying sound.
+        let use_cache =
+            rlimit == DEFAULT_RLIMIT && options.mutation_floor == crate::mutation::MUTATION_FLOOR;
         let key = cache::cache_key(&lowered, seed, &verus_version, THERMITE_VERSION);
         if use_cache {
             if let Some(stored) = cache::load(&cache_dir, &key) {
@@ -295,6 +347,52 @@ pub fn check_file_with_rlimit(
         } else {
             cert
         };
+
+        // #12 §7 step 4 — MUTATION SCORING, AFTER a successful L3 proof of the REAL
+        // body (`.design/forge/mutation-scoring.md` REQ-7). Reached ONLY on a
+        // `VerusOutcome::Proved` real body: the cert is `Level::L3` with no reject.
+        // A non-proving item (counterexample / timeout / a `spec fn`) is never
+        // scored — §7's premise is "mutate a KNOWN-GOOD body". Each mutant's
+        // re-verify is content-addressed through the SAME proof cache (#8), so a
+        // re-`forge check` re-scores from the cache cheaply. A sub-floor kill ratio
+        // turns the cert into a `WeakContract` reject (verdict-in-cert); a met floor
+        // graduates `mutants_killed`/`survivor` on the certified cert.
+        let cert = if let Item::Fn(f) = item {
+            if cert.level == Level::L3 && cert.reject.is_none() {
+                let score = mutation_score(
+                    f,
+                    &spec_items,
+                    seed,
+                    rlimit,
+                    &verus_version,
+                    &cache_dir,
+                    use_cache,
+                )?;
+                let effects = effects_of(&f.contract.fx);
+                if score.meets_floor(options.mutation_floor) {
+                    cert.with_mutation_score(score.mutants_killed_string(), score.survivor)
+                } else {
+                    // Sub-floor: the contract under-constrains the body. A survivor
+                    // is guaranteed below the floor (a < 1.0 ratio means ≥1 mutant
+                    // survived); fall back to a generic prompt only if absent.
+                    let survivor = score
+                        .survivor
+                        .clone()
+                        .unwrap_or_else(|| "a mutant survived the contract".to_string());
+                    Certificate::rejected_weak_contract(
+                        f.name.clone(),
+                        effects,
+                        score.mutants_killed_string(),
+                        survivor,
+                    )
+                }
+            } else {
+                cert
+            }
+        } else {
+            cert
+        };
+
         // #11: a TIMEOUT cert (budget-dependent, `VerusTimeout`) is NEVER cached —
         // it is not a settled verdict (a larger budget might prove it). Only a
         // settled cert (proved / counterexample) at the default budget is stored.
@@ -933,6 +1031,110 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
             obligations.clone(),
         ),
     }
+}
+
+/// Score the frozen mutant set of `f` against its OWN (unchanged) contract (#12
+/// §7 step 4; `.design/forge/mutation-scoring.md` REQ-3/REQ-4/REQ-5/REQ-7).
+/// Called from the per-item L3 path ONLY after `f`'s REAL body proved L3 (the
+/// caller gates on `cert.level == L3 && reject.is_none()`).
+///
+/// For each mutant (`mutation::generate`, the frozen + ordered + capped set):
+/// 1. weave it into the same per-item sub-program shape ([`item_subprogram`]) and
+///    lower via the existing `thermite_lower::lower`. A mutant that FAILS to lower
+///    is DROPPED from the denominator (not scored — OQ-5), never an `Err` that
+///    fails the gate.
+/// 2. content-address the lowered mutant via the SAME proof cache (#8;
+///    `cache::cache_key`/`load`/`store`) — a HIT serves the stored verdict without
+///    spawning verus, so a re-`forge check` re-scores cheaply (REQ-7). The cache
+///    is consulted ONLY at the canonical config (`use_cache`); a non-default
+///    rlimit / floor run bypasses it (the caller's invariant).
+/// 3. run the existing `run_verus` on a MISS and classify (REQ-4): a `Proved`
+///    mutant SURVIVED (the contract is too weak); a `Counterexample` / `Timeout`
+///    mutant is KILLED. An ENVIRONMENT / VIR failure surfaces a `ForgeError`
+///    (R-CODE-4), never a silent kill or survive.
+///
+/// Returns the [`mutation::MutationScore`] (`killed`/`scored` + the first
+/// surviving mutant's description). DETERMINISTIC (REQ-8): the mutant list is a
+/// pure function of the AST + the frozen table, and each mutant verdict is the
+/// same deterministic verus run the L3 path + cache rely on.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the L3-path seams (spec items, \
+    seed, rlimit, verus version, cache dir + enable) are all verdict-determining \
+    inputs threaded from check_file; bundling them would obscure the per-mutant \
+    cache-key composition"
+)]
+fn mutation_score(
+    f: &thermite_syntax::FnItem,
+    spec_items: &[Item],
+    seed: u64,
+    rlimit: f64,
+    verus_version: &str,
+    cache_dir: &Path,
+    use_cache: bool,
+) -> Result<crate::mutation::MutationScore, ForgeError> {
+    let mutants = crate::mutation::generate(f, seed);
+    let mut killed = 0usize;
+    let mut scored = 0usize;
+    let mut survivor: Option<String> = None;
+
+    for mutant in mutants {
+        let item = Item::Fn(mutant.item);
+        let sub = item_subprogram(&item, spec_items);
+        // OQ-5: a mutant that fails to LOWER (structurally degenerate) is DROPPED
+        // from the denominator, never an `Err` that fails the whole gate.
+        let lowered = match thermite_lower::lower(&sub) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Content-address the mutant exactly as the L3 path does (#8). A mutant's
+        // verdict is a deterministic function of its lowered source + seed +
+        // versions, so it caches like any item.
+        let key = cache::cache_key(&lowered, seed, verus_version, THERMITE_VERSION);
+        let proved = if use_cache {
+            if let Some(stored) = cache::load(cache_dir, &key) {
+                mutant_cert_is_survivor(&stored)
+            } else {
+                let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+                let cert = assemble_certificate(&item, &verus);
+                let _ = cache::store(cache_dir, &key, &cert);
+                mutant_cert_is_survivor(&cert)
+            }
+        } else {
+            let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+            mutant_outcome_is_survivor(&verus.outcome)
+        };
+
+        scored += 1;
+        if crate::mutation::classify_mutant(proved) == crate::mutation::MutantOutcome::Killed {
+            killed += 1;
+        } else if survivor.is_none() {
+            // The FIRST survivor in deterministic enumeration order (REQ-2) is the
+            // representative strengthening prompt.
+            survivor = Some(mutant.desc);
+        }
+    }
+
+    Ok(crate::mutation::MutationScore {
+        killed,
+        scored,
+        survivor,
+    })
+}
+
+/// `true` iff a verus outcome on a MUTANT body is a SURVIVOR (REQ-4): verus
+/// PROVED the deliberately-wrong body (`VerusOutcome::Proved`). A counterexample
+/// or a timeout is KILLED (OQ-4 — an un-proved mutant is not a survivor).
+fn mutant_outcome_is_survivor(outcome: &VerusOutcome) -> bool {
+    matches!(outcome, VerusOutcome::Proved { .. })
+}
+
+/// `true` iff a CACHED mutant cert is a SURVIVOR (REQ-4). The stored cert is a
+/// full item cert: a `Level::L3` with no reject means verus PROVED the mutant (a
+/// survivor); anything else (a counterexample-L0, a timeout reject) is KILLED.
+fn mutant_cert_is_survivor(cert: &Certificate) -> bool {
+    cert.level == Level::L3 && cert.reject.is_none()
 }
 
 #[cfg(test)]

@@ -1,0 +1,10 @@
+{
+  "uuid": "cc6af0d9-2371-4704-9d5e-e5d39451fa58",
+  "issue_uuid": "5a238c07-b4b7-4bb7-90a5-6dd9add6a452",
+  "author": "Yffe",
+  "content": "SHIPPED — multi-agent Forge sessions. The concurrency-safety primitive is EMERGENT: cache::store atomic (temp+rename, #8), load degrades torn entries to MISS (#49). forge/tests/concurrency.rs (7 tests): N=8 concurrent forge PROCESSES over a shared cache -> correct certs (oracle-subset == serial == golden), no corruption; per-item LOCALITY (editing A never invalidates B unless B references A — §5.3/§9, with negative control); torn->MISS; concurrent==serial. No central daemon. Critic NO DIVERGENCE (genuinely concurrent, store atomic stress-probed, locality genuine, no flakiness 3x). Commit e0e930b. workspace 365 tests, clippy/fmt clean. Filed #53 (verus-temp leak). Not pushed.",
+  "created_at": "2026-06-05T11:15:15.918140867Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAgB0OGjjWhxy44heHf7G2HwvBmRTeWNYuWRNOMCSxFn7HDKh9XBqLb+wfgGZXU36M58Yox7vpst1bwjfBxMoPCg=="
+}

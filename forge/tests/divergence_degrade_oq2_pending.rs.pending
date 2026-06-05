@@ -1,0 +1,60 @@
+// DIVERGENCE PIN (blocker #51) — the fixer MUST move this test into
+// `forge/src/kani.rs`'s `#[cfg(test)] mod tests` (the symbols it asserts —
+// `classify_l2_outcome`, `L2Result`, `is_under_bound_failure` — are private to
+// the binary-only `forge` crate and unreachable from an external `tests/` file).
+// It FAILS against 2323dcb and goes green only when the fix lands (R-DEFER-3).
+//
+// Authority: `.design/forge/degrade-ladder.md` OQ-2 — the under-bound
+// discriminator is kani's boilerplate `unwinding assertion loop N`; a concrete
+// `Failed Checks: assertion failed: <ens clause>` is a COUNTEREXAMPLE. The
+// ratified OQ-2 resolution (R-DEFER-9): ambiguous → Counterexample (hard fail),
+// because hiding a bug is worse than over-reporting a failure.
+//
+// THE BUG: `is_under_bound_failure`'s second arm `d.contains("unwind")` is a
+// bare-substring match on the user's `ens` clause text (which kani echoes
+// verbatim into `Failed Checks:`, per `parse_failed_checks`). Any real
+// counterexample whose `ens` text merely CONTAINS the substring `unwind`
+// (e.g. a spec helper `unwind_count`, a field `.unwind`, `rewind`, `unwound`) is
+// classified `UnderBound` → `run_ladder` degrades it to L1 with a
+// `lowered-assurance` stamp — a DISPROVED contract hidden behind a certified
+// rung, exactly the R-DEFER-9 / REQ-2 anti-cheat failure (§12).
+//
+// Deterministically confirmed against a faithful copy of the 2323dcb logic:
+//   real counterexample w/ 'unwind' substring -> UnderBound   (WRONG)
+//   control counterexample (no 'unwind')      -> Counterexample (right)
+//
+// EXPECTED FIX: drop the `|| d.contains("unwind")` arm; key the under-bound
+// classification on kani's boilerplate `unwinding assertion` ONLY (the grounded
+// `under_bound_is_reported_failure` shape, design OQ-2). After the fix, this test
+// and the existing classify_l2_* tests are all green.
+
+// >>> Move the following test INTO `forge/src/kani.rs` `mod tests` (it already
+//     `use super::*;` and `use crate::manifest::ObligationStatus;`). <<<
+
+// #10 OQ-2 / REQ-2 anti-cheat (blocker #51): a REAL property counterexample whose
+// `ens` clause text merely CONTAINS the substring `unwind` (a perfectly ordinary
+// identifier — here a spec helper `unwind_count`) is a COUNTEREXAMPLE, NEVER an
+// UnderBound degrade to L1. The under-bound discriminator is kani's boilerplate
+// `unwinding assertion`, not a bare `unwind` substring of the user's ens text
+// (degrade-ladder.md OQ-2, R-DEFER-9). R-CHAR-3: kani echoes the asserted
+// property verbatim (`failure_terse_is_counterexample` shape), not forge's text.
+#[test]
+fn classify_l2_assertion_with_unwind_substring_is_counterexample() {
+    let r = L2Result {
+        level: Level::L0,
+        obligations: vec![ObligationResult::failed(
+            "assertion failed: result == unwind_count(n)",
+            Some("src/lib.rs:22".to_string()),
+            None,
+        )],
+        solver_time_ms: 3,
+    };
+    assert_eq!(
+        classify_l2_outcome(&r),
+        L2Verdict::Counterexample,
+        "a real `assertion failed: <ens>` counterexample whose clause text merely \
+         contains the substring `unwind` must be a Counterexample (hard fail), NEVER \
+         an UnderBound degrade to L1 — degrading it hides a disproved contract behind \
+         a lowered-assurance stamp (degrade-ladder.md OQ-2, R-DEFER-9)"
+    );
+}

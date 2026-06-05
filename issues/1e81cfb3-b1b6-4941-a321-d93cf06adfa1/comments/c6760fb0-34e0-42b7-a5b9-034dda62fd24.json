@@ -1,0 +1,10 @@
+{
+  "uuid": "c6760fb0-34e0-42b7-a5b9-034dda62fd24",
+  "issue_uuid": "1e81cfb3-b1b6-4941-a321-d93cf06adfa1",
+  "author": "Yffe",
+  "content": "Result: NO DIVERGENCE. 11 probes committed at thermite-spec/tests/divergence_nesting.rs (adac0ec), all green. Under-enforcement (2-level/inv/3-arg-outer/spec-fn-body nests) all reject with NestedCombinator; over-enforcement/leak probes (sibling top-level combinators, named-spec-fn-body composition, named-spec-fn-in-closure) all stay Ok. Generality grep: rule keys on combinators::lookup, no name hardcoding. Gauntlet green. One cosmetic artifact (co-emitted misleading ForbiddenCall on an already-rejected nested-combinator program) documented in the test file, not pinned.",
+  "created_at": "2026-06-05T01:16:40.379353947Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAFHFabjXXns3XS2mCruQ6qLzwsooq31azqAEbBEI98nmD+DOK8PWSPbOqDZQuoaF7/kjetxHZ814vk3AFgodsAA=="
+}

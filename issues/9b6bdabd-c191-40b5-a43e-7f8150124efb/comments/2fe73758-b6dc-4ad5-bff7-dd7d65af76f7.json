@@ -1,0 +1,10 @@
+{
+  "uuid": "2fe73758-b6dc-4ad5-bff7-dd7d65af76f7",
+  "issue_uuid": "9b6bdabd-c191-40b5-a43e-7f8150124efb",
+  "author": "Yffe",
+  "content": "SHIPPED — automatic L3->L2->L1 degrade ladder + assurance manifest (§6 'the gate degrades, it never blocks'). degrade.rs run_ladder: L3 Proved->L3; Timeout->attempt L2 (lower_l2+run_kani); L2 Verified->L2+lowered-assurance+bound; L2 UnderBound->L1 (records level); COUNTEREXAMPLE at any rung->HARD FAIL (never degraded). Composes #11 (timeout-vs-counterexample trigger), #9 (L2 Kani), l1 (L1). manifest.rs: Level: Ord (L0<L1<L2<L3), AssuranceManifest::aggregate = min-over-functions; a hard-failed fn -> project Failed (not a rung). Loop: doc-author -> builder -> critic (found #51) -> fixer. #51: is_under_bound_failure had an over-broad '|| d.contains(\"unwind\")' arm matching a real counterexample whose ens text contains 'unwind' (e.g. unwind_count) -> wrongly degraded to L1, hiding a bug (R-DEFER-9 anti-cheat failure); FIXED to 'unwinding assertion' boilerplate only. Anti-cheat verified: counterexample never degrades (hermetic panic-closure test + live broken-contract -> L0 hard-fail); genuine under-bound still -> L1. Commits 2323dcb -> 36cab43 (critic) -> de890e1 (#51). workspace 288 tests, clippy/fmt clean, corpus L3 no-degrade. Proof-repair loop is #18. Not pushed.",
+  "created_at": "2026-06-05T07:04:06.513326541Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkItQibikaVBwmLU71qrOpx2QbYOfGX3q1q5FA6bOo4O0yzi9hqu8VFOD+eBp18SxXfR0LnH1P+j/uhNBzIYqAw=="
+}

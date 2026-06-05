@@ -1,0 +1,10 @@
+{
+  "uuid": "15404399-38fb-4e70-b61b-974e85df0225",
+  "issue_uuid": "4ec9b660-2c0d-4544-88c4-1e50df514540",
+  "author": "Yffe",
+  "content": "Implement §7 step-4 mutation scoring across forge/src/mutation.rs (frozen deterministic mutator set: operator flips, off-by-ones, early returns, branch swaps; MUTANT_CAP=64; seeded from DEFAULT_SOLVER_SEED), check.rs (mutation_score reuses item_subprogram+thermite_lower::lower+run_verus through the proof cache; floor gate AFTER L3 success), manifest.rs (with_mutation_score / rejected_weak_contract; RejectReason cause WeakContract), cli.rs (--mutation-floor flag), main.rs (mod mutation), and forge/tests/mutation_conformance.rs (AC-1..4 vs conformance/mutation/cases.json). Polarity: a mutant verus PROVES = SURVIVED (contract too weak); verus FAILS = KILLED. mutants_killed stays oracle-excluded (verus-version-sensitive).",
+  "created_at": "2026-06-05T05:46:47.389689626Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAd5vQbsbS33GxSh8ze2Dir0rWdzAaRoHhgiTxXx7DbJWKStXxf581OkHdFF+LJcT1ZCGlyaouGpMm2eyKjE2YDw=="
+}

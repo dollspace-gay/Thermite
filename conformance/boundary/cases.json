@@ -1,0 +1,16 @@
+{
+  "note": "Oracle for forge's crates.io FFI boundary modules (§9, issue #16). Hand-derived (R-CHAR-3). A boundary fn is a bodyless `fn` + `#[boundary(\"crate::path\")]`: the foreign body is UNPROVEN, the contract is L1-enforced (runtime checks on every crossing). It certifies Level L1 with a boundary flag + the foreign target — NOT L3. slag-adjacent (§9): it is enumerable in the TCB. NOTE: these programs require the #16 parser extension (bodyless-fn + the #[boundary] attribute) — they do NOT parse before #16; the builder confirms they parse + certify post-build.",
+  "certifies_l1_boundary": [
+    { "name": "foreign_id", "expect_level": "L1", "expect_boundary": true, "expect_target": "ext::foreign_id",
+      "program": "#[boundary(\"ext::foreign_id\")] fn foreign_id(x: u32) -> u32 req x < 100 ens result == x fx pure ;",
+      "why": "A foreign fn given a Thermite contract; the body is foreign (unproven) so it cannot reach L3 — it certifies L1 with the contract enforced at the crossing (req x<100 checked before, ens result==x checked after), boundary flag set, target recorded for the TCB enumeration." }
+  ],
+  "reject": [
+    { "name": "bodyless_without_boundary", "cause": "ParseError",
+      "program": "fn nope(x: u32) -> u32 req x < 100 ens result == x fx pure ;",
+      "why": "A bodyless `fn` WITHOUT #[boundary] must be a parse ERROR (OQ-2): the ;-body is only valid for a boundary fn; a normal fn missing its body must not silently become a boundary fn." },
+    { "name": "boundary_vacuous_contract", "cause": "EnsIsTrivial",
+      "program": "#[boundary(\"ext::g\")] fn g(x: u32) -> u32 req true ens true fx pure ;",
+      "why": "boundary is slag-adjacent: it exempts PROVING, not STATING. A vacuous contract (ens true) on a boundary fn is still rejected by the §7.1 structural triage." }
+  ]
+}

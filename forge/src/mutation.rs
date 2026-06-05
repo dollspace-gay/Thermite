@@ -25,11 +25,11 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (frozen deterministic mutator set) | SHIPPED | `pub fn generate` walks a `FnItem.body` in source order and applies the FIXED families: operator flips (`flip_binop`), off-by-ones (`IntLit n`→`n+1`/`n-1`, skip `n-1` at 0), early returns (`return <type-zero>` via `zero_value_for` at body head), branch swaps (negate `if`/`Expr::If` cond, else swap arms). Consumer: `check::mutation_score` in `check.rs`. |
+//! | REQ-1 (frozen deterministic mutator set) | SHIPPED | `pub fn generate` walks a `FnItem.body` in source order and applies the FIXED families: operator flips (`flip_binop`), off-by-ones (`IntLit n`→`n+1`/`n-1`, skip `n-1` at 0), early returns (`return <value>` via `early_return_value` at body head — scalar zero via `zero_value_for`, OR the empty-slice literal `&[]`/`&mut []` for a reference-to-slice return so EVERY real body is scored, #48), branch swaps (negate `if`/`Expr::If` cond, else swap arms). Consumer: `check::mutation_score` in `check.rs`. |
 //! | REQ-2 (deterministic order + seed + cap) | SHIPPED | a pre-order walk in a fixed family order, capped by `pub const MUTANT_CAP`; selection is the first `MUTANT_CAP` mutants in enumeration order. The seam takes the pinned `check::DEFAULT_SOLVER_SEED` (recorded in the run; the enumeration is seed-stable). Consumer: `check::mutation_score`. |
 //! | REQ-3 (re-lower + re-verify vs same contract) | SHIPPED | `pub fn generate` clones the original `FnItem` and mutates only `body`; `check::mutation_score` weaves each mutant via `item_subprogram` + `thermite_lower::lower` and runs the existing `run_verus`. The `req`/`ens`/`inv`/`dec` are the original's, unchanged. |
 //! | REQ-4 (KILLED vs SURVIVED) | SHIPPED | `pub fn classify_mutant` maps a `MutantOutcome`: `Proved` → SURVIVED, `Killed` (counterexample / timeout) → KILLED; a lowering failure is DROPPED (not scored). Consumer: `check::mutation_score`. |
-//! | REQ-5 (kill ratio + floor gate, default 60%) | SHIPPED | `pub struct MutationScore` carries `killed`/`scored`/`survivor`; `pub fn MutationScore::kill_ratio` + `pub const MUTATION_FLOOR: f64 = 0.60`; `pub fn MutationScore::meets_floor`. The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Consumer: `check::mutation_score` + the floor gate in `check::check_file_with_options`. |
+//! | REQ-5 (kill ratio + floor gate, default 60%) | SHIPPED | `pub struct MutationScore` carries `killed`/`scored`/`survivor`; `pub fn MutationScore::kill_ratio` + `pub const MUTATION_FLOOR: f64 = 0.60`; `pub fn MutationScore::meets_floor`. A `0/0` score (no scoreable mutant) is BELOW the floor (`kill_ratio == 0.0`), not a vacuous pass — a contract that cannot be mutation-validated is gated `WeakContract` (#48, anti-Goodhart). The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Consumer: `check::mutation_score` + the floor gate in `check::check_file_with_options`. |
 //! | REQ-6 (graduate `mutants_killed`/`survivor`) | SHIPPED | `MutationScore::mutants_killed_string` builds the `"K/N"` form; `check` sets it via `Certificate::with_mutation_score` / `Certificate::rejected_weak_contract`. |
 //! | REQ-7 (gate AFTER L3, reuse proof cache) | SHIPPED | `check::mutation_score` runs only on a `VerusOutcome::Proved` real body and content-addresses each mutant via `cache::cache_key`/`load`/`store`. |
 //! | REQ-8 (deterministic kill ratio) | SHIPPED | `generate` is a pure function of the AST + the frozen table; each mutant verdict is the deterministic verus run the L3 path + cache rely on, so `mutants_killed` is deterministic (asserted by the same-input-twice conformance double-run). `mutants_killed`/`survivor` stay oracle-EXCLUDED (OQ-1). |
@@ -114,14 +114,19 @@ pub struct MutationScore {
 
 impl MutationScore {
     /// The kill ratio `killed / scored` (REQ-5). When NO mutant was scored
-    /// (`scored == 0` — e.g. every mutant failed to lower, or the body has no
-    /// mutation site), the ratio is `1.0`: there is no surviving counterexample
-    /// to the contract's strength, so the floor is vacuously met (the gate does
-    /// not reject a body it could not mutate). Documented: a `0/0` score is a
-    /// pass, not a reject.
+    /// (`scored == 0` — every mutant failed to lower, or the body had no mutation
+    /// site AND no early-return mutant could be synthesized), the ratio is `0.0`:
+    /// a contract that CANNOT be mutation-validated has NOT met the §7 bar, so the
+    /// floor is NOT met (#48). This is the 0/0 backstop — a `0/0` score is treated
+    /// as below-floor (gated `WeakContract`), never a silent vacuous `1.0` pass
+    /// that lets an under-constraining contract certify L3 UNSCORED (§7 step 4 /
+    /// `goal.md` R-DEFER-9 anti-Goodhart). With the widened early-return mutant
+    /// (`early_return_value` synthesizes one for ref/slice returns too), a 0/0
+    /// score is unreachable for a real `fn` body; the backstop is the floor-of-
+    /// last-resort for any genuinely un-synthesizable return type.
     pub fn kill_ratio(&self) -> f64 {
         if self.scored == 0 {
-            1.0
+            0.0
         } else {
             self.killed as f64 / self.scored as f64
         }
@@ -165,16 +170,20 @@ impl MutationScore {
 pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
     let mut mutants = Vec::new();
 
-    // Family 1: early return at body head (one mutant, if the ret type has a
-    // canonical zero). Listed first so it is never crowded out by the cap on a
-    // body with many sites — it is the §7 discriminator (the value-add mutant).
-    if let Some(zero) = zero_value_for(&f.ret) {
+    // Family 1: early return at body head. EVERY real `fn` body gets this mutant
+    // (the §7 discriminator / value-add mutant) so the floor is never silently
+    // skipped via a 0/0 score (#48). Listed first so the cap never crowds it out.
+    // The returned value is the return type's canonical zero (`zero_value_for`)
+    // OR, for a reference/slice return that has no scalar zero, a synthesized
+    // valid early return — an empty subslice borrowing a matching slice param
+    // (`&p[..0]`, valid lifetime) or the empty-slice literal `&[]` (OQ-3 widened).
+    if let Some((value, desc)) = early_return_value(f) {
         let mut body = f.body.clone();
-        body.stmts.insert(0, Stmt::Return(Some(zero)));
+        body.stmts.insert(0, Stmt::Return(Some(value)));
         mutants.push(mutant_with_body(
             f,
             body,
-            format!("insert early `return {}` at body head", zero_desc(&f.ret)),
+            format!("insert early `return {desc}` at body head"),
         ));
     }
 
@@ -239,13 +248,57 @@ fn binop_token(op: BinOp) -> &'static str {
     }
 }
 
-/// The canonical zero VALUE of a return type for the early-return mutant (REQ-1,
-/// OQ-3): `0` for an integer prim, `false` for `bool`, `None` for an `Option`.
-/// A type with no canonical zero (`Unit`, a `Ref`, a bare `Slice`, a non-`Option`
-/// generic) yields `None` — the early-return mutator is SKIPPED for that `fn`
-/// (dropped from the set, not an error). Returning a value of the function's
-/// return type keeps the mutant well-typed so it LOWERS (only the contract should
-/// reject it, not the type checker).
+/// The early-return mutant's `(value, description)` for `f`'s return type (REQ-1,
+/// OQ-3 widened by #48). EVERY real `fn` body must get an early-return mutant so
+/// the §7 floor is never silently skipped via a 0/0 score:
+///
+/// - a scalar return uses its canonical zero (`zero_value_for`): `0` for an
+///   integer prim, `false` for `bool`, `None` for an `Option`;
+/// - a reference-to-slice return (`&[T]` / `&mut [T]`) has no scalar zero, so it
+///   synthesizes the empty-slice literal early return `&[]` (`&mut []`). An empty
+///   slice is the canonical "trivial" slice (it borrows nothing, so its lifetime
+///   is always valid and it LOWERS to exec code Verus accepts — `RangeTo`
+///   subslices like `&xs[..0]` are NOT supported in Verus exec position, so the
+///   empty literal is the right synthesis). A weak `ens` that does not pin the
+///   result (`ens result.len() <= N`) PROVES `&[]` → the mutant SURVIVES → the
+///   floor gates the weak contract; a strong `ens result == xs` REJECTS `&[]`
+///   (unless `xs` is empty) → the mutant is KILLED → no over-gating (#48).
+///
+/// `None` is returned only for a genuinely un-synthesizable return type (`Unit`, a
+/// non-slice ref, a non-`Option` generic) — see the 0/0 backstop in `kill_ratio`.
+fn early_return_value(f: &FnItem) -> Option<(Expr, String)> {
+    if let Some(zero) = zero_value_for(&f.ret) {
+        return Some((zero, zero_desc(&f.ret).to_string()));
+    }
+    // A reference-to-slice return: the empty-slice literal `&[]` / `&mut []`.
+    if let Type::Ref { mutable, inner } = &f.ret {
+        if matches!(inner.as_ref(), Type::Slice(_)) {
+            let empty = Expr::Ref {
+                mutable: *mutable,
+                expr: Box::new(empty_slice_literal()),
+            };
+            let amp = if *mutable { "&mut " } else { "&" };
+            return Some((empty, format!("{amp}[]")));
+        }
+    }
+    None
+}
+
+/// The empty-slice literal expression `[]`. The AST has no dedicated array-literal
+/// node; the lowerer emits a `Path`'s sole segment verbatim, so a single-segment
+/// `Path(["[]"])` lowers to the exec literal `[]` (then wrapped in `Expr::Ref` for
+/// `&[]`). Verus accepts `&[]` in exec position (a zero-length borrowed slice).
+fn empty_slice_literal() -> Expr {
+    Expr::Path(vec!["[]".to_string()])
+}
+
+/// The canonical zero VALUE of a SCALAR return type for the early-return mutant
+/// (REQ-1, OQ-3): `0` for an integer prim, `false` for `bool`, `None` for an
+/// `Option`. A type with no scalar zero (`Unit`, a `Ref`, a bare `Slice`, a
+/// non-`Option` generic) yields `None` here; reference-to-slice returns are
+/// handled by `early_return_value`. Returning a value of the function's return
+/// type keeps the mutant well-typed so it LOWERS (only the contract should reject
+/// it, not the type checker).
 fn zero_value_for(ret: &Type) -> Option<Expr> {
     match ret {
         Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => Some(Expr::IntLit(0)),
@@ -864,19 +917,42 @@ mod tests {
         assert_eq!(weak.mutants_killed_string(), "1/3");
     }
 
-    // REQ-5: a 0/0 score (no scoreable mutant) meets the floor vacuously (not a
-    // reject) — the gate does not reject a body it could not mutate.
+    // REQ-5 / #48 backstop: a 0/0 score (no scoreable mutant) does NOT meet the
+    // floor — a contract that cannot be mutation-validated has not met the §7 bar
+    // (anti-Goodhart, goal.md R-DEFER-9), so it is gated, NOT a silent vacuous
+    // pass. Expected value traces to §7 step 4 (the floor catches an
+    // under-constraining contract), not to forge's output (R-CHAR-3).
     #[test]
-    fn empty_score_meets_floor() {
+    fn empty_score_is_below_floor() {
         let score = MutationScore {
             killed: 0,
             scored: 0,
             survivor: None,
         };
-        assert_eq!(score.kill_ratio(), 1.0);
-        assert!(score.meets_floor(MUTATION_FLOOR));
+        assert_eq!(score.kill_ratio(), 0.0);
+        assert!(!score.meets_floor(MUTATION_FLOOR));
     }
 
+    // #48: a reference-to-slice return synthesizes an early-return mutant (the
+    // empty-slice literal `&[]`) so EVERY real `fn` body is scored — the 0/0 escape
+    // is unreachable. The weak `pick` fixture from the divergence issue:
+    // `fn pick(xs: &[u32]) -> &[u32] ... { xs }`. Expected mutant traces to REQ-1's
+    // widened early-return family (R-CHAR-3), not to the generator's output.
+    #[test]
+    fn slice_return_synthesizes_early_return_mutant() {
+        let f = parse_fn(
+            "fn pick(xs: &[u32]) -> &[u32] req xs.len() <= 10 ens result.len() <= 10 fx pure { xs }",
+        );
+        let mutants = generate(&f, 0);
+        assert!(
+            mutants
+                .iter()
+                .any(|m| m.desc == "insert early `return &[]` at body head"),
+            "a `&[u32]` return uses the empty-slice literal for the early-return \
+             mutant: {:?}",
+            mutants.iter().map(|m| &m.desc).collect::<Vec<_>>()
+        );
+    }
     // REQ-1 (family 4): a branch swap negates a comparison `if` condition.
     #[test]
     fn branch_swap_negates_comparison() {

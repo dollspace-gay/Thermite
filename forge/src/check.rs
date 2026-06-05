@@ -372,13 +372,21 @@ pub fn check_file_with_options(
                 if score.meets_floor(options.mutation_floor) {
                     cert.with_mutation_score(score.mutants_killed_string(), score.survivor)
                 } else {
-                    // Sub-floor: the contract under-constrains the body. A survivor
-                    // is guaranteed below the floor (a < 1.0 ratio means ≥1 mutant
-                    // survived); fall back to a generic prompt only if absent.
-                    let survivor = score
-                        .survivor
-                        .clone()
-                        .unwrap_or_else(|| "a mutant survived the contract".to_string());
+                    // Sub-floor: the contract under-constrains the body. Below the
+                    // floor a survivor is normally present (a < 1.0 ratio means ≥1
+                    // mutant survived). The one exception is the 0/0 backstop (#48):
+                    // NO mutant could be scored (un-synthesizable return type) — a
+                    // contract that cannot be mutation-validated has not met the §7
+                    // bar, so it is gated with an explicit unscoreable prompt.
+                    let survivor = score.survivor.clone().unwrap_or_else(|| {
+                        if score.scored == 0 {
+                            "the contract could not be mutation-validated (no \
+                             scoreable mutant); it does not meet the §7 floor"
+                                .to_string()
+                        } else {
+                            "a mutant survived the contract".to_string()
+                        }
+                    });
                     Certificate::rejected_weak_contract(
                         f.name.clone(),
                         effects,

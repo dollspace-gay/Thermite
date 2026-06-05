@@ -21,6 +21,7 @@
 //! | REQ-6 (clean compile) | SHIPPED | gauntlet green; the anti-pattern gate passes (no placeholder macros). |
 
 mod audit;
+mod build;
 mod cache;
 mod check;
 mod cli;

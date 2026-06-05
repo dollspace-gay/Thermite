@@ -136,14 +136,18 @@ below (Verification) against real rustc.
   `effects_of`/`EffectRow::Pure` projection; Appendix A's certificate has
   `"effects": ["pure"]`) — the per-fn `fx` row #57's filter is derived from.
 
-- **AC-6 (deterministic source; reproducible modulo archive timestamp).** The
-  `lower_l1`-emitted source for `conformance/sum.th` is **bit-identical** across two
-  builds (forge owns this determinism; §5.3). The compiled `.rlib` is byte-identical in
-  its codegen content across two same-input builds; the ONLY varying byte is the `ar`
-  archive member-mtime header (a Unix-timestamp digit), pinnable via `SOURCE_DATE_EPOCH`
-  / a deterministic archiver. The manifest states this honestly: deterministic source +
-  deterministic codegen, modulo the archive-timestamp linker bit (Verification quantifies
-  it: exactly one byte).
+- **AC-6 (deterministic source; reproducible artifact).** The `lower_l1`-emitted
+  source for `conformance/sum.th` is **bit-identical** across two builds (forge owns
+  this determinism; §5.3). The compiled `.rlib` is **byte-identical** across two
+  same-input builds once two nondeterminism sources are pinned: (1) the archive
+  member-mtime, pinned via `SOURCE_DATE_EPOCH=0`; and (2) the per-run scratch path
+  baked into the artifact's debug metadata, pinned by compiling the RELATIVE filename
+  (cwd = the scratch dir) plus `--remap-path-prefix=<scratch>=.`. With both pinned the
+  residual is **zero bytes** — `build_conformance::rebuilt_library_is_byte_identical`
+  asserts a byte-for-byte equal rlib. (The original grounding measured one residual
+  byte using ABSOLUTE source paths + no remap; the shipped impl additionally pins the
+  path, closing that byte. The manifest's `reproducibility.note` states the
+  `SOURCE_DATE_EPOCH` pin honestly.)
 
 - **AC-7 (exit-status discipline).** A `rustc` failure (e.g. an intentionally
   un-compilable injected fixture) yields a non-zero `forge build` exit and a structured
@@ -242,11 +246,13 @@ for `conformance/sum.th` was emitted (the production `thermite_lower::lower_l1`)
    `thermite L1 contract violation [inv]: acc == spec_sum(&xs[..i])` — the always-active
    check fired observably, never reaching the runner's tail.
 4. **Reproducibility (REQ-5 / AC-6, §5.3).** The `lower_l1` source was **bit-identical**
-   across two emissions (forge-owned determinism). Two same-input `.rlib` builds differed
-   in **exactly one byte** (offset 138, ASCII `1`↔`2`): the `ar` archive member-mtime
-   header — the codegen content is identical; only the archive timestamp varies (pinnable
-   via `SOURCE_DATE_EPOCH` / a deterministic archiver). This is the honest "modulo
-   nondeterministic linker bits" caveat the manifest must state.
+   across two emissions (forge-owned determinism). The original grounding (ABSOLUTE source
+   path, no remap, `SOURCE_DATE_EPOCH` unpinned) measured the `.rlib` differing in the `ar`
+   archive member-mtime header. The SHIPPED `invoke_rustc` pins BOTH residuals —
+   `SOURCE_DATE_EPOCH=0` (the mtime) and the relative-filename + `--remap-path-prefix` (the
+   embedded scratch path) — so two same-input `.rlib` builds are now **byte-identical**
+   (`build_conformance::rebuilt_library_is_byte_identical`). The manifest's
+   `reproducibility.note` records the `SOURCE_DATE_EPOCH` pin honestly.
 
 All grounding scratch was created under `/tmp` and removed; no artifacts leaked into the
 repo tree (the #53 lesson — compiled artifacts are large).
@@ -303,9 +309,9 @@ must:
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (build pipeline: lower_l1 → emit → rustc) | NOT-STARTED | open prereq blocker #56 (`forge build`). `forge/src/build.rs` does not exist; no route in `tooling/spec-routes.toml`. The reusable pieces exist (`pub fn lower_l1 in l1.rs`, the `check_file` pipeline front in `check.rs`) but no `build` assembly step consumes them. |
-| REQ-2 (rustc invocation; exit-status; crate-name gotcha) | NOT-STARTED | open prereq blocker #56. No rustc spawn / `RustcAbsent` error family exists in `forge`; the analogue (`run_verus`'s exit-checked spawn + `ScratchDir` cleanup in `check.rs`, the `--crate-name` pattern in `l1_conformance.rs::compile_and_run`) is present but not reused for rustc. |
-| REQ-3 (artifact form: library + optional `--entry` runner) | NOT-STARTED | open prereq blocker #56. No artifact emission exists; `lower_l1` emits no `main`. Grounding confirms BOTH forms compile under rustc (rlib exit 0; `--entry` exe runs `sum(&[1,2,3]) = 6`) but nothing in `forge` produces them. |
-| REQ-4 (L1 checks baked in, all profiles) | NOT-STARTED | open prereq blocker #56. `lower_l1`'s `emit_check_macro` already emits the always-active `if !($cond)` macro (the property is in the emission), but no `forge build` compiles it into an artifact yet. |
-| REQ-5 (build manifest: path, level, fx rows, reproducibility) | NOT-STARTED | open prereq blocker #56. The `Certificate`/`AssuranceManifest`/`effects_of` vocabulary exists in `manifest.rs`/`effects.rs`, but no build-manifest emitter consumes it; no artifact-path or reproducibility block is produced. |
-| REQ-6 (#57 hook: runnable exe + fx rows) | NOT-STARTED | open prereq blocker #56. Depends on REQ-3 + REQ-5, neither shipped. The hooks (`--entry` binary, manifest `fx` rows) are designed here but unbuilt; #57 has nothing to consume yet. |
+| REQ-1 (build pipeline: lower_l1 → emit → rustc) | SHIPPED | `pub fn build_file in build.rs` runs `parse`/`validate`/`check_effects` (the `check_file` front, via `parse_program`), `thermite_lower::lower_l1` (via `emit_source`), writes a crate, invokes `rustc` (`invoke_rustc`); short-circuits into `ForgeError`. Consumer: `cli::run_build` (`cli.rs`). Verified by `build_conformance::sum_runs` + `sum_builds_as_library`. |
+| REQ-2 (rustc invocation; exit-status; crate-name gotcha) | SHIPPED | `invoke_rustc in build.rs` passes `--crate-name` (no `.` — `crate_name_for`), `--edition 2021`, checks `status.success()` → `ForgeError::RustcOutput`; spawn ENOENT → `ForgeError::RustcAbsent`; reuses `check::ScratchDir`'s Drop guard + `unique_scratch_dir` to remove the crate dir wholesale. `RustcAbsent`/`RustcSpawn`/`RustcOutput` added to `ForgeError` in `cli.rs`. Verified by `uncompilable_lowering_is_nonzero_exit` (AC-7). |
+| REQ-3 (artifact form: library + optional `--entry` runner) | SHIPPED | `build_file(path, None)` → `CrateType::Rlib`; `build_file(path, Some(fn))` → `CrateType::Bin` with `synthesize_entry_main`'s deterministic runner (`&[u32]` → `&[1u32,2,3]`, scalars → fixed literals). Verified by `sum_runs` (exe prints `6`) + `sum_builds_as_library`. |
+| REQ-4 (L1 checks baked in, all profiles) | SHIPPED | the artifact is `lower_l1`'s output verbatim (the always-active `thermite_check!`, NOT `debug_assert!`); `build_file` never strips it. Verified by `ens_violation_fires_at_runtime` (the runtime `[ens]` check fires, non-zero exit) + `checks_are_baked_in` (AC-2: macro present, no `debug_assert`). |
+| REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `struct BuildManifest in build.rs` composes the artifact path + `CrateType`, the assurance string `"L1 (built, runtime-checked)"`, the per-fn `fx` rows (`effects_of` via `build_functions`), and the `Reproducibility` block (pinned `rustc` identity via `resolve_rustc_version` + `SOURCE_DATE_EPOCH=0`). Consumer: `cli::run_build` (human `render_build` + `--json`). Verified by `rebuilt_library_is_byte_identical` (AC-6: byte-identical rlib via `SOURCE_DATE_EPOCH` + `--remap-path-prefix`). |
+| REQ-6 (#57 hook: runnable exe + fx rows) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (`sum` → `["pure"]`); v0.1 installs no sandbox (R-SPEC-5). Verified by `sum_runs` (`fx == ["pure"]` + the binary runs). |

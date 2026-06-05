@@ -35,6 +35,7 @@ use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
 use crate::audit::{self, AuditManifest};
+use crate::build::{self, BuildManifest, CrateType};
 use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::manifest::{
     AssuranceManifest, AssuranceScope, Certificate, Level, ObligationStatus, ProjectAssurance,
@@ -88,6 +89,19 @@ pub enum ForgeError {
     /// (never swallowed, `.design/lower/l2-kani.md` REQ-5 / R-CODE-4). The L2
     /// parallel of `VerusOutput`.
     KaniOutput { detail: String },
+    /// The `rustc` compiler was not found on `PATH` — an ENVIRONMENT error, NOT a
+    /// verification/build failure (`.design/forge/build.md` REQ-2). The `forge
+    /// build` parallel of `VerusAbsent`.
+    RustcAbsent { binary: String },
+    /// Spawning `rustc` failed for a reason other than absence (e.g. permission).
+    /// The `forge build` parallel of `VerusSpawn`.
+    RustcSpawn { source: std::io::Error },
+    /// `rustc` ran but exited NON-ZERO (a real lowering/codegen failure, not a
+    /// runtime contract violation — a violating body still COMPILES), or produced
+    /// no version string. Its stderr is surfaced (never swallowed, R-CODE-4 /
+    /// `.design/forge/build.md` REQ-2 / AC-7). The `forge build` parallel of
+    /// `VerusOutput`.
+    RustcOutput { detail: String },
     /// An IO error reading a source file or writing a scaffold/temp file.
     Io {
         path: String,
@@ -161,6 +175,15 @@ impl fmt::Display for ForgeError {
             ForgeError::KaniSpawn { source } => write!(f, "failed to spawn kani: {source}"),
             ForgeError::KaniOutput { detail } => {
                 write!(f, "could not interpret kani output: {detail}")
+            }
+            ForgeError::RustcAbsent { binary } => write!(
+                f,
+                "the `{binary}` compiler was not found on PATH (environment error, not a build \
+                 failure); install the Rust toolchain or set rustc on PATH"
+            ),
+            ForgeError::RustcSpawn { source } => write!(f, "failed to spawn rustc: {source}"),
+            ForgeError::RustcOutput { detail } => {
+                write!(f, "rustc failed to build the lowered artifact: {detail}")
             }
             ForgeError::Io { path, source } => write!(f, "io error at `{path}`: {source}"),
             ForgeError::ReviewerAbsent { cmd } => write!(
@@ -260,6 +283,17 @@ enum Command {
         item: Option<String>,
         json: bool,
         reviewer: Option<String>,
+    },
+    /// `forge build <file> [--entry <fn>] [--json]` — lower a Thermite program to
+    /// executable Rust and compile it with `rustc` into a contract-checked artifact
+    /// (issue #56; `.design/forge/build.md` REQ-1). Default → a compiled library
+    /// (`rlib`); `--entry <fn>` → a runnable executable whose generated `main`
+    /// calls `fn` with deterministic synthesized inputs (REQ-3), so the always-
+    /// active `thermite_check!`s are observable at runtime (the #57 hook).
+    Build {
+        file: PathBuf,
+        entry: Option<String>,
+        json: bool,
     },
 }
 
@@ -522,6 +556,50 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 reviewer,
             })
         }
+        "build" => {
+            // `forge build <file> [--entry <fn>] [--json]` (#56;
+            // `.design/forge/build.md` REQ-1/REQ-3). The first positional is the
+            // file (required in v0.1 — no project-default item yet). `--entry <fn>`
+            // names the fn the generated deterministic runner exercises (its value
+            // is a separate token; a missing value is a Usage error); without it the
+            // default library (`rlib`) artifact is produced.
+            let mut file: Option<PathBuf> = None;
+            let mut entry: Option<String> = None;
+            let mut json = false;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--entry" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--entry` requires a <fn> value (the entry point the generated \
+                                 runner calls)"
+                                    .to_string(),
+                            )
+                        })?;
+                        entry = Some(value.to_string());
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_some() {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge build` takes at most one <file>; unexpected `{positional}`"
+                            )));
+                        }
+                        file = Some(PathBuf::from(positional));
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge build` requires a <file> [--entry <fn>] in v0.1".to_string(),
+                )
+            })?;
+            Ok(Command::Build { file, entry, json })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -533,7 +611,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
      [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
-     | forge review <file> [item] [--json] [--reviewer <cmd>]"
+     | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
+     [--json]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -574,6 +653,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             reviewer,
         } => run_review(&file, item.as_deref(), json, reviewer.as_deref()),
+        Command::Build { file, entry, json } => run_build(&file, entry.as_deref(), json),
     }
 }
 
@@ -812,6 +892,71 @@ fn run_review(
     }
 
     Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge build`: lower the program to executable Rust and compile it with
+/// `rustc` into a contract-checked artifact (#56; `.design/forge/build.md`
+/// REQ-1/REQ-5). Drives `build::build_file` (the parse→validate→check_effects→
+/// lower_l1→rustc pipeline), then renders the [`BuildManifest`] (the artifact
+/// path and crate-type, the achieved assurance, the per-fn `fx` rows — the #57
+/// hook — and the reproducibility block) as human text or (under `--json`) the
+/// structured document.
+///
+/// `forge build` does NOT itself RUN the produced `--entry` executable: running is
+/// left to the consumer / the conformance test (which exercises the runtime
+/// `thermite_check!` behavior directly). This keeps `forge build` a pure
+/// build-and-report step; observing the runtime check fire is the test's job
+/// (`build_conformance::ens_violation_fires_at_runtime`).
+///
+/// Exit code: a successful build exits 0. A front-of-pipeline failure (parse /
+/// spec / effects / lowering), an absent/failing rustc, or an IO error propagates
+/// as a `ForgeError` (the environment exit code, REQ-2 / R-CODE-4), never a silent
+/// success.
+fn run_build(file: &Path, entry: Option<&str>, json: bool) -> Result<ExitCode, ForgeError> {
+    let manifest = build::build_file(file, entry)?;
+    if json {
+        let doc = serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::RustcOutput {
+            detail: format!("failed to serialize the build manifest JSON: {e}"),
+        })?;
+        println!("{doc}");
+    } else {
+        print!("{}", render_build(&manifest));
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Render the [`BuildManifest`] as human-readable text (#56;
+/// `.design/forge/build.md` REQ-5 — the `--json` form is the machine surface). The
+/// artifact path + crate-type, the achieved assurance, the per-fn `fx` rows (the
+/// #57 seccomp input), and the reproducibility block.
+fn render_build(manifest: &BuildManifest) -> String {
+    let mut out = String::new();
+    let kind = match manifest.crate_type {
+        CrateType::Rlib => "library (rlib)",
+        CrateType::Bin => "executable (bin)",
+    };
+    out.push_str(&format!(
+        "artifact: {} [{kind}]\n",
+        manifest.artifact.display()
+    ));
+    if let Some(entry) = &manifest.entry {
+        out.push_str(&format!(
+            "entry: {entry} (deterministic synthesized inputs)\n"
+        ));
+    }
+    out.push_str(&format!("assurance: {}\n", manifest.assurance));
+    out.push_str("functions:\n");
+    for f in &manifest.functions {
+        out.push_str(&format!("  {} fx=[{}]\n", f.name, f.fx.join(", ")));
+    }
+    out.push_str("reproducibility:\n");
+    out.push_str(&format!("  rustc: {}\n", manifest.reproducibility.rustc));
+    out.push_str(&format!(
+        "  SOURCE_DATE_EPOCH: {}\n",
+        manifest.reproducibility.source_date_epoch
+    ));
+    out.push_str(&format!("  note: {}\n", manifest.reproducibility.note));
+    out
 }
 
 /// The `<file>.review.json` record path for a reviewed `<file>` (#19; REQ-4, OQ-2 —

@@ -6,5 +6,8 @@
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-05T20:52:48.700976529Z",
-  "updated_at": "2026-06-05T20:52:48.700976529Z"
+  "updated_at": "2026-06-05T20:52:50.192458741Z",
+  "labels": [
+    "docs"
+  ]
 }

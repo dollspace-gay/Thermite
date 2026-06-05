@@ -1,0 +1,10 @@
+{
+  "uuid": "2e5720e7-9127-4f39-867e-2525a516484a",
+  "issue_uuid": "ec0ecc21-332f-439c-a74e-dacbff6c7a0f",
+  "author": "Yffe",
+  "content": "SHIPPED — end-to-end vs to-the-boundary classification (§9). forge/src/closure.rs: a cycle-safe SYNTACTIC transitive-call-closure analysis (classify(&Program)); spec fns + combinators pure; END-TO-END iff the closure reaches no #[boundary]/#[slag] fn, else TO-THE-BOUNDARY{via}. Additive per-fn Certificate.assurance_scope (golden stable via the scope_is_end_to_end normalizer: None==Some(EndToEnd); Some(ToBoundary) oracle-distinct; via diagnostic). Orthogonal to level. AssuranceManifest gains the project scope (end-to-end iff every fn is). Loop: doc-author -> builder (stopped at the cli.rs oracle_subset-arity manifest boundary; I authorized + applied the 6-tuple + scope render) -> critic NO DIVERGENCE. Critic hammered the false-end-to-end direction (the #38 call-walk lesson): every call position (while-cond/if/match/closure-body/deep-chain/cycle/arg/method/cast) correctly to_boundary; pure stays end-to-end; via correct; golden stable; determinism. Commit f78dd66. workspace 327 tests, clippy/fmt clean. FILED #52: the §9 COMPOSITION (a boundary-caller verifying THROUGH the boundary contract via verus-assumable signatures) is a separate gap — currently a boundary-caller lands L0 (scope correct, level pending #52). #17 = the classification (orthogonal to level). Not pushed.",
+  "created_at": "2026-06-05T08:47:57.026757399Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA71xZQCTnPu832K7rFDIpji2bTFmfm12lG0Nj0VCVyh+fe265ePSJ/N8DMOzOvpcC1QF6A94qkEhoNb1a+iozAg=="
+}

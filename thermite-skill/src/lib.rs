@@ -1,20 +1,24 @@
 //! `thermite-skill` — the `THERMITE.skill.md` generator plus the CI 6,000-token
-//! budget gate.
+//! budget gate (issue #7, the last v0.1-kernel leaf; `goal.md` Scope step 5).
 //!
-//! In the v0.1 kernel DAG (REQ-2) this crate depends on `thermite-spec` (the
-//! combinator registry) and `thermite-syntax` (the grammar). At scaffold time
-//! (issue #1) it is an empty, clean library root — the generator and the
-//! `--check-budget` CI step land in issue #7 (REQ-7), NOT here. Per the scaffold
-//! contract (REQ-3), no error type is created here.
+//! In the kernel DAG this crate depends on `thermite-spec` (the frozen
+//! combinator registry — the single source of truth the combinator section is
+//! machine-rendered from) and `thermite-syntax` (the grammar). The generator is
+//! [`generate::generate`]; the budget heuristic is [`generate::token_count`].
+//! The `thermite-skill` bin (`src/main.rs`, `--emit` / `--check-budget`) is the
+//! CLI that the CI gauntlet runs.
 //!
-//! Governing design: `.design/scaffold/workspace.md`.
+//! Governing design: `.design/skill/skill-generator.md`.
+//! Thesis: `thermite-design.md` §2.2 (≤ 6,000-token hard budget), §10 (the skill
+//! IS the spec; regenerated from the registry).
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (workspace topology) | SHIPPED | this crate is a `lib` member of the virtual workspace in root `Cargo.toml`. |
-//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | `thermite-skill/Cargo.toml` declares path deps `thermite-spec` + `thermite-syntax`. |
-//! | REQ-3 (Result discipline; no scaffold error type) | SHIPPED | this file declares no error type and no `unwrap`/`expect`/`panic!` (empty root). |
-//! | REQ-6 (empty scaffold compiles clean) | SHIPPED | no stubs, no `mod` pointing at a missing file; `cargo build --workspace` is green. |
-//! | REQ-7 (skill-budget gate deferred to #7) | NOT-STARTED | open prereq issue #7; no `generate.rs`, no `--check-budget` CI step at scaffold time. |
+//! The full per-REQ table lives on [`generate`] (the module the REQs govern).
+//! Summary: REQ-1..REQ-7 SHIPPED — `generate`/`token_count` here, the bin in
+//! `main.rs`, the committed `THERMITE.skill.md` at the repo root, and the
+//! `--check-budget` CI step in `.github/workflows/ci.yml`.
+
+pub mod generate;
+
+pub use generate::{generate, token_count, SKILL_TOKEN_BUDGET};

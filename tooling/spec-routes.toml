@@ -186,3 +186,11 @@ crate_pattern = "thermite-skill/src/generate.rs"
 design = ".design/skill/skill-generator.md"
 reference = []
 conformance_ops = []
+
+# The thermite-skill bin (--emit / --check-budget), governed by the same
+# skill-generator contract (REQ-6, the bin; REQ-4, the budget gate). Issue #7.
+[[route]]
+crate_pattern = "thermite-skill/src/main.rs"
+design = ".design/skill/skill-generator.md"
+reference = []
+conformance_ops = []

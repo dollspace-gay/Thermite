@@ -1,0 +1,10 @@
+{
+  "uuid": "ed192d9f-534f-4020-91bc-49e90c9fd481",
+  "issue_uuid": "b4852e68-d722-4277-82e0-68974a1aad27",
+  "author": "Yffe",
+  "content": "Pin the divergence as failing tests (acto-critic, no production edits): thermite-lower/tests/divergence_golden_intlit.rs asserts emitter==golden on the 1_000_000 literal for both L3 (sum.verus.rs) and L1 (sum.l1.rs); both FAIL (golden has raw 1_000_000, emitter emits 1000000), marked #[ignore] with tracking #54 so CI stays green while the divergence is tracked. Also commit the no-divergence companion tests (divergence_intlit.rs round-trip edge cases; divergence_intlit_lower.rs executable-form value emission). The fix is the generator's call: regenerate goldens to 1000000 OR amend ast.md (R-SPEC-4).",
+  "created_at": "2026-06-05T18:51:10.971717563Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtbtOGUMIwVG/442VDj+RmD/5SsuWnJr3j9q1JVAtUUpcZ/K8OH5/+s5YFi3vKu2SwfdvtRQ4hJIXPf953G3IBw=="
+}

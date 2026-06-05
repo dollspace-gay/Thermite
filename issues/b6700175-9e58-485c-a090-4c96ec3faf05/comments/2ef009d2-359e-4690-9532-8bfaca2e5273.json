@@ -1,0 +1,10 @@
+{
+  "uuid": "2ef009d2-359e-4690-9532-8bfaca2e5273",
+  "issue_uuid": "b6700175-9e58-485c-a090-4c96ec3faf05",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_mutation.rs::divergence_weak_contract_escapes_floor_via_zero_scored_mutants demonstrates the divergence. Program: `fn pick(xs: &[u32]) -> &[u32] req xs.len() <= 10 ens result.len() <= 10 fx pure { xs }`. mutation::generate emits ZERO mutants (the early-return mutator is skipped for &[u32] because zero_value_for returns None, and the body has no Binary/IntLit/If site); MutationScore::kill_ratio returns 1.0 for scored==0 (mutation.rs), so the floor is vacuously met and the under-constraining contract certifies clean L3 with mutants_killed=0/0. Authority: thermite-design.md §7 step 4 (the floor must catch a contract that under-constrains the body) + goal.md R-DEFER-9 (anti-Goodhart). Root cause + owning crate: forge::mutation / forge::check::mutation_score. A fix likely makes the early-return mutant generatable for any return type (or treats 0/0 as not-certifiable rather than vacuous-pass).",
+  "created_at": "2026-06-05T05:56:53.064934868Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABARwuZ8KX6XWfrmFqJf9oRQ9FSBS7Gm29/EoH4yEqQTMV9i0kKGyNzzT7T0+Iz6F2DN+sSpQsHNi1OqGKe0piQCg=="
+}

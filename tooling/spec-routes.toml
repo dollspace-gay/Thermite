@@ -324,3 +324,10 @@ crate_pattern = "forge/src/build.rs"
 design = ".design/forge/build.md"
 reference = ["conformance/build"]
 conformance_ops = ["sum"]
+
+# runtime effect sandbox — seccomp filter from fx (issue #57)
+[[route]]
+crate_pattern = "forge/src/sandbox.rs"
+design = ".design/forge/runtime-sandbox.md"
+reference = ["conformance/sandbox"]
+conformance_ops = ["sum"]

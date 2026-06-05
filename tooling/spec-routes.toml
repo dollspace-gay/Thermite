@@ -283,3 +283,10 @@ crate_pattern = "forge/src/repair.rs"
 design = ".design/forge/proof-repair.md"
 reference = ["conformance/repair"]
 conformance_ops = ["never_provable_counterexample", "sum"]
+
+# v0.5 — pluggable spec-intent review slot (issue #19)
+[[route]]
+crate_pattern = "forge/src/review.rs"
+design = ".design/forge/spec-review.md"
+reference = ["conformance/review"]
+conformance_ops = ["sum", "vacuous"]

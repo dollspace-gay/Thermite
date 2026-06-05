@@ -1,0 +1,10 @@
+{
+  "uuid": "11dadede-17a9-41d0-931b-a6a030deca76",
+  "issue_uuid": "cb5b880d-b50e-4306-905a-ffd48fa0382d",
+  "author": "Yffe",
+  "content": "README updated: trust line + a Self-verification Status bullet record that the soundness-critical core is Verus-verified (thermite-verified), reflecting epic #60. Commit on main.",
+  "created_at": "2026-06-05T22:48:53.925295965Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAD7hWV0Q9JnmWCmmgkkA+G5NBg5bDUYzQaM7iSh6ZDiLVPFvEtu1t8+fY8meXQClWY7PfMlVbWyqMJGXCA2vXCA=="
+}

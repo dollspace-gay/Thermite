@@ -1,0 +1,14 @@
+{
+  "note": "Oracle for forge build (issue #56) — lower to executable Rust + rustc -> a compiled, L1-contract-checked artifact. Hand-derived (R-CHAR-3). forge build reuses lower_l1 (the always-active thermite_check! exec form) + rustc. The library form compiles the L1-checked fns; `forge build --entry <fn>` appends a deterministic generated main (synthesizing sample inputs per the entry's signature) -> a runnable executable whose contract checks fire AT RUNTIME (the #57 hook). forge build at L1 builds any well-formed program; the runtime check is the assurance (an L3 proof is NOT required to build).",
+  "build_and_run": [
+    { "name": "sum_runs", "source": "conformance/sum.th", "entry": "sum",
+      "expect_rustc_exit": 0, "expect_run_contains": "6",
+      "why": "forge build --entry sum lowers sum.th to executable Rust, rustc-compiles it (exit 0), and the generated runner calls sum with a deterministic sample slice (e.g. [1,2,3]) -> prints 6. The thermite_check! contract checks are baked in + active. BuildManifest records sum's fx = [pure] (the #57 seccomp input)." }
+  ],
+  "runtime_violation": [
+    { "name": "ens_violation_fires_at_runtime", "entry": "bad",
+      "program": "fn bad(x: u32) -> u32 req x < 100 ens result == x fx pure { x + 1 }",
+      "expect_rustc_exit": 0, "expect_run_nonzero": true, "expect_run_contains": "ens",
+      "why": "bad's body returns x+1 but ens claims result == x. forge build (L1) COMPILES it (rustc exit 0 — L1 does not verify, it checks at runtime); the runner calls bad(<sample x<100>) -> the always-active ens check FIRES at runtime (non-zero exit + an [ens] contract-violation diagnostic). This is the runtime-enforcement behavior #57 builds on. (forge CHECK would reject bad at L0; forge BUILD at L1 builds it + the runtime check catches the violation.)" }
+  ]
+}

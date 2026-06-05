@@ -1,0 +1,10 @@
+{
+  "uuid": "ee6ee7fb-0129-4972-b769-32f2ea52bd8e",
+  "issue_uuid": "c7014785-a18f-4920-a1a8-73ee76124801",
+  "author": "Yffe",
+  "content": "SHIPPED — pluggable spec-intent review slot forge review (§7 line 227). review.rs: project the pre-screened DECLARATIVE spec layer (per fn: verbatim req/ens/fx + directly-referenced spec-fn declarations, NO bodies) as the 'is this what you meant?' intent-review artifact. Pre-screening (R-DEFER-9): only battery-passing (reject-free, certified incl. slag/boundary L1) contracts are intent_reviewable; a vacuous/weak/counterexample contract is flagged battery_failing, NEVER surfaced. The pluggable verdict slot: ReviewVerdict{item,aligned,note} attaches as a SEPARATE <file>.review.json record (NOT a Certificate field — mechanical vs intent never conflated). Optional --reviewer <cmd> shell-out pipes the artifact to a command + attaches the returned verdict (the pluggable integration; forge NEVER fabricates aligned). Loop: doc-author -> builder -> critic NO DIVERGENCE: no body leak (structural, fresh probe), pre-screening holds, forge never fabricates aligned, reviewer failures -> ForgeError (no panic), verdict never mutates the cert, deterministic. Commit 63d3953. workspace 358 tests, clippy/fmt clean. Not pushed.",
+  "created_at": "2026-06-05T10:36:39.599146665Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAnfibp7gY1P2Ilant9V3A8C3UGAQFFjFnTLjgEm+tHLNNgUA4oF5aFRHOWE1ATtioNj4vdWyHLhku3J9SFnwfBw=="
+}

@@ -2,11 +2,12 @@
   "uuid": "627da4f1-eaf5-4b9a-acc8-fc63fead3a12",
   "display_id": 5,
   "title": "Implement the forge CLI with structured check output and counterexamples",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:47:10.401112547Z",
-  "updated_at": "2026-06-04T18:11:30.812826030Z",
+  "updated_at": "2026-06-05T00:42:23.577281074Z",
+  "closed_at": "2026-06-05T00:42:23.577281074Z",
   "labels": [
     "feature"
   ],

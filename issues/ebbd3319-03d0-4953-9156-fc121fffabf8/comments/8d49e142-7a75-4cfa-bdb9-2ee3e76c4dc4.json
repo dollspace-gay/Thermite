@@ -1,0 +1,10 @@
+{
+  "uuid": "8d49e142-7a75-4cfa-bdb9-2ee3e76c4dc4",
+  "issue_uuid": "ebbd3319-03d0-4953-9156-fc121fffabf8",
+  "author": "Yffe",
+  "content": "SHIPPED first increment in fb4512f. Landed mechanism (c): thermite-verified crate with verus block core (subsumes + spec_subsumes 8-way subset conjunction + 3 lattice-law proof fns) behind cfg(verus_keep_ghost); verus --no-cheating --crate-type=lib src/lib.rs => 8 verified, 0 errors (permanent gauntlet via tests/verus_verify.rs). effects::subsumes now delegates its bit comparison to thermite_verified::subsumes_masks and is anchored by tests/effects_verified.rs (65536 pairs, 0 mismatches vs the proved spec_subsumes_mask). Behavior preserved: 14 effects tests + 414 workspace tests pass; clippy/fmt clean. Epic stays OPEN for REQ-2 (7 remaining Tier-1 targets). Critic should re-audit all 5 manifest files.",
+  "created_at": "2026-06-05T21:29:42.309780224Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAiSRURbTdFmyeo3R3+D+z0lbnWGWUAkhZmME8zuo0zROvLigfZ15N/Vr5oIggDBJgSHK44vJhnIUBQYzS9vurAw=="
+}

@@ -22,7 +22,7 @@ proof fn lemma_sum_push(xs: Seq<u32>, k: int)
 }
 
 fn sum(xs: &[u32]) -> (result: u64)
-    requires xs.len() <= 1_000_000,
+    requires xs.len() <= 1000000,
     ensures
         result as nat == spec_sum(xs@),
         result <= xs.len() as u64 * u32::MAX as u64,
@@ -32,14 +32,14 @@ fn sum(xs: &[u32]) -> (result: u64)
     while i < xs.len()
         invariant
             i <= xs.len(),
-            xs.len() <= 1_000_000,
+            xs.len() <= 1000000,
             acc as nat == spec_sum(xs@.subrange(0, i as int)),
             acc <= i as u64 * u32::MAX as u64,
         decreases xs.len() - i,
     {
         proof { lemma_sum_push(xs@, i as int); }
         assert(acc + xs[i as int] as u64 <= (i as u64 + 1) * u32::MAX as u64) by(nonlinear_arith)
-            requires acc <= i as u64 * u32::MAX as u64, i < xs.len(), xs.len() <= 1_000_000;
+            requires acc <= i as u64 * u32::MAX as u64, i < xs.len(), xs.len() <= 1000000;
         acc = acc + xs[i] as u64;
         i = i + 1;
     }

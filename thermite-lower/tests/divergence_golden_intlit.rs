@@ -60,7 +60,6 @@ fn lower_sum_l1() -> String {
 /// `xs.len() <= 1_000_000` requires-clause. ast.md REQ-6 says both emit the
 /// value `1000000`. The emitter does; the golden does not.
 #[test]
-#[ignore = "divergence: L3 golden sum.verus.rs stale (raw 1_000_000 vs emitted 1000000); tracking #54"]
 fn divergence_l3_golden_stale_on_underscore_literal() {
     let emitted = lower_sum_l3();
     let golden = std::fs::read_to_string(golden_dir().join("lower").join("sum.verus.rs")).unwrap();
@@ -88,7 +87,6 @@ fn divergence_l3_golden_stale_on_underscore_literal() {
 /// (The verbatim `1_000_000` inside the diagnostic LABEL string is correct and
 /// is not what this asserts — we pin the executable comparison only.)
 #[test]
-#[ignore = "divergence: L1 golden sum.l1.rs stale executable check (raw 1_000_000 vs emitted 1000000); tracking #54"]
 fn divergence_l1_golden_stale_on_underscore_literal() {
     let emitted = lower_sum_l1();
     let golden = std::fs::read_to_string(golden_dir().join("l1").join("sum.l1.rs")).unwrap();

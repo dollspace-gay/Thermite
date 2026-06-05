@@ -1,0 +1,10 @@
+{
+  "uuid": "70cc5d59-ab96-4ce2-8b9e-8fcd30e21ea3",
+  "issue_uuid": "b4852e68-d722-4277-82e0-68974a1aad27",
+  "author": "Yffe",
+  "content": "Fixed: corrected the stale lowering golden REFERENCES to the REQ-6 value form (1000000), the hand-derived _-stripped value of 1_000_000. The emitter was already correct (emits 1000000 per ast.md REQ-6 CRITICAL note); the goldens were mis-authored with the raw 1_000_000.\n\nEdits (2 golden files, single-divergence scope):\n- tests/golden/lower/sum.verus.rs: 3 emitted spec/exec expressions 1_000_000 -> 1000000 (requires clause, loop invariant, by(nonlinear_arith) requires). Emitter confirmed to produce 1000000 in each.\n- tests/golden/l1/sum.l1.rs: line 39 executable check expr xs.len() <= 1_000_000 -> xs.len() <= 1000000. The diagnostic LABEL string xs.len() <= 1_000_000 (Clause.text verbatim source) correctly LEFT UNCHANGED.\n- thermite-lower/tests/divergence_golden_intlit.rs: removed #[ignore] from both #54 divergence tests (permanent regression coverage).\n\nR-SPEC-4 note: verus-lowering.md REQ-3 shows underscores-verbatim, but the later #37 amendment in ast.md REQ-6 (CRITICAL note + AC-1b) overrides with value-emission and states sum.verus.rs reads 1000000. Authority resolves to value-emission; no design amendment needed.\n\nVerification: lower_conformance.rs 5 passed (real verus on edited L3 golden verifies identically); l1_conformance.rs 7 passed (rustc compile+run, check fires); divergence_golden_intlit 2 passed. Corpus sum.th + cert oracle UNCHANGED.\n\nGauntlet: build OK; test 388 passed/0 failed/0 ignored; clippy -D warnings PASS; fmt --check PASS.",
+  "created_at": "2026-06-05T19:00:47.050356010Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJ9ekckfCHN9mIOPwiOwrfrSE0WCAgfBvpY4O89KCz/Uk9XU2kIefKowTBjRqdkT/TupKmwnPkG+JX9oPsO4+Dg=="
+}

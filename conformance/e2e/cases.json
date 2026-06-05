@@ -1,0 +1,18 @@
+{
+  "note": "Oracle for forge's end-to-end vs to-the-boundary classification (§9, issue #17). Hand-derived (R-CHAR-3). The classification is SYNTACTIC (a transitive-call-closure analysis on the parsed Program), orthogonal to a fn's verification level. END-TO-END iff the fn's closure reaches no #[boundary] and no #[slag] fn; otherwise TO-THE-BOUNDARY via the reached crossing. Boundary syntax requires #16 (shipped). Expected per-fn scope is hand-derived from the call graph.",
+  "end_to_end": [
+    { "name": "corpus_sum",           "source": "conformance/sum.th",           "fn": "sum",           "why": "sum calls only spec_sum (a spec fn, pure) -> closure reaches no boundary/slag -> END-TO-END." },
+    { "name": "corpus_binary_search", "source": "conformance/binary_search.th", "fn": "binary_search", "why": "binary_search calls only registry combinators (pure) -> END-TO-END." }
+  ],
+  "to_boundary": [
+    { "name": "direct_boundary_caller", "fn": "caller", "via": "ext_id",
+      "program": "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }",
+      "why": "caller's body calls ext_id (a #[boundary] fn, foreign unproven body) -> caller is TO-THE-BOUNDARY via ext_id. (caller may itself be L3-proved against ext_id's contract — scope is orthogonal to level.)" },
+    { "name": "transitive_boundary_caller", "fn": "h", "via": "ext_id",
+      "program": "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn g(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) } fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }",
+      "why": "h -> g -> ext_id: the transitive closure of h reaches the boundary -> h is TO-THE-BOUNDARY (transitive, via ext_id)." },
+    { "name": "slag_caller", "fn": "caller", "via": "vendored",
+      "program": "#[slag(reason = \"hand-tuned\", owner = \"agent:x\", review = \"required\")] fn vendored(x: u32) -> u32 req x < 100 ens result == x fx pure { x } fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { vendored(x) }",
+      "why": "caller calls vendored (a #[slag] fn, trusted-by-fiat body) -> caller is TO-THE-BOUNDARY via vendored (slag is in the closure)." }
+  ]
+}

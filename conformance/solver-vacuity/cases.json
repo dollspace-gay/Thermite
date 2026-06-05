@@ -1,0 +1,15 @@
+{
+  "note": "Oracle for forge's SOLVER-backed vacuity checks (§7 steps 2-3, issue #13) — the SMT counterparts to #6's free structural triage. Hand-derived (R-CHAR-3). `reject` programs PASS #6's syntactic triage but are semantically degenerate and must be caught by #13's verus queries (the value-add over #6); each sets the named contract_quality field true and rejects. `accept` programs (the corpus) are non-tautological with satisfiable preconditions and still certify L3. Tautology check: assume(req) + arbitrary result + assert(ens) — verus proves iff ens holds for ANY result. Vacuity check: assume(req) + assert(false) — verus proves iff req is unsatisfiable.",
+  "reject": [
+    { "name": "semantic_tautology", "cause": "SemanticTautology", "field": "tautology",
+      "program": "fn f(x: u32) -> u32 req x > 0 ens result >= 0 fx pure { x }",
+      "why": "ens `result >= 0` holds for ANY u32 result -> the postcondition says nothing about the output -> tautology. Passes #6 (ens mentions result, not literal-true, not an identity, not req-equal), caught only by the #13 solver." },
+    { "name": "vacuous_precondition", "cause": "VacuousPrecondition", "field": "vacuous_precondition",
+      "program": "fn f(x: u32) -> u32 req x > 5 && x < 3 ens result == x fx pure { x }",
+      "why": "req `x > 5 && x < 3` is unsatisfiable -> the fn can never be called -> contract vacuously true. Passes #6 (req is syntactically fine), caught only by the #13 solver." }
+  ],
+  "accept": [
+    { "name": "corpus_sum",           "source": "conformance/sum.th",           "why": "ens `result == spec_sum(xs)` does NOT hold for an arbitrary result (not a tautology); req `xs.len() <= 1_000_000` is satisfiable." },
+    { "name": "corpus_binary_search", "source": "conformance/binary_search.th", "why": "real match-ens (non-tautological); satisfiable req." }
+  ]
+}

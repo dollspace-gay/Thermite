@@ -2,11 +2,12 @@
   "uuid": "ebbd3319-03d0-4953-9156-fc121fffabf8",
   "display_id": 60,
   "title": "Self-verify the toolchain with Verus (Tier 1: soundness-critical pure core)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T21:05:13.026256889Z",
-  "updated_at": "2026-06-05T21:05:15.654109455Z",
+  "updated_at": "2026-06-05T22:47:39.731139741Z",
+  "closed_at": "2026-06-05T22:47:39.731139741Z",
   "labels": [
     "epic"
   ]

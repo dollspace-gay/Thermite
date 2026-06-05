@@ -1,0 +1,10 @@
+{
+  "uuid": "69a7177c-327b-4dad-94dd-b65d1ba49899",
+  "issue_uuid": "265febfc-255a-47a5-8a41-e91a9a47bf26",
+  "author": "Yffe",
+  "content": "Ship audit manifest v1 + forge audit as a PURE PROJECTION over the existing per-fn Certificate collection + AssuranceManifest::aggregate. New module forge/src/audit.rs: AuditManifest { manifest_version v1, functions[] (FunctionRow), project_assurance (ProjectAssuranceSection embedding the #10/#17 aggregate), tcb (Tcb = SlagBlock U BoundaryContract U Toolchain) }. forge audit verb in cli.rs runs check::check_file (default config, no re-verification) and emits --json or a human summary. TCB completeness (R-DEFER-9): every cert.slag + cert.boundary enumerated, toolchain always present. Verified against conformance/audit/cases.json (corpus_empty_tcb, slag_boundary_tcb).",
+  "created_at": "2026-06-05T09:05:32.243695334Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABArwmqFvgbQrjRySdGz1STG/ZDH0v6be6xC2ZCcIXYpaPZob0PLC32AyBx4sJnWj4zvFuGpzWXMm8W8framekKDQ=="
+}

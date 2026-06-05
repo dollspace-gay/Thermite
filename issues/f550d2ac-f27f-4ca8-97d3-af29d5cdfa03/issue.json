@@ -1,0 +1,10 @@
+{
+  "uuid": "f550d2ac-f27f-4ca8-97d3-af29d5cdfa03",
+  "display_id": 46,
+  "title": "forge mutation scoring (§7 step 4): frozen deterministic mutator set + re-verify + kill-ratio floor gate (default 60%) + survivor report; forge/src/mutation.rs is greenfield, all REQs blocked",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T05:24:52.496952560Z",
+  "updated_at": "2026-06-05T05:24:52.496952560Z"
+}

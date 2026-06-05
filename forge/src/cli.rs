@@ -483,12 +483,18 @@ fn render_human(cert: &Certificate) -> String {
     // item / level / effects / slag — the fields the cert-oracle compares — are
     // rendered first, then the non-deterministic `solver_time_ms` labelled as
     // such so a reader does not mistake it for an oracle field.
-    let (item, level, effects, slag) = cert.oracle_subset();
+    let (item, level, effects, slag, boundary) = cert.oracle_subset();
     let mut out = String::new();
     out.push_str(&format!("item: {item}\n"));
     out.push_str(&format!("level: {}\n", level_str(level)));
     out.push_str(&format!("effects: [{}]\n", effects.join(", ")));
     out.push_str(&format!("slag: {slag}\n"));
+    // #16: a boundary fn (FFI crossing) renders its flag + foreign target so the
+    // §9 "to-the-boundary, body unproven" status is visible (the #15 TCB hook).
+    out.push_str(&format!("boundary: {boundary}\n"));
+    if let Some(target) = &cert.boundary_target {
+        out.push_str(&format!("boundary_target: {target}\n"));
+    }
     // #6: a valid `#[slag]` item carries its audit metadata (§8 visibility).
     if let Some(meta) = &cert.slag_meta {
         out.push_str(&format!(

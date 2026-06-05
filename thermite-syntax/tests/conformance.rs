@@ -198,9 +198,12 @@ fn check_parse_facts(facts_file: &str) {
                     fact.name
                 );
 
-                // Loop facts.
+                // Loop facts. The corpus fns are in-language (bodied); a boundary
+                // fn (#16) would carry `body: None` and no loops.
                 let mut loops = Vec::new();
-                collect_loops(&f.body, &mut loops);
+                if let Some(body) = &f.body {
+                    collect_loops(body, &mut loops);
+                }
                 assert_eq!(
                     loops.len(),
                     fact.loops.len(),

@@ -41,6 +41,12 @@
 //! | vacuity-triage REQ-6 (gate BEFORE L3) | SHIPPED | `gate_fn` runs `vacuity::triage` on each `Item::Fn` BEFORE `thermite_lower::lower` + `run_verus`; a `VacuityVerdict::Rejected` short-circuits to a non-certified `Certificate::rejected` (no lowering, no verus); a pass calls `Certificate::graduate_triage_clean` (the two §7.1 `contract_quality` bools go live-`false`). |
 //! | slag REQ-2/REQ-5 (L1 short-circuit) | SHIPPED | `gate_fn` for a `slag.is_some()` item runs `slag::validate` (invalid → `Certificate::rejected`), then `vacuity::triage` (a/b/c — slag exempts (d) inside `triage`), then `Certificate::slag_l1` (`Level::L1`, `slag: true`, `slag_meta`) WITHOUT invoking verus. |
 //!
+//! ## #16 gate (boundary-fn FFI L1 path, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | ffi REQ-5/REQ-7 (route boundary fns to L1 EARLY) | SHIPPED | `gate_fn` detects `f.boundary.is_some()` FIRST (before the slag/non-slag forks): validates a non-empty target, runs `vacuity::triage` (a)/(b)/(c) (rule (d) exempt — `triage` reads `f.boundary`), then `Certificate::boundary_l1` (`Level::L1`, `boundary: true`, `boundary_target`, NO verus). The per-item loop's `GateOutcome::BoundaryL1` short-circuits like `SlagL1` — a boundary fn NEVER reaches the L3 (verus) / L2 (kani) / #12 mutation / #14 strengthen paths, so `g` calling `f` sees only `f`'s contract (§9 composition independence, REQ-7). |
+//!
 //! ## #8 gate (per-item content-addressed proof cache, this iteration)
 //!
 //! | REQ | Status | Evidence |
@@ -234,6 +240,15 @@ pub fn check_file_with_options(
                 // `.design/forge/slag.md` REQ-2): the L1 runtime-check codegen is
                 // thermite-lower's `l1.rs` job at build time, not here.
                 GateOutcome::SlagL1(cert) => {
+                    certs.push(cert);
+                    continue;
+                }
+                // A valid `#[boundary]` (FFI) item certifies L1 to-the-boundary by
+                // fiat (`.design/boundary/ffi-boundary.md` REQ-5): the foreign body
+                // is unproven, so it NEVER enters L3/L2/mutation/strengthening; the
+                // L1 wrapper codegen is thermite-lower's `l1.rs` build-time job. No
+                // verus run — so a boundary-only file does not require the prover.
+                GateOutcome::BoundaryL1(cert) => {
                     certs.push(cert);
                     continue;
                 }
@@ -542,6 +557,10 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
 enum GateOutcome {
     /// A valid `#[slag]` item: certify L1 by fiat (no verus run) — the cert.
     SlagL1(Certificate),
+    /// A valid `#[boundary]` (FFI) item: certify L1 to-the-boundary (foreign body
+    /// unproven, contract enforced at the crossing; no verus run) — the cert
+    /// (`.design/boundary/ffi-boundary.md` REQ-5).
+    BoundaryL1(Certificate),
     /// A triage / slag-validation reject: the item does not certify — the cert.
     Rejected(Certificate),
     /// A non-slag item that passed all four triage checks: run the normal L3 path.
@@ -567,6 +586,50 @@ enum GateOutcome {
 /// ```
 fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
     let effects = effects_of(&f.contract.fx);
+
+    // #16 BOUNDARY (FFI) path, detected FIRST (`.design/boundary/ffi-boundary.md`
+    // REQ-5, §9): a `#[boundary("crate::path")]` fn's FOREIGN body is unproven, so
+    // it NEVER enters the L3 (verus) / L2 (kani) / mutation / strengthening paths —
+    // it certifies at L1 to-the-boundary. The §7.1 (a)/(b)/(c) triage STILL applies
+    // (slag-adjacent: it exempts PROVING the body, not STATING a non-vacuous
+    // contract — a `#[boundary]` fn with `ens true` is still rejected). Rule (d) is
+    // exempt (a foreign body's effects are trusted-by-fiat, OQ-4 — `triage` reads
+    // `f.boundary` and skips (d)). The target's non-emptiness is validated here:
+    // an empty `#[boundary("")]` target is a contract-certification reject.
+    if let Some(boundary_attr) = f.boundary.as_ref() {
+        let target = boundary_attr.target.trim();
+        if target.is_empty() {
+            return GateOutcome::Rejected(Certificate::rejected(
+                f.name.clone(),
+                effects,
+                false,
+                RejectReason {
+                    cause: "BoundaryTargetEmpty".to_string(),
+                    detail: "a `#[boundary(\"...\")]` attribute must name a non-empty foreign \
+                             `crate::path` target"
+                        .to_string(),
+                },
+            ));
+        }
+        return match crate::vacuity::triage(f) {
+            crate::vacuity::VacuityVerdict::Rejected { cause } => {
+                GateOutcome::Rejected(Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    false,
+                    RejectReason {
+                        cause: cause.tag().to_string(),
+                        detail: cause.detail(),
+                    },
+                ))
+            }
+            // Triage clean → certify L1 to-the-boundary (no verus): the contract is
+            // enforced at the crossing by `thermite_lower::l1`'s boundary wrapper.
+            crate::vacuity::VacuityVerdict::Passed => GateOutcome::BoundaryL1(
+                Certificate::boundary_l1(f.name.clone(), effects, target.to_string()),
+            ),
+        };
+    }
 
     if let Some(slag_attr) = f.slag.as_ref() {
         // Slag path: validate the mandatory fields FIRST (it gates whether rule

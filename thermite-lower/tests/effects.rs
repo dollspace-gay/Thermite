@@ -47,6 +47,7 @@ fn fn_calling(name: &str, fx: EffectRow, calls: &[&str]) -> Item {
         .collect();
     Item::Fn(FnItem {
         slag: None,
+        boundary: None,
         name: name.to_string(),
         params: vec![],
         ret: Type::Unit,
@@ -55,7 +56,7 @@ fn fn_calling(name: &str, fx: EffectRow, calls: &[&str]) -> Item {
             ens: vec![true_clause()],
             fx,
         },
-        body: Block { stmts, tail: None },
+        body: Some(Block { stmts, tail: None }),
         span: span(),
     })
 }
@@ -444,6 +445,7 @@ fn deeply_nested_body_returns_result_not_panic() {
     }
     let item = Item::Fn(FnItem {
         slag: None,
+        boundary: None,
         name: "deep".to_string(),
         params: vec![],
         ret: Type::Unit,
@@ -452,10 +454,10 @@ fn deeply_nested_body_returns_result_not_panic() {
             ens: vec![true_clause()],
             fx: pure(),
         },
-        body: Block {
+        body: Some(Block {
             stmts: vec![],
             tail: Some(Box::new(expr)),
-        },
+        }),
         span: span(),
     });
     let prog = Program { items: vec![item] };

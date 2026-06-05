@@ -52,10 +52,12 @@ fn divergence_value_less_trailing_if_is_statement_not_tail_expr() {
     let Item::Fn(f) = &r.program.items[0] else {
         panic!("binary_search is the first item and is a `fn`");
     };
+    let Some(body) = &f.body else {
+        panic!("binary_search is an in-language fn with a body (not a boundary fn)");
+    };
 
     // Locate the bare `loop` (binary_search.loop#1).
-    let lp = f
-        .body
+    let lp = body
         .stmts
         .iter()
         .find_map(|s| match s {

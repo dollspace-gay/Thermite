@@ -254,6 +254,7 @@ fn validate_never_panics_on_deep_nesting() {
     let program = Program {
         items: vec![Item::Fn(FnItem {
             slag: None,
+            boundary: None,
             name: "f".to_string(),
             params: vec![],
             ret: Type::Prim(PrimType::U32),
@@ -262,10 +263,10 @@ fn validate_never_panics_on_deep_nesting() {
                 ens: vec![clause(Expr::BoolLit(true))],
                 fx: EffectRow::Pure,
             },
-            body: Block {
+            body: Some(Block {
                 stmts: vec![],
                 tail: Some(Box::new(Expr::IntLit(0))),
-            },
+            }),
             span,
         })],
     };

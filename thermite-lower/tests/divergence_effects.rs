@@ -45,6 +45,7 @@ fn call(callee: &str) -> Expr {
 fn fn_with_body(name: &str, fx: EffectRow, body: Block) -> Item {
     Item::Fn(FnItem {
         slag: None,
+        boundary: None,
         name: name.to_string(),
         params: vec![],
         ret: Type::Unit,
@@ -53,7 +54,7 @@ fn fn_with_body(name: &str, fx: EffectRow, body: Block) -> Item {
             ens: vec![true_clause()],
             fx,
         },
-        body,
+        body: Some(body),
         span: span(),
     })
 }

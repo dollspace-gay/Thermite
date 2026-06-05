@@ -131,7 +131,17 @@ fn lower_fn_body_exec(f: &FnItem) -> Result<String, LowerError> {
     write!(out, "fn {}(", f.name).ok();
     emit_params(&mut out, &f.params)?;
     writeln!(out, ") -> {ret} {{").ok();
-    out.push_str(&lower_block_exec(&f.body, 1, f.span)?);
+    // A boundary fn (ffi-boundary.md REQ-2) has `body: None` and is NEVER lowered
+    // to an L2 kani harness — `forge`'s `check.rs` routes it to L1 BEFORE any L2
+    // attempt (the foreign body cannot be bounded-checked). A `None` here is a
+    // structured error (R-CODE-2), never an unwrap.
+    let body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "lower_l2 (kani) reached a bodyless (boundary) fn; a boundary fn \
+               certifies at L1 and is never bounded-checked (ffi-boundary.md OQ-3)"
+            .to_string(),
+        span: f.span,
+    })?;
+    out.push_str(&lower_block_exec(body, 1, f.span)?);
     out.push_str("}\n");
     Ok(out)
 }
@@ -196,7 +206,14 @@ fn lower_loop_exec(l: &LoopNode, indent: usize) -> Result<String, LowerError> {
 /// 3. call the executable body, binding `result`;
 /// 4. `assert!` each `ens` against the bound `result`.
 fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
-    let unwind = unwind_bound(&f.body);
+    // A boundary fn (ffi-boundary.md REQ-2) has `body: None` and never reaches an
+    // L2 harness — its body is foreign, so there is nothing to bounded-check. A
+    // `None` here is a structured error (R-CODE-2), never an unwrap.
+    let body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "lower_l2 (kani) reached a bodyless (boundary) fn (ffi-boundary.md OQ-3)".to_string(),
+        span: f.span,
+    })?;
+    let unwind = unwind_bound(body);
     let mut out = String::new();
     out.push_str("#[cfg(kani)]\n");
     out.push_str("#[kani::proof]\n");
@@ -342,7 +359,9 @@ pub fn bound_string(program: &Program) -> String {
         .items
         .iter()
         .filter_map(|i| match i {
-            Item::Fn(f) => Some(unwind_bound(&f.body)),
+            // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — no loop to
+            // bound, so it contributes no unwind requirement.
+            Item::Fn(f) => f.body.as_ref().map(unwind_bound),
             Item::SpecFn(_) => None,
         })
         .max()
@@ -440,13 +459,17 @@ mod tests {
             "fn g(xs: &[u32]) -> u64\n  req true\n  ens result >= 0\n  fx pure\n{\n  let mut a: u64 = 0;\n  let mut i: usize = 0;\n  while i < xs.len()\n    inv i <= xs.len()\n    dec xs.len() - i\n  {\n    a = a + xs[i] as u64;\n    i = i + 1;\n  }\n  a\n}\n",
         );
         if let Item::Fn(f) = &while_fn.items[0] {
-            assert_eq!(unwind_bound(&f.body), SLICE_BOUND + 1, "while → N+1");
+            if let Some(body) = f.body.as_ref() {
+                assert_eq!(unwind_bound(body), SLICE_BOUND + 1, "while → N+1");
+            }
         }
         let loop_fn = parse(
             "fn h(xs: &[u32]) -> usize\n  req true\n  ens result <= xs.len()\n  fx pure\n{\n  let mut i: usize = 0;\n  loop\n    inv i <= xs.len()\n    dec xs.len() - i\n  {\n    if i == xs.len() { return i; }\n    i = i + 1;\n  }\n}\n",
         );
         if let Item::Fn(f) = &loop_fn.items[0] {
-            assert_eq!(unwind_bound(&f.body), SLICE_BOUND + 2, "loop → N+2");
+            if let Some(body) = f.body.as_ref() {
+                assert_eq!(unwind_bound(body), SLICE_BOUND + 2, "loop → N+2");
+            }
         }
     }
 

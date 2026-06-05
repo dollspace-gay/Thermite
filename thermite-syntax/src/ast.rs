@@ -16,6 +16,12 @@
 //! | REQ-1 (item nodes) | SHIPPED | `enum Item { Fn, SpecFn }`; consumer `parse_item` in `parser.rs`, asserted by `tests/conformance.rs`. |
 //! | REQ-2 (contract node, mandatory fields) | SHIPPED | `struct Contract { req: Expr, ens: Vec<Expr>, fx: EffectRow }` — non-`Option`; built only in `parse_contract` after presence checks. |
 //! | REQ-3 (slag attribute node) | SHIPPED | `struct SlagAttr` + `Fn.slag: Option<SlagAttr>`; parsed by `parse_slag` in `parser.rs`. |
+//!
+//! ## #16 boundary-fn additive schema (FFI boundary modules, `.design/boundary/ffi-boundary.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | ffi REQ-2 (AST shape) | SHIPPED | `struct BoundaryAttr { target, span }` (mirrors `SlagAttr`) + `FnItem.boundary: Option<BoundaryAttr>` + `FnItem.body: Option<Block>` (a boundary fn is `boundary: Some`, `body: None`; an in-language fn is `boundary: None`, `body: Some`). Built by `parse_attribute`/`parse_fn` in `parser.rs`; consumed by `thermite_lower::l1::lower_l1` (the boundary L1 wrapper) and `forge`'s `check::gate_fn` (the `boundary_l1` cert). |
 //! | REQ-4 (block + statement nodes) | SHIPPED | `struct Block`, `enum Stmt`; built by `parse_block`/`parse_stmt` in `parser.rs`. |
 //! | REQ-5 (loop nodes, addressable) | SHIPPED | `struct LoopNode { kind, invs, dec, .. }`; addressed by `address.rs`. |
 //! | REQ-6 (expression nodes) | SHIPPED | `enum Expr` with `Call`/`MethodCall`/`Field`/`Path`/... ; built by `parse_expr_bp`. |
@@ -51,15 +57,27 @@ impl Item {
     }
 }
 
-/// A `fn` item with its mandatory contract and body (ast.md REQ-1/REQ-2/REQ-3).
+/// A `fn` item with its mandatory contract and body (ast.md REQ-1/REQ-2/REQ-3;
+/// ffi-boundary.md REQ-2).
+///
+/// A structural invariant the parser upholds: `boundary.is_some()` IFF
+/// `body.is_none()`. A FOREIGN (boundary) fn carries a `#[boundary("crate::path")]`
+/// attribute and NO Thermite body (`body: None`) — its body is the foreign
+/// crate's, enforced at L1 (`.design/boundary/ffi-boundary.md` §"surface form").
+/// An IN-LANGUAGE fn carries `boundary: None` and a real `body: Some(Block)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnItem {
     pub slag: Option<SlagAttr>,
+    /// The `#[boundary("crate::path")]` attribute marking a FOREIGN fn (ffi
+    /// REQ-2). `Some` iff this is a boundary fn (and then `body` is `None`).
+    pub boundary: Option<BoundaryAttr>,
     pub name: Ident,
     pub params: Vec<Param>,
     pub ret: Type,
     pub contract: Contract,
-    pub body: Block,
+    /// The Thermite body — `Some(Block)` for an in-language fn, `None` for a
+    /// boundary fn (the body is foreign; ffi REQ-2).
+    pub body: Option<Block>,
     pub span: Span,
 }
 
@@ -82,6 +100,20 @@ pub struct SlagAttr {
     pub reason: Option<String>,
     pub owner: Option<String>,
     pub review: Option<String>,
+    pub span: Span,
+}
+
+/// A `#[boundary("crate::path::to::foreign_fn")]` attribute (ffi-boundary.md
+/// REQ-1/REQ-2, §9). Mirrors `struct SlagAttr`: it marks a `fn` whose body is
+/// body-unproven (here, FOREIGN) while leaving the contract mandatory. The single
+/// positional `target` string names the foreign `crate::path` the L1 wrapper calls
+/// (OQ-1: a boundary has exactly one datum, so a positional string, not the named
+/// `key = "value"` fields `#[slag]` uses).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundaryAttr {
+    /// The foreign target: a `crate::path` naming the foreign fn the L1 wrapper
+    /// calls. Stored verbatim; non-emptiness is a downstream (forge) check.
+    pub target: String,
     pub span: Span,
 }
 

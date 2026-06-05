@@ -229,7 +229,14 @@ impl Validator {
                     // (the only contract positions inside a body). The body's
                     // other expressions (`return Some(mid)`, `haystack[mid]`,
                     // assignments, …) are surface code and are NOT cage-checked.
-                    self.scan_block_for_loops(&f.body);
+                    // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — the
+                    // body is foreign, so there are no in-language loops to scan
+                    // for caged `inv`/`dec` clauses. Its `req`/`ens` (walked above)
+                    // are still fully caged. An in-language fn's body is scanned
+                    // structurally as before.
+                    if let Some(body) = &f.body {
+                        self.scan_block_for_loops(body);
+                    }
                 }
                 Item::SpecFn(s) => {
                     // A `spec fn` body is itself a contract-position expression

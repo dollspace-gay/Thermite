@@ -52,6 +52,14 @@
 //! |---|---|---|
 //! | `Certificate::rejected_vacuity` | SHIPPED | builds a `Level::L0` reject cert (like `Certificate::rejected`) that ALSO sets the SOLVER-confirmed `contract_quality.{tautology,vacuous_precondition}` bool the detection corresponds to (`.design/forge/solver-vacuity.md` REQ-6, OQ-1). NO schema change (R-SPEC-2) — it only makes the EXISTING Appendix A bools' `true` real (solver-confirmed) rather than #6's syntactic `false`. Produced by `vacuity_solver::solver_vacuity_check`, consumed by `check::check_file`. |
 //!
+//! ## #16 additive schema (boundary-fn FFI cert — `.design/boundary/ffi-boundary.md`)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `boundary: bool` (FFI verdict flag) | SHIPPED | `Certificate.boundary` (additive, `#[serde(default)]` so the frozen golden `conformance/sum.cert.json` — which omits it, defaulting `false` — still deserializes, R-SPEC-2). `true` ONLY on a boundary-fn cert built by `Certificate::boundary_l1`. VERDICT-relevant (qualifies the L1 as "to-the-boundary, foreign body unproven") and feeds #15 (TCB enumeration) / #17 (verified-to-the-boundary): joins `slag` in `oracle_subset`. Set by `check::gate_fn`. |
+//! | `boundary_target: Option<String>` (foreign path) | SHIPPED | `Certificate.boundary_target` (additive, `#[serde(default, skip_serializing_if = "Option::is_none")]`). `Some(crate::path)` ONLY on a boundary cert (the foreign target the L1 wrapper calls); `None` otherwise. DIAGNOSTIC (the #15 audit hook's prose half): oracle-EXCLUDED. |
+//! | `Certificate::boundary_l1` | SHIPPED | builds the boundary cert: `Level::L1`, `boundary: true`, `boundary_target: Some(target)`, one discharged obligation ("contract enforced at L1 (boundary); foreign body trusted by fiat"), NO verus run, `graduate_triage_clean()` (a boundary fn still passes §7.1 (a)/(b)/(c)). Modeled on `Certificate::slag_l1`. Consumed by `check::gate_fn`. |
+//!
 //! ## #10 additive schema (the degrade ladder + assurance aggregate, this iteration)
 //!
 //! | Field/symbol | Status | Evidence |
@@ -338,6 +346,27 @@ pub struct Certificate {
     /// absence, mirroring the `suggested_move: None` precedent).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub strengthening: Vec<Suggestion>,
+    /// Whether this item is a FOREIGN-CROSSING boundary fn (issue #16 additive
+    /// field; `.design/boundary/ffi-boundary.md` REQ-5). `true` ONLY on a
+    /// boundary-fn cert (`Certificate::boundary_l1`): a `#[boundary("crate::path")]`
+    /// fn whose foreign body is UNPROVEN and whose contract is enforced at L1 (the
+    /// FFI analog of `slag: true`). `#[serde(default)]` so the frozen golden
+    /// `conformance/sum.cert.json` (which omits it) still deserializes, defaulting
+    /// `false`, mirroring the `slag`/`cached`/`lowered_assurance` additive
+    /// precedents (R-SPEC-2). VERDICT-RELEVANT (it qualifies the achieved L1 as
+    /// "to-the-boundary, foreign body unproven", the #15 TCB-enumeration + #17
+    /// verified-to-the-boundary input), so it JOINS `slag` in `oracle_subset`.
+    #[serde(default)]
+    pub boundary: bool,
+    /// The foreign `crate::path` target a boundary fn's L1 wrapper calls (issue #16
+    /// additive field; `.design/boundary/ffi-boundary.md` REQ-5). `Some` ONLY on a
+    /// boundary cert (`Certificate::boundary_l1`); `None` otherwise. `#[serde(default,
+    /// skip_serializing_if = "Option::is_none")]` so a non-boundary cert (the golden)
+    /// deserializes unchanged (R-SPEC-2). DIAGNOSTIC — the prose half of the #15
+    /// audit hook (the `boundary` flag is the verdict-relevant half): EXCLUDED from
+    /// `oracle_subset` (parallel to `slag_meta`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boundary_target: Option<String>,
 }
 
 impl Certificate {
@@ -368,6 +397,8 @@ impl Certificate {
             lowered_assurance: false,
             degrade_reason: None,
             strengthening: Vec::new(),
+            boundary: false,
+            boundary_target: None,
         }
     }
 
@@ -410,6 +441,8 @@ impl Certificate {
             lowered_assurance: false,
             degrade_reason: None,
             strengthening: Vec::new(),
+            boundary: false,
+            boundary_target: None,
         }
     }
 
@@ -464,6 +497,45 @@ impl Certificate {
             lowered_assurance: false,
             degrade_reason: None,
             strengthening: Vec::new(),
+            boundary: false,
+            boundary_target: None,
+        }
+        .graduate_triage_clean()
+    }
+
+    /// Build a BOUNDARY-fn certificate (`.design/boundary/ffi-boundary.md` REQ-5,
+    /// §9). The FFI analog of [`Certificate::slag_l1`]: a `#[boundary("crate::path")]`
+    /// fn whose FOREIGN body is UNPROVEN, so it certifies at `Level::L1` (the
+    /// contract enforced at the crossing — `req` before, `ens` after — by
+    /// `thermite_lower::l1`'s wrapper) with `boundary: true` and the foreign
+    /// `target` recorded for the #15 TCB enumeration — NOT L3 (no verus run on a
+    /// foreign body). A single discharged obligation records the trusted-by-fiat
+    /// fact (NOT a verus obligation). The §7.1 (a)/(b)/(c) triage STILL applies (a
+    /// boundary fn with a vacuous contract is rejected — slag-adjacent: it exempts
+    /// PROVING, not STATING), so the triage bools graduate to live-`false`
+    /// (`graduate_triage_clean`, the slag precedent). `slag` stays `false` — a
+    /// boundary fn is a distinct TCB category from a `#[slag]` block.
+    pub fn boundary_l1(item: impl Into<String>, effects: Vec<String>, target: String) -> Self {
+        Certificate {
+            item: item.into(),
+            level: Level::L1,
+            solver_time_ms: 0,
+            contract_quality: ContractQuality::forward_declared(),
+            effects,
+            slag: false,
+            slag_meta: None,
+            reject: None,
+            obligations: vec![ObligationResult::discharged(
+                "contract enforced at L1 (boundary); foreign body trusted by fiat",
+            )],
+            cached: false,
+            solver_profile: None,
+            suggested_move: None,
+            lowered_assurance: false,
+            degrade_reason: None,
+            strengthening: Vec::new(),
+            boundary: true,
+            boundary_target: Some(target),
         }
         .graduate_triage_clean()
     }
@@ -498,6 +570,8 @@ impl Certificate {
             lowered_assurance: false,
             degrade_reason: None,
             strengthening: Vec::new(),
+            boundary: false,
+            boundary_target: None,
         }
     }
 
@@ -625,15 +699,24 @@ impl Certificate {
     }
 
     /// The DETERMINISTIC, currently-producible oracle subset (REQ-3/REQ-6,
-    /// `.design/forge/check.md` AC-1): `(item, level, effects, slag)`. The
-    /// forward-declared `contract_quality.*` and the non-deterministic
-    /// `solver_time_ms` are STRUCTURALLY excluded by being absent from this
-    /// tuple. The cert-oracle (`tests/check_conformance.rs`) and the human
-    /// renderer (`cli::render_human`, which prints exactly this subset plus the
-    /// excluded `solver_time_ms` labelled as such) treat these four as the
-    /// oracle-stable fields in #5.
-    pub fn oracle_subset(&self) -> (&str, Level, &[String], bool) {
-        (&self.item, self.level, &self.effects, self.slag)
+    /// `.design/forge/check.md` AC-1; ffi-boundary.md REQ-5/AC-2):
+    /// `(item, level, effects, slag, boundary)`. The forward-declared
+    /// `contract_quality.*` and the non-deterministic `solver_time_ms` are
+    /// STRUCTURALLY excluded by being absent from this tuple. The cert-oracle
+    /// (`tests/check_conformance.rs`, `tests/boundary_conformance.rs`) and the
+    /// human renderer treat these five as the oracle-stable fields. `boundary`
+    /// joins the subset because it is verdict-relevant (an L1 "to-the-boundary"
+    /// is distinct from a proved/runtime L1); `boundary_target` is diagnostic and
+    /// stays EXCLUDED (parallel to `slag_meta`). The golden `sum.cert.json` omits
+    /// `boundary`, so it defaults `false` and the subset still matches (R-SPEC-2).
+    pub fn oracle_subset(&self) -> (&str, Level, &[String], bool, bool) {
+        (
+            &self.item,
+            self.level,
+            &self.effects,
+            self.slag,
+            self.boundary,
+        )
     }
 }
 

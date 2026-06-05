@@ -308,7 +308,11 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
                 for ens in &f.contract.ens {
                     collect_combinators_in_expr(&ens.expr, f.span, &mut names);
                 }
-                collect_combinators_in_block_specs(&f.body, f.span, &mut names);
+                // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — its
+                // `req`/`ens` combinators are collected above; no body to scan.
+                if let Some(body) = &f.body {
+                    collect_combinators_in_block_specs(body, f.span, &mut names);
+                }
             }
             Item::SpecFn(s) => {
                 collect_combinators_in_expr(&s.dec.expr, s.span, &mut names);
@@ -1049,7 +1053,17 @@ fn lower_binary_operand(
 /// the extensionality assert at exit.
 fn lower_fn_body(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
     let mut out = String::from("{\n");
-    let inner = lower_block_with_fn_aids(&f.body, f, nat_fns, 1)?;
+    // A boundary fn (ffi-boundary.md REQ-2/OQ-3) has `body: None` and is NEVER
+    // lowered to Verus — `forge`'s `check.rs` routes it to the L1 boundary path
+    // BEFORE `lower` ever sees it (the foreign body cannot be proved). Reaching
+    // here with no body is a structured error (R-CODE-2), never an unwrap.
+    let body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "lower (L3 Verus) reached a bodyless (boundary) fn; a boundary fn \
+               certifies at L1 and is never lowered to Verus (ffi-boundary.md OQ-3)"
+            .to_string(),
+        span: f.span,
+    })?;
+    let inner = lower_block_with_fn_aids(body, f, nat_fns, 1)?;
     out.push_str(&inner);
     out.push_str("}\n");
     Ok(out)
@@ -1419,7 +1433,12 @@ fn accumulator_aid(f: &FnItem, invs: &[Clause]) -> Result<Option<(String, String
 /// the program. Emitted at file scope by `lower` before the `fn`.
 fn push_lemma_defs_for_fn(f: &FnItem) -> Result<Vec<String>, LowerError> {
     let mut defs = Vec::new();
-    collect_push_lemmas_in_block(&f.body, &mut defs);
+    // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — no loop bodies, so
+    // no accumulator-fold push lemmas. A boundary fn never reaches L3 anyway
+    // (`lower_fn` errors on a bodyless fn); this keeps the collector total.
+    if let Some(body) = &f.body {
+        collect_push_lemmas_in_block(body, &mut defs);
+    }
     Ok(defs)
 }
 

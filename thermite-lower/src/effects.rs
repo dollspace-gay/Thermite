@@ -194,15 +194,22 @@ pub fn check_effects(program: &Program) -> Result<(), Vec<LowerError>> {
         // Only `fn` items have an `fx` row and so can be a checked caller; a
         // `spec fn` is pure by construction and makes no effectful calls.
         if let Item::Fn(f) = item {
-            check_block(
-                &f.body,
-                &f.contract.fx,
-                &f.name,
-                f.span,
-                &resolve,
-                0,
-                &mut errors,
-            );
+            // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — its body is
+            // foreign and makes no in-language calls to subsume (its own `fx` row
+            // is trusted-by-fiat, OQ-4; the row is still CHECKED at the call site,
+            // because the boundary fn's declared `fx` is in `fn_rows` above). Only
+            // an in-language body is walked for callee subsumption.
+            if let Some(body) = &f.body {
+                check_block(
+                    body,
+                    &f.contract.fx,
+                    &f.name,
+                    f.span,
+                    &resolve,
+                    0,
+                    &mut errors,
+                );
+            }
         }
     }
 

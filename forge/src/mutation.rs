@@ -170,6 +170,16 @@ impl MutationScore {
 pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
     let mut mutants = Vec::new();
 
+    // A boundary fn (`.design/boundary/ffi-boundary.md` REQ-2) has `body: None` —
+    // its body is FOREIGN, so there is nothing to mutate (mutation scores a
+    // KNOWN-GOOD Thermite body, §7's premise). It never reaches here in
+    // production (`check.rs` routes a boundary fn to L1 before any L3 proof +
+    // mutation stage), but handle `None` as an empty mutant set rather than panic
+    // (R-CODE-2). The `real_body` below is the in-language body the families walk.
+    let Some(real_body) = &f.body else {
+        return mutants;
+    };
+
     // Family 1: early return at body head. EVERY real `fn` body gets this mutant
     // (the §7 discriminator / value-add mutant) so the floor is never silently
     // skipped via a 0/0 score (#48). Listed first so the cap never crowds it out.
@@ -178,7 +188,7 @@ pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
     // valid early return — an empty subslice borrowing a matching slice param
     // (`&p[..0]`, valid lifetime) or the empty-slice literal `&[]` (OQ-3 widened).
     if let Some((value, desc)) = early_return_value(f) {
-        let mut body = f.body.clone();
+        let mut body = real_body.clone();
         body.stmts.insert(0, Stmt::Return(Some(value)));
         mutants.push(mutant_with_body(
             f,
@@ -190,8 +200,8 @@ pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
     // Families 2-4: walk the body collecting per-site mutated bodies. Each entry
     // is a (mutated Block, description); we rebuild the `FnItem` around it.
     let mut sink = MutantSink::new();
-    sink.walk_block(&f.body);
-    for (body, desc) in sink.into_mutants(&f.body) {
+    sink.walk_block(real_body);
+    for (body, desc) in sink.into_mutants(real_body) {
         mutants.push(mutant_with_body(f, body, desc));
     }
 
@@ -203,7 +213,9 @@ pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
 /// the contract and signature are cloned verbatim; only `body` changes.
 fn mutant_with_body(f: &FnItem, body: Block, desc: String) -> Mutant {
     let mut item = f.clone();
-    item.body = body;
+    // A mutant is always a bodied in-language fn (its source `f` proved L3, so it
+    // had a real body); the field is `Option<Block>` since #16, so wrap in `Some`.
+    item.body = Some(body);
     Mutant { item, desc }
 }
 

@@ -17,7 +17,7 @@
 //! | REQ-1 (ens-is-true reject (a)) | SHIPPED | `ens_is_trivially_true` over `Expr::BoolLit(true)` (all clauses) or any clause being a syntactic identity `Eq`/`Le`/`Ge` (`identity_clause`); consumer `triage` → `check::check_file`. |
 //! | REQ-2 (ens-omits-result reject (b)) | SHIPPED | `ens_omits_result`: `ret != Type::Unit` AND no `ens` clause `Expr` tree contains a `result` path (`mentions_result`, bounded `expr_mentions_result`); consumer `triage`. |
 //! | REQ-3 (ens-implied-by-req reject (c)) | SHIPPED | `ens_implied_by_req`: `flatten_and` of `req`'s left-associative `&&` chain, then every `ens` clause `PartialEq`-equal to `req` whole or a conjunct; consumer `triage`. |
-//! | REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag`: `slag.is_none()` AND `effect_row_is_maximal` (all 8 `Effect` kinds in a `Set`); consumer `triage`. |
+//! | REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag`: `slag.is_none()` AND `boundary.is_none()` (a `#[boundary]` fn is slag-adjacent — ffi-boundary.md §9/OQ-4 — and exempt from (d) like `#[slag]`) AND `effect_row_is_maximal` (all 8 `Effect` kinds in a `Set`); consumer `triage`. |
 //! | REQ-5 (`VacuityVerdict` + typed cause) | SHIPPED | `pub enum VacuityVerdict { Passed, Rejected { cause } }` + `pub enum VacuityCause`; `VacuityCause::tag`/`detail` feed `manifest::RejectReason`; consumed by `check::check_file` (OQ-1: verdict-in-cert, not a `ForgeError`). |
 //! | REQ-6 (forge-check gate + `contract_quality`) | SHIPPED | `triage` runs in `check::check_file` BEFORE `lower`/`run_verus`; a pass graduates `contract_quality.{tautology,vacuous_precondition}` to live-`false` via `Certificate::graduate_triage_clean`. |
 //! | REQ-7 (slag exempts proving, not stating) | SHIPPED | `triage` takes `slag: Option<&SlagAttr>` and gates ONLY rule (d) on it; (a)/(b)/(c) always run, so a slag fn with a vacuous contract is still `Rejected`. |
@@ -125,8 +125,13 @@ pub fn triage(item: &FnItem) -> VacuityVerdict {
         };
     }
 
-    // (d) maximal fx without slag (slag exempts ONLY this rule, REQ-7).
-    if fx_maximal_without_slag(&contract.fx, item.slag.as_ref()) {
+    // (d) maximal fx without slag (slag exempts ONLY this rule, REQ-7). A
+    // BOUNDARY fn (ffi-boundary.md §9, slag-adjacent) is ALSO exempt from (d): its
+    // foreign body's effects are trusted-by-fiat exactly as a `#[slag]` body's are
+    // (OQ-4), so a `#[boundary]` attribute justifies a maximal row just as
+    // `#[slag]` does. (a)/(b)/(c) STILL run for a boundary fn (it exempts PROVING
+    // / the body's effects, not STATING a non-vacuous contract).
+    if fx_maximal_without_slag(&contract.fx, item.slag.as_ref(), item.boundary.as_ref()) {
         return VacuityVerdict::Rejected {
             cause: VacuityCause::MaximalFxWithoutSlag,
         };
@@ -338,9 +343,17 @@ fn flatten_and<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>, depth: usize) {
 /// regardless of their `Ident` arg + Alloc/Time/Rand/Panic/Diverge). `Pure` is
 /// never maximal; a partial `Set` is never maximal. A `#[slag]` item (with a
 /// present attribute) skips this rule entirely (slag is the ONLY justification for
-/// a maximal row, §8, REQ-7 / `slag.md` REQ-3).
-fn fx_maximal_without_slag(fx: &EffectRow, slag: Option<&SlagAttr>) -> bool {
-    slag.is_none() && effect_row_is_maximal(fx)
+/// a maximal row, §8, REQ-7 / `slag.md` REQ-3). A `#[boundary]` item is exempt
+/// too (ffi-boundary.md §9, slag-adjacent): a foreign body's effects are
+/// trusted-by-fiat (OQ-4), so the foreign-target attribute justifies a maximal
+/// row just as `#[slag]` does — the rule fires ONLY when NEITHER attribute is
+/// present.
+fn fx_maximal_without_slag(
+    fx: &EffectRow,
+    slag: Option<&SlagAttr>,
+    boundary: Option<&thermite_syntax::BoundaryAttr>,
+) -> bool {
+    slag.is_none() && boundary.is_none() && effect_row_is_maximal(fx)
 }
 
 /// `true` iff `fx` is an `EffectRow::Set` containing at least one occurrence of
@@ -390,6 +403,7 @@ mod tests {
                 // to satisfy the return type without a forbidden macro.
                 FnItem {
                     slag: None,
+                    boundary: None,
                     name: String::new(),
                     params: Vec::new(),
                     ret: Type::Unit,
@@ -398,10 +412,10 @@ mod tests {
                         ens: vec![dummy_clause()],
                         fx: EffectRow::Pure,
                     },
-                    body: thermite_syntax::Block {
+                    body: Some(thermite_syntax::Block {
                         stmts: Vec::new(),
                         tail: None,
-                    },
+                    }),
                     span: dummy_span(),
                 }
             }

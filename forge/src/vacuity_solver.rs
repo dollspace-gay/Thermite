@@ -635,6 +635,7 @@ mod tests {
         assert!(f.is_some(), "fixture has no fn item");
         let f = f.unwrap_or_else(|| FnItem {
             slag: None,
+            boundary: None,
             name: String::new(),
             params: Vec::new(),
             ret: thermite_syntax::Type::Unit,
@@ -647,10 +648,10 @@ mod tests {
                 ens: Vec::new(),
                 fx: thermite_syntax::EffectRow::Pure,
             },
-            body: thermite_syntax::Block {
+            body: Some(thermite_syntax::Block {
                 stmts: Vec::new(),
                 tail: None,
-            },
+            }),
             span: thermite_syntax::Span::new(0, 0),
         });
         (f, spec_items)

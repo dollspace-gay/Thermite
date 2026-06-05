@@ -26,6 +26,12 @@
 //! | REQ-5 (round-trip fidelity) | SHIPPED | `tests/conformance.rs` asserts `sum`/`binary_search` facts with 0 diagnostics. |
 //! | REQ-6 (one call syntax) | SHIPPED | postfix `.` -> `MethodCall`/`Field`, free `f(args)` -> `Call`, `::` -> `Path` (never method dispatch). |
 //! | REQ-7 (addressing substrate) | SHIPPED | loops/`inv`s kept in source order in the AST; numbered by `address.rs`. |
+//!
+//! ## #16 boundary-fn parser extension (`.design/boundary/ffi-boundary.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | ffi REQ-1/REQ-3 | SHIPPED | `parse_attribute` generalizes `parse_slag` (dispatch on the `#[` attribute name: `slag` -> `SlagAttr`, `boundary` -> `BoundaryAttr` reading one positional `(` STRING `)`); `parse_item` routes a `boundary` attribute into `parse_fn` (and rejects `#[boundary]` on a `spec fn`). `parse_fn` gains a `Semi`-terminated bodyless path GATED on `boundary.is_some()` (OQ-2): `#[boundary]` REQUIRES the `;` body, a fn with NO `#[boundary]` REQUIRES the `{ }` body — a bodyless non-`#[boundary]` fn is a clear `SyntaxError`, never silently a boundary fn. |
 
 use crate::ast::*;
 use crate::lexer::{tokenize, Span, TokKind, Token};
@@ -192,6 +198,16 @@ pub fn parse(src: &str) -> ParseResult {
 /// A parse error local to one item — carries enough to record + resync.
 type PResult<T> = Result<T, SyntaxError>;
 
+/// A parsed leading `#[...]` attribute (ffi-boundary.md REQ-3): either the
+/// `#[slag(...)]` field list or the `#[boundary("...")]` foreign-target string.
+/// `parse_attribute` produces this; `parse_item` routes it onto the `FnItem`'s
+/// `slag` / `boundary` fields. A module-private dispatch type — the AST carries
+/// the two attributes as separate `Option`s, not this union.
+enum ParsedAttr {
+    Slag(SlagAttr),
+    Boundary(BoundaryAttr),
+}
+
 struct Parser<'a> {
     src: &'a str,
     tokens: Vec<Token>,
@@ -353,36 +369,79 @@ impl<'a> Parser<'a> {
 
     fn parse_item(&mut self) -> PResult<Item> {
         let start_span = self.peek_span();
-        let slag = if self.check(&TokKind::HashBracket) {
-            Some(self.parse_slag()?)
+        // An optional leading `#[...]` attribute (`#[slag(...)]` or
+        // `#[boundary("...")]`; ffi-boundary.md REQ-3). `parse_attribute`
+        // dispatches on the name; `parse_item` routes the result to the fn.
+        let attr = if self.check(&TokKind::HashBracket) {
+            Some(self.parse_attribute()?)
         } else {
             None
         };
 
         if self.check(&TokKind::Spec) {
-            if slag.is_some() {
-                // `#[slag]` only attaches to `fn` (surface-grammar Item).
-                return Err(self.unexpected("`fn` after `#[slag(...)]`"));
+            // Neither `#[slag]` nor `#[boundary]` attaches to a `spec fn`
+            // (surface-grammar Item; ffi-boundary.md "#[boundary] is NOT valid on
+            // a spec fn").
+            match &attr {
+                Some(ParsedAttr::Slag(_)) => {
+                    return Err(self.unexpected("`fn` after `#[slag(...)]`"));
+                }
+                Some(ParsedAttr::Boundary(_)) => {
+                    return Err(self.unexpected("`fn` after `#[boundary(\"...\")]`"));
+                }
+                None => {}
             }
             self.parse_spec_fn(start_span)
         } else if self.check(&TokKind::Fn) {
-            self.parse_fn(slag, start_span)
+            let (slag, boundary) = match attr {
+                Some(ParsedAttr::Slag(s)) => (Some(s), None),
+                Some(ParsedAttr::Boundary(b)) => (None, Some(b)),
+                None => (None, None),
+            };
+            self.parse_fn(slag, boundary, start_span)
         } else {
-            Err(self.unexpected("`fn`, `spec fn`, or `#[slag(...)]`"))
+            Err(self.unexpected("`fn`, `spec fn`, `#[slag(...)]`, or `#[boundary(\"...\")]`"))
         }
     }
 
-    fn parse_slag(&mut self) -> PResult<SlagAttr> {
+    /// Parse a leading `#[...]` attribute, dispatching on its name (ffi-boundary.md
+    /// REQ-3): `slag` -> the `SlagAttr` field-list path, `boundary` -> a single
+    /// positional `("crate::path")` string -> a `BoundaryAttr`. Generalizes the
+    /// former name-hardcoded `parse_slag`.
+    fn parse_attribute(&mut self) -> PResult<ParsedAttr> {
         let start = self.peek_span();
         self.consume(&TokKind::HashBracket, "`#[`")?;
-        let name = self.take_ident("`slag`")?;
-        if name != "slag" {
-            return Err(SyntaxError::Unexpected {
-                expected: "`slag`".to_string(),
+        let name = self.take_ident("`slag` or `boundary`")?;
+        match name.as_str() {
+            "slag" => Ok(ParsedAttr::Slag(self.parse_slag_body(start)?)),
+            "boundary" => Ok(ParsedAttr::Boundary(self.parse_boundary_body(start)?)),
+            _ => Err(SyntaxError::Unexpected {
+                expected: "`slag` or `boundary`".to_string(),
                 found: format!("identifier `{name}`"),
                 span: start,
-            });
+            }),
         }
+    }
+
+    /// Parse a `#[boundary("crate::path")]` attribute body: a single positional
+    /// string literal naming the foreign target (ffi-boundary.md REQ-1/OQ-1).
+    /// `start` is the span of the opening `#[` (for the attribute span).
+    fn parse_boundary_body(&mut self, start: Span) -> PResult<BoundaryAttr> {
+        self.consume(&TokKind::LParen, "`(`")?;
+        let target = self.take_string("a foreign-target string `\"crate::path\"`")?;
+        let end = self.peek_span();
+        self.consume(&TokKind::RParen, "`)`")?;
+        self.consume(&TokKind::RBracket, "`]`")?;
+        Ok(BoundaryAttr {
+            target,
+            span: start.to(end),
+        })
+    }
+
+    /// Parse a `#[slag(...)]` attribute body (the `key = "value"` field list).
+    /// `start` is the span of the opening `#[`. The `#[` and the `slag` name are
+    /// already consumed by `parse_attribute`.
+    fn parse_slag_body(&mut self, start: Span) -> PResult<SlagAttr> {
         self.consume(&TokKind::LParen, "`(`")?;
         let mut reason = None;
         let mut owner = None;
@@ -420,17 +479,59 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_fn(&mut self, slag: Option<SlagAttr>, start_span: Span) -> PResult<Item> {
+    fn parse_fn(
+        &mut self,
+        slag: Option<SlagAttr>,
+        boundary: Option<BoundaryAttr>,
+        start_span: Span,
+    ) -> PResult<Item> {
         self.consume(&TokKind::Fn, "`fn`")?;
         let name = self.take_ident("a function name")?;
         let params = self.parse_params()?;
         self.consume(&TokKind::Arrow, "`->`")?;
         let ret = self.parse_type()?;
         let contract = self.parse_contract(&name)?;
-        let body = self.parse_block()?;
+        // Body fork (ffi-boundary.md REQ-3, OQ-2): a `#[boundary]` fn is bodyless
+        // — terminated by `;` (the foreign body lives in the foreign crate); a
+        // non-`#[boundary]` fn REQUIRES a `{ }` body (the §4.1 body-second rule).
+        // The `;` body is VALID ONLY when `boundary.is_some()`: a bodyless fn
+        // WITHOUT `#[boundary]` is a clear parse error, never silently a boundary
+        // fn (a normal fn missing its body must not be mistaken for a foreign one).
+        let body = if boundary.is_some() {
+            // A foreign fn MUST be bodyless: `;`, not `{ }`. A `{ }` body on a
+            // `#[boundary]` fn is an error — there is no Thermite body to prove.
+            if self.check(&TokKind::LBrace) {
+                return Err(SyntaxError::Unexpected {
+                    expected: "`;` (a `#[boundary]` fn is bodyless — its body is foreign)"
+                        .to_string(),
+                    found: describe(self.peek()),
+                    span: self.peek_span(),
+                });
+            }
+            self.consume(
+                &TokKind::Semi,
+                "`;` to end the bodyless `#[boundary]` fn (its body is foreign)",
+            )?;
+            None
+        } else {
+            // A non-boundary fn MUST have a `{ }` body. A `;` here is the OQ-2
+            // case — a bodyless fn WITHOUT `#[boundary]`: a clear, distinct error,
+            // not a silent boundary fn.
+            if self.check(&TokKind::Semi) {
+                return Err(SyntaxError::Unexpected {
+                    expected: "`{` (a non-`#[boundary]` fn requires a `{ }` body; \
+                               only a `#[boundary(\"...\")]` fn is bodyless)"
+                        .to_string(),
+                    found: describe(self.peek()),
+                    span: self.peek_span(),
+                });
+            }
+            Some(self.parse_block()?)
+        };
         let span = start_span.to(self.prev_span());
         Ok(Item::Fn(FnItem {
             slag,
+            boundary,
             name,
             params,
             ret,

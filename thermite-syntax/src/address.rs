@@ -82,7 +82,12 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
                     surface_keyword: None,
                     text: None,
                 });
-                collect_block_loops(&f.name, &f.body, &mut out);
+                // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — no
+                // Thermite body, so no addressable inner loops. An in-language fn
+                // carries a body whose loops are numbered as before.
+                if let Some(body) = &f.body {
+                    collect_block_loops(&f.name, body, &mut out);
+                }
             }
             Item::SpecFn(s) => {
                 // A spec fn has no addressable inner blocks in v0.1 (its `dec`

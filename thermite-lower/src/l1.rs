@@ -87,6 +87,11 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     for item in &program.items {
         let item_src = match item {
             Item::SpecFn(s) => lower_spec_fn_l1(s)?,
+            // A boundary fn (ffi-boundary.md REQ-4) lowers to the L1 wrapper: a
+            // `req`-check, a call to the FOREIGN target binding `result`, then the
+            // `ens`-checks — the foreign body is NOT lowered/verified. An
+            // in-language fn lowers with its real body.
+            Item::Fn(f) if f.boundary.is_some() => lower_boundary_fn_l1(f)?,
             Item::Fn(f) => lower_fn_l1(f)?,
         };
         out.push('\n');
@@ -157,7 +162,12 @@ pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, Lower
                 for ens in &f.contract.ens {
                     collect_combinators_in_expr(&ens.expr, f.span, &mut names);
                 }
-                collect_combinators_in_block_specs(&f.body, f.span, &mut names);
+                // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — its
+                // `req`/`ens` combinators are collected above; there is no body
+                // with loop spec-positions to scan.
+                if let Some(body) = &f.body {
+                    collect_combinators_in_block_specs(body, f.span, &mut names);
+                }
             }
             Item::SpecFn(s) => {
                 collect_combinators_in_expr(&s.dec.expr, s.span, &mut names);
@@ -413,12 +423,78 @@ fn lower_fn_l1(f: &FnItem) -> Result<String, LowerError> {
         out.push_str(&emit_check("req", &f.contract.req.text, &req_cond, 1));
     }
 
-    // The body value is bound to `result` so `ens` can reference it (REQ-1).
+    // The body value is bound to `result` so `ens` can reference it (REQ-1). A
+    // boundary fn has `body: None` and is routed to `lower_boundary_fn_l1` by the
+    // `lower_l1` match guard, so this arm only ever sees an in-language fn; a
+    // `None` here is a structured error (never an unwrap/panic — R-CODE-2).
+    let body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "lower_fn_l1 reached a bodyless (boundary) fn; route it through \
+               lower_boundary_fn_l1 instead (ffi-boundary.md REQ-4)"
+            .to_string(),
+        span: f.span,
+    })?;
     writeln!(out, "    let result = {{").ok();
-    out.push_str(&lower_fn_body_l1(&f.body, f, 2)?);
+    out.push_str(&lower_fn_body_l1(body, f, 2)?);
     writeln!(out, "    }};").ok();
 
     // ens on exit, in source order, against the bound `result` (REQ-1/REQ-2).
+    for ens in &f.contract.ens {
+        let cond = lower_expr_exec(&ens.expr, 0, f.span)?;
+        out.push_str(&emit_check("ens", &ens.text, &cond, 1));
+    }
+
+    writeln!(out, "    result").ok();
+    out.push_str("}\n");
+    Ok(out)
+}
+
+/// Lower a BOUNDARY fn to its L1 wrapper (ffi-boundary.md REQ-4, §9 "L1, runtime
+/// checks on every crossing"). The wrapper REUSES `l1.rs`'s executable machinery
+/// exactly — `emit_params`/`lower_type`/`emit_check`/`lower_expr_exec` — and
+/// emits, around the FOREIGN call:
+///
+/// 1. the `fn <name>(<params>) -> <ret>` head;
+/// 2. a `req`-check on entry (the always-active `thermite_check!`);
+/// 3. `let result = <target>(<args>);` — the foreign call (the unproven crossing,
+///    §9): the foreign body is NOT lowered, NOT verified, NOT proved;
+/// 4. an `ens`-check on exit against the bound `result`.
+///
+/// `fx` emits no runtime sandbox in v0.1 (REQ-7, deferred to #21). The target is
+/// `f.boundary`'s `BoundaryAttr.target`; this fn is only called when
+/// `f.boundary.is_some()` (the `lower_l1` match guard), so the attribute is read
+/// via a structured error rather than an unwrap (R-CODE-2).
+fn lower_boundary_fn_l1(f: &FnItem) -> Result<String, LowerError> {
+    let boundary = f.boundary.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "lower_boundary_fn_l1 reached a non-boundary fn (no `#[boundary]` \
+               target to call); route it through lower_fn_l1 (ffi-boundary.md REQ-4)"
+            .to_string(),
+        span: f.span,
+    })?;
+    let ret = lower_type(&f.ret)?;
+    let mut out = String::new();
+    write!(out, "fn {}(", f.name).ok();
+    emit_params(&mut out, &f.params)?;
+    writeln!(out, ") -> {ret} {{").ok();
+
+    // (2) req-check on entry (REQ-4). Omit a literal-`true` req (empty contract).
+    let req_cond = lower_expr_exec(&f.contract.req.expr, 0, f.span)?;
+    if req_cond != "true" {
+        out.push_str(&emit_check("req", &f.contract.req.text, &req_cond, 1));
+    }
+
+    // (3) the foreign call binding `result` — the unproven crossing (§9). The
+    // body is NOT lowered: this `<target>(<params>)` REPLACES the `let result =
+    // { <lowered body> }` of a normal L1 fn. Arguments are the parameter names in
+    // declaration order (the wrapper forwards its own params to the foreign fn).
+    let args = f
+        .params
+        .iter()
+        .map(|p| p.name.clone())
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(out, "    let result = {}({args});", boundary.target).ok();
+
+    // (4) ens-check on exit against the bound `result` (REQ-4), in source order.
     for ens in &f.contract.ens {
         let cond = lower_expr_exec(&ens.expr, 0, f.span)?;
         out.push_str(&emit_check("ens", &ens.text, &cond, 1));

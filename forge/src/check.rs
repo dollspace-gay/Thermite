@@ -266,7 +266,15 @@ pub fn check_file_with_options(
             }
         }
 
-        let sub = item_subprogram(item, &spec_items);
+        // #52 §9 composition weaving (`.design/lower/boundary-composition.md`
+        // REQ-2): weave the in-file `fn`s this item transitively references into
+        // its §5.3 sub-program — regular fns with their real body, boundary/slag
+        // fns as `#[verifier::external_body]` signatures — so `verus` resolves the
+        // callee and the caller proves THROUGH its contract (was an undefined-callee
+        // L0). EMPTY for a fn referencing only spec fns / combinators (the pure
+        // corpus), so the corpus cert + lowering are byte-stable (AC-4).
+        let fn_deps = reachable_fn_deps(&parsed.program, item.name());
+        let sub = item_subprogram(item, &spec_items, &fn_deps);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
 
         // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
@@ -402,6 +410,7 @@ pub fn check_file_with_options(
                 let score = mutation_score(
                     f,
                     &spec_items,
+                    &fn_deps,
                     seed,
                     rlimit,
                     &verus_version,
@@ -427,6 +436,7 @@ pub fn check_file_with_options(
                     let suggestions = strengthen_certificate(
                         f,
                         &spec_items,
+                        &fn_deps,
                         &score,
                         seed,
                         rlimit,
@@ -564,7 +574,12 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
         let Item::Fn(f) = item else {
             continue;
         };
-        let sub = item_subprogram(item, &spec_items);
+        // The explicit `--level l2` (kani) path does NOT weave the §9 composition
+        // deps: #52's external_body arm lives in the L3 `lower`, not `lower_l2`, and
+        // the composition oracle (`conformance/composition`) is L3-only. A boundary
+        // caller at L2 is out of #52's v0.1 scope, so this stays the prior shape
+        // (no fn-dep weaving) to keep the explicit-L2 behavior byte-stable.
+        let sub = item_subprogram(item, &spec_items, &[]);
         let harness = thermite_lower::lower_l2(&sub).map_err(ForgeError::Lower)?;
         let bound = thermite_lower::bound_string(&sub);
         let l2 = crate::kani::run_kani(&harness, &f.name, &bound)?;
@@ -711,31 +726,60 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
 
 /// Build the per-item sub-`Program` that isolates `item`'s verification (§5.3).
 ///
-/// - A `fn` is verified against itself plus the file's `spec fn`s (the pure
-///   shared dependencies its contract may reference), so its obligations are its
-///   own and a sibling `fn`'s failure cannot leak in.
+/// - A `fn` is verified against itself, the file's `spec fn`s (the pure shared
+///   dependencies its contract may reference), AND the in-file `fn`s its body
+///   TRANSITIVELY references (`fn_deps`, the #52 §9 composition weaving). A
+///   regular reachable fn is woven with its REAL body (fully lowered + proved);
+///   a `#[boundary]`/`#[slag]` reachable fn is woven as a
+///   `#[verifier::external_body]` signature (`thermite_lower::lower`'s
+///   composition arm), so `verus` resolves the foreign callee and the caller
+///   proves THROUGH its contract (§9). Its obligations stay its own (§5.3) — a
+///   sibling fn NOT in the closure never enters, so an unrelated sibling's
+///   failure cannot leak in.
 /// - A `spec fn` carries no `req`/`ens`/`fx` contract (`ast.rs` `SpecFnItem`,
 ///   §4.2): there is no L3 proof obligation to discharge, only well-formedness
 ///   (the `decreases` measure). It is verified against the set of `spec fn`s
 ///   alone (which already contains it), so a mutually-recursive spec fn still
 ///   resolves. The resulting cert records the spec fn's well-formedness as its
-///   own discharged result — never a neighbor `fn`'s counterexample.
-fn item_subprogram(item: &Item, spec_items: &[Item]) -> Program {
+///   own discharged result — never a neighbor `fn`'s counterexample. A `spec fn`
+///   has no `fn_deps` (its body can call only spec fns / combinators, §4.2).
+fn item_subprogram(item: &Item, spec_items: &[Item], fn_deps: &[Item]) -> Program {
     match item {
-        // The `fn` plus all pure spec-fn dependencies, in source order (spec fns
-        // first so a forward reference resolves; the lowerer emits combinator
-        // defs and dedups regardless of order).
+        // The `fn` plus all pure spec-fn dependencies plus the transitively
+        // reachable in-file `fn` dependencies (#52), then the item itself last
+        // (so a forward reference resolves; the lowerer dedups combinator defs
+        // regardless of order).
         Item::Fn(_) => {
             let mut items = spec_items.to_vec();
+            items.extend(fn_deps.iter().cloned());
             items.push(item.clone());
             Program { items }
         }
         // Spec fns verified together (mutual recursion); `spec_items` already
-        // includes `item`.
+        // includes `item`. A spec fn has no `fn` dependencies to weave (§4.2).
         Item::SpecFn(_) => Program {
             items: spec_items.to_vec(),
         },
     }
+}
+
+/// The in-file `Item::Fn`s a fn named `start` transitively references — the §9
+/// composition dependencies woven into `start`'s sub-program (#52). Resolves
+/// `closure::reachable_in_file_fns` (the reused #17 call-graph walk) to the
+/// matching `Item::Fn` clones from `program`, in source order (DETERMINISTIC,
+/// R-CODE-5). EXCLUDES `start` itself and every `spec fn` (the latter is woven by
+/// the separate `spec_items` set — no duplication). For a fn with no in-file fn
+/// references (e.g. the pure corpus `sum`, which calls only the `spec fn`
+/// `spec_sum`) this is EMPTY, so the §52 weaving is a no-op and no external_body
+/// is ever emitted (the AC-4 corpus-unaffected / honesty-gate invariant).
+fn reachable_fn_deps(program: &Program, start: &str) -> Vec<Item> {
+    let names = crate::closure::reachable_in_file_fns(program, start);
+    program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Fn(_)) && names.contains(i.name()))
+        .cloned()
+        .collect()
 }
 
 /// Resolve the pinned solver seed for `path` (§5.3). v0.1 reads no lockfile yet
@@ -1296,6 +1340,7 @@ fn ladder_for_timeout(
 fn mutation_score(
     f: &thermite_syntax::FnItem,
     spec_items: &[Item],
+    fn_deps: &[Item],
     seed: u64,
     rlimit: f64,
     verus_version: &str,
@@ -1309,7 +1354,10 @@ fn mutation_score(
 
     for mutant in mutants {
         let item = Item::Fn(mutant.item);
-        let sub = item_subprogram(&item, spec_items);
+        // Weave the SAME §9 composition deps as the original `f` (#52): a mutant
+        // body still references the original's boundary/regular callees, so they
+        // must resolve in the mutant's sub-program too.
+        let sub = item_subprogram(&item, spec_items, fn_deps);
         // OQ-5: a mutant that fails to LOWER (structurally degenerate) is DROPPED
         // from the denominator, never an `Err` that fails the whole gate.
         let lowered = match thermite_lower::lower(&sub) {
@@ -1388,6 +1436,7 @@ fn mutation_score(
 fn strengthen_certificate(
     f: &thermite_syntax::FnItem,
     spec_items: &[Item],
+    fn_deps: &[Item],
     score: &crate::mutation::MutationScore,
     seed: u64,
     rlimit: f64,
@@ -1411,7 +1460,9 @@ fn strengthen_certificate(
     // reject). An un-lowerable woven fn is `Ok(false)` (parallel to #12's drop).
     let verify_woven = |woven: &thermite_syntax::FnItem| -> Result<bool, ForgeError> {
         let item = Item::Fn(woven.clone());
-        let sub = item_subprogram(&item, spec_items);
+        // The candidate weaves the SAME §9 composition deps as `f` (#52) so a
+        // boundary/regular callee in `f`'s body resolves in the candidate too.
+        let sub = item_subprogram(&item, spec_items, fn_deps);
         let lowered = match thermite_lower::lower(&sub) {
             Ok(s) => s,
             Err(_) => return Ok(false),
@@ -1649,7 +1700,10 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
                 .cloned()
                 .collect();
             let item = parsed.program.items.iter().find(|i| i.name() == target)?;
-            let sub = item_subprogram(item, &spec_items);
+            // #52: weave the item's transitively-reachable in-file fn deps (empty
+            // here — `g` references no in-file fn, so locality is preserved).
+            let fn_deps = reachable_fn_deps(&parsed.program, item.name());
+            let sub = item_subprogram(item, &spec_items, &fn_deps);
             let lowered = thermite_lower::lower(&sub).ok()?;
             Some(cache::cache_key(&lowered, 0, VERUS, THERMITE))
         };

@@ -124,6 +124,15 @@ design = ".design/lower/verus-lowering.md"
 reference = ["tests/golden/lower"]
 conformance_ops = ["sum", "binary_search"]
 
+# #52 §9 boundary-composition: lower.rs ALSO carries the external_body emission
+# arm governed by boundary-composition.md (a file may carry multiple governing
+# docs; the spec-discipline hook requires each matched route satisfied).
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/lower/boundary-composition.md"
+reference = ["conformance/composition"]
+conformance_ops = ["direct_boundary_caller", "transitive_boundary_caller", "req_violating_caller"]
+
 [[route]]
 crate_pattern = "thermite-lower/src/l1.rs"
 design = ".design/lower/l1-runtime-checks.md"
@@ -151,6 +160,15 @@ crate_pattern = "forge/src/check.rs"
 design = ".design/forge/check.md"
 reference = ["conformance"]
 conformance_ops = ["sum", "binary_search"]
+
+# #52 §9 boundary-composition: check.rs's `item_subprogram` ALSO weaves the
+# transitively-reachable in-file fns (boundary/slag as external_body sigs), the
+# PRIMARY change site governed by boundary-composition.md.
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/lower/boundary-composition.md"
+reference = ["conformance/composition"]
+conformance_ops = ["direct_boundary_caller", "transitive_boundary_caller", "req_violating_caller"]
 
 [[route]]
 crate_pattern = "forge/src/manifest.rs"

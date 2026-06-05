@@ -43,6 +43,12 @@
 //! | REQ-7 (proof-aid emission, shape-keyed) | SHIPPED | `push_lemma_for`/`nonlinear_overflow_assert`/`lift_immutable_preconds`/`extensionality_at_exit`/`complementary_coverage_split`; each keys on AST/contract shape, documented at site. |
 //! | REQ-8 (golden-file contract — VERIFY) | SHIPPED | emitted output run through real `verus` in `lower_conformance.rs`; contracts asserted equivalent to the corpus (no weakening). |
 //! | REQ-9 (`LowerError`, no panics) | SHIPPED | `enum LowerError` (span-bearing, `Display`); `lower` returns `Result`; no `unwrap`/`expect`/`panic!` in this file. |
+//!
+//! ## #52 §9 boundary-composition arm (`.design/lower/boundary-composition.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | composition REQ-1 (assumable-signature emission, boundary/slag only) | SHIPPED | `lower_fn` dispatches a `f.boundary.is_some() \|\| f.slag.is_some()` fn to `lower_external_body_fn`, which emits `#[verifier::external_body]` + the SAME `lower_fn_signature` (unweakened `requires`/`ensures`) + a synthetic `{ unimplemented!() }` body verus never checks. THE HONESTY GATE: external_body iff the syntactic `#[boundary]`/`#[slag]` flag — a regular fn ALWAYS takes the fully-proved-body arm. Consumer: `forge::check::item_subprogram` weaves a boundary/slag dep through this arm. Verified: `forge`'s `composition_conformance::direct_boundary_caller_verifies_through_the_contract` (caller L3) + `lying_regular_fn_is_caught_never_laundered_to_l3` (a regular lie is CAUGHT — verus `postcondition not satisfied`). The `#[verifier::external_body]` lives in the lowered verus STRING (a generated foreign-fn artifact), never in this `.rs` source. |
 
 use std::fmt::Write as _;
 
@@ -267,6 +273,13 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     for item in &program.items {
         let item_src = match item {
             Item::SpecFn(s) => lower_spec_fn(s)?,
+            Item::Fn(f) if f.boundary.is_some() || f.slag.is_some() => {
+                // A boundary/slag fn is woven as a `#[verifier::external_body]`
+                // signature (its body is never lowered, REQ-1), so it needs no
+                // accumulator-fold push lemmas — skip the lemma collection that a
+                // fully-proved fn body drives.
+                lower_fn(f, &nat_fns)?
+            }
             Item::Fn(f) => {
                 for lemma_def in push_lemma_defs_for_fn(f)? {
                     let name_line = lemma_def.lines().next().unwrap_or("").to_string();
@@ -462,7 +475,45 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
 
 /// Lower a `fn` (REQ-1). `-> (result: RET)` binder so `ens` can mention
 /// `result`; `req`→`requires`, each `ens`→`ensures`, `fx pure`→nothing.
+///
+/// THE BOUNDARY/SLAG COMPOSITION ARM (`.design/lower/boundary-composition.md`
+/// REQ-1, §9/§8): when `f.boundary.is_some() || f.slag.is_some()` the fn is a
+/// DECLARED trust boundary — a `#[boundary]` fn has a FOREIGN body (`body: None`)
+/// and a `#[slag]` fn a fiat-trusted body, both body-UNPROVEN by §8/§9. As a
+/// woven dependency of a caller's sub-program it is emitted as a
+/// `#[verifier::external_body]` SIGNATURE — its `requires`/`ensures` lowered
+/// exactly as a regular fn's (no weakening), with the body SUPPRESSED to a
+/// synthetic `{ unimplemented!() }` verus never checks — so the caller's proof
+/// resolves the callee and discharges against its ASSUMED `ensures`. The
+/// exemption is gated STRICTLY on the syntactic `#[boundary]`/`#[slag]` flag
+/// (the honesty gate, `goal.md` R-DEFER-9): a REGULAR fn (neither flag) ALWAYS
+/// takes the fully-proved-body path below — a lying regular body is CAUGHT.
 fn lower_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
+    // THE HONESTY GATE: external_body iff a declared trust boundary
+    // (`#[boundary]`/`#[slag]`), NEVER a regular fn. Emitted only into a CALLER's
+    // sub-program as a woven dependency (forge's `item_subprogram`).
+    if f.boundary.is_some() || f.slag.is_some() {
+        return lower_external_body_fn(f, nat_fns);
+    }
+
+    let mut out = String::new();
+    out.push_str(&lower_fn_signature(f, nat_fns)?);
+    // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
+
+    // Body, with shape-derived proof aids threaded through the loop lowering.
+    let body = lower_fn_body(f, nat_fns)?;
+    out.push_str(&body);
+    Ok(out)
+}
+
+/// Emit a `fn`'s signature up to and including its `requires`/`ensures` block
+/// (everything before the body): `fn name(<params>) -> (result: RET)` then
+/// `requires <req>,` (omitted when literal-`true`) and each `ens` in source
+/// order. Shared by the regular fully-proved arm ([`lower_fn`]) and the
+/// boundary/slag external_body arm ([`lower_external_body_fn`]) so the contract
+/// lowering is IDENTICAL across both (REQ-1 — the assumed signature carries the
+/// exact unweakened contract).
+fn lower_fn_signature(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
     write!(out, "fn {}(", f.name).ok();
@@ -484,11 +535,38 @@ fn lower_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
         let e = lower_expr(&ens.expr, spec, 0, f.span)?;
         writeln!(out, "        {e},").ok();
     }
-    // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
+    Ok(out)
+}
 
-    // Body, with shape-derived proof aids threaded through the loop lowering.
-    let body = lower_fn_body(f, nat_fns)?;
-    out.push_str(&body);
+/// Lower a `#[boundary]`/`#[slag]` fn as a `#[verifier::external_body]` assumable
+/// SIGNATURE (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
+/// `#[verifier::external_body]` attribute makes the body OPAQUE: verus assumes
+/// the `requires`/`ensures` at every call site and NEVER checks the body
+/// (grounded harness (1): a caller proves L3 through the assumed `ensures`). The
+/// signature + contract are lowered by the SAME [`lower_fn_signature`] a regular
+/// fn uses (no weakening — REQ-1), and the body is a synthetic
+/// `{ unimplemented!() }` verus never examines (the foreign/fiat body the caller
+/// trusts by declaration; §8/§9).
+///
+/// This is THE HONEST modeling of a foreign function, not a proof cheat
+/// (`goal.md` R-DEFER-9): it is emitted ONLY for a fn ALREADY classified
+/// `#[boundary]`/`#[slag]` (the §16/§8 `gate_fn` L1 path) and woven into a
+/// CALLER's sub-program — the caller still proves its OWN body and discharges
+/// the callee's `req` at the call site (harnesses (2)/(3)). The
+/// `#[verifier::external_body]` lives in the lowered verus STRING (a generated
+/// artifact describing a foreign function), NEVER in the toolchain's own `.rs`
+/// source — categorically distinct from the gate-forbidden `#[verifier::external]`
+/// proof-dodge of code we wrote (the doc's emitted-verus vs our-Rust distinction).
+fn lower_external_body_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
+    let mut out = String::new();
+    out.push_str("#[verifier::external_body]\n");
+    out.push_str(&lower_fn_signature(f, nat_fns)?);
+    // The body is SUPPRESSED: verus does not check an external_body body, so the
+    // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the
+    // caller trusts by declaration (§8/§9). The real `f.body` (None for a
+    // boundary fn, a fiat body for slag) is NEVER lowered here — re-lowering a
+    // slag body would re-introduce the obligation §8 exempts (OQ-2).
+    out.push_str("{\n    unimplemented!()\n}\n");
     Ok(out)
 }
 

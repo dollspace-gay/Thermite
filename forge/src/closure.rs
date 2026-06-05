@@ -53,6 +53,16 @@
 //! | REQ-4 (project-level claim) | SHIPPED | `degrade.rs`'s `AssuranceManifest::aggregate` computes `ProjectScope` from the per-fn scopes (END-TO-END iff every fn is). |
 //! | REQ-5 (scope ⊥ level) | SHIPPED | `classify` reads only the call graph (`#[boundary]`/`#[slag]` syntactic flags) — never a cert `Level`; `check.rs` attaches the scope ALONGSIDE the achieved level, so an L3 fn whose closure crosses a boundary is `ToBoundary` at `Level::L3`. |
 //! | REQ-6 (determinism) | SHIPPED | `classify` returns a `BTreeMap<String, AssuranceScope>` (sorted, stable); the `via` crossing is the FIRST reached in source-order DFS (`reach_crossing` iterates callees in source order, visited-guarded). A pure function of the `Program` — no wall-clock / unordered map in the verdict (R-CODE-5). |
+//!
+//! ## #52 reuse note (`.design/lower/boundary-composition.md`)
+//!
+//! The private `CallGraph::from_program` + the cycle-safe DFS are now ALSO
+//! consumed by the §9 boundary-composition weaving (#52): `pub fn
+//! reachable_in_file_fns` reuses the SAME walker (a new `CallGraph::reachable_fns`
+//! DFS sibling of `reach_crossing`) to return every in-file `Item::Fn` a caller
+//! transitively references, which `check::item_subprogram` weaves into the
+//! caller's §5.3 sub-program (regular fns with their real body, boundary/slag fns
+//! as `#[verifier::external_body]` signatures). No walker is duplicated.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -69,6 +79,11 @@ struct Node {
     /// `#[slag]` (fiat-trusted body) fn. The `via` for any fn reaching it is this
     /// node's name.
     is_crossing: bool,
+    /// `true` iff this node is an `Item::Fn` (a regular OR `#[boundary]`/`#[slag]`
+    /// fn), `false` for an `Item::SpecFn`. Lets [`CallGraph::reachable_fns`]
+    /// return only `fn` dependencies (#52 weaving) — a `spec fn` is woven
+    /// separately by `check::item_subprogram`'s `spec_items` set.
+    is_fn: bool,
     /// The in-file callee names this node's body calls directly, in source order
     /// (deterministic). Resolved in [`CallGraph::from_program`]; an unresolved /
     /// `spec fn` / combinator callee that is NOT an in-file `Item::Fn` node is
@@ -109,6 +124,7 @@ impl CallGraph {
                         f.name.clone(),
                         Node {
                             is_crossing,
+                            is_fn: true,
                             callees,
                         },
                     );
@@ -123,6 +139,7 @@ impl CallGraph {
                         s.name.clone(),
                         Node {
                             is_crossing: false,
+                            is_fn: false,
                             callees,
                         },
                     );
@@ -130,6 +147,46 @@ impl CallGraph {
             }
         }
         CallGraph { nodes }
+    }
+
+    /// Every IN-FILE fn name (`Item::Fn`, NOT `Item::SpecFn`) transitively
+    /// referenced from `start`'s body, EXCLUDING `start` itself — a cycle-safe,
+    /// bounded DFS over the same out-edges [`reach_crossing`] walks (#52
+    /// composition weaving). Used by `check::item_subprogram` to weave a caller's
+    /// regular-fn dependencies (real body) and boundary/slag dependencies
+    /// (external_body signature) into its §5.3 sub-program so `lower`/`verus`
+    /// resolve every referenced callee.
+    ///
+    /// A `spec fn` is EXCLUDED here: spec fns are woven separately by
+    /// `item_subprogram` (the existing `spec_items` set), so emitting them again
+    /// would duplicate. The walk follows edges THROUGH every node (so a fn reached
+    /// only via a spec-fn or boundary-fn intermediary is still found), but only
+    /// `Item::Fn` names are RETURNED. Returns a `BTreeSet` (sorted, stable —
+    /// DETERMINISTIC, R-CODE-5).
+    fn reachable_fns(&self, start: &str) -> BTreeSet<String> {
+        let mut visited: BTreeSet<String> = BTreeSet::new();
+        let mut result: BTreeSet<String> = BTreeSet::new();
+        let mut stack: Vec<String> = vec![start.to_string()];
+        while let Some(name) = stack.pop() {
+            if !visited.insert(name.clone()) {
+                continue;
+            }
+            let Some(node) = self.nodes.get(&name) else {
+                continue;
+            };
+            // Record every reached `fn` node except `start` itself. A `spec fn`
+            // node is `is_fn == false` and is left for `item_subprogram`'s
+            // `spec_items` weaving (no duplication).
+            if name != start && node.is_fn {
+                result.insert(name.clone());
+            }
+            for callee in node.callees.iter().rev() {
+                if !visited.contains(callee) {
+                    stack.push(callee.clone());
+                }
+            }
+        }
+        result
     }
 
     /// The first CROSSING (`#[boundary]`/`#[slag]` fn) reachable from `start` in a
@@ -195,6 +252,28 @@ pub fn classify(program: &Program) -> BTreeMap<String, AssuranceScope> {
         scopes.insert(name.clone(), scope);
     }
     scopes
+}
+
+/// The set of in-file `Item::Fn` names that `start`'s body transitively
+/// references (EXCLUDING `start` itself), for the §9 boundary-composition
+/// weaving (`.design/lower/boundary-composition.md` REQ-2, crosslink #52).
+///
+/// `check::item_subprogram` consumes this to build a caller `f`'s isolated §5.3
+/// sub-program: every regular reachable fn is woven with its REAL body (proved),
+/// and every `#[boundary]`/`#[slag]` reachable fn is woven as a
+/// `#[verifier::external_body]` signature (`thermite_lower::lower`), so `verus`
+/// resolves the foreign callee and `f` proves THROUGH its contract (was an
+/// undefined-callee L0). A `spec fn` is EXCLUDED here — it is woven separately by
+/// `item_subprogram`'s existing `spec_items` set (no duplication); the transitive
+/// walk still traverses THROUGH spec-fn / boundary-fn intermediaries so a fn
+/// reached only via one is still found.
+///
+/// Reuses the private `CallGraph::from_program` + a cycle-safe, bounded,
+/// source-order DFS (`reachable_fns`) — the SAME walker `classify` uses (the #17
+/// reachability seam), never a duplicate. Returns a `BTreeSet` (sorted, stable —
+/// DETERMINISTIC, R-CODE-5: a pure function of the parsed `Program`).
+pub fn reachable_in_file_fns(program: &Program, start: &str) -> BTreeSet<String> {
+    CallGraph::from_program(program).reachable_fns(start)
 }
 
 /// Walk a `Block` collecting the names of every in-file callee its expressions
@@ -466,5 +545,83 @@ fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }";
         let src = "fn f(x: u32) -> u32 req x < 100 ens result == x fx pure { external_helper(x) }";
         let scopes = classify(&parse(src));
         assert_eq!(scopes.get("f"), Some(&AssuranceScope::EndToEnd));
+    }
+
+    // #52 REQ-2: `reachable_in_file_fns` returns the in-file `fn`s a caller
+    // transitively references — the boundary fn `ext_id` for the direct caller.
+    #[test]
+    fn reachable_fns_includes_a_directly_called_boundary_fn() {
+        let src = "\
+#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ;
+fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }";
+        let deps = reachable_in_file_fns(&parse(src), "caller");
+        assert!(
+            deps.contains("ext_id"),
+            "caller references ext_id: {deps:?}"
+        );
+        assert!(
+            !deps.contains("caller"),
+            "start itself is excluded: {deps:?}"
+        );
+    }
+
+    // #52 REQ-2 (transitive): h's sub-program must weave BOTH g (real body) and
+    // ext_id (external_body) — both are reachable `fn`s.
+    #[test]
+    fn reachable_fns_is_transitive_through_an_intermediary() {
+        let src = "\
+#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ;
+fn g(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }
+fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }";
+        let deps = reachable_in_file_fns(&parse(src), "h");
+        assert!(deps.contains("g"), "h transitively references g: {deps:?}");
+        assert!(
+            deps.contains("ext_id"),
+            "h transitively reaches ext_id: {deps:?}"
+        );
+        assert!(!deps.contains("h"));
+    }
+
+    // #52 honesty / AC-4: a pure caller of only a `spec fn` has NO `fn` deps, so
+    // nothing is woven and no external_body is ever emitted (the corpus `sum`
+    // shape). A `spec fn` is EXCLUDED from the returned set (woven separately).
+    #[test]
+    fn reachable_fns_excludes_spec_fns_and_is_empty_for_a_pure_caller() {
+        let src = "\
+spec fn spec_id(x: u32) -> u32 dec 0 { x }
+fn f(x: u32) -> u32 req x < 100 ens result == x fx pure { spec_id(x) }";
+        let deps = reachable_in_file_fns(&parse(src), "f");
+        assert!(
+            deps.is_empty(),
+            "a caller of only a spec fn has no in-file `fn` deps (no external_body): {deps:?}"
+        );
+    }
+
+    // #52 isolation (§5.3): a sibling `fn` NOT referenced is NOT woven — the
+    // reachability is exactly the transitive closure, never all-in-file fns.
+    #[test]
+    fn reachable_fns_omits_an_unreferenced_sibling() {
+        let src = "\
+fn a(x: u32) -> u32 req x < 100 ens result == x fx pure { x }
+fn b(x: u32) -> u32 req x < 100 ens result == x fx pure { x }";
+        let deps = reachable_in_file_fns(&parse(src), "a");
+        assert!(
+            !deps.contains("b"),
+            "a does not reference b → b is NOT woven (§5.3 isolation): {deps:?}"
+        );
+    }
+
+    // #52 determinism (R-CODE-5): the same program yields the same dep set.
+    #[test]
+    fn reachable_fns_is_deterministic() {
+        let src = "\
+#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ;
+fn g(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }
+fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }";
+        let prog = parse(src);
+        assert_eq!(
+            reachable_in_file_fns(&prog, "h"),
+            reachable_in_file_fns(&prog, "h")
+        );
     }
 }

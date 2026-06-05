@@ -1,0 +1,10 @@
+{
+  "uuid": "7b4aa8d5-72fb-4688-9daa-3adb728b2431",
+  "issue_uuid": "e32ea128-dbe6-4a0f-8122-35b119245cc6",
+  "author": "Yffe",
+  "content": "SHIPPED — solver profiles as proof-repair prompts. profile.rs: SolverProfile + parse_profile (Z3 quantifier-instantiation report) + suggested_move/render_prompts. check.rs classify_verus_outcome: success->L3; error+profile-report->TIMEOUT (Level L0, RejectReason VerusTimeout, solver_profile + suggested_move populated); error+no-profile->counterexample. Always passes --profile --rlimit 30.0; corpus stays L3. Critic NO DIVERGENCE: counterexample NEVER softened to timeout (a real bug + a profile report don't co-occur — verus profiles only on rlimit-hit); timeout/error NEVER becomes L3; fast-unknown -> reported as failure not false-success (doc-ratified tradeoff); parse faithful, no panic, additive oracle-excluded cert field, cache sound, deterministic. Commit a61c9b5, forge 96 tests, workspace green, clippy/fmt clean. Proof-repair LOOP is #18. Not pushed.",
+  "created_at": "2026-06-05T04:47:33.494606222Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAXKQTWGHq6Bj8RnAJ4832F1ai+hq6lrK4sXR3/DJJbWnwXhFi/ybXR35KpUDp6efzqtHQL6jza23mFP15t0cACg=="
+}

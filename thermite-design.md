@@ -49,7 +49,7 @@ A Thermite artifact ships with a certificate that says: *the implementation sati
 │  Verification ladder                           │
 │   L3  SMT proof          (Verus/Z3)            │
 │   L2  bounded check      (Kani/CBMC)           │
-│   L1  runtime contracts  (debug_assert chains) │
+│   L1  runtime contracts  (active all profiles) │
 │   L0  unverified         (#[slag] only)        │
 ├────────────────────────────────────────────────┤
 │  Rust (MIR-level lowering)                     │   semantics, borrow checker, ecosystem

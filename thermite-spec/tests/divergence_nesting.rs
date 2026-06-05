@@ -96,8 +96,7 @@ fn nested_combinator_under_three_arg_outer_rejects() {
          ens forall_below(xs, 1, |x| forall_in(ys, |y| y > x)) \
          fx pure { 0 }",
     );
-    let errs =
-        validate(&p).expect_err("REQ-6: nested combinator under a 3-arg outer must reject");
+    let errs = validate(&p).expect_err("REQ-6: nested combinator under a 3-arg outer must reject");
     assert!(
         has_nested(&errs),
         "REQ-6: nested combinator under `forall_below` must yield NestedCombinator; got {errs:?}"
@@ -171,8 +170,7 @@ fn spec_fn_body_calling_a_combinator_accepts() {
         "spec fn all_pos(xs: &[u32]) -> bool dec 0 { forall_in(xs, |x| x > 0) } \
          fn f(xs: &[u32]) -> u32 req true ens all_pos(xs) fx pure { 0 }",
     );
-    validate(&p)
-        .expect("REQ-6 named caveat: a spec-fn body may itself call a combinator (Ok)");
+    validate(&p).expect("REQ-6 named caveat: a spec-fn body may itself call a combinator (Ok)");
 }
 
 /// The full named-composition chain: a combinator closure body calls a NAMED
@@ -186,9 +184,8 @@ fn named_spec_fn_quantifier_called_from_closure_accepts() {
         "spec fn all_pos(ys: &[u32]) -> bool dec 0 { forall_in(ys, |x| x > 0) } \
          fn f(ys: &[u32]) -> u32 req true ens forall_in(ys, |s| all_pos(ys)) fx pure { 0 }",
     );
-    validate(&p).expect(
-        "REQ-6: a closure body MAY call a named spec fn that internally quantifies (Ok)",
-    );
+    validate(&p)
+        .expect("REQ-6: a closure body MAY call a named spec fn that internally quantifies (Ok)");
 }
 
 /// A named `spec fn` call inside a closure body (AC-7 canonical). Expected: Ok.

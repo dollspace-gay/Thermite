@@ -276,3 +276,10 @@ crate_pattern = "forge/src/audit.rs"
 design = ".design/forge/audit-manifest.md"
 reference = ["conformance/audit"]
 conformance_ops = ["sum", "slag_boundary"]
+
+# v0.5 — background proof-repair loop (issue #18)
+[[route]]
+crate_pattern = "forge/src/repair.rs"
+design = ".design/forge/proof-repair.md"
+reference = ["conformance/repair"]
+conformance_ops = ["never_provable_counterexample", "sum"]

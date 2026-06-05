@@ -1,0 +1,12 @@
+{
+  "note": "Oracle for forge's spec-intent review slot (forge review, §7 line 227, issue #19). Hand-derived (R-CHAR-3). forge review extracts the pre-screened DECLARATIVE spec layer (per fn: req/ens/fx + referenced spec-fn declarations, NO bodies) as the intent-review artifact. PRE-SCREENING (R-DEFER-9): only battery-passing (certified, reject-free) contracts are intent-reviewable; a vacuous/rejected contract is flagged battery_failing and NOT surfaced. The extraction is deterministic; the verdict comes from the EXTERNAL pluggable reviewer.",
+  "intent_reviewable": [
+    { "name": "corpus_sum", "source": "conformance/sum.th", "fn": "sum",
+      "expect_includes": ["req", "ens", "fx", "spec_sum"], "expect_body_excluded": true,
+      "why": "sum certifies L3 (battery-passing) -> intent-reviewable. The spec layer is sum's req + ens + fx (declarative) plus spec_sum's DECLARATION (name/params/ret/dec), NO bodies." }
+  ],
+  "battery_failing": [
+    { "name": "vacuous", "source": "conformance/review/vacuous.th", "fn": "f", "expect_intent_reviewable": false,
+      "why": "ens true is a §7.1 vacuity reject (battery-failing). Flagged battery_failing, NOT surfaced for intent review (R-DEFER-9 — mechanical failure answered first)." }
+  ]
+}

@@ -1,0 +1,1 @@
+fn f(x: u32) -> u32 req true ens true fx pure { x }

@@ -32,6 +32,12 @@
 //! |---|---|---|
 //! | `SlagMeta` (cert metadata) | SHIPPED | `struct SlagMeta { reason, owner, review }`; `Certificate.slag_meta: Option<SlagMeta>` (additive, `skip_serializing_if`); produced by `slag::validate`, set by `Certificate::slag_l1`, consumed by `check::check_file` for a valid `#[slag]` item (`slag.md` REQ-4, OQ-1 ratified). |
 //! | `RejectReason` (verdict-in-cert) | SHIPPED | `struct RejectReason { cause, detail }`; `Certificate.reject: Option<RejectReason>` (additive); a triage / slag reject is `Certificate::rejected` (`Level::L0` + cause), consumed by `check::check_file` + `cli::run_check` (exit non-zero) (`vacuity-triage.md` REQ-5, OQ-1: verdict-in-cert NOT a `ForgeError`). |
+//!
+//! ## #8 additive schema (proof-cache provenance, this iteration)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `cached: bool` (cache provenance) | SHIPPED | `Certificate.cached: bool` (additive, `#[serde(default)]` so the frozen golden `sum.cert.json` still deserializes); set by `Certificate::with_cached`, consumed by `check::check_file` (`true` on a HIT, `false` on a fresh verify) and `cache::store` (cleared before persisting). EXCLUDED from `oracle_subset` — a hit and a fresh verify compare oracle-EQUAL (`proof-cache.md` REQ-7/REQ-2). |
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
@@ -236,6 +242,15 @@ pub struct Certificate {
     /// certificate-manifest.md OQ-2) deserializes into a `Certificate`.
     #[serde(default)]
     pub obligations: Vec<ObligationResult>,
+    /// Whether THIS certificate was served from the proof cache (#8 additive
+    /// field; `.design/forge/proof-cache.md` REQ-7). `true` on a cache HIT (verus
+    /// skipped), `false` on a fresh verify. `#[serde(default)]` so the frozen
+    /// golden `conformance/sum.cert.json` (which omits it) still deserializes,
+    /// mirroring the #6 `slag_meta`/`reject` additive precedent (R-SPEC-2). It is
+    /// PROVENANCE, never verdict: EXCLUDED from `oracle_subset` so a cache hit and
+    /// a fresh verify compare oracle-EQUAL (REQ-2, the soundness invariant).
+    #[serde(default)]
+    pub cached: bool,
     /// Reserved heuristic-hint slot — `None` in #5 (REQ-4).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_move: Option<SuggestedMove>,
@@ -263,8 +278,21 @@ impl Certificate {
             slag_meta: None,
             reject: None,
             obligations,
+            cached: false,
             suggested_move: None,
         }
+    }
+
+    /// Set this certificate's cache-provenance flag (#8;
+    /// `.design/forge/proof-cache.md` REQ-7). Returns the certificate with
+    /// `cached` set: `true` when served from a HIT (verus skipped), `false` on a
+    /// fresh verify. Only the provenance bit changes — every deterministic
+    /// (oracle) field is untouched, so a hit stays oracle-equal to the fresh
+    /// verify it was stored from (REQ-2, the soundness invariant). Consumed by
+    /// `check::check_file` and `cache::store` (which clears it before persisting).
+    pub fn with_cached(mut self, cached: bool) -> Self {
+        self.cached = cached;
+        self
     }
 
     /// Graduate the two §7.1 structural-triage `contract_quality` bools to their
@@ -300,6 +328,7 @@ impl Certificate {
             obligations: vec![ObligationResult::discharged(
                 "contract enforced at L1 (slag); proof exempt by fiat",
             )],
+            cached: false,
             suggested_move: None,
         }
         .graduate_triage_clean()
@@ -329,6 +358,7 @@ impl Certificate {
             slag_meta: None,
             reject: Some(reason),
             obligations: vec![obligation],
+            cached: false,
             suggested_move: None,
         }
     }
@@ -543,6 +573,45 @@ mod tests {
             if let Ok(g) = golden {
                 assert!(g.slag_meta.is_none());
                 assert!(g.reject.is_none());
+            }
+        }
+    }
+
+    // #8 (proof-cache REQ-7 / AC-5): `cached` is an ADDITIVE field that defaults
+    // `false` (the golden `sum.cert.json` omits it) and is EXCLUDED from the
+    // oracle subset -- a HIT (`cached: true`) is oracle-equal to the fresh verify
+    // it was stored from. Expected behavior traces to `proof-cache.md` REQ-7/REQ-2
+    // (R-CHAR-3), not forge's output.
+    #[test]
+    fn cached_field_is_additive_and_oracle_excluded() {
+        let fresh = Certificate::new("f", Level::L3, vec!["pure".to_string()], 1, vec![]);
+        assert!(!fresh.cached, "a fresh cert is not cached by default");
+
+        // `with_cached(true)` flips ONLY the provenance bit; the oracle subset is
+        // unchanged, so a hit is oracle-equal to the fresh verify (REQ-2).
+        let hit = fresh.clone().with_cached(true);
+        assert!(hit.cached);
+        assert!(
+            oracle_eq(&fresh, &hit),
+            "a cache hit must be oracle-equal to the fresh verify it was stored from"
+        );
+
+        // The golden `conformance/sum.cert.json` (which omits `cached`) still
+        // deserializes, defaulting `cached` to `false` (additive, R-SPEC-2).
+        let golden_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("conformance")
+            .join("sum.cert.json");
+        let golden_src = std::fs::read_to_string(&golden_path);
+        assert!(golden_src.is_ok(), "read golden cert: {golden_src:?}");
+        if let Ok(src) = golden_src {
+            let golden: Result<Certificate, _> = serde_json::from_str(&src);
+            assert!(golden.is_ok(), "golden deserializes: {golden:?}");
+            if let Ok(g) = golden {
+                assert!(
+                    !g.cached,
+                    "golden omits `cached`, defaults false (additive)"
+                );
             }
         }
     }

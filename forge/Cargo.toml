@@ -19,3 +19,8 @@ thermite-skill = { path = "../thermite-skill" }
 # stable JSON; `check.rs` parses verus's `--output-json` summary with serde_json.
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# #8: the per-item content-addressed proof cache (`cache.rs`) hashes the four
+# verdict-determining inputs (lowered source + seed + verus version + thermite
+# version) into a stable sha256 content address (`.design/forge/proof-cache.md`
+# REQ-1).
+sha2 = "0.10"

@@ -40,6 +40,13 @@
 //! |---|---|---|
 //! | vacuity-triage REQ-6 (gate BEFORE L3) | SHIPPED | `gate_fn` runs `vacuity::triage` on each `Item::Fn` BEFORE `thermite_lower::lower` + `run_verus`; a `VacuityVerdict::Rejected` short-circuits to a non-certified `Certificate::rejected` (no lowering, no verus); a pass calls `Certificate::graduate_triage_clean` (the two §7.1 `contract_quality` bools go live-`false`). |
 //! | slag REQ-2/REQ-5 (L1 short-circuit) | SHIPPED | `gate_fn` for a `slag.is_some()` item runs `slag::validate` (invalid → `Certificate::rejected`), then `vacuity::triage` (a/b/c — slag exempts (d) inside `triage`), then `Certificate::slag_l1` (`Level::L1`, `slag: true`, `slag_meta`) WITHOUT invoking verus. |
+//!
+//! ## #8 gate (per-item content-addressed proof cache, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | proof-cache REQ-3 (lookup-then-store, per item) | SHIPPED | `check_file`'s L3 path computes `cache::cache_key(&lowered, seed, &verus_version, &thermite_version)` and `cache::load`s BEFORE `run_verus`: a HIT returns the stored cert via `Certificate::with_cached(true)` (verus SKIPPED); a MISS runs verus, assembles + `graduate_triage_clean`s the cert, `cache::store`s it, and returns `with_cached(false)`. |
+//! | proof-cache REQ-5 (version-keyed) | SHIPPED | `resolve_verus_version` captures the verus version ONCE per `check_file` (the `VERUS_VERSION` pin, else `verus --version`) and `THERMITE_VERSION = env!("CARGO_PKG_VERSION")` feeds the key — a version change forces a universal MISS. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -47,8 +54,14 @@ use std::time::Instant;
 
 use thermite_syntax::{Item, Program};
 
+use crate::cache;
 use crate::cli::ForgeError;
 use crate::manifest::{effects_of, Certificate, Level, ObligationResult, RejectReason};
+
+/// The `forge` toolchain version (`.design/forge/proof-cache.md` REQ-1c/REQ-5):
+/// a verdict-determining cache-key input. Sourced deterministically from the
+/// crate version at compile time (R-CODE-5 — no wall-clock).
+const THERMITE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The pinned default solver seed (§5.3) used when no project lockfile supplies
 /// one. Determinism (R-CODE-5) lives in the INPUT (this fixed seed + the
@@ -96,6 +109,15 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
     // belongs to the item it is reported on, never a neighbor's).
     let seed = resolve_seed(path);
 
+    // #8 proof cache (`.design/forge/proof-cache.md`): the verus version is
+    // captured ONCE per `check_file` invocation (REQ-5) so every item this run
+    // keys against the SAME prover, and the cache directory is resolved once. A
+    // missing/unreadable verus version is an ENVIRONMENT error, not a silent
+    // empty-string key (REQ-5) — so this resolves BEFORE the per-item loop and
+    // short-circuits the whole run if the prover version cannot be determined.
+    let verus_version = resolve_verus_version()?;
+    let cache_dir = resolve_cache_dir();
+
     // The file's `spec fn`s are pure, contract-free shared dependencies; they go
     // into every per-item sub-program so a `fn` whose `ens` references one (e.g.
     // `sum`'s `ens result == spec_sum(xs)`) still lowers and verifies.
@@ -139,6 +161,23 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
 
         let sub = item_subprogram(item, &spec_items);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
+
+        // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
+        // source is the item's content-address — the EXACT bytes verus checks
+        // (§5.3 isolated sub-program). The key composes it with the four
+        // verdict-determining inputs. Consult the cache BEFORE spawning verus.
+        let key = cache::cache_key(&lowered, seed, &verus_version, THERMITE_VERSION);
+        if let Some(stored) = cache::load(&cache_dir, &key) {
+            // HIT: skip verus entirely (REQ-3, AC-1 — the decisive solver-skip).
+            // The stored cert is the canonical fresh verify; mark it served from
+            // cache (`cached: true`) — provenance only, oracle fields unchanged
+            // (REQ-2: a hit is oracle-equal to a fresh verify).
+            certs.push(stored.with_cached(true));
+            continue;
+        }
+
+        // MISS: the solver runs (REQ-3). Assemble the cert exactly as the
+        // non-cached path always has.
         let verus = run_verus(&sub, &lowered, seed)?;
         let cert = assemble_certificate(item, &verus);
         // A non-slag `fn` that reached the L3 path passed triage — graduate the
@@ -150,7 +189,12 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
         } else {
             cert
         };
-        certs.push(cert);
+        // Store the fresh verify under its content address for next time (REQ-3).
+        // The cache is best-effort: a write failure must NOT fail the verdict
+        // (which already stands) — degrade to "uncached," never to an error
+        // (REQ-6, R-CODE-2). `store` persists the canonical `cached: false`.
+        let _ = cache::store(&cache_dir, &key, &cert);
+        certs.push(cert.with_cached(false));
     }
     Ok(certs)
 }
@@ -277,6 +321,69 @@ fn item_subprogram(item: &Item, spec_items: &[Item]) -> Program {
 /// sourcing lands (#8) without changing `check_file`'s signature.
 fn resolve_seed(_path: &Path) -> u64 {
     DEFAULT_SOLVER_SEED
+}
+
+/// Resolve the verus version that keys the proof cache for THIS run
+/// (`.design/forge/proof-cache.md` REQ-5). Captured ONCE per `check_file` so
+/// every item keys against the same prover; a verus or thermite upgrade changes
+/// this string, the key, and forces a universal re-verify.
+///
+/// Sourcing order (deterministic, R-CODE-5 — no wall-clock):
+/// 1. `VERUS_VERSION` env var, when set — the pinned/CI override. This is also
+///    the hermetic-test seam: a test pins a fixed version so the key is stable
+///    even when the verus BINARY is later removed (the AC-1 decisive
+///    solver-skip test populates the cache, then removes verus from PATH; the
+///    pinned version keeps the key matching so the HIT is served WITHOUT a verus
+///    spawn).
+/// 2. otherwise `verus --version` stdout (the live binary's version).
+///
+/// A missing/unreadable verus version (verus absent AND no `VERUS_VERSION`) is an
+/// ENVIRONMENT error (`ForgeError::VerusAbsent`), NOT a silent empty-string key
+/// (REQ-5) — an empty key input would let two different provers collide.
+fn resolve_verus_version() -> Result<String, ForgeError> {
+    if let Ok(pinned) = std::env::var("VERUS_VERSION") {
+        let pinned = pinned.trim().to_string();
+        if !pinned.is_empty() {
+            return Ok(pinned);
+        }
+    }
+    let output = Command::new("verus")
+        .arg("--version")
+        .output()
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ForgeError::VerusAbsent {
+                    binary: "verus".to_string(),
+                }
+            } else {
+                ForgeError::VerusSpawn { source: e }
+            }
+        })?;
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if version.is_empty() {
+        return Err(ForgeError::VerusOutput {
+            detail: "`verus --version` produced no version string (cannot key the proof cache \
+                     deterministically); set VERUS_VERSION to pin it"
+                .to_string(),
+        });
+    }
+    Ok(version)
+}
+
+/// Resolve the proof-cache directory for this run (`.design/forge/proof-cache.md`
+/// REQ-6). The production default is `cache::default_cache_dir()`
+/// (`target/thermite-proof-cache/`, under the git-ignored `target/`). The
+/// `FORGE_CACHE_DIR` env var overrides it — the hermetic-test seam so a test can
+/// point the cache at a per-test temp dir, keeping the shared `target/` cache
+/// free of test pollution and tests independent of order. Deterministic
+/// (R-CODE-5): the location is an explicit input, never wall-clock-derived.
+fn resolve_cache_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("FORGE_CACHE_DIR") {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    cache::default_cache_dir()
 }
 
 /// The parsed result of one verus run: the machine-readable summary (drives
@@ -677,6 +784,66 @@ mod tests {
         }"#;
         let r = parse_verus_output(stdout, "internal error", Some(1), 1);
         assert!(matches!(r, Err(ForgeError::VerusOutput { .. })));
+    }
+
+    // #8 proof-cache AC-3 (LOCALITY) + AC-4 (DETERMINISM), exercised over the
+    // REAL `item_subprogram` → `thermite_lower::lower` → `cache::cache_key`
+    // pipeline (not a re-implementation): in a two-item file `f`,`g` where `g`
+    // does not reference `f`, editing `f`'s body leaves `g`'s key byte-identical
+    // while `f`'s key changes. Expected behavior traces to
+    // `.design/forge/proof-cache.md` REQ-4/AC-3 (R-CHAR-3), not forge's output.
+    #[test]
+    fn cache_key_is_local_to_the_item() {
+        const VERUS: &str = "verus-test-pin";
+        const THERMITE: &str = "0.0.0-test";
+
+        // Two independent `fn`s; `g` does not reference `f`. Original program.
+        let src_v1 = "fn f(x: u64) -> u64\n  req x < 10\n  ens result == x\n  fx  pure\n{\n  x\n}\n\
+                      fn g(y: u64) -> u64\n  req y < 10\n  ens result == y\n  fx  pure\n{\n  y\n}\n";
+        // Same `g`, but `f`'s body/contract edited.
+        let src_v2 = "fn f(x: u64) -> u64\n  req x < 20\n  ens result == x\n  fx  pure\n{\n  x\n}\n\
+                      fn g(y: u64) -> u64\n  req y < 10\n  ens result == y\n  fx  pure\n{\n  y\n}\n";
+
+        let key_of = |src: &str, target: &str| -> Option<String> {
+            let parsed = thermite_syntax::parse(src);
+            if !parsed.is_clean() {
+                return None;
+            }
+            let spec_items: Vec<Item> = parsed
+                .program
+                .items
+                .iter()
+                .filter(|i| matches!(i, Item::SpecFn(_)))
+                .cloned()
+                .collect();
+            let item = parsed.program.items.iter().find(|i| i.name() == target)?;
+            let sub = item_subprogram(item, &spec_items);
+            let lowered = thermite_lower::lower(&sub).ok()?;
+            Some(cache::cache_key(&lowered, 0, VERUS, THERMITE))
+        };
+
+        let g_v1 = key_of(src_v1, "g");
+        let g_v2 = key_of(src_v2, "g");
+        let f_v1 = key_of(src_v1, "f");
+        let f_v2 = key_of(src_v2, "f");
+
+        assert!(
+            g_v1.is_some() && f_v1.is_some(),
+            "the two-item program must parse + lower (g_v1={g_v1:?}, f_v1={f_v1:?})"
+        );
+        // DETERMINISM (AC-4): the same item over identical input yields the same key.
+        assert_eq!(
+            key_of(src_v1, "g"),
+            g_v1,
+            "key is deterministic for unchanged input"
+        );
+        // LOCALITY (AC-3): editing `f` does NOT change `g`'s key.
+        assert_eq!(
+            g_v1, g_v2,
+            "g's key is invariant under an f-only edit (locality)"
+        );
+        // INVALIDATION (AC-2): editing `f` DOES change `f`'s key.
+        assert_ne!(f_v1, f_v2, "f's key changes when f's contract changes");
     }
 
     #[test]

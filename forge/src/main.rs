@@ -20,6 +20,7 @@
 //! | REQ-3 (Result discipline; error type) | SHIPPED | `ForgeError` born in `cli.rs`; `main` returns `ExitCode` from `cli::run`; no `unwrap`/`expect`/`panic!`. |
 //! | REQ-6 (clean compile) | SHIPPED | gauntlet green; the anti-pattern gate passes (no placeholder macros). |
 
+mod cache;
 mod check;
 mod cli;
 mod manifest;

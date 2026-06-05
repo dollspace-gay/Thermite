@@ -4,6 +4,7 @@
     { "name": "unknown_combinator",   "expected": "UnknownCombinator", "program": "fn f(xs: &[u32]) -> u32 req frobnicate(xs) ens result == 0 fx pure { 0 }", "why": "frobnicate is not a registered combinator and not a declared spec fn — an arbitrary free-function call is forbidden in a contract (§4.2 locked cage)." },
     { "name": "wrong_arity",          "expected": "WrongArity",        "program": "fn f(xs: &[u32]) -> u32 req sorted(xs, xs) ens result == 0 fx pure { 0 }", "why": "sorted has arity 1; called with 2 args." },
     { "name": "wrong_arg_kind",       "expected": "WrongArgKind",      "program": "fn f(xs: &[u32]) -> u32 req true ens forall_in(xs, 5) fx pure { 0 }", "why": "forall_in's 2nd arg must be a predicate closure (Pred); a literal 5 is not a closure." },
-    { "name": "forall_below_wrong_arity", "expected": "WrongArity",   "program": "fn f(xs: &[u32]) -> u32 req true ens forall_below(xs, |x| x < 5) fx pure { 0 }", "why": "forall_below has arity 3 (Slice, Index, Pred); called with 2 (missing the Index)." }
+    { "name": "forall_below_wrong_arity", "expected": "WrongArity",   "program": "fn f(xs: &[u32]) -> u32 req true ens forall_below(xs, |x| x < 5) fx pure { 0 }", "why": "forall_below has arity 3 (Slice, Index, Pred); called with 2 (missing the Index)." },
+    { "name": "nested_combinator_in_closure", "expected": "NestedCombinator", "program": "fn f(xs: &[u32], ys: &[u32]) -> u32 req true ens forall_in(xs, |x| exists_in(ys, |y| y == x)) fx pure { 0 }", "why": "#40 flat-closure-fragment rule: a combinator's predicate-closure body may NOT contain another combinator call (anonymous nested quantifier). forall_in's closure here calls exists_in -> reject. Nested quantification must be a named spec fn." }
   ]
 }

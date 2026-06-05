@@ -9,6 +9,7 @@
     { "name": "disjoint_in_req",      "combinator": "disjoint",       "program": "fn f(xs: &[u32], ys: &[u32]) -> u32 req disjoint(xs, ys) ens result == 0 fx pure { 0 }" },
     { "name": "forall_below_in_ens",  "combinator": "forall_below",   "program": "fn f(xs: &[u32], i: usize) -> u32 req true ens forall_below(xs, i, |x| x < 5) fx pure { 0 }" },
     { "name": "forall_from_in_ens",   "combinator": "forall_from",    "program": "fn f(xs: &[u32], i: usize) -> u32 req true ens forall_from(xs, i, |x| x > 5) fx pure { 0 }" },
-    { "name": "spec_fn_call_in_ens",  "combinator": "(spec fn call)", "program": "spec fn sz(xs: &[u32]) -> usize dec xs.len() { xs.len() } fn f(xs: &[u32]) -> usize req true ens result == sz(xs) fx pure { 0 }" }
+    { "name": "spec_fn_call_in_ens",  "combinator": "(spec fn call)", "program": "spec fn sz(xs: &[u32]) -> usize dec xs.len() { xs.len() } fn f(xs: &[u32]) -> usize req true ens result == sz(xs) fx pure { 0 }" },
+    { "name": "named_spec_fn_in_closure", "combinator": "forall_in", "program": "spec fn is_small(x: u32) -> bool dec 0 { x < 10 } fn f(xs: &[u32]) -> u32 req true ens forall_in(xs, |x| is_small(x)) fx pure { 0 }" }
   ]
 }

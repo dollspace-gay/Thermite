@@ -103,6 +103,7 @@ Anatomy:
 Contracts are written in **SpecTherm**, a restricted total language:
 
 - **No general quantifiers.** Quantification is only available through a fixed library of bounded combinators (`forall_in`, `forall_below`, `exists_in`, `count_where`, `sorted`, `permutation_of`, `disjoint`, …), each with hand-tuned, frozen SMT triggers. Undecidability lives in quantifier instantiation; Thermite locks the cage.
+- **Closure bodies are flat predicates.** A combinator's predicate-closure body (`|x| …`) may use comparisons, arithmetic, boolean/logical operators, field/index access, and calls to *named* `spec fn`s — but it may **not** contain another combinator. This is what makes "locks the cage" precise: there are no *anonymous* nested quantifiers, so the frozen trigger on a combinator's predicate application fully controls its instantiation. Genuine nested quantification is written as a named `spec fn` — which may itself quantify (boundedly), but carries its own `dec` measure and appears by name in the audit surface. Stated exactly: *every quantifier is a bounded combinator with a frozen trigger; composition happens only through named `spec fn`s, never anonymous nested quantifiers.*
 - **Spec functions are executable.** Every `spec fn` is total, terminating (checked), and compilable to a runtime check. This guarantees the L1 fallback rung always exists for every contract, and it keeps the solver on predictable ground.
 - **No spec-level recursion without a `dec` measure**, same as code.
 

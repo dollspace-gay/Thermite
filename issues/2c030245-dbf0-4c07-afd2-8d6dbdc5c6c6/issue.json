@@ -2,11 +2,12 @@
   "uuid": "2c030245-dbf0-4c07-afd2-8d6dbdc5c6c6",
   "display_id": 41,
   "title": "Divergence: forge::check::check_file smears one crate-level verus result across all items — a correct, contract-independent item in a multi-item file is falsely certified L0 with a sibling's counterexample",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T00:35:27.566149705Z",
-  "updated_at": "2026-06-05T00:35:29.332283808Z",
+  "updated_at": "2026-06-05T00:40:54.356131523Z",
+  "closed_at": "2026-06-05T00:40:54.356131523Z",
   "labels": [
     "blocker"
   ]

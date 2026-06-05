@@ -1,0 +1,10 @@
+{
+  "uuid": "e8d6644b-f57a-4bd0-9e7c-371603ea3666",
+  "issue_uuid": "28331920-83b7-4073-92ed-02cb53705c61",
+  "author": "Yffe",
+  "content": "Discovered during #17. §9 composition rule: a pure-Thermite caller of a #[boundary] (or #[slag]) fn should VERIFY through the callee's CONTRACT (g's cert valid independent of f's body). Currently a boundary-caller fails at L0: forge's L3 lowering does not emit the boundary fn as a verus-assumable signature, so verus sees an undefined callee. To make 'verified to the boundary' an achievable STATUS (not just a syntactic label on a failed cert), thermite-lower must emit each boundary/slag fn referenced by a caller as a verus assume-spec signature (req->requires, ens->ensures, no body / external_body) in the caller's sub-program. Demonstrated: caller calling ext_id -> L0 (scope correctly to_boundary via ext_id, but unverified). #17 ships the CLASSIFICATION (correct + orthogonal to level per the oracle); this composition lowering is the separate piece that lets the caller actually reach verified-to-the-boundary.",
+  "created_at": "2026-06-05T08:34:59.811998780Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9qW6nvweLV+jUnjudXGxIzAzrjuPnjkTTbrZUWFZVL6M9bhSXVPmAMdy72bYQVeAcHFjvKVnRo/mLPyTDysHBA=="
+}

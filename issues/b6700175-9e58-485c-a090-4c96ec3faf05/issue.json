@@ -2,11 +2,12 @@
   "uuid": "b6700175-9e58-485c-a090-4c96ec3faf05",
   "display_id": 48,
   "title": "Divergence: forge mutation gate — a weak contract with 0 scored mutants escapes the §7 floor (0/0 -> ratio 1.0 -> certify)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T05:56:29.063592131Z",
-  "updated_at": "2026-06-05T05:56:30.371730745Z",
+  "updated_at": "2026-06-05T06:10:03.554678702Z",
+  "closed_at": "2026-06-05T06:10:03.554678702Z",
   "labels": [
     "blocker"
   ]

@@ -1,0 +1,10 @@
+{
+  "uuid": "60d9042b-3231-4b5a-b099-5f3970acf3b4",
+  "issue_uuid": "c5248244-4ede-4a43-8536-5a8de78d6d78",
+  "author": "Yffe",
+  "content": "Failing tests at forge/tests/divergence_vacuity.rs::{divergence_ens_implied_by_req_over_rejects_partial_implication, divergence_redundant_true_clause_with_real_clause_not_c_rejected} demonstrate the divergence.\n\nROOT CAUSE: `ens_implied_by_req` in forge/src/vacuity.rs returns `Some(idx)` on the FIRST ens clause that equals req or a req conjunct — i.e. it rejects when ANY clause is implied. The governing authority requires the WHOLE postcondition conjunction be implied.\n\nAUTHORITY: .design/forge/vacuity-triage.md REQ-3 — '(c) reject ... defined as: EVERY ens clause's Clause.expr is structurally identical (PartialEq) to ... the whole req ... or one of the conjuncts of req'. thermite-design.md §7.1 — 'ens is syntactically implied by req alone -> reject' (the whole ens). OQ-4 confirms 'ens true + ens result == x ... carries a real conjunct'.\n\nINPUT 1: req x > 0 && x < 10 / ens x > 0 / ens result == x  (fx pure, non-slag).\nINPUT 2: req true / ens true / ens result == x.\nEXPECTED: NOT an EnsImpliedByReq reject (result == x is a real obligation not implied by req; the whole ens is non-vacuous -> proceed to L3).\nACTUAL: cert.reject.cause == 'EnsImpliedByReq' (level L0) — the legitimately-stronger contract is wrongly rejected.\n\nThe fix narrows the (c) predicate to fire only when EVERY ens clause is req-implied. Control test ens_fully_implied_by_req_still_rejects_c (sole implied clause -> genuine (c) reject) guards against regressing the true-positive (oracle ens_conjunct_req). Tests must go green WITHOUT #[ignore] (R-DEFER-3).",
+  "created_at": "2026-06-05T01:56:07.585149803Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAuDNzwtgFFAo44PpU1h7CPiJLQRR3fB6/laf5GJLqade9fGTgfvaz1li0EeMQhh7BVSJJbNxm6RNwh4l1dOymDw=="
+}

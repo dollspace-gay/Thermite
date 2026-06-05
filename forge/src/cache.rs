@@ -24,7 +24,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (cache-key composition — four verdict-determining inputs) | SHIPPED | `pub fn cache_key(lowered_src, seed, verus_version, thermite_version) -> String` hashes the four inputs, each DOMAIN-TAGGED + LENGTH-PREFIXED (`field`), into a lowercase-hex sha256 content address. Consumer: `check::check_file`. |
+//! | REQ-1 (cache-key composition — verdict-determining inputs) | SHIPPED | `pub fn cache_key(lowered_src, seed, verus_version, thermite_version) -> String` hashes the four args PLUS the `CHECK_SCHEMA_VERSION` check-logic version (blocker #49), each DOMAIN-TAGGED + LENGTH-PREFIXED (`field`), into a lowercase-hex sha256 content address. Consumer: `check::check_file`. |
 //! | REQ-2 (soundness-completeness invariant — hit == fresh verify) | SHIPPED | `cache_key` captures every verdict-determining input (the four args); `store` clears `cached` before persisting and `load` returns the stored cert unchanged, so `check::check_file`'s `with_cached(true)` HIT is oracle-equal to the fresh verify it was stored from. Verified by `key_changes_when_any_input_changes` + `check::check_file`'s `with_cached` wiring. |
 //! | REQ-3 (lookup-then-store flow, per item) | SHIPPED | `pub fn load(cache_dir, key) -> Option<Certificate>` consulted BEFORE `run_verus`; `pub fn store(cache_dir, key, cert)` after a MISS. Consumer: `check::check_file`'s per-item L3 path. |
 //! | REQ-4 (locality — per-item) | SHIPPED | the key is over the item's OWN `item_subprogram` lowered source (`check.rs`), so an edit to a sibling leaves this item's key byte-identical. Verified by `check::tests::cache_key_is_local_to_the_item`. |
@@ -37,12 +37,38 @@ use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use crate::manifest::Certificate;
+use crate::manifest::{Certificate, ObligationStatus};
 
 /// Domain-separation tag prefixed to the WHOLE keyed stream, so a `forge` proof
 /// cache key can never collide with an unrelated sha256 use of the same bytes
 /// (`.design/forge/proof-cache.md` REQ-1 — domain separation).
 const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
+
+/// The version of forge's VERDICT-AFFECTING CHECK LOGIC — the set of gates a
+/// cached certificate was produced under (`.design/forge/proof-cache.md` REQ-2,
+/// the soundness-completeness invariant). It is a FIFTH cache-key input
+/// (domain-tagged + length-prefixed like the other four) so that a certificate
+/// stored under one set of gates can NEVER be re-served once the gate set
+/// changes: a different schema ⇒ a different key ⇒ a MISS ⇒ a full re-check
+/// under the CURRENT gates. This closes the bypass where a cert cached by a
+/// forge BEFORE a gate existed — under an IDENTICAL (lowered_src, seed,
+/// verus_version, thermite_version) key, because `forge`'s crate version did not
+/// move — was served on a HIT and skipped the now-required gate.
+///
+/// MAINTENANCE CONTRACT (blocker #49): BUMP this constant WHENEVER the set of
+/// verdict-affecting checks/gates changes — a gate added, removed, or its
+/// pass/fail semantics altered (e.g. the §7 mutation floor, the vacuity battery,
+/// the triage rejects). The `thermite_version` input does NOT suffice: the
+/// toolchain ships gate changes WITHOUT a crate-version bump (issue #12's
+/// mutation gate landed at 0.1.0), so the check-logic version must move
+/// independently. Forgetting to bump it re-opens the stale-verdict bypass; this
+/// is the contract that prevents it.
+///
+/// History:
+///   1 — pre-mutation-gate check logic (the original four-input key era).
+///   2 — issue #12 §7 mutation floor added (blocker #49: invalidates every
+///       pre-gate cert so a weak contract is re-checked through the gate).
+const CHECK_SCHEMA_VERSION: u32 = 2;
 
 /// The project-local proof-cache directory (`.design/forge/proof-cache.md`
 /// REQ-6, OQ-1): `target/thermite-proof-cache/`. It is BUILD OUTPUT under the
@@ -82,6 +108,16 @@ pub fn cache_key(
     field(&mut hasher, b"seed", &seed.to_le_bytes());
     field(&mut hasher, b"verus", verus_version.as_bytes());
     field(&mut hasher, b"thermite", thermite_version.as_bytes());
+    // The FIFTH input (blocker #49): the verdict-affecting check-logic version, so
+    // a cert cached under one set of gates cannot be re-served once the gate set
+    // changes (a different schema ⇒ a different key ⇒ a MISS ⇒ re-check under the
+    // CURRENT gates). Captures what `thermite_version` cannot — gate changes that
+    // ship without a crate-version bump (see `CHECK_SCHEMA_VERSION`).
+    field(
+        &mut hasher,
+        b"check-schema",
+        &CHECK_SCHEMA_VERSION.to_le_bytes(),
+    );
     let digest = hasher.finalize();
     hex_lower(&digest)
 }
@@ -130,7 +166,44 @@ pub fn load(cache_dir: &Path, key: &str) -> Option<Certificate> {
     let path = entry_path(cache_dir, key);
     let src = std::fs::read_to_string(&path).ok()?;
     // A corrupt/unparseable entry is a MISS (not an error): re-verify + overwrite.
-    serde_json::from_str::<Certificate>(&src).ok()
+    let cert = serde_json::from_str::<Certificate>(&src).ok()?;
+    // An INTERNALLY-INCONSISTENT entry is also a MISS (blocker #49). A cert
+    // produced under a DIFFERENT set of gates than the current `forge` — e.g.
+    // stored by a forge BEFORE the §7 mutation floor existed — can land under the
+    // same content-address as a current key (the gate change shipped without a
+    // verdict-input change) and would otherwise be re-served on a HIT, BYPASSING
+    // the now-required gate. The tell is self-contradiction: the stored cert
+    // claims CLEAN (`reject: None`) yet still carries a FAILED obligation in its
+    // own `obligations` array (the gate that failed it under the old logic). A
+    // genuinely-clean cert produced by the current logic NEVER carries a failed
+    // obligation while `reject` is `None`. Treating such an entry as a MISS forces
+    // a full re-check under the CURRENT gates (REQ-2: a hit must equal a fresh
+    // verify; `goal.md` R-DEFER-9: the cache cannot launder a stale clean verdict
+    // past a gate). This is the load-time half of the soundness guard; the
+    // `CHECK_SCHEMA_VERSION` cache-key input is the on-disk-key half.
+    if is_internally_consistent(&cert) {
+        Some(cert)
+    } else {
+        None
+    }
+}
+
+/// A stored [`Certificate`] is internally consistent iff a CLEAN verdict
+/// (`reject.is_none()`) carries NO failed obligation (blocker #49). A cert that
+/// claims clean while still recording a failed obligation was produced under a
+/// different gate set than the current `forge` (a stale verdict that predates a
+/// gate); serving it would bypass that gate. The check is conservative — it only
+/// rejects the self-contradictory shape, so every cert the current logic itself
+/// stores (clean ⇒ all obligations discharged; rejected ⇒ `reject.is_some()`)
+/// round-trips as a HIT (no regression to the warm-hit path, REQ-2/AC-1).
+fn is_internally_consistent(cert: &Certificate) -> bool {
+    if cert.reject.is_some() {
+        return true;
+    }
+    !cert
+        .obligations
+        .iter()
+        .any(|o| o.status == ObligationStatus::Failed)
 }
 
 /// Store `cert` under `key` in `cache_dir` (REQ-3/REQ-6), persisting the

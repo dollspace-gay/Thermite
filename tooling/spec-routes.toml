@@ -331,3 +331,10 @@ crate_pattern = "forge/src/sandbox.rs"
 design = ".design/forge/runtime-sandbox.md"
 reference = ["conformance/sandbox"]
 conformance_ops = ["sum"]
+
+# self-verification: the Verus-verified soundness-critical core (epic #60)
+[[route]]
+crate_pattern = "thermite-verified/src/lib.rs"
+design = ".design/verified/self-verification.md"
+reference = []
+conformance_ops = []

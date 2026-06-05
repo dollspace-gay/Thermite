@@ -1,0 +1,16 @@
+{
+  "note": "Oracle for forge's #[slag] handling (§8). Hand-derived (R-CHAR-3). A VALID slag fn (all three fields present + non-empty) is EXEMPT from the L3 proof but its contract is still mandatory + enforced at L1 -> certifies level L1 with slag:true (NOT L3, NOT skipped). slag exempts PROVING, never STATING/checking: the §7.1 structural triage STILL applies (a slag fn with a vacuous contract is rejected; only the maximal-fx (d) check is justified by slag). Invalid slag metadata (missing/empty reason/owner/review) is rejected.",
+  "accept": [
+    { "name": "simd_sum_l1", "expect_level": "L1", "expect_slag": true,
+      "program": "#[slag(reason = \"vendored SIMD intrinsics\", owner = \"agent:forge-7\", review = \"required\")] fn simd_sum(xs: &[u32]) -> u64 req xs.len() <= 1000000 ens result == 0 fx pure { 0 }",
+      "why": "valid slag (all 3 fields non-empty), non-vacuous contract -> L1 + slag:true (L3-exempt, L1-enforced)." },
+    { "name": "slag_justifies_maximal_fx", "expect_level": "L1", "expect_slag": true,
+      "program": "#[slag(reason = \"raw FFI\", owner = \"agent:forge-7\", review = \"required\")] fn g(x: u32) -> u32 req true ens result == x fx read(a), write(a), net(a), alloc, time, rand, panic, diverge { x }",
+      "why": "maximal fx WITH slag -> the (d) triage check does not fire; certifies L1 + slag:true." }
+  ],
+  "reject": [
+    { "name": "empty_reason",  "cause": "SlagFieldEmpty",   "program": "#[slag(reason = \"\", owner = \"agent:forge-7\", review = \"required\")] fn f(x: u32) -> u32 req true ens result == x fx pure { x }", "why": "reason is empty (§8 mandates non-empty reason/owner/review)." },
+    { "name": "missing_owner", "cause": "SlagFieldMissing", "program": "#[slag(reason = \"vendored\", review = \"required\")] fn f(x: u32) -> u32 req true ens result == x fx pure { x }", "why": "owner field omitted (parser -> None; forge rejects)." },
+    { "name": "slag_vacuous",  "cause": "EnsIsTrivial",     "program": "#[slag(reason = \"vendored\", owner = \"agent:forge-7\", review = \"required\")] fn f(x: u32) -> u32 req true ens true fx pure { x }", "why": "slag exempts PROVING, not STATING: a vacuous ens (a) is still rejected by §7.1 triage even on a slag fn." }
+  ]
+}

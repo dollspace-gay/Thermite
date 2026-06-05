@@ -1,0 +1,16 @@
+{
+  "note": "Oracle for forge's §7.1 STRUCTURAL vacuity triage (free/syntactic, no solver). Hand-derived from thermite-design.md §7.1 (R-CHAR-3). `accept` programs must PASS triage (non-vacuous); `reject` programs must be REJECTED with the named structural cause. Triage order: ens-is-trivial (a), ens-omits-result (b), ens-implied-by-req (c), maximal-fx-without-slag (d) — `cause` is the FIRST matching check. Solver tautology/unsat-precondition is #13; mutation is #12 — NOT covered here.",
+  "accept": [
+    { "name": "corpus_sum",           "source": "conformance/sum.th",           "why": "sum's contracts are non-vacuous (ens mentions result, not trivially true, not req-implied)." },
+    { "name": "corpus_binary_search", "source": "conformance/binary_search.th", "why": "binary_search's match-ens mentions result and is non-trivial." },
+    { "name": "unit_omits_result_ok", "program": "fn f(x: u32) -> () req true ens x > 0 fx pure { }", "why": "(b) exempts unit-return fns from must-mention-result (§4.1); ens is non-trivial -> passes (a); not req-implied -> passes (c)." }
+  ],
+  "reject": [
+    { "name": "ens_is_true",        "cause": "EnsIsTrivial",        "program": "fn f() -> () req true ens true fx pure { }", "why": "(a) ens is the literal `true`." },
+    { "name": "ens_eq_self",        "cause": "EnsIsTrivial",        "program": "fn f(x: u32) -> () req true ens x == x fx pure { }", "why": "(a) ens is an equality with syntactically-identical operands (trivially true)." },
+    { "name": "ens_omits_result",   "cause": "EnsOmitsResult",      "program": "fn f(x: u32) -> u32 req true ens x > 0 fx pure { x }", "why": "(b) non-unit return but ens does not mention `result` (§4.1)." },
+    { "name": "ens_eq_req",         "cause": "EnsImpliedByReq",     "program": "fn f(x: u32) -> () req x > 0 ens x > 0 fx pure { }", "why": "(c) ens is syntactically identical to req (unit -> (b) does not pre-empt)." },
+    { "name": "ens_conjunct_req",   "cause": "EnsImpliedByReq",     "program": "fn f(x: u32) -> () req x > 0 && x < 10 ens x > 0 fx pure { }", "why": "(c) ens is a conjunct of req's && chain." },
+    { "name": "maximal_fx_no_slag", "cause": "MaximalFxWithoutSlag", "program": "fn f(x: u32) -> u32 req true ens result == x fx read(a), write(a), net(a), alloc, time, rand, panic, diverge { x }", "why": "(d) fx row covers all 8 effect kinds and there is no #[slag] justification." }
+  ]
+}

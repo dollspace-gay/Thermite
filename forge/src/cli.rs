@@ -42,6 +42,7 @@ use crate::manifest::{
 };
 use crate::mutation::MUTATION_FLOOR;
 use crate::repair::{self, RepairItem, RepairOutcome, RepairReport};
+use crate::review::{self, ReviewArtifact};
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
 /// document describing failed obligations). Distinct from an environment error
@@ -92,6 +93,26 @@ pub enum ForgeError {
         path: String,
         source: std::io::Error,
     },
+    /// The `--reviewer <cmd>` external reviewer command was not found (`ENOENT`) —
+    /// an ENVIRONMENT error (issue #19; `.design/forge/spec-review.md` REQ-7,
+    /// OQ-1). The spec-intent verdict is the EXTERNAL reviewer's; an absent
+    /// reviewer is reported, never a panic and never a fabricated `aligned`.
+    ReviewerAbsent { cmd: String },
+    /// Spawning the `--reviewer <cmd>` failed for a reason other than absence, or
+    /// writing the artifact to its stdin failed (issue #19). The reviewer parallel
+    /// of `VerusSpawn`.
+    ReviewerSpawn { cmd: String, source: std::io::Error },
+    /// The `--reviewer <cmd>` ran but exited NON-ZERO (issue #19). Its stderr is
+    /// surfaced (never swallowed, R-CODE-4); forge does NOT fabricate a verdict.
+    ReviewerFailed {
+        cmd: String,
+        code: Option<i32>,
+        stderr: String,
+    },
+    /// The `--reviewer <cmd>` ran but its stdout was missing / not a parseable
+    /// `ReviewVerdict` (issue #19). Reported (R-CODE-4), never a crash and never a
+    /// fabricated `aligned`.
+    ReviewerOutput { detail: String },
     /// A usage error: missing/unknown verb, missing positional, bad flag, or a
     /// `forge new` target that already exists.
     Usage(String),
@@ -142,6 +163,27 @@ impl fmt::Display for ForgeError {
                 write!(f, "could not interpret kani output: {detail}")
             }
             ForgeError::Io { path, source } => write!(f, "io error at `{path}`: {source}"),
+            ForgeError::ReviewerAbsent { cmd } => write!(
+                f,
+                "the `--reviewer` command `{cmd}` was not found (environment error, not a \
+                 verification failure); the spec-intent verdict is the external reviewer's — \
+                 install/correct the command or run `forge review` without `--reviewer` to emit \
+                 the artifact for a manual reviewer"
+            ),
+            ForgeError::ReviewerSpawn { cmd, source } => {
+                write!(
+                    f,
+                    "failed to run the `--reviewer` command `{cmd}`: {source}"
+                )
+            }
+            ForgeError::ReviewerFailed { cmd, code, stderr } => write!(
+                f,
+                "the `--reviewer` command `{cmd}` exited with status {code:?} (no verdict \
+                 attached; forge never fabricates a spec-intent verdict); stderr: {stderr}"
+            ),
+            ForgeError::ReviewerOutput { detail } => {
+                write!(f, "could not read a reviewer verdict: {detail}")
+            }
             ForgeError::Usage(msg) => write!(f, "usage error: {msg}"),
         }
     }
@@ -201,6 +243,23 @@ enum Command {
         file: PathBuf,
         item: Option<String>,
         json: bool,
+    },
+    /// `forge review <file> [item] [--json] [--reviewer <cmd>]` — the PLUGGABLE
+    /// SPEC-INTENT REVIEW SLOT (issue #19; `.design/forge/spec-review.md` REQ-7,
+    /// §7 line 227). Runs the SAME default-config check pipeline `forge check` /
+    /// `forge audit` run (the battery verdict — no extra verification), extracts
+    /// the PRE-SCREENED declarative spec layer (per battery-passing fn: `req`/`ens`/
+    /// `fx` + the directly-referenced `spec fn` declarations, NO bodies) + an "is
+    /// this what you meant?" prompt, and emits the artifact (`--json` machine form
+    /// or human). An OPTIONAL `[item]` restricts the artifact to one fn. With
+    /// `--reviewer <cmd>` it pipes the artifact to the EXTERNAL reviewer's stdin,
+    /// reads the `ReviewVerdict` JSON from its stdout, and writes a separate
+    /// `<file>.review.json` record (forge NEVER fabricates `aligned` — OQ-1/OQ-2).
+    Review {
+        file: PathBuf,
+        item: Option<String>,
+        json: bool,
+        reviewer: Option<String>,
     },
 }
 
@@ -405,6 +464,64 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })?;
             Ok(Command::Repair { file, item, json })
         }
+        "review" => {
+            // `forge review <file> [item] [--json] [--reviewer <cmd>]` (#19;
+            // `.design/forge/spec-review.md` REQ-7). The first positional is the
+            // file (required); an OPTIONAL second positional restricts the artifact
+            // to a single item. Like `forge audit`, the EXTRACTION runs at the
+            // pinned default budget (the exploratory `--rlimit`/`--mutation-floor`
+            // levers are NOT exposed — the §7 "the certificate includes the spec
+            // layer" framing). `--reviewer <cmd>` names the external reviewer
+            // command (its value is a separate token; a missing value is a Usage
+            // error). Without it, forge emits only the artifact (the reviewer is
+            // external/manual).
+            let mut file: Option<PathBuf> = None;
+            let mut item: Option<String> = None;
+            let mut json = false;
+            let mut reviewer: Option<String> = None;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--reviewer" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--reviewer` requires a <cmd> value (the external reviewer \
+                                 command the artifact is piped to)"
+                                    .to_string(),
+                            )
+                        })?;
+                        reviewer = Some(value.to_string());
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_none() {
+                            file = Some(PathBuf::from(positional));
+                        } else if item.is_none() {
+                            item = Some(positional.to_string());
+                        } else {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge review` takes at most <file> [item]; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge review` requires a <file> [item] [--reviewer <cmd>]".to_string(),
+                )
+            })?;
+            Ok(Command::Review {
+                file,
+                item,
+                json,
+                reviewer,
+            })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -415,7 +532,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json]"
+     [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
+     | forge review <file> [item] [--json] [--reviewer <cmd>]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -450,6 +568,12 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
         } => run_check(&file, json, level, rlimit, mutation_floor),
         Command::Audit { file, json } => run_audit(&file, json),
         Command::Repair { file, item, json } => run_repair(&file, item.as_deref(), json),
+        Command::Review {
+            file,
+            item,
+            json,
+            reviewer,
+        } => run_review(&file, item.as_deref(), json, reviewer.as_deref()),
     }
 }
 
@@ -624,6 +748,121 @@ fn run_repair(file: &Path, item: Option<&str>, json: bool) -> Result<ExitCode, F
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
     }
+}
+
+/// Run `forge review`: the PLUGGABLE SPEC-INTENT REVIEW SLOT (#19;
+/// `.design/forge/spec-review.md` REQ-5/REQ-7, §7 line 227). Extracts the
+/// pre-screened declarative spec-layer ARTIFACT (`review::review_file` — a pure
+/// projection of the battery cert collection + the parsed contract surface, no
+/// bodies), emits it (`--json` machine form or human), and — with `--reviewer
+/// <cmd>` — pipes it to the EXTERNAL reviewer, reads the `ReviewVerdict` JSON from
+/// its stdout, and writes a SEPARATE `<file>.review.json` record (OQ-2: the verdict
+/// is the reviewer's, never a `Certificate` field; forge NEVER fabricates
+/// `aligned`).
+///
+/// Exit code: the EXTRACTION succeeding is a SUCCESS (the artifact is a valid
+/// document — surfacing a battery-failing fn is not a forge failure, it is the
+/// artifact's content). An ENVIRONMENT failure (verus absent for the pre-screen, a
+/// `--reviewer` cmd absent/failing/garbage, an IO error) propagates as a
+/// `ForgeError` (the environment exit code), never a silent success.
+fn run_review(
+    file: &Path,
+    item: Option<&str>,
+    json: bool,
+    reviewer: Option<&str>,
+) -> Result<ExitCode, ForgeError> {
+    // The pre-screened spec-layer artifact (REQ-1/REQ-2/REQ-6) — the deterministic
+    // pure projection. Runs the SAME default-config check pipeline `forge check`
+    // runs (the battery verdict), then projects; it re-runs no verus.
+    let artifact = review::review_file(file, item)?;
+
+    if let Some(cmd) = reviewer {
+        // The PLUGGABLE INTEGRATION (REQ-7, OQ-1): pipe the artifact JSON to the
+        // external reviewer's stdin, read the `ReviewVerdict` JSON from its stdout
+        // (the reviewer's judgment — forge never fabricates `aligned`), and write
+        // the SEPARATE `<file>.review.json` record. A spawn/exit/parse failure is a
+        // `ForgeError` (handled above by `?`), never a panic.
+        let verdicts = review::run_reviewer(cmd, &artifact)?;
+        let record = review::attach_verdicts(&file.display().to_string(), verdicts);
+        let record_path = review_record_path(file);
+        let doc =
+            serde_json::to_string_pretty(&record).map_err(|e| ForgeError::ReviewerOutput {
+                detail: format!("failed to serialize the review record JSON: {e}"),
+            })?;
+        std::fs::write(&record_path, format!("{doc}\n")).map_err(|e| ForgeError::Io {
+            path: record_path.display().to_string(),
+            source: e,
+        })?;
+        // Echo what was attached + where (stderr keeps `--json` stdout clean).
+        eprintln!(
+            "forge review: attached {} verdict(s) to `{}`",
+            record.verdicts.len(),
+            record_path.display()
+        );
+    }
+
+    if json {
+        let doc =
+            serde_json::to_string_pretty(&artifact).map_err(|e| ForgeError::ReviewerOutput {
+                detail: format!("failed to serialize the review artifact JSON: {e}"),
+            })?;
+        println!("{doc}");
+    } else {
+        print!("{}", render_review(&artifact));
+    }
+
+    Ok(ExitCode::SUCCESS)
+}
+
+/// The `<file>.review.json` record path for a reviewed `<file>` (#19; REQ-4, OQ-2 —
+/// a SEPARATE document keyed by the reviewed file). `conformance/sum.th` →
+/// `conformance/sum.th.review.json`.
+fn review_record_path(file: &Path) -> PathBuf {
+    let mut name = file
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
+    name.push(".review.json");
+    file.with_file_name(name)
+}
+
+/// Render the spec-intent review ARTIFACT as human-readable text (#19;
+/// `.design/forge/spec-review.md` REQ-5, §7 — the human half of the dual emission;
+/// the `--json` form is the critic-model surface). Per intent-reviewable fn: its
+/// declarative spec layer (req/ens/fx plus referenced spec-fn declarations, NO
+/// bodies) and the "is this what you meant?" prompt; then the battery-failing fns
+/// flagged with their cause (NOT surfaced for intent review, R-DEFER-9).
+fn render_review(artifact: &ReviewArtifact) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "spec-intent review: {} intent-reviewable, {} battery-failing\n",
+        artifact.intent_reviewable.len(),
+        artifact.battery_failing.len()
+    ));
+    for r in &artifact.intent_reviewable {
+        out.push_str(&format!(
+            "\nfn {} (battery-passing — spec layer):\n",
+            r.item
+        ));
+        out.push_str(&format!("  req {}\n", r.spec_layer.req));
+        for e in &r.spec_layer.ens {
+            out.push_str(&format!("  ens {e}\n"));
+        }
+        out.push_str(&format!("  fx  [{}]\n", r.spec_layer.fx.join(", ")));
+        for decl in &r.spec_layer.referenced_spec_fns {
+            out.push_str(&format!("  {} dec {}\n", decl.signature, decl.dec));
+        }
+        out.push_str(&format!("  prompt: {}\n", r.prompt));
+    }
+    if !artifact.battery_failing.is_empty() {
+        out.push_str(
+            "\nbattery-failing (NOT surfaced for intent review — mechanical failure first):\n",
+        );
+        for b in &artifact.battery_failing {
+            out.push_str(&format!("  {} — {} ({})\n", b.item, b.cause, b.detail));
+        }
+    }
+    out
 }
 
 /// Build the `--json` document for a repair report (#18; §5.1 structured output).

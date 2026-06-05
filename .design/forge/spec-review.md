@@ -221,21 +221,27 @@ same content for a person.
 
 ## REQ status
 
-GREENFIELD: no spec-layer extraction / intent-review slot exists in the tree
-(`forge/src/review.rs` is unwritten; `forge review` is absent from `cli.rs`'s
-`Command`/`parse_args`/`run`). All REQs NOT-STARTED, blocked on #19. The data both
-sources read (`check::check_file` certs; the `FnItem`/`Contract`/`Clause`/`SpecFnItem`
-AST) already ship — the projection that combines them does not.
+SHIPPED (#19): `forge/src/review.rs` (the spec-layer extraction + verdict slot +
+`--reviewer` shell-out) + the `forge review` verb in `cli.rs` +
+`forge/tests/review_conformance.rs` against the `conformance/review/` oracle. The
+EXTRACTION is a deterministic pure projection of the battery cert collection
+(`check::check_file`) + the parsed contract surface; the verdict is the EXTERNAL
+reviewer's (forge never fabricates `aligned`). OQ-1 decided: the thin
+`--reviewer <cmd>` shell-out harness IS shipped (artifact → stdin, `ReviewVerdict`
+← stdout). OQ-2 decided: reading (a) — a SEPARATE `*.review.json` record, never a
+`Certificate` field (the cert's `oracle_subset` is untouched). OQ-3: direct-only
+spec-fn references. OQ-4: slag/boundary L1 (reject-free certified rung) ARE
+intent-reviewable.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (spec-layer extraction, no bodies) | NOT-STARTED | open prereq blocker #19. No `forge/src/review.rs`; nothing projects `FnItem.contract` + referenced `SpecFnItem` declarations into a body-free spec layer. The source data exists (`struct Contract`/`struct Clause`/`struct SpecFnItem` in `ast.rs`) but no consumer extracts it for review. |
-| REQ-2 (pre-screening — only battery-passing) | NOT-STARTED | open prereq blocker #19. The battery verdict exists (`Certificate.reject`/`level` in `manifest.rs`, the `Certificate::rejected*` constructors) but no code partitions certs into intent-reviewable vs battery-failing for a review artifact. |
-| REQ-3 (per-contract intent prompt) | NOT-STARTED | open prereq blocker #19. No "is this what you meant?" prompt is emitted anywhere. |
-| REQ-4 (pluggable verdict slot — schema + additive attach) | NOT-STARTED | open prereq blocker #19. No `ReviewVerdict` type, no review record, no additive verdict field; the additive precedent exists (`slag_meta`/`reject`/`cached`/`strengthening` on `Certificate`) but is unused for a verdict. |
-| REQ-5 (dual emission machine + human) | NOT-STARTED | open prereq blocker #19. No `review` arm in `cli::run`; the `--json` + human-render precedent (`cli::run_audit`) exists but is not reused for review. |
-| REQ-6 (determinism, R-CODE-5) | NOT-STARTED | open prereq blocker #19. No extraction exists to be deterministic; the projection precedent (`audit::AuditManifest::from_certificates`, prover-free) is the model to follow. |
-| REQ-7 (`forge review [item]` command + dispatch) | NOT-STARTED | open prereq blocker #19. `cli.rs` `enum Command` has `New/Check/Audit/Repair` (per `parse_args`) but NO `Review` variant; `forge review` is absent from Appendix B and must be added as the #19 surface verb. |
+| REQ-1 (spec-layer extraction, no bodies) | SHIPPED | `pub fn review_file` in `review.rs` → `ReviewArtifact`; `SpecLayer::extract` projects `FnItem.contract` (verbatim `Clause.text` for `req`/`ens`/`fx`) + `referenced_spec_fns` (the directly-referenced `SpecFnItem` declarations: name/params/ret/`dec`); `FnItem.body`/`SpecFnItem.body` are NEVER read (structural exclusion). Consumer: `cli::run_review`. Verified: `corpus_sum_intent_reviewable_no_bodies` (no body tokens). |
+| REQ-2 (pre-screening — only battery-passing) | SHIPPED | `is_intent_reviewable` (= `manifest::cert_certifies`: reject-free + certified rung) partitions certs in `project_artifact`; a `reject.is_some()` cert becomes a `BatteryFailing` flag carrying `reject.cause`, NOT surfaced. Consumer: `review_file`. Verified: `vacuous_flagged_not_surfaced` (`EnsIsTrivial`, not surfaced). |
+| REQ-3 (per-contract intent prompt) | SHIPPED | `IntentReview::prompt` names the item + frames the only-open-question as spec-intent alignment; built in `IntentReview::new`. Consumer: `cli::render_review`. Verified: the `prompt` assertion in `corpus_sum_intent_reviewable_no_bodies`. |
+| REQ-4 (pluggable verdict slot — separate record) | SHIPPED | `struct ReviewVerdict { item, aligned, note }` + `struct ReviewRecord` (the separate `*.review.json` document); `attach_verdicts` builds it, `cli::run_review` writes `<file>.review.json`. NEVER a `Certificate` field — the cert's `oracle_subset` is untouched. Verified: `reviewer_shellout_attaches_verdict`. |
+| REQ-5 (dual emission machine + human) | SHIPPED | `ReviewArtifact` derives `Serialize` (the `--json` machine form); `cli::render_review` is the human form; `cli::run_review` selects on `--json`. Verified: the `--json` artifact asserted by `review_conformance.rs`. |
+| REQ-6 (determinism, R-CODE-5) | SHIPPED | `review_file`/`project_artifact` are a pure projection of the parsed program + cert collection; `referenced_spec_fns` resolves into a sorted-deduplicated set; no wall-clock, no model call. Verified: `artifact_is_deterministic` (unit) + the byte-identical second run in `corpus_sum_intent_reviewable_no_bodies`. |
+| REQ-7 (`forge review [item]` command + dispatch + `--reviewer`) | SHIPPED | `cli::parse_args`'s `review` verb (`Command::Review`) + `cli::run_review`; `review::run_reviewer` is the `--reviewer <cmd>` shell-out (artifact → stdin, `ReviewVerdict` ← stdout); a spawn/exit/parse failure is a `ForgeError` (`ReviewerAbsent`/`ReviewerSpawn`/`ReviewerFailed`/`ReviewerOutput`), never a panic. Verified: `reviewer_failure_is_error_not_panic`. |
 
 ## Open questions
 

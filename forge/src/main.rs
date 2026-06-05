@@ -31,6 +31,7 @@ mod manifest;
 mod mutation;
 mod profile;
 mod repair;
+mod review;
 mod slag;
 mod strengthen;
 mod vacuity;

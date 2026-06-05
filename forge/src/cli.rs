@@ -13,7 +13,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 (command surface) | SHIPPED | `run` matches `new`/`check`; an unknown verb → `ForgeError::Usage`; the other Appendix B verbs are out of #5. Consumer: `main::main`. |
-//! | REQ-2 (hand-rolled arg parsing) | SHIPPED | `parse_args` is a `match` over the verb + positionals + the single `--json` flag; no `clap` dependency in `forge/Cargo.toml`. |
+//! | REQ-2 (hand-rolled arg parsing) | SHIPPED | `parse_args` is a `match` over the verb + positionals + the `--json` / `--level` / `--rlimit` flags; no `clap` dependency in `forge/Cargo.toml`. The #11 `--rlimit <FLOAT>` flag tunes the verus SMT resource budget (default `check::DEFAULT_RLIMIT`); a low value forces the timeout path (`run_check` → `check::check_file_with_rlimit`). |
 //! | REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError` wraps `Vec<SyntaxError>`/`Vec<SpecError>`/`Vec<LowerError>`/`LowerError` and carries `VerusAbsent`/`VerusSpawn`/`VerusOutput`/`Io`/`Usage`; `Display` forwards each inner error's diagnostic (no information lost). |
 //! | REQ-4 (human + `--json` output) | SHIPPED | `render_human` / `serde_json::to_string_pretty` of the cert array; `run_check` picks the rendering from `--json`; diagnostics go to stderr so `--json` stdout is a clean document. |
 //! | REQ-5 (typed exit codes) | SHIPPED | `cert_is_certified` → `ExitCode`: every item certified (each `L3`, or `L1`+valid-`#[slag]`, with no `reject`) → 0; any #6 triage / slag reject or un-discharged proof → `EXIT_VERIFICATION_FAILURE`; environment/usage/IO → `EXIT_ENVIRONMENT`. |
@@ -28,7 +28,7 @@ use thermite_lower::LowerError;
 use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
-use crate::check::{self, DEFAULT_SOLVER_SEED};
+use crate::check::{self, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::manifest::{Certificate, Level, ObligationStatus};
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
@@ -147,16 +147,23 @@ impl ForgeError {
     }
 }
 
-/// The parsed command (REQ-1/REQ-2).
-#[derive(Debug, PartialEq, Eq)]
+/// The parsed command (REQ-1/REQ-2). Drops `Eq` because `Check.rlimit` is an
+/// `f64` (the verus resource budget, #11) — `PartialEq` suffices for the
+/// arg-parsing unit tests' `assert_eq!`.
+#[derive(Debug, PartialEq)]
 enum Command {
     /// `forge new <name>`.
     New { name: String },
-    /// `forge check [<file>] [--json] [--level l2|l3]`.
+    /// `forge check [<file>] [--json] [--level l2|l3] [--rlimit <FLOAT>]`.
     Check {
         file: PathBuf,
         json: bool,
         level: CheckLevel,
+        /// The verus `--rlimit` (SMT resource budget, roughly seconds) for the
+        /// L3 path (#11; `.design/forge/solver-profiles.md` REQ-5). Defaults to
+        /// the generous pinned [`DEFAULT_RLIMIT`]; a LOW value forces the timeout
+        /// path so the three-way classification is testable.
+        rlimit: f64,
     },
 }
 
@@ -199,10 +206,33 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut file: Option<PathBuf> = None;
             let mut json = false;
             let mut level = CheckLevel::L3;
+            let mut rlimit = DEFAULT_RLIMIT;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
                     "--json" => json = true,
+                    "--rlimit" => {
+                        // `--rlimit <FLOAT>` — the verus SMT resource budget (#11;
+                        // `.design/forge/solver-profiles.md` REQ-5). The value is a
+                        // separate token; a missing or non-numeric value is a Usage
+                        // error, never a silent default (the test lever that forces
+                        // the timeout path uses a LOW value).
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--rlimit` requires a FLOAT value (the verus SMT resource budget)"
+                                    .to_string(),
+                            )
+                        })?;
+                        rlimit = value.parse::<f64>().map_err(|_| {
+                            ForgeError::Usage(format!("`--rlimit` value `{value}` is not a number"))
+                        })?;
+                        if !(rlimit.is_finite() && rlimit > 0.0) {
+                            return Err(ForgeError::Usage(format!(
+                                "`--rlimit` must be a finite positive number (got `{value}`); \
+                                 verus rejects rlimit <= 0"
+                            )));
+                        }
+                    }
                     "--level" => {
                         // `--level l2|l3` — an EXPLICIT rung choice (REQ-7). The
                         // value is a separate token (`--level l2`); a missing or
@@ -241,7 +271,12 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         .to_string(),
                 )
             })?;
-            Ok(Command::Check { file, json, level })
+            Ok(Command::Check {
+                file,
+                json,
+                level,
+                rlimit,
+            })
         }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
@@ -252,7 +287,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
-    "usage: forge new <name> | forge check <file> [--json] [--level l2|l3]"
+    "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -278,19 +313,35 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             println!("created Thermite project `{name}`");
             Ok(ExitCode::SUCCESS)
         }
-        Command::Check { file, json, level } => run_check(&file, json, level),
+        Command::Check {
+            file,
+            json,
+            level,
+            rlimit,
+        } => run_check(&file, json, level, rlimit),
     }
 }
 
 /// Run `forge check`: drive the pipeline, render every certificate, and map the
 /// aggregate outcome to an exit code (REQ-4/REQ-5). Diagnostics go to stderr so
 /// the `--json` stdout is a single clean machine-parseable document (AC-2).
-fn run_check(file: &Path, json: bool, level: CheckLevel) -> Result<ExitCode, ForgeError> {
+fn run_check(
+    file: &Path,
+    json: bool,
+    level: CheckLevel,
+    rlimit: f64,
+) -> Result<ExitCode, ForgeError> {
     // The DEFAULT (no flag) stays the L3 verus path; `--level l2` is an EXPLICIT
     // choice that runs the Kani bounded model check instead — never an automatic
-    // degrade (`.design/lower/l2-kani.md` REQ-7; #10 owns the auto-degrade).
+    // degrade (`.design/lower/l2-kani.md` REQ-7; #10 owns the auto-degrade). The
+    // `--rlimit` (#11) tunes the L3 verus resource budget; the L2 Kani path does
+    // not consume it.
     let certs = match level {
-        CheckLevel::L3 => check::check_file(file)?,
+        // The DEFAULT budget routes through `check_file` (the public default-rlimit
+        // entry); an explicit `--rlimit` routes through `check_file_with_rlimit`
+        // (#11 — the timeout-forcing lever).
+        CheckLevel::L3 if rlimit == DEFAULT_RLIMIT => check::check_file(file)?,
+        CheckLevel::L3 => check::check_file_with_rlimit(file, rlimit)?,
         CheckLevel::L2 => check::check_l2_file(file)?,
     };
 
@@ -470,7 +521,8 @@ mod tests {
             Some(Command::Check {
                 file: PathBuf::from("a.th"),
                 json: false,
-                level: CheckLevel::L3
+                level: CheckLevel::L3,
+                rlimit: DEFAULT_RLIMIT,
             })
         );
         assert_eq!(
@@ -478,9 +530,50 @@ mod tests {
             Some(Command::Check {
                 file: PathBuf::from("a.th"),
                 json: true,
-                level: CheckLevel::L3
+                level: CheckLevel::L3,
+                rlimit: DEFAULT_RLIMIT,
             })
         );
+    }
+
+    // #11 (`.design/forge/solver-profiles.md` REQ-5): `--rlimit <FLOAT>` parses
+    // into the `Check.rlimit`; the DEFAULT (no flag) is the pinned generous
+    // `DEFAULT_RLIMIT`; a missing / non-numeric / non-positive value is a Usage
+    // error (the test lever for the timeout path uses a LOW value like `1`).
+    #[test]
+    fn parses_rlimit_flag() {
+        assert_eq!(
+            parse_args(&argv(&["check", "a.th", "--rlimit", "1"])).ok(),
+            Some(Command::Check {
+                file: PathBuf::from("a.th"),
+                json: false,
+                level: CheckLevel::L3,
+                rlimit: 1.0,
+            })
+        );
+        // Default when the flag is absent.
+        assert_eq!(
+            parse_args(&argv(&["check", "a.th"])).ok(),
+            Some(Command::Check {
+                file: PathBuf::from("a.th"),
+                json: false,
+                level: CheckLevel::L3,
+                rlimit: DEFAULT_RLIMIT,
+            })
+        );
+        // Missing value, non-numeric, and non-positive are Usage errors.
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--rlimit"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--rlimit", "nope"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--rlimit", "0"])),
+            Err(ForgeError::Usage(_))
+        ));
     }
 
     // REQ-7 (`.design/lower/l2-kani.md`): `--level l2` selects the Kani path; the
@@ -492,7 +585,8 @@ mod tests {
             Some(Command::Check {
                 file: PathBuf::from("a.th"),
                 json: false,
-                level: CheckLevel::L2
+                level: CheckLevel::L2,
+                rlimit: DEFAULT_RLIMIT,
             })
         );
         assert_eq!(
@@ -500,7 +594,8 @@ mod tests {
             Some(Command::Check {
                 file: PathBuf::from("a.th"),
                 json: false,
-                level: CheckLevel::L3
+                level: CheckLevel::L3,
+                rlimit: DEFAULT_RLIMIT,
             })
         );
         assert!(matches!(

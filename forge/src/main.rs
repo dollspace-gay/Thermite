@@ -25,6 +25,7 @@ mod check;
 mod cli;
 mod kani;
 mod manifest;
+mod profile;
 mod slag;
 mod vacuity;
 

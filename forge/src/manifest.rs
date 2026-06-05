@@ -38,9 +38,18 @@
 //! | Field/symbol | Status | Evidence |
 //! |---|---|---|
 //! | `cached: bool` (cache provenance) | SHIPPED | `Certificate.cached: bool` (additive, `#[serde(default)]` so the frozen golden `sum.cert.json` still deserializes); set by `Certificate::with_cached`, consumed by `check::check_file` (`true` on a HIT, `false` on a fresh verify) and `cache::store` (cleared before persisting). EXCLUDED from `oracle_subset` — a hit and a fresh verify compare oracle-EQUAL (`proof-cache.md` REQ-7/REQ-2). |
+//!
+//! ## #11 additive schema (solver-profile timeout slot, this iteration)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `solver_profile: Option<SolverProfile>` | SHIPPED | `Certificate.solver_profile` (additive, `#[serde(default, skip_serializing_if)]` so the frozen golden `sum.cert.json` still deserializes — R-SPEC-2). `Some` ONLY on a timeout cert built by `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the parsed profile + a profile-derived `suggested_move`); `None` on a proved cert and a counterexample cert. Produced by `profile::parse_profile`/`profile::suggested_move`, set by `check::classify_verus_outcome`. DIAGNOSTIC + non-deterministic (§5.3): EXCLUDED from `oracle_subset` (`.design/forge/solver-profiles.md` REQ-6/REQ-7). |
+//! | `suggested_move` populated | SHIPPED | the reserved #5 slot is now CONSTRUCTED in production on a timeout cert (`Certificate::timeout`) from `profile::suggested_move` — the §5.1 "trigger hints" content. Still `None` on every non-timeout cert. |
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
+
+use crate::profile::SolverProfile;
 
 /// The assurance level (`thermite-design.md` §6). Serializes to the string form
 /// `"L0".."L3"` to match the golden cert's `"level": "L3"` (REQ-1, REQ-7).
@@ -251,7 +260,21 @@ pub struct Certificate {
     /// a fresh verify compare oracle-EQUAL (REQ-2, the soundness invariant).
     #[serde(default)]
     pub cached: bool,
-    /// Reserved heuristic-hint slot — `None` in #5 (REQ-4).
+    /// The structured Z3 quantifier-instantiation report attached on a verus
+    /// TIMEOUT / rlimit-hit (issue #11 additive field;
+    /// `.design/forge/solver-profiles.md` REQ-6). `Some` ONLY on a timeout cert
+    /// (`Certificate::timeout`); `None` on a proved (`L3`) cert and on a
+    /// counterexample-L0 cert (AC-4). `#[serde(default)]` + skip-if-none so the
+    /// frozen golden `conformance/sum.cert.json` (which omits it) still
+    /// deserializes (R-SPEC-2, additive only), mirroring the `slag_meta`/`reject`
+    /// and `cached` additive precedents. DIAGNOSTIC and NON-deterministic (§5.3):
+    /// EXCLUDED from `oracle_subset` (a timeout cert with a profile is
+    /// oracle-equal to the same cert with the profile stripped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solver_profile: Option<SolverProfile>,
+    /// Reserved heuristic-hint slot — `None` in #5 (REQ-4); populated on a
+    /// timeout cert from `profile::suggested_move` (#11; the profile-derived
+    /// proof-repair hint).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_move: Option<SuggestedMove>,
 }
@@ -279,7 +302,47 @@ impl Certificate {
             reject: None,
             obligations,
             cached: false,
+            solver_profile: None,
             suggested_move: None,
+        }
+    }
+
+    /// Build a TIMEOUT certificate for a verus run that exhausted its resource
+    /// budget (`.design/forge/solver-profiles.md` REQ-6/REQ-7). DISTINCT from a
+    /// counterexample-L0: a timeout records `Level::L0` with a structured
+    /// `RejectReason { cause: "VerusTimeout" }` (NOT a `postcondition not
+    /// satisfied` witness), carries the parsed `SolverProfile`, and populates
+    /// `suggested_move` with the profile-derived proof-repair hint. v0.1 has no
+    /// automatic degrade (#10), so the level is the un-discharged `L0` with the
+    /// timeout reason — a timeout is reported, never silently treated as success
+    /// (R-CODE-4). The profile + `suggested_move` are oracle-EXCLUDED (§5.3).
+    pub fn timeout(
+        item: impl Into<String>,
+        effects: Vec<String>,
+        solver_time_ms: u64,
+        profile: SolverProfile,
+        suggested_move: Option<SuggestedMove>,
+        detail: String,
+    ) -> Self {
+        let reason = RejectReason {
+            cause: "VerusTimeout".to_string(),
+            detail,
+        };
+        let obligation =
+            ObligationResult::failed(reason.cause.clone(), None, Some(reason.detail.clone()));
+        Certificate {
+            item: item.into(),
+            level: Level::L0,
+            solver_time_ms,
+            contract_quality: ContractQuality::forward_declared(),
+            effects,
+            slag: false,
+            slag_meta: None,
+            reject: Some(reason),
+            obligations: vec![obligation],
+            cached: false,
+            solver_profile: Some(profile),
+            suggested_move,
         }
     }
 
@@ -329,6 +392,7 @@ impl Certificate {
                 "contract enforced at L1 (slag); proof exempt by fiat",
             )],
             cached: false,
+            solver_profile: None,
             suggested_move: None,
         }
         .graduate_triage_clean()
@@ -359,6 +423,7 @@ impl Certificate {
             reject: Some(reason),
             obligations: vec![obligation],
             cached: false,
+            solver_profile: None,
             suggested_move: None,
         }
     }

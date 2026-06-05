@@ -47,6 +47,14 @@
 //! |---|---|---|
 //! | proof-cache REQ-3 (lookup-then-store, per item) | SHIPPED | `check_file`'s L3 path computes `cache::cache_key(&lowered, seed, &verus_version, &thermite_version)` and `cache::load`s BEFORE `run_verus`: a HIT returns the stored cert via `Certificate::with_cached(true)` (verus SKIPPED); a MISS runs verus, assembles + `graduate_triage_clean`s the cert, `cache::store`s it, and returns `with_cached(false)`. |
 //! | proof-cache REQ-5 (version-keyed) | SHIPPED | `resolve_verus_version` captures the verus version ONCE per `check_file` (the `VERUS_VERSION` pin, else `verus --version`) and `THERMITE_VERSION = env!("CARGO_PKG_VERSION")` feeds the key — a version change forces a universal MISS. |
+//!
+//! ## #11 gate (solver profiles as proof-repair prompts, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | solver-profiles REQ-2 (capture on rlimit-hit) | SHIPPED | `invoke_verus` ALWAYS passes `--profile` + `--rlimit <rlimit>` (the pinned generous `DEFAULT_RLIMIT = 30.0`, so the corpus still PROVES L3); `--profile` emits the Z3 instantiation report on STDERR ONLY on an rlimit-hit. |
+//! | solver-profiles REQ-5 (three-way classification) | SHIPPED | `classify_verus_outcome` is the deterministic three-way split: `Proved` (`success && errors==0` → L3, no profile) / `Timeout` (an error WITH a `profile::parse_profile` report present on stderr → attach the `SolverProfile`) / `Counterexample` (an error WITHOUT a profile → the #5 witness path, which ALSO absorbs the incompleteness-unknown FAST-`unknown` edge — OQ-1). Consumer: `assemble_certificate`. |
+//! | solver-profiles REQ-7 (timeout cert level, distinct) | SHIPPED | the `Timeout` outcome → `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the profile + a `profile::suggested_move` hint), DISTINCT from a counterexample-L0 (no profile, a `postcondition not satisfied` reason). v0.1 does not auto-degrade (#10). `--rlimit` is exposed via `cli.rs`; `check_file_with_rlimit` threads it; a non-default budget bypasses the proof cache (a timeout is never cached as proved). |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -57,6 +65,7 @@ use thermite_syntax::{Item, Program};
 use crate::cache;
 use crate::cli::ForgeError;
 use crate::manifest::{effects_of, Certificate, Level, ObligationResult, RejectReason};
+use crate::profile::{self, SolverProfile};
 
 /// The `forge` toolchain version (`.design/forge/proof-cache.md` REQ-1c/REQ-5):
 /// a verdict-determining cache-key input. Sourced deterministically from the
@@ -68,6 +77,16 @@ const THERMITE_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// toolchain version), not in wall-clock state.
 pub const DEFAULT_SOLVER_SEED: u64 = 0;
 
+/// The pinned default verus `--rlimit` (SMT resource budget, roughly seconds) for
+/// the L3 path (#11; `.design/forge/solver-profiles.md` REQ-5). DETERMINISTIC
+/// (R-CODE-5 — a fixed input, not wall-clock) and GENEROUS: comfortably above
+/// verus's own default of `10` so the conformance corpus (`sum`, `binary_search`)
+/// still PROVES at `L3` (the cert-oracle is unperturbed). A LOW `--rlimit` (the
+/// `forge check --rlimit 1` test lever) forces the timeout path so the three-way
+/// classification is exercisable. Always paired with `--profile` so an rlimit-hit
+/// emits the Z3 instantiation report on STDERR (the timeout discriminator).
+pub const DEFAULT_RLIMIT: f64 = 30.0;
+
 /// Run the full v0.1 `forge check` pipeline for every `fn` / `spec fn` item in
 /// `path`, returning one [`Certificate`] per item in source order (REQ-1).
 ///
@@ -76,6 +95,20 @@ pub const DEFAULT_SOLVER_SEED: u64 = 0;
 /// failure (level != L3, with per-obligation witnesses). Only an environment /
 /// internal failure (verus absent, unparseable output, IO) is an `Err`.
 pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
+    check_file_with_rlimit(path, DEFAULT_RLIMIT)
+}
+
+/// `check_file` with an explicit verus `--rlimit` (#11;
+/// `.design/forge/solver-profiles.md` REQ-5). [`check_file`] delegates here with
+/// the pinned generous [`DEFAULT_RLIMIT`]; `cli::run_check` passes the
+/// `--rlimit <FLOAT>` flag value so a LOW budget forces the timeout path
+/// (TIMEOUT cert with a `SolverProfile`), exercising the three-way
+/// classification ([`classify_verus_outcome`]). The corpus PROVES at the default
+/// rlimit, so the cert-oracle is unperturbed.
+pub fn check_file_with_rlimit(
+    path: impl AsRef<Path>,
+    rlimit: f64,
+) -> Result<Vec<Certificate>, ForgeError> {
     let path = path.as_ref();
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
         path: path.display().to_string(),
@@ -166,34 +199,58 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
         // source is the item's content-address — the EXACT bytes verus checks
         // (§5.3 isolated sub-program). The key composes it with the four
         // verdict-determining inputs. Consult the cache BEFORE spawning verus.
+        //
+        // #11: the cache is keyed at the CANONICAL [`DEFAULT_RLIMIT`] budget only.
+        // A NON-default `--rlimit` (the timeout-forcing / exploratory lever) is a
+        // budget-dependent verdict (a TIMEOUT at `--rlimit 1` is NOT the cached
+        // `L3` proved at the generous default), so it BYPASSES the cache entirely
+        // — neither served from nor written to it. This keeps the cache key
+        // (`cache::cache_key`, four inputs) unchanged while staying sound (a
+        // timeout verdict is never cached as if proved).
+        let use_cache = rlimit == DEFAULT_RLIMIT;
         let key = cache::cache_key(&lowered, seed, &verus_version, THERMITE_VERSION);
-        if let Some(stored) = cache::load(&cache_dir, &key) {
-            // HIT: skip verus entirely (REQ-3, AC-1 — the decisive solver-skip).
-            // The stored cert is the canonical fresh verify; mark it served from
-            // cache (`cached: true`) — provenance only, oracle fields unchanged
-            // (REQ-2: a hit is oracle-equal to a fresh verify).
-            certs.push(stored.with_cached(true));
-            continue;
+        if use_cache {
+            if let Some(stored) = cache::load(&cache_dir, &key) {
+                // HIT: skip verus entirely (REQ-3, AC-1 — the decisive solver-skip).
+                // The stored cert is the canonical fresh verify; mark it served from
+                // cache (`cached: true`) — provenance only, oracle fields unchanged
+                // (REQ-2: a hit is oracle-equal to a fresh verify).
+                certs.push(stored.with_cached(true));
+                continue;
+            }
         }
 
-        // MISS: the solver runs (REQ-3). Assemble the cert exactly as the
-        // non-cached path always has.
-        let verus = run_verus(&sub, &lowered, seed)?;
+        // MISS (or a non-default rlimit bypassing the cache): the solver runs
+        // (REQ-3). Assemble the cert exactly as the non-cached path always has.
+        let verus = run_verus(&sub, &lowered, seed, rlimit)?;
         let cert = assemble_certificate(item, &verus);
         // A non-slag `fn` that reached the L3 path passed triage — graduate the
         // §7.1 `contract_quality` bools to asserted live-`false` (REQ-6 / AC-7). A
         // `spec fn` carries no contract, so triage does not apply and the bools
-        // stay forward-declared.
-        let cert = if matches!(item, Item::Fn(_)) {
+        // stay forward-declared. A TIMEOUT cert (`VerusTimeout`) is NOT graduated:
+        // its triage bools stay forward-declared (nothing about the contract's
+        // syntactic quality was newly confirmed by a budget exhaustion).
+        let cert = if matches!(item, Item::Fn(_)) && cert.reject.is_none() {
             cert.graduate_triage_clean()
         } else {
             cert
         };
+        // #11: a TIMEOUT cert (budget-dependent, `VerusTimeout`) is NEVER cached —
+        // it is not a settled verdict (a larger budget might prove it). Only a
+        // settled cert (proved / counterexample) at the default budget is stored.
+        if cert.reject.as_ref().map(|r| r.cause.as_str()) == Some("VerusTimeout") {
+            certs.push(cert.with_cached(false));
+            continue;
+        }
         // Store the fresh verify under its content address for next time (REQ-3).
         // The cache is best-effort: a write failure must NOT fail the verdict
         // (which already stands) — degrade to "uncached," never to an error
-        // (REQ-6, R-CODE-2). `store` persists the canonical `cached: false`.
-        let _ = cache::store(&cache_dir, &key, &cert);
+        // (REQ-6, R-CODE-2). `store` persists the canonical `cached: false`. Only
+        // at the canonical [`DEFAULT_RLIMIT`] (#11): a non-default budget's verdict
+        // is not cached (it bypassed the lookup too).
+        if use_cache {
+            let _ = cache::store(&cache_dir, &key, &cert);
+        }
         certs.push(cert.with_cached(false));
     }
     Ok(certs)
@@ -446,13 +503,35 @@ fn resolve_cache_dir() -> PathBuf {
     cache::default_cache_dir()
 }
 
-/// The parsed result of one verus run: the machine-readable summary (drives
-/// level, REQ-5) plus the per-obligation results (REQ-4).
+/// The parsed result of one verus run: the deterministically-classified outcome
+/// (#11 three-way, REQ-5) plus the wall-clock solver time (REQ-6, oracle-excluded).
 #[derive(Debug, Clone)]
 struct VerusResult {
-    level: Level,
+    outcome: VerusOutcome,
     solver_time_ms: u64,
-    obligations: Vec<ObligationResult>,
+}
+
+/// The THREE-WAY classification of one verus run (#11;
+/// `.design/forge/solver-profiles.md` REQ-5). DETERMINISTIC; the profile CONTENT
+/// it attaches on a timeout is not (§5.3).
+#[derive(Debug, Clone)]
+enum VerusOutcome {
+    /// (a) PROVED: `success == true && errors == 0` → `Level::L3`, one discharged
+    /// summary obligation, NO profile.
+    Proved { verified: u64 },
+    /// (c) TIMEOUT / rlimit-exceeded: an error run WHOSE STDERR carries a
+    /// `--profile` Z3 instantiation report (the timeout discriminator — `--profile`
+    /// reports ONLY on an rlimit-hit). Carries the parsed `SolverProfile`.
+    Timeout {
+        profile: SolverProfile,
+        detail: String,
+    },
+    /// (b) COUNTEREXAMPLE / the failure path: an error run WITHOUT a profile (the
+    /// existing #5 witness path, e.g. `postcondition not satisfied`). This bucket
+    /// ALSO absorbs the incompleteness-unknown edge (an `unknown` returned FAST
+    /// without exhausting the rlimit → no profile → treated as the failure path,
+    /// OQ-1), so a timeout is never silently reported as success (R-CODE-4).
+    Counterexample { obligations: Vec<ObligationResult> },
 }
 
 /// The `verification-results` summary verus emits under `--output-json`
@@ -499,7 +578,12 @@ fn crate_stem(path: &Path) -> String {
 /// and clean up the temp file. Verus absent on spawn → `ForgeError::VerusAbsent`
 /// (REQ-6); a non-zero exit with parseable failure → a reported failure cert;
 /// unparseable output → `ForgeError::VerusOutput` (REQ-3).
-fn run_verus(program: &Program, lowered: &str, seed: u64) -> Result<VerusResult, ForgeError> {
+fn run_verus(
+    program: &Program,
+    lowered: &str,
+    seed: u64,
+    rlimit: f64,
+) -> Result<VerusResult, ForgeError> {
     // Name the temp file after the first item (deterministic) so concurrent
     // runs over different files do not collide; fall back to a fixed stem.
     let label = program.items.first().map(|i| i.name()).unwrap_or("forge");
@@ -510,7 +594,7 @@ fn run_verus(program: &Program, lowered: &str, seed: u64) -> Result<VerusResult,
         source: e,
     })?;
 
-    let result = invoke_verus(&tmp, seed);
+    let result = invoke_verus(&tmp, seed, rlimit);
 
     // Best-effort cleanup; never mask the real result on a cleanup failure.
     let _ = std::fs::remove_file(&tmp);
@@ -520,10 +604,19 @@ fn run_verus(program: &Program, lowered: &str, seed: u64) -> Result<VerusResult,
 
 /// Spawn verus and parse its output. Split from `run_verus` so the temp file is
 /// always cleaned up regardless of outcome.
-fn invoke_verus(tmp: &Path, seed: u64) -> Result<VerusResult, ForgeError> {
+///
+/// #11: ALWAYS passes `--profile` + the pinned `--rlimit <rlimit>`. `--profile`
+/// emits the Z3 instantiation report on STDERR ONLY when the rlimit is exceeded
+/// (the timeout discriminator); a clean proof / a fast counterexample emits no
+/// report, so its PRESENCE is the timeout signal that
+/// [`classify_verus_outcome`] keys on.
+fn invoke_verus(tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusResult, ForgeError> {
     let started = Instant::now();
     let output = Command::new("verus")
         .arg("--output-json")
+        .arg("--profile")
+        .arg("--rlimit")
+        .arg(format!("{rlimit}"))
         .arg("--smt-option")
         .arg(format!("smt.random_seed={seed}"))
         .arg(tmp)
@@ -544,7 +637,11 @@ fn invoke_verus(tmp: &Path, seed: u64) -> Result<VerusResult, ForgeError> {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let exit_code = output.status.code();
 
-    parse_verus_output(&stdout, &stderr, exit_code, solver_time_ms)
+    let outcome = classify_verus_outcome(&stdout, &stderr, exit_code)?;
+    Ok(VerusResult {
+        outcome,
+        solver_time_ms,
+    })
 }
 
 /// Build a unique temp path with the given valid stem and a `.rs` extension.
@@ -562,16 +659,30 @@ fn unique_temp_path(stem: &str) -> PathBuf {
     std::env::temp_dir().join(format!("forge_{stem}_{pid}_{n}.rs"))
 }
 
-/// Parse verus's `--output-json` stdout + stderr into a [`VerusResult`] (REQ-4,
-/// REQ-5, REQ-3). The JSON `verification-results` object drives the level; the
-/// stderr `error:` / `--> file:line:col` pairs become per-obligation failure
-/// witnesses.
-fn parse_verus_output(
+/// Classify one verus run THREE ways DETERMINISTICALLY (#11;
+/// `.design/forge/solver-profiles.md` REQ-5). The JSON `verification-results`
+/// summary on stdout cannot tell a timeout from a counterexample (both report
+/// `success: false, errors: 1` — OQ-1), so the discriminator is the PRESENCE of
+/// a `--profile` Z3 instantiation report on STDERR (verus emits it ONLY on an
+/// rlimit-hit):
+///
+/// - (a) PROVED (`success && errors == 0`) → [`VerusOutcome::Proved`] → `Level::L3`.
+/// - (c) error WITH a profile report present → [`VerusOutcome::Timeout`]: parse
+///   the `SolverProfile`, attach it (the cert is `Level::L0` + `VerusTimeout`).
+/// - (b) error WITHOUT a profile → [`VerusOutcome::Counterexample`] (the existing
+///   #5 witness path). This ALSO absorbs the documented incompleteness-unknown
+///   edge (an `unknown` returned FAST without exhausting the rlimit → no profile →
+///   the failure path), so a timeout is never silently reported as success
+///   (R-CODE-4 — degrade/report, do not treat as success).
+///
+/// The classification is DETERMINISTIC; the profile CONTENT (instantiation
+/// counts) is not (§5.3). A VIR / internal error and unparseable output stay
+/// environment errors (`ForgeError::VerusOutput`), never a verification verdict.
+fn classify_verus_outcome(
     stdout: &str,
     stderr: &str,
     exit_code: Option<i32>,
-    solver_time_ms: u64,
-) -> Result<VerusResult, ForgeError> {
+) -> Result<VerusOutcome, ForgeError> {
     let summary = parse_summary(stdout).ok_or_else(|| ForgeError::VerusOutput {
         detail: format!(
             "could not parse verus `verification-results` from --output-json output \
@@ -592,58 +703,46 @@ fn parse_verus_output(
         });
     }
 
-    let level = level_from_summary(&summary);
+    // (a) PROVED.
+    if summary.success && summary.errors == 0 {
+        return Ok(VerusOutcome::Proved {
+            verified: summary.verified,
+        });
+    }
 
-    let obligations = if summary.errors == 0 && summary.success {
-        // All discharged: one summary-level discharged obligation recording the
-        // verified count (the §5.1 per-obligation list is non-empty for a pass).
-        vec![ObligationResult::discharged(format!(
-            "{} obligations discharged",
-            summary.verified
-        ))]
+    // (c) TIMEOUT: an error run whose stderr carries a `--profile` instantiation
+    // report. `--profile` reports ONLY on an rlimit-hit, so the report's PRESENCE
+    // is the timeout discriminator (REQ-5 / the doc's Architecture).
+    if let Some(profile) = profile::parse_profile(stderr) {
+        let detail = format!(
+            "verus exhausted its SMT resource budget (rlimit) before proving this item; \
+             {} total quantifier instantiations observed (see solver_profile / suggested_move)",
+            profile.total_instantiations
+        );
+        return Ok(VerusOutcome::Timeout { profile, detail });
+    }
+
+    // (b) COUNTEREXAMPLE / the failure path (no profile report). Parse stderr for
+    // the per-obligation witnesses (the existing #5 path). If verus reported
+    // errors but no structured witness is extractable, surface a single failure
+    // carrying the raw stderr head (still a reported cert, never swallowed).
+    let failures = parse_stderr_failures(stderr);
+    let obligations = if failures.is_empty() {
+        vec![ObligationResult::failed(
+            "verus reported obligation failure",
+            None,
+            Some(first_lines(stderr, 12)),
+        )]
     } else {
-        // Reported failure: parse stderr for the per-obligation witnesses. If
-        // verus reported errors but we extract no structured witness, that is a
-        // non-zero-exit-with-unparseable-detail case — surface a single failure
-        // result carrying the raw stderr head (still a reported cert, never a
-        // bare boolean and never swallowed).
-        let failures = parse_stderr_failures(stderr);
-        if failures.is_empty() {
-            vec![ObligationResult::failed(
-                "verus reported obligation failure",
-                None,
-                Some(first_lines(stderr, 12)),
-            )]
-        } else {
-            failures
-        }
+        failures
     };
-
-    Ok(VerusResult {
-        level,
-        solver_time_ms,
-        obligations,
-    })
+    Ok(VerusOutcome::Counterexample { obligations })
 }
 
 /// Take the first `n` non-empty lines of a diagnostic blob (bounded — never
 /// echo unbounded solver output).
 fn first_lines(text: &str, n: usize) -> String {
     text.lines().take(n).collect::<Vec<_>>().join("\n")
-}
-
-/// `Level::L3` iff verus discharged every obligation (REQ-5): `success == true`
-/// and `errors == 0`. Otherwise the run is a reported non-L3 failure. The full
-/// L3→L2→L1 degrade ladder is issue #10; v0.1's level logic is binary.
-fn level_from_summary(summary: &VerusSummary) -> Level {
-    if summary.success && summary.errors == 0 {
-        Level::L3
-    } else {
-        // v0.1: a non-clean proof is reported, not auto-degraded. The certificate
-        // carries the failing obligations; the level is the un-discharged L0
-        // (no proof obligation discharged for all inputs).
-        Level::L0
-    }
 }
 
 /// Parse the `verification-results` object out of verus's `--output-json`
@@ -724,23 +823,56 @@ fn parse_span(line: &str) -> Option<String> {
 
 /// Assemble one item's [`Certificate`] from THAT item's own verus result (REQ-1
 /// final stage; §5.3 per-item). `verus` is the result of verifying `item`'s
-/// isolated sub-program (`item_subprogram`), so its `level`/`obligations` reflect
-/// only this item — never a sibling's. `item` is the item name; `effects` is the
-/// item's `fx` row (`spec fn`s are pure — they carry no `fx`); `slag` is `false`
-/// in #5.
+/// isolated sub-program (`item_subprogram`), so its outcome reflects only this
+/// item — never a sibling's. `item` is the item name; `effects` is the item's
+/// `fx` row (`spec fn`s are pure — they carry no `fx`).
+///
+/// #11 — the THREE-WAY outcome maps to three certificate shapes:
+/// - [`VerusOutcome::Proved`] → `Level::L3`, one discharged summary obligation,
+///   NO profile.
+/// - [`VerusOutcome::Timeout`] → `Certificate::timeout` (`Level::L0` +
+///   `RejectReason { cause: "VerusTimeout" }` + the `SolverProfile` + the
+///   profile-derived `suggested_move`), DISTINCT from a counterexample.
+/// - [`VerusOutcome::Counterexample`] → `Level::L0` with the per-obligation
+///   witnesses (the existing #5 path), NO profile.
 fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
     let effects = match item {
         Item::Fn(f) => effects_of(&f.contract.fx),
         // `spec fn`s have no `fx` row (§4.2) — they are pure by construction.
         Item::SpecFn(_) => vec!["pure".to_string()],
     };
-    Certificate::new(
-        item.name(),
-        verus.level,
-        effects,
-        verus.solver_time_ms,
-        verus.obligations.clone(),
-    )
+    match &verus.outcome {
+        VerusOutcome::Proved { verified } => Certificate::new(
+            item.name(),
+            Level::L3,
+            effects,
+            verus.solver_time_ms,
+            vec![ObligationResult::discharged(format!(
+                "{verified} obligations discharged"
+            ))],
+        ),
+        VerusOutcome::Timeout { profile, detail } => {
+            // The profile-derived proof-repair hint populates the reserved
+            // `suggested_move` slot (#11 REQ-4); the structured profile lands in
+            // the additive `solver_profile` field. Both oracle-excluded (§5.3).
+            let suggested = profile::suggested_move(profile);
+            Certificate::timeout(
+                item.name(),
+                effects,
+                verus.solver_time_ms,
+                profile.clone(),
+                suggested,
+                detail.clone(),
+            )
+        }
+        VerusOutcome::Counterexample { obligations } => Certificate::new(
+            item.name(),
+            Level::L0,
+            effects,
+            verus.solver_time_ms,
+            obligations.clone(),
+        ),
+    }
 }
 
 #[cfg(test)]
@@ -779,10 +911,11 @@ mod tests {
             "errors": 0
           }
         }"#;
-        let r = parse_verus_output(stdout, "", Some(0), 7).expect("parse");
-        assert_eq!(r.level, Level::L3);
-        assert_eq!(r.obligations.len(), 1);
-        assert_eq!(r.obligations[0].status, ObligationStatus::Discharged);
+        let outcome = classify_verus_outcome(stdout, "", Some(0));
+        assert!(
+            matches!(outcome, Ok(VerusOutcome::Proved { verified: 5 })),
+            "a success summary classifies as Proved (L3): {outcome:?}"
+        );
     }
 
     // AC-6 + REQ-4: a parseable FAILURE summary + stderr witness → a reported
@@ -801,10 +934,18 @@ mod tests {
           }
         }"#;
         let stderr = "error: postcondition not satisfied\n --> /tmp/broken_check.rs:5:13\n  |\nerror: aborting due to 1 previous error\n";
-        let r = parse_verus_output(stdout, stderr, Some(1), 3).expect("parse");
-        assert_eq!(r.level, Level::L0);
-        let failed: Vec<_> = r
-            .obligations
+        // #11: a failure summary with NO profile report on stderr classifies as a
+        // COUNTEREXAMPLE (the failure path), NOT a timeout (AC-3, AC-4).
+        let outcome = classify_verus_outcome(stdout, stderr, Some(1));
+        assert!(
+            matches!(outcome, Ok(VerusOutcome::Counterexample { .. })),
+            "a no-profile failure must classify as Counterexample: {outcome:?}"
+        );
+        let obligations = match outcome {
+            Ok(VerusOutcome::Counterexample { obligations }) => obligations,
+            _ => Vec::new(),
+        };
+        let failed: Vec<_> = obligations
             .iter()
             .filter(|o| o.status == ObligationStatus::Failed)
             .collect();
@@ -825,7 +966,7 @@ mod tests {
     // (never swallowed, never treated as success).
     #[test]
     fn unparseable_output_is_verus_output_error() {
-        let r = parse_verus_output("not json at all", "boom", Some(101), 1);
+        let r = classify_verus_outcome("not json at all", "boom", Some(101));
         assert!(matches!(r, Err(ForgeError::VerusOutput { .. })));
     }
 
@@ -842,8 +983,49 @@ mod tests {
             "errors": 0
           }
         }"#;
-        let r = parse_verus_output(stdout, "internal error", Some(1), 1);
+        let r = classify_verus_outcome(stdout, "internal error", Some(1));
         assert!(matches!(r, Err(ForgeError::VerusOutput { .. })));
+    }
+
+    // #11 / AC-3 / AC-4: a failure summary WHOSE STDERR carries a `--profile` Z3
+    // instantiation report classifies as a TIMEOUT (not a counterexample) and the
+    // parsed `SolverProfile` is attached. The profile blob is the captured real
+    // verus report (R-CHAR-3 — verus's format, not forge's). The classification
+    // is the deterministic crux; the profile content is oracle-excluded.
+    #[test]
+    fn failure_with_profile_report_classifies_as_timeout() {
+        let stdout = r#"{
+          "verification-results": {
+            "encountered-error": true,
+            "encountered-vir-error": false,
+            "success": false,
+            "verified": 0,
+            "errors": 1
+          }
+        }"#;
+        // The error: line is present (verus's JSON cannot tell timeout from
+        // counterexample, OQ-1); the PROFILE REPORT on stderr is the discriminator.
+        let stderr = "\
+error: postcondition not satisfied
+ --> /tmp/x_check.rs:9:9
+note: Observed 14 total instantiations of user-level quantifiers
+note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost 15) top 1 of 2 user-level quantifiers.
+
+  --> /tmp/x_check.rs:13:51
+   |
+13 |         forall|x: int, y: int, z: int| #[trigger] e(x, y) && #[trigger] e(y, z) ==> e(x, z),
+   |         ------------------------------------------^^^^^^^---------------^^^^^^^------------ Triggers selected for this quantifier
+";
+        let outcome = classify_verus_outcome(stdout, stderr, Some(1));
+        assert!(
+            matches!(outcome, Ok(VerusOutcome::Timeout { .. })),
+            "a profile report present on stderr is the timeout signal: {outcome:?}"
+        );
+        if let Ok(VerusOutcome::Timeout { profile, .. }) = outcome {
+            // Hand-derived from the blob (R-CHAR-3): 14 total, top quantifier 10.
+            assert_eq!(profile.total_instantiations, 14);
+            assert_eq!(profile.quantifiers[0].instantiations, 10);
+        }
     }
 
     // #8 proof-cache AC-3 (LOCALITY) + AC-4 (DETERMINISM), exercised over the

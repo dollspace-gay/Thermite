@@ -303,21 +303,22 @@ should be the CAPTURED stderr blob, not a live run.
 
 ## REQ status
 
-All REQs are NOT-STARTED: `forge/src/profile.rs` does not exist, and `check.rs`'s
-`run_verus` does not yet distinguish a timeout from a counterexample (it is the
-#5 two-way `level_from_summary` path). Blocked on issue **#11** (the feature
-itself; milestone #2 v0.2 Ladder). This doc is forward-looking — the per-component
-contract the #11 builder implements against.
+All REQs SHIPPED in issue **#11** (milestone #2 v0.2 Ladder): `forge/src/profile.rs`
+exists, and `check.rs`'s `classify_verus_outcome` distinguishes a timeout from a
+counterexample from a success three ways. The DETERMINISTIC classification is
+pinned hermetically (unit test on the captured profiler blob); the LIVE
+forced-timeout is best-effort (OQ-1 — provoking a real resourceout is
+timing-fragile, documented below).
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (`SolverProfile` schema) | NOT-STARTED | blocker #11. `forge/src/profile.rs` does not exist; no `SolverProfile` type. The profiler report it models is grounded (captured `note: Observed N total instantiations …` + `Cost * Instantiations` blocks). |
-| REQ-2 (profile capture on rlimit-hit) | NOT-STARTED | blocker #11. No capture path; `invoke_verus` in `check.rs` runs `--output-json` only (no `--profile`/`--profile-all`). |
-| REQ-3 (parse the Z3 report) | NOT-STARTED | blocker #11. No `parse_profile`. The grounded format is documented (Architecture) for the implementation to anchor to. |
-| REQ-4 (render proof-repair prompts) | NOT-STARTED | blocker #11. No renderer; `manifest.rs` `SuggestedMove` exists but is documented as "reserved (currently un-constructed in production)" — never populated. |
-| REQ-5 (three-way classification in `run_verus`) | NOT-STARTED | blocker #11. `level_from_summary` in `check.rs` is two-way (`L3` vs `L0`); `parse_verus_output` treats every non-clean run as a reported failure regardless of timeout vs counterexample; `VerusSummary` carries no reason-unknown field. |
-| REQ-6 (additive cert slot, oracle-excluded) | NOT-STARTED | blocker #11. The slot does not exist; `Certificate.suggested_move` is reserved `None` and `Certificate::oracle_subset` returns only `(item, level, effects, slag)` — a profile field would be additive + excluded, but is unbuilt. |
-| REQ-7 (timeout cert level, distinct) | NOT-STARTED | blocker #11. A timeout currently lands in the same `Level::L0` bucket as a counterexample (`level_from_summary`), with no timeout-vs-counterexample reason distinction in the cert. |
+| REQ-1 (`SolverProfile` schema) | SHIPPED | `pub struct SolverProfile { total_instantiations, quantifiers: Vec<QuantifierProfile { trigger, instantiations, pct_of_total, cost, cost_x_instantiations, span }> }` in `profile.rs`. Consumer: `check::classify_verus_outcome` attaches it on a timeout. Oracle-EXCLUDED (absent from `manifest::Certificate::oracle_subset`). |
+| REQ-2 (profile capture on rlimit-hit) | SHIPPED | `check::invoke_verus` always passes `--profile` + the pinned `--rlimit`; the report lands on STDERR and is parsed inline (single run, OQ-3 cheapest path). |
+| REQ-3 (parse the Z3 report) | SHIPPED | `pub fn parse_profile(stderr) -> Option<SolverProfile>` in `profile.rs` parses the `Observed N total instantiations` line + each `Cost * Instantiations:` block + its `--> file:line:col` span + the selected-trigger source line (carets reconstructed); tolerant (`None` when no report). Consumer: `check::classify_verus_outcome`. |
+| REQ-4 (render proof-repair prompts) | SHIPPED | `pub fn render_prompts(&SolverProfile) -> Vec<SuggestedMove>` + `pub fn suggested_move(&SolverProfile) -> Option<SuggestedMove>` name the top quantifier's trigger + share with a trigger-loop hint when one dominates (`DOMINANCE_PCT`). Consumer: `check::assemble_certificate` populates `Certificate.suggested_move` on a timeout. |
+| REQ-5 (three-way classification in `run_verus`) | SHIPPED | `check::classify_verus_outcome` → `enum VerusOutcome { Proved / Timeout / Counterexample }`: a profiler report PRESENT on stderr (verus emits it ONLY on an rlimit-hit) is the timeout discriminator; an error WITHOUT a profile is the counterexample/failure path (which absorbs the incompleteness-unknown FAST-`unknown` edge — OQ-1). Deterministic; profile content oracle-excluded. |
+| REQ-6 (additive cert slot, oracle-excluded) | SHIPPED | `Certificate.solver_profile: Option<SolverProfile>` (additive, `#[serde(default, skip_serializing_if)]` — the frozen golden `sum.cert.json` still deserializes) AND the reserved `suggested_move` populated from `render_prompts`; both absent from `oracle_subset`. Consumer: `check::assemble_certificate`. |
+| REQ-7 (timeout cert level, distinct) | SHIPPED | `Certificate::timeout` → `Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the profile + the `suggested_move` hint, DISTINCT from a counterexample-L0 (no profile, a `postcondition not satisfied`-shaped reason). No auto-degrade (#10). Consumer: `check::assemble_certificate`. |
 
 ## Open questions
 
@@ -340,6 +341,25 @@ contract the #11 builder implements against.
   classification may need a conservative default (treat an ambiguous `unknown` as
   a timeout — degrade-don't-block, §5.2 — rather than misreport a counterexample).
   This is the REQ I am least confident is cleanly mechanizable.
+
+  **#11 RESOLUTION (implemented).** `check::classify_verus_outcome` uses
+  candidate mechanism (b): the PRESENCE of a `--profile` instantiation report on
+  STDERR is the timeout signal (verus emits it ONLY on an rlimit-hit). An error
+  run WITHOUT a profile is the COUNTEREXAMPLE/failure bucket, which CONSERVATIVELY
+  ALSO absorbs the incompleteness-unknown FAST-`unknown` edge — so a timeout is
+  never misreported as success (R-CODE-4 degrade-don't-block), at the cost that a
+  fast-unknown that is "really" a budget problem is reported as a failure rather
+  than a timeout. The empirical fragility is confirmed: running the real binary,
+  `--rlimit 1` on the corpus + synthetic nonlinear / trigger-loop goals returns
+  `unknown` FAST without exhausting the budget, so `--profile` does not emit a
+  report — the LIVE forced-timeout test (`forge/tests/profile_conformance.rs`) is
+  therefore BEST-EFFORT (skip-loud when no report is provoked). The DETERMINISTIC
+  classification itself is pinned hermetically by `check.rs`'s
+  `failure_with_profile_report_classifies_as_timeout` unit test driving
+  `classify_verus_outcome` on the captured profiler blob, independent of
+  provoking a live resourceout. A future hardening (parse Z3's `:reason-unknown`
+  from a `--log-all` artifact, mechanism (a)) would make the live signal robust;
+  it is out of #11 scope.
 
 - **OQ-2 (cert slot: new additive field vs reuse `suggested_move`).** The scope
   permits either an additive `Certificate.solver_profile` field OR populating the

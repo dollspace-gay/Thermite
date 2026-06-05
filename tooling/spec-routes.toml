@@ -212,3 +212,10 @@ crate_pattern = "forge/src/kani.rs"
 design = ".design/lower/l2-kani.md"
 reference = []
 conformance_ops = []
+
+# v0.2 — solver profiles as proof-repair prompts (issue #11)
+[[route]]
+crate_pattern = "forge/src/profile.rs"
+design = ".design/forge/solver-profiles.md"
+reference = []
+conformance_ops = []

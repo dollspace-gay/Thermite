@@ -32,7 +32,7 @@ See [`thermite-design.md`](./thermite-design.md) for the full design (thesis, su
 
 ## Status
 
-**v0.1–v0.5 complete — the toolchain runs end-to-end.** A Thermite program goes from source to a verified, **runnable, contract-checked native binary**. Both corpus programs certify **L3 in real Verus** and **L2 in real Kani**; every soundness invariant has been adversarially verified by the ACToR critic loop.
+**v0.1–v0.5 complete — the toolchain runs end-to-end.** A Thermite program goes from source to a verified, **runnable, contract-checked native binary**. Both corpus programs certify **L3 in real Verus** and **L2 in real Kani**; every soundness invariant has been adversarially verified by the ACToR critic loop, and the toolchain's soundness-critical core is **itself Verus-verified** (`thermite-verified`).
 
 - ✅ **Frontend** (`thermite-syntax`) — lexer, recovering per-item parser, AST (literals keep verbatim text), stable semantic addressing
 - ✅ **SpecTherm** (`thermite-spec`) — the frozen bounded-combinator registry + the cage validator (no anonymous nested quantifiers; closure bodies are flat predicates)
@@ -41,6 +41,7 @@ See [`thermite-design.md`](./thermite-design.md) for the full design (thesis, su
 - ✅ **Anti-Goodhart battery** — structural vacuity triage, solver tautology/unsat-precondition checks, mutation scoring (kill-ratio floor), strengthening probes
 - ✅ **Boundaries** — crates.io FFI + `#[slag]` modules, L1-enforced and runtime-confined to their declared `fx`; the manifest distinguishes *verified-to-the-boundary* from *verified, period*; a caller verifies **through** a boundary's contract (composition)
 - ✅ **`THERMITE.skill.md`** — the whole language in ≤ 6,000 tokens, regenerated from the registry, CI-gated; concurrency-safe multi-agent sessions
+- ✅ **Self-verification** (`thermite-verified`) — the soundness-critical pure core is itself **Verus-verified** (`verus --no-cheating`, no `assume`/`external_body` on the core): effect subsumption, the degrade anti-cheat (a counterexample never degrades), the seccomp allowlist (pure → no I/O + monotonicity), the boundary honesty gate (a regular fn is never laundered to L3), project-level aggregation (no over-claim), and the mutation 0/0 floor. Each is anchored to its production consumer by exhaustive/observable equivalence. The toolchain shrinks its own TCB.
 - 🔭 Deferred (tracked, crosslink #21): direct MIR-level lowering (we transpile to Rust, which rustc takes to MIR) and the incremental goal-state REPL
 
 Roadmap (all shipped): v0.1 kernel → v0.2 Kani-backed L2 + degrade protocol → v0.3 mutation/vacuity battery → v0.4 crates.io FFI boundary → v0.5 background proof-repair + multi-agent sessions, plus `forge build` (runnable binaries) and the runtime seccomp sandbox. Progress is tracked in crosslink (milestones #1–#5 closed).

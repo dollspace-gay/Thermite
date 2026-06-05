@@ -23,6 +23,7 @@
 mod cache;
 mod check;
 mod cli;
+mod degrade;
 mod kani;
 mod manifest;
 mod mutation;

@@ -51,6 +51,15 @@
 //! | Field/symbol | Status | Evidence |
 //! |---|---|---|
 //! | `Certificate::rejected_vacuity` | SHIPPED | builds a `Level::L0` reject cert (like `Certificate::rejected`) that ALSO sets the SOLVER-confirmed `contract_quality.{tautology,vacuous_precondition}` bool the detection corresponds to (`.design/forge/solver-vacuity.md` REQ-6, OQ-1). NO schema change (R-SPEC-2) — it only makes the EXISTING Appendix A bools' `true` real (solver-confirmed) rather than #6's syntactic `false`. Produced by `vacuity_solver::solver_vacuity_check`, consumed by `check::check_file`. |
+//!
+//! ## #10 additive schema (the degrade ladder + assurance aggregate, this iteration)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `lowered_assurance: bool` (degrade flag) | SHIPPED | `Certificate.lowered_assurance` (additive, `#[serde(default)]` so the frozen golden `sum.cert.json` still deserializes — R-SPEC-2). `true` ONLY on a cert the #10 ladder produced by degrading a verus TIMEOUT to L2/L1; set by `Certificate::into_degraded`, produced by `degrade::run_ladder`, consumed by `check::ladder_for_timeout` + `cli::render_assurance`. VERDICT-relevant (it qualifies the level as "lowered, not proved") so NOT oracle-excluded; the corpus never degrades so the golden keeps the default `false`. |
+//! | `degrade_reason: Option<RejectReason>` | SHIPPED | `Certificate.degrade_reason` (additive, `#[serde(default, skip_serializing_if)]`). `Some` ONLY on a `lowered_assurance` cert — the `VerusTimeout` reason carried from the timed-out L3 attempt (REQ-4). Set by `Certificate::into_degraded`; DIAGNOSTIC, EXCLUDED from `oracle_subset`. |
+//! | `Level: Ord` (ladder ordering) | SHIPPED | `#[derive(PartialOrd, Ord)]` on `enum Level` makes the declaration order `L0 < L1 < L2 < L3` the `Ord` the aggregate's min-over-functions uses (`.design/forge/degrade-ladder.md` REQ-6). |
+//! | `AssuranceManifest` + `ProjectAssurance` (the aggregate) | SHIPPED | `AssuranceManifest::aggregate(&[Certificate])` computes the per-fn `FunctionAssurance` rows + the project headline `ProjectAssurance::{Certified(min), Failed}` (REQ-5/REQ-6); a non-certifying fn (`cert_certifies` false) caps the project at `Failed` (a non-rung, REQ-2). Render-time aggregate (OQ-4 (b)). Consumed by `cli::run_check`/`render_assurance`. |
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
@@ -59,7 +68,12 @@ use crate::profile::SolverProfile;
 
 /// The assurance level (`thermite-design.md` §6). Serializes to the string form
 /// `"L0".."L3"` to match the golden cert's `"level": "L3"` (REQ-1, REQ-7).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// The declaration order `L0 < L1 < L2 < L3` IS the ladder ordering
+/// (`.design/forge/degrade-ladder.md` REQ-6): `#[derive(PartialOrd, Ord)]` makes
+/// it the `Ord` the assurance-manifest aggregate uses for the min-over-functions
+/// project headline. The discriminant order is load-bearing — do not reorder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Level {
     /// L0 — unverified / `#[slag]` escape hatch (§6, §8).
     L0,
@@ -283,6 +297,30 @@ pub struct Certificate {
     /// proof-repair hint).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suggested_move: Option<SuggestedMove>,
+    /// Whether this certificate was achieved by an AUTOMATIC DEGRADE below L3
+    /// (issue #10 additive field; `.design/forge/degrade-ladder.md` REQ-4). `true`
+    /// on a cert the L3→L2→L1 ladder produced after a verus TIMEOUT degraded the
+    /// item to L2 (kani bounded check) or L1 (runtime checks); `false` on every
+    /// directly-achieved cert (an L3 proof, an EXPLICIT `--level l2`/`--level l1`
+    /// choice, a `#[slag]` L1-by-fiat, a reject). `#[serde(default)]` so the frozen
+    /// golden `conformance/sum.cert.json` (which omits it) still deserializes,
+    /// mirroring the `cached` additive precedent (R-SPEC-2). It is VERDICT-RELEVANT
+    /// (it qualifies the achieved level as "lowered, not proved") so it is NOT
+    /// oracle-excluded — but the corpus at the default budget never degrades, so the
+    /// golden cert keeps the default `false` (AC-1/AC-6).
+    #[serde(default)]
+    pub lowered_assurance: bool,
+    /// The structured reason this item was DEGRADED below L3 (issue #10 additive
+    /// field; `.design/forge/degrade-ladder.md` REQ-4). `Some` ONLY on a
+    /// `lowered_assurance` cert — the `VerusTimeout` reason ("here's where I got
+    /// lost") carried from the L3 attempt that timed out. `#[serde(default,
+    /// skip_serializing_if)]` so a non-degraded cert (the golden) deserializes
+    /// unchanged (R-SPEC-2). DIAGNOSTIC + non-deterministic in content (it carries
+    /// the same kind of material as the §5.3 `solver_profile`): EXCLUDED from
+    /// `oracle_subset` (a degraded cert is oracle-compared on its `level` +
+    /// `lowered_assurance` flag, not on the prose reason).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub degrade_reason: Option<RejectReason>,
 }
 
 impl Certificate {
@@ -310,6 +348,8 @@ impl Certificate {
             cached: false,
             solver_profile: None,
             suggested_move: None,
+            lowered_assurance: false,
+            degrade_reason: None,
         }
     }
 
@@ -349,6 +389,8 @@ impl Certificate {
             cached: false,
             solver_profile: Some(profile),
             suggested_move,
+            lowered_assurance: false,
+            degrade_reason: None,
         }
     }
 
@@ -400,6 +442,8 @@ impl Certificate {
             cached: false,
             solver_profile: None,
             suggested_move: None,
+            lowered_assurance: false,
+            degrade_reason: None,
         }
         .graduate_triage_clean()
     }
@@ -431,6 +475,8 @@ impl Certificate {
             cached: false,
             solver_profile: None,
             suggested_move: None,
+            lowered_assurance: false,
+            degrade_reason: None,
         }
     }
 
@@ -455,6 +501,21 @@ impl Certificate {
         cert.contract_quality.tautology = set_tautology;
         cert.contract_quality.vacuous_precondition = set_vacuous_precondition;
         cert
+    }
+
+    /// Stamp this certificate as an AUTOMATIC DEGRADE below L3 (issue #10;
+    /// `.design/forge/degrade-ladder.md` REQ-4). Called by the ladder
+    /// (`degrade::run_ladder`) on a cert achieved at L2 (kani) or L1 after a verus
+    /// L3 TIMEOUT: sets the `lowered_assurance` flag `true` and records the
+    /// `degrade_reason` (the `VerusTimeout` reason — "here's where I got lost").
+    /// ONLY the two degrade fields change — `level`, `effects`, `obligations`, and
+    /// the rest are the underlying rung's verdict, untouched. This is NEVER applied
+    /// to a hard-failed cert (a counterexample): the ladder short-circuits a
+    /// counterexample to a hard fail WITHOUT degrading (REQ-2 anti-cheat).
+    pub fn into_degraded(mut self, reason: RejectReason) -> Self {
+        self.lowered_assurance = true;
+        self.degrade_reason = Some(reason);
+        self
     }
 
     /// Graduate the mutation-scoring `contract_quality` fields on a CERTIFIED
@@ -515,6 +576,98 @@ impl Certificate {
     pub fn oracle_subset(&self) -> (&str, Level, &[String], bool) {
         (&self.item, self.level, &self.effects, self.slag)
     }
+}
+
+/// The project-level assurance headline an aggregate of the per-fn certificates
+/// resolves to (`.design/forge/degrade-ladder.md` REQ-6). DISTINCT from a per-fn
+/// `Level`: a single hard-failed (non-certifying) function makes the WHOLE project
+/// `Failed` — a rejected item is NOT a rung the min ranges over (REQ-2/REQ-6 — "a
+/// non-certifying item is not a rung"). When every function certifies, the
+/// headline is the min over their achieved levels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "level")]
+pub enum ProjectAssurance {
+    /// Every function certifies; the headline is the MIN over their levels (§5.2
+    /// "the whole-project assurance level is the min over functions"). The carried
+    /// `Level` is the weakest function's rung.
+    Certified(Level),
+    /// At least one function did NOT certify (a counterexample / reject /
+    /// un-discharged proof). The project does not certify at any rung — it is a
+    /// FAILURE, not a lowered level (REQ-2 anti-cheat: falsity never becomes a rung).
+    Failed,
+}
+
+/// The project-level assurance manifest: an AGGREGATE over the per-fn certificate
+/// collection `forge check` returns (`.design/forge/degrade-ladder.md` REQ-5,
+/// OQ-4 reading (b) — a render-time aggregate, NOT a separately-materialized
+/// schema object). It is computed from `&[Certificate]` and carries the
+/// project headline (the min-over-functions, REQ-6) plus the per-fn degrade view
+/// (each fn's name, achieved level, and whether it was a lowered-assurance
+/// degrade). Consumed by `cli::run_check` to display the project assurance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssuranceManifest {
+    /// The project headline: the min over functions when all certify, else
+    /// `Failed` (REQ-6).
+    pub project: ProjectAssurance,
+    /// The per-fn degrade view in cert order: `(item, level, lowered_assurance)`.
+    pub functions: Vec<FunctionAssurance>,
+}
+
+/// One function's row in the [`AssuranceManifest`] (REQ-5): its achieved level,
+/// whether it certifies, and whether it was an automatic degrade.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionAssurance {
+    /// The function name.
+    pub item: String,
+    /// The achieved assurance level.
+    pub level: Level,
+    /// `true` iff this item certifies (a certified rung with no `reject`).
+    pub certified: bool,
+    /// `true` iff this level was reached by an automatic degrade below L3 (#10).
+    pub lowered_assurance: bool,
+}
+
+impl AssuranceManifest {
+    /// Aggregate a per-fn certificate collection into the project-level manifest
+    /// (`.design/forge/degrade-ladder.md` REQ-5/REQ-6). The headline is the MIN
+    /// over functions (`Level`'s `Ord`, `L0 < L1 < L2 < L3`) when EVERY function
+    /// certifies; if ANY function does NOT certify (a counterexample / reject /
+    /// un-discharged proof — `cert_certifies` is `false`), the project is `Failed`
+    /// (REQ-2/REQ-6: a non-certifying item is a project FAILURE, never a lowered
+    /// rung). An empty collection certifies vacuously at the top rung (`L3`) — a
+    /// file with no `fn` items has nothing un-proved. DETERMINISTIC (REQ-7): a pure
+    /// function of the cert collection, no wall-clock / ordering nondeterminism.
+    pub fn aggregate(certs: &[Certificate]) -> Self {
+        let functions: Vec<FunctionAssurance> = certs
+            .iter()
+            .map(|c| FunctionAssurance {
+                item: c.item.clone(),
+                level: c.level,
+                certified: cert_certifies(c),
+                lowered_assurance: c.lowered_assurance,
+            })
+            .collect();
+        let project = if functions.iter().any(|f| !f.certified) {
+            // REQ-2/REQ-6: any non-certifying function caps the project at FAILURE,
+            // never a lowered level — falsity is not a rung.
+            ProjectAssurance::Failed
+        } else {
+            // Min over the certified functions' levels (REQ-6). Empty → vacuous L3.
+            let min = functions.iter().map(|f| f.level).min().unwrap_or(Level::L3);
+            ProjectAssurance::Certified(min)
+        };
+        AssuranceManifest { project, functions }
+    }
+}
+
+/// `true` iff a certificate represents a CERTIFIED item: no reject cause and a
+/// certified assurance rung (`L3` proved, `L2` bounded, or `L1` runtime/slag).
+/// `L0` (a triage / counterexample / timeout reject, or an un-discharged proof)
+/// is NOT certified. Shared by the assurance aggregate (REQ-6) and `cli`'s
+/// exit-code path (so the project headline and the exit code agree on what
+/// "certifies").
+pub fn cert_certifies(cert: &Certificate) -> bool {
+    cert.reject.is_none() && matches!(cert.level, Level::L3 | Level::L2 | Level::L1)
 }
 
 /// Map a parsed `EffectRow` to the certificate's `effects` string vector
@@ -860,6 +1013,163 @@ mod tests {
             detail.contains("insert early `return 0` at body head"),
             "detail names the survivor: {detail}"
         );
+    }
+
+    // #10 (degrade-ladder REQ-6): Level's derived Ord is the ladder ordering
+    // L0 < L1 < L2 < L3. Expected from the design doc's REQ-6 (R-CHAR-3).
+    #[test]
+    fn level_ord_is_the_ladder_ordering() {
+        assert!(Level::L0 < Level::L1);
+        assert!(Level::L1 < Level::L2);
+        assert!(Level::L2 < Level::L3);
+        // min over a mixed set is the weakest rung.
+        let levels = [Level::L3, Level::L1, Level::L2];
+        assert_eq!(levels.iter().min().copied(), Some(Level::L1));
+    }
+
+    // #10 (degrade-ladder REQ-4): into_degraded stamps the lowered_assurance flag +
+    // the degrade reason, leaving the level + obligations untouched.
+    #[test]
+    fn into_degraded_stamps_flag_and_reason() {
+        let base = Certificate::new("g", Level::L2, vec!["pure".to_string()], 0, vec![]);
+        assert!(!base.lowered_assurance);
+        let reason = RejectReason {
+            cause: "VerusTimeout".to_string(),
+            detail: "rlimit exhausted".to_string(),
+        };
+        let degraded = base.clone().into_degraded(reason);
+        assert!(degraded.lowered_assurance);
+        assert_eq!(
+            degraded.degrade_reason.as_ref().map(|r| r.cause.as_str()),
+            Some("VerusTimeout")
+        );
+        // The achieved level is untouched — into_degraded qualifies it, not mutates.
+        assert_eq!(degraded.level, Level::L2);
+    }
+
+    // #10 (degrade-ladder AC-6, R-SPEC-2): the lowered_assurance / degrade_reason
+    // fields are ADDITIVE — absent on a plain cert and on the golden, so the frozen
+    // golden `sum.cert.json` still deserializes. A non-degraded cert serializes
+    // lowered_assurance:false and omits degrade_reason.
+    #[test]
+    fn degrade_fields_are_additive() {
+        let cert = Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![]);
+        assert!(!cert.lowered_assurance);
+        assert!(cert.degrade_reason.is_none());
+        let json = serialize(&cert);
+        assert!(
+            !json.contains("degrade_reason"),
+            "None degrade_reason is omitted:\n{json}"
+        );
+        // The frozen golden cert (no #10 fields) deserializes, defaulting the flag.
+        let golden_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("conformance")
+            .join("sum.cert.json");
+        if let Ok(src) = std::fs::read_to_string(&golden_path) {
+            let golden: Result<Certificate, _> = serde_json::from_str(&src);
+            assert!(
+                golden.is_ok(),
+                "golden deserializes with #10 additive fields: {golden:?}"
+            );
+            if let Ok(g) = golden {
+                assert!(
+                    !g.lowered_assurance,
+                    "golden defaults lowered_assurance false"
+                );
+                assert!(g.degrade_reason.is_none());
+            }
+        }
+    }
+
+    // #10 (degrade-ladder REQ-5/REQ-6 / AC-5): the assurance aggregate headline is
+    // the MIN over functions. {L3,L2,L1} → Certified(L1). Expected: Level's Ord
+    // (REQ-6), not forge's output (R-CHAR-3).
+    #[test]
+    fn aggregate_headline_is_min_over_functions() {
+        let certs = vec![
+            Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![]),
+            Certificate::new("g", Level::L2, vec!["pure".to_string()], 0, vec![]),
+            Certificate::new("h", Level::L1, vec!["pure".to_string()], 0, vec![]),
+        ];
+        let m = AssuranceManifest::aggregate(&certs);
+        assert_eq!(m.project, ProjectAssurance::Certified(Level::L1));
+        assert_eq!(m.functions.len(), 3);
+    }
+
+    // #10 (REQ-2/REQ-6 / AC-5): a single non-certifying (counterexample / reject)
+    // fn caps the whole project at FAILURE — never a lowered rung (falsity is not a
+    // rung). Expected from REQ-6 (R-CHAR-3).
+    #[test]
+    fn aggregate_hard_fail_is_project_failure() {
+        let reason = RejectReason {
+            cause: "EnsIsTrivial".to_string(),
+            detail: "ens#0 is true".to_string(),
+        };
+        let certs = vec![
+            Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![]),
+            Certificate::rejected("bad", vec!["pure".to_string()], false, reason),
+        ];
+        let m = AssuranceManifest::aggregate(&certs);
+        assert_eq!(m.project, ProjectAssurance::Failed);
+        // The rejected fn is recorded as non-certified in its row.
+        let bad = m.functions.iter().find(|r| r.item == "bad");
+        assert_eq!(bad.map(|r| r.certified), Some(false));
+    }
+
+    // #10 (REQ-6): an empty cert collection certifies vacuously at the top rung —
+    // a file with no fn has nothing un-proved.
+    #[test]
+    fn aggregate_empty_is_vacuous_l3() {
+        let m = AssuranceManifest::aggregate(&[]);
+        assert_eq!(m.project, ProjectAssurance::Certified(Level::L3));
+        assert!(m.functions.is_empty());
+    }
+
+    // #10: cert_certifies treats L3/L2/L1 (no reject) as certified and L0 / a
+    // reject as not — the shared predicate the aggregate + cli exit code use.
+    #[test]
+    fn cert_certifies_recognizes_the_certified_rungs() {
+        assert!(cert_certifies(&Certificate::new(
+            "a",
+            Level::L3,
+            vec![],
+            0,
+            vec![]
+        )));
+        assert!(cert_certifies(&Certificate::new(
+            "b",
+            Level::L2,
+            vec![],
+            0,
+            vec![]
+        )));
+        assert!(cert_certifies(&Certificate::new(
+            "c",
+            Level::L1,
+            vec![],
+            0,
+            vec![]
+        )));
+        assert!(!cert_certifies(&Certificate::new(
+            "d",
+            Level::L0,
+            vec![],
+            0,
+            vec![]
+        )));
+        let reason = RejectReason {
+            cause: "WeakContract".to_string(),
+            detail: "x".to_string(),
+        };
+        // An L3 cert WITH a reject (e.g. a WeakContract reject built on L0) does not
+        // certify — the reject dominates.
+        assert!(!cert_certifies(&Certificate::rejected(
+            "e",
+            vec![],
+            false,
+            reason
+        )));
     }
 
     // effects_of covers the whole Effect enum, not just `pure` (R-DEFER-8: fix

@@ -63,6 +63,13 @@
 //! | solver-vacuity REQ-5 (gate AFTER #6, before L3) | SHIPPED | `check_file_with_rlimit`'s per-item loop calls `vacuity_solver::solver_vacuity_check(f, &spec_items, seed, rlimit)` AFTER `gate_fn` returns `ProceedToL3` and BEFORE the L3 lower/`run_verus`; a `Detected` short-circuits to `Certificate::rejected_vacuity` (verdict-in-cert, no L3 proof) and a `Clean` falls through to the existing L3 path. |
 //! | solver-vacuity REQ-6 (graduate the two bools to solver-confirmed) | SHIPPED | a `SemanticTautology` detection sets `contract_quality.tautology = true`, a `VacuousPrecondition` sets `vacuous_precondition = true` (via `Certificate::rejected_vacuity`); a `Clean` reaches the L3 path whose `graduate_triage_clean` keeps both live-`false`, now solver-confirmed. |
 //! | solver-vacuity REQ-3/REQ-7 (R-CODE-4 + determinism) | SHIPPED | a harness environment/internal verus failure propagates as a `ForgeError` from `solver_vacuity_check` (the `?`), never a silent clean; the two queries run under the same pinned `seed` + `rlimit` as the L3 path. |
+//!
+//! ## #10 gate (the automatic L3→L2→L1 degrade ladder, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | degrade-ladder REQ-1/REQ-2/REQ-3 (wire the default path → the ladder) | SHIPPED | `check_file_with_options`'s per-item L3 path calls `ladder_for_timeout(f, &sub, &verus.outcome, cert)` after `assemble_certificate`: it maps the `VerusOutcome` to a `degrade::L3Verdict` and runs `degrade::run_ladder` with LIVE L2 (`lower_l2`→`run_kani`→`classify_l2_outcome`) + L1 (`lower_l1` record, OQ-3 (b)) closures. A `Proved` is unchanged (no degrade); a `Counterexample` short-circuits to a hard fail with NO L2/L1 (REQ-2 anti-cheat); a `Timeout` degrades. The EXPLICIT `--level l2` path (`check_l2_file`) is UNCHANGED. |
+//! | degrade-ladder REQ-8 (subprocess failures never silently degrade) | SHIPPED | the ladder's L2/L1 closures return `Result`; a `ForgeError` (kani absent, lowering failure) propagates via the `?` in `run_ladder` and out of `ladder_for_timeout`, NEVER a degrade. A degraded cert (`lowered_assurance`) is NEVER cached (budget-dependent, parallel to the `VerusTimeout` no-cache rule). |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -336,6 +343,24 @@ pub fn check_file_with_options(
         // non-cached path always has.
         let verus = run_verus(&sub, &lowered, seed, rlimit)?;
         let cert = assemble_certificate(item, &verus);
+
+        // #10 AUTOMATIC DEGRADE LADDER (`.design/forge/degrade-ladder.md`, the
+        // DEFAULT `forge check` path). On a `VerusOutcome::Timeout` (verus could
+        // not PROVE within budget — INCONCLUSIVE) the v0.1 behavior was to emit the
+        // `VerusTimeout` L0 cert and STOP; #10 replaces that STOP with the ladder:
+        // attempt L2 (kani) and, on an under-bound, drop to L1. A
+        // `VerusOutcome::Counterexample` (verus DISPROVED the contract — a real
+        // bug) is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat); the ladder
+        // short-circuits it. The ladder runs ONLY for an `Item::Fn` (a `spec fn`
+        // carries no `req`/`ens` to bound-check at L2). An ENVIRONMENT failure on a
+        // lower rung (kani absent / unparseable) propagates as a `ForgeError`
+        // (REQ-8), never a silent degrade.
+        let cert = if let Item::Fn(f) = item {
+            ladder_for_timeout(f, &sub, &verus.outcome, cert)?
+        } else {
+            cert
+        };
+
         // A non-slag `fn` that reached the L3 path passed triage — graduate the
         // §7.1 `contract_quality` bools to asserted live-`false` (REQ-6 / AC-7). A
         // `spec fn` carries no contract, so triage does not apply and the bools
@@ -401,10 +426,16 @@ pub fn check_file_with_options(
             cert
         };
 
-        // #11: a TIMEOUT cert (budget-dependent, `VerusTimeout`) is NEVER cached —
-        // it is not a settled verdict (a larger budget might prove it). Only a
-        // settled cert (proved / counterexample) at the default budget is stored.
-        if cert.reject.as_ref().map(|r| r.cause.as_str()) == Some("VerusTimeout") {
+        // #11/#10: a TIMEOUT cert (budget-dependent, `VerusTimeout`) and any cert
+        // the #10 ladder produced by DEGRADING a timeout (`lowered_assurance`) are
+        // NEVER cached — they are not settled verdicts (a larger budget might prove
+        // the item at L3, so a degraded L2/L1 cert must not pollute the
+        // canonical-budget cache as if it were the final word; degrade-ladder.md
+        // "Why a Timeout cert is never cached as proved"). Only a settled cert
+        // (proved L3 / counterexample) at the default budget is stored.
+        if cert.reject.as_ref().map(|r| r.cause.as_str()) == Some("VerusTimeout")
+            || cert.lowered_assurance
+        {
             certs.push(cert.with_cached(false));
             continue;
         }
@@ -1039,6 +1070,87 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
             obligations.clone(),
         ),
     }
+}
+
+/// Drive the #10 automatic degrade ladder for ONE `fn` whose L3 verus run is in
+/// `outcome` (`.design/forge/degrade-ladder.md` REQ-1/REQ-2/REQ-3). `l3_cert` is
+/// the cert `assemble_certificate` already built from `outcome` (the L3 cert on
+/// `Proved`, the `VerusTimeout` cert on `Timeout`, the counterexample cert on
+/// `Counterexample`). Returns the ACHIEVED-level cert:
+///
+/// - `Proved` → the L3 cert UNCHANGED (no degrade — the common path).
+/// - `Counterexample` → the counterexample cert UNCHANGED — HARD FAIL, NO L2/L1
+///   rung is attempted (REQ-2 anti-cheat: the ladder short-circuits falsity).
+/// - `Timeout` → run the ladder: lower + kani the SAME item (L2); on a verified
+///   bound certify L2 + lowered-assurance; on an under-bound drop to L1 (a RECORDED
+///   `Level::L1` cert, OQ-3 (b) — `lower_l1`'s runtime-check emission stays a
+///   build-time concern); on an L2 counterexample HARD FAIL (REQ-2, 2nd rung).
+///
+/// An ENVIRONMENT failure on a lower rung (kani absent, unparseable output,
+/// lowering failure) propagates as a `ForgeError` (REQ-8), NEVER a silent degrade.
+/// The L2/L1 closures are LAZY — they run ONLY on the timeout edge, so the common
+/// `Proved` path never spawns kani.
+fn ladder_for_timeout(
+    f: &thermite_syntax::FnItem,
+    sub: &Program,
+    outcome: &VerusOutcome,
+    l3_cert: Certificate,
+) -> Result<Certificate, ForgeError> {
+    let l3 = match outcome {
+        // PROVED / COUNTEREXAMPLE are TERMINAL — the ladder returns the existing
+        // cert with NO lower rung (REQ-2: a counterexample never degrades).
+        VerusOutcome::Proved { .. } => crate::degrade::L3Verdict::Proved(l3_cert),
+        VerusOutcome::Counterexample { .. } => crate::degrade::L3Verdict::Counterexample(l3_cert),
+        // TIMEOUT — the SOLE degrade trigger. Carry the `VerusTimeout` reason onto
+        // the lower rung (REQ-4). The reason is the `l3_cert`'s reject (the
+        // `Certificate::timeout` `RejectReason { cause: "VerusTimeout", .. }`).
+        VerusOutcome::Timeout { detail, .. } => {
+            let reason = l3_cert.reject.clone().unwrap_or_else(|| RejectReason {
+                cause: "VerusTimeout".to_string(),
+                detail: detail.clone(),
+            });
+            crate::degrade::L3Verdict::Timeout { reason }
+        }
+    };
+
+    let effects = effects_of(&f.contract.fx);
+    let l1_effects = effects.clone();
+    let fname = f.name.clone();
+
+    crate::degrade::run_ladder(
+        l3,
+        // The L2 rung (lazy): lower the SAME item to a kani harness, run the real
+        // kani binary, classify (the OQ-2 split). An environment failure → Err.
+        || {
+            let harness = thermite_lower::lower_l2(sub).map_err(ForgeError::Lower)?;
+            let bound = thermite_lower::bound_string(sub);
+            let l2 = crate::kani::run_kani(&harness, &fname, &bound)?;
+            let verdict = crate::kani::classify_l2_outcome(&l2);
+            let cert = crate::kani::assemble_l2_certificate(&fname, effects, &l2);
+            Ok(crate::degrade::L2Attempt { verdict, cert })
+        },
+        // The L1 fallback rung (lazy): RECORD the achieved `Level::L1` (OQ-3 (b)).
+        // The contract's runtime-check EMISSION is `thermite_lower::lower_l1`'s
+        // build-time job, not the verdict-aggregator's — exactly the
+        // `Certificate::slag_l1` precedent (records L1 without running a prover).
+        // `lower_l1` is invoked here only to CONFIRM the contract lowers to runtime
+        // checks (so the recorded L1 is real, never a fiat the build cannot honor);
+        // a lowering failure is an environment error (REQ-8), never a silent drop.
+        || {
+            thermite_lower::lower_l1(sub).map_err(ForgeError::Lower)?;
+            Ok(Certificate::new(
+                f.name.clone(),
+                Level::L1,
+                l1_effects,
+                0,
+                vec![ObligationResult::discharged(
+                    "contract recorded at L1 (runtime checks emitted at build by \
+                     thermite_lower::lower_l1); L3 proof and L2 bounded check both \
+                     inconclusive within budget",
+                )],
+            ))
+        },
+    )
 }
 
 /// Score the frozen mutant set of `f` against its OWN (unchanged) contract (#12

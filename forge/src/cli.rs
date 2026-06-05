@@ -16,7 +16,13 @@
 //! | REQ-2 (hand-rolled arg parsing) | SHIPPED | `parse_args` is a `match` over the verb + positionals + the `--json` / `--level` / `--rlimit` flags; no `clap` dependency in `forge/Cargo.toml`. The #11 `--rlimit <FLOAT>` flag tunes the verus SMT resource budget (default `check::DEFAULT_RLIMIT`); a low value forces the timeout path (`run_check` → `check::check_file_with_rlimit`). |
 //! | REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError` wraps `Vec<SyntaxError>`/`Vec<SpecError>`/`Vec<LowerError>`/`LowerError` and carries `VerusAbsent`/`VerusSpawn`/`VerusOutput`/`Io`/`Usage`; `Display` forwards each inner error's diagnostic (no information lost). |
 //! | REQ-4 (human + `--json` output) | SHIPPED | `render_human` / `serde_json::to_string_pretty` of the cert array; `run_check` picks the rendering from `--json`; diagnostics go to stderr so `--json` stdout is a clean document. |
-//! | REQ-5 (typed exit codes) | SHIPPED | `cert_is_certified` → `ExitCode`: every item certified (each `L3`, or `L1`+valid-`#[slag]`, with no `reject`) → 0; any #6 triage / slag reject or un-discharged proof → `EXIT_VERIFICATION_FAILURE`; environment/usage/IO → `EXIT_ENVIRONMENT`. |
+//! | REQ-5 (typed exit codes) | SHIPPED | `run_check` maps the #10 `AssuranceManifest::aggregate` headline to an `ExitCode`: `ProjectAssurance::Certified(_)` (every item certified at `L3`/`L2`/`L1` with no `reject`, via `manifest::cert_certifies`) → 0; `ProjectAssurance::Failed` (any #6 triage / slag reject, un-discharged proof, or counterexample) → `EXIT_VERIFICATION_FAILURE`; environment/usage/IO → `EXIT_ENVIRONMENT`. |
+//!
+//! ## #10 gate (the project assurance display, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | degrade-ladder REQ-5/REQ-6 (display the project assurance) | SHIPPED | `run_check` computes `manifest::AssuranceManifest::aggregate(&certs)` and `render_assurance` prints the project headline (the min-over-functions, or `FAILED` when any fn does not certify) + the per-fn `lowered-assurance` flags (§5.2 "displayed on every build"). The headline also drives the exit code (REQ-5). |
 //! | REQ-6 (no panics; Result discipline) | SHIPPED | every fallible path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]`; verus exit status inspected in `check.rs`. |
 //! | REQ-7 (`forge new` scaffold) | SHIPPED | `scaffold_project` writes `forge.toml` + `forge.lock` (pinned seed, §5.3) + `THERMITE.skill.pin`; refuses a non-empty target (`ForgeError::Usage`). |
 
@@ -29,7 +35,7 @@ use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
 use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
-use crate::manifest::{Certificate, Level, ObligationStatus};
+use crate::manifest::{AssuranceManifest, Certificate, Level, ObligationStatus, ProjectAssurance};
 use crate::mutation::MUTATION_FLOOR;
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
@@ -391,9 +397,17 @@ fn run_check(
         CheckLevel::L2 => check::check_l2_file(file)?,
     };
 
+    // #10 the project-level ASSURANCE MANIFEST (`.design/forge/degrade-ladder.md`
+    // REQ-5/REQ-6, OQ-4 reading (b) — a render-time aggregate over the per-fn cert
+    // collection, NOT a separately-materialized schema object). The headline is the
+    // MIN over functions (a single L1 fn caps the project at L1; a single
+    // hard-failed fn is a project FAILURE). Computed for both renderings.
+    let manifest = AssuranceManifest::aggregate(&certs);
+
     if json {
         // One JSON document on stdout: the array of certificates. Nothing else
-        // goes to stdout under --json.
+        // goes to stdout under --json (the per-cert `lowered_assurance` flag is in
+        // each cert; the project headline is a derived display, not a schema field).
         let doc = serde_json::to_string_pretty(&certs).map_err(|e| ForgeError::VerusOutput {
             detail: format!("failed to serialize certificate JSON: {e}"),
         })?;
@@ -402,15 +416,20 @@ fn run_check(
         for cert in &certs {
             print!("{}", render_human(cert));
         }
+        // #10: the project assurance headline + per-fn lowered-assurance flags
+        // (§5.2 "displayed on every build"). Goes to stdout (the human document).
+        print!("{}", render_assurance(&manifest));
     }
 
     // Aggregate outcome (REQ-5): every item must CERTIFY. An item certifies iff
     // it carries no `reject` cause AND its level is a certified rung — `L3` (the
-    // verus path) OR `L1` (a valid `#[slag]` item, deliberately L1-by-fiat;
-    // `.design/forge/slag.md` REQ-2). A `#6` triage / slag-validation reject
+    // verus path), `L2` (a bounded check, #9/#10 degrade), OR `L1` (a valid
+    // `#[slag]` item / #10 degrade). A `#6` triage / slag-validation reject
     // (`Level::L0` + a `reject` cause) is a reported contract-certification
     // FAILURE — non-zero, but a valid cert document on stdout (verdict-in-cert).
-    let all_certified = certs.iter().all(cert_is_certified);
+    // The #10 assurance aggregate's `Failed` headline and this all-certified check
+    // agree (both use `manifest::cert_certifies`).
+    let all_certified = matches!(manifest.project, ProjectAssurance::Certified(_));
     if all_certified {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -418,15 +437,42 @@ fn run_check(
     }
 }
 
-/// `true` iff a certificate represents a CERTIFIED item (`.design/forge/check.md`;
-/// `slag.md` REQ-2). No structural / slag-validation reject cause, and a certified
-/// assurance rung: `L3` (proved) or `L1` (a valid `#[slag]` item, runtime-enforced
-/// by fiat). `L0` (a triage reject or an un-discharged proof) is NOT certified.
-fn cert_is_certified(cert: &Certificate) -> bool {
-    // L2 (Kani bounded model check, verified up to bound) is a certified rung —
-    // it joins L3 (proved) and L1 (slag fiat). `L0` (a triage reject, an
-    // un-discharged proof, or a Kani counterexample) is NOT certified.
-    cert.reject.is_none() && matches!(cert.level, Level::L3 | Level::L2 | Level::L1)
+/// Render the #10 project ASSURANCE MANIFEST as human-readable text
+/// (`.design/forge/degrade-ladder.md` REQ-5/REQ-6, §5.2 "displayed on every
+/// build"). The project headline (the min-over-functions, or `FAILED` when any fn
+/// does not certify) plus, when any function was an automatic degrade, the per-fn
+/// lowered-assurance flags. The headline goes LAST so it is the final line a reader
+/// (or an agent) sees.
+fn render_assurance(manifest: &AssuranceManifest) -> String {
+    let mut out = String::new();
+    out.push_str("---\n");
+    // The per-fn lowered-assurance view: surface each fn that was auto-degraded
+    // (REQ-5) so the headline's "why" is visible. A no-degrade build (the corpus)
+    // prints none of these (AC-1).
+    for f in &manifest.functions {
+        if f.lowered_assurance {
+            out.push_str(&format!(
+                "lowered-assurance: {} achieved {} (auto-degraded below L3)\n",
+                f.item,
+                level_str(f.level)
+            ));
+        }
+    }
+    let headline = match manifest.project {
+        ProjectAssurance::Certified(level) => {
+            format!(
+                "project assurance: {} (min over functions)",
+                level_str(level)
+            )
+        }
+        ProjectAssurance::Failed => {
+            "project assurance: FAILED (a function did not certify — not a lowered rung)"
+                .to_string()
+        }
+    };
+    out.push_str(&headline);
+    out.push('\n');
+    out
 }
 
 /// Render a [`Certificate`] as human-readable text (REQ-4, §5.1 "rendered to
@@ -773,6 +819,56 @@ mod tests {
         // No-clobber: a second scaffold over the now-non-empty dir is a Usage err.
         assert!(matches!(scaffold_project(&dir), Err(ForgeError::Usage(_))));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // #10 (degrade-ladder REQ-5/REQ-6): render_assurance prints the project
+    // headline (the min-over-functions) and the per-fn lowered-assurance lines. A
+    // {L3,L2} set with the L2 degraded → headline L2 + one lowered-assurance line.
+    #[test]
+    fn render_assurance_shows_headline_and_lowered_flags() {
+        use crate::manifest::{AssuranceManifest, RejectReason};
+        let reason = RejectReason {
+            cause: "VerusTimeout".to_string(),
+            detail: "rlimit".to_string(),
+        };
+        let certs = vec![
+            Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![]),
+            Certificate::new("g", Level::L2, vec!["pure".to_string()], 0, vec![])
+                .into_degraded(reason),
+        ];
+        let m = AssuranceManifest::aggregate(&certs);
+        let text = render_assurance(&m);
+        assert!(
+            text.contains("project assurance: L2"),
+            "headline is the min over functions (L2):\n{text}"
+        );
+        assert!(
+            text.contains("lowered-assurance: g achieved L2"),
+            "the degraded fn is surfaced:\n{text}"
+        );
+    }
+
+    // #10 (REQ-2): a project with a hard-failed fn shows the FAILED headline (not a
+    // lowered rung).
+    #[test]
+    fn render_assurance_shows_failed_headline() {
+        use crate::manifest::{AssuranceManifest, RejectReason};
+        let reason = RejectReason {
+            cause: "EnsIsTrivial".to_string(),
+            detail: "x".to_string(),
+        };
+        let certs = vec![Certificate::rejected(
+            "bad",
+            vec!["pure".to_string()],
+            false,
+            reason,
+        )];
+        let m = AssuranceManifest::aggregate(&certs);
+        let text = render_assurance(&m);
+        assert!(
+            text.contains("project assurance: FAILED"),
+            "a non-certifying fn is a project FAILURE:\n{text}"
+        );
     }
 
     // REQ-4 human rendering: failed obligation shows location + diagnostic.

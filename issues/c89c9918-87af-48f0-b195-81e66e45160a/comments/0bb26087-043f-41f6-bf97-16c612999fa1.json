@@ -1,0 +1,10 @@
+{
+  "uuid": "0bb26087-043f-41f6-bf97-16c612999fa1",
+  "issue_uuid": "c89c9918-87af-48f0-b195-81e66e45160a",
+  "author": "Yffe",
+  "content": "Scope update: item 1 (runtime effect sandbox) is now SHIPPED via #57 — forge build emits an fx-derived seccomp filter; declared effects are enforced at the syscall boundary (killed on violation), boundary/slag confined to their declared fx. The runnable-binary gate it needed was shipped as #56 (forge build). #21 now tracks only: (2) DIRECT MIR-level lowering (we transpile to Rust which rustc takes to MIR; the thesis is satisfied transitively, direct-MIR emission is an unneeded rewrite, candidate to reframe/close); (3) the incremental goal-state REPL (forge goal/fill; we do whole-item forge check).",
+  "created_at": "2026-06-05T20:47:59.023237609Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAPI46bZh50ZPudWxUoy1XgOd5kSsxn+O5e706Ri5JBOl0AJRmI/ZrVA0yQCJs1Rc6d4naT9canlpweITPjHyICg=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "07615e40-6c9d-4f16-83bc-75eb75abb0b9",
+  "issue_uuid": "aa73d01c-0443-44fc-8064-3436eb0dfc34",
+  "author": "Yffe",
+  "content": "Build thermite-skill #7: generate.rs (generate() = 5 §10 sections; combinator section machine-rendered from thermite_spec::all() with generator-side example table; curated grammar/forge/ladder/slag from §4/§4.2/§4.4/§6/§8/AppdxB; token_count = (chars*2).div_ceil(7), SKILL_TOKEN_BUDGET=6000), main.rs bin (--emit/--check-budget, ExitCode, no panic), tests/skill.rs (budget+coverage+freshness+determinism, 6 ACs), committed THERMITE.skill.md, ci.yml --check-budget step, spec-routes entry for main.rs. Gauntlet green; 2560 tokens.",
+  "created_at": "2026-06-05T02:52:19.139830773Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABATdt5Fqri+KQKb9T6uV3nHQFFaBuqF82Y5hzme9g6OEtTyLex4hKgBHFqLAgfRlZMID9nRTgLpfRzA+z0jEXLAw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "0a3bee4a-fdb5-4f71-8919-a40d3deff480",
+  "issue_uuid": "99c1875b-1bae-4c37-858e-d254d4a5f72c",
+  "author": "Yffe",
+  "content": "SHIPPED — the background proof-repair loop forge repair (§6 + Appendix B). repair.rs repair_file: classify each sub-L3 item; a TIMEOUT (profile-present / VerusTimeout) is escalated along a frozen bounded ladder REPAIR_LADDER=[2,4,8,16]x DEFAULT_RLIMIT, re-verified each rung, upgraded to L3 on the first proof (records the budget), else surfaces the #11 SolverProfile repair prompt. ANTI-CHEAT (R-DEFER-9): only Timeouts are retried; a COUNTEREXAMPLE (profile-absent), rejected_vacuity, rejected_weak_contract -> NotRepairable, NEVER retried/upgraded (the verify closure is dropped unused — 0 calls). Loop: doc-author -> builder -> critic NO DIVERGENCE: fresh false contracts never upgraded (live); rejects never retried (0 closure calls); classify_sub_l3 traced (a counterexample can never acquire a VerusTimeout tag — into_degraded only reachable from the Timeout arm); bounded termination; real re-verify (not relabel); corpus no-op; deterministic; no panic. Commit 7e34b0d. workspace 348 tests, clippy/fmt clean. Dual of #10's down-ladder anti-cheat. Not pushed.",
+  "created_at": "2026-06-05T10:11:02.681463969Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAN+CrJhKweAljardoxZoLNYei4iGp7vbBJoIxIxQ6bYDoNmoK3QTWnVpXVSbb2uljdGVjk1ZAWOnDdiiIOTyhCA=="
+}

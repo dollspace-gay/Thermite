@@ -262,3 +262,10 @@ crate_pattern = "forge/src/boundary.rs"
 design = ".design/boundary/ffi-boundary.md"
 reference = ["conformance/boundary"]
 conformance_ops = ["foreign_id"]
+
+# v0.4 — end-to-end vs to-the-boundary certification (issue #17)
+[[route]]
+crate_pattern = "forge/src/closure.rs"
+design = ".design/forge/e2e-vs-boundary.md"
+reference = ["conformance/e2e"]
+conformance_ops = ["sum", "boundary_caller"]

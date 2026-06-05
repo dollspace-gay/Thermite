@@ -37,11 +37,11 @@ This is the **#9 / v0.2** ladder component (`thermite-design.md §13` v0.2: "Kan
 backed L2 with type-driven bound inference"). The headline of #9 is **type-driven
 bound inference**: the symbolic bound is inferred from the parameter *types*.
 
-This component is **GREENFIELD**: `thermite-lower/src/l2.rs` and
-`forge/src/kani.rs` do **not exist**. Every REQ below is **NOT-STARTED**, blocked
-on the #9 implementation. L3 (`lower.rs`), L1 (`l1.rs`), and `forge::check`
-(per-item, runs verus) ship; this doc is the forward-looking contract the builder
-fills.
+This component **SHIPPED** in #9 (v0.2): `thermite-lower/src/l2.rs`
+(`pub fn lower_l2`) and `forge/src/kani.rs` (`pub fn run_kani`) exist and every
+REQ below is **SHIPPED** (see the REQ-status table), verified against real
+`cargo kani 0.67.0`. L3 (`lower.rs`), L1 (`l1.rs`), and `forge::check`
+(per-item, runs verus) ship alongside.
 
 ### Scope boundary (what #9 is and is NOT)
 
@@ -472,15 +472,15 @@ conformance_ops = ["sum", "binary_search"]
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (L2 harness-emission entry point) | NOT-STARTED | open prereq blocker #9 (v0.2). `thermite-lower/src/l2.rs` does not exist; no `pub fn lower_l2`. The L1 lowering it must reuse (`pub fn lower_l1 in l1.rs`) ships. |
-| REQ-2 (type-driven bound inference) | NOT-STARTED | open prereq blocker #9. The #9 headline; the inference table is forward-spec only — no emitter exists. |
-| REQ-3 (unwind bounds for loops/recursion) | NOT-STARTED | open prereq blocker #9. The `K = N + 1` rule is grounded against real Kani (`unwind(5)` for sum, `unwind(6)` for binary_search) but unimplemented. |
-| REQ-4 (`run_kani` invocation, exit status) | NOT-STARTED | open prereq blocker #9. `forge/src/kani.rs` does not exist; no `fn run_kani`. The verus parallel (`fn run_verus in check.rs`) ships. |
-| REQ-5 (Kani output → L2-or-counterexample) | NOT-STARTED | open prereq blocker #9. The parse markers are grounded against Kani 0.67.0 output but no parser exists. |
-| REQ-6 (L2 "up to bound" caveat in the cert) | NOT-STARTED | open prereq blocker #9. `Level::L2 in manifest.rs` exists (unused); no producer emits it. |
-| REQ-7 (forge L2 exposure, not auto-degrade) | NOT-STARTED | open prereq blocker #9. No `forge check --level l2` entry; `cli.rs` has no L2 path. |
-| REQ-8 (Kani-absent = env error / skip-loud) | NOT-STARTED | open prereq blocker #9. No `ForgeError::KaniAbsent`; the `VerusAbsent` parallel exists in `cli.rs`. Kani-absent ENOENT grounded. |
-| REQ-9 (determinism, pinned bound + seed) | NOT-STARTED | open prereq blocker #9. The fixed-`N`/fixed-`K` discipline is spec'd; no code. `oracle_subset in manifest.rs` (the time-exclusion precedent) ships. |
+| REQ-1 (L2 harness-emission entry point) | SHIPPED | `pub fn lower_l2 in l2.rs` emits a `#[kani::proof]` harness per `FnItem`, reusing the L1 lowering (`lower_spec_fn_l1`/`emit_combinator_l1_defs`/`lower_expr_exec` from `l1.rs`); consumer `check::check_l2_file in check.rs`; verified by `l2_conformance::sum_harness_verifies_to_bound` (real kani → `VERIFICATION:- SUCCESSFUL`). |
+| REQ-2 (type-driven bound inference) | SHIPPED | `infer_symbolic_input in l2.rs` keys on the `struct Param`'s `struct Type` (`&[T]`→array+`len<=N`, scalar→`kani::any()`); `l2_conformance::bound_is_type_derived_not_name_derived` (AC-4 — synthetic `fn f(xs: &[u32], k: u32)`, no name check). |
+| REQ-3 (unwind bounds for loops/recursion) | SHIPPED | `unwind_bound in l2.rs` derives `K` SHAPE-keyed on the loop kind (`while`→`N+1`=5 for sum, unconditional `loop`→`N+2`=6 for binary_search); `l2_conformance::sum_harness_verifies_to_bound`/`binary_search_harness_verifies_to_bound`. Under-bound → `unwinding assertion` (AC-5, `under_bound_is_reported_failure_not_false_pass`). |
+| REQ-4 (`run_kani` invocation, exit status) | SHIPPED | `pub fn run_kani in kani.rs` writes a temp cargo crate (`write_kani_crate`, no-`.` `crate_stem`), spawns `cargo-kani`, checks exit status; ENOENT → `ForgeError::KaniAbsent`, other → `KaniSpawn`; temp crate removed. Consumer `check::check_l2_file`. |
+| REQ-5 (Kani output → L2-or-counterexample) | SHIPPED | `parse_kani_output in kani.rs` keys on `VERIFICATION:- SUCCESSFUL`/`FAILED` + `Failed Checks:`/`File:`; no summary → `KaniOutput` (R-CODE-4). Pure tests `success_terse_is_l2`/`failure_terse_is_counterexample`/`under_bound_is_reported_failure`/`no_summary_is_kani_output_error`. |
+| REQ-6 (L2 "up to bound" caveat in the cert) | SHIPPED | `bound_string in l2.rs` (`slice <= 4, unwind K`) is recorded on the discharged obligation by `run_kani`; the cert is `Level::L2 in manifest.rs` (distinct from L3); `kani::bound_recorded_on_l2_cert` (AC-6) + `l2_check::forge_check_level_l2_sum_is_l2`. |
+| REQ-7 (forge L2 exposure, not auto-degrade) | SHIPPED | `forge check --level l2 <file>` runs `check::check_l2_file` (per-`fn` `lower_l2`→`run_kani`→L2 cert); default stays L3; the `CheckLevel` flag in `cli::parse_args`; NO auto-degrade (#10). `l2_check::forge_check_level_l2_sum_is_l2` + `cli::parses_level_flag`. |
+| REQ-8 (Kani-absent = env error / skip-loud) | SHIPPED | `ForgeError::KaniAbsent in cli.rs`; `run_kani` maps ENOENT to it (`kani::run_kani_with_absent_binary_is_kani_absent`, AC-7); the kani-spawning integration tests skip LOUD (eprintln + return, no `#[ignore]`). |
+| REQ-9 (determinism, pinned bound + seed) | SHIPPED | `SLICE_BOUND in l2.rs` is a fixed `const`; `unwind_bound`/`lower_l2` are pure functions of the AST (`l2_conformance::lowering_is_deterministic`); the temp crate path uses pid+counter (not wall-clock); `solver_time_ms` excluded from `oracle_subset in manifest.rs`. |
 
 ## Open questions (for the orchestrator before the builder runs)
 

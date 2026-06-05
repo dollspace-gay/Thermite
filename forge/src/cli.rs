@@ -63,6 +63,18 @@ pub enum ForgeError {
     /// or it reported an internal (VIR) error (never swallowed, REQ-3 /
     /// R-CODE-4).
     VerusOutput { detail: String },
+    /// The `cargo kani` / kani binary was not found on `PATH` — an ENVIRONMENT
+    /// error, NOT a verification failure (`.design/lower/l2-kani.md` REQ-8). The
+    /// L2 parallel of `VerusAbsent`.
+    KaniAbsent { binary: String },
+    /// Spawning kani failed for a reason other than absence (e.g. permission).
+    /// The L2 parallel of `VerusSpawn`.
+    KaniSpawn { source: std::io::Error },
+    /// Kani ran but its output could not be parsed into a verification summary,
+    /// or it reported a reachable unsupported construct / internal failure
+    /// (never swallowed, `.design/lower/l2-kani.md` REQ-5 / R-CODE-4). The L2
+    /// parallel of `VerusOutput`.
+    KaniOutput { detail: String },
     /// An IO error reading a source file or writing a scaffold/temp file.
     Io {
         path: String,
@@ -107,6 +119,16 @@ impl fmt::Display for ForgeError {
             ForgeError::VerusOutput { detail } => {
                 write!(f, "could not interpret verus output: {detail}")
             }
+            ForgeError::KaniAbsent { binary } => write!(
+                f,
+                "the `{binary}` bounded model checker was not found on PATH (environment error, \
+                 not a verification failure); install kani (`cargo install --locked kani-verifier \
+                 && cargo kani setup`) or set it on PATH"
+            ),
+            ForgeError::KaniSpawn { source } => write!(f, "failed to spawn kani: {source}"),
+            ForgeError::KaniOutput { detail } => {
+                write!(f, "could not interpret kani output: {detail}")
+            }
             ForgeError::Io { path, source } => write!(f, "io error at `{path}`: {source}"),
             ForgeError::Usage(msg) => write!(f, "usage error: {msg}"),
         }
@@ -130,8 +152,24 @@ impl ForgeError {
 enum Command {
     /// `forge new <name>`.
     New { name: String },
-    /// `forge check [<file>] [--json]`.
-    Check { file: PathBuf, json: bool },
+    /// `forge check [<file>] [--json] [--level l2|l3]`.
+    Check {
+        file: PathBuf,
+        json: bool,
+        level: CheckLevel,
+    },
+}
+
+/// The assurance rung `forge check` targets (`.design/lower/l2-kani.md` REQ-7,
+/// OQ-1: the `--level l2` flag). The DEFAULT stays `L3` (the verus path); `--level
+/// l2` is an EXPLICIT choice that runs the Kani bounded model check INSTEAD —
+/// never an automatic degrade (that is #10).
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum CheckLevel {
+    /// The default: the verus SMT proof path (`check::check_file`).
+    L3,
+    /// The Kani bounded model check path (`check::check_l2_file`).
+    L2,
 }
 
 /// Parse `argv[1..]` (the arguments after the program name) into a [`Command`]
@@ -160,9 +198,30 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
         "check" => {
             let mut file: Option<PathBuf> = None;
             let mut json = false;
-            for arg in iter {
+            let mut level = CheckLevel::L3;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
                 match arg.as_str() {
                     "--json" => json = true,
+                    "--level" => {
+                        // `--level l2|l3` — an EXPLICIT rung choice (REQ-7). The
+                        // value is a separate token (`--level l2`); a missing or
+                        // unknown value is a Usage error, never a silent default.
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--level` requires a value (`l2` or `l3`)".to_string(),
+                            )
+                        })?;
+                        level = match value.as_str() {
+                            "l2" | "L2" => CheckLevel::L2,
+                            "l3" | "L3" => CheckLevel::L3,
+                            other => {
+                                return Err(ForgeError::Usage(format!(
+                                    "unknown `--level` value `{other}` (expected `l2` or `l3`)"
+                                )));
+                            }
+                        };
+                    }
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -182,7 +241,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         .to_string(),
                 )
             })?;
-            Ok(Command::Check { file, json })
+            Ok(Command::Check { file, json, level })
         }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
@@ -193,7 +252,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
-    "usage: forge new <name> | forge check <file> [--json]"
+    "usage: forge new <name> | forge check <file> [--json] [--level l2|l3]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -219,15 +278,21 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             println!("created Thermite project `{name}`");
             Ok(ExitCode::SUCCESS)
         }
-        Command::Check { file, json } => run_check(&file, json),
+        Command::Check { file, json, level } => run_check(&file, json, level),
     }
 }
 
 /// Run `forge check`: drive the pipeline, render every certificate, and map the
 /// aggregate outcome to an exit code (REQ-4/REQ-5). Diagnostics go to stderr so
 /// the `--json` stdout is a single clean machine-parseable document (AC-2).
-fn run_check(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
-    let certs = check::check_file(file)?;
+fn run_check(file: &Path, json: bool, level: CheckLevel) -> Result<ExitCode, ForgeError> {
+    // The DEFAULT (no flag) stays the L3 verus path; `--level l2` is an EXPLICIT
+    // choice that runs the Kani bounded model check instead — never an automatic
+    // degrade (`.design/lower/l2-kani.md` REQ-7; #10 owns the auto-degrade).
+    let certs = match level {
+        CheckLevel::L3 => check::check_file(file)?,
+        CheckLevel::L2 => check::check_l2_file(file)?,
+    };
 
     if json {
         // One JSON document on stdout: the array of certificates. Nothing else
@@ -261,7 +326,10 @@ fn run_check(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
 /// assurance rung: `L3` (proved) or `L1` (a valid `#[slag]` item, runtime-enforced
 /// by fiat). `L0` (a triage reject or an un-discharged proof) is NOT certified.
 fn cert_is_certified(cert: &Certificate) -> bool {
-    cert.reject.is_none() && matches!(cert.level, Level::L3 | Level::L1)
+    // L2 (Kani bounded model check, verified up to bound) is a certified rung —
+    // it joins L3 (proved) and L1 (slag fiat). `L0` (a triage reject, an
+    // un-discharged proof, or a Kani counterexample) is NOT certified.
+    cert.reject.is_none() && matches!(cert.level, Level::L3 | Level::L2 | Level::L1)
 }
 
 /// Render a [`Certificate`] as human-readable text (REQ-4, §5.1 "rendered to
@@ -398,19 +466,51 @@ mod tests {
             }
         );
         assert_eq!(
-            parse_args(&argv(&["check", "a.th"])).expect("check"),
-            Command::Check {
+            parse_args(&argv(&["check", "a.th"])).ok(),
+            Some(Command::Check {
                 file: PathBuf::from("a.th"),
-                json: false
-            }
+                json: false,
+                level: CheckLevel::L3
+            })
         );
         assert_eq!(
-            parse_args(&argv(&["check", "a.th", "--json"])).expect("check json"),
-            Command::Check {
+            parse_args(&argv(&["check", "a.th", "--json"])).ok(),
+            Some(Command::Check {
                 file: PathBuf::from("a.th"),
-                json: true
-            }
+                json: true,
+                level: CheckLevel::L3
+            })
         );
+    }
+
+    // REQ-7 (`.design/lower/l2-kani.md`): `--level l2` selects the Kani path; the
+    // DEFAULT (no flag) is L3; an unknown / missing value is a Usage error.
+    #[test]
+    fn parses_level_flag() {
+        assert_eq!(
+            parse_args(&argv(&["check", "a.th", "--level", "l2"])).ok(),
+            Some(Command::Check {
+                file: PathBuf::from("a.th"),
+                json: false,
+                level: CheckLevel::L2
+            })
+        );
+        assert_eq!(
+            parse_args(&argv(&["check", "a.th", "--level", "l3"])).ok(),
+            Some(Command::Check {
+                file: PathBuf::from("a.th"),
+                json: false,
+                level: CheckLevel::L3
+            })
+        );
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--level", "l9"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["check", "a.th", "--level"])),
+            Err(ForgeError::Usage(_))
+        ));
     }
 
     // AC-1: no args / unknown verb / missing positional → Usage error, never a

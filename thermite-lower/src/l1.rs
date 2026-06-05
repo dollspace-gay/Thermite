@@ -64,7 +64,7 @@ const MAX_EMIT_DEPTH: usize = 256;
 
 /// A span pointing at the very start of source, used when an AST node we are
 /// lowering does not carry a `Span` (mirrors `lower.rs::zero_span`).
-fn zero_span() -> Span {
+pub(crate) fn zero_span() -> Span {
     Span::new(0, 0)
 }
 
@@ -148,7 +148,7 @@ fn emit_check_macro() -> String {
 /// frozen `l1` runnable Rust `fn` from the `thermite-spec` registry (REQ-3; the
 /// L1 half of the OQ-2 seam — this is the registry `l1` field's #4 consumer per
 /// R-DEFER-1). A referenced name with no registry entry is `UnknownCombinator`.
-fn emit_combinator_l1_defs(program: &Program) -> Result<String, LowerError> {
+pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, LowerError> {
     let mut names: Vec<(String, Span)> = Vec::new();
     for item in &program.items {
         match item {
@@ -279,7 +279,7 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 /// preserving real recursion. The `dec` measure is NOT emitted as a runtime
 /// check (REQ-5: a spec fn just runs at L1). The slice-match shape is detected
 /// structurally, never by name (mirrors `lower.rs::is_head_fold_sum`).
-fn lower_spec_fn_l1(s: &SpecFnItem) -> Result<String, LowerError> {
+pub(crate) fn lower_spec_fn_l1(s: &SpecFnItem) -> Result<String, LowerError> {
     let ret = lower_type(&s.ret)?;
     let mut out = String::new();
     write!(out, "fn {}(", s.name).ok();
@@ -523,7 +523,7 @@ fn rust_string_literal(s: &str) -> String {
 // ---------------------------------------------------------------------------
 
 /// Emit the comma-separated parameter list (exec types — plain `&[T]`, no `Seq`).
-fn emit_params(out: &mut String, params: &[Param]) -> Result<(), LowerError> {
+pub(crate) fn emit_params(out: &mut String, params: &[Param]) -> Result<(), LowerError> {
     for (i, p) in params.iter().enumerate() {
         if i > 0 {
             out.push_str(", ");
@@ -553,7 +553,7 @@ fn lower_block_inner(block: &Block, indent: usize, span: Span) -> Result<String,
 }
 
 /// Lower a single statement in exec position.
-fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerError> {
+pub(crate) fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
     match stmt {
         Stmt::Let {
@@ -615,7 +615,7 @@ fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerError> {
 /// lowers to a call of its L1 fn (the name is unchanged; its body is emitted by
 /// `emit_combinator_l1_defs`), with a closure argument becoming a real Rust
 /// closure. Every clause is a real `bool`/value expression over real values.
-fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<String, LowerError> {
+pub(crate) fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<String, LowerError> {
     if depth >= MAX_EMIT_DEPTH {
         return Err(LowerError::TooDeep {
             limit: MAX_EMIT_DEPTH,
@@ -823,7 +823,7 @@ fn precedence(op: BinOp) -> u8 {
 
 /// Lower a `Type` to its Rust spelling (exec). No `Seq` — every type is its
 /// plain Rust form. Mirrors `lower.rs::lower_type`.
-fn lower_type(ty: &Type) -> Result<String, LowerError> {
+pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
     match ty {
         Type::Prim(PrimType::U32) => Ok("u32".to_string()),
         Type::Prim(PrimType::U64) => Ok("u64".to_string()),

@@ -199,6 +199,66 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
     Ok(certs)
 }
 
+/// Run the L2 (Kani bounded model check) pipeline for every `fn` item in `path`,
+/// returning one [`Certificate`] (at `Level::L2` on success) per `fn` in source
+/// order (`.design/lower/l2-kani.md` REQ-7). This is the EXPLICIT `--level l2`
+/// path: `forge check --level l2 <file>` runs it INSTEAD of the default L3 verus
+/// path (`check_file`). #9 does NOT wire L2 as an automatic fallback on a verus
+/// timeout (that is #10's `level_from_summary` change) — `--level l2` is a
+/// deliberate choice (REQ-7 / `goal.md` R-DEFER-4).
+///
+/// Pipeline order (parallel to `check_file`): parse → validate → check_effects →
+/// PER ITEM (`thermite_lower::lower_l2` of the item's isolated sub-program) →
+/// `kani::run_kani` → an L2 `Certificate`. A `spec fn` carries no `req`/`ens`
+/// contract (§4.2), so it has no L2 obligation to discharge — it is a pure shared
+/// dependency woven into every `fn`'s sub-program (so a `fn` whose `ens` calls
+/// `spec_sum` lowers + checks), and produces NO certificate of its own. Stages
+/// short-circuit into the earliest failing stage's `ForgeError`; a reachable
+/// contract `assert!` failure is a valid non-L2 certificate, not an `Err` (the
+/// counterexample, §5.1).
+pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
+    let path = path.as_ref();
+    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
+        path: path.display().to_string(),
+        source: e,
+    })?;
+
+    // 1. parse; 2. validate; 3. effect-check — identical to the L3 path.
+    let parsed = thermite_syntax::parse(&src);
+    if !parsed.is_clean() {
+        return Err(ForgeError::Parse(parsed.errors));
+    }
+    thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
+    thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
+
+    // The file's pure `spec fn`s are shared dependencies woven into every per-item
+    // sub-program (so a `fn` whose `ens` references one still lowers + checks),
+    // exactly as the L3 path does (§5.3 per-item isolation).
+    let spec_items: Vec<Item> = parsed
+        .program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::SpecFn(_)))
+        .cloned()
+        .collect();
+
+    let mut certs = Vec::new();
+    for item in &parsed.program.items {
+        // Only `fn`s carry an L2 contract obligation; a `spec fn` is a pure
+        // dependency with no `req`/`ens` to bounded-check (§4.2).
+        let Item::Fn(f) = item else {
+            continue;
+        };
+        let sub = item_subprogram(item, &spec_items);
+        let harness = thermite_lower::lower_l2(&sub).map_err(ForgeError::Lower)?;
+        let bound = thermite_lower::bound_string(&sub);
+        let l2 = crate::kani::run_kani(&harness, &f.name, &bound)?;
+        let effects = effects_of(&f.contract.fx);
+        certs.push(crate::kani::assemble_l2_certificate(&f.name, effects, &l2));
+    }
+    Ok(certs)
+}
+
 /// The result of the #6 contract-certification gate for one `fn`
 /// (`.design/forge/check.md`; `vacuity-triage.md` REQ-6; `slag.md` REQ-5).
 enum GateOutcome {

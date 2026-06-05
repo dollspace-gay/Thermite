@@ -23,6 +23,7 @@
 mod cache;
 mod check;
 mod cli;
+mod kani;
 mod manifest;
 mod slag;
 mod vacuity;

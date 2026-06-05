@@ -4,10 +4,12 @@
 //! In the v0.1 kernel DAG (REQ-2) this crate depends on `thermite-syntax` and
 //! `thermite-spec`. The L3 emission stage (`lower`) lands in `lower.rs` (issue
 //! #4) per the route table; the L1 runtime-check stage (`l1::lower_l1`) is the
-//! sibling `l1.rs` (`.design/lower/l1-runtime-checks.md`); effect subsumption is
+//! sibling `l1.rs` (`.design/lower/l1-runtime-checks.md`); the L2 Kani-harness
+//! stage (`l2::lower_l2`) is the sibling `l2.rs` (`.design/lower/l2-kani.md`,
+//! issue #9 / v0.2) and REUSES the L1 executable lowering; effect subsumption is
 //! a separate dispatch. This crate's OWN error type (`LowerError`) is born in
 //! `lower.rs` with its first fallible function `lower` (workspace.md REQ-3) and
-//! is shared by `l1::lower_l1`.
+//! is shared by `l1::lower_l1` and `l2::lower_l2`.
 //!
 //! Governing design: `.design/scaffold/workspace.md` (crate topology),
 //! `.design/lower/verus-lowering.md` (the L3 emission contract).
@@ -23,8 +25,10 @@
 
 pub mod effects;
 pub mod l1;
+pub mod l2;
 pub mod lower;
 
 pub use effects::{check_effects, subsumes};
 pub use l1::lower_l1;
+pub use l2::{bound_string, lower_l2};
 pub use lower::{lower, LowerError};

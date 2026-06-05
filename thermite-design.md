@@ -204,6 +204,7 @@ Rules:
 - L3 is the default target for every function.
 - Downgrades are automatic, logged, and surfaced in the build manifest; upgrades are a standing background task.
 - The certificate attached to a build artifact lists every function's level, every `#[slag]` block, and the contract-quality scores from §7. This manifest **is** the deliverable's trust statement.
+- **`#[slag]`, the L0 row, and L1 enforcement.** The L0 row measures assurance about the *body*: nothing is proved about the implementation — it is trusted by fiat. But a `#[slag]` function's *contract* is still mandatory and is enforced at runtime (§8), so its certificate carries level **L1** with a `slag: true` flag — `L1` because the contract is L1-checked at the call site, `slag` because the body is unproven. The L0 row therefore names the body-proof aspect (recorded by the `slag` flag), never an unchecked contract: slag exempts *proving*, never *stating and checking*. (`fx` effect rows are likewise enforced — at compile time in v0.1, at the syscall boundary later — independent of the proof level.)
 
 ---
 

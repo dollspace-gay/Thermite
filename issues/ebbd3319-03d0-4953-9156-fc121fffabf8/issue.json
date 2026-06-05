@@ -6,5 +6,8 @@
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T21:05:13.026256889Z",
-  "updated_at": "2026-06-05T21:05:13.026256889Z"
+  "updated_at": "2026-06-05T21:05:15.654109455Z",
+  "labels": [
+    "epic"
+  ]
 }

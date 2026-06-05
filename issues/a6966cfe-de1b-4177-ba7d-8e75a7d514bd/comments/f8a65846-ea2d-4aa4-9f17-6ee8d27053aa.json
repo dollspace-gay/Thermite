@@ -1,0 +1,10 @@
+{
+  "uuid": "f8a65846-ea2d-4aa4-9f17-6ee8d27053aa",
+  "issue_uuid": "a6966cfe-de1b-4177-ba7d-8e75a7d514bd",
+  "author": "Yffe",
+  "content": "SHIPPED — crates.io FFI boundary modules, L1-enforced (§9). Surface: a bodyless fn + #[boundary(\"crate::path\")] (parse_attribute generalizes parse_slag; the ;-body is GATED on boundary.is_some() — a bodyless fn without #[boundary] is a parse ERROR, OQ-2). FnItem.body is now Option<Block>; the ripple across ~10 body-consumers handles None as a structured error/safe skip (no panic, no false pass). thermite-lower lower_boundary_fn_l1: req-check -> foreign call -> ens-check (foreign body NOT lowered/verified). forge gate_fn routes boundary fns to BoundaryL1 EARLY -> Certificate::boundary_l1 (Level L1, boundary:true, boundary_target, NOT L3); §7.1 triage (a/b/c) still applies (rule d maximal-fx exempt — foreign effects trusted by fiat). oracle_subset = (item,level,effects,slag,boundary). Loop: doc-author -> builder -> critic NO DIVERGENCE: boundary-never-L3 proven live (a lying contract -> L1, verus never spawned); None-ripple sound (every consumer audited); parse gate robust; triage applies (vacuous boundary -> EnsIsTrivial); wrapper not a no-op; golden deserializes. Commit 74a2b91. workspace 312 tests, clippy/fmt clean, skill budget 2560/6000. TCB-enumeration hook for #15; #17 reads the boundary flag. Not pushed.",
+  "created_at": "2026-06-05T08:13:34.539972678Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAXGt4sHJ4E1Enrey4YStfXFXX72hic0ax0eqQ0v1Zp2ghigZiV8PIDns8tZghLS3NktGXwcNzHmeX6N7/vpfSCA=="
+}

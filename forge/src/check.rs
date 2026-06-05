@@ -395,7 +395,31 @@ pub fn check_file_with_options(
                 )?;
                 let effects = effects_of(&f.contract.fx);
                 if score.meets_floor(options.mutation_floor) {
-                    cert.with_mutation_score(score.mutants_killed_string(), score.survivor)
+                    // #14 §7 step 5 — STRENGTHENING PROBE
+                    // (`.design/forge/strengthening-probes.md` REQ-5). The item is a
+                    // SETTLED L3-certified + scored item (level L3, no reject, a
+                    // `MutationScore` produced), so the probe runs: it generates the
+                    // frozen candidate stronger-`ens` set, verifies each against the
+                    // REAL body via the SAME `run_verus` + #8 cache, keeps the
+                    // verifying + strictly-stronger ones, and attaches them as
+                    // ADVISORY suggestions. The probe NEVER changes the verdict
+                    // (`with_strengthening` only adds the additive field + the
+                    // `suggested_move` headline; `level`/`reject`/oracle subset
+                    // untouched, REQ-4). An environment failure on a candidate verus
+                    // run propagates (R-CODE-4).
+                    let scored_cert = cert
+                        .with_mutation_score(score.mutants_killed_string(), score.survivor.clone());
+                    let suggestions = strengthen_certificate(
+                        f,
+                        &spec_items,
+                        &score,
+                        seed,
+                        rlimit,
+                        &verus_version,
+                        &cache_dir,
+                        use_cache,
+                    )?;
+                    scored_cert.with_strengthening(suggestions)
                 } else {
                     // Sub-floor: the contract under-constrains the body. Below the
                     // floor a survivor is normally present (a < 1.0 ratio means ≥1
@@ -1241,6 +1265,105 @@ fn mutation_score(
         scored,
         survivor,
     })
+}
+
+/// Run the #14 §7 step-5 STRENGTHENING PROBE for `f`
+/// (`.design/forge/strengthening-probes.md` REQ-2/REQ-3/REQ-4). Called from the
+/// per-item L3 path ONLY after `f`'s REAL body proved L3 AND its mutant set met
+/// the floor (the caller gates on `cert.level == L3 && reject.is_none()` + a
+/// produced `MutationScore`, REQ-5). It delegates the candidate template +
+/// verify/filter pipeline to `strengthen::probe`, threading TWO verify closures
+/// that reuse the EXISTING verus driver:
+///
+/// - `verify_body` — weave the candidate `ens` into a COPY of `f` (body
+///   UNCHANGED, `strengthen::candidate_fn`), build the SAME per-item sub-program
+///   (`item_subprogram`), lower (`thermite_lower::lower`), content-address (the #8
+///   cache), and `run_verus`. Returns `Ok(true)` iff verus PROVED the candidate
+///   against the real body (the §7 "proves with no body change"); `Ok(false)` on a
+///   non-`Proved` outcome OR an un-lowerable woven fn (parallel to #12's drop), and
+///   `Err` on an environment failure (R-CODE-4).
+/// - `verify_survivor` — verify the candidate `ens` against the SURVIVOR body (the
+///   #12 mutant whose description is the recorded survivor). The survivor body
+///   comes from the SAME frozen mutator (`mutation::generate`), so the kill witness
+///   is the design's grounded `result == a + b` against `{ return 0; }`. Returns
+///   `Ok(true)` iff verus PROVED the candidate against the survivor body (NOT
+///   killed); `Ok(false)` when it did not (KILLED — the strictly-stronger witness).
+///
+/// Returns the ordered, deterministic list of adoptable [`strengthen::Suggestion`]s
+/// (possibly empty — an honest absence, REQ-4). The probe introduces NO new prover
+/// invocation path; it is a new caller of `run_verus` (REQ-2 / the doc's "the probe
+/// introduces NO new prover invocation path, only a new caller of the existing one").
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the L3-path seams (spec items, seed, rlimit, verus version, cache \
+    dir + enable) are the same verdict-determining inputs `mutation_score` threads; \
+    they compose the per-candidate cache key, so bundling them would obscure the \
+    content-addressing the probe reuses"
+)]
+fn strengthen_certificate(
+    f: &thermite_syntax::FnItem,
+    spec_items: &[Item],
+    score: &crate::mutation::MutationScore,
+    seed: u64,
+    rlimit: f64,
+    verus_version: &str,
+    cache_dir: &Path,
+    use_cache: bool,
+) -> Result<Vec<crate::strengthen::Suggestion>, ForgeError> {
+    // The SURVIVOR body the kill witness verifies against: the #12 mutant whose
+    // description matches the recorded survivor (the SAME frozen mutator). Resolved
+    // once; reused for every survivor-linked candidate.
+    let survivor_body: Option<thermite_syntax::FnItem> = score.survivor.as_ref().and_then(|desc| {
+        crate::mutation::generate(f, seed)
+            .into_iter()
+            .find(|m| &m.desc == desc)
+            .map(|m| m.item)
+    });
+
+    // A single content-addressed verify of a woven `fn` (the candidate `ens` over
+    // a given body): lower the per-item sub-program, consult the #8 cache, else
+    // `run_verus` + store. Returns whether verus PROVED it (the cert is L3 with no
+    // reject). An un-lowerable woven fn is `Ok(false)` (parallel to #12's drop).
+    let verify_woven = |woven: &thermite_syntax::FnItem| -> Result<bool, ForgeError> {
+        let item = Item::Fn(woven.clone());
+        let sub = item_subprogram(&item, spec_items);
+        let lowered = match thermite_lower::lower(&sub) {
+            Ok(s) => s,
+            Err(_) => return Ok(false),
+        };
+        let key = cache::cache_key(&lowered, seed, verus_version, THERMITE_VERSION);
+        if use_cache {
+            if let Some(stored) = cache::load(cache_dir, &key) {
+                return Ok(mutant_cert_is_survivor(&stored));
+            }
+            let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+            let cert = assemble_certificate(&item, &verus);
+            let _ = cache::store(cache_dir, &key, &cert);
+            Ok(mutant_cert_is_survivor(&cert))
+        } else {
+            let verus = run_verus(&sub, &lowered, seed, rlimit)?;
+            Ok(mutant_outcome_is_survivor(&verus.outcome))
+        }
+    };
+
+    crate::strengthen::probe(
+        f,
+        spec_items,
+        score,
+        // verify_body: the candidate `ens` over the REAL body.
+        |woven| verify_woven(woven),
+        // verify_survivor: the candidate `ens` over the SURVIVOR body. If the
+        // survivor body could not be resolved (no recorded survivor), the candidate
+        // is treated as PROVING (not killed) so it is not credited a kill it cannot
+        // witness — the structural-equality witness still applies.
+        |candidate| match &survivor_body {
+            Some(body) => {
+                let woven = crate::strengthen::candidate_fn(body, candidate);
+                verify_woven(&woven)
+            }
+            None => Ok(true),
+        },
+    )
 }
 
 /// `true` iff a verus outcome on a MUTANT body is a SURVIVOR (REQ-4): verus

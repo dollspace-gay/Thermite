@@ -65,6 +65,7 @@ use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
 
 use crate::profile::SolverProfile;
+use crate::strengthen::Suggestion;
 
 /// The assurance level (`thermite-design.md` §6). Serializes to the string form
 /// `"L0".."L3"` to match the golden cert's `"level": "L3"` (REQ-1, REQ-7).
@@ -321,6 +322,22 @@ pub struct Certificate {
     /// `lowered_assurance` flag, not on the prose reason).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub degrade_reason: Option<RejectReason>,
+    /// The §7 step-5 STRENGTHENING SUGGESTIONS surfaced for this item (issue #14
+    /// additive field; `.design/forge/strengthening-probes.md` REQ-4). Each
+    /// [`Suggestion`] is an adoptable stronger-`ens` clause that VERIFIES against
+    /// the real body AND is strictly stronger than the current `ens` (it would
+    /// kill a #12 survivor / adds an equality the `ens` lacks). ADVISORY: a probe
+    /// NEVER changes the verdict (`level`/`reject`/the oracle subset) — it only
+    /// ADDS these. `#[serde(default, skip_serializing_if = Vec::is_empty)]` so the
+    /// frozen golden `conformance/sum.cert.json` (which omits it, and for which the
+    /// probe emits nothing) still deserializes (R-SPEC-2, additive only), mirroring
+    /// the `solver_profile` additive precedent. DIAGNOSTIC + verus-version-
+    /// sensitive (a future verus might prove a candidate today's cannot), so it is
+    /// EXCLUDED from `oracle_subset` (parallel to `solver_profile`/`mutants_killed`,
+    /// OQ-3). An item with no surviving candidate carries an EMPTY list (an honest
+    /// absence, mirroring the `suggested_move: None` precedent).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strengthening: Vec<Suggestion>,
 }
 
 impl Certificate {
@@ -350,6 +367,7 @@ impl Certificate {
             suggested_move: None,
             lowered_assurance: false,
             degrade_reason: None,
+            strengthening: Vec::new(),
         }
     }
 
@@ -391,6 +409,7 @@ impl Certificate {
             suggested_move,
             lowered_assurance: false,
             degrade_reason: None,
+            strengthening: Vec::new(),
         }
     }
 
@@ -444,6 +463,7 @@ impl Certificate {
             suggested_move: None,
             lowered_assurance: false,
             degrade_reason: None,
+            strengthening: Vec::new(),
         }
         .graduate_triage_clean()
     }
@@ -477,6 +497,7 @@ impl Certificate {
             suggested_move: None,
             lowered_assurance: false,
             degrade_reason: None,
+            strengthening: Vec::new(),
         }
     }
 
@@ -530,6 +551,44 @@ impl Certificate {
     pub fn with_mutation_score(mut self, mutants_killed: String, survivor: Option<String>) -> Self {
         self.contract_quality.mutants_killed = mutants_killed;
         self.contract_quality.survivor = survivor;
+        self
+    }
+
+    /// Attach the §7 step-5 STRENGTHENING SUGGESTIONS to this certificate (#14;
+    /// `.design/forge/strengthening-probes.md` REQ-4). ADVISORY: only the additive
+    /// `strengthening` field and the reserved `suggested_move` headline change —
+    /// `level`, `reject`, and the `oracle_subset` are UNTOUCHED, so a probe NEVER
+    /// changes the verdict (a `fn` that certified L3 still certifies L3 with the
+    /// same oracle subset, now carrying suggestions). The top suggestion (the first
+    /// in the deterministic family order) becomes the `suggested_move` headline
+    /// (§5.1 "every message is a prompt"); the full ordered list lives in
+    /// `strengthening`. An EMPTY `suggestions` is a no-op (an honest absence — the
+    /// `suggested_move` stays whatever it was, the list stays empty). Consumed by
+    /// `check::strengthen_certificate`.
+    pub fn with_strengthening(mut self, suggestions: Vec<Suggestion>) -> Self {
+        if let Some(top) = suggestions.first() {
+            // The headline hint (the §5.1 reserved `suggested_move` slot): the
+            // top adoptable tightening. A probe NEVER overwrites a NON-`None`
+            // `suggested_move` (e.g. a timeout cert's profile hint), but a probe
+            // only runs on a CERTIFIED L3 item whose `suggested_move` is `None`,
+            // so this is the first writer in that path.
+            self.suggested_move = Some(SuggestedMove {
+                kind: "strengthen-ens".to_string(),
+                detail: match &top.kills_survivor {
+                    Some(survivor) => format!(
+                        "consider strengthening `ens` with `{}` — it holds for your body and \
+                         would kill survivor `{survivor}`",
+                        top.clause
+                    ),
+                    None => format!(
+                        "consider strengthening `ens` with `{}` — it holds for your body and \
+                         pins the result more tightly than the current `ens`",
+                        top.clause
+                    ),
+                },
+            });
+        }
+        self.strengthening = suggestions;
         self
     }
 

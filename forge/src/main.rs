@@ -29,6 +29,7 @@ mod manifest;
 mod mutation;
 mod profile;
 mod slag;
+mod strengthen;
 mod vacuity;
 mod vacuity_solver;
 

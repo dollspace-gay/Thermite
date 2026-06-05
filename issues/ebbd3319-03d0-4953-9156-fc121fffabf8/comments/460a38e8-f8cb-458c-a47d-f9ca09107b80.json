@@ -1,0 +1,10 @@
+{
+  "uuid": "460a38e8-f8cb-458c-a47d-f9ca09107b80",
+  "issue_uuid": "ebbd3319-03d0-4953-9156-fc121fffabf8",
+  "author": "Yffe",
+  "content": "Increments 2+3 SHIPPED + critic-clean (commit 0125d12): ladder_action (degrade ANTI-CHEAT, REQ-7) + io_allow/syscall_allowlist (seccomp soundness, REQ-8) now Verus-verified. verus --no-cheating: 19 verified, 0 errors. A: run_ladder branches on the proved ladder_action (load-bearing — a Counterexample never reaches attempt_l2/l1, Cell-instrumented observable-outcome test; mirror==spec over all verdicts). B: 256-mask exhaustive equivalence binds production syscall_allowlist to the proved io_allow (pure->no I/O + monotonicity + deny-by-default; projection faithful, 8 fx verbs 1:1). Critic NO DIVERGENCE (load-bearing confirmed, contracts non-vacuous via 3 verus mutation tests, no cheat, OQ-6 honestly scoped to 5 sensitive syscalls). forge binary-only -> anchor tests in-module #[cfg(test)] (Option B, doc-amended). Verus-verified soundness cores now: subsumes, ladder_action, io_allow. Next: boundary honesty gate + level aggregation + mutation 0/0 gate; then honestly bound the infinite-domain rest (cache_key sha256, triage/mutation AST-walks).",
+  "created_at": "2026-06-05T22:12:23.418957821Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAPH6clJsLALoZvbg+V7gsfg4vPLB01lf0xbb8F+aFZh3otca2QIKEQfHSQcFwe+th5GG1rPdw6hVaW4s+HJ3QDg=="
+}

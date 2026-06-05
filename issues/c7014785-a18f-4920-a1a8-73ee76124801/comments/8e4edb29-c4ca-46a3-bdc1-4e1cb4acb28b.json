@@ -1,0 +1,10 @@
+{
+  "uuid": "8e4edb29-c4ca-46a3-bdc1-4e1cb4acb28b",
+  "issue_uuid": "c7014785-a18f-4920-a1a8-73ee76124801",
+  "author": "Yffe",
+  "content": "Ship the pluggable spec-intent review slot forge review (#19, design §7 line 227). New forge/src/review.rs: pub fn review_file projects the PRE-SCREENED declarative spec layer (per battery-passing fn: verbatim req/ens/fx + directly-referenced spec-fn declarations name/params/ret/dec, NO bodies — structural exclusion, never reads FnItem.body/SpecFnItem.body) + an is-this-what-you-meant prompt. Pre-screening (R-DEFER-9): intent_reviewable iff cert reject-free + certified rung (manifest::cert_certifies, incl. slag/boundary L1 per OQ-4); a reject cert is flagged battery_failing with its cause, NOT surfaced. Pluggable verdict slot ReviewVerdict{item,aligned,note} attaches as a SEPARATE *.review.json record (OQ-2 reading a), never a Certificate field — oracle_subset untouched. --reviewer cmd shell-out (OQ-1) pipes the artifact to stdin, reads the verdict from stdout; absent/failing/garbage reviewer -> ForgeError, never a panic, never a fabricated aligned. forge review [item] verb in cli.rs + tests/review_conformance.rs against conformance/review/cases.json. Extraction deterministic (R-CODE-5). Do NOT close #19 (critic re-audits).",
+  "created_at": "2026-06-05T10:28:42.776329871Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAK/M6aqXX8Y3Uw0KG2WvQ9Gl1Mm9CIrkGLh4J4FjqfBMlUG4G4FWmNx8MFnPCx7x8b5calYMsbAYB5N0uB56rDA=="
+}

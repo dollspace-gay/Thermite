@@ -206,10 +206,10 @@ Expected JSON keys/values trace to `thermite-design.md` Appendix A and
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (stable schema, Appendix A) | NOT-STARTED | open issue #5. No `manifest.rs`; `forge/src/main.rs` is the empty scaffold. Target shape fixed by `thermite-design.md` Appendix A. |
-| REQ-2 (fields #5 produces now) | NOT-STARTED | open issue #5. No `Certificate` type exists; depends on `check.rs` (#5) to derive `item`/`level`/`effects`/`slag`. |
-| REQ-3 (forward-declared fields) | NOT-STARTED | open issue #5. `contract_quality` producers (#6/#12) not yet built; `conformance/README.md` fixes the forward-declaration convention. |
-| REQ-4 (`suggested_move` reserved) | NOT-STARTED | open issue #5. No type exists; slot reserved per `thermite-design.md` §5.1. |
-| REQ-5 (per-obligation results) | NOT-STARTED | open issue #5. No `ObligationResult` type; populated by `check.rs` (#5). |
-| REQ-6 (`solver_time_ms` excluded) | NOT-STARTED | open issue #5. No comparator exists; exclusion fixed by `conformance/README.md` + §5.3. |
-| REQ-7 (serde_json serialization) | NOT-STARTED | open issue #5. No serde derive exists; `forge/Cargo.toml` does not yet declare `serde`/`serde_json` deps. |
+| REQ-1 (stable schema, Appendix A) | SHIPPED | `struct Certificate { item, level, solver_time_ms, contract_quality, effects, slag, obligations, suggested_move }` in `manifest.rs` mirrors Appendix A field order; consumed by `check::assemble_certificate`. Test `schema_matches_appendix_a`. |
+| REQ-2 (fields #5 produces now) | SHIPPED | `Certificate::new` + `fn effects_of` set real `item`/`level`/`effects`/`slag`/`obligations`; consumer `check::assemble_certificate`; live oracle `sum_cert_matches_golden_deterministic_subset` against `conformance/sum.cert.json`. |
+| REQ-3 (forward-declared fields) | SHIPPED | `ContractQuality::forward_declared` returns honest unscored values (`mutants_killed="0/0"`, not the golden `"17/18"`); excluded from `Certificate::oracle_subset`. Test `oracle_ignores_forward_declared_and_time`. |
+| REQ-4 (`suggested_move` reserved) | SHIPPED | `Certificate::new` sets `suggested_move: None` (serialized as omitted, not a placeholder); `struct SuggestedMove` reserves the slot. Test `suggested_move_is_reserved_absence`. |
+| REQ-5 (per-obligation results) | SHIPPED | `struct ObligationResult` + `enum ObligationStatus`; `obligations` field; populated by `check::parse_verus_output`, rendered by `cli::render_human`. Test `obligation_results_present`. |
+| REQ-6 (`solver_time_ms` excluded) | SHIPPED | `solver_time_ms: u64` present (`#[serde(default)]` so the golden subset deserializes); `Certificate::oracle_subset` omits it. Test `golden_deterministic_subset_round_trips`. |
+| REQ-7 (serde_json serialization) | SHIPPED | `#[derive(Serialize, Deserialize)]`; `Level` → `"L0".."L3"`; serialized via `cli::run_check`'s `serde_json::to_string_pretty`; deterministic field order. Test `serialization_is_deterministic`. |

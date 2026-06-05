@@ -178,10 +178,10 @@ error-mapping surface only.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (command surface) | NOT-STARTED | open issue #5. `forge/src/main.rs` is the empty scaffold (`fn main` exits 0, comment "the command surface (`new`/`check`/...) ... arrive in issue #5"); no `cli.rs`, no verb dispatch exists. |
-| REQ-2 (hand-rolled arg parsing) | NOT-STARTED | open issue #5. No arg parser exists; `forge/Cargo.toml` declares no `clap`/CLI dependency (only the four path deps). Decision recorded; implementation pending. |
-| REQ-3 (`ForgeError` aggregation) | NOT-STARTED | open issue #5. `forge` has no error type (`main.rs` comment: "no error type — `forge::ForgeError` ... land with issue #5"). The per-crate errors it must wrap DO exist: `SyntaxError`, `SpecError`, `LowerError` (re-exported from each crate's `lib.rs`). |
-| REQ-4 (human + `--json` output) | NOT-STARTED | open issue #5. No output rendering exists; depends on `manifest.rs` `Certificate` (`.design/forge/certificate-manifest.md`, also #5). |
-| REQ-5 (typed exit codes) | NOT-STARTED | open issue #5. `main` currently returns `()` and exits 0 unconditionally. |
-| REQ-6 (no panics; Result discipline) | NOT-STARTED | open issue #5. Scaffold is panic-free but has no fallible paths yet to discipline. |
-| REQ-7 (`forge new` scaffold) | NOT-STARTED | open issue #5. No `new` verb; no project-scaffold writer exists. |
+| REQ-1 (command surface) | SHIPPED | `fn run` + `fn dispatch` in `cli.rs` match `new`/`check`; unknown verb → `ForgeError::Usage`; consumer `fn main` in `main.rs`. Other Appendix B verbs out of #5. |
+| REQ-2 (hand-rolled arg parsing) | SHIPPED | `fn parse_args` in `cli.rs` is a `match` over verb + positionals + `--json`; `forge/Cargo.toml` declares no `clap`. |
+| REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError` in `cli.rs` wraps `Vec<SyntaxError>`/`Vec<SpecError>`/`Vec<LowerError>`/`LowerError` + `VerusAbsent`/`VerusSpawn`/`VerusOutput`/`Io`/`Usage`; `Display` forwards inner diagnostics (test `aggregation_preserves_inner_diagnostics`). |
+| REQ-4 (human + `--json` output) | SHIPPED | `fn render_human` + `serde_json::to_string_pretty` in `fn run_check`; diagnostics to stderr; integration test `sum_cert_matches_golden_deterministic_subset` parses the clean `--json` stdout. |
+| REQ-5 (typed exit codes) | SHIPPED | `fn run_check` returns `ExitCode`: all-L3 → 0, reported failure → `EXIT_VERIFICATION_FAILURE`(1); `ForgeError::exit_code` → `EXIT_ENVIRONMENT`(2). Tests `broken_contract_is_reported_failure_with_counterexample` (exit 1) + `missing_file_is_usage_error_nonzero`. |
+| REQ-6 (no panics; Result discipline) | SHIPPED | every fallible `cli.rs` path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` in non-test code (anti-pattern gate + clippy `-D warnings` pass); verus exit status inspected in `check::invoke_verus`. |
+| REQ-7 (`forge new` scaffold) | SHIPPED | `pub fn scaffold_project` in `cli.rs` writes `forge.toml`+`forge.lock`(pinned seed)+`THERMITE.skill.pin`, refuses non-empty target; consumer `fn dispatch`; test `scaffold_writes_layout_and_refuses_clobber`. |

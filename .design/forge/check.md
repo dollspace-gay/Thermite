@@ -237,10 +237,10 @@ commit touches `forge`.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (pipeline orchestration) | NOT-STARTED | open issue #5. No `check.rs`; `forge/src/main.rs` is the empty scaffold. The driven APIs exist (`parse`, `validate`, `check_effects`, `lower`) but no orchestrator calls them. |
-| REQ-2 (verus invocation, temp file, crate-name gotcha) | NOT-STARTED | open issue #5. No verus subprocess code exists. Gotcha grounded: `verus <file>.verus.rs` → `invalid character '.' in crate name`. |
-| REQ-3 (exit-status checked, never swallow) | NOT-STARTED | open issue #5. No subprocess invocation exists yet. |
-| REQ-4 (verus output → per-obligation + counterexamples) | NOT-STARTED | open issue #5. No output parser exists. Output formats grounded (JSON `verification-results` + stderr `error:`/`-->` spans). |
-| REQ-5 (level determination, v0.1) | NOT-STARTED | open issue #5. No level logic exists. L3-on-0-errors grounded; full degrade is issue #10. |
-| REQ-6 (verus-absent = environment error) | NOT-STARTED | open issue #5. No `VerusAbsent` handling exists; `forge` has no error type yet (`main.rs`: "`ForgeError` ... land with issue #5"). |
-| REQ-7 (determinism) | NOT-STARTED | open issue #5. No seed plumbing exists; `solver_time_ms` exclusion is fixed by `conformance/README.md`. |
+| REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` in `check.rs` runs `parse`→`validate`→`check_effects`→`lower`→`run_verus`→`parse_verus_output`→`assemble_certificate`, each short-circuiting into a `ForgeError`; consumer `cli::run_check`. Live oracle test `sum_cert_matches_golden_deterministic_subset`. |
+| REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `fn crate_stem` strips `.`/leading-digit; `fn run_verus` writes `forge_<stem>_<pid>_<n>.rs` and spawns `verus --output-json --smt-option smt.random_seed=<seed>`; cleaned up. Test `crate_stem_has_no_dot_and_is_valid`. |
+| REQ-3 (exit-status checked, never swallow) | SHIPPED | `fn invoke_verus` captures status+stdout+stderr; `fn parse_verus_output` makes parseable failure a reported cert, unparseable/VIR-error a `ForgeError::VerusOutput`, ENOENT a `VerusAbsent`. Tests `unparseable_output_is_verus_output_error`, `vir_error_is_verus_output_error`. |
+| REQ-4 (verus output → per-obligation + counterexamples) | SHIPPED | `fn parse_summary` reads JSON `verification-results`; `fn parse_stderr_failures`/`fn parse_span` turn `error:` + `--> file:line:col` into `ObligationResult::failed` witnesses. Test `parseable_failure_is_reported_cert_with_counterexample`. |
+| REQ-5 (level determination, v0.1) | SHIPPED | `fn level_from_summary`: `Level::L3` iff `success && errors==0`, else `Level::L0` reported failure. Tests `parseable_success_is_l3_cert` (L3) + the broken-contract integration test (L0). |
+| REQ-6 (verus-absent = environment error) | SHIPPED | `fn invoke_verus` maps spawn `ErrorKind::NotFound` → `ForgeError::VerusAbsent`; integration test `verus_absent_is_environment_error_not_l3`. |
+| REQ-7 (determinism) | SHIPPED | `DEFAULT_SOLVER_SEED` (via `fn resolve_seed`) passed to verus; `solver_time_ms` is the only wall-clock field, excluded from `Certificate::oracle_subset`; test `serialization_is_deterministic`. |

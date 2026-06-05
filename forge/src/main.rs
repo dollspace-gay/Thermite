@@ -1,26 +1,33 @@
-//! `forge` — the Thermite CLI / verification driver: `forge new`, `forge check`
-//! (run the ladder, structured per-obligation JSON + counterexamples),
-//! structural vacuity triage, `#[slag]`, the proof cache, and pinned seeds.
+//! `forge` — the Thermite CLI / verification driver. v0.1 (issue #5) ships the
+//! first end-to-end `forge check <file.th> → certificate`: `forge new <name>`
+//! (project scaffold) and `forge check <file> [--json]` (the verus-backed ladder
+//! pipeline emitting a structured per-obligation certificate).
 //!
-//! `forge` is the sole binary crate of the v0.1 kernel (REQ-1). In the DAG
-//! (REQ-2) it depends on all three libraries (`thermite-syntax`, `thermite-spec`,
-//! `thermite-lower`) and on `thermite-skill`. At scaffold time (issue #1) it is a
-//! real entry point that exits cleanly (exit code 0) with no command surface yet
-//! and no error type — `forge::ForgeError` and the CLI land with issue #5 (REQ-3,
-//! REQ-6). It does not `panic!` and contains no stubs.
+//! `main.rs` is the thin entry point (`.design/forge/cli.md` Architecture): it
+//! delegates to `cli::run`, which owns `argv` parsing, dispatch, rendering, and
+//! the typed exit-code mapping. The pipeline lives in `check.rs`
+//! (`.design/forge/check.md`) and the certificate schema in `manifest.rs`
+//! (`.design/forge/certificate-manifest.md`).
 //!
-//! Governing design: `.design/scaffold/workspace.md`.
+//! Governing design: `.design/forge/cli.md`, `check.md`, `certificate-manifest.md`.
 //!
-//! ## REQ status
+//! ## REQ status (scaffold REQs, `.design/scaffold/workspace.md`)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (workspace topology) | SHIPPED | this crate is the sole `bin` member of the virtual workspace (root `Cargo.toml` + `[[bin]]` in `forge/Cargo.toml`). |
-//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | `forge/Cargo.toml` declares path deps on all three libs + `thermite-skill`. |
-//! | REQ-3 (Result discipline; no scaffold error type) | SHIPPED | `fn main` returns `()` and exits 0; no error type, no `unwrap`/`expect`/`panic!`. |
-//! | REQ-6 (empty scaffold compiles clean) | SHIPPED | real entry point exiting cleanly; no stubs, no missing-module `mod`; gauntlet green. |
+//! | REQ-1 (workspace topology) | SHIPPED | sole `bin` member; `[[bin]]` in `forge/Cargo.toml`. |
+//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | path deps on all three libs + `thermite-skill`; `check.rs` drives `parse`/`validate`/`check_effects`/`lower`. |
+//! | REQ-3 (Result discipline; error type) | SHIPPED | `ForgeError` born in `cli.rs`; `main` returns `ExitCode` from `cli::run`; no `unwrap`/`expect`/`panic!`. |
+//! | REQ-6 (clean compile) | SHIPPED | gauntlet green; the anti-pattern gate passes (no placeholder macros). |
 
-fn main() {
-    // Empty-but-clean scaffold entry point (REQ-6): exits 0. The command
-    // surface (`new`/`check`/...) and `ForgeError` arrive in issue #5.
+mod check;
+mod cli;
+mod manifest;
+
+use std::process::ExitCode;
+
+/// The driver entry point. All logic — `argv`, dispatch, rendering, exit-code
+/// mapping — lives in `cli::run` (`.design/forge/cli.md`).
+fn main() -> ExitCode {
+    cli::run()
 }

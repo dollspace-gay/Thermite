@@ -1,0 +1,18 @@
+{
+  "note": "Oracle for the §9 boundary-composition lowering (issue #52). Hand-derived (R-CHAR-3). A caller of a #[boundary]/#[slag] fn that HONORS the callee's contract verifies at L3 THROUGH the assumed contract (the foreign body is external_body — unchecked, L1-enforced at runtime); its assurance_scope is to_boundary (#17). A caller that VIOLATES the callee's req (does not establish it) or OVERCLAIMS its own ens is a COUNTEREXAMPLE, never a false L3 — the composition is sound. external_body is emitted ONLY for the declared boundary/slag fn, never a regular fn.",
+  "verifies_to_boundary": [
+    { "name": "direct_boundary_caller", "fn": "caller", "expect_level": "L3", "expect_scope": "to_boundary", "expect_via": "ext_id",
+      "program": "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }",
+      "why": "caller establishes ext_id's req (x<100) at the call site and its own ens (result==x) follows from ext_id's ASSUMED ensures -> caller proves L3 through the contract; scope to_boundary via ext_id (the foreign body is trusted-by-fiat, L1-enforced). Was L0 before #52." }
+  ],
+  "transitive": [
+    { "name": "transitive_boundary_caller", "fn": "h", "expect_level": "L3", "expect_scope": "to_boundary", "expect_via": "ext_id",
+      "program": "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn g(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) } fn h(x: u32) -> u32 req x < 100 ens result == x fx pure { g(x) }",
+      "why": "h -> g -> ext_id: both g and h prove L3 through the contracts; scope to_boundary via ext_id." }
+  ],
+  "counterexample": [
+    { "name": "req_violating_caller", "fn": "bad", "expect_level": "L0",
+      "program": "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn bad(x: u32) -> u32 req true ens result == x fx pure { ext_id(x) }",
+      "why": "bad's req `true` does NOT establish ext_id's req (x<100) at the call site -> precondition not satisfied -> COUNTEREXAMPLE, never a false L3 (soundness: external_body assumes the ensures but the caller must still discharge the callee's req)." }
+  ]
+}

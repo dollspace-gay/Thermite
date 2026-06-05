@@ -35,7 +35,9 @@ use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
 use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
-use crate::manifest::{AssuranceManifest, Certificate, Level, ObligationStatus, ProjectAssurance};
+use crate::manifest::{
+    AssuranceManifest, AssuranceScope, Certificate, Level, ObligationStatus, ProjectAssurance,
+};
 use crate::mutation::MUTATION_FLOOR;
 
 /// Exit code: a reported verification FAILURE (the certificate is a valid
@@ -483,7 +485,7 @@ fn render_human(cert: &Certificate) -> String {
     // item / level / effects / slag — the fields the cert-oracle compares — are
     // rendered first, then the non-deterministic `solver_time_ms` labelled as
     // such so a reader does not mistake it for an oracle field.
-    let (item, level, effects, slag, boundary) = cert.oracle_subset();
+    let (item, level, effects, slag, boundary, _scope_end_to_end) = cert.oracle_subset();
     let mut out = String::new();
     out.push_str(&format!("item: {item}\n"));
     out.push_str(&format!("level: {}\n", level_str(level)));
@@ -494,6 +496,17 @@ fn render_human(cert: &Certificate) -> String {
     out.push_str(&format!("boundary: {boundary}\n"));
     if let Some(target) = &cert.boundary_target {
         out.push_str(&format!("boundary_target: {target}\n"));
+    }
+    // #17: end-to-end vs to-the-boundary (§9) — whether the verified guarantee
+    // depends on an unproven foreign/slag body anywhere in the call closure.
+    match &cert.assurance_scope {
+        Some(AssuranceScope::EndToEnd) => {
+            out.push_str("assurance_scope: end-to-end\n");
+        }
+        Some(AssuranceScope::ToBoundary { via }) => {
+            out.push_str(&format!("assurance_scope: to-the-boundary (via {via})\n"));
+        }
+        None => {}
     }
     // #6: a valid `#[slag]` item carries its audit metadata (§8 visibility).
     if let Some(meta) = &cert.slag_meta {

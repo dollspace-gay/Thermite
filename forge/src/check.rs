@@ -489,6 +489,28 @@ pub fn check_file_with_options(
         }
         certs.push(cert.with_cached(false));
     }
+
+    // #17 §9 END-TO-END vs TO-THE-BOUNDARY classification
+    // (`.design/forge/e2e-vs-boundary.md` REQ-1/REQ-2/REQ-3). Run the structural
+    // transitive-call-closure analysis ONCE over the whole file's program (it is a
+    // pure function of the parsed `Program`, R-CODE-5), then attach each fn's
+    // assurance scope to its certificate. ORTHOGONAL to the verdict (REQ-5): the
+    // scope is recorded ALONGSIDE the already-achieved level — a fn whose body
+    // SMT-proved at L3 but whose closure crosses a `#[boundary]`/`#[slag]` fn keeps
+    // `Level::L3` AND records `ToBoundary { via }`. The classification keys on the
+    // in-file `#[boundary]`/`#[slag]` NODE (the §9 composition rule), never a
+    // sibling's verdict, so it does not perturb any oracle-stable level.
+    let scopes = crate::closure::classify(&parsed.program);
+    let certs = certs
+        .into_iter()
+        .map(|cert| match scopes.get(&cert.item) {
+            Some(scope) => cert.with_assurance_scope(scope.clone()),
+            // A cert whose item has no node (defensive — every checked item is a
+            // node) keeps its `None` scope, which `oracle_subset` reads as
+            // end-to-end (the golden-stable default).
+            None => cert,
+        })
+        .collect();
     Ok(certs)
 }
 

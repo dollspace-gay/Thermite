@@ -45,6 +45,12 @@
 //! | REQ-6 (min-over-functions project assurance) | SHIPPED | `AssuranceManifest::aggregate` headline = `ProjectAssurance::Certified(min over levels)` via `Level`'s `Ord` (`L0<L1<L2<L3`), or `Failed` if any fn does not certify. Test `aggregate_is_min_over_functions` + `hard_fail_caps_project_at_failure`. |
 //! | REQ-7 (determinism) | SHIPPED | `run_ladder` is a pure function of its verdict + closures; `aggregate` is a pure function of the cert collection; no wall-clock / unseeded input enters the verdict (R-CODE-5). Test `ladder_is_deterministic`. |
 //! | REQ-8 (subprocess failures never silently degrade) | SHIPPED | `attempt_l2` / `attempt_l1` return `Result<_, ForgeError>`; an environment failure propagates as the `Err` (the `?` in `run_ladder`), NEVER a degrade — only a classified `Timeout`/`UnderBound` verdict takes a degrade edge. Test `l2_environment_error_is_not_a_degrade`. |
+//!
+//! ## #17 extension (the §9 project assurance-scope claim, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | e2e-vs-boundary REQ-4 (project END-TO-END iff every fn is) | SHIPPED | `manifest::AssuranceManifest::aggregate` now also computes `manifest::ProjectScope` (via `project_scope`): `EndToEnd` iff every cert's `assurance_scope` is end-to-end (a `None` reads end-to-end — the golden default), else `ToBoundary { crossings }` listing the reached `#[boundary]`/`#[slag]` fns (sorted + deduplicated, deterministic). ORTHOGONAL to the min-over-functions `project` level headline. Consumer: `cli::run_check` (the manifest it aggregates + renders). Tests `aggregate_project_scope_*` below. |
 
 use crate::cli::ForgeError;
 use crate::kani::L2Verdict;
@@ -451,5 +457,58 @@ mod tests {
         assert_eq!(manifest.project, ProjectAssurance::Certified(Level::L3));
         assert!(manifest.functions.iter().all(|f| !f.lowered_assurance));
         assert!(manifest.functions.iter().all(|f| f.certified));
+    }
+
+    // #17 e2e-vs-boundary REQ-4 / AC-5: a project of only end-to-end fns claims
+    // ProjectScope::EndToEnd. A `None` scope (the golden default) reads end-to-end.
+    // Expected from the design REQ-4 (R-CHAR-3), not forge output.
+    #[test]
+    fn aggregate_project_scope_all_end_to_end() {
+        use crate::manifest::{AssuranceScope, ProjectScope};
+        let certs = vec![
+            proved_cert("spec_sum").with_assurance_scope(AssuranceScope::EndToEnd),
+            proved_cert("sum").with_assurance_scope(AssuranceScope::EndToEnd),
+        ];
+        let manifest = AssuranceManifest::aggregate(&certs);
+        assert_eq!(manifest.scope, ProjectScope::EndToEnd);
+        // ORTHOGONAL: the level headline is still the min-over-functions (L3).
+        assert_eq!(manifest.project, ProjectAssurance::Certified(Level::L3));
+    }
+
+    // #17 e2e-vs-boundary REQ-4 / AC-5: a project with ANY to-boundary fn claims
+    // ProjectScope::ToBoundary listing the (sorted, deduplicated) crossings. The
+    // scope is ORTHOGONAL to the level — every fn can be Certified(L3) AND the
+    // project be to-the-boundary. Expected from REQ-4 (R-CHAR-3).
+    #[test]
+    fn aggregate_project_scope_any_to_boundary_lists_crossings() {
+        use crate::manifest::{AssuranceScope, ProjectScope};
+        let certs = vec![
+            proved_cert("h").with_assurance_scope(AssuranceScope::ToBoundary {
+                via: "ext_id".to_string(),
+            }),
+            proved_cert("g").with_assurance_scope(AssuranceScope::ToBoundary {
+                via: "ext_id".to_string(),
+            }),
+            proved_cert("pure").with_assurance_scope(AssuranceScope::EndToEnd),
+        ];
+        let manifest = AssuranceManifest::aggregate(&certs);
+        assert_eq!(
+            manifest.scope,
+            ProjectScope::ToBoundary {
+                crossings: vec!["ext_id".to_string()]
+            },
+            "the crossing is listed once (deduplicated) even when two fns reach it"
+        );
+        // The level headline is independent — all proved L3 → Certified(L3).
+        assert_eq!(manifest.project, ProjectAssurance::Certified(Level::L3));
+    }
+
+    // #17 e2e-vs-boundary REQ-4: an empty cert collection is vacuously END-TO-END
+    // (nothing crosses a boundary). Expected from REQ-4 (R-CHAR-3).
+    #[test]
+    fn aggregate_project_scope_empty_is_end_to_end() {
+        use crate::manifest::ProjectScope;
+        let manifest = AssuranceManifest::aggregate(&[]);
+        assert_eq!(manifest.scope, ProjectScope::EndToEnd);
     }
 }

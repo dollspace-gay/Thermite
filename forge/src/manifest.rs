@@ -68,12 +68,76 @@
 //! | `degrade_reason: Option<RejectReason>` | SHIPPED | `Certificate.degrade_reason` (additive, `#[serde(default, skip_serializing_if)]`). `Some` ONLY on a `lowered_assurance` cert — the `VerusTimeout` reason carried from the timed-out L3 attempt (REQ-4). Set by `Certificate::into_degraded`; DIAGNOSTIC, EXCLUDED from `oracle_subset`. |
 //! | `Level: Ord` (ladder ordering) | SHIPPED | `#[derive(PartialOrd, Ord)]` on `enum Level` makes the declaration order `L0 < L1 < L2 < L3` the `Ord` the aggregate's min-over-functions uses (`.design/forge/degrade-ladder.md` REQ-6). |
 //! | `AssuranceManifest` + `ProjectAssurance` (the aggregate) | SHIPPED | `AssuranceManifest::aggregate(&[Certificate])` computes the per-fn `FunctionAssurance` rows + the project headline `ProjectAssurance::{Certified(min), Failed}` (REQ-5/REQ-6); a non-certifying fn (`cert_certifies` false) caps the project at `Failed` (a non-rung, REQ-2). Render-time aggregate (OQ-4 (b)). Consumed by `cli::run_check`/`render_assurance`. |
+//!
+//! ## #17 additive schema (the §9 end-to-end vs to-the-boundary scope, this iteration)
+//!
+//! | Field/symbol | Status | Evidence |
+//! |---|---|---|
+//! | `AssuranceScope` (per-fn §9 scope) | SHIPPED | `enum AssuranceScope { EndToEnd, ToBoundary { via } }` (`.design/forge/e2e-vs-boundary.md` REQ-2/REQ-3); `Certificate.assurance_scope: Option<AssuranceScope>` (additive, `#[serde(default, skip_serializing_if = "Option::is_none")]` so the frozen golden `conformance/sum.cert.json` — which omits it — still deserializes, defaulting `None`, mirroring the `boundary_target`/`solver_profile` precedents, R-SPEC-2). Produced by `closure::classify`, set by `Certificate::with_assurance_scope`, consumed by `check::check_file_with_options`. VERDICT-RELEVANT (§9 / R-DEFER-9) so it JOINS `oracle_subset` — NORMALIZED to a bool (`scope_is_end_to_end`): `None` and `Some(EndToEnd)` are oracle-EQUAL (golden stays stable) while `Some(ToBoundary)` is oracle-visible; the `via` crossing name is diagnostic, oracle-EXCLUDED. ORTHOGONAL to `level` (REQ-5). |
+//! | `ProjectScope` (project §9 claim) | SHIPPED | `enum ProjectScope { EndToEnd, ToBoundary { crossings } }` + `AssuranceManifest.scope`; `AssuranceManifest::aggregate` computes it (`project_scope`): END-TO-END iff every cert is end-to-end, else TO-THE-BOUNDARY listing the reached crossings (sorted + deduplicated, deterministic — REQ-4/REQ-6). ORTHOGONAL to the `project` level headline. Consumed by `cli::run_check`. |
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};
 
 use crate::profile::SolverProfile;
 use crate::strengthen::Suggestion;
+
+/// The §9 ASSURANCE SCOPE of a function (issue #17,
+/// `.design/forge/e2e-vs-boundary.md` REQ-2/REQ-3; `thermite-design.md` §9). The
+/// manifest distinction "verified to the boundary" vs "verified, period":
+///
+/// - [`AssuranceScope::EndToEnd`] — the fn's transitive intra-file call closure
+///   reaches NO `#[boundary]` (foreign body) and NO `#[slag]` (fiat-trusted body)
+///   fn; the whole-program guarantee rests only on the toolchain ("verified,
+///   period").
+/// - [`AssuranceScope::ToBoundary`] — the closure transitively reaches a crossing;
+///   `via` names the first reached `#[boundary]`/`#[slag]` fn. The fn's own
+///   contract is verified, but the end-to-end guarantee crosses a foreign/unproven
+///   body (`goal.md` R-DEFER-9 — honestly mark such a guarantee).
+///
+/// ORTHOGONAL to [`Level`] (REQ-5): a `ToBoundary` fn may be `Level::L3` (its own
+/// body fully SMT-proved against the crossing's contract). Produced by
+/// [`crate::closure::classify`] (the structural call-closure analysis); recorded
+/// as the additive [`Certificate::assurance_scope`] field.
+///
+/// The serialized form is a tagged enum (`{"kind": "end_to_end"}` /
+/// `{"kind": "to_boundary", "via": "<fn>"}`), mirroring [`ProjectAssurance`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum AssuranceScope {
+    /// "Verified, period": no `#[boundary]`/`#[slag]` fn in the transitive closure.
+    EndToEnd,
+    /// "Verified to the boundary": the closure reaches a crossing; `via` is the
+    /// first reached `#[boundary]`/`#[slag]` fn (the deterministic crossing).
+    ToBoundary {
+        /// The name of the first `#[boundary]`/`#[slag]` fn the closure reaches.
+        via: String,
+    },
+}
+
+impl AssuranceScope {
+    /// `true` iff this scope is END-TO-END ("verified, period"). The verdict-
+    /// relevant bit the cert-oracle compares (see [`Certificate::oracle_subset`]):
+    /// a `None` `assurance_scope` (the frozen golden `sum.cert.json`, which omits
+    /// the field) and `Some(EndToEnd)` (a freshly-classified pure fn) BOTH read
+    /// `true` here, so the golden subset stays stable (R-SPEC-2) while a
+    /// `ToBoundary` verdict is oracle-visible.
+    pub fn is_end_to_end(&self) -> bool {
+        matches!(self, AssuranceScope::EndToEnd)
+    }
+}
+
+/// `true` iff `scope` is END-TO-END for the oracle (REQ-3): `None` (field absent,
+/// the golden default) OR `Some(EndToEnd)`. A `Some(ToBoundary)` reads `false`.
+/// This is the normalization that keeps the golden `sum.cert.json` (no
+/// `assurance_scope` key) oracle-equal to a freshly-classified `Some(EndToEnd)`
+/// `sum` cert (`.design/forge/e2e-vs-boundary.md` Verification).
+fn scope_is_end_to_end(scope: &Option<AssuranceScope>) -> bool {
+    match scope {
+        None => true,
+        Some(s) => s.is_end_to_end(),
+    }
+}
 
 /// The assurance level (`thermite-design.md` §6). Serializes to the string form
 /// `"L0".."L3"` to match the golden cert's `"level": "L3"` (REQ-1, REQ-7).
@@ -367,6 +431,26 @@ pub struct Certificate {
     /// `oracle_subset` (parallel to `slag_meta`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub boundary_target: Option<String>,
+    /// The §9 ASSURANCE SCOPE of this fn (issue #17 additive field;
+    /// `.design/forge/e2e-vs-boundary.md` REQ-3). `Some(EndToEnd)` when the fn's
+    /// transitive intra-file call closure reaches no `#[boundary]`/`#[slag]` fn;
+    /// `Some(ToBoundary { via })` when it does (the first reached crossing). `None`
+    /// only on a cert built BEFORE classification ran (the constructors below set
+    /// `None`; `check::check_file_with_options` attaches the real scope via
+    /// `Certificate::with_assurance_scope`). `#[serde(default, skip_serializing_if =
+    /// "Option::is_none")]` so the frozen golden `conformance/sum.cert.json` (which
+    /// OMITS this field) still deserializes, defaulting `None`, mirroring the
+    /// `slag_meta`/`solver_profile`/`boundary_target` additive precedents (R-SPEC-2).
+    ///
+    /// VERDICT-RELEVANT (§9 / R-DEFER-9 — a guarantee depending on an unproven
+    /// foreign body must be HONESTLY marked), so it JOINS the `oracle_subset` — but
+    /// NORMALIZED to a bool (`scope_is_end_to_end`): `None` (the golden default) and
+    /// `Some(EndToEnd)` (a freshly-classified pure fn) are oracle-EQUAL, so the
+    /// golden `sum.cert.json` stays stable while a `ToBoundary` verdict is
+    /// oracle-visible (the design's stability requirement). ORTHOGONAL to `level`
+    /// (REQ-5): recorded alongside, never merged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assurance_scope: Option<AssuranceScope>,
 }
 
 impl Certificate {
@@ -399,6 +483,7 @@ impl Certificate {
             strengthening: Vec::new(),
             boundary: false,
             boundary_target: None,
+            assurance_scope: None,
         }
     }
 
@@ -443,6 +528,7 @@ impl Certificate {
             strengthening: Vec::new(),
             boundary: false,
             boundary_target: None,
+            assurance_scope: None,
         }
     }
 
@@ -499,6 +585,7 @@ impl Certificate {
             strengthening: Vec::new(),
             boundary: false,
             boundary_target: None,
+            assurance_scope: None,
         }
         .graduate_triage_clean()
     }
@@ -536,6 +623,7 @@ impl Certificate {
             strengthening: Vec::new(),
             boundary: true,
             boundary_target: Some(target),
+            assurance_scope: None,
         }
         .graduate_triage_clean()
     }
@@ -572,6 +660,7 @@ impl Certificate {
             strengthening: Vec::new(),
             boundary: false,
             boundary_target: None,
+            assurance_scope: None,
         }
     }
 
@@ -698,24 +787,43 @@ impl Certificate {
             .with_mutation_score(mutants_killed, Some(survivor))
     }
 
+    /// Attach the §9 assurance scope to this certificate (#17;
+    /// `.design/forge/e2e-vs-boundary.md` REQ-3). Returns the cert with
+    /// `assurance_scope` set to the classified value. ORTHOGONAL to the verdict
+    /// (REQ-5): ONLY this field changes — `level`, `reject`, `boundary`, `slag`
+    /// are untouched, so a fn keeps its achieved level AND records its scope (an
+    /// L3 fn whose closure crosses a boundary stays `Level::L3` + `ToBoundary`).
+    /// Set by `check::check_file_with_options` after `closure::classify`.
+    pub fn with_assurance_scope(mut self, scope: AssuranceScope) -> Self {
+        self.assurance_scope = Some(scope);
+        self
+    }
+
     /// The DETERMINISTIC, currently-producible oracle subset (REQ-3/REQ-6,
-    /// `.design/forge/check.md` AC-1; ffi-boundary.md REQ-5/AC-2):
-    /// `(item, level, effects, slag, boundary)`. The forward-declared
-    /// `contract_quality.*` and the non-deterministic `solver_time_ms` are
-    /// STRUCTURALLY excluded by being absent from this tuple. The cert-oracle
-    /// (`tests/check_conformance.rs`, `tests/boundary_conformance.rs`) and the
-    /// human renderer treat these five as the oracle-stable fields. `boundary`
-    /// joins the subset because it is verdict-relevant (an L1 "to-the-boundary"
-    /// is distinct from a proved/runtime L1); `boundary_target` is diagnostic and
-    /// stays EXCLUDED (parallel to `slag_meta`). The golden `sum.cert.json` omits
-    /// `boundary`, so it defaults `false` and the subset still matches (R-SPEC-2).
-    pub fn oracle_subset(&self) -> (&str, Level, &[String], bool, bool) {
+    /// `.design/forge/check.md` AC-1; ffi-boundary.md REQ-5/AC-2; e2e-vs-boundary.md
+    /// REQ-3): `(item, level, effects, slag, boundary, end_to_end)`. The
+    /// forward-declared `contract_quality.*` and the non-deterministic
+    /// `solver_time_ms` are STRUCTURALLY excluded by being absent from this tuple.
+    /// `boundary` joins because it is verdict-relevant (an L1 "to-the-boundary" is
+    /// distinct from a proved/runtime L1); `boundary_target` is diagnostic and
+    /// stays EXCLUDED (parallel to `slag_meta`).
+    ///
+    /// `end_to_end` is the §9 assurance-scope bit (#17), NORMALIZED via
+    /// `scope_is_end_to_end`: `None` (the frozen golden `sum.cert.json`, which omits
+    /// `assurance_scope`) and `Some(EndToEnd)` (a freshly-classified pure fn) are
+    /// BOTH `true`, so the golden subset stays oracle-stable (R-SPEC-2) while a
+    /// `Some(ToBoundary)` verdict reads `false` and is oracle-visible (§9 / R-DEFER-9
+    /// — a to-the-boundary guarantee must be honestly distinguished). The `via`
+    /// crossing name is diagnostic detail and stays EXCLUDED (parallel to
+    /// `boundary_target`).
+    pub fn oracle_subset(&self) -> (&str, Level, &[String], bool, bool, bool) {
         (
             &self.item,
             self.level,
             &self.effects,
             self.slag,
             self.boundary,
+            scope_is_end_to_end(&self.assurance_scope),
         )
     }
 }
@@ -751,8 +859,38 @@ pub struct AssuranceManifest {
     /// The project headline: the min over functions when all certify, else
     /// `Failed` (REQ-6).
     pub project: ProjectAssurance,
+    /// The §9 PROJECT ASSURANCE SCOPE (issue #17;
+    /// `.design/forge/e2e-vs-boundary.md` REQ-4): END-TO-END iff EVERY fn is
+    /// end-to-end, else TO-THE-BOUNDARY listing the crossings. A render-time
+    /// aggregate of the per-fn `Certificate::assurance_scope`, ORTHOGONAL to the
+    /// `project` level headline (a project can be `Certified(L3)` AND
+    /// `ToBoundary` — every fn proved its own contract while the closure crosses a
+    /// foreign body).
+    pub scope: ProjectScope,
     /// The per-fn degrade view in cert order: `(item, level, lowered_assurance)`.
     pub functions: Vec<FunctionAssurance>,
+}
+
+/// The project-level §9 assurance-scope claim (issue #17;
+/// `.design/forge/e2e-vs-boundary.md` REQ-4). The aggregate of the per-fn
+/// [`AssuranceScope`]s, ORTHOGONAL to [`ProjectAssurance`] (the level headline):
+///
+/// - [`ProjectScope::EndToEnd`] — EVERY fn is END-TO-END (no fn's closure reaches a
+///   `#[boundary]`/`#[slag]`); the whole project is "verified, period".
+/// - [`ProjectScope::ToBoundary`] — at least one fn is TO-THE-BOUNDARY; `crossings`
+///   lists the reached `#[boundary]`/`#[slag]` fns (deduplicated, sorted —
+///   deterministic, R-CODE-5).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum ProjectScope {
+    /// Every fn is end-to-end: the project is "verified, period".
+    EndToEnd,
+    /// At least one fn reaches a crossing; `crossings` are the reached
+    /// `#[boundary]`/`#[slag]` fns (sorted, deduplicated).
+    ToBoundary {
+        /// The `#[boundary]`/`#[slag]` fns the project's closures reach.
+        crossings: Vec<String>,
+    },
 }
 
 /// One function's row in the [`AssuranceManifest`] (REQ-5): its achieved level,
@@ -798,7 +936,36 @@ impl AssuranceManifest {
             let min = functions.iter().map(|f| f.level).min().unwrap_or(Level::L3);
             ProjectAssurance::Certified(min)
         };
-        AssuranceManifest { project, functions }
+        let scope = project_scope(certs);
+        AssuranceManifest {
+            project,
+            scope,
+            functions,
+        }
+    }
+}
+
+/// Aggregate the per-fn [`AssuranceScope`]s into the §9 PROJECT scope claim (issue
+/// #17; `.design/forge/e2e-vs-boundary.md` REQ-4): [`ProjectScope::EndToEnd`] iff
+/// EVERY cert is end-to-end (a `None` scope reads end-to-end — the golden default),
+/// else [`ProjectScope::ToBoundary`] listing the reached crossings (the `via` fns,
+/// deduplicated + sorted — DETERMINISTIC, R-CODE-5). An empty collection is
+/// vacuously END-TO-END (nothing crosses a boundary). ORTHOGONAL to the level
+/// headline: a project can be `Certified(L3)` AND `ToBoundary`.
+fn project_scope(certs: &[Certificate]) -> ProjectScope {
+    // BTreeSet → sorted + deduplicated crossings (deterministic).
+    let mut crossings: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for cert in certs {
+        if let Some(AssuranceScope::ToBoundary { via }) = &cert.assurance_scope {
+            crossings.insert(via.clone());
+        }
+    }
+    if crossings.is_empty() {
+        ProjectScope::EndToEnd
+    } else {
+        ProjectScope::ToBoundary {
+            crossings: crossings.into_iter().collect(),
+        }
     }
 }
 
@@ -1312,6 +1479,67 @@ mod tests {
             false,
             reason
         )));
+    }
+
+    // #17 (e2e-vs-boundary REQ-3, R-SPEC-2): `assurance_scope` is ADDITIVE — absent
+    // on a plain cert and on the golden, defaulting `None`, so the frozen golden
+    // `conformance/sum.cert.json` still deserializes. The oracle NORMALIZATION makes
+    // `None` (golden) oracle-equal to `Some(EndToEnd)` (a classified pure fn), so the
+    // golden subset stays stable; a `Some(ToBoundary)` is oracle-DISTINCT (verdict-
+    // relevant, §9 / R-DEFER-9). Expected behavior traces to the design REQ-3 + the
+    // Verification section (R-CHAR-3), not forge output.
+    #[test]
+    fn assurance_scope_is_additive_normalized_and_golden_stable() {
+        let plain = Certificate::new("f", Level::L3, vec!["pure".to_string()], 0, vec![]);
+        assert!(plain.assurance_scope.is_none(), "additive: defaults None");
+        let json = serialize(&plain);
+        assert!(
+            !json.contains("assurance_scope"),
+            "None assurance_scope is omitted:\n{json}"
+        );
+
+        // None and Some(EndToEnd) are ORACLE-EQUAL (the normalization keeping the
+        // golden stable).
+        let e2e = plain.clone().with_assurance_scope(AssuranceScope::EndToEnd);
+        assert!(
+            oracle_eq(&plain, &e2e),
+            "None and Some(EndToEnd) must be oracle-equal (golden stability)"
+        );
+
+        // Some(ToBoundary) is ORACLE-DISTINCT from end-to-end (verdict-relevant).
+        let to_boundary = plain
+            .clone()
+            .with_assurance_scope(AssuranceScope::ToBoundary {
+                via: "ext_id".to_string(),
+            });
+        assert!(
+            !oracle_eq(&plain, &to_boundary),
+            "a to-the-boundary scope must be oracle-visible (§9 / R-DEFER-9)"
+        );
+        // The achieved level is UNTOUCHED — scope ⊥ level (REQ-5).
+        assert_eq!(to_boundary.level, Level::L3, "scope is orthogonal to level");
+
+        // The frozen golden `sum.cert.json` (no assurance_scope) deserializes,
+        // defaulting None, and is oracle-equal to a classified EndToEnd `sum`.
+        let golden_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("conformance")
+            .join("sum.cert.json");
+        if let Ok(src) = std::fs::read_to_string(&golden_path) {
+            let golden: Result<Certificate, _> = serde_json::from_str(&src);
+            assert!(
+                golden.is_ok(),
+                "golden deserializes with the #17 additive field: {golden:?}"
+            );
+            if let Ok(g) = golden {
+                assert!(g.assurance_scope.is_none(), "golden omits assurance_scope");
+                let classified = g.clone().with_assurance_scope(AssuranceScope::EndToEnd);
+                assert!(
+                    oracle_eq(&g, &classified),
+                    "the golden subset is stable once `sum` is classified EndToEnd"
+                );
+            }
+        }
     }
 
     // effects_of covers the whole Effect enum, not just `pure` (R-DEFER-8: fix

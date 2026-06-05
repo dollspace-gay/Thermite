@@ -2,11 +2,12 @@
   "uuid": "89a5ef71-c07c-4e21-bc71-99ec4a7eebcc",
   "display_id": 49,
   "title": "Divergence: forge proof cache — a stale same-version (thermite 0.1.0) pre-#12 L3-clean cert bypasses the §7 mutation gate on a warm check",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T05:56:38.933284543Z",
-  "updated_at": "2026-06-05T05:56:40.209953727Z",
+  "updated_at": "2026-06-05T06:16:43.033368908Z",
+  "closed_at": "2026-06-05T06:16:43.033368908Z",
   "labels": [
     "blocker"
   ]

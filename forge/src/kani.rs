@@ -41,7 +41,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | degrade-ladder OQ-2 (split the L2 `FAILED` bucket) | SHIPPED | `pub fn classify_l2_outcome` maps an `L2Result` to `enum L2Verdict { Verified, UnderBound, Counterexample }`: a `Level::L2` result is `Verified`; a `Level::L0` failure whose EVERY failed obligation is an `is_under_bound_failure` (`unwinding assertion` / `unwind`) is `UnderBound` (the L2 analog of a timeout → degrade to L1); ANY real property failure (`assertion failed: <ens>`) OR an ambiguous/empty-witness failure is a `Counterexample` (hard fail, CONSERVATIVE per R-DEFER-9). Consumer: `degrade::run_ladder` (`degrade.rs`). Tests `classify_l2_{successful_is_verified, unwinding_assertion_is_under_bound, real_assertion_is_counterexample, mixed_failure_is_counterexample, ambiguous_failure_is_counterexample}`. |
+//! | degrade-ladder OQ-2 (split the L2 `FAILED` bucket) | SHIPPED | `pub fn classify_l2_outcome` maps an `L2Result` to `enum L2Verdict { Verified, UnderBound, Counterexample }`: a `Level::L2` result is `Verified`; a `Level::L0` failure whose EVERY failed obligation is an `is_under_bound_failure` (kani's BOILERPLATE `unwinding assertion` text ONLY) is `UnderBound` (the L2 analog of a timeout → degrade to L1); ANY real property failure (`assertion failed: <ens>`, even when the ens clause merely CONTAINS the substring `unwind`) OR an ambiguous/empty-witness failure is a `Counterexample` (hard fail, CONSERVATIVE per R-DEFER-9 — blocker #51). Consumer: `degrade::run_ladder` (`degrade.rs`). Tests `classify_l2_{successful_is_verified, unwinding_assertion_is_under_bound, real_assertion_is_counterexample, assertion_with_unwind_substring_is_counterexample, mixed_failure_is_counterexample, ambiguous_failure_is_counterexample}`. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -383,13 +383,19 @@ pub fn classify_l2_outcome(result: &L2Result) -> L2Verdict {
 
 /// `true` iff a kani failed-check description is an UNDER-BOUND / resource
 /// exhaustion (the L2 analog of a timeout, issue #10 OQ-2), as opposed to a real
-/// property counterexample. Grounded kani shapes: `unwinding assertion loop 0`
-/// (the loop unwind ran out) and the `unwind` resource markers. A real property
-/// failure (`assertion failed: result == spec_sum(xs)`) is NOT under-bound. Match
-/// is on the kani text (R-CHAR-3 — kani's wording, not forge's).
+/// property counterexample. The discriminator is kani's BOILERPLATE
+/// `unwinding assertion` text (the grounded `unwinding assertion loop N` shape —
+/// the loop unwind ran out), ONLY. A real property failure
+/// (`assertion failed: result == spec_sum(xs)`) is NOT under-bound — note this
+/// holds even when the user's `ens` clause, which kani echoes verbatim into
+/// `Failed Checks:`, merely CONTAINS the substring `unwind` (a spec helper
+/// `unwind_count`, a field `.unwind`, `rewind`, `unwound`): such a bare-substring
+/// match would degrade a DISPROVED contract to L1 behind a lowered-assurance
+/// stamp, exactly the R-DEFER-9 / REQ-2 anti-cheat hole (blocker #51). Match is
+/// on the kani text (R-CHAR-3 — kani's wording, not forge's).
 fn is_under_bound_failure(description: &str) -> bool {
     let d = description.to_ascii_lowercase();
-    d.contains("unwinding assertion") || d.contains("unwind")
+    d.contains("unwinding assertion")
 }
 
 /// Assemble the L2 [`Certificate`] for one item from its [`L2Result`]
@@ -590,6 +596,34 @@ mod tests {
             classify_l2_outcome(&r),
             L2Verdict::Counterexample,
             "a real ens-property failure must NEVER degrade to L1 (REQ-2)"
+        );
+    }
+
+    // #10 OQ-2 / REQ-2 anti-cheat (blocker #51): a REAL property counterexample whose
+    // `ens` clause text merely CONTAINS the substring `unwind` (a perfectly ordinary
+    // identifier — here a spec helper `unwind_count`) is a COUNTEREXAMPLE, NEVER an
+    // UnderBound degrade to L1. The under-bound discriminator is kani's boilerplate
+    // `unwinding assertion`, not a bare `unwind` substring of the user's ens text
+    // (degrade-ladder.md OQ-2, R-DEFER-9). R-CHAR-3: kani echoes the asserted
+    // property verbatim (`failure_terse_is_counterexample` shape), not forge's text.
+    #[test]
+    fn classify_l2_assertion_with_unwind_substring_is_counterexample() {
+        let r = L2Result {
+            level: Level::L0,
+            obligations: vec![ObligationResult::failed(
+                "assertion failed: result == unwind_count(n)",
+                Some("src/lib.rs:22".to_string()),
+                None,
+            )],
+            solver_time_ms: 3,
+        };
+        assert_eq!(
+            classify_l2_outcome(&r),
+            L2Verdict::Counterexample,
+            "a real `assertion failed: <ens>` counterexample whose clause text merely \
+             contains the substring `unwind` must be a Counterexample (hard fail), NEVER \
+             an UnderBound degrade to L1 — degrading it hides a disproved contract behind \
+             a lowered-assurance stamp (degrade-ladder.md OQ-2, R-DEFER-9)"
         );
     }
 

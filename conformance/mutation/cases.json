@@ -1,0 +1,12 @@
+{
+  "note": "Oracle for forge's mutation scoring (§7 step 4, issue #12). QUALITATIVE (R-CHAR-3): the exact kill ratio is tool-computed + verus-version-sensitive, so mutants_killed is oracle-EXCLUDED — the checkable property is the FLOOR-relative outcome (configurable default 60%) + determinism (same fn + frozen mutator set + seed => same ratio every run). A STRONG contract (pins behavior) kills mutants -> ratio >= floor -> certify. A WEAK contract (technically true but under-constrains) lets mutants survive -> ratio < floor -> gated (RejectReason WeakContract) + the surviving mutants reported as the strengthening prompt. All run AFTER a successful L3 proof of the real body.",
+  "accept_above_floor": [
+    { "name": "corpus_sum",           "source": "conformance/sum.th",           "why": "ens result == spec_sum(xs) pins the output exactly; arithmetic/early-return mutants break the loop invariant or the postcondition -> killed -> ratio >= floor." },
+    { "name": "corpus_binary_search", "source": "conformance/binary_search.th", "why": "the match-ens pins found/not-found behavior; mutants violate it -> killed -> ratio >= floor." }
+  ],
+  "reject_below_floor": [
+    { "name": "weak_loose_bound", "cause": "WeakContract",
+      "program": "fn f(a: u32, b: u32) -> u32 req a <= 10 && b <= 10 ens result <= 1000000 fx pure { a + b }",
+      "why": "The contract proves L3 for the real body (a+b <= 20 <= 1_000_000) and passes #6 (ens mentions result, non-trivial, not req-implied) + #13 (not a tautology: an arbitrary u32 result can exceed 1_000_000). But `result <= 1_000_000` does NOT pin the output: the early-return-0 mutant (0 <= 1_000_000) SURVIVES, so a meaningful fraction of mutants survive -> ratio < floor -> gated. This is the §7 value-add: a non-vacuous contract that still under-constrains behavior. NOTE: the exact ratio depends on the frozen mutator set; the builder confirms this fixture scores < floor and reports if it must be weakened further (orchestrator ratifies — R-CHAR-3, the oracle is the qualitative below-floor requirement)." }
+  ]
+}

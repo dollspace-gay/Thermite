@@ -1,0 +1,10 @@
+{
+  "uuid": "69a2ad75-c8d3-4196-b5da-a93bb5d032f9",
+  "display_id": 47,
+  "title": "Fix thermite-design.md §3: L1 is always-active checks, not debug_assert chains (contradicts §6 + l1.rs)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T05:28:58.034582789Z",
+  "updated_at": "2026-06-05T05:28:58.034582789Z"
+}

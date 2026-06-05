@@ -1,0 +1,12 @@
+{
+  "note": "Oracle for forge's proof-repair loop (forge repair, §6, issue #18). Hand-derived (R-CHAR-3). The ANTI-CHEAT (R-DEFER-9) is the load-bearing property + is reliably live-testable: repair escalates a TIMEOUT's budget but NEVER upgrades a COUNTEREXAMPLE/reject — more budget never makes a false contract true. The budget-escalation UPGRADE path (timeout-that-proves -> L3) is fragile to express as a Thermite program (the limited surface proves fast) + is Z3-version-sensitive, so the loop logic is tested HERMETICALLY by the builder (a synthesized Timeout that proves at a higher budget -> upgrade); this oracle anchors the reliably-testable anti-cheat + no-op.",
+  "never_upgraded": [
+    { "name": "never_provable_counterexample", "expect_level_after_repair": "L0", "expect_upgraded": false,
+      "program": "fn inc(x: u32) -> u32 req x < 100 ens result == x + 2 fx pure { x + 1 }",
+      "why": "ens result == x + 2 with body x + 1 is a COUNTEREXAMPLE (false for all x). verus returns the counterexample at EVERY budget (no profile report). repair MUST NOT retry/upgrade it — it stays L0 and the prompt reports the counterexample, NEVER a false L3 (R-DEFER-9). The anti-cheat: more budget never makes a false thing true." }
+  ],
+  "no_op": [
+    { "name": "corpus_sum", "source": "conformance/sum.th", "expect_upgraded": false,
+      "why": "sum/spec_sum already certify L3 at the default budget -> no sub-L3 item -> repair attempts nothing (a no-op)." }
+  ]
+}

@@ -317,3 +317,10 @@ crate_pattern = "forge/src/session.rs"
 design = ".design/forge/multi-agent.md"
 reference = []
 conformance_ops = []
+
+# forge build — lower to Rust + rustc -> compiled artifact (issue #56)
+[[route]]
+crate_pattern = "forge/src/build.rs"
+design = ".design/forge/build.md"
+reference = ["conformance/build"]
+conformance_ops = ["sum"]

@@ -1,0 +1,10 @@
+{
+  "uuid": "6e11392a-731d-4961-82ab-c78fb8618406",
+  "issue_uuid": "03813815-1239-466a-8275-9102e275daa7",
+  "author": "Yffe",
+  "content": "SHIPPED — strengthening probes (§7 step 5). strengthen.rs: a frozen bounded (CANDIDATE_CAP=16) candidate-clause template (result==spec_fn(params); result==<depth-1 expr over params>; survivor-derived bound), each VERIFIED against the real body (run_verus, #8-cached), surfaced ONLY if it verifies AND is strictly stronger (kills a #12 survivor / narrows). ADVISORY — never changes the verdict (additive oracle-excluded strengthening field + suggested_move headline). Loop: doc-author -> builder -> critic NO DIVERGENCE: every surfaced suggestion independently re-verified adoptable (no vaporware, R-DEFER-1); verdict unchanged; no false suggestion on tight contracts (sum -> none); deterministic; no panic. Live: weak ens result<=1000000 {a+b} -> suggestion result==a+b (kills early-return-0 survivor); sum -> none. Commits 3376538 + a2ef0ec (critic guard). forge 184 tests, workspace 302, clippy/fmt clean. Noted (not a divergence): depth-1 template means 3-input bodies get no suggestion (design-sanctioned). Not pushed.",
+  "created_at": "2026-06-05T07:33:35.670919102Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAasLB1uLCWZYQsJ3Z//MgvrvdO4+CQQxjJAHpMjOz4biG52PIiIqHCtK4IXkbVlui1MJKjHwmu7uoxQR9PNl1Cg=="
+}

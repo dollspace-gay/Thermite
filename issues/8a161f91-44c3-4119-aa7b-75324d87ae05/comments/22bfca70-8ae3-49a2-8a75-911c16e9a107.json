@@ -1,0 +1,10 @@
+{
+  "uuid": "22bfca70-8ae3-49a2-8a75-911c16e9a107",
+  "issue_uuid": "8a161f91-44c3-4119-aa7b-75324d87ae05",
+  "author": "Yffe",
+  "content": "Resolved. The skill regen was deterministic (no diff) BUT the generator's curated content was stale — missing forge build (#56) + the runtime seccomp sandbox (#57). Updated render_forge (+ forge build command) + render_ladder (fx enforced two ways: compile-time subsumption + the forge build seccomp sandbox). Regenerated THERMITE.skill.md (committed == generate(), freshness test holds). Budget 2673/6000. forge build + seccomp now PRESENT. workspace 409 tests, clippy/fmt clean. §10 no-version-skew restored. Commit fd8bf3b.",
+  "created_at": "2026-06-05T20:58:24.526908029Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAi7WyCAYJwWz5WJdNG0tuHs7fXxs0p4NMPgU7WZdilt2uGMqUtsvN15NRmeAvAsBN1cttkQwflmsRygThS1kCDw=="
+}

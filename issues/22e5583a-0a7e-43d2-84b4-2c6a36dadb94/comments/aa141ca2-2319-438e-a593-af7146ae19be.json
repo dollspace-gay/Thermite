@@ -1,0 +1,10 @@
+{
+  "uuid": "aa141ca2-2319-438e-a593-af7146ae19be",
+  "issue_uuid": "22e5583a-0a7e-43d2-84b4-2c6a36dadb94",
+  "author": "Yffe",
+  "content": "Fix the reopened sibling leak in forge/src/vacuity_solver.rs (the #13 vacuity-solver verus path has the IDENTICAL #53 temp-binary leak). Reuse check.rs's #53 ScratchDir Drop guard (DRY): make struct ScratchDir + fn unique_scratch_dir pub(crate) in check.rs (minimal visibility change), then in vacuity_solver::run_harness write <stem>.rs inside a per-run scratch DIRECTORY and run verus with current_dir = that dir so the compiled binary lands inside and the Drop guard removes it wholesale on every exit path. Crate-name gotcha intact. Add forge/tests/scratch_cleanup.rs::vacuity_harness_success_leaves_no_scratch_orphan (a tautology fixture — the harness SUCCEEDS, the leak case — leaves no forge_* entry in an isolated TMPDIR; skip-loud if verus absent). Verify #13 behavior unchanged + full gauntlet.",
+  "created_at": "2026-06-05T18:01:54.949695896Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAhAFRsqB0CdheeAcGE95kIvqGvVBaNvi6WKtQB/9bInQTySfkrVZp2r6IFMQeuYpWaAFGNhCb0B2Glp2CDG8BCg=="
+}

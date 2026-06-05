@@ -1,0 +1,10 @@
+{
+  "uuid": "02cad92c-6bca-4746-b3be-da2bbbd42c7b",
+  "issue_uuid": "4ec9b660-2c0d-4544-88c4-1e50df514540",
+  "author": "Yffe",
+  "content": "SHIPPED — mutation scoring with a frozen deterministic mutator set (§7 step 4). mutation.rs: operator flips/off-by-ones/early-returns/branch-swaps applied to the body, re-verified against the contract (KILLED=verus fails, SURVIVED=proves), via the proof cache. Floor (default 60%, --mutation-floor) gates after L3 success: <floor -> RejectReason WeakContract + survivor prompt. contract_quality.mutants_killed now LIVE (sum 7/7, binary_search 14/16); sum.cert.json '17/18' stays illustrative (oracle-excluded). Loop: doc-author -> builder -> critic (found #48 0/0-escape + #49 cache-bypass) -> 2 fixers. #48: zero_value_for returned None for &[T] -> early-return mutant skipped -> 0/0 -> 1.0 pass; FIXED (synthesize &[] early-return for slices + 0/0->gate backstop). #49: cache key omitted the check-logic version -> a pre-#12 cert bypassed the gate; FIXED (CHECK_SCHEMA_VERSION=2 in cache_key + load-time internal-consistency guard). Verified: weak slice contract gates (0/1), strong certifies (1/1, no over-gating), corpus L3 cold+warm, spec fns exempt. Commits fa55760 -> 3043e92 (critic) -> 64ec916 (#48) -> 6d7b3af (#49). workspace 255 tests, clippy/fmt clean. Strengthening SUGGESTIONS are #14. Not pushed.",
+  "created_at": "2026-06-05T06:19:50.323332697Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJX6aPYsyx7eNwDhRzBWwUnXpbgUPdBLMrGrAYf9Ky6IlGkFDlF0knEjDZlTiLtsCg0OjPyqbmQXsW+u9p/MMAA=="
+}

@@ -26,20 +26,24 @@ Verification ladder
 Rust (MIR-level lowering) → LLVM
 ```
 
-v0.1 lowers Thermite to **Verus-annotated Rust source** (transpile, then shell out to Verus/Z3), inheriting the borrow checker and the ecosystem. The gate **degrades, it never blocks**: on solver timeout it falls L3 → L2 → L1 and reports honestly. A **vacuity battery** (tautology / unsat-precondition / mutation-kill-ratio checks) runs inside the gate so the mandatory contract can't be gamed into triviality.
+Thermite **transpiles to Rust** — `rustc` is the backend, so there is no separate compiler: `forge check` lowers to Verus-annotated Rust and shells out to Verus/Z3 (L3) or Kani/CBMC (L2); `forge build` lowers to executable Rust + the always-active runtime checks and shells out to `rustc` to produce a native binary. The gate **degrades, it never blocks**: on solver timeout it falls L3 → L2 → L1 and reports honestly (a *counterexample* is never softened to a degrade). A **vacuity battery** (structural triage, solver tautology/unsat-precondition checks, mutation kill-ratio, strengthening probes) runs inside the gate so the mandatory contract can't be gamed into triviality. A built binary's declared `fx` is enforced at runtime by a **seccomp sandbox** — code that exceeds its effects is killed at the syscall boundary, not trusted at the type level alone.
 
 See [`thermite-design.md`](./thermite-design.md) for the full design (thesis, surface language, the Forge REPL, the ladder, the vacuity battery, `#[slag]`, FFI, roadmap).
 
 ## Status
 
-**Early v0.1 (kernel) — under construction.** This repo is a toolchain being built in Rust, not yet a usable language.
+**v0.1–v0.5 complete — the toolchain runs end-to-end.** A Thermite program goes from source to a verified, **runnable, contract-checked native binary**. Both corpus programs certify **L3 in real Verus** and **L2 in real Kani**; every soundness invariant has been adversarially verified by the ACToR critic loop.
 
-- ✅ Verification harness + conformance corpus (the ACToR agent loop; golden `.th` programs as the cert oracle)
-- ✅ Cargo workspace scaffold — five crates: `thermite-syntax`, `thermite-spec`, `thermite-lower`, `forge` (CLI), `thermite-skill`
-- 🔭 In progress: `thermite-syntax` (lexer, recovering parser, AST, stable semantic addressing)
-- ⬜ Next: SpecTherm combinator registry → lowering to Verus → `forge check` → skill generator
+- ✅ **Frontend** (`thermite-syntax`) — lexer, recovering per-item parser, AST (literals keep verbatim text), stable semantic addressing
+- ✅ **SpecTherm** (`thermite-spec`) — the frozen bounded-combinator registry + the cage validator (no anonymous nested quantifiers; closure bodies are flat predicates)
+- ✅ **Lowering** (`thermite-lower`) — Thermite → Verus (L3), Kani harnesses (L2), executable Rust + always-active runtime checks (L1); compile-time effect-row subsumption
+- ✅ **Forge** (`forge`) — `check` (parse → validate → effect-check → lower → Verus, per-item certificate with content-addressed proof caching), `build` (→ `rustc` → a runnable binary whose contract checks fire at runtime, with an **fx-derived seccomp sandbox**), `audit` (the trust manifest + enumerable TCB), `review` (pluggable spec-intent slot), `repair` (background L1/L2 → L3 upgrades). Automatic **L3 → L2 → L1 degrade**; a counterexample never degrades and is never "repaired."
+- ✅ **Anti-Goodhart battery** — structural vacuity triage, solver tautology/unsat-precondition checks, mutation scoring (kill-ratio floor), strengthening probes
+- ✅ **Boundaries** — crates.io FFI + `#[slag]` modules, L1-enforced and runtime-confined to their declared `fx`; the manifest distinguishes *verified-to-the-boundary* from *verified, period*; a caller verifies **through** a boundary's contract (composition)
+- ✅ **`THERMITE.skill.md`** — the whole language in ≤ 6,000 tokens, regenerated from the registry, CI-gated; concurrency-safe multi-agent sessions
+- 🔭 Deferred (tracked, crosslink #21): direct MIR-level lowering (we transpile to Rust, which rustc takes to MIR) and the incremental goal-state REPL
 
-Roadmap: v0.1 kernel → v0.2 Kani-backed L2 + degrade protocol → v0.3 mutation/vacuity battery → v0.4 crates.io FFI boundary → v0.5 background proof-repair. Progress is tracked in crosslink (milestones #1–#5).
+Roadmap (all shipped): v0.1 kernel → v0.2 Kani-backed L2 + degrade protocol → v0.3 mutation/vacuity battery → v0.4 crates.io FFI boundary → v0.5 background proof-repair + multi-agent sessions, plus `forge build` (runnable binaries) and the runtime seccomp sandbox. Progress is tracked in crosslink (milestones #1–#5 closed).
 
 ## Repository layout
 
@@ -50,7 +54,7 @@ Roadmap: v0.1 kernel → v0.2 Kani-backed L2 + degrade protocol → v0.3 mutatio
 | `conformance/` | Golden `.th` programs + expected certificates — the verification oracle |
 | `.design/` | Per-component design docs (the contract between the thesis and the code) |
 | `tooling/` | The spec-discipline + anti-pattern gates and the route table |
-| `thermite-*/`, `forge/` | The toolchain crates (scaffolded; implementation in progress) |
+| `thermite-*/`, `forge/` | The toolchain crates: `thermite-syntax`, `thermite-spec`, `thermite-lower`, `forge` (the CLI), `thermite-skill` |
 
 ## A taste of the surface language
 
@@ -73,4 +77,4 @@ fn sum(xs: &[u32]) -> u64
 }
 ```
 
-`forge check` turns this into a certificate: `L3`, contract non-vacuous, mutants killed 17/18 — the deliverable's trust statement.
+`forge check` turns this into a certificate: `L3`, contract non-vacuous, mutants killed — the deliverable's trust statement. `forge build --entry sum` compiles it to a native binary whose contract checks fire at runtime and whose `fx pure` is seccomp-enforced.

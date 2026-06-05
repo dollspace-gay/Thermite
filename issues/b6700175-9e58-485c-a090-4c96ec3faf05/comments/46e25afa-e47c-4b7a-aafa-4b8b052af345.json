@@ -1,0 +1,10 @@
+{
+  "uuid": "46e25afa-e47c-4b7a-aafa-4b8b052af345",
+  "issue_uuid": "b6700175-9e58-485c-a090-4c96ec3faf05",
+  "author": "Yffe",
+  "content": "Fixed in 64ec916. Cause = incomplete early-return mutant generation -> 0/0 -> vacuous 1.0 pass. Two parts (one cause; files forge/src/mutation.rs + the check.rs gate that consumes the score):\n1. mutation::early_return_value (new) synthesizes a valid early-return for every real body -- scalar zero via zero_value_for, OR the empty-slice literal &[] / &mut [] for a reference-to-slice return (empty_slice_literal). &[] lowers to Verus-accepted exec (&xs[..0] RangeTo is NOT supported in Verus exec, confirmed against verus 0.2026.05.24). So EVERY real fn body gets the early-return mutant.\n2. MutationScore::kill_ratio 0/0 backstop: 1.0 -> 0.0. A contract that cannot be mutation-validated has not met the §7 bar, so 0/0 is gated WeakContract, never a silent pass. check::check_file_with_options emits an explicit unscoreable-prompt survivor for the 0/0 case.\n\nVerified: divergence_weak_contract_escapes_floor_via_zero_scored_mutants PASSES. Weak pick(xs:&[u32])->&[u32] ens result.len()<=10 -> GATED WeakContract 0/1, survivor '&[]'. Strong id ens result==xs -> certifies L3 1/1 (mutant KILLED, no over-gating). Corpus sum/binary_search still L3 (mutation_conformance 4/4). Determinism: identical score on two runs. forge bin 93/93, workspace 254 passed / 1 failed -- the single failure is the SEPARATE cache-key blocker #49 (untouched). clippy + fmt clean. No fixtures or #48 test assertions edited; cache key untouched.",
+  "created_at": "2026-06-05T06:09:57.805124069Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAyWpgkmsWza0Cdk/Mf12XZk7WTp3UV19EII3nUx6jT/SuYTMIdXin2sOBnaYUf/E6U+73dXVqDnaXPnxzpxKTDA=="
+}

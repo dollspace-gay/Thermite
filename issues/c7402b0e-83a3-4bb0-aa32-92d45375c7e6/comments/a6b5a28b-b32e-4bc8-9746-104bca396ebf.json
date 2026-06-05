@@ -1,0 +1,10 @@
+{
+  "uuid": "a6b5a28b-b32e-4bc8-9746-104bca396ebf",
+  "issue_uuid": "c7402b0e-83a3-4bb0-aa32-92d45375c7e6",
+  "author": "Yffe",
+  "content": "Implement forge build: reuse check_file's pipeline front (parse/validate/check_effects), then thermite_lower::lower_l1 -> write a self-contained crate into a per-run check::ScratchDir (reuse #53 Drop guard) -> invoke real rustc (exit-checked, --crate-name gotcha, SOURCE_DATE_EPOCH=0 + --remap-path-prefix for byte-reproducibility). Default rlib; --entry appends a deterministic generated main synthesizing fixed sample inputs per param type. BuildManifest (separate struct composing effects_of, not the frozen Certificate schema) records artifact path/crate-type, honest L1 assurance, per-fn fx rows (the #57 hook), reproducibility. New ForgeError::{RustcAbsent,RustcSpawn,RustcOutput}. Verified by forge/tests/build_conformance.rs (6 tests, AC-1..AC-7) against conformance/build/cases.json.",
+  "created_at": "2026-06-05T19:57:10.706012704Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAev0VlpUhmln+DI6lQkNIfpq9LvuH0eLs1+5JnJKijwFJ+7ut5M4L1zaGLDEUM3nWjp2KA4GeVVNj3TQImE7QBw=="
+}

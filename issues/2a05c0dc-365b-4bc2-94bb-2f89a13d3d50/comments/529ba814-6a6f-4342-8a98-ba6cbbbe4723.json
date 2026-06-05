@@ -1,0 +1,10 @@
+{
+  "uuid": "529ba814-6a6f-4342-8a98-ba6cbbbe4723",
+  "issue_uuid": "2a05c0dc-365b-4bc2-94bb-2f89a13d3d50",
+  "author": "Yffe",
+  "content": "Aligned verus-lowering.md (REQ-3 description + exec/spec table + example lowered Verus, 3 sites) and l1-runtime-checks.md (example executable expr; label kept verbatim) to value-emission, matching ast.md REQ-6 + the #54-corrected goldens + the emitter. Remaining 1_000_000 refs are legitimate (Clause.text label, source-literal form, raw-field value, prose). Docs-only; workspace 388 tests unaffected. The #37/#54/#55 chain is now consistent: IntLit carries raw (Expr fidelity), lowering emits value, goldens + docs show value.",
+  "created_at": "2026-06-05T19:05:47.094165803Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKr14qQj0scqdp7+rE70K+jrXbzsfO1kwEFX2kv4WIdFUPa18DUdOkVnjM6EBmSZkF7H+Lzfb+FkYJqAiG7pzDw=="
+}

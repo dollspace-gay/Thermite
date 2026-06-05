@@ -1,0 +1,10 @@
+{
+  "uuid": "453bf815-9577-46f3-88c4-e2d196154f7d",
+  "issue_uuid": "ebbd3319-03d0-4953-9156-fc121fffabf8",
+  "author": "Yffe",
+  "content": "Increment 1 SHIPPED + critic-clean (commit fb4512f): effects::subsumes is now Verus-verified. thermite-verified crate: verus!{} subsumes + spec_subsumes (the genuine 8-way subset relation) + 3 lattice-law proof fns -> verus --no-cheating: 8 verified, 0 errors (non-vacuous: a broken impl -> 1 error). Mechanism (c) exhaustive-equivalence (delegation infeasible — vstd won't cargo-compile, OQ-1 confirmed): effects::subsumes delegates to subsumes_masks + a 65536-pair exhaustive test binds the PRODUCTION fn to the proved spec_subsumes_mask. Critic NO DIVERGENCE: projection FAITHFUL (effects.md REQ-2 specifies path-insensitive atom-kind subsumption for v0.1), test binds production code, contract genuine, no cheat. 414 workspace tests. Next batch: the degrade anti-cheat (counterexample-never-degrades), the seccomp allowlist (pure->no I/O), the boundary honesty gate.",
+  "created_at": "2026-06-05T21:36:27.561441478Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtxD5aV42kzAy9fE1wSE31ayd+1KDpYLwpifak+YHILG2IX584RAGAWiaFj4eUGe1RpBsbxGaYSe9iVLaiCXSCQ=="
+}

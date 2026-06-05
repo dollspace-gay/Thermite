@@ -2,11 +2,12 @@
   "uuid": "9b80e4fd-69f0-4780-8433-f1d1ecb67c55",
   "display_id": 6,
   "title": "Implement structural vacuity triage and the #[slag] escape hatch",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:47:14.507234655Z",
-  "updated_at": "2026-06-04T17:48:41.538297799Z",
+  "updated_at": "2026-06-05T02:01:21.156081916Z",
+  "closed_at": "2026-06-05T02:01:21.156081916Z",
   "labels": [
     "feature"
   ],

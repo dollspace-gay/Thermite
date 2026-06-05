@@ -1,0 +1,10 @@
+{
+  "uuid": "5b8b1634-15b2-462a-98c2-10abde547a26",
+  "issue_uuid": "c822771e-0e6b-4bf7-9479-20273473b392",
+  "author": "Yffe",
+  "content": "Implement forge per-item content-addressed proof cache (cache.rs): cache_key = sha256 over 4 domain-tagged length-prefixed inputs (lowered Verus source + seed + verus version + thermite version); load/store under target/thermite-proof-cache/<hex>.json with atomic temp+rename and corrupt-entry-degrades-to-MISS. Wire check.rs L3 path: resolve verus version once per run (VERUS_VERSION pin else verus --version; absent => VerusAbsent, never empty key), lookup BEFORE run_verus (HIT => with_cached(true), skip verus), store after MISS (with_cached(false)). Additive manifest::Certificate.cached (serde default, oracle-excluded so a hit is oracle-equal to a fresh verify). Soundness: a hit equals a fresh verify because the key captures every verdict-determining input. Tests: HIT, decisive verus-unavailable HIT, invalidation, locality (per-item key), determinism/purity, corpus-still-L3.",
+  "created_at": "2026-06-05T03:29:53.980017407Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAVubtqKOTLJ+iw5O3YmsBAsD/IXjKW6CM7aMIvhTiylefZI7dBYCsgCse0x7ExiJ5QVsHbybHx2uUvn5JuUXICA=="
+}

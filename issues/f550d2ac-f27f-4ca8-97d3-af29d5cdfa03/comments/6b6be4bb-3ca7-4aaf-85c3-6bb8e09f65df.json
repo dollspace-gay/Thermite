@@ -1,0 +1,10 @@
+{
+  "uuid": "6b6be4bb-3ca7-4aaf-85c3-6bb8e09f65df",
+  "issue_uuid": "f550d2ac-f27f-4ca8-97d3-af29d5cdfa03",
+  "author": "Yffe",
+  "content": "Closing as redundant with #12. The mutation-scoring doc-author filed this as a prereq blocker, but #12 (Add mutation scoring with a frozen deterministic mutator set) IS the tracking issue for this work — the NOT-STARTED REQs are blocked on #12 itself. No separate blocker needed (S8 noise).",
+  "created_at": "2026-06-05T05:31:30.204668808Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAVBIwEjeqzPw7XKq/7AjD3ljww1O+yOndTuAW4sjsJcnCrZ5SpcSIkc0O7guXBgEqS11PM/NYrGihtugbi2yPAg=="
+}

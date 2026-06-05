@@ -194,3 +194,21 @@ crate_pattern = "thermite-skill/src/main.rs"
 design = ".design/skill/skill-generator.md"
 reference = []
 conformance_ops = []
+
+# ---------------------------------------------------------------------
+# v0.2 — L2 Kani bounded checking (issue #9)
+#   l2.rs lowers a Thermite fn to a Kani proof harness; forge/kani.rs runs the
+#   real kani binary. Auto-degrade (#10) + solver profiles (#11) are separate.
+# ---------------------------------------------------------------------
+
+[[route]]
+crate_pattern = "thermite-lower/src/l2.rs"
+design = ".design/lower/l2-kani.md"
+reference = []
+conformance_ops = ["sum", "binary_search"]
+
+[[route]]
+crate_pattern = "forge/src/kani.rs"
+design = ".design/lower/l2-kani.md"
+reference = []
+conformance_ops = []

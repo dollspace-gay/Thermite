@@ -240,3 +240,10 @@ crate_pattern = "forge/src/degrade.rs"
 design = ".design/forge/degrade-ladder.md"
 reference = []
 conformance_ops = ["sum", "binary_search"]
+
+# v0.3 — strengthening probes (issue #14)
+[[route]]
+crate_pattern = "forge/src/strengthen.rs"
+design = ".design/forge/strengthening-probes.md"
+reference = ["conformance/strengthening"]
+conformance_ops = ["weak_loose_bound", "sum"]

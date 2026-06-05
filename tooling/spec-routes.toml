@@ -233,3 +233,10 @@ crate_pattern = "forge/src/mutation.rs"
 design = ".design/forge/mutation-scoring.md"
 reference = ["conformance/mutation"]
 conformance_ops = ["weak_contract", "sum"]
+
+# v0.2 — automatic L3->L2->L1 degrade ladder + assurance manifest (issue #10)
+[[route]]
+crate_pattern = "forge/src/degrade.rs"
+design = ".design/forge/degrade-ladder.md"
+reference = []
+conformance_ops = ["sum", "binary_search"]

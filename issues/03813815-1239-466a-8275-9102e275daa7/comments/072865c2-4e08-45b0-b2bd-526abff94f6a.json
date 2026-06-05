@@ -1,0 +1,10 @@
+{
+  "uuid": "072865c2-4e08-45b0-b2bd-526abff94f6a",
+  "issue_uuid": "03813815-1239-466a-8275-9102e275daa7",
+  "author": "Yffe",
+  "content": "Critic adversarial audit of strengthening probes (commit 3376538). Plan: add an INDEPENDENT adoptability re-verify (forge/tests/divergence_strengthen.rs) that, for each family-2 template shape, adopts every surfaced suggestion as the ens over the same body and re-checks through forge's own lowering+verus pipeline; each must certify L3 (R-DEFER-1 / REQ-2). Commit the regression guard.",
+  "created_at": "2026-06-05T07:32:07.942655332Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1Hbfl6/c3bPUE8yBhDrn/6I41b5lVOP681DPIVkFMNcApoyCVMfhS5j8FMMNW7BroujkBLI3gg3xz6MwTT57BA=="
+}

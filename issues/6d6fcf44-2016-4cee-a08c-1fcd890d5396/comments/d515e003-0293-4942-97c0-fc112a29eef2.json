@@ -1,0 +1,10 @@
+{
+  "uuid": "d515e003-0293-4942-97c0-fc112a29eef2",
+  "issue_uuid": "6d6fcf44-2016-4cee-a08c-1fcd890d5396",
+  "author": "Yffe",
+  "content": "SHIPPED — runtime effect sandbox (seccomp). forge build --entry installs (default-on; --no-sandbox opts out) a seccomp-bpf filter from the entry's TRANSITIVE fx (closure::reachable_in_file_fns + effects_of; boundary/slag confined to declared fx). sandbox.rs: syscall_allowlist (pure = minimal baseline incl. the panic/abort path; read/write/net/time/rand widen) -> emit_sandbox_prelude (arch-guarded BPF, default SECCOMP_RET_KILL_PROCESS; extern-C to std's libc, NO crate dep, unsafe only in emitted source). Loop: doc-author -> builder -> critic NO DIVERGENCE: filter genuinely KILLS (default=KILL); pure denies openat+socket+connect (no I/O escape, R-DEFER-9); baseline COMPLETE so a contract violation PANICS [ens] (exit 101), NOT seccomp-killed (159); fx-derived widening (read->openat, net->socket, transitive); deterministic. Live: pure clean (prints 6); openat probe killed under pure (159/SIGSYS), allowed under read-fx (0); violation panics [ens] (101). Commit 56c2356. workspace 409 tests, clippy/fmt clean. §4.1 runtime fx enforcement realized; TCB (slag/boundary) confined to declared fx. Coverage note: socket/connect/net-widening probes worth adding as permanent sandbox_conformance tests (verified correct, currently probed live). Not pushed.",
+  "created_at": "2026-06-05T20:44:08.423269846Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA41UElKlcyK3IRuZQHJ+E3XhGl67thyR1VVq8kLUAwB4N0zFkDwRt6DjGjibpFYrW1TnWz+UXdMEwkoF27gAoCw=="
+}

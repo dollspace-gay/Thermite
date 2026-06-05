@@ -26,7 +26,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` runs `thermite_syntax::parse` → `thermite_spec::validate` → `thermite_lower::check_effects` → `thermite_lower::lower` → `run_verus` → `parse_verus_output` → `Certificate`; each stage short-circuits into a `ForgeError`. Consumer: `cli::run` (`cli.rs`). |
+//! | REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` runs `thermite_syntax::parse` → `thermite_spec::validate` → `thermite_lower::check_effects`, then PER ITEM (§5.3) `item_subprogram` → `thermite_lower::lower` → `run_verus` → `parse_verus_output` → `Certificate`; each stage short-circuits into a `ForgeError`. Consumer: `cli::run` (`cli.rs`). |
 //! | REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `lower_to_temp` writes a `<stem>_check.rs` temp file (no `.` in the stem — `crate_stem`), `run_verus` spawns `verus --output-json --smt-option smt.random_seed=<seed>`; cleaned up after. |
 //! | REQ-3 (exit-status checked, never swallow) | SHIPPED | `run_verus` returns exit status; `parse_verus_output` makes a parseable failure a reported cert and an unparseable/internal failure `ForgeError::VerusOutput`; spawn ENOENT → `ForgeError::VerusAbsent`. |
 //! | REQ-4 (verus output → per-obligation + counterexamples) | SHIPPED | `parse_verus_output` reads the JSON `verification-results` summary for level and parses stderr `error:` + `--> file:line:col` into `ObligationResult::failed` witnesses. |
@@ -71,25 +71,72 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
     // 2. validate (thermite-spec) — the SpecTherm cage.
     thermite_spec::validate(&parsed.program).map_err(ForgeError::Spec)?;
 
-    // 3. effect-check (thermite-lower) — `fx` subsumption (§4.1).
+    // 3. effect-check (thermite-lower) — `fx` subsumption (§4.1). Effect
+    // subsumption is a whole-program property (a caller's row must subsume every
+    // callee's), so it is checked once over the full program before any per-item
+    // split.
     thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
 
-    // 4. lower (thermite-lower) — emit Verus-annotated Rust source.
-    let lowered = thermite_lower::lower(&parsed.program).map_err(ForgeError::Lower)?;
-
-    // 5/6/7. run verus once on the whole lowered program, then assemble one
-    // certificate per item from the shared verus result. The lowering emits all
-    // items into one crate, so verus runs once; the per-item certs share the
-    // crate-level summary but carry their own `item`/`effects` and the
-    // obligations naming that item.
+    // 4/5/6/7. PER-ITEM certification (`thermite-design.md` §5.3 — "proof
+    // results content-addressed and cached PER ITEM"; "an edit to `f` cannot
+    // invalidate `g`'s certificate unless `g`'s contract references `f`'s").
+    // Each `fn` is lowered and verified in ISOLATION — a sub-program holding only
+    // THAT `fn` plus the file's `spec fn`s (pure shared dependencies its contract
+    // may reference) plus the combinator defs the lowerer emits. So verus's run
+    // yields only that item's obligations and its level is L3 iff THAT item's
+    // obligations all discharge, independent of any sibling's failure (§6 — the
+    // certificate lists EVERY function's OWN level; §5.1 — a counterexample
+    // belongs to the item it is reported on, never a neighbor's).
     let seed = resolve_seed(path);
-    let verus = run_verus(&parsed.program, &lowered, seed)?;
 
-    let mut certs = Vec::new();
+    // The file's `spec fn`s are pure, contract-free shared dependencies; they go
+    // into every per-item sub-program so a `fn` whose `ens` references one (e.g.
+    // `sum`'s `ens result == spec_sum(xs)`) still lowers and verifies.
+    let spec_items: Vec<Item> = parsed
+        .program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::SpecFn(_)))
+        .cloned()
+        .collect();
+
+    let mut certs = Vec::with_capacity(parsed.program.items.len());
     for item in &parsed.program.items {
+        let sub = item_subprogram(item, &spec_items);
+        let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
+        let verus = run_verus(&sub, &lowered, seed)?;
         certs.push(assemble_certificate(item, &verus));
     }
     Ok(certs)
+}
+
+/// Build the per-item sub-`Program` that isolates `item`'s verification (§5.3).
+///
+/// - A `fn` is verified against itself plus the file's `spec fn`s (the pure
+///   shared dependencies its contract may reference), so its obligations are its
+///   own and a sibling `fn`'s failure cannot leak in.
+/// - A `spec fn` carries no `req`/`ens`/`fx` contract (`ast.rs` `SpecFnItem`,
+///   §4.2): there is no L3 proof obligation to discharge, only well-formedness
+///   (the `decreases` measure). It is verified against the set of `spec fn`s
+///   alone (which already contains it), so a mutually-recursive spec fn still
+///   resolves. The resulting cert records the spec fn's well-formedness as its
+///   own discharged result — never a neighbor `fn`'s counterexample.
+fn item_subprogram(item: &Item, spec_items: &[Item]) -> Program {
+    match item {
+        // The `fn` plus all pure spec-fn dependencies, in source order (spec fns
+        // first so a forward reference resolves; the lowerer emits combinator
+        // defs and dedups regardless of order).
+        Item::Fn(_) => {
+            let mut items = spec_items.to_vec();
+            items.push(item.clone());
+            Program { items }
+        }
+        // Spec fns verified together (mutual recursion); `spec_items` already
+        // includes `item`.
+        Item::SpecFn(_) => Program {
+            items: spec_items.to_vec(),
+        },
+    }
 }
 
 /// Resolve the pinned solver seed for `path` (§5.3). v0.1 reads no lockfile yet
@@ -376,10 +423,12 @@ fn parse_span(line: &str) -> Option<String> {
     Some(format!("{base}:{loc}"))
 }
 
-/// Assemble one item's [`Certificate`] from the shared verus result (REQ-1 final
-/// stage). `item` is the item name; `effects` is the item's `fx` row
-/// (`spec fn`s are pure — they carry no `fx`); `level`/`obligations` come from
-/// verus; `slag` is `false` in #5.
+/// Assemble one item's [`Certificate`] from THAT item's own verus result (REQ-1
+/// final stage; §5.3 per-item). `verus` is the result of verifying `item`'s
+/// isolated sub-program (`item_subprogram`), so its `level`/`obligations` reflect
+/// only this item — never a sibling's. `item` is the item name; `effects` is the
+/// item's `fx` row (`spec fn`s are pure — they carry no `fx`); `slag` is `false`
+/// in #5.
 fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
     let effects = match item {
         Item::Fn(f) => effects_of(&f.contract.fx),

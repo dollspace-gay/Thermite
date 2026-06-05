@@ -40,8 +40,7 @@ fn verus_present() -> bool {
 
 /// Run `forge check <file> --json`, returning the parsed array of certificates.
 fn check_json(src: &str, stem: &str) -> Vec<Value> {
-    let fixture =
-        std::env::temp_dir().join(format!("forge_div_{stem}_{}.th", std::process::id()));
+    let fixture = std::env::temp_dir().join(format!("forge_div_{stem}_{}.th", std::process::id()));
     std::fs::write(&fixture, src).expect("write fixture");
     let out = Command::new(forge_bin())
         .arg("check")

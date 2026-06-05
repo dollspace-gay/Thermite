@@ -375,7 +375,7 @@ impl Validator {
             }
             Expr::Closure { body, .. } => self.scan_expr_for_loops(body),
             // Leaves — no nested loop possible.
-            Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
         }
     }
 
@@ -432,7 +432,7 @@ impl Validator {
     fn walk_expr_inner(&mut self, expr: &Expr, span: Span) {
         match expr {
             // (c) grammar built-ins: literals and paths are leaves.
-            Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
 
             // (a)/(b)/(iv): a free call is a combinator, a spec-fn call, or
             // forbidden.

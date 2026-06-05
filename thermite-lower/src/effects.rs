@@ -516,7 +516,7 @@ fn check_expr<'a>(
             d,
             errors,
         ),
-        Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }
 }
 

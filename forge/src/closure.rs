@@ -406,7 +406,7 @@ fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
         Expr::Cast { expr, .. } => walk_expr(expr, in_file, out),
         Expr::Ref { expr, .. } => walk_expr(expr, in_file, out),
         // Leaves: no nested call to find.
-        Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }
 }
 

@@ -237,11 +237,17 @@ fn validate_never_panics_on_deep_nesting() {
         Type,
     };
 
-    let mut expr = Expr::IntLit(0);
+    let mut expr = Expr::IntLit {
+        value: 0,
+        raw: "0".to_string(),
+    };
     for _ in 0..400 {
         expr = Expr::Binary {
             op: BinOp::Add,
-            lhs: Box::new(Expr::IntLit(0)),
+            lhs: Box::new(Expr::IntLit {
+                value: 0,
+                raw: "0".to_string(),
+            }),
             rhs: Box::new(expr),
         };
     }
@@ -265,7 +271,10 @@ fn validate_never_panics_on_deep_nesting() {
             },
             body: Some(Block {
                 stmts: vec![],
-                tail: Some(Box::new(Expr::IntLit(0))),
+                tail: Some(Box::new(Expr::IntLit {
+                    value: 0,
+                    raw: "0".to_string(),
+                })),
             }),
             span,
         })],

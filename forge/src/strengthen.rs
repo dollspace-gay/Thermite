@@ -118,7 +118,7 @@ fn result_equals(rhs: Expr) -> Clause {
 pub fn render_expr(e: &Expr) -> String {
     match e {
         Expr::Path(segs) => segs.join("::"),
-        Expr::IntLit(n) => n.to_string(),
+        Expr::IntLit { value, .. } => value.to_string(),
         Expr::BoolLit(b) => b.to_string(),
         Expr::Binary { op, lhs, rhs } => {
             format!(

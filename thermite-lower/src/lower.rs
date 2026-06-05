@@ -408,7 +408,7 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
             collect_combinators_in_expr(expr, span, acc)
         }
-        Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }
 }
 
@@ -629,7 +629,7 @@ fn is_head_fold_sum(body: &Block) -> bool {
     for arm in arms {
         match &arm.pattern {
             Pattern::Slice(pats) if pats.is_empty() => {
-                if matches!(&arm.body, Expr::IntLit(0)) {
+                if matches!(&arm.body, Expr::IntLit { value: 0, .. }) {
                     has_empty_zero = true;
                 }
             }
@@ -774,7 +774,9 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
     }
     let d = depth + 1;
     match expr {
-        Expr::IntLit(n) => Ok(n.to_string()),
+        // Emit the numeric `value`, NOT `raw` (#37): the lowered output stays
+        // byte-identical (`1_000_000` lowers to `1000000`); no golden churn.
+        Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
         Expr::Path(segs) => {
             // A plain path emits its segments joined by `::`. The slice→`xs@`
@@ -1460,7 +1462,7 @@ fn split_conjuncts(expr: &Expr) -> Vec<&Expr> {
 fn expr_mentions(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Path(segs) => segs.iter().any(|s| s == name),
-        Expr::IntLit(_) | Expr::BoolLit(_) => false,
+        Expr::IntLit { .. } | Expr::BoolLit(_) => false,
         Expr::Call { callee, args } => {
             expr_mentions(callee, name) || args.iter().any(|a| expr_mentions(a, name))
         }

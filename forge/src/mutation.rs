@@ -313,7 +313,10 @@ fn empty_slice_literal() -> Expr {
 /// it, not the type checker).
 fn zero_value_for(ret: &Type) -> Option<Expr> {
     match ret {
-        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => Some(Expr::IntLit(0)),
+        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => Some(Expr::IntLit {
+            value: 0,
+            raw: "0".to_string(),
+        }),
         Type::Prim(PrimType::Bool) => Some(Expr::BoolLit(false)),
         Type::Generic { name, .. } if name == "Option" => {
             Some(Expr::Path(vec!["None".to_string()]))
@@ -448,7 +451,10 @@ impl MutantSink {
 
     fn scan_expr(&mut self, expr: &Expr, ctr: &mut Counters) {
         match expr {
-            Expr::IntLit(n) => {
+            // Mutation reasons over the numeric `value` only (#37); the verbatim
+            // `raw` is irrelevant to off-by-one — a mutated literal is rebuilt
+            // with `raw = value.to_string()` (a plain decimal) in `apply_expr`.
+            Expr::IntLit { value: n, .. } => {
                 let site = ctr.intlit;
                 ctr.intlit += 1;
                 // `n`→`n+1` (always) and `n`→`n-1` (skip at 0: `IntLit` is u128,
@@ -673,15 +679,23 @@ impl Applier<'_> {
 
     fn apply_expr(&mut self, expr: &Expr) -> Expr {
         match expr {
-            Expr::IntLit(n) => {
+            Expr::IntLit { value: n, raw } => {
                 let site = self.ctr.intlit;
                 self.ctr.intlit += 1;
                 if site == self.action.site {
                     if let MutKind::OffByOne(v) = &self.action.kind {
-                        return Expr::IntLit(*v);
+                        // A mutated literal sets `raw = value.to_string()` — a
+                        // plain decimal (no `_`); #37 keeps the value semantics.
+                        return Expr::IntLit {
+                            value: *v,
+                            raw: v.to_string(),
+                        };
                     }
                 }
-                Expr::IntLit(*n)
+                Expr::IntLit {
+                    value: *n,
+                    raw: raw.clone(),
+                }
             }
             Expr::Binary { op, lhs, rhs } => {
                 let site = self.ctr.binary;

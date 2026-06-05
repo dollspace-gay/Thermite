@@ -454,7 +454,7 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
         }
         Expr::Cast { expr, ty: _ } => collect_callee_names(expr, out),
         Expr::Ref { mutable: _, expr } => collect_callee_names(expr, out),
-        Expr::IntLit(_) | Expr::BoolLit(_) => {}
+        Expr::IntLit { .. } | Expr::BoolLit(_) => {}
     }
 }
 

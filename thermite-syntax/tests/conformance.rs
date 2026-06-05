@@ -444,13 +444,104 @@ fn address_stability_under_unrelated_edit() {
 
 #[test]
 fn int_literal_underscores_strip_to_value() {
-    // lexer.md AC-2: `1_000_000` lexes to the numeric value 1000000.
+    // lexer.md AC-2: `1_000_000` lexes to the numeric value 1000000 (UNCHANGED).
     let (tokens, errors) = thermite_syntax::tokenize("1_000_000");
     assert!(errors.is_empty());
-    let has_value = tokens
+    let has_value = tokens.iter().any(|t| {
+        matches!(
+            t.kind,
+            thermite_syntax::TokKind::Int {
+                value: 1_000_000,
+                ..
+            }
+        )
+    });
+    assert!(has_value, "expected Int value 1000000, got {tokens:?}");
+}
+
+#[test]
+fn int_literal_preserves_raw() {
+    // lexer.md AC-2b (#37): the integer token carries BOTH the numeric `value`
+    // (separators stripped) AND the verbatim `raw` (separators included). The
+    // expected raw is the source substring, hand-derived from the input, never
+    // copied from the lexer (R-CHAR-3).
+    use thermite_syntax::TokKind;
+
+    let (tokens, errors) = thermite_syntax::tokenize("1_000_000");
+    assert!(errors.is_empty());
+    let int = tokens
         .iter()
-        .any(|t| matches!(t.kind, thermite_syntax::TokKind::Int(1_000_000)));
-    assert!(has_value, "expected Int(1000000), got {tokens:?}");
+        .find_map(|t| match &t.kind {
+            TokKind::Int { value, raw } => Some((*value, raw.clone())),
+            _ => None,
+        })
+        .expect("expected an Int token");
+    assert_eq!(int, (1_000_000u128, "1_000_000".to_string()));
+
+    // A literal with no separators: raw == "42".
+    let (tokens, _) = thermite_syntax::tokenize("42");
+    let int = tokens.iter().find_map(|t| match &t.kind {
+        TokKind::Int { value, raw } => Some((*value, raw.clone())),
+        _ => None,
+    });
+    assert_eq!(int, Some((42u128, "42".to_string())));
+
+    // A trailing `_` (e.g. `1_`) is in NEITHER value nor raw: value 1, raw "1".
+    let (tokens, _) = thermite_syntax::tokenize("1_");
+    let int = tokens.iter().find_map(|t| match &t.kind {
+        TokKind::Int { value, raw } => Some((*value, raw.clone())),
+        _ => None,
+    });
+    assert_eq!(int, Some((1u128, "1".to_string())));
+}
+
+#[test]
+fn int_literal_preserves_value_and_raw() {
+    // ast.md AC-1b (#37): the `1_000_000` literal parses to an EXPR-level
+    // `Expr::IntLit { value: 1000000, raw: "1_000_000" }` — BOTH the numeric
+    // value (separators stripped, UNCHANGED) AND the verbatim raw. Expected is
+    // hand-derived from the source, never copied from the parser (R-CHAR-3).
+    use thermite_syntax::ast::{BinOp, Expr};
+
+    let src = "fn f(xs: &[u32]) -> u32 req xs.len() <= 1_000_000 ens result == 0 fx pure { 0 }";
+    let result = parse(src);
+    assert!(result.is_clean(), "fixture should parse clean: {result:?}");
+
+    let Item::Fn(f) = &result.program.items[0] else {
+        panic!("expected a fn item");
+    };
+    // req is `xs.len() <= 1_000_000`: a Binary whose rhs is the IntLit.
+    let Expr::Binary {
+        rhs, op: BinOp::Le, ..
+    } = &f.contract.req.expr
+    else {
+        panic!("expected a `<=` Binary req, got {:?}", f.contract.req.expr);
+    };
+    match rhs.as_ref() {
+        Expr::IntLit { value, raw } => {
+            assert_eq!(*value, 1_000_000u128, "value: separators stripped");
+            assert_eq!(raw, "1_000_000", "raw: verbatim separators preserved");
+        }
+        other => panic!("expected an IntLit rhs, got {other:?}"),
+    }
+
+    // A separator-free literal `42` round-trips as `{ value: 42, raw: "42" }`.
+    let src2 = "fn g() -> u32 req true ens result == 42 fx pure { 0 }";
+    let result2 = parse(src2);
+    assert!(result2.is_clean());
+    let Item::Fn(g) = &result2.program.items[0] else {
+        panic!("expected a fn item");
+    };
+    let Expr::Binary { rhs, .. } = &g.contract.ens[0].expr else {
+        panic!("expected a Binary ens");
+    };
+    match rhs.as_ref() {
+        Expr::IntLit { value, raw } => {
+            assert_eq!(*value, 42u128);
+            assert_eq!(raw, "42");
+        }
+        other => panic!("expected an IntLit, got {other:?}"),
+    }
 }
 
 #[test]

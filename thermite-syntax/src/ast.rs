@@ -24,7 +24,8 @@
 //! | ffi REQ-2 (AST shape) | SHIPPED | `struct BoundaryAttr { target, span }` (mirrors `SlagAttr`) + `FnItem.boundary: Option<BoundaryAttr>` + `FnItem.body: Option<Block>` (a boundary fn is `boundary: Some`, `body: None`; an in-language fn is `boundary: None`, `body: Some`). Built by `parse_attribute`/`parse_fn` in `parser.rs`; consumed by `thermite_lower::l1::lower_l1` (the boundary L1 wrapper) and `forge`'s `check::gate_fn` (the `boundary_l1` cert). |
 //! | REQ-4 (block + statement nodes) | SHIPPED | `struct Block`, `enum Stmt`; built by `parse_block`/`parse_stmt` in `parser.rs`. |
 //! | REQ-5 (loop nodes, addressable) | SHIPPED | `struct LoopNode { kind, invs, dec, .. }`; addressed by `address.rs`. |
-//! | REQ-6 (expression nodes) | SHIPPED | `enum Expr` with `Call`/`MethodCall`/`Field`/`Path`/... ; built by `parse_expr_bp`. |
+//! | REQ-6 — VALUE (expression nodes incl. `IntLit` value) | SHIPPED | `enum Expr` with `Call`/`MethodCall`/`Field`/`Path`/... and `IntLit { value, .. }` carrying the numeric value; built by `parse_expr_bp`; lowered by `Expr::IntLit { value, .. } => value.to_string()`. |
+//! | REQ-6 — RAW (`IntLit` verbatim raw on the Expr, #37) | SHIPPED | `Expr::IntLit { value: u128, raw: String }` (struct variant) in `ast.rs`; built by `parse_primary`/pattern-literal in `parser.rs` from `TokKind::Int { value, raw }`; `1_000_000` parses to `{ value: 1000000, raw: "1_000_000" }` (test `int_literal_preserves_value_and_raw`). Lowering still emits `value` (no golden churn). |
 //! | REQ-7 (pattern/type/effect nodes) | SHIPPED | `enum Pattern`/`enum Type`/`enum EffectRow`; built by `parse_pattern`/`parse_type`. |
 //! | REQ-8 (addressable nodes) | SHIPPED | `Item`/`LoopNode`/`Clause` carry source order; numbered by `address.rs`. |
 //! | REQ-9 (spans + boundary stability) | SHIPPED | `Span` on `Item`/`LoopNode`/`Clause`; clauses also keep verbatim `text` for addressing. |
@@ -262,7 +263,16 @@ pub enum IndexArg {
 /// call syntax (surface-grammar.md REQ-6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
-    IntLit(u128),
+    /// An integer literal carrying BOTH the numeric `value` (with `_`
+    /// separators stripped — ast.md REQ-6 VALUE, the original semantics,
+    /// UNCHANGED) and the verbatim source `raw` (separators included — ast.md
+    /// REQ-6 RAW, #37). `1_000_000` parses to `{ value: 1000000, raw:
+    /// "1_000_000" }`. CRITICAL: lowering/mutation/vacuity consume `value`, NOT
+    /// `raw` (no golden churn); `raw` is AST-fidelity / round-trip only.
+    IntLit {
+        value: u128,
+        raw: String,
+    },
     BoolLit(bool),
     Path(Vec<Ident>),
     Call {

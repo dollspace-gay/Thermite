@@ -16,7 +16,8 @@
 //! |---|---|---|
 //! | REQ-1 (token set) | SHIPPED | `enum TokKind` enumerates exactly keywords/ident/int/bool/punct/slag/eof; consumed by `parser.rs`. |
 //! | REQ-2 (keywords closed set) | SHIPPED | `keyword_kind` maps the 17 reserved words; effect/slag names fall through to `Ident`. |
-//! | REQ-3 (int literals with `_`) | SHIPPED | `lex_int` strips `_` and accumulates value; `1_000_000` → `1000000` (test in `tests/conformance.rs`). |
+//! | REQ-3 — VALUE (int literals with `_` stripped) | SHIPPED | `lex_int` strips `_` and accumulates `value`; `1_000_000` → value `1000000` (test `int_literal_underscores_strip_to_value` in `tests/conformance.rs`). |
+//! | REQ-3 — RAW (verbatim source slice on the token, #37) | SHIPPED | `lex_int` ALSO captures the verbatim digit+`_` run as `raw` (`source[i..last_digit]`); `TokKind::Int { value, raw }` so `1_000_000` lexes to value `1000000` AND raw `"1_000_000"` (test `int_literal_preserves_raw`). Consumer: `parse_primary`/pattern-literal in `parser.rs`. |
 //! | REQ-4 (`#[slag]` tokenization) | SHIPPED | `#[` token + string literals via `lex_string`; consumed by `parse_slag`. |
 //! | REQ-5 (comments + whitespace insignificant) | SHIPPED | `skip_trivia` consumes `[ \t\r\n]+` and `//`-to-EOL, emitting nothing. |
 //! | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators before 1-char (`<=`, `==`, `->`, `::`, `..`, `#[`). |
@@ -83,7 +84,14 @@ pub enum TokKind {
 
     // Literals / names.
     Ident(String),
-    Int(u128),
+    /// An integer literal carrying BOTH the numeric `value` (with `_`
+    /// separators stripped — lexer.md REQ-3 VALUE, UNCHANGED) and the verbatim
+    /// source `raw` (separators included — lexer.md REQ-3 RAW, #37). E.g.
+    /// `1_000_000` lexes to `{ value: 1000000, raw: "1_000_000" }`.
+    Int {
+        value: u128,
+        raw: String,
+    },
     Bool(bool),
     Str(String),
 
@@ -274,7 +282,11 @@ fn lex_word(bytes: &[u8], i: usize) -> (Token, usize) {
 }
 
 /// Lex an integer literal with optional `_` separators (lexer.md REQ-3). The
-/// `_` are stripped while accumulating; a trailing `_` is not consumed.
+/// `_` are stripped while accumulating the numeric `value` (VALUE, UNCHANGED);
+/// the verbatim source slice from the start to the last digit (separators
+/// included) is captured as `raw` (RAW, #37). A trailing/leading `_` adjacent
+/// to the digit run is in NEITHER value nor raw: both end at `last_digit`, so
+/// `raw` is exactly the span's source slice (`source[i..last_digit]`).
 fn lex_int(bytes: &[u8], i: usize) -> (Token, usize) {
     let n = bytes.len();
     let mut j = i;
@@ -293,9 +305,12 @@ fn lex_int(bytes: &[u8], i: usize) -> (Token, usize) {
         }
     }
     // A trailing `_` (e.g. `1_`) is not part of the literal: end at last digit.
+    // The digit-run bytes are ASCII (`is_ascii_digit` + `_`), so this slice is
+    // valid UTF-8 — the verbatim raw including interior `_` separators.
+    let raw: String = bytes[i..last_digit].iter().map(|&b| b as char).collect();
     (
         Token {
-            kind: TokKind::Int(value),
+            kind: TokKind::Int { value, raw },
             span: Span::new(i, last_digit - i),
         },
         last_digit,

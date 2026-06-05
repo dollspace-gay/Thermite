@@ -251,7 +251,7 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
             collect_combinators_in_expr(expr, span, acc)
         }
-        Expr::IntLit(_) | Expr::BoolLit(_) | Expr::Path(_) => {}
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }
 }
 
@@ -379,7 +379,7 @@ fn is_head_fold_sum(body: &Block) -> bool {
     for arm in arms {
         match &arm.pattern {
             Pattern::Slice(pats) if pats.is_empty() => {
-                if matches!(&arm.body, Expr::IntLit(0)) {
+                if matches!(&arm.body, Expr::IntLit { value: 0, .. }) {
                     has_empty_zero = true;
                 }
             }
@@ -700,7 +700,8 @@ pub(crate) fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<S
     }
     let d = depth + 1;
     match expr {
-        Expr::IntLit(n) => Ok(n.to_string()),
+        // Emit the numeric `value`, NOT `raw` (#37) — byte-identical L1 output.
+        Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
         Expr::Path(segs) => Ok(segs.join("::")),
         Expr::Call { callee, args } => {

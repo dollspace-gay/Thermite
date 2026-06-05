@@ -1106,9 +1106,9 @@ impl<'a> Parser<'a> {
 
     fn parse_primary(&mut self) -> PResult<Expr> {
         match self.peek().clone() {
-            TokKind::Int(v) => {
+            TokKind::Int { value, raw } => {
                 self.bump();
-                Ok(Expr::IntLit(v))
+                Ok(Expr::IntLit { value, raw })
             }
             TokKind::Bool(b) => {
                 self.bump();
@@ -1213,9 +1213,9 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Pattern::Wildcard)
             }
-            TokKind::Int(v) => {
+            TokKind::Int { value, raw } => {
                 self.bump();
-                Ok(Pattern::Literal(Expr::IntLit(v)))
+                Ok(Pattern::Literal(Expr::IntLit { value, raw }))
             }
             TokKind::Bool(b) => {
                 self.bump();
@@ -1394,7 +1394,7 @@ impl<'a> Parser<'a> {
 fn describe(kind: &TokKind) -> String {
     match kind {
         TokKind::Ident(s) => format!("identifier `{s}`"),
-        TokKind::Int(v) => format!("integer `{v}`"),
+        TokKind::Int { value, .. } => format!("integer `{value}`"),
         TokKind::Bool(b) => format!("`{b}`"),
         TokKind::Str(s) => format!("string {s:?}"),
         TokKind::Eof => "end of input".to_string(),
@@ -1453,8 +1453,10 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Amp => "&",
         TokKind::Pipe => "|",
         TokKind::Bang => "!",
-        TokKind::Ident(_) | TokKind::Int(_) | TokKind::Bool(_) | TokKind::Str(_) | TokKind::Eof => {
-            "<token>"
-        }
+        TokKind::Ident(_)
+        | TokKind::Int { .. }
+        | TokKind::Bool(_)
+        | TokKind::Str(_)
+        | TokKind::Eof => "<token>",
     }
 }

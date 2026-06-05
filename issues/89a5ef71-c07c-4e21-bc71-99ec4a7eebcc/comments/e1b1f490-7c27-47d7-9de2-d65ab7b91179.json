@@ -1,0 +1,10 @@
+{
+  "uuid": "e1b1f490-7c27-47d7-9de2-d65ab7b91179",
+  "issue_uuid": "89a5ef71-c07c-4e21-bc71-99ec4a7eebcc",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_mutation.rs::divergence_stale_same_version_cache_entry_bypasses_mutation_gate demonstrates the divergence. cache::cache_key = (lowered_src, seed, verus_version, THERMITE_VERSION). Commit fa55760 introduced the mutation gate but did NOT bump forge's version (Cargo.toml still 0.1.0), and neither the gate's existence nor the floor is in the key. A cert stored by pre-#12 forge (#5/#6/#13 all ship at 0.1.0 and populate the same target/ cache) for a weak-contract fn is an L3-clean cert under the identical key; a post-#12 warm check serves it on a HIT (check::check_file_with_options ~line 273) BEFORE the gate runs. The test confirms: cold check gates `ens result <= 1000000` WeakContract (1/2 < 0.60); a planted stale same-version L3-clean cert is re-served as level=L3 cached=true mutants_killed=0/0 (and the served cert is internally inconsistent — its obligations array still carries the WeakContract diagnostic). Reachability: NOT version-guarded — same thermite version 0.1.0. Owning crate: forge (cache/check). Fix: the gate-introducing commit must invalidate the cache (bump THERMITE_VERSION or add a gate/floor tag to cache_key).",
+  "created_at": "2026-06-05T05:57:02.788908921Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAqKz8fXv/HSc4oUuBhZTiOhr9DG/KYawZejEuG1/WOTYzmwlVqAR19XlwP7Um01u2WrCD2KhMiYbsSoyp+rk/DA=="
+}

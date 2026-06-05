@@ -2,11 +2,12 @@
   "uuid": "c822771e-0e6b-4bf7-9479-20273473b392",
   "display_id": 8,
   "title": "Make Thermite builds bit-reproducible with pinned seeds and per-item proof caching",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:47:23.014702056Z",
-  "updated_at": "2026-06-04T17:48:44.458457443Z",
+  "updated_at": "2026-06-05T03:36:36.048813714Z",
+  "closed_at": "2026-06-05T03:36:36.048813714Z",
   "labels": [
     "feature"
   ],

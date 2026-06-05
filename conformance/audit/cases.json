@@ -1,0 +1,14 @@
+{
+  "note": "Oracle for forge's audit manifest v1 (§6/§8/§9, issue #15) — the trust deliverable. Hand-derived (R-CHAR-3). The manifest is a pure projection of the cert collection; the oracle asserts the STABLE structure: per-fn levels + assurance_scope, the project assurance (min level + scope), and the TCB enumeration (slag U boundary U toolchain). contract_quality shape is asserted; version-sensitive ratios + solver_time_ms are excluded (per-cert precedent). manifest_version == v1.",
+  "cases": [
+    { "name": "corpus_empty_tcb", "sources": ["conformance/sum.th"],
+      "expect_project_level": "L3", "expect_project_scope": "end_to_end",
+      "expect_tcb_slag": [], "expect_tcb_boundary": [],
+      "why": "sum/spec_sum are pure-Thermite, L3, end-to-end -> project L3 end-to-end; the TCB has NO slag and NO boundary (only the toolchain identity). The fiat-trusted base of a pure project is exactly the toolchain." },
+    { "name": "slag_boundary_tcb",
+      "program": "#[slag(reason = \"hand-tuned\", owner = \"agent:x\", review = \"required\")] fn vendored(x: u32) -> u32 req x < 100 ens result == x fx pure { x } #[boundary(\"ext::ext_f\")] fn ext_f(x: u32) -> u32 req x < 100 ens result == x fx pure ;",
+      "expect_tcb_slag": ["vendored"], "expect_tcb_boundary": ["ext_f"],
+      "expect_boundary_target": "ext::ext_f",
+      "why": "TCB enumeration: the slag block `vendored` (with reason/owner/review) AND the boundary contract `ext_f` (target ext::ext_f) BOTH appear in the audit manifest's TCB (§8 grep-slag inventory + §9 boundary contracts). Nothing fiat-trusted omitted (R-DEFER-9)." }
+  ]
+}

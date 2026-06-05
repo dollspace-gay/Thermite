@@ -1,0 +1,10 @@
+{
+  "uuid": "f11efec0-85d5-42c4-a33f-dac166b1eb51",
+  "issue_uuid": "b4852e68-d722-4277-82e0-68974a1aad27",
+  "author": "Yffe",
+  "content": "Failing tests at thermite-lower/tests/divergence_golden_intlit.rs::divergence_l3_golden_stale_on_underscore_literal and ::divergence_l1_golden_stale_on_underscore_literal demonstrate the divergence. Authority: goal.md §B (the tests/golden/ files are the lowering oracle; emitted source MUST match the golden) + .design/syntax/ast.md REQ-6 CRITICAL note ('lowering continues to emit the numeric value e.g. 1000000, NOT the raw -- so tests/golden/lower/*.verus.rs do NOT change'). Reality: the emitter for conformance/sum.th emits 'xs.len() <= 1000000' (the _-stripped value, correct per AC-1b) but the goldens tests/golden/lower/sum.verus.rs (line 25 'requires xs.len() <= 1_000_000') and tests/golden/l1/sum.l1.rs (line 39 executable check 'xs.len() <= 1_000_000') still carry the RAW form. Pre-existing at a2c0f73^ (the parent goldens are identical); no test byte-matches these goldens (lower_conformance.rs/l1_conformance.rs verify via verus/rustc + contract presence, not byte equality), so #37's 'git diff tests/golden/ empty' no-churn check passed over an already-stale oracle. R-DEFER-5: every divergence on main is ours. Fix is the generator's: regenerate the golden executable expressions to 1000000, OR amend ast.md if the design intends verbatim separators in the golden (R-SPEC-4). NOTE: the verbatim 1_000_000 inside the L1 diagnostic LABEL string is correct (Clause.text) and is NOT flagged.",
+  "created_at": "2026-06-05T18:45:34.138251566Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAjKU+fqGw119kQe/85hUwUbVRSXxbv31+3pefMLB/Z3Wt/xcEHHhB3gIMRCKl8QCpzX/HTPt6r0RZBD6tkXaiCg=="
+}

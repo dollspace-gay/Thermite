@@ -1,0 +1,19 @@
+{
+  "note": "Oracle for forge build's runtime effect sandbox (seccomp, issue #57). Hand-derived (R-CHAR-3). forge build --entry installs (by default) a seccomp-bpf filter whose allowlist is the entry's transitive fx; a syscall off the allowlist -> SIGSYS (process killed, exit 159 = 128+31). PURE Thermite has no I/O surface to trigger it, so the kill is DEMONSTRATED via --sandbox-self-test (injects an openat probe AFTER the filter is installed): under a PURE filter the probe is KILLED; under a read(_) filter openat is allowlisted so the probe is ALLOWED. A genuinely pure program runs CLEAN (baseline syscalls + result print + the panic/abort path are allowed). The filter is deterministic (same transitive fx -> same allowlist).",
+  "pure_runs_clean": [
+    { "name": "pure_clean", "source": "conformance/sum.th", "entry": "sum", "flags": ["--sandbox"],
+      "expect_exit": 0, "expect_run_contains": "6",
+      "why": "sum is fx pure; the pure seccomp filter allows the baseline (run + print + exit). The sandboxed binary runs clean -> prints 6, exit 0. The sandbox does not impede a program that stays within its declared (empty I/O) effects." }
+  ],
+  "probe_killed": [
+    { "name": "pure_probe_killed", "source": "conformance/sum.th", "entry": "sum", "flags": ["--sandbox", "--sandbox-self-test"],
+      "expect_killed": true, "expect_exit": 159,
+      "why": "Under sum's PURE filter, the --sandbox-self-test openat probe (a disallowed I/O syscall) is killed by seccomp -> SIGSYS, exit 159 (128+31). Demonstrates the filter ENFORCES: a syscall outside the declared fx is killed at the boundary (§4.1)." }
+  ],
+  "probe_allowed_when_fx_widens": [
+    { "name": "read_probe_allowed", "entry": "rf", "flags": ["--sandbox", "--sandbox-self-test"],
+      "program": "fn rf(x: u32) -> u32 req x < 100 ens result == x fx read(src) { x }",
+      "expect_killed": false, "expect_exit": 0,
+      "why": "rf declares fx read(src); the seccomp allowlist WIDENS to include openat. The SAME --sandbox-self-test openat probe is now ALLOWED (no kill) -> exit 0. Confirms the allowlist is derived from the declared fx (read -> openat permitted)." }
+  ]
+}

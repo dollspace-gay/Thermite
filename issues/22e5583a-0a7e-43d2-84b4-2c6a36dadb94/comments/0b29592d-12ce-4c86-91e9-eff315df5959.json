@@ -1,0 +1,10 @@
+{
+  "uuid": "0b29592d-12ce-4c86-91e9-eff315df5959",
+  "issue_uuid": "22e5583a-0a7e-43d2-84b4-2c6a36dadb94",
+  "author": "Yffe",
+  "content": "Run verus in a per-run scratch DIRECTORY removed WHOLESALE (RAII Drop guard), so the .rs source + verus's ~4.3M compiled-binary sibling + any artifact all go away on EVERY exit path incl. a ? early-return. Single file forge/src/check.rs: add struct ScratchDir + Drop (best-effort remove_dir_all, R-CODE-2); unique_temp_path -> unique_scratch_dir (dir, pid+counter, R-CODE-5); run_verus writes <stem>.rs (no-. crate_stem, gotcha intact) inside it; invoke_verus runs verus with current_dir = scratch dir. Class check: kani.rs already removes its crate dir wholesale (no leak); vacuity_solver.rs shares the leak but is off-manifest -> report for follow-up. Regression test forge/tests/scratch_cleanup.rs: success + error paths, isolated TMPDIR, no surviving forge_* entry; skip-loud if verus absent.",
+  "created_at": "2026-06-05T17:49:55.127007840Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJ/o8bdpV/9W9puKjLg2PmxRFkGNJxE12ZtVxmNGS29x43VA036qxsAK/MmK8adMTlzw/jmDXt4dqXEvxQGCMCg=="
+}

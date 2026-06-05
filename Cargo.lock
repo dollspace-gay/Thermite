@@ -176,6 +176,7 @@ version = "0.1.0"
 dependencies = [
  "thermite-spec",
  "thermite-syntax",
+ "thermite-verified",
 ]
 
 [[package]]
@@ -202,6 +203,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "thermite-verified"
+version = "0.1.0"
 
 [[package]]
 name = "typenum"

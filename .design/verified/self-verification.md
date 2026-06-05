@@ -1,8 +1,8 @@
 # Self-Verifying the Toolchain with Verus (Tier 1: the soundness-critical pure core)
 <!--
 tier: 3-component
-status: draft
-governs: thermite-verified/src/lib.rs (the verified delegation crate — NOT YET SCAFFOLDED, blocked on epic #60)
+status: active (REQ-5 first increment SHIPPED via mechanism (c); epic #60 open for the remaining 7 Tier-1 targets)
+governs: thermite-verified/src/lib.rs (the verified core — SCAFFOLDED; `subsumes` proved + anchored, epic #60)
 thesis-refs:
   - thermite-design.md §6   (Verus is the L3 prover)
   - thermite-design.md §9   (the TCB is slag ∪ boundary ∪ the toolchain itself)
@@ -36,11 +36,14 @@ and Tier 3 (I/O / `Command`-spawning / heavy-std) are explicitly OUT: Tier 3 is 
 trusted floor, sealed behind `#[verifier::external_body]` (Verus's analog of Thermite's
 own `#[slag]`/`#[boundary]`), assumed-by-contract.
 
-> **GREENFIELD / FORWARD-LOOKING.** The verified crate (`thermite-verified`) does not yet
-> exist; the existing Tier-1 functions are plain Rust. Every REQ below is **NOT-STARTED**,
-> tracked under epic **#60**. The grounding section is REAL (a verified Verus port of
-> `subsumes` was run; output pasted) and proves the mechanism end-to-end, but no toolchain
-> code delegates to it yet, so nothing is SHIPPED.
+> **FIRST INCREMENT SHIPPED.** The verified crate (`thermite-verified`) now exists and the
+> FIRST Tier-1 target — `effects::subsumes` (REQ-5) — is proved by real `verus
+> --no-cheating` (8 verified, 0 errors) and anchored to the toolchain via mechanism (c)
+> (a verus-verified core + an exhaustive 65536-pair impl==spec equivalence test; mechanism
+> (b) was shown empirically infeasible for v1, OQ-1/OQ-2). REQ-1/3/4/5/6 are SHIPPED; REQ-2
+> (the remaining seven Tier-1 targets) is NOT-STARTED, tracked under epic **#60**. The
+> grounding section below records the original out-of-tree verus run; the in-tree proof is
+> now permanent and CI-runnable (`thermite-verified/tests/verus_verify.rs`).
 
 ## The three tiers (the scope boundary)
 
@@ -282,11 +285,27 @@ When the verified crate is scaffolded (epic #60), add to `tooling/spec-routes.to
 
 ## REQ status
 
+The FIRST increment (REQ-5: `subsumes`) is SHIPPED. The empirical b-vs-c decision
+(OQ-1/OQ-2) was settled in-tree: mechanism **(b)** (link the verified crate into
+the cargo build) is NOT viable for v1 — the installed `vstd`/`builtin`/`builtin_macros`
+crates inherit `workspace.lints` from the Verus workspace root (so `cargo metadata`
+fails on them outside it), carry `cfg(verus_keep_ghost)` lint configs cargo rejects,
+resolve a renamed `verus_builtin` crate, and a `verus!{}` exec body with an `ensures`
+clause is verus-driver-only syntax (plain `rustc` cannot compile it). So we landed
+mechanism **(c)** exactly as the decision rule prescribes: the `verus!{}` proof lives
+behind `#[cfg(verus_keep_ghost)]` in `thermite-verified/src/lib.rs` (verified by
+`thermite-verified/tests/verus_verify.rs` running real `verus --no-cheating
+--crate-type=lib src/lib.rs` → **8 verified, 0 errors**), and the always-cargo-compiled
+plain-Rust mirror (`subsumes_masks` / `spec_subsumes_mask`) is what runs;
+`thermite_lower::effects::subsumes` delegates its bit comparison to `subsumes_masks`
+and is anchored to the proved subset relation by the exhaustive 2^8×2^8 = 65536-pair
+equivalence test `thermite-lower/tests/effects_verified.rs` (0 mismatches).
+
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (self-verification architecture) | NOT-STARTED | epic #60. No `thermite-verified` crate exists; the toolchain is plain Rust. Mechanism (b) chosen, grounded as feasible via standalone `verus` (8 verified, 0 errors), but no crate ships and nothing delegates yet. |
-| REQ-2 (Tier-1 target list + porting pattern) | NOT-STARTED | epic #60. The eight target symbols exist as plain Rust (cited above), but none is ported into `verus!{}` or delegated to. |
-| REQ-3 (Tier-2/Tier-3 boundaries) | NOT-STARTED | epic #60. No verified core exists, so no `external_body` floor is drawn; the boundary is specified here, not yet enforced. |
-| REQ-4 (honesty — genuine proof) | NOT-STARTED | epic #60. The grounding run used `--no-cheating` and the broken variant failed (8 vs 7+1 errors), proving the discipline is enforceable, but no in-tree verified core carries it yet. |
-| REQ-5 (FIRST increment — `subsumes` verified + delegated) | NOT-STARTED | epic #60. `subsumes` was ported and verified OUT OF TREE (`/tmp` grounding, now cleaned); `effects::subsumes` in `effects.rs` is still the plain-Rust impl with no delegation/conformance link. |
-| REQ-6 (CI-able verus-verify gauntlet step) | NOT-STARTED | epic #60. The `verus --no-cheating` invocation is real and CI-able (grounded), but no gauntlet/CI step runs it and no `errors>0` gate is wired. |
+| REQ-1 (self-verification architecture) | SHIPPED | `verus_core` in `thermite-verified/src/lib.rs` (the `verus!{}` body, verified by `verus`, Thermite's L3 rung §6); mechanism (c) landed + recorded (b empirically infeasible, see above); `tests/verus_verify.rs` runs `verus --no-cheating` → 8 verified, 0 errors. |
+| REQ-2 (Tier-1 target list + porting pattern) | NOT-STARTED | epic #60. `subsumes` is the FIRST and ONLY ported target (REQ-5); the other seven Tier-1 fns (`run_ladder`, `cache_key`, `triage`, `syscall_allowlist`, `kill_ratio`/`meets_floor`, `is_strictly_stronger`, the boundary gate) remain plain Rust, ported one at a time AFTER the mechanism is proven (REQ-6). |
+| REQ-3 (Tier-2/Tier-3 boundaries) | SHIPPED | `thermite-verified` has NO I/O and NO `external_body`/`external` (AC-5 grep: zero occurrences in `src/`); the Tier-1 core (`subsumes`) carries a real `ensures`, reaching no Tier-3 floor. Tier 2 acknowledged, not attempted. |
+| REQ-4 (honesty — genuine proof) | SHIPPED | `verus --no-cheating` on the core (no `assume`/`admit`/`external_body`); `ensures result == spec_subsumes(..)` is non-vacuous — negating the body (`missing == 0` → `missing != 0`) → `7 verified, 1 errors`, demonstrated by `tests/verus_verify.rs::broken_subsumes_fails_verification`; `effects_verified.rs::verified_spec_is_not_vacuous` re-checks the relation rejects Pure⊇{Read}. |
+| REQ-5 (FIRST increment — `subsumes` verified + delegated/matched) | SHIPPED | `verus_core::subsumes` proved (+ three lattice-law `proof fn`s: reflexive / Pure-subsumes-only-Pure / top-subsumes-all); `thermite_verified::subsumes_masks` (the plain mirror) consumed by `thermite_lower::effects::subsumes`; matched by the 65536-pair exhaustive equivalence test (mechanism (c), AC-4, 0 mismatches); the 14 `effects` tests still pass (behavior preserved, AC-3). |
+| REQ-6 (CI-able verus-verify gauntlet step) | SHIPPED | `thermite-verified/tests/verus_verify.rs` runs real `verus --no-cheating --crate-type=lib src/lib.rs` (skip-loud if verus absent, like `lower_conformance`) and asserts `verified, 0 errors`; a core fn that fails to verify is a HARD test failure (R-DEFER-6). |

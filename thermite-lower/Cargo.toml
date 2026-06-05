@@ -8,3 +8,8 @@ rust-version.workspace = true
 [dependencies]
 thermite-syntax = { path = "../thermite-syntax" }
 thermite-spec = { path = "../thermite-spec" }
+# epic #60 (self-verification.md REQ-5): `effects::subsumes` delegates its
+# bit-level mask comparison to the Verus-verified `thermite_verified::subsumes_masks`
+# (mechanism (c) — the plain-Rust mirror of the proved exec body), anchoring the
+# soundness-critical decision to the `verus` proof.
+thermite-verified = { path = "../thermite-verified" }

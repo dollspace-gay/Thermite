@@ -1,0 +1,22 @@
+[package]
+name = "thermite-verified"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+
+# REQ-1 / REQ-5 (self-verification.md): the Verus-verified soundness-critical
+# core (epic #60). The crate has NO runtime deps — the verified `verus!{}` body
+# lives behind `#[cfg(verus_keep_ghost)]` (only the real `verus` driver sets that
+# cfg), so a normal `cargo build` compiles only the plain-Rust subset-relation
+# reference (`spec_subsumes_mask`) that the exhaustive-equivalence test
+# (mechanism (c)) and `thermite-lower::effects` anchor against. The `verus`
+# proof runs as the gauntlet step in `tests/verus_verify.rs`.
+[dependencies]
+
+# `verus_keep_ghost` is the cfg the real `verus` driver sets to compile the
+# `verus!{}` proof core (`verus_core` in lib.rs); a normal `cargo build` never
+# sets it, so the gated module is skipped. Declaring it as an expected cfg keeps
+# `cargo`/`clippy` from warning (the clean alternative to a module-root #![allow],
+# R-CODE-3).
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(verus_keep_ghost)'] }

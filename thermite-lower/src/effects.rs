@@ -28,7 +28,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 (effect lattice) | SHIPPED | `enum EffectKind` (the 8 atoms) + `effects` (the powerset projection of an `EffectRow`); consumer `subsumes`/`missing_atoms`; asserted by `tests/effects.rs::lattice_law` (AC-1). |
-//! | REQ-2 (subsumption accept relation) | SHIPPED | `pub fn subsumes` (`effects(callee) ⊆ effects(caller)`, `Pure` subsumes only `Pure`); consumer `check_effects`; asserted by `lattice_law` + `crafted_accepts` (AC-1/AC-3). |
+//! | REQ-2 (subsumption accept relation) | SHIPPED | `pub fn subsumes` (`effects(callee) ⊆ effects(caller)`, `Pure` subsumes only `Pure`); consumer `check_effects`; asserted by `lattice_law` + `crafted_accepts` (AC-1/AC-3). Epic #60: the bit-level subset test is DELEGATED to the Verus-verified `thermite_verified::subsumes_masks` (mechanism (c)); `effects::subsumes` is anchored to the `verus` proof by the exhaustive 65536-pair equivalence test `tests/effects_verified.rs`. |
 //! | REQ-3 (check entry point + call graph) | SHIPPED | `pub fn check_effects` builds a name→`fx` map over `FnItem`s (`SpecFnItem`/combinators noted pure) and walks each body's `Expr` tree per `Call`/`MethodCall`; consumer `tests/effects.rs` + the #4 lowering pipeline surface; asserted by `corpus_accepts` (AC-2) + `crafted_rejects` (AC-4). |
 //! | REQ-4 (structured rejection, `LowerError`) | SHIPPED | `LowerError::EffectNotSubsumed { caller, callee, missing, span }` in `lower.rs`; produced by `check_effects`; `missing` = `effects(callee) \ effects(caller)`; asserted by `crafted_rejects` (AC-4). |
 //! | REQ-5 (maximal-row / slag boundary) | SHIPPED | boundary recorded — `check_effects` enforces subsumption only; maximal-row triage is forge's vacuity stage (#6), not here. No maximal-row judgement in this file. |
@@ -69,6 +69,27 @@ pub enum EffectKind {
 }
 
 impl EffectKind {
+    /// The bit position of this atom kind in the 8-atom `u8` bitset shared with
+    /// the Verus-verified core (`thermite_verified`, epic #60): Read=0, Write=1,
+    /// Net=2, Alloc=3, Time=4, Rand=5, Panic=6, Diverge=7. This is the
+    /// representation port of `.design/verified/self-verification.md` (REQ-5) —
+    /// `subsumes` projects each `EffectRow` to its mask via this bit and delegates
+    /// the subset test to `thermite_verified::subsumes_masks`, the plain-Rust
+    /// mirror of the `verus`-proved exec body.
+    fn bit(self) -> u8 {
+        let index: u8 = match self {
+            EffectKind::Read => 0,
+            EffectKind::Write => 1,
+            EffectKind::Net => 2,
+            EffectKind::Alloc => 3,
+            EffectKind::Time => 4,
+            EffectKind::Rand => 5,
+            EffectKind::Panic => 6,
+            EffectKind::Diverge => 7,
+        };
+        1u8 << index
+    }
+
     /// The atom-kind of a concrete `Effect`, dropping the path/domain argument
     /// (REQ-2, OQ-1 — path-insensitive in v0.1).
     fn of(effect: &Effect) -> EffectKind {
@@ -116,14 +137,35 @@ fn effects(row: &EffectRow) -> Vec<EffectKind> {
     kinds
 }
 
+/// The 8-atom `u8` bitset of an effect row (one bit per `EffectKind`, see
+/// `EffectKind::bit`): the representation port shared with the Verus-verified
+/// core (`.design/verified/self-verification.md` REQ-5). `mask(Pure) = 0`;
+/// `mask(Set(v))` ORs in `EffectKind::of(e).bit()` for each `e`. Path-insensitive
+/// (OQ-1), exactly the projection `effects` already performs.
+fn mask(row: &EffectRow) -> u8 {
+    match row {
+        EffectRow::Pure => 0,
+        EffectRow::Set(v) => v.iter().fold(0u8, |m, e| m | EffectKind::of(e).bit()),
+    }
+}
+
 /// The subsumption relation (REQ-2): `caller` subsumes `callee` iff
 /// `effects(callee) ⊆ effects(caller)`. `Pure` (the bottom, `{}`) subsumes only
 /// `Pure`; a row of all atoms (the top) subsumes every row. Reflexive by
 /// construction (a set is a subset of itself). This is the accept relation
 /// `check_effects` asserts at every resolved call site.
+///
+/// SELF-VERIFICATION (epic #60, `.design/verified/self-verification.md` REQ-5):
+/// the bit-level subset decision is DELEGATED to
+/// `thermite_verified::subsumes_masks` — the plain-Rust mirror of the
+/// `verus`-proved exec body (`(callee & !caller) == 0`). This function projects
+/// each `EffectRow` to its 8-atom mask (`mask`) and hands the masks to the
+/// verified core; the exhaustive 65536-pair equivalence test
+/// (`tests/effects_verified.rs`) anchors this projection to the proved subset
+/// relation `thermite_verified::spec_subsumes_mask`. Behavior is IDENTICAL to the
+/// former set-membership form (the masks encode the same atom-kind sets).
 pub fn subsumes(caller: &EffectRow, callee: &EffectRow) -> bool {
-    let caller_set = effects(caller);
-    effects(callee).iter().all(|k| caller_set.contains(k))
+    thermite_verified::subsumes_masks(mask(caller), mask(callee))
 }
 
 /// The atoms the callee has that the caller's row lacks (`effects(callee) \

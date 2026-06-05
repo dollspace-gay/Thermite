@@ -216,6 +216,8 @@ fn matches_expected(err: &SpecError, expected: &str) -> bool {
         "WrongArgKind" => matches!(err, SpecError::WrongArgKind { .. }),
         // Forbidden arbitrary contract call (REQ-4 (iv)).
         "ForbiddenCall" => matches!(err, SpecError::ForbiddenCall { .. }),
+        // Nested combinator in a closure body (REQ-6, #40 flat-closure rule).
+        "NestedCombinator" => matches!(err, SpecError::NestedCombinator { .. }),
         other => panic!("reject.json has an unrecognized expected cause `{other}`"),
     }
 }

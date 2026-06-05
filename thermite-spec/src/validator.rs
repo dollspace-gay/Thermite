@@ -15,6 +15,7 @@
 //! | REQ-3 (validator accept rule) | SHIPPED | `pub fn validate` collects `spec fn` names then walks `Contract.req`/`ens`, `LoopNode.invs`/`dec`, `SpecFnItem.body`; accepts registered combinators (via `combinators::lookup`), declared spec-fn calls, and grammar built-ins. Every `accept.json` case validates clean (`tests/combinators_conformance.rs`). |
 //! | REQ-4 (reject cases, structured `SpecError`) | SHIPPED | `enum SpecError` with `UnknownCombinator`/`WrongArity`/`WrongArgKind`/`ForbiddenCall`/`ExpressionTooDeep`; `validate` returns `Result<(), Vec<SpecError>>`, never panics. Every `reject.json` case yields the expected cause. |
 //! | REQ-5 (bounded recursion — no overflow) | SHIPPED | a single `MAX_RECURSION_DEPTH` guard wraps EVERY recursive descent (`walk_expr`, closure bodies, match arms, index args, if/block tails) via `descend`; deep input yields `ExpressionTooDeep`, never an overflow (`validate_never_panics`). |
+//! | REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | SHIPPED | `check_arg_kind`'s `Pred` arm sets `Validator::in_combinator_closure` for the whole closure-body descent (kept set through all nested sub-expressions/closures); while set, `walk_call` rejects any callee resolving via `combinators::lookup` with `SpecError::NestedCombinator`, while a declared `spec fn` call stays accepted. Consumer: `validate` → `walk_clause`/`walk_block` reach `walk_call`. Verification: `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; the flat corpus closures stay `Ok` (`tests/combinators_conformance.rs`). |
 
 use std::collections::HashSet;
 use std::fmt;
@@ -80,6 +81,18 @@ pub enum SpecError {
     /// callee shape (REQ-4 (iv)). Distinct from `UnknownCombinator` (a free
     /// `Expr::Call`) so the diagnostic names the construct precisely.
     ForbiddenCall { detail: String, span: Span },
+    /// A registered combinator call appearing INSIDE another combinator's
+    /// predicate-closure body — an anonymous nested quantifier (REQ-6). The
+    /// flat-closure-fragment rule forbids it: a combinator's `Pred`-slot closure
+    /// body is a FLAT predicate (comparisons, arithmetic, boolean/logical ops,
+    /// field/index, casts/refs, literals/paths, bounded built-in method calls,
+    /// `Match`/`If`, and NAMED `spec fn` calls) and MAY NOT compose another
+    /// bounded quantifier. The sanctioned alternative is extracting a NAMED
+    /// `spec fn` (each `dec`-measured and auditable). `name` is the nested
+    /// combinator. Distinct from `UnknownCombinator` (a free call resolving to
+    /// nothing) and `ForbiddenCall` (a generic forbidden construct) so the
+    /// diagnostic can say "extract a named `spec fn`" (§4.2; issue #40).
+    NestedCombinator { name: String, span: Span },
     /// A contract expression nested past `MAX_RECURSION_DEPTH` — surfaced as a
     /// structured diagnostic so external input can never overflow the stack
     /// (REQ-5).
@@ -94,6 +107,7 @@ impl SpecError {
             | SpecError::WrongArity { span, .. }
             | SpecError::WrongArgKind { span, .. }
             | SpecError::ForbiddenCall { span, .. }
+            | SpecError::NestedCombinator { span, .. }
             | SpecError::ExpressionTooDeep { span, .. } => *span,
         }
     }
@@ -128,6 +142,12 @@ impl fmt::Display for SpecError {
             SpecError::ForbiddenCall { detail, .. } => {
                 write!(f, "construct not permitted in a contract: {detail}")
             }
+            SpecError::NestedCombinator { name, .. } => write!(
+                f,
+                "combinator `{name}` may not appear inside another combinator's \
+                 predicate-closure body — that body must be a FLAT predicate (REQ-6); \
+                 express nested quantification through a named `spec fn` instead"
+            ),
             SpecError::ExpressionTooDeep { limit, .. } => write!(
                 f,
                 "contract expression nested deeper than the validator limit of {limit}"
@@ -158,11 +178,19 @@ pub fn validate(program: &Program) -> Result<(), Vec<SpecError>> {
 }
 
 /// The walk state: the declared `spec fn` name set, the current recursion depth,
-/// and the accumulated diagnostics.
+/// the accumulated diagnostics, and the "caged-flat" mode flag (REQ-6).
 struct Validator {
     spec_fns: HashSet<String>,
     depth: usize,
     errors: Vec<SpecError>,
+    /// REQ-6 flat-closure-fragment mode. Set ONCE on entry to a combinator's
+    /// `Pred`-slot closure body and kept set for ALL nested sub-expressions and
+    /// nested closures within it. While set, a call resolving to a registered
+    /// combinator (`combinators::lookup(name).is_some()`) is REJECTED with
+    /// `NestedCombinator` (an anonymous nested quantifier); a NAMED `spec fn`
+    /// call stays accepted (named composition). In a top-level contract position
+    /// (flag clear) a combinator call is accepted as before (REQ-3 (a)).
+    in_combinator_closure: bool,
 }
 
 impl Validator {
@@ -182,6 +210,7 @@ impl Validator {
             spec_fns,
             depth: 0,
             errors: Vec::new(),
+            in_combinator_closure: false,
         }
     }
 
@@ -507,7 +536,25 @@ impl Validator {
         };
 
         if let Some(sig) = combinators::lookup(name) {
-            self.check_combinator(sig, args, span);
+            if self.in_combinator_closure {
+                // REQ-6: a combinator call inside another combinator's
+                // predicate-closure body is an anonymous nested quantifier —
+                // forbidden. The discriminator is EXACTLY `combinators::lookup`
+                // succeeding (the same test that ACCEPTS this callee in a
+                // top-level contract position); the verdict is context-dependent.
+                self.errors.push(SpecError::NestedCombinator {
+                    name: name.clone(),
+                    span,
+                });
+                // Still recurse the args (staying in caged-flat mode) so deeper
+                // nested combinators / forbidden / too-deep content also surfaces
+                // (REQ-5), and so a doubly-nested combinator is reported too.
+                for arg in args {
+                    self.walk_expr(arg, span);
+                }
+            } else {
+                self.check_combinator(sig, args, span);
+            }
         } else if self.spec_fns.contains(name) {
             // (b) a declared spec-fn call: accept; its arguments are ordinary
             // contract expressions (recursed, depth-guarded).
@@ -572,7 +619,22 @@ impl Validator {
                 // BODY — the legitimate contract sub-expression — rather than
                 // the closure node (which `walk_expr` would flag as a misplaced
                 // bare closure). This bounds the body's depth too (REQ-5).
-                Expr::Closure { body, .. } => self.walk_expr(body, span),
+                //
+                // REQ-6: enter "caged-flat" mode for the body. Set ONCE here and
+                // keep it set for the entire body descent (all nested
+                // sub-expressions AND any nested closure), then restore so a
+                // sibling top-level `Pred` slot is checked independently. Inside
+                // this mode a registered-combinator call is rejected with
+                // `NestedCombinator` (see `walk_call`); a named `spec fn` call
+                // stays accepted (named composition is the sanctioned alternative).
+                // The save/restore makes re-entry a harmless no-op (a nested
+                // `Pred` body's `|y|` re-sets an already-set flag).
+                Expr::Closure { body, .. } => {
+                    let saved = self.in_combinator_closure;
+                    self.in_combinator_closure = true;
+                    self.walk_expr(body, span);
+                    self.in_combinator_closure = saved;
+                }
                 _ => {
                     self.errors.push(SpecError::WrongArgKind {
                         name: name.to_string(),

@@ -37,6 +37,7 @@
 //! | REQ-3 (validator accept rule) | SHIPPED | `validate` walks `Contract.req`/`ens`, `LoopNode.invs`/`dec`, `SpecFnItem.body`; every `accept.json` case validates clean. |
 //! | REQ-4 (reject cases, structured `SpecError`) | SHIPPED | `SpecError::{UnknownCombinator,WrongArity,WrongArgKind,ForbiddenCall,ExpressionTooDeep}`; every `reject.json` case yields the expected cause. |
 //! | REQ-5 (bounded recursion) | SHIPPED | single `MAX_RECURSION_DEPTH` guard via `Validator::descend` over every recursive descent; deep input → `ExpressionTooDeep`. |
+//! | REQ-6 (flat-closure-fragment rule) | SHIPPED | `Validator::in_combinator_closure` set on entry to a combinator `Pred`-slot closure body (kept set for all nesting); while set, `walk_call` rejects a registered-combinator callee with `SpecError::NestedCombinator`, named `spec fn` calls stay accepted. `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; flat corpus closures unaffected. |
 
 pub mod combinators;
 pub mod validator;

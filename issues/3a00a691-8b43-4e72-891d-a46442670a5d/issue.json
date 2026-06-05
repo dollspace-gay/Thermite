@@ -1,0 +1,10 @@
+{
+  "uuid": "3a00a691-8b43-4e72-891d-a46442670a5d",
+  "display_id": 50,
+  "title": "forge/src/degrade.rs (#10): the L3->L2->L1 auto-degrade ladder + assurance manifest does not exist. forge check default path classifies via #11's classify_verus_outcome (Proved/Timeout/Counterexample) but does NOT auto-attempt L2 on a Timeout, nor drop to L1, nor aggregate a min-over-functions project assurance level. GREENFIELD: degrade.rs absent; no route in spec-routes.toml. Anti-cheat invariant (R-DEFER-9): a Counterexample MUST be a hard fail, never degraded to L1.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T06:24:32.325245081Z",
+  "updated_at": "2026-06-05T06:24:32.325245081Z"
+}

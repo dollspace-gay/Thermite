@@ -2,11 +2,12 @@
   "uuid": "b8a87d79-b973-47a6-97fa-07ac80a2bd9b",
   "display_id": 40,
   "title": "Restrict SpecTherm closure bodies to a flat predicate fragment (no nested combinators)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T00:31:24.995133297Z",
-  "updated_at": "2026-06-05T00:31:27.464124365Z",
+  "updated_at": "2026-06-05T01:18:28.594802330Z",
+  "closed_at": "2026-06-05T01:18:28.594802330Z",
   "labels": [
     "enhancement"
   ]

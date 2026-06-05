@@ -1,0 +1,12 @@
+{
+  "note": "Oracle for forge's strengthening probes (§7 step 5, issue #14). ADVISORY (R-CHAR-3): probes never change the verdict; they surface adoptable stronger-ens SUGGESTIONS. A suggestion must (a) VERIFY against the real body and (b) be strictly stronger (kill a #12 survivor). The suggestions list is oracle-EXCLUDED from the deterministic cert subset (it is advisory); the checkable property is: a weak contract yields a verifying+stronger suggestion; a tight contract yields none. Suggestions are hand-derived (the obvious tight contract for the body), not echoed from forge.",
+  "has_suggestion": [
+    { "name": "weak_loose_bound", "expect_suggestion": "result == a + b",
+      "program": "fn f(a: u32, b: u32) -> u32 req a <= 10 && b <= 10 ens result <= 1000000 fx pure { a + b }",
+      "why": "The weak `ens result <= 1000000` lets the early-return-0 mutant survive. The candidate `ens result == a + b` VERIFIES against the real body `{ a + b }` and KILLS the survivor (0 == a+b unprovable) -> a strictly-stronger, adoptable suggestion the probe must surface." }
+  ],
+  "no_suggestion": [
+    { "name": "corpus_sum", "source": "conformance/sum.th",
+      "why": "sum's `ens result == spec_sum(xs)` already pins the output exactly; no candidate is strictly stronger (its golden survivor is invariant-killed, not ens-killed) -> no strengthening suggestion." }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "e8c3f674-3b3b-4ab2-a2f0-39e905a63eb6",
+  "issue_uuid": "b8a87d79-b973-47a6-97fa-07ac80a2bd9b",
+  "author": "Yffe",
+  "content": "SHIPPED — the quantifier cage is now honestly locked. thermite-spec validator forbids a registered combinator call inside a combinator's predicate-closure body (SpecError::NestedCombinator), via an in_combinator_closure flag set across the Pred-slot descent (covers ens/req/inv/dec + spec-fn bodies, all nesting depths). Named composition preserved: a closure may call a named spec fn, and a spec fn body may itself use a combinator (the sanctioned bounded-named alternative). Design amended: .design/spec/spectherm-combinators.md REQ-6 + the honest §4.2 clarification note (a thesis erratum flagged for the user: 'no general quantifiers' is realized as 'bounded combinators with frozen triggers; composition only via named spec fns, never anonymous nested quantifiers' — named spec fns CAN quantify boundedly).\n\nLoop: doc-author (REQ-6) -> oracle delta (parse-corrected: % not in grammar, dec mandatory) -> builder (validator rule) -> critic NO DIVERGENCE (under-enforcement: 2-deep/inv/dec/3-arg-outer/spec-fn-body all reject; over-enforcement: no flag leak, named-composition escape intact; generality grep clean; no panic). Commits: 64d21af (doc+oracle) -> 4d46f8a (validator) -> adac0ec (critic probes) -> 0a7bc2e (fmt). Verified: nested->NestedCombinator reject, named-spec-fn->Ok, corpus flat closures still L3 (binary_search verifies). thermite-spec 30 tests, workspace 113, clippy/fmt clean. Cosmetic noise documented (a spurious secondary ForbiddenCall diagnostic on already-rejected nested programs; reject outcome+cause hold; S8 won't-fix). Not pushed.",
+  "created_at": "2026-06-05T01:18:19.801698749Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9wMThJAVwYB6X3BmCUxsfN4V9aFDFF5B6tEBEIlrUQ7CP9+QnomjkHERyuIJSdBbZydLfNDXFndmJwiJAxoeBw=="
+}

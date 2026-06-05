@@ -219,3 +219,10 @@ crate_pattern = "forge/src/profile.rs"
 design = ".design/forge/solver-profiles.md"
 reference = []
 conformance_ops = []
+
+# v0.3 — solver-backed vacuity (tautology + unsat-precondition) (issue #13)
+[[route]]
+crate_pattern = "forge/src/vacuity_solver.rs"
+design = ".design/forge/solver-vacuity.md"
+reference = ["conformance/solver-vacuity"]
+conformance_ops = ["tautology", "vacuous_precondition"]

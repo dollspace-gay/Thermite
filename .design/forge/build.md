@@ -1,0 +1,311 @@
+# forge build — lower a Thermite program to executable Rust and compile it with rustc into a contract-checked artifact
+<!--
+tier: 3-component
+status: draft
+governs: forge/src/build.rs
+thesis-refs:
+  - thermite-design.md §3
+  - thermite-design.md §5.3
+  - thermite-design.md §6
+  - thermite-design.md §9
+  - thermite-design.md Appendix A
+  - thermite-design.md Appendix B
+-->
+
+## Summary
+
+`forge build <file.th>` is the missing assembly step that turns a verified Thermite
+program into a compiled, runnable artifact: parse → validate → effect-check →
+(reuse `forge check`'s verification) → `thermite_lower::lower_l1` to a self-contained
+executable Rust crate → invoke real `rustc`/`cargo` → a compiled artifact whose L1
+`thermite_check!` contract checks are baked in and active in EVERY build profile
+(§6). It is the SAME pipeline shape as `forge check` (the per-item parse→validate→
+effect→lower→backend loop), but the backend is `rustc` (COMPILE) instead of `verus`
+(VERIFY). There is **no new compiler**: Thermite transpiles to Rust and rustc/LLVM
+is the codegen backend (§3, the stack). Alongside the artifact, `forge build` emits a
+**build manifest** recording the artifact path, the achieved assurance level (reusing
+`forge check`'s `Certificate`/`AssuranceManifest`), the per-fn `fx` rows, and
+reproducibility info (§5.3). The `fx` rows and the runnable executable are the hooks
+the #57 seccomp sandbox consumes.
+
+This whole component is GREENFIELD: `forge/src/build.rs` does not exist. Every REQ is
+NOT-STARTED, blocked on issue #56. This doc is the forward-looking contract the
+builder implements against; it is grounded against real `rustc` (see Verification).
+
+> **Appendix B note.** `forge build` is **not** in the v0.1 command surface listed in
+> `thermite-design.md` Appendix B (which lists `new`/`goal`/`fill`/`edit`/`check`/
+> `battery`/`audit`/`skill`/`repair`). It is an additive command tracked by crosslink
+> issue #56, motivated by §3 ("Thermite lowers to Rust … inheriting the optimizer")
+> and §6 (L1 checks "active all profiles") — the toolchain already EMITS compilable,
+> runnable Rust at L1 (`tests/golden/l1/sum.l1.rs` is compiled and run under real
+> rustc by `l1_conformance.rs`), so `build` is the documented act of turning that
+> emission into a real compiled deliverable. Adding the command is an Appendix-B
+> amendment the builder records in the commit (R-SPEC-4), not a code-local choice.
+
+## Requirements
+
+- **REQ-1 (build pipeline: lower_l1 → emit crate → rustc → artifact).** Derived from
+  §3 (Thermite lowers to Rust; rustc/LLVM is codegen) + §6 (L1 active all profiles).
+  `forge build <file.th>` runs the same front of the pipeline `forge check` runs —
+  `thermite_syntax::parse` → `thermite_spec::validate` → `thermite_lower::check_effects`
+  — then `thermite_lower::lower_l1` to a single self-contained executable Rust source,
+  emits it as a crate file, and invokes `rustc`/`cargo` to produce a compiled artifact.
+  Any front-of-pipeline failure short-circuits into a `ForgeError` exactly as
+  `check_file` does; no stage is skipped.
+
+- **REQ-2 (rustc invocation: exit-status checked, crate-name gotcha handled).** Derived
+  from `goal.md` R-CODE-4 (check subprocess exit status, never swallow). The `rustc`/
+  `cargo` invocation mirrors `l1_conformance.rs::compile_and_run` and
+  `check.rs::run_verus`: write the lowered source to a `<stem>.rs` file inside a
+  per-run scratch dir, always pass `--crate-name` (the `.`-in-filename gotcha — a
+  `*.l1.rs` filename breaks rustc's crate-name derivation), pass `--edition 2021`,
+  CHECK the exit status, and surface a non-zero rustc exit as a structured `ForgeError`
+  (mirroring the new `ForgeError::VerusAbsent`/`VerusSpawn`/`VerusOutput` family — a
+  `RustcAbsent`/`RustcSpawn`/`RustcOutput` analogue). The scratch crate dir is removed
+  on every exit path (the #53 leak lesson; compiled binaries are large).
+
+- **REQ-3 (artifact form: a compiled library, with an optional generated entry runner).**
+  Derived from §3 + §9 (a Thermite program is a library of contract-carrying `fn`s; the
+  corpus `sum`/`binary_search` have no `main`) and the #57 setup requirement. The v0.1
+  baseline deliverable is a **compiled library** (`--crate-type=rlib`) of the
+  L1-checked fns. `forge build --entry <fn>` additionally appends a deterministic
+  **generated entry runner** (a tiny `main` exercising the designated fn over fixed
+  inputs) and produces a **runnable executable** — the form #57 needs to install a
+  syscall filter and observe a violation killing the process. The entry runner uses
+  only deterministic inputs (no wall-clock / rand — R-CODE-5). See OQ-1 for the
+  load-bearing entry-point question.
+
+- **REQ-4 (L1 checks baked in, active in every build profile).** Derived from §6 ("L1 …
+  active all profiles") and the §3 active-all-profiles fix. The compiled artifact
+  carries the always-active `thermite_check!` macro (a plain `if !(cond)`, NOT
+  `debug_assert!`) that `lower_l1` emits, so every `req`/`ens`/loop-`inv` clause fires
+  on violation in any profile (debug or release). `forge build` does not strip or gate
+  the checks; the emitted `thermite_contract_violation` handler is the artifact's
+  defined contract-failure behavior.
+
+- **REQ-5 (build manifest: artifact path, assurance level, fx rows, reproducibility).**
+  Derived from §6 (the manifest IS the trust statement), §5.3 (bit-reproducible builds,
+  pinned toolchain + seeds), and Appendix A (the certificate shape). `forge build`
+  emits a build-record document: the artifact path + crate-type, the achieved assurance
+  level (the `Certificate`/`AssuranceManifest` produced by reusing the `forge check`
+  pipeline), the per-fn `fx` rows (the `effects_of`/`EffectRow` projection — the input
+  #57's seccomp filter is derived from), and reproducibility info (the pinned toolchain
+  identity + the deterministic-source guarantee, with the honest archive-timestamp
+  caveat from Verification).
+
+- **REQ-6 (the #57 hook: runnable executable + fx rows).** Derived from §9 (the runtime
+  "enforces the row as a sandbox … killed at the syscall boundary") and the issue-#57
+  setup. `forge build` provides exactly the two inputs #57 consumes: (a) a runnable
+  executable (REQ-3 `--entry`) the seccomp filter can be installed into and observed
+  killing a violation, and (b) the per-fn `fx` rows in the build manifest (REQ-5) that
+  the syscall filter is derived from. v0.1 `forge build` does NOT itself install a
+  sandbox (that is #57; effects are compile-time-only in v0.1, R-SPEC-5) — it only
+  emits these hooks.
+
+## Acceptance criteria
+
+All ACs are mechanically checkable. They tie to a `conformance/build/` oracle the
+ORCHESTRATOR authors (not this doc — see "Fixtures the orchestrator must author"), and
+reuse the corpus + the `l1_conformance.rs` compile-and-run pattern. Each is grounded
+below (Verification) against real rustc.
+
+- **AC-1 (sum builds: rustc exit 0).** `forge build conformance/sum.th` lowers via
+  `lower_l1` and produces a compiled artifact with `rustc`/`cargo` **exit status 0**.
+  The emitted source compiles clean (warnings — unused `fn` in a lib — are allowed; a
+  non-zero exit is a hard fail surfaced as `ForgeError`).
+
+- **AC-2 (checks baked in).** The compiled artifact's source contains the always-active
+  `thermite_check!` macro (`if !($cond)`) and NO `debug_assert` — the §6 every-profile
+  property is structurally present (the same check `l1_conformance.rs::
+  no_debug_assert_in_emission` asserts on the lowered source).
+
+- **AC-3 (the executable runs correctly).** `forge build conformance/sum.th --entry sum`
+  produces a runnable binary that, run, prints `sum(&[1,2,3]) = 6` and exits 0
+  (`sum(&[1,2,3]) == 6` is the hand-derived value from §Appendix A's `spec_sum`
+  denotation — R-CHAR-3, never copied from toolchain output).
+
+- **AC-4 (the check FIRES on a violation, observably).** A corrupted sum body
+  (`acc = acc + xs[i] as u64` → `… + 1`) still COMPILES (rustc exit 0 — only the
+  runtime check is affected), but the built binary, run, ABORTS with a non-zero exit
+  and the structured diagnostic `thermite L1 contract violation [inv]` (or `[ens]`) —
+  the contract failure is OBSERVABLE, never silent (this is the #57-relevant kill
+  behavior; mirrors `l1_conformance.rs::negative_fixture_fires_violation`).
+
+- **AC-5 (build manifest records sum's `fx pure`).** The build manifest for
+  `conformance/sum.th` lists `sum` with effect row `["pure"]` (the
+  `effects_of`/`EffectRow::Pure` projection; Appendix A's certificate has
+  `"effects": ["pure"]`) — the per-fn `fx` row #57's filter is derived from.
+
+- **AC-6 (deterministic source; reproducible modulo archive timestamp).** The
+  `lower_l1`-emitted source for `conformance/sum.th` is **bit-identical** across two
+  builds (forge owns this determinism; §5.3). The compiled `.rlib` is byte-identical in
+  its codegen content across two same-input builds; the ONLY varying byte is the `ar`
+  archive member-mtime header (a Unix-timestamp digit), pinnable via `SOURCE_DATE_EPOCH`
+  / a deterministic archiver. The manifest states this honestly: deterministic source +
+  deterministic codegen, modulo the archive-timestamp linker bit (Verification quantifies
+  it: exactly one byte).
+
+- **AC-7 (exit-status discipline).** A `rustc` failure (e.g. an intentionally
+  un-compilable injected fixture) yields a non-zero `forge build` exit and a structured
+  `ForgeError`, never a silent success (R-CODE-4).
+
+## Architecture
+
+`forge build` is structurally `forge check` with the verus backend swapped for rustc.
+The front of the pipeline is shared verbatim: `forge check`'s `check_file` (in
+`check.rs`) runs `thermite_syntax::parse` → `thermite_spec::validate` →
+`thermite_lower::check_effects`, then per item assembles an `item_subprogram`
+(`check.rs`) and lowers it. `forge build` reuses that front, then diverges at the
+backend:
+
+- **The lowering.** `forge check`'s L3 path calls `thermite_lower::lower` (Verus
+  source); `forge build` calls `pub fn lower_l1 in l1.rs`, which already emits a single
+  self-contained, runnable Rust source — the always-active `thermite_check!` macro +
+  `thermite_contract_violation` handler (`emit_check_macro` in `l1.rs`), every
+  combinator's executable form (`emit_combinator_l1_defs`, sourced from the
+  `thermite-spec` registry `l1` field), every `spec fn` as a real recursive Rust fn
+  (`lower_spec_fn_l1`), and every `fn` with its `req`/`ens`/`inv` checks woven in
+  (`lower_fn_l1`). `lower_l1` does NOT emit a `main` — the program is a library of fns
+  (REQ-3, OQ-1). This is the same emission the L1 golden `tests/golden/l1/sum.l1.rs`
+  pins and `l1_conformance.rs::compile_and_run` compiles + runs under real rustc.
+
+- **The backend.** Where `forge check` calls `run_verus` (in `check.rs`) — which writes
+  a `<stem>.rs` (no `.` in the stem, via its `crate_stem` helper) inside a per-run
+  scratch dir (`unique_scratch_dir`), spawns the verifier with `current_dir` set to the
+  scratch dir, checks the exit code, and removes the scratch dir wholesale via a
+  `ScratchDir` Drop guard on every exit path (the #53 leak fix) — `forge build` does the
+  analogous thing with `rustc`/`cargo`: write the lowered source, pass `--crate-name`
+  (the dotted-filename gotcha that `l1_conformance.rs::compile_and_run` documents),
+  `--edition 2021`, and the crate-type (`rlib` for the library; a bin for `--entry`),
+  check the exit status, surface a non-zero exit as a structured `ForgeError`, and clean
+  the scratch dir on every path (REQ-2; compiled artifacts are large — the #53 lesson).
+
+- **Toolchain identity for reproducibility.** `forge check` resolves and pins the verus
+  version (`resolve_verus_version` in `check.rs`, honoring a `VERUS_VERSION` env pin) so
+  the proof cache is keyed deterministically. `forge build` resolves the analogous rustc
+  identity (`rustc --version`/`--version --verbose` commit hash, honoring an env pin) and
+  records it in the build manifest as the §5.3 pinned-toolchain field — the bit
+  reproducibility claim is "same toolchain → same codegen".
+
+- **The build manifest.** `forge build` reuses the `Certificate`/`AssuranceManifest`
+  vocabulary that `manifest.rs` defines: `struct Certificate` (Appendix A field order,
+  incl. `effects: Vec<String>` from `effects_of`), `AssuranceManifest::aggregate` (the
+  per-fn `FunctionAssurance` rows + the `ProjectAssurance::{Certified(min)|Failed}`
+  headline). The build record adds the artifact path + crate-type and the
+  reproducibility block (pinned rustc identity + the deterministic-source guarantee).
+  The per-fn `fx` rows come from the `EffectRow`/`effects_of` projection in `effects.rs`
+  / `manifest.rs`. These rows + the runnable executable are the #57 seccomp hooks (REQ-6,
+  §9). The `forge build` entry is dispatched from `cli.rs`'s `run`/`parse_args` as a new
+  `Command::Build { file, entry, json, .. }` arm, mapping its outcome to an `ExitCode`
+  via the existing `EXIT_VERIFICATION_FAILURE`/`EXIT_ENVIRONMENT` constants (`cli.rs`).
+
+Boundaries (what `forge build` is NOT):
+- `forge check` (#5) VERIFIES (verus, the L3/SMT path); `forge build` (#56) COMPILES
+  (rustc). They share the pipeline front, not the backend.
+- The runtime seccomp SANDBOX is #57 — this doc only documents the two hooks `forge
+  build` hands it (the runnable executable + the per-fn `fx` rows). v0.1 effects are
+  compile-time-only (R-SPEC-5, issue #21).
+- Cross-platform packaging, optimization-flag selection, multi-file Thermite projects:
+  future work, out of v0.1 scope.
+
+## Verification
+
+The ACs are discharged by the `forge build` conformance test the builder adds, against
+the `conformance/build/` oracle the orchestrator authors, reusing the corpus and the
+`l1_conformance.rs::compile_and_run` pattern. The discharge commands:
+
+- `cargo test -p forge` — the `build.rs` unit + integration tests (AC-1..AC-7).
+- The build conformance test compiles `forge build conformance/sum.th`'s emitted crate
+  under real rustc and asserts exit 0 (AC-1), the baked-in macro (AC-2), runs the
+  `--entry sum` binary and asserts `sum(&[1,2,3]) = 6` (AC-3), runs the corrupted binary
+  and asserts a non-zero exit + the `[inv]`/`[ens]` diagnostic (AC-4), asserts the
+  manifest's `sum` row carries `["pure"]` (AC-5), double-builds and diffs the emitted
+  source (bit-identical) + the rlib codegen (AC-6), and asserts a non-zero `forge build`
+  exit on an un-compilable fixture (AC-7).
+- `cargo clippy -p forge --all-targets -- -D warnings` and `cargo fmt --check` (the
+  gauntlet).
+
+**This doc is grounded against real rustc (rustc 1.95.0).** The exact `lower_l1` output
+for `conformance/sum.th` was emitted (the production `thermite_lower::lower_l1`), then:
+
+1. **Library form (REQ-3 baseline).** Compiled `--crate-type=rlib --crate-name
+   sum_thermite` → **rustc exit 0**, produced `libsum_thermite.rlib` (the L1-checked fns
+   as a library; rustc emits dead-code WARNINGS for the unused fns, not errors — AC-1).
+2. **Executable form (REQ-3 `--entry`).** Appended a generated `fn main() { let r =
+   sum(&[1u32,2,3]); println!("sum(&[1,2,3]) = {r}"); }` runner, compiled → **rustc exit
+   0**, ran the binary → printed `sum(&[1,2,3]) = 6`, **exit 0** (AC-3). The
+   `--crate-name` flag is mandatory (the `.l1.rs` dotted-filename gotcha; AC handled in
+   REQ-2).
+3. **Violation form (REQ-4 / AC-4 — the #57 kill behavior).** Corrupted the fold
+   (`+ xs[i] as u64` → `+ xs[i] as u64 + 1`); the binary still **compiled (rustc exit
+   0)** but, run, ABORTED with **exit 101** and printed
+   `thermite L1 contract violation [inv]: acc == spec_sum(&xs[..i])` — the always-active
+   check fired observably, never reaching the runner's tail.
+4. **Reproducibility (REQ-5 / AC-6, §5.3).** The `lower_l1` source was **bit-identical**
+   across two emissions (forge-owned determinism). Two same-input `.rlib` builds differed
+   in **exactly one byte** (offset 138, ASCII `1`↔`2`): the `ar` archive member-mtime
+   header — the codegen content is identical; only the archive timestamp varies (pinnable
+   via `SOURCE_DATE_EPOCH` / a deterministic archiver). This is the honest "modulo
+   nondeterministic linker bits" caveat the manifest must state.
+
+All grounding scratch was created under `/tmp` and removed; no artifacts leaked into the
+repo tree (the #53 lesson — compiled artifacts are large).
+
+## Fixtures the orchestrator must author (NOT this doc)
+
+The doc-author does not author production code, routes, or the oracle. The orchestrator
+must:
+
+- Add the route to `tooling/spec-routes.toml`:
+  `crate_pattern = "forge/src/build.rs"`, `design = ".design/forge/build.md"`,
+  `reference = ["conformance/build"]`, `conformance_ops = ["sum"]`.
+- Author the `conformance/build/` oracle the ACs reference — at minimum the EXACT
+  fixtures used in the grounding:
+  - **`conformance/sum.th`** (existing corpus) — the build input for AC-1/2/3/5/6.
+  - the positive `--entry sum` expected stdout `sum(&[1,2,3]) = 6` (R-CHAR-3:
+    hand-derived from Appendix A's `spec_sum`, not toolchain output) — AC-3.
+  - the corrupted-body fixture (`acc = acc + xs[i] as u64 + 1;`) + its expected non-zero
+    exit and `thermite L1 contract violation [inv]`/`[ens]` diagnostic — AC-4.
+  - an un-compilable fixture (or an injected source edit) for the AC-7 exit-status check.
+  - the expected build-manifest `sum` row: `"effects": ["pure"]` (Appendix A) — AC-5.
+
+## Open questions
+
+- **OQ-1 (load-bearing — the entry-point form).** A v0.1 Thermite program is a library
+  of fns with no `main` (the corpus). What runnable form does `forge build` produce for
+  #57? Options laid out:
+  - (a) **library only** (`.rlib`) — the baseline; but #57 needs a runnable binary, so
+    insufficient alone.
+  - (b) **library + an optional generated `--entry <fn>` runner** — a tiny deterministic
+    `main` calling the designated fn; this doc DECIDES this (REQ-3): the library is the
+    baseline deliverable and `--entry` produces the observable binary #57 installs a
+    filter into.
+  - (c) **a designated-fn harness binary for the #57 demo** (a fixed small binary that
+    exercises one fn) — subsumed by (b)'s `--entry`.
+  The DECISION (b) is grounded above (both forms compile under rustc; the `--entry`
+  binary runs and the check fires). The residual question for #56/#57: what argument/
+  input convention the generated runner uses (fixed literals vs a `--input` flag). v0.1
+  uses fixed deterministic literals (R-CODE-5); a richer convention is future work.
+- **OQ-2 (rustc vs cargo).** The grounding used raw `rustc` (matching
+  `l1_conformance.rs` and `run_verus`'s direct-spawn pattern, which keeps the build
+  hermetic and deterministic). `cargo build` would add a generated `Cargo.toml` +
+  dependency resolution; v0.1 single-file programs do not need it. DECIDED: raw `rustc`
+  for v0.1 (consistent with the existing compile-and-run pattern); `cargo` is future
+  work for multi-file/dependency programs.
+- **OQ-3 (manifest format unification).** Should the build manifest be a distinct
+  document or an extension of the `forge check`/`forge audit` `AssuranceManifest`? This
+  doc reuses the `Certificate`/`AssuranceManifest` vocabulary (REQ-5) and adds the
+  artifact-path + reproducibility block; whether that is a new `BuildManifest` struct or
+  an additive field set on the existing manifest is a builder decision constrained by
+  R-SPEC-2 (no breaking the frozen certificate schema).
+
+## REQ status
+
+| REQ | Status | Evidence |
+|---|---|---|
+| REQ-1 (build pipeline: lower_l1 → emit → rustc) | NOT-STARTED | open prereq blocker #56 (`forge build`). `forge/src/build.rs` does not exist; no route in `tooling/spec-routes.toml`. The reusable pieces exist (`pub fn lower_l1 in l1.rs`, the `check_file` pipeline front in `check.rs`) but no `build` assembly step consumes them. |
+| REQ-2 (rustc invocation; exit-status; crate-name gotcha) | NOT-STARTED | open prereq blocker #56. No rustc spawn / `RustcAbsent` error family exists in `forge`; the analogue (`run_verus`'s exit-checked spawn + `ScratchDir` cleanup in `check.rs`, the `--crate-name` pattern in `l1_conformance.rs::compile_and_run`) is present but not reused for rustc. |
+| REQ-3 (artifact form: library + optional `--entry` runner) | NOT-STARTED | open prereq blocker #56. No artifact emission exists; `lower_l1` emits no `main`. Grounding confirms BOTH forms compile under rustc (rlib exit 0; `--entry` exe runs `sum(&[1,2,3]) = 6`) but nothing in `forge` produces them. |
+| REQ-4 (L1 checks baked in, all profiles) | NOT-STARTED | open prereq blocker #56. `lower_l1`'s `emit_check_macro` already emits the always-active `if !($cond)` macro (the property is in the emission), but no `forge build` compiles it into an artifact yet. |
+| REQ-5 (build manifest: path, level, fx rows, reproducibility) | NOT-STARTED | open prereq blocker #56. The `Certificate`/`AssuranceManifest`/`effects_of` vocabulary exists in `manifest.rs`/`effects.rs`, but no build-manifest emitter consumes it; no artifact-path or reproducibility block is produced. |
+| REQ-6 (#57 hook: runnable exe + fx rows) | NOT-STARTED | open prereq blocker #56. Depends on REQ-3 + REQ-5, neither shipped. The hooks (`--entry` binary, manifest `fx` rows) are designed here but unbuilt; #57 has nothing to consume yet. |

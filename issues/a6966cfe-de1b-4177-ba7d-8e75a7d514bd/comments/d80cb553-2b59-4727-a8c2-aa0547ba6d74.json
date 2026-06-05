@@ -1,0 +1,10 @@
+{
+  "uuid": "d80cb553-2b59-4727-a8c2-aa0547ba6d74",
+  "issue_uuid": "a6966cfe-de1b-4177-ba7d-8e75a7d514bd",
+  "author": "Yffe",
+  "content": "FFI boundary modules, L1-enforced (§9). MULTI-CRATE build. Approach: (1) thermite-syntax ast.rs — struct BoundaryAttr { target, span } mirroring SlagAttr + FnItem.boundary: Option<BoundaryAttr> + FnItem.body: Option<Block> (boundary fn = boundary:Some, body:None). (2) parser.rs — generalize parse_slag -> parse_attribute dispatching on the #[ name (slag/boundary); parse_fn gains a Semi-body path GATED on boundary.is_some() (OQ-2: bodyless non-#[boundary] fn = parse error; #[boundary] on spec fn = error; #[boundary] with {} body = error). (3) thermite-lower l1.rs — lower_boundary_fn_l1: req-check -> let result = <target>(args) (foreign call, body NOT lowered) -> ens-checks; routed by f.boundary.is_some() in lower_l1. (4) forge manifest.rs — Certificate.boundary: bool + boundary_target: Option<String> + Certificate::boundary_l1 (L1, no verus, graduate_triage_clean); oracle_subset gains boundary. check.rs gate_fn detects boundary FIRST, validates non-empty target, runs (a)(b)(c) triage, then boundary_l1 — never enters L3/L2/mutation/strengthen. (5) The FnItem.body: Option<Block> ripple handled across every consumer (None as structured error or safe skip, never unwrap/panic): address.rs, validator.rs, lower/l2/effects.rs, mutation/vacuity/vacuity_solver.rs + test fixtures. Tests: boundary_parse.rs (6) + boundary_conformance.rs (3, foreign_id->L1+boundary+target, two rejects). Stay on main; add files by name; do NOT close #16 (critic re-audits).",
+  "created_at": "2026-06-05T08:03:20.609620319Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABASdknWpWRxoM3PNNeuKr+CqWJM6CdTvHKk2UqMPgfIhPSvQ0Tf2XZwhW58bsYgynUD2W2rOVVaj27YPHja6a+CA=="
+}

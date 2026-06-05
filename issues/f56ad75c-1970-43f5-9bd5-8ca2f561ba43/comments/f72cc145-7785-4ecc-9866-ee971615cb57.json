@@ -1,0 +1,10 @@
+{
+  "uuid": "f72cc145-7785-4ecc-9866-ee971615cb57",
+  "issue_uuid": "f56ad75c-1970-43f5-9bd5-8ca2f561ba43",
+  "author": "Yffe",
+  "content": "SHIPPED — Kani L2 bounded checking. l2.rs lower_l2 -> Kani harness (reuses L1 exec lowering; bounded symbolic slice; shape-keyed bound inference N=4, unwind N+1/N+2). forge/src/kani.rs run_kani -> L2 cert/counterexample; forge check --level l2 (default L3). Critic NO DIVERGENCE: anti-vacuity proven (fresh ens-violating body -> L0+counterexample), under-bound reported (never false pass), shape-keyed, deterministic, kani-absent -> ForgeError. Live: sum/binary_search -> L2. Commit 13db730, workspace 201 tests, clippy/fmt clean. N=4 is doc-authorized; N=8 (§5.2 example) measured feasible (10.7s) = one-const bump if wanted. Not pushed.",
+  "created_at": "2026-06-05T04:15:59.637556351Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAixvZ2fSJEeDnmUCslieXVyDzx/2syTuwwpeQEjoyaFZPH0FAwi0wsja9DCoaM+DdVy0FqYoAD0bnzAjzAdRJBA=="
+}

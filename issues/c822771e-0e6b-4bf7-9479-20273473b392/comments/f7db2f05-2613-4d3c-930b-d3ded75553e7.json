@@ -1,0 +1,10 @@
+{
+  "uuid": "f7db2f05-2613-4d3c-930b-d3ded75553e7",
+  "issue_uuid": "c822771e-0e6b-4bf7-9479-20273473b392",
+  "author": "Yffe",
+  "content": "OQ resolutions: cache at target/thermite-proof-cache/<sha256>.json (under gitignored target/); solver_time_ms reports stored value on a hit (oracle-excluded); content-address = lowered Verus source (what verus checks), not the AST. Key = sha256(lowered source + seed + verus version + thermite version) — soundness: captures everything affecting the verdict, hit==fresh-verify, any change=>miss. Additive cached:bool cert field. Decisive test: populate then run with verus off PATH -> cached L3. Next: builder (cache.rs + wire check.rs + sha2 dep + tests).",
+  "created_at": "2026-06-05T03:15:41.256220867Z",
+  "kind": "decision",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA5N/6mtwBi+eZ/ngsgpv11ZdKxINTQbTTo/KLs9yRh5WFt+ushbpZL7rHQb9/hnHpEWHX74Pgjy8HSvI5dukKDw=="
+}

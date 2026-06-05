@@ -2,11 +2,12 @@
   "uuid": "f56ad75c-1970-43f5-9bd5-8ca2f561ba43",
   "display_id": 9,
   "title": "Add Kani-backed L2 bounded checking with type-driven bound inference",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:47:27.407758256Z",
-  "updated_at": "2026-06-04T17:47:30.172256337Z",
+  "updated_at": "2026-06-05T04:16:05.486578120Z",
+  "closed_at": "2026-06-05T04:16:05.486578120Z",
   "labels": [
     "feature"
   ],

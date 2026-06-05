@@ -11,7 +11,7 @@
 //!
 //! `unwrap`/`expect` are fine here — `tests/` is not anti-pattern-gated.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::Value;
@@ -175,8 +175,14 @@ fn divergence_redundant_true_clause_with_real_clause_not_c_rejected() {
 #[test]
 fn lt_ne_identity_is_not_a_rejected() {
     for (prog, label) in [
-        ("fn f(x: u32) -> () req true ens x < x fx pure { }", "x_lt_x"),
-        ("fn f(x: u32) -> () req true ens x != x fx pure { }", "x_ne_x"),
+        (
+            "fn f(x: u32) -> () req true ens x < x fx pure { }",
+            "x_lt_x",
+        ),
+        (
+            "fn f(x: u32) -> () req true ens x != x fx pure { }",
+            "x_ne_x",
+        ),
     ] {
         let cert = first_cert(prog, label);
         assert_ne!(

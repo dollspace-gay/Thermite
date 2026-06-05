@@ -284,21 +284,31 @@ fn index_arg_mentions_result(index: &thermite_syntax::IndexArg, depth: usize) ->
     }
 }
 
-/// (c) REQ-3: an `ens` clause is syntactically implied by `req` alone — equal to
-/// the whole `req` expr or to one of its `&&`-chain conjuncts. The chain is
-/// LEFT-ASSOCIATIVE (`a && b && c` → `And(And(a, b), c)`), so the conjunct set is
-/// collected by recursively flattening `Binary{And, ..}` along both arms. Returns
-/// the first offending `ens` clause index, or `None`. SYNTACTIC only: the SOLVER
-/// "is `ens` provable from `req`" question is #13.
+/// (c) REQ-3: the WHOLE postcondition is syntactically implied by `req` alone —
+/// i.e. EVERY `ens` clause is `PartialEq`-equal to the whole `req` expr or to one
+/// of its `&&`-chain conjuncts. The chain is LEFT-ASSOCIATIVE
+/// (`a && b && c` → `And(And(a, b), c)`), so the conjunct set is collected by
+/// recursively flattening `Binary{And, ..}` along both arms.
+///
+/// The §7.1 (c) move is "`ens` is syntactically implied by `req` alone" — the
+/// whole postcondition conjunction adds nothing. So the rule fires ONLY when every
+/// clause is req-implied: a contract with a redundant implied clause AND a
+/// genuinely-stronger clause (`req x > 0 && x < 10` / `ens x > 0` / `ens result == x`)
+/// carries a real obligation (`result == x` is not a req conjunct) and is NOT
+/// (c)-rejected. Returns the first req-implied `ens` clause index (for the
+/// diagnostic) ONLY when EVERY clause matches; `None` otherwise. SYNTACTIC only:
+/// the SOLVER "is `ens` provable from `req`" question is #13.
 fn ens_implied_by_req(req: &Expr, ens: &[thermite_syntax::Clause]) -> Option<usize> {
     let mut conjuncts = Vec::new();
     flatten_and(req, &mut conjuncts, 0);
-    for (idx, clause) in ens.iter().enumerate() {
-        if conjuncts.contains(&&clause.expr) {
-            return Some(idx);
-        }
+    // The WHOLE postcondition is req-implied only if EVERY clause is. A single
+    // genuinely-stronger clause (not a req conjunct) makes the `ens` non-vacuous.
+    if ens.is_empty() || !ens.iter().all(|c| conjuncts.contains(&&c.expr)) {
+        return None;
     }
-    None
+    // Every clause matches → the postcondition adds nothing. Report the first
+    // clause index as the offending-clause diagnostic.
+    Some(0)
 }
 
 /// Flatten a left-associative `&&` chain into its conjunct set (REQ-3). The whole

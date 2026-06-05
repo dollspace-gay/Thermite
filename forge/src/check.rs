@@ -27,7 +27,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` runs `thermite_syntax::parse` → `thermite_spec::validate` → `thermite_lower::check_effects`, then PER ITEM (§5.3) `item_subprogram` → `thermite_lower::lower` → `run_verus` → `parse_verus_output` → `Certificate`; each stage short-circuits into a `ForgeError`. Consumer: `cli::run` (`cli.rs`). |
-//! | REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `lower_to_temp` writes a `<stem>_check.rs` temp file (no `.` in the stem — `crate_stem`), `run_verus` spawns `verus --output-json --smt-option smt.random_seed=<seed>`; cleaned up after. |
+//! | REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `run_verus` writes a `<stem>.rs` file (no `.` in the stem — `crate_stem`) INSIDE a per-run scratch DIR (`unique_scratch_dir`), spawns `verus --output-json --smt-option smt.random_seed=<seed>` with `current_dir` = the scratch dir, and removes the scratch dir WHOLESALE via the `ScratchDir` Drop guard on EVERY exit path (source + verus's compiled-binary sibling go together — blocker #53). |
 //! | REQ-3 (exit-status checked, never swallow) | SHIPPED | `run_verus` returns exit status; `parse_verus_output` makes a parseable failure a reported cert and an unparseable/internal failure `ForgeError::VerusOutput`; spawn ENOENT → `ForgeError::VerusAbsent`. |
 //! | REQ-4 (verus output → per-obligation + counterexamples) | SHIPPED | `parse_verus_output` reads the JSON `verification-results` summary for level and parses stderr `error:` + `--> file:line:col` into `ObligationResult::failed` witnesses. |
 //! | REQ-5 (level determination, v0.1) | SHIPPED | `level_from_summary`: `Level::L3` iff `success && errors == 0`, else the run is a reported non-L3 failure. |
@@ -923,44 +923,92 @@ fn crate_stem(path: &Path) -> String {
     stem
 }
 
-/// Write the lowered source to a temp file with a valid-crate-name stem (REQ-2),
-/// spawn verus on it with the pinned seed + `--output-json`, parse the result,
-/// and clean up the temp file. Verus absent on spawn → `ForgeError::VerusAbsent`
-/// (REQ-6); a non-zero exit with parseable failure → a reported failure cert;
-/// unparseable output → `ForgeError::VerusOutput` (REQ-3).
+/// A per-run scratch DIRECTORY for one verus invocation, removed WHOLESALE on
+/// `Drop` (blocker #53). verus compiles the lowered `.rs` into a sibling binary
+/// (`<stem>`, no extension, ~4.3M) in its working directory; the v0.1 driver ran
+/// verus in the SHARED `std::env::temp_dir()` and cleaned ONLY the `.rs` source,
+/// so a verus run that ERRORED mid-compile orphaned the binary → unbounded `/tmp`
+/// growth under sustained multi-agent fresh-verification (the ENOSPC seen during
+/// #18/#20). The fix: every verus run gets its OWN scratch dir (the `.rs` source,
+/// verus's compiled-binary sibling, and ANY other verus artifact all land
+/// inside), and this guard's `Drop` does a `remove_dir_all` that fires on EVERY
+/// exit path — success, a reported counterexample, OR a `?` early-return on an
+/// environment/IO error. Cleanup is best-effort (`let _ =`), never a panic
+/// (R-CODE-2): a removal failure must not mask the real verus result.
+///
+/// This mirrors the L2 (kani) driver's discipline, which already runs in a
+/// per-run scratch CRATE removed wholesale via `kani.rs::run_kani`'s
+/// `remove_dir_all(&crate_dir)` — so the kani path does NOT share this leak. The
+/// shared cause's class ("an external-tool invocation must run in a scratch dir
+/// removed wholesale, even on error") is now uniform across both rungs.
+struct ScratchDir {
+    path: PathBuf,
+}
+
+impl Drop for ScratchDir {
+    fn drop(&mut self) {
+        // Best-effort wholesale removal: the `.rs` source AND verus's compiled
+        // binary AND any other artifact go together. A failure here NEVER fails
+        // the verdict (R-CODE-2) — degrade to "left on disk", never to a panic.
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// Write the lowered source to a `.rs` file with a valid-crate-name stem (REQ-2)
+/// INSIDE a per-run scratch DIRECTORY, spawn verus there (`current_dir` is the
+/// scratch dir, so verus's compiled-binary sibling lands inside it), parse
+/// the result, and remove the scratch dir WHOLESALE on every exit path
+/// (blocker #53 — the `ScratchDir` Drop guard cleans even on a `?` early-return).
+/// Verus absent on spawn → `ForgeError::VerusAbsent` (REQ-6); a non-zero exit
+/// with parseable failure → a reported failure cert; unparseable output →
+/// `ForgeError::VerusOutput` (REQ-3).
 fn run_verus(
     program: &Program,
     lowered: &str,
     seed: u64,
     rlimit: f64,
 ) -> Result<VerusResult, ForgeError> {
-    // Name the temp file after the first item (deterministic) so concurrent
-    // runs over different files do not collide; fall back to a fixed stem.
+    // Name the scratch dir + `.rs` after the first item (deterministic) so
+    // concurrent runs over different files do not collide; fall back to a fixed
+    // stem. The crate-name gotcha (REQ-2 / AC-4) is unchanged: the `.rs` stem is
+    // still the no-`.` `crate_stem`, so verus's crate-name derivation succeeds.
     let label = program.items.first().map(|i| i.name()).unwrap_or("forge");
     let stem = crate_stem(Path::new(label));
-    let tmp = unique_temp_path(&stem);
+    let scratch = ScratchDir {
+        path: unique_scratch_dir(&stem),
+    };
+    std::fs::create_dir_all(&scratch.path).map_err(|e| ForgeError::Io {
+        path: scratch.path.display().to_string(),
+        source: e,
+    })?;
+    let tmp = scratch.path.join(format!("{stem}.rs"));
     std::fs::write(&tmp, lowered).map_err(|e| ForgeError::Io {
         path: tmp.display().to_string(),
         source: e,
     })?;
 
-    let result = invoke_verus(&tmp, seed, rlimit);
+    // The `?` here still cleans up: `scratch` is dropped on the early-return.
+    let result = invoke_verus(&scratch.path, &tmp, seed, rlimit);
 
-    // Best-effort cleanup; never mask the real result on a cleanup failure.
-    let _ = std::fs::remove_file(&tmp);
+    // `scratch` drops at the end of this scope (and on the `?` above), removing
+    // the source + verus's compiled binary + everything WHOLESALE (blocker #53).
+    drop(scratch);
 
     result
 }
 
-/// Spawn verus and parse its output. Split from `run_verus` so the temp file is
-/// always cleaned up regardless of outcome.
+/// Spawn verus and parse its output. Split from `run_verus` so the scratch dir is
+/// always cleaned up regardless of outcome. `cwd` is the per-run scratch
+/// directory (blocker #53): verus's working-directory artifacts — most notably
+/// the ~4.3M compiled-binary sibling — land THERE, so the caller's `ScratchDir`
+/// guard removes them wholesale.
 ///
 /// #11: ALWAYS passes `--profile` + the pinned `--rlimit <rlimit>`. `--profile`
 /// emits the Z3 instantiation report on STDERR ONLY when the rlimit is exceeded
 /// (the timeout discriminator); a clean proof / a fast counterexample emits no
 /// report, so its PRESENCE is the timeout signal that
 /// [`classify_verus_outcome`] keys on.
-fn invoke_verus(tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusResult, ForgeError> {
+fn invoke_verus(cwd: &Path, tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusResult, ForgeError> {
     let started = Instant::now();
     let output = Command::new("verus")
         .arg("--output-json")
@@ -970,7 +1018,7 @@ fn invoke_verus(tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusResult, Forge
         .arg("--smt-option")
         .arg(format!("smt.random_seed={seed}"))
         .arg(tmp)
-        .current_dir(std::env::temp_dir())
+        .current_dir(cwd)
         .output()
         .map_err(|e| {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -994,19 +1042,19 @@ fn invoke_verus(tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusResult, Forge
     })
 }
 
-/// Build a unique temp path with the given valid stem and a `.rs` extension.
-/// Uniqueness uses the process id + a monotonic counter — NOT wall-clock — so
-/// the path varies between concurrent runs without violating R-CODE-5
-/// (determinism is a property of the CERTIFICATE, not the scratch path; §check.md
-/// REQ-2 "determinism is in the INPUT, not the path").
-fn unique_temp_path(stem: &str) -> PathBuf {
+/// Build a unique per-run scratch DIRECTORY path for one verus invocation
+/// (blocker #53). Uniqueness uses the process id + a monotonic counter — NOT
+/// wall-clock — so the path varies between concurrent runs without violating
+/// R-CODE-5 (determinism is a property of the CERTIFICATE, not the scratch path;
+/// §check.md REQ-2 "determinism is in the INPUT, not the path"). The directory
+/// (not a bare `.rs` file) is what gets removed wholesale, taking the `.rs`
+/// source AND verus's compiled-binary sibling with it.
+fn unique_scratch_dir(stem: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let n = COUNTER.fetch_add(1, Ordering::Relaxed);
     let pid = std::process::id();
-    // No `.` before the extension in the STEM — the dot is only the extension
-    // separator, which verus accepts; the crate name derives from the stem.
-    std::env::temp_dir().join(format!("forge_{stem}_{pid}_{n}.rs"))
+    std::env::temp_dir().join(format!("forge_{stem}_{pid}_{n}"))
 }
 
 /// Classify one verus run THREE ways DETERMINISTICALLY (#11;

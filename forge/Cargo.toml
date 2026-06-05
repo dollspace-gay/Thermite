@@ -24,3 +24,12 @@ serde_json = "1"
 # version) into a stable sha256 content address (`.design/forge/proof-cache.md`
 # REQ-1).
 sha2 = "0.10"
+
+# epic #60 (self-verification, REQ-7/REQ-8): the Verus-verified soundness-critical
+# core. A DEV-dependency only — the in-module `verus_anchor` tests in `degrade.rs`
+# (the ladder anti-cheat decision) and `sandbox.rs` (the seccomp allowlist
+# soundness) bind the PRODUCTION decision fns to the verus-proved plain-Rust mirrors
+# (`thermite_verified::ladder_action_*_tag` / `io_allow`) over their finite domains
+# (mechanism (c)). NOT a runtime dep: forge's production code does not consume it.
+[dev-dependencies]
+thermite-verified = { path = "../thermite-verified" }

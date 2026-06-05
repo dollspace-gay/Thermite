@@ -137,3 +137,77 @@ fn broken_subsumes_fails_verification() {
     }
     let _ = std::fs::remove_file(&tmp);
 }
+
+/// Mutate `lib.rs` (a TEMP copy), write it, and assert `verus --no-cheating`
+/// reports an error (non-vacuity). `from` must appear EXACTLY once in the source —
+/// a shape change fails LOUDLY (the mutation point must be the REAL proved body).
+fn assert_mutation_fails(label: &str, from: &str, to: &str) {
+    if verus_bin().is_none() {
+        eprintln!("SKIP: verus not available — {label} non-triviality not run.");
+        return;
+    }
+    let src = std::fs::read_to_string(lib_rs()).expect("read verified lib.rs");
+    assert!(
+        src.contains(from),
+        "the proved body shape changed — update the {label} mutation point \
+         (the mutation must hit the REAL body):\nlooked for:\n{from}"
+    );
+    let mutated = src.replacen(from, to, 1);
+    assert_ne!(mutated, src, "mutation must change the source ({label})");
+    let tmp = std::env::temp_dir().join(format!("thermite_verified_broken_{label}.rs"));
+    std::fs::write(&tmp, &mutated).expect("write mutated temp lib.rs");
+    match run_verus(&tmp) {
+        Some((ok, output)) => {
+            assert!(
+                !ok || !output.contains(", 0 errors"),
+                "the BROKEN {label} MUST fail verification (non-vacuous contract) \
+                 but verus reported success:\n{output}"
+            );
+            assert!(
+                output.contains("error"),
+                "the broken {label} should report a verus error:\n{output}"
+            );
+        }
+        None => eprintln!("SKIP: verus disappeared mid-test — {label} not run."),
+    }
+    let _ = std::fs::remove_file(&tmp);
+}
+
+/// AC-7b (non-vacuity, REQ-7): mutating `ladder_action_l3`'s `Counterexample` arm
+/// from `HardFail` to `DegradeToL1` (a counterexample DEGRADES — the exact cheat
+/// R-DEFER-9 forbids) makes the anti-cheat `ensures`
+/// `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` fail. This
+/// proves the anti-cheat invariant is genuinely constraining, not vacuous.
+#[test]
+fn broken_ladder_action_counterexample_degrades_fails() {
+    assert_mutation_fails(
+        "ladder_action",
+        "        L3Tag::Counterexample => LadderAction::HardFail,\n        }\n    }\n\n    /// The L2 ladder DECISION",
+        "        L3Tag::Counterexample => LadderAction::DegradeToL1,\n        }\n    }\n\n    /// The L2 ladder DECISION",
+    );
+}
+
+/// AC-8b (non-vacuity #1, REQ-8): mutating `widen`'s non-widening `else` arm so a
+/// non-widening atom (Alloc/Panic/Diverge) leaks `openat` makes `pure_has_no_io`
+/// (and `non_widening_atoms_have_no_io`) fail. PURE-NO-I/O is genuinely constraining.
+#[test]
+fn broken_widen_leaks_openat_fails_pure_no_io() {
+    assert_mutation_fails(
+        "widen_leak",
+        "        else if i == 4 { 8u32 }       // Rand → getrandom\n        else { 0u32 }",
+        "        else if i == 4 { 8u32 }       // Rand → getrandom\n        else { 1u32 }",
+    );
+}
+
+/// AC-8b (non-vacuity #2, REQ-8): mutating the `io_allow` spec fold to use XOR
+/// (`^`) instead of OR (`|`) so a `Write` atom cancels a `Read` atom's `openat`
+/// (non-monotone) makes the `monotone` lemma fail. MONOTONICITY is genuinely
+/// constraining (adding an effect must never remove a permitted syscall).
+#[test]
+fn broken_io_allow_xor_fails_monotone() {
+    assert_mutation_fails(
+        "io_allow_xor",
+        "        (if fx_has(fx, 0) { widen(0) } else { 0u32 })\n        | (if fx_has(fx, 1) { widen(1) } else { 0u32 })",
+        "        (if fx_has(fx, 0) { widen(0) } else { 0u32 })\n        ^ (if fx_has(fx, 1) { widen(1) } else { 0u32 })",
+    );
+}

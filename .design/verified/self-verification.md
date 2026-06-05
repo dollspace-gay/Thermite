@@ -1,8 +1,8 @@
 # Self-Verifying the Toolchain with Verus (Tier 1: the soundness-critical pure core)
 <!--
 tier: 3-component
-status: active (REQ-5/7/8 increments designed; REQ-5 `subsumes` SHIPPED via mechanism (c); REQ-7 `ladder_action` + REQ-8 `syscall_allowlist` NOT-STARTED, grounded; epic #60 open for the remaining 5 Tier-1 targets)
-governs: thermite-verified/src/lib.rs (the verified core — `subsumes` proved + anchored; `ladder_action`/`syscall_allowlist` to be ported, epic #60)
+status: active (REQ-5 `subsumes` + REQ-7 `ladder_action` + REQ-8 `syscall_allowlist` all SHIPPED via mechanism (c), verus `19 verified, 0 errors`; epic #60 open for the remaining REQ-2 Tier-1 targets — cache_key/triage/kill_ratio/is_strictly_stronger/boundary-gate)
+governs: thermite-verified/src/lib.rs (the verified core — `subsumes` + `ladder_action` + `io_allow` all proved + anchored; the REQ-2 set to be ported, epic #60)
 thesis-refs:
   - thermite-design.md §6   (Verus is the L3 prover)
   - thermite-design.md §9   (the TCB is slag ∪ boundary ∪ the toolchain itself)
@@ -43,16 +43,17 @@ are explicitly OUT: Tier 3 is the trusted floor, sealed behind
 `#[verifier::external_body]` (Verus's analog of Thermite's own `#[slag]`/`#[boundary]`),
 assumed-by-contract.
 
-> **THREE INCREMENTS DESIGNED, ONE SHIPPED.** The verified crate (`thermite-verified`)
-> exists and the FIRST Tier-1 target — `effects::subsumes` (REQ-5) — is proved by real
-> `verus --no-cheating` (8 verified, 0 errors) and anchored to the toolchain via mechanism
-> (c) (a verus-verified core + an exhaustive 65536-pair impl==spec equivalence test). This
-> iteration GROUNDS the next two targets with real `verus` runs (see Grounding A and B
-> below) but leaves them **NOT-STARTED** (no in-tree port/anchor yet): REQ-7
-> (`degrade::ladder_action`, the anti-cheat) and REQ-8 (`sandbox::syscall_allowlist`, the
-> seccomp soundness). REQ-1/3/4/5/6 are SHIPPED; REQ-2/7/8 are NOT-STARTED, tracked under
-> epic **#60**. The grounding sections record the REAL out-of-tree verus runs that prove
-> each is verus-fragment-friendly and that the contracts are non-vacuous.
+> **THREE TIER-1 INCREMENTS SHIPPED.** The verified crate (`thermite-verified`) holds three
+> proved soundness-critical cores: `effects::subsumes` (REQ-5), the degrade-ladder
+> anti-cheat `ladder_action` (REQ-7), and the seccomp `io_allow` soundness (REQ-8) — all
+> proved by real `verus --no-cheating --crate-type=lib thermite-verified/src/lib.rs`
+> (**19 verified, 0 errors**) and anchored to the toolchain via mechanism (c): a
+> verus-verified core + a plain-Rust mirror + an exhaustive impl==spec equivalence test
+> (`subsumes` 65536 pairs in `thermite-lower`; `ladder_action` the 3+3 verdict enum +
+> `io_allow` the 256 fx-masks in forge's in-module `verus_anchor` blocks — Option B, since
+> forge is binary-only). REQ-1/3/4/5/6/7/8 are SHIPPED; REQ-2 (the remaining FIVE Tier-1
+> fns) is NOT-STARTED, tracked under epic **#60**. The grounding sections (A/B) record the
+> out-of-tree verus runs that first proved REQ-7/REQ-8 verus-fragment-friendly + non-vacuous.
 
 ## The three tiers (the scope boundary)
 
@@ -444,5 +445,5 @@ porting (no separate blocker filed — #60 is the tracker).
 | REQ-4 (honesty — genuine proof) | SHIPPED | `verus --no-cheating` on the core; `ensures result == spec_subsumes(..)` non-vacuous (negating the body → `7 verified, 1 errors`, `tests/verus_verify.rs::broken_subsumes_fails_verification`). The REQ-7/REQ-8 groundings ALSO each demonstrate non-vacuity (Grounding A: `2 verified, 1 errors`; Grounding B: `14 verified, 1 errors` ×2). |
 | REQ-5 (`subsumes` verified + matched) | SHIPPED | `verus_core::subsumes` proved (+ three lattice-law `proof fn`s); `thermite_verified::subsumes_masks` (the plain mirror) consumed by `thermite_lower::effects::subsumes`; matched by the 65536-pair exhaustive equivalence test (mechanism (c), AC-4, 0 mismatches); the 14 `effects` tests still pass (AC-3). |
 | REQ-6 (CI-able verus-verify gauntlet step) | SHIPPED | `thermite-verified/tests/verus_verify.rs` runs real `verus --no-cheating --crate-type=lib src/lib.rs` (skip-loud if verus absent) and asserts `verified, 0 errors`; a core fn that fails to verify is a HARD test failure (R-DEFER-6). |
-| REQ-7 (degrade anti-cheat verified + anchored) | NOT-STARTED | epic #60. GROUNDED (Grounding A): the `ladder_action` verus port verifies `3 verified, 0 errors` and the anti-cheat `ensures` is non-vacuous (a `Counterexample`→`DegradeToL1` mutant → `2 verified, 1 errors`, "failed this postcondition"). NOT yet in-tree: no `verus_core` extension, `run_ladder` does NOT yet delegate to an extracted `ladder_action`, no `forge/tests/ladder_action_verified.rs` equivalence test. Today `forge/src/degrade.rs` `run_ladder`'s anti-cheat (REQ-2 there) is HERMETICALLY tested only (`counterexample_never_degrades` / `l2_counterexample_never_drops_to_l1`), not verus-anchored. |
-| REQ-8 (seccomp allowlist soundness verified + anchored) | NOT-STARTED | epic #60. GROUNDED (Grounding B): the fx→syscall bitset port verifies `15 verified, 0 errors`; PURE-NO-I/O and MONOTONICITY are each non-vacuous (leak-openat mutant → `14 verified, 1 errors`; XOR non-monotone mutant → `14 verified, 1 errors`). NOT yet in-tree: no `verus_core` extension, `forge/src/sandbox.rs` `syscall_allowlist` is NOT yet anchored to the proved spec, no `forge/tests/sandbox_verified.rs` 2^8-mask equivalence test. Today `syscall_allowlist`'s soundness (REQ-3 there) is unit-tested only (`pure_baseline_excludes_io_syscalls`) + the `sandbox_conformance` oracle, not verus-anchored. |
+| REQ-7 (degrade anti-cheat verified + anchored) | SHIPPED | epic #60. `verus_core::ladder_action_l3`/`ladder_action_l2` proved in-tree (the anti-cheat `ensures` `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` + the L2 analog + the global `anti_cheat_holds_for_all_verdicts` proof); `verus --no-cheating thermite-verified/src/lib.rs` → **19 verified, 0 errors**. The plain mirrors `thermite_verified::ladder_action_l3_tag`/`ladder_action_l2_tag` (+ `LadderAction`/`is_degrade`) are consumed by `forge::degrade::ladder_action_l3`/`ladder_action_l2`, and `run_ladder` now BRANCHES on the returned `LadderAction` (the proved decision drives the control flow, OQ-5). Anchored in-module (Option B — forge is binary-only): `degrade::verus_anchor` asserts the production decision == the proved tag over every verdict (3 L3 + 3 L2) AND the OQ-5 observable outcome (a `Counterexample` → hard-fail cert, no degrade stamp, `attempt_l2`/`attempt_l1` NOT invoked). Non-vacuity: `tests/verus_verify.rs::broken_ladder_action_counterexample_degrades_fails` (a `Counterexample`→`DegradeToL1` mutant fails the anti-cheat `ensures`). The existing `counterexample_never_degrades`/`l2_counterexample_never_drops_to_l1` still pass. |
+| REQ-8 (seccomp allowlist soundness verified + anchored) | SHIPPED | epic #60. `verus_core::io_allow` (+ `widen`/`io_allow_exec`/`widen_exec`) proved in-tree with the four soundness lemmas — `pure_has_no_io` (`io_allow(0)==0`), `non_widening_atoms_have_no_io`, `monotone` (subset on the syscall-mask), `io_allow_within_io_bits` (deny-by-default, bits 0..5) — `19 verified, 0 errors`. The plain mirror `thermite_verified::io_allow` (+ `widen` + the 5 `SYS_*` bit constants) is anchored to `forge::sandbox::syscall_allowlist` over ALL 256 fx-masks by `sandbox::verus_anchor::syscall_allowlist_matches_proved_io_allow_over_all_256_masks` (membership over openat/socket/connect/getrandom/clock_gettime == the proved `io_allow` bits, R-CHAR-3). OQ-6: verus proves soundness over the 5 sensitive syscalls only; the dense `BASELINE_SYSCALLS` stays `sandbox_conformance`-grounded. Non-vacuity: `tests/verus_verify.rs::broken_widen_leaks_openat_fails_pure_no_io` + `broken_io_allow_xor_fails_monotone`. The existing `sandbox_conformance` (5) + `pure_baseline_excludes_io_syscalls` still pass. |

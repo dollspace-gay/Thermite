@@ -2,11 +2,12 @@
   "uuid": "8ba5df93-c63a-4082-92f9-18f9ef83319a",
   "display_id": 51,
   "title": "Divergence: kani::is_under_bound_failure misclassifies a real L2 counterexample as UnderBound (degrades a disproved contract to L1 — R-DEFER-9 anti-cheat hole)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T06:54:21.340585220Z",
-  "updated_at": "2026-06-05T06:54:22.836749577Z",
+  "updated_at": "2026-06-05T07:01:44.826568747Z",
+  "closed_at": "2026-06-05T07:01:44.826568747Z",
   "labels": [
     "blocker"
   ]

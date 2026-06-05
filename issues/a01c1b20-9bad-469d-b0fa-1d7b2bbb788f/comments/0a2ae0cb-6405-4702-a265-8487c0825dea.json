@@ -1,0 +1,10 @@
+{
+  "uuid": "0a2ae0cb-6405-4702-a265-8487c0825dea",
+  "issue_uuid": "a01c1b20-9bad-469d-b0fa-1d7b2bbb788f",
+  "author": "Yffe",
+  "content": "Reshape TokKind::Int and Expr::IntLit to struct variants { value: u128, raw: String } per amended .design/syntax/lexer.md REQ-3 + ast.md REQ-6. lex_int captures source[i..last_digit] as verbatim raw alongside the _-stripped value. Thread { value, raw } / { value, .. } through the full IntLit ripple (parser, lower, l1, effects, validator, mutation, strengthen, vacuity, closure, review). INVARIANT: every emit/lowering/mutation path reads value exactly as the old u128; lower.rs/l1.rs emit value.to_string() so tests/golden/* stay byte-identical (no golden churn). raw is AST-fidelity only; mutated literals set raw=value.to_string(). New round-trip tests assert BOTH fields. Manifest-bounded; critic re-audits.",
+  "created_at": "2026-06-05T18:33:10.164678307Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANrsxnK7VdMrlpRgCL10cPXPA33cgQZxmbPZ+MLsSKCV6Y/IPFgMYcj/AhY8atOw6OFNy4tfJ6rS3bZxahskMAQ=="
+}

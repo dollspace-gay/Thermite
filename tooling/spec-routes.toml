@@ -269,3 +269,10 @@ crate_pattern = "forge/src/closure.rs"
 design = ".design/forge/e2e-vs-boundary.md"
 reference = ["conformance/e2e"]
 conformance_ops = ["sum", "boundary_caller"]
+
+# v0.3 — audit manifest v1, the trust deliverable (issue #15)
+[[route]]
+crate_pattern = "forge/src/audit.rs"
+design = ".design/forge/audit-manifest.md"
+reference = ["conformance/audit"]
+conformance_ops = ["sum", "slag_boundary"]

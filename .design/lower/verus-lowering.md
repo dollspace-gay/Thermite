@@ -54,7 +54,9 @@ they are the lowering contract the builder reproduces, not guesses.
 
 - **REQ-3 (expression lowering — exec position):** Each `Expr` lowers to the
   matching Verus/Rust surface in **executable (body)** position:
-  `IntLit`/`BoolLit` (underscored literals like `1_000_000` preserved verbatim);
+  `IntLit`/`BoolLit` (an underscored literal like `1_000_000` lowers to its
+  `_`-stripped numeric value `1000000` — ast.md REQ-6; the verbatim `raw` is
+  kept on the AST node, not emitted);
   `Path(["u32","MAX"])`→`u32::MAX`; `Call`/`MethodCall`/`Field`; `Binary` with the
   `BinOp`→operator map (`Add`→`+`, `Le`→`<=`, `And`→`&&`, …); `Index` over the
   four `IndexArg` forms (`a[i]`, `a[..i]`, `a[i..]`, `a[i..j]`); `Cast`→`as T`;
@@ -243,7 +245,7 @@ with `decreases LOWER_SPEC(dec)` and a `Seq`-typed slice parameter (REQ-5).
 
 | `Expr` / `BinOp` | exec spelling | spec spelling |
 |---|---|---|
-| `IntLit(1_000_000)` | `1_000_000` (underscores preserved) | same |
+| `IntLit{value:1000000,raw:"1_000_000"}` | `1000000` (value, `_`-stripped) | same |
 | `Path(["u32","MAX"])` | `u32::MAX` | `u32::MAX` |
 | `MethodCall{name:"len"}` on `xs` | `xs.len()` | `xs@.len()` |
 | `Index{Single(i)}` `xs[i]` | `xs[i]` | `xs@[i as int]` |
@@ -331,7 +333,7 @@ proof fn lemma_sum_push(xs: Seq<u32>, k: int)
 }
 
 fn sum(xs: &[u32]) -> (result: u64)
-    requires xs.len() <= 1_000_000,
+    requires xs.len() <= 1000000,
     ensures
         result as nat == spec_sum(xs@),
         result <= xs.len() as u64 * u32::MAX as u64,
@@ -341,14 +343,14 @@ fn sum(xs: &[u32]) -> (result: u64)
     while i < xs.len()
         invariant
             i <= xs.len(),
-            xs.len() <= 1_000_000,
+            xs.len() <= 1000000,
             acc as nat == spec_sum(xs@.subrange(0, i as int)),
             acc <= i as u64 * u32::MAX as u64,
         decreases xs.len() - i,
     {
         proof { lemma_sum_push(xs@, i as int); }
         assert(acc + xs[i as int] as u64 <= (i as u64 + 1) * u32::MAX as u64) by(nonlinear_arith)
-            requires acc <= i as u64 * u32::MAX as u64, i < xs.len(), xs.len() <= 1_000_000;
+            requires acc <= i as u64 * u32::MAX as u64, i < xs.len(), xs.len() <= 1000000;
         acc = acc + xs[i] as u64;
         i = i + 1;
     }

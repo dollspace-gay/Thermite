@@ -235,7 +235,7 @@ fn spec_sum(xs: &[u32]) -> u64 {        // executable spec fn (REQ-4)
 }
 
 fn sum(xs: &[u32]) -> u64 {
-    thermite_check!("req", "xs.len() <= 1_000_000", xs.len() <= 1_000_000);
+    thermite_check!("req", "xs.len() <= 1_000_000", xs.len() <= 1000000);
     let result = {
         let mut acc: u64 = 0;
         let mut i: usize = 0;

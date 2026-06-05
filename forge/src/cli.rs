@@ -34,9 +34,11 @@ use thermite_lower::LowerError;
 use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
+use crate::audit::{self, AuditManifest};
 use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::manifest::{
     AssuranceManifest, AssuranceScope, Certificate, Level, ObligationStatus, ProjectAssurance,
+    ProjectScope,
 };
 use crate::mutation::MUTATION_FLOOR;
 
@@ -179,6 +181,13 @@ enum Command {
         /// LOW value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
         mutation_floor: f64,
     },
+    /// `forge audit <file> [--json]` — emit the project AUDIT MANIFEST v1 (issue
+    /// #15; `.design/forge/audit-manifest.md` REQ-2). Runs the SAME check pipeline
+    /// `forge check` runs at the pinned default config (no extra verification),
+    /// aggregates the cert collection into an `AuditManifest`, and emits it as the
+    /// stable `--json` document or a human summary. The default-config path is the
+    /// reproducible trust statement (OQ-3).
+    Audit { file: PathBuf, json: bool },
 }
 
 /// The assurance rung `forge check` targets (`.design/lower/l2-kani.md` REQ-7,
@@ -319,6 +328,34 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 mutation_floor,
             })
         }
+        "audit" => {
+            // `forge audit <file> [--json]` (#15; `.design/forge/audit-manifest.md`
+            // REQ-2). The canonical audit deliverable runs at the pinned default
+            // config (OQ-3 — the reproducible trust statement), so this verb takes
+            // ONLY the file + `--json`; the exploratory `--rlimit`/`--mutation-floor`
+            // levers are NOT exposed here (the default-config path is the contract).
+            let mut file: Option<PathBuf> = None;
+            let mut json = false;
+            for arg in iter {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_some() {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge audit` takes at most one <file>; unexpected `{positional}`"
+                            )));
+                        }
+                        file = Some(PathBuf::from(positional));
+                    }
+                }
+            }
+            let file = file
+                .ok_or_else(|| ForgeError::Usage("`forge audit` requires a <file>".to_string()))?;
+            Ok(Command::Audit { file, json })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -329,7 +366,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>]"
+     [--mutation-floor <FLOAT>] | forge audit <file> [--json]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -362,6 +399,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             rlimit,
             mutation_floor,
         } => run_check(&file, json, level, rlimit, mutation_floor),
+        Command::Audit { file, json } => run_audit(&file, json),
     }
 }
 
@@ -437,6 +475,159 @@ fn run_check(
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
     }
+}
+
+/// Run `forge audit`: emit the project AUDIT MANIFEST v1 (#15;
+/// `.design/forge/audit-manifest.md` REQ-2). Runs the SAME check pipeline
+/// `forge check` runs at the pinned default config (`CheckOptions::default` via
+/// `check::check_file` — NO extra verification, NO re-derivation), parses the file
+/// once for the boundary contracts' enforced `req`/`ens`/`fx` (the cert carries
+/// only the target), resolves the toolchain identity, builds the
+/// [`AuditManifest`] (a pure projection), and emits it as the stable `--json`
+/// document or a human summary (OQ-1 — the JSON is the oracle-asserted surface).
+/// The exit code mirrors `forge check`'s project headline (REQ-5): a fully-
+/// certified project exits 0, else a verification-failure exit.
+fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
+    // The SAME default pipeline `forge check` runs (REQ-4 — aggregation, never
+    // re-derivation): `check_file` is the canonical default-config entry (the only
+    // one that serves / populates the shared proof cache). The audit re-runs no
+    // verus, re-scores no mutants — it projects the cert collection this returns.
+    let certs = check::check_file(file)?;
+
+    // Parse the file once for the boundary contracts' enforced req/ens/fx (the
+    // §9 per-function contracts the TCB enumerates). A pure read of the parsed AST
+    // — `check_file` already validated it parses clean, so this is re-parse of a
+    // known-good file (deterministic, R-CODE-5), never a re-verification.
+    let src = std::fs::read_to_string(file).map_err(|e| ForgeError::Io {
+        path: file.display().to_string(),
+        source: e,
+    })?;
+    let parsed = thermite_syntax::parse(&src);
+    if !parsed.is_clean() {
+        return Err(ForgeError::Parse(parsed.errors));
+    }
+
+    // The toolchain identity (the irreducible §9 TCB residue): the verus version
+    // (the same deterministic sourcing the proof cache uses) + the compile-time
+    // thermite version. `check_file` already required verus, so resolving the
+    // version adds no requirement.
+    let verus_version = audit::resolve_verus_version()?;
+    let toolchain = audit::Toolchain::new(verus_version);
+
+    let manifest = AuditManifest::from_certificates(&certs, &parsed.program, toolchain);
+
+    if json {
+        // The stable v1 document on stdout (REQ-1 — the oracle-asserted surface).
+        let doc = serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::VerusOutput {
+            detail: format!("failed to serialize audit manifest JSON: {e}"),
+        })?;
+        println!("{doc}");
+    } else {
+        print!("{}", render_audit(&manifest));
+    }
+
+    // The audit exit code mirrors `forge check`'s project headline: the manifest is
+    // a projection, so a fully-certified project exits 0 and a project with a
+    // non-certifying fn exits with the verification-failure code (the headlines
+    // agree — both via `manifest::cert_certifies`).
+    let certified = matches!(
+        manifest.project_assurance.level,
+        ProjectAssurance::Certified(_)
+    );
+    if certified {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Render the AUDIT MANIFEST v1 as a human-readable summary (#15;
+/// `.design/forge/audit-manifest.md` REQ-2, OQ-1 — the human shape is a rendering
+/// detail; the `--json` document is the stable contract). Three sections: the
+/// per-fn table, the project assurance, and the §8/§9 greppable TCB inventory.
+fn render_audit(manifest: &AuditManifest) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "audit manifest {} ({} function(s))\n",
+        manifest.manifest_version,
+        manifest.functions.len()
+    ));
+
+    // The per-fn table (§6 — every function's level + slag/boundary flags).
+    out.push_str("functions:\n");
+    for f in &manifest.functions {
+        let scope = match &f.assurance_scope {
+            Some(AssuranceScope::EndToEnd) => " scope=end-to-end".to_string(),
+            Some(AssuranceScope::ToBoundary { via }) => {
+                format!(" scope=to-the-boundary(via {via})")
+            }
+            None => String::new(),
+        };
+        let flags = format!(
+            "{}{}",
+            if f.slag { " slag" } else { "" },
+            if f.boundary { " boundary" } else { "" }
+        );
+        out.push_str(&format!(
+            "  {} {}{}{}\n",
+            f.name,
+            level_str(f.level),
+            flags,
+            scope
+        ));
+    }
+
+    // The project assurance headline + scope + lowered-assurance fns (REQ-5).
+    out.push_str("project assurance:\n");
+    let level_line = match manifest.project_assurance.level {
+        ProjectAssurance::Certified(level) => {
+            format!("  level: {} (min over functions)\n", level_str(level))
+        }
+        ProjectAssurance::Failed => "  level: FAILED (a function did not certify)\n".to_string(),
+    };
+    out.push_str(&level_line);
+    match &manifest.project_assurance.scope {
+        ProjectScope::EndToEnd => out.push_str("  scope: end-to-end (verified, period)\n"),
+        ProjectScope::ToBoundary { crossings } => out.push_str(&format!(
+            "  scope: to-the-boundary (crossings: {})\n",
+            crossings.join(", ")
+        )),
+    }
+    for name in &manifest.project_assurance.lowered_assurance {
+        out.push_str(&format!(
+            "  lowered-assurance: {name} (auto-degraded below L3)\n"
+        ));
+    }
+
+    // The §9 ENUMERABLE TCB — slag ∪ boundary ∪ toolchain. The §8 "`grep slag` is
+    // the complete inventory" framing → a line-oriented, greppable section.
+    out.push_str("tcb (trusted computing base):\n");
+    if manifest.tcb.slag_blocks.is_empty() && manifest.tcb.boundary_contracts.is_empty() {
+        out.push_str("  slag: (none) — no fiat-trusted bodies\n");
+        out.push_str("  boundary: (none) — no foreign crossings\n");
+    } else {
+        for b in &manifest.tcb.slag_blocks {
+            out.push_str(&format!(
+                "  slag: {} reason={:?} owner={:?} review={:?}\n",
+                b.name, b.reason, b.owner, b.review
+            ));
+        }
+        for c in &manifest.tcb.boundary_contracts {
+            out.push_str(&format!(
+                "  boundary: {} -> {} (req={:?} ens=[{}] fx=[{}])\n",
+                c.name,
+                c.target,
+                c.req.as_deref().unwrap_or("(unresolved)"),
+                c.ens.join("; "),
+                c.fx.join(", ")
+            ));
+        }
+    }
+    out.push_str(&format!(
+        "  toolchain: verus={} thermite={}\n",
+        manifest.tcb.toolchain.verus, manifest.tcb.toolchain.thermite
+    ));
+    out
 }
 
 /// Render the #10 project ASSURANCE MANIFEST as human-readable text

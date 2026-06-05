@@ -1,0 +1,10 @@
+{
+  "uuid": "b4852e68-d722-4277-82e0-68974a1aad27",
+  "display_id": 54,
+  "title": "Divergence: thermite-lower lowering goldens (sum.verus.rs / sum.l1.rs) STALE vs emitter on the 1_000_000 literal (emitter emits 1000000, golden has 1_000_000)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T18:45:18.205091192Z",
+  "updated_at": "2026-06-05T18:45:18.205091192Z"
+}

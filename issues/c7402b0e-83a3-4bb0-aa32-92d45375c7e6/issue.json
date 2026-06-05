@@ -2,11 +2,12 @@
   "uuid": "c7402b0e-83a3-4bb0-aa32-92d45375c7e6",
   "display_id": 56,
   "title": "forge build: lower to executable Rust + rustc -> a compiled, L1-contract-checked artifact (no new compiler)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-05T19:30:21.992338255Z",
-  "updated_at": "2026-06-05T19:31:02.573857284Z",
+  "updated_at": "2026-06-05T20:08:43.620655100Z",
+  "closed_at": "2026-06-05T20:08:43.620655100Z",
   "labels": [
     "feature"
   ]

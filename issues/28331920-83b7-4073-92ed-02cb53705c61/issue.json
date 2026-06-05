@@ -2,11 +2,12 @@
   "uuid": "28331920-83b7-4073-92ed-02cb53705c61",
   "display_id": 52,
   "title": "Boundary-fn composition: emit verus-assumable signatures so a caller verifies through a boundary contract (§9)",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-05T08:34:47.196810970Z",
-  "updated_at": "2026-06-05T08:34:48.456006475Z",
+  "updated_at": "2026-06-05T17:38:25.314806554Z",
+  "closed_at": "2026-06-05T17:38:25.314806554Z",
   "labels": [
     "enhancement"
   ]

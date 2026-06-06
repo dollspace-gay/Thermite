@@ -275,9 +275,23 @@ fn binop_token(op: BinOp) -> &'static str {
 ///   result (`ens result.len() <= N`) PROVES `&[]` → the mutant SURVIVES → the
 ///   floor gates the weak contract; a strong `ens result == xs` REJECTS `&[]`
 ///   (unless `xs` is empty) → the mutant is KILLED → no over-gating (#48).
+/// - a bounded-`Vec` return (`Vec<T>`, `.design/basis/04-collections.md` REQ-5)
+///   has no scalar zero either, so it synthesizes the EMPTY-Vec construction
+///   `TVec<Suffix> { data: Vec::new() }` — the exact `thermite_lower`
+///   wrapper-newtype literal a `Vec<T>` lowers to (`tvec_name` in `lower.rs`),
+///   constructed empty. This MIRRORS the #48 slice precedent (`&[]` for `&[T]`)
+///   for the `Vec`-return class: an empty `Vec` is the canonical "trivial" Vec
+///   (`len() == 0`, always `well_formed`), so EVERY `Vec`-returning body is
+///   scored rather than escaping via a 0/0 gate (#74). A strong `ens
+///   result.len() == v.len() + 1` REJECTS the empty Vec (`0 != v.len()+1`) → the
+///   mutant is KILLED → a genuinely-proved `push_one` SCORES the floor and
+///   certifies L3 (it does NOT bypass the gate). A weak `ens result.len() <= N`
+///   PROVES the empty Vec → the mutant SURVIVES → the floor still gates the weak
+///   `Vec` contract (the synthesis ENABLES scoring; it does not auto-pass).
 ///
 /// `None` is returned only for a genuinely un-synthesizable return type (`Unit`, a
-/// non-slice ref, a non-`Option` generic) — see the 0/0 backstop in `kill_ratio`.
+/// non-slice ref, a non-`Option` generic, a `Vec` of a non-Copy-primitive element
+/// that the wrapper does not support) — see the 0/0 backstop in `kill_ratio`.
 fn early_return_value(f: &FnItem) -> Option<(Expr, String)> {
     if let Some(zero) = zero_value_for(&f.ret) {
         return Some((zero, zero_desc(&f.ret).to_string()));
@@ -293,7 +307,48 @@ fn early_return_value(f: &FnItem) -> Option<(Expr, String)> {
             return Some((empty, format!("{amp}[]")));
         }
     }
+    // A bounded-`Vec` return: the empty-Vec wrapper literal `TVec<Suffix> { data:
+    // Vec::new() }` (#74, mirroring the #48 `&[]` slice precedent).
+    if let Type::Vec(elem) = &f.ret {
+        if let Some((value, desc)) = empty_vec_value(elem) {
+            return Some((value, desc));
+        }
+    }
     None
+}
+
+/// The empty-`Vec` early-return value for a `Vec<elem>` return: the wrapper-newtype
+/// struct literal `TVec<Suffix> { data: Vec::new() }` (#74). The wrapper NAME
+/// mirrors `thermite_lower::lower`'s `tvec_name` — a `Vec<u64>` lowers to the
+/// `TVecU64` newtype over `vstd::vec::Vec<u64>`, so the early-return mutant must
+/// construct THAT newtype empty (an empty `vstd::vec::Vec` has `len() == 0`, so the
+/// constructed wrapper is `well_formed` and lowers to exec code Verus accepts). The
+/// `data` field is the verified vstd `Vec::new()`. Returns `None` for a `Vec`
+/// element type the wrapper does not materialize (a non-Copy-primitive element —
+/// `lower.rs::tvec_name` itself rejects these via `LowerError::Unsupported`), so
+/// the mutant is simply not synthesized (dropped from the denominator, OQ-5), never
+/// an over-gate.
+fn empty_vec_value(elem: &Type) -> Option<(Expr, String)> {
+    let suffix = match elem {
+        Type::Prim(PrimType::U32) => "U32",
+        Type::Prim(PrimType::U64) => "U64",
+        Type::Prim(PrimType::Usize) => "Usize",
+        Type::Prim(PrimType::Bool) => "Bool",
+        _ => return None,
+    };
+    let wrapper = format!("TVec{suffix}");
+    let empty = Expr::StructLit {
+        path: vec![wrapper.clone()],
+        // The verified `vstd::vec::Vec::new()` (an empty backing run).
+        fields: vec![(
+            "data".to_string(),
+            Expr::Call {
+                callee: Box::new(Expr::Path(vec!["Vec".to_string(), "new".to_string()])),
+                args: Vec::new(),
+            },
+        )],
+    };
+    Some((empty, format!("{wrapper} {{ data: Vec::new() }}")))
 }
 
 /// The empty-slice literal expression `[]`. The AST has no dedicated array-literal

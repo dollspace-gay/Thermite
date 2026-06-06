@@ -68,7 +68,16 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///   1 — pre-mutation-gate check logic (the original four-input key era).
 ///   2 — issue #12 §7 mutation floor added (blocker #49: invalidates every
 ///       pre-gate cert so a weak contract is re-checked through the gate).
-const CHECK_SCHEMA_VERSION: u32 = 2;
+///   3 — blocker #74: the §7 early-return mutant is now SYNTHESIZED for a
+///       `Vec<T>` return (an empty-Vec `TVec<Suffix> { data: Vec::new() }`,
+///       mirroring the #48 `&[]` slice synthesis), so a `Vec`-returning fn is
+///       SCORED instead of 0/0-gated to `WeakContract`. This CHANGES the gate
+///       verdict for `Vec`-return fns (a genuinely-proved `push_one` now
+///       certifies L3 instead of the spurious mutation-gated L0), so every cert
+///       stored under schema 2 MUST be re-checked under schema 3 — the
+///       maintenance contract above (a gate-semantics change ⇒ bump, or a
+///       stale L0 is served on an identical lowered-source key, REQ-2).
+const CHECK_SCHEMA_VERSION: u32 = 3;
 
 /// The project-local proof-cache directory (`.design/forge/proof-cache.md`
 /// REQ-6, OQ-1): `target/thermite-proof-cache/`. It is BUILD OUTPUT under the

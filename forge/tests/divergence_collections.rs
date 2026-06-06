@@ -102,7 +102,6 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 ///
 /// Tracking: #74
 #[test]
-#[ignore = "blocker #74 — un-ignore when fixed: push_one mutation-gated to L0 despite verus L3"]
 fn divergence_push_one_l3_not_mutation_gated_l0() {
     if !verus_present() {
         eprintln!("SKIP: verus absent — push_one per-item certification not exercised.");

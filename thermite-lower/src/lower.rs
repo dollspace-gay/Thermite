@@ -929,57 +929,70 @@ fn lower_spec_fn_ret(ret: &Type, body: &Block) -> String {
     lower_type(ret).unwrap_or_else(|_| "bool".to_string())
 }
 
-/// Detect the ADT match-fold-sum shape (`sum_list`, REQ-10): a `match l { Nil =>
-/// 0, Cons(h, t) => <cast h> + f(*t) }` — a unit-variant base case of `0` and a
-/// tuple/struct-variant arm adding a (cast) payload to a recursive call on the
-/// `Box`-deref tail. SHAPE predicate over the AST (an `Expr::Enum` pattern with a
-/// recursive `Deref` argument), never a name check. Such a fold is lowered with
-/// a `nat` return so its integer arithmetic stays `nat` (the GROUNDED form;
-/// without it a `u64` arm body is `int`-typed and verus rejects the `match`).
+/// Detect the GENERAL ADT structural-fold shape (`.design/basis/01-adts.md`
+/// REQ-10 + the recorded structural-recursion finding): a `spec fn` over a
+/// recursive ADT value whose body `match`es that value and whose arm(s) RECURSE
+/// on the dereferenced recursive field — `f(*t)`, the `Box`-deref of REQ-3.
+///
+/// This is a STRUCTURAL predicate, NOT fitted to a base-arm shape (the #69
+/// divergence): it does NOT require a literal-`0` unit base. Both folds detect:
+///
+/// - `sum_list`/`len` — literal-`0` unit base (`Nil => 0`) + a cons arm
+///   `Cons(h, t) => <cast h> + f(*t)`;
+/// - `tree_sum` — a VALUE-carrying base (`Leaf(v) => v as u64`) + a
+///   binary-recursive arm `Node(l, r) => f(*l) + f(*r)`.
+///
+/// The single distinguishing signal is the presence of a recursive `f(*x)`
+/// call ANYWHERE in some arm body (`expr_has_deref_call_arg`, a full-tree walk),
+/// over a `match` of the function's `dec` value. Such a fold is lowered with a
+/// `nat` return so EVERY arm's integer arithmetic stays `nat` and the arms
+/// type-check uniformly (the GROUNDED form; without the `nat` return a base arm
+/// like `v as u64` is `u64` while the recursive arm is `int`, and verus rejects
+/// the `match` with `match arms have incompatible types`).
 fn is_adt_fold_sum(body: &Block) -> bool {
     let Some(tail) = &body.tail else { return false };
     let Expr::Match { arms, .. } = tail.as_ref() else {
         return false;
     };
-    let mut has_unit_zero = false;
-    let mut has_rec_add = false;
-    for arm in arms {
-        match &arm.pattern {
-            // A unit variant base case (`Nil => 0`): an enum pattern with no
-            // payload whose body is the literal `0`.
-            Pattern::Enum { fields, .. } if fields.is_empty() => {
-                if matches!(&arm.body, Expr::IntLit { value: 0, .. }) {
-                    has_unit_zero = true;
-                }
-            }
-            // A recursive cons arm (`Cons(h, t) => h as T + f(*t)`): an enum
-            // pattern WITH a payload whose body is an `Add` containing a recursive
-            // call through a `Deref` (the `*t` of `f(*t)`).
-            Pattern::Enum { fields, .. } if !fields.is_empty() => {
-                if let Expr::Binary {
-                    op: BinOp::Add,
-                    rhs,
-                    ..
-                } = &arm.body
-                {
-                    if expr_has_deref_call_arg(rhs) {
-                        has_rec_add = true;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    has_unit_zero && has_rec_add
+    // GENERAL: a recursive structural fold has at least one arm that recurses
+    // through a `Box`-deref'd field (`f(*x)`). The base arm(s) are whatever
+    // remains — a literal `0`, a value-carrying `Leaf(v) => v`, etc. — and are
+    // coerced to `nat` uniformly with the recursive arm by the `nat` return.
+    arms.iter().any(|arm| expr_has_deref_call_arg(&arm.body))
 }
 
-/// True if `expr` is a `Call` one of whose arguments is a `Deref` (the `f(*t)`
-/// of the ADT fold's recursive arm). SHAPE check.
+/// True if a recursive structural-fold call `f(*x)` (a `Call` with a `Deref`
+/// argument, the `*t` of REQ-3's `Box`-deref recursion) appears ANYWHERE in the
+/// expression tree of an arm body — not just at its top level. A full-tree walk
+/// so `Node(l, r) => f(*l) + f(*r)` (the recursive call nested under an `Add`)
+/// and `Cons(h, t) => h as T + f(*t)` (nested under an `Add` rhs) are both
+/// detected. SHAPE check, never a name check.
 fn expr_has_deref_call_arg(expr: &Expr) -> bool {
-    if let Expr::Call { args, .. } = expr {
-        return args.iter().any(|a| matches!(a, Expr::Deref(_)));
+    match expr {
+        Expr::Call { callee, args } => {
+            args.iter().any(|a| matches!(a, Expr::Deref(_)))
+                || expr_has_deref_call_arg(callee)
+                || args.iter().any(expr_has_deref_call_arg)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_has_deref_call_arg(receiver) || args.iter().any(expr_has_deref_call_arg)
+        }
+        Expr::Field { receiver, .. } => expr_has_deref_call_arg(receiver),
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_has_deref_call_arg(lhs) || expr_has_deref_call_arg(rhs)
+        }
+        Expr::Cast { expr, .. } => expr_has_deref_call_arg(expr),
+        Expr::Ref { expr, .. } | Expr::Deref(expr) => expr_has_deref_call_arg(expr),
+        Expr::Index { base, .. } => expr_has_deref_call_arg(base),
+        Expr::Is { scrutinee, .. } => expr_has_deref_call_arg(scrutinee),
+        Expr::Closure { body, .. } => expr_has_deref_call_arg(body),
+        Expr::Match { scrutinee, arms } => {
+            expr_has_deref_call_arg(scrutinee)
+                || arms.iter().any(|a| expr_has_deref_call_arg(&a.body))
+        }
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_deref_call_arg(v)),
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::If { .. } => false,
     }
-    false
 }
 
 // ---------------------------------------------------------------------------

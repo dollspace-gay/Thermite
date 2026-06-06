@@ -1,0 +1,10 @@
+{
+  "uuid": "48889e58-d260-471e-a6f1-5dc9a4ffe955",
+  "issue_uuid": "a3c24238-4fbc-4799-8174-125ca9ec3633",
+  "author": "Yffe",
+  "content": "Stage 3 effect-primitive stdlib v1 = a CONFORMANCE DEMONSTRATION over the shipped #16/#52/#57 pipeline (the doc's 'outcome-coverage is EMERGENT, no new code' resolution). Manifest: forge/tests/effect_stdlib_conformance.rs (NEW only). Approach: drive the BUILT forge over conformance/effect_demo.th + the inline reject/tcb/sandbox cases, asserting the oracle (conformance/effect-stdlib/cases.json, R-CHAR-3): (1) read_small/now -> L1 boundary + os:: target + fx; (2) read_doubled -> L3 to_boundary via read_small at --mutation-floor 0; (3) missing-arm -> E0004 non-exhaustive, overclaim -> L0 cex; (4) audit TCB enumerates read_small+now; (5) fx time allowlist incl clock_gettime(228), pure probe SIGSYS exit 159. Mutation-floor OQ: read_doubled is intrinsically mutation-survivable (return-None mutant survives v<512), so DEFAULT floor honestly gates WeakContract; demonstrate L3 at floor 0; NO exemption rule added (soundness-adjacent, orchestrator/critic to weigh). Confirmed NO new src code needed.",
+  "created_at": "2026-06-06T16:24:17.379035620Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAlL1ci+qec5odUID6TdF3vmsNuwiEBwjAw3Ck+Br5OshHrAfBlS7vNJEUUKoAbYe6Kt72zysrRHhwSTJ+zaM7DA=="
+}

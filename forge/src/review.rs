@@ -472,7 +472,10 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
             variant: _,
         } => collect_callee_names(scrutinee, out),
         Expr::Deref(inner) => collect_callee_names(inner, out),
-        Expr::IntLit { .. } | Expr::BoolLit(_) => {}
+        // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF: no
+        // sub-expression, no callee path — it references no spec fn (the no-op
+        // leaf arm alongside `IntLit`/`BoolLit`).
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}
     }
 }
 
@@ -589,6 +592,11 @@ fn render_type(ty: &Type) -> String {
         // declaration a reviewer reads. The honest neutral value for the
         // infallible surface renderer, NOT a stub.
         Type::Vec(inner) => format!("Vec<{}>", render_type(inner)),
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): the SURFACE
+        // rendering of the bounded owned text primitive is its surface text
+        // `String` — the faithful declaration a reviewer reads. The honest neutral
+        // value for the infallible surface renderer, NOT a stub.
+        Type::String => "String".to_string(),
     }
 }
 

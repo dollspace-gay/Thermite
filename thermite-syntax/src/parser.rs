@@ -1378,6 +1378,19 @@ impl<'a> Parser<'a> {
                 self.bump();
                 Ok(Expr::BoolLit(b))
             }
+            // A string literal `"hello"` as a primary expression
+            // (`.design/basis/07-strings.md` REQ-1). The literal LEXES today
+            // (`TokKind::Str(String)`); this arm accepts it as an `Expr::StrLit`,
+            // mirroring the `IntLit`/`BoolLit` value-carrying literal precedent.
+            // The token's EXISTING `parse_slag`/`parse_attribute` consumers (the
+            // `#[slag(reason = "…")]` / `#[boundary("…")]` field values) are
+            // UNCHANGED — those read the token directly via `take_string`, never
+            // through `parse_primary`, so a field value is still a token-level
+            // string, not an `Expr` (REQ-1; no regression to sealed/boundary parse).
+            TokKind::Str(s) => {
+                self.bump();
+                Ok(Expr::StrLit(s))
+            }
             TokKind::Ident(_) => self.parse_path_expr(),
             TokKind::Pipe | TokKind::OrOr => self.parse_closure(),
             TokKind::Match => self.parse_match(),
@@ -1712,6 +1725,18 @@ impl<'a> Parser<'a> {
                         self.consume(&TokKind::Gt, "`>` to close `Vec<…>`")?;
                         Ok(Type::Vec(Box::new(inner)))
                     }
+                    // The bounded owned-text primitive `String`
+                    // (`.design/basis/07-strings.md` REQ-2, OQ-3 RESOLVED: a
+                    // dedicated NULLARY `Type::String` node — no `<T>` argument,
+                    // unlike `Vec<T>`, because the element type is FIXED to `u8`
+                    // (the char model is bytes for v1). `String` is a contextual
+                    // identifier (NOT a reserved keyword), matched here by name
+                    // exactly as `Box`/`Vec` are. The borrowed `str`-view is
+                    // `&String` (`Ref { inner: String }`), parsed by the `&` arm
+                    // above. `String`'s `len`/`byte_at`/`slice`/`concat` ops are
+                    // ordinary `MethodCall`s (the existing postfix `.` form) — no
+                    // new surface; `==`/`+` are the existing `Binary` ops.
+                    "String" => Ok(Type::String),
                     _ => {
                         // A generic application `NAME<T>` (e.g. `Option<usize>`),
                         // or a bare user-defined type name `Account`/`Shape`/

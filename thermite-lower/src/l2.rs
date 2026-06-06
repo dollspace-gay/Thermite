@@ -452,6 +452,11 @@ fn type_label(ty: &Type) -> String {
         // bounded model check) does not yet harness the `Vec` wrapper; this is the
         // honest human label, NOT a stub.
         Type::Vec(_) => "Vec<_>".to_string(),
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): a descriptive label
+        // for the bounded owned text primitive `String` inside an `Unsupported` L2
+        // diagnostic. L2 (Kani bounded model check) does not yet harness the
+        // `TString` wrapper; this is the honest human label, NOT a stub.
+        Type::String => "String".to_string(),
     }
 }
 

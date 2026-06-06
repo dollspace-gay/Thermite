@@ -436,7 +436,10 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         }
         Expr::Is { scrutinee, .. } => collect_combinators_in_expr(scrutinee, span, acc),
         Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // sub-expressions, so it references no combinator — the no-op leaf arm
+        // alongside `IntLit`/`BoolLit`.
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 
@@ -952,6 +955,11 @@ pub(crate) fn lower_expr_exec(
         // Emit the numeric `value`, NOT `raw` (#37) — byte-identical L1 output.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1):
+        // render the literal text back as a quoted/escaped Rust string literal,
+        // the exec-render counterpart of `IntLit`'s numeric `value` emission.
+        // `{:?}` produces a valid escaped Rust string token deterministically.
+        Expr::StrLit(s) => Ok(format!("{s:?}")),
         Expr::Path(segs) => Ok(segs.join("::")),
         Expr::Call { callee, args } => {
             let c = lower_expr_exec(callee, d, span, variants)?;
@@ -1261,5 +1269,13 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let i = lower_type(inner)?;
             Ok(format!("Vec<{i}>"))
         }
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded owned
+        // text primitive lowers to the newtype `TString` over `vstd::vec::Vec<u8>`
+        // (the byte char model). The L1 exec mirror is the SAME wrapper name as the
+        // L3 lowering (`lower.rs::lower_type` -> `"TString"`), so its
+        // `len`/`byte_at`/`concat` method calls resolve to the emitted `TString`
+        // ops. The v1 corpus exercises L3 only; this arm keeps L1 total over `Type`
+        // (no panic, REQ-7 / REQ-5).
+        Type::String => Ok("TString".to_string()),
     }
 }

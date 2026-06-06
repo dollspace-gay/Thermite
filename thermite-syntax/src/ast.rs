@@ -437,6 +437,16 @@ pub enum Expr {
     /// fits — `Ref` is its inverse); its SEMANTICS (the `Box` deref Verus reads
     /// transparently with `*`) are stage 1c. Surface-only here.
     Deref(Box<Expr>),
+    /// A string literal in expression position `"hello"`
+    /// (`.design/basis/07-strings.md` REQ-1): the decoded literal text, mirroring
+    /// the value-carrying [`Expr::IntLit`] / [`Expr::BoolLit`] literal precedent.
+    /// The literal LEXES today (`TokKind::Str(String)` in `lexer.rs`, consumed by
+    /// `parse_slag`/`parse_attribute` for `#[slag]`/`#[boundary]` field values);
+    /// this node is the addition of accepting it as an `Expr` (`parse_primary`).
+    /// A `String` literal lowers to an owned `TString` materialized by pushing
+    /// each UTF-8 byte (the char model is `u8` for v1 — stage 7c, `lower.rs`); it
+    /// is a CONSTRUCTING op carrying `fx alloc`.
+    StrLit(String),
 }
 
 /// A pattern (ast.md REQ-7). Slice patterns `[]`/`[head, ..t]` and enum
@@ -523,4 +533,18 @@ pub enum Type {
     /// syntax, §4.4). Constructing / `push`-ing a `Vec` allocates, so the fn
     /// carries `fx alloc` (the Stage-1 [`Effect::Alloc`] heap, generalized; REQ-5).
     Vec(Box<Type>),
+    /// The bounded owned text primitive `String` (`.design/basis/07-strings.md`
+    /// REQ-2, OQ-3 RESOLVED: a dedicated NULLARY node — no element-type
+    /// indirection, unlike [`Type::Vec(Box<Type>)`], because the element type is
+    /// FIXED to `u8` (the char model is bytes for v1). Mirrors the [`Type::Vec`]/
+    /// [`Type::Box`] dedicated-node decision so the lowerer keys the `TString`
+    /// wrapper + capacity invariant + `fx alloc` emission on the NODE KIND rather
+    /// than a string-name match. A `String` is a bounded run of `u8` bytes, the
+    /// EXACT shape of the verified bounded [`Type::Vec`] over `u8`. Its operations
+    /// `len`/`byte_at`/`slice`/`concat` are ordinary [`Expr::MethodCall`]s and
+    /// `==`/`+` are [`Expr::Binary`] (no new expression node — the one call
+    /// syntax, §4.4). The borrowed `str`-view is `Ref { inner: String }` (the same
+    /// way `&[T]` is `Ref` of `Slice`). Constructing / concatenating a `String`
+    /// allocates, so the fn carries `fx alloc` (the Stage-1 [`Effect::Alloc`]).
+    String,
 }

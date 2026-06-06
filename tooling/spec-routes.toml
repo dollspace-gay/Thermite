@@ -417,3 +417,21 @@ crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/basis/07-strings.md"
 reference = ["conformance/string"]
 conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/basis/07-strings.md"
+reference = ["conformance/string_demo.th"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/basis/07-strings.md"
+reference = ["conformance/string_demo.th"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/07-strings.md"
+reference = ["conformance/string_demo.th"]
+conformance_ops = []

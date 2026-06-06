@@ -107,6 +107,11 @@ fn render_type(ty: &Type) -> String {
         // rendering. Additive arm so this existing test helper compiles; the
         // sum/binary_search fixtures never exercise it.
         Type::Vec(inner) => format!("Vec<{}>", render_type(inner)),
+        // Basis Stage 7 bounded owned-text type node
+        // (`.design/basis/07-strings.md` REQ-2): the `String` surface rendering.
+        // Additive arm so this existing test helper compiles; the
+        // sum/binary_search fixtures never exercise it.
+        Type::String => "String".to_string(),
     }
 }
 

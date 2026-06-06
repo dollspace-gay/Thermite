@@ -204,7 +204,10 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
     let d = depth + 1;
     match expr {
         Expr::Path(segments) => segments.first().map(|s| s == "result").unwrap_or(false),
-        Expr::IntLit { .. } | Expr::BoolLit(_) => false,
+        // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF with no
+        // sub-expression — it can never contain a `result` mention, so it answers
+        // `false` alongside `IntLit`/`BoolLit` (no false-reject risk).
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
         Expr::Call { callee, args } => {
             expr_mentions_result(callee, d) || args.iter().any(|a| expr_mentions_result(a, d))
         }

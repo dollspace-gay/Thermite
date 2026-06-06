@@ -102,7 +102,20 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// built-in method is added — per REQ-1's frozen-set discipline and anti-goal
 /// §11, the set grows only by design amendment from a corpus need, never
 /// speculatively.
-const BUILTIN_METHODS: &[&str] = &["len", "get"];
+/// Stage 7 strings (`.design/basis/07-strings.md` REQ-3): the bounded `String`
+/// operations a contract names are FLAT built-ins admitted inside the §4.2 cage
+/// exactly as the slice/`Vec` `len`/`get` are. `byte_at` is the no-OOB byte
+/// accessor whose result a contract names (`ens result == s.byte_at(0)` in
+/// `conformance/string_demo.th`'s `first_byte`); `concat` is the bounded
+/// constructing op whose length a contract names (`ens result.len() == a.len() +
+/// b.len()` in `join` — the receiver `a.concat(b)`); `slice` is the bounded
+/// substring (`ens result.len() == hi - lo`). The no-OOB safety is in the
+/// LOWERED accessor's `req i < len` (the lowerer maps `s.byte_at(i)` to the
+/// wrapper's `spec_byte_at(i as int)` whose exec mirror carries the precondition —
+/// REQ-4); admitting the method here only opens the cage to name it, the bound is
+/// proved by verus (the unguarded form FAILS, non-vacuity, R-DEFER-9). `push`/
+/// the literal-materialization are EXEC-only (a fn body), never in a contract.
+const BUILTIN_METHODS: &[&str] = &["len", "get", "byte_at", "concat", "slice"];
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so
@@ -767,8 +780,10 @@ impl Validator {
                 self.scan_expr_for_loops(scrutinee, span);
             }
             Expr::Deref(inner) => self.scan_expr_for_loops(inner, span),
-            // Leaves — no nested loop / ADT node possible.
-            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+            // Leaves — no nested loop / ADT node possible. A string literal
+            // (`.design/basis/07-strings.md` REQ-1) is a value-carrying leaf, like
+            // an int/bool literal — no sub-expression to descend.
+            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
         }
     }
 
@@ -824,8 +839,11 @@ impl Validator {
 
     fn walk_expr_inner(&mut self, expr: &Expr, span: Span) {
         match expr {
-            // (c) grammar built-ins: literals and paths are leaves.
-            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+            // (c) grammar built-ins: literals and paths are leaves. A string
+            // literal (`.design/basis/07-strings.md` REQ-1) is a value-carrying
+            // leaf admitted in a contract position exactly as an int/bool literal
+            // — e.g. the editor case `s == "needle"`; no sub-expression to walk.
+            Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
 
             // (a)/(b)/(iv): a free call is a combinator, a spec-fn call, or
             // forbidden.

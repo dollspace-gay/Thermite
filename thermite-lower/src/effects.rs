@@ -600,7 +600,13 @@ fn check_expr<'a>(
             d,
             errors,
         ),
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // sub-expressions, no calls — it contributes no effect-row obligation, so
+        // it joins the no-op leaf arm alongside `IntLit`/`BoolLit`. (Materializing
+        // a literal into an owned `String` carries `fx alloc`, but that is keyed at
+        // the lowering/constructing site in `lower.rs`, not at this effect walk —
+        // the bare literal node has no callee to subsume.)
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 

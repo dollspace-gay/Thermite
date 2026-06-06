@@ -231,6 +231,17 @@ struct Ctx<'a> {
     /// the step closure lowered to a typed `spec_fn`. EMPTY for a non-scheme fn
     /// (byte-stable for the existing corpus).
     schemes: &'a [SchemeBinding],
+    /// Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the names that denote
+    /// a `String` value IN SCOPE for the spec context currently being lowered —
+    /// every `String`/`&String` parameter plus `result` when the return type is
+    /// `String`. A `String` receiver's `.len()` / `.byte_at(i)` in SPEC position
+    /// rewrites to the wrapper's spec fns `.spec_len()` / `.spec_byte_at(i as int)`
+    /// (the exec `len`/`byte_at` return `u64` and cannot be named in a contract; a
+    /// Verus spec index is `int`). Keyed on the receiver being a `String`-named
+    /// path so a `Vec` receiver's `.len()` (whose wrapper spec fn IS named `len`)
+    /// is UNCHANGED — the rewrite is `String`-specific. EMPTY for a non-`String`
+    /// fn (byte-stable for the existing corpus).
+    strings: &'a [&'a str],
 }
 
 /// A resolved recursion-scheme binding in scope while lowering a spec fn body
@@ -260,6 +271,7 @@ impl<'a> Ctx<'a> {
             variants: NO_VARIANTS,
             nat_ret: false,
             schemes: NO_SCHEMES,
+            strings: NO_SLICES,
         }
     }
     fn spec(slices: &'a [&'a str], nat_fns: &'a [&'a str]) -> Ctx<'a> {
@@ -270,6 +282,7 @@ impl<'a> Ctx<'a> {
             variants: NO_VARIANTS,
             nat_ret: false,
             schemes: NO_SCHEMES,
+            strings: NO_SLICES,
         }
     }
     /// A spec context with no slice-view names — for positions where every
@@ -283,6 +296,7 @@ impl<'a> Ctx<'a> {
             variants: NO_VARIANTS,
             nat_ret: false,
             schemes: NO_SCHEMES,
+            strings: NO_SLICES,
         }
     }
     /// This context with the enum-variant map attached (REQ-9 — variant-pattern
@@ -303,6 +317,19 @@ impl<'a> Ctx<'a> {
     fn with_schemes(mut self, schemes: &'a [SchemeBinding]) -> Ctx<'a> {
         self.schemes = schemes;
         self
+    }
+    /// This context with the `String`-named values in scope (REQ-4 — a `String`
+    /// receiver's spec-position `.len()`/`.byte_at(i)` rewrite). Carried into the
+    /// signature `requires`/`ensures` lowering so a contract over a `String` param
+    /// or `result` names the wrapper's spec fns.
+    fn with_strings(mut self, strings: &'a [&'a str]) -> Ctx<'a> {
+        self.strings = strings;
+        self
+    }
+    /// True if `name` denotes a `String` value in scope (drives the spec-position
+    /// `.len()`→`.spec_len()` / `.byte_at(i)`→`.spec_byte_at(i as int)` rewrite).
+    fn is_string(&self, name: &str) -> bool {
+        self.strings.contains(&name)
     }
     /// The in-scope scheme binding for a callee `name` (REQ-6), or `None` if
     /// `name` is not a scheme call resolved for the current fn.
@@ -375,6 +402,18 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // capacity-preserving `push` with the `final(self)` &mut postcondition.
     let vec_wrappers = emit_vec_wrappers(program)?;
     out.push_str(&vec_wrappers);
+
+    // (1d) Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded
+    // `String` wrapper struct `TString` over `vstd::vec::Vec<u8>` + its verified
+    // `well_formed`/`spec_len`/`len`/`spec_byte_at`/`byte_at`/`concat`/`slice`
+    // impl, materialized ONCE when the program uses `String`, BEFORE any fn
+    // references it. EMPTY when the program uses no `String` (byte-stable for the
+    // existing corpus — no regression). The GROUNDED `TString`-over-
+    // `vstd::vec::Vec<u8>` form (verus `verified, 0 errors`): the `well_formed`
+    // capacity invariant, the no-OOB `byte_at` (`req i < len`), the bounded
+    // `concat`/`slice` with the `final`-free owned-value construction.
+    let string_wrapper = emit_string_wrapper(program)?;
+    out.push_str(&string_wrapper);
 
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
     // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
@@ -753,7 +792,9 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         }
         Expr::Is { scrutinee, .. } => collect_combinators_in_expr(scrutinee, span, acc),
         Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+        // A string literal (`.design/basis/07-strings.md` REQ-1) references no
+        // combinator — a value-carrying leaf, like an int/bool literal.
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 
@@ -1014,7 +1055,9 @@ fn each_subexpr(
             }
         }
         Expr::Is { scrutinee, .. } => f(scrutinee)?,
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+        // A string literal (`.design/basis/07-strings.md` REQ-1) is a value-
+        // carrying leaf with no sub-expression — like an int/bool literal.
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
     Ok(())
 }
@@ -1557,6 +1600,33 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
         .collect()
 }
 
+/// The `String`-named values in scope for a fn's contract (REQ-4): every
+/// `String`/`&String` parameter, plus the synthetic `result` when the return type
+/// is `String`. A contract over a `String` names the wrapper's spec fns
+/// (`.spec_len()`/`.spec_byte_at(i as int)`); this is the SHAPE-derived set the
+/// `Ctx::is_string` rewrite keys on. A `&String` (the `str`-view role) is a
+/// `String` value too — a read-only param's `.len()`/`.byte_at` are the same spec
+/// fns. EMPTY for a non-`String` fn (byte-stable for the existing corpus).
+fn string_value_names(f: &FnItem) -> Vec<&str> {
+    fn ty_is_string(ty: &Type) -> bool {
+        match ty {
+            Type::String => true,
+            Type::Ref { inner, .. } => ty_is_string(inner),
+            _ => false,
+        }
+    }
+    let mut names: Vec<&str> = f
+        .params
+        .iter()
+        .filter(|p| ty_is_string(&p.ty))
+        .map(|p| p.name.as_str())
+        .collect();
+    if ty_is_string(&f.ret) {
+        names.push("result");
+    }
+    names
+}
+
 /// Lower a `fn` (REQ-1). `-> (result: RET)` binder so `ens` can mention
 /// `result`; `req`→`requires`, each `ens`→`ensures`, `fx pure`→nothing.
 ///
@@ -1622,7 +1692,12 @@ fn lower_fn_signature(
     writeln!(out, ") -> (result: {ret})").ok();
 
     let slices = slice_param_names(&f.params);
-    let spec = Ctx::spec(&slices, nat_fns);
+    // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the `String`-named
+    // values in scope for this fn's contract — every `String`/`&String` param plus
+    // `result` when the return is `String`. A `String` receiver's spec-position
+    // `.len()`/`.byte_at(i)` rewrites to `.spec_len()`/`.spec_byte_at(i as int)`.
+    let strings = string_value_names(f);
+    let spec = Ctx::spec(&slices, nat_fns).with_strings(&strings);
 
     // requires: the single `req` clause (REQ-1), plus the woven `well_formed()`
     // conjunct for every parameter whose type is an invariant-bearing `struct`
@@ -1832,7 +1907,11 @@ fn expr_has_deref_call_arg(expr: &Expr) -> bool {
                 || arms.iter().any(|a| expr_has_deref_call_arg(&a.body))
         }
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_deref_call_arg(v)),
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::If { .. } => false,
+        Expr::IntLit { .. }
+        | Expr::BoolLit(_)
+        | Expr::Path(_)
+        | Expr::StrLit(_)
+        | Expr::If { .. } => false,
     }
 }
 
@@ -2148,6 +2227,18 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // (#62): the surface contract names `len`/`get`/`push` over `v@`, never
         // `vstd::vec::Vec`; v1 IMPLEMENTS it by wrapping vstd's verified `Vec`.
         Type::Vec(inner) => Ok(tvec_name(inner)?),
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2/REQ-4): a bounded
+        // `String` lowers to the Thermite-runtime newtype `TString` over
+        // `vstd::vec::Vec<u8>` (the GROUNDED `TString`-over-`Vec<u8>` form,
+        // `verified, 0 errors`). The wrapper struct + its verified
+        // `well_formed`/`len`/`byte_at`/`concat`/`slice` impl are materialized
+        // ONCE by `emit_string_wrapper`; this arm names the type. The element
+        // type is FIXED to `u8` (the char model is bytes for v1), so — unlike
+        // `Type::Vec(elem)` — there is no per-element monomorphization. BACKING-
+        // AGNOSTIC SURFACE (#62): the surface contract names `len`/`byte_at` over
+        // the byte view `s@`, never `vstd::vec::Vec<u8>`; v1 IMPLEMENTS it by
+        // wrapping vstd's verified `Vec<u8>`.
+        Type::String => Ok("TString".to_string()),
     }
 }
 
@@ -2303,6 +2394,210 @@ fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
 }
 
 // ---------------------------------------------------------------------------
+// Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded-`String`
+// wrapper emission. A Thermite `String` lowers to a newtype `TString` over
+// `vstd::vec::Vec<u8>` with the verified `well_formed`/`len`/`byte_at`/`concat`/
+// `slice` impl — the GROUNDED `TString`-over-`Vec<u8>` form. Materialized ONCE
+// when the program references `String` (the element type is FIXED to `u8`, so —
+// unlike the per-element `Vec` wrapper — there is exactly one `TString`).
+// ---------------------------------------------------------------------------
+
+/// True if the program references the `String` type in any `fn`/`spec fn`
+/// parameter or return position, OR uses a string literal anywhere (REQ-4) — both
+/// require the `TString` wrapper (a literal materializes a `TString`). The wrapper
+/// is emitted once iff this holds (EMPTY otherwise — byte-stable for the non-`String`
+/// corpus).
+fn program_uses_string(program: &Program) -> bool {
+    fn ty_is_string(ty: &Type) -> bool {
+        match ty {
+            Type::String => true,
+            Type::Ref { inner, .. } => ty_is_string(inner),
+            _ => false,
+        }
+    }
+    for item in &program.items {
+        let (params, ret, body): (&[Param], &Type, Option<&Block>) = match item {
+            Item::Fn(f) => (&f.params, &f.ret, f.body.as_ref()),
+            Item::SpecFn(s) => (&s.params, &s.ret, Some(&s.body)),
+            Item::Struct(_) | Item::Enum(_) => continue,
+        };
+        if params.iter().any(|p| ty_is_string(&p.ty)) || ty_is_string(ret) {
+            return true;
+        }
+        if let Some(b) = body {
+            if block_has_str_lit(b) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// True if a block contains a string-literal expression anywhere (REQ-1) — a
+/// literal materializes a `TString`, so the wrapper must be emitted even when no
+/// parameter/return is typed `String` (e.g. `literal_len()`'s `"hello".len()`).
+fn block_has_str_lit(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_str_lit)
+        || block.tail.as_deref().map(expr_has_str_lit).unwrap_or(false)
+}
+
+fn stmt_has_str_lit(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_has_str_lit(init),
+        Stmt::Assign { target, value } => expr_has_str_lit(target) || expr_has_str_lit(value),
+        Stmt::Return(opt) => opt.as_ref().map(expr_has_str_lit).unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_has_str_lit(cond)
+                || block_has_str_lit(then)
+                || else_.as_ref().map(block_has_str_lit).unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_has_str_lit(&l.body),
+        Stmt::Expr(e) => expr_has_str_lit(e),
+    }
+}
+
+/// True if a string literal appears anywhere in `expr` (a full-tree walk reusing
+/// `each_subexpr`'s structural cases). REQ-1.
+fn expr_has_str_lit(expr: &Expr) -> bool {
+    if matches!(expr, Expr::StrLit(_)) {
+        return true;
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |e| {
+        if expr_has_str_lit(e) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+/// Emit the `TString` wrapper struct + its verified `well_formed`/`spec_len`/
+/// `len`/`spec_byte_at`/`byte_at`/`concat`/`slice` impl when the program uses
+/// `String` (REQ-4), in deterministic order. EMPTY otherwise. The emitted form is
+/// EXACTLY the GROUNDED `TString` over `vstd::vec::Vec<u8>` (`verified, 0
+/// errors`):
+///
+/// ```verus
+/// pub struct TString { pub data: Vec<u8> }
+/// impl TString {
+///     pub open spec fn well_formed(&self) -> bool { self.data.len() <= 1000000 }
+///     pub open spec fn spec_len(&self) -> nat { self.data.len() as nat }
+///     pub fn len(&self) -> (result: u64) ensures result == self.data.len(),
+///         { self.data.len() as u64 }
+///     pub open spec fn spec_byte_at(&self, i: int) -> u64 { self.data@[i] as u64 }
+///     pub fn byte_at(&self, i: usize) -> (result: u64)
+///         requires i < self.data.len(), ensures result == self.data@[i as int],
+///         { self.data[i] as u64 }
+///     pub fn concat(&self, b: TString) -> (result: TString) { … two-loop append … }
+///     pub fn slice(&self, lo: usize, hi: usize) -> (result: TString) { … bounded copy … }
+/// }
+/// ```
+///
+/// THE BYTE CHAR MODEL (REQ-2): `byte_at` returns `u64` (the corpus oracle's
+/// `first_byte -> u64` shape; a byte zero-extends into `u64`); the exec `len`
+/// returns `u64` (the corpus `greeting_len -> u64`) while the SPEC fn is `spec_len`
+/// (a contract names `spec_len`, the exec `len` cannot be named in a contract). The
+/// no-OOB `byte_at` (`req i < self.data.len()`) is the editor's core safety — the
+/// unguarded form FAILS verus (`0 verified, 1 errors`, the L0 demonstration,
+/// R-DEFER-9). `concat`/`slice` carry the bounded length identity; `slice` requires
+/// `self.well_formed()` so the copied run stays `<= CAP`. NO `assume`/`external_body`
+/// (R-DEFER-9) — every Thermite-level contract is threaded over vstd's verified
+/// `Vec<u8>::push`/`index`/`len` (which carry the heap proof).
+fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
+    if !program_uses_string(program) {
+        return Ok(String::new());
+    }
+    let cap = VEC_CAP;
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str("pub struct TString { pub data: Vec<u8> }\n");
+    out.push_str("impl TString {\n");
+    writeln!(
+        out,
+        "    pub open spec fn well_formed(&self) -> bool {{ self.data.len() <= {cap} }}"
+    )
+    .ok();
+    out.push_str("    pub open spec fn spec_len(&self) -> nat { self.data.len() as nat }\n");
+    out.push_str("    pub fn len(&self) -> (result: u64)\n");
+    out.push_str("        ensures result == self.data.len(),\n");
+    out.push_str("    { self.data.len() as u64 }\n");
+    out.push_str(
+        "    pub open spec fn spec_byte_at(&self, i: int) -> u64 { self.data@[i] as u64 }\n",
+    );
+    // The no-OOB exec accessor `byte_at` (REQ-4): `req i < len`, `ens result ==
+    // self.data@[i as int]`. The verified vstd index `self.data[i]` zero-extended
+    // to `u64` (the corpus `first_byte -> u64`).
+    out.push_str("    pub fn byte_at(&self, i: usize) -> (result: u64)\n");
+    out.push_str("        requires i < self.data.len(),\n");
+    out.push_str("        ensures result == self.data@[i as int],\n");
+    out.push_str("    { self.data[i] as u64 }\n");
+    // The bounded constructing `concat` (REQ-4): a two-loop append, `req
+    // self.well_formed() && b.well_formed() && len_a + len_b <= CAP`, `ens
+    // result.well_formed() && result.len() == len_a + len_b`. `b` is by value to
+    // match the corpus `a.concat(b)` (no `&` insertion needed). An owned-value
+    // construction — no `&mut`/`final(self)` (the result is a fresh value).
+    out.push_str("    pub fn concat(&self, b: TString) -> (result: TString)\n");
+    out.push_str("        requires self.well_formed(), b.well_formed(),\n");
+    writeln!(
+        out,
+        "                 self.data.len() + b.data.len() <= {cap},"
+    )
+    .ok();
+    out.push_str("        ensures result.well_formed(),\n");
+    out.push_str("                result.data.len() == self.data.len() + b.data.len(),\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("        let mut i: usize = 0;\n");
+    out.push_str("        while i < self.data.len()\n");
+    out.push_str("            invariant i <= self.data.len(), out.len() == i,\n");
+    writeln!(
+        out,
+        "                      self.data.len() + b.data.len() <= {cap},"
+    )
+    .ok();
+    out.push_str("            decreases self.data.len() - i,\n");
+    out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
+    out.push_str("        let mut j: usize = 0;\n");
+    out.push_str("        while j < b.data.len()\n");
+    out.push_str("            invariant j <= b.data.len(), out.len() == self.data.len() + j,\n");
+    writeln!(
+        out,
+        "                      self.data.len() + b.data.len() <= {cap},"
+    )
+    .ok();
+    out.push_str("            decreases b.data.len() - j,\n");
+    out.push_str("        { out.push(b.data[j]); j = j + 1; }\n");
+    out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
+    // The bounded substring `slice` (REQ-4): a bounded copy, `req self.well_formed()
+    // && lo <= hi && hi <= len`, `ens result.well_formed() && result.len() == hi -
+    // lo`. The owned-copy form (OQ-4 RESOLVED — owned, not a borrowed view, so no
+    // region/lifetime reasoning §4.4 defers). `self.well_formed()` keeps the copied
+    // run <= CAP (the invariant carries the CAP bound).
+    out.push_str("    pub fn slice(&self, lo: usize, hi: usize) -> (result: TString)\n");
+    out.push_str("        requires self.well_formed(), lo <= hi, hi <= self.data.len(),\n");
+    out.push_str("        ensures result.well_formed(), result.data.len() == hi - lo,\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("        let mut i: usize = lo;\n");
+    out.push_str("        while i < hi\n");
+    writeln!(
+        out,
+        "            invariant lo <= i, i <= hi, hi <= self.data.len(), self.data.len() <= {cap}, out.len() == i - lo,"
+    )
+    .ok();
+    out.push_str("            decreases hi - i,\n");
+    out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
+    out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // REQ-3/REQ-5: expression lowering (exec vs spec).
 // ---------------------------------------------------------------------------
 
@@ -2322,6 +2617,26 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         // byte-identical (`1_000_000` lowers to `1000000`); no golden churn.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-1/REQ-4): a string
+        // literal `"hello"` materializes into an owned `TString` whose bytes are
+        // the literal's UTF-8, constructed by pushing each byte — the GROUNDED
+        // `lit_hello` form (`{ let mut data = Vec::new(); data.push(104u8); …
+        // TString { data } }`, `verified, 0 errors`). Emitted as an INLINE block
+        // expression so it composes as a receiver (`"hello".len()` →
+        // `({ … TString { data } }).len()`). It is a CONSTRUCTING op (it
+        // allocates), so the enclosing fn carries `fx alloc` (the Stage-1
+        // `Effect::Alloc`, accepted by effect-subsumption — `push` is an
+        // intrinsic, no declared callee to subsume). The byte sequence is the
+        // literal's UTF-8 (`str::as_bytes`), so a multi-byte codepoint pushes each
+        // of its bytes (v1 indexes bytes, REQ-2 char model).
+        Expr::StrLit(s) => {
+            let mut block = String::from("({ let mut data: Vec<u8> = Vec::new();");
+            for b in s.as_bytes() {
+                write!(block, " data.push({b}u8);").ok();
+            }
+            block.push_str(" TString { data } })");
+            Ok(block)
+        }
         Expr::Path(segs) => {
             // A plain path emits its segments joined by `::`. The slice→`xs@`
             // view (REQ-5) is applied at the point of USE (a spec-fn / combinator
@@ -2387,6 +2702,44 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             if ctx.is_spec() && name == "get" && args.len() == 1 {
                 let idx = lower_index_arg(&args[0], ctx, d, span)?;
                 return Ok(format!("{r}.spec_get({idx})"));
+            }
+            // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): in SPEC position
+            // a `String` receiver's `.len()` / `.byte_at(i)` lowers to the wrapper's
+            // SPEC fns `.spec_len()` / `.spec_byte_at(i as int)` — the exec `len`/
+            // `byte_at` return `u64` and cannot be NAMED in a contract (a contract
+            // needs the spec function), and a Verus spec index is `int`. Keyed on
+            // the receiver being a `String`-named bare path (`ctx.is_string`) so a
+            // `Vec` receiver's `.len()` (whose wrapper spec fn IS `len`) is
+            // UNCHANGED — the rewrite is `String`-specific. A `String` `result`
+            // (a `String`-returning fn) is in the set too, so `result.len()` in an
+            // `ens` rewrites the same way. The receiver path lowered to `r`.
+            if ctx.is_spec() {
+                if let Expr::Path(segs) = receiver.as_ref() {
+                    if segs.len() == 1 && ctx.is_string(&segs[0]) {
+                        if name == "len" && args.is_empty() {
+                            return Ok(format!("{r}.spec_len()"));
+                        }
+                        if name == "byte_at" && args.len() == 1 {
+                            // The spec accessor `spec_byte_at(i: int)` takes an
+                            // `int` index. An integer LITERAL (`s.byte_at(0)` —
+                            // the corpus `first_byte` ens) flows into the `int`
+                            // parameter directly (Verus coerces a literal), so it
+                            // is emitted plainly, matching the GROUNDED golden
+                            // `tests/golden/lower/string_demo.verus.rs`
+                            // (`s.spec_byte_at(0)`, `11 verified, 0 errors`). A
+                            // non-literal index (a `usize`-typed variable) needs
+                            // the explicit `as int` cast Verus requires (no
+                            // implicit `usize`->`int` in spec position), so it goes
+                            // through `lower_index_arg`.
+                            let idx = if matches!(&args[0], Expr::IntLit { .. }) {
+                                lower_expr(&args[0], ctx, d, span)?
+                            } else {
+                                lower_index_arg(&args[0], ctx, d, span)?
+                            };
+                            return Ok(format!("{r}.spec_byte_at({idx})"));
+                        }
+                    }
+                }
             }
             let mut parts = Vec::new();
             for a in args {
@@ -2964,7 +3317,8 @@ fn lower_loop(
     };
 
     let slices = slice_param_names(&f.params);
-    let spec = Ctx::spec(&slices, nat_fns);
+    let strings = string_value_names(f);
+    let spec = Ctx::spec(&slices, nat_fns).with_strings(&strings);
 
     // Invariants: the loop's own `inv`s, then lifted immutable preconditions
     // (template b) not already present.
@@ -3139,7 +3493,7 @@ fn split_conjuncts(expr: &Expr) -> Vec<&Expr> {
 fn expr_mentions(expr: &Expr, name: &str) -> bool {
     match expr {
         Expr::Path(segs) => segs.iter().any(|s| s == name),
-        Expr::IntLit { .. } | Expr::BoolLit(_) => false,
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
         Expr::Call { callee, args } => {
             expr_mentions(callee, name) || args.iter().any(|a| expr_mentions(a, name))
         }

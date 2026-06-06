@@ -591,7 +591,11 @@ impl MutantSink {
             }
             Expr::Is { scrutinee, .. } => self.scan_expr(scrutinee, ctr),
             Expr::Deref(inner) => self.scan_expr(inner, ctr),
-            Expr::BoolLit(_) | Expr::Path(_) => {}
+            // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF and
+            // is NOT an off-by-one target (it is text, not a numeric literal) — it
+            // defines no NEW mutation site and has no sub-expression to descend
+            // into, so it joins the no-op `BoolLit`/`Path` arm.
+            Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
         }
     }
 
@@ -865,6 +869,10 @@ impl Applier<'_> {
             Expr::Deref(inner) => Expr::Deref(Box::new(self.apply_expr(inner))),
             Expr::BoolLit(b) => Expr::BoolLit(*b),
             Expr::Path(p) => Expr::Path(p.clone()),
+            // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF with
+            // no mutation site (text, not an off-by-one target) — the rewriter
+            // rebuilds it by IDENTITY, exactly as for `BoolLit`/`Path`.
+            Expr::StrLit(s) => Expr::StrLit(s.clone()),
         }
     }
 

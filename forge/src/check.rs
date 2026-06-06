@@ -1054,7 +1054,9 @@ fn collect_expr_spec_fn_calls(
             }
         }
         Expr::Is { scrutinee, .. } => collect_expr_spec_fn_calls(scrutinee, spec_decls, out),
-        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // sub-expression, so it calls no spec fn — the no-op leaf arm.
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 
@@ -1229,7 +1231,13 @@ fn collect_type_adt_refs(
         thermite_syntax::Type::Generic { arg, .. } => {
             collect_type_adt_refs(arg, adt_decls, out);
         }
-        thermite_syntax::Type::Prim(_) | thermite_syntax::Type::Unit => {}
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): `String` is a
+        // built-in (NOT a user ADT) NULLARY type — no inner type to recurse into
+        // and never an in-file ADT decl, so it references no ADT (the no-op leaf
+        // arm alongside `Prim`/`Unit`).
+        thermite_syntax::Type::Prim(_)
+        | thermite_syntax::Type::Unit
+        | thermite_syntax::Type::String => {}
     }
 }
 
@@ -1321,7 +1329,9 @@ fn collect_expr_adt_refs(
         }
         Expr::Ref { expr, .. } => collect_expr_adt_refs(expr, adt_decls, out),
         Expr::Deref(inner) => collect_expr_adt_refs(inner, adt_decls, out),
-        Expr::IntLit { .. } | Expr::BoolLit(_) => {}
+        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // sub-expression, no path — it references no ADT (the no-op leaf arm).
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}
     }
 }
 

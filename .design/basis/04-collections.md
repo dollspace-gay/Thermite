@@ -1,0 +1,458 @@
+# Bounded Dynamic Collections — Vec / Map (Basis Stage 4)
+<!--
+tier: 3-component
+status: draft
+governs: thermite-syntax/src/ast.rs
+governs: thermite-syntax/src/parser.rs
+governs: thermite-spec/src/validator.rs
+governs: thermite-lower/src/lower.rs
+thesis-refs:
+  - thermite-design.md §4.2
+  - thermite-design.md §4.4
+  - thermite-design.md §6
+-->
+
+## Summary
+
+Stage 4 of the universal verified primitive basis (crosslink epic **#62**) adds
+the **practical data-structure stdlib**: a **bounded `Vec<T>`** (a growable
+sequence with a `len() <= CAP` capacity invariant + verified `push`/`pop`/`get`/
+`len`) and a **bounded `Map<K,V>`** (`insert`/`get`/`contains`/`len` with a
+key-uniqueness invariant). Both are the **`Box`/`Alloc` heap primitive of Stage 1
+generalized**: a `Vec`-building `fn` carries `fx alloc`. The unlock beyond the
+existing read-only `&[T]` algorithms (`sum`/`binary_search`) is *growth* — a
+capacity-preserving `push` and a no-OOB `get` — plus **collections of verified
+data**: a `Vec<Account>` where every element satisfies a Stage-1 `well_formed`
+invariant, carried as a `forall|i| inv(v@[i])` predicate through a named
+`spec fn` (the §4.2 cage bridge).
+
+This doc is GREENFIELD / FORWARD-LOOKING. Thermite v0.1 today admits exactly
+`u32`/`u64`/`usize`, `bool`, and the read-only slice `&[T]` (`thermite-syntax/
+src/ast.rs` `enum Type` = `Prim`/`Unit`/`Ref`/`Slice`/`Generic`); there is no
+`Vec`, `Map`, or growth. **Every REQ below is NOT-STARTED**, tracked under epic
+**#62** (no separate blocker is filed — #62 owns this stage; a gap needing an
+independent blocker is noted with a fresh `#`). The Stage-1 `Box`/`Alloc` keystone
+(`.design/basis/01-adts.md` REQ-3/REQ-10) is the load-bearing prerequisite: a
+growable `Vec` is the same `Alloc`-effect heap as `Box<T>`, generalized from a
+single boxed cell to a contiguous run. Stage 4 cannot land before Stage 1's
+recursive-type + `alloc` lowering does (R-DEFER-7).
+
+## Decision: wrap vstd `Vec`/`Map` with a bounded newtype + capacity invariant
+
+The cage prefers **bounded** structures — a `Vec` with `len() <= CAP` keeps the
+solver decidable and matches the existing `xs.len() <= 1_000_000` corpus idiom
+(`conformance/sum.th` `req xs.len() <= 1_000_000`). Three representations were
+considered for the verified `Vec`:
+
+- **(a) wrap vstd `Vec`** — a Thermite `Vec<T>` lowers to a newtype over Verus's
+  `vstd::vec::Vec<T>`, with the capacity bound carried as a Thermite-level
+  `well_formed` predicate (`self.data.len() <= CAP`) threaded through contracts.
+  vstd already gives verified `push`/`index`/`len` with `Seq` views (`v@`).
+- **(b) a from-scratch custom bounded Vec** — re-derive a length-tracked backing
+  store with hand-written push/get proofs.
+- **(c) a fixed-capacity inline array** — `[T; CAP]` with a length field; no heap,
+  no `alloc`.
+
+**DECIDED: option (a), wrap vstd `Vec`.** It is the only option that (1) Verus
+accepts end-to-end *today* (GROUNDED below — `BVec` over `Vec<u64>` with a
+`well_formed`/`push`/`get` + a preserved element invariant verified `5 verified,
+0 errors`), (2) inherits vstd's verified `push`/`index`/`len` rather than
+re-proving heap mechanics, and (3) reuses the Stage-1 `Alloc` heap story directly
+(vstd `Vec` allocates → the constructing `fn` carries `fx alloc`, REQ-5).
+Option (b) re-proves what vstd already verifies (wasted proof surface, no
+expressiveness gain). Option (c) caps the structure below "growable" — it cannot
+`push` past `CAP` slots fixed at compile time, failing the practical-stdlib claim;
+and it removes the `alloc` effect that is the point of generalizing Stage 1's
+`Box`. The capacity bound `CAP` is the SAME constant idiom as the corpus
+(`1_000_000`); a `Vec` is bounded by design so the §4.2 cage never sees an
+unbounded sequence. OQ-1 records the residual ambiguity (wrap-vstd vs. a thin
+custom newtype for the certificate-stability story); OQ-3 the Map first-cut depth.
+
+## Requirements
+
+### Surface + AST (governs `thermite-syntax/src/ast.rs`, `parser.rs`)
+
+- **REQ-1 (`Vec<T>` type + operation surface):** The surface admits a `Vec<T>`
+  type and its bounded operations `push`/`pop`/`get`/`len`. The AST `enum Type`
+  gains the `Vec` element-type indirection — either a dedicated `Type::Vec(Box<
+  Type>)` or reuse of the existing `Generic { name: "Vec", arg }` machinery (the
+  same OQ-1 shape `.design/basis/01-adts.md` raised for `Box`). `Vec` is the
+  growth generalization of the existing `Type::Slice(Box<Type>)` (`ast.rs`): a
+  `&[T]` is a read-only borrowed view, a `Vec<T>` owns a growable backing run
+  whose borrowed slice is `&v[..]` and whose `Seq` view is `v@`. Operations are
+  ordinary calls (`v.push(x)`, `v.get(i)`, `v.len()`) reusing `Expr::Call` /
+  `Expr::Method` (no new expression node). Derived from §4.4 (one call syntax,
+  closed built-in interface set — `Vec` is a built-in, not a user type) and the
+  existing `Type::Slice`/`Type::Generic` machinery.
+
+- **REQ-2 (`Map<K,V>` type + operation surface):** The surface admits a
+  `Map<K,V>` type and `insert`/`get`/`contains`/`len`. The AST `enum Type` gains a
+  two-argument generic for `Map` (the existing `Generic { name, arg: Box<Type> }`
+  is single-arg — `Map` needs a key AND a value type, so either a dedicated
+  `Type::Map { key, value }` or a generalized multi-arg generic, OQ-2). `Map` may
+  be a thinner first cut than `Vec` (see OQ-3): `contains`/`get`/`insert` with a
+  key-uniqueness invariant, modeled on `vstd::map::Map`. Derived from §4.4 (closed
+  built-in interfaces — `Map` is built in) and the vstd `Map` model.
+
+### Validator / the SpecTherm cage (governs `thermite-spec/src/validator.rs`)
+
+- **REQ-3 (capacity + operation contracts fit the §4.2 cage):** The bounded
+  collection contracts are written with FLAT, named predicates, never anonymous
+  nested quantifiers. The capacity bound (`v.len() <= CAP`) is a flat comparison;
+  the operation contracts (`push` `req len < CAP, ens len' == len+1 && v@[old_len]
+  == x`; `get` `req i < len, ens result == v@[i]`; `pop`; `len`) are flat
+  built-ins admitted inside a combinator's predicate-closure body. The §4.2 cage
+  is preserved exactly: a property quantifying over a collection's elements is the
+  EXISTING bounded combinator `forall_in(v, |x| …)` (the `&[T]` form of
+  `conformance/binary_search.th` `forall_in(haystack, |x| x != needle)`, now
+  reading `v@` instead of a slice), whose closure body is flat; a deeper property
+  is a NAMED `spec fn`. The validator's caged-flat walk
+  (`.design/spec/spectherm-combinators.md` REQ-6) is UNCHANGED — `v@`-indexing and
+  `v.len()` are flat built-ins, `forall_in` over a `Vec` is the same frozen-trigger
+  combinator as over a slice. Derived from §4.2 (the cage — every quantifier is a
+  bounded combinator with a frozen trigger; composition through named `spec fn`s),
+  `.design/spec/spectherm-combinators.md` REQ-6, and the GROUNDED `all_elems_inv`
+  named-`spec fn` element invariant.
+
+- **REQ-4 (element invariant — `forall|i| inv(v@[i])` via a named `spec fn`):** A
+  `Vec<T>` may carry an element invariant: every element satisfies a predicate
+  (e.g. a `Vec<Account>` where each element satisfies Stage-1 `Account::
+  well_formed`, `.design/basis/01-adts.md` REQ-8). This is expressed as a NAMED
+  `spec fn all_elems_inv(v) -> bool` whose body is the bounded combinator
+  `forall_in(v, |e| inv(e))` (or, at the Verus layer, `forall|i| 0 <= i < v.len()
+  ==> inv(v@[i])` with a frozen trigger) — never an anonymous nested quantifier.
+  The validator accepts the element invariant exactly as it accepts any named
+  `spec fn` (`.design/spec/spectherm-combinators.md` REQ-3 name collection). The
+  invariant must be PRESERVED by `push` (the contract conjunct `all_elems_inv(v')`
+  given `all_elems_inv(v) && inv(x)`). Derived from §4.2 (named-`spec fn`
+  composition), the decided scope (verified collections of verified data), and the
+  GROUNDED `push_preserving` proof (element invariant preserved across `push`).
+
+### Verus lowering (governs `thermite-lower/src/lower.rs`)
+
+- **REQ-5 (`Vec<T>` → vstd `Vec` wrapper; `push`/`get`/`len` → verified vstd ops;
+  the `alloc` effect):** A Thermite `Vec<T>` lowers to a newtype over `vstd::vec::
+  Vec<T>` (or vstd `Vec` directly) with the capacity bound as a `pub open spec fn
+  well_formed(&self) -> bool { self.data.len() <= CAP }` threaded through
+  `requires`/`ensures` (the SAME data-invariant-threading mechanism as Stage-1
+  `Account::well_formed`, `.design/basis/01-adts.md` REQ-8 / OQ-3). `push` lowers
+  to `self.data.push(x)` with `req old(self).well_formed() && old(self).data.len()
+  < CAP, ens final(self).well_formed() && final(self).data.len() == old.len()+1 &&
+  final(self).data@[old_len] == x` plus the element-preservation frame; `get`
+  lowers to `self.data[i]` with `req i < self.data.len(), ens result ==
+  self.data@[i as int]` (the verified no-OOB index); `len` to `self.data.len()`.
+  A `fn` CONSTRUCTING / `push`-ing a `Vec` allocates, so it carries `fx alloc`
+  (`Effect::Alloc`, `thermite-syntax/src/ast.rs` `enum Effect` `Alloc`, already
+  present) — the SAME effect-row rule and effect-subsumption acceptance as Stage-1
+  `Box` construction (`.design/basis/01-adts.md` REQ-3). **GROUNDED**: a `BVec`
+  newtype over `Vec<u64>`, verified `well_formed`/`push`/`get`/`accumulate`,
+  `5 verified, 0 errors`; the no-OOB `get` and capacity-preserving `push` proven,
+  the broken forms (push without the cap guard, get without the bound) FAIL.
+  Derived from §3 (transpile to Verus), §4.1 (the `alloc` effect; row
+  subsumption), §6 (L3), and the GROUNDED `BVec` proof.
+
+- **REQ-6 (`Map<K,V>` → vstd `Map` wrapper; `insert`/`get`/`contains` → verified
+  ops; key-uniqueness invariant):** A Thermite `Map<K,V>` lowers to a wrapper over
+  `vstd::map::Map<K,V>` with `insert` (`ens get(k) after insert(k,v) == v`),
+  `get`, `contains`, `len`, and a key-uniqueness invariant (a Verus `Map` has at
+  most one value per key by construction — the invariant is the model's, surfaced
+  as a `well_formed` if a bound on `len()` is also carried). A `Map`-mutating `fn`
+  carries `fx alloc` (REQ-5's rule). This may be a THINNER first cut than `Vec`
+  (OQ-3): the minimum is `insert`/`get`/`contains` with the post-insert-get
+  contract; `pop`/iteration may follow. Derived from §3, §4.1 (`alloc`), the vstd
+  `Map` model, and the decided scope.
+
+- **REQ-7 (`LowerError`/`SpecError` extension, no panics):** The new collection
+  constructs extend the EXISTING `thermite-lower::LowerError` and `thermite-spec::
+  SpecError` enums with span-bearing variants for the new failure modes (a `get`
+  whose index bound cannot be discharged is a Verus proof failure surfaced through
+  the ladder, not a lowerer panic; an un-lowerable collection construct is a
+  `LowerError` variant), reusing `thermite_syntax::lexer::Span`. No `unwrap`/
+  `expect`/`panic!` in production (R-CODE-2 / R-APG-1). Derived from R-CODE-2 and
+  the existing error-enum discipline in `validator.rs` / `lower.rs`.
+
+## Acceptance criteria
+
+The orchestrator authors a NEW corpus program — call it `conformance/vec_accum.th`
+(a `Vec<u64>` accumulator with a `len() <= CAP` capacity bound, a verified `push`
+and a no-OOB `get`/sum) — and a NEW element-invariant program `conformance/
+vec_accounts.th` (a `Vec<Account>` reusing the Stage-1 `struct Account` whose
+`all_elems_inv` is preserved across `push`). Their golden lowerings live at
+`tests/golden/lower/vec_accum.verus.rs` / `tests/golden/lower/vec_accounts.verus.rs`,
+hand-authored from this doc and confirmed to pass `verus` (the GROUNDED `BVec`
+form below is the verified seed). The certificate goldens live at `conformance/
+vec_accum.cert.json` / `conformance/vec_accounts.cert.json`.
+
+- **AC-1 (bounded `Vec` accumulator parses, validates, lowers, certifies L3):**
+  Parsing `vec_accum.th` yields a `Vec<u64>`-typed value; the validator accepts
+  the capacity-bound + operation contracts in the §4.2 cage (REQ-3); the lowerer
+  emits the vstd-`Vec` wrapper + `well_formed` predicate + `push`/`get`/`len`
+  (REQ-5); the constructing `fn` carries `fx alloc` and passes effect-subsumption;
+  running the real `verus` binary on the emitted output exits 0 with `N verified,
+  0 errors` — the no-OOB `get` and the capacity-preserving `push` proven; the
+  emitted certificate matches `vec_accum.cert.json` (L3, non-vacuous). A crafted
+  negative — a `push` without the `len < CAP` guard, or a `get` without the
+  `i < len` bound — FAILS to verify (R-DEFER-9 non-vacuity; GROUNDED: `3 verified,
+  2 errors`). (REQ-1, REQ-3, REQ-5, REQ-7.)
+
+- **AC-2 (`Vec<Account>` element invariant preserved by `push`, certifies L3):**
+  Parsing `vec_accounts.th` yields a `Vec<Account>` whose element invariant is the
+  named `spec fn all_elems_inv(v)` (each element satisfies Stage-1
+  `Account::well_formed`); the validator accepts it as named-`spec fn` composition
+  (REQ-4); the lowerer threads `all_elems_inv(v)` through `push`'s `requires`/
+  `ensures`; `verus` proves `all_elems_inv(v')` from `all_elems_inv(v) &&
+  Account::well_formed(x)` (`N verified, 0 errors`). A crafted `push` of an element
+  violating `well_formed` (without the `elem_inv(x)` precondition) FAILS — the
+  invariant is real, not vacuous. (REQ-2 not required; REQ-1, REQ-4, REQ-5.)
+
+- **AC-3 (`Map<K,V>` insert/get round-trip certifies L3):** Parsing a `Map<K,V>`
+  program yields a `Map`-typed value; the lowerer emits the vstd-`Map` wrapper;
+  `verus` certifies the post-insert-get contract (`get(k)` after `insert(k,v) ==
+  v`) and the key-uniqueness invariant (`N verified, 0 errors`). If the Map first
+  cut is thinner (OQ-3), this AC pins exactly `insert`/`get`/`contains`. (REQ-2,
+  REQ-6.)
+
+- **AC-4 (the slice↔Vec relation; existing corpus unchanged — no regression):**
+  The read-only `&[T]` algorithms `conformance/sum.th` and
+  `conformance/binary_search.th` are UNCHANGED — they still parse to the same AST,
+  validate clean, lower to the byte-stable `tests/golden/lower/{sum,binary_search}.
+  verus.rs`, and certify L3. A `Vec`'s backing slice is `&v[..]` and its `Seq` view
+  is `v@` — the SAME `Seq` the slice `forall_in`/`spec_sum` already quantify over;
+  the collection additions are purely additive (new `Type` variant(s), the `Vec`/
+  `Map` lowering paths). Mechanically: `cargo test -p thermite-syntax -p
+  thermite-spec -p thermite-lower` and the conformance corpus pass with 0
+  mismatches. (All REQs; Stage 4 must not break the kernel.)
+
+## Architecture
+
+The component spans three crates, all additively:
+
+- **`thermite-syntax`** — `enum Type` (`thermite-syntax/src/ast.rs`) gains the
+  `Vec` element-type indirection (REQ-1, OQ-1) and the `Map` key/value
+  indirection (REQ-2, OQ-2), generalizing the existing single-arg `Generic { name,
+  arg: Box<Type> }` and the read-only `Slice(Box<Type>)`. `Vec`/`Map` operations
+  are ordinary calls — no new `Expr` node (`Expr::Call`/method form). `parser.rs`
+  parses the `Vec<T>` / `Map<K,V>` type spellings; the mandatory-contract
+  discipline of `Contract` (`.design/syntax/ast.md` REQ-2) is unchanged.
+
+- **`thermite-spec`** — `validator.rs` (`pub fn validate`) accepts the
+  capacity/operation contracts as FLAT built-ins (REQ-3) and the element invariant
+  as a named `spec fn` (REQ-4). The caged-flat walk
+  (`.design/spec/spectherm-combinators.md` REQ-6) is UNCHANGED: `v@`-indexing,
+  `v.len()`, and `forall_in(v, …)` over a `Vec` are the same flat-built-in /
+  frozen-trigger-combinator forms as over a `&[T]`. ADT element invariants compose
+  through named `spec fn`s, never anonymous nested quantifiers — the §4.2 cage is
+  preserved.
+
+- **`thermite-lower`** — `lower.rs` (`pub fn lower` / `lower_expr`) gains the
+  `Vec`/`Map` lowering paths (REQ-5/REQ-6): the vstd-`Vec`/`Map` wrapper, the
+  `well_formed` capacity predicate (REQ-5), and the operation contracts. The
+  data-invariant-threading mechanism is the SAME as Stage-1 `Account::well_formed`
+  (`.design/basis/01-adts.md` REQ-8 / OQ-3 — automatic threading vs. authored).
+  The two lowering contexts (exec vs. spec, `.design/lower/verus-lowering.md`)
+  extend: `v.push(x)` is exec position (carries `fx alloc`); `v@[i]` / `v.len()` /
+  `forall_in(v, …)` are spec position over the `Seq` view. Symbol anchors:
+  `enum Type` in `ast.rs`; `enum Effect` `Alloc` in `ast.rs`; `pub fn validate` in
+  `validator.rs`; `pub fn lower` / `lower_expr` in `lower.rs`.
+
+### The verified Verus form (GROUNDED — the lowering contract, not guesses)
+
+Produced by the real `verus 0.2026.05.24` binary during authoring (Verification).
+This is the seed for the `vec_accum.th` / `vec_accounts.th` golden lowerings.
+
+```verus
+pub spec const CAP: usize = 1_000_000;
+
+pub struct BVec { pub data: Vec<u64> }
+
+impl BVec {
+    pub open spec fn well_formed(&self) -> bool { self.data.len() <= CAP }
+    pub open spec fn len(&self) -> nat { self.data.len() as nat }
+
+    pub fn get(&self, i: usize) -> (result: u64)
+        requires i < self.data.len(),                       // the no-OOB bound
+        ensures result == self.data@[i as int],             // result == v@[i]
+    { self.data[i] }
+
+    pub fn push(&mut self, x: u64)
+        requires old(self).well_formed(), old(self).data.len() < CAP,  // cap guard
+        ensures
+            final(self).well_formed(),                       // capacity preserved
+            final(self).data.len() == old(self).data.len() + 1,
+            final(self).data@[old(self).data.len() as int] == x,
+            forall|j: int| 0 <= j < old(self).data.len()     // element frame
+                ==> final(self).data@[j] == old(self).data@[j],
+    { self.data.push(x) }
+}
+
+pub open spec fn elem_inv(x: u64) -> bool { x <= CAP as u64 }
+pub open spec fn all_elems_inv(v: Seq<u64>) -> bool {
+    forall|i: int| 0 <= i < v.len() ==> elem_inv(#[trigger] v[i])
+}
+
+pub fn push_preserving(bv: &mut BVec, x: u64)             // element invariant preserved
+    requires old(bv).well_formed(), old(bv).data.len() < CAP,
+             all_elems_inv(old(bv).data@), elem_inv(x),
+    ensures  final(bv).well_formed(), all_elems_inv(final(bv).data@),
+             final(bv).data.len() == old(bv).data.len() + 1,
+{ bv.data.push(x); /* assert all_elems_inv by the element frame */ }
+```
+
+**RECORDED FINDING (the bounded-collection stack is end-to-end feasible).** The
+`well_formed` capacity invariant (`len() <= CAP`), the no-OOB `get` (`req i < len`),
+the capacity-preserving `push` (`req len < CAP`), and the element invariant
+(`all_elems_inv`, a named `spec fn` over `forall|i|`, PRESERVED across `push` via
+the element frame) all verify together — `5 verified, 0 errors`. Cheat-token grep
+(`assume`/`external_body`/`admit`/`verifier::external`): NONE. Non-vacuity
+confirmed by a companion run dropping the `req len < CAP` from `push` and the
+`req i < len` from `get`: the unguarded `push` FAILS its `well_formed`
+postcondition and the unbounded `get` FAILS its index precondition (`3 verified,
+2 errors`). **Migration note:** this `verus` version (0.2026.05.24) requires
+`final(self)` (not bare `self`) to disambiguate a `&mut` parameter in a
+postcondition — the lowerer must emit `final(...)` for `&mut`-mutating
+collection-operation `ensures`. The verified `BVec` over vstd `Vec<u64>` is the
+exact wrap-vstd form REQ-5 lowers to: vstd's verified `Vec::push`/`Vec::index`/
+`Vec::len` carry the heap proof; the capacity bound and element invariant are the
+Thermite-level additions threaded through contracts.
+
+## Dependency hooks (for the rest of epic #62)
+
+- **Stage 1 (ADTs — `Box`/`alloc`, type invariants — CONSUMED):** Stage 4 is the
+  generalization of Stage 1's `Box<T>` heap primitive (`.design/basis/01-adts.md`
+  REQ-3/REQ-10) from a single boxed cell to a growable run. The `fx alloc`
+  effect-row rule (a constructing `fn` carries `fx alloc`) and the
+  effect-subsumption acceptance of `alloc` are REUSED VERBATIM (REQ-5). The
+  element invariant (REQ-4) reuses the Stage-1 `well_formed` type-invariant
+  mechanism (`.design/basis/01-adts.md` REQ-8) — a `Vec<Account>` element
+  satisfies the SAME `Account::well_formed` predicate, now under a `forall|i|`. The
+  data-invariant-threading question (`.design/basis/01-adts.md` OQ-3) is shared:
+  the capacity `well_formed` is threaded exactly as the struct invariant is.
+
+- **Stage 2 (recursion schemes — fold/map — CONSUMES this):** a `Vec` is
+  foldable. The Stage-2 scheme set (`fold`/`map` over a structure;
+  `.design/basis/02-recursion-schemes.md`, being authored in parallel — reference
+  by name, do not re-derive) instantiates over a `Vec`'s `Seq` view `v@` exactly as
+  over a `Box`-recursive list: a `Vec` fold is a `spec fn` with `decreases v.len()`
+  (or a `Seq`-indexed loop with a `forall_in` element invariant, the
+  `conformance/sum.th` `spec_sum` form generalized from a slice to `v@`). The
+  no-anonymous-quantifier composition (REQ-3/REQ-4) is exactly how a Vec fold
+  quantifies over elements inside the cage.
+
+- **Stage 5 (composition law — CONSUMES this):** reasons over the collection
+  contracts pinned here — the capacity invariant (`well_formed`, REQ-5) and the
+  element invariant (`all_elems_inv`, REQ-4) are the contract surface a
+  composition law quantifies the collection-half over. The §9 composition rule
+  ("if `g` calls `f` only through `f`'s contract …") applies to `Vec`/`Map`-valued
+  contracts unchanged: a `fn` returning a `well_formed` `Vec` with an element
+  invariant exposes exactly that contract to its caller.
+
+## Verification
+
+- **Mandatory Verus grounding (DONE during authoring — real `verus
+  0.2026.05.24`).** A single `verus!{}` file containing the bounded `BVec` over
+  vstd `Vec<u64>` (`well_formed`/`len`/`get`/`push` with the capacity invariant,
+  no-OOB index, capacity-preserving push + element frame), the element invariant
+  (`elem_inv`/`all_elems_inv` named `spec fn`s + `push_preserving` proving the
+  invariant preserved across `push`), and an `accumulate` exercising
+  push-then-no-OOB-get verified:
+
+  ```
+  verus --no-cheating /tmp/coll_ground.rs
+  verification results:: 5 verified, 0 errors
+  ```
+
+  Cheat-token grep (`assume`/`external_body`/`admit`/`verifier::external`) over
+  the file: NONE. Non-vacuity confirmed by a companion run dropping the cap guard
+  from `push` and the bound from `get`: both correctly FAIL (`3 verified, 2
+  errors` — the unguarded `push` violates `well_formed`, the unbounded `get`
+  violates its index precondition). This proves the bounded-`Vec` + capacity-
+  invariant + no-OOB-get + element-invariant stack is Verus-feasible end to end —
+  the practical-stdlib foundation Stages 2 and 5 build on. (Scratch cleaned per
+  §53 — no stray `*.rlib`/`*.d` left.)
+
+- **AC-1/AC-2/AC-3:** `cargo test -p thermite-syntax -p thermite-spec -p
+  thermite-lower`, plus a harness that shells the real `verus` binary on the
+  emitted lowering of `vec_accum.th` / `vec_accounts.th` / the Map program and
+  asserts exit 0 + `N verified, 0 errors` (R-CODE-4: subprocess status checked,
+  never swallowed), plus `forge check` matching the golden certificates
+  (`conformance/{vec_accum,vec_accounts}.cert.json`). The non-vacuity negatives
+  (unguarded `push`, unbounded `get`, `push` of a `well_formed`-violating element)
+  must FAIL to verify (R-DEFER-9).
+- **AC-4:** the existing `tests/golden/lower/{sum,binary_search}.verus.rs` and
+  `conformance/sum.cert.json` assertions stay green (no regression); the slice↔Vec
+  relation (`&v[..]`, `v@`) is documented, not a new node reshape.
+
+Gauntlet (R-DEFER-6, per crate): `cargo test -p <crate>`, `cargo clippy -p
+<crate> --all-targets -- -D warnings`, `cargo fmt --check`.
+
+## Routes to add (orchestrator)
+
+This stage adds NEW concerns to files that already carry routes; the orchestrator
+adds these routes to `tooling/spec-routes.toml` pointing at THIS doc (a file may
+carry multiple governing docs — the `lower.rs` precedent):
+
+```
+[[route]]  crate_pattern = "thermite-syntax/src/ast.rs"        design = ".design/basis/04-collections.md"   reference = ["conformance/vec_accum.th", "conformance/vec_accounts.th"]
+[[route]]  crate_pattern = "thermite-syntax/src/parser.rs"     design = ".design/basis/04-collections.md"   reference = ["conformance/vec_accum.th", "conformance/vec_accounts.th"]
+[[route]]  crate_pattern = "thermite-spec/src/validator.rs"    design = ".design/basis/04-collections.md"   reference = ["conformance/vec_accum.th"]
+[[route]]  crate_pattern = "thermite-lower/src/lower.rs"       design = ".design/basis/04-collections.md"   reference = ["tests/golden/lower/vec_accum.verus.rs", "tests/golden/lower/vec_accounts.verus.rs"]
+```
+
+The corpus programs `conformance/vec_accum.th`, `conformance/vec_accounts.th`,
+their `.cert.json` goldens, and the `tests/golden/lower/*.verus.rs` lowerings are
+authored by the orchestrator from this doc (and the GROUNDED `BVec` seed) before
+the builder runs (R-CHAR-3).
+
+## REQ status
+
+| REQ | Status | Evidence |
+|---|---|---|
+| REQ-1 (`Vec<T>` type + push/pop/get/len surface) | NOT-STARTED | epic **#62** Stage 4. `enum Type` (`thermite-syntax/src/ast.rs`) is `Prim`/`Unit`/`Ref`/`Slice`/`Generic` only — no `Vec`; the surface admits only the read-only `&[T]` (`Type::Slice`). GROUNDED-feasible (verus `5 verified, 0 errors`), not implemented. |
+| REQ-2 (`Map<K,V>` type + insert/get/contains/len surface) | NOT-STARTED | epic **#62** Stage 4. No `Map` in `enum Type`; the existing `Generic { name, arg }` is single-arg and cannot carry a key+value (OQ-2). Not implemented. |
+| REQ-3 (capacity + operation contracts fit the §4.2 cage) | NOT-STARTED | epic **#62** Stage 4. The caged-flat walk (`.design/spec/spectherm-combinators.md` REQ-6) is itself NOT-STARTED (blocker #40); `v@`-index / `v.len()` / `forall_in(v, …)` join its flat accept set when both land. |
+| REQ-4 (element invariant via named `spec fn` `forall|i| inv(v@[i])`) | NOT-STARTED | epic **#62** Stage 4. No element-invariant mechanism; reuses Stage-1 `well_formed` (`.design/basis/01-adts.md` REQ-8, itself NOT-STARTED). GROUNDED (`all_elems_inv` preserved across `push`, `0 errors`), not implemented. |
+| REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`) | NOT-STARTED | epic **#62** Stage 4. `lower.rs` has no `Vec` lowering; `Effect::Alloc` (`ast.rs` `enum Effect`) exists but is unexercised; no corpus program is non-`pure`. GROUNDED `BVec` form pinned (Architecture); requires Stage-1 `alloc` lowering (`.design/basis/01-adts.md` REQ-3) first (R-DEFER-7). |
+| REQ-6 (`Map` → vstd `Map` wrapper; insert/get/contains; key-uniqueness) | NOT-STARTED | epic **#62** Stage 4. `lower.rs` has no `Map` lowering; first-cut depth open (OQ-3). Modeled on `vstd::map::Map`, not implemented. |
+| REQ-7 (`LowerError`/`SpecError` extension, no panics) | NOT-STARTED | epic **#62** Stage 4. The new collection lower/reject variants are not yet added to the existing error enums in `validator.rs` / `lower.rs`. |
+
+## Open questions (for the orchestrator before the builder runs)
+
+- **OQ-1 (least-confident: wrap vstd `Vec` vs. a thin custom bounded newtype).**
+  The Decision picks wrap-vstd (option (a)) and it is GROUNDED (`BVec` over
+  `Vec<u64>`, `0 errors`). The residual question is the certificate/golden-
+  stability story: a thin Thermite-owned newtype `struct Vec<T> { data:
+  vstd::Vec<T> }` (the GROUNDED `BVec` shape) keeps the capacity invariant + the
+  `fx alloc` boundary Thermite's own, but couples the golden lowering to vstd's
+  `Vec` API surface (which can shift across Verus versions — cf. the `final(self)`
+  migration note this version forced). RECOMMEND the thin newtype (GROUNDED), with
+  the golden lowering pinned to a recorded `verus` version. This is the
+  highest-judgment, least-confident call: the GROUNDED proof uses `vstd::vec::Vec`
+  directly, so a fully vstd-decoupled custom backing store is designed-but-unproven
+  end-to-end. Not a blocker; pinned for the builder.
+
+- **OQ-2 (`Vec`/`Map` as dedicated `Type` nodes vs. generalized `Generic`):** the
+  existing `Generic { name: Ident, arg: Box<Type> }` (`ast.rs`) is single-arg —
+  fine for `Vec<T>`, insufficient for `Map<K,V>` (two type args). Two shapes: a
+  dedicated `Type::Vec(Box<Type>)` + `Type::Map { key, value }` (clearest — keys
+  the lowerer/effect check on node kind), or a generalized multi-arg `Generic {
+  name, args: Vec<Type> }`. The same OQ-1 shape `.design/basis/01-adts.md` raised
+  for `Box`. RECOMMEND dedicated nodes so the `fx alloc` / capacity-invariant
+  emission keys on the node kind, not a string-name match. Not a blocker.
+
+- **OQ-3 (Map first-cut depth):** REQ-6 may ship a THINNER `Map` than `Vec`. The
+  minimum first cut is `insert`/`get`/`contains`/`len` with the post-insert-get
+  contract and the vstd-`Map` key-uniqueness invariant; `pop`/`remove`/iteration
+  and a `len() <= CAP` capacity bound on the Map may follow in a later pass.
+  RECOMMEND the thin first cut (insert/get/contains/len) at Stage 4 — it certifies
+  the practical "verified key-value store" claim without the iteration proof
+  surface — and defer `remove`/iteration to a Stage-4 follow-up under #62. Not a
+  blocker; flagged so the builder does not over-scope the Map.
+
+- **OQ-4 (`fx alloc` as a non-`pure` corpus program — shared with Stage 1):** a
+  `Vec`-constructing / `push`-ing `fn` is non-`pure` (`fx alloc`), exercising
+  `Effect::Alloc` and effect-subsumption (`.design/lower/effect-subsumption.md`).
+  This is the SAME first-non-`pure` exercise Stage 1's `Box` construction raises
+  (`.design/basis/01-adts.md` OQ-4). If Stage 1 lands the `fx alloc` exec
+  constructor first (RECOMMENDED there), Stage 4 inherits the exercised effect; if
+  not, `vec_accum.th` is the first `fx alloc` corpus entry. RECOMMEND Stage 1 land
+  `alloc` first (R-DEFER-7); Stage 4's `Vec` then reuses it. Not a blocker.

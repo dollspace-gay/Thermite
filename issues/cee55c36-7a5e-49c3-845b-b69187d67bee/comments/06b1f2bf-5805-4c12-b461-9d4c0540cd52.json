@@ -1,0 +1,10 @@
+{
+  "uuid": "06b1f2bf-5805-4c12-b461-9d4c0540cd52",
+  "issue_uuid": "cee55c36-7a5e-49c3-845b-b69187d67bee",
+  "author": "Yffe",
+  "content": "Plan: commit the acto-critic pinned failing test forge/tests/divergence_strings.rs (headline join-L0 divergence #[ignore]d as blocker #80, plus two non-ignored non-vacuity confirmations). Critic does not fix — the Type::String arm in forge/src/mutation.rs::early_return_value is the fixer's job.",
+  "created_at": "2026-06-06T20:42:15.785583180Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAP3Ij9TVQaERys9kYJBw2qhZrSqciNYVjjHg13aLh2kZ9E9rHw/MjpwOTyMN7V1HEDANDWCa8E9PcFV2Clp1ACA=="
+}

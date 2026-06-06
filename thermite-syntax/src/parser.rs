@@ -1423,7 +1423,14 @@ impl<'a> Parser<'a> {
         while !self.check(&TokKind::RBrace) && !self.at_eof() {
             let pattern = self.parse_pattern()?;
             self.consume(&TokKind::FatArrow, "`=>`")?;
-            let body = self.parse_expr()?;
+            // An arm body is in VALUE position, so a struct-literal construction
+            // (`Point { x: 1 }`) MUST parse here even when the `match` sits under
+            // an enclosing no-struct-literal head (a contract clause / `match`
+            // scrutinee). Re-enable struct literals exactly as `parse_call_args`
+            // does inside `( … )` (REQ-2/REQ-4); the scrutinee above stays under
+            // the no-struct-literal context, and `with_struct_literal` restores
+            // the prior context on exit so no leak escapes the body.
+            let body = self.with_struct_literal(Self::parse_expr)?;
             arms.push(MatchArm { pattern, body });
             if !self.eat(&TokKind::Comma) {
                 break;

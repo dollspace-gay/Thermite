@@ -1,0 +1,10 @@
+{
+  "uuid": "04362fd5-bfb1-49be-a608-95f94802aba8",
+  "issue_uuid": "09d18fdc-c0ae-46a7-bd35-8de468f6ce5f",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (57d9727 schemes, de458b2 the #71 cert-identity fix). Recursion schemes: schemes.rs registry (fold/map/for_all/exists/traverse), validator scheme-recognition + flat-step cage (NestedScheme reject), generated per-(ADT,scheme) Verus folds (fold_E/for_all_E, decreases on the value) + the fold_bound_E induction-once law, scheme-call lowering (step as Verus spec_fn). Critic confirmed the MULTIPLIER GENUINE (instance cites the law, no fresh induction; negative control fails; law not assumed), generation FAITHFUL (for_all is a real conjunction-fold; distinct bodies per scheme), the cage rejects nested schemes, no cheat. Found+fixed #71 (cert-identity collision: item_subprogram's SpecFn arm included ALL spec_items -> byte-identical lowering -> proof-cache collision -> all served as len_list; fixed via reachable_spec_fn_deps isolating each). list_fold -> 4 distinct L3 certs. workspace 465 tests, 0 failed. Stage 2 complete.",
+  "created_at": "2026-06-06T15:57:17.820243642Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAEYTjv3NfSPefQDhWGksEcyFYMxnNA9UolMFbMAF6zMB0bVvptqusxd5RNhmHUYXa7bLee0LL12qNsFOSKQrKAA=="
+}

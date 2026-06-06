@@ -27,9 +27,12 @@ string-CONSTRUCTING operation (`concat`, a literal materialized into an owned
 `String`) allocates and carries **`fx alloc`** — the Stage-1 `Alloc` effect, the
 SAME rule as `Box`/`Vec` construction.
 
-This doc is GREENFIELD / FORWARD-LOOKING. **Every REQ below is NOT-STARTED**,
-tracked under **#79** (no separate blocker is filed — #79 owns this stage; a gap
-needing an independent blocker is noted with a fresh `#`). Thermite today
+**SHIPPED** (commits `b8c3bf7` + `2f5535a`, #79, critic-clean): `string_demo.th`
+certifies — `greeting_len`/`first_byte` L3 pure, `join`/`literal_len` L3 alloc,
+the no-`req` OOB access → L0. The per-REQ prose below is the original pre-build
+feasibility analysis (retained for the grounding record; each row's status cell now
+reads SHIPPED). Originally GREENFIELD / FORWARD-LOOKING — every REQ below WAS
+NOT-STARTED, tracked under **#79**. Thermite today
 **lexes** a string literal — `TokKind::Str(String)` (`thermite-syntax/src/lexer.rs`)
 is produced and consumed by `parse_slag`/`parse_attribute` for `#[slag]` /
 `#[boundary]` field values — but a string literal is **rejected as an expression**:
@@ -518,11 +521,11 @@ from this doc (and the GROUNDED `TString` seed) before the builder runs (R-CHAR-
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (`Expr::StrLit` — string literal as a primary expr) | NOT-STARTED | #79 Stage 7. `enum Expr` (`thermite-syntax/src/ast.rs`) has `IntLit`/`BoolLit` but no `StrLit`; `parse_primary` (`thermite-syntax/src/parser.rs`) has no `TokKind::Str` arm — `let s = "hello"` dies at the catch-all `_ => Err(self.unexpected("an expression"))`. The literal LEXES (`TokKind::Str(String)` in `lexer.rs`, consumed by `parse_slag`/`parse_attribute` only). GROUNDED-feasible (the literal lowers + verifies, `lit_hello` `4 verified, 0 errors`); not yet accepted as an `Expr`. |
-| REQ-2 (`String` type + len/byte_at/slice/concat/`==` surface) | NOT-STARTED | #79 Stage 7. `enum Type` (`ast.rs`) has `Prim`/`Slice`/`Vec`/`Box`/`Named`/`Generic` but no `String` node; `parse_type` has no `String` contextual-ident dispatch. The operations would reuse `Expr::MethodCall`/`Expr::Binary` (no new node), but no `String`-typed value parses today. Char model DECIDED (bytes/`u8`), `String`-owned / `str`-as-`&String` DECIDED; not implemented. |
-| REQ-3 (string contracts fit the §4.2 cage — no-OOB index, length, bounded slice/concat, `==`) | NOT-STARTED | #79 Stage 7. `byte_at` is not in `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`); no string contract validates today. The accept path it reuses (the Stage-4 `get` no-OOB accessor in `BUILTIN_METHODS`, the caged-flat walk) is SHIPPED, so the validator extension is mechanical. GROUNDED-feasible (the no-OOB `byte_at` certifies, the unguarded form FAILS `0 verified, 1 errors`); not implemented. |
-| REQ-4 (`String` → `vstd::vec::Vec<u8>` wrapper; len/byte_at/slice/concat/`==`; `fx alloc`; literal lowering; BACKING-AGNOSTIC surface) | NOT-STARTED | #79 Stage 7. `lower.rs` has no `String`/`Type::String` lowering and no string-literal materialization. The wrap-vstd path it reuses (the Stage-4 `TVec` over `vstd::vec::Vec`, the `well_formed` predicate, the no-OOB exec accessor, `fx alloc` subsumption, the `final(self)` finding) is SHIPPED (#73), so the extension to `Vec<u8>` is mechanical. GROUNDED-feasible (`TString` over `vstd::vec::Vec<u8>`: `well_formed`/`len`/`byte_at`/`concat` `6 verified, 0 errors`; literal `lit_hello` `4 verified, 0 errors`); not implemented. |
-| REQ-5 (`LowerError`/`SpecError` extension, no panics) | NOT-STARTED | #79 Stage 7. No string lowering exists yet to surface a failure mode; the existing `LowerError::Unsupported` / validator reject path is expected to suffice (Stage 4 needed no new variant). No code added — NOT-STARTED until the string path lands. No `unwrap`/`expect`/`panic!` will be introduced (R-CODE-2 / R-APG-1). |
+| REQ-1 (`Expr::StrLit` — string literal as a primary expr) | SHIPPED | #79 Stage 7. `enum Expr` (`thermite-syntax/src/ast.rs`) has `IntLit`/`BoolLit` but no `StrLit`; `parse_primary` (`thermite-syntax/src/parser.rs`) has no `TokKind::Str` arm — `let s = "hello"` dies at the catch-all `_ => Err(self.unexpected("an expression"))`. The literal LEXES (`TokKind::Str(String)` in `lexer.rs`, consumed by `parse_slag`/`parse_attribute` only). GROUNDED-feasible (the literal lowers + verifies, `lit_hello` `4 verified, 0 errors`); not yet accepted as an `Expr`. |
+| REQ-2 (`String` type + len/byte_at/slice/concat/`==` surface) | SHIPPED | #79 Stage 7. `enum Type` (`ast.rs`) has `Prim`/`Slice`/`Vec`/`Box`/`Named`/`Generic` but no `String` node; `parse_type` has no `String` contextual-ident dispatch. The operations would reuse `Expr::MethodCall`/`Expr::Binary` (no new node), but no `String`-typed value parses today. Char model DECIDED (bytes/`u8`), `String`-owned / `str`-as-`&String` DECIDED; not implemented. |
+| REQ-3 (string contracts fit the §4.2 cage — no-OOB index, length, bounded slice/concat, `==`) | SHIPPED | #79 Stage 7. `byte_at` is not in `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`); no string contract validates today. The accept path it reuses (the Stage-4 `get` no-OOB accessor in `BUILTIN_METHODS`, the caged-flat walk) is SHIPPED, so the validator extension is mechanical. GROUNDED-feasible (the no-OOB `byte_at` certifies, the unguarded form FAILS `0 verified, 1 errors`); not implemented. |
+| REQ-4 (`String` → `vstd::vec::Vec<u8>` wrapper; len/byte_at/slice/concat/`==`; `fx alloc`; literal lowering; BACKING-AGNOSTIC surface) | SHIPPED | #79 Stage 7. `lower.rs` has no `String`/`Type::String` lowering and no string-literal materialization. The wrap-vstd path it reuses (the Stage-4 `TVec` over `vstd::vec::Vec`, the `well_formed` predicate, the no-OOB exec accessor, `fx alloc` subsumption, the `final(self)` finding) is SHIPPED (#73), so the extension to `Vec<u8>` is mechanical. GROUNDED-feasible (`TString` over `vstd::vec::Vec<u8>`: `well_formed`/`len`/`byte_at`/`concat` `6 verified, 0 errors`; literal `lit_hello` `4 verified, 0 errors`); not implemented. |
+| REQ-5 (`LowerError`/`SpecError` extension, no panics) | SHIPPED | #79 Stage 7. No string lowering exists yet to surface a failure mode; the existing `LowerError::Unsupported` / validator reject path is expected to suffice (Stage 4 needed no new variant). No code added — NOT-STARTED until the string path lands. No `unwrap`/`expect`/`panic!` will be introduced (R-CODE-2 / R-APG-1). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

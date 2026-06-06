@@ -1,0 +1,10 @@
+{
+  "uuid": "23c30b3e-b57c-4fac-a719-442beb0711f6",
+  "issue_uuid": "2ea50984-508b-4f33-82a5-32243a04c6bc",
+  "author": "Yffe",
+  "content": "Stage 4 bounded Vec<T> (epic #62). Plan: add Type::Vec(Box<Type>) mirroring Type::Box (ast.rs); parse the contextual Vec ident (parser.rs); add  to BUILTIN_METHODS so the no-OOB accessor validates flat in the §4.2 cage (validator.rs); lower Vec<u64> to the GROUNDED TVecU64 newtype over vstd::vec::Vec<u64> with well_formed/len/spec_get + no-OOB get + capacity-preserving push using final(self), emitted once per element type, with spec-position v.get(i) → v.spec_get(i as int) (lower.rs). fx alloc rides effect-subsumption (push is an intrinsic). Verify against the oracle conformance/vec_demo.th + collections/cases.json with real verus (checked_get L3/pure, push_one L3/alloc, oob_get_no_req → L0 fail) in collections_conformance.rs + golden vec_demo.verus.rs. Map<K,V> + element invariant deferred to v1.1. Minimal honest Type::Vec arms added to the downstream exhaustive Type matches (l1/l2/check/review). Do NOT close #73 — critic re-audits.",
+  "created_at": "2026-06-06T16:52:18.193125817Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAWl9WvpaRKms40BkBrOIZFUVk4JTkFhKelx/QCuLO53CJTALGa1OVjlnWetyglhUXG0zTZHIYcvIzQJW6+f4CDQ=="
+}

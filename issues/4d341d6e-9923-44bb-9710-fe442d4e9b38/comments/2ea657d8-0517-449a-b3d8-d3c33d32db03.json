@@ -1,0 +1,10 @@
+{
+  "uuid": "2ea657d8-0517-449a-b3d8-d3c33d32db03",
+  "issue_uuid": "4d341d6e-9923-44bb-9710-fe442d4e9b38",
+  "author": "Yffe",
+  "content": "Minimal single-file fix: correct render_type_arm's Type::Unit arm example in thermite-skill/src/generate.rs from `fn log() -> () ens true fx pure { }` to `fn log() -> () req true ens true fx pure { }` (add the mandatory req clause; clauses now in req->ens->fx order per thermite-design.md §4.1). Root cause is the invalid example STRING, not the REQ-8 compile-force mechanism (untouched). Re-checked every other render_*_arm example: all other fn/spec-fn examples are intentional ..-placeholder fragments or bare signatures (not standalone programs); only the Type::Unit arm was a complete program and the only invalid one. Un-ignore the pinned test rendered_fn_examples_parse_clean and broaden it to sweep EVERY complete rendered fn/spec-fn example and assert each parses clean (permanent regression guard). Regenerate THERMITE.skill.md. Authority: thermite-design.md §10/§4.1, skill-generator.md REQ-8/REQ-10.",
+  "created_at": "2026-06-06T22:40:45.234181864Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANMrcfDwUmQn+INkL/bgjss/xFFb14Pzt/PAtkgPa/HeVE/j82e86Xtjp0DU8LjOf3O9Tw+gbG9ZFaylEO9BbCw=="
+}

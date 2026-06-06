@@ -1,0 +1,10 @@
+{
+  "uuid": "5396f7ad-8f0b-4052-ab88-5145a0c91dae",
+  "issue_uuid": "5e70ccef-a23f-4616-8b0b-8ffa1fb681e2",
+  "author": "Yffe",
+  "content": "README updated: headline now reflects v0.1-v0.5 + the universal verified primitive basis (Stages 1-6); added a Stages-1-6 bullet (recursive ADTs, recursion schemes, effect stdlib, bounded collections, composition, security-by-construction/IFC) + the v1.1 deferral list. Commit on main.",
+  "created_at": "2026-06-06T19:36:11.005746355Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMHr9l7d3+htH4d1GRIgVdjvTStuIw3/vBIbGBW9V/qdEMB4nKAuRyRxjgYrc2Ri8QG8BHA5OgsCmc9jBtb1zBQ=="
+}

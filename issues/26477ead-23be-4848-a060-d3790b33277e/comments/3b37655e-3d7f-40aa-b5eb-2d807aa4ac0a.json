@@ -1,0 +1,10 @@
+{
+  "uuid": "3b37655e-3d7f-40aa-b5eb-2d807aa4ac0a",
+  "issue_uuid": "26477ead-23be-4848-a060-d3790b33277e",
+  "author": "Yffe",
+  "content": "RESULT (commit 03138c8): #69 fixed. is_adt_fold_sum generalized from the literal-0-base shape-fit to a STRUCTURAL recursive-fold predicate in thermite-lower/src/lower.rs (single file, +57/-44). New detection: arms.iter().any(|arm| expr_has_deref_call_arg(&arm.body)) — a match with at least one arm recursing through a Box-deref'd field (f(*x)), NO base-arm literal requirement; expr_has_deref_call_arg now walks the full arm-body expression tree. The -> nat return then coerces every arm uniformly (Cast -> as nat). Tree fold (Leaf(v)=>v as u64, value-carrying base) now lowers -> nat and REAL verus verifies: 'verification results:: 1 verified, 0 errors'. No regression: list_sum/len/bank_account/shape still L3 (adt_lower_conformance 10/10); sum/binary_search unchanged; deposit/is_circle still L3; whole workspace green. Gauntlet: cargo test --workspace 0 failed; clippy --workspace --all-targets -D warnings PASS; fmt --all --check PASS. No conformance/golden edits (R-CHAR-3); no check.rs touch (#68 intact). Hand back for acto-critic re-audit.",
+  "created_at": "2026-06-06T13:35:40.157759535Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAz+C98BMF/VStUDwT7Zo6BnNGb+fRJSzcCL76tzg4ZOYF81f79nz0jaTPfpN4qTm7nuzO41OcjaCxWyJ/HMD5Bg=="
+}

@@ -410,3 +410,10 @@ crate_pattern = "thermite-spec/src/validator.rs"
 design = ".design/basis/06-provenance-and-sinks.md"
 reference = ["conformance/provenance"]
 conformance_ops = []
+
+# Stage 7 Strings — String/str + literals + ops (issue #79)
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/07-strings.md"
+reference = ["conformance/string"]
+conformance_ops = []

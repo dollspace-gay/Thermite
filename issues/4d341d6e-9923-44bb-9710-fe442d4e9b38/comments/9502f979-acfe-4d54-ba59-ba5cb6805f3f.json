@@ -1,0 +1,10 @@
+{
+  "uuid": "9502f979-acfe-4d54-ba59-ba5cb6805f3f",
+  "issue_uuid": "4d341d6e-9923-44bb-9710-fe442d4e9b38",
+  "author": "Yffe",
+  "content": "FIXED in commit 04412aa (single file thermite-skill/src/generate.rs + regenerated THERMITE.skill.md). Type::Unit arm example corrected: `fn log() -> () ens true fx pure { }` -> `fn log() -> () req true ens true fx pure { }` (mandatory req added, req->ens->fx order). Only complete-program example among the arms; all others are ..-fragments/signatures. Pinned test rendered_fn_examples_parse_clean un-ignored + broadened to parse EVERY complete rendered fn/spec-fn example clean — now passes (1 test). Skill regenerated; committed_skill_is_fresh passes. Gauntlet: cargo test --workspace 83 result-groups 0 failed; --check-budget 4309<=6000 exit 0; clippy --workspace --all-targets -D warnings clean; fmt --all --check clean. Hand back for acto-critic re-audit.",
+  "created_at": "2026-06-06T22:41:05.148190593Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAyr0khYOOjgJ25WQAOwpwkYq721K8jZFr+mp7u531QkCukDVTwisoG+YwiVHZVYeDM0ZUn45aizQK12KDxe0eAw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "b784dcdd-41fe-46e5-a9be-c5526b1f9a6f",
+  "issue_uuid": "651d64f2-a582-4af7-b736-76c6d22af527",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (322d479 lowering, 310ab70 the #68 per-item ADT-decl weave, 03138c8 the #69 fold-generality fix). ADT LOWERING -> Verus L3 + L1: struct->Verus struct + invariant woven into req/ens (well_formed), enum->Verus enum, match->Verus match (enum-qualified), is->variant test, Box->Verus Box, StructLit->construction, Deref->*, recursive spec fn -> decreases on the datatype value. Critic found+fixed 2: #68 (item_subprogram dropped ADT decls -> per-item verus E0425 -> L0; fixed by weaving reachable struct/enum decls transitively, the #52-analog), #69 (recursive-fold lowering was fitted to the literal-0-base sum_list shape; generalized to any structural fold incl. value-carrying base like a Tree). END-TO-END: bank_account/shape/list_sum certify L3; sum/binary_search unchanged. workspace ZERO failures. STAGE 1 (the keystone) COMPLETE: ADTs parse->validate->lower->L3.",
+  "created_at": "2026-06-06T13:39:11.084517754Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAwFTegCIWWdOw/HzDOaH6kaEYrMJ+nCo8r8qLP2dtC0xq8ppioL40yeQoRcZ82cW0wM4qoWHDf/GgYT2Po3Q8AQ=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "e8b4e987-097b-413a-9f4a-9861cd2c0f87",
+  "display_id": 87,
+  "title": "Editor-shell lowering gaps: L1 inv method-call rewrite + L1 String-index u64->usize coercion + fx-diverge termination exemption",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T23:47:42.046564105Z",
+  "updated_at": "2026-06-06T23:47:42.046564105Z"
+}

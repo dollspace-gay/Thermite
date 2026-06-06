@@ -1,0 +1,10 @@
+{
+  "uuid": "c6629cdc-c33a-41c9-a82e-bc708d17214a",
+  "issue_uuid": "09d18fdc-c0ae-46a7-bd35-8de468f6ce5f",
+  "author": "Yffe",
+  "content": "Build Stage 2 recursion schemes. 2b: NEW thermite-spec/src/schemes.rs registry (5 schemes fold/map/for_all/exists/traverse, mirroring combinators.rs) + validator scheme-call recognition (schemes::lookup in walk_call), the flat-step cage (in_scheme_step mode rejects a nested scheme/combinator in a step body), step arity/shape check, and SpecError::{NestedScheme,SchemeWrongArity,SchemeStepShape}. 2c: lower.rs emit_scheme_defs generates per-(ADT,scheme) Verus recursive spec fns (fold_<e>/for_all_<e>/<e>_len, decreases l, reusing the Stage-1 recursive-fold shape) + the fold_bound_<e> induction-discharged-once law; a scheme call lowers via lower_scheme_call to cite the generated fn with the step as a typed spec_fn ((x+acc) as nat for fold). DEC NUANCE resolved: the scheme-call instance body is NON-recursive so its spurious decreases is suppressed; the generated fold_<e> carries decreases l. forge/check.rs needs no change (reachable_adt_deps already weaves the enum; the lowerer materializes the scheme fns). Grounded with real verus --no-cheating: list_fold.th certifies L3, the fold_bound multiplier + grounded instance verify 0 errors, the premise-removed negative control fails.",
+  "created_at": "2026-06-06T15:29:34.066720835Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAf33Yb4Rk3dWY+4AbTTB0+vFfYFnVqU/PiHpWqQQthwCHie5CelaCp6Ik2aIBLVh2vnXHYCcSUw4y8EW29YgpCA=="
+}

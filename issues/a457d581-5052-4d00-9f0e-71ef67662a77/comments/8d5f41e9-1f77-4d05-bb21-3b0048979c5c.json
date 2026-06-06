@@ -1,0 +1,10 @@
+{
+  "uuid": "8d5f41e9-1f77-4d05-bb21-3b0048979c5c",
+  "issue_uuid": "a457d581-5052-4d00-9f0e-71ef67662a77",
+  "author": "Yffe",
+  "content": "FIXED by the #[sealed] ABSTRACTION BARRIER (06-provenance-and-sinks.md REQ-8) at commit 5f8b55df.\n\nWHAT LANDED: AST StructItem.sealed: bool (ast.rs); parser parse_attribute -> ParsedAttr::Sealed routed onto a struct by parse_item (parse_struct(start, sealed)), #[sealed] on enum/fn/spec fn is a parse error; validator Validator::new collects sealed_structs, NEW SpecError::SealedConstruction { name, span }, check_sealed_construction rejects any Expr::StructLit of a sealed struct from BOTH walk arms (exec scan_expr_for_loops + caged walk_expr_inner). Consumer pub fn validate -> forge::check::check_file (ForgeError::Spec, exit non-zero, no L3). Corpus: Sql/Public/Authorized marked #[sealed] in conformance/provenance_demo.th.\n\nVERIFICATION (real forge + verus): the 3 pinned #77 bypass tests UN-IGNORED + PASS -- query(Sql{stmt:input.raw}) / emit(Public{val:s.val}) / delete(Authorized{id:u.id}) each REJECTED with SealedConstruction (no L3). Safe doored paths STILL L3 (door is foreign external_body, no in-language StructLit). Naive careless still L0. Plain non-sealed structs unaffected (rule is opt-in + inert). StructItem.sealed broke no downstream exhaustive match (only parser constructs it; lower reads name/fields/inv only -- a sealed struct lowers identically).\n\nGAUNTLET: cargo build --workspace OK; cargo test --workspace 500 passed / 0 failed / 0 ignored; clippy -D warnings PASS; fmt --check PASS. REQ-8 NOT-STARTED -> SHIPPED in the doc + validator //! table; REQ-1..REQ-7 stay NOT-STARTED (owned by #76).",
+  "created_at": "2026-06-06T19:19:02.775255357Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAc1+p3FkXf+xocgp/XIIyYJ3oYJVNd5aiMZsbeuCC7866wVCo8Qyitf0PhsGQgTIXJ3aJKEhiRq23nkjGIFNRAA=="
+}

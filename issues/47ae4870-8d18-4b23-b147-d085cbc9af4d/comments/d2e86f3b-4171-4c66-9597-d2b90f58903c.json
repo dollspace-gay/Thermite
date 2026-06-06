@@ -1,0 +1,10 @@
+{
+  "uuid": "d2e86f3b-4171-4c66-9597-d2b90f58903c",
+  "issue_uuid": "47ae4870-8d18-4b23-b147-d085cbc9af4d",
+  "author": "Yffe",
+  "content": "PLAN: commit the two #[ignore]d pinned failing tests at forge/tests/divergence_effect_link_string_wrappers.rs (print_wrapper_builds_and_runs, read_line_wrapper_builds) as the audit artifact for this divergence. Critic does not fix; tests un-ignore when the generator makes os::write/os::print/os::read_line link (emit a build-resolvable String/TString type). Committing to main per dispatch (no branches).",
+  "created_at": "2026-06-06T21:41:48.196613978Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACYbYFt6d9GxvsmD6l7TgTnf40+YMW6lsd1FuyQSYsZL2V0uVtF3fuzlpWdgbbNIA05h+Uqll3tOjYfPYKBPLDw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "09d18fdc-c0ae-46a7-bd35-8de468f6ce5f",
+  "display_id": 70,
+  "title": "Stage 2 — recursion schemes: fold/map/for_all over ADTs (registry + validator + generated Verus folds + fold_bound)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T14:50:44.899433229Z",
+  "updated_at": "2026-06-06T14:50:44.899433229Z"
+}

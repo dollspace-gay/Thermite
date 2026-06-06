@@ -1,0 +1,10 @@
+{
+  "uuid": "651d64f2-a582-4af7-b736-76c6d22af527",
+  "display_id": 67,
+  "title": "Stage 1c — ADT lowering: struct/enum/match/is/Box -> Verus + L1; corpus certifies L3",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T12:28:23.107257009Z",
+  "updated_at": "2026-06-06T12:28:23.107257009Z"
+}

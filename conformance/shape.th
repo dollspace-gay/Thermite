@@ -4,6 +4,7 @@ enum Shape {
 }
 
 fn is_circle(s: Shape) -> bool
+  req true
   ens result == (s is Circle)
   fx  pure
 {

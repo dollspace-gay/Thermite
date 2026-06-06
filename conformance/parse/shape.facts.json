@@ -17,6 +17,7 @@
       "kind": "fn",
       "params": [ { "name": "s", "type": "Shape" } ],
       "ret": "bool",
+      "req_count": 1,
       "ens_count": 1,
       "ens_has_is_expr": { "scrutinee": "s", "variant": "Circle" },
       "fx": "pure",

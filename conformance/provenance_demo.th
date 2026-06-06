@@ -1,0 +1,92 @@
+struct Tainted { raw: u64 }
+struct Sql { stmt: u64 }
+
+#[boundary("ifc::parameterize")] fn parameterize(t: Tainted) -> Sql
+  req true
+  ens result.stmt == t.raw
+  fx  pure
+  ;
+
+#[boundary("ifc::query")] fn query(q: Sql) -> u64
+  req true
+  ens result == q.stmt
+  fx  net(db)
+  ;
+
+fn safe_query(input: Tainted) -> u64
+  req true
+  ens result == input.raw
+  fx  net(db)
+{
+  query(parameterize(input))
+}
+
+fn careless_query(input: Tainted) -> u64
+  req true
+  ens result == input.raw
+  fx  net(db)
+{
+  query(input)
+}
+
+struct Secret { val: u64 }
+struct Public { val: u64 }
+
+#[boundary("ifc::declassify")] fn declassify(s: Secret) -> Public
+  req true
+  ens result.val == s.val
+  fx  pure
+  ;
+
+#[boundary("ifc::emit")] fn emit(p: Public) -> u64
+  req true
+  ens result == p.val
+  fx  write(log)
+  ;
+
+fn safe_emit(s: Secret) -> u64
+  req true
+  ens result == s.val
+  fx  write(log)
+{
+  emit(declassify(s))
+}
+
+fn leak(s: Secret) -> u64
+  req true
+  ens result == s.val
+  fx  write(log)
+{
+  emit(s)
+}
+
+struct User { id: u64 }
+struct Authorized { id: u64 }
+
+#[boundary("ifc::authorize")] fn authorize(u: User) -> Authorized
+  req true
+  ens result.id == u.id
+  fx  pure
+  ;
+
+#[boundary("ifc::delete")] fn delete(c: Authorized) -> u64
+  req true
+  ens result == c.id
+  fx  write(db)
+  ;
+
+fn safe_delete(u: User) -> u64
+  req true
+  ens result == u.id
+  fx  write(db)
+{
+  delete(authorize(u))
+}
+
+fn unauth_delete(u: User) -> u64
+  req true
+  ens result == u.id
+  fx  write(db)
+{
+  delete(u)
+}

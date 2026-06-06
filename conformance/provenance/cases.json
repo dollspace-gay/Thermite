@@ -1,0 +1,27 @@
+{
+  "note": "Oracle for Stage 6 — security-by-construction / IFC (issue #76). Hand-derived (R-CHAR-3) from .design/basis/06-provenance-and-sinks.md. v1 = TYPE-LEVEL enforcement (emergent, NO new validator code): marked types (Tainted/Secret/Authorized — Stage-1 newtype structs) are DISTINCT from clean types (Sql/Public/Authorized); a sink demands the clean type by its param type; the ONLY door from a marked type to a clean type is the declared #[boundary] door (parameterize/declassify/authorize). The DIPSHIT path passes a raw marked value to a sink -> TYPE MISMATCH -> rejected at lowering/verus (E0308) -> L0 (does NOT certify). The SAFE path routes through the door -> L3 to-boundary. The doors are the audited TCB (grep declassify = every secret-release). Dataflow propagation (taint through derived values) is v1.1.",
+  "centerpiece_sqli": [
+    { "name": "careless_query", "source": "conformance/provenance_demo.th", "expect_level": "L0",
+      "why": "THE CENTERPIECE: careless_query passes a raw Tainted to query(q: Sql) -> a type mismatch (expected Sql, found Tainted) -> rejected (verus E0308) -> L0. The SQL-injection program does NOT certify — injection is un-typeable. The dipshit path doesn't compile to a verified artifact." },
+    { "name": "safe_query", "source": "conformance/provenance_demo.th", "expect_level": "L3", "scope": "to_boundary",
+      "why": "safe_query routes the Tainted through parameterize (the only Tainted->Sql door) before query -> typechecks -> ens result == input.raw discharged through parameterize (stmt==raw) + query (result==stmt) -> L3, to-the-boundary. The contract is a precise equality (result==input.raw), mutation-killable -> certifies at the DEFAULT floor." }
+  ],
+  "secret_leak": [
+    { "name": "leak", "source": "conformance/provenance_demo.th", "expect_level": "L0",
+      "why": "leak passes a raw Secret to emit(p: Public) -> type mismatch (expected Public, found Secret) -> L0. A secret cannot reach a public sink un-declassified — the leak is un-typeable." },
+    { "name": "safe_emit", "source": "conformance/provenance_demo.th", "expect_level": "L3", "scope": "to_boundary",
+      "why": "safe_emit routes the Secret through declassify (the audited door) before emit -> L3. The declassify is enumerated in the TCB (grep-able secret-release)." }
+  ],
+  "missing_capability": [
+    { "name": "unauth_delete", "source": "conformance/provenance_demo.th", "expect_level": "L0",
+      "why": "unauth_delete passes a raw User to delete(c: Authorized) -> type mismatch (expected Authorized, found User) -> L0. A protected op is un-callable without the capability — missing-authz / IDOR is un-typeable." },
+    { "name": "safe_delete", "source": "conformance/provenance_demo.th", "expect_level": "L3", "scope": "to_boundary",
+      "why": "safe_delete obtains the Authorized capability via authorize before delete -> L3 (delete's req discharges from authorize's ens)." }
+  ],
+  "doors_and_sinks_are_tcb": [
+    { "name": "boundary_doors", "source": "conformance/provenance_demo.th",
+      "expect_l1_boundary": ["parameterize", "query", "declassify", "emit", "authorize", "delete"],
+      "expect_tcb_boundary_contains": ["parameterize", "declassify", "authorize"],
+      "why": "the 6 doors/sinks certify L1+boundary (foreign bodies, assumed contracts); forge audit enumerates them as the security TCB. The doors (parameterize/declassify/authorize) are the audited trust points — exactly where a marked value is laundered to clean; everything else is verified or rejected." }
+  ]
+}

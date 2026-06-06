@@ -1,0 +1,23 @@
+{
+  "note": "Oracle for Stage 2 — recursion schemes (issue #70). Hand-derived (R-CHAR-3) from .design/basis/02-recursion-schemes.md (REQ-1 the scheme set as named primitives; REQ-2 the flat step closure; REQ-3 spec form; the GROUNDED fold/fold_bound/for_all Verus forms, 9 verified). A scheme call reuses Expr::Call (callee = scheme name + scrutinee + step Expr::Closure); the toolchain generates a per-(ADT,scheme) Verus recursive spec fn (fold_list/for_all_list) with decreases on the datatype value + the law fold_bound_list, and lowers the call to cite it. These test the full pipeline (validate scheme calls + lower + real verus).",
+  "certify": [
+    { "name": "len_list",     "source": "conformance/list_fold.th", "level": "L3",
+      "why": "len_list = fold(l, 0, |x, acc| 1 + acc) lowers to the generated fold_list (decreases l) with the count step; real verus verifies the spec fn (total, terminating). Spec fn -> no req/ens/fx; L3." },
+    { "name": "sum_list",     "source": "conformance/list_fold.th", "level": "L3",
+      "why": "sum_list = fold(l, 0, |x, acc| x + acc) lowers to fold_list with the sum step; verus verifies." },
+    { "name": "all_positive", "source": "conformance/list_fold.th", "level": "L3",
+      "why": "all_positive = for_all(l, |x| x > 0) lowers to the generated for_all_list (a bool-collapsing fold); verus verifies." }
+  ],
+  "multiplier": {
+    "note": "The prove-once-instantiate engine (REQ + fold_bound). The GENERATED law fold_bound_list carries the structural induction ONCE; an instance bound (sum_list(l) <= len_list(l) * MAX) is proven by CITING the law with NO fresh decreases/match/recursion. The builder must reproduce the design's grounded form (9 verified, 0 errors) as a thermite-lower test: the instance proof cites fold_bound_list and contains no recursion. Negative control: dropping the per-node premise FAILS verus (the induction is real, not vacuous).",
+    "expect_grounded": "verus --no-cheating on the generated fold_list + fold_bound_list + the sum_list instance citing the law -> N verified, 0 errors; the negative control (per-node premise dropped) -> 1 error."
+  },
+  "reject": [
+    { "name": "nested_scheme_in_step", "expect_error_contains": "nested",
+      "program": "enum List { Nil, Cons(u64, Box<List>) } spec fn bad(l: List) -> u64 dec l { fold(l, 0, |x, acc| fold(l, 0, |y, a| y + a) + acc) } }",
+      "why": "the step closure contains a NESTED scheme call (fold inside the step) -> rejected (REQ-2: the step is a FLAT per-node closure, no nested scheme; the cage's no-anonymous-nested rule extends to schemes)." },
+    { "name": "unknown_scheme", "expect_error_contains": "not a registered",
+      "program": "enum List { Nil, Cons(u64, Box<List>) } spec fn bad(l: List) -> u64 dec l { frobnicate(l, 0, |x, acc| x + acc) } }",
+      "why": "frobnicate is not a registered scheme or combinator or declared spec fn -> rejected (REQ-1: the scheme set is closed)." }
+  ]
+}

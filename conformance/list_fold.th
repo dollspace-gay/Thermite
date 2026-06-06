@@ -1,0 +1,22 @@
+enum List {
+  Nil,
+  Cons(u64, Box<List>),
+}
+
+spec fn len_list(l: List) -> u64
+  dec l
+{
+  fold(l, 0, |x, acc| 1 + acc)
+}
+
+spec fn sum_list(l: List) -> u64
+  dec l
+{
+  fold(l, 0, |x, acc| x + acc)
+}
+
+spec fn all_positive(l: List) -> bool
+  dec l
+{
+  for_all(l, |x| x > 0)
+}

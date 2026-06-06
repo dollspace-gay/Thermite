@@ -1,0 +1,10 @@
+{
+  "uuid": "31320ce3-15e1-4242-860a-cf916059cb83",
+  "issue_uuid": "13600ea5-9ad7-4e8a-be40-c79a7cfa54ab",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_scheme_certs.rs::divergence_list_fold_three_distinct_item_certs (#[ignore]d, run with --ignored).\n\nROOT CAUSE: check::item_subprogram for Item::SpecFn returns Program{ adt_deps + ALL spec_items } — identical for every spec fn in the file (the checked item is not distinguished; it merely rides along in spec_items). Confirmed: the three spec-fn sub-programs of conformance/list_fold.th lower to BYTE-IDENTICAL Verus (same DefaultHasher 38213b645c7b112, len 1420). The proof-cache content-address (cache::cache_key over the lowered source) therefore collides, and the stored len_list certificate (carrying f.name=len_list) is served for sum_list and all_positive. forge check --json emits items [List, len_list, len_list, len_list].\n\nAUTHORITY: conformance/adt-schemes/cases.json certify block requires three DISTINCT L3 items: len_list, sum_list, all_positive. thermite-design.md §6 (the certificate lists EVERY function's level) + §5.3 (per-item isolated sub-program). A cert whose item field is a neighbor's name violates the §6 per-function manifest contract.\n\nNOTE: not a proof-soundness bug — all three are genuinely L3 (the served cert is a real L3); it is a certificate-IDENTITY divergence. A fix should make the per-spec-fn sub-program (or cache key) item-distinguishing so each spec fn certifies under its own name. The crux (fold_bound multiplier, faithful catamorphism, flat-step cage, dec-nuance) is GENUINE — see report.",
+  "created_at": "2026-06-06T15:43:37.500076643Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAl5bSOasOrNJkVvq+CMDrxkvvdNppBkk+jXjFREnRgpxEh8DwhE2nDj0U92GbhG9q1eT4OTKXnnC4WSuPIerhCw=="
+}

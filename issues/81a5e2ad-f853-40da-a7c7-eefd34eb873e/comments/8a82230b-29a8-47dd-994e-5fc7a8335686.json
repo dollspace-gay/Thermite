@@ -1,0 +1,10 @@
+{
+  "uuid": "8a82230b-29a8-47dd-994e-5fc7a8335686",
+  "issue_uuid": "81a5e2ad-f853-40da-a7c7-eefd34eb873e",
+  "author": "Yffe",
+  "content": "FIXED in 5ec3a70. parse_match arm-body parse changed from self.parse_expr() to self.with_struct_literal(Self::parse_expr) — the with_struct_literal wrap re-enables struct literals in the arm-body VALUE position, mirroring parse_call_args. Scrutinee parse (with_no_struct_literal) and the { block delimiter are unchanged; context restored on exit (no reverse leak). Pinned test divergence_clause_match_arm_body_struct_lit_parses PASSES. Gauntlet: cargo test -p thermite-syntax green (adt_parse 4/4); cargo test --workspace 437 passed, 0 failed; clippy --workspace --all-targets -D warnings PASS; fmt --all --check PASS. Corpus (sum.th, binary_search.th) unchanged.",
+  "created_at": "2026-06-06T11:53:40.338148522Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA8+7wqbEVu7XgHW/CXA1LvIVZELHXK7xww3pbyyTYg8a++aQW5tFZ2ht94sF6QU/3lA+EyJ7F60qQvv5fX41kAA=="
+}

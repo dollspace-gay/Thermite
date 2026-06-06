@@ -106,7 +106,6 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 /// L0 is NOT a verus/composition failure; it is the mutation-gate divergence.
 ///
 /// Tracking: #80
-#[ignore = "blocker #80 — un-ignore when fixed"]
 #[test]
 fn divergence_join_l3_not_mutation_gated_l0() {
     if !verus_present() {
@@ -117,7 +116,8 @@ fn divergence_join_l3_not_mutation_gated_l0() {
     let join = cert_for(&certs, "join");
     // ORACLE (cases.json): join certifies L3 with fx alloc.
     assert_eq!(
-        join["level"], "L3",
+        join["level"],
+        "L3",
         "ORACLE conformance/string/cases.json: join -> L3 (the bounded concat; \
          verus PROVES it, golden string_demo.verus.rs is `11 verified, 0 errors`). \
          forge check reports: {} (mutants_killed={}, reject={}). ROOT CAUSE: \
@@ -160,7 +160,10 @@ fn confirm_string_non_join_items_certify_per_oracle() {
     assert_eq!(gl["effects"], serde_json::json!(["pure"]));
 
     let fb = cert_for(&certs, "first_byte");
-    assert_eq!(fb["level"], "L3", "ORACLE: first_byte -> L3 (no-OOB byte_at)");
+    assert_eq!(
+        fb["level"], "L3",
+        "ORACLE: first_byte -> L3 (no-OOB byte_at)"
+    );
     assert_eq!(fb["effects"], serde_json::json!(["pure"]));
 
     let ll = cert_for(&certs, "literal_len");
@@ -206,8 +209,7 @@ fn confirm_byte_at_bound_is_load_bearing() {
     //     no `req s.len() > 0` -> byte_at's `0 < len` undischarged -> L0.
     // (3) an OFF-BY-ONE bound `req i <= s.len()` -> `i < len` undischarged
     //     (`i == len` is OOB) -> L0 (the bound is genuinely load-bearing).
-    let fixture =
-        std::env::temp_dir().join(format!("forge_div_str_oob_{}.th", std::process::id()));
+    let fixture = std::env::temp_dir().join(format!("forge_div_str_oob_{}.th", std::process::id()));
     std::fs::write(
         &fixture,
         "fn oob_byte_at_no_req(s: String) -> u64\n  req true\n  ens result == s.byte_at(0)\n  fx  pure\n{\n  s.byte_at(0)\n}\n\nfn oob_byte_at_offbyone(s: String, i: usize) -> u64\n  req i <= s.len()\n  ens result == s.byte_at(i)\n  fx  pure\n{\n  s.byte_at(i)\n}\n",

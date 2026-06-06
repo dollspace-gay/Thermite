@@ -288,6 +288,20 @@ fn binop_token(op: BinOp) -> &'static str {
 ///   certifies L3 (it does NOT bypass the gate). A weak `ens result.len() <= N`
 ///   PROVES the empty Vec → the mutant SURVIVES → the floor still gates the weak
 ///   `Vec` contract (the synthesis ENABLES scoring; it does not auto-pass).
+/// - a bounded-`String` return (`Type::String`, `.design/basis/07-strings.md`
+///   REQ-4) has no scalar zero either, so it synthesizes the EMPTY-`TString`
+///   construction `TString { data: Vec::new() }` (`empty_string_value`) — the
+///   exact `thermite_lower` wrapper-newtype literal a `String` lowers to
+///   (`Type::String => "TString"` in `lower.rs`), constructed empty. This MIRRORS
+///   the #74 `Vec` precedent for the `String`-return class (#80): an empty
+///   `TString` is the canonical "trivial" String (`len() == 0`, always
+///   `well_formed`), so EVERY `String`-returning body is scored rather than
+///   escaping via a 0/0 gate. A strong `ens result.len() == a.len() + b.len()`
+///   (the corpus `join`) REJECTS the empty String (`0 != a.len()+b.len()` for
+///   non-empty inputs) so the mutant is KILLED — a genuinely-proved `concat`
+///   SCORES the floor and certifies L3 (it does NOT bypass the gate). A weak `ens
+///   result.len() <= N` PROVES the empty String so the mutant SURVIVES — the floor
+///   STILL gates the weak `String` contract.
 ///
 /// `None` is returned only for a genuinely un-synthesizable return type (`Unit`, a
 /// non-slice ref, a non-`Option` generic, a `Vec` of a non-Copy-primitive element
@@ -314,7 +328,50 @@ fn early_return_value(f: &FnItem) -> Option<(Expr, String)> {
             return Some((value, desc));
         }
     }
+    // A bounded-`String` return: the empty-`TString` wrapper literal
+    // `TString { data: Vec::new() }` (#80, mirroring the #74 empty-`Vec` arm
+    // EXACTLY for the `Type::String` class). A `String` has no scalar zero, so
+    // without this arm a `String`-returning body whose surface body has no
+    // binop/off-by-one/branch site (`{ a.concat(b) }`) yields ZERO mutants → a
+    // `0/0` score → the #48 anti-Goodhart backstop spuriously gates a
+    // genuinely-L3-proved fn to `WeakContract`/L0. An empty `TString` is the
+    // canonical "trivial" String (`len() == 0`, always `well_formed`), the exact
+    // `thermite_lower::lower` wrapper-newtype literal a `String` lowers to
+    // (`TString { data }` over `vstd::vec::Vec<u8>` — the single nullary `TString`
+    // wrapper, no per-element suffix unlike `Vec`). A strong `ens result.len() ==
+    // a.len() + b.len()` REJECTS the empty String (`0 != a.len()+b.len()` for
+    // non-empty inputs) → the mutant is KILLED → `join` SCORES the floor and
+    // certifies L3 (the synthesis ENABLES scoring; it does NOT bypass the gate). A
+    // WEAK `ens result.len() <= N` PROVES the empty String → the mutant SURVIVES →
+    // the floor STILL gates the weak String contract.
+    if let Type::String = &f.ret {
+        return Some(empty_string_value());
+    }
     None
+}
+
+/// The empty-`String` early-return value: the wrapper-newtype struct literal
+/// `TString { data: Vec::new() }` (#80). The wrapper NAME mirrors
+/// `thermite_lower::lower`'s `Type::String => "TString"` — a Thermite `String`
+/// lowers to the single `TString` newtype over `vstd::vec::Vec<u8>` (a nullary
+/// node, fixed `u8` element — unlike `Vec<T>`'s per-element `TVec<Suffix>`, there
+/// is exactly one `TString`). An empty `vstd::vec::Vec::new()` has `len() == 0`,
+/// so the constructed wrapper is `well_formed` and lowers to exec code Verus
+/// accepts — the same shape `empty_vec_value` synthesizes for the `Vec`-return
+/// class (#74). The `data` field is the verified vstd `Vec::new()`.
+fn empty_string_value() -> (Expr, String) {
+    let empty = Expr::StructLit {
+        path: vec!["TString".to_string()],
+        // The verified `vstd::vec::Vec::new()` (an empty byte backing run).
+        fields: vec![(
+            "data".to_string(),
+            Expr::Call {
+                callee: Box::new(Expr::Path(vec!["Vec".to_string(), "new".to_string()])),
+                args: Vec::new(),
+            },
+        )],
+    };
+    (empty, "TString { data: Vec::new() }".to_string())
 }
 
 /// The empty-`Vec` early-return value for a `Vec<elem>` return: the wrapper-newtype

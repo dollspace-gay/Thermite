@@ -77,7 +77,17 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///       stored under schema 2 MUST be re-checked under schema 3 — the
 ///       maintenance contract above (a gate-semantics change ⇒ bump, or a
 ///       stale L0 is served on an identical lowered-source key, REQ-2).
-const CHECK_SCHEMA_VERSION: u32 = 3;
+///   4 — blocker #80: the §7 early-return mutant is now SYNTHESIZED for a
+///       `String` return (an empty `TString { data: Vec::new() }`, mirroring the
+///       #74 empty-`Vec` synthesis) in `mutation::early_return_value`'s
+///       `Type::String` arm, so a `String`-returning fn is SCORED instead of
+///       0/0-gated to `WeakContract`. This CHANGES the gate verdict for
+///       `String`-return fns (the genuinely-proved `join`/`concat` now certifies
+///       L3 instead of the spurious mutation-gated L0), so every cert stored
+///       under schema 3 MUST be re-checked under schema 4 — the maintenance
+///       contract above (else `forge check` serves the stale L0 cached on an
+///       identical lowered-source key, REQ-2: a HIT must equal a fresh verify).
+const CHECK_SCHEMA_VERSION: u32 = 4;
 
 /// The project-local proof-cache directory (`.design/forge/proof-cache.md`
 /// REQ-6, OQ-1): `target/thermite-proof-cache/`. It is BUILD OUTPUT under the

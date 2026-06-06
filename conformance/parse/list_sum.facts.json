@@ -1,0 +1,32 @@
+{
+  "source": "conformance/list_sum.th",
+  "note": "Hand-derived structural facts (goal.md R-CHAR-3) from .design/basis/01-adts.md REQ-3 (recursive type via Box<T>, the alloc primitive) + REQ-4 (match binding). The Cons variant carries a Box<List> self-reference (Type::Box). sum_list is a spec fn (total/terminating, `dec l` on the datatype value per the grounding) with NO req/ens/fx; its body matches l exhaustively and derefs the boxed tail (`*t`) in the recursive call. Stage 1a (parse) oracle.",
+  "parses_ok": true,
+  "error_count": 0,
+  "items": [
+    {
+      "name": "List",
+      "kind": "enum",
+      "variants": [
+        { "name": "Nil", "shape": "unit" },
+        { "name": "Cons", "shape": "tuple", "arity": 2, "types": [ "u64", "Box<List>" ], "has_box_self_ref": true }
+      ]
+    },
+    {
+      "name": "sum_list",
+      "kind": "spec fn",
+      "params": [ { "name": "l", "type": "List" } ],
+      "ret": "u64",
+      "has_dec": true,
+      "dec_text": "l",
+      "has_contract_clauses": false,
+      "match": {
+        "scrutinee": "l",
+        "arm_count": 2,
+        "arms": [ { "variant": "Nil", "pattern": "unit", "binds": [] }, { "variant": "Cons", "pattern": "tuple", "binds": [ "h", "t" ] } ],
+        "exhaustive": true,
+        "recursive_call_derefs_box": "*t"
+      }
+    }
+  ]
+}

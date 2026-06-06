@@ -1,0 +1,26 @@
+{
+  "source": "conformance/bank_account.th",
+  "note": "Hand-derived structural facts (goal.md R-CHAR-3) from .design/basis/01-adts.md REQ-1 (struct item + `inv` type-invariant clause) and REQ-2 (`Expr::StructLit` construction). Stage 1a (parse) oracle. The struct carries fields + an Option<Clause> inv; deposit constructs an Account via StructLit and field-accesses a.balance.",
+  "parses_ok": true,
+  "error_count": 0,
+  "items": [
+    {
+      "name": "Account",
+      "kind": "struct",
+      "fields": [ { "name": "balance", "type": "u64" } ],
+      "has_inv": true,
+      "inv_text": "balance <= 1_000_000"
+    },
+    {
+      "name": "deposit",
+      "kind": "fn",
+      "params": [ { "name": "a", "type": "Account" }, { "name": "amount", "type": "u64" } ],
+      "ret": "Account",
+      "req_count": 1,
+      "ens_count": 1,
+      "fx": "pure",
+      "body_constructs_struct_lit": "Account",
+      "body_field_access": [ "a.balance" ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+enum List {
+  Nil,
+  Cons(u64, Box<List>),
+}
+
+spec fn sum_list(l: List) -> u64
+  dec l
+{
+  match l {
+    Nil        => 0,
+    Cons(h, t) => h as u64 + sum_list(*t),
+  }
+}

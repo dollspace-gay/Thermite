@@ -1,0 +1,31 @@
+{
+  "source": "conformance/shape.th",
+  "note": "Hand-derived structural facts (goal.md R-CHAR-3) from .design/basis/01-adts.md REQ-2 (enum with tuple + struct variants), REQ-4 (exhaustive match with payload binding), REQ-6 (`is` variant-discrimination in a contract). Stage 1a (parse) oracle.",
+  "parses_ok": true,
+  "error_count": 0,
+  "items": [
+    {
+      "name": "Shape",
+      "kind": "enum",
+      "variants": [
+        { "name": "Circle", "shape": "tuple", "arity": 1, "types": [ "u64" ] },
+        { "name": "Rect", "shape": "struct", "fields": [ { "name": "w", "type": "u64" }, { "name": "h", "type": "u64" } ] }
+      ]
+    },
+    {
+      "name": "is_circle",
+      "kind": "fn",
+      "params": [ { "name": "s", "type": "Shape" } ],
+      "ret": "bool",
+      "ens_count": 1,
+      "ens_has_is_expr": { "scrutinee": "s", "variant": "Circle" },
+      "fx": "pure",
+      "match": {
+        "scrutinee": "s",
+        "arm_count": 2,
+        "arms": [ { "variant": "Circle", "pattern": "tuple", "binds": [ "r" ] }, { "variant": "Rect", "pattern": "struct", "binds": [ "w", "h" ] } ],
+        "exhaustive": true
+      }
+    }
+  ]
+}

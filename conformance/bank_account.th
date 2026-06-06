@@ -1,0 +1,11 @@
+struct Account {
+  balance: u64,
+} inv balance <= 1_000_000
+
+fn deposit(a: Account, amount: u64) -> Account
+  req a.balance + amount <= 1_000_000
+  ens result.balance == a.balance + amount
+  fx  pure
+{
+  Account { balance: a.balance + amount }
+}

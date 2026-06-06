@@ -1,0 +1,14 @@
+enum Shape {
+  Circle(u64),
+  Rect { w: u64, h: u64 },
+}
+
+fn is_circle(s: Shape) -> bool
+  ens result == (s is Circle)
+  fx  pure
+{
+  match s {
+    Circle(r)     => true,
+    Rect { w, h } => false,
+  }
+}

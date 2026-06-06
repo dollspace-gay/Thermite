@@ -1,0 +1,10 @@
+{
+  "uuid": "2d62a94b-c0cb-4ec5-a343-cb1fc98b09c4",
+  "issue_uuid": "d853e814-68f5-4c80-a047-9c1b53e80a39",
+  "author": "Yffe",
+  "content": "[action] Stage 1b ADT validator SHIPPED (commit 5f5a4b7). validator.rs: pre-pass + check_match_exhaustiveness + check_field + check_variant_ref; 4 new SpecError variants (additive). tests/adt_validate.rs drives the oracle (3 accept, 5 reject). thermite-spec 33 tests pass; workspace 0 failures; clippy/fmt clean. NOT pushed, NOT closed (#65 awaits critic re-audit). Next: acto-critic.",
+  "created_at": "2026-06-06T12:09:12.801767893Z",
+  "kind": "note",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHwra3EIyJeTiXKdf4TAx0Gj63A3y4cQEFBIeJ+7vpzVi/vC7nWYbN0rgPJLAmh9pDlk1fwzgj5EnomHTXiquAg=="
+}

@@ -2,11 +2,12 @@
   "uuid": "d853e814-68f5-4c80-a047-9c1b53e80a39",
   "display_id": 65,
   "title": "Stage 1b — ADT validator: exhaustiveness + well-formed field/variant access + is + cage",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-06T11:55:38.593905651Z",
-  "updated_at": "2026-06-06T11:55:39.890595974Z",
+  "updated_at": "2026-06-06T12:27:37.217898454Z",
+  "closed_at": "2026-06-06T12:27:37.217898454Z",
   "labels": [
     "feature"
   ]

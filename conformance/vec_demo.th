@@ -1,0 +1,17 @@
+fn checked_get(v: Vec<u64>, i: usize) -> u64
+  req i < v.len()
+  ens result == v.get(i)
+  fx  pure
+{
+  v.get(i)
+}
+
+fn push_one(v: Vec<u64>, x: u64) -> Vec<u64>
+  req v.len() < 1_000_000
+  ens result.len() == v.len() + 1
+  fx  alloc
+{
+  let mut v2 = v;
+  v2.push(x);
+  v2
+}

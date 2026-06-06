@@ -1,0 +1,14 @@
+{
+  "note": "Oracle for Stage 4 — bounded collections (issue #73). Hand-derived (R-CHAR-3) from .design/basis/04-collections.md (DECIDED: wrap vstd::vec::Vec as a bounded Vec<T> newtype with a len()<=CAP capacity invariant; verified push/pop/get/len; the surface contract is backing-agnostic). A Vec-constructing/pushing fn carries `fx alloc` (the Stage-1 Box/Alloc heap, generalized). Grounded form: BVec over vstd Vec<u64> with well_formed/push/get + a preserved element invariant -> 5 verified, 0 errors.",
+  "certify": [
+    { "name": "checked_get", "source": "conformance/vec_demo.th", "level": "L3", "effects": ["pure"],
+      "why": "the verified no-OOB accessor: req i < v.len() discharges Vec::get's bound precondition; ens result == v.get(i) holds by get's spec (result == v@[i]). fx pure (get does not allocate). The OOB bug is unrepresentable — req i<len is mandatory." },
+    { "name": "push_one", "source": "conformance/vec_demo.th", "level": "L3", "effects": ["alloc"],
+      "why": "the capacity-preserving push: req v.len() < 1_000_000 (CAP headroom); ens result.len() == v.len()+1 holds by Vec::push's spec (len' == len+1). fx alloc (push allocates — the Stage-1 Alloc effect, vstd Vec on the heap). NOTE the lowerer must emit final(self) for the &mut push postcondition (the grounding finding)." }
+  ],
+  "reject": [
+    { "name": "oob_get_no_req", "expect_level": "L0",
+      "program": "fn bad(v: Vec<u64>, i: usize) -> u64 req true ens result == v.get(i) fx pure { v.get(i) }",
+      "why": "without `req i < v.len()`, v.get(i) is unproven in-bounds -> get's precondition is not discharged -> L0 (the no-OOB guarantee requires the caller to establish i < len; a missing bound is caught, not laundered to L3)." }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "b0876e7e-aafc-4385-9302-f965afd9b452",
+  "issue_uuid": "d3558913-c54b-4b57-aa96-6f50b53da2a7",
+  "author": "Yffe",
+  "content": "RESULT (commit 310ab70): Fixed in single file forge/src/check.rs. check::item_subprogram now weaves the referenced struct/enum decls (new reachable_adt_deps: direct refs from param/return Type::Named/Box, contract req/ens/dec, body StructLit/Match/Pattern::Enum/Struct/Is/Field + variant->enum resolution; transitive cycle-safe fixed point over weaved-decl FIELD types so recursive Box<List> terminates), woven FIRST so verus has the type decl + well_formed in scope. Threaded adt_deps through mutation_score/strengthen_certificate (ADT mutants lower; no spurious 0/0 WeakContract). The 3 pinned tests PASS: deposit/is_circle/sum_list -> L3 matching the cert oracle (taut false, vac false, fx [pure], slag false). Non-ADT corpus unchanged (sum/binary_search L3, check_conformance green); adt_lower_conformance 10 pass; composition (#52) 5 pass; a boundary-caller that ALSO references an ADT composes (read_balance -> L3 to_boundary). Gauntlet: cargo test -p forge 186+ pass 0 fail; clippy --workspace --all-targets -D warnings PASS; cargo fmt --all --check PASS. The only workspace failure is thermite-lower divergence_adt_fold_generality = SEPARATE blocker #69 (fold-generality in lower.rs), not touched here.",
+  "created_at": "2026-06-06T13:25:29.730656554Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAwh0f0+6fl7b4VaDcL20ywSHC92o2ZGrM1VvzLOFoFiMp32nL25tE9/MUhSucFr7dMOWpVoa3xk67ISQCNTlrCA=="
+}

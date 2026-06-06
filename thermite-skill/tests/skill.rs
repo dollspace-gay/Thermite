@@ -46,6 +46,95 @@ fn every_combinator_appears_with_an_example() {
     );
 }
 
+/// AC-9 — every entry in the frozen recursion-scheme registry appears by name
+/// AND carries a usage example (the REQ-9 registry-driven anti-drift property —
+/// the AC-2 analogue for schemes). The expected set IS `schemes::all()`, so a
+/// scheme added or dropped changes this coverage automatically (R-CHAR-3).
+#[test]
+fn every_scheme_appears_with_an_example() {
+    let skill = generate();
+    let registry = thermite_spec::schemes::all();
+    for sig in registry {
+        assert!(
+            skill.contains(sig.name),
+            "skill is missing recursion-scheme name `{}`",
+            sig.name
+        );
+    }
+    // One scheme example marker per registry entry. The scheme section renders
+    // each example inside a `fold(`/`map(`/… call; assert the per-scheme call
+    // shape line is present (the `-> nat`/`-> bool`/`-> the same ADT` result tag
+    // appears once per scheme).
+    for sig in registry {
+        // Each scheme renders a `name(` call-shape token; the registry's own
+        // names are the oracle (R-CHAR-3).
+        let call = format!("`{}(", sig.name);
+        assert!(
+            skill.contains(&call),
+            "skill is missing a call shape for scheme `{}`",
+            sig.name
+        );
+    }
+}
+
+/// AC-10(ii) — coverage: every current Stage-1–8 surface construct appears in the
+/// generated skill (the OUTPUT half of the no-staleness guarantee). Expected
+/// substrings are derived from the construct's name / §4.4 — never copied back
+/// from the generator (R-CHAR-3). The STRUCTURAL half (no `_` arm, so a new
+/// variant fails to compile — AC-10(i)) is enforced by `rustc`'s exhaustiveness
+/// check on `render_*_arm`: this very test crate would not compile if a renderer
+/// arm were missing, so a green build IS the structural proof. See the module
+/// test `renderers_are_exhaustive_no_wildcard` for the inline invariant.
+#[test]
+fn surface_construct_coverage() {
+    let skill = generate();
+    // The Stage-1–8 surface the curated string formerly LIED about ("no
+    // struct/enum") — each must now appear (struct/enum items, the ADT/Box/Vec/
+    // String types, the StructLit/Is/StrLit/Deref/Match exprs, every effect atom,
+    // the recursion schemes).
+    for marker in [
+        // Items (the lie was "no struct/enum"):
+        "struct NAME",
+        "enum NAME",
+        "spec fn NAME",
+        // Types (Stage 1/4/7):
+        "&[T]",
+        "Box<T>",
+        "Vec<T>",
+        "`String`",
+        "NAME<T>",
+        // Expressions (Stage 1 ADT surface):
+        "Path { field: val",
+        "EXPR is Variant",
+        "*EXPR",
+        "\"text\"", // the StrLit fragment
+        "match e {",
+        // Effect atoms (Stage 3):
+        "read(path)",
+        "write(path)",
+        "net(domain)",
+        "alloc",
+        "diverge",
+        // Recursion schemes (Stage 2):
+        "fold(",
+        "map(",
+        "for_all(",
+        "exists(",
+        "traverse(",
+    ] {
+        assert!(
+            skill.contains(marker),
+            "skill is missing surface construct marker `{marker}`"
+        );
+    }
+    // The committed-string LIE must be gone: the skill no longer claims the
+    // language has no struct/enum.
+    assert!(
+        !skill.contains("no `struct`"),
+        "skill still carries the stale `no struct/enum` lie"
+    );
+}
+
 /// AC-3 — all four ladder labels and the L0/slag clarification are present
 /// (expected strings derived from `thermite-design.md` §6).
 #[test]

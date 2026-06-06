@@ -8,29 +8,45 @@
 //! (the surface grammar), §6 (the ladder, incl. the L0/slag clarification),
 //! §8 (the slag rules), Appendix B (the Forge command surface).
 //!
-//! [`generate`] assembles the five §10 sections — (1) surface grammar,
-//! (2) the SpecTherm combinator library, (3) the Forge command set, (4) the
-//! ladder semantics, (5) the slag rules — into one deterministic `String`.
-//! Section (2) is **machine-rendered** from `thermite_spec::all()` (the frozen
-//! registry), so adding/removing a combinator auto-appears/auto-drops in the
-//! skill (§10 anti-drift). Sections (1)/(3)/(4)/(5) are curated, templated
-//! strings sourced from the design and versioned with the toolchain. No I/O, no
-//! env, no wall-clock, no RNG — a pure function of the compiled-in curated text
-//! and the static registry (R-CODE-5).
+//! [`generate`] assembles the §10 sections — (1) surface grammar, (2) the
+//! SpecTherm combinator library, (2b) the recursion-scheme library, (3) the
+//! Forge command set, (4) the ladder semantics, (5) the slag rules — into one
+//! deterministic `String`. The SURFACE INVENTORY is DYNAMIC by two
+//! compiler-backed mechanisms (REQ-8): (i) **registry-driven** — section (2)
+//! iterates `thermite_spec::all()` and (2b) iterates
+//! `thermite_spec::schemes::all()`, so a new registry entry auto-appears (REQ-2,
+//! REQ-9); (ii) **exhaustive-match-driven** — section (1)'s construct inventory
+//! is rendered by an EXHAUSTIVE `match` (no `_` wildcard) over the definitional
+//! enums `thermite_syntax::{Type,Expr,Item,Pattern,Effect}` (+ `BinOp`/
+//! `PrimType`), so a NEW variant FAILS TO COMPILE until its skill arm is added
+//! (REQ-10 — the compiler is the freshness enforcer). The explanatory PROSE (the
+//! framing, the ladder, the slag rules, the forge verb table) stays curated,
+//! guarded by the freshness + budget tests (REQ-11). No I/O, no env, no
+//! wall-clock, no RNG — a pure function of the compiled-in text, the static
+//! registries, and the per-variant match arms (R-CODE-5).
 //!
 //! ## REQ status
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (`generate()` API + five canonical sections) | SHIPPED | `pub fn generate` concatenates `render_grammar`/`render_combinators`/`render_forge`/`render_ladder`/`render_slag` in §10 order; consumed by `main::run` (the `--emit`/`--check-budget` bin) and the freshness/coverage tests. |
+//! | REQ-1 (`generate()` API + canonical sections) | SHIPPED | `pub fn generate` concatenates `render_grammar`/`render_combinators`/`render_schemes`/`render_forge`/`render_ladder`/`render_slag` in §10 order; consumed by `main::run` (the `--emit`/`--check-budget` bin) and the freshness/coverage tests. |
 //! | REQ-2 (combinator section machine-rendered from `all()`) | SHIPPED | `render_combinators` iterates `thermite_spec::all()`, renders each entry's surface signature from `name`/`arity`/`arg_kinds`/`result` + one example from `example_for`; consumed by `generate`. Verified: `combinator_coverage` asserts every `all()` name + an example marker appears. |
-//! | REQ-3 (curated grammar/forge/ladder/slag sections) | SHIPPED | `render_grammar`/`render_forge`/`render_ladder`/`render_slag` return compiled-in strings sourced from §4/§4.2/§4.4 + Appendix B + §6 + §8; consumed by `generate`. Verified: `grammar_forge_slag_coverage`, `ladder_coverage`. |
+//! | REQ-3 (curated PROSE sections — narrowed to irreducible prose) | SHIPPED | `render_forge`/`render_ladder`/`render_slag` + the framing/scaffolding in `render_grammar` return compiled-in strings sourced from §5.1/§6/§8/§4.2; consumed by `generate`. The structural inventory moved to REQ-9/REQ-10. Verified: `grammar_forge_slag_coverage`, `ladder_coverage`. |
 //! | REQ-4 (deterministic token count + ≤ 6,000 gate) | SHIPPED | `pub fn token_count` = `(chars*2).div_ceil(7)` (ceil(chars/3.5), integer, deterministic); `SKILL_TOKEN_BUDGET = 6000`; consumed by `main::run` (`--check-budget`) and `budget_gate`. |
 //! | REQ-5 (committed `THERMITE.skill.md` + up-to-date check) | SHIPPED | the repo-root `THERMITE.skill.md` is `generate()`'s output; `committed_skill_is_fresh` asserts the committed bytes `== generate()`. |
 //! | REQ-6 (`thermite-skill` bin — `--emit`/`--check-budget`) | SHIPPED — see `main.rs` | `main::run` dispatches `--emit`→`generate()` and `--check-budget`→`token_count(generate())`; consumes both `generate` and `token_count`. |
 //! | REQ-7 (CI `--check-budget` step) | SHIPPED — see `.github/workflows/ci.yml` | the `cargo run -p thermite-skill -- --check-budget` step in `ci.yml` runs the gate in CI. |
+//! | REQ-8 (compiler-enforced no-staleness GUARANTEE) | SHIPPED | the surface inventory is rendered ONLY by registry iteration (`render_combinators`/`render_schemes`) or exhaustive `match` (`render_type_arm`/`render_expr_arm`/`render_item_arm`/`render_pattern_arm`/`render_effect_arm`/`render_binop_arm`/`render_prim_arm`, NO `_` arm) — a new variant FAILS TO COMPILE; a new registry entry auto-renders. Consumed by `render_grammar`/`render_schemes` in `generate`. Verified: `surface_construct_coverage` (output) + the no-`_` structural invariant (compile-forced). |
+//! | REQ-9 (recursion-scheme section registry-driven from `schemes::all()`) | SHIPPED | `render_schemes` iterates `thermite_spec::schemes::all()`, renders each `SchemeSig`'s call shape (`scrutinee_args`+`step_shape`) + result + one `scheme_example_for`; consumed by `generate`. Verified: `every_scheme_appears_with_an_example`. This is `thermite-skill`'s non-test consumer of `schemes::all()` (R-DEFER-1). |
+//! | REQ-10 (type/expr/item/pattern/effect grammar exhaustive-match-driven) | SHIPPED | `render_{type,expr,item,pattern,effect,binop,prim}_arm` are exhaustive `match`es with NO `_` arm over `thermite_syntax::{Type,Expr,Item,Pattern,Effect,BinOp,PrimType}`; driven over per-variant inventories (`type_inventory` etc.) by `render_grammar`. Verified: `surface_construct_coverage`. |
+//! | REQ-11 (prose curated + freshness-tested; forge command list the honest exception) | SHIPPED | the irreducible prose stays curated in `render_grammar`'s framing/`render_forge`/`render_ladder`/`render_slag`; the forge verb LIST stays a curated table (forge's `Command` is private + forge→thermite-skill dep, OQ-5), kept honest by `committed_skill_is_fresh` (REQ-5) + `grammar_forge_slag_coverage` (AC-4). |
 
+use thermite_spec::schemes::{SchemeResult, SchemeSig, StepShape};
 use thermite_spec::{ArgKind, CombinatorSig, ResultKind};
+use thermite_syntax::ast::{
+    BinOp, Effect, Expr, IndexArg, Item, Pattern, PrimType, SlicePat, Type,
+};
+use thermite_syntax::lexer::Span;
 
 /// The hard token budget for `THERMITE.skill.md` (`thermite-design.md` §2.2:
 /// "≤ 6,000 tokens … This is a hard budget, enforced in CI"). The design's
@@ -58,16 +74,20 @@ pub fn token_count(s: &str) -> usize {
 
 /// Assemble the canonical `THERMITE.skill.md` as one deterministic `String`.
 ///
-/// The five sections appear in `thermite-design.md` §10 order: (1) surface
-/// grammar, (2) the SpecTherm combinator library (one example each), (3) the
-/// Forge command set, (4) the ladder semantics, (5) the slag rules. Section (2)
-/// is machine-rendered from `thermite_spec::all()` (REQ-2); the rest are curated
-/// (REQ-3). Pure: no I/O, no env, no clock, no RNG (REQ-1 / R-CODE-5 / AC-6).
+/// The sections appear in `thermite-design.md` §10 order: (1) surface grammar,
+/// (2) the SpecTherm combinator library, (2b) the recursion-scheme library, (3)
+/// the Forge command set, (4) the ladder semantics, (5) the slag rules. Section
+/// (1)'s construct inventory is EXHAUSTIVE-MATCH-driven over the `thermite_syntax`
+/// enums (REQ-10), (2) is registry-driven from `thermite_spec::all()` (REQ-2),
+/// (2b) is registry-driven from `thermite_spec::schemes::all()` (REQ-9); the
+/// curated prose (the framing, ladder, slag, forge verb table) stays templated
+/// (REQ-11). Pure: no I/O, no env, no clock, no RNG (REQ-1 / R-CODE-5 / AC-6).
 pub fn generate() -> String {
     let mut out = String::new();
     out.push_str(HEADER);
     out.push_str(&render_grammar());
     out.push_str(&render_combinators());
+    out.push_str(&render_schemes());
     out.push_str(&render_forge());
     out.push_str(&render_ladder());
     out.push_str(&render_slag());
@@ -90,19 +110,631 @@ Budget: this file must stay under 6,000 tokens (a hard CI gate, design §2.2).
 
 ";
 
-/// Section (1) — the surface grammar. CURATED from `thermite-design.md`
-/// §4/§4.2/§4.4 and `.design/syntax/surface-grammar.md` (REQ-3): the three item
-/// forms, the mandatory clause order, mandatory loop `inv`/`dec`, the one call
-/// syntax, the expression/pattern/type/effect grammar, the flat-closure rule,
-/// and the "removed from Rust" table.
+/// One rendered surface-construct entry (REQ-10): the per-variant fragment an
+/// exhaustive-`match` renderer emits for a single language construct — a concise
+/// grammar `fragment`, a one-line `description`, and a tiny `example`. The text
+/// is a deterministic function of the VARIANT (not of any payload value), so the
+/// rendered inventory is pure (R-CODE-5, AC-6).
+struct SkillFragment {
+    /// The grammar fragment for this construct (e.g. `&[T]`, `match e { … }`).
+    fragment: &'static str,
+    /// A one-line description of what the construct is.
+    description: &'static str,
+    /// A tiny illustrative example of the construct in use.
+    example: &'static str,
+}
+
+impl SkillFragment {
+    /// Render this fragment as one markdown bullet (the per-construct row of the
+    /// REQ-10 inventory): the grammar fragment + description, then a tiny example.
+    fn to_bullet(&self) -> String {
+        format!(
+            "- `{fragment}` — {description}\n  // e.g. {example}\n",
+            fragment = self.fragment,
+            description = self.description,
+            example = self.example,
+        )
+    }
+}
+
+/// Render ONE `Type` variant's surface fragment (REQ-10).
+///
+/// EXHAUSTIVE `match` over `thermite_syntax::ast::Type` with NO `_` wildcard arm:
+/// adding a new `Type` variant (e.g. the deferred `Type::Map`, ast.rs REQ-2)
+/// makes this `match` non-exhaustive, a HARD `rustc` `E0004` compile error in
+/// `thermite-skill`, until its arm is added — the compiler is the freshness
+/// enforcer (REQ-8, AC-10(i)). Payload is field-elided (`{ .. }` / `(_)`); the
+/// elision does not weaken exhaustiveness (the compiler checks the VARIANT set).
+fn render_type_arm(ty: &Type) -> SkillFragment {
+    match ty {
+        Type::Prim(_) => SkillFragment {
+            fragment: "u32 | u64 | usize | bool",
+            description: "the closed primitive scalar set (no implicit widening)",
+            example: "let n: u64 = 0;",
+        },
+        Type::Unit => SkillFragment {
+            fragment: "()",
+            description: "the unit type, written explicitly in a return position",
+            example: "fn log() -> () ens true fx pure { }",
+        },
+        Type::Ref { .. } => SkillFragment {
+            fragment: "&T | &mut T",
+            description: "a shared / exclusive reference (no explicit lifetimes)",
+            example: "fn f(x: &mut u64)",
+        },
+        Type::Slice(_) => SkillFragment {
+            fragment: "&[T]",
+            description: "a borrowed read-only slice view",
+            example: "fn sum(xs: &[u32]) -> u64",
+        },
+        Type::Generic { .. } => SkillFragment {
+            fragment: "NAME<T>",
+            description: "one single-arg generic application (e.g. Option)",
+            example: "-> Option<usize>",
+        },
+        Type::Named(_) => SkillFragment {
+            fragment: "Name",
+            description: "a bare user-declared struct/enum type name",
+            example: "fn area(s: Shape) -> u64",
+        },
+        Type::Box(_) => SkillFragment {
+            fragment: "Box<T>",
+            description: "heap indirection for a recursive enum (carries fx alloc)",
+            example: "Cons(u64, Box<List>)",
+        },
+        Type::Vec(_) => SkillFragment {
+            fragment: "Vec<T>",
+            description: "a bounded growable collection over verified vstd (fx alloc)",
+            example: "let v: Vec<u64> = Vec::new();",
+        },
+        Type::String => SkillFragment {
+            fragment: "String",
+            description: "a bounded owned run of u8 bytes (fx alloc)",
+            example: "let s: String = \"hi\";",
+        },
+    }
+}
+
+/// Render ONE `PrimType` leaf's surface fragment (REQ-10): the exhaustive `match`
+/// over the closed primitive set so a NEW primitive also compile-forces an entry.
+fn render_prim_arm(prim: PrimType) -> SkillFragment {
+    match prim {
+        PrimType::U32 => SkillFragment {
+            fragment: "u32",
+            description: "a 32-bit unsigned integer",
+            example: "needle: u32",
+        },
+        PrimType::U64 => SkillFragment {
+            fragment: "u64",
+            description: "a 64-bit unsigned integer",
+            example: "-> u64",
+        },
+        PrimType::Usize => SkillFragment {
+            fragment: "usize",
+            description: "a pointer-width unsigned index",
+            example: "let i: usize = 0;",
+        },
+        PrimType::Bool => SkillFragment {
+            fragment: "bool",
+            description: "a boolean",
+            example: "let ok: bool = true;",
+        },
+    }
+}
+
+/// Render ONE `Item` variant's surface fragment (REQ-10): exhaustive `match` over
+/// `thermite_syntax::ast::Item`, NO `_` arm — a new top-level item kind
+/// compile-forces a skill entry (REQ-8, AC-10).
+fn render_item_arm(item: &Item) -> SkillFragment {
+    match item {
+        Item::Fn(_) => SkillFragment {
+            fragment: "fn NAME(..) -> T req .. ens .. fx .. { .. }",
+            description: "a contract-first function (mandatory req/ens/fx, in order)",
+            example: "fn sum(xs: &[u32]) -> u64 req .. ens .. fx pure { .. }",
+        },
+        Item::SpecFn(_) => SkillFragment {
+            fragment: "spec fn NAME(..) -> T dec .. { .. }",
+            description: "a total terminating spec function (one dec measure, no req/ens/fx)",
+            example: "spec fn spec_sum(xs: &[u32]) -> nat dec xs.len() { .. }",
+        },
+        Item::Struct(_) => SkillFragment {
+            fragment: "struct NAME { field: T, .. } [inv EXPR]",
+            description: "a product type with an optional type-invariant inv clause",
+            example: "struct Account { balance: u64 } inv balance <= cap",
+        },
+        Item::Enum(_) => SkillFragment {
+            fragment: "enum NAME { Unit, Tuple(T, ..), Struct { f: T } }",
+            description: "a sum type; match over it must be exhaustive",
+            example: "enum List { Nil, Cons(u64, Box<List>) }",
+        },
+    }
+}
+
+/// Render ONE `Expr` variant's surface fragment (REQ-10): exhaustive `match` over
+/// `thermite_syntax::ast::Expr`, NO `_` arm — a new expression form compile-forces
+/// a skill entry (REQ-8, AC-10).
+fn render_expr_arm(expr: &Expr) -> SkillFragment {
+    match expr {
+        Expr::IntLit { .. } => SkillFragment {
+            fragment: "1_000_000",
+            description: "an integer literal (verbatim `_` separators preserved)",
+            example: "req xs.len() <= 1_000_000",
+        },
+        Expr::BoolLit(_) => SkillFragment {
+            fragment: "true | false",
+            description: "a boolean literal",
+            example: "req true",
+        },
+        Expr::Path(_) => SkillFragment {
+            fragment: "name | Mod::ITEM",
+            description: "a path: a binding, a constant, or an enum variant",
+            example: "u32::MAX",
+        },
+        Expr::Call { .. } => SkillFragment {
+            fragment: "f(args)",
+            description: "a free call (combinators and spec fns are free calls)",
+            example: "sorted(haystack)",
+        },
+        Expr::MethodCall { .. } => SkillFragment {
+            fragment: "recv.m(args)",
+            description: "the ONE member-access call syntax (no UFCS)",
+            example: "xs.len()",
+        },
+        Expr::Field { .. } => SkillFragment {
+            fragment: "recv.field",
+            description: "a field access",
+            example: "account.balance",
+        },
+        Expr::Closure { .. } => SkillFragment {
+            fragment: "|x| EXPR",
+            description: "a flat predicate closure (no nested combinator/scheme)",
+            example: "|x| x != needle",
+        },
+        Expr::Match { .. } => SkillFragment {
+            fragment: "match e { Pat => EXPR, .. }",
+            description: "a match expression (arms must be exhaustive over an enum)",
+            example: "match result { Some(i) => .., None => .. }",
+        },
+        Expr::If { .. } => SkillFragment {
+            fragment: "if C { .. } else { .. }",
+            description: "an if/else as an expression (both arms required)",
+            example: "if lo == hi { 0 } else { 1 }",
+        },
+        Expr::Binary { .. } => SkillFragment {
+            fragment: "a OP b",
+            description: "an arithmetic / comparison / logical binary op",
+            example: "lo + (hi - lo) / 2",
+        },
+        Expr::Index { .. } => SkillFragment {
+            fragment: "a[i] | a[..i] | a[i..] | a[i..j]",
+            description: "single or range indexing",
+            example: "spec_sum(&xs[..i])",
+        },
+        Expr::Cast { .. } => SkillFragment {
+            fragment: "EXPR as T",
+            description: "an explicit cast (all integer conversions are explicit)",
+            example: "xs[i] as u64",
+        },
+        Expr::Ref { .. } => SkillFragment {
+            fragment: "&EXPR | &mut EXPR",
+            description: "a shared / exclusive borrow",
+            example: "&xs[..i]",
+        },
+        Expr::StructLit { .. } => SkillFragment {
+            fragment: "Path { field: val, .. }",
+            description: "a struct / struct-variant construction",
+            example: "Account { balance: 0 }",
+        },
+        Expr::Is { .. } => SkillFragment {
+            fragment: "EXPR is Variant",
+            description: "a bool-valued variant-discrimination test",
+            example: "result is Circle",
+        },
+        Expr::Deref(_) => SkillFragment {
+            fragment: "*EXPR",
+            description: "a dereference of a boxed value (the recursive descent)",
+            example: "sum_list(*t)",
+        },
+        Expr::StrLit(_) => SkillFragment {
+            fragment: "\"text\"",
+            description: "a string literal (an owned String; carries fx alloc)",
+            example: "let s: String = \"hello\";",
+        },
+    }
+}
+
+/// Render ONE `BinOp` leaf's surface fragment (REQ-10): exhaustive `match` so a
+/// NEW operator compile-forces a skill entry. Comparisons are non-associative
+/// (`a < b < c` is a parse error).
+fn render_binop_arm(op: BinOp) -> SkillFragment {
+    match op {
+        BinOp::Add => SkillFragment {
+            fragment: "a + b",
+            description: "addition (overflow is a proof obligation)",
+            example: "acc + xs[i] as u64",
+        },
+        BinOp::Sub => SkillFragment {
+            fragment: "a - b",
+            description: "subtraction (underflow is a proof obligation)",
+            example: "hi - lo",
+        },
+        BinOp::Mul => SkillFragment {
+            fragment: "a * b",
+            description: "multiplication (overflow is a proof obligation)",
+            example: "w * h",
+        },
+        BinOp::Div => SkillFragment {
+            fragment: "a / b",
+            description: "division (div-by-zero is a proof obligation)",
+            example: "(hi - lo) / 2",
+        },
+        BinOp::Eq => SkillFragment {
+            fragment: "a == b",
+            description: "equality",
+            example: "haystack[mid] == needle",
+        },
+        BinOp::Ne => SkillFragment {
+            fragment: "a != b",
+            description: "inequality",
+            example: "x != needle",
+        },
+        BinOp::Lt => SkillFragment {
+            fragment: "a < b",
+            description: "less-than (non-associative)",
+            example: "i < xs.len()",
+        },
+        BinOp::Le => SkillFragment {
+            fragment: "a <= b",
+            description: "less-or-equal",
+            example: "lo <= hi",
+        },
+        BinOp::Gt => SkillFragment {
+            fragment: "a > b",
+            description: "greater-than",
+            example: "x > needle",
+        },
+        BinOp::Ge => SkillFragment {
+            fragment: "a >= b",
+            description: "greater-or-equal",
+            example: "balance >= amount",
+        },
+        BinOp::And => SkillFragment {
+            fragment: "a && b",
+            description: "logical and",
+            example: "lo <= hi && hi <= len",
+        },
+        BinOp::Or => SkillFragment {
+            fragment: "a || b",
+            description: "logical or",
+            example: "done || empty",
+        },
+    }
+}
+
+/// Render ONE `Pattern` variant's surface fragment (REQ-10): exhaustive `match`
+/// over `thermite_syntax::ast::Pattern`, NO `_` arm.
+fn render_pattern_arm(pat: &Pattern) -> SkillFragment {
+    match pat {
+        Pattern::Wildcard => SkillFragment {
+            fragment: "_",
+            description: "the wildcard pattern",
+            example: "_ => 0",
+        },
+        Pattern::Literal(_) => SkillFragment {
+            fragment: "LIT",
+            description: "a literal pattern",
+            example: "0 => true",
+        },
+        Pattern::Binding(_) => SkillFragment {
+            fragment: "name",
+            description: "a binding pattern",
+            example: "Some(i) => i",
+        },
+        Pattern::Slice(_) => SkillFragment {
+            fragment: "[] | [head, ..tail]",
+            description: "a slice pattern with an optional rest binding",
+            example: "[head, ..tail] => head",
+        },
+        Pattern::Enum { .. } => SkillFragment {
+            fragment: "Variant(p, ..) | None",
+            description: "a tuple/unit enum-variant pattern (binds the payload)",
+            example: "Some(i) => ..",
+        },
+        Pattern::Struct { .. } => SkillFragment {
+            fragment: "Path { field, .. }",
+            description: "a struct / struct-variant destructuring pattern",
+            example: "Rect { w, h } => w * h",
+        },
+    }
+}
+
+/// Render ONE `Effect` atom's surface fragment (REQ-10): exhaustive `match` over
+/// `thermite_syntax::ast::Effect`, NO `_` arm — a new effect atom compile-forces
+/// a skill entry (REQ-8, AC-10). A caller's row must subsume every callee's row.
+fn render_effect_arm(effect: &Effect) -> SkillFragment {
+    match effect {
+        Effect::Read(_) => SkillFragment {
+            fragment: "read(path)",
+            description: "reads from a filesystem path",
+            example: "fx read(\"/etc/hosts\")",
+        },
+        Effect::Write(_) => SkillFragment {
+            fragment: "write(path)",
+            description: "writes to a filesystem path",
+            example: "fx write(\"/tmp/out\")",
+        },
+        Effect::Net(_) => SkillFragment {
+            fragment: "net(domain)",
+            description: "performs network I/O to a domain",
+            example: "fx net(\"api.example.com\")",
+        },
+        Effect::Alloc => SkillFragment {
+            fragment: "alloc",
+            description: "allocates on the heap (Box/Vec/String construction)",
+            example: "fx alloc",
+        },
+        Effect::Time => SkillFragment {
+            fragment: "time",
+            description: "reads the wall clock",
+            example: "fx time",
+        },
+        Effect::Rand => SkillFragment {
+            fragment: "rand",
+            description: "draws randomness",
+            example: "fx rand",
+        },
+        Effect::Panic => SkillFragment {
+            fragment: "panic",
+            description: "may panic / abort",
+            example: "fx panic",
+        },
+        Effect::Diverge => SkillFragment {
+            fragment: "diverge",
+            description: "may not terminate (waives the default termination proof)",
+            example: "fx diverge",
+        },
+    }
+}
+
+/// The representative `Type` variants the REQ-10 inventory enumerates. ONE value
+/// per `Type` variant — the `match` in `render_type_arm` is what the compiler
+/// checks for exhaustiveness; this list is what the OUTPUT covers. Payload is the
+/// cheapest legal filler (the arm text is payload-independent, AC-6). If a new
+/// `Type` variant is added, `render_type_arm`'s `match` fails to compile FIRST
+/// (REQ-8); this list is then extended to render it.
+fn type_inventory() -> Vec<Type> {
+    vec![
+        Type::Prim(PrimType::U64),
+        Type::Unit,
+        Type::Ref {
+            mutable: false,
+            inner: Box::new(Type::Unit),
+        },
+        Type::Slice(Box::new(Type::Unit)),
+        Type::Generic {
+            name: String::new(),
+            arg: Box::new(Type::Unit),
+        },
+        Type::Named(String::new()),
+        Type::Box(Box::new(Type::Unit)),
+        Type::Vec(Box::new(Type::Unit)),
+        Type::String,
+    ]
+}
+
+/// The closed `PrimType` set, in declaration order (REQ-10 leaf inventory).
+fn prim_inventory() -> [PrimType; 4] {
+    [
+        PrimType::U32,
+        PrimType::U64,
+        PrimType::Usize,
+        PrimType::Bool,
+    ]
+}
+
+/// One representative value per `Item` variant (REQ-10). See [`type_inventory`].
+fn item_inventory() -> Vec<Item> {
+    use thermite_syntax::ast::{
+        Block, Clause, Contract, EffectRow, EnumItem, FnItem, SpecFnItem, StructItem,
+    };
+    let span = Span::new(0, 0);
+    let clause = || Clause {
+        expr: Expr::BoolLit(true),
+        text: String::new(),
+        span,
+    };
+    let empty_block = || Block {
+        stmts: Vec::new(),
+        tail: None,
+    };
+    vec![
+        Item::Fn(FnItem {
+            slag: None,
+            boundary: None,
+            name: String::new(),
+            params: Vec::new(),
+            ret: Type::Unit,
+            contract: Contract {
+                req: clause(),
+                ens: vec![clause()],
+                fx: EffectRow::Pure,
+            },
+            body: Some(empty_block()),
+            span,
+        }),
+        Item::SpecFn(SpecFnItem {
+            name: String::new(),
+            params: Vec::new(),
+            ret: Type::Unit,
+            dec: clause(),
+            body: empty_block(),
+            span,
+        }),
+        Item::Struct(StructItem {
+            name: String::new(),
+            fields: Vec::new(),
+            inv: None,
+            sealed: false,
+            span,
+        }),
+        Item::Enum(EnumItem {
+            name: String::new(),
+            variants: Vec::new(),
+            span,
+        }),
+    ]
+}
+
+/// One representative value per `Expr` variant (REQ-10). See [`type_inventory`].
+fn expr_inventory() -> Vec<Expr> {
+    use thermite_syntax::ast::{Block, MatchArm};
+    let unit = || Box::new(Expr::Path(Vec::new()));
+    let empty_block = || Block {
+        stmts: Vec::new(),
+        tail: None,
+    };
+    vec![
+        Expr::IntLit {
+            value: 0,
+            raw: String::new(),
+        },
+        Expr::BoolLit(true),
+        Expr::Path(Vec::new()),
+        Expr::Call {
+            callee: unit(),
+            args: Vec::new(),
+        },
+        Expr::MethodCall {
+            receiver: unit(),
+            name: String::new(),
+            args: Vec::new(),
+        },
+        Expr::Field {
+            receiver: unit(),
+            name: String::new(),
+        },
+        Expr::Closure {
+            params: Vec::new(),
+            body: unit(),
+        },
+        Expr::Match {
+            scrutinee: unit(),
+            arms: Vec::<MatchArm>::new(),
+        },
+        Expr::If {
+            cond: unit(),
+            then: empty_block(),
+            else_: empty_block(),
+        },
+        Expr::Binary {
+            op: BinOp::Add,
+            lhs: unit(),
+            rhs: unit(),
+        },
+        Expr::Index {
+            base: unit(),
+            index: IndexArg::Single(unit()),
+        },
+        Expr::Cast {
+            expr: unit(),
+            ty: Type::Unit,
+        },
+        Expr::Ref {
+            mutable: false,
+            expr: unit(),
+        },
+        Expr::StructLit {
+            path: Vec::new(),
+            fields: Vec::new(),
+        },
+        Expr::Is {
+            scrutinee: unit(),
+            variant: Vec::new(),
+        },
+        Expr::Deref(unit()),
+        Expr::StrLit(String::new()),
+    ]
+}
+
+/// The closed `BinOp` set, in declaration order (REQ-10 leaf inventory).
+fn binop_inventory() -> [BinOp; 12] {
+    [
+        BinOp::Add,
+        BinOp::Sub,
+        BinOp::Mul,
+        BinOp::Div,
+        BinOp::Eq,
+        BinOp::Ne,
+        BinOp::Lt,
+        BinOp::Le,
+        BinOp::Gt,
+        BinOp::Ge,
+        BinOp::And,
+        BinOp::Or,
+    ]
+}
+
+/// One representative value per `Pattern` variant (REQ-10). See [`type_inventory`].
+fn pattern_inventory() -> Vec<Pattern> {
+    vec![
+        Pattern::Wildcard,
+        Pattern::Literal(Expr::BoolLit(true)),
+        Pattern::Binding(String::new()),
+        Pattern::Slice(Vec::<SlicePat>::new()),
+        Pattern::Enum {
+            path: Vec::new(),
+            fields: Vec::new(),
+        },
+        Pattern::Struct {
+            path: Vec::new(),
+            fields: Vec::new(),
+            rest: false,
+        },
+    ]
+}
+
+/// One representative value per `Effect` atom (REQ-10). See [`type_inventory`].
+fn effect_inventory() -> Vec<Effect> {
+    vec![
+        Effect::Read(String::new()),
+        Effect::Write(String::new()),
+        Effect::Net(String::new()),
+        Effect::Alloc,
+        Effect::Time,
+        Effect::Rand,
+        Effect::Panic,
+        Effect::Diverge,
+    ]
+}
+
+/// Render a labelled construct sub-section: a heading + one bullet per fragment.
+fn render_inventory(label: &str, fragments: &[SkillFragment]) -> String {
+    let mut s = format!("\n**{label}**\n\n");
+    for frag in fragments {
+        s.push_str(&frag.to_bullet());
+    }
+    s
+}
+
+/// Section (1) — the surface grammar. The narrative SCAFFOLDING (the
+/// contract-first framing, the mandatory clause order, the loop `inv`/`dec`
+/// rule, the one-call-syntax rule, the "removed from Rust" motivation) is CURATED
+/// PROSE (REQ-11, sourced from `thermite-design.md` §4/§4.2/§4.4). The CONSTRUCT
+/// INVENTORY — the type / item / expression / operator / pattern / effect forms —
+/// is rendered by EXHAUSTIVE `match`es over the definitional enums (REQ-10), so a
+/// new language construct compile-forces a skill entry (REQ-8). The exact set is
+/// `render_*_arm` over [`type_inventory`]/[`item_inventory`]/[`expr_inventory`]/
+/// [`binop_inventory`]/[`pattern_inventory`]/[`prim_inventory`]/
+/// [`effect_inventory`] — the OUTPUT covers every current variant, the COMPILER
+/// guarantees no variant can be added without an arm.
 fn render_grammar() -> String {
-    String::from(
+    let mut s = String::from(
         "\
 ## 1. Surface grammar
 
-Every `fn` is contract-first, body-second. Three top-level item forms exist and
-no others (no `struct`/`impl`/`trait`/`use`/`mod`/macros in v0.1): `fn`,
-`spec fn`, and `#[slag(...)] fn`.
+Every `fn` is contract-first, body-second. v0.1 has four top-level item forms —
+`fn`, `spec fn`, `struct`, and `enum` (plus the `#[slag(...)]` / `#[boundary]`
+attributes) — and no others (no `impl`/`trait`/`use`/`mod`/macros).
 
 A `fn` signature is followed by mandatory clauses in this exact order — absence
 of any is a parse error, never an implicit default:
@@ -147,35 +779,63 @@ error. Termination is proved by default; divergence requires `fx diverge`.
 Statements: `let mut? NAME : TYPE = EXPR ;`, assignment `LVALUE = EXPR ;`,
 `return EXPR? ;`, the `if`/`else` statement, and expression-statements. A block
 `{ }` is statements plus an optional trailing tail expression (no `;`) that is
-the block's value.
+the block's value. There is ONE member-access call syntax (postfix `.`); there
+is no UFCS. Comparisons are non-associative (`a < b < c` is an error).
 
-Expressions: integer literals (`1_000_000`), `bool` literals, paths (`lo`,
-`u32::MAX`, `Some`, `None`), free call `f(args)`, ONE call syntax for member
-access (postfix `.`: `xs.len()` is a method call; there is no UFCS), closure
-`|x| EXPR`, `match`, `if/else` as an expression, arithmetic `+ - * /`,
-comparison `== != < <= > >=` (non-associative — `a < b < c` is an error),
-logical `&& ||`, indexing `a[i]` / range index `a[..i]`, cast `EXPR as TYPE`,
-references `&EXPR` / `&mut EXPR`, and parenthesized grouping.
+The CONSTRUCT INVENTORY below is GENERATED by an exhaustive match over the
+toolchain's own `Item`/`Type`/`Expr`/`BinOp`/`Pattern`/`Effect` enums: a new
+language construct cannot ship without appearing here (the compiler rejects a
+non-exhaustive match), so this list can never silently fall behind the language.
 
-Patterns: `_`, literals, bindings, slice patterns `[]` / `[head, ..t]`, and
-enum/tuple-struct patterns `Some(i)` / `None`.
+### Item forms
+",
+    );
+    let items = item_inventory();
+    let item_frags: Vec<SkillFragment> = items.iter().map(render_item_arm).collect();
+    for frag in &item_frags {
+        s.push_str(&frag.to_bullet());
+    }
 
-Types: `u32`, `u64`, `usize`, `bool`, shared slice `&[T]`, references `&T` /
-`&mut T`, one generic application `NAME<T>` (`Option<usize>`). No user generics,
-no lifetimes. A `()` return type is written explicitly.
+    let types = type_inventory();
+    let type_frags: Vec<SkillFragment> = types.iter().map(render_type_arm).collect();
+    s.push_str(&render_inventory("Types", &type_frags));
 
-Effect rows: `pure`, or a set drawn from `read(path)`, `write(path)`,
-`net(domain)`, `alloc`, `time`, `rand`, `panic`, `diverge`. A caller's row must
-subsume every callee's row (compile-time check).
+    let prim_frags: Vec<SkillFragment> =
+        prim_inventory().into_iter().map(render_prim_arm).collect();
+    s.push_str(&render_inventory("Primitive scalars", &prim_frags));
 
-Removed from Rust (to keep the language small and formulaic): explicit
+    let exprs = expr_inventory();
+    let expr_frags: Vec<SkillFragment> = exprs.iter().map(render_expr_arm).collect();
+    s.push_str(&render_inventory("Expressions", &expr_frags));
+
+    let binop_frags: Vec<SkillFragment> = binop_inventory()
+        .into_iter()
+        .map(render_binop_arm)
+        .collect();
+    s.push_str(&render_inventory("Binary operators", &binop_frags));
+
+    let pats = pattern_inventory();
+    let pat_frags: Vec<SkillFragment> = pats.iter().map(render_pattern_arm).collect();
+    s.push_str(&render_inventory("Patterns", &pat_frags));
+
+    let effects = effect_inventory();
+    let effect_frags: Vec<SkillFragment> = effects.iter().map(render_effect_arm).collect();
+    s.push_str(&render_inventory(
+        "Effect atoms (a caller's fx row subsumes every callee's)",
+        &effect_frags,
+    ));
+
+    s.push_str(
+        "\
+\nRemoved from Rust (to keep the language small and formulaic): explicit
 lifetimes, the full trait system (only built-in `Eq`/`Ord`/`Hash`/`Iter`/
 `Display`), macros, `unsafe` (replaced by `#[slag]`), UFCS, `match`-ergonomics
 special cases, and implicit integer widening (all conversions explicit;
 arithmetic overflow is a proof obligation).
 
 ",
-    )
+    );
+    s
 }
 
 /// Render the surface type a single argument `ArgKind` presents in a usage
@@ -277,6 +937,93 @@ fn render_one_combinator(sig: &CombinatorSig) -> String {
         result = render_result_kind(sig.result),
         example = example_for(sig.name),
     )
+}
+
+/// The generator-side example table for the recursion schemes (REQ-9 / OQ-2):
+/// one tiny usage example per scheme name, keyed by `name`. Examples are a SKILL
+/// concern, not a registry field, so they live here, not in `SchemeSig` (the
+/// `example_for` combinator precedent). A scheme added to the registry without a
+/// mapping falls back to a generic example (so the renderer never panics —
+/// R-CODE-2) and the coverage test still pins its name + the example marker
+/// (AC-9), making the gap visible without an abort.
+fn scheme_example_for(name: &str) -> &'static str {
+    match name {
+        "fold" => "fold(list, 0, |x, acc| acc + x)",
+        "map" => "map(list, |x| x + 1)",
+        "for_all" => "for_all(list, |x| x <= bound)",
+        "exists" => "exists(list, |x| x == needle)",
+        "traverse" => "traverse(list, |x, acc| acc && p(x))",
+        _ => "fold(list, 0, |x, acc| acc)",
+    }
+}
+
+/// Render the trailing step-closure shape of a scheme (REQ-9): `|x, acc|` for an
+/// element+accumulator step, `|x|` for an element-only step.
+fn render_step_shape(shape: StepShape) -> &'static str {
+    match shape {
+        StepShape::ElementAcc => "|x, acc| …",
+        StepShape::Element => "|x| …",
+    }
+}
+
+/// Render the surface result kind a scheme collapses to (REQ-9): an accumulator
+/// folds to `nat`, the structural predicates to `bool`, a `map` rebuilds the ADT.
+fn render_scheme_result(result: SchemeResult) -> &'static str {
+    match result {
+        SchemeResult::Accumulator => "nat",
+        SchemeResult::Bool => "bool",
+        SchemeResult::SameAdt => "the same ADT",
+    }
+}
+
+/// Render one scheme's surface call shape + result + one example as a markdown
+/// bullet (the per-entry body of [`render_schemes`], REQ-9). The call shape is
+/// the `scrutinee_args` positional args (`l`, then a seed for `fold`) plus the
+/// trailing `step_shape` closure.
+fn render_one_scheme(sig: &SchemeSig) -> String {
+    let mut args = String::from("l");
+    // A second positional arg before the step is the fold/traverse-style seed.
+    for _ in 1..sig.scrutinee_args {
+        args.push_str(", init");
+    }
+    format!(
+        "- `{name}({args}, {step}) -> {result}`\n  // scheme: {example}\n",
+        name = sig.name,
+        args = args,
+        step = render_step_shape(sig.step_shape),
+        result = render_scheme_result(sig.result),
+        example = scheme_example_for(sig.name),
+    )
+}
+
+/// Section (2b) — the recursion-scheme library. MACHINE-RENDERED from
+/// `thermite_spec::schemes::all()` (REQ-9): for EVERY entry and ONLY those
+/// entries, the surface call shape (name + positional args + the trailing step
+/// closure) + result kind + one example. Adding a scheme to the frozen registry
+/// makes it auto-appear; removing one auto-drops it (§10 anti-drift — the
+/// `render_combinators` precedent, REQ-2). The generated lowering symbols
+/// (`fold_<e>` etc.) are NOT rendered — the skill teaches the surface call.
+fn render_schemes() -> String {
+    let mut s = String::from(
+        "\n\
+## 2b. Recursion-scheme library
+
+Recursion over a recursive ADT is NOT open-coded; it goes through this fixed,
+closed set of verified recursion schemes (the structural analogue of the
+combinator library). Each scheme takes the scrutinee (and, for `fold`, a seed)
+then a trailing FLAT step closure — exactly as a combinator's predicate closure
+is flat, the step closure may NOT contain another scheme (genuine nesting is a
+named `spec fn`). A scheme over an ADT discharges its bound by citing the
+`fold_bound` prove-once law, never a fresh induction.
+
+The schemes (call shape, result, then one example each):
+
+",
+    );
+    for sig in thermite_spec::schemes::all() {
+        s.push_str(&render_one_scheme(sig));
+    }
+    s
 }
 
 /// Section (3) — the Forge command set. CURATED from `thermite-design.md`
@@ -436,6 +1183,59 @@ mod tests {
     }
 
     #[test]
+    fn scheme_coverage() {
+        // AC-9: every entry in the frozen scheme registry appears by name AND
+        // has a call-shape marker (the registry IS the oracle — R-CHAR-3).
+        let skill = generate();
+        for sig in thermite_spec::schemes::all() {
+            assert!(
+                skill.contains(sig.name),
+                "skill is missing scheme name `{}`",
+                sig.name
+            );
+        }
+    }
+
+    #[test]
+    fn renderers_are_exhaustive_no_wildcard() {
+        // AC-10(i) — the STRUCTURAL no-staleness invariant. The renderer
+        // functions `render_{type,expr,item,pattern,effect,binop,prim}_arm` are
+        // EXHAUSTIVE `match`es with NO `_` wildcard arm over their definitional
+        // enums. Rust's exhaustiveness check (E0004) makes adding a new variant a
+        // HARD compile error in THIS crate until the matching arm is added — so
+        // the skill cannot silently fall behind the language (REQ-8).
+        //
+        // This is enforced by the compiler, not by a runtime assertion: if a
+        // future variant were added without a renderer arm, this whole crate
+        // (and thus this test) would FAIL TO BUILD. A green build is the proof.
+        // We exercise the renderers over the full per-variant inventories so the
+        // arms are reached, and assert each inventory is non-empty (a sanity
+        // floor — the inventories must cover at least the shipped variants).
+        assert!(!type_inventory().is_empty());
+        assert!(!item_inventory().is_empty());
+        assert!(!expr_inventory().is_empty());
+        assert!(!pattern_inventory().is_empty());
+        assert!(!effect_inventory().is_empty());
+        assert_eq!(prim_inventory().len(), 4);
+        assert_eq!(binop_inventory().len(), 12);
+        for ty in &type_inventory() {
+            assert!(!render_type_arm(ty).fragment.is_empty());
+        }
+        for it in &item_inventory() {
+            assert!(!render_item_arm(it).fragment.is_empty());
+        }
+        for ex in &expr_inventory() {
+            assert!(!render_expr_arm(ex).fragment.is_empty());
+        }
+        for pat in &pattern_inventory() {
+            assert!(!render_pattern_arm(pat).fragment.is_empty());
+        }
+        for ef in &effect_inventory() {
+            assert!(!render_effect_arm(ef).fragment.is_empty());
+        }
+    }
+
+    #[test]
     fn ladder_coverage() {
         // AC-3: all four ladder labels + the L0/slag clarification.
         let skill = generate();
@@ -490,13 +1290,35 @@ mod tests {
 
     #[test]
     fn sections_in_canonical_order() {
-        // REQ-1: the five sections appear in §10 order.
+        // REQ-1: the sections appear in §10 order, now including 2b (schemes).
         let skill = generate();
-        let g = skill.find("## 1. Surface grammar").expect("section 1");
-        let c = skill.find("## 2. SpecTherm").expect("section 2");
-        let f = skill.find("## 3. Forge").expect("section 3");
-        let l = skill.find("## 4. Verification ladder").expect("section 4");
-        let s = skill.find("## 5. Slag rules").expect("section 5");
-        assert!(g < c && c < f && f < l && l < s, "sections out of order");
+        let headings = [
+            "## 1. Surface grammar",
+            "## 2. SpecTherm",
+            "## 2b. Recursion-scheme",
+            "## 3. Forge",
+            "## 4. Verification ladder",
+            "## 5. Slag rules",
+        ];
+        // Each heading must be present; collect the byte offsets it appears at.
+        let positions: Vec<usize> = headings
+            .iter()
+            .map(|heading| {
+                let found = skill.find(heading);
+                assert!(
+                    found.is_some(),
+                    "skill is missing section heading `{heading}`"
+                );
+                // `is_some` just asserted; the default is never observed.
+                found.unwrap_or_default()
+            })
+            .collect();
+        // The offsets must be strictly increasing (the §10 canonical order).
+        for window in positions.windows(2) {
+            assert!(
+                window[0] < window[1],
+                "skill sections are out of canonical order: {positions:?}"
+            );
+        }
     }
 }

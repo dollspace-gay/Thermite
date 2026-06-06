@@ -1,0 +1,11 @@
+{
+  "item": "is_circle",
+  "level": "L3",
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false
+  },
+  "effects": ["pure"],
+  "slag": false,
+  "note": "Stable-subset oracle (R-CHAR-3) from .design/basis/01-adts.md (REQ-2 enum, REQ-9 enum->Verus + match->Verus match + is->variant test). `is_circle` proves L3: ens `result == (s is Circle)` is discharged by the exhaustive `match s` (Circle -> true, Rect -> false), so `result` equals the Circle discriminant for every Shape. fx pure. Non-vacuous: `result == (s is Circle)` is a genuine discriminant relation (not a tautology); req `true` is satisfiable (a total function has no precondition). mutants_killed/solver_time excluded (oracle_subset)."
+}

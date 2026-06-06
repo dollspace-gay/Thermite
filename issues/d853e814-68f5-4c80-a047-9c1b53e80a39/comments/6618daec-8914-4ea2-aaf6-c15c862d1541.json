@@ -1,0 +1,10 @@
+{
+  "uuid": "6618daec-8914-4ea2-aaf6-c15c862d1541",
+  "issue_uuid": "d853e814-68f5-4c80-a047-9c1b53e80a39",
+  "author": "Yffe",
+  "content": "Stage 1b: replace the 1a UnsupportedAdt validator gate with the real ADT validator in thermite-spec/src/validator.rs. Declaration pre-pass (Validator::new) collects enums (name->variant order), variant_to_enum, struct_fields. REQ-5 check_match_exhaustiveness infers the matched enum from arm patterns and emits NonExhaustiveMatch{missing}/UnreachableArm/UnknownVariant; slice/Option matches inert (no regression). REQ-6 check_field/check_variant_ref emit UnknownField/UnknownVariant. REQ-7: Match/Field/Is/Deref stay flat built-ins in the caged walk. New SpecError variants additive. Tests: thermite-spec/tests/adt_validate.rs drives conformance/adt-validate/cases.json (3 accept, 5 reject). Gauntlet: build/test/clippy/fmt all green; lowering stays gated (1c).",
+  "created_at": "2026-06-06T12:08:42.732383110Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAoN5pVYgQDLV2sF2yJoGpg4tgFLAzMyZr8wAU2OiX3FE/CfrLY7LpmPdhP5lnKS7maANQ9vJS6DSeYa/u7l2xAg=="
+}

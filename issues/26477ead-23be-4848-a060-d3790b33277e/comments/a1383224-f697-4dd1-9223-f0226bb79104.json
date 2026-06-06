@@ -1,0 +1,10 @@
+{
+  "uuid": "a1383224-f697-4dd1-9223-f0226bb79104",
+  "issue_uuid": "26477ead-23be-4848-a060-d3790b33277e",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_adt_fold_generality.rs::divergence_tree_fold_does_not_lower_and_verify demonstrates the divergence. ROOT CAUSE: is_adt_fold_sum (thermite-lower/src/lower.rs) is the SOLE gate for the '-> nat' return coercion (lower_spec_fn_ret) of an ADT fold, but it hard-requires a UNIT-variant base arm whose body is the LITERAL 0 (has_unit_zero: Pattern::Enum{fields empty} with body IntLit 0). The design's GROUNDED Tree fold (.design/basis/01-adts.md recorded finding: 'a tree_sum fold was also confirmed to verify' + REQ-10) has a VALUE-CARRYING base (Leaf(v) => v as u64), so is_adt_fold_sum returns false, the spec fn lowers '-> u64' (not nat), and the recursive arm tree_sum(*l) + tree_sum(*r) is int-typed -> verus rejects: 'match arms have incompatible types: expected u64, found int'. The lowering is fitted to the literal-0-base sum_list corpus shape, not the general Box-recursive structural fold REQ-10 grounds (R-DEFER-9 corpus-gaming). The fold BODY itself flows through the general lower_match path correctly; only the nat-return detection is shape-fit. A len-style fold (1 + len(*t), literal-0 unit base) IS detected and works — confirming the gate keys on the base-arm shape, not generality.",
+  "created_at": "2026-06-06T13:08:57.024729797Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABApgIyO8L0elfeoLtKVs99aI5l0QR47TBEECNkZvRH/lwjEmcunVY8AMhxva2vq9iFM6pRokz4MFV26R3Qw5jkBw=="
+}

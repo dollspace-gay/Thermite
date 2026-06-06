@@ -2,11 +2,12 @@
   "uuid": "16347a6e-990e-48de-9caa-bac5bc717f7a",
   "display_id": 79,
   "title": "Stage 7 — Strings: String/str type + string-literal expressions + operations (len/index/slice/concat/eq) over a verified model",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-06T19:47:25.096889206Z",
-  "updated_at": "2026-06-06T19:47:26.448481540Z",
+  "updated_at": "2026-06-06T21:02:59.914542996Z",
+  "closed_at": "2026-06-06T21:02:59.914542996Z",
   "labels": [
     "feature"
   ]

@@ -81,7 +81,7 @@ non-exhaustive match), so this list can never silently fall behind the language.
 - `u32 | u64 | usize | bool` — the closed primitive scalar set (no implicit widening)
   // e.g. let n: u64 = 0;
 - `()` — the unit type, written explicitly in a return position
-  // e.g. fn log() -> () ens true fx pure { }
+  // e.g. fn log() -> () req true ens true fx pure { }
 - `&T | &mut T` — a shared / exclusive reference (no explicit lifetimes)
   // e.g. fn f(x: &mut u64)
 - `&[T]` — a borrowed read-only slice view

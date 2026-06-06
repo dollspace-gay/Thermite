@@ -31,45 +31,87 @@
 //!
 //! Tracking: crosslink #85.
 //!
-//! Un-ignore when fixed: the fixer corrects the `Type::Unit` arm example (e.g.
-//! `fn log() -> () req true ens true fx pure { }`) AND regenerates
-//! `THERMITE.skill.md`. The assertion then passes.
+//! FIXED (crosslink #85): the `Type::Unit` arm now renders
+//! `fn log() -> () req true ens true fx pure { }` (the mandatory `req` is
+//! present, clauses in `req`->`ens`->`fx` order) and `THERMITE.skill.md` is
+//! regenerated. This test is now the PERMANENT regression guard: EVERY complete
+//! `fn`/`spec fn` example the skill renders must parse clean, so a rendered
+//! un-parseable example can never ship again (§10: the skill IS the spec).
 
 use thermite_skill::generate;
 use thermite_syntax::parser::parse;
 
-/// Every example line the skill renders for a top-level-item-shaped construct
-/// must be a program the parser accepts. The `Type::Unit` arm's example is a
-/// bare `fn … ens … fx …` with no `req`, which the parser rejects.
+/// Extract the example text from each skill bullet's `// e.g. <example>` line —
+/// the per-construct example a `SkillFragment` renders (`render_*_arm`). Returns
+/// every example string verbatim.
+fn rendered_examples(skill: &str) -> Vec<&str> {
+    skill
+        .lines()
+        .filter_map(|line| line.trim_start().strip_prefix("// e.g. "))
+        .collect()
+}
+
+/// Is `example` a COMPLETE top-level item (a `fn`/`spec fn` with a body), as
+/// opposed to a signature snippet or a `..`-placeholder grammar fragment? Only
+/// complete items are meant to be standalone-parseable programs; fragments
+/// (`fn sum(..) -> u64 req .. ens .. fx pure { .. }`, bare signatures like
+/// `fn f(x: &mut u64)`) deliberately are not.
+fn is_complete_item(example: &str) -> bool {
+    let e = example.trim();
+    (e.starts_with("fn ") || e.starts_with("spec fn ")) && !e.contains("..") && e.ends_with('}')
+}
+
+/// Every COMPLETE `fn`/`spec fn` example the skill renders must be a program the
+/// parser accepts. This is the regression guard for crosslink #85: the
+/// `Type::Unit` arm previously rendered `fn log() -> () ens true fx pure { }`,
+/// which OMITS the mandatory `req` and so the parser rejected with
+/// `clause `req` is out of order`. The corrected arm renders the example WITH
+/// `req true`. Authority: the skill's own mandatory-clause prose
+/// (`req`->`ens`->`fx`, "absence of any is a parse error") + `thermite_syntax::
+/// parser`; the expected value ("the skill's examples parse clean") is derived
+/// from the parser, never copied from `generate.rs` (R-CHAR-3).
 #[test]
-#[ignore = "blocker #85 — un-ignore when fixed"]
 fn rendered_fn_examples_parse_clean() {
     let skill = generate();
 
-    // The exact misleading example string the `Type::Unit` arm renders. We assert
-    // it is PRESENT in the skill (so this test tracks that arm specifically) and
-    // that it is NOT accepted by the parser. Authority: the skill's own
-    // mandatory-clause prose + `thermite_syntax::parser`.
-    let unit_example = "fn log() -> () ens true fx pure { }";
+    // The corrected `Type::Unit` arm example must be present (so this test still
+    // tracks that arm specifically) AND must be a complete item we then parse.
+    let unit_example = "fn log() -> () req true ens true fx pure { }";
     assert!(
         skill.contains(unit_example),
-        "precondition for this pin: the Type::Unit arm renders `{unit_example}`; \
-         if the arm text changed, re-derive this pin"
+        "the Type::Unit arm should render the corrected `{unit_example}` \
+         (mandatory `req`, clauses in order); if the arm text changed, re-derive \
+         this pin"
     );
 
-    let result = parse(unit_example);
+    let complete: Vec<&str> = rendered_examples(&skill)
+        .into_iter()
+        .filter(|e| is_complete_item(e))
+        .collect();
+
+    // The sweep must actually find complete examples (the Type::Unit one at
+    // minimum) — a guard against the extractor silently matching nothing.
     assert!(
-        result.is_clean(),
-        "the skill teaches `{unit_example}` (Type::Unit arm) but the parser \
-         rejects it ({} error(s): {}). The skill's own prose says `req` is \
-         mandatory — `absence of any is a parse error`. A taught example MUST \
-         parse clean (design §10: the skill IS the spec).",
-        result.errors.len(),
-        result
-            .errors
-            .iter()
-            .map(|e| e.to_string())
-            .collect::<Vec<_>>()
-            .join("; "),
+        complete.iter().any(|e| e.trim() == unit_example),
+        "the rendered-example sweep did not pick up the Type::Unit example"
     );
+
+    for example in complete {
+        let result = parse(example);
+        assert!(
+            result.is_clean(),
+            "the skill teaches `{example}` but the parser rejects it \
+             ({} error(s): {}). The skill's own prose says the mandatory \
+             clauses (`req`->`ens`->`fx`) must all be present and in order — \
+             `absence of any is a parse error`. A taught example MUST parse \
+             clean (design §10: the skill IS the spec).",
+            result.errors.len(),
+            result
+                .errors
+                .iter()
+                .map(|e| e.to_string())
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
+    }
 }

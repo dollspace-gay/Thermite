@@ -155,7 +155,7 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
         Type::Unit => SkillFragment {
             fragment: "()",
             description: "the unit type, written explicitly in a return position",
-            example: "fn log() -> () ens true fx pure { }",
+            example: "fn log() -> () req true ens true fx pure { }",
         },
         Type::Ref { .. } => SkillFragment {
             fragment: "&T | &mut T",

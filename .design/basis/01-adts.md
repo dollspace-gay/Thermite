@@ -146,6 +146,18 @@ node `Box(Box<Type>)` or a `Generic { name: "Box", arg }` reusing the existing
   Derived from §4, the existing `enum Expr` (`Path`/`Call`), and the Verus enum
   model (GROUNDED).
 
+  **Variant names MUST be UpperCamelCase (uppercase-initial).** The validator
+  rejects a lowercase-initial variant declaration with a structured
+  `SpecError::InvalidVariantCasing { name, span }`. This is load-bearing for
+  soundness, not style: the parser disambiguates a single-segment arm pattern by
+  first-letter case (`Pattern::Enum` if uppercase-initial, `Pattern::Binding`
+  otherwise). Forbidding lowercase variants makes that split SOUND — a
+  lowercase ident in a pattern is *unambiguously* a binding, because no lowercase
+  variant can exist, so a non-exhaustive `match` can never be silently masked by a
+  variant-looking name being read as a catch-all binding (the #66 bypass).
+  Field names, by contrast, are unconstrained. Derived from §4.4 (always-explicit,
+  one desugaring) + the #66 audit.
+
 - **REQ-3 (recursive types via `Box<T>` + the `alloc` effect):** A type may refer
   to itself through `Box<T>`: `enum List { Nil, Cons(u64, Box<List>) }`, `enum
   Tree { Leaf(u64), Node(Box<Tree>, Box<Tree>) }`. The AST `enum Type` gains the

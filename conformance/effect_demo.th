@@ -1,0 +1,31 @@
+#[boundary("os::read_small")] fn read_small() -> Option<u64>
+  req true
+  ens match result {
+    Some(v) => v < 256,
+    None    => true,
+  }
+  fx  read(stdin)
+  ;
+
+#[boundary("os::now")] fn now() -> Option<u64>
+  req true
+  ens match result {
+    Some(t) => t < 4_000_000_000,
+    None    => true,
+  }
+  fx  time
+  ;
+
+fn read_doubled() -> Option<u64>
+  req true
+  ens match result {
+    Some(v) => v < 512,
+    None    => true,
+  }
+  fx  read(stdin)
+{
+  match read_small() {
+    Some(v) => Some(v + v),
+    None    => None,
+  }
+}

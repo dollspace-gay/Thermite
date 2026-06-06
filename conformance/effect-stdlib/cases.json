@@ -1,0 +1,33 @@
+{
+  "note": "Oracle for Stage 3 — the effect-primitive stdlib (issue #72). Hand-derived (R-CHAR-3) from .design/basis/03-effect-stdlib.md. v1 = the VERIFICATION + sandbox-derivation layer (the runnable os:: foreign-body link is v1.1). Each effect primitive is a #[boundary(\"os::...\")] fn (the #16 form) returning a Stage-1 ADT (Option) with a CLOSED-OUTCOME ens; a pure caller that handles BOTH arms verifies THROUGH the contract (#52) to to-boundary L3; the seccomp sandbox (#57) confines each primitive to its fx's syscalls. OUTCOME-COVERAGE is EMERGENT (no new code): #16 triage rejects a trivial ens but admits a closed-set match-ens; Stage-1b exhaustive-match forces every arm; #52 composes through.",
+  "boundary_primitive": [
+    { "name": "read_small", "source": "conformance/effect_demo.th", "level": "L1", "boundary": true,
+      "expect_target": "os::read_small", "expect_fx_contains": "read",
+      "why": "read_small is a #[boundary] effect primitive -> L1 + boundary:true (the body is the foreign syscall, assumed by external_body; the contract L1-enforced at the crossing). fx read(stdin). Its closed-outcome ens (Some(v)=>v<256, None=>true) is NOT vacuity-rejected (boundary L1-short-circuits before the value-strength gates) yet is not trivial (rule (a) would reject `ens true`)." },
+    { "name": "now", "source": "conformance/effect_demo.th", "level": "L1", "boundary": true,
+      "expect_target": "os::now", "expect_fx_contains": "time",
+      "why": "now is the Time effect primitive -> L1 boundary, fx time." }
+  ],
+  "compose_through": [
+    { "name": "read_doubled", "source": "conformance/effect_demo.th", "level": "L3", "scope": "to_boundary", "via": "read_small",
+      "mutation_floor": 0.0,
+      "why": "read_doubled calls the boundary read_small, handles BOTH Option arms, and its ens (Some(v)=>v<512, None=>true) is discharged on each arm THROUGH read_small's assumed ens (Some(v)=>v<256 => v+v<512) -> L3, to-the-boundary via read_small (#52). MUTATION-FLOOR CAVEAT (OQ): a shape-only effect-caller contract is intrinsically mutation-survivable (a return-None / return-Some(0) mutant satisfies v<512), so the L3 demo runs at --mutation-floor 0; the anti-Goodhart flag at the default floor is a TRUE reflection that the contract is shape-only by necessity (you cannot pin a value read from the world). The builder/critic must decide whether a to-boundary caller warrants a mutation-floor EXEMPTION (a small new rule, like the boundary vacuity-exemption) or whether floor-0 is the honest demo." }
+  ],
+  "reject": [
+    { "name": "missing_arm", "expect_error_contains": "NonExhaustive",
+      "program": "#[boundary(\"os::read_small\")] fn read_small() -> Option<u64> req true ens match result { Some(v) => v < 256, None => true } fx read(stdin) ; fn bad() -> Option<u64> req true ens match result { Some(v) => v < 512, None => true } fx read(stdin) { match read_small() { Some(v) => Some(v + v) } }",
+      "why": "bad's match on read_small()'s Option misses the None arm -> NonExhaustiveMatch (handled-or-loud: every modeled outcome handled, enforced at validation). The compile-time tooth." },
+    { "name": "overclaim_soundness", "expect_level": "L0",
+      "program": "#[boundary(\"os::read_small\")] fn read_small() -> Option<u64> req true ens match result { Some(v) => v < 256, None => true } fx read(stdin) ; fn liar() -> Option<u64> req true ens match result { Some(v) => v < 100, None => true } fx read(stdin) { match read_small() { Some(v) => Some(v), None => None } }",
+      "why": "liar claims its result's Some is < 100, but read_small only guarantees < 256 -> the ens is NOT discharged through the boundary's contract -> L0 counterexample (a false claim about a world value is caught, NOT laundered to L3). R-DEFER-9." }
+  ],
+  "tcb": [
+    { "name": "effect_demo_tcb", "source": "conformance/effect_demo.th",
+      "expect_tcb_boundary_contains": ["read_small", "now"],
+      "why": "the audit manifest enumerates read_small + now as boundary TCB members (target + req/ens/fx) — the enumerated, contracted trusted base; everything else is verified. `grep boundary` = the effect-trust inventory (§9)." }
+  ],
+  "sandbox": [
+    { "name": "fx_time_allowlist", "expect_allowlist_contains_syscall": "clock_gettime",
+      "why": "forge build --entry of a program with fx time derives a seccomp allowlist including clock_gettime (#57 fx->syscall table); fx read includes openat/read; a fx pure probe attempting a denied syscall is SIGSYS-killed (exit 159). The kill scream confines each primitive to its declared effect." }
+  ]
+}

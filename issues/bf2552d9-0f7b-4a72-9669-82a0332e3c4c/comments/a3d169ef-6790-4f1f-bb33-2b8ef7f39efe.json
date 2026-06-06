@@ -1,0 +1,10 @@
+{
+  "uuid": "a3d169ef-6790-4f1f-bb33-2b8ef7f39efe",
+  "issue_uuid": "bf2552d9-0f7b-4a72-9669-82a0332e3c4c",
+  "author": "Yffe",
+  "content": "Resolved in commit 9294377. Root cause closed at the ENUM DECLARATION per .design/basis/01-adts.md REQ-2: the declaration pre-pass Validator::new now rejects any enum variant whose first char is not is_ascii_uppercase() with SpecError::InvalidVariantCasing { name, span }, seeded into the error list BEFORE the body/contract walk. This makes the parser case-based single-segment pattern disambiguation (uppercase to Pattern::Enum, lowercase to Pattern::Binding) SOUND: no lowercase variant can exist, so a lowercase pattern ident is unambiguously a binding and can never masquerade as a catch-all masking a non-exhaustive match. check_match_exhaustiveness is unchanged. The 2 pinned bypass tests updated to expect InvalidVariantCasing{foo}/{tri} (R-CHAR-3; CORE pin holds, no silent accept); added positive companion exhaustiveness_intact_uppercase_nonexhaustive proving an UPPERCASE non-exhaustive match still yields NonExhaustiveMatch{missing:[Rect]}. Gauntlet: build --workspace green; test -p thermite-spec 0 failed; test --workspace 0 failed; clippy -D warnings PASS; fmt --check PASS.",
+  "created_at": "2026-06-06T12:25:59.996320856Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAsqUaD10R+/Q7zm0kONHVZCtcW+awDIdekPY7vWNf1U5Wy5Kc/QbEmOHkzYWoycJDrwxVK4sXr7J9ayzmoz+gAQ=="
+}

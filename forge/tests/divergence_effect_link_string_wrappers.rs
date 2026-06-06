@@ -95,9 +95,6 @@ fn write_fixture(name: &str, src: &str) -> PathBuf {
 }
 
 #[test]
-#[ignore = "divergence: os::print/os::write wrapper references undefined `super::TString`; \
-            the build-emitted crate defines no `struct TString`, so forge build of a Write-family \
-            boundary fails E0425 (08-runnable-effect-link.md REQ-1/REQ-3); blocker #N — un-ignore when fixed"]
 fn print_wrapper_builds_and_runs() {
     // AUTHORITY (08-runnable-effect-link.md REQ-1): "os::write/os::print
     // (std::io::stdout().write_all, Stage 7 String arg). Each wrapper's signature
@@ -126,9 +123,6 @@ fn print_wrapper_builds_and_runs() {
 }
 
 #[test]
-#[ignore = "divergence: os::read_line wrapper references undefined `super::TString`; \
-            forge build of a read_line boundary fails E0425/E0422 (08-runnable-effect-link.md \
-            REQ-1/REQ-3); blocker #N — un-ignore when fixed"]
 fn read_line_wrapper_builds() {
     // AUTHORITY (08-runnable-effect-link.md REQ-1): "os::read_byte/os::read_line
     // (std::io::stdin().read/read_line, the latter over Stage 7 String)".

@@ -92,6 +92,23 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // contract/spec position, deduped in source order (REQ-3).
     out.push_str(&emit_combinator_l1_defs(program)?);
 
+    // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3): the
+    // BUILD-emitted crate must DEFINE `TString` whenever a `String`-typed value is
+    // present, because the runnable effect-link wrappers
+    // (`forge/src/effect_wrappers.rs`: `os::print`/`os::write`/`os::read_line`)
+    // reference `super::TString`, and `lower_type` lowers a `String`-typed boundary
+    // signature to the bare name `TString` (`Type::String => "TString"`). Unlike the
+    // L3/Verus lowering (`lower.rs::emit_string_wrapper`, a `verus!` form over
+    // `vstd::vec::Vec<u8>`), L1 is ENTIRELY exec — so this emits a PLAIN-Rust
+    // `TString` over `std::vec::Vec<u8>` (no `Seq`/`@`/`spec`/`requires`), plus
+    // `use TString as String;` so the surface name `String` (e.g. `String::new()` in
+    // a body) resolves to the same emitted type as a `String`-typed signature
+    // (`07-strings.md` REQ-4: the surface `String` IS `TString`). Without this the
+    // build crate `rustc`-fails `error[E0425]: cannot find type \`TString\``. Emitted
+    // ONCE, only when the program uses `String` (the non-`String` corpus is
+    // byte-unaffected, matching `lower.rs::program_uses_string`'s gate).
+    out.push_str(&emit_string_runtime_l1(program));
+
     // The program-wide `(variant, enum)` map (REQ-9) — drives the ENUM-QUALIFIED
     // `Enum::Variant` of an L1 `match` arm / pattern / `is` `matches!` — and the
     // invariant-bearing `struct` set (REQ-8) whose `well_formed()` check is woven
@@ -1278,4 +1295,193 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // (no panic, REQ-7 / REQ-5).
         Type::String => Ok("TString".to_string()),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3): the
+// plain-Rust `TString` definition the BUILD-emitted crate needs when a
+// `String`-typed value is present (so the `os::<name>` Write/Read-line wrappers'
+// `super::TString` and `lower_type`'s bare `TString` boundary signatures resolve).
+// ---------------------------------------------------------------------------
+
+/// The bounded-string capacity (`.design/basis/07-strings.md` §4.2 cage; the
+/// `lower.rs` L3 `VEC_CAP` idiom `1_000_000`). At L1 (runtime checks, not an SMT
+/// proof) the bound is enforced by an always-active `thermite_check!` rather than a
+/// `requires`/`invariant`.
+const STRING_CAP_L1: usize = 1_000_000;
+
+/// True iff the program references the `String` type in any `fn`/`spec fn`
+/// parameter or return position, OR materializes a string literal anywhere — both
+/// require the build-crate `TString` definition (a literal lowers to a constructed
+/// `TString`, a `String`-typed boundary signature lowers to `TString`). Mirrors
+/// `lower.rs::program_uses_string`'s gate so the emission is byte-stable for the
+/// non-`String` corpus (no `TString` emitted when nothing uses it).
+fn program_uses_string_l1(program: &Program) -> bool {
+    fn ty_is_string(ty: &Type) -> bool {
+        match ty {
+            Type::String => true,
+            Type::Ref { inner, .. } => ty_is_string(inner),
+            Type::Slice(inner) | Type::Box(inner) | Type::Vec(inner) => ty_is_string(inner),
+            Type::Generic { arg, .. } => ty_is_string(arg),
+            Type::Prim(_) | Type::Unit | Type::Named(_) => false,
+        }
+    }
+    for item in &program.items {
+        let (params, ret, body): (&[Param], &Type, Option<&Block>) = match item {
+            Item::Fn(f) => (&f.params, &f.ret, f.body.as_ref()),
+            Item::SpecFn(s) => (&s.params, &s.ret, Some(&s.body)),
+            Item::Struct(_) | Item::Enum(_) => continue,
+        };
+        if params.iter().any(|p| ty_is_string(&p.ty)) || ty_is_string(ret) {
+            return true;
+        }
+        if let Some(b) = body {
+            if block_has_str_lit_l1(b) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// True if a block contains a string-literal expression anywhere (a literal lowers
+/// to a constructed `TString`). The L1 mirror of `lower.rs::block_has_str_lit`.
+fn block_has_str_lit_l1(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_str_lit_l1)
+        || block
+            .tail
+            .as_deref()
+            .map(expr_has_str_lit_l1)
+            .unwrap_or(false)
+}
+
+fn stmt_has_str_lit_l1(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_has_str_lit_l1(init),
+        Stmt::Assign { target, value } => expr_has_str_lit_l1(target) || expr_has_str_lit_l1(value),
+        Stmt::Return(opt) => opt.as_ref().map(expr_has_str_lit_l1).unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_has_str_lit_l1(cond)
+                || block_has_str_lit_l1(then)
+                || else_.as_ref().map(block_has_str_lit_l1).unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_has_str_lit_l1(&l.body),
+        Stmt::Expr(e) => expr_has_str_lit_l1(e),
+    }
+}
+
+/// True if a string literal appears anywhere in `expr` (a full structural walk).
+fn expr_has_str_lit_l1(expr: &Expr) -> bool {
+    match expr {
+        Expr::StrLit(_) => true,
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => false,
+        Expr::Call { callee, args } => {
+            expr_has_str_lit_l1(callee) || args.iter().any(expr_has_str_lit_l1)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_has_str_lit_l1(receiver) || args.iter().any(expr_has_str_lit_l1)
+        }
+        Expr::Field { receiver, .. } => expr_has_str_lit_l1(receiver),
+        Expr::Closure { body, .. } => expr_has_str_lit_l1(body),
+        Expr::Match { scrutinee, arms } => {
+            expr_has_str_lit_l1(scrutinee) || arms.iter().any(|a| expr_has_str_lit_l1(&a.body))
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_has_str_lit_l1(cond) || block_has_str_lit_l1(then) || block_has_str_lit_l1(else_)
+        }
+        Expr::Binary { lhs, rhs, .. } => expr_has_str_lit_l1(lhs) || expr_has_str_lit_l1(rhs),
+        Expr::Index { base, index } => {
+            expr_has_str_lit_l1(base)
+                || match index {
+                    IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => {
+                        expr_has_str_lit_l1(e)
+                    }
+                    IndexArg::Range(lo, hi) => expr_has_str_lit_l1(lo) || expr_has_str_lit_l1(hi),
+                }
+        }
+        Expr::Cast { expr, .. } | Expr::Ref { expr, .. } | Expr::Deref(expr) => {
+            expr_has_str_lit_l1(expr)
+        }
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_str_lit_l1(v)),
+        Expr::Is { scrutinee, .. } => expr_has_str_lit_l1(scrutinee),
+    }
+}
+
+/// Emit the PLAIN-Rust `TString` definition + the `use TString as String;` surface
+/// alias the BUILD-emitted crate needs whenever the program uses `String`
+/// (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3), EMPTY otherwise (the
+/// non-`String` corpus is byte-unaffected).
+///
+/// This is the L1 exec mirror of `lower.rs::emit_string_wrapper`'s L3/Verus form:
+/// the SAME `TString { data: Vec<u8> }` shape (matching the wrappers' `super::TString
+/// { data: s.into_bytes() }` construction and `&s.data` field access in
+/// `forge/src/effect_wrappers.rs`) and the SAME method surface (`new`/`len`/`byte_at`/
+/// `concat`/`slice`), but as ordinary runnable Rust — no `vstd`, no `Seq`/`@`, no
+/// `spec`/`requires`/`ensures`/`invariant`/`decreases` (L1 is entirely exec; §6 L1
+/// rung). The bounds the L3 form proves (`i < len`, `lo <= hi <= len`, `len <= CAP`)
+/// are enforced at run time by the always-active `thermite_check!` (so a no-OOB /
+/// over-cap violation ABORTS loudly rather than being a silent panic; the §6 L1
+/// "handled-or-loud" discipline). `#[derive(Debug)]` so a `String`-returning
+/// `--entry` runner's `println!("… = {r:?}")` compiles (`build.rs`
+/// `synthesize_entry_main`). `#[allow(dead_code)]` because a program may name only
+/// a subset of the methods (the wrapper/lowering keeps the full surface available).
+///
+/// The `use TString as String;` alias makes the surface name `String` (in
+/// expression position, e.g. a body's `String::new()`) resolve to the SAME emitted
+/// type as a `String`-typed signature lowered by `lower_type` (`07-strings.md`
+/// REQ-4: the surface `String` IS the bounded `TString`, not `std::string::String`).
+fn emit_string_runtime_l1(program: &Program) -> String {
+    if !program_uses_string_l1(program) {
+        return String::new();
+    }
+    let cap = STRING_CAP_L1;
+    let mut out = String::new();
+    out.push('\n');
+    out.push_str("#[derive(Debug)]\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("struct TString { data: Vec<u8> }\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("use TString as String;\n");
+    out.push_str("#[allow(dead_code)]\n");
+    out.push_str("impl TString {\n");
+    out.push_str("    fn new() -> TString { TString { data: Vec::new() } }\n");
+    out.push_str("    fn len(&self) -> u64 { self.data.len() as u64 }\n");
+    // The no-OOB `byte_at` accessor (the editor's core safety): the L3 form PROVES
+    // `req i < len`; L1 enforces it loudly at run time (the always-active check),
+    // then returns the byte zero-extended to `u64` (the corpus `first_byte -> u64`).
+    out.push_str("    fn byte_at(&self, i: usize) -> u64 {\n");
+    writeln!(
+        out,
+        "        thermite_check!(\"req\", \"i < self.len()\", i < self.data.len());"
+    )
+    .ok();
+    out.push_str("        self.data[i] as u64\n");
+    out.push_str("    }\n");
+    // The bounded constructing `concat` (a two-loop append). The L3 form PROVES the
+    // `len_a + len_b <= CAP` cage; L1 enforces it loudly, then appends.
+    out.push_str("    fn concat(&self, b: TString) -> TString {\n");
+    writeln!(
+        out,
+        "        thermite_check!(\"req\", \"self.len() + b.len() <= CAP\", self.data.len() + b.data.len() <= {cap});"
+    )
+    .ok();
+    out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("        out.extend_from_slice(&self.data);\n");
+    out.push_str("        out.extend_from_slice(&b.data);\n");
+    out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
+    // The bounded substring `slice` (an owned byte copy). The L3 form PROVES `lo <=
+    // hi <= len`; L1 enforces it loudly, then copies the run.
+    out.push_str("    fn slice(&self, lo: usize, hi: usize) -> TString {\n");
+    writeln!(
+        out,
+        "        thermite_check!(\"req\", \"lo <= hi && hi <= self.len()\", lo <= hi && hi <= self.data.len());"
+    )
+    .ok();
+    out.push_str("        TString { data: self.data[lo..hi].to_vec() }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    out
 }

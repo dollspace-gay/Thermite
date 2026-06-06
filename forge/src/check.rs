@@ -274,7 +274,14 @@ pub fn check_file_with_options(
         // L0). EMPTY for a fn referencing only spec fns / combinators (the pure
         // corpus), so the corpus cert + lowering are byte-stable (AC-4).
         let fn_deps = reachable_fn_deps(&parsed.program, item.name());
-        let sub = item_subprogram(item, &spec_items, &fn_deps);
+        // #68: ALSO weave the `struct`/`enum` DECLARATIONS the checked item AND
+        // its woven fn-deps reference (transitively closed over the ADT type
+        // graph), so the per-item Verus emission has the type decls + their
+        // `well_formed` invariants in scope (was an undefined-type L0).
+        let mut referrers: Vec<&Item> = vec![item];
+        referrers.extend(fn_deps.iter());
+        let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
+        let sub = item_subprogram(item, &spec_items, &fn_deps, &adt_deps);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
 
         // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
@@ -411,6 +418,7 @@ pub fn check_file_with_options(
                     f,
                     &spec_items,
                     &fn_deps,
+                    &adt_deps,
                     seed,
                     rlimit,
                     &verus_version,
@@ -437,6 +445,7 @@ pub fn check_file_with_options(
                         f,
                         &spec_items,
                         &fn_deps,
+                        &adt_deps,
                         &score,
                         seed,
                         rlimit,
@@ -579,7 +588,10 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
         // the composition oracle (`conformance/composition`) is L3-only. A boundary
         // caller at L2 is out of #52's v0.1 scope, so this stays the prior shape
         // (no fn-dep weaving) to keep the explicit-L2 behavior byte-stable.
-        let sub = item_subprogram(item, &spec_items, &[]);
+        // The explicit `--level l2` path does not weave the §9 composition deps
+        // (#52) nor the #68 ADT decls — the kani-backed L2 corpus is scalar-only
+        // and the composition/ADT oracles are L3; keep this byte-stable.
+        let sub = item_subprogram(item, &spec_items, &[], &[]);
         let harness = thermite_lower::lower_l2(&sub).map_err(ForgeError::Lower)?;
         let bound = thermite_lower::bound_string(&sub);
         let l2 = crate::kani::run_kani(&harness, &f.name, &bound)?;
@@ -743,23 +755,39 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
 ///   resolves. The resulting cert records the spec fn's well-formedness as its
 ///   own discharged result — never a neighbor `fn`'s counterexample. A `spec fn`
 ///   has no `fn_deps` (its body can call only spec fns / combinators, §4.2).
-fn item_subprogram(item: &Item, spec_items: &[Item], fn_deps: &[Item]) -> Program {
+fn item_subprogram(
+    item: &Item,
+    spec_items: &[Item],
+    fn_deps: &[Item],
+    adt_deps: &[Item],
+) -> Program {
     match item {
-        // The `fn` plus all pure spec-fn dependencies plus the transitively
-        // reachable in-file `fn` dependencies (#52), then the item itself last
-        // (so a forward reference resolves; the lowerer dedups combinator defs
-        // regardless of order).
+        // The referenced `struct`/`enum` DECLARATIONS first (#68 — so verus has
+        // the type decls + their `well_formed` invariants in scope BEFORE any fn
+        // that references them), then all pure spec-fn dependencies, then the
+        // transitively reachable in-file `fn` dependencies (#52), then the item
+        // itself last (so a forward reference resolves; the lowerer dedups
+        // combinator defs regardless of order). EMPTY `adt_deps` for a fn that
+        // references no ADT (the pure scalar corpus), so the existing sub-program
+        // is byte-stable (no regression).
         Item::Fn(_) => {
-            let mut items = spec_items.to_vec();
+            let mut items = adt_deps.to_vec();
+            items.extend(spec_items.iter().cloned());
             items.extend(fn_deps.iter().cloned());
             items.push(item.clone());
             Program { items }
         }
         // Spec fns verified together (mutual recursion); `spec_items` already
-        // includes `item`. A spec fn has no `fn` dependencies to weave (§4.2).
-        Item::SpecFn(_) => Program {
-            items: spec_items.to_vec(),
-        },
+        // includes `item`. A spec fn has no `fn` dependencies to weave (§4.2), but
+        // a recursive `spec fn` fold over an ADT (the `list_sum` over `enum List`)
+        // DOES reference the `enum` decl, so weave the referenced ADT decls first
+        // (#68 — without `enum List` in scope the recursive fold's lowering fails
+        // to compile and degrades to L0).
+        Item::SpecFn(_) => {
+            let mut items = adt_deps.to_vec();
+            items.extend(spec_items.iter().cloned());
+            Program { items }
+        }
         // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` item
         // has no `fn`/`spec fn` dependency closure — the neutral sub-program is
         // the item alone. Dead-in-1a: the resulting sub-program dies at the
@@ -788,6 +816,390 @@ fn reachable_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         .filter(|i| matches!(i, Item::Fn(_)) && names.contains(i.name()))
         .cloned()
         .collect()
+}
+
+/// The in-file `Item::Struct`/`Item::Enum` DECLARATIONS the items in
+/// `referrers` reference, transitively closed over the ADT type graph (#68 — the
+/// ADT-decl analog of `reachable_fn_deps`). `check::item_subprogram` weaves these
+/// FIRST into a checked item's §5.3 sub-program so the per-item Verus emission has
+/// the type decls + their `well_formed` invariants in scope — without them a fn
+/// referencing `Account`/`Shape`/`List` lowers to Verus with no decl
+/// (`error[E0425]: cannot find type`), verus fails, and the item degrades to L0.
+///
+/// `referrers` is the checked item PLUS every woven `fn` dependency (a regular
+/// fn-dep woven with its real body may itself reference an ADT — the whole
+/// dependency class must resolve, not just the checked item). The roots are
+/// collected from each referrer's signature types (param + return), contract
+/// clauses (`req`/`ens`/`dec`), and body; the closure then follows the FIELD types
+/// of each weaved struct/enum into the types they reference (a struct field of an
+/// ADT type, a recursive `Cons(u64, Box<List>)` occurrence). The walk is
+/// cycle-safe (a visited set keyed by type name, so the self-referential `List`
+/// terminates) and DETERMINISTIC (R-CODE-5): the result is returned in source
+/// order. EMPTY for a referrer set that names no ADT (the pure scalar corpus —
+/// `sum`/`binary_search`), so the existing sub-program is byte-stable (AC-6).
+fn reachable_adt_deps(program: &Program, referrers: &[&Item]) -> Vec<Item> {
+    // The set of in-file ADT type names → their declaring item, for resolution.
+    let adt_decls: std::collections::BTreeMap<&str, &Item> = program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Struct(_) | Item::Enum(_)))
+        .map(|i| (i.name(), i))
+        .collect();
+    if adt_decls.is_empty() {
+        return Vec::new();
+    }
+
+    // Seed the worklist with every ADT type name the referrers reference.
+    let mut names: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for item in referrers {
+        collect_item_adt_refs(item, &adt_decls, &mut names);
+    }
+
+    // Fixed-point over the type graph: a weaved struct/enum's FIELD types may
+    // reference further ADT decls (a struct field of an ADT type; the recursive
+    // `Box<List>` occurrence). Cycle-safe via the `visited` set — the
+    // self-referential `List` is entered once.
+    let mut visited: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut worklist: Vec<String> = names.iter().cloned().collect();
+    while let Some(name) = worklist.pop() {
+        if !visited.insert(name.clone()) {
+            continue;
+        }
+        if let Some(decl) = adt_decls.get(name.as_str()) {
+            let mut refs: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            collect_decl_field_adt_refs(decl, &adt_decls, &mut refs);
+            for r in refs {
+                names.insert(r.clone());
+                if !visited.contains(&r) {
+                    worklist.push(r);
+                }
+            }
+        }
+    }
+
+    // Return the weaved decls in SOURCE order (deterministic), so the lowered
+    // sub-program is byte-stable for a given program.
+    program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Struct(_) | Item::Enum(_)) && names.contains(i.name()))
+        .cloned()
+        .collect()
+}
+
+/// Collect the in-file ADT type names one `Item` (a checked fn / weaved fn-dep /
+/// spec fn) references, from its signature types, contract clauses, and body
+/// (#68). Only names resolving to an in-file `Item::Struct`/`Item::Enum`
+/// (`adt_decls`) are emitted — a primitive / slice / `Option` type, or an unknown
+/// name, is ignored.
+fn collect_item_adt_refs(
+    item: &Item,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    match item {
+        Item::Fn(f) => {
+            for p in &f.params {
+                collect_type_adt_refs(&p.ty, adt_decls, out);
+            }
+            collect_type_adt_refs(&f.ret, adt_decls, out);
+            collect_expr_adt_refs(&f.contract.req.expr, adt_decls, out);
+            for ens in &f.contract.ens {
+                collect_expr_adt_refs(&ens.expr, adt_decls, out);
+            }
+            if let Some(body) = &f.body {
+                collect_block_adt_refs(body, adt_decls, out);
+            }
+        }
+        Item::SpecFn(s) => {
+            for p in &s.params {
+                collect_type_adt_refs(&p.ty, adt_decls, out);
+            }
+            collect_type_adt_refs(&s.ret, adt_decls, out);
+            collect_expr_adt_refs(&s.dec.expr, adt_decls, out);
+            collect_block_adt_refs(&s.body, adt_decls, out);
+        }
+        // A struct/enum decl's own field types are followed by the type-graph
+        // fixed point (`collect_decl_field_adt_refs`), not here.
+        Item::Struct(_) | Item::Enum(_) => {}
+    }
+}
+
+/// Collect the in-file ADT type names a struct/enum DECL references through its
+/// FIELD types (#68 transitive type graph): a struct field of an ADT type, a
+/// tuple/struct enum-variant payload of an ADT type, and the recursive `Box<T>`
+/// occurrence (`Cons(u64, Box<List>)`).
+fn collect_decl_field_adt_refs(
+    decl: &Item,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    match decl {
+        Item::Struct(s) => {
+            for field in &s.fields {
+                collect_type_adt_refs(&field.ty, adt_decls, out);
+            }
+        }
+        Item::Enum(e) => {
+            for variant in &e.variants {
+                match &variant.shape {
+                    thermite_syntax::VariantShape::Unit => {}
+                    thermite_syntax::VariantShape::Tuple(tys) => {
+                        for ty in tys {
+                            collect_type_adt_refs(ty, adt_decls, out);
+                        }
+                    }
+                    thermite_syntax::VariantShape::Struct(fields) => {
+                        for field in fields {
+                            collect_type_adt_refs(&field.ty, adt_decls, out);
+                        }
+                    }
+                }
+            }
+        }
+        Item::Fn(_) | Item::SpecFn(_) => {}
+    }
+}
+
+/// Emit every in-file ADT type name reachable through a `Type` (#68): a
+/// `Type::Named` resolving to an in-file ADT decl, recursing through `Box<T>`,
+/// `&T`, `[T]`, and `Generic<T>` inner types so a `Box<List>` reaches `List`.
+fn collect_type_adt_refs(
+    ty: &thermite_syntax::Type,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    match ty {
+        thermite_syntax::Type::Named(name) => {
+            if adt_decls.contains_key(name.as_str()) {
+                out.insert(name.clone());
+            }
+        }
+        thermite_syntax::Type::Box(inner) | thermite_syntax::Type::Slice(inner) => {
+            collect_type_adt_refs(inner, adt_decls, out);
+        }
+        thermite_syntax::Type::Ref { inner, .. } => {
+            collect_type_adt_refs(inner, adt_decls, out);
+        }
+        thermite_syntax::Type::Generic { arg, .. } => {
+            collect_type_adt_refs(arg, adt_decls, out);
+        }
+        thermite_syntax::Type::Prim(_) | thermite_syntax::Type::Unit => {}
+    }
+}
+
+/// Emit every in-file ADT type name an `Expr` references (#68): a `StructLit`
+/// path (`Account { .. }`), an `Is` variant (`s is Circle`), a `Match` arm's
+/// `Pattern::Enum`/`Pattern::Struct` variant path — and recurse into every
+/// sub-expression so a nested reference is not missed. A `Path`/`Field`/method
+/// segment naming a VARIANT or the enclosing TYPE resolves through the
+/// `adt_decls` map (the variant→enum resolution is handled by walking the
+/// pattern/`Is`/`StructLit` paths against the in-file ADT name set, plus the
+/// `enum`/`struct` names directly).
+fn collect_expr_adt_refs(
+    expr: &thermite_syntax::Expr,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    use thermite_syntax::Expr;
+    // A `path` segment list may name `Type::Variant` or a bare `Type`/`Variant`.
+    // Any segment resolving to an in-file ADT TYPE name is a direct reference;
+    // a bare VARIANT name is resolved to its enum by `resolve_variant_owner`.
+    let note_path = |segments: &[String], out: &mut std::collections::BTreeSet<String>| {
+        for seg in segments {
+            if adt_decls.contains_key(seg.as_str()) {
+                out.insert(seg.clone());
+            } else if let Some(owner) = resolve_variant_owner(seg, adt_decls) {
+                out.insert(owner);
+            }
+        }
+    };
+    match expr {
+        Expr::StructLit { path, fields } => {
+            note_path(path, out);
+            for (_, value) in fields {
+                collect_expr_adt_refs(value, adt_decls, out);
+            }
+        }
+        Expr::Is { scrutinee, variant } => {
+            note_path(variant, out);
+            collect_expr_adt_refs(scrutinee, adt_decls, out);
+        }
+        Expr::Path(segments) => note_path(segments, out),
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_adt_refs(scrutinee, adt_decls, out);
+            for arm in arms {
+                collect_pattern_adt_refs(&arm.pattern, adt_decls, out);
+                collect_expr_adt_refs(&arm.body, adt_decls, out);
+            }
+        }
+        Expr::Call { callee, args } => {
+            collect_expr_adt_refs(callee, adt_decls, out);
+            for a in args {
+                collect_expr_adt_refs(a, adt_decls, out);
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_expr_adt_refs(receiver, adt_decls, out);
+            for a in args {
+                collect_expr_adt_refs(a, adt_decls, out);
+            }
+        }
+        Expr::Field { receiver, .. } => collect_expr_adt_refs(receiver, adt_decls, out),
+        Expr::Closure { body, .. } => collect_expr_adt_refs(body, adt_decls, out),
+        Expr::If { cond, then, else_ } => {
+            collect_expr_adt_refs(cond, adt_decls, out);
+            collect_block_adt_refs(then, adt_decls, out);
+            collect_block_adt_refs(else_, adt_decls, out);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_adt_refs(lhs, adt_decls, out);
+            collect_expr_adt_refs(rhs, adt_decls, out);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_adt_refs(base, adt_decls, out);
+            match index {
+                thermite_syntax::IndexArg::Single(e)
+                | thermite_syntax::IndexArg::RangeTo(e)
+                | thermite_syntax::IndexArg::RangeFrom(e) => {
+                    collect_expr_adt_refs(e, adt_decls, out)
+                }
+                thermite_syntax::IndexArg::Range(a, b) => {
+                    collect_expr_adt_refs(a, adt_decls, out);
+                    collect_expr_adt_refs(b, adt_decls, out);
+                }
+            }
+        }
+        Expr::Cast { expr, ty } => {
+            collect_expr_adt_refs(expr, adt_decls, out);
+            collect_type_adt_refs(ty, adt_decls, out);
+        }
+        Expr::Ref { expr, .. } => collect_expr_adt_refs(expr, adt_decls, out),
+        Expr::Deref(inner) => collect_expr_adt_refs(inner, adt_decls, out),
+        Expr::IntLit { .. } | Expr::BoolLit(_) => {}
+    }
+}
+
+/// Walk a `Block`'s statements + tail for ADT type references (#68).
+fn collect_block_adt_refs(
+    block: &thermite_syntax::Block,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    for stmt in &block.stmts {
+        collect_stmt_adt_refs(stmt, adt_decls, out);
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_adt_refs(tail, adt_decls, out);
+    }
+}
+
+/// Walk one `Stmt` for ADT type references (#68), including a `let` annotation
+/// type and a loop's spec clauses + body.
+fn collect_stmt_adt_refs(
+    stmt: &thermite_syntax::Stmt,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    use thermite_syntax::Stmt;
+    match stmt {
+        Stmt::Let { ty, init, .. } => {
+            if let Some(ty) = ty {
+                collect_type_adt_refs(ty, adt_decls, out);
+            }
+            collect_expr_adt_refs(init, adt_decls, out);
+        }
+        Stmt::Assign { target, value } => {
+            collect_expr_adt_refs(target, adt_decls, out);
+            collect_expr_adt_refs(value, adt_decls, out);
+        }
+        Stmt::Return(opt) => {
+            if let Some(e) = opt {
+                collect_expr_adt_refs(e, adt_decls, out);
+            }
+        }
+        Stmt::If { cond, then, else_ } => {
+            collect_expr_adt_refs(cond, adt_decls, out);
+            collect_block_adt_refs(then, adt_decls, out);
+            if let Some(b) = else_ {
+                collect_block_adt_refs(b, adt_decls, out);
+            }
+        }
+        Stmt::Loop(node) => {
+            for inv in &node.invs {
+                collect_expr_adt_refs(&inv.expr, adt_decls, out);
+            }
+            collect_expr_adt_refs(&node.dec.expr, adt_decls, out);
+            if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                collect_expr_adt_refs(cond, adt_decls, out);
+            }
+            collect_block_adt_refs(&node.body, adt_decls, out);
+        }
+        Stmt::Expr(e) => collect_expr_adt_refs(e, adt_decls, out),
+    }
+}
+
+/// Walk one `Pattern` for ADT type references (#68): a `Pattern::Enum`/
+/// `Pattern::Struct` path names a variant (or bare type), resolved to its in-file
+/// enum/struct; nested sub-patterns are walked.
+fn collect_pattern_adt_refs(
+    pat: &thermite_syntax::Pattern,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    use thermite_syntax::Pattern;
+    let note_path = |segments: &[String], out: &mut std::collections::BTreeSet<String>| {
+        for seg in segments {
+            if adt_decls.contains_key(seg.as_str()) {
+                out.insert(seg.clone());
+            } else if let Some(owner) = resolve_variant_owner(seg, adt_decls) {
+                out.insert(owner);
+            }
+        }
+    };
+    match pat {
+        Pattern::Enum { path, fields } => {
+            note_path(path, out);
+            for f in fields {
+                collect_pattern_adt_refs(f, adt_decls, out);
+            }
+        }
+        Pattern::Struct { path, fields, .. } => {
+            note_path(path, out);
+            for (_, p) in fields {
+                collect_pattern_adt_refs(p, adt_decls, out);
+            }
+        }
+        Pattern::Slice(pats) => {
+            for sp in pats {
+                if let thermite_syntax::SlicePat::Pat(p) = sp {
+                    collect_pattern_adt_refs(p, adt_decls, out);
+                }
+            }
+        }
+        Pattern::Literal(e) => collect_expr_adt_refs(e, adt_decls, out),
+        Pattern::Wildcard | Pattern::Binding(_) => {}
+    }
+}
+
+/// Resolve a bare VARIANT name (`Circle`, `Cons`, `Nil`) to its declaring in-file
+/// `enum` name (#68). The surface drops the enum qualifier in a `match` arm / `is`
+/// (`Circle(r)`, `s is Circle`), so a pattern/`Is` path segment is a variant, not
+/// the type — this maps it back to the `enum` decl that must be woven. Returns the
+/// FIRST declaring enum in source order (deterministic); `None` for a name that is
+/// no declared variant (a binding, a combinator).
+fn resolve_variant_owner(
+    name: &str,
+    adt_decls: &std::collections::BTreeMap<&str, &Item>,
+) -> Option<String> {
+    for decl in adt_decls.values() {
+        if let Item::Enum(e) = decl {
+            if e.variants.iter().any(|v| v.name == name) {
+                return Some(e.name.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Resolve the pinned solver seed for `path` (§5.3). v0.1 reads no lockfile yet
@@ -1402,6 +1814,7 @@ fn mutation_score(
     f: &thermite_syntax::FnItem,
     spec_items: &[Item],
     fn_deps: &[Item],
+    adt_deps: &[Item],
     seed: u64,
     rlimit: f64,
     verus_version: &str,
@@ -1415,10 +1828,12 @@ fn mutation_score(
 
     for mutant in mutants {
         let item = Item::Fn(mutant.item);
-        // Weave the SAME §9 composition deps as the original `f` (#52): a mutant
-        // body still references the original's boundary/regular callees, so they
-        // must resolve in the mutant's sub-program too.
-        let sub = item_subprogram(&item, spec_items, fn_deps);
+        // Weave the SAME §9 composition deps as the original `f` (#52) AND the
+        // same #68 ADT decls: a mutant body still references the original's
+        // boundary/regular callees + ADT types, so they must resolve in the
+        // mutant's sub-program too (else every mutant fails to lower and the score
+        // is the 0/0 backstop — a spurious `WeakContract` reject of an ADT fn).
+        let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
         // OQ-5: a mutant that fails to LOWER (structurally degenerate) is DROPPED
         // from the denominator, never an `Err` that fails the whole gate.
         let lowered = match thermite_lower::lower(&sub) {
@@ -1498,6 +1913,7 @@ fn strengthen_certificate(
     f: &thermite_syntax::FnItem,
     spec_items: &[Item],
     fn_deps: &[Item],
+    adt_deps: &[Item],
     score: &crate::mutation::MutationScore,
     seed: u64,
     rlimit: f64,
@@ -1521,9 +1937,10 @@ fn strengthen_certificate(
     // reject). An un-lowerable woven fn is `Ok(false)` (parallel to #12's drop).
     let verify_woven = |woven: &thermite_syntax::FnItem| -> Result<bool, ForgeError> {
         let item = Item::Fn(woven.clone());
-        // The candidate weaves the SAME §9 composition deps as `f` (#52) so a
-        // boundary/regular callee in `f`'s body resolves in the candidate too.
-        let sub = item_subprogram(&item, spec_items, fn_deps);
+        // The candidate weaves the SAME §9 composition deps as `f` (#52) AND the
+        // same #68 ADT decls so a boundary/regular callee in `f`'s body + every
+        // referenced ADT type resolves in the candidate too.
+        let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
         let lowered = match thermite_lower::lower(&sub) {
             Ok(s) => s,
             Err(_) => return Ok(false),
@@ -1764,7 +2181,12 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             // #52: weave the item's transitively-reachable in-file fn deps (empty
             // here — `g` references no in-file fn, so locality is preserved).
             let fn_deps = reachable_fn_deps(&parsed.program, item.name());
-            let sub = item_subprogram(item, &spec_items, &fn_deps);
+            // #68: no ADT in this fixture (`g`/`f` are scalar), so the ADT-decl
+            // weave is empty and the key is unchanged.
+            let mut referrers: Vec<&Item> = vec![item];
+            referrers.extend(fn_deps.iter());
+            let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
+            let sub = item_subprogram(item, &spec_items, &fn_deps, &adt_deps);
             let lowered = thermite_lower::lower(&sub).ok()?;
             Some(cache::cache_key(&lowered, 0, VERUS, THERMITE))
         };

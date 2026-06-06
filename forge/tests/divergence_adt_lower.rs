@@ -78,15 +78,15 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 /// `fn deposit` at **L0**, but the cert oracle says **L3**.
 ///
 /// Root cause: `forge`'s per-item path (`check::item_subprogram`) builds a
-/// sub-program for `deposit` containing only the `fn` itself (+ `spec fn` deps
-/// + reachable `fn` deps) — it does NOT weave the `struct Account` declaration
-/// (nor its `well_formed` invariant) that `deposit`'s signature references. The
-/// emitted Verus per-item lowering therefore fails to compile
-/// (`error[E0425]: cannot find type Account in this scope`), so the item
+/// sub-program for `deposit` containing only the `fn` itself, plus `spec fn`
+/// deps, plus reachable `fn` deps — it does NOT weave the `struct Account`
+/// declaration (and its `well_formed` invariant) that `deposit`'s signature
+/// references. The emitted Verus per-item lowering therefore fails to compile
+/// with `error[E0425]: cannot find type Account in this scope`, so the item
 /// degrades to L0. The builder's `adt_lower_conformance` test passed because it
 /// lowers the WHOLE program once (struct + fn together); the real `forge check`
-/// per-item path does not. This is the ADT-type-dependency analog of #52
-/// (which weaves `fn`/`spec fn` deps into `item_subprogram` but not ADT decls).
+/// per-item path does not. This is the ADT-type-dependency analog of #52, which
+/// weaves `fn`/`spec fn` deps into `item_subprogram` but not ADT decls.
 ///
 /// Authority: `conformance/bank_account.cert.json` — `"item": "deposit"`,
 /// `"level": "L3"`. `.design/basis/01-adts.md` REQ-8 (struct → Verus struct +

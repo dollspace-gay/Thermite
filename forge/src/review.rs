@@ -584,6 +584,11 @@ fn render_type(ty: &Type) -> String {
         // reviewed — it dies at the validator).
         Type::Named(name) => name.clone(),
         Type::Box(inner) => format!("Box<{}>", render_type(inner)),
+        // Basis Stage 4 (`.design/basis/04-collections.md`): the SURFACE rendering
+        // of a bounded `Vec<T>` is its surface text `Vec<T>` — the faithful
+        // declaration a reviewer reads. The honest neutral value for the
+        // infallible surface renderer, NOT a stub.
+        Type::Vec(inner) => format!("Vec<{}>", render_type(inner)),
     }
 }
 

@@ -1250,5 +1250,16 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let i = lower_type(inner)?;
             Ok(format!("Box<{i}>"))
         }
+        // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the L1 exec
+        // mirror of a bounded `Vec<T>` is a plain Rust `Vec<T>` — at L1 (runtime
+        // checks, not an SMT proof) the structure IS a `std::vec::Vec`, so its
+        // `len`/`push` run natively. (The L3 lowering wraps it in `TVec<elem>` for
+        // the capacity invariant + no-OOB `get` PROOF; L1 needs no wrapper — the
+        // honest exec type.) The v1 corpus exercises L3 only; this arm keeps L1
+        // total over `Type` (no panic, REQ-7).
+        Type::Vec(inner) => {
+            let i = lower_type(inner)?;
+            Ok(format!("Vec<{i}>"))
+        }
     }
 }

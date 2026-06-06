@@ -68,6 +68,14 @@
 //! | REQ-7 (induction-discharged-once — the multiplier) | SHIPPED | `emit_fold_bound_law` GENERATES `fold_bound_<e>` (a `proof fn` parametric in the step `f` + a per-node premise, carrying the SINGLE `decreases l` induction, proving `fold_<e>(l, init, f) <= <e>_len(l) * b`) per ADT a `fold` folds over; `emit_len_measure` generates the structural measure `<e>_len`. An instance bound is proven by CITING the law with NO fresh induction. Consumer: `lower`. Verified: `verus --no-cheating` `verified, 0 errors` on the law + the GROUNDED `sum_list_bounded` instance (cites `fold_bound_list`, NO `decreases`) — `multiplier_instance_cites_the_generated_law_no_fresh_induction`; the NEGATIVE CONTROL (per-node premise removed) FAILS verus — `negative_control_premise_removed_fails_verus` (the induction is real, R-DEFER-9). |
 //! | REQ-9 (`LowerError` extension, no panics) | SHIPPED | the scheme lowering reuses the existing `LowerError::Unsupported` (a scheme over a non-ADT value, an un-resolvable scrutinee) and `TooDeep`; no new variant needed. The DEC NUANCE is resolved: a scheme-CALL instance body (non-recursive — the recursion is in the generated `fold_<e>`) lowers WITHOUT a spurious `decreases` (`lower_spec_fn` suppresses it for `is_scheme_call_body`), while the generated `fold_<e>`/law carry their own `decreases l`. No `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1). |
 //! | REQ-3 (exec form — MONOMORPHIZED, OQ-2) | NOT-STARTED | epic **#62** Stage 2c. The SPEC scheme (the verified engine — the generated higher-order `fold_<e>` with the step passed as a `spec_fn`) is SHIPPED above. The MONOMORPHIZED EXEC mirror (an inlined `decreases`-bearing loop, the `conformance/sum.th` while-loop shape) is NOT implemented: the v0.1 corpus `list_fold.th` is SPEC-ONLY (all three items are `spec fn`), so no exec scheme is exercised yet — `collect_scheme_uses` collects spec-fn uses only. The exec mirror lands when a corpus exec fn folds an ADT (no blocker filed; #62 Stage 2c owns it). |
+//!
+//! ## REQ status — 04-collections.md (Basis Stage 4, issue #73)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-5 (`Vec<T>` → vstd-`Vec` newtype; push/get/len; `fx alloc`; backing-agnostic) | SHIPPED | `lower_type` maps `Type::Vec(elem)` → `tvec_name` (`Vec<u64>` → `TVecU64`); `emit_vec_wrappers` (called from `lower` after `emit_scheme_defs`) materializes ONCE per element type the GROUNDED `TVec<elem>` newtype over `vstd::vec::Vec<elem>` with `well_formed` (`len() <= CAP`), spec `len`/`spec_get`, the no-OOB exec `get` (`req i < len`), and the capacity-preserving exec `push` (`req well_formed && len < CAP`, `ens final(self)...` — the `final(self)` &mut grounding finding). Spec-position `v.get(i)` lowers to `v.spec_get(i as int)` (`lower_expr` MethodCall arm). `fx alloc` emits no verus annotation (effects are a Thermite-level row; `push`'s allocation is the Stage-1 `Effect::Alloc`, accepted by effect-subsumption since `push` is an intrinsic, not a declared callee). Consumer: `lower`. Verified: real `verus --no-cheating` on the emitted `vec_demo.th` — `checked_get`/`push_one` `verified, 0 errors` (`thermite-lower/tests/collections_conformance.rs`); the no-`req` `get` reject FAILS (non-vacuity, L0). BACKING-AGNOSTIC (#62): the surface contract names `len`/`get`/`push` over `v@`, never `vstd::vec::Vec`; a later custom-backing decouple swaps `TVec`'s `data` field WITHOUT changing user `.th` code. |
+//! | REQ-6 (`Map<K,V>` → vstd `Map` wrapper) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut, v1.1). No `Type::Map` node / no `Map` lowering; the v1 corpus oracle (`conformance/vec_demo.th`) is `Vec`-only. Modeled on `vstd::map::Map`, deferred to a Stage-4 follow-up under #62. |
+//! | REQ-7 (`LowerError` extension, no panics) | SHIPPED | the `Vec` lowering reuses the existing `LowerError::Unsupported` (`tvec_name` on a non-primitive element type) — no new variant needed; no `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1). |
 
 use std::fmt::Write as _;
 
@@ -356,6 +364,17 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // the program uses no scheme (byte-stable for the non-scheme corpus).
     let scheme_defs = emit_scheme_defs(program)?;
     out.push_str(&scheme_defs);
+
+    // (1c) Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the
+    // bounded-`Vec` wrapper struct + its verified `len`/`spec_get`/`get`/`push`
+    // impl, materialized ONCE per element type the program uses (a `Vec<u64>`
+    // param/return → `TVecU64`), BEFORE any fn references it. EMPTY when the
+    // program uses no `Vec` (byte-stable for the existing corpus — no regression).
+    // The GROUNDED `BVec`-over-`vstd::vec::Vec<u64>` form (verus `verified, 0
+    // errors`): the `well_formed` capacity invariant, the no-OOB `get`, the
+    // capacity-preserving `push` with the `final(self)` &mut postcondition.
+    let vec_wrappers = emit_vec_wrappers(program)?;
+    out.push_str(&vec_wrappers);
 
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
     // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
@@ -2118,7 +2137,169 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let i = lower_type(inner)?;
             Ok(format!("Box<{i}>"))
         }
+        // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): a bounded
+        // `Vec<T>` lowers to the Thermite-runtime newtype `TVec<elem>` over
+        // `vstd::vec::Vec<T>` (the GROUNDED `BVec`-over-`Vec<u64>` form). The
+        // wrapper struct + its verified `len`/`spec_get`/`get`/`push` impl are
+        // materialized ONCE per element type by `emit_vec_wrappers`; this arm
+        // names the type (`Vec<u64>` → `TVecU64`). The wrapper carries the
+        // `well_formed` capacity invariant + the no-OOB `get` + capacity-preserving
+        // `push`, the §4.2-decidable bounded structure. BACKING-AGNOSTIC SURFACE
+        // (#62): the surface contract names `len`/`get`/`push` over `v@`, never
+        // `vstd::vec::Vec`; v1 IMPLEMENTS it by wrapping vstd's verified `Vec`.
+        Type::Vec(inner) => Ok(tvec_name(inner)?),
     }
+}
+
+/// The generated wrapper struct name for `Vec<elem>` — `TVec` plus an
+/// UpperCamelCase suffix derived from the element type's Verus spelling
+/// (`Vec<u64>` → `TVecU64`, `Vec<u32>` → `TVecU32`, `Vec<usize>` → `TVecUsize`)
+/// (`.design/basis/04-collections.md` REQ-5). A per-element-type concrete
+/// wrapper (not a generic `TVec<T>`) is the GROUNDED form: vstd's `Vec<T>` index
+/// `self.data[i]` moves the element out, which requires `T: Copy` — so the
+/// verified `get` is monomorphized per (Copy) element type, exactly as the design's
+/// GROUNDED `BVec` over `Vec<u64>` is. A non-primitive / nested-collection element
+/// is `Unsupported` (the v1 corpus is `Vec<u64>`; a richer element joins when a
+/// corpus program needs it — never speculatively, REQ-1 frozen-set discipline).
+fn tvec_name(elem: &Type) -> Result<String, LowerError> {
+    let suffix = match elem {
+        Type::Prim(PrimType::U32) => "U32",
+        Type::Prim(PrimType::U64) => "U64",
+        Type::Prim(PrimType::Usize) => "Usize",
+        Type::Prim(PrimType::Bool) => "Bool",
+        other => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "Vec element type {:?} (v1 wraps a Copy primitive element; \
+                     the GROUNDED form is Vec<u64>)",
+                    lower_type(other).unwrap_or_else(|_| "<unlowerable>".to_string())
+                ),
+                span: zero_span(),
+            });
+        }
+    };
+    Ok(format!("TVec{suffix}"))
+}
+
+// ---------------------------------------------------------------------------
+// Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the bounded-`Vec`
+// wrapper emission. A Thermite `Vec<T>` lowers to a newtype `TVec<elem>` over
+// `vstd::vec::Vec<T>` with the verified `len`/`spec_get`/`get`/`push` impl — the
+// GROUNDED `BVec`-over-`Vec<u64>` form. Materialized ONCE per element type, so a
+// program using `Vec<u64>` in many fns emits a single `TVecU64`.
+// ---------------------------------------------------------------------------
+
+/// The bounded-`Vec` capacity constant `CAP` (`.design/basis/04-collections.md`
+/// REQ-5 / the GROUNDED `BVec` `spec const CAP`): the SAME `1_000_000` bound the
+/// corpus idiom uses (`conformance/sum.th` `req xs.len() <= 1_000_000`;
+/// `conformance/vec_demo.th` `push_one` `req v.len() < 1_000_000`). A `Vec` is
+/// bounded by design so the §4.2 cage never sees an unbounded sequence.
+const VEC_CAP: u64 = 1_000_000;
+
+/// Collect, in deterministic source order and deduped, the element type of every
+/// `Vec<T>` the program references in a `fn`/`spec fn` parameter or return
+/// position (REQ-5). The wrapper struct is materialized once per element type.
+fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
+    let mut elems: Vec<Type> = Vec::new();
+    let note = |ty: &Type, elems: &mut Vec<Type>| {
+        if let Type::Vec(inner) = ty {
+            let e = (**inner).clone();
+            if !elems.contains(&e) {
+                elems.push(e);
+            }
+        }
+    };
+    for item in &program.items {
+        let (params, ret) = match item {
+            Item::Fn(f) => (&f.params, &f.ret),
+            Item::SpecFn(s) => (&s.params, &s.ret),
+            Item::Struct(_) | Item::Enum(_) => continue,
+        };
+        for p in params {
+            note(&p.ty, &mut elems);
+        }
+        note(ret, &mut elems);
+    }
+    elems
+}
+
+/// Emit the `TVec<elem>` wrapper struct + its verified `len`/`spec_get`/`get`/
+/// `push` impl for every element type the program uses (REQ-5), in deterministic
+/// order. EMPTY when the program uses no `Vec` (byte-stable for the non-Vec
+/// corpus). The emitted form is EXACTLY the GROUNDED `BVec` over `vstd::vec::Vec`
+/// (`verified, 0 errors`):
+///
+/// ```verus
+/// pub struct TVecU64 { pub data: Vec<u64> }
+/// impl TVecU64 {
+///     pub open spec fn well_formed(&self) -> bool { self.data.len() <= 1000000 }
+///     pub open spec fn len(&self) -> nat { self.data.len() as nat }
+///     pub open spec fn spec_get(&self, i: int) -> u64 { self.data@[i] }
+///     pub fn get(&self, i: usize) -> (result: u64)
+///         requires i < self.data.len(),
+///         ensures result == self.data@[i as int],
+///     { self.data[i] }
+///     pub fn push(&mut self, x: u64)
+///         requires old(self).well_formed(), old(self).data.len() < 1000000,
+///         ensures
+///             final(self).well_formed(),
+///             final(self).data.len() == old(self).data.len() + 1,
+///             final(self).data@[old(self).data.len() as int] == x,
+///     { self.data.push(x) }
+/// }
+/// ```
+///
+/// THE `final(self)` FINDING (REQ-5 / the design's recorded migration note): verus
+/// 0.2026.05.24 requires `final(self)` (NOT bare `self`) to disambiguate a `&mut`
+/// receiver in a `push` postcondition. The `well_formed` capacity invariant + the
+/// no-OOB `get` (`req i < len`) + the capacity-preserving `push` (`req len < CAP`)
+/// are the Thermite-level additions threaded over vstd's verified `Vec::push`/
+/// `Vec::index`/`Vec::len` (which carry the heap proof) — NO `assume`/`external_body`
+/// (R-DEFER-9; the broken unguarded forms FAIL verus, the non-vacuity proof).
+fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
+    let elems = collect_vec_elem_types(program);
+    if elems.is_empty() {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    for elem in &elems {
+        let name = tvec_name(elem)?;
+        let ety = lower_type(elem)?;
+        out.push('\n');
+        writeln!(out, "pub struct {name} {{ pub data: Vec<{ety}> }}").ok();
+        writeln!(out, "impl {name} {{").ok();
+        writeln!(
+            out,
+            "    pub open spec fn well_formed(&self) -> bool {{ self.data.len() <= {VEC_CAP} }}"
+        )
+        .ok();
+        out.push_str("    pub open spec fn len(&self) -> nat { self.data.len() as nat }\n");
+        writeln!(
+            out,
+            "    pub open spec fn spec_get(&self, i: int) -> {ety} {{ self.data@[i] }}"
+        )
+        .ok();
+        // The no-OOB exec accessor `get` (REQ-5): `req i < len`, `ens result ==
+        // v@[i]`. The verified vstd index `self.data[i]`.
+        writeln!(out, "    pub fn get(&self, i: usize) -> (result: {ety})").ok();
+        out.push_str("        requires i < self.data.len(),\n");
+        out.push_str("        ensures result == self.data@[i as int],\n");
+        out.push_str("    { self.data[i] }\n");
+        // The capacity-preserving exec mutator `push` (REQ-5): `req well_formed &&
+        // len < CAP`, `ens final(self).well_formed() && len' == len+1 &&
+        // v@[old_len] == x`. The `final(self)` &mut postcondition (the grounding
+        // finding). The verified vstd `self.data.push(x)`.
+        writeln!(out, "    pub fn push(&mut self, x: {ety})").ok();
+        out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
+        writeln!(out, "{VEC_CAP},").ok();
+        out.push_str("        ensures\n");
+        out.push_str("            final(self).well_formed(),\n");
+        out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
+        out.push_str("            final(self).data@[old(self).data.len() as int] == x,\n");
+        out.push_str("    { self.data.push(x) }\n");
+        out.push_str("}\n");
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -2192,6 +2373,21 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // references confirm; the `@` view is only needed where a `Seq`
             // operation (`subrange`/index) is required (handled in `lower_index`).
             let r = lower_expr(receiver, ctx, d, span)?;
+            // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): in SPEC
+            // position the bounded-`Vec` accessor `v.get(i)` (a contract naming the
+            // accessed element, `ens result == v.get(i)`) lowers to the wrapper's
+            // SPEC accessor `v.spec_get(i as int)` — the exec `get` returns `T` but
+            // a contract needs the spec function (`self.data@[i]`), and a Verus spec
+            // index is `int`. `v.len()` in spec position lowers to the wrapper's
+            // `spec fn len(&self) -> nat` unchanged (`r.len()`). Keyed on the method
+            // NAME `get` in spec position only; exec `get`/`push`/`len` (a fn body)
+            // lower verbatim to the verified vstd-backed exec methods. The index
+            // cast `as int` is appended exactly as `lower_index_arg` does for a
+            // combinator index, avoiding a double-cast on an already-`as int` arg.
+            if ctx.is_spec() && name == "get" && args.len() == 1 {
+                let idx = lower_index_arg(&args[0], ctx, d, span)?;
+                return Ok(format!("{r}.spec_get({idx})"));
+            }
             let mut parts = Vec::new();
             for a in args {
                 parts.push(lower_expr(a, ctx, d, span)?);

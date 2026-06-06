@@ -102,6 +102,11 @@ fn render_type(ty: &Type) -> String {
         // existing `sum`/`binary_search` fixtures never exercise them.
         Type::Named(name) => name.clone(),
         Type::Box(inner) => format!("Box<{}>", render_type(inner)),
+        // Basis Stage 4 bounded-collection type node
+        // (`.design/basis/04-collections.md` REQ-1): the `Vec<T>` surface
+        // rendering. Additive arm so this existing test helper compiles; the
+        // sum/binary_search fixtures never exercise it.
+        Type::Vec(inner) => format!("Vec<{}>", render_type(inner)),
     }
 }
 

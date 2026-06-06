@@ -78,11 +78,29 @@ design = ".design/syntax/parser.md"
 reference = ["conformance/parse"]
 conformance_ops = ["binary_search", "sum", "recover_per_item"]
 
+# Basis Stage 4 (bounded collections, issue #73 / epic #62): parser.rs ALSO parses
+# the `Vec<T>` type spelling (the contextual `Vec` ident, mirroring `Box<T>`),
+# governed by 04-collections.md.
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/basis/04-collections.md"
+reference = ["conformance/vec_demo.th", "conformance/collections/cases.json"]
+conformance_ops = ["checked_get", "push_one"]
+
 [[route]]
 crate_pattern = "thermite-syntax/src/ast.rs"
 design = ".design/syntax/ast.md"
 reference = []
 conformance_ops = []
+
+# Basis Stage 4 (bounded collections, issue #73 / epic #62): ast.rs ALSO carries
+# the `Type::Vec(Box<Type>)` element-type node governed by 04-collections.md
+# (a file may carry multiple governing docs — the lower.rs precedent).
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/basis/04-collections.md"
+reference = ["conformance/vec_demo.th", "conformance/collections/cases.json"]
+conformance_ops = ["checked_get", "push_one"]
 
 [[route]]
 crate_pattern = "thermite-syntax/src/address.rs"
@@ -122,6 +140,16 @@ design = ".design/basis/02-recursion-schemes.md"
 reference = ["conformance/list_fold.th"]
 conformance_ops = ["nested_scheme_in_step", "unknown_scheme"]
 
+# Basis Stage 4 (bounded collections, issue #73 / epic #62): validator.rs ALSO
+# admits the bounded `Vec` operation contracts as flat built-ins (`v.len()`,
+# the no-OOB accessor `v.get(i)`) inside the §4.2 cage, governed by
+# 04-collections.md.
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/04-collections.md"
+reference = ["conformance/vec_demo.th", "conformance/collections/cases.json"]
+conformance_ops = ["checked_get", "push_one"]
+
 # Basis Stage 2 (recursion schemes, issue #70): the NEW scheme registry,
 # mirroring combinators.rs.
 [[route]]
@@ -150,6 +178,16 @@ crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/basis/02-recursion-schemes.md"
 reference = ["conformance/list_fold.th"]
 conformance_ops = ["len_list", "sum_list", "all_positive"]
+
+# Basis Stage 4 (bounded collections, issue #73 / epic #62): lower.rs ALSO carries
+# the `Vec<T>` → vstd-`Vec` newtype wrapper (`TVec<elem>` with `well_formed`/
+# `len`/`get`/`push`, the `final(self)` &mut postcondition, the `fx alloc`
+# boundary), governed by 04-collections.md.
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/04-collections.md"
+reference = ["tests/golden/lower/vec_demo.verus.rs", "conformance/vec_demo.th"]
+conformance_ops = ["checked_get", "push_one"]
 
 # #52 §9 boundary-composition: lower.rs ALSO carries the external_body emission
 # arm governed by boundary-composition.md (a file may carry multiple governing

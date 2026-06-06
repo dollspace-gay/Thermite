@@ -43,6 +43,13 @@
 //! | REQ-4 SURFACE (`match` over enum/struct patterns + binding) | SHIPPED | `Pattern::Struct { path, fields: Vec<(Ident, Pattern)>, rest }` added; the existing `Pattern::Enum` covers tuple/unit variants; `parse_match`/`parse_pattern` bind payloads (`Circle(r)`, `Rect { w, h }`, `Cons(h, t)`); asserted by `tests/adt_parse.rs` (shape + list_sum 2-arm matches). The exhaustiveness CHECK is stage 1b. |
 //! | REQ-6 SURFACE (`Expr::Is` + `is` operator) | SHIPPED | `Expr::Is { scrutinee: Box<Expr>, variant: Vec<Ident> }`; built by the postfix `is` parse in `parser::parse_postfix`; `result == (s is Circle)` parses (`tests/adt_parse.rs` shape). The VALIDATOR rule (accept only declared variants) is stage 1b. |
 //! | deref `*t` (REQ-3/REQ-4 surface) | SHIPPED | `Expr::Deref(Box<Expr>)` (new prefix-`*` unary; no existing node fit); built by `parser::parse_ref`; `sum_list(*t)` parses (`tests/adt_parse.rs` list_sum). Its SEMANTICS are stage 1c. |
+//!
+//! ## Basis Stage 4 — bounded-collection SURFACE AST (`.design/basis/04-collections.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 SURFACE (`Vec<T>` type node) | SHIPPED | `Type::Vec(Box<Type>)` (OQ-2 RESOLVED — dedicated node, mirroring `Type::Box`, NOT `Generic`); built by `parser::parse_type` on the contextual `Vec` ident; `v: Vec<u64>` parses (`conformance/vec_demo.th`, asserted by `thermite-lower/tests/collections_conformance.rs`). The `push`/`pop`/`get`/`len` operations reuse `Expr::MethodCall` (no new node). The vstd-`Vec` wrapper + capacity invariant + `fx alloc` are Stage 4 lowering (`lower.rs`). |
+//! | REQ-2 (`Map<K,V>` type) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut); `Map` deferred to a Stage-4 follow-up — `enum Type` has no `Map` node; the single-arg `Generic`/`Vec`/`Box` shapes do not carry a key+value. |
 
 use crate::lexer::Span;
 
@@ -495,4 +502,16 @@ pub enum Type {
     /// recursive `enum` (`Cons(u64, Box<List>)`); constructing a boxed value
     /// carries `fx alloc` (stage 1c).
     Box(Box<Type>),
+    /// The bounded growable-collection primitive `Vec<T>`
+    /// (`.design/basis/04-collections.md` REQ-1, OQ-2 RESOLVED: a dedicated
+    /// first-class node mirroring [`Type::Box`], NOT a `Generic { name: "Vec",
+    /// .. }`, so the lowerer keys the vstd-`Vec` wrapper + capacity invariant +
+    /// `fx alloc` emission on the node KIND rather than a string-name match). A
+    /// `Vec<T>` is the GROWTH generalization of the read-only [`Type::Slice`]: a
+    /// `&[T]` is a borrowed read-only view, a `Vec<T>` owns a growable backing run
+    /// whose `Seq` view is `v@`. Its bounded operations `push`/`pop`/`get`/`len`
+    /// are ordinary [`Expr::MethodCall`]s (no new expression node — the one call
+    /// syntax, §4.4). Constructing / `push`-ing a `Vec` allocates, so the fn
+    /// carries `fx alloc` (the Stage-1 [`Effect::Alloc`] heap, generalized; REQ-5).
+    Vec(Box<Type>),
 }

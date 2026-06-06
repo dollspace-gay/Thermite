@@ -1215,7 +1215,12 @@ fn collect_type_adt_refs(
                 out.insert(name.clone());
             }
         }
-        thermite_syntax::Type::Box(inner) | thermite_syntax::Type::Slice(inner) => {
+        // Basis Stage 4 (`.design/basis/04-collections.md`): a bounded `Vec<T>`
+        // recurses into its element type so a `Vec<Account>` reaches `Account`
+        // (the element-invariant ADT ref), exactly as `Box<List>` reaches `List`.
+        thermite_syntax::Type::Box(inner)
+        | thermite_syntax::Type::Slice(inner)
+        | thermite_syntax::Type::Vec(inner) => {
             collect_type_adt_refs(inner, adt_decls, out);
         }
         thermite_syntax::Type::Ref { inner, .. } => {

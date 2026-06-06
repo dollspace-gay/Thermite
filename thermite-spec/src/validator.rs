@@ -47,6 +47,13 @@
 //! | REQ-2 (flat step closure — arity + no nested scheme) | SHIPPED | `check_scheme` requires the trailing arg to be an `Expr::Closure` whose param count matches `SchemeSig::step_shape.arity()` (`SchemeStepShape` otherwise) and walks the step body in `in_scheme_step` mode; while set, `walk_call` rejects a registered scheme OR combinator callee with `SpecError::NestedScheme`. Consumer: `validate`. Verification: `scheme_validate.rs` `nested_scheme_in_step` → `NestedScheme` (a `fold` inside a `fold` step). |
 //! | REQ-4 (cage bridge — named structural quantification; nested-scheme reject) | SHIPPED | a top-level `for_all`/`fold` scheme call is ACCEPTED as a named-composition leaf (mirroring the combinator-call accept, REQ-6); a scheme nested in a step / a combinator closure is `NestedScheme`. The scheme accept JOINS the combinator-call accept in `walk_call`; the caged-flat walk (`walk_expr_inner`, Stage 1 REQ-7) is unchanged. Verification: `scheme_validate.rs` `list_fold_validates` + `nested_scheme_in_step`. |
 //! | REQ-9 (`SpecError` extension, no panics) | SHIPPED | `SpecError::{NestedScheme, SchemeWrongArity, SchemeStepShape}` are span-bearing variants; `validate` returns `Result<(), Vec<SpecError>>`, never panics. The structural-`dec` reject (REQ-5) reuses Stage 1's recursive-`spec fn` `dec` diagnostic (a generated `fold_<e>` is checked exactly as a hand-written recursive `spec fn` — `thermite-lower`). |
+//!
+//! ## REQ status — 04-collections.md (Basis Stage 4, issue #73)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (capacity + operation contracts fit the §4.2 cage) | SHIPPED | the bounded-`Vec` operation contracts are FLAT built-ins: `v.len()` (already in `BUILTIN_METHODS`) and the no-OOB accessor `get` ADDED to `BUILTIN_METHODS` so `ens result == v.get(i)` (`conformance/vec_demo.th` `checked_get`) validates inside the cage; the capacity bound `v.len() < CAP` / `result.len() == v.len() + 1` (`push_one`) are flat comparisons over the `len` built-in. The caged-flat walk (`walk_expr_inner`'s `MethodCall` arm) is UNCHANGED — a Vec `len`/`get` is the same flat built-in as a slice `len`. `push`/`pop` are EXEC-only (never in a contract), so the cage does not admit them. Consumer: `validate` → `walk_expr_inner`. Verification: `thermite-lower/tests/collections_conformance.rs` (the contracts validate clean + real verus L3). |
+//! | REQ-4 (element invariant via named `spec fn`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The element invariant (`forall_in(v, |e| inv(e))` as a named `spec fn`, preserved across `push`) reuses the existing named-`spec fn` accept path UNCHANGED — but the v1 corpus oracle (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get; no `Vec<Account>` element-invariant program is in the corpus, so this REQ is deferred to a Stage-4 follow-up (the GROUNDED `all_elems_inv` form is design-confirmed feasible, not yet corpus-exercised). |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -76,12 +83,20 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// `xs.len()`)"). Any method name outside this set in a contract position is a
 /// `ForbiddenCall` (REQ-4 (iv)) — the §4.2 cage is closed.
 ///
-/// v0.1 set = `len` only: it is the single method the conformance corpus uses
-/// in any contract position (`haystack.len()` in `binary_search.th`; `xs.len()`
-/// in `sum.th`'s `req`/`inv`/`dec`). No other built-in method is added — per
-/// REQ-1's frozen-set discipline and anti-goal §11, the set grows only by
-/// design amendment from a corpus need, never speculatively.
-const BUILTIN_METHODS: &[&str] = &["len"];
+/// Set = `len` + the bounded-collection no-OOB accessor `get`
+/// (`.design/basis/04-collections.md` REQ-3): `len` is the slice/Vec length used
+/// by `sum.th`/`binary_search.th` (`haystack.len()`, `xs.len()`) and the Vec
+/// capacity contract (`v.len() < CAP`, `result.len() == v.len() + 1`); `get` is
+/// the verified `Vec` accessor whose result a contract names
+/// (`ens result == v.get(i)` in `conformance/vec_demo.th`'s `checked_get`),
+/// admitted as a FLAT built-in inside the §4.2 cage exactly as `len` is — the
+/// lowerer maps the spec-position `v.get(i)` to the wrapper's `spec_get(i as int)`
+/// (REQ-5). `push`/`pop` are NOT here: they are EXEC-only mutators (a fn body),
+/// never named in a contract position, so the cage does not admit them. No other
+/// built-in method is added — per REQ-1's frozen-set discipline and anti-goal
+/// §11, the set grows only by design amendment from a corpus need, never
+/// speculatively.
+const BUILTIN_METHODS: &[&str] = &["len", "get"];
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so

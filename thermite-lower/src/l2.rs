@@ -447,6 +447,11 @@ fn type_label(ty: &Type) -> String {
         // type is dead-in-1a (gated at the validator).
         Type::Named(name) => name.clone(),
         Type::Box(_) => "Box<_>".to_string(),
+        // Basis Stage 4 (`.design/basis/04-collections.md`): a descriptive label
+        // for a bounded `Vec<T>` inside an `Unsupported` L2 diagnostic. L2 (Kani
+        // bounded model check) does not yet harness the `Vec` wrapper; this is the
+        // honest human label, NOT a stub.
+        Type::Vec(_) => "Vec<_>".to_string(),
     }
 }
 

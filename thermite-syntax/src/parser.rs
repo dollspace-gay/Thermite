@@ -31,6 +31,12 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
+//! ## Basis Stage 4 — bounded-collection type parse (`.design/basis/04-collections.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (`Vec<T>` type spelling) | SHIPPED | `parse_type` matches the contextual `Vec` ident (mirroring `Box`): `Vec<u64>` → `Type::Vec(Box::new(Type::Prim(U64)))` (`conformance/vec_demo.th`, asserted by `thermite-lower/tests/collections_conformance.rs`). The `push`/`pop`/`get`/`len` operations are ordinary postfix `.m(args)` `MethodCall`s already parsed by `parse_postfix` (REQ-6) — no new surface. |
+//!
 //! | ffi REQ-1/REQ-3 | SHIPPED | `parse_attribute` generalizes `parse_slag` (dispatch on the `#[` attribute name: `slag` -> `SlagAttr`, `boundary` -> `BoundaryAttr` reading one positional `(` STRING `)`); `parse_item` routes a `boundary` attribute into `parse_fn` (and rejects `#[boundary]` on a `spec fn`). `parse_fn` gains a `Semi`-terminated bodyless path GATED on `boundary.is_some()` (OQ-2): `#[boundary]` REQUIRES the `;` body, a fn with NO `#[boundary]` REQUIRES the `{ }` body — a bodyless non-`#[boundary]` fn is a clear `SyntaxError`, never silently a boundary fn. |
 
 use crate::ast::*;
@@ -1646,6 +1652,21 @@ impl<'a> Parser<'a> {
                         let inner = self.parse_type()?;
                         self.consume(&TokKind::Gt, "`>` to close `Box<…>`")?;
                         Ok(Type::Box(Box::new(inner)))
+                    }
+                    // The bounded growable-collection primitive `Vec<T>`
+                    // (`.design/basis/04-collections.md` REQ-1, OQ-2 RESOLVED: a
+                    // dedicated `Type::Vec` node, mirroring `Box<T>`). `Vec` is a
+                    // contextual identifier (NOT a reserved keyword), matched here
+                    // by name exactly as `Box` is. The element type `T` parses
+                    // recursively; `Vec<u64>` (`conformance/vec_demo.th`) yields
+                    // `Type::Vec(Box::new(Type::Prim(U64)))`. Its `push`/`pop`/
+                    // `get`/`len` operations are ordinary `MethodCall`s parsed by
+                    // the existing postfix `.` form (REQ-6) — no new surface here.
+                    "Vec" => {
+                        self.consume(&TokKind::Lt, "`<` after `Vec`")?;
+                        let inner = self.parse_type()?;
+                        self.consume(&TokKind::Gt, "`>` to close `Vec<…>`")?;
+                        Ok(Type::Vec(Box::new(inner)))
                     }
                     _ => {
                         // A generic application `NAME<T>` (e.g. `Option<usize>`),

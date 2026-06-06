@@ -1,0 +1,10 @@
+{
+  "uuid": "84bea691-b2f1-4325-a241-a5419f481587",
+  "issue_uuid": "d853e814-68f5-4c80-a047-9c1b53e80a39",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (5f5a4b7 validator, 9294377 the #66 fix). The real ADT validator: declaration pre-pass (enum variant sets + struct field sets), exhaustiveness (NonExhaustiveMatch/UnreachableArm), well-formed field/variant access (UnknownField/UnknownVariant), is-discrimination, the cage interaction (match/Field/is flat built-ins). 3 ADT programs validate clean; 5 reject cases yield exact errors. Critic found+fixed #66 (CRITICAL: exhaustiveness bypassable via a lowercase variant — the parser's case-based pattern disambiguation was unsound; closed by mandating UpperCamelCase variants [REQ-2 amended] + InvalidVariantCasing rejection in the pre-pass, whole-class). workspace 440 tests, thermite-spec ZERO failures. ADT programs now validate + effect-check + gate at LOWERING. Next: 1c lowering (the last gate) -> ADTs certify L3.",
+  "created_at": "2026-06-06T12:27:29.763759501Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKmon0i4EztE8uECEU12pq+QInT4rdbHJP1U7lNzpvG6T6Ejeej+aFsOV6Ir1eC+ElVIt6JXMnN1CR+Fh8UTLAw=="
+}

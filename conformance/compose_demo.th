@@ -1,0 +1,46 @@
+fn step_inc(x: u32) -> u32
+  req x < 99
+  ens result == x + 1
+  fx  pure
+{
+  x + 1
+}
+
+fn step_double(y: u32) -> u32
+  req y < 100
+  ens result == 2 * y
+  fx  pure
+{
+  2 * y
+}
+
+fn pipeline(x: u32) -> u32
+  req x < 99
+  ens result == 2 * (x + 1)
+  fx  pure
+{
+  step_double(step_inc(x))
+}
+
+#[boundary("os::read_small")] fn read_small() -> Option<u64>
+  req true
+  ens match result {
+    Some(v) => v < 256,
+    None    => true,
+  }
+  fx  read(stdin)
+  ;
+
+fn read_then_inc() -> Option<u64>
+  req true
+  ens match result {
+    Some(v) => v < 257,
+    None    => true,
+  }
+  fx  read(stdin)
+{
+  match read_small() {
+    Some(v) => Some(v + 1),
+    None    => None,
+  }
+}

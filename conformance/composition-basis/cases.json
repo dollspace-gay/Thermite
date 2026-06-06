@@ -1,0 +1,21 @@
+{
+  "note": "Oracle for Stage 5 — compositional reasoning (issue #75). Hand-derived (R-CHAR-3) from .design/basis/05-composition.md. The four laws: (1) CONTRACT composition (#52, SHIPPED) — a caller discharges a callee's req from the prior step's ens; (2) ASSURANCE aggregation (#15/#60, SHIPPED) — project level = min over parts, scope = end_to_end iff all parts are, TCB = union of boundaries; (3) scheme fusion + (4) invariant conjunction are NOT-STARTED extensions probed TEST-FIRST against the shipped machinery. compose_demo.th: a pure pipeline (step_inc -> step_double, each step's ens feeding the next's req) + a to-boundary chain (read_then_inc composing through the read_small boundary). Verification is LOCAL: each step proved against its callee's contract, never re-proved.",
+  "contract_composition": [
+    { "name": "pipeline", "source": "conformance/compose_demo.th", "level": "L3", "scope": "end_to_end", "effects": ["pure"],
+      "why": "pipeline = step_double(step_inc(x)). step_inc ens result==x+1 (and x<99 => x+1<100) discharges step_double's req y<100; step_double ens result==2*y. So pipeline's ens result==2*(x+1) is proven LOCALLY by composing the two contracts (#52) — no re-proof. L3, end_to_end (no boundary/slag in the closure), pure." },
+    { "name": "step_inc",    "source": "conformance/compose_demo.th", "level": "L3", "effects": ["pure"], "why": "L3 leaf." },
+    { "name": "step_double", "source": "conformance/compose_demo.th", "level": "L3", "effects": ["pure"], "why": "L3 leaf." }
+  ],
+  "boundary_composition_and_aggregation": [
+    { "name": "read_then_inc", "source": "conformance/compose_demo.th", "level": "L3", "scope": "to_boundary", "via": "read_small",
+      "mutation_floor": 0.0,
+      "why": "read_then_inc composes THROUGH read_small (a boundary): handles both Option arms, and Some(v) => v < 256 (read_small's assumed ens) => v+1 < 257 (its own ens). L3, to-the-boundary via read_small (#52). --mutation-floor 0 (shape-only effect contract, per Stage 3)." },
+    { "name": "read_small", "source": "conformance/compose_demo.th", "level": "L1", "boundary": true, "why": "the boundary primitive." }
+  ],
+  "project_aggregation": [
+    { "name": "compose_demo_project", "source": "conformance/compose_demo.th",
+      "expect_project_scope": "to_boundary",
+      "expect_tcb_boundary_contains": ["read_small"],
+      "why": "ASSURANCE aggregation (#15/#60): the file mixes end_to_end (pipeline) + to_boundary (read_then_inc) parts -> the PROJECT scope is to_boundary (the weaker/min — a project is no stronger than its weakest part); the TCB enumerates read_small. The whole-program assurance is the honest 'everything proven except the enumerated effect boundary'." }
+  ]
+}

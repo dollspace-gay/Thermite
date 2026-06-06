@@ -32,6 +32,21 @@
 //! | REQ-2 (variant names UpperCamelCase — `InvalidVariantCasing`) | SHIPPED | #66. The declaration pre-pass `Validator::new` rejects any `enum` variant whose first char is not `is_ascii_uppercase()` with `SpecError::InvalidVariantCasing { name, span }`, seeded into the error list BEFORE the body/contract walk. This is load-bearing for soundness: the parser disambiguates a single-segment arm pattern by first-letter case (uppercase → `Pattern::Enum`, lowercase → `Pattern::Binding`), so forbidding lowercase variants makes that split sound — a lowercase pattern ident is unambiguously a binding (no lowercase variant can exist), closing the #66 bypass where a lowercase variant masqueraded as a catch-all and masked a non-exhaustive `match`. Consumer: `validate`. Verification: `tests/divergence_adt_validate.rs` `divergence_lowercase_variant_bypasses_exhaustiveness` → `InvalidVariantCasing{foo}`, `divergence_lowercase_arm_masks_unhandled_variant` → `InvalidVariantCasing{tri}`; `exhaustiveness_intact_uppercase_nonexhaustive` confirms uppercase enums still get `NonExhaustiveMatch`. |
 //! | REQ-7 (ADT predicates fit the cage — flat built-ins) | SHIPPED | `Expr::Match`/`Field`/`Is`/`Deref` are FLAT built-ins in `walk_expr_inner` — they recurse operands without setting `in_combinator_closure` and without resolving as combinators, so they are admitted unchanged inside a combinator predicate-closure body (the existing caged-flat walk). No recursive scheme exists yet to nest (forward-declared; schemes are Stage 2). Verification: the combinator cage tests (`tests/combinators_conformance.rs`) stay green. |
 //! | 1a GATE (`SpecError::UnsupportedAdt`) | RETIRED for well-formed ADTs | the variant is RETAINED (downstream `forge`/`thermite-lower` reference it by name in comments and it screams for a future un-checkable ADT form) but has NO live emitter in 1b: `run`'s `Item::Struct` now cages the `inv` clause, `Item::Enum` is a no-op, and `walk_expr_inner`'s `Expr::StructLit`/`Expr::Is`/`Expr::Deref` arms validate-or-accept. A well-formed ADT no longer dies at the gate. |
+//!
+//! ## Basis Stage 2b — recursion-scheme recognition + the flat-step cage (`.design/basis/02-recursion-schemes.md`)
+//!
+//! Stage 2b EXTENDS the cage to recognize a recursion-scheme call
+//! (`fold`/`map`/`for_all`/`exists`/`traverse`) as a named-composition leaf and
+//! to reject a scheme/combinator NESTED in a scheme's step closure (the flat-step
+//! cage). Verified against the oracle `conformance/adt-schemes/cases.json`
+//! (R-CHAR-3) via `thermite-spec/tests/scheme_validate.rs`.
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (scheme set recognized as named primitives) | SHIPPED | `walk_call` resolves a callee `Path` against `schemes::lookup` FIRST; a registered scheme call is checked by `check_scheme` (total arity = `SchemeSig::total_arity`) and ACCEPTED at top level. Consumer: `validate` → `walk_call`. Verification: `scheme_validate.rs` `list_fold_validates` (the `fold`/`for_all` calls of `conformance/list_fold.th` validate clean); `unknown_scheme` → `UnknownCombinator` (an unregistered callee like `frobnicate` is neither scheme/combinator/spec-fn). |
+//! | REQ-2 (flat step closure — arity + no nested scheme) | SHIPPED | `check_scheme` requires the trailing arg to be an `Expr::Closure` whose param count matches `SchemeSig::step_shape.arity()` (`SchemeStepShape` otherwise) and walks the step body in `in_scheme_step` mode; while set, `walk_call` rejects a registered scheme OR combinator callee with `SpecError::NestedScheme`. Consumer: `validate`. Verification: `scheme_validate.rs` `nested_scheme_in_step` → `NestedScheme` (a `fold` inside a `fold` step). |
+//! | REQ-4 (cage bridge — named structural quantification; nested-scheme reject) | SHIPPED | a top-level `for_all`/`fold` scheme call is ACCEPTED as a named-composition leaf (mirroring the combinator-call accept, REQ-6); a scheme nested in a step / a combinator closure is `NestedScheme`. The scheme accept JOINS the combinator-call accept in `walk_call`; the caged-flat walk (`walk_expr_inner`, Stage 1 REQ-7) is unchanged. Verification: `scheme_validate.rs` `list_fold_validates` + `nested_scheme_in_step`. |
+//! | REQ-9 (`SpecError` extension, no panics) | SHIPPED | `SpecError::{NestedScheme, SchemeWrongArity, SchemeStepShape}` are span-bearing variants; `validate` returns `Result<(), Vec<SpecError>>`, never panics. The structural-`dec` reject (REQ-5) reuses Stage 1's recursive-`spec fn` `dec` diagnostic (a generated `fold_<e>` is checked exactly as a hand-written recursive `spec fn` — `thermite-lower`). |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -41,6 +56,7 @@ use thermite_syntax::{
 };
 
 use crate::combinators::{self, ArgKind, CombinatorSig};
+use crate::schemes::{self, SchemeSig};
 
 /// The maximum recursive-descent nesting depth the validator will follow before
 /// returning an `ExpressionTooDeep` diagnostic. A fixed constant for determinism
@@ -149,6 +165,41 @@ pub enum SpecError {
     /// `is` discrimination (`r is Triangle`), or a struct-variant construction
     /// (`.design/basis/01-adts.md` REQ-6). `name` is the unknown variant.
     UnknownVariant { name: String, span: Span },
+    /// A recursion-scheme call (`fold`/`map`/`for_all`/`exists`/`traverse`)
+    /// NESTED inside another scheme's step closure
+    /// (`.design/basis/02-recursion-schemes.md` REQ-2/REQ-4 — the flat-step
+    /// cage). The step closure body of a scheme is a FLAT per-node expression
+    /// (comparisons, arithmetic, field/index, named `spec fn` calls) and MAY NOT
+    /// compose another recursion scheme or a bounded combinator — that would be
+    /// an anonymous nested structural quantifier the §4.2 cage forbids. The
+    /// sanctioned alternative is a NAMED `spec fn` (each `dec`-measured, in the
+    /// audit surface). `name` is the nested scheme (or combinator). This is the
+    /// scheme analogue of `NestedCombinator`, EXTENDING the cage's
+    /// no-anonymous-nested rule to schemes (REQ-4).
+    NestedScheme { name: String, span: Span },
+    /// A recursion-scheme call with the wrong number of arguments
+    /// (`.design/basis/02-recursion-schemes.md` REQ-1/REQ-2): a scheme call is
+    /// `<scheme>(<scrutinee/seed args>, <step closure>)`, so `fold` takes 3 args
+    /// (scrutinee + seed + step) and a predicate scheme (`for_all`/`map`/…) 2
+    /// (scrutinee + step). `expected`/`found` are the total positional arities.
+    SchemeWrongArity {
+        name: String,
+        expected: usize,
+        found: usize,
+        span: Span,
+    },
+    /// A recursion-scheme call whose trailing step argument is not a closure of
+    /// the scheme's required per-node shape
+    /// (`.design/basis/02-recursion-schemes.md` REQ-2): `fold`/`traverse` take a
+    /// 2-param step `|x, acc|`, `map`/`for_all`/`exists` a 1-param step `|x|`.
+    /// `expected`/`found` are the step closure's parameter counts; a non-closure
+    /// in the step slot reports `found: 0` against the scheme's `expected`.
+    SchemeStepShape {
+        name: String,
+        expected: usize,
+        found: usize,
+        span: Span,
+    },
     /// An `enum` variant declared with a lowercase-initial name
     /// (`.design/basis/01-adts.md` REQ-2: "Variant names MUST be UpperCamelCase
     /// (uppercase-initial); the validator rejects a lowercase-initial variant
@@ -179,6 +230,9 @@ impl SpecError {
             | SpecError::UnreachableArm { span, .. }
             | SpecError::UnknownField { span, .. }
             | SpecError::UnknownVariant { span, .. }
+            | SpecError::NestedScheme { span, .. }
+            | SpecError::SchemeWrongArity { span, .. }
+            | SpecError::SchemeStepShape { span, .. }
             | SpecError::InvalidVariantCasing { span, .. } => *span,
         }
     }
@@ -247,6 +301,33 @@ impl fmt::Display for SpecError {
                 f,
                 "`{name}` is not a declared variant of its `enum` (REQ-6)"
             ),
+            SpecError::NestedScheme { name, .. } => write!(
+                f,
+                "recursion scheme `{name}` may not appear nested inside another \
+                 scheme's step closure — that step body must be a FLAT per-node \
+                 expression (REQ-2); express nested structural quantification \
+                 through a named `spec fn` instead"
+            ),
+            SpecError::SchemeWrongArity {
+                name,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "recursion scheme `{name}` expects {expected} argument(s) \
+                 (scrutinee/seed args + the trailing step closure), found {found}"
+            ),
+            SpecError::SchemeStepShape {
+                name,
+                expected,
+                found,
+                ..
+            } => write!(
+                f,
+                "recursion scheme `{name}` step must be a closure with {expected} \
+                 parameter(s) (the per-node step shape), found {found}"
+            ),
             SpecError::InvalidVariantCasing { name, .. } => write!(
                 f,
                 "enum variant `{name}` must be UpperCamelCase (uppercase-initial) (REQ-2)"
@@ -306,6 +387,16 @@ struct Validator {
     /// call stays accepted (named composition). In a top-level contract position
     /// (flag clear) a combinator call is accepted as before (REQ-3 (a)).
     in_combinator_closure: bool,
+    /// REQ-2/REQ-4 flat-scheme-step mode (`.design/basis/02-recursion-schemes.md`).
+    /// Set ONCE on entry to a recursion scheme's step closure body and kept set
+    /// for ALL nested sub-expressions within it. While set, a call resolving to a
+    /// registered scheme (`schemes::lookup`) OR a registered combinator
+    /// (`combinators::lookup`) is REJECTED with `NestedScheme` — the step body is
+    /// a FLAT per-node expression and may not compose another structural
+    /// quantifier (a named `spec fn` call stays accepted). This EXTENDS the
+    /// existing combinator-closure cage (the `in_combinator_closure` rule) to
+    /// scheme steps, exactly as the design's REQ-4 mandates.
+    in_scheme_step: bool,
 }
 
 impl Validator {
@@ -402,6 +493,7 @@ impl Validator {
             // declaration BEFORE the (now-sound) match/exhaustiveness walk runs.
             errors: casing_errors,
             in_combinator_closure: false,
+            in_scheme_step: false,
         }
     }
 
@@ -935,18 +1027,55 @@ impl Validator {
             }
         };
 
-        if let Some(sig) = combinators::lookup(name) {
-            if self.in_combinator_closure {
-                // REQ-6: a combinator call inside another combinator's
-                // predicate-closure body is an anonymous nested quantifier —
-                // forbidden. The discriminator is EXACTLY `combinators::lookup`
-                // succeeding (the same test that ACCEPTS this callee in a
-                // top-level contract position); the verdict is context-dependent.
-                self.errors.push(SpecError::NestedCombinator {
+        // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-1/REQ-2/
+        // REQ-4): a callee resolving to a registered recursion SCHEME
+        // (`fold`/`map`/`for_all`/`exists`/`traverse`) is handled FIRST. A scheme
+        // nested inside another scheme's step OR inside a combinator's
+        // predicate-closure body is an anonymous nested structural quantifier the
+        // cage forbids (`NestedScheme`); a top-level scheme call is ACCEPTED as a
+        // named-composition leaf after its arity + flat step are checked. The
+        // scheme registry is disjoint from the combinator registry (distinct name
+        // sets), so this branch never shadows a combinator.
+        if let Some(scheme) = schemes::lookup(name) {
+            if self.in_scheme_step || self.in_combinator_closure {
+                self.errors.push(SpecError::NestedScheme {
                     name: name.clone(),
                     span,
                 });
-                // Still recurse the args (staying in caged-flat mode) so deeper
+                // Still recurse the args (staying in the caged mode) so deeper
+                // nested schemes / forbidden / too-deep content also surfaces.
+                for arg in args {
+                    self.walk_expr(arg, span);
+                }
+            } else {
+                self.check_scheme(scheme, args, span);
+            }
+            return;
+        }
+
+        if let Some(sig) = combinators::lookup(name) {
+            if self.in_combinator_closure || self.in_scheme_step {
+                // REQ-6 (combinators) / REQ-2 (schemes): a combinator call inside
+                // another combinator's predicate-closure body OR a scheme's flat
+                // step closure is an anonymous nested quantifier — forbidden. The
+                // discriminator is EXACTLY `combinators::lookup` succeeding (the
+                // same test that ACCEPTS this callee in a top-level contract
+                // position); the verdict is context-dependent. Inside a scheme
+                // step the diagnostic is `NestedScheme` (the flat-step cage,
+                // 02-recursion-schemes.md REQ-2); inside a combinator closure it
+                // stays `NestedCombinator` (spectherm-combinators.md REQ-6).
+                if self.in_scheme_step {
+                    self.errors.push(SpecError::NestedScheme {
+                        name: name.clone(),
+                        span,
+                    });
+                } else {
+                    self.errors.push(SpecError::NestedCombinator {
+                        name: name.clone(),
+                        span,
+                    });
+                }
+                // Still recurse the args (staying in caged mode) so deeper
                 // nested combinators / forbidden / too-deep content also surfaces
                 // (REQ-5), and so a doubly-nested combinator is reported too.
                 for arg in args {
@@ -994,6 +1123,82 @@ impl Validator {
 
         for (position, (arg, kind)) in args.iter().zip(sig.arg_kinds.iter()).enumerate() {
             self.check_arg_kind(sig.name, position, *kind, arg, span);
+        }
+    }
+
+    /// Check a registered recursion-scheme call as a named-composition leaf
+    /// (`.design/basis/02-recursion-schemes.md` REQ-1/REQ-2/REQ-4): the total
+    /// arity matches the scheme (scrutinee/seed args + the trailing step closure),
+    /// the trailing argument is an `Expr::Closure` of the scheme's per-node step
+    /// shape, and the step body is FLAT (no nested scheme/combinator — enforced by
+    /// walking the body in `in_scheme_step` mode). The scrutinee/seed args are
+    /// ordinary contract expressions (recursed, depth-guarded). ACCEPTED at the
+    /// top level (the cage bridge, REQ-4) — the §4.2 "named composition" leaf.
+    fn check_scheme(&mut self, scheme: &SchemeSig, args: &[Expr], span: Span) {
+        let expected = scheme.total_arity();
+        if args.len() != expected {
+            self.errors.push(SpecError::SchemeWrongArity {
+                name: scheme.name.to_string(),
+                expected,
+                found: args.len(),
+                span,
+            });
+            // Arity is wrong; still recurse the supplied args (depth guard,
+            // nested-content surfacing) but skip the per-position step check (the
+            // step slot is not where we expect it). The step body, if any, is
+            // walked WITHOUT scheme-step mode — a malformed call is not a valid
+            // step context.
+            for arg in args {
+                self.walk_expr(arg, span);
+            }
+            return;
+        }
+
+        // The leading `scrutinee_args` are ordinary contract sub-expressions (the
+        // scrutinee structure + a fold seed), recursed under the depth guard. They
+        // are NOT in scheme-step mode — a scheme/combinator there is a legitimate
+        // nested named composition at the call's argument level (only the STEP
+        // body is the flat-cage position, REQ-2).
+        let step_position = scheme.scrutinee_args;
+        for arg in &args[..step_position] {
+            self.walk_expr(arg, span);
+        }
+
+        // The trailing argument is the per-node STEP: it must be a closure of the
+        // scheme's step shape, and its body is walked in `in_scheme_step` mode so
+        // a nested scheme/combinator is rejected (the flat-step cage, REQ-2/REQ-4).
+        let step_arity = scheme.step_shape.arity();
+        match &args[step_position] {
+            Expr::Closure { params, body } => {
+                if params.len() != step_arity {
+                    self.errors.push(SpecError::SchemeStepShape {
+                        name: scheme.name.to_string(),
+                        expected: step_arity,
+                        found: params.len(),
+                        span,
+                    });
+                }
+                // Enter flat-scheme-step mode for the body. Set ONCE here and keep
+                // it set for the entire body descent (save/restore so a sibling
+                // scheme call's step is checked independently and re-entry from a
+                // — rejected — nested scheme is a harmless no-op).
+                let saved = self.in_scheme_step;
+                self.in_scheme_step = true;
+                self.walk_expr(body, span);
+                self.in_scheme_step = saved;
+            }
+            other => {
+                // A non-closure in the step slot: report the shape error
+                // (`found: 0` params against the scheme's expected step arity) and
+                // still recurse the expression for deep/forbidden nested content.
+                self.errors.push(SpecError::SchemeStepShape {
+                    name: scheme.name.to_string(),
+                    expected: step_arity,
+                    found: 0,
+                    span,
+                });
+                self.walk_expr(other, span);
+            }
         }
     }
 

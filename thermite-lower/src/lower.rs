@@ -59,12 +59,21 @@
 //! | REQ-10 (recursive type → Verus recursive enum; `Box`; structural `decreases`) | SHIPPED | `lower_enum` emits `Cons(u64, Box<List>)` (`lower_type` `Type::Box`→`Box<…>`); a `spec fn` matching the ADT-fold-sum shape (`is_adt_fold_sum`) lowers `-> nat` with `decreases l` over the datatype VALUE (Verus's built-in structural order) and `Expr::Deref`→`*t`, casts coerced `as nat` (`Ctx::nat_ret`). Consumer: `lower` (`Item::SpecFn`/`Item::Enum`). Verified: real verus `1 verified, 0 errors` on the emitted `list_sum` lowering — `list_sum_lowers_recursive_box_and_verifies_l3`. |
 //! | REQ-11 (`LowerError`/no panics) | SHIPPED | the ADT arms reuse the existing `LowerError` (`Unsupported`/`TooDeep`); no new variant needed (the validator #65 owns the reject cases); no `unwrap`/`expect`/`panic!` added. Verified: `cargo clippy --workspace -D warnings` + the anti-pattern-gate. |
 //! | REQ-12 (handled-or-loud — compile-time tooth) | SHIPPED | the exhaustiveness mechanism it names is the #65 validator (`SpecError::NonExhaustiveMatch`); this stage's L3/L1 lowering of the accepted `match` preserves it (every arm is emitted; a non-exhaustive match never reaches the lowerer). No regression to the compile-time tooth. |
+//!
+//! ## REQ status — 02-recursion-schemes.md (Basis Stage 2c, issue #70)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-6 (scheme → generated Verus recursive `spec fn` + `decreases <value>`) | SHIPPED | `emit_scheme_defs` (called from `lower` after `emit_combinator_defs`) GENERATES, per (ADT, scheme) the program uses (`collect_scheme_uses` resolving the scrutinee path → the param's `enum` type), the recursive `spec fn fold_<e>`/`for_all_<e>`/`map_<e>`/… (`emit_scheme_spec_fn`, `decreases l`, `*tail` deref, `Box::new` for `map`) reusing the Stage-1 recursive-fold shape. A scheme CALL lowers (`lower_expr` `Call` arm → `lower_scheme_call`) to a call of the generated `fold_<e>` with the step `Expr::Closure` lowered to a TYPED Verus `spec_fn` (`lower_step_closure`: `|x: u64, acc: nat| (<body>) as nat` for `fold`, `|x: u64| <body>` for `for_all`). Consumer: `lower`. Verified: real `verus --no-cheating` `verified, 0 errors` on the emitted `list_fold.th` (len_list/sum_list/all_positive → L3) — `tests/adt_schemes_conformance.rs::list_fold_lowers_to_generated_schemes_and_verifies_l3`. |
+//! | REQ-7 (induction-discharged-once — the multiplier) | SHIPPED | `emit_fold_bound_law` GENERATES `fold_bound_<e>` (a `proof fn` parametric in the step `f` + a per-node premise, carrying the SINGLE `decreases l` induction, proving `fold_<e>(l, init, f) <= <e>_len(l) * b`) per ADT a `fold` folds over; `emit_len_measure` generates the structural measure `<e>_len`. An instance bound is proven by CITING the law with NO fresh induction. Consumer: `lower`. Verified: `verus --no-cheating` `verified, 0 errors` on the law + the GROUNDED `sum_list_bounded` instance (cites `fold_bound_list`, NO `decreases`) — `multiplier_instance_cites_the_generated_law_no_fresh_induction`; the NEGATIVE CONTROL (per-node premise removed) FAILS verus — `negative_control_premise_removed_fails_verus` (the induction is real, R-DEFER-9). |
+//! | REQ-9 (`LowerError` extension, no panics) | SHIPPED | the scheme lowering reuses the existing `LowerError::Unsupported` (a scheme over a non-ADT value, an un-resolvable scrutinee) and `TooDeep`; no new variant needed. The DEC NUANCE is resolved: a scheme-CALL instance body (non-recursive — the recursion is in the generated `fold_<e>`) lowers WITHOUT a spurious `decreases` (`lower_spec_fn` suppresses it for `is_scheme_call_body`), while the generated `fold_<e>`/law carry their own `decreases l`. No `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1). |
+//! | REQ-3 (exec form — MONOMORPHIZED, OQ-2) | NOT-STARTED | epic **#62** Stage 2c. The SPEC scheme (the verified engine — the generated higher-order `fold_<e>` with the step passed as a `spec_fn`) is SHIPPED above. The MONOMORPHIZED EXEC mirror (an inlined `decreases`-bearing loop, the `conformance/sum.th` while-loop shape) is NOT implemented: the v0.1 corpus `list_fold.th` is SPEC-ONLY (all three items are `spec fn`), so no exec scheme is exercised yet — `collect_scheme_uses` collects spec-fn uses only. The exec mirror lands when a corpus exec fn folds an ADT (no blocker filed; #62 Stage 2c owns it). |
 
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
     BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
-    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type, VariantShape,
+    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type, VariantDef, VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -206,7 +215,30 @@ struct Ctx<'a> {
     /// cast (`h as u64`) coerces to `as nat` so the fold's arithmetic stays `nat`
     /// (no overflow obligation in spec context), the GROUNDED `sum_list` form.
     nat_ret: bool,
+    /// Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): the
+    /// recursion-scheme bindings IN SCOPE for the spec fn currently being lowered
+    /// — one per (scheme name → resolved generated fn + element/result types) the
+    /// fn's scrutinee resolves to. A scheme CALL `fold(l, 0, |x, acc| …)` lowers
+    /// (in `lower_expr`'s `Call` arm) to a CALL of the generated `fold_<e>` with
+    /// the step closure lowered to a typed `spec_fn`. EMPTY for a non-scheme fn
+    /// (byte-stable for the existing corpus).
+    schemes: &'a [SchemeBinding],
 }
+
+/// A resolved recursion-scheme binding in scope while lowering a spec fn body
+/// (REQ-6): the surface scheme name (`fold`), the generated Verus fn name it
+/// lowers to (`fold_list`), the ADT element type (`u64` — the step's element
+/// parameter type), and the scheme's result kind (drives the step's accumulator
+/// type + the `as nat` coercion of the step body).
+#[derive(Debug, Clone)]
+struct SchemeBinding {
+    scheme_name: &'static str,
+    gen_name: String,
+    elem_ty: String,
+    result: thermite_spec::SchemeResult,
+}
+
+const NO_SCHEMES: &[SchemeBinding] = &[];
 
 const NO_SLICES: &[&str] = &[];
 const NO_VARIANTS: &[(&str, &str)] = &[];
@@ -219,6 +251,7 @@ impl<'a> Ctx<'a> {
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
+            schemes: NO_SCHEMES,
         }
     }
     fn spec(slices: &'a [&'a str], nat_fns: &'a [&'a str]) -> Ctx<'a> {
@@ -228,6 +261,7 @@ impl<'a> Ctx<'a> {
             nat_fns,
             variants: NO_VARIANTS,
             nat_ret: false,
+            schemes: NO_SCHEMES,
         }
     }
     /// A spec context with no slice-view names — for positions where every
@@ -240,6 +274,7 @@ impl<'a> Ctx<'a> {
             nat_fns: NO_SLICES,
             variants: NO_VARIANTS,
             nat_ret: false,
+            schemes: NO_SCHEMES,
         }
     }
     /// This context with the enum-variant map attached (REQ-9 — variant-pattern
@@ -253,6 +288,18 @@ impl<'a> Ctx<'a> {
     fn with_nat_ret(mut self, nat_ret: bool) -> Ctx<'a> {
         self.nat_ret = nat_ret;
         self
+    }
+    /// This context with the recursion-scheme bindings in scope (REQ-6 — scheme
+    /// CALL lowering). Carried into the spec-fn body so `lower_expr` rewrites a
+    /// scheme call to a call of the generated `fold_<e>`.
+    fn with_schemes(mut self, schemes: &'a [SchemeBinding]) -> Ctx<'a> {
+        self.schemes = schemes;
+        self
+    }
+    /// The in-scope scheme binding for a callee `name` (REQ-6), or `None` if
+    /// `name` is not a scheme call resolved for the current fn.
+    fn scheme_binding(&self, name: &str) -> Option<&'a SchemeBinding> {
+        self.schemes.iter().find(|b| b.scheme_name == name)
     }
     fn is_spec(&self) -> bool {
         self.pos == Pos::Spec
@@ -301,16 +348,34 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     let combinator_defs = emit_combinator_defs(program)?;
     out.push_str(&combinator_defs);
 
+    // (1b) Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7):
+    // the GENERATED per-(ADT, scheme) Verus recursive `spec fn`s
+    // (`fold_<e>`/`for_all_<e>`/…) + the structural measure `<e>_len` + the
+    // induction-discharged-once law `fold_bound_<e>`, materialized ONCE BEFORE
+    // their first use (a scheme call lowers to a CALL of `fold_<e>`). EMPTY when
+    // the program uses no scheme (byte-stable for the non-scheme corpus).
+    let scheme_defs = emit_scheme_defs(program)?;
+    out.push_str(&scheme_defs);
+
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
     // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
     // ADT match-fold-sum spec fn (`sum_list`, REQ-10) joins this set: it too
     // returns `nat` so its integer arithmetic stays `nat` (no overflow obligation
     // in spec context), exactly as the slice head-fold does.
+    // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): a `fold`
+    // scheme-CALL instance (the only `nat`-result scheme — `Accumulator`) also
+    // returns `nat`, so it joins the `nat_fns` set exactly as a hand-written
+    // ADT-fold-sum does (an `Eq` against it coerces `as nat`). Detected by SHAPE:
+    // the body tail is a `Call` whose callee path resolves to the `fold` scheme.
     let nat_fns: Vec<&str> = program
         .items
         .iter()
         .filter_map(|item| match item {
-            Item::SpecFn(s) if is_head_fold_sum(&s.body) || is_adt_fold_sum(&s.body) => {
+            Item::SpecFn(s)
+                if is_head_fold_sum(&s.body)
+                    || is_adt_fold_sum(&s.body)
+                    || is_fold_scheme_call_body(&s.body) =>
+            {
                 Some(s.name.as_str())
             }
             _ => None,
@@ -355,7 +420,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     let mut emitted_lemmas: Vec<String> = Vec::new();
     for item in &program.items {
         let item_src = match item {
-            Item::SpecFn(s) => lower_spec_fn(s, &variants)?,
+            Item::SpecFn(s) => lower_spec_fn(s, &variants, program)?,
             Item::Fn(f) if f.boundary.is_some() || f.slag.is_some() => {
                 // A boundary/slag fn is woven as a `#[verifier::external_body]`
                 // signature (its body is never lowered, REQ-1), so it needs no
@@ -698,6 +763,611 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 }
 
 // ---------------------------------------------------------------------------
+// Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7): the
+// GENERATED per-(ADT, scheme) Verus recursive `spec fn`s + the discharged-once
+// law. A scheme call `fold(l, init, step)` lowers to a CALL of the generated
+// `fold_<e>`, materialized here ONCE before its first use (the OQ-1 (b)
+// MATERIALIZED-items resolution — shared across instances, in the audit surface).
+// ---------------------------------------------------------------------------
+
+/// A single (recursion scheme, recursive ADT) pair the program uses, resolved by
+/// SHAPE: a scheme call whose scrutinee path resolves to a `spec fn` parameter of
+/// a declared `enum` type. The lowerer materializes the scheme's generated
+/// `spec fn` over this ADT (`fold_<e>`/`for_all_<e>`/…) + the structural measure +
+/// the `fold_bound_<e>` law (REQ-6/REQ-7).
+struct SchemeUse {
+    scheme: &'static thermite_spec::SchemeSig,
+    /// The declared `enum` the scheme folds over (the scrutinee's type).
+    enum_name: String,
+    /// The element type of the ADT's recursive variant (the first non-`Box`
+    /// field — `u64` for `Cons(u64, Box<List>)`), the step's element parameter
+    /// type. The GROUNDED forms are all `u64`-element.
+    elem_ty: String,
+    /// The recursive variant's name (`Cons`) and the base (unit/value) variant(s),
+    /// resolved from the enum decl, so the generated `match` is ENUM-QUALIFIED and
+    /// recurses through the `Box`-deref'd recursive field.
+    enum_item: EnumItem,
+}
+
+/// Emit the GENERATED scheme definitions for every (scheme, ADT) pair the program
+/// uses (REQ-6/REQ-7), in a DETERMINISTIC order (R-CODE-5), deduped. For each ADT
+/// that ANY scheme folds over, the structural measure `<e>_len` is emitted once;
+/// for each used scheme over that ADT the recursive `spec fn` (`fold_<e>`/
+/// `for_all_<e>`/…); and for each `fold` over that ADT the induction law
+/// `fold_bound_<e>`. EMPTY when the program uses no scheme (the non-scheme corpus
+/// is byte-stable — no regression). The forms reproduce the GROUNDED Verus
+/// (`9 verified, 0 errors`) of `.design/basis/02-recursion-schemes.md`.
+fn emit_scheme_defs(program: &Program) -> Result<String, LowerError> {
+    let uses = collect_scheme_uses(program)?;
+    if uses.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut out = String::new();
+
+    // (a) the structural measure `<e>_len` once per ADT any scheme folds over —
+    // the `fold_bound_<e>` law's `len_<e>(l) * b` bound references it. Deduped by
+    // enum name, deterministic source-order traversal.
+    let mut measured: Vec<String> = Vec::new();
+    for u in &uses {
+        if measured.iter().any(|m| m == &u.enum_name) {
+            continue;
+        }
+        out.push('\n');
+        out.push_str(&emit_len_measure(u)?);
+        out.push('\n');
+        measured.push(u.enum_name.clone());
+    }
+
+    // (b) each used scheme's generated recursive `spec fn`, deduped by the
+    // generated name (`fold_list`/`for_all_list`/…).
+    let mut emitted: Vec<String> = Vec::new();
+    for u in &uses {
+        let name = u.scheme.generated_fn_name(&u.enum_name);
+        if emitted.iter().any(|e| e == &name) {
+            continue;
+        }
+        out.push('\n');
+        out.push_str(&emit_scheme_spec_fn(u)?);
+        out.push('\n');
+        emitted.push(name);
+    }
+
+    // (c) the `fold_bound_<e>` induction-discharged-once law for each ADT a `fold`
+    // folds over (REQ-7). Deduped by enum name.
+    let mut lawed: Vec<String> = Vec::new();
+    for u in &uses {
+        if u.scheme.name != "fold" {
+            continue;
+        }
+        if lawed.iter().any(|m| m == &u.enum_name) {
+            continue;
+        }
+        out.push('\n');
+        out.push_str(&emit_fold_bound_law(u)?);
+        out.push('\n');
+        lawed.push(u.enum_name.clone());
+    }
+
+    Ok(out)
+}
+
+/// Collect every (scheme, ADT) pair the program uses (REQ-6). A scheme call is an
+/// `Expr::Call` whose callee `Path` resolves via `thermite_spec::schemes::lookup`;
+/// the ADT is the type of its scrutinee (first) argument, resolved against the
+/// enclosing `spec fn`/`fn`'s parameter types (the AST is untyped — OQ-3 — so the
+/// scrutinee path → param-type resolution is the SHAPE-decidable mapping). A
+/// scheme over a value whose type is not a declared `enum` is `Unsupported`
+/// (REQ-9 — never a panic).
+fn collect_scheme_uses(program: &Program) -> Result<Vec<SchemeUse>, LowerError> {
+    // The declared enums, by name.
+    let enums: std::collections::BTreeMap<&str, &EnumItem> = program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Enum(e) => Some((e.name.as_str(), e)),
+            _ => None,
+        })
+        .collect();
+
+    let mut uses: Vec<SchemeUse> = Vec::new();
+    for item in &program.items {
+        let (params, body, span) = match item {
+            Item::SpecFn(s) => (&s.params, &s.body, s.span),
+            // A scheme in an exec `fn` body is the MONOMORPHIZED exec form (OQ-2);
+            // the v0.1 corpus is spec-only, so an exec scheme is out of the
+            // grounded path — collect spec-fn scheme uses only here.
+            _ => continue,
+        };
+        collect_scheme_uses_in_block(body, params, &enums, span, &mut uses)?;
+    }
+    Ok(uses)
+}
+
+/// Walk a `spec fn` body block collecting scheme uses (REQ-6).
+fn collect_scheme_uses_in_block(
+    block: &Block,
+    params: &[Param],
+    enums: &std::collections::BTreeMap<&str, &EnumItem>,
+    span: Span,
+    uses: &mut Vec<SchemeUse>,
+) -> Result<(), LowerError> {
+    for stmt in &block.stmts {
+        if let Stmt::Expr(e) | Stmt::Return(Some(e)) | Stmt::Let { init: e, .. } = stmt {
+            collect_scheme_uses_in_expr(e, params, enums, span, uses)?;
+        }
+    }
+    if let Some(tail) = &block.tail {
+        collect_scheme_uses_in_expr(tail, params, enums, span, uses)?;
+    }
+    Ok(())
+}
+
+/// Walk an expression collecting scheme uses (REQ-6). A scheme call's scrutinee
+/// path is resolved to an enclosing parameter's `enum` type.
+fn collect_scheme_uses_in_expr(
+    expr: &Expr,
+    params: &[Param],
+    enums: &std::collections::BTreeMap<&str, &EnumItem>,
+    span: Span,
+    uses: &mut Vec<SchemeUse>,
+) -> Result<(), LowerError> {
+    if let Expr::Call { callee, args } = expr {
+        if let Expr::Path(segs) = callee.as_ref() {
+            if let Some(name) = segs.last() {
+                if let Some(scheme) = thermite_spec::schemes::lookup(name) {
+                    let enum_item = resolve_scheme_adt(scheme, args, params, enums, span)?;
+                    let elem_ty = recursive_elem_type(&enum_item, span)?;
+                    if !uses
+                        .iter()
+                        .any(|u| u.scheme.name == scheme.name && u.enum_name == enum_item.name)
+                    {
+                        uses.push(SchemeUse {
+                            scheme,
+                            enum_name: enum_item.name.clone(),
+                            elem_ty,
+                            enum_item,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    // Recurse sub-expressions (a scheme call may be nested in arithmetic — though
+    // the validator caps the step to a flat closure, the instance body itself can
+    // wrap the call, e.g. `fold(...) + 0`). The depth is bounded by the source
+    // structure; the validator already enforced the contract limit.
+    each_subexpr(expr, &mut |e| {
+        collect_scheme_uses_in_expr(e, params, enums, span, uses)
+    })
+}
+
+/// Apply `f` to each immediate sub-expression of `expr` (a shared structural
+/// walk), short-circuiting on the first `Err`. Used by the scheme-use collector.
+fn each_subexpr(
+    expr: &Expr,
+    f: &mut impl FnMut(&Expr) -> Result<(), LowerError>,
+) -> Result<(), LowerError> {
+    match expr {
+        Expr::Call { callee, args } => {
+            f(callee)?;
+            for a in args {
+                f(a)?;
+            }
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            f(receiver)?;
+            for a in args {
+                f(a)?;
+            }
+        }
+        Expr::Field { receiver, .. } => f(receiver)?,
+        Expr::Closure { body, .. } => f(body)?,
+        Expr::Match { scrutinee, arms } => {
+            f(scrutinee)?;
+            for arm in arms {
+                f(&arm.body)?;
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            f(cond)?;
+            each_block_subexpr(then, f)?;
+            each_block_subexpr(else_, f)?;
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            f(lhs)?;
+            f(rhs)?;
+        }
+        Expr::Index { base, index } => {
+            f(base)?;
+            match index {
+                IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => f(e)?,
+                IndexArg::Range(a, b) => {
+                    f(a)?;
+                    f(b)?;
+                }
+            }
+        }
+        Expr::Cast { expr, .. } | Expr::Ref { expr, .. } | Expr::Deref(expr) => f(expr)?,
+        Expr::StructLit { fields, .. } => {
+            for (_, v) in fields {
+                f(v)?;
+            }
+        }
+        Expr::Is { scrutinee, .. } => f(scrutinee)?,
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+    }
+    Ok(())
+}
+
+/// Apply `f` to each sub-expression of a block (for `each_subexpr`'s `If` arms).
+fn each_block_subexpr(
+    block: &Block,
+    f: &mut impl FnMut(&Expr) -> Result<(), LowerError>,
+) -> Result<(), LowerError> {
+    for stmt in &block.stmts {
+        if let Stmt::Expr(e) | Stmt::Return(Some(e)) | Stmt::Let { init: e, .. } = stmt {
+            f(e)?;
+        }
+    }
+    if let Some(tail) = &block.tail {
+        f(tail)?;
+    }
+    Ok(())
+}
+
+/// Resolve the declared `enum` a scheme call folds over (REQ-6): the scrutinee
+/// (first) argument is a bare path naming a parameter whose type is `Named(E)`
+/// for a declared `enum E`. An un-resolvable scrutinee (non-path, unknown param,
+/// non-enum type) is `Unsupported` (REQ-9 — a scheme over a non-ADT value).
+fn resolve_scheme_adt(
+    scheme: &thermite_spec::SchemeSig,
+    args: &[Expr],
+    params: &[Param],
+    enums: &std::collections::BTreeMap<&str, &EnumItem>,
+    span: Span,
+) -> Result<EnumItem, LowerError> {
+    let scrutinee = args.first().ok_or_else(|| LowerError::Unsupported {
+        what: format!(
+            "recursion scheme `{}` with no scrutinee argument",
+            scheme.name
+        ),
+        span,
+    })?;
+    let Expr::Path(segs) = scrutinee else {
+        return Err(LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` scrutinee must be a bare value path",
+                scheme.name
+            ),
+            span,
+        });
+    };
+    let pname = segs.last().map(|s| s.as_str()).unwrap_or_default();
+    let ty = params
+        .iter()
+        .find(|p| p.name == pname)
+        .map(|p| &p.ty)
+        .ok_or_else(|| LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` scrutinee `{pname}` is not a parameter",
+                scheme.name
+            ),
+            span,
+        })?;
+    let Type::Named(enum_name) = ty else {
+        return Err(LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` scrutinee `{pname}` is not a declared `enum` value",
+                scheme.name
+            ),
+            span,
+        });
+    };
+    enums
+        .get(enum_name.as_str())
+        .map(|e| (*e).clone())
+        .ok_or_else(|| LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` over `{enum_name}`, which is not a declared `enum`",
+                scheme.name
+            ),
+            span,
+        })
+}
+
+/// The element type of an ADT's recursive variant — the first NON-`Box` field of
+/// the variant that carries a `Box<Self>` recursive occurrence (`u64` for
+/// `Cons(u64, Box<List>)`). The step's element parameter type (REQ-6). An enum
+/// with no recursive `Box` variant is not a recursion-scheme target → `Unsupported`.
+fn recursive_elem_type(e: &EnumItem, span: Span) -> Result<String, LowerError> {
+    for variant in &e.variants {
+        if let VariantShape::Tuple(tys) = &variant.shape {
+            let has_box = tys.iter().any(|t| matches!(t, Type::Box(_)));
+            if has_box {
+                if let Some(elem) = tys.iter().find(|t| !matches!(t, Type::Box(_))) {
+                    return lower_type(elem);
+                }
+            }
+        }
+    }
+    Err(LowerError::Unsupported {
+        what: format!(
+            "recursion scheme over `{}`: no recursive `Box<{}>` variant with an element field",
+            e.name, e.name
+        ),
+        span,
+    })
+}
+
+/// The recursive variant (the one carrying a `Box<Self>`) and the variant set, so
+/// the generated `match` is ENUM-QUALIFIED and recurses through the deref'd field.
+/// Returns `(base_variants, recursive_variant_name)`. The base variants are every
+/// non-recursive variant (unit `Nil` / value `Leaf(v)`).
+fn enum_variant_split(e: &EnumItem) -> (Vec<&VariantDef>, Option<&VariantDef>) {
+    let mut base = Vec::new();
+    let mut recursive = None;
+    for variant in &e.variants {
+        let is_rec = matches!(&variant.shape, VariantShape::Tuple(tys) if tys.iter().any(|t| matches!(t, Type::Box(_))));
+        if is_rec {
+            recursive = Some(variant);
+        } else {
+            base.push(variant);
+        }
+    }
+    (base, recursive)
+}
+
+/// Emit the structural measure `<e>_len(l: E) -> nat decreases l` (REQ-6/REQ-7):
+/// the `len_list`-shaped count the `fold_bound_<e>` law multiplies. The recursive
+/// arm counts `1 + <e>_len(*tail)`; each base arm contributes `0`. GROUNDED
+/// (`list_len`, part of the `9 verified` run). The generated name is `<e>_len`
+/// (e.g. `list_len`), DISTINCT from any surface `len_<e>` fold instance so the
+/// two never collide (the corpus `len_list` is a `fold` instance).
+fn emit_len_measure(u: &SchemeUse) -> Result<String, LowerError> {
+    let e = &u.enum_item;
+    let lname = format!("{}_len", e.name.to_ascii_lowercase());
+    let (base, recursive) = enum_variant_split(e);
+    let rec = recursive.ok_or_else(|| LowerError::Unsupported {
+        what: format!("ADT `{}` has no recursive variant for a measure", e.name),
+        span: zero_span(),
+    })?;
+    let mut out = String::new();
+    writeln!(out, "spec fn {lname}(l: {}) -> nat", e.name).map_err(|_| fmt_err())?;
+    out.push_str("    decreases l,\n{\n    match l {\n");
+    for b in &base {
+        writeln!(out, "        {}::{} => 0,", e.name, base_variant_pattern(b))
+            .map_err(|_| fmt_err())?;
+    }
+    writeln!(
+        out,
+        "        {}::{}(x, tail) => 1 + {lname}(*tail),",
+        e.name, rec.name
+    )
+    .map_err(|_| fmt_err())?;
+    out.push_str("    }\n}\n");
+    Ok(out)
+}
+
+/// The arm pattern for a BASE variant in a generated `match` (REQ-6): a unit
+/// variant is its bare name (`Nil`); a value-carrying tuple base binds its field
+/// (`Leaf(v)`). v0.1 grounded corpus is unit-base (`Nil`); the value-base shape
+/// is supported for the `Tree` generalization.
+fn base_variant_pattern(v: &VariantDef) -> String {
+    match &v.shape {
+        VariantShape::Unit => v.name.clone(),
+        VariantShape::Tuple(tys) => {
+            let binds: Vec<String> = (0..tys.len()).map(|i| format!("v{i}")).collect();
+            format!("{}({})", v.name, binds.join(", "))
+        }
+        VariantShape::Struct(_) => v.name.clone(),
+    }
+}
+
+/// Emit the generated recursive scheme `spec fn` over the ADT (REQ-6): `fold_<e>`
+/// (`-> nat`, `decreases l`, applies the passed `spec_fn` step at each recursive
+/// node), `for_all_<e>`/`exists_<e>`/`traverse_<e>` (`-> bool`), or `map_<e>`
+/// (`-> E`, `Box::new`-reconstructing). GROUNDED forms (`fold_list`/`for_all_list`/
+/// `map_list`, `decreases l`, `*tail`).
+fn emit_scheme_spec_fn(u: &SchemeUse) -> Result<String, LowerError> {
+    use thermite_spec::{SchemeResult, StepShape};
+    let e = &u.enum_item;
+    let elem = &u.elem_ty;
+    let fname = u.scheme.generated_fn_name(&e.name);
+    let (base, recursive) = enum_variant_split(e);
+    let rec = recursive.ok_or_else(|| LowerError::Unsupported {
+        what: format!(
+            "ADT `{}` has no recursive variant for scheme `{}`",
+            e.name, u.scheme.name
+        ),
+        span: zero_span(),
+    })?;
+
+    // The step `spec_fn` type + the seed/return type, by the scheme's result kind.
+    let (step_ty, ret_ty, seed_param) = match (u.scheme.step_shape, u.scheme.result) {
+        (StepShape::ElementAcc, SchemeResult::Accumulator) => (
+            format!("spec_fn({elem}, nat) -> nat"),
+            "nat".to_string(),
+            Some(("init", "nat")),
+        ),
+        (StepShape::ElementAcc, SchemeResult::Bool) => (
+            format!("spec_fn({elem}, bool) -> bool"),
+            "bool".to_string(),
+            Some(("init", "bool")),
+        ),
+        (StepShape::Element, SchemeResult::Bool) => {
+            (format!("spec_fn({elem}) -> bool"), "bool".to_string(), None)
+        }
+        (StepShape::Element, SchemeResult::SameAdt) => {
+            (format!("spec_fn({elem}) -> {elem}"), e.name.clone(), None)
+        }
+        // The remaining (shape, result) combinations are not in the frozen scheme
+        // set (the registry pairs each shape with one result); unreachable for a
+        // registered scheme, surfaced structurally rather than panicking.
+        (shape, result) => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                "scheme `{}` has an unmodeled (step-shape {shape:?}, result {result:?}) pairing",
+                u.scheme.name
+            ),
+                span: zero_span(),
+            })
+        }
+    };
+
+    let mut out = String::new();
+    write!(out, "spec fn {fname}(l: {}", e.name).map_err(|_| fmt_err())?;
+    if let Some((sn, st)) = seed_param {
+        write!(out, ", {sn}: {st}").map_err(|_| fmt_err())?;
+    }
+    let step_name = step_param_name(u.scheme);
+    writeln!(out, ", {step_name}: {step_ty}) -> {ret_ty}").map_err(|_| fmt_err())?;
+    out.push_str("    decreases l,\n{\n    match l {\n");
+
+    // Base arm(s) + the recursive arm, per scheme.
+    for b in &base {
+        let value = scheme_base_value(u.scheme, b, seed_param.map(|(n, _)| n));
+        writeln!(
+            out,
+            "        {}::{} => {value},",
+            e.name,
+            base_variant_pattern(b)
+        )
+        .map_err(|_| fmt_err())?;
+    }
+    let rec_arm = scheme_recursive_arm(
+        u.scheme,
+        &e.name,
+        &rec.name,
+        &fname,
+        step_name,
+        seed_param.map(|(n, _)| n),
+    );
+    writeln!(
+        out,
+        "        {}::{}(x, tail) => {rec_arm},",
+        e.name, rec.name
+    )
+    .map_err(|_| fmt_err())?;
+    out.push_str("    }\n}\n");
+    Ok(out)
+}
+
+/// The step parameter name in the generated scheme `spec fn` (REQ-6): `f` for the
+/// accumulator schemes (`fold`/`traverse`), `g` for `map`, `p` for the predicates
+/// (`for_all`/`exists`) — matching the GROUNDED forms.
+fn step_param_name(scheme: &thermite_spec::SchemeSig) -> &'static str {
+    match scheme.name {
+        "fold" | "traverse" => "f",
+        "map" => "g",
+        _ => "p",
+    }
+}
+
+/// The base-arm value for a generated scheme `spec fn` (REQ-6): `fold` → the seed
+/// `init`; `for_all`/`traverse` → `true`; `exists` → `false`; `map` → the empty
+/// ADT (the unit base reconstructed, `E::Nil`).
+fn scheme_base_value(
+    scheme: &thermite_spec::SchemeSig,
+    base: &VariantDef,
+    seed: Option<&str>,
+) -> String {
+    match scheme.name {
+        "fold" | "traverse" => seed.unwrap_or("init").to_string(),
+        "exists" => "false".to_string(),
+        "map" => base.name.clone(),
+        // for_all (and any predicate base) is the identity `true`.
+        _ => "true".to_string(),
+    }
+}
+
+/// The recursive-arm body for a generated scheme `spec fn` (REQ-6), applying the
+/// step at each `Cons`/`Node`. GROUNDED forms:
+/// - `fold`: `f(x, fold_<e>(*tail, init, f))`
+/// - `for_all`: `p(x) && for_all_<e>(*tail, p)`
+/// - `exists`: `p(x) || exists_<e>(*tail, p)`
+/// - `traverse`: `f(x, traverse_<e>(*tail, init, f))`
+/// - `map`: `E::Cons(g(x), Box::new(map_<e>(*tail, g)))`
+fn scheme_recursive_arm(
+    scheme: &thermite_spec::SchemeSig,
+    enum_name: &str,
+    rec_variant: &str,
+    fname: &str,
+    step_name: &str,
+    seed: Option<&str>,
+) -> String {
+    let seed = seed.unwrap_or("init");
+    match scheme.name {
+        "fold" | "traverse" => {
+            format!("{step_name}(x, {fname}(*tail, {seed}, {step_name}))")
+        }
+        "for_all" => format!("{step_name}(x) && {fname}(*tail, {step_name})"),
+        "exists" => format!("{step_name}(x) || {fname}(*tail, {step_name})"),
+        "map" => format!(
+            "{enum_name}::{rec_variant}({step_name}(x), Box::new({fname}(*tail, {step_name})))"
+        ),
+        // Unreachable for a registered scheme (the 5 are matched above); the
+        // identity for safety.
+        _ => format!("{fname}(*tail, {step_name})"),
+    }
+}
+
+/// Emit the `fold_bound_<e>` induction-discharged-once law (REQ-7) — the
+/// multiplier. A `proof fn` parametric in the step `f` + a per-node premise,
+/// carrying the SINGLE `decreases l` structural induction, proving
+/// `fold_<e>(l, init, f) <= <e>_len(l) * b` for `init == 0` and a per-node bound.
+/// GROUNDED (`fold_bound_list`, single induction, `9 verified, 0 errors`; the
+/// per-node-premise-removed negative control FAILS). Emitted ONLY for an ADT a
+/// `fold` folds over.
+fn emit_fold_bound_law(u: &SchemeUse) -> Result<String, LowerError> {
+    let e = &u.enum_item;
+    let elem = &u.elem_ty;
+    let foldn = u.scheme.generated_fn_name(&e.name); // fold_<e>
+    let lenn = format!("{}_len", e.name.to_ascii_lowercase());
+    let lawn = format!("fold_bound_{}", e.name.to_ascii_lowercase());
+    let (base, recursive) = enum_variant_split(e);
+    let rec = recursive.ok_or_else(|| LowerError::Unsupported {
+        what: format!("ADT `{}` has no recursive variant for the fold law", e.name),
+        span: zero_span(),
+    })?;
+
+    let mut out = String::new();
+    writeln!(
+        out,
+        "proof fn {lawn}(l: {}, init: nat, f: spec_fn({elem}, nat) -> nat, b: nat)",
+        e.name
+    )
+    .map_err(|_| fmt_err())?;
+    out.push_str("    requires\n        init == 0,\n");
+    writeln!(
+        out,
+        "        forall|x: {elem}, acc: nat| #[trigger] f(x, acc) <= acc + b,"
+    )
+    .map_err(|_| fmt_err())?;
+    writeln!(out, "    ensures").map_err(|_| fmt_err())?;
+    writeln!(out, "        {foldn}(l, init, f) <= {lenn}(l) * b,").map_err(|_| fmt_err())?;
+    out.push_str("    decreases l,\n{\n    match l {\n");
+    for b in &base {
+        writeln!(
+            out,
+            "        {}::{} => {{}}",
+            e.name,
+            base_variant_pattern(b)
+        )
+        .map_err(|_| fmt_err())?;
+    }
+    writeln!(out, "        {}::{}(x, tail) => {{", e.name, rec.name).map_err(|_| fmt_err())?;
+    writeln!(out, "            {lawn}(*tail, init, f, b);").map_err(|_| fmt_err())?;
+    writeln!(
+        out,
+        "            assert(({lenn}(*tail) + 1) * b == {lenn}(*tail) * b + b) by(nonlinear_arith);"
+    )
+    .map_err(|_| fmt_err())?;
+    out.push_str("        }\n    }\n}\n");
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // REQ-1: signature lowering.
 // ---------------------------------------------------------------------------
 
@@ -705,18 +1375,152 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 /// body lowers in spec context; `dec`→`decreases`. The return type uses the
 /// `nat`-typed accumulator form when the body folds slice elements into a sum
 /// (OQ-1: `u64`-valued `spec_sum` would re-introduce the overflow obligation).
-fn lower_spec_fn(s: &SpecFnItem, variants: &[(&str, &str)]) -> Result<String, LowerError> {
+fn lower_spec_fn(
+    s: &SpecFnItem,
+    variants: &[(&str, &str)],
+    program: &Program,
+) -> Result<String, LowerError> {
+    // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): the
+    // recursion-scheme bindings in scope for THIS spec fn — its scrutinee params
+    // resolved to the generated `fold_<e>`/`for_all_<e>`. EMPTY for a non-scheme
+    // fn (byte-stable for the existing corpus).
+    let scheme_bindings = spec_fn_scheme_bindings(s, program)?;
+
     let mut out = String::new();
-    let ret = lower_spec_fn_ret(&s.ret, &s.body);
+    // The return type: a scheme-CALL fold body returns the scheme's result kind
+    // (`nat` for `fold`, `bool` for `for_all`/`exists`/`traverse`, the ADT for
+    // `map`); else the existing head/ADT-fold-sum or declared-type lowering.
+    let ret = lower_spec_fn_ret_with_schemes(&s.ret, &s.body, &scheme_bindings);
     write!(out, "spec fn {}(", s.name).ok();
     emit_params(&mut out, &s.params, Pos::Spec)?;
-    write!(
-        out,
-        ") -> {ret}\n    decreases {}\n",
-        spec_dec(&s.dec, &s.params)
-    )
-    .ok();
-    out.push_str(&lower_spec_fn_body(&s.body, &s.params, &ret, variants)?);
+
+    // The DEC NUANCE (`.design/basis/02-recursion-schemes.md` step-lowering
+    // resolution): a scheme-CALL instance body (`fold_list(l, 0, f)`) is
+    // NON-recursive — the recursion lives in the GENERATED `fold_<e>`, which
+    // carries its own `decreases l`. The surface instance still parses with a
+    // mandatory `dec l`, but emitting `decreases l` on this non-recursive body is
+    // spurious. We SUPPRESS it for a scheme-call body. (A hand-written recursive
+    // `spec fn` — the `is_adt_fold_sum`/head-fold path — keeps its `decreases`.)
+    if is_scheme_call_body(&s.body, &scheme_bindings) {
+        writeln!(out, ") -> {ret}").ok();
+    } else {
+        write!(
+            out,
+            ") -> {ret}\n    decreases {}\n",
+            spec_dec(&s.dec, &s.params)
+        )
+        .ok();
+    }
+    out.push_str(&lower_spec_fn_body_with_schemes(
+        &s.body,
+        &s.params,
+        &ret,
+        variants,
+        &scheme_bindings,
+    )?);
+    Ok(out)
+}
+
+/// The recursion-scheme bindings in scope for a `spec fn` (REQ-6): for each
+/// distinct scheme its body CALLS, the resolved generated fn name + element/result
+/// types (from the scrutinee param's `enum` type). EMPTY for a non-scheme fn.
+fn spec_fn_scheme_bindings(
+    s: &SpecFnItem,
+    program: &Program,
+) -> Result<Vec<SchemeBinding>, LowerError> {
+    let enums: std::collections::BTreeMap<&str, &EnumItem> = program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Enum(e) => Some((e.name.as_str(), e)),
+            _ => None,
+        })
+        .collect();
+    let mut uses: Vec<SchemeUse> = Vec::new();
+    collect_scheme_uses_in_block(&s.body, &s.params, &enums, s.span, &mut uses)?;
+    Ok(uses
+        .into_iter()
+        .map(|u| SchemeBinding {
+            scheme_name: u.scheme.name,
+            gen_name: u.scheme.generated_fn_name(&u.enum_name),
+            elem_ty: u.elem_ty,
+            result: u.scheme.result,
+        })
+        .collect())
+}
+
+/// True if the spec fn's body tail is a scheme CALL resolved by an in-scope
+/// binding (REQ-6) — the instance whose `decreases` is suppressed (the recursion
+/// lives in the generated `fold_<e>`).
+fn is_scheme_call_body(body: &Block, bindings: &[SchemeBinding]) -> bool {
+    scheme_call_result(body, bindings).is_some()
+}
+
+/// The result kind of a scheme-CALL body tail (REQ-6), or `None` if the body is
+/// not a scheme call. Used to pick the instance's return type + suppress the
+/// spurious `decreases`.
+fn scheme_call_result(
+    body: &Block,
+    bindings: &[SchemeBinding],
+) -> Option<thermite_spec::SchemeResult> {
+    let tail = body.tail.as_ref()?;
+    if let Expr::Call { callee, .. } = tail.as_ref() {
+        if let Expr::Path(segs) = callee.as_ref() {
+            if let Some(name) = segs.last() {
+                return bindings
+                    .iter()
+                    .find(|b| b.scheme_name == name)
+                    .map(|b| b.result);
+            }
+        }
+    }
+    None
+}
+
+/// The return type of a scheme-CALL instance spec fn (REQ-6): `nat` for `fold`,
+/// `bool` for the predicate schemes, the ADT element-or-name for `map`. Falls
+/// back to the existing `lower_spec_fn_ret` (head/ADT-fold-sum or declared type)
+/// when the body is not a scheme call.
+fn lower_spec_fn_ret_with_schemes(ret: &Type, body: &Block, bindings: &[SchemeBinding]) -> String {
+    use thermite_spec::SchemeResult;
+    match scheme_call_result(body, bindings) {
+        Some(SchemeResult::Accumulator) => "nat".to_string(),
+        Some(SchemeResult::Bool) => "bool".to_string(),
+        Some(SchemeResult::SameAdt) => {
+            // `map` returns the same ADT; the surface `ret` already names it.
+            lower_type(ret).unwrap_or_else(|_| "bool".to_string())
+        }
+        None => lower_spec_fn_ret(ret, body),
+    }
+}
+
+/// Lower a spec-fn body with the recursion-scheme bindings in scope (REQ-6) — a
+/// scheme call in the body lowers to a call of the generated `fold_<e>`. Delegates
+/// to the existing `lower_spec_fn_body` for the non-scheme paths (head-fold-sum,
+/// ADT-fold-sum), threading the bindings through the spec context.
+fn lower_spec_fn_body_with_schemes(
+    body: &Block,
+    params: &[Param],
+    ret: &str,
+    variants: &[(&str, &str)],
+    bindings: &[SchemeBinding],
+) -> Result<String, LowerError> {
+    if bindings.is_empty() {
+        return lower_spec_fn_body(body, params, ret, variants);
+    }
+    // A scheme-call fn body lowers directly in spec context with the scheme
+    // bindings (and variants) attached. The head/ADT-fold-sum shape predicates do
+    // not match a scheme-call body (its tail is a `Call`, not a `Match`), so the
+    // existing special-case lowering is bypassed — the scheme call is handled in
+    // `lower_expr`'s `Call` arm via `lower_scheme_call`.
+    let ctx = Ctx::spec_seq()
+        .with_variants(variants)
+        .with_nat_ret(ret == "nat")
+        .with_schemes(bindings);
+    let mut out = String::from("{\n");
+    let b = lower_block_inner(body, ctx, 1, zero_span())?;
+    out.push_str(&b);
+    out.push_str("}\n");
     Ok(out)
 }
 
@@ -949,6 +1753,24 @@ fn lower_spec_fn_ret(ret: &Type, body: &Block) -> String {
 /// type-check uniformly (the GROUNDED form; without the `nat` return a base arm
 /// like `v as u64` is `u64` while the recursive arm is `int`, and verus rejects
 /// the `match` with `match arms have incompatible types`).
+/// True if a spec-fn body is a `fold` SCHEME CALL (`.design/basis/02-recursion-
+/// schemes.md` REQ-6): the body tail is an `Expr::Call` whose callee path is the
+/// `fold` scheme. Such an instance returns `nat` (the `Accumulator` result), so
+/// it joins `nat_fns` exactly as a hand-written ADT-fold-sum does. SHAPE check
+/// (the callee path is `fold` and `fold` is a registered scheme), never a name
+/// check; only `fold` is the `nat`-result scheme.
+fn is_fold_scheme_call_body(body: &Block) -> bool {
+    let Some(tail) = &body.tail else { return false };
+    let Expr::Call { callee, .. } = tail.as_ref() else {
+        return false;
+    };
+    let Expr::Path(segs) = callee.as_ref() else {
+        return false;
+    };
+    segs.last().map(|s| s.as_str()) == Some("fold")
+        && thermite_spec::schemes::lookup("fold").is_some()
+}
+
 fn is_adt_fold_sum(body: &Block) -> bool {
     let Some(tail) = &body.tail else { return false };
     let Expr::Match { arms, .. } = tail.as_ref() else {
@@ -1124,6 +1946,140 @@ fn seq_fold_body(slice: &str, arms: &[MatchArm], ret: &str) -> Result<String, Lo
 }
 
 // ---------------------------------------------------------------------------
+// Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): scheme-CALL
+// lowering — a scheme call → a call of the generated `fold_<e>`.
+// ---------------------------------------------------------------------------
+
+/// Lower a recursion-scheme CALL to a CALL of the generated scheme `spec fn`
+/// (REQ-6): `fold(l, 0, |x, acc| x + acc)` → `fold_list(l, 0, |x: u64, acc: nat|
+/// (x + acc) as nat)`; `for_all(l, |x| x > 0)` → `for_all_list(l, |x: u64| x >
+/// 0)`. The scrutinee/seed args lower plainly; the trailing STEP closure is
+/// lowered to a TYPED Verus `spec_fn` — element parameter `x: <elem>`, the
+/// accumulator parameter `acc: <acc-ty>` for `fold`/`traverse`, and for an
+/// accumulator (`fold`) the step body is coerced `as nat` (a `u64`/`nat` mixed
+/// body is `int` in spec; the GROUNDED step is `(x + acc) as nat`). The validator
+/// (Stage 2b) has already checked the call arity + the flat step.
+fn lower_scheme_call(
+    binding: &SchemeBinding,
+    args: &[Expr],
+    ctx: Ctx,
+    depth: usize,
+    span: Span,
+) -> Result<String, LowerError> {
+    // The trailing argument is the step closure; everything before it is a
+    // scrutinee/seed argument lowered plainly. The validator guaranteed the
+    // closure shape, but be defensive (no panic, REQ-9): a missing step is
+    // `Unsupported`.
+    let Some((step, head_args)) = args.split_last() else {
+        return Err(LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` with no arguments",
+                binding.scheme_name
+            ),
+            span,
+        });
+    };
+
+    let mut parts: Vec<String> = Vec::with_capacity(args.len());
+    for a in head_args {
+        parts.push(lower_expr(a, ctx, depth, span)?);
+    }
+
+    let Expr::Closure { params, body } = step else {
+        return Err(LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` step must be a closure",
+                binding.scheme_name
+            ),
+            span,
+        });
+    };
+
+    // Lower the step body in spec context. For an accumulator scheme the body is
+    // coerced `as nat` (the GROUNDED `(x + acc) as nat`); for a predicate / map
+    // scheme the body stays as written (the closure result type already matches).
+    let lowered_body = lower_expr(body, ctx.keep(), depth, span)?;
+    let step_src = lower_step_closure(binding, params, &lowered_body, span)?;
+    parts.push(step_src);
+
+    Ok(format!("{}({})", binding.gen_name, parts.join(", ")))
+}
+
+/// Lower a scheme STEP closure to a typed Verus `spec_fn` literal (REQ-6). The
+/// element parameter is typed `<elem>`; an accumulator scheme adds the `acc: nat`
+/// (or `acc: bool` for `traverse`) parameter and coerces the body `as nat`. The
+/// parameter NAMES are the surface closure's (`x`/`acc`), so the body's path
+/// references resolve.
+fn lower_step_closure(
+    binding: &SchemeBinding,
+    params: &[String],
+    lowered_body: &str,
+    span: Span,
+) -> Result<String, LowerError> {
+    use thermite_spec::SchemeResult;
+    let elem = &binding.elem_ty;
+    match binding.result {
+        // fold: `|x: <elem>, acc: nat| (<body>) as nat`
+        SchemeResult::Accumulator => {
+            let (x, acc) = two_params(params, binding, span)?;
+            Ok(format!("|{x}: {elem}, {acc}: nat| ({lowered_body}) as nat"))
+        }
+        // traverse: `|x: <elem>, acc: bool| <body>` (the body is already `bool`)
+        SchemeResult::Bool if binding.scheme_name == "traverse" => {
+            let (x, acc) = two_params(params, binding, span)?;
+            Ok(format!("|{x}: {elem}, {acc}: bool| {lowered_body}"))
+        }
+        // for_all/exists: `|x: <elem>| <body>` (the body is already `bool`)
+        SchemeResult::Bool => {
+            let x = one_param(params, binding, span)?;
+            Ok(format!("|{x}: {elem}| {lowered_body}"))
+        }
+        // map: `|x: <elem>| <body>` (the body returns `<elem>`)
+        SchemeResult::SameAdt => {
+            let x = one_param(params, binding, span)?;
+            Ok(format!("|{x}: {elem}| {lowered_body}"))
+        }
+    }
+}
+
+/// The two step-closure parameter names for an accumulator scheme (REQ-6),
+/// defensively erroring (no panic) if the validator's shape check was bypassed.
+fn two_params<'p>(
+    params: &'p [String],
+    binding: &SchemeBinding,
+    span: Span,
+) -> Result<(&'p str, &'p str), LowerError> {
+    match params {
+        [x, acc] => Ok((x.as_str(), acc.as_str())),
+        _ => Err(LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` step must have 2 parameters (`|x, acc|`)",
+                binding.scheme_name
+            ),
+            span,
+        }),
+    }
+}
+
+/// The single step-closure parameter name for an element scheme (REQ-6).
+fn one_param<'p>(
+    params: &'p [String],
+    binding: &SchemeBinding,
+    span: Span,
+) -> Result<&'p str, LowerError> {
+    match params {
+        [x] => Ok(x.as_str()),
+        _ => Err(LowerError::Unsupported {
+            what: format!(
+                "recursion scheme `{}` step must have 1 parameter (`|x|`)",
+                binding.scheme_name
+            ),
+            span,
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // REQ-2: type lowering.
 // ---------------------------------------------------------------------------
 
@@ -1193,6 +2149,18 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             Ok(segs.join("::"))
         }
         Expr::Call { callee, args } => {
+            // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): a
+            // scheme CALL `fold(l, 0, |x, acc| …)` lowers to a CALL of the
+            // generated `fold_<e>` with the step closure lowered to a typed Verus
+            // `spec_fn`. Resolved through the in-scope scheme bindings (the
+            // current spec fn's `with_schemes`); a non-scheme call falls through.
+            if let Expr::Path(segs) = callee.as_ref() {
+                if let Some(name) = segs.last() {
+                    if let Some(binding) = ctx.scheme_binding(name) {
+                        return lower_scheme_call(binding, args, ctx, d, span);
+                    }
+                }
+            }
             let c = lower_expr(callee, ctx, d, span)?;
             // In spec position, a bare slice-param argument to a spec fn or a
             // combinator is passed as its `Seq` view `xs@` (REQ-5). Keyed on the

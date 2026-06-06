@@ -113,6 +113,23 @@ design = ".design/spec/spectherm-combinators.md"
 reference = ["tests/golden/combinators"]
 conformance_ops = ["accept", "reject"]
 
+# Basis Stage 2 (recursion schemes, issue #70 / epic #62): validator.rs ALSO
+# carries the scheme-call recognition + flat-step cage governed by
+# 02-recursion-schemes.md (a file may carry multiple governing docs).
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/02-recursion-schemes.md"
+reference = ["conformance/list_fold.th"]
+conformance_ops = ["nested_scheme_in_step", "unknown_scheme"]
+
+# Basis Stage 2 (recursion schemes, issue #70): the NEW scheme registry,
+# mirroring combinators.rs.
+[[route]]
+crate_pattern = "thermite-spec/src/schemes.rs"
+design = ".design/basis/02-recursion-schemes.md"
+reference = ["conformance/list_fold.th"]
+conformance_ops = ["fold", "map", "for_all", "exists", "traverse"]
+
 # ---------------------------------------------------------------------
 # thermite-lower — Thermite AST -> Verus source; L1 runtime checks
 #   (issue #4)
@@ -123,6 +140,16 @@ crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/lower/verus-lowering.md"
 reference = ["tests/golden/lower"]
 conformance_ops = ["sum", "binary_search"]
+
+# Basis Stage 2 (recursion schemes, issue #70 / epic #62): lower.rs ALSO carries
+# the generated per-(ADT,scheme) Verus recursive spec fns (fold_<e>/for_all_<e>)
+# + the fold_bound_<e> law + the scheme-call lowering, governed by
+# 02-recursion-schemes.md (a file may carry multiple governing docs).
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/02-recursion-schemes.md"
+reference = ["conformance/list_fold.th"]
+conformance_ops = ["len_list", "sum_list", "all_positive"]
 
 # #52 §9 boundary-composition: lower.rs ALSO carries the external_body emission
 # arm governed by boundary-composition.md (a file may carry multiple governing

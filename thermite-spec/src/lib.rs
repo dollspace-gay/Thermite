@@ -6,6 +6,13 @@
 //!   arg-kinds / result) and `lookup` (§4.2; REQ-1/REQ-2). The frozen SMT
 //!   trigger + Verus (L3) + executable (L1) lowering facet is DEFERRED to issue
 //!   #4 (the `CombinatorSig` struct is left extensible for it; OQ-2).
+//! - **`schemes`** — the FROZEN v0.1 recursion-scheme registry (Basis Stage 2,
+//!   `.design/basis/02-recursion-schemes.md` REQ-1/REQ-2): the 5 schemes
+//!   (`fold`/`map`/`for_all`/`exists`/`traverse`) over recursive ADTs, each with
+//!   its step shape + result kind + generated-fn-name function. The structural
+//!   complement of `combinators` (`lookup` precedent); consumed by `validator`
+//!   (the scheme-call accept + flat-step cage) and `thermite-lower` (the
+//!   generated `fold_<e>`/`for_all_<e>` materialization).
 //! - **`validator`** — `validate`, the boundary API that walks a parsed
 //!   `thermite-syntax` program's contract positions and enforces the §4.2 cage,
 //!   plus `thermite-spec`'s own `SpecError` enum (workspace.md REQ-3; REQ-3/4/5).
@@ -40,7 +47,9 @@
 //! | REQ-6 (flat-closure-fragment rule) | SHIPPED | `Validator::in_combinator_closure` set on entry to a combinator `Pred`-slot closure body (kept set for all nesting); while set, `walk_call` rejects a registered-combinator callee with `SpecError::NestedCombinator`, named `spec fn` calls stay accepted. `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; flat corpus closures unaffected. |
 
 pub mod combinators;
+pub mod schemes;
 pub mod validator;
 
 pub use combinators::{all, lookup, ArgKind, CombinatorSig, ResultKind};
+pub use schemes::{SchemeResult, SchemeSig, StepShape};
 pub use validator::{validate, SpecError};

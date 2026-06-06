@@ -1,0 +1,31 @@
+fn greeting_len(s: String) -> u64
+  req true
+  ens result == s.len()
+  fx  pure
+{
+  s.len()
+}
+
+fn first_byte(s: String) -> u64
+  req s.len() > 0
+  ens result == s.byte_at(0)
+  fx  pure
+{
+  s.byte_at(0)
+}
+
+fn join(a: String, b: String) -> String
+  req a.len() + b.len() <= 1_000_000
+  ens result.len() == a.len() + b.len()
+  fx  alloc
+{
+  a.concat(b)
+}
+
+fn literal_len() -> u64
+  req true
+  ens result == 5
+  fx  alloc
+{
+  "hello".len()
+}

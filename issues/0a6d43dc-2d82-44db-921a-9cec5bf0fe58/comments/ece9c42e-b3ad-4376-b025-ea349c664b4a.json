@@ -1,0 +1,10 @@
+{
+  "uuid": "ece9c42e-b3ad-4376-b025-ea349c664b4a",
+  "issue_uuid": "0a6d43dc-2d82-44db-921a-9cec5bf0fe58",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (ba4af4b type-level IFC, 5f8b55d the #77 #[sealed] abstraction barrier). Security-by-construction: 3-axis IFC (Tainted/Secret/Authorized marked types + parameterize/declassify/authorize #[boundary] doors + query/emit/delete sinks). The careless path (raw marked -> sink) -> L0/E0308; the StructLit LAUNDER (Sql{stmt:input.raw}) -> REJECTED via #[sealed] (SealedConstruction); the safe path (through the door) -> L3 to_boundary; audit enumerates the doors as the security TCB. Critic caught #77 (the StructLit door-bypass made the guarantee HOLLOW — clean types were ordinary structs) -> fixed via the #[sealed] abstraction barrier (a sealed type's ONLY producer is its #[boundary] door; the validator rejects a sealed StructLit anywhere). Re-audit: barrier COMPLETE (16 probes — every StructLit position; no non-door mint path: casts/call-form/struct-update/qualified-path/slag-door all rejected; the door is the sole producer + TCB-enumerated). The SQLi/secret-leak/missing-cap programs are genuinely UN-TYPEABLE (the dipshit path doesn't compile). workspace 500 tests. v1.1 deferred: REQ-4 the dataflow-propagation engine (taint through arbitrary derived values). Stage 6 complete.",
+  "created_at": "2026-06-06T19:30:56.670235236Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAWg4bKX0U5eQFgLl1n3D60lq8qUiIneydkwZQWAOi3iBweA5r2r/0wyimgtNjnmo9orCHJWfZ1eLpVLhcN11UAQ=="
+}

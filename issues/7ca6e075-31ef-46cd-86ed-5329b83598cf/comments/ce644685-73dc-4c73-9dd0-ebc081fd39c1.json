@@ -1,0 +1,10 @@
+{
+  "uuid": "ce644685-73dc-4c73-9dd0-ebc081fd39c1",
+  "issue_uuid": "7ca6e075-31ef-46cd-86ed-5329b83598cf",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (e0ee523 dynamic generator, 04412aa #85 fix). Surface inventory now registry-driven (combinators + 5 schemes) + exhaustive-match-driven (Type/Expr/Item/Pattern/Effect/BinOp/PrimType, no _ wildcard). Compiler-enforced no-staleness confirmed (active probe: Effect::SynthProbe -> E0004). Skill no longer lies; budget 4309<=6000; freshness holds. #85 fixed (Type::Unit example missing req -> rendered_fn_examples_parse_clean now guards every example).",
+  "created_at": "2026-06-06T22:42:40.275599369Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtO2fM6MlTR4rp0tRFmgUz6IIT/67Xh8rul68mEtPmNPqcfkV+d+IQPh6QhTX6/Oavz0gLyr5sT46Pd1vptd9Dw=="
+}

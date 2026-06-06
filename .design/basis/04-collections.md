@@ -65,8 +65,26 @@ expressiveness gain). Option (c) caps the structure below "growable" — it cann
 and it removes the `alloc` effect that is the point of generalizing Stage 1's
 `Box`. The capacity bound `CAP` is the SAME constant idiom as the corpus
 (`1_000_000`); a `Vec` is bounded by design so the §4.2 cage never sees an
-unbounded sequence. OQ-1 records the residual ambiguity (wrap-vstd vs. a thin
-custom newtype for the certificate-stability story); OQ-3 the Map first-cut depth.
+unbounded sequence.
+
+**RESOLVED (#62 design-refinement, OQ-1): v1 WRAPS `vstd::vec::Vec`** —
+proven-for-free (vstd's `push`/`index`/`len` carry the heap proof; the GROUNDED
+`BVec` over `Vec<u64>` is exactly this form, `5 verified, 0 errors`), and `vstd` is
+VERSION-PINNED alongside Verus, so the coupling is to a PINNED dep (low-risk, not
+an unpinned moving target). The decisive REQUIREMENT this resolution pins
+(REQ-5): the **Thermite-surface `Vec` contract — `push`/`pop`/`get`/`len` plus the
+capacity invariant (`len() <= CAP`) and the element invariant — is specified
+BACKING-AGNOSTIC**, independently of vstd. The surface contract names what each
+operation guarantees (`push`: `req len < CAP, ens len' == len+1 && v@[old_len] ==
+x`; `get`: `req i < len, ens result == v@[i]`) WITHOUT referencing
+`vstd::vec::Vec` in the contract itself; vstd is the v1 IMPLEMENTATION behind that
+contract, not the contract. **Migration path:** a later decouple to a custom
+backing store (a Thermite-owned `Seq`-backed run) swaps the IMPLEMENTATION — the
+lowering target changes from `self.data: vstd::vec::Vec<T>` to the custom store —
+WITHOUT changing the surface contract or any user `.th` code, exactly because the
+contract is backing-agnostic (the §6/§9 "the contract is the interface" property).
+OQ-1 below records the certificate/golden-stability consequence; OQ-3 the Map
+first-cut depth.
 
 ## Requirements
 
@@ -149,7 +167,18 @@ custom newtype for the certificate-stability story); OQ-3 the Map first-cut dept
   `5 verified, 0 errors`; the no-OOB `get` and capacity-preserving `push` proven,
   the broken forms (push without the cap guard, get without the bound) FAIL.
   Derived from §3 (transpile to Verus), §4.1 (the `alloc` effect; row
-  subsumption), §6 (L3), and the GROUNDED `BVec` proof.
+  subsumption), §6 (L3), and the GROUNDED `BVec` proof. **BACKING-AGNOSTIC SURFACE CONTRACT
+  (#62 resolution, REQUIRED).** The Thermite-surface `Vec` contract
+  (`push`/`pop`/`get`/`len` + the capacity and element invariants) is specified
+  INDEPENDENTLY of vstd — the contract names the operation guarantees over the
+  `Seq` view `v@`, never `vstd::vec::Vec` itself. v1 IMPLEMENTS that contract by
+  wrapping `vstd::vec::Vec` (proven-for-free; vstd is version-pinned alongside
+  Verus, so the coupling is to a pinned dep). Because the contract is
+  backing-agnostic, a later decouple to a custom Thermite-owned backing store swaps
+  the lowering target (`self.data: vstd::vec::Vec<T>` → the custom store) WITHOUT
+  changing the surface contract or any user `.th` code (§6/§9 "the contract is the
+  interface"). The golden lowering is pinned to a recorded `verus`/vstd version
+  (OQ-1).
 
 - **REQ-6 (`Map<K,V>` → vstd `Map` wrapper; `insert`/`get`/`contains` → verified
   ops; key-uniqueness invariant):** A Thermite `Map<K,V>` lowers to a wrapper over
@@ -411,24 +440,29 @@ the builder runs (R-CHAR-3).
 | REQ-2 (`Map<K,V>` type + insert/get/contains/len surface) | NOT-STARTED | epic **#62** Stage 4. No `Map` in `enum Type`; the existing `Generic { name, arg }` is single-arg and cannot carry a key+value (OQ-2). Not implemented. |
 | REQ-3 (capacity + operation contracts fit the §4.2 cage) | NOT-STARTED | epic **#62** Stage 4. The caged-flat walk (`.design/spec/spectherm-combinators.md` REQ-6) is itself NOT-STARTED (blocker #40); `v@`-index / `v.len()` / `forall_in(v, …)` join its flat accept set when both land. |
 | REQ-4 (element invariant via named `spec fn` `forall|i| inv(v@[i])`) | NOT-STARTED | epic **#62** Stage 4. No element-invariant mechanism; reuses Stage-1 `well_formed` (`.design/basis/01-adts.md` REQ-8, itself NOT-STARTED). GROUNDED (`all_elems_inv` preserved across `push`, `0 errors`), not implemented. |
-| REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`) | NOT-STARTED | epic **#62** Stage 4. `lower.rs` has no `Vec` lowering; `Effect::Alloc` (`ast.rs` `enum Effect`) exists but is unexercised; no corpus program is non-`pure`. GROUNDED `BVec` form pinned (Architecture); requires Stage-1 `alloc` lowering (`.design/basis/01-adts.md` REQ-3) first (R-DEFER-7). |
+| REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`; BACKING-AGNOSTIC surface) | NOT-STARTED | epic **#62** Stage 4 (design-refinement: v1 WRAPS `vstd::vec::Vec`, surface contract backing-agnostic, OQ-1 RESOLVED). `lower.rs` has no `Vec` lowering; `Effect::Alloc` exists but is unexercised. GROUNDED `BVec` form pinned (Architecture, `5 verified, 0 errors`); the surface contract is specified independently of vstd so a later custom-backing decouple swaps the impl without changing user code. Requires Stage-1 `alloc` lowering first (R-DEFER-7). Not implemented. |
 | REQ-6 (`Map` → vstd `Map` wrapper; insert/get/contains; key-uniqueness) | NOT-STARTED | epic **#62** Stage 4. `lower.rs` has no `Map` lowering; first-cut depth open (OQ-3). Modeled on `vstd::map::Map`, not implemented. |
 | REQ-7 (`LowerError`/`SpecError` extension, no panics) | NOT-STARTED | epic **#62** Stage 4. The new collection lower/reject variants are not yet added to the existing error enums in `validator.rs` / `lower.rs`. |
 
 ## Open questions (for the orchestrator before the builder runs)
 
-- **OQ-1 (least-confident: wrap vstd `Vec` vs. a thin custom bounded newtype).**
-  The Decision picks wrap-vstd (option (a)) and it is GROUNDED (`BVec` over
-  `Vec<u64>`, `0 errors`). The residual question is the certificate/golden-
-  stability story: a thin Thermite-owned newtype `struct Vec<T> { data:
-  vstd::Vec<T> }` (the GROUNDED `BVec` shape) keeps the capacity invariant + the
-  `fx alloc` boundary Thermite's own, but couples the golden lowering to vstd's
-  `Vec` API surface (which can shift across Verus versions — cf. the `final(self)`
-  migration note this version forced). RECOMMEND the thin newtype (GROUNDED), with
-  the golden lowering pinned to a recorded `verus` version. This is the
-  highest-judgment, least-confident call: the GROUNDED proof uses `vstd::vec::Vec`
-  directly, so a fully vstd-decoupled custom backing store is designed-but-unproven
-  end-to-end. Not a blocker; pinned for the builder.
+- **OQ-1 (wrap vstd `Vec` vs. a custom bounded backing — RESOLVED; #62
+  design-refinement).** *(This is the OQ the #62 pass refers to for the Vec
+  backing; in this doc it is OQ-1.)* **RESOLVED: v1 WRAPS `vstd::vec::Vec`** behind
+  a thin Thermite-owned newtype (`struct Vec<T> { data: vstd::vec::Vec<T> }`, the
+  GROUNDED `BVec` shape, `5 verified, 0 errors`) — proven-for-free, and `vstd` is
+  version-pinned alongside Verus so the coupling is to a PINNED dep (low-risk). The
+  capacity invariant + the `fx alloc` boundary stay Thermite's own. The decisive
+  REQUIREMENT (REQ-5): the surface contract is **BACKING-AGNOSTIC** — specified
+  independently of vstd — so the residual certificate/golden-stability concern (the
+  golden lowering references vstd's `Vec` API, which can shift across Verus
+  versions — cf. the `final(self)` migration note this version forced) is handled
+  by pinning the golden lowering to a RECORDED `verus`/vstd version, and the
+  MIGRATION PATH is clean: swapping to a custom Thermite-owned backing store later
+  changes only the lowering target, never the surface contract or user `.th` code.
+  The GROUNDED proof uses `vstd::vec::Vec` directly; a fully vstd-decoupled custom
+  backing store is the designed-but-unproven future swap that the backing-agnostic
+  contract makes safe. Pinned for the builder.
 
 - **OQ-2 (`Vec`/`Map` as dedicated `Type` nodes vs. generalized `Generic`):** the
   existing `Generic { name: Ident, arg: Box<Type> }` (`ast.rs`) is single-arg —

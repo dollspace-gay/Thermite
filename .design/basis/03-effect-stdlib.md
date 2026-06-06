@@ -53,6 +53,40 @@ the `#[boundary]` form + L1-enforced contract (`#16`,
 lowering (`#52`, `.design/lower/boundary-composition.md`), and the seccomp runtime
 sandbox + fx→syscall table (`#57`, `.design/forge/runtime-sandbox.md`).
 
+## The unifying principle — handled-or-loud, on every OUTCOME (the EFFECT seam)
+
+Stage 3 is where the toolchain's unifying law (crosslink **#62** design-refinement
+pass) meets the genuinely-uncertain world: **for every outcome a program MODELS it
+must either HANDLE it (a path proven L3 or checked L1) or SCREAM (an explicit,
+typed, greppable refusal); silently doing the wrong thing is structurally
+impossible.** An effect primitive interacts with a world the prover cannot
+model — but it can still CLOSE its outcome SET and force every arm to be handled.
+The three escalating teeth all show up here:
+
+- **Compile-time scream.** A primitive returning a Stage-1 ADT `Result<T, E>` /
+  `Option<T>` models its outcome space as a closed sum type; the caller's exhaustive
+  `match` (`01-adts.md` REQ-5/REQ-12) makes a missed arm a VALIDATION reject — the
+  failure/EOF outcome cannot be silently dropped.
+- **Runtime scream.** Each primitive's contract is L1-enforced on EVERY crossing
+  (the `#16` `lower_boundary_fn_l1` wrapper: `req`-check → foreign call → `ens`-
+  check, §6 L1): a primitive that violates its assumed contract is caught at the
+  boundary, exit 101, never a wrong value. And `fx panic` makes "I can scream here"
+  FIRST-CLASS — a function that may abort declares `panic` in its effect row (§4.1),
+  so the refusal is in the row and in the manifest, greppable.
+- **Kill scream.** The #57 seccomp sandbox confines each primitive to exactly its
+  effect's syscalls (REQ-5): a `read_file` that tries to `write`/`connect` is
+  `SIGSYS`-killed by the kernel — the trusted-by-fiat body cannot exceed its
+  declared `fx`.
+
+The fiat/verified line is a KNOB (the load-bearing reframing OQ-1 resolves): the
+honest claim about a syscall is NOT a strong promise about the world, it is a
+TOTALLY-COVERED outcome SET. You model MORE failure variants → MORE arms the caller
+is forced to handle → MORE of the program verified; whatever you leave UNMODELED is
+the enumerated trusted remainder the manifest reports (the §9 TCB). The boundary is
+strong where it CAN be (the outcome set is closed and must be handled) and silent
+where it MUST be (WHICH outcome the world produces). That is handled-or-loud for
+effects.
+
 ## The verus mechanism (GROUNDED — `verus 0.2026.05.24`)
 
 An effect primitive is a `#[verifier::external_body]` fn carrying a real
@@ -184,6 +218,49 @@ and `diverge` adds no syscall (it is the non-termination effect — see the
 interactive-program note). They appear in the lattice and the row but are not
 members of THIS stdlib's syscall-primitive families.
 
+### GROUNDED — handled-or-loud on every arm (`verus 0.2026.05`)
+
+The OQ-1 resolution — a boundary contract is honest iff its outcome space is
+totally covered and the caller's `ens` holds on EVERY arm — was run against the
+real `verus 0.2026.05.24` binary during authoring (scratch removed). The harness:
+a `read` boundary returning a closed outcome space `Result<u64, ReadErr>`
+(`external_body`, the syscall by fiat), a PURE caller that `match`es BOTH arms, and
+the caller's own `ensures` proven to hold on EACH arm (the Ok/handle path AND the
+Err/scream path):
+
+```rust
+pub enum ReadErr { Eof, Io }
+
+#[verifier::external_body]
+fn read_small() -> (r: Result<u64, ReadErr>)
+    ensures match r { Result::Ok(v) => v < 256, Result::Err(_) => true },  // closes the SET
+{ unimplemented!() }                                                       // the syscall, by fiat
+
+fn read_capped() -> (out: u64)
+    ensures out < 256,                       // holds on the Ok arm AND the Err arm
+{
+    match read_small() {
+        Result::Ok(v)  => v,                 // HANDLE: proven correct (v < 256 from the ens)
+        Result::Err(_) => 0,                 // SCREAM-and-recover: typed Err arm, also < 256
+    }
+}
+```
+
+→ `verus`: **`2 verified, 0 errors`** (exit 0, default mode — `read_capped` plus a
+second-order consumer `doubled` that proves `out < 512` through `read_capped`'s
+contract). The caller proves its postcondition on EVERY arm using ONLY the
+primitive's assumed outcome-set `ensures`. **Negative control (outcome-coverage is
+load-bearing, not vacuous):** make the Err/scream arm return a wrong value
+(`Result::Err(_) => 999` under `ensures out < 256`) — verus FAILS
+`0 verified, 1 errors` (the unhandled-correctly arm is caught). Cheat-token grep
+(`assume`/`admit`/`verifier::external`/`--no-cheating`): NONE — the lone
+`external_body` is the LEGITIMATE boundary model (the §52/§60 honesty gate:
+`external_body` iff a declared boundary; banned under `--no-cheating`, which guards
+the CORE). This proves "handled-or-loud-on-every-arm" is real: the boundary is
+strong on the outcome SET (closed + each arm constrained + each arm forced handled),
+silent on WHICH outcome — and a caller that mishandles the scream arm does NOT
+verify.
+
 ### The TCB / honesty story (the load-bearing point — §1, §9, R-DEFER-9)
 
 §9 states the trusted computing base is **exactly (slag blocks ∪ boundary
@@ -249,16 +326,33 @@ the only non-termination is the explicitly-declared `diverge` of the accept loop
   lattice this stdlib instantiates) + the §1 "verify anything" thesis + `01-adts.md`
   (the `Alloc`/`Box` tie).
 
-- **REQ-3 (the assumed contract is honest + minimal):** each primitive's `ens`
-  states the MINIMAL true claim about the syscall's result SHAPE — never an
-  unprovable claim about the world (`read_file` ens the `Result<bytes, Error>`
-  shape, never WHICH bytes; `write_file` ens "handed to the OS", never durability;
-  `random` ens a `u64`, never a distribution; `now` ens a `u64`, never an instant).
-  An inherently-uncertain syscall (a read that can fail / short-read) returns a
-  Stage 1 ADT `Result`/`Option` so the uncertainty is in the TYPE, and the caller
-  is FORCED to handle the failure case (verified). Derived from §9 (the contract is
-  the interface) + `goal.md` R-DEFER-9 (honest, never a vacuously-strong assumed
-  ensures) + `01-adts.md` (the `Result`/`Option` ADT returns). See OQ-1.
+- **REQ-3 (a boundary contract is honest iff it TOTALLY COVERS its outcome space
+  — the resolved honesty seam):** a boundary/effect-primitive contract is HONEST
+  not by making a strong claim about the world, and not by a blanket
+  vacuity-exemption, but by **closing its outcome SET and forcing the caller to
+  handle every arm.** The primitive's return type is a Stage-1 ADT `Result<T, E>` /
+  `Option<T>` (the closed outcome space — Ok/value OR a typed Err/scream); its `ens`
+  constrains the SHAPE of each arm (e.g. the Ok value's bound), never WHICH arm the
+  world produces; and the caller's exhaustive `match` (`01-adts.md` REQ-5/REQ-12) is
+  FORCED to resolve EVERY arm — handle-or-scream on each. The honesty test is
+  therefore OUTCOME-COVERAGE — *is every arm of the returned sum type resolved by
+  the caller, and does the caller's own `ens` hold on EACH arm (the Ok/handle path
+  AND the Err/scream path)?* — NOT "is the value-promise strong?". The §7 vacuity
+  battery's weak-`ens` rule, applied to a `#[boundary]` contract, checks
+  OUTCOME-COVERAGE (REQ-6 / OQ-1 resolution), it does NOT fire merely because the
+  value-promise is weak: a foreign syscall's honest contract genuinely IS weak about
+  the world, and that weakness is legitimate precisely because the outcome SET is
+  closed and totally handled. **GROUNDED** (`verus 0.2026.05.24`, [grounding
+  below](#grounded-handled-or-loud-on-every-arm-verus-0202605)): a `read_small ->
+  Result<u64, ReadErr>` external_body whose `ens` closes the outcome set, a pure
+  caller that `match`es BOTH arms with its own `ens` holding on EACH
+  (`2 verified, 0 errors`), and a negative control where the Err/scream arm returns
+  a wrong value FAILS (`0 verified, 1 errors`). The fiat line is a KNOB: model more
+  failure variants → more arms forced handled → more verified; the unmodeled
+  remainder is manifest-enumerated (§9 TCB). Derived from §9 (the contract is the
+  interface) + `goal.md` R-DEFER-9 (honest — neither vacuously-strong nor a free
+  weak pass) + `01-adts.md` REQ-5/REQ-12 (exhaustive `match` = handled-or-loud) +
+  the **#62** outcome-coverage resolution. (Resolves the honesty-seam OQ.)
 
 - **REQ-4 (the effect is typed + the primitive lowers via `external_body`):** each
   primitive's `fx` atom is the §4.1 typed effect, checked by the SHIPPED
@@ -466,23 +560,31 @@ per-boundary `to_boundary` certs Stage 5's law sums into a project-level claim.
 
 ## Open questions
 
-- **OQ-1 (the honest contract for an inherently-uncertain syscall — LEAST
-  CONFIDENT):** a read can fail, short-read, or EOF; a write can partial-write; a
-  connect can refuse. How does the assumed `ensures` stay HONEST without being
-  vacuous (R-DEFER-9 forbids a vacuously-WEAK contract just as it forbids a
-  vacuously-strong one)? LEANING: the uncertainty lives in the RETURN TYPE (a
-  Stage 1 ADT `Result<T, IoError>` / `Option<T>`), so the `ens` is the SHAPE of
-  that ADT and the caller is FORCED by `match` exhaustiveness to handle the failure
-  arm (GROUNDED: `read_byte -> Option<u8>` with a `match` on the EOF case verified).
-  The assumed `ens` then claims only what the OS contract guarantees about the
-  shape, never the contents. The residual risk: the §7 vacuity battery may flag an
-  `ens true` primitive contract as too weak — but a foreign syscall's honest
-  contract genuinely IS weak (you cannot prove the disk), so the battery's
-  triage must EXEMPT a `#[boundary]` contract from the weak-`ens` rejection (as
-  `#16` REQ-5 already routes boundary fns through `graduate_triage_clean`). The
-  builder + critic MUST pin that a boundary contract is NOT rejected for weakness,
-  and that this exemption does NOT leak to regular fns. This is the load-bearing
-  honesty seam and the claim I am least sure of.
+- **OQ-1 (the honesty seam — RESOLVED via OUTCOME-COVERAGE; #62
+  design-refinement).** *(This is the "OQ-2 honesty seam" the #62 pass names — in
+  this doc it has always been OQ-1.)* The question was: how does the assumed
+  `ensures` of an inherently-uncertain syscall (read can fail/short/EOF; write can
+  partial; connect can refuse) stay HONEST without being vacuous? **RESOLVED — a
+  boundary contract is honest iff it TOTALLY COVERS its outcome space, NOT by a
+  strong world-claim and NOT by a blanket vacuity exemption** (REQ-3, reframed). The
+  uncertainty lives in the RETURN TYPE — a Stage-1 ADT `Result<T, E>` / `Option<T>`,
+  a CLOSED outcome set; the `ens` constrains the SHAPE of each arm, never WHICH arm;
+  and the caller's exhaustive `match` (`01-adts.md` REQ-5/REQ-12) FORCES every arm
+  resolved with the caller's own `ens` proven on EACH (the Ok/handle path AND the
+  Err/scream path). **The §7 weak-`ens` vacuity rule, applied to a `#[boundary]`
+  contract, checks OUTCOME-COVERAGE — is every arm of the returned sum type
+  resolved? — it does NOT fire merely because the value-promise is weak** (REQ-3).
+  This REPLACES the old "exempt boundaries from the weak-`ens` rejection" framing: a
+  boundary is not exempt from honesty, it is held to a DIFFERENT honesty test (the
+  outcome SET is closed + must be handled) appropriate to a foreign function (REQ-3 is the honesty test; REQ-6 keeps the TCB enumeration honest). The
+  builder + critic MUST pin that the §7 boundary path checks outcome-coverage (every
+  arm handled), and that this does NOT leak the value-strength exemption to regular
+  fns (which are held to the full §7 battery). GROUNDED (`verus 0.2026.05.24`,
+  [grounding above](#grounded--handled-or-loud-on-every-arm-verus-0202605)):
+  `read_small -> Result<u64, ReadErr>` + a both-arms-handled caller `2 verified, 0
+  errors`; the Err-arm-returns-wrong-value negative FAILS `0 verified, 1 errors`.
+  The fiat line is a KNOB — model more failure variants → more arms forced handled →
+  more verified; the unmodeled remainder is manifest-enumerated (§9 TCB).
 
 - **OQ-2 (stdlib crate layout + skill budget):** where do the primitives live —
   a `thermite-stdlib` crate of `.th` declarations, a built-in module the skill
@@ -567,7 +669,7 @@ LEANING (OQ-2); the orchestrator settles it.
 |---|---|---|
 | REQ-1 (effect-primitive declaration form) | NOT-STARTED | epic #62, Stage 3. No effect-primitive stdlib exists: there is no `thermite-stdlib` crate and no `#[boundary("os::…")]` syscall primitive anywhere in the tree. The SHIPPED prerequisite form (`#16` `FnItem { boundary: Some, body: None }` in `ast.rs`, `parse_attribute` + the `Semi`-body path in `parser.rs`) is the substrate this stage instantiates, but no syscall primitive is declared against it. |
 | REQ-2 (one primitive family per effect atom — the stdlib) | NOT-STARTED | epic #62, Stage 3. The `enum Effect` atoms (`Read`/`Write`/`Net`/`Alloc`/`Time`/`Rand` in `ast.rs`) exist and are unexercised by the corpus (`fx pure` only); no `read_file`/`write_file`/`net_*`/`now`/`random` primitive family is defined. The §57 fx→syscall table (`runtime-sandbox.md`) ships, but no primitive maps onto it. |
-| REQ-3 (assumed contract is honest + minimal) | NOT-STARTED | epic #62, Stage 3. No primitive contract exists to be honest about. The Stage 1 ADT `Result`/`Option` returns this REQ leans on are themselves NOT-STARTED (`01-adts.md` — all REQs NOT-STARTED, no `struct`/`enum`/`match` in item position yet). Prereq: Stage 1 ADTs (`01-adts.md`) for the `Result<bytes, Error>` return shape. |
+| REQ-3 (boundary contract honest iff TOTAL OUTCOME-COVERAGE — honesty seam RESOLVED) | NOT-STARTED | epic #62, Stage 3 (design-refinement: honesty seam resolved via outcome-coverage, OQ-1). No primitive contract exists yet to cover. The Stage-1 ADT `Result`/`Option` returns + exhaustive `match` (`01-adts.md` REQ-5/REQ-12) this REQ requires are themselves NOT-STARTED. The RESOLUTION is GROUNDED (`verus 0.2026.05.24`: both-arms-handled caller `2 verified, 0 errors`; Err-arm-wrong-value negative `0 verified, 1 errors`), not implemented. Prereq: Stage 1 ADTs for the closed-outcome-set return shape. |
 | REQ-4 (typed effect + `external_body` lowering) | NOT-STARTED | epic #62, Stage 3. The SHIPPED `#52` `lower_external_body_fn` (in `lower.rs`) + `check::item_subprogram` weave and the SHIPPED row-subsumption (`effect-subsumption.md`) are the mechanism, GROUNDED here (`verus 0.2026.05.24`: a compose-through proof `2 verified, 0 errors`), but no effect primitive is lowered through them — there is no primitive to weave. |
 | REQ-5 (runtime-sandboxed — confined to its syscalls) | NOT-STARTED | epic #62, Stage 3. The SHIPPED `#57` `sandbox::syscall_allowlist` over `sandbox::transitive_fx` (in `forge/src/sandbox.rs`) + the fx→syscall table are the confinement mechanism, but no effect primitive declares an `fx` atom for them to confine; no `conformance/effect-stdlib` sandbox case exists. |
 | REQ-6 (TCB / verified-to-the-boundary honesty story) | NOT-STARTED | epic #62, Stage 3. The SHIPPED `#17` `AssuranceScope::ToBoundary` (in `closure.rs`/`manifest.rs`) + `#15` `AuditManifest.tcb` (in `forge/src/audit.rs`) are the honesty surface, but no program reaches an effect primitive, so no `to_boundary` scope is recorded for one and no primitive is enumerated in a TCB. |

@@ -134,12 +134,18 @@ that drops the per-node premise FAILS (`2 verified, 1 errors`); a `fold` with no
   (`fx`-carrying: a `fold`/`map` that constructs a result over a heap-allocated
   `List` carries `fx alloc` per Stage 1 REQ-3, the constructing effect). The spec
   form is primary; the exec form is its compiled mirror, related by an `ensures`
-  tying the exec result to the spec fold (`result == fold(l, …)`). OQ-2 records
-  the least-confident scoping call: whether the exec form is a true higher-order
-  exec `fold` (a closure passed at exec time) or whether exec folds are
-  monomorphized per-step at lowering (the closure inlined), since Verus exec
-  higher-order functions are heavier than spec `spec_fn`. Derived from §4.2
-  ("Spec functions are executable" — the L1 rung), §4.1 (`fx` rows), Stage 1 REQ-3.
+  tying the exec result to the spec fold (`result == fold(l, …)`). **RESOLVED
+  (#62 design-refinement, OQ-2): the RUNNABLE (exec) fold is MONOMORPHIZED** — the
+  lowering INLINES the per-use step into a generated dedicated loop (the prover
+  handles a simple monomorphic loop trivially, the `conformance/sum.th` while-loop
+  pattern; higher-order EXEC closures are heavy in Verus). **The SPEC scheme stays
+  higher-order / parametric** (a Verus `spec_fn` step — the verified engine, fully
+  GROUNDED above) and is UNAFFECTED by this decision: the exec/spec split is
+  exactly the §4.2 dual (the spec primitive is the engine; the exec mirror is its
+  compiled, monomorphized form). The exec form carries `fx alloc` per Stage-1 REQ-3
+  when it constructs over a heap-allocated `List`; the spec form carries no effect
+  row. Derived from §4.2 ("Spec functions are executable" — the L1 rung), §4.1
+  (`fx` rows), Stage 1 REQ-3, and the #62 monomorphized-exec resolution.
 
 ### Validator / the SpecTherm cage — the structural-quantification bridge (governs `thermite-spec/src/validator.rs`)
 
@@ -498,7 +504,7 @@ this doc before the builder runs (R-CHAR-3).
 |---|---|---|
 | REQ-1 (the scheme set as named primitives) | NOT-STARTED | epic **#62** Stage 2. No `fold`/`map`/`for_all`/`exists`/`traverse` scheme in `thermite-syntax/src/ast.rs` or a `thermite-spec/src/schemes.rs` registry; the surface admits no scheme today. GROUNDED-feasible (`fold`/`map`/`for_all` verus `0 errors`), not implemented. Depends on Stage 1 REQ-3/REQ-10 (recursive ADTs), itself NOT-STARTED. |
 | REQ-2 (the step — flat per-node closure) | NOT-STARTED | epic **#62** Stage 2. `Expr::Closure` exists (slice-combinator closures) but no scheme-step validation; the flat-closure / no-nested-scheme rule is unimplemented. |
-| REQ-3 (spec form + exec form) | NOT-STARTED | epic **#62** Stage 2. No scheme `spec fn` primitive and no exec mirror; the spec form is GROUNDED, the exec higher-order form is OQ-2 (least-confident, not grounded). |
+| REQ-3 (spec form + exec form — exec MONOMORPHIZED, RESOLVED) | NOT-STARTED | epic **#62** Stage 2 (design-refinement: exec form resolved as MONOMORPHIZED, OQ-2). No scheme `spec fn` primitive and no exec mirror yet. The SPEC scheme (higher-order `spec_fn`, the verified engine) is GROUNDED and unaffected; the EXEC fold is RESOLVED to inline the step into a generated `decreases`-bearing loop (the `conformance/sum.th` while-loop shape), not a higher-order exec function. Not implemented. |
 | REQ-4 (cage bridge — named structural quantification) | NOT-STARTED | epic **#62** Stage 2. `validator.rs` has no scheme-as-named-composition accept nor the nested-scheme-in-step reject; depends on the caged-flat walk (`.design/spec/spectherm-combinators.md` REQ-6, blocker #40) + Stage 1 REQ-7, both NOT-STARTED. `for_all` cage form GROUNDED (`0 errors`). |
 | REQ-5 (structural `decreases <value>` enforcement) | NOT-STARTED | epic **#62** Stage 2. `validator.rs` does not yet enforce a structural `dec` for a scheme definition. GROUNDED: every scheme verified with `decreases l`; a no-`decreases` fold is REJECTED by Verus (negative control). |
 | REQ-6 (scheme → Verus recursive `spec fn` + `decreases <value>`) | NOT-STARTED | epic **#62** Stage 2. `lower.rs` has no `lower_scheme`. GROUNDED (`fold`/`map`/`for_all` over `List`, `decreases l`, `*tail`, `Box::new`, `0 errors`). |
@@ -519,20 +525,21 @@ this doc before the builder runs (R-CHAR-3).
   so the validator can key the named-composition accept (REQ-4) on the scheme kind
   rather than a string-name match. Not a blocker; pinned for the builder.
 
-- **OQ-2 (least-confident: exec higher-order folds vs. monomorphized exec
-  lowering).** The SPEC scheme primitive — the verified engine — is fully GROUNDED
-  (the step is a Verus `spec_fn`). The EXEC scheme form (REQ-3) was NOT grounded:
-  Verus exec higher-order functions are heavier than spec `spec_fn`s, and the
-  corpus's only exec fold (`sum.th`) is a monomorphic while-loop, not a
-  closure-passing higher-order call. The open call: does an exec `fold`/`map` ship
-  as a true higher-order exec function (a closure passed at run time), or is the
-  step MONOMORPHIZED at lowering (the closure inlined into a generated loop, the
-  `sum.th` shape)? RECOMMEND monomorphizing the exec form (inline the step,
-  generate a loop — it matches the verified `sum.th` exec pattern and dodges Verus
-  exec-closure weight), while keeping the SPEC scheme higher-order (`spec_fn`). This
-  is the highest-judgment, least-confident part of the stage; the spec engine does
-  not depend on it. Not a blocker for the corpus (the orchestrator's goldens pin
-  the verified output).
+- **OQ-2 (exec higher-order folds vs. monomorphized exec lowering — RESOLVED;
+  #62 design-refinement).** *(This is the OQ the #62 pass refers to for the exec
+  form; in this doc it is OQ-2.)* **RESOLVED: the RUNNABLE (exec) fold is
+  MONOMORPHIZED — the lowering inlines the per-use step into a generated dedicated
+  loop**, NOT a true higher-order exec function. Rationale: the prover handles a
+  simple monomorphic loop trivially (the verified `conformance/sum.th` while-loop is
+  exactly this shape), whereas Verus exec higher-order functions (closures passed at
+  run time) are heavy. **The SPEC scheme stays higher-order / parametric** (the step
+  is a Verus `spec_fn` — the verified engine, fully GROUNDED) and is UNAFFECTED by
+  this decision; the spec primitive does not depend on the exec form. The two are
+  the §4.2 dual: prove once in the parametric spec scheme, run via the monomorphized
+  exec mirror (tied back by `result == fold(l, …)`). The builder lowers an exec
+  `fold`/`map` by inlining its step into a `decreases`-bearing generated loop with a
+  `forall_in`/`spec`-fold invariant (the `sum.th` pattern, REQ-6 lowering); the spec
+  scheme remains the higher-order `spec_fn`. Pinned as the REQ-3 exec form.
 
 - **OQ-3 (which fusion laws the v0.1 corpus exercises):** REQ-8 pins three fusion
   laws; only `map_preserves_len` was GROUNDED end-to-end. `fold∘map` and `map∘map`

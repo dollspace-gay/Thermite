@@ -39,6 +39,45 @@ or heap. **Every REQ below is NOT-STARTED**, tracked under epic **#62** (no
 separate blocker is filed — #62 owns this stage; gaps that need an independent
 blocker are noted with a fresh `#`).
 
+## The unifying principle — handled-or-loud (the COMPILE-TIME tooth)
+
+This stage instantiates, in DATA, the unifying law of the whole toolchain
+(crosslink **#62** design-refinement pass): **for every outcome a program MODELS,
+it must either (a) HANDLE it — a path whose correctness is *proven* (L3) or
+*checked* (L1) — or (b) SCREAM — an explicit, typed, greppable refusal. Silently
+doing the wrong thing is structurally impossible.** Verification's claim is not
+"nothing fails"; it is "every modeled outcome resolves to *correct* or *loud*, and
+the unmodeled remainder is enumerated in the manifest." The law has three teeth,
+escalating in loudness:
+
+- **Compile-time scream (loudest) — THIS stage.** The exhaustive `match` (REQ-5)
+  is the COMPILE-TIME enforcement: a missed variant/outcome is REJECTED by the
+  validator *before the program ships* (`SpecError::NonExhaustiveMatch`). Either
+  every variant is handled, or an explicit `Wildcard` catch-arm screams. There is
+  no third "fell through silently" path — a non-exhaustive `match` does not
+  compile. This is the tooth `01-adts.md` owns.
+- **Runtime scream (always-live) — the §6 ladder's L1 rung.** Every contract is
+  L1-checked in EVERY build profile (§6: "Violations detected at the call site, in
+  every build profile"); a violated `[ens]`/`[req]` aborts with the diagnostic
+  (exit 101), never returns a wrong value. An ADT-shaped contract (`well_formed`,
+  `is Variant`, a `match`-postcondition) rides this rung exactly as a scalar one,
+  so even a `#[slag]`/boundary ADT producer screams at runtime if it lies (§6 L1 +
+  `slag` flag). The data half this stage pins is therefore handled-or-loud at BOTH
+  compile time (exhaustiveness) and run time (the L1 contract).
+- **Kill scream (effect-confinement) — the #57 seccomp sandbox.** Code exceeding
+  its declared `fx` is `SIGSYS`-killed at the syscall boundary
+  (`.design/forge/runtime-sandbox.md`). The `Alloc` effect this stage first
+  exercises (REQ-3) participates: a constructing `fn` is confined to its declared
+  `alloc` allowlist.
+
+The fiat/verified line is a KNOB, not a fixed frontier: whatever outcome you NAME
+(model as a variant), you must handle-or-scream it; whatever you leave UNMODELED is
+the enumerated trusted remainder the manifest reports. An ADT models its outcome
+set as its variant set, so "exhaustive `match`" is precisely "every modeled
+outcome is handled-or-loud" made mechanical at validation time. This is why
+exhaustiveness is mandatory (REQ-5), not a convenience — it is the data-side
+enforcement of the toolchain's core safety law.
+
 ## Decision: the recursive-type representation — `Box<T>` on the `Alloc` effect
 
 A recursive `enum` needs indirection at the recursive occurrence (Rust/Verus
@@ -143,7 +182,7 @@ node `Box(Box<Type>)` or a `Generic { name: "Box", arg }` reusing the existing
   "validator rejects non-exhaustive matches" rule of the decided scope. Derived
   from §4.4 ("One desugaring, always explicit" — exhaustiveness is mandatory, not
   defaulted), §2.4 (crisp structured feedback), and `validator.rs`'s existing
-  `SpecError` discipline (`.design/spec/spectherm-combinators.md` REQ-4).
+  `SpecError` discipline (`.design/spec/spectherm-combinators.md` REQ-4). **This REQ IS the compile-time tooth of the handled-or-loud principle** (above): the validator rejecting a non-exhaustive `match` is exactly "every modeled outcome (variant) is handled, or an explicit `Wildcard` catch screams" enforced *before the program ships* — silently dropping an unhandled variant is structurally impossible. The runtime tooth (the always-live §6 L1 contract) and the kill tooth (#57 confinement of the `alloc` effect, REQ-3) are the escalating complements.
 
 - **REQ-6 (well-formed field / variant access + variant discrimination `is`):**
   The validator rejects access to a field a `struct`/struct-variant does not
@@ -215,6 +254,23 @@ node `Box(Box<Type>)` or a `Generic { name: "Box", arg }` reusing the existing
   `thermite_syntax::lexer::Span`. No `unwrap`/`expect`/`panic!` in production
   (R-CODE-2 / R-APG-1). Derived from R-CODE-2, the existing error-enum discipline
   in `validator.rs` / `lower.rs`.
+
+- **REQ-12 (handled-or-loud is mechanically enforced on every ADT outcome — the
+  compile-time tooth):** every outcome an ADT MODELS (each declared variant of an
+  `enum`; each arm of a returned sum type) is, at the point a `match` consumes it,
+  either HANDLED by an arm or covered by an explicit `Wildcard` catch that screams
+  — the validator REJECTS any other shape (`SpecError::NonExhaustiveMatch`, REQ-5)
+  *at validation, before the program ships*. There is no silent fall-through: a
+  non-exhaustive `match` does not compile. This is the COMPILE-TIME tooth of the
+  toolchain's unifying handled-or-loud law (the principle section above); the
+  runtime tooth is the always-live §6 L1 contract (a violated `[ens]`/`[req]`
+  aborts exit 101, never returns a wrong value — an ADT contract rides it exactly
+  as a scalar one), and the kill tooth is #57's seccomp confinement of the `alloc`
+  effect (REQ-3). Derived from §4.4 ("`match` … One desugaring, always explicit"),
+  §6 (the L1 rung active in every profile), the #57 sandbox
+  (`.design/forge/runtime-sandbox.md`), and the **#62** design-refinement
+  unifying-principle decision. REQ-12 is the named statement of the law; REQ-5 is
+  its concrete validator mechanism.
 
 ## Acceptance criteria
 
@@ -499,6 +555,7 @@ authored by the orchestrator from this doc before the builder runs (R-CHAR-3).
 | REQ-9 (enum → Verus enum; `match` → `match`; `is`) | NOT-STARTED | epic **#62** Stage 1. `lower.rs` has no `lower_enum`/`lower_is`. GROUNDED (`Shape`/`shape_area`/`is_circle`, `0 errors`). |
 | REQ-10 (recursive type → Verus recursive enum; `Box`; structural `decreases`) | NOT-STARTED | epic **#62** Stage 1. No recursive-type lowering; the structural `decreases l` over a `Box`-recursive ADT is GROUNDED (`List`/`Tree`, `0 errors`) but unimplemented. |
 | REQ-11 (`LowerError`/`SpecError` extension, no panics) | NOT-STARTED | epic **#62** Stage 1. The new reject/lower failure variants are not yet added to the existing error enums in `validator.rs`/`lower.rs`. |
+| REQ-12 (handled-or-loud — compile-time tooth via exhaustive `match`) | NOT-STARTED | epic **#62** Stage 1 (design-refinement principle). The exhaustiveness mechanism (REQ-5) it names is itself NOT-STARTED — `validator.rs` has no `NonExhaustiveMatch`/`UnreachableArm` reject. Named here as the data-side compile-time enforcement of the toolchain's unifying handled-or-loud law; the runtime tooth is the §6 L1 contract (shipped ladder) and the kill tooth is #57 (`.design/forge/runtime-sandbox.md`, SHIPPED). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

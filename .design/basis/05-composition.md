@@ -157,6 +157,46 @@ a stronger state than the per-part certs support (#60 verus-verified the min).
   itself)") + §8 (`grep slag` is the complete inventory). SHIPPED via #15
   (`Tcb::from_certificates`).
 
+### Resolution method for the extensions — TEST-FIRST against #52 (RESOLVED, #62 OQ-4)
+
+**RESOLVED (#62 design-refinement, OQ-4): the extension REQs are resolved
+TEST-FIRST at build time, NOT pre-judged code-vs-test.** The recursion-scheme
+fusion (REQ-5), the invariant-conjunction (REQ-6), and the deep-call-graph
+assurance aggregation (REQ-7 / the OQ-3 deep-graph question) all hinge on the SAME
+empirical unknown: does the EXISTING #52 transitive-weaving machinery
+(`reachable_fn_deps in check.rs` → `closure::reachable_in_file_fns`, the cycle-safe
+source-order DFS already shipped for boundary composition) ALREADY pull in the
+`spec fn`/`struct`/`enum`/scheme definitions an ADT-/collection-/scheme-valued
+contract transitively references, and does it ALREADY accumulate `ProjectScope`
+crossings through a deep closure that passes through the effect stdlib? The
+resolution PROCEDURE the builder follows, per extension REQ:
+
+1. **Probe first.** FIRST write a conformance probe (a `conformance/composition/`
+   fixture exercising the capability — an ADT-valued contract composed through a
+   caller, a fused `fold∘map`, a `Vec<Account>` element-invariant conjunction, a
+   deep pipeline through a Stage-3 boundary) against the EXISTING #52
+   `reachable_fn_deps`/`closure.rs` machinery, with the expected cert/manifest
+   hand-derived (R-CHAR-3).
+2. **Pass → SHIPPED-via-existing-machinery.** If the probe passes, the capability
+   was ALREADY present in #52's transitive weave — the REQ is discharged by a
+   CONFORMANCE TEST, with NO new production code (the test cites the #52 symbol that
+   covers it). Per R-DEFER-2 this becomes a SHIPPED row whose evidence is the
+   passing conformance test + the existing #52 consumer; per R-HONEST-1 it is NOT
+   reframed as deferred — it is shipped by the existing mechanism.
+3. **Fail → build the extension.** If the probe fails, THEN (and only then) build
+   the minimal extension to `reachable_fn_deps` / `item_subprogram` /
+   `AssuranceManifest::aggregate` that makes it pass, in the owning crate, tests +
+   production same commit (R-DEFER-1/6).
+
+This pins the resolution METHOD, deliberately NOT the outcome: OQ-1/OQ-2/OQ-3 each
+flag that #52's machinery MIGHT already cover the case (the DFS is transitive, and
+`item_subprogram` may already weave all in-file `spec fn` defs), in which case the
+extension is a test not a code change. The builder MEASURES this against the
+Stage-1/2/4 corpus before treating any extension REQ as a code gap — over-claiming
+a code gap when #52 already covers it would mislead (R-HONEST-3 honest underclaim).
+The REQ rows stay NOT-STARTED until the probe is RUN (the method is decided, the
+empirical result is the builder's to obtain).
+
 ### Extensions the basis needs (NOT-STARTED — the concrete gaps)
 
 - **REQ-4 (compose ADT/collection invariants across the basis vocabulary —
@@ -395,33 +435,40 @@ assumed contract composes like any other, and the discharge is local + sound.
 
 ## Open questions
 
-- **OQ-1 (least confident — REQ-4/REQ-5 real gap vs already-covered by #52):**
-  the #52 weaving (`reachable_fn_deps`) already pulls in transitively-reachable
-  in-file `fn`s and `spec fn`s. It is UNCLEAR whether it ALSO weaves the `struct`/
-  `enum`/`spec fn` definitions an ADT-VALUED contract references but does not
-  CALL (e.g. `g`'s `ens` mentions `result.well_formed()` — is `well_formed`'s def
-  woven?). If `item_subprogram` already includes all `spec fn` defs (the
-  `01-adts.md` REQ-7 named-composition path), REQ-4 may largely reduce to a
-  conformance test rather than a code change. The builder/critic must measure this
-  against the Stage-1 ADT corpus before treating REQ-4 as a code gap — over-
-  claiming it NOT-STARTED when #52 already covers it would mislead. This is the
-  REQ I am LEAST confident is a real extension.
-- **OQ-2 (REQ-5 fusion — is `fold∘map = fold` a LOWERING concern or purely a
-  proof the agent writes?):** fusion may be a property the agent proves with a
-  `proof fn` (no toolchain change — composition is just verus reasoning), OR it
-  may need cache/weaving support so the scheme's termination proof is reused. The
-  scope boundary depends on Stage 2's (`02-recursion-schemes.md`) chosen scheme
-  representation, which is in parallel. Pinned for the Stage-2 author + the
-  builder; do not implement REQ-5 before Stage 2 lands.
+- **OQ-1 (REQ-4 ADT-valued contract weave — real gap vs already-covered by #52;
+  RESOLVED-METHOD, #62 OQ-4).** #52's `reachable_fn_deps` already pulls in
+  transitively-reachable in-file `fn`s and `spec fn`s; it is UNCLEAR whether it ALSO
+  weaves the `struct`/`enum`/`spec fn` defs an ADT-VALUED contract REFERENCES but
+  does not CALL (e.g. `g`'s `ens` mentions `result.well_formed()` — is
+  `well_formed`'s def woven?). **RESOLVED-METHOD:** this is settled TEST-FIRST per
+  the [resolution-method section](#resolution-method-for-the-extensions--test-first-against-52-resolved-62-oq-4)
+  — write the ADT-valued-contract conformance probe against the existing #52
+  machinery; if it passes, REQ-4 is SHIPPED-via-existing-machinery (a conformance
+  test, no new code); if it fails, build the minimal `reachable_fn_deps` extension.
+  Do NOT pre-judge it a code gap. This is the REQ I am LEAST confident is a real
+  code extension — exactly why the method is probe-first.
+- **OQ-2 (REQ-5 fusion — `fold∘map = fold` a LOWERING concern or a proof the agent
+  writes?; RESOLVED-METHOD, #62 OQ-4).** Fusion may be a property the agent proves
+  with a `proof fn` (no toolchain change — composition is just verus reasoning), OR
+  it may need cache/weaving support so the scheme's termination proof is reused.
+  **RESOLVED-METHOD:** settled TEST-FIRST per the
+  [resolution-method section](#resolution-method-for-the-extensions--test-first-against-52-resolved-62-oq-4)
+  — write a fused-pipeline probe against the existing #52 weave once Stage 2's
+  scheme representation lands; pass → SHIPPED-via-existing-machinery (conformance
+  test); fail → build the cache/weaving extension. Do not implement REQ-5 before
+  Stage 2 lands; the probe depends on the Stage-2 scheme form.
 - **OQ-3 (REQ-7 deep-graph scope accumulation — does `closure.rs` already reach
-  transitively?):** `closure::reachable_in_file_fns` reuses the `CallGraph` DFS,
-  which IS transitive, so `ProjectScope` accumulation across a deep closure may
-  already be correct (#52/#17 proved the transitive boundary-caller case `h ←
-  g ← ext_id`). REQ-7 may therefore be a CONFORMANCE gap (a deep-pipeline-through-
-  the-effect-stdlib fixture) rather than a code gap. The genuine unknown is the
-  Stage-3 effect-stdlib boundary (`03-effect-stdlib.md`, in parallel): whether a
-  Stage-3 primitive is modeled as a `#[boundary]`/`#[slag]` fn (then #52/#15
-  already aggregate it) or a new construct. Confirm against Stage 3.
+  transitively?; RESOLVED-METHOD, #62 OQ-4).** `closure::reachable_in_file_fns`
+  reuses the `CallGraph` DFS, which IS transitive, so `ProjectScope` accumulation
+  across a deep closure may already be correct (#52/#17 proved the transitive
+  boundary-caller case `h ← g ← ext_id`), making REQ-7 a CONFORMANCE gap not a code
+  gap. Stage 3 (`03-effect-stdlib.md`) confirms a primitive IS modeled as a
+  `#[boundary]` fn (then #52/#15 already aggregate it). **RESOLVED-METHOD:** settled
+  TEST-FIRST per the
+  [resolution-method section](#resolution-method-for-the-extensions--test-first-against-52-resolved-62-oq-4)
+  — write a deep-pipeline-through-the-effect-stdlib probe; pass →
+  SHIPPED-via-existing-machinery (conformance test); fail → extend the aggregate's
+  scope accumulation. This is the deep-call-graph aggregation OQ the #62 pass names.
 - **OQ-4 (effect-row composition through the chain):** §4.1 — "a caller's row
   must subsume every callee's row," checked at compile time by `check_effects`
   (verified by #60's `subsumes` core). The composition law's effect-half is the
@@ -439,7 +486,7 @@ assumed contract composes like any other, and the discharge is local + sound.
 | REQ-1 (CONTRACT composition — `g∘f` through the contract) | SHIPPED | `lower_external_body_fn in thermite-lower/src/lower.rs` emits a boundary/slag callee as a `#[verifier::external_body]` assumable signature (req→requires, ens→ensures, no checked body); `item_subprogram in forge/src/check.rs` weaves the transitively-reachable callees (via `reachable_fn_deps` → `closure::reachable_in_file_fns`) so verus resolves the call and the caller proves THROUGH the contract. Non-test consumer: `check::check_file_with_options` drives `item_subprogram` per fn. Soundness: a caller must discharge `f`'s `req` + prove its own `ens` (#52). GROUNDED `verus 0.2026.05.24`: the multi-step chain `h(g(f(x)))` verifies `4 verified, 0 errors` (default, `f` external_body) / `5 verified, 0 errors` (`--no-cheating`, `f` proved); over-claim → `3 verified, 1 errors`, req-violation → `2 verified, 1 errors`. Verified by `composition_conformance::direct_boundary_caller_verifies_through_the_contract` (#52). |
 | REQ-2 (ASSURANCE aggregation — project = min over parts; scope end_to_end iff all) | SHIPPED | `AssuranceManifest::aggregate in forge/src/manifest.rs` computes `ProjectAssurance` = MIN level over functions (else `Failed`) + `ProjectScope` = END-TO-END iff every part is, else TO-THE-BOUNDARY listing crossings. The min/subset core is verus-verified (#60: `thermite-verified`, `verus --no-cheating` `8 verified, 0 errors`; a broken impl → `7 verified, 1 errors`, non-vacuous). Non-test consumer: `audit::AuditManifest::from_certificates` (`forge/src/audit.rs`) embeds it; `cli::run_audit` emits it. Verified by `audit_conformance.rs::corpus_empty_tcb` (L3/end-to-end headline) + #60 `tests/verus_verify.rs`. |
 | REQ-3 (TCB aggregation — whole = ∪ parts' boundary/slag ∪ toolchain) | SHIPPED | `Tcb::from_certificates in forge/src/audit.rs` enumerates every `cert.slag` → `SlagBlock` (reason/owner/review) ∪ every `cert.boundary` → `BoundaryContract` (target + req/ens/fx) ∪ `Toolchain` (always present) — nothing fiat-trusted omitted (R-DEFER-9). Non-test consumer: `AuditManifest::from_certificates` → `cli::run_audit`. Verified by `audit_conformance.rs::slag_boundary_tcb` (both slag + boundary enumerated) + `corpus_empty_tcb` (empty-but-toolchain pure state) (#15). |
-| REQ-4 (compose ADT/collection invariants — contract composition reaches Stage 1–4) | NOT-STARTED | epic **#62** Stage 5. #52 composes SCALAR/boundary contracts; whether `reachable_fn_deps in check.rs` weaves the `struct`/`enum`/`spec fn` invariant defs an ADT-valued contract references (e.g. `result.well_formed()`) is unverified end-to-end and depends on Stage 1 (`01-adts.md`, NOT-STARTED). May partially reduce to a conformance test if #52 already weaves all `spec fn` defs (OQ-1, least confident). |
-| REQ-5 (compose recursion-scheme contracts — fusion / proven scheme verifies instances) | NOT-STARTED | epic **#62** Stage 5. No scheme representation exists yet — Stage 2 (`02-recursion-schemes.md`) is in parallel. Whether the §5.3 cache + `item_subprogram` reuse a scheme's `decreases`-termination proof across instantiations (`fold∘map = fold`) is unresolved (OQ-2); blocked on Stage 2 landing. |
-| REQ-6 (compose nested invariants — conjunction for nested ADTs/collections) | NOT-STARTED | epic **#62** Stage 5. No lowering/validator support for threading a container-element invariant (a `Vec<Account>` carrying conjoined `well_formed()`) as a composed `spec fn`. Depends on Stage 1 (`01-adts.md` REQ-8) + Stage 4 (`04-collections.md`), both NOT-STARTED. |
-| REQ-7 (aggregate assurance across a DEEP call graph through the effect stdlib) | NOT-STARTED | epic **#62** Stage 5. #15's aggregate is proven on a SHALLOW corpus (direct boundary callers); whether `ProjectScope` accumulates crossings through a deep transitive closure passing through Stage-3 effect primitives is unverified — depends on Stage 3 (`03-effect-stdlib.md`, in parallel) modeling primitives as `#[boundary]`/`#[slag]` (then #52/#15 already aggregate them, OQ-3). |
+| REQ-4 (compose ADT/collection invariants — contract composition reaches Stage 1–4) | NOT-STARTED | epic **#62** Stage 5. #52 composes SCALAR/boundary contracts; whether `reachable_fn_deps in check.rs` weaves the `struct`/`enum`/`spec fn` invariant defs an ADT-valued contract references (e.g. `result.well_formed()`) is unverified end-to-end and depends on Stage 1 (`01-adts.md`, NOT-STARTED). May partially reduce to a conformance test if #52 already weaves all `spec fn` defs (OQ-1, least confident). RESOLUTION-METHOD (#62 OQ-4): settled TEST-FIRST — a conformance probe against the existing #52 `reachable_fn_deps`/`closure.rs` machinery; pass → SHIPPED-via-existing-machinery (a conformance test, no new code), fail → build the minimal extension; not pre-judged code-vs-test. |
+| REQ-5 (compose recursion-scheme contracts — fusion / proven scheme verifies instances) | NOT-STARTED | epic **#62** Stage 5. No scheme representation exists yet — Stage 2 (`02-recursion-schemes.md`) is in parallel. Whether the §5.3 cache + `item_subprogram` reuse a scheme's `decreases`-termination proof across instantiations (`fold∘map = fold`) is unresolved (OQ-2); blocked on Stage 2 landing. RESOLUTION-METHOD (#62 OQ-4): settled TEST-FIRST — a conformance probe against the existing #52 `reachable_fn_deps`/`closure.rs` machinery; pass → SHIPPED-via-existing-machinery (a conformance test, no new code), fail → build the minimal extension; not pre-judged code-vs-test. |
+| REQ-6 (compose nested invariants — conjunction for nested ADTs/collections) | NOT-STARTED | epic **#62** Stage 5. No lowering/validator support for threading a container-element invariant (a `Vec<Account>` carrying conjoined `well_formed()`) as a composed `spec fn`. Depends on Stage 1 (`01-adts.md` REQ-8) + Stage 4 (`04-collections.md`), both NOT-STARTED. RESOLUTION-METHOD (#62 OQ-4): settled TEST-FIRST — a conformance probe against the existing #52 `reachable_fn_deps`/`closure.rs` machinery; pass → SHIPPED-via-existing-machinery (a conformance test, no new code), fail → build the minimal extension; not pre-judged code-vs-test. |
+| REQ-7 (aggregate assurance across a DEEP call graph through the effect stdlib) | NOT-STARTED | epic **#62** Stage 5. #15's aggregate is proven on a SHALLOW corpus (direct boundary callers); whether `ProjectScope` accumulates crossings through a deep transitive closure passing through Stage-3 effect primitives is unverified — depends on Stage 3 (`03-effect-stdlib.md`, in parallel) modeling primitives as `#[boundary]`/`#[slag]` (then #52/#15 already aggregate them, OQ-3). RESOLUTION-METHOD (#62 OQ-4): settled TEST-FIRST — a conformance probe against the existing #52 `reachable_fn_deps`/`closure.rs` machinery; pass → SHIPPED-via-existing-machinery (a conformance test, no new code), fail → build the minimal extension; not pre-judged code-vs-test. |

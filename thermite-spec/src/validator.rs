@@ -17,20 +17,27 @@
 //! | REQ-5 (bounded recursion — no overflow) | SHIPPED | a single `MAX_RECURSION_DEPTH` guard wraps EVERY recursive descent (`walk_expr`, closure bodies, match arms, index args, if/block tails) via `descend`; deep input yields `ExpressionTooDeep`, never an overflow (`validate_never_panics`). |
 //! | REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | SHIPPED | `check_arg_kind`'s `Pred` arm sets `Validator::in_combinator_closure` for the whole closure-body descent (kept set through all nested sub-expressions/closures); while set, `walk_call` rejects any callee resolving via `combinators::lookup` with `SpecError::NestedCombinator`, while a declared `spec fn` call stays accepted. Consumer: `validate` → `walk_clause`/`walk_block` reach `walk_call`. Verification: `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; the flat corpus closures stay `Ok` (`tests/combinators_conformance.rs`). |
 //!
-//! ## Basis Stage 1a — the ADT validator GATE (`.design/basis/01-adts.md`)
+//! ## Basis Stage 1b — the REAL ADT validator (`.design/basis/01-adts.md`)
 //!
-//! Stage 1a parses the ADT surface but does NOT yet validate it (REQ-5
-//! exhaustiveness + REQ-6 well-formedness land in Stage 1b). The validator is
-//! the honest 1a gate: it SCREAMS, not silently mis-processes.
+//! Stage 1b REPLACES the 1a `UnsupportedAdt` gate with real exhaustiveness +
+//! well-formedness checking. The 3 ADT corpus programs validate clean; crafted
+//! negatives reject with the precise structured error. Verified against the
+//! oracle `conformance/adt-validate/cases.json` (R-CHAR-3) via
+//! `tests/adt_validate.rs`. Lowering stays gated (Stage 1c, thermite-lower).
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | 1a GATE (`SpecError::UnsupportedAdt`) | SHIPPED | `SpecError::UnsupportedAdt { construct, span }`; returned from `run`'s `Item::Struct`/`Item::Enum` arms and `walk_expr_inner`'s `Expr::StructLit`/`Expr::Is`/`Expr::Deref` arms. Consumer: `validate` (the boundary API `forge check` calls before lowering) — every ADT program PARSES then dies at this gate with a structured "ADTs not yet supported in the validator" error (the handled-or-loud scream). Stage 1b REPLACES these arms with real variant-set collection + exhaustiveness + well-formedness. |
+//! | REQ-5 (exhaustiveness — `NonExhaustiveMatch`/`UnreachableArm`) | SHIPPED | declaration pre-pass `Validator::new` collects `enums` (name → variant order) + `variant_to_enum`; `check_match_exhaustiveness` (reached from both the caged `walk_expr_inner` `Match` arm AND the exec-body `scan_expr_for_loops` `Match` arm) infers the matched enum from arm patterns (`variant_pattern_name`), then emits `NonExhaustiveMatch { missing }` (declaration order), `UnreachableArm` (variant twice / arm after wildcard), `UnknownVariant` (undeclared variant in a pattern). Slice/`Option` matches are inert (no regression). Consumer: `validate`. Verification: `tests/adt_validate.rs` `non_exhaustive_match` → `missing:[Rect]`; `unreachable_redundant_arm` → `UnreachableArm`; `unknown_variant_pattern` → `UnknownVariant{Square}`; `shape`/`list_sum` accept. |
+//! | REQ-6 (well-formed field/variant access + `is`) | SHIPPED | pre-pass collects `struct_fields` (every `struct`/struct-variant field). `check_field` (on `Expr::Field` + `Expr::StructLit` fields, both walks) → `UnknownField` for an undeclared field (inert when no struct declared). `check_variant_ref` (on `Expr::Is`, both walks) → `UnknownVariant` for an undeclared variant. Consumer: `validate`. Verification: `unknown_field` → `UnknownField{bogus}`; `unknown_variant_is` → `UnknownVariant{Triangle}`; `bank_account`/`shape` accept. |
+//! | REQ-7 (ADT predicates fit the cage — flat built-ins) | SHIPPED | `Expr::Match`/`Field`/`Is`/`Deref` are FLAT built-ins in `walk_expr_inner` — they recurse operands without setting `in_combinator_closure` and without resolving as combinators, so they are admitted unchanged inside a combinator predicate-closure body (the existing caged-flat walk). No recursive scheme exists yet to nest (forward-declared; schemes are Stage 2). Verification: the combinator cage tests (`tests/combinators_conformance.rs`) stay green. |
+//! | 1a GATE (`SpecError::UnsupportedAdt`) | RETIRED for well-formed ADTs | the variant is RETAINED (downstream `forge`/`thermite-lower` reference it by name in comments and it screams for a future un-checkable ADT form) but has NO live emitter in 1b: `run`'s `Item::Struct` now cages the `inv` clause, `Item::Enum` is a no-op, and `walk_expr_inner`'s `Expr::StructLit`/`Expr::Is`/`Expr::Deref` arms validate-or-accept. A well-formed ADT no longer dies at the gate. |
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use thermite_syntax::{Block, Clause, Expr, IndexArg, Item, MatchArm, Program, Span, Stmt};
+use thermite_syntax::{
+    Block, Clause, Expr, IndexArg, Item, MatchArm, Pattern, Program, Span, Stmt, VariantShape,
+};
 
 use crate::combinators::{self, ArgKind, CombinatorSig};
 
@@ -110,14 +117,37 @@ pub enum SpecError {
     /// An ADT surface construct (`struct`/`enum` item, struct-literal
     /// construction, `is` discrimination, or a `Box` deref) reached the
     /// validator before the validator knows how to check it
-    /// (`.design/basis/01-adts.md`). Basis Stage 1a parses the ADT surface but
-    /// does NOT yet validate it: this is the honest "handled-or-loud" SCREAM
-    /// (the unifying principle of `01-adts.md`) — an ADT program PARSES, then
-    /// gets a clean, structured refusal at validation rather than being silently
-    /// mis-processed downstream. Stage 1b REPLACES this gate with real
-    /// exhaustiveness (REQ-5) + well-formedness (REQ-6) checking. `construct`
-    /// names the unsupported surface form for a crisp diagnostic (§2.4).
+    /// (`.design/basis/01-adts.md`). RETAINED from Stage 1a as the honest
+    /// "handled-or-loud" SCREAM for ADT forms the validator still does not check
+    /// — but Stage 1b NO LONGER fires it for a WELL-FORMED ADT: `struct`/`enum`
+    /// items, `Expr::StructLit`, `Expr::Is`, and `Expr::Deref` are now
+    /// validated (exhaustiveness REQ-5, well-formedness REQ-6) and ACCEPTED when
+    /// well-formed. The variant stays in the enum so a future un-checkable ADT
+    /// form has a structured refusal rather than a silent pass (the variant has
+    /// no live emitter in 1b; `construct` names the unsupported surface form for
+    /// a crisp diagnostic, §2.4).
     UnsupportedAdt { construct: &'static str, span: Span },
+    /// A `match` over a DECLARED `enum` value whose arms do not cover every
+    /// declared variant and is not closed by a `Wildcard` arm
+    /// (`.design/basis/01-adts.md` REQ-5). `missing` is the set of uncovered
+    /// variant names, in the enum's declaration order (deterministic, R-CODE-5).
+    /// This is the COMPILE-TIME tooth of the handled-or-loud law (REQ-12): a
+    /// modeled outcome (variant) is left neither handled nor explicitly screamed
+    /// over — the validator rejects it BEFORE the program ships.
+    NonExhaustiveMatch { missing: Vec<String>, span: Span },
+    /// A `match` arm that can never be reached (`.design/basis/01-adts.md`
+    /// REQ-5): a variant matched twice (the second arm is dead), or any arm
+    /// after a catch-all `Wildcard` (the wildcard already absorbed it). A
+    /// redundant arm is a program error, not a no-op.
+    UnreachableArm { span: Span },
+    /// Field access (`Expr::Field` `a.balance`, or a struct-literal field) to a
+    /// name no declared `struct`/struct-variant declares
+    /// (`.design/basis/01-adts.md` REQ-6). `name` is the unknown field.
+    UnknownField { name: String, span: Span },
+    /// A variant a declared `enum` does not declare, in a `match` pattern, an
+    /// `is` discrimination (`r is Triangle`), or a struct-variant construction
+    /// (`.design/basis/01-adts.md` REQ-6). `name` is the unknown variant.
+    UnknownVariant { name: String, span: Span },
 }
 
 impl SpecError {
@@ -130,7 +160,11 @@ impl SpecError {
             | SpecError::ForbiddenCall { span, .. }
             | SpecError::NestedCombinator { span, .. }
             | SpecError::ExpressionTooDeep { span, .. }
-            | SpecError::UnsupportedAdt { span, .. } => *span,
+            | SpecError::UnsupportedAdt { span, .. }
+            | SpecError::NonExhaustiveMatch { span, .. }
+            | SpecError::UnreachableArm { span, .. }
+            | SpecError::UnknownField { span, .. }
+            | SpecError::UnknownVariant { span, .. } => *span,
         }
     }
 }
@@ -176,9 +210,27 @@ impl fmt::Display for SpecError {
             ),
             SpecError::UnsupportedAdt { construct, .. } => write!(
                 f,
-                "ADTs are not yet supported in the validator: `{construct}` parses but is not \
-                 validated in basis Stage 1a (`.design/basis/01-adts.md`); the exhaustiveness \
-                 and well-formedness checks land in Stage 1b"
+                "ADT construct `{construct}` is not yet checkable by the validator \
+                 (`.design/basis/01-adts.md`)"
+            ),
+            SpecError::NonExhaustiveMatch { missing, .. } => write!(
+                f,
+                "non-exhaustive `match`: the variant(s) {missing:?} are neither handled by an arm \
+                 nor covered by a `_` wildcard — every modeled outcome must be handled or an \
+                 explicit catch must scream (REQ-5, §4.4)"
+            ),
+            SpecError::UnreachableArm { .. } => write!(
+                f,
+                "unreachable `match` arm: a variant matched twice, or an arm after a `_` wildcard \
+                 that already absorbs it (REQ-5)"
+            ),
+            SpecError::UnknownField { name, .. } => write!(
+                f,
+                "`{name}` is not a field of any declared `struct` or struct-variant (REQ-6)"
+            ),
+            SpecError::UnknownVariant { name, .. } => write!(
+                f,
+                "`{name}` is not a declared variant of its `enum` (REQ-6)"
             ),
         }
     }
@@ -209,6 +261,22 @@ pub fn validate(program: &Program) -> Result<(), Vec<SpecError>> {
 /// the accumulated diagnostics, and the "caged-flat" mode flag (REQ-6).
 struct Validator {
     spec_fns: HashSet<String>,
+    /// REQ-5: each declared `enum`'s variant names, in declaration order
+    /// (collected from `Item::Enum` in the pre-pass). Keyed by enum name. The
+    /// exhaustiveness check reads this to compute the missing-variant set; the
+    /// declaration order makes that set deterministic (R-CODE-5).
+    enums: HashMap<String, Vec<String>>,
+    /// REQ-5/REQ-6: reverse index variant-name → owning-enum-name, built from
+    /// `enums`. A `match` arm / `is` test / pattern naming a variant resolves
+    /// the matched enum through this map; a name absent here (in a context
+    /// already identified as a declared-enum match/`is`) is `UnknownVariant`.
+    variant_to_enum: HashMap<String, String>,
+    /// REQ-6: every field name declared by any `struct` or struct-variant
+    /// (`VariantShape::Struct`). The AST is untyped (OQ-3: no type resolution),
+    /// so field well-formedness is the shallow, mechanically-decidable check the
+    /// design admits — an accessed field must be declared SOMEWHERE; a name no
+    /// struct/struct-variant declares is `UnknownField`.
+    struct_fields: HashSet<String>,
     depth: usize,
     errors: Vec<SpecError>,
     /// REQ-6 flat-closure-fragment mode. Set ONCE on entry to a combinator's
@@ -233,14 +301,56 @@ impl Validator {
                 Item::SpecFn(s) => Some(s.name.clone()),
                 Item::Fn(_) => None,
                 // A `struct`/`enum` item declares no `spec fn` name
-                // (`.design/basis/01-adts.md`) — neutral value `None`. The
-                // item itself is gated at `run` (the `UnsupportedAdt` scream);
-                // here it simply contributes no callable spec-fn name.
+                // (`.design/basis/01-adts.md`). The ADT declarations are
+                // collected separately below.
                 Item::Struct(_) | Item::Enum(_) => None,
             })
             .collect();
+
+        // The ADT DECLARATION PRE-PASS (`.design/basis/01-adts.md` REQ-5/REQ-6;
+        // mirrors the spec-fn-name collection above). A program references types
+        // across items in any order (`fn f(s: Shape)` may precede `enum Shape`),
+        // so the body/contract walk must see EVERY declared type before walking
+        // any body — order-independent, like the spec-fn resolution.
+        let mut enums: HashMap<String, Vec<String>> = HashMap::new();
+        let mut variant_to_enum: HashMap<String, String> = HashMap::new();
+        let mut struct_fields: HashSet<String> = HashSet::new();
+        for item in &program.items {
+            match item {
+                Item::Enum(e) => {
+                    let mut variant_names = Vec::with_capacity(e.variants.len());
+                    for variant in &e.variants {
+                        variant_names.push(variant.name.clone());
+                        // Last writer wins on a duplicated variant name across
+                        // enums; the validator's job here is well-formedness of
+                        // ACCESS, not enum-declaration uniqueness (a separate
+                        // concern not in this REQ). A struct-shaped variant's
+                        // fields join the struct field set (REQ-6: `Field`
+                        // access is checked against struct AND struct-variant
+                        // fields).
+                        variant_to_enum.insert(variant.name.clone(), e.name.clone());
+                        if let VariantShape::Struct(fields) = &variant.shape {
+                            for field in fields {
+                                struct_fields.insert(field.name.clone());
+                            }
+                        }
+                    }
+                    enums.insert(e.name.clone(), variant_names);
+                }
+                Item::Struct(s) => {
+                    for field in &s.fields {
+                        struct_fields.insert(field.name.clone());
+                    }
+                }
+                Item::Fn(_) | Item::SpecFn(_) => {}
+            }
+        }
+
         Validator {
             spec_fns,
+            enums,
+            variant_to_enum,
+            struct_fields,
             depth: 0,
             errors: Vec::new(),
             in_combinator_closure: false,
@@ -268,7 +378,7 @@ impl Validator {
                     // are still fully caged. An in-language fn's body is scanned
                     // structurally as before.
                     if let Some(body) = &f.body {
-                        self.scan_block_for_loops(body);
+                        self.scan_block_for_loops(body, f.span);
                     }
                 }
                 Item::SpecFn(s) => {
@@ -277,26 +387,22 @@ impl Validator {
                     self.walk_clause(&s.dec);
                     self.walk_block(&s.body, s.span);
                 }
-                // Basis Stage 1a: a `struct`/`enum` item PARSES but the
-                // validator does not yet check it. This is the honest
-                // handled-or-loud SCREAM (`.design/basis/01-adts.md` — REQ-5/
-                // REQ-6 land in 1b): the validator GATES every ADT program here
-                // with a structured `UnsupportedAdt` rather than letting an
-                // unvalidated ADT flow into lowering. 1b REPLACES these arms
-                // with real variant-set collection + exhaustiveness +
-                // well-formedness checking.
+                // Basis Stage 1b (`.design/basis/01-adts.md` REQ-5/REQ-6): the
+                // `struct`/`enum` declarations were collected in the pre-pass
+                // (`Validator::new`). A `struct`'s type-invariant `inv` clause is
+                // a CONTRACT POSITION (REQ-1: Verus enforces it at construction /
+                // use) — it is fully caged here exactly like a `req`/`ens`,
+                // including its `Field` access well-formedness (REQ-6). An `enum`
+                // item carries no contract position of its own; its variant set
+                // (collected above) drives the exhaustiveness/`is` checks at the
+                // `match`/`is` sites. The 1a `UnsupportedAdt` gate is GONE: a
+                // well-formed ADT now validates.
                 Item::Struct(s) => {
-                    self.errors.push(SpecError::UnsupportedAdt {
-                        construct: "struct item",
-                        span: s.span,
-                    });
+                    if let Some(inv) = &s.inv {
+                        self.walk_clause(inv);
+                    }
                 }
-                Item::Enum(e) => {
-                    self.errors.push(SpecError::UnsupportedAdt {
-                        construct: "enum item",
-                        span: e.span,
-                    });
-                }
+                Item::Enum(_) => {}
             }
         }
     }
@@ -334,12 +440,12 @@ impl Validator {
     /// `walk_block` (used for `spec fn` bodies and caged sub-expressions): same
     /// shape walk, but it cage-checks NOTHING except the loop contract clauses it
     /// discovers.
-    fn scan_block_for_loops(&mut self, block: &Block) {
+    fn scan_block_for_loops(&mut self, block: &Block, span: Span) {
         for stmt in &block.stmts {
-            self.scan_stmt_for_loops(stmt);
+            self.scan_stmt_for_loops(stmt, span);
         }
         if let Some(tail) = &block.tail {
-            self.scan_expr_for_loops(tail);
+            self.scan_expr_for_loops(tail, span);
         }
     }
 
@@ -348,7 +454,7 @@ impl Validator {
     /// descending through control flow to find deeper loops. Surface expressions
     /// are descended into ONLY to reach nested loops (e.g. a `loop` inside an
     /// `if` block), never cage-checked.
-    fn scan_stmt_for_loops(&mut self, stmt: &Stmt) {
+    fn scan_stmt_for_loops(&mut self, stmt: &Stmt, span: Span) {
         match stmt {
             Stmt::Loop(loop_node) => {
                 // The loop's `invs`/`dec` ARE contract positions — cage them.
@@ -358,90 +464,106 @@ impl Validator {
                 self.walk_clause(&loop_node.dec);
                 // The loop BODY is still executable surface code: scan it
                 // structurally for further nested loops, do not cage it.
-                self.scan_block_for_loops(&loop_node.body);
+                self.scan_block_for_loops(&loop_node.body, loop_node.span);
             }
-            Stmt::Let { init, .. } => self.scan_expr_for_loops(init),
+            Stmt::Let { init, .. } => self.scan_expr_for_loops(init, span),
             Stmt::Assign { target, value } => {
-                self.scan_expr_for_loops(target);
-                self.scan_expr_for_loops(value);
+                self.scan_expr_for_loops(target, span);
+                self.scan_expr_for_loops(value, span);
             }
-            Stmt::Return(Some(e)) | Stmt::Expr(e) => self.scan_expr_for_loops(e),
+            Stmt::Return(Some(e)) | Stmt::Expr(e) => self.scan_expr_for_loops(e, span),
             Stmt::Return(None) => {}
             Stmt::If { cond, then, else_ } => {
-                self.scan_expr_for_loops(cond);
-                self.scan_block_for_loops(then);
+                self.scan_expr_for_loops(cond, span);
+                self.scan_block_for_loops(then, span);
                 if let Some(else_block) = else_ {
-                    self.scan_block_for_loops(else_block);
+                    self.scan_block_for_loops(else_block, span);
                 }
             }
         }
     }
 
-    /// STRUCTURAL traversal of a `fn`-body expression: descend ONLY into the
-    /// sub-expressions/blocks that can themselves contain a nested `loop` (an
-    /// `if`/`match` arm body), so a loop nested inside an expression is still
-    /// found and its contract caged. The expression itself is surface code and
-    /// is NOT cage-checked.
-    fn scan_expr_for_loops(&mut self, expr: &Expr) {
+    /// STRUCTURAL traversal of a `fn`-body expression. It descends to find
+    /// nested `loop`s (caging each loop's `invs`/`dec`) AND — Basis Stage 1b —
+    /// applies the ADT WELL-FORMEDNESS checks (REQ-5 exhaustiveness, REQ-6
+    /// field/variant access) to every ADT node, because the validator rejecting
+    /// a non-exhaustive `match` is the COMPILE-TIME tooth (REQ-12) and a `match`
+    /// over an enum lives in `fn`-body (exec) position, not a contract position.
+    /// These ADT checks are NOT cage checks: the body's combinator/spec-fn
+    /// resolution is still NOT performed here (a body `Some(mid)` call stays
+    /// surface code). The two concerns are orthogonal — the cage gates contract
+    /// positions; the ADT well-formedness gates every modeled-outcome site.
+    /// `span` is the enclosing `fn`/loop span (the AST carries no per-`Expr`
+    /// span). When no ADT is declared, every ADT check is inert, so the existing
+    /// non-ADT corpus body walk (`binary_search.th`) is UNCHANGED.
+    fn scan_expr_for_loops(&mut self, expr: &Expr, span: Span) {
         match expr {
             Expr::If { cond, then, else_ } => {
-                self.scan_expr_for_loops(cond);
-                self.scan_block_for_loops(then);
-                self.scan_block_for_loops(else_);
+                self.scan_expr_for_loops(cond, span);
+                self.scan_block_for_loops(then, span);
+                self.scan_block_for_loops(else_, span);
             }
             Expr::Match { scrutinee, arms } => {
-                self.scan_expr_for_loops(scrutinee);
+                self.scan_expr_for_loops(scrutinee, span);
+                // REQ-5: a `match` over a declared enum is exhaustiveness-checked
+                // even in exec position (the reject fixtures put the `match` in a
+                // `fn` body). A slice/Option `match` is inert (see the helper).
+                self.check_match_exhaustiveness(arms, span);
                 for MatchArm { body, .. } in arms {
-                    self.scan_expr_for_loops(body);
+                    self.scan_expr_for_loops(body, span);
                 }
             }
             Expr::Call { args, .. } => {
                 for arg in args {
-                    self.scan_expr_for_loops(arg);
+                    self.scan_expr_for_loops(arg, span);
                 }
             }
             Expr::MethodCall { receiver, args, .. } => {
-                self.scan_expr_for_loops(receiver);
+                self.scan_expr_for_loops(receiver, span);
                 for arg in args {
-                    self.scan_expr_for_loops(arg);
+                    self.scan_expr_for_loops(arg, span);
                 }
             }
-            Expr::Field { receiver, .. } => self.scan_expr_for_loops(receiver),
+            // REQ-6: field access well-formedness applies in exec position too.
+            Expr::Field { receiver, name } => {
+                self.check_field(name, span);
+                self.scan_expr_for_loops(receiver, span);
+            }
             Expr::Binary { lhs, rhs, .. } => {
-                self.scan_expr_for_loops(lhs);
-                self.scan_expr_for_loops(rhs);
+                self.scan_expr_for_loops(lhs, span);
+                self.scan_expr_for_loops(rhs, span);
             }
             Expr::Index { base, index } => {
-                self.scan_expr_for_loops(base);
+                self.scan_expr_for_loops(base, span);
                 match index {
                     IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => {
-                        self.scan_expr_for_loops(e)
+                        self.scan_expr_for_loops(e, span)
                     }
                     IndexArg::Range(lo, hi) => {
-                        self.scan_expr_for_loops(lo);
-                        self.scan_expr_for_loops(hi);
+                        self.scan_expr_for_loops(lo, span);
+                        self.scan_expr_for_loops(hi, span);
                     }
                 }
             }
             Expr::Cast { expr: inner, .. } | Expr::Ref { expr: inner, .. } => {
-                self.scan_expr_for_loops(inner)
+                self.scan_expr_for_loops(inner, span)
             }
-            Expr::Closure { body, .. } => self.scan_expr_for_loops(body),
-            // Basis Stage 1a ADT expressions (`.design/basis/01-adts.md`): this
-            // is the STRUCTURAL fn-body walk that only descends to find nested
-            // loops — it cage-checks nothing. The ADT program dies at the
-            // validator's item/contract gate (`UnsupportedAdt`) regardless;
-            // here we simply descend into sub-expressions that could hold a
-            // nested `loop` so the structural invariant (every loop's contract
-            // is reachable) is preserved.
+            Expr::Closure { body, .. } => self.scan_expr_for_loops(body, span),
+            // REQ-6: a struct / struct-variant construction's field names must be
+            // declared; the field VALUES are descended for nested loops/ADTs.
             Expr::StructLit { fields, .. } => {
-                for (_, value) in fields {
-                    self.scan_expr_for_loops(value);
+                for (field_name, value) in fields {
+                    self.check_field(field_name, span);
+                    self.scan_expr_for_loops(value, span);
                 }
             }
-            Expr::Is { scrutinee, .. } => self.scan_expr_for_loops(scrutinee),
-            Expr::Deref(inner) => self.scan_expr_for_loops(inner),
-            // Leaves — no nested loop possible.
+            // REQ-6: `is` discrimination well-formedness applies in exec position.
+            Expr::Is { scrutinee, variant } => {
+                self.check_variant_ref(variant, span);
+                self.scan_expr_for_loops(scrutinee, span);
+            }
+            Expr::Deref(inner) => self.scan_expr_for_loops(inner, span),
+            // Leaves — no nested loop / ADT node possible.
             Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
         }
     }
@@ -534,7 +656,17 @@ impl Validator {
             }
 
             // (c) field access, binary, index, cast, ref — structural built-ins.
-            Expr::Field { receiver, .. } => self.walk_expr(receiver, span),
+            // REQ-6: a `Field` whose name is declared by NO `struct`/struct-variant
+            // is `UnknownField`. The AST is untyped (OQ-3), so this is the
+            // shallow, mechanically-decidable check the design admits — the field
+            // must exist SOMEWHERE. When no ADT is declared (`struct_fields`
+            // empty), the check is inert, so the existing non-ADT corpus
+            // (`sum.th`/`binary_search.th`, which have no struct field access) is
+            // UNCHANGED.
+            Expr::Field { receiver, name } => {
+                self.check_field(name, span);
+                self.walk_expr(receiver, span);
+            }
             Expr::Binary { lhs, rhs, .. } => {
                 self.walk_expr(lhs, span);
                 self.walk_expr(rhs, span);
@@ -546,9 +678,17 @@ impl Validator {
             Expr::Cast { expr: inner, .. } => self.walk_expr(inner, span),
             Expr::Ref { expr: inner, .. } => self.walk_expr(inner, span),
 
-            // (c) match / if — built-in control forms; recurse into all sub-exprs.
+            // (c) match / if — built-in control forms. A `match` over a DECLARED
+            // `enum` value is exhaustiveness/well-formedness-checked (REQ-5/
+            // REQ-6); a slice `match` (`sum.th`) or a `match` over a built-in
+            // (`Option`'s `Some`/`None` in `binary_search.th`) is UNCHANGED —
+            // `check_match_exhaustiveness` only fires when an arm pattern names a
+            // variant of a declared enum. `Match`/`Field`/`If`/`Is` stay FLAT
+            // built-ins inside a combinator closure (REQ-7) — the caged-flat
+            // mode is untouched by this descent.
             Expr::Match { scrutinee, arms } => {
                 self.walk_expr(scrutinee, span);
+                self.check_match_exhaustiveness(arms, span);
                 for MatchArm { body, .. } in arms {
                     self.walk_expr(body, span);
                 }
@@ -572,35 +712,36 @@ impl Validator {
                 self.walk_expr(body, span);
             }
 
-            // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT contract
-            // expressions PARSE but the validator does not yet check them — it
-            // SCREAMS `UnsupportedAdt` (REQ-6's `is` well-formedness + the
-            // struct-literal/deref handling land in 1b/1c). Recurse operands
-            // regardless so deep/forbidden nested content still surfaces (REQ-5)
-            // and the program dies loudly at validation, never silently.
+            // Basis Stage 1b (`.design/basis/01-adts.md` REQ-6): the ADT contract
+            // / construction expressions are now VALIDATED, not gated.
+            //
+            // A struct / struct-variant construction `Path { field: val, … }`:
+            // each initializer field must be declared by some
+            // `struct`/struct-variant (REQ-6 — same shallow, untyped check as
+            // `Field`); the field VALUES are recursed (depth-guarded, REQ-5). The
+            // last `path` segment naming a known struct-variant is well-formed by
+            // construction; a `path` naming nothing checkable is left to lowering
+            // (1c) — the 1a `UnsupportedAdt` scream is gone for a well-formed
+            // literal.
             Expr::StructLit { fields, .. } => {
-                self.errors.push(SpecError::UnsupportedAdt {
-                    construct: "struct literal",
-                    span,
-                });
-                for (_, value) in fields {
+                for (field_name, value) in fields {
+                    self.check_field(field_name, span);
                     self.walk_expr(value, span);
                 }
             }
-            Expr::Is { scrutinee, .. } => {
-                self.errors.push(SpecError::UnsupportedAdt {
-                    construct: "`is` discrimination",
-                    span,
-                });
+            // `SCRUTINEE is Variant` (REQ-6): the `variant` must name a declared
+            // enum variant, else `UnknownVariant`. `is` is a FLAT `bool` built-in
+            // and joins `Match`/`Field`/`If` in the caged-flat accept set (REQ-7)
+            // — it is admitted inside a combinator predicate-closure body
+            // unchanged. The scrutinee is recursed (depth-guarded).
+            Expr::Is { scrutinee, variant } => {
+                self.check_variant_ref(variant, span);
                 self.walk_expr(scrutinee, span);
             }
-            Expr::Deref(inner) => {
-                self.errors.push(SpecError::UnsupportedAdt {
-                    construct: "`Box` deref",
-                    span,
-                });
-                self.walk_expr(inner, span);
-            }
+            // A `Box` deref `*EXPR` (REQ-3): accepted STRUCTURALLY here (the
+            // recursive deref `sum_list(*t)` of `list_sum.th`); its `Box` SEMANTICS
+            // are Stage 1c. Recurse the inner expression (depth-guarded).
+            Expr::Deref(inner) => self.walk_expr(inner, span),
         }
     }
 
@@ -614,6 +755,113 @@ impl Validator {
             IndexArg::Range(lo, hi) => {
                 self.walk_expr(lo, span);
                 self.walk_expr(hi, span);
+            }
+        }
+    }
+
+    /// REQ-5 exhaustiveness + REQ-6 variant well-formedness for a `match`'s arms.
+    ///
+    /// The AST is untyped (OQ-3): the matched enum is inferred from the ARM
+    /// PATTERNS, not the scrutinee. A `match` is a DECLARED-enum match iff some
+    /// arm names a variant of a declared `enum` (`variant_to_enum`); otherwise it
+    /// is a slice `match` (`sum.th`'s `[]`/`[head, ..t]`) or a `match` over a
+    /// built-in (`Option`'s `Some`/`None` in `binary_search.th` — `Option` is no
+    /// declared `Item::Enum`) and is left UNCHANGED (the AC-6 no-regression
+    /// invariant). Once identified as a declared-enum match:
+    /// - an arm naming a variant of a DIFFERENT/undeclared enum is `UnknownVariant`;
+    /// - a variant matched twice, or an arm after a catch-all, is `UnreachableArm`;
+    /// - if no catch-all closes the match, every uncovered declared variant is
+    ///   collected into `NonExhaustiveMatch { missing }` (declaration order).
+    fn check_match_exhaustiveness(&mut self, arms: &[MatchArm], span: Span) {
+        // Identify the matched enum: the owning enum of the FIRST arm pattern
+        // that names a declared variant.
+        let matched_enum = arms.iter().find_map(|arm| {
+            variant_pattern_name(&arm.pattern).and_then(|v| self.variant_to_enum.get(v).cloned())
+        });
+        let Some(enum_name) = matched_enum else {
+            // Not a declared-enum match (slice / Option / bindings only) — the
+            // existing behavior, untouched.
+            return;
+        };
+        // `enum_name` was resolved from `variant_to_enum`, which is built only
+        // from keys present in `enums`, so this lookup always succeeds; the
+        // `else` keeps the function total without a panic (R-CODE-2).
+        let Some(declared) = self.enums.get(&enum_name).cloned() else {
+            return;
+        };
+
+        let mut covered: HashSet<&str> = HashSet::new();
+        let mut wildcard_seen = false;
+        for arm in arms {
+            match &arm.pattern {
+                // A bare `_` or a whole-scrutinee binding (`x => …`) is a
+                // catch-all: it closes the match. A second catch-all, or any arm
+                // after it, can never be reached.
+                Pattern::Wildcard | Pattern::Binding(_) => {
+                    if wildcard_seen {
+                        self.errors.push(SpecError::UnreachableArm { span });
+                    }
+                    wildcard_seen = true;
+                }
+                _ => {
+                    let Some(variant) = variant_pattern_name(&arm.pattern) else {
+                        // A non-variant pattern (a literal) in a declared-enum
+                        // match is not a well-formed enum arm; leave it to the
+                        // (untyped) shallow checking — no false UnknownVariant.
+                        continue;
+                    };
+                    if wildcard_seen {
+                        // Any arm after a catch-all is dead.
+                        self.errors.push(SpecError::UnreachableArm { span });
+                    } else if !declared.iter().any(|d| d == variant) {
+                        self.errors.push(SpecError::UnknownVariant {
+                            name: variant.to_string(),
+                            span,
+                        });
+                    } else if !covered.insert(variant) {
+                        // Variant matched twice → the second arm is unreachable.
+                        self.errors.push(SpecError::UnreachableArm { span });
+                    }
+                }
+            }
+        }
+
+        if !wildcard_seen {
+            let missing: Vec<String> = declared
+                .iter()
+                .filter(|d| !covered.contains(d.as_str()))
+                .cloned()
+                .collect();
+            if !missing.is_empty() {
+                self.errors
+                    .push(SpecError::NonExhaustiveMatch { missing, span });
+            }
+        }
+    }
+
+    /// REQ-6 field well-formedness: a `Field`/struct-literal field name must be
+    /// declared by SOME `struct`/struct-variant. Shallow + untyped (OQ-3): inert
+    /// when no ADT declares any field (the non-ADT corpus is UNCHANGED), and a
+    /// name no declared struct/struct-variant carries is `UnknownField`.
+    fn check_field(&mut self, name: &str, span: Span) {
+        if !self.struct_fields.is_empty() && !self.struct_fields.contains(name) {
+            self.errors.push(SpecError::UnknownField {
+                name: name.to_string(),
+                span,
+            });
+        }
+    }
+
+    /// REQ-6 variant well-formedness for an `is` discrimination (`r is Circle`)
+    /// — the variant (last path segment) must name a declared enum variant, else
+    /// `UnknownVariant`.
+    fn check_variant_ref(&mut self, variant: &[String], span: Span) {
+        if let Some(name) = variant.last() {
+            if !self.variant_to_enum.contains_key(name) {
+                self.errors.push(SpecError::UnknownVariant {
+                    name: name.clone(),
+                    span,
+                });
             }
         }
     }
@@ -769,5 +1017,21 @@ impl Validator {
                 self.walk_expr(arg, span);
             }
         }
+    }
+}
+
+/// The variant name a `match` arm pattern names, or `None` for a non-variant
+/// pattern (`.design/basis/01-adts.md` REQ-5). A `Pattern::Enum`
+/// (`Circle(r)`, `Nil`, `Some(i)`) and a `Pattern::Struct` (`Rect { w, h }`)
+/// both name a variant by the LAST path segment (the variant name; an enclosing
+/// `Shape::` prefix is the type). A `Wildcard`/`Binding`/`Literal`/`Slice`
+/// pattern names no variant — used to distinguish a declared-enum match from a
+/// slice match (`sum.th`) and to drive the covered-variant set.
+fn variant_pattern_name(pattern: &Pattern) -> Option<&str> {
+    match pattern {
+        Pattern::Enum { path, .. } | Pattern::Struct { path, .. } => {
+            path.last().map(|s| s.as_str())
+        }
+        Pattern::Wildcard | Pattern::Binding(_) | Pattern::Literal(_) | Pattern::Slice(_) => None,
     }
 }

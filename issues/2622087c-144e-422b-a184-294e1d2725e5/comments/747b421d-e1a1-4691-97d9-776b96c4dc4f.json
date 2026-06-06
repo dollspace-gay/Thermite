@@ -1,0 +1,10 @@
+{
+  "uuid": "747b421d-e1a1-4691-97d9-776b96c4dc4f",
+  "issue_uuid": "2622087c-144e-422b-a184-294e1d2725e5",
+  "author": "Yffe",
+  "content": "Finish + commit the prior builder's COMPLETE, COHERENT uncommitted tree (verified by acto-critic via cache-cleared verus). THIN: no revert/redo/refactor. GAP 1 = slice/byte_at exec-position u64->usize arg coercion (coerce_usize + is_usize_cast in lower_expr MethodCall exec arm, exec-only, whole index-intrinsic family). GAP 2 = TString wrapper woven into the per-item sub-program when String is reachable as a struct/enum FIELD type (ty_reaches_string/variant_reaches_string + block_has_string_local widen program_uses_string) + String-field receiver .len()/.byte_at(i) -> spec fns (Ctx::string_fields/is_string_field; lower_inv_expr MethodCall arm). check.rs UNTOUCHED. New forge/tests/string_l3_completeness.rs (5 real-verus tests, joins the green suite). spec-routes.toml NOT touched: forge/tests/*.rs is not a gated path (no src/ segment). Commit only; do not push, do not close (#86 awaits final critic; orchestrator closes).",
+  "created_at": "2026-06-06T23:26:06.001353360Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA48Gkw8LREEDOuE23LBJShNgC2acROAuLnv2g0y/KnTefTYrbmsDarpl7F8WVi0MSftzAuwTQyNekX1rhP00EAg=="
+}

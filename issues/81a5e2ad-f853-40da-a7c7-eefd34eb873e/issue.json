@@ -2,11 +2,12 @@
   "uuid": "81a5e2ad-f853-40da-a7c7-eefd34eb873e",
   "display_id": 64,
   "title": "Divergence: parser no-struct-literal context leaks into match arm bodies — a value-position struct literal in a clause-position match fails to parse (01-adts.md REQ-2/REQ-4)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-06T11:45:32.004566471Z",
-  "updated_at": "2026-06-06T11:45:33.230978820Z",
+  "updated_at": "2026-06-06T11:53:44.500809644Z",
+  "closed_at": "2026-06-06T11:53:44.500809644Z",
   "labels": [
     "blocker"
   ]

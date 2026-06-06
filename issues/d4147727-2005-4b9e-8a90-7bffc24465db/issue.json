@@ -1,0 +1,10 @@
+{
+  "uuid": "d4147727-2005-4b9e-8a90-7bffc24465db",
+  "display_id": 63,
+  "title": "Stage 1a — Thermite surface: struct/enum/recursive(Box) types + match + is (lex+AST+parse)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T10:56:23.821099893Z",
+  "updated_at": "2026-06-06T10:56:23.821099893Z"
+}

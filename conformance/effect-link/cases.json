@@ -1,0 +1,21 @@
+{
+  "note": "Oracle for Stage 8 — the runnable effect link (issue #81). Hand-derived (R-CHAR-3) from .design/basis/08-runnable-effect-link.md. forge build emits `mod os { ... }` (the syscall-wrapper impls) into the generated crate, keyed by the reachable #[boundary(\"os::...\")] targets, so a verified program that uses an effect primitive COMPILES + RUNS + does real I/O. forge check (verification) is UNCHANGED — the link is a build-only concern; the wrappers are the trusted-by-fiat, seccomp-confined, manifest-enumerated TCB. The mutation-floor 0 on elapsed_ok is the shape-only-effect-contract caveat (Stage 3): a timestamp bound is mutation-survivable, so the L3-to-boundary demo runs at floor 0.",
+  "verify_unchanged": [
+    { "name": "now", "source": "conformance/effect_link_demo.th", "level": "L1", "boundary": true,
+      "expect_target": "os::now", "expect_fx_contains": "time",
+      "why": "now is the Time effect primitive -> L1 boundary (os::now, fx time). forge CHECK certifies it independent of the build link." },
+    { "name": "elapsed_ok", "source": "conformance/effect_link_demo.th", "level": "L3", "scope": "to_boundary", "via": "now",
+      "mutation_floor": 0.0,
+      "why": "elapsed_ok calls now() (the boundary), ens result < 4_000_000_000 discharged through now's assumed ens -> L3, to-the-boundary via now (#52). forge check is unchanged by the runnable link." }
+  ],
+  "build_and_run": [
+    { "name": "elapsed_ok_runs", "source": "conformance/effect_link_demo.th", "entry": "elapsed_ok",
+      "expect_rustc_exit": 0, "expect_run_exit": 0, "expect_run_output_is_u64_below": 4000000000,
+      "why": "forge build --entry elapsed_ok emits `mod os { fn now() -> u64 { SystemTime::now()... } }`, rustc-links it (exit 0), and the binary RUNS -> prints elapsed_ok()'s result: a live Unix timestamp (a u64, > 0, < 4_000_000_000). This is THE unlock: a verified Thermite program runs + does real I/O (a clock_gettime syscall)." }
+  ],
+  "sandbox_confines": [
+    { "name": "fx_time_allowlist", "source": "conformance/effect_link_demo.th",
+      "expect_allowlist_contains_syscall": "clock_gettime",
+      "why": "forge build --entry elapsed_ok derives an fx-time seccomp allowlist including clock_gettime (#57); the linked os::now's clock_gettime runs clean; a probe attempting an out-of-fx syscall (openat) under that filter -> SIGSYS-killed (exit 159). The linked wrapper is confined to its declared effect — a Time primitive cannot exceed Time syscalls." }
+  ]
+}

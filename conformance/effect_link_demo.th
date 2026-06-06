@@ -1,0 +1,13 @@
+#[boundary("os::now")] fn now() -> u64
+  req true
+  ens result < 4_000_000_000
+  fx  time
+  ;
+
+fn elapsed_ok() -> u64
+  req true
+  ens result < 4_000_000_000
+  fx  time
+{
+  now()
+}

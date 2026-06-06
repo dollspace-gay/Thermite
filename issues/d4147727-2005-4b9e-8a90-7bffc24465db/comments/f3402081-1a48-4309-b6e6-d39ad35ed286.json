@@ -1,0 +1,10 @@
+{
+  "uuid": "f3402081-1a48-4309-b6e6-d39ad35ed286",
+  "issue_uuid": "d4147727-2005-4b9e-8a90-7bffc24465db",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (32fab6b surface+gate, 5ec3a70 the #64 fix). ADT surface parses to the oracle AST (adt_parse 4/4); existing corpus byte-identical; downstream workspace-green via honest arms; the VALIDATOR gates ADTs with SpecError::UnsupportedAdt (no stubs/panics). Critic found+fixed #64 (no-struct-lit context leaked into match-arm bodies). 437 workspace tests. Next: 1b real validator.",
+  "created_at": "2026-06-06T11:55:01.099479182Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAfo3TamFL8o8FbVRsSpsjzSfyWBqaXep0y4EqflvH/ikRjFdRs1SOap0/TxZE0V0eqDYlS9MlbAy+6suehAe5Bg=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "1b925fc0-914b-42fd-9f2d-aa5bba1ea030",
+  "issue_uuid": "bf2552d9-0f7b-4a72-9669-82a0332e3c4c",
+  "author": "Yffe",
+  "content": "Plan: pin the divergence as two FAILING critic tests in thermite-spec/tests/divergence_adt_validate.rs (no production edits — critic role). The tests assert REQ-5/REQ-12's required reject (NonExhaustiveMatch) for a non-exhaustive match over a declared enum whose handled variant is lowercase, hand-derived per R-CHAR-3. Left un-ignored as a release blocker. Commit the failing tests as the audit artifact; the generator/fixer resolves the root cause at the parser/validator boundary.",
+  "created_at": "2026-06-06T12:18:07.608779219Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA4O6RMFUmQU6wwGFvJCKutcbmbL/czJPdmPxQ3d6RYaphmsvU1pug40v1UP0oRTCl5hdM/zjzLWMy7ZhSzLDLDQ=="
+}

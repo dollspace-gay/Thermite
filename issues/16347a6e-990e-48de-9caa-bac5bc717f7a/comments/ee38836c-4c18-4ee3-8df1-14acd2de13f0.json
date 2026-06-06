@@ -1,0 +1,10 @@
+{
+  "uuid": "ee38836c-4c18-4ee3-8df1-14acd2de13f0",
+  "issue_uuid": "16347a6e-990e-48de-9caa-bac5bc717f7a",
+  "author": "Yffe",
+  "content": "Stage 7 builder: add the minimal honest exhaustive-match arms in every downstream consumer that the two new AST variants (Expr::StrLit, Type::String) reach, so the workspace compiles; commit the staged on-manifest Strings work + arms as one Stage-7 commit. Arms are layer-appropriate neutral values (StrLit leaf: no-op collector / quoted exec-render / identity / false-for-result; Type::String label: TString or String). Also fix a staged lower.rs vs golden divergence (spec_byte_at(0) not 0 as int). Gauntlet green: 506 tests, clippy/fmt clean, golden 11 verified.",
+  "created_at": "2026-06-06T20:27:15.481718399Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/bXy+KGndFFPNjSQtna7xjUGRSj/84OOgd8z5OvHRW10jSEMN8LhkuX448x1QAQ+kt4EKNA8fcHONgJGHv7ZAg=="
+}

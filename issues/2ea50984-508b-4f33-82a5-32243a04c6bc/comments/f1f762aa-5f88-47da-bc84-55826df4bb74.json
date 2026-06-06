@@ -1,0 +1,10 @@
+{
+  "uuid": "f1f762aa-5f88-47da-bc84-55826df4bb74",
+  "issue_uuid": "2ea50984-508b-4f33-82a5-32243a04c6bc",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (a48d2a1 Vec, b3c30c7 the #74 fix). Bounded Vec<T> (Type::Vec, a newtype TVecU64 over vstd::vec::Vec<u64> with well_formed len<=CAP). checked_get -> L3 pure (no-OOB accessor; req i<v.len() genuinely load-bearing, off-by-one -> L0); push_one -> L3 alloc (capacity-preserving, final(self) ens). Critic confirmed crux sound (bounds-checked get, real capacity invariant, no cheat, no regression) + found #74: push_one was L0 because the #12 mutation scorer couldn't synthesize a Vec-return mutant (0/0 -> #48 backstop -> WeakContract) -> fixed by synthesizing an empty-Vec early-return mutant (the #48-analog: empty Vec -> ens len==v.len()+1 false -> killed -> 1/1 -> L3); anti-Goodhart intact (weak Vec contract still WeakContract); CHECK_SCHEMA_VERSION 2->3 (the #49 cache-invalidation contract). Element invariant (Vec<Account>) + Map DEFERRED to v1.1. workspace 480 tests. Stage 4 complete.",
+  "created_at": "2026-06-06T17:27:15.270575527Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAb7fasVlzHbVHDGq4NwyVbK59cYRNCnh5d49yUeiDFKBLLP2C3dkjZbA41KrGVB74lYV/uMi3emcZWIet30dYBA=="
+}

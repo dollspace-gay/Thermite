@@ -1,0 +1,10 @@
+{
+  "uuid": "56af04ca-d209-4667-b861-452c4c1a9810",
+  "issue_uuid": "26477ead-23be-4848-a060-d3790b33277e",
+  "author": "Yffe",
+  "content": "Fix (single file thermite-lower/src/lower.rs): generalize is_adt_fold_sum from a literal-0-base shape-fit to a STRUCTURAL recursive-fold predicate. The nat-return coercion (lower_spec_fn_ret) gated on has_unit_zero (a unit-variant base arm whose body is IntLit 0), so the GROUNDED Tree fold's value-carrying base (Leaf(v) => v as u64) was missed -> lowered -> u64 -> recursive arm tree_sum(*l)+tree_sum(*r) int-typed -> verus E0308 incompatible match arms. New detection: the match has at least one arm that recurses through a Box-deref'd field (f(*x)), with NO base-arm literal requirement; expr_has_deref_call_arg now walks the full arm-body expression tree (so Node(l,r)=>f(*l)+f(*r) and Cons(h,t)=>h as T+f(*t) both match). The nat return then coerces every arm uniformly (Cast -> as nat). sum_list/len (literal-0 base) unchanged; tree_sum now verifies 1 verified, 0 errors. Authority: .design/basis/01-adts.md REQ-10 + recorded structural-recursion finding; goal.md R-DEFER-9.",
+  "created_at": "2026-06-06T13:35:11.521300544Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJoz6P49jKBwQaBCE82NTqGpfLz86A05mdLeiZ6d2WryBAntMDf4Ppxje5Gg7Ic4s2+7cQjdV9L9fzeaUPykxCA=="
+}

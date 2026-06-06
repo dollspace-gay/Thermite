@@ -242,6 +242,16 @@ struct Ctx<'a> {
     /// is UNCHANGED — the rewrite is `String`-specific. EMPTY for a non-`String`
     /// fn (byte-stable for the existing corpus).
     strings: &'a [&'a str],
+    /// Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the program-wide set of
+    /// FIELD names whose declared type reaches `String` (the editor core `Buf {
+    /// text: String }`). A spec-position method call whose receiver is a FIELD
+    /// access `<x>.<field>` where `<field>` is in this set rewrites `.len()`/
+    /// `.byte_at(i)` to the wrapper SPEC fns `.spec_len()`/`.spec_byte_at(i as int)`
+    /// — the field analog of `strings` (which keys a bare `String` VALUE path). A
+    /// contract `b.text.len()` / `result.text.len()` over a `String` field needs the
+    /// spec accessor (the exec `len`/`byte_at` cannot be named in a contract). EMPTY
+    /// for a program with no `String` field (byte-stable for the existing corpus).
+    string_fields: &'a [&'a str],
 }
 
 /// A resolved recursion-scheme binding in scope while lowering a spec fn body
@@ -272,6 +282,7 @@ impl<'a> Ctx<'a> {
             nat_ret: false,
             schemes: NO_SCHEMES,
             strings: NO_SLICES,
+            string_fields: NO_SLICES,
         }
     }
     fn spec(slices: &'a [&'a str], nat_fns: &'a [&'a str]) -> Ctx<'a> {
@@ -283,6 +294,7 @@ impl<'a> Ctx<'a> {
             nat_ret: false,
             schemes: NO_SCHEMES,
             strings: NO_SLICES,
+            string_fields: NO_SLICES,
         }
     }
     /// A spec context with no slice-view names — for positions where every
@@ -297,6 +309,7 @@ impl<'a> Ctx<'a> {
             nat_ret: false,
             schemes: NO_SCHEMES,
             strings: NO_SLICES,
+            string_fields: NO_SLICES,
         }
     }
     /// This context with the enum-variant map attached (REQ-9 — variant-pattern
@@ -326,10 +339,22 @@ impl<'a> Ctx<'a> {
         self.strings = strings;
         self
     }
+    /// This context with the program-wide `String`-typed FIELD names in scope
+    /// (REQ-4 — a `String` FIELD receiver's spec-position `.len()`/`.byte_at(i)`
+    /// rewrite). The field analog of [`Ctx::with_strings`].
+    fn with_string_fields(mut self, string_fields: &'a [&'a str]) -> Ctx<'a> {
+        self.string_fields = string_fields;
+        self
+    }
     /// True if `name` denotes a `String` value in scope (drives the spec-position
     /// `.len()`→`.spec_len()` / `.byte_at(i)`→`.spec_byte_at(i as int)` rewrite).
     fn is_string(&self, name: &str) -> bool {
         self.strings.contains(&name)
+    }
+    /// True if `name` is a program field whose type reaches `String` (drives the
+    /// spec-position `<x>.<field>.len()`→`<x>.<field>.spec_len()` rewrite). REQ-4.
+    fn is_string_field(&self, name: &str) -> bool {
+        self.string_fields.contains(&name)
     }
     /// The in-scope scheme binding for a callee `name` (REQ-6), or `None` if
     /// `name` is not a scheme call resolved for the current fn.
@@ -453,6 +478,45 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
         })
         .collect();
 
+    // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the program-wide set of
+    // FIELD names whose declared type reaches `String` — the editor core's `Buf {
+    // text: String, .. }`. A contract reading `b.text.len()` / `result.text.len()`
+    // (a String FIELD access receiver) must rewrite `.len()`/`.byte_at(i)` to the
+    // wrapper SPEC fns `.spec_len()`/`.spec_byte_at(i as int)` (the exec `len`/
+    // `byte_at` return `u64` and cannot be named in a contract — the same rule the
+    // bare-`String`-value rewrite applies). Threaded into every fn's spec `Ctx`
+    // (sorted+deduped for determinism, R-CODE-5). A field name is keyed alone (no
+    // struct qualifier): v0.1 has no field-name overload across a `String` field and
+    // a non-`String` field of the same name in scope, and the rewrite is inert
+    // unless the method is `len`/`byte_at`.
+    let mut string_field_names: Vec<&str> = program
+        .items
+        .iter()
+        .flat_map(|item| -> Box<dyn Iterator<Item = &str>> {
+            match item {
+                Item::Struct(s) => Box::new(
+                    s.fields
+                        .iter()
+                        .filter(|fd| ty_reaches_string(&fd.ty))
+                        .map(|fd| fd.name.as_str()),
+                ),
+                Item::Enum(e) => Box::new(e.variants.iter().flat_map(|v| {
+                    let fields: &[thermite_syntax::ast::FieldDef] = match &v.shape {
+                        thermite_syntax::ast::VariantShape::Struct(fds) => fds,
+                        _ => &[],
+                    };
+                    fields
+                        .iter()
+                        .filter(|fd| ty_reaches_string(&fd.ty))
+                        .map(|fd| fd.name.as_str())
+                })),
+                _ => Box::new(std::iter::empty()),
+            }
+        })
+        .collect();
+    string_field_names.sort_unstable();
+    string_field_names.dedup();
+
     // The program-wide `(variant_name, enum_name)` map (REQ-9): drives the
     // ENUM-QUALIFIED `Enum::Variant` lowering of a `match` arm / pattern over a
     // user enum value (verus rejects a bare `Nil`/`Circle`). Built once, threaded
@@ -484,7 +548,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
                 // signature (its body is never lowered, REQ-1), so it needs no
                 // accumulator-fold push lemmas — skip the lemma collection that a
                 // fully-proved fn body drives.
-                lower_fn(f, &nat_fns, &inv_structs, &variants)?
+                lower_fn(f, &nat_fns, &inv_structs, &string_field_names, &variants)?
             }
             Item::Fn(f) => {
                 for lemma_def in push_lemma_defs_for_fn(f)? {
@@ -497,7 +561,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
                     out.push('\n');
                     emitted_lemmas.push(name_line);
                 }
-                lower_fn(f, &nat_fns, &inv_structs, &variants)?
+                lower_fn(f, &nat_fns, &inv_structs, &string_field_names, &variants)?
             }
             // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-10): a
             // `struct` lowers to a Verus `pub struct` + the `well_formed`
@@ -551,7 +615,19 @@ fn lower_struct(s: &thermite_syntax::ast::StructItem) -> Result<String, LowerErr
     // which is exactly the invariant-bearing set).
     if let Some(inv) = &s.inv {
         let field_names: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
-        let body = lower_inv_expr(&inv.expr, &field_names, 0, s.span)?;
+        // The subset of fields whose type reaches `String` (REQ-4): a `String`
+        // field's `<field>.len()` / `<field>.byte_at(i)` inside the spec-position
+        // `well_formed` predicate must name the wrapper SPEC fns
+        // `.spec_len()`/`.spec_byte_at(i as int)` (the exec `len`/`byte_at` return
+        // `u64` and cannot be named in a contract — the same rule the fn-signature
+        // String rewrite applies). The editor core `inv cursor <= text.len()`.
+        let string_fields: Vec<&str> = s
+            .fields
+            .iter()
+            .filter(|f| ty_reaches_string(&f.ty))
+            .map(|f| f.name.as_str())
+            .collect();
+        let body = lower_inv_expr(&inv.expr, &field_names, &string_fields, 0, s.span)?;
         writeln!(out, "\nimpl {} {{", s.name).ok();
         out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
         writeln!(out, "        {body}").ok();
@@ -568,6 +644,7 @@ fn lower_struct(s: &thermite_syntax::ast::StructItem) -> Result<String, LowerErr
 fn lower_inv_expr(
     expr: &Expr,
     field_names: &[&str],
+    string_fields: &[&str],
     depth: usize,
     span: Span,
 ) -> Result<String, LowerError> {
@@ -590,13 +667,58 @@ fn lower_inv_expr(
             }
         }
         Expr::Binary { op, lhs, rhs } => {
-            let l = lower_inv_operand(lhs, *op, true, field_names, d, span)?;
-            let r = lower_inv_operand(rhs, *op, false, field_names, d, span)?;
+            let l = lower_inv_operand(lhs, *op, true, field_names, string_fields, d, span)?;
+            let r = lower_inv_operand(rhs, *op, false, field_names, string_fields, d, span)?;
             Ok(format!("{l} {} {r}", binop(*op)))
         }
         Expr::Field { receiver, name } => {
-            let r = lower_inv_expr(receiver, field_names, d, span)?;
+            let r = lower_inv_expr(receiver, field_names, string_fields, d, span)?;
             Ok(format!("{r}.{name}"))
+        }
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): a method call inside
+        // the spec-position `well_formed` predicate — the editor core `inv cursor <=
+        // text.len()`. The receiver's bare field name is rewritten to `self.<field>`
+        // (recursively, so a nested field receiver works too). When the receiver is a
+        // `String`-typed field, `.len()`/`.byte_at(i)` rewrite to the wrapper SPEC fns
+        // `.spec_len()`/`.spec_byte_at(i as int)` — the exec `len`/`byte_at` return
+        // `u64` and CANNOT be named in a contract (the same rule the fn-signature
+        // String rewrite applies; `lower_expr` MethodCall spec arm). A non-`String`
+        // field's method call (e.g. a `Vec` field's `.len()`, whose wrapper spec fn IS
+        // `len`) keeps the method name unchanged. Without this arm `text.len()` fell to
+        // the catch-all `lower_expr`, which lowered the bare receiver `text` with NO
+        // `self.` rewrite (`error[E0425]: cannot find value text`).
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => {
+            let r = lower_inv_expr(receiver, field_names, string_fields, d, span)?;
+            let recv_is_string_field = matches!(
+                receiver.as_ref(),
+                Expr::Path(segs) if segs.len() == 1 && string_fields.contains(&segs[0].as_str())
+            );
+            if recv_is_string_field {
+                if name == "len" && args.is_empty() {
+                    return Ok(format!("{r}.spec_len()"));
+                }
+                if name == "byte_at" && args.len() == 1 {
+                    // `spec_byte_at(i: int)`: an integer literal flows into the `int`
+                    // parameter directly (Verus coerces a literal); a non-literal
+                    // index gets the explicit `as int` Verus requires in spec
+                    // position (the same split as the fn-signature byte_at rewrite).
+                    let idx = if matches!(&args[0], Expr::IntLit { .. }) {
+                        lower_inv_expr(&args[0], field_names, string_fields, d, span)?
+                    } else {
+                        lower_index_arg(&args[0], Ctx::spec_seq(), d, span)?
+                    };
+                    return Ok(format!("{r}.spec_byte_at({idx})"));
+                }
+            }
+            let mut parts = Vec::with_capacity(args.len());
+            for a in args {
+                parts.push(lower_inv_expr(a, field_names, string_fields, d, span)?);
+            }
+            Ok(format!("{r}.{name}({})", parts.join(", ")))
         }
         // A literal / other leaf lowers exactly as the shared spec lowering would
         // (the field rewrite only matters for bare paths and their parents).
@@ -612,10 +734,11 @@ fn lower_inv_operand(
     parent: BinOp,
     is_left: bool,
     field_names: &[&str],
+    string_fields: &[&str],
     depth: usize,
     span: Span,
 ) -> Result<String, LowerError> {
-    let s = lower_inv_expr(operand, field_names, depth, span)?;
+    let s = lower_inv_expr(operand, field_names, string_fields, depth, span)?;
     if let Expr::Binary { op: child, .. } = operand {
         let pp = precedence(parent);
         let cp = precedence(*child);
@@ -1646,6 +1769,7 @@ fn lower_fn(
     f: &FnItem,
     nat_fns: &[&str],
     inv_structs: &[&str],
+    string_fields: &[&str],
     variants: &[(&str, &str)],
 ) -> Result<String, LowerError> {
     // THE HONESTY GATE: external_body iff a declared trust boundary
@@ -1658,17 +1782,17 @@ fn lower_fn(
     // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this OBSERVABLE
     // dispatch (the emitted `#[verifier::external_body]` substring) to the proof.
     if thermite_verified::should_emit_external_body(f.boundary.is_some(), f.slag.is_some()) {
-        return lower_external_body_fn(f, nat_fns, inv_structs);
+        return lower_external_body_fn(f, nat_fns, inv_structs, string_fields);
     }
 
     let mut out = String::new();
-    out.push_str(&lower_fn_signature(f, nat_fns, inv_structs)?);
+    out.push_str(&lower_fn_signature(f, nat_fns, inv_structs, string_fields)?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
 
     // Body, with shape-derived proof aids threaded through the loop lowering. The
     // variant map flows into the exec body so an enum `match` (e.g. `is_circle`'s)
     // lowers to ENUM-QUALIFIED arms (REQ-9).
-    let body = lower_fn_body(f, nat_fns, variants)?;
+    let body = lower_fn_body(f, nat_fns, string_fields, variants)?;
     out.push_str(&body);
     Ok(out)
 }
@@ -1684,6 +1808,7 @@ fn lower_fn_signature(
     f: &FnItem,
     nat_fns: &[&str],
     inv_structs: &[&str],
+    string_fields: &[&str],
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
@@ -1697,7 +1822,9 @@ fn lower_fn_signature(
     // `result` when the return is `String`. A `String` receiver's spec-position
     // `.len()`/`.byte_at(i)` rewrites to `.spec_len()`/`.spec_byte_at(i as int)`.
     let strings = string_value_names(f);
-    let spec = Ctx::spec(&slices, nat_fns).with_strings(&strings);
+    let spec = Ctx::spec(&slices, nat_fns)
+        .with_strings(&strings)
+        .with_string_fields(string_fields);
 
     // requires: the single `req` clause (REQ-1), plus the woven `well_formed()`
     // conjunct for every parameter whose type is an invariant-bearing `struct`
@@ -1773,10 +1900,11 @@ fn lower_external_body_fn(
     f: &FnItem,
     nat_fns: &[&str],
     inv_structs: &[&str],
+    string_fields: &[&str],
 ) -> Result<String, LowerError> {
     let mut out = String::new();
     out.push_str("#[verifier::external_body]\n");
-    out.push_str(&lower_fn_signature(f, nat_fns, inv_structs)?);
+    out.push_str(&lower_fn_signature(f, nat_fns, inv_structs, string_fields)?);
     // The body is SUPPRESSED: verus does not check an external_body body, so the
     // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the
     // caller trusts by declaration (§8/§9). The real `f.body` (None for a
@@ -2402,35 +2530,100 @@ fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
 // unlike the per-element `Vec` wrapper — there is exactly one `TString`).
 // ---------------------------------------------------------------------------
 
-/// True if the program references the `String` type in any `fn`/`spec fn`
-/// parameter or return position, OR uses a string literal anywhere (REQ-4) — both
-/// require the `TString` wrapper (a literal materializes a `TString`). The wrapper
-/// is emitted once iff this holds (EMPTY otherwise — byte-stable for the non-`String`
-/// corpus).
-fn program_uses_string(program: &Program) -> bool {
-    fn ty_is_string(ty: &Type) -> bool {
-        match ty {
-            Type::String => true,
-            Type::Ref { inner, .. } => ty_is_string(inner),
-            _ => false,
-        }
+/// True if the `String` type (`Type::String`) is REACHABLE anywhere in `ty` —
+/// directly, or nested under a `Ref`/`Slice`/`Vec`/`Box`/`Generic` constructor
+/// (a `&String` view, a `Vec<String>`, a `Box<String>`). The whole type-constructor
+/// closure is walked so no String-bearing type position is missed (REQ-4).
+fn ty_reaches_string(ty: &Type) -> bool {
+    match ty {
+        Type::String => true,
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Vec(inner)
+        | Type::Box(inner)
+        | Type::Generic { arg: inner, .. } => ty_reaches_string(inner),
+        Type::Prim(_) | Type::Unit | Type::Named(_) => false,
     }
+}
+
+/// True if the program references the `String` type in ANY reachable type
+/// position — a `fn`/`spec fn` parameter or return, a `struct`/`enum`-variant
+/// FIELD, or a `fn`-body local `let` annotation — OR uses a string literal
+/// anywhere (REQ-4). Every such position needs the `TString` wrapper in scope (a
+/// struct field `text: String` lowers to `pub text: TString`; a literal
+/// materializes a `TString`). The wrapper is emitted once iff this holds (EMPTY
+/// otherwise — byte-stable for the non-`String` corpus).
+///
+/// CRITICAL for the per-item sub-program weave (forge `#86`): a `forge check`
+/// per-item sub-program may be a STRUCT decl alone (`struct Buf { text: String,
+/// cursor: u64 }`) whose only `String` reference is a FIELD type — so the struct
+/// and enum field arms below are load-bearing, not a `continue`. Mirrors the way
+/// `reachable_adt_deps` weaves the struct decls a String-bearing item reaches.
+fn program_uses_string(program: &Program) -> bool {
     for item in &program.items {
-        let (params, ret, body): (&[Param], &Type, Option<&Block>) = match item {
-            Item::Fn(f) => (&f.params, &f.ret, f.body.as_ref()),
-            Item::SpecFn(s) => (&s.params, &s.ret, Some(&s.body)),
-            Item::Struct(_) | Item::Enum(_) => continue,
-        };
-        if params.iter().any(|p| ty_is_string(&p.ty)) || ty_is_string(ret) {
-            return true;
-        }
-        if let Some(b) = body {
-            if block_has_str_lit(b) {
-                return true;
+        match item {
+            Item::Fn(f) => {
+                if f.params.iter().any(|p| ty_reaches_string(&p.ty)) || ty_reaches_string(&f.ret) {
+                    return true;
+                }
+                if let Some(b) = &f.body {
+                    if block_has_str_lit(b) || block_has_string_local(b) {
+                        return true;
+                    }
+                }
+            }
+            Item::SpecFn(s) => {
+                if s.params.iter().any(|p| ty_reaches_string(&p.ty))
+                    || ty_reaches_string(&s.ret)
+                    || block_has_str_lit(&s.body)
+                    || block_has_string_local(&s.body)
+                {
+                    return true;
+                }
+            }
+            Item::Struct(s) => {
+                if s.fields.iter().any(|fd| ty_reaches_string(&fd.ty)) {
+                    return true;
+                }
+            }
+            Item::Enum(e) => {
+                if e.variants.iter().any(variant_reaches_string) {
+                    return true;
+                }
             }
         }
     }
     false
+}
+
+/// True if any field/payload type of an enum variant reaches `String` (REQ-4).
+fn variant_reaches_string(v: &thermite_syntax::ast::VariantDef) -> bool {
+    match &v.shape {
+        thermite_syntax::ast::VariantShape::Unit => false,
+        thermite_syntax::ast::VariantShape::Tuple(tys) => tys.iter().any(ty_reaches_string),
+        thermite_syntax::ast::VariantShape::Struct(fields) => {
+            fields.iter().any(|fd| ty_reaches_string(&fd.ty))
+        }
+    }
+}
+
+/// True if a block contains a `let` whose type annotation reaches `String`
+/// (REQ-4) — a `let s: String = …` local needs the `TString` wrapper even when no
+/// param/return/field is typed `String`. Walks nested `if`/`loop` blocks.
+fn block_has_string_local(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_string_local)
+}
+
+fn stmt_has_string_local(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { ty, .. } => ty.as_ref().map(ty_reaches_string).unwrap_or(false),
+        Stmt::If { then, else_, .. } => {
+            block_has_string_local(then)
+                || else_.as_ref().map(block_has_string_local).unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_has_string_local(&l.body),
+        Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Expr(_) => false,
+    }
 }
 
 /// True if a block contains a string-literal expression anywhere (REQ-1) — a
@@ -2713,37 +2906,72 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // UNCHANGED — the rewrite is `String`-specific. A `String` `result`
             // (a `String`-returning fn) is in the set too, so `result.len()` in an
             // `ens` rewrites the same way. The receiver path lowered to `r`.
-            if ctx.is_spec() {
-                if let Expr::Path(segs) = receiver.as_ref() {
-                    if segs.len() == 1 && ctx.is_string(&segs[0]) {
-                        if name == "len" && args.is_empty() {
-                            return Ok(format!("{r}.spec_len()"));
-                        }
-                        if name == "byte_at" && args.len() == 1 {
-                            // The spec accessor `spec_byte_at(i: int)` takes an
-                            // `int` index. An integer LITERAL (`s.byte_at(0)` —
-                            // the corpus `first_byte` ens) flows into the `int`
-                            // parameter directly (Verus coerces a literal), so it
-                            // is emitted plainly, matching the GROUNDED golden
-                            // `tests/golden/lower/string_demo.verus.rs`
-                            // (`s.spec_byte_at(0)`, `11 verified, 0 errors`). A
-                            // non-literal index (a `usize`-typed variable) needs
-                            // the explicit `as int` cast Verus requires (no
-                            // implicit `usize`->`int` in spec position), so it goes
-                            // through `lower_index_arg`.
-                            let idx = if matches!(&args[0], Expr::IntLit { .. }) {
-                                lower_expr(&args[0], ctx, d, span)?
-                            } else {
-                                lower_index_arg(&args[0], ctx, d, span)?
-                            };
-                            return Ok(format!("{r}.spec_byte_at({idx})"));
-                        }
-                    }
+            // The receiver is a `String` either as a bare value PATH (`s`,
+            // `result` — `ctx.is_string`) or as a struct FIELD access (`b.text`,
+            // `result.text` — `Expr::Field` whose `name` is a `String` field,
+            // `ctx.is_string_field`). The editor core `ens result.text.len() ==
+            // t.len()` / `b.text.len()` exercises the field form; the corpus
+            // `greeting_len` the bare form. Both rewrite `.len()`/`.byte_at(i)` the
+            // SAME way (the spec accessors); only the receiver-classification
+            // differs, so the whole `String`-receiver class is covered (no field
+            // sibling left for a critic to re-pin).
+            let recv_is_string = ctx.is_spec()
+                && match receiver.as_ref() {
+                    Expr::Path(segs) => segs.len() == 1 && ctx.is_string(&segs[0]),
+                    Expr::Field { name, .. } => ctx.is_string_field(name),
+                    _ => false,
+                };
+            if recv_is_string {
+                if name == "len" && args.is_empty() {
+                    return Ok(format!("{r}.spec_len()"));
+                }
+                if name == "byte_at" && args.len() == 1 {
+                    // The spec accessor `spec_byte_at(i: int)` takes an `int` index.
+                    // An integer LITERAL (`s.byte_at(0)` — the corpus `first_byte`
+                    // ens) flows into the `int` parameter directly (Verus coerces a
+                    // literal), so it is emitted plainly, matching the GROUNDED
+                    // golden `tests/golden/lower/string_demo.verus.rs`
+                    // (`s.spec_byte_at(0)`, `11 verified, 0 errors`). A non-literal
+                    // index (a `usize`-typed variable) needs the explicit `as int`
+                    // cast Verus requires (no implicit `usize`->`int` in spec
+                    // position), so it goes through `lower_index_arg`.
+                    let idx = if matches!(&args[0], Expr::IntLit { .. }) {
+                        lower_expr(&args[0], ctx, d, span)?
+                    } else {
+                        lower_index_arg(&args[0], ctx, d, span)?
+                    };
+                    return Ok(format!("{r}.spec_byte_at({idx})"));
                 }
             }
+            // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): in EXEC position
+            // the `String` wrapper's index accessors `byte_at(i: usize)` and
+            // `slice(lo: usize, hi: usize)` take `usize` parameters (the `vstd::vec::Vec`
+            // index type), but a Thermite surface index is commonly a `u64` (the
+            // `Buf { cursor: u64 }` editor core, `s.slice(0, k)` with `k: u64`).
+            // Verus performs NO implicit `u64 -> usize` narrowing, so each index
+            // argument is coerced with an explicit `as usize` cast — the same
+            // intrinsic-index coercion `byte_at`'s `usize` accessor needs, applied
+            // uniformly across BOTH string index intrinsics so the whole op family
+            // (no single triggering site left for a sibling to re-pin). Keyed on the
+            // reserved built-in method NAME (`byte_at`/`slice` — there are no
+            // user-defined methods in v0.1, so no misfire) and only on the positional
+            // index args (`concat`'s by-value `TString` arg is NOT an index). An
+            // integer LITERAL (`s.byte_at(0)`, `s.slice(0, ..)`) flows into the
+            // `usize` parameter directly (Verus coerces a literal — the GROUNDED
+            // golden `string_demo.verus.rs` `{ s.byte_at(0) }` stays byte-identical),
+            // and an argument already written `as usize` is left as-is (no
+            // double-cast); only a non-literal `u64`/`u32` index needs the explicit
+            // narrowing. EXEC-only — the spec-position `.byte_at`/`.spec_*` rewrite
+            // above handles a contract index.
+            let coerce_usize = !ctx.is_spec() && matches!(name.as_str(), "byte_at" | "slice");
             let mut parts = Vec::new();
             for a in args {
-                parts.push(lower_expr(a, ctx, d, span)?);
+                let lowered = lower_expr(a, ctx, d, span)?;
+                if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast(a) {
+                    parts.push(format!("{lowered} as usize"));
+                } else {
+                    parts.push(lowered);
+                }
             }
             Ok(format!("{r}.{name}({})", parts.join(", ")))
         }
@@ -2857,6 +3085,20 @@ fn is_int_type(ty: &Type) -> bool {
     matches!(
         ty,
         Type::Prim(PrimType::U32) | Type::Prim(PrimType::U64) | Type::Prim(PrimType::Usize)
+    )
+}
+
+/// True if `expr` is already an `as usize` cast — so the Stage-7 string index
+/// coercion (`.design/basis/07-strings.md` REQ-4, the `byte_at`/`slice` `usize`
+/// accessors) does NOT double-cast an argument the source already wrote as
+/// `... as usize`.
+fn is_usize_cast(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Cast {
+            ty: Type::Prim(PrimType::Usize),
+            ..
+        }
     )
 }
 
@@ -3154,6 +3396,7 @@ fn lower_binary_operand(
 fn lower_fn_body(
     f: &FnItem,
     nat_fns: &[&str],
+    string_fields: &[&str],
     variants: &[(&str, &str)],
 ) -> Result<String, LowerError> {
     let mut out = String::from("{\n");
@@ -3167,7 +3410,7 @@ fn lower_fn_body(
             .to_string(),
         span: f.span,
     })?;
-    let inner = lower_block_with_fn_aids(body, f, nat_fns, variants, 1)?;
+    let inner = lower_block_with_fn_aids(body, f, nat_fns, string_fields, variants, 1)?;
     out.push_str(&inner);
     out.push_str("}\n");
     Ok(out)
@@ -3181,6 +3424,7 @@ fn lower_block_with_fn_aids(
     block: &Block,
     f: &FnItem,
     nat_fns: &[&str],
+    string_fields: &[&str],
     variants: &[(&str, &str)],
     indent: usize,
 ) -> Result<String, LowerError> {
@@ -3190,7 +3434,7 @@ fn lower_block_with_fn_aids(
     for stmt in &block.stmts {
         match stmt {
             Stmt::Loop(l) => {
-                out.push_str(&lower_loop(l, f, nat_fns, variants, indent)?);
+                out.push_str(&lower_loop(l, f, nat_fns, string_fields, variants, indent)?);
             }
             other => {
                 out.push_str(&lower_stmt(other, exec, indent)?);
@@ -3298,6 +3542,7 @@ fn lower_loop(
     l: &thermite_syntax::ast::LoopNode,
     f: &FnItem,
     nat_fns: &[&str],
+    string_fields: &[&str],
     variants: &[(&str, &str)],
     indent: usize,
 ) -> Result<String, LowerError> {
@@ -3318,7 +3563,9 @@ fn lower_loop(
 
     let slices = slice_param_names(&f.params);
     let strings = string_value_names(f);
-    let spec = Ctx::spec(&slices, nat_fns).with_strings(&strings);
+    let spec = Ctx::spec(&slices, nat_fns)
+        .with_strings(&strings)
+        .with_string_fields(string_fields);
 
     // Invariants: the loop's own `inv`s, then lifted immutable preconditions
     // (template b) not already present.

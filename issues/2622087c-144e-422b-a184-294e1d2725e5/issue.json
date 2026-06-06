@@ -2,11 +2,12 @@
   "uuid": "2622087c-144e-422b-a184-294e1d2725e5",
   "display_id": 86,
   "title": "String L3 completeness: weave TString into per-item subprograms (struct fields) + slice u64->usize arg coercion (editor-core prereqs)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-06T22:43:34.396631464Z",
-  "updated_at": "2026-06-06T22:43:35.667877077Z",
+  "updated_at": "2026-06-06T23:28:47.289719808Z",
+  "closed_at": "2026-06-06T23:28:47.289719808Z",
   "labels": [
     "bug"
   ]

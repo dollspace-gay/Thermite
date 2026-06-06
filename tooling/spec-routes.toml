@@ -403,3 +403,10 @@ crate_pattern = "thermite-verified/src/lib.rs"
 design = ".design/verified/self-verification.md"
 reference = []
 conformance_ops = []
+
+# Stage 6 IFC — the #[sealed] abstraction barrier governs these (issue #76/#77)
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/06-provenance-and-sinks.md"
+reference = ["conformance/provenance"]
+conformance_ops = []

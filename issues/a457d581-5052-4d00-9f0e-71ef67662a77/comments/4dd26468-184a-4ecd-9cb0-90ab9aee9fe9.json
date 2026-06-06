@@ -1,0 +1,10 @@
+{
+  "uuid": "4dd26468-184a-4ecd-9cb0-90ab9aee9fe9",
+  "issue_uuid": "a457d581-5052-4d00-9f0e-71ef67662a77",
+  "author": "Yffe",
+  "content": "Pin the StructLit door-bypass as 3 #[ignore]d failing tests in forge/tests/divergence_provenance.rs (one per IFC axis), asserting the authority's required behavior (un-doored marked->clean flow must be L0, never L3). Commit the failing-test artifact on main; the fixer un-ignores when the abstraction barrier lands. No production code touched (critic role).",
+  "created_at": "2026-06-06T18:49:40.266067614Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAou0RUaySVX/7EE5QZnTXJhgoMaETnOw+K+CXMu1afhN5C3Ohu2W6UcJm7T+Km5WvfytnjdLA3u3Ux3+p6JkGAw=="
+}

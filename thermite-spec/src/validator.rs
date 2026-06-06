@@ -54,6 +54,12 @@
 //! |---|---|---|
 //! | REQ-3 (capacity + operation contracts fit the §4.2 cage) | SHIPPED | the bounded-`Vec` operation contracts are FLAT built-ins: `v.len()` (already in `BUILTIN_METHODS`) and the no-OOB accessor `get` ADDED to `BUILTIN_METHODS` so `ens result == v.get(i)` (`conformance/vec_demo.th` `checked_get`) validates inside the cage; the capacity bound `v.len() < CAP` / `result.len() == v.len() + 1` (`push_one`) are flat comparisons over the `len` built-in. The caged-flat walk (`walk_expr_inner`'s `MethodCall` arm) is UNCHANGED — a Vec `len`/`get` is the same flat built-in as a slice `len`. `push`/`pop` are EXEC-only (never in a contract), so the cage does not admit them. Consumer: `validate` → `walk_expr_inner`. Verification: `thermite-lower/tests/collections_conformance.rs` (the contracts validate clean + real verus L3). |
 //! | REQ-4 (element invariant via named `spec fn`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The element invariant (`forall_in(v, |e| inv(e))` as a named `spec fn`, preserved across `push`) reuses the existing named-`spec fn` accept path UNCHANGED — but the v1 corpus oracle (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get; no `Vec<Account>` element-invariant program is in the corpus, so this REQ is deferred to a Stage-4 follow-up (the GROUNDED `all_elems_inv` form is design-confirmed feasible, not yet corpus-exercised). |
+//!
+//! ## REQ status — 06-provenance-and-sinks.md (Basis Stage 6, issue #76 / blocker #77)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-8 (`#[sealed]` abstraction barrier — the door is the only mint) | SHIPPED | epic **#62** Stage 6 (#77). The declaration pre-pass `Validator::new` collects `sealed_structs` (every `Item::Struct` with `sealed == true`, alongside `struct_fields`). The new span-bearing `SpecError::SealedConstruction { name, span }` variant is emitted by `check_sealed_construction`, called from BOTH `Expr::StructLit` walk arms (the exec-body `scan_expr_for_loops` AND the caged `walk_expr_inner`): any struct literal whose `path` resolves to a `#[sealed]` struct is REJECTED, so a `#[sealed]` clean/capability type (`Sql`/`Public`/`Authorized`) is obtainable ONLY as a `#[boundary]` door's return (the door body is foreign/`external_body`, no in-language `StructLit`). Inert when no `#[sealed]` struct is declared (the non-IFC corpus is UNCHANGED). Consumer: `pub fn validate` → `forge::check::check_file` (a `ForgeError::Spec`, exit non-zero, no L3 cert). Verification: `thermite-spec/tests/sealed_validate.rs` (the launder rejects with `SealedConstruction{Sql}`; the safe doored path + a plain/no-sealed struct validate clean); `forge/tests/divergence_provenance.rs` (the 3 #77 bypass tests, UN-IGNORED, REJECT on all three axes); `forge/tests/provenance_conformance.rs` unchanged (safe paths L3, naive careless L0). |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -228,6 +234,17 @@ pub enum SpecError {
     /// `name` is the offending variant. Rejected at the DECLARATION pre-pass,
     /// before any `match`/exhaustiveness check.
     InvalidVariantCasing { name: String, span: Span },
+    /// An `Expr::StructLit` constructing a `#[sealed]` clean/capability type
+    /// (`.design/basis/06-provenance-and-sinks.md` REQ-8). A `#[sealed]` struct
+    /// is the ABSTRACTION BARRIER for an IFC clean type (`Sql`/`Public`/
+    /// `Authorized`): it is obtainable ONLY as a `#[boundary]` door's return
+    /// value (the door body is foreign/`external_body`, with no in-language
+    /// `StructLit`), never minted directly. Minting one with a struct literal
+    /// would LAUNDER a marked value into a clean type outside its door —
+    /// defeating the IFC guarantee (the #77 SQLi/secret/capability bypass). This
+    /// is the LOUDEST tooth of handled-or-loud, in IFC: the un-doored mark-change
+    /// is a compile-time SCREAM, not a silent `L3`. `name` is the sealed struct.
+    SealedConstruction { name: String, span: Span },
 }
 
 impl SpecError {
@@ -248,7 +265,8 @@ impl SpecError {
             | SpecError::NestedScheme { span, .. }
             | SpecError::SchemeWrongArity { span, .. }
             | SpecError::SchemeStepShape { span, .. }
-            | SpecError::InvalidVariantCasing { span, .. } => *span,
+            | SpecError::InvalidVariantCasing { span, .. }
+            | SpecError::SealedConstruction { span, .. } => *span,
         }
     }
 }
@@ -347,6 +365,13 @@ impl fmt::Display for SpecError {
                 f,
                 "enum variant `{name}` must be UpperCamelCase (uppercase-initial) (REQ-2)"
             ),
+            SpecError::SealedConstruction { name, .. } => write!(
+                f,
+                "`{name}` is a `#[sealed]` type and cannot be constructed with a struct literal — \
+                 a sealed clean/capability type is obtainable ONLY through its `#[boundary]` door \
+                 (the abstraction barrier; `.design/basis/06-provenance-and-sinks.md` REQ-8); \
+                 minting it directly would launder a marked value past its door"
+            ),
         }
     }
 }
@@ -392,6 +417,14 @@ struct Validator {
     /// design admits — an accessed field must be declared SOMEWHERE; a name no
     /// struct/struct-variant declares is `UnknownField`.
     struct_fields: HashSet<String>,
+    /// REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the names of every
+    /// `#[sealed]` `struct` (collected from `Item::Struct` with `sealed == true`
+    /// in the pre-pass, alongside `struct_fields`). The abstraction-barrier rule
+    /// REJECTS any `Expr::StructLit` whose `path` resolves to a name in this set
+    /// (`SealedConstruction`) — a sealed clean/capability type is door-only-
+    /// mintable. Inert when no `#[sealed]` struct is declared (the non-IFC corpus
+    /// is UNCHANGED), exactly like `struct_fields`.
+    sealed_structs: HashSet<String>,
     depth: usize,
     errors: Vec<SpecError>,
     /// REQ-6 flat-closure-fragment mode. Set ONCE on entry to a combinator's
@@ -440,6 +473,12 @@ impl Validator {
         let mut enums: HashMap<String, Vec<String>> = HashMap::new();
         let mut variant_to_enum: HashMap<String, String> = HashMap::new();
         let mut struct_fields: HashSet<String> = HashSet::new();
+        // REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the `#[sealed]`
+        // clean/capability struct names — the abstraction barrier the
+        // `Expr::StructLit` walk keys off to REJECT a direct mint. Collected in
+        // the SAME pre-pass as `struct_fields` so a forward reference (`fn
+        // f() { Sql { … } }` before `#[sealed] struct Sql`) is seen.
+        let mut sealed_structs: HashSet<String> = HashSet::new();
         // `.design/basis/01-adts.md` REQ-2: every `enum` variant name MUST be
         // UpperCamelCase (uppercase-initial). A lowercase-initial variant is
         // rejected HERE, at the declaration pre-pass, BEFORE any
@@ -492,6 +531,11 @@ impl Validator {
                     for field in &s.fields {
                         struct_fields.insert(field.name.clone());
                     }
+                    // REQ-8: a `#[sealed]` struct joins the abstraction-barrier
+                    // set — its name will REJECT any `StructLit` mint.
+                    if s.sealed {
+                        sealed_structs.insert(s.name.clone());
+                    }
                 }
                 Item::Fn(_) | Item::SpecFn(_) => {}
             }
@@ -502,6 +546,7 @@ impl Validator {
             enums,
             variant_to_enum,
             struct_fields,
+            sealed_structs,
             depth: 0,
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
             // the error list, so a lowercase-variant `enum` is rejected at the
@@ -706,7 +751,11 @@ impl Validator {
             Expr::Closure { body, .. } => self.scan_expr_for_loops(body, span),
             // REQ-6: a struct / struct-variant construction's field names must be
             // declared; the field VALUES are descended for nested loops/ADTs.
-            Expr::StructLit { fields, .. } => {
+            // REQ-8: minting a `#[sealed]` clean type with a literal is the #77
+            // door-bypass — REJECTED here (the exec-body walk) so a laundering
+            // `query(Sql { stmt: input.raw })` screams at validation.
+            Expr::StructLit { path, fields } => {
+                self.check_sealed_construction(path, span);
                 for (field_name, value) in fields {
                     self.check_field(field_name, span);
                     self.scan_expr_for_loops(value, span);
@@ -878,7 +927,11 @@ impl Validator {
             // construction; a `path` naming nothing checkable is left to lowering
             // (1c) — the 1a `UnsupportedAdt` scream is gone for a well-formed
             // literal.
-            Expr::StructLit { fields, .. } => {
+            Expr::StructLit { path, fields } => {
+                // REQ-8: a `#[sealed]` clean type is door-only-mintable; a
+                // literal of one (anywhere — contract OR caged body) is the #77
+                // launder and is REJECTED with `SealedConstruction`.
+                self.check_sealed_construction(path, span);
                 for (field_name, value) in fields {
                     self.check_field(field_name, span);
                     self.walk_expr(value, span);
@@ -990,6 +1043,25 @@ impl Validator {
             if !missing.is_empty() {
                 self.errors
                     .push(SpecError::NonExhaustiveMatch { missing, span });
+            }
+        }
+    }
+
+    /// REQ-8 abstraction barrier (`.design/basis/06-provenance-and-sinks.md`): a
+    /// `StructLit` whose constructed type is a `#[sealed]` clean/capability type
+    /// is REJECTED (`SealedConstruction`) — a sealed type is door-only-mintable.
+    /// `path` is the literal's path; the constructed type is its LAST segment
+    /// (`Sql` in `Sql { … }`). Inert when no `#[sealed]` struct is declared (the
+    /// non-IFC corpus is UNCHANGED). The `#[boundary]` door is unaffected: its
+    /// body is foreign/`external_body`, with no in-language `StructLit`, so the
+    /// safe path `query(parameterize(input))` carries no sealed literal.
+    fn check_sealed_construction(&mut self, path: &[String], span: Span) {
+        if let Some(name) = path.last() {
+            if self.sealed_structs.contains(name) {
+                self.errors.push(SpecError::SealedConstruction {
+                    name: name.clone(),
+                    span,
+                });
             }
         }
     }

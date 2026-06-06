@@ -1,51 +1,45 @@
-//! Divergence: the v1 type-level IFC guarantee (Stage 6, issue #76, commit
-//! `ba4af4b`) is BYPASSABLE via direct struct construction (`Expr::StructLit`).
-//! Authored by acto-critic — each test pins the divergence as a FAILING assertion
-//! of the AUTHORITY's required behavior and is `#[ignore]`d behind the tracking
-//! blocker so `main` stays CI-green (the fixer un-ignores when the barrier lands).
+//! Divergence (CLOSED, blocker #77): the v1 type-level IFC guarantee (Stage 6,
+//! issue #76) WAS bypassable via direct struct construction (`Expr::StructLit`).
+//! The acto-critic pinned the hole as three `#[ignore]`d failing tests; the
+//! `#[sealed]` ABSTRACTION BARRIER (REQ-8) now CLOSES it, so these tests are
+//! UN-IGNORED and assert the bypass is REJECTED at validation.
 //!
-//! THE HOLE (CONFIRMED live against the real `forge` binary). The clean types
-//! (`Sql`/`Public`/`Authorized`) are ordinary Stage-1 newtype structs with
-//! ACCESSIBLE fields, so a caller can MINT one directly from a marked value
-//! WITHOUT the declared `#[boundary]` door:
+//! THE HOLE (was live; now closed). The clean types (`Sql`/`Public`/`Authorized`)
+//! are Stage-1 newtype structs with ACCESSIBLE fields, so a caller could MINT one
+//! directly from a marked value WITHOUT the declared `#[boundary]` door:
 //!
 //! ```text
 //! fn bypass_query(input: Tainted) -> u64 ... { query(Sql { stmt: input.raw }) }
 //! ```
 //!
-//! The `Sql { stmt: input.raw }` `StructLit` launders the `Tainted` payload into a
-//! `Sql` outside the `parameterize` door, the sink accepts it by type, and the
-//! function certifies **L3** (exit 0). Tainted data flows into the SQL sink, fully
-//! certified, with no sanitizer reached. This VIOLATES the design's central claim.
+//! The `Sql { stmt: input.raw }` `StructLit` laundered the `Tainted` payload into
+//! a `Sql` outside the `parameterize` door, the sink accepted it by type, and the
+//! function certified **L3**. THE FIX (REQ-8): the clean types are `#[sealed]`, and
+//! the validator REJECTS any `Expr::StructLit` of a `#[sealed]` struct with
+//! `SpecError::SealedConstruction`. `forge check` on a bypass program now FAILS at
+//! validation (a whole-program spec error — exit non-zero, the `SealedConstruction`
+//! diagnostic on stderr, NO L3 certificate ever emitted), exactly as every other
+//! validator reject (`NonExhaustiveMatch`, `UnknownField`, …) does. The door is the
+//! ONLY launder point — its body is foreign (`external_body`), with no in-language
+//! `StructLit`, so the safe doored path (`query(parameterize(input))`) is unaffected
+//! (still L3, see `provenance_conformance.rs`).
 //!
 //! Authority (`.design/basis/06-provenance-and-sinks.md`):
-//!   - REQ-2: "No mark-change exists outside a door — a value's mark is fixed at
-//!     construction (the struct literal) and changeable only by passing a door's
-//!     return type." The StructLit here CHANGES the effective mark (Tainted payload
-//!     → a clean `Sql`) OUTSIDE any door — directly contradicting REQ-2.
-//!   - The model section: "DOORS (the only mark-changing operations)" / "the only
-//!     door from `Tainted` to `Sql` is `parameterize`". Here a `StructLit` is a
-//!     SECOND, undeclared, un-audited launder point.
-//!   - The handled-or-loud law: a forbidden flow is HANDLED (through a door) or a
-//!     compile-time SCREAM. This flow is NEITHER — it is silently certified L3.
-//!   - `conformance/provenance/cases.json`: "the ONLY door from a marked type to a
-//!     clean type is the declared #[boundary] door"; the doors are "exactly where a
-//!     marked value is laundered to clean". A StructLit launder is NOT a door.
-//!   - `goal.md` R-DEFER-9: a marked value reaches the sink as clean without the
-//!     door — the obligation (no un-doored marked→clean flow) is silently dropped.
+//!   - REQ-8: a `#[sealed]` clean type "CANNOT be constructed by a `StructLit`
+//!     anywhere in Thermite code, so the ONLY way to obtain one is through its
+//!     `#[boundary]` door". `query(Sql { … })` is `SpecError::SealedConstruction`.
+//!   - REQ-2: "No mark-change exists outside a door … TRUE only because the clean
+//!     types are `#[sealed]` (REQ-8)." The StructLit launder is closed.
+//!   - AC-7: these three `#[ignore]`d tests are UN-IGNORED and PASS — each launder
+//!     yields `SealedConstruction` and does NOT certify L3.
+//!   - The handled-or-loud law: the un-doored flow is now the LOUDEST tooth — a
+//!     compile-time SCREAM (validation reject), never a silent L3.
+//!   - `goal.md` R-DEFER-9: no un-doored marked→clean launder.
 //!
-//! ROOT CAUSE: the clean types are ordinary structs with accessible fields; v1's
-//! "emergent type-level enforcement" has NO abstraction barrier (no sealed /
-//! door-only-constructible clean type, and no v1.1 dataflow propagation), so a
-//! `StructLit` of a clean type reading a marked field is accepted. v1 catches the
-//! NAIVE form (`query(input)` is L0 — see `provenance_conformance.rs`) but NOT the
-//! StructLit launder. Tracking: blocker #77.
-//!
-//! These run a real verus proof (the bypass body proves its equality contract), so
-//! they SKIP LOUDLY if verus is absent — never panic on a missing solver (mirrors
-//! `provenance_conformance.rs`).
+//! These do NOT need verus: the launder dies at the VALIDATOR (before any proof),
+//! so they assert the spec-reject directly and run regardless of solver presence.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 use serde_json::Value;
@@ -70,27 +64,16 @@ fn write_temp(name: &str, program: &str) -> PathBuf {
     path
 }
 
-fn verus_present() -> bool {
-    if let Ok(p) = std::env::var("VERUS_BIN") {
-        if Path::new(&p).exists() {
-            return true;
-        }
-    }
-    if let Ok(out) = Command::new("which").arg("verus").output() {
-        if out.status.success() && !String::from_utf8_lossy(&out.stdout).trim().is_empty() {
-            return true;
-        }
-    }
-    if let Ok(home) = std::env::var("HOME") {
-        if PathBuf::from(home).join(".local/bin/verus").exists() {
-            return true;
-        }
-    }
-    false
+/// The captured outcome of `forge check <program> --json` on a sealed-launder
+/// program: the exit code, the combined stdout, and stderr.
+struct CheckOutcome {
+    code: Option<i32>,
+    stdout: String,
+    stderr: String,
 }
 
-/// Run `forge check <program> --json` and return the certificate for `item`.
-fn cert_for(program: &str, file: &str, item: &str) -> Value {
+/// Run `forge check <program> --json` and capture exit code + stdout + stderr.
+fn run_check(program: &str, file: &str) -> CheckOutcome {
     let path = write_temp(file, program);
     let out = Command::new(forge_bin())
         .arg("check")
@@ -99,22 +82,52 @@ fn cert_for(program: &str, file: &str, item: &str) -> Value {
         .output()
         .unwrap_or_else(|e| panic!("spawn forge: {e}"));
     let _ = std::fs::remove_file(&path);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let value: Value = serde_json::from_str(stdout.trim()).unwrap_or_else(|e| {
-        panic!(
-            "forge --json must emit one JSON document: {e}\nstdout:\n{stdout}\nstderr:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        )
-    });
-    value
-        .as_array()
-        .and_then(|certs| {
-            certs
-                .iter()
-                .find(|c| c.get("item").and_then(|v| v.as_str()) == Some(item))
-                .cloned()
-        })
-        .unwrap_or_else(|| panic!("no certificate for item `{item}`\nstdout:\n{stdout}"))
+    CheckOutcome {
+        code: out.status.code(),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// Assert a `#[sealed]` `StructLit` launder is REJECTED at validation (REQ-8,
+/// AC-7): the run FAILS (non-zero exit), the `SealedConstruction` barrier
+/// diagnostic for `sealed_ty` is surfaced (never swallowed), and NO certificate
+/// for the laundering `item` ever reaches `L3` (the security guarantee). A
+/// validator reject is a whole-program spec error, so `forge --json` emits NO
+/// cert array on stdout — the door-bypass dies BEFORE any per-item proof, exactly
+/// like every other validator reject. Expectations are hand-derived from
+/// `.design/basis/06-provenance-and-sinks.md` REQ-8/AC-7 (R-CHAR-3), never read
+/// back from the toolchain's own output.
+fn assert_sealed_launder_rejected(outcome: &CheckOutcome, item: &str, sealed_ty: &str) {
+    assert_ne!(
+        outcome.code,
+        Some(0),
+        "IFC HOLE: a `#[sealed]` `{sealed_ty}` minted via `StructLit` in `{item}` was \
+         ACCEPTED (exit 0) — the door-bypass certifies. REQ-8 requires the door be the \
+         ONLY launder point; the un-doored flow must be a compile-time SCREAM."
+    );
+    let diag = format!("{}{}", outcome.stdout, outcome.stderr);
+    assert!(
+        diag.contains("sealed") && diag.contains(sealed_ty),
+        "the reject must be the `SealedConstruction` barrier naming `{sealed_ty}` (REQ-8) — \
+         got:\nstdout:\n{}\nstderr:\n{}",
+        outcome.stdout,
+        outcome.stderr
+    );
+    // No L3 certificate for the laundering fn may be emitted. A validator reject
+    // emits no cert array at all; if a (future) regression emitted one, it must
+    // NOT carry the laundering item at L3.
+    if let Ok(Value::Array(certs)) = serde_json::from_str::<Value>(outcome.stdout.trim()) {
+        for cert in &certs {
+            if cert.get("item").and_then(|v| v.as_str()) == Some(item) {
+                assert_ne!(
+                    cert["level"],
+                    Value::from("L3"),
+                    "SECURITY GUARANTEE: the door-bypass `{item}` MUST NEVER certify L3 (REQ-8)"
+                );
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +140,7 @@ fn cert_for(program: &str, file: &str, item: &str) -> Value {
 /// clean type without `parameterize`. The SQLi-un-typeable centerpiece is hollow.
 const TAINT_BYPASS: &str = r#"
 struct Tainted { raw: u64 }
-struct Sql { stmt: u64 }
+#[sealed] struct Sql { stmt: u64 }
 
 #[boundary("ifc::query")] fn query(q: Sql) -> u64
   req true
@@ -148,7 +161,7 @@ fn bypass_query(input: Tainted) -> u64
 /// clean type without `declassify`. The secret reaches `emit` un-declassified.
 const SECRET_BYPASS: &str = r#"
 struct Secret { val: u64 }
-struct Public { val: u64 }
+#[sealed] struct Public { val: u64 }
 
 #[boundary("ifc::emit")] fn emit(p: Public) -> u64
   req true
@@ -169,7 +182,7 @@ fn bypass_emit(s: Secret) -> u64
 /// `authorize`. The protected op `delete` runs on an unauthorized `User`.
 const CAP_BYPASS: &str = r#"
 struct User { id: u64 }
-struct Authorized { id: u64 }
+#[sealed] struct Authorized { id: u64 }
 
 #[boundary("ifc::delete")] fn delete(c: Authorized) -> u64
   req true
@@ -188,100 +201,38 @@ fn bypass_delete(u: User) -> u64
 
 /// TAINT bypass — `query(Sql { stmt: input.raw })` from a `Tainted input`.
 ///
-/// AUTHORITY (06-provenance-and-sinks.md REQ-2): a mark changes "only by passing a
-/// door's return type"; "No mark-change exists outside a door." The only
-/// `Tainted -> Sql` door is `parameterize`. A `StructLit` is NOT a door, so the
-/// tainted payload reaching the SQL sink as a clean `Sql` MUST NOT certify L3 — it
-/// must be the same compile-time SCREAM (`L0`) as the naive `query(input)`.
-///
-/// CURRENT (commit ba4af4b, real forge): `bypass_query` certifies **L3** (exit 0).
-/// The SQLi-un-typeable centerpiece is hollow. Tracking: blocker #77.
+/// AUTHORITY (06-provenance-and-sinks.md REQ-8/AC-7): `Sql` is `#[sealed]`, so a
+/// `StructLit` minting it is `SpecError::SealedConstruction` — the door
+/// (`parameterize`) is the ONLY launder point. The tainted payload reaching the
+/// SQL sink as a clean `Sql` via a struct literal MUST be REJECTED at validation,
+/// never certify L3. FIXED by blocker #77 (the `#[sealed]` barrier) — un-ignored.
 #[test]
-#[ignore = "divergence: StructLit launders Tainted->Sql outside the parameterize door, certifies L3 (must be L0); blocker #77 — un-ignore when fixed"]
 fn taint_structlit_bypass_must_not_certify_l3() {
-    if !verus_present() {
-        eprintln!("SKIP: verus not available — the StructLit-launder taint axis not run.");
-        return;
-    }
-    let cert = cert_for(TAINT_BYPASS, "taint_bypass", "bypass_query");
-    assert_ne!(
-        cert["level"],
-        Value::from("L3"),
-        "IFC HOLE: a Tainted laundered to Sql via `StructLit` (NOT the parameterize \
-         door) reaches the SQL sink and certifies L3 — SQLi is laundered. \
-         06-provenance-and-sinks.md REQ-2 requires the door be the ONLY launder \
-         point; the un-doored flow must be a compile-time SCREAM (L0)."
-    );
-    assert_eq!(
-        cert["level"],
-        Value::from("L0"),
-        "the un-doored Tainted->Sql StructLit flow must be rejected (L0), like the \
-         naive `query(input)` path (which IS L0 — see provenance_conformance.rs)."
-    );
+    let outcome = run_check(TAINT_BYPASS, "taint_bypass");
+    assert_sealed_launder_rejected(&outcome, "bypass_query", "Sql");
 }
 
 /// SECRET bypass — `emit(Public { val: s.val })` from a `Secret s`.
 ///
-/// AUTHORITY (06-provenance-and-sinks.md Axis 2 / REQ-2): "A `Secret` ... cannot
-/// reach a PUBLIC output ... without an explicit, AUDITED `declassify` door." The
-/// only `Secret -> Public` door is `declassify`. A `StructLit` minting a `Public`
-/// from a secret payload is an un-audited release — it MUST NOT certify L3.
-///
-/// CURRENT: `bypass_emit` certifies **L3** (exit 0) — the secret is laundered to a
-/// public sink with no `declassify` in the TCB. Tracking: blocker #77.
+/// AUTHORITY (06-provenance-and-sinks.md Axis 2 / REQ-8/AC-7): `Public` is
+/// `#[sealed]`, so a `StructLit` minting it is `SealedConstruction` — `declassify`
+/// is the ONLY release door. A `Public` struct literal reading a secret payload is
+/// an un-audited release REJECTED at validation, never L3. FIXED by #77 —
+/// un-ignored.
 #[test]
-#[ignore = "divergence: StructLit launders Secret->Public outside the declassify door, certifies L3 (must be L0); blocker #77 — un-ignore when fixed"]
 fn secret_structlit_bypass_must_not_certify_l3() {
-    if !verus_present() {
-        eprintln!("SKIP: verus not available — the StructLit-launder secret axis not run.");
-        return;
-    }
-    let cert = cert_for(SECRET_BYPASS, "secret_bypass", "bypass_emit");
-    assert_ne!(
-        cert["level"],
-        Value::from("L3"),
-        "IFC HOLE: a Secret laundered to Public via `StructLit` (NOT the declassify \
-         door) reaches the public sink `emit` and certifies L3 — the secret is \
-         released with no audited declassify. 06-provenance-and-sinks.md Axis 2 \
-         requires every release pass the declassify door; this must be L0."
-    );
-    assert_eq!(
-        cert["level"],
-        Value::from("L0"),
-        "the un-doored Secret->Public StructLit flow must be rejected (L0), like the \
-         naive `emit(s)` leak path (which IS L0)."
-    );
+    let outcome = run_check(SECRET_BYPASS, "secret_bypass");
+    assert_sealed_launder_rejected(&outcome, "bypass_emit", "Public");
 }
 
 /// CAPABILITY bypass — `delete(Authorized { id: u.id })` from a `User u`.
 ///
-/// AUTHORITY (06-provenance-and-sinks.md Axis 3 / REQ-2): the protected op demands
-/// an `Authorized` token that ONLY the `authorize` door produces — "the op is
-/// un-callable without it." A `StructLit` minting `Authorized` from a raw `User`
-/// forges the capability outside the auth check; it MUST NOT certify L3.
-///
-/// CURRENT: `bypass_delete` certifies **L3** (exit 0) — the capability is forged,
-/// the protected `delete` runs on an unauthorized `User`. Tracking: blocker #77.
+/// AUTHORITY (06-provenance-and-sinks.md Axis 3 / REQ-8/AC-7): `Authorized` is
+/// `#[sealed]`, so a `StructLit` forging it is `SealedConstruction` — `authorize`
+/// is the ONLY `Authorized` producer. A forged capability via a struct literal is
+/// REJECTED at validation, never L3. FIXED by #77 — un-ignored.
 #[test]
-#[ignore = "divergence: StructLit forges Authorized from User outside the authorize door, certifies L3 (must be L0); blocker #77 — un-ignore when fixed"]
 fn capability_structlit_bypass_must_not_certify_l3() {
-    if !verus_present() {
-        eprintln!("SKIP: verus not available — the StructLit-launder capability axis not run.");
-        return;
-    }
-    let cert = cert_for(CAP_BYPASS, "cap_bypass", "bypass_delete");
-    assert_ne!(
-        cert["level"],
-        Value::from("L3"),
-        "IFC HOLE: an Authorized token forged from a raw User via `StructLit` (NOT \
-         the authorize door) lets the protected `delete` certify L3 — missing-authz \
-         / IDOR is forgeable. 06-provenance-and-sinks.md Axis 3 requires authorize \
-         be the ONLY Authorized producer; this must be L0."
-    );
-    assert_eq!(
-        cert["level"],
-        Value::from("L0"),
-        "the un-doored User->Authorized StructLit forge must be rejected (L0), like \
-         the naive `delete(u)` path (which IS L0)."
-    );
+    let outcome = run_check(CAP_BYPASS, "cap_bypass");
+    assert_sealed_launder_rejected(&outcome, "bypass_delete", "Authorized");
 }

@@ -99,11 +99,20 @@ impl Item {
 /// `None` when the struct declares no invariant. Stage 1b validates field
 /// access against `fields`; stage 1c lowers the `inv` to a Verus `well_formed`
 /// predicate.
+///
+/// `sealed` carries the `#[sealed]` ABSTRACTION-BARRIER attribute
+/// (`.design/basis/06-provenance-and-sinks.md` REQ-8): a `#[sealed]` struct is a
+/// door-only-mintable clean/capability type — the validator REJECTS any
+/// `Expr::StructLit` of a sealed struct (`SpecError::SealedConstruction`), so the
+/// ONLY way to obtain one is through its `#[boundary]` door's return value (the
+/// door body is foreign/`external_body`, with no in-language `StructLit`). It is
+/// `false` for an ordinary struct (the parser sets it `true` only on `#[sealed]`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StructItem {
     pub name: Ident,
     pub fields: Vec<FieldDef>,
     pub inv: Option<Clause>,
+    pub sealed: bool,
     pub span: Span,
 }
 

@@ -1,5 +1,5 @@
 struct Tainted { raw: u64 }
-struct Sql { stmt: u64 }
+#[sealed] struct Sql { stmt: u64 }
 
 #[boundary("ifc::parameterize")] fn parameterize(t: Tainted) -> Sql
   req true
@@ -30,7 +30,7 @@ fn careless_query(input: Tainted) -> u64
 }
 
 struct Secret { val: u64 }
-struct Public { val: u64 }
+#[sealed] struct Public { val: u64 }
 
 #[boundary("ifc::declassify")] fn declassify(s: Secret) -> Public
   req true
@@ -61,7 +61,7 @@ fn leak(s: Secret) -> u64
 }
 
 struct User { id: u64 }
-struct Authorized { id: u64 }
+#[sealed] struct Authorized { id: u64 }
 
 #[boundary("ifc::authorize")] fn authorize(u: User) -> Authorized
   req true

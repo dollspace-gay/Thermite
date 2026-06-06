@@ -27,6 +27,7 @@ mod check;
 mod cli;
 mod closure;
 mod degrade;
+mod effect_wrappers;
 mod kani;
 mod manifest;
 mod mutation;

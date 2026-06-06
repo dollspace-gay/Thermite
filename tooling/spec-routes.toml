@@ -390,6 +390,20 @@ design = ".design/forge/build.md"
 reference = ["conformance/build"]
 conformance_ops = ["sum"]
 
+# Stage 8 — the runnable effect link (issue #81): forge build emits a `mod os`
+# linking the v1 os::<name> syscall wrappers so a verified program RUNS + does I/O.
+[[route]]
+crate_pattern = "forge/src/build.rs"
+design = ".design/basis/08-runnable-effect-link.md"
+reference = ["conformance/effect-link", "conformance/build"]
+conformance_ops = ["now_runs", "read_runs", "now_sandbox_confined"]
+
+[[route]]
+crate_pattern = "forge/src/effect_wrappers.rs"
+design = ".design/basis/08-runnable-effect-link.md"
+reference = ["conformance/effect-link"]
+conformance_ops = ["now_runs", "read_runs"]
+
 # runtime effect sandbox — seccomp filter from fx (issue #57)
 [[route]]
 crate_pattern = "forge/src/sandbox.rs"

@@ -53,8 +53,11 @@ use std::process::Command;
 use serde::Serialize;
 use thermite_syntax::{FnItem, Item, PrimType, Program, Type};
 
+use std::collections::BTreeSet;
+
 use crate::check::{unique_scratch_dir, ScratchDir};
 use crate::cli::ForgeError;
+use crate::effect_wrappers;
 use crate::manifest::effects_of;
 use crate::sandbox::{self, SandboxMode};
 
@@ -305,12 +308,43 @@ pub fn emit_source(
 ) -> Result<String, ForgeError> {
     let path = path.as_ref();
     let program = parse_program(path)?;
-    let mut source = thermite_lower::lower_l1(&program).map_err(ForgeError::Lower)?;
+    let lowered = thermite_lower::lower_l1(&program).map_err(ForgeError::Lower)?;
+
+    // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-2): emit a
+    // self-contained `mod os { … }` carrying EXACTLY the wrappers the program's
+    // `#[boundary("os::<name>")]` targets name, PREPENDED to the lowered code so
+    // `lower_boundary_fn_l1`'s `let result = os::<name>(args);` crossing RESOLVES
+    // under raw rustc (closing the GROUNDED `E0433`). A program with no `os::`
+    // boundary emits no module (the pure corpus is byte-unaffected, AC-7).
+    let targets = reachable_boundary_targets(&program);
+    let mut source = effect_wrappers::emit_mod_os(&targets)?;
+    source.push_str(&lowered);
+
     if let Some(name) = entry {
         let f = find_entry_fn(&program, name)?;
         source.push_str(&synthesize_entry_main(&program, f, sandbox)?);
     }
     Ok(source)
+}
+
+/// Collect the DISTINCT `#[boundary("os::<name>")]` foreign targets the built
+/// program names (Stage 8 REQ-2). `thermite_lower::lower_l1` emits a boundary L1
+/// wrapper — containing the `os::<name>(args)` crossing — for EVERY `#[boundary]`
+/// `Item::Fn` in the program (`thermite-lower/src/l1.rs` `lower_l1`'s match guard),
+/// so the self-contained crate must resolve EACH such target regardless of the
+/// `--entry`. The set is keyed by the `BoundaryAttr.target` string (the foreign
+/// target the lowered crossing calls), so the emitted `mod os` is exactly the
+/// program's live TCB surface — nothing more (minimal TCB, REQ-2/REQ-6). Returns a
+/// `BTreeSet` (sorted, deterministic; R-CODE-5).
+fn reachable_boundary_targets(program: &Program) -> BTreeSet<String> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fn(f) => f.boundary.as_ref().map(|b| b.target.clone()),
+            Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+        })
+        .collect()
 }
 
 /// Project the program's `Item::Fn`s into the per-fn `fx` rows for the manifest

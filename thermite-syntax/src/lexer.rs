@@ -15,7 +15,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 (token set) | SHIPPED | `enum TokKind` enumerates exactly keywords/ident/int/bool/punct/slag/eof; consumed by `parser.rs`. |
-//! | REQ-2 (keywords closed set) | SHIPPED | `keyword_kind` maps the 17 reserved words; effect/slag names fall through to `Ident`. |
+//! | REQ-2 (keywords closed set) | SHIPPED | `keyword_kind` maps the reserved words; effect/slag names fall through to `Ident`. The basis ADT stage (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-6) reserves `struct`/`enum`/`is` here; `Box` stays a contextual identifier matched by name in `parser::parse_type` (the `Generic` path, like `Option`), so it is NOT reserved. |
 //! | REQ-3 — VALUE (int literals with `_` stripped) | SHIPPED | `lex_int` strips `_` and accumulates `value`; `1_000_000` → value `1000000` (test `int_literal_underscores_strip_to_value` in `tests/conformance.rs`). |
 //! | REQ-3 — RAW (verbatim source slice on the token, #37) | SHIPPED | `lex_int` ALSO captures the verbatim digit+`_` run as `raw` (`source[i..last_digit]`); `TokKind::Int { value, raw }` so `1_000_000` lexes to value `1000000` AND raw `"1_000_000"` (test `int_literal_preserves_raw`). Consumer: `parse_primary`/pattern-literal in `parser.rs`. |
 //! | REQ-4 (`#[slag]` tokenization) | SHIPPED | `#[` token + string literals via `lex_string`; consumed by `parse_slag`. |
@@ -81,6 +81,9 @@ pub enum TokKind {
     While,
     Match,
     As,
+    Struct,
+    Enum,
+    Is,
 
     // Literals / names.
     Ident(String),
@@ -157,6 +160,9 @@ fn keyword_kind(word: &str) -> Option<TokKind> {
         "while" => TokKind::While,
         "match" => TokKind::Match,
         "as" => TokKind::As,
+        "struct" => TokKind::Struct,
+        "enum" => TokKind::Enum,
+        "is" => TokKind::Is,
         "true" => TokKind::Bool(true),
         "false" => TokKind::Bool(false),
         _ => return None,

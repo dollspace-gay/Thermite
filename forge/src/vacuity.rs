@@ -230,6 +230,17 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
         }
         Expr::Cast { expr, .. } => expr_mentions_result(expr, d),
         Expr::Ref { expr, .. } => expr_mentions_result(expr, d),
+        // Basis Stage 1a (`.design/basis/01-adts.md`): a `result` mention can
+        // appear inside an ADT expression (`result is Circle`, `result.balance`
+        // inside a struct literal, `*result`), so the honest walk descends into
+        // their sub-expressions — answering a flat `false` would risk a
+        // false-reject (b). Dead-in-1a (the ADT program dies at the validator
+        // before the vacuity battery runs).
+        Expr::StructLit { fields, .. } => fields
+            .iter()
+            .any(|(_, value)| expr_mentions_result(value, d)),
+        Expr::Is { scrutinee, .. } => expr_mentions_result(scrutinee, d),
+        Expr::Deref(inner) => expr_mentions_result(inner, d),
     }
 }
 

@@ -307,6 +307,11 @@ fn project_artifact(
         .filter_map(|i| match i {
             Item::SpecFn(s) => Some(s),
             Item::Fn(_) => None,
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item is not a `spec fn` — it contributes nothing to the
+            // referenced-spec-fn projection (neutral value `None`). Dead-in-1a
+            // (an ADT program dies at the validator before a cert is reviewed).
+            Item::Struct(_) | Item::Enum(_) => None,
         })
         .collect();
 
@@ -454,6 +459,19 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
         }
         Expr::Cast { expr, ty: _ } => collect_callee_names(expr, out),
         Expr::Ref { mutable: _, expr } => collect_callee_names(expr, out),
+        // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
+        // expressions, but the honest collector descends into their
+        // sub-expressions so a referenced spec-fn name nested inside is found.
+        Expr::StructLit { path: _, fields } => {
+            for (_, value) in fields {
+                collect_callee_names(value, out);
+            }
+        }
+        Expr::Is {
+            scrutinee,
+            variant: _,
+        } => collect_callee_names(scrutinee, out),
+        Expr::Deref(inner) => collect_callee_names(inner, out),
         Expr::IntLit { .. } | Expr::BoolLit(_) => {}
     }
 }
@@ -558,6 +576,14 @@ fn render_type(ty: &Type) -> String {
         }
         Type::Slice(inner) => format!("[{}]", render_type(inner)),
         Type::Generic { name, arg } => format!("{}<{}>", name, render_type(arg)),
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): the
+        // SURFACE rendering of a user `Named` type or a `Box<T>` is its surface
+        // text — the faithful declaration form a reviewer reads (`Account`,
+        // `Box<List>`). This is the honest neutral value for an infallible
+        // surface renderer, NOT a stub. Dead-in-1a (an ADT cert is never
+        // reviewed — it dies at the validator).
+        Type::Named(name) => name.clone(),
+        Type::Box(inner) => format!("Box<{}>", render_type(inner)),
     }
 }
 

@@ -144,6 +144,11 @@ impl CallGraph {
                         },
                     );
                 }
+                // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+                // item is not a callable call-graph node — it is neither a
+                // crossing nor a fn with out-edges. The neutral value is to
+                // insert no node. Dead-in-1a (gated at the validator).
+                Item::Struct(_) | Item::Enum(_) => {}
             }
         }
         CallGraph { nodes }
@@ -405,6 +410,18 @@ fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
         }
         Expr::Cast { expr, .. } => walk_expr(expr, in_file, out),
         Expr::Ref { expr, .. } => walk_expr(expr, in_file, out),
+        // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
+        // expressions, but the honest call-graph walk descends into their
+        // sub-expressions — an in-file call could sit in a struct-literal field
+        // value, an `is` scrutinee, or a deref operand, so no out-edge is
+        // silently dropped.
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                walk_expr(value, in_file, out);
+            }
+        }
+        Expr::Is { scrutinee, .. } => walk_expr(scrutinee, in_file, out),
+        Expr::Deref(inner) => walk_expr(inner, in_file, out),
         // Leaves: no nested call to find.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }

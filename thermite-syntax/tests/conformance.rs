@@ -96,6 +96,12 @@ fn render_type(ty: &Type) -> String {
         Type::Slice(inner) => format!("[{}]", render_type(inner)),
         Type::Generic { name, arg } => format!("{name}<{}>", render_type(arg)),
         Type::Unit => "()".to_string(),
+        // Basis Stage 1a ADT type nodes (`.design/basis/01-adts.md` REQ-1/REQ-2/
+        // REQ-3): a bare user type name and the `Box<T>` recursive-occurrence
+        // primitive. Additive arms so this existing test helper compiles; the
+        // existing `sum`/`binary_search` fixtures never exercise them.
+        Type::Named(name) => name.clone(),
+        Type::Box(inner) => format!("Box<{}>", render_type(inner)),
     }
 }
 
@@ -225,6 +231,16 @@ fn check_parse_facts(facts_file: &str) {
                 assert_eq!(render_type(&s.ret), fact.ret, "{} ret mismatch", fact.name);
                 assert_eq!(Some(true), fact.has_dec, "{} has_dec", fact.name);
             }
+            // The existing `sum`/`binary_search` fixtures contain only `fn`/
+            // `spec fn`; the basis ADT item kinds (`.design/basis/01-adts.md`)
+            // never appear here. Additive arm so this exhaustive `match`
+            // compiles; ADT items are asserted by `tests/adt_parse.rs`.
+            Item::Struct(_) | Item::Enum(_) => {
+                panic!(
+                    "{}: unexpected ADT item in the non-ADT corpus fixture",
+                    fact.name
+                )
+            }
         }
     }
 }
@@ -316,6 +332,10 @@ fn recover_per_item() {
                 assert_eq!(Some(f.contract.ens.len()), fact.ens_count);
             }
             Item::SpecFn(_) => panic!("`ok` should be a fn"),
+            // The recovery fixture's recovered item is a `fn`; ADT item kinds
+            // (`.design/basis/01-adts.md`) do not appear. Additive arm so this
+            // exhaustive `match` compiles.
+            Item::Struct(_) | Item::Enum(_) => panic!("`ok` should be a fn, not an ADT item"),
         }
     }
 }

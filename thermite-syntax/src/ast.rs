@@ -29,6 +29,20 @@
 //! | REQ-7 (pattern/type/effect nodes) | SHIPPED | `enum Pattern`/`enum Type`/`enum EffectRow`; built by `parse_pattern`/`parse_type`. |
 //! | REQ-8 (addressable nodes) | SHIPPED | `Item`/`LoopNode`/`Clause` carry source order; numbered by `address.rs`. |
 //! | REQ-9 (spans + boundary stability) | SHIPPED | `Span` on `Item`/`LoopNode`/`Clause`; clauses also keep verbatim `text` for addressing. |
+//!
+//! ## Basis Stage 1a — ADT SURFACE AST nodes (`.design/basis/01-adts.md`)
+//!
+//! SURFACE-only (parse-into-the-right-AST); the VALIDATOR rules (1b) and Verus
+//! LOWERING (1c) are NOT in this crate.
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 SURFACE (struct items + `inv` clause) | SHIPPED | `Item::Struct(StructItem)` with `StructItem { name, fields: Vec<FieldDef>, inv: Option<Clause>, span }` + `FieldDef { name, ty }`; built by `parse_struct` in `parser.rs`; asserted by `tests/adt_parse.rs` against `conformance/parse/bank_account.facts.json`. |
+//! | REQ-2 SURFACE (enum items + struct-lit construction) | SHIPPED | `Item::Enum(EnumItem)` with `EnumItem { name, variants: Vec<VariantDef>, span }`, `VariantDef { name, shape }`, `VariantShape::{Unit,Tuple(Vec<Type>),Struct(Vec<FieldDef>)}`, and `Expr::StructLit { path, fields }`; built by `parse_enum`/`parse_struct_lit`; asserted by `tests/adt_parse.rs` (shape/bank_account facts). |
+//! | REQ-3 SURFACE (recursive `Box<T>` type) | SHIPPED | `Type::Box(Box<Type>)` (OQ-1 RESOLVED — dedicated node, not `Generic`); built by `parser::parse_type` on the contextual `Box` ident; the `Cons(u64, Box<List>)` self-ref parses (`tests/adt_parse.rs` list_sum). The `alloc` effect / subsumption is stage 1c. |
+//! | REQ-4 SURFACE (`match` over enum/struct patterns + binding) | SHIPPED | `Pattern::Struct { path, fields: Vec<(Ident, Pattern)>, rest }` added; the existing `Pattern::Enum` covers tuple/unit variants; `parse_match`/`parse_pattern` bind payloads (`Circle(r)`, `Rect { w, h }`, `Cons(h, t)`); asserted by `tests/adt_parse.rs` (shape + list_sum 2-arm matches). The exhaustiveness CHECK is stage 1b. |
+//! | REQ-6 SURFACE (`Expr::Is` + `is` operator) | SHIPPED | `Expr::Is { scrutinee: Box<Expr>, variant: Vec<Ident> }`; built by the postfix `is` parse in `parser::parse_postfix`; `result == (s is Circle)` parses (`tests/adt_parse.rs` shape). The VALIDATOR rule (accept only declared variants) is stage 1b. |
+//! | deref `*t` (REQ-3/REQ-4 surface) | SHIPPED | `Expr::Deref(Box<Expr>)` (new prefix-`*` unary; no existing node fit); built by `parser::parse_ref`; `sum_list(*t)` parses (`tests/adt_parse.rs` list_sum). Its SEMANTICS are stage 1c. |
 
 use crate::lexer::Span;
 
@@ -41,21 +55,85 @@ pub struct Program {
     pub items: Vec<Item>,
 }
 
-/// A top-level item. v0.1 admits exactly `fn` and `spec fn` (ast.md REQ-1).
+/// A top-level item. v0.1 admits `fn` and `spec fn`; the basis ADT stage
+/// (`.design/basis/01-adts.md` REQ-1/REQ-2) adds `struct` (product types) and
+/// `enum` (sum types) item kinds. These are PURELY ADDITIVE: existing
+/// `Item::Fn`/`Item::SpecFn` consumers are unchanged in shape — but exhaustive
+/// `match`es over `Item` downstream (thermite-spec/thermite-lower/forge) gain
+/// the validate/lower arms in basis stages 1b/1c.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Item {
     Fn(FnItem),
     SpecFn(SpecFnItem),
+    /// A `struct NAME { field: TYPE, … } [inv <expr>]` product type
+    /// (`.design/basis/01-adts.md` REQ-1).
+    Struct(StructItem),
+    /// An `enum NAME { Variant, Variant(TYPE, …), Variant { field: TYPE, … } }`
+    /// sum type (`.design/basis/01-adts.md` REQ-2).
+    Enum(EnumItem),
 }
 
 impl Item {
-    /// The function name — the root segment of every semantic address.
+    /// The item name — the root segment of every semantic address. For a
+    /// `struct`/`enum` this is the type name.
     pub fn name(&self) -> &str {
         match self {
             Item::Fn(f) => &f.name,
             Item::SpecFn(s) => &s.name,
+            Item::Struct(s) => &s.name,
+            Item::Enum(e) => &e.name,
         }
     }
+}
+
+/// A `struct NAME { field: TYPE, … }` product-type item, optionally carrying a
+/// type-invariant `inv <expr>` clause (`.design/basis/01-adts.md` REQ-1). The
+/// `inv` reuses the existing [`Clause`] (verbatim text + parsed expr); it is
+/// `None` when the struct declares no invariant. Stage 1b validates field
+/// access against `fields`; stage 1c lowers the `inv` to a Verus `well_formed`
+/// predicate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StructItem {
+    pub name: Ident,
+    pub fields: Vec<FieldDef>,
+    pub inv: Option<Clause>,
+    pub span: Span,
+}
+
+/// A named, typed field of a `struct` or a struct-shaped enum variant
+/// (`.design/basis/01-adts.md` REQ-1/REQ-2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FieldDef {
+    pub name: Ident,
+    pub ty: Type,
+}
+
+/// An `enum NAME { … }` sum-type item (`.design/basis/01-adts.md` REQ-2). Its
+/// `variants` are the declared outcome set the exhaustive-`match` check (REQ-5,
+/// stage 1b) and `is`-discrimination (REQ-6) key off.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumItem {
+    pub name: Ident,
+    pub variants: Vec<VariantDef>,
+    pub span: Span,
+}
+
+/// One declared variant of an `enum` (`.design/basis/01-adts.md` REQ-2): a name
+/// plus its payload [`VariantShape`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariantDef {
+    pub name: Ident,
+    pub shape: VariantShape,
+}
+
+/// The payload shape of an enum variant (`.design/basis/01-adts.md` REQ-2):
+/// `Unit` (`Nil`), `Tuple` (`Circle(u64)`, `Cons(u64, Box<List>)`), or `Struct`
+/// (`Rect { w: u64, h: u64 }`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum VariantShape {
+    Unit,
+    Tuple(Vec<Type>),
+    Struct(Vec<FieldDef>),
 }
 
 /// A `fn` item with its mandatory contract and body (ast.md REQ-1/REQ-2/REQ-3;
@@ -318,6 +396,31 @@ pub enum Expr {
         mutable: bool,
         expr: Box<Expr>,
     },
+    /// A struct / struct-variant construction `Path { field: val, … }`
+    /// (`.design/basis/01-adts.md` REQ-2): the literal that builds an
+    /// `Account { balance: … }` or a struct-shaped enum variant. The `path` is
+    /// the (possibly `::`-segmented) type/variant name; `fields` are the
+    /// `name: value` initializers in source order. A unit/tuple variant is
+    /// constructed via the existing `Path`/`Call` nodes (REQ-2) — only the
+    /// brace-initializer form is new.
+    StructLit {
+        path: Vec<Ident>,
+        fields: Vec<(Ident, Expr)>,
+    },
+    /// A variant-discrimination test `SCRUTINEE is Variant`
+    /// (`.design/basis/01-adts.md` REQ-6): a `bool`-valued contract expression
+    /// (`result is Circle`). The `variant` is the (possibly `::`-segmented)
+    /// variant name. Stage 1b validates it against the scrutinee's declared
+    /// variant set; stage 1c lowers it to the Verus `is` discriminant test.
+    Is {
+        scrutinee: Box<Expr>,
+        variant: Vec<Ident>,
+    },
+    /// A dereference of a boxed value `*EXPR` (`.design/basis/01-adts.md` REQ-3,
+    /// the recursive call `sum_list(*t)`). A new unary node (no existing node
+    /// fits — `Ref` is its inverse); its SEMANTICS (the `Box` deref Verus reads
+    /// transparently with `*`) are stage 1c. Surface-only here.
+    Deref(Box<Expr>),
 }
 
 /// A pattern (ast.md REQ-7). Slice patterns `[]`/`[head, ..t]` and enum
@@ -331,6 +434,16 @@ pub enum Pattern {
     Enum {
         path: Vec<Ident>,
         fields: Vec<Pattern>,
+    },
+    /// A struct / struct-variant destructuring pattern `Path { field: pat, … }`
+    /// or `Path { .. }` (`.design/basis/01-adts.md` REQ-4): binds the named
+    /// fields of a `struct` or struct-shaped enum variant (`Rect { w, h }`). The
+    /// `rest` flag is the `..` of `Rect { .. }`. A `field` shorthand `Rect { w,
+    /// h }` is sugar the parser expands to `(w, Pattern::Binding("w"))`.
+    Struct {
+        path: Vec<Ident>,
+        fields: Vec<(Ident, Pattern)>,
+        rest: bool,
     },
 }
 
@@ -358,7 +471,28 @@ pub enum PrimType {
 pub enum Type {
     Prim(PrimType),
     Unit,
-    Ref { mutable: bool, inner: Box<Type> },
+    Ref {
+        mutable: bool,
+        inner: Box<Type>,
+    },
     Slice(Box<Type>),
-    Generic { name: Ident, arg: Box<Type> },
+    Generic {
+        name: Ident,
+        arg: Box<Type>,
+    },
+    /// A bare user-defined type name — a `struct`/`enum` declared in the program
+    /// (`.design/basis/01-adts.md` REQ-1/REQ-2): `Account`, `Shape`, `List`. A
+    /// parameter `a: Account`, a return type `-> Shape`, and the recursive
+    /// occurrence `Box<List>`'s inner `List` are all `Type::Named`. Without this
+    /// node a user type could not appear in any type position (no ADT program
+    /// would parse); it is the type-side complement of the `struct`/`enum` items.
+    /// Distinct from `Generic` (which REQUIRES `<arg>`, e.g. `Option<usize>`).
+    Named(Ident),
+    /// The heap-indirection primitive `Box<T>` (`.design/basis/01-adts.md`
+    /// REQ-3, OQ-1 RESOLVED: a dedicated first-class `Type` node, NOT a
+    /// `Generic { name: "Box", .. }`, so the effect-subsumption check keys on the
+    /// node kind rather than a string match). The recursive occurrence of a
+    /// recursive `enum` (`Cons(u64, Box<List>)`); constructing a boxed value
+    /// carries `fx alloc` (stage 1c).
+    Box(Box<Type>),
 }

@@ -108,6 +108,22 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
                 out.push_str(&emit_harness(f)?);
                 out.push('\n');
             }
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item is UNREACHABLE — an ADT program dies at the validator gate
+            // before L2 lowering. Honest neutral value: the existing
+            // `Unsupported` error at the item span (1c lowers ADTs). NOT a panic.
+            Item::Struct(s) => {
+                return Err(LowerError::Unsupported {
+                    what: "struct item (ADT L2 lowering lands in basis Stage 1c)".to_string(),
+                    span: s.span,
+                })
+            }
+            Item::Enum(e) => {
+                return Err(LowerError::Unsupported {
+                    what: "enum item (ADT L2 lowering lands in basis Stage 1c)".to_string(),
+                    span: e.span,
+                })
+            }
         }
     }
 
@@ -363,6 +379,10 @@ pub fn bound_string(program: &Program) -> String {
             // bound, so it contributes no unwind requirement.
             Item::Fn(f) => f.body.as_ref().map(unwind_bound),
             Item::SpecFn(_) => None,
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item has no loop body to unwind-bound → contributes nothing
+            // (neutral value `None`). Dead-in-1a (gated at the validator).
+            Item::Struct(_) | Item::Enum(_) => None,
         })
         .max()
         .unwrap_or(SLICE_BOUND + 1);
@@ -412,6 +432,13 @@ fn type_label(ty: &Type) -> String {
         }
         Type::Slice(_) => "[_]".to_string(),
         Type::Generic { name, .. } => format!("{name}<_>"),
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): a
+        // descriptive label for a user `Named` type or a `Box<T>`. This fn is
+        // purely a human label INSIDE an `Unsupported` diagnostic — a
+        // descriptive name (NOT a panic) is the honest neutral value here; the
+        // type is dead-in-1a (gated at the validator).
+        Type::Named(name) => name.clone(),
+        Type::Box(_) => "Box<_>".to_string(),
     }
 }
 

@@ -218,6 +218,13 @@ struct Parser<'a> {
     /// expressions, types, patterns, and the if-tail cycle — against stack
     /// overflow on deeply nested input — parser.md AC-4).
     recursion_depth: usize,
+    /// When true, a path primary does NOT consume a following `{ … }` as a
+    /// struct-literal (`.design/basis/01-adts.md` REQ-2): set for the
+    /// `match`/`if`/`while` head positions so `match s { … }` reads `{` as the
+    /// arm block, not `s { … }` as a struct lit (the Rust no-struct-literal
+    /// context). Saved/restored around each head so nested call/index/paren
+    /// args re-enable struct literals.
+    no_struct_literal: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -229,7 +236,38 @@ impl<'a> Parser<'a> {
             items: Vec::new(),
             errors: lex_errors,
             recursion_depth: 0,
+            no_struct_literal: false,
         }
+    }
+
+    /// Run `inner` with struct-literal parsing suppressed (the `match`/`if`/
+    /// `while` head context), restoring the prior flag afterward
+    /// (`.design/basis/01-adts.md` REQ-2). A nested call/index/paren-group
+    /// re-enables struct literals via `with_struct_literal`.
+    fn with_no_struct_literal<T>(
+        &mut self,
+        inner: impl FnOnce(&mut Self) -> PResult<T>,
+    ) -> PResult<T> {
+        let saved = self.no_struct_literal;
+        self.no_struct_literal = true;
+        let result = inner(self);
+        self.no_struct_literal = saved;
+        result
+    }
+
+    /// Run `inner` with struct-literal parsing RE-ENABLED inside a bracketed
+    /// subexpression (call args, index, paren group) of a no-struct-literal head
+    /// — `match f(A { x: 1 }) { … }` constructs `A { … }` even though the match
+    /// scrutinee itself forbids a bare struct literal (Rust semantics).
+    fn with_struct_literal<T>(
+        &mut self,
+        inner: impl FnOnce(&mut Self) -> PResult<T>,
+    ) -> PResult<T> {
+        let saved = self.no_struct_literal;
+        self.no_struct_literal = false;
+        let result = inner(self);
+        self.no_struct_literal = saved;
+        result
     }
 
     // ---- recursion-depth guard (parser.md AC-4) ----------------------------
@@ -357,7 +395,11 @@ impl<'a> Parser<'a> {
         while !self.at_eof() {
             if matches!(
                 self.peek(),
-                TokKind::Fn | TokKind::Spec | TokKind::HashBracket
+                TokKind::Fn
+                    | TokKind::Spec
+                    | TokKind::HashBracket
+                    | TokKind::Struct
+                    | TokKind::Enum
             ) {
                 break;
             }
@@ -377,6 +419,25 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
+
+        // `struct`/`enum` items (`.design/basis/01-adts.md` REQ-1/REQ-2) carry
+        // NO attribute (only `fn` does); a leading `#[..]` before one is an error.
+        if self.check(&TokKind::Struct) || self.check(&TokKind::Enum) {
+            match &attr {
+                Some(ParsedAttr::Slag(_)) => {
+                    return Err(self.unexpected("`fn` after `#[slag(...)]`"));
+                }
+                Some(ParsedAttr::Boundary(_)) => {
+                    return Err(self.unexpected("`fn` after `#[boundary(\"...\")]`"));
+                }
+                None => {}
+            }
+            return if self.check(&TokKind::Struct) {
+                self.parse_struct(start_span)
+            } else {
+                self.parse_enum(start_span)
+            };
+        }
 
         if self.check(&TokKind::Spec) {
             // Neither `#[slag]` nor `#[boundary]` attaches to a `spec fn`
@@ -569,6 +630,110 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    /// Parse a `struct NAME { field: TYPE, … } [inv <expr>]` item
+    /// (`.design/basis/01-adts.md` REQ-1). The optional `inv` type-invariant
+    /// clause follows the closing brace and reuses the existing `Clause`
+    /// (verbatim text + parsed expr). The VALIDATOR rules (field well-formedness)
+    /// are stage 1b; here we only parse the surface into the right AST.
+    fn parse_struct(&mut self, start_span: Span) -> PResult<Item> {
+        self.consume(&TokKind::Struct, "`struct`")?;
+        let name = self.take_ident("a struct name")?;
+        let fields = self.parse_field_defs()?;
+        // The optional `inv <expr>` type-invariant clause (REQ-1) follows the
+        // field block. Absent -> `None` (a struct may declare no invariant).
+        let inv = if self.check(&TokKind::Inv) {
+            Some(self.parse_clause(&TokKind::Inv)?)
+        } else {
+            None
+        };
+        let span = start_span.to(self.prev_span());
+        Ok(Item::Struct(StructItem {
+            name,
+            fields,
+            inv,
+            span,
+        }))
+    }
+
+    /// Parse a `{ field: TYPE, … }` field-definition block, shared by `struct`
+    /// items and struct-shaped enum variants (`.design/basis/01-adts.md`
+    /// REQ-1/REQ-2). A trailing comma is permitted.
+    fn parse_field_defs(&mut self) -> PResult<Vec<FieldDef>> {
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut fields = Vec::new();
+        if !self.check(&TokKind::RBrace) {
+            loop {
+                let name = self.take_ident("a field name")?;
+                self.consume(&TokKind::Colon, "`:`")?;
+                let ty = self.parse_type()?;
+                fields.push(FieldDef { name, ty });
+                if !self.eat(&TokKind::Comma) {
+                    break;
+                }
+                if self.check(&TokKind::RBrace) {
+                    break;
+                }
+            }
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        Ok(fields)
+    }
+
+    /// Parse an `enum NAME { Variant, Variant(TYPE, …), Variant { field: TYPE, … }
+    /// }` item (`.design/basis/01-adts.md` REQ-2). A variant is `Unit` (bare
+    /// name), `Tuple` (`(TYPE, …)`), or `Struct` (`{ field: TYPE, … }`). A
+    /// trailing comma is permitted. Recursive `Box<List>` self-refs parse via
+    /// `parse_type` (REQ-3).
+    fn parse_enum(&mut self, start_span: Span) -> PResult<Item> {
+        self.consume(&TokKind::Enum, "`enum`")?;
+        let name = self.take_ident("an enum name")?;
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut variants = Vec::new();
+        if !self.check(&TokKind::RBrace) {
+            loop {
+                let vname = self.take_ident("a variant name")?;
+                let shape = if self.check(&TokKind::LParen) {
+                    // Tuple variant `Circle(u64)` / `Cons(u64, Box<List>)`.
+                    self.bump();
+                    let mut tys = Vec::new();
+                    if !self.check(&TokKind::RParen) {
+                        loop {
+                            tys.push(self.parse_type()?);
+                            if !self.eat(&TokKind::Comma) {
+                                break;
+                            }
+                            if self.check(&TokKind::RParen) {
+                                break;
+                            }
+                        }
+                    }
+                    self.consume(&TokKind::RParen, "`)`")?;
+                    VariantShape::Tuple(tys)
+                } else if self.check(&TokKind::LBrace) {
+                    // Struct variant `Rect { w: u64, h: u64 }`.
+                    VariantShape::Struct(self.parse_field_defs()?)
+                } else {
+                    // Unit variant `Nil`.
+                    VariantShape::Unit
+                };
+                variants.push(VariantDef { name: vname, shape });
+                if !self.eat(&TokKind::Comma) {
+                    break;
+                }
+                if self.check(&TokKind::RBrace) {
+                    break;
+                }
+            }
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        let span = start_span.to(self.prev_span());
+        Ok(Item::Enum(EnumItem {
+            name,
+            variants,
+            span,
+        }))
+    }
+
     fn parse_params(&mut self) -> PResult<Vec<Param>> {
         self.consume(&TokKind::LParen, "`(`")?;
         let mut params = Vec::new();
@@ -652,7 +817,13 @@ impl<'a> Parser<'a> {
     fn parse_clause(&mut self, keyword: &TokKind) -> PResult<Clause> {
         self.consume(keyword, "a clause keyword")?;
         let start = self.peek_span();
-        let expr = self.parse_expr()?;
+        // A clause expression is a no-struct-literal head: a clause is followed
+        // by another clause keyword or a block `{` (a loop body, a spec-fn body),
+        // so a trailing `Name { … }` must NOT be read as a struct literal
+        // (`.design/basis/01-adts.md` REQ-2; e.g. `dec xs.len() - i { … }` —
+        // the `{` is the body). Struct literals inside call args / parens still
+        // parse (those re-enable the context).
+        let expr = self.with_no_struct_literal(Self::parse_expr)?;
         let end = self.prev_span();
         let span = start.to(end);
         let text = self.span_text(span);
@@ -822,7 +993,9 @@ impl<'a> Parser<'a> {
 
     fn parse_if_parts_inner(&mut self) -> PResult<(Expr, Block, Option<Block>)> {
         self.consume(&TokKind::If, "`if`")?;
-        let cond = self.parse_expr()?;
+        // The condition is a no-struct-literal head (REQ-2): `if c { … }` reads
+        // `{` as the then-block, not a struct literal.
+        let cond = self.with_no_struct_literal(Self::parse_expr)?;
         let then = self.parse_block()?;
         let else_ = if self.eat(&TokKind::Else) {
             Some(self.parse_block()?)
@@ -851,7 +1024,8 @@ impl<'a> Parser<'a> {
             LoopKind::Loop
         } else {
             self.consume(&TokKind::While, "`loop` or `while`")?;
-            let cond = self.parse_expr()?;
+            // The condition is a no-struct-literal head (REQ-2).
+            let cond = self.with_no_struct_literal(Self::parse_expr)?;
             LoopKind::While(Box::new(cond))
         };
 
@@ -936,8 +1110,10 @@ impl<'a> Parser<'a> {
     }
 
     /// Comparison is NON-associative (surface-grammar.md): at most one CmpOp.
+    /// Its operands are `is`-level (so `s is Circle` is a valid comparison
+    /// operand, e.g. `result == (s is Circle)`).
     fn parse_cmp(&mut self) -> PResult<Expr> {
-        let lhs = self.parse_add()?;
+        let lhs = self.parse_is()?;
         let op = match self.peek() {
             TokKind::EqEq => Some(BinOp::Eq),
             TokKind::Ne => Some(BinOp::Ne),
@@ -949,7 +1125,7 @@ impl<'a> Parser<'a> {
         };
         if let Some(op) = op {
             self.bump();
-            let rhs = self.parse_add()?;
+            let rhs = self.parse_is()?;
             Ok(Expr::Binary {
                 op,
                 lhs: Box::new(lhs),
@@ -957,6 +1133,28 @@ impl<'a> Parser<'a> {
             })
         } else {
             Ok(lhs)
+        }
+    }
+
+    /// Parse the variant-discrimination operator `SCRUTINEE is Variant`
+    /// (`.design/basis/01-adts.md` REQ-6): a `bool`-valued postfix operator
+    /// producing `Expr::Is`. The variant is a (possibly `::`-segmented) path.
+    /// Non-associative (a discrimination is not chained), sitting just below
+    /// comparison so `s is Circle` reads as one operand. The VALIDATOR rule
+    /// (accept only a declared variant of the scrutinee's enum) is stage 1b.
+    fn parse_is(&mut self) -> PResult<Expr> {
+        let scrutinee = self.parse_add()?;
+        if self.eat(&TokKind::Is) {
+            let mut variant = vec![self.take_ident("a variant name after `is`")?];
+            while self.eat(&TokKind::ColonCol) {
+                variant.push(self.take_ident("a variant path segment")?);
+            }
+            Ok(Expr::Is {
+                scrutinee: Box::new(scrutinee),
+                variant,
+            })
+        } else {
+            Ok(scrutinee)
         }
     }
 
@@ -1018,6 +1216,13 @@ impl<'a> Parser<'a> {
                 mutable,
                 expr: Box::new(expr),
             })
+        } else if self.eat(&TokKind::Star) {
+            // Prefix dereference `*EXPR` (`.design/basis/01-adts.md` REQ-3): the
+            // recursive call `sum_list(*t)` derefs the boxed tail. A new
+            // `Expr::Deref` unary — no existing node fits (`Ref` is its inverse).
+            // SEMANTICS are stage 1c; surface-only here.
+            let expr = self.parse_ref()?;
+            Ok(Expr::Deref(Box::new(expr)))
         } else {
             self.parse_postfix()
         }
@@ -1070,22 +1275,31 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::LParen, "`(`")?;
         let mut args = Vec::new();
         if !self.check(&TokKind::RParen) {
-            loop {
-                args.push(self.parse_expr()?);
-                if !self.eat(&TokKind::Comma) {
-                    break;
+            // Inside the `( … )` a struct literal is unambiguous again (REQ-2).
+            self.with_struct_literal(|p| {
+                loop {
+                    args.push(p.parse_expr()?);
+                    if !p.eat(&TokKind::Comma) {
+                        break;
+                    }
+                    if p.check(&TokKind::RParen) {
+                        break;
+                    }
                 }
-                if self.check(&TokKind::RParen) {
-                    break;
-                }
-            }
+                Ok(())
+            })?;
         }
         self.consume(&TokKind::RParen, "`)`")?;
         Ok(args)
     }
 
     /// Parse an index argument: `i`, `..i`, `i..`, `i..j` (surface-grammar.md).
+    /// Inside the `[ … ]` a struct literal is unambiguous again (REQ-2).
     fn parse_index_arg(&mut self) -> PResult<IndexArg> {
+        self.with_struct_literal(Self::parse_index_arg_inner)
+    }
+
+    fn parse_index_arg_inner(&mut self) -> PResult<IndexArg> {
         if self.eat(&TokKind::DotDot) {
             // `..i`
             let hi = self.parse_expr()?;
@@ -1120,7 +1334,9 @@ impl<'a> Parser<'a> {
             TokKind::If => self.parse_if_expr(),
             TokKind::LParen => {
                 self.bump();
-                let inner = self.parse_expr()?;
+                // A parenthesised group re-enables struct literals (REQ-2):
+                // `(s is Circle)` / `(A { x: 1 })`.
+                let inner = self.with_struct_literal(Self::parse_expr)?;
                 self.consume(&TokKind::RParen, "`)`")?;
                 Ok(inner)
             }
@@ -1128,14 +1344,50 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a path expression `Ident (:: Ident)*` (`lo`, `u32::MAX`, `Some`).
+    /// Parse a path expression `Ident (:: Ident)*` (`lo`, `u32::MAX`, `Some`),
+    /// or a struct-literal `Path { field: val, … }` when a `{` follows and the
+    /// struct-literal context is enabled (`.design/basis/01-adts.md` REQ-2).
     /// `::` is a PATH separator, never method dispatch (REQ-6).
     fn parse_path_expr(&mut self) -> PResult<Expr> {
         let mut segments = vec![self.take_ident("a path")?];
         while self.eat(&TokKind::ColonCol) {
             segments.push(self.take_ident("a path segment")?);
         }
+        // A `Path { … }` is a struct / struct-variant construction (REQ-2),
+        // EXCEPT in a no-struct-literal head (`match s { … }`), where the `{`
+        // opens the arm/then/loop block, not a struct literal.
+        if !self.no_struct_literal && self.check(&TokKind::LBrace) {
+            return self.parse_struct_lit(segments);
+        }
         Ok(Expr::Path(segments))
+    }
+
+    /// Parse the `{ field: val, … }` tail of a struct / struct-variant
+    /// construction `Path { … }` (`.design/basis/01-adts.md` REQ-2), building an
+    /// `Expr::StructLit`. The field initializers re-enable struct literals
+    /// (a nested `A { b: B { … } }`); a trailing comma is permitted.
+    fn parse_struct_lit(&mut self, path: Vec<Ident>) -> PResult<Expr> {
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut fields = Vec::new();
+        if !self.check(&TokKind::RBrace) {
+            self.with_struct_literal(|p| {
+                loop {
+                    let name = p.take_ident("a field name")?;
+                    p.consume(&TokKind::Colon, "`:`")?;
+                    let value = p.parse_expr()?;
+                    fields.push((name, value));
+                    if !p.eat(&TokKind::Comma) {
+                        break;
+                    }
+                    if p.check(&TokKind::RBrace) {
+                        break;
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        Ok(Expr::StructLit { path, fields })
     }
 
     fn parse_closure(&mut self) -> PResult<Expr> {
@@ -1163,7 +1415,9 @@ impl<'a> Parser<'a> {
 
     fn parse_match(&mut self) -> PResult<Expr> {
         self.consume(&TokKind::Match, "`match`")?;
-        let scrutinee = self.parse_expr()?;
+        // The scrutinee is a no-struct-literal head: `match s { … }` reads the
+        // `{` as the arm block, not `s { … }` as a struct literal (REQ-2).
+        let scrutinee = self.with_no_struct_literal(Self::parse_expr)?;
         self.consume(&TokKind::LBrace, "`{`")?;
         let mut arms = Vec::new();
         while !self.check(&TokKind::RBrace) && !self.at_eof() {
@@ -1185,7 +1439,7 @@ impl<'a> Parser<'a> {
     /// The expression form of `if` requires an `else` (it must have a value).
     fn parse_if_expr(&mut self) -> PResult<Expr> {
         self.consume(&TokKind::If, "`if`")?;
-        let cond = self.parse_expr()?;
+        let cond = self.with_no_struct_literal(Self::parse_expr)?;
         let then = self.parse_block()?;
         self.consume(&TokKind::Else, "`else` (an `if` expression must have one)")?;
         let else_ = self.parse_block()?;
@@ -1270,6 +1524,11 @@ impl<'a> Parser<'a> {
             }
             self.consume(&TokKind::RParen, "`)`")?;
             Ok(Pattern::Enum { path, fields })
+        } else if self.check(&TokKind::LBrace) {
+            // A struct / struct-variant destructuring pattern `Path { field: pat,
+            // … }` or `Path { .. }` (`.design/basis/01-adts.md` REQ-4). A bare
+            // field name `Rect { w, h }` is shorthand for `w: w` (a binding).
+            self.parse_struct_pattern(path)
         } else if path.len() == 1 {
             // A single lowercase name is a binding; an uppercase-initial single
             // segment (`None`) is a zero-field enum pattern.
@@ -1288,6 +1547,42 @@ impl<'a> Parser<'a> {
                 fields: Vec::new(),
             })
         }
+    }
+
+    /// Parse a struct / struct-variant destructuring pattern `Path { field:
+    /// pat, … }` / `Path { .. }` (`.design/basis/01-adts.md` REQ-4). Each field
+    /// is `name: pat` or the shorthand `name` (expanded to `name:
+    /// Pattern::Binding(name)`). A leading/trailing `..` sets `rest`. Building
+    /// the binding shorthand keeps `match`-arm binding ergonomic (`Rect { w, h }`
+    /// binds `w` and `h`).
+    fn parse_struct_pattern(&mut self, path: Vec<Ident>) -> PResult<Pattern> {
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut fields = Vec::new();
+        let mut rest = false;
+        if !self.check(&TokKind::RBrace) {
+            loop {
+                if self.eat(&TokKind::DotDot) {
+                    rest = true;
+                    break;
+                }
+                let name = self.take_ident("a field name")?;
+                let pat = if self.eat(&TokKind::Colon) {
+                    self.parse_pattern()?
+                } else {
+                    // Field shorthand `Rect { w, h }`: bind the field to its name.
+                    Pattern::Binding(name.clone())
+                };
+                fields.push((name, pat));
+                if !self.eat(&TokKind::Comma) {
+                    break;
+                }
+                if self.check(&TokKind::RBrace) {
+                    break;
+                }
+            }
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        Ok(Pattern::Struct { path, fields, rest })
     }
 
     // ---- types -------------------------------------------------------------
@@ -1335,8 +1630,23 @@ impl<'a> Parser<'a> {
                     "u64" => Ok(Type::Prim(PrimType::U64)),
                     "usize" => Ok(Type::Prim(PrimType::Usize)),
                     "bool" => Ok(Type::Prim(PrimType::Bool)),
+                    // The heap-indirection primitive `Box<T>`
+                    // (`.design/basis/01-adts.md` REQ-3, OQ-1 RESOLVED: a
+                    // dedicated `Type::Box` node). `Box` is a contextual
+                    // identifier (NOT a reserved keyword), matched here by name.
+                    "Box" => {
+                        self.consume(&TokKind::Lt, "`<` after `Box`")?;
+                        let inner = self.parse_type()?;
+                        self.consume(&TokKind::Gt, "`>` to close `Box<…>`")?;
+                        Ok(Type::Box(Box::new(inner)))
+                    }
                     _ => {
-                        // A generic application `NAME<T>` (e.g. `Option<usize>`).
+                        // A generic application `NAME<T>` (e.g. `Option<usize>`),
+                        // or a bare user-defined type name `Account`/`Shape`/
+                        // `List` (`.design/basis/01-adts.md` REQ-1/REQ-2 ->
+                        // `Type::Named`). A bare lowercase/uppercase ident with no
+                        // `<` is a named type (the type-side of a `struct`/`enum`
+                        // declaration) rather than a parse error.
                         if self.eat(&TokKind::Lt) {
                             let arg = self.parse_type()?;
                             self.consume(&TokKind::Gt, "`>`")?;
@@ -1345,11 +1655,7 @@ impl<'a> Parser<'a> {
                                 arg: Box::new(arg),
                             })
                         } else {
-                            Err(SyntaxError::Unexpected {
-                                expected: "a type (primitive, &T, &[T], or Name<T>)".to_string(),
-                                found: format!("identifier `{name}`"),
-                                span: self.prev_span(),
-                            })
+                            Ok(Type::Named(name))
                         }
                     }
                 }
@@ -1422,6 +1728,9 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::While => "while",
         TokKind::Match => "match",
         TokKind::As => "as",
+        TokKind::Struct => "struct",
+        TokKind::Enum => "enum",
+        TokKind::Is => "is",
         TokKind::HashBracket => "#[",
         TokKind::Arrow => "->",
         TokKind::FatArrow => "=>",

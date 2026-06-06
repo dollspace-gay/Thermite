@@ -760,6 +760,14 @@ fn item_subprogram(item: &Item, spec_items: &[Item], fn_deps: &[Item]) -> Progra
         Item::SpecFn(_) => Program {
             items: spec_items.to_vec(),
         },
+        // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` item
+        // has no `fn`/`spec fn` dependency closure — the neutral sub-program is
+        // the item alone. Dead-in-1a: the resulting sub-program dies at the
+        // validator gate (`SpecError::UnsupportedAdt`) before any proof
+        // obligation is built, so this arm never produces a cert.
+        Item::Struct(_) | Item::Enum(_) => Program {
+            items: vec![item.clone()],
+        },
     }
 }
 
@@ -1238,6 +1246,11 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
         Item::Fn(f) => effects_of(&f.contract.fx),
         // `spec fn`s have no `fx` row (§4.2) — they are pure by construction.
         Item::SpecFn(_) => vec!["pure".to_string()],
+        // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` type
+        // declares no `fx` row — its neutral effect projection is `pure` (the
+        // same empty-effect value as a `spec fn`). Dead-in-1a: an ADT item dies
+        // at the validator before a certificate is ever assembled for it.
+        Item::Struct(_) | Item::Enum(_) => vec!["pure".to_string()],
     };
     match &verus.outcome {
         VerusOutcome::Proved { verified } => Certificate::new(

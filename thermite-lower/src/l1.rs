@@ -93,6 +93,22 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
             // in-language fn lowers with its real body.
             Item::Fn(f) if f.boundary.is_some() => lower_boundary_fn_l1(f)?,
             Item::Fn(f) => lower_fn_l1(f)?,
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item is UNREACHABLE here — an ADT program dies at the validator
+            // gate before any L1 lowering. Honest neutral value: the existing
+            // `Unsupported` error at the item span (1c lowers ADTs). NOT a panic.
+            Item::Struct(s) => {
+                return Err(LowerError::Unsupported {
+                    what: "struct item (ADT L1 lowering lands in basis Stage 1c)".to_string(),
+                    span: s.span,
+                })
+            }
+            Item::Enum(e) => {
+                return Err(LowerError::Unsupported {
+                    what: "enum item (ADT L1 lowering lands in basis Stage 1c)".to_string(),
+                    span: e.span,
+                })
+            }
         };
         out.push('\n');
         out.push_str(&item_src);
@@ -173,6 +189,11 @@ pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, Lower
                 collect_combinators_in_expr(&s.dec.expr, s.span, &mut names);
                 collect_combinators_in_block_specs(&s.body, s.span, &mut names);
             }
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item carries no contract clauses → references no combinator; the
+            // collector's neutral value is a no-op. (Dead-in-1a: gated at the
+            // validator.)
+            Item::Struct(_) | Item::Enum(_) => {}
         }
     }
 
@@ -251,6 +272,16 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
             collect_combinators_in_expr(expr, span, acc)
         }
+        // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
+        // expressions, but the honest collector descends into their
+        // sub-expressions so no referenced combinator is silently dropped.
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_combinators_in_expr(value, span, acc);
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_combinators_in_expr(scrutinee, span, acc),
+        Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }
 }
@@ -762,6 +793,22 @@ pub(crate) fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<S
                 Ok(format!("&{e}"))
             }
         }
+        // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions are
+        // UNREACHABLE in 1a (gated at the validator before L1 lowering). Honest
+        // neutral value: the existing `Unsupported` error at `span`. 1c emits
+        // the struct-literal / `is` / `Box`-deref forms.
+        Expr::StructLit { .. } => Err(LowerError::Unsupported {
+            what: "struct literal (ADT L1 lowering lands in basis Stage 1c)".to_string(),
+            span,
+        }),
+        Expr::Is { .. } => Err(LowerError::Unsupported {
+            what: "`is` discrimination (ADT L1 lowering lands in basis Stage 1c)".to_string(),
+            span,
+        }),
+        Expr::Deref(_) => Err(LowerError::Unsupported {
+            what: "`Box` deref (ADT L1 lowering lands in basis Stage 1c)".to_string(),
+            span,
+        }),
     }
 }
 
@@ -841,6 +888,14 @@ fn lower_pattern_exec(pat: &Pattern, depth: usize, span: Span) -> Result<String,
         }
         Pattern::Slice(_) => Err(LowerError::Unsupported {
             what: "slice pattern outside a head-fold spec fn".to_string(),
+            span,
+        }),
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-4): a struct /
+        // struct-variant destructuring pattern is UNREACHABLE in 1a (gated at
+        // the validator). Honest neutral value: the existing `Unsupported`
+        // error at `span`; 1c emits the struct-pattern form.
+        Pattern::Struct { .. } => Err(LowerError::Unsupported {
+            what: "struct pattern (ADT L1 lowering lands in basis Stage 1c)".to_string(),
             span,
         }),
     }
@@ -923,5 +978,18 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let a = lower_type(arg)?;
             Ok(format!("{name}<{a}>"))
         }
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): a user
+        // `Named` type or `Box<T>` is UNREACHABLE in 1a (the ADT program dies at
+        // the validator). Honest neutral value: the existing `Unsupported`
+        // error at the file-level `zero_span` (this fn has no span). 1c emits
+        // the user-type / `Box<T>` spelling.
+        Type::Named(name) => Err(LowerError::Unsupported {
+            what: format!("user type `{name}` (ADT L1 lowering lands in basis Stage 1c)"),
+            span: zero_span(),
+        }),
+        Type::Box(_) => Err(LowerError::Unsupported {
+            what: "`Box<T>` (ADT L1 lowering lands in basis Stage 1c)".to_string(),
+            span: zero_span(),
+        }),
     }
 }

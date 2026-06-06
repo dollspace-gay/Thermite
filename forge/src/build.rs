@@ -326,6 +326,11 @@ fn build_functions(program: &Program) -> Vec<BuildFunction> {
                 fx: effects_of(&f.contract.fx),
             }),
             Item::SpecFn(_) => None,
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item carries no `fx` contract row → contributes no manifest
+            // function (neutral value `None`). Dead-in-1a: an ADT program dies
+            // at the validator before `forge build` projects its functions.
+            Item::Struct(_) | Item::Enum(_) => None,
         })
         .collect()
 }
@@ -344,6 +349,13 @@ fn find_entry_fn<'a>(program: &'a Program, name: &str) -> Result<&'a FnItem, For
         Some(Item::SpecFn(_)) => Err(ForgeError::Usage(format!(
             "`--entry {name}` names a `spec fn` (a pure spec dependency, not a runnable entry \
              point); name a `fn`"
+        ))),
+        // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` type
+        // is not a runnable entry point — the honest neutral value is the same
+        // `Usage` refusal as a `spec fn` name. Dead-in-1a (the ADT program dies
+        // at the validator before `forge build --entry` resolves an entry).
+        Some(Item::Struct(_)) | Some(Item::Enum(_)) => Err(ForgeError::Usage(format!(
+            "`--entry {name}` names a `struct`/`enum` type, not a runnable `fn`; name a `fn`"
         ))),
         None => Err(ForgeError::Usage(format!(
             "`--entry {name}` names no `fn` in the program"

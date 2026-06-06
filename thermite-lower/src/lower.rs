@@ -293,6 +293,26 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
                 }
                 lower_fn(f, &nat_fns)?
             }
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item is UNREACHABLE here in 1a — an ADT program dies at the
+            // validator gate (`SpecError::UnsupportedAdt`) before `forge check`
+            // ever lowers it. This arm is dead-in-1a but must be an honest
+            // value, not a panic: it returns the neutral `LowerError::Unsupported`
+            // (the lowerer's existing "this construct is not lowered" error). 1c
+            // REPLACES it with real struct/enum → Verus emission (REQ-8/REQ-9/
+            // REQ-10).
+            Item::Struct(s) => {
+                return Err(LowerError::Unsupported {
+                    what: "struct item (ADT lowering lands in basis Stage 1c)".to_string(),
+                    span: s.span,
+                })
+            }
+            Item::Enum(e) => {
+                return Err(LowerError::Unsupported {
+                    what: "enum item (ADT lowering lands in basis Stage 1c)".to_string(),
+                    span: e.span,
+                })
+            }
         };
         out.push('\n');
         out.push_str(&item_src);
@@ -331,6 +351,11 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
                 collect_combinators_in_expr(&s.dec.expr, s.span, &mut names);
                 collect_combinators_in_block_specs(&s.body, s.span, &mut names);
             }
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item carries no contract clauses, so it references no combinators
+            // — the neutral value for this collector is a no-op. (The item is
+            // gated at the validator anyway; this arm is dead-in-1a.)
+            Item::Struct(_) | Item::Enum(_) => {}
         }
     }
 
@@ -408,6 +433,18 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
             collect_combinators_in_expr(expr, span, acc)
         }
+        // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions are
+        // dead-in-1a (gated at the validator), but the honest collector value
+        // is to descend into their sub-expressions — a combinator could in
+        // principle appear in a struct-literal field value, an `is` scrutinee,
+        // or a deref operand — so no referenced combinator is silently dropped.
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_combinators_in_expr(value, span, acc);
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_combinators_in_expr(scrutinee, span, acc),
+        Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
     }
 }
@@ -761,6 +798,20 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let a = lower_type(arg)?;
             Ok(format!("{name}<{a}>"))
         }
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): a
+        // user-defined `Named` type or a `Box<T>` is UNREACHABLE in 1a — its
+        // declaring ADT program dies at the validator gate before lowering. The
+        // honest neutral value is the lowerer's existing `Unsupported` error
+        // (this fn has no span, so the file-level `zero_span`). 1c REPLACES this
+        // with `Account`/`List`-as-Verus-type and `Box<T>` emission (REQ-10).
+        Type::Named(name) => Err(LowerError::Unsupported {
+            what: format!("user type `{name}` (ADT lowering lands in basis Stage 1c)"),
+            span: zero_span(),
+        }),
+        Type::Box(_) => Err(LowerError::Unsupported {
+            what: "`Box<T>` (ADT lowering lands in basis Stage 1c)".to_string(),
+            span: zero_span(),
+        }),
     }
 }
 
@@ -887,6 +938,24 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 Ok(format!("&{e}"))
             }
         }
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-2/REQ-6/REQ-3): the
+        // ADT expressions are UNREACHABLE in 1a (an ADT program dies at the
+        // validator gate before lowering). Honest neutral value: the lowerer's
+        // existing `Unsupported` error, anchored at the enclosing `span`. 1c
+        // REPLACES these with struct-literal / `is`-discriminant / `Box`-deref
+        // emission (REQ-8/REQ-9/REQ-10).
+        Expr::StructLit { .. } => Err(LowerError::Unsupported {
+            what: "struct literal (ADT lowering lands in basis Stage 1c)".to_string(),
+            span,
+        }),
+        Expr::Is { .. } => Err(LowerError::Unsupported {
+            what: "`is` discrimination (ADT lowering lands in basis Stage 1c)".to_string(),
+            span,
+        }),
+        Expr::Deref(_) => Err(LowerError::Unsupported {
+            what: "`Box` deref (ADT lowering lands in basis Stage 1c)".to_string(),
+            span,
+        }),
     }
 }
 
@@ -1069,6 +1138,15 @@ fn lower_pattern(pat: &Pattern, depth: usize, span: Span) -> Result<String, Lowe
         }
         Pattern::Slice(_) => Err(LowerError::Unsupported {
             what: "slice pattern outside a head-fold spec fn".to_string(),
+            span,
+        }),
+        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-4): a struct /
+        // struct-variant destructuring pattern is UNREACHABLE in 1a (the
+        // enclosing ADT program dies at the validator). Honest neutral value:
+        // the existing `Unsupported` error at `span`. 1c REPLACES it with Verus
+        // struct-pattern emission (REQ-9).
+        Pattern::Struct { .. } => Err(LowerError::Unsupported {
+            what: "struct pattern (ADT lowering lands in basis Stage 1c)".to_string(),
             span,
         }),
     }
@@ -1492,6 +1570,13 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
                 }
         }
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => expr_mentions(expr, name),
+        // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
+        // expressions, but the honest predicate value is to descend — a name
+        // could be mentioned in a struct-literal field value, an `is`
+        // scrutinee, or a deref operand, so we must not silently answer `false`.
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_mentions(v, name)),
+        Expr::Is { scrutinee, .. } => expr_mentions(scrutinee, name),
+        Expr::Deref(inner) => expr_mentions(inner, name),
     }
 }
 

@@ -523,6 +523,19 @@ impl MutantSink {
             }
             Expr::Cast { expr, .. } => self.scan_expr(expr, ctr),
             Expr::Ref { expr, .. } => self.scan_expr(expr, ctr),
+            // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions
+            // define no NEW mutation site themselves (no off-by-one literal,
+            // binop, or branch), but the honest scan descends into their
+            // sub-expressions so a mutable site nested inside is still found.
+            // Dead-in-1a (the ADT program dies at the validator before
+            // mutation, which runs only after a successful L3 proof).
+            Expr::StructLit { fields, .. } => {
+                for (_, value) in fields {
+                    self.scan_expr(value, ctr);
+                }
+            }
+            Expr::Is { scrutinee, .. } => self.scan_expr(scrutinee, ctr),
+            Expr::Deref(inner) => self.scan_expr(inner, ctr),
             Expr::BoolLit(_) | Expr::Path(_) => {}
         }
     }
@@ -777,6 +790,24 @@ impl Applier<'_> {
                 mutable: *mutable,
                 expr: Box::new(self.apply_expr(expr)),
             },
+            // Basis Stage 1a (`.design/basis/01-adts.md`): the mutation
+            // rewriter rebuilds the ADT node FAITHFULLY, recursing into its
+            // sub-expressions so a mutation site nested inside is applied. This
+            // is the honest neutral value (an identity-preserving rebuild, not a
+            // panic). Dead-in-1a (mutation runs only post-L3-proof; an ADT
+            // program never reaches it — it dies at the validator).
+            Expr::StructLit { path, fields } => Expr::StructLit {
+                path: path.clone(),
+                fields: fields
+                    .iter()
+                    .map(|(name, value)| (name.clone(), self.apply_expr(value)))
+                    .collect(),
+            },
+            Expr::Is { scrutinee, variant } => Expr::Is {
+                scrutinee: Box::new(self.apply_expr(scrutinee)),
+                variant: variant.clone(),
+            },
+            Expr::Deref(inner) => Expr::Deref(Box::new(self.apply_expr(inner))),
             Expr::BoolLit(b) => Expr::BoolLit(*b),
             Expr::Path(p) => Expr::Path(p.clone()),
         }

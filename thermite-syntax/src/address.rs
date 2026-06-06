@@ -99,6 +99,14 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
                     text: None,
                 });
             }
+            // A `struct`/`enum` type item (`.design/basis/01-adts.md` Stage 1a)
+            // is NOT an addressable node: the addressing scheme
+            // (`.design/syntax/semantic-addressing.md` REQ-1/REQ-2) roots only at
+            // FUNCTION names and numbers their inner loops/`inv`/`dec` — a type
+            // declaration has no loops, no contract clauses, hence no address.
+            // This additive no-op arm keeps the same-crate exhaustive `match`
+            // compiling; types gain no `forge edit` address.
+            Item::Struct(_) | Item::Enum(_) => {}
         }
     }
     out

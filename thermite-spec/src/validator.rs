@@ -16,6 +16,16 @@
 //! | REQ-4 (reject cases, structured `SpecError`) | SHIPPED | `enum SpecError` with `UnknownCombinator`/`WrongArity`/`WrongArgKind`/`ForbiddenCall`/`ExpressionTooDeep`; `validate` returns `Result<(), Vec<SpecError>>`, never panics. Every `reject.json` case yields the expected cause. |
 //! | REQ-5 (bounded recursion — no overflow) | SHIPPED | a single `MAX_RECURSION_DEPTH` guard wraps EVERY recursive descent (`walk_expr`, closure bodies, match arms, index args, if/block tails) via `descend`; deep input yields `ExpressionTooDeep`, never an overflow (`validate_never_panics`). |
 //! | REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | SHIPPED | `check_arg_kind`'s `Pred` arm sets `Validator::in_combinator_closure` for the whole closure-body descent (kept set through all nested sub-expressions/closures); while set, `walk_call` rejects any callee resolving via `combinators::lookup` with `SpecError::NestedCombinator`, while a declared `spec fn` call stays accepted. Consumer: `validate` → `walk_clause`/`walk_block` reach `walk_call`. Verification: `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; the flat corpus closures stay `Ok` (`tests/combinators_conformance.rs`). |
+//!
+//! ## Basis Stage 1a — the ADT validator GATE (`.design/basis/01-adts.md`)
+//!
+//! Stage 1a parses the ADT surface but does NOT yet validate it (REQ-5
+//! exhaustiveness + REQ-6 well-formedness land in Stage 1b). The validator is
+//! the honest 1a gate: it SCREAMS, not silently mis-processes.
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | 1a GATE (`SpecError::UnsupportedAdt`) | SHIPPED | `SpecError::UnsupportedAdt { construct, span }`; returned from `run`'s `Item::Struct`/`Item::Enum` arms and `walk_expr_inner`'s `Expr::StructLit`/`Expr::Is`/`Expr::Deref` arms. Consumer: `validate` (the boundary API `forge check` calls before lowering) — every ADT program PARSES then dies at this gate with a structured "ADTs not yet supported in the validator" error (the handled-or-loud scream). Stage 1b REPLACES these arms with real variant-set collection + exhaustiveness + well-formedness. |
 
 use std::collections::HashSet;
 use std::fmt;
@@ -97,6 +107,17 @@ pub enum SpecError {
     /// structured diagnostic so external input can never overflow the stack
     /// (REQ-5).
     ExpressionTooDeep { limit: usize, span: Span },
+    /// An ADT surface construct (`struct`/`enum` item, struct-literal
+    /// construction, `is` discrimination, or a `Box` deref) reached the
+    /// validator before the validator knows how to check it
+    /// (`.design/basis/01-adts.md`). Basis Stage 1a parses the ADT surface but
+    /// does NOT yet validate it: this is the honest "handled-or-loud" SCREAM
+    /// (the unifying principle of `01-adts.md`) — an ADT program PARSES, then
+    /// gets a clean, structured refusal at validation rather than being silently
+    /// mis-processed downstream. Stage 1b REPLACES this gate with real
+    /// exhaustiveness (REQ-5) + well-formedness (REQ-6) checking. `construct`
+    /// names the unsupported surface form for a crisp diagnostic (§2.4).
+    UnsupportedAdt { construct: &'static str, span: Span },
 }
 
 impl SpecError {
@@ -108,7 +129,8 @@ impl SpecError {
             | SpecError::WrongArgKind { span, .. }
             | SpecError::ForbiddenCall { span, .. }
             | SpecError::NestedCombinator { span, .. }
-            | SpecError::ExpressionTooDeep { span, .. } => *span,
+            | SpecError::ExpressionTooDeep { span, .. }
+            | SpecError::UnsupportedAdt { span, .. } => *span,
         }
     }
 }
@@ -151,6 +173,12 @@ impl fmt::Display for SpecError {
             SpecError::ExpressionTooDeep { limit, .. } => write!(
                 f,
                 "contract expression nested deeper than the validator limit of {limit}"
+            ),
+            SpecError::UnsupportedAdt { construct, .. } => write!(
+                f,
+                "ADTs are not yet supported in the validator: `{construct}` parses but is not \
+                 validated in basis Stage 1a (`.design/basis/01-adts.md`); the exhaustiveness \
+                 and well-formedness checks land in Stage 1b"
             ),
         }
     }
@@ -204,6 +232,11 @@ impl Validator {
             .filter_map(|item| match item {
                 Item::SpecFn(s) => Some(s.name.clone()),
                 Item::Fn(_) => None,
+                // A `struct`/`enum` item declares no `spec fn` name
+                // (`.design/basis/01-adts.md`) — neutral value `None`. The
+                // item itself is gated at `run` (the `UnsupportedAdt` scream);
+                // here it simply contributes no callable spec-fn name.
+                Item::Struct(_) | Item::Enum(_) => None,
             })
             .collect();
         Validator {
@@ -243,6 +276,26 @@ impl Validator {
                     // tree (REQ-3) — fully caged; its `dec` measure is a clause.
                     self.walk_clause(&s.dec);
                     self.walk_block(&s.body, s.span);
+                }
+                // Basis Stage 1a: a `struct`/`enum` item PARSES but the
+                // validator does not yet check it. This is the honest
+                // handled-or-loud SCREAM (`.design/basis/01-adts.md` — REQ-5/
+                // REQ-6 land in 1b): the validator GATES every ADT program here
+                // with a structured `UnsupportedAdt` rather than letting an
+                // unvalidated ADT flow into lowering. 1b REPLACES these arms
+                // with real variant-set collection + exhaustiveness +
+                // well-formedness checking.
+                Item::Struct(s) => {
+                    self.errors.push(SpecError::UnsupportedAdt {
+                        construct: "struct item",
+                        span: s.span,
+                    });
+                }
+                Item::Enum(e) => {
+                    self.errors.push(SpecError::UnsupportedAdt {
+                        construct: "enum item",
+                        span: e.span,
+                    });
                 }
             }
         }
@@ -374,6 +427,20 @@ impl Validator {
                 self.scan_expr_for_loops(inner)
             }
             Expr::Closure { body, .. } => self.scan_expr_for_loops(body),
+            // Basis Stage 1a ADT expressions (`.design/basis/01-adts.md`): this
+            // is the STRUCTURAL fn-body walk that only descends to find nested
+            // loops — it cage-checks nothing. The ADT program dies at the
+            // validator's item/contract gate (`UnsupportedAdt`) regardless;
+            // here we simply descend into sub-expressions that could hold a
+            // nested `loop` so the structural invariant (every loop's contract
+            // is reachable) is preserved.
+            Expr::StructLit { fields, .. } => {
+                for (_, value) in fields {
+                    self.scan_expr_for_loops(value);
+                }
+            }
+            Expr::Is { scrutinee, .. } => self.scan_expr_for_loops(scrutinee),
+            Expr::Deref(inner) => self.scan_expr_for_loops(inner),
             // Leaves — no nested loop possible.
             Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
         }
@@ -503,6 +570,36 @@ impl Validator {
                     span,
                 });
                 self.walk_expr(body, span);
+            }
+
+            // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT contract
+            // expressions PARSE but the validator does not yet check them — it
+            // SCREAMS `UnsupportedAdt` (REQ-6's `is` well-formedness + the
+            // struct-literal/deref handling land in 1b/1c). Recurse operands
+            // regardless so deep/forbidden nested content still surfaces (REQ-5)
+            // and the program dies loudly at validation, never silently.
+            Expr::StructLit { fields, .. } => {
+                self.errors.push(SpecError::UnsupportedAdt {
+                    construct: "struct literal",
+                    span,
+                });
+                for (_, value) in fields {
+                    self.walk_expr(value, span);
+                }
+            }
+            Expr::Is { scrutinee, .. } => {
+                self.errors.push(SpecError::UnsupportedAdt {
+                    construct: "`is` discrimination",
+                    span,
+                });
+                self.walk_expr(scrutinee, span);
+            }
+            Expr::Deref(inner) => {
+                self.errors.push(SpecError::UnsupportedAdt {
+                    construct: "`Box` deref",
+                    span,
+                });
+                self.walk_expr(inner, span);
             }
         }
     }

@@ -218,6 +218,12 @@ pub fn check_effects(program: &Program) -> Result<(), Vec<LowerError>> {
             Item::SpecFn(s) => {
                 spec_names.entry(s.name.as_str()).or_insert(());
             }
+            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
+            // item declares no callable `fn`/`spec fn` name and carries no `fx`
+            // row — the neutral value for this name-collection pass is a no-op.
+            // (The item is gated at the validator before effect-check runs;
+            // dead-in-1a.)
+            Item::Struct(_) | Item::Enum(_) => {}
         }
     }
 
@@ -551,6 +557,42 @@ fn check_expr<'a>(
         }
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => check_expr(
             expr,
+            caller_fx,
+            caller_name,
+            caller_span,
+            resolve,
+            d,
+            errors,
+        ),
+        // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions are
+        // dead-in-1a (gated at the validator before effect-check), but the
+        // honest walk descends into their sub-expressions — a call carrying an
+        // effect could sit in a struct-literal field value, an `is` scrutinee,
+        // or a deref operand, so subsumption must not silently skip it.
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                check_expr(
+                    value,
+                    caller_fx,
+                    caller_name,
+                    caller_span,
+                    resolve,
+                    d,
+                    errors,
+                );
+            }
+        }
+        Expr::Is { scrutinee, .. } => check_expr(
+            scrutinee,
+            caller_fx,
+            caller_name,
+            caller_span,
+            resolve,
+            d,
+            errors,
+        ),
+        Expr::Deref(inner) => check_expr(
+            inner,
             caller_fx,
             caller_name,
             caller_span,

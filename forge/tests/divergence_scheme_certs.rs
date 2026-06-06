@@ -89,7 +89,6 @@ fn check_json(path: &Path) -> Vec<Value> {
 /// per-function manifest contract (`goal.md` R-SPEC-2 — the cert is a contract).
 /// Tracking: #71
 #[test]
-#[ignore = "blocker #71 — un-ignore when fixed"]
 fn divergence_list_fold_three_distinct_item_certs() {
     if !verus_present() {
         eprintln!("SKIP: verus absent — list_fold scheme cert identity not exercised.");

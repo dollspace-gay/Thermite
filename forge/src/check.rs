@@ -280,8 +280,31 @@ pub fn check_file_with_options(
         // `well_formed` invariants in scope (was an undefined-type L0).
         let mut referrers: Vec<&Item> = vec![item];
         referrers.extend(fn_deps.iter());
+        // #71: the spec-fn set woven into THIS item's sub-program. An `Item::Fn`
+        // keeps the WHOLE file's `spec_items` (the CAUTION: an exec fn's contract
+        // may reference any spec fn — e.g. `sum`'s `ens result == spec_sum(xs)` —
+        // so verus must resolve every one; this dep-weaving is UNCHANGED). An
+        // `Item::SpecFn` instead weaves only ITSELF + the spec fns it transitively
+        // references (`reachable_spec_fn_deps`, which includes the start), so a
+        // multi-spec-fn file no longer lowers every spec fn to byte-identical Verus
+        // (the cache-collision cause — the sub-program is now DISTINCT per spec fn).
+        let item_spec_items: Vec<Item> = match item {
+            Item::SpecFn(_) => reachable_spec_fn_deps(&parsed.program, item.name()),
+            _ => spec_items.clone(),
+        };
+        // For a checked `Item::SpecFn`, the ADT referrers are its OWN reachable
+        // spec-fn set (which includes the spec fn itself), so its `enum`/`struct`
+        // decls are present even though the file's full `spec_items` is no longer
+        // woven (#71). The `Item::Fn` path is UNCHANGED — its ADT referrers stay
+        // `[item] + fn_deps` exactly as before (the exec sub-program is byte-stable;
+        // the corpus cert oracle is unperturbed). The Fn arm of `item_subprogram`
+        // still weaves the full `spec_items` (the CAUTION).
+        if matches!(item, Item::SpecFn(_)) {
+            referrers.clear();
+            referrers.extend(item_spec_items.iter());
+        }
         let adt_deps = reachable_adt_deps(&parsed.program, &referrers);
-        let sub = item_subprogram(item, &spec_items, &fn_deps, &adt_deps);
+        let sub = item_subprogram(item, &item_spec_items, &fn_deps, &adt_deps);
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
 
         // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
@@ -777,12 +800,24 @@ fn item_subprogram(
             items.push(item.clone());
             Program { items }
         }
-        // Spec fns verified together (mutual recursion); `spec_items` already
-        // includes `item`. A spec fn has no `fn` dependencies to weave (§4.2), but
-        // a recursive `spec fn` fold over an ADT (the `list_sum` over `enum List`)
+        // A checked spec fn's sub-program is DISTINCT + MINIMAL (#71): it weaves
+        // `item` PLUS only the spec fns `item` TRANSITIVELY references (`spec_items`
+        // here is the reachable spec-fn closure from `reachable_spec_fn_deps`, which
+        // INCLUDES `item` itself), NOT every `spec fn` in the file. Weaving all spec
+        // fns made every spec fn in a multi-spec-fn file lower to BYTE-IDENTICAL
+        // Verus (the checked item was indistinguishable — it just rode along in the
+        // full set), so the proof-cache content-address collided and the first
+        // item's cert was served for every sibling (the cert IDENTITY was a
+        // neighbor's, violating §6). With only the reachable deps, each spec fn's
+        // sub-program differs by its own focused body → a distinct content-address
+        // → a distinct, correctly-named cert. A spec fn that references no other
+        // spec fn (the `list_fold.th` instances) gets a sub-program of just itself
+        // (+ its ADT decls) → three DISTINCT lowerings (different fold steps). A
+        // spec fn that DOES reference a sibling Y still includes Y (reachability),
+        // so verus resolves Y and mutual recursion still verifies (§4.2). A spec fn
+        // has no `fn` dependencies to weave (§4.2), but a recursive fold over an ADT
         // DOES reference the `enum` decl, so weave the referenced ADT decls first
-        // (#68 — without `enum List` in scope the recursive fold's lowering fails
-        // to compile and degrades to L0).
+        // (#68 — without `enum List` in scope the fold's lowering degrades to L0).
         Item::SpecFn(_) => {
             let mut items = adt_deps.to_vec();
             items.extend(spec_items.iter().cloned());
@@ -816,6 +851,211 @@ fn reachable_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         .filter(|i| matches!(i, Item::Fn(_)) && names.contains(i.name()))
         .cloned()
         .collect()
+}
+
+/// The in-file `Item::SpecFn`s a spec fn named `start` transitively references —
+/// the spec-fn analog of [`reachable_fn_deps`], INCLUDING `start` itself (#71).
+///
+/// A `spec fn`'s §5.3 sub-program must be DISTINCT and MINIMAL: it weaves `start`
+/// PLUS only the spec fns `start`'s body transitively calls — NOT every `spec fn`
+/// in the file. Weaving all of them made every spec fn in a multi-spec-fn file
+/// (e.g. `len_list`/`sum_list`/`all_positive` in `conformance/list_fold.th`) lower
+/// to BYTE-IDENTICAL Verus, so the proof-cache content-address collided and the
+/// first item's certificate was served for every sibling (the cert IDENTITY was a
+/// neighbor's, violating §6 "the certificate lists EVERY function's level"). With
+/// only the transitive deps, each spec fn's sub-program differs (its own focused
+/// body) → a distinct content-address → a distinct, correctly-named certificate.
+///
+/// `start` IS included in the result (unlike [`reachable_fn_deps`], which excludes
+/// its own start because the checked fn is pushed separately): the `Item::SpecFn`
+/// arm of [`item_subprogram`] builds the whole spec-fn set from this result, so
+/// `start` must be in it. A spec fn that references no other spec fn (the
+/// `list_fold.th` instances) yields exactly `{start}`.
+///
+/// Resolution mirrors the §52/§68 pattern: walk the spec-fn call graph from
+/// `start` over `Expr::Call`/`MethodCall` callee names that resolve to an in-file
+/// `Item::SpecFn`, transitively (cycle-safe via a visited set so a mutually- or
+/// self-recursive spec fn terminates), then return the matching `Item::SpecFn`
+/// clones in SOURCE order (DETERMINISTIC, R-CODE-5). A `spec fn` body can call only
+/// other spec fns / combinators (§4.2), so no `Item::Fn` is ever pulled in.
+fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
+    // The set of in-file spec-fn names → their declaring item, for resolution.
+    let spec_decls: std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem> = program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::SpecFn(s) => Some((s.name.as_str(), s)),
+            _ => None,
+        })
+        .collect();
+
+    // Cycle-safe transitive closure over spec-fn → spec-fn calls, seeded at
+    // `start` (which is itself a spec fn). A name with no in-file spec-fn decl is
+    // dropped (a combinator / scheme / cross-file callee — §4.2 PURE).
+    let mut reached: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut worklist: Vec<String> = vec![start.to_string()];
+    while let Some(name) = worklist.pop() {
+        if !reached.insert(name.clone()) {
+            continue;
+        }
+        if let Some(decl) = spec_decls.get(name.as_str()) {
+            let mut callees: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+            collect_block_spec_fn_calls(&decl.body, &spec_decls, &mut callees);
+            for callee in callees {
+                if !reached.contains(&callee) {
+                    worklist.push(callee);
+                }
+            }
+        }
+    }
+
+    // Return the reached spec fns in SOURCE order (deterministic) so the lowered
+    // sub-program is byte-stable for a given program.
+    program
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::SpecFn(_)) && reached.contains(i.name()))
+        .cloned()
+        .collect()
+}
+
+/// Collect the in-file spec-fn names a `Block` calls, walking statements + tail
+/// (#71). Only a callee name resolving to an in-file `Item::SpecFn` (`spec_decls`)
+/// is emitted — a combinator / scheme / cross-file callee is ignored (§4.2 PURE).
+fn collect_block_spec_fn_calls(
+    block: &thermite_syntax::Block,
+    spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    for stmt in &block.stmts {
+        collect_stmt_spec_fn_calls(stmt, spec_decls, out);
+    }
+    if let Some(tail) = &block.tail {
+        collect_expr_spec_fn_calls(tail, spec_decls, out);
+    }
+}
+
+/// Collect the in-file spec-fn names one `Stmt` calls (#71), recursing into the
+/// `let`/assign/return/if/loop/expr forms a spec-fn body may contain.
+fn collect_stmt_spec_fn_calls(
+    stmt: &thermite_syntax::Stmt,
+    spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    use thermite_syntax::Stmt;
+    match stmt {
+        Stmt::Let { init, .. } => collect_expr_spec_fn_calls(init, spec_decls, out),
+        Stmt::Assign { target, value } => {
+            collect_expr_spec_fn_calls(target, spec_decls, out);
+            collect_expr_spec_fn_calls(value, spec_decls, out);
+        }
+        Stmt::Return(opt) => {
+            if let Some(e) = opt {
+                collect_expr_spec_fn_calls(e, spec_decls, out);
+            }
+        }
+        Stmt::If { cond, then, else_ } => {
+            collect_expr_spec_fn_calls(cond, spec_decls, out);
+            collect_block_spec_fn_calls(then, spec_decls, out);
+            if let Some(b) = else_ {
+                collect_block_spec_fn_calls(b, spec_decls, out);
+            }
+        }
+        Stmt::Loop(node) => {
+            for inv in &node.invs {
+                collect_expr_spec_fn_calls(&inv.expr, spec_decls, out);
+            }
+            collect_expr_spec_fn_calls(&node.dec.expr, spec_decls, out);
+            if let thermite_syntax::LoopKind::While(cond) = &node.kind {
+                collect_expr_spec_fn_calls(cond, spec_decls, out);
+            }
+            collect_block_spec_fn_calls(&node.body, spec_decls, out);
+        }
+        Stmt::Expr(e) => collect_expr_spec_fn_calls(e, spec_decls, out),
+    }
+}
+
+/// Collect the in-file spec-fn names one `Expr` calls (#71): an `Expr::Call` whose
+/// leading `Path` segment names an in-file spec fn, an `Expr::MethodCall` whose
+/// method name does, and every nested sub-expression (a call argument, a closure
+/// body, a match arm — so a spec-fn call inside a scheme step closure is found).
+fn collect_expr_spec_fn_calls(
+    expr: &thermite_syntax::Expr,
+    spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    use thermite_syntax::Expr;
+    let note = |name: &str, out: &mut std::collections::BTreeSet<String>| {
+        if spec_decls.contains_key(name) {
+            out.insert(name.to_string());
+        }
+    };
+    match expr {
+        Expr::Call { callee, args } => {
+            if let Expr::Path(segments) = callee.as_ref() {
+                if let Some(first) = segments.first() {
+                    note(first, out);
+                }
+            } else {
+                collect_expr_spec_fn_calls(callee, spec_decls, out);
+            }
+            for a in args {
+                collect_expr_spec_fn_calls(a, spec_decls, out);
+            }
+        }
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => {
+            note(name, out);
+            collect_expr_spec_fn_calls(receiver, spec_decls, out);
+            for a in args {
+                collect_expr_spec_fn_calls(a, spec_decls, out);
+            }
+        }
+        Expr::Field { receiver, .. } => collect_expr_spec_fn_calls(receiver, spec_decls, out),
+        Expr::Closure { body, .. } => collect_expr_spec_fn_calls(body, spec_decls, out),
+        Expr::Match { scrutinee, arms } => {
+            collect_expr_spec_fn_calls(scrutinee, spec_decls, out);
+            for arm in arms {
+                collect_expr_spec_fn_calls(&arm.body, spec_decls, out);
+            }
+        }
+        Expr::If { cond, then, else_ } => {
+            collect_expr_spec_fn_calls(cond, spec_decls, out);
+            collect_block_spec_fn_calls(then, spec_decls, out);
+            collect_block_spec_fn_calls(else_, spec_decls, out);
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_expr_spec_fn_calls(lhs, spec_decls, out);
+            collect_expr_spec_fn_calls(rhs, spec_decls, out);
+        }
+        Expr::Index { base, index } => {
+            collect_expr_spec_fn_calls(base, spec_decls, out);
+            match index {
+                thermite_syntax::IndexArg::Single(e)
+                | thermite_syntax::IndexArg::RangeTo(e)
+                | thermite_syntax::IndexArg::RangeFrom(e) => {
+                    collect_expr_spec_fn_calls(e, spec_decls, out)
+                }
+                thermite_syntax::IndexArg::Range(a, b) => {
+                    collect_expr_spec_fn_calls(a, spec_decls, out);
+                    collect_expr_spec_fn_calls(b, spec_decls, out);
+                }
+            }
+        }
+        Expr::Cast { expr, .. } => collect_expr_spec_fn_calls(expr, spec_decls, out),
+        Expr::Ref { expr, .. } => collect_expr_spec_fn_calls(expr, spec_decls, out),
+        Expr::Deref(inner) => collect_expr_spec_fn_calls(inner, spec_decls, out),
+        Expr::StructLit { fields, .. } => {
+            for (_, value) in fields {
+                collect_expr_spec_fn_calls(value, spec_decls, out);
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_expr_spec_fn_calls(scrutinee, spec_decls, out),
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) => {}
+    }
 }
 
 /// The in-file `Item::Struct`/`Item::Enum` DECLARATIONS the items in

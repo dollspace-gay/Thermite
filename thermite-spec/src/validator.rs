@@ -29,6 +29,7 @@
 //! |---|---|---|
 //! | REQ-5 (exhaustiveness — `NonExhaustiveMatch`/`UnreachableArm`) | SHIPPED | declaration pre-pass `Validator::new` collects `enums` (name → variant order) + `variant_to_enum`; `check_match_exhaustiveness` (reached from both the caged `walk_expr_inner` `Match` arm AND the exec-body `scan_expr_for_loops` `Match` arm) infers the matched enum from arm patterns (`variant_pattern_name`), then emits `NonExhaustiveMatch { missing }` (declaration order), `UnreachableArm` (variant twice / arm after wildcard), `UnknownVariant` (undeclared variant in a pattern). Slice/`Option` matches are inert (no regression). Consumer: `validate`. Verification: `tests/adt_validate.rs` `non_exhaustive_match` → `missing:[Rect]`; `unreachable_redundant_arm` → `UnreachableArm`; `unknown_variant_pattern` → `UnknownVariant{Square}`; `shape`/`list_sum` accept. |
 //! | REQ-6 (well-formed field/variant access + `is`) | SHIPPED | pre-pass collects `struct_fields` (every `struct`/struct-variant field). `check_field` (on `Expr::Field` + `Expr::StructLit` fields, both walks) → `UnknownField` for an undeclared field (inert when no struct declared). `check_variant_ref` (on `Expr::Is`, both walks) → `UnknownVariant` for an undeclared variant. Consumer: `validate`. Verification: `unknown_field` → `UnknownField{bogus}`; `unknown_variant_is` → `UnknownVariant{Triangle}`; `bank_account`/`shape` accept. |
+//! | REQ-2 (variant names UpperCamelCase — `InvalidVariantCasing`) | SHIPPED | #66. The declaration pre-pass `Validator::new` rejects any `enum` variant whose first char is not `is_ascii_uppercase()` with `SpecError::InvalidVariantCasing { name, span }`, seeded into the error list BEFORE the body/contract walk. This is load-bearing for soundness: the parser disambiguates a single-segment arm pattern by first-letter case (uppercase → `Pattern::Enum`, lowercase → `Pattern::Binding`), so forbidding lowercase variants makes that split sound — a lowercase pattern ident is unambiguously a binding (no lowercase variant can exist), closing the #66 bypass where a lowercase variant masqueraded as a catch-all and masked a non-exhaustive `match`. Consumer: `validate`. Verification: `tests/divergence_adt_validate.rs` `divergence_lowercase_variant_bypasses_exhaustiveness` → `InvalidVariantCasing{foo}`, `divergence_lowercase_arm_masks_unhandled_variant` → `InvalidVariantCasing{tri}`; `exhaustiveness_intact_uppercase_nonexhaustive` confirms uppercase enums still get `NonExhaustiveMatch`. |
 //! | REQ-7 (ADT predicates fit the cage — flat built-ins) | SHIPPED | `Expr::Match`/`Field`/`Is`/`Deref` are FLAT built-ins in `walk_expr_inner` — they recurse operands without setting `in_combinator_closure` and without resolving as combinators, so they are admitted unchanged inside a combinator predicate-closure body (the existing caged-flat walk). No recursive scheme exists yet to nest (forward-declared; schemes are Stage 2). Verification: the combinator cage tests (`tests/combinators_conformance.rs`) stay green. |
 //! | 1a GATE (`SpecError::UnsupportedAdt`) | RETIRED for well-formed ADTs | the variant is RETAINED (downstream `forge`/`thermite-lower` reference it by name in comments and it screams for a future un-checkable ADT form) but has NO live emitter in 1b: `run`'s `Item::Struct` now cages the `inv` clause, `Item::Enum` is a no-op, and `walk_expr_inner`'s `Expr::StructLit`/`Expr::Is`/`Expr::Deref` arms validate-or-accept. A well-formed ADT no longer dies at the gate. |
 
@@ -148,6 +149,19 @@ pub enum SpecError {
     /// `is` discrimination (`r is Triangle`), or a struct-variant construction
     /// (`.design/basis/01-adts.md` REQ-6). `name` is the unknown variant.
     UnknownVariant { name: String, span: Span },
+    /// An `enum` variant declared with a lowercase-initial name
+    /// (`.design/basis/01-adts.md` REQ-2: "Variant names MUST be UpperCamelCase
+    /// (uppercase-initial); the validator rejects a lowercase-initial variant
+    /// declaration"). This is LOAD-BEARING for soundness, not style: the parser
+    /// disambiguates a single-segment arm pattern by first-letter case
+    /// (`Pattern::Enum` if uppercase-initial, `Pattern::Binding` otherwise).
+    /// Forbidding lowercase variants makes that split SOUND — a lowercase ident
+    /// in a pattern is *unambiguously* a binding, because no lowercase variant
+    /// can exist, so a non-exhaustive `match` can never be silently masked by a
+    /// variant-looking name being read as a catch-all binding (the #66 bypass).
+    /// `name` is the offending variant. Rejected at the DECLARATION pre-pass,
+    /// before any `match`/exhaustiveness check.
+    InvalidVariantCasing { name: String, span: Span },
 }
 
 impl SpecError {
@@ -164,7 +178,8 @@ impl SpecError {
             | SpecError::NonExhaustiveMatch { span, .. }
             | SpecError::UnreachableArm { span, .. }
             | SpecError::UnknownField { span, .. }
-            | SpecError::UnknownVariant { span, .. } => *span,
+            | SpecError::UnknownVariant { span, .. }
+            | SpecError::InvalidVariantCasing { span, .. } => *span,
         }
     }
 }
@@ -231,6 +246,10 @@ impl fmt::Display for SpecError {
             SpecError::UnknownVariant { name, .. } => write!(
                 f,
                 "`{name}` is not a declared variant of its `enum` (REQ-6)"
+            ),
+            SpecError::InvalidVariantCasing { name, .. } => write!(
+                f,
+                "enum variant `{name}` must be UpperCamelCase (uppercase-initial) (REQ-2)"
             ),
         }
     }
@@ -315,11 +334,37 @@ impl Validator {
         let mut enums: HashMap<String, Vec<String>> = HashMap::new();
         let mut variant_to_enum: HashMap<String, String> = HashMap::new();
         let mut struct_fields: HashSet<String> = HashSet::new();
+        // `.design/basis/01-adts.md` REQ-2: every `enum` variant name MUST be
+        // UpperCamelCase (uppercase-initial). A lowercase-initial variant is
+        // rejected HERE, at the declaration pre-pass, BEFORE any
+        // match/exhaustiveness check — this is the cause of the #66 bypass: the
+        // parser disambiguates a single-segment arm pattern by first-letter case
+        // (uppercase → `Pattern::Enum`, lowercase → `Pattern::Binding`), so a
+        // lowercase variant in a `match` arm masquerades as a catch-all binding
+        // and a non-exhaustive match is silently accepted. Forbidding lowercase
+        // variants at the declaration makes that case-based split SOUND. These
+        // casing diagnostics SEED the validator's error list so a lowercase-
+        // variant program never reaches the (now-sound) body/contract walk.
+        let mut casing_errors: Vec<SpecError> = Vec::new();
         for item in &program.items {
             match item {
                 Item::Enum(e) => {
                     let mut variant_names = Vec::with_capacity(e.variants.len());
                     for variant in &e.variants {
+                        // A variant name is uppercase-initial iff its first char
+                        // is `is_ascii_uppercase()`. An empty name (a parser
+                        // edge) is treated as non-uppercase → rejected.
+                        if !variant
+                            .name
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_ascii_uppercase())
+                        {
+                            casing_errors.push(SpecError::InvalidVariantCasing {
+                                name: variant.name.clone(),
+                                span: e.span,
+                            });
+                        }
                         variant_names.push(variant.name.clone());
                         // Last writer wins on a duplicated variant name across
                         // enums; the validator's job here is well-formedness of
@@ -352,7 +397,10 @@ impl Validator {
             variant_to_enum,
             struct_fields,
             depth: 0,
-            errors: Vec::new(),
+            // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
+            // the error list, so a lowercase-variant `enum` is rejected at the
+            // declaration BEFORE the (now-sound) match/exhaustiveness walk runs.
+            errors: casing_errors,
             in_combinator_closure: false,
         }
     }

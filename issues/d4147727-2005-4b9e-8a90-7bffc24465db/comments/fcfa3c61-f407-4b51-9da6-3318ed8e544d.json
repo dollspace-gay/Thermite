@@ -1,0 +1,10 @@
+{
+  "uuid": "fcfa3c61-f407-4b51-9da6-3318ed8e544d",
+  "issue_uuid": "d4147727-2005-4b9e-8a90-7bffc24465db",
+  "author": "Yffe",
+  "content": "Stage 1a: make the workspace compile green over the already-built ADT surface (thermite-syntax struct/enum/Box/match/is/deref), then commit 1a. Plan: add SpecError::UnsupportedAdt as the honest 1a validator GATE (struct/enum items + StructLit/Is/Deref contract exprs scream cleanly); add the minimal honest neutral downstream arm for every other E0004 site (UNREACHABLE in 1a — ADT programs die at the validator first) across thermite-lower {lower,l1,l2,effects} and forge {build,check,closure,mutation,review,vacuity}. Result-returning fns -> Err(layer's Unsupported); collectors -> recurse-or-empty; filter_map -> None; bool predicates -> structural recurse; surface renderers -> surface text. NO panic/unwrap/todo/unreachable. Verify: build/test/clippy/fmt all green; corpus + adt_parse unchanged.",
+  "created_at": "2026-06-06T11:36:30.171085395Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAYEPqv16Y1AErjO0jkjo+qadLAlob9OwGGJjEvQKFpPi1TuQvLtX0JA2tQKtVFDoIZJW5N0lCc3qfB2OPhvRkDg=="
+}

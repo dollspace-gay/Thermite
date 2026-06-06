@@ -1,0 +1,28 @@
+{
+  "note": "Oracle for Stage 1b — the ADT validator (issue #65). Hand-derived (R-CHAR-3) from .design/basis/01-adts.md REQ-5 (exhaustiveness — NonExhaustiveMatch / UnreachableArm), REQ-6 (well-formed field/variant access — UnknownField / UnknownVariant; `is` against a declared variant), REQ-7 (ADT predicates fit the SpecTherm cage). The validator collects each enum's variant set + each struct's field set (from Item::Enum / Item::Struct), then checks bodies + contracts. These cases test thermite_spec::validate directly (the validator layer), NOT the full forge pipeline (lowering is Stage 1c). The validator is the COMPILE-TIME tooth of handled-or-loud: a non-exhaustive match is rejected before the program ships.",
+  "accept": [
+    { "name": "bank_account", "source": "conformance/bank_account.th",
+      "why": "struct Account + inv + deposit constructing via StructLit + a.balance field access are all well-formed; no match. Validates clean (the 1a UnsupportedAdt gate is gone)." },
+    { "name": "shape", "source": "conformance/shape.th",
+      "why": "Shape enum (Circle, Rect); is_circle's `match s` covers BOTH variants (exhaustive), binds payloads to declared shapes, and `s is Circle` names a declared variant. Validates clean." },
+    { "name": "list_sum", "source": "conformance/list_sum.th",
+      "why": "List enum (Nil, Cons); sum_list's `match l` covers BOTH variants exhaustively, binds Cons's payload; the recursive deref is structural. spec fn, dec l. Validates clean." }
+  ],
+  "reject": [
+    { "name": "non_exhaustive_match", "expect_error": "NonExhaustiveMatch", "expect_missing": ["Rect"],
+      "program": "enum Shape { Circle(u64), Rect { w: u64, h: u64 } } fn f(s: Shape) -> u64 req true ens result == result fx pure { match s { Circle(r) => r, } }",
+      "why": "the match covers Circle but NOT Rect and has no Wildcard -> NonExhaustiveMatch { missing: [Rect] }. REQ-5: every modeled variant handled or an explicit catch screams — enforced at validation." },
+    { "name": "unreachable_redundant_arm", "expect_error": "UnreachableArm",
+      "program": "enum Shape { Circle(u64), Rect { w: u64, h: u64 } } fn f(s: Shape) -> u64 req true ens result == result fx pure { match s { Circle(r) => r, Rect { w, h } => w, Circle(r2) => r2, } }",
+      "why": "Circle is matched twice -> the second Circle arm is unreachable -> UnreachableArm (REQ-5)." },
+    { "name": "unknown_field", "expect_error": "UnknownField", "expect_name": "bogus",
+      "program": "struct Account { balance: u64 } inv balance <= 1_000_000 fn f(a: Account) -> u64 req true ens result == result fx pure { a.bogus }",
+      "why": "Account declares only `balance`; `a.bogus` accesses an undeclared field -> UnknownField { name: bogus } (REQ-6)." },
+    { "name": "unknown_variant_is", "expect_error": "UnknownVariant", "expect_name": "Triangle",
+      "program": "enum Shape { Circle(u64), Rect { w: u64, h: u64 } } fn f(s: Shape) -> bool req true ens result == (s is Triangle) fx pure { match s { Circle(r) => true, Rect { w, h } => false, } }",
+      "why": "`s is Triangle` names a variant Shape does not declare -> UnknownVariant { name: Triangle } (REQ-6). The match itself is exhaustive (Circle, Rect) — the error is the `is` in the ens." },
+    { "name": "unknown_variant_pattern", "expect_error": "UnknownVariant", "expect_name": "Square",
+      "program": "enum Shape { Circle(u64), Rect { w: u64, h: u64 } } fn f(s: Shape) -> u64 req true ens result == result fx pure { match s { Circle(r) => r, Square(x) => x, } }",
+      "why": "the match has an arm for `Square`, not a declared Shape variant -> UnknownVariant { name: Square } (REQ-6); the pattern names a non-existent variant." }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "827b7766-15d9-4674-86ef-2e60654ac9aa",
+  "issue_uuid": "4d341d6e-9923-44bb-9710-fe442d4e9b38",
+  "author": "Yffe",
+  "content": "Failing test at thermite-skill/tests/divergence_unit_arm_example.rs::rendered_fn_examples_parse_clean (run with --ignored) demonstrates the divergence. render_type_arm's Type::Unit arm in generate.rs renders the example `fn log() -> () ens true fx pure { }` which OMITS the mandatory req clause; thermite_syntax::parser::parse rejects it with 'clause `req` is out of order'. The same fn WITH `req true` parses clean. The skill's own render_grammar prose states 'absence of any is a parse error'. Authority: thermite-design.md §10 (skill IS the spec, no version skew); skill-generator.md REQ-10/REQ-8. R-CHAR-3: expected value = parser-accepts, not copied from generate.rs.",
+  "created_at": "2026-06-06T22:32:34.512153926Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABApwAM5YE+IUFJ7zvrGmkT8SrDloVqdYxw6f6xoEUcX/4pGlYsyhkbrRgHCN0NRKm4eclkBD/9qisLyg5XC/U2Ag=="
+}

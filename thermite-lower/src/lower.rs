@@ -49,12 +49,22 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | composition REQ-1 (assumable-signature emission, boundary/slag only) | SHIPPED | `lower_fn` dispatches a `f.boundary.is_some() \|\| f.slag.is_some()` fn to `lower_external_body_fn`, which emits `#[verifier::external_body]` + the SAME `lower_fn_signature` (unweakened `requires`/`ensures`) + a synthetic `{ unimplemented!() }` body verus never checks. THE HONESTY GATE: external_body iff the syntactic `#[boundary]`/`#[slag]` flag — a regular fn ALWAYS takes the fully-proved-body arm. The 2-bool decision is DELEGATED to the Verus-verified `thermite_verified::should_emit_external_body` (epic #60, REQ-9 / `.design/verified/self-verification.md` Target C, mechanism (c)): its `ensures` proves the disjunction AND the §9 corollary `(!boundary && !slag) ==> !r`, anchored by the OBSERVABLE-dispatch test `tests/boundary_gate_verified.rs` (the emitted `#[verifier::external_body]` substring over the 4 (boundary,slag) combos). Consumer: `forge::check::item_subprogram` weaves a boundary/slag dep through this arm. Verified: `forge`'s `composition_conformance::direct_boundary_caller_verifies_through_the_contract` (caller L3) + `lying_regular_fn_is_caught_never_laundered_to_l3` (a regular lie is CAUGHT — verus `postcondition not satisfied`). The `#[verifier::external_body]` lives in the lowered verus STRING (a generated foreign-fn artifact), never in this `.rs` source. |
+//!
+//! ## Basis Stage 1c ADT arm (`.design/basis/01-adts.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-8 (struct → Verus struct; type-invariant → enforced predicate) | SHIPPED | `lower_struct` emits a `pub struct` + `pub` fields + `impl { pub open spec fn well_formed(&self) -> bool { <inv with self.field> } }` (`lower_inv_expr`); OQ-3 RESOLVED — automatic threading: `lower_fn_signature` weaves `<param>.well_formed()` / `result.well_formed()` into `requires`/`ensures` for every invariant-bearing struct param/return (`inv_structs`). The `pub` visibility tier is the recorded grounding finding (a `pub open spec fn` body needs `pub` struct+fields). Consumer: `lower` (`Item::Struct` arm) + `lower_fn`. Verified: real verus `1 verified, 0 errors` on the emitted `bank_account` lowering, the cert oracle (`conformance/bank_account.cert.json` L3/pure/non-vacuous) — `tests/adt_lower_conformance.rs::bank_account_lowers_struct_invariant_and_verifies_l3` + `deposit_matches_cert_oracle_stable_subset`. |
+//! | REQ-9 (enum → Verus enum; `match` → Verus `match`; `is` → variant test) | SHIPPED | `lower_enum` emits a Verus `enum` (unit/tuple/struct variants); `lower_match`/`lower_pattern` emit ENUM-QUALIFIED arms via the program `variants` map (`qualify_variant_path`) incl. `Pattern::Struct` (`Rect { w, h }`/`..`); `Expr::Is` → the Verus-native `(s is Circle)` discriminant. Consumer: `lower` (`Item::Enum` arm) + `lower_fn`. Verified: real verus `1 verified, 0 errors` on the emitted `shape` lowering + the cert oracle (`conformance/shape.cert.json` L3/pure/non-vacuous) — `shape_lowers_enum_match_is_and_verifies_l3` + `is_circle_matches_cert_oracle_stable_subset`. |
+//! | REQ-10 (recursive type → Verus recursive enum; `Box`; structural `decreases`) | SHIPPED | `lower_enum` emits `Cons(u64, Box<List>)` (`lower_type` `Type::Box`→`Box<…>`); a `spec fn` matching the ADT-fold-sum shape (`is_adt_fold_sum`) lowers `-> nat` with `decreases l` over the datatype VALUE (Verus's built-in structural order) and `Expr::Deref`→`*t`, casts coerced `as nat` (`Ctx::nat_ret`). Consumer: `lower` (`Item::SpecFn`/`Item::Enum`). Verified: real verus `1 verified, 0 errors` on the emitted `list_sum` lowering — `list_sum_lowers_recursive_box_and_verifies_l3`. |
+//! | REQ-11 (`LowerError`/no panics) | SHIPPED | the ADT arms reuse the existing `LowerError` (`Unsupported`/`TooDeep`); no new variant needed (the validator #65 owns the reject cases); no `unwrap`/`expect`/`panic!` added. Verified: `cargo clippy --workspace -D warnings` + the anti-pattern-gate. |
+//! | REQ-12 (handled-or-loud — compile-time tooth) | SHIPPED | the exhaustiveness mechanism it names is the #65 validator (`SpecError::NonExhaustiveMatch`); this stage's L3/L1 lowering of the accepted `match` preserves it (every arm is emitted; a non-exhaustive match never reaches the lowerer). No regression to the compile-time tooth. |
 
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
-    BinOp, Block, Clause, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern, PrimType,
-    Program, SlicePat, SpecFnItem, Stmt, Type,
+    BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
+    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type, VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -186,9 +196,20 @@ struct Ctx<'a> {
     /// these coerces the scalar with `as nat`, since `nat` and `u64` are not the
     /// same Verus type. Computed program-wide, SHAPE-derived.
     nat_fns: &'a [&'a str],
+    /// The program's `(variant_name, enum_name)` map (REQ-9): a `match` arm /
+    /// pattern over a user enum variant lowers to the Verus-required ENUM-QUALIFIED
+    /// path `Enum::Variant` (verus rejects a bare `Nil`/`Circle`). `Some`/`None`
+    /// and slice patterns are NOT in this map, so they lower unqualified (Verus
+    /// knows the `Option` built-in) — the qualification is keyed on membership.
+    variants: &'a [(&'a str, &'a str)],
+    /// True inside the body of a `nat`-returning spec fn (REQ-10): an integer
+    /// cast (`h as u64`) coerces to `as nat` so the fold's arithmetic stays `nat`
+    /// (no overflow obligation in spec context), the GROUNDED `sum_list` form.
+    nat_ret: bool,
 }
 
 const NO_SLICES: &[&str] = &[];
+const NO_VARIANTS: &[(&str, &str)] = &[];
 
 impl<'a> Ctx<'a> {
     fn exec() -> Ctx<'static> {
@@ -196,6 +217,8 @@ impl<'a> Ctx<'a> {
             pos: Pos::Exec,
             slices: NO_SLICES,
             nat_fns: NO_SLICES,
+            variants: NO_VARIANTS,
+            nat_ret: false,
         }
     }
     fn spec(slices: &'a [&'a str], nat_fns: &'a [&'a str]) -> Ctx<'a> {
@@ -203,6 +226,8 @@ impl<'a> Ctx<'a> {
             pos: Pos::Spec,
             slices,
             nat_fns,
+            variants: NO_VARIANTS,
+            nat_ret: false,
         }
     }
     /// A spec context with no slice-view names — for positions where every
@@ -213,7 +238,21 @@ impl<'a> Ctx<'a> {
             pos: Pos::Spec,
             slices: NO_SLICES,
             nat_fns: NO_SLICES,
+            variants: NO_VARIANTS,
+            nat_ret: false,
         }
+    }
+    /// This context with the enum-variant map attached (REQ-9 — variant-pattern
+    /// qualification). Carried through `match`/pattern lowering.
+    fn with_variants(mut self, variants: &'a [(&'a str, &'a str)]) -> Ctx<'a> {
+        self.variants = variants;
+        self
+    }
+    /// This context marked as a `nat`-returning spec-fn body (REQ-10 — integer
+    /// casts coerce to `as nat`).
+    fn with_nat_ret(mut self, nat_ret: bool) -> Ctx<'a> {
+        self.nat_ret = nat_ret;
+        self
     }
     fn is_spec(&self) -> bool {
         self.pos == Pos::Spec
@@ -225,6 +264,14 @@ impl<'a> Ctx<'a> {
     /// True if `name` is a `nat`-returning spec fn (drives `as nat` coercion).
     fn is_nat_fn(&self, name: &str) -> bool {
         self.nat_fns.contains(&name)
+    }
+    /// The enum name a user variant belongs to (REQ-9), or `None` if `name` is not
+    /// a declared user variant (`Some`/`None`/a binding/literal — left unqualified).
+    fn enum_of_variant(&self, name: &str) -> Option<&'a str> {
+        self.variants
+            .iter()
+            .find(|(v, _)| *v == name)
+            .map(|(_, e)| *e)
     }
     /// A clone of this spec context keeping its name sets (for recursing).
     fn keep(&self) -> Ctx<'a> {
@@ -255,13 +302,49 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     out.push_str(&combinator_defs);
 
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
-    // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`).
+    // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
+    // ADT match-fold-sum spec fn (`sum_list`, REQ-10) joins this set: it too
+    // returns `nat` so its integer arithmetic stays `nat` (no overflow obligation
+    // in spec context), exactly as the slice head-fold does.
     let nat_fns: Vec<&str> = program
         .items
         .iter()
         .filter_map(|item| match item {
-            Item::SpecFn(s) if is_head_fold_sum(&s.body) => Some(s.name.as_str()),
+            Item::SpecFn(s) if is_head_fold_sum(&s.body) || is_adt_fold_sum(&s.body) => {
+                Some(s.name.as_str())
+            }
             _ => None,
+        })
+        .collect();
+
+    // The program-wide set of `struct` names that carry a type-invariant (REQ-8,
+    // OQ-3 automatic threading): every `fn` taking or returning such a struct gets
+    // the `<param>.well_formed()` / `result.well_formed()` conjunct woven into its
+    // `requires`/`ensures` so Verus enforces the invariant at construction + use.
+    let inv_structs: Vec<&str> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(s) if s.inv.is_some() => Some(s.name.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    // The program-wide `(variant_name, enum_name)` map (REQ-9): drives the
+    // ENUM-QUALIFIED `Enum::Variant` lowering of a `match` arm / pattern over a
+    // user enum value (verus rejects a bare `Nil`/`Circle`). Built once, threaded
+    // through every `fn`/`spec fn` body's match lowering.
+    let variants: Vec<(&str, &str)> = program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Enum(e) => Some(e),
+            _ => None,
+        })
+        .flat_map(|e| {
+            e.variants
+                .iter()
+                .map(move |v| (v.name.as_str(), e.name.as_str()))
         })
         .collect();
 
@@ -272,13 +355,13 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     let mut emitted_lemmas: Vec<String> = Vec::new();
     for item in &program.items {
         let item_src = match item {
-            Item::SpecFn(s) => lower_spec_fn(s)?,
+            Item::SpecFn(s) => lower_spec_fn(s, &variants)?,
             Item::Fn(f) if f.boundary.is_some() || f.slag.is_some() => {
                 // A boundary/slag fn is woven as a `#[verifier::external_body]`
                 // signature (its body is never lowered, REQ-1), so it needs no
                 // accumulator-fold push lemmas — skip the lemma collection that a
                 // fully-proved fn body drives.
-                lower_fn(f, &nat_fns)?
+                lower_fn(f, &nat_fns, &inv_structs, &variants)?
             }
             Item::Fn(f) => {
                 for lemma_def in push_lemma_defs_for_fn(f)? {
@@ -291,28 +374,14 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
                     out.push('\n');
                     emitted_lemmas.push(name_line);
                 }
-                lower_fn(f, &nat_fns)?
+                lower_fn(f, &nat_fns, &inv_structs, &variants)?
             }
-            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
-            // item is UNREACHABLE here in 1a — an ADT program dies at the
-            // validator gate (`SpecError::UnsupportedAdt`) before `forge check`
-            // ever lowers it. This arm is dead-in-1a but must be an honest
-            // value, not a panic: it returns the neutral `LowerError::Unsupported`
-            // (the lowerer's existing "this construct is not lowered" error). 1c
-            // REPLACES it with real struct/enum → Verus emission (REQ-8/REQ-9/
-            // REQ-10).
-            Item::Struct(s) => {
-                return Err(LowerError::Unsupported {
-                    what: "struct item (ADT lowering lands in basis Stage 1c)".to_string(),
-                    span: s.span,
-                })
-            }
-            Item::Enum(e) => {
-                return Err(LowerError::Unsupported {
-                    what: "enum item (ADT lowering lands in basis Stage 1c)".to_string(),
-                    span: e.span,
-                })
-            }
+            // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-10): a
+            // `struct` lowers to a Verus `pub struct` + the `well_formed`
+            // type-invariant predicate (REQ-8); a (recursive) `enum` lowers to a
+            // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
+            Item::Struct(s) => lower_struct(s)?,
+            Item::Enum(e) => lower_enum(e)?,
         };
         out.push('\n');
         out.push_str(&item_src);
@@ -320,6 +389,161 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     }
 
     out.push_str("\n}\nfn main() {}\n");
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// REQ-8/REQ-9/REQ-10: ADT item lowering (struct, enum, recursive enum).
+// ---------------------------------------------------------------------------
+
+/// Lower a `StructItem` to a Verus `pub struct` plus, when it carries an `inv`
+/// clause, the `well_formed` type-invariant predicate (REQ-8). The GROUNDED form
+/// (`.design/basis/01-adts.md` "Struct + type invariant", verus `0 errors`):
+///
+/// ```verus
+/// pub struct Account { pub balance: u64 }
+/// impl Account {
+///     pub open spec fn well_formed(&self) -> bool { self.balance <= 1000000 }
+/// }
+/// ```
+///
+/// VISIBILITY TIER (the recorded finding, REQ-8): a `pub open spec fn` body may
+/// refer only to `pub` items, so the struct, ITS FIELDS, and the predicate are
+/// all emitted `pub` — otherwise verus rejects with `field expression for a
+/// non-visible datatype`. The `inv` expression is lowered with bare field-name
+/// paths rewritten to `self.<field>` (the predicate's receiver), the
+/// data-invariant the corpus `inv balance <= 1_000_000` denotes.
+fn lower_struct(s: &thermite_syntax::ast::StructItem) -> Result<String, LowerError> {
+    let mut out = String::new();
+    writeln!(out, "pub struct {} {{", s.name).ok();
+    for field in &s.fields {
+        let ty = lower_type(&field.ty)?;
+        writeln!(out, "    pub {}: {ty},", field.name).ok();
+    }
+    out.push_str("}\n");
+
+    // The type-invariant predicate (REQ-8), when an `inv` clause is present. A
+    // struct WITHOUT an invariant is a plain `pub struct` (no predicate, nothing
+    // to thread — the OQ-3 threading in `lower_fn_signature` keys on `inv_structs`
+    // which is exactly the invariant-bearing set).
+    if let Some(inv) = &s.inv {
+        let field_names: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
+        let body = lower_inv_expr(&inv.expr, &field_names, 0, s.span)?;
+        writeln!(out, "\nimpl {} {{", s.name).ok();
+        out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
+        writeln!(out, "        {body}").ok();
+        out.push_str("    }\n}\n");
+    }
+    Ok(out)
+}
+
+/// Lower an `inv` expression to the `well_formed(&self)` predicate body (REQ-8):
+/// a bare single-segment path that names a declared field is rewritten to
+/// `self.<field>` (the invariant `balance <= 1_000_000` is about `self.balance`).
+/// Everything else lowers in spec position via the shared `lower_expr` — but the
+/// field rewrite must happen on the AST, so this walks the expression itself.
+fn lower_inv_expr(
+    expr: &Expr,
+    field_names: &[&str],
+    depth: usize,
+    span: Span,
+) -> Result<String, LowerError> {
+    if depth >= MAX_EMIT_DEPTH {
+        return Err(LowerError::TooDeep {
+            limit: MAX_EMIT_DEPTH,
+            span,
+        });
+    }
+    let d = depth + 1;
+    match expr {
+        // A bare field-name path becomes a `self.<field>` field access; any other
+        // single/multi-segment path lowers normally (a `spec const` like a CAP,
+        // or a `::`-qualified path, stays as written).
+        Expr::Path(segs) => {
+            if segs.len() == 1 && field_names.contains(&segs[0].as_str()) {
+                Ok(format!("self.{}", segs[0]))
+            } else {
+                Ok(segs.join("::"))
+            }
+        }
+        Expr::Binary { op, lhs, rhs } => {
+            let l = lower_inv_operand(lhs, *op, true, field_names, d, span)?;
+            let r = lower_inv_operand(rhs, *op, false, field_names, d, span)?;
+            Ok(format!("{l} {} {r}", binop(*op)))
+        }
+        Expr::Field { receiver, name } => {
+            let r = lower_inv_expr(receiver, field_names, d, span)?;
+            Ok(format!("{r}.{name}"))
+        }
+        // A literal / other leaf lowers exactly as the shared spec lowering would
+        // (the field rewrite only matters for bare paths and their parents).
+        _ => lower_expr(expr, Ctx::spec_seq(), depth, span),
+    }
+}
+
+/// Parenthesize an `inv` binary operand the same way `lower_binary_operand` does,
+/// but recursing through `lower_inv_expr` so nested field-name paths are rewritten
+/// (REQ-8). Mirrors the precedence discipline of the exec/spec operand lowering.
+fn lower_inv_operand(
+    operand: &Expr,
+    parent: BinOp,
+    is_left: bool,
+    field_names: &[&str],
+    depth: usize,
+    span: Span,
+) -> Result<String, LowerError> {
+    let s = lower_inv_expr(operand, field_names, depth, span)?;
+    if let Expr::Binary { op: child, .. } = operand {
+        let pp = precedence(parent);
+        let cp = precedence(*child);
+        let needs = cp < pp || (!is_left && cp == pp);
+        if needs {
+            return Ok(format!("({s})"));
+        }
+    }
+    Ok(s)
+}
+
+/// Lower an `EnumItem` to a Verus `enum` (REQ-9), recursive `Box<T>` and all
+/// (REQ-10). The GROUNDED forms (`.design/basis/01-adts.md`, verus `0 errors`):
+///
+/// ```verus
+/// enum Shape { Circle(u64), Rect { w: u64, h: u64 } }
+/// enum List { Nil, Cons(u64, Box<List>) }
+/// ```
+///
+/// A unit variant is the bare name; a tuple variant `Name(T, …)`; a struct
+/// variant `Name { field: T, … }`. The recursive occurrence is a `Box<List>`
+/// (`lower_type` emits `Box<…>` for `Type::Box`), the heap indirection Verus
+/// dereferences with `*` (REQ-10). An enum is emitted WITHOUT `pub`: the corpus
+/// `Shape`/`List` are used only from `fn`/`spec fn` in the same module, and a bare
+/// `enum` matches the GROUNDED verified form (no `pub open spec fn` refers to it,
+/// so no visibility-tier obligation as the struct invariant has).
+fn lower_enum(e: &EnumItem) -> Result<String, LowerError> {
+    let mut out = String::new();
+    writeln!(out, "enum {} {{", e.name).ok();
+    for variant in &e.variants {
+        match &variant.shape {
+            VariantShape::Unit => {
+                writeln!(out, "    {},", variant.name).ok();
+            }
+            VariantShape::Tuple(tys) => {
+                let mut parts = Vec::with_capacity(tys.len());
+                for ty in tys {
+                    parts.push(lower_type(ty)?);
+                }
+                writeln!(out, "    {}({}),", variant.name, parts.join(", ")).ok();
+            }
+            VariantShape::Struct(fields) => {
+                let mut parts = Vec::with_capacity(fields.len());
+                for field in fields {
+                    parts.push(format!("{}: {}", field.name, lower_type(&field.ty)?));
+                }
+                writeln!(out, "    {} {{ {} }},", variant.name, parts.join(", ")).ok();
+            }
+        }
+    }
+    out.push_str("}\n");
     Ok(out)
 }
 
@@ -481,7 +705,7 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 /// body lowers in spec context; `dec`→`decreases`. The return type uses the
 /// `nat`-typed accumulator form when the body folds slice elements into a sum
 /// (OQ-1: `u64`-valued `spec_sum` would re-introduce the overflow obligation).
-fn lower_spec_fn(s: &SpecFnItem) -> Result<String, LowerError> {
+fn lower_spec_fn(s: &SpecFnItem, variants: &[(&str, &str)]) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_spec_fn_ret(&s.ret, &s.body);
     write!(out, "spec fn {}(", s.name).ok();
@@ -492,7 +716,7 @@ fn lower_spec_fn(s: &SpecFnItem) -> Result<String, LowerError> {
         spec_dec(&s.dec, &s.params)
     )
     .ok();
-    out.push_str(&lower_spec_fn_body(&s.body, &s.params, &ret)?);
+    out.push_str(&lower_spec_fn_body(&s.body, &s.params, &ret, variants)?);
     Ok(out)
 }
 
@@ -525,7 +749,12 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
 /// exemption is gated STRICTLY on the syntactic `#[boundary]`/`#[slag]` flag
 /// (the honesty gate, `goal.md` R-DEFER-9): a REGULAR fn (neither flag) ALWAYS
 /// takes the fully-proved-body path below — a lying regular body is CAUGHT.
-fn lower_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
+fn lower_fn(
+    f: &FnItem,
+    nat_fns: &[&str],
+    inv_structs: &[&str],
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     // THE HONESTY GATE: external_body iff a declared trust boundary
     // (`#[boundary]`/`#[slag]`), NEVER a regular fn. Emitted only into a CALLER's
     // sub-program as a woven dependency (forge's `item_subprogram`). The 2-bool
@@ -536,15 +765,17 @@ fn lower_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
     // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this OBSERVABLE
     // dispatch (the emitted `#[verifier::external_body]` substring) to the proof.
     if thermite_verified::should_emit_external_body(f.boundary.is_some(), f.slag.is_some()) {
-        return lower_external_body_fn(f, nat_fns);
+        return lower_external_body_fn(f, nat_fns, inv_structs);
     }
 
     let mut out = String::new();
-    out.push_str(&lower_fn_signature(f, nat_fns)?);
+    out.push_str(&lower_fn_signature(f, nat_fns, inv_structs)?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
 
-    // Body, with shape-derived proof aids threaded through the loop lowering.
-    let body = lower_fn_body(f, nat_fns)?;
+    // Body, with shape-derived proof aids threaded through the loop lowering. The
+    // variant map flows into the exec body so an enum `match` (e.g. `is_circle`'s)
+    // lowers to ENUM-QUALIFIED arms (REQ-9).
+    let body = lower_fn_body(f, nat_fns, variants)?;
     out.push_str(&body);
     Ok(out)
 }
@@ -556,7 +787,11 @@ fn lower_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
 /// boundary/slag external_body arm ([`lower_external_body_fn`]) so the contract
 /// lowering is IDENTICAL across both (REQ-1 — the assumed signature carries the
 /// exact unweakened contract).
-fn lower_fn_signature(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
+fn lower_fn_signature(
+    f: &FnItem,
+    nat_fns: &[&str],
+    inv_structs: &[&str],
+) -> Result<String, LowerError> {
     let mut out = String::new();
     let ret = lower_type(&f.ret)?;
     write!(out, "fn {}(", f.name).ok();
@@ -566,14 +801,50 @@ fn lower_fn_signature(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError
     let slices = slice_param_names(&f.params);
     let spec = Ctx::spec(&slices, nat_fns);
 
-    // requires: the single `req` clause (REQ-1). Omit a literal-`true` req.
+    // requires: the single `req` clause (REQ-1), plus the woven `well_formed()`
+    // conjunct for every parameter whose type is an invariant-bearing `struct`
+    // (REQ-8, OQ-3 automatic threading) so Verus has the type-invariant of each
+    // incoming value in scope. The author writes neither conjunct: the invariant
+    // is a property of the TYPE, implicit at every use.
+    let mut woven_reqs: Vec<String> = Vec::new();
+    for p in &f.params {
+        if let Type::Named(name) = &p.ty {
+            if inv_structs.contains(&name.as_str()) {
+                woven_reqs.push(format!("{}.well_formed()", p.name));
+            }
+        }
+    }
     let req = lower_expr(&f.contract.req.expr, spec, 0, f.span)?;
-    if req != "true" {
-        writeln!(out, "    requires {req},").ok();
+    if woven_reqs.is_empty() {
+        // No woven invariant conjunct: keep the existing single-line
+        // `requires <req>,` form byte-for-byte (no golden churn for the non-ADT
+        // corpus — `sum`/`binary_search` lower UNCHANGED). Omit a literal-`true`.
+        if req != "true" {
+            writeln!(out, "    requires {req},").ok();
+        }
+    } else {
+        // An invariant-bearing struct param weaves its `well_formed()` conjunct;
+        // emit the multi-line `requires` block (the woven conjuncts first, then
+        // the author's `req` unless it is literal-`true`).
+        out.push_str("    requires\n");
+        for r in &woven_reqs {
+            writeln!(out, "        {r},").ok();
+        }
+        if req != "true" {
+            writeln!(out, "        {req},").ok();
+        }
     }
 
-    // ensures: every `ens` clause in source order (no weakening — R-DEFER-9).
+    // ensures: the woven `result.well_formed()` conjunct FIRST when the return
+    // type is an invariant-bearing struct (REQ-8 — Verus proves the constructed
+    // return value satisfies the invariant), then every `ens` clause in source
+    // order (no weakening — R-DEFER-9).
     out.push_str("    ensures\n");
+    if let Type::Named(name) = &f.ret {
+        if inv_structs.contains(&name.as_str()) {
+            out.push_str("        result.well_formed(),\n");
+        }
+    }
     for ens in &f.contract.ens {
         let e = lower_expr(&ens.expr, spec, 0, f.span)?;
         writeln!(out, "        {e},").ok();
@@ -600,10 +871,14 @@ fn lower_fn_signature(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError
 /// artifact describing a foreign function), NEVER in the toolchain's own `.rs`
 /// source — categorically distinct from the gate-forbidden `#[verifier::external]`
 /// proof-dodge of code we wrote (the doc's emitted-verus vs our-Rust distinction).
-fn lower_external_body_fn(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
+fn lower_external_body_fn(
+    f: &FnItem,
+    nat_fns: &[&str],
+    inv_structs: &[&str],
+) -> Result<String, LowerError> {
     let mut out = String::new();
     out.push_str("#[verifier::external_body]\n");
-    out.push_str(&lower_fn_signature(f, nat_fns)?);
+    out.push_str(&lower_fn_signature(f, nat_fns, inv_structs)?);
     // The body is SUPPRESSED: verus does not check an external_body body, so the
     // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the
     // caller trusts by declaration (§8/§9). The real `f.body` (None for a
@@ -648,10 +923,63 @@ fn spec_param_type(ty: &Type) -> Result<String, LowerError> {
 /// fold cannot overflow the spec relation (OQ-1). Detected by SHAPE: a `Match`
 /// or `if/else` whose recursive arm adds a cast slice head to a recursive call.
 fn lower_spec_fn_ret(ret: &Type, body: &Block) -> String {
-    if is_head_fold_sum(body) {
+    if is_head_fold_sum(body) || is_adt_fold_sum(body) {
         return "nat".to_string();
     }
     lower_type(ret).unwrap_or_else(|_| "bool".to_string())
+}
+
+/// Detect the ADT match-fold-sum shape (`sum_list`, REQ-10): a `match l { Nil =>
+/// 0, Cons(h, t) => <cast h> + f(*t) }` — a unit-variant base case of `0` and a
+/// tuple/struct-variant arm adding a (cast) payload to a recursive call on the
+/// `Box`-deref tail. SHAPE predicate over the AST (an `Expr::Enum` pattern with a
+/// recursive `Deref` argument), never a name check. Such a fold is lowered with
+/// a `nat` return so its integer arithmetic stays `nat` (the GROUNDED form;
+/// without it a `u64` arm body is `int`-typed and verus rejects the `match`).
+fn is_adt_fold_sum(body: &Block) -> bool {
+    let Some(tail) = &body.tail else { return false };
+    let Expr::Match { arms, .. } = tail.as_ref() else {
+        return false;
+    };
+    let mut has_unit_zero = false;
+    let mut has_rec_add = false;
+    for arm in arms {
+        match &arm.pattern {
+            // A unit variant base case (`Nil => 0`): an enum pattern with no
+            // payload whose body is the literal `0`.
+            Pattern::Enum { fields, .. } if fields.is_empty() => {
+                if matches!(&arm.body, Expr::IntLit { value: 0, .. }) {
+                    has_unit_zero = true;
+                }
+            }
+            // A recursive cons arm (`Cons(h, t) => h as T + f(*t)`): an enum
+            // pattern WITH a payload whose body is an `Add` containing a recursive
+            // call through a `Deref` (the `*t` of `f(*t)`).
+            Pattern::Enum { fields, .. } if !fields.is_empty() => {
+                if let Expr::Binary {
+                    op: BinOp::Add,
+                    rhs,
+                    ..
+                } = &arm.body
+                {
+                    if expr_has_deref_call_arg(rhs) {
+                        has_rec_add = true;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    has_unit_zero && has_rec_add
+}
+
+/// True if `expr` is a `Call` one of whose arguments is a `Deref` (the `f(*t)`
+/// of the ADT fold's recursive arm). SHAPE check.
+fn expr_has_deref_call_arg(expr: &Expr) -> bool {
+    if let Expr::Call { args, .. } = expr {
+        return args.iter().any(|a| matches!(a, Expr::Deref(_)));
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -699,7 +1027,12 @@ fn is_head_rest(pats: &[SlicePat]) -> bool {
 /// recursion `if xs.len() == 0 { 0 } else { xs[0] as nat + f(xs.drop_first()) }`
 /// (REQ-5). The recursion is reconstructed from the match arms' SHAPE: the base
 /// arm's value, the head-element cast, and the recursive callee name.
-fn lower_spec_fn_body(body: &Block, params: &[Param], ret: &str) -> Result<String, LowerError> {
+fn lower_spec_fn_body(
+    body: &Block,
+    params: &[Param],
+    ret: &str,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     if is_head_fold_sum(body) {
         if let Some(slice) = first_slice_param(params) {
             if let Some(tail) = &body.tail {
@@ -709,9 +1042,16 @@ fn lower_spec_fn_body(body: &Block, params: &[Param], ret: &str) -> Result<Strin
             }
         }
     }
-    // Fallback: lower the block in spec context directly.
+    // Fallback: lower the block in spec context directly. An ADT fold (`sum_list`,
+    // REQ-10) flows through HERE — its `match l { … }` lowers via `lower_match`
+    // with the enum-variant map attached (ENUM-QUALIFIED arms) and, when the
+    // return is `nat`, with `nat_ret` set so integer casts coerce to `as nat`
+    // (the GROUNDED form's `h as nat + sum_list(*t)`).
+    let ctx = Ctx::spec_seq()
+        .with_variants(variants)
+        .with_nat_ret(ret == "nat");
     let mut out = String::from("{\n");
-    let b = lower_block_inner(body, Ctx::spec_seq(), 1, zero_span())?;
+    let b = lower_block_inner(body, ctx, 1, zero_span())?;
     out.push_str(&b);
     out.push_str("}\n");
     Ok(out)
@@ -798,20 +1138,17 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let a = lower_type(arg)?;
             Ok(format!("{name}<{a}>"))
         }
-        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): a
-        // user-defined `Named` type or a `Box<T>` is UNREACHABLE in 1a — its
-        // declaring ADT program dies at the validator gate before lowering. The
-        // honest neutral value is the lowerer's existing `Unsupported` error
-        // (this fn has no span, so the file-level `zero_span`). 1c REPLACES this
-        // with `Account`/`List`-as-Verus-type and `Box<T>` emission (REQ-10).
-        Type::Named(name) => Err(LowerError::Unsupported {
-            what: format!("user type `{name}` (ADT lowering lands in basis Stage 1c)"),
-            span: zero_span(),
-        }),
-        Type::Box(_) => Err(LowerError::Unsupported {
-            what: "`Box<T>` (ADT lowering lands in basis Stage 1c)".to_string(),
-            span: zero_span(),
-        }),
+        // Basis Stage 1c (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-10): a
+        // user-defined `struct`/`enum` type is its bare name (`Account`, `Shape`,
+        // `List`) — the type-side complement of the lowered `Item::Struct`/
+        // `Item::Enum`. `Box<T>` is the heap-indirection primitive emitted as a
+        // Verus `Box<…>` (the recursive occurrence `Box<List>`, REQ-10), which
+        // Verus models natively for a recursive datatype.
+        Type::Named(name) => Ok(name.clone()),
+        Type::Box(inner) => {
+            let i = lower_type(inner)?;
+            Ok(format!("Box<{i}>"))
+        }
     }
 }
 
@@ -920,7 +1257,17 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
         Expr::Index { base, index } => lower_index(base, index, ctx, d, span),
         Expr::Cast { expr, ty } => {
             let e = lower_expr(expr, ctx, d, span)?;
-            let t = lower_type(ty)?;
+            // REQ-10: inside a `nat`-returning ADT-fold spec fn body, an integer
+            // cast (`h as u64`) coerces to `as nat` so the fold's arithmetic stays
+            // `nat` (the GROUNDED `sum_list` form `h as nat + sum_list(*t)`; a
+            // `u64`-typed arm body is `int` in spec and verus rejects the match).
+            // Keyed on the SHAPE (nat-ret spec body + an integer-target cast),
+            // never a name. A `bool`/`()` cast is left as written.
+            let t = if ctx.nat_ret && is_int_type(ty) {
+                "nat".to_string()
+            } else {
+                lower_type(ty)?
+            };
             Ok(format!("{e} as {t}"))
         }
         Expr::Ref { mutable, expr } => {
@@ -938,25 +1285,49 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 Ok(format!("&{e}"))
             }
         }
-        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-2/REQ-6/REQ-3): the
-        // ADT expressions are UNREACHABLE in 1a (an ADT program dies at the
-        // validator gate before lowering). Honest neutral value: the lowerer's
-        // existing `Unsupported` error, anchored at the enclosing `span`. 1c
-        // REPLACES these with struct-literal / `is`-discriminant / `Box`-deref
-        // emission (REQ-8/REQ-9/REQ-10).
-        Expr::StructLit { .. } => Err(LowerError::Unsupported {
-            what: "struct literal (ADT lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
-        Expr::Is { .. } => Err(LowerError::Unsupported {
-            what: "`is` discrimination (ADT lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
-        Expr::Deref(_) => Err(LowerError::Unsupported {
-            what: "`Box` deref (ADT lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
+        // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9/REQ-10).
+        Expr::StructLit { path, fields } => {
+            // A struct / struct-variant construction `Path { field: val, … }`
+            // (REQ-2/REQ-8): the struct name (or ENUM-QUALIFIED variant) followed
+            // by `field: <value>` initializers in source order. The GROUNDED form
+            // `Account { balance: a.balance + amount }`. A struct path stays as
+            // written; a single-segment user enum VARIANT is qualified.
+            let head = qualify_variant_path(path, ctx);
+            let mut parts = Vec::with_capacity(fields.len());
+            for (name, value) in fields {
+                let v = lower_expr(value, ctx, d, span)?;
+                parts.push(format!("{name}: {v}"));
+            }
+            Ok(format!("{head} {{ {} }}", parts.join(", ")))
+        }
+        Expr::Is { scrutinee, variant } => {
+            // A variant-discrimination test `SCRUTINEE is Variant` (REQ-6/REQ-9):
+            // Verus-native variant discrimination `<scrutinee> is <Variant>` (the
+            // GROUNDED `s is Circle`). The variant name is emitted UNQUALIFIED —
+            // Verus's `is` operator takes the bare variant identifier (the
+            // scrutinee's type fixes the enum), confirmed by the grounding.
+            let s = lower_expr(scrutinee, ctx, d, span)?;
+            let v = variant.last().cloned().unwrap_or_default();
+            Ok(format!("({s} is {v})"))
+        }
+        Expr::Deref(inner) => {
+            // A `Box` dereference `*EXPR` (REQ-3/REQ-10): the recursive-occurrence
+            // read `*tail` Verus follows transparently through the `Box`. Lowers to
+            // `*<inner>` in both contexts (the GROUNDED `sum_list(*t)`).
+            let e = lower_expr(inner, ctx, d, span)?;
+            Ok(format!("*{e}"))
+        }
     }
+}
+
+/// True if `ty` is an integer primitive (`u32`/`u64`/`usize`) — the cast targets
+/// that coerce to `nat` inside a `nat`-returning ADT-fold spec fn (REQ-10). A
+/// `bool`/`()`/reference/slice/user type is NOT coerced.
+fn is_int_type(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Prim(PrimType::U32) | Type::Prim(PrimType::U64) | Type::Prim(PrimType::Usize)
+    )
 }
 
 /// Lower a spec-position call/combinator argument (REQ-5). A bare slice-param
@@ -1103,7 +1474,7 @@ fn lower_match(
     let s = lower_expr(scrutinee, ctx, depth, span)?;
     let mut out = format!("match {s} {{\n");
     for arm in arms {
-        let pat = lower_pattern(&arm.pattern, depth, span)?;
+        let pat = lower_pattern(&arm.pattern, ctx, depth, span)?;
         let body = lower_expr(&arm.body, ctx, depth, span)?;
         writeln!(out, "            {pat} => {body},").ok();
     }
@@ -1111,9 +1482,13 @@ fn lower_match(
     Ok(out)
 }
 
-/// Lower a pattern (REQ-7 node set). Enum patterns `Some(i)`/`None`, bindings,
-/// wildcards, literals.
-fn lower_pattern(pat: &Pattern, depth: usize, span: Span) -> Result<String, LowerError> {
+/// Lower a pattern (REQ-7/REQ-9 node set). A user enum-variant pattern is
+/// ENUM-QUALIFIED (`Circle(r)`→`Shape::Circle(r)`, `Nil`→`List::Nil`) via the
+/// `ctx.variants` map (verus rejects a bare variant); `Some(i)`/`None` and
+/// bindings/wildcards/literals are NOT in the map, so they lower unqualified.
+/// `Pattern::Struct` (`Rect { w, h }` / `Rect { .. }`) is REQ-4's struct-variant
+/// destructuring (REQ-9 lowering).
+fn lower_pattern(pat: &Pattern, ctx: Ctx, depth: usize, span: Span) -> Result<String, LowerError> {
     if depth >= MAX_EMIT_DEPTH {
         return Err(LowerError::TooDeep {
             limit: MAX_EMIT_DEPTH,
@@ -1125,31 +1500,62 @@ fn lower_pattern(pat: &Pattern, depth: usize, span: Span) -> Result<String, Lowe
         Pattern::Binding(name) => Ok(name.clone()),
         Pattern::Literal(e) => lower_expr(e, Ctx::spec_seq(), depth + 1, span),
         Pattern::Enum { path, fields } => {
-            let head = path.join("::");
+            let head = qualify_variant_path(path, ctx);
             if fields.is_empty() {
                 Ok(head)
             } else {
                 let mut fs = Vec::new();
                 for f in fields {
-                    fs.push(lower_pattern(f, depth + 1, span)?);
+                    fs.push(lower_pattern(f, ctx, depth + 1, span)?);
                 }
                 Ok(format!("{head}({})", fs.join(", ")))
+            }
+        }
+        Pattern::Struct { path, fields, rest } => {
+            // `Rect { w, h }` / `Rect { .. }` (REQ-4/REQ-9): an ENUM-QUALIFIED
+            // struct-variant (or struct) destructuring pattern. Each field is
+            // `name: <subpat>`; the `rest` flag emits the `..` of `Rect { .. }`.
+            let head = qualify_variant_path(path, ctx);
+            let mut parts = Vec::with_capacity(fields.len());
+            for (name, subpat) in fields {
+                let sub = lower_pattern(subpat, ctx, depth + 1, span)?;
+                // A field-shorthand `Rect { w, h }` (parsed to `(w, Binding(w))`)
+                // lowers to the bare field name; an explicit `field: pat` keeps the
+                // `name: pat` form.
+                if matches!(subpat, Pattern::Binding(b) if b == name) {
+                    parts.push(name.clone());
+                } else {
+                    parts.push(format!("{name}: {sub}"));
+                }
+            }
+            if *rest {
+                parts.push("..".to_string());
+            }
+            if parts.is_empty() {
+                Ok(format!("{head} {{}}"))
+            } else {
+                Ok(format!("{head} {{ {} }}", parts.join(", ")))
             }
         }
         Pattern::Slice(_) => Err(LowerError::Unsupported {
             what: "slice pattern outside a head-fold spec fn".to_string(),
             span,
         }),
-        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-4): a struct /
-        // struct-variant destructuring pattern is UNREACHABLE in 1a (the
-        // enclosing ADT program dies at the validator). Honest neutral value:
-        // the existing `Unsupported` error at `span`. 1c REPLACES it with Verus
-        // struct-pattern emission (REQ-9).
-        Pattern::Struct { .. } => Err(LowerError::Unsupported {
-            what: "struct pattern (ADT lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
     }
+}
+
+/// ENUM-QUALIFY a variant-pattern path (REQ-9): a single-segment user variant
+/// `["Circle"]` becomes `Shape::Circle` via the `ctx.variants` map; an already
+/// `::`-qualified path, a built-in (`Some`/`None`), or an unknown name is joined
+/// as-written (verus knows `Option`; a user variant must be qualified or it is
+/// rejected). Keyed on map membership, never on a name pattern.
+fn qualify_variant_path(path: &[String], ctx: Ctx) -> String {
+    if path.len() == 1 {
+        if let Some(enum_name) = ctx.enum_of_variant(&path[0]) {
+            return format!("{enum_name}::{}", path[0]);
+        }
+    }
+    path.join("::")
 }
 
 /// The Verus/Rust operator for a `BinOp` (REQ-3).
@@ -1215,7 +1621,11 @@ fn lower_binary_operand(
 /// Lower a `fn` body, threading the shape-derived proof aids (REQ-7). The body
 /// is emitted between `{` and `}`; the loop lowering injects per-loop aids and
 /// the extensionality assert at exit.
-fn lower_fn_body(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
+fn lower_fn_body(
+    f: &FnItem,
+    nat_fns: &[&str],
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     let mut out = String::from("{\n");
     // A boundary fn (ffi-boundary.md REQ-2/OQ-3) has `body: None` and is NEVER
     // lowered to Verus — `forge`'s `check.rs` routes it to the L1 boundary path
@@ -1227,7 +1637,7 @@ fn lower_fn_body(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
             .to_string(),
         span: f.span,
     })?;
-    let inner = lower_block_with_fn_aids(body, f, nat_fns, 1)?;
+    let inner = lower_block_with_fn_aids(body, f, nat_fns, variants, 1)?;
     out.push_str(&inner);
     out.push_str("}\n");
     Ok(out)
@@ -1235,26 +1645,30 @@ fn lower_fn_body(f: &FnItem, nat_fns: &[&str]) -> Result<String, LowerError> {
 
 /// Lower a block with the enclosing `fn`'s contract in scope, so loop lowering
 /// can lift immutable preconditions and emit accumulator/coverage aids (REQ-7).
+/// The exec context carries the enum-variant map (REQ-9) so a `match` over a user
+/// enum (e.g. `is_circle`'s body) lowers to ENUM-QUALIFIED arms.
 fn lower_block_with_fn_aids(
     block: &Block,
     f: &FnItem,
     nat_fns: &[&str],
+    variants: &[(&str, &str)],
     indent: usize,
 ) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
+    let exec = Ctx::exec().with_variants(variants);
     let mut out = String::new();
     for stmt in &block.stmts {
         match stmt {
             Stmt::Loop(l) => {
-                out.push_str(&lower_loop(l, f, nat_fns, indent)?);
+                out.push_str(&lower_loop(l, f, nat_fns, variants, indent)?);
             }
             other => {
-                out.push_str(&lower_stmt(other, Ctx::exec(), indent)?);
+                out.push_str(&lower_stmt(other, exec, indent)?);
             }
         }
     }
     if let Some(tail) = &block.tail {
-        let t = lower_expr(tail, Ctx::exec(), 0, f.span)?;
+        let t = lower_expr(tail, exec, 0, f.span)?;
         writeln!(out, "{pad}{t}").ok();
     }
     Ok(out)
@@ -1354,18 +1768,20 @@ fn lower_loop(
     l: &thermite_syntax::ast::LoopNode,
     f: &FnItem,
     nat_fns: &[&str],
+    variants: &[(&str, &str)],
     indent: usize,
 ) -> Result<String, LowerError> {
     use thermite_syntax::ast::LoopKind;
     let pad = "    ".repeat(indent);
     let ipad = "    ".repeat(indent + 1);
+    let exec = Ctx::exec().with_variants(variants);
     let mut out = String::new();
 
     // Loop header.
     match &l.kind {
         LoopKind::Loop => writeln!(out, "{pad}loop").map_err(|_| fmt_err())?,
         LoopKind::While(c) => {
-            let cs = lower_expr(c, Ctx::exec(), 0, f.span)?;
+            let cs = lower_expr(c, exec, 0, f.span)?;
             writeln!(out, "{pad}while {cs}").map_err(|_| fmt_err())?;
         }
     };
@@ -1406,7 +1822,7 @@ fn lower_loop(
 
     // The body statements, with the loop-exit coverage split injected into the
     // matching `if` branch (template e).
-    let body_src = lower_loop_body(&l.body, f, &l.invs, indent + 1)?;
+    let body_src = lower_loop_body(&l.body, f, &l.invs, variants, indent + 1)?;
     out.push_str(&body_src);
 
     writeln!(out, "{pad}}}").map_err(|_| fmt_err())?;
@@ -1814,11 +2230,13 @@ fn lower_loop_body(
     body: &Block,
     f: &FnItem,
     invs: &[Clause],
+    variants: &[(&str, &str)],
     indent: usize,
 ) -> Result<String, LowerError> {
     // Pre-compute the coverage split, if this loop's invariants + the fn's
     // None-postcondition match template (e).
     let coverage = complementary_coverage_split(f, invs)?;
+    let exec = Ctx::exec().with_variants(variants);
 
     let mut out = String::new();
     for stmt in &body.stmts {
@@ -1832,16 +2250,17 @@ fn lower_loop_body(
                     else_,
                     &cov.assert_block,
                     f,
+                    variants,
                     indent,
                 )?);
                 continue;
             }
         }
-        out.push_str(&lower_stmt(stmt, Ctx::exec(), indent)?);
+        out.push_str(&lower_stmt(stmt, exec, indent)?);
     }
     if let Some(tail) = &body.tail {
         let pad = "    ".repeat(indent);
-        let t = lower_expr(tail, Ctx::exec(), 0, f.span)?;
+        let t = lower_expr(tail, exec, 0, f.span)?;
         writeln!(out, "{pad}{t}").map_err(|_| fmt_err())?;
     }
     Ok(out)
@@ -1871,10 +2290,12 @@ fn emit_if_with_split(
     else_: &Option<Block>,
     split: &str,
     f: &FnItem,
+    variants: &[(&str, &str)],
     indent: usize,
 ) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
-    let c = lower_expr(cond, Ctx::exec(), 0, f.span)?;
+    let exec = Ctx::exec().with_variants(variants);
+    let c = lower_expr(cond, exec, 0, f.span)?;
     let mut out = format!("{pad}if {c} {{\n");
     // The split assert, indented one level in.
     for line in split.lines() {
@@ -1884,11 +2305,11 @@ fn emit_if_with_split(
             writeln!(out, "{pad}    {line}").map_err(|_| fmt_err())?;
         }
     }
-    let then_src = lower_block_inner(then, Ctx::exec(), indent, f.span)?;
+    let then_src = lower_block_inner(then, exec, indent, f.span)?;
     out.push_str(&then_src);
     out.push_str(&format!("{pad}}}"));
     if let Some(e) = else_ {
-        let es = lower_block_inner(e, Ctx::exec(), indent, f.span)?;
+        let es = lower_block_inner(e, exec, indent, f.span)?;
         write!(out, " else {{\n{es}{pad}}}").map_err(|_| fmt_err())?;
     }
     out.push('\n');

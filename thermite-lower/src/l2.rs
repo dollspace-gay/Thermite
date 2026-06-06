@@ -55,7 +55,7 @@ use thermite_syntax::lexer::Span;
 
 use crate::l1::{
     emit_combinator_l1_defs, emit_params, lower_expr_exec, lower_spec_fn_l1, lower_stmt_l1,
-    lower_type, zero_span,
+    lower_type, zero_span, NO_VARIANTS,
 };
 use crate::lower::LowerError;
 
@@ -97,7 +97,7 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
             // it as the `ens` reference, e.g. `result == spec_sum(xs)`).
             Item::SpecFn(s) => {
                 out.push('\n');
-                out.push_str(&lower_spec_fn_l1(s)?);
+                out.push_str(&lower_spec_fn_l1(s, NO_VARIANTS)?);
                 out.push('\n');
             }
             // A `fn` is a check-free executable body PLUS its Kani harness.
@@ -108,19 +108,27 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
                 out.push_str(&emit_harness(f)?);
                 out.push('\n');
             }
-            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
-            // item is UNREACHABLE — an ADT program dies at the validator gate
-            // before L2 lowering. Honest neutral value: the existing
-            // `Unsupported` error at the item span (1c lowers ADTs). NOT a panic.
+            // Basis Stage 1c (`.design/basis/01-adts.md`): the ADT corpus
+            // certifies at L3 (the verus path, `lower.rs`) — the L2 Kani BOUNDED
+            // harness for ADTs (symbolic `enum`/recursive-`Box` inputs) is NOT
+            // targeted in this stage (the manifest's "a clean label if L2 isn't
+            // targeted for ADTs yet"). An ADT program never DEGRADES to L2 in the
+            // corpus (it proves at L3); reaching here is the honest, structured
+            // "L2 ADT harness not built" error (NOT a panic — R-CODE-2). The L3
+            // (`lower.rs`) and L1 (`l1.rs`) ADT paths ARE shipped this stage.
             Item::Struct(s) => {
                 return Err(LowerError::Unsupported {
-                    what: "struct item (ADT L2 lowering lands in basis Stage 1c)".to_string(),
+                    what: "ADT `struct` L2 Kani harness (the ADT corpus certifies at L3; \
+                           L2 bounded-checking of ADTs is not targeted in basis Stage 1c)"
+                        .to_string(),
                     span: s.span,
                 })
             }
             Item::Enum(e) => {
                 return Err(LowerError::Unsupported {
-                    what: "enum item (ADT L2 lowering lands in basis Stage 1c)".to_string(),
+                    what: "ADT `enum` L2 Kani harness (the ADT corpus certifies at L3; \
+                           L2 bounded-checking of ADTs is not targeted in basis Stage 1c)"
+                        .to_string(),
                     span: e.span,
                 })
             }
@@ -171,11 +179,11 @@ fn lower_block_exec(block: &Block, indent: usize, span: Span) -> Result<String, 
     for stmt in &block.stmts {
         match stmt {
             Stmt::Loop(l) => out.push_str(&lower_loop_exec(l, indent)?),
-            other => out.push_str(&lower_stmt_l1(other, indent)?),
+            other => out.push_str(&lower_stmt_l1(other, indent, NO_VARIANTS)?),
         }
     }
     if let Some(tail) = &block.tail {
-        let t = lower_expr_exec(tail, 0, span)?;
+        let t = lower_expr_exec(tail, 0, span, NO_VARIANTS)?;
         writeln!(out, "{pad}{t}").ok();
     }
     Ok(out)
@@ -192,18 +200,18 @@ fn lower_loop_exec(l: &LoopNode, indent: usize) -> Result<String, LowerError> {
     match &l.kind {
         LoopKind::Loop => writeln!(out, "{pad}loop {{").ok(),
         LoopKind::While(c) => {
-            let cs = lower_expr_exec(c, 0, zero_span())?;
+            let cs = lower_expr_exec(c, 0, zero_span(), NO_VARIANTS)?;
             writeln!(out, "{pad}while {cs} {{").ok()
         }
     };
     for stmt in &l.body.stmts {
         match stmt {
             Stmt::Loop(inner) => out.push_str(&lower_loop_exec(inner, indent + 1)?),
-            other => out.push_str(&lower_stmt_l1(other, indent + 1)?),
+            other => out.push_str(&lower_stmt_l1(other, indent + 1, NO_VARIANTS)?),
         }
     }
     if let Some(tail) = &l.body.tail {
-        let t = lower_expr_exec(tail, 0, zero_span())?;
+        let t = lower_expr_exec(tail, 0, zero_span(), NO_VARIANTS)?;
         writeln!(out, "{ipad}{t}").ok();
     }
     writeln!(out, "{pad}}}").ok();
@@ -248,7 +256,7 @@ fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
     }
 
     // (2) assume the `req` (omit a literal-`true` empty contract).
-    let req = lower_expr_exec(&f.contract.req.expr, 0, f.span)?;
+    let req = lower_expr_exec(&f.contract.req.expr, 0, f.span, NO_VARIANTS)?;
     if req != "true" {
         writeln!(out, "    kani::assume({req});").ok();
     }
@@ -265,7 +273,7 @@ fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
     // (4) assert each `ens` against `result`, in source order (REQ-1, no
     // weakening — R-DEFER-9).
     for ens in &f.contract.ens {
-        let cond = lower_expr_exec(&ens.expr, 0, f.span)?;
+        let cond = lower_expr_exec(&ens.expr, 0, f.span, NO_VARIANTS)?;
         writeln!(out, "    assert!({cond});").ok();
     }
 

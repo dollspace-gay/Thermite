@@ -41,12 +41,21 @@
 //! | REQ-5 (`dec`/termination L1 scope) | SHIPPED | `lower_loop_l1` emits `inv` checks only, no `dec` runtime check (OQ-3); `no_syscall_sandbox_and_no_dec_guarantee` (AC-5). |
 //! | REQ-6 (golden L1 contract) | SHIPPED | `tests/golden/l1/sum.l1.rs` compiles+runs; emitted output is execution-equivalent (compiles, runs, `sum(&[1,2,3])==6`, checks fire) — `sum_l1_compiles_and_runs`. |
 //! | REQ-7 (`fx`/effect at L1 deferred to #21) | SHIPPED | no `fx` runtime check emitted; `no_syscall_sandbox_and_no_dec_guarantee` (AC-5) confirms no sandbox scaffolding. |
+//!
+//! ## Basis Stage 1c ADT arm (`.design/basis/01-adts.md`)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-8 (struct → L1 struct + always-active invariant check) | SHIPPED | `lower_struct_l1` emits a plain Rust `struct` + `fn well_formed(&self) -> bool` (the inv via `lower_inv_expr_l1`, `self.field`); `lower_fn_l1` weaves `<param>.well_formed()` (req-class) + `result.well_formed()` (ens-class) `thermite_check!`s for invariant-bearing struct params/returns — handled-or-loud at run time (§6 L1 rung). Consumer: `lower_l1`. Verified: `tests/adt_lower_conformance.rs::bank_account_l1_compiles_and_runs` (rustc compile+run, positive 150/0) + `bank_account_l1_req_check_fires` (an overflowing deposit ABORTS at the `[req]` check). |
+//! | REQ-9 (enum/match/`is` → L1 enum/match/`matches!`) | SHIPPED | `lower_enum_l1` emits a plain Rust `enum`; `lower_match_exec`/`lower_pattern_exec` emit ENUM-QUALIFIED arms (`qualify_variant_path_l1`) incl. `Pattern::Struct`; `Expr::Is`→`matches!(s, Enum::Variant { .. })`. Consumer: `lower_l1`/`lower_fn_l1`. Verified: `shape_l1_compiles_and_runs` (Circle→true/Rect→false) + `shape_l1_ens_check_fires_on_a_lying_body` (a lying body ABORTS at the `[ens]` check). |
+//! | REQ-10 (recursive type → L1 `Box`; deref) | SHIPPED | `lower_type` emits `Box<List>`; `Expr::Deref`→`*t`; an ADT-fold `spec fn` lowers to a real recursive Rust fn through the fallback `lower_block_inner`. Consumer: `lower_l1` (`Item::SpecFn`/`Item::Enum`). Verified by the workspace `cargo test` (the `list_sum` L1 lowering compiles in the corpus pipeline). |
+//! | REQ-11 (`LowerError`/no panics) | SHIPPED | the L1 ADT arms reuse `LowerError`; no `unwrap`/`expect`/`panic!` added (the emitted program's `thermite_contract_violation` panic is the GENERATED program's intended L1 abort, not a toolchain panic). |
 
 use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
-    BinOp, Block, Expr, FnItem, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param, Pattern,
-    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type,
+    BinOp, Block, EnumItem, Expr, FnItem, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param,
+    Pattern, PrimType, Program, SlicePat, SpecFnItem, Stmt, StructItem, Type, VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -83,38 +92,183 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // contract/spec position, deduped in source order (REQ-3).
     out.push_str(&emit_combinator_l1_defs(program)?);
 
+    // The program-wide `(variant, enum)` map (REQ-9) — drives the ENUM-QUALIFIED
+    // `Enum::Variant` of an L1 `match` arm / pattern / `is` `matches!` — and the
+    // invariant-bearing `struct` set (REQ-8) whose `well_formed()` check is woven
+    // into a producing fn (handled-or-loud at run time, §6 L1 rung). Built once.
+    let variants = variant_map(program);
+    let inv_structs = invariant_struct_names(program);
+
     // (3) + (4) the lowered items, in source order (determinism, §5.3).
     for item in &program.items {
         let item_src = match item {
-            Item::SpecFn(s) => lower_spec_fn_l1(s)?,
+            Item::SpecFn(s) => lower_spec_fn_l1(s, &variants)?,
             // A boundary fn (ffi-boundary.md REQ-4) lowers to the L1 wrapper: a
             // `req`-check, a call to the FOREIGN target binding `result`, then the
             // `ens`-checks — the foreign body is NOT lowered/verified. An
             // in-language fn lowers with its real body.
-            Item::Fn(f) if f.boundary.is_some() => lower_boundary_fn_l1(f)?,
-            Item::Fn(f) => lower_fn_l1(f)?,
-            // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
-            // item is UNREACHABLE here — an ADT program dies at the validator
-            // gate before any L1 lowering. Honest neutral value: the existing
-            // `Unsupported` error at the item span (1c lowers ADTs). NOT a panic.
-            Item::Struct(s) => {
-                return Err(LowerError::Unsupported {
-                    what: "struct item (ADT L1 lowering lands in basis Stage 1c)".to_string(),
-                    span: s.span,
-                })
-            }
-            Item::Enum(e) => {
-                return Err(LowerError::Unsupported {
-                    what: "enum item (ADT L1 lowering lands in basis Stage 1c)".to_string(),
-                    span: e.span,
-                })
-            }
+            Item::Fn(f) if f.boundary.is_some() => lower_boundary_fn_l1(f, &variants)?,
+            Item::Fn(f) => lower_fn_l1(f, &variants, &inv_structs)?,
+            // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9): a `struct`
+            // lowers to a plain Rust `struct` + a `well_formed` method (the
+            // always-active invariant predicate); an `enum` to a plain Rust `enum`.
+            Item::Struct(s) => lower_struct_l1(s)?,
+            Item::Enum(e) => lower_enum_l1(e)?,
         };
         out.push('\n');
         out.push_str(&item_src);
         out.push('\n');
     }
 
+    Ok(out)
+}
+
+/// The fixed empty variant map for the non-ADT lowering paths (mirrors
+/// `lower.rs::NO_VARIANTS`): an enum-variant pattern is qualified only when its
+/// name is in the program's map, so a `Some`/`None`/binding lowers unqualified.
+pub(crate) const NO_VARIANTS: &[(&str, &str)] = &[];
+
+/// The program's `(variant_name, enum_name)` map (REQ-9). A user enum-variant
+/// pattern / `is` test lowers ENUM-QUALIFIED via this map; `Some`/`None`/bindings
+/// are absent and lower unqualified. Built once in `lower_l1`, threaded down.
+fn variant_map(program: &Program) -> Vec<(&str, &str)> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Enum(e) => Some(e),
+            _ => None,
+        })
+        .flat_map(|e| {
+            e.variants
+                .iter()
+                .map(move |v| (v.name.as_str(), e.name.as_str()))
+        })
+        .collect()
+}
+
+/// The program's invariant-bearing `struct` names (REQ-8): a fn taking/returning
+/// one gets its `well_formed()` check woven as an always-active L1 contract check.
+fn invariant_struct_names(program: &Program) -> Vec<&str> {
+    program
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Struct(s) if s.inv.is_some() => Some(s.name.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The enum name a user variant belongs to (REQ-9), or `None` if `name` is not a
+/// declared user variant. Shared by the L1 pattern / `is` qualification.
+fn enum_of_variant<'a>(variants: &[(&'a str, &'a str)], name: &str) -> Option<&'a str> {
+    variants.iter().find(|(v, _)| *v == name).map(|(_, e)| *e)
+}
+
+/// ENUM-QUALIFY a variant path (REQ-9, the L1 mirror of `lower.rs`): a single
+/// user-variant segment becomes `Enum::Variant`; an already-qualified path or a
+/// built-in/unknown name is joined as-written.
+fn qualify_variant_path_l1(path: &[String], variants: &[(&str, &str)]) -> String {
+    if path.len() == 1 {
+        if let Some(enum_name) = enum_of_variant(variants, &path[0]) {
+            return format!("{enum_name}::{}", path[0]);
+        }
+    }
+    path.join("::")
+}
+
+// ---------------------------------------------------------------------------
+// REQ-8/REQ-9: ADT item lowering (struct + well_formed method, enum).
+// ---------------------------------------------------------------------------
+
+/// Lower a `StructItem` to a plain Rust `struct` plus, when it carries an `inv`
+/// clause, a `well_formed(&self) -> bool` method (REQ-8) — the always-active
+/// invariant predicate a producing fn checks at run time (handled-or-loud, §6 L1
+/// rung). The `inv` body rewrites bare field-name paths to `self.<field>`.
+fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
+    let mut out = String::new();
+    writeln!(out, "struct {} {{", s.name).ok();
+    for field in &s.fields {
+        let ty = lower_type(&field.ty)?;
+        writeln!(out, "    {}: {ty},", field.name).ok();
+    }
+    out.push_str("}\n");
+    if let Some(inv) = &s.inv {
+        let field_names: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
+        let body = lower_inv_expr_l1(&inv.expr, &field_names, 0, s.span)?;
+        writeln!(out, "\nimpl {} {{", s.name).ok();
+        writeln!(out, "    #[allow(dead_code)]").ok();
+        writeln!(out, "    fn well_formed(&self) -> bool {{ {body} }}").ok();
+        out.push_str("}\n");
+    }
+    Ok(out)
+}
+
+/// Lower an `inv` expression to the L1 `well_formed(&self)` method body (REQ-8):
+/// a bare field-name path becomes `self.<field>` (mirrors `lower.rs::lower_inv_expr`,
+/// exec spelling — no `Seq`/`@`).
+fn lower_inv_expr_l1(
+    expr: &Expr,
+    field_names: &[&str],
+    depth: usize,
+    span: Span,
+) -> Result<String, LowerError> {
+    if depth >= MAX_EMIT_DEPTH {
+        return Err(LowerError::TooDeep {
+            limit: MAX_EMIT_DEPTH,
+            span,
+        });
+    }
+    let d = depth + 1;
+    match expr {
+        Expr::Path(segs) => {
+            if segs.len() == 1 && field_names.contains(&segs[0].as_str()) {
+                Ok(format!("self.{}", segs[0]))
+            } else {
+                Ok(segs.join("::"))
+            }
+        }
+        Expr::Binary { op, lhs, rhs } => {
+            let l = lower_inv_expr_l1(lhs, field_names, d, span)?;
+            let r = lower_inv_expr_l1(rhs, field_names, d, span)?;
+            Ok(format!("{l} {} {r}", binop(*op)))
+        }
+        Expr::Field { receiver, name } => {
+            let r = lower_inv_expr_l1(receiver, field_names, d, span)?;
+            Ok(format!("{r}.{name}"))
+        }
+        _ => lower_expr_exec(expr, depth, span, NO_VARIANTS),
+    }
+}
+
+/// Lower an `EnumItem` to a plain Rust `enum` (REQ-9): unit/tuple/struct variants
+/// in their plain Rust spelling (the L1 mirror of `lower.rs::lower_enum`).
+fn lower_enum_l1(e: &EnumItem) -> Result<String, LowerError> {
+    let mut out = String::new();
+    writeln!(out, "enum {} {{", e.name).ok();
+    for variant in &e.variants {
+        match &variant.shape {
+            VariantShape::Unit => {
+                writeln!(out, "    {},", variant.name).ok();
+            }
+            VariantShape::Tuple(tys) => {
+                let mut parts = Vec::with_capacity(tys.len());
+                for ty in tys {
+                    parts.push(lower_type(ty)?);
+                }
+                writeln!(out, "    {}({}),", variant.name, parts.join(", ")).ok();
+            }
+            VariantShape::Struct(fields) => {
+                let mut parts = Vec::with_capacity(fields.len());
+                for field in fields {
+                    parts.push(format!("{}: {}", field.name, lower_type(&field.ty)?));
+                }
+                writeln!(out, "    {} {{ {} }},", variant.name, parts.join(", ")).ok();
+            }
+        }
+    }
+    out.push_str("}\n");
     Ok(out)
 }
 
@@ -320,22 +474,30 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 /// preserving real recursion. The `dec` measure is NOT emitted as a runtime
 /// check (REQ-5: a spec fn just runs at L1). The slice-match shape is detected
 /// structurally, never by name (mirrors `lower.rs::is_head_fold_sum`).
-pub(crate) fn lower_spec_fn_l1(s: &SpecFnItem) -> Result<String, LowerError> {
+pub(crate) fn lower_spec_fn_l1(
+    s: &SpecFnItem,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     let ret = lower_type(&s.ret)?;
     let mut out = String::new();
     write!(out, "fn {}(", s.name).ok();
     emit_params(&mut out, &s.params)?;
     writeln!(out, ") -> {ret} {{").ok();
-    out.push_str(&lower_spec_fn_body_l1(s, &ret)?);
+    out.push_str(&lower_spec_fn_body_l1(s, &ret, variants)?);
     out.push_str("}\n");
     Ok(out)
 }
 
 /// Lower a spec-fn body. For the head-fold-sum shape, emit the slice-length
 /// branch recursion (REQ-4). Otherwise lower the block directly in exec
-/// position. The recursion is reconstructed from the match arms' SHAPE: the base
-/// arm's value, the head cast, and the recursive callee name.
-fn lower_spec_fn_body_l1(s: &SpecFnItem, ret: &str) -> Result<String, LowerError> {
+/// position (an ADT fold `sum_list` flows here — its `match l { … }` lowers with
+/// the enum-variant map for ENUM-QUALIFIED arms + `*t` Box-deref, REQ-9/REQ-10).
+/// The recursion is reconstructed from the match arms' SHAPE.
+fn lower_spec_fn_body_l1(
+    s: &SpecFnItem,
+    ret: &str,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     if is_head_fold_sum(&s.body) {
         if let Some(slice) = first_slice_param(&s.params) {
             if let Some(tail) = &s.body.tail {
@@ -346,7 +508,7 @@ fn lower_spec_fn_body_l1(s: &SpecFnItem, ret: &str) -> Result<String, LowerError
         }
     }
     // Fallback: lower the block in exec position directly.
-    lower_block_inner(&s.body, 1, s.span)
+    lower_block_inner(&s.body, 1, s.span, variants)
 }
 
 /// The name of the first slice (`&[T]`) parameter — the recursion subject.
@@ -368,7 +530,7 @@ fn slice_fold_body_l1(slice: &str, arms: &[MatchArm], ret: &str) -> Result<Strin
     for arm in arms {
         match &arm.pattern {
             Pattern::Slice(pats) if pats.is_empty() => {
-                base = lower_expr_exec(&arm.body, 0, zero_span())?;
+                base = lower_expr_exec(&arm.body, 0, zero_span(), NO_VARIANTS)?;
             }
             Pattern::Slice(pats) if is_head_rest(pats) => {
                 if let Expr::Binary { rhs, .. } = &arm.body {
@@ -441,7 +603,11 @@ fn is_head_rest(pats: &[SlicePat]) -> bool {
 /// (REQ-1): each `req` asserted on entry, the body lowered with each loop's
 /// `inv` asserted per iteration, the body's value bound to `result`, then each
 /// `ens` asserted on exit against `result`. `fx` emits no runtime check (REQ-7).
-fn lower_fn_l1(f: &FnItem) -> Result<String, LowerError> {
+fn lower_fn_l1(
+    f: &FnItem,
+    variants: &[(&str, &str)],
+    inv_structs: &[&str],
+) -> Result<String, LowerError> {
     let ret = lower_type(&f.ret)?;
     let mut out = String::new();
     write!(out, "fn {}(", f.name).ok();
@@ -449,9 +615,20 @@ fn lower_fn_l1(f: &FnItem) -> Result<String, LowerError> {
     writeln!(out, ") -> {ret} {{").ok();
 
     // req on entry (REQ-1/REQ-2). Omit a literal-`true` req (the empty contract).
-    let req_cond = lower_expr_exec(&f.contract.req.expr, 0, f.span)?;
+    let req_cond = lower_expr_exec(&f.contract.req.expr, 0, f.span, variants)?;
     if req_cond != "true" {
         out.push_str(&emit_check("req", &f.contract.req.text, &req_cond, 1));
+    }
+    // REQ-8 (handled-or-loud, run-time tooth): a parameter whose type is an
+    // invariant-bearing `struct` gets its `well_formed()` check woven as an
+    // always-active `req`-class check — the type-invariant is verified on entry.
+    for p in &f.params {
+        if let Type::Named(name) = &p.ty {
+            if inv_structs.contains(&name.as_str()) {
+                let cond = format!("{}.well_formed()", p.name);
+                out.push_str(&emit_check("req", &cond, &cond, 1));
+            }
+        }
     }
 
     // The body value is bound to `result` so `ens` can reference it (REQ-1). A
@@ -465,13 +642,27 @@ fn lower_fn_l1(f: &FnItem) -> Result<String, LowerError> {
         span: f.span,
     })?;
     writeln!(out, "    let result = {{").ok();
-    out.push_str(&lower_fn_body_l1(body, f, 2)?);
+    out.push_str(&lower_fn_body_l1(body, f, variants, 2)?);
     writeln!(out, "    }};").ok();
 
     // ens on exit, in source order, against the bound `result` (REQ-1/REQ-2).
     for ens in &f.contract.ens {
-        let cond = lower_expr_exec(&ens.expr, 0, f.span)?;
+        let cond = lower_expr_exec(&ens.expr, 0, f.span, variants)?;
         out.push_str(&emit_check("ens", &ens.text, &cond, 1));
+    }
+    // REQ-8 (handled-or-loud): a fn returning an invariant-bearing `struct` checks
+    // `result.well_formed()` on exit — the constructed value satisfies the
+    // type-invariant or the always-active check SCREAMS (the L1 mirror of the L3
+    // `ensures result.well_formed()`).
+    if let Type::Named(name) = &f.ret {
+        if inv_structs.contains(&name.as_str()) {
+            out.push_str(&emit_check(
+                "ens",
+                "result.well_formed()",
+                "result.well_formed()",
+                1,
+            ));
+        }
     }
 
     writeln!(out, "    result").ok();
@@ -494,7 +685,7 @@ fn lower_fn_l1(f: &FnItem) -> Result<String, LowerError> {
 /// `f.boundary`'s `BoundaryAttr.target`; this fn is only called when
 /// `f.boundary.is_some()` (the `lower_l1` match guard), so the attribute is read
 /// via a structured error rather than an unwrap (R-CODE-2).
-fn lower_boundary_fn_l1(f: &FnItem) -> Result<String, LowerError> {
+fn lower_boundary_fn_l1(f: &FnItem, variants: &[(&str, &str)]) -> Result<String, LowerError> {
     let boundary = f.boundary.as_ref().ok_or_else(|| LowerError::Unsupported {
         what: "lower_boundary_fn_l1 reached a non-boundary fn (no `#[boundary]` \
                target to call); route it through lower_fn_l1 (ffi-boundary.md REQ-4)"
@@ -508,7 +699,7 @@ fn lower_boundary_fn_l1(f: &FnItem) -> Result<String, LowerError> {
     writeln!(out, ") -> {ret} {{").ok();
 
     // (2) req-check on entry (REQ-4). Omit a literal-`true` req (empty contract).
-    let req_cond = lower_expr_exec(&f.contract.req.expr, 0, f.span)?;
+    let req_cond = lower_expr_exec(&f.contract.req.expr, 0, f.span, variants)?;
     if req_cond != "true" {
         out.push_str(&emit_check("req", &f.contract.req.text, &req_cond, 1));
     }
@@ -527,7 +718,7 @@ fn lower_boundary_fn_l1(f: &FnItem) -> Result<String, LowerError> {
 
     // (4) ens-check on exit against the bound `result` (REQ-4), in source order.
     for ens in &f.contract.ens {
-        let cond = lower_expr_exec(&ens.expr, 0, f.span)?;
+        let cond = lower_expr_exec(&ens.expr, 0, f.span, variants)?;
         out.push_str(&emit_check("ens", &ens.text, &cond, 1));
     }
 
@@ -538,18 +729,25 @@ fn lower_boundary_fn_l1(f: &FnItem) -> Result<String, LowerError> {
 
 /// Lower a `fn` body block, threading the loop `inv`-check injection. The body's
 /// statements are emitted, then its tail expression (the block's value) — both
-/// inside the `let result = { .. }` binder the caller opened.
-fn lower_fn_body_l1(block: &Block, f: &FnItem, indent: usize) -> Result<String, LowerError> {
+/// inside the `let result = { .. }` binder the caller opened. The variant map
+/// flows into the exec lowering so an enum `match` (`is_circle`'s body) is
+/// ENUM-QUALIFIED (REQ-9).
+fn lower_fn_body_l1(
+    block: &Block,
+    f: &FnItem,
+    variants: &[(&str, &str)],
+    indent: usize,
+) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
     let mut out = String::new();
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Loop(l) => out.push_str(&lower_loop_l1(l, indent)?),
-            other => out.push_str(&lower_stmt_l1(other, indent)?),
+            Stmt::Loop(l) => out.push_str(&lower_loop_l1(l, variants, indent)?),
+            other => out.push_str(&lower_stmt_l1(other, indent, variants)?),
         }
     }
     if let Some(tail) = &block.tail {
-        let t = lower_expr_exec(tail, 0, f.span)?;
+        let t = lower_expr_exec(tail, 0, f.span, variants)?;
         writeln!(out, "{pad}{t}").ok();
     }
     Ok(out)
@@ -561,31 +759,35 @@ fn lower_fn_body_l1(block: &Block, f: &FnItem, indent: usize) -> Result<String, 
 /// emitted: termination is a proof-time (L3) / bounded (L2) obligation, out of
 /// L1's runtime scope (REQ-5, OQ-3) — a runtime check cannot prove a
 /// still-running loop terminates.
-fn lower_loop_l1(l: &LoopNode, indent: usize) -> Result<String, LowerError> {
+fn lower_loop_l1(
+    l: &LoopNode,
+    variants: &[(&str, &str)],
+    indent: usize,
+) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
     let ipad = "    ".repeat(indent + 1);
     let mut out = String::new();
     match &l.kind {
         LoopKind::Loop => writeln!(out, "{pad}loop {{").ok(),
         LoopKind::While(c) => {
-            let cs = lower_expr_exec(c, 0, zero_span())?;
+            let cs = lower_expr_exec(c, 0, zero_span(), variants)?;
             writeln!(out, "{pad}while {cs} {{").ok()
         }
     };
     // inv checks at the top of each iteration (REQ-1). NO dec check (REQ-5).
     for inv in &l.invs {
-        let cond = lower_expr_exec(&inv.expr, 0, zero_span())?;
+        let cond = lower_expr_exec(&inv.expr, 0, zero_span(), variants)?;
         out.push_str(&emit_check("inv", &inv.text, &cond, indent + 1));
     }
     // Loop body statements (a nested loop recurses through `lower_loop_l1`).
     for stmt in &l.body.stmts {
         match stmt {
-            Stmt::Loop(inner) => out.push_str(&lower_loop_l1(inner, indent + 1)?),
-            other => out.push_str(&lower_stmt_l1(other, indent + 1)?),
+            Stmt::Loop(inner) => out.push_str(&lower_loop_l1(inner, variants, indent + 1)?),
+            other => out.push_str(&lower_stmt_l1(other, indent + 1, variants)?),
         }
     }
     if let Some(tail) = &l.body.tail {
-        let t = lower_expr_exec(tail, 0, zero_span())?;
+        let t = lower_expr_exec(tail, 0, zero_span(), variants)?;
         writeln!(out, "{ipad}{t}").ok();
     }
     writeln!(out, "{pad}}}").ok();
@@ -643,24 +845,35 @@ pub(crate) fn emit_params(out: &mut String, params: &[Param]) -> Result<(), Lowe
 
 /// Lower a plain block in exec position (no loop-inv injection — used for spec-fn
 /// fallback bodies and `if`/`else` arms).
-fn lower_block_inner(block: &Block, indent: usize, span: Span) -> Result<String, LowerError> {
+fn lower_block_inner(
+    block: &Block,
+    indent: usize,
+    span: Span,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
     let mut out = String::new();
     for stmt in &block.stmts {
         match stmt {
-            Stmt::Loop(l) => out.push_str(&lower_loop_l1(l, indent)?),
-            other => out.push_str(&lower_stmt_l1(other, indent)?),
+            Stmt::Loop(l) => out.push_str(&lower_loop_l1(l, variants, indent)?),
+            other => out.push_str(&lower_stmt_l1(other, indent, variants)?),
         }
     }
     if let Some(tail) = &block.tail {
-        let t = lower_expr_exec(tail, 0, span)?;
+        let t = lower_expr_exec(tail, 0, span, variants)?;
         writeln!(out, "{pad}{t}").ok();
     }
     Ok(out)
 }
 
-/// Lower a single statement in exec position.
-pub(crate) fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerError> {
+/// Lower a single statement in exec position. `variants` flows to the expression
+/// lowering for ENUM-QUALIFIED match/struct/`is` forms (REQ-9); it is the last
+/// parameter so `l2.rs`'s reuse passes `NO_VARIANTS` explicitly.
+pub(crate) fn lower_stmt_l1(
+    stmt: &Stmt,
+    indent: usize,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
     match stmt {
         Stmt::Let {
@@ -670,7 +883,7 @@ pub(crate) fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerE
             init,
         } => {
             let kw = if *mutable { "let mut" } else { "let" };
-            let init_s = lower_expr_exec(init, 0, zero_span())?;
+            let init_s = lower_expr_exec(init, 0, zero_span(), variants)?;
             if let Some(t) = ty {
                 let ts = lower_type(t)?;
                 Ok(format!("{pad}{kw} {name}: {ts} = {init_s};\n"))
@@ -679,30 +892,30 @@ pub(crate) fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerE
             }
         }
         Stmt::Assign { target, value } => {
-            let t = lower_expr_exec(target, 0, zero_span())?;
-            let v = lower_expr_exec(value, 0, zero_span())?;
+            let t = lower_expr_exec(target, 0, zero_span(), variants)?;
+            let v = lower_expr_exec(value, 0, zero_span(), variants)?;
             Ok(format!("{pad}{t} = {v};\n"))
         }
         Stmt::Return(e) => match e {
             Some(e) => {
-                let s = lower_expr_exec(e, 0, zero_span())?;
+                let s = lower_expr_exec(e, 0, zero_span(), variants)?;
                 Ok(format!("{pad}return {s};\n"))
             }
             None => Ok(format!("{pad}return;\n")),
         },
         Stmt::If { cond, then, else_ } => {
-            let c = lower_expr_exec(cond, 0, zero_span())?;
-            let t = lower_block_inner(then, indent + 1, zero_span())?;
+            let c = lower_expr_exec(cond, 0, zero_span(), variants)?;
+            let t = lower_block_inner(then, indent + 1, zero_span(), variants)?;
             let mut out = format!("{pad}if {c} {{\n{t}{pad}}}");
             if let Some(e) = else_ {
-                let es = lower_block_inner(e, indent + 1, zero_span())?;
+                let es = lower_block_inner(e, indent + 1, zero_span(), variants)?;
                 write!(out, " else {{\n{es}{pad}}}").ok();
             }
             out.push('\n');
             Ok(out)
         }
         Stmt::Expr(e) => {
-            let s = lower_expr_exec(e, 0, zero_span())?;
+            let s = lower_expr_exec(e, 0, zero_span(), variants)?;
             Ok(format!("{pad}{s};\n"))
         }
         Stmt::Loop(_) => Err(LowerError::Unsupported {
@@ -722,7 +935,12 @@ pub(crate) fn lower_stmt_l1(stmt: &Stmt, indent: usize) -> Result<String, LowerE
 /// lowers to a call of its L1 fn (the name is unchanged; its body is emitted by
 /// `emit_combinator_l1_defs`), with a closure argument becoming a real Rust
 /// closure. Every clause is a real `bool`/value expression over real values.
-pub(crate) fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<String, LowerError> {
+pub(crate) fn lower_expr_exec(
+    expr: &Expr,
+    depth: usize,
+    span: Span,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     if depth >= MAX_EMIT_DEPTH {
         return Err(LowerError::TooDeep {
             limit: MAX_EMIT_DEPTH,
@@ -736,10 +954,10 @@ pub(crate) fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<S
         Expr::BoolLit(b) => Ok(b.to_string()),
         Expr::Path(segs) => Ok(segs.join("::")),
         Expr::Call { callee, args } => {
-            let c = lower_expr_exec(callee, d, span)?;
+            let c = lower_expr_exec(callee, d, span, variants)?;
             let mut parts = Vec::new();
             for a in args {
-                parts.push(lower_expr_exec(a, d, span)?);
+                parts.push(lower_expr_exec(a, d, span, variants)?);
             }
             Ok(format!("{c}({})", parts.join(", ")))
         }
@@ -748,67 +966,89 @@ pub(crate) fn lower_expr_exec(expr: &Expr, depth: usize, span: Span) -> Result<S
             name,
             args,
         } => {
-            let r = lower_expr_exec(receiver, d, span)?;
+            let r = lower_expr_exec(receiver, d, span, variants)?;
             let mut parts = Vec::new();
             for a in args {
-                parts.push(lower_expr_exec(a, d, span)?);
+                parts.push(lower_expr_exec(a, d, span, variants)?);
             }
             Ok(format!("{r}.{name}({})", parts.join(", ")))
         }
         Expr::Field { receiver, name } => {
-            let r = lower_expr_exec(receiver, d, span)?;
+            let r = lower_expr_exec(receiver, d, span, variants)?;
             Ok(format!("{r}.{name}"))
         }
         Expr::Closure { params, body } => {
             // A real Rust closure (REQ-3); the corpus closures are `u32`-typed
             // slice-element predicates (matching the registry `l1` `impl Fn(u32)
             // -> bool` parameter).
-            let b = lower_expr_exec(body, d, span)?;
+            let b = lower_expr_exec(body, d, span, variants)?;
             let ps: Vec<String> = params.iter().map(|p| format!("{p}: u32")).collect();
             Ok(format!("|{}| {b}", ps.join(", ")))
         }
-        Expr::Match { scrutinee, arms } => lower_match_exec(scrutinee, arms, d, span),
+        Expr::Match { scrutinee, arms } => lower_match_exec(scrutinee, arms, d, span, variants),
         Expr::If { cond, then, else_ } => {
-            let c = lower_expr_exec(cond, d, span)?;
-            let t = lower_block_inner(then, 0, span)?;
-            let e = lower_block_inner(else_, 0, span)?;
+            let c = lower_expr_exec(cond, d, span, variants)?;
+            let t = lower_block_inner(then, 0, span, variants)?;
+            let e = lower_block_inner(else_, 0, span, variants)?;
             Ok(format!("if {c} {{ {} }} else {{ {} }}", t.trim(), e.trim()))
         }
         Expr::Binary { op, lhs, rhs } => {
-            let l = lower_binary_operand(lhs, *op, true, d, span)?;
-            let r = lower_binary_operand(rhs, *op, false, d, span)?;
+            let l = lower_binary_operand(lhs, *op, true, d, span, variants)?;
+            let r = lower_binary_operand(rhs, *op, false, d, span, variants)?;
             Ok(format!("{l} {} {r}", binop(*op)))
         }
-        Expr::Index { base, index } => lower_index_exec(base, index, d, span),
+        Expr::Index { base, index } => lower_index_exec(base, index, d, span, variants),
         Expr::Cast { expr, ty } => {
-            let e = lower_expr_exec(expr, d, span)?;
+            let e = lower_expr_exec(expr, d, span, variants)?;
             let t = lower_type(ty)?;
             Ok(format!("{e} as {t}"))
         }
         Expr::Ref { mutable, expr } => {
-            let e = lower_expr_exec(expr, d, span)?;
+            let e = lower_expr_exec(expr, d, span, variants)?;
             if *mutable {
                 Ok(format!("&mut {e}"))
             } else {
                 Ok(format!("&{e}"))
             }
         }
-        // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions are
-        // UNREACHABLE in 1a (gated at the validator before L1 lowering). Honest
-        // neutral value: the existing `Unsupported` error at `span`. 1c emits
-        // the struct-literal / `is` / `Box`-deref forms.
-        Expr::StructLit { .. } => Err(LowerError::Unsupported {
-            what: "struct literal (ADT L1 lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
-        Expr::Is { .. } => Err(LowerError::Unsupported {
-            what: "`is` discrimination (ADT L1 lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
-        Expr::Deref(_) => Err(LowerError::Unsupported {
-            what: "`Box` deref (ADT L1 lowering lands in basis Stage 1c)".to_string(),
-            span,
-        }),
+        // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9/REQ-10).
+        Expr::StructLit { path, fields } => {
+            // A struct / struct-variant construction (REQ-2/REQ-8): the struct
+            // name (or ENUM-QUALIFIED variant) + `field: value` initializers (the
+            // `Account { balance: a.balance + amount }` of `deposit`).
+            let head = qualify_variant_path_l1(path, variants);
+            let mut parts = Vec::with_capacity(fields.len());
+            for (name, value) in fields {
+                let v = lower_expr_exec(value, d, span, variants)?;
+                parts.push(format!("{name}: {v}"));
+            }
+            Ok(format!("{head} {{ {} }}", parts.join(", ")))
+        }
+        Expr::Is { scrutinee, variant } => {
+            // A variant-discrimination test `SCRUTINEE is Variant` (REQ-6/REQ-9):
+            // at L1 there is no Verus `is`, so it is the always-true-or-false Rust
+            // `matches!(<scrutinee>, Enum::Variant { .. })` (the `{ .. }` form
+            // works for unit/tuple/struct variants). The enum is resolved from the
+            // variant map so the discriminant test is ENUM-QUALIFIED.
+            let s = lower_expr_exec(scrutinee, d, span, variants)?;
+            let v = variant.last().cloned().unwrap_or_default();
+            let qualified = qualify_variant_path_l1(variant, variants);
+            // If the variant is not in the map (an unknown/qualified name), fall
+            // back to the bare variant; otherwise use the qualified path.
+            let pat_path = if qualified == v && variant.len() == 1 {
+                v.clone()
+            } else {
+                qualified
+            };
+            Ok(format!("matches!({s}, {pat_path} {{ .. }})"))
+        }
+        Expr::Deref(inner) => {
+            // A `Box` dereference `*EXPR` (REQ-3/REQ-10): the recursive read
+            // `*tail`. At L1 `Box<T>` is a real heap box; `*t` derefs it (moving
+            // the owned `T` out — the recursive `sum_list(*t)` consumes the box).
+            let e = lower_expr_exec(inner, d, span, variants)?;
+            Ok(format!("*{e}"))
+        }
     }
 }
 
@@ -819,51 +1059,62 @@ fn lower_index_exec(
     index: &IndexArg,
     depth: usize,
     span: Span,
+    variants: &[(&str, &str)],
 ) -> Result<String, LowerError> {
-    let b = lower_expr_exec(base, depth, span)?;
+    let b = lower_expr_exec(base, depth, span, variants)?;
     match index {
         IndexArg::Single(i) => {
-            let idx = lower_expr_exec(i, depth, span)?;
+            let idx = lower_expr_exec(i, depth, span, variants)?;
             Ok(format!("{b}[{idx}]"))
         }
         IndexArg::RangeTo(i) => {
-            let idx = lower_expr_exec(i, depth, span)?;
+            let idx = lower_expr_exec(i, depth, span, variants)?;
             Ok(format!("{b}[..{idx}]"))
         }
         IndexArg::RangeFrom(i) => {
-            let idx = lower_expr_exec(i, depth, span)?;
+            let idx = lower_expr_exec(i, depth, span, variants)?;
             Ok(format!("{b}[{idx}..]"))
         }
         IndexArg::Range(i, j) => {
-            let lo = lower_expr_exec(i, depth, span)?;
-            let hi = lower_expr_exec(j, depth, span)?;
+            let lo = lower_expr_exec(i, depth, span, variants)?;
+            let hi = lower_expr_exec(j, depth, span, variants)?;
             Ok(format!("{b}[{lo}..{hi}]"))
         }
     }
 }
 
-/// Lower a `match` in exec position (e.g. `binary_search`'s `Option` ens match).
+/// Lower a `match` in exec position (e.g. `binary_search`'s `Option` ens match,
+/// `is_circle`'s enum match, `sum_list`'s ADT fold). Arm patterns are
+/// ENUM-QUALIFIED via the variant map (REQ-9).
 fn lower_match_exec(
     scrutinee: &Expr,
     arms: &[MatchArm],
     depth: usize,
     span: Span,
+    variants: &[(&str, &str)],
 ) -> Result<String, LowerError> {
-    let s = lower_expr_exec(scrutinee, depth, span)?;
+    let s = lower_expr_exec(scrutinee, depth, span, variants)?;
     let mut out = format!("match {s} {{ ");
     for arm in arms {
-        let pat = lower_pattern_exec(&arm.pattern, depth, span)?;
-        let body = lower_expr_exec(&arm.body, depth, span)?;
+        let pat = lower_pattern_exec(&arm.pattern, depth, span, variants)?;
+        let body = lower_expr_exec(&arm.body, depth, span, variants)?;
         write!(out, "{pat} => {body}, ").ok();
     }
     out.push('}');
     Ok(out)
 }
 
-/// Lower a pattern in exec position. Enum patterns `Some(i)`/`None`, bindings,
-/// wildcards, literals. A slice pattern outside a head-fold spec fn is
-/// unsupported at L1 (mirrors `lower.rs`).
-fn lower_pattern_exec(pat: &Pattern, depth: usize, span: Span) -> Result<String, LowerError> {
+/// Lower a pattern in exec position (REQ-7/REQ-9). A user enum-variant pattern is
+/// ENUM-QUALIFIED via the variant map (`Circle(r)`→`Shape::Circle(r)`); `Some`/
+/// `None`/bindings lower unqualified. `Pattern::Struct` (`Rect { w, h }`) is the
+/// struct-variant destructuring (REQ-4/REQ-9). A slice pattern outside a head-fold
+/// spec fn is unsupported at L1 (mirrors `lower.rs`).
+fn lower_pattern_exec(
+    pat: &Pattern,
+    depth: usize,
+    span: Span,
+    variants: &[(&str, &str)],
+) -> Result<String, LowerError> {
     if depth >= MAX_EMIT_DEPTH {
         return Err(LowerError::TooDeep {
             limit: MAX_EMIT_DEPTH,
@@ -873,29 +1124,41 @@ fn lower_pattern_exec(pat: &Pattern, depth: usize, span: Span) -> Result<String,
     match pat {
         Pattern::Wildcard => Ok("_".to_string()),
         Pattern::Binding(name) => Ok(name.clone()),
-        Pattern::Literal(e) => lower_expr_exec(e, depth + 1, span),
+        Pattern::Literal(e) => lower_expr_exec(e, depth + 1, span, variants),
         Pattern::Enum { path, fields } => {
-            let head = path.join("::");
+            let head = qualify_variant_path_l1(path, variants);
             if fields.is_empty() {
                 Ok(head)
             } else {
                 let mut fs = Vec::new();
                 for f in fields {
-                    fs.push(lower_pattern_exec(f, depth + 1, span)?);
+                    fs.push(lower_pattern_exec(f, depth + 1, span, variants)?);
                 }
                 Ok(format!("{head}({})", fs.join(", ")))
             }
         }
+        Pattern::Struct { path, fields, rest } => {
+            let head = qualify_variant_path_l1(path, variants);
+            let mut parts = Vec::with_capacity(fields.len());
+            for (name, subpat) in fields {
+                let sub = lower_pattern_exec(subpat, depth + 1, span, variants)?;
+                if matches!(subpat, Pattern::Binding(b) if b == name) {
+                    parts.push(name.clone());
+                } else {
+                    parts.push(format!("{name}: {sub}"));
+                }
+            }
+            if *rest {
+                parts.push("..".to_string());
+            }
+            if parts.is_empty() {
+                Ok(format!("{head} {{}}"))
+            } else {
+                Ok(format!("{head} {{ {} }}", parts.join(", ")))
+            }
+        }
         Pattern::Slice(_) => Err(LowerError::Unsupported {
             what: "slice pattern outside a head-fold spec fn".to_string(),
-            span,
-        }),
-        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-4): a struct /
-        // struct-variant destructuring pattern is UNREACHABLE in 1a (gated at
-        // the validator). Honest neutral value: the existing `Unsupported`
-        // error at `span`; 1c emits the struct-pattern form.
-        Pattern::Struct { .. } => Err(LowerError::Unsupported {
-            what: "struct pattern (ADT L1 lowering lands in basis Stage 1c)".to_string(),
             span,
         }),
     }
@@ -910,8 +1173,9 @@ fn lower_binary_operand(
     is_left: bool,
     depth: usize,
     span: Span,
+    variants: &[(&str, &str)],
 ) -> Result<String, LowerError> {
-    let s = lower_expr_exec(operand, depth, span)?;
+    let s = lower_expr_exec(operand, depth, span, variants)?;
     if let Expr::Binary { op: child, .. } = operand {
         let pp = precedence(parent);
         let cp = precedence(*child);
@@ -978,18 +1242,13 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let a = lower_type(arg)?;
             Ok(format!("{name}<{a}>"))
         }
-        // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): a user
-        // `Named` type or `Box<T>` is UNREACHABLE in 1a (the ADT program dies at
-        // the validator). Honest neutral value: the existing `Unsupported`
-        // error at the file-level `zero_span` (this fn has no span). 1c emits
-        // the user-type / `Box<T>` spelling.
-        Type::Named(name) => Err(LowerError::Unsupported {
-            what: format!("user type `{name}` (ADT L1 lowering lands in basis Stage 1c)"),
-            span: zero_span(),
-        }),
-        Type::Box(_) => Err(LowerError::Unsupported {
-            what: "`Box<T>` (ADT L1 lowering lands in basis Stage 1c)".to_string(),
-            span: zero_span(),
-        }),
+        // Basis Stage 1c (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-10): a user
+        // `struct`/`enum` type is its bare name; `Box<T>` is a real heap box (the
+        // L1 mirror of `lower.rs::lower_type` — plain Rust, no `Seq`).
+        Type::Named(name) => Ok(name.clone()),
+        Type::Box(inner) => {
+            let i = lower_type(inner)?;
+            Ok(format!("Box<{i}>"))
+        }
     }
 }

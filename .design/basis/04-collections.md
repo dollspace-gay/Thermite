@@ -29,9 +29,12 @@ invariant, carried as a `forall|i| inv(v@[i])` predicate through a named
 This doc is GREENFIELD / FORWARD-LOOKING. Thermite v0.1 today admits exactly
 `u32`/`u64`/`usize`, `bool`, and the read-only slice `&[T]` (`thermite-syntax/
 src/ast.rs` `enum Type` = `Prim`/`Unit`/`Ref`/`Slice`/`Generic`); there is no
-`Vec`, `Map`, or growth. **Every REQ below is NOT-STARTED**, tracked under epic
-**#62** (no separate blocker is filed — #62 owns this stage; a gap needing an
-independent blocker is noted with a fresh `#`). The Stage-1 `Box`/`Alloc` keystone
+`Vec`, `Map`, or growth. **UPDATE (#73): the `Vec` half is SHIPPED** — REQ-1/REQ-3/
+REQ-5/REQ-7 landed (the bounded `Vec<u64>` over `vstd::vec::Vec`, capacity
+invariant + no-OOB `get` + capacity-preserving `push`, real verus L3); the `Map`
+half (REQ-2/REQ-6) and the `Vec` element invariant (REQ-4) are deferred to a
+Stage-4 v1.1 follow-up under epic **#62** (no separate blocker is filed — #62
+owns this stage; a gap needing an independent blocker is noted with a fresh `#`). The Stage-1 `Box`/`Alloc` keystone
 (`.design/basis/01-adts.md` REQ-3/REQ-10) is the load-bearing prerequisite: a
 growable `Vec` is the same `Alloc`-effect heap as `Box<T>`, generalized from a
 single boxed cell to a contiguous run. Stage 4 cannot land before Stage 1's
@@ -436,13 +439,13 @@ the builder runs (R-CHAR-3).
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (`Vec<T>` type + push/pop/get/len surface) | NOT-STARTED | epic **#62** Stage 4. `enum Type` (`thermite-syntax/src/ast.rs`) is `Prim`/`Unit`/`Ref`/`Slice`/`Generic` only — no `Vec`; the surface admits only the read-only `&[T]` (`Type::Slice`). GROUNDED-feasible (verus `5 verified, 0 errors`), not implemented. |
-| REQ-2 (`Map<K,V>` type + insert/get/contains/len surface) | NOT-STARTED | epic **#62** Stage 4. No `Map` in `enum Type`; the existing `Generic { name, arg }` is single-arg and cannot carry a key+value (OQ-2). Not implemented. |
-| REQ-3 (capacity + operation contracts fit the §4.2 cage) | NOT-STARTED | epic **#62** Stage 4. The caged-flat walk (`.design/spec/spectherm-combinators.md` REQ-6) is itself NOT-STARTED (blocker #40); `v@`-index / `v.len()` / `forall_in(v, …)` join its flat accept set when both land. |
-| REQ-4 (element invariant via named `spec fn` `forall|i| inv(v@[i])`) | NOT-STARTED | epic **#62** Stage 4. No element-invariant mechanism; reuses Stage-1 `well_formed` (`.design/basis/01-adts.md` REQ-8, itself NOT-STARTED). GROUNDED (`all_elems_inv` preserved across `push`, `0 errors`), not implemented. |
-| REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`; BACKING-AGNOSTIC surface) | NOT-STARTED | epic **#62** Stage 4 (design-refinement: v1 WRAPS `vstd::vec::Vec`, surface contract backing-agnostic, OQ-1 RESOLVED). `lower.rs` has no `Vec` lowering; `Effect::Alloc` exists but is unexercised. GROUNDED `BVec` form pinned (Architecture, `5 verified, 0 errors`); the surface contract is specified independently of vstd so a later custom-backing decouple swaps the impl without changing user code. Requires Stage-1 `alloc` lowering first (R-DEFER-7). Not implemented. |
-| REQ-6 (`Map` → vstd `Map` wrapper; insert/get/contains; key-uniqueness) | NOT-STARTED | epic **#62** Stage 4. `lower.rs` has no `Map` lowering; first-cut depth open (OQ-3). Modeled on `vstd::map::Map`, not implemented. |
-| REQ-7 (`LowerError`/`SpecError` extension, no panics) | NOT-STARTED | epic **#62** Stage 4. The new collection lower/reject variants are not yet added to the existing error enums in `validator.rs` / `lower.rs`. |
+| REQ-1 (`Vec<T>` type + push/pop/get/len surface) | SHIPPED | #73. `Type::Vec(Box<Type>)` in `thermite-syntax/src/ast.rs` (dedicated node mirroring `Type::Box`, OQ-2 RESOLVED); parsed by `parser::parse_type` on the contextual `Vec` ident; `push`/`pop`/`get`/`len` reuse `Expr::MethodCall` (no new node). Consumer: `thermite_lower::lower`. Verified: `v: Vec<u64>` parses + lowers + verus-verifies (`thermite-lower/tests/collections_conformance.rs`, the `conformance/vec_demo.th` oracle). |
+| REQ-2 (`Map<K,V>` type + insert/get/contains/len surface) | NOT-STARTED | epic **#62** Stage 4 (v1.1). No `Map` in `enum Type`; the single-arg `Generic`/`Vec`/`Box` nodes cannot carry a key+value (OQ-2). The v1 oracle (`conformance/vec_demo.th`) is `Vec`-only; deferred to a Stage-4 follow-up. |
+| REQ-3 (capacity + operation contracts fit the §4.2 cage) | SHIPPED | #73. The bounded-`Vec` contracts are FLAT built-ins: `v.len()` (already admitted) + the no-OOB accessor `get` ADDED to `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`) so `ens result == v.get(i)` validates inside the cage; `v.len() < CAP` / `result.len() == v.len() + 1` are flat `len` comparisons. The caged-flat walk (`walk_expr_inner`'s `MethodCall` arm) is UNCHANGED. `push`/`pop` are EXEC-only (never in a contract). Consumer: `validate`. Verified: `collections_conformance.rs` (contracts validate clean + real verus L3). |
+| REQ-4 (element invariant via named `spec fn` `forall|i| inv(v@[i])`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The named-`spec fn` accept path it reuses is SHIPPED, but the v1 corpus (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get — no `Vec<Account>` element-invariant program is in the corpus. The GROUNDED `all_elems_inv` form (preserved across `push`, `0 errors`) is design-confirmed feasible; deferred to a Stage-4 follow-up. |
+| REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`; BACKING-AGNOSTIC surface) | SHIPPED | #73 (OQ-1 RESOLVED: v1 WRAPS `vstd::vec::Vec`). `lower.rs`: `Type::Vec(elem)` → `tvec_name` (`Vec<u64>` → `TVecU64`); `emit_vec_wrappers` materializes ONCE per element type the GROUNDED `TVec<elem>` newtype over `vstd::vec::Vec<elem>` with `well_formed` (`len() <= CAP`), spec `len`/`spec_get`, the no-OOB exec `get` (`req i < len`), and the capacity-preserving exec `push` (`req well_formed && len < CAP`, `ens final(self)...` — the `final(self)` &mut grounding finding). Spec-position `v.get(i)` → `v.spec_get(i as int)`. `fx alloc` accepted by effect-subsumption (`push` is an intrinsic, no callee row). Consumer: `lower`. Verified: real `verus --no-cheating` on emitted `vec_demo.th` — `checked_get` L3/pure, `push_one` L3/alloc (`4 verified, 0 errors`); the no-`req` `get` reject FAILS (L0, R-DEFER-9). BACKING-AGNOSTIC surface preserved (the contract names `len`/`get`/`push` over `v@`, never `vstd::vec::Vec`). |
+| REQ-6 (`Map` → vstd `Map` wrapper; insert/get/contains; key-uniqueness) | NOT-STARTED | epic **#62** Stage 4 (v1.1). `lower.rs` has no `Map` lowering; the v1 oracle is `Vec`-only (OQ-3 thin-first-cut). Modeled on `vstd::map::Map`, deferred to a Stage-4 follow-up. |
+| REQ-7 (`LowerError`/`SpecError` extension, no panics) | SHIPPED | #73. The `Vec` lowering reuses the existing `LowerError::Unsupported` (`tvec_name` on a non-primitive element type) — no new variant needed; the validator reuses its existing reject path (a forbidden method in a contract). No `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1); verified by `cargo clippy --workspace -D warnings` + the anti-pattern-gate. |
 
 ## Open questions (for the orchestrator before the builder runs)
 

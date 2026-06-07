@@ -1,0 +1,10 @@
+{
+  "uuid": "d0f78aee-8b6b-497f-b62e-616542cbd664",
+  "issue_uuid": "38275d0a-93af-4685-90e2-253b2f44e1e3",
+  "author": "Yffe",
+  "content": "Close the 3 editor-build blockers + ship the verified editor (#83). (1) check.rs: add fn_is_diverge + diverge_l1_cert + GateOutcome::DivergeL1; gate_fn routes a non-boundary/non-slag fx-diverge fn to an L1 partial-correctness cap that continues like BoundaryL1/SlagL1 (no verus, no §7 mutation/strengthen) — honest + diverge-only. (2) l1.rs blocker 2: lower_fn_l1 snapshots non-Copy params an ens references into <p>__pre clones before the body, rewrites ens via rename_params_in_expr; TString/struct/enum derive Clone. (3) l1.rs blocker 3: Expr::StrLit (exec) materializes a TString (Vec<u8> byte-push, mirroring lower.rs #82). Tests: forge/tests/editor_runs.rs (edit core L3, run L1, build+run with piped keys, diverge-only regressions). README. Gauntlet: workspace test/clippy/fmt.",
+  "created_at": "2026-06-07T00:32:52.090552667Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADriKcTlOxsEy/49UKHVZjItzLYgwqJzyNqELlnmccovjxMledfKstJfW1E7aG+0oW23vWgTareGy268uTDS1Dw=="
+}

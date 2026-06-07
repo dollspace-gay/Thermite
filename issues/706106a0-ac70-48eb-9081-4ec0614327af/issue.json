@@ -2,11 +2,12 @@
   "uuid": "706106a0-ac70-48eb-9081-4ec0614327af",
   "display_id": 96,
   "title": "Divergence: thermite-lower u64_to_string emits LSB-first (42 -> \"24\"), 07-strings.md REQ-8 mandates MSB-first display",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T05:10:48.692256800Z",
-  "updated_at": "2026-06-07T05:10:50.097742384Z",
+  "updated_at": "2026-06-07T05:33:03.926725646Z",
+  "closed_at": "2026-06-07T05:33:03.926725646Z",
   "labels": [
     "blocker"
   ]

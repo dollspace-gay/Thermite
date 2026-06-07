@@ -650,3 +650,26 @@ crate_pattern = "thermite-skill/src/generate.rs"
 design = ".design/basis/11-ergonomics.md"
 reference = []
 conformance_ops = []
+
+# Basis Cluster C11 (mutual recursion — the C9 deferral, issue #113): refines the
+# #110 blanket `MutualRecursionUnsupported` reject in `forge::check`'s
+# `mutual_recursion_cycle_fns` to CONDITIONAL — a mutual cycle whose every member
+# carries `dec` falls through to the normal lower/verus ladder (the existing
+# source-order single-`verus!`-block emission ALREADY produces a valid Verus
+# mutual-decreases group, GROUNDED, no adjacency required); a cycle with a member
+# lacking `dec` (and not `fx diverge`) stays a clean L0 cert with a refined
+# missing-decreases cause. check.rs owns the conditional; lower.rs's mutual-group
+# emission is grandfathered-correct (REQ-3). The verus-grounded
+# mutual_recursion_conformance test IS the C11 truth (R-CHAR-3); `reference = []`
+# until a golden lands.
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/basis/12-mutual-recursion.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/12-mutual-recursion.md"
+reference = []
+conformance_ops = []

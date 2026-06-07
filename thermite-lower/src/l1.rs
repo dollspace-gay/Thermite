@@ -50,6 +50,12 @@
 //! | REQ-9 (enum/match/`is` → L1 enum/match/`matches!`) | SHIPPED | `lower_enum_l1` emits a plain Rust `enum`; `lower_match_exec`/`lower_pattern_exec` emit ENUM-QUALIFIED arms (`qualify_variant_path_l1`) incl. `Pattern::Struct`; `Expr::Is`→`matches!(s, Enum::Variant { .. })`. Consumer: `lower_l1`/`lower_fn_l1`. Verified: `shape_l1_compiles_and_runs` (Circle→true/Rect→false) + `shape_l1_ens_check_fires_on_a_lying_body` (a lying body ABORTS at the `[ens]` check). |
 //! | REQ-10 (recursive type → L1 `Box`; deref) | SHIPPED | `lower_type` emits `Box<List>`; `Expr::Deref`→`*t`; an ADT-fold `spec fn` lowers to a real recursive Rust fn through the fallback `lower_block_inner`. Consumer: `lower_l1` (`Item::SpecFn`/`Item::Enum`). Verified by the workspace `cargo test` (the `list_sum` L1 lowering compiles in the corpus pipeline). |
 //! | REQ-11 (`LowerError`/no panics) | SHIPPED | the L1 ADT arms reuse `LowerError`; no `unwrap`/`expect`/`panic!` added (the emitted program's `thermite_contract_violation` panic is the GENERATED program's intended L1 abort, not a toolchain panic). |
+//!
+//! ## C5/C7 build-side exec twins (`.design/basis/07-strings.md` REQ-9/REQ-13..16, `09-option-result.md` REQ-5; issue #104)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | C5/C7 contract spec-fn EXEC twins (the build/runtime mirror of the L3 spec fns) | SHIPPED | `forge build` lowers EVERY fn to L1 (always-active runtime `thermite_check!`s), so a contract NAMING a generated spec fn needs a runnable exec twin to evaluate the check. `emit_string_runtime_l1` emits the C5 twins (`occurs_at`/`contains_sub`/`count_sep`/`sep_free`, gated on `program_uses_string_search`) + the C7 twins (`is_digit`/`all_digits`/the free `parse_u64`/`parse_be`, gated on `program_uses_parse`, `parse_be` deduped against the C4 numfmt round-trip), each computing the SAME value as its spec body over the runtime `TString` (`Vec<u8>`) — NO verus proof (the L1 path is runtime-checked, not verified). `lower_expr_exec`'s `Expr::Call` arm `.clone()`s the leading string args (`string_arg_count_l1`, the by-value/`&`-snapshot ambiguity). The `Vec<String>` (`TVecTString`) exec `len() -> u64` is emitted by `emit_vec_runtime_l1` (every `TVec*` wrapper). Consumer: `lower_l1`. Verified: `forge/tests/acceptance_programs.rs::calculator_string_parse_builds_and_runs_end_to_end` (the full `calc.th` builds + RUNS, 2+3→Some(5), 100+200→Some(300)) + `parser_builds_and_runs_end_to_end` (the full `parse_lines.th` builds + RUNS, a,b,c→3 pieces); the formatter (C4) is unaffected + `forge check` is unchanged (L3). |
 
 use std::fmt::Write as _;
 
@@ -61,8 +67,8 @@ use thermite_syntax::ast::{
 use thermite_syntax::lexer::Span;
 
 use crate::lower::{
-    collect_vec_elem_types, elem_is_copy, is_vec_new, program_uses_string_search, tvec_name,
-    LowerError,
+    collect_vec_elem_types, elem_is_copy, is_vec_new, program_uses_parse,
+    program_uses_string_search, tvec_name, LowerError,
 };
 
 /// The maximum recursive-descent emission depth before `lower_l1` returns
@@ -1383,10 +1389,31 @@ pub(crate) fn lower_expr_exec(
             // left as-is.
             let borrow_arg = matches!(callee.as_ref(), Expr::Path(segs)
                 if segs.len() == 1 && (segs[0] == "parse_be" || segs[0] == "parse_le"));
+            // Cluster C5/C7 (`.design/basis/07-strings.md` REQ-13..16 / REQ-9, issue
+            // #104): the L1 exec twins of the C5/C7 CONTRACT spec fns (`all_digits` /
+            // `is_digit` / `parse_u64` / `count_sep` / `sep_free` / `contains_sub` /
+            // `occurs_at`, emitted by `emit_string_runtime_l1`) take their `TString`
+            // byte-sequence argument(s) BY VALUE. A contract names them over a
+            // `String`-typed param that may be a by-value snapshot (`s__pre`, a
+            // `TString` value) OR a `&String` reference param (`s`, a `&TString`),
+            // and the two surface shapes lower to textually-indistinguishable
+            // identifiers — so the call uniformly `.clone()`s the leading string
+            // argument(s) (a deep `Vec<u8>` copy; `(&TString).clone()` and
+            // `TString.clone()` both yield an owned `TString`), which is always valid
+            // and never moves the source. The trailing scalar args (the `sep` /
+            // offset byte, a surface `u64`) pass through unchanged. The COUNT of
+            // leading string args per twin is fixed by its spec signature
+            // (`lower.rs::emit_string_search_defs`/`emit_parse_defs`).
+            let string_args = match callee.as_ref() {
+                Expr::Path(segs) if segs.len() == 1 => string_arg_count_l1(&segs[0]),
+                _ => 0,
+            };
             let mut parts = Vec::new();
-            for a in args {
+            for (idx, a) in args.iter().enumerate() {
                 let lowered = lower_expr_exec(a, d, span, variants)?;
-                if borrow_arg && !lowered.starts_with('&') {
+                if idx < string_args {
+                    parts.push(format!("{lowered}.clone()"));
+                } else if borrow_arg && !lowered.starts_with('&') {
                     parts.push(format!("&{lowered}"));
                 } else {
                     parts.push(lowered);
@@ -1814,6 +1841,24 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
 /// `requires`/`invariant`.
 const STRING_CAP_L1: usize = 1_000_000;
 
+/// The number of LEADING `TString`-typed arguments a C5/C7 contract spec-fn twin
+/// takes (issue #104), used by `lower_expr_exec`'s `Expr::Call` arm to `.clone()`
+/// exactly those arguments at a call site (the by-value/`&` snapshot-shape
+/// ambiguity, see that arm). The counts mirror the spec signatures in
+/// `lower.rs::emit_string_search_defs`/`emit_parse_defs`: `all_digits(s)` /
+/// `parse_u64(s)` / `count_sep(s, sep)` / `sep_free(s, sep)` take one leading
+/// string; `contains_sub(s, needle)` / `occurs_at(s, needle, at)` take two;
+/// `is_digit(b)` takes none (a `u8`/`u64` byte). A name not in this set is not a
+/// string-arg twin (0). `parse_be`/`parse_le` are EXCLUDED — they keep the C4
+/// `&TString` borrow form (the `borrow_arg` gate), not the clone form.
+fn string_arg_count_l1(name: &str) -> usize {
+    match name {
+        "all_digits" | "parse_u64" | "count_sep" | "sep_free" => 1,
+        "contains_sub" | "occurs_at" => 2,
+        _ => 0,
+    }
+}
+
 /// True iff the program references the `String` type in any `fn`/`spec fn`
 /// parameter or return position, OR materializes a string literal anywhere — both
 /// require the build-crate `TString` definition (a literal lowers to a constructed
@@ -2103,6 +2148,142 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("    }\n");
     }
     out.push_str("}\n");
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #104): the L1 EXEC
+    // twins of the C5 CONTRACT spec fns (`occurs_at`/`contains_sub`/`count_sep`/
+    // `sep_free`). At L3 these are `spec fn`s carrying the PROOF; `forge build` lowers
+    // EVERY fn to its always-active runtime `thermite_check!`, so a contract naming a
+    // C5 spec fn (the parser's `ens result.len() == 1 + count_sep(s, sep)` /
+    // `ens result == contains_sub(s, sep)`) becomes a RUN-time check that must resolve
+    // the named fn as runnable Rust. Each twin computes the SAME value as its spec body
+    // over the runtime `TString` (`Vec<u8>`) — the byte scans are the exec mirror of
+    // the `Seq<u8>` definitions in `lower.rs::emit_string_search_defs`. They carry NO
+    // verus proof (the L1 path is runtime-checked, not verified — the SPEC twins + the
+    // §7 proofs already discharge the check path). String args are taken BY VALUE
+    // (the call site `.clone()`s — `string_arg_count_l1`). Emitted only when the
+    // program uses a C5 op (`program_uses_string_search` — byte-stable for the non-C5
+    // corpus), `#[allow(dead_code)]` because a program may name only a subset.
+    if program_uses_string_search(program) {
+        out.push('\n');
+        // occurs_at: the needle occurs at byte offset `at` (a bounded forward compare).
+        // The exec mirror of the `Seq<u8>` `0 <= at && at + needle.len() <= s.len() &&
+        // forall|k| s[at+k] == needle[k]`. `at` is the surface `u64` offset.
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn occurs_at(s: TString, needle: TString, at: u64) -> bool {\n");
+        out.push_str("    let at_u: usize = at as usize;\n");
+        out.push_str("    if at_u + needle.data.len() > s.data.len() { return false; }\n");
+        out.push_str("    let mut k: usize = 0;\n");
+        out.push_str("    while k < needle.data.len() {\n");
+        out.push_str("        if s.data[at_u + k] != needle.data[k] { return false; }\n");
+        out.push_str("        k = k + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    true\n");
+        out.push_str("}\n");
+        // contains_sub: some offset `at` at which the needle occurs (the bounded
+        // existential, scanned left-to-right). Mirror of `exists|at| occurs_at(..)`.
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn contains_sub(s: TString, needle: TString) -> bool {\n");
+        out.push_str("    if needle.data.len() > s.data.len() { return false; }\n");
+        out.push_str("    let last: usize = s.data.len() - needle.data.len();\n");
+        out.push_str("    let mut at: usize = 0;\n");
+        out.push_str("    while at <= last {\n");
+        out.push_str(
+            "        if occurs_at(s.clone(), needle.clone(), at as u64) { return true; }\n",
+        );
+        out.push_str("        at = at + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    false\n");
+        out.push_str("}\n");
+        // count_sep: the number of bytes equal to `sep` — split's piece count is
+        // `1 + count_sep`. The exec mirror of the recursive `Seq<u8>` count. The surface
+        // `sep` is a `u64` (the `byte_at -> u64` convention), narrowed `as u8`.
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn count_sep(s: TString, sep: u64) -> u64 {\n");
+        out.push_str("    let sep_b: u8 = sep as u8;\n");
+        out.push_str("    let mut n: u64 = 0;\n");
+        out.push_str("    let mut i: usize = 0;\n");
+        out.push_str("    while i < s.data.len() {\n");
+        out.push_str("        if s.data[i] == sep_b { n = n + 1; }\n");
+        out.push_str("        i = i + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    n\n");
+        out.push_str("}\n");
+        // sep_free: no byte equals `sep` (each split piece). Mirror of the `forall`.
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn sep_free(s: TString, sep: u64) -> bool {\n");
+        out.push_str("    let sep_b: u8 = sep as u8;\n");
+        out.push_str("    let mut i: usize = 0;\n");
+        out.push_str("    while i < s.data.len() {\n");
+        out.push_str("        if s.data[i] == sep_b { return false; }\n");
+        out.push_str("        i = i + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    true\n");
+        out.push_str("}\n");
+    }
+    // Cluster C7 (`.design/basis/09-option-result.md` REQ-4 / `07-strings.md` REQ-9,
+    // issue #104): the L1 EXEC twins of the C7 parse CONTRACT spec fns (`is_digit`/
+    // `all_digits`/the free `parse_u64`/`parse_be`). The calculator's `add` names
+    // `all_digits(a)` / `parse_be(a)` in its `req`/`ens` and calls the free
+    // `parse_u64(a)` in its body — all become RUN-time `thermite_check!`/exec calls
+    // under `forge build`, so each needs a runnable form computing the SAME value as
+    // its spec body over the runtime `TString`. `parse_be` is SHARED with the numfmt
+    // round-trip (`program_uses_numfmt_l1`); emit it HERE only when numfmt did not
+    // (dedup — a program using BOTH `to_string` and `parse_u64`/`parse_be` must not
+    // define `parse_be` twice). `parse_be` keeps the C4 `&TString` borrow form (the
+    // round-trip ens borrows `result`); the C7 string-arg twins take `TString` by
+    // value (the call site `.clone()`s). Emitted only when the program uses a parse op
+    // (`program_uses_parse` — byte-stable otherwise), `#[allow(dead_code)]`.
+    if program_uses_parse(program) {
+        out.push('\n');
+        // is_digit: the ASCII decimal-digit predicate (the surface byte is a `u64`).
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn is_digit(b: u64) -> bool { 48 <= b && b <= 57 }\n");
+        // all_digits: every byte is a decimal digit (the `forall` witness).
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn all_digits(s: TString) -> bool {\n");
+        out.push_str("    let mut i: usize = 0;\n");
+        out.push_str("    while i < s.data.len() {\n");
+        out.push_str("        let b: u8 = s.data[i];\n");
+        out.push_str("        if b < 48 || b > 57 { return false; }\n");
+        out.push_str("        i = i + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    true\n");
+        out.push_str("}\n");
+        // parse_be — the MSB-first decimal value (a left-to-right Horner accumulate),
+        // SHARED with the numfmt round-trip. Emit only when numfmt did not (dedup),
+        // identical bytes to the numfmt form so L1 stays byte-stable either way.
+        if !program_uses_numfmt_l1(program) {
+            out.push_str("#[allow(dead_code)]\n");
+            out.push_str("fn parse_be(s: &TString) -> u64 {\n");
+            out.push_str("    let mut acc: u64 = 0;\n");
+            out.push_str("    let mut i: usize = 0;\n");
+            out.push_str("    while i < s.data.len() {\n");
+            out.push_str("        acc = acc * 10 + (s.data[i] as u64 - 48);\n");
+            out.push_str("        i = i + 1;\n");
+            out.push_str("    }\n");
+            out.push_str("    acc\n");
+            out.push_str("}\n");
+        }
+        // parse_u64 — the free `String -> Option<u64>` partial parse. The exec mirror
+        // of `lower.rs::emit_parse_defs`'s Horner loop with the three handled-or-loud
+        // `None` arms (empty / non-digit / would-overflow), computing the SAME value
+        // as the L3 form. The L3 PROOF lives in `emit_parse_defs`; this just RUNS the
+        // loop. Takes `TString` by value (the call site `.clone()`s).
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn parse_u64(s: TString) -> Option<u64> {\n");
+        out.push_str("    if s.data.len() == 0 { return None; }\n");
+        out.push_str("    let mut acc: u64 = 0;\n");
+        out.push_str("    let mut i: usize = 0;\n");
+        out.push_str("    while i < s.data.len() {\n");
+        out.push_str("        let b: u8 = s.data[i];\n");
+        out.push_str("        if b < 48 || b > 57 { return None; }\n");
+        out.push_str("        let digit: u64 = (b - 48) as u64;\n");
+        out.push_str("        if acc > (u64::MAX - digit) / 10 { return None; }\n");
+        out.push_str("        acc = acc * 10 + digit;\n");
+        out.push_str("        i = i + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    Some(acc)\n");
+        out.push_str("}\n");
+    }
     // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1 exec
     // form of the generated `u64`→decimal-`String` round-trip. The L3 form PROVES
     // the round-trip `parse_le(result.data@) == n` via the divide/mod-by-10 digit

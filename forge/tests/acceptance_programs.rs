@@ -19,12 +19,11 @@
 //!     parse_be(a) + parse_be(b) }` certifies **L3** (the C7 nested-`match` parse +
 //!     sum; the sum is PINNED). The arithmetic core `add_vals`/`add_2_3` also
 //!     certifies L3 and BUILDS + RUNS → `Some(5)` (2+3), `Some(300)` (100+200). The
-//!     FORCING-FUNCTION FINDING: the STRING-PARSE front-end `add` canNOT `forge
-//!     build` — its contract names the C7 spec fns `all_digits` / `parse_be` / the
-//!     free `parse_u64`, which have NO L1 (runtime / build) exec emission (only C4's
-//!     numfmt spec fns got one). This test PINS that gap (the build fails with a
-//!     `cannot find function` for the un-lowered C7 spec fn), and grounds the
-//!     runnable core via the buildable arithmetic composition. NOT faked.
+//!     GAP NOW CLOSED (crosslink #104): the FULL `calc.th` — including the
+//!     STRING-PARSE front-end `add` whose contract names the C7 spec fns
+//!     `all_digits` / `parse_be` / the free `parse_u64` — now `forge build`s + RUNS
+//!     end-to-end, because those C7 spec fns now have an L1 (runtime / build) EXEC
+//!     twin (`emit_string_runtime_l1`'s C7 block). NOT faked.
 //!
 //!   * PARSER — `has_sep(s, sep) ens result == contains_sub(s, sep)` certifies **L3**
 //!     via the full §7-mutation-scored `forge check` ladder; `fields(s, sep) ens
@@ -32,21 +31,21 @@
 //!     under REAL VERUS on the lowering (the thin `{ s.split(sep) }` caller is not
 //!     §7-mutation-scoreable, the documented split-caller precedent). The runnable
 //!     `split_abc` BUILDS + RUNS → 3 pieces ([97],[98],[99] == "a","b","c") for
-//!     "a,b,c" split on ',' (byte 44). The SAME forcing-function finding: a `fields`
-//!     entry whose `ens` names `count_sep` canNOT `forge build` (count_sep has no L1
-//!     form), so the runnable entry's `ens` is the L1-safe `result.len() >= 1` floor.
+//!     "a,b,c" split on ',' (byte 44). The full file (incl. the `fields` count-bound
+//!     + `has_sep` substring contracts) now `forge build`s end-to-end too (#104).
 //!
-//! THE FORCING-FUNCTION FINDING (the #86–#100-style real gap this corpus surfaces):
-//! the C5/C7 CONTRACT spec fns — `count_sep`, `sep_free`, `occurs_at`,
-//! `contains_sub`, `all_digits`, `is_digit`, the free `parse_u64`, and `parse_be` in
-//! a C7 (non-numfmt) context — have NO L1 runnable emission in `thermite-lower`'s
-//! `emit_string_runtime_l1` (only C4's `parse_be`/`parse_le`/`pow10`/`u64_to_string`
-//! were given one, for the formatter). Because `forge build` lowers EVERY fn in a
-//! file to its always-active runtime `thermite_check!`, any program whose contracts
-//! name a C5/C7 spec fn FAILS to `forge build`. The formatter (C4) is unaffected;
-//! the calculator's parse front-end and the parser's count-bound entry are blocked.
-//! This belongs to the C7/#95 build-side cluster (the L1 mirror of the C5/#102 +
-//! C7/#95 spec fns), NOT a defect in these programs — they certify L3 correctly.
+//! THE GAP NOW CLOSED (crosslink #104, the C5/#102 + C7/#95 build-side cluster): the
+//! C5/C7 CONTRACT spec fns — `count_sep`, `sep_free`, `occurs_at`, `contains_sub`,
+//! `all_digits`, `is_digit`, the free `parse_u64`, and `parse_be` in a C7
+//! (non-numfmt) context — now HAVE an L1 runnable EXEC twin in `thermite-lower`'s
+//! `emit_string_runtime_l1` (the C5 block gated on `program_uses_string_search`, the
+//! C7 block on `program_uses_parse`; each twin computes the same value as its spec
+//! body over the runtime `Vec<u8>`). Because `forge build` lowers EVERY fn in a file
+//! to its always-active runtime `thermite_check!`, a program whose contracts name a
+//! C5/C7 spec fn now resolves the named fn and builds. The formatter (C4) is
+//! unaffected; the calculator's parse front-end and the parser's count-bound entry
+//! now BUILD + RUN. The `forge check` ladder is unchanged (L3 — the SPEC twins +
+//! verus proofs carry the check path; #104 touched only the L1/exec mirror).
 //!
 //! The verus checks SKIP LOUDLY when verus is absent (the `string_format_conformance`
 //! / `editor_runs` precedent) — never panic on a missing solver (R-CODE-4). The
@@ -185,7 +184,7 @@ fn artifact_of(stdout: &str) -> PathBuf {
 
 /// Write `program` to a unique temp `.th`, build the entry, run it, return the run
 /// stdout. The temp file is removed before returning (#53). Used for the runnable
-/// CORES that the full program files cannot build alongside their L3 contracts.
+/// CORES (a minimal subset program — the full files now build too, #104).
 fn build_run_fixture(tag: &str, program: &str, entry: &str) -> String {
     let fixture = std::env::temp_dir().join(format!(
         "forge_accept_{tag}_{}_{}.th",
@@ -329,7 +328,7 @@ fn formatter_builds_and_runs_each_value() {
 
 // ============================================================================
 // PROGRAM 2 — the CALCULATOR. forge check L3; build+run the arithmetic core;
-// the STRING-PARSE front-end build is the forcing-function gap.
+// the STRING-PARSE front-end now builds + runs end-to-end (#104).
 // ============================================================================
 
 /// (a) `add(a, b)` (parse two digit strings + add) certifies L3 with the PINNED sum
@@ -360,10 +359,10 @@ fn calculator_sum_contract_certifies_l3() {
 }
 
 /// (b) the arithmetic core BUILDS + RUNS → Some(5) (2+3) and Some(300) (100+200).
-/// The runnable core is built from a derived program because the full `calc.th`
-/// cannot `forge build` (the `add` front-end's contract names un-lowered C7 spec
-/// fns — pinned by `calculator_string_parse_build_is_blocked`). AUTHORITY: the
-/// `add_vals` sum contract; `thermite-design.md` §6 (L1 runtime-checked build).
+/// Built from a minimal derived program (the Option + `+` core in isolation); the
+/// full `calc.th` now builds + runs end-to-end too (#104,
+/// `calculator_string_parse_builds_and_runs_end_to_end`). AUTHORITY: the `add_vals`
+/// sum contract; `thermite-design.md` §6 (L1 runtime-checked build).
 #[test]
 fn calculator_arithmetic_core_builds_and_runs() {
     // The arithmetic core in isolation (Option + `+`, NO parse_u64) — the half of
@@ -386,40 +385,57 @@ fn calculator_arithmetic_core_builds_and_runs() {
     );
 }
 
-/// THE FORCING-FUNCTION FINDING — `forge build calc.th` (the STRING-PARSE front-end
-/// `add`) FAILS because the C7 contract spec fns (`all_digits` / `parse_be` / the
-/// free `parse_u64`) have NO L1 (runtime/build) exec emission. This PINS the gap as
-/// a real divergence (R-CHAR-3: the error is the rustc `cannot find function`
-/// diagnostic for the un-lowered C7 spec fn — the gap itself, not a forge
-/// self-assertion). When the C7/#95 build-side L1 lowering lands, this test FLIPS
-/// (the build succeeds) and the calculator composes end-to-end — a forcing function.
+/// THE GAP NOW CLOSED (crosslink #104) — `forge build calc.th` (the FULL file,
+/// including the STRING-PARSE front-end `add`) now COMPILES + RUNS end-to-end. The
+/// C7 contract spec fns (`all_digits` / `parse_be` / the free `parse_u64`) now have
+/// an L1 (runtime/build) EXEC twin (`thermite-lower::emit_string_runtime_l1`'s C7
+/// block, gated on `program_uses_parse`), so the always-active `thermite_check!`s
+/// `add`'s `req`/`ens` lower to resolve. The calculator composes end-to-end: the
+/// arithmetic core entries build alongside `add`'s now-runnable contracts and RUN →
+/// `add_2_3` prints `Some(5)` (2+3), `add_100_200` prints `Some(300)` (100+200).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-9 ships the C7 parse spec fns for L3
-/// (verus), but `thermite-lower::emit_string_runtime_l1` emits an L1 runnable form
-/// ONLY for C4's `parse_be`/`parse_le`/`pow10`/`u64_to_string` (the formatter), NOT
-/// for the free `parse_u64`/`all_digits`. `thermite-design.md` §6 (L1 build).
+/// (Was `calculator_string_parse_build_is_blocked_by_missing_l1_parse_u64`, which
+/// PINNED the gap as an expected build failure; #104 emitted the missing L1 exec
+/// twins, flipping it to assert the build SUCCEEDS — the forcing function fired.)
+///
+/// AUTHORITY: `.design/basis/07-strings.md` REQ-9 + `09-option-result.md` (the C7
+/// parse spec fns) + the L1-EXEC-TWIN note; `thermite-design.md` §6 (L1 build —
+/// every fn lowers to its always-active runtime check). The sum bytes (5 / 300) are
+/// the arithmetic design constant (R-CHAR-3): 2+3==5, 100+200==300.
 #[test]
-fn calculator_string_parse_build_is_blocked_by_missing_l1_parse_u64() {
+fn calculator_string_parse_builds_and_runs_end_to_end() {
     // `forge build` lowers EVERY fn in calc.th to its runtime `thermite_check!`;
     // `add`'s `req`/`ens` name `all_digits`/`parse_be` and its body calls the free
-    // `parse_u64` — none of which `emit_string_runtime_l1` emits — so rustc cannot
-    // resolve them and the build fails. The runnable arithmetic core (separately
-    // grounded above) is unaffected; this pins the C7 build-side gap precisely.
+    // `parse_u64`, all of which now have an L1 exec twin (#104) — so the FULL file
+    // compiles and the runnable entries build + run from the same lowering.
     let (ok, stdout, stderr) = build_entry(&calculator_th(), "add_2_3");
-    let combined = format!("{stdout}{stderr}");
     assert!(
-        !ok,
-        "FORCING-FUNCTION FINDING (C7/#95 build-side): `forge build calc.th` is expected to \
-         FAIL while the C7 parse spec fns lack an L1 form. If this now SUCCEEDS, the L1 \
-         lowering of `parse_u64`/`all_digits`/`parse_be` (C7) has landed — flip this test to \
-         assert the calculator builds + runs end-to-end.\nstdout:{stdout}\nstderr:{stderr}"
+        ok,
+        "crosslink #104: `forge build calc.th` (the FULL file, with the `add` parse front-end's \
+         contracts naming the C7 spec fns) must now COMPILE — the L1 exec twins of \
+         `all_digits`/`parse_be`/`parse_u64` are emitted.\nstdout:{stdout}\nstderr:{stderr}"
     );
+    let run = Command::new(artifact_of(&stdout))
+        .output()
+        .expect("run add_2_3");
+    let s = String::from_utf8_lossy(&run.stdout);
     assert!(
-        combined.contains("cannot find function `parse_u64`")
-            || combined.contains("cannot find function `all_digits`")
-            || combined.contains("cannot find function `parse_be`"),
-        "the build must fail SPECIFICALLY on an un-lowered C7 parse spec fn (the precise \
-         gap), not an unrelated error:\n{combined}"
+        run.status.success() && s.contains("Some(5)"),
+        "the calculator 2+3 must RUN → Some(5) (the full file, parse front-end built in):\nstdout:{s}"
+    );
+
+    let (ok, stdout, stderr) = build_entry(&calculator_th(), "add_100_200");
+    assert!(
+        ok,
+        "add_100_200 must COMPILE:\nstdout:{stdout}\nstderr:{stderr}"
+    );
+    let run = Command::new(artifact_of(&stdout))
+        .output()
+        .expect("run add_100_200");
+    let s = String::from_utf8_lossy(&run.stdout);
+    assert!(
+        run.status.success() && s.contains("Some(300)"),
+        "the calculator 100+200 must RUN → Some(300):\nstdout:{s}"
     );
 }
 
@@ -475,9 +491,8 @@ fn parser_split_count_bound_verifies_under_real_verus() {
 }
 
 /// (b) the split core BUILDS + RUNS → 3 pieces for "a,b,c" split on ',' (byte 44).
-/// Built from a derived split-only program because `parse_lines.th` cannot `forge
-/// build` (the `fields`/`has_sep` contracts name `count_sep`/`contains_sub`, which
-/// have no L1 form — same forcing-function gap as the calculator, pinned below).
+/// Built from a minimal split-only program; the full `parse_lines.th` now builds +
+/// runs end-to-end too (#104, `parser_builds_and_runs_end_to_end`).
 /// AUTHORITY: `.design/basis/07-strings.md` REQ-15; the byte values 97/98/99 are the
 /// ASCII design constant (R-CHAR-3): 'a'=97,'b'=98,'c'=99.
 #[test]
@@ -503,30 +518,49 @@ fn parser_split_core_builds_and_runs_three_pieces() {
     );
 }
 
-/// THE FORCING-FUNCTION FINDING (parser side, same class) — `forge build
-/// parse_lines.th` FAILS because the C5 contract spec fns (`count_sep` /
-/// `contains_sub`) have NO L1 exec emission. PINS the gap (R-CHAR-3: the rustc
-/// `cannot find function` for the un-lowered C5 spec fn). Flips when the C5/#102
-/// build-side L1 lowering lands.
+/// THE GAP NOW CLOSED (parser side, same class — crosslink #104) — `forge build
+/// parse_lines.th` (the FULL file, including the `fields` count-bound + `has_sep`
+/// substring contracts) now COMPILES + RUNS. The C5 contract spec fns (`count_sep`
+/// / `contains_sub` / `sep_free` / `occurs_at`) now have an L1 exec twin
+/// (`thermite-lower::emit_string_runtime_l1`'s C5 block, gated on
+/// `program_uses_string_search`), so the always-active `thermite_check!`s of
+/// `fields`/`has_sep` resolve. The runnable `split_abc` builds alongside them + RUNS
+/// → 3 pieces ([97],[98],[99] == "a","b","c") for "a,b,c" split on ',' (byte 44).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-13/REQ-15 ship the C5 spec fns for
-/// L3 (verus), but `thermite-lower::emit_string_runtime_l1` emits NO L1 form for
-/// `count_sep`/`sep_free`/`occurs_at`/`contains_sub`. `thermite-design.md` §6.
+/// (Was `parser_build_is_blocked_by_missing_l1_count_sep`, which PINNED the gap as
+/// an expected build failure; #104 emitted the missing L1 exec twins, flipping it.)
+///
+/// AUTHORITY: `.design/basis/07-strings.md` REQ-13/REQ-15 (the C5 spec fns) + the
+/// L1-EXEC-TWIN note; `thermite-design.md` §6. The byte values 97/98/99 are the
+/// ASCII design constant (R-CHAR-3): 'a'=97,'b'=98,'c'=99.
 #[test]
-fn parser_build_is_blocked_by_missing_l1_count_sep() {
+fn parser_builds_and_runs_end_to_end() {
+    // The FULL parse_lines.th — `fields`'s `ens result.len() == 1 + count_sep(s, sep)`
+    // and `has_sep`'s `ens result == contains_sub(s, sep)` now lower to runnable L1
+    // checks (the C5 exec twins, #104), so the file compiles and `split_abc` runs.
     let (ok, stdout, stderr) = build_entry(&parser_th(), "split_abc");
-    let combined = format!("{stdout}{stderr}");
     assert!(
-        !ok,
-        "FORCING-FUNCTION FINDING (C5/#102 build-side): `forge build parse_lines.th` is expected \
-         to FAIL while the C5 contract spec fns lack an L1 form (the `fields`/`has_sep` ens name \
-         `count_sep`/`contains_sub`). If this now SUCCEEDS, the L1 lowering has landed — flip \
-         this test to assert the parser builds + runs end-to-end.\nstdout:{stdout}\nstderr:{stderr}"
+        ok,
+        "crosslink #104: `forge build parse_lines.th` (the FULL file, with the C5 count-bound + \
+         substring contracts) must now COMPILE — the L1 exec twins of \
+         `count_sep`/`contains_sub`/`sep_free`/`occurs_at` are emitted.\nstdout:{stdout}\nstderr:{stderr}"
     );
+    let run = Command::new(artifact_of(&stdout))
+        .output()
+        .expect("run split_abc");
+    let out = String::from_utf8_lossy(&run.stdout);
     assert!(
-        combined.contains("cannot find function `count_sep`")
-            || combined.contains("cannot find function `contains_sub`")
-            || combined.contains("cannot find function `sep_free`"),
-        "the build must fail SPECIFICALLY on an un-lowered C5 spec fn (the precise gap):\n{combined}"
+        run.status.success()
+            && out.contains("[97]")
+            && out.contains("[98]")
+            && out.contains("[99]"),
+        "\"a,b,c\" split on ',' (44) must RUN → 3 pieces [97],[98],[99] (the full file built):\nstdout:{out}"
+    );
+    // Exactly 3 pieces from 2 commas (the per-element `data: [9` pattern, see
+    // `parser_split_core_builds_and_runs_three_pieces`).
+    assert_eq!(
+        out.matches("data: [9").count(),
+        3,
+        "the parser must produce exactly 3 pieces from \"a,b,c\":\nstdout:{out}"
     );
 }

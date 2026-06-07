@@ -4185,7 +4185,7 @@ const GENERATED_PARSE_FNS: &[&str] = &["parse_u64", "all_digits", "is_digit"];
 /// reference in a contract. Either requires the generated parse definitions in
 /// scope. EMPTY otherwise (byte-stable for the non-parse corpus). The walk reuses
 /// the `each_subexpr` full-tree traversal exactly as `program_uses_numfmt`.
-fn program_uses_parse(program: &Program) -> bool {
+pub(crate) fn program_uses_parse(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
         Item::Fn(f) => {
             contract_uses_parse(&f.contract)

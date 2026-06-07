@@ -1,0 +1,10 @@
+{
+  "uuid": "2be7e0f2-e573-4ec3-ac4f-3bae1e84a345",
+  "issue_uuid": "0743acbf-4f2f-4845-8af2-0d21d2bd29f8",
+  "author": "Yffe",
+  "content": "Fix landed (forge/src/check.rs, single file): generalize the validator's DIRECT self-call rule (REQ-2, block_calls_name) to a CALL-GRAPH CYCLE. New fn mutual_recursion_cycle_fns reuses closure::reachable_in_file_fns — f is in a mutual cycle iff it shares an SCC (size >= 2) with some other fn g (g reachable from f AND f reachable from g). Pure direct self-recursion (f->f) excluded (REQ-2, dec-supported); fx diverge exempt (#88). The per-item loop emits Certificate::rejected (L0, MutualRecursionUnsupported) per cycle member BEFORE lowering/verus — a parseable verdict-in-cert (no false L3, no crash), matching the single-fn non-decreasing L0 precedent (REQ-4/AC-2), instead of the prior ForgeError::VerusOutput VIR-crash. Pinned test un-ignored + passing.",
+  "created_at": "2026-06-07T18:08:23.132541750Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAwgo0o3vTcpGOClFNwGQ5yXBVE0eNXE2wN2ZfGz1LgpXN5HwgNHShwvS0RoKCkhcIlEd3scTXOtLLzXaQYDE4DQ=="
+}

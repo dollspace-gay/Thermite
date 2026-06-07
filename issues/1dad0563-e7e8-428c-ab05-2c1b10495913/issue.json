@@ -2,11 +2,12 @@
   "uuid": "1dad0563-e7e8-428c-ab05-2c1b10495913",
   "display_id": 99,
   "title": "Divergence: thermite-lower emit_one_vec_wrapper push ens drops the element-preservation frame (REQ-5 GROUNDED seed)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T06:42:16.695021181Z",
-  "updated_at": "2026-06-07T06:42:18.115247707Z",
+  "updated_at": "2026-06-07T06:52:19.856039233Z",
+  "closed_at": "2026-06-07T06:52:19.856039233Z",
   "labels": [
     "blocker"
   ]

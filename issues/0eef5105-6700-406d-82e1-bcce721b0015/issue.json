@@ -1,0 +1,10 @@
+{
+  "uuid": "0eef5105-6700-406d-82e1-bcce721b0015",
+  "display_id": 120,
+  "title": "Divergence: thermite-spec validator::check_match_exhaustiveness misses a guarded-only catch-all match over an enum (REQ-3 a guard does NOT complete a match)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T20:39:20.575055158Z",
+  "updated_at": "2026-06-07T20:39:20.575055158Z"
+}

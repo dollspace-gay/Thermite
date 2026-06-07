@@ -150,15 +150,16 @@ fn ac7_to_string_round_trip_certifies_l3() {
     }
     let certs = check_program(
         "tostring",
-        "fn show(n: u64) -> String\n  req true\n  ens parse_le(result) == n\n  fx alloc\n{ n.to_string() }\n",
+        "fn show(n: u64) -> String\n  req true\n  ens parse_be(result) == n\n  fx alloc\n{ n.to_string() }\n",
     );
     let show = cert_for(&certs, "show");
     assert_eq!(
         show["level"], "L3",
         "DESIGN 07-strings.md REQ-8: `n.to_string()` certifies L3 with the GOLD-STANDARD \
-         round-trip `parse_le(result) == n` — the divide/mod-by-10 digit loop, the \
-         pow10/parse_le spec fns, the lemma_parse_push append lemma (the GROUNDED \
-         16-verified form, no proof cheat). forge reports: {}",
+         MSB-first round-trip `parse_be(result) == n` (blocker #96) — the divide/mod-by-10 \
+         digit loop builds LSB-first then reverses, the pow10/parse_le/parse_be spec fns, \
+         the lemma_parse_push append lemma + the parse_be(seq_reverse(s)) == parse_le(s) \
+         bridge (no proof cheat). forge reports: {}",
         show["level"]
     );
     assert_eq!(
@@ -193,38 +194,36 @@ fn ac7_overclaimed_round_trip_is_rejected() {
     // FAILS the postcondition → NOT L3. The round-trip is real teeth.
     let certs = check_program(
         "tostring_overclaim",
-        "fn bad(n: u64) -> String\n  req n < 1000\n  ens parse_le(result) == n + 1\n  fx alloc\n{ n.to_string() }\n",
+        "fn bad(n: u64) -> String\n  req n < 1000\n  ens parse_be(result) == n + 1\n  fx alloc\n{ n.to_string() }\n",
     );
     let bad = cert_for(&certs, "bad");
     assert_ne!(
         bad["level"], "L3",
-        "R-DEFER-9 non-vacuity: an OVERCLAIMED round-trip (`parse_le(result) == n+1` \
-         when the formatter proves `parse_le == n`) must be REJECTED, never laundered \
+        "R-DEFER-9 non-vacuity: an OVERCLAIMED round-trip (`parse_be(result) == n+1` \
+         when the formatter proves `parse_be == n`) must be REJECTED, never laundered \
          to L3 — the round-trip ens is a real proof. forge reports: {}",
         bad["level"]
     );
 }
 
 /// AC-7 (the unlock RUNNING) — `forge build` a formatter and RUN it: it prints the
-/// correct decimal digits of 42. `show42()` returns `n.to_string()` for `n == 42`;
-/// the built binary's `{r:?}` of the `TString` renders its bytes. v1's `to_string`
-/// builds LSB-first (the divide/mod-by-10 loop pushes the least-significant digit
-/// first — the PROVEN `parse_le(result) == n` form), so 42 → the bytes `[50, 52]`
-/// (digit '2' == 50 then '4' == 52). Both decimal digits of 42 ('4' == 52, '2' ==
-/// 50) appear — the digit loop produced exactly the decimal bytes of 42. The
-/// human-readable MSB-first reversal is the design's noted display bridge
-/// (`parse_be(reverse(s)) == parse_le(s)`, a clean follow-up); v1 ships the proven
-/// LSB-first round-trip form (L3 and L1 byte-identical, no display divergence).
+/// correct human-readable decimal of 42. `show42()` returns `n.to_string()` for
+/// `n == 42`; the built binary's `{r:?}` of the `TString` renders its bytes. v1's
+/// `to_string` builds LSB-first then REVERSES to the human-readable MSB-first display
+/// order (REQ-8, blocker #96 — the PROVEN `parse_be(result) == n` form via the
+/// `parse_be(seq_reverse(s)) == parse_le(s)` bridge), so 42 → the bytes `[52, 50]`
+/// (digit '4' == 52 then '2' == 50, reading "42"). L3 and L1 both reverse, so they
+/// agree byte-for-byte (no display divergence).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 — `n.to_string()` produces the
-/// decimal byte sequence of `n` (LSB-first construction, the GROUNDED `parse_le ==
-/// n` form); for 42 the digit bytes are `52` ('4') and `50` ('2'). `rustc` builds
-/// the L1 runnable form (the divide/mod-by-10 loop), the process run prints it. The
-/// ASCII decode is the design constant (R-CHAR-3), not forge output.
+/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 — "The surface emits the
+/// human-readable MSB-first decimal"; for 42 the MSB-first byte order is `52` ('4')
+/// then `50` ('2'). `rustc` builds the L1 runnable form (the divide/mod-by-10 loop +
+/// `data.reverse()`), the process run prints it. The ASCII decode is the design
+/// constant (R-CHAR-3), not forge output.
 #[test]
 fn ac7_formatter_builds_and_prints_decimal() {
     // rustc is always present (no skip; the editor_runs.rs precedent).
-    let program = "fn show42() -> String\n  req true\n  ens parse_le(result) == 42\n  fx alloc\n{ let n: u64 = 42; n.to_string() }\n";
+    let program = "fn show42() -> String\n  req true\n  ens parse_be(result) == 42\n  fx alloc\n{ let n: u64 = 42; n.to_string() }\n";
     let fixture = std::env::temp_dir().join(format!("forge_strfmt_run_{}.th", std::process::id()));
     std::fs::write(&fixture, program).expect("write fixture");
 
@@ -267,15 +266,15 @@ fn ac7_formatter_builds_and_prints_decimal() {
         run.status,
         String::from_utf8_lossy(&run.stderr)
     );
-    // 42 → the decimal-digit bytes 52 ('4') and 50 ('2'). v1's `to_string` is
-    // LSB-first (the proven `parse_le == n` form), so the L1 `TString`'s derived
-    // Debug renders `TString { data: [50, 52] }` (digit '2' then '4'). BOTH digit
-    // bytes of 42 are present — the digit loop produced exactly the decimal digits
-    // of 42. The ASCII codes are the design constant (R-CHAR-3), not forge output.
+    // 42 → the decimal-digit bytes 52 ('4') and 50 ('2'). v1's `to_string` reverses
+    // to MSB-first (the proven `parse_be == n` form, blocker #96), so the L1
+    // `TString`'s derived Debug renders `TString { data: [52, 50] }` (digit '4' then
+    // '2', reading "42"). BOTH digit bytes of 42 are present in the human-readable
+    // order. The ASCII codes are the design constant (R-CHAR-3), not forge output.
     assert!(
-        run_stdout.contains("50, 52"),
-        "the formatter must print the decimal-digit bytes of 42 (LSB-first `50, 52` \
-         == digits '2','4' == the proven round-trip form):\nstdout:{run_stdout}\nstderr:{}",
+        run_stdout.contains("52, 50"),
+        "the formatter must print the human-readable MSB-first decimal of 42 (`52, 50` \
+         == digits '4','2' == \"42\", the proven round-trip form):\nstdout:{run_stdout}\nstderr:{}",
         String::from_utf8_lossy(&run.stderr)
     );
     assert!(

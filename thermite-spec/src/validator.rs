@@ -66,7 +66,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | #94 cluster C4. `push_byte` ADDED to `BUILTIN_METHODS` (so a contract over a byte-builder result validates inside the §4.2 cage exactly as `concat`/`slice`); `from_byte` is an associated path-call `String::from_byte(b)` (an `Expr::Call`, no `BUILTIN_METHODS` entry needed). Both are constructing ops (`fx alloc`). Consumer: `pub fn validate` → `walk_expr_inner` (`BUILTIN_METHODS` allowlist). Verification: `forge/tests/string_format_conformance.rs` (the byte-builder certifies L3 / `effects: [alloc]` against real verus, the GROUNDED `4 verified, 0 errors` form). |
-//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | #94 cluster C4. `to_string` ADDED to `BUILTIN_METHODS` (the `n.to_string()` method spelling); the GENERATED round-trip spec fns `parse_le`/`pow10` are seeded into `spec_fns` (`GENERATED_SPEC_FNS`) so a contract `ens parse_le(result) == n` validates inside the cage as a named `spec fn` call. The lowerer (`thermite-lower::lower`) emits the `u64_to_string` exec + `pow10`/`parse_le` spec + `lemma_parse_push` proof fn (the divide/mod-by-10 digit loop, round-trip `inv` + `dec m`). Consumer: `pub fn validate` → `walk_call` (the `spec_fns` accept). Verification: `forge/tests/string_format_conformance.rs` (the round-trip `parse_le(to_string(n)) == n` certifies L3, GROUNDED `16 verified, 0 errors`; a wrong digit FAILS, non-vacuous, R-DEFER-9). |
+//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | #94 cluster C4 (+ blocker #96 MSB-first display). `to_string` ADDED to `BUILTIN_METHODS` (the `n.to_string()` method spelling); the GENERATED round-trip spec fns `parse_be`/`parse_le`/`pow10` are seeded into `spec_fns` (`GENERATED_SPEC_FNS`) so a contract `ens parse_be(result) == n` validates inside the cage as a named `spec fn` call. The lowerer (`thermite-lower::lower`) emits the `u64_to_string` exec (LSB build + reverse to MSB-first) + `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec + `lemma_parse_push` + the `parse_be(seq_reverse(s)) == parse_le(s)` bridge lemmas. Consumer: `pub fn validate` → `walk_call` (the `spec_fns` accept). Verification: `forge/tests/string_format_conformance.rs` (the MSB-first round-trip `parse_be(to_string(n)) == n` certifies L3, GROUNDED `17 verified, 0 errors`; an overclaim FAILS, non-vacuous, R-DEFER-9). |
 //! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | NOT-STARTED | #94 cluster C4, DEPENDS-ON-C7 — prereq blocker #95. The §4.2-cage spec sublanguage has no built-in `Option`/`Result` + payload-in-contract surface, so the success-arm round-trip cannot be spelled today. GROUNDED-feasible (real verus, `5 verified, 0 errors`); REQ-7/REQ-8 ship now, REQ-9 lands after C7. |
 
 use std::collections::{HashMap, HashSet};
@@ -144,16 +144,19 @@ const BUILTIN_METHODS: &[&str] = &[
 ];
 
 /// The GENERATED `spec fn` names the lowerer materializes for the C4 `u64`→`String`
-/// round-trip (`.design/basis/07-strings.md` REQ-8, issue #94): `parse_le` (the
-/// LSB-first decimal value of a byte sequence) and `pow10` (the decimal weight).
-/// They are NOT user-declared — the lowerer (`thermite-lower::lower`) emits them
-/// when the program uses `n.to_string()` — but a contract names `parse_le` to state
-/// the round-trip (`ens parse_le(result) == n`), so the validator must accept them
-/// as named `spec fn` calls inside the §4.2 cage (seeded into `Validator::spec_fns`
-/// in `Validator::new`, alongside the user-declared spec fns). This is the EXACT
-/// mechanism a user `spec fn` call uses — these are reserved generated names, so a
-/// user cannot shadow them (a clash would be a name collision the lowerer owns).
-const GENERATED_SPEC_FNS: &[&str] = &["parse_le", "pow10"];
+/// round-trip (`.design/basis/07-strings.md` REQ-8, issue #94): `parse_be` (the
+/// MSB-first / human-readable decimal value of a byte sequence — the DISPLAY-form
+/// round-trip the surface contract names, blocker #96), `parse_le` (the LSB-first
+/// construction-order value the bridge carries the proof through), and `pow10` (the
+/// decimal weight). They are NOT user-declared — the lowerer
+/// (`thermite-lower::lower`) emits them when the program uses `n.to_string()` — but a
+/// contract names `parse_be` to state the round-trip (`ens parse_be(result) == n`),
+/// so the validator must accept them as named `spec fn` calls inside the §4.2 cage
+/// (seeded into `Validator::spec_fns` in `Validator::new`, alongside the
+/// user-declared spec fns). This is the EXACT mechanism a user `spec fn` call uses —
+/// these are reserved generated names, so a user cannot shadow them (a clash would be
+/// a name collision the lowerer owns).
+const GENERATED_SPEC_FNS: &[&str] = &["parse_be", "parse_le", "pow10"];
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so

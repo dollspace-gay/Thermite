@@ -1342,13 +1342,14 @@ pub(crate) fn lower_expr_exec(
         Expr::Call { callee, args } => {
             let c = lower_expr_exec(callee, d, span, variants)?;
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1
-            // runnable `parse_le` (emitted by `emit_string_runtime_l1`) takes its
-            // byte sequence by REFERENCE (`&TString`) so the ens check does not MOVE
-            // the bound `result` it also returns. Borrow the sole arg of a `parse_le`
-            // call (the round-trip ens `parse_le(result) == n`). Keyed on the
-            // generated callee name; an arg already written `&x` is left as-is.
+            // runnable `parse_be`/`parse_le` (emitted by `emit_string_runtime_l1`) take
+            // their byte sequence by REFERENCE (`&TString`) so the ens check does not
+            // MOVE the bound `result` it also returns. Borrow the sole arg of a
+            // `parse_be`/`parse_le` call (the round-trip ens `parse_be(result) == n`).
+            // Keyed on the generated callee name; an arg already written `&x` is
+            // left as-is.
             let borrow_arg = matches!(callee.as_ref(), Expr::Path(segs)
-                if segs.len() == 1 && segs[0] == "parse_le");
+                if segs.len() == 1 && (segs[0] == "parse_be" || segs[0] == "parse_le"));
             let mut parts = Vec::new();
             for a in args {
                 let lowered = lower_expr_exec(a, d, span, variants)?;
@@ -1979,26 +1980,42 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("        data.push((m % 10) as u8 + 48u8);\n");
         out.push_str("        m = m / 10;\n");
         out.push_str("    }\n");
+        // Reverse the LSB-first construction buffer to the human-readable MSB-first
+        // display order (REQ-8, blocker #96) — the BUILT binary prints "42", not "24".
+        // Mirrors the L3 reverse loop in `lower.rs::emit_numfmt_defs`, so L1 and L3
+        // agree byte-for-byte (both now reverse to MSB-first).
+        out.push_str("    data.reverse();\n");
         out.push_str("    TString { data }\n");
         out.push_str("}\n");
-        // The L1 runnable form of the round-trip spec fns (`parse_le`/`pow10`). At L3
-        // these are `spec fn`s carrying the PROOF; at L1 a contract `ens parse_le(result)
-        // == n` becomes an always-active runtime CHECK, so `parse_le` must be a real
-        // runnable fn. `parse_le` reads the byte sequence LSB-FIRST — `data[0]` least
-        // significant — matching the L3 spec `parse_le` (`(s[0]-48) + 10*parse_le(s[1..])`)
-        // AND the LSB-first construction order of `u64_to_string` (the divide/mod-by-10
-        // loop pushes the least-significant digit first). Iterating from the END (the
-        // most significant digit) with a left-to-right Horner accumulate reconstructs
-        // the same value the recursive LSB-first def computes — so L1 and L3 agree
-        // byte-for-byte (no display divergence). Takes `&TString` so the ens check
-        // borrows (never moves) the bound `result`. `pow10` is the decimal weight
-        // (emitted for completeness; a contract may name it).
+        // The L1 runnable form of the round-trip spec fns (`parse_be`/`parse_le`/
+        // `pow10`). At L3 these are `spec fn`s carrying the PROOF; at L1 a contract
+        // `ens parse_be(result) == n` becomes an always-active runtime CHECK, so the
+        // named parse fn must be a real runnable fn. `u64_to_string` now reverses to
+        // MSB-first display order (REQ-8, blocker #96), so the surface round-trip is
+        // `parse_be` — the MSB-first parse: a left-to-right Horner accumulate
+        // (`acc = acc*10 + (s[i]-48)`, `data[0]` most significant), matching the L3
+        // spec `parse_be`. `parse_le` (the LSB-first parse, `data[0]` least
+        // significant) is ALSO emitted: it is the construction-order value the bridge
+        // carries the proof through, and a contract may still name it. Both take
+        // `&TString` so the ens check borrows (never moves) the bound `result`. L1 and
+        // L3 agree byte-for-byte (both reverse to MSB-first — no display divergence).
+        // `pow10` is the decimal weight (emitted for completeness; a contract may name it).
         out.push_str("#[allow(dead_code)]\n");
         out.push_str("fn pow10(k: u64) -> u64 {\n");
         out.push_str("    let mut p: u64 = 1;\n");
         out.push_str("    let mut i: u64 = 0;\n");
         out.push_str("    while i < k { p = p * 10; i = i + 1; }\n");
         out.push_str("    p\n");
+        out.push_str("}\n");
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn parse_be(s: &TString) -> u64 {\n");
+        out.push_str("    let mut acc: u64 = 0;\n");
+        out.push_str("    let mut i: usize = 0;\n");
+        out.push_str("    while i < s.data.len() {\n");
+        out.push_str("        acc = acc * 10 + (s.data[i] as u64 - 48);\n");
+        out.push_str("        i = i + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    acc\n");
         out.push_str("}\n");
         out.push_str("#[allow(dead_code)]\n");
         out.push_str("fn parse_le(s: &TString) -> u64 {\n");

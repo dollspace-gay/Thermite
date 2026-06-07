@@ -82,7 +82,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | `emit_string_wrapper` emits the `from_byte(b: u64) -> TString` 1-byte constructor (`ens len == 1 && data@[0] == b as u8`) and the `push_byte(&self, b: u64) -> TString` copy-then-append (`req len < CAP`, `ens len == old+1 && data@[old] == b as u8` + the element-frame `forall|j| 0 <= j < old ==> result@[j] == self@[j]`) — the GROUNDED byte-builder over vstd's verified `Vec::push` (the `u64` byte zero-extends, the SAME convention as `byte_at -> u64`). Owned-result form (no `&mut`/`final`). Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_format_conformance.rs` (real verus L3 / `effects: [alloc]`). |
-//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le` spec fns + the `lemma_parse_push` append lemma (proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop with the round-trip invariant `parse_le(data@) + m*pow10(data.len()) == n` + `decreases m`), materialized once when the program uses `n.to_string()` / names `parse_le` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_le(result)` lowers to `parse_le(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_le(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_le`). GROUNDED `16 verified, 0 errors`; a wrong digit FAILS (R-DEFER-9). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` (the round-trip certifies L3, the formatter builds+runs 42→"42"). |
+//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec fns + the `lemma_parse_push` append lemma + the display-bridge lemmas `lemma_parse_be_push`/`lemma_parse_be_reverse` (`parse_be(seq_reverse(s)) == parse_le(s)`, proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop builds LSB-first — invariant `parse_le(data@) + m*pow10(data.len()) == n`, `decreases m` — THEN a reverse loop to the human-readable MSB-first display order, blocker #96). Materialized once when the program uses `n.to_string()` / names `parse_be` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_be(result)` lowers to `parse_be(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_be(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_be`). GROUNDED `17 verified, 0 errors`; an overclaimed round-trip FAILS (R-DEFER-9). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` + `forge/tests/divergence_numfmt_display_order.rs` (the MSB-first round-trip certifies L3, the formatter builds+runs 42→[52,50]=="42", 100→"100", 7→"7"). |
 //! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL) | NOT-STARTED | #94 cluster C4, DEPENDS-ON-C7 — prereq blocker #95. No `parse_u64` / `parse_be`/`all_digits` emission; the §4.2-cage spec sublanguage has no built-in `Option`/`Result` + payload-in-contract surface. GROUNDED-feasible (real verus `5 verified, 0 errors`); REQ-7/REQ-8 ship now under #94, REQ-9 lands after C7. |
 
 use std::fmt::Write as _;
@@ -2980,7 +2980,7 @@ fn expr_uses_numfmt(expr: &Expr) -> bool {
 /// `thermite-spec::validator::GENERATED_SPEC_FNS`): a contract naming either
 /// requires the generated definitions emitted + drives the `parse_le(result)` →
 /// `parse_le(result.data@)` rewrite and the `as nat` equality coercion (REQ-8).
-const GENERATED_NUMFMT_SPEC_FNS: &[&str] = &["parse_le", "pow10"];
+const GENERATED_NUMFMT_SPEC_FNS: &[&str] = &["parse_le", "parse_be", "pow10"];
 
 /// Emit the generated `u64`→decimal-`String` round-trip definitions (REQ-8, #94)
 /// when the program uses `n.to_string()` / names `parse_le`, in deterministic
@@ -3010,6 +3010,25 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str(
         "  else { ((s[0] - 48) as nat) + 10 * parse_le(s.subrange(1, s.len() as int)) } }\n",
     );
+    // parse_be — the MSB-first (human-readable) decimal value: the LAST byte is the
+    // least significant. This is the DISPLAY-form parse the surface contract names
+    // (REQ-8: "the displayed bytes round-trip against a big-endian parse"). The
+    // reversed buffer `u64_to_string` returns round-trips against THIS parse.
+    out.push_str("pub open spec fn parse_be(s: Seq<u8>) -> nat\n");
+    out.push_str("    decreases s.len()\n");
+    out.push_str("{ if s.len() == 0 { 0 }\n");
+    out.push_str(
+        "  else { parse_be(s.subrange(0, (s.len() - 1) as int)) * 10 + ((s[(s.len() - 1) as int] - 48) as nat) } }\n",
+    );
+    // seq_reverse — a recursively-defined reverse (head moves to the END), so the
+    // display bridge `parse_be(seq_reverse(s)) == parse_le(s)` is a clean induction
+    // mirroring `parse_le`'s recursion. (NOT vstd's index-based `Seq::reverse`, whose
+    // `subrange` alignment would need extra lemmas; this self-contained form proves
+    // GROUNDED `17 verified, 0 errors`.)
+    out.push_str("pub open spec fn seq_reverse(s: Seq<u8>) -> Seq<u8>\n");
+    out.push_str("    decreases s.len()\n");
+    out.push_str("{ if s.len() == 0 { Seq::<u8>::empty() }\n");
+    out.push_str("  else { seq_reverse(s.subrange(1, s.len() as int)).push(s[0]) } }\n");
     // lemma_parse_push — appending a digit at the end adds (d-48)*pow10(len) to the
     // value (proved by induction: base subrange==empty + pow10(0)==1; step subrange
     // recurse + pow10 fold + nonlinear_arith distribution + =~= extensionality).
@@ -3062,13 +3081,47 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     );
     out.push_str("    }\n");
     out.push_str("}\n");
-    // u64_to_string — the divide/mod-by-10 digit-extraction loop, returning a
-    // TString (the surface `String`) with the GOLD-STANDARD round-trip ens
-    // `parse_le(result.data@) == n`. The loop invariant is the round-trip partial
-    // accumulator; `decreases m` is the strictly-shrinking remainder.
+    // lemma_parse_be_push — appending a byte at the END of a big-endian sequence
+    // multiplies the value by 10 and adds the new least-significant digit. The
+    // building block for the reverse loop's per-iteration step (proved by =~=
+    // extensionality on the subrange).
+    out.push('\n');
+    out.push_str("proof fn lemma_parse_be_push(s: Seq<u8>, d: u8)\n");
+    out.push_str("    ensures parse_be(s.push(d)) == parse_be(s) * 10 + ((d - 48) as nat),\n");
+    out.push_str("{\n");
+    out.push_str("    let sd = s.push(d);\n");
+    out.push_str("    assert(sd.len() == s.len() + 1);\n");
+    out.push_str("    assert(sd[(sd.len() - 1) as int] == d);\n");
+    out.push_str("    assert(sd.subrange(0, (sd.len() - 1) as int) =~= s);\n");
+    out.push_str("}\n");
+    // lemma_parse_be_reverse — THE DISPLAY BRIDGE (REQ-8): the MSB-first parse of the
+    // reversed buffer equals the LSB-first parse of the construction buffer, by
+    // induction on s. Carries the round-trip proof from the LSB construction
+    // (`parse_le(data@) == n`) onto the reversed display form
+    // (`parse_be(seq_reverse(data@)) == n`).
+    out.push('\n');
+    out.push_str("proof fn lemma_parse_be_reverse(s: Seq<u8>)\n");
+    out.push_str("    ensures parse_be(seq_reverse(s)) == parse_le(s),\n");
+    out.push_str("    decreases s.len(),\n");
+    out.push_str("{\n");
+    out.push_str("    if s.len() == 0 {\n");
+    out.push_str("        assert(seq_reverse(s) =~= Seq::<u8>::empty());\n");
+    out.push_str("    } else {\n");
+    out.push_str("        let t = s.subrange(1, s.len() as int);\n");
+    out.push_str("        lemma_parse_be_reverse(t);\n");
+    out.push_str("        lemma_parse_be_push(seq_reverse(t), s[0]);\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    // u64_to_string — the divide/mod-by-10 digit-extraction loop builds the decimal
+    // LSB-first (the GROUNDED `parse_le(data@) == n` form), THEN reverses to the
+    // human-readable MSB-first display order (REQ-8); the surface round-trip ens is
+    // `parse_be(result.data@) == n` — the display bridge carries the proof. The first
+    // loop invariant is the round-trip partial accumulator (`decreases m`); the
+    // reverse loop maintains `out@ == seq_reverse(<suffix of data@>)` (`decreases
+    // data.len() - i`), and `lemma_parse_be_reverse` closes the contract.
     out.push('\n');
     out.push_str("pub fn u64_to_string(n: u64) -> (result: TString)\n");
-    out.push_str("    ensures parse_le(result.data@) == n as nat,\n");
+    out.push_str("    ensures parse_be(result.data@) == n as nat,\n");
     out.push_str("{\n");
     out.push_str("    let mut data: Vec<u8> = Vec::new();\n");
     out.push_str("    let mut m: u64 = n;\n");
@@ -3104,7 +3157,40 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("                    pow10((old_len + 1) as nat) == 10 * pow10(old_len);\n");
     out.push_str("        }\n");
     out.push_str("    }\n");
-    out.push_str("    TString { data }\n");
+    // data@ now satisfies parse_le(data@) == n (m == 0, the LSB-first construction).
+    // Reverse into `out` to the human-readable MSB-first display order (REQ-8); the
+    // loop maintains `out@ == seq_reverse(<suffix of data@>)`, so at exit
+    // `out@ == seq_reverse(data@)` and `lemma_parse_be_reverse` gives
+    // `parse_be(out@) == parse_le(data@) == n`.
+    out.push_str("    let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("    let mut i: usize = 0;\n");
+    out.push_str("    while i < data.len()\n");
+    out.push_str("        invariant\n");
+    out.push_str("            i <= data.len(),\n");
+    out.push_str("            out@ =~= seq_reverse(data@.subrange((data.len() - i) as int, data.len() as int)),\n");
+    out.push_str("        decreases data.len() - i,\n");
+    out.push_str("    {\n");
+    out.push_str(
+        "        let ghost prefix = data@.subrange((data.len() - i) as int, data.len() as int);\n",
+    );
+    out.push_str("        out.push(data[data.len() - 1 - i]);\n");
+    out.push_str("        i = i + 1;\n");
+    out.push_str("        proof {\n");
+    out.push_str("            let lo = (data.len() - i) as int;\n");
+    out.push_str("            let whole = data@.subrange(lo, data@.len() as int);\n");
+    out.push_str("            assert(whole.len() > 0);\n");
+    out.push_str("            assert(whole[0] == data@[lo]);\n");
+    out.push_str("            assert(whole.subrange(1, whole.len() as int) =~= prefix);\n");
+    out.push_str(
+        "            assert(seq_reverse(whole) =~= seq_reverse(prefix).push(data@[lo]));\n",
+    );
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    proof {\n");
+    out.push_str("        assert(data@.subrange(0, data@.len() as int) =~= data@);\n");
+    out.push_str("        lemma_parse_be_reverse(data@);\n");
+    out.push_str("    }\n");
+    out.push_str("    TString { data: out }\n");
     out.push_str("}\n");
     Ok(out)
 }

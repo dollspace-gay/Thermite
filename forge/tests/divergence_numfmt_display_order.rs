@@ -54,13 +54,14 @@ fn forge_bin() -> PathBuf {
 /// `'2'`==50 are the design digit constants (`+ 48u8`), not forge output (R-CHAR-3).
 /// Tracking: #96.
 #[test]
-#[ignore = "divergence: u64_to_string emits LSB-first (42->\"24\"), REQ-8 mandates MSB-first display; blocker #96 — un-ignore when fixed"]
 fn divergence_to_string_display_order_msb_first() {
-    let program = "fn show42() -> String\n  req true\n  ens parse_le(result) == 42\n  fx alloc\n{ let n: u64 = 42; n.to_string() }\n";
-    let fixture = std::env::temp_dir().join(format!(
-        "forge_numfmt_order_{}.th",
-        std::process::id()
-    ));
+    // REQ-8 (blocker #96): the surface round-trip is the MSB-first `parse_be` — the
+    // displayed bytes round-trip against a big-endian parse. `u64_to_string` now
+    // reverses the LSB construction buffer, carrying the proof via the
+    // `parse_be(seq_reverse(s)) == parse_le(s)` bridge.
+    let program = "fn show42() -> String\n  req true\n  ens parse_be(result) == 42\n  fx alloc\n{ let n: u64 = 42; n.to_string() }\n";
+    let fixture =
+        std::env::temp_dir().join(format!("forge_numfmt_order_{}.th", std::process::id()));
     std::fs::write(&fixture, program).expect("write fixture");
 
     let build = Command::new(forge_bin())

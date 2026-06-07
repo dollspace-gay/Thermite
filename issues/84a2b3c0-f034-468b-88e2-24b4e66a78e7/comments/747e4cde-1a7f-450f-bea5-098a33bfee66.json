@@ -1,0 +1,10 @@
+{
+  "uuid": "747e4cde-1a7f-450f-bea5-098a33bfee66",
+  "issue_uuid": "84a2b3c0-f034-468b-88e2-24b4e66a78e7",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (4277bf1). The MAX-VERIFIED interactive editor — the thesis MET: render_frame (ANSI frame via C1 escapes + C4 u64_to_string + concat) and decode (byte->keycode) are L3 (verified Thermite display+input LOGIC), the edit core L3, only raw_mode_on/off/read_key_raw/write_frame (extern-C termios syscalls) trusted (L1). Two seams fixed: u64_to_string upper-bound ens (len<=20, PROVED via lemma_pow10_20_gt_u64max -> render_frame discharges the §4.2 CAP); render_frame(&Buffer) + named_struct_param &-borrow invariant weave. Critic NO DIVERGENCE: render_frame genuine (dropped-text->L0), the bound a real proof (no cheat, load-bearing), decode genuine (key-collapse->L0), the &Buffer weave sound (caller-discharged requires), no regression (622 tests, acceptance 9/9). BUILDS+RUNS: piped a,b,LEFT,X,bksp,Ctrl-Q -> aXb mid-text splice -> ab -> clean exit. The 4th acceptance program. Caveat (#106): runs --no-sandbox (the seccomp set lacks ioctl for termios).",
+  "created_at": "2026-06-07T17:11:22.643472056Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAOlaYpVl1lmPvkF0+/4kedJsUfOqERfOp+0B9fxsp6yPwM8IG1xlwfqVy5zWWf7jKBssPbhnAqJRHQyQ3pPAfBA=="
+}

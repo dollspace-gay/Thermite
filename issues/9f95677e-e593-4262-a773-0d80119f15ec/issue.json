@@ -2,11 +2,12 @@
   "uuid": "9f95677e-e593-4262-a773-0d80119f15ec",
   "display_id": 125,
   "title": "Multi-line nano editor in Thermite: newlines/Enter + up-down line nav + row/col cursor render + file load/save (verified edit+nav core L3, only syscalls trusted)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T22:48:18.469128094Z",
-  "updated_at": "2026-06-07T22:48:19.800531601Z",
+  "updated_at": "2026-06-07T23:46:31.967498133Z",
+  "closed_at": "2026-06-07T23:46:31.967498133Z",
   "labels": [
     "feature"
   ]

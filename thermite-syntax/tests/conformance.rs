@@ -112,6 +112,14 @@ fn render_type(ty: &Type) -> String {
         // Additive arm so this existing test helper compiles; the
         // sum/binary_search fixtures never exercise it.
         Type::String => "String".to_string(),
+        // Cluster C7 built-in Option/Result type nodes
+        // (`.design/basis/09-option-result.md` REQ-1/REQ-2): the surface rendering.
+        // Additive arms so this existing test helper compiles; the
+        // sum/binary_search fixtures never exercise them.
+        Type::Option(inner) => format!("Option<{}>", render_type(inner)),
+        Type::Result(ok, err) => {
+            format!("Result<{}, {}>", render_type(ok), render_type(err))
+        }
     }
 }
 

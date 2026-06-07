@@ -93,7 +93,14 @@
 //! |---|---|---|
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | `emit_string_wrapper` emits the `from_byte(b: u64) -> TString` 1-byte constructor (`ens len == 1 && data@[0] == b as u8`) and the `push_byte(&self, b: u64) -> TString` copy-then-append (`req len < CAP`, `ens len == old+1 && data@[old] == b as u8` + the element-frame `forall|j| 0 <= j < old ==> result@[j] == self@[j]`) — the GROUNDED byte-builder over vstd's verified `Vec::push` (the `u64` byte zero-extends, the SAME convention as `byte_at -> u64`). Owned-result form (no `&mut`/`final`). Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_format_conformance.rs` (real verus L3 / `effects: [alloc]`). |
 //! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec fns + the `lemma_parse_push` append lemma + the display-bridge lemmas `lemma_parse_be_push`/`lemma_parse_be_reverse` (`parse_be(seq_reverse(s)) == parse_le(s)`, proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop builds LSB-first — invariant `parse_le(data@) + m*pow10(data.len()) == n`, `decreases m` — THEN a reverse loop to the human-readable MSB-first display order, blocker #96). Materialized once when the program uses `n.to_string()` / names `parse_be` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_be(result)` lowers to `parse_be(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_be(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_be`). GROUNDED `17 verified, 0 errors`; an overclaimed round-trip FAILS (R-DEFER-9). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` + `forge/tests/divergence_numfmt_display_order.rs` (the MSB-first round-trip certifies L3, the formatter builds+runs 42→[52,50]=="42", 100→"100", 7→"7"). |
-//! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL) | NOT-STARTED | #94 cluster C4, DEPENDS-ON-C7 — prereq blocker #95. No `parse_u64` / `parse_be`/`all_digits` emission; the §4.2-cage spec sublanguage has no built-in `Option`/`Result` + payload-in-contract surface. GROUNDED-feasible (real verus `5 verified, 0 errors`); REQ-7/REQ-8 ship now under #94, REQ-9 lands after C7. |
+//! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL) | SHIPPED | #95 cluster C7. `emit_parse_defs` emits the `is_digit`/`all_digits`/`parse_be` spec fns + `parse_u64(s: &TString) -> Option<u64>` (the Horner-accumulate loop + the BE partial-value invariant + the three handled-or-loud `None` arms) with the round-trip success `ens match result { Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat, None => true }`; materialized when `program_uses_parse`; `parse_be` deduped against the numfmt round-trip. Consumer: `lower`. Verified: `forge/tests/option_result_conformance.rs::ac4_parse_u64_lowering_verifies_under_real_verus` (real verus `5 verified, 0 errors`) + the broken-`Some(0)` non-vacuity. |
+//!
+//! ## REQ status — 09-option-result.md cluster C7 (built-in Option/Result, issue #95)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-4 (`Option`/`Result` → Verus types; construct/match/`is`/spec-match lower) | SHIPPED | `lower_type` gains `Type::Option(T)` → `Option<T>` and `Type::Result(T, E)` → `Result<T, E>` (the Verus-native generics, no wrapper); `qualify_variant_path` leaves the built-in `Some`/`Ok`/`Err`/`None` UNQUALIFIED (not in the user `variants` map → bare names Verus's prelude carries). The spec-`match`-in-`ens` lowers via the EXISTING `lower_expr` `Match` arm. Consumer: `lower`. Verified: `forge/tests/option_result_conformance.rs` AC-1/AC-2/AC-4 (real verus L3). |
+//! | REQ-5 (`parse_u64` emission) | SHIPPED | `emit_parse_defs` + `program_uses_parse` (see 07-strings.md REQ-9 above). |
 
 use std::fmt::Write as _;
 
@@ -470,6 +477,22 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // `TString` wrapper because `u64_to_string` returns a `TString`.
     let numfmt_defs = emit_numfmt_defs(program)?;
     out.push_str(&numfmt_defs);
+
+    // (1f) Cluster C7 (`.design/basis/09-option-result.md` REQ-5, issue #95): the
+    // generated `String`→`u64` PARTIAL parser `parse_u64` (the C4 07-strings.md
+    // REQ-9 payoff) — the `is_digit`/`all_digits` spec fns + the `parse_u64` exec fn
+    // (the Horner-accumulate loop `acc = acc*10 + digit`, the three handled-or-loud
+    // `None` arms — empty / non-digit / overflow — and the round-trip success
+    // contract `ens match result { Some(v) => all_digits(s.data@) && s.data.len() >=
+    // 1 && parse_be(s.data@) == v, None => true }`). Materialized ONCE when the
+    // program calls `parse_u64` / names `all_digits`/`is_digit` (`program_uses_-
+    // parse`), BEFORE any fn references it. EMPTY otherwise (byte-stable). The
+    // emitted form is EXACTLY the GROUNDED `5 verified, 0 errors` parse (no
+    // `assume`/`external_body`/`admit`, R-DEFER-9 — the round-trip is a REAL proof;
+    // a broken `Some(0)` FAILS). `parse_be` is shared with the numfmt round-trip; it
+    // is emitted here ONLY when numfmt did not already emit it (dedup).
+    let parse_defs = emit_parse_defs(program)?;
+    out.push_str(&parse_defs);
 
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
     // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
@@ -2442,6 +2465,23 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // the byte view `s@`, never `vstd::vec::Vec<u8>`; v1 IMPLEMENTS it by
         // wrapping vstd's verified `Vec<u8>`.
         Type::String => Ok("TString".to_string()),
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-4, issue #95): the
+        // built-in `Option<T>` / `Result<T, E>` lower to the Verus-NATIVE generic
+        // types — Verus's prelude carries `Option`/`Result` and their constructors
+        // `Some`/`None`/`Ok`/`Err` (GROUNDED `5 verified, 0 errors`), so there is NO
+        // wrapper to emit (unlike `TString`/`TVec`) and the constructors fall
+        // through `qualify_variant_path` to the BARE name (they are not user-enum
+        // variants, so they are never enum-qualified — exactly what Verus wants).
+        // The element/error types lower recursively.
+        Type::Option(inner) => {
+            let i = lower_type(inner)?;
+            Ok(format!("Option<{i}>"))
+        }
+        Type::Result(ok, err) => {
+            let o = lower_type(ok)?;
+            let e = lower_type(err)?;
+            Ok(format!("Result<{o}, {e}>"))
+        }
     }
 }
 
@@ -2633,7 +2673,17 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
         Type::Ref { inner, .. }
         | Type::Slice(inner)
         | Type::Box(inner)
-        | Type::Generic { arg: inner, .. } => note_vec_elems(inner, elems),
+        | Type::Generic { arg: inner, .. }
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): a `Vec` nested
+        // under an `Option<Vec<_>>` is reached through the option's element type,
+        // exactly as a `Box`/`Generic` inner is.
+        | Type::Option(inner) => note_vec_elems(inner, elems),
+        // A `Result<T, E>` reaches a `Vec` in EITHER type argument (the `T` ok type
+        // or the `E` error type), so both are recursed (inner-first preserved).
+        Type::Result(ok, err) => {
+            note_vec_elems(ok, elems);
+            note_vec_elems(err, elems);
+        }
         Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
     }
 }
@@ -2888,7 +2938,12 @@ fn ty_reaches_string(ty: &Type) -> bool {
         | Type::Slice(inner)
         | Type::Vec(inner)
         | Type::Box(inner)
-        | Type::Generic { arg: inner, .. } => ty_reaches_string(inner),
+        | Type::Generic { arg: inner, .. }
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): a `String` nested
+        // under an `Option<String>` is reached through the option's element type.
+        | Type::Option(inner) => ty_reaches_string(inner),
+        // A `Result<T, E>` reaches a `String` in EITHER type argument.
+        Type::Result(ok, err) => ty_reaches_string(ok) || ty_reaches_string(err),
         Type::Prim(_) | Type::Unit | Type::Named(_) => false,
     }
 }
@@ -3513,6 +3568,168 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("        lemma_parse_be_reverse(data@);\n");
     out.push_str("    }\n");
     out.push_str("    TString { data: out }\n");
+    out.push_str("}\n");
+    Ok(out)
+}
+
+/// The GENERATED `String`→`u64` parser spec-fn / fn names (Cluster C7,
+/// `.design/basis/09-option-result.md` REQ-5, issue #95). A program calling
+/// `parse_u64` (the surface partial parser) or naming `all_digits`/`is_digit` (a
+/// contract over the parse witness) requires the generated definitions emitted.
+/// `parse_be` is SHARED with the numfmt round-trip (`GENERATED_NUMFMT_SPEC_FNS`),
+/// so it is NOT in this list — `emit_parse_defs` keys its own `parse_be` emission
+/// off whether numfmt already emitted it (dedup).
+const GENERATED_PARSE_FNS: &[&str] = &["parse_u64", "all_digits", "is_digit"];
+
+/// True if the program uses the `String`→`u64` parser anywhere (REQ-5): a
+/// `parse_u64` call (the surface `parse_u64(s)`) or an `all_digits`/`is_digit`
+/// reference in a contract. Either requires the generated parse definitions in
+/// scope. EMPTY otherwise (byte-stable for the non-parse corpus). The walk reuses
+/// the `each_subexpr` full-tree traversal exactly as `program_uses_numfmt`.
+fn program_uses_parse(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(f) => {
+            contract_uses_parse(&f.contract)
+                || f.body.as_ref().map(block_uses_parse).unwrap_or(false)
+        }
+        Item::SpecFn(s) => block_uses_parse(&s.body),
+        Item::Struct(_) | Item::Enum(_) => false,
+    })
+}
+
+fn contract_uses_parse(contract: &thermite_syntax::ast::Contract) -> bool {
+    expr_uses_parse(&contract.req.expr) || contract.ens.iter().any(|c| expr_uses_parse(&c.expr))
+}
+
+fn block_uses_parse(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_parse)
+        || block.tail.as_deref().map(expr_uses_parse).unwrap_or(false)
+}
+
+fn stmt_uses_parse(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_parse(init),
+        Stmt::Assign { target, value } => expr_uses_parse(target) || expr_uses_parse(value),
+        Stmt::Return(opt) => opt.as_ref().map(expr_uses_parse).unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_parse(cond)
+                || block_uses_parse(then)
+                || else_.as_ref().map(block_uses_parse).unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_uses_parse(&l.body),
+        Stmt::Expr(e) => expr_uses_parse(e),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// True if `expr` references a parse construct anywhere (REQ-5): a `parse_u64` /
+/// `all_digits` / `is_digit` `Call`. A full-tree walk reusing `each_subexpr`.
+fn expr_uses_parse(expr: &Expr) -> bool {
+    if let Expr::Call { callee, .. } = expr {
+        if let Expr::Path(segs) = callee.as_ref() {
+            if let Some(last) = segs.last() {
+                if GENERATED_PARSE_FNS.contains(&last.as_str()) {
+                    return true;
+                }
+            }
+        }
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |e| {
+        if expr_uses_parse(e) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+/// Emit the generated `String`→`u64` PARTIAL parser definitions (Cluster C7,
+/// `.design/basis/09-option-result.md` REQ-5, issue #95) when the program calls
+/// `parse_u64`, in deterministic order: the `is_digit`/`all_digits`/`parse_be`
+/// spec fns (the round-trip witnesses), then the `parse_u64` exec fn (the
+/// Horner-accumulate loop with the BE partial-value invariant + the three
+/// handled-or-loud `None` arms). EMPTY otherwise. The emitted form is EXACTLY the
+/// GROUNDED `5 verified, 0 errors` parse: `parse_u64(s: &TString) -> Option<u64>`
+/// with `ens match result { Some(v) => all_digits(s.data@) && s.data.len() >= 1 &&
+/// parse_be(s.data@) == v as nat, None => true }`; the loop invariant is the BE
+/// partial value over the consumed prefix (`parse_be(s.data@.subrange(0, i)) ==
+/// acc`) + the all-digits prefix witness, `decreases s.data.len() - i`; the
+/// overflow guard screams BEFORE `acc*10 + digit` would wrap. NO `assume`/
+/// `external_body`/`admit` (R-DEFER-9). `parse_be` is emitted here ONLY when the
+/// numfmt round-trip did not already emit it (shared dedup).
+fn emit_parse_defs(program: &Program) -> Result<String, LowerError> {
+    if !program_uses_parse(program) {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    out.push('\n');
+    // is_digit / all_digits — the per-byte digit predicate + the all-bytes-are-
+    // digits witness (a bounded `forall` over the byte seq, the §4.2 cage form).
+    out.push_str("pub open spec fn is_digit(b: u8) -> bool { 48 <= b && b <= 57 }\n");
+    out.push_str("pub open spec fn all_digits(s: Seq<u8>) -> bool\n");
+    out.push_str("{ forall|i: int| 0 <= i < s.len() ==> is_digit(#[trigger] s[i]) }\n");
+    // parse_be — the MSB-first (read-order) decimal value. SHARED with the numfmt
+    // round-trip (`emit_numfmt_defs`), so emit it HERE only when numfmt did not
+    // (dedup — a program using BOTH `to_string` and `parse_u64` must not define
+    // `parse_be` twice).
+    if !program_uses_numfmt(program) {
+        out.push_str("pub open spec fn parse_be(s: Seq<u8>) -> nat\n");
+        out.push_str("    decreases s.len()\n");
+        out.push_str("{ if s.len() == 0 { 0 }\n");
+        out.push_str(
+            "  else { parse_be(s.subrange(0, (s.len() - 1) as int)) * 10 + ((s[(s.len() - 1) as int] - 48) as nat) } }\n",
+        );
+    }
+    // parse_u64 — the Horner-accumulate loop. Takes `&TString` (the surface
+    // `&String`), returns the Verus-native `Option<u64>`; the success arm proves
+    // the round-trip, the three partial cases take the LOUD `None` arm BEFORE
+    // corrupting `acc`. GROUNDED `5 verified, 0 errors`; a broken `Some(0)` FAILS.
+    out.push('\n');
+    out.push_str("pub fn parse_u64(s: &TString) -> (result: Option<u64>)\n");
+    out.push_str("    requires s.well_formed(),\n");
+    out.push_str("    ensures match result {\n");
+    out.push_str(
+        "        Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat,\n",
+    );
+    out.push_str("        None => true,\n");
+    out.push_str("    },\n");
+    out.push_str("{\n");
+    out.push_str("    if s.data.len() == 0 { return None; }\n");
+    out.push_str("    let mut acc: u64 = 0;\n");
+    out.push_str("    let mut i: usize = 0;\n");
+    out.push_str("    while i < s.data.len()\n");
+    out.push_str("        invariant\n");
+    out.push_str("            i <= s.data.len(),\n");
+    out.push_str("            all_digits(s.data@.subrange(0, i as int)),\n");
+    out.push_str("            parse_be(s.data@.subrange(0, i as int)) == acc as nat,\n");
+    out.push_str("        decreases s.data.len() - i,\n");
+    out.push_str("    {\n");
+    out.push_str("        let b: u8 = s.data[i];\n");
+    // non-digit → LOUD None (handled-or-loud, never a wrong value).
+    out.push_str("        if b < 48 || b > 57 { return None; }\n");
+    out.push_str("        let digit: u64 = (b - 48) as u64;\n");
+    // overflow → LOUD None, BEFORE the `acc*10 + digit` u64 arithmetic would wrap.
+    out.push_str("        if acc > (u64::MAX - digit) / 10 { return None; }\n");
+    // The subrange/index ghost glue: the prefix of length i+1 restricted to its
+    // first i bytes is the length-i prefix, and its last byte is `b`; so the BE
+    // value of the length-(i+1) prefix is `parse_be(prefix_i) * 10 + (b - 48)`.
+    out.push_str("        let ghost old_i = i as int;\n");
+    out.push_str(
+        "        assert(s.data@.subrange(0, (i + 1) as int).subrange(0, old_i) =~= s.data@.subrange(0, old_i));\n",
+    );
+    out.push_str("        assert(s.data@.subrange(0, (i + 1) as int)[old_i] == b);\n");
+    out.push_str(
+        "        assert(parse_be(s.data@.subrange(0, (i + 1) as int)) == parse_be(s.data@.subrange(0, old_i)) * 10 + ((b - 48) as nat));\n",
+    );
+    out.push_str("        acc = acc * 10 + digit;\n");
+    out.push_str("        i = i + 1;\n");
+    out.push_str("    }\n");
+    // At exit i == s.data.len(), so the consumed prefix is the whole seq.
+    out.push_str("    assert(s.data@.subrange(0, i as int) =~= s.data@);\n");
+    out.push_str("    Some(acc)\n");
     out.push_str("}\n");
     Ok(out)
 }

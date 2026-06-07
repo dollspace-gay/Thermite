@@ -351,28 +351,40 @@ fn missing_arm_is_rejected_handled_or_loud() {
         .replace('-', "");
 
     let path = write_temp_program("missing_arm", program);
-    let (code, certs, _stderr) = run_check_json(&path, Some(0.0));
+    let (code, certs, stderr) = run_check_json(&path, Some(0.0));
     let _ = std::fs::remove_file(&path);
 
     assert_ne!(code, Some(0), "a dropped Option arm does not certify");
-    let cert = find_cert(&certs, "bad");
-    assert_eq!(
-        cert["level"],
-        Value::from("L0"),
-        "the missing-arm caller is rejected (handled-or-loud)"
-    );
-    let obligations = cert["obligations"].as_array().expect("obligations array");
-    let diagnostic_blob = obligations
-        .iter()
-        .filter(|o| o["status"].as_str() == Some("failed"))
-        .filter_map(|o| o["diagnostic"].as_str())
-        .collect::<String>()
-        .to_lowercase()
-        .replace('-', "");
+    // Cluster C7 (`.design/basis/09-option-result.md` REQ-3, #95): `Option` is now a
+    // SEEDED built-in variant set, so a `match` over it that drops the `None` arm is
+    // caught LOUDLY at the VALIDATOR (`SpecError::NonExhaustiveMatch`) BEFORE lowering
+    // — the compile-time tooth the oracle's `why` names ("enforced at validation").
+    // Pre-C7 `Option` was inert at the validator and the missing arm fell through to
+    // verus's E0004; now it is a structured spec reject (exit 2, no per-item cert).
+    // Either surface is the LOUD reject the oracle pins (`expect_error_contains:
+    // "NonExhaustive"`); accept whichever the toolchain emits — a validator Spec error
+    // in stderr (the C7 path) OR a verus E0004 in a failed obligation.
+    let validator_reject = stderr.to_lowercase().replace('-', "").contains(&expect);
+    let verus_reject = certs.iter().any(|c| {
+        c.get("item").and_then(|v| v.as_str()) == Some("bad")
+            && c["obligations"]
+                .as_array()
+                .map(|os| {
+                    os.iter()
+                        .filter(|o| o["status"].as_str() == Some("failed"))
+                        .filter_map(|o| o["diagnostic"].as_str())
+                        .collect::<String>()
+                        .to_lowercase()
+                        .replace('-', "")
+                        .contains(&expect)
+                })
+                .unwrap_or(false)
+    });
     assert!(
-        diagnostic_blob.contains(&expect),
-        "the reject carries the LOUD non-exhaustive diagnostic (oracle `{expect}`): \
-         got\n{diagnostic_blob}"
+        validator_reject || verus_reject,
+        "the dropped-None-arm caller carries the LOUD non-exhaustive reject (oracle \
+         `{expect}`) — either the C7 validator `NonExhaustiveMatch` (stderr) or a verus \
+         E0004 (failed obligation). got stderr:\n{stderr}\ncerts:\n{certs:?}"
     );
 }
 

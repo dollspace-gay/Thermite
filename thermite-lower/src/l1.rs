@@ -1759,6 +1759,22 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // borrow-`get` surface ops (native `Vec::get` returns `Option`); the wrapper
         // makes the whole op family runnable.
         Type::Vec(inner) => tvec_name(inner),
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): the L1 exec mirror
+        // of the built-in `Option<T>` / `Result<T, E>` is the Verus-/Rust-NATIVE
+        // generic — Rust's prelude carries them and their constructors
+        // `Some`/`None`/`Ok`/`Err`, so the L1 runnable form is the bare native type
+        // (no wrapper), exactly as the L3 lowering (`lower.rs::lower_type`). The
+        // element/error types lower recursively. This keeps L1 total over `Type`
+        // (no panic, REQ-6 / REQ-5).
+        Type::Option(inner) => {
+            let i = lower_type(inner)?;
+            Ok(format!("Option<{i}>"))
+        }
+        Type::Result(ok, err) => {
+            let o = lower_type(ok)?;
+            let e = lower_type(err)?;
+            Ok(format!("Result<{o}, {e}>"))
+        }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded owned
         // text primitive lowers to the newtype `TString` over `vstd::vec::Vec<u8>`
         // (the byte char model). The L1 exec mirror is the SAME wrapper name as the
@@ -1796,6 +1812,11 @@ fn program_uses_string_l1(program: &Program) -> bool {
             Type::Ref { inner, .. } => ty_is_string(inner),
             Type::Slice(inner) | Type::Box(inner) | Type::Vec(inner) => ty_is_string(inner),
             Type::Generic { arg, .. } => ty_is_string(arg),
+            // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): a `String`
+            // nested under an `Option<String>` / `Result<String, E>` is reached
+            // through the type argument(s), exactly as a `Box`/`Vec` inner is.
+            Type::Option(inner) => ty_is_string(inner),
+            Type::Result(ok, err) => ty_is_string(ok) || ty_is_string(err),
             Type::Prim(_) | Type::Unit | Type::Named(_) => false,
         }
     }

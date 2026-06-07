@@ -93,8 +93,8 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. fn f(x: &mut u64)
 - `&[T]` — a borrowed read-only slice view
   // e.g. fn sum(xs: &[u32]) -> u64
-- `NAME<T>` — one single-arg generic application (e.g. Option)
-  // e.g. -> Option<usize>
+- `NAME<T>` — one single-arg generic application
+  // e.g. -> Wrapper<usize>
 - `Name` — a bare user-declared struct/enum type name
   // e.g. fn area(s: Shape) -> u64
 - `Box<T>` — heap indirection for a recursive enum (carries fx alloc)
@@ -103,6 +103,10 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. let v: Vec<u64> = Vec::new();
 - `String` — a bounded owned run of u8 bytes (fx alloc)
   // e.g. let s: String = "hi";
+- `Option<T>` — the built-in optional (Some(v)/None; match/is; payload-in-contract via match-in-ens)
+  // e.g. -> Option<u64> ens match result { Some(v) => v == 5, None => true }
+- `Result<T, E>` — the built-in fallible (Ok(v)/Err(e); match/is; the loud error arm)
+  // e.g. -> Result<u64, ParseErr>
 
 **Primitive scalars**
 

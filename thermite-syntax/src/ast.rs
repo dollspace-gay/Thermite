@@ -53,6 +53,13 @@
 //! |---|---|---|
 //! | REQ-1 SURFACE (`Vec<T>` type node) | SHIPPED | `Type::Vec(Box<Type>)` (OQ-2 RESOLVED — dedicated node, mirroring `Type::Box`, NOT `Generic`); built by `parser::parse_type` on the contextual `Vec` ident; `v: Vec<u64>` parses (`conformance/vec_demo.th`, asserted by `thermite-lower/tests/collections_conformance.rs`). The `push`/`pop`/`get`/`len` operations reuse `Expr::MethodCall` (no new node). The vstd-`Vec` wrapper + capacity invariant + `fx alloc` are Stage 4 lowering (`lower.rs`). |
 //! | REQ-2 (`Map<K,V>` type) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut); `Map` deferred to a Stage-4 follow-up — `enum Type` has no `Map` node; the single-arg `Generic`/`Vec`/`Box` shapes do not carry a key+value. |
+//!
+//! ## Cluster C7 — built-in Option/Result SURFACE AST (`.design/basis/09-option-result.md`, #95)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 SURFACE (`Option<T>` type node) | SHIPPED | `Type::Option(Box<Type>)` (OQ-1 RESOLVED — dedicated node, mirroring `Type::Vec`/`Type::Box`, NOT a string-named `Generic`; the OQ-1 ripple updates every `Generic { name: "Option" }` reader). Built by `parser::parse_type` on the contextual `Option` ident. `Some(v)`/`None` construction reuses the EXISTING `Expr::Call`/`Path` nodes (no reshape); `match`/`is` reuse `Expr::Match`/`Expr::Is`. Consumer: `thermite-lower::lower::lower_type` (→ Verus `Option<T>`). Verified: `forge/tests/option_result_conformance.rs::ac1_...` (real verus L3). |
+//! | REQ-2 SURFACE (`Result<T, E>` two-arg type node) | SHIPPED | `Type::Result(Box<Type>, Box<Type>)` — the FIRST two-type-argument node in the grammar (the load-bearing parser change of C7; the single-arg `Generic` died at the comma). Built by `parser::parse_type`'s `"Result"` arm (`<T, E>` = a comma + a second type + `>`). `Ok(v)`/`Err(e)` reuse `Expr::Call`. Consumer: `thermite-lower::lower::lower_type` (→ Verus `Result<T, E>`). Verified: `forge/tests/option_result_conformance.rs::ac2_...` (`Result<u64, ParseErr>` parses + L3). |
 
 use crate::lexer::Span;
 
@@ -597,4 +604,24 @@ pub enum Type {
     /// way `&[T]` is `Ref` of `Slice`). Constructing / concatenating a `String`
     /// allocates, so the fn carries `fx alloc` (the Stage-1 [`Effect::Alloc`]).
     String,
+    /// The built-in optional primitive `Option<T>`
+    /// (`.design/basis/09-option-result.md` REQ-1, OQ-1 RESOLVED: a dedicated
+    /// `Type::Option(Box<Type>)` node, NOT a `Generic { name: "Option", .. }`,
+    /// so the lowerer/validator key `Option` on the NODE KIND — mirroring the
+    /// [`Type::Vec`]/[`Type::Box`]/[`Type::String`] dedicated-node precedent. This
+    /// makes `Option` STOP being a string-named `Generic` (the OQ-1 ripple: every
+    /// `Generic { name: "Option", .. }` reader is updated to read this node). Its
+    /// constructors `Some(v)`/`None` reuse the EXISTING [`Expr::Call`]/[`Expr::Path`]
+    /// nodes (no reshape); `match`/`is` reuse [`Expr::Match`]/[`Expr::Is`]. Lowers
+    /// to the Verus-native `Option<T>` (the `lower_type` `Option` arm).
+    Option(Box<Type>),
+    /// The built-in fallible primitive `Result<T, E>`
+    /// (`.design/basis/09-option-result.md` REQ-2, OQ-1 RESOLVED: a dedicated
+    /// TWO-type-argument node — the load-bearing AST/parser change of C7, the FIRST
+    /// two-arg type in the grammar). The single-arg [`Type::Generic`] cannot parse
+    /// `Result<u64, ParseErr>` (it dies at the comma). `Ok(v)`/`Err(e)` reuse the
+    /// EXISTING [`Expr::Call`] node; `match`/`is` reuse [`Expr::Match`]/[`Expr::Is`].
+    /// Lowers to the Verus-native `Result<T, E>` (the `lower_type` `Result` arm).
+    /// The `E` parameter is an ordinary user error enum (a [`Type::Named`]).
+    Result(Box<Type>, Box<Type>),
 }

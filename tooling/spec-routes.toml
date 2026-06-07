@@ -450,9 +450,89 @@ design = ".design/basis/07-strings.md"
 reference = ["conformance/string_demo.th"]
 conformance_ops = []
 
-# C7 Option/Result + payload-in-contract (issue #95)
+# C7 Option/Result + payload-in-contract (issue #95). These files gain the
+# built-in Option/Result variant registry, the Type::Option/Type::Result nodes +
+# the parse_type two-arg arm, the spec-match-in-ens payload projection, the new-
+# Type exhaustive-match arms, and the generated parse_u64 (the C4 07-strings.md
+# REQ-9 payoff). The external truth is the conformance test that shells the real
+# verus binary (forge/tests/option_result_conformance.rs) — the C7 cert/golden
+# corpus (conformance/option-result/cases.json) is orchestrator-authored
+# (R-CHAR-3), so `reference = []` until it lands (the hook requires a reference
+# read only for a NON-empty list; the verus-grounded test IS the C7 truth here).
 [[route]]
 crate_pattern = "thermite-spec/src/validator.rs"
 design = ".design/basis/09-option-result.md"
-reference = ["conformance/option-result"]
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/l2.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/review.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/mutation.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/vacuity.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/closure.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/strengthen.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-skill/src/generate.rs"
+design = ".design/basis/09-option-result.md"
+reference = []
 conformance_ops = []

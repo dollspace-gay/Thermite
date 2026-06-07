@@ -29,6 +29,13 @@
 //! | REQ-8 (operator tiers `% << >> & \| ^ !`, #92) | SHIPPED | `parse_mul`+`%`→`Rem`; new tiers `parse_shift`/`parse_bitand`/`parse_bitxor`/`parse_bitor` (threaded `parse_is`→`parse_bitor`→…→`parse_add`, `is` above the bitwise tiers); `parse_unary` builds the prefix `!`→`Unary { Not }`. Binary `&`/`\|` vs prefix ref/closure disambiguated by position. Tests `tests/operators_parse.rs`. |
 //! | REQ-9 (partiality not a parse concern, #92) | SHIPPED | `parse_mul`/`parse_shift` build the `Binary` node UNCONDITIONALLY — no `req` injection; the div-by-zero / shift-bound obligation is a §7 proof obligation (`ast.md` REQ-11), GROUNDED L0-without/L3-with in `forge/tests/operators_conformance.rs`. |
 //!
+//! ## Cluster C7 — Option/Result type parsing (`.design/basis/09-option-result.md`, #95)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (`Option<T>` parse) | SHIPPED | `parse_type`'s `"Option"` contextual-ident arm builds `Type::Option(Box<Type>)` (mirroring the `Box`/`Vec` arms) — `Option` STOPS being a string-named `Generic`. Verified: `forge/tests/option_result_conformance.rs::ac1_...`. |
+//! | REQ-2 (`Result<T, E>` two-arg parse) | SHIPPED | `parse_type`'s `"Result"` arm parses `<T, E>` — the FIRST two-type-argument type in the grammar (a `Comma` + a second `parse_type` + `Gt`), building `Type::Result(Box<Type>, Box<Type>)`. The single-arg `Generic` could not (it died at the comma). Verified: `forge/tests/option_result_conformance.rs::ac2_...` (`Result<u64, ParseErr>` parses). |
+//!
 //! ## #16 boundary-fn parser extension (`.design/boundary/ffi-boundary.md`)
 //!
 //! | REQ | Status | Evidence |
@@ -1901,6 +1908,37 @@ impl<'a> Parser<'a> {
                     // ordinary `MethodCall`s (the existing postfix `.` form) — no
                     // new surface; `==`/`+` are the existing `Binary` ops.
                     "String" => Ok(Type::String),
+                    // The built-in optional primitive `Option<T>`
+                    // (`.design/basis/09-option-result.md` REQ-1, OQ-1 RESOLVED: a
+                    // dedicated `Type::Option` node, mirroring `Box<T>`/`Vec<T>`).
+                    // `Option` STOPS being a string-named `Generic` so the
+                    // lowerer/validator key on the node kind. `Option` is a
+                    // contextual ident (NOT a reserved keyword), matched here by
+                    // name exactly as `Box`/`Vec` are. `Some(v)`/`None`/`match`/`is`
+                    // reuse the existing `Call`/`Path`/`Match`/`Is` nodes.
+                    "Option" => {
+                        self.consume(&TokKind::Lt, "`<` after `Option`")?;
+                        let inner = self.parse_type()?;
+                        self.consume(&TokKind::Gt, "`>` to close `Option<…>`")?;
+                        Ok(Type::Option(Box::new(inner)))
+                    }
+                    // The built-in fallible primitive `Result<T, E>`
+                    // (`.design/basis/09-option-result.md` REQ-2, OQ-1 RESOLVED: a
+                    // dedicated TWO-type-argument node — the FIRST two-arg type in
+                    // the grammar, the load-bearing parser change of C7). The
+                    // single-arg `Generic { name, arg }` dies at the comma; this arm
+                    // parses `<T, E>` (a comma + a second type + `>`). `Result` is a
+                    // contextual ident matched by name exactly as `Box`/`Vec`/
+                    // `Option`. `Ok(v)`/`Err(e)`/`match`/`is` reuse the existing
+                    // `Call`/`Match`/`Is` nodes.
+                    "Result" => {
+                        self.consume(&TokKind::Lt, "`<` after `Result`")?;
+                        let ok_ty = self.parse_type()?;
+                        self.consume(&TokKind::Comma, "`,` between `Result<T, E>` args")?;
+                        let err_ty = self.parse_type()?;
+                        self.consume(&TokKind::Gt, "`>` to close `Result<…, …>`")?;
+                        Ok(Type::Result(Box::new(ok_ty), Box::new(err_ty)))
+                    }
                     _ => {
                         // A generic application `NAME<T>` (e.g. `Option<usize>`),
                         // or a bare user-defined type name `Account`/`Shape`/

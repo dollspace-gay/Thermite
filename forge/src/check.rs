@@ -1343,6 +1343,18 @@ fn collect_type_adt_refs(
         thermite_syntax::Type::Generic { arg, .. } => {
             collect_type_adt_refs(arg, adt_decls, out);
         }
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-2): the built-in
+        // `Option<T>` / `Result<T, E>` recurse into their type argument(s) so a
+        // `Result<u64, ParseErr>` reaches the in-file error enum `ParseErr` (the
+        // `E` parameter is an ordinary user ADT), exactly as `Box<List>` reaches
+        // `List`. `Option`/`Result` themselves are built-ins, never an in-file ADT.
+        thermite_syntax::Type::Option(inner) => {
+            collect_type_adt_refs(inner, adt_decls, out);
+        }
+        thermite_syntax::Type::Result(ok, err) => {
+            collect_type_adt_refs(ok, adt_decls, out);
+            collect_type_adt_refs(err, adt_decls, out);
+        }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): `String` is a
         // built-in (NOT a user ADT) NULLARY type — no inner type to recurse into
         // and never an in-file ADT decl, so it references no ADT (the no-op leaf

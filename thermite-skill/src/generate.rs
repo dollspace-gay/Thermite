@@ -169,8 +169,22 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
         },
         Type::Generic { .. } => SkillFragment {
             fragment: "NAME<T>",
-            description: "one single-arg generic application (e.g. Option)",
-            example: "-> Option<usize>",
+            description: "one single-arg generic application",
+            example: "-> Wrapper<usize>",
+        },
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): the built-in
+        // optional / fallible primitives are dedicated `Type` nodes (NOT a
+        // string-named `Generic`), so each renders ITS OWN surface fragment — the
+        // construct + payload-in-contract surface an agent reads.
+        Type::Option(_) => SkillFragment {
+            fragment: "Option<T>",
+            description: "the built-in optional (Some(v)/None; match/is; payload-in-contract via match-in-ens)",
+            example: "-> Option<u64> ens match result { Some(v) => v == 5, None => true }",
+        },
+        Type::Result(_, _) => SkillFragment {
+            fragment: "Result<T, E>",
+            description: "the built-in fallible (Ok(v)/Err(e); match/is; the loud error arm)",
+            example: "-> Result<u64, ParseErr>",
         },
         Type::Named(_) => SkillFragment {
             fragment: "Name",
@@ -574,6 +588,13 @@ fn type_inventory() -> Vec<Type> {
         Type::Box(Box::new(Type::Unit)),
         Type::Vec(Box::new(Type::Unit)),
         Type::String,
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): one
+        // representative each of the built-in `Option<T>` / `Result<T, E>` nodes so
+        // the REQ-10 inventory renders their fragments (the `match` in
+        // `render_type_arm` is the exhaustiveness oracle; this list is the OUTPUT
+        // cover). The payload is the cheapest legal filler.
+        Type::Option(Box::new(Type::Unit)),
+        Type::Result(Box::new(Type::Unit), Box::new(Type::Unit)),
     ]
 }
 

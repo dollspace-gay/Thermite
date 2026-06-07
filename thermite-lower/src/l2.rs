@@ -457,6 +457,12 @@ fn type_label(ty: &Type) -> String {
         // diagnostic. L2 (Kani bounded model check) does not yet harness the
         // `TString` wrapper; this is the honest human label, NOT a stub.
         Type::String => "String".to_string(),
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-2): a descriptive
+        // human label for the built-in `Option<T>` / `Result<T, E>` inside an
+        // `Unsupported` L2 diagnostic. L2 (Kani bounded model check) does not yet
+        // harness these built-ins; this is the honest human label, NOT a stub.
+        Type::Option(_) => "Option<_>".to_string(),
+        Type::Result(_, _) => "Result<_, _>".to_string(),
     }
 }
 

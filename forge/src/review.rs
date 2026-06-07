@@ -602,6 +602,15 @@ fn render_type(ty: &Type) -> String {
         // `String` — the faithful declaration a reviewer reads. The honest neutral
         // value for the infallible surface renderer, NOT a stub.
         Type::String => "String".to_string(),
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): the SURFACE
+        // rendering of the built-in `Option<T>` / `Result<T, E>` is its surface text
+        // — the faithful declaration a reviewer reads (`Option<u64>`,
+        // `Result<u64, ParseErr>`). The honest neutral value for the infallible
+        // surface renderer, NOT a stub.
+        Type::Option(inner) => format!("Option<{}>", render_type(inner)),
+        Type::Result(ok, err) => {
+            format!("Result<{}, {}>", render_type(ok), render_type(err))
+        }
     }
 }
 

@@ -448,9 +448,13 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
             raw: "0".to_string(),
         }),
         Type::Prim(PrimType::Bool) => Some(Expr::BoolLit(false)),
-        Type::Generic { name, .. } if name == "Option" => {
-            Some(Expr::Path(vec!["None".to_string()]))
-        }
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1): `Option<T>` is now
+        // the dedicated `Type::Option` node (NOT a string-named `Generic`), so the
+        // early-return zero VALUE of an `Option`-returning fn is `None` keyed on the
+        // node kind — the OQ-1 ripple at this `Generic { name: "Option" }` reader.
+        // (A `Result`-returning fn has no canonical scalar zero — its `Err(e)` needs
+        // a typed reason — so it falls through to `None` here, like a bare `Slice`.)
+        Type::Option(_) => Some(Expr::Path(vec!["None".to_string()])),
         _ => None,
     }
 }
@@ -460,7 +464,10 @@ fn zero_desc(ret: &Type) -> &'static str {
     match ret {
         Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => "0",
         Type::Prim(PrimType::Bool) => "false",
-        Type::Generic { name, .. } if name == "Option" => "None",
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1): the description of
+        // the `Option`-returning early-return zero, keyed on `Type::Option` (the
+        // OQ-1 ripple — `Option` is no longer a string-named `Generic`).
+        Type::Option(_) => "None",
         _ => "<none>",
     }
 }

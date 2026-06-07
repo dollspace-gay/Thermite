@@ -68,7 +68,13 @@
 //! |---|---|---|
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | #94 cluster C4. `push_byte` ADDED to `BUILTIN_METHODS` (so a contract over a byte-builder result validates inside the §4.2 cage exactly as `concat`/`slice`); `from_byte` is an associated path-call `String::from_byte(b)` (an `Expr::Call`, no `BUILTIN_METHODS` entry needed). Both are constructing ops (`fx alloc`). Consumer: `pub fn validate` → `walk_expr_inner` (`BUILTIN_METHODS` allowlist). Verification: `forge/tests/string_format_conformance.rs` (the byte-builder certifies L3 / `effects: [alloc]` against real verus, the GROUNDED `4 verified, 0 errors` form). |
 //! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | #94 cluster C4 (+ blocker #96 MSB-first display). `to_string` ADDED to `BUILTIN_METHODS` (the `n.to_string()` method spelling); the GENERATED round-trip spec fns `parse_be`/`parse_le`/`pow10` are seeded into `spec_fns` (`GENERATED_SPEC_FNS`) so a contract `ens parse_be(result) == n` validates inside the cage as a named `spec fn` call. The lowerer (`thermite-lower::lower`) emits the `u64_to_string` exec (LSB build + reverse to MSB-first) + `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec + `lemma_parse_push` + the `parse_be(seq_reverse(s)) == parse_le(s)` bridge lemmas. Consumer: `pub fn validate` → `walk_call` (the `spec_fns` accept). Verification: `forge/tests/string_format_conformance.rs` (the MSB-first round-trip `parse_be(to_string(n)) == n` certifies L3, GROUNDED `17 verified, 0 errors`; an overclaim FAILS, non-vacuous, R-DEFER-9). |
-//! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | NOT-STARTED | #94 cluster C4, DEPENDS-ON-C7 — prereq blocker #95. The §4.2-cage spec sublanguage has no built-in `Option`/`Result` + payload-in-contract surface, so the success-arm round-trip cannot be spelled today. GROUNDED-feasible (real verus, `5 verified, 0 errors`); REQ-7/REQ-8 ship now, REQ-9 lands after C7. |
+//! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | SHIPPED | #95 cluster C7. `GENERATED_SPEC_FNS` += `all_digits`/`is_digit` (alongside `parse_be`/`parse_le`/`pow10`) so `parse_u64`'s round-trip witness validates inside the §4.2 cage as named `spec fn` calls; the lowerer emits the bodies. Consumer: `pub fn validate` → `walk_call`. Verified: `forge/tests/option_result_conformance.rs` (real verus `5 verified, 0 errors`). |
+//!
+//! ## REQ status — 09-option-result.md (Cluster C7, built-in Option/Result, issue #95)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (built-in-variant registry + spec-`match`-in-`ens` payload projection) | SHIPPED | `Validator::new` SEEDS the built-in variants `Some`/`None`→enum `Option` and `Ok`/`Err`→enum `Result` into `enums`/`variant_to_enum` (order `[Some, None]`/`[Ok, Err]`), AFTER the user pre-pass (a user re-decl wins via `or_insert`). With them registered, `Some(v)`/`Ok(v)` construction is accepted (the exec-body walk recurses `Call`/`Path`, no `UnknownVariant`), `match` over them is exhaustiveness-checked (`check_match_exhaustiveness` now infers `Option`/`Result` — both arms or a `Wildcard` required), and `r is Some` (`check_variant_ref`) accepts. The spec-`match`-in-`ens` payload projection needs NO new cage rule — `walk_expr_inner`'s `Match` arm already admits a flat `match` as a built-in (01-adts REQ-7), so `match result { Some(v) => <flat pred>, None => true }` in an `ens` is an accepted flat predicate. `GENERATED_SPEC_FNS` += `all_digits`/`is_digit`. Consumer: `pub fn validate`. Verified: `forge/tests/option_result_conformance.rs` (AC-1/AC-2 L3 construct + payload `ens`; AC-3 the broken payload REJECTED, non-vacuous). |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -168,7 +174,14 @@ const BUILTIN_METHODS: &[&str] = &[
 /// user-declared spec fns). This is the EXACT mechanism a user `spec fn` call uses —
 /// these are reserved generated names, so a user cannot shadow them (a clash would be
 /// a name collision the lowerer owns).
-const GENERATED_SPEC_FNS: &[&str] = &["parse_be", "parse_le", "pow10"];
+/// Cluster C7 (`.design/basis/09-option-result.md` REQ-3/REQ-5, issue #95) adds
+/// the `parse_u64` round-trip spec fns `parse_be` (already present, the C4
+/// big-endian value), `all_digits` (the all-bytes-are-`'0'..'9'` witness), and
+/// `is_digit` (the per-byte `48 <= b <= 57` predicate) — so the GENERATED
+/// `parse_u64`'s round-trip `ens match result { Some(v) => all_digits(s.data@) &&
+/// parse_be(s.data@) == v, None => true }` validates inside the §4.2 cage as named
+/// `spec fn` calls (the lowerer emits their bodies in `emit_parse_defs`).
+const GENERATED_SPEC_FNS: &[&str] = &["parse_be", "parse_le", "pow10", "all_digits", "is_digit"];
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so
@@ -612,6 +625,38 @@ impl Validator {
                     }
                 }
                 Item::Fn(_) | Item::SpecFn(_) => {}
+            }
+        }
+
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2/REQ-3, issue
+        // #95): SEED the BUILT-IN variants `Some`/`None` (enum `Option`) and
+        // `Ok`/`Err` (enum `Result`) into the SAME `enums`/`variant_to_enum`
+        // registry the user-`Item::Enum` pre-pass fills. This is the ONE validator
+        // change C7 needs: with the built-in variants registered, construction
+        // (`Some(v)`/`Ok(v)` reach the exec-body walk's `Call`/`Path` recursion, no
+        // longer an `UnknownVariant`), `match` arms over them (`check_match_-
+        // exhaustiveness` now infers `Option`/`Result` and requires BOTH arms or a
+        // wildcard), and `is` discrimination (`r is Some` via `check_variant_ref`)
+        // are ALL ACCEPTED — exactly as a user enum (01-adts REQ-5/REQ-6). The
+        // declaration ORDER pins the exhaustiveness `missing` set: `Option` is
+        // `[Some, None]`, `Result` is `[Ok, Err]`. The spec-`match`-in-`ens` payload
+        // projection needs NO new cage rule — `walk_expr_inner`'s `Match` arm
+        // already admits a flat `match` as a built-in (01-adts REQ-7), so a
+        // `match result { Some(v) => <flat pred>, None => true }` in a contract is
+        // already an accepted flat predicate once the variants are registered. A
+        // user `enum` named `Option`/`Result` (or a variant `Some`/`Ok`/…) is a
+        // re-declaration; last-writer-wins matches the existing duplicate-variant
+        // policy (the built-ins are seeded FIRST, so a user re-decl overrides — the
+        // user's intent wins, no silent shadow of a user type).
+        for (enum_name, variant_names) in [("Option", ["Some", "None"]), ("Result", ["Ok", "Err"])]
+        {
+            enums
+                .entry(enum_name.to_string())
+                .or_insert_with(|| variant_names.iter().map(|v| v.to_string()).collect());
+            for variant in variant_names {
+                variant_to_enum
+                    .entry(variant.to_string())
+                    .or_insert_with(|| enum_name.to_string());
             }
         }
 

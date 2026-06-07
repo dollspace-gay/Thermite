@@ -2,11 +2,12 @@
   "uuid": "3db44fb8-805d-49b3-92ef-436bc51174b8",
   "display_id": 91,
   "title": "Primitive completeness C1 (literal layer): \\x/\\r/\\0 + \\xNN string escapes, char literals, hex/binary int literals, negative literals",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T01:26:33.642152462Z",
-  "updated_at": "2026-06-07T01:26:35.053113827Z",
+  "updated_at": "2026-06-07T02:41:40.933322450Z",
+  "closed_at": "2026-06-07T02:41:40.933322450Z",
   "labels": [
     "feature"
   ]

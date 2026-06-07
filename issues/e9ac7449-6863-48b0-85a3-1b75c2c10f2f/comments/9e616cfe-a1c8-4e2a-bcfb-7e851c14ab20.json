@@ -1,0 +1,10 @@
+{
+  "uuid": "9e616cfe-a1c8-4e2a-bcfb-7e851c14ab20",
+  "issue_uuid": "e9ac7449-6863-48b0-85a3-1b75c2c10f2f",
+  "author": "Yffe",
+  "content": "C5 string search/transform: emit the six ops (contains/starts_with/ends_with/find/split/trim) as verified TString methods in emit_string_search_methods + the occurs_at/contains_sub/count_sep/sep_free/is_space spec fns + lemma_count_push in emit_string_search_defs (lower.rs), gated by program_uses_string_search. starts_with/ends_with/find/split/trim added to BUILTIN_METHODS + the 5 spec fns to GENERATED_SPEC_FNS (validator.rs). The contains name-clash is resolved by Rust receiver-type method resolution (TString::contains substring vs TVec::contains membership). split's Vec<String> wrapper woven via collect_vec_elem_types when a C5 op is used. L1 runnable mirrors added. Grounded each op with real verus first (predicates+find 14/0, split 7/0, trim 8/0); pinned a true/Some case per #101.",
+  "created_at": "2026-06-07T09:21:56.897640133Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAFGRJtMPKWV6wnzZ+PN4HdF2neqT2vnB+Fe0JB92iWLnqiLyYOjLGDQBMih9024TSxc5zHiETgfilPFxrkt8fCA=="
+}

@@ -2,11 +2,12 @@
   "uuid": "e3243a2d-bc66-4f96-a9d5-6744eb85b6a1",
   "display_id": 115,
   "title": "C10 REQ-1: tuple destructuring let (x,y)=e — no Pattern::Tuple in ast.rs; parse_let takes only an Ident name. Desugar to let t=e; let x=t.0; let y=t.1 (Expr::TupleProj shipped). GROUNDED L3 (.design/basis/11-ergonomics.md AC-1).",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T19:49:05.213994471Z",
-  "updated_at": "2026-06-07T19:49:06.882154423Z",
+  "updated_at": "2026-06-07T21:31:22.254420041Z",
+  "closed_at": "2026-06-07T21:31:22.254420041Z",
   "labels": [
     "blocker"
   ]

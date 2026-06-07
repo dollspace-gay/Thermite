@@ -2,11 +2,12 @@
   "uuid": "07ac7b46-eb9f-469f-95c4-08d383fc35d9",
   "display_id": 112,
   "title": "C10 ergonomics: tuple destructuring (let (x,y)=e) + for-loops + match guards (x if c) + or-patterns (1|2) + if-let/while-let (sugar over the shipped while/match/projection)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T19:41:15.193929636Z",
-  "updated_at": "2026-06-07T19:41:16.672353436Z",
+  "updated_at": "2026-06-07T20:51:23.399311275Z",
+  "closed_at": "2026-06-07T20:51:23.399311275Z",
   "labels": [
     "feature"
   ]

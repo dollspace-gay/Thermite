@@ -1,0 +1,10 @@
+{
+  "uuid": "8fb96450-5f9f-415a-8426-a36a4bb8eada",
+  "issue_uuid": "bf7de490-159f-43ca-b0ac-9079e8ca955c",
+  "author": "Yffe",
+  "content": "RESOLVED: examples/editor/run.sh builds (forge build --entry run --no-sandbox) + launches the editor (self-sets raw mode via extern-C termios; no stty). The editor builds+runs interactively (4277bf1, #90). The stable-path concern is superseded by run.sh + the self-contained binary. README documents the keymap + verified-vs-trusted split.",
+  "created_at": "2026-06-07T17:12:01.266776985Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACzAn4P6J+KNajDlhd2v6odA5RbtwGb+Onq5T6GwPqBTbw8JlwVEU7Go98Doa1WVFU1TlvTIp+3SkMn3no3ElAA=="
+}

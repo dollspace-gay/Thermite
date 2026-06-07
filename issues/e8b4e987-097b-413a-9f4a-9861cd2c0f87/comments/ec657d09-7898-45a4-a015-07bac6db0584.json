@@ -1,0 +1,10 @@
+{
+  "uuid": "ec657d09-7898-45a4-a015-07bac6db0584",
+  "issue_uuid": "e8b4e987-097b-413a-9f4a-9861cd2c0f87",
+  "author": "Yffe",
+  "content": "SHIPPED (5fd42f0). The 3 editor-shell lowering gaps: L1 inv field-rewrite recurses through MethodCall/Call; L1 byte_at/slice u64->usize coercion (mirrors #86 on the build side); fx-diverge termination exemption (#[verifier::exec_allows_no_decreases_clause] + suppress loop decreases, diverge-ONLY). Verified via the editor building + the critic's audit of deed870. sum/binary_search still prove termination -> L3.",
+  "created_at": "2026-06-07T00:48:52.830808199Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAt33CpOawB7UmMXdY1Nz/Ugymb8QyKBvsq6g09XJ/uvMhQITkbISUv1/bqAkTE+UQ2ae+W348uKx4zoZHPF8UBA=="
+}

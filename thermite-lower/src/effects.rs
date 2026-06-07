@@ -600,6 +600,17 @@ fn check_expr<'a>(
             d,
             errors,
         ),
+        // The prefix `!` (#92): descend into the operand so an effect-bearing call
+        // under a `!` (e.g. `!has_net_access()`) is still subsumption-checked.
+        Expr::Unary { expr, .. } => check_expr(
+            expr,
+            caller_fx,
+            caller_name,
+            caller_span,
+            resolve,
+            d,
+            errors,
+        ),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, no calls — it contributes no effect-row obligation, so
         // it joins the no-op leaf arm alongside `IntLit`/`BoolLit`. (Materializing

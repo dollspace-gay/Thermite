@@ -19,9 +19,10 @@
 //! | REQ-3 — VALUE (int literals with `_` stripped) | SHIPPED | `lex_int` strips `_` and accumulates `value`; `1_000_000` → value `1000000` (test `int_literal_underscores_strip_to_value` in `tests/conformance.rs`). |
 //! | REQ-3 — RAW (verbatim source slice on the token, #37) | SHIPPED | `lex_int` ALSO captures the verbatim digit+`_` run as `raw` (`source[i..last_digit]`); `TokKind::Int { value, raw }` so `1_000_000` lexes to value `1000000` AND raw `"1_000_000"` (test `int_literal_preserves_raw`). Consumer: `parse_primary`/pattern-literal in `parser.rs`. |
 //! | REQ-4 (`#[slag]` tokenization) | SHIPPED | `#[` token + string literals via `lex_string`; consumed by `parse_slag`. The `lex_string` escape table (`.design/basis/07-strings.md` REQ-6, #91 cluster 1) decodes `\n`/`\t`/`\r`/`\0`/`\"`/`\\` + `\xNN` (`0x00..=0x7F`) to their BYTES; an unknown/malformed/high-byte escape is a STRUCTURED `SyntaxError` (not the old silent `other as char` swallow), recovering past the close-quote. Verified by `tests/string_escapes.rs` + `forge/tests/literal_layer.rs` (`"\x1b".byte_at(0) == 27` L3). |
-//! | NOTE (char + hex/binary int literals — #91 cluster 1) | NOT-STARTED | gaps 2/3 of #91 add `'A'` char literals and `0x`/`0b` int literals. These ADD lexer token grammar that THIS doc's REQ-1 ("no char tokens exist") and REQ-3 ("an integer literal is a run of ASCII digits") currently FORBID; per goal.md R-SPEC-4 they require a `.design/syntax/lexer.md` AMENDMENT (acto-doc-author) before implementation — `lexer.md` is NOT on the #91 cluster-1 manifest. Reported for manifest expansion; deferred until re-authorized. The negative-literal gap (4) is deferred to the signed-int cluster (no signed `PrimType` exists — `U32`/`U64`/`Usize`/`Bool` only — so a negative literal has no sound typed home in v1). |
+//! | REQ-3 — HEX/BINARY (radix spellings, #92) | SHIPPED | `lex_int` dispatches on `0x`/`0X`/`0b`/`0B` (`radix_digit`) into the SAME `TokKind::Int`: `0x1b`→27, `0b101`→5, `0xFF_FF`→65535, verbatim raw preserved (#37). A bare `0x`/`0b2` is a `SyntaxError`. Tests `tests/operators_parse.rs`. The radix is a surface spelling only — every downstream `Int` consumer sees a plain `u128`. |
+//! | REQ-9 (char literals → byte `u8` via `Int` token, #91/#92) | SHIPPED | the `'` branch in `tokenize` → `lex_char` produces `TokKind::Int { value: <byte>, raw }` (NO new token kind / Expr variant): `'A'`→65, `'\n'`→10, `'\x1b'`→27. A multi-byte/non-ASCII/empty/unterminated char (or `\xNN >= 0x80`) is a structured `SyntaxError` (never a panic). GROUNDED: `'A'`==65 certifies L3 (`forge/tests/operators_conformance.rs`). |
 //! | REQ-5 (comments + whitespace insignificant) | SHIPPED | `skip_trivia` consumes `[ \t\r\n]+` and `//`-to-EOL, emitting nothing. |
-//! | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators before 1-char (`<=`, `==`, `->`, `::`, `..`, `#[`). |
+//! | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators before 1-char (`<=`, `==`, `->`, `::`, `..`, `#[`, and the #92 shifts `<<`/`>>`); the single-char branch adds `%`→`Percent` / `^`→`Caret` (#92). |
 //! | REQ-7 (spans) | SHIPPED | every `Token` carries a `Span { start, len }`; used by parser diagnostics + addressing. |
 //! | REQ-8 (Result discipline) | SHIPPED | `tokenize` returns `(Vec<Token>, Vec<SyntaxError>)`; stray chars become diagnostics, no panic. |
 
@@ -113,6 +114,8 @@ pub enum TokKind {
     OrOr,     // ||
     ColonCol, // ::
     DotDot,   // ..
+    Shl,      // <<  (#92)
+    Shr,      // >>  (#92)
 
     // Single-char punctuation.
     LBrace,
@@ -132,6 +135,8 @@ pub enum TokKind {
     Minus,
     Star,
     Slash,
+    Percent, // %  (#92)
+    Caret,   // ^  (#92)
     Amp,
     Pipe,
     Bang,
@@ -205,9 +210,35 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
                 }
             }
         } else if c.is_ascii_digit() {
-            let (tok, next) = lex_int(bytes, i);
-            tokens.push(tok);
-            i = next;
+            match lex_int(bytes, i) {
+                Ok((tok, next)) => {
+                    tokens.push(tok);
+                    i = next;
+                }
+                Err(err) => {
+                    // A malformed radix literal (`0x` with no hex digit, `0b2`):
+                    // structured diagnostic, resume past the scanned bytes (REQ-8).
+                    let next = err.span().end().max(i + 1).min(n);
+                    errors.push(err);
+                    i = next;
+                }
+            }
+        } else if c == b'\'' {
+            // A char literal `'A'` (lexer.md REQ-9, #91/#92) lexes into the SAME
+            // integer-literal token (NO new token kind / Expr variant). A
+            // malformed char (`''`, `'AB'`, non-ASCII, bad escape) is a structured
+            // diagnostic that resyncs past the literal — never a panic.
+            match lex_char(bytes, i) {
+                Ok((tok, next)) => {
+                    tokens.push(tok);
+                    i = next;
+                }
+                Err(err) => {
+                    let next = err.recover_to;
+                    errors.push(err.error);
+                    i = next;
+                }
+            }
         } else if is_ident_start(c) {
             let (tok, next) = lex_word(bytes, i);
             tokens.push(tok);
@@ -289,39 +320,225 @@ fn lex_word(bytes: &[u8], i: usize) -> (Token, usize) {
 }
 
 /// Lex an integer literal with optional `_` separators (lexer.md REQ-3). The
-/// `_` are stripped while accumulating the numeric `value` (VALUE, UNCHANGED);
-/// the verbatim source slice from the start to the last digit (separators
-/// included) is captured as `raw` (RAW, #37). A trailing/leading `_` adjacent
-/// to the digit run is in NEITHER value nor raw: both end at `last_digit`, so
-/// `raw` is exactly the span's source slice (`source[i..last_digit]`).
-fn lex_int(bytes: &[u8], i: usize) -> (Token, usize) {
+/// `_` are stripped while accumulating the numeric `value` (VALUE); the verbatim
+/// source slice (separators + any `0x`/`0b` prefix included) is captured as `raw`
+/// (RAW, #37).
+///
+/// The radix is chosen by the prefix at the start of a digit run (lexer.md REQ-3,
+/// #92): `0x`/`0X` → hexadecimal, `0b`/`0B` → binary, otherwise decimal. A hex /
+/// binary literal carries the SAME integer `value` as the equivalent decimal
+/// (`0x1b` → 27, `0b101` → 5) — the radix is a surface spelling only, never a
+/// distinct token kind. A `0x`/`0b` prefix REQUIRES at least one radix digit; a
+/// bare prefix with no following digit is an `Err(SyntaxError)` (lexer.md REQ-8),
+/// NOT a `0` followed by an `x`/`b` identifier. A trailing/leading `_` adjacent to
+/// the digit run is in neither value nor raw (both end at the last radix digit).
+fn lex_int(bytes: &[u8], i: usize) -> Result<(Token, usize), SyntaxError> {
     let n = bytes.len();
-    let mut j = i;
+    // Radix prefix dispatch (#92). `0x`/`0X` → 16, `0b`/`0B` → 2, else 10. The
+    // prefix is two bytes; the digit scan begins after it.
+    let (radix, digits_start): (u32, usize) = if i + 1 < n && bytes[i] == b'0' {
+        match bytes[i + 1] {
+            b'x' | b'X' => (16, i + 2),
+            b'b' | b'B' => (2, i + 2),
+            _ => (10, i),
+        }
+    } else {
+        (10, i)
+    };
+
+    let mut j = digits_start;
     let mut value: u128 = 0;
-    let mut last_digit = i;
+    let mut last_digit = digits_start;
+    let mut saw_digit = false;
     while j < n {
         let c = bytes[j];
-        if c.is_ascii_digit() {
-            value = value.saturating_mul(10).saturating_add((c - b'0') as u128);
+        if let Some(d) = radix_digit(c, radix) {
+            value = value
+                .saturating_mul(radix as u128)
+                .saturating_add(d as u128);
             j += 1;
             last_digit = j;
+            saw_digit = true;
         } else if c == b'_' {
             j += 1;
         } else {
             break;
         }
     }
-    // A trailing `_` (e.g. `1_`) is not part of the literal: end at last digit.
-    // The digit-run bytes are ASCII (`is_ascii_digit` + `_`), so this slice is
-    // valid UTF-8 — the verbatim raw including interior `_` separators.
+
+    // A `0x`/`0b` prefix with no radix digit (`0x`, `0b2`) is a malformed literal,
+    // not `0` + ident `x`/`b` (lexer.md REQ-3/REQ-8). Span the prefix + any bytes
+    // scanned; recovery resumes past it (the caller advances to the returned end).
+    if radix != 10 && !saw_digit {
+        let bad_end = (digits_start).max(j).min(n);
+        let bad: String = bytes[i..bad_end].iter().map(|&b| b as char).collect();
+        return Err(SyntaxError::stray_char(bad, Span::new(i, bad_end - i)));
+    }
+
+    // The literal raw is `source[i..last_digit]` (prefix + interior `_` included,
+    // trailing `_` excluded). The bytes are ASCII (digits/`_`/`0x`/`0b`), valid UTF-8.
     let raw: String = bytes[i..last_digit].iter().map(|&b| b as char).collect();
-    (
+    Ok((
         Token {
             kind: TokKind::Int { value, raw },
             span: Span::new(i, last_digit - i),
         },
         last_digit,
-    )
+    ))
+}
+
+/// Map an ASCII digit to its value `0..radix`, or `None` if it is not a digit of
+/// that radix. Supports radix 2 (binary), 10 (decimal), and 16 (hexadecimal) —
+/// the three integer-literal spellings (lexer.md REQ-3, #92).
+fn radix_digit(c: u8, radix: u32) -> Option<u32> {
+    let d = match c {
+        b'0'..=b'9' => (c - b'0') as u32,
+        b'a'..=b'f' => (c - b'a') as u32 + 10,
+        b'A'..=b'F' => (c - b'A') as u32 + 10,
+        _ => return None,
+    };
+    if d < radix {
+        Some(d)
+    } else {
+        None
+    }
+}
+
+/// A char-lex failure carrying the diagnostic and where to resume (mirrors
+/// [`StringLexError`]).
+struct CharLexError {
+    error: SyntaxError,
+    recover_to: usize,
+}
+
+/// Lex a char literal `'A'` (lexer.md REQ-9, #91/#92) into the SAME
+/// `TokKind::Int { value, raw }` token as a numeric literal — NO new token kind,
+/// NO new Expr variant. `value` is the BYTE value of the character (`'A'` → 65,
+/// `'\n'` → 10, `'\x1b'` → 27); `raw` is the verbatim source including the quotes
+/// (`"'A'"`). The char model is byte-level `u8` (consistent with the 07-strings
+/// byte model). A `\`-escape is decoded by the SAME escape table the string lexer
+/// uses (`\n`/`\t`/`\r`/`\0`/`\\`/`\'` + `\xNN` with `NN <= 0x7F`).
+///
+/// A char literal that is multi-byte / non-ASCII (a codepoint `>= 0x80`), empty
+/// (`''`), unterminated, or whose `\xNN >= 0x80` is a STRUCTURED `SyntaxError`
+/// (lexer.md REQ-8/REQ-9) — never a silent mis-lex, never a panic. (§4.4 removes
+/// lifetimes, so `'` ALWAYS begins a char literal — there is no `'a` lifetime to
+/// disambiguate against.)
+fn lex_char(bytes: &[u8], i: usize) -> Result<(Token, usize), CharLexError> {
+    let n = bytes.len();
+    // Helper: the verbatim raw from `i` to `end` (exclusive), ASCII-faithful.
+    let raw_of =
+        |end: usize| -> String { bytes[i..end.min(n)].iter().map(|&b| b as char).collect() };
+    // An empty/unterminated literal at EOF: `'` with nothing after.
+    if i + 1 >= n {
+        return Err(CharLexError {
+            error: SyntaxError::stray_char(raw_of(n), Span::new(i, n - i)),
+            recover_to: n,
+        });
+    }
+    let (byte, content_end): (u8, usize) = if bytes[i + 1] == b'\\' {
+        // An escape `'\n'`, `'\xNN'`, etc. — decode via the shared table.
+        if i + 2 >= n {
+            return Err(CharLexError {
+                error: SyntaxError::stray_char(raw_of(n), Span::new(i, n - i)),
+                recover_to: n,
+            });
+        }
+        let esc = bytes[i + 2];
+        let single: Option<u8> = match esc {
+            b'n' => Some(10),
+            b't' => Some(9),
+            b'r' => Some(13),
+            b'0' => Some(0),
+            b'\\' => Some(b'\\'),
+            b'\'' => Some(b'\''),
+            _ => None,
+        };
+        if let Some(b) = single {
+            (b, i + 3)
+        } else if esc == b'x' {
+            // `\xNN` — exactly two hex digits; ASCII range `0x00..=0x7F` only (the
+            // byte model, mirroring `lex_string`). A high byte (`>= 0x80`) or a
+            // malformed escape is a structured error.
+            match parse_hex_escape(bytes, i + 3) {
+                Some(b) if b < 0x80 => (b, i + 5), // `'` `\` `x` + two hex digits
+                Some(_) | None => {
+                    let bad_end = (i + 5).min(n);
+                    return Err(CharLexError {
+                        error: SyntaxError::stray_char(raw_of(bad_end), Span::new(i, bad_end - i)),
+                        recover_to: resume_past_char(bytes, bad_end),
+                    });
+                }
+            }
+        } else {
+            // An unknown escape (`'\z'`): structured error, never a silent swallow.
+            let bad_end = (i + 3).min(n);
+            return Err(CharLexError {
+                error: SyntaxError::stray_char(raw_of(bad_end), Span::new(i, bad_end - i)),
+                recover_to: resume_past_char(bytes, bad_end),
+            });
+        }
+    } else {
+        let c = bytes[i + 1];
+        // A non-ASCII / multi-byte char (`'é'`, codepoint >= 0x80) is NOT a single
+        // `u8` in v1 — a structured error (it awaits the `Vec<u8>` reshape that
+        // defers high-byte string escapes). An ASCII char is its own byte value.
+        if c >= 0x80 {
+            let bad_end = resume_past_char(bytes, i + 1);
+            return Err(CharLexError {
+                error: SyntaxError::stray_char(raw_of(bad_end), Span::new(i, bad_end - i)),
+                recover_to: bad_end,
+            });
+        }
+        // An empty literal `''`: the char position is immediately the close quote.
+        if c == b'\'' {
+            return Err(CharLexError {
+                error: SyntaxError::stray_char(raw_of(i + 2), Span::new(i, 2)),
+                recover_to: i + 2,
+            });
+        }
+        (c, i + 2)
+    };
+
+    // The closing quote MUST follow the single char/escape; anything else (a
+    // multi-char literal `'AB'`, a missing close) is a structured error.
+    if content_end < n && bytes[content_end] == b'\'' {
+        let end = content_end + 1;
+        Ok((
+            Token {
+                kind: TokKind::Int {
+                    value: byte as u128,
+                    raw: raw_of(end),
+                },
+                span: Span::new(i, end - i),
+            },
+            end,
+        ))
+    } else {
+        let bad_end = resume_past_char(bytes, content_end);
+        Err(CharLexError {
+            error: SyntaxError::stray_char(raw_of(bad_end), Span::new(i, bad_end - i)),
+            recover_to: bad_end,
+        })
+    }
+}
+
+/// After a malformed char literal, resume scanning past the next `'` (if any) so
+/// per-item recovery resyncs at a token boundary (mirrors [`resume_past_string`]).
+/// Bounded by a small window so a stray `'` does not swallow the rest of the file.
+fn resume_past_char(bytes: &[u8], from: usize) -> usize {
+    let n = bytes.len();
+    let mut k = from;
+    // Scan a bounded window for a closing quote; cap so an unmatched `'` resyncs
+    // promptly rather than consuming the program (per-item recovery, REQ-8).
+    let limit = (from + 4).min(n);
+    while k < limit {
+        if bytes[k] == b'\'' {
+            return k + 1;
+        }
+        k += 1;
+    }
+    from
 }
 
 /// A string-lex failure carrying the diagnostic and where to resume.
@@ -484,6 +701,12 @@ fn lex_punct(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
             (b'|', b'|') => Some(TokKind::OrOr),
             (b':', b':') => Some(TokKind::ColonCol),
             (b'.', b'.') => Some(TokKind::DotDot),
+            // Shift operators (#92): `<<`/`>>` win over single `<`/`>` by maximal
+            // munch (REQ-6). `<=`/`>=` are distinct pairs (the second byte differs),
+            // so the order among these two-char arms is irrelevant — `>>` is `>` `>`,
+            // `>=` is `>` `=`; both are matched here before any single-char fallback.
+            (b'<', b'<') => Some(TokKind::Shl),
+            (b'>', b'>') => Some(TokKind::Shr),
             _ => None,
         };
         if let Some(kind) = two {
@@ -509,6 +732,8 @@ fn lex_punct(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
         b'-' => TokKind::Minus,
         b'*' => TokKind::Star,
         b'/' => TokKind::Slash,
+        b'%' => TokKind::Percent, // #92
+        b'^' => TokKind::Caret,   // #92
         b'&' => TokKind::Amp,
         b'|' => TokKind::Pipe,
         b'!' => TokKind::Bang,

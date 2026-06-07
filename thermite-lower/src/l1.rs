@@ -55,7 +55,8 @@ use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
     BinOp, Block, EnumItem, Expr, FnItem, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param,
-    Pattern, PrimType, Program, SlicePat, SpecFnItem, Stmt, StructItem, Type, VariantShape,
+    Pattern, PrimType, Program, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp,
+    VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -498,6 +499,8 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         }
         Expr::Is { scrutinee, .. } => collect_combinators_in_expr(scrutinee, span, acc),
         Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
+        // The prefix `!` (#92): descend into the operand.
+        Expr::Unary { expr, .. } => collect_combinators_in_expr(expr, span, acc),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, so it references no combinator — the no-op leaf arm
         // alongside `IntLit`/`BoolLit`.
@@ -902,6 +905,11 @@ fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
             variant: variant.clone(),
         },
         Expr::Deref(inner) => Expr::Deref(rec(inner)),
+        // The prefix `!` (#92): rebuild faithfully, recursing the operand.
+        Expr::Unary { op, expr } => Expr::Unary {
+            op: *op,
+            expr: rec(expr),
+        },
     }
 }
 
@@ -951,6 +959,8 @@ fn expr_references_ident(expr: &Expr, ident: &str) -> bool {
         }
         Expr::Is { scrutinee, .. } => expr_references_ident(scrutinee, ident),
         Expr::Deref(inner) => expr_references_ident(inner, ident),
+        // The prefix `!` (#92): an ident can be referenced under it (`!done`).
+        Expr::Unary { expr, .. } => expr_references_ident(expr, ident),
     }
 }
 
@@ -1367,6 +1377,19 @@ pub(crate) fn lower_expr_exec(
             let r = lower_binary_operand(rhs, *op, false, d, span, variants)?;
             Ok(format!("{l} {} {r}", binop(*op)))
         }
+        Expr::Unary { op, expr: inner } => {
+            // The prefix `!` (#92, L1 exec mirror of `lower.rs`): Rust's `!` is
+            // type-directed (logical-not on `bool`, bitwise-not on an integer),
+            // exactly like Verus's, so the bare `!` lowers per the operand type. A
+            // binary operand is parenthesized so the prefix binds only the operand.
+            let UnaryOp::Not = op;
+            let inner_src = lower_expr_exec(inner, d, span, variants)?;
+            if matches!(inner.as_ref(), Expr::Binary { .. }) {
+                Ok(format!("!({inner_src})"))
+            } else {
+                Ok(format!("!{inner_src}"))
+            }
+        }
         Expr::Index { base, index } => lower_index_exec(base, index, d, span, variants),
         Expr::Cast { expr, ty } => {
             let e = lower_expr_exec(expr, d, span, variants)?;
@@ -1577,6 +1600,13 @@ fn binop(op: BinOp) -> &'static str {
         BinOp::Sub => "-",
         BinOp::Mul => "*",
         BinOp::Div => "/",
+        // #92 integer operators (the L1 exec mirror of `lower.rs::binop`).
+        BinOp::Rem => "%",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",
@@ -1589,14 +1619,18 @@ fn binop(op: BinOp) -> &'static str {
 }
 
 /// Binding-power tier of a binary operator (higher binds tighter). Mirrors
-/// `lower.rs::precedence`.
+/// `lower.rs::precedence` (the pinned standard-Rust precedence, #92).
 fn precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 3,
-        BinOp::Add | BinOp::Sub => 4,
-        BinOp::Mul | BinOp::Div => 5,
+        BinOp::BitOr => 4,
+        BinOp::BitXor => 5,
+        BinOp::BitAnd => 6,
+        BinOp::Shl | BinOp::Shr => 7,
+        BinOp::Add | BinOp::Sub => 8,
+        BinOp::Mul | BinOp::Div | BinOp::Rem => 9,
     }
 }
 
@@ -1764,6 +1798,8 @@ fn expr_has_str_lit_l1(expr: &Expr) -> bool {
         }
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_str_lit_l1(v)),
         Expr::Is { scrutinee, .. } => expr_has_str_lit_l1(scrutinee),
+        // The prefix `!` (#92): a string literal could sit under it; descend.
+        Expr::Unary { expr, .. } => expr_has_str_lit_l1(expr),
     }
 }
 

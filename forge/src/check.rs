@@ -1162,6 +1162,8 @@ fn collect_expr_spec_fn_calls(
             }
         }
         Expr::Is { scrutinee, .. } => collect_expr_spec_fn_calls(scrutinee, spec_decls, out),
+        // The prefix `!` (#92): a spec-fn call could sit under it (`!is_sorted(xs)`).
+        Expr::Unary { expr, .. } => collect_expr_spec_fn_calls(expr, spec_decls, out),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, so it calls no spec fn — the no-op leaf arm.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -1437,6 +1439,8 @@ fn collect_expr_adt_refs(
         }
         Expr::Ref { expr, .. } => collect_expr_adt_refs(expr, adt_decls, out),
         Expr::Deref(inner) => collect_expr_adt_refs(inner, adt_decls, out),
+        // The prefix `!` (#92): an ADT ref could sit under it; descend the operand.
+        Expr::Unary { expr, .. } => collect_expr_adt_refs(expr, adt_decls, out),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, no path — it references no ADT (the no-op leaf arm).
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}

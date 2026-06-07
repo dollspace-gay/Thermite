@@ -472,6 +472,8 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
             variant: _,
         } => collect_callee_names(scrutinee, out),
         Expr::Deref(inner) => collect_callee_names(inner, out),
+        // The prefix `!` (#92): a spec-fn name could be referenced under it; descend.
+        Expr::Unary { expr, .. } => collect_callee_names(expr, out),
         // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF: no
         // sub-expression, no callee path — it references no spec fn (the no-op
         // leaf arm alongside `IntLit`/`BoolLit`).

@@ -422,6 +422,8 @@ fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
         }
         Expr::Is { scrutinee, .. } => walk_expr(scrutinee, in_file, out),
         Expr::Deref(inner) => walk_expr(inner, in_file, out),
+        // The prefix `!` (#92): an in-file call could sit under it; descend.
+        Expr::Unary { expr, .. } => walk_expr(expr, in_file, out),
         // Leaves: no nested call to find. A string literal
         // (`.design/basis/07-strings.md` REQ-1) is a LEAF — no sub-expression, no
         // callee — so it contributes no out-edge.

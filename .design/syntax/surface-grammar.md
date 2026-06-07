@@ -288,13 +288,13 @@ standalone grammar binary; the parser is the executable grammar.
 | REQ-3 (loop/while + inv* + one dec) | SHIPPED | `parse_loop` requires `inv`+ then one `dec`. |
 | REQ-4 (statement grammar) | SHIPPED | `parse_block`/`parse_let`/`parse_return`/`parse_if_stmt` + tail expr. |
 | REQ-5 — base expr grammar | SHIPPED | precedence ladder `parse_or`→…→`parse_postfix`→`parse_primary` in `parser.rs`; corpus exprs round-trip. |
-| REQ-5 — char/hex/binary literals (#91/#92) | NOT-STARTED | blocker #92. The lexer produces no `'A'`/`0x`/`0b` token yet (`lexer.md` REQ-3/REQ-9); the parser's `parse_primary` literal arm consumes only the decimal `TokKind::Int`. Builder: lexer emits `Int` for all radices+char, parser arm unchanged (same `IntLit`). |
-| REQ-5 — operators `% << >> & \| ^ !` (#92) | NOT-STARTED | blocker #92. `parser.rs` ladder has `parse_mul` (`*`/`/` only — no `%`), no shift/bitwise tiers, and no `!` prefix arm (`parse_ref` handles `&`/`&mut`/`*` only). Builder adds the tiers + `Unary` prefix (`ast.md` REQ-10 ripple). |
+| REQ-5 — char/hex/binary literals (#91/#92) | SHIPPED | the lexer emits the SAME `TokKind::Int` for `'A'`/`0x1b`/`0b101` (`lexer.rs` `lex_char`/`lex_int`); `parse_primary`'s literal arm is UNCHANGED (it consumes any `Int`), so all radices+char build `Expr::IntLit` (test `char_hex_binary_parse_to_intlit_no_new_variant`). `''`/`0x`/`'é'` are lex errors (`malformed_literals_are_structured_diagnostics_not_panic`). |
+| REQ-5 — operators `% << >> & \| ^ !` (#92) | SHIPPED | `parser.rs` threads `parse_mul`(+`%`)→`parse_shift`→`parse_bitand`→`parse_bitxor`→`parse_bitor` between comparison and addition, with `is` above the bitwise tiers (OQ-3) and a `parse_unary` (`!` prefix) above `parse_ref`. Each builds the `ast.md` REQ-10 node (`each_new_operator_parses_to_its_binop_node`). |
 | REQ-6 (one call syntax) | SHIPPED | `parse_postfix` + `parse_path_expr` (`::`→`Path`). |
 | REQ-7 (pattern grammar) | SHIPPED | `parse_pattern`/`parse_slice_pattern`/`parse_path_pattern`. |
 | REQ-8 (type grammar) | SHIPPED | `parse_type` covers prims/`&T`/`&mut T`/`&[T]`/`Name<T>`. |
 | REQ-9 (effect-row grammar) | SHIPPED | `parse_effect_row`/`parse_effect`. |
-| REQ-10 (operator precedence pinned, #92) | NOT-STARTED | blocker #92. The pinned standard-Rust precedence is NOT yet realized: the ladder has no modulo/shift/bitwise tiers. Builder threads `parse_mul`(+`%`)→`parse_shift`→`parse_bitand`→`parse_bitxor`→`parse_bitor`→`parse_cmp` and a `!`-prefix tier above `parse_ref`. GROUNDED: `a % b + 1` groups as `(a%b)+1` (verus-certified). |
+| REQ-10 (operator precedence pinned, #92) | SHIPPED | the ladder realizes the pinned standard-Rust precedence: `* / %` > `+ -` > `<< >>` > `&` > `^` > `\|` > comparison > `&&` > `\|\|`, with prefix `!` tighter than all binaries. Tests `modulo_binds_tighter_than_add`, `shift_binds_looser_than_add`, `not_binds_tighter_than_bitand`, `bitand_binds_tighter_than_bitor` (`thermite-syntax/tests/operators_parse.rs`). GROUNDED: `a % b + 1` groups `(a%b)+1`, verus-certified (`forge/tests/operators_conformance.rs::precedence_rem_binds_tighter_than_add`). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

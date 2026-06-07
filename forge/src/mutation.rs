@@ -230,6 +230,18 @@ fn flip_binop(op: BinOp) -> Option<BinOp> {
         BinOp::Sub => BinOp::Add,
         BinOp::Mul => BinOp::Div,
         BinOp::Div => BinOp::Mul,
+        // #92 integer operators: sound, value-distinguishable op-swaps so EVERY
+        // new operator yields a kill-able mutant (the §7 battery exercises the new
+        // ops, not a neutral no-op). `%`↔`/` (a remainder vs a quotient differ
+        // wherever the divisor doesn't divide evenly), `<<`↔`>>` (shift direction),
+        // `&`↔`|` and `^`↔`&` (distinct bit results) — each flips to an operator
+        // of the SAME arity/operand types so the mutant always type-checks.
+        BinOp::Rem => BinOp::Div,
+        BinOp::Shl => BinOp::Shr,
+        BinOp::Shr => BinOp::Shl,
+        BinOp::BitAnd => BinOp::BitOr,
+        BinOp::BitOr => BinOp::BitAnd,
+        BinOp::BitXor => BinOp::BitAnd,
         BinOp::Lt => BinOp::Le,
         BinOp::Le => BinOp::Lt,
         BinOp::Gt => BinOp::Ge,
@@ -249,6 +261,12 @@ fn binop_token(op: BinOp) -> &'static str {
         BinOp::Sub => "-",
         BinOp::Mul => "*",
         BinOp::Div => "/",
+        BinOp::Rem => "%",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",
@@ -648,6 +666,10 @@ impl MutantSink {
             }
             Expr::Is { scrutinee, .. } => self.scan_expr(scrutinee, ctr),
             Expr::Deref(inner) => self.scan_expr(inner, ctr),
+            // The prefix `!` (#92): it defines no NEW mutation site of its own (no
+            // off-by-one, binop, or branch), but the honest scan descends into the
+            // operand so a mutable site nested under `!` is still found.
+            Expr::Unary { expr, .. } => self.scan_expr(expr, ctr),
             // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF and
             // is NOT an off-by-one target (it is text, not a numeric literal) — it
             // defines no NEW mutation site and has no sub-expression to descend
@@ -924,6 +946,13 @@ impl Applier<'_> {
                 variant: variant.clone(),
             },
             Expr::Deref(inner) => Expr::Deref(Box::new(self.apply_expr(inner))),
+            // The prefix `!` (#92): rebuild faithfully, recursing the operand so a
+            // mutation site nested under `!` is applied (identity-preserving for the
+            // node itself).
+            Expr::Unary { op, expr } => Expr::Unary {
+                op: *op,
+                expr: Box::new(self.apply_expr(expr)),
+            },
             Expr::BoolLit(b) => Expr::BoolLit(*b),
             Expr::Path(p) => Expr::Path(p.clone()),
             // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF with

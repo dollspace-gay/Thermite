@@ -780,6 +780,8 @@ impl Validator {
                 self.scan_expr_for_loops(scrutinee, span);
             }
             Expr::Deref(inner) => self.scan_expr_for_loops(inner, span),
+            // The prefix `!` (#92): descend into the operand for nested loops/ADTs.
+            Expr::Unary { expr, .. } => self.scan_expr_for_loops(expr, span),
             // Leaves — no nested loop / ADT node possible. A string literal
             // (`.design/basis/07-strings.md` REQ-1) is a value-carrying leaf, like
             // an int/bool literal — no sub-expression to descend.
@@ -893,6 +895,15 @@ impl Validator {
                 self.walk_expr(lhs, span);
                 self.walk_expr(rhs, span);
             }
+            // The prefix `!` (#92, ast.md REQ-10): a structural built-in operator,
+            // admitted in a contract position exactly like a `Binary`. The cage is
+            // UNTYPED (OQ-3), so the bitwise-vs-logical / valid-operand-type
+            // discrimination is NOT a validator check — it is resolved DOWNSTREAM by
+            // Verus's type-directed `!` (ast.md OQ-4): `!` on a non-integer /
+            // non-bool operand (e.g. `&[u32]`) is rejected at L3 as a Verus type
+            // error, not here. The operand is recursed (depth-guarded, REQ-5) so
+            // nested forbidden content still surfaces.
+            Expr::Unary { expr: inner, .. } => self.walk_expr(inner, span),
             Expr::Index { base, index } => {
                 self.walk_expr(base, span);
                 self.walk_index(index, span);

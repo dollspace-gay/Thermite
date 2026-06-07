@@ -44,7 +44,7 @@
 use thermite_spec::schemes::{SchemeResult, SchemeSig, StepShape};
 use thermite_spec::{ArgKind, CombinatorSig, ResultKind};
 use thermite_syntax::ast::{
-    BinOp, Effect, Expr, IndexArg, Item, Pattern, PrimType, SlicePat, Type,
+    BinOp, Effect, Expr, IndexArg, Item, Pattern, PrimType, SlicePat, Type, UnaryOp,
 };
 use thermite_syntax::lexer::Span;
 
@@ -302,8 +302,13 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
         },
         Expr::Binary { .. } => SkillFragment {
             fragment: "a OP b",
-            description: "an arithmetic / comparison / logical binary op",
+            description: "an arithmetic / comparison / logical / bitwise binary op",
             example: "lo + (hi - lo) / 2",
+        },
+        Expr::Unary { .. } => SkillFragment {
+            fragment: "!EXPR",
+            description: "prefix not (logical on bool, bitwise on int; binds tightest)",
+            example: "!done",
         },
         Expr::Index { .. } => SkillFragment {
             fragment: "a[i] | a[..i] | a[i..] | a[i..j]",
@@ -368,6 +373,36 @@ fn render_binop_arm(op: BinOp) -> SkillFragment {
             description: "division (div-by-zero is a proof obligation)",
             example: "(hi - lo) / 2",
         },
+        BinOp::Rem => SkillFragment {
+            fragment: "a % b",
+            description: "remainder (div-by-zero is a proof obligation: req b != 0)",
+            example: "n % 2",
+        },
+        BinOp::Shl => SkillFragment {
+            fragment: "a << k",
+            description: "left shift (the shift amount must be bounded: req k < 64)",
+            example: "1 << k",
+        },
+        BinOp::Shr => SkillFragment {
+            fragment: "a >> k",
+            description: "right shift (the shift amount must be bounded: req k < 64)",
+            example: "x >> k",
+        },
+        BinOp::BitAnd => SkillFragment {
+            fragment: "a & b",
+            description: "bitwise and",
+            example: "flags & mask",
+        },
+        BinOp::BitOr => SkillFragment {
+            fragment: "a | b",
+            description: "bitwise or",
+            example: "flags | bit",
+        },
+        BinOp::BitXor => SkillFragment {
+            fragment: "a ^ b",
+            description: "bitwise xor",
+            example: "a ^ b",
+        },
         BinOp::Eq => SkillFragment {
             fragment: "a == b",
             description: "equality",
@@ -409,6 +444,26 @@ fn render_binop_arm(op: BinOp) -> SkillFragment {
             example: "done || empty",
         },
     }
+}
+
+/// Render ONE `UnaryOp` leaf's surface fragment (REQ-10, #92): exhaustive `match`
+/// so a NEW prefix operator compile-forces a skill entry. There is ONE
+/// `UnaryOp::Not` (the prefix `!`), whose meaning is per the operand type
+/// (logical-not on `bool`, bitwise-not on an integer; ast.md OQ-4); it binds
+/// tighter than every binary operator (`surface-grammar.md` REQ-10).
+fn render_unaryop_arm(op: UnaryOp) -> SkillFragment {
+    match op {
+        UnaryOp::Not => SkillFragment {
+            fragment: "!EXPR",
+            description: "prefix not — logical on bool, bitwise on int; binds tightest",
+            example: "!(a & mask)",
+        },
+    }
+}
+
+/// The closed `UnaryOp` set, in declaration order (REQ-10 leaf inventory, #92).
+fn unaryop_inventory() -> [UnaryOp; 1] {
+    [UnaryOp::Not]
 }
 
 /// Render ONE `Pattern` variant's surface fragment (REQ-10): exhaustive `match`
@@ -631,6 +686,10 @@ fn expr_inventory() -> Vec<Expr> {
             lhs: unit(),
             rhs: unit(),
         },
+        Expr::Unary {
+            op: thermite_syntax::ast::UnaryOp::Not,
+            expr: unit(),
+        },
         Expr::Index {
             base: unit(),
             index: IndexArg::Single(unit()),
@@ -656,13 +715,20 @@ fn expr_inventory() -> Vec<Expr> {
     ]
 }
 
-/// The closed `BinOp` set, in declaration order (REQ-10 leaf inventory).
-fn binop_inventory() -> [BinOp; 12] {
+/// The closed `BinOp` set, in declaration order (REQ-10 leaf inventory). The #92
+/// integer operators (`Rem`/`Shl`/`Shr`/`BitAnd`/`BitOr`/`BitXor`) join the set.
+fn binop_inventory() -> [BinOp; 18] {
     [
         BinOp::Add,
         BinOp::Sub,
         BinOp::Mul,
         BinOp::Div,
+        BinOp::Rem,
+        BinOp::Shl,
+        BinOp::Shr,
+        BinOp::BitAnd,
+        BinOp::BitOr,
+        BinOp::BitXor,
         BinOp::Eq,
         BinOp::Ne,
         BinOp::Lt,
@@ -813,6 +879,15 @@ non-exhaustive match), so this list can never silently fall behind the language.
         .map(render_binop_arm)
         .collect();
     s.push_str(&render_inventory("Binary operators", &binop_frags));
+
+    let unaryop_frags: Vec<SkillFragment> = unaryop_inventory()
+        .into_iter()
+        .map(render_unaryop_arm)
+        .collect();
+    s.push_str(&render_inventory(
+        "Unary (prefix) operators",
+        &unaryop_frags,
+    ));
 
     let pats = pattern_inventory();
     let pat_frags: Vec<SkillFragment> = pats.iter().map(render_pattern_arm).collect();
@@ -1217,7 +1292,13 @@ mod tests {
         assert!(!pattern_inventory().is_empty());
         assert!(!effect_inventory().is_empty());
         assert_eq!(prim_inventory().len(), 4);
-        assert_eq!(binop_inventory().len(), 12);
+        // 12 base BinOps + the 6 #92 integer operators = 18.
+        assert_eq!(binop_inventory().len(), 18);
+        // The closed `UnaryOp` set (#92): exactly the prefix `!`.
+        assert_eq!(unaryop_inventory().len(), 1);
+        for op in unaryop_inventory() {
+            assert!(!render_unaryop_arm(op).fragment.is_empty());
+        }
         for ty in &type_inventory() {
             assert!(!render_type_arm(ty).fragment.is_empty());
         }

@@ -29,6 +29,9 @@
 //! | REQ-7 (pattern/type/effect nodes) | SHIPPED | `enum Pattern`/`enum Type`/`enum EffectRow`; built by `parse_pattern`/`parse_type`. |
 //! | REQ-8 (addressable nodes) | SHIPPED | `Item`/`LoopNode`/`Clause` carry source order; numbered by `address.rs`. |
 //! | REQ-9 (spans + boundary stability) | SHIPPED | `Span` on `Item`/`LoopNode`/`Clause`; clauses also keep verbatim `text` for addressing. |
+//! | REQ-6 — CHAR/HEX/BIN reuse `IntLit` (#91/#92) | SHIPPED | `'A'`/`0x1b`/`0b101` lex into `TokKind::Int` and `parse_primary` builds `Expr::IntLit { value, raw }` — NO new variant, ZERO match-arm churn; lowering emits the decimal `value`. Test `tests/operators_parse.rs::char_hex_binary_parse_to_intlit_no_new_variant`. |
+//! | REQ-10 (binary + unary operator set, #92) | SHIPPED | `enum BinOp` += `Rem`/`Shl`/`Shr`/`BitAnd`/`BitOr`/`BitXor`; `enum UnaryOp { Not }` + `Expr::Unary { op, expr }` (the prefix `!`). Built by the `parser.rs` precedence ladder; the workspace match-arm ripple (lower/l1/effects/validator/mutation/vacuity/closure/review/check/strengthen/skill) is closed (no `_`/panic). GROUNDED L3 for all 7 forms (`forge/tests/operators_conformance.rs`). |
+//! | REQ-11 (partial-operator obligations, #92) | SHIPPED | `lower.rs`/`l1.rs` `binop` emit the BARE Verus `%`/`<<`/`>>` (no `external`/`assume`, R-DEFER-9); Verus raises the div-by-zero / shift-bound obligation. GROUNDED: `%`/`<<` WITH their `req` → L3, WITHOUT → L0 (`forge/tests/operators_conformance.rs`). |
 //!
 //! ## Basis Stage 1a — ADT SURFACE AST nodes (`.design/basis/01-adts.md`)
 //!
@@ -326,13 +329,30 @@ pub struct MatchArm {
     pub body: Expr,
 }
 
-/// A binary operator (ast.md REQ-6; §4.4).
+/// A binary operator (ast.md REQ-6/REQ-10; §4.4). The arithmetic/comparison/
+/// logical core is the v0.1 base; `Rem`/`Shl`/`Shr`/`BitAnd`/`BitOr`/`BitXor` are
+/// the #92 integer-operator additions (their precedence is pinned in
+/// `surface-grammar.md` REQ-10). `Rem` (`%`) inherits `Div`'s divide-by-zero PROOF
+/// obligation; `Shl`/`Shr` raise a shift-bound obligation — both are Verus-native
+/// (ast.md REQ-11), discharged at L3, NOT a parse/lowering check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
     Add,
     Sub,
     Mul,
     Div,
+    /// `%` — remainder (#92). PARTIAL: requires a nonzero divisor (ast.md REQ-11).
+    Rem,
+    /// `<<` — left shift (#92). PARTIAL: requires a bounded shift amount.
+    Shl,
+    /// `>>` — right shift (#92). PARTIAL: requires a bounded shift amount.
+    Shr,
+    /// `&` — bitwise and (#92).
+    BitAnd,
+    /// `|` — bitwise or (#92).
+    BitOr,
+    /// `^` — bitwise xor (#92).
+    BitXor,
     Eq,
     Ne,
     Lt,
@@ -341,6 +361,17 @@ pub enum BinOp {
     Ge,
     And,
     Or,
+}
+
+/// A unary (prefix) operator (ast.md REQ-10, #92). There is ONE `UnaryOp::Not`
+/// for the prefix `!`: its meaning is per the OPERAND TYPE — logical-not on
+/// `bool`, bitwise-not on an integer — resolved DOWNSTREAM (validator/lower) by
+/// Verus's type-directed `!`, NOT by a syntactic split (§2.3 "one way to do
+/// everything"; ast.md OQ-4). Prefix `!` binds tighter than every binary operator
+/// (`surface-grammar.md` REQ-10), so `!a & b` parses as `(!a) & b`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    Not,
 }
 
 /// An index argument: `a[i]`, `a[..i]`, `a[i..]`, `a[i..j]` (ast.md REQ-6).
@@ -399,6 +430,15 @@ pub enum Expr {
         op: BinOp,
         lhs: Box<Expr>,
         rhs: Box<Expr>,
+    },
+    /// A unary prefix application `!EXPR` (ast.md REQ-10, #92). The single
+    /// `UnaryOp::Not` whose meaning is per the operand type (logical-not on
+    /// `bool`, bitwise-not on an integer) — resolved downstream by Verus's
+    /// type-directed `!`, NOT by a syntactic split (§2.3). Prefix `!` binds tighter
+    /// than every binary, so `!a & b` is `(!a) & b`.
+    Unary {
+        op: UnaryOp,
+        expr: Box<Expr>,
     },
     Index {
         base: Box<Expr>,

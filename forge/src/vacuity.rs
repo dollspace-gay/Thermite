@@ -244,6 +244,9 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
             .any(|(_, value)| expr_mentions_result(value, d)),
         Expr::Is { scrutinee, .. } => expr_mentions_result(scrutinee, d),
         Expr::Deref(inner) => expr_mentions_result(inner, d),
+        // The prefix `!` (#92): `result` can be mentioned under it (`!result`),
+        // so the honest walk descends into the operand (no false-reject risk).
+        Expr::Unary { expr, .. } => expr_mentions_result(expr, d),
     }
 }
 

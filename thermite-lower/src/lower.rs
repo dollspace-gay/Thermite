@@ -81,7 +81,7 @@ use std::fmt::Write as _;
 
 use thermite_syntax::ast::{
     BinOp, Block, Clause, EnumItem, Expr, FnItem, IndexArg, Item, MatchArm, Param, Pattern,
-    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type, VariantDef, VariantShape,
+    PrimType, Program, SlicePat, SpecFnItem, Stmt, Type, UnaryOp, VariantDef, VariantShape,
 };
 use thermite_syntax::lexer::Span;
 
@@ -915,6 +915,9 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         }
         Expr::Is { scrutinee, .. } => collect_combinators_in_expr(scrutinee, span, acc),
         Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
+        // The prefix `!` (#92): descend into the operand so a combinator inside
+        // `!forall_in(...)` is still collected (recurse like the other unary arms).
+        Expr::Unary { expr, .. } => collect_combinators_in_expr(expr, span, acc),
         // A string literal (`.design/basis/07-strings.md` REQ-1) references no
         // combinator — a value-carrying leaf, like an int/bool literal.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -1172,6 +1175,8 @@ fn each_subexpr(
             }
         }
         Expr::Cast { expr, .. } | Expr::Ref { expr, .. } | Expr::Deref(expr) => f(expr)?,
+        // The prefix `!` (#92): descend into its single operand.
+        Expr::Unary { expr, .. } => f(expr)?,
         Expr::StructLit { fields, .. } => {
             for (_, v) in fields {
                 f(v)?;
@@ -2060,6 +2065,9 @@ fn expr_has_deref_call_arg(expr: &Expr) -> bool {
                 || arms.iter().any(|a| expr_has_deref_call_arg(&a.body))
         }
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_deref_call_arg(v)),
+        // The prefix `!` (#92): a deref'd recursive call could sit under `!`,
+        // so descend into the operand (the honest full-tree walk).
+        Expr::Unary { expr, .. } => expr_has_deref_call_arg(expr),
         Expr::IntLit { .. }
         | Expr::BoolLit(_)
         | Expr::Path(_)
@@ -3037,6 +3045,24 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             let r = lower_binary_operand(rhs, *op, false, ctx, d, span)?;
             Ok(format!("{l} {} {r}", binop(*op)))
         }
+        Expr::Unary { op, expr: inner } => {
+            // The prefix `!` (#92, ast.md REQ-10): Verus's `!` is TYPE-DIRECTED —
+            // logical-not on `bool`, bitwise-not on an integer — so the lowering
+            // emits the bare `!` and Verus resolves the meaning from the operand
+            // type (ast.md OQ-4; the GROUNDED `!flag`/`!bits` both certify). The
+            // operand is parenthesized when it is itself a binary (or another
+            // unary) so the prefix binds only the operand: `!(a & b)` for a
+            // grouped binary inner, never `!a & b`. A bare path/literal/call needs
+            // no parens.
+            let UnaryOp::Not = op;
+            let inner_src = lower_expr(inner, ctx, d, span)?;
+            let needs_parens = matches!(inner.as_ref(), Expr::Binary { .. });
+            if needs_parens {
+                Ok(format!("!({inner_src})"))
+            } else {
+                Ok(format!("!{inner_src}"))
+            }
+        }
         Expr::Index { base, index } => lower_index(base, index, ctx, d, span),
         Expr::Cast { expr, ty } => {
             let e = lower_expr(expr, ctx, d, span)?;
@@ -3362,6 +3388,16 @@ fn binop(op: BinOp) -> &'static str {
         BinOp::Sub => "-",
         BinOp::Mul => "*",
         BinOp::Div => "/",
+        // #92 integer operators → their Verus-native operators. `%`/`<<`/`>>` carry
+        // the divide-by-zero / shift-bound PROOF obligation Verus raises at the
+        // operator site (ast.md REQ-11); the lowering emits the BARE operator and
+        // MUST NOT suppress it (no `external`/`assume` — R-DEFER-9).
+        BinOp::Rem => "%",
+        BinOp::Shl => "<<",
+        BinOp::Shr => ">>",
+        BinOp::BitAnd => "&",
+        BinOp::BitOr => "|",
+        BinOp::BitXor => "^",
         BinOp::Eq => "==",
         BinOp::Ne => "!=",
         BinOp::Lt => "<",
@@ -3373,16 +3409,22 @@ fn binop(op: BinOp) -> &'static str {
     }
 }
 
-/// Binding-power tier of a binary operator (higher binds tighter). Mirrors
-/// Rust/Verus operator precedence closely enough to decide parenthesization of
-/// nested binaries during emission (REQ-3 — preserve the AST's grouping).
+/// Binding-power tier of a binary operator (higher binds tighter). Mirrors the
+/// pinned standard-Rust precedence (`surface-grammar.md` REQ-10) closely enough to
+/// decide parenthesization of nested binaries during emission (REQ-3 — preserve
+/// the AST's grouping). The #92 tiers (modulo at `* /`, shifts, `&`, `^`, `|`)
+/// slot between `+ -` and comparison exactly as the parser threads them.
 fn precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
         BinOp::And => 2,
         BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => 3,
-        BinOp::Add | BinOp::Sub => 4,
-        BinOp::Mul | BinOp::Div => 5,
+        BinOp::BitOr => 4,
+        BinOp::BitXor => 5,
+        BinOp::BitAnd => 6,
+        BinOp::Shl | BinOp::Shr => 7,
+        BinOp::Add | BinOp::Sub => 8,
+        BinOp::Mul | BinOp::Div | BinOp::Rem => 9,
     }
 }
 
@@ -3806,6 +3848,8 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_mentions(v, name)),
         Expr::Is { scrutinee, .. } => expr_mentions(scrutinee, name),
         Expr::Deref(inner) => expr_mentions(inner, name),
+        // The prefix `!` (#92): a name can be mentioned under it (`!done`).
+        Expr::Unary { expr, .. } => expr_mentions(expr, name),
     }
 }
 

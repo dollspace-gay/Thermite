@@ -26,6 +26,8 @@
 //! | REQ-5 (round-trip fidelity) | SHIPPED | `tests/conformance.rs` asserts `sum`/`binary_search` facts with 0 diagnostics. |
 //! | REQ-6 (one call syntax) | SHIPPED | postfix `.` -> `MethodCall`/`Field`, free `f(args)` -> `Call`, `::` -> `Path` (never method dispatch). |
 //! | REQ-7 (addressing substrate) | SHIPPED | loops/`inv`s kept in source order in the AST; numbered by `address.rs`. |
+//! | REQ-8 (operator tiers `% << >> & \| ^ !`, #92) | SHIPPED | `parse_mul`+`%`→`Rem`; new tiers `parse_shift`/`parse_bitand`/`parse_bitxor`/`parse_bitor` (threaded `parse_is`→`parse_bitor`→…→`parse_add`, `is` above the bitwise tiers); `parse_unary` builds the prefix `!`→`Unary { Not }`. Binary `&`/`\|` vs prefix ref/closure disambiguated by position. Tests `tests/operators_parse.rs`. |
+//! | REQ-9 (partiality not a parse concern, #92) | SHIPPED | `parse_mul`/`parse_shift` build the `Binary` node UNCONDITIONALLY — no `req` injection; the div-by-zero / shift-bound obligation is a §7 proof obligation (`ast.md` REQ-11), GROUNDED L0-without/L3-with in `forge/tests/operators_conformance.rs`. |
 //!
 //! ## #16 boundary-fn parser extension (`.design/boundary/ffi-boundary.md`)
 //!
@@ -1193,7 +1195,11 @@ impl<'a> Parser<'a> {
     /// comparison so `s is Circle` reads as one operand. The VALIDATOR rule
     /// (accept only a declared variant of the scrutinee's enum) is stage 1b.
     fn parse_is(&mut self) -> PResult<Expr> {
-        let scrutinee = self.parse_add()?;
+        // OQ-3 (parser.md): `is` sits just below comparison and ABOVE the #92
+        // bitwise/shift tiers, so `a & b is Variant` reads as `(a & b) is Variant`
+        // (its scrutinee is a full bitwise-or expression). The ladder below `is`
+        // is `parse_bitor`→`parse_bitxor`→`parse_bitand`→`parse_shift`→`parse_add`.
+        let scrutinee = self.parse_bitor()?;
         if self.eat(&TokKind::Is) {
             let mut variant = vec![self.take_ident("a variant name after `is`")?];
             while self.eat(&TokKind::ColonCol) {
@@ -1206,6 +1212,80 @@ impl<'a> Parser<'a> {
         } else {
             Ok(scrutinee)
         }
+    }
+
+    /// Tier 6 `|` — bitwise or (#92, `surface-grammar.md` REQ-10). A binary `|`
+    /// joins two operands here; a `|` that OPENS a closure is recognized only in
+    /// `parse_primary` (`Closure`), so the two `|` roles are disambiguated by
+    /// position (parser.md REQ-8 / AC-6): an operator `|` is seen at the start of
+    /// an iteration of this loop (after a left operand), never at expression head.
+    fn parse_bitor(&mut self) -> PResult<Expr> {
+        let mut lhs = self.parse_bitxor()?;
+        while self.check(&TokKind::Pipe) {
+            self.bump();
+            let rhs = self.parse_bitxor()?;
+            lhs = Expr::Binary {
+                op: BinOp::BitOr,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(lhs)
+    }
+
+    /// Tier 5 `^` — bitwise xor (#92).
+    fn parse_bitxor(&mut self) -> PResult<Expr> {
+        let mut lhs = self.parse_bitand()?;
+        while self.check(&TokKind::Caret) {
+            self.bump();
+            let rhs = self.parse_bitand()?;
+            lhs = Expr::Binary {
+                op: BinOp::BitXor,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(lhs)
+    }
+
+    /// Tier 4 `&` — bitwise and (#92). The binary `&` joins two operands here; the
+    /// PREFIX reference `&`/`&mut` is parsed in `parse_ref` (one operand) —
+    /// disambiguated by position (parser.md REQ-8 / AC-6): a prefix `&` is seen at
+    /// expression head, a binary `&` after a left operand at this loop's start.
+    fn parse_bitand(&mut self) -> PResult<Expr> {
+        let mut lhs = self.parse_shift()?;
+        while self.check(&TokKind::Amp) {
+            self.bump();
+            let rhs = self.parse_shift()?;
+            lhs = Expr::Binary {
+                op: BinOp::BitAnd,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(lhs)
+    }
+
+    /// Tier 3 `<<` `>>` — shifts (#92), below `+ -`. PARTIAL: an unbounded shift
+    /// amount fails the §7 shift-bound obligation at L3 (ast.md REQ-11), but the
+    /// PARSER builds the `Binary` node unconditionally (parser.md REQ-9).
+    fn parse_shift(&mut self) -> PResult<Expr> {
+        let mut lhs = self.parse_add()?;
+        loop {
+            let op = match self.peek() {
+                TokKind::Shl => BinOp::Shl,
+                TokKind::Shr => BinOp::Shr,
+                _ => break,
+            };
+            self.bump();
+            let rhs = self.parse_add()?;
+            lhs = Expr::Binary {
+                op,
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+            };
+        }
+        Ok(lhs)
     }
 
     fn parse_add(&mut self) -> PResult<Expr> {
@@ -1233,6 +1313,10 @@ impl<'a> Parser<'a> {
             let op = match self.peek() {
                 TokKind::Star => BinOp::Mul,
                 TokKind::Slash => BinOp::Div,
+                // `%` folds into the `MulExpr` tier alongside `*`/`/` (#92,
+                // tier 1). PARTIAL: a zero divisor fails the §7 obligation at L3
+                // (ast.md REQ-11); the parser builds the node unconditionally.
+                TokKind::Percent => BinOp::Rem,
                 _ => break,
             };
             self.bump();
@@ -1247,7 +1331,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_cast(&mut self) -> PResult<Expr> {
-        let mut expr = self.parse_ref()?;
+        let mut expr = self.parse_unary()?;
         while self.eat(&TokKind::As) {
             let ty = self.parse_type()?;
             expr = Expr::Cast {
@@ -1256,6 +1340,26 @@ impl<'a> Parser<'a> {
             };
         }
         Ok(expr)
+    }
+
+    /// The prefix `!` tier (#92, `surface-grammar.md` REQ-10 `UnaryExpr`): prefix
+    /// `!` binds tighter than every binary operator (so `!a & b` is `(!a) & b`)
+    /// and sits between `parse_cast` and `parse_ref`. A standalone `!` is
+    /// unambiguously the unary operator — `!=` is the distinct maximal-munch
+    /// `TokKind::Ne` token (parser.md REQ-8). The ONE `UnaryOp::Not` is built
+    /// regardless of operand type; its bitwise-vs-logical meaning is resolved
+    /// downstream by Verus's type-directed `!` (§2.3, ast.md OQ-4). `!` is
+    /// right-recursive (`!!a` is `!(!a)`).
+    fn parse_unary(&mut self) -> PResult<Expr> {
+        if self.eat(&TokKind::Bang) {
+            let expr = self.parse_unary()?;
+            Ok(Expr::Unary {
+                op: UnaryOp::Not,
+                expr: Box::new(expr),
+            })
+        } else {
+            self.parse_ref()
+        }
     }
 
     fn parse_ref(&mut self) -> PResult<Expr> {
@@ -1839,6 +1943,8 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::OrOr => "||",
         TokKind::ColonCol => "::",
         TokKind::DotDot => "..",
+        TokKind::Shl => "<<",
+        TokKind::Shr => ">>",
         TokKind::LBrace => "{",
         TokKind::RBrace => "}",
         TokKind::LParen => "(",
@@ -1856,6 +1962,8 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Minus => "-",
         TokKind::Star => "*",
         TokKind::Slash => "/",
+        TokKind::Percent => "%",
+        TokKind::Caret => "^",
         TokKind::Amp => "&",
         TokKind::Pipe => "|",
         TokKind::Bang => "!",

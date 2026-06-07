@@ -128,8 +128,10 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. match result { Some(i) => .., None => .. }
 - `if C { .. } else { .. }` — an if/else as an expression (both arms required)
   // e.g. if lo == hi { 0 } else { 1 }
-- `a OP b` — an arithmetic / comparison / logical binary op
+- `a OP b` — an arithmetic / comparison / logical / bitwise binary op
   // e.g. lo + (hi - lo) / 2
+- `!EXPR` — prefix not (logical on bool, bitwise on int; binds tightest)
+  // e.g. !done
 - `a[i] | a[..i] | a[i..] | a[i..j]` — single or range indexing
   // e.g. spec_sum(&xs[..i])
 - `EXPR as T` — an explicit cast (all integer conversions are explicit)
@@ -155,6 +157,18 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. w * h
 - `a / b` — division (div-by-zero is a proof obligation)
   // e.g. (hi - lo) / 2
+- `a % b` — remainder (div-by-zero is a proof obligation: req b != 0)
+  // e.g. n % 2
+- `a << k` — left shift (the shift amount must be bounded: req k < 64)
+  // e.g. 1 << k
+- `a >> k` — right shift (the shift amount must be bounded: req k < 64)
+  // e.g. x >> k
+- `a & b` — bitwise and
+  // e.g. flags & mask
+- `a | b` — bitwise or
+  // e.g. flags | bit
+- `a ^ b` — bitwise xor
+  // e.g. a ^ b
 - `a == b` — equality
   // e.g. haystack[mid] == needle
 - `a != b` — inequality
@@ -171,6 +185,11 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. lo <= hi && hi <= len
 - `a || b` — logical or
   // e.g. done || empty
+
+**Unary (prefix) operators**
+
+- `!EXPR` — prefix not — logical on bool, bitwise on int; binds tightest
+  // e.g. !(a & mask)
 
 **Patterns**
 

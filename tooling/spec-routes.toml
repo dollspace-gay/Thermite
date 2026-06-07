@@ -674,9 +674,30 @@ design = ".design/basis/12-mutual-recursion.md"
 reference = []
 conformance_ops = []
 
-# C12 Map<K,V> — bounded verified kv collection (issue #114/#123)
+# C12 Map<K,V> — bounded verified kv collection (issue #114/#123/#124). The
+# design's "Routes to add" mandates the syntax/spec files (ast/parser/validator)
+# carry the corpus reference + the lower.rs file carry the golden lowering
+# reference (mirroring the C7/C9 multi-file route pattern).
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/basis/13-map.md"
+reference = ["conformance/map_kv.th"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/basis/13-map.md"
+reference = ["conformance/map_kv.th"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/13-map.md"
+reference = ["conformance/map_kv.th"]
+conformance_ops = []
+
 [[route]]
 crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/basis/13-map.md"
-reference = ["conformance/map"]
+reference = ["tests/golden/lower/map_kv.verus.rs"]
 conformance_ops = []

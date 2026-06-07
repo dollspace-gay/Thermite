@@ -47,7 +47,6 @@ fn repo_root() -> PathBuf {
 /// do not in `0c75cc0` (the C12 external oracle is absent; only `conformance/map_kv.th`
 /// was authored). Un-ignore when the orchestrator authors the two goldens.
 #[test]
-#[ignore = "blocker #124 — un-ignore when fixed"]
 fn divergence_c12_map_cert_and_lowering_goldens_exist() {
     let root = repo_root();
     // The design-AC-enumerated artifact set (authority: 13-map.md "Acceptance criteria"

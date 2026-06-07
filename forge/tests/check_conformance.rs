@@ -278,6 +278,63 @@ fn make_some_cert_matches_golden_deterministic_subset() {
     assert_stable_subset_matches_golden("option_result.th", "option_result", "make_some");
 }
 
+/// C12 / `.design/basis/13-map.md` AC-3 (#124): `map_kv.th::has_key` certifies L3
+/// against the committed `conformance/map_kv.cert.json` oracle (the R-CHAR-3
+/// hand-derived cert — `has_key -> bool ens result == m.contains_key(k)`, L3 pure,
+/// non-vacuous, mutation-strong). `contains_key` in `BUILTIN_METHODS` admits the
+/// §4.2-caged accessor; the lowerer maps spec-position `contains_key` to the TMap
+/// wrapper's `spec_contains_key`. The stable subset (item/level/tautology/
+/// vacuous_precondition/effects/slag) must match the committed oracle; the
+/// insert-then-get round-trip + absent→None teeth are pinned at the verus
+/// codegen-grounding level in `map_conformance.rs`.
+///
+/// Unlike the single-L3-item corpora above, `map_kv.th` is multi-item and its
+/// thin runnable-core fns (`build_one`/`demo`/`lookup_absent`) carry the §7-partial
+/// caveat the oracle's `note` documents (a `Map`-return has no scoreable scalar-zero
+/// mutant; a `None`-only contract is the #101 partial class) — they certify below
+/// L3, so the whole-file exit is NOT 0. We assert the `has_key` cert's stable subset
+/// directly (the mutation-strong L3 anchor), mirroring `map_conformance.rs::ac3`,
+/// rather than the whole-file-exit-0 helper.
+#[test]
+fn has_key_cert_matches_golden_deterministic_subset() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — map_kv.th cert-oracle not run.");
+        return;
+    }
+    let (_code, certs) = run_check_json(&corpus_dir().join("map_kv.th"));
+    let cert = find_cert(&certs, "has_key");
+    let golden = golden_cert("map_kv");
+
+    assert_eq!(
+        cert["item"], golden["item"],
+        "has_key: item must match golden"
+    );
+    assert_eq!(cert["item"], Value::from("has_key"));
+    assert_eq!(
+        cert["level"], golden["level"],
+        "has_key: level must match golden"
+    );
+    assert_eq!(cert["level"], Value::from("L3"), "has_key must verify L3");
+    assert_eq!(
+        cert["contract_quality"]["tautology"], golden["contract_quality"]["tautology"],
+        "has_key: tautology must match golden"
+    );
+    assert_eq!(
+        cert["contract_quality"]["vacuous_precondition"],
+        golden["contract_quality"]["vacuous_precondition"],
+        "has_key: vacuous_precondition must match golden"
+    );
+    assert_eq!(
+        cert["effects"], golden["effects"],
+        "has_key: effects must match golden"
+    );
+    assert_eq!(cert["effects"], serde_json::json!(["pure"]));
+    assert_eq!(
+        cert["slag"], golden["slag"],
+        "has_key: slag must match golden"
+    );
+}
+
 // ---- AC-2 (stream discipline) + AC-1: usage error exits non-zero ----------
 
 #[test]

@@ -138,6 +138,32 @@ auto-degrade ladder + the assurance aggregate, nothing more.
   timeout degrades the ladder … never silently treated as success"). Derived from
   R-CODE-4.
 
+- **REQ-9 (the `fx diverge` L1 cap is a PARTIAL-CORRECTNESS rung, distinct from a
+  TIMEOUT degrade — the level semantics, #88)**: this doc owns the LEVEL meaning of
+  every rung, and a `fx diverge` fn's honest level is **L1 = partial correctness**.
+  A diverge fn (effect row contains `Effect::Diverge`, §4.1 "divergence requires
+  `fx diverge` in the row") is NOT total: it may not terminate, so it CANNOT be L3
+  — L3 means "the contract holds for ALL inputs" = TOTAL correctness (§6 ladder
+  table). Its honest assurance is PARTIAL correctness: the loop INVARIANTS + the
+  `ens` hold GIVEN the runtime contract checks, but termination + a strong
+  functional postcondition are NOT claimed. Therefore a diverge fn is CAPPED at L1
+  (this rung's partial-correctness reading of L1, alongside the §6 "runtime contract
+  checks" reading) and is EXEMPT from the §7 mutation-kill + strengthening gate
+  (which validates a strong-functional `ens`, inapplicable to a partial-correctness
+  event loop). This cap is the SAME honesty move as #16's `#[boundary]` L1 cap (a
+  boundary fn caps at L1, mutation-exempt, because its foreign body is unproven) and
+  #18/slag's L1 — three distinct REASONS a fn honestly sits at L1 below an L3-total
+  claim. CRITICAL: the diverge L1 cap is NOT a degrade-ladder TIMEOUT rung — it is a
+  STRUCTURAL cap decided by `gate_fn` from the `fx diverge` declaration BEFORE any
+  prover runs (the `.design/forge/check.md` REQ-8 `gate_fn` routing), never a
+  budget-exhaustion degrade (REQ-1) and never a counterexample (REQ-2). The cap is
+  diverge-ONLY: a non-diverge fn STILL proves termination (its `dec`) AND STILL
+  passes the §7 mutation gate to reach L3; the exemption is not a termination
+  (#87, `fn_is_diverge in lower.rs` keeps the termination exemption diverge-only) or
+  mutation escape hatch for a normal weak contract. Derived from §4.1, §6, §7,
+  `goal.md` R-DEFER-9 (the cap is honest, not a laundering bypass), the #16 boundary
+  precedent; open blocker #88.
+
 ## Acceptance criteria
 
 - **AC-1 (corpus → all L3, project assurance L3, no degrade)**: `forge check
@@ -200,6 +226,26 @@ auto-degrade ladder + the assurance aggregate, nothing more.
   (R-CODE-5); the degrade reason content is asserted only structurally
   (oracle-excluded). Mechanically: two runs, oracle-subset-equal certs + equal
   aggregate headline.
+
+- **AC-8 (the `fx diverge` L1 cap — partial correctness, mutation-exempt, the
+  diverge-ONLY scope; #88)**: the editor's event loop `fn run() ... fx
+  read(input), write(output), alloc, diverge { while quit == 0 inv ... dec 1 { ...
+  } }` (`examples/editor/editor.th`) certifies `Level::L1` (partial correctness) —
+  NOT `Level::L0` `WeakContract` and NOT a forced L3 — with NO `strengthening`
+  suggestion and NO mutation `survivor` reject (the §7 gate is skipped). A NORMAL
+  weak-contract fn (no `diverge`) STILL rejects at `Level::L0` `WeakContract` at the
+  default floor (the gate still bites a non-diverge weak contract); a NORMAL loop fn
+  without a `dec` (no `diverge`) STILL fails Verus termination (the #87 exemption
+  stays diverge-only); `conformance/sum.th` + `conformance/binary_search.th` are
+  UNCHANGED at `Level::L3` (the diverge gate never fires for a total fn). The
+  min-over-functions aggregate (REQ-6) treats a diverge L1 cert as a genuine L1 rung
+  (NOT a hard failure) — a project containing the editor's `run` caps at L1, exactly
+  as one containing a boundary L1 fn does. Mechanically: assert `run`'s cert is L1
+  with no reject and no strengthening; assert a non-diverge weak fixture still L0;
+  assert the corpus still L3; assert the aggregate over `{run: L1, others: L3}` is
+  L1. GROUNDED: `run`'s loose `ens result <= 256` is met by `return 0`, so the §7
+  battery (if run) kills a minority of mutants and reports `WeakContract` at L0 —
+  the wrong verdict the L1 cap corrects.
 
 ## Architecture
 
@@ -296,6 +342,39 @@ as proved"). The ladder must preserve this: a degraded L2/L1 verdict is
 budget-dependent (a larger budget might prove L3), so it is not a settled
 content-addressed verdict and must not pollute the canonical-budget cache. The
 ladder runs INSIDE the existing per-item loop where this invariant already holds.
+
+### The L1 rung has THREE distinct partial-correctness causes (REQ-9, the level semantics)
+
+This component owns the LEVEL meaning of each rung, so the diverge cap's semantics
+live here even though the gate ROUTING that produces it lives in `gate_fn`
+(`.design/forge/check.md` REQ-8). L1 is reached for THREE structurally distinct,
+all-honest reasons — none of which is an L3-total over-claim:
+
+- **Degrade-to-L1** (REQ-3): a TOTAL fn that L3-TIMED-OUT and L2-TIMED-OUT drops to
+  the runtime-check rung. Budget-dependent, carries `lowered-assurance` + a degrade
+  REASON. This is the §5.2 inconclusiveness degrade.
+- **Boundary-L1 / slag-L1** (#16 / #18): a fn whose BODY is unproven (foreign, or
+  fiat-trusted) — the contract is L1-enforced at the crossing, the body is not
+  proved. `boundary: true` / `slag: true`. Structural (from the attribute), NOT a
+  degrade.
+- **Diverge-L1 (REQ-9, NEW)**: a `fx diverge` fn whose body IS (partially) proved —
+  its loop INVARIANTS verify (post-#87, partial correctness) — but which is NOT
+  total (it may not terminate), so it cannot claim L3-total. Structural (from the
+  `fx diverge` declaration in `gate_fn`), NOT a degrade and NOT a body-trust gap.
+  The honest level is L1 = partial correctness; the §7 mutation/strengthen gate
+  (which validates a strong-functional `ens`) is SKIPPED, exactly as it is for a
+  boundary fn.
+
+The min-over-functions aggregate (REQ-6) treats ALL THREE L1 causes as genuine L1
+RUNGS (a project with a diverge `run` caps at L1, not a project FAILURE) — only a
+counterexample / hard reject (REQ-2) is a non-rung failure. The diverge cap is
+decided BEFORE the prover by `gate_fn` (so it never flows through this doc's
+TIMEOUT-degrade edges); the degrade-ladder's anti-cheat invariant (degrade
+inconclusiveness, never falsity) is UNTOUCHED — a diverge fn is not a degrade at
+all, it is a structural cap. Whether the diverge cert RUNS Verus for its partial
+invariants (recommended — the #87 proof is real assurance) or skips Verus like a
+boundary fn is pinned in `.design/forge/check.md` REQ-8 (the gate that builds the
+cert); this doc fixes only that the resulting LEVEL is L1 = partial correctness.
 
 ## Verification
 
@@ -418,6 +497,7 @@ composition and the min-over-functions aggregate do not. Open prereq blocker:
 | REQ-6 (min-over-functions project assurance) | NOT-STARTED | open prereq blocker #50. `enum Level { L0, L1, L2, L3 }` (`manifest.rs`) gives the ordering, but nothing computes the min over a cert collection or displays a project headline. |
 | REQ-7 (determinism of the achieved level) | NOT-STARTED | open prereq blocker #50. The inputs are deterministic given pinned budgets (the pinned `DEFAULT_RLIMIT in check.rs`, the fixed `SLICE_BOUND in l2.rs`), and #11's classification is deterministic, but the ladder that would produce a deterministic achieved-level does not exist. |
 | REQ-8 (subprocess failures never silently degrade) | NOT-STARTED | open prereq blocker #50. `run_verus` / `run_kani` already surface `ForgeError::{VerusAbsent,KaniAbsent,VerusOutput,KaniOutput}` (R-CODE-4 honored at the driver level), but no ladder exists to (correctly) NOT treat those as a degrade trigger — the invariant is unenforced because the ladder is absent. |
+| REQ-9 (`fx diverge` L1 cap = partial-correctness rung, mutation/strengthen exempt, the #16 mirror) | NOT-STARTED | open prereq blocker #88. `enum Level { L0, L1, L2, L3 }` (`manifest.rs`) and `Certificate::boundary_l1` (the L1-cap precedent to mirror) ship, and `fn_is_diverge in lower.rs` + the #87 termination exemption let a diverge fn prove its loop invariants (partial correctness), but NO diverge L1 cap exists: `gate_fn in check.rs` has no `fn_is_diverge` branch, so a diverge fn falls through to L3 and the §7 mutation gate rejects `examples/editor/editor.th`'s `run` at `Level::L0` (`WeakContract`, `ens result <= 256` is met by `return 0`). The diverge-L1-partial-correctness level is unrepresented; the gate routing that would produce it is `.design/forge/check.md` REQ-8 (also NOT-STARTED, #88). |
 
 ## Open questions
 

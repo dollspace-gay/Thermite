@@ -1,0 +1,10 @@
+{
+  "uuid": "bf7de490-159f-43ca-b0ac-9079e8ca955c",
+  "display_id": 89,
+  "title": "Package the editor binary to a stable path + document the interactive run recipe",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T01:05:18.170303639Z",
+  "updated_at": "2026-06-07T01:05:18.170303639Z"
+}

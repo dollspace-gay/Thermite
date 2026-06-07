@@ -203,6 +203,134 @@ first-cut depth.
   `expect`/`panic!` in production (R-CODE-2 / R-APG-1). Derived from R-CODE-2 and
   the existing error-enum discipline in `validator.rs` / `lower.rs`.
 
+### Cluster C6 (#98) — Vec completeness: the missing ops + non-Copy elements + the reachability fix
+
+Cluster C6 (crosslink **#98**) closes the probe-confirmed gaps that left `Vec` an
+incomplete primitive: the missing operations (`pop`/`insert`/`remove`/`contains`),
+`Vec<T>` for **NON-COPY** element types (`Vec<String>`, `Vec<struct>`, nested
+`Vec<Vec<_>>`), and the `Vec::new()`-no-param wrapper-emission bug. All forms below
+were GROUNDED end-to-end with the real `verus 0.2026.05.24` binary during authoring
+(Verification — the C6 grounding record), non-vacuous, no cheat tokens.
+
+- **REQ-8 (the missing ops — `pop_last`/`last`/`insert`/`remove`/`contains`, all
+  TUPLE-FREE):** The surface tuple-less today (tuples land in C9), so the ops are
+  pinned to tuple-free shapes:
+  - **`pop_last(self)`** — drop the LAST element. `req len > 0`, `ens len' == len - 1
+    && (forall j in [0,len') => v'@[j] == v@[j])` (the kept prefix is preserved). It
+    does NOT return the popped value (no tuple); the companion accessor returns it.
+  - **`last(self) -> T`** — the final element accessor. `req len > 0`, `ens result ==
+    v@[len - 1]`. (The tuple-free split of a classic `pop -> (Vec, Option<T>)`:
+    `last()` reads, `pop_last()` shortens.)
+  - **`insert(self, i, x)`** — splice `x` at index `i`, shifting the suffix right.
+    `req well_formed() && len < CAP && i <= len`, `ens len' == len + 1 && v'@ ==
+    v@.insert(i, x)`. The `i <= len` bound is the no-OOB safety (NOT `i < len` — an
+    insert AT `len` is an append).
+  - **`remove(self, i)`** — delete the element at `i`, shifting the suffix left.
+    `req i < len`, `ens len' == len - 1 && v'@ == v@.remove(i)`.
+  - **`contains(self, x) -> bool`** — an EXEC linear scan over the `Vec` (element
+    equality `==` on the element type). `req well_formed()`, `ens result == (exists|k|
+    0 <= k < len && v@[k] == x)`. The loop carries the standard `forall|k| 0 <= k < i
+    ==> v@[k] != x` invariant + `decreases len - i`.
+
+  `pop_last`/`insert`/`remove` are `&mut self`-mutating, so their `ens` is written
+  with **`final(self)`** (the Stage-4 / REQ-5 `&mut` grounding finding — verus
+  0.2026.05.24 requires `final(self)`, not bare `self`); `last`/`contains` are
+  `&self`-reading (no `final`). All lower to vstd's verified `Vec::pop`/`Vec::insert`/
+  `Vec::remove`/`Vec::index` (which carry the heap + shift proof). `insert`/`remove`/
+  `pop_last` allocate/mutate-in-place → the constructing fn carries `fx alloc` (the
+  REQ-5 rule); `last`/`contains` over a `&Vec` are `pure`. **GROUNDED** (`vec_ops`
+  probe): `pop_last`/`last`/`insert`/`remove`/`contains` over `Vec<u64>` all verify
+  together — **`9 verified, 0 errors`**, no cheat tokens; the broken `insert` dropping
+  the `i <= len` guard FAILS (**`8 verified, 1 errors`**, vstd `insert` precondition
+  — the no-OOB bound is load-bearing, non-vacuous, R-DEFER-9). Derived from §4.2 (the
+  cage — every op bounded), §4.4 (closed built-in interface), §6 (L3), and the C6
+  GROUNDED `vec_ops` proof.
+
+- **REQ-9 (`Vec<T>` for NON-COPY element types — `Vec<String>`, `Vec<struct>`,
+  nested `Vec<Vec<_>>` — via BORROW-returning `get`):** THE HARD GAP. The Stage-4
+  finding (recorded in REQ-5 / the `tvec_name` doc) was that a GENERIC `TVec<T>`
+  failed verus because vstd's index `self.data[i]` MOVES a non-`Copy` `T` out of the
+  backing `Vec` (`E0507: cannot move out of index`), which forced the u64-only
+  monomorphization (`TVecU64`). For non-`Copy` elements (`Vec<String>` /
+  `Vec<struct>` / nested) the resolution is: the monomorphized wrapper's exec `get`
+  returns a **BORROW** `&T`, not a moved `T` — `pub fn get(&self, i: usize) ->
+  (result: &T) requires i < self.data.len(), ensures *result == self.data@[i as int]
+  { &self.data[i] }`. The `&self.data[i]` reads through the index WITHOUT moving;
+  the `ens` dereferences (`*result == v@[i]`). `push(x: T)` CONSUMES (moves) the owned
+  element in — no `Copy` needed for push. The per-element-type monomorphization
+  (REQ-5 `tvec_name`) EXTENDS to non-`Copy` elements: `Vec<String>` → `TVecTString`,
+  `Vec<UserStruct>` → `TVec<UserStruct>` (the struct name suffix), nested
+  `Vec<Vec<u64>>` → `TVecTVecU64`. A Copy element (`u64`) MAY keep the by-value `get
+  -> T` (the existing GROUNDED `TVecU64` form, byte-stable for `vec_demo.th`); a
+  non-Copy element MUST use the borrow `get -> &T`. **GROUNDED**: `Vec<String>`
+  (`TVecTString` over `vstd::vec::Vec<TString>`, push a `String`, `get` it back by
+  borrow, read its `len`) verifies **`4 verified, 0 errors`**, no cheat tokens — and
+  the by-value-move form of the SAME probe FAILS with **`E0507: cannot move out of
+  index of std::vec::Vec<TString>`** (the exact Stage-4 finding, proving the borrow
+  is the fix, not a convenience). `Vec<struct>` (`TVecPoint` over a 2-field
+  `Point { x, y }`, push + borrow-`get` + field read) verifies **`4 verified, 0
+  errors`**. Nested `Vec<Vec<u64>>` (`TVecTVecU64`, the element `TVecU64` itself
+  non-Copy) ALSO verifies **`4 verified, 0 errors`** with the same borrow-`get`.
+  Derived from §3 (transpile to Verus), §4.4 (the closed built-in over any element
+  type), §6 (L3), the Stage-4 non-Copy-move finding, and the C6 GROUNDED
+  `vec_string`/`vec_struct`/`vec_nested` proofs.
+
+- **REQ-10 (the element type's own wrapper MUST be woven — the #68/#86 weave):**
+  A non-Copy element wrapper references the element's own decl/wrapper: `TVecTString`
+  names `TString` (the Stage-7 string wrapper), `TVec<UserStruct>` names the user
+  `struct UserStruct` decl, `TVecTVecU64` names the inner `TVecU64` wrapper. Verus
+  needs each in scope BEFORE the outer wrapper, exactly as the #68 ADT-decl weave
+  (`forge::reachable_adt_deps` recursing through `Type::Vec(inner)` to reach the
+  element `struct`) and the #86 String-reachability weave (`program_uses_string`
+  recursing through `Type::Vec(inner)` to reach `String`). For `Vec<struct>` the
+  forge per-item sub-program weave is ALREADY correct — `collect_type_adt_refs`
+  (`forge/src/check.rs`) recurses `Type::Vec(inner) => collect_type_adt_refs(inner)`,
+  so a `Vec<Account>` already weaves the `Account` decl (a CONSUMED capability, no
+  change). For `Vec<String>` the `TString` wrapper is emitted whenever
+  `program_uses_string` holds, which ALREADY recurses through `Type::Vec(inner)` to
+  reach `String` (`ty_reaches_string`, `lower.rs`) — a CONSUMED capability. The
+  builder's residual work is emission ORDER: `emit_vec_wrappers` must emit the
+  element's wrapper (or the struct decl be in scope) BEFORE the `TVec<elem>` newtype.
+  GROUNDED feasible (the nested + struct + string probes verify with the element
+  wrapper/decl declared first). Derived from §4.2 (named composition), the #68 ADT
+  weave (`.design/basis/01-adts.md`), and the #86 String-reachability weave
+  (`.design/basis/07-strings.md` REQ-4 / `program_uses_string`).
+
+- **REQ-11 (the `Vec::new()`-no-param wrapper-reachability fix — the #86 analog):**
+  A `Vec` built LOCALLY with `Vec::new()` and used only inside a fn body — with NO
+  `Vec`-typed parameter or return — fails `E0425 cannot find type TVecU64` today,
+  because `emit_vec_wrappers` collects element types via `collect_vec_elem_types`
+  which walks ONLY `fn`/`spec fn` PARAMETER and RETURN positions (`lower.rs`). It
+  misses a body-local `let mut v: Vec<u64> = Vec::new();` (and a `Vec<u64>` struct
+  FIELD, an enum-variant payload), so the `TVecU64` wrapper is never emitted yet the
+  fn body references it. The fix is the EXACT #86 String-reachability pattern: the
+  `Vec`-wrapper emission must trigger when a `Vec<T>` is REACHABLE ANYWHERE — a
+  param/return (current), a struct/enum FIELD, OR a fn-body local `let` annotation —
+  mirroring `program_uses_string` (`lower.rs`), which walks param/return + struct
+  field + enum variant + local `let` + literal for `String`. `collect_vec_elem_types`
+  EXTENDS to the same reachability closure (struct fields, enum-variant payloads,
+  body-local `let` type annotations), keyed on `Type::Vec(inner)` exactly as
+  `ty_reaches_string` keys on `Type::String`. GROUNDED: the verus form of a local
+  `Vec::new()` fn (build locally, push, borrow-`get`, read len) verifies — the gap
+  is purely the wrapper-emission reachability, NOT the verification (the same
+  `Vec::new()` local appears verified inside every GROUNDED C6 probe's `build_*`
+  body). Derived from the #86 String-reachability weave
+  (`.design/basis/07-strings.md` REQ-4 / `program_uses_string`) and §4.4.
+
+- **REQ-12 (`pop`/`insert`/`remove`/`contains` in `BUILTIN_METHODS`; non-Copy
+  `tvec_name` extension; no panics):** The new EXEC ops `pop_last`/`insert`/`remove`
+  are EXEC-only (never in a contract — they mutate). `last`/`contains` MAY be named
+  in a contract (`ens result == v.last()` / a `contains` predicate), so `last` and
+  `contains` (alongside the existing `get`/`len`) are admitted in `BUILTIN_METHODS`
+  (`thermite-spec/src/validator.rs`) so their `ens` validates inside the §4.2 cage.
+  `tvec_name` (`lower.rs`) EXTENDS its `match` from Copy primitives to also accept a
+  `Type::String` element (→ `TVecTString`), a `Type::Named(struct)` element
+  (→ `TVec<StructName>`), and a `Type::Vec(inner)` nested element (→ recursive
+  suffix), each emitting the borrow-`get` form (REQ-9). A still-unlowerable element
+  is the existing `LowerError::Unsupported` (no new variant, no `unwrap`/`expect`/
+  `panic!`, R-CODE-2 / R-APG-1). Derived from R-CODE-2, the Stage-4 `BUILTIN_METHODS`
+  precedent, and the existing error-enum discipline.
+
 ## Acceptance criteria
 
 The orchestrator authors a NEW corpus program — call it `conformance/vec_accum.th`
@@ -254,6 +382,42 @@ vec_accum.cert.json` / `conformance/vec_accounts.cert.json`.
   `Map` lowering paths). Mechanically: `cargo test -p thermite-syntax -p
   thermite-spec -p thermite-lower` and the conformance corpus pass with 0
   mismatches. (All REQs; Stage 4 must not break the kernel.)
+
+### Cluster C6 acceptance criteria (#98 — Vec completeness, GROUNDED)
+
+The orchestrator authors NEW corpus programs from the C6 GROUNDED forms below: a
+`Vec<u64>` ops program (`pop_last`/`last`/`insert`/`remove`/`contains`), a
+`Vec<String>` program, a `Vec<struct>` program, and a local-`Vec::new()` program.
+
+- **AC-5 (the missing ops certify L3; the OOB negative certifies L0):** A `Vec<u64>`
+  program exercising `pop_last`/`last`/`insert`/`remove`/`contains` parses, validates
+  (`last`/`contains` accepted in `BUILTIN_METHODS`, REQ-12), lowers (the ops emitted
+  on `TVecU64`, REQ-8), and the real `verus` binary on the emitted output exits 0
+  with `N verified, 0 errors` (GROUNDED `9 verified, 0 errors`). A crafted `insert`
+  WITHOUT the `i <= len` guard FAILS to verify (GROUNDED `8 verified, 1 errors`, the
+  L0 demonstration; R-DEFER-9 non-vacuity). The mutating ops carry `fx alloc`; the
+  reading ops are `pure`. (REQ-8, REQ-12.)
+
+- **AC-6 (`Vec<String>` builds/indexes via borrow-`get`, certifies L3):** A fn
+  building a `Vec<String>` (push a `String`, `get` it back, read its `len`) parses,
+  lowers to `TVecTString` over `vstd::vec::Vec<TString>` with the BORROW-returning
+  `get -> &TString` (REQ-9), the `TString` element wrapper woven before it (REQ-10),
+  and `verus` exits 0 (`N verified, 0 errors`; GROUNDED `4 verified, 0 errors`). The
+  by-value-move form of `get` FAILS (`E0507: cannot move out of index`), proving the
+  borrow is the load-bearing fix. (This unblocks cluster 5 `split` returning
+  `Vec<String>`.) (REQ-9, REQ-10, REQ-12.)
+
+- **AC-7 (`Vec<struct>` push/borrow-get certifies L3):** A fn building a
+  `Vec<a-2-field-struct>` (push a struct, borrow-`get`, read a field) lowers to
+  `TVec<Struct>` with the borrow-`get` (REQ-9) and the struct decl woven before it
+  (REQ-10, the #68 `collect_type_adt_refs` recursion through `Type::Vec`, CONSUMED),
+  and `verus` exits 0 (GROUNDED `4 verified, 0 errors`). (REQ-9, REQ-10.)
+
+- **AC-8 (a local `Vec::new()` with NO Vec param certifies L3 — the reachability
+  fix):** A fn whose ONLY `Vec` is a body-local `let mut v: Vec<u64> = Vec::new();`
+  (no `Vec`-typed param/return) parses, the wrapper-reachability fix emits `TVecU64`
+  (REQ-11 — `collect_vec_elem_types` extended to body-local `let`s, the #86 analog),
+  and `verus` exits 0 — NOT `E0425 cannot find type TVecU64`. (REQ-11.)
 
 ## Architecture
 
@@ -346,6 +510,59 @@ collection-operation `ensures`. The verified `BVec` over vstd `Vec<u64>` is the
 exact wrap-vstd form REQ-5 lowers to: vstd's verified `Vec::push`/`Vec::index`/
 `Vec::len` carry the heap proof; the capacity bound and element invariant are the
 Thermite-level additions threaded through contracts.
+
+### The C6 grounding record (GROUNDED — real `verus 0.2026.05.24`, the #98 seed)
+
+The four C6 forms below were GROUNDED with the real `verus 0.2026.05.24` binary
+during authoring (`verus --no-cheating`), non-vacuous, cheat-token grep
+(`assume`/`external_body`/`admit`/`verifier::external`) NONE. Scratch cleaned (§53).
+
+- **The missing ops over `Vec<u64>` (REQ-8) — `9 verified, 0 errors`.** A `TVecU64`
+  with `well_formed`/`len`/`spec_get`/`get`/`push` PLUS the tuple-free
+  `pop_last` (`&mut`, `req len > 0`, `ens final(self).data.len() == old.len()-1` +
+  the kept-prefix frame), `last` (`&self`, `req len > 0`, `ens result ==
+  v@[len-1]`), `insert` (`&mut`, `req well_formed && len < CAP && i <= len`, `ens
+  final(self).data@ == old.data@.insert(i, x)`), `remove` (`&mut`, `req i < len`,
+  `ens final(self).data@ == old.data@.remove(i)`), and `contains` (`&self`, the
+  exec linear scan, `ens result == exists|k| 0<=k<len && v@[k]==x`) all verify
+  together. The `&mut` ops use `final(self)` (the REQ-5 finding). NON-VACUITY: the
+  same file with the `i <= len` guard dropped from `insert` FAILS — `8 verified, 1
+  errors` (vstd `insert` precondition; the no-OOB bound is load-bearing, R-DEFER-9).
+
+- **`Vec<String>` non-Copy via borrow-`get` (REQ-9) — `4 verified, 0 errors`.** A
+  `TVecTString { data: Vec<TString> }` whose exec `get` returns a BORROW:
+  `pub fn get(&self, i: usize) -> (result: &TString) requires i < self.data.len(),
+  ensures *result == self.data@[i as int] { &self.data[i] }`, `push(x: TString)`
+  consuming the owned element, and a `build_and_read` fn (build a local
+  `Vec::new()`, push a `String`, `get` it back by borrow, read its `len`). THE
+  ACCESS FORM THAT WORKED: `&self.data[i]` (a borrow), with the `ens` dereferencing
+  `*result == v@[i]`. THE FAILURE THE BORROW SOLVES: the same probe with `get`
+  returning `TString` by value (`{ self.data[i] }`) FAILS — `error[E0507]: cannot
+  move out of index of std::vec::Vec<TString>` (the exact Stage-4 non-Copy finding).
+
+- **`Vec<struct>` non-Copy (REQ-9) — `4 verified, 0 errors`.** A `TVecPoint { data:
+  Vec<Point> }` over `struct Point { x: u64, y: u64 }` (a 2-field non-Copy struct),
+  the SAME borrow-`get -> &Point`, push by move, and a fn pushing a `Point`,
+  borrow-`get`-ing it, reading `e.x`. The struct decl is in scope before the
+  `TVecPoint` wrapper (REQ-10 weave).
+
+- **Nested `Vec<Vec<u64>>` (REQ-9, feasible NOT deferred) — `4 verified, 0 errors`.**
+  A `TVecTVecU64 { data: Vec<TVecU64> }` whose element `TVecU64` is itself non-Copy,
+  the SAME borrow-`get -> &TVecU64`. The inner `TVecU64` wrapper is declared before
+  the outer (REQ-10). So nested Vecs are GROUNDED-feasible by the same borrow rule +
+  per-element-type monomorphization; they are NOT deferred.
+
+- **The local `Vec::new()`-no-param case (REQ-11).** Every C6 probe's `build_*` body
+  contains `let mut v: TVec*  = TVec* { data: Vec::new() };` — the local `Vec::new()`
+  verifies in verus. The bug is purely Thermite-side wrapper-emission reachability
+  (`collect_vec_elem_types` not walking body-local `let`s), NOT verification.
+
+**Migration note (C6):** the per-element-type monomorphization (REQ-5 `tvec_name`)
+EXTENDS to non-Copy elements with a BORROW-returning `get -> &T` (Copy elements may
+keep the by-value `get -> T`, the byte-stable `vec_demo.th` form). The element type's
+own wrapper/decl must be in scope before the `TVec<elem>` newtype (REQ-10, the
+#68/#86 weave). The `final(self)` `&mut` rule (REQ-5) carries to `pop_last`/`insert`/
+`remove`.
 
 ## Dependency hooks (for the rest of epic #62)
 
@@ -446,6 +663,11 @@ the builder runs (R-CHAR-3).
 | REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`; BACKING-AGNOSTIC surface) | SHIPPED | #73 (OQ-1 RESOLVED: v1 WRAPS `vstd::vec::Vec`). `lower.rs`: `Type::Vec(elem)` → `tvec_name` (`Vec<u64>` → `TVecU64`); `emit_vec_wrappers` materializes ONCE per element type the GROUNDED `TVec<elem>` newtype over `vstd::vec::Vec<elem>` with `well_formed` (`len() <= CAP`), spec `len`/`spec_get`, the no-OOB exec `get` (`req i < len`), and the capacity-preserving exec `push` (`req well_formed && len < CAP`, `ens final(self)...` — the `final(self)` &mut grounding finding). Spec-position `v.get(i)` → `v.spec_get(i as int)`. `fx alloc` accepted by effect-subsumption (`push` is an intrinsic, no callee row). Consumer: `lower`. Verified: real `verus --no-cheating` on emitted `vec_demo.th` — `checked_get` L3/pure, `push_one` L3/alloc (`4 verified, 0 errors`); the no-`req` `get` reject FAILS (L0, R-DEFER-9). BACKING-AGNOSTIC surface preserved (the contract names `len`/`get`/`push` over `v@`, never `vstd::vec::Vec`). |
 | REQ-6 (`Map` → vstd `Map` wrapper; insert/get/contains; key-uniqueness) | NOT-STARTED | epic **#62** Stage 4 (v1.1). `lower.rs` has no `Map` lowering; the v1 oracle is `Vec`-only (OQ-3 thin-first-cut). Modeled on `vstd::map::Map`, deferred to a Stage-4 follow-up. |
 | REQ-7 (`LowerError`/`SpecError` extension, no panics) | SHIPPED | #73. The `Vec` lowering reuses the existing `LowerError::Unsupported` (`tvec_name` on a non-primitive element type) — no new variant needed; the validator reuses its existing reject path (a forbidden method in a contract). No `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1); verified by `cargo clippy --workspace -D warnings` + the anti-pattern-gate. |
+| REQ-8 (`pop_last`/`last`/`insert`/`remove`/`contains` — tuple-free missing ops) | NOT-STARTED | open prereq blocker **#98** (C6 owns this). The skill claimed `pop` but `TVecU64` has no `pop` method (`E0599 no method pop`); `insert`/`remove`/`contains` are absent. `emit_vec_wrappers` (`thermite-lower/src/lower.rs`) emits only `well_formed`/`len`/`spec_get`/`get`/`push` — the five C6 ops are unimplemented. GROUNDED feasible: tuple-free `pop_last`/`last`/`insert`/`remove`/`contains` over `Vec<u64>` verify together `9 verified, 0 errors`; the no-OOB `insert` negative FAILS `8 verified, 1 errors` (C6 grounding record). |
+| REQ-9 (`Vec<T>` non-Copy elements — `Vec<String>`/`Vec<struct>`/nested via borrow-`get`) | NOT-STARTED | open prereq blocker **#98** (C6 owns this). `tvec_name` (`thermite-lower/src/lower.rs`) `match` accepts ONLY Copy primitives (`U32`/`U64`/`Usize`/`Bool`); a `String`/struct/nested element returns `LowerError::Unsupported`. The Stage-4 non-Copy move finding (vstd index `self.data[i]` moves a non-`Copy` `T`, `E0507`) is resolved by a BORROW-returning `get -> &T` (`{ &self.data[i] }`, `ens *result == v@[i]`). GROUNDED: `Vec<String>` (`TVecTString`) `4 verified, 0 errors`, the by-value move FAILS `E0507`; `Vec<struct>` (`TVecPoint`) `4 verified, 0 errors`; nested `Vec<Vec<u64>>` (`TVecTVecU64`) `4 verified, 0 errors` (C6 grounding record). |
+| REQ-10 (element-type wrapper/decl woven before the `TVec` — #68/#86 pattern) | NOT-STARTED | open prereq blocker **#98** (C6 owns this). The forge ADT weave (`forge::reachable_adt_deps`→`collect_type_adt_refs`, recursing `Type::Vec(inner)`) ALREADY reaches a `Vec<struct>` element decl, and `program_uses_string` (`thermite-lower/src/lower.rs`, `ty_reaches_string` recursing `Type::Vec(inner)`) ALREADY reaches a `Vec<String>` element — both CONSUMED. The residual is `emit_vec_wrappers` emission ORDER (the element wrapper/decl before the `TVec<elem>` newtype) for the non-Copy + nested cases; GROUNDED feasible (probes verify with the element declared first). |
+| REQ-11 (`Vec::new()`-no-param wrapper-reachability fix — the #86 analog) | NOT-STARTED | open prereq blocker **#98** (C6 owns this). `collect_vec_elem_types` (`thermite-lower/src/lower.rs`) walks ONLY `fn`/`spec fn` param + return positions, so a body-local `let mut v: Vec<u64> = Vec::new();` with no `Vec` param/return emits no `TVecU64` wrapper → `E0425 cannot find type TVecU64`. The fix mirrors `program_uses_string` (which walks struct field + enum variant + local `let` + literal): extend `collect_vec_elem_types` to the same reachability closure keyed on `Type::Vec(inner)`. GROUNDED: the verus form (a local `Vec::new()` fn) verifies — the gap is emission reachability, not verification. |
+| REQ-12 (`last`/`contains` in `BUILTIN_METHODS`; non-Copy `tvec_name` extension; no panics) | NOT-STARTED | open prereq blocker **#98** (C6 owns this). `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`) has `len`/`get`/`byte_at`/`concat`/`slice`/`push_byte` — `last`/`contains` (the C6 ops nameable in a contract) are not yet admitted; `pop_last`/`insert`/`remove` stay EXEC-only. `tvec_name` extends its `match` to `String`/`Named(struct)`/`Vec(inner)` elements (the borrow-`get` form). Reuses the existing `LowerError::Unsupported` — no new variant, no panics (R-CODE-2 / R-APG-1). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

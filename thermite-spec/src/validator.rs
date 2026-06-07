@@ -60,6 +60,14 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-8 (`#[sealed]` abstraction barrier — the door is the only mint) | SHIPPED | epic **#62** Stage 6 (#77). The declaration pre-pass `Validator::new` collects `sealed_structs` (every `Item::Struct` with `sealed == true`, alongside `struct_fields`). The new span-bearing `SpecError::SealedConstruction { name, span }` variant is emitted by `check_sealed_construction`, called from BOTH `Expr::StructLit` walk arms (the exec-body `scan_expr_for_loops` AND the caged `walk_expr_inner`): any struct literal whose `path` resolves to a `#[sealed]` struct is REJECTED, so a `#[sealed]` clean/capability type (`Sql`/`Public`/`Authorized`) is obtainable ONLY as a `#[boundary]` door's return (the door body is foreign/`external_body`, no in-language `StructLit`). Inert when no `#[sealed]` struct is declared (the non-IFC corpus is UNCHANGED). Consumer: `pub fn validate` → `forge::check::check_file` (a `ForgeError::Spec`, exit non-zero, no L3 cert). Verification: `thermite-spec/tests/sealed_validate.rs` (the launder rejects with `SealedConstruction{Sql}`; the safe doored path + a plain/no-sealed struct validate clean); `forge/tests/divergence_provenance.rs` (the 3 #77 bypass tests, UN-IGNORED, REJECT on all three axes); `forge/tests/provenance_conformance.rs` unchanged (safe paths L3, naive careless L0). |
+//!
+//! ## REQ status — 07-strings.md (Basis Stage 7 cluster C4, issue #94)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | #94 cluster C4. `push_byte` ADDED to `BUILTIN_METHODS` (so a contract over a byte-builder result validates inside the §4.2 cage exactly as `concat`/`slice`); `from_byte` is an associated path-call `String::from_byte(b)` (an `Expr::Call`, no `BUILTIN_METHODS` entry needed). Both are constructing ops (`fx alloc`). Consumer: `pub fn validate` → `walk_expr_inner` (`BUILTIN_METHODS` allowlist). Verification: `forge/tests/string_format_conformance.rs` (the byte-builder certifies L3 / `effects: [alloc]` against real verus, the GROUNDED `4 verified, 0 errors` form). |
+//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | #94 cluster C4. `to_string` ADDED to `BUILTIN_METHODS` (the `n.to_string()` method spelling); the GENERATED round-trip spec fns `parse_le`/`pow10` are seeded into `spec_fns` (`GENERATED_SPEC_FNS`) so a contract `ens parse_le(result) == n` validates inside the cage as a named `spec fn` call. The lowerer (`thermite-lower::lower`) emits the `u64_to_string` exec + `pow10`/`parse_le` spec + `lemma_parse_push` proof fn (the divide/mod-by-10 digit loop, round-trip `inv` + `dec m`). Consumer: `pub fn validate` → `walk_call` (the `spec_fns` accept). Verification: `forge/tests/string_format_conformance.rs` (the round-trip `parse_le(to_string(n)) == n` certifies L3, GROUNDED `16 verified, 0 errors`; a wrong digit FAILS, non-vacuous, R-DEFER-9). |
+//! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | NOT-STARTED | #94 cluster C4, DEPENDS-ON-C7 — prereq blocker #95. The §4.2-cage spec sublanguage has no built-in `Option`/`Result` + payload-in-contract surface, so the success-arm round-trip cannot be spelled today. GROUNDED-feasible (real verus, `5 verified, 0 errors`); REQ-7/REQ-8 ship now, REQ-9 lands after C7. |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -115,7 +123,37 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// REQ-4); admitting the method here only opens the cage to name it, the bound is
 /// proved by verus (the unguarded form FAILS, non-vacuity, R-DEFER-9). `push`/
 /// the literal-materialization are EXEC-only (a fn body), never in a contract.
-const BUILTIN_METHODS: &[&str] = &["len", "get", "byte_at", "concat", "slice"];
+/// Cluster C4 strings (`.design/basis/07-strings.md` REQ-7/REQ-8, issue #94):
+/// `push_byte` is the verified byte-builder's append op whose result a contract
+/// names (the byte-builder length/element-frame `ens`) — admitted as a FLAT
+/// built-in exactly as `concat`/`slice`; `to_string` is the `u64`→decimal-`String`
+/// method whose round-trip a contract names (`ens parse_le(result) == n`, the
+/// GROUNDED gold standard). Both are constructing ops (`fx alloc`); `from_byte` is
+/// an associated path-call (`String::from_byte(b)`, an `Expr::Call`), so it needs
+/// no `BUILTIN_METHODS` entry. The no-OOB / round-trip teeth are PROVED at L3 (a
+/// wrong digit FAILS, R-DEFER-9); admitting the method here only opens the cage to
+/// NAME it.
+const BUILTIN_METHODS: &[&str] = &[
+    "len",
+    "get",
+    "byte_at",
+    "concat",
+    "slice",
+    "push_byte",
+    "to_string",
+];
+
+/// The GENERATED `spec fn` names the lowerer materializes for the C4 `u64`→`String`
+/// round-trip (`.design/basis/07-strings.md` REQ-8, issue #94): `parse_le` (the
+/// LSB-first decimal value of a byte sequence) and `pow10` (the decimal weight).
+/// They are NOT user-declared — the lowerer (`thermite-lower::lower`) emits them
+/// when the program uses `n.to_string()` — but a contract names `parse_le` to state
+/// the round-trip (`ens parse_le(result) == n`), so the validator must accept them
+/// as named `spec fn` calls inside the §4.2 cage (seeded into `Validator::spec_fns`
+/// in `Validator::new`, alongside the user-declared spec fns). This is the EXACT
+/// mechanism a user `spec fn` call uses — these are reserved generated names, so a
+/// user cannot shadow them (a clash would be a name collision the lowerer owns).
+const GENERATED_SPEC_FNS: &[&str] = &["parse_le", "pow10"];
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so
@@ -465,7 +503,7 @@ impl Validator {
         // Collect every declared `spec fn` name first so a forward reference in
         // a contract (`ens result == sz(xs)` before `spec fn sz` is seen) still
         // resolves (REQ-3 (b)).
-        let spec_fns = program
+        let mut spec_fns: HashSet<String> = program
             .items
             .iter()
             .filter_map(|item| match item {
@@ -477,6 +515,14 @@ impl Validator {
                 Item::Struct(_) | Item::Enum(_) => None,
             })
             .collect();
+        // Cluster C4 strings (`.design/basis/07-strings.md` REQ-8, issue #94): seed
+        // the GENERATED round-trip spec fns (`parse_le`/`pow10`) so a contract
+        // `ens parse_le(result) == n` validates inside the §4.2 cage as a named
+        // `spec fn` call (the lowerer materializes their bodies). These are reserved
+        // names the lowerer owns — accepted exactly as a user-declared spec fn.
+        for name in GENERATED_SPEC_FNS {
+            spec_fns.insert((*name).to_string());
+        }
 
         // The ADT DECLARATION PRE-PASS (`.design/basis/01-adts.md` REQ-5/REQ-6;
         // mirrors the spec-fn-name collection above). A program references types

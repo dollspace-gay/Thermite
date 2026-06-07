@@ -76,6 +76,14 @@
 //! | REQ-5 (`Vec<T>` → vstd-`Vec` newtype; push/get/len; `fx alloc`; backing-agnostic) | SHIPPED | `lower_type` maps `Type::Vec(elem)` → `tvec_name` (`Vec<u64>` → `TVecU64`); `emit_vec_wrappers` (called from `lower` after `emit_scheme_defs`) materializes ONCE per element type the GROUNDED `TVec<elem>` newtype over `vstd::vec::Vec<elem>` with `well_formed` (`len() <= CAP`), spec `len`/`spec_get`, the no-OOB exec `get` (`req i < len`), and the capacity-preserving exec `push` (`req well_formed && len < CAP`, `ens final(self)...` — the `final(self)` &mut grounding finding). Spec-position `v.get(i)` lowers to `v.spec_get(i as int)` (`lower_expr` MethodCall arm). `fx alloc` emits no verus annotation (effects are a Thermite-level row; `push`'s allocation is the Stage-1 `Effect::Alloc`, accepted by effect-subsumption since `push` is an intrinsic, not a declared callee). Consumer: `lower`. Verified: real `verus --no-cheating` on the emitted `vec_demo.th` — `checked_get`/`push_one` `verified, 0 errors` (`thermite-lower/tests/collections_conformance.rs`); the no-`req` `get` reject FAILS (non-vacuity, L0). BACKING-AGNOSTIC (#62): the surface contract names `len`/`get`/`push` over `v@`, never `vstd::vec::Vec`; a later custom-backing decouple swaps `TVec`'s `data` field WITHOUT changing user `.th` code. |
 //! | REQ-6 (`Map<K,V>` → vstd `Map` wrapper) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut, v1.1). No `Type::Map` node / no `Map` lowering; the v1 corpus oracle (`conformance/vec_demo.th`) is `Vec`-only. Modeled on `vstd::map::Map`, deferred to a Stage-4 follow-up under #62. |
 //! | REQ-7 (`LowerError` extension, no panics) | SHIPPED | the `Vec` lowering reuses the existing `LowerError::Unsupported` (`tvec_name` on a non-primitive element type) — no new variant needed; no `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1). |
+//!
+//! ## REQ status — 07-strings.md cluster C4 (Basis Stage 7, issue #94)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | `emit_string_wrapper` emits the `from_byte(b: u64) -> TString` 1-byte constructor (`ens len == 1 && data@[0] == b as u8`) and the `push_byte(&self, b: u64) -> TString` copy-then-append (`req len < CAP`, `ens len == old+1 && data@[old] == b as u8` + the element-frame `forall|j| 0 <= j < old ==> result@[j] == self@[j]`) — the GROUNDED byte-builder over vstd's verified `Vec::push` (the `u64` byte zero-extends, the SAME convention as `byte_at -> u64`). Owned-result form (no `&mut`/`final`). Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_format_conformance.rs` (real verus L3 / `effects: [alloc]`). |
+//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le` spec fns + the `lemma_parse_push` append lemma (proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop with the round-trip invariant `parse_le(data@) + m*pow10(data.len()) == n` + `decreases m`), materialized once when the program uses `n.to_string()` / names `parse_le` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_le(result)` lowers to `parse_le(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_le(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_le`). GROUNDED `16 verified, 0 errors`; a wrong digit FAILS (R-DEFER-9). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` (the round-trip certifies L3, the formatter builds+runs 42→"42"). |
+//! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL) | NOT-STARTED | #94 cluster C4, DEPENDS-ON-C7 — prereq blocker #95. No `parse_u64` / `parse_be`/`all_digits` emission; the §4.2-cage spec sublanguage has no built-in `Option`/`Result` + payload-in-contract surface. GROUNDED-feasible (real verus `5 verified, 0 errors`); REQ-7/REQ-8 ship now under #94, REQ-9 lands after C7. |
 
 use std::fmt::Write as _;
 
@@ -440,6 +448,19 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     let string_wrapper = emit_string_wrapper(program)?;
     out.push_str(&string_wrapper);
 
+    // (1e) Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
+    // generated `u64`→decimal-`String` round-trip definitions — the `pow10`/
+    // `parse_le` spec fns, the `lemma_parse_push` append lemma, and the
+    // `u64_to_string` exec fn (the divide/mod-by-10 digit-extraction loop with the
+    // round-trip invariant `parse_le(data@) + m*pow10(len) == n` + `decreases m`) —
+    // materialized ONCE when the program uses `n.to_string()`, BEFORE any fn
+    // references them. EMPTY otherwise (byte-stable for the existing corpus — no
+    // regression). The emitted form is EXACTLY the GROUNDED `16 verified, 0 errors`
+    // round-trip (no `assume`/`external_body`, R-DEFER-9). Emitted AFTER the
+    // `TString` wrapper because `u64_to_string` returns a `TString`.
+    let numfmt_defs = emit_numfmt_defs(program)?;
+    out.push_str(&numfmt_defs);
+
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
     // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
     // ADT match-fold-sum spec fn (`sum_list`, REQ-10) joins this set: it too
@@ -450,7 +471,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // returns `nat`, so it joins the `nat_fns` set exactly as a hand-written
     // ADT-fold-sum does (an `Eq` against it coerces `as nat`). Detected by SHAPE:
     // the body tail is a `Call` whose callee path resolves to the `fold` scheme.
-    let nat_fns: Vec<&str> = program
+    let mut nat_fns: Vec<&str> = program
         .items
         .iter()
         .filter_map(|item| match item {
@@ -464,6 +485,17 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
             _ => None,
         })
         .collect();
+    // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the generated
+    // round-trip spec fns `parse_le`/`pow10` return `nat`, so when the program names
+    // them they join `nat_fns` — an `Eq` against `parse_le(...)` (the round-trip
+    // `ens parse_le(result) == n`) coerces the scalar `u64` side `as nat` exactly as
+    // a hand-written ADT-fold-sum does. Added only when numfmt is in use (byte-stable
+    // for the non-numfmt corpus).
+    if program_uses_numfmt(program) {
+        for name in GENERATED_NUMFMT_SPEC_FNS {
+            nat_fns.push(name);
+        }
+    }
 
     // The program-wide set of `struct` names that carry a type-invariant (REQ-8,
     // OQ-3 automatic threading): every `fn` taking or returning such a struct gets
@@ -2824,6 +2856,255 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
     out.push_str("        TString { data: out }\n");
     out.push_str("    }\n");
+    // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): the verified
+    // byte-builder. `from_byte(b)` builds a 1-byte `String`; `push_byte(b)` appends
+    // one byte returning a FRESH owned `String` (the `&self`/owned-result form — no
+    // `&mut`/`final(self)`, consistent with `concat`'s owned result). The surface
+    // byte is a `u64` (the SAME zero-extended convention as `byte_at -> u64`), cast
+    // to the `u8` backing element. GROUNDED `verified, 0 errors` (the copy loop with
+    // the element-frame invariant `forall|j| 0 <= j < i ==> out@[j] == self.data@[j]`
+    // + the new-byte placement `result@[old_len] == b`). All constructing (`fx alloc`).
+    out.push_str("    pub fn from_byte(b: u64) -> (result: TString)\n");
+    out.push_str("        ensures result.well_formed(), result.data.len() == 1,\n");
+    out.push_str("                result.data@[0] == b as u8,\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut data: Vec<u8> = Vec::new();\n");
+    out.push_str("        data.push(b as u8);\n");
+    out.push_str("        TString { data }\n");
+    out.push_str("    }\n");
+    out.push_str("    pub fn push_byte(&self, b: u64) -> (result: TString)\n");
+    writeln!(
+        out,
+        "        requires self.well_formed(), self.data.len() < {cap},"
+    )
+    .ok();
+    out.push_str("        ensures result.well_formed(),\n");
+    out.push_str("                result.data.len() == self.data.len() + 1,\n");
+    out.push_str("                result.data@[self.data.len() as int] == b as u8,\n");
+    out.push_str("                forall|j: int| 0 <= j < self.data.len()\n");
+    out.push_str("                    ==> result.data@[j] == self.data@[j],\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("        let mut i: usize = 0;\n");
+    out.push_str("        while i < self.data.len()\n");
+    out.push_str("            invariant i <= self.data.len(), out.len() == i,\n");
+    writeln!(out, "                      self.data.len() < {cap},").ok();
+    out.push_str(
+        "                      forall|j: int| 0 <= j < i ==> #[trigger] out@[j] == self.data@[j],\n",
+    );
+    out.push_str("            decreases self.data.len() - i,\n");
+    out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
+    out.push_str("        out.push(b as u8);\n");
+    out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    Ok(out)
+}
+
+/// True if the program uses `n.to_string()` anywhere (a `to_string` `MethodCall`)
+/// OR names the generated `parse_le`/`pow10` spec fns in a contract (REQ-8, #94).
+/// Either reference requires the generated `u64`→`String` round-trip definitions
+/// in scope. EMPTY otherwise (byte-stable for the non-numfmt corpus). The walk
+/// reuses the `each_subexpr` full-tree traversal (the same shape as
+/// `expr_has_str_lit`), over every fn/spec-fn body + every contract clause.
+fn program_uses_numfmt(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(f) => {
+            contract_uses_numfmt(&f.contract)
+                || f.body.as_ref().map(block_uses_numfmt).unwrap_or(false)
+        }
+        Item::SpecFn(s) => block_uses_numfmt(&s.body),
+        Item::Struct(_) | Item::Enum(_) => false,
+    })
+}
+
+/// True if a fn `Contract`'s `req`/`ens` names a numfmt construct (REQ-8).
+fn contract_uses_numfmt(contract: &thermite_syntax::ast::Contract) -> bool {
+    expr_uses_numfmt(&contract.req.expr) || contract.ens.iter().any(|c| expr_uses_numfmt(&c.expr))
+}
+
+/// True if a block uses a numfmt construct anywhere (REQ-8) — a `to_string`
+/// `MethodCall` in exec position or a `parse_le`/`pow10` call in a contract.
+fn block_uses_numfmt(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_numfmt)
+        || block.tail.as_deref().map(expr_uses_numfmt).unwrap_or(false)
+}
+
+fn stmt_uses_numfmt(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_numfmt(init),
+        Stmt::Assign { target, value } => expr_uses_numfmt(target) || expr_uses_numfmt(value),
+        Stmt::Return(opt) => opt.as_ref().map(expr_uses_numfmt).unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_numfmt(cond)
+                || block_uses_numfmt(then)
+                || else_.as_ref().map(block_uses_numfmt).unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_uses_numfmt(&l.body),
+        Stmt::Expr(e) => expr_uses_numfmt(e),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// True if `expr` references a numfmt construct anywhere (REQ-8): a `to_string`
+/// `MethodCall` (the surface `n.to_string()`) or a `parse_le`/`pow10` `Call` (a
+/// contract naming the generated round-trip). A full-tree walk reusing
+/// `each_subexpr` (the same structural traversal as `expr_has_str_lit`).
+fn expr_uses_numfmt(expr: &Expr) -> bool {
+    match expr {
+        Expr::MethodCall { name, .. } if name == "to_string" => return true,
+        Expr::Call { callee, .. } => {
+            if let Expr::Path(segs) = callee.as_ref() {
+                if let Some(last) = segs.last() {
+                    if GENERATED_NUMFMT_SPEC_FNS.contains(&last.as_str()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |e| {
+        if expr_uses_numfmt(e) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+/// The GENERATED `u64`→`String` round-trip spec-fn names (mirrors
+/// `thermite-spec::validator::GENERATED_SPEC_FNS`): a contract naming either
+/// requires the generated definitions emitted + drives the `parse_le(result)` →
+/// `parse_le(result.data@)` rewrite and the `as nat` equality coercion (REQ-8).
+const GENERATED_NUMFMT_SPEC_FNS: &[&str] = &["parse_le", "pow10"];
+
+/// Emit the generated `u64`→decimal-`String` round-trip definitions (REQ-8, #94)
+/// when the program uses `n.to_string()` / names `parse_le`, in deterministic
+/// order: the `pow10`/`parse_le` spec fns, the `lemma_parse_push` append lemma
+/// (proved by induction), then the `u64_to_string` exec fn (the divide/mod-by-10
+/// digit-extraction loop). EMPTY otherwise. The emitted form is EXACTLY the
+/// GROUNDED `16 verified, 0 errors` round-trip: `u64_to_string` returns a `TString`
+/// (so the surface `String` return type matches) with `ens parse_le(result.data@)
+/// == n`; the loop invariant is the round-trip partial accumulator `parse_le(data@)
+/// + m*pow10(data.len()) == n` with `decreases m`; the per-iteration step is
+/// discharged by `lemma_parse_push` + `by(nonlinear_arith)`. NO `assume`/
+/// `external_body`/`admit` (R-DEFER-9) — the round-trip is a REAL proof.
+fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
+    if !program_uses_numfmt(program) {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    out.push('\n');
+    // pow10 / parse_le — the decimal-weight + LSB-first decimal-value spec fns
+    // (data[0] least significant — the divide/mod-by-10 construction order).
+    out.push_str("pub open spec fn pow10(k: nat) -> nat\n");
+    out.push_str("    decreases k\n");
+    out.push_str("{ if k == 0 { 1 } else { 10 * pow10((k - 1) as nat) } }\n");
+    out.push_str("pub open spec fn parse_le(s: Seq<u8>) -> nat\n");
+    out.push_str("    decreases s.len()\n");
+    out.push_str("{ if s.len() == 0 { 0 }\n");
+    out.push_str(
+        "  else { ((s[0] - 48) as nat) + 10 * parse_le(s.subrange(1, s.len() as int)) } }\n",
+    );
+    // lemma_parse_push — appending a digit at the end adds (d-48)*pow10(len) to the
+    // value (proved by induction: base subrange==empty + pow10(0)==1; step subrange
+    // recurse + pow10 fold + nonlinear_arith distribution + =~= extensionality).
+    out.push('\n');
+    out.push_str("proof fn lemma_parse_push(s: Seq<u8>, d: u8)\n");
+    out.push_str(
+        "    ensures parse_le(s.push(d)) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()),\n",
+    );
+    out.push_str("    decreases s.len(),\n");
+    out.push_str("{\n");
+    out.push_str("    let sd = s.push(d);\n");
+    out.push_str("    if s.len() == 0 {\n");
+    out.push_str("        assert(sd.len() == 1);\n");
+    out.push_str("        assert(sd[0] == d);\n");
+    out.push_str("        assert(sd.subrange(1, sd.len() as int) =~= Seq::<u8>::empty());\n");
+    out.push_str("        assert(parse_le(sd.subrange(1, sd.len() as int)) == 0);\n");
+    out.push_str("        assert(parse_le(sd) == ((d - 48) as nat));\n");
+    out.push_str("        assert(parse_le(s) == 0);\n");
+    out.push_str("        assert(pow10(0) == 1);\n");
+    out.push_str(
+        "        assert(((d - 48) as nat) * pow10(0) == ((d - 48) as nat)) by(nonlinear_arith);\n",
+    );
+    out.push_str(
+        "        assert(parse_le(sd) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()));\n",
+    );
+    out.push_str("    } else {\n");
+    out.push_str("        let t = s.subrange(1, s.len() as int);\n");
+    out.push_str("        lemma_parse_push(t, d);\n");
+    out.push_str("        assert(sd.len() == s.len() + 1);\n");
+    out.push_str("        assert(sd[0] == s[0]);\n");
+    out.push_str("        assert(sd.subrange(1, sd.len() as int) =~= t.push(d));\n");
+    out.push_str("        assert(t.len() == s.len() - 1);\n");
+    out.push_str("        assert(sd.subrange(1, sd.len() as int) == t.push(d));\n");
+    out.push_str("        assert(parse_le(sd) == ((sd[0] - 48) as nat) + 10 * parse_le(sd.subrange(1, sd.len() as int)));\n");
+    out.push_str(
+        "        assert(parse_le(sd) == ((s[0] - 48) as nat) + 10 * parse_le(t.push(d)));\n",
+    );
+    out.push_str("        assert(parse_le(s) == ((s[0] - 48) as nat) + 10 * parse_le(t));\n");
+    out.push_str("        assert(pow10(s.len()) == 10 * pow10(t.len()));\n");
+    out.push_str("        assert(10 * (((d - 48) as nat) * pow10(t.len())) == ((d - 48) as nat) * pow10(s.len()))\n");
+    out.push_str("            by(nonlinear_arith)\n");
+    out.push_str("            requires pow10(s.len()) == 10 * pow10(t.len());\n");
+    out.push_str("        assert(10 * (parse_le(t) + ((d - 48) as nat) * pow10(t.len()))\n");
+    out.push_str("            == 10 * parse_le(t) + 10 * (((d - 48) as nat) * pow10(t.len()))) by(nonlinear_arith);\n");
+    out.push_str("        assert(parse_le(t.push(d)) == parse_le(t) + ((d - 48) as nat) * pow10(t.len()));\n");
+    out.push_str("        assert(10 * parse_le(t.push(d))\n");
+    out.push_str("            == 10 * parse_le(t) + ((d - 48) as nat) * pow10(s.len()));\n");
+    out.push_str(
+        "        assert(parse_le(sd) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()));\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    // u64_to_string — the divide/mod-by-10 digit-extraction loop, returning a
+    // TString (the surface `String`) with the GOLD-STANDARD round-trip ens
+    // `parse_le(result.data@) == n`. The loop invariant is the round-trip partial
+    // accumulator; `decreases m` is the strictly-shrinking remainder.
+    out.push('\n');
+    out.push_str("pub fn u64_to_string(n: u64) -> (result: TString)\n");
+    out.push_str("    ensures parse_le(result.data@) == n as nat,\n");
+    out.push_str("{\n");
+    out.push_str("    let mut data: Vec<u8> = Vec::new();\n");
+    out.push_str("    let mut m: u64 = n;\n");
+    out.push_str("    proof {\n");
+    out.push_str("        assert(data@ =~= Seq::<u8>::empty());\n");
+    out.push_str("        assert(parse_le(data@) == 0);\n");
+    out.push_str("        assert(pow10(0) == 1);\n");
+    out.push_str("        assert((n as nat) * pow10(0) == n as nat) by(nonlinear_arith);\n");
+    out.push_str("    }\n");
+    out.push_str("    while m > 0\n");
+    out.push_str(
+        "        invariant parse_le(data@) + (m as nat) * pow10(data.len() as nat) == n as nat,\n",
+    );
+    out.push_str("        decreases m,\n");
+    out.push_str("    {\n");
+    out.push_str("        let d: u8 = (m % 10) as u8 + 48u8;\n");
+    out.push_str("        let ghost old_data = data@;\n");
+    out.push_str("        let ghost old_m = m as nat;\n");
+    out.push_str("        let ghost old_len = data.len() as nat;\n");
+    out.push_str("        data.push(d);\n");
+    out.push_str("        proof {\n");
+    out.push_str("            lemma_parse_push(old_data, d);\n");
+    out.push_str("            assert((m as nat) == 10 * ((m / 10) as nat) + ((m % 10) as nat)) by(nonlinear_arith);\n");
+    out.push_str("            assert(pow10((old_len + 1) as nat) == 10 * pow10(old_len));\n");
+    out.push_str("        }\n");
+    out.push_str("        m = m / 10;\n");
+    out.push_str("        proof {\n");
+    out.push_str("            assert(old_m * pow10(old_len)\n");
+    out.push_str("                == ((d - 48) as nat) * pow10(old_len) + (m as nat) * pow10((old_len + 1) as nat))\n");
+    out.push_str("                by(nonlinear_arith)\n");
+    out.push_str("                requires\n");
+    out.push_str("                    old_m == 10 * (m as nat) + ((d - 48) as nat),\n");
+    out.push_str("                    pow10((old_len + 1) as nat) == 10 * pow10(old_len);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    TString { data }\n");
     out.push_str("}\n");
     Ok(out)
 }
@@ -2869,6 +3150,24 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             Ok(block)
         }
         Expr::Path(segs) => {
+            // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): a
+            // `String::`-qualified associated call (`String::from_byte(b)`) names the
+            // surface type `String`, which lowers to the wrapper `TString` (the SAME
+            // mapping `lower_type` applies to `Type::String`). Rewrite a leading
+            // `String` path segment to `TString` so the associated constructor
+            // resolves to the wrapper's `from_byte` (Verus would otherwise resolve
+            // `String` to `std::string::String`, which has no `from_byte`). Keyed on
+            // the leading segment being exactly `String` with a `::`-qualified tail
+            // (a bare `String` is a TYPE position handled by `lower_type`, never an
+            // expression path).
+            if segs.len() >= 2 && segs[0] == "String" {
+                let mut out = String::from("TString");
+                for seg in &segs[1..] {
+                    out.push_str("::");
+                    out.push_str(seg);
+                }
+                return Ok(out);
+            }
             // A plain path emits its segments joined by `::`. The slice→`xs@`
             // view (REQ-5) is applied at the point of USE (a spec-fn / combinator
             // argument position — `lower_spec_arg`), NOT here, because an `Index`
@@ -2919,6 +3218,18 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // references confirm; the `@` view is only needed where a `Seq`
             // operation (`subrange`/index) is required (handled in `lower_index`).
             let r = lower_expr(receiver, ctx, d, span)?;
+            // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
+            // `u64`→decimal-`String` method `n.to_string()` lowers to a CALL of the
+            // generated free fn `u64_to_string(n)` (emitted by `emit_numfmt_defs`,
+            // returning a `TString` with the round-trip `ens parse_le(result.data@)
+            // == n`). The method spelling is the surface (07-strings.md REQ-8 pins
+            // `n.to_string()`); the free-fn call is the clean lowering — the generated
+            // fn carries the proof, so the method-call site is a thin dispatch. EXEC
+            // position only (a constructing op, `fx alloc`); `to_string` never appears
+            // in a contract (the round-trip is named via `parse_le`, not `to_string`).
+            if !ctx.is_spec() && name == "to_string" && args.is_empty() {
+                return Ok(format!("u64_to_string({r})"));
+            }
             // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): in SPEC
             // position the bounded-`Vec` accessor `v.get(i)` (a contract naming the
             // accessed element, `ens result == v.get(i)`) lowers to the wrapper's
@@ -3167,6 +3478,17 @@ fn lower_spec_arg(arg: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<Stri
             if let Some(name) = segs.last() {
                 if segs.len() == 1 && ctx.is_slice(name) {
                     return Ok(format!("{name}@"));
+                }
+                // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): a
+                // `String`-named value passed to a spec fn is viewed as its byte
+                // `Seq<u8>` — `result.data@` — so the round-trip `parse_le(result)`
+                // lowers to `parse_le(result.data@)` (the `TString` wraps a
+                // `vstd::vec::Vec<u8>` whose `Seq` view is `.data@`). The SAME
+                // view-at-use rule a slice param gets (`xs@`), specialized to the
+                // `TString`'s backing field. Keyed on the in-scope `String` SHAPE
+                // set (`ctx.is_string`), so a non-`String` arg is UNCHANGED.
+                if segs.len() == 1 && ctx.is_string(name) {
+                    return Ok(format!("{name}.data@"));
                 }
             }
         }

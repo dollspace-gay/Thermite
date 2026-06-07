@@ -1320,12 +1320,43 @@ pub(crate) fn lower_expr_exec(
             block.push_str(" TString { data } })");
             Ok(block)
         }
-        Expr::Path(segs) => Ok(segs.join("::")),
+        Expr::Path(segs) => {
+            // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): the L1
+            // mirror of `lower.rs`'s `String::`→`TString::` rewrite — a
+            // `String::from_byte(b)` associated call names the surface `String`,
+            // which the L1 runtime emits as `TString` (`emit_string_runtime_l1`).
+            // Without the rewrite the build crate resolves `String` to the
+            // `use TString as String;` alias for a TYPE, but an associated-fn PATH
+            // `String::from_byte` needs the wrapper name; rewriting the leading
+            // segment keeps it on the emitted `TString` impl.
+            if segs.len() >= 2 && segs[0] == "String" {
+                let mut out = String::from("TString");
+                for seg in &segs[1..] {
+                    out.push_str("::");
+                    out.push_str(seg);
+                }
+                return Ok(out);
+            }
+            Ok(segs.join("::"))
+        }
         Expr::Call { callee, args } => {
             let c = lower_expr_exec(callee, d, span, variants)?;
+            // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1
+            // runnable `parse_le` (emitted by `emit_string_runtime_l1`) takes its
+            // byte sequence by REFERENCE (`&TString`) so the ens check does not MOVE
+            // the bound `result` it also returns. Borrow the sole arg of a `parse_le`
+            // call (the round-trip ens `parse_le(result) == n`). Keyed on the
+            // generated callee name; an arg already written `&x` is left as-is.
+            let borrow_arg = matches!(callee.as_ref(), Expr::Path(segs)
+                if segs.len() == 1 && segs[0] == "parse_le");
             let mut parts = Vec::new();
             for a in args {
-                parts.push(lower_expr_exec(a, d, span, variants)?);
+                let lowered = lower_expr_exec(a, d, span, variants)?;
+                if borrow_arg && !lowered.starts_with('&') {
+                    parts.push(format!("&{lowered}"));
+                } else {
+                    parts.push(lowered);
+                }
             }
             Ok(format!("{c}({})", parts.join(", ")))
         }
@@ -1335,6 +1366,16 @@ pub(crate) fn lower_expr_exec(
             args,
         } => {
             let r = lower_expr_exec(receiver, d, span, variants)?;
+            // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
+            // `u64`→decimal-`String` method `n.to_string()` lowers to a CALL of the
+            // generated free fn `u64_to_string(n)` (emitted by
+            // `emit_string_runtime_l1` when the program uses `to_string`). The L1
+            // mirror of the L3 `lower.rs` rewrite — the surface method spelling, the
+            // free-fn call the runnable form. The generated fn RUNS the digit loop +
+            // reverses to the MSB-first decimal.
+            if name == "to_string" && args.is_empty() {
+                return Ok(format!("u64_to_string({r})"));
+            }
             // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the emitted L1
             // `String` wrapper's index accessors `byte_at(i: usize)` /
             // `slice(lo: usize, hi: usize)` (see `emit_string_runtime_l1`) take
@@ -1891,6 +1932,171 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     .ok();
     out.push_str("        TString { data: self.data[lo..hi].to_vec() }\n");
     out.push_str("    }\n");
+    // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): the L1 exec
+    // mirror of the verified byte-builder (`lower.rs::emit_string_wrapper`'s
+    // `from_byte`/`push_byte`). `from_byte(b)` builds a 1-byte `String`; `push_byte(b)`
+    // appends one byte returning a FRESH owned `String` (the owned-result form). The
+    // surface byte is a `u64` (the SAME zero-extension as `byte_at -> u64`), narrowed
+    // to the `u8` backing element. The L3 form PROVES `len < CAP`; L1 enforces it
+    // loudly at run time (the always-active check) so an over-cap push ABORTS rather
+    // than silently — §6 L1 handled-or-loud.
+    out.push_str("    fn from_byte(b: u64) -> TString {\n");
+    out.push_str("        let mut data: Vec<u8> = Vec::new();\n");
+    out.push_str("        data.push(b as u8);\n");
+    out.push_str("        TString { data }\n");
+    out.push_str("    }\n");
+    out.push_str("    fn push_byte(&self, b: u64) -> TString {\n");
+    writeln!(
+        out,
+        "        thermite_check!(\"req\", \"self.len() < CAP\", self.data.len() < {cap});"
+    )
+    .ok();
+    out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("        out.extend_from_slice(&self.data);\n");
+    out.push_str("        out.push(b as u8);\n");
+    out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
     out.push_str("}\n");
+    // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1 exec
+    // form of the generated `u64`→decimal-`String` round-trip. The L3 form PROVES
+    // the round-trip `parse_le(result.data@) == n` via the divide/mod-by-10 digit
+    // loop + the `lemma_parse_push` append lemma; L1 is ENTIRELY exec, so this is
+    // ordinary runnable Rust — the SAME digit-extraction loop (LSB-first push of
+    // `(m % 10) + 48`, then `m /= 10`), reversed at the end to the human-readable
+    // MSB-first decimal (the construction is LSB-first; the display reverses — the
+    // L3 `parse_be(reverse(s)) == parse_le(s)` bridge). Emitted only when the program
+    // uses `n.to_string()` (the non-numfmt corpus is byte-unaffected). `n == 0` yields
+    // the single byte "0" (the loop body runs once before the reverse). The method
+    // `n.to_string()` lowers to a CALL of this free fn (`lower_expr_exec`).
+    if program_uses_numfmt_l1(program) {
+        out.push('\n');
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn u64_to_string(n: u64) -> TString {\n");
+        out.push_str("    let mut data: Vec<u8> = Vec::new();\n");
+        out.push_str("    let mut m: u64 = n;\n");
+        out.push_str("    if m == 0 { data.push(48u8); }\n");
+        out.push_str("    while m > 0 {\n");
+        out.push_str("        data.push((m % 10) as u8 + 48u8);\n");
+        out.push_str("        m = m / 10;\n");
+        out.push_str("    }\n");
+        out.push_str("    TString { data }\n");
+        out.push_str("}\n");
+        // The L1 runnable form of the round-trip spec fns (`parse_le`/`pow10`). At L3
+        // these are `spec fn`s carrying the PROOF; at L1 a contract `ens parse_le(result)
+        // == n` becomes an always-active runtime CHECK, so `parse_le` must be a real
+        // runnable fn. `parse_le` reads the byte sequence LSB-FIRST — `data[0]` least
+        // significant — matching the L3 spec `parse_le` (`(s[0]-48) + 10*parse_le(s[1..])`)
+        // AND the LSB-first construction order of `u64_to_string` (the divide/mod-by-10
+        // loop pushes the least-significant digit first). Iterating from the END (the
+        // most significant digit) with a left-to-right Horner accumulate reconstructs
+        // the same value the recursive LSB-first def computes — so L1 and L3 agree
+        // byte-for-byte (no display divergence). Takes `&TString` so the ens check
+        // borrows (never moves) the bound `result`. `pow10` is the decimal weight
+        // (emitted for completeness; a contract may name it).
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn pow10(k: u64) -> u64 {\n");
+        out.push_str("    let mut p: u64 = 1;\n");
+        out.push_str("    let mut i: u64 = 0;\n");
+        out.push_str("    while i < k { p = p * 10; i = i + 1; }\n");
+        out.push_str("    p\n");
+        out.push_str("}\n");
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn parse_le(s: &TString) -> u64 {\n");
+        out.push_str("    let mut acc: u64 = 0;\n");
+        out.push_str("    let mut i: usize = s.data.len();\n");
+        out.push_str("    while i > 0 {\n");
+        out.push_str("        i = i - 1;\n");
+        out.push_str("        acc = acc * 10 + (s.data[i] as u64 - 48);\n");
+        out.push_str("    }\n");
+        out.push_str("    acc\n");
+        out.push_str("}\n");
+    }
     out
+}
+
+/// True if the L1 program uses `n.to_string()` anywhere (the L1 mirror of
+/// `lower.rs::program_uses_numfmt`): a `to_string` `MethodCall` requires the
+/// generated `u64_to_string` runnable form emitted. EMPTY otherwise (byte-stable
+/// for the non-numfmt corpus). A contract `parse_le`/`pow10` reference is L3-only
+/// (a spec fn never runs as exec code at L1), so only the `to_string` method drives
+/// the L1 emission — the round-trip PROOF lives at L3, the L1 fn just RUNS the loop.
+fn program_uses_numfmt_l1(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(f) => f.body.as_ref().map(block_has_to_string).unwrap_or(false),
+        Item::SpecFn(s) => block_has_to_string(&s.body),
+        Item::Struct(_) | Item::Enum(_) => false,
+    })
+}
+
+/// True if a block calls `n.to_string()` anywhere (REQ-8 L1) — a full-tree walk
+/// over the body statements + tail, mirroring `block_has_str_lit_l1`.
+fn block_has_to_string(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_has_to_string)
+        || block
+            .tail
+            .as_deref()
+            .map(expr_has_to_string)
+            .unwrap_or(false)
+}
+
+fn stmt_has_to_string(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_has_to_string(init),
+        Stmt::Assign { target, value } => expr_has_to_string(target) || expr_has_to_string(value),
+        Stmt::Return(opt) => opt.as_ref().map(expr_has_to_string).unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_has_to_string(cond)
+                || block_has_to_string(then)
+                || else_.as_ref().map(block_has_to_string).unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_has_to_string(&l.body),
+        Stmt::Expr(e) => expr_has_to_string(e),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// True if a `to_string` method call appears anywhere in `expr` (REQ-8 L1) — a
+/// full structural walk mirroring `expr_has_str_lit_l1`.
+fn expr_has_to_string(expr: &Expr) -> bool {
+    match expr {
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => {
+            name == "to_string"
+                || expr_has_to_string(receiver)
+                || args.iter().any(expr_has_to_string)
+        }
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => false,
+        Expr::Call { callee, args } => {
+            expr_has_to_string(callee) || args.iter().any(expr_has_to_string)
+        }
+        Expr::Field { receiver, .. } => expr_has_to_string(receiver),
+        Expr::Closure { body, .. } => expr_has_to_string(body),
+        Expr::Match { scrutinee, arms } => {
+            expr_has_to_string(scrutinee) || arms.iter().any(|a| expr_has_to_string(&a.body))
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_has_to_string(cond) || block_has_to_string(then) || block_has_to_string(else_)
+        }
+        Expr::Binary { lhs, rhs, .. } => expr_has_to_string(lhs) || expr_has_to_string(rhs),
+        Expr::Index { base, index } => {
+            expr_has_to_string(base)
+                || match index {
+                    IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => {
+                        expr_has_to_string(e)
+                    }
+                    IndexArg::Range(lo, hi) => expr_has_to_string(lo) || expr_has_to_string(hi),
+                }
+        }
+        Expr::Cast { expr, .. } | Expr::Ref { expr, .. } | Expr::Deref(expr) => {
+            expr_has_to_string(expr)
+        }
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_to_string(v)),
+        Expr::Is { scrutinee, .. } => expr_has_to_string(scrutinee),
+        Expr::Unary { expr, .. } => expr_has_to_string(expr),
+    }
 }

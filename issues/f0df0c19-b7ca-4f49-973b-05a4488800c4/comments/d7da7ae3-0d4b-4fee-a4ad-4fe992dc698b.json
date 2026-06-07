@@ -1,0 +1,10 @@
+{
+  "uuid": "d7da7ae3-0d4b-4fee-a4ad-4fe992dc698b",
+  "issue_uuid": "f0df0c19-b7ca-4f49-973b-05a4488800c4",
+  "author": "Yffe",
+  "content": "FIXED (acto-fixer, single concern: the zero-guard + the len>=1 floor at L3).\n\nROOT-CAUSE FIX: emit_numfmt_defs (thermite-lower/src/lower.rs) now emits the L3 u64_to_string with the zero-guard 'if m == 0 { data.push(48u8); }' (mirroring emit_string_runtime_l1 in l1.rs) BEFORE the 'while m > 0' build loop, so n==0 -> data=[48] -> (reverse of [48] is [48]) -> result.data@==[48]=='0', byte-for-byte equal to L1. REQ-8 (the human-readable MSB-first decimal of 0 is '0') now holds at L3.\n\nCONTRACT STRENGTHENED (R-DEFER-9 teeth, not a cheat): added 'ens result.data.len() >= 1' alongside the round-trip 'ens parse_be(result.data@) == n as nat'. The round-trip alone admits empty for 0 (parse_be([])==0); the len floor contractually FORBIDS the empty string. CONFIRMED real teeth: with the zero-guard removed, the build-loop invariant 'data.len() >= 1 || m > 0' FAILS verus (26 verified, 1 error). No assume/admit/external_body.\n\nVERIFICATION:\n- divergence_numfmt_zero (un-ignored): 1 passed.\n- emitted L3 under real verus 0.2026.05.24: 28 verified, 0 errors.\n- forge string_format_conformance: 5 passed; divergence_numfmt_display_order: 1 passed (0->'0', 42->'42', 100->'100', 7->'7'; L3==L1 byte-for-byte at 0 and everywhere).\n- cargo test --workspace: 0 failed; clippy -D warnings: clean; fmt --check: clean.\n\nHand back for acto-critic re-audit.",
+  "created_at": "2026-06-07T05:54:56.329041948Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAZi20DdKge1MW5FHSF2nZm77vLNVXBw0IgH/8OS33mRTIwdYex9fLTyxuK7NMDoUdXnnDDK7GJhe3ZcpxiuI2CQ=="
+}

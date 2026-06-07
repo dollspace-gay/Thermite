@@ -6,6 +6,7 @@ governs: thermite-syntax/src/parser.rs
 thesis-refs:
   - thermite-design.md §4.1
   - thermite-design.md §4.3
+  - thermite-design.md §4.4
   - thermite-design.md §2 (pillar 4 crisp feedback, pillar 5 locality)
 references:
   - conformance/sum.th
@@ -22,9 +23,7 @@ stream (`lexer.md`) producing the AST (`ast.md`). It is the executable form of
 into the next (§4.3, pillar 5 locality); and (b) **mandatory-clause enforcement**
 — a `fn` missing `req`/`ens`/`fx`, or a `loop`/`while` missing `inv`/`dec`, is a
 parse error, never an implicit default (§4.1). It is **REGISTRY-FREE**: it parses
-combinator calls (`forall_in`, `sorted`) as generic call expressions and never
-consults thermite-spec (`goal.md`: the fixed-combinator-set rule is a downstream
-*semantic* check, not a grammar rule).
+combinator calls (`forall_in`, `sorted`) as generic call expressions.
 
 This doc is GREENFIELD / FORWARD-LOOKING: no `parser.rs` exists. Every REQ is
 **NOT-STARTED**, blocked on issue #3.
@@ -34,160 +33,177 @@ This doc is GREENFIELD / FORWARD-LOOKING: no `parser.rs` exists. Every REQ is
 - **REQ-1 (recursive-descent over the surface grammar):** The parser implements
   exactly the productions of `surface-grammar.md` as recursive-descent functions
   (one per non-terminal family), with the expression-precedence ladder
-  (`OrExpr`→…→`Postfix`→`Primary`) and non-associative comparison from that
-  grammar. It accepts both corpus programs in full and rejects the constructs
-  §4.4 removes. Derived from §4.3 + `surface-grammar.md`.
+  (`OrExpr`→`AndExpr`→`CmpExpr`→`BitOrExpr`→`BitXorExpr`→`BitAndExpr`→`ShiftExpr`
+  →`AddExpr`→`MulExpr`→`CastExpr`→`UnaryExpr`→`RefExpr`→`Postfix`→`Primary`) and
+  non-associative comparison from that grammar. It accepts both corpus programs
+  in full and rejects the constructs §4.4 removes. Derived from §4.3 +
+  `surface-grammar.md`.
+
+  > **AMENDMENT (#92).** The ladder gains the modulo/shift/bitwise tiers
+  > (`BitOrExpr`/`BitXorExpr`/`BitAndExpr`/`ShiftExpr`, and `%` folded into
+  > `MulExpr`) and a unary `!` tier (`UnaryExpr`), at the standard-Rust
+  > precedence pinned in `surface-grammar.md` REQ-10.
 
 - **REQ-2 (mandatory-clause enforcement is a parse error):** Parsing a `fn`
   emits a `SyntaxError` if any of `req`, `ens` (≥1), or `fx` is absent or
   out-of-order; parsing a `loop`/`while` errors if `inv` (≥1) or `dec` (exactly
-  one) is absent. The parser enforces clause PRESENCE, ORDER, and CARDINALITY
-  only — it does NOT check that `ens` mentions `result`, that `req` is
-  satisfiable, or that combinators are registered (those are forge/thermite-spec,
-  §7/§4.2). Derived from §4.1 ("absence is always a parse error, never an
-  implicit default") + the scope boundary in `surface-grammar.md`.
+  one) is absent. The parser enforces PRESENCE, ORDER, and CARDINALITY only.
+  Derived from §4.1 + the scope boundary in `surface-grammar.md`.
 
 - **REQ-3 (per-item recovery, no cascade):** On a syntax error inside an item,
-  the parser (a) records a `SyntaxError` diagnostic with the error span, (b)
-  **resyncs** by discarding tokens up to the next top-level item-boundary token
-  (`fn`, `spec`, or `#[` beginning a `#[slag]` attribute) or EOF, and (c)
-  resumes parsing the next item. A malformed item produces an error-marked /
-  absent `Item` but the following well-formed items still parse to correct AST
-  nodes. Items are parsed independently — recovery is per-item by construction
-  (§4.3: "a syntax error inside one item cannot cascade into the next … recovery
-  is per-item by construction"). Derived from §4.3 + pillar 5 (locality: "an
-  edit's blast radius is its block").
+  the parser records a `SyntaxError`, resyncs to the next item-boundary token
+  (`fn`, `spec`, `#[`) or EOF, and resumes. A malformed item does not corrupt the
+  following well-formed items. Derived from §4.3 + pillar 5.
 
 - **REQ-4 (Result / diagnostics-bearing return, no panics):** The parser returns
-  a structure bearing the parsed `Program` (the recovered items) AND the full
-  `Vec<SyntaxError>` diagnostics — e.g. `ParseResult { program, errors }` or
-  `Result<Program, Vec<SyntaxError>>` such that even on error the recovered items
-  are recoverable for tooling. No `unwrap`/`expect`/`panic!` in production
-  (`goal.md` R-CODE-2; `thermite-syntax`'s `SyntaxError` per scaffold REQ-3).
-  Every diagnostic carries a span (from `lexer.md` REQ-7) and an actionable
-  message (pillar 4). Derived from R-CODE-2 + §2 pillar 4.
+  a structure bearing the recovered `Program` AND the full `Vec<SyntaxError>`.
+  No `unwrap`/`expect`/`panic!` in production. Every diagnostic carries a span +
+  an actionable message. Derived from R-CODE-2 + §2 pillar 4.
 
 - **REQ-5 (round-trip / AST-shape fidelity):** Parsing `conformance/sum.th` and
-  `conformance/binary_search.th` produces the AST shapes pinned in `ast.md`
-  (AC-1, AC-3) with zero diagnostics. The `conformance/parse/` fixtures are the
-  oracle: a round-trip (parse → AST-shape assertion, and where a formatter exists,
-  parse → print → parse stability) over both programs. Derived from `goal.md`
-  (corpus is the parser's verification oracle) + `conformance/README.md`.
+  `conformance/binary_search.th` produces the AST shapes pinned in `ast.md` with
+  zero diagnostics. The `conformance/parse/` fixtures are the oracle. Derived
+  from `goal.md` + `conformance/README.md`.
 
-- **REQ-6 (one call syntax disambiguation):** The parser resolves the postfix
-  `.` form to a `MethodCall` (when followed by `( … )`) or `Field` (otherwise),
-  free `name(args)` to a `Call`, and `::`-segmented names to a `Path`
-  (`u32::MAX`, `Some`) — never treating `::` as method dispatch
-  (`surface-grammar.md` REQ-6; §4.4 "one call syntax"). Derived from §4.4 + the
-  corpus (`xs.len()` vs `spec_sum(t)` vs `u32::MAX`).
+- **REQ-6 (one call syntax disambiguation):** The parser resolves postfix `.` to
+  `MethodCall` (when followed by `(…)`) or `Field`, free `name(args)` to `Call`,
+  and `::`-segmented names to `Path` (`u32::MAX`). Derived from §4.4.
 
 - **REQ-7 (addressing substrate available):** The parser produces AST nodes from
-  which `semantic-addressing.md`'s deterministic numbering is computable — loops
-  in source order within their function, `inv` in source order within their loop
-  — so `address.rs` (governed by `semantic-addressing.md`) can resolve
-  `binary_search.loop#1.inv#2`. The parser does not itself implement the address
-  string syntax; it guarantees the structural order addressing relies on. Derived
+  which `semantic-addressing.md`'s deterministic numbering is computable. Derived
   from §4.3 + `ast.md` REQ-8.
+
+- **REQ-8 (operator-tier parsing — NEW, #92):** The parser parses the new binary
+  operators and the unary `!` into the AST nodes of `ast.md` REQ-10 at the
+  precedence of `surface-grammar.md` REQ-10:
+  - `%` (`TokKind::Percent`) folds into the `MulExpr` tier alongside `*`/`/` →
+    `Binary { op: BinOp::Rem, .. }`;
+  - `<<`/`>>` (`TokKind::Shl`/`Shr`) at a NEW `ShiftExpr` tier (below `+ -`) →
+    `BinOp::Shl`/`Shr`;
+  - `&` (`TokKind::Amp`) at a NEW `BitAndExpr` tier → `BinOp::BitAnd` (the parser
+    distinguishes binary `&` here from the prefix `&`/`&mut` reference in
+    `RefExpr` by position: a `&` in operator position binds two operands);
+  - `^` (`TokKind::Caret`) at a NEW `BitXorExpr` tier → `BinOp::BitXor`;
+  - `|` (`TokKind::Pipe`) at a NEW `BitOrExpr` tier → `BinOp::BitOr` (the parser
+    distinguishes binary `|` from a closure delimiter `|params|` by context: a
+    closure `|` opens a closure in `Primary`, an operator `|` joins two operands
+    in `BitOrExpr`);
+  - prefix `!` (`TokKind::Bang`) at a NEW `UnaryExpr` tier (tighter than all
+    binaries) → `Unary { op: UnaryOp::Not, .. }`.
+
+  The `!` meaning (bitwise vs logical) is per operand type, resolved downstream
+  (validator/lower) — the PARSER produces one `UnaryOp::Not` regardless (§2.3,
+  `ast.md` OQ-4). Derived from §4.4 + `surface-grammar.md` REQ-10.
+
+- **REQ-9 (partiality is NOT a parse concern — NEW, #92):** The parser parses
+  `a / b`, `a % b`, `a << k`, `a >> k` UNCONDITIONALLY — it does NOT check or
+  inject the divide-by-zero / shift-bound obligation. That obligation is a §7
+  PROOF obligation discharged at verification (`ast.md` REQ-11): the lowering
+  emits the bare Verus operator and Verus raises the obligation. The parser's
+  only job is to build the `Binary` node. Derived from the scope boundary in
+  `surface-grammar.md` + `ast.md` REQ-11.
 
 ## Acceptance criteria
 
-- **AC-1 (corpus round-trips):** `conformance/parse/` fixtures: parsing
-  `sum.th` and `binary_search.th` yields the `ast.md`-pinned shapes with zero
-  diagnostics. Specifically, parsing `binary_search.th` yields an item addressed
-  `binary_search` whose `binary_search.loop#1.inv#2` resolves to
-  `forall_from(haystack, hi, |x| x > needle)` (a `Call` to `forall_from` with a
-  closure arg). (REQ-1, REQ-5, REQ-6, REQ-7)
-- **AC-2 (missing clause = diagnostic):** A `conformance/parse/` negative
-  fixture per case — `sum.th` with the `req` line removed, with an `ens` removed
-  (leaving zero), with `fx` removed, with a `loop`/`while` `inv` removed, with
-  `dec` removed, and with `req`/`ens`/`fx` reordered — each produces a
-  `SyntaxError` (no silent default). (REQ-2)
-- **AC-3 (per-item recovery, no cascade):** A `conformance/parse/` fixture
-  (`recover_per_item`, per `tooling/spec-routes.toml conformance_ops`) with two
-  items where the FIRST is malformed (e.g. a broken `fn` body) and the SECOND is
-  well-formed: the parser emits ≥1 diagnostic for item one AND parses item two to
-  its correct AST node. The error does not consume or corrupt item two. (REQ-3)
-- **AC-4 (no panic):** No input — including the negative and recovery fixtures —
-  causes a panic; all failures surface as `SyntaxError` diagnostics in the
-  returned structure. (REQ-4)
+- **AC-1 (corpus round-trips):** parsing `sum.th`/`binary_search.th` yields the
+  `ast.md` shapes with zero diagnostics, including
+  `binary_search.loop#1.inv#2 → forall_from(...)`. (REQ-1, REQ-5, REQ-6, REQ-7)
+- **AC-2 (missing clause = diagnostic):** removing `req`/`ens`/`fx`/`inv`/`dec`
+  or reordering `req`/`ens`/`fx` each produces a `SyntaxError`. (REQ-2)
+- **AC-3 (per-item recovery, no cascade):** the `recover_per_item` fixture: a
+  malformed first item + a well-formed second; ≥1 diagnostic for item one, item
+  two parses to its correct node. (REQ-3)
+- **AC-4 (no panic):** no input — including negative/recovery fixtures and
+  malformed literals (`''`, `0x`, `'é'`) — panics. (REQ-4)
+- **AC-5 (operator tiers + precedence — NEW, #92):** `a % b` → `Binary { op:
+  Rem }`, `a << k` → `Shl`, `a >> k` → `Shr`, `a & b` → `BitAnd`, `a | b` →
+  `BitOr`, `a ^ b` → `BitXor`, `!a` → `Unary { op: Not }`. Precedence:
+  `a % b + 1` parses as `(a % b) + 1`, `a + b << c` as `(a + b) << c`,
+  `!a & b` as `(!a) & b`, `a & b | c` as `(a & b) | c`. (REQ-8)
+- **AC-6 (binary `|` vs closure `|`, binary `&` vs ref `&` — NEW, #92):** `|x| x`
+  parses as a closure (in `Primary`); `a | b` parses as `BinOp::BitOr`; `&e`
+  parses as a `Ref`; `a & b` as `BinOp::BitAnd`. The parser disambiguates by
+  position. (REQ-8)
+- **AC-7 (char/hex/binary literal parse — NEW, #91/#92):** `'A'`/`0x1b`/`0b101`
+  each parse to `Expr::IntLit` (the same node as decimal); `let c: u8 = 'A';`
+  parses. (REQ-1, ties to `lexer.md` REQ-3/REQ-9.)
 
 ## Architecture
 
 A hand-written recursive-descent parser in `thermite-syntax/src/parser.rs` with a
-cursor over the `Vec<Token>` from `lexer.md`. One function per grammar family
-(`parse_item`, `parse_fn`, `parse_contract`, `parse_block`, `parse_stmt`,
-`parse_loop`, `parse_expr_bp` for the precedence ladder, `parse_pattern`,
-`parse_type`). The precedence ladder follows `surface-grammar.md` exactly
-(non-associative comparison, postfix for `.`/`[]`/`(`).
+cursor over the `Vec<Token>` from `lexer.md`. One function per grammar family.
 
-**Mandatory clauses (REQ-2).** `parse_contract` requires `req` then `ens`+ then
-`fx` in order; a missing or misordered keyword is a `SyntaxError` at that span.
-`parse_loop`/`parse_while` require `inv`+ then exactly one `dec`. Because the AST
-`Contract`/`Loop` types are non-optional in those fields (`ast.md` REQ-2/REQ-5),
-the parser physically cannot build the node without them — the type system backs
-the rule (§4.1).
+**Expression ladder (REQ-1, REQ-8).** The existing ladder
+(`parse_or`→`parse_and`→`parse_cmp`→`parse_is`→`parse_add`→`parse_mul`→
+`parse_cast`→`parse_ref`→`parse_postfix`→`parse_primary`) GAINS the #92 tiers,
+threaded at the pinned precedence between `parse_cmp` and `parse_add`:
+`parse_cmp` → `parse_bitor` → `parse_bitxor` → `parse_bitand` → `parse_shift` →
+`parse_add`; `parse_mul` adds the `%` arm; and a `parse_unary` (`!` prefix) sits
+between `parse_cast` and `parse_ref`. (The `parse_is` tier of the basis ADT stage
+stays where it is; the builder reconciles its position with the new tiers,
+keeping `is` at its current binding.) Each new tier is a left-folding loop
+mirroring `parse_add`/`parse_mul`.
 
-**Per-item recovery (REQ-3).** The top-level loop is:
-`while not EOF { match parse_item() { Ok(item) => push; Err(e) => { record e;
-resync_to_item_boundary(); } } }`. `resync_to_item_boundary` discards tokens
-until it sees `fn` / `spec` / `#[` / EOF (the item-start tokens), so a broken
-item's tokens never bleed into the next. This realizes §4.3's "items are parsed
-independently — recovery is per-item by construction" and pillar 5 locality
-(blast radius = the block). The token spans (`lexer.md` REQ-7) make the resync
-boundary precise.
+**Disambiguation (REQ-8, AC-6).** `&` in `parse_bitand` is the BINARY operator
+(two operands); `&`/`&mut` in `parse_ref` is the PREFIX reference (one operand) —
+distinguished by parse position (prefix vs infix). `|` in `parse_bitor` is the
+BINARY operator; `|` opening a closure is recognized only in `parse_primary`
+(`Closure`) — distinguished by position. `!` in `parse_unary` is the prefix
+unary; `!=` (`TokKind::Ne`) is already a distinct maximal-munch token, so a
+standalone `!` is unambiguously the unary operator.
 
-**Registry-free (REQ-6, the corrected dependency note in `goal.md`).** The parser
-has NO dependency on thermite-spec. `forall_in`, `forall_below`, `forall_from`,
-`sorted` parse as ordinary `Call`/path expressions; the parser does not know they
-are combinators. The "fixed combinator set" rule (§4.2) is enforced later, in
-thermite-spec / forge, as a semantic check — confirmed by the absence of a
-`thermite-spec/src/grammar.rs` route in `tooling/spec-routes.toml`.
+**Mandatory clauses (REQ-2), per-item recovery (REQ-3), registry-free (REQ-6),
+Result discipline (REQ-4), addressing substrate (REQ-7)** — unchanged.
 
-**Result discipline (REQ-4).** Parsing returns a diagnostics-bearing structure
-carrying both the recovered `Program` and `Vec<SyntaxError>`; no panics
-(R-CODE-2). Errors are `thermite_syntax::SyntaxError` (scaffold REQ-3 — the first
-fallible code in the toolchain introduces its own error type).
-
-**Addressing substrate (REQ-7).** The parser guarantees structural source order
-of loops within a function and `inv` within a loop; `semantic-addressing.md` /
-`address.rs` compute the address strings over that order. The parser owns the
-order; addressing owns the numbering.
+**Partiality (REQ-9).** The parser builds `Binary { op: Div/Rem/Shl/Shr, .. }`
+with no obligation check; the lowering (`ast.md` REQ-11) emits the bare Verus
+operator and Verus raises the divide-by-zero / shift-bound obligation. The
+parser MUST NOT inject `req` clauses or guards — that would silently alter the
+contract.
 
 ## Verification
 
 `cargo test -p thermite-syntax` against `conformance/parse/`:
-- round-trip / AST-shape fixtures for `sum.th` and `binary_search.th` (AC-1),
-  including the `binary_search.loop#1.inv#2 → forall_from(...)` assertion;
-- one negative fixture per missing/misordered-clause case (AC-2);
-- the `recover_per_item` fixture (AC-3) asserting item-two parses despite a
-  broken item-one;
-- a no-panic sweep over all negative inputs (AC-4).
+- round-trip / AST-shape fixtures for the corpus (AC-1);
+- missing/misordered-clause negatives (AC-2);
+- `recover_per_item` (AC-3);
+- a no-panic sweep over negatives incl. malformed literals (AC-4);
+- NEW operator-tier + precedence fixtures (AC-5), `|`/`&` disambiguation (AC-6),
+  and char/hex/binary literal fixtures (AC-7).
 
-Expected ASTs / diagnostics are hand-derived from `surface-grammar.md` + the
-corpus, NEVER copied from the parser's own output (R-CHAR-3). This is the oracle
-`goal.md` "verification model (A)" assigns to thermite-syntax.
+The operator + literal SEMANTICS are GROUNDED end-to-end through `forge`/
+`thermite-lower` certifying real Verus (`ast.md` Verification: `% / << >> & | ^
+!` certify L3 with non-vacuous `ens`; the partials fail L0 without their
+obligation; `'A'`==65 / `0x1b`==27 / `0b101`==5 certify L3). Expected ASTs are
+hand-derived (R-CHAR-3).
 
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (recursive descent) | SHIPPED | `parser.rs` has one fn per grammar family + the precedence ladder (`parse_or`→…→`parse_postfix`→`parse_primary`); `sum`/`binary_search` parse facts pass. |
-| REQ-2 (mandatory-clause enforcement) | SHIPPED | `parse_contract` requires `req`→`ens`+→`fx` in order; `parse_loop` requires `inv`+→one `dec`; absence/misorder → `SyntaxError` (test `negative_inputs_never_panic`, `recover_per_item`). |
-| REQ-3 (per-item recovery) | SHIPPED | `parse_program` + `resync_to_item_boundary`; test `recover_per_item` confirms `ok` parses despite broken `broken`. |
+| REQ-1 (recursive descent) | SHIPPED | `parser.rs` has one fn per grammar family + the precedence ladder; corpus parse facts pass. The #92 tier extensions are REQ-8. |
+| REQ-2 (mandatory-clause enforcement) | SHIPPED | `parse_contract`/`parse_loop` enforce presence/order/cardinality; recovery test. |
+| REQ-3 (per-item recovery) | SHIPPED | `parse_program` + `resync_to_item_boundary`; test `recover_per_item`. |
 | REQ-4 (Result / no panic) | SHIPPED | `pub fn parse → ParseResult { program, errors }`; `enum SyntaxError`; test `negative_inputs_never_panic`. |
-| REQ-5 (round-trip fidelity) | SHIPPED | `tests/conformance.rs` asserts both corpus programs' facts with 0 diagnostics against `conformance/parse/`. |
-| REQ-6 (one call syntax) | SHIPPED | `parse_postfix` → `MethodCall`/`Field`, free `f(args)` → `Call`, `parse_path_expr` `::` → `Path` (corpus `xs.len()`/`u32::MAX`). |
-| REQ-7 (addressing substrate) | SHIPPED | loops/`inv`s kept in source order in the AST; `address.rs` numbers them (address oracle passes). |
+| REQ-5 (round-trip fidelity) | SHIPPED | `tests/conformance.rs` asserts both corpus programs with 0 diagnostics. |
+| REQ-6 (one call syntax) | SHIPPED | `parse_postfix` + `parse_path_expr`. |
+| REQ-7 (addressing substrate) | SHIPPED | loops/`inv`s kept in source order; `address.rs` numbers them. |
+| REQ-8 (operator tiers `% << >> & \| ^ !`, #92) | NOT-STARTED | blocker #92. `parse_mul` in `parser.rs` matches ONLY `Star`/`Slash` (no `Percent`); there are NO shift/bitand/bitxor/bitor tiers; `parse_ref` handles `&`/`&mut`/`*` but no `!` prefix (`Bang` only via `!=`). Builder threads the new tiers + `parse_unary`. GROUNDED L3 for all forms. |
+| REQ-9 (partiality not a parse concern, #92) | NOT-STARTED | blocker #92. Depends on REQ-8 (the partial operators don't parse yet). The CONTRACT is pinned: the parser builds the `Binary` node only; the divide-by-zero / shift-bound obligation is a §7 proof obligation (`ast.md` REQ-11). `/` (`BinOp::Div`) already follows this — it lowers to bare `/` and Verus raises the obligation (GROUNDED: `/` without `req b != 0` is L0). |
 
 ## Open questions (for the orchestrator)
 
-- **OQ-1 (resync token set):** REQ-3 resyncs to `fn`/`spec`/`#[`/EOF. If a future
-  item kind is added (none in v0.1), the resync set grows. For v0.1 these three
-  are the complete item-start set (`surface-grammar.md` `Item`). Recorded; not a
-  blocker.
-- **OQ-2 (return-shape: ParseResult vs Result):** REQ-4 allows either a
-  `ParseResult { program, errors }` (always returns recovered items + diagnostics)
-  or `Result<Program, Vec<SyntaxError>>`. The former is preferable for per-item
-  recovery (tooling wants the surviving items even on partial failure); the
-  builder picks one, the critic checks recovery is observable either way. Not a
-  blocker.
+- **OQ-1 (resync token set):** unchanged; `fn`/`spec`/`#[`/EOF. Not a blocker.
+- **OQ-2 (return-shape):** unchanged; `ParseResult` preferred. Not a blocker.
+- **OQ-3 (`parse_is` tier vs new #92 tiers):** REQ-8 inserts the bitwise tiers
+  between comparison and addition; the basis-stage `parse_is` currently sits
+  between comparison and addition (`parse_cmp` → `parse_is` → `parse_add`). The
+  builder must place `is` consistently — recommended: keep `is` ABOVE the
+  bitwise/shift tiers (so `a & b is Variant` reads as `(a & b) is Variant`),
+  matching `is`'s current near-comparison binding. Flagged for the critic to
+  confirm the placement does not regress the ADT `is` facts. Not a blocker for
+  the AST shape, but the builder MUST pin a single placement.
+- **OQ-4 (binary `|` / closure `|` ambiguity, #92):** REQ-8 resolves it by
+  position (closure `|` only in `Primary`, operator `|` in `BitOrExpr`). A
+  pathological `|x| x | 1` is `|x| (x | 1)` (the closure body is a full `Expr`).
+  Recorded; the builder confirms via an AC-6 fixture. Not a blocker.

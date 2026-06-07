@@ -17,123 +17,146 @@ thesis-refs:
 
 This is the canonical EBNF for the Thermite v0.1 surface language: exactly the
 constructs in the two conformance programs (`conformance/sum.th`,
-`conformance/binary_search.th`) and §4, and *no more* (pillar 3, "one way to do
-everything", §2). It is the shared anchor that `lexer.md`, `ast.md`,
-`parser.md`, and `semantic-addressing.md` all reference. The parser is the
-executable form of this grammar; this doc fixes what is and is not accepted.
+`conformance/binary_search.th`) and §4, plus the primitive-completeness additions
+(#91/#92: char/hex/binary literals and the integer operators `% << >> & | ^ !`),
+and *no more* (pillar 3, "one way to do everything", §2). It is the shared anchor
+that `lexer.md`, `ast.md`, `parser.md`, and `semantic-addressing.md` all
+reference. The parser is the executable form of this grammar.
 
 This doc is GREENFIELD / FORWARD-LOOKING: no parser code exists. Every REQ is
-**NOT-STARTED**, blocked on issue #3. The acto-builder satisfies these REQs next.
+**NOT-STARTED**, blocked on issue #3.
 
 ## Scope boundary (grammar vs. semantics)
 
 The grammar enforces **clause PRESENCE and structure only**. It does NOT enforce:
 
 - that `ens` mentions `result` (a §7 structural-vacuity check; forge, issue #6),
-- that combinators come from the fixed SpecTherm set (a §4.2 *semantic* check in
-  thermite-spec / forge; `goal.md` "the parser is REGISTRY-FREE … the
-  fixed-combinator-set rule is a SEMANTIC check, NOT a grammar rule"),
-- that `req`/`inv` are non-vacuous, that types resolve, that effects subsume.
+- that combinators come from the fixed SpecTherm set (a §4.2 *semantic* check),
+- that `req`/`inv` are non-vacuous, that types resolve, that effects subsume,
+- **the partiality obligations of `/`/`%`/`<<`/`>>`** (`ast.md` REQ-11): the
+  grammar parses `a / b` regardless; the divide-by-zero / shift-bound obligation
+  is a §7 PROOF obligation discharged at verification, not a parse rule.
 
 The grammar's job: a `fn` without all three of `req`/`ens`/`fx`, or a `loop`/
-`while` missing `inv`/`dec`, is a **parse error** (§4.1: "absence is always a
-parse error, never an implicit default"). A combinator call like
-`forall_in(haystack, |x| ...)` parses as a generic call expression — the parser
-neither knows nor cares whether `forall_in` is a registered combinator.
+`while` missing `inv`/`dec`, is a **parse error** (§4.1). A combinator call like
+`forall_in(haystack, |x| ...)` parses as a generic call expression.
 
 ## Requirements
 
-- **REQ-1 (item grammar):** The grammar admits exactly three top-level item
-  forms — `fn`, `spec fn`, and `#[slag(...)] fn` — and nothing else (no `struct`,
-  `impl`, `trait`, `use`, `mod`, `macro` in v0.1). Derived from §4.1, §4.2
-  (`spec fn`), §8 (`#[slag]`), and the corpus (`sum`, `spec_sum`).
+- **REQ-1 (item grammar):** Exactly three top-level item forms — `fn`,
+  `spec fn`, and `#[slag(...)] fn` (plus the basis-stage `struct`/`enum`) — and
+  nothing else (no `impl`, `trait`, `use`, `mod`, `macro` in v0.1). Derived from
+  §4.1, §4.2, §8, and the corpus.
 
 - **REQ-2 (mandatory contract clauses, fixed order):** A `fn` signature is
   `fn NAME ( PARAMS ) -> TYPE` followed by, in this exact order, `req EXPR`,
-  then one-or-more `ens EXPR`, then exactly one `fx EFFECTROW`. A `spec fn`
-  signature is `spec fn NAME ( PARAMS ) -> TYPE` followed by exactly one
-  `dec EXPR` (spec functions carry a decreases-measure, not req/ens/fx — corpus
-  `spec_sum` has only `dec xs.len()`). Absence of a required clause is a parse
-  error. Derived from §4.1 ("`req`/`ens`/`fx` … Mandatory keyword"), §4.2
-  ("No spec-level recursion without a `dec` measure"), and the two corpus
-  programs verbatim.
+  one-or-more `ens EXPR`, then exactly one `fx EFFECTROW`. A `spec fn` carries
+  exactly one `dec EXPR`. Absence of a required clause is a parse error. Derived
+  from §4.1, §4.2, and the corpus verbatim.
 
 - **REQ-3 (loop/while with mandatory inv* + exactly one dec):** Both `loop { }`
-  and `while EXPR { }` carry one-or-more `inv EXPR` clauses followed by exactly
-  one `dec EXPR`, then the body block. Missing `inv` or missing/duplicate `dec`
-  is a parse error. Derived from §4.1 ("`inv` / `dec` … Mandatory on every
-  `loop`/`while`"), corpus `binary_search` (`loop` + 3×`inv` + `dec`) and `sum`
-  (`while` + 3×`inv` + `dec`).
+  and `while EXPR { }` carry one-or-more `inv EXPR` clauses then exactly one
+  `dec EXPR`, then the body. Missing `inv` or missing/duplicate `dec` is a parse
+  error. Derived from §4.1 and the corpus loops.
 
 - **REQ-4 (statement grammar):** A block `{ }` is a sequence of statements with
-  an optional trailing tail expression (no semicolon → the block's value, as in
-  `sum`'s final `acc`). Statements: `let mut? NAME : TYPE = EXPR ;`,
-  assignment `LVALUE = EXPR ;`, `return EXPR? ;`, the `if`/`else` statement, and
-  an expression-statement `EXPR ;`. Derived from §4.3 (explicit `{}` blocks, no
-  significant whitespace) and the corpus bodies.
+  an optional trailing tail expression. Statements: `let mut? NAME : TYPE = EXPR
+  ;`, assignment `LVALUE = EXPR ;`, `return EXPR? ;`, the `if`/`else` statement,
+  and `EXPR ;`. Derived from §4.3 and the corpus bodies.
 
 - **REQ-5 (expression grammar):** Expressions cover exactly: integer literals
-  with optional `_` separators (`1_000_000`), `bool` literals, paths
-  (`lo`, `u32::MAX`, `Some`, `None`), call `f(args)`, the ONE call syntax for
-  member access (see REQ-6), closure `|params| EXPR`, `match EXPR { ARMS }`,
-  `if EXPR { } else { }` as an expression, binary arithmetic (`+ - * /`),
-  comparison (`== != < <= > >=`), logical (`&& ||`), indexing `a[i]` including
-  range index `a[..i]`, cast `EXPR as TYPE`, references `&EXPR` / `&mut EXPR`,
-  and parenthesized grouping. Derived from §4.4 and both corpus programs.
+  (decimal `1_000_000`, **hexadecimal `0x1b`, binary `0b101`** — #92; all the
+  SAME integer value as the equivalent decimal), **char literals `'A'`** (#91/#92;
+  a byte-valued integer literal, `'A'` == 65), `bool` literals, paths (`lo`,
+  `u32::MAX`, `Some`, `None`), call `f(args)`, the ONE call syntax for member
+  access (REQ-6), closure `|params| EXPR`, `match EXPR { ARMS }`, `if EXPR { }
+  else { }` as an expression, **binary arithmetic `+ - * /`, modulo `%`, shifts
+  `<< >>`, bitwise `& | ^`** (#92), comparison (`== != < <= > >=`), logical
+  (`&& ||`), **the unary prefix `!`** (#92 — bitwise-not on integers, logical-not
+  on `bool`; one operator, meaning per type), indexing `a[i]` / `a[..i]`, cast
+  `EXPR as TYPE`, references `&EXPR` / `&mut EXPR`, and parenthesized grouping.
+  Derived from §4.4 and both corpus programs.
 
-- **REQ-6 (one call syntax — DECISION):** Member/associated access uses **one
-  call syntax**: a postfix `.` selects a field or a zero-or-more-arg method call,
-  written `RECEIVER . NAME` (field) or `RECEIVER . NAME ( ARGS )` (method).
-  `haystack.len()` and `xs.len()` (both corpus programs) parse as a method call
-  on `haystack`/`xs`. The grammar admits the postfix dot form AND the free-call
-  form `NAME(ARGS)` (e.g. `spec_sum(t)`, `forall_in(...)`); it does NOT admit a
-  UFCS form `Type::method(receiver, ...)` as an alternate spelling of a method
-  call (§4.4: "Method syntax vs UFCS choice → One call syntax"). `Type::NAME` is
-  a *path* (associated constant / variant constructor, e.g. `u32::MAX`), parsed
-  as a path expression, never as a method-dispatch sugar. See OQ-1.
+  > **AMENDMENT (#91/#92, supersedes the prior expr-grammar wording).** The prior
+  > REQ-5 admitted only `+ - * /` arithmetic, `== != < <= > >=`, and `&& ||` and
+  > only DECIMAL integer literals. It now ADDS: hex/binary integer literals and
+  > char literals (all lexing into the SAME integer-literal form — `lexer.md`
+  > REQ-3/REQ-9, `ast.md` REQ-6, NO new Expr variant), the binary operators
+  > `% << >> & | ^`, and the unary prefix `!`. These complete "compose any
+  > program" for integer/bit work (#91/#92). The precedence is pinned below.
 
-- **REQ-7 (pattern grammar):** Patterns cover exactly: literal patterns, binding
-  patterns (`i`, `head`), wildcard `_`, slice patterns `[]` and `[head, ..t]`
-  (rest binding), and enum/tuple-struct patterns `Some(i)` / `None`. Derived
-  from §4.1 (the `match result { Some(i) => …, None => … }` in `binary_search`)
-  and Appendix A (`match xs { [] => …, [head, ..t] => … }`).
+- **REQ-6 (one call syntax — DECISION):** Member/associated access uses one call
+  syntax: postfix `.` selects a field or a method call. `xs.len()` is a method
+  call; `spec_sum(t)`/`forall_in(...)` are free calls; `u32::MAX` is a path
+  (never method-dispatch sugar). No UFCS. Derived from §4.4.
 
-- **REQ-8 (type grammar):** Types cover exactly: primitive names (`u32`, `u64`,
-  `usize`, `bool`), shared slice `&[T]`, references `&T` / `&mut T`, and one
-  generic application `NAME<T>` (`Option<usize>`). No user generics beyond the
-  closed built-in set; no lifetimes (§4.4). Derived from the corpus signatures
-  (`&[u32]`, `u32`, `Option<usize>`, `u64`, `usize`) and §4.4 (lifetimes removed).
+- **REQ-7 (pattern grammar):** Patterns cover literal patterns (including a
+  char/hex/binary literal, which is the SAME integer-literal pattern — `ast.md`
+  REQ-7), binding patterns, wildcard `_`, slice patterns `[]`/`[head, ..t]`, and
+  enum/tuple-struct patterns `Some(i)`/`None`. Derived from §4.1 + Appendix A.
 
-- **REQ-9 (effect-row grammar):** An `fx` row is either the keyword `pure` or a
-  brace/paren-free set drawn from `{read(path), write(path), net(domain), alloc,
-  time, rand, panic, diverge}`. The corpus uses only `fx pure`. Derived from
-  §4.1 (the effect-row enumeration; `diverge` from "divergence requires
-  `fx diverge`").
+- **REQ-8 (type grammar):** Types cover primitive names (`u32`, `u64`, `usize`,
+  `bool`), `&[T]`, `&T`/`&mut T`, and one generic application `NAME<T>`. No
+  lifetimes (§4.4). A char literal is `u8`-typed (`lexer.md` REQ-9 / OQ-2); `u8`
+  is therefore an accepted primitive in a char/byte context. Derived from the
+  corpus signatures and §4.4.
+
+- **REQ-9 (effect-row grammar):** An `fx` row is `pure` or a set drawn from
+  `{read(path), write(path), net(domain), alloc, time, rand, panic, diverge}`.
+  Derived from §4.1.
+
+- **REQ-10 (operator precedence — PINNED, #92):** The binary-operator precedence
+  is the standard Rust precedence (tightest → loosest):
+
+  | Tier | Operators | Associativity |
+  |---|---|---|
+  | 1 (tightest) | `*` `/` `%` | left |
+  | 2 | `+` `-` | left |
+  | 3 | `<<` `>>` | left |
+  | 4 | `&` | left |
+  | 5 | `^` | left |
+  | 6 | `\|` | left |
+  | 7 | `==` `!=` `<` `<=` `>` `>=` | **non-associative** (≤ 1, unchanged) |
+  | 8 | `&&` | left |
+  | 9 (loosest) | `\|\|` | left |
+
+  The unary prefix `!` binds TIGHTER than every binary operator (it is a prefix
+  operator at the `RefExpr` tier, alongside `&`/`&mut`/`*`). So `!a & b` parses
+  as `(!a) & b`, and `a % b + 1` parses as `(a % b) + 1` (GROUNDED: this group
+  certifies under verus). This is the SINGLE canonical precedence; there are no
+  precedence knobs (§2.3). Comparison stays non-associative (`a < b < c` is a
+  parse error — unchanged). Derived from §4.4 (the Rust-dialect register: "reads
+  like a boring, regular Rust dialect") and §2.3.
 
 ## Acceptance criteria
 
-- **AC-1 (both corpus programs accept):** The grammar accepts
-  `conformance/sum.th` (both `spec fn spec_sum` and `fn sum`) and
-  `conformance/binary_search.th` in full, with no construct in either program
-  unrecognized. Mechanically: the parser (parser.md AC-1) round-trips both.
-- **AC-2 (missing clause rejects):** Removing the `req` line from `sum.th`,
-  the single `ens` from a `fn`, the `fx` line, any `inv`, or the `dec` from a
-  `loop`/`while` yields a parse error (not a silent default). Tied to
-  `conformance/parse/` negative fixtures.
-- **AC-3 (no extra constructs):** The grammar has no production for `struct`,
-  `impl`, `trait`, `use`, `mod`, macro invocation, `for`, `unsafe`, an explicit
-  lifetime token, or a UFCS `Type::method(recv, ..)` method call — each is a
-  parse error. (REQ-1, REQ-6, REQ-8; §4.4.)
-- **AC-4 (one call syntax round-trips both spellings in corpus):** `xs.len()`
-  parses as a method-call expression and `spec_sum(t)` / `forall_in(...)` as
-  free-call expressions; `u32::MAX` parses as a path (not a method call). Tied
-  to `conformance/parse/` AST-shape fixtures.
+- **AC-1 (both corpus programs accept):** The grammar accepts `sum.th` and
+  `binary_search.th` in full. (REQ-1..REQ-9)
+- **AC-2 (missing clause rejects):** Removing `req`/`ens`/`fx`/`inv`/`dec`
+  yields a parse error. (REQ-2, REQ-3)
+- **AC-3 (no extra constructs):** No production for `struct`-as-Rust-generics,
+  `impl`, `trait`, `use`, `mod`, macro, `for`, `unsafe`, an explicit lifetime
+  token, or a UFCS method call. (REQ-1, REQ-6, REQ-8)
+- **AC-4 (one call syntax):** `xs.len()` → method call, `spec_sum(t)` → free
+  call, `u32::MAX` → path. (REQ-6)
+- **AC-5 (new literals parse — NEW, #91/#92):** `0x1b`, `0b101`, and `'A'` each
+  parse as an integer-literal expression (the same node as a decimal literal);
+  `0xFF_FF` parses (interior `_`); `''`, `0x` with no digit, and a non-ASCII
+  `'é'` are parse/lex errors. (REQ-5)
+- **AC-6 (new operators parse with the pinned precedence — NEW, #92):** `a % b`,
+  `a << k`, `a >> k`, `a & b`, `a | b`, `a ^ b`, `!a` each parse to the expected
+  `Binary`/`Unary` node; `a % b + 1` groups as `(a % b) + 1`; `!a & b` as
+  `(!a) & b`; `a + b << c` as `(a + b) << c` (shifts below `+ -`). (REQ-5,
+  REQ-10)
+- **AC-7 (partiality is a §7 obligation, not a parse rule — GROUNDED):** `a / b`
+  / `a % b` parse regardless of whether `b` can be zero; the divide-by-zero
+  obligation is discharged (or fails) at verification. GROUNDED: `a % b` with
+  `req b != 0` certifies L3; without it, L0. (Scope boundary; `ast.md` REQ-11.)
 
 ## Architecture
 
 EBNF (informative; `parser.md` is the operational contract). Symbol anchors,
-never line numbers (R-CITE-2b). `'x'` is a terminal; `?` optional; `*` zero+;
-`+` one+; `|` alternation.
+never line numbers (R-CITE-2b).
 
 ```ebnf
 Program     ::= Item*
@@ -147,7 +170,7 @@ SpecFnItem  ::= 'spec' 'fn' Ident '(' Params? ')' RetType DecClause Block
 
 Params      ::= Param (',' Param)*
 Param       ::= Ident ':' Type
-RetType     ::= '->' Type                          ; '()' written explicitly if unit
+RetType     ::= '->' Type
 
 ReqClause   ::= 'req' Expr                          ; mandatory (§4.1)
 EnsClause   ::= 'ens' Expr                          ; >=1, mandatory (§4.1)
@@ -160,12 +183,12 @@ Effect      ::= 'read' '(' PathArg ')' | 'write' '(' PathArg ')'
               | 'panic' | 'diverge'
 
 Block       ::= '{' Stmt* TailExpr? '}'
-TailExpr    ::= Expr                                ; no trailing ';' -> block value
+TailExpr    ::= Expr
 Stmt        ::= LetStmt | AssignStmt | ReturnStmt | IfStmt | ExprStmt
 LetStmt     ::= 'let' 'mut'? Ident ':' Type '=' Expr ';'
 AssignStmt  ::= LValue '=' Expr ';'
 ReturnStmt  ::= 'return' Expr? ';'
-IfStmt      ::= 'if' Expr Block ('else' Block)?     ; statement form
+IfStmt      ::= 'if' Expr Block ('else' Block)?
 ExprStmt    ::= Expr ';'
 LValue      ::= Ident | IndexExpr | FieldExpr
 
@@ -173,97 +196,118 @@ LoopExpr    ::= 'loop'  InvClause+ DecClause Block
 WhileExpr   ::= 'while' Expr InvClause+ DecClause Block
 InvClause   ::= 'inv' Expr
 
-; Expression precedence (loosest -> tightest), one-way-to-do-everything (§2.3):
+; Expression precedence (loosest -> tightest), the SINGLE canonical ladder
+; (§2.3). #92 inserts the modulo/shift/bitwise tiers between '+ -' and
+; comparison, matching standard Rust precedence (surface-grammar.md REQ-10).
 Expr        ::= OrExpr
 OrExpr      ::= AndExpr ('||' AndExpr)*
 AndExpr     ::= CmpExpr ('&&' CmpExpr)*
-CmpExpr     ::= AddExpr (CmpOp AddExpr)?             ; non-associative comparison
+CmpExpr     ::= BitOrExpr (CmpOp BitOrExpr)?        ; non-associative comparison
 CmpOp       ::= '==' | '!=' | '<' | '<=' | '>' | '>='
+BitOrExpr   ::= BitXorExpr ('|' BitXorExpr)*        ; #92
+BitXorExpr  ::= BitAndExpr ('^' BitAndExpr)*        ; #92
+BitAndExpr  ::= ShiftExpr ('&' ShiftExpr)*          ; #92
+ShiftExpr   ::= AddExpr (('<<' | '>>') AddExpr)*    ; #92
 AddExpr     ::= MulExpr (('+' | '-') MulExpr)*
-MulExpr     ::= CastExpr (('*' | '/') CastExpr)*
-CastExpr    ::= RefExpr ('as' Type)*
-RefExpr     ::= '&' 'mut'? RefExpr | Postfix
+MulExpr     ::= CastExpr (('*' | '/' | '%') CastExpr)*   ; '%' is #92
+CastExpr    ::= UnaryExpr ('as' Type)*
+UnaryExpr   ::= '!' UnaryExpr | RefExpr             ; '!' prefix is #92
+RefExpr     ::= '&' 'mut'? RefExpr | '*' RefExpr | Postfix
 Postfix     ::= Primary PostfixOp*
 PostfixOp   ::= '.' Ident ('(' Args? ')')?          ; field OR method — ONE call syntax
-              | '[' IndexArg ']'                     ; a[i] / a[..i]
-              | '(' Args? ')'                         ; free call  f(args)
+              | '[' IndexArg ']'
+              | '(' Args? ')'
 Primary     ::= Literal | Path | Closure | MatchExpr | IfExpr | '(' Expr ')'
 
 Closure     ::= '|' ClosureParams? '|' Expr
-ClosureParams ::= Ident (',' Ident)*                ; corpus closures are untyped: |x| ...
+ClosureParams ::= Ident (',' Ident)*
 MatchExpr   ::= 'match' Expr '{' MatchArm (',' MatchArm)* ','? '}'
 MatchArm    ::= Pattern '=>' Expr
-IfExpr      ::= 'if' Expr Block 'else' Block         ; expression form requires else
+IfExpr      ::= 'if' Expr Block 'else' Block
 
-Path        ::= Ident ('::' Ident)*                 ; lo, u32::MAX, Some, None
-IndexArg    ::= Expr | '..' Expr | Expr '..' Expr | Expr '..'   ; a[i], a[..i]
+Path        ::= Ident ('::' Ident)*
+IndexArg    ::= Expr | '..' Expr | Expr '..' Expr | Expr '..'
 Args        ::= Expr (',' Expr)*
 
-Pattern     ::= '_' | Literal | Ident                ; wildcard / literal / binding
-              | '[' (SlicePat (',' SlicePat)*)? ']'  ; [] , [head, ..t]
-              | Path ('(' Pattern (',' Pattern)* ')')? ; Some(i) / None
-SlicePat    ::= Pattern | '..' Ident                 ; rest binding ..t
+Pattern     ::= '_' | Literal | Ident
+              | '[' (SlicePat (',' SlicePat)*)? ']'
+              | Path ('(' Pattern (',' Pattern)* ')')?
+SlicePat    ::= Pattern | '..' Ident
 
 Type        ::= 'u32' | 'u64' | 'usize' | 'bool'
               | '&' 'mut'? Type
-              | '&' '[' Type ']'                      ; &[u32]
-              | Ident '<' Type '>'                    ; Option<usize>
-Literal     ::= IntLit | BoolLit                      ; IntLit allows '_' : 1_000_000
+              | '&' '[' Type ']'
+              | Ident '<' Type '>'
+
+; #92: a single IntLit terminal covers decimal/hex/binary AND the char form —
+; one integer-literal node (lexer.md REQ-3/REQ-9, ast.md REQ-6).
+Literal     ::= IntLit | BoolLit
+IntLit      ::= DecLit | HexLit | BinLit | CharLit
+DecLit      ::= Digit ('_'? Digit)*                  ; 1_000_000
+HexLit      ::= ('0x' | '0X') HexDigit ('_'? HexDigit)*   ; 0x1b, 0xFF_FF  (== decimal value)
+BinLit      ::= ('0b' | '0B') BinDigit ('_'? BinDigit)*   ; 0b101          (== decimal value)
+CharLit     ::= "'" (AsciiChar | Escape) "'"         ; 'A' == 65 (byte value); ASCII only in v1
 ```
 
 **Key design decisions (one-way-to-do-everything, §2.3):**
 
-1. **One call syntax (REQ-6).** Member access is the postfix `.` form only;
-   `xs.len()` is a method call, `spec_sum(t)` is a free call. There is no UFCS
-   alternate (`<[u32]>::len(xs)`). `::` is reserved for path segments
-   (`u32::MAX`, `Some`), never for method dispatch. This is the single
-   "Method syntax vs UFCS choice → One call syntax" resolution (§4.4).
-2. **`if` is both a statement and an expression.** The corpus bodies use `if` as
-   a statement (`if lo == hi { return None; }`) and the design forbids
-   `match` ergonomics special-casing (§4.4). The expression form requires an
-   `else` (it must have a value); the statement form does not. This is the one
-   desugaring, always explicit.
-3. **Comparison is non-associative** (`CmpExpr` takes at most one `CmpOp`), so
-   `a < b < c` is a parse error — predictability over expressiveness (§2.3).
-4. **`()` return type is written explicitly** (§4.4 "All conversions explicit"
-   register); the grammar requires `-> Type`. No implicit unit return in a
-   signature. (Corpus functions all return non-unit.)
+1. **One call syntax (REQ-6).** Unchanged.
+2. **`if` is both a statement and an expression.** Unchanged.
+3. **Comparison is non-associative.** Unchanged (`a < b < c` is a parse error).
+4. **`()` return type written explicitly.** Unchanged.
+5. **One integer-literal node for all radices AND char (#91/#92).** Decimal,
+   hex, binary, and char literals are ONE `IntLit` node carrying the integer
+   value — the radix/char spelling is surface-only, never a distinct type or
+   downstream node (no Expr-variant break). A char is `u8`-typed (`'A'` == 65).
+6. **Standard Rust operator precedence, single canonical ladder (REQ-10, #92).**
+   No precedence config; `*` `/` `%` tightest among binaries, then `+` `-`, then
+   shifts, then `&`, `^`, `|`, then comparison, then `&&`, then `||`. Prefix `!`
+   binds tighter than all binaries.
+7. **Partial operators are §7 obligations, not parse rules.** `a / b` / `a % b`
+   / `a << k` parse unconditionally; divide-by-zero / shift-bound is proven (or
+   fails) at verification (`ast.md` REQ-11; scope boundary above).
 
 ## Verification
 
 The grammar is verified through `parser.md`'s oracle, `conformance/parse/`:
-round-trip and AST-shape fixtures derived from `sum.th` / `binary_search.th`
-(AC-1, AC-4) plus negative fixtures for each missing-clause case (AC-2) and each
-removed construct (AC-3). No standalone grammar binary; the parser is the
-executable grammar (`goal.md`: "the parser is the grammar's executable form").
+round-trip / AST-shape fixtures (AC-1, AC-4), missing-clause negatives (AC-2),
+removed-construct negatives (AC-3), and NEW fixtures for the literal forms
+(AC-5) and the operator precedence (AC-6). The partiality / value semantics
+(AC-7, and the radix/char value equalities) are GROUNDED end-to-end through
+`forge`/`thermite-lower` certifying real Verus (see `ast.md` Verification — the
+`% / << >> & | ^ !` and `'A'`/`0x1b`/`0b101` probes, all certifying L3 with
+non-vacuous `ens`, the partials failing L0 without their obligation). No
+standalone grammar binary; the parser is the executable grammar.
 
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (item grammar) | SHIPPED | `parse_item` in `parser.rs` admits exactly `fn`/`spec fn`/`#[slag] fn`; `negative_inputs_never_panic` rejects other item starts. |
-| REQ-2 (mandatory contract clauses, fixed order) | SHIPPED | `parse_contract`/`parse_spec_fn` enforce `req`→`ens`+→`fx` and spec-fn `dec`; corpus parse facts + recovery test. |
-| REQ-3 (loop/while + inv* + one dec) | SHIPPED | `parse_loop` requires `inv`+ then exactly one `dec`; both corpus loops pass facts. |
-| REQ-4 (statement grammar) | SHIPPED | `parse_block`/`parse_let`/`parse_return`/`parse_if_stmt` + tail expr; corpus bodies parse clean. |
-| REQ-5 (expression grammar) | SHIPPED | precedence ladder `parse_or`→…→`parse_postfix`→`parse_primary`; non-assoc `parse_cmp`; corpus exprs round-trip. |
-| REQ-6 (one call syntax) | SHIPPED | `parse_postfix` (`MethodCall`/`Field`/`Call`) + `parse_path_expr` (`::`→`Path`); corpus `xs.len()`/`u32::MAX`. |
-| REQ-7 (pattern grammar) | SHIPPED | `parse_pattern`/`parse_slice_pattern`/`parse_path_pattern`; `[]`/`[head, ..t]`/`Some(i)`/`None` parse (sum/binary_search facts). |
-| REQ-8 (type grammar) | SHIPPED | `parse_type` covers prims/`&T`/`&mut T`/`&[T]`/`Name<T>`; corpus `&[u32]`/`Option<usize>` verified by param/ret facts. |
-| REQ-9 (effect-row grammar) | SHIPPED | `parse_effect_row`/`parse_effect` parse `pure` + the effect set; corpus `fx pure` verified by parse facts. |
+| REQ-1 (item grammar) | SHIPPED | `parse_item` in `parser.rs` admits `fn`/`spec fn`/`#[slag] fn` (+ basis `struct`/`enum`). |
+| REQ-2 (mandatory contract clauses) | SHIPPED | `parse_contract`/`parse_spec_fn` enforce `req`→`ens`+→`fx` and spec-fn `dec`. |
+| REQ-3 (loop/while + inv* + one dec) | SHIPPED | `parse_loop` requires `inv`+ then one `dec`. |
+| REQ-4 (statement grammar) | SHIPPED | `parse_block`/`parse_let`/`parse_return`/`parse_if_stmt` + tail expr. |
+| REQ-5 — base expr grammar | SHIPPED | precedence ladder `parse_or`→…→`parse_postfix`→`parse_primary` in `parser.rs`; corpus exprs round-trip. |
+| REQ-5 — char/hex/binary literals (#91/#92) | NOT-STARTED | blocker #92. The lexer produces no `'A'`/`0x`/`0b` token yet (`lexer.md` REQ-3/REQ-9); the parser's `parse_primary` literal arm consumes only the decimal `TokKind::Int`. Builder: lexer emits `Int` for all radices+char, parser arm unchanged (same `IntLit`). |
+| REQ-5 — operators `% << >> & \| ^ !` (#92) | NOT-STARTED | blocker #92. `parser.rs` ladder has `parse_mul` (`*`/`/` only — no `%`), no shift/bitwise tiers, and no `!` prefix arm (`parse_ref` handles `&`/`&mut`/`*` only). Builder adds the tiers + `Unary` prefix (`ast.md` REQ-10 ripple). |
+| REQ-6 (one call syntax) | SHIPPED | `parse_postfix` + `parse_path_expr` (`::`→`Path`). |
+| REQ-7 (pattern grammar) | SHIPPED | `parse_pattern`/`parse_slice_pattern`/`parse_path_pattern`. |
+| REQ-8 (type grammar) | SHIPPED | `parse_type` covers prims/`&T`/`&mut T`/`&[T]`/`Name<T>`. |
+| REQ-9 (effect-row grammar) | SHIPPED | `parse_effect_row`/`parse_effect`. |
+| REQ-10 (operator precedence pinned, #92) | NOT-STARTED | blocker #92. The pinned standard-Rust precedence is NOT yet realized: the ladder has no modulo/shift/bitwise tiers. Builder threads `parse_mul`(+`%`)→`parse_shift`→`parse_bitand`→`parse_bitxor`→`parse_bitor`→`parse_cmp` and a `!`-prefix tier above `parse_ref`. GROUNDED: `a % b + 1` groups as `(a%b)+1` (verus-certified). |
 
 ## Open questions (for the orchestrator before the builder runs)
 
-- **OQ-1 (UFCS exclusion):** REQ-6 reads "Method syntax vs UFCS choice → One
-  call syntax" (§4.4) as: keep the postfix-dot method form, drop UFCS as an
-  *alternate spelling of method dispatch*. `Type::const` paths (`u32::MAX`)
-  stay (they are paths, not method calls). This is the only reading consistent
-  with the corpus (`xs.len()` and `u32::MAX` both appear). Flagged for
-  confirmation; not a blocker.
-- **OQ-2 (typed closure params):** The corpus closures are all untyped
-  (`|x| x != needle`). The grammar admits only untyped closure params. If a
-  future combinator needs `|x: T| ...`, the grammar is a superset away; recorded
-  as a deliberate v0.1 restriction, not a blocker.
-- **OQ-3 (if-expression else-mandatory):** REQ-5 makes the *expression* form of
-  `if` require an `else` (it must produce a value); the *statement* form does
-  not. The corpus only uses the statement form. Recorded; resolvable from §4.4
-  ("one desugaring, always explicit"), not a blocker.
+- **OQ-1 (UFCS exclusion):** unchanged; `Type::const` paths stay, UFCS method
+  dispatch dropped. Not a blocker.
+- **OQ-2 (typed closure params):** unchanged; untyped only in v0.1. Not a
+  blocker.
+- **OQ-3 (if-expression else-mandatory):** unchanged. Not a blocker.
+- **OQ-4 (`!` precedence tier, #92):** REQ-10 places prefix `!` at the unary
+  (`RefExpr`-adjacent) tier — tighter than every binary, so `!a & b` is
+  `(!a) & b`. This matches Rust. The builder may implement it as a dedicated
+  `parse_unary` between `parse_cast` and `parse_ref`. GROUNDED via the verus
+  probes. Recorded; not a blocker.
+- **OQ-5 (char model is byte/`u8`, #91/#92):** a char literal is a byte (`'A'`
+  == 65), ASCII-only in v1 (`lexer.md` REQ-9). Non-ASCII chars await the
+  `Vec<u8>` reshape. Recorded; not a blocker.

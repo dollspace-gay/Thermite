@@ -1,0 +1,10 @@
+{
+  "uuid": "fc6939ea-b627-4787-bbe7-6f1a7e2c88d5",
+  "issue_uuid": "1dad0563-e7e8-428c-ab05-2c1b10495913",
+  "author": "Yffe",
+  "content": "FIXED. Re-added the element-preservation frame to push's ensures in emit_one_vec_wrapper (thermite-lower/src/lower.rs), matching the REQ-5 GROUNDED BVec::push seed: forall|j: int| 0 <= j < old(self).data.len() ==> final(self).data@[j] == old(self).data@[j] (same forall/old/final spelling as the already-correct pop_last kept-prefix frame). Element-generic (uses old(self).data.len() regardless of Copy/non-Copy), so it applies to Vec<u64> AND Vec<String>/struct/nested. L1 (l1.rs emit_vec_runtime_l1) carries NO Verus ensures contract on push (entirely exec, thermite_check! capacity guard only) -- nothing to mirror; single-file fix. Verification (real verus 0.2026.05.24): divergence_push_frames_prior_elements (un-ignored) now 10 verified, 0 errors -- the 2-push value-pin (get(0)==10, get(1)==20) PROVES; non-vacuity confirmed by reverting the frame (9 verified, 1 errors / error: assertion failed, test FAILS). vec_completeness_conformance still green. No assume/external_body, no cheat (R-DEFER-9). cargo test --workspace 0 failed; clippy -D warnings PASS; fmt --check PASS.",
+  "created_at": "2026-06-07T06:52:01.857464622Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkxGQVNTsIX92DB638P6Bp8g2LzPMdkVI0uxWaof1wYI3MNcjYS2gEA9OLsP61psSbzePBAXqfH8z6pymjwVgAA=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "f1488831-f007-4d75-951e-9c5506376d4c",
+  "issue_uuid": "9712c039-6e49-45dd-a35f-7efd1e7cc709",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (3c27d68). Mutual recursion supported with dec: check.rs mutual_recursion_cycle_fns refined from unconditional reject to conditional (reject a cycle member only if its cycle has a non-diverge dec.is_none() member); MutualRecursionUnsupported -> MutualRecursionMissingDecreases. The item_subprogram already weaves the partner (fn_deps) so Verus sees the SCC — no lower.rs change. Critic NO DIVERGENCE (R-DEFER-9): dec'd pair/3-cycle -> L3 (termination genuinely proven), non-decreasing/n+1/bad-edge -> L0, any-no-dec -> clean whole-cycle L0 (no VIR crash), diverge -> L1, the partner woven (wrong is_odd -> is_even also L0, not laundered), no cheat. 652 tests. Single-fn recursion unchanged.",
+  "created_at": "2026-06-07T21:30:25.938388840Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAaRmrE4HNvuwIDshgNOfypjihif0jm7y04ieRlmaOO6bbzDT31hWLQgsHtn4IDoKCXh+33x6owIhVYbNhGx4MDg=="
+}

@@ -247,6 +247,14 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
         // The prefix `!` (#92): `result` can be mentioned under it (`!result`),
         // so the honest walk descends into the operand (no false-reject risk).
         Expr::Unary { expr, .. } => expr_mentions_result(expr, d),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): the
+        // LOAD-BEARING tuple-vacuity case — an `ens result.0 == b` mentions
+        // `result` THROUGH the projection's receiver, and an `ens (result.0, x) ==
+        // …` mentions it through a tuple element. The §7.1 (b) `ens`-omits-`result`
+        // check must descend into BOTH so a tuple-projection `ens` is recognized as
+        // result-bearing (NOT false-rejected as vacuous).
+        Expr::Tuple(elems) => elems.iter().any(|e| expr_mentions_result(e, d)),
+        Expr::TupleProj { receiver, .. } => expr_mentions_result(receiver, d),
     }
 }
 

@@ -474,6 +474,15 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
         Expr::Deref(inner) => collect_callee_names(inner, out),
         // The prefix `!` (#92): a spec-fn name could be referenced under it; descend.
         Expr::Unary { expr, .. } => collect_callee_names(expr, out),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // spec-fn name could be referenced in any tuple element or projection
+        // receiver — descend into both.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                collect_callee_names(e, out);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => collect_callee_names(receiver, out),
         // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF: no
         // sub-expression, no callee path — it references no spec fn (the no-op
         // leaf arm alongside `IntLit`/`BoolLit`).
@@ -610,6 +619,14 @@ fn render_type(ty: &Type) -> String {
         Type::Option(inner) => format!("Option<{}>", render_type(inner)),
         Type::Result(ok, err) => {
             format!("Result<{}, {}>", render_type(ok), render_type(err))
+        }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the
+        // SURFACE rendering of an n-tuple type is its surface text `(T, U, …)` —
+        // the faithful declaration a reviewer reads. The honest neutral value for
+        // the infallible surface renderer, NOT a stub.
+        Type::Tuple(tys) => {
+            let parts: Vec<String> = tys.iter().map(render_type).collect();
+            format!("({})", parts.join(", "))
         }
     }
 }

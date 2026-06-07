@@ -982,6 +982,16 @@ impl Validator {
             Expr::Deref(inner) => self.scan_expr_for_loops(inner, span),
             // The prefix `!` (#92): descend into the operand for nested loops/ADTs.
             Expr::Unary { expr, .. } => self.scan_expr_for_loops(expr, span),
+            // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+            // tuple construction descends into each element (a nested loop / ADT can
+            // live in any element); a projection descends into its receiver. A
+            // tuple's well-formedness is its elements' (REQ-8 leaf descent).
+            Expr::Tuple(elems) => {
+                for e in elems {
+                    self.scan_expr_for_loops(e, span);
+                }
+            }
+            Expr::TupleProj { receiver, .. } => self.scan_expr_for_loops(receiver, span),
             // Leaves — no nested loop / ADT node possible. A string literal
             // (`.design/basis/07-strings.md` REQ-1) is a value-carrying leaf, like
             // an int/bool literal — no sub-expression to descend.
@@ -1182,6 +1192,18 @@ impl Validator {
             // recursive deref `sum_list(*t)` of `list_sum.th`); its `Box` SEMANTICS
             // are Stage 1c. Recurse the inner expression (depth-guarded).
             Expr::Deref(inner) => self.walk_expr(inner, span),
+            // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+            // tuple construction `(a, b, …)` is a flat structural built-in (its
+            // elements are recursed, depth-guarded); a projection `e.0`/`e.1` is a
+            // flat built-in like `Field`, admitted inside the §4.2 cage — an `ens
+            // result.0 == b` reads a tuple element exactly as `Field` reads a
+            // struct field. A tuple is well-formed iff its elements are.
+            Expr::Tuple(elems) => {
+                for e in elems {
+                    self.walk_expr(e, span);
+                }
+            }
+            Expr::TupleProj { receiver, .. } => self.walk_expr(receiver, span),
         }
     }
 
@@ -1687,6 +1709,12 @@ fn expr_calls_name(expr: &Expr, name: &str) -> bool {
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, e)| expr_calls_name(e, name)),
         Expr::Is { scrutinee, .. } => expr_calls_name(scrutinee, name),
         Expr::Deref(e) => expr_calls_name(e, name),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // recursive call can live in any tuple element (a recursive fn returning a
+        // tuple) or under a projection's receiver — the self-call detection (REQ-2)
+        // descends into both.
+        Expr::Tuple(elems) => elems.iter().any(|e| expr_calls_name(e, name)),
+        Expr::TupleProj { receiver, .. } => expr_calls_name(receiver, name),
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => false,
     }
 }

@@ -615,6 +615,25 @@ fn check_expr<'a>(
             d,
             errors,
         ),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // tuple construction's effects are the UNION of its elements' effects, so
+        // every element is effect-walked; a projection's effects are exactly its
+        // receiver's (the projection itself is pure). An effect-bearing call inside
+        // a tuple element / under a projection is still subsumption-checked.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                check_expr(e, caller_fx, caller_name, caller_span, resolve, d, errors);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => check_expr(
+            receiver,
+            caller_fx,
+            caller_name,
+            caller_span,
+            resolve,
+            d,
+            errors,
+        ),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, no calls — it contributes no effect-row obligation, so
         // it joins the no-op leaf arm alongside `IntLit`/`BoolLit`. (Materializing

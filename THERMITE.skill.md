@@ -107,6 +107,8 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. -> Option<u64> ens match result { Some(v) => v == 5, None => true }
 - `Result<T, E>` — the built-in fallible (Ok(v)/Err(e); match/is; the loud error arm)
   // e.g. -> Result<u64, ParseErr>
+- `(T, U, ..)` — an n-tuple (arity >= 2) for multiple returns; access via .0/.1
+  // e.g. fn swap(a: u64, b: u64) -> (u64, u64) req true ens result.0 == b && result.1 == a fx pure { (b, a) }
 
 **Primitive scalars**
 
@@ -157,6 +159,10 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. sum_list(*t)
 - `"text"` — a string literal (an owned String; carries fx alloc)
   // e.g. let s: String = "hello";
+- `(a, b, ..)` — an n-tuple construction (arity >= 2; (e) is grouping)
+  // e.g. (b, a)
+- `e.0 | e.1 | ..` — a tuple projection (the one tuple access; reads in exec and ens)
+  // e.g. ens result.0 == b && result.1 == a
 
 **Binary operators**
 

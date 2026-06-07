@@ -455,6 +455,28 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
         // (A `Result`-returning fn has no canonical scalar zero — its `Err(e)` needs
         // a typed reason — so it falls through to `None` here, like a bare `Slice`.)
         Type::Option(_) => Some(Expr::Path(vec!["None".to_string()])),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): the
+        // early-return zero VALUE of a tuple-returning fn is the tuple of its
+        // elements' zero values (`(u64, u64)` → `(0, 0)`) — the #48/#74/#80
+        // early-return-synthesis pattern extended to the tuple-return class. WITHOUT
+        // this, a tuple-returning fn whose body has no binop/off-by-one/branch site
+        // (the GROUNDED `swap` body `(b, a)`) yields ZERO mutants → a `0/0` score →
+        // the anti-Goodhart backstop spuriously gates a genuinely-L3-proved fn to
+        // `WeakContract`/L0 (AC-4 requires swap → L3). A strong `ens result.0 == b
+        // && result.1 == a` REJECTS `(0, 0)` (for nonzero b/a) → the mutant is
+        // KILLED → swap SCORES the floor and certifies L3 (the synthesis ENABLES
+        // scoring; it does NOT bypass the gate — a WEAK tuple `ens` PROVES `(0, 0)`
+        // → the mutant SURVIVES → the floor STILL gates it). Returns `None` if ANY
+        // element lacks a scalar zero (a `Ref`/`Result` element), so the mutant is
+        // simply not synthesized (dropped from the denominator, OQ-5), never an
+        // over-gate. The element zeros recurse, so a nested tuple composes.
+        Type::Tuple(tys) => {
+            let mut elems = Vec::with_capacity(tys.len());
+            for t in tys {
+                elems.push(zero_value_for(t)?);
+            }
+            Some(Expr::Tuple(elems))
+        }
         _ => None,
     }
 }
@@ -468,6 +490,10 @@ fn zero_desc(ret: &Type) -> &'static str {
         // the `Option`-returning early-return zero, keyed on `Type::Option` (the
         // OQ-1 ripple — `Option` is no longer a string-named `Generic`).
         Type::Option(_) => "None",
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // static label for the synthesized zero-tuple early-return mutant (the
+        // per-element zeros are in `zero_value_for`; this is only the human desc).
+        Type::Tuple(_) => "(0, ..)",
         _ => "<none>",
     }
 }
@@ -682,6 +708,17 @@ impl MutantSink {
             // off-by-one, binop, or branch), but the honest scan descends into the
             // operand so a mutable site nested under `!` is still found.
             Expr::Unary { expr, .. } => self.scan_expr(expr, ctr),
+            // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+            // tuple construction / projection defines no NEW mutation site of its
+            // own (the projection INDEX is not a v1 mutant — REQ-8 leaf walk), but
+            // a mutable site (a binop, an off-by-one literal) can sit in a tuple
+            // element / under a projection's receiver, so the honest scan descends.
+            Expr::Tuple(elems) => {
+                for e in elems {
+                    self.scan_expr(e, ctr);
+                }
+            }
+            Expr::TupleProj { receiver, .. } => self.scan_expr(receiver, ctr),
             // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF and
             // is NOT an off-by-one target (it is text, not a numeric literal) — it
             // defines no NEW mutation site and has no sub-expression to descend
@@ -968,6 +1005,15 @@ impl Applier<'_> {
             Expr::Unary { op, expr } => Expr::Unary {
                 op: *op,
                 expr: Box::new(self.apply_expr(expr)),
+            },
+            // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109):
+            // rebuild the tuple / projection faithfully, recursing so a mutation
+            // site nested in an element / under the receiver is applied; the
+            // projection INDEX is identity-preserved (not a v1 mutant).
+            Expr::Tuple(elems) => Expr::Tuple(elems.iter().map(|e| self.apply_expr(e)).collect()),
+            Expr::TupleProj { receiver, index } => Expr::TupleProj {
+                receiver: Box::new(self.apply_expr(receiver)),
+                index: *index,
             },
             Expr::BoolLit(b) => Expr::BoolLit(*b),
             Expr::Path(p) => Expr::Path(p.clone()),

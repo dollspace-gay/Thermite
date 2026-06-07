@@ -145,6 +145,16 @@ pub fn render_expr(e: &Expr) -> String {
             let rendered_args: Vec<String> = args.iter().map(render_expr).collect();
             format!("{}({})", render_expr(callee), rendered_args.join(", "))
         }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8, #109):
+        // a tuple projection `result.0` / a tuple construction `(a, b)` can appear
+        // in a strengthenable `ens` (the GROUNDED `ens result.0 == b`), so render
+        // both FAITHFULLY (the surface text a strengthening suggestion echoes)
+        // rather than the `<unsupported>` placeholder.
+        Expr::TupleProj { receiver, index } => format!("{}.{index}", render_expr(receiver)),
+        Expr::Tuple(elems) => {
+            let parts: Vec<String> = elems.iter().map(render_expr).collect();
+            format!("({})", parts.join(", "))
+        }
         // The frozen template never emits another shape; render a safe, non-panic
         // placeholder so the function is total (R-CODE-2). Discarded downstream.
         _ => "<unsupported>".to_string(),

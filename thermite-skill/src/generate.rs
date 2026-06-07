@@ -206,6 +206,14 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
             description: "a bounded owned run of u8 bytes (fx alloc)",
             example: "let s: String = \"hi\";",
         },
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the
+        // n-tuple return / pair primitive. Projection `.0`/`.1` is the access form
+        // (the Expr::TupleProj fragment); `()` is unit, `(T)` is grouping.
+        Type::Tuple(_) => SkillFragment {
+            fragment: "(T, U, ..)",
+            description: "an n-tuple (arity >= 2) for multiple returns; access via .0/.1",
+            example: "fn swap(a: u64, b: u64) -> (u64, u64) req true ens result.0 == b && result.1 == a fx pure { (b, a) }",
+        },
     }
 }
 
@@ -358,6 +366,20 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
             fragment: "\"text\"",
             description: "a string literal (an owned String; carries fx alloc)",
             example: "let s: String = \"hello\";",
+        },
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8): the
+        // tuple construction + the projection access form. Projection (NOT
+        // destructuring) is the v1 tuple access; it reads in BOTH exec and contract
+        // (`ens result.0 == b`).
+        Expr::Tuple(_) => SkillFragment {
+            fragment: "(a, b, ..)",
+            description: "an n-tuple construction (arity >= 2; (e) is grouping)",
+            example: "(b, a)",
+        },
+        Expr::TupleProj { .. } => SkillFragment {
+            fragment: "e.0 | e.1 | ..",
+            description: "a tuple projection (the one tuple access; reads in exec and ens)",
+            example: "ens result.0 == b && result.1 == a",
         },
     }
 }
@@ -595,6 +617,11 @@ fn type_inventory() -> Vec<Type> {
         // cover). The payload is the cheapest legal filler.
         Type::Option(Box::new(Type::Unit)),
         Type::Result(Box::new(Type::Unit), Box::new(Type::Unit)),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): a
+        // representative n-tuple type so the REQ-10 inventory renders its fragment
+        // (the `match` in `render_type_arm` is the exhaustiveness oracle; this list
+        // is the OUTPUT cover). Arity 2 — the minimal legal tuple.
+        Type::Tuple(vec![Type::Unit, Type::Unit]),
     ]
 }
 
@@ -737,6 +764,15 @@ fn expr_inventory() -> Vec<Expr> {
         },
         Expr::Deref(unit()),
         Expr::StrLit(String::new()),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8): one
+        // representative each of the tuple construction + the projection node so the
+        // REQ-10 inventory renders their fragments (the `match` in `render_expr_arm`
+        // is the exhaustiveness oracle; this list is the OUTPUT cover).
+        Expr::Tuple(vec![*unit(), *unit()]),
+        Expr::TupleProj {
+            receiver: unit(),
+            index: 0,
+        },
     ]
 }
 

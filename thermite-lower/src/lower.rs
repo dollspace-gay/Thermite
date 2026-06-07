@@ -1043,6 +1043,15 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         // The prefix `!` (#92): descend into the operand so a combinator inside
         // `!forall_in(...)` is still collected (recurse like the other unary arms).
         Expr::Unary { expr, .. } => collect_combinators_in_expr(expr, span, acc),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // combinator could appear in any tuple element or under a projection's
+        // receiver — descend into both so no referenced combinator is dropped.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                collect_combinators_in_expr(e, span, acc);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => collect_combinators_in_expr(receiver, span, acc),
         // A string literal (`.design/basis/07-strings.md` REQ-1) references no
         // combinator — a value-carrying leaf, like an int/bool literal.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -1308,6 +1317,15 @@ fn each_subexpr(
             }
         }
         Expr::Is { scrutinee, .. } => f(scrutinee)?,
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): the
+        // immediate sub-expressions of a tuple are its elements; of a projection,
+        // its receiver — a scheme use can hide in any of them.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                f(e)?;
+            }
+        }
+        Expr::TupleProj { receiver, .. } => f(receiver)?,
         // A string literal (`.design/basis/07-strings.md` REQ-1) is a value-
         // carrying leaf with no sub-expression — like an int/bool literal.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -2258,6 +2276,11 @@ fn expr_has_deref_call_arg(expr: &Expr) -> bool {
         // The prefix `!` (#92): a deref'd recursive call could sit under `!`,
         // so descend into the operand (the honest full-tree walk).
         Expr::Unary { expr, .. } => expr_has_deref_call_arg(expr),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // deref'd recursive call could sit in any tuple element or under a
+        // projection's receiver — the honest full-tree walk descends into both.
+        Expr::Tuple(elems) => elems.iter().any(expr_has_deref_call_arg),
+        Expr::TupleProj { receiver, .. } => expr_has_deref_call_arg(receiver),
         Expr::IntLit { .. }
         | Expr::BoolLit(_)
         | Expr::Path(_)
@@ -2607,6 +2630,18 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let e = lower_type(err)?;
             Ok(format!("Result<{o}, {e}>"))
         }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7/REQ-8,
+        // #109): an n-tuple type `(T, U, …)` lowers to the Verus-NATIVE tuple type
+        // `(<t0>, <t1>, …)` (Verus tuples are native, GROUNDED at arity 2 and 3 —
+        // `verified, 0 errors`); each element type lowers recursively. There is no
+        // wrapper to emit (like `Option`/`Result`, unlike `TString`/`TVec`).
+        Type::Tuple(elems) => {
+            let parts = elems
+                .iter()
+                .map(lower_type)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({})", parts.join(", ")))
+        }
     }
 }
 
@@ -2820,6 +2855,15 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
         Type::Result(ok, err) => {
             note_vec_elems(ok, elems);
             note_vec_elems(err, elems);
+        }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // tuple type `(T, U, …)` reaches a `Vec` in ANY of its element types, so
+        // every element is recursed (inner-first preserved, exactly as `Result`'s
+        // two arguments are).
+        Type::Tuple(tys) => {
+            for t in tys {
+                note_vec_elems(t, elems);
+            }
         }
         Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
     }
@@ -3114,6 +3158,9 @@ fn ty_reaches_string(ty: &Type) -> bool {
         | Type::Option(inner) => ty_reaches_string(inner),
         // A `Result<T, E>` reaches a `String` in EITHER type argument.
         Type::Result(ok, err) => ty_reaches_string(ok) || ty_reaches_string(err),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // tuple type reaches a `String` if ANY element does.
+        Type::Tuple(tys) => tys.iter().any(ty_reaches_string),
         Type::Prim(_) | Type::Unit | Type::Named(_) => false,
     }
 }
@@ -4940,6 +4987,28 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             let e = lower_expr(inner, ctx, d, span)?;
             Ok(format!("*{e}"))
         }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7/REQ-8,
+        // #109): an n-tuple construction `(a, b, …)` lowers to the Verus-NATIVE
+        // tuple `(<e0>, <e1>, …)` — the GROUNDED `swap` body `(b, a)`
+        // (`verified, 0 errors`). Each element lowers recursively in the SAME ctx
+        // (exec or spec). A trailing arity-1 single-element tuple cannot occur (the
+        // parser only builds `Expr::Tuple` at arity ≥ 2).
+        Expr::Tuple(elems) => {
+            let parts = elems
+                .iter()
+                .map(|e| lower_expr(e, ctx, d, span))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({})", parts.join(", ")))
+        }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8, #109): a
+        // tuple projection `e.0`/`e.1`/… lowers to the Verus-NATIVE projection
+        // `<recv>.<index>` (the GROUNDED `ens result.0 == b` form `r.0 == b`).
+        // Works in BOTH exec and spec/contract position. The projection is the v1
+        // §2.3 "one way" tuple access (destructuring deferred).
+        Expr::TupleProj { receiver, index } => {
+            let r = lower_expr(receiver, ctx, d, span)?;
+            Ok(format!("{r}.{index}"))
+        }
     }
 }
 
@@ -5704,6 +5773,10 @@ fn expr_mentions(expr: &Expr, name: &str) -> bool {
         Expr::Deref(inner) => expr_mentions(inner, name),
         // The prefix `!` (#92): a name can be mentioned under it (`!done`).
         Expr::Unary { expr, .. } => expr_mentions(expr, name),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a name
+        // can be mentioned in any tuple element or under a projection's receiver.
+        Expr::Tuple(elems) => elems.iter().any(|e| expr_mentions(e, name)),
+        Expr::TupleProj { receiver, .. } => expr_mentions(receiver, name),
     }
 }
 

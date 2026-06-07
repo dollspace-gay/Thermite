@@ -526,6 +526,15 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Deref(inner) => collect_combinators_in_expr(inner, span, acc),
         // The prefix `!` (#92): descend into the operand.
         Expr::Unary { expr, .. } => collect_combinators_in_expr(expr, span, acc),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // combinator could appear in any tuple element or projection receiver —
+        // descend (mirrors `lower.rs::collect_combinators_in_expr`).
+        Expr::Tuple(elems) => {
+            for e in elems {
+                collect_combinators_in_expr(e, span, acc);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => collect_combinators_in_expr(receiver, span, acc),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, so it references no combinator — the no-op leaf arm
         // alongside `IntLit`/`BoolLit`.
@@ -935,6 +944,20 @@ fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
             op: *op,
             expr: rec(expr),
         },
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109):
+        // rebuild the tuple / projection faithfully, renaming params in every
+        // element / in the receiver (a `__pre` snapshot may name a param under a
+        // tuple element, e.g. `ens result.0 == b__pre`).
+        Expr::Tuple(elems) => Expr::Tuple(
+            elems
+                .iter()
+                .map(|e| rename_params_in_expr(e, renames))
+                .collect(),
+        ),
+        Expr::TupleProj { receiver, index } => Expr::TupleProj {
+            receiver: rec(receiver),
+            index: *index,
+        },
     }
 }
 
@@ -986,6 +1009,10 @@ fn expr_references_ident(expr: &Expr, ident: &str) -> bool {
         Expr::Deref(inner) => expr_references_ident(inner, ident),
         // The prefix `!` (#92): an ident can be referenced under it (`!done`).
         Expr::Unary { expr, .. } => expr_references_ident(expr, ident),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): an
+        // ident can be referenced in any tuple element or projection receiver.
+        Expr::Tuple(elems) => any(elems),
+        Expr::TupleProj { receiver, .. } => expr_references_ident(receiver, ident),
     }
 }
 
@@ -1563,6 +1590,22 @@ pub(crate) fn lower_expr_exec(
             let e = lower_expr_exec(inner, d, span, variants)?;
             Ok(format!("*{e}"))
         }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8, #109):
+        // the L1 exec mirror of `lower.rs`'s tuple lowering — a Rust tuple `(e0,
+        // e1, …)` (the runnable `swap` body `(b, a)`) and the native projection
+        // `recv.0`/`recv.1` (the runnable `result.0`). Rust tuples + `.N`
+        // projection are native, so the L1 form is identical to the L3 form.
+        Expr::Tuple(elems) => {
+            let parts = elems
+                .iter()
+                .map(|e| lower_expr_exec(e, d, span, variants))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({})", parts.join(", ")))
+        }
+        Expr::TupleProj { receiver, index } => {
+            let r = lower_expr_exec(receiver, d, span, variants)?;
+            Ok(format!("{r}.{index}"))
+        }
     }
 }
 
@@ -1825,6 +1868,17 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // ops. The v1 corpus exercises L3 only; this arm keeps L1 total over `Type`
         // (no panic, REQ-7 / REQ-5).
         Type::String => Ok("TString".to_string()),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7/REQ-8,
+        // #109): the L1 exec mirror of `lower.rs`'s tuple type — a native Rust
+        // tuple `(<t0>, <t1>, …)` (the runnable `-> (u64, u64)`). Each element
+        // lowers recursively, identical to the L3 form (Rust tuples are native).
+        Type::Tuple(elems) => {
+            let parts = elems
+                .iter()
+                .map(lower_type)
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({})", parts.join(", ")))
+        }
     }
 }
 
@@ -1877,6 +1931,9 @@ fn program_uses_string_l1(program: &Program) -> bool {
             // through the type argument(s), exactly as a `Box`/`Vec` inner is.
             Type::Option(inner) => ty_is_string(inner),
             Type::Result(ok, err) => ty_is_string(ok) || ty_is_string(err),
+            // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+            // `String` nested in any tuple element is reached through the element.
+            Type::Tuple(tys) => tys.iter().any(ty_is_string),
             Type::Prim(_) | Type::Unit | Type::Named(_) => false,
         }
     }
@@ -1964,6 +2021,11 @@ fn expr_has_str_lit_l1(expr: &Expr) -> bool {
         Expr::Is { scrutinee, .. } => expr_has_str_lit_l1(scrutinee),
         // The prefix `!` (#92): a string literal could sit under it; descend.
         Expr::Unary { expr, .. } => expr_has_str_lit_l1(expr),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // string literal could sit in any tuple element or under a projection's
+        // receiver — descend into both (the honest full-tree walk).
+        Expr::Tuple(elems) => elems.iter().any(expr_has_str_lit_l1),
+        Expr::TupleProj { receiver, .. } => expr_has_str_lit_l1(receiver),
     }
 }
 
@@ -2565,5 +2627,9 @@ fn expr_has_to_string(expr: &Expr) -> bool {
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_to_string(v)),
         Expr::Is { scrutinee, .. } => expr_has_to_string(scrutinee),
         Expr::Unary { expr, .. } => expr_has_to_string(expr),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // `to_string` call could sit in any tuple element or projection receiver.
+        Expr::Tuple(elems) => elems.iter().any(expr_has_to_string),
+        Expr::TupleProj { receiver, .. } => expr_has_to_string(receiver),
     }
 }

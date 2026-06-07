@@ -1475,6 +1475,25 @@ impl<'a> Parser<'a> {
             match self.peek() {
                 TokKind::Dot => {
                     self.bump();
+                    // A numeric projection `e.0`/`e.1`/…
+                    // (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8, OQ-1
+                    // RESOLVED → a dedicated `Expr::TupleProj { receiver, index }`,
+                    // NOT an overloaded `Expr::Field` with a string `"0"` name: a
+                    // tuple index is a `usize`, and a dedicated node keeps the
+                    // projection lowering (`<recv>.<index>`) distinct from a
+                    // struct/method `.field`). A tuple index lexes as a
+                    // `TokKind::Int` after the `.` (e.g. `r.0` is `r` `.` `Int{0}`).
+                    if let TokKind::Int { value, .. } = self.peek().clone() {
+                        self.bump();
+                        let index = usize::try_from(value).map_err(|_| {
+                            self.unexpected("a tuple projection index within `usize`")
+                        })?;
+                        expr = Expr::TupleProj {
+                            receiver: Box::new(expr),
+                            index,
+                        };
+                        continue;
+                    }
                     let name = self.take_ident("a field or method name")?;
                     if self.check(&TokKind::LParen) {
                         let args = self.parse_call_args()?;
@@ -1589,10 +1608,41 @@ impl<'a> Parser<'a> {
             TokKind::LParen => {
                 self.bump();
                 // A parenthesised group re-enables struct literals (REQ-2):
-                // `(s is Circle)` / `(A { x: 1 })`.
-                let inner = self.with_struct_literal(Self::parse_expr)?;
-                self.consume(&TokKind::RParen, "`)`")?;
-                Ok(inner)
+                // `(s is Circle)` / `(A { x: 1 })`. The SAME `(` opens an n-tuple
+                // construction `(a, b, …)`
+                // (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the parser
+                // distinguishes by the comma — `()` → unit (the empty group; no
+                // tuple expr, mirroring `Type::Unit`), `(e)` → grouping (the inner
+                // expr, arity 1), `(a, b, …)` → `Expr::Tuple` (arity ≥ 2).
+                self.with_struct_literal(|p| {
+                    if p.check(&TokKind::RParen) {
+                        // Arity 0: the empty group `()` — the unit value. There is
+                        // no `Expr::Unit` node; v1 surfaces unit only as a return
+                        // TYPE (`Type::Unit`), so a literal `()` value is not a
+                        // grammar form. Reject it explicitly rather than silently.
+                        return Err(
+                            p.unexpected("an expression (an empty `()` is not a value form)")
+                        );
+                    }
+                    let first = p.parse_expr()?;
+                    if !p.check(&TokKind::Comma) {
+                        // Arity 1: `(e)` is a parenthesised grouping — the inner
+                        // expression.
+                        p.consume(&TokKind::RParen, "`)`")?;
+                        return Ok(first);
+                    }
+                    // Arity ≥ 2: an n-tuple construction `(a, b, …)`.
+                    let mut elems = vec![first];
+                    while p.eat(&TokKind::Comma) {
+                        if p.check(&TokKind::RParen) {
+                            // A trailing comma `(a, b,)` — stop collecting.
+                            break;
+                        }
+                        elems.push(p.parse_expr()?);
+                    }
+                    p.consume(&TokKind::RParen, "`)` to close the tuple `(a, b, …)`")?;
+                    Ok(Expr::Tuple(elems))
+                })
             }
             _ => Err(self.unexpected("an expression")),
         }
@@ -1859,11 +1909,39 @@ impl<'a> Parser<'a> {
     fn parse_type_inner(&mut self) -> PResult<Type> {
         match self.peek().clone() {
             // `()` is the ONE sanctioned unit-type spelling (surface-grammar.md
-            // decision 4 / REQ-8): written explicitly in a return position.
+            // decision 4 / REQ-8): written explicitly in a return position. The
+            // SAME `(` opens an n-tuple type `(T, U, …)`
+            // (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the parser
+            // distinguishes by the comma — `()` → `Type::Unit` (arity 0), `(T)`
+            // → grouping (the inner type, arity 1), `(T, U, …)` → `Type::Tuple`
+            // (arity ≥ 2).
             TokKind::LParen => {
                 self.bump();
-                self.consume(&TokKind::RParen, "`)` to close the unit type `()`")?;
-                Ok(Type::Unit)
+                if self.check(&TokKind::RParen) {
+                    // Arity 0: `()` is the unit type (UNCHANGED).
+                    self.bump();
+                    return Ok(Type::Unit);
+                }
+                let first = self.parse_type()?;
+                if !self.check(&TokKind::Comma) {
+                    // Arity 1: `(T)` is a parenthesised grouping — the inner type.
+                    self.consume(
+                        &TokKind::RParen,
+                        "`)` to close the parenthesised type `(T)`",
+                    )?;
+                    return Ok(first);
+                }
+                // Arity ≥ 2: an n-tuple type `(T, U, …)`.
+                let mut elems = vec![first];
+                while self.eat(&TokKind::Comma) {
+                    if self.check(&TokKind::RParen) {
+                        // A trailing comma `(T, U,)` — stop collecting.
+                        break;
+                    }
+                    elems.push(self.parse_type()?);
+                }
+                self.consume(&TokKind::RParen, "`)` to close the tuple type `(T, U, …)`")?;
+                Ok(Type::Tuple(elems))
             }
             TokKind::Amp => {
                 self.bump();

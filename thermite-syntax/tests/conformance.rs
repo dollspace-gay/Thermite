@@ -120,6 +120,14 @@ fn render_type(ty: &Type) -> String {
         Type::Result(ok, err) => {
             format!("Result<{}, {}>", render_type(ok), render_type(err))
         }
+        // Cluster C9-B n-tuple type node (`.design/basis/10-recursion-tuples.md`
+        // REQ-5/REQ-7): the `(T, U, …)` surface rendering. Additive arm so this
+        // existing test helper compiles; the sum/binary_search fixtures never
+        // exercise it.
+        Type::Tuple(tys) => {
+            let parts: Vec<String> = tys.iter().map(render_type).collect();
+            format!("({})", parts.join(", "))
+        }
     }
 }
 

@@ -1280,6 +1280,14 @@ fn collect_expr_spec_fn_calls(
         Expr::Is { scrutinee, .. } => collect_expr_spec_fn_calls(scrutinee, spec_decls, out),
         // The prefix `!` (#92): a spec-fn call could sit under it (`!is_sorted(xs)`).
         Expr::Unary { expr, .. } => collect_expr_spec_fn_calls(expr, spec_decls, out),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // spec-fn call could sit in any tuple element or projection receiver.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                collect_expr_spec_fn_calls(e, spec_decls, out);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => collect_expr_spec_fn_calls(receiver, spec_decls, out),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, so it calls no spec fn — the no-op leaf arm.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
@@ -1469,6 +1477,14 @@ fn collect_type_adt_refs(
             collect_type_adt_refs(ok, adt_decls, out);
             collect_type_adt_refs(err, adt_decls, out);
         }
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
+        // tuple type `(T, U, …)` reaches an in-file ADT in ANY element (a
+        // `(Account, u64)` reaches `Account`), so every element is recursed.
+        thermite_syntax::Type::Tuple(tys) => {
+            for t in tys {
+                collect_type_adt_refs(t, adt_decls, out);
+            }
+        }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): `String` is a
         // built-in (NOT a user ADT) NULLARY type — no inner type to recurse into
         // and never an in-file ADT decl, so it references no ADT (the no-op leaf
@@ -1569,6 +1585,14 @@ fn collect_expr_adt_refs(
         Expr::Deref(inner) => collect_expr_adt_refs(inner, adt_decls, out),
         // The prefix `!` (#92): an ADT ref could sit under it; descend the operand.
         Expr::Unary { expr, .. } => collect_expr_adt_refs(expr, adt_decls, out),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): an ADT
+        // ref could sit in any tuple element or projection receiver; descend both.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                collect_expr_adt_refs(e, adt_decls, out);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => collect_expr_adt_refs(receiver, adt_decls, out),
         // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, no path — it references no ADT (the no-op leaf arm).
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}

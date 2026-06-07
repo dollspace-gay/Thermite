@@ -66,6 +66,13 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 (`fn` `dec` clause — AST) | SHIPPED | `FnItem.dec: Option<Clause>` — an OPTIONAL termination measure on a RECURSIVE exec `fn` (mirroring `SpecFnItem.dec: Clause`, but optional — a non-recursive fn has `dec = None`). Built by `parser::parse_fn` (the optional trailing `dec <expr>` parsed AFTER `fx`, OQ-4 byte-stable slot). Consumer: `thermite-lower::lower::lower_fn` (emits `decreases <measure>` when `Some`). Verified: `forge/tests/recursion_conformance.rs::recursive_fn_with_dec_certifies_l3` (real verus L3). The additive field rippled to every `FnItem { .. }` literal (skill `generate.rs`, the test fixtures) as `dec: None`. |
+//!
+//! ## Cluster C9-B — tuples AST (`.design/basis/10-recursion-tuples.md`, #109)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection — AST) | SHIPPED | `enum Type` += `Tuple(Vec<Type>)` (n-tuple type, arity ≥ 2); `enum Expr` += `Tuple(Vec<Expr>)` (construction) + the DEDICATED `TupleProj { receiver: Box<Expr>, index: usize }` projection node (OQ-1 RESOLVED → dedicated, NOT an overloaded `Field` with a string `"0"`: a tuple index is a `usize`). Built by `parser::parse_type_inner` (the `(` arm disambiguates by the comma: `()` → `Unit`, `(T)` → grouping, `(T, U, …)` → `Tuple`), `parser::parse_primary` (the `(` arm builds `Expr::Tuple` on a comma; `(e)` → grouping), `parser::parse_postfix` (the `.` arm builds `Expr::TupleProj` when the token after `.` is an `Int`). Consumer: `thermite-lower::lower::lower_type`/`lower_expr` (→ Verus tuples). Verified: `forge/tests/tuples_conformance.rs::tuple_type_disambiguation_unit_grouping_tuple` + `tuple_expr_and_projection_nodes`. |
+//! | REQ-7 (tuple arity — n-tuples, ≥ 2) | SHIPPED | `Type::Tuple(Vec<Type>)`/`Expr::Tuple(Vec<Expr>)` carry any arity ≥ 2; `()` stays `Type::Unit` (arity 0), `(T)` is grouping (arity 1, the inner). Verified: `forge/tests/tuples_conformance.rs::ac6_three_tuple_certifies_l3` (a 3-tuple → L3 under real verus) + `tuple_type_disambiguation_unit_grouping_tuple` (`()`/`(T)` unbroken). |
 
 use crate::lexer::Span;
 
@@ -534,6 +541,29 @@ pub enum Expr {
     /// each UTF-8 byte (the char model is `u8` for v1 — stage 7c, `lower.rs`); it
     /// is a CONSTRUCTING op carrying `fx alloc`.
     StrLit(String),
+    /// An n-tuple construction `(a, b, …)` of arity ≥ 2
+    /// (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7, C9-B): the value form
+    /// of [`Type::Tuple`] (`swap`'s body `(b, a)`). The parser distinguishes arity
+    /// by the comma — `(e)` is a parenthesised grouping (arity 1, the inner expr),
+    /// `(a, b, …)` is `Expr::Tuple` (arity ≥ 2); the empty `()` is not a value form
+    /// (v1 surfaces unit only as a return TYPE). Lowers to the Verus-native tuple
+    /// `(<e0>, <e1>, …)`. Its effects are the UNION of its elements' effects (a
+    /// tuple construction is otherwise pure).
+    Tuple(Vec<Expr>),
+    /// A tuple projection `e.0`/`e.1`/… (`.design/basis/10-recursion-tuples.md`
+    /// REQ-5/REQ-8, C9-B; OQ-1 RESOLVED → a DEDICATED node, NOT an overloaded
+    /// [`Expr::Field`] with a string `"0"` name: a tuple index is a `usize`, and a
+    /// dedicated node keeps the projection lowering distinct from struct/method
+    /// `.field`). The v1 §2.3 "one way" tuple access (destructuring is deferred).
+    /// Parsed in the postfix `.` ladder (`parse_postfix`) when the token after `.`
+    /// is a numeric literal. Works in BOTH exec and spec/contract position — an
+    /// `ens result.0 == b` is exactly the GROUNDED Verus form `r.0 == b`. Lowers to
+    /// the Verus-native projection `<recv>.<index>`. A projection is PURE (its
+    /// effects are exactly its receiver's).
+    TupleProj {
+        receiver: Box<Expr>,
+        index: usize,
+    },
 }
 
 /// A pattern (ast.md REQ-7). Slice patterns `[]`/`[head, ..t]` and enum
@@ -654,4 +684,15 @@ pub enum Type {
     /// Lowers to the Verus-native `Result<T, E>` (the `lower_type` `Result` arm).
     /// The `E` parameter is an ordinary user error enum (a [`Type::Named`]).
     Result(Box<Type>, Box<Type>),
+    /// An n-tuple type `(T, U, …)` of arity ≥ 2
+    /// (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7, C9-B). The
+    /// multiple-return / pair primitive: `fn swap(a, b: u64) -> (u64, u64)`. The
+    /// parser distinguishes arity by the comma — `()` stays [`Type::Unit`] (arity
+    /// 0), `(T)` is a parenthesised grouping (arity 1, the inner type), and
+    /// `(T, U, …)` is `Type::Tuple` (arity ≥ 2). Lowers to the Verus-native tuple
+    /// type `(<t0>, <t1>, …)` (the `lower_type` `Tuple` arm) — Verus tuples are
+    /// native and GROUNDED at arity 2 and 3. Its elements are accessed by the
+    /// projection [`Expr::TupleProj`] (`.0`/`.1`/…), the v1 §2.3 "one way" tuple
+    /// access (destructuring is deferred — REQ-9/OQ-2).
+    Tuple(Vec<Type>),
 }

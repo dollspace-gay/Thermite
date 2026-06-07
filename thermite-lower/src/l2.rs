@@ -463,6 +463,11 @@ fn type_label(ty: &Type) -> String {
         // harness these built-ins; this is the honest human label, NOT a stub.
         Type::Option(_) => "Option<_>".to_string(),
         Type::Result(_, _) => "Result<_, _>".to_string(),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-7): a
+        // descriptive human label for an n-tuple type inside an `Unsupported` L2
+        // diagnostic. L2 (Kani bounded model check) does not yet harness tuple
+        // returns; this is the honest human label, NOT a stub.
+        Type::Tuple(_) => "(_, _)".to_string(),
     }
 }
 

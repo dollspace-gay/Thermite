@@ -427,6 +427,15 @@ fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
         Expr::Deref(inner) => walk_expr(inner, in_file, out),
         // The prefix `!` (#92): an in-file call could sit under it; descend.
         Expr::Unary { expr, .. } => walk_expr(expr, in_file, out),
+        // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): an
+        // in-file call could sit in any tuple element or projection receiver, so no
+        // out-edge is silently dropped — descend into both.
+        Expr::Tuple(elems) => {
+            for e in elems {
+                walk_expr(e, in_file, out);
+            }
+        }
+        Expr::TupleProj { receiver, .. } => walk_expr(receiver, in_file, out),
         // Leaves: no nested call to find. A string literal
         // (`.design/basis/07-strings.md` REQ-1) is a LEAF — no sub-expression, no
         // callee — so it contributes no out-edge.

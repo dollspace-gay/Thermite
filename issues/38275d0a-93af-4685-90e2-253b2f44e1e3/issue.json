@@ -1,0 +1,10 @@
+{
+  "uuid": "38275d0a-93af-4685-90e2-253b2f44e1e3",
+  "display_id": 88,
+  "title": "Editor build blockers R2: fx-diverge caps at L1 (mutation-exempt) + L1 ens-after-move (E0382) + L1 empty-literal->TString in struct-lit",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T00:08:27.299535086Z",
+  "updated_at": "2026-06-07T00:08:27.299535086Z"
+}

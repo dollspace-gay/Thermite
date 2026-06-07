@@ -1,0 +1,10 @@
+{
+  "uuid": "43798bc8-dce0-4f4c-b1a5-b29214dca134",
+  "issue_uuid": "9f95677e-e593-4262-a773-0d80119f15ec",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (b8169cb). The MULTI-LINE nano editor: Enter inserts newlines, up/down navigate lines, full-screen render positions the cursor by row/col, Ctrl-S saves to a file. VERIFIED (L3): count_nl/line_start/line_end/min2/cursor_row/cursor_col/move_up/move_down/to_1based/render_frame/decode + the edit core (16 L3 items) — the editing+navigation+layout LOGIC is proven. TRUSTED (L1 boundary): raw_mode_on/off/read_key_raw/write_frame/read_file/write_file (the syscalls). Critic NO DIVERGENCE: nav/layout genuinely L3 (mutation >= 0.60 floor; Buffer invariant re-established on move_up/down -> out-of-bounds PROVEN; cursor_row/col drive the actual ANSI position), the editor RUNS multi-line correctly (ab+Enter+cd+UP -> two lines, cursor row1 col3 clamped; 3-line session correct), the file save ROUND-TRIPS (ab\\ncd, \\n preserved, od -c confirmed), no cheat, no regression (663 tests). Honest: cursor_col bounds (<=cursor) rather than pins the col (above floor, runtime-correct). Runs --no-sandbox (#106 termios ioctl). Worked around #122 (the cast-paren L1 twin) with forward scans (honest, not stubbed).",
+  "created_at": "2026-06-07T23:46:20.939199019Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABASatghwmHtGFGeq1v4DXMY9cEfVqTG9Y23Jg1FKxNZRyj5CTQbGTR1WPiXeaF1vHyucyd8a/uuGNghomXQZ0oBQ=="
+}

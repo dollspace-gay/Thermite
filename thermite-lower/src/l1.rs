@@ -60,7 +60,10 @@ use thermite_syntax::ast::{
 };
 use thermite_syntax::lexer::Span;
 
-use crate::lower::{collect_vec_elem_types, elem_is_copy, is_vec_new, tvec_name, LowerError};
+use crate::lower::{
+    collect_vec_elem_types, elem_is_copy, is_vec_new, program_uses_string_search, tvec_name,
+    LowerError,
+};
 
 /// The maximum recursive-descent emission depth before `lower_l1` returns
 /// `LowerError::TooDeep`. Mirrors `lower.rs`'s `MAX_EMIT_DEPTH` (the
@@ -1421,11 +1424,23 @@ pub(crate) fn lower_expr_exec(
             // coerces a literal to `usize`) and an arg already `as usize` is left
             // as-is (no double-cast). L1 is entirely exec, so no spec guard needed.
             let coerce_usize = matches!(name.as_str(), "byte_at" | "slice");
+            // Cluster C5 (`.design/basis/07-strings.md` REQ-15, #102): the L1
+            // `split(sep: u8)` mirror takes a `u8` separator; the surface `sep` is a
+            // `u64` (the `byte_at -> u64` convention). Rust does no implicit `u64 ->
+            // u8` narrowing, so coerce the `split` arg `as u8` (the L1 mirror of the
+            // L3 call-site coercion in `lower.rs`). A literal / already-`as u8` arg
+            // passes through.
+            let coerce_u8 = name == "split";
             let mut parts = Vec::with_capacity(args.len());
             for a in args {
                 let lowered = lower_expr_exec(a, d, span, variants)?;
                 if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast_l1(a) {
                     parts.push(format!("{lowered} as usize"));
+                } else if coerce_u8
+                    && !matches!(a, Expr::IntLit { .. })
+                    && !lowered.ends_with("as u8")
+                {
+                    parts.push(format!("{lowered} as u8"));
                 } else {
                     parts.push(lowered);
                 }
@@ -2010,6 +2025,83 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     out.push_str("        out.push(b as u8);\n");
     out.push_str("        TString { data: out }\n");
     out.push_str("    }\n");
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): the L1 exec
+    // mirror of the verified string search/transform ops (`lower.rs::emit_string_-
+    // search_methods`). Entirely runnable Rust — no `verus!`/`Seq`/`requires`; the L3
+    // proof carries the contracts, L1 RUNS the same byte scans. `find` returns a
+    // native `Option<u64>`; `split` returns the C6 `TVecTString` runtime wrapper
+    // (woven by `emit_vec_runtime_l1` because `collect_vec_elem_types` notes the
+    // `Vec<String>` element when a C5 op is used). Emitted only when the program uses
+    // a C5 op (byte-stable for the non-C5 corpus). `contains` here is the SUBSTRING op
+    // (the `TString` receiver); the C6 `TVec::contains` membership op is a DISTINCT
+    // inherent method on the `TVec*` impl (receiver-type dispatch, no clobber).
+    if program_uses_string_search(program) {
+        out.push_str("    fn matches_at(&self, p: &TString, at: usize) -> bool {\n");
+        out.push_str("        let mut k: usize = 0;\n");
+        out.push_str("        while k < p.data.len() {\n");
+        out.push_str("            if self.data[at + k] != p.data[k] { return false; }\n");
+        out.push_str("            k = k + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        true\n");
+        out.push_str("    }\n");
+        out.push_str("    fn starts_with(&self, p: &TString) -> bool {\n");
+        out.push_str("        if p.data.len() > self.data.len() { return false; }\n");
+        out.push_str("        self.matches_at(p, 0)\n");
+        out.push_str("    }\n");
+        out.push_str("    fn ends_with(&self, p: &TString) -> bool {\n");
+        out.push_str("        if p.data.len() > self.data.len() { return false; }\n");
+        out.push_str("        self.matches_at(p, self.data.len() - p.data.len())\n");
+        out.push_str("    }\n");
+        out.push_str("    fn contains(&self, p: &TString) -> bool {\n");
+        out.push_str("        if p.data.len() > self.data.len() { return false; }\n");
+        out.push_str("        let last: usize = self.data.len() - p.data.len();\n");
+        out.push_str("        let mut at: usize = 0;\n");
+        out.push_str("        while at <= last {\n");
+        out.push_str("            if self.matches_at(p, at) { return true; }\n");
+        out.push_str("            at = at + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        false\n");
+        out.push_str("    }\n");
+        out.push_str("    fn find(&self, p: &TString) -> Option<u64> {\n");
+        out.push_str("        if p.data.len() > self.data.len() { return None; }\n");
+        out.push_str("        let last: usize = self.data.len() - p.data.len();\n");
+        out.push_str("        let mut at: usize = 0;\n");
+        out.push_str("        while at <= last {\n");
+        out.push_str("            if self.matches_at(p, at) { return Some(at as u64); }\n");
+        out.push_str("            at = at + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        None\n");
+        out.push_str("    }\n");
+        out.push_str("    fn split(&self, sep: u8) -> TVecTString {\n");
+        out.push_str("        let mut pieces: Vec<TString> = Vec::new();\n");
+        out.push_str("        let mut cur: Vec<u8> = Vec::new();\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < self.data.len() {\n");
+        out.push_str("            let b: u8 = self.data[i];\n");
+        out.push_str("            if b == sep {\n");
+        out.push_str("                pieces.push(TString { data: cur });\n");
+        out.push_str("                cur = Vec::new();\n");
+        out.push_str("            } else {\n");
+        out.push_str("                cur.push(b);\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        pieces.push(TString { data: cur });\n");
+        out.push_str("        TVecTString { data: pieces }\n");
+        out.push_str("    }\n");
+        out.push_str("    fn trim(&self) -> TString {\n");
+        out.push_str("        let n: usize = self.data.len();\n");
+        out.push_str("        let mut lo: usize = 0;\n");
+        out.push_str(
+            "        while lo < n && { let c = self.data[lo]; c == 32 || c == 9 || c == 10 || c == 13 } { lo = lo + 1; }\n",
+        );
+        out.push_str("        let mut hi: usize = n;\n");
+        out.push_str(
+            "        while hi > lo && { let c = self.data[hi - 1]; c == 32 || c == 9 || c == 10 || c == 13 } { hi = hi - 1; }\n",
+        );
+        out.push_str("        TString { data: self.data[lo..hi].to_vec() }\n");
+        out.push_str("    }\n");
+    }
     out.push_str("}\n");
     // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1 exec
     // form of the generated `u64`→decimal-`String` round-trip. The L3 form PROVES

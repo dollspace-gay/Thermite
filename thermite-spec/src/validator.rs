@@ -69,6 +69,10 @@
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | #94 cluster C4. `push_byte` ADDED to `BUILTIN_METHODS` (so a contract over a byte-builder result validates inside the §4.2 cage exactly as `concat`/`slice`); `from_byte` is an associated path-call `String::from_byte(b)` (an `Expr::Call`, no `BUILTIN_METHODS` entry needed). Both are constructing ops (`fx alloc`). Consumer: `pub fn validate` → `walk_expr_inner` (`BUILTIN_METHODS` allowlist). Verification: `forge/tests/string_format_conformance.rs` (the byte-builder certifies L3 / `effects: [alloc]` against real verus, the GROUNDED `4 verified, 0 errors` form). |
 //! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | #94 cluster C4 (+ blocker #96 MSB-first display). `to_string` ADDED to `BUILTIN_METHODS` (the `n.to_string()` method spelling); the GENERATED round-trip spec fns `parse_be`/`parse_le`/`pow10` are seeded into `spec_fns` (`GENERATED_SPEC_FNS`) so a contract `ens parse_be(result) == n` validates inside the cage as a named `spec fn` call. The lowerer (`thermite-lower::lower`) emits the `u64_to_string` exec (LSB build + reverse to MSB-first) + `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec + `lemma_parse_push` + the `parse_be(seq_reverse(s)) == parse_le(s)` bridge lemmas. Consumer: `pub fn validate` → `walk_call` (the `spec_fns` accept). Verification: `forge/tests/string_format_conformance.rs` (the MSB-first round-trip `parse_be(to_string(n)) == n` certifies L3, GROUNDED `17 verified, 0 errors`; an overclaim FAILS, non-vacuous, R-DEFER-9). |
 //! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | SHIPPED | #95 cluster C7. `GENERATED_SPEC_FNS` += `all_digits`/`is_digit` (alongside `parse_be`/`parse_le`/`pow10`) so `parse_u64`'s round-trip witness validates inside the §4.2 cage as named `spec fn` calls; the lowerer emits the bodies. Consumer: `pub fn validate` → `walk_call`. Verified: `forge/tests/option_result_conformance.rs` (real verus `5 verified, 0 errors`). |
+//! | REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`) | SHIPPED | #102 cluster C5. `starts_with`/`ends_with` ADDED to `BUILTIN_METHODS` (so `ens result == occurs_at(s@, needle@, ..)` validates inside the §4.2 cage); `contains` was already present (C6) and is RECEIVER-TYPE-dispatched by the lowerer (a `String` receiver → `TString::contains` substring scan, a `Vec` receiver → `TVec::contains` membership — Rust inherent-method resolution, no clobber). `GENERATED_SPEC_FNS` += `occurs_at`/`contains_sub` so the cage admits the named predicate. Consumer: `pub fn validate` → `walk_expr_inner` (`BUILTIN_METHODS` allowlist) + `walk_call` (`spec_fns` accept). Verified: `forge/tests/string_search_conformance.rs` (the predicates certify L3 pure under real verus; a true AND a false case proved, a broken `starts_with` FAILS — non-vacuous). |
+//! | REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`) | SHIPPED | #102 cluster C5. `find` ADDED to `BUILTIN_METHODS`; its `ens` is the C7 spec-`match`-in-`ens` (`match result { Some(at) => occurs_at(..), None => !contains_sub(..) }`), admitted via the existing flat-`match` cage rule (01-adts REQ-7). `contains_sub`/`occurs_at` in `GENERATED_SPEC_FNS`. Consumer: `pub fn validate`. Verified: `forge/tests/string_search_conformance.rs` (real verus L3; the PINNED Some case proves `result is Some`, the always-`None` mutant FAILS — #101 trap avoided). |
+//! | REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`) | SHIPPED | #102 cluster C5. `split` ADDED to `BUILTIN_METHODS`; `GENERATED_SPEC_FNS` += `count_sep`/`sep_free` so `ens result.len() == 1 + count_sep(s@, sep) && forall|k| sep_free(..)` validates inside the §4.2 cage as named `spec fn` calls (the lowerer emits the bodies + `lemma_count_push`). Consumer: `pub fn validate`. Verified: `forge/tests/string_search_conformance.rs` (the count-bound + sep-free floor certifies L3 alloc under real verus; a `split`-drop mutant FAILS — non-vacuous). |
+//! | REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | SHIPPED | #102 cluster C5. `trim` ADDED to `BUILTIN_METHODS`; `GENERATED_SPEC_FNS` += `is_space` so a contract may name the whitespace predicate; the grounded `ens result.len() <= s.len() && exists|lo,hi| result == s.subrange(lo,hi)` validates inside the cage. Consumer: `pub fn validate`. Verified: `forge/tests/string_search_conformance.rs` (the length floor + subrange content certifies L3 alloc under real verus). |
 //!
 //! ## REQ status — 09-option-result.md (Cluster C7, built-in Option/Result, issue #95)
 //!
@@ -149,6 +153,21 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// `exists`-meaning is PROVED by the exec `ens`'s linear-scan invariant, R-DEFER-9).
 /// `pop_last`/`insert`/`remove` stay EXEC-only (`&mut` mutators, never in a
 /// contract). No other built-in is added — REQ-1 frozen-set discipline.
+/// Cluster C5 string search/transform (`.design/basis/07-strings.md` REQ-13..16,
+/// issue #102): `starts_with`/`ends_with` are the boolean substring predicates whose
+/// result a contract names (`ens result == occurs_at(s@, needle@, ..)`), `find` is
+/// the first-occurrence search whose result is the built-in `Option<u64>` named via
+/// the spec-`match`-in-`ens` (`ens match result { Some(at) => occurs_at(..), None =>
+/// !contains_sub(..) }`), `split` is the `Vec<String>` splitter and `trim` the
+/// whitespace stripper whose results a contract names (`ens result.len() == 1 +
+/// count_sep(..)` / `ens exists|lo,hi| result == s.subrange(lo,hi)`). All admitted as
+/// FLAT built-ins so the §4.2 cage can NAME them; their meanings are PROVED by the
+/// emitted exec scans' loop invariants (R-DEFER-9). `contains` (already present from
+/// C6) is SHARED by the string substring op AND the `Vec` membership op — the surface
+/// NAME is one, but the lowerer RECEIVER-TYPE-dispatches it (a `String` receiver →
+/// `TString::contains` substring scan; a `Vec` receiver → `TVec::contains` membership
+/// scan), so no separate entry and no clobber (Rust inherent-method resolution keys on
+/// the receiver type).
 const BUILTIN_METHODS: &[&str] = &[
     "len",
     "get",
@@ -159,6 +178,11 @@ const BUILTIN_METHODS: &[&str] = &[
     "slice",
     "push_byte",
     "to_string",
+    "starts_with",
+    "ends_with",
+    "find",
+    "split",
+    "trim",
 ];
 
 /// The GENERATED `spec fn` names the lowerer materializes for the C4 `u64`→`String`
@@ -181,7 +205,29 @@ const BUILTIN_METHODS: &[&str] = &[
 /// `parse_u64`'s round-trip `ens match result { Some(v) => all_digits(s.data@) &&
 /// parse_be(s.data@) == v, None => true }` validates inside the §4.2 cage as named
 /// `spec fn` calls (the lowerer emits their bodies in `emit_parse_defs`).
-const GENERATED_SPEC_FNS: &[&str] = &["parse_be", "parse_le", "pow10", "all_digits", "is_digit"];
+/// Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102) adds the string
+/// search/transform spec fns the lowerer emits when a program uses the C5 ops, so a
+/// contract NAMING them validates inside the §4.2 cage as named `spec fn` calls (the
+/// lowerer emits their bodies in `emit_string_search_defs`): `occurs_at(s, needle, at)`
+/// (needle occurs at byte offset `at` — a flat bounded `forall|k|`), `contains_sub(s,
+/// needle)` (a flat bounded `exists|at| occurs_at(..)` — the `contains`/`find`
+/// meaning), `count_sep(s, sep)` (the recursive separator count — `split`'s result
+/// length), `sep_free(s, sep)` (no byte equals `sep` — each `split` piece), and
+/// `is_space(b)` (the ASCII-whitespace predicate `trim` strips). All flat / bounded /
+/// named per §4.2 (no anonymous nested quantifiers — `occurs_at`'s inner `forall|k|`
+/// lives in the NAMED spec-fn body).
+const GENERATED_SPEC_FNS: &[&str] = &[
+    "parse_be",
+    "parse_le",
+    "pow10",
+    "all_digits",
+    "is_digit",
+    "occurs_at",
+    "contains_sub",
+    "count_sep",
+    "sep_free",
+    "is_space",
+];
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so

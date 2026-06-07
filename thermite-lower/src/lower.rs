@@ -94,6 +94,10 @@
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | `emit_string_wrapper` emits the `from_byte(b: u64) -> TString` 1-byte constructor (`ens len == 1 && data@[0] == b as u8`) and the `push_byte(&self, b: u64) -> TString` copy-then-append (`req len < CAP`, `ens len == old+1 && data@[old] == b as u8` + the element-frame `forall|j| 0 <= j < old ==> result@[j] == self@[j]`) — the GROUNDED byte-builder over vstd's verified `Vec::push` (the `u64` byte zero-extends, the SAME convention as `byte_at -> u64`). Owned-result form (no `&mut`/`final`). Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_format_conformance.rs` (real verus L3 / `effects: [alloc]`). |
 //! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec fns + the `lemma_parse_push` append lemma + the display-bridge lemmas `lemma_parse_be_push`/`lemma_parse_be_reverse` (`parse_be(seq_reverse(s)) == parse_le(s)`, proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop builds LSB-first — invariant `parse_le(data@) + m*pow10(data.len()) == n`, `decreases m` — THEN a reverse loop to the human-readable MSB-first display order, blocker #96). Materialized once when the program uses `n.to_string()` / names `parse_be` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_be(result)` lowers to `parse_be(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_be(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_be`). GROUNDED `17 verified, 0 errors`; an overclaimed round-trip FAILS (R-DEFER-9). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` + `forge/tests/divergence_numfmt_display_order.rs` (the MSB-first round-trip certifies L3, the formatter builds+runs 42→[52,50]=="42", 100→"100", 7→"7"). |
 //! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL) | SHIPPED | #95 cluster C7. `emit_parse_defs` emits the `is_digit`/`all_digits`/`parse_be` spec fns + `parse_u64(s: &TString) -> Option<u64>` (the Horner-accumulate loop + the BE partial-value invariant + the three handled-or-loud `None` arms) with the round-trip success `ens match result { Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat, None => true }`; materialized when `program_uses_parse`; `parse_be` deduped against the numfmt round-trip. Consumer: `lower`. Verified: `forge/tests/option_result_conformance.rs::ac4_parse_u64_lowering_verifies_under_real_verus` (real verus `5 verified, 0 errors`) + the broken-`Some(0)` non-vacuity. |
+//! | REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` (called from `emit_string_wrapper` when `program_uses_string_search`) emits the inner `matches_at` helper + `starts_with`/`ends_with`/`contains` byte scans (`ens result == occurs_at(self.data@, p.data@, ..)` / `contains_sub(..)`); `emit_string_search_defs` emits the `occurs_at`/`contains_sub` spec fns. `contains` is RECEIVER-TYPE-dispatched: `TString::contains` (substring) vs `TVec::contains` (membership) — DISTINCT inherent methods, no clobber. Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_search_conformance.rs` (real verus L3 pure — a true AND a false case; a broken `starts_with` FAILS, non-vacuous). GROUNDED `14 verified, 0 errors`. |
+//! | REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `find(&self, p: &TString) -> Option<u64>` occurrence scan with the C7 spec-`match`-in-`ens` (`Some(at) => occurs_at(..), None => !contains_sub(..)`), reusing C7's `Type::Option` lowering. The `occurs_at` offset arg is cast `as int` (the `lower_expr` `Call` `occurs_fn` arm). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus L3; the PINNED Some case proves `result is Some`, the always-`None` mutant FAILS — #101 trap avoided). |
+//! | REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `split(&self, sep: u8) -> TVecTString` push-loop (the count partial + sep-free invariant); `emit_string_search_defs` emits the `count_sep`/`sep_free` spec fns + the `lemma_count_push` induction proof. `collect_vec_elem_types` weaves the `Vec<String>` element (→ `TVecTString`) when a C5 op is used so `split`'s result wrapper is always in scope. The surface `u64` `sep` is cast `as u8` at the call site (exec) + `as u8` in the `count_sep`/`sep_free` contract arg (spec). `count_sep` joins `nat_fns`. Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the count-bound + sep-free floor `7 verified, 0 errors`; a `split`-drop mutant FAILS, non-vacuous). The count-bound is the STRONGEST proved contract (NOT a reconstruct-round-trip). |
+//! | REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `trim(&self) -> TString` forward/backward whitespace scan + bounded copy (the subrange invariant `out@ == self.data@.subrange(lo, i)`); `emit_string_search_defs` emits the `is_space` spec fn. The whitespace test is inlined in the exec loop (`is_space` is a spec fn). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the length floor + subrange content `8 verified, 0 errors`). |
 //!
 //! ## REQ status — 09-option-result.md cluster C7 (built-in Option/Result, issue #95)
 //!
@@ -491,6 +495,19 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     let string_wrapper = emit_string_wrapper(program)?;
     out.push_str(&string_wrapper);
 
+    // (1d.5) Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): the
+    // string search/transform module-scope definitions — the `occurs_at`/
+    // `contains_sub`/`count_sep`/`sep_free`/`is_space` spec fns + the
+    // `lemma_count_push` proof fn — materialized ONCE when the program uses a C5 op
+    // (`program_uses_string_search`). The `TString` search METHODS (emitted by
+    // `emit_string_wrapper`'s `emit_string_search_methods`) NAME these in their
+    // contracts; verus resolves them order-independently within the single `verus!`
+    // block. EMPTY otherwise (byte-stable — no regression). The GROUNDED forms (no
+    // `assume`/`admit`/`external_body`, R-DEFER-9; `lemma_count_push` is a REAL
+    // induction proof).
+    let string_search_defs = emit_string_search_defs(program)?;
+    out.push_str(&string_search_defs);
+
     // (1e) Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
     // generated `u64`→decimal-`String` round-trip definitions — the `pow10`/
     // `parse_le` spec fns, the `lemma_parse_push` append lemma, and the
@@ -554,6 +571,16 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
         for name in GENERATED_NUMFMT_SPEC_FNS {
             nat_fns.push(name);
         }
+    }
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the generated
+    // `count_sep` spec fn returns `nat`, so when the program uses a C5 op it joins
+    // `nat_fns` — `split`'s `ens result.len() == 1 + count_sep(s@, sep)` coerces the
+    // scalar `result.len()` side `as nat` exactly as a hand-written ADT-fold-sum does.
+    // (The other C5 spec fns — `occurs_at`/`contains_sub`/`sep_free`/`is_space` —
+    // return `bool`, so they do NOT join `nat_fns`.) Added only when a C5 op is in use
+    // (byte-stable for the non-C5 corpus).
+    if program_uses_string_search(program) {
+        nat_fns.push("count_sep");
     }
 
     // The program-wide set of `struct` names that carry a type-invariant (REQ-8,
@@ -1966,11 +1993,39 @@ fn lower_fn_signature(
     // (REQ-8, OQ-3 automatic threading) so Verus has the type-invariant of each
     // incoming value in scope. The author writes neither conjunct: the invariant
     // is a property of the TYPE, implicit at every use.
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, #102): does THIS fn use a
+    // string search/transform op (a C5 method call or a C5 spec-fn in its contract)?
+    // If so its `String` params need the woven `well_formed()` precondition (below).
+    let fn_uses_string_search = contract_uses_string_search(&f.contract)
+        || f.body
+            .as_ref()
+            .map(block_uses_string_search)
+            .unwrap_or(false);
     let mut woven_reqs: Vec<String> = Vec::new();
     for p in &f.params {
         if let Type::Named(name) = &p.ty {
             if inv_structs.contains(&name.as_str()) {
                 woven_reqs.push(format!("{}.well_formed()", p.name));
+            }
+        }
+        // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): a
+        // `String`/`&String` param is BOUNDED by its type invariant `well_formed()`
+        // (`data.len() <= CAP`, the §4.2 cage), exactly like an invariant-bearing
+        // struct. The C5 search/transform methods REQUIRE `self.well_formed()` /
+        // `p.well_formed()`, so weave the `well_formed()` conjunct for every
+        // `String`-typed param (a bare `String` or a `&String` borrow — `is_string_ty`
+        // sees through the `Ref`) so a caller of `s.starts_with(p)` / `s.split(sep)`
+        // discharges the method's precondition. The author writes neither conjunct —
+        // the invariant is implicit at every use, the SAME automatic threading the
+        // inv-bearing struct gets. Woven ONLY when the program uses a C5 op (no golden
+        // churn for the pre-C5 string corpus — `string_demo`'s `join`/`first_byte`
+        // discharge `well_formed` from their own `req`, so they need no weave). Keyed
+        // on the param TYPE reaching `String` directly (not a `Vec<String>`/struct
+        // field — those carry their own invariant), deduped against the struct weave.
+        if fn_uses_string_search && is_string_param_ty(&p.ty) {
+            let conj = format!("{}.well_formed()", p.name);
+            if !woven_reqs.contains(&conj) {
+                woven_reqs.push(conj);
             }
         }
     }
@@ -2689,6 +2744,18 @@ pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
             }
         }
     }
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the emitted
+    // `TString::split` method RETURNS a `TVecTString` (the `Vec<String>` wrapper), and
+    // the `split` method is emitted whenever ANY C5 op is used
+    // (`program_uses_string_search`) — including in a per-item subprogram (forge's
+    // `item_subprogram`) whose own return type is NOT `Vec<String>`. So weave the
+    // `Vec<String>` element (→ `TVecTString`) whenever the program uses a C5 op, so the
+    // wrapper `split` references is ALWAYS in scope (the REQ-10 element-wrapper weave,
+    // applied to `split`'s implicit result type). `note_vec_elems` dedups, so a
+    // program that ALSO has an explicit `Vec<String>` does not double-emit.
+    if program_uses_string_search(program) {
+        note_vec_elems(&Type::Vec(Box::new(Type::String)), &mut elems);
+    }
     elems
 }
 
@@ -2971,6 +3038,21 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
 /// directly, or nested under a `Ref`/`Slice`/`Vec`/`Box`/`Generic` constructor
 /// (a `&String` view, a `Vec<String>`, a `Box<String>`). The whole type-constructor
 /// closure is walked so no String-bearing type position is missed (REQ-4).
+/// True if `ty` is a `String` VALUE param — a bare `String` or a `&String` borrow
+/// (the `str`-view role), but NOT a `Vec<String>`/`Box<String>`/struct field (those
+/// carry their OWN wrapper invariant, named differently). Used to weave the `TString`
+/// `well_formed()` precondition for a `String`-receiver/needle param of a C5
+/// search/transform fn (`.design/basis/07-strings.md` REQ-13..16, issue #102): the
+/// emitted method requires `self.well_formed()`/`p.well_formed()`, and a `String`
+/// value is bounded by that invariant (the §4.2 cage), so the caller discharges it.
+fn is_string_param_ty(ty: &Type) -> bool {
+    match ty {
+        Type::String => true,
+        Type::Ref { inner, .. } => matches!(inner.as_ref(), Type::String),
+        _ => false,
+    }
+}
+
 fn ty_reaches_string(ty: &Type) -> bool {
     match ty {
         Type::String => true,
@@ -3273,6 +3355,483 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
     out.push_str("        out.push(b as u8);\n");
     out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): the string
+    // search/transform ops. Emitted only when the program uses a C5 op
+    // (`program_uses_string_search`) so the non-C5 corpus is byte-unaffected (no
+    // regression). The GROUNDED forms (`verus 0.2026.05.24`, no `assume`/`admit`/
+    // `external_body` — R-DEFER-9): the predicate scans `14 verified, 0 errors`,
+    // `split` `7 verified, 0 errors`, `trim` `8 verified, 0 errors`.
+    if program_uses_string_search(program) {
+        emit_string_search_methods(&mut out, cap);
+    }
+    out.push_str("}\n");
+    Ok(out)
+}
+
+/// Emit the C5 string search/transform METHODS onto the open `TString` impl
+/// (`.design/basis/07-strings.md` REQ-13..16, issue #102). Appended inside
+/// `emit_string_wrapper`'s impl block (the open brace is still pending). The
+/// contracts NAME the seeded spec fns `occurs_at`/`contains_sub`/`count_sep`/
+/// `sep_free` (emitted at module scope by `emit_string_search_defs`); verus resolves
+/// them order-independently within the single `verus!` block. The exact GROUNDED
+/// forms — the inner `matches_at` helper + the byte-scan predicates (REQ-13), the
+/// `find -> Option<u64>` occurrence scan (REQ-14, the C7 spec-`match`-in-`ens`), the
+/// `split -> TVecTString` push-loop (REQ-15, reusing C6's `TVecTString`), and the
+/// `trim -> TString` whitespace scan + bounded copy (REQ-16). `cap` is the §4.2
+/// capacity bound (`VEC_CAP`). No `unwrap`/`expect`/`panic!` (R-CODE-2), no proof
+/// cheat (the scans + split + the lemma are PROVED).
+fn emit_string_search_methods(out: &mut String, cap: u64) {
+    // The inner occurrence helper: does `p` occur at byte offset `at`? A scan over
+    // `p`'s bytes with the prefix-match invariant; the `at <= len - plen` form keeps
+    // the `at + plen` precondition from overflowing `usize` (the GROUNDED form).
+    // Consumed by `starts_with`/`ends_with`/`contains`/`find`.
+    out.push_str("    pub fn matches_at(&self, p: &TString, at: usize) -> (result: bool)\n");
+    out.push_str("        requires self.well_formed(), p.well_formed(),\n");
+    out.push_str("                 p.data.len() <= self.data.len(),\n");
+    out.push_str("                 at <= self.data.len() - p.data.len(),\n");
+    out.push_str("        ensures result == occurs_at(self.data@, p.data@, at as int),\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut k: usize = 0;\n");
+    out.push_str("        while k < p.data.len()\n");
+    out.push_str("            invariant\n");
+    out.push_str("                k <= p.data.len(),\n");
+    out.push_str("                p.data.len() <= self.data.len(),\n");
+    out.push_str("                at <= self.data.len() - p.data.len(),\n");
+    out.push_str(
+        "                forall|j: int| 0 <= j < k ==> self.data@[at + j] == p.data@[j],\n",
+    );
+    out.push_str("            decreases p.data.len() - k,\n");
+    out.push_str("        {\n");
+    out.push_str("            if self.data[at + k] != p.data[k] {\n");
+    out.push_str("                assert(self.data@[at + k as int] != p.data@[k as int]);\n");
+    out.push_str("                return false;\n");
+    out.push_str("            }\n");
+    out.push_str("            k = k + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        true\n");
+    out.push_str("    }\n");
+    // starts_with: `occurs_at(s@, needle@, 0)` (REQ-13). The empty-needle / oversized-
+    // needle guard returns false BEFORE calling `matches_at` (its `req` would not hold).
+    out.push_str("    pub fn starts_with(&self, p: &TString) -> (result: bool)\n");
+    out.push_str("        requires self.well_formed(), p.well_formed(),\n");
+    out.push_str("        ensures result == occurs_at(self.data@, p.data@, 0),\n");
+    out.push_str("    {\n");
+    out.push_str("        if p.data.len() > self.data.len() { return false; }\n");
+    out.push_str("        self.matches_at(p, 0)\n");
+    out.push_str("    }\n");
+    // ends_with: `occurs_at(s@, needle@, (len - needle.len()))` (REQ-13).
+    out.push_str("    pub fn ends_with(&self, p: &TString) -> (result: bool)\n");
+    out.push_str("        requires self.well_formed(), p.well_formed(),\n");
+    out.push_str(
+        "        ensures result == occurs_at(self.data@, p.data@, (self.data.len() - p.data.len()) as int),\n",
+    );
+    out.push_str("    {\n");
+    out.push_str("        if p.data.len() > self.data.len() { return false; }\n");
+    out.push_str("        let off: usize = self.data.len() - p.data.len();\n");
+    out.push_str("        self.matches_at(p, off)\n");
+    out.push_str("    }\n");
+    // contains: `contains_sub(s@, needle@)` — the outer occurrence-position scan
+    // calling `matches_at`, with the no-match-so-far invariant + the
+    // `assert forall .. !occurs_at .. by` blocks that prove `!contains_sub` on the
+    // no-match exits (REQ-13). RECEIVER-TYPE-dispatched: this is `TString::contains`;
+    // the C6 `TVec::contains` (membership) is a DISTINCT inherent method — Rust keys
+    // method resolution on the receiver type, so the shared surface name `contains`
+    // does not clobber (the design-flagged name-clash, RESOLVED at this layer).
+    out.push_str("    pub fn contains(&self, p: &TString) -> (result: bool)\n");
+    out.push_str("        requires self.well_formed(), p.well_formed(),\n");
+    out.push_str("        ensures result == contains_sub(self.data@, p.data@),\n");
+    out.push_str("    {\n");
+    out.push_str("        if p.data.len() > self.data.len() {\n");
+    out.push_str("            assert forall|at: int| !occurs_at(self.data@, p.data@, at) by {\n");
+    out.push_str("                if 0 <= at && at + p.data.len() <= self.data.len() { }\n");
+    out.push_str("            }\n");
+    out.push_str("            return false;\n");
+    out.push_str("        }\n");
+    out.push_str("        let last: usize = self.data.len() - p.data.len();\n");
+    out.push_str("        let mut at: usize = 0;\n");
+    out.push_str("        while at <= last\n");
+    out.push_str("            invariant\n");
+    out.push_str("                self.well_formed(), p.well_formed(),\n");
+    out.push_str("                p.data.len() <= self.data.len(),\n");
+    out.push_str("                last == self.data.len() - p.data.len(),\n");
+    out.push_str("                at <= last + 1,\n");
+    out.push_str("                last + p.data.len() == self.data.len(),\n");
+    out.push_str(
+        "                forall|j: int| 0 <= j < at ==> !occurs_at(self.data@, p.data@, j),\n",
+    );
+    out.push_str("            decreases last + 1 - at,\n");
+    out.push_str("        {\n");
+    out.push_str("            assert(at <= self.data.len() - p.data.len());\n");
+    out.push_str("            if self.matches_at(p, at) {\n");
+    out.push_str("                assert(occurs_at(self.data@, p.data@, at as int));\n");
+    out.push_str("                return true;\n");
+    out.push_str("            }\n");
+    out.push_str("            at = at + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        assert forall|j: int| !occurs_at(self.data@, p.data@, j) by {\n");
+    out.push_str("            if 0 <= j && j + p.data.len() <= self.data.len() {\n");
+    out.push_str("                assert(j <= last);\n");
+    out.push_str("                assert(j < at);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        false\n");
+    out.push_str("    }\n");
+    // find -> Option<u64>: the SAME outer scan as `contains`, returning `Some(at)` on
+    // the first hit (REQ-14, reuses C7's `Option`). The `Some` arm carries the honest
+    // bound `at + plen <= slen` (NOT `at < slen`, false for an empty needle at
+    // `at == len`); the `None` arm proves `!contains_sub` (the handled-or-loud tooth).
+    out.push_str("    pub fn find(&self, p: &TString) -> (result: Option<u64>)\n");
+    out.push_str("        requires self.well_formed(), p.well_formed(),\n");
+    out.push_str("        ensures match result {\n");
+    out.push_str(
+        "            Some(at) => at + p.data.len() <= self.data.len() && occurs_at(self.data@, p.data@, at as int),\n",
+    );
+    out.push_str("            None => !contains_sub(self.data@, p.data@),\n");
+    out.push_str("        },\n");
+    out.push_str("    {\n");
+    out.push_str("        if p.data.len() > self.data.len() {\n");
+    out.push_str("            assert forall|at: int| !occurs_at(self.data@, p.data@, at) by {\n");
+    out.push_str("                if 0 <= at && at + p.data.len() <= self.data.len() { }\n");
+    out.push_str("            }\n");
+    out.push_str("            return None;\n");
+    out.push_str("        }\n");
+    out.push_str("        let last: usize = self.data.len() - p.data.len();\n");
+    out.push_str("        let mut at: usize = 0;\n");
+    out.push_str("        while at <= last\n");
+    out.push_str("            invariant\n");
+    out.push_str("                self.well_formed(), p.well_formed(),\n");
+    out.push_str("                p.data.len() <= self.data.len(),\n");
+    out.push_str("                last == self.data.len() - p.data.len(),\n");
+    out.push_str("                at <= last + 1,\n");
+    out.push_str("                last + p.data.len() == self.data.len(),\n");
+    out.push_str(
+        "                forall|j: int| 0 <= j < at ==> !occurs_at(self.data@, p.data@, j),\n",
+    );
+    out.push_str("            decreases last + 1 - at,\n");
+    out.push_str("        {\n");
+    out.push_str("            assert(at <= self.data.len() - p.data.len());\n");
+    out.push_str("            if self.matches_at(p, at) {\n");
+    out.push_str("                assert(occurs_at(self.data@, p.data@, at as int));\n");
+    out.push_str("                return Some(at as u64);\n");
+    out.push_str("            }\n");
+    out.push_str("            at = at + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        assert forall|j: int| !occurs_at(self.data@, p.data@, j) by {\n");
+    out.push_str("            if 0 <= j && j + p.data.len() <= self.data.len() {\n");
+    out.push_str("                assert(j <= last);\n");
+    out.push_str("                assert(j < at);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        None\n");
+    out.push_str("    }\n");
+    // split -> Vec<String> (TVecTString): the parser core (REQ-15). The scan builds
+    // `cur: Vec<u8>`; on a `sep` byte it pushes `TString { data: cur }` into the
+    // `pieces: Vec<TString>` and resets `cur`; otherwise pushes the byte onto `cur`;
+    // after the loop pushes the trailing `cur` (the `+1`). The loop invariant carries
+    // the count partial (`pieces.len() == count_sep(prefix)`, maintained by
+    // `lemma_count_push`), `sep_free(cur@)`, and every completed piece sep-free. The
+    // surface `sep` is a `u64` (the `byte_at -> u64` convention); the exec param is a
+    // `u8` (the backing element), so the lowerer casts the call arg `as u8`.
+    out.push_str("    pub fn split(&self, sep: u8) -> (result: TVecTString)\n");
+    out.push_str("        requires self.well_formed(),\n");
+    out.push_str("        ensures\n");
+    out.push_str("            result.data.len() >= 1,\n");
+    out.push_str("            result.data.len() == 1 + count_sep(self.data@, sep),\n");
+    out.push_str(
+        "            forall|k: int| 0 <= k < result.data.len() ==> sep_free(#[trigger] result.data@[k].data@, sep),\n",
+    );
+    out.push_str("    {\n");
+    out.push_str("        let mut pieces: Vec<TString> = Vec::new();\n");
+    out.push_str("        let mut cur: Vec<u8> = Vec::new();\n");
+    out.push_str("        let mut i: usize = 0;\n");
+    out.push_str("        while i < self.data.len()\n");
+    out.push_str("            invariant\n");
+    out.push_str("                i <= self.data.len(),\n");
+    out.push_str(
+        "                pieces.len() == count_sep(self.data@.subrange(0, i as int), sep),\n",
+    );
+    out.push_str("                sep_free(cur@, sep),\n");
+    out.push_str(
+        "                forall|k: int| 0 <= k < pieces.len() ==> sep_free(#[trigger] pieces@[k].data@, sep),\n",
+    );
+    out.push_str("            decreases self.data.len() - i,\n");
+    out.push_str("        {\n");
+    out.push_str("            let b: u8 = self.data[i];\n");
+    out.push_str("            let ghost old_pref = self.data@.subrange(0, i as int);\n");
+    out.push_str("            proof {\n");
+    out.push_str(
+        "                assert(self.data@.subrange(0, (i + 1) as int) =~= old_pref.push(b));\n",
+    );
+    out.push_str("                lemma_count_push(old_pref, b, sep);\n");
+    out.push_str("            }\n");
+    out.push_str("            if b == sep {\n");
+    out.push_str("                let piece = TString { data: cur };\n");
+    out.push_str("                pieces.push(piece);\n");
+    out.push_str("                cur = Vec::new();\n");
+    out.push_str("                assert(sep_free(cur@, sep));\n");
+    out.push_str("            } else {\n");
+    out.push_str("                let ghost old_cur = cur@;\n");
+    out.push_str("                cur.push(b);\n");
+    out.push_str("                assert(cur@ =~= old_cur.push(b));\n");
+    out.push_str(
+        "                assert forall|j: int| 0 <= j < cur@.len() implies #[trigger] cur@[j] != sep by {\n",
+    );
+    out.push_str("                    if j < old_cur.len() { } else { assert(cur@[j] == b); }\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            i = i + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        assert(self.data@.subrange(0, i as int) =~= self.data@);\n");
+    out.push_str("        let final_piece = TString { data: cur };\n");
+    out.push_str("        pieces.push(final_piece);\n");
+    out.push_str("        TVecTString { data: pieces }\n");
+    out.push_str("    }\n");
+    // trim -> String: scan `lo` forward past leading whitespace, `hi` (exclusive)
+    // backward past trailing whitespace, then copy `[lo, hi)` into a fresh `Vec<u8>`
+    // with the subrange invariant `out@ == self.data@.subrange(lo, i)` (REQ-16). The
+    // whitespace test is inlined in the exec loop condition (space/`\t`/`\n`/`\r` ==
+    // 32/9/10/13) since `is_space` is a spec fn (not callable in exec position). The
+    // content relation (`exists|lo,hi| result == s.subrange(lo,hi)`) pins the trimmed
+    // bytes are a contiguous slice of the source. Constructing (`fx alloc`).
+    out.push_str("    pub fn trim(&self) -> (result: TString)\n");
+    out.push_str("        requires self.well_formed(),\n");
+    out.push_str("        ensures\n");
+    out.push_str("            result.well_formed(),\n");
+    out.push_str("            result.data.len() <= self.data.len(),\n");
+    out.push_str("            exists|lo: int, hi: int|\n");
+    out.push_str(
+        "                0 <= lo <= hi <= self.data.len() && result.data@ == self.data@.subrange(lo, hi),\n",
+    );
+    out.push_str("    {\n");
+    out.push_str("        let n: usize = self.data.len();\n");
+    out.push_str("        let mut lo: usize = 0;\n");
+    out.push_str("        while lo < n && {\n");
+    out.push_str("                let c = self.data[lo];\n");
+    out.push_str("                c == 32 || c == 9 || c == 10 || c == 13\n");
+    out.push_str("            }\n");
+    out.push_str("            invariant lo <= n, n == self.data.len(),\n");
+    out.push_str("            decreases n - lo,\n");
+    out.push_str("        { lo = lo + 1; }\n");
+    out.push_str("        let mut hi: usize = n;\n");
+    out.push_str("        while hi > lo && {\n");
+    out.push_str("                let c = self.data[hi - 1];\n");
+    out.push_str("                c == 32 || c == 9 || c == 10 || c == 13\n");
+    out.push_str("            }\n");
+    out.push_str("            invariant lo <= hi, hi <= n, n == self.data.len(),\n");
+    out.push_str("            decreases hi,\n");
+    out.push_str("        { hi = hi - 1; }\n");
+    out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
+    out.push_str("        let mut i: usize = lo;\n");
+    out.push_str("        while i < hi\n");
+    out.push_str("            invariant\n");
+    out.push_str("                lo <= i, i <= hi, hi <= n, n == self.data.len(),\n");
+    writeln!(out, "                self.data.len() <= {cap},").ok();
+    out.push_str("                out@ == self.data@.subrange(lo as int, i as int),\n");
+    out.push_str("            decreases hi - i,\n");
+    out.push_str("        {\n");
+    out.push_str("            let ghost old_out = out@;\n");
+    out.push_str("            out.push(self.data[i]);\n");
+    out.push_str(
+        "            assert(out@ =~= self.data@.subrange(lo as int, (i + 1) as int)) by {\n",
+    );
+    out.push_str(
+        "                assert(self.data@.subrange(lo as int, (i + 1) as int) =~= self.data@.subrange(lo as int, i as int).push(self.data@[i as int]));\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("            i = i + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        assert(out@ == self.data@.subrange(lo as int, hi as int));\n");
+    out.push_str("        TString { data: out }\n");
+    out.push_str("    }\n");
+}
+
+/// The C5 string search/transform method names (`.design/basis/07-strings.md`
+/// REQ-13..16, issue #102). `contains` is INTENTIONALLY OMITTED from this trigger
+/// set: it is shared with the C6 `Vec` membership op, so a bare `.contains(..)` does
+/// not by itself imply a `String` receiver. The string-search defs (+ the substring
+/// `TString::contains` method) are emitted when ANY of these UNAMBIGUOUS string ops
+/// appears OR when a contract names a C5 spec fn (`occurs_at`/`contains_sub`/
+/// `count_sep`/`sep_free`/`is_space`); a String `s.contains(needle)` in such a
+/// program then resolves to `TString::contains` (receiver-type dispatch). A program
+/// whose ONLY string op were a bare `contains` would still emit the method because it
+/// names `contains_sub` in the contract (REQ-13's `ens result == contains_sub(..)`).
+const STRING_SEARCH_METHODS: &[&str] = &["starts_with", "ends_with", "find", "split", "trim"];
+
+/// The C5 GENERATED spec-fn names (mirrors `thermite-spec::validator::
+/// GENERATED_SPEC_FNS`'s C5 additions): a contract naming any of these requires the
+/// string-search defs emitted + drives the `<String> -> <String>.data@` byte-view
+/// rewrite (the SAME mechanism `parse_le`/`parse_be` use).
+const GENERATED_SEARCH_SPEC_FNS: &[&str] = &[
+    "occurs_at",
+    "contains_sub",
+    "count_sep",
+    "sep_free",
+    "is_space",
+];
+
+/// True if the program uses a C5 string search/transform op (REQ-13..16, #102) — an
+/// unambiguous string method (`STRING_SEARCH_METHODS`) in exec/spec position OR a
+/// contract naming a C5 spec fn (`GENERATED_SEARCH_SPEC_FNS`). Either reference
+/// requires the search methods + the generated spec fns + `lemma_count_push` in
+/// scope. EMPTY otherwise (byte-stable for the non-C5 corpus, no regression). The
+/// walk reuses the `each_subexpr` full-tree traversal (the same shape as
+/// `program_uses_numfmt`), over every fn/spec-fn body + every contract clause.
+pub(crate) fn program_uses_string_search(program: &Program) -> bool {
+    program.items.iter().any(|item| match item {
+        Item::Fn(f) => {
+            contract_uses_string_search(&f.contract)
+                || f.body
+                    .as_ref()
+                    .map(block_uses_string_search)
+                    .unwrap_or(false)
+        }
+        Item::SpecFn(s) => block_uses_string_search(&s.body),
+        Item::Struct(_) | Item::Enum(_) => false,
+    })
+}
+
+/// True if a fn `Contract`'s `req`/`ens` uses a C5 construct (REQ-13..16).
+fn contract_uses_string_search(contract: &thermite_syntax::ast::Contract) -> bool {
+    expr_uses_string_search(&contract.req.expr)
+        || contract
+            .ens
+            .iter()
+            .any(|c| expr_uses_string_search(&c.expr))
+}
+
+/// True if a block uses a C5 construct anywhere (REQ-13..16).
+fn block_uses_string_search(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_uses_string_search)
+        || block
+            .tail
+            .as_deref()
+            .map(expr_uses_string_search)
+            .unwrap_or(false)
+}
+
+fn stmt_uses_string_search(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_string_search(init),
+        Stmt::Assign { target, value } => {
+            expr_uses_string_search(target) || expr_uses_string_search(value)
+        }
+        Stmt::Return(opt) => opt.as_ref().map(expr_uses_string_search).unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_string_search(cond)
+                || block_uses_string_search(then)
+                || else_
+                    .as_ref()
+                    .map(block_uses_string_search)
+                    .unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_uses_string_search(&l.body),
+        Stmt::Expr(e) => expr_uses_string_search(e),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// True if `expr` references a C5 construct anywhere (REQ-13..16): an unambiguous
+/// string-search `MethodCall` (`STRING_SEARCH_METHODS`) or a C5 spec-fn `Call`
+/// (`GENERATED_SEARCH_SPEC_FNS`). A full-tree walk reusing `each_subexpr`.
+fn expr_uses_string_search(expr: &Expr) -> bool {
+    match expr {
+        Expr::MethodCall { name, .. } if STRING_SEARCH_METHODS.contains(&name.as_str()) => {
+            return true;
+        }
+        Expr::Call { callee, .. } => {
+            if let Expr::Path(segs) = callee.as_ref() {
+                if let Some(last) = segs.last() {
+                    if GENERATED_SEARCH_SPEC_FNS.contains(&last.as_str()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |e| {
+        if expr_uses_string_search(e) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+/// Emit the C5 string search/transform module-scope DEFINITIONS (REQ-13..16, #102):
+/// the spec fns `occurs_at`/`contains_sub`/`count_sep`/`sep_free`/`is_space` + the
+/// `lemma_count_push` proof fn (`split`'s count-invariant engine, proved by
+/// induction). Emitted ONCE when the program uses a C5 op (`program_uses_string_
+/// search`), in deterministic order. EMPTY otherwise (byte-stable). The emitted forms
+/// are EXACTLY the GROUNDED `verus 0.2026.05.24` definitions (no `assume`/`admit`/
+/// `external_body` — R-DEFER-9; `lemma_count_push` is a REAL induction proof). These
+/// must be in scope for the `TString` search methods' contracts (which name them);
+/// verus resolves references order-independently within the single `verus!` block.
+fn emit_string_search_defs(program: &Program) -> Result<String, LowerError> {
+    if !program_uses_string_search(program) {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    out.push('\n');
+    // occurs_at: needle occurs at byte offset `at` (a flat bounded `forall|k|` in the
+    // NAMED spec-fn body — §4.2 composition through named spec fns).
+    out.push_str("pub open spec fn occurs_at(s: Seq<u8>, needle: Seq<u8>, at: int) -> bool {\n");
+    out.push_str("    0 <= at && at + needle.len() <= s.len()\n");
+    out.push_str(
+        "    && (forall|k: int| 0 <= k < needle.len() ==> #[trigger] s[at + k] == needle[k])\n",
+    );
+    out.push_str("}\n");
+    // contains_sub: a flat single bounded existential (the §4.2 `exists`).
+    out.push_str("pub open spec fn contains_sub(s: Seq<u8>, needle: Seq<u8>) -> bool {\n");
+    out.push_str("    exists|at: int| occurs_at(s, needle, at)\n");
+    out.push_str("}\n");
+    // count_sep: the recursive separator count (split's result length).
+    out.push_str("pub open spec fn count_sep(s: Seq<u8>, sep: u8) -> nat\n");
+    out.push_str("    decreases s.len()\n");
+    out.push_str("{ if s.len() == 0 { 0nat }\n");
+    out.push_str(
+        "  else { (if s[0] == sep { 1nat } else { 0nat }) + count_sep(s.subrange(1, s.len() as int), sep) } }\n",
+    );
+    // sep_free: no byte equals sep (each split piece).
+    out.push_str("pub open spec fn sep_free(s: Seq<u8>, sep: u8) -> bool\n");
+    out.push_str("{ forall|i: int| 0 <= i < s.len() ==> #[trigger] s[i] != sep }\n");
+    // is_space: the ASCII-whitespace predicate (space/tab/LF/CR) trim strips. A
+    // contract may name it; trim's exec inlines the byte test (a spec fn is not
+    // callable in exec position).
+    out.push_str(
+        "pub open spec fn is_space(b: u8) -> bool { b == 32 || b == 9 || b == 10 || b == 13 }\n",
+    );
+    // lemma_count_push: appending a byte at the end adds (if b == sep {1} else {0}) to
+    // the count — proved by induction on `s` (the count-invariant engine for split).
+    out.push_str("pub proof fn lemma_count_push(s: Seq<u8>, b: u8, sep: u8)\n");
+    out.push_str(
+        "    ensures count_sep(s.push(b), sep) == count_sep(s, sep) + (if b == sep { 1nat } else { 0nat }),\n",
+    );
+    out.push_str("    decreases s.len(),\n");
+    out.push_str("{\n");
+    out.push_str("    let t = s.push(b);\n");
+    out.push_str("    assert(t.len() == s.len() + 1);\n");
+    out.push_str("    if s.len() == 0 {\n");
+    out.push_str("        assert(t[0] == b);\n");
+    out.push_str("        assert(t.subrange(1, t.len() as int) =~= Seq::<u8>::empty());\n");
+    out.push_str("        assert(count_sep(t.subrange(1, t.len() as int), sep) == 0nat);\n");
+    out.push_str("        assert(count_sep(t, sep) == (if t[0] == sep { 1nat } else { 0nat }));\n");
+    out.push_str("    } else {\n");
+    out.push_str("        assert(t[0] == s[0]);\n");
+    out.push_str("        let ts = t.subrange(1, t.len() as int);\n");
+    out.push_str("        let ss = s.subrange(1, s.len() as int);\n");
+    out.push_str("        assert(ts =~= ss.push(b));\n");
+    out.push_str("        lemma_count_push(ss, b, sep);\n");
+    out.push_str(
+        "        assert(count_sep(t, sep) == (if t[0] == sep { 1nat } else { 0nat }) + count_sep(ts, sep));\n",
+    );
+    out.push_str(
+        "        assert(count_sep(s, sep) == (if s[0] == sep { 1nat } else { 0nat }) + count_sep(ss, sep));\n",
+    );
     out.push_str("    }\n");
     out.push_str("}\n");
     Ok(out)
@@ -3953,12 +4512,52 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // that is a bare `usize` var is cast `as int` (the registry spec-fn
             // param is `int`) — keyed on the registry kind, not on the name.
             let arg_kinds = combinator_arg_kinds(callee);
+            // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the
+            // generated `count_sep(s: Seq<u8>, sep: u8)` / `sep_free(s: Seq<u8>, sep:
+            // u8)` spec fns take a `u8` separator, but the Thermite surface separator
+            // is a `u64` (the `byte_at -> u64` convention — a contract `ens
+            // result.len() == 1 + count_sep(s, sep)` names a `u64` `sep`). The first
+            // arg is the `String` byte-view (`s -> s.data@`, the existing `is_string`
+            // rule); the SECOND arg is the `sep` byte, cast `as u8` to match the spec
+            // fn's param (Verus does no implicit `u64 -> u8` in spec position). Keyed
+            // on the callee NAME being a sep-taking C5 spec fn + the arg index (1),
+            // mirroring `split`'s exec `as u8` coercion at the call site. A bare-int
+            // literal flows in directly; an arg already `as u8` is left as-is.
+            let sep_fn = ctx.is_spec()
+                && matches!(
+                    callee.as_ref(),
+                    Expr::Path(segs) if segs.last().map(|s| matches!(s.as_str(), "count_sep" | "sep_free")).unwrap_or(false)
+                );
+            // Cluster C5 (`.design/basis/07-strings.md` REQ-13/REQ-14, issue #102): the
+            // generated `occurs_at(s: Seq<u8>, needle: Seq<u8>, at: int)` spec fn takes
+            // an `int` occurrence offset, but the surface offset is a `u64` (the
+            // `find -> Option<u64>` payload, or a literal) — a contract `ens occurs_at(s,
+            // p, i)` names a `u64` `i`. Args 0/1 are the `String` byte-views (the
+            // `is_string` `.data@` rule); arg 2 is the `at` offset, cast `as int` (Verus
+            // does no implicit `u64 -> int` in a spec-fn arg position). The SAME `as
+            // int` coercion a combinator `Index`-kind arg gets, here keyed on the callee
+            // NAME `occurs_at` + the arg index (2). A literal / already-`as int` arg
+            // passes through (`lower_index_arg` avoids the double-cast).
+            let occurs_fn = ctx.is_spec()
+                && matches!(
+                    callee.as_ref(),
+                    Expr::Path(segs) if segs.last().map(|s| s.as_str()) == Some("occurs_at")
+                );
             let mut parts = Vec::new();
             for (i, a) in args.iter().enumerate() {
                 let is_index = arg_kinds
                     .map(|ks| ks.get(i).copied() == Some(thermite_spec::ArgKind::Index))
                     .unwrap_or(false);
                 if is_index && ctx.is_spec() {
+                    parts.push(lower_index_arg(a, ctx, d, span)?);
+                } else if sep_fn && i == 1 {
+                    let lowered = lower_spec_arg(a, ctx, d, span)?;
+                    if matches!(a, Expr::IntLit { .. }) || lowered.ends_with("as u8") {
+                        parts.push(lowered);
+                    } else {
+                        parts.push(format!("{lowered} as u8"));
+                    }
+                } else if occurs_fn && i == 2 {
                     parts.push(lower_index_arg(a, ctx, d, span)?);
                 } else {
                     parts.push(lower_spec_arg(a, ctx, d, span)?);
@@ -4087,11 +4686,28 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // narrowing. EXEC-only — the spec-position `.byte_at`/`.spec_*` rewrite
             // above handles a contract index.
             let coerce_usize = !ctx.is_spec() && matches!(name.as_str(), "byte_at" | "slice");
+            // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the
+            // `split(sep: u8)` exec accessor takes a `u8` separator (the backing byte
+            // element), but the Thermite surface separator is a `u64` (the `byte_at ->
+            // u64` zero-extension convention, the parser passes `,`/`\n` as `u64`).
+            // Rust does NO implicit `u64 -> u8` narrowing, so the `split` arg is
+            // coerced with an explicit `as u8` — the same byte-narrowing the wrapper's
+            // `from_byte`/`push_byte` apply to their `b: u64` surface byte, here at the
+            // call site because the emitted `split` param is `u8`. EXEC-only (a
+            // contract names `sep` as a `u8` via the spec fns). An integer LITERAL
+            // flows in directly (Verus/Rust coerce a literal) and an arg already `as
+            // u8` is left as-is (no double-cast).
+            let coerce_u8 = !ctx.is_spec() && name == "split";
             let mut parts = Vec::new();
             for a in args {
                 let lowered = lower_expr(a, ctx, d, span)?;
                 if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast(a) {
                     parts.push(format!("{lowered} as usize"));
+                } else if coerce_u8
+                    && !matches!(a, Expr::IntLit { .. })
+                    && !lowered.ends_with("as u8")
+                {
+                    parts.push(format!("{lowered} as u8"));
                 } else {
                     parts.push(lowered);
                 }

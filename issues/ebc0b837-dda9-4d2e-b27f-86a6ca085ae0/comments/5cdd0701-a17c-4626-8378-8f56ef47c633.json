@@ -1,0 +1,10 @@
+{
+  "uuid": "5cdd0701-a17c-4626-8378-8f56ef47c633",
+  "issue_uuid": "ebc0b837-dda9-4d2e-b27f-86a6ca085ae0",
+  "author": "Yffe",
+  "content": "C9-B tuples build: Type::Tuple(Vec<Type>) + Expr::Tuple(Vec<Expr>) + dedicated Expr::TupleProj{receiver,index:usize} (OQ-1 dedicated node). parse_type_inner/parse_primary/parse_postfix disambiguate ()/( e )/(a,b) by the comma + the .N projection. lower_type/lower_expr (+l1 exec mirror) -> native Verus tuples + recv.N. Close the workspace exhaustive-match ripple (parser/lower/l1/l2/effects/validator/check/mutation/vacuity/closure/review/strengthen/skill) with honest leaf arms. Add mutation zero-tuple early-return synth so a tuple-returning fn is scoreable. New forge/tests/tuples_conformance.rs: swap->L3, wrong->NOT-L3, 3-tuple->L3, let+exec proj->L3. Gauntlet green. Do NOT close (critic re-audits).",
+  "created_at": "2026-06-07T18:44:32.561488450Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA2jsq4QTrTB4nIStwBqoIrWn1a7aMTMUZJxYwA8GMsAyikqVo1oHL33qsmHYTvXe/kAehUjtw+aLr6QerYO1lAw=="
+}

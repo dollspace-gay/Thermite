@@ -82,6 +82,12 @@
 //! |---|---|---|
 //! | degrade-ladder REQ-1/REQ-2/REQ-3 (wire the default path → the ladder) | SHIPPED | `check_file_with_options`'s per-item L3 path calls `ladder_for_timeout(f, &sub, &verus.outcome, cert)` after `assemble_certificate`: it maps the `VerusOutcome` to a `degrade::L3Verdict` and runs `degrade::run_ladder` with LIVE L2 (`lower_l2`→`run_kani`→`classify_l2_outcome`) + L1 (`lower_l1` record, OQ-3 (b)) closures. A `Proved` is unchanged (no degrade); a `Counterexample` short-circuits to a hard fail with NO L2/L1 (REQ-2 anti-cheat); a `Timeout` degrades. The EXPLICIT `--level l2` path (`check_l2_file`) is UNCHANGED. |
 //! | degrade-ladder REQ-8 (subprocess failures never silently degrade) | SHIPPED | the ladder's L2/L1 closures return `Result`; a `ForgeError` (kani absent, lowering failure) propagates via the `?` in `run_ladder` and out of `ladder_for_timeout`, NEVER a degrade. A degraded cert (`lowered_assurance`) is NEVER cached (budget-dependent, parallel to the `VerusTimeout` no-cache rule). |
+//!
+//! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3/REQ-4 (Pattern::Or + MatchArm.guard ripple) | SHIPPED | `collect_pattern_adt_refs` gains a `Pattern::Or` arm (walks each alternative for ADT refs — no `_`/panic); `collect_expr_adt_refs`/`collect_expr_spec_fn_calls` walk `arm.guard` (a guard may reference an ADT / call a spec fn). The pure-desugar features (REQ-1/2/5) reach `check` as the SHIPPED desugared nodes, so the ADT-ref / spec-fn-call collection is unchanged for them. Consumer: `check_file`. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1243,6 +1249,11 @@ fn collect_expr_spec_fn_calls(
         Expr::Match { scrutinee, arms } => {
             collect_expr_spec_fn_calls(scrutinee, spec_decls, out);
             for arm in arms {
+                // A C10 match guard is an `Expr` that may CALL a spec fn
+                // (`.design/basis/11-ergonomics.md` REQ-3) — walk it too.
+                if let Some(guard) = &arm.guard {
+                    collect_expr_spec_fn_calls(guard, spec_decls, out);
+                }
                 collect_expr_spec_fn_calls(&arm.body, spec_decls, out);
             }
         }
@@ -1537,6 +1548,11 @@ fn collect_expr_adt_refs(
             collect_expr_adt_refs(scrutinee, adt_decls, out);
             for arm in arms {
                 collect_pattern_adt_refs(&arm.pattern, adt_decls, out);
+                // A C10 match guard may reference an ADT
+                // (`.design/basis/11-ergonomics.md` REQ-3).
+                if let Some(guard) = &arm.guard {
+                    collect_expr_adt_refs(guard, adt_decls, out);
+                }
                 collect_expr_adt_refs(&arm.body, adt_decls, out);
             }
         }
@@ -1699,6 +1715,13 @@ fn collect_pattern_adt_refs(
             }
         }
         Pattern::Literal(e) => collect_expr_adt_refs(e, adt_decls, out),
+        // A C10 or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4):
+        // an ADT ref appears iff some alternative names one — walk each.
+        Pattern::Or(alts) => {
+            for alt in alts {
+                collect_pattern_adt_refs(alt, adt_decls, out);
+            }
+        }
         Pattern::Wildcard | Pattern::Binding(_) => {}
     }
 }

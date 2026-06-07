@@ -33,6 +33,12 @@
 //! | REQ-6 (graduate `mutants_killed`/`survivor`) | SHIPPED | `MutationScore::mutants_killed_string` builds the `"K/N"` form; `check` sets it via `Certificate::with_mutation_score` / `Certificate::rejected_weak_contract`. |
 //! | REQ-7 (gate AFTER L3, reuse proof cache) | SHIPPED | `check::mutation_score` runs only on a `VerusOutcome::Proved` real body and content-addresses each mutant via `cache::cache_key`/`load`/`store`. |
 //! | REQ-8 (deterministic kill ratio) | SHIPPED | `generate` is a pure function of the AST + the frozen table; each mutant verdict is the deterministic verus run the L3 path + cache rely on, so `mutants_killed` is deterministic (asserted by the same-input-twice conformance double-run). `mutants_killed`/`survivor` stay oracle-EXCLUDED (OQ-1). |
+//!
+//! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `scan_expr`'s `Expr::Match` arm scans `arm.guard` (a guard is a mutable sub-expression — a guard mutant must be scoreable); `apply_expr`'s `Expr::Match` rebuild threads the mutation through `arm.guard`. `Pattern::Or` needs no mutation arm (mutation walks expressions, not patterns). Consumer: `mutation_score`. |
 
 use thermite_syntax::{BinOp, Block, Expr, FnItem, PrimType, Stmt, Type};
 
@@ -682,6 +688,11 @@ impl MutantSink {
             Expr::Match { scrutinee, arms } => {
                 self.scan_expr(scrutinee, ctr);
                 for arm in arms {
+                    // A C10 match guard is a mutable sub-expression too
+                    // (`.design/basis/11-ergonomics.md` REQ-3).
+                    if let Some(guard) = &arm.guard {
+                        self.scan_expr(guard, ctr);
+                    }
                     self.scan_expr(&arm.body, ctr);
                 }
             }
@@ -965,6 +976,10 @@ impl Applier<'_> {
                     .iter()
                     .map(|arm| thermite_syntax::MatchArm {
                         pattern: arm.pattern.clone(),
+                        // A C10 match guard is a mutable sub-expression
+                        // (`.design/basis/11-ergonomics.md` REQ-3) — apply the
+                        // mutation through it so a guard mutant is scoreable.
+                        guard: arm.guard.as_ref().map(|g| self.apply_expr(g)),
                         body: self.apply_expr(&arm.body),
                     })
                     .collect(),

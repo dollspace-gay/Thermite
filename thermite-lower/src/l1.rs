@@ -56,6 +56,14 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | C5/C7 contract spec-fn EXEC twins (the build/runtime mirror of the L3 spec fns) | SHIPPED | `forge build` lowers EVERY fn to L1 (always-active runtime `thermite_check!`s), so a contract NAMING a generated spec fn needs a runnable exec twin to evaluate the check. `emit_string_runtime_l1` emits the C5 twins (`occurs_at`/`contains_sub`/`count_sep`/`sep_free`, gated on `program_uses_string_search`) + the C7 twins (`is_digit`/`all_digits`/the free `parse_u64`/`parse_be`, gated on `program_uses_parse`, `parse_be` deduped against the C4 numfmt round-trip), each computing the SAME value as its spec body over the runtime `TString` (`Vec<u8>`) — NO verus proof (the L1 path is runtime-checked, not verified). `lower_expr_exec`'s `Expr::Call` arm `.clone()`s the leading string args (`string_arg_count_l1`, the by-value/`&`-snapshot ambiguity). The `Vec<String>` (`TVecTString`) exec `len() -> u64` is emitted by `emit_vec_runtime_l1` (every `TVec*` wrapper). Consumer: `lower_l1`. Verified: `forge/tests/acceptance_programs.rs::calculator_string_parse_builds_and_runs_end_to_end` (the full `calc.th` builds + RUNS, 2+3→Some(5), 100+200→Some(300)) + `parser_builds_and_runs_end_to_end` (the full `parse_lines.th` builds + RUNS, a,b,c→3 pieces); the formatter (C4) is unaffected + `forge check` is unchanged (L3). |
+//!
+//! ## Cluster C10 — ergonomics L1 mirror (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (match guard L1) | SHIPPED | `lower_match_exec` emits the Rust-native guarded arm `pat if <g> => body` when `arm.guard.is_some()` (the exec mirror of `lower.rs::lower_match`); `rename_params_in_expr` + `collect_combinators_in_expr` walk the guard `Expr`. Consumer: `lower_l1`/`lower_fn_l1`. The runnable L1 path of a guarded match builds + runs (workspace `cargo test`). |
+//! | REQ-4 (or-pattern L1) | SHIPPED | `lower_pattern_exec` += a `Pattern::Or` arm emitting `p0 \| p1 \| …` (each alternative enum-qualified) — the exec mirror of `lower.rs::lower_pattern`. The new variant's L1 ripple is closed (no `_`/panic). Consumer: `lower_match_exec`. |
+//! | REQ-1/2/5 (pure-desugar — runnable path) | SHIPPED | The parser-desugared `Expr::TupleProj`/`LoopNode`(`While`)/`Expr::Match`/`Expr::Is` lower at L1 through the SHIPPED `lower_expr_exec`/`lower_loop_l1`/`lower_match_exec` arms unchanged — the `for`/destructure/`if let`/`while let` runnable forms need no new L1 arm. |
 
 use std::fmt::Write as _;
 
@@ -487,6 +495,11 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Match { scrutinee, arms } => {
             collect_combinators_in_expr(scrutinee, span, acc);
             for arm in arms {
+                // A C10 match guard is an `Expr` that may carry a combinator
+                // (`.design/basis/11-ergonomics.md` REQ-3).
+                if let Some(guard) = &arm.guard {
+                    collect_combinators_in_expr(guard, span, acc);
+                }
                 collect_combinators_in_expr(&arm.body, span, acc);
             }
         }
@@ -901,6 +914,12 @@ fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
                 .iter()
                 .map(|arm| MatchArm {
                     pattern: arm.pattern.clone(),
+                    // A C10 match guard is an `Expr` whose params must be renamed
+                    // too (`.design/basis/11-ergonomics.md` REQ-3).
+                    guard: arm
+                        .guard
+                        .as_ref()
+                        .map(|g| rename_params_in_expr(g, renames)),
                     body: rename_params_in_expr(&arm.body, renames),
                 })
                 .collect(),
@@ -1668,7 +1687,18 @@ fn lower_match_exec(
     for arm in arms {
         let pat = lower_pattern_exec(&arm.pattern, depth, span, variants)?;
         let body = lower_expr_exec(&arm.body, depth, span, variants)?;
-        write!(out, "{pat} => {body}, ").ok();
+        // A C10 match guard lowers to the Rust-native guarded arm `pat if <g> =>
+        // body` (`.design/basis/11-ergonomics.md` REQ-3), the exec mirror of
+        // `lower.rs::lower_match`.
+        match &arm.guard {
+            Some(guard) => {
+                let g = lower_expr_exec(guard, depth, span, variants)?;
+                write!(out, "{pat} if {g} => {body}, ").ok();
+            }
+            None => {
+                write!(out, "{pat} => {body}, ").ok();
+            }
+        }
     }
     out.push('}');
     Ok(out)
@@ -1726,6 +1756,16 @@ fn lower_pattern_exec(
             } else {
                 Ok(format!("{head} {{ {} }}", parts.join(", ")))
             }
+        }
+        // An or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4)
+        // lowers to the Rust-native or-pattern `p0 | p1 | …` (each alternative
+        // enum-qualified). The exec mirror of `lower.rs::lower_pattern`.
+        Pattern::Or(alts) => {
+            let mut parts = Vec::with_capacity(alts.len());
+            for alt in alts {
+                parts.push(lower_pattern_exec(alt, depth + 1, span, variants)?);
+            }
+            Ok(parts.join(" | "))
         }
         Pattern::Slice(_) => Err(LowerError::Unsupported {
             what: "slice pattern outside a head-fold spec fn".to_string(),

@@ -112,6 +112,14 @@
 //! |---|---|---|
 //! | REQ-3 (`fn` `decreases` lowering) | SHIPPED | `lower_fn` emits `decreases <spec_dec(f.dec, f.params)>` AFTER the signature's `requires`/`ensures` block and BEFORE the body when `f.dec.is_some()` — the SAME `spec_dec` helper + position the recursive `spec fn` uses (`lower_spec_fn`). A non-recursive fn (`dec = None`) emits NO `decreases` (byte-stable for the existing corpus — AC-7, `sum`/`binary_search` lower unchanged). The self-call lowers as an ordinary `Expr::Call` (no special node); Verus discharges termination from the emitted `decreases`. The `fx diverge` exemption (`fn_is_diverge` → `#[verifier::exec_allows_no_decreases_clause]`, #88) lets a diverge fn recurse WITHOUT `dec` (L1-capped). Consumer: `lower` (`Item::Fn`). Verified: `forge/tests/recursion_conformance.rs` — real verus: `count_down(n-1)` `dec n` → L3; recurse-on-`n` → L0 ("could not prove termination"); a `fx diverge` recursive fn → L1; the recursive fn BUILDS + RUNS at L1. |
 //! | REQ-4 (termination bites) | SHIPPED | GROUNDED end-to-end (`forge/tests/recursion_conformance.rs`): the `decreases` is the ONLY thing between the fn and L0 — non-decreasing → L0, no-`dec` → `MissingDecreases` (the `thermite-spec` validator, never reaching L3), diverge → L1-capped. No proof cheat (R-DEFER-9). Consumer: `forge::check` ladder. |
+//!
+//! ## REQ status — 11-ergonomics.md cluster C10 (binding/control-flow ergonomics, issue #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1/REQ-2/REQ-5 (tuple destructure / `for` / `if let`-`while let`) | SHIPPED | PURE-DESUGAR in the parser — these emit NO new AST node; the desugar targets (`Expr::TupleProj`, `LoopNode`(`While`), `Expr::Match`, `Expr::Is`) are the SHIPPED constructs `lower_expr`/`lower_loop`/`lower_match` already emit unchanged. The `for` AUTO-`dec hi - i` is a real `dec` `Clause` (`lower_loop` emits it as `decreases` — no proof cheat, R-DEFER-9). Verified: `forge/tests/ergonomics_conformance.rs::{req1_tuple_destructuring_certifies_l3, req2_for_range_certifies_l3, req2_bad_for_inv_is_l0, req5_if_let_certifies_l3, req5_while_let_certifies_l3}` (real verus). |
+//! | REQ-3 (match guard lowering) | SHIPPED | `lower_match` emits the Verus-NATIVE guarded arm `pat if <guard> => body` when `arm.guard.is_some()` (the proven core — Verus supports guards). The guard `Expr` is also walked by `collect_combinators_in_expr` + `each_subexpr` (a combinator/effect in a guard is captured). Consumer: `lower` / `lower_fn`. Verified: `forge/tests/ergonomics_conformance.rs::req3_guarded_match_certifies_l3` (L3, non-vacuous). |
+//! | REQ-4 (or-pattern lowering) | SHIPPED | `lower_pattern` += a `Pattern::Or` arm emitting the Verus-NATIVE `p0 \| p1 \| …` (each alternative enum-qualified). The new variant rippled to every exhaustive `match Pattern` in this crate (`lower_pattern`, `l1::lower_pattern_exec`) with honest arms. Consumer: `lower_match`. Verified: `forge/tests/ergonomics_conformance.rs::req4_or_pattern_certifies_l3` (L3). |
 
 use std::fmt::Write as _;
 
@@ -1001,6 +1009,11 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
         Expr::Match { scrutinee, arms } => {
             collect_combinators_in_expr(scrutinee, span, acc);
             for arm in arms {
+                // A C10 match guard is an `Expr` that may carry a combinator
+                // (`.design/basis/11-ergonomics.md` REQ-3).
+                if let Some(guard) = &arm.guard {
+                    collect_combinators_in_expr(guard, span, acc);
+                }
                 collect_combinators_in_expr(&arm.body, span, acc);
             }
         }
@@ -1286,6 +1299,11 @@ fn each_subexpr(
         Expr::Match { scrutinee, arms } => {
             f(scrutinee)?;
             for arm in arms {
+                // A C10 match guard is a sub-expression too
+                // (`.design/basis/11-ergonomics.md` REQ-3).
+                if let Some(guard) = &arm.guard {
+                    f(guard)?;
+                }
                 f(&arm.body)?;
             }
         }
@@ -4971,14 +4989,24 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             Ok(format!("{head} {{ {} }}", parts.join(", ")))
         }
         Expr::Is { scrutinee, variant } => {
-            // A variant-discrimination test `SCRUTINEE is Variant` (REQ-6/REQ-9):
-            // Verus-native variant discrimination `<scrutinee> is <Variant>` (the
-            // GROUNDED `s is Circle`). The variant name is emitted UNQUALIFIED —
-            // Verus's `is` operator takes the bare variant identifier (the
-            // scrutinee's type fixes the enum), confirmed by the grounding.
+            // A variant-discrimination test `SCRUTINEE is Variant` (REQ-6/REQ-9).
+            // In SPEC/contract position Verus's `is` operator is the proven core
+            // (the GROUNDED `s is Circle`): emit `<scrutinee> is <Variant>` with
+            // the BARE variant identifier (the scrutinee's type fixes the enum).
+            // In EXEC position (the C10 `while let` desugar's loop CONDITION —
+            // `.design/basis/11-ergonomics.md` REQ-5) Verus REJECTS `is` ("cannot
+            // test variant in exec mode"), so emit the exec-valid discriminant
+            // `matches!(<scrutinee>, <Qualified::Variant> { .. })` — the SAME shape
+            // the L1 mirror (`l1::lower_expr_exec`) uses, ENUM-QUALIFIED for a user
+            // variant (a built-in `Some`/`None` stays unqualified).
             let s = lower_expr(scrutinee, ctx, d, span)?;
-            let v = variant.last().cloned().unwrap_or_default();
-            Ok(format!("({s} is {v})"))
+            if ctx.pos == Pos::Exec {
+                let head = qualify_variant_path(variant, ctx);
+                Ok(format!("matches!({s}, {head} {{ .. }})"))
+            } else {
+                let v = variant.last().cloned().unwrap_or_default();
+                Ok(format!("({s} is {v})"))
+            }
         }
         Expr::Deref(inner) => {
             // A `Box` dereference `*EXPR` (REQ-3/REQ-10): the recursive-occurrence
@@ -5193,7 +5221,20 @@ fn lower_match(
     for arm in arms {
         let pat = lower_pattern(&arm.pattern, ctx, depth, span)?;
         let body = lower_expr(&arm.body, ctx, depth, span)?;
-        writeln!(out, "            {pat} => {body},").ok();
+        // A C10 match guard lowers to the Verus-NATIVE guarded arm
+        // `pat if <guard> => body` (`.design/basis/11-ergonomics.md` REQ-3). The
+        // guard is the proven core (Verus supports match guards); the
+        // down-weighted exhaustiveness (a guard does not complete a match) is the
+        // validator's job — here we just emit the `if`.
+        match &arm.guard {
+            Some(guard) => {
+                let g = lower_expr(guard, ctx, depth, span)?;
+                writeln!(out, "            {pat} if {g} => {body},").ok();
+            }
+            None => {
+                writeln!(out, "            {pat} => {body},").ok();
+            }
+        }
     }
     out.push_str("        }");
     Ok(out)
@@ -5253,6 +5294,17 @@ fn lower_pattern(pat: &Pattern, ctx: Ctx, depth: usize, span: Span) -> Result<St
             } else {
                 Ok(format!("{head} {{ {} }}", parts.join(", ")))
             }
+        }
+        // An or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4)
+        // lowers to the Verus-NATIVE or-pattern `p0 | p1 | …` — Verus supports it
+        // as the proven core. Each alternative is enum-qualified independently;
+        // the alternatives are joined with ` | `.
+        Pattern::Or(alts) => {
+            let mut parts = Vec::with_capacity(alts.len());
+            for alt in alts {
+                parts.push(lower_pattern(alt, ctx, depth + 1, span)?);
+            }
+            Ok(parts.join(" | "))
         }
         Pattern::Slice(_) => Err(LowerError::Unsupported {
             what: "slice pattern outside a head-fold spec fn".to_string(),

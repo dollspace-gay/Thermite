@@ -42,6 +42,16 @@
 //! |---|---|---|
 //! | REQ-1 (`fn` `dec` clause parse) | SHIPPED | `parse_fn` parses an OPTIONAL trailing `dec <expr>` clause AFTER the contract (`req`/`ens`/`fx`) and BEFORE the body — the OQ-4 byte-stable slot mirroring the loop order (`inv`s then `dec`). Reuses `parse_clause(&TokKind::Dec)` (the same `dec` parse `parse_spec_fn`/`parse_loop` use). Absent → `FnItem.dec = None` (the `req`/`ens`/`fx` parse is UNCHANGED for every non-recursive fn). Consumer: `thermite-lower::lower::lower_fn`. Verified: `forge/tests/recursion_conformance.rs` (a recursive `count_down` with `dec n` parses + certifies L3). |
 //!
+//! ## Cluster C10 — binding/control-flow ergonomics parse (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (tuple destructure parse) | SHIPPED | `parse_let` returns `Vec<Stmt>`; a `(` after `let [mut]` routes to `parse_let_tuple_destructure`, desugaring `let (x, y) = e;` to `let __td<n> = e;` + per-element `let x = __td<n>.0;` (reusing `Expr::TupleProj`). `_` drops an element. Consumer: `lower_stmt` (the projection `let`s lower today). |
+//! | REQ-2 (`for i in 0..n` parse) | SHIPPED | `parse_for` (dispatched on the contextual `for` ident at statement head) desugars `for i in lo..hi inv … { B }` to `let mut i = lo;` + `LoopNode { While(i < hi), invs, dec: hi - i, body: B ++ [i = i + 1;] }`. `for`/`in` are NOT reserved (matched by name). The user `inv` is mandatory; the `dec` is AUTO-synthesized (`hi - i`), and a user `dec` on a `for` is rejected. Consumer: `lower_loop`. |
+//! | REQ-3 (match guard parse) | SHIPPED | `parse_match` parses an optional `if <cond>` (a no-struct-literal head) before `=>` into `MatchArm.guard`. Consumer: `lower_match`/`check_match_exhaustiveness`. |
+//! | REQ-4 (or-pattern parse) | SHIPPED | `parse_pattern` parses a `\|`-joined alternation into a flat `Pattern::Or(Vec<Pattern>)` (a single alternative stays the bare pattern — byte-stable). Consumer: `lower_pattern`/`check_match_exhaustiveness`. |
+//! | REQ-5 (`if let`/`while let` parse) | SHIPPED | `parse_if_let` (dispatched on `if` followed by `let` via `peek_nth`) desugars to `Expr::Match { e, [P => T, _ => E] }` (value form, mandatory `else`); `parse_while_let` desugars `while let Variant(_) = e inv … dec … { B }` to a `LoopNode { While(e is Variant), … }` (the canonical `while (cond)` form). Consumer: `lower_match`/`lower_loop`. |
+//!
 //! ## #16 boundary-fn parser extension (`.design/boundary/ffi-boundary.md`)
 //!
 //! | REQ | Status | Evidence |
@@ -354,6 +364,14 @@ impl<'a> Parser<'a> {
 
     fn peek_span(&self) -> Span {
         self.tokens[self.pos.min(self.tokens.len() - 1)].span
+    }
+
+    /// Look ahead `n` tokens past the cursor without consuming (clamped to the
+    /// trailing `Eof`). Used by the C10 ergonomics to distinguish `if`/`while`
+    /// from `if let`/`while let` (`.design/basis/11-ergonomics.md` REQ-5) — the
+    /// only lookahead in the parser beyond a single `peek`.
+    fn peek_nth(&self, n: usize) -> &TokKind {
+        &self.tokens[(self.pos + n).min(self.tokens.len() - 1)].kind
     }
 
     fn at_eof(&self) -> bool {
@@ -978,10 +996,35 @@ impl<'a> Parser<'a> {
         while !self.check(&TokKind::RBrace) && !self.at_eof() {
             // Statement keywords that are not expression-starting.
             match self.peek() {
-                TokKind::Let => stmts.push(self.parse_let()?),
+                // `let` (incl. the C10 tuple-destructure `let (x, y) = e;`, which
+                // desugars to a temp + N projection `let`s — REQ-1). `parse_let`
+                // returns 1+ statements; extend the block with all of them.
+                TokKind::Let => {
+                    let lets = self.parse_let()?;
+                    stmts.extend(lets);
+                }
                 TokKind::Return => stmts.push(self.parse_return()?),
-                TokKind::Loop | TokKind::While => {
+                TokKind::Loop => {
                     stmts.push(Stmt::Loop(self.parse_loop()?));
+                }
+                // `while` is the bare loop OR the C10 `while let P = e inv … { B }`
+                // ergonomic (REQ-5), distinguished by a `let` after `while`. The
+                // `while let` form desugars to a `while (e is Variant)` loop.
+                TokKind::While => {
+                    if matches!(self.peek_nth(1), TokKind::Let) {
+                        stmts.push(Stmt::Loop(self.parse_while_let()?));
+                    } else {
+                        stmts.push(Stmt::Loop(self.parse_loop()?));
+                    }
+                }
+                // `for i in lo..hi inv … { B }` — the C10 bounded-range loop
+                // ergonomic (REQ-2). `for`/`in` are contextual identifiers (NOT
+                // reserved keywords, matched by name like `Box`/`Vec`), so the
+                // token here is `Ident("for")`. The desugar produces a `let mut i`
+                // statement + a `while` loop, so it extends the block.
+                TokKind::Ident(name) if name == "for" => {
+                    let stmts_for = self.parse_for()?;
+                    stmts.extend(stmts_for);
                 }
                 // `break;` / `continue;` (parser.md REQ-10, #93). Loop-control
                 // statements: payload-less, value-less, require a trailing `;`,
@@ -989,6 +1032,19 @@ impl<'a> Parser<'a> {
                 // rule — `self.loop_depth > 0`).
                 TokKind::Break => stmts.push(self.parse_break_continue(true)?),
                 TokKind::Continue => stmts.push(self.parse_break_continue(false)?),
+                // `if let P = e { T } else { E }` — the C10 ergonomic (REQ-5),
+                // distinguished by a `let` after `if`. It desugars to the SHIPPED
+                // `Expr::Match { e, [P => T, _ => E] }`. In tail position (an `else`
+                // + a value-producing then-tail + nothing after) it is the block
+                // tail; otherwise a `Stmt::Expr` (the `_ => ()` arm when no `else`).
+                TokKind::If if matches!(self.peek_nth(1), TokKind::Let) => {
+                    let (match_expr, value_tail) = self.parse_if_let()?;
+                    if value_tail && self.check(&TokKind::RBrace) {
+                        tail = Some(Box::new(match_expr));
+                        break;
+                    }
+                    stmts.push(Stmt::Expr(match_expr));
+                }
                 TokKind::If => {
                     // `if` is both a statement and an expression
                     // (surface-grammar.md decision 2). The discriminator is
@@ -1051,9 +1107,21 @@ impl<'a> Parser<'a> {
         Ok(Block { stmts, tail })
     }
 
-    fn parse_let(&mut self) -> PResult<Stmt> {
+    /// Parse a `let` binding. Returns 1+ statements: a scalar `let x = e;` is one
+    /// `Stmt::Let`; the C10 tuple-destructure `let (x, y) = e;`
+    /// (`.design/basis/11-ergonomics.md` REQ-1) DESUGARS, in the parser, to a
+    /// fresh temp `let __td<n> = e;` plus one `let x = __td<n>.0;` /
+    /// `let y = __td<n>.1;` per element — reusing the SHIPPED `Expr::TupleProj`
+    /// (C9-B). PURE-DESUGAR: no new AST node, the projection lowers + verifies
+    /// today. v0.1 admits only flat binding/`_` sub-patterns in a tuple `let`
+    /// (a nested `let (Some(x), y) = …` is out of scope — §2.3 one-way).
+    fn parse_let(&mut self) -> PResult<Vec<Stmt>> {
         self.consume(&TokKind::Let, "`let`")?;
         let mutable = self.eat(&TokKind::Mut);
+        // A `(` here opens a tuple-destructuring pattern `let (x, y) = e;` (REQ-1).
+        if self.check(&TokKind::LParen) {
+            return self.parse_let_tuple_destructure(mutable);
+        }
         let name = self.take_ident("a binding name")?;
         let ty = if self.eat(&TokKind::Colon) {
             Some(self.parse_type()?)
@@ -1063,11 +1131,323 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::Eq, "`=`")?;
         let init = self.parse_expr()?;
         self.consume(&TokKind::Semi, "`;`")?;
-        Ok(Stmt::Let {
+        Ok(vec![Stmt::Let {
             mutable,
             name,
             ty,
             init,
+        }])
+    }
+
+    /// Desugar a tuple-destructuring `let (x, y, …) = e;` to a temp + per-element
+    /// projection `let`s (`.design/basis/11-ergonomics.md` REQ-1). The element
+    /// sub-patterns are flat: a `Binding` name (`x`) becomes
+    /// `let [mut] x = __td<n>.<i>;`, a `Wildcard` (`_`) drops that element (no
+    /// `let`). The temp `__td<n>` uses the let's start byte as a unique suffix so
+    /// nested/sibling destructures never collide. The temp init re-enables struct
+    /// literals (it is a value-position initializer).
+    fn parse_let_tuple_destructure(&mut self, mutable: bool) -> PResult<Vec<Stmt>> {
+        let start = self.peek_span();
+        self.consume(&TokKind::LParen, "`(` to open a tuple-destructuring `let`")?;
+        // Collect the flat element sub-patterns: a binding name or `_`.
+        let mut elems: Vec<Option<Ident>> = Vec::new();
+        if !self.check(&TokKind::RParen) {
+            loop {
+                if let TokKind::Ident(name) = self.peek().clone() {
+                    self.bump();
+                    if name == "_" {
+                        elems.push(None);
+                    } else {
+                        elems.push(Some(name));
+                    }
+                } else {
+                    return Err(self.unexpected(
+                        "a binding name or `_` in a tuple-destructuring `let` \
+                         (v0.1 admits only flat names — a nested pattern is out of scope)",
+                    ));
+                }
+                if !self.eat(&TokKind::Comma) {
+                    break;
+                }
+                if self.check(&TokKind::RParen) {
+                    break;
+                }
+            }
+        }
+        self.consume(
+            &TokKind::RParen,
+            "`)` to close the tuple-destructuring `let`",
+        )?;
+        self.consume(&TokKind::Eq, "`=` after a tuple-destructuring `let`")?;
+        let init = self.parse_expr()?;
+        self.consume(&TokKind::Semi, "`;`")?;
+        // A fresh, collision-free temp name keyed on the byte offset (deterministic
+        // — goal.md R-CODE-5).
+        let temp = format!("__td{}", start.start);
+        let mut out = Vec::with_capacity(elems.len() + 1);
+        out.push(Stmt::Let {
+            mutable: false,
+            name: temp.clone(),
+            ty: None,
+            init,
+        });
+        for (i, elem) in elems.into_iter().enumerate() {
+            if let Some(name) = elem {
+                out.push(Stmt::Let {
+                    mutable,
+                    name,
+                    ty: None,
+                    init: Expr::TupleProj {
+                        receiver: Box::new(Expr::Path(vec![temp.clone()])),
+                        index: i,
+                    },
+                });
+            }
+        }
+        Ok(out)
+    }
+
+    /// Parse + desugar a C10 `for i in lo..hi inv … { B }` bounded-range loop
+    /// (`.design/basis/11-ergonomics.md` REQ-2). `for`/`in` are CONTEXTUAL
+    /// identifiers (not reserved keywords), so the caller dispatched on
+    /// `Ident("for")`. PURE-DESUGAR to the SHIPPED `while`+`inv`/`dec` core:
+    ///   `let mut i = lo;`
+    ///   `while i < hi inv <user invs> dec hi - i { B; i = i + 1; }`
+    /// The user supplies the `inv` (mandatory, §4.1 — at least one); the `dec` is
+    /// AUTOMATIC (`hi - i`, the canonical monotone measure of a bounded range —
+    /// strictly decreases on each `i = i + 1`, floored at 0). Returns the `let mut
+    /// i` + the `while` loop as two statements.
+    fn parse_for(&mut self) -> PResult<Vec<Stmt>> {
+        let start = self.peek_span();
+        // `for` (contextual ident).
+        let kw = self.take_ident("`for`")?;
+        if kw != "for" {
+            return Err(self.unexpected("`for`"));
+        }
+        let var = self.take_ident("a `for` loop variable")?;
+        // `in` (contextual ident).
+        let in_kw = self.take_ident("`in` after the `for` loop variable")?;
+        if in_kw != "in" {
+            return Err(self.unexpected("`in` after the `for` loop variable"));
+        }
+        // The range `lo..hi` is a no-struct-literal head (the `{` after `hi`/the
+        // inv clauses opens the body, never a struct literal — mirrors `while`).
+        let (lo, hi) = self.with_no_struct_literal(|p| {
+            let lo = p.parse_expr()?;
+            p.consume(
+                &TokKind::DotDot,
+                "`..` in the `for` range `lo..hi` (only an exclusive integer range is admitted)",
+            )?;
+            let hi = p.parse_expr()?;
+            Ok((lo, hi))
+        })?;
+        // `inv` — one or more (mandatory; the for-loop is a loop, §4.1). NO `dec`
+        // — it is synthesized below (REQ-2).
+        if !self.check(&TokKind::Inv) {
+            return Err(SyntaxError::MissingClause {
+                item: "for".to_string(),
+                clause: "inv".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let mut invs = Vec::new();
+        while self.check(&TokKind::Inv) {
+            invs.push(self.parse_clause(&TokKind::Inv)?);
+        }
+        // A `dec` on a `for` is an error — the `dec` is automatic (REQ-2).
+        if self.check(&TokKind::Dec) {
+            return Err(SyntaxError::Unexpected {
+                expected: "the loop body `{` (a `for` loop's `dec` is automatic — \
+                           `dec hi - i` — so the user writes no `dec`)"
+                    .to_string(),
+                found: describe(self.peek()),
+                span: self.peek_span(),
+            });
+        }
+        // Parse the body at loop depth +1 (break/continue are valid inside).
+        self.loop_depth += 1;
+        let body_result = self.parse_block();
+        self.loop_depth -= 1;
+        let mut body = body_result?;
+        // Append the auto-step `i = i + 1;` to the body.
+        body.stmts.push(Stmt::Assign {
+            target: Expr::Path(vec![var.clone()]),
+            value: Expr::Binary {
+                op: BinOp::Add,
+                lhs: Box::new(Expr::Path(vec![var.clone()])),
+                rhs: Box::new(Expr::IntLit {
+                    value: 1,
+                    raw: "1".to_string(),
+                }),
+            },
+        });
+        // The auto `dec hi - i` clause: a single `Clause` whose expr is `hi - i`.
+        let dec_expr = Expr::Binary {
+            op: BinOp::Sub,
+            lhs: Box::new(hi.clone()),
+            rhs: Box::new(Expr::Path(vec![var.clone()])),
+        };
+        let dec = Clause {
+            expr: dec_expr,
+            text: "hi - i".to_string(),
+            span: start,
+        };
+        // The loop condition `i < hi`.
+        let cond = Expr::Binary {
+            op: BinOp::Lt,
+            lhs: Box::new(Expr::Path(vec![var.clone()])),
+            rhs: Box::new(hi),
+        };
+        let span = start.to(self.prev_span());
+        Ok(vec![
+            Stmt::Let {
+                mutable: true,
+                name: var,
+                ty: None,
+                init: lo,
+            },
+            Stmt::Loop(LoopNode {
+                kind: LoopKind::While(Box::new(cond)),
+                invs,
+                dec,
+                body,
+                span,
+            }),
+        ])
+    }
+
+    /// Parse + desugar a C10 `if let P = e { T } else { E }`
+    /// (`.design/basis/11-ergonomics.md` REQ-5). PURE-DESUGAR to the SHIPPED
+    /// `Expr::Match { e, [P => T, _ => E] }`. v0.1 admits the VALUE form (both
+    /// branches reduce to a tail expression) with a mandatory `else` — the
+    /// statement-`if`-without-`else` `_ => ()` form needs a unit expr the grammar
+    /// does not surface (OQ-4). Returns the `Expr::Match` and whether it is in
+    /// value (tail) position (always true here — the value form). The caller
+    /// places it as the block tail or a `Stmt::Expr`.
+    fn parse_if_let(&mut self) -> PResult<(Expr, bool)> {
+        self.consume(&TokKind::If, "`if`")?;
+        self.consume(&TokKind::Let, "`let`")?;
+        let pattern = self.parse_pattern()?;
+        self.consume(&TokKind::Eq, "`=` in `if let P = e`")?;
+        // The scrutinee is a no-struct-literal head (the `{` opens the then-block).
+        let scrutinee = self.with_no_struct_literal(Self::parse_expr)?;
+        let then = self.parse_block()?;
+        self.consume(
+            &TokKind::Else,
+            "`else` (a v0.1 `if let` requires an `else` — its branches must produce a value)",
+        )?;
+        let else_ = self.parse_block()?;
+        let then_body = self.block_into_arm_body(then, "the `if let` then-branch")?;
+        let else_body = self.block_into_arm_body(else_, "the `if let` else-branch")?;
+        let match_expr = Expr::Match {
+            scrutinee: Box::new(scrutinee),
+            arms: vec![
+                MatchArm {
+                    pattern,
+                    guard: None,
+                    body: then_body,
+                },
+                MatchArm {
+                    pattern: Pattern::Wildcard,
+                    guard: None,
+                    body: else_body,
+                },
+            ],
+        };
+        Ok((match_expr, true))
+    }
+
+    /// Reduce a single-tail-expression `Block` to its arm-body `Expr`
+    /// (`.design/basis/11-ergonomics.md` REQ-5). A v0.1 `if let` branch is a
+    /// value-producing block whose body IS its tail expression (`{ v }`); a
+    /// statement-bearing branch is out of scope (the desugar target is a `match`
+    /// arm body, an `Expr`, not a block). A branch with no tail (or with leading
+    /// statements) is a structured `SyntaxError`, never silently dropped.
+    fn block_into_arm_body(&self, block: Block, what: &str) -> PResult<Expr> {
+        if !block.stmts.is_empty() {
+            return Err(SyntaxError::Unexpected {
+                expected: format!(
+                    "a single value expression in {what} \
+                     (a v0.1 `if let` branch is `{{ value }}` — no leading statements)"
+                ),
+                found: "a statement".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        match block.tail {
+            Some(tail) => Ok(*tail),
+            None => Err(SyntaxError::Unexpected {
+                expected: format!("a value expression in {what} (its branch must produce a value)"),
+                found: "an empty/value-less block".to_string(),
+                span: self.peek_span(),
+            }),
+        }
+    }
+
+    /// Parse + desugar a C10 `while let Variant(_) = e inv … dec … { B }`
+    /// (`.design/basis/11-ergonomics.md` REQ-5). PINNED (GROUNDED): desugar to the
+    /// canonical `while (e is Variant)` form (NOT `loop { match … None => break }`
+    /// — the loop+break shape fails to carry the post-exit fact, L0). v0.1 admits
+    /// a PAYLOAD-FREE pattern (`Variant`, `Variant(_)`, `Variant { .. }`) — the
+    /// condition is `e is Variant` (the SHIPPED `Expr::Is`), no payload rebind.
+    /// The user supplies the loop `inv`/`dec` exactly as for a `while` (mandatory,
+    /// §4.1). Returns the `LoopNode`.
+    fn parse_while_let(&mut self) -> PResult<LoopNode> {
+        let start = self.peek_span();
+        self.consume(&TokKind::While, "`while`")?;
+        self.consume(&TokKind::Let, "`let`")?;
+        let pattern = self.parse_pattern()?;
+        // Extract the variant head of the payload-free pattern (the SHIPPED
+        // `Expr::Is` discriminant). A binding/wildcard pattern is rejected: a
+        // `while let` must discriminate a variant (`e is Variant`).
+        let variant = match &pattern {
+            Pattern::Enum { path, .. } | Pattern::Struct { path, .. } => path.clone(),
+            _ => {
+                return Err(self.unexpected(
+                    "a variant pattern after `while let` (e.g. `Some(_)` — v0.1 admits a \
+                     payload-free variant; the loop runs while `e is Variant`)",
+                ));
+            }
+        };
+        self.consume(&TokKind::Eq, "`=` in `while let P = e`")?;
+        // The scrutinee is a no-struct-literal head.
+        let scrutinee = self.with_no_struct_literal(Self::parse_expr)?;
+        // `inv` — one or more (mandatory, §4.1).
+        if !self.check(&TokKind::Inv) {
+            return Err(SyntaxError::MissingClause {
+                item: "while".to_string(),
+                clause: "inv".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let mut invs = Vec::new();
+        while self.check(&TokKind::Inv) {
+            invs.push(self.parse_clause(&TokKind::Inv)?);
+        }
+        // `dec` — exactly one (mandatory, §4.1; a `while let` is a `while`).
+        if !self.check(&TokKind::Dec) {
+            return Err(SyntaxError::MissingClause {
+                item: "while".to_string(),
+                clause: "dec".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let dec = self.parse_clause(&TokKind::Dec)?;
+        self.loop_depth += 1;
+        let body_result = self.parse_block();
+        self.loop_depth -= 1;
+        let body = body_result?;
+        // The condition `e is Variant` (the SHIPPED `Expr::Is`).
+        let cond = Expr::Is {
+            scrutinee: Box::new(scrutinee),
+            variant,
+        };
+        Ok(LoopNode {
+            kind: LoopKind::While(Box::new(cond)),
+            invs,
+            dec,
+            body,
+            span: start.to(self.prev_span()),
         })
     }
 
@@ -1726,6 +2106,17 @@ impl<'a> Parser<'a> {
         let mut arms = Vec::new();
         while !self.check(&TokKind::RBrace) && !self.at_eof() {
             let pattern = self.parse_pattern()?;
+            // An optional match guard `pat if <cond> =>`
+            // (`.design/basis/11-ergonomics.md` REQ-3): a `bool`-valued condition
+            // evaluated in the arm's binding scope. The guard is a no-struct-literal
+            // head (the `=>` follows; a trailing `Name { … }` would be ambiguous),
+            // mirroring the `if`/`while`/`match`-head rule. A guarded arm does NOT
+            // complete a match (the validator's exhaustiveness check, REQ-3).
+            let guard = if self.eat(&TokKind::If) {
+                Some(self.with_no_struct_literal(Self::parse_expr)?)
+            } else {
+                None
+            };
             self.consume(&TokKind::FatArrow, "`=>`")?;
             // An arm body is in VALUE position, so a struct-literal construction
             // (`Point { x: 1 }`) MUST parse here even when the `match` sits under
@@ -1735,7 +2126,11 @@ impl<'a> Parser<'a> {
             // the no-struct-literal context, and `with_struct_literal` restores
             // the prior context on exit so no leak escapes the body.
             let body = self.with_struct_literal(Self::parse_expr)?;
-            arms.push(MatchArm { pattern, body });
+            arms.push(MatchArm {
+                pattern,
+                guard,
+                body,
+            });
             if !self.eat(&TokKind::Comma) {
                 break;
             }
@@ -1769,7 +2164,22 @@ impl<'a> Parser<'a> {
         // `parse_path_pattern`) both re-enter `parse_pattern`, so a single guard
         // here caps both cycles (parser.md AC-4; #31 — the #29 expr-only guard
         // never saw the pattern path).
-        self.guard_recursion(Self::parse_pattern_inner)
+        //
+        // An or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4):
+        // parse one alternative, then while a `|` follows collect more, building a
+        // flat `Pattern::Or` (a single alternative stays the bare pattern — no
+        // spurious `Or` wrapper, byte-stable for the pre-C10 corpus). The `|`
+        // here is unambiguously the pattern alternator: a pattern position never
+        // starts a bitwise/closure `|` (those are expression-tier).
+        let first = self.guard_recursion(Self::parse_pattern_inner)?;
+        if !self.check(&TokKind::Pipe) {
+            return Ok(first);
+        }
+        let mut alts = vec![first];
+        while self.eat(&TokKind::Pipe) {
+            alts.push(self.guard_recursion(Self::parse_pattern_inner)?);
+        }
+        Ok(Pattern::Or(alts))
     }
 
     fn parse_pattern_inner(&mut self) -> PResult<Pattern> {

@@ -73,6 +73,16 @@
 //! |---|---|---|
 //! | REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection — AST) | SHIPPED | `enum Type` += `Tuple(Vec<Type>)` (n-tuple type, arity ≥ 2); `enum Expr` += `Tuple(Vec<Expr>)` (construction) + the DEDICATED `TupleProj { receiver: Box<Expr>, index: usize }` projection node (OQ-1 RESOLVED → dedicated, NOT an overloaded `Field` with a string `"0"`: a tuple index is a `usize`). Built by `parser::parse_type_inner` (the `(` arm disambiguates by the comma: `()` → `Unit`, `(T)` → grouping, `(T, U, …)` → `Tuple`), `parser::parse_primary` (the `(` arm builds `Expr::Tuple` on a comma; `(e)` → grouping), `parser::parse_postfix` (the `.` arm builds `Expr::TupleProj` when the token after `.` is an `Int`). Consumer: `thermite-lower::lower::lower_type`/`lower_expr` (→ Verus tuples). Verified: `forge/tests/tuples_conformance.rs::tuple_type_disambiguation_unit_grouping_tuple` + `tuple_expr_and_projection_nodes`. |
 //! | REQ-7 (tuple arity — n-tuples, ≥ 2) | SHIPPED | `Type::Tuple(Vec<Type>)`/`Expr::Tuple(Vec<Expr>)` carry any arity ≥ 2; `()` stays `Type::Unit` (arity 0), `(T)` is grouping (arity 1, the inner). Verified: `forge/tests/tuples_conformance.rs::ac6_three_tuple_certifies_l3` (a 3-tuple → L3 under real verus) + `tuple_type_disambiguation_unit_grouping_tuple` (`()`/`(T)` unbroken). |
+//!
+//! ## Cluster C10 — binding/control-flow ergonomics AST (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (tuple destructuring `let (x,y)=e`) | SHIPPED | PURE-DESUGAR — NO new AST node. `parser::parse_let` recognizes a `(` after `let [mut]` and desugars `let (x, y) = e;` to a fresh temp `let __td<n> = e;` + one `let x = __td<n>.0;` / `let y = __td<n>.1;` per element, reusing the SHIPPED `Expr::TupleProj` (C9-B). The desugar emits multiple `Stmt::Let`s into the block. Verified: `forge/tests/ergonomics_conformance.rs::req1_tuple_destructuring_certifies_l3` (real verus L3). |
+//! | REQ-2 (`for i in 0..n` loop) | SHIPPED | PURE-DESUGAR — NO new AST node. `parser::parse_for` (dispatched on the contextual `for` ident at statement head — `for`/`in` are NOT reserved keywords, matched by name like `Box`/`Vec`) desugars `for i in lo..hi inv … { B }` to `let mut i = lo;` + a `LoopNode { kind: While(i < hi), invs: <user>, dec: hi - i, body: B ++ [i = i + 1;] }` — the AUTO-`dec hi - i` is synthesized (REQ-2). Reuses the SHIPPED `lower_loop`. Verified: `forge/tests/ergonomics_conformance.rs::req2_for_range_certifies_l3` (L3) + `req2_bad_for_inv_is_l0` (a bad inv → L0). |
+//! | REQ-3 (match guards `x if cond =>`) | SHIPPED | NEW field `MatchArm.guard: Option<Expr>`. `parser::parse_match` parses an optional `if <cond>` before `=>`; `thermite_lower::lower::lower_match`/`l1::lower_match_exec` emit ` if <guard>` after the pattern; the validator's `check_match_exhaustiveness` treats a guarded arm as covering NONE of its cases (a guard does NOT complete a match). Verified: `forge/tests/ergonomics_conformance.rs::req3_guarded_match_certifies_l3` (L3) + `req3_guarded_only_arm_is_non_exhaustive` (a guarded-only `Some` arm → `NonExhaustiveMatch`). |
+//! | REQ-4 (or-patterns `1 \| 2 =>`) | SHIPPED | NEW variant `Pattern::Or(Vec<Pattern>)`. `parser::parse_pattern` parses a `\|`-joined alternation; `lower_pattern`/`lower_pattern_exec` emit `p0 \| p1 \| …`; the validator counts EACH alternative toward the covered-variant set (union). The new variant rippled to every exhaustive `match Pattern` (lower/l1/validator/check/generate — honest arms, no `_`/panic). Verified: `forge/tests/ergonomics_conformance.rs::req4_or_pattern_certifies_l3` (L3) + `req4_or_pattern_exhaustive_via_union` (`Some(_) \| None` exhaustive). |
+//! | REQ-5 (`if let` / `while let`) | SHIPPED | PURE-DESUGAR — NO new AST node. `parser::parse_if_let` desugars `if let P = e { T } else { E }` to the SHIPPED `Expr::Match { e, [P => T, _ => E] }`; `parser::parse_while_let` desugars `while let Variant(x) = e inv … dec … { B }` to a `LoopNode { kind: While(e is Variant), body: <rebind x> ++ B }` (the canonical `while (cond)` form, NOT loop+break). Verified: `forge/tests/ergonomics_conformance.rs::req5_if_let_certifies_l3` + `req5_while_let_certifies_l3` (L3). |
 
 use crate::lexer::Span;
 
@@ -376,10 +386,21 @@ impl LoopKind {
     }
 }
 
-/// A match arm `Pattern => Expr` (ast.md REQ-6).
+/// A match arm `Pattern [if GUARD] => Expr` (ast.md REQ-6;
+/// `.design/basis/11-ergonomics.md` REQ-3). The optional `guard` is the C10
+/// match-guard `pat if cond => …`: a `bool`-valued [`Expr`] evaluated in the
+/// arm's binding scope, lowered to the Verus-native guarded arm
+/// (`pat if <guard> => body`). CRITICAL (REQ-3, GROUNDED): a guard does NOT
+/// complete a match — the validator's exhaustiveness check treats a guarded arm
+/// as covering NONE of its pattern's cases (the guard may fail), exactly as
+/// Rust/Verus does. `None` is an unguarded arm (the entire pre-C10 corpus).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchArm {
     pub pattern: Pattern,
+    /// The optional `if <cond>` match guard (`.design/basis/11-ergonomics.md`
+    /// REQ-3). `Some(cond)` is a guarded arm `pat if cond => body`; `None` is an
+    /// unguarded arm. A guarded arm covers no cases for exhaustiveness.
+    pub guard: Option<Expr>,
     pub body: Expr,
 }
 
@@ -588,6 +609,16 @@ pub enum Pattern {
         fields: Vec<(Ident, Pattern)>,
         rest: bool,
     },
+    /// An or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4): a
+    /// `|`-joined alternation matching any one of its alternatives, lowered to the
+    /// Verus-native or-pattern `p0 | p1 | … => body`. **Exhaustiveness (REQ-4,
+    /// GROUNDED):** an `Or` covers EXACTLY the union of its alternatives' covered
+    /// cases — `Some(_) | None` is exhaustive over `Option`, the validator counts
+    /// each alternative toward the covered set. v0.1 admits literal/variant
+    /// alternatives that bind the SAME set of names (OQ-3 — payload-free
+    /// alternatives sidestep Verus's same-bindings rule). Never nested in v0.1
+    /// (`(a | b) | c` flattens at the parser).
+    Or(Vec<Pattern>),
 }
 
 /// A sub-pattern inside a slice pattern, or a rest binding `..t` (ast.md REQ-7).

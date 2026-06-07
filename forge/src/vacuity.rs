@@ -21,6 +21,12 @@
 //! | REQ-5 (`VacuityVerdict` + typed cause) | SHIPPED | `pub enum VacuityVerdict { Passed, Rejected { cause } }` + `pub enum VacuityCause`; `VacuityCause::tag`/`detail` feed `manifest::RejectReason`; consumed by `check::check_file` (OQ-1: verdict-in-cert, not a `ForgeError`). |
 //! | REQ-6 (forge-check gate + `contract_quality`) | SHIPPED | `triage` runs in `check::check_file` BEFORE `lower`/`run_verus`; a pass graduates `contract_quality.{tautology,vacuous_precondition}` to live-`false` via `Certificate::graduate_triage_clean`. |
 //! | REQ-7 (slag exempts proving, not stating) | SHIPPED | `triage` takes `slag: Option<&SlagAttr>` and gates ONLY rule (d) on it; (a)/(b)/(c) always run, so a slag fn with a vacuous contract is still `Rejected`. |
+//!
+//! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `expr_mentions_result`'s `Expr::Match` arm checks `arm.guard` for a `result` mention — a contract that mentions `result` ONLY through a match guard is still NON-vacuous (the §7 gate is not fooled). `Pattern::Or` needs no vacuity arm. Consumer: `triage`. |
 
 use thermite_syntax::{BinOp, Effect, EffectRow, Expr, FnItem, SlagAttr, Type};
 
@@ -218,7 +224,15 @@ fn expr_mentions_result(expr: &Expr, depth: usize) -> bool {
         Expr::Closure { body, .. } => expr_mentions_result(body, d),
         Expr::Match { scrutinee, arms } => {
             expr_mentions_result(scrutinee, d)
-                || arms.iter().any(|arm| expr_mentions_result(&arm.body, d))
+                || arms.iter().any(|arm| {
+                    // A C10 match guard may mention `result`
+                    // (`.design/basis/11-ergonomics.md` REQ-3) — a contract
+                    // mentioning `result` only through a guard is still non-vacuous.
+                    arm.guard
+                        .as_ref()
+                        .is_some_and(|g| expr_mentions_result(g, d))
+                        || expr_mentions_result(&arm.body, d)
+                })
         }
         Expr::If { cond, then, else_ } => {
             expr_mentions_result(cond, d)

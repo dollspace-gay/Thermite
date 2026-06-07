@@ -85,6 +85,13 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-2 (`dec` mandatory for a recursive `fn`; the self-call validator rule) | SHIPPED | `run`'s `Item::Fn` arm detects a DIRECT self-call (`block_calls_name(body, &f.name)` — a free call whose callee path's last segment is the fn's own name, walked over every statement/expression) and, when `f.dec.is_none() && !fn_is_diverge(f)`, pushes the span-bearing `SpecError::MissingDecreases { name, span }` — the surface mirror of the Verus rule "recursive function must have a decreases clause", so a non-terminating fn never reaches an L3 cert (R-DEFER-9). The `fx diverge` exemption is honored by `fn_is_diverge` (mirroring `thermite-lower`'s — the single §4.1 truth): a diverge fn recurses WITHOUT `dec` and is L1-capped (#88). Mutual recursion (REQ-6) is OUT of v1 — a pair that calls EACH OTHER (no direct self-call) is not flagged here; it reaches Verus and is rejected there (no false L3, no crash). Consumer: `pub fn validate` → `forge::check`. Verified: `forge/tests/recursion_conformance.rs::self_call_without_dec_is_structured_error` (the MissingDecreases reject) + `diverge_recursion_without_dec_is_l1`. |
+//!
+//! ## REQ status — 11-ergonomics.md (Cluster C10, binding/control-flow ergonomics, issue #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (match guards — exhaustiveness down-weight) | SHIPPED | `check_match_exhaustiveness` reads `arm.guard.is_some()`: a GUARDED arm is NEVER a catch-all and NEVER marks its variant `covered` (the guard may fail), so a guarded-only `Some` arm leaves `Some` uncovered → `SpecError::NonExhaustiveMatch` (the GROUNDED Verus rule: a guarded-only arm is non-exhaustive). A guard `Expr` is also walked by `walk_expr`/`scan_expr_for_loops` (an unknown field/variant in a guard is flagged). Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req3_guarded_only_arm_is_non_exhaustive`. |
+//! | REQ-4 (or-patterns — exhaustiveness via union) | SHIPPED | `collect_covered_variants` counts EACH alternative of a `Pattern::Or` toward the covered-variant set (union); `pattern_is_catch_all` treats an `Or` containing a `_`/binding as a catch-all. So `Some(_) \| None` is EXHAUSTIVE over `Option`-like enums; an `Or` over a strict subset still leaves the rest `NonExhaustiveMatch`. `variant_pattern_name` resolves the matched enum from the first variant-naming alternative. Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req4_or_pattern_exhaustive_via_union`. |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -922,8 +929,14 @@ impl Validator {
                 // even in exec position (the reject fixtures put the `match` in a
                 // `fn` body). A slice/Option `match` is inert (see the helper).
                 self.check_match_exhaustiveness(arms, span);
-                for MatchArm { body, .. } in arms {
-                    self.scan_expr_for_loops(body, span);
+                for arm in arms {
+                    // A C10 match guard is an `Expr` evaluated in the arm scope —
+                    // scan it for loops too (`.design/basis/11-ergonomics.md`
+                    // REQ-3), not just the body.
+                    if let Some(guard) = &arm.guard {
+                        self.scan_expr_for_loops(guard, span);
+                    }
+                    self.scan_expr_for_loops(&arm.body, span);
                 }
             }
             Expr::Call { args, .. } => {
@@ -1135,8 +1148,14 @@ impl Validator {
             Expr::Match { scrutinee, arms } => {
                 self.walk_expr(scrutinee, span);
                 self.check_match_exhaustiveness(arms, span);
-                for MatchArm { body, .. } in arms {
-                    self.walk_expr(body, span);
+                for arm in arms {
+                    // A C10 match guard is an `Expr` in the cage walk too — a guard
+                    // mentioning an unknown field/variant must still be flagged
+                    // (`.design/basis/11-ergonomics.md` REQ-3).
+                    if let Some(guard) = &arm.guard {
+                        self.walk_expr(guard, span);
+                    }
+                    self.walk_expr(&arm.body, span);
                 }
             }
             Expr::If { cond, then, else_ } => {
@@ -1255,35 +1274,58 @@ impl Validator {
         let mut covered: HashSet<&str> = HashSet::new();
         let mut wildcard_seen = false;
         for arm in arms {
-            match &arm.pattern {
-                // A bare `_` or a whole-scrutinee binding (`x => …`) is a
-                // catch-all: it closes the match. A second catch-all, or any arm
-                // after it, can never be reached.
-                Pattern::Wildcard | Pattern::Binding(_) => {
-                    if wildcard_seen {
-                        self.errors.push(SpecError::UnreachableArm { span });
-                    }
-                    wildcard_seen = true;
+            // A GUARDED arm covers NONE of its pattern's cases — the guard may
+            // fail (`.design/basis/11-ergonomics.md` REQ-3, GROUNDED: Verus
+            // rejects a guarded-only `Some` arm as non-exhaustive). It is never a
+            // catch-all and never marks a variant covered. It is still reachable
+            // (a guarded arm after a catch-all IS dead, handled below), and its
+            // variant must still be DECLARED (a guarded `r is Bogus` is still
+            // `UnknownVariant`).
+            let guarded = arm.guard.is_some();
+
+            // A catch-all (`_`/binding, or an or-pattern containing one) closes
+            // the match — UNLESS it is guarded (the guard may fail). A second
+            // catch-all, or any arm after one, is unreachable.
+            if !guarded && pattern_is_catch_all(&arm.pattern) {
+                if wildcard_seen {
+                    self.errors.push(SpecError::UnreachableArm { span });
                 }
-                _ => {
-                    let Some(variant) = variant_pattern_name(&arm.pattern) else {
-                        // A non-variant pattern (a literal) in a declared-enum
-                        // match is not a well-formed enum arm; leave it to the
-                        // (untyped) shallow checking — no false UnknownVariant.
-                        continue;
-                    };
-                    if wildcard_seen {
-                        // Any arm after a catch-all is dead.
-                        self.errors.push(SpecError::UnreachableArm { span });
-                    } else if !declared.iter().any(|d| d == variant) {
-                        self.errors.push(SpecError::UnknownVariant {
-                            name: variant.to_string(),
-                            span,
-                        });
-                    } else if !covered.insert(variant) {
-                        // Variant matched twice → the second arm is unreachable.
-                        self.errors.push(SpecError::UnreachableArm { span });
-                    }
+                wildcard_seen = true;
+                continue;
+            }
+
+            // Validate + count each declared-enum variant the pattern names. An
+            // or-pattern contributes the UNION of its alternatives' variants
+            // (REQ-4). A non-variant pattern (a bare literal) names none — left to
+            // the shallow checking (no false `UnknownVariant`).
+            let mut variants = Vec::new();
+            collect_covered_variants(&arm.pattern, &mut variants);
+            if variants.is_empty() {
+                // No declared variant named: if this is a dead arm after a
+                // catch-all, still flag it; otherwise nothing to count.
+                if wildcard_seen && variant_pattern_name(&arm.pattern).is_some() {
+                    self.errors.push(SpecError::UnreachableArm { span });
+                }
+                continue;
+            }
+            for variant in variants {
+                if wildcard_seen {
+                    // Any arm after a catch-all is dead.
+                    self.errors.push(SpecError::UnreachableArm { span });
+                } else if !declared.iter().any(|d| d == variant) {
+                    self.errors.push(SpecError::UnknownVariant {
+                        name: variant.to_string(),
+                        span,
+                    });
+                } else if guarded {
+                    // A guarded arm does NOT cover its variant for exhaustiveness
+                    // (REQ-3): it neither closes the match nor is a redundant
+                    // re-cover (a later unguarded arm for the same variant is the
+                    // real handler, not unreachable). Validate the variant
+                    // (declared) but do not insert into `covered`.
+                } else if !covered.insert(variant) {
+                    // Variant matched twice (unguarded) → the second arm is dead.
+                    self.errors.push(SpecError::UnreachableArm { span });
                 }
             }
         }
@@ -1626,7 +1668,46 @@ fn variant_pattern_name(pattern: &Pattern) -> Option<&str> {
         Pattern::Enum { path, .. } | Pattern::Struct { path, .. } => {
             path.last().map(|s| s.as_str())
         }
+        // An or-pattern names a variant iff some alternative does (used only to
+        // IDENTIFY the matched enum — the first variant-naming arm). The full
+        // covered-variant union is collected by `collect_covered_variants`
+        // (`.design/basis/11-ergonomics.md` REQ-4).
+        Pattern::Or(alts) => alts.iter().find_map(variant_pattern_name),
         Pattern::Wildcard | Pattern::Binding(_) | Pattern::Literal(_) | Pattern::Slice(_) => None,
+    }
+}
+
+/// True iff `pattern` is a CATCH-ALL — a bare `_`/binding, or an or-pattern any of
+/// whose alternatives is a catch-all (`.design/basis/11-ergonomics.md` REQ-4). A
+/// catch-all closes a `match` (every remaining case is covered). A guarded arm is
+/// NEVER a catch-all for exhaustiveness (REQ-3 — handled at the call site).
+fn pattern_is_catch_all(pattern: &Pattern) -> bool {
+    match pattern {
+        Pattern::Wildcard | Pattern::Binding(_) => true,
+        Pattern::Or(alts) => alts.iter().any(pattern_is_catch_all),
+        _ => false,
+    }
+}
+
+/// Collect every declared-enum variant name an UNGUARDED `pattern` covers into
+/// `out` (`.design/basis/11-ergonomics.md` REQ-4). A `Pattern::Enum`/`Struct`
+/// covers its one variant; a `Pattern::Or` covers the UNION of its alternatives'
+/// variants (the load-bearing or-pattern rule — `Some(_) | None` covers both). A
+/// catch-all/literal/slice contributes no specific variant (a catch-all closes
+/// the match separately via `pattern_is_catch_all`).
+fn collect_covered_variants<'p>(pattern: &'p Pattern, out: &mut Vec<&'p str>) {
+    match pattern {
+        Pattern::Enum { path, .. } | Pattern::Struct { path, .. } => {
+            if let Some(v) = path.last() {
+                out.push(v.as_str());
+            }
+        }
+        Pattern::Or(alts) => {
+            for alt in alts {
+                collect_covered_variants(alt, out);
+            }
+        }
+        Pattern::Wildcard | Pattern::Binding(_) | Pattern::Literal(_) | Pattern::Slice(_) => {}
     }
 }
 

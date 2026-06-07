@@ -40,6 +40,14 @@
 //! | REQ-9 (recursion-scheme section registry-driven from `schemes::all()`) | SHIPPED | `render_schemes` iterates `thermite_spec::schemes::all()`, renders each `SchemeSig`'s call shape (`scrutinee_args`+`step_shape`) + result + one `scheme_example_for`; consumed by `generate`. Verified: `every_scheme_appears_with_an_example`. This is `thermite-skill`'s non-test consumer of `schemes::all()` (R-DEFER-1). |
 //! | REQ-10 (type/expr/item/pattern/effect grammar exhaustive-match-driven) | SHIPPED | `render_{type,expr,item,pattern,effect,binop,prim}_arm` are exhaustive `match`es with NO `_` arm over `thermite_syntax::{Type,Expr,Item,Pattern,Effect,BinOp,PrimType}`; driven over per-variant inventories (`type_inventory` etc.) by `render_grammar`. Verified: `surface_construct_coverage`. |
 //! | REQ-11 (prose curated + freshness-tested; forge command list the honest exception) | SHIPPED | the irreducible prose stays curated in `render_grammar`'s framing/`render_forge`/`render_ladder`/`render_slag`; the forge verb LIST stays a curated table (forge's `Command` is private + forge→thermite-skill dep, OQ-5), kept honest by `committed_skill_is_fresh` (REQ-5) + `grammar_forge_slag_coverage` (AC-4). |
+//!
+//! ## Cluster C10 — ergonomics skill arms (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1/2/5 (tuple destructure / `for` / `if let`-`while let` teaching) | SHIPPED | the PURE-DESUGAR ergonomics add NO AST node, so the exhaustive-match inventory cannot auto-render them; `render_grammar`'s statement section gains a curated "Binding / control-flow ergonomics" prose block teaching all five (the desugarings, the `for` AUTO-`dec`, the guard-doesn't-complete rule, the or-pattern union, the `while let` → `while (cond)`). Kept fresh by `committed_skill_is_fresh`. |
+//! | REQ-3 (match guard arm) | SHIPPED | `render_expr_arm`'s `Expr::Match` fragment now teaches `Pat [if C] => EXPR` + "a guard does NOT complete a match". Auto-rendered. |
+//! | REQ-4 (or-pattern arm) | SHIPPED | `render_pattern_arm` += a `Pattern::Or` arm (`p0 \| p1 \| ..`, "covers their union") + `pattern_inventory` += `Pattern::Or(Vec::new())` — the compiler-forced no-staleness GUARANTEE (REQ-8) auto-renders it. Verified: `surface_construct_coverage`. |
 
 use thermite_spec::schemes::{SchemeResult, SchemeSig, StepShape};
 use thermite_spec::{ArgKind, CombinatorSig, ResultKind};
@@ -313,8 +321,9 @@ fn render_expr_arm(expr: &Expr) -> SkillFragment {
             example: "|x| x != needle",
         },
         Expr::Match { .. } => SkillFragment {
-            fragment: "match e { Pat => EXPR, .. }",
-            description: "a match expression (arms must be exhaustive over an enum)",
+            fragment: "match e { Pat [if C] => EXPR, .. }",
+            description:
+                "a match (exhaustive over an enum; an `if C` guard does NOT complete a match)",
             example: "match result { Some(i) => .., None => .. }",
         },
         Expr::If { .. } => SkillFragment {
@@ -535,6 +544,14 @@ fn render_pattern_arm(pat: &Pattern) -> SkillFragment {
             fragment: "Path { field, .. }",
             description: "a struct / struct-variant destructuring pattern",
             example: "Rect { w, h } => w * h",
+        },
+        // The C10 or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md`
+        // REQ-4): an alternation matching any one alternative, covering the
+        // UNION of their cases for exhaustiveness.
+        Pattern::Or(_) => SkillFragment {
+            fragment: "p0 | p1 | ..",
+            description: "an or-pattern (matches any alternative; covers their union)",
+            example: "1 | 2 => true",
         },
     }
 }
@@ -817,6 +834,8 @@ fn pattern_inventory() -> Vec<Pattern> {
             fields: Vec::new(),
             rest: false,
         },
+        // The C10 or-pattern (`.design/basis/11-ergonomics.md` REQ-4).
+        Pattern::Or(Vec::new()),
     ]
 }
 
@@ -915,6 +934,29 @@ value-less — no `break EXPR`), and expression-statements. A block `{ }` is
 statements plus an optional trailing tail expression (no `;`) that is the
 block's value. There is ONE member-access call syntax (postfix `.`); there is no
 UFCS. Comparisons are non-associative (`a < b < c` is an error).
+
+Binding / control-flow ergonomics (sugar over the proven core — one desugaring,
+always explicit):
+
+- Tuple destructuring `let (x, y) = e;` binds each element by projection
+  (`let x = e.0; let y = e.1;`). Use `_` to drop an element; sub-patterns are
+  flat names only.
+- `for i in lo..hi inv EXPR { B }` is a bounded-range loop: you write the loop
+  `inv` (mandatory, one-or-more, like `while`); the `dec` is AUTOMATIC
+  (`hi - i`), so you write no `dec`. It desugars to
+  `let mut i = lo; while i < hi inv EXPR dec hi - i { B; i = i + 1; }`. Only an
+  exclusive integer range `lo..hi` (step +1) is admitted.
+- Match guards: `Pat if COND => EXPR`. A guard does NOT complete a match — a
+  guarded-only arm leaves its variant uncovered, so a `_`/full-variant arm is
+  still required for exhaustiveness.
+- Or-patterns: `p0 | p1 => EXPR` matches any alternative and covers their UNION
+  (`Some(_) | None` is exhaustive over an `Option`). v0.1 alternatives are
+  payload-free (they bind the same — empty — set of names).
+- `if let Pat = e { T } else { E }` desugars to `match e { Pat => T, _ => E }`
+  (the `else` is required — both branches produce a value). `while let
+  Variant(_) = e inv EXPR dec EXPR { B }` desugars to the canonical
+  `while (e is Variant) inv EXPR dec EXPR { B }` (you write `inv`/`dec` as for
+  any `while`).
 
 The CONSTRUCT INVENTORY below is GENERATED by an exhaustive match over the
 toolchain's own `Item`/`Type`/`Expr`/`BinOp`/`Pattern`/`Effect` enums: a new

@@ -63,10 +63,16 @@
 //! transitively references, which `check::item_subprogram` weaves into the
 //! caller's §5.3 sub-program (regular fns with their real body, boundary/slag fns
 //! as `#[verifier::external_body]` signatures). No walker is duplicated.
+//!
+//! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `walk_expr`'s `Expr::Match` arm walks `arm.guard` (a guard may CALL a fn — its callee crosses into the call graph / closure surface). `Pattern::Or` needs no closure arm (the call-graph walk is over expressions). Consumer: `classify` / `reachable_in_file_fns`. |
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use thermite_syntax::{Block, Expr, IndexArg, Item, MatchArm, Program, Stmt};
+use thermite_syntax::{Block, Expr, IndexArg, Item, Program, Stmt};
 
 use crate::manifest::AssuranceScope;
 
@@ -386,8 +392,13 @@ fn walk_expr(expr: &Expr, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
         Expr::Closure { body, .. } => walk_expr(body, in_file, out),
         Expr::Match { scrutinee, arms } => {
             walk_expr(scrutinee, in_file, out);
-            for MatchArm { body, .. } in arms {
-                walk_expr(body, in_file, out);
+            for arm in arms {
+                // A C10 match guard is an `Expr` in the closure-spec walk too
+                // (`.design/basis/11-ergonomics.md` REQ-3).
+                if let Some(guard) = &arm.guard {
+                    walk_expr(guard, in_file, out);
+                }
+                walk_expr(&arm.body, in_file, out);
             }
         }
         Expr::If { cond, then, else_ } => {

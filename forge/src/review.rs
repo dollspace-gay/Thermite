@@ -53,6 +53,12 @@
 //! | REQ-5 (dual emission machine + human) | SHIPPED | [`ReviewArtifact`] derives `Serialize` (the `--json` machine form); `cli::render_review` is the human form. Consumer: `cli::run_review`. |
 //! | REQ-6 (determinism, R-CODE-5) | SHIPPED | [`review_file`] is a pure projection of the parsed program + the cert collection; spec-fn references are resolved into a sorted-deduplicated set ([`referenced_spec_fns`]); no wall-clock, no model call. The EXTRACTION is byte-identical across runs. |
 //! | REQ-7 (`forge review [item]` command + dispatch + --reviewer) | SHIPPED | `cli::parse_args`'s `review` verb + `cli::run_review`; [`run_reviewer`] is the `--reviewer <cmd>` shell-out (artifact → stdin, `ReviewVerdict` ← stdout); a spawn/parse failure is a `ForgeError`, never a panic. |
+//!
+//! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `collect_callee_names`'s `Expr::Match` arm walks `arm.guard` (a guard may CALL a fn — its callees are part of the review surface). `Pattern::Or` needs no review arm (review walks expressions, not patterns). Consumer: `review_file`. |
 
 use std::io::Write;
 use std::path::Path;
@@ -441,6 +447,11 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
         Expr::Match { scrutinee, arms } => {
             collect_callee_names(scrutinee, out);
             for arm in arms {
+                // A C10 match guard may CALL a fn (`.design/basis/11-ergonomics.md`
+                // REQ-3) — its callees are part of the review surface.
+                if let Some(guard) = &arm.guard {
+                    collect_callee_names(guard, out);
+                }
                 collect_callee_names(&arm.body, out);
             }
         }

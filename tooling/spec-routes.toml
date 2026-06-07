@@ -565,3 +565,88 @@ crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/basis/10-recursion-tuples.md"
 reference = []
 conformance_ops = []
+
+# Cluster C10 (binding/control-flow ergonomics, issue #112): tuple destructuring
+# (`let (x,y)=e`), `for i in 0..n`, match guards (`x if c`), or-patterns (`1|2`),
+# and `if let`/`while let`. Mostly SUGAR over the shipped while/match/projection.
+# REQ-1/2/5 are PURE-DESUGAR in the parser (zero new AST nodes — OQ-1 parser-site
+# choice); REQ-3 (MatchArm.guard) + REQ-4 (Pattern::Or) add AST shape the
+# lower/validator emit. The verus-grounded ergonomics_conformance test IS the C10
+# truth (R-CHAR-3), so `reference = []` until a golden lands.
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/l1.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/l2.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/review.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/mutation.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/vacuity.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/closure.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/strengthen.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-skill/src/generate.rs"
+design = ".design/basis/11-ergonomics.md"
+reference = []
+conformance_ops = []

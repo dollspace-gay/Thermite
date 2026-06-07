@@ -32,6 +32,12 @@
 //! | REQ-4 (advisory placement — additive cert field, not a gate) | SHIPPED | `pub fn probe` returns `Vec<Suggestion>`; `check::strengthen_certificate` attaches them via `Certificate::with_strengthening` (the additive `strengthening` field + the `suggested_move` headline). The `level`/`reject`/oracle subset are untouched (REQ-4). |
 //! | REQ-5 (consumes #12 survivors; runs on a settled L3 + scored item) | SHIPPED | `check::check_file_with_options` calls `check::strengthen_certificate` AFTER mutation scoring, ONLY when the item is `Level::L3` with `reject.is_none()` and a `MutationScore` was produced; the `MutationScore.survivor` feeds family-3 candidate generation. |
 //! | REQ-6 (determinism — same fn ⇒ same suggestions) | SHIPPED | `generate_candidates` is a pure function of the AST + spec fns + survivor + frozen template, so the candidate list is byte-stable; each candidate's verus verdict is the same deterministic pinned-seed/rlimit run + #8 cache the L3 path uses. The suggestions are DIAGNOSTIC + verus-version-sensitive, so oracle-EXCLUDED. |
+//!
+//! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3/REQ-4 (NO strengthen change needed) | SHIPPED | `render_expr` is a frozen-template `ens`-shape renderer over the strengthenable family (binary/method/call/tuple/projection) with a safe non-panic `_` placeholder for any other shape — it does not match `Pattern` and never renders a `match` arm, so neither the `MatchArm.guard` field nor the `Pattern::Or` variant ripples here (the template never emits a guard/or-pattern). Consumer: `generate_candidates`. |
 
 use thermite_syntax::{BinOp, Clause, Expr, FnItem, Item, PrimType, Span, Type};
 

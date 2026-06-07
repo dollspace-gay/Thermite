@@ -45,6 +45,12 @@
 //! | REQ-6 (the "up to bound" caveat) | SHIPPED | `bound_string` records `slice ≤ N, unwind K`; `forge::kani::run_kani` carries it onto the `Level::L2` cert (`forge/src/kani.rs`); the L2 cert is programmatically distinct from L3 (`manifest::Level::L2`). |
 //! | REQ-9 (determinism) | SHIPPED | [`SLICE_BOUND`] is a fixed `const`; `unwind_bound` is a pure function of the AST; no wall-clock — a pure function of the `Program` bytes (R-CODE-5). |
 //! | REQ-1 (no panics; `LowerError`) | SHIPPED | `lower_l2` returns `Result<String, LowerError>` (shared with `lower.rs`); an un-lowerable construct is an `Err`, never an `unwrap`/`panic!`; `l2_conformance::unlowerable_is_err_not_panic` (AC-9). |
+//!
+//! ## Cluster C10 — ergonomics L2 mirror (`.design/basis/11-ergonomics.md`, #112)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1..5 (NO L2 change needed) | SHIPPED | The L2 harness reuses `l1.rs`'s `lower_spec_fn_l1` + body lowering (`lower_match_exec`/`lower_pattern_exec`), which ALREADY carry the C10 guard-emit + `Pattern::Or` arm. The pure-desugar features (tuple destructure / `for` / `if let`-`while let`) lower to the SHIPPED nodes before reaching L2. `l2.rs` references no `Pattern`/`MatchArm` directly, so the `MatchArm.guard` field + `Pattern::Or` variant ripple does NOT reach this file — no arm to add, no churn. Consumer: `forge::kani::run_kani`. |
 
 use std::fmt::Write as _;
 

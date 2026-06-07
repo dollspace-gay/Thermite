@@ -1,0 +1,10 @@
+{
+  "uuid": "0610497d-2374-45b4-90a1-32479cd5e579",
+  "issue_uuid": "e8b4e987-097b-413a-9f4a-9861cd2c0f87",
+  "author": "Yffe",
+  "content": "Editor #83 build+run BLOCKED on 3 NEW issues beyond the 3 gaps (the 3 gaps themselves are fixed + committed 5fd42f0). (B1) forge/src/check.rs gate_fn does not route fx-diverge fns to L1 — run's invariants verify in Verus but the §7 mutation battery rejects it L0 (WeakContract, kill 10/42): an event loop's ens result<=256 is inherently weak. A diverge fn should route to L1 like a boundary fn and SKIP the L3 mutation/strengthen gate. OFF-MANIFEST (check.rs) + a level-semantics DESIGN question (needs a .design/ note: 'a fx diverge fn caps at L1 — partial correctness, no termination, no mutation gate'). (B2) L1 borrow-after-move in ens checks: a fn that moves a non-Copy field into its result then names it in ens -> E0382 (move_left/move_right/insert_str). New L1 ens-emission class. (B3) L1 '' string literal -> &str not TString -> E0308. New L1 string-literal-construction gap. Request manifest re-authorization for check.rs + a .design/ note for B1, and l1.rs for B2/B3.",
+  "created_at": "2026-06-07T00:06:41.746088007Z",
+  "kind": "blocker",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAVwHnkkTE4xasj52PQSjL6OxCqR2rknDfbPjXkn/Qy45jKefBYfqMIWFX2NksaaZyDV6wRe/w0oYPWK9EhuTLBg=="
+}

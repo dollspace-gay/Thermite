@@ -2,11 +2,12 @@
   "uuid": "43f67a5e-9785-4bfc-b3ac-4a041510af5c",
   "display_id": 103,
   "title": "Acceptance programs: formatter + calculator + line/CSV parser certify L3 and forge build+run (compose-any-program proof)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T09:33:38.450653490Z",
-  "updated_at": "2026-06-07T09:33:39.872773106Z",
+  "updated_at": "2026-06-07T10:34:59.256474280Z",
+  "closed_at": "2026-06-07T10:34:59.256474280Z",
   "labels": [
     "feature"
   ]

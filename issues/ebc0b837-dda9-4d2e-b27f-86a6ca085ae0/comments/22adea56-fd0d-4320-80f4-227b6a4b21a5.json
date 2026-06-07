@@ -1,0 +1,10 @@
+{
+  "uuid": "22adea56-fd0d-4320-80f4-227b6a4b21a5",
+  "issue_uuid": "ebc0b837-dda9-4d2e-b27f-86a6ca085ae0",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (a664765). Tuples: Type::Tuple(Vec<Type>) + Expr::Tuple(Vec<Expr>) + Expr::TupleProj{receiver,index} (dedicated node), n-tuples >=2, projection (not destructuring) for v1. Lowers to Verus tuples. The ()/( e)/(a,b) disambiguation by-comma. Critic NO DIVERGENCE: projection genuine (swapped ens -> L0, wrong .2 -> L0, .0/.1/.2 access the right element), disambiguation sound (unit/paren/tuple all correct, none mis-parse), zero-tuple mutation synthesis sound (#74/#80-class: weak tuple contract still WeakContract/L0, not a bypass), ~15 ripple arms honest (no stub/panic), builds+runs (swap(1,2)->(2,1)), no cheat, no regression. swap -> L3. 634 tests, budget 4827.",
+  "created_at": "2026-06-07T18:59:44.253550561Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABApTT9LilHri6eljEXhkas9rWQcVgKlof/TrAFzNHP5s8LfMA46vsxDA5XBnpQ6POhtjE24Y4T+FhO43zjJJ7dCg=="
+}

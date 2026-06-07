@@ -2,11 +2,12 @@
   "uuid": "7610b896-ba4d-48d9-8066-71d1ac2b90e0",
   "display_id": 100,
   "title": "Divergence: C7 (#95) ships no conformance/option_result.th + conformance/parse_u64.th corpus + .cert.json/.verus.rs goldens — the 09-option-result.md Acceptance-criteria external oracle is absent",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T07:42:59.920695216Z",
-  "updated_at": "2026-06-07T07:43:01.439569748Z",
+  "updated_at": "2026-06-07T08:17:07.641807011Z",
+  "closed_at": "2026-06-07T08:17:07.641807011Z",
   "labels": [
     "blocker"
   ]

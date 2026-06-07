@@ -27,6 +27,14 @@ string-CONSTRUCTING operation (`concat`, a literal materialized into an owned
 `String`) allocates and carries **`fx alloc`** — the Stage-1 `Alloc` effect, the
 SAME rule as `Box`/`Vec` construction.
 
+**Cluster C4 (#94) extends this** with the verified `u64`↔`String` conversions the
+editor (ANSI cursor coords) and a number formatter / calculator need, on a new PURE
+byte-builder: **`push_byte`/`from_byte`** (REQ-7), **`u64_to_string`** with a
+GROUNDED gold-standard ROUND-TRIP contract (`parse_le(result@) == n`, REQ-8), and
+**`parse_u64`** (REQ-9, PARTIAL / handled-or-loud) — the last blocked on **C7
+(#95)**, the built-in `Option`/`Result` + payload-in-contract surface, so REQ-7/REQ-8
+ship now under #94 and REQ-9 lands after C7.
+
 **SHIPPED** (commits `b8c3bf7` + `2f5535a`, #79, critic-clean): `string_demo.th`
 certifies — `greeting_len`/`first_byte` L3 pure, `join`/`literal_len` L3 alloc,
 the no-`req` OOB access → L0. The per-REQ prose below is the original pre-build
@@ -186,6 +194,200 @@ are flat built-ins.
   enumerating the escape SET — this REQ enumerates it). Derived from §4.4 (a closed
   surface), REQ-2 (the byte char model), and the ANSI-editor unblock (#91).
 
+
+### `u64`↔`String` + the byte-builder (crosslink #94, cluster C4 — GROUNDED)
+
+Cluster C4 adds the verified `u64`↔`String` conversions the **editor** (ANSI
+cursor coordinates — `ESC[<row>;<col>H` needs `u64`→decimal text) and a number
+formatter / calculator need, plus the **byte-builder** that constructs them in
+PURE Thermite (replacing the trusted `os::key_str` glue the editor used). All three
+were GROUNDED end-to-end with the real `verus 0.2026.05.24` binary during authoring
+(Verification, below) — non-vacuous contracts, the §7 gate's floor cleared, no
+`assume`/`admit`/`external_body`. These extend the SHIPPED `TString`-over-
+`vstd::vec::Vec<u8>` machinery (REQ-4): `push_byte`/`from_byte` are the verified
+byte-construction building block the other two stand on.
+
+- **REQ-7 (`push_byte` / `from_byte` — the verified byte-builder; `fx alloc`):**
+  The surface admits byte construction of a `String`: `s.push_byte(b)` (append one
+  byte, returning a fresh owned `String`) and `String::from_byte(b)` (build a 1-byte
+  `String`). Both are CONSTRUCTING ops (they allocate), so a fn using them carries
+  **`fx alloc`** (the Stage-1 `Effect::Alloc`, accepted by effect-subsumption since
+  `push`/`Vec::new` are intrinsics — the SAME rule as `concat`/the literal
+  materialization, REQ-4). `push_byte` is an `Expr::MethodCall` (`s.push_byte(b)`,
+  ADDED to `BUILTIN_METHODS` so its `ens` validates inside the cage); `from_byte`
+  is an associated constructor call `String::from_byte(b)` (an `Expr::Call` on the
+  `String::from_byte` path — the SAME path-call shape as a free op). The GROUNDED
+  contracts (`4 verified, 0 errors`, no cheat tokens):
+
+  ```verus
+  // from_byte: a 1-byte String whose sole byte is b.
+  pub fn from_byte(b: u8) -> (result: TString)
+      ensures result.well_formed(), result.data.len() == 1, result.data@[0] == b,
+  { let mut data: Vec<u8> = Vec::new(); data.push(b); TString { data } }
+
+  // push_byte: append b, returning a fresh String (owned construction, NO &mut).
+  pub fn push_byte(&self, b: u8) -> (result: TString)
+      requires self.well_formed(), self.data.len() < CAP,         // the §4.2 cage
+      ensures
+          result.well_formed(),
+          result.data.len() == self.data.len() + 1,                // length identity
+          result.data@[self.data.len() as int] == b,               // the new byte
+          forall|j: int| 0 <= j < self.data.len()                  // element frame
+              ==> result.data@[j] == self.data@[j],
+  { let mut out: Vec<u8> = Vec::new(); let mut i: usize = 0;
+    while i < self.data.len()
+        invariant i <= self.data.len(), out.len() == i, self.data.len() < CAP,
+                  forall|j: int| 0 <= j < i ==> #[trigger] out@[j] == self.data@[j],
+        decreases self.data.len() - i,
+    { out.push(self.data[i]); i = i + 1; }
+    out.push(b); TString { data: out } }
+  ```
+
+  The contract is NON-VACUOUS: the length identity, the new-byte placement
+  (`result@[old_len] == b`), AND the element frame (every prior byte is preserved)
+  are all proved over vstd's verified `Vec::push`. The copy loop carries the standard
+  loop invariant (`out.len() == i`, the element-frame `forall`) + `decreases`. v1
+  returns a FRESH owned value (the `&self`/owned-result form, NOT a `&mut self`
+  in-place mutate — so no `final(self)` is needed; consistent with `concat`'s owned
+  result, REQ-4). Derived from §4.1 (the `alloc` effect; row subsumption), §4.2 (the
+  cage — `len < CAP`), §6 (L3), the GROUNDED `from_byte`/`push_byte` proofs, and the
+  Stage-4 capacity-preserving-`push` precedent (`.design/basis/04-collections.md`
+  REQ-5).
+
+- **REQ-8 (`u64_to_string` — decimal formatting with the ROUND-TRIP contract;
+  `fx alloc`):** The surface admits `u64`→decimal-`String`: a method
+  `n.to_string()` on a `u64` (the chosen spelling — an `Expr::MethodCall` `to_string`
+  ADDED to `BUILTIN_METHODS`; it lowers to the generated `u64_to_string` exec fn).
+  It is a CONSTRUCTING op (`fx alloc`). The **CONTRACT is the round-trip — the GOLD
+  STANDARD, and it PROVES**: the produced byte sequence parses back to exactly `n`.
+  GROUNDED (`9 verified, 0 errors`, no cheat tokens):
+
+  ```verus
+  // pow10 and the LSB-first digit value (data[0] least significant — the
+  // construction order of the divide/mod-by-10 loop). The DISPLAY string reverses
+  // to MSB-first; parse_be(reverse(s)) == parse_le(s) is separately proved (4/0).
+  pub open spec fn pow10(k: nat) -> nat decreases k
+  { if k == 0 { 1 } else { 10 * pow10((k - 1) as nat) } }
+  pub open spec fn parse_le(s: Seq<u8>) -> nat decreases s.len()
+  { if s.len() == 0 { 0 }
+    else { ((s[0] - 48) as nat) + 10 * parse_le(s.subrange(1, s.len() as int)) } }
+
+  // The append lemma (proved by induction, 4/0): appending a digit at the end
+  // adds (d-48)*pow10(len) to the value.
+  proof fn lemma_parse_push(s: Seq<u8>, d: u8)
+      ensures parse_le(s.push(d)) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()),
+      decreases s.len(), { /* base: subrange(1,1)==empty, pow10(0)==1;
+        step: subrange recurse + pow10(s.len())==10*pow10(t.len()) + nonlinear_arith */ }
+
+  pub fn u64_to_string(n: u64) -> (result: Vec<u8>)
+      ensures parse_le(result@) == n as nat,                       // THE ROUND-TRIP
+  { let mut data: Vec<u8> = Vec::new(); let mut m: u64 = n;
+    proof { /* parse_le([]) + n*pow10(0) == n: pow10(0)==1, n*1==n by nonlinear */ }
+    while m > 0
+        invariant parse_le(data@) + (m as nat) * pow10(data.len() as nat) == n as nat,
+        decreases m,
+    { let d: u8 = (m % 10) as u8 + 48u8;                           // the C2 `%`/`/` by 10
+      let ghost old_data = data@; let ghost old_m = m as nat;
+      let ghost old_len = data.len() as nat;
+      data.push(d);
+      proof { lemma_parse_push(old_data, d);
+              assert((m as nat) == 10 * ((m / 10) as nat) + ((m % 10) as nat)) by(nonlinear_arith);
+              assert(pow10((old_len + 1) as nat) == 10 * pow10(old_len)); }
+      m = m / 10;
+      proof { assert(old_m * pow10(old_len)
+          == ((d - 48) as nat) * pow10(old_len) + (m as nat) * pow10((old_len + 1) as nat))
+          by(nonlinear_arith)
+          requires old_m == 10 * (m as nat) + ((d - 48) as nat),
+                   pow10((old_len + 1) as nat) == 10 * pow10(old_len); } }
+    data }
+  ```
+
+  **THE DIGIT-EXTRACTION LOOP (divide/mod by 10 — the C2 `%`/`/` shipped):** the loop
+  invariant is the round-trip *partial accumulator* —
+  `parse_le(data@) + m * pow10(data.len()) == n` (the digits built so far plus the
+  un-emitted remainder `m`, scaled by `pow10` of the digit count, equal `n`); the
+  `decreases m` is the strictly-shrinking remainder (`m / 10 < m` while `m > 0`). The
+  per-iteration step is discharged by the `lemma_parse_push` append lemma + a
+  `by(nonlinear_arith)` step (`m == 10*(m/10) + m%10`). **This is the strongest
+  contract — NOT the floor.** (The HONEST FLOOR — length `>= 1`, `<= 20` (u64 max is
+  20 digits, proved via `pow10(20) > u64::MAX` with `reveal_with_fuel`), and
+  `all_ascii_digits` (every byte is `'0'..'9'`, 48..=57) — ALSO independently GROUNDED
+  `8 verified, 0 errors`; the round-trip SUBSUMES the digit-correctness half of it.)
+  The surface emits the human-readable MSB-first decimal (the construction is
+  LSB-first; the display form reverses — `parse_be(reverse(s)) == parse_le(s)` proved
+  `4 verified, 0 errors`, so the displayed bytes round-trip against a big-endian
+  parse). Derived from §3 (transpile to Verus), §4.1 (`alloc`), §6 (L3), the C2 `%`/`/`
+  primitives, and the GROUNDED round-trip proof.
+
+- **REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud; DEPENDS-ON-C7
+  for the surface return type):** The surface admits `String`→`u64` parsing:
+  `parse_u64(s) -> Option<u64>` (v1 form) — PARTIAL, with the **handled-or-loud
+  teeth**: a non-digit byte, an overflowing value, or an empty string takes the LOUD
+  error arm (`None`), NEVER a wrong value or a panic (`.design/basis/06-provenance-
+  and-sinks.md` "handled-or-loud, the COMPILE-TIME tooth"; §4.2 partiality). The
+  CONTRACT is the round-trip on the success arm: `Some(v)` implies the string is
+  all-digits, non-empty, and `parse_be(s) == v`. GROUNDED (`5 verified, 0 errors`, no
+  cheat tokens; the verus probe used vstd's `Option` + `result is Some` / `result->
+  Some_0`):
+
+  ```verus
+  pub open spec fn is_digit(b: u8) -> bool { 48 <= b && b <= 57 }
+  pub open spec fn all_digits(s: Seq<u8>) -> bool
+  { forall|i: int| 0 <= i < s.len() ==> is_digit(#[trigger] s[i]) }
+  pub open spec fn parse_be(s: Seq<u8>) -> nat decreases s.len()       // big-endian (read order)
+  { if s.len() == 0 { 0 }
+    else { parse_be(s.subrange(0, (s.len()-1) as int)) * 10 + ((s[s.len()-1] - 48) as nat) } }
+
+  pub fn parse_u64(s: &TString) -> (result: Option<u64>)
+      requires s.well_formed(),
+      ensures result is Some ==> (all_digits(s.data@) && s.data.len() >= 1
+                                  && parse_be(s.data@) == result->Some_0 as nat),
+  { if s.data.len() == 0 { return None; }                              // empty → LOUD None
+    let mut acc: u64 = 0; let mut i: usize = 0;
+    while i < s.data.len()
+        invariant i <= s.data.len(),
+                  all_digits(s.data@.subrange(0, i as int)),
+                  parse_be(s.data@.subrange(0, i as int)) == acc as nat,
+        decreases s.data.len() - i,
+    { let b: u8 = s.data[i];
+      if b < 48 || b > 57 { return None; }                            // non-digit → LOUD None
+      let digit: u64 = (b - 48) as u64;
+      if acc > (u64::MAX - digit) / 10 { return None; }               // overflow → LOUD None
+      /* subrange/index ghost glue */
+      acc = acc * 10 + digit; i = i + 1; }
+    Some(acc) }
+  ```
+
+  **THE PARSE LOOP (Horner accumulate — `acc = acc*10 + digit`):** the invariant is
+  the BE partial value over the prefix consumed so far (`parse_be(s[0..i]) == acc`)
+  plus the all-digits prefix witness; the `decreases s.len() - i`. The three partial
+  cases each take the `None` arm BEFORE corrupting `acc`: the overflow guard
+  (`acc > (u64::MAX - digit) / 10`) screams BEFORE the `acc*10 + digit` would wrap
+  (the C2 partial-`+`/`*` obligation, handled-or-loud). **NON-VACUITY CONFIRMED:** a
+  broken `parse_u64` returning `Some(0)` unconditionally FAILS verus (`2 verified, 1
+  errors`, "postcondition not satisfied") — the round-trip ens is real teeth, the
+  error arm bites.
+
+  **DEPENDS-ON-C7 (the honest dependency — `parse_u64` does NOT ship under #94):**
+  the verus probe expresses the contract with vstd's built-in `Option` + the
+  `result is Some` discriminant + the `result->Some_0` PAYLOAD PROJECTION in the
+  `ensures`. The Thermite surface today has user-defined `enum`s + `Expr::Is` +
+  `match` + tuple-variant constructors (`.design/basis/01-adts.md` SHIPPED), but it
+  has **NO built-in `Option`/`Result` type AND no enum-PAYLOAD projection in the spec
+  sublanguage** — `Expr::Field` is struct-field only; there is no `result->Some_0`
+  surface, and a `match`-in-contract over a tuple variant is not admitted by the
+  §4.2 cage. Naming `parse_be(s) == <payload>` in an `ens` therefore needs the
+  Result/Option-built-in-with-payload-in-contract work — pinned as **C7** in prereq
+  **blocker #95**. Per the build-leaves-first discipline (R-DEFER-7, R-LOOP-3):
+  **REQ-7 (`push_byte`/`from_byte`) and REQ-8 (`u64_to_string`) ship NOW under #94**
+  (they need no new return type); **REQ-9 (`parse_u64`) is NOT-STARTED, blocked on
+  C7 (#95)**, then lands. The GROUNDING above PROVES `parse_u64` is feasible the
+  instant C7 lands (the contract verifies `5/0`); the gap is purely the surface
+  spelling of the partial return type, NOT the verification. Derived from §4.2
+  (partiality, the cage), the handled-or-loud principle
+  (`.design/basis/06-provenance-and-sinks.md`), the C2 partial-operator obligations,
+  and the GROUNDED `parse_u64` proof.
+
 ### Validator / the SpecTherm cage (governs `thermite-spec/src/validator.rs`)
 
 - **REQ-3 (string contracts fit the §4.2 cage — flat, no-OOB index, length,
@@ -274,11 +476,27 @@ the Stage-1/Stage-4 layer split:
   `slice`/`concat`, `==` over `s@`, and the string-literal → byte-`push` sequence.
   A constructing op carries `fx alloc`; a read-only op is `pure`. `final(...)` is
   emitted for `&mut`-mutating `ensures`.
+- **C4 — the byte-builder + `u64`↔`String` (#94, layered across 7b/7c).** *7b
+  (`thermite-spec`):* `push_byte` and `to_string` ADDED to `BUILTIN_METHODS`
+  (alongside `byte_at`/`concat`/`slice`) so their `ens` validates inside the cage
+  (REQ-7/REQ-8). *7c (`thermite-lower`):* `emit_string_wrapper` gains the
+  `from_byte`/`push_byte` constructor methods (REQ-7); `lower` emits the generated
+  `u64_to_string` exec fn + the `pow10`/`parse_le` spec fns + the `lemma_parse_push`
+  proof fn (the divide/mod-by-10 digit-extraction loop with its round-trip `inv` +
+  `dec m`, REQ-8). All carry `fx alloc` (constructing). **`parse_u64` (REQ-9) is
+  NOT in this layer map — it is blocked on C7 (#95):** it needs the built-in
+  `Option`/`Result` return + the `result is Some` / payload-in-contract surface that
+  the §4.2-cage spec sublanguage does not yet admit; once C7 lands, 7c gains the
+  `parse_u64` Horner-accumulate loop + the `parse_be`/`all_digits` spec fns + the
+  `None`-arm handled-or-loud error path.
 
 Symbol anchors: `enum Expr` (`StrLit`), `enum Type` (`String`), `enum Effect`
 (`Alloc`) in `ast.rs`; `fn parse_primary` / `fn parse_type` in `parser.rs`;
 `pub fn validate` + `BUILTIN_METHODS` in `validator.rs`; `pub fn lower` /
-`lower_expr` in `lower.rs`.
+`lower_expr` + `emit_string_wrapper` in `lower.rs`. C4 adds (#94): `push_byte`/
+`to_string` in `BUILTIN_METHODS` (`validator.rs`); the `from_byte`/`push_byte`
+methods in `emit_string_wrapper` + the generated `u64_to_string` / `pow10` /
+`parse_le` / `lemma_parse_push` in `lower.rs`.
 
 ### The verified Verus form (GROUNDED — the lowering contract, not guesses)
 
@@ -429,6 +647,42 @@ non-vacuity (R-DEFER-9).
   conformance corpus pass with 0 mismatches. (All REQs; Stage 7 must not break the
   kernel.) (REQ-1–REQ-5.)
 
+### C4 acceptance criteria (#94 — `u64`↔`String` + the byte-builder, GROUNDED)
+
+The orchestrator authors a NEW corpus program — `conformance/numfmt_demo.th` (the
+byte-builder + `u64_to_string`, certifying L3 with `fx alloc`) — its golden lowering
+at `tests/golden/lower/numfmt_demo.verus.rs` (hand-authored from the GROUNDED forms
+above, confirmed to pass `verus`) and cert golden at
+`conformance/numfmt_demo.cert.json`. (The `parse_u64` corpus entry is authored only
+once C7 / #95 lands — AC-8 below is gated.)
+
+- **AC-6 (`push_byte`/`from_byte` build a `String` byte-by-byte, certify L3/alloc):**
+  `from_byte(b)` lowers to the 1-byte constructor (`ens len == 1 && data@[0] == b`)
+  and `s.push_byte(b)` to the copy-then-append (`ens len == old + 1 && data@[old] == b`
+  + the element frame); the constructing fn carries `fx alloc` and passes
+  effect-subsumption; the real `verus` binary on the emitted output exits 0 with
+  `N verified, 0 errors` (the GROUNDED `4 verified, 0 errors`); `forge check` certifies
+  L3 with `effects: [alloc]`. (REQ-7.)
+
+- **AC-7 (`u64_to_string` certifies L3 with the ROUND-TRIP contract):** `n.to_string()`
+  lowers to the generated `u64_to_string` (the divide/mod-by-10 digit loop + the
+  `pow10`/`parse_le` spec fns + the `lemma_parse_push` append lemma); the emitted
+  output passes the real `verus` binary `N verified, 0 errors` with the round-trip
+  ens `parse_le(result@) == n` (the GROUNDED `9 verified, 0 errors`); the constructing
+  fn carries `fx alloc`; `forge check` certifies L3, `effects: [alloc]`, NON-VACUOUS.
+  A crafted broken `u64_to_string` (e.g. dropping the loop step or returning a fixed
+  byte) FAILS to verify (R-DEFER-9 non-vacuity). (REQ-8.)
+
+- **AC-8 (`parse_u64` — GATED ON C7/#95 — the error arm BITES):** once C7 lands the
+  built-in `Option`/`Result` + payload-in-contract surface, `parse_u64(s)` lowers to
+  the Horner accumulate loop with the round-trip ens `result is Some ==> parse_be(s)
+  == <payload>`; `verus` certifies L3 (`5 verified, 0 errors`); a non-digit /
+  overflowing / empty input takes the `None` arm (not a wrong value, not a panic —
+  handled-or-loud); a crafted broken `parse_u64` returning `Some(0)` unconditionally
+  FAILS to verify (GROUNDED `2 verified, 1 errors` — non-vacuity, R-DEFER-9). UNTIL
+  C7 lands this AC is NOT exercised — REQ-9 is NOT-STARTED. (REQ-9; blocked on #95.)
+
+
 ## Architecture
 
 The component spans three crates, all additively:
@@ -506,6 +760,32 @@ The component spans three crates, all additively:
   bounded-`concat` + string-literal-lowering stack is Verus-feasible end to end.
   (Scratch cleaned per #53 — no stray `*.rlib`/`*.d` left.)
 
+- **C4 Verus grounding (DONE during authoring — real `verus 0.2026.05.24`, #94).**
+  Five `verus!{}` probes were run; ALL cheat-free (grep `assume`/`admit`/
+  `external_body`/`verifier::external`: NONE):
+  - `from_byte` + `push_byte` (byte-builder over `vstd::vec::Vec<u8>`, the
+    copy-then-append loop with the element-frame invariant): `4 verified, 0 errors`.
+  - `u64_to_string` — **the GOLD-STANDARD round-trip** (`ens parse_le(result@) == n`),
+    the divide/mod-by-10 digit loop with invariant
+    `parse_le(data@) + m*pow10(data.len()) == n` + `decreases m` + the
+    `lemma_parse_push` append lemma (proved by induction) + `by(nonlinear_arith)`
+    steps: `9 verified, 0 errors`.
+  - `u64_to_string` — the honest FLOOR (`len >= 1`, `<= 20` via `pow10(20) > u64::MAX`
+    with `reveal_with_fuel`, `all_ascii_digits`): `8 verified, 0 errors` (independently;
+    the round-trip subsumes its digit-correctness half).
+  - `parse_be(reverse(s)) == parse_le(s)` (the display-form bridge — the loop builds
+    LSB-first, the displayed decimal reverses to MSB-first): `4 verified, 0 errors`.
+  - `parse_u64 -> Option<u64>` (the Horner-accumulate loop, the round-trip success
+    ens `result is Some ==> parse_be(s) == result->Some_0`, the non-digit/overflow/
+    empty `None` arms): `5 verified, 0 errors`. **Non-vacuity:** a broken `parse_u64`
+    returning `Some(0)` unconditionally FAILS — `2 verified, 1 errors` (postcondition
+    not satisfied) — the error arm bites. `parse_u64`'s SURFACE return type is the C7
+    dependency (#95); the VERIFICATION is proved feasible here.
+  This proves the C4 stack (byte-builder + the gold-standard `u64`→`String`
+  round-trip + the partial `String`→`u64` parse) is Verus-feasible end to end; the
+  digit-extraction and Horner loops both verify with a real invariant + `decreases`.
+  (Scratch cleaned per #53 — no stray `*.rs`/`*.rlib`/`*.d` left.)
+
 - **Toolchain path grounded:** `./target/debug/forge check conformance/vec_demo.th`
   exits 0 emitting L3 certs with `effects: [pure]` (read-only `checked_get`) and
   `effects: [alloc]` (constructing `push_one`) — the exact cert shape
@@ -552,6 +832,10 @@ from this doc (and the GROUNDED `TString` seed) before the builder runs (R-CHAR-
 | REQ-4 (`String` → `vstd::vec::Vec<u8>` wrapper; len/byte_at/slice/concat/`==`; `fx alloc`; literal lowering; BACKING-AGNOSTIC surface) | SHIPPED | #79 Stage 7. `lower.rs` has no `String`/`Type::String` lowering and no string-literal materialization. The wrap-vstd path it reuses (the Stage-4 `TVec` over `vstd::vec::Vec`, the `well_formed` predicate, the no-OOB exec accessor, `fx alloc` subsumption, the `final(self)` finding) is SHIPPED (#73), so the extension to `Vec<u8>` is mechanical. GROUNDED-feasible (`TString` over `vstd::vec::Vec<u8>`: `well_formed`/`len`/`byte_at`/`concat` `6 verified, 0 errors`; literal `lit_hello` `4 verified, 0 errors`); not implemented. |
 | REQ-5 (`LowerError`/`SpecError` extension, no panics) | SHIPPED | #79 Stage 7. No string lowering exists yet to surface a failure mode; the existing `LowerError::Unsupported` / validator reject path is expected to suffice (Stage 4 needed no new variant). No code added — NOT-STARTED until the string path lands. No `unwrap`/`expect`/`panic!` will be introduced (R-CODE-2 / R-APG-1). |
 | REQ-6 (string-literal escape table — control/hex bytes, #91 cluster 1) | SHIPPED | #91. `lex_string` in `thermite-syntax/src/lexer.rs` decodes `\n`/`\t`/`\r`/`\0`/`\"`/`\\` to their bytes and `\xNN` (two hex digits, `0x00..=0x7F`) to the byte value via `parse_hex_escape`/`hex_digit`; an unknown/malformed/high-byte escape is a STRUCTURED `SyntaxError::StrayChar` (recovering past the close-quote via `resume_past_string`), never the old silent `other as char` swallow and never a panic. Consumer: the decoded byte flows through the EXISTING `Expr::StrLit` lowering (`thermite-lower::lower` `lower_expr`, byte-`push` of `s.as_bytes()`) — no new variant. Verified: `thermite-syntax/tests/string_escapes.rs` (9 decode/diagnostic tests) + `forge/tests/literal_layer.rs` grounds `"\x1b".byte_at(0) == 27` / `\r` == 13 / `\0` == 0 at L3 against real verus (non-vacuous, §7 battery), wrong-code NOT L3. |
+
+| REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | NOT-STARTED | #94 cluster C4. `BUILTIN_METHODS` in `thermite-spec/src/validator.rs` is `["len","get","byte_at","concat","slice"]` — no `push_byte`; `emit_string_wrapper` in `thermite-lower/src/lower.rs` emits `well_formed`/`spec_len`/`len`/`spec_byte_at`/`byte_at`/`concat`/`slice` but no `push_byte`/`from_byte` method. GROUNDED-feasible (real `verus 0.2026.05.24`: `from_byte` `ens len==1 && data@[0]==b` + `push_byte` `ens len==old+1 && data@[old]==b` + element frame, `4 verified, 0 errors`, no cheat tokens; reuses vstd's verified `Vec::push`); not implemented. Builder's layer: `push_byte` ADDED to `BUILTIN_METHODS` (`validator.rs`); the `from_byte`/`push_byte` methods ADDED to `emit_string_wrapper` (`lower.rs`); `fx alloc` via effect-subsumption (the REQ-4 `concat` rule). |
+| REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | NOT-STARTED | #94 cluster C4. `BUILTIN_METHODS` has no `to_string`; `lower.rs` has no `u64_to_string` / `pow10` / `parse_le` / `lemma_parse_push` emission. GROUNDED-feasible AT THE GOLD STANDARD (real `verus`: the round-trip `ens parse_le(result@) == n` via the divide/mod-by-10 digit loop with invariant `parse_le(data@) + m*pow10(len) == n` + `decreases m` + the `lemma_parse_push` append lemma + `by(nonlinear_arith)` steps — `9 verified, 0 errors`, no cheat tokens; the honest floor (len>=1, <=20, all_ascii_digits) ALSO independently `8 verified, 0 errors`; `parse_be(reverse(s))==parse_le(s)` for the display form `4/0`); not implemented. Builder's layer: `to_string` ADDED to `BUILTIN_METHODS`; `lower.rs` emits the generated `u64_to_string` exec fn + the `pow10`/`parse_le` spec fns + the `lemma_parse_push` proof fn (the digit-extraction loop with `inv`+`dec`); `fx alloc`. |
+| REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | NOT-STARTED | #94 cluster C4, **DEPENDS-ON-C7 — prereq blocker #95**. The Thermite surface has user `enum`s + `Expr::Is` + `match` + tuple-variant constructors (`.design/basis/01-adts.md` SHIPPED) but NO built-in `Option`/`Result` AND no enum-payload projection in the §4.2-cage spec sublanguage (`Expr::Field` is struct-only; no `result->Some_0`; no `match`-in-contract over a tuple variant) — so the success-arm round-trip `ens result is Some ==> parse_be(s) == <payload>` cannot be spelled on the surface today. GROUNDED-feasible (real `verus`, vstd `Option`: the Horner-accumulate parse loop with the BE partial-value invariant + the overflow/non-digit/empty `None` arms, `5 verified, 0 errors`; the broken `Some(0)` FAILS `2 verified, 1 errors` — the error arm bites, non-vacuous). REQ-7/REQ-8 ship now under #94; REQ-9 lands after C7 (#95). Builder's layer (post-C7): the C7 built-in `Option`/`Result` return type + the `result is Some`/payload-in-contract surface, THEN `parse_u64` in `lower.rs` (the accumulate loop) + the `parse_be`/`all_digits` spec fns + the `None`-arm error path (handled-or-loud, no panic — R-CODE-2). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

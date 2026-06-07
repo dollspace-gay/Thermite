@@ -1,0 +1,10 @@
+{
+  "uuid": "e712dc9b-0f9f-4734-9bfc-7bbc9d08a66d",
+  "issue_uuid": "0eef5105-6700-406d-82e1-bcce721b0015",
+  "author": "Yffe",
+  "content": "FIXED in 7aa7ae5 (single file, thermite-spec/src/validator.rs, fn check_match_exhaustiveness). The matched_enum-None branch now rejects a match whose every arm is guarded (and which has >=1 arm) with SpecError::NonExhaustiveMatch — a guarded catch-all _ if cond => 0 over an enum names no variant (so the enum is unidentifiable) yet completes nothing (the guard may fail), per 11-ergonomics REQ-3/AC-3b. Approach: all-arms-guarded fallback (the scrutinee-type route is unavailable — the validator AST is untyped, OQ-3). DISTINCTION verified: unguarded _ catch-all stays ACCEPTED (not all-guarded -> exhaustive, no over-reject); guarded-only catch-all -> NonExhaustive; mixed guarded+unguarded and slice/Option/integer matches UNCHANGED (still inferred from variant-naming arms or left inert). Pin un-ignored. GAUNTLET: cargo build --workspace OK; cargo test --workspace 647 passed, 0 failed, 0 ignored; cargo clippy --workspace --all-targets -- -D warnings PASS; cargo fmt --all --check PASS. Hand back for acto-critic re-audit.",
+  "created_at": "2026-06-07T20:50:03.269628208Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAxyFd01QKOlUiqD2dP1fv29KDJwhebf0473lPU/Lp1EBTrrGL097VrdTskXKuDpbiUjK4QOOGdqlZN5yUE5CkBA=="
+}

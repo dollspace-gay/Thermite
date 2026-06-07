@@ -52,3 +52,4 @@ target/
 
 # Crosslink runtime signing key (machine-local; trust is synced via the hub branch).
 .crosslink/driver-key.pub
+examples/editor/bin/

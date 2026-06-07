@@ -18,7 +18,8 @@
 //! | REQ-2 (keywords closed set) | SHIPPED | `keyword_kind` maps the reserved words; effect/slag names fall through to `Ident`. The basis ADT stage (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-6) reserves `struct`/`enum`/`is` here; `Box` stays a contextual identifier matched by name in `parser::parse_type` (the `Generic` path, like `Option`), so it is NOT reserved. |
 //! | REQ-3 — VALUE (int literals with `_` stripped) | SHIPPED | `lex_int` strips `_` and accumulates `value`; `1_000_000` → value `1000000` (test `int_literal_underscores_strip_to_value` in `tests/conformance.rs`). |
 //! | REQ-3 — RAW (verbatim source slice on the token, #37) | SHIPPED | `lex_int` ALSO captures the verbatim digit+`_` run as `raw` (`source[i..last_digit]`); `TokKind::Int { value, raw }` so `1_000_000` lexes to value `1000000` AND raw `"1_000_000"` (test `int_literal_preserves_raw`). Consumer: `parse_primary`/pattern-literal in `parser.rs`. |
-//! | REQ-4 (`#[slag]` tokenization) | SHIPPED | `#[` token + string literals via `lex_string`; consumed by `parse_slag`. |
+//! | REQ-4 (`#[slag]` tokenization) | SHIPPED | `#[` token + string literals via `lex_string`; consumed by `parse_slag`. The `lex_string` escape table (`.design/basis/07-strings.md` REQ-6, #91 cluster 1) decodes `\n`/`\t`/`\r`/`\0`/`\"`/`\\` + `\xNN` (`0x00..=0x7F`) to their BYTES; an unknown/malformed/high-byte escape is a STRUCTURED `SyntaxError` (not the old silent `other as char` swallow), recovering past the close-quote. Verified by `tests/string_escapes.rs` + `forge/tests/literal_layer.rs` (`"\x1b".byte_at(0) == 27` L3). |
+//! | NOTE (char + hex/binary int literals — #91 cluster 1) | NOT-STARTED | gaps 2/3 of #91 add `'A'` char literals and `0x`/`0b` int literals. These ADD lexer token grammar that THIS doc's REQ-1 ("no char tokens exist") and REQ-3 ("an integer literal is a run of ASCII digits") currently FORBID; per goal.md R-SPEC-4 they require a `.design/syntax/lexer.md` AMENDMENT (acto-doc-author) before implementation — `lexer.md` is NOT on the #91 cluster-1 manifest. Reported for manifest expansion; deferred until re-authorized. The negative-literal gap (4) is deferred to the signed-int cluster (no signed `PrimType` exists — `U32`/`U64`/`Usize`/`Bool` only — so a negative literal has no sound typed home in v1). |
 //! | REQ-5 (comments + whitespace insignificant) | SHIPPED | `skip_trivia` consumes `[ \t\r\n]+` and `//`-to-EOL, emitting nothing. |
 //! | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators before 1-char (`<=`, `==`, `->`, `::`, `..`, `#[`). |
 //! | REQ-7 (spans) | SHIPPED | every `Token` carries a `Span { start, len }`; used by parser diagnostics + addressing. |
@@ -349,15 +350,66 @@ fn lex_string(bytes: &[u8], i: usize) -> Result<(Token, usize), StringLexError> 
         }
         if c == b'\\' && j + 1 < n {
             let esc = bytes[j + 1];
-            content.push(match esc {
-                b'n' => '\n',
-                b't' => '\t',
-                b'"' => '"',
-                b'\\' => '\\',
-                other => other as char,
+            // Single-char escapes materialize to a control/literal BYTE
+            // (`.design/basis/07-strings.md` REQ-6, the escape table). The byte
+            // model (REQ-2: a string is a run of `u8`) means each escape decodes
+            // to one byte; `\n`/`\t`/`\r`/`\0` are control bytes, `\"`/`\\` are
+            // the quote/backslash literals. Codepoints < 0x80 are a single UTF-8
+            // byte, so `String::push` of the corresponding `char` materializes
+            // the intended byte exactly (`"\x1b".as_bytes()[0] == 27`).
+            let single: Option<char> = match esc {
+                b'n' => Some('\n'), // 10
+                b't' => Some('\t'), // 9
+                b'r' => Some('\r'), // 13
+                b'0' => Some('\0'), // 0
+                b'"' => Some('"'),  // 34
+                b'\\' => Some('\\'),
+                _ => None,
+            };
+            if let Some(ch) = single {
+                content.push(ch);
+                j += 2;
+                continue;
+            }
+            if esc == b'x' {
+                // `\xNN` — exactly two hex digits, materializing to the byte
+                // value (`\x1b` -> 27). The byte model (REQ-2/REQ-6) admits the
+                // ASCII range `\x00`..=`\x7F` (a single UTF-8 byte); a value
+                // >= 0x80 is NOT a single byte in a UTF-8 `String` (it would
+                // UTF-8-encode to two bytes), so it is a STRUCTURED lex error in
+                // v1, not silently mis-materialized — faithful byte indexing is
+                // the load-bearing string claim (REQ-2). A high-byte `\xNN`
+                // awaits the `Vec<u8>` string-content reshape (a future stage).
+                match parse_hex_escape(bytes, j + 2) {
+                    Some(byte) if byte < 0x80 => {
+                        // codepoint == byte < 0x80 -> exactly one UTF-8 byte.
+                        content.push(byte as char);
+                        j += 4; // `\x` + two hex digits
+                        continue;
+                    }
+                    Some(_) | None => {
+                        // Malformed (`\xZZ`, truncated) OR a high byte (>= 0x80,
+                        // not single-byte representable in v1): a structured
+                        // diagnostic over the `\x..` span; resume after `"`.
+                        let bad_end = (j + 4).min(n);
+                        let bad: String = bytes[j..bad_end].iter().map(|&b| b as char).collect();
+                        return Err(StringLexError {
+                            error: SyntaxError::stray_char(bad, Span::new(j, bad_end - j)),
+                            recover_to: resume_past_string(bytes, bad_end),
+                        });
+                    }
+                }
+            }
+            // Any other escape (`\z`) is unknown: a structured diagnostic, never
+            // a silent `other as char` swallow (the v0.1 bug this stage closes).
+            let bad: String = bytes[j..(j + 2).min(n)]
+                .iter()
+                .map(|&b| b as char)
+                .collect();
+            return Err(StringLexError {
+                error: SyntaxError::stray_char(bad, Span::new(j, (j + 2).min(n) - j)),
+                recover_to: resume_past_string(bytes, j + 2),
             });
-            j += 2;
-            continue;
         }
         content.push(c as char);
         j += 1;
@@ -366,6 +418,49 @@ fn lex_string(bytes: &[u8], i: usize) -> Result<(Token, usize), StringLexError> 
         error: SyntaxError::unterminated_string(Span::new(i, n - i)),
         recover_to: n,
     })
+}
+
+/// Parse exactly two hex digits at `bytes[at..at+2]` into a byte value, or
+/// `None` if fewer than two hex digits are present (a malformed `\xZ`/`\x`).
+/// Deterministic, total — no panic (lexer.md REQ-8).
+fn parse_hex_escape(bytes: &[u8], at: usize) -> Option<u8> {
+    let n = bytes.len();
+    if at + 1 >= n {
+        return None;
+    }
+    let hi = hex_digit(bytes[at])?;
+    let lo = hex_digit(bytes[at + 1])?;
+    Some(hi * 16 + lo)
+}
+
+/// Map an ASCII hex digit (`0-9`/`a-f`/`A-F`) to its value `0..=15`, or `None`.
+fn hex_digit(c: u8) -> Option<u8> {
+    match c {
+        b'0'..=b'9' => Some(c - b'0'),
+        b'a'..=b'f' => Some(c - b'a' + 10),
+        b'A'..=b'F' => Some(c - b'A' + 10),
+        _ => None,
+    }
+}
+
+/// After a malformed escape inside a string literal, resume scanning past the
+/// string's closing `"` (if any) so per-item recovery resyncs at a token
+/// boundary, mirroring the unterminated-string recovery. Starts at `from`.
+fn resume_past_string(bytes: &[u8], from: usize) -> usize {
+    let n = bytes.len();
+    let mut k = from;
+    while k < n {
+        // A `\"` inside the literal is an escaped quote, not the terminator.
+        if bytes[k] == b'\\' && k + 1 < n {
+            k += 2;
+            continue;
+        }
+        if bytes[k] == b'"' {
+            return k + 1;
+        }
+        k += 1;
+    }
+    n
 }
 
 /// Lex a punctuation/operator token by maximal munch (lexer.md REQ-6): try the

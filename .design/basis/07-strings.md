@@ -161,6 +161,31 @@ are flat built-ins.
   decision above). Derived from §4.4 (one call syntax, closed built-in interface
   set — `String` is a built-in, not a user type) and the `Type::Vec` precedent.
 
+- **REQ-6 (string-literal escape table — control/hex bytes; crosslink #91 cluster
+  1):** A string literal decodes a closed escape set to the BYTES it materializes
+  (REQ-2's byte char model). The escape table is: `\n` → 10 (LF), `\t` → 9 (TAB),
+  `\r` → 13 (CR), `\0` → 0 (NUL), `\"` → 34 (the quote), `\\` → 92 (the backslash),
+  and `\xNN` (exactly two hex digits) → the byte value `0xNN`. The `\r`/`\0`/`\xNN`
+  forms are the ANSI/control bytes a terminal editor needs (e.g. `\x1b` → 27, the
+  ANSI ESC introducer; `"\x1b".byte_at(0) == 27`). The decoded byte flows through
+  the EXISTING `Expr::StrLit` lowering (`thermite-lower::lower` `lower_expr` —
+  byte-`push` of `s.as_bytes()`), so no lowering change is needed: a control byte
+  is just another byte in the materialized `TString`. **v1 byte-model bound:**
+  `\xNN` is admitted for `0x00..=0x7F` (a single UTF-8 byte, byte-faithful); a value
+  `>= 0x80` is NOT single-byte-representable in the v1 `String` content (a Rust
+  UTF-8 `String`), so it is a STRUCTURED lex diagnostic, NOT a silent
+  mis-materialization to two bytes — faithful byte indexing (REQ-2) is the
+  load-bearing claim; a high-byte `\xNN` awaits a future `Vec<u8>` string-content
+  reshape. An UNKNOWN escape (`\z`) and a MALFORMED `\x` (`\xZZ`, truncated) are
+  STRUCTURED `SyntaxError` diagnostics (the v0.1 `lex_string` catch-all
+  `other => other as char` SILENTLY swallowed these — the bug this REQ closes),
+  never a panic (`.design/syntax/lexer.md` REQ-8; the lexer recovers past the
+  string's closing quote). This REQ extends the existing `lex_string` escape table
+  in `thermite-syntax/src/lexer.rs` (consistent with `.design/syntax/lexer.md`
+  REQ-4, which says a string token carries "the unescaped string content" without
+  enumerating the escape SET — this REQ enumerates it). Derived from §4.4 (a closed
+  surface), REQ-2 (the byte char model), and the ANSI-editor unblock (#91).
+
 ### Validator / the SpecTherm cage (governs `thermite-spec/src/validator.rs`)
 
 - **REQ-3 (string contracts fit the §4.2 cage — flat, no-OOB index, length,
@@ -526,6 +551,7 @@ from this doc (and the GROUNDED `TString` seed) before the builder runs (R-CHAR-
 | REQ-3 (string contracts fit the §4.2 cage — no-OOB index, length, bounded slice/concat, `==`) | SHIPPED | #79 Stage 7. `byte_at` is not in `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`); no string contract validates today. The accept path it reuses (the Stage-4 `get` no-OOB accessor in `BUILTIN_METHODS`, the caged-flat walk) is SHIPPED, so the validator extension is mechanical. GROUNDED-feasible (the no-OOB `byte_at` certifies, the unguarded form FAILS `0 verified, 1 errors`); not implemented. |
 | REQ-4 (`String` → `vstd::vec::Vec<u8>` wrapper; len/byte_at/slice/concat/`==`; `fx alloc`; literal lowering; BACKING-AGNOSTIC surface) | SHIPPED | #79 Stage 7. `lower.rs` has no `String`/`Type::String` lowering and no string-literal materialization. The wrap-vstd path it reuses (the Stage-4 `TVec` over `vstd::vec::Vec`, the `well_formed` predicate, the no-OOB exec accessor, `fx alloc` subsumption, the `final(self)` finding) is SHIPPED (#73), so the extension to `Vec<u8>` is mechanical. GROUNDED-feasible (`TString` over `vstd::vec::Vec<u8>`: `well_formed`/`len`/`byte_at`/`concat` `6 verified, 0 errors`; literal `lit_hello` `4 verified, 0 errors`); not implemented. |
 | REQ-5 (`LowerError`/`SpecError` extension, no panics) | SHIPPED | #79 Stage 7. No string lowering exists yet to surface a failure mode; the existing `LowerError::Unsupported` / validator reject path is expected to suffice (Stage 4 needed no new variant). No code added — NOT-STARTED until the string path lands. No `unwrap`/`expect`/`panic!` will be introduced (R-CODE-2 / R-APG-1). |
+| REQ-6 (string-literal escape table — control/hex bytes, #91 cluster 1) | SHIPPED | #91. `lex_string` in `thermite-syntax/src/lexer.rs` decodes `\n`/`\t`/`\r`/`\0`/`\"`/`\\` to their bytes and `\xNN` (two hex digits, `0x00..=0x7F`) to the byte value via `parse_hex_escape`/`hex_digit`; an unknown/malformed/high-byte escape is a STRUCTURED `SyntaxError::StrayChar` (recovering past the close-quote via `resume_past_string`), never the old silent `other as char` swallow and never a panic. Consumer: the decoded byte flows through the EXISTING `Expr::StrLit` lowering (`thermite-lower::lower` `lower_expr`, byte-`push` of `s.as_bytes()`) — no new variant. Verified: `thermite-syntax/tests/string_escapes.rs` (9 decode/diagnostic tests) + `forge/tests/literal_layer.rs` grounds `"\x1b".byte_at(0) == 27` / `\r` == 13 / `\0` == 0 at L3 against real verus (non-vacuous, §7 battery), wrong-code NOT L3. |
 
 ## Open questions (for the orchestrator before the builder runs)
 

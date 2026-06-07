@@ -77,6 +77,16 @@
 //! | REQ-6 (`Map<K,V>` → vstd `Map` wrapper) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut, v1.1). No `Type::Map` node / no `Map` lowering; the v1 corpus oracle (`conformance/vec_demo.th`) is `Vec`-only. Modeled on `vstd::map::Map`, deferred to a Stage-4 follow-up under #62. |
 //! | REQ-7 (`LowerError` extension, no panics) | SHIPPED | the `Vec` lowering reuses the existing `LowerError::Unsupported` (`tvec_name` on a non-primitive element type) — no new variant needed; no `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1). |
 //!
+//! ## REQ status — 04-collections.md cluster C6 (Vec completeness, issue #98)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-8 (`pop_last`/`last`/`insert`/`remove`/`contains` — tuple-free missing ops) | SHIPPED | #98. `emit_one_vec_wrapper` (called per element type from `emit_vec_wrappers`) emits all five ops on the `TVec<elem>` impl: `pop_last`/`insert`/`remove` are `&mut` with `final(self)` (the REQ-5 grounding finding), `last` is `&self`-reading, `contains` is the exec linear scan with the `forall|k| 0<=k<i ==> v@[k]!=x` invariant + `decreases len-i`. The `insert` carries the load-bearing `i <= len` no-OOB guard. Spec-position `v.last()` lowers to `v.spec_get((v.len()-1) as int)` (`lower_expr` MethodCall arm). Consumer: `lower`. Verified: `forge/tests/vec_completeness_conformance.rs::vec_u64_ops_certify_l3` — real `verus --no-cheating` `9 verified, 0 errors`; the unguarded `insert` FAILS `8 verified, 1 errors` (`vec_insert_without_oob_guard_fails_verus_l0`, non-vacuity, R-DEFER-9). |
+//! | REQ-9 (`Vec<T>` non-Copy elements — `Vec<String>`/`Vec<struct>`/nested via borrow-`get`) | SHIPPED | #98. `tvec_name` `match` EXTENDS to a `String` element (→ `TVecTString`), a `Named` struct/enum element (→ `TVec<Name>`), and a nested `Vec(inner)` element (→ recursive `tvec_name(inner)` suffix, `Vec<Vec<u64>>` → `TVecTVecU64`). `elem_is_copy` classifies the element: a Copy element keeps the by-value `get -> T`/`last -> T` + `contains`; a NON-Copy element gets the BORROW `get -> &T`/`last -> &T` (`&self.data[i]`, `ens *result == v@[i]`) — vstd's index MOVES a non-Copy element out (`E0507`), so the borrow is the load-bearing fix; `push(x: T)` consumes the owned element (no Copy needed). Consumer: `lower`. Verified: `vec_completeness_conformance.rs` — `Vec<String>` `17 verified, 0 errors` (the make-or-break), `Vec<struct>` `7 verified`, nested `Vec<Vec<u64>>` `15 verified`, all `0 errors` (the GROUNDED `4 verified, 0 errors` op-subset within each, the by-value form FAILS `E0507`). |
+//! | REQ-10 (element-type wrapper/decl woven before the `TVec` — #68/#86 pattern) | SHIPPED | #98. `collect_vec_elem_types`'s `note_vec_elems` notes a nested `Vec` element INNER-FIRST, so `emit_vec_wrappers` emits the inner `TVecU64` before the outer `TVecTVecU64` (REQ-10 emission order for the two-wrapper case). For a `String`/struct element the wrapper/decl is woven via the CONSUMED `program_uses_string` (`ty_reaches_string` recurses `Type::Vec`) / `forge::collect_type_adt_refs` (recurses `Type::Vec`) — verus resolves references within the `verus!` block order-independently (the 17/0 + 7/0 verifies confirm). Consumer: `lower`. Verified: `vec_completeness_conformance.rs` (the element wrapper/decl present + the whole program verifies L3). |
+//! | REQ-11 (`Vec::new()`-no-param wrapper-reachability fix — the #86 analog) | SHIPPED | #98. `collect_vec_elem_types` EXTENDS its reachability closure from fn/spec-fn param+return to ALSO walk `struct`/`enum`-variant FIELD types and `fn`-body local `let` type annotations (`note_block_vec_elems`/`note_stmt_vec_elems`, the #86 String-reachability analog keyed on `Type::Vec(inner)`). A body-local `let v: Vec<u64> = Vec::new();` now emits `TVecU64`. `lower_stmt`'s `Stmt::Let` arm rewrites a `Vec`-typed `Vec::new()` init (`is_vec_new`) to the wrapper construction `<TVec> { data: Vec::new() }` (a bare `Vec::new()` cannot inhabit the newtype, `E0308`). Consumer: `lower`. Verified: `vec_completeness_conformance.rs::local_vec_new_no_param_certifies_l3` (a fn whose only Vec is a body-local `Vec::new()` certifies L3 — NOT `E0425`). |
+//! | REQ-12 (`last`/`contains` in `BUILTIN_METHODS`; non-Copy `tvec_name` extension; no panics) | SHIPPED | #98. `last`/`contains` ADDED to `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`) so an `ens result == v.last()` / `v.contains(x)` validates inside the §4.2 cage; `pop_last`/`insert`/`remove` stay EXEC-only. `tvec_name` extends to String/`Named`/nested `Vec` elements (REQ-9). A still-unlowerable element (`Unit`/`Ref`/`Slice`/`Generic`) is the existing `LowerError::Unsupported` — no new variant, no `unwrap`/`expect`/`panic!` (R-CODE-2 / R-APG-1). Consumer: `lower` / `validate`. Verified: `vec_completeness_conformance.rs` + the validator tests. |
+//!
 //! ## REQ status — 07-strings.md cluster C4 (Basis Stage 7, issue #94)
 //!
 //! | REQ | Status | Evidence |
@@ -2438,24 +2448,44 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
 /// The generated wrapper struct name for `Vec<elem>` — `TVec` plus an
 /// UpperCamelCase suffix derived from the element type's Verus spelling
 /// (`Vec<u64>` → `TVecU64`, `Vec<u32>` → `TVecU32`, `Vec<usize>` → `TVecUsize`)
-/// (`.design/basis/04-collections.md` REQ-5). A per-element-type concrete
-/// wrapper (not a generic `TVec<T>`) is the GROUNDED form: vstd's `Vec<T>` index
-/// `self.data[i]` moves the element out, which requires `T: Copy` — so the
-/// verified `get` is monomorphized per (Copy) element type, exactly as the design's
-/// GROUNDED `BVec` over `Vec<u64>` is. A non-primitive / nested-collection element
-/// is `Unsupported` (the v1 corpus is `Vec<u64>`; a richer element joins when a
-/// corpus program needs it — never speculatively, REQ-1 frozen-set discipline).
-fn tvec_name(elem: &Type) -> Result<String, LowerError> {
+/// (`.design/basis/04-collections.md` REQ-5 / REQ-9 / REQ-12). A per-element-type
+/// concrete wrapper (not a generic `TVec<T>`) is the GROUNDED form: vstd's
+/// `Vec<T>` index `self.data[i]` moves the element out (`E0507` for non-`Copy`
+/// `T`), so the verified accessor is monomorphized per element type.
+///
+/// CLUSTER C6 (#98, REQ-9/REQ-12): the suffix `match` EXTENDS from Copy primitives
+/// to the NON-`Copy` element types — a `String` element (→ `TVecTString`, the
+/// Stage-7 string-wrapper element name), a user `struct`/`enum` element (→
+/// `TVec<StructName>`, the bare decl name), and a NESTED `Vec<Vec<_>>` element (→
+/// the RECURSIVE `T` + inner `tvec_name`, so `Vec<Vec<u64>>` → `TVecTVecU64`). A
+/// non-Copy element's wrapper emits the BORROW-returning `get -> &T` (REQ-9); a
+/// Copy element keeps the by-value `get -> T` (the byte-stable `vec_demo.th` form)
+/// — classified by [`elem_is_copy`]. A still-unlowerable element (`Unit`/`Ref`/
+/// `Slice`/`Generic`) is the existing `LowerError::Unsupported` (no panic, REQ-12).
+pub(crate) fn tvec_name(elem: &Type) -> Result<String, LowerError> {
     let suffix = match elem {
-        Type::Prim(PrimType::U32) => "U32",
-        Type::Prim(PrimType::U64) => "U64",
-        Type::Prim(PrimType::Usize) => "Usize",
-        Type::Prim(PrimType::Bool) => "Bool",
+        Type::Prim(PrimType::U32) => "U32".to_string(),
+        Type::Prim(PrimType::U64) => "U64".to_string(),
+        Type::Prim(PrimType::Usize) => "Usize".to_string(),
+        Type::Prim(PrimType::Bool) => "Bool".to_string(),
+        // Cluster C6 (REQ-9): a `String` element → the Stage-7 wrapper name
+        // `TString`, so `Vec<String>` → `TVecTString` (the GROUNDED non-Copy form).
+        Type::String => "TString".to_string(),
+        // Cluster C6 (REQ-9): a user `struct`/`enum` element → its bare decl name,
+        // so `Vec<Point>` → `TVecPoint`. The decl is woven before the wrapper
+        // (REQ-10, the #68 `collect_type_adt_refs` recursion through `Type::Vec`).
+        Type::Named(name) => name.clone(),
+        // Cluster C6 (REQ-9, nested): a `Vec<Vec<_>>` element → the RECURSIVE inner
+        // wrapper name as the suffix, so `Vec<Vec<u64>>` → `TVec` + `TVecU64` =
+        // `TVecTVecU64` (the inner `tvec_name` already yields `TVecU64`; the outer
+        // prepends `TVec`). The inner `TVec*` wrapper is emitted before the outer
+        // (REQ-10). The recursion is bounded by `Type` nesting (finite).
+        Type::Vec(inner) => tvec_name(inner)?,
         other => {
             return Err(LowerError::Unsupported {
                 what: format!(
-                    "Vec element type {:?} (v1 wraps a Copy primitive element; \
-                     the GROUNDED form is Vec<u64>)",
+                    "Vec element type {:?} (v1 wraps a Copy primitive, a String, a \
+                     user struct/enum, or a nested Vec element)",
                     lower_type(other).unwrap_or_else(|_| "<unlowerable>".to_string())
                 ),
                 span: zero_span(),
@@ -2463,6 +2493,39 @@ fn tvec_name(elem: &Type) -> Result<String, LowerError> {
         }
     };
     Ok(format!("TVec{suffix}"))
+}
+
+/// True iff a `Vec` element type is `Copy` (`.design/basis/04-collections.md`
+/// REQ-9): a Copy element (`u32`/`u64`/`usize`/`bool`) keeps the by-value
+/// accessor `get -> T` / `last -> T` (the byte-stable `vec_demo.th` form, vstd's
+/// index `self.data[i]` copies); a NON-Copy element (`String`/struct/enum/nested
+/// `Vec`) MUST use the BORROW accessor `get -> &T` / `last -> &T` (`&self.data[i]`),
+/// because vstd's index MOVES a non-Copy element out of the backing `Vec` (`E0507`,
+/// the Stage-4 finding the borrow resolves). A `contains` (element `==`) is emitted
+/// only for a Copy element — `==` on a `String`/struct in exec position is not a
+/// v1 built-in (it joins when a corpus program needs it, REQ-1 frozen-set).
+/// True iff `expr` is the bounded-`Vec` no-param constructor `Vec::new()`
+/// (`.design/basis/04-collections.md` REQ-11): an `Expr::Call` whose callee path
+/// is `Vec::new` (or a bare `new` on `Vec`) with no arguments. Drives the
+/// `let`-init rewrite to the wrapper construction `<TVec> { data: Vec::new() }`.
+pub(crate) fn is_vec_new(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { callee, args }
+            if args.is_empty()
+                && matches!(callee.as_ref(), Expr::Path(segs)
+                    if segs.len() == 2 && segs[0] == "Vec" && segs[1] == "new")
+    )
+}
+
+pub(crate) fn elem_is_copy(elem: &Type) -> bool {
+    matches!(
+        elem,
+        Type::Prim(PrimType::U32)
+            | Type::Prim(PrimType::U64)
+            | Type::Prim(PrimType::Usize)
+            | Type::Prim(PrimType::Bool)
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -2480,31 +2543,127 @@ fn tvec_name(elem: &Type) -> Result<String, LowerError> {
 /// bounded by design so the §4.2 cage never sees an unbounded sequence.
 const VEC_CAP: u64 = 1_000_000;
 
-/// Collect, in deterministic source order and deduped, the element type of every
-/// `Vec<T>` the program references in a `fn`/`spec fn` parameter or return
-/// position (REQ-5). The wrapper struct is materialized once per element type.
-fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
+/// Collect, in deterministic order and deduped, the element type of every
+/// `Vec<T>` the program references ANYWHERE it is REACHABLE
+/// (`.design/basis/04-collections.md` REQ-5/REQ-10/REQ-11). The wrapper struct is
+/// materialized once per element type.
+///
+/// CLUSTER C6 (#98, REQ-11 — the `Vec::new()`-no-param reachability fix, the #86
+/// String-reachability analog): a `Vec<T>` is REACHABLE not only in a `fn`/`spec
+/// fn` PARAMETER or RETURN position (the original closure) but also in a
+/// `struct`/`enum`-variant FIELD type and a `fn`-body local `let` type annotation —
+/// a body-local `let mut v: Vec<u64> = Vec::new();` with no `Vec` param/return must
+/// still emit `TVecU64` (else `E0425 cannot find type TVecU64`). The closure walks
+/// the SAME reachability set as `program_uses_string` (`ty_reaches_string` over
+/// param/return + field + local `let`), keyed on `Type::Vec(inner)`.
+///
+/// CLUSTER C6 (#98, REQ-10 — emission ORDER for nested): for a NESTED `Vec<Vec<_>>`
+/// the outer wrapper (`TVecTVecU64`) references the inner wrapper (`TVecU64`), so
+/// the inner element is noted BEFORE the outer — [`note`] recurses into a `Vec`
+/// element first, then pushes the element itself, so the inner `TVec*` is emitted
+/// before the outer (verus needs each in scope before the wrapper that names it).
+pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
     let mut elems: Vec<Type> = Vec::new();
-    let note = |ty: &Type, elems: &mut Vec<Type>| {
-        if let Type::Vec(inner) = ty {
+    for item in &program.items {
+        match item {
+            Item::Fn(f) => {
+                for p in &f.params {
+                    note_vec_elems(&p.ty, &mut elems);
+                }
+                note_vec_elems(&f.ret, &mut elems);
+                if let Some(b) = &f.body {
+                    note_block_vec_elems(b, &mut elems);
+                }
+            }
+            Item::SpecFn(s) => {
+                for p in &s.params {
+                    note_vec_elems(&p.ty, &mut elems);
+                }
+                note_vec_elems(&s.ret, &mut elems);
+                note_block_vec_elems(&s.body, &mut elems);
+            }
+            // REQ-10/REQ-11: a `struct`/`enum`-variant FIELD typed `Vec<T>` reaches
+            // the element wrapper exactly as a param does (a `Buf { items: Vec<u64> }`
+            // or an enum payload). The #86 String-reachability analog over fields.
+            Item::Struct(s) => {
+                for fd in &s.fields {
+                    note_vec_elems(&fd.ty, &mut elems);
+                }
+            }
+            Item::Enum(e) => {
+                for v in &e.variants {
+                    match &v.shape {
+                        VariantShape::Unit => {}
+                        VariantShape::Tuple(tys) => {
+                            for ty in tys {
+                                note_vec_elems(ty, &mut elems);
+                            }
+                        }
+                        VariantShape::Struct(fields) => {
+                            for fd in fields {
+                                note_vec_elems(&fd.ty, &mut elems);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    elems
+}
+
+/// Note the `Vec` element type(s) REACHABLE in a single `Type` (REQ-10/REQ-11),
+/// deduped, INNER-FIRST. A nested `Vec<Vec<u64>>` element is itself a `Type::Vec`,
+/// so the inner element is noted BEFORE pushing the outer element — the inner
+/// `TVec*` wrapper is emitted before the outer that references it (REQ-10 emission
+/// order). Recurses through every type constructor (`Ref`/`Slice`/`Box`/`Generic`/
+/// `Vec`) so a `Vec` nested under a reference/box is reached.
+fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
+    match ty {
+        Type::Vec(inner) => {
+            // INNER-FIRST: a `Vec<u64>` element of `Vec<Vec<u64>>` must be noted
+            // (and emitted) before the outer (REQ-10). Recurse into the element so
+            // its own nested `Vec`s are noted first, then push the element itself.
+            note_vec_elems(inner, elems);
             let e = (**inner).clone();
             if !elems.contains(&e) {
                 elems.push(e);
             }
         }
-    };
-    for item in &program.items {
-        let (params, ret) = match item {
-            Item::Fn(f) => (&f.params, &f.ret),
-            Item::SpecFn(s) => (&s.params, &s.ret),
-            Item::Struct(_) | Item::Enum(_) => continue,
-        };
-        for p in params {
-            note(&p.ty, &mut elems);
-        }
-        note(ret, &mut elems);
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Box(inner)
+        | Type::Generic { arg: inner, .. } => note_vec_elems(inner, elems),
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
     }
-    elems
+}
+
+/// Note every `Vec` element type reachable in a body-local `let` type annotation
+/// (REQ-11 — the `Vec::new()`-no-param fix). Walks nested `if`/`loop` blocks, the
+/// SAME body-walk shape as `block_has_string_local` (the #86 analog), keyed on the
+/// `let`'s declared type via `note_vec_elems`.
+fn note_block_vec_elems(block: &Block, elems: &mut Vec<Type>) {
+    for stmt in &block.stmts {
+        note_stmt_vec_elems(stmt, elems);
+    }
+}
+
+fn note_stmt_vec_elems(stmt: &Stmt, elems: &mut Vec<Type>) {
+    match stmt {
+        Stmt::Let { ty, .. } => {
+            if let Some(t) = ty {
+                note_vec_elems(t, elems);
+            }
+        }
+        Stmt::If { then, else_, .. } => {
+            note_block_vec_elems(then, elems);
+            if let Some(e) = else_ {
+                note_block_vec_elems(e, elems);
+            }
+        }
+        Stmt::Loop(l) => note_block_vec_elems(&l.body, elems),
+        Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Expr(_) | Stmt::Break | Stmt::Continue => {}
+    }
 }
 
 /// Emit the `TVec<elem>` wrapper struct + its verified `len`/`spec_get`/`get`/
@@ -2547,42 +2706,158 @@ fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
     }
     let mut out = String::new();
     for elem in &elems {
-        let name = tvec_name(elem)?;
-        let ety = lower_type(elem)?;
-        out.push('\n');
-        writeln!(out, "pub struct {name} {{ pub data: Vec<{ety}> }}").ok();
-        writeln!(out, "impl {name} {{").ok();
-        writeln!(
-            out,
-            "    pub open spec fn well_formed(&self) -> bool {{ self.data.len() <= {VEC_CAP} }}"
-        )
-        .ok();
-        out.push_str("    pub open spec fn len(&self) -> nat { self.data.len() as nat }\n");
-        writeln!(
-            out,
-            "    pub open spec fn spec_get(&self, i: int) -> {ety} {{ self.data@[i] }}"
-        )
-        .ok();
-        // The no-OOB exec accessor `get` (REQ-5): `req i < len`, `ens result ==
-        // v@[i]`. The verified vstd index `self.data[i]`.
+        out.push_str(&emit_one_vec_wrapper(elem)?);
+    }
+    Ok(out)
+}
+
+/// Emit ONE `TVec<elem>` wrapper struct + its verified op `impl` for a single
+/// element type (`.design/basis/04-collections.md` REQ-5/REQ-8/REQ-9). The
+/// `well_formed`/`len`/`spec_get`/`push`/`pop_last`/`insert`/`remove` ops are
+/// element-type-AGNOSTIC (they shift/drop indices, never moving an element OUT),
+/// so they are identical for Copy and non-Copy elements. The element-RETURNING
+/// accessors `get`/`last` and `contains` diverge by Copy-ness (REQ-9):
+///
+/// - **Copy element** (`u64` etc.): `get -> T` / `last -> T` by VALUE (vstd's
+///   index copies, the byte-stable `vec_demo.th` form) + `contains` (element `==`).
+/// - **NON-Copy element** (`String`/struct/nested `Vec`): `get -> &T` / `last ->
+///   &T` by BORROW (`&self.data[i]`, `ens *result == v@[i]`), because vstd's index
+///   MOVES a non-Copy element out (`E0507`, the Stage-4 finding); `contains` is
+///   omitted (element `==` on a non-Copy type is not a v1 exec built-in).
+///
+/// GROUNDED (real `verus 0.2026.05.24`): `Vec<u64>` all ops `9 verified, 0 errors`;
+/// `Vec<String>`/`Vec<struct>`/nested `Vec<Vec<u64>>` the borrow form
+/// `4 verified, 0 errors`; the by-value `get` on a non-Copy element `E0507`. NO
+/// `assume`/`external_body` (R-DEFER-9) — every contract is threaded over vstd's
+/// verified `Vec::push`/`pop`/`insert`/`remove`/`index`/`len`. The `&mut`-mutating
+/// ops (`push`/`pop_last`/`insert`/`remove`) use `final(self)` (the REQ-5
+/// grounding: verus 0.2026.05.24 disambiguates a `&mut` postcondition with
+/// `final`).
+fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
+    let name = tvec_name(elem)?;
+    let ety = lower_type(elem)?;
+    let copy = elem_is_copy(elem);
+    let mut out = String::new();
+    out.push('\n');
+    writeln!(out, "pub struct {name} {{ pub data: Vec<{ety}> }}").ok();
+    writeln!(out, "impl {name} {{").ok();
+    writeln!(
+        out,
+        "    pub open spec fn well_formed(&self) -> bool {{ self.data.len() <= {VEC_CAP} }}"
+    )
+    .ok();
+    out.push_str("    pub open spec fn len(&self) -> nat { self.data.len() as nat }\n");
+    writeln!(
+        out,
+        "    pub open spec fn spec_get(&self, i: int) -> {ety} {{ self.data@[i] }}"
+    )
+    .ok();
+    // The no-OOB exec accessor `get` (REQ-5/REQ-9): `req i < len`. A Copy element
+    // returns by VALUE (`result == v@[i]`, vstd's index copies); a non-Copy element
+    // returns a BORROW `&T` (`*result == v@[i]`, `&self.data[i]` — vstd's index
+    // would MOVE the element out, `E0507`, so the borrow is the load-bearing fix).
+    if copy {
         writeln!(out, "    pub fn get(&self, i: usize) -> (result: {ety})").ok();
         out.push_str("        requires i < self.data.len(),\n");
         out.push_str("        ensures result == self.data@[i as int],\n");
         out.push_str("    { self.data[i] }\n");
-        // The capacity-preserving exec mutator `push` (REQ-5): `req well_formed &&
-        // len < CAP`, `ens final(self).well_formed() && len' == len+1 &&
-        // v@[old_len] == x`. The `final(self)` &mut postcondition (the grounding
-        // finding). The verified vstd `self.data.push(x)`.
-        writeln!(out, "    pub fn push(&mut self, x: {ety})").ok();
-        out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
-        writeln!(out, "{VEC_CAP},").ok();
-        out.push_str("        ensures\n");
-        out.push_str("            final(self).well_formed(),\n");
-        out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
-        out.push_str("            final(self).data@[old(self).data.len() as int] == x,\n");
-        out.push_str("    { self.data.push(x) }\n");
-        out.push_str("}\n");
+    } else {
+        writeln!(out, "    pub fn get(&self, i: usize) -> (result: &{ety})").ok();
+        out.push_str("        requires i < self.data.len(),\n");
+        out.push_str("        ensures *result == self.data@[i as int],\n");
+        out.push_str("    { &self.data[i] }\n");
     }
+    // The capacity-preserving exec mutator `push` (REQ-5): `req well_formed && len <
+    // CAP`, `ens final(self).well_formed() && len' == len+1 && v@[old_len] == x`. The
+    // `final(self)` &mut postcondition. `push(x: T)` CONSUMES the owned element (no
+    // `Copy` needed — moves the value into the backing run), so it is identical for
+    // Copy and non-Copy elements (REQ-9).
+    writeln!(out, "    pub fn push(&mut self, x: {ety})").ok();
+    out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
+    writeln!(out, "{VEC_CAP},").ok();
+    out.push_str("        ensures\n");
+    out.push_str("            final(self).well_formed(),\n");
+    out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
+    out.push_str("            final(self).data@[old(self).data.len() as int] == x,\n");
+    out.push_str("    { self.data.push(x) }\n");
+    // The tuple-free `pop_last` (REQ-8): drop the LAST element. `req len > 0`, `ens
+    // len' == len-1` + the kept-prefix frame. `&mut`, `final(self)`. The companion
+    // `last` reads the value (no tuple). Element-agnostic (vstd's `pop` drops an
+    // index, never moving an element out as a result here).
+    out.push_str("    pub fn pop_last(&mut self)\n");
+    out.push_str("        requires old(self).data.len() > 0,\n");
+    out.push_str("        ensures\n");
+    out.push_str("            final(self).data.len() == old(self).data.len() - 1,\n");
+    out.push_str("            forall|j: int| 0 <= j < final(self).data.len()\n");
+    out.push_str("                ==> final(self).data@[j] == old(self).data@[j],\n");
+    out.push_str("    { self.data.pop(); }\n");
+    // The final-element accessor `last` (REQ-8): `req len > 0`, `ens result ==
+    // v@[len-1]`. `&self`-reading (no `final`). Copy → by VALUE; non-Copy → BORROW
+    // `&T` (the same no-move rule as `get`, REQ-9).
+    if copy {
+        writeln!(out, "    pub fn last(&self) -> (result: {ety})").ok();
+        out.push_str("        requires self.data.len() > 0,\n");
+        out.push_str("        ensures result == self.data@[self.data.len() - 1],\n");
+        out.push_str("    { self.data[self.data.len() - 1] }\n");
+    } else {
+        writeln!(out, "    pub fn last(&self) -> (result: &{ety})").ok();
+        out.push_str("        requires self.data.len() > 0,\n");
+        out.push_str("        ensures *result == self.data@[self.data.len() - 1],\n");
+        out.push_str("    { &self.data[self.data.len() - 1] }\n");
+    }
+    // The `insert` op (REQ-8): splice `x` at index `i`, shifting the suffix right.
+    // `req well_formed && len < CAP && i <= len` (the `i <= len` is the no-OOB
+    // safety — an insert AT `len` is an append, NOT `i < len`). `ens len' == len+1
+    // && v'@ == v@.insert(i, x)`. `&mut`, `final(self)`. Element-agnostic.
+    writeln!(out, "    pub fn insert(&mut self, i: usize, x: {ety})").ok();
+    out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
+    writeln!(out, "{VEC_CAP}, i <= old(self).data.len(),").ok();
+    out.push_str("        ensures\n");
+    out.push_str("            final(self).well_formed(),\n");
+    out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
+    out.push_str("            final(self).data@ == old(self).data@.insert(i as int, x),\n");
+    out.push_str("    { self.data.insert(i, x); }\n");
+    // The `remove` op (REQ-8): delete the element at `i`, shifting the suffix left.
+    // `req i < len`, `ens len' == len-1 && v'@ == v@.remove(i)`. `&mut`,
+    // `final(self)`. Element-agnostic.
+    out.push_str("    pub fn remove(&mut self, i: usize)\n");
+    out.push_str("        requires i < old(self).data.len(),\n");
+    out.push_str("        ensures\n");
+    out.push_str("            final(self).data.len() == old(self).data.len() - 1,\n");
+    out.push_str("            final(self).data@ == old(self).data@.remove(i as int),\n");
+    out.push_str("    { self.data.remove(i); }\n");
+    // The `contains` op (REQ-8): an EXEC linear scan with the standard
+    // `forall|k| 0 <= k < i ==> v@[k] != x` invariant + `decreases len - i`. `req
+    // well_formed`, `ens result == exists|k| 0<=k<len && v@[k]==x`. Emitted only for
+    // a Copy element — `==` on a non-Copy element (`String`/struct) in exec position
+    // is not a v1 built-in (REQ-9; it joins when a corpus program needs it).
+    if copy {
+        writeln!(
+            out,
+            "    pub fn contains(&self, x: {ety}) -> (result: bool)"
+        )
+        .ok();
+        out.push_str("        requires self.well_formed(),\n");
+        out.push_str(
+            "        ensures result == (exists|k: int| 0 <= k < self.data.len() && self.data@[k] == x),\n",
+        );
+        out.push_str("    {\n");
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < self.data.len()\n");
+        out.push_str("            invariant\n");
+        out.push_str("                i <= self.data.len(),\n");
+        out.push_str("                forall|k: int| 0 <= k < i ==> self.data@[k] != x,\n");
+        out.push_str("            decreases self.data.len() - i,\n");
+        out.push_str("        {\n");
+        out.push_str("            if self.data[i] == x {\n");
+        out.push_str("                return true;\n");
+        out.push_str("            }\n");
+        out.push_str("            i = i + 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        false\n");
+        out.push_str("    }\n");
+    }
+    out.push_str("}\n");
     Ok(out)
 }
 
@@ -3371,6 +3646,22 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 let idx = lower_index_arg(&args[0], ctx, d, span)?;
                 return Ok(format!("{r}.spec_get({idx})"));
             }
+            // Cluster C6 (`.design/basis/04-collections.md` REQ-8/REQ-12): in SPEC
+            // position the bounded-`Vec` final-element accessor `v.last()` (a
+            // contract naming the last element, `ens result == v.last()`) lowers to
+            // the wrapper's SPEC accessor over the last index `v.spec_get((v.len() -
+            // 1) as int)` — the exec `last` returns `T`/`&T` but a contract needs the
+            // spec function (`self.data@[len-1]`), and a Verus spec index is `int`.
+            // The receiver's spec `len` is `nat`, so the `- 1` stays in `int`
+            // arithmetic and is cast once. Keyed on the method NAME `last` (no args)
+            // in spec position only; the exec `last` (a fn body) lowers verbatim to
+            // the verified wrapper method. `contains` is NOT rewritten here: its spec
+            // meaning is the `exists` its exec `ens` already states, so a contract
+            // naming `v.contains(x)` is admitted (REQ-12) but is not a v1 spec-fn
+            // rewrite target (no corpus contract names it; it joins by amendment).
+            if ctx.is_spec() && name == "last" && args.is_empty() {
+                return Ok(format!("{r}.spec_get(({r}.len() - 1) as int)"));
+            }
             // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): in SPEC position
             // a `String` receiver's `.len()` / `.byte_at(i)` lowers to the wrapper's
             // SPEC fns `.spec_len()` / `.spec_byte_at(i as int)` — the exec `len`/
@@ -3997,7 +4288,22 @@ fn lower_stmt(stmt: &Stmt, ctx: Ctx, indent: usize) -> Result<String, LowerError
             init,
         } => {
             let kw = if *mutable { "let mut" } else { "let" };
-            let init_s = lower_expr(init, ctx, 0, zero_span())?;
+            // Cluster C6 (`.design/basis/04-collections.md` REQ-5/REQ-11): a
+            // `Vec`-typed `let` whose init is the no-param constructor `Vec::new()`
+            // lowers the init to the wrapper construction `<TVec> { data: Vec::new()
+            // }` — the bounded-`Vec` wrapper is a newtype over `vstd::vec::Vec`, so a
+            // bare `Vec::new()` cannot inhabit the `TVec` type (`E0308`). The element
+            // type comes from the `let`'s `Type::Vec(elem)` annotation (the surface
+            // `Vec::new()` carries none), exactly the GROUNDED `let mut v: TVec* =
+            // TVec* { data: Vec::new() };` form. Keyed on the annotation being a
+            // `Type::Vec` AND the init being `Vec::new()` — any other init lowers
+            // normally (a `let v: Vec<u64> = other_vec;` passes through).
+            let init_s = if let (Some(Type::Vec(elem)), true) = (ty, is_vec_new(init)) {
+                let wname = tvec_name(elem.as_ref())?;
+                format!("{wname} {{ data: Vec::new() }}")
+            } else {
+                lower_expr(init, ctx, 0, zero_span())?
+            };
             if let Some(t) = ty {
                 let ts = lower_type(t)?;
                 Ok(format!("{pad}{kw} {name}: {ts} = {init_s};\n"))

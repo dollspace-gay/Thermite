@@ -60,7 +60,7 @@ use thermite_syntax::ast::{
 };
 use thermite_syntax::lexer::Span;
 
-use crate::lower::LowerError;
+use crate::lower::{collect_vec_elem_types, elem_is_copy, is_vec_new, tvec_name, LowerError};
 
 /// The maximum recursive-descent emission depth before `lower_l1` returns
 /// `LowerError::TooDeep`. Mirrors `lower.rs`'s `MAX_EMIT_DEPTH` (the
@@ -109,6 +109,22 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // ONCE, only when the program uses `String` (the non-`String` corpus is
     // byte-unaffected, matching `lower.rs::program_uses_string`'s gate).
     out.push_str(&emit_string_runtime_l1(program));
+
+    // Cluster C6 (`.design/basis/04-collections.md` REQ-5/REQ-8/REQ-9, issue #98):
+    // the BUILD-emitted crate must DEFINE the per-element `TVec<elem>` runtime
+    // wrapper whenever a `Vec<T>` is REACHABLE — `lower_type` lowers `Type::Vec` to
+    // the wrapper name (`Vec<u64>` → `TVecU64`), and the surface ops (`push`/`get`/
+    // `last`/`pop_last`/`insert`/`remove`/`contains`/`len`) resolve to its methods.
+    // Unlike the L3/Verus lowering (`lower.rs::emit_vec_wrappers`, a `verus!` form
+    // over `vstd::vec::Vec<T>` with `requires`/`ensures`/`Seq`), L1 is ENTIRELY exec
+    // — so this emits PLAIN-Rust methods with the capacity/no-OOB guards as
+    // always-active `thermite_check!`s (§6 L1 handled-or-loud: an over-cap push or an
+    // OOB get ABORTS loudly rather than UB). A non-Copy element's `get`/`last` return
+    // a BORROW `&T` (the L1 mirror of the REQ-9 borrow-`get`), so a non-Copy element
+    // is never moved out of the backing run. Emitted ONCE per element type, only when
+    // the program uses `Vec` (the non-`Vec` corpus is byte-unaffected, matching
+    // `lower.rs::collect_vec_elem_types`'s reachability gate).
+    out.push_str(&emit_vec_runtime_l1(program)?);
 
     // The program-wide `(variant, enum)` map (REQ-9) — drives the ENUM-QUALIFIED
     // `Enum::Variant` of an L1 `match` arm / pattern / `is` `matches!` — and the
@@ -1228,7 +1244,21 @@ pub(crate) fn lower_stmt_l1(
             init,
         } => {
             let kw = if *mutable { "let mut" } else { "let" };
-            let init_s = lower_expr_exec(init, 0, zero_span(), variants)?;
+            // Cluster C6 (`.design/basis/04-collections.md` REQ-5/REQ-11): the L1
+            // mirror of the L3 `Vec::new()`-init rewrite. A `Vec`-typed `let` whose
+            // init is the no-param constructor `Vec::new()` lowers the init to the
+            // wrapper constructor `<TVec>::new()` (`emit_vec_runtime_l1` emits a
+            // `fn new()`), because the bounded-`Vec` wrapper is a newtype — a bare
+            // `Vec::new()` cannot inhabit the `TVec` type (rustc `E0308`). The element
+            // type comes from the `let`'s `Type::Vec(elem)` annotation. Keyed on a
+            // `Type::Vec` annotation AND a `Vec::new()` init; any other init passes
+            // through.
+            let init_s = if let (Some(Type::Vec(elem)), true) = (ty, is_vec_new(init)) {
+                let wname = tvec_name(elem.as_ref())?;
+                format!("{wname}::new()")
+            } else {
+                lower_expr_exec(init, 0, zero_span(), variants)?
+            };
             if let Some(t) = ty {
                 let ts = lower_type(t)?;
                 Ok(format!("{pad}{kw} {name}: {ts} = {init_s};\n"))
@@ -1716,17 +1746,19 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let i = lower_type(inner)?;
             Ok(format!("Box<{i}>"))
         }
-        // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the L1 exec
-        // mirror of a bounded `Vec<T>` is a plain Rust `Vec<T>` — at L1 (runtime
-        // checks, not an SMT proof) the structure IS a `std::vec::Vec`, so its
-        // `len`/`push` run natively. (The L3 lowering wraps it in `TVec<elem>` for
-        // the capacity invariant + no-OOB `get` PROOF; L1 needs no wrapper — the
-        // honest exec type.) The v1 corpus exercises L3 only; this arm keeps L1
-        // total over `Type` (no panic, REQ-7).
-        Type::Vec(inner) => {
-            let i = lower_type(inner)?;
-            Ok(format!("Vec<{i}>"))
-        }
+        // Basis Stage 4 / Cluster C6 (`.design/basis/04-collections.md`
+        // REQ-5/REQ-8/REQ-9, issue #98): the L1 exec mirror of a bounded `Vec<T>`
+        // is the per-element runtime wrapper `TVec<elem>` (`Vec<u64>` → `TVecU64`,
+        // `Vec<String>` → `TVecTString`, `Vec<Point>` → `TVecPoint`, nested
+        // `Vec<Vec<u64>>` → `TVecTVecU64`), the SAME name as the L3 lowering
+        // (`lower.rs::tvec_name`). The wrapper is DEFINED by `emit_vec_runtime_l1`
+        // with the surface ops (`push`/`get`/`last`/`pop_last`/`insert`/`remove`/
+        // `contains`/`len`) as plain-Rust methods carrying the capacity/no-OOB
+        // guards as always-active `thermite_check!`s (§6 L1 handled-or-loud). The
+        // earlier bare `Vec<T>` form could not back the value-`get`/`pop_last`/
+        // borrow-`get` surface ops (native `Vec::get` returns `Option`); the wrapper
+        // makes the whole op family runnable.
+        Type::Vec(inner) => tvec_name(inner),
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded owned
         // text primitive lowers to the newtype `TString` over `vstd::vec::Vec<u8>`
         // (the byte char model). The L1 exec mirror is the SAME wrapper name as the
@@ -2029,6 +2061,130 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("}\n");
     }
     out
+}
+
+/// The bounded-`Vec` capacity (`.design/basis/04-collections.md` REQ-5; the
+/// `lower.rs` L3 `VEC_CAP` idiom `1_000_000`). At L1 (runtime checks, not an SMT
+/// proof) the bound is enforced by an always-active `thermite_check!`.
+const VEC_CAP_L1: usize = 1_000_000;
+
+/// Emit the per-element `TVec<elem>` runtime wrapper(s) for every `Vec<T>` the
+/// program reaches (Cluster C6 #98, `.design/basis/04-collections.md`
+/// REQ-5/REQ-8/REQ-9). The L1 EXEC mirror of `lower.rs::emit_vec_wrappers`: PLAIN
+/// Rust (no `verus!`/`Seq`/`requires`), with the capacity / no-OOB guards as
+/// always-active `thermite_check!`s so a violated contract ABORTS loudly (§6 L1
+/// handled-or-loud) rather than UB. EMPTY when the program uses no `Vec`
+/// (byte-stable for the non-`Vec` corpus). The element wrapper(s) are emitted
+/// inner-first (a nested `Vec<Vec<u64>>` emits `TVecU64` before `TVecTVecU64`) via
+/// `collect_vec_elem_types`'s ordering, so the outer wrapper's field type resolves.
+fn emit_vec_runtime_l1(program: &Program) -> Result<String, LowerError> {
+    let elems = collect_vec_elem_types(program);
+    if elems.is_empty() {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    for elem in &elems {
+        let name = tvec_name(elem)?;
+        let ety = lower_type(elem)?;
+        let copy = elem_is_copy(elem);
+        let cap = VEC_CAP_L1;
+        out.push('\n');
+        // `Clone`: the L1 ens-check snapshots a non-Copy parameter before the body
+        // consumes it (`lower_fn_l1`'s `<p>__pre` snapshot), so a `TVec*` param named
+        // in an `ens` after a move no longer rustc-`E0382`s. A `TVec*` over a
+        // `Clone` element is a deep copy.
+        out.push_str("#[derive(Debug, Clone)]\n");
+        out.push_str("#[allow(dead_code)]\n");
+        writeln!(out, "struct {name} {{ data: Vec<{ety}> }}").ok();
+        out.push_str("#[allow(dead_code)]\n");
+        writeln!(out, "impl {name} {{").ok();
+        writeln!(
+            out,
+            "    fn new() -> {name} {{ {name} {{ data: Vec::new() }} }}"
+        )
+        .ok();
+        out.push_str("    fn len(&self) -> u64 { self.data.len() as u64 }\n");
+        // `get`: no-OOB guard, then index. Copy → by value; non-Copy → borrow `&T`
+        // (the L1 mirror of the REQ-9 borrow-`get` — never move a non-Copy element
+        // out of the backing run).
+        if copy {
+            writeln!(out, "    fn get(&self, i: usize) -> {ety} {{").ok();
+            out.push_str(
+                "        thermite_check!(\"req\", \"i < self.len()\", i < self.data.len());\n",
+            );
+            out.push_str("        self.data[i]\n");
+            out.push_str("    }\n");
+        } else {
+            writeln!(out, "    fn get(&self, i: usize) -> &{ety} {{").ok();
+            out.push_str(
+                "        thermite_check!(\"req\", \"i < self.len()\", i < self.data.len());\n",
+            );
+            out.push_str("        &self.data[i]\n");
+            out.push_str("    }\n");
+        }
+        // `push`: capacity guard, then append (consumes the owned element).
+        writeln!(out, "    fn push(&mut self, x: {ety}) {{").ok();
+        writeln!(
+            out,
+            "        thermite_check!(\"req\", \"self.len() < CAP\", self.data.len() < {cap});"
+        )
+        .ok();
+        out.push_str("        self.data.push(x);\n");
+        out.push_str("    }\n");
+        // `pop_last`: len>0 guard, then drop the last (REQ-8).
+        out.push_str("    fn pop_last(&mut self) {\n");
+        out.push_str(
+            "        thermite_check!(\"req\", \"self.len() > 0\", self.data.len() > 0);\n",
+        );
+        out.push_str("        self.data.pop();\n");
+        out.push_str("    }\n");
+        // `last`: len>0 guard, then read the last. Copy → value; non-Copy → borrow.
+        if copy {
+            writeln!(out, "    fn last(&self) -> {ety} {{").ok();
+            out.push_str(
+                "        thermite_check!(\"req\", \"self.len() > 0\", self.data.len() > 0);\n",
+            );
+            out.push_str("        self.data[self.data.len() - 1]\n");
+            out.push_str("    }\n");
+        } else {
+            writeln!(out, "    fn last(&self) -> &{ety} {{").ok();
+            out.push_str(
+                "        thermite_check!(\"req\", \"self.len() > 0\", self.data.len() > 0);\n",
+            );
+            out.push_str("        &self.data[self.data.len() - 1]\n");
+            out.push_str("    }\n");
+        }
+        // `insert`: i<=len && len<CAP guard, then splice (REQ-8).
+        writeln!(out, "    fn insert(&mut self, i: usize, x: {ety}) {{").ok();
+        writeln!(
+            out,
+            "        thermite_check!(\"req\", \"i <= self.len() && self.len() < CAP\", i <= self.data.len() && self.data.len() < {cap});"
+        )
+        .ok();
+        out.push_str("        self.data.insert(i, x);\n");
+        out.push_str("    }\n");
+        // `remove`: i<len guard, then delete (REQ-8).
+        out.push_str("    fn remove(&mut self, i: usize) {\n");
+        out.push_str(
+            "        thermite_check!(\"req\", \"i < self.len()\", i < self.data.len());\n",
+        );
+        out.push_str("        self.data.remove(i);\n");
+        out.push_str("    }\n");
+        // `contains`: a linear scan (Copy element `==` only — the L3 form omits a
+        // non-Copy `contains` too, REQ-9).
+        if copy {
+            writeln!(out, "    fn contains(&self, x: {ety}) -> bool {{").ok();
+            out.push_str("        let mut i: usize = 0;\n");
+            out.push_str("        while i < self.data.len() {\n");
+            out.push_str("            if self.data[i] == x { return true; }\n");
+            out.push_str("            i += 1;\n");
+            out.push_str("        }\n");
+            out.push_str("        false\n");
+            out.push_str("    }\n");
+        }
+        out.push_str("}\n");
+    }
+    Ok(out)
 }
 
 /// True if the L1 program uses `n.to_string()` anywhere (the L1 mirror of

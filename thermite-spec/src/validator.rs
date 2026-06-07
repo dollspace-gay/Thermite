@@ -54,6 +54,7 @@
 //! |---|---|---|
 //! | REQ-3 (capacity + operation contracts fit the §4.2 cage) | SHIPPED | the bounded-`Vec` operation contracts are FLAT built-ins: `v.len()` (already in `BUILTIN_METHODS`) and the no-OOB accessor `get` ADDED to `BUILTIN_METHODS` so `ens result == v.get(i)` (`conformance/vec_demo.th` `checked_get`) validates inside the cage; the capacity bound `v.len() < CAP` / `result.len() == v.len() + 1` (`push_one`) are flat comparisons over the `len` built-in. The caged-flat walk (`walk_expr_inner`'s `MethodCall` arm) is UNCHANGED — a Vec `len`/`get` is the same flat built-in as a slice `len`. `push`/`pop` are EXEC-only (never in a contract), so the cage does not admit them. Consumer: `validate` → `walk_expr_inner`. Verification: `thermite-lower/tests/collections_conformance.rs` (the contracts validate clean + real verus L3). |
 //! | REQ-4 (element invariant via named `spec fn`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The element invariant (`forall_in(v, |e| inv(e))` as a named `spec fn`, preserved across `push`) reuses the existing named-`spec fn` accept path UNCHANGED — but the v1 corpus oracle (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get; no `Vec<Account>` element-invariant program is in the corpus, so this REQ is deferred to a Stage-4 follow-up (the GROUNDED `all_elems_inv` form is design-confirmed feasible, not yet corpus-exercised). |
+//! | REQ-12 (`last`/`contains` in `BUILTIN_METHODS`) | SHIPPED | #98 cluster C6. `last` and `contains` ADDED to `BUILTIN_METHODS` so an `ens result == v.last()` / `ens result == v.contains(x)` validates inside the §4.2 cage exactly as the no-OOB `get` does (the lowerer maps spec-position `v.last()` to the wrapper's `spec_get((len-1) as int)`; `contains`'s `exists`-meaning is PROVED by the exec `ens`'s linear-scan invariant, R-DEFER-9). `pop_last`/`insert`/`remove` stay EXEC-only (`&mut` mutators, never in a contract). The caged-flat walk (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED. Consumer: `pub fn validate` → `walk_expr_inner`. Verification: `forge/tests/vec_completeness_conformance.rs` (the C6 ops certify L3) + `cargo test -p thermite-spec`. |
 //!
 //! ## REQ status — 06-provenance-and-sinks.md (Basis Stage 6, issue #76 / blocker #77)
 //!
@@ -133,9 +134,20 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// no `BUILTIN_METHODS` entry. The no-OOB / round-trip teeth are PROVED at L3 (a
 /// wrong digit FAILS, R-DEFER-9); admitting the method here only opens the cage to
 /// NAME it.
+/// Cluster C6 collections (`.design/basis/04-collections.md` REQ-8/REQ-12, issue
+/// #98): `last` is the bounded-`Vec` final-element accessor whose result a contract
+/// names (`ens result == v.last()`), admitted as a FLAT built-in exactly as `get` —
+/// the lowerer maps spec-position `v.last()` to the wrapper's `spec_get((len-1) as
+/// int)`; `contains` is the element-membership predicate whose result a contract
+/// names (`ens result == v.contains(x)`), admitted so the cage can NAME it (its
+/// `exists`-meaning is PROVED by the exec `ens`'s linear-scan invariant, R-DEFER-9).
+/// `pop_last`/`insert`/`remove` stay EXEC-only (`&mut` mutators, never in a
+/// contract). No other built-in is added — REQ-1 frozen-set discipline.
 const BUILTIN_METHODS: &[&str] = &[
     "len",
     "get",
+    "last",
+    "contains",
     "byte_at",
     "concat",
     "slice",

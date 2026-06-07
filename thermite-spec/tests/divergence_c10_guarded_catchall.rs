@@ -41,7 +41,6 @@ use thermite_spec::{validate, SpecError};
 /// emit `SpecError::NonExhaustiveMatch`. It currently returns `Ok(())` because
 /// the enum is never identified (no arm names a variant).
 #[test]
-#[ignore = "blocker #120 — un-ignore when fixed"]
 fn divergence_guarded_only_catchall_is_non_exhaustive() {
     let parsed = thermite_syntax::parse(
         "enum Maybe { Yes(u64), No } fn f(m: Maybe) -> u64 req true ens result == 0 fx pure { match m { _ if true => 0 } }",

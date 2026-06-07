@@ -90,7 +90,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-3 (match guards — exhaustiveness down-weight) | SHIPPED | `check_match_exhaustiveness` reads `arm.guard.is_some()`: a GUARDED arm is NEVER a catch-all and NEVER marks its variant `covered` (the guard may fail), so a guarded-only `Some` arm leaves `Some` uncovered → `SpecError::NonExhaustiveMatch` (the GROUNDED Verus rule: a guarded-only arm is non-exhaustive). A guard `Expr` is also walked by `walk_expr`/`scan_expr_for_loops` (an unknown field/variant in a guard is flagged). Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req3_guarded_only_arm_is_non_exhaustive`. |
+//! | REQ-3 (match guards — exhaustiveness down-weight) | SHIPPED | `check_match_exhaustiveness` reads `arm.guard.is_some()`: a GUARDED arm is NEVER a catch-all and NEVER marks its variant `covered` (the guard may fail), so a guarded-only `Some` arm leaves `Some` uncovered → `SpecError::NonExhaustiveMatch` (the GROUNDED Verus rule: a guarded-only arm is non-exhaustive). When NO arm names a declared variant (so the enum cannot be inferred from the patterns — e.g. a guarded CATCH-ALL `match m { _ if cond => 0 }`), a match whose EVERY arm is guarded covers nothing unconditionally and is `NonExhaustiveMatch`; an UNGUARDED catch-all (`match m { _ => 0 }`) still completes the match (accepted, #120). A guard `Expr` is also walked by `walk_expr`/`scan_expr_for_loops` (an unknown field/variant in a guard is flagged). Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req3_guarded_only_arm_is_non_exhaustive` + `thermite-spec/tests/divergence_c10_guarded_catchall.rs`. |
 //! | REQ-4 (or-patterns — exhaustiveness via union) | SHIPPED | `collect_covered_variants` counts EACH alternative of a `Pattern::Or` toward the covered-variant set (union); `pattern_is_catch_all` treats an `Or` containing a `_`/binding as a catch-all. So `Some(_) \| None` is EXHAUSTIVE over `Option`-like enums; an `Or` over a strict subset still leaves the rest `NonExhaustiveMatch`. `variant_pattern_name` resolves the matched enum from the first variant-naming alternative. Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req4_or_pattern_exhaustive_via_union`. |
 
 use std::collections::{HashMap, HashSet};
@@ -1260,8 +1260,31 @@ impl Validator {
             variant_pattern_name(&arm.pattern).and_then(|v| self.variant_to_enum.get(v).cloned())
         });
         let Some(enum_name) = matched_enum else {
-            // Not a declared-enum match (slice / Option / bindings only) — the
-            // existing behavior, untouched.
+            // No arm NAMES a declared variant, so the enum could not be inferred
+            // from the patterns. Two sub-cases:
+            //   (a) a slice / Option / integer / bindings match (the existing
+            //       inert behavior — Verus discharges any non-exhaustiveness);
+            //   (b) a match whose EVERY arm is GUARDED (`_ if cond =>`, `x if
+            //       cond =>`, …) and so covers NOTHING unconditionally. Per
+            //       `.design/basis/11-ergonomics.md` REQ-3 / AC-3b a guard does
+            //       NOT complete a match (the guard may fail at runtime), so a
+            //       guarded-ONLY match — including a guarded catch-all
+            //       `match m { _ if cond => 0 }` over an enum, where no arm names
+            //       a variant to reveal the enum — is NON-exhaustive. An UNGUARDED
+            //       catch-all (`match m { _ => 0 }`) DOES complete the match and
+            //       is left accepted (it would have set `wildcard_seen` in the
+            //       main loop; here we require at least one arm and EVERY arm
+            //       guarded, so a plain `_` arm keeps the match inert).
+            // Detecting (b) is the only sound reject we can make without the
+            // scrutinee's (untyped, OQ-3) declared enum: a bare `_ if cond`
+            // guarantees nothing, so the match is non-exhaustive regardless of
+            // the scrutinee's type.
+            if !arms.is_empty() && arms.iter().all(|arm| arm.guard.is_some()) {
+                self.errors.push(SpecError::NonExhaustiveMatch {
+                    missing: vec!["<guarded-only: no arm completes the match>".to_string()],
+                    span,
+                });
+            }
             return;
         };
         // `enum_name` was resolved from `variant_to_enum`, which is built only

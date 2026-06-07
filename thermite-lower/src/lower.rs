@@ -3121,7 +3121,14 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     // data.len() - i`), and `lemma_parse_be_reverse` closes the contract.
     out.push('\n');
     out.push_str("pub fn u64_to_string(n: u64) -> (result: TString)\n");
-    out.push_str("    ensures parse_be(result.data@) == n as nat,\n");
+    // The round-trip is the gold standard; `result.data.len() >= 1` is the HONEST
+    // floor that contractually FORBIDS the empty string (every decimal has at least
+    // one digit, including 0 -> "0"). The round-trip alone admits "" for 0
+    // (`parse_be([]) == 0`), so the len floor is what catches a dropped zero-guard
+    // (blocker #97; without the guard this `ens` FAILS verus, R-DEFER-9 — real teeth).
+    out.push_str("    ensures\n");
+    out.push_str("        parse_be(result.data@) == n as nat,\n");
+    out.push_str("        result.data.len() >= 1,\n");
     out.push_str("{\n");
     out.push_str("    let mut data: Vec<u8> = Vec::new();\n");
     out.push_str("    let mut m: u64 = n;\n");
@@ -3131,10 +3138,38 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("        assert(pow10(0) == 1);\n");
     out.push_str("        assert((n as nat) * pow10(0) == n as nat) by(nonlinear_arith);\n");
     out.push_str("    }\n");
-    out.push_str("    while m > 0\n");
+    // Zero-guard (mirrors the L1 `if m == 0 { data.push(48u8); }`, blocker #97):
+    // `while m > 0` never runs for `n == 0`, so without this the verified output is
+    // the EMPTY seq while the built L1 binary prints "0" ([48]) — L3 != L1 and REQ-8
+    // (the human-readable decimal of 0 is "0") is missed. Pushing 48 ('0') makes the
+    // verified bytes match L1 byte-for-byte; `parse_le([48]) == 0 == n` keeps the
+    // build-loop invariant intact for the `n == 0` entry.
+    out.push_str("    if m == 0 {\n");
+    out.push_str("        data.push(48u8);\n");
+    out.push_str("        proof {\n");
+    out.push_str("            assert(data@.len() == 1);\n");
+    out.push_str("            assert(data@[0] == 48u8);\n");
     out.push_str(
-        "        invariant parse_le(data@) + (m as nat) * pow10(data.len() as nat) == n as nat,\n",
+        "            assert(data@.subrange(1, data@.len() as int) =~= Seq::<u8>::empty());\n",
     );
+    out.push_str("            assert(parse_le(data@.subrange(1, data@.len() as int)) == 0);\n");
+    out.push_str("            assert(parse_le(data@) == 0);\n");
+    out.push_str("            assert((m as nat) == 0);\n");
+    out.push_str(
+        "            assert((m as nat) * pow10(data.len() as nat) == 0) by(nonlinear_arith)\n",
+    );
+    out.push_str("                requires (m as nat) == 0;\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("    while m > 0\n");
+    out.push_str("        invariant\n");
+    out.push_str(
+        "            parse_le(data@) + (m as nat) * pow10(data.len() as nat) == n as nat,\n",
+    );
+    // `data.len() >= 1 || m > 0`: at entry n>0 -> m>0; n==0 -> guard pushed so
+    // data.len()>=1. On exit `m == 0`, so the disjunct forces data.len()>=1 (the
+    // len floor's proof, blocker #97).
+    out.push_str("            data.len() >= 1 || m > 0,\n");
     out.push_str("        decreases m,\n");
     out.push_str("    {\n");
     out.push_str("        let d: u8 = (m % 10) as u8 + 48u8;\n");
@@ -3162,11 +3197,16 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     // loop maintains `out@ == seq_reverse(<suffix of data@>)`, so at exit
     // `out@ == seq_reverse(data@)` and `lemma_parse_be_reverse` gives
     // `parse_be(out@) == parse_le(data@) == n`.
+    // `data.len() >= 1` falls out of the build-loop invariant on exit; carry it as
+    // `out.len() == i` through the reverse loop so the `result.data.len() >= 1`
+    // ensures discharges (out.len() == data.len() >= 1 at exit; blocker #97).
+    out.push_str("    assert(data.len() >= 1);\n");
     out.push_str("    let mut out: Vec<u8> = Vec::new();\n");
     out.push_str("    let mut i: usize = 0;\n");
     out.push_str("    while i < data.len()\n");
     out.push_str("        invariant\n");
     out.push_str("            i <= data.len(),\n");
+    out.push_str("            out.len() == i,\n");
     out.push_str("            out@ =~= seq_reverse(data@.subrange((data.len() - i) as int, data.len() as int)),\n");
     out.push_str("        decreases data.len() - i,\n");
     out.push_str("    {\n");

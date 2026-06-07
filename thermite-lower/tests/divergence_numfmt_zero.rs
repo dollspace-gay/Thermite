@@ -51,7 +51,6 @@ const TOSTRING_SRC: &str =
     "fn show(n: u64) -> String\n  req true\n  ens parse_be(result) == n\n  fx alloc\n{ n.to_string() }\n";
 
 #[test]
-#[ignore = "divergence: L3 u64_to_string emits the empty seq for input 0 (no zero-guard) while L1 emits [48]=\"0\"; REQ-8 mandates the human-readable decimal of 0 (\"0\"); blocker #97 — un-ignore when fixed"]
 fn divergence_numfmt_l3_zero_handling_matches_l1() {
     let program = parse_src(TOSTRING_SRC);
 

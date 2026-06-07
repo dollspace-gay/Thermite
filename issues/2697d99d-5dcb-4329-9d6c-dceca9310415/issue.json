@@ -2,11 +2,12 @@
   "uuid": "2697d99d-5dcb-4329-9d6c-dceca9310415",
   "display_id": 93,
   "title": "Primitive completeness C3: break + continue in loops (verified — invariant holds at continue, interacts with decreases/diverge)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T02:42:22.830007362Z",
-  "updated_at": "2026-06-07T02:42:24.220517494Z",
+  "updated_at": "2026-06-07T04:17:04.392031626Z",
+  "closed_at": "2026-06-07T04:17:04.392031626Z",
   "labels": [
     "feature"
   ]

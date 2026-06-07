@@ -1,29 +1,21 @@
 // C7 conformance corpus (#95): the String->Option<u64> parser, USED. The oracle
 // (parse_u64.cert.json) is hand-derived (R-CHAR-3) from .design/basis/09-option-result.md
-// AC-4 + 07-strings.md REQ-9. The deliverable is that a caller given a valid, in-range
-// digit string PROVES it gets Some with the round-trip value (the strengthened parse_u64
+// AC-4 + 07-strings.md REQ-9. The deliverable: a caller given a valid, in-range digit
+// string PROVES it gets Some with the round-trip value (the strengthened parse_u64
 // contract: all_digits(s) && in-range ==> result is Some && parse_be(s) == the payload).
-// The loud None arms (non-digit / overflow / empty) are the handled-or-loud teeth.
+// The loud None arms (non-digit / overflow / empty) are the handled-or-loud teeth,
+// proven at parse_u64's own verification (tests/golden/lower/parse_u64.verus.rs).
 
 // A valid digit string in range parses to Some of its big-endian value — proven (not
 // runtime-checked). `ens result is Some` discharges from the req via parse_u64's
 // strengthened contract; the round-trip `Some(v) => parse_be(s) == v` follows. A None
-// mutant violates `result is Some` given the req -> mutation-killable -> L3.
+// mutant violates `result is Some` given the req -> mutation-killable -> L3. This is the
+// calculator's parse primitive: a valid digit string in range -> Some(value), for all
+// such inputs.
 fn parse_valid(s: String) -> Option<u64>
   req all_digits(s) && s.len() >= 1 && parse_be(s) <= 18446744073709551615
   ens result is Some
   ens match result { Some(v) => parse_be(s) == v, None => true }
-  fx  pure
-{
-  parse_u64(s)
-}
-
-// A non-digit string yields the loud None arm (handled-or-loud): the parser refuses,
-// it does not return a wrong value. `!all_digits(s) ==> result is None` is the
-// contractual guarantee that a malformed input is REFUSED, proven.
-fn parse_rejects_nondigit(s: String) -> Option<u64>
-  req s.len() >= 1 && !all_digits(s)
-  ens match result { Some(v) => false, None => true }
   fx  pure
 {
   parse_u64(s)

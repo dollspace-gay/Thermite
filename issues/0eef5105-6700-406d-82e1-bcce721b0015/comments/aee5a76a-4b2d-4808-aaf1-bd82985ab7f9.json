@@ -1,0 +1,10 @@
+{
+  "uuid": "aee5a76a-4b2d-4808-aaf1-bd82985ab7f9",
+  "issue_uuid": "0eef5105-6700-406d-82e1-bcce721b0015",
+  "author": "Yffe",
+  "content": "FIX PLAN (acto-fixer, blocker #120): single-file fix in thermite-spec/src/validator.rs, fn check_match_exhaustiveness. ROOT CAUSE: the matched enum is inferred only from an arm naming a declared variant (variant_pattern_name); a guarded-only/catch-all-only match names none, so matched_enum is None and the fn returns Ok(()) with no check. FIX: in the matched_enum-None branch, when the match has arms AND every arm is guarded (arm.guard.is_some()), no arm completes the match unconditionally -> push SpecError::NonExhaustiveMatch. The scrutinee-type approach is unavailable (untyped AST, OQ-3); the all-arms-guarded fallback is the sound reject the design (11-ergonomics REQ-3/AC-3b) sanctions. DISTINCTION preserved: unguarded _ catch-all stays accepted (exhaustive); slice/Option/integer matches with unguarded arms stay inert. Un-ignore the pin after green gauntlet.",
+  "created_at": "2026-06-07T20:48:57.672042365Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkrjfJorhxsf/9aVkmEnkybxfYX3u72YjJFld9ybUFWV+EY/Gk95xbyjLBfbe818HtbSgziAFYHZOfyigeBzXDw=="
+}

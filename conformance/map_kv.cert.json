@@ -1,0 +1,11 @@
+{
+  "item": "has_key",
+  "level": "L3",
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false
+  },
+  "effects": ["pure"],
+  "slag": false,
+  "note": "Stable-subset oracle (goal.md R-CHAR-3): item/level/tautology/vacuous_precondition/effects/slag are hand-derived from .design/basis/13-map.md (the Map<K,V> contracts: contains_key ens result == self@.contains_key(k)) + thermite-design.md §6 ladder, and are oracle-compared. mutants_killed + solver_time_ms are tool-computed + EXCLUDED (oracle_subset, §5.3). `has_key(m, k) -> bool ens result == m.contains_key(k)` proves L3: the emitted TMap wrapper's exec linear-scan `contains_key` (loop invariant `forall|j| 0<=j<i ==> data@[j].0 != k`, decreases len-i) discharges the membership relation against the spec view `spec_contains_key` (`exists|j| data@[j].0 == k`); the contract is non-vacuous + mutation-strong (a contains_key that always returns true/false, or a vacuous spec view, FAILS — verified in map_conformance.rs). fx pure (no construction). This is the mutation-strong L3 anchor of map_kv.th; the insert-then-get round-trip + the absent->None refusal are PROVEN at the TMap wrapper's own verus verification (tests/golden/lower/map_kv.verus.rs, grounded 9 verified) — the thin runnable-core fns (build_one/demo/lookup_absent) carry the §7-partial-contract caveat (a Map-return has no scoreable scalar-zero mutant; a None-only contract is the #101 partial class), so they do not reach a mutation-scored L3, by design."
+}

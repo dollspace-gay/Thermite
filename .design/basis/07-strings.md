@@ -35,6 +35,17 @@ GROUNDED gold-standard ROUND-TRIP contract (`parse_le(result@) == n`, REQ-8), an
 (#95)**, the built-in `Option`/`Result` + payload-in-contract surface, so REQ-7/REQ-8
 ship now under #94 and REQ-9 lands after C7.
 
+**Cluster C5 (#102) extends this** with the **string search / transform** layer the
+line/CSV parser acceptance program needs: the boolean substring predicates
+`contains`/`starts_with`/`ends_with` (`pure`, REQ-13), the first-occurrence search
+`find -> Option<u64>` (`pure`, REQ-14, reusing C7's built-in `Option` + spec-`match`-
+in-`ens`), the splitter `split -> Vec<String>` (`fx alloc`, REQ-15, reusing C6's non-
+`Copy` `Vec<String>`/`TVecTString`), and the whitespace-stripper `trim -> String`
+(`fx alloc`, REQ-16). All six GROUNDED L3 with real `verus` (Verification) — each
+non-vacuous (a true/Some case pinned, a mutant killed). Both dependencies (C6 #98,
+C7 #95) are CONFIRMED SHIPPED, so C5 depends on nothing not-yet-built; the six ops are
+NOT-STARTED (no code yet — the build issue is #102).
+
 **SHIPPED** (commits `b8c3bf7` + `2f5535a`, #79, critic-clean): `string_demo.th`
 certifies — `greeting_len`/`first_byte` L3 pure, `join`/`literal_len` L3 alloc,
 the no-`req` OOB access → L0. The per-REQ prose below is the original pre-build
@@ -388,6 +399,201 @@ byte-construction building block the other two stand on.
   (`.design/basis/06-provenance-and-sinks.md`), the C2 partial-operator obligations,
   and the GROUNDED `parse_u64` proof.
 
+### String SEARCH / TRANSFORM ops (crosslink #102, cluster C5 — GROUNDED)
+
+Cluster C5 (crosslink **#102**) adds the **string search / transform** layer the
+line/CSV parser acceptance program needs: the boolean substring predicates
+**`contains` / `starts_with` / `ends_with`**, the first-index search
+**`find` (→ `Option<u64>`)**, the splitter **`split` (→ `Vec<String>`)**, and the
+whitespace-stripper **`trim` (→ `String`)`. All six were GROUNDED end-to-end with
+the real `verus 0.2026.05.24` binary during authoring (Verification, below) —
+non-vacuous contracts (a true/Some case pinned, the §7 floor cleared), no
+`assume`/`admit`/`external_body`/`verifier::external`. They extend the SHIPPED
+`TString`-over-`vstd::vec::Vec<u8>` machinery (REQ-4) and stand on two CONFIRMED-
+SHIPPED dependencies:
+
+- **`find` → `Option<u64>` REUSES C7 (#95, SHIPPED, `.design/basis/09-option-result.md`
+  REQ-1/REQ-4):** the built-in `Option<T>` type (`Type::Option`), the `Some(v)`/`None`
+  constructors, and the **spec-`match`-in-`ens`** payload projection. `find`'s `ens` is
+  written exactly as C7's `parse_u64`: `ens match result { Some(at) => …, None => … }`.
+- **`split` → `Vec<String>` REUSES C6 (#98, SHIPPED, `.design/basis/04-collections.md`
+  REQ-9/REQ-10):** the non-`Copy` `Vec<String>` wrapper **`TVecTString` over
+  `vstd::vec::Vec<TString>`** with the woven `TString` element wrapper, the borrow-
+  returning `get -> &TString`, and the capacity-preserving `push`. `split` builds its
+  result by `push`-ing each `TString` piece into a `Vec<TString>` inside the scan loop.
+
+Both dependencies are SHIPPED today (C6 `vec_completeness_conformance.rs` `Vec<String>`
+`17 verified, 0 errors`; C7 `option_result_conformance.rs` L3), so C5 DEPENDS on
+nothing not-yet-built — the gap is purely that the six ops have no code yet (the
+build issue is #102).
+
+- **REQ-13 (`contains` / `starts_with` / `ends_with` — boolean substring predicates;
+  `pure`):** The surface admits the three boolean substring tests as method calls
+  `s.contains(needle)`, `s.starts_with(needle)`, `s.ends_with(needle)` (each an
+  `Expr::MethodCall`, `needle: &String`). They are READ-ONLY (`fx pure` — no
+  allocation, a scan over the existing byte view). The CONTRACT names the substring
+  relation over the byte views `s.data@` / `needle.data@` via a NAMED `spec fn`
+  `occurs_at(s, needle, at)` (the cage's named-`spec fn` composition, §4.2):
+  `starts_with` ⟺ `occurs_at(s@, needle@, 0)`; `ends_with` ⟺ `occurs_at(s@, needle@,
+  s.len() - needle.len())`; `contains` ⟺ `contains_sub(s@, needle@)` (an `exists|at|
+  occurs_at(…)`, a flat single bounded existential over the byte index — the §4.2
+  cage's `exists`, NOT a nested anonymous quantifier; `occurs_at`'s inner `forall|k|`
+  is in the NAMED `spec fn` body, flat). The GROUNDED contracts (`14 verified, 0
+  errors`, no cheat tokens):
+
+  ```verus
+  pub open spec fn occurs_at(s: Seq<u8>, needle: Seq<u8>, at: int) -> bool {
+      0 <= at && at + needle.len() <= s.len()
+      && (forall|k: int| 0 <= k < needle.len() ==> #[trigger] s[at + k] == needle[k])
+  }
+  pub open spec fn contains_sub(s: Seq<u8>, needle: Seq<u8>) -> bool {
+      exists|at: int| occurs_at(s, needle, at)
+  }
+  // starts_with: req well_formed, ens result == occurs_at(s@, needle@, 0)
+  // ends_with:   ens result == occurs_at(s@, needle@, (s.len()-needle.len()) as int)
+  // contains:    ens result == contains_sub(s@, needle@)
+  ```
+
+  The exec form is a SCAN with a loop invariant: `starts_with`/`ends_with` scan the
+  `needle.len()` overlap with invariant `forall|k| 0 <= k < i ==> s@[off+k] ==
+  needle@[k]` + `decreases needle.len() - i`; `contains` is the outer
+  occurrence-position scan (`at` from `0` to `s.len()-needle.len()`) calling the
+  inner `matches_at` helper, with invariant `forall|j| 0 <= j < at ==> !occurs_at(s@,
+  needle@, j)` + `decreases (last+1) - at`, proving `!contains_sub` on the no-match
+  exit via a `assert forall … implies false by { … }` block. **NON-VACUITY
+  CONFIRMED (both arms):** a TRUE case (`starts_with` on a known prefix) PROVES `r ==
+  true`; a broken `starts_with` that drops the byte-mismatch check (always returns
+  `true`) FAILS verus (`13 verified, 1 errors`) — the predicate is real teeth, the
+  false case bites. Derived from §4.2 (the cage — bounded `exists`, named `spec fn`
+  composition), §4.4 (one call syntax, closed built-in set), §6 (L3), and the
+  GROUNDED `contains`/`starts_with`/`ends_with` proofs.
+
+- **REQ-14 (`find` / `index_of` — first occurrence index → `Option<u64>`; `pure`;
+  REUSES C7 Option):** The surface admits `s.find(needle) -> Option<u64>` (the
+  spelling is `find`; `index_of` is NOT a second surface — one way, §2.3): the first
+  index at which `needle` occurs in `s`, or `None`. An `Expr::MethodCall` returning
+  the built-in `Type::Option(u64)` (C7). It is READ-ONLY (`fx pure`). The CONTRACT is
+  the spec-`match`-in-`ens` (the C7 form, NO new surface): a `Some(at)` carries the
+  occurrence witness, a `None` carries the no-occurrence guarantee. GROUNDED (within
+  the `14 verified, 0 errors` probe, no cheat tokens):
+
+  ```verus
+  pub fn find(&self, p: &TString) -> (result: Option<u64>)
+      requires self.well_formed(), p.well_formed(),
+      ensures match result {
+          Some(at) => at + p.data.len() <= self.data.len()
+                      && occurs_at(self.data@, p.data@, at as int),    // the occurrence witness
+          None     => !contains_sub(self.data@, p.data@),              // the LOUD no-occurrence
+      },
+  { /* the same outer occurrence-position scan as `contains`, returning Some(at) on
+       the first match; the no-match exit proves !contains_sub via the forall-implies-
+       false block */ }
+  ```
+
+  The exec form is the SAME outer scan as `contains` (`at` from `0`, the inner
+  `matches_at`), returning `Some(at as u64)` on the first hit. The `Some` arm's bound
+  is the HONEST provable form `at + p.len <= s.len` (NOT `at < s.len`, which is false
+  for an empty needle matching at `at == s.len`). The `None` arm is the handled-or-
+  loud tooth (`.design/basis/06-provenance-and-sinks.md`): a needle absent ⟹ `None`,
+  never a wrong index. **AVOIDING THE #101 EQUIVALENT-MUTANT TRAP:** the demo PINS a
+  Some case — `demo_find_some` (`req` the needle's bytes equal `s`'s leading bytes,
+  `needle.len() >= 1`) PROVES `result is Some`. Because a found case is pinned, a
+  broken always-`None` `find` is provably WRONG (FAILS verus `13 verified, 1 errors`,
+  the `None => !contains_sub` arm bites), NOT behaviorally equivalent — so the §7 gate
+  can kill the always-None mutant (unlike the C7 `parse_u64` forced-None demo refused
+  under `req !all_digits`, #101). Derived from §4.2 (the cage), §4.4, §6 (L3), C7
+  (`.design/basis/09-option-result.md` REQ-1/REQ-4 — built-in `Option` + spec-`match`-
+  in-`ens`, SHIPPED), the handled-or-loud principle, and the GROUNDED `find` proof.
+
+- **REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`; REUSES C6
+  `Vec<String>`):** The surface admits `s.split(sep) -> Vec<String>` (the parser's
+  core) where `sep` is a separator byte (a `u64` in the `byte_at -> u64` zero-extend
+  convention, cast to the `u8` backing). An `Expr::MethodCall` returning a
+  `Vec<String>` (C6's `Type::Vec(Box<Type::String>)` → `TVecTString`). It is a
+  CONSTRUCTING op (it allocates the `Vec<TString>` and each piece), so a fn using it
+  carries **`fx alloc`** (the REQ-4/REQ-7 effect-row rule). The **STRONGEST CONTRACT
+  THAT PROVED** is the **count-bound + sep-free** floor — NOT a full reconstruct-
+  round-trip. GROUNDED (`7 verified, 0 errors`, no cheat tokens):
+
+  ```verus
+  pub open spec fn count_sep(s: Seq<u8>, sep: u8) -> nat decreases s.len()
+  { if s.len() == 0 { 0 }
+    else { (if s[0] == sep { 1nat } else { 0nat }) + count_sep(s.subrange(1, s.len() as int), sep) } }
+  pub open spec fn sep_free(s: Seq<u8>, sep: u8) -> bool
+  { forall|i: int| 0 <= i < s.len() ==> #[trigger] s[i] != sep }
+
+  // The back-extension lemma (proved by induction, the count invariant's engine):
+  pub proof fn lemma_count_push(s: Seq<u8>, b: u8, sep: u8)
+      ensures count_sep(s.push(b), sep) == count_sep(s, sep) + (if b == sep { 1nat } else { 0nat }),
+      decreases s.len(), { /* base: subrange(1,1) == empty; step: subrange recurse */ }
+
+  pub fn split(&self, sep: u8) -> (result: TVecTString)
+      requires self.well_formed(),
+      ensures
+          result.data.len() >= 1,                                          // ALWAYS >= 1 piece
+          result.data.len() == 1 + count_sep(self.data@, sep),             // the COUNT bound
+          forall|k: int| 0 <= k < result.data.len()
+              ==> sep_free(#[trigger] result.data@[k].data@, sep),         // each piece sep-free
+  { /* the scan loop: build `cur: Vec<u8>`; on a `sep` byte push `TString { data: cur }`
+       into `pieces: Vec<TString>` and reset `cur`; else push the byte onto `cur`;
+       after the loop push the final `cur`. */ }
+  ```
+
+  **THE Vec<String> PUSH LOOP (the parser core):** the scan walks `s.data@`; the LOOP
+  INVARIANT carries (1) `pieces.len() == count_sep(self.data@.subrange(0, i), sep)`
+  (the count partial, maintained by `lemma_count_push` on each prefix extension), (2)
+  `sep_free(cur@, sep)` (the current piece has no separator), and (3) `forall|k| 0 <=
+  k < pieces.len() ==> sep_free(pieces@[k].data@, sep)` (every COMPLETED piece is
+  sep-free) + `decreases self.data.len() - i`. On the loop exit the closing assertion
+  `self.data@.subrange(0, len) == self.data@` lifts the count to the whole input; the
+  final `pieces.push(cur)` adds the trailing piece (the `+1`). The piece `Vec<TString>`
+  push reuses the C6 `TVecTString` borrow-`get` machinery (the element-wrapper weave,
+  REQ-10). **HONEST CONTRACT NOTE (the strength ceiling):** the full reconstruct-round-
+  trip (`concat-with-sep(pieces) == s`) is the GOLD STANDARD but needs a `Seq`-of-`Seq`
+  flatten lemma far heavier than the count/sep-free floor; v1 ships the **count-bound +
+  sep-free** contract (the strongest that proved cleanly), which already pins (a) the
+  exact piece count, (b) that no piece contains the separator. **NON-VACUITY:** a
+  broken `split` that drops the mid-loop `pieces.push` (always 1 piece) FAILS verus
+  (`6 verified, 1 errors`) — the count bound bites. Derived from §4.1 (`alloc`), §4.2
+  (the cage — `count_sep`/`sep_free` named `spec fn`s, bounded), §4.4, §6 (L3), C6
+  (`.design/basis/04-collections.md` REQ-9/REQ-10 — `Vec<String>`/`TVecTString`,
+  SHIPPED), and the GROUNDED `split` proof.
+
+- **REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`):**
+  The surface admits `s.trim() -> String` (strip leading and trailing ASCII whitespace
+  — space/`\t`/`\n`/`\r`). An `Expr::MethodCall`; a CONSTRUCTING op (it copies the
+  trimmed run into a fresh `String`), so `fx alloc`. The CONTRACT is the length bound
+  PLUS the content relation (the trimmed result IS a contiguous subrange of the
+  source). GROUNDED (`8 verified, 0 errors`, no cheat tokens):
+
+  ```verus
+  pub open spec fn is_space(b: u8) -> bool { b == 32 || b == 9 || b == 10 || b == 13 }
+
+  pub fn trim(&self) -> (result: TString)
+      requires self.well_formed(),
+      ensures
+          result.well_formed(),
+          result.data.len() <= self.data.len(),                            // the length floor
+          exists|lo: int, hi: int|                                         // the CONTENT relation
+              0 <= lo <= hi <= self.data.len()
+              && result.data@ == self.data@.subrange(lo, hi),
+  { /* scan `lo` forward past leading whitespace; `hi` backward past trailing
+       whitespace; copy `[lo, hi)` into a fresh `Vec<u8>` with the subrange invariant
+       `out@ == self.data@.subrange(lo, i)`. */ }
+  ```
+
+  **THE COPY LOOP:** scan `lo` forward while `is_space(s[lo])`, scan `hi` (exclusive)
+  backward while `is_space(s[hi-1])`, then copy `[lo, hi)` into a fresh `Vec<u8>` with
+  the loop invariant `out@ == self.data@.subrange(lo, i)` + `decreases hi - i`,
+  maintained by the `subrange(lo, i+1) == subrange(lo, i).push(s@[i])` step. The
+  content relation (result is a contiguous subrange) is the meaningful contract — it
+  pins the trimmed bytes are a slice of the source, not arbitrary. (A full
+  whitespace-boundary content claim — the trimmed boundary bytes are non-space — is a
+  follow-up strengthening over the same scan; v1 ships the subrange-content + length
+  floor, GROUNDED.) `fx alloc` (constructing). Derived from §4.1 (`alloc`), §4.2 (the
+  cage — `is_space` named `spec fn`, bounded subrange), §4.4, §6 (L3), and the GROUNDED
+  `trim` proof.
+
 ### Validator / the SpecTherm cage (governs `thermite-spec/src/validator.rs`)
 
 - **REQ-3 (string contracts fit the §4.2 cage — flat, no-OOB index, length,
@@ -489,6 +695,28 @@ the Stage-1/Stage-4 layer split:
   the §4.2-cage spec sublanguage does not yet admit; once C7 lands, 7c gains the
   `parse_u64` Horner-accumulate loop + the `parse_be`/`all_digits` spec fns + the
   `None`-arm handled-or-loud error path.
+
+- **C5 — string search / transform (#102, layered across 7b/7c).** *7b
+  (`thermite-spec`):* `starts_with`/`ends_with` ADDED to `BUILTIN_METHODS` so their
+  `ens result == occurs_at(…)` validates inside the §4.2 cage (REQ-13); `find` ADDED to
+  `BUILTIN_METHODS` (its `ens` is the C7 spec-`match`-in-`ens`, REQ-14); `split`/`trim`
+  ADDED so a contract may NAME them (REQ-15/REQ-16). The generated predicate `spec fn`s
+  `occurs_at`/`contains_sub`/`count_sep`/`sep_free`/`is_space` are seeded into
+  `Validator::spec_fns` (`GENERATED_SPEC_FNS`, the C4 `parse_le`/`pow10` precedent) so
+  the contracts validate as named `spec fn` calls. **NOTE (the `contains` name clash):**
+  C6 (#98) already put `contains` in `BUILTIN_METHODS` as the `Vec` element-membership
+  predicate; the STRING `contains` (substring) shares the surface name but is keyed on
+  the RECEIVER type (`String` vs `Vec`) by the lowerer — the builder must dispatch
+  `contains` to the substring scan only for a `String` receiver (the `Vec` membership
+  scan is unchanged). *7c (`thermite-lower`):* `emit_string_wrapper` gains the
+  `contains`/`starts_with`/`ends_with` byte-scan methods (REQ-13), the `find ->
+  Option<u64>` occurrence scan (REQ-14, reusing C7's `Type::Option` lowering), the
+  `split -> TVecTString` push-loop (REQ-15, reusing C6's `TVecTString`/borrow-`get` —
+  the `TVecTString` wrapper must be woven when a program calls `split`, the REQ-10
+  weave) + the `count_sep`/`sep_free`/`occurs_at`/`contains_sub` spec fns + the
+  `lemma_count_push` proof fn, and the `trim -> TString` whitespace-scan + bounded copy
+  (REQ-16) + the `is_space` spec fn. The predicate/find ops are `pure`; `split`/`trim`
+  are `alloc` (constructing).
 
 Symbol anchors: `enum Expr` (`StrLit`), `enum Type` (`String`), `enum Effect`
 (`Alloc`) in `ast.rs`; `fn parse_primary` / `fn parse_type` in `parser.rs`;
@@ -682,6 +910,53 @@ once C7 / #95 lands — AC-8 below is gated.)
   FAILS to verify (GROUNDED `2 verified, 1 errors` — non-vacuity, R-DEFER-9). UNTIL
   C7 lands this AC is NOT exercised — REQ-9 is NOT-STARTED. (REQ-9; blocked on #95.)
 
+### C5 acceptance criteria (#102 — string search / transform, GROUNDED)
+
+The orchestrator authors a NEW corpus program — `conformance/string_search_demo.th`
+(`contains`/`starts_with`/`ends_with` bool, `find` → `Option<u64>`, `split` →
+`Vec<String>`, `trim` → `String`, certifying L3 — the predicate/find ops `pure`, the
+`split`/`trim` ops `alloc`) — its golden lowering at
+`tests/golden/lower/string_search_demo.verus.rs` (hand-authored from the GROUNDED
+forms above, confirmed to pass `verus`) and cert golden at
+`conformance/string_search_demo.cert.json`. The `find` corpus PINS a Some case (a
+needle present at index 0) so the always-None mutant is killable (#101 trap avoided).
+
+- **AC-9 (`contains`/`starts_with`/`ends_with` certify L3 pure — a true AND a false
+  case):** the three boolean predicates lower to the byte scans (REQ-13), the contract
+  names `occurs_at`/`contains_sub` as seeded `spec fn`s inside the §4.2 cage, the real
+  `verus` binary exits 0 (`N verified, 0 errors`, within the GROUNDED `14 verified, 0
+  errors`); `forge check` certifies L3 `effects: [pure]`. A TRUE case (a known prefix)
+  PROVES `result == true`; a broken `starts_with` (drops the byte-mismatch check) FAILS
+  verus (`13 verified, 1 errors`, the FALSE case bites — non-vacuous, R-DEFER-9).
+  (REQ-13.)
+
+- **AC-10 (`find` certifies L3 pure with the spec-`match`-in-`ens`; the Some case
+  pinned — #101):** `s.find(needle) -> Option<u64>` lowers to the occurrence scan
+  (REQ-14), the `ens match result { Some(at) => occurs_at(…), None => !contains_sub(…)
+  }` (the C7 spec-`match` form), `verus` exits 0 (`N verified, 0 errors`); `forge check`
+  certifies L3 `effects: [pure]`. A PINNED Some case (needle present) PROVES `result is
+  Some`; a broken always-`None` `find` FAILS verus (`13 verified, 1 errors`, the `None
+  => !contains_sub` arm bites). Because the Some case is pinned, the always-None mutant
+  is provably WRONG (not equivalent), so the §7 gate kills it — the #101
+  equivalent-mutant trap is AVOIDED. (REQ-14; reuses C7 #95.)
+
+- **AC-11 (`split` certifies L3 alloc — the count-bound + sep-free contract; the
+  Vec<String> push loop):** `s.split(sep) -> Vec<String>` lowers to the scan loop that
+  `push`es `TString` pieces into a `TVecTString` (REQ-15, reusing C6 #98's
+  `Vec<String>`/`TVecTString`), the `ens result.data.len() == 1 + count_sep(s@, sep) &&
+  forall|k| sep_free(pieces[k])`, `verus` exits 0 (`N verified, 0 errors`, within the
+  GROUNDED `7 verified, 0 errors`); the constructing fn carries `fx alloc`; `forge
+  check` certifies L3 `effects: [alloc]`. A broken `split` (drops the mid-loop
+  `pieces.push`) FAILS verus (`6 verified, 1 errors`, the count bound bites —
+  non-vacuous). (REQ-15; reuses C6 #98.)
+
+- **AC-12 (`trim` certifies L3 alloc — the length floor + subrange content):**
+  `s.trim() -> String` lowers to the forward/backward whitespace scan + the bounded
+  copy (REQ-16), the `ens result.data.len() <= s.data.len() && exists|lo,hi|
+  result.data@ == s.data@.subrange(lo,hi)`, `verus` exits 0 (`N verified, 0 errors`,
+  the GROUNDED `8 verified, 0 errors`); `fx alloc`; `forge check` L3 `effects:
+  [alloc]`. (REQ-16.)
+
 
 ## Architecture
 
@@ -786,6 +1061,38 @@ The component spans three crates, all additively:
   digit-extraction and Horner loops both verify with a real invariant + `decreases`.
   (Scratch cleaned per #53 — no stray `*.rs`/`*.rlib`/`*.d` left.)
 
+- **C5 Verus grounding (DONE during authoring — real `verus 0.2026.05.24`, #102).**
+  Three `verus!{}` probes were run; ALL cheat-free (grep `assume`/`admit`/
+  `external_body`/`verifier::external`: NONE):
+  - `contains`/`starts_with`/`ends_with` (the byte scans over `occurs_at`/
+    `contains_sub`) + `find -> Option<u64>` (the occurrence scan, the spec-`match`-in-
+    `ens` `Some(at)`/`None` arms) + the non-vacuity demos (a `starts_with` TRUE case
+    PROVES `r == true`; `demo_find_some` PINS a Some case PROVING `result is Some`):
+    **`14 verified, 0 errors`.** Non-vacuity / mutation: a broken `starts_with`
+    (drops the byte-mismatch check) FAILS `13 verified, 1 errors`; a broken always-
+    `None` `find` FAILS `13 verified, 1 errors` (the `None => !contains_sub` arm
+    bites — and because the Some case is PINNED, the always-None mutant is provably
+    wrong, NOT equivalent — the #101 trap avoided).
+  - `trim -> String` (the forward/backward whitespace scan + the bounded `[lo,hi)`
+    copy with the subrange invariant `out@ == s@.subrange(lo, i)`), `ens len <=
+    self.len() && exists|lo,hi| result@ == s@.subrange(lo,hi)`: **`8 verified, 0
+    errors`.**
+  - `split -> Vec<String>` (the scan loop `push`-ing `TString` pieces into a
+    `TVecTString`, the count invariant `pieces.len() == count_sep(s@.subrange(0,i))`
+    maintained by the `lemma_count_push` back-extension lemma, `sep_free` per piece),
+    the STRONGEST proved contract `ens result.len() == 1 + count_sep(s@, sep) &&
+    result.len() >= 1 && forall|k| sep_free(pieces[k])`: **`7 verified, 0 errors`**
+    (the count-bound + sep-free floor — NOT a reconstruct-round-trip, which needs a
+    Seq-of-Seq flatten lemma far heavier; the honest strength ceiling). Non-vacuity: a
+    broken `split` (drops the mid-loop `pieces.push`) FAILS `6 verified, 1 errors` (the
+    count bound bites). The Vec<String> push loop exercises C6's `TVecTString`/borrow-
+    `get` machinery (SHIPPED #98).
+  This proves the C5 stack (the boolean substring predicates + `find` → built-in
+  `Option` + `split` → `Vec<String>` + `trim`) is Verus-feasible end to end; `find`
+  reuses C7's `Option` + spec-`match`-in-`ens` (SHIPPED #95) and `split` reuses C6's
+  `Vec<String>`/`TVecTString` (SHIPPED #98) — neither dependency is not-yet-built.
+  (Scratch cleaned per #53 — no stray `*.rs`/`*.rlib`/`*.d`/build dirs left.)
+
 - **Toolchain path grounded:** `./target/debug/forge check conformance/vec_demo.th`
   exits 0 emitting L3 certs with `effects: [pure]` (read-only `checked_get`) and
   `effects: [alloc]` (constructing `push_one`) — the exact cert shape
@@ -822,6 +1129,13 @@ The corpus program `conformance/string_demo.th`, its `.cert.json` golden, and th
 `tests/golden/lower/string_demo.verus.rs` lowering are authored by the orchestrator
 from this doc (and the GROUNDED `TString` seed) before the builder runs (R-CHAR-3).
 
+The C5 corpus program `conformance/string_search_demo.th` (`contains`/`starts_with`/
+`ends_with`/`find`/`split`/`trim`), its `.cert.json` golden, and
+`tests/golden/lower/string_search_demo.verus.rs` are authored by the orchestrator from
+this doc (and the GROUNDED C5 forms above) before the builder runs (R-CHAR-3). The
+existing four routes (`ast.rs`/`parser.rs`/`validator.rs`/`lower.rs` → this doc) already
+cover the C5 surface — no new route is needed; #102 owns the build.
+
 ## REQ status
 
 | REQ | Status | Evidence |
@@ -836,6 +1150,10 @@ from this doc (and the GROUNDED `TString` seed) before the builder runs (R-CHAR-
 | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | #94 cluster C4. `push_byte` ADDED to `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`, now `["len","get","byte_at","concat","slice","push_byte","to_string"]`); `from_byte`/`push_byte` methods ADDED to `emit_string_wrapper` (`thermite-lower/src/lower.rs`) — `from_byte(b: u64) -> TString` (`ens len==1 && data@[0]==b as u8`) + `push_byte(&self, b: u64) -> TString` (`req len < CAP`, `ens len==old+1 && data@[old]==b as u8` + the element frame `forall|j| 0 <= j < old ==> result@[j]==self@[j]`); the surface byte is `u64` (the `byte_at -> u64` zero-extension convention), cast to the `u8` backing. `String::from_byte(b)` (a path call) lowers to `TString::from_byte(b)` (the `lower_expr` `Path` arm `String::`→`TString::` rewrite); `fx alloc` via effect-subsumption (the REQ-4 `concat` rule). Owned-result form (no `&mut`/`final`). GROUNDED `verified, 0 errors` (reuses vstd's verified `Vec::push`). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs::ac6_byte_builder_certifies_l3_alloc` (real verus L3 / `effects: [alloc]`). |
 | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | #94 cluster C4. `to_string` ADDED to `BUILTIN_METHODS`; the GENERATED `parse_le`/`pow10` seeded into `Validator::spec_fns` (`GENERATED_SPEC_FNS`) so `ens parse_le(result) == n` validates inside the §4.2 cage. `lower.rs::emit_numfmt_defs` emits the `pow10`/`parse_le` spec fns + the `lemma_parse_push` append lemma + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop with the round-trip invariant `parse_le(data@) + m*pow10(data.len()) == n` + `decreases m` + `by(nonlinear_arith)` + `=~=` extensionality), materialized when the program uses `n.to_string()` / names `parse_le` (`program_uses_numfmt`). `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); `parse_le(result)` lowers to `parse_le(result.data@)` (`lower_spec_arg` String byte-view rule) with the `as nat` coercion (`nat_fns += parse_le`). The round-trip `ens parse_le(result.data@) == n as nat` is the GOLD STANDARD — GROUNDED `16 verified, 0 errors` end-to-end (the wrapper + numfmt + the surface `show`), no `assume`/`external_body`/`admit`; a WRONG digit (`+49` instead of `+48`) FAILS verus `15 verified, 1 errors` (non-vacuous, R-DEFER-9). v1 builds LSB-first (the proven form); the human MSB-first display reversal is the design's noted `parse_be(reverse(s)) == parse_le(s)` bridge (follow-up). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` — `ac7_to_string_round_trip_certifies_l3` (L3, mutants 1/1, non-vacuous), `ac7_overclaimed_round_trip_is_rejected` (an overclaimed `== n+1` REJECTED, never L3), `ac7_formatter_builds_and_prints_decimal` (the formatter builds + RUNS + prints the decimal digits of 42). |
 | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud) | SHIPPED | #95 cluster C7 (the C7 built-in `Option` + payload-in-contract surface landed, unblocking this). `thermite-lower::lower::emit_parse_defs` emits the `is_digit`/`all_digits`/`parse_be` spec fns + `parse_u64(s: &TString) -> Option<u64>` (the Horner-accumulate loop `acc = acc*10 + digit`, the BE partial-value invariant + all-digits prefix witness + `decreases s.data.len() - i`, the three handled-or-loud `None` arms — empty / non-digit / overflow, each screaming BEFORE corrupting `acc`) with the STRENGTHENED, caller-usable contract (#100): the success-arm round-trip `Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat` PLUS the guarantee `(all_digits && len>=1 && parse_be<=u64::MAX) ==> result is Some` (so a caller with that `req` discharges `ens result is Some`) PLUS the refusal `result is None ==> (!all_digits || len==0 || parse_be>u64::MAX)`. The new monotonicity lemma `lemma_parse_be_prefix_le` lifts the overflow-prefix witness to the whole input. Materialized when `program_uses_parse` (a `parse_u64` call); `parse_be` shared+deduped with the C4 numfmt round-trip. NO `assume`/`external_body`/`admit` (R-DEFER-9). Consumer: `lower`. Verified: the EXTERNAL cert/golden oracle (#100) `forge check conformance/parse_u64.th` → `parse_valid` L3 == `conformance/parse_u64.cert.json` (`forge/tests/check_conformance.rs::parse_valid_cert_matches_golden_deterministic_subset`) + the golden lowering `tests/golden/lower/parse_u64.verus.rs` (`34 verified, 0 errors`) + `forge/tests/option_result_conformance.rs::ac4_parse_u64_lowering_verifies_under_real_verus` (real verus) + `ac4_broken_parse_u64_body_fails_real_verus` (a broken `Some(0)` FAILS, non-vacuous). The C7 surface (`.design/basis/09-option-result.md` REQ-1..REQ-5) is the dependency that landed. |
+| REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`) | NOT-STARTED | #102 cluster C5 (build issue). No code exists: `grep starts_with\|ends_with thermite-spec/src thermite-lower/src` returns NO string predicate (only the unrelated Rust-stdlib `str::starts_with`/`ends_with` in `l1.rs`/`lower.rs` internals); `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`) = `["len","get","last","contains","byte_at","concat","slice","push_byte","to_string"]` — `starts_with`/`ends_with` are ABSENT (and the existing `contains` is the C6 `Vec` membership predicate, NOT the string substring op — the name must be RECEIVER-type-dispatched by the builder). `occurs_at`/`contains_sub` are not in `GENERATED_SPEC_FNS`; `emit_string_wrapper` (`thermite-lower/src/lower.rs`) has `len`/`byte_at`/`concat`/`slice`/`from_byte`/`push_byte` but no predicate scans. GROUNDED-feasible (`14 verified, 0 errors`; a broken `starts_with` FAILS `13 verified, 1 errors`, non-vacuous). Not implemented. |
+| REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`; reuses C7 Option) | NOT-STARTED | #102 cluster C5 (build issue). No `find` string op exists (the `find` hits in `lower.rs`/`l1.rs` are iterator `.find()` internals, not the string surface op). The dependency C7 (`.design/basis/09-option-result.md` REQ-1/REQ-4 — built-in `Type::Option` + spec-`match`-in-`ens`) is CONFIRMED SHIPPED (#95, `option_result_conformance.rs` L3), so the return type + the `ens match result { Some(at) => …, None => … }` surface are available; the gap is the `find` method + its occurrence scan in `emit_string_wrapper`. GROUNDED-feasible (within `14 verified, 0 errors`; the PINNED Some case avoids the #101 trap — a broken always-`None` `find` FAILS `13 verified, 1 errors`). Not implemented. |
+| REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`; reuses C6 `Vec<String>`) | NOT-STARTED | #102 cluster C5 (build issue, the parser core). No `split` string op exists (the `split` hits in `lower.rs` are unrelated `str::split`/local var names). The dependency C6 (`.design/basis/04-collections.md` REQ-9/REQ-10 — `Vec<String>`/`TVecTString` over `vstd::vec::Vec<TString>`, the borrow-`get`, the woven element wrapper) is CONFIRMED SHIPPED (#98, `vec_completeness_conformance.rs` `Vec<String>` `17 verified, 0 errors`), so the result type + the push-into-`Vec<TString>` machinery are available; the gap is the `split` method + its push loop + the `count_sep`/`sep_free` spec fns + `lemma_count_push` in `lower.rs` (and weaving `TVecTString` when a program calls `split`, the REQ-10 weave). GROUNDED-feasible — the STRONGEST proved contract is the count-bound + sep-free floor (`7 verified, 0 errors`; NOT a reconstruct-round-trip; a broken `split` FAILS `6 verified, 1 errors`, non-vacuous). Not implemented. |
+| REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | NOT-STARTED | #102 cluster C5 (build issue). No `trim` string op exists (the `.trim()` hits in `parser.rs`/`lower.rs` are Rust-stdlib `str::trim` internals, not the Thermite surface op). The constructing-op `fx alloc` rule + the bounded-copy loop machinery it reuses (the `slice` copy loop in `emit_string_wrapper`) are SHIPPED; the gap is the `trim` method + the forward/backward whitespace scan + the `is_space` spec fn in `lower.rs`. GROUNDED-feasible (`8 verified, 0 errors` — the length floor + the subrange content relation `result@ == s@.subrange(lo,hi)`). Not implemented. |
 
 ## Open questions (for the orchestrator before the builder runs)
 

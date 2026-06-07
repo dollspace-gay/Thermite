@@ -1,0 +1,10 @@
+{
+  "uuid": "c2213c72-e875-462c-89c1-d0b21d11756a",
+  "issue_uuid": "ce1cb343-ed20-43b7-a628-919df216cf53",
+  "author": "Yffe",
+  "content": "SHIPPED under #112 (d72e60f) + critic-clean. The C10 ergonomics cluster (tuple destructure/for/match-guards/or-patterns/if-let) was built + audited as one commit; this per-REQ sub-blocker is resolved. See #112.",
+  "created_at": "2026-06-07T21:31:13.717169026Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAK+jcRNLZpZx2nm3K6xUjuefMiaygEsRcoC3gOkFpZMflWkurgXXVg93SA3ZXol403ASm11WD8p3qpoY8PVFpAQ=="
+}

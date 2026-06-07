@@ -2,11 +2,12 @@
   "uuid": "468b50f9-8fe6-4fba-bc54-23594132a3e7",
   "display_id": 123,
   "title": "C12 Map<K,V>: Type::Map two-arg node + Vec-of-pairs backing + insert/get/contains_key/len ops + Type-match ripple + skill fragment — NOT-STARTED per .design/basis/13-map.md (GROUNDED 8 verified, 0 errors)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T21:39:02.684505531Z",
-  "updated_at": "2026-06-07T21:39:04.166890483Z",
+  "updated_at": "2026-06-07T22:28:52.043766440Z",
+  "closed_at": "2026-06-07T22:28:52.043766440Z",
   "labels": [
     "blocker"
   ]

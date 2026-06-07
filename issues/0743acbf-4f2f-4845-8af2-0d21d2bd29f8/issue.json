@@ -2,11 +2,12 @@
   "uuid": "0743acbf-4f2f-4845-8af2-0d21d2bd29f8",
   "display_id": 110,
   "title": "Divergence: forge::check aborts mutual-recursion termination rejection as a VIR environment error (exit 2, no cert) instead of REQ-6 'rejected there, no crash'",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T17:56:33.395956340Z",
-  "updated_at": "2026-06-07T17:56:34.865369613Z",
+  "updated_at": "2026-06-07T18:08:50.814585812Z",
+  "closed_at": "2026-06-07T18:08:50.814585812Z",
   "labels": [
     "blocker"
   ]

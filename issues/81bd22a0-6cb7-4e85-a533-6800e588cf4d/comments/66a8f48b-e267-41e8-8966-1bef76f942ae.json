@@ -1,0 +1,10 @@
+{
+  "uuid": "66a8f48b-e267-41e8-8966-1bef76f942ae",
+  "issue_uuid": "81bd22a0-6cb7-4e85-a533-6800e588cf4d",
+  "author": "Yffe",
+  "content": "RESOLVED by 4277bf1 (#90): render_frame caps at L3 (the u64_to_string len<=20 upper-bound ens discharges the §4.2 concat CAP) and the build E0382 (render_frame -> &Buffer) is fixed. The 2 pinned divergence tests were folded into editor_runs.rs (which now asserts render_frame/decode L3 + the build+run). forge check: render_frame L3, decode L3; forge build --entry run compiles + runs (mid-text splice). Critic-confirmed NO DIVERGENCE.",
+  "created_at": "2026-06-07T17:11:59.824840162Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAvKJZfP35fn1EtT9OySNQKNSeL7GUC8VSeDo8g4VbrHchDlWPu1ejkOauRCL0NQXq7AGbnOpoaEV1p6FelTZECA=="
+}

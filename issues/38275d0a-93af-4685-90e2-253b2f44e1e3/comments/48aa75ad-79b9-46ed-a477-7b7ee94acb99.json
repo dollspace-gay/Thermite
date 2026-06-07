@@ -1,0 +1,10 @@
+{
+  "uuid": "48aa75ad-79b9-46ed-a477-7b7ee94acb99",
+  "issue_uuid": "38275d0a-93af-4685-90e2-253b2f44e1e3",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (deed870). 3 R2 blockers: (1) fx diverge -> L1 cap (mutation-exempt) via gate_fn fn_is_diverge -> DivergeL1, mirroring boundary_l1; (2) L1 ens-after-move fixed (snapshot non-Copy params .clone() pre-body + rename in ens); (3) L1 empty-literal -> TString in struct-lit. Critic NO DIVERGENCE: the diverge L1 cap is HONEST + strict + diverge-only — the effect-row firewall (a caller of a diverge fn must itself be diverge) means no L3 cert rests on a diverge fn's unverified ens; a non-diverge weak contract still -> L0; a vacuous diverge ens still rejects EnsIsTrivial. 540 tests.",
+  "created_at": "2026-06-07T00:48:54.378137409Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtaiZSB+KKfyJjVwycQf5fsmLYgPSBHvxPibqczyKGL0+gPAsuwL5cmmz7326OcmaaeX30OBOhMOVkkGtjROVDA=="
+}

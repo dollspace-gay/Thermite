@@ -1,0 +1,10 @@
+{
+  "uuid": "d2517c6c-f5c9-4cbc-93a1-7e1ed4c19599",
+  "display_id": 98,
+  "title": "Primitive completeness C6: Vec completeness — pop/insert/remove/contains, Vec<String>/Vec<struct> (non-Copy elements), Vec::new()-no-param wrapper bug",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T05:57:21.842067286Z",
+  "updated_at": "2026-06-07T05:57:21.842067286Z"
+}

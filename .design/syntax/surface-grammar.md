@@ -18,10 +18,11 @@ thesis-refs:
 This is the canonical EBNF for the Thermite v0.1 surface language: exactly the
 constructs in the two conformance programs (`conformance/sum.th`,
 `conformance/binary_search.th`) and §4, plus the primitive-completeness additions
-(#91/#92: char/hex/binary literals and the integer operators `% << >> & | ^ !`),
-and *no more* (pillar 3, "one way to do everything", §2). It is the shared anchor
-that `lexer.md`, `ast.md`, `parser.md`, and `semantic-addressing.md` all
-reference. The parser is the executable form of this grammar.
+(#91/#92: char/hex/binary literals and the integer operators `% << >> & | ^ !`;
+#93: `break`/`continue` in loops), and *no more* (pillar 3, "one way to do
+everything", §2). It is the shared anchor that `lexer.md`, `ast.md`, `parser.md`,
+and `semantic-addressing.md` all reference. The parser is the executable form of
+this grammar.
 
 This doc is GREENFIELD / FORWARD-LOOKING: no parser code exists. Every REQ is
 **NOT-STARTED**, blocked on issue #3.
@@ -36,6 +37,13 @@ The grammar enforces **clause PRESENCE and structure only**. It does NOT enforce
 - **the partiality obligations of `/`/`%`/`<<`/`>>`** (`ast.md` REQ-11): the
   grammar parses `a / b` regardless; the divide-by-zero / shift-bound obligation
   is a §7 PROOF obligation discharged at verification, not a parse rule.
+- **whether a `continue` preserves the loop invariant / respects `dec`, or
+  whether `break` exits soundly** (#93): the grammar parses `break;`/`continue;`
+  inside a loop body; the invariant-at-continue and decreases-interaction
+  semantics are §7 PROOF obligations Verus checks on the lowered loop
+  (`verus-lowering.md` REQ-12), not parse rules. The grammar's ONE structural
+  break/continue rule is `break`/`continue` must appear inside a loop body
+  (`parser.md` REQ-10).
 
 The grammar's job: a `fn` without all three of `req`/`ens`/`fx`, or a `loop`/
 `while` missing `inv`/`dec`, is a **parse error** (§4.1). A combinator call like
@@ -61,8 +69,9 @@ The grammar's job: a `fn` without all three of `req`/`ens`/`fx`, or a `loop`/
 
 - **REQ-4 (statement grammar):** A block `{ }` is a sequence of statements with
   an optional trailing tail expression. Statements: `let mut? NAME : TYPE = EXPR
-  ;`, assignment `LVALUE = EXPR ;`, `return EXPR? ;`, the `if`/`else` statement,
-  and `EXPR ;`. Derived from §4.3 and the corpus bodies.
+  ;`, assignment `LVALUE = EXPR ;`, `return EXPR? ;`, **`break ;` and
+  `continue ;`** (#93), the `if`/`else` statement, and `EXPR ;`. Derived from
+  §4.3 and the corpus bodies.
 
 - **REQ-5 (expression grammar):** Expressions cover exactly: integer literals
   (decimal `1_000_000`, **hexadecimal `0x1b`, binary `0b101`** — #92; all the
@@ -128,6 +137,25 @@ The grammar's job: a `fn` without all three of `req`/`ens`/`fx`, or a `loop`/
   parse error — unchanged). Derived from §4.4 (the Rust-dialect register: "reads
   like a boring, regular Rust dialect") and §2.3.
 
+- **REQ-11 (`break` / `continue` loop-control statements — NEW, #93):** Inside a
+  `loop`/`while` body, `break ;` exits the loop and `continue ;` skips to the
+  next iteration. They are STATEMENTS (`BreakStmt`/`ContinueStmt`), payload-less
+  and value-less — there is NO `break EXPR`, NO loop label, NO `continue LABEL`
+  (§2.3 "one way to do everything"; Verus has no loop labels in the v0.1 register
+  either). Each requires a trailing `;`. They are valid ONLY inside a loop body:
+  a `break;`/`continue;` at a function-body top level (outside any loop) is a
+  parse error (`parser.md` REQ-10, the in-loop structural rule). Before #93 the
+  words lexed as identifiers, so `break;` parsed as a no-op identifier-expression
+  statement (the editor's quit-flag workaround); #93 makes them real keywords
+  + statements (`lexer.md` REQ-10, `ast.md` REQ-12). The VERIFICATION semantics
+  (the loop invariant must hold at every `continue` and at re-entry; `continue`
+  must respect the `dec` measure; `break` exits and the post-loop facts come from
+  the loop `ensures`; a `fx diverge` loop's break/continue are unconstrained by
+  `dec`) are §7 PROOF obligations on the lowered loop, owned + GROUNDED in
+  `verus-lowering.md` REQ-12, NOT grammar rules. Derived from §4.1 (the loop
+  model; "Termination is proved by default; divergence requires `fx diverge`")
+  + R-DEFER-9 (break/continue must not launder the invariant / decreases).
+
 ## Acceptance criteria
 
 - **AC-1 (both corpus programs accept):** The grammar accepts `sum.th` and
@@ -136,15 +164,16 @@ The grammar's job: a `fn` without all three of `req`/`ens`/`fx`, or a `loop`/
   yields a parse error. (REQ-2, REQ-3)
 - **AC-3 (no extra constructs):** No production for `struct`-as-Rust-generics,
   `impl`, `trait`, `use`, `mod`, macro, `for`, `unsafe`, an explicit lifetime
-  token, or a UFCS method call. (REQ-1, REQ-6, REQ-8)
+  token, a UFCS method call, a loop label, or `break EXPR`. (REQ-1, REQ-6,
+  REQ-8, REQ-11)
 - **AC-4 (one call syntax):** `xs.len()` → method call, `spec_sum(t)` → free
   call, `u32::MAX` → path. (REQ-6)
-- **AC-5 (new literals parse — NEW, #91/#92):** `0x1b`, `0b101`, and `'A'` each
+- **AC-5 (new literals parse — #91/#92):** `0x1b`, `0b101`, and `'A'` each
   parse as an integer-literal expression (the same node as a decimal literal);
   `0xFF_FF` parses (interior `_`); `''`, `0x` with no digit, and a non-ASCII
   `'é'` are parse/lex errors. (REQ-5)
-- **AC-6 (new operators parse with the pinned precedence — NEW, #92):** `a % b`,
-  `a << k`, `a >> k`, `a & b`, `a | b`, `a ^ b`, `!a` each parse to the expected
+- **AC-6 (new operators parse with the pinned precedence — #92):** `a % b`,
+  `a << b`, `a >> b`, `a & b`, `a | b`, `a ^ b`, `!a` each parse to the expected
   `Binary`/`Unary` node; `a % b + 1` groups as `(a % b) + 1`; `!a & b` as
   `(!a) & b`; `a + b << c` as `(a + b) << c` (shifts below `+ -`). (REQ-5,
   REQ-10)
@@ -152,6 +181,15 @@ The grammar's job: a `fn` without all three of `req`/`ens`/`fx`, or a `loop`/
   / `a % b` parse regardless of whether `b` can be zero; the divide-by-zero
   obligation is discharged (or fails) at verification. GROUNDED: `a % b` with
   `req b != 0` certifies L3; without it, L0. (Scope boundary; `ast.md` REQ-11.)
+- **AC-8 (`break`/`continue` parse + in-loop rule + verification — NEW, #93):**
+  A `while … { … break; }` parses with a `break;` statement in the loop body;
+  `continue;` likewise; both require a trailing `;`. A `break;`/`continue;`
+  OUTSIDE any loop is a parse error (`parser.md` REQ-10). GROUNDED (the §7
+  semantics, `verus-lowering.md`): a terminating `while` with `dec` whose
+  `continue` preserves the invariant + decreases certifies L3; a `continue` that
+  breaks the invariant — or that does not decrease the measure — is L0; a `break`
+  early-exit with the loop `ensures` certifies L3; a `fx diverge` loop with
+  `break`/`continue` (no `dec`) certifies (capped at L1 by the #88 gate). (REQ-11)
 
 ## Architecture
 
@@ -184,10 +222,16 @@ Effect      ::= 'read' '(' PathArg ')' | 'write' '(' PathArg ')'
 
 Block       ::= '{' Stmt* TailExpr? '}'
 TailExpr    ::= Expr
-Stmt        ::= LetStmt | AssignStmt | ReturnStmt | IfStmt | ExprStmt
+; #93 adds BreakStmt/ContinueStmt to the statement set. They are loop-body-only
+; (a structural rule enforced by the parser, parser.md REQ-10), payload-less and
+; value-less (no `break EXPR`, no loop label — §2.3).
+Stmt        ::= LetStmt | AssignStmt | ReturnStmt | BreakStmt | ContinueStmt
+              | IfStmt | ExprStmt
 LetStmt     ::= 'let' 'mut'? Ident ':' Type '=' Expr ';'
 AssignStmt  ::= LValue '=' Expr ';'
 ReturnStmt  ::= 'return' Expr? ';'
+BreakStmt   ::= 'break' ';'                          ; #93; loop-body only
+ContinueStmt::= 'continue' ';'                       ; #93; loop-body only
 IfStmt      ::= 'if' Expr Block ('else' Block)?
 ExprStmt    ::= Expr ';'
 LValue      ::= Ident | IndexExpr | FieldExpr
@@ -266,18 +310,27 @@ CharLit     ::= "'" (AsciiChar | Escape) "'"         ; 'A' == 65 (byte value); A
 7. **Partial operators are §7 obligations, not parse rules.** `a / b` / `a % b`
    / `a << k` parse unconditionally; divide-by-zero / shift-bound is proven (or
    fails) at verification (`ast.md` REQ-11; scope boundary above).
+8. **`break`/`continue` are payload-less, loop-body-only statements (REQ-11,
+   #93).** No `break EXPR`, no loop labels, no `continue LABEL` — one way to exit
+   / continue a loop. The ONLY structural rule is "inside a loop body" (a parser
+   depth check, `parser.md` REQ-10); the invariant/decreases/diverge SEMANTICS
+   are §7 proof obligations Verus checks (`verus-lowering.md` REQ-12), not parse
+   rules. They ARE new `Stmt` variants (the workspace `match Stmt` ripple —
+   `ast.md` REQ-12), unlike the char/hex/binary literals which reuse `IntLit`.
 
 ## Verification
 
 The grammar is verified through `parser.md`'s oracle, `conformance/parse/`:
 round-trip / AST-shape fixtures (AC-1, AC-4), missing-clause negatives (AC-2),
-removed-construct negatives (AC-3), and NEW fixtures for the literal forms
-(AC-5) and the operator precedence (AC-6). The partiality / value semantics
-(AC-7, and the radix/char value equalities) are GROUNDED end-to-end through
-`forge`/`thermite-lower` certifying real Verus (see `ast.md` Verification — the
-`% / << >> & | ^ !` and `'A'`/`0x1b`/`0b101` probes, all certifying L3 with
-non-vacuous `ens`, the partials failing L0 without their obligation). No
-standalone grammar binary; the parser is the executable grammar.
+removed-construct negatives (AC-3), NEW fixtures for the literal forms (AC-5),
+the operator precedence (AC-6), and `break`/`continue` parse + in-loop-rule
+fixtures (AC-8). The partiality / value semantics (AC-7, and the radix/char value
+equalities) AND the break/continue verification semantics (AC-8's §7 part) are
+GROUNDED end-to-end through `forge`/`thermite-lower` certifying real Verus (see
+`ast.md` Verification — the `% / << >> & | ^ !` and `'A'`/`0x1b`/`0b101` probes;
+and `verus-lowering.md` Verification — the continue+invariant L3, invariant-
+violating-continue L0, break early-exit L3, and diverge-loop break L1 probes).
+No standalone grammar binary; the parser is the executable grammar.
 
 ## REQ status
 
@@ -286,7 +339,7 @@ standalone grammar binary; the parser is the executable grammar.
 | REQ-1 (item grammar) | SHIPPED | `parse_item` in `parser.rs` admits `fn`/`spec fn`/`#[slag] fn` (+ basis `struct`/`enum`). |
 | REQ-2 (mandatory contract clauses) | SHIPPED | `parse_contract`/`parse_spec_fn` enforce `req`→`ens`+→`fx` and spec-fn `dec`. |
 | REQ-3 (loop/while + inv* + one dec) | SHIPPED | `parse_loop` requires `inv`+ then one `dec`. |
-| REQ-4 (statement grammar) | SHIPPED | `parse_block`/`parse_let`/`parse_return`/`parse_if_stmt` + tail expr. |
+| REQ-4 (statement grammar) | SHIPPED | `parse_block`/`parse_let`/`parse_return`/`parse_if_stmt` + tail expr. The `break ;`/`continue ;` additions are REQ-11 (#93, NOT-STARTED). |
 | REQ-5 — base expr grammar | SHIPPED | precedence ladder `parse_or`→…→`parse_postfix`→`parse_primary` in `parser.rs`; corpus exprs round-trip. |
 | REQ-5 — char/hex/binary literals (#91/#92) | SHIPPED | the lexer emits the SAME `TokKind::Int` for `'A'`/`0x1b`/`0b101` (`lexer.rs` `lex_char`/`lex_int`); `parse_primary`'s literal arm is UNCHANGED (it consumes any `Int`), so all radices+char build `Expr::IntLit` (test `char_hex_binary_parse_to_intlit_no_new_variant`). `''`/`0x`/`'é'` are lex errors (`malformed_literals_are_structured_diagnostics_not_panic`). |
 | REQ-5 — operators `% << >> & \| ^ !` (#92) | SHIPPED | `parser.rs` threads `parse_mul`(+`%`)→`parse_shift`→`parse_bitand`→`parse_bitxor`→`parse_bitor` between comparison and addition, with `is` above the bitwise tiers (OQ-3) and a `parse_unary` (`!` prefix) above `parse_ref`. Each builds the `ast.md` REQ-10 node (`each_new_operator_parses_to_its_binop_node`). |
@@ -295,6 +348,7 @@ standalone grammar binary; the parser is the executable grammar.
 | REQ-8 (type grammar) | SHIPPED | `parse_type` covers prims/`&T`/`&mut T`/`&[T]`/`Name<T>`. |
 | REQ-9 (effect-row grammar) | SHIPPED | `parse_effect_row`/`parse_effect`. |
 | REQ-10 (operator precedence pinned, #92) | SHIPPED | the ladder realizes the pinned standard-Rust precedence: `* / %` > `+ -` > `<< >>` > `&` > `^` > `\|` > comparison > `&&` > `\|\|`, with prefix `!` tighter than all binaries. Tests `modulo_binds_tighter_than_add`, `shift_binds_looser_than_add`, `not_binds_tighter_than_bitand`, `bitand_binds_tighter_than_bitor` (`thermite-syntax/tests/operators_parse.rs`). GROUNDED: `a % b + 1` groups `(a%b)+1`, verus-certified (`forge/tests/operators_conformance.rs::precedence_rem_binds_tighter_than_add`). |
+| REQ-11 (`break`/`continue` loop-control, #93) | NOT-STARTED | open prereq blocker #93. The grammar has NO `BreakStmt`/`ContinueStmt` production today (`parse_block`'s dispatch in `parser.rs` has no `Break`/`Continue` arm), so `break;` parses as a no-op identifier-expression statement. #93 must add the keywords (`lexer.md` REQ-10), the `Stmt::Break`/`Continue` AST variants (`ast.md` REQ-12), the parser arms + in-loop check (`parser.md` REQ-10), and the Verus-native lowering + verification semantics (`verus-lowering.md` REQ-12, GROUNDED there: continue+invariant L3, invariant-violating-continue L0, break early-exit L3, diverge-loop break L1). |
 
 ## Open questions (for the orchestrator before the builder runs)
 
@@ -311,3 +365,7 @@ standalone grammar binary; the parser is the executable grammar.
 - **OQ-5 (char model is byte/`u8`, #91/#92):** a char literal is a byte (`'A'`
   == 65), ASCII-only in v1 (`lexer.md` REQ-9). Non-ASCII chars await the
   `Vec<u8>` reshape. Recorded; not a blocker.
+- **OQ-6 (`break`/`continue` are labelless, #93):** REQ-11 pins NO loop labels
+  and NO `break EXPR` — §2.3 one-way-to-do-everything. A labelled break / a
+  value-carrying break would be a NEW design amendment, not v0.1. The editor's
+  event loop needs only `break;` on Ctrl-Q. Recorded; not a blocker.

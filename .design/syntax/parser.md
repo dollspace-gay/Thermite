@@ -103,6 +103,28 @@ This doc is GREENFIELD / FORWARD-LOOKING: no `parser.rs` exists. Every REQ is
   only job is to build the `Binary` node. Derived from the scope boundary in
   `surface-grammar.md` + `ast.md` REQ-11.
 
+- **REQ-10 (`break` / `continue` statement parsing + in-loop enforcement — NEW,
+  #93):** The parser recognizes the loop-control statements:
+  - In `parse_block`'s statement dispatch, a `TokKind::Break` followed by `;`
+    builds `Stmt::Break`; a `TokKind::Continue` followed by `;` builds
+    `Stmt::Continue` (`ast.md` REQ-12). Both are statement-only, payload-less,
+    and value-less (no `break expr`, no loop label — §2.3); a missing `;` is a
+    `SyntaxError` (presence/cardinality, like every statement).
+  - **In-loop structural enforcement.** `break`/`continue` are valid ONLY inside
+    a `loop`/`while` body. The parser tracks loop-nesting depth (a counter
+    incremented in `parse_loop_inner` around the body parse) and emits a
+    `SyntaxError` for a `break;`/`continue;` parsed at loop-depth 0 (e.g. at a
+    function-body top level, outside any loop). This is a STRUCTURAL parse rule,
+    not a verification rule — analogous to the mandatory-clause enforcement
+    (REQ-2): the parser owns presence/position; Verus owns the invariant/
+    decreases semantics (`verus-lowering.md` REQ-12).
+
+  Before #93, `break`/`continue` lexed as identifiers and parsed as a bare
+  identifier-expression statement (`Stmt::Expr(Path(["break"]))`) — a silent
+  no-op (the editor's quit-flag workaround). #93 makes them real statements.
+  Derived from §4.1 (the loop model) + `surface-grammar.md` REQ-11 + `ast.md`
+  REQ-12.
+
 ## Acceptance criteria
 
 - **AC-1 (corpus round-trips):** parsing `sum.th`/`binary_search.th` yields the
@@ -114,19 +136,26 @@ This doc is GREENFIELD / FORWARD-LOOKING: no `parser.rs` exists. Every REQ is
   malformed first item + a well-formed second; ≥1 diagnostic for item one, item
   two parses to its correct node. (REQ-3)
 - **AC-4 (no panic):** no input — including negative/recovery fixtures and
-  malformed literals (`''`, `0x`, `'é'`) — panics. (REQ-4)
-- **AC-5 (operator tiers + precedence — NEW, #92):** `a % b` → `Binary { op:
+  malformed literals (`''`, `0x`, `'é'`) and a `break;` outside a loop — panics.
+  (REQ-4)
+- **AC-5 (operator tiers + precedence — #92):** `a % b` → `Binary { op:
   Rem }`, `a << k` → `Shl`, `a >> k` → `Shr`, `a & b` → `BitAnd`, `a | b` →
   `BitOr`, `a ^ b` → `BitXor`, `!a` → `Unary { op: Not }`. Precedence:
   `a % b + 1` parses as `(a % b) + 1`, `a + b << c` as `(a + b) << c`,
   `!a & b` as `(!a) & b`, `a & b | c` as `(a & b) | c`. (REQ-8)
-- **AC-6 (binary `|` vs closure `|`, binary `&` vs ref `&` — NEW, #92):** `|x| x`
+- **AC-6 (binary `|` vs closure `|`, binary `&` vs ref `&` — #92):** `|x| x`
   parses as a closure (in `Primary`); `a | b` parses as `BinOp::BitOr`; `&e`
   parses as a `Ref`; `a & b` as `BinOp::BitAnd`. The parser disambiguates by
   position. (REQ-8)
-- **AC-7 (char/hex/binary literal parse — NEW, #91/#92):** `'A'`/`0x1b`/`0b101`
+- **AC-7 (char/hex/binary literal parse — #91/#92):** `'A'`/`0x1b`/`0b101`
   each parse to `Expr::IntLit` (the same node as decimal); `let c: u8 = 'A';`
   parses. (REQ-1, ties to `lexer.md` REQ-3/REQ-9.)
+- **AC-8 (`break`/`continue` parse + in-loop rule — NEW, #93):** A `while … { …
+  break; }` body parses with a `Stmt::Break` in its `stmts`; `continue;` to
+  `Stmt::Continue`; both require a trailing `;`. A `break;` or `continue;` parsed
+  at the function-body top level (NO enclosing loop) produces a `SyntaxError`
+  (`break` outside a loop), never a panic. A `break;` nested inside an `if`
+  WITHIN a loop body is accepted (depth > 0). (REQ-10)
 
 ## Architecture
 
@@ -152,6 +181,20 @@ BINARY operator; `|` opening a closure is recognized only in `parse_primary`
 unary; `!=` (`TokKind::Ne`) is already a distinct maximal-munch token, so a
 standalone `!` is unambiguously the unary operator.
 
+**`break`/`continue` statement parsing + in-loop enforcement (REQ-10, AC-8).**
+The statement dispatch in `parse_block` (which already branches on
+`TokKind::Let`/`Return`/`Loop`/`While`/`If` before falling through to an
+expression statement) gains two arms: `TokKind::Break` → consume `break`, consume
+`;`, push `Stmt::Break`; `TokKind::Continue` likewise → `Stmt::Continue`. The
+in-loop rule is a depth counter: `parse_loop_inner` increments it around the body
+parse and decrements after; the `break`/`continue` arms read the counter and emit
+a `SyntaxError` if it is 0 (outside any loop). The counter increments per loop, so
+a `break` inside an `if` block that is itself inside a loop is depth ≥ 1 and
+accepted. The arms are pure parsing — they do NOT inject any invariant/decreases
+reasoning (that is Verus's job, `verus-lowering.md` REQ-12). This is a new `Stmt`
+construction site; the broader `match Stmt` ripple is pinned in `ast.md`
+Architecture (the `Stmt` ripple).
+
 **Mandatory clauses (REQ-2), per-item recovery (REQ-3), registry-free (REQ-6),
 Result discipline (REQ-4), addressing substrate (REQ-7)** — unchanged.
 
@@ -167,15 +210,19 @@ contract.
 - round-trip / AST-shape fixtures for the corpus (AC-1);
 - missing/misordered-clause negatives (AC-2);
 - `recover_per_item` (AC-3);
-- a no-panic sweep over negatives incl. malformed literals (AC-4);
-- NEW operator-tier + precedence fixtures (AC-5), `|`/`&` disambiguation (AC-6),
-  and char/hex/binary literal fixtures (AC-7).
+- a no-panic sweep over negatives incl. malformed literals + a `break;` outside
+  a loop (AC-4);
+- operator-tier + precedence fixtures (AC-5), `|`/`&` disambiguation (AC-6),
+  char/hex/binary literal fixtures (AC-7);
+- NEW `break`/`continue` parse fixtures: a `while` body with `break;`/`continue;`
+  parses to `Stmt::Break`/`Continue`; a top-level `break;` is a `SyntaxError`; a
+  loop-nested-`if` `break;` is accepted (AC-8).
 
 The operator + literal SEMANTICS are GROUNDED end-to-end through `forge`/
-`thermite-lower` certifying real Verus (`ast.md` Verification: `% / << >> & | ^
-!` certify L3 with non-vacuous `ens`; the partials fail L0 without their
-obligation; `'A'`==65 / `0x1b`==27 / `0b101`==5 certify L3). Expected ASTs are
-hand-derived (R-CHAR-3).
+`thermite-lower` certifying real Verus (`ast.md` Verification). The `break`/
+`continue` END-TO-END verification semantics (invariant-at-continue, decreases
+interaction, break-exit, diverge-loop) are owned + GROUNDED in
+`verus-lowering.md` (#93). Expected ASTs are hand-derived (R-CHAR-3).
 
 ## REQ status
 
@@ -190,6 +237,7 @@ hand-derived (R-CHAR-3).
 | REQ-7 (addressing substrate) | SHIPPED | loops/`inv`s kept in source order; `address.rs` numbers them. |
 | REQ-8 (operator tiers `% << >> & \| ^ !`, #92) | SHIPPED | `parse_mul` adds the `Percent`→`Rem` arm; `parse_shift`/`parse_bitand`/`parse_bitxor`/`parse_bitor` are the new left-folding tiers (threaded `parse_is`→`parse_bitor`→…→`parse_add`); `parse_unary` builds the prefix `!`→`Unary { Not }`. Binary `&`/`\|` vs prefix ref `&`/closure `\|` disambiguated by position (tests `each_new_operator_parses_to_its_binop_node`, `binary_pipe_distinct_from_closure_pipe`). GROUNDED L3 for all forms (`forge/tests/operators_conformance.rs`). |
 | REQ-9 (partiality not a parse concern, #92) | SHIPPED | `parse_mul`/`parse_shift` build the `Binary { op: Rem/Shl/Shr, .. }` node UNCONDITIONALLY — no `req` injection, no obligation check. The div-by-zero / shift-bound obligation is a §7 proof obligation raised by the bare Verus operator the lowering emits (`ast.md` REQ-11). GROUNDED: `%` without `req b != 0` is L0, `<<` unbounded is L0 (`forge/tests/operators_conformance.rs::rem_without_nonzero_req_is_l0` / `shift_without_bound_is_l0`). |
+| REQ-10 (`break`/`continue` parse + in-loop rule, #93) | NOT-STARTED | open prereq blocker #93. `parse_block`'s statement dispatch (`parser.rs`) currently branches `Let`/`Return`/`Loop`\|`While`/`If` then falls to an expression statement, with NO `Break`/`Continue` arm — so `break;` parses as `Stmt::Expr(Path(["break"]))` once `break` lexes as an identifier (a silent no-op). #93 must add the `TokKind::Break`/`Continue` arms building `Stmt::Break`/`Continue` (depends on `lexer.md` REQ-10 reserving the tokens + `ast.md` REQ-12 adding the variants) and a loop-depth counter in `parse_loop_inner` for the in-loop structural error. |
 
 ## Open questions (for the orchestrator)
 
@@ -207,3 +255,13 @@ hand-derived (R-CHAR-3).
   position (closure `|` only in `Primary`, operator `|` in `BitOrExpr`). A
   pathological `|x| x | 1` is `|x| (x | 1)` (the closure body is a full `Expr`).
   Recorded; the builder confirms via an AC-6 fixture. Not a blocker.
+- **OQ-5 (in-loop check: parser vs validator, #93):** REQ-10 puts the "break
+  outside a loop" check IN THE PARSER (a depth counter) rather than deferring it
+  to the validator (#2) — it is a purely structural/syntactic rule (like the
+  mandatory-clause enforcement REQ-2), needs no type/effect information, and
+  gives the crispest feedback (pillar 4) at parse time. The builder MAY instead
+  surface it as a validator diagnostic if the depth counter complicates recovery;
+  either is acceptable as long as a top-level `break;` is rejected SOMEWHERE
+  before lowering (an un-rejected top-level `break;` would lower to a Verus
+  `break` outside a loop, a Verus error — so it is caught no later than verus,
+  but pillar-4 wants it earlier). Flagged; not a blocker.

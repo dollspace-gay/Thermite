@@ -146,6 +146,77 @@ they are the lowering contract the builder reproduces, not guesses.
   re-checks defensively). No `unwrap`/`expect`/`panic!` in production
   (R-CODE-2 / R-APG-1). Derived from R-CODE-2, workspace.md REQ-3.
 
+- **REQ-12 (`break` / `continue` lowering + the verification semantics — NEW,
+  #93):** `Stmt::Break` lowers to the Verus-native `break;`, `Stmt::Continue` to
+  `continue;` (Verus 0.2026 supports both natively inside `while`/`loop`). The
+  emission is trivial; the LOAD-BEARING contract is the VERIFICATION SEMANTICS the
+  lowering MUST preserve so the proof obligations BITE (R-DEFER-9 — break/continue
+  must NOT let a loop skip its invariant or launder termination). The lowering
+  emits the loop annotations exactly as REQ-4 does, and Verus enforces:
+
+  - **(a) Invariant at every `continue` AND at re-entry.** A plain Verus
+    `invariant` clause must hold at the top of EVERY iteration AND at every
+    `continue` point (a `continue` re-enters the loop head). A `continue` that
+    leaves the loop with the invariant broken is L0. GROUNDED below (a `continue`
+    that bumps the accumulator past its bound without advancing the index →
+    "loop invariant not satisfied … at this continue", L0). The lowering does NOT
+    add or weaken any invariant for break/continue — it emits the corpus `inv`s
+    verbatim, and Verus checks them at the continue.
+
+  - **(b) `continue` respects the `decreases` measure.** In a TERMINATING loop
+    (non-`diverge`, so a `decreases` is emitted — REQ-4), the measure must strictly
+    decrease BEFORE a `continue` (the `continue` re-enters the loop, so it is a
+    back-edge that owes the termination obligation). A `continue` that does NOT
+    decrease the measure (e.g. `continue;` without advancing the loop variable) is
+    L0 with the exact Verus error "decreases not satisfied at continue". GROUNDED
+    below. This is the crux pin: `continue` is a loop back-edge → it inherits the
+    SAME decreases obligation as the implicit loop-end back-edge.
+
+  - **(c) `break` exits; post-loop facts come from the loop `ensures`, NOT
+    `invariant ∧ ¬guard`.** A `break` can exit the loop while the guard is STILL
+    TRUE, so the usual "after a `while c` loop, `¬c` holds" reasoning does NOT
+    apply at a break. Verus's model (GROUNDED — see Architecture): a plain
+    `invariant` clause must ALSO hold at every `break` point (Verus checks the
+    invariant at the loop EXIT, including break); an invariant that is true at
+    re-entry but NOT at break must instead be written `invariant_except_break`;
+    and what is provable AFTER the loop is the loop's `ensures` clause (true at
+    break OR normal exit). The lowering's contract: a Thermite `inv` lowers to a
+    Verus `invariant` (held at re-entry AND break); if a Thermite program needs a
+    re-entry-only fact (true on continue, broken at break) that is a FUTURE
+    `invariant_except_break` need (OQ-5) — the v0.1 corpus break-loop holds all
+    its `inv`s at the break point, so the plain `invariant` suffices and a loop
+    `ensures` (the fn's `ens`, threaded onto the loop) carries the post-break
+    fact. GROUNDED below (a `break` early-exit certifies L3 once the break-true
+    fact is the loop `ensures` and the re-entry-only fact is
+    `invariant_except_break`).
+
+  - **(d) `fx diverge` loop: break/continue unconstrained by `decreases`.** A
+    `fx diverge` fn emits NO `decreases` on its loop and carries
+    `#[verifier::exec_allows_no_decreases_clause]` on the fn (REQ-4 / the existing
+    `fn_is_diverge` path). In such a loop, `break` and `continue` carry NO
+    decreases obligation (there is no measure) — the editor's event loop
+    `while true { let k = read(); if k == quit { break; } … }` certifies its
+    INVARIANTS (partial correctness) with `break` exiting cleanly on Ctrl-Q and
+    `continue` skipping an iteration, no termination claim. GROUNDED below. forge
+    STRUCTURALLY caps such a fn at L1 (the #88 diverge cap,
+    `degrade-ladder.md` REQ-9), regardless of how strong the loop `ensures` is —
+    break/continue do not change the cap.
+
+  - **(e) The cap is diverge-ONLY.** A NON-diverge loop with break/continue STILL
+    proves termination (its `dec` + the per-`continue` decreases obligation) AND
+    its invariants → L3. break/continue are NOT a termination escape hatch: a
+    non-diverge loop WITHOUT a `decreases` still fails Verus ("loop must have a
+    decreases clause") — GROUNDED below (the negative control). The #87/#88
+    exemptions stay diverge-only (`fn_is_diverge in lower.rs`).
+
+  This component lowers `break`/`continue` and relies on Verus to enforce
+  (a)–(e); it MUST NOT suppress the obligations (no `assume`, no `external`,
+  no dropping a `decreases` for a non-diverge loop — R-DEFER-9). The `Stmt`
+  match-arm ripple this introduces is pinned in `ast.md` REQ-12 (Architecture →
+  the `Stmt` ripple) — `lower.rs`/`l1.rs`/`l2.rs` each gain `Break`/`Continue`
+  emit arms. Derived from §4.1 (the loop model), §6 (L3 = total correctness; a
+  diverge loop caps at L1), R-DEFER-9, `degrade-ladder.md` REQ-9.
+
 ## Acceptance criteria
 
 - **AC-1 (`sum` lowers + VERIFIES):** running the real `verus` binary on
@@ -187,6 +258,24 @@ they are the lowering contract the builder reproduces, not guesses.
 - **AC-6 (`LowerError`, never panics):** Lowering a program with an un-lowerable
   construct returns `Err(LowerError::…)`, never panics; `lower` over the corpus
   returns `Ok`. (REQ-9)
+
+- **AC-7 (`break`/`continue` lower + the verification obligations bite —
+  GROUNDED, NEW, #93):** the four pinned probes, run through the real `verus`
+  binary (Verification section):
+  - a terminating `while … dec …` whose `continue` skips an element while
+    preserving the invariant + decreasing the measure → L3 (`2 verified, 0
+    errors`);
+  - a `continue` that BREAKS the invariant → L0 ("loop invariant not satisfied …
+    at this continue");
+  - a `continue` that does NOT decrease the measure → L0 ("decreases not
+    satisfied at continue");
+  - a `break` early-exit whose post-loop fact is the loop `ensures` → L3 (`2
+    verified, 0 errors`), with the re-entry-only fact as `invariant_except_break`;
+  - a `fx diverge` loop with `break`/`continue` (no `decreases`,
+    `#[verifier::exec_allows_no_decreases_clause]`) → verifies its invariants
+    (`2 verified, 0 errors`), capped at L1 by the #88 gate;
+  - NEGATIVE CONTROL: a NON-diverge loop WITHOUT a `decreases` → L0 ("loop must
+    have a decreases clause") — the exemption is diverge-only. (REQ-12)
 
 ## Architecture
 
@@ -254,6 +343,54 @@ with `decreases LOWER_SPEC(dec)` and a `Seq`-typed slice parameter (REQ-5).
 | `Binary{Add..Or}` | `+ - * / == != < <= > >= && \|\|` | same |
 | `Match`/`If` | Rust `match`/`if` | spec `match`/`if` |
 | `Closure{[x], body}` | (exec n/a in corpus) | `\|x: T\| LOWER_SPEC(body)` (Verus `spec_fn`) |
+
+### `break` / `continue` lowering + the verification model (REQ-12, #93)
+
+The EMISSION is one statement each: `Stmt::Break` → `break;`, `Stmt::Continue`
+→ `continue;`, placed verbatim in the lowered loop body (Verus has native
+`break`/`continue` inside `while`/`loop`). `lower_stmt` / `lower_loop_body` in
+`lower.rs` (and the `l1.rs`/`l2.rs` mirrors) gain the two arms; the broader
+`match Stmt` ripple is pinned in `ast.md` REQ-12.
+
+The CONTRACT is the verification model below, which the lowering preserves by
+emitting the loop annotations unchanged and letting Verus enforce them. The model
+was established by running the real `verus 0.2026.05.24` binary (Verification):
+
+- **`continue` is a loop back-edge.** Verus treats a `continue` exactly like
+  falling off the end of the loop body: it must (a) re-establish every plain
+  `invariant`, and (b) in a terminating loop, satisfy the `decreases` (the
+  measure must have strictly decreased since loop entry). Both obligations BITE
+  at the `continue` site, with distinct errors ("loop invariant not satisfied …
+  at this continue" / "decreases not satisfied at continue").
+
+- **`break` is a loop EXIT.** Verus distinguishes three loop annotations:
+  - plain `invariant` — must hold at re-entry AND at every `break`/loop exit;
+  - `invariant_except_break` — must hold at re-entry/continue but NOT at break;
+  - `ensures` (on the loop) — what is true AFTER the loop (at break OR normal
+    exit), the ONLY thing provable in post-loop code.
+
+  This is the load-bearing finding: after a `break`, the loop GUARD is NOT known
+  false (break can exit mid-guard-true), so post-loop reasoning is the loop
+  `ensures`, NOT `invariant ∧ ¬guard`. The lowering maps a Thermite `inv` to a
+  plain Verus `invariant` (so it must hold at break too); a Thermite `ens`
+  (function postcondition) is what the post-loop code must establish — for a
+  break-bearing loop the relevant facts thread onto the loop `ensures`. The v0.1
+  corpus break-loops hold all their `inv`s at the break point (so plain
+  `invariant` suffices); a future re-entry-only invariant would need
+  `invariant_except_break` (OQ-5).
+
+- **`fx diverge` loop.** `fn_is_diverge` (the existing #87/#88 path) suppresses
+  the loop `decreases` and emits `#[verifier::exec_allows_no_decreases_clause]`
+  on the fn. break/continue then carry NO decreases obligation — they exit /
+  skip freely while Verus still checks the loop invariants (partial correctness).
+  forge caps the fn at L1 (`degrade-ladder.md` REQ-9). The cap is STRUCTURAL
+  (from the `fx diverge` declaration), decided before any prover; break/continue
+  do not affect it.
+
+The lowering MUST NOT suppress any of these obligations (no `assume`, no
+`external`, no dropping a non-diverge `decreases`) — that would be a proof cheat
+(R-DEFER-9). break/continue change WHERE the obligations are checked (a continue
+adds a back-edge), never WHETHER.
 
 ### Combinator Verus(L3) definitions + frozen triggers (REQ-6)
 
@@ -453,6 +590,93 @@ input (R-CODE-5, §5.3).
   `ensures true` (all absent); diff emitted `requires`/`ensures` vs parsed corpus.
 - **AC-6:** an un-lowerable-construct fixture asserts `Err(LowerError)`, no panic.
 
+### `break`/`continue` verification semantics — GROUNDED (AC-7, REQ-12, #93)
+
+Run against the real `verus 0.2026.05.24.ecee80a` binary THIS amendment. Each
+probe is a lowered loop in the v0.1 shape; the results ARE the contract the
+builder's emitted lowering must reproduce, and the hand-authored break/continue
+golden(s) under `tests/golden/lower/` are pinned from these (R-CHAR-3).
+
+**(1) terminating `while` + `dec`, `continue` preserves invariant + decreases →
+L3.** Skip elements above a bound, summing the rest; the index advances BEFORE
+the `continue`, the invariant `acc <= i*BOUND` holds at the continue:
+
+```
+$ verus p1_continue_ok.rs
+verification results:: 2 verified, 0 errors        (L3)
+```
+
+**(2) `continue` that BREAKS the invariant → L0.** The same loop, but the
+`continue` bumps `acc` past its bound without advancing the matching index:
+
+```
+$ verus p2_continue_bad_inv.rs
+error: invariant not satisfied at end of loop body
+   |   acc <= i as u64 * 1000000,   <-- failed this invariant
+   |   continue;                    <-- at this continue
+verification results:: 1 verified, 1 errors        (L0 — the invariant obligation BITES at the continue)
+```
+
+**(3) `continue` that does NOT decrease the measure → L0.** A `continue;` without
+advancing the loop variable (the back-edge owes the decreases):
+
+```
+$ verus p3_continue_bad_dec.rs
+error: decreases not satisfied at continue
+   |   continue;   <-- NO measure decrease: i unchanged before continue
+verification results:: 1 verified, 1 errors        (L0 — the decreases obligation BITES at the continue)
+```
+
+**(4) `break` early-exit → L3.** A find-loop that breaks on a hit. The
+re-entry-only fact (`found == false`) is `invariant_except_break`; the
+break-true fact (`found == true ==> len > 0`) is the loop `ensures` (post-loop
+reasoning is the loop `ensures`, NOT `invariant ∧ ¬guard`):
+
+```
+$ verus p4b_break_ok.rs            // invariant_except_break + loop ensures
+verification results:: 2 verified, 0 errors        (L3)
+```
+
+NOTE (the load-bearing finding): writing `found == false` as a PLAIN `invariant`
+(not `invariant_except_break`) FAILS — `error: loop invariant not satisfied …
+at this loop exit` — because a plain `invariant` must also hold at the `break`,
+and `found` is `true` there. This is exactly why (c) above distinguishes
+`invariant` / `invariant_except_break` / `ensures`. The lowering's Thermite-`inv`
+→ Verus-`invariant` mapping is sound for the v0.1 corpus (whose `inv`s hold at
+break); a re-entry-only Thermite invariant would need the
+`invariant_except_break` lowering (OQ-5).
+
+**(5) `fx diverge` loop with `break` AND `continue`, no `decreases` → verifies
+(capped L1).** The editor event-loop shape; the fn carries
+`#[verifier::exec_allows_no_decreases_clause]` and the loop has NO `decreases`:
+
+```
+$ verus p5_diverge_break.rs        // while/loop { … if k==quit { break; } }
+verification results:: 2 verified, 0 errors        (invariants proved; partial correctness)
+$ verus p6_diverge_cont_break.rs   // … if k==0 { continue; } if k==quit { break; }
+verification results:: 2 verified, 0 errors        (invariants proved; partial correctness)
+```
+
+forge STRUCTURALLY caps this fn at L1 (`degrade-ladder.md` REQ-9, the #88 diverge
+cap) — break/continue exit/skip cleanly, no termination claim. The editor's
+`while true { let k = read(); if k == quit { break; } … }` now works WITHOUT the
+`quit` flag + `dec 1` hack.
+
+**(6) NEGATIVE CONTROL — non-diverge loop WITHOUT a `decreases` → L0.** The
+exemption is diverge-ONLY; break/continue are NOT a termination escape hatch:
+
+```
+$ verus p7_nondiverge_no_dec.rs
+error: loop must have a decreases clause
+   = help: to disable this check, use #[verifier::exec_allows_no_decreases_clause] on the function
+verification results:: 1 verified, 1 errors        (L0)
+```
+
+These six probes ground AC-7. The continue-back-edge obligations (2)+(3) and the
+break-exit `invariant`/`invariant_except_break`/`ensures` distinction (4) are the
+crux — they prove break/continue cannot launder the invariant or termination
+(R-DEFER-9), and that the diverge cap (5) is honest and diverge-only (6).
+
 Gauntlet (R-DEFER-6): `cargo test -p thermite-lower`,
 `cargo clippy -p thermite-lower --all-targets -- -D warnings`,
 `cargo fmt --check`. Because this route touches `thermite-lower`, the conformance
@@ -461,7 +685,8 @@ expectation (the golden Verus passing `verus`) is part of the gate.
 **The `tests/golden/lower/` goldens do NOT exist yet** (GREENFIELD). The two
 verified files pinned verbatim above are hand-authored into
 `tests/golden/lower/{sum,binary_search}.verus.rs` (R-CHAR-3) before the builder
-runs; each was confirmed to pass `verus` during authoring of this doc.
+runs; each was confirmed to pass `verus` during authoring of this doc. The #93
+break/continue golden(s) are hand-authored from the six probes above.
 
 ## REQ status
 
@@ -476,6 +701,7 @@ runs; each was confirmed to pass `verus` during authoring of this doc.
 | REQ-7 (proof-aid emission) | SHIPPED | shape-keyed templates in `lower.rs`: `push_lemma_for` (a), `lift_immutable_preconds` (b), `accumulator_aid`/`match_acc_invariant` (c), `extensionality_at_exit` (d), `complementary_coverage_split` (e); NO per-program hardcoding; both corpus programs verify. |
 | REQ-8 (golden-file contract — VERIFY) | SHIPPED | `lower_conformance.rs` runs the real `verus` binary on emitted output (`sum`: 5 verified; `binary_search`: 2 verified; 0 errors each) and asserts the emitted contracts equal the corpus contracts (no weakening). Goldens used as the verified reference, not byte-matched (amended REQ-8). |
 | REQ-9 (`LowerError`, no panics) | SHIPPED | `enum LowerError` (span-bearing via `thermite_syntax::lexer::Span`, `Display`) born in `lower.rs`; `lower` returns `Result`; no `unwrap`/`expect`/`panic!` in `src/`; `unknown_combinator_is_err_not_panic` exercises the API surface. |
+| REQ-12 (`break`/`continue` lowering + verification semantics, #93) | NOT-STARTED | open prereq blocker #93. `lower_stmt`/`lower_loop_body` in `lower.rs` have NO `Stmt::Break`/`Continue` arm today (the arms are `Let`/`Assign`/`Return`/`If`/`Loop`/`Expr`), so the AST variants do not yet exist to lower (`ast.md` REQ-12 NOT-STARTED). #93 must add the `Break`→`break;` / `Continue`→`continue;` emit arms (+ the `l1.rs`/`l2.rs` mirrors, the `Stmt` ripple) and rely on Verus to enforce the GROUNDED obligations (Verification §`break`/`continue`): continue preserves invariant+decreases → L3; invariant-breaking or non-decreasing continue → L0; break early-exit (loop `ensures` + `invariant_except_break`) → L3; `fx diverge` loop break/continue (no `decreases`) → invariants verify, capped L1 (#88); non-diverge loop without `decreases` → L0 (exemption diverge-only). NO obligation suppression (R-DEFER-9). |
 
 ## Open questions (for the orchestrator before the builder runs)
 
@@ -504,3 +730,32 @@ runs; each was confirmed to pass `verus` during authoring of this doc.
   least-confident combinator form; its frozen trigger is provisional until a
   corpus program exercises it. Not a blocker for the corpus (#4's AC-1/AC-2 do not
   touch it), but a real risk for the registry's completeness claim.
+
+- **OQ-4 (break/continue mutation, #93):** A `break`/`continue` is NOT a mutation
+  target in v0.1 (`forge/src/mutation.rs` gains leaf `Stmt::Break`/`Continue` arms
+  that produce no mutant — `ast.md` REQ-12 Architecture). The open question is
+  whether a future mutation operator should DELETE a `break` (a loop that no
+  longer exits early) or swap `break`↔`continue` to strengthen the mutation-kill
+  score over loop-control logic. Recorded for the builder/critic; deleting a
+  `break` in a terminating loop is usually caught by the `ens`/decreases anyway.
+  Not a blocker.
+
+- **OQ-5 (`invariant_except_break` lowering, #93 — least-confident):** REQ-12 (c)
+  pins that the v0.1 corpus break-loops hold all their Thermite `inv`s at the
+  break point, so a Thermite `inv` lowers to a plain Verus `invariant` (which
+  Verus checks at break too) and the post-break fact threads onto the loop
+  `ensures`. A Thermite program whose `inv` is true at re-entry but FALSE at break
+  would need the `invariant_except_break` lowering — and Thermite has no surface
+  syntax to distinguish "re-entry-only" from "always" invariants today. This is
+  the LEAST-CONFIDENT part of #93: the GROUNDED break probe (4) needed
+  `invariant_except_break` + a loop `ensures`, neither of which the Thermite
+  surface currently spells. The builder must decide whether (i) the lowering
+  INFERS which `inv`s are re-entry-only (hard — needs a break-reachability +
+  fact-survival analysis), or (ii) v0.1 requires every `inv` to hold at break
+  (the corpus does; a program that needs otherwise is rejected with a crisp
+  diagnostic until a surface `inv_except_break` keyword is designed — a future
+  amendment). Recommended: (ii) for v0.1 (simplest, matches the corpus, no
+  surface change). Flagged for the orchestrator — this is the post-break
+  assertion-reasoning judgement call and the one most likely to need a follow-up
+  design decision. Not a blocker for the parse/AST/lower-emission work, but the
+  builder MUST pin a single break-invariant policy.

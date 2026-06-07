@@ -2,11 +2,12 @@
   "uuid": "db34855c-2b9e-4b47-a435-9e3d477a1885",
   "display_id": 117,
   "title": "C10 REQ-3: match guards x if cond => — no guard field on MatchArm; lower_match has no guard emit; check_match_exhaustiveness does not down-weight a guarded arm. A guard does NOT complete a match (GROUNDED: Some(v) if v<10 rejects Some(_) non-exhaustive). GROUNDED guarded match L3 (.design/basis/11-ergonomics.md AC-3/AC-3b).",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T19:49:21.260601913Z",
-  "updated_at": "2026-06-07T19:49:22.757041032Z",
+  "updated_at": "2026-06-07T21:31:28.898710712Z",
+  "closed_at": "2026-06-07T21:31:28.898710712Z",
   "labels": [
     "blocker"
   ]

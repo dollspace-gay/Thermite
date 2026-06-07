@@ -290,6 +290,16 @@ pub enum Stmt {
         else_: Option<Block>,
     },
     Loop(LoopNode),
+    /// `break;` — the loop-control statement (ast.md REQ-12, #93). Payload-less
+    /// and value-less (no loop label, no `break expr` — §2.3). Lowers to the
+    /// Verus-native `break;` (`verus-lowering.md` REQ-12). Valid only inside a
+    /// loop body (the parser enforces the in-loop rule — `parser.md` REQ-10).
+    Break,
+    /// `continue;` — the loop-control statement (ast.md REQ-12, #93).
+    /// Payload-less and value-less. Lowers to the Verus-native `continue;`; a
+    /// `continue` is a loop back-edge owing the invariant + `decreases`
+    /// obligations (Verus-checked — `verus-lowering.md` REQ-12).
+    Continue,
     Expr(Expr),
 }
 

@@ -77,6 +77,11 @@ pub enum SyntaxError {
     /// as a structured diagnostic so external input can never overflow the
     /// C stack and abort the process (parser.md AC-4 / REQ-4; goal.md R-CODE-2).
     ExpressionTooDeep { limit: usize, span: Span },
+    /// A `break;`/`continue;` statement parsed OUTSIDE any `loop`/`while` body
+    /// (parser.md REQ-10, #93). A structural rule (like the mandatory-clause
+    /// rule) — break/continue are loop-control statements and have no meaning at
+    /// a function-body top level; `keyword` is `"break"` or `"continue"`.
+    BreakContinueOutsideLoop { keyword: String, span: Span },
 }
 
 /// The maximum recursive-descent nesting depth the parser will follow before
@@ -125,7 +130,8 @@ impl SyntaxError {
             | SyntaxError::MissingClause { span, .. }
             | SyntaxError::ClauseOrder { span, .. }
             | SyntaxError::UnexpectedEof { span, .. }
-            | SyntaxError::ExpressionTooDeep { span, .. } => *span,
+            | SyntaxError::ExpressionTooDeep { span, .. }
+            | SyntaxError::BreakContinueOutsideLoop { span, .. } => *span,
         }
     }
 }
@@ -166,6 +172,11 @@ impl std::fmt::Display for SyntaxError {
             SyntaxError::ExpressionTooDeep { limit, span } => write!(
                 f,
                 "expression nested deeper than the limit of {limit} at byte {}",
+                span.start
+            ),
+            SyntaxError::BreakContinueOutsideLoop { keyword, span } => write!(
+                f,
+                "`{keyword}` outside of a loop body at byte {}",
                 span.start
             ),
         }
@@ -240,6 +251,13 @@ struct Parser<'a> {
     /// context). Saved/restored around each head so nested call/index/paren
     /// args re-enable struct literals.
     no_struct_literal: bool,
+    /// Current loop-nesting depth (parser.md REQ-10, #93). Incremented in
+    /// `parse_loop_inner` around the loop body parse, decremented after. A
+    /// `break;`/`continue;` parsed at depth 0 (outside any `loop`/`while` body)
+    /// is a structural `SyntaxError` — analogous to the mandatory-clause rule
+    /// (REQ-2): the parser owns presence/position; Verus owns the invariant/
+    /// decreases semantics (`verus-lowering.md` REQ-12).
+    loop_depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -252,6 +270,7 @@ impl<'a> Parser<'a> {
             errors: lex_errors,
             recursion_depth: 0,
             no_struct_literal: false,
+            loop_depth: 0,
         }
     }
 
@@ -937,6 +956,12 @@ impl<'a> Parser<'a> {
                 TokKind::Loop | TokKind::While => {
                     stmts.push(Stmt::Loop(self.parse_loop()?));
                 }
+                // `break;` / `continue;` (parser.md REQ-10, #93). Loop-control
+                // statements: payload-less, value-less, require a trailing `;`,
+                // and are valid only inside a loop body (the in-loop structural
+                // rule — `self.loop_depth > 0`).
+                TokKind::Break => stmts.push(self.parse_break_continue(true)?),
+                TokKind::Continue => stmts.push(self.parse_break_continue(false)?),
                 TokKind::If => {
                     // `if` is both a statement and an expression
                     // (surface-grammar.md decision 2). The discriminator is
@@ -1016,6 +1041,33 @@ impl<'a> Parser<'a> {
             name,
             ty,
             init,
+        })
+    }
+
+    /// Parse `break;` / `continue;` (parser.md REQ-10, #93). `is_break` selects
+    /// the keyword/variant. Enforces the in-loop structural rule: a
+    /// break/continue at `loop_depth == 0` (outside any loop body) is a
+    /// `BreakContinueOutsideLoop` diagnostic. Payload-less, value-less, with a
+    /// mandatory trailing `;` (presence/cardinality, like every statement).
+    fn parse_break_continue(&mut self, is_break: bool) -> PResult<Stmt> {
+        let (tok, keyword) = if is_break {
+            (TokKind::Break, "break")
+        } else {
+            (TokKind::Continue, "continue")
+        };
+        let span = self.peek_span();
+        self.consume(&tok, if is_break { "`break`" } else { "`continue`" })?;
+        if self.loop_depth == 0 {
+            return Err(SyntaxError::BreakContinueOutsideLoop {
+                keyword: keyword.to_string(),
+                span,
+            });
+        }
+        self.consume(&TokKind::Semi, "`;`")?;
+        Ok(if is_break {
+            Stmt::Break
+        } else {
+            Stmt::Continue
         })
     }
 
@@ -1112,7 +1164,15 @@ impl<'a> Parser<'a> {
             });
         }
 
-        let body = self.parse_block()?;
+        // Enter the loop body at depth+1 so a `break;`/`continue;` anywhere
+        // inside it (including nested `if` blocks — depth stays > 0) is accepted
+        // (parser.md REQ-10, #93). A NESTED loop bumps the depth again; the
+        // decrement is symmetric on every exit path (the `?` on `parse_block`
+        // would skip a manual decrement, so guard around it).
+        self.loop_depth += 1;
+        let body_result = self.parse_block();
+        self.loop_depth -= 1;
+        let body = body_result?;
         Ok(LoopNode {
             kind,
             invs,
@@ -1923,6 +1983,8 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Let => "let",
         TokKind::Mut => "mut",
         TokKind::Return => "return",
+        TokKind::Break => "break",
+        TokKind::Continue => "continue",
         TokKind::If => "if",
         TokKind::Else => "else",
         TokKind::Loop => "loop",

@@ -292,6 +292,8 @@ fn stmt_mentions_result(stmt: &thermite_syntax::Stmt, depth: usize) -> bool {
         }
         Stmt::Loop(loop_node) => block_mentions_result(&loop_node.body, d),
         Stmt::Expr(e) => expr_mentions_result(e, d),
+        // break/continue carry no sub-expression (#93): mention nothing.
+        Stmt::Break | Stmt::Continue => false,
     }
 }
 

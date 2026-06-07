@@ -2655,7 +2655,10 @@ fn stmt_has_string_local(stmt: &Stmt) -> bool {
                 || else_.as_ref().map(block_has_string_local).unwrap_or(false)
         }
         Stmt::Loop(l) => block_has_string_local(&l.body),
-        Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Expr(_) => false,
+        // break/continue declare no local (#93): no string-typed binding.
+        Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Expr(_) | Stmt::Break | Stmt::Continue => {
+            false
+        }
     }
 }
 
@@ -2681,6 +2684,8 @@ fn stmt_has_str_lit(stmt: &Stmt) -> bool {
         }
         Stmt::Loop(l) => block_has_str_lit(&l.body),
         Stmt::Expr(e) => expr_has_str_lit(e),
+        // break/continue carry no sub-expression (#93): no string literal.
+        Stmt::Break | Stmt::Continue => false,
     }
 }
 
@@ -3579,6 +3584,14 @@ fn lower_stmt(stmt: &Stmt, ctx: Ctx, indent: usize) -> Result<String, LowerError
             let s = lower_expr(e, ctx, 0, zero_span())?;
             Ok(format!("{pad}{s};\n"))
         }
+        // `break;` / `continue;` lower to the Verus-native loop-control
+        // statements (verus-lowering.md REQ-12, #93). The emission is trivial;
+        // the verification semantics (the invariant at every continue, the
+        // continue-decreases back-edge obligation, break-as-exit) are enforced
+        // by Verus on the lowered loop annotations — NOT suppressed here
+        // (no `assume`/`external`/dropped `decreases` — R-DEFER-9).
+        Stmt::Break => Ok(format!("{pad}break;\n")),
+        Stmt::Continue => Ok(format!("{pad}continue;\n")),
         Stmt::Loop(_) => Err(LowerError::Unsupported {
             what: "nested loop without fn-aid context".to_string(),
             span: zero_span(),

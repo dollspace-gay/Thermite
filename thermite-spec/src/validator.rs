@@ -693,6 +693,9 @@ impl Validator {
                     self.scan_block_for_loops(else_block, span);
                 }
             }
+            // break/continue carry no sub-expression and no nested loop (#93):
+            // nothing to scan or cage (the layer-neutral leaf value).
+            Stmt::Break | Stmt::Continue => {}
         }
     }
 
@@ -829,6 +832,9 @@ impl Validator {
                     self.walk_block(else_block, span);
                 }
             }
+            // break/continue carry no sub-expression (#93): no ADT node to
+            // well-formedness-check (the layer-neutral leaf value).
+            Stmt::Break | Stmt::Continue => {}
         }
     }
 

@@ -981,6 +981,8 @@ fn block_references_ident(block: &Block, ident: &str) -> bool {
         }
         Stmt::Expr(e) => expr_references_ident(e, ident),
         Stmt::Loop(l) => block_references_ident(&l.body, ident),
+        // break/continue carry no sub-expression (#93): reference nothing.
+        Stmt::Break | Stmt::Continue => false,
     });
     stmt_hit
         || block
@@ -1261,6 +1263,11 @@ pub(crate) fn lower_stmt_l1(
             let s = lower_expr_exec(e, 0, zero_span(), variants)?;
             Ok(format!("{pad}{s};\n"))
         }
+        // `break;` / `continue;` — the L1 runtime-check form is the same native
+        // loop-control statement as L3 (#93); the L1 form has no decreases/
+        // invariant to weaken (runtime checks, not a proof). Mirror of `lower.rs`.
+        Stmt::Break => Ok(format!("{pad}break;\n")),
+        Stmt::Continue => Ok(format!("{pad}continue;\n")),
         Stmt::Loop(_) => Err(LowerError::Unsupported {
             what: "nested loop reached lower_stmt_l1 (should route through lower_loop_l1)"
                 .to_string(),
@@ -1761,6 +1768,8 @@ fn stmt_has_str_lit_l1(stmt: &Stmt) -> bool {
         }
         Stmt::Loop(l) => block_has_str_lit_l1(&l.body),
         Stmt::Expr(e) => expr_has_str_lit_l1(e),
+        // break/continue carry no sub-expression (#93): no string literal.
+        Stmt::Break | Stmt::Continue => false,
     }
 }
 

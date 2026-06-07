@@ -77,6 +77,8 @@ pub enum TokKind {
     Let,
     Mut,
     Return,
+    Break,    // break (#93)
+    Continue, // continue (#93)
     If,
     Else,
     Loop,
@@ -160,6 +162,8 @@ fn keyword_kind(word: &str) -> Option<TokKind> {
         "let" => TokKind::Let,
         "mut" => TokKind::Mut,
         "return" => TokKind::Return,
+        "break" => TokKind::Break,
+        "continue" => TokKind::Continue,
         "if" => TokKind::If,
         "else" => TokKind::Else,
         "loop" => TokKind::Loop,

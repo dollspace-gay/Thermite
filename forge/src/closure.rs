@@ -337,6 +337,9 @@ fn walk_stmt(stmt: &Stmt, in_file: &BTreeSet<&str>, out: &mut Vec<String>) {
             walk_block(&node.body, in_file, out);
         }
         Stmt::Expr(e) => walk_expr(e, in_file, out),
+        // break/continue carry no sub-expression and no callee (#93): no
+        // call-graph edge (the layer-neutral leaf value).
+        Stmt::Break | Stmt::Continue => {}
     }
 }
 

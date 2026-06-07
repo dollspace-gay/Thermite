@@ -531,6 +531,9 @@ fn collect_stmt_callee_names(
             collect_block_callee_names(&loop_node.body, out);
         }
         Stmt::Expr(e) => collect_callee_names(e, out),
+        // break/continue carry no sub-expression and no callee (#93): no name
+        // to collect (the layer-neutral leaf value).
+        Stmt::Break | Stmt::Continue => {}
     }
 }
 

@@ -1080,6 +1080,8 @@ fn collect_stmt_spec_fn_calls(
             collect_block_spec_fn_calls(&node.body, spec_decls, out);
         }
         Stmt::Expr(e) => collect_expr_spec_fn_calls(e, spec_decls, out),
+        // break/continue carry no sub-expression (#93): no spec-fn call.
+        Stmt::Break | Stmt::Continue => {}
     }
 }
 
@@ -1503,6 +1505,8 @@ fn collect_stmt_adt_refs(
             collect_block_adt_refs(&node.body, adt_decls, out);
         }
         Stmt::Expr(e) => collect_expr_adt_refs(e, adt_decls, out),
+        // break/continue carry no type and no sub-expression (#93): no ADT ref.
+        Stmt::Break | Stmt::Continue => {}
     }
 }
 

@@ -379,6 +379,10 @@ fn check_block<'a>(
                     errors,
                 );
             }
+            // break/continue are loop-control statements with NO sub-expression
+            // and NO callee (#93): they contribute NO effect to the row walk
+            // (the layer-neutral value — verus-lowering.md REQ-12).
+            Stmt::Break | Stmt::Continue => {}
         }
     }
     if let Some(tail) = &block.tail {

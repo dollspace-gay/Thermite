@@ -40,7 +40,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the [`WRAPPERS`] table holds a real `std` body for each v1 target: `os::now` (`SystemTime::now()`), `os::read_byte`/`os::read_line` (`std::io::stdin().read`/`read_line`), `os::write`/`os::print` (`std::io::stdout().write_all`). Consumer: [`emit_mod_os`] (emitted into the generated crate by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`). |
+//! | REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the [`WRAPPERS`] table holds a real `std` body for each v1 target: `os::now` (`SystemTime::now()`), `os::read_byte`/`os::read_key`/`os::read_line` (`std::io::stdin().read`/`read_line`), `os::key_str` (a keystroke byte → a bounded 1-byte `TString`, the editor's host glue the surface lacks), `os::write`/`os::print` (`std::io::stdout().write_all`). Consumer: [`emit_mod_os`] (emitted into the generated crate by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `effect_wrappers::tests::{read_key_wrapper_mirrors_read_byte_eof_sentinel,key_str_wrapper_is_bounded_one_byte_string}` (the editor's terminal-I/O wrappers) + the runnable editor `forge/tests/editor_runs.rs` (the linked `os::read_key`/`os::key_str`/`os::print` build + run with piped keystrokes). |
 //! | REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets) | SHIPPED | [`emit_mod_os`] assembles a `mod os { … }` carrying EXACTLY the wrappers in the given target set (sorted, deterministic); `build::reachable_boundary_targets` keys it off the program's `#[boundary]` fns; `build::emit_source` prepends it. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (rustc exit 0, no `E0433`) + `effect_wrappers::tests::emits_only_named_wrappers`. |
 //! | REQ-3 (a verified program COMPILES + RUNS + does real I/O) | SHIPPED | the linked `os::now` wrapper does a real `clock_gettime` → `elapsed_ok()` prints a live Unix timestamp. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (run exit 0, output is a u64 < 4_000_000_000). |
 
@@ -94,6 +94,33 @@ const WRAPPERS: &[Wrapper] = &[
                  match std::io::stdin().read(&mut buf) {\n            \
                  Ok(1) => buf[0] as u64,\n            \
                  _ => 256,\n        }\n    }\n",
+    },
+    // os::read_key (Read) — the editor's keystroke primitive: one raw byte from
+    // stdin, or the EOF sentinel 256 (the editor's `read_key`, `ens result <= 256`).
+    // IDENTICAL closed-outcome shape to `read_byte` (the keystroke IS a raw byte);
+    // a separate name keeps the editor's terminal-input boundary legible in the
+    // manifest. A read error is the honest EOF arm (256), never a panic.
+    Wrapper {
+        name: "read_key",
+        source: "    pub fn read_key() -> u64 {\n        \
+                 use std::io::Read;\n        \
+                 let mut buf = [0u8; 1];\n        \
+                 match std::io::stdin().read(&mut buf) {\n            \
+                 Ok(1) => buf[0] as u64,\n            \
+                 _ => 256,\n        }\n    }\n",
+    },
+    // os::key_str (Alloc) — the editor's host glue the surface lacks: a keystroke
+    // byte → a one-byte Stage-7 `String` to insert (`ens result.len() <= 1`). A
+    // representable byte (`k <= 255`) yields a 1-byte `TString`; a control/EOF key
+    // (`k >= 256`, or any non-byte value) yields the EMPTY string (the bounded,
+    // honest arm — `result.len() <= 1` holds in every case). Total, no panic.
+    Wrapper {
+        name: "key_str",
+        source: "    pub fn key_str(k: u64) -> super::TString {\n        \
+                 if k <= 255 {\n            \
+                 super::TString { data: vec![k as u8] }\n        \
+                 } else {\n            \
+                 super::TString { data: Vec::new() }\n        }\n    }\n",
     },
     // os::read_line (Read) — a line from stdin as a Stage-7 `String` (the lowered
     // `TString` newtype, `pub data: Vec<u8>`). A read error yields an empty line
@@ -265,6 +292,54 @@ mod tests {
         assert!(
             out.contains("_ => 256"),
             "the EOF/error arm is the 256 sentinel, not a panic: {out}"
+        );
+    }
+
+    fn emit_or_fail(items: &[&str]) -> String {
+        let result = emit_mod_os(&targets(items));
+        assert!(result.is_ok(), "emit_mod_os({items:?}) should succeed");
+        result.unwrap_or_default()
+    }
+
+    #[test]
+    fn read_key_wrapper_mirrors_read_byte_eof_sentinel() {
+        // REQ-1 (the editor's terminal-input boundary): `os::read_key` is the
+        // keystroke primitive — one raw byte from stdin or the 256 EOF sentinel
+        // (the editor's `read_key`, `ens result <= 256`), the honest closed
+        // outcome set, never a panic. Anchored to the design's pinned wrapper
+        // shape (R-CHAR-3), not toolchain output.
+        let out = emit_or_fail(&["os::read_key"]);
+        assert!(out.contains("pub fn read_key() -> u64"), "{out}");
+        assert!(out.contains("std::io::stdin().read(&mut buf)"), "{out}");
+        assert!(
+            out.contains("_ => 256"),
+            "the EOF/error arm is the 256 sentinel, not a panic: {out}"
+        );
+    }
+
+    #[test]
+    fn key_str_wrapper_is_bounded_one_byte_string() {
+        // REQ-1 (the editor's host glue): `os::key_str` maps a keystroke byte to a
+        // bounded one-byte `String` — a representable byte (`k <= 255`) is a 1-byte
+        // `TString`, a control/EOF key the EMPTY string (`ens result.len() <= 1`
+        // holds in every case). Total, no panic. Anchored to the design's pinned
+        // wrapper shape (R-CHAR-3).
+        let out = emit_or_fail(&["os::key_str"]);
+        assert!(
+            out.contains("pub fn key_str(k: u64) -> super::TString"),
+            "{out}"
+        );
+        assert!(
+            out.contains("if k <= 255"),
+            "the representable-byte guard keeps result.len() <= 1: {out}"
+        );
+        assert!(
+            out.contains("vec![k as u8]"),
+            "a representable byte yields a 1-byte TString: {out}"
+        );
+        assert!(
+            out.contains("data: Vec::new()"),
+            "a control/EOF key yields the empty string (the bounded arm): {out}"
         );
     }
 

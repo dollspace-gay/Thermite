@@ -255,6 +255,37 @@ fn lower_inv_expr_l1(
             let r = lower_inv_expr_l1(receiver, field_names, d, span)?;
             Ok(format!("{r}.{name}"))
         }
+        // A method-call receiver/args (`cursor <= text.len()`'s `text.len()`,
+        // `b.text.slice(0, b.cursor)`) must have the field-path rewrite recurse
+        // THROUGH the receiver AND every argument — a bare field name `text` is a
+        // `self.text` in the emitted `well_formed`, so an unqualified `text.len()`
+        // would emit `text.len()` (rustc E0425: cannot find value `text`). Recurse
+        // the rewrite so the WHOLE call tree is qualified (the editor's struct
+        // inv `cursor <= text.len()`).
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => {
+            let r = lower_inv_expr_l1(receiver, field_names, d, span)?;
+            let mut parts = Vec::with_capacity(args.len());
+            for a in args {
+                parts.push(lower_inv_expr_l1(a, field_names, d, span)?);
+            }
+            Ok(format!("{r}.{name}({})", parts.join(", ")))
+        }
+        // A call's args also carry the field-path rewrite (a `spec fn`/combinator
+        // call over struct fields inside an `inv` — the same CLASS as the method
+        // receiver above, so the whole call family is covered, not just the one
+        // triggering site).
+        Expr::Call { callee, args } => {
+            let c = lower_inv_expr_l1(callee, field_names, d, span)?;
+            let mut parts = Vec::with_capacity(args.len());
+            for a in args {
+                parts.push(lower_inv_expr_l1(a, field_names, d, span)?);
+            }
+            Ok(format!("{c}({})", parts.join(", ")))
+        }
         _ => lower_expr_exec(expr, depth, span, NO_VARIANTS),
     }
 }
@@ -992,9 +1023,28 @@ pub(crate) fn lower_expr_exec(
             args,
         } => {
             let r = lower_expr_exec(receiver, d, span, variants)?;
-            let mut parts = Vec::new();
+            // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the emitted L1
+            // `String` wrapper's index accessors `byte_at(i: usize)` /
+            // `slice(lo: usize, hi: usize)` (see `emit_string_runtime_l1`) take
+            // `usize`, but a Thermite surface index is commonly a `u64` (the
+            // editor's `b.text.slice(0, b.cursor)` with `cursor: u64`). Rust does
+            // NO implicit `u64 -> usize` narrowing, so each index arg is coerced
+            // with an explicit `as usize` (rustc E0308 otherwise). This MIRRORS the
+            // CHECK-path coercion in `lower.rs::lower_expr` (#86): keyed on the
+            // reserved built-in method NAME (`byte_at`/`slice` — no user methods in
+            // v0.1) across BOTH string index intrinsics (the whole op family, no
+            // sibling left to re-pin). An integer LITERAL flows in directly (Rust
+            // coerces a literal to `usize`) and an arg already `as usize` is left
+            // as-is (no double-cast). L1 is entirely exec, so no spec guard needed.
+            let coerce_usize = matches!(name.as_str(), "byte_at" | "slice");
+            let mut parts = Vec::with_capacity(args.len());
             for a in args {
-                parts.push(lower_expr_exec(a, d, span, variants)?);
+                let lowered = lower_expr_exec(a, d, span, variants)?;
+                if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast_l1(a) {
+                    parts.push(format!("{lowered} as usize"));
+                } else {
+                    parts.push(lowered);
+                }
             }
             Ok(format!("{r}.{name}({})", parts.join(", ")))
         }
@@ -1075,6 +1125,19 @@ pub(crate) fn lower_expr_exec(
             Ok(format!("*{e}"))
         }
     }
+}
+
+/// True if `expr` is already an `as usize` cast — so the L1 `byte_at`/`slice`
+/// `u64 -> usize` index coercion (mirroring `lower.rs::is_usize_cast`, #86) does
+/// NOT double-cast an argument the source already wrote `... as usize`.
+fn is_usize_cast_l1(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Cast {
+            ty: Type::Prim(PrimType::Usize),
+            ..
+        }
+    )
 }
 
 /// Lower an `Index` expression in exec position (plain Rust): `xs[i]`,

@@ -1765,6 +1765,18 @@ fn string_value_names(f: &FnItem) -> Vec<&str> {
 /// exemption is gated STRICTLY on the syntactic `#[boundary]`/`#[slag]` flag
 /// (the honesty gate, `goal.md` R-DEFER-9): a REGULAR fn (neither flag) ALWAYS
 /// takes the fully-proved-body path below — a lying regular body is CAUGHT.
+/// True iff the fn's effect row contains `diverge` (§4.1: "divergence requires
+/// `fx diverge` in the row"). Keyed on the SHAPE of the effect row — a `pure`
+/// row never diverges; a `Set` row diverges iff it lists [`Effect::Diverge`].
+/// This is the SINGLE source of truth for the §4.1 termination exemption (the
+/// fn attribute in [`lower_fn`] and the loop-`decreases` suppression in
+/// [`lower_loop`] both gate on it), so the exemption is applied uniformly and
+/// ONLY to a diverge fn (a non-diverge loop still proves termination).
+fn fn_is_diverge(f: &FnItem) -> bool {
+    use thermite_syntax::ast::{Effect, EffectRow};
+    matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
+}
+
 fn lower_fn(
     f: &FnItem,
     nat_fns: &[&str],
@@ -1786,6 +1798,19 @@ fn lower_fn(
     }
 
     let mut out = String::new();
+    // §4.1: "Termination is proved by default; divergence requires `fx diverge`."
+    // A `fx diverge` fn (an event loop, `examples/editor/editor.th`'s `run`) is
+    // honestly NON-terminating: its loop's `decreases` is suppressed below
+    // (`lower_loop`), and Verus would then DEMAND a termination proof for the
+    // bare loop unless the fn carries this exemption. The attribute scopes the
+    // exemption to THIS fn (it does not weaken termination for any other fn): a
+    // diverge fn proves PARTIAL correctness (the loop INVARIANTS) only, which is
+    // the honest L1 verdict — termination is not claimed. A non-diverge fn never
+    // emits this, so the termination default stands unweakened (gap-3 is
+    // diverge-ONLY; a normal loop without `dec` still fails to verify).
+    if fn_is_diverge(f) {
+        out.push_str("#[verifier::exec_allows_no_decreases_clause]\n");
+    }
     out.push_str(&lower_fn_signature(f, nat_fns, inv_structs, string_fields)?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
 
@@ -3579,9 +3604,19 @@ fn lower_loop(
         writeln!(out, "{ipad}    {inv},").map_err(|_| fmt_err())?;
     }
 
-    // decreases.
-    let dec = lower_expr(&l.dec.expr, spec, 0, f.span)?;
-    writeln!(out, "{ipad}decreases {dec},").map_err(|_| fmt_err())?;
+    // decreases (§4.1: "Termination is proved by default"). SUPPRESSED for a
+    // `fx diverge` fn: an event loop is non-terminating BY DESIGN, so emitting a
+    // `decreases` would force Verus to prove a termination measure that honestly
+    // does not exist. The enclosing fn carries `#[verifier::exec_allows_no_
+    // decreases_clause]` (see `lower_fn`), so Verus verifies the loop's
+    // INVARIANTS (partial correctness) WITHOUT a termination claim — the honest
+    // L1 verdict. A non-diverge fn ALWAYS emits its `decreases` (sum/binary_search
+    // still prove termination → L3): the exemption is diverge-ONLY and is not a
+    // termination-proof escape hatch.
+    if !fn_is_diverge(f) {
+        let dec = lower_expr(&l.dec.expr, spec, 0, f.span)?;
+        writeln!(out, "{ipad}decreases {dec},").map_err(|_| fmt_err())?;
+    }
 
     // Body open.
     writeln!(out, "{pad}{{").map_err(|_| fmt_err())?;

@@ -673,3 +673,10 @@ crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/basis/12-mutual-recursion.md"
 reference = []
 conformance_ops = []
+
+# C12 Map<K,V> — bounded verified kv collection (issue #114/#123)
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/13-map.md"
+reference = ["conformance/map"]
+conformance_ops = []

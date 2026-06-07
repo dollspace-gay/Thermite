@@ -10,10 +10,6 @@
     "83": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-06T22:05:28.956656266Z"
-    },
-    "88": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-07T00:08:33.977433479Z"
     }
   },
   "issues": {},
@@ -872,11 +868,16 @@
       "agent_id": "Yffe",
       "agent_seq": 171,
       "timestamp": "2026-06-07T00:49:17.676284382Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 172,
+      "timestamp": "2026-06-07T00:49:20.885654710Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-07T00:49:17.676284382Z",
+    "timestamp": "2026-06-07T00:49:20.885654710Z",
     "agent_id": "Yffe",
-    "agent_seq": 171
+    "agent_seq": 172
   }
 }

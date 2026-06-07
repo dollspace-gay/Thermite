@@ -1,0 +1,10 @@
+{
+  "uuid": "0e326fef-9698-4f2c-9301-6cae6c9b83e5",
+  "display_id": 92,
+  "title": "Primitive completeness C2 (integer operators): % << >> & | ^ ! (+ char/hex/binary literals folded from C1)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T01:43:11.287323068Z",
+  "updated_at": "2026-06-07T01:43:11.287323068Z"
+}

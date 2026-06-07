@@ -1,0 +1,10 @@
+{
+  "uuid": "23b92e2e-9d5e-479c-8b5f-adfd2cc60a26",
+  "issue_uuid": "f0df0c19-b7ca-4f49-973b-05a4488800c4",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_numfmt_zero.rs::divergence_numfmt_l3_zero_handling_matches_l1 demonstrates the divergence (run: cargo test -p thermite-lower --test divergence_numfmt_zero -- --ignored).\n\nROOT: emit_numfmt_defs (thermite-lower/src/lower.rs) emits the L3 u64_to_string with only a 'while m > 0' digit loop and NO zero-guard. For n==0 the loop never runs, the reverse of [] is [], so result.data@ == empty seq. parse_be([]) == 0 == n verifies (the round-trip ens is satisfied for BOTH [] and [48]), so verus does NOT catch it. By contrast emit_string_runtime_l1 (l1.rs) DOES emit 'if m == 0 { data.push(48u8); }', so the BUILT binary prints \"0\" ([48]).\n\nDIVERGENCE 1 (L3 != L1): commit 1b57d60 claims 'L3 == L1 ... agree byte-for-byte'. False at n==0: L3 -> [] (\"\"), L1 -> [48] (\"0\").\nDIVERGENCE 2 (REQ-8): .design/basis/07-strings.md REQ-8 'the surface emits the human-readable MSB-first decimal' — the decimal of 0 is \"0\", not the empty string. The verified L3 lowering emits \"\" for 0.\n\nFIX (generator): add the same zero-guard to emit_numfmt_defs' L3 u64_to_string (push 48u8 when n==0, before/around the build loop) with the invariant/proof extended so parse_be(result.data@)==0 still discharges with result.data@ == [48]. R-DEFER-9: prove it, do not assume.",
+  "created_at": "2026-06-07T05:44:23.859641911Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADPE5lurtsQXmm3H6MuqH0s+qQAWpIgPLEjeUmWSvrxkooE6bNKmQkh1Gb5rPCXSDjvqxtPTmuXjTOI5DimoTBA=="
+}

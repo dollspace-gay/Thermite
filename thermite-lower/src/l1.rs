@@ -34,7 +34,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (L1 check-emission entry point) | SHIPPED | `pub fn lower_l1`; emits each `FnItem` with `req` on entry, loop `inv` per iteration, `ens` against bound `result` on exit; verified by `sum_l1_compiles_and_runs` (compile+run via `rustc`). |
+//! | REQ-1 (L1 check-emission entry point) | SHIPPED | `pub fn lower_l1`; emits each `FnItem` with `req` on entry, loop `inv` per iteration, `ens` against bound `result` on exit; verified by `sum_l1_compiles_and_runs` (compile+run via `rustc`). #88 blocker 2 (ens-after-move CLASS): `lower_fn_l1` snapshots each non-Copy param an `ens` references (`type_is_non_copy_l1` + `expr_references_ident`) into a `<p>__pre` `.clone()` BEFORE the body, and lowers the `ens` against the snapshot (`rename_params_in_expr`) — so a param moved into the result and then named in `ens` (`move_left`'s `ens result.text.len() == b.text.len()`, `insert_str`'s `+ ins.len()`) no longer rustc-`E0382`s. `TString`/struct/enum all `#[derive(Clone)]`. #88 blocker 3 (empty-literal → `TString`): `lower_expr_exec`'s `Expr::StrLit` materializes an owned `TString` (the `Vec<u8>` byte-push, mirroring `lower.rs`'s L3 form, #82) NOT a Rust `&str`, so `Buffer { text: "", .. }` in struct-lit field position no longer rustc-`E0308`s. Verified: `forge/tests/editor_runs.rs` (the editor builds + runs with piped keystrokes). |
 //! | REQ-2 (always-active check primitive) | SHIPPED | `emit_check_macro` writes the `thermite_check!` macro + `thermite_contract_violation` handler (NOT `debug_assert!`); `no_debug_assert_in_emission` (AC-2) + `negative_fixture_fires_violation`. |
 //! | REQ-3 (combinator L1 executable forms) | SHIPPED | `emit_combinator_l1_defs` reads `thermite_spec::CombinatorSig.l1`; a combinator call lowers via `lower_expr_exec`; unit-tested by `combinator_l1_forms_run` (AC-3). |
 //! | REQ-4 (`spec fn` → executable fn) | SHIPPED | `lower_spec_fn_l1`/`slice_fold_body_l1` emit the slice-length-branch recursion over `&[u32]`; verified by `sum_l1_compiles_and_runs` (AC-4: `spec_sum(&[1,2,3]) == 6` in the positive harness). |
@@ -205,6 +205,15 @@ fn qualify_variant_path_l1(path: &[String], variants: &[(&str, &str)]) -> String
 /// rung). The `inv` body rewrites bare field-name paths to `self.<field>`.
 fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
     let mut out = String::new();
+    // `#[derive(Clone)]`: the L1 ens-check snapshots a non-Copy struct parameter
+    // BEFORE the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot) so a field
+    // moved into the result and then named in an `ens` (e.g. `move_left`'s `ens
+    // result.text.len() == b.text.len()`, `b.text` moved into `Buffer { text:
+    // b.text, .. }`) no longer triggers rustc `error[E0382]` (#88 blocker 2). The
+    // derive is the whole CLASS — every invariant/plain struct can be a moved-then-
+    // named ens param.
+    out.push_str("#[derive(Clone)]\n");
+    out.push_str("#[allow(dead_code)]\n");
     writeln!(out, "struct {} {{", s.name).ok();
     for field in &s.fields {
         let ty = lower_type(&field.ty)?;
@@ -294,6 +303,11 @@ fn lower_inv_expr_l1(
 /// in their plain Rust spelling (the L1 mirror of `lower.rs::lower_enum`).
 fn lower_enum_l1(e: &EnumItem) -> Result<String, LowerError> {
     let mut out = String::new();
+    // `#[derive(Clone)]` mirrors `lower_struct_l1` (the whole non-Copy-param
+    // class): an enum-typed param named in an `ens` after the body moves it is
+    // snapshot-cloned by `lower_fn_l1` (#88 blocker 2).
+    out.push_str("#[derive(Clone)]\n");
+    out.push_str("#[allow(dead_code)]\n");
     writeln!(out, "enum {} {{", e.name).ok();
     for variant in &e.variants {
         match &variant.shape {
@@ -682,6 +696,50 @@ fn lower_fn_l1(
         }
     }
 
+    // #88 blocker 2 (the ens-after-move CLASS): an `ens` may name a non-Copy
+    // parameter (`String`/`TString`, an invariant/plain `struct`, `Vec`/`Box`)
+    // that the BODY then MOVES into the `result` — e.g. `move_left`'s
+    // `ens result.text.len() == b.text.len()` where the body is
+    // `Buffer { text: b.text, .. }` (`b.text` moved), or `insert_str`'s
+    // `ens ... + ins.len()` where `ins` is moved into `head.concat(ins)`. Reading
+    // the param in the ens AFTER the body consumed it is rustc
+    // `error[E0382]: borrow of moved value`. So we SNAPSHOT each non-Copy param
+    // into a `<p>__pre` CLONE on entry (before the body runs) and lower every ens
+    // against the snapshot (`rename_params_in_expr`). The snapshot is taken AFTER
+    // the `req`/well_formed checks (which read the live param) and BEFORE the body
+    // (which may move it). A Copy param (`u64`/`bool`) is left live (no snapshot,
+    // no rename) so the common arithmetic ens is byte-unchanged for the corpus.
+    // Snapshot ONLY a non-Copy param that some `ens` actually references (else the
+    // emitted `let <p>__pre = ..` would be an unused binding → clippy `-D warnings`
+    // and a needless clone). A Copy param is never snapshot.
+    let snap_params: Vec<&Param> = f
+        .params
+        .iter()
+        .filter(|p| {
+            type_is_non_copy_l1(&p.ty)
+                && f.contract
+                    .ens
+                    .iter()
+                    .any(|ens| expr_references_ident(&ens.expr, &p.name))
+        })
+        .collect();
+    let rename: Vec<(String, String)> = snap_params
+        .iter()
+        .map(|p| (p.name.clone(), snapshot_name_l1(&p.name)))
+        .collect();
+    for p in &snap_params {
+        // A deep `clone()` of the non-Copy param (the L1 `TString`/struct/enum all
+        // `#[derive(Clone)]`) preserves it for the ens check after the body moves
+        // the original.
+        writeln!(
+            out,
+            "    let {} = {}.clone();",
+            snapshot_name_l1(&p.name),
+            p.name
+        )
+        .ok();
+    }
+
     // The body value is bound to `result` so `ens` can reference it (REQ-1). A
     // boundary fn has `body: None` and is routed to `lower_boundary_fn_l1` by the
     // `lower_l1` match guard, so this arm only ever sees an in-language fn; a
@@ -696,9 +754,12 @@ fn lower_fn_l1(
     out.push_str(&lower_fn_body_l1(body, f, variants, 2)?);
     writeln!(out, "    }};").ok();
 
-    // ens on exit, in source order, against the bound `result` (REQ-1/REQ-2).
+    // ens on exit, in source order, against the bound `result` (REQ-1/REQ-2). A
+    // reference to a snapshot non-Copy param is rewritten to its `<p>__pre` clone
+    // (#88 blocker 2) so the check never borrows a value the body moved.
     for ens in &f.contract.ens {
-        let cond = lower_expr_exec(&ens.expr, 0, f.span, variants)?;
+        let expr = rename_params_in_expr(&ens.expr, &rename);
+        let cond = lower_expr_exec(&expr, 0, f.span, variants)?;
         out.push_str(&emit_check("ens", &ens.text, &cond, 1));
     }
     // REQ-8 (handled-or-loud): a fn returning an invariant-bearing `struct` checks
@@ -719,6 +780,227 @@ fn lower_fn_l1(
     writeln!(out, "    result").ok();
     out.push_str("}\n");
     Ok(out)
+}
+
+/// The `<p>__pre` snapshot binding name for a non-Copy parameter `p` (#88
+/// blocker 2). Deterministic; a single fixed suffix so the renamer and the
+/// emitter agree. `__pre` cannot collide with a surface identifier (the lexer
+/// rejects a leading `_`-run as an ident start in user code paths, and no
+/// surface name carries this exact suffix in the corpus).
+fn snapshot_name_l1(param: &str) -> String {
+    format!("{param}__pre")
+}
+
+/// True iff a parameter of type `ty` is NON-Copy in the emitted L1 source — so the
+/// ens-check must snapshot it before the body may move it (#88 blocker 2). The
+/// owning types are the ADT/collection/text types: a `String` (`TString`
+/// newtype), a `Vec`/`Box` (owning heap), and a user `Named` `struct`/`enum`. A
+/// `Prim` (`u32`/`u64`/`usize`/`bool`), `Unit`, a `&[T]`/`&T` `Ref` (a Copy
+/// shared borrow), a `Slice`, or a `Generic` are left LIVE (no snapshot) so the
+/// common arithmetic ens (`sum`/`binary_search`) lowers byte-unchanged.
+fn type_is_non_copy_l1(ty: &Type) -> bool {
+    matches!(
+        ty,
+        Type::Named(_) | Type::String | Type::Vec(_) | Type::Box(_)
+    )
+}
+
+/// Rewrite every reference to a snapshot parameter in `expr` to its `<p>__pre`
+/// clone (#88 blocker 2). `renames` maps a param name to its snapshot name. The
+/// rewrite is a structural deep copy of the `ens` `Expr` that, at every `Path`
+/// whose SINGLE segment is a renamed param, swaps in the snapshot segment — so a
+/// `b.text.len()` (`MethodCall` over `Field` over `Path(["b"])`) becomes
+/// `b__pre.text.len()` and a bare `ins` (`Path(["ins"])`) becomes `ins__pre`. The
+/// bound `result` is never a param, so it is untouched. A multi-segment / non-param
+/// path is left as-is. This recurses through EVERY `Expr` variant (the whole class,
+/// no node left un-renamed) so an arbitrary ens shape is handled.
+fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
+    let rec = |e: &Expr| Box::new(rename_params_in_expr(e, renames));
+    match expr {
+        Expr::Path(segs) => {
+            if segs.len() == 1 {
+                if let Some((_, to)) = renames.iter().find(|(from, _)| from == &segs[0]) {
+                    return Expr::Path(vec![to.clone()]);
+                }
+            }
+            Expr::Path(segs.clone())
+        }
+        Expr::IntLit { value, raw } => Expr::IntLit {
+            value: *value,
+            raw: raw.clone(),
+        },
+        Expr::BoolLit(b) => Expr::BoolLit(*b),
+        Expr::StrLit(s) => Expr::StrLit(s.clone()),
+        Expr::Call { callee, args } => Expr::Call {
+            callee: rec(callee),
+            args: args
+                .iter()
+                .map(|a| rename_params_in_expr(a, renames))
+                .collect(),
+        },
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } => Expr::MethodCall {
+            receiver: rec(receiver),
+            name: name.clone(),
+            args: args
+                .iter()
+                .map(|a| rename_params_in_expr(a, renames))
+                .collect(),
+        },
+        Expr::Field { receiver, name } => Expr::Field {
+            receiver: rec(receiver),
+            name: name.clone(),
+        },
+        Expr::Closure { params, body } => Expr::Closure {
+            params: params.clone(),
+            body: rec(body),
+        },
+        Expr::Match { scrutinee, arms } => Expr::Match {
+            scrutinee: rec(scrutinee),
+            arms: arms
+                .iter()
+                .map(|arm| MatchArm {
+                    pattern: arm.pattern.clone(),
+                    body: rename_params_in_expr(&arm.body, renames),
+                })
+                .collect(),
+        },
+        Expr::If { cond, then, else_ } => Expr::If {
+            cond: rec(cond),
+            then: then.clone(),
+            else_: else_.clone(),
+        },
+        Expr::Binary { op, lhs, rhs } => Expr::Binary {
+            op: *op,
+            lhs: rec(lhs),
+            rhs: rec(rhs),
+        },
+        Expr::Index { base, index } => Expr::Index {
+            base: rec(base),
+            index: rename_params_in_index(index, renames),
+        },
+        Expr::Cast { expr, ty } => Expr::Cast {
+            expr: rec(expr),
+            ty: ty.clone(),
+        },
+        Expr::Ref { mutable, expr } => Expr::Ref {
+            mutable: *mutable,
+            expr: rec(expr),
+        },
+        Expr::StructLit { path, fields } => Expr::StructLit {
+            path: path.clone(),
+            fields: fields
+                .iter()
+                .map(|(n, v)| (n.clone(), rename_params_in_expr(v, renames)))
+                .collect(),
+        },
+        Expr::Is { scrutinee, variant } => Expr::Is {
+            scrutinee: rec(scrutinee),
+            variant: variant.clone(),
+        },
+        Expr::Deref(inner) => Expr::Deref(rec(inner)),
+    }
+}
+
+/// True iff `expr` references the bare single-segment identifier `ident`
+/// anywhere — used to decide whether an `ens` needs a `<p>__pre` snapshot of a
+/// non-Copy param (#88 blocker 2). Recurses the whole `Expr` class; a `Path`
+/// whose single segment equals `ident` is the hit.
+fn expr_references_ident(expr: &Expr, ident: &str) -> bool {
+    let any = |es: &[Expr]| es.iter().any(|e| expr_references_ident(e, ident));
+    match expr {
+        Expr::Path(segs) => segs.len() == 1 && segs[0] == ident,
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => false,
+        Expr::Call { callee, args } => expr_references_ident(callee, ident) || any(args),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_references_ident(receiver, ident) || any(args)
+        }
+        Expr::Field { receiver, .. } => expr_references_ident(receiver, ident),
+        Expr::Closure { params, body } => {
+            // A closure param that SHADOWS `ident` rebinds it inside the body, so
+            // the body's use is not the param. Conservative: if shadowed, the outer
+            // param is not referenced through this closure.
+            if params.iter().any(|p| p == ident) {
+                false
+            } else {
+                expr_references_ident(body, ident)
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            expr_references_ident(scrutinee, ident)
+                || arms.iter().any(|a| expr_references_ident(&a.body, ident))
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_references_ident(cond, ident)
+                || block_references_ident(then, ident)
+                || block_references_ident(else_, ident)
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_references_ident(lhs, ident) || expr_references_ident(rhs, ident)
+        }
+        Expr::Index { base, index } => {
+            expr_references_ident(base, ident) || index_references_ident(index, ident)
+        }
+        Expr::Cast { expr, .. } => expr_references_ident(expr, ident),
+        Expr::Ref { expr, .. } => expr_references_ident(expr, ident),
+        Expr::StructLit { fields, .. } => {
+            fields.iter().any(|(_, v)| expr_references_ident(v, ident))
+        }
+        Expr::Is { scrutinee, .. } => expr_references_ident(scrutinee, ident),
+        Expr::Deref(inner) => expr_references_ident(inner, ident),
+    }
+}
+
+/// [`expr_references_ident`] for a `Block` (its statements' inits + tail).
+fn block_references_ident(block: &Block, ident: &str) -> bool {
+    let stmt_hit = block.stmts.iter().any(|s| match s {
+        Stmt::Let { init, .. } => expr_references_ident(init, ident),
+        Stmt::Assign { target, value } => {
+            expr_references_ident(target, ident) || expr_references_ident(value, ident)
+        }
+        Stmt::Return(e) => e.as_ref().is_some_and(|e| expr_references_ident(e, ident)),
+        Stmt::If { cond, then, else_ } => {
+            expr_references_ident(cond, ident)
+                || block_references_ident(then, ident)
+                || else_
+                    .as_ref()
+                    .is_some_and(|b| block_references_ident(b, ident))
+        }
+        Stmt::Expr(e) => expr_references_ident(e, ident),
+        Stmt::Loop(l) => block_references_ident(&l.body, ident),
+    });
+    stmt_hit
+        || block
+            .tail
+            .as_ref()
+            .is_some_and(|t| expr_references_ident(t, ident))
+}
+
+/// [`expr_references_ident`] for an `IndexArg`.
+fn index_references_ident(index: &IndexArg, ident: &str) -> bool {
+    match index {
+        IndexArg::Single(i) | IndexArg::RangeTo(i) | IndexArg::RangeFrom(i) => {
+            expr_references_ident(i, ident)
+        }
+        IndexArg::Range(i, j) => expr_references_ident(i, ident) || expr_references_ident(j, ident),
+    }
+}
+
+/// Rename snapshot params inside an `IndexArg` (the index sub-expressions), the
+/// `Index` companion to [`rename_params_in_expr`] (#88 blocker 2).
+fn rename_params_in_index(index: &IndexArg, renames: &[(String, String)]) -> IndexArg {
+    match index {
+        IndexArg::Single(i) => IndexArg::Single(Box::new(rename_params_in_expr(i, renames))),
+        IndexArg::RangeTo(i) => IndexArg::RangeTo(Box::new(rename_params_in_expr(i, renames))),
+        IndexArg::RangeFrom(i) => IndexArg::RangeFrom(Box::new(rename_params_in_expr(i, renames))),
+        IndexArg::Range(i, j) => IndexArg::Range(
+            Box::new(rename_params_in_expr(i, renames)),
+            Box::new(rename_params_in_expr(j, renames)),
+        ),
+    }
 }
 
 /// Lower a BOUNDARY fn to its L1 wrapper (ffi-boundary.md REQ-4, §9 "L1, runtime
@@ -1003,11 +1285,24 @@ pub(crate) fn lower_expr_exec(
         // Emit the numeric `value`, NOT `raw` (#37) — byte-identical L1 output.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
-        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1):
-        // render the literal text back as a quoted/escaped Rust string literal,
-        // the exec-render counterpart of `IntLit`'s numeric `value` emission.
-        // `{:?}` produces a valid escaped Rust string token deterministically.
-        Expr::StrLit(s) => Ok(format!("{s:?}")),
+        // A string literal materializes an OWNED `TString` (NOT a Rust `&str`)
+        // (`.design/basis/07-strings.md` REQ-1) — the L1 exec mirror of `lower.rs`'s
+        // L3 `Expr::StrLit` form (#82). Without this an `Expr::StrLit("")` in a
+        // struct-literal field position (`Buffer { text: "", cursor: 0 }`) emits a
+        // bare `""` where a `TString` field is expected → rustc `error[E0308]:
+        // mismatched types (expected `TString`, found `&str`)` (#88 blocker 3). The
+        // L1 `TString` is the `Vec<u8>` newtype (`emit_string_runtime_l1`), so the
+        // literal's UTF-8 bytes are pushed one-by-one into a fresh `data` vec (the
+        // empty literal yields the empty `TString`). Emitted as an inline block so
+        // it composes as a receiver (`"hi".len()`), exactly like the L3 form.
+        Expr::StrLit(s) => {
+            let mut block = String::from("({ let mut data: Vec<u8> = Vec::new();");
+            for b in s.as_bytes() {
+                write!(block, " data.push({b}u8);").ok();
+            }
+            block.push_str(" TString { data } })");
+            Ok(block)
+        }
         Expr::Path(segs) => Ok(segs.join("::")),
         Expr::Call { callee, args } => {
             let c = lower_expr_exec(callee, d, span, variants)?;
@@ -1502,7 +1797,13 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     let cap = STRING_CAP_L1;
     let mut out = String::new();
     out.push('\n');
-    out.push_str("#[derive(Debug)]\n");
+    // `Clone` (alongside `Debug`): the L1 ens-check snapshots a non-Copy
+    // parameter BEFORE the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot),
+    // so a `String`/`TString` param named in an `ens` after being moved into the
+    // result no longer triggers rustc `error[E0382]: borrow of moved value` (#88
+    // blocker 2). A `TString` is a `Vec<u8>` newtype, so the derive is a deep byte
+    // copy.
+    out.push_str("#[derive(Debug, Clone)]\n");
     out.push_str("#[allow(dead_code)]\n");
     out.push_str("struct TString { data: Vec<u8> }\n");
     out.push_str("#[allow(dead_code)]\n");

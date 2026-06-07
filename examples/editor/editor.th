@@ -1,0 +1,156 @@
+// A verified, RUNNABLE nano-like text editor (crosslink #83) — the
+// proof-of-the-pudding for Thermite.
+//
+// THE HONEST SPLIT (verified vs trusted):
+//   * VERIFIED EDIT CORE (certifies L3 — the editor's bug-prone heart):
+//       Buffer + insert_str + backspace + move_left + move_right.
+//       Each is a TOTAL function whose cursor math and buffer edits are
+//       PROVEN: the cursor stays in bounds (the type invariant) and every
+//       length delta is proven (the `ens`). `forge check` certifies all five
+//       at L3.
+//   * TRUSTED RUNNABLE SHELL (L1 / boundary — seccomp-confined):
+//       read_key / key_str / render are `#[boundary]` primitives (the
+//       terminal I/O, trusted-by-fiat, contract-stated, syscall-confined);
+//       run is the `fx diverge` event loop. These are L1 — the honest seam
+//       between proven logic and the world.
+//
+// See README.md for what is verified vs trusted and how to run it.
+
+// ---------------------------------------------------------------------------
+// THE VERIFIED EDIT CORE (L3) — proven cursor math + buffer edits.
+// ---------------------------------------------------------------------------
+
+// The editor buffer: the text and the cursor offset (a byte index). The type
+// invariant is the editor's core safety claim — the cursor never points past
+// the end of the text, and the text stays within the bounded-String capacity
+// (the §4.2 cage). Every edit op below preserves this invariant (proven L3).
+struct Buffer {
+  text: String,
+  cursor: u64,
+} inv cursor <= text.len() && text.len() <= 1_000_000
+
+// Insert `ins` at the cursor: split the text at the cursor, splice `ins`
+// between the halves, and advance the cursor past the inserted run. PROVEN:
+// the text grows by exactly `ins.len()` and the cursor advances by exactly
+// `ins.len()` (so it still points within the new text — the invariant holds).
+fn insert_str(b: Buffer, ins: String) -> Buffer
+  req b.text.len() + ins.len() <= 1_000_000
+  ens result.text.len() == b.text.len() + ins.len()
+  ens result.cursor == b.cursor + ins.len()
+  fx  alloc
+{
+  let n: u64 = ins.len();
+  let head: String = b.text.slice(0, b.cursor);
+  let tail: String = b.text.slice(b.cursor, b.text.len());
+  Buffer { text: head.concat(ins).concat(tail), cursor: b.cursor + n }
+}
+
+// Delete the byte before the cursor: splice the text around the deleted byte
+// and step the cursor back one. PROVEN: the text shrinks by exactly one and
+// the cursor steps back exactly one (the invariant holds — `req cursor > 0`
+// guarantees there is a byte to delete).
+fn backspace(b: Buffer) -> Buffer
+  req b.cursor > 0
+  ens result.text.len() == b.text.len() - 1
+  ens result.cursor == b.cursor - 1
+  fx  alloc
+{
+  let lo: u64 = b.cursor - 1;
+  let head: String = b.text.slice(0, lo);
+  let tail: String = b.text.slice(b.cursor, b.text.len());
+  Buffer { text: head.concat(tail), cursor: lo }
+}
+
+// Move the cursor one byte left. PROVEN: the cursor steps back exactly one
+// (`req cursor > 0` keeps it non-negative) and the text is unchanged.
+fn move_left(b: Buffer) -> Buffer
+  req b.cursor > 0
+  ens result.cursor == b.cursor - 1
+  ens result.text.len() == b.text.len()
+  fx  alloc
+{
+  Buffer { text: b.text, cursor: b.cursor - 1 }
+}
+
+// Move the cursor one byte right. PROVEN: the cursor advances exactly one
+// (`req cursor < text.len()` keeps it within the text — the invariant holds)
+// and the text is unchanged.
+fn move_right(b: Buffer) -> Buffer
+  req b.cursor < b.text.len()
+  ens result.cursor == b.cursor + 1
+  ens result.text.len() == b.text.len()
+  fx  alloc
+{
+  Buffer { text: b.text, cursor: b.cursor + 1 }
+}
+
+// ---------------------------------------------------------------------------
+// THE RUNNABLE SHELL (L1 / boundary) — trusted, seccomp-confined terminal I/O.
+// ---------------------------------------------------------------------------
+
+// Read one keystroke (a raw byte) from stdin, or the EOF sentinel 256. The
+// closed outcome set (`ens result <= 256`) is honest: the world produces a
+// byte or EOF, never more. Trusted-by-fiat (you cannot prove the terminal),
+// confined to the `read` syscall set by the #57 seccomp filter.
+#[boundary("os::read_key")] fn read_key() -> u64
+  req true
+  ens result <= 256
+  fx  read(input)
+  ;
+
+// Turn a keystroke byte into a one-byte String to insert (the surface has no
+// byte->String operation — this is the host glue for a capability the language
+// lacks). A control/EOF key yields the empty string. `ens result.len() <= 1`
+// keeps the inserted run bounded.
+#[boundary("os::key_str")] fn key_str(k: u64) -> String
+  req true
+  ens result.len() <= 1
+  fx  alloc
+  ;
+
+// Render: hand the buffer text to stdout (a status u64, 0 = ok). Trusted, and
+// confined to the `write` syscall set.
+#[boundary("os::print")] fn render(s: String) -> u64
+  req true
+  ens result <= 1
+  fx  write(output)
+  ;
+
+// The event loop: read a keystroke, dispatch it to a PROVEN edit op, render,
+// repeat until Ctrl-Q (byte 17) or EOF (>= 256). This loop is the honest
+// `fx diverge` seam — an event loop is non-terminating by design — and it
+// reads/writes/allocates, so it carries the full effect row. The edit ops it
+// calls (insert_str / backspace) are the L3-proven total functions: the
+// loop's correctness rests on their proofs.
+fn run() -> u64
+  req true
+  ens result <= 256
+  fx  read(input), write(output), alloc, diverge
+{
+  let mut b: Buffer = Buffer { text: "", cursor: 0 };
+  let mut quit: u64 = 0;
+  while quit == 0
+    inv b.text.len() <= 1_000_000
+    dec 1
+  {
+    let k: u64 = read_key();
+    if k == 17 { quit = 1; }
+    if k == 127 {
+      if b.cursor > 0 { b = backspace(b); }
+    }
+    if k < 17 {
+      quit = quit;
+    }
+    if k > 17 {
+      if k < 127 {
+        if b.text.len() + 1 <= 1_000_000 { b = insert_str(b, key_str(k)); }
+      }
+    }
+    if k > 127 {
+      quit = 1;
+    }
+    let snapshot: String = b.text.slice(0, b.text.len());
+    let shown: u64 = render(snapshot);
+  }
+  quit
+}

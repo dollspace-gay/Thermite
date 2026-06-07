@@ -47,6 +47,12 @@
 //! |---|---|---|
 //! | ffi REQ-5/REQ-7 (route boundary fns to L1 EARLY) | SHIPPED | `gate_fn` detects `f.boundary.is_some()` FIRST (before the slag/non-slag forks): validates a non-empty target, runs `vacuity::triage` (a)/(b)/(c) (rule (d) exempt — `triage` reads `f.boundary`), then `Certificate::boundary_l1` (`Level::L1`, `boundary: true`, `boundary_target`, NO verus). The per-item loop's `GateOutcome::BoundaryL1` short-circuits like `SlagL1` — a boundary fn NEVER reaches the L3 (verus) / L2 (kani) / #12 mutation / #14 strengthen paths, so `g` calling `f` sees only `f`'s contract (§9 composition independence, REQ-7). |
 //!
+//! ## #88 gate (`fx diverge` → L1 partial-correctness cap, this iteration)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | check.md REQ-8 (`fx diverge` caps at L1, mutation/strengthen exempt — the #16 mirror) | SHIPPED | `fn_is_diverge` (the row-shape predicate mirroring `thermite_lower`'s) routes a non-boundary, non-slag `fx diverge` fn (the editor's `run`) in `gate_fn` to `GateOutcome::DivergeL1(diverge_l1_cert(..))` — `Level::L1`, `slag: false`, `boundary: false`, the partial-correctness discharged obligation, the §7.1 (a)/(b)/(c) triage STILL applied (a vacuous-`ens` diverge fn still rejects). The per-item loop's `GateOutcome::DivergeL1` short-circuits like `BoundaryL1`/`SlagL1` (no verus, no #12 mutation, no #14 strengthen) — so `run` NEVER reaches the §7 gate that mis-rejected it `WeakContract` at L0. Boundary-style L1-no-verus (check.md REQ-8 reading (b)): the per-item sub-program's diverge body would fail verus (the loop callees' `req`s are not re-established by the loop invariant — spurious for partial correctness), so the cap skips verus; the real assurance is the L1 runtime checks + the L3-proven edit core. DIVERGE-ONLY (R-DEFER-9): a non-diverge weak contract still rejects L0 `WeakContract`; a non-diverge non-decreasing `dec` still fails verus termination. Verified: `forge/tests/editor_runs.rs` (run L1, edit core L3, build+run; non-diverge regressions). |
+//!
 //! ## #8 gate (per-item content-addressed proof cache, this iteration)
 //!
 //! | REQ | Status | Evidence |
@@ -249,6 +255,19 @@ pub fn check_file_with_options(
                 // L1 wrapper codegen is thermite-lower's `l1.rs` build-time job. No
                 // verus run — so a boundary-only file does not require the prover.
                 GateOutcome::BoundaryL1(cert) => {
+                    certs.push(cert);
+                    continue;
+                }
+                // A `fx diverge` item certifies L1 = PARTIAL correctness by the
+                // structural cap (`.design/forge/check.md` REQ-8, `degrade-ladder.md`
+                // REQ-9): an event loop may not terminate, so it cannot claim
+                // L3-total. Like `BoundaryL1`/`SlagL1`, it NEVER reaches the L3
+                // (verus-total) / mutation / strengthen path — so the §7 mutation
+                // gate that mis-rejects `run` at L0 (`WeakContract`, its loose
+                // `ens result <= 256` is met by `return 0`) is SKIPPED. The cap is
+                // HONEST (it claims LESS than L3, never more — R-DEFER-9) and
+                // diverge-ONLY (a non-diverge weak contract still bites at L0).
+                GateOutcome::DivergeL1(cert) => {
                     certs.push(cert);
                     continue;
                 }
@@ -633,6 +652,16 @@ enum GateOutcome {
     /// unproven, contract enforced at the crossing; no verus run) — the cert
     /// (`.design/boundary/ffi-boundary.md` REQ-5).
     BoundaryL1(Certificate),
+    /// A `fx diverge` item (`.design/forge/check.md` REQ-8,
+    /// `degrade-ladder.md` REQ-9): an event loop that may not terminate, so it
+    /// CANNOT claim L3-total — it caps at `Level::L1` = PARTIAL correctness and is
+    /// EXEMPT from the §7 mutation/strengthen gate (which validates a
+    /// strong-functional `ens`, the wrong instrument for a partial-correctness
+    /// loop). The structural analog of [`GateOutcome::BoundaryL1`] — the cert is
+    /// built BEFORE any prover runs, keyed strictly on the `fx diverge`
+    /// declaration (the honesty gate, R-DEFER-9: a non-diverge fn never reaches
+    /// this arm).
+    DivergeL1(Certificate),
     /// A triage / slag-validation reject: the item does not certify — the cert.
     Rejected(Certificate),
     /// A non-slag item that passed all four triage checks: run the normal L3 path.
@@ -740,6 +769,46 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
                 GateOutcome::SlagL1(Certificate::slag_l1(f.name.clone(), effects, meta))
             }
         }
+    } else if fn_is_diverge(f) {
+        // #88 `fx diverge` PARTIAL-CORRECTNESS cap (`.design/forge/check.md`
+        // REQ-8, `degrade-ladder.md` REQ-9), MIRRORING the `#[boundary]`
+        // short-circuit above. A diverge fn (effect row contains
+        // `Effect::Diverge`, §4.1) is an event loop that may not terminate, so it
+        // cannot claim L3-TOTAL correctness — it caps at `Level::L1` = PARTIAL
+        // correctness and is EXEMPT from the §7 mutation/strengthen gate (which
+        // validates a strong-functional `ens`, inapplicable to a partial-correctness
+        // loop whose `ens` is inherently a weak shape — `run`'s `ens result <= 256`
+        // is met by `return 0`, so the §7 battery would mis-reject it `WeakContract`
+        // at L0). The §7.1 (a)/(b)/(c) triage STILL applies (divergence exempts
+        // PROVING total correctness, not STATING a non-vacuous contract — a diverge
+        // fn with a vacuous `ens` is still rejected), exactly as for `#[boundary]`.
+        // The cap is built HERE, BEFORE any prover runs, keyed strictly on the
+        // `fx diverge` DECLARATION (the honesty gate, R-DEFER-9): it is NOT a
+        // verus-timeout degrade and NOT a counterexample (degrade-ladder.md REQ-9);
+        // it is a STRUCTURAL cap. We do NOT run verus on the diverge body: in the
+        // per-item sub-program `run`'s loop calls `backspace`/`insert_str` whose
+        // `req`s the loop invariant does not (and need not) re-establish, so verus
+        // would report a (spurious-for-partial-correctness) failure — the
+        // boundary-style L1-no-verus reading (`.design/forge/check.md` REQ-8
+        // reading (b), the explicitly-sanctioned fallback) is the honest and clean
+        // choice. The runtime contract checks (`thermite_lower::l1`) plus the proven
+        // edit core (`insert_str`/`backspace` are L3) carry the real assurance.
+        match crate::vacuity::triage(f) {
+            crate::vacuity::VacuityVerdict::Rejected { cause } => {
+                GateOutcome::Rejected(Certificate::rejected(
+                    f.name.clone(),
+                    effects,
+                    false,
+                    RejectReason {
+                        cause: cause.tag().to_string(),
+                        detail: cause.detail(),
+                    },
+                ))
+            }
+            crate::vacuity::VacuityVerdict::Passed => {
+                GateOutcome::DivergeL1(diverge_l1_cert(f.name.clone(), effects))
+            }
+        }
     } else {
         // Non-slag path: run all four triage checks.
         match crate::vacuity::triage(f) {
@@ -757,6 +826,45 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
             crate::vacuity::VacuityVerdict::Passed => GateOutcome::ProceedToL3,
         }
     }
+}
+
+/// True iff `f`'s effect row contains `diverge` (§4.1: "divergence requires
+/// `fx diverge` in the row"). MIRRORS `thermite_lower`'s `fn_is_diverge` (the
+/// SINGLE source of truth for the §4.1 termination exemption in the lowerer); the
+/// two share the row-shape predicate so the #88 L1 cap and the #87 termination
+/// exemption fire on EXACTLY the same set of fns. Keyed on the SHAPE of the
+/// effect row — a `pure` row never diverges; a `Set` row diverges iff it lists
+/// [`thermite_syntax::ast::Effect::Diverge`]. The honesty gate (R-DEFER-9): the
+/// cap is applied ONLY to a fn that LOUDLY declares `fx diverge`, never silently
+/// to a normal fn.
+fn fn_is_diverge(f: &thermite_syntax::FnItem) -> bool {
+    use thermite_syntax::ast::{Effect, EffectRow};
+    matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
+}
+
+/// Build a `fx diverge` PARTIAL-CORRECTNESS L1 certificate (`.design/forge/check.md`
+/// REQ-8, `degrade-ladder.md` REQ-9). The diverge analog of
+/// [`Certificate::boundary_l1`] / [`Certificate::slag_l1`]: `Level::L1` (partial
+/// correctness — the loop runs under its runtime contract checks; termination +
+/// strong functional postcondition NOT claimed), `slag: false`, `boundary: false`,
+/// the §7.1 triage bools graduated to live-`false` (a diverge fn passes (a)/(b)/(c)
+/// before this is built), and a single DISCHARGED obligation recording the
+/// partial-correctness verdict (NOT a verus obligation — no proof was run on the
+/// non-terminating body). Mirrors the `boundary_l1` field layout exactly; the only
+/// cap-specific datum is the obligation note. Built inline here (rather than as a
+/// `manifest.rs` ctor) so the #88 fix stays within the authorized file manifest.
+fn diverge_l1_cert(item: String, effects: Vec<String>) -> Certificate {
+    let mut cert = Certificate::boundary_l1(item, effects, String::new());
+    // Re-shape the boundary cert into the diverge cap: it is NOT a boundary fn
+    // (its body is in-language and partially proven via the L3-proven edit ops it
+    // calls), so clear the boundary flag/target and replace the obligation note.
+    cert.boundary = false;
+    cert.boundary_target = None;
+    cert.obligations = vec![ObligationResult::discharged(
+        "contract holds at L1 (diverge / partial correctness); termination not \
+         claimed (§4.1 `fx diverge`); §7 mutation/strengthen gate exempt",
+    )];
+    cert
 }
 
 /// Build the per-item sub-`Program` that isolates `item`'s verification (§5.3).

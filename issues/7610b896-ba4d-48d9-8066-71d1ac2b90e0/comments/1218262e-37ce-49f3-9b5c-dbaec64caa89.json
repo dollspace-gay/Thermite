@@ -1,0 +1,10 @@
+{
+  "uuid": "1218262e-37ce-49f3-9b5c-dbaec64caa89",
+  "issue_uuid": "7610b896-ba4d-48d9-8066-71d1ac2b90e0",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_c7_corpus_goldens_missing.rs::divergence_c7_corpus_and_cert_goldens_exist demonstrates the divergence: run with --ignored, it FAILS listing all 6 missing design-mandated artifacts (conformance/option_result.th + .cert.json, conformance/parse_u64.th + .cert.json, tests/golden/lower/{option_result,parse_u64}.verus.rs). Authority: .design/basis/09-option-result.md 'Acceptance criteria' + 'Routes to add' (the routes carry reference=[] in tooling/spec-routes.toml). C7 is verified only against ephemeral temp .th programs in option_result_conformance.rs, NOT the external cert/golden oracle goal.md verification model (B) + R-CHAR-3 mandate. The toolchain BEHAVIOR is correct (payload projection genuine, parse_u64 round-trip proven non-vacuously, no unsound shadow) — the gap is the missing external oracle artifact, an orchestrator-authoring deliverable.",
+  "created_at": "2026-06-07T07:43:50.616917171Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHQpz8VC1ZHHYykUhqOfbCYC7sISl7H42ybFIeiz7deWMe/Adpy7CyV2d1usy7OJwa1NoHmeytQgjfCJYRykuDw=="
+}

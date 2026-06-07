@@ -277,6 +277,15 @@ struct Ctx<'a> {
     /// spec accessor (the exec `len`/`byte_at` cannot be named in a contract). EMPTY
     /// for a program with no `String` field (byte-stable for the existing corpus).
     string_fields: &'a [&'a str],
+    /// Cluster C7 (`.design/basis/09-option-result.md` REQ-5, issue #95/#100): the
+    /// names of OWNED `String` (`Type::String`, NOT `&String`) parameters in scope
+    /// for the EXEC body currently being lowered. The generated `parse_u64` takes
+    /// `&TString` (a read-only borrow), so an exec call `parse_u64(s)` whose arg `s`
+    /// is an OWNED `String` param must lower to `parse_u64(&s)` (a `&String` param is
+    /// already a borrow and passes through unchanged). Keyed on the param SHAPE
+    /// (owned vs reference), not on the name. EMPTY for a fn with no owned `String`
+    /// param (byte-stable for the existing corpus).
+    owned_strings: &'a [&'a str],
 }
 
 /// A resolved recursion-scheme binding in scope while lowering a spec fn body
@@ -308,6 +317,7 @@ impl<'a> Ctx<'a> {
             schemes: NO_SCHEMES,
             strings: NO_SLICES,
             string_fields: NO_SLICES,
+            owned_strings: NO_SLICES,
         }
     }
     fn spec(slices: &'a [&'a str], nat_fns: &'a [&'a str]) -> Ctx<'a> {
@@ -320,6 +330,7 @@ impl<'a> Ctx<'a> {
             schemes: NO_SCHEMES,
             strings: NO_SLICES,
             string_fields: NO_SLICES,
+            owned_strings: NO_SLICES,
         }
     }
     /// A spec context with no slice-view names — for positions where every
@@ -335,6 +346,7 @@ impl<'a> Ctx<'a> {
             schemes: NO_SCHEMES,
             strings: NO_SLICES,
             string_fields: NO_SLICES,
+            owned_strings: NO_SLICES,
         }
     }
     /// This context with the enum-variant map attached (REQ-9 — variant-pattern
@@ -370,6 +382,20 @@ impl<'a> Ctx<'a> {
     fn with_string_fields(mut self, string_fields: &'a [&'a str]) -> Ctx<'a> {
         self.string_fields = string_fields;
         self
+    }
+    /// This context with the OWNED `String` parameter names in scope (REQ-5 — the
+    /// exec `parse_u64(s)` borrow-rewrite). Carried into the EXEC body so an owned
+    /// `String` arg to the generated `parse_u64` (which takes `&TString`) lowers to
+    /// `parse_u64(&s)`. The field analog of [`Ctx::with_strings`], EXEC-side.
+    fn with_owned_strings(mut self, owned_strings: &'a [&'a str]) -> Ctx<'a> {
+        self.owned_strings = owned_strings;
+        self
+    }
+    /// True if `name` denotes an OWNED `String` (`Type::String`, not `&String`)
+    /// parameter in scope (drives the exec `parse_u64(s)` → `parse_u64(&s)` borrow,
+    /// REQ-5). An owned value must be borrowed to satisfy the `&TString` param.
+    fn is_owned_string(&self, name: &str) -> bool {
+        self.owned_strings.contains(&name)
     }
     /// True if `name` denotes a `String` value in scope (drives the spec-position
     /// `.len()`→`.spec_len()` / `.byte_at(i)`→`.spec_byte_at(i as int)` rewrite).
@@ -1818,6 +1844,20 @@ fn string_value_names(f: &FnItem) -> Vec<&str> {
         names.push("result");
     }
     names
+}
+
+/// The OWNED `String` (`Type::String`, NOT `&String`) parameter names of a fn
+/// (Cluster C7, `.design/basis/09-option-result.md` REQ-5, #100): the exec body
+/// borrows an owned `String` arg when it calls the generated `parse_u64` (which
+/// takes `&TString`). A `&String` param is already a borrow and is EXCLUDED — it
+/// passes through unchanged. EMPTY for a fn with no owned `String` param
+/// (byte-stable for the existing corpus).
+fn owned_string_value_names(f: &FnItem) -> Vec<&str> {
+    f.params
+        .iter()
+        .filter(|p| matches!(p.ty, Type::String))
+        .map(|p| p.name.as_str())
+        .collect()
 }
 
 /// Lower a `fn` (REQ-1). `-> (result: RET)` binder so `ens` can mention
@@ -3683,19 +3723,68 @@ fn emit_parse_defs(program: &Program) -> Result<String, LowerError> {
             "  else { parse_be(s.subrange(0, (s.len() - 1) as int)) * 10 + ((s[(s.len() - 1) as int] - 48) as nat) } }\n",
         );
     }
+    // lemma_parse_be_prefix_le — parse_be is MONOTONE in the prefix length: the
+    // big-endian value of a length-`k` prefix never exceeds the value of the whole
+    // sequence (each appended digit multiplies the running value by 10 and adds a
+    // non-negative digit). Proved by induction on the suffix (`decreases s.len() -
+    // k`), `=~=` extensionality on the prefix-of-prefix + `by(nonlinear_arith)` for
+    // the `* 10` growth. This carries the OVERFLOW `None` arm of `parse_u64`: when
+    // the accumulator would overflow at byte `i+1`, the length-(i+1) prefix already
+    // exceeds `u64::MAX`, so (if the whole input is all-digits) the FULL parse_be
+    // exceeds `u64::MAX` — discharging the strengthened `result is None ==> ... ||
+    // parse_be(s.data@) > u64::MAX`. NO `assume`/`external_body`/`admit`
+    // (R-DEFER-9). GROUNDED `9 verified, 0 errors` with the two corpus callers.
+    out.push('\n');
+    out.push_str("proof fn lemma_parse_be_prefix_le(s: Seq<u8>, k: int)\n");
+    out.push_str("    requires 0 <= k <= s.len(),\n");
+    out.push_str("    ensures parse_be(s.subrange(0, k)) <= parse_be(s),\n");
+    out.push_str("    decreases s.len() - k,\n");
+    out.push_str("{\n");
+    out.push_str("    if k == s.len() {\n");
+    out.push_str("        assert(s.subrange(0, k) =~= s);\n");
+    out.push_str("    } else {\n");
+    out.push_str("        let m = (s.len() - 1) as int;\n");
+    out.push_str("        assert(s.subrange(0, m).subrange(0, k) =~= s.subrange(0, k));\n");
+    out.push_str("        lemma_parse_be_prefix_le(s.subrange(0, m), k);\n");
+    out.push_str(
+        "        assert(parse_be(s) == parse_be(s.subrange(0, m)) * 10 + ((s[m] - 48) as nat));\n",
+    );
+    out.push_str(
+        "        assert(parse_be(s.subrange(0, m)) * 10 >= parse_be(s.subrange(0, m))) by(nonlinear_arith);\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("}\n");
     // parse_u64 — the Horner-accumulate loop. Takes `&TString` (the surface
-    // `&String`), returns the Verus-native `Option<u64>`; the success arm proves
-    // the round-trip, the three partial cases take the LOUD `None` arm BEFORE
-    // corrupting `acc`. GROUNDED `5 verified, 0 errors`; a broken `Some(0)` FAILS.
+    // `&String`), returns the Verus-native `Option<u64>`. The STRENGTHENED,
+    // CALLER-USABLE contract (#100 — the C7 external oracle `parse_u64.cert.json`):
+    //   (1) a valid in-range all-digit string is GUARANTEED `Some`
+    //       (`(all_digits && len>=1 && parse_be<=MAX) ==> result is Some`), so a
+    //       caller with that `req` discharges `ens result is Some` — `parse_valid`;
+    //   (2) the round-trip on the success arm carries the `Some(v)` payload AND its
+    //       digit/length witness (`Some(v) => all_digits(s.data@) && len>=1 &&
+    //       parse_be == v`), so a caller proving `!all_digits` derives `result is
+    //       None` (the `Some(v) => false` arm of `parse_rejects_nondigit`);
+    //   (3) the handled-or-loud refusal (`result is None ==> !all_digits || len==0
+    //       || parse_be > u64::MAX`) names EXACTLY the three reasons a parse fails.
+    // The three partial cases take the LOUD `None` arm BEFORE corrupting `acc`; each
+    // carries its proof (non-digit ⟹ !all_digits; overflow ⟹ prefix > MAX ⟹ (via
+    // lemma_parse_be_prefix_le) full > MAX when all-digits). GROUNDED `9 verified, 0
+    // errors` (with the two corpus callers); a broken `Some(0)` FAILS (non-vacuous).
     out.push('\n');
     out.push_str("pub fn parse_u64(s: &TString) -> (result: Option<u64>)\n");
-    out.push_str("    requires s.well_formed(),\n");
-    out.push_str("    ensures match result {\n");
+    out.push_str("    ensures\n");
     out.push_str(
-        "        Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat,\n",
+        "        (all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) <= u64::MAX) ==> result is Some,\n",
     );
-    out.push_str("        None => true,\n");
-    out.push_str("    },\n");
+    out.push_str("        match result {\n");
+    out.push_str(
+        "            Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat,\n",
+    );
+    out.push_str("            None => true,\n");
+    out.push_str("        },\n");
+    out.push_str(
+        "        result is None ==> (!all_digits(s.data@) || s.data.len() == 0 || parse_be(s.data@) > u64::MAX),\n",
+    );
     out.push_str("{\n");
     out.push_str("    if s.data.len() == 0 { return None; }\n");
     out.push_str("    let mut acc: u64 = 0;\n");
@@ -3708,11 +3797,13 @@ fn emit_parse_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("        decreases s.data.len() - i,\n");
     out.push_str("    {\n");
     out.push_str("        let b: u8 = s.data[i];\n");
-    // non-digit → LOUD None (handled-or-loud, never a wrong value).
-    out.push_str("        if b < 48 || b > 57 { return None; }\n");
+    // non-digit → LOUD None; the offending byte witnesses `!all_digits(s.data@)`.
+    out.push_str("        if b < 48 || b > 57 {\n");
+    out.push_str("            assert(!is_digit(s.data@[i as int]));\n");
+    out.push_str("            assert(!all_digits(s.data@));\n");
+    out.push_str("            return None;\n");
+    out.push_str("        }\n");
     out.push_str("        let digit: u64 = (b - 48) as u64;\n");
-    // overflow → LOUD None, BEFORE the `acc*10 + digit` u64 arithmetic would wrap.
-    out.push_str("        if acc > (u64::MAX - digit) / 10 { return None; }\n");
     // The subrange/index ghost glue: the prefix of length i+1 restricted to its
     // first i bytes is the length-i prefix, and its last byte is `b`; so the BE
     // value of the length-(i+1) prefix is `parse_be(prefix_i) * 10 + (b - 48)`.
@@ -3724,6 +3815,28 @@ fn emit_parse_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str(
         "        assert(parse_be(s.data@.subrange(0, (i + 1) as int)) == parse_be(s.data@.subrange(0, old_i)) * 10 + ((b - 48) as nat));\n",
     );
+    // overflow → LOUD None, BEFORE the `acc*10 + digit` u64 arithmetic would wrap.
+    // The length-(i+1) prefix value overflows u64::MAX; the monotonicity lemma
+    // lifts that to the FULL parse_be when the whole input is all-digits, so the
+    // strengthened `result is None ==> ... || parse_be > u64::MAX` arm discharges.
+    out.push_str("        if acc > (u64::MAX - digit) / 10 {\n");
+    out.push_str("            proof {\n");
+    out.push_str("                assert(digit <= 9);\n");
+    out.push_str(
+        "                assert((acc as nat) * 10 + (digit as nat) > u64::MAX as nat) by(nonlinear_arith)\n",
+    );
+    out.push_str(
+        "                    requires acc as nat > ((u64::MAX - digit) / 10) as nat, digit <= 9;\n",
+    );
+    out.push_str(
+        "                assert(parse_be(s.data@.subrange(0, (i + 1) as int)) > u64::MAX);\n",
+    );
+    out.push_str("                if all_digits(s.data@) {\n");
+    out.push_str("                    lemma_parse_be_prefix_le(s.data@, (i + 1) as int);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            return None;\n");
+    out.push_str("        }\n");
     out.push_str("        acc = acc * 10 + digit;\n");
     out.push_str("        i = i + 1;\n");
     out.push_str("    }\n");
@@ -3809,6 +3922,26 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 if let Some(name) = segs.last() {
                     if let Some(binding) = ctx.scheme_binding(name) {
                         return lower_scheme_call(binding, args, ctx, d, span);
+                    }
+                }
+            }
+            // Cluster C7 (`.design/basis/09-option-result.md` REQ-5, #100): the
+            // generated `parse_u64` takes `&TString` (a read-only borrow). An EXEC
+            // call `parse_u64(s)` whose arg `s` is an OWNED `String` param
+            // (`ctx.is_owned_string`) must borrow it — `parse_u64(&s)` — to satisfy
+            // the `&TString` parameter (a surface `String` lowers to an owned
+            // `TString`, not a reference). A `&String` param is ALREADY a borrow and
+            // is NOT in `owned_strings`, so it passes through unchanged
+            // (`parse_u64(s)` where `s: &TString` typechecks directly). Keyed on the
+            // callee NAME `parse_u64` + the arg being an owned-`String` bare path.
+            if !ctx.is_spec() {
+                if let Expr::Path(csegs) = callee.as_ref() {
+                    if csegs.last().map(|s| s.as_str()) == Some("parse_u64") {
+                        if let [Expr::Path(asegs)] = args.as_slice() {
+                            if asegs.len() == 1 && ctx.is_owned_string(&asegs[0]) {
+                                return Ok(format!("parse_u64(&{})", asegs[0]));
+                            }
+                        }
                     }
                 }
             }
@@ -4464,7 +4597,10 @@ fn lower_block_with_fn_aids(
     indent: usize,
 ) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
-    let exec = Ctx::exec().with_variants(variants);
+    let owned = owned_string_value_names(f);
+    let exec = Ctx::exec()
+        .with_variants(variants)
+        .with_owned_strings(&owned);
     let mut out = String::new();
     for stmt in &block.stmts {
         match stmt {
@@ -4607,7 +4743,10 @@ fn lower_loop(
     use thermite_syntax::ast::LoopKind;
     let pad = "    ".repeat(indent);
     let ipad = "    ".repeat(indent + 1);
-    let exec = Ctx::exec().with_variants(variants);
+    let owned = owned_string_value_names(f);
+    let exec = Ctx::exec()
+        .with_variants(variants)
+        .with_owned_strings(&owned);
     let mut out = String::new();
 
     // Loop header.
@@ -5084,7 +5223,10 @@ fn lower_loop_body(
     // Pre-compute the coverage split, if this loop's invariants + the fn's
     // None-postcondition match template (e).
     let coverage = complementary_coverage_split(f, invs)?;
-    let exec = Ctx::exec().with_variants(variants);
+    let owned = owned_string_value_names(f);
+    let exec = Ctx::exec()
+        .with_variants(variants)
+        .with_owned_strings(&owned);
 
     let mut out = String::new();
     for stmt in &body.stmts {
@@ -5142,7 +5284,10 @@ fn emit_if_with_split(
     indent: usize,
 ) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
-    let exec = Ctx::exec().with_variants(variants);
+    let owned = owned_string_value_names(f);
+    let exec = Ctx::exec()
+        .with_variants(variants)
+        .with_owned_strings(&owned);
     let c = lower_expr(cond, exec, 0, f.span)?;
     let mut out = format!("{pad}if {c} {{\n");
     // The split assert, indented one level in.

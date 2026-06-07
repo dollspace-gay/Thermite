@@ -209,6 +209,75 @@ fn broken_contract_is_reported_failure_with_counterexample() {
     );
 }
 
+// ---- C7 (#100): the external cert oracle for option_result + parse_u64 -----
+
+/// Assert the DETERMINISTIC stable-subset of `<corpus>`'s `<item>` certificate
+/// matches its golden `conformance/<cert_stem>.cert.json` (R-CHAR-3): `item`,
+/// `level`, `contract_quality.tautology`, `contract_quality.vacuous_precondition`,
+/// `effects`, `slag`. NOT `contract_quality.mutants_killed` / `solver_time_ms`
+/// (tool-computed / non-det — `oracle_subset`, §5.3). `level` must be `L3`. The
+/// golden cert is keyed on the CORPUS stem (one `.cert.json` per `.th`), so a
+/// multi-item corpus has a single golden cert naming one representative `item`.
+fn assert_stable_subset_matches_golden(corpus: &str, cert_stem: &str, item: &str) {
+    let (code, certs) = run_check_json(&corpus_dir().join(corpus));
+    assert_eq!(code, Some(0), "{corpus} must verify (exit 0)");
+    let cert = find_cert(&certs, item);
+    let golden = golden_cert(cert_stem);
+
+    assert_eq!(
+        cert["item"], golden["item"],
+        "{item}: item must match golden"
+    );
+    assert_eq!(cert["item"], Value::from(item));
+    assert_eq!(
+        cert["level"], golden["level"],
+        "{item}: level must match golden"
+    );
+    assert_eq!(cert["level"], Value::from("L3"), "{item} must verify L3");
+    assert_eq!(
+        cert["contract_quality"]["tautology"], golden["contract_quality"]["tautology"],
+        "{item}: tautology must match golden"
+    );
+    assert_eq!(
+        cert["contract_quality"]["vacuous_precondition"],
+        golden["contract_quality"]["vacuous_precondition"],
+        "{item}: vacuous_precondition must match golden"
+    );
+    assert_eq!(
+        cert["effects"], golden["effects"],
+        "{item}: effects must match golden"
+    );
+    assert_eq!(
+        cert["slag"], golden["slag"],
+        "{item}: slag must match golden"
+    );
+}
+
+/// C7 / `.design/basis/09-option-result.md` AC-4 (#100): `parse_valid` certifies L3
+/// against the committed `conformance/parse_u64.cert.json` oracle. A valid in-range
+/// digit string PROVES `result is Some` via parse_u64's strengthened contract.
+#[test]
+fn parse_valid_cert_matches_golden_deterministic_subset() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — parse_u64.th cert-oracle not run.");
+        return;
+    }
+    assert_stable_subset_matches_golden("parse_u64.th", "parse_u64", "parse_valid");
+}
+
+/// C7 / `.design/basis/09-option-result.md` AC-1 (#100): `make_some` certifies L3
+/// against the committed `conformance/option_result.cert.json` oracle (built-in
+/// `Some` construction + payload-in-contract). The sibling L3 items (`small`,
+/// `ok_seven`, `checked`) are covered in `option_result_conformance.rs`.
+#[test]
+fn make_some_cert_matches_golden_deterministic_subset() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — option_result.th cert-oracle not run.");
+        return;
+    }
+    assert_stable_subset_matches_golden("option_result.th", "option_result", "make_some");
+}
+
 // ---- AC-2 (stream discipline) + AC-1: usage error exits non-zero ----------
 
 #[test]

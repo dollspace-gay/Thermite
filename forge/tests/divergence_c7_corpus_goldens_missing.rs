@@ -44,8 +44,13 @@ fn repo_root() -> PathBuf {
 /// DIVERGENCE — the C7 corpus programs + their `.cert.json` cert goldens + the golden
 /// Verus lowerings, all enumerated by `.design/basis/09-option-result.md` "Acceptance
 /// criteria", MUST exist. They do not in `bcd5ede` (the C7 external oracle is absent).
+// RESOLVED (#100): all six C7 external-oracle artifacts now exist —
+// `conformance/option_result.{th,cert.json}` + `conformance/parse_u64.{th,cert.json}`
+// (the parse corpus is `parse_valid` only; the forced-None refusal demo is the tracked
+// §7 equivalent-mutant limitation #101) + `tests/golden/lower/{option_result,
+// parse_u64}.verus.rs` (verus `4`/`34 verified, 0 errors`). The pin is un-ignored and
+// now PASSES, guarding against a regression that deletes the external oracle.
 #[test]
-#[ignore = "blocker #100 — un-ignore when fixed: C7 corpus + cert/lowering goldens absent (09-option-result.md Acceptance criteria)"]
 fn divergence_c7_corpus_and_cert_goldens_exist() {
     let root = repo_root();
     // The design-AC-enumerated artifact set (authority: 09-option-result.md

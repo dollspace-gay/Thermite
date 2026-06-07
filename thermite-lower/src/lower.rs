@@ -2779,6 +2779,13 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     out.push_str("            final(self).well_formed(),\n");
     out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
     out.push_str("            final(self).data@[old(self).data.len() as int] == x,\n");
+    // The element-preservation frame (REQ-5 GROUNDED `BVec::push` seed): `push`
+    // APPENDS without disturbing the prior elements, so a caller can prove an
+    // earlier `get(j)` still reads the originally-pushed element after a later
+    // `push` (the accumulator soundness — a token list / editor buffer keeps its
+    // earlier elements). Mirrors the `pop_last` kept-prefix frame below.
+    out.push_str("            forall|j: int| 0 <= j < old(self).data.len()\n");
+    out.push_str("                ==> final(self).data@[j] == old(self).data@[j],\n");
     out.push_str("    { self.data.push(x) }\n");
     // The tuple-free `pop_last` (REQ-8): drop the LAST element. `req len > 0`, `ens
     // len' == len-1` + the kept-prefix frame. `&mut`, `final(self)`. The companion

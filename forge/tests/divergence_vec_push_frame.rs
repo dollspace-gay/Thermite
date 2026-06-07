@@ -87,7 +87,6 @@ fn two(x: u64, y: u64) -> u64
 "#;
 
 #[test]
-#[ignore = "blocker #99 — push ens drops the element-preservation frame; un-ignore when fixed"]
 fn divergence_push_frames_prior_elements() {
     let parsed = thermite_syntax::parse(VEC_TWO_PUSH);
     assert!(parsed.errors.is_empty(), "must parse: {:?}", parsed.errors);
@@ -123,7 +122,9 @@ pub fn critic_first_element_framed() {
     match run_verus(&tmp) {
         Some((ok, output)) => {
             assert!(
-                ok && output.contains("verified, 0 errors") && !output.contains("error"),
+                ok && output.contains("verified, 0 errors")
+                    && !output.contains("error:")
+                    && !output.contains("error["),
                 "DIVERGENCE: the emitted `push` ens lacks the element-preservation \
                  frame, so a caller cannot prove get(0) is the first element after a \
                  second push (.design/basis/04-collections.md REQ-5 GROUNDED seed: \

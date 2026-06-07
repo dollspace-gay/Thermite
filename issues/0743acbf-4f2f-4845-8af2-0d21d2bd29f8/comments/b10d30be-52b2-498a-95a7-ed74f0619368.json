@@ -1,0 +1,10 @@
+{
+  "uuid": "b10d30be-52b2-498a-95a7-ed74f0619368",
+  "issue_uuid": "0743acbf-4f2f-4845-8af2-0d21d2bd29f8",
+  "author": "Yffe",
+  "content": "Failing test (pinned, #[ignore]d) at forge/tests/divergence_mutual_recursion.rs::divergence_mutual_recursion_is_rejected_not_crashed.\n\nDIVERGENCE: .design/basis/10-recursion-tuples.md REQ-6 (+ Architecture + the REQ-2 validator doc-comment) promise a mutually-recursive pair without a dec chain 'reaches Verus and is rejected there (no false L3, no crash)'. forge::check::classify_verus_outcome (forge/src/check.rs) maps Verus's termination rejection 'recursive function must have a decreases clause' (encountered-vir-error: true) to ForgeError::VerusOutput — an ENVIRONMENT abort: exit 2, EMPTY --json stdout, NO certificate. That is a crash in the design's sense (no verdict produced).\n\nCONTRAST (authority, R-CHAR-3): the SAME termination-failure class on a SINGLE self-recursive fn whose dec does not decrease yields a clean parseable L0 cert (exit 0) — recursion_conformance.rs::nondecreasing_recursion_is_l0, REQ-4/AC-2. The mutual case must likewise produce a non-L3 certificate verdict (reject/L0), not an uninterpretable VIR abort.\n\nProbe (real verus 0.2026.05.24):\n  fn a(n) { b(n-1) } / fn b(n) { a(n-1) }  no dec, fx pure\n  -> forge check --json: exit 2, stdout empty, stderr 'could not interpret verus output: verus reported an internal (VIR) error; ... recursive function must have a decreases clause'\n\nNON-laundering holds (not L3) — the divergence is the 'no crash' clause + the §5.1/R-SPEC-3 'certificate is the deliverable' contract.",
+  "created_at": "2026-06-07T17:56:50.724550330Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGDjIwECQ6kXHRfb0qDFsSrPcbMF62Jlh0NRE1wbddxJ3xPH+6M0Tiiko1aCdBh1NGk4k+ds3NcQoNWcltDm3AQ=="
+}

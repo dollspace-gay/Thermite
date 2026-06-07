@@ -2,11 +2,12 @@
   "uuid": "3728a934-98ca-4484-8f05-45b95a8db205",
   "display_id": 81,
   "title": "Stage 8 — the runnable effect link: forge build links foreign syscall wrappers so verified programs run + do I/O",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-06T21:03:54.817718972Z",
-  "updated_at": "2026-06-06T21:03:56.141231199Z",
+  "updated_at": "2026-06-07T00:50:09.578866706Z",
+  "closed_at": "2026-06-07T00:50:09.578866706Z",
   "labels": [
     "feature"
   ]

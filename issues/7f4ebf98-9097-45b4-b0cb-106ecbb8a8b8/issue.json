@@ -2,11 +2,12 @@
   "uuid": "7f4ebf98-9097-45b4-b0cb-106ecbb8a8b8",
   "display_id": 108,
   "title": "C9-A: plain-fn recursion — fn cannot carry a dec clause (parse error 'missing fx') so a self-calling exec fn cannot be written; needs FnItem.dec: Option<Clause> + parse_contract dec slot + lower_fn emitting 'decreases <dec>' + validator self-reference acceptance. GROUNDED: with decreases L3, non-decreasing -> 'could not prove termination' L0, no-dec -> 'recursive function must have a decreases clause'.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T17:22:26.574311230Z",
-  "updated_at": "2026-06-07T17:22:28.373748447Z",
+  "updated_at": "2026-06-07T18:12:57.083142117Z",
+  "closed_at": "2026-06-07T18:12:57.083142117Z",
   "labels": [
     "blocker"
   ]

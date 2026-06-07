@@ -1,0 +1,10 @@
+{
+  "uuid": "505f8069-ee89-4af6-9c13-02302cd9ff11",
+  "issue_uuid": "3db44fb8-805d-49b3-92ef-436bc51174b8",
+  "author": "Yffe",
+  "content": "Cluster 1 gap 1 (string escapes) ONLY this commit. lex_string escape table extended: \\r->13, \\0->0, \\xNN->byte (0x00..=0x7F byte-faithful per the v1 byte char model); unknown/malformed/high-byte escapes are structured SyntaxError (recover past close-quote), never the old silent 'other as char' swallow, never a panic. No new Expr/Token variant — decoded byte flows through existing Expr::StrLit byte-push lowering, so no workspace match-arm churn and no skill arm. 07-strings.md gains REQ-6 (escape table; on-manifest). Gaps 2/3 (char + hex/binary int literals) STOPPED+REPORTED: they add lexer token grammar that lexer.md REQ-1 ('no char tokens') / REQ-3 ('int = ASCII-digit run') forbid -> need a .design/syntax/lexer.md amendment (acto-doc-author); lexer.md is NOT on the cluster-1 manifest. MANIFEST EXPANSION requested per R-SPEC-4. Gap 4 (negative literals) deferred to the signed-int cluster: no signed PrimType exists (U32/U64/Usize/Bool only), so a negative literal has no sound typed home in v1. Verified: \\x1b==27 / \\r==13 / \\0==0 at L3 (real verus, non-vacuous via result==(n==CODE)); wrong-code NOT L3. Workspace 553 passed/0 failed; clippy/fmt clean. NOT pushed, NOT closed (critic re-audits).",
+  "created_at": "2026-06-07T01:40:38.858688152Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAV1sacrWTEIsgU8P3v/HVeGNOfW0L0INh2YDfjnjeTigUVTsefujeeu8b+nqDH5to2LnLHnTqpzP+aIr3mdx/DA=="
+}

@@ -87,10 +87,6 @@ const MUTUAL_NO_DEC: &str = "fn a(n: u64) -> u64\n  \
     {\n  if n == 0 { 0 } else { a(n - 1) }\n}\n";
 
 #[test]
-#[ignore = "divergence: mutual-recursion termination rejection aborts as a VIR \
-            environment error (exit 2, no cert) instead of the REQ-6 \
-            'rejected there, no crash' certificate verdict; blocker #110 — \
-            un-ignore when fixed"]
 fn divergence_mutual_recursion_is_rejected_not_crashed() {
     if !verus_present() {
         eprintln!("SKIP: verus absent — mutual-recursion rejection not exercised.");

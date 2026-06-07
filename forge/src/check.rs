@@ -233,8 +233,52 @@ pub fn check_file_with_options(
         .cloned()
         .collect();
 
+    // C9-A (`.design/basis/10-recursion-tuples.md` REQ-6): the in-file `fn`s in a
+    // MUTUAL-recursion cycle (`a -> b -> a`). Mutual recursion is DEFERRED in v1
+    // (Verus needs a mutual-`decreases` group + a shared/lexicographic measure);
+    // the validator's REQ-2 self-call rule (`block_calls_name`) catches only a
+    // DIRECT self-call, so a mutual pair would reach Verus and be rejected with
+    // `recursive function must have a decreases clause` (`encountered-vir-error`),
+    // which `classify_verus_outcome` maps to a `ForgeError::VerusOutput`
+    // environment ABORT (exit 2, EMPTY `--json` stdout, NO cert) — a CRASH in the
+    // design's sense. REQ-6 promises "rejected there (no false L3, no crash)": a
+    // PARSEABLE certificate verdict. We catch the cycle HERE, BEFORE lowering /
+    // verus, and emit a `Certificate::rejected` per member (`Level::L0`, the
+    // structured `MutualRecursionUnsupported` cause) — the same verdict-in-cert
+    // shape as the single-fn non-decreasing L0 cert (REQ-4/AC-2), so `forge check`
+    // exits non-zero with a parseable cert array. Computed ONCE (a pure function of
+    // the program, R-CODE-5).
+    let mutual_cycle_fns = mutual_recursion_cycle_fns(&parsed.program);
+
     let mut certs = Vec::with_capacity(parsed.program.items.len());
     for item in &parsed.program.items {
+        // C9-A REQ-6 mutual-recursion reject (no false L3, no crash): a `fn` in a
+        // mutual cycle does NOT certify — it is rejected as a clean L0 cert verdict
+        // (never lowered / sent to verus), so the rejection is a parseable cert,
+        // not the raw VIR-error abort.
+        if let Item::Fn(f) = item {
+            if mutual_cycle_fns.contains(&f.name) {
+                certs.push(Certificate::rejected(
+                    f.name.clone(),
+                    effects_of(&f.contract.fx),
+                    false,
+                    RejectReason {
+                        cause: "MutualRecursionUnsupported".to_string(),
+                        detail: format!(
+                            "`{}` is part of a mutual-recursion cycle; mutual recursion is \
+                             not supported in v1 (it requires a Verus mutual-`decreases` group \
+                             and a shared/lexicographic measure — \
+                             `.design/basis/10-recursion-tuples.md` REQ-6, DEFERRED). Inline the \
+                             cycle into one self-recursive `fn` with a `dec` measure, or declare \
+                             `fx diverge` for a non-terminating loop.",
+                            f.name
+                        ),
+                    },
+                ));
+                continue;
+            }
+        }
+
         // #6 gate: structural vacuity triage + `#[slag]` short-circuit run BEFORE
         // the L3 proof ("a function does not certify until its contract
         // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),
@@ -959,6 +1003,76 @@ fn reachable_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         .filter(|i| matches!(i, Item::Fn(_)) && names.contains(i.name()))
         .cloned()
         .collect()
+}
+
+/// The set of in-file `fn` names that participate in a MUTUAL-recursion cycle
+/// (`.design/basis/10-recursion-tuples.md` REQ-6 — mutual recursion is DEFERRED
+/// in v1). A `fn` `f` is in a mutual cycle iff it is reachable from ITSELF
+/// THROUGH AT LEAST ONE OTHER `fn` (a call-graph cycle `a -> b -> ... -> a`,
+/// `b != a`). This is the GENERALIZATION of the validator's DIRECT self-call
+/// rule (REQ-2, `block_calls_name`) from a self-edge to a call-graph cycle: the
+/// validator catches `a -> a` (a direct self-call, which is SUPPORTED with a
+/// `dec` and lowered to `decreases`), while THIS catches `a -> b -> a` (which
+/// v1 does NOT support — Verus would need a mutual-`decreases` group + a
+/// shared/lexicographic measure, REQ-6/Architecture).
+///
+/// Detected at `forge check` (BEFORE lowering / verus) so the rejection is a
+/// clean CERTIFICATE verdict (a `Certificate::rejected`, `Level::L0`, a
+/// structured `MutualRecursionUnsupported` reject cause) rather than the raw
+/// Verus VIR-error abort (`recursive function must have a decreases clause`,
+/// `encountered-vir-error: true`) that `classify_verus_outcome` maps to a
+/// `ForgeError::VerusOutput` environment crash (exit 2, EMPTY `--json` stdout,
+/// NO certificate). REQ-6 + the REQ-2 validator doc-comment promise the mutual
+/// pair "reaches Verus and is rejected there (no false L3, **no crash**)"; this
+/// keeps the "no false L3" (the cert is `L0`, never `L3`) AND the "no crash"
+/// (`forge check --json` emits a parseable cert array, exit non-zero — the
+/// verdict-in-cert shape, §5.1 / R-SPEC-3), exactly as the single-fn
+/// non-decreasing termination failure is a clean `L0` cert (REQ-4/AC-2).
+///
+/// A whole CLASS, not the one reported pair (`goal.md` "fix the cause … its
+/// whole class"): ANY mutual cycle (`a -> b -> a`, `a -> b -> c -> a`, …) of
+/// length ≥ 2 is caught, since the membership test is "reaches itself through
+/// an intermediary", computed for EVERY `fn`. A `fx diverge` `fn` is EXEMPT
+/// (the #88 honesty exemption, mirroring the validator's `block_calls_name`
+/// diverge skip and the single-fn diverge L1 cap): a diverge fn is honestly
+/// non-terminating, lowers with `#[verifier::exec_allows_no_decreases_clause]`,
+/// and is L1-capped — never reaching the termination check that would crash.
+///
+/// DETERMINISTIC (R-CODE-5): a pure function of the parsed `Program`, returning
+/// a sorted `BTreeSet` (the `reachable_in_file_fns` walk is itself
+/// source-ordered + cycle-safe + bounded — `closure::CallGraph`).
+fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<String> {
+    use std::collections::BTreeSet;
+    let mut members: BTreeSet<String> = BTreeSet::new();
+    for item in &program.items {
+        let Item::Fn(f) = item else {
+            continue;
+        };
+        // The #88 diverge exemption: a `fx diverge` fn is honestly
+        // non-terminating and never enters the termination check — never a
+        // mutual-recursion crash (mirrors the validator's `block_calls_name`
+        // diverge skip + the single-fn diverge L1 cap).
+        if fn_is_diverge(f) {
+            continue;
+        }
+        // `f` is in a MUTUAL cycle iff it shares a call-graph CYCLE with at
+        // least one OTHER fn `g` (`g != f`): `g` is reachable from `f` AND `f`
+        // is reachable from `g` (they sit in the same strongly-connected
+        // component of size ≥ 2). A PURE DIRECT self-recursion (the only
+        // back-edge is `f -> f`) is the REQ-2 case (supported with `dec`,
+        // lowered to `decreases`); it is NOT a mutual cycle and is excluded
+        // because the witness `g` must be DISTINCT from `f`. Uses only the
+        // existing source-ordered, cycle-safe, bounded `reachable_in_file_fns`
+        // walk (no new closure API) — DETERMINISTIC (R-CODE-5).
+        let reach_f = crate::closure::reachable_in_file_fns(program, &f.name);
+        let is_mutual = reach_f.iter().any(|g| {
+            g != &f.name && crate::closure::reachable_in_file_fns(program, g).contains(&f.name)
+        });
+        if is_mutual {
+            members.insert(f.name.clone());
+        }
+    }
+    members
 }
 
 /// The in-file `Item::SpecFn`s a spec fn named `start` transitively references —

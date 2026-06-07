@@ -1,0 +1,49 @@
+// C7 conformance corpus (#95): built-in Option/Result construction + the
+// Result<T,E> two-arg type + payload-in-contract projection (spec-match-in-ens).
+// The oracle (option_result.cert.json) is hand-derived (R-CHAR-3) from
+// .design/basis/09-option-result.md AC-1..AC-3.
+
+enum ParseErr { NotDigit, Overflow, Empty }
+
+// AC-1: Some(_) constructs (the seeded built-in variant) and the payload-in-contract
+// `ens match result { Some(v) => ..., None => true }` projects the Some payload. The
+// Some-arm predicate `v == 5` is mutation-killable (a Some(0) mutant violates it) -> L3.
+fn make_some() -> Option<u64>
+  req true
+  ens match result { Some(v) => v == 5, None => true }
+  fx  pure
+{
+  Some(5)
+}
+
+// Some AND None construction, both arms meaningful (Some iff x < 10, None iff x >= 10):
+// a mutant returning None for x < 10 violates `None => x >= 10`; a Some(wrong) violates
+// `Some(v) => v == x`. Both arms bite -> L3. Exercises None construction non-vacuously.
+fn small(x: u64) -> Option<u64>
+  req true
+  ens match result { Some(v) => v == x, None => x >= 10 }
+  fx  pure
+{
+  if x < 10 { Some(x) } else { None }
+}
+
+// AC-2: Result<u64, ParseErr> parses (the two-arg Type::Result); Ok(_) constructs
+// (the seeded Ok/Err); the payload `ens match result { Ok(v) => ..., Err(_) => true }`
+// projects the Ok payload. Ok(7) with `v == 7` is mutation-killable -> L3.
+fn ok_seven() -> Result<u64, ParseErr>
+  req true
+  ens match result { Ok(v) => v == 7, Err(e) => true }
+  fx  pure
+{
+  Ok(7)
+}
+
+// Ok AND Err construction, both arms meaningful (Ok iff x > 0, Err iff x == 0):
+// the handled-or-loud failure path is contractually pinned -> L3.
+fn checked(x: u64) -> Result<u64, ParseErr>
+  req true
+  ens match result { Ok(v) => v == x, Err(e) => x == 0 }
+  fx  pure
+{
+  if x > 0 { Ok(x) } else { Err(ParseErr::Empty) }
+}

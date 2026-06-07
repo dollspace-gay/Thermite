@@ -2,11 +2,12 @@
   "uuid": "9712c039-6e49-45dd-a35f-7efd1e7cc709",
   "display_id": 121,
   "title": "C11 mutual recursion: refine forge::check mutual_recursion_cycle_fns to CONDITIONAL — a mutual cycle with dec on every member falls through to L3 (GROUNDED: is_even/is_odd dec n cross n-1 -> 4 verified 0 errors; 3-cycle -> 3 verified; lexicographic -> 2 verified; NO adjacency required), reject ONLY a member lacking dec (refined MutualRecursionMissingDecreases cause), fx-diverge member exempt+L1-capped. lower.rs grandfathered-correct (existing source-order single-verus!-block emission already produces a valid Verus mutual-decreases group). .design/basis/12-mutual-recursion.md REQ-1/REQ-2/REQ-4.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T20:57:17.815749264Z",
-  "updated_at": "2026-06-07T20:57:29.215277275Z",
+  "updated_at": "2026-06-07T21:30:36.339513506Z",
+  "closed_at": "2026-06-07T21:30:36.339513506Z",
   "labels": [
     "blocker"
   ]

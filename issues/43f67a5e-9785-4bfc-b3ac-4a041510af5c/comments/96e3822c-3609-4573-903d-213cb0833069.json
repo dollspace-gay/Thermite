@@ -1,0 +1,10 @@
+{
+  "uuid": "96e3822c-3609-4573-903d-213cb0833069",
+  "issue_uuid": "43f67a5e-9785-4bfc-b3ac-4a041510af5c",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (cb9d781 programs + 20ea6cb #104 L1 exec twins). 3 acceptance programs certify L3 AND build+run: formatter (42->'42', 0->'0', 1000000->'1000000'; round-trip parse_be(result)==n), calculator (add 2+3->Some(5), 100+200->Some(300); sum pinned), parser (split 'a,b,c'->3 pieces; count-bound). The basis COMPOSES + RUNS. C5/C7 build-side L1 exec twins (#104) closed the run gap. Critic NO DIVERGENCE (certs genuine + load-bearing; twins compute correctly on edge cases; runtime checks fire; no cheat). The editor is the 4th acceptance program (#90).",
+  "created_at": "2026-06-07T10:34:50.870202235Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGdg4S7DYuPhhFM80kalraCYNZdOoXY+5Exw2uCmPy84tzVGIv+/f0bE8K6GpQhPwYOiSxBkNJMcL1nQPYDgVCg=="
+}

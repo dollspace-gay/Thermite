@@ -1,0 +1,10 @@
+{
+  "uuid": "d0d04304-3fa4-4f21-adde-204ed65e7b7b",
+  "display_id": 124,
+  "title": "Divergence: C12 Map design-mandated golden oracle absent (conformance/map_kv.cert.json + tests/golden/lower/map_kv.verus.rs)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T22:17:58.513745995Z",
+  "updated_at": "2026-06-07T22:17:58.513745995Z"
+}

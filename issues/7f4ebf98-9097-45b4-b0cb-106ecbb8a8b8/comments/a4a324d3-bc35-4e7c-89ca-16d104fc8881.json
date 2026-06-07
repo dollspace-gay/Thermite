@@ -1,0 +1,10 @@
+{
+  "uuid": "a4a324d3-bc35-4e7c-89ca-16d104fc8881",
+  "issue_uuid": "7f4ebf98-9097-45b4-b0cb-106ecbb8a8b8",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (167a4eb recursion + 43a5798 #110 mutual fix). Plain-fn recursion: FnItem.dec clause (parsed after fx), lower_fn emits decreases, validator mandatory-dec rule (block_calls_name self-detection + the #88 fx-diverge exemption). Critic NO DIVERGENCE on the termination-laundering crux: decreasing recursion -> L3, non-decreasing -> L0 (several shapes), no-dec self-call -> structured MissingDecreases even buried deep, diverge-recursion -> L1 (not L3 laundering), dec genuine (no cheat, builds+runs). Found+fixed #110 (mutual recursion a<->b crashed Verus with a VIR error -> now a clean L0 MutualRecursionUnsupported cert via SCC-size>=2 detection, no crash, no false L3). Independently re-confirmed: cd(n-1) dec n -> L3, mutual -> L0. 628 tests. Mutual recursion DEFERRED (v1.1).",
+  "created_at": "2026-06-07T18:12:48.333975638Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAZQlcOZFb37lc7QLvfMTMe1hVXwPSxSGmD+eBgr+64Ly4WXOFgocqoDtPumKcULP3IkPQTOJ4+rzQzHqDGwa9Bg=="
+}

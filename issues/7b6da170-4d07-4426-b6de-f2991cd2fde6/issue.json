@@ -2,11 +2,12 @@
   "uuid": "7b6da170-4d07-4426-b6de-f2991cd2fde6",
   "display_id": 114,
   "title": "C12: Map<K,V> bounded verified collection (vstd::map / a kv type) — insert/get/contains_key/len with no-OOB + capacity contracts",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T19:41:28.541186928Z",
-  "updated_at": "2026-06-07T19:41:30.010524877Z",
+  "updated_at": "2026-06-07T22:28:26.790423070Z",
+  "closed_at": "2026-06-07T22:28:26.790423070Z",
   "labels": [
     "feature"
   ]

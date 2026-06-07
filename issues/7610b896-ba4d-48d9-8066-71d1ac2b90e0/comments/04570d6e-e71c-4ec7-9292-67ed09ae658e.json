@@ -1,0 +1,10 @@
+{
+  "uuid": "04570d6e-e71c-4ec7-9292-67ed09ae658e",
+  "issue_uuid": "7610b896-ba4d-48d9-8066-71d1ac2b90e0",
+  "author": "Yffe",
+  "content": "FINISH #100 (C7 external oracle, THIN). Corpus + cert goldens are the committed orchestrator R-CHAR-3 oracle; the prior builder's verified lowering (owned-String exec auto-ref + strengthened parse_u64 contract + lemma_parse_be_prefix_le) is uncommitted. Plan: (1) commit the lowering + the 2 verus goldens as-is (verified: option_result 4 verified, parse_u64 34 verified); (2) un-ignore the #100 pin (the 6 artifacts now exist); (3) register the new corpus in check_conformance.rs (+2 oracle-compare tests: parse_valid -> L3 == parse_u64.cert.json, make_some -> L3 == option_result.cert.json, stable subset item/level/tautology/vacuous_precondition/effects/slag); (4) flip 09 REQ-5 / 07 REQ-9 notes to the strengthened contract. Gauntlet: build + test --workspace (605 passed, 0 failed) + clippy + fmt green. No cheat. Then close.",
+  "created_at": "2026-06-07T08:16:42.077361331Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADf60VdoAthdOrbxObnvHYtGvIqGnuUKhjAHYB1y7eiYYuCa1LySsaGIbQz0W1hLv07pJEdMKQ/AOwQ7OwDmKAA=="
+}

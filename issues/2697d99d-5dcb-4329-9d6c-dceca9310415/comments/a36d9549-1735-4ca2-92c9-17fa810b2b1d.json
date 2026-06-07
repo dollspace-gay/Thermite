@@ -1,0 +1,10 @@
+{
+  "uuid": "a36d9549-1735-4ca2-92c9-17fa810b2b1d",
+  "issue_uuid": "2697d99d-5dcb-4329-9d6c-dceca9310415",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (b60a64e). break/continue in while loops: Stmt::Break/Continue + keywords + loop_depth check; Verus-native emit, NO obligation suppression. Critic NO DIVERGENCE (R-DEFER-9): continue can't launder invariant (broken-inv continue -> L0) or termination (non-decreasing continue -> L0); break doesn't over-claim (weak-ens break -> L0 WeakContract, v0.1 limit honest); diverge-loop break+continue -> L1 (structural cap, diverge-only, the editor event-loop payoff, no quit-flag hack); break/continue outside a loop -> structured error; ~131 Stmt arms layer-neutral; determinism byte-exact; sum/binary_search still L3. 581 tests.",
+  "created_at": "2026-06-07T04:16:56.095697303Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAo2LJuRtmyJQ5THk/3pFEVQH4JPpEEJGKrw+JSjS4WyjmFvFoqRHNx8B516sgWyx7JWB75KDApGjgIicmJs3CCw=="
+}

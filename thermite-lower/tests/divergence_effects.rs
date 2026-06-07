@@ -54,6 +54,7 @@ fn fn_with_body(name: &str, fx: EffectRow, body: Block) -> Item {
             ens: vec![true_clause()],
             fx,
         },
+        dec: None,
         body: Some(body),
         span: span(),
     })

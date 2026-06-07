@@ -105,6 +105,13 @@
 //! |---|---|---|
 //! | REQ-4 (`Option`/`Result` → Verus types; construct/match/`is`/spec-match lower) | SHIPPED | `lower_type` gains `Type::Option(T)` → `Option<T>` and `Type::Result(T, E)` → `Result<T, E>` (the Verus-native generics, no wrapper); `qualify_variant_path` leaves the built-in `Some`/`Ok`/`Err`/`None` UNQUALIFIED (not in the user `variants` map → bare names Verus's prelude carries). The spec-`match`-in-`ens` lowers via the EXISTING `lower_expr` `Match` arm. Consumer: `lower`. Verified: `forge/tests/option_result_conformance.rs` AC-1/AC-2/AC-4 (real verus L3). |
 //! | REQ-5 (`parse_u64` emission) | SHIPPED | `emit_parse_defs` + `program_uses_parse` (see 07-strings.md REQ-9 above). |
+//!
+//! ## REQ status — 10-recursion-tuples.md cluster C9-A (plain-`fn` recursion, issue #108)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (`fn` `decreases` lowering) | SHIPPED | `lower_fn` emits `decreases <spec_dec(f.dec, f.params)>` AFTER the signature's `requires`/`ensures` block and BEFORE the body when `f.dec.is_some()` — the SAME `spec_dec` helper + position the recursive `spec fn` uses (`lower_spec_fn`). A non-recursive fn (`dec = None`) emits NO `decreases` (byte-stable for the existing corpus — AC-7, `sum`/`binary_search` lower unchanged). The self-call lowers as an ordinary `Expr::Call` (no special node); Verus discharges termination from the emitted `decreases`. The `fx diverge` exemption (`fn_is_diverge` → `#[verifier::exec_allows_no_decreases_clause]`, #88) lets a diverge fn recurse WITHOUT `dec` (L1-capped). Consumer: `lower` (`Item::Fn`). Verified: `forge/tests/recursion_conformance.rs` — real verus: `count_down(n-1)` `dec n` → L3; recurse-on-`n` → L0 ("could not prove termination"); a `fx diverge` recursive fn → L1; the recursive fn BUILDS + RUNS at L1. |
+//! | REQ-4 (termination bites) | SHIPPED | GROUNDED end-to-end (`forge/tests/recursion_conformance.rs`): the `decreases` is the ONLY thing between the fn and L0 — non-decreasing → L0, no-`dec` → `MissingDecreases` (the `thermite-spec` validator, never reaching L3), diverge → L1-capped. No proof cheat (R-DEFER-9). Consumer: `forge::check` ladder. |
 
 use std::fmt::Write as _;
 
@@ -1950,6 +1957,24 @@ fn lower_fn(
     }
     out.push_str(&lower_fn_signature(f, nat_fns, inv_structs, string_fields)?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
+
+    // C9-A (`.design/basis/10-recursion-tuples.md` REQ-3): a RECURSIVE exec `fn`
+    // carries an optional `dec <measure>` clause; emit the Verus `decreases
+    // <measure>` AFTER the signature's `requires`/`ensures` block and BEFORE the
+    // body `{` — the SAME position + the SAME `spec_dec` measure-lowering helper
+    // the recursive `spec fn` uses (`lower_spec_fn`). Verus discharges termination
+    // of the self-recursion from this measure: a non-decreasing measure → L0
+    // ("could not prove termination", REQ-4); the self-call itself lowers as an
+    // ordinary `Expr::Call` in the body (no special node). A NON-recursive fn has
+    // `dec = None` and emits NO `decreases` — byte-stable for the entire existing
+    // corpus (AC-7; `sum`/`binary_search` lower unchanged). The `fx diverge`
+    // exemption above (`#[verifier::exec_allows_no_decreases_clause]`, #88) lets a
+    // diverge fn recurse WITHOUT a `dec` (L1-capped, partial correctness only);
+    // such a fn carries `dec = None`, so this block correctly emits nothing.
+    if let Some(dec) = &f.dec {
+        let measure = spec_dec(dec, &f.params);
+        writeln!(out, "    decreases {measure}").ok();
+    }
 
     // Body, with shape-derived proof aids threaded through the loop lowering. The
     // variant map flows into the exec body so an enum `match` (e.g. `is_circle`'s)

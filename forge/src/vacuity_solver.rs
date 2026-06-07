@@ -665,6 +665,7 @@ mod tests {
                 ens: Vec::new(),
                 fx: thermite_syntax::EffectRow::Pure,
             },
+            dec: None,
             body: Some(thermite_syntax::Block {
                 stmts: Vec::new(),
                 tail: None,

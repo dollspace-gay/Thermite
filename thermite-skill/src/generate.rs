@@ -635,6 +635,10 @@ fn item_inventory() -> Vec<Item> {
                 ens: vec![clause()],
                 fx: EffectRow::Pure,
             },
+            // C9-A (`.design/basis/10-recursion-tuples.md` REQ-1): the optional
+            // `dec` termination clause of a recursive exec `fn`. `None` for this
+            // representative non-recursive item (the additive-field ripple).
+            dec: None,
             body: Some(empty_block()),
             span,
         }),

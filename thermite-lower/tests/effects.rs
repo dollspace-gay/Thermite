@@ -56,6 +56,7 @@ fn fn_calling(name: &str, fx: EffectRow, calls: &[&str]) -> Item {
             ens: vec![true_clause()],
             fx,
         },
+        dec: None,
         body: Some(Block { stmts, tail: None }),
         span: span(),
     })
@@ -454,6 +455,7 @@ fn deeply_nested_body_returns_result_not_panic() {
             ens: vec![true_clause()],
             fx: pure(),
         },
+        dec: None,
         body: Some(Block {
             stmts: vec![],
             tail: Some(Box::new(expr)),

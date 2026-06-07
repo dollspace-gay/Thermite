@@ -36,6 +36,12 @@
 //! | REQ-1 (`Option<T>` parse) | SHIPPED | `parse_type`'s `"Option"` contextual-ident arm builds `Type::Option(Box<Type>)` (mirroring the `Box`/`Vec` arms) — `Option` STOPS being a string-named `Generic`. Verified: `forge/tests/option_result_conformance.rs::ac1_...`. |
 //! | REQ-2 (`Result<T, E>` two-arg parse) | SHIPPED | `parse_type`'s `"Result"` arm parses `<T, E>` — the FIRST two-type-argument type in the grammar (a `Comma` + a second `parse_type` + `Gt`), building `Type::Result(Box<Type>, Box<Type>)`. The single-arg `Generic` could not (it died at the comma). Verified: `forge/tests/option_result_conformance.rs::ac2_...` (`Result<u64, ParseErr>` parses). |
 //!
+//! ## Cluster C9-A — plain-`fn` recursion `dec` clause (`.design/basis/10-recursion-tuples.md`, #108)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (`fn` `dec` clause parse) | SHIPPED | `parse_fn` parses an OPTIONAL trailing `dec <expr>` clause AFTER the contract (`req`/`ens`/`fx`) and BEFORE the body — the OQ-4 byte-stable slot mirroring the loop order (`inv`s then `dec`). Reuses `parse_clause(&TokKind::Dec)` (the same `dec` parse `parse_spec_fn`/`parse_loop` use). Absent → `FnItem.dec = None` (the `req`/`ens`/`fx` parse is UNCHANGED for every non-recursive fn). Consumer: `thermite-lower::lower::lower_fn`. Verified: `forge/tests/recursion_conformance.rs` (a recursive `count_down` with `dec n` parses + certifies L3). |
+//!
 //! ## #16 boundary-fn parser extension (`.design/boundary/ffi-boundary.md`)
 //!
 //! | REQ | Status | Evidence |
@@ -625,6 +631,19 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::Arrow, "`->`")?;
         let ret = self.parse_type()?;
         let contract = self.parse_contract(&name)?;
+        // The OPTIONAL `dec <measure>` termination clause of a RECURSIVE exec `fn`
+        // (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). It parses AFTER the
+        // contract (`req`/`ens`/`fx`) and BEFORE the body — the OQ-4 byte-stable
+        // slot mirroring the loop order (`inv`s then `dec`). Absent → `None` (a
+        // non-recursive `fn`); the `req`/`ens`/`fx` parse is UNCHANGED for every
+        // existing non-recursive fn. A self-calling fn LACKING this clause (and not
+        // `fx diverge`) is a validator error (REQ-2), not a parse error — the
+        // grammar admits it; the cage rejects it.
+        let dec = if self.check(&TokKind::Dec) {
+            Some(self.parse_clause(&TokKind::Dec)?)
+        } else {
+            None
+        };
         // Body fork (ffi-boundary.md REQ-3, OQ-2): a `#[boundary]` fn is bodyless
         // — terminated by `;` (the foreign body lives in the foreign crate); a
         // non-`#[boundary]` fn REQUIRES a `{ }` body (the §4.1 body-second rule).
@@ -670,6 +689,7 @@ impl<'a> Parser<'a> {
             params,
             ret,
             contract,
+            dec,
             body,
             span,
         }))

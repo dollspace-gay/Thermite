@@ -60,6 +60,12 @@
 //! |---|---|---|
 //! | REQ-1 SURFACE (`Option<T>` type node) | SHIPPED | `Type::Option(Box<Type>)` (OQ-1 RESOLVED — dedicated node, mirroring `Type::Vec`/`Type::Box`, NOT a string-named `Generic`; the OQ-1 ripple updates every `Generic { name: "Option" }` reader). Built by `parser::parse_type` on the contextual `Option` ident. `Some(v)`/`None` construction reuses the EXISTING `Expr::Call`/`Path` nodes (no reshape); `match`/`is` reuse `Expr::Match`/`Expr::Is`. Consumer: `thermite-lower::lower::lower_type` (→ Verus `Option<T>`). Verified: `forge/tests/option_result_conformance.rs::ac1_...` (real verus L3). |
 //! | REQ-2 SURFACE (`Result<T, E>` two-arg type node) | SHIPPED | `Type::Result(Box<Type>, Box<Type>)` — the FIRST two-type-argument node in the grammar (the load-bearing parser change of C7; the single-arg `Generic` died at the comma). Built by `parser::parse_type`'s `"Result"` arm (`<T, E>` = a comma + a second type + `>`). `Ok(v)`/`Err(e)` reuse `Expr::Call`. Consumer: `thermite-lower::lower::lower_type` (→ Verus `Result<T, E>`). Verified: `forge/tests/option_result_conformance.rs::ac2_...` (`Result<u64, ParseErr>` parses + L3). |
+//!
+//! ## Cluster C9-A — plain-`fn` recursion AST (`.design/basis/10-recursion-tuples.md`, #108)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (`fn` `dec` clause — AST) | SHIPPED | `FnItem.dec: Option<Clause>` — an OPTIONAL termination measure on a RECURSIVE exec `fn` (mirroring `SpecFnItem.dec: Clause`, but optional — a non-recursive fn has `dec = None`). Built by `parser::parse_fn` (the optional trailing `dec <expr>` parsed AFTER `fx`, OQ-4 byte-stable slot). Consumer: `thermite-lower::lower::lower_fn` (emits `decreases <measure>` when `Some`). Verified: `forge/tests/recursion_conformance.rs::recursive_fn_with_dec_certifies_l3` (real verus L3). The additive field rippled to every `FnItem { .. }` literal (skill `generate.rs`, the test fixtures) as `dec: None`. |
 
 use crate::lexer::Span;
 
@@ -79,6 +85,19 @@ pub struct Program {
 /// `match`es over `Item` downstream (thermite-spec/thermite-lower/forge) gain
 /// the validate/lower arms in basis stages 1b/1c.
 #[derive(Debug, Clone, PartialEq, Eq)]
+// C9-A (#108): adding `FnItem.dec: Option<Clause>` (the recursive-fn termination
+// measure) grew `Item::Fn` past clippy's `large_enum_variant` threshold (Fn ~560
+// bytes vs SpecFn ~256). Boxing `Item::Fn(Box<FnItem>)` would ripple a `Box` deref
+// to EVERY exhaustive `match Item` across thermite-spec/thermite-lower/forge
+// (dozens of value-pattern sites), a churn far beyond this clusters's scope — and
+// `Item` is a VALUE enum threaded by-value through the whole pipeline by design.
+// The size asymmetry is benign (an `Item` vec holds few items; no hot copy path),
+// so a per-item allow (R-CODE-3 / R-APG-3 — NOT a module-root `#![allow]`) is the
+// minimal, correct response. crosslink observation: #108 builder.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "Item is a by-value pipeline enum; boxing Fn would churn every match Item site (#108)"
+)]
 pub enum Item {
     Fn(FnItem),
     SpecFn(SpecFnItem),
@@ -180,6 +199,17 @@ pub struct FnItem {
     pub params: Vec<Param>,
     pub ret: Type,
     pub contract: Contract,
+    /// The OPTIONAL `dec <measure>` termination clause of a RECURSIVE exec `fn`
+    /// (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). Mirrors
+    /// [`SpecFnItem::dec`] (a spec fn's `dec` is mandatory; an exec fn's is
+    /// optional — a non-recursive `fn` has `dec = None`). When `Some`, the
+    /// lowerer emits a `decreases <measure>` on the Verus `fn` (the SAME measure
+    /// position the spec-fn / loop `decreases` use) so Verus proves termination of
+    /// the self-recursion; a self-calling `fn` WITHOUT this (and not `fx diverge`)
+    /// is a validator error (REQ-2). The clause parses AFTER `fx` (REQ-1, OQ-4 —
+    /// keeping the `req`/`ens`/`fx` parse byte-stable), mirroring the loop order
+    /// where `dec` follows the `inv`s.
+    pub dec: Option<Clause>,
     /// The Thermite body — `Some(Block)` for an in-language fn, `None` for a
     /// boundary fn (the body is foreign; ffi REQ-2).
     pub body: Option<Block>,

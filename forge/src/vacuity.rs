@@ -431,6 +431,7 @@ mod tests {
                         ens: vec![dummy_clause()],
                         fx: EffectRow::Pure,
                     },
+                    dec: None,
                     body: Some(thermite_syntax::Block {
                         stmts: Vec::new(),
                         tail: None,

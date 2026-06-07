@@ -79,6 +79,12 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-3 (built-in-variant registry + spec-`match`-in-`ens` payload projection) | SHIPPED | `Validator::new` SEEDS the built-in variants `Some`/`None`→enum `Option` and `Ok`/`Err`→enum `Result` into `enums`/`variant_to_enum` (order `[Some, None]`/`[Ok, Err]`), AFTER the user pre-pass (a user re-decl wins via `or_insert`). With them registered, `Some(v)`/`Ok(v)` construction is accepted (the exec-body walk recurses `Call`/`Path`, no `UnknownVariant`), `match` over them is exhaustiveness-checked (`check_match_exhaustiveness` now infers `Option`/`Result` — both arms or a `Wildcard` required), and `r is Some` (`check_variant_ref`) accepts. The spec-`match`-in-`ens` payload projection needs NO new cage rule — `walk_expr_inner`'s `Match` arm already admits a flat `match` as a built-in (01-adts REQ-7), so `match result { Some(v) => <flat pred>, None => true }` in an `ens` is an accepted flat predicate. `GENERATED_SPEC_FNS` += `all_digits`/`is_digit`. Consumer: `pub fn validate`. Verified: `forge/tests/option_result_conformance.rs` (AC-1/AC-2 L3 construct + payload `ens`; AC-3 the broken payload REJECTED, non-vacuous). |
+//!
+//! ## REQ status — 10-recursion-tuples.md (Cluster C9-A, plain-`fn` recursion, issue #108)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-2 (`dec` mandatory for a recursive `fn`; the self-call validator rule) | SHIPPED | `run`'s `Item::Fn` arm detects a DIRECT self-call (`block_calls_name(body, &f.name)` — a free call whose callee path's last segment is the fn's own name, walked over every statement/expression) and, when `f.dec.is_none() && !fn_is_diverge(f)`, pushes the span-bearing `SpecError::MissingDecreases { name, span }` — the surface mirror of the Verus rule "recursive function must have a decreases clause", so a non-terminating fn never reaches an L3 cert (R-DEFER-9). The `fx diverge` exemption is honored by `fn_is_diverge` (mirroring `thermite-lower`'s — the single §4.1 truth): a diverge fn recurses WITHOUT `dec` and is L1-capped (#88). Mutual recursion (REQ-6) is OUT of v1 — a pair that calls EACH OTHER (no direct self-call) is not flagged here; it reaches Verus and is rejected there (no false L3, no crash). Consumer: `pub fn validate` → `forge::check`. Verified: `forge/tests/recursion_conformance.rs::self_call_without_dec_is_structured_error` (the MissingDecreases reject) + `diverge_recursion_without_dec_is_l1`. |
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -370,6 +376,18 @@ pub enum SpecError {
     /// is the LOUDEST tooth of handled-or-loud, in IFC: the un-doored mark-change
     /// is a compile-time SCREAM, not a silent `L3`. `name` is the sealed struct.
     SealedConstruction { name: String, span: Span },
+    /// A RECURSIVE exec `fn` (one whose body calls itself directly) that carries
+    /// NO `dec` termination clause and is NOT `fx diverge`
+    /// (`.design/basis/10-recursion-tuples.md` REQ-2, C9-A). Termination is proved
+    /// by default (§4.1): a self-calling `fn` MUST supply a `dec <measure>` so
+    /// Verus can prove the recursion terminates, UNLESS the fn declares `fx
+    /// diverge` (the #88 exemption — a diverge fn is honestly non-terminating,
+    /// L1-capped). This is the SURFACE-LEVEL mirror of the Verus rule "recursive
+    /// function must have a decreases clause": Thermite reports it as its OWN
+    /// span-bearing diagnostic so the user never reaches a raw Verus error, and a
+    /// non-terminating fn can never be laundered to L3 (the no-proof-cheat
+    /// guarantee, `goal.md` R-DEFER-9). `name` is the self-recursive fn.
+    MissingDecreases { name: String, span: Span },
 }
 
 impl SpecError {
@@ -391,7 +409,8 @@ impl SpecError {
             | SpecError::SchemeWrongArity { span, .. }
             | SpecError::SchemeStepShape { span, .. }
             | SpecError::InvalidVariantCasing { span, .. }
-            | SpecError::SealedConstruction { span, .. } => *span,
+            | SpecError::SealedConstruction { span, .. }
+            | SpecError::MissingDecreases { span, .. } => *span,
         }
     }
 }
@@ -496,6 +515,12 @@ impl fmt::Display for SpecError {
                  a sealed clean/capability type is obtainable ONLY through its `#[boundary]` door \
                  (the abstraction barrier; `.design/basis/06-provenance-and-sinks.md` REQ-8); \
                  minting it directly would launder a marked value past its door"
+            ),
+            SpecError::MissingDecreases { name, .. } => write!(
+                f,
+                "recursive function `{name}` must have a decreases clause — a `fn` that calls \
+                 itself MUST supply a `dec <measure>` so termination is proved (§4.1; \
+                 `.design/basis/10-recursion-tuples.md` REQ-2), UNLESS it declares `fx diverge`"
             ),
         }
     }
@@ -744,6 +769,26 @@ impl Validator {
                     // structurally as before.
                     if let Some(body) = &f.body {
                         self.scan_block_for_loops(body, f.span);
+                        // C9-A (`.design/basis/10-recursion-tuples.md` REQ-2): a
+                        // RECURSIVE exec `fn` — one whose body calls itself directly
+                        // — MUST carry a `dec` termination measure so Verus can prove
+                        // the recursion terminates (§4.1 "Termination is proved by
+                        // default"), UNLESS it declares `fx diverge` (the #88
+                        // exemption — a diverge fn is honestly non-terminating,
+                        // L1-capped). A self-call WITHOUT `dec` AND not `fx diverge`
+                        // is a structured `MissingDecreases` — the surface mirror of
+                        // the Verus rule "recursive function must have a decreases
+                        // clause", so a non-terminating fn never reaches an L3 cert
+                        // (R-DEFER-9). Mutual recursion (REQ-6) is OUT of v1: a pair
+                        // that calls EACH OTHER (neither calls itself directly) is not
+                        // a direct self-call, so it is not flagged here — it reaches
+                        // Verus and is rejected there (no false L3, no crash).
+                        if f.dec.is_none() && !fn_is_diverge(f) && block_calls_name(body, &f.name) {
+                            self.errors.push(SpecError::MissingDecreases {
+                                name: f.name.clone(),
+                                span: f.span,
+                            });
+                        }
                     }
                 }
                 Item::SpecFn(s) => {
@@ -1560,5 +1605,97 @@ fn variant_pattern_name(pattern: &Pattern) -> Option<&str> {
             path.last().map(|s| s.as_str())
         }
         Pattern::Wildcard | Pattern::Binding(_) | Pattern::Literal(_) | Pattern::Slice(_) => None,
+    }
+}
+
+/// True iff the exec `fn` declares `fx diverge` (`.design/basis/10-recursion-tuples.md`
+/// REQ-2, §4.1: "divergence requires `fx diverge`"). A diverge fn is honestly
+/// non-terminating (an event loop), so it is EXEMPT from the mandatory-`dec` rule
+/// — it may recurse without a termination measure (the #88 L1-cap; the lowerer
+/// emits `#[verifier::exec_allows_no_decreases_clause]`). Keyed on the SHAPE of
+/// the effect row, mirroring `thermite-lower`'s `fn_is_diverge` (the single source
+/// of truth for the §4.1 termination exemption).
+fn fn_is_diverge(f: &thermite_syntax::ast::FnItem) -> bool {
+    use thermite_syntax::ast::{Effect, EffectRow};
+    matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
+}
+
+/// True iff `block` contains a DIRECT call to `name` — the self-reference test
+/// for the mandatory-`dec` rule (`.design/basis/10-recursion-tuples.md` REQ-2).
+/// "Direct" means a free-function call `name(..)` whose callee path's last
+/// segment is `name` (a self-recursive call); a method call `recv.name(..)` is
+/// NOT a self-call (the receiver dispatches it). Walks every statement + nested
+/// expression of the body (let inits, assigns, returns, ifs, loops, match arms,
+/// call args, …) so a self-call anywhere in the body is found. Mutual recursion
+/// (a call to a DIFFERENT fn that calls back) is NOT detected here (REQ-6,
+/// deferred) — only a direct self-call triggers the rule.
+fn block_calls_name(block: &Block, name: &str) -> bool {
+    block.stmts.iter().any(|s| stmt_calls_name(s, name))
+        || block
+            .tail
+            .as_ref()
+            .is_some_and(|e| expr_calls_name(e, name))
+}
+
+fn stmt_calls_name(stmt: &Stmt, name: &str) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_calls_name(init, name),
+        Stmt::Assign { target, value } => {
+            expr_calls_name(target, name) || expr_calls_name(value, name)
+        }
+        Stmt::Return(opt) => opt.as_ref().is_some_and(|e| expr_calls_name(e, name)),
+        Stmt::If { cond, then, else_ } => {
+            expr_calls_name(cond, name)
+                || block_calls_name(then, name)
+                || else_.as_ref().is_some_and(|b| block_calls_name(b, name))
+        }
+        Stmt::Loop(l) => block_calls_name(&l.body, name),
+        Stmt::Break | Stmt::Continue => false,
+        Stmt::Expr(e) => expr_calls_name(e, name),
+    }
+}
+
+fn expr_calls_name(expr: &Expr, name: &str) -> bool {
+    match expr {
+        Expr::Call { callee, args } => {
+            let callee_is_self = matches!(
+                callee.as_ref(),
+                Expr::Path(segs) if segs.last().map(|s| s.as_str()) == Some(name)
+            );
+            callee_is_self
+                || expr_calls_name(callee, name)
+                || args.iter().any(|a| expr_calls_name(a, name))
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_calls_name(receiver, name) || args.iter().any(|a| expr_calls_name(a, name))
+        }
+        Expr::Field { receiver, .. } => expr_calls_name(receiver, name),
+        Expr::Closure { body, .. } => expr_calls_name(body, name),
+        Expr::Match { scrutinee, arms } => {
+            expr_calls_name(scrutinee, name) || arms.iter().any(|a| expr_calls_name(&a.body, name))
+        }
+        Expr::If { cond, then, else_ } => {
+            expr_calls_name(cond, name)
+                || block_calls_name(then, name)
+                || block_calls_name(else_, name)
+        }
+        Expr::Binary { lhs, rhs, .. } => expr_calls_name(lhs, name) || expr_calls_name(rhs, name),
+        Expr::Unary { expr, .. } => expr_calls_name(expr, name),
+        Expr::Index { base, index } => expr_calls_name(base, name) || index_calls_name(index, name),
+        Expr::Cast { expr, .. } => expr_calls_name(expr, name),
+        Expr::Ref { expr, .. } => expr_calls_name(expr, name),
+        Expr::StructLit { fields, .. } => fields.iter().any(|(_, e)| expr_calls_name(e, name)),
+        Expr::Is { scrutinee, .. } => expr_calls_name(scrutinee, name),
+        Expr::Deref(e) => expr_calls_name(e, name),
+        Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => false,
+    }
+}
+
+fn index_calls_name(index: &IndexArg, name: &str) -> bool {
+    match index {
+        IndexArg::Single(e) | IndexArg::RangeTo(e) | IndexArg::RangeFrom(e) => {
+            expr_calls_name(e, name)
+        }
+        IndexArg::Range(a, b) => expr_calls_name(a, name) || expr_calls_name(b, name),
     }
 }

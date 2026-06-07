@@ -269,6 +269,7 @@ fn validate_never_panics_on_deep_nesting() {
                 ens: vec![clause(Expr::BoolLit(true))],
                 fx: EffectRow::Pure,
             },
+            dec: None,
             body: Some(Block {
                 stmts: vec![],
                 tail: Some(Box::new(Expr::IntLit {

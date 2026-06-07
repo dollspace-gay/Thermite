@@ -1,0 +1,10 @@
+{
+  "uuid": "4dff494e-f3f2-4565-92a0-25ac5ac59b26",
+  "issue_uuid": "7610b896-ba4d-48d9-8066-71d1ac2b90e0",
+  "author": "Yffe",
+  "content": "CLOSED by a7f743a. The C7 external cert/golden oracle now exists and is matched. parse_valid -> L3 == conformance/parse_u64.cert.json; make_some/small/ok_seven/checked -> L3 == conformance/option_result.cert.json (forge check, real verus). The 2 goldens verus-verify: option_result.verus.rs 4 verified 0 errors, parse_u64.verus.rs 34 verified 0 errors (no assume/external_body/admit, R-DEFER-9). The #100 pin (divergence_c7_corpus_and_cert_goldens_exist) is un-ignored and PASSES (6 artifacts present). check_conformance.rs gained 2 oracle-compare tests (stable subset item/level/tautology/vacuous_precondition/effects/slag). 09 REQ-5 / 07 REQ-9 status notes flipped to the strengthened caller-usable contract. Gauntlet: cargo test --workspace 605 passed 0 failed 0 ignored; clippy -D warnings PASS; fmt --check PASS. The forced-None refusal demo stays out (tracked section-7 equivalent-mutant limitation #101).",
+  "created_at": "2026-06-07T08:17:03.033479497Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAzFo8CtDrQeqG2+2LJPgQ/FbvFJuDNkoDpfr3FAK8TTm2uvwu/EB0tIM9sYNhnleVknh4AtaQwTYLxefJ5fWYCQ=="
+}

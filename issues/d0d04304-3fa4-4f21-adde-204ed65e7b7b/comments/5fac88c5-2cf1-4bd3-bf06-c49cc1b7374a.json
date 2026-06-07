@@ -1,0 +1,10 @@
+{
+  "uuid": "5fac88c5-2cf1-4bd3-bf06-c49cc1b7374a",
+  "issue_uuid": "d0d04304-3fa4-4f21-adde-204ed65e7b7b",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_c12_map_goldens_missing.rs::divergence_c12_map_cert_and_lowering_goldens_exist demonstrates the divergence: 13-map.md Acceptance criteria mandates conformance/map_kv.cert.json (cert oracle, goal.md model B) and tests/golden/lower/map_kv.verus.rs (golden lowering, goal.md model A); 0c75cc0 ships neither (only conformance/map_kv.th). Verified only by the real-verus-on-emitted harness, which is a weaker oracle than the design-mandated diffable goldens. C7-#100 oracle-gap class. ALSO: tooling/spec-routes.toml carries only the lower.rs route (reference is the stale non-existent 'conformance/map'; should be the AC artifacts), and the design-mandated ast.rs/parser.rs/validator.rs routes are absent.",
+  "created_at": "2026-06-07T22:18:53.576181930Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA6fjcv44Rm4XwwfYidjXGWwi5uLSCogF2u4QbM8q86LLhn74NvvxO7y3mfHdCKTUVaG7OG0b7J8WnE6i3pmknDQ=="
+}

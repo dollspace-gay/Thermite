@@ -536,3 +536,32 @@ crate_pattern = "thermite-skill/src/generate.rs"
 design = ".design/basis/09-option-result.md"
 reference = []
 conformance_ops = []
+
+# Basis Cluster C9 (plain-fn recursion + tuples, issue #107): four files carry
+# the 10-recursion-tuples.md governing doc (a file may carry multiple governing
+# docs — the lower.rs / ast.rs precedent). The fn `dec` clause + Type::Tuple/
+# Expr::Tuple/projection AST + parse slot (syntax), the self-call validator rule
+# (spec), and the fn `decreases` + Verus-tuple lowering (lower).
+[[route]]
+crate_pattern = "thermite-syntax/src/ast.rs"
+design = ".design/basis/10-recursion-tuples.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-syntax/src/parser.rs"
+design = ".design/basis/10-recursion-tuples.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-spec/src/validator.rs"
+design = ".design/basis/10-recursion-tuples.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-lower/src/lower.rs"
+design = ".design/basis/10-recursion-tuples.md"
+reference = []
+conformance_ops = []

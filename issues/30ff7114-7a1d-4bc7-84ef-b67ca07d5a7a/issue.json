@@ -1,0 +1,10 @@
+{
+  "uuid": "30ff7114-7a1d-4bc7-84ef-b67ca07d5a7a",
+  "display_id": 95,
+  "title": "C7 (Result/Option built-in with payload-in-contract): parse_u64 (String->u64, #94 C4) needs a built-in Option<u64>/Result<u64,ParseErr> return + 'result is Some'/payload-projection in a contract (ens result is Some ==> parse_be(s) == <payload>). The Thermite surface has user enums + Expr::Is + match, but NO enum-payload projection in the spec sublanguage (no result->Some_0; Expr::Field is struct-only). GROUNDED in verus: parse_u64 -> Option<u64> verifies 5/0 (parse_be round-trip ens, loud None on non-digit/overflow/empty), broken Some(0) FAILS 1 err. push_byte/from_byte + u64_to_string (round-trip parse_le==n, 9/0) ship now under #94; parse_u64 DEPENDS-ON this C7 prereq.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T04:22:56.159084505Z",
+  "updated_at": "2026-06-07T04:22:56.159084505Z"
+}

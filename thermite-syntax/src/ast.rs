@@ -74,6 +74,13 @@
 //! | REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection — AST) | SHIPPED | `enum Type` += `Tuple(Vec<Type>)` (n-tuple type, arity ≥ 2); `enum Expr` += `Tuple(Vec<Expr>)` (construction) + the DEDICATED `TupleProj { receiver: Box<Expr>, index: usize }` projection node (OQ-1 RESOLVED → dedicated, NOT an overloaded `Field` with a string `"0"`: a tuple index is a `usize`). Built by `parser::parse_type_inner` (the `(` arm disambiguates by the comma: `()` → `Unit`, `(T)` → grouping, `(T, U, …)` → `Tuple`), `parser::parse_primary` (the `(` arm builds `Expr::Tuple` on a comma; `(e)` → grouping), `parser::parse_postfix` (the `.` arm builds `Expr::TupleProj` when the token after `.` is an `Int`). Consumer: `thermite-lower::lower::lower_type`/`lower_expr` (→ Verus tuples). Verified: `forge/tests/tuples_conformance.rs::tuple_type_disambiguation_unit_grouping_tuple` + `tuple_expr_and_projection_nodes`. |
 //! | REQ-7 (tuple arity — n-tuples, ≥ 2) | SHIPPED | `Type::Tuple(Vec<Type>)`/`Expr::Tuple(Vec<Expr>)` carry any arity ≥ 2; `()` stays `Type::Unit` (arity 0), `(T)` is grouping (arity 1, the inner). Verified: `forge/tests/tuples_conformance.rs::ac6_three_tuple_certifies_l3` (a 3-tuple → L3 under real verus) + `tuple_type_disambiguation_unit_grouping_tuple` (`()`/`(T)` unbroken). |
 //!
+//! ## Cluster C12 — bounded verified `Map<K,V>` SURFACE AST (`.design/basis/13-map.md`, #123)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 SURFACE (`Map<K,V>` two-arg type node) | SHIPPED | `Type::Map(Box<Type>, Box<Type>)` — the SECOND two-type-argument node (after `Type::Result`, C7), a dedicated node (NOT a generalized multi-arg `Generic`). Built by `parser::parse_type`'s `"Map"` contextual-ident arm (`<K, V>` = a comma + a second type + `>`, mirroring the `"Result"` arm). `Map<u64, u64>` → `Type::Map(Box::new(u64), Box::new(u64))`. The `insert`/`get`/`contains_key`/`len` operations reuse `Expr::MethodCall` (no new node). Consumer: `thermite_lower::lower::lower_type` (→ the `TMap` Vec-of-pairs wrapper). Verified: `forge/tests/map_conformance.rs` (real verus L3 — insert-then-get round-trip, absent→None). |
+//! | REQ-2 SURFACE (`Map` ops are `Expr::MethodCall`) | SHIPPED | `insert`/`get`/`contains_key`/`len` over a `Map` are ordinary `Expr::MethodCall`s already parsed by `parse_postfix` — no new expression node (the one call syntax, §4.4), exactly as `Vec`'s `push`/`get`/`len`. `get` returns the C7 `Type::Option<V>`. Verified: `forge/tests/map_conformance.rs`. |
+//!
 //! ## Cluster C10 — binding/control-flow ergonomics AST (`.design/basis/11-ergonomics.md`, #112)
 //!
 //! | REQ | Status | Evidence |
@@ -715,6 +722,21 @@ pub enum Type {
     /// Lowers to the Verus-native `Result<T, E>` (the `lower_type` `Result` arm).
     /// The `E` parameter is an ordinary user error enum (a [`Type::Named`]).
     Result(Box<Type>, Box<Type>),
+    /// The built-in bounded verified key-value primitive `Map<K, V>`
+    /// (`.design/basis/13-map.md` REQ-1, C12: the SECOND two-type-argument node,
+    /// mirroring [`Type::Result`] — a dedicated node, NOT a generalized multi-arg
+    /// `Generic`, so the lowerer/validator key the `TMap` Vec-of-pairs wrapper +
+    /// the spec abstraction view + the capacity/no-OOB contracts on the node KIND.
+    /// The single-arg [`Type::Generic`] cannot parse `Map<u64, u64>` (it dies at
+    /// the comma, the C7 finding). The first arg is the KEY type, the second the
+    /// VALUE type. Its `insert`/`get`/`contains_key`/`len` ops are ordinary
+    /// [`Expr::MethodCall`]s (no new expression node — the one call syntax, §4.4);
+    /// `get` returns the C7 [`Type::Option`] (the no-OOB / handled-or-loud
+    /// accessor, absent key → `None`). Lowers to a `TMap<K,V>` newtype over a
+    /// `vstd::vec::Vec<(K, V)>`-of-pairs backing + a spec abstraction view
+    /// (`spec_contains_key`/`spec_dom`); constructing / `insert`-ing a `Map`
+    /// allocates, so the fn carries `fx alloc` (the Stage-1 [`Effect::Alloc`]).
+    Map(Box<Type>, Box<Type>),
     /// An n-tuple type `(T, U, …)` of arity ≥ 2
     /// (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7, C9-B). The
     /// multiple-return / pair primitive: `fn swap(a, b: u64) -> (u64, u64)`. The

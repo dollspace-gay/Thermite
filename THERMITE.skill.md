@@ -130,6 +130,8 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. -> Option<u64> ens match result { Some(v) => v == 5, None => true }
 - `Result<T, E>` — the built-in fallible (Ok(v)/Err(e); match/is; the loud error arm)
   // e.g. -> Result<u64, ParseErr>
+- `Map<K, V>` — a bounded verified key-value map (insert/get/contains_key/len; get -> Option<V>, absent -> None; fx alloc)
+  // e.g. let mut m: Map<u64, u64> = Map::new(); m.insert(k, v); m.get(k)
 - `(T, U, ..)` — an n-tuple (arity >= 2) for multiple returns; access via .0/.1
   // e.g. fn swap(a: u64, b: u64) -> (u64, u64) req true ens result.0 == b && result.1 == a fx pure { (b, a) }
 

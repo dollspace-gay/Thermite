@@ -469,6 +469,11 @@ fn type_label(ty: &Type) -> String {
         // harness these built-ins; this is the honest human label, NOT a stub.
         Type::Option(_) => "Option<_>".to_string(),
         Type::Result(_, _) => "Result<_, _>".to_string(),
+        // Cluster C12 (`.design/basis/13-map.md` REQ-5): a descriptive human label
+        // for the bounded verified `Map<K, V>` inside an `Unsupported` L2 diagnostic.
+        // L2 (Kani bounded model check) does not yet harness the `TMap` wrapper; this
+        // is the honest human label, NOT a stub.
+        Type::Map(_, _) => "Map<_, _>".to_string(),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-7): a
         // descriptive human label for an n-tuple type inside an `Unsupported` L2
         // diagnostic. L2 (Kani bounded model check) does not yet harness tuple

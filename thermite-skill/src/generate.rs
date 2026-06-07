@@ -194,6 +194,15 @@ fn render_type_arm(ty: &Type) -> SkillFragment {
             description: "the built-in fallible (Ok(v)/Err(e); match/is; the loud error arm)",
             example: "-> Result<u64, ParseErr>",
         },
+        // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): the bounded verified
+        // key-value primitive `Map<K, V>` — the SECOND two-type-arg node. insert/get/
+        // contains_key/len; get returns Option<V> (absent key -> None, NOT a wrong
+        // value); insert carries fx alloc. Renders its OWN surface fragment.
+        Type::Map(_, _) => SkillFragment {
+            fragment: "Map<K, V>",
+            description: "a bounded verified key-value map (insert/get/contains_key/len; get -> Option<V>, absent -> None; fx alloc)",
+            example: "let mut m: Map<u64, u64> = Map::new(); m.insert(k, v); m.get(k)",
+        },
         Type::Named(_) => SkillFragment {
             fragment: "Name",
             description: "a bare user-declared struct/enum type name",
@@ -634,6 +643,11 @@ fn type_inventory() -> Vec<Type> {
         // cover). The payload is the cheapest legal filler.
         Type::Option(Box::new(Type::Unit)),
         Type::Result(Box::new(Type::Unit), Box::new(Type::Unit)),
+        // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): a representative
+        // `Map<K, V>` node so the REQ-10 inventory renders its fragment (the `match`
+        // in `render_type_arm` is the exhaustiveness oracle; this list is the OUTPUT
+        // cover). The two args are the cheapest legal filler.
+        Type::Map(Box::new(Type::Unit), Box::new(Type::Unit)),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): a
         // representative n-tuple type so the REQ-10 inventory renders its fragment
         // (the `match` in `render_type_arm` is the exhaustiveness oracle; this list

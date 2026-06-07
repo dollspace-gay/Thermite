@@ -75,8 +75,8 @@ use thermite_syntax::ast::{
 use thermite_syntax::lexer::Span;
 
 use crate::lower::{
-    collect_vec_elem_types, elem_is_copy, is_vec_new, program_uses_parse,
-    program_uses_string_search, tvec_name, LowerError,
+    collect_map_kv_types, collect_vec_elem_types, elem_is_copy, is_map_new, is_vec_new,
+    program_uses_parse, program_uses_string_search, tmap_name, tvec_name, LowerError,
 };
 
 /// The maximum recursive-descent emission depth before `lower_l1` returns
@@ -142,6 +142,14 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // the program uses `Vec` (the non-`Vec` corpus is byte-unaffected, matching
     // `lower.rs::collect_vec_elem_types`'s reachability gate).
     out.push_str(&emit_vec_runtime_l1(program)?);
+
+    // Cluster C12 (`.design/basis/13-map.md` REQ-4/REQ-5): the L1 runnable `TMap<K,V>`
+    // wrapper(s) — the plain-Rust Vec-of-pairs newtype with `new`/`len`/`contains_key`/
+    // `get`/`insert` carrying the capacity/uniqueness guards as always-active
+    // `thermite_check!`s (§6 L1 handled-or-loud — an over-cap or duplicate-key insert
+    // ABORTS loudly), `get -> Option<V>` (absent → None). Emitted ONCE per `(K, V)`
+    // pair, only when the program uses `Map` (byte-unaffected for the non-`Map` corpus).
+    out.push_str(&emit_map_runtime_l1(program)?);
 
     // The program-wide `(variant, enum)` map (REQ-9) — drives the ENUM-QUALIFIED
     // `Enum::Variant` of an L1 `match` arm / pattern / `is` `matches!` — and the
@@ -1311,6 +1319,15 @@ pub(crate) fn lower_stmt_l1(
             let init_s = if let (Some(Type::Vec(elem)), true) = (ty, is_vec_new(init)) {
                 let wname = tvec_name(elem.as_ref())?;
                 format!("{wname}::new()")
+            } else if let (Some(Type::Map(k, v)), true) = (ty, is_map_new(init)) {
+                // Cluster C12 (`.design/basis/13-map.md` REQ-4): the L1 mirror of the
+                // L3 `Map::new()`-init rewrite. A `Map`-typed `let` whose init is the
+                // no-param `Map::new()` lowers to the wrapper constructor
+                // `<TMap>::new()` (`emit_map_runtime_l1` emits a `fn new()`), because
+                // the `TMap` newtype wraps a `Vec<(K,V)>` — a bare `Map::new()` cannot
+                // inhabit it (rustc `E0308`). MIRRORS the `Vec::new()` rewrite.
+                let wname = tmap_name(k.as_ref(), v.as_ref())?;
+                format!("{wname}::new()")
             } else {
                 lower_expr_exec(init, 0, zero_span(), variants)?
             };
@@ -1900,6 +1917,15 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let e = lower_type(err)?;
             Ok(format!("Result<{o}, {e}>"))
         }
+        // Cluster C12 (`.design/basis/13-map.md` REQ-4/REQ-5): the L1 exec mirror of
+        // a bounded `Map<K, V>` is the per-`(K,V)`-pair runtime wrapper `TMap<K,V>`
+        // (`Map<u64, u64>` → `TMapU64U64`), the SAME name as the L3 lowering
+        // (`lower.rs::tmap_name`). The wrapper is DEFINED by `emit_map_runtime_l1`
+        // with the surface ops (`insert`/`get`/`contains_key`/`len`) as plain-Rust
+        // methods carrying the capacity/uniqueness guards as always-active
+        // `thermite_check!`s (§6 L1 handled-or-loud); `get` returns the native
+        // `Option<V>` (absent → None). Keeps L1 total over `Type` (no panic, REQ-6).
+        Type::Map(k, v) => tmap_name(k, v),
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded owned
         // text primitive lowers to the newtype `TString` over `vstd::vec::Vec<u8>`
         // (the byte char model). The L1 exec mirror is the SAME wrapper name as the
@@ -1971,6 +1997,10 @@ fn program_uses_string_l1(program: &Program) -> bool {
             // through the type argument(s), exactly as a `Box`/`Vec` inner is.
             Type::Option(inner) => ty_is_string(inner),
             Type::Result(ok, err) => ty_is_string(ok) || ty_is_string(err),
+            // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `String` nested in a
+            // `Map<String, _>` key or a `Map<_, String>` value is reached through the
+            // type argument(s), exactly as `Result`'s two arguments.
+            Type::Map(k, v) => ty_is_string(k) || ty_is_string(v),
             // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
             // `String` nested in any tuple element is reached through the element.
             Type::Tuple(tys) => tys.iter().any(ty_is_string),
@@ -2578,6 +2608,81 @@ fn emit_vec_runtime_l1(program: &Program) -> Result<String, LowerError> {
             out.push_str("        false\n");
             out.push_str("    }\n");
         }
+        out.push_str("}\n");
+    }
+    Ok(out)
+}
+
+/// Emit the L1 runnable `TMap<K,V>` wrapper(s) — the plain-Rust Vec-of-pairs
+/// newtype with `new`/`len`/`contains_key`/`get`/`insert` — for every `(K, V)`
+/// pair the program uses (`.design/basis/13-map.md` REQ-4/REQ-5). EMPTY when the
+/// program uses no `Map` (byte-stable for the non-`Map` corpus). MIRRORS
+/// [`emit_vec_runtime_l1`]: the capacity/uniqueness guards are always-active
+/// `thermite_check!`s (§6 L1 handled-or-loud — an over-cap or duplicate-key insert
+/// ABORTS loudly rather than corrupting the map); `get -> Option<V>` returns the
+/// native `Option` (absent → `None`, the C7 handled-or-loud refusal), NOT a wrong
+/// value. v1 grounds Copy keys (`Map<u64, u64>`); a non-Copy key is refused via
+/// `tmap_name`'s `LowerError::Unsupported` exactly as the L3 path.
+fn emit_map_runtime_l1(program: &Program) -> Result<String, LowerError> {
+    let pairs = collect_map_kv_types(program);
+    if pairs.is_empty() {
+        return Ok(String::new());
+    }
+    let cap = VEC_CAP_L1;
+    let mut out = String::new();
+    for (k, v) in &pairs {
+        let name = tmap_name(k, v)?;
+        let kty = lower_type(k)?;
+        let vty = lower_type(v)?;
+        out.push('\n');
+        // `Clone`: the L1 ens-check snapshots a non-Copy parameter before the body
+        // consumes it (`lower_fn_l1`'s `<p>__pre` snapshot), so a `TMap*` param named
+        // in an `ens` after a move no longer rustc-`E0382`s.
+        out.push_str("#[derive(Debug, Clone)]\n");
+        out.push_str("#[allow(dead_code)]\n");
+        writeln!(out, "struct {name} {{ data: Vec<({kty}, {vty})> }}").ok();
+        out.push_str("#[allow(dead_code)]\n");
+        writeln!(out, "impl {name} {{").ok();
+        writeln!(
+            out,
+            "    fn new() -> {name} {{ {name} {{ data: Vec::new() }} }}"
+        )
+        .ok();
+        out.push_str("    fn len(&self) -> u64 { self.data.len() as u64 }\n");
+        // `contains_key`: a linear scan over the key column (`pair.0 == k`).
+        writeln!(out, "    fn contains_key(&self, k: {kty}) -> bool {{").ok();
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < self.data.len() {\n");
+        out.push_str("            if self.data[i].0 == k { return true; }\n");
+        out.push_str("            i += 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        false\n");
+        out.push_str("    }\n");
+        // `get`: a linear scan returning the native `Option<V>` — an absent key is
+        // `None` (the C7 handled-or-loud refusal), NOT a wrong value (§6 L1 rung).
+        writeln!(out, "    fn get(&self, k: {kty}) -> Option<{vty}> {{").ok();
+        out.push_str("        let mut i: usize = 0;\n");
+        out.push_str("        while i < self.data.len() {\n");
+        out.push_str("            if self.data[i].0 == k { return Some(self.data[i].1); }\n");
+        out.push_str("            i += 1;\n");
+        out.push_str("        }\n");
+        out.push_str("        None\n");
+        out.push_str("    }\n");
+        // `insert`: capacity + key-absent guards (the L1 mirror of the L3 `req
+        // len < CAP && !contains_key(k)`), then append the pair. Both guards are
+        // always-active `thermite_check!`s — an over-cap or duplicate-key insert
+        // ABORTS loudly (§6 L1 handled-or-loud, never a silent overwrite/corruption).
+        writeln!(out, "    fn insert(&mut self, k: {kty}, v: {vty}) {{").ok();
+        writeln!(
+            out,
+            "        thermite_check!(\"req\", \"self.len() < CAP\", self.data.len() < {cap});"
+        )
+        .ok();
+        out.push_str(
+            "        thermite_check!(\"req\", \"!self.contains_key(k)\", !self.contains_key(k));\n",
+        );
+        out.push_str("        self.data.push((k, v));\n");
+        out.push_str("    }\n");
         out.push_str("}\n");
     }
     Ok(out)

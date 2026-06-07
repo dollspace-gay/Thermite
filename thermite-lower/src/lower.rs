@@ -99,6 +99,14 @@
 //! | REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `split(&self, sep: u8) -> TVecTString` push-loop (the count partial + sep-free invariant); `emit_string_search_defs` emits the `count_sep`/`sep_free` spec fns + the `lemma_count_push` induction proof. `collect_vec_elem_types` weaves the `Vec<String>` element (→ `TVecTString`) when a C5 op is used so `split`'s result wrapper is always in scope. The surface `u64` `sep` is cast `as u8` at the call site (exec) + `as u8` in the `count_sep`/`sep_free` contract arg (spec). `count_sep` joins `nat_fns`. Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the count-bound + sep-free floor `7 verified, 0 errors`; a `split`-drop mutant FAILS, non-vacuous). The count-bound is the STRONGEST proved contract (NOT a reconstruct-round-trip). |
 //! | REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `trim(&self) -> TString` forward/backward whitespace scan + bounded copy (the subrange invariant `out@ == self.data@.subrange(lo, i)`); `emit_string_search_defs` emits the `is_space` spec fn. The whitespace test is inlined in the exec loop (`is_space` is a spec fn). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the length floor + subrange content `8 verified, 0 errors`). |
 //!
+//! ## REQ status — 13-map.md cluster C12 (bounded verified Map<K,V>, issue #114/#123)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-4 (`Map<K,V>` → Vec-of-pairs `TMap` wrapper + spec view; `insert`/`get`/`contains_key`/`len`; `fx alloc`) | SHIPPED | `lower_type` maps `Type::Map(k, v)` → `tmap_name` (`Map<u64,u64>` → `TMapU64U64`); `emit_map_wrappers` (called from `lower` after `emit_vec_wrappers`) materializes ONCE per `(K,V)` pair the GROUNDED `TMapU64U64` newtype over `vstd::vec::Vec<(u64,u64)>` with `spec_dom`/`well_formed` (capacity `data.len() <= MAP_CAP` + key-uniqueness)/`spec_contains_key`/`len` spec view, the exec linear-scan `contains_key` (`ens result == spec_contains_key(k)`), the no-OOB / handled-or-loud `get -> Option<V>` (absent → None, NOT a wrong value), and the append-under-`!contains_key` `insert` (`ens final(self)...`, the `final(self)` &mut grounding finding). Spec-position `m.contains_key(k)` lowers to `m.spec_contains_key(k)` (`lower_expr` MethodCall arm); a `Map`-typed param weaves `well_formed()` (`is_map_param_ty`, the inv-struct/String weave precedent); `Map::new()` `let`-init rewrites to `<TMap> { data: Vec::new() }` (`is_map_new`). `fx alloc` accepted by effect-subsumption (`insert` is an intrinsic). Consumer: `lower`. Verified: real `verus --no-cheating` on the GROUNDED `TMapU64U64` + the emitted `map_kv.th` (`forge/tests/map_conformance.rs` — `9 verified, 0 errors`: insert-then-get round-trip → `Some(v)`, absent → `None`, contains_key both branches; the broken `Some(0)`-for-absent FAILS `verified, 1 errors`, non-vacuity R-DEFER-9). BACKING-AGNOSTIC (#62/#114): the surface contract names `len`/`get`/`contains_key`/`insert` over the spec map abstraction, never `vstd::vec::Vec<(K,V)>`. |
+//! | REQ-5 (`Type::Map` exhaustive-match ripple) | SHIPPED | the new two-arg `Type::Map` variant rippled to every exhaustive `match Type`: `lower_type` (the wrapper-name arm), `tmap_name`/`tmap_type_suffix`/`collect_map_kv_types`/`note_map_kv` (the monomorphization + reachability), `note_vec_elems` (recurses both Map args), `ty_reaches_string` (recurses both args), `l1.rs::lower_type` + `emit_map_runtime_l1` (the L1 runnable mirror), `l2.rs` `type_label`, `forge/src/{check.rs (collect_type_adt_refs both args — the #68 ADT weave), review.rs (render_type)}`, `thermite-skill/src/generate.rs` (the `Map<K,V>` fragment) — honest arms, no `_`/panic. `mutation.rs`'s `zero_value_for`/`zero_desc` legitimately route a `Map`-returning fn to the no-scalar-zero `_` catch-all (like `Result`). Consumer: `lower`/`lower_l1`. Verified: `cargo build --workspace` (exhaustiveness) + `forge/tests/map_conformance.rs`. |
+//! | REQ-6 (`LowerError` extension, no panics) | SHIPPED | the `Map` lowering reuses the existing `LowerError::Unsupported` (`tmap_name`/`tmap_type_suffix` on a non-Copy key / unsupported key-value type — v1 grounds `Map<u64,u64>` Copy keys, OQ-4) — no new variant; no `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1). |
+//!
 //! ## REQ status — 09-option-result.md cluster C7 (built-in Option/Result, issue #95)
 //!
 //! | REQ | Status | Evidence |
@@ -497,6 +505,19 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // capacity-preserving `push` with the `final(self)` &mut postcondition.
     let vec_wrappers = emit_vec_wrappers(program)?;
     out.push_str(&vec_wrappers);
+
+    // (1c.5) Cluster C12 (`.design/basis/13-map.md` REQ-4): the bounded verified
+    // `Map<K, V>` wrapper struct `TMap<K,V>` over a `vstd::vec::Vec<(K, V)>`-of-pairs
+    // backing + the spec abstraction view (`spec_dom`/`spec_contains_key`/`len`) +
+    // its verified `contains_key`/`get`/`insert` ops, materialized ONCE per `(K, V)`
+    // pair the program uses, BEFORE any fn references it. EMPTY when the program uses
+    // no `Map` (byte-stable for the existing corpus — no regression). The GROUNDED
+    // `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` form (verus `9 verified, 0
+    // errors`): the `well_formed` capacity + key-uniqueness invariant, the no-OOB /
+    // handled-or-loud `get -> Option<V>` (absent → None), the append-under-
+    // `!contains_key` `insert` with the `final(self)` &mut postcondition.
+    let map_wrappers = emit_map_wrappers(program)?;
+    out.push_str(&map_wrappers);
 
     // (1d) Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded
     // `String` wrapper struct `TString` over `vstd::vec::Vec<u8>` + its verified
@@ -2094,6 +2115,21 @@ fn lower_fn_signature(
                 woven_reqs.push(conj);
             }
         }
+        // Cluster C12 (`.design/basis/13-map.md` REQ-4): a `Map<K, V>`-typed param
+        // (bare or `&Map`) is BOUNDED by its type invariant `well_formed()` (the
+        // capacity + key-uniqueness invariant, the §4.2 cage) — the SAME automatic
+        // threading an invariant-bearing struct / a `String` param gets. The `TMap`
+        // wrapper's `contains_key`/`get`/`insert` all `require self.well_formed()`,
+        // so weave the `well_formed()` conjunct for every `Map`-typed param so a
+        // caller of `m.contains_key(k)` / `m.get(k)` / `m.insert(k, v)` discharges
+        // the method's precondition. The author writes no conjunct — the invariant
+        // is implicit at every use. Deduped against the struct/String weaves.
+        if is_map_param_ty(&p.ty) {
+            let conj = format!("{}.well_formed()", p.name);
+            if !woven_reqs.contains(&conj) {
+                woven_reqs.push(conj);
+            }
+        }
     }
     let req = lower_expr(&f.contract.req.expr, spec, 0, f.span)?;
     if woven_reqs.is_empty() {
@@ -2648,6 +2684,19 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
             let e = lower_type(err)?;
             Ok(format!("Result<{o}, {e}>"))
         }
+        // Cluster C12 (`.design/basis/13-map.md` REQ-4): a bounded `Map<K, V>` lowers
+        // to the Thermite-runtime newtype `TMap<K,V>` over a `vstd::vec::Vec<(K, V)>`-
+        // of-pairs backing (C6 `Vec<tuple>` + C9 `(K,V)` pair). The wrapper struct +
+        // its verified `spec_dom`/`spec_contains_key`/`len`/`contains_key`/`get`/
+        // `insert` impl are materialized ONCE per `(K, V)` pair by `emit_map_wrappers`;
+        // this arm names the type (`Map<u64, u64>` → `TMapU64U64`). The wrapper carries
+        // the `well_formed` capacity + key-uniqueness invariant + the no-OOB /
+        // handled-or-loud `get -> Option<V>` (absent → None). BACKING-AGNOSTIC SURFACE
+        // (#62/#114): the surface contract names `len`/`get`/`contains_key`/`insert`
+        // over a spec map abstraction, never `vstd::vec::Vec<(K,V)>`; v1 IMPLEMENTS it
+        // by wrapping the Vec-of-pairs (a later vstd-hash-map decouple swaps the
+        // backing WITHOUT changing user `.th` code).
+        Type::Map(k, v) => Ok(tmap_name(k, v)?),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7/REQ-8,
         // #109): an n-tuple type `(T, U, …)` lowers to the Verus-NATIVE tuple type
         // `(<t0>, <t1>, …)` (Verus tuples are native, GROUNDED at arity 2 and 3 —
@@ -2711,6 +2760,74 @@ pub(crate) fn tvec_name(elem: &Type) -> Result<String, LowerError> {
         }
     };
     Ok(format!("TVec{suffix}"))
+}
+
+/// The generated wrapper struct name for `Map<K, V>` — `TMap` plus the
+/// UpperCamelCase suffix of the KEY type's wrapper-suffix and the VALUE type's
+/// (`Map<u64, u64>` → `TMapU64U64`) (`.design/basis/13-map.md` REQ-4). A
+/// per-`(K,V)`-pair concrete wrapper (not a generic `TMap<K,V>`) MIRRORS
+/// [`tvec_name`]'s monomorphization: the GROUNDED `TMapU64U64`-over-
+/// `vstd::vec::Vec<(u64,u64)>` form. v1 grounds `Map<u64, u64>` (Copy keys, OQ-4);
+/// the suffix reuses `tmap_type_suffix` so a future `Map<String, u64>` /
+/// `Map<u64, Account>` composes by the SAME rule the SHIPPED `Vec<String>`/
+/// `Vec<struct>` proved. A still-unlowerable key/value type is the existing
+/// `LowerError::Unsupported` (no panic, REQ-6).
+pub(crate) fn tmap_name(key: &Type, val: &Type) -> Result<String, LowerError> {
+    let ks = tmap_type_suffix(key)?;
+    let vs = tmap_type_suffix(val)?;
+    Ok(format!("TMap{ks}{vs}"))
+}
+
+/// The UpperCamelCase wrapper-name suffix for a single `Map` key/value type
+/// (`.design/basis/13-map.md` REQ-4 / OQ-4). MIRRORS the suffix arm of
+/// [`tvec_name`] (a Copy primitive, a `String` → `TString`, a user `struct`/`enum`
+/// → its bare decl name, a nested `Vec` → its `tvec_name`), so a `(K, V)` pair
+/// monomorphizes by the SAME rule the SHIPPED `Vec` element does. A still-
+/// unlowerable type is the existing `LowerError::Unsupported` (no panic, REQ-6).
+fn tmap_type_suffix(ty: &Type) -> Result<String, LowerError> {
+    Ok(match ty {
+        Type::Prim(PrimType::U32) => "U32".to_string(),
+        Type::Prim(PrimType::U64) => "U64".to_string(),
+        Type::Prim(PrimType::Usize) => "Usize".to_string(),
+        Type::Prim(PrimType::Bool) => "Bool".to_string(),
+        Type::String => "TString".to_string(),
+        Type::Named(name) => name.clone(),
+        Type::Vec(inner) => tvec_name(inner)?,
+        other => {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "Map key/value type {:?} (v1 grounds Map<u64, u64>; the suffix \
+                     mirrors a Vec element — a Copy primitive, a String, a user \
+                     struct/enum, or a nested Vec)",
+                    lower_type(other).unwrap_or_else(|_| "<unlowerable>".to_string())
+                ),
+                span: zero_span(),
+            });
+        }
+    })
+}
+
+/// True iff `expr` is the bounded-`Map` no-param constructor `Map::new()`
+/// (`.design/basis/13-map.md` REQ-4, mirroring [`is_vec_new`]): an `Expr::Call`
+/// whose callee path is `Map::new` with no arguments. Drives the `let`-init
+/// rewrite to the wrapper construction `<TMap> { data: Vec::new() }`.
+pub(crate) fn is_map_new(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Call { callee, args }
+            if args.is_empty()
+                && matches!(callee.as_ref(), Expr::Path(segs)
+                    if segs.len() == 2 && segs[0] == "Map" && segs[1] == "new")
+    )
+}
+
+/// True iff a `Map` key type is `Copy` (`.design/basis/13-map.md` OQ-4): v1
+/// grounds `Map<u64, u64>` (Copy key, by-value `get -> Option<V>`). A non-Copy key
+/// (`Map<String, _>`) needs the borrow-comparison rule (the REQ-9 finding), flagged
+/// as the breadth v1 does not exercise. Used to gate the by-value value return in
+/// the emitted `get`.
+fn map_key_is_copy(key: &Type) -> bool {
+    elem_is_copy(key)
 }
 
 /// True iff a `Vec` element type is `Copy` (`.design/basis/04-collections.md`
@@ -2873,6 +2990,17 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
         Type::Result(ok, err) => {
             note_vec_elems(ok, elems);
             note_vec_elems(err, elems);
+        }
+        // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches a
+        // `Vec` in EITHER type argument (the key or the value), so both are recursed
+        // (inner-first preserved, exactly as `Result`'s two arguments are). A `Map`
+        // itself does NOT carry a `TVec` element type — its Vec-of-pairs backing is
+        // emitted by `emit_map_wrappers`, not the `TVec` path — so the `Map` node is
+        // not pushed as a `Vec` element; only its arguments are walked for nested
+        // `Vec`s.
+        Type::Map(k, v) => {
+            note_vec_elems(k, elems);
+            note_vec_elems(v, elems);
         }
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
         // tuple type `(T, U, …)` reaches a `Vec` in ANY of its element types, so
@@ -3118,6 +3246,323 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
 }
 
 // ---------------------------------------------------------------------------
+// Cluster C12 (`.design/basis/13-map.md` REQ-4): the bounded verified `Map<K, V>`
+// wrapper emission. A Thermite `Map<K, V>` lowers to a newtype `TMap<K,V>` over a
+// `vstd::vec::Vec<(K, V)>`-of-pairs backing (C6 `Vec<tuple>` + C9 `(K,V)` pair)
+// with the verified `spec_dom`/`spec_contains_key`/`len`/`contains_key`/`get`/
+// `insert` impl — the GROUNDED `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` form
+// (`9 verified, 0 errors`). Materialized ONCE per `(K, V)` pair the program uses.
+// ---------------------------------------------------------------------------
+
+/// The bounded-`Map` capacity bound (`.design/basis/13-map.md` REQ-4 / the GROUNDED
+/// `MAP_CAP`): the SAME `1_000_000` idiom as [`VEC_CAP`]. A `Map`'s `well_formed`
+/// carries `data.len() <= MAP_CAP` so the §4.2 cage never sees an unbounded backing.
+const MAP_CAP: u64 = 1_000_000;
+
+/// Collect, in deterministic order and deduped, every `(K, V)` pair the program
+/// uses in a `Map<K, V>` REACHABLE anywhere (a `fn`/`spec fn` param/return, a
+/// `struct`/`enum`-variant FIELD, a `fn`-body local `let` annotation) — the SAME
+/// reachability closure as [`collect_vec_elem_types`], keyed on `Type::Map(k, v)`.
+/// The wrapper struct is materialized once per `(K, V)` pair.
+pub(crate) fn collect_map_kv_types(program: &Program) -> Vec<(Type, Type)> {
+    let mut pairs: Vec<(Type, Type)> = Vec::new();
+    for item in &program.items {
+        match item {
+            Item::Fn(f) => {
+                for p in &f.params {
+                    note_map_kv(&p.ty, &mut pairs);
+                }
+                note_map_kv(&f.ret, &mut pairs);
+                if let Some(b) = &f.body {
+                    note_block_map_kv(b, &mut pairs);
+                }
+            }
+            Item::SpecFn(s) => {
+                for p in &s.params {
+                    note_map_kv(&p.ty, &mut pairs);
+                }
+                note_map_kv(&s.ret, &mut pairs);
+                note_block_map_kv(&s.body, &mut pairs);
+            }
+            Item::Struct(s) => {
+                for fd in &s.fields {
+                    note_map_kv(&fd.ty, &mut pairs);
+                }
+            }
+            Item::Enum(e) => {
+                for v in &e.variants {
+                    match &v.shape {
+                        VariantShape::Unit => {}
+                        VariantShape::Tuple(tys) => {
+                            for ty in tys {
+                                note_map_kv(ty, &mut pairs);
+                            }
+                        }
+                        VariantShape::Struct(fields) => {
+                            for fd in fields {
+                                note_map_kv(&fd.ty, &mut pairs);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    pairs
+}
+
+/// Note every `(K, V)` pair reachable in a single `Type` (REQ-5), deduped. Recurses
+/// through every type constructor so a `Map` nested under a `Ref`/`Vec`/`Option`/
+/// `Result`/`Tuple` is reached.
+fn note_map_kv(ty: &Type, pairs: &mut Vec<(Type, Type)>) {
+    match ty {
+        Type::Map(k, v) => {
+            // Recurse into the key/value first (a `Map<_, Map<_,_>>` inner pair must
+            // be noted/emitted before the outer that names it), then push this pair.
+            note_map_kv(k, pairs);
+            note_map_kv(v, pairs);
+            let pair = ((**k).clone(), (**v).clone());
+            if !pairs.contains(&pair) {
+                pairs.push(pair);
+            }
+        }
+        Type::Ref { inner, .. }
+        | Type::Slice(inner)
+        | Type::Box(inner)
+        | Type::Vec(inner)
+        | Type::Generic { arg: inner, .. }
+        | Type::Option(inner) => note_map_kv(inner, pairs),
+        Type::Result(ok, err) => {
+            note_map_kv(ok, pairs);
+            note_map_kv(err, pairs);
+        }
+        Type::Tuple(tys) => {
+            for t in tys {
+                note_map_kv(t, pairs);
+            }
+        }
+        Type::Prim(_) | Type::Unit | Type::Named(_) | Type::String => {}
+    }
+}
+
+/// Note every `(K, V)` pair reachable in a body-local `let` type annotation (REQ-5,
+/// the `Map::new()`-no-param reachability — the #86/REQ-11 analog). Walks nested
+/// `if`/`loop` blocks, keyed on the `let`'s declared type via [`note_map_kv`].
+fn note_block_map_kv(block: &Block, pairs: &mut Vec<(Type, Type)>) {
+    for stmt in &block.stmts {
+        note_stmt_map_kv(stmt, pairs);
+    }
+}
+
+fn note_stmt_map_kv(stmt: &Stmt, pairs: &mut Vec<(Type, Type)>) {
+    match stmt {
+        Stmt::Let { ty, .. } => {
+            if let Some(t) = ty {
+                note_map_kv(t, pairs);
+            }
+        }
+        Stmt::If { then, else_, .. } => {
+            note_block_map_kv(then, pairs);
+            if let Some(e) = else_ {
+                note_block_map_kv(e, pairs);
+            }
+        }
+        Stmt::Loop(l) => note_block_map_kv(&l.body, pairs),
+        Stmt::Assign { .. } | Stmt::Return(_) | Stmt::Expr(_) | Stmt::Break | Stmt::Continue => {}
+    }
+}
+
+/// Emit the `TMap<K,V>` wrapper struct + its verified op `impl` for every `(K, V)`
+/// pair the program uses (REQ-4), in deterministic order. EMPTY when the program
+/// uses no `Map` (byte-stable for the non-`Map` corpus — no regression).
+fn emit_map_wrappers(program: &Program) -> Result<String, LowerError> {
+    let pairs = collect_map_kv_types(program);
+    if pairs.is_empty() {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    for (k, v) in &pairs {
+        out.push_str(&emit_one_map_wrapper(k, v)?);
+    }
+    Ok(out)
+}
+
+/// Emit ONE `TMap<K,V>` wrapper struct + its verified op `impl` for a single
+/// `(K, V)` pair (`.design/basis/13-map.md` REQ-4). The emitted form is EXACTLY the
+/// GROUNDED `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` (`9 verified, 0 errors`):
+/// the `well_formed` capacity + key-uniqueness invariant, the `spec_dom`/
+/// `spec_contains_key`/`len` spec abstraction view, the exec linear-scan
+/// `contains_key` (`ens result == spec_contains_key(k)`), the no-OOB /
+/// handled-or-loud `get -> Option<V>` (absent → `None`, NOT a wrong value), and the
+/// append-under-`!contains_key` `insert` with the `final(self)` &mut postcondition.
+/// NO `assume`/`external_body` (R-DEFER-9) — every contract is real verus map
+/// reasoning threaded over vstd's verified `Vec::push`/`Vec::index`/`Vec::len`. v1
+/// grounds Copy keys (`Map<u64,u64>`, OQ-4); a non-Copy key is the existing
+/// `LowerError::Unsupported` via `tmap_name`.
+fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
+    let name = tmap_name(key, val)?;
+    let kty = lower_type(key)?;
+    let vty = lower_type(val)?;
+    if !map_key_is_copy(key) {
+        // v1 grounds Copy keys only (OQ-4): a non-Copy key (`Map<String, _>`) needs
+        // the borrow-comparison rule (the REQ-9 finding) not yet grounded. Refuse
+        // loudly via the existing error enum — no panic, no silent wrong code.
+        return Err(LowerError::Unsupported {
+            what: format!(
+                "Map key type {kty} (v1 grounds Copy keys — Map<u64, u64>; a non-Copy \
+                 key needs the borrow-comparison rule, deferred per 13-map.md OQ-4)"
+            ),
+            span: zero_span(),
+        });
+    }
+    let mut out = String::new();
+    out.push('\n');
+    writeln!(out, "pub struct {name} {{ pub data: Vec<({kty}, {vty})> }}").ok();
+    writeln!(out, "impl {name} {{").ok();
+    // The key-set abstraction `spec_dom` (the spec membership view; REQ-4). A named
+    // spec fn over a `Set` comprehension with an explicit trigger (the §4.2 cage —
+    // never an anonymous nested quantifier admitted raw).
+    out.push_str("    pub open spec fn spec_dom(&self) -> Set<int> {\n");
+    out.push_str("        Set::new(|kk: int| exists|j: int|\n");
+    out.push_str(
+        "            0 <= j < self.data.len() && #[trigger] self.data@[j].0 as int == kk)\n",
+    );
+    out.push_str("    }\n");
+    // The `well_formed` capacity + key-uniqueness invariant (REQ-4): `data.len() <=
+    // MAP_CAP` AND every distinct pair has a distinct key. The forall carries an
+    // explicit dual-key trigger (both quantified vars covered).
+    out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
+    writeln!(out, "        &&& self.data.len() <= {MAP_CAP}").ok();
+    out.push_str(
+        "        &&& (forall|a: int, b: int| #![trigger self.data@[a].0, self.data@[b].0]\n",
+    );
+    out.push_str(
+        "                0 <= a < self.data.len() && 0 <= b < self.data.len() && a != b\n",
+    );
+    out.push_str("                ==> self.data@[a].0 != self.data@[b].0)\n");
+    out.push_str("    }\n");
+    // The membership abstraction `spec_contains_key` (REQ-4): `exists|j| data@[j].0
+    // == k`, an explicit single-var trigger.
+    writeln!(
+        out,
+        "    pub open spec fn spec_contains_key(&self, k: {kty}) -> bool {{"
+    )
+    .ok();
+    out.push_str(
+        "        exists|j: int| 0 <= j < self.data.len() && #[trigger] self.data@[j].0 == k\n",
+    );
+    out.push_str("    }\n");
+    out.push_str("    pub open spec fn len(&self) -> nat { self.data.len() as nat }\n");
+    // The exec linear-scan `contains_key` (REQ-4): `req well_formed`, `ens result ==
+    // spec_contains_key(k)`, the scan invariant + `decreases`. PURE.
+    writeln!(
+        out,
+        "    pub fn contains_key(&self, k: {kty}) -> (result: bool)"
+    )
+    .ok();
+    out.push_str("        requires self.well_formed(),\n");
+    out.push_str("        ensures result == self.spec_contains_key(k),\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut i: usize = 0;\n");
+    out.push_str("        while i < self.data.len()\n");
+    out.push_str("            invariant\n");
+    out.push_str("                i <= self.data.len(),\n");
+    out.push_str("                forall|j: int| 0 <= j < i ==> self.data@[j].0 != k,\n");
+    out.push_str("            decreases self.data.len() - i,\n");
+    out.push_str("        {\n");
+    out.push_str("            if self.data[i].0 == k {\n");
+    out.push_str("                assert(self.data@[i as int].0 == k);\n");
+    out.push_str("                return true;\n");
+    out.push_str("            }\n");
+    out.push_str("            i = i + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        false\n");
+    out.push_str("    }\n");
+    // The no-OOB / handled-or-loud `get -> Option<V>` (REQ-4): `req well_formed`,
+    // `ens match result { Some(v) => contains_key(k) && (the pair exists), None =>
+    // !contains_key(k) }` — an ABSENT key returns None, NOT a wrong value (the C7
+    // Option, the absent → None refusal). PURE. v1 grounds a Copy value (by value).
+    writeln!(
+        out,
+        "    pub fn get(&self, k: {kty}) -> (result: Option<{vty}>)"
+    )
+    .ok();
+    out.push_str("        requires self.well_formed(),\n");
+    out.push_str("        ensures match result {\n");
+    out.push_str("            Some(v) => self.spec_contains_key(k)\n");
+    out.push_str("                && (exists|j: int| 0 <= j < self.data.len()\n");
+    out.push_str("                       && self.data@[j].0 == k && self.data@[j].1 == v),\n");
+    out.push_str("            None => !self.spec_contains_key(k),\n");
+    out.push_str("        },\n");
+    out.push_str("    {\n");
+    out.push_str("        let mut i: usize = 0;\n");
+    out.push_str("        while i < self.data.len()\n");
+    out.push_str("            invariant\n");
+    out.push_str("                i <= self.data.len(),\n");
+    out.push_str("                forall|j: int| 0 <= j < i ==> self.data@[j].0 != k,\n");
+    out.push_str("            decreases self.data.len() - i,\n");
+    out.push_str("        {\n");
+    out.push_str("            if self.data[i].0 == k {\n");
+    writeln!(out, "                let v: {vty} = self.data[i].1;").ok();
+    out.push_str(
+        "                assert(self.data@[i as int].0 == k && self.data@[i as int].1 == v);\n",
+    );
+    out.push_str("                return Some(v);\n");
+    out.push_str("            }\n");
+    out.push_str("            i = i + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        None\n");
+    out.push_str("    }\n");
+    // The append-under-`!contains_key` `insert` (REQ-4, OQ-2 the v1 form): `req
+    // well_formed && len < MAP_CAP && !contains_key(k)`, `ens final(self)...` (the
+    // `final(self)` &mut postcondition — the SHIPPED Vec::push grounding finding) —
+    // the new pair maps `k -> v`, capacity + uniqueness preserved, `len' == len + 1`.
+    // Carries `fx alloc` at the surface (the Vec-push / Effect::Alloc rule). The
+    // proof: the new pair witnesses the membership; uniqueness holds because the new
+    // key was absent by precondition.
+    writeln!(out, "    pub fn insert(&mut self, k: {kty}, v: {vty})").ok();
+    out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
+    writeln!(out, "{MAP_CAP},").ok();
+    out.push_str("                 !old(self).spec_contains_key(k),\n");
+    out.push_str("        ensures\n");
+    out.push_str("            final(self).well_formed(),\n");
+    out.push_str("            final(self).spec_contains_key(k),\n");
+    out.push_str("            exists|j: int| 0 <= j < final(self).data.len()\n");
+    out.push_str(
+        "                && final(self).data@[j].0 == k && final(self).data@[j].1 == v,\n",
+    );
+    out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
+    out.push_str("    {\n");
+    out.push_str("        let ghost old_len = self.data.len();\n");
+    out.push_str("        self.data.push((k, v));\n");
+    out.push_str(
+        "        assert(self.data@[old_len as int].0 == k && self.data@[old_len as int].1 == v);\n",
+    );
+    out.push_str("        assert(self.spec_contains_key(k)) by {\n");
+    out.push_str(
+        "            assert(0 <= old_len < self.data.len() && self.data@[old_len as int].0 == k);\n",
+    );
+    out.push_str("        }\n");
+    out.push_str("        assert(self.well_formed()) by {\n");
+    out.push_str("            assert forall|a: int, b: int|\n");
+    out.push_str(
+        "                0 <= a < self.data.len() && 0 <= b < self.data.len() && a != b\n",
+    );
+    out.push_str("                implies self.data@[a].0 != self.data@[b].0 by {\n");
+    out.push_str("                if a < old_len && b < old_len {\n");
+    out.push_str("                } else if a == old_len {\n");
+    out.push_str("                    assert(self.data@[b].0 != k);\n");
+    out.push_str("                } else if b == old_len {\n");
+    out.push_str("                    assert(self.data@[a].0 != k);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    Ok(out)
+}
+
+// ---------------------------------------------------------------------------
 // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded-`String`
 // wrapper emission. A Thermite `String` lowers to a newtype `TString` over
 // `vstd::vec::Vec<u8>` with the verified `well_formed`/`len`/`byte_at`/`concat`/
@@ -3141,6 +3586,20 @@ fn is_string_param_ty(ty: &Type) -> bool {
     match ty {
         Type::String => true,
         Type::Ref { inner, .. } => matches!(inner.as_ref(), Type::String),
+        _ => false,
+    }
+}
+
+/// True iff `ty` is a `Map<K, V>` VALUE param — a bare `Map` or a `&Map`/`&mut Map`
+/// borrow (`.design/basis/13-map.md` REQ-4). Used to weave the `TMap`
+/// `well_formed()` precondition for a `Map`-receiver param of a fn calling
+/// `contains_key`/`get`/`insert` (those methods `require self.well_formed()`), the
+/// SAME automatic threading [`is_string_param_ty`] gives a `String` param. Sees
+/// through one borrow only (a `&&Map` is not an invariant-bearing receiver).
+fn is_map_param_ty(ty: &Type) -> bool {
+    match ty {
+        Type::Map(_, _) => true,
+        Type::Ref { inner, .. } => matches!(inner.as_ref(), Type::Map(_, _)),
         _ => false,
     }
 }
@@ -3176,6 +3635,12 @@ fn ty_reaches_string(ty: &Type) -> bool {
         | Type::Option(inner) => ty_reaches_string(inner),
         // A `Result<T, E>` reaches a `String` in EITHER type argument.
         Type::Result(ok, err) => ty_reaches_string(ok) || ty_reaches_string(err),
+        // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches a
+        // `String` in EITHER type argument (a `Map<String, _>` key or a
+        // `Map<_, String>` value), so both are recursed (exactly as `Result`'s two
+        // arguments are) — the `TString` wrapper must be in scope for the
+        // Vec-of-pairs backing.
+        Type::Map(k, v) => ty_reaches_string(k) || ty_reaches_string(v),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
         // tuple type reaches a `String` if ANY element does.
         Type::Tuple(tys) => tys.iter().any(ty_reaches_string),
@@ -4791,6 +5256,26 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             if ctx.is_spec() && name == "last" && args.is_empty() {
                 return Ok(format!("{r}.spec_get(({r}.len() - 1) as int)"));
             }
+            // Cluster C12 (`.design/basis/13-map.md` REQ-4): in SPEC position the
+            // bounded-`Map` membership accessor `m.contains_key(k)` (a contract naming
+            // key membership, `ens result == m.contains_key(k)`) lowers to the
+            // wrapper's SPEC abstraction `m.spec_contains_key(k)` — the exec
+            // `contains_key` returns `bool` but a contract needs the spec function
+            // (the `exists|j| data@[j].0 == k` membership). Keyed on the method NAME
+            // `contains_key` (one arg) in spec position only; the exec `contains_key`
+            // (a fn body) lowers verbatim to the verified wrapper method. The key arg
+            // lowers plainly (a Copy key value, no `as int` cast — `spec_contains_key`
+            // takes the surface key type). `m.len()` in spec position lowers to the
+            // wrapper's `spec fn len -> nat` unchanged (`r.len()`, the SAME spec fn as
+            // the `Vec` wrapper, so the existing pass-through covers it). `m.get(k)`
+            // is NOT spec-rewritten: the exec `get -> Option<V>` is named in a
+            // contract only via the C7 spec-`match`-in-`ens` over the RESULT (the
+            // `match result { Some(v) => …, None => … }` form), exactly as the
+            // grounded `insert_then_get` round-trip threads — not a spec-fn rewrite.
+            if ctx.is_spec() && name == "contains_key" && args.len() == 1 {
+                let arg = lower_expr(&args[0], ctx, d, span)?;
+                return Ok(format!("{r}.spec_contains_key({arg})"));
+            }
             // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): in SPEC position
             // a `String` receiver's `.len()` / `.byte_at(i)` lowers to the wrapper's
             // SPEC fns `.spec_len()` / `.spec_byte_at(i as int)` — the exec `len`/
@@ -5505,6 +5990,15 @@ fn lower_stmt(stmt: &Stmt, ctx: Ctx, indent: usize) -> Result<String, LowerError
             // normally (a `let v: Vec<u64> = other_vec;` passes through).
             let init_s = if let (Some(Type::Vec(elem)), true) = (ty, is_vec_new(init)) {
                 let wname = tvec_name(elem.as_ref())?;
+                format!("{wname} {{ data: Vec::new() }}")
+            } else if let (Some(Type::Map(k, v)), true) = (ty, is_map_new(init)) {
+                // Cluster C12 (`.design/basis/13-map.md` REQ-4): a `Map`-typed `let`
+                // whose init is the no-param constructor `Map::new()` lowers to the
+                // wrapper construction `<TMap> { data: Vec::new() }` — the `TMap`
+                // newtype wraps a `vstd::vec::Vec<(K,V)>`-of-pairs, so a bare
+                // `Map::new()` cannot inhabit it (`E0308`). MIRRORS the `Vec::new()`
+                // rewrite above; the `(K, V)` pair comes from the `let` annotation.
+                let wname = tmap_name(k.as_ref(), v.as_ref())?;
                 format!("{wname} {{ data: Vec::new() }}")
             } else {
                 lower_expr(init, ctx, 0, zero_span())?

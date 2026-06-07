@@ -1539,6 +1539,15 @@ fn collect_type_adt_refs(
             collect_type_adt_refs(ok, adt_decls, out);
             collect_type_adt_refs(err, adt_decls, out);
         }
+        // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches an
+        // in-file ADT in EITHER type argument (a `Map<u64, Account>` reaches
+        // `Account` — the #68 ADT weave so the value's decl is woven into the
+        // per-item subprogram), so both the key and value are recursed, exactly as
+        // `Result`'s two arguments. `Map` itself is a built-in, never an in-file ADT.
+        thermite_syntax::Type::Map(k, v) => {
+            collect_type_adt_refs(k, adt_decls, out);
+            collect_type_adt_refs(v, adt_decls, out);
+        }
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
         // tuple type `(T, U, …)` reaches an in-file ADT in ANY element (a
         // `(Account, u64)` reaches `Account`), so every element is recursed.

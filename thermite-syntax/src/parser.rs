@@ -2447,6 +2447,24 @@ impl<'a> Parser<'a> {
                         self.consume(&TokKind::Gt, "`>` to close `Result<…, …>`")?;
                         Ok(Type::Result(Box::new(ok_ty), Box::new(err_ty)))
                     }
+                    // The bounded verified key-value primitive `Map<K, V>`
+                    // (`.design/basis/13-map.md` REQ-1, C12: the SECOND
+                    // two-type-argument node, mirroring `Result<T, E>` VERBATIM —
+                    // the single-arg `Generic { name, arg }` cannot carry a key AND
+                    // a value (it dies at the comma, the exact C7 finding). `Map` is
+                    // a contextual ident matched by name exactly as `Box`/`Vec`/
+                    // `Option`/`Result`. The key `K` and value `V` parse recursively;
+                    // `Map<u64, u64>` yields `Type::Map(Box::new(u64), Box::new(u64))`.
+                    // Its `insert`/`get`/`contains_key`/`len` ops are ordinary
+                    // `MethodCall`s (the existing postfix `.` form) — no new surface.
+                    "Map" => {
+                        self.consume(&TokKind::Lt, "`<` after `Map`")?;
+                        let key_ty = self.parse_type()?;
+                        self.consume(&TokKind::Comma, "`,` between `Map<K, V>` args")?;
+                        let val_ty = self.parse_type()?;
+                        self.consume(&TokKind::Gt, "`>` to close `Map<…, …>`")?;
+                        Ok(Type::Map(Box::new(key_ty), Box::new(val_ty)))
+                    }
                     _ => {
                         // A generic application `NAME<T>` (e.g. `Option<usize>`),
                         // or a bare user-defined type name `Account`/`Shape`/

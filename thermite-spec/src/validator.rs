@@ -56,6 +56,12 @@
 //! | REQ-4 (element invariant via named `spec fn`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The element invariant (`forall_in(v, |e| inv(e))` as a named `spec fn`, preserved across `push`) reuses the existing named-`spec fn` accept path UNCHANGED — but the v1 corpus oracle (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get; no `Vec<Account>` element-invariant program is in the corpus, so this REQ is deferred to a Stage-4 follow-up (the GROUNDED `all_elems_inv` form is design-confirmed feasible, not yet corpus-exercised). |
 //! | REQ-12 (`last`/`contains` in `BUILTIN_METHODS`) | SHIPPED | #98 cluster C6. `last` and `contains` ADDED to `BUILTIN_METHODS` so an `ens result == v.last()` / `ens result == v.contains(x)` validates inside the §4.2 cage exactly as the no-OOB `get` does (the lowerer maps spec-position `v.last()` to the wrapper's `spec_get((len-1) as int)`; `contains`'s `exists`-meaning is PROVED by the exec `ens`'s linear-scan invariant, R-DEFER-9). `pop_last`/`insert`/`remove` stay EXEC-only (`&mut` mutators, never in a contract). The caged-flat walk (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED. Consumer: `pub fn validate` → `walk_expr_inner`. Verification: `forge/tests/vec_completeness_conformance.rs` (the C6 ops certify L3) + `cargo test -p thermite-spec`. |
 //!
+//! ## REQ status — 13-map.md cluster C12 (bounded verified Map<K,V>, issue #114/#123)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-3 (`contains_key` cage admission; capacity/op contracts in §4.2) | SHIPPED | `contains_key` ADDED to `BUILTIN_METHODS` so an `ens result == m.contains_key(k)` (`conformance/map_kv.th` `has_key`) validates inside the §4.2 cage as a FLAT built-in exactly as the `Vec` `contains` / no-OOB `get` — the lowerer maps spec-position `m.contains_key(k)` to the wrapper's `spec_contains_key(k)`. `insert` stays EXEC-only (`&mut` mutator, never in a contract, like `push`); `get`/`len` were already present. The round-trip / absent→None contracts are the C7 spec-`match`-in-`ens` over `get`'s `Option` result (the admitted flat-`match` cage rule, 01-adts REQ-7), UNCHANGED. The caged-flat walk (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED. Consumer: `pub fn validate` → `walk_expr_inner`. Verification: `forge/tests/map_conformance.rs::ac3_..._certifies_l3` (`has_key` L3, the mutation-strong contains_key contract) + `cargo test -p thermite-spec`. |
+//!
 //! ## REQ status — 06-provenance-and-sinks.md (Basis Stage 6, issue #76 / blocker #77)
 //!
 //! | REQ | Status | Evidence |
@@ -186,6 +192,15 @@ const BUILTIN_METHODS: &[&str] = &[
     "get",
     "last",
     "contains",
+    // Cluster C12 (`.design/basis/13-map.md` REQ-3): the bounded-`Map` membership
+    // predicate whose result a contract names (`ens result == m.contains_key(k)`),
+    // admitted as a FLAT built-in exactly as the `Vec` `contains` / no-OOB `get` —
+    // the lowerer maps spec-position `m.contains_key(k)` to the wrapper's spec
+    // abstraction `m.spec_contains_key(k)` (the `exists|j| data@[j].0 == k`
+    // membership). `insert` stays EXEC-only (`&mut` mutator, never in a contract,
+    // like `push`); `get`/`len` are already present. The §4.2 caged-flat walk
+    // (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED.
+    "contains_key",
     "byte_at",
     "concat",
     "slice",

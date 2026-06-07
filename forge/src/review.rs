@@ -631,6 +631,11 @@ fn render_type(ty: &Type) -> String {
         Type::Result(ok, err) => {
             format!("Result<{}, {}>", render_type(ok), render_type(err))
         }
+        // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): the SURFACE rendering
+        // of the bounded verified `Map<K, V>` is its surface text `Map<K, V>` — the
+        // faithful declaration a reviewer reads. The honest neutral value for the
+        // infallible surface renderer, NOT a stub.
+        Type::Map(k, v) => format!("Map<{}, {}>", render_type(k), render_type(v)),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the
         // SURFACE rendering of an n-tuple type is its surface text `(T, U, …)` —
         // the faithful declaration a reviewer reads. The honest neutral value for

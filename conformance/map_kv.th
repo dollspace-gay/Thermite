@@ -1,0 +1,61 @@
+// Cluster C12 (`.design/basis/13-map.md`): the bounded verified `Map<u64, u64>`
+// corpus oracle. Exercises the parse + validate + lower of the two-arg `Map<K,V>`
+// type and its `insert`/`get`/`contains_key`/`len` ops over the Vec-of-pairs
+// `TMap` backing (C6 `Vec<tuple>` + C9 `(u64,u64)` pair + C7 `Option` for the
+// no-OOB / handled-or-loud `get`, absent key → None). Hand-authored from the
+// design's GROUNDED `TMapU64U64` form (`9 verified, 0 errors`), NOT regenerated
+// from the toolchain (R-CHAR-3). The insert-then-get round-trip and the
+// absent→None refusal are carried by the emitted `TMap` wrapper (the design's
+// GROUNDED seed, which forge/tests/map_conformance.rs grounds with real verus);
+// these surface fns drive the wrapper emission, the well_formed() precondition
+// weave, the spec-position `contains_key` rewrite, and the `Map::new()`
+// reachability.
+
+// Build a fresh map and insert one entry; the inserted key is then a member
+// (the membership half of the round-trip — `insert(k,v)` makes `k` present).
+fn build_one(k: u64, v: u64) -> Map<u64, u64>
+  req true
+  ens result.contains_key(k)
+  fx alloc
+{
+  let mut m: Map<u64, u64> = Map::new();
+  m.insert(k, v);
+  m
+}
+
+// The no-OOB / handled-or-loud `contains_key` accessor: the result is EXACTLY the
+// spec membership (both branches proved by the wrapper's linear-scan invariant).
+fn has_key(m: Map<u64, u64>, k: u64) -> bool
+  req true
+  ens result == m.contains_key(k)
+  fx pure
+{
+  m.contains_key(k)
+}
+
+// A RUNNABLE entry (no Map param/return — synthesizable inputs): build a local map,
+// insert (k=7, v=42), get it back, and return the value (or a 0 sentinel if absent —
+// the exhaustive match handles the None arm loudly). At L1 (forge build) this RUNS:
+// insert + get → 42. The contract is the §7-thin runnable-core form (the round-trip
+// PROOF lives in the TMap wrapper, grounded by forge/tests/map_conformance.rs).
+fn demo() -> u64
+  req true
+  ens true
+  fx alloc
+{
+  let mut m: Map<u64, u64> = Map::new();
+  m.insert(7, 42);
+  match m.get(7) { Some(v) => v, None => 0 }
+}
+
+// The no-OOB `get`: an ABSENT key (one the map does not contain) returns `None`,
+// NOT a wrong value — the handled-or-loud refusal (the C7 Option None arm). The
+// precondition `!m.contains_key(k)` makes `k` absent; the wrapper's `get` ensures
+// the None arm `!spec_contains_key(k)`, so the result is provably `None`.
+fn lookup_absent(m: Map<u64, u64>, k: u64) -> Option<u64>
+  req !m.contains_key(k)
+  ens result is None
+  fx pure
+{
+  m.get(k)
+}

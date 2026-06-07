@@ -120,6 +120,10 @@ fn render_type(ty: &Type) -> String {
         Type::Result(ok, err) => {
             format!("Result<{}, {}>", render_type(ok), render_type(err))
         }
+        // Cluster C12 bounded verified Map type node (`.design/basis/13-map.md`
+        // REQ-1): the `Map<K, V>` surface rendering. Additive arm so this existing
+        // test helper compiles; the sum/binary_search fixtures never exercise it.
+        Type::Map(k, v) => format!("Map<{}, {}>", render_type(k), render_type(v)),
         // Cluster C9-B n-tuple type node (`.design/basis/10-recursion-tuples.md`
         // REQ-5/REQ-7): the `(T, U, …)` surface rendering. Additive arm so this
         // existing test helper compiles; the sum/binary_search fixtures never

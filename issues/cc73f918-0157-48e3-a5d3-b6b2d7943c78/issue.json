@@ -1,0 +1,10 @@
+{
+  "uuid": "cc73f918-0157-48e3-a5d3-b6b2d7943c78",
+  "display_id": 101,
+  "title": "Deferred §7: equivalent-mutant exclusion (a mutant provably-equivalent to the real body under the precondition must drop from the kill-ratio denominator, not count as a survivor) — sound-incomplete via verus; surfaced by parse forced-None refusal",
+  "status": "open",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T08:06:46.720169080Z",
+  "updated_at": "2026-06-07T08:06:46.720169080Z"
+}

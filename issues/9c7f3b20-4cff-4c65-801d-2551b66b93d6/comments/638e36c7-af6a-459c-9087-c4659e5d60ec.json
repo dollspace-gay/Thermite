@@ -1,0 +1,10 @@
+{
+  "uuid": "638e36c7-af6a-459c-9087-c4659e5d60ec",
+  "issue_uuid": "9c7f3b20-4cff-4c65-801d-2551b66b93d6",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean. A verified, RUNNABLE nano-like text editor (examples/editor/editor.th). VERIFIED CORE (L3, proven for all inputs): Buffer{text:String,cursor} inv cursor<=text.len(); insert_str/backspace/move_left/move_right — cursor-in-bounds + length-delta ens, real mutation kills (2/2,4/4,3/3,3/3). TRUSTED SHELL (L1 boundary, enumerable TCB): read_key/key_str/render + the run event loop (fx diverge -> L1 partial-correctness cap). forge build --entry run COMPILES; RUN proof: printf 'hi\\x11' | bin -> renders h,hi, quits clean (exit 0); critic verified 4 keystroke sequences edit correctly (insert/backspace/empty/multi-char). Prerequisites built along the way: #86 (String L3 in structs + slice coercion), #87 (3 L1/diverge lowering gaps), #88 (diverge->L1 cap + 2 L1 fixes). The first real Thermite app — it hardened the L1-build + diverge + String-in-struct paths the L3 corpus never exercised. The editing logic is PROVEN; the terminal loop is the trusted boundary — the exact split Thermite is for.",
+  "created_at": "2026-06-07T00:49:22.600533978Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAWT4H6JYPC0OSVvCM8MoNJ6cvuxwxCv+Vp0WgSpYSnhiGlJvgRxdpwkAAyhagyL19nxStu+FEGKA2Bx2RPvFgBA=="
+}

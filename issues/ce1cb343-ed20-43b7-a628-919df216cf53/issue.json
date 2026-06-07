@@ -2,11 +2,12 @@
   "uuid": "ce1cb343-ed20-43b7-a628-919df216cf53",
   "display_id": 118,
   "title": "C10 REQ-4: or-patterns 1|2 => — no Pattern::Or variant (breaks every match Pattern); lower_pattern/check_match_exhaustiveness have no Or handling. Or-pattern covers union of its alternatives (GROUNDED: Some(_)|None exhaustive over Option). GROUNDED L3 (.design/basis/11-ergonomics.md AC-4).",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T19:49:28.794047619Z",
-  "updated_at": "2026-06-07T19:49:31.032297115Z",
+  "updated_at": "2026-06-07T21:31:32.307831448Z",
+  "closed_at": "2026-06-07T21:31:32.307831448Z",
   "labels": [
     "blocker"
   ]

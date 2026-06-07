@@ -2,11 +2,12 @@
   "uuid": "81339639-c850-477f-8830-911726524a0a",
   "display_id": 116,
   "title": "C10 REQ-2: for i in 0..n loop — no for/in keyword in lexer keyword_kind, no Stmt::For. Desugar to let mut i=0; while i<n inv... dec hi-i {B; i=i+1}. User supplies inv, dec is AUTOMATIC for a bounded range. GROUNDED L3 + bad-inv L0 (.design/basis/11-ergonomics.md AC-2/AC-2b).",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T19:49:13.724115170Z",
-  "updated_at": "2026-06-07T19:49:15.608570608Z",
+  "updated_at": "2026-06-07T21:31:25.526576682Z",
+  "closed_at": "2026-06-07T21:31:25.526576682Z",
   "labels": [
     "blocker"
   ]

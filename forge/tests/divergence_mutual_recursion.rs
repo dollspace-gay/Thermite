@@ -43,6 +43,18 @@
 //! FAILS this: it produces empty `--json` stdout and a non-zero exit.
 //!
 //! Tracking: crosslink **blocker #110** (filed by the critic for #108).
+//!
+//! ## C11 (#121 / #113) — the no-`dec` mutual pair STAYS a clean non-L3 cert
+//!
+//! `.design/basis/12-mutual-recursion.md` REFINES the #110 reject: a mutual cycle
+//! whose members ALL carry `dec` now FALLS THROUGH to L3 (the
+//! `mutual_recursion_conformance.rs` AC-1 grounding). The `MUTUAL_NO_DEC` fixture
+//! here carries NO `dec` on EITHER member, so under C11 it is the
+//! `MutualRecursionMissingDecreases` reject — a clean L0 cert, still satisfying
+//! REQ-6's "rejected there (no false L3, no crash)". So this #110 regression pin
+//! continues to hold byte-for-byte: a no-`dec` mutual pair must STILL be a
+//! parseable non-L3 cert array, never the VIR-error abort. C11 ADDS that a
+//! `dec`-complete pair reaches L3 — covered by `mutual_recursion_conformance.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

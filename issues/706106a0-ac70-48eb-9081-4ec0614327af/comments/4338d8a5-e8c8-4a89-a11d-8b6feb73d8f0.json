@@ -1,0 +1,10 @@
+{
+  "uuid": "4338d8a5-e8c8-4a89-a11d-8b6feb73d8f0",
+  "issue_uuid": "706106a0-ac70-48eb-9081-4ec0614327af",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_numfmt_display_order.rs::divergence_to_string_display_order_msb_first.\n\nAUTHORITY: .design/basis/07-strings.md REQ-8 — 'The surface emits the human-readable MSB-first decimal (the construction is LSB-first; the display form reverses — parse_be(reverse(s)) == parse_le(s) proved ...)'. The Summary names the consumers: the editor's ANSI cursor coords (ESC[<row>;<col>H) and a number formatter/calculator.\n\nTOOLCHAIN: thermite-lower/src/lower.rs emit_numfmt_defs and thermite-lower/src/l1.rs emit_string_runtime_l1 build u64_to_string by pushing (m%10)+48 then m/=10 and return the buffer UN-reversed (LSB-first). The L1 comment claims 'reversed at the end to the human-readable MSB-first decimal' but there is NO reversal in the emitted code.\n\nINPUT/EXPECTED/ACTUAL: forge build a formatter on n==42; run it. EXPECTED (REQ-8 MSB-first): bytes [52, 50] ('4','2' == \"42\"). ACTUAL: [50, 52] ('2','4' == \"24\"). Empirically confirmed by running the built binary.\n\nThe round-trip proof (parse_le(result@) == n) is GENUINE and non-vacuous (parse_le is itself LSB-first, so a reversed buffer still parses back to n — proven-but-wrong-output). No proof cheat (no assume/external_body/admit). push_byte/from_byte sound (length + non-vacuous element-frame contract). L3 and L1 agree byte-for-byte (both LSB-first) so this is NOT an L3/L1 mismatch — it is the display-order gap. Fix direction: build MSB-first via parse_be round-trip, OR reverse the buffer + carry the proved parse_be(reverse(s))==parse_le(s) bridge.",
+  "created_at": "2026-06-07T05:11:08.220359500Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAFD6UEdOBsQH3F8GYFRttBoDHLSOwNmTPYORV8CcyWaM+r8JbxTxTTsdGa5Bvr2z2HtBW42qT5qcfmftR3bwSAQ=="
+}

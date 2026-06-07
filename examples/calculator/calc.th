@@ -1,0 +1,73 @@
+// ACCEPTANCE PROGRAM 2 of 3 (crosslink #103) — a verified CALCULATOR core.
+//
+// THE COMPOSE-ANY-PROGRAM PROOF: this program composes shipped verified
+// primitives — cluster C7's `parse_u64` (String -> Option<u64>,
+// .design/basis/09-option-result.md / 07-strings.md REQ-9) with its big-endian
+// round-trip contract, the built-in `Option<u64>` + the spec-`match`-in-`ens`
+// payload projection (C7), and the C2 partial-`+` (overflow is a proof
+// obligation). No new toolchain feature is needed to CERTIFY.
+//
+// DELIVERABLE (a) — `forge check calc.th` certifies `add` at L3 with the
+// MEANINGFUL sum contract: a valid, in-range pair of digit strings parses to
+// `Some(parse_be(a) + parse_be(b))` (the sum is PINNED, not vacuous — a None or
+// a wrong-sum mutant violates the `ens`). The nested-`match` composition over
+// the two `parse_u64` calls certifies cleanly.
+//
+// DELIVERABLE (b) — RUN: the arithmetic core `add_vals` + the `add_2_3` entry
+// build + run, printing `Some(5)` for 2+3. The STRING-PARSE front-end `add`
+// canNOT `forge build` — its contract names the C7 spec fns `all_digits` /
+// `parse_be` / the free `parse_u64`, which have NO L1 (runtime / build) exec
+// emission (only C4's `parse_be`/`parse_le`/`u64_to_string` were given an L1
+// form, for the formatter). This is a real FORCING-FUNCTION finding (the C7/#95
+// build-side gap), reported precisely in README.md — NOT faked. The calculator's
+// add-and-return-Some(sum) core composes and runs; the digit-string parse at
+// RUNTIME awaits the L1 lowering of the C7 parse spec fns.
+
+// THE FULL CALCULATOR (forge check -> L3): parse two valid in-range digit
+// strings and add. The req pins all_digits + non-empty + in-range (so each
+// parse_u64 takes the Some arm and the sum does not overflow i64::MAX*2 < u64);
+// `ens result is Some` discharges from those reqs; the sum `Some(v) => v ==
+// parse_be(a) + parse_be(b)` pins the value (the round-trip on both operands).
+fn add(a: String, b: String) -> Option<u64>
+  req all_digits(a) && a.len() >= 1 && parse_be(a) <= 9223372036854775807 && all_digits(b) && b.len() >= 1 && parse_be(b) <= 9223372036854775807
+  ens result is Some
+  ens match result { Some(v) => v == parse_be(a) + parse_be(b), None => true }
+  fx  pure
+{
+  match parse_u64(a) {
+    Some(x) => match parse_u64(b) { Some(y) => Some(x + y), None => None },
+    None => None,
+  }
+}
+
+// THE ARITHMETIC CORE (forge check -> L3, builds + runs): add two parsed values,
+// returning `Some(sum)`. The `ens match result { Some(v) => v == x + y, None =>
+// false }` pins the sum AND forbids None (a None or wrong-sum mutant is killed).
+// The req bounds each operand to i64::MAX so `x + y` cannot overflow u64. This is
+// the half of the calculator that has an L1 runnable form (ordinary Option + `+`).
+fn add_vals(x: u64, y: u64) -> Option<u64>
+  req x <= 9223372036854775807 && y <= 9223372036854775807
+  ens match result { Some(v) => v == x + y, None => false }
+  fx  pure
+{
+  Some(x + y)
+}
+
+// Runnable entry (forge build --entry add_2_3): the 2 + 3 example, fixed
+// internally (the v0.1 runner synthesizes no Option/String arg). RUNS -> Some(5).
+fn add_2_3() -> Option<u64>
+  req true
+  ens match result { Some(v) => v == 5, None => false }
+  fx  pure
+{
+  add_vals(2, 3)
+}
+
+// Runnable entry: 100 + 200 -> Some(300).
+fn add_100_200() -> Option<u64>
+  req true
+  ens match result { Some(v) => v == 300, None => false }
+  fx  pure
+{
+  add_vals(100, 200)
+}

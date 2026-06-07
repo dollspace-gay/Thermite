@@ -1,0 +1,61 @@
+// ACCEPTANCE PROGRAM 1 of 3 (crosslink #103) — a verified u64 decimal FORMATTER.
+//
+// THE COMPOSE-ANY-PROGRAM PROOF: this program is built ENTIRELY from shipped
+// verified primitives — cluster C4's `n.to_string()` (u64 -> decimal String,
+// .design/basis/07-strings.md REQ-8) with its GOLD-STANDARD round-trip contract
+// `parse_be(result) == n` (the produced bytes parse back to exactly n). No new
+// toolchain feature; the formatter is C4 composed into a real program.
+//
+// DELIVERABLE (a) — `forge check format.th` certifies `format` at L3 with the
+// MEANINGFUL round-trip contract: for ALL n, the decimal bytes parse back to n.
+// DELIVERABLE (b) — `forge build format.th --entry format_42` (etc.) COMPILES +
+// RUNS, printing the human-readable MSB-first decimal: 42 -> [52, 50] == "42",
+// 0 -> [48] == "0", 1000000 -> [49,48,48,48,48,48,48] == "1000000" (REQ-8 /
+// blocker #96: to_string builds LSB-first then reverses to the readable order).
+
+// THE FORMATTER (forge check -> L3): the round-trip is the gold standard — the
+// decimal byte sequence parses back to exactly `n` (parse_be is the MSB-first
+// read-order parse). A formatter that emitted a wrong digit would produce bytes
+// that do NOT parse back to n, so the `ens` is real teeth (R-DEFER-9 non-vacuity,
+// pinned in forge/tests/string_format_conformance.rs's overclaim negative). The
+// length floor `result.len() >= 1` pins that even 0 yields a non-empty string.
+fn format(n: u64) -> String
+  req true
+  ens parse_be(result) == n
+  ens result.len() >= 1
+  fx  alloc
+{
+  n.to_string()
+}
+
+// --- Runnable entry points (forge build --entry <fn>): zero-arg wrappers that
+// fix `n` internally (the v0.1 deterministic runner synthesizes no String/u64
+// arg for an entry, editor.th `run` precedent), each carrying the round-trip ens
+// for the fixed value. The built binary prints the TString's decimal bytes. ---
+
+fn format_42() -> String
+  req true
+  ens parse_be(result) == 42
+  fx  alloc
+{
+  let n: u64 = 42;
+  n.to_string()
+}
+
+fn format_0() -> String
+  req true
+  ens parse_be(result) == 0
+  fx  alloc
+{
+  let n: u64 = 0;
+  n.to_string()
+}
+
+fn format_1000000() -> String
+  req true
+  ens parse_be(result) == 1000000
+  fx  alloc
+{
+  let n: u64 = 1000000;
+  n.to_string()
+}

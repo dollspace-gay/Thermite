@@ -1,0 +1,64 @@
+// ACCEPTANCE PROGRAM 3 of 3 (crosslink #103) — a verified line / CSV PARSER.
+//
+// THE COMPOSE-ANY-PROGRAM PROOF: this program composes shipped verified
+// primitives — cluster C5's `split` (String -> Vec<String> on a separator byte,
+// .design/basis/07-strings.md REQ-15) with its count-bound + sep-free contract,
+// over cluster C6's non-Copy `Vec<String>` wrapper (TVecTString), plus C5's
+// `contains` substring predicate (REQ-13). No new toolchain feature.
+//
+// DELIVERABLE (a) — `forge check parse_lines.th` certifies `has_sep` at L3 via
+// the §7-mutation-scored ladder (the `contains` predicate is real teeth). The
+// `fields` split fn certifies L3 under REAL VERUS (the count-bound + sep-free
+// contract, GROUNDED `7 verified, 0 errors` per REQ-15) — but its thin
+// `{ s.split(sep) }` body delegates entirely to the proven method, so `forge
+// check`'s §7 gate cannot mutation-score it (no scoreable body mutant, the
+// documented parse_u64 / split-caller precedent); its L3 is established by verus
+// on the lowering, as forge/tests/string_search_conformance.rs grounds `parts`.
+//
+// DELIVERABLE (b) — `forge build parse_lines.th --entry split_abc` COMPILES +
+// RUNS: "a,b,c" split on ',' (byte 44) -> 3 pieces ([97],[98],[99] == "a","b","c").
+// The entry's `ens result.len() >= 1` is a non-vacuous floor that lowers to an
+// L1 runtime check WITHOUT naming a C5 spec fn (count_sep has no L1 form), so the
+// runnable binary compiles. (A `ens result.len() == 1 + count_sep(s, sep)` entry
+// would NOT build — count_sep, like the other C5/C7 contract spec fns, has no L1
+// runnable emission; see README.md for that forcing-function finding.)
+
+// THE SPLITTER (forge check -> L3 under real verus): split on a separator byte
+// into a Vec<String>. The count-bound `result.len() == 1 + count_sep(s, sep)`
+// pins the EXACT piece count (always 1 + the number of separators); a split that
+// dropped a piece would violate it (REQ-15 non-vacuity, GROUNDED). `sep` is the
+// separator byte in the byte_at -> u64 zero-extend convention.
+fn fields(s: String, sep: u64) -> Vec<String>
+  req true
+  ens result.len() == 1 + count_sep(s, sep)
+  fx  alloc
+{
+  s.split(sep)
+}
+
+// A field-presence predicate (forge check -> L3, §7-mutation-scored): does `s`
+// contain the separator string? The `ens result == contains_sub(s, sep)` is the
+// substring relation — a broken `contains` that always returned true/false would
+// fail the §7 gate (REQ-13 non-vacuity, the `has` form in string_search). This is
+// the MEANINGFUL contract that certifies L3 through the full `forge check` ladder.
+fn has_sep(s: &String, sep: &String) -> bool
+  req true
+  ens result == contains_sub(s, sep)
+  fx  pure
+{
+  s.contains(sep)
+}
+
+// Runnable entry (forge build --entry split_abc): split "a,b,c" on ',' (byte 44),
+// fixed internally (the v0.1 runner synthesizes no String/Vec arg). The built
+// binary prints the Vec<String> result — 3 pieces. The `ens result.len() >= 1`
+// floor is non-vacuous (every split yields at least one piece, REQ-15) and lowers
+// to an L1 runtime check that names no C5 spec fn, so the binary compiles + runs.
+fn split_abc() -> Vec<String>
+  req true
+  ens result.len() >= 1
+  fx  alloc
+{
+  let s: String = "a,b,c";
+  s.split(44)
+}

@@ -5,18 +5,28 @@
 # its own extern-C termios boundary (`raw_mode_on`/`raw_mode_off`) — no `stty`
 # needed; the binary clears ICANON/ECHO on entry and restores the terminal on exit.
 #
-# Keymap (the L3-proven `decode`):
+# Keymap (the L3-proven `decode`) — MULTI-LINE (#125):
 #   printable keys (space..~)  -> insert the char at the cursor (the frame is
 #                                 redrawn after every keystroke by the L3 render_frame)
-#   LEFT / RIGHT arrow         -> move the cursor (ESC [ D / ESC [ C)
+#   Enter (CR/LF)              -> insert a newline (the cursor drops to the next line)
+#   UP / DOWN arrow            -> move the cursor to the same column on the prev/next
+#                                 line (ESC [ A / ESC [ B; the L3 move_up/move_down)
+#   LEFT / RIGHT arrow         -> move the cursor one byte (ESC [ D / ESC [ C)
 #   Backspace / DEL (0x7f)     -> delete the char before the cursor
+#   Ctrl-S (0x13)              -> save the buffer to the file (write_file)
 #   Ctrl-Q (0x11)              -> quit (restores the terminal)
 #
-# Honest note: the editor clears the screen and positions the cursor each frame
-# (the C1 ANSI escapes in render_frame). The DISPLAY logic (render_frame), the
-# INPUT logic (decode), and the EDIT logic (insert/backspace/cursor bounds) are all
-# PROVEN at L3; only the raw read/write/ioctl SYSCALLS are the trusted boundary. For
-# a clean, deterministic view of the buffer evolving, use the piped form (README.md):
+# Honest note: the editor LOADS the buffer from a fixed file on start (read_file;
+# THERMITE_EDITOR_FILE, else /tmp/thermite_editor.txt), clears the screen and
+# positions the cursor by ROW/COLUMN each frame (the C1 ANSI escapes + the verified
+# cursor_row/cursor_col in render_frame). The DISPLAY logic (render_frame), the INPUT
+# logic (decode), the EDIT logic (insert/backspace/cursor bounds), AND the multi-line
+# NAVIGATION + LAYOUT logic (cursor_row/cursor_col/move_up/move_down) are all PROVEN
+# at L3; only the raw read/write/ioctl/open SYSCALLS are the trusted boundary. For a
+# clean, deterministic view, use the piped form (README.md):
+#   SAVE=/tmp/thermite_editor.txt
+#   printf 'ab\rcd\x1b[A\x13\x11' | THERMITE_EDITOR_FILE="$SAVE" <binary>
+#       # "ab", Enter, "cd", UP arrow (row 1), Ctrl-S (save -> ab\ncd), Ctrl-Q
 #   printf 'ab\x1b[DX\x7f\x11' | <binary>   # a,b, LEFT, X (splice -> aXb), bksp, Ctrl-Q
 #
 # --no-sandbox: the termios boundary issues `ioctl` (16), which the v0.1

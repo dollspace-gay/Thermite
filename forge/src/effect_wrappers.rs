@@ -40,7 +40,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the [`WRAPPERS`] table holds a real `std` body for each v1 target: `os::now` (`SystemTime::now()`), `os::read_byte`/`os::read_key`/`os::read_line` (`std::io::stdin().read`/`read_line`), `os::key_str` (a keystroke byte → a bounded 1-byte `TString`, the editor's host glue the surface lacks), `os::write`/`os::print` (`std::io::stdout().write_all`). Consumer: [`emit_mod_os`] (emitted into the generated crate by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `effect_wrappers::tests::{read_key_wrapper_mirrors_read_byte_eof_sentinel,key_str_wrapper_is_bounded_one_byte_string}` (the editor's terminal-I/O wrappers) + the runnable editor `forge/tests/editor_runs.rs` (the linked `os::read_key`/`os::key_str`/`os::print` build + run with piped keystrokes). |
+//! | REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the [`WRAPPERS`] table holds a real `std` body for each v1 target: `os::now` (`SystemTime::now()`), `os::read_byte`/`os::read_key`/`os::read_line` (`std::io::stdin().read`/`read_line`), `os::key_str` (a keystroke byte → a bounded 1-byte `TString`, the editor's host glue the surface lacks), `os::write`/`os::print` (`std::io::stdout().write_all`), the editor's terminal-control + render boundaries `os::raw_mode_on`/`os::raw_mode_off`/`os::read_key_raw`/`os::write_frame` (#90), and the editor's file-LOAD/SAVE boundaries `os::read_file` (`std::fs::read` of the fixed `THERMITE_EDITOR_FILE`/`/tmp` path → empty `TString` on error) / `os::write_file` (`std::fs::write`, 0/1 status, #125). Consumer: [`emit_mod_os`] (emitted into the generated crate by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `effect_wrappers::tests::{read_key_wrapper_mirrors_read_byte_eof_sentinel,key_str_wrapper_is_bounded_one_byte_string,read_file_wrapper_is_total_empty_on_error,write_file_wrapper_is_total_status_arm}` (the editor's terminal-I/O + file-I/O wrappers) + the runnable editor `forge/tests/editor_runs.rs` (the linked `os::read_key_raw`/`os::write_frame`/`os::read_file`/`os::write_file` build + run with piped multi-line keystrokes + a save). |
 //! | REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets) | SHIPPED | [`emit_mod_os`] assembles a `mod os { … }` carrying EXACTLY the wrappers in the given target set (sorted, deterministic); `build::reachable_boundary_targets` keys it off the program's `#[boundary]` fns; `build::emit_source` prepends it. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (rustc exit 0, no `E0433`) + `effect_wrappers::tests::emits_only_named_wrappers`. |
 //! | REQ-3 (a verified program COMPILES + RUNS + does real I/O) | SHIPPED | the linked `os::now` wrapper does a real `clock_gettime` → `elapsed_ok()` prints a live Unix timestamp. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (run exit 0, output is a u64 < 4_000_000_000). |
 
@@ -217,6 +217,38 @@ const WRAPPERS: &[Wrapper] = &[
                  use std::io::Write;\n        \
                  let mut out = std::io::stdout();\n        \
                  match out.write_all(&s.data).and_then(|()| out.flush()) {\n            \
+                 Ok(()) => 0,\n            \
+                 Err(_) => 1,\n        }\n    }\n",
+    },
+    // os::read_file (the editor's file-LOAD boundary, #125) — read the editor's fixed
+    // demo file (THERMITE_EDITOR_FILE) into a Stage-7 `String` (the lowered `TString`
+    // newtype, `pub data: Vec<u8>`). The v0.1 `forge build --entry run` synthesizes no
+    // path arg, so the load source is a FIXED path: the `THERMITE_EDITOR_FILE` env var
+    // if set, else `/tmp/thermite_editor.txt`. A missing file / read error yields the
+    // EMPTY string (the honest arm — a fresh buffer), NEVER a panic. The byte content
+    // is taken verbatim (`\n` bytes are preserved — the multi-line buffer is one
+    // String). Trusted-by-fiat, #57-confined to the `read`/`open` syscall set.
+    Wrapper {
+        name: "read_file",
+        source: "    pub fn read_file() -> super::TString {\n        \
+                 let path = std::env::var(\"THERMITE_EDITOR_FILE\")\n            \
+                 .unwrap_or_else(|_| \"/tmp/thermite_editor.txt\".to_string());\n        \
+                 match std::fs::read(&path) {\n            \
+                 Ok(bytes) => super::TString { data: bytes },\n            \
+                 Err(_) => super::TString { data: Vec::new() },\n        }\n    }\n",
+    },
+    // os::write_file (the editor's file-SAVE boundary, #125 — Ctrl-S) — write the
+    // buffer `String`'s bytes to the editor's fixed demo file (THERMITE_EDITOR_FILE if
+    // set, else `/tmp/thermite_editor.txt`). Returns a status u64 (0 = ok, 1 = I/O
+    // error), the honest closed status arm, NEVER a panic. The bytes (incl. the `\n`
+    // line breaks) are written verbatim — the multi-line buffer round-trips through
+    // read_file. Trusted-by-fiat, #57-confined to the `open`/`write` syscall set.
+    Wrapper {
+        name: "write_file",
+        source: "    pub fn write_file(s: super::TString) -> u64 {\n        \
+                 let path = std::env::var(\"THERMITE_EDITOR_FILE\")\n            \
+                 .unwrap_or_else(|_| \"/tmp/thermite_editor.txt\".to_string());\n        \
+                 match std::fs::write(&path, &s.data) {\n            \
                  Ok(()) => 0,\n            \
                  Err(_) => 1,\n        }\n    }\n",
     },
@@ -488,6 +520,52 @@ mod tests {
         assert!(
             out.contains("data: Vec::new()"),
             "a control/EOF key yields the empty string (the bounded arm): {out}"
+        );
+    }
+
+    #[test]
+    fn read_file_wrapper_is_total_empty_on_error() {
+        // REQ-1 (the editor's file-LOAD boundary, #125): `os::read_file` reads the
+        // fixed demo path into a `TString`; a missing file / read error is the EMPTY
+        // string (the honest arm — a fresh buffer), NEVER a panic. Anchored to the
+        // design's pinned wrapper shape (R-CHAR-3).
+        let out = emit_or_fail(&["os::read_file"]);
+        assert!(
+            out.contains("pub fn read_file() -> super::TString"),
+            "{out}"
+        );
+        assert!(
+            out.contains("std::fs::read(&path)"),
+            "the load reads the fixed path's bytes: {out}"
+        );
+        assert!(
+            out.contains("Err(_) => super::TString { data: Vec::new() }"),
+            "a read error yields the EMPTY string (fresh buffer), not a panic: {out}"
+        );
+        assert!(
+            out.contains("THERMITE_EDITOR_FILE"),
+            "the load source is the fixed env/`/tmp` path (v0.1 synthesizes no arg): {out}"
+        );
+    }
+
+    #[test]
+    fn write_file_wrapper_is_total_status_arm() {
+        // REQ-1 (the editor's file-SAVE boundary, #125 — Ctrl-S): `os::write_file`
+        // writes the buffer bytes (incl. `\n`) to the fixed demo path, returning a
+        // status u64 (0 = ok, 1 = I/O error) — the honest closed arm, NEVER a panic.
+        // Anchored to the design's pinned wrapper shape (R-CHAR-3).
+        let out = emit_or_fail(&["os::write_file"]);
+        assert!(
+            out.contains("pub fn write_file(s: super::TString) -> u64"),
+            "{out}"
+        );
+        assert!(
+            out.contains("std::fs::write(&path, &s.data)"),
+            "the save writes the buffer bytes verbatim (the `\\n` line breaks): {out}"
+        );
+        assert!(
+            out.contains("Ok(()) => 0") && out.contains("Err(_) => 1"),
+            "the status arm is 0=ok / 1=error, not a panic: {out}"
         );
     }
 

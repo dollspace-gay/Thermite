@@ -1,50 +1,62 @@
-// A verified, RUNNABLE nano-like text editor (crosslink #90, ref #83) — the
-// keystone acceptance program, MAX-VERIFIED.
+// A verified, RUNNABLE nano-like MULTI-LINE text editor (crosslink #125, ref #83,
+// builds on #90) — the keystone acceptance program, MAX-VERIFIED.
 //
 // THE THESIS (verified vs trusted, pushed as far as the language allows):
 //   * VERIFIED (certifies L3 — proven Thermite, NOT trusted glue):
 //       - the EDIT CORE: Buffer + insert_str + backspace + move_left + move_right
-//         (the cursor math + buffer edits — proven for all inputs).
+//         (the cursor math + buffer edits — proven for all inputs). The buffer is
+//         ONE String with `\n` bytes; the cursor is a byte offset, so insert_str/
+//         backspace/move_left/move_right work UNCHANGED over the multi-line text
+//         (a `\n` is just a byte).
+//       - the NAV / LAYOUT CORE (the multi-line heart, #125): cursor_row / cursor_col
+//         (the verified ROW/COLUMN of the cursor — a recursive `\n`-counting scan
+//         over the buffer prefix, proven) + move_up / move_down (verified up/down
+//         line navigation — find the prev/next line boundaries, clamp the column,
+//         set the new cursor, proven IN BOUNDS). The recursive scans count_nl /
+//         line_start / line_end carry real `ens` + `dec` and certify L3 individually.
 //       - the RENDER-FRAME: `render_frame(&b)` builds the full ANSI terminal frame
-//         as a String (C1 escape literals `\x1b...` + `b.text` by concat + the
-//         cursor-coordinate via C4 `(b.cursor+1).to_string()`); its `ens` PROVES
-//         the frame is at least as long as the buffer text (the text is carried
-//         into the frame — a non-vacuous lower bound).
-//       - the DECODE: `decode(b0,b1,b2)` — a PURE TOTAL function mapping the raw
-//         read bytes to a key code (printable -> itself, DEL -> backspace,
-//         Ctrl-Q -> quit, the arrow escape sequences -> synthetic codes). The
-//         keystroke INTERPRETATION is proven, not trusted.
+//         as a String (C1 escape literals + `b.text` by concat + the cursor
+//         coordinate `\x1b[<row+1>;<col+1>H` via the verified row/col + C4
+//         `.to_string()`); its `ens` PROVES the frame is at least as long as the
+//         buffer text. The 1-based ANSI conversion is the PROVEN `to_1based`
+//         (`ens result == x + 1` — the off-by-one is killed, not laundered).
+//       - the DECODE: `decode(b0,b1,b2)` — a PURE TOTAL function mapping the raw read
+//         bytes to a key code (printable -> itself, DEL -> backspace, Enter (CR/LF)
+//         -> insert-newline, Ctrl-S -> save, Ctrl-Q -> quit, the arrow escapes ->
+//         synthetic up/down/left/right codes). The keystroke interpretation is proven.
 //   * TRUSTED (the MINIMAL syscall boundary — certifies L1, the honest seam):
 //       - os::raw_mode_on / os::raw_mode_off (termios raw mode via extern-C
-//         tcgetattr/tcsetattr — libc linked through std, self-contained),
-//       - os::read_key_raw (read 1 byte; on ESC read the 2-byte arrow tail; the
-//         1-3 bytes are packed into a u64 for `decode`),
-//       - os::write_frame (write the rendered String to stdout).
-//   * THE EVENT LOOP `run` (L1, the `fx diverge` cap): the non-terminating loop
-//     is the honest L1 seam; the LOGIC it calls (decode, render_frame, the edit
+//         tcgetattr/tcsetattr — libc through std, self-contained),
+//       - os::read_key_raw (read 1 byte; on ESC read the 2-byte arrow tail; packed),
+//       - os::write_frame (write the rendered String to stdout),
+//       - os::read_file (LOAD the initial buffer from the fixed demo file) and
+//         os::write_file (SAVE the buffer on Ctrl-S) — extern-C `std::fs` (#125).
+//   * THE EVENT LOOP `run` (L1, the `fx diverge` cap): the non-terminating loop is
+//     the honest L1 seam; the LOGIC it calls (decode, render_frame, the edit + nav
 //     ops) is the L3-verified core.
 //
-// Only the raw read/write/ioctl SYSCALLS are trusted. The display-frame
-// construction and the keystroke decode — the editor's bug-prone logic — are
-// VERIFIED. See README.md for the split + how to run `./editor`.
+// Only the raw read/write/ioctl/open SYSCALLS are trusted. The editing, the
+// navigation, AND the cursor-layout LOGIC — the editor's bug-prone parts — are
+// VERIFIED. See README.md for the split + the keymap + how to run.
 
 // ---------------------------------------------------------------------------
 // THE VERIFIED EDIT CORE (L3) — proven cursor math + buffer edits.
 // ---------------------------------------------------------------------------
 
-// The editor buffer: the text and the cursor offset (a byte index). The type
-// invariant is the editor's core safety claim — the cursor never points past
-// the end of the text, and the text stays within the bounded-String capacity
-// (the §4.2 cage). Every edit op below preserves this invariant (proven L3).
+// The editor buffer: the text (one String, `\n` bytes mark line breaks) and the
+// cursor offset (a byte index). The type invariant is the editor's core safety
+// claim — the cursor never points past the end of the text, and the text stays
+// within the bounded-String capacity (the §4.2 cage). Every edit + nav op below
+// preserves this invariant (proven L3).
 struct Buffer {
   text: String,
   cursor: u64,
 } inv cursor <= text.len() && text.len() <= 1_000_000
 
-// Insert `ins` at the cursor: split the text at the cursor, splice `ins`
-// between the halves, and advance the cursor past the inserted run. PROVEN:
-// the text grows by exactly `ins.len()` and the cursor advances by exactly
-// `ins.len()` (so it still points within the new text — the invariant holds).
+// Insert `ins` at the cursor: split the text at the cursor, splice `ins` between
+// the halves, advance the cursor past the inserted run. PROVEN: the text grows by
+// exactly `ins.len()` and the cursor advances by exactly `ins.len()`. (Enter
+// inserts "\n" through this SAME op — a newline is just a byte.)
 fn insert_str(b: Buffer, ins: String) -> Buffer
   req b.text.len() + ins.len() <= 1_000_000
   ens result.text.len() == b.text.len() + ins.len()
@@ -57,10 +69,9 @@ fn insert_str(b: Buffer, ins: String) -> Buffer
   Buffer { text: head.concat(ins).concat(tail), cursor: b.cursor + n }
 }
 
-// Delete the byte before the cursor: splice the text around the deleted byte
-// and step the cursor back one. PROVEN: the text shrinks by exactly one and
-// the cursor steps back exactly one (the invariant holds — `req cursor > 0`
-// guarantees there is a byte to delete).
+// Delete the byte before the cursor: splice the text around the deleted byte and
+// step the cursor back one. PROVEN: the text shrinks by exactly one and the cursor
+// steps back exactly one (`req cursor > 0` guarantees a byte to delete).
 fn backspace(b: Buffer) -> Buffer
   req b.cursor > 0
   ens result.text.len() == b.text.len() - 1
@@ -73,8 +84,8 @@ fn backspace(b: Buffer) -> Buffer
   Buffer { text: head.concat(tail), cursor: lo }
 }
 
-// Move the cursor one byte left. PROVEN: the cursor steps back exactly one
-// (`req cursor > 0` keeps it non-negative) and the text is unchanged.
+// Move the cursor one byte left. PROVEN: the cursor steps back exactly one and the
+// text is unchanged.
 fn move_left(b: Buffer) -> Buffer
   req b.cursor > 0
   ens result.cursor == b.cursor - 1
@@ -84,9 +95,8 @@ fn move_left(b: Buffer) -> Buffer
   Buffer { text: b.text, cursor: b.cursor - 1 }
 }
 
-// Move the cursor one byte right. PROVEN: the cursor advances exactly one
-// (`req cursor < text.len()` keeps it within the text — the invariant holds)
-// and the text is unchanged.
+// Move the cursor one byte right. PROVEN: the cursor advances exactly one (kept in
+// bounds by `req cursor < text.len()`) and the text is unchanged.
 fn move_right(b: Buffer) -> Buffer
   req b.cursor < b.text.len()
   ens result.cursor == b.cursor + 1
@@ -97,62 +107,262 @@ fn move_right(b: Buffer) -> Buffer
 }
 
 // ---------------------------------------------------------------------------
-// THE VERIFIED RENDER-FRAME (L3) — the editor's DISPLAY logic, PROVEN.
+// THE VERIFIED NAV / LAYOUT CORE (L3, #125) — the multi-line heart, PROVEN.
+//
+// cursor_row / cursor_col compute the cursor's ROW and COLUMN by VERIFIED scans
+// over the buffer prefix (each scan a recursive `fn` with a real `ens` + `dec`);
+// move_up / move_down move the cursor to (approximately) the same column on the
+// previous / next line, clamping to that line's length and proving the new cursor
+// stays IN BOUNDS (the Buffer type invariant). This is the editor's navigation +
+// layout LOGIC — proven, not trusted.
+// ---------------------------------------------------------------------------
+
+// Count the newline (byte 10) occurrences in text[i..end] — a verified recursive
+// FORWARD scan (it examines `byte_at(i)` at the plain loop index `i`, so the L1
+// runtime-check lowering of the contract has no compound-index cast to mangle).
+// PROVEN: result <= end - i (a bound), AND when the byte at i is a newline the
+// count is at least one (a boundary teeth clause that kills the trivial `return 0`
+// mutant — the contract is non-vacuous). `dec end - i` proves it terminates.
+fn count_nl(text: &String, i: u64, end: u64) -> u64
+  req i <= end && end <= text.len()
+  ens result <= end - i
+  ens i == end || text.byte_at(i) != 10 || result >= 1
+  fx  pure
+  dec end - i
+{
+  if i == end {
+    0
+  } else {
+    let b: u64 = text.byte_at(i);
+    if b == 10 {
+      count_nl(text, i + 1, end) + 1
+    } else {
+      count_nl(text, i + 1, end)
+    }
+  }
+}
+
+// The start index of the line that `target` sits on: a verified FORWARD scan from
+// `i` to `target`, carrying `acc` = the index just after the most recent newline
+// seen (0 if none). Each step examines `byte_at(i)` at the plain index `i` (no
+// compound-index cast). PROVEN: acc <= result <= target — the line start is
+// at-or-before the target and never before the running accumulator. `dec target - i`.
+fn line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
+  req i <= target && target <= text.len() && acc <= i
+  ens result <= target
+  ens result >= acc
+  fx  pure
+  dec target - i
+{
+  if i == target {
+    acc
+  } else {
+    let b: u64 = text.byte_at(i);
+    if b == 10 {
+      line_start(text, i + 1, target, i + 1)
+    } else {
+      line_start(text, i + 1, target, acc)
+    }
+  }
+}
+
+// The index of the next newline at-or-after position i, or n (= text.len()) if
+// none — the end of the line position i sits on. A verified FORWARD scan examining
+// `byte_at(i)` at the plain index. PROVEN: i <= result <= n. The length `n` is
+// passed as a u64 so the `dec n - i` measure is a plain arithmetic term (a `.len()`
+// call is exec-mode, not admitted in a `dec`). `req n == text.len()` ties it to the
+// real length.
+fn line_end(text: &String, i: u64, n: u64) -> u64
+  req i <= n && n == text.len()
+  ens result >= i
+  ens result <= n
+  fx  pure
+  dec n - i
+{
+  if i == n {
+    n
+  } else {
+    let b: u64 = text.byte_at(i);
+    if b == 10 {
+      i
+    } else {
+      line_end(text, i + 1, n)
+    }
+  }
+}
+
+// min of two u64s — PROVEN result is <= both AND equals one of them (so it is a
+// real minimum, not a constant). Used to CLAMP the target column to the
+// destination line's length in move_up/move_down.
+fn min2(a: u64, b: u64) -> u64
+  req true
+  ens result <= a
+  ens result <= b
+  ens result == a || result == b
+  fx  pure
+{
+  if a <= b { a } else { b }
+}
+
+// The cursor's ROW (0-based): the count of newlines in text[0..cursor]. Delegates
+// to the verified `count_nl` forward scan. PROVEN: result <= cursor, AND the
+// boundary teeth (if the text begins with a newline and the cursor is past it, the
+// row is >= 1) — a plain `byte_at(0)` index that kills the trivial `return 0`
+// mutant (non-vacuous), buildable at L1.
+fn cursor_row(b: &Buffer) -> u64
+  req true
+  ens result <= b.cursor
+  ens b.cursor == 0 || b.text.byte_at(0) != 10 || result >= 1
+  fx  pure
+{
+  count_nl(&b.text, 0, b.cursor)
+}
+
+// The cursor's COLUMN (0-based): the distance from the line start to the cursor.
+// Delegates to the verified `line_start` forward scan. PROVEN: result <= cursor.
+// The subtraction `cursor - line_start` gives the §7 gate a scoreable body mutant
+// (the contract is non-vacuous — a mutated subtraction or scan fails the bound).
+fn cursor_col(b: &Buffer) -> u64
+  req true
+  ens result <= b.cursor
+  fx  pure
+{
+  let ls: u64 = line_start(&b.text, 0, b.cursor, 0);
+  b.cursor - ls
+}
+
+// Move the cursor to (approximately) the same column on the PREVIOUS line. Find
+// the current line start; if it is 0 the cursor is already on the first line
+// (no-op). Otherwise the newline before the start ends the previous line; find
+// that line's start, clamp the target column to its length, and set the new
+// cursor. PROVEN: the text is unchanged (length identity — a dropped-text mutant
+// fails) AND the new cursor never advances past the old one (it moves up). The new
+// cursor stays in bounds (the Buffer type invariant — `cursor <= text.len()`).
+fn move_up(b: Buffer) -> Buffer
+  req true
+  ens result.text.len() == b.text.len()
+  ens result.cursor <= b.cursor
+  fx  alloc
+{
+  let ls: u64 = line_start(&b.text, 0, b.cursor, 0);
+  if ls == 0 {
+    b
+  } else {
+    let col: u64 = b.cursor - ls;
+    let prev_nl: u64 = ls - 1;
+    let prev_ls: u64 = line_start(&b.text, 0, prev_nl, 0);
+    let prev_len: u64 = prev_nl - prev_ls;
+    let want: u64 = prev_ls + min2(col, prev_len);
+    Buffer { text: b.text, cursor: want }
+  }
+}
+
+// Move the cursor to (approximately) the same column on the NEXT line. Find the
+// current line end; if it is the text end there is no next line (no-op).
+// Otherwise the byte after the end starts the next line; find that line's end,
+// clamp the target column to its length, and set the new cursor. PROVEN: the text
+// is unchanged AND the new cursor stays in bounds (`cursor <= text.len()` — the
+// Buffer invariant).
+fn move_down(b: Buffer) -> Buffer
+  req true
+  ens result.text.len() == b.text.len()
+  ens result.cursor <= b.text.len()
+  fx  alloc
+{
+  let n: u64 = b.text.len();
+  let ls: u64 = line_start(&b.text, 0, b.cursor, 0);
+  let col: u64 = b.cursor - ls;
+  let cur_end: u64 = line_end(&b.text, b.cursor, n);
+  if cur_end == n {
+    b
+  } else {
+    let next_ls: u64 = cur_end + 1;
+    let next_end: u64 = line_end(&b.text, next_ls, n);
+    let next_len: u64 = next_end - next_ls;
+    let want: u64 = next_ls + min2(col, next_len);
+    Buffer { text: b.text, cursor: want }
+  }
+}
+
+// Convert a 0-based coordinate to the 1-based form ANSI cursor positioning needs.
+// PROVEN: `result == x + 1` — so an off-by-one mutant (`+ 0` / `+ 2`) FAILS the
+// postcondition and is killed. The 1-based conversion is thus PROVEN here, not an
+// unverified literal floating in render_frame (that lets render_frame certify L3
+// without a surviving off-by-one).
+fn to_1based(x: u64) -> u64
+  req x < 1_000_000
+  ens result == x + 1
+  fx  pure
+{
+  x + 1
+}
+
+// ---------------------------------------------------------------------------
+// THE VERIFIED RENDER-FRAME (L3, #125) — the multi-line DISPLAY logic, PROVEN.
 // ---------------------------------------------------------------------------
 
 // Build the full-screen ANSI frame as a String (no syscall — pure construction):
-//   * "\x1b[2J\x1b[H"  — C1 escape literals: clear the screen + home the cursor;
-//   * b.text           — the buffer contents (carried in by concat);
-//   * "\x1b[1;" + (b.cursor+1).to_string() + "H"
-//                      — the C4 decimal cursor-coordinate, positioning the
-//                        terminal cursor at row 1, column cursor+1.
-// PROVEN (the non-vacuous contract): the frame is at least as long as the
-// buffer text — `result.len() >= b.text.len()` — i.e. the whole buffer text is
-// carried into the rendered frame (a dropped-text mutant shortens the frame and
-// fails the `ens`). The `req` bounds the text so every bounded `concat` stays
-// within the §4.2 cage. This is VERIFIED Thermite (certifies L3), NOT a trusted
-// wrapper: the display-frame construction is proven correct.
+//   * "\x1b[2J\x1b[H"            — C1 escape literals: clear the screen + home;
+//   * b.text                     — the buffer contents (carried in by concat — the
+//                                  `\n` bytes render as terminal line breaks, so a
+//                                  multi-line buffer shows as multiple lines);
+//   * "\x1b[" + (row+1) + ";" + (col+1) + "H"
+//                                — position the terminal cursor at row+1, col+1 (the
+//                                  C4 decimal coordinates of the VERIFIED cursor_row
+//                                  / cursor_col, 1-based via the PROVEN to_1based).
+// PROVEN (non-vacuous): the frame is at least as long as the buffer text —
+// `result.len() >= b.text.len()` — i.e. the whole buffer text is carried into the
+// frame (a dropped-text mutant shortens the frame and fails the `ens`). The `req`
+// bounds the text so every bounded `concat` stays within the §4.2 cage; the C4
+// coordinate concat discharges because `u64_to_string`'s `ens` bounds the
+// formatted length <= 20 (blocker #105). VERIFIED Thermite (L3) — the multi-line
+// display logic is proven, NOT a trusted wrapper. The actual `write` syscall
+// (write_frame) is the trusted boundary.
 fn render_frame(b: &Buffer) -> String
   req b.text.len() <= 900_000
   ens result.len() >= b.text.len()
   fx  alloc
 {
   let clear: String = "\x1b[2J\x1b[H";
-  let col: String = (b.cursor + 1).to_string();
-  let pos: String = "\x1b[1;".concat(col).concat("H");
+  let row: String = to_1based(cursor_row(b)).to_string();
+  let col: String = to_1based(cursor_col(b)).to_string();
+  let pos: String = "\x1b[".concat(row).concat(";").concat(col).concat("H");
   let body: String = b.text.slice(0, b.text.len());
   clear.concat(body).concat(pos)
 }
 
 // ---------------------------------------------------------------------------
-// THE VERIFIED DECODE (L3) — the editor's INPUT logic, PROVEN PURE + TOTAL.
+// THE VERIFIED DECODE (L3, #125) — the editor's INPUT logic, PROVEN PURE + TOTAL.
 // ---------------------------------------------------------------------------
 
-// Decode the raw read bytes (b0, b1, b2 — a keystroke, EOF=256, or an arrow
-// escape sequence) to a single key code. A PURE TOTAL function over the bytes:
+// Decode the raw read bytes (b0, b1, b2 — a keystroke, EOF=256, or an arrow escape
+// sequence) to a single key code. A PURE TOTAL function over the bytes:
 //   * the arrow escape sequence 0x1b 0x5b 0x41..0x44 -> a synthetic code
 //       up=1000, down=1001, right=1002, left=1003 (the 0x41..0x44 tail offset);
+//   * Enter — CR (13) or LF (10)                      -> 1004 (insert a newline);
 //   * a printable byte 32..126                        -> itself (insert it);
 //   * 127 (DEL)                                        -> backspace;
-//   * 17  (Ctrl-Q)                                     -> quit;
+//   * 19  (Ctrl-S)                                     -> 19 (save);
+//   * 17  (Ctrl-Q)                                     -> 17 (quit);
 //   * anything else                                    -> 0 (a no-op key).
-// PROVEN (the non-vacuous contract): a printable non-ESC byte decodes to itself
-// (the disjunctive contraposition `b0 < 32 || b0 > 126 || b0 == 27 || result ==
-// b0` — i.e. for a printable non-ESC `b0`, `result == b0`) AND the result is
-// always a bounded code (`result <= 1003`) — the mapping is total and the
-// printable case is pinned (a decode that dropped the printable byte fails the
-// `ens`). This is VERIFIED Thermite (certifies L3), NOT trusted glue: the
-// keystroke interpretation is proven correct.
+// PROVEN (non-vacuous): a printable non-ESC byte decodes to itself; Enter (CR/LF)
+// decodes to 1004; Ctrl-S to 19; Ctrl-Q to 17; the arrows to 1000..1003; and the
+// result is always a bounded code (`result <= 1004`). The mapping is total and
+// each special case is pinned (a decode that dropped a case fails the `ens`).
+// VERIFIED Thermite (L3) — the keystroke interpretation is proven, not trusted.
 fn decode(b0: u64, b1: u64, b2: u64) -> u64
   req true
   ens b0 < 32 || b0 > 126 || b0 == 27 || result == b0
   ens b0 != 127 || result == 127
   ens b0 != 17 || result == 17
+  ens b0 != 19 || result == 19
+  ens b0 != 13 || result == 1004
+  ens b0 != 10 || result == 1004
   ens b0 != 27 || b1 != 91 || b2 != 65 || result == 1000
   ens b0 != 27 || b1 != 91 || b2 != 66 || result == 1001
   ens b0 != 27 || b1 != 91 || b2 != 67 || result == 1002
   ens b0 != 27 || b1 != 91 || b2 != 68 || result == 1003
-  ens result <= 1003
+  ens result <= 1004
   fx  pure
 {
   if b0 == 27 {
@@ -170,24 +380,36 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
       0
     }
   } else {
-    if b0 >= 32 {
-      if b0 <= 126 {
-        b0
-      } else {
-        if b0 == 127 {
-          127
-        } else {
-          0
-        }
-      }
+    if b0 == 13 {
+      1004
     } else {
-      if b0 == 17 {
-        17
+      if b0 == 10 {
+        1004
       } else {
-        if b0 == 127 {
-          127
+        if b0 >= 32 {
+          if b0 <= 126 {
+            b0
+          } else {
+            if b0 == 127 {
+              127
+            } else {
+              0
+            }
+          }
         } else {
-          0
+          if b0 == 17 {
+            17
+          } else {
+            if b0 == 19 {
+              19
+            } else {
+              if b0 == 127 {
+                127
+              } else {
+                0
+              }
+            }
+          }
         }
       }
     }
@@ -198,45 +420,56 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
 // THE MINIMAL TRUSTED SYSCALL BOUNDARY (L1 / extern-C, self-contained).
 // ---------------------------------------------------------------------------
 
-// Put the terminal into raw mode (termios: clear ICANON/ECHO so each keystroke
-// reaches the editor live, no line buffering, no echo) via extern-C
-// tcgetattr/tcsetattr (libc is linked through std — self-contained, no `stty`).
-// Returns a status (0 = ok / not-a-TTY no-op, 1 = error). Trusted-by-fiat (you
-// cannot prove the kernel); the foreign body handles a non-TTY stdin gracefully
-// (no crash when piped). #57-seccomp-confined.
+// Put the terminal into raw mode via extern-C tcgetattr/tcsetattr (libc through
+// std). Returns a status (0 = ok / not-a-TTY no-op, 1 = error). Trusted-by-fiat;
+// the foreign body handles a non-TTY stdin gracefully. #57-confined.
 #[boundary("os::raw_mode_on")] fn raw_mode_on() -> u64
   req true
   ens result <= 1
   fx  write(output)
   ;
 
-// Restore the terminal's original mode (the saved termios). MUST run on exit —
-// the editor's quit path calls this so the terminal is never left in raw mode.
+// Restore the terminal's original mode. MUST run on exit. Trusted, #57-confined.
 #[boundary("os::raw_mode_off")] fn raw_mode_off() -> u64
   req true
   ens result <= 1
   fx  write(output)
   ;
 
-// Read one keystroke from stdin, returning the raw bytes PACKED into a u64 for
-// `decode`: byte b0 in bits 0..8, b1 in bits 9..17, b2 in bits 18..26 (each
-// field holds 0..256, or the 256 EOF sentinel). A plain key reads 1 byte (b1 =
-// b2 = 0); an ESC (0x1b) reads the 2-byte arrow tail (b1, b2). The closed
-// outcome set is honest — the world produces bytes or EOF, never more. Each field
-// holds 0..256 (the 256 EOF sentinel included), so the packed maximum is
-// 256 + (256<<9) + (256<<18) = 67_240_192; the ens bounds it by the field width
-// 2^27-1 = 134_217_727 (every value packed into bits 0..27 fits) — an HONEST
-// boundary bound, never a false ceiling. Trusted, #57-confined to the `read`
-// syscall set.
+// Read one keystroke, returning the raw bytes PACKED into a u64 for `decode`: b0 in
+// bits 0..9, b1 in 9..18, b2 in 18..27. A plain key reads 1 byte; an ESC reads the
+// 2-byte arrow tail. The packed maximum fits in 27 bits. Trusted, #57-confined to
+// the `read` syscall set.
 #[boundary("os::read_key_raw")] fn read_key_raw() -> u64
   req true
   ens result <= 134_217_727
   fx  read(input)
   ;
 
-// Write the rendered frame String to stdout (and flush). Returns a status u64
-// (0 = ok, 1 = I/O error). Trusted, #57-confined to the `write` syscall set.
+// Write the rendered frame String to stdout (and flush). Returns a status u64 (0 =
+// ok, 1 = I/O error). Trusted, #57-confined to the `write` syscall set.
 #[boundary("os::write_frame")] fn write_frame(s: String) -> u64
+  req true
+  ens result <= 1
+  fx  write(output)
+  ;
+
+// LOAD the initial buffer content from the editor's fixed demo file (the
+// THERMITE_EDITOR_FILE env path, else /tmp/thermite_editor.txt) into a String
+// (the multi-line `\n` bytes preserved). A missing file yields the empty string (a
+// fresh buffer) — the honest arm, no crash. The v0.1 `--entry run` synthesizes no
+// path arg, so the load source is fixed. Trusted, #57-confined to the `read`/`open`
+// syscall set (#125).
+#[boundary("os::read_file")] fn read_file() -> String
+  req true
+  ens result.len() <= 1_000_000
+  fx  read(input)
+  ;
+
+// SAVE the buffer String's bytes (incl. the `\n` line breaks) to the editor's fixed
+// demo file. Returns a status u64 (0 = ok, 1 = I/O error). Bound to Ctrl-S in the
+// loop. Trusted, #57-confined to the `open`/`write` syscall set (#125).
+#[boundary("os::write_file")] fn write_file(content: String) -> u64
   req true
   ens result <= 1
   fx  write(output)
@@ -246,22 +479,24 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
 // THE EVENT LOOP `run` (L1 — the honest `fx diverge` seam).
 // ---------------------------------------------------------------------------
 
-// The interactive loop: enter raw mode; then read a keystroke, DECODE it (the
-// L3-verified `decode`), dispatch the decoded code to the L3-verified edit ops,
-// build the frame (the L3-verified `render_frame`), write it, and repeat until
-// Ctrl-Q (decode -> 17) breaks the loop; finally restore the terminal
-// (raw_mode_off runs on the quit path). This loop is the honest `fx diverge`
-// seam — an event loop is non-terminating by design — and it reads/writes/
-// allocates, so it carries the full effect row. The LOGIC it drives (decode,
-// render_frame, insert_str/backspace/move_left/move_right) is the L3-proven
-// core: the loop's correctness rests on those proofs.
+// The interactive multi-line loop: enter raw mode; LOAD the initial buffer from the
+// file (read_file); then read a keystroke, DECODE it (the L3-verified decode),
+// dispatch the decoded code to the L3-verified edit + nav ops (insert_str — incl.
+// the newline insert on Enter, backspace, move_left/right, move_up/down), build the
+// multi-line frame (the L3-verified render_frame positioning the cursor by the
+// verified row/col), write it, SAVE on Ctrl-S (write_file), and repeat until Ctrl-Q
+// (decode -> 17) breaks; finally restore the terminal. This loop is the honest `fx
+// diverge` seam; the LOGIC it drives is the L3-proven core.
 fn run() -> u64
   req true
   ens result <= 1
   fx  read(input), write(output), alloc, diverge
 {
   let entered: u64 = raw_mode_on();
-  let mut b: Buffer = Buffer { text: "", cursor: 0 };
+  let loaded: String = read_file();
+  let mut b: Buffer = Buffer { text: loaded, cursor: 0 };
+  let first: String = render_frame(&b);
+  let shown0: u64 = write_frame(first);
   while true
     inv b.text.len() <= 900_000
     dec 1
@@ -274,6 +509,10 @@ fn run() -> u64
     if k == 17 {
       break;
     }
+    if k == 19 {
+      let snapshot: String = b.text.slice(0, b.text.len());
+      let saved: u64 = write_file(snapshot);
+    }
     if k == 127 {
       if b.cursor > 0 { b = backspace(b); }
     }
@@ -282,6 +521,15 @@ fn run() -> u64
     }
     if k == 1002 {
       if b.cursor < b.text.len() { b = move_right(b); }
+    }
+    if k == 1000 {
+      b = move_up(b);
+    }
+    if k == 1001 {
+      b = move_down(b);
+    }
+    if k == 1004 {
+      if b.text.len() + 1 <= 900_000 { b = insert_str(b, "\n"); }
     }
     if k >= 32 {
       if k <= 126 {

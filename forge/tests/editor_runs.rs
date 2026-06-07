@@ -1,12 +1,22 @@
-//! THE PROOF-OF-THE-PUDDING (crosslink #90, ref #83 #105): the MAX-VERIFIED
-//! interactive editor that RUNS. This integration test grounds
-//! `examples/editor/editor.th` end-to-end against the EXTERNAL truths the toolchain
-//! does not author for itself — the real `verus` SMT prover (the cert levels) and
-//! the real `rustc` compiler + a real process run (the build + the piped-keystroke
-//! session).
+//! THE PROOF-OF-THE-PUDDING (crosslink #125, builds on #90, ref #83 #105): the
+//! MAX-VERIFIED interactive MULTI-LINE editor that RUNS. This integration test
+//! grounds `examples/editor/editor.th` end-to-end against the EXTERNAL truths the
+//! toolchain does not author for itself — the real `verus` SMT prover (the cert
+//! levels) and the real `rustc` compiler + a real process run (the build + the
+//! piped-keystroke session).
 //!
-//! THE #90 THESIS — the editor's bug-prone LOGIC (display + input) is PROVEN; only
-//! the raw read/write/ioctl SYSCALLS are trusted:
+//! THE #125 MULTI-LINE EXTENSION: on top of the shipped edit core, the editor adds
+//! the VERIFIED NAV / LAYOUT core — `count_nl`/`line_start`/`line_end`/`min2`
+//! (verified recursive line scans), `cursor_row`/`cursor_col` (the cursor's
+//! ROW/COLUMN), `move_up`/`move_down` (up/down line navigation), and `to_1based`
+//! (the proven 0→1-based ANSI conversion) — all L3, plus the file LOAD/SAVE
+//! boundaries `read_file`/`write_file` (L1). `editor_multiline_enter_up_nav_and_ctrl_s_save`
+//! grounds the runnable proof: Enter inserts a `\n` (the cursor drops to row 2), the
+//! UP arrow moves to the same column on the previous line, and Ctrl-S saves the
+//! multi-line buffer (the `\n` round-trips through the file).
+//!
+//! THE #90 THESIS — the editor's bug-prone LOGIC (display + input + NAV/LAYOUT) is
+//! PROVEN; only the raw read/write/ioctl/open SYSCALLS are trusted:
 //!
 //!   * `forge check editor.th` certifies:
 //!       - the VERIFIED EDIT CORE (`Buffer`, `insert_str`, `backspace`,
@@ -199,13 +209,25 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
         "backspace",
         "move_left",
         "move_right",
+        // The multi-line NAV / LAYOUT core (#125): the verified row/col scans + the
+        // up/down line navigation + the proven 1-based ANSI conversion. The editor's
+        // navigation + cursor-layout LOGIC is PROVEN, not trusted glue.
+        "count_nl",
+        "line_start",
+        "line_end",
+        "min2",
+        "cursor_row",
+        "cursor_col",
+        "move_up",
+        "move_down",
+        "to_1based",
         "render_frame",
         "decode",
     ] {
         assert_eq!(
             level_of(&certs, op),
             "L3",
-            "the verified editor-logic item `{op}` must certify L3 (the #90 thesis)"
+            "the verified editor-logic item `{op}` must certify L3 (the #90/#125 thesis)"
         );
     }
 
@@ -218,7 +240,16 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
 
     // THE MINIMAL TRUSTED SYSCALL BOUNDARY — L1, boundary:true (foreign termios /
     // read / write bodies, trusted-by-fiat).
-    for prim in ["raw_mode_on", "raw_mode_off", "read_key_raw", "write_frame"] {
+    for prim in [
+        "raw_mode_on",
+        "raw_mode_off",
+        "read_key_raw",
+        "write_frame",
+        // The file LOAD / SAVE boundaries (#125) — extern-C `std::fs` read/write,
+        // trusted-by-fiat, enumerated in the TCB.
+        "read_file",
+        "write_file",
+    ] {
         let cert = find_cert(&certs, prim);
         assert_eq!(cert["level"], Value::from("L1"), "{prim} is an L1 boundary");
         assert_eq!(
@@ -356,6 +387,104 @@ fn editor_builds_and_runs_arrow_move_then_splice() {
         "the frame must carry the C4 cursor-coordinate escape (render_frame ran):\n\
          stdout:{stdout}"
     );
+}
+
+// ----------------------------------------------------------------------------
+// Deliverable 2b — the MULTI-LINE session (#125): Enter inserts a `\n` (the cursor
+// drops to the next row), the UP arrow moves the cursor to the same column on the
+// previous line (the L3 `move_up` over the verified row/col scans), and Ctrl-S
+// SAVES the multi-line buffer to a file (the `os::write_file` boundary). The frames
+// show TWO lines and the cursor moving between them; the saved file round-trips the
+// `\n`. (#125; the verified nav/layout core L3 + the file boundary L1.)
+// ----------------------------------------------------------------------------
+
+#[test]
+fn editor_multiline_enter_up_nav_and_ctrl_s_save() {
+    let editor = editor_th();
+    let (ok, stdout, stderr) = run_forge_build(&[
+        editor.to_str().unwrap(),
+        "--entry",
+        "run",
+        "--no-sandbox",
+        "--json",
+    ]);
+    assert!(
+        ok,
+        "forge build editor.th --entry run must COMPILE (the multi-line nav scans + \
+         file boundaries lower to L1):\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    let artifact = artifact_path_from_json(&stdout);
+    assert!(artifact.exists(), "the built editor binary must exist");
+
+    // A dedicated save target so the test is hermetic + asserts the round-trip. The
+    // editor's `os::read_file`/`os::write_file` wrappers honor THERMITE_EDITOR_FILE.
+    let save_path = std::env::temp_dir().join(format!(
+        "thermite_editor_multiline_{}.txt",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&save_path);
+
+    // Keystrokes: 'a','b'; ENTER (CR 0x0d -> decode 1004 -> insert "\n"); 'c','d';
+    // UP arrow (ESC [ A = 0x1b 0x5b 0x41 -> decode 1000 -> move_up); Ctrl-S (0x13 ->
+    // decode 19 -> write_file SAVE); Ctrl-Q (0x11 -> decode 17 -> clean quit).
+    let mut child = Command::new(&artifact)
+        .env("THERMITE_EDITOR_FILE", &save_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap_or_else(|e| panic!("spawn built editor `{}`: {e}", artifact.display()));
+    child
+        .stdin
+        .as_mut()
+        .expect("editor stdin")
+        .write_all(b"ab\rcd\x1b[A\x13\x11")
+        .expect("pipe multi-line keystrokes");
+    let out = child.wait_with_output().expect("editor run completes");
+
+    assert!(
+        out.status.success(),
+        "the multi-line editor must exit CLEAN on Ctrl-Q:\nstatus:{:?}\nstderr:{}",
+        out.status,
+        String::from_utf8_lossy(&out.stderr),
+    );
+
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    // The two-line buffer is rendered (the `\n` byte is carried into the frame by the
+    // L3 `render_frame`, so the body shows "ab\ncd").
+    assert!(
+        stdout.contains("ab\ncd"),
+        "the editor must render the TWO-line buffer `ab\\ncd` (Enter inserted the \
+         L3 newline):\nstdout:{stdout:?}"
+    );
+    // After Enter the cursor drops to row 2, col 1 — the verified cursor_row/cursor_col
+    // produce the `\x1b[2;1H` coordinate (a SECOND row, the multi-line proof).
+    assert!(
+        stdout.contains("\x1b[2;1H"),
+        "the frame after Enter must position the cursor on row 2 (the L3 cursor_row \
+         counted the inserted newline):\nstdout:{stdout:?}"
+    );
+    // After the UP arrow the cursor returns to row 1 (col 3) — the L3 `move_up` walked
+    // the verified line boundaries to the same column on the previous line.
+    assert!(
+        stdout.contains("\x1b[1;3H"),
+        "the frame after UP must position the cursor back on row 1 col 3 (the L3 \
+         `move_up` over the verified row/col scans):\nstdout:{stdout:?}"
+    );
+    // Ctrl-S SAVED the multi-line buffer to the file (the `os::write_file` boundary);
+    // the saved bytes round-trip the `\n` line break.
+    let saved = std::fs::read(&save_path).unwrap_or_else(|e| {
+        panic!(
+            "the editor's Ctrl-S must have saved {}: {e}",
+            save_path.display()
+        )
+    });
+    assert_eq!(
+        saved, b"ab\ncd",
+        "Ctrl-S must save the multi-line buffer verbatim (the `\\n` preserved) via \
+         the os::write_file boundary; got {saved:?}"
+    );
+    let _ = std::fs::remove_file(&save_path);
 }
 
 // ----------------------------------------------------------------------------

@@ -1,0 +1,10 @@
+{
+  "uuid": "0f13f43e-5ae9-4b6e-be37-1e7649aff280",
+  "issue_uuid": "3728a934-98ca-4484-8f05-45b95a8db205",
+  "author": "Yffe",
+  "content": "SHIPPED + proven end-to-end. The runnable effect link (forge build emits mod os {} syscall wrappers keyed by reachable boundary targets) was built (bb0fbd9), the String-wrapper follow-up fixed (#82, 82e0257), and is now PROVEN by the verified text editor (#83): forge build --entry run links os::read_key/os::write -> a native binary that reads keystrokes, edits a verified buffer, renders, exits — a verified Thermite program that RUNS + does real I/O, seccomp-confined. The editor is the proof-of-the-pudding.",
+  "created_at": "2026-06-07T00:50:04.065745483Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABASlIR7kEBba2FmVMk0ZCNcX/usc4w10VO0K0MkxT1PulHsn8pqXU4HdQFF1RNj4HVLwhsEoaCT0ooqgjlRTbQAg=="
+}

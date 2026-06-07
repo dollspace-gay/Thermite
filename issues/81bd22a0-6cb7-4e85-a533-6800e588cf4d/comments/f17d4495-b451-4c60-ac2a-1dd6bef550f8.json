@@ -1,0 +1,10 @@
+{
+  "uuid": "f17d4495-b451-4c60-ac2a-1dd6bef550f8",
+  "issue_uuid": "81bd22a0-6cb7-4e85-a533-6800e588cf4d",
+  "author": "Yffe",
+  "content": "Failing tests at forge/tests/divergence_editor_render_frame.rs::divergence_render_frame_certifies_l3 (render_frame L0, not L3 — u64_to_string ens has no upper length bound so the bounded concat §4.2 CAP precondition is undischargeable) and ::divergence_editor_build_run_compiles (rustc E0382: render_frame(b) moves Buffer b, reused next loop iteration). decode IS L3 with teeth (the done half). Authority: thermite-design.md §4.2 + .design/basis/07-strings.md REQ-4/REQ-8 + the #90 thesis. Tests #[ignore]'d (blocker #90); they PASS-as-fail under --include-ignored against the uncommitted state.",
+  "created_at": "2026-06-07T16:09:39.201097062Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA7FrwBQH58IBlqgOmR8fYWRHxXhZH6CkP5zfe4AJcTaPNgjDVQPAtbRT42FwVkRUivBzMyPwNxVupCXKO0XKECA=="
+}

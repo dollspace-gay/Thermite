@@ -1,0 +1,10 @@
+{
+  "uuid": "2915b13c-38a5-4d45-924a-506e933b67e0",
+  "issue_uuid": "7b6da170-4d07-4426-b6de-f2991cd2fde6",
+  "author": "Yffe",
+  "content": "EPIC COMPLETE + critic-clean (0c75cc0 Map + #124 oracle 6d46f55). Map<K,V>: Type::Map two-arg + emit_map_wrappers (TMap over Vec<(K,V)>-of-pairs + spec view) + insert/get/contains_key/len (reuses C6 Vec + C9 tuples + C7 Option). Critic crux HELD: round-trip genuine, spec view sound, absent->None handled-or-loud, §7-anchoring honest (has_key L3), no cheat. #124 fixed (cert/lowering goldens: orchestrator map_kv.cert.json + builder map_kv.verus.rs 9 verified + routes + cert-compare). 658 tests. Map was the last deferred basis primitive.",
+  "created_at": "2026-06-07T22:28:19.476636672Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA6eq5kwwS8KCFNKHv7mH17E3W/XhwufSRb3i3ah+A84bt2xdMcRPLXoCJsdRGm7q9bAeyyP0s7QI+eieNCkQHDg=="
+}

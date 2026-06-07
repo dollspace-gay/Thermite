@@ -1,0 +1,10 @@
+{
+  "uuid": "92dff3a1-9a10-4a9a-aba3-677abe70878d",
+  "issue_uuid": "e8b4e987-097b-413a-9f4a-9861cd2c0f87",
+  "author": "Yffe",
+  "content": "Fix the 3 thermite-lower gaps blocking the editor shell (#87): (1) l1.rs lower_inv_expr_l1 — recurse the struct-inv field-rewrite through Expr::MethodCall (receiver+args) and Expr::Call (callee+args), so inv cursor<=text.len() emits self.text.len() (was E0425). (2) l1.rs lower_expr_exec MethodCall arm — mirror lower.rs #86 coerce_usize: byte_at/slice index args get an explicit 'as usize' (skip literals + already-as-usize), fixing E0308. (3) lower.rs lower_fn+lower_loop — fx-diverge termination exemption: emit #[verifier::exec_allows_no_decreases_clause] AND suppress the loop decreases (new fn_is_diverge helper); diverge-ONLY so sum/binary_search still prove termination. Re-add os::read_key/os::key_str wrappers + unit tests. Editor #83 build+run ESCALATED: 3 NEW blockers beyond the 3 gaps (mutation battery rejects fx-diverge run at L0; L1 borrow-after-move in ens; L1 string-literal->TString).",
+  "created_at": "2026-06-07T00:05:39.294991505Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA8TYjIZauAadeqKa/NOcd5B0T8hY6EeDhMdISdjsdDw3wJuTRyc6l3cTzaaM4w3GyVhWmysZAg4ROr+cNuzQsCQ=="
+}

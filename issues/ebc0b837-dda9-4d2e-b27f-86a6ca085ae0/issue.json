@@ -1,0 +1,10 @@
+{
+  "uuid": "ebc0b837-dda9-4d2e-b27f-86a6ca085ae0",
+  "display_id": 109,
+  "title": "C9-B: tuples — (T, U) parse-fails ('expected ) to close the unit type ()'); needs Type::Tuple(Vec<Type>) + Expr::Tuple(Vec<Expr>) + .N projection (Expr::TupleProj or reuse Field) + lower_type/lower_expr arms to Verus tuples + the exhaustive-match ripple (lower/l1/l2/validator/check/review/mutation/vacuity/closure/strengthen/skill). GROUNDED: swap (u64,u64) with ens r.0==b,r.1==a -> L3; wrong body -> L0.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T17:22:33.716176782Z",
+  "updated_at": "2026-06-07T17:22:33.716176782Z"
+}

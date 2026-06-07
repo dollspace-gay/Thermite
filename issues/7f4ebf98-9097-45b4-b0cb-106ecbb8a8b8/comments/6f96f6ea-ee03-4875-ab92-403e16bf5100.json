@@ -1,0 +1,10 @@
+{
+  "uuid": "6f96f6ea-ee03-4875-ab92-403e16bf5100",
+  "issue_uuid": "7f4ebf98-9097-45b4-b0cb-106ecbb8a8b8",
+  "author": "Yffe",
+  "content": "C9-A plain-fn recursion: add FnItem.dec: Option<Clause> (ast) + parse_fn optional trailing dec after fx (parser); lower_fn emits decreases <spec_dec> when dec.is_some() reusing the spec-fn/loop machinery (lower); validator detects direct self-call (block_calls_name) and emits MissingDecreases when dec absent and not fx diverge (the #88 exemption honored); grounded conformance test (recursion_conformance.rs) — L3 with dec, L0 non-decreasing, MissingDecreases no-dec, L1 diverge, builds+runs. Additive dec field rippled to FnItem literals as dec: None. Mutual recursion (REQ-6) deferred.",
+  "created_at": "2026-06-07T17:45:25.336347828Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABArdnp41NDntdjGjV4K8NnjDedKpeMqx9bZxot4+0XE12pPPsWzOcljf2bcZB+T2L6hGkKFlyoWX2kzbIkY0WoCw=="
+}

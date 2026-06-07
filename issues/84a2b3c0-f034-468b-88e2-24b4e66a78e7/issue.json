@@ -2,11 +2,12 @@
   "uuid": "84a2b3c0-f034-468b-88e2-24b4e66a78e7",
   "display_id": 90,
   "title": "Real interactive nano: self-contained raw-mode (termios) + full-screen render + arrow-key cursor nav + clean quit",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T01:08:38.177594172Z",
-  "updated_at": "2026-06-07T01:08:39.968124114Z",
+  "updated_at": "2026-06-07T17:11:31.924049128Z",
+  "closed_at": "2026-06-07T17:11:31.924049128Z",
   "labels": [
     "feature"
   ]

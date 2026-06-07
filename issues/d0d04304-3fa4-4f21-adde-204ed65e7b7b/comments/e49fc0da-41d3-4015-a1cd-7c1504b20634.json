@@ -1,0 +1,10 @@
+{
+  "uuid": "e49fc0da-41d3-4015-a1cd-7c1504b20634",
+  "issue_uuid": "d0d04304-3fa4-4f21-adde-204ed65e7b7b",
+  "author": "Yffe",
+  "content": "PLAN: pin the C12 Map design-mandated golden-oracle gap as an #[ignore]d failing test (forge/tests/divergence_c12_map_goldens_missing.rs), asserting conformance/map_kv.cert.json + tests/golden/lower/map_kv.verus.rs exist per 13-map.md Acceptance criteria. Commit the test only; the orchestrator authors the goldens to resolve.",
+  "created_at": "2026-06-07T22:19:42.248982737Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACqa03pKGmknYB0edJlEf6s/HJiAOUYOsTJlTDXx2bFJ6WCBnyA6Rp/xRcxAQvER5zSAppwrmO0yHrhbSNHmTAA=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "0780cfd6-0084-4f15-9004-0cdb3a2b0831",
+  "display_id": 119,
+  "title": "C10 REQ-5: if let / while let — no let-binding head in parse_if_parts/parse_loop. if let->match e {P=>T,_=>E}; while let->while (e is Variant) {let bindings; B}. The while(cond) form is canonical; loop+break is L0 on the postcondition. GROUNDED L3 (.design/basis/11-ergonomics.md AC-5/AC-6).",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T19:49:37.572415438Z",
+  "updated_at": "2026-06-07T19:49:37.572415438Z"
+}

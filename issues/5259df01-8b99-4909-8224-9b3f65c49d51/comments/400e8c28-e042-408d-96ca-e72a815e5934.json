@@ -1,0 +1,10 @@
+{
+  "uuid": "400e8c28-e042-408d-96ca-e72a815e5934",
+  "issue_uuid": "5259df01-8b99-4909-8224-9b3f65c49d51",
+  "author": "Yffe",
+  "content": "Cluster C4 (part 1): ship the verified u64<->String byte-builder + decimal formatter per 07-strings.md REQ-7/REQ-8 (REQ-9 parse_u64 stays blocked on C7/#95). Approach: (1) validator.rs — push_byte+to_string into BUILTIN_METHODS, seed parse_le/pow10 into spec_fns (GENERATED_SPEC_FNS) so the round-trip contract validates in the cage; (2) lower.rs — from_byte/push_byte methods in emit_string_wrapper, new emit_numfmt_defs emitting pow10/parse_le spec fns + lemma_parse_push proof fn + u64_to_string exec (divide/mod-by-10 loop, round-trip inv parse_le(data@)+m*pow10(len)==n, dec m, by(nonlinear_arith), =~= extensionality; the GROUNDED 16/0 form), n.to_string()->u64_to_string(n), parse_le(result)->parse_le(result.data@), String::->TString:: path rewrite; (3) l1.rs — the runnable mirrors (plain-Rust from_byte/push_byte/u64_to_string/parse_le/pow10); (4) forge/tests/string_format_conformance.rs grounds it against real verus. The round-trip is a REAL proof (no assume/external_body); a wrong digit FAILS 15/1 (non-vacuous, R-DEFER-9).",
+  "created_at": "2026-06-07T05:02:01.541268429Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAVXdzBN+o4aVN34EoUAVy9vqmzf4o2PmIFhhjK/0Y5jFXIQgGfBbaBtX+aElnLs+U0XiUVLyZwXfrQ0Wg13X7Cw=="
+}

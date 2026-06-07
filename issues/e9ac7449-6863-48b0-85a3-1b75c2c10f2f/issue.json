@@ -2,11 +2,12 @@
   "uuid": "e9ac7449-6863-48b0-85a3-1b75c2c10f2f",
   "display_id": 102,
   "title": "Primitive completeness C5: string search/transform — find/index_of (Option) / contains / starts_with / ends_with / split (Vec<String>) / trim",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T08:25:37.121085629Z",
-  "updated_at": "2026-06-07T08:25:38.730221216Z",
+  "updated_at": "2026-06-07T09:33:34.880829587Z",
+  "closed_at": "2026-06-07T09:33:34.880829587Z",
   "labels": [
     "feature"
   ]

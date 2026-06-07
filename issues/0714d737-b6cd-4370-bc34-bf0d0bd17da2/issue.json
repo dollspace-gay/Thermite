@@ -2,11 +2,12 @@
   "uuid": "0714d737-b6cd-4370-bc34-bf0d0bd17da2",
   "display_id": 107,
   "title": "Primitive completeness C9: plain-fn recursion (fn with dec clause, self-call, termination-proven) + tuples (Type::Tuple + Expr::Tuple + .0/.1 projection + destructuring)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-07T17:18:38.307145806Z",
-  "updated_at": "2026-06-07T17:18:39.763814580Z",
+  "updated_at": "2026-06-07T19:00:06.585083763Z",
+  "closed_at": "2026-06-07T19:00:06.585083763Z",
   "labels": [
     "feature"
   ]

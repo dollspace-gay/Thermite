@@ -154,7 +154,155 @@ const WRAPPERS: &[Wrapper] = &[
                  Ok(()) => 0,\n            \
                  Err(_) => 1,\n        }\n    }\n",
     },
+    // os::raw_mode_on (the editor's terminal-control boundary, #90) — put the
+    // terminal into RAW mode (clear ICANON + ECHO so each keystroke reaches the
+    // editor live, no line buffering, no echo; VMIN=1/VTIME=0 for a blocking
+    // 1-byte read) via extern-C `tcgetattr`/`tcsetattr`. libc is resolved against
+    // the std binary's already-linked libc (NO libc crate dependency — the SAME
+    // `extern "C"`-against-std path the #57 seccomp prelude's `prctl` uses), so the
+    // generated single-file crate stays self-contained. The ORIGINAL termios is
+    // saved into a process-global `OnceLock` on first entry so `raw_mode_off` can
+    // restore it. GRACEFUL on a non-TTY stdin (piped): `tcgetattr` returns nonzero
+    // (ENOTTY), the wrapper returns 1 and leaves the terminal untouched — NO crash,
+    // NO panic (the honest status arm). Trusted-by-fiat (you cannot prove the
+    // kernel), #57-seccomp-confined to its declared `fx`.
+    Wrapper {
+        name: "raw_mode_on",
+        source: TERMIOS_RAW_MODE_SOURCE,
+    },
+    // os::raw_mode_off (#90) — restore the terminal's ORIGINAL mode (the saved
+    // termios). MUST run on the editor's exit path so the terminal is never left in
+    // raw mode. A no-op (returns 0) when raw mode was never entered (no saved
+    // termios — the non-TTY/piped case) or on a `tcsetattr` error (returns 1), never
+    // a panic. Shares the `__THERMITE_ORIG_TERMIOS` OnceLock + the extern-C decls
+    // with `raw_mode_on` (emitted once in `TERMIOS_RAW_MODE_SOURCE`); this entry is
+    // EMPTY so the pair is emitted exactly once even when both targets are named.
+    Wrapper {
+        name: "raw_mode_off",
+        source: "",
+    },
+    // os::read_key_raw (the editor's keystroke boundary, #90) — read one keystroke
+    // from stdin, returning the raw bytes PACKED into a u64 for the verified
+    // `decode`: byte b0 in bits 0..9, b1 in bits 9..18, b2 in bits 18..27 (each
+    // field 0..256, or the 256 EOF sentinel). A plain key reads 1 byte (b1=b2=0); an
+    // ESC (0x1b) reads the 2-byte arrow tail. The closed outcome set is honest — the
+    // world produces bytes or EOF, never more; a read error/EOF is the 256 sentinel
+    // arm, never a panic. Trusted, #57-confined to the `read` syscall set.
+    Wrapper {
+        name: "read_key_raw",
+        source: "    pub fn read_key_raw() -> u64 {\n        \
+                 use std::io::Read;\n        \
+                 let mut buf = [0u8; 1];\n        \
+                 let b0: u64 = match std::io::stdin().read(&mut buf) {\n            \
+                 Ok(1) => buf[0] as u64,\n            \
+                 _ => 256,\n        };\n        \
+                 if b0 != 27 {\n            \
+                 return b0;\n        }\n        \
+                 let b1: u64 = match std::io::stdin().read(&mut buf) {\n            \
+                 Ok(1) => buf[0] as u64,\n            \
+                 _ => 256,\n        };\n        \
+                 let b2: u64 = match std::io::stdin().read(&mut buf) {\n            \
+                 Ok(1) => buf[0] as u64,\n            \
+                 _ => 256,\n        };\n        \
+                 b0 + (b1 << 9) + (b2 << 18)\n    }\n",
+    },
+    // os::write_frame (the editor's render boundary, #90) — write the rendered frame
+    // String's bytes to stdout and flush. Returns a status u64 (0 = ok, 1 = I/O
+    // error), the honest closed status arm, never a panic. Trusted, #57-confined to
+    // the `write` syscall set. (Identical shape to `print`; a distinct name keeps the
+    // editor's render boundary legible in the #15 manifest.)
+    Wrapper {
+        name: "write_frame",
+        source: "    pub fn write_frame(s: super::TString) -> u64 {\n        \
+                 use std::io::Write;\n        \
+                 let mut out = std::io::stdout();\n        \
+                 match out.write_all(&s.data).and_then(|()| out.flush()) {\n            \
+                 Ok(()) => 0,\n            \
+                 Err(_) => 1,\n        }\n    }\n",
+    },
 ];
+
+/// The extern-C termios raw-mode wrapper pair (`os::raw_mode_on` + `os::raw_mode_off`,
+/// #90), emitted VERBATIM into `mod os` when EITHER target is named (the
+/// `raw_mode_off` table row is empty — this source carries both so the shared
+/// `extern "C"` decls + the `__THERMITE_ORIG_TERMIOS` OnceLock are emitted exactly
+/// once, never duplicated). The `Termios` struct + `tcgetattr`/`tcsetattr` are
+/// declared `extern "C"` and resolve against the std binary's already-linked libc
+/// (NO libc crate dependency — the SAME hermetic single-file path the #57 seccomp
+/// prelude's `prctl`/`syscall` use). Trusted-by-fiat, #57-seccomp-confined.
+///
+/// Honest error handling (R-CODE-2): a non-TTY stdin (the piped/no-TTY case) makes
+/// `tcgetattr` return nonzero (ENOTTY); the wrapper returns 1 and leaves the terminal
+/// untouched — NO crash, NO panic. The `unsafe` blocks are documented leaf FFI
+/// primitives (the only way to call the libc termios syscalls), each with a
+/// `// SAFETY:` note; the structs are POD the kernel fills.
+const TERMIOS_RAW_MODE_SOURCE: &str = r#"    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct Termios {
+        c_iflag: u32,
+        c_oflag: u32,
+        c_cflag: u32,
+        c_lflag: u32,
+        c_line: u8,
+        c_cc: [u8; 32],
+        c_ispeed: u32,
+        c_ospeed: u32,
+    }
+    extern "C" {
+        fn tcgetattr(fd: i32, termios_p: *mut Termios) -> i32;
+        fn tcsetattr(fd: i32, optional_actions: i32, termios_p: *const Termios) -> i32;
+    }
+    // The original terminal mode, saved on the first `raw_mode_on` so `raw_mode_off`
+    // can restore it. A process-global OnceLock (no Mutex/RefCell escape hatch).
+    static __THERMITE_ORIG_TERMIOS: std::sync::OnceLock<Termios> = std::sync::OnceLock::new();
+    pub fn raw_mode_on() -> u64 {
+        const STDIN_FD: i32 = 0;
+        const ICANON: u32 = 0x0000_0002;
+        const ECHO: u32 = 0x0000_0008;
+        const TCSANOW: i32 = 0;
+        const VMIN: usize = 6;
+        const VTIME: usize = 5;
+        let mut t = Termios {
+            c_iflag: 0, c_oflag: 0, c_cflag: 0, c_lflag: 0,
+            c_line: 0, c_cc: [0u8; 32], c_ispeed: 0, c_ospeed: 0,
+        };
+        // SAFETY: leaf FFI primitive — `tcgetattr` fills `*mut Termios` (a #[repr(C)]
+        // POD matching the libc layout) for the valid stdin fd; the only way to read
+        // the terminal mode. A non-TTY fd returns nonzero (handled below, no UB).
+        let got = unsafe { tcgetattr(STDIN_FD, &mut t as *mut Termios) };
+        if got != 0 {
+            // Not a TTY (piped stdin) or error: leave the terminal untouched (the
+            // graceful no-crash arm) — read_key_raw still reads the piped bytes.
+            return 1;
+        }
+        let _ = __THERMITE_ORIG_TERMIOS.set(t);
+        let mut raw = t;
+        raw.c_lflag &= !(ICANON | ECHO);
+        raw.c_cc[VMIN] = 1;
+        raw.c_cc[VTIME] = 0;
+        // SAFETY: leaf FFI primitive — `tcsetattr` reads `*const Termios` (the same
+        // #[repr(C)] POD) and applies it to the valid stdin fd; the only way to set
+        // raw mode. Returns nonzero on error (handled, no UB).
+        let set = unsafe { tcsetattr(STDIN_FD, TCSANOW, &raw as *const Termios) };
+        if set != 0 { 1 } else { 0 }
+    }
+    pub fn raw_mode_off() -> u64 {
+        const STDIN_FD: i32 = 0;
+        const TCSANOW: i32 = 0;
+        match __THERMITE_ORIG_TERMIOS.get() {
+            // Restore the saved original mode. If raw mode was never entered (no
+            // saved termios — the non-TTY/piped case), this is a clean no-op.
+            Some(orig) => {
+                // SAFETY: leaf FFI primitive — `tcsetattr` reads `*const Termios` (the
+                // saved #[repr(C)] POD) and restores it on the valid stdin fd. Returns
+                // nonzero on error (handled, no UB).
+                let r = unsafe { tcsetattr(STDIN_FD, TCSANOW, orig as *const Termios) };
+                if r != 0 { 1 } else { 0 }
+            }
+            None => 0,
+        }
+    }
+"#;
 
 /// The `os::` prefix every v1 effect-primitive target carries
 /// (`08-runnable-effect-link.md`, the `os::<name>` convention). A target that does

@@ -152,10 +152,30 @@ proof fn lemma_parse_be_reverse(s: Seq<u8>)
     }
 }
 
+proof fn lemma_pow10_le(a: nat, b: nat)
+    requires a <= b,
+    ensures pow10(a) <= pow10(b),
+    decreases b,
+{
+    if a < b {
+        lemma_pow10_le(a, (b - 1) as nat);
+        assert(pow10(b) == 10 * pow10((b - 1) as nat));
+        assert(pow10((b - 1) as nat) <= 10 * pow10((b - 1) as nat)) by(nonlinear_arith);
+    }
+}
+
+proof fn lemma_pow10_20_gt_u64max()
+    ensures pow10(20) > u64::MAX as nat,
+{
+    reveal_with_fuel(pow10, 21);
+    assert(pow10(20) == 100_000_000_000_000_000_000nat) by(compute);
+}
+
 pub fn u64_to_string(n: u64) -> (result: TString)
     ensures
         parse_be(result.data@) == n as nat,
         result.data.len() >= 1,
+        result.data.len() <= 20,
 {
     let mut data: Vec<u8> = Vec::new();
     let mut m: u64 = n;
@@ -182,12 +202,22 @@ pub fn u64_to_string(n: u64) -> (result: TString)
         invariant
             parse_le(data@) + (m as nat) * pow10(data.len() as nat) == n as nat,
             data.len() >= 1 || m > 0,
+            data.len() <= 20,
         decreases m,
     {
         let d: u8 = (m % 10) as u8 + 48u8;
         let ghost old_data = data@;
         let ghost old_m = m as nat;
         let ghost old_len = data.len() as nat;
+        proof {
+            if data.len() == 20 {
+                lemma_pow10_20_gt_u64max();
+                assert(pow10(20) <= (m as nat) * pow10(20)) by(nonlinear_arith)
+                    requires (m as nat) >= 1;
+                assert((m as nat) * pow10(data.len() as nat) <= n as nat);
+                assert(false);
+            }
+        }
         data.push(d);
         proof {
             lemma_parse_push(old_data, d);
@@ -205,11 +235,13 @@ pub fn u64_to_string(n: u64) -> (result: TString)
         }
     }
     assert(data.len() >= 1);
+    assert(data.len() <= 20);
     let mut out: Vec<u8> = Vec::new();
     let mut i: usize = 0;
     while i < data.len()
         invariant
             i <= data.len(),
+            data.len() <= 20,
             out.len() == i,
             out@ =~= seq_reverse(data@.subrange((data.len() - i) as int, data.len() as int)),
         decreases data.len() - i,

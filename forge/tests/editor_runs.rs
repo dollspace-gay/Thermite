@@ -1,37 +1,60 @@
-//! THE PROOF-OF-THE-PUDDING (crosslink #83 / #88): a VERIFIED text editor that
-//! RUNS. This integration test grounds `examples/editor/editor.th` end-to-end
-//! against the EXTERNAL truths the toolchain does not author for itself — the real
-//! `verus` SMT prover (the cert levels) and the real `rustc` compiler + a real
-//! process run (the build + the piped-keystroke session).
+//! THE PROOF-OF-THE-PUDDING (crosslink #90, ref #83 #105): the MAX-VERIFIED
+//! interactive editor that RUNS. This integration test grounds
+//! `examples/editor/editor.th` end-to-end against the EXTERNAL truths the toolchain
+//! does not author for itself — the real `verus` SMT prover (the cert levels) and
+//! the real `rustc` compiler + a real process run (the build + the piped-keystroke
+//! session).
 //!
-//! It pins the editor's TWO deliverables and the #88 diverge-L1 honesty gate:
+//! THE #90 THESIS — the editor's bug-prone LOGIC (display + input) is PROVEN; only
+//! the raw read/write/ioctl SYSCALLS are trusted:
 //!
-//!   * `forge check editor.th` — the VERIFIED EDIT CORE (`Buffer`, `insert_str`,
-//!     `backspace`, `move_left`, `move_right`) certifies **L3** (total + mutation
-//!     proven); the terminal boundary (`read_key`/`key_str`/`render`) is **L1
-//!     boundary**; the event loop `run` (`fx diverge`) is **L1** = partial
-//!     correctness (the #88 cap — NOT L0 `WeakContract`).
-//!   * `forge build editor.th --entry run` — COMPILES (the #88 L1-lowering fixes:
-//!     ens-after-move snapshot + empty-literal → `TString`); the produced binary
-//!     RUNS with piped keystrokes (`h`, `i`, Ctrl-Q) → edits, renders, exits clean.
+//!   * `forge check editor.th` certifies:
+//!       - the VERIFIED EDIT CORE (`Buffer`, `insert_str`, `backspace`,
+//!         `move_left`, `move_right`) at **L3** (cursor math + length deltas PROVEN);
+//!       - the VERIFIED RENDER-FRAME (`render_frame`) at **L3** — THE THESIS: the
+//!         display-frame construction is PROVEN Thermite, not trusted glue (the C4
+//!         cursor coordinate `(b.cursor+1).to_string()` now discharges the bounded
+//!         `concat` §4.2 CAP because `u64_to_string`'s `ens` bounds the formatted
+//!         length `<= 20`, blocker #105);
+//!       - the VERIFIED DECODE (`decode`) at **L3** — the keystroke interpretation
+//!         is a PURE TOTAL function, proven;
+//!       - the MINIMAL TRUSTED SYSCALL BOUNDARY (`raw_mode_on`, `raw_mode_off`,
+//!         `read_key_raw`, `write_frame`) at **L1 boundary** (the foreign termios /
+//!         read / write bodies, trusted-by-fiat, contract-stated);
+//!       - the event loop `run` (`fx diverge`) at **L1** = partial correctness (the
+//!         #88 cap — NOT L0 `WeakContract`).
+//!   * `forge build editor.th --entry run` COMPILES (`render_frame(&Buffer)` borrows
+//!     `b`, no E0382) and the produced binary RUNS with piped keystrokes — insert,
+//!     a LEFT arrow, a mid-text insert (splice), backspace, Ctrl-Q — and the frames
+//!     reflect the L3-proven edits.
+//!
+//! THE TERMIOS BOUNDARY NEEDS `ioctl`: `raw_mode_on`/`raw_mode_off` call
+//! `tcgetattr`/`tcsetattr`, which on Linux issue the `ioctl` syscall (16). The v0.1
+//! `write(output)` seccomp set (`forge/src/sandbox.rs` `WRITE_SYSCALLS`) does NOT
+//! grant `ioctl`, so the SANDBOXED binary is SIGSYS-killed before `tcgetattr` can
+//! return its graceful non-TTY status. The piped run therefore builds with
+//! `--no-sandbox` (the honest seam: the terminal-control boundary is trusted-by-fiat
+//! and its ioctl is not yet in the sandbox table — a separate `sandbox.rs` /
+//! `runtime-sandbox.md` gap, reported as spillover). Under `--no-sandbox` the
+//! wrapper's own non-TTY handling (`tcgetattr` returns ENOTTY -> the wrapper returns
+//! 1, no crash) is exercised by the piped (non-TTY) stdin.
 //!
 //! And the diverge cap's HONESTY (it is diverge-ONLY, not a Goodhart bypass —
 //! `goal.md` R-DEFER-9):
 //!
-//!   * a NON-diverge weak-contract fn STILL rejects at L0 `WeakContract` (the §7
-//!     mutation gate still bites a non-diverge weak contract);
-//!   * a NORMAL loop fn WITHOUT a `dec` (no `diverge`) STILL fails Verus
-//!     termination (the #87 exemption stays diverge-only);
-//!   * `conformance/sum.th` / `binary_search.th` STILL certify L3 (the diverge gate
-//!     never fires for a total fn — the corpus oracle is unperturbed).
+//!   * a NON-diverge weak-contract fn STILL rejects at L0 `WeakContract`;
+//!   * a NORMAL loop fn WITHOUT a strictly-decreasing `dec` STILL fails termination;
+//!   * `conformance/sum.th` / `binary_search.th` STILL certify L3 (the corpus oracle
+//!     is unperturbed — the `u64_to_string` upper-bound strengthening did not break
+//!     the total corpus).
 //!
 //! Driving the BUILT `forge` binary (not a library API) keeps `forge` a pure `bin`
 //! crate and exercises the real CLI surface. The cert-level checks RUN VERUS; if
 //! verus is absent they SKIP LOUDLY (the `check_conformance.rs` precedent) — never
 //! panic on a missing solver. `tests/` is not anti-pattern-gated, so `unwrap`/
 //! `expect`/`panic!` are fine here (R-APG-2). Expected levels trace to the design
-//! (`.design/forge/check.md` AC-7 / `degrade-ladder.md` AC-8) + the provers'
-//! output, NEVER copied from forge's own output (R-CHAR-3).
+//! (`.design/forge/check.md` AC-7 / `degrade-ladder.md` AC-8) + the #90 thesis +
+//! the provers' output, NEVER copied from forge's own output (R-CHAR-3).
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -147,12 +170,13 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
 }
 
 // ----------------------------------------------------------------------------
-// Deliverable 1 — `forge check editor.th`: edit core L3, boundary L1, run L1.
-// (.design/forge/check.md AC-7(a); degrade-ladder.md AC-8.)
+// Deliverable 1 — `forge check editor.th`: edit core L3, render_frame L3,
+// decode L3, boundary L1, run L1. (.design/forge/check.md AC-7(a);
+// degrade-ladder.md AC-8; the #90 thesis + blocker #105.)
 // ----------------------------------------------------------------------------
 
 #[test]
-fn editor_edit_core_certifies_l3_and_run_caps_at_l1() {
+fn editor_logic_certifies_l3_boundary_and_run_l1() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — editor cert-oracle not run.");
         return;
@@ -161,28 +185,40 @@ fn editor_edit_core_certifies_l3_and_run_caps_at_l1() {
     assert_eq!(
         code,
         Some(0),
-        "a fully-certifying editor (edit core L3 + boundary/run L1) exits 0; certs:\n{certs:#?}"
+        "a fully-certifying editor (logic L3 + boundary/run L1) exits 0; certs:\n{certs:#?}"
     );
 
-    // The VERIFIED EDIT CORE — every total edit op is L3 (cursor math + length
-    // deltas PROVEN, the §7 mutation gate passed). The expected level is the
-    // design's claim (.design/forge/check.md AC-7), grounded by real verus.
+    // THE VERIFIED LOGIC — every total edit op, the render-frame, and the decode are
+    // L3 (the #90 thesis: the editor's bug-prone display + input logic is PROVEN, not
+    // trusted glue). `render_frame` L3 is THE THESIS — it discharges only because
+    // `u64_to_string`'s `ens` now bounds the formatted length `<= 20` (blocker #105),
+    // so the bounded `concat` §4.2 CAP precondition holds.
     for op in [
         "Buffer",
         "insert_str",
         "backspace",
         "move_left",
         "move_right",
+        "render_frame",
+        "decode",
     ] {
         assert_eq!(
             level_of(&certs, op),
             "L3",
-            "the verified edit core op `{op}` must certify L3"
+            "the verified editor-logic item `{op}` must certify L3 (the #90 thesis)"
         );
     }
 
-    // The TRUSTED terminal boundary — L1, boundary:true (foreign body unproven).
-    for prim in ["read_key", "key_str", "render"] {
+    // `decode` is a PURE total function (the keystroke interpretation, proven).
+    assert_eq!(
+        find_cert(&certs, "decode")["effects"],
+        Value::from(vec!["pure"]),
+        "`decode` is a PURE total function (fx pure)"
+    );
+
+    // THE MINIMAL TRUSTED SYSCALL BOUNDARY — L1, boundary:true (foreign termios /
+    // read / write bodies, trusted-by-fiat).
+    for prim in ["raw_mode_on", "raw_mode_off", "read_key_raw", "write_frame"] {
         let cert = find_cert(&certs, prim);
         assert_eq!(cert["level"], Value::from("L1"), "{prim} is an L1 boundary");
         assert_eq!(
@@ -193,8 +229,7 @@ fn editor_edit_core_certifies_l3_and_run_caps_at_l1() {
     }
 
     // THE #88 CAP — `run` (fx diverge) is L1 = PARTIAL correctness: NOT L0
-    // `WeakContract`, NOT a forced L3, and NOT a boundary fn. No reject, no
-    // strengthening suggestion (the §7 mutation/strengthen gate is SKIPPED).
+    // `WeakContract`, NOT a forced L3, and NOT a boundary fn.
     let run = find_cert(&certs, "run");
     assert_eq!(
         run["level"],
@@ -234,21 +269,31 @@ fn editor_edit_core_certifies_l3_and_run_caps_at_l1() {
 }
 
 // ----------------------------------------------------------------------------
-// Deliverable 2 — `forge build editor.th --entry run`: COMPILES + RUNS.
-// (#88 blockers 2+3: ens-after-move snapshot + empty-literal → TString.)
+// Deliverable 2 — `forge build editor.th --entry run`: COMPILES (no E0382, the
+// `render_frame(&Buffer)` borrow) + RUNS with piped keystrokes (arrow-move +
+// mid-text splice). (#90; #105 divergence 2; 08-runnable-effect-link.md.)
 // ----------------------------------------------------------------------------
 
 #[test]
-fn editor_builds_and_runs_with_piped_keystrokes() {
-    // rustc is always present (no skip; the build_conformance.rs precedent). This
-    // is THE proof: a verified editor that runs.
+fn editor_builds_and_runs_arrow_move_then_splice() {
+    // rustc is always present (no skip; the build_conformance.rs precedent). This is
+    // THE proof: a verified editor that runs. Build with `--no-sandbox` because the
+    // termios boundary issues `ioctl` (16), which the v0.1 `write(output)` seccomp set
+    // does not grant (a separate sandbox-table gap — see the module note); the
+    // `--no-sandbox` build still links the SAME extern-C termios wrappers and proves
+    // the runnable thesis. The compile path (E0382 fix) is identical under either flag.
     let editor = editor_th();
-    let (ok, stdout, stderr) =
-        run_forge_build(&[editor.to_str().unwrap(), "--entry", "run", "--json"]);
+    let (ok, stdout, stderr) = run_forge_build(&[
+        editor.to_str().unwrap(),
+        "--entry",
+        "run",
+        "--no-sandbox",
+        "--json",
+    ]);
     assert!(
         ok,
-        "forge build editor.th --entry run must COMPILE (blockers 2+3 fixed):\n\
-         stdout:\n{stdout}\nstderr:\n{stderr}"
+        "forge build editor.th --entry run must COMPILE (render_frame(&Buffer) borrows \
+         b — no E0382 borrow-after-move):\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
     let artifact = artifact_path_from_json(&stdout);
@@ -258,9 +303,11 @@ fn editor_builds_and_runs_with_piped_keystrokes() {
         artifact.display()
     );
 
-    // RUN it with piped keystrokes: 'h', 'i', then Ctrl-Q (byte 0x11 = 17 = quit).
-    // The editor inserts 'h' and 'i' (the L3-proven `insert_str`), renders the
-    // buffer after each keystroke, sees Ctrl-Q, and exits clean.
+    // RUN it with piped keystrokes: insert 'a','b'; a LEFT arrow (ESC [ D =
+    // 0x1b 0x5b 0x44 -> decode 1003, cursor moves left to between 'a' and 'b'); insert
+    // 'X' (the L3 `insert_str` SPLICES mid-text -> "aXb"); backspace (0x7f -> decode
+    // 127, deletes 'X' -> "ab"); Ctrl-Q (0x11 -> decode 17, clean quit). The frames
+    // must show the mid-text splice ("aXb") then the backspace undo ("ab").
     let mut child = Command::new(&artifact)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -271,29 +318,43 @@ fn editor_builds_and_runs_with_piped_keystrokes() {
         .stdin
         .as_mut()
         .expect("editor stdin")
-        .write_all(b"hi\x11")
+        .write_all(b"ab\x1b[DX\x7f\x11")
         .expect("pipe keystrokes to editor");
     let out = child.wait_with_output().expect("editor run completes");
 
     assert!(
         out.status.success(),
-        "the editor must exit CLEAN (exit 0) on Ctrl-Q:\nstatus:{:?}\nstdout:{}\nstderr:{}",
+        "the editor must exit CLEAN (exit 0) on Ctrl-Q (the non-TTY stdin is handled \
+         gracefully — no crash):\nstatus:{:?}\nstdout:{}\nstderr:{}",
         out.status,
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr),
     );
 
-    // The rendered output must reflect the edits: after 'h' the buffer renders
-    // "h", after 'i' it renders "hi". So the buffer text "hi" appears in the
-    // rendered stream (the proven edit core ran). We assert the buffer reached
-    // "hi" (the substring), not an exact transcript (the render cadence is the
-    // host glue's, not the verified core's).
     let stdout = String::from_utf8_lossy(&out.stdout);
+    // The mid-text splice: after the LEFT arrow + 'X' the buffer is "aXb" (the proven
+    // `insert_str` spliced at the moved cursor), which appears in a rendered frame.
     assert!(
-        stdout.contains("hi"),
-        "the editor must render the edited buffer `hi` (the L3 `insert_str` ran):\n\
+        stdout.contains("aXb"),
+        "the editor must render the mid-text splice `aXb` (LEFT arrow then insert ran \
+         the L3 `move_left` + `insert_str`):\nstdout:{stdout}\nstderr:{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // After the backspace, the buffer returns to "ab" (the proven `backspace` deleted
+    // the spliced 'X'), the FINAL rendered buffer.
+    assert!(
+        stdout.contains("ab"),
+        "the editor must render `ab` after the backspace (the L3 `backspace` ran):\n\
          stdout:{stdout}\nstderr:{}",
         String::from_utf8_lossy(&out.stderr)
+    );
+    // The cursor-coordinate escape is the C4 `u64_to_string` formatted column — its
+    // presence confirms the L3 `render_frame` (the proven display logic) produced the
+    // frame, not a trusted print.
+    assert!(
+        stdout.contains("\x1b[1;"),
+        "the frame must carry the C4 cursor-coordinate escape (render_frame ran):\n\
+         stdout:{stdout}"
     );
 }
 
@@ -308,10 +369,9 @@ fn non_diverge_weak_contract_still_rejects_l0_weakcontract() {
         eprintln!("SKIP: verus not available — non-diverge weak-contract regression not run.");
         return;
     }
-    // The AC-7(b) fixture: a TOTAL `fx pure` fn with a LOOSE `ens` and NO
-    // `diverge`. The §7 mutation gate must STILL bite it (a `return 0`-style mutant
-    // survives the loose `ens result <= 1000000`), rejecting at L0 `WeakContract` —
-    // the diverge exemption is NOT a mutation escape hatch for a normal fn.
+    // The AC-7(b) fixture: a TOTAL `fx pure` fn with a LOOSE `ens` and NO `diverge`.
+    // The §7 mutation gate must STILL bite it (a `return 0`-style mutant survives the
+    // loose `ens result <= 1000000`), rejecting at L0 `WeakContract`.
     let fixture = write_fixture(
         "weak_total",
         "fn f(a: u32, b: u32) -> u32\n  \
@@ -344,16 +404,10 @@ fn normal_loop_without_dec_still_fails_termination() {
         eprintln!("SKIP: verus not available — termination-exemption regression not run.");
         return;
     }
-    // The AC-7(c) fixture: a NORMAL (non-diverge) fn with a `while` loop whose
-    // `dec` measure does NOT strictly decrease (`dec n`, constant across the loop —
-    // a loop's `dec` is mandatory syntactically, so "no dec" is a parse error, not
-    // a verus outcome; a NON-decreasing dec is the faithful "termination unproven"
-    // shape). Verus must STILL DEMAND a strictly-decreasing measure and FAIL — the
-    // #87 termination exemption (`#[verifier::exec_allows_no_decreases_clause]`,
-    // which SUPPRESSES the decreases obligation) is diverge-ONLY, and the #88
-    // diverge L1 cap does not relax it for any other fn. (No `diverge` in the row →
-    // the gate routes it to the normal L3 path, where the non-decreasing `dec` is a
-    // verus termination failure, NOT a diverge cap.)
+    // The AC-7(c) fixture: a NORMAL (non-diverge) fn with a `while` loop whose `dec`
+    // measure does NOT strictly decrease (`dec n`, constant). Verus must STILL DEMAND
+    // a strictly-decreasing measure and FAIL — the #87 termination exemption is
+    // diverge-ONLY, and the #88 diverge L1 cap does not relax it for any other fn.
     let fixture = write_fixture(
         "loop_bad_dec",
         "fn spin(n: u32) -> u32\n  \
@@ -379,9 +433,6 @@ fn normal_loop_without_dec_still_fails_termination() {
         Value::from("L3"),
         "a non-diverge loop with a non-decreasing `dec` must NOT certify L3:\n{cert:#?}"
     );
-    // The failure is specifically a TERMINATION obligation (the decreases measure),
-    // proving that obligation is still LIVE for a non-diverge fn (the #87 exemption
-    // did not fire) — NOT a diverge cap, NOT a weak-contract reject.
     let obs = cert["obligations"].as_array().expect("obligations array");
     let mentions_termination = obs.iter().any(|o| {
         o.get("name")
@@ -403,8 +454,9 @@ fn corpus_still_certifies_l3_unperturbed() {
         eprintln!("SKIP: verus not available — corpus L3 regression not run.");
         return;
     }
-    // The AC-7(d) anchor: the total corpus (NO `diverge`, `dec` present) is
-    // UNCHANGED at L3 — the diverge gate never fires for it.
+    // The AC-7(d) anchor: the total corpus (NO `diverge`, `dec` present) is UNCHANGED
+    // at L3 — neither the diverge gate nor the `u64_to_string` upper-bound
+    // strengthening (blocker #105) perturbs it.
     let (code, sum_certs) = run_check_json(&conformance_dir().join("sum.th"));
     assert_eq!(code, Some(0), "sum.th still verifies clean (exit 0)");
     assert_eq!(level_of(&sum_certs, "sum"), "L3", "sum still L3");

@@ -92,7 +92,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`) | SHIPPED | `emit_string_wrapper` emits the `from_byte(b: u64) -> TString` 1-byte constructor (`ens len == 1 && data@[0] == b as u8`) and the `push_byte(&self, b: u64) -> TString` copy-then-append (`req len < CAP`, `ens len == old+1 && data@[old] == b as u8` + the element-frame `forall|j| 0 <= j < old ==> result@[j] == self@[j]`) — the GROUNDED byte-builder over vstd's verified `Vec::push` (the `u64` byte zero-extends, the SAME convention as `byte_at -> u64`). Owned-result form (no `&mut`/`final`). Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_format_conformance.rs` (real verus L3 / `effects: [alloc]`). |
-//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec fns + the `lemma_parse_push` append lemma + the display-bridge lemmas `lemma_parse_be_push`/`lemma_parse_be_reverse` (`parse_be(seq_reverse(s)) == parse_le(s)`, proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop builds LSB-first — invariant `parse_le(data@) + m*pow10(data.len()) == n`, `decreases m` — THEN a reverse loop to the human-readable MSB-first display order, blocker #96). Materialized once when the program uses `n.to_string()` / names `parse_be` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_be(result)` lowers to `parse_be(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_be(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_be`). GROUNDED `17 verified, 0 errors`; an overclaimed round-trip FAILS (R-DEFER-9). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` + `forge/tests/divergence_numfmt_display_order.rs` (the MSB-first round-trip certifies L3, the formatter builds+runs 42→[52,50]=="42", 100→"100", 7→"7"). |
+//! | REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`) | SHIPPED | `emit_numfmt_defs` emits the `pow10`/`parse_le`/`parse_be`/`seq_reverse` spec fns + the `lemma_parse_push` append lemma + the display-bridge lemmas `lemma_parse_be_push`/`lemma_parse_be_reverse` (`parse_be(seq_reverse(s)) == parse_le(s)`, proved by induction, `=~=` extensionality + `by(nonlinear_arith)`) + the `u64_to_string(n) -> TString` exec fn (the divide/mod-by-10 digit loop builds LSB-first — invariant `parse_le(data@) + m*pow10(data.len()) == n`, `decreases m` — THEN a reverse loop to the human-readable MSB-first display order, blocker #96). Materialized once when the program uses `n.to_string()` / names `parse_be` (`program_uses_numfmt`). The method `n.to_string()` lowers to `u64_to_string(n)` (`lower_expr` MethodCall exec arm); a contract `parse_be(result)` lowers to `parse_be(result.data@)` (`lower_spec_arg` String-view rule) with the round-trip `ens parse_be(result.data@) == n as nat` (the `as nat` coercion via `nat_fns += parse_be`). GROUNDED `17 verified, 0 errors`; an overclaimed round-trip FAILS (R-DEFER-9). UPPER-BOUND `ens result.data.len() <= 20` (blocker #105): a u64 is `< 10^20`, so at most 20 digits — PROVED via the build-loop invariant `data.len() <= 20` + `lemma_pow10_le`/`lemma_pow10_20_gt_u64max` (`pow10(20) > u64::MAX`, `reveal_with_fuel` + `by(compute)`), carried through the reverse loop; this lets a caller's bounded `concat` discharge the §4.2 CAP when an operand is `n.to_string()`. The struct-invariant signature weave (`named_struct_param`) now sees through a single `&` borrow so a `&Buffer`-style ref param carries `well_formed()` (without it `b.cursor + 1` cannot be proved non-overflowing). Consumer: `lower`. Verified: `forge/tests/string_format_conformance.rs` + `forge/tests/divergence_numfmt_display_order.rs` (the MSB-first round-trip certifies L3, the formatter builds+runs 42→[52,50]=="42", 100→"100", 7→"7") + `forge/tests/editor_runs.rs` (the #90 editor's `render_frame` certifies L3 — the upper bound + ref-weave discharge the bounded `concat`). |
 //! | REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL) | SHIPPED | #95 cluster C7. `emit_parse_defs` emits the `is_digit`/`all_digits`/`parse_be` spec fns + `parse_u64(s: &TString) -> Option<u64>` (the Horner-accumulate loop + the BE partial-value invariant + the three handled-or-loud `None` arms) with the round-trip success `ens match result { Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat, None => true }`; materialized when `program_uses_parse`; `parse_be` deduped against the numfmt round-trip. Consumer: `lower`. Verified: `forge/tests/option_result_conformance.rs::ac4_parse_u64_lowering_verifies_under_real_verus` (real verus `5 verified, 0 errors`) + the broken-`Some(0)` non-vacuity. |
 //! | REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` (called from `emit_string_wrapper` when `program_uses_string_search`) emits the inner `matches_at` helper + `starts_with`/`ends_with`/`contains` byte scans (`ens result == occurs_at(self.data@, p.data@, ..)` / `contains_sub(..)`); `emit_string_search_defs` emits the `occurs_at`/`contains_sub` spec fns. `contains` is RECEIVER-TYPE-dispatched: `TString::contains` (substring) vs `TVec::contains` (membership) — DISTINCT inherent methods, no clobber. Consumer: `lower` (`emit_string_wrapper`). Verified: `forge/tests/string_search_conformance.rs` (real verus L3 pure — a true AND a false case; a broken `starts_with` FAILS, non-vacuous). GROUNDED `14 verified, 0 errors`. |
 //! | REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `find(&self, p: &TString) -> Option<u64>` occurrence scan with the C7 spec-`match`-in-`ens` (`Some(at) => occurs_at(..), None => !contains_sub(..)`), reusing C7's `Type::Option` lowering. The `occurs_at` offset arg is cast `as int` (the `lower_expr` `Call` `occurs_fn` arm). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus L3; the PINNED Some case proves `result is Some`, the always-`None` mutant FAILS — #101 trap avoided). |
@@ -2003,8 +2003,13 @@ fn lower_fn_signature(
             .unwrap_or(false);
     let mut woven_reqs: Vec<String> = Vec::new();
     for p in &f.params {
-        if let Type::Named(name) = &p.ty {
-            if inv_structs.contains(&name.as_str()) {
+        // The invariant-bearing-struct `well_formed()` weave sees through a single
+        // `&` borrow (blocker #105): `b: Buffer` and `b: &Buffer` both weave
+        // `b.well_formed()`, so a borrowed receiver carries its type invariant
+        // (`cursor <= text.len()`) into scope — without it `b.cursor + 1` cannot be
+        // proved non-overflowing. (Field access auto-derefs in both Rust and Verus.)
+        if let Some(name) = named_struct_param(&p.ty) {
+            if inv_structs.contains(&name) {
                 woven_reqs.push(format!("{}.well_formed()", p.name));
             }
         }
@@ -3053,6 +3058,24 @@ fn is_string_param_ty(ty: &Type) -> bool {
     }
 }
 
+/// The named-type of a param, SEEING THROUGH a single `&` borrow (REQ-8 automatic
+/// threading, blocker #105): `Buffer` and `&Buffer` both yield `Some("Buffer")` so
+/// the invariant-bearing-struct `well_formed()` weave fires for a borrowed receiver
+/// exactly as for an owned one. Mirrors how `is_string_param_ty` sees through `Ref`
+/// for the C5 String weave — the type invariant is a property of the TYPE, implicit
+/// at every use whether the value is owned or borrowed. NOT a deref chain (a `&&T`
+/// or `&Box<T>` is not an invariant-bearing struct receiver) — one borrow only.
+fn named_struct_param(ty: &Type) -> Option<&str> {
+    match ty {
+        Type::Named(name) => Some(name.as_str()),
+        Type::Ref { inner, .. } => match inner.as_ref() {
+            Type::Named(name) => Some(name.as_str()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn ty_reaches_string(ty: &Type) -> bool {
     match ty {
         Type::String => true,
@@ -4048,6 +4071,33 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("        lemma_parse_be_push(seq_reverse(t), s[0]);\n");
     out.push_str("    }\n");
     out.push_str("}\n");
+    // lemma_pow10_le — pow10 is monotone non-decreasing in its exponent (a <= b =>
+    // pow10(a) <= pow10(b)), by induction peeling the top factor (each step multiplies
+    // by 10 >= 1). The building block for the digit-count UPPER bound (REQ-8's `<= 20`):
+    // it bounds pow10(data.len()) from below by pow10(20) once data.len() reaches 20.
+    out.push('\n');
+    out.push_str("proof fn lemma_pow10_le(a: nat, b: nat)\n");
+    out.push_str("    requires a <= b,\n");
+    out.push_str("    ensures pow10(a) <= pow10(b),\n");
+    out.push_str("    decreases b,\n");
+    out.push_str("{\n");
+    out.push_str("    if a < b {\n");
+    out.push_str("        lemma_pow10_le(a, (b - 1) as nat);\n");
+    out.push_str("        assert(pow10(b) == 10 * pow10((b - 1) as nat));\n");
+    out.push_str("        assert(pow10((b - 1) as nat) <= 10 * pow10((b - 1) as nat)) by(nonlinear_arith);\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    // lemma_pow10_20_gt_u64max — pow10(20) == 10^20 == 100_000_000_000_000_000_000 is
+    // STRICTLY GREATER than u64::MAX (18_446_744_073_709_551_615). The literal-evaluated
+    // anchor (reveal-with-fuel folds pow10(20) to the closed literal) for REQ-8's
+    // digit-count cap: a u64 is < pow10(20), so its decimal has at most 20 digits.
+    out.push('\n');
+    out.push_str("proof fn lemma_pow10_20_gt_u64max()\n");
+    out.push_str("    ensures pow10(20) > u64::MAX as nat,\n");
+    out.push_str("{\n");
+    out.push_str("    reveal_with_fuel(pow10, 21);\n");
+    out.push_str("    assert(pow10(20) == 100_000_000_000_000_000_000nat) by(compute);\n");
+    out.push_str("}\n");
     // u64_to_string — the divide/mod-by-10 digit-extraction loop builds the decimal
     // LSB-first (the GROUNDED `parse_le(data@) == n` form), THEN reverses to the
     // human-readable MSB-first display order (REQ-8); the surface round-trip ens is
@@ -4065,6 +4115,13 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("    ensures\n");
     out.push_str("        parse_be(result.data@) == n as nat,\n");
     out.push_str("        result.data.len() >= 1,\n");
+    // `result.data.len() <= 20` — the HONEST UPPER floor (REQ-8): a u64 is < 10^20
+    // (pow10(20) > u64::MAX), so its decimal has AT MOST 20 digits. This bounds the
+    // formatted-number length from ABOVE so a caller's bounded `concat` (the §4.2 cage
+    // CAP precondition `self.len() + b.len() <= CAP`) discharges when one operand is
+    // `n.to_string()` (e.g. the editor's render_frame cursor coordinate). PROVED, not
+    // assumed (blocker #105): the digit-count cap rides the build loop's invariant.
+    out.push_str("        result.data.len() <= 20,\n");
     out.push_str("{\n");
     out.push_str("    let mut data: Vec<u8> = Vec::new();\n");
     out.push_str("    let mut m: u64 = n;\n");
@@ -4106,12 +4163,32 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     // data.len()>=1. On exit `m == 0`, so the disjunct forces data.len()>=1 (the
     // len floor's proof, blocker #97).
     out.push_str("            data.len() >= 1 || m > 0,\n");
+    // `data.len() <= 20` — the digit-count cap (REQ-8 upper floor, blocker #105). It is
+    // maintained because a 21st digit cannot exist: if data.len() reached 20 with m > 0
+    // (the loop guard), then m*pow10(20) >= pow10(20) > u64::MAX >= n would contradict
+    // the round-trip invariant parse_le(data@) + m*pow10(data.len()) == n. So at the top
+    // of the body data.len() <= 19, and the single push keeps data.len() <= 20.
+    out.push_str("            data.len() <= 20,\n");
     out.push_str("        decreases m,\n");
     out.push_str("    {\n");
     out.push_str("        let d: u8 = (m % 10) as u8 + 48u8;\n");
     out.push_str("        let ghost old_data = data@;\n");
     out.push_str("        let ghost old_m = m as nat;\n");
     out.push_str("        let ghost old_len = data.len() as nat;\n");
+    // Prove data.len() <= 19 BEFORE the push (so the push keeps data.len() <= 20). If
+    // data.len() == 20 then pow10(20) <= m*pow10(20) (m >= 1) <= n (the round-trip
+    // invariant, parse_le >= 0) <= u64::MAX < pow10(20) — a contradiction.
+    out.push_str("        proof {\n");
+    out.push_str("            if data.len() == 20 {\n");
+    out.push_str("                lemma_pow10_20_gt_u64max();\n");
+    out.push_str(
+        "                assert(pow10(20) <= (m as nat) * pow10(20)) by(nonlinear_arith)\n",
+    );
+    out.push_str("                    requires (m as nat) >= 1;\n");
+    out.push_str("                assert((m as nat) * pow10(data.len() as nat) <= n as nat);\n");
+    out.push_str("                assert(false);\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
     out.push_str("        data.push(d);\n");
     out.push_str("        proof {\n");
     out.push_str("            lemma_parse_push(old_data, d);\n");
@@ -4137,11 +4214,17 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     // `out.len() == i` through the reverse loop so the `result.data.len() >= 1`
     // ensures discharges (out.len() == data.len() >= 1 at exit; blocker #97).
     out.push_str("    assert(data.len() >= 1);\n");
+    // `data.len() <= 20` falls out of the build-loop invariant on exit (the digit-count
+    // cap, blocker #105). `data` is NOT mutated by the reverse loop, so carry it as a
+    // reverse-loop invariant: at exit i == data.len() and out.len() == i, so
+    // out.len() == data.len() <= 20 — the `result.data.len() <= 20` ens discharges.
+    out.push_str("    assert(data.len() <= 20);\n");
     out.push_str("    let mut out: Vec<u8> = Vec::new();\n");
     out.push_str("    let mut i: usize = 0;\n");
     out.push_str("    while i < data.len()\n");
     out.push_str("        invariant\n");
     out.push_str("            i <= data.len(),\n");
+    out.push_str("            data.len() <= 20,\n");
     out.push_str("            out.len() == i,\n");
     out.push_str("            out@ =~= seq_reverse(data@.subrange((data.len() - i) as int, data.len() as int)),\n");
     out.push_str("        decreases data.len() - i,\n");

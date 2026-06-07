@@ -1,20 +1,32 @@
-// A verified, RUNNABLE nano-like text editor (crosslink #83) — the
-// proof-of-the-pudding for Thermite.
+// A verified, RUNNABLE nano-like text editor (crosslink #90, ref #83) — the
+// keystone acceptance program, MAX-VERIFIED.
 //
-// THE HONEST SPLIT (verified vs trusted):
-//   * VERIFIED EDIT CORE (certifies L3 — the editor's bug-prone heart):
-//       Buffer + insert_str + backspace + move_left + move_right.
-//       Each is a TOTAL function whose cursor math and buffer edits are
-//       PROVEN: the cursor stays in bounds (the type invariant) and every
-//       length delta is proven (the `ens`). `forge check` certifies all five
-//       at L3.
-//   * TRUSTED RUNNABLE SHELL (L1 / boundary — seccomp-confined):
-//       read_key / key_str / render are `#[boundary]` primitives (the
-//       terminal I/O, trusted-by-fiat, contract-stated, syscall-confined);
-//       run is the `fx diverge` event loop. These are L1 — the honest seam
-//       between proven logic and the world.
+// THE THESIS (verified vs trusted, pushed as far as the language allows):
+//   * VERIFIED (certifies L3 — proven Thermite, NOT trusted glue):
+//       - the EDIT CORE: Buffer + insert_str + backspace + move_left + move_right
+//         (the cursor math + buffer edits — proven for all inputs).
+//       - the RENDER-FRAME: `render_frame(&b)` builds the full ANSI terminal frame
+//         as a String (C1 escape literals `\x1b...` + `b.text` by concat + the
+//         cursor-coordinate via C4 `(b.cursor+1).to_string()`); its `ens` PROVES
+//         the frame is at least as long as the buffer text (the text is carried
+//         into the frame — a non-vacuous lower bound).
+//       - the DECODE: `decode(b0,b1,b2)` — a PURE TOTAL function mapping the raw
+//         read bytes to a key code (printable -> itself, DEL -> backspace,
+//         Ctrl-Q -> quit, the arrow escape sequences -> synthetic codes). The
+//         keystroke INTERPRETATION is proven, not trusted.
+//   * TRUSTED (the MINIMAL syscall boundary — certifies L1, the honest seam):
+//       - os::raw_mode_on / os::raw_mode_off (termios raw mode via extern-C
+//         tcgetattr/tcsetattr — libc linked through std, self-contained),
+//       - os::read_key_raw (read 1 byte; on ESC read the 2-byte arrow tail; the
+//         1-3 bytes are packed into a u64 for `decode`),
+//       - os::write_frame (write the rendered String to stdout).
+//   * THE EVENT LOOP `run` (L1, the `fx diverge` cap): the non-terminating loop
+//     is the honest L1 seam; the LOGIC it calls (decode, render_frame, the edit
+//     ops) is the L3-verified core.
 //
-// See README.md for what is verified vs trusted and how to run it.
+// Only the raw read/write/ioctl SYSCALLS are trusted. The display-frame
+// construction and the keystroke decode — the editor's bug-prone logic — are
+// VERIFIED. See README.md for the split + how to run `./editor`.
 
 // ---------------------------------------------------------------------------
 // THE VERIFIED EDIT CORE (L3) — proven cursor math + buffer edits.
@@ -85,72 +97,200 @@ fn move_right(b: Buffer) -> Buffer
 }
 
 // ---------------------------------------------------------------------------
-// THE RUNNABLE SHELL (L1 / boundary) — trusted, seccomp-confined terminal I/O.
+// THE VERIFIED RENDER-FRAME (L3) — the editor's DISPLAY logic, PROVEN.
 // ---------------------------------------------------------------------------
 
-// Read one keystroke (a raw byte) from stdin, or the EOF sentinel 256. The
-// closed outcome set (`ens result <= 256`) is honest: the world produces a
-// byte or EOF, never more. Trusted-by-fiat (you cannot prove the terminal),
-// confined to the `read` syscall set by the #57 seccomp filter.
-#[boundary("os::read_key")] fn read_key() -> u64
-  req true
-  ens result <= 256
-  fx  read(input)
-  ;
-
-// Turn a keystroke byte into a one-byte String to insert (the surface has no
-// byte->String operation — this is the host glue for a capability the language
-// lacks). A control/EOF key yields the empty string. `ens result.len() <= 1`
-// keeps the inserted run bounded.
-#[boundary("os::key_str")] fn key_str(k: u64) -> String
-  req true
-  ens result.len() <= 1
+// Build the full-screen ANSI frame as a String (no syscall — pure construction):
+//   * "\x1b[2J\x1b[H"  — C1 escape literals: clear the screen + home the cursor;
+//   * b.text           — the buffer contents (carried in by concat);
+//   * "\x1b[1;" + (b.cursor+1).to_string() + "H"
+//                      — the C4 decimal cursor-coordinate, positioning the
+//                        terminal cursor at row 1, column cursor+1.
+// PROVEN (the non-vacuous contract): the frame is at least as long as the
+// buffer text — `result.len() >= b.text.len()` — i.e. the whole buffer text is
+// carried into the rendered frame (a dropped-text mutant shortens the frame and
+// fails the `ens`). The `req` bounds the text so every bounded `concat` stays
+// within the §4.2 cage. This is VERIFIED Thermite (certifies L3), NOT a trusted
+// wrapper: the display-frame construction is proven correct.
+fn render_frame(b: &Buffer) -> String
+  req b.text.len() <= 900_000
+  ens result.len() >= b.text.len()
   fx  alloc
-  ;
+{
+  let clear: String = "\x1b[2J\x1b[H";
+  let col: String = (b.cursor + 1).to_string();
+  let pos: String = "\x1b[1;".concat(col).concat("H");
+  let body: String = b.text.slice(0, b.text.len());
+  clear.concat(body).concat(pos)
+}
 
-// Render: hand the buffer text to stdout (a status u64, 0 = ok). Trusted, and
-// confined to the `write` syscall set.
-#[boundary("os::print")] fn render(s: String) -> u64
+// ---------------------------------------------------------------------------
+// THE VERIFIED DECODE (L3) — the editor's INPUT logic, PROVEN PURE + TOTAL.
+// ---------------------------------------------------------------------------
+
+// Decode the raw read bytes (b0, b1, b2 — a keystroke, EOF=256, or an arrow
+// escape sequence) to a single key code. A PURE TOTAL function over the bytes:
+//   * the arrow escape sequence 0x1b 0x5b 0x41..0x44 -> a synthetic code
+//       up=1000, down=1001, right=1002, left=1003 (the 0x41..0x44 tail offset);
+//   * a printable byte 32..126                        -> itself (insert it);
+//   * 127 (DEL)                                        -> backspace;
+//   * 17  (Ctrl-Q)                                     -> quit;
+//   * anything else                                    -> 0 (a no-op key).
+// PROVEN (the non-vacuous contract): a printable non-ESC byte decodes to itself
+// (the disjunctive contraposition `b0 < 32 || b0 > 126 || b0 == 27 || result ==
+// b0` — i.e. for a printable non-ESC `b0`, `result == b0`) AND the result is
+// always a bounded code (`result <= 1003`) — the mapping is total and the
+// printable case is pinned (a decode that dropped the printable byte fails the
+// `ens`). This is VERIFIED Thermite (certifies L3), NOT trusted glue: the
+// keystroke interpretation is proven correct.
+fn decode(b0: u64, b1: u64, b2: u64) -> u64
+  req true
+  ens b0 < 32 || b0 > 126 || b0 == 27 || result == b0
+  ens b0 != 127 || result == 127
+  ens b0 != 17 || result == 17
+  ens b0 != 27 || b1 != 91 || b2 != 65 || result == 1000
+  ens b0 != 27 || b1 != 91 || b2 != 66 || result == 1001
+  ens b0 != 27 || b1 != 91 || b2 != 67 || result == 1002
+  ens b0 != 27 || b1 != 91 || b2 != 68 || result == 1003
+  ens result <= 1003
+  fx  pure
+{
+  if b0 == 27 {
+    if b1 == 91 {
+      if b2 >= 65 {
+        if b2 <= 68 {
+          1000 + (b2 - 65)
+        } else {
+          0
+        }
+      } else {
+        0
+      }
+    } else {
+      0
+    }
+  } else {
+    if b0 >= 32 {
+      if b0 <= 126 {
+        b0
+      } else {
+        if b0 == 127 {
+          127
+        } else {
+          0
+        }
+      }
+    } else {
+      if b0 == 17 {
+        17
+      } else {
+        if b0 == 127 {
+          127
+        } else {
+          0
+        }
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// THE MINIMAL TRUSTED SYSCALL BOUNDARY (L1 / extern-C, self-contained).
+// ---------------------------------------------------------------------------
+
+// Put the terminal into raw mode (termios: clear ICANON/ECHO so each keystroke
+// reaches the editor live, no line buffering, no echo) via extern-C
+// tcgetattr/tcsetattr (libc is linked through std — self-contained, no `stty`).
+// Returns a status (0 = ok / not-a-TTY no-op, 1 = error). Trusted-by-fiat (you
+// cannot prove the kernel); the foreign body handles a non-TTY stdin gracefully
+// (no crash when piped). #57-seccomp-confined.
+#[boundary("os::raw_mode_on")] fn raw_mode_on() -> u64
   req true
   ens result <= 1
   fx  write(output)
   ;
 
-// The event loop: read a keystroke, dispatch it to a PROVEN edit op, render,
-// repeat until Ctrl-Q (byte 17) or EOF (>= 256). This loop is the honest
-// `fx diverge` seam — an event loop is non-terminating by design — and it
-// reads/writes/allocates, so it carries the full effect row. The edit ops it
-// calls (insert_str / backspace) are the L3-proven total functions: the
-// loop's correctness rests on their proofs.
+// Restore the terminal's original mode (the saved termios). MUST run on exit —
+// the editor's quit path calls this so the terminal is never left in raw mode.
+#[boundary("os::raw_mode_off")] fn raw_mode_off() -> u64
+  req true
+  ens result <= 1
+  fx  write(output)
+  ;
+
+// Read one keystroke from stdin, returning the raw bytes PACKED into a u64 for
+// `decode`: byte b0 in bits 0..8, b1 in bits 9..17, b2 in bits 18..26 (each
+// field holds 0..256, or the 256 EOF sentinel). A plain key reads 1 byte (b1 =
+// b2 = 0); an ESC (0x1b) reads the 2-byte arrow tail (b1, b2). The closed
+// outcome set is honest — the world produces bytes or EOF, never more. Each field
+// holds 0..256 (the 256 EOF sentinel included), so the packed maximum is
+// 256 + (256<<9) + (256<<18) = 67_240_192; the ens bounds it by the field width
+// 2^27-1 = 134_217_727 (every value packed into bits 0..27 fits) — an HONEST
+// boundary bound, never a false ceiling. Trusted, #57-confined to the `read`
+// syscall set.
+#[boundary("os::read_key_raw")] fn read_key_raw() -> u64
+  req true
+  ens result <= 134_217_727
+  fx  read(input)
+  ;
+
+// Write the rendered frame String to stdout (and flush). Returns a status u64
+// (0 = ok, 1 = I/O error). Trusted, #57-confined to the `write` syscall set.
+#[boundary("os::write_frame")] fn write_frame(s: String) -> u64
+  req true
+  ens result <= 1
+  fx  write(output)
+  ;
+
+// ---------------------------------------------------------------------------
+// THE EVENT LOOP `run` (L1 — the honest `fx diverge` seam).
+// ---------------------------------------------------------------------------
+
+// The interactive loop: enter raw mode; then read a keystroke, DECODE it (the
+// L3-verified `decode`), dispatch the decoded code to the L3-verified edit ops,
+// build the frame (the L3-verified `render_frame`), write it, and repeat until
+// Ctrl-Q (decode -> 17) breaks the loop; finally restore the terminal
+// (raw_mode_off runs on the quit path). This loop is the honest `fx diverge`
+// seam — an event loop is non-terminating by design — and it reads/writes/
+// allocates, so it carries the full effect row. The LOGIC it drives (decode,
+// render_frame, insert_str/backspace/move_left/move_right) is the L3-proven
+// core: the loop's correctness rests on those proofs.
 fn run() -> u64
   req true
-  ens result <= 256
+  ens result <= 1
   fx  read(input), write(output), alloc, diverge
 {
+  let entered: u64 = raw_mode_on();
   let mut b: Buffer = Buffer { text: "", cursor: 0 };
-  let mut quit: u64 = 0;
-  while quit == 0
-    inv b.text.len() <= 1_000_000
+  while true
+    inv b.text.len() <= 900_000
     dec 1
   {
-    let k: u64 = read_key();
-    if k == 17 { quit = 1; }
+    let packed: u64 = read_key_raw();
+    let b0: u64 = packed % 512;
+    let b1: u64 = (packed / 512) % 512;
+    let b2: u64 = (packed / 262_144) % 512;
+    let k: u64 = decode(b0, b1, b2);
+    if k == 17 {
+      break;
+    }
     if k == 127 {
       if b.cursor > 0 { b = backspace(b); }
     }
-    if k < 17 {
-      quit = quit;
+    if k == 1003 {
+      if b.cursor > 0 { b = move_left(b); }
     }
-    if k > 17 {
-      if k < 127 {
-        if b.text.len() + 1 <= 1_000_000 { b = insert_str(b, key_str(k)); }
+    if k == 1002 {
+      if b.cursor < b.text.len() { b = move_right(b); }
+    }
+    if k >= 32 {
+      if k <= 126 {
+        if b.text.len() + 1 <= 900_000 { b = insert_str(b, String::from_byte(k)); }
       }
     }
-    if k > 127 {
-      quit = 1;
-    }
-    let snapshot: String = b.text.slice(0, b.text.len());
-    let shown: u64 = render(snapshot);
+    let frame: String = render_frame(&b);
+    let shown: u64 = write_frame(frame);
   }
-  quit
+  let restored: u64 = raw_mode_off();
+  0
 }

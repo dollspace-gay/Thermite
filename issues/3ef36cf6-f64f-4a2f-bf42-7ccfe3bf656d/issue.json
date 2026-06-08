@@ -2,11 +2,12 @@
   "uuid": "3ef36cf6-f64f-4a2f-bf42-7ccfe3bf656d",
   "display_id": 148,
   "title": "Divergence: thermite-lower::lower_inv_operand misses the cast-LT paren fix (struct type-invariant) — `} inv (x as u32) < cap` mis-parses as a generic (the #146 class, unfixed on the struct-inv path); forge check → L0 `expected ,`",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T20:18:16.278628547Z",
-  "updated_at": "2026-06-08T20:18:28.088807199Z",
+  "updated_at": "2026-06-08T20:33:42.191983099Z",
+  "closed_at": "2026-06-08T20:33:42.191983099Z",
   "labels": [
     "blocker"
   ]

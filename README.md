@@ -108,9 +108,28 @@ agent needs to work the repo **ships in the repo**:
 - **`.claude/agents/acto-*.md`** — the four sub-agents below, auto-discovered by Claude
   Code as the `acto-doc-author` / `acto-builder` / `acto-critic` / `acto-fixer`
   subagent types (dispatch them with the Task/Agent tool — no setup needed).
-- **`tooling/` + `.claude/hooks/`** — the spec-discipline gate (a routed file can't be
-  edited until its `.design/` doc exists) and the anti-pattern gate (no stubs/TODOs),
-  enforced as hooks. A `.crosslink/` issue must be active before any edit.
+- **`tooling/`** (tracked — ships + fires on a fresh clone) — the enforcement layer:
+  the **spec-discipline gate** (`spec-discipline.py`: a routed file can't be edited
+  until its `.design/` doc exists), the **anti-pattern gate** (`anti-pattern-gate.py`:
+  no stubs/TODOs), and the **route table** (`spec-routes.toml`: which file maps to
+  which design doc). `.claude/settings.json` (also tracked) wires these into Claude
+  Code's `PreToolUse`/`PostToolUse` events, so they enforce automatically — no setup.
+- **`.claude/hooks/`** (gitignored — environment infra, *not* project source) — the
+  crosslink issue-tracking + session machinery (`work-check.py` = an active issue is
+  required before any edit, plus session/heartbeat/prompt hooks). These are regenerated
+  by `crosslink init` and depend on the `crosslink` CLI + the `.crosslink/` DB, so they
+  ship with the *harness*, not the repo. Every hook in `settings.json` is guarded with
+  `if [ -f "$HOOK" ]` — so a clone **without** crosslink degrades them to no-ops while
+  the `tooling/` gates still fire.
+
+### Setting up a fresh clone
+
+The verification gates work immediately (`tooling/` + `settings.json` are tracked). To
+also get the crosslink issue-tracking discipline (the `acto-*` agents assume it), install
+the `crosslink` CLI and run `crosslink init` at the repo root —
+it regenerates `.claude/hooks/` + the `.crosslink/` DB and leaves the tracked
+`settings.json` (with its `tooling/` wiring) intact. Without it, you can still build and
+verify; you just won't get the issue-before-edit enforcement.
 
 ### The four roles
 

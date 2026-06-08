@@ -1,0 +1,10 @@
+{
+  "uuid": "c0a6700e-f62d-4ee7-8913-a65040fe6d59",
+  "issue_uuid": "77aa5998-e4e1-4f54-8c2b-f12b6d0901bd",
+  "author": "Yffe",
+  "content": "Plan: remove examples/editor/run.sh; update README How-to-run to the standalone binary (forge build --out ./nano; run ./nano directly — self-sets raw mode, no script).",
+  "created_at": "2026-06-08T02:01:33.522030308Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/36ZNbCnolqVBtW82tUMMhFvDspzR17y5NdNxmmkzIRtVtff31PyKjahOwfyDMQTBERW5FrzNpJqrZ+Da0DWCA=="
+}

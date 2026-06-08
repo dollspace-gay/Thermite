@@ -1,0 +1,10 @@
+{
+  "uuid": "8fe83553-fdb2-4af6-bca6-0f2edee3e624",
+  "issue_uuid": "3ef36cf6-f64f-4a2f-bf42-7ccfe3bf656d",
+  "author": "Yffe",
+  "content": "Failing test pinned at thermite-lower/tests/divergence_struct_inv_cast_lt.rs::struct_invariant_cast_lt_is_parenthesized (#[ignore]'d, blocker #148). Repro: `struct Gauge { x: u64, cap: u64, } inv (x as u32) < cap` → thermite_lower::lower emits the bare `self.x as u32 < self.cap`; forge check → L0 `error: expected ,` (the #146 generic mis-parse). Root cause: lower_inv_operand (the struct type-invariant operand parenthesizer, REQ-8 well_formed path) lacks the cast-< paren guard that lower_binary_operand got in 167b9f4 (is_lt_leading). Same class as #146, separate code path. lower_binary_operand-path clauses (fn req/ens/loop-inv, what forge tv checks) ARE fixed — verified (x as u32) < 33 parenthesizes there.",
+  "created_at": "2026-06-08T20:19:18.393795208Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkK6LBRkf7LkMzChsjRqRqUK0qd0VGjIHm/ozRtZJXgPx8T4j9Mm9Iwq3ve1ClIwMPwuL5YwsrDQOiYssyLeOBg=="
+}

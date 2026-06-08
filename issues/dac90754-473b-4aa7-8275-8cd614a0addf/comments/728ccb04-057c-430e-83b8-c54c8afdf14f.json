@@ -1,0 +1,10 @@
+{
+  "uuid": "728ccb04-057c-430e-83b8-c54c8afdf14f",
+  "issue_uuid": "dac90754-473b-4aa7-8275-8cd614a0addf",
+  "author": "Yffe",
+  "content": "Plan: author .design/verified/contract-tv.md — a new thermite-tv crate (deps: thermite-syntax + thermite-spec ONLY, never thermite-lower, so N-version independence is a compile constraint) with an independent reference encoder (re-implements the spec rewrites slice->@/method->spec_*/cast->nat/binop; reuses the frozen REGISTRY.verus_l3 as combinator ground truth) + a per-clause Z3 equivalence obligation (P_prod <==> P_ref). GROUNDED: faithful->verified, ==/<= + #127 byteview + combinator-predicate infidelity -> counterexample. Off-corpus generator (REQ-3) escapes the corpus bound. Honest N-version framing (evidence not proof). Scope = contract sublanguage only (body/term TV is step 2). Blockers #140-#144.",
+  "created_at": "2026-06-08T18:19:48.947171801Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAhVrBVC1TM5UyvyQJc3wB80UjQZ0/QNWTH0Gr00iGBie5mmE5+I8uaHK6KjukOQ4O6wjxFVWdq06F/93vddfmBQ=="
+}

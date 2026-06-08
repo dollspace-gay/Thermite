@@ -1,0 +1,10 @@
+{
+  "uuid": "8aecfd35-4e75-4ec9-9fc8-c725205ed07c",
+  "display_id": 130,
+  "title": "Divergence: thermite-lower::lower emits DOUBLE DEFINITION (E0428) when a user String spec fn shadows a generated name AND the generated module is genuinely used",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T02:13:11.544830635Z",
+  "updated_at": "2026-06-08T02:13:11.544830635Z"
+}

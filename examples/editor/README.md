@@ -79,10 +79,28 @@ Project assurance: **L1**.
 
 ## How to run it
 
+Build it once to a named path with `--out`, then run that **standalone binary
+directly** — it self-sets raw mode via its own extern-C `termios` boundary (no
+`stty`, no wrapper script):
+
 ```sh
-forge build examples/editor/editor.th --entry run --no-sandbox
-# then run the produced binary, feeding keystrokes on stdin:
-printf 'ab\x1b[DX\x7f\x11' | <the-built-binary>
+# build the standalone editor binary (one time):
+cargo run -q -p forge -- build examples/editor/editor.th --entry run --no-sandbox --out ./nano
+
+# run it INTERACTIVELY in a real terminal — type, arrows move, Ctrl-S saves, Ctrl-Q quits:
+THERMITE_EDITOR_FILE=mydoc.txt ./nano
+```
+
+`./nano` is a self-contained executable: it puts the terminal in raw mode itself,
+loads `THERMITE_EDITOR_FILE` (empty/missing → a fresh buffer), and restores the
+terminal on Ctrl-Q. (`--no-sandbox` is a *build* flag — the seccomp set doesn't yet
+grant the `ioctl` the terminal needs, crosslink #106; the binary is otherwise
+self-contained. The proof and the compiled code are identical either way.)
+
+You can also drive it non-interactively by piping keystrokes (deterministic):
+
+```sh
+printf 'ab\x1b[DX\x7f\x11' | ./nano    # a, b, LEFT, X (splice -> aXb), Backspace, Ctrl-Q
 ```
 
 The keystrokes are `a`, `b`, then a **LEFT arrow** (`ESC [ D` = `\x1b[D`, decode →

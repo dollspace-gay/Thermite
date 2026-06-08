@@ -1,0 +1,10 @@
+{
+  "uuid": "693b8404-38b7-4459-bfdd-74728d51b694",
+  "display_id": 155,
+  "title": "exec-tv REQ-4: the teeth (thermite-tv/tests/exec_teeth.rs) — faithful exec expr VERIFIES; injected #122 cast-paren (E0308/wrong value), #146 cast-< (expected  mis-parse), and a wrapping/overflow-distinguishing infidelity each produce a verus error/counterexample. R-CHAR-3.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:36.659211434Z",
+  "updated_at": "2026-06-08T22:59:36.659211434Z"
+}

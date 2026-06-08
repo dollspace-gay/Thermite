@@ -32,12 +32,12 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-1 (independent reference encoder) | SHIPPED | `pub fn ref_contract_pred` here; non-test consumer `thermite_tv::obligation::equivalence_obligation` (`obligation.rs`); verified by `thermite-tv/tests/teeth.rs` F1–F4 against real verus (faithful VERIFIES, infidel COUNTEREXAMPLE). Depends on `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower` (`Cargo.toml`), so the independence is a compile constraint (AC-6). |
+//! | REQ-1 (independent reference encoder) | SHIPPED | `pub fn ref_contract_pred` here; non-test consumer `thermite_tv::obligation::equivalence_obligation` (`obligation.rs`); verified by `thermite-tv/tests/teeth.rs` F1–F4 against real verus (faithful VERIFIES, infidel COUNTEREXAMPLE). Depends on `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower` (`Cargo.toml`), so the independence is a compile constraint (AC-6). **#150 coverage extension:** `encode_match`/`encode_pattern` independently encode an `Expr::Match`-in-ens (the C7 payload-in-contract `Some/None/Ok/Err` match, mirroring production's `lower_match` shape); `encode_string_byteview` (keyed on the `string_bound` receiver set) re-implements production's `recv_is_string` byte-view rewrite (`.len()`→`spec_len()`, `.byte_at(i)`→`spec_byte_at(<i>)`); `encode_map_accessor` (keyed on `map_bound`) rewrites `.contains_key(k)`→`spec_contains_key(k)` / `.len()`→`len()`; `encode_len_receiver` keeps a plain slice `.len()` BARE (matching production's un-viewed slice `.len()`). Non-test consumer: `forge::contract_tv::tv_file` (the corpus phase, via `equivalence_obligation`). GROUNDED under real verus: binary_search Option-match-ens + string_demo byte-view + map_kv `contains_key`/`is None` all Checked + Faithful (`forge/tests/contract_tv_conformance.rs`). |
 
 use std::collections::BTreeSet;
 use std::fmt;
 
-use thermite_syntax::ast::{BinOp, Expr, IndexArg, UnaryOp};
+use thermite_syntax::ast::{BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
 
 /// An honest failure to encode a construct outside the frozen contract
 /// sublanguage (REQ-1). The reference encoder NEVER panics and NEVER silently
@@ -89,6 +89,24 @@ pub struct RefCtx {
     /// A name NOT in this set that is used in a slice position gets the explicit
     /// `@` suffix (the `&[T]`→`Seq` view at use sites).
     seq_bound: BTreeSet<String>,
+    /// Names bound in the obligation as the `String` wrapper (`&TString`/`TString`)
+    /// — a `String`/`&String` param (#150 gap #2). For such a receiver the
+    /// byte-view dispatch is the wrapper's SPEC fns, NOT a `Seq<u8>` index:
+    /// `.len()`→`.spec_len()`, `.byte_at(i)`→`.spec_byte_at(i as int)`. This
+    /// RE-implements production's `String`-receiver spec-position rewrite
+    /// (`lower.rs`: `recv_is_string` → `r.spec_len()` / `r.spec_byte_at(i as int)`)
+    /// INDEPENDENTLY, so a misdispatch (a wrong index, the #127 class) is caught.
+    /// A `String`-bound receiver is emitted BARE (`s`, NOT `s@`) — the wrapper
+    /// spec fns take `&self`, not a `Seq` view.
+    string_bound: BTreeSet<String>,
+    /// Names bound in the obligation as the `Map` wrapper (`TMap…`) — a
+    /// `Map<K,V>`/`&Map<K,V>` param/result (#150 gap #3). For such a receiver the
+    /// membership accessor rewrites to the wrapper SPEC fn: `.contains_key(k)`→
+    /// `.spec_contains_key(k)`, `.len()`→`.len()` (the wrapper `spec fn len -> nat`).
+    /// This RE-implements production's `m.contains_key(k)`→`m.spec_contains_key(k)`
+    /// spec rewrite (`lower.rs`) INDEPENDENTLY (the wrapper spec fns are the shared
+    /// frozen ground truth, in the preamble). The receiver is emitted BARE.
+    map_bound: BTreeSet<String>,
     /// Names that are a bounded integer (`u64`/`u32`/`usize`) and MUST be coerced
     /// `as nat` when they appear as a top-level operand of a comparison against a
     /// `nat`-valued term (a `nat`-returning spec-fn call). This RE-implements,
@@ -114,8 +132,36 @@ impl RefCtx {
     {
         RefCtx {
             seq_bound: names.into_iter().map(Into::into).collect(),
+            string_bound: BTreeSet::new(),
+            map_bound: BTreeSet::new(),
             nat_coerce: BTreeSet::new(),
         }
+    }
+
+    /// Declare names bound as the `Map` wrapper (`TMap…`) — a `Map<K,V>` param/
+    /// result whose spec-position membership accessor dispatches to the wrapper SPEC
+    /// fn (`.contains_key(k)`→`.spec_contains_key(k)`), MATCHING production (#150 gap
+    /// #3; see [`RefCtx::map_bound`]).
+    pub fn with_map_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.map_bound = names.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Declare names bound as the `String` wrapper (`&TString`/`TString`) — a
+    /// `String`/`&String` param whose spec-position byte-view dispatches to the
+    /// wrapper SPEC fns (`.spec_len()`/`.spec_byte_at(i as int)`), NOT a `Seq<u8>`
+    /// index (#150 gap #2; see [`RefCtx::string_bound`]).
+    pub fn with_string_bound<I, S>(mut self, names: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.string_bound = names.into_iter().map(Into::into).collect();
+        self
     }
 
     /// Declare bounded-int names that must be coerced `as nat` when compared
@@ -131,6 +177,14 @@ impl RefCtx {
 
     fn is_seq_bound(&self, name: &str) -> bool {
         self.seq_bound.contains(name)
+    }
+
+    fn is_string_bound(&self, name: &str) -> bool {
+        self.string_bound.contains(name)
+    }
+
+    fn is_map_bound(&self, name: &str) -> bool {
+        self.map_bound.contains(name)
     }
 
     fn needs_nat_coerce(&self, name: &str) -> bool {
@@ -202,6 +256,7 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
             let s = encode(scrutinee, ctx)?;
             Ok(format!("({s} is {})", variant.join("::")))
         }
+        Expr::Match { scrutinee, arms } => encode_match(scrutinee, arms, ctx),
         other => Err(RefEncodeError::Unsupported(node_kind(other))),
     }
 }
@@ -548,11 +603,27 @@ fn encode_method_call(
     args: &[Expr],
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
-    let recv = encode_receiver(receiver, ctx)?;
+    // A `String`/`&String` receiver (#150 gap #2): the byte-view dispatch is the
+    // wrapper SPEC fns (`.spec_len()` / `.spec_byte_at(i as int)`), keyed on the
+    // RECEIVER being a `string_bound` bare path — MIRRORING production's
+    // `recv_is_string` arm (`lower.rs`), which a `String`-param `s.byte_at(0)` /
+    // `s.len()` in an `ens` reaches. The receiver is emitted BARE (`s`), not `s@`:
+    // the wrapper spec fns take `&self`.
+    if let Expr::Path(segs) = receiver {
+        if segs.len() == 1 && ctx.is_string_bound(&segs[0]) {
+            return encode_string_byteview(&segs[0], name, args, ctx);
+        }
+        if segs.len() == 1 && ctx.is_map_bound(&segs[0]) {
+            return encode_map_accessor(&segs[0], name, args, ctx);
+        }
+    }
+
     match name {
         // The byte-view accessor (#127): `s.byte_at(i)` is the i-th byte of the
         // sequence view — `recv[i]`. F3's teeth bite here: a production
-        // misdispatch to index `1` for source index `0` differs from this.
+        // misdispatch to index `1` for source index `0` differs from this. This is
+        // the `Seq<u8>`-bound byte-view (a #127/#147 `Seq`-receiver), distinct from
+        // the `String`/TString wrapper byte-view above (#150 gap #2).
         "byte_at" => {
             if args.len() != 1 {
                 return Err(RefEncodeError::Unsupported(format!(
@@ -560,16 +631,24 @@ fn encode_method_call(
                     args.len()
                 )));
             }
+            let recv = encode_receiver(receiver, ctx)?;
             let idx = encode_index_value(&args[0], ctx)?;
             Ok(format!("{recv}[{idx}]"))
         }
-        // The length accessor: `s.len()` over the sequence view.
+        // The length accessor `s.len()`. A `Seq`-bound receiver views as `recv.len()`
+        // (the `Seq::len()`); a plain SLICE-param receiver (`&[T]`, NOT seq-bound)
+        // emits the BARE `recv.len()` — matching production, which keeps a slice
+        // `.len()` un-viewed in spec position (`lower.rs`: "a slice `.len()` in spec
+        // position is accepted by Verus on the slice (`haystack.len()`); the `@` view
+        // is only needed where a `Seq` operation is required"). So the receiver here
+        // is the BARE path (no `@` suffix), NOT `encode_receiver`'s viewed form.
         "len" => {
             if !args.is_empty() {
                 return Err(RefEncodeError::Unsupported(
                     "len with arguments".to_string(),
                 ));
             }
+            let recv = encode_len_receiver(receiver, ctx)?;
             Ok(format!("{recv}.len()"))
         }
         // A sub-slice view `s.slice(lo, hi)` → `recv.subrange(lo as int, hi as int)`.
@@ -580,6 +659,7 @@ fn encode_method_call(
                     args.len()
                 )));
             }
+            let recv = encode_receiver(receiver, ctx)?;
             let lo = encode_index_value(&args[0], ctx)?;
             let hi = encode_index_value(&args[1], ctx)?;
             Ok(format!("{recv}.subrange({lo}, {hi})"))
@@ -588,6 +668,218 @@ fn encode_method_call(
             "spec method `.{other}()` (not in the frozen byte-view set)"
         ))),
     }
+}
+
+/// Encode a `String`/`&String`-receiver byte-view method (#150 gap #2). The
+/// receiver `s` is a `string_bound` name (bound `&TString`/`TString` in the
+/// obligation), so its spec-position byte-view rewrites to the wrapper SPEC fns —
+/// EXACTLY production's `recv_is_string` arm (`lower.rs`):
+///
+/// - `.len()` → `s.spec_len()` (the `nat`-valued spec length; the exec `len`
+///   returns `u64` and cannot be named in a contract).
+/// - `.byte_at(i)` → `s.spec_byte_at(<i>)` where an integer LITERAL stays bare
+///   (Verus coerces it into the `int` param, matching the golden
+///   `string_demo.verus.rs` `s.spec_byte_at(0)`) and a non-literal index is cast
+///   `as int` (no implicit `usize`→`int` in spec position) — the SAME literal/cast
+///   split production applies.
+///
+/// `.slice(..)` over a `String` is NOT in the frozen contract byte-view set (the
+/// `TString` wrapper has no `spec_slice` — `slice` is an EXEC constructor, never
+/// named in a contract; no corpus clause uses it) → an honest [`RefEncodeError`],
+/// never a silent wrong encoding.
+fn encode_string_byteview(
+    recv: &str,
+    name: &str,
+    args: &[Expr],
+    ctx: &RefCtx,
+) -> Result<String, RefEncodeError> {
+    match name {
+        "len" => {
+            if !args.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "String len with arguments".to_string(),
+                ));
+            }
+            Ok(format!("{recv}.spec_len()"))
+        }
+        "byte_at" => {
+            if args.len() != 1 {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "String byte_at/{} (expected exactly 1 arg)",
+                    args.len()
+                )));
+            }
+            // An integer literal flows into the `int` param directly (Verus coerces
+            // it), matching production's golden `s.spec_byte_at(0)`; a non-literal
+            // index is cast `as int` via `encode_index_value`.
+            let idx = match &args[0] {
+                Expr::IntLit { value, .. } => value.to_string(),
+                other => encode_index_value(other, ctx)?,
+            };
+            Ok(format!("{recv}.spec_byte_at({idx})"))
+        }
+        other => Err(RefEncodeError::Unsupported(format!(
+            "spec method `.{other}()` on a String receiver (the frozen String \
+             byte-view is `.len()`/`.byte_at(i)`; `.slice(..)` is an exec \
+             constructor, not a contract spec fn)"
+        ))),
+    }
+}
+
+/// Encode a `Map`-receiver spec-position accessor (#150 gap #3). The receiver `m`
+/// is a `map_bound` name (bound `TMap…` in the obligation), so its membership/length
+/// accessor rewrites to the wrapper SPEC fns — EXACTLY production's `lower.rs` Map
+/// arm:
+///
+/// - `.contains_key(k)` → `m.spec_contains_key(k)` — the `exists|j| data@[j].0 == k`
+///   membership. The key arg lowers PLAINLY (a Copy key value, NO `as int` cast —
+///   `spec_contains_key` takes the surface key type), matching production.
+/// - `.len()` → `m.len()` — the wrapper `spec fn len(&self) -> nat`, unchanged.
+///
+/// `.get(_)`/`.insert(_)` are NOT spec-rewritten (production names `get` only via a
+/// `match`-in-`ens` over the result, and `insert` is exec) → an honest
+/// [`RefEncodeError`], never a silent wrong encoding.
+fn encode_map_accessor(
+    recv: &str,
+    name: &str,
+    args: &[Expr],
+    ctx: &RefCtx,
+) -> Result<String, RefEncodeError> {
+    match name {
+        "contains_key" => {
+            if args.len() != 1 {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "contains_key/{} (expected exactly 1 arg)",
+                    args.len()
+                )));
+            }
+            let arg = encode(&args[0], ctx)?;
+            Ok(format!("{recv}.spec_contains_key({arg})"))
+        }
+        "len" => {
+            if !args.is_empty() {
+                return Err(RefEncodeError::Unsupported(
+                    "Map len with arguments".to_string(),
+                ));
+            }
+            Ok(format!("{recv}.len()"))
+        }
+        other => Err(RefEncodeError::Unsupported(format!(
+            "spec method `.{other}()` on a Map receiver (the frozen Map spec \
+             accessors are `.contains_key(k)`/`.len()`; `.get`/`.insert` are not \
+             contract spec-fn rewrite targets)"
+        ))),
+    }
+}
+
+/// Encode a `.len()` receiver: a `Seq`-bound name is its own view (`recv.len()`),
+/// and a plain SLICE-param bare path (`&[T]`, not seq-bound, not string-bound)
+/// emits the BARE name — production keeps a slice `.len()` UN-viewed in spec
+/// position (`haystack.len()`, NOT `haystack@.len()`), applying `@` only at a `Seq`
+/// op (index/subrange/combinator-arg). This is the dual of production's slice
+/// `.len()` rule. A non-path / non-slice receiver falls back to [`encode`].
+fn encode_len_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
+    if let Expr::Path(segments) = receiver {
+        if segments.len() == 1 {
+            return encode_path(segments);
+        }
+    }
+    encode(receiver, ctx)
+}
+
+/// Encode an `Expr::Match` in contract position (#150 gap #1; the C7 payload-in-
+/// contract `ens match result { Some(v) => <pred(v)>, None => <pred> }`, and the
+/// `Ok`/`Err` Result form). Production lowers a spec-context `match` to a Verus
+/// `match` EXPRESSION in the `ensures` (`tests/golden/lower/binary_search.verus.rs`,
+/// `option_result.verus.rs`):
+///
+/// ```text
+/// match result {
+///     Some(i) => i < haystack.len() && haystack@[i as int] == needle,
+///     None => forall_in(haystack@, |x: u32| x != needle),
+/// }
+/// ```
+///
+/// We RE-implement that shape INDEPENDENTLY: the scrutinee is encoded by the same
+/// recursion, each arm's PATTERN is encoded ([`encode_pattern`]) and each arm's
+/// BODY is encoded by the SAME independent recursion (so a payload-predicate
+/// infidelity — a wrong arm body, a swapped `Some`/`None` — is caught). The
+/// pattern-bound payload var (`i`/`v`/`e`) is in scope in the body exactly as
+/// production binds it, so `haystack[i]` encodes to `haystack@[i as int]` (the
+/// pattern var as an `int` index) MATCHING production. The brace/arm layout
+/// mirrors production's `lower_match`. A guard arm emits `pat if <guard> => body`
+/// (the C10 form). NEVER a panic / silent wrong encoding.
+fn encode_match(
+    scrutinee: &Expr,
+    arms: &[MatchArm],
+    ctx: &RefCtx,
+) -> Result<String, RefEncodeError> {
+    let s = encode(scrutinee, ctx)?;
+    let mut out = format!("match {s} {{\n");
+    for arm in arms {
+        let pat = encode_pattern(&arm.pattern)?;
+        let body = encode(&arm.body, ctx)?;
+        match &arm.guard {
+            Some(guard) => {
+                let g = encode(guard, ctx)?;
+                out.push_str(&format!("            {pat} if {g} => {body},\n"));
+            }
+            None => {
+                out.push_str(&format!("            {pat} => {body},\n"));
+            }
+        }
+    }
+    out.push_str("        }");
+    Ok(out)
+}
+
+/// Encode a contract-position match PATTERN independently of production's
+/// `lower_pattern` (#150 gap #1). The frozen contract-`match` covers the C7
+/// payload-in-contract patterns: the built-in `Option`/`Result` variants
+/// (`Some(x)`/`None`/`Ok(x)`/`Err(e)`, unqualified — Verus knows `Option`/`Result`,
+/// exactly as production's `qualify_variant_path` leaves a built-in unqualified),
+/// a binding (`x`), and a wildcard (`_`). A nested/struct/slice/or pattern, or a
+/// USER enum variant (which production would enum-qualify via its `variants` map —
+/// the reference has no such map, so qualifying it would risk a silent wrong
+/// encoding) is an honest [`RefEncodeError`].
+fn encode_pattern(pat: &Pattern) -> Result<String, RefEncodeError> {
+    match pat {
+        Pattern::Wildcard => Ok("_".to_string()),
+        Pattern::Binding(name) => Ok(name.clone()),
+        Pattern::Enum { path, fields } => {
+            let head = path.join("::");
+            // Only the built-in Option/Result variants are encodable unqualified
+            // (production leaves a built-in unqualified; a user variant would need
+            // the enum-qualification map we deliberately do not import).
+            if !is_builtin_variant(&head) {
+                return Err(RefEncodeError::Unsupported(format!(
+                    "match pattern over the user/non-built-in variant `{head}` \
+                     (the frozen contract-`match` covers the built-in \
+                     Some/None/Ok/Err payload patterns)"
+                )));
+            }
+            if fields.is_empty() {
+                Ok(head)
+            } else {
+                let mut fs = Vec::with_capacity(fields.len());
+                for f in fields {
+                    fs.push(encode_pattern(f)?);
+                }
+                Ok(format!("{head}({})", fs.join(", ")))
+            }
+        }
+        other => Err(RefEncodeError::Unsupported(format!(
+            "match pattern {other:?} (the frozen contract-`match` covers the \
+             built-in Some/None/Ok/Err payload patterns + bindings/wildcards)"
+        ))),
+    }
+}
+
+/// Is `head` a built-in `Option`/`Result` variant constructor (unqualified in
+/// Verus)? These are the only variants a contract-position `match` patterns over
+/// in the frozen sublanguage (#150 gap #1).
+fn is_builtin_variant(head: &str) -> bool {
+    matches!(head, "Some" | "None" | "Ok" | "Err")
 }
 
 /// Encode a method-call receiver. A bare slice/string param name takes its

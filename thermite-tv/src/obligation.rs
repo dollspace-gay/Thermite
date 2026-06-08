@@ -94,14 +94,34 @@ pub struct ObligationFrame {
     /// column) and the faithful obligation VERIFIES rather than failing on a
     /// spurious coercion mismatch.
     pub nat_coerce_params: Vec<String>,
+    /// The names of params bound as the `String` wrapper (`&TString`/`TString`) —
+    /// a `String`/`&String` param whose spec-position byte-view dispatches to the
+    /// wrapper SPEC fns (`.spec_len()`/`.spec_byte_at(i as int)`), NOT a `Seq<u8>`
+    /// index (#150 gap #2). The reference encoder reads this set (via
+    /// [`RefCtx::with_string_bound`]) so a `String`-param `s.byte_at(0)` encodes to
+    /// `s.spec_byte_at(0)`, MATCHING production's `recv_is_string` rewrite under the
+    /// same `&TString` binding.
+    pub string_params: Vec<String>,
+    /// The names of params bound as the `Map` wrapper (`TMap…`) — a `Map<K,V>`
+    /// param/result whose spec-position membership accessor dispatches to the
+    /// wrapper SPEC fn (`.contains_key(k)`→`.spec_contains_key(k)`), MATCHING
+    /// production (#150 gap #3). Read by the reference encoder via
+    /// [`RefCtx::with_map_bound`].
+    pub map_params: Vec<String>,
 }
 
 impl ObligationFrame {
     /// Build the [`RefCtx`] the reference encoder uses for this frame: the
-    /// `seq_params` are the names whose `@`-view is the identity.
+    /// `seq_params` are the names whose `@`-view is the identity; the
+    /// `string_params` are the `&TString`-bound names whose byte-view dispatches to
+    /// the wrapper spec fns (#150 gap #2); the `map_params` are the `TMap`-bound
+    /// names whose membership accessor dispatches to the wrapper spec fn (#150 gap
+    /// #3).
     fn ref_ctx(&self) -> RefCtx {
         RefCtx::with_seq_bound(self.seq_params.iter().cloned())
             .with_nat_coerce(self.nat_coerce_params.iter().cloned())
+            .with_string_bound(self.string_params.iter().cloned())
+            .with_map_bound(self.map_params.iter().cloned())
     }
 
     /// The Verus parameter list `name: type, …`.

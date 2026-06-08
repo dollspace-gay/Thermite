@@ -37,7 +37,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. |
+//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. **#150 whole-corpus totality:** `signature_frame` now binds the three previously-Skipped construct classes — `String`→`&TString` (`SpecType::Strng`, threaded as production's `strings`), `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires` weave), `Option`/`Result` params + result natively (`SpecType::Opt`/`Res`) — so the C7 `match`-in-ens, the String byte-view, and the Map/Option signature clauses all reach verus + discharge. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped/unverifiable; the 200-clause off-corpus run is TOTAL (0 skipped, the byte-view now over a `&TString` receiver `t`). |
 
 use std::path::Path;
 use std::process::Command;
@@ -215,11 +215,22 @@ fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut T
         let locals = collect_locals(body);
         let mut loop_frame = base_frame.clone();
         for (name, spec_ty) in &locals {
-            // A local seq/nat-coerce local extends the corresponding sets.
+            // A local seq/string/nat-coerce local extends the corresponding sets.
+            // A `Map`/`Option`/`Result` local is bound by its wrapper/native
+            // spelling (no extra set); a `Map` local weaves its `well_formed()` so a
+            // loop `inv` over `m.spec_contains_key(_)` is provable.
             match spec_ty {
                 SpecType::Seq(_) => loop_frame.seq_params.push(name.clone()),
+                SpecType::Strng => loop_frame.string_params.push(name.clone()),
                 SpecType::BoundedInt => loop_frame.nat_coerce_params.push(name.clone()),
-                SpecType::Bool => {}
+                SpecType::Map(_, _) => {
+                    let r = format!("{name}.well_formed()");
+                    loop_frame.req = Some(match loop_frame.req.take() {
+                        Some(existing) => format!("{existing}, {r}"),
+                        None => r,
+                    });
+                }
+                SpecType::Bool | SpecType::Opt(_) | SpecType::Res(_, _) => {}
             }
             loop_frame
                 .params
@@ -361,19 +372,36 @@ fn tv_clause(
     // against the `&[elem]` binding. nat_fns drive the `as nat` coercion.
     let slice_params = slice_param_names(base_frame);
     let slices: Vec<&str> = slice_params.iter().map(String::as_str).collect();
-    let p_production =
-        match thermite_lower::lower_contract_expr(&clause.expr, &slices, nat_fns, &[], &[], &[]) {
-            Ok(p) => p,
-            Err(e) => {
-                report.clauses.push(ClauseResult {
-                    label: label.to_string(),
-                    verdict: ClauseVerdict::Skipped {
-                        reason: format!("production lowering does not cover this clause: {e}"),
-                    },
-                });
-                return;
-            }
-        };
+    // The frame's `String` params (bound `&TString`, #150 gap #2) are threaded as
+    // production's `strings` so a `String`-receiver `.len()`/`.byte_at(i)` in the
+    // clause rewrites to the wrapper SPEC fns (`s.spec_len()`/`s.spec_byte_at(i as
+    // int)`) — production's `recv_is_string` arm — MATCHING the reference's
+    // `string_bound` dispatch. Without it production emits the bare exec `s.len()`
+    // (`u64`) vs the reference's `s.spec_len()` (`nat`) → a type-level Unverifiable.
+    let strings: Vec<&str> = base_frame
+        .string_params
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let p_production = match thermite_lower::lower_contract_expr(
+        &clause.expr,
+        &slices,
+        nat_fns,
+        &strings,
+        &[],
+        &[],
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            report.clauses.push(ClauseResult {
+                label: label.to_string(),
+                verdict: ClauseVerdict::Skipped {
+                    reason: format!("production lowering does not cover this clause: {e}"),
+                },
+            });
+            return;
+        }
+    };
 
     // The frame for THIS clause: the signature params + any `old(_)` params it uses.
     let mut frame = base_frame.clone();
@@ -416,30 +444,20 @@ pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, Forge
     // generator vocabulary) + `count_where` (the `nat`-returning combinator).
     let nat_fns = ["spec_sum", "count_where"];
 
+    // The off-corpus String byte-view receiver name (#150 gap #2). A generated
+    // `t.byte_at(i)`/`t.len()` clause is now CHECKED (not Skipped): `t` is threaded
+    // as production's `strings`, so production's `recv_is_string` rewrite emits
+    // `t.spec_byte_at(i as int)`/`t.spec_len()` — MATCHING the reference's
+    // `string_bound` dispatch (the frame names `t` in `string_params`). The TString
+    // wrapper is in the preamble (`generated_preamble`'s `touch_string` fn).
+    let strings = ["t"];
+
     let clauses = thermite_tv::generate_clauses(seed, n);
     let mut report = TvReport::default();
     for (i, clause) in clauses.iter().enumerate() {
         let label = format!("gen#{i}");
-        // A byte-view clause (`s.byte_at(i)`/`s.len()`) is reported Skipped HONESTLY
-        // (not a false faithful): faithful production byte-view lowering keys on a
-        // `&String` param + the TString wrapper, so framing it against the seq-based
-        // reference in one obligation needs the TString bridge (String/body-TV scope,
-        // #139 step 2). Its lowering fidelity is covered by the F3 teeth + the String
-        // corpus programs. Detect + skip BEFORE lowering so it never trips verus.
-        if references_byteview(clause) {
-            report.clauses.push(ClauseResult {
-                label,
-                verdict: ClauseVerdict::Skipped {
-                    reason: "byte-view clause — faithful production lowering needs a \
-                             &String param + the TString wrapper (String/body-TV scope, \
-                             #139 step 2); fidelity covered by the F3 teeth + String corpus"
-                        .to_string(),
-                },
-            });
-            continue;
-        }
         let p_production =
-            match thermite_lower::lower_contract_expr(clause, &[], &nat_fns, &[], &[], &[]) {
+            match thermite_lower::lower_contract_expr(clause, &[], &nat_fns, &strings, &[], &[]) {
                 Ok(p) => p,
                 Err(e) => {
                     report.clauses.push(ClauseResult {
@@ -487,6 +505,12 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
             ParamDecl::new("k", "int"),
             ParamDecl::new("result", "u64"),
             ParamDecl::new("old_acc", "u64"),
+            // The String byte-view receiver (#150 gap #2): `t: &TString`, so the
+            // generator's `t.byte_at(i)`/`t.len()` clauses dispatch to the wrapper
+            // SPEC fns on BOTH columns (production's `recv_is_string` rewrite + the
+            // reference's `string_bound` dispatch) — the off-corpus String-byteview
+            // coverage the corpus alone does not give.
+            ParamDecl::new("t", "&TString"),
         ],
         // No enclosing `req`: a generated clause is equivalence-checked for ALL
         // inputs (the strongest faithfulness check). A `Seq` index in spec position
@@ -495,6 +519,8 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
         req: None,
         seq_params: vec!["xs".to_string(), "ys".to_string(), "s".to_string()],
         nat_coerce_params: vec!["result".to_string(), "old_acc".to_string()],
+        string_params: vec!["t".to_string()],
+        map_params: vec![],
     }
 }
 
@@ -526,6 +552,18 @@ fn touch(xs: &[u32], ys: &[u32], n: usize) -> bool
   fx  pure
 {
   true
+}
+
+// #150 gap #2: a `String`-param fn so `emit_string_wrapper` materializes the
+// `TString` wrapper (its `spec_len`/`spec_byte_at` spec fns) into the preamble —
+// the off-corpus String byte-view obligation binds `t: &TString` and dispatches
+// `t.byte_at(i)`/`t.len()` to those spec fns on BOTH columns.
+fn touch_string(t: String) -> u64
+  req t.len() > 0
+  ens result == t.byte_at(0)
+  fx  pure
+{
+  t.byte_at(0)
 }
 ";
     let parsed = thermite_syntax::parse(src);
@@ -614,6 +652,15 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     // its OWN `Seq<_>`-bound locals (the loop-local seq-bound identity).
     let seq_params = Vec::new();
     let mut nat_coerce_params = Vec::new();
+    let mut string_params = Vec::new();
+    let mut map_params = Vec::new();
+    // The `requires` clauses the obligation frame must thread so production's
+    // signature path weave typechecks: a `Map`/struct param weaves `well_formed()`
+    // (`is_map_param_ty` in production), so a `m.spec_contains_key(k)` over the
+    // wrapper has the capacity/key-uniqueness invariant in scope (#150 gap #3). The
+    // reference + production agree on the predicate; the `requires` keeps both
+    // columns provable rather than spuriously failing on a missing invariant.
+    let mut reqs: Vec<String> = Vec::new();
 
     for p in &f.params {
         let spec_ty = spec_type_of(&p.ty)?;
@@ -625,8 +672,25 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             // proves them equivalent. (Under the old `Seq` binding the indexed
             // `xs@.subrange(..)` was a type error → Unverifiable.)
             SpecType::Seq(_) => {}
+            // A `String` param is bound `&TString` (#150 gap #2) + named in
+            // `string_params` so the reference dispatches its byte-view to the
+            // wrapper spec fns (matching production's `recv_is_string` rewrite).
+            SpecType::Strng => string_params.push(p.name.clone()),
             SpecType::BoundedInt => nat_coerce_params.push(p.name.clone()),
             SpecType::Bool => {}
+            // A `Map` param (#150 gap #3) is bound as the `TMap` wrapper; production
+            // weaves `well_formed()` for it (`is_map_param_ty`), so the obligation
+            // threads the SAME `requires` to keep the spec_contains_key membership
+            // provable. The `spec_contains_key` rewrite is RE-implemented in the
+            // reference encoder (the wrapper spec fn is the shared frozen ground
+            // truth, in the preamble).
+            SpecType::Map(_, _) => {
+                map_params.push(p.name.clone());
+                reqs.push(format!("{}.well_formed()", p.name));
+            }
+            // An `Option`/`Result` param is bound as the native Verus type (#150
+            // gap #3); no invariant weave (the enum carries its own discriminant).
+            SpecType::Opt(_) | SpecType::Res(_, _) => {}
         }
         params.push(ParamDecl::new(
             p.name.clone(),
@@ -634,12 +698,12 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         ));
     }
 
-    // `result` — bound when the return is non-unit AND framable (so an `ens` may
-    // mention it). An UNFRAMED return type (Option/Result/Map/struct/enum) does NOT
-    // bail the whole signature: it just omits `result`, so a `req`/`inv`/`dec`
-    // clause that does not reference `result` still frames + checks (a clause that
-    // DOES reference `result` is then Skipped by the encoder — honest). A param of
-    // an unframed type, by contrast, DOES bail (every clause may reference it).
+    // `result` — bound when the return is non-unit AND framable. As of #150 the
+    // framable RETURN set INCLUDES `Option`/`Result`/`Map` (the construct classes
+    // this iteration covers): an `ens match result { … }` (binary_search), an `ens
+    // result is None` (map_kv `lookup_absent`), and an `ens result.contains_key(k)`
+    // (map_kv `build_one`) now BIND `result` and discharge, rather than dropping it
+    // (Skipped). A struct/enum return still drops `result` (body-TV scope).
     if !matches!(f.ret, Type::Unit) {
         if let Some(ret_ty) = spec_type_of(&f.ret) {
             match &ret_ty {
@@ -648,18 +712,37 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
                 // the same rule as a slice param) — NOT seq-bound; both columns
                 // emit `result@`.
                 SpecType::Seq(_) => {}
+                SpecType::Strng => string_params.push("result".to_string()),
                 SpecType::Bool => {}
+                // A `Map` result (#150 gap #3): production proves `result.well_formed()`
+                // (the constructed map is well-formed), so a `result.spec_contains_key(k)`
+                // ens has the invariant in scope. The obligation threads it as a
+                // `requires` so the equivalence obligation (which assumes the ens
+                // context) is provable.
+                SpecType::Map(_, _) => {
+                    map_params.push("result".to_string());
+                    reqs.push("result.well_formed()".to_string());
+                }
+                SpecType::Opt(_) | SpecType::Res(_, _) => {}
             }
             params.push(ParamDecl::new("result", ret_ty.verus_param_spelling()));
         }
     }
 
+    let req = if reqs.is_empty() {
+        None
+    } else {
+        Some(reqs.join(", "))
+    };
+
     Some(ObligationFrame {
         spec_defs: preamble.to_vec(),
         params,
-        req: None,
+        req,
         seq_params,
         nat_coerce_params,
+        string_params,
+        map_params,
     })
 }
 
@@ -684,12 +767,32 @@ fn slice_param_names(frame: &ObligationFrame) -> Vec<String> {
 /// is contract-TV's scalar/slice/String scope).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SpecType {
-    /// A `Seq<elem>` (a `&[elem]` slice, a `Vec<elem>`, or a `String` → `Seq<u8>`).
+    /// A `Seq<elem>` (a `&[elem]` slice or a `Vec<elem>` → `Seq<elem>`).
     Seq(String),
+    /// A `String`/`&String` — bound as the `TString` wrapper (#150 gap #2), whose
+    /// spec-position byte-view (`.len()`/`.byte_at(i)`) dispatches to the wrapper
+    /// SPEC fns (`.spec_len()`/`.spec_byte_at(i as int)`), exactly as production's
+    /// `recv_is_string` rewrite. NOT a `Seq<u8>` index (the wrapper spec fns take
+    /// `&self`); the obligation frame names it in `string_params`.
+    Strng,
     /// A bounded integer (`u32`/`u64`/`usize`) — `as nat`-coercible against a `nat`.
     BoundedInt,
     /// A `bool`.
     Bool,
+    /// A `Map<K, V>` bound as the `TMap` wrapper (#150 gap #3). The string is the
+    /// Verus wrapper spelling (`TMapU64U64`). Production weaves `well_formed()` for
+    /// a `Map` param/result, so the obligation threads it as a `requires`; the
+    /// `contains_key`→`spec_contains_key` spec rewrite is RE-implemented in the
+    /// reference encoder (the wrapper spec fns are the shared frozen ground truth,
+    /// in the preamble).
+    Map(String, String),
+    /// An `Option<T>` bound as the native Verus `Option<…>` (#150 gap #3). The
+    /// string is the full Verus spelling (`Option<usize>`). Carries the C7
+    /// payload-in-contract `match`/`is`/`spec-match` clauses.
+    Opt(String),
+    /// A `Result<T, E>` bound as the native Verus `Result<…, …>` (#150 gap #3). The
+    /// string is the full Verus spelling (`Result<u64, ParseErr>`).
+    Res(String, String),
 }
 
 impl SpecType {
@@ -697,8 +800,25 @@ impl SpecType {
     fn verus_spelling(&self) -> String {
         match self {
             SpecType::Seq(elem) => format!("Seq<{elem}>"),
+            SpecType::Strng => "TString".to_string(),
             SpecType::BoundedInt => "u64".to_string(),
             SpecType::Bool => "bool".to_string(),
+            // The `Map` wrapper spelling (`TMapU64U64`); the inner `(K, V)` pair is
+            // carried for completeness. The wrapper struct is in the preamble.
+            SpecType::Map(_, _) => self.map_wrapper_name(),
+            SpecType::Opt(inner) => format!("Option<{inner}>"),
+            SpecType::Res(ok, err) => format!("Result<{ok}, {err}>"),
+        }
+    }
+
+    /// The `TMap` wrapper struct name for a `Map(K, V)` (`TMapU64U64`), mirroring
+    /// production's `tmap_name`. The frozen v0.1 `Map` is `Map<u64, u64>`; the
+    /// suffix capitalizes each Verus prim spelling.
+    fn map_wrapper_name(&self) -> String {
+        if let SpecType::Map(k, v) = self {
+            format!("TMap{}{}", cap_prim(k), cap_prim(v))
+        } else {
+            String::new()
         }
     }
 
@@ -717,6 +837,12 @@ impl SpecType {
     fn verus_param_spelling(&self) -> String {
         match self {
             SpecType::Seq(elem) => format!("&[{elem}]"),
+            // A `String` param is bound as a `&TString` borrow (#150 gap #2) —
+            // MIRRORING production's `&String`-param lowering (`&TString`), so the
+            // spec-position `s.spec_len()`/`s.spec_byte_at(i)` calls resolve on the
+            // wrapper. The `TString` wrapper struct + its spec fns are in scope (the
+            // frame preamble lowers the whole program, which emits the wrapper).
+            SpecType::Strng => "&TString".to_string(),
             other => other.verus_spelling(),
         }
     }
@@ -731,8 +857,26 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
         Type::Ref { inner, .. } => spec_type_of(inner),
         Type::Slice(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
         Type::Vec(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
-        // A `String`'s byte-view is `Seq<u8>`.
-        Type::String => Some(SpecType::Seq("u8".to_string())),
+        // A `String`/`&String` is bound as the `TString` wrapper (#150 gap #2):
+        // its spec-position byte-view dispatches to the wrapper SPEC fns
+        // (`.spec_len()`/`.spec_byte_at(i as int)`), MATCHING production's
+        // `recv_is_string` rewrite — NOT a `Seq<u8>` index (which would not
+        // typecheck against production's `&TString` receiver).
+        Type::String => Some(SpecType::Strng),
+        // The #150 gap #3 construct classes: `Option`/`Result`/`Map` params +
+        // result are now FRAMED (the inner types are themselves framable). A
+        // `match`/`is` over an `Option`/`Result` result (binary_search ens,
+        // lookup_absent ens) and a `Map`-method spec rewrite (build_one/has_key)
+        // discharge against the native Verus type / the `TMap` wrapper.
+        Type::Option(inner) => Some(SpecType::Opt(verus_type_spelling(inner)?)),
+        Type::Result(ok, err) => Some(SpecType::Res(
+            verus_type_spelling(ok)?,
+            verus_type_spelling(err)?,
+        )),
+        Type::Map(k, v) => Some(SpecType::Map(
+            verus_type_spelling(k)?,
+            verus_type_spelling(v)?,
+        )),
         _ => None,
     }
 }
@@ -745,6 +889,35 @@ fn elem_spelling(ty: &Type) -> Option<String> {
         Type::Prim(PrimType::U64) => Some("u64".to_string()),
         Type::Prim(PrimType::Usize) => Some("usize".to_string()),
         _ => None,
+    }
+}
+
+/// The full Verus spelling of a framable inner type for an `Option`/`Result`/`Map`
+/// type argument (#150 gap #3), mirroring production's `lower_type`: a bounded prim
+/// spells itself; a `String` spells the `TString` wrapper; a user-named enum
+/// (`ParseErr`) spells its name (its `enum` def is in the preamble). Returns `None`
+/// for a type contract-TV does not frame (a nested `Map`/struct/slice arg), so the
+/// whole signature falls back to honest Skip rather than mis-spelling it.
+fn verus_type_spelling(ty: &Type) -> Option<String> {
+    match ty {
+        Type::Prim(PrimType::U32) => Some("u32".to_string()),
+        Type::Prim(PrimType::U64) => Some("u64".to_string()),
+        Type::Prim(PrimType::Usize) => Some("usize".to_string()),
+        Type::Prim(PrimType::Bool) => Some("bool".to_string()),
+        Type::String => Some("TString".to_string()),
+        Type::Named(n) => Some(n.clone()),
+        _ => None,
+    }
+}
+
+/// Capitalize a Verus prim spelling into the `TMap` suffix segment (`u64` → `U64`),
+/// mirroring production's `tmap_type_suffix` (`Type::Prim(U64)` → `"U64"`).
+fn cap_prim(spelling: &str) -> String {
+    match spelling {
+        "u32" => "U32".to_string(),
+        "u64" => "U64".to_string(),
+        "usize" => "Usize".to_string(),
+        other => other.to_string(),
     }
 }
 
@@ -767,34 +940,6 @@ fn old_params(expr: &Expr, f: &FnItem) -> Vec<(String, String)> {
     let mut found = Vec::new();
     collect_old(expr, f, &mut found);
     found
-}
-
-/// Does the clause reference a byte-view accessor (`s.byte_at(i)` / `s.len()` on a
-/// non-fn receiver)? The off-corpus run reports such a clause `Skipped` (see
-/// `run_generated`). Walks the whole expression tree.
-fn references_byteview(expr: &Expr) -> bool {
-    match expr {
-        Expr::MethodCall {
-            receiver,
-            name,
-            args,
-        } => {
-            name == "byte_at"
-                || name == "len"
-                || references_byteview(receiver)
-                || args.iter().any(references_byteview)
-        }
-        Expr::Binary { lhs, rhs, .. } => references_byteview(lhs) || references_byteview(rhs),
-        Expr::Unary { expr, .. } => references_byteview(expr),
-        Expr::Call { callee, args } => {
-            references_byteview(callee) || args.iter().any(references_byteview)
-        }
-        Expr::Cast { expr, .. } => references_byteview(expr),
-        Expr::Closure { body, .. } => references_byteview(body),
-        Expr::Index { base, .. } => references_byteview(base),
-        Expr::Field { receiver, .. } => references_byteview(receiver),
-        _ => false,
-    }
 }
 
 fn collect_old(expr: &Expr, f: &FnItem, out: &mut Vec<(String, String)>) {

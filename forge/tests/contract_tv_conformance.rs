@@ -141,10 +141,12 @@ fn sum_corpus_zero_divergent() {
     );
 }
 
-/// REQ-5: binary_search's framable clauses (the `sorted(haystack)` req + the
-/// `forall_below`/`forall_from` loop invariants + the `dec`) are ALL faithful (0
-/// divergent). The `Option<usize>` `ens match` clause is honestly Skipped (Match
-/// is body-TV scope), NOT a false faithful.
+/// REQ-5 + #150 gap #1/#3: binary_search's clauses are ALL faithful, 0 divergent,
+/// AND 0 SKIPPED — the `Option<usize>` `ens match` clause (the C7 payload-in-
+/// contract match-in-ens) is now CHECKED + FAITHFUL (was Skipped: `Expr::Match`
+/// unsupported). The `ref_encode::encode_match` arm encodes the match independently
+/// and the `signature_frame` binds `result: Option<usize>` so the obligation
+/// discharges.
 #[test]
 fn binary_search_corpus_zero_divergent() {
     if !verus_present() {
@@ -163,10 +165,26 @@ fn binary_search_corpus_zero_divergent() {
          invariants + req + dec); got {checked}"
     );
     assert_eq!(faithful, checked);
+    // #150 gap #1: the Option `ens match` is now Checked + Faithful (was Skipped —
+    // `Expr::Match` unsupported). The match-in-ens encodes independently to
+    // production's match-expression shape and discharges. Non-vacuous: P_prod
+    // (`Some(i) => i < haystack.len() && haystack@[i as int] == needle, …`) ≠ P_ref
+    // text (the #122 paren discipline), proven equivalent by Z3.
+    assert_eq!(
+        corpus_clause_verdict(&report, "binary_search.ens#1"),
+        Some("faithful"),
+        "binary_search's Option `ens match` clause must be Checked + Faithful \
+         (#150 gap #1 — the `Expr::Match`-in-ens encoding). report: {report}"
+    );
 }
 
-/// REQ-5: map_kv's framable scalar/Seq clauses are faithful (0 divergent); the
-/// `Map`/`Option`-typed clauses are honestly Skipped.
+/// REQ-5 + #150 gap #3: map_kv's clauses are ALL faithful, 0 divergent, AND 0
+/// SKIPPED — the `Map`/`Option`-typed signature clauses (`has_key`/`build_one`'s
+/// `contains_key`, `lookup_absent`'s `result is None` + `!m.contains_key(k)` req)
+/// are now CHECKED + FAITHFUL (was Skipped: a Map/Option param/result type the
+/// `signature_frame` could not bind). The frame now binds `Map`→`TMap` (with the
+/// `well_formed()` req weave) + `Option`→native, and `ref_encode::encode_map_accessor`
+/// rewrites `contains_key`→`spec_contains_key`.
 #[test]
 fn map_kv_corpus_zero_divergent() {
     if !verus_present() {
@@ -174,12 +192,78 @@ fn map_kv_corpus_zero_divergent() {
         return;
     }
     let report = run_tv_json(&corpus_dir().join("map_kv.th"), None);
-    let (_checked, faithful, divergent) = corpus_counts(&report);
+    let (checked, faithful, divergent) = corpus_counts(&report);
     assert_eq!(
         divergent, 0,
         "map_kv corpus has a DIVERGENT clause — a real finding. report: {report}"
     );
-    assert_eq!(faithful, corpus_counts(&report).0);
+    assert_eq!(faithful, checked);
+    // #150 gap #3: the Map/Option signature clauses are now CHECKED + FAITHFUL.
+    for (clause, why) in [
+        (
+            "has_key.ens#1",
+            "`result == m.contains_key(k)` — Map param + spec_contains_key",
+        ),
+        (
+            "build_one.ens#1",
+            "`result.contains_key(k)` — Map RESULT spec_contains_key",
+        ),
+        (
+            "lookup_absent.req",
+            "`!m.contains_key(k)` — Map param in a req",
+        ),
+        (
+            "lookup_absent.ens#1",
+            "`result is None` — Option result `is`",
+        ),
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, clause),
+            Some("faithful"),
+            "map_kv's {clause} ({why}) must be Checked + Faithful (#150 gap #3 — \
+             the Map/Option frame binding). report: {report}"
+        );
+    }
+}
+
+/// REQ-5 + #150 gap #2: a STRING-corpus program's byte-view clauses (`result ==
+/// s.byte_at(0)`, `result == s.len()`) are CHECKED + FAITHFUL (was Unverifiable —
+/// production lowered the bare exec `s.len()`/`s.byte_at(0)` against the reference's
+/// `s.spec_len()`/`s.spec_byte_at(0)`, a type-level mismatch). The frame now binds
+/// `String`→`&TString` + threads it as production's `strings` so BOTH columns
+/// dispatch to the wrapper SPEC fns, and `ref_encode::encode_string_byteview`
+/// re-implements that dispatch independently.
+#[test]
+fn string_demo_corpus_byteview_checked() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — `forge tv string_demo.th` not run.");
+        return;
+    }
+    let report = run_tv_json(&corpus_dir().join("string_demo.th"), None);
+    let (checked, faithful, divergent) = corpus_counts(&report);
+    assert_eq!(
+        divergent, 0,
+        "string_demo corpus has a DIVERGENT clause — a real finding. report: {report}"
+    );
+    assert_eq!(faithful, checked);
+    // #150 gap #2: the String byte-view clauses are now Checked + Faithful.
+    for (clause, why) in [
+        (
+            "first_byte.ens#1",
+            "`result == s.byte_at(0)` — String spec_byte_at",
+        ),
+        (
+            "greeting_len.ens#1",
+            "`result == s.len()` — String spec_len",
+        ),
+    ] {
+        assert_eq!(
+            corpus_clause_verdict(&report, clause),
+            Some("faithful"),
+            "string_demo's {clause} ({why}) must be Checked + Faithful (#150 gap \
+             #2 — the String byte-view receiver dispatch). report: {report}"
+        );
+    }
 }
 
 // ---- the off-corpus generated run (the thesis payoff) ----------------------
@@ -229,6 +313,17 @@ fn off_corpus_generated_run_all_faithful() {
         checked >= 120,
         "the 200-clause generated run checked only {checked} clauses — too many \
          skipped; the off-corpus coverage is not substantive. report: {gen}"
+    );
+    // #150 gap #2: the byte-view clauses (`t.byte_at(i)`/`t.len()`) are NO LONGER
+    // Skipped off-corpus — `t` is a `&TString`-bound receiver dispatched to the
+    // wrapper spec fns on both columns. So the generated run is now TOTAL (0
+    // skipped) over the whole generated vocabulary: every generated construct class
+    // (comparison/connective/combinator/cast/nat/byte-view) is CHECKED + faithful.
+    let skipped = counts["skipped"].as_u64().unwrap();
+    assert_eq!(
+        skipped, 0,
+        "#150: the generated run must have 0 SKIPPED clauses — the String byte-view \
+         is now Checked (`t: &TString` dispatch). {skipped} skipped. report: {gen}"
     );
 
     // #147 — the cast-`<` / non-Eq-nat REGRESSION GUARD for #146/#148 off-corpus.

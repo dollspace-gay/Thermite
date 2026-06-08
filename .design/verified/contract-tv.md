@@ -197,11 +197,58 @@ that the vacuity battery and verus-on-emitted cannot see.
 (`contract_tv` conformance), `cargo clippy -p thermite-tv -p forge --all-targets -- -D warnings`,
 `cargo fmt --check`. Scratch/verus temp cleaned per the `ScratchDir` Drop guard (blocker #53).
 
+## Coverage extension — #150 (whole-corpus totality)
+
+The reference encoder + obligation frame originally honestly SKIPPED three
+construct classes (they reached verus as `Skipped`/`Unverifiable`, never a silent
+pass). #150 closes all three so contract-TV is TOTAL on the WHOLE corpus, not just
+the numeric core:
+
+1. **Option/Result `match`-in-ens (C7 payload-in-contract).** `ref_encode::encode_match`
+   + `encode_pattern` independently encode an `Expr::Match` to the matching Verus
+   `match` expression (the binary_search Option-match ens, the `option_result`/
+   string-`find` shapes), mirroring production's `lower_match` shape (the bound
+   payload var `i`/`v`/`e` in scope, the `Some`/`None`/`Ok`/`Err` patterns left
+   unqualified as production does, the guard arm). The `signature_frame` binds an
+   `Option`/`Result` `result` (the new `SpecType::Opt`/`Res`) so the match-ens
+   scrutinee discharges. binary_search `ens#1` moves Skipped → **Checked + Faithful**
+   (non-vacuous: P_prod ≠ P_ref text, the #122 paren discipline; Z3 proves
+   equivalent).
+2. **String byte-view receivers.** `ref_encode::encode_string_byteview` (dispatched
+   on a `string_bound` receiver) re-implements production's `recv_is_string` rewrite
+   — `.len()`→`s.spec_len()`, `.byte_at(i)`→`s.spec_byte_at(<i>)` (literal bare,
+   non-literal `as int`) — under a `String`→`&TString` frame binding (the new
+   `SpecType::Strng`), with the `String` param threaded as production's `strings` so
+   BOTH columns dispatch to the wrapper spec fns. string_demo's byte-view clauses
+   move Unverifiable → **Checked + Faithful**. The off-corpus generator now emits the
+   byte-view over a `&TString` receiver `t`, so the String byte-view is off-corpus-
+   checkable (0 generated skips).
+3. **Map/Option/Result fn signatures in the obligation frame.** `signature_frame`
+   now binds `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires`
+   weave production's `is_map_param_ty` mandates), `Option`/`Result` params + result
+   natively, and `ref_encode::encode_map_accessor` rewrites `.contains_key(k)`→
+   `m.spec_contains_key(k)`. map_kv's signature clauses (`has_key`/`build_one`/
+   `lookup_absent`) move Skipped → **Checked + Faithful**.
+
+**Whole-corpus skip count for these classes → 0:** binary_search 6/6, map_kv 8/8,
+string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped, 0 unverifiable. The
+200-clause off-corpus run is now TOTAL (0 skipped). Verified by
+`forge/tests/contract_tv_conformance.rs` (`binary_search_corpus_zero_divergent`,
+`map_kv_corpus_zero_divergent`, `string_demo_corpus_byteview_checked`,
+`off_corpus_generated_run_all_faithful`) under real verus. Honest remainder: an
+atomic single-call clause (`build_one`'s `result.spec_contains_key(k)`,
+`lookup_absent`'s `result is None`) produces TEXTUALLY-IDENTICAL P_prod/P_ref (an
+atomic construct has no binop for the paren discipline to differ on) — Checked +
+Faithful but the obligation is `assert(X <==> X)`; the independence VALUE is that a
+production misdispatch (the F3-class wrong spec fn) WOULD diverge, exactly as the
+teeth bite. INDEPENDENCE intact: `cargo tree -p thermite-tv` stays syntax + spec
+only (no `thermite-lower`).
+
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (independent reference encoder) | SHIPPED | `thermite_tv::ref_encode::ref_contract_pred` (`thermite-tv/src/ref_encode.rs`) — independently encodes the contract sublanguage (binop map, slice→`@`, method→byte-view dispatch on the RECEIVER shape, cast→`nat`/`int`), reusing ONLY `thermite_spec::lookup(name).verus_l3` for the 8 combinators. Non-test consumer: `thermite_tv::obligation::equivalence_obligation`. The crate depends on `thermite-syntax` + `thermite-spec` ONLY (`thermite-tv/Cargo.toml`) — NO `thermite-lower` (`cargo tree -p thermite-tv` shows syntax + spec only), so independence is a COMPILE constraint (AC-6). Verified by `thermite-tv/tests/teeth.rs` F1–F4 under real verus. **#147 coverage extension (two gaps closed):** (1) `encode_ref` covers `Expr::Ref` in spec position — `&xs[..i]`/`&xs[a..b]`/`&xs[i]` encode EXACTLY as the inner `Index` subrange (the slice→`Seq`-subrange rewrite), and a bare `&xs` → the base view (`encode_slice_arg`), INDEPENDENTLY re-implementing production's `Expr::Ref` spec arm (no `lower_index` call). (2) `encode_binary`'s nat-coercion is now `Eq`-ONLY (matching production's `lower_nat_equality`, which fires only `if *op == BinOp::Eq`) — a NON-`Eq` comparison of a bounded int to a `nat`-valued call (`acc <= spec_sum(xs)`) is left BARE, matching production; and `encode_binary_operand`/`encode_comparison_operand` apply the #146/#148 cast-`<` paren (`is_lt_leading`, the independent dual of production's `lower_binary_operand` guard) so a `Cast`/`as nat` LEFT operand of a `<`-leading op is wholly parenthesized (`(x as u32) < 33`). GROUNDED: the non-`Eq` bare + cast-`<` obligations VERIFY against production under real verus (`acc <= spec_sum`, `(x as u32) < 33`, `(result as nat) <= spec_sum`). |
+| REQ-1 (independent reference encoder) | SHIPPED | `thermite_tv::ref_encode::ref_contract_pred` (`thermite-tv/src/ref_encode.rs`) — independently encodes the contract sublanguage (binop map, slice→`@`, method→byte-view dispatch on the RECEIVER shape, cast→`nat`/`int`), reusing ONLY `thermite_spec::lookup(name).verus_l3` for the 8 combinators. Non-test consumer: `thermite_tv::obligation::equivalence_obligation`. The crate depends on `thermite-syntax` + `thermite-spec` ONLY (`thermite-tv/Cargo.toml`) — NO `thermite-lower` (`cargo tree -p thermite-tv` shows syntax + spec only), so independence is a COMPILE constraint (AC-6). Verified by `thermite-tv/tests/teeth.rs` F1–F4 under real verus. **#147 coverage extension (two gaps closed):** (1) `encode_ref` covers `Expr::Ref` in spec position — `&xs[..i]`/`&xs[a..b]`/`&xs[i]` encode EXACTLY as the inner `Index` subrange (the slice→`Seq`-subrange rewrite), and a bare `&xs` → the base view (`encode_slice_arg`), INDEPENDENTLY re-implementing production's `Expr::Ref` spec arm (no `lower_index` call). (2) `encode_binary`'s nat-coercion is now `Eq`-ONLY (matching production's `lower_nat_equality`, which fires only `if *op == BinOp::Eq`) — a NON-`Eq` comparison of a bounded int to a `nat`-valued call (`acc <= spec_sum(xs)`) is left BARE, matching production; and `encode_binary_operand`/`encode_comparison_operand` apply the #146/#148 cast-`<` paren (`is_lt_leading`, the independent dual of production's `lower_binary_operand` guard) so a `Cast`/`as nat` LEFT operand of a `<`-leading op is wholly parenthesized (`(x as u32) < 33`). GROUNDED: the non-`Eq` bare + cast-`<` obligations VERIFY against production under real verus (`acc <= spec_sum`, `(x as u32) < 33`, `(result as nat) <= spec_sum`). **#150 coverage extension (three construct classes, see above):** `encode_match`/`encode_pattern` (Option/Result `match`-in-ens), `encode_string_byteview` (String byte-view receiver → `spec_len`/`spec_byte_at`), `encode_map_accessor` (`contains_key`→`spec_contains_key`), keyed on new `RefCtx` sets `string_bound`/`map_bound` (`with_string_bound`/`with_map_bound`); `encode_len_receiver` keeps a slice `.len()` bare (matching production's un-viewed slice `.len()`). Non-test consumer: `equivalence_obligation` via `ObligationFrame::ref_ctx`. GROUNDED under real verus (the corpus + off-corpus runs). |
 | REQ-2 (per-clause Z3 equivalence obligation + discharge) | SHIPPED | `thermite_tv::obligation::equivalence_obligation` + `ObligationFrame`/`ParamDecl` (`thermite-tv/src/obligation.rs`) — emits a self-contained `proof fn tv_check(<params>) requires <req> { assert((P_production) <==> (P_reference)); }` with the spec-fn/combinator `verus_l3` defs + free vars + `result`/`old(_)` params in scope. Discharged through real verus by `thermite-tv/tests/teeth.rs` (the obligation TEXT's non-test consumer; the forge discharge phase is REQ-5/#144). GROUNDED: F1 faithful → `2 verified, 0 errors`; F1 infidel (`<=`) → `1 verified, 1 errors`. |
 | REQ-3 (off-corpus generator) | SHIPPED | `thermite_tv::gen::generate_clauses(seed, n) -> Vec<Expr>` (`thermite-tv/src/gen.rs`) — a DETERMINISTIC (self-contained SplitMix64 PRNG, NO `rand`/clock/global state, R-CODE-5) generator of well-typed `bool`-valued contract-position `Expr`s over the frozen sublanguage: comparisons over all `BinOp`s, logical connectives (`&&`/`\|\|`/`!`, nested), the 8 frozen combinators with the CORRECT arg KINDS per `thermite_spec::lookup(name).arg_kinds` (`Slice`/`Index`/`Pred`/`Value` — `forall_below` gets an `int` index, not a slice), `spec_sum` calls, `result`/`old(acc)`, byte-view method calls, and casts. Non-test consumer: `forge::contract_tv::run_generated` (lowers each via `lower_contract_expr` → TV-checks via `equivalence_obligation` → `verus`). Pure generation in the INDEPENDENT crate — no `thermite-lower` dep (`cargo tree -p thermite-tv` = syntax + spec only, AC-6 intact). **#147 generator extension (regression-guard #146/#148 off-corpus):** the generator now EMITS the cast-`<` class — `gen_cast_lt` produces a `Cast` LEFT operand of a `<`-leading op (`n as u32 < k`, `n as nat <= m`) as a `gen_bool` leaf form, and `gen_pred_closure`'s cast-LHS body now uses ANY comparison op INCLUDING `<`/`<=` (the now-removed `CAST_SAFE_CMP_OPS` avoidance lifted) — plus non-`Eq` nat comparisons (`gen_nat_cmp` draws from all six comparison ops via `NAT_CMP_OPS`, not `Eq`-only). So the off-corpus run EXERCISES exactly the #146/#148 ambiguity surface + the #147 gap #2 non-Eq-coercion surface; a divergence on a generated cast-`<` clause = a real off-corpus hole in the fix. Construct coverage asserted in `gen::tests` (`cast_lt >= 1`, `non_eq_nat_cmp >= 1`). The off-corpus run discharges 200 clauses through real verus: **168 checked, 168 faithful, 0 divergent, 0 unverifiable** (32 byte-view clauses honestly Skipped — String/body-TV scope), of which ~64 are cast-`<` and ~60 are non-`Eq` nat comparisons (seed 0). Determinism + construct-coverage asserted in `gen::tests`; the 200-clause faithful run + corpus 0-divergent in `forge/tests/contract_tv_conformance.rs` (AC-7). |
 | REQ-4 (the teeth — R-CHAR-3) | SHIPPED | `thermite-tv/tests/teeth.rs` — the four orchestrator fixtures F1 (comparison `==`/`<=`), F2 (combinator predicate `<`/`<=`), F3 (#127 byte-view index `0`/`1`), F4 (structural-drop conjunct): each FAITHFUL p_production VERIFIES (`0 errors`) and each INFIDEL produces a verus COUNTEREXAMPLE at the `assert(P_production <==> P_reference)` site (`errors >= 1`). Skip-loudly if verus absent (mirrors `lower_conformance.rs`). Expected values trace to the fixtures + `thermite-design.md` §4.2 + `REGISTRY.verus_l3` (R-CHAR-3, never the lowerer's output). |

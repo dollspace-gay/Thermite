@@ -53,7 +53,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-3 (off-corpus generator) | SHIPPED | `pub fn generate_clauses` here — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of well-typed `bool`-valued contract-position `Expr`s over the frozen sublanguage (comparisons over all `BinOp`s, logical connectives incl. nesting, the 8 combinators with the correct arg KINDS per `thermite_spec::lookup(_).arg_kinds`, `spec_sum` calls, `result`/`old(acc)`, byte-view method calls, casts). Non-test consumer: the forge off-corpus run `forge::contract_tv::run_generated` (lowers each via `thermite_lower::lower_contract_expr` → TV-checks via `equivalence_obligation`). Pure generation in the INDEPENDENT crate — no `thermite-lower` dep (AC-6 intact). Coverage + reproducibility asserted in `tests` + `forge/tests/contract_tv_conformance.rs` (AC-7). |
+//! | REQ-3 (off-corpus generator) | SHIPPED | `pub fn generate_clauses` here — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of well-typed `bool`-valued contract-position `Expr`s over the frozen sublanguage (comparisons over all `BinOp`s, logical connectives incl. nesting, the 8 combinators with the correct arg KINDS per `thermite_spec::lookup(_).arg_kinds`, `spec_sum` calls, `result`/`old(acc)`, byte-view method calls, casts). Non-test consumer: the forge off-corpus run `forge::contract_tv::run_generated` (lowers each via `thermite_lower::lower_contract_expr` → TV-checks via `equivalence_obligation`). Pure generation in the INDEPENDENT crate — no `thermite-lower` dep (AC-6 intact). Coverage + reproducibility asserted in `tests` + `forge/tests/contract_tv_conformance.rs` (AC-7). **#150 String byte-view off-corpus coverage:** `gen_byteview_cmp` now emits `t.byte_at(i)`/`t.len()` over the `String`/`&TString` receiver `t` (`STRING_NAME`), so the off-corpus run dispatches BOTH columns to the wrapper SPEC fns (`t.spec_byte_at(i as int)`/`t.spec_len()`) and the byte-view is CHECKED (no longer an honest Skip) — the generated run is now TOTAL (0 skipped). |
 
 use thermite_syntax::ast::{BinOp, Expr, PrimType, Type, UnaryOp};
 
@@ -103,6 +103,12 @@ const SEQ_NAMES: &[&str] = &["xs", "ys"];
 const INT_NAMES: &[&str] = &["n", "m", "k"];
 /// The fixed `u64` bounded-int names (nat-coerced against a `nat` term).
 const NAT_COERCE_NAMES: &[&str] = &["result", "old_acc"];
+/// The fixed `String`/`&TString` byte-view receiver name (#150 gap #2). A generated
+/// byte-view clause (`t.byte_at(i)`/`t.len()`) uses `t` so the forge off-corpus run
+/// can dispatch BOTH columns to the wrapper SPEC fns (`t.spec_byte_at(i as int)` /
+/// `t.spec_len()`) — production's `recv_is_string` rewrite + the reference's
+/// `string_bound` dispatch — making the String byte-view off-corpus-CHECKABLE.
+const STRING_NAME: &str = "t";
 
 /// Generate `n` well-typed, `bool`-valued contract-position [`Expr`]s over the
 /// frozen SpecTherm sublanguage, deterministically from `seed` (REQ-3). Each is a
@@ -335,10 +341,12 @@ fn gen_cast_lt(rng: &mut Rng, depth: usize) -> Expr {
 fn gen_byteview_cmp(rng: &mut Rng, depth: usize) -> Expr {
     let op = rng.pick(CMP_OPS);
     if rng.below(2) == 0 {
-        // `s.byte_at(i) <op> <u32 literal>` — the byte accessor with an int index.
+        // `t.byte_at(i) <op> <u32 literal>` — the byte accessor with an int index,
+        // over the `String`/`&TString` receiver `t` (#150 gap #2) so BOTH columns
+        // dispatch to `t.spec_byte_at(i as int)` and the clause is off-corpus-checkable.
         let idx = gen_int(rng, depth + 1);
         let recv = Expr::MethodCall {
-            receiver: Box::new(path("s")),
+            receiver: Box::new(path(STRING_NAME)),
             name: "byte_at".to_string(),
             args: vec![idx],
         };
@@ -348,9 +356,9 @@ fn gen_byteview_cmp(rng: &mut Rng, depth: usize) -> Expr {
             rhs: Box::new(int_lit(rng.below(256) as u128)),
         }
     } else {
-        // `s.len() <op> n` — the length accessor.
+        // `t.len() <op> n` — the length accessor (→ `t.spec_len()` on both columns).
         let recv = Expr::MethodCall {
-            receiver: Box::new(path("s")),
+            receiver: Box::new(path(STRING_NAME)),
             name: "len".to_string(),
             args: vec![],
         };

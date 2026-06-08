@@ -209,6 +209,10 @@ fn f1_frame() -> ObligationFrame {
         req: None,
         seq_params: vec!["xs".to_string()],
         nat_coerce_params: vec!["result".to_string()],
+        // #150 mechanical ripple: the additive `string_params`/`map_params` fields
+        // (the String/Map byte-view receiver dispatch) are empty for F1 (no
+        // String/Map receiver in the comparison teeth).
+        ..Default::default()
     }
 }
 
@@ -258,6 +262,7 @@ fn f2_frame() -> ObligationFrame {
         req: None,
         seq_params: vec!["xs".to_string()],
         nat_coerce_params: vec![],
+        ..Default::default()
     }
 }
 
@@ -301,6 +306,7 @@ fn f3_frame() -> ObligationFrame {
         req: Some("s.len() >= 2".to_string()),
         seq_params: vec!["s".to_string()],
         nat_coerce_params: vec![],
+        ..Default::default()
     }
 }
 
@@ -349,6 +355,7 @@ fn f4_frame() -> ObligationFrame {
         req: None,
         seq_params: vec![],
         nat_coerce_params: vec![],
+        ..Default::default()
     }
 }
 

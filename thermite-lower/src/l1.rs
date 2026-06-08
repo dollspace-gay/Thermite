@@ -1525,12 +1525,30 @@ pub(crate) fn lower_expr_exec(
             for a in args {
                 let lowered = lower_expr_exec(a, d, span, variants)?;
                 if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast_l1(a) {
-                    parts.push(format!("{lowered} as usize"));
+                    // Issue #122: `as` binds tighter than `+`/`-`/…, so a compound
+                    // index `i - 1` MUST be parenthesized before the coercion —
+                    // `i - 1 as usize` is `i - (1 as usize)` (`u64 - usize`, E0277).
+                    // A simple arg (`i`, `b.cursor`) never mis-binds, so the paren
+                    // is added ONLY for a `Binary`/`Unary` index (the editor's
+                    // `slice(i - 1, j)` / `byte_at(i - 1)`); no double-cast since an
+                    // `as usize` arg already short-circuited above.
+                    if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
+                        parts.push(format!("({lowered}) as usize"));
+                    } else {
+                        parts.push(format!("{lowered} as usize"));
+                    }
                 } else if coerce_u8
                     && !matches!(a, Expr::IntLit { .. })
                     && !lowered.ends_with("as u8")
                 {
-                    parts.push(format!("{lowered} as u8"));
+                    // Issue #122: same precedence-safety as the `as usize` arm —
+                    // a binary/unary separator is parenthesized so `as u8` binds
+                    // the whole inner, not just its last operand.
+                    if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
+                        parts.push(format!("({lowered}) as u8"));
+                    } else {
+                        parts.push(format!("{lowered} as u8"));
+                    }
                 } else {
                     parts.push(lowered);
                 }
@@ -1578,6 +1596,18 @@ pub(crate) fn lower_expr_exec(
         Expr::Cast { expr, ty } => {
             let e = lower_expr_exec(expr, d, span, variants)?;
             let t = lower_type(ty)?;
+            // Issue #122: `as` binds tighter than the binary/unary operators, so a
+            // cast over a binary/unary inner (`(i - 1) as usize`) MUST parenthesize
+            // the inner — `i - 1 as usize` parses as `i - (1 as usize)` (a
+            // `u64`/`usize` mismatch, E0277). Mirror of the check-path fix in
+            // `lower.rs`'s `Expr::Cast` arm. A simple inner (`i as usize`,
+            // `0 as usize`) never mis-binds, so the paren is added ONLY for a
+            // `Binary`/`Unary` inner (no regression on the existing simple casts).
+            let e = if matches!(expr.as_ref(), Expr::Binary { .. } | Expr::Unary { .. }) {
+                format!("({e})")
+            } else {
+                e
+            };
             Ok(format!("{e} as {t}"))
         }
         Expr::Ref { mutable, expr } => {

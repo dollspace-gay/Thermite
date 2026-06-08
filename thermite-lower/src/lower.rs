@@ -5360,12 +5360,28 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             for a in args {
                 let lowered = lower_expr(a, ctx, d, span)?;
                 if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast(a) {
-                    parts.push(format!("{lowered} as usize"));
+                    // Issue #122: `as` binds tighter than `+`/`-`/…, so a compound
+                    // index `i - 1` MUST be parenthesized before the coercion —
+                    // `i - 1 as usize` is `i - (1 as usize)` (`u64 - usize`, E0277).
+                    // A simple arg never mis-binds, so the paren is added ONLY for a
+                    // `Binary`/`Unary` index; an `as usize` arg already short-circuited.
+                    if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
+                        parts.push(format!("({lowered}) as usize"));
+                    } else {
+                        parts.push(format!("{lowered} as usize"));
+                    }
                 } else if coerce_u8
                     && !matches!(a, Expr::IntLit { .. })
                     && !lowered.ends_with("as u8")
                 {
-                    parts.push(format!("{lowered} as u8"));
+                    // Issue #122: same precedence-safety as the `as usize` arm —
+                    // a binary/unary separator (`split(sep - 1)`) is parenthesized
+                    // so `as u8` binds the whole inner, not just its last operand.
+                    if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
+                        parts.push(format!("({lowered}) as u8"));
+                    } else {
+                        parts.push(format!("{lowered} as u8"));
+                    }
                 } else {
                     parts.push(lowered);
                 }
@@ -5440,6 +5456,21 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 "nat".to_string()
             } else {
                 lower_type(ty)?
+            };
+            // Issue #122: `as` binds TIGHTER than the binary/unary operators in
+            // both Verus and Rust, so a cast over a binary/unary inner operand
+            // (`(n - 1) as nat`) MUST parenthesize the inner — without the parens
+            // `n - 1 as nat` parses as `n - (1 as nat)`, an `int`/`nat`
+            // (or `u64`/`usize`) type mismatch → L0. The hand-authored golden
+            // reference uses exactly this form (`tests/golden/lower/parse_u64.verus.rs`
+            // `(k - 1) as nat`, `(s.len() - 1) as int`). A non-binary/unary inner
+            // (`i as int`, `acc as nat`, the literal `0 as usize`) never mis-binds,
+            // so the paren is added ONLY for a `Binary`/`Unary` inner — the simple
+            // casts the corpus/goldens pin stay byte-identical (no regression).
+            let e = if matches!(expr.as_ref(), Expr::Binary { .. } | Expr::Unary { .. }) {
+                format!("({e})")
+            } else {
+                e
             };
             Ok(format!("{e} as {t}"))
         }
@@ -5596,6 +5627,12 @@ fn lower_index_arg(arg: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<Str
     // Avoid double-casting if the surface already wrote `as int`.
     if lowered.ends_with("as int") {
         Ok(lowered)
+    } else if matches!(arg, Expr::Binary { .. } | Expr::Unary { .. }) {
+        // Issue #122: `as` binds tighter than the binary/unary operators, so a
+        // compound combinator index (`forall_in(s, ..)` with an `i - 1`-shaped
+        // bound) MUST parenthesize the inner — `i - 1 as int` is `i - (1 as int)`.
+        // A simple path index (`i`) never mis-binds (the common case).
+        Ok(format!("({lowered}) as int"))
     } else {
         Ok(format!("{lowered} as int"))
     }

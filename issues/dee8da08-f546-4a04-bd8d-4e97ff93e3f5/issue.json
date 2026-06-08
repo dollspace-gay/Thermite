@@ -2,11 +2,12 @@
   "uuid": "dee8da08-f546-4a04-bd8d-4e97ff93e3f5",
   "display_id": 140,
   "title": "contract-TV REQ-1: independent reference encoder ref_contract_pred for the SpecTherm sublanguage (comparisons/connectives/result/old/spec-fn calls/8 combinators via REGISTRY.verus_l3 + spec rewrites slice->@/method->spec_*/cast->nat) — MUST NOT call lower_expr (N-version independence)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T18:15:29.944266787Z",
-  "updated_at": "2026-06-08T18:15:31.730684862Z",
+  "updated_at": "2026-06-08T19:00:53.284631736Z",
+  "closed_at": "2026-06-08T19:00:53.284631736Z",
   "labels": [
     "blocker"
   ]

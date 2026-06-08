@@ -1,0 +1,10 @@
+{
+  "uuid": "0a55f046-e429-40c2-af91-366f0d3fee91",
+  "issue_uuid": "92c4d781-7c42-473c-8293-21d22c40d21c",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (c369425). Effect::Term (9th atom) via u8->u16 proved-bitset widening in thermite-verified (subsumes_masks/widen/io_allow + the re-derived bit_vector lemmas, verus --no-cheating 27 verified). fx term -> TERM_SYSCALLS={ioctl:16}; editor raw_mode declares fx term. Critic NO DIVERGENCE: the widened core sound (no cheat; the <512 bound faithful — EffectKind::bit maxes 1<<8, all-9 OR=511, no mask >=512 constructible), the lattice unchanged (262144 pairs agree), term subsumption-checked (pure-caller-of-term REJECTED), THE EDITOR RUNS FULLY SANDBOXED (exit 0, ioctl scoped, ab+Enter+cd+UP+Ctrl-S saved ab\\ncd), no regression. 677 tests, budget 5325.",
+  "created_at": "2026-06-08T05:51:53.451152222Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAX5MpxDzbg/CsFnFl9kNHlhUMyu1tHGa0xaZ42v197xBGUPib9lYHP4FZEwI9lSZkBBpvFfPXkN0kzu6fxmK5Bg=="
+}

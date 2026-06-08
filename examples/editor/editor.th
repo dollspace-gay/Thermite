@@ -151,6 +151,7 @@ fn line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
   req i <= target && target <= text.len() && acc <= i
   ens result <= target
   ens result >= acc
+  ens result == spec_line_start(text, i, target, acc)
   fx  pure
   dec target - i
 {
@@ -218,12 +219,40 @@ fn cursor_row(b: &Buffer) -> u64
   count_nl(&b.text, 0, b.cursor)
 }
 
+// The SPEC twin of the exec `line_start` (#126): the same `\n`-scan over the
+// `&String` prefix, as a `spec fn` so `cursor_col`'s `ens` can NAME the exact line
+// start. The base case is `i >= target` (a spec fn carries no `req`, so the
+// `decreases target - i` must be well-founded for every `i`); the recursion mirrors
+// `line_start` byte-for-byte (`acc` jumps to `i + 1` just past a newline). PROVEN to
+// terminate (`dec target - i`). The exec `line_start`'s `ens result == spec_line_-
+// start(text, i, target, acc)` (below) ties the two together, so a contract that
+// names `spec_line_start` is pinned to the value the exec scan computes.
+spec fn spec_line_start(text: &String, i: u64, target: u64, acc: u64) -> u64
+  dec target - i
+{
+  if i >= target {
+    acc
+  } else {
+    if text.byte_at(i) == 10 {
+      spec_line_start(text, i + 1, target, i + 1)
+    } else {
+      spec_line_start(text, i + 1, target, acc)
+    }
+  }
+}
+
 // The cursor's COLUMN (0-based): the distance from the line start to the cursor.
-// Delegates to the verified `line_start` forward scan. PROVEN: result <= cursor.
-// The subtraction `cursor - line_start` gives the §7 gate a scoreable body mutant
-// (the contract is non-vacuous — a mutated subtraction or scan fails the bound).
+// Delegates to the verified `line_start` forward scan. PINNED (#126): the column is
+// EXACTLY `cursor - spec_line_start(text, 0, cursor, 0)` — the distance from the
+// PROVEN line start to the cursor — not merely bounded by `<= cursor`. This kills
+// the return-0 (and return-cursor) mutant: a body `0` or `b.cursor` no longer
+// satisfies the equality (it must equal the real `cursor - line_start`), so the §7
+// gate scores cursor_col 4/4 (the survivor is gone). The body is UNCHANGED
+// (`b.cursor - line_start(...)`); only the contract tightens. Mirrors cursor_row's
+// tight-contract precedent.
 fn cursor_col(b: &Buffer) -> u64
   req true
+  ens result == b.cursor - spec_line_start(&b.text, 0, b.cursor, 0)
   ens result <= b.cursor
   fx  pure
 {

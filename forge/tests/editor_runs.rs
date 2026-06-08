@@ -214,6 +214,10 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
         // navigation + cursor-layout LOGIC is PROVEN, not trusted glue.
         "count_nl",
         "line_start",
+        // The #126 SPEC twin of `line_start` (the `\n`-scan as a `spec fn`) — proves
+        // the toolchain now lowers a String-scanning spec fn (`byte_at` over a
+        // `&String` param) so `cursor_col`'s `ens` can NAME the exact line start.
+        "spec_line_start",
         "line_end",
         "min2",
         "cursor_row",
@@ -230,6 +234,20 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
             "the verified editor-logic item `{op}` must certify L3 (the #90/#125 thesis)"
         );
     }
+
+    // #126 — `cursor_col`'s contract is now PINNED, not merely bounded: the
+    // `ens result == b.cursor - spec_line_start(&b.text, 0, b.cursor, 0)` ties the
+    // column to the EXACT line start (the verified spec twin), so the §7 mutation
+    // gate scores it 4/4 — the surviving return-0 (and return-cursor) mutant is
+    // KILLED (it no longer satisfies the equality). The ratio is the design
+    // authority's non-vacuity floor (R-DEFER-9), NOT copied from forge's output.
+    assert_eq!(
+        find_cert(&certs, "cursor_col")["contract_quality"]["mutants_killed"],
+        Value::from("4/4"),
+        "the PINNED `cursor_col` (ens == cursor - spec_line_start) must score 4/4 — \
+         the return-0 mutant is killed (#126):\n{:#?}",
+        find_cert(&certs, "cursor_col")
+    );
 
     // `decode` is a PURE total function (the keystroke interpretation, proven).
     assert_eq!(

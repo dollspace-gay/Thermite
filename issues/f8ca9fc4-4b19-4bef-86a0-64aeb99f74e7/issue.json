@@ -1,0 +1,10 @@
+{
+  "uuid": "f8ca9fc4-4b19-4bef-86a0-64aeb99f74e7",
+  "display_id": 156,
+  "title": "exec-tv REQ-5: forge plug-in (forge/src/exec_tv.rs or contract_tv exec phase) — run exec-expr TV over body exec exprs of each checked item via forge tv --exec; consumer cli::run_tv. Surfaces a per-expr DIVERGENT verdict.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:44.848280285Z",
+  "updated_at": "2026-06-08T22:59:44.848280285Z"
+}

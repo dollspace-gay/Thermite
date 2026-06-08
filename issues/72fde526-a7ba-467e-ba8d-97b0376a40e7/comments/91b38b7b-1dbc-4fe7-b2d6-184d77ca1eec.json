@@ -1,0 +1,10 @@
+{
+  "uuid": "91b38b7b-1dbc-4fe7-b2d6-184d77ca1eec",
+  "issue_uuid": "72fde526-a7ba-467e-ba8d-97b0376a40e7",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (167b9f4). forge tv <file> [--generated N]: per-clause P_production (thermite_lower::lower_contract_expr) vs the independent ref_contract_pred, discharged via run_verus. Critic's 3 integrity probes PASS: (1) Skips are honest (only ever pre-obligation ref-encode/lower failures, never masking a discharged infidelity; '0 divergent' excludes skips honestly); (2) obligations are NON-VACUOUS (ref fully parenthesizes where prod doesn't -> P_prod != P_ref text -> Z3 does real X<==>Y equivalence work, real teeth); (3) corpus no-false-positive (sum 6/6, binary_search 5/5, map_kv all faithful). Independence intact (cargo tree: no thermite-lower). The could-not-slip-an-infidelity-past verdict.",
+  "created_at": "2026-06-08T20:35:05.314881708Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAAKgd6pfmdMzXvPBUvktxF8TbMsE+12SagHZe5n1xEjbHSTuD4DFQs6HlCRW9BJsN56dYth7wCt8jB+vMUifSAw=="
+}

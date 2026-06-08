@@ -38,16 +38,16 @@
 //!     a LEFT arrow, a mid-text insert (splice), backspace, Ctrl-Q — and the frames
 //!     reflect the L3-proven edits.
 //!
-//! THE TERMIOS BOUNDARY NEEDS `ioctl`: `raw_mode_on`/`raw_mode_off` call
-//! `tcgetattr`/`tcsetattr`, which on Linux issue the `ioctl` syscall (16). The v0.1
-//! `write(output)` seccomp set (`forge/src/sandbox.rs` `WRITE_SYSCALLS`) does NOT
-//! grant `ioctl`, so the SANDBOXED binary is SIGSYS-killed before `tcgetattr` can
-//! return its graceful non-TTY status. The piped run therefore builds with
-//! `--no-sandbox` (the honest seam: the terminal-control boundary is trusted-by-fiat
-//! and its ioctl is not yet in the sandbox table — a separate `sandbox.rs` /
-//! `runtime-sandbox.md` gap, reported as spillover). Under `--no-sandbox` the
-//! wrapper's own non-TTY handling (`tcgetattr` returns ENOTTY -> the wrapper returns
-//! 1, no crash) is exercised by the piped (non-TTY) stdin.
+//! THE TERMIOS BOUNDARY NEEDS `ioctl` — NOW GRANTED (#106/#132): `raw_mode_on`/
+//! `raw_mode_off` call `tcgetattr`/`tcsetattr`, which on Linux issue the `ioctl`
+//! syscall (16). They now declare `fx term` (the dedicated #106 terminal-control
+//! atom), whose `forge/src/sandbox.rs` `TERM_SYSCALLS = {ioctl:16}` widening grants
+//! `ioctl`. So the SANDBOXED binary (default seccomp, NO `--no-sandbox`) runs CLEAN:
+//! raw mode enters (the `ioctl` ALLOWED), keys read (`read`), edits apply (the L3
+//! ops), frames write (`write`), and Ctrl-S saves (`openat`/`write`). The grant is
+//! SCOPED to the effect — a `pure`/`read`/`write`/`net` program's `ioctl` is STILL
+//! SIGSYS-killed. The wrapper's own non-TTY handling (`tcgetattr` returns ENOTTY ->
+//! the wrapper returns 1, no crash) is exercised by the piped (non-TTY) stdin.
 //!
 //! And the diverge cap's HONESTY (it is diverge-ONLY, not a Goodhart bypass —
 //! `goal.md` R-DEFER-9):
@@ -326,19 +326,15 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
 #[test]
 fn editor_builds_and_runs_arrow_move_then_splice() {
     // rustc is always present (no skip; the build_conformance.rs precedent). This is
-    // THE proof: a verified editor that runs. Build with `--no-sandbox` because the
-    // termios boundary issues `ioctl` (16), which the v0.1 `write(output)` seccomp set
-    // does not grant (a separate sandbox-table gap — see the module note); the
-    // `--no-sandbox` build still links the SAME extern-C termios wrappers and proves
-    // the runnable thesis. The compile path (E0382 fix) is identical under either flag.
+    // THE proof: a verified editor that runs FULLY SANDBOXED (#106/#132). The
+    // termios boundary's `ioctl` (16) is now granted by the editor's `fx term`
+    // (raw_mode_on/off declare it), so the binary builds WITH the default seccomp
+    // sandbox (NO --no-sandbox) and runs clean — every syscall it issues is granted
+    // by its transitive fx (ioctl by term, read/openat by read(input), write/openat
+    // by write(output), the heap by the baseline).
     let editor = editor_th();
-    let (ok, stdout, stderr) = run_forge_build(&[
-        editor.to_str().unwrap(),
-        "--entry",
-        "run",
-        "--no-sandbox",
-        "--json",
-    ]);
+    let (ok, stdout, stderr) =
+        run_forge_build(&[editor.to_str().unwrap(), "--entry", "run", "--json"]);
     assert!(
         ok,
         "forge build editor.th --entry run must COMPILE (render_frame(&Buffer) borrows \
@@ -419,13 +415,10 @@ fn editor_builds_and_runs_arrow_move_then_splice() {
 #[test]
 fn editor_multiline_enter_up_nav_and_ctrl_s_save() {
     let editor = editor_th();
-    let (ok, stdout, stderr) = run_forge_build(&[
-        editor.to_str().unwrap(),
-        "--entry",
-        "run",
-        "--no-sandbox",
-        "--json",
-    ]);
+    // FULLY SANDBOXED (#106/#132): no --no-sandbox; the editor's `fx term` grants the
+    // termios `ioctl`, and read(input)/write(output) grant the file load/save syscalls.
+    let (ok, stdout, stderr) =
+        run_forge_build(&[editor.to_str().unwrap(), "--entry", "run", "--json"]);
     assert!(
         ok,
         "forge build editor.th --entry run must COMPILE (the multi-line nav scans + \

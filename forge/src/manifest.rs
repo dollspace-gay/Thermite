@@ -1002,6 +1002,9 @@ fn effect_token(effect: &Effect) -> String {
         Effect::Rand => "rand".to_string(),
         Effect::Panic => "panic".to_string(),
         Effect::Diverge => "diverge".to_string(),
+        // The #106 terminal-control atom (`fx term` → the `ioctl` seccomp grant,
+        // runtime-sandbox.md REQ-7). A bare atom like `alloc`/`time`.
+        Effect::Term => "term".to_string(),
     }
 }
 
@@ -1556,10 +1559,14 @@ mod tests {
             Effect::Rand,
             Effect::Panic,
             Effect::Diverge,
+            Effect::Term,
         ]);
         assert_eq!(
             effects_of(&row),
-            vec!["read(x)", "write(y)", "net(z)", "alloc", "time", "rand", "panic", "diverge"]
+            vec![
+                "read(x)", "write(y)", "net(z)", "alloc", "time", "rand", "panic", "diverge",
+                "term"
+            ]
         );
     }
 

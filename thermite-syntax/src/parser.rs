@@ -979,8 +979,10 @@ impl<'a> Parser<'a> {
             "rand" => Ok(Effect::Rand),
             "panic" => Ok(Effect::Panic),
             "diverge" => Ok(Effect::Diverge),
+            "term" => Ok(Effect::Term),
             _ => Err(SyntaxError::Unexpected {
-                expected: "an effect (read/write/net/alloc/time/rand/panic/diverge)".to_string(),
+                expected: "an effect (read/write/net/alloc/time/rand/panic/diverge/term)"
+                    .to_string(),
                 found: format!("identifier `{name}`"),
                 span: self.prev_span(),
             }),

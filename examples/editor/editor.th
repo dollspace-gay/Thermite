@@ -451,18 +451,20 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
 
 // Put the terminal into raw mode via extern-C tcgetattr/tcsetattr (libc through
 // std). Returns a status (0 = ok / not-a-TTY no-op, 1 = error). Trusted-by-fiat;
-// the foreign body handles a non-TTY stdin gracefully. #57-confined.
+// the foreign body handles a non-TTY stdin gracefully. #57-confined to `fx term`
+// — the termios wrappers issue ONLY the `ioctl` syscall (16), which `term` grants
+// (runtime-sandbox.md REQ-7, #106), so the editor runs FULLY sandboxed.
 #[boundary("os::raw_mode_on")] fn raw_mode_on() -> u64
   req true
   ens result <= 1
-  fx  write(output)
+  fx  term
   ;
 
 // Restore the terminal's original mode. MUST run on exit. Trusted, #57-confined.
 #[boundary("os::raw_mode_off")] fn raw_mode_off() -> u64
   req true
   ens result <= 1
-  fx  write(output)
+  fx  term
   ;
 
 // Read one keystroke, returning the raw bytes PACKED into a u64 for `decode`: b0 in
@@ -519,7 +521,7 @@ fn decode(b0: u64, b1: u64, b2: u64) -> u64
 fn run() -> u64
   req true
   ens result <= 1
-  fx  read(input), write(output), alloc, diverge
+  fx  read(input), write(output), alloc, diverge, term
 {
   let entered: u64 = raw_mode_on();
   let loaded: String = read_file();

@@ -84,8 +84,8 @@ directly** — it self-sets raw mode via its own extern-C `termios` boundary (no
 `stty`, no wrapper script):
 
 ```sh
-# build the standalone editor binary (one time):
-cargo run -q -p forge -- build examples/editor/editor.th --entry run --no-sandbox --out ./nano
+# build the standalone editor binary (one time) — FULLY SANDBOXED by default:
+cargo run -q -p forge -- build examples/editor/editor.th --entry run --out ./nano
 
 # run it INTERACTIVELY in a real terminal — type, arrows move, Ctrl-S saves, Ctrl-Q quits:
 THERMITE_EDITOR_FILE=mydoc.txt ./nano
@@ -93,9 +93,12 @@ THERMITE_EDITOR_FILE=mydoc.txt ./nano
 
 `./nano` is a self-contained executable: it puts the terminal in raw mode itself,
 loads `THERMITE_EDITOR_FILE` (empty/missing → a fresh buffer), and restores the
-terminal on Ctrl-Q. (`--no-sandbox` is a *build* flag — the seccomp set doesn't yet
-grant the `ioctl` the terminal needs, crosslink #106; the binary is otherwise
-self-contained. The proof and the compiled code are identical either way.)
+terminal on Ctrl-Q. It runs UNDER the default seccomp sandbox (no `--no-sandbox`):
+its `raw_mode_on`/`raw_mode_off` boundaries declare `fx term` (crosslink #106/#132),
+whose seccomp widening grants the `ioctl` the termios raw mode needs — so every
+syscall the editor issues is granted by its transitive `fx` (`ioctl` by `term`,
+`read`/`openat` by `read(input)`, `write`/`openat` by `write(output)`, the heap by
+the baseline). A program WITHOUT `term` attempting `ioctl` is still SIGSYS-killed.
 
 You can also drive it non-interactively by piping keystrokes (deterministic):
 
@@ -137,12 +140,16 @@ buffer text (`\n` → line breaks), then the cursor positioned at
 shows TWO lines and the cursor moving between them — e.g. after Enter the cursor is
 at `\x1b[2;1H` (row 2), and after the UP arrow it is back at `\x1b[1;3H` (row 1).
 
-**`--no-sandbox` note:** the termios boundary (`raw_mode_on`/`raw_mode_off`) issues
-the `ioctl` syscall (16) via `tcgetattr`/`tcsetattr`. The v0.1 `write(output)`
-seccomp set does not yet grant `ioctl`, so the sandboxed binary is SIGSYS-killed
-before the wrapper's graceful non-TTY handling can run. Build with `--no-sandbox`
-until the sandbox table grows a terminal-control entry (a separate `sandbox.rs` /
-`runtime-sandbox.md` item). The compile path and the proof are identical either way.
+**The sandbox grants `ioctl` via `fx term` (#106/#132):** the termios boundary
+(`raw_mode_on`/`raw_mode_off`) issues the `ioctl` syscall (16) via
+`tcgetattr`/`tcsetattr`. Those boundaries declare `fx term` — the dedicated
+terminal-control effect atom — whose `forge/src/sandbox.rs` `TERM_SYSCALLS={ioctl:16}`
+widening grants `ioctl`. So the editor builds + runs FULLY sandboxed (the default,
+NO `--no-sandbox`): raw mode enters under the filter, edits/saves run, exit 0. The
+grant is SCOPED to the effect — a plain `write` program (`print`, `write_file`) does
+NOT acquire `ioctl`, so its `ioctl` is still SIGSYS-killed. The grant is `ioctl`-broad
+(any cmd) because classic seccomp-bpf cannot filter the `ioctl` cmd register
+(runtime-sandbox.md OQ-5).
 
 The runnable session is grounded as a test: `forge/tests/editor_runs.rs` builds the
 editor with `rustc`, runs it with the piped keystrokes above, and asserts the frames

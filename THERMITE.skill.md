@@ -268,6 +268,8 @@ non-exhaustive match), so this list can never silently fall behind the language.
   // e.g. fx panic
 - `diverge` — may not terminate (waives the default termination proof)
   // e.g. fx diverge
+- `term` — controls the terminal (raw mode via the `ioctl` syscall)
+  // e.g. fx term
 
 Removed from Rust (to keep the language small and formulaic): explicit
 lifetimes, the full trait system (only built-in `Eq`/`Ord`/`Hash`/`Iter`/

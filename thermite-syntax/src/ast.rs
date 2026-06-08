@@ -320,6 +320,12 @@ pub enum Effect {
     Rand,
     Panic,
     Diverge,
+    /// Terminal-control effect (`fx term`, issue #106): the boundary issues the
+    /// `ioctl` syscall (termios `tcgetattr`/`tcsetattr`). A bare atom (no path
+    /// arg), like `time`/`rand`. Its runtime-sandbox grant is `{ioctl:16}`
+    /// (runtime-sandbox.md REQ-7); it carries no proof obligation (only the
+    /// syscall grant + the §4.1 row-subsumption every atom is subject to).
+    Term,
 }
 
 /// A `{ ... }` block: statements plus an optional trailing tail expression

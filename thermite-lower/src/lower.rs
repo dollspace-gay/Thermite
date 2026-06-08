@@ -238,6 +238,7 @@ fn effect_atom_name(effect: &thermite_syntax::ast::Effect) -> String {
         Effect::Rand => "rand".to_string(),
         Effect::Panic => "panic".to_string(),
         Effect::Diverge => "diverge".to_string(),
+        Effect::Term => "term".to_string(),
     }
 }
 

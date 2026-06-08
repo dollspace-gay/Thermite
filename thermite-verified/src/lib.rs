@@ -9,12 +9,17 @@
 //!
 //! The FIRST proven increment is effect subsumption (`subsumes`): a wrong answer
 //! mints a false `pure` certificate for an effectful function (§4.1 / §9). The
-//! decision is ported to a bounded **8-atom `u8` bitset** (Read=0 .. Diverge=7,
+//! decision is ported to a bounded **9-atom `u16` bitset** (Read=0 .. Term=8,
 //! the path-insensitive atom-kind projection `EffectKind::of` already computes in
 //! `thermite-lower`), where subsumption is the mask test `(callee & !caller) == 0`
 //! and the genuine subset relation `effects(callee) ⊆ effects(caller)` is the
-//! explicit 8-way conjunction over the bit positions. The two are proved
-//! equivalent by Verus `bit_vector`-mode SMT.
+//! explicit 9-way conjunction over the bit positions. The two are proved
+//! equivalent by Verus `bit_vector`-mode SMT. (The proved bitset WIDENED from
+//! `u8` to `u16` for the 9th atom `Term` — the §4.1 terminal-control effect,
+//! issue #106 — and every `bit_vector`/`compute` proof was RE-DERIVED over the
+//! widened u16 domain; the widened lattice is still sound. `Term` is a
+//! terminal-control grant that is NOT one of the 5 io-sensitive syscalls, so its
+//! `io_allow` contribution is 0 — runtime-sandbox.md REQ-7 / OQ-5.)
 //!
 //! ## The landed mechanism: (c) exhaustive equivalence (NOT (b) delegation)
 //!
@@ -40,7 +45,7 @@
 //! - The always-cargo-compiled plain Rust ([`subsumes_masks`] / its spec
 //!   [`spec_subsumes_mask`]) is BYTE-IDENTICAL to the verus exec body / spec. The
 //!   toolchain delegates the mask comparison to [`subsumes_masks`]; the
-//!   exhaustive 2^8 × 2^8 = 65536-pair equivalence test
+//!   exhaustive 2^9 × 2^9 = 262144-pair equivalence test
 //!   (`tests/equivalence` over in `thermite-lower`) asserts the running code
 //!   equals the proved subset relation for EVERY input — finite + fully
 //!   enumerated, so this PROVES `effects::subsumes` computes exactly the relation
@@ -64,7 +69,7 @@
 //!   user-I/O syscalls (openat/socket/connect/getrandom/clock_gettime, bits 0..5).
 //!   The verus core carries `pure_has_no_io` (`io_allow(0) == 0`), `monotone`
 //!   (subset on the syscall-mask), and `io_allow_within_io_bits` (deny-by-default).
-//!   `forge::sandbox`'s `syscall_allowlist` is anchored to this over all 256 masks
+//!   `forge::sandbox`'s `syscall_allowlist` is anchored to this over all 512 masks
 //!   by its in-module `verus_anchor` test (OQ-6: the 5 sensitive syscalls only; the
 //!   dense `BASELINE_SYSCALLS` stays `sandbox_conformance`-grounded).
 //!
@@ -79,48 +84,52 @@
 //! | REQ-5 (FIRST increment — `subsumes` verified + delegated/matched) | SHIPPED | `verus_core::subsumes` proved; `subsumes_masks` (plain mirror) consumed by `thermite_lower::effects::subsumes`; the lattice laws (reflexive / Pure-subsumes-only-Pure / top-subsumes-all) are three `proof fn`s; the 14 `effects` tests still pass (behavior preserved). |
 //! | REQ-6 (CI-able verus-verify gauntlet step) | SHIPPED | `tests/verus_verify.rs` runs the real `verus --no-cheating src/lib.rs` (skip-loud if verus absent, like `lower_conformance`) and asserts `verified, 0 errors`; a core fn that fails to verify is a HARD test failure (R-DEFER-6). |
 //! | REQ-7 (degrade anti-cheat verified + anchored) | SHIPPED | `verus_core::ladder_action_l3`/`ladder_action_l2` proved (the anti-cheat `ensures` `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` + the L2 analog + the global `anti_cheat_holds_for_all_verdicts` proof); the plain mirrors [`ladder_action_l3_tag`]/[`ladder_action_l2_tag`] are consumed by `forge::degrade::ladder_action_l3`/`ladder_action_l2` (its in-module `verus_anchor` equivalence test); `run_ladder` BRANCHES on the proved decision. |
-//! | REQ-8 (seccomp allowlist soundness verified + anchored) | SHIPPED | `verus_core::io_allow` proved (`pure_has_no_io`, `non_widening_atoms_have_no_io`, `monotone`, `io_allow_within_io_bits`); the plain mirror [`io_allow`] is anchored to `forge::sandbox::syscall_allowlist` over all 256 fx-masks by the `sandbox::verus_anchor` test (the 5 sensitive syscalls only, OQ-6). |
+//! | REQ-8 (seccomp allowlist soundness verified + anchored) | SHIPPED | `verus_core::io_allow` proved over the 9-atom u16 fx-mask (`pure_has_no_io`, `non_widening_atoms_have_no_io`, `monotone`, `io_allow_within_io_bits`); the plain mirror [`io_allow`] is anchored to `forge::sandbox::syscall_allowlist` over all 512 fx-masks by the `sandbox::verus_anchor` test (the 5 sensitive syscalls only, OQ-6). The #106 `Term` atom (bit 8) is non-widening (`widen(8)==0`) — a terminal-control `ioctl` grant, NOT io-sensitive (REQ-7/OQ-5). |
 //! | REQ-9 (boundary HONESTY gate — Target C) | SHIPPED | `verus_core::should_emit_external_body` proved (`r == has_boundary \|\| has_slag` + the §9 corollary `(!has_boundary && !has_slag) ==> !r` + the global `regular_fn_never_external_body` proof); the plain mirror [`should_emit_external_body`] is consumed by `thermite_lower::lower::lower_fn`'s gate, anchored by the OBSERVABLE-dispatch test `thermite-lower/tests/boundary_gate_verified.rs` (emitted `#[verifier::external_body]` IFF the proved predicate, over the 4 (boundary,slag) combos). |
 //! | REQ-10 (project LEVEL AGGREGATION — Target D) | SHIPPED | `verus_core::aggregate_level` (the `Seq<Level>` fold-min seeded at L3) proved with `aggregate_le_all` (D1: ≤ every fn) + `aggregate_is_attained` (D2: == the min); the plain mirror [`aggregate_level`] (+ [`Level`]/[`min2`]/[`rank`]) anchors `forge::manifest::AssuranceManifest::aggregate` over all 341 `Level` lists (len 0..=4) by `manifest::tests::verus_anchor`. |
 //! | REQ-11 (mutation FLOOR gate — Target E, #48) | SHIPPED | `verus_core::meets_floor_60` (INTEGER cross-multiply `scored > 0 && killed*100 >= scored*60`, `u128` widening, NO float) proved with the #48 `scored == 0 ==> !r` `ensures` + the global `zero_scored_never_passes` proof; the plain mirror [`meets_floor_60`] anchors `forge::mutation::MutationScore::meets_floor` over the `0..=20 × 0..=20` f64↔integer grid by `mutation::tests::verus_anchor` (OQ-E: 0 divergences — the cross-multiply is the exact rational test). |
 
 /// The number of atomic effect kinds (`thermite_syntax::ast::Effect` →
 /// `thermite_lower::effects::EffectKind`): Read=0, Write=1, Net=2, Alloc=3,
-/// Time=4, Rand=5, Panic=6, Diverge=7. The bitset is a `u8` (one bit per atom),
-/// so bits 0..8 are meaningful and the relation is total over all 256 masks.
-pub const ATOM_COUNT: u8 = 8;
+/// Time=4, Rand=5, Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom).
+/// The bitset is a `u16` (one bit per atom), so bits 0..9 are meaningful and the
+/// relation is total over all 512 masks (the 9-atom domain). WIDENED `u8`→`u16`
+/// for the 9th atom; the `bit_vector` proofs were re-derived over u16.
+pub const ATOM_COUNT: u16 = 9;
 
-/// The executable effect-subsumption decision over the 8-atom bitset (REQ-5):
-/// `caller` subsumes `callee` iff `callee` has no atom the `caller` lacks, i.e.
-/// `(callee & !caller) == 0`. This plain-Rust body is BYTE-IDENTICAL to the
-/// `verus_core::subsumes` exec body the Verus prover discharges against the
+/// The executable effect-subsumption decision over the 9-atom `u16` bitset
+/// (REQ-5): `caller` subsumes `callee` iff `callee` has no atom the `caller`
+/// lacks, i.e. `(callee & !caller) == 0`. This plain-Rust body is BYTE-IDENTICAL
+/// to the `verus_core::subsumes` exec body the Verus prover discharges against the
 /// subset-relation `ensures` (mechanism (c) — the running code mirrors the proved
-/// code). [`spec_subsumes_mask`] is the spec it is proved to compute.
+/// code). [`spec_subsumes_mask`] is the spec it is proved to compute. WIDENED
+/// `u8`→`u16` for the 9th atom `Term` (#106); the `(callee & !caller) == 0`
+/// equivalence to the 9-way subset conjunction is re-proved over u16.
 ///
 /// `thermite_lower::effects::subsumes` delegates its bit-level comparison here
-/// (the production consumer, R-DEFER-1); the exhaustive 65536-pair equivalence
-/// test anchors `effects::subsumes` to this verus-verified relation.
+/// (the production consumer, R-DEFER-1); the exhaustive 512×512 = 131072-pair
+/// equivalence test anchors `effects::subsumes` to this verus-verified relation.
 #[must_use]
-pub fn subsumes_masks(caller: u8, callee: u8) -> bool {
+pub fn subsumes_masks(caller: u16, callee: u16) -> bool {
     let missing = callee & !caller;
     missing == 0
 }
 
 /// The genuine subset relation `effects(callee) ⊆ effects(caller)` over the
-/// 8-atom bitset, as the explicit per-atom conjunction (REQ-4 — the NON-trivial
-/// contract `subsumes_masks` is proved to compute). For each atom position `i`,
-/// if `callee` has atom `i` then `caller` must have it. This is the plain-Rust
-/// mirror of `verus_core::spec_subsumes`; the Verus `bit_vector` proof shows
-/// `subsumes_masks(c, k) == spec_subsumes_mask(c, k)` for all `(c, k)`, and the
-/// exhaustive equivalence test re-checks the mirror over the full domain.
+/// 9-atom `u16` bitset, as the explicit per-atom conjunction (REQ-4 — the
+/// NON-trivial contract `subsumes_masks` is proved to compute). For each atom
+/// position `i`, if `callee` has atom `i` then `caller` must have it. This is the
+/// plain-Rust mirror of `verus_core::spec_subsumes`; the Verus `bit_vector` proof
+/// shows `subsumes_masks(c, k) == spec_subsumes_mask(c, k)` for all `(c, k)`, and
+/// the exhaustive equivalence test re-checks the mirror over the full u16 domain.
 ///
 /// NON-VACUITY: this returns `false` for `caller=0, callee=1` (Pure does not
 /// subsume {Read}), so the relation is genuinely constraining (not `true`).
 #[must_use]
-pub fn spec_subsumes_mask(caller: u8, callee: u8) -> bool {
-    let mut i: u8 = 0;
+pub fn spec_subsumes_mask(caller: u16, callee: u16) -> bool {
+    let mut i: u16 = 0;
     while i < ATOM_COUNT {
-        let bit = 1u8 << i;
+        let bit = 1u16 << i;
         if (callee & bit) != 0 && (caller & bit) == 0 {
             return false;
         }
@@ -218,9 +227,13 @@ pub fn ladder_action_l2_tag(v: L2Tag) -> LadderAction {
 // REQ-8 — the seccomp allowlist SOUNDNESS decision (the fx → sensitive-I/O map).
 // ===========================================================================
 
-/// The number of fx-atom kinds in the `u8` fx-mask (Read=0, Write=1, Net=2, Time=3,
-/// Rand=4, Alloc=5, Panic=6, Diverge=7). The bitset is total over all 256 masks.
-pub const FX_ATOM_COUNT: u8 = 8;
+/// The number of fx-atom kinds in the `u16` fx-mask (Read=0, Write=1, Net=2,
+/// Time=3, Rand=4, Alloc=5, Panic=6, Diverge=7, Term=8 — the #106
+/// terminal-control atom). The bitset is total over all 512 masks. WIDENED
+/// `u8`→`u16` for the 9th atom; `Term` is NON-widening (`widen(8) == 0`) — a
+/// terminal-control `ioctl` grant, NOT one of the 5 io-sensitive syscalls
+/// (runtime-sandbox.md REQ-7 / OQ-5), so the io_allow soundness lemmas still hold.
+pub const FX_ATOM_COUNT: u16 = 9;
 
 /// The bit positions, in the `u32` sensitive-syscall mask, of the 5 user-I/O
 /// syscalls the §4.1 `pure`-exclusion table calls out (REQ-8). The dense
@@ -239,37 +252,40 @@ pub const SYS_CLOCK_GETTIME: u32 = 1 << 4;
 /// The per-atom contribution to the sensitive-syscall mask (REQ-8): which of the 5
 /// sensitive user-I/O syscalls fx-atom `i` widens the allowlist to permit.
 /// Read/Write→openat, Net→socket|connect, Time→clock_gettime, Rand→getrandom,
-/// Alloc/Panic/Diverge→0 (non-widening). BYTE-IDENTICAL to `verus_core::widen`.
+/// Alloc/Panic/Diverge/Term→0 (non-widening). BYTE-IDENTICAL to `verus_core::widen`.
+/// `Term` (8, #106) is the `ioctl` grant — NOT one of the 5 io-sensitive syscalls
+/// (runtime-sandbox.md REQ-7 / OQ-5), so it contributes 0 to the io_allow mask.
 #[must_use]
-pub fn widen(i: u8) -> u32 {
+pub fn widen(i: u16) -> u32 {
     match i {
         0 => SYS_OPENAT,               // Read
         1 => SYS_OPENAT,               // Write
         2 => SYS_SOCKET | SYS_CONNECT, // Net
         3 => SYS_CLOCK_GETTIME,        // Time
         4 => SYS_GETRANDOM,            // Rand
-        // Alloc (5) / Panic (6) / Diverge (7) widen NO sensitive syscall.
+        // Alloc (5) / Panic (6) / Diverge (7) / Term (8) widen NO sensitive syscall.
         _ => 0,
     }
 }
 
 /// The sensitive-syscall membership a transitive fx-mask permits (REQ-8): the OR of
-/// every PRESENT atom's [`widen`] contribution. BYTE-IDENTICAL to the
-/// `verus_core::io_allow` exec body the Verus prover discharges against the three
-/// soundness lemmas — `pure_has_no_io` (`io_allow(0) == 0`), `monotone` (subset on
-/// the syscall-mask), and `io_allow_within_io_bits` (deny-by-default). The
-/// `forge::sandbox::syscall_allowlist` production fn is anchored to this over all
-/// 256 fx-masks by `sandbox::verus_anchor` (the production consumer, R-DEFER-1).
+/// every PRESENT atom's [`widen`] contribution, over the 9-atom `u16` fx-mask.
+/// BYTE-IDENTICAL to the `verus_core::io_allow` exec body the Verus prover
+/// discharges against the three soundness lemmas — `pure_has_no_io`
+/// (`io_allow(0) == 0`), `monotone` (subset on the syscall-mask), and
+/// `io_allow_within_io_bits` (deny-by-default). The `forge::sandbox::syscall_allowlist`
+/// production fn is anchored to this over all 512 fx-masks by `sandbox::verus_anchor`
+/// (the production consumer, R-DEFER-1).
 ///
 /// NON-VACUITY: `io_allow(0) == 0` (pure permits NO sensitive syscall) and
 /// `io_allow(1) == SYS_OPENAT != 0` (Read widens), so the map is genuinely
 /// constraining (not constant).
 #[must_use]
-pub fn io_allow(fx: u8) -> u32 {
+pub fn io_allow(fx: u16) -> u32 {
     let mut out: u32 = 0;
-    let mut i: u8 = 0;
+    let mut i: u16 = 0;
     while i < FX_ATOM_COUNT {
-        if (fx & (1u8 << i)) != 0 {
+        if (fx & (1u16 << i)) != 0 {
             out |= widen(i);
         }
         i += 1;
@@ -411,16 +427,16 @@ mod verus_core {
 
     verus! {
 
-    /// Atom `i` is present in `mask` (bit `i` set). 8 atoms: Read=0 .. Diverge=7.
-    pub open spec fn has(mask: u8, i: u8) -> bool {
-        (mask & (1u8 << i)) != 0
+    /// Atom `i` is present in `mask` (bit `i` set). 9 atoms (u16): Read=0 .. Term=8.
+    pub open spec fn has(mask: u16, i: u16) -> bool {
+        (mask & (1u16 << i)) != 0
     }
 
     /// The genuine subset relation `effects(callee) ⊆ effects(caller)`, as the
-    /// explicit 8-way conjunction over the atom positions (mirrors the plain-Rust
+    /// explicit 9-way conjunction over the atom positions (mirrors the plain-Rust
     /// `spec_subsumes_mask`). NON-vacuous (REQ-4): false when callee has an atom
-    /// caller lacks.
-    pub open spec fn spec_subsumes(caller: u8, callee: u8) -> bool {
+    /// caller lacks. Bit 8 is the #106 terminal-control atom `Term`.
+    pub open spec fn spec_subsumes(caller: u16, callee: u16) -> bool {
         &&& (has(callee, 0) ==> has(caller, 0))
         &&& (has(callee, 1) ==> has(caller, 1))
         &&& (has(callee, 2) ==> has(caller, 2))
@@ -429,39 +445,51 @@ mod verus_core {
         &&& (has(callee, 5) ==> has(caller, 5))
         &&& (has(callee, 6) ==> has(caller, 6))
         &&& (has(callee, 7) ==> has(caller, 7))
+        &&& (has(callee, 8) ==> has(caller, 8))
     }
 
     /// The executable mask test, PROVED equal to the subset relation for ALL
     /// inputs (the L3 guarantee, §6). Byte-identical to the plain-Rust
-    /// `subsumes_masks` the toolchain runs.
-    pub fn subsumes(caller: u8, callee: u8) -> (r: bool)
+    /// `subsumes_masks` the toolchain runs. WIDENED to u16 for the 9th atom (#106).
+    /// The 9-atom masks only ever set bits 0..9 (the `EffectKind::bit` domain), so
+    /// the contract is over `caller < 512 && callee < 512` — the upper bits 9..16
+    /// are unused, so the all-16-bit `(callee & !caller) == 0` test agrees with the
+    /// 9-way `spec_subsumes` conjunction exactly when no out-of-domain bit is set.
+    pub fn subsumes(caller: u16, callee: u16) -> (r: bool)
+        requires caller < 512, callee < 512,
         ensures r == spec_subsumes(caller, callee),
     {
-        assert((callee & !caller == 0) == spec_subsumes(caller, callee)) by (bit_vector);
+        assert(caller < 512 && callee < 512 ==>
+            ((callee & !caller & 0x1FF) == 0) == spec_subsumes(caller, callee)) by (bit_vector);
+        assert(caller < 512 && callee < 512 ==>
+            (callee & !caller) == (callee & !caller & 0x1FF)) by (bit_vector);
         let missing = callee & !caller;
         missing == 0
     }
 
     /// Lattice law 1 (`.design/lower/effect-subsumption.md` REQ-1): reflexive —
     /// every row subsumes itself.
-    proof fn lattice_reflexive(row: u8)
+    proof fn lattice_reflexive(row: u16)
         ensures spec_subsumes(row, row),
     {
         assert(spec_subsumes(row, row)) by (bit_vector);
     }
 
-    /// Lattice law 2: Pure (the empty set, mask 0) subsumes ONLY Pure.
-    proof fn lattice_pure_subsumes_only_pure(callee: u8)
-        ensures spec_subsumes(0u8, callee) == (callee == 0),
+    /// Lattice law 2: Pure (the empty set, mask 0) subsumes ONLY Pure (over the
+    /// 9-atom domain `callee < 512`; an out-of-domain upper bit is not a modeled
+    /// atom).
+    proof fn lattice_pure_subsumes_only_pure(callee: u16)
+        requires callee < 512,
+        ensures spec_subsumes(0u16, callee) == (callee == 0),
     {
-        assert(spec_subsumes(0u8, callee) == (callee == 0)) by (bit_vector);
+        assert(callee < 512 ==> (spec_subsumes(0u16, callee) == (callee == 0))) by (bit_vector);
     }
 
-    /// Lattice law 3: the top row (all 8 atoms, mask 0xFF) subsumes every row.
-    proof fn lattice_top_subsumes_all(callee: u8)
-        ensures spec_subsumes(0xFFu8, callee),
+    /// Lattice law 3: the top row (all 9 atoms, mask 0x1FF) subsumes every row.
+    proof fn lattice_top_subsumes_all(callee: u16)
+        ensures spec_subsumes(0x1FFu16, callee),
     {
-        assert(spec_subsumes(0xFFu8, callee)) by (bit_vector);
+        assert(spec_subsumes(0x1FFu16, callee)) by (bit_vector);
     }
 
     // =======================================================================
@@ -569,28 +597,30 @@ mod verus_core {
     // deny-by-default over the 5 sensitive user-I/O syscalls).
     // =======================================================================
 
-    /// fx-atom `i` is present in the `u8` fx-mask (bit `i` set).
-    pub open spec fn fx_has(fx: u8, i: u8) -> bool {
-        (fx & (1u8 << i)) != 0
+    /// fx-atom `i` is present in the `u16` fx-mask (bit `i` set).
+    pub open spec fn fx_has(fx: u16, i: u16) -> bool {
+        (fx & (1u16 << i)) != 0
     }
 
     /// The per-atom sensitive-syscall contribution (REQ-8): which of the 5 sensitive
     /// I/O syscalls atom `i` widens to permit. openat=bit0, socket=bit1, connect=bit2,
     /// getrandom=bit3, clock_gettime=bit4. Mirrors the plain-Rust `widen`. NON-widening
-    /// atoms (Alloc=5/Panic=6/Diverge=7, and any i>=8) contribute 0.
-    pub open spec fn widen(i: u8) -> u32 {
+    /// atoms (Alloc=5/Panic=6/Diverge=7/Term=8, and any i>=9) contribute 0. `Term`
+    /// (8, #106) is the `ioctl` grant — NOT an io-sensitive syscall (REQ-7/OQ-5).
+    pub open spec fn widen(i: u16) -> u32 {
         if i == 0 { 1u32 }            // Read  → openat
         else if i == 1 { 1u32 }       // Write → openat
         else if i == 2 { 2u32 | 4u32 } // Net  → socket | connect
         else if i == 3 { 16u32 }      // Time → clock_gettime
         else if i == 4 { 8u32 }       // Rand → getrandom
-        else { 0u32 }                 // Alloc/Panic/Diverge → none
+        else { 0u32 }                 // Alloc/Panic/Diverge/Term → none
     }
 
     /// The sensitive-syscall membership an fx-mask permits (REQ-8): the OR of every
-    /// PRESENT atom's `widen` contribution, the explicit 8-way unrolled fold over the
-    /// bit positions. Mirrors the plain-Rust `io_allow`. The proved exec form.
-    pub open spec fn io_allow(fx: u8) -> u32 {
+    /// PRESENT atom's `widen` contribution, the explicit 9-way unrolled fold over the
+    /// bit positions (bit 8 is `Term`, #106 — `widen(8) == 0`). Mirrors the plain-Rust
+    /// `io_allow`. The proved exec form.
+    pub open spec fn io_allow(fx: u16) -> u32 {
         (if fx_has(fx, 0) { widen(0) } else { 0u32 })
         | (if fx_has(fx, 1) { widen(1) } else { 0u32 })
         | (if fx_has(fx, 2) { widen(2) } else { 0u32 })
@@ -599,29 +629,31 @@ mod verus_core {
         | (if fx_has(fx, 5) { widen(5) } else { 0u32 })
         | (if fx_has(fx, 6) { widen(6) } else { 0u32 })
         | (if fx_has(fx, 7) { widen(7) } else { 0u32 })
+        | (if fx_has(fx, 8) { widen(8) } else { 0u32 })
     }
 
     /// The exec form of `io_allow`, PROVED equal to the spec fold for ALL masks (the
     /// L3 guarantee, §6). A single OR expression structurally matching the spec
     /// (each `fx_has(fx, i)` is the `(fx & (1<<i)) != 0` test, each `widen(i)` its
     /// literal). Byte-identical in shape to the plain-Rust `io_allow` accumulation.
-    pub fn io_allow_exec(fx: u8) -> (r: u32)
+    pub fn io_allow_exec(fx: u16) -> (r: u32)
         ensures r == io_allow(fx),
     {
-        (if (fx & (1u8 << 0)) != 0 { widen_exec(0) } else { 0u32 })
-        | (if (fx & (1u8 << 1)) != 0 { widen_exec(1) } else { 0u32 })
-        | (if (fx & (1u8 << 2)) != 0 { widen_exec(2) } else { 0u32 })
-        | (if (fx & (1u8 << 3)) != 0 { widen_exec(3) } else { 0u32 })
-        | (if (fx & (1u8 << 4)) != 0 { widen_exec(4) } else { 0u32 })
-        | (if (fx & (1u8 << 5)) != 0 { widen_exec(5) } else { 0u32 })
-        | (if (fx & (1u8 << 6)) != 0 { widen_exec(6) } else { 0u32 })
-        | (if (fx & (1u8 << 7)) != 0 { widen_exec(7) } else { 0u32 })
+        (if (fx & (1u16 << 0)) != 0 { widen_exec(0) } else { 0u32 })
+        | (if (fx & (1u16 << 1)) != 0 { widen_exec(1) } else { 0u32 })
+        | (if (fx & (1u16 << 2)) != 0 { widen_exec(2) } else { 0u32 })
+        | (if (fx & (1u16 << 3)) != 0 { widen_exec(3) } else { 0u32 })
+        | (if (fx & (1u16 << 4)) != 0 { widen_exec(4) } else { 0u32 })
+        | (if (fx & (1u16 << 5)) != 0 { widen_exec(5) } else { 0u32 })
+        | (if (fx & (1u16 << 6)) != 0 { widen_exec(6) } else { 0u32 })
+        | (if (fx & (1u16 << 7)) != 0 { widen_exec(7) } else { 0u32 })
+        | (if (fx & (1u16 << 8)) != 0 { widen_exec(8) } else { 0u32 })
     }
 
     /// The exec form of `widen`, PROVED equal to the spec for all atom indices
     /// (used by `io_allow_exec` so the running form delegates to the proved per-atom
     /// contribution rather than re-spelling the literals).
-    pub fn widen_exec(i: u8) -> (r: u32)
+    pub fn widen_exec(i: u16) -> (r: u32)
         ensures r == widen(i),
     {
         if i == 0 { 1u32 }
@@ -636,24 +668,24 @@ mod verus_core {
     /// sensitive user-I/O syscall. NON-vacuous: a non-widening atom leaking `openat`
     /// (mutating `widen`'s `else` arm) makes this fail (Grounding B).
     proof fn pure_has_no_io()
-        ensures io_allow(0u8) == 0u32,
+        ensures io_allow(0u16) == 0u32,
     {
-        assert(io_allow(0u8) == 0u32) by (compute);
+        assert(io_allow(0u16) == 0u32) by (compute);
     }
 
-    /// SOUNDNESS lemma 2 — non-widening atoms (Alloc/Panic/Diverge) add no I/O: a
-    /// mask of ONLY bits 5,6,7 permits nothing sensitive.
+    /// SOUNDNESS lemma 2 — non-widening atoms (Alloc/Panic/Diverge/Term) add no I/O: a
+    /// mask of ONLY bits 5,6,7,8 (incl. the #106 `Term` bit) permits nothing sensitive.
     proof fn non_widening_atoms_have_no_io()
-        ensures io_allow(0b1110_0000u8) == 0u32,
+        ensures io_allow(0b1_1110_0000u16) == 0u32,
     {
-        assert(io_allow(0b1110_0000u8) == 0u32) by (compute);
+        assert(io_allow(0b1_1110_0000u16) == 0u32) by (compute);
     }
 
     /// SOUNDNESS lemma 3 — MONOTONICITY (REQ-8, deny-by-default's positive form):
     /// `fx ⊆ fx'` (bitset subset) ⟹ `io_allow(fx) ⊆ io_allow(fx')` on the
     /// syscall-mask (adding an effect NEVER removes a permitted syscall). NON-vacuous:
     /// an XOR `io_allow` (so Write cancels Read's openat) makes this fail (Grounding B).
-    proof fn monotone(fx: u8, fxp: u8)
+    proof fn monotone(fx: u16, fxp: u16)
         requires (fx & fxp) == fx,
         ensures (io_allow(fx) & io_allow(fxp)) == io_allow(fx),
     {
@@ -662,8 +694,9 @@ mod verus_core {
 
     /// SOUNDNESS lemma 4 — DENY-BY-DEFAULT (REQ-8): `io_allow` NEVER sets a bit
     /// outside the 5 sensitive syscalls (bits 0..5, mask 0x1F). A widening can only
-    /// grant inside the modeled sensitive set, never silently elsewhere (OQ-6).
-    proof fn io_allow_within_io_bits(fx: u8)
+    /// grant inside the modeled sensitive set, never silently elsewhere (OQ-6). The
+    /// #106 `Term` bit (8) widens to 0, so the deny-by-default bound is unchanged.
+    proof fn io_allow_within_io_bits(fx: u16)
         ensures (io_allow(fx) & !0x1Fu32) == 0u32,
     {
         assert((io_allow(fx) & !0x1Fu32) == 0u32) by (bit_vector);

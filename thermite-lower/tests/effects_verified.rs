@@ -7,11 +7,12 @@
 //! crates inherit `workspace.lints` and a `verus!{}` exec body with an `ensures`
 //! clause is verus-driver-only syntax. So we land (c): the verified relation is
 //! a proved oracle, and THIS test enumerates the ENTIRE finite input domain
-//! (2^8 × 2^8 = 65536 (caller_mask, callee_mask) pairs) and asserts
-//! `effects::subsumes` (over `EffectRow`s decoded from the masks) equals the
-//! verus-proved subset relation `thermite_verified::spec_subsumes_mask` for EVERY
-//! pair. Since the domain is finite and fully enumerated with 0 mismatches, this
-//! PROVES `effects::subsumes` computes exactly the relation `verus` proved
+//! (2^9 × 2^9 = 262144 (caller_mask, callee_mask) pairs over the 9-atom `u16`
+//! bitset, WIDENED for the #106 `Term` atom) and asserts `effects::subsumes`
+//! (over `EffectRow`s decoded from the masks) equals the verus-proved subset
+//! relation `thermite_verified::spec_subsumes_mask` for EVERY pair. Since the
+//! domain is finite and fully enumerated with 0 mismatches, this PROVES
+//! `effects::subsumes` computes exactly the relation `verus` proved
 //! `thermite_verified::subsumes` implements → `effects::subsumes` is transitively
 //! verus-anchored.
 //!
@@ -23,12 +24,16 @@
 use thermite_lower::subsumes;
 use thermite_syntax::ast::{Effect, EffectRow};
 
-/// Decode an 8-atom `u8` mask to the `EffectRow` `effects::subsumes` consumes.
+/// The number of meaningful atom bits in the widened `u16` bitset (Read=0 ..
+/// Term=8). The domain the proved relation is total over is `0..512`.
+const ATOM_DOMAIN: u16 = 512;
+
+/// Decode a 9-atom `u16` mask to the `EffectRow` `effects::subsumes` consumes.
 /// Bit positions MUST match `EffectKind::bit` in `effects.rs` and the verus
 /// core's atom ordering: Read=0, Write=1, Net=2, Alloc=3, Time=4, Rand=5,
-/// Panic=6, Diverge=7. Path-carrying atoms use a representative path (v0.1
-/// subsumption is path-insensitive, OQ-1).
-fn row_from_mask(mask: u8) -> EffectRow {
+/// Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom). Path-carrying
+/// atoms use a representative path (v0.1 subsumption is path-insensitive, OQ-1).
+fn row_from_mask(mask: u16) -> EffectRow {
     if mask == 0 {
         return EffectRow::Pure;
     }
@@ -57,17 +62,21 @@ fn row_from_mask(mask: u8) -> EffectRow {
     if mask & (1 << 7) != 0 {
         effects.push(Effect::Diverge);
     }
+    if mask & (1 << 8) != 0 {
+        effects.push(Effect::Term);
+    }
     EffectRow::Set(effects)
 }
 
-/// AC-4: over ALL 65536 (caller, callee) mask pairs, `effects::subsumes` equals
-/// the verus-proved subset relation `thermite_verified::spec_subsumes_mask`.
+/// AC-4: over ALL 262144 (caller, callee) mask pairs (the 9-atom u16 domain),
+/// `effects::subsumes` equals the verus-proved subset relation
+/// `thermite_verified::spec_subsumes_mask`.
 #[test]
 fn subsumes_matches_verified_spec_exhaustively() {
     let mut checked: u32 = 0;
     let mut mismatches: u32 = 0;
-    for caller in 0u8..=255 {
-        for callee in 0u8..=255 {
+    for caller in 0u16..ATOM_DOMAIN {
+        for callee in 0u16..ATOM_DOMAIN {
             // The EXTERNAL truth: the verus-verified subset relation (proved by
             // `verus --no-cheating`, see tests/verus_verify.rs).
             let expected = thermite_verified::spec_subsumes_mask(caller, callee);
@@ -76,18 +85,21 @@ fn subsumes_matches_verified_spec_exhaustively() {
             if actual != expected {
                 mismatches += 1;
                 eprintln!(
-                    "MISMATCH caller={caller:#010b} callee={callee:#010b}: \
+                    "MISMATCH caller={caller:#011b} callee={callee:#011b}: \
                      effects::subsumes={actual} verus_spec={expected}"
                 );
             }
             checked += 1;
         }
     }
-    assert_eq!(checked, 65536, "must enumerate the entire 2^8 x 2^8 domain");
+    assert_eq!(
+        checked, 262144,
+        "must enumerate the entire 2^9 x 2^9 domain"
+    );
     assert_eq!(
         mismatches, 0,
         "effects::subsumes must equal the verus-verified subset relation for \
-         every one of the 65536 mask pairs (mechanism (c), AC-4)"
+         every one of the 262144 mask pairs (mechanism (c), AC-4)"
     );
 }
 
@@ -100,8 +112,8 @@ fn subsumes_matches_verified_spec_exhaustively() {
 /// oracle.)
 #[test]
 fn verified_mirror_equals_spec_exhaustively() {
-    for caller in 0u8..=255 {
-        for callee in 0u8..=255 {
+    for caller in 0u16..ATOM_DOMAIN {
+        for callee in 0u16..ATOM_DOMAIN {
             assert_eq!(
                 thermite_verified::subsumes_masks(caller, callee),
                 thermite_verified::spec_subsumes_mask(caller, callee),
@@ -113,8 +125,10 @@ fn verified_mirror_equals_spec_exhaustively() {
 }
 
 /// Non-triviality (AC-2 mirror in Rust): the subset relation is NOT the constant
-/// `true` — Pure (mask 0) does not subsume {Read} (mask 1). Guards against a
-/// vacuous contract (R-DEFER-9).
+/// `true` — Pure (mask 0) does not subsume {Read} (mask 1). Also the new #106
+/// `Term` atom is genuinely constraining: a `write`-only row (mask 1<<1) does NOT
+/// subsume a `term` row (mask 1<<8) — the dedicated atom is not folded into
+/// `write`. Guards against a vacuous contract (R-DEFER-9).
 #[test]
 fn verified_spec_is_not_vacuous() {
     assert!(
@@ -122,8 +136,17 @@ fn verified_spec_is_not_vacuous() {
         "Pure must NOT subsume {{Read}} — the relation is non-vacuous"
     );
     assert!(
-        thermite_verified::spec_subsumes_mask(0xFF, 0xFF),
-        "top subsumes top (sanity)"
+        !thermite_verified::spec_subsumes_mask(1 << 1, 1 << 8),
+        "a write-only caller must NOT subsume a term callee — term is a dedicated \
+         atom, not folded into write (#106)"
+    );
+    assert!(
+        thermite_verified::spec_subsumes_mask(1 << 8, 1 << 8),
+        "a term caller subsumes a term callee (reflexive on the new atom)"
+    );
+    assert!(
+        thermite_verified::spec_subsumes_mask(0x1FF, 0x1FF),
+        "top (all 9 atoms) subsumes top (sanity)"
     );
     assert!(
         thermite_verified::spec_subsumes_mask(0, 0),

@@ -610,6 +610,11 @@ fn render_effect_arm(effect: &Effect) -> SkillFragment {
             description: "may not terminate (waives the default termination proof)",
             example: "fx diverge",
         },
+        Effect::Term => SkillFragment {
+            fragment: "term",
+            description: "controls the terminal (raw mode via the `ioctl` syscall)",
+            example: "fx term",
+        },
     }
 }
 
@@ -864,6 +869,7 @@ fn effect_inventory() -> Vec<Effect> {
         Effect::Rand,
         Effect::Panic,
         Effect::Diverge,
+        Effect::Term,
     ]
 }
 

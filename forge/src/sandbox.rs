@@ -18,7 +18,8 @@
 //! 2. **`fx` → syscall allowlist** ([`syscall_allowlist`]): each `fx` token maps to
 //!    a fixed set of x86_64 syscall numbers ([the table](#the-fx--syscall-table));
 //!    `pure` is the minimal baseline (run + print + the panic/abort path), `read`/
-//!    `write`/`net`/`time`/`rand` widen. Deterministic (sorted, deduped).
+//!    `write`/`net`/`time`/`rand`/`term` widen (`term` → `ioctl`:16, #106).
+//!    Deterministic (sorted, deduped).
 //! 3. **the BPF prelude** ([`emit_sandbox_prelude`]): the Rust SOURCE that, as the
 //!    first statements of the generated `main`, builds a classic `sock_filter[]`
 //!    program (arch-guard for x86_64 → load `nr` → a `BPF_JEQ` per allowed syscall →
@@ -58,6 +59,7 @@
 //! | REQ-4 (sandbox-on-by-default for `--entry`, `--no-sandbox` opt-out) | SHIPPED | `build::synthesize_entry_main` injects the prelude FIRST when `SandboxMode::On` (`build::SandboxConfig::default` = on); `--no-sandbox` → `SandboxMode::Off` (no prelude); a library build emits no `main` at all. Consumer: `cli::run_build` (the `--sandbox`/`--no-sandbox` flags). Verified by `sandbox_conformance::no_sandbox_omits_prelude` + `cli::tests::parses_build_sandbox_flags`. |
 //! | REQ-5 (reproducible prelude + manifest record) | SHIPPED | `emit_sandbox_prelude` is byte-deterministic (sorted allowlist); the `build::BuildManifest::sandbox` (`SandboxRecord`) field records the installed allowlist. Verified by unit `prelude_installs_and_is_deterministic` + `sandbox_conformance::pure_runs_clean` (the recorded allowlist excludes openat). |
 //! | REQ-6 (demonstrable enforcement — probe + clean pure run) | SHIPPED | `pub fn emit_probe` injects (under `--sandbox-self-test`, AFTER the filter) a raw `syscall(SYS_openat, ...)`. Consumer: `build::synthesize_entry_main`. Verified by `sandbox_conformance::probe_killed` (exit 159) vs `probe_allowed_when_fx_widens` (exit 0). |
+//! | REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106) | SHIPPED | `TERM_SYSCALLS = &[16 /* ioctl */]` + the `"term" => TERM_SYSCALLS` arm in `syscall_allowlist`; the §4.1 `Effect::Term` atom (`thermite_syntax::ast::Effect::Term`, parsed as `fx term`) flows through `manifest::effects_of` → `transitive_fx` → the allowlist, so a `term` program's allowlist INCLUDES `ioctl`:16 and a non-`term` one EXCLUDES it (scoped to the effect). The `examples/editor/editor.th` `run` entry now declares `fx term` (its `raw_mode_on`/`raw_mode_off` boundaries) and builds+runs FULLY sandboxed (NO `--no-sandbox`). Consumer: `syscall_allowlist` (via `build::synthesize_entry_main`). Verified by `tests::term_grants_ioctl_scoped_to_the_effect` + `verus_anchor` (the term bit is non-io, `widen(8)==0`, so the proved io_allow bitset is unaffected over all 512 masks) + `editor_runs.rs` (the editor sandboxed, exit 0). The grant is `ioctl`-BROAD (OQ-5). |
 
 use std::collections::BTreeSet;
 
@@ -134,6 +136,18 @@ const RAND_SYSCALLS: &[u32] = &[
     318, // getrandom
 ];
 
+/// The x86_64 syscall a `term` (terminal-control) effect ADDS (issue #106):
+/// `ioctl` (16), the syscall the termios `tcgetattr`/`tcsetattr` boundary issues
+/// for raw mode. The grant is `ioctl`-BROAD (any cmd) — classic seccomp-bpf
+/// compares only `seccomp_data.nr`, not the `cmd` register, so v0.1 grants the
+/// whole `ioctl` under `term` (runtime-sandbox.md REQ-7 / OQ-5). Scoped to the
+/// `term` effect: a `pure`/`read`/`write`/`net` program's allowlist EXCLUDES
+/// `ioctl`, so its `ioctl` is still `SIGSYS`-killed (a dedicated atom keeps a
+/// plain `write` program — `print`/`write_file` — from silently acquiring `ioctl`).
+const TERM_SYSCALLS: &[u32] = &[
+    16, // ioctl (termios TCGETS/TCSETS — the cmd cannot be filtered, OQ-5)
+];
+
 /// The x86_64 `openat` syscall number — the [`emit_probe`] self-test attempts it
 /// (`--sandbox-self-test`); denied under a `pure` filter (kill), allowed under
 /// `read`. Mirrors the `READ_SYSCALLS` `openat`:257 entry.
@@ -180,8 +194,9 @@ pub fn transitive_fx(program: &Program, entry: &str) -> BTreeSet<String> {
 /// Map a transitive `fx` token set to the x86_64 syscall allowlist (REQ-3): the
 /// baseline UNION every widening token's added syscalls ([the table](#the-fx--syscall-table)).
 /// `pure`/`alloc`/`panic`/`diverge` add nothing beyond the baseline; `read(_)`/
-/// `write(_)`/`net(_)`/`time`/`rand` widen. A token is matched by its leading verb
-/// (`read(src)` → the `read` widening) so the carried ident is irrelevant. Returns
+/// `write(_)`/`net(_)`/`time`/`rand`/`term` widen (`term` → `ioctl`:16, #106). A
+/// token is matched by its leading verb (`read(src)` → the `read` widening) so the
+/// carried ident is irrelevant. Returns
 /// the syscall numbers SORTED + DEDUPED — the same transitive `fx` yields the
 /// byte-identical allowlist (deterministic, R-CODE-5).
 pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
@@ -196,6 +211,10 @@ pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
             "net" => NET_SYSCALLS,
             "time" => TIME_SYSCALLS,
             "rand" => RAND_SYSCALLS,
+            // `term` (#106) widens with `ioctl`:16 for the termios raw-mode boundary
+            // (runtime-sandbox.md REQ-7). Scoped to the effect — only a `term`
+            // program's allowlist gains `ioctl`.
+            "term" => TERM_SYSCALLS,
             // "pure" / "alloc" / "panic" / "diverge" / any unknown → baseline-only.
             _ => &[],
         };
@@ -404,6 +423,42 @@ mod tests {
         );
     }
 
+    // REQ-7 (#106): a `term` program's allowlist INCLUDES ioctl:16; a
+    // pure/read/write/net program's allowlist EXCLUDES it — the grant is SCOPED to
+    // the `term` effect (a dedicated atom, not folded into `write`). Anchored to the
+    // design's Table `TERM_SYSCALLS={ioctl:16}` (R-CHAR-3, the design constant).
+    #[test]
+    fn term_grants_ioctl_scoped_to_the_effect() {
+        assert!(
+            syscall_allowlist(&set(&["term"])).contains(&16),
+            "fx term grants ioctl:16"
+        );
+        // A program WITHOUT term never gains ioctl — pure, read, write, net all deny it.
+        for fx in [
+            &set(&["pure"]),
+            &set(&["read(src)"]),
+            &set(&["write(dst)"]),
+            &set(&["net(sock)"]),
+        ] {
+            assert!(
+                !syscall_allowlist(fx).contains(&16),
+                "a non-term program must NOT gain ioctl: {fx:?}"
+            );
+        }
+        // The editor's full transitive row (read/write/alloc/diverge/term) gains ioctl.
+        assert!(
+            syscall_allowlist(&set(&[
+                "read(input)",
+                "write(output)",
+                "alloc",
+                "diverge",
+                "term"
+            ]))
+            .contains(&16),
+            "the editor's transitive fx (incl. term) grants ioctl"
+        );
+    }
+
     // REQ-3 / R-CODE-5: the allowlist is sorted + deduped (read's openat:257 is not
     // duplicated by write's openat:257) — deterministic.
     #[test]
@@ -499,9 +554,10 @@ mod tests {
 // block reaches them directly; `thermite-verified` is a forge DEV-dependency.
 // (Reported for the critic.)
 //
-// AC-8c — the 256-mask EXHAUSTIVE equivalence: enumerate ALL 2^8 fx-atom masks,
-// project each to the PRODUCTION token set, run the PRODUCTION `syscall_allowlist`,
-// and assert its membership over the FIVE sensitive user-I/O syscalls
+// AC-8c — the 512-mask EXHAUSTIVE equivalence: enumerate ALL 2^9 fx-atom masks
+// (WIDENED for the #106 `Term` atom, bit 8), project each to the PRODUCTION token
+// set, run the PRODUCTION `syscall_allowlist`, and assert its membership over the
+// FIVE sensitive user-I/O syscalls
 // (openat/socket/connect/getrandom/clock_gettime) equals the VERUS-PROVED
 // `thermite_verified::io_allow(mask)` bits for every mask. Expected = the proved
 // bitset spec (R-CHAR-3, never forge's own output) — so the production string-keyed
@@ -523,12 +579,13 @@ mod verus_anchor {
         SYS_SOCKET,
     };
 
-    /// Project a `u8` fx-atom mask to the PRODUCTION token set (the same strings the
+    /// Project a `u16` fx-atom mask to the PRODUCTION token set (the same strings the
     /// `BuildManifest.functions` rows carry). The bit positions MATCH the verus
-    /// model's `u8` fx-mask: Read=0, Write=1, Net=2, Time=3, Rand=4, Alloc=5,
-    /// Panic=6, Diverge=7. The carried ident on `read(_)`/`write(_)`/`net(_)` is
-    /// irrelevant to the mapping (matched by the leading verb).
-    fn mask_to_tokens(mask: u8) -> BTreeSet<String> {
+    /// model's `u16` fx-mask: Read=0, Write=1, Net=2, Time=3, Rand=4, Alloc=5,
+    /// Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom). The carried
+    /// ident on `read(_)`/`write(_)`/`net(_)` is irrelevant to the mapping (matched
+    /// by the leading verb). WIDENED `u8`→`u16` for the 9th atom (#106).
+    fn mask_to_tokens(mask: u16) -> BTreeSet<String> {
         let mut toks: BTreeSet<String> = BTreeSet::new();
         if mask & (1 << 0) != 0 {
             toks.insert("read(src)".to_string());
@@ -553,6 +610,9 @@ mod verus_anchor {
         }
         if mask & (1 << 7) != 0 {
             toks.insert("diverge".to_string());
+        }
+        if mask & (1 << 8) != 0 {
+            toks.insert("term".to_string());
         }
         // An empty mask is `pure` (no widening atom).
         if toks.is_empty() {
@@ -579,9 +639,8 @@ mod verus_anchor {
     // bits. This is the exhaustive impl==spec equivalence (mechanism (c)) binding the
     // string-keyed production mapping to the proved bitset over its FULL finite domain.
     #[test]
-    fn syscall_allowlist_matches_proved_io_allow_over_all_256_masks() {
-        for mask in 0u16..=255 {
-            let mask = mask as u8;
+    fn syscall_allowlist_matches_proved_io_allow_over_all_512_masks() {
+        for mask in 0u16..=511 {
             let tokens = mask_to_tokens(mask);
             let allow = syscall_allowlist(&tokens);
             let proved = io_allow(mask);
@@ -618,12 +677,11 @@ mod verus_anchor {
     // of mask/superset pairs (the full bitset monotonicity is proved in verus).
     #[test]
     fn superset_mask_never_drops_a_sensitive_syscall() {
-        for mask in 0u16..=255 {
-            let mask = mask as u8;
+        for mask in 0u16..=511 {
             let base = syscall_allowlist(&mask_to_tokens(mask));
             // The full superset (all atoms) must contain every sensitive syscall the
             // sub-mask permitted (deny-by-default monotonicity, the proved lemma).
-            let full = syscall_allowlist(&mask_to_tokens(0xFF));
+            let full = syscall_allowlist(&mask_to_tokens(0x1FF));
             for &(nr, _) in SENSITIVE {
                 if base.contains(&nr) {
                     assert!(

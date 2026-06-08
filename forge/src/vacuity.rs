@@ -17,7 +17,7 @@
 //! | REQ-1 (ens-is-true reject (a)) | SHIPPED | `ens_is_trivially_true` over `Expr::BoolLit(true)` (all clauses) or any clause being a syntactic identity `Eq`/`Le`/`Ge` (`identity_clause`); consumer `triage` → `check::check_file`. |
 //! | REQ-2 (ens-omits-result reject (b)) | SHIPPED | `ens_omits_result`: `ret != Type::Unit` AND no `ens` clause `Expr` tree contains a `result` path (`mentions_result`, bounded `expr_mentions_result`); consumer `triage`. |
 //! | REQ-3 (ens-implied-by-req reject (c)) | SHIPPED | `ens_implied_by_req`: `flatten_and` of `req`'s left-associative `&&` chain, then every `ens` clause `PartialEq`-equal to `req` whole or a conjunct; consumer `triage`. |
-//! | REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag`: `slag.is_none()` AND `boundary.is_none()` (a `#[boundary]` fn is slag-adjacent — ffi-boundary.md §9/OQ-4 — and exempt from (d) like `#[slag]`) AND `effect_row_is_maximal` (all 8 `Effect` kinds in a `Set`); consumer `triage`. |
+//! | REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag`: `slag.is_none()` AND `boundary.is_none()` (a `#[boundary]` fn is slag-adjacent — ffi-boundary.md §9/OQ-4 — and exempt from (d) like `#[slag]`) AND `effect_row_is_maximal` (the 8 broad `Effect` kinds in a `Set`; #106 `term` is a narrow grant, excluded); consumer `triage`. |
 //! | REQ-5 (`VacuityVerdict` + typed cause) | SHIPPED | `pub enum VacuityVerdict { Passed, Rejected { cause } }` + `pub enum VacuityCause`; `VacuityCause::tag`/`detail` feed `manifest::RejectReason`; consumed by `check::check_file` (OQ-1: verdict-in-cert, not a `ForgeError`). |
 //! | REQ-6 (forge-check gate + `contract_quality`) | SHIPPED | `triage` runs in `check::check_file` BEFORE `lower`/`run_verus`; a pass graduates `contract_quality.{tautology,vacuous_precondition}` to live-`false` via `Certificate::graduate_triage_clean`. |
 //! | REQ-7 (slag exempts proving, not stating) | SHIPPED | `triage` takes `slag: Option<&SlagAttr>` and gates ONLY rule (d) on it; (a)/(b)/(c) always run, so a slag fn with a vacuous contract is still `Rejected`. |
@@ -52,7 +52,7 @@ pub enum VacuityCause {
     /// (c) an `ens` clause is `PartialEq`-equal to `req` whole or a conjunct of
     /// its `&&` chain.
     EnsImpliedByReq { clause: usize },
-    /// (d) the effect row is maximal (all 8 `Effect` kinds) without `#[slag]`.
+    /// (d) the effect row is maximal (the 8 broad `Effect` kinds) without `#[slag]`.
     MaximalFxWithoutSlag,
 }
 
@@ -83,7 +83,7 @@ impl VacuityCause {
                 format!("§7.1 (c): ens#{clause} is syntactically implied by `req` (equal or a conjunct)")
             }
             VacuityCause::MaximalFxWithoutSlag => {
-                "§7.1 (d): effect row is maximal (all 8 effect kinds) without `#[slag]` justification"
+                "§7.1 (d): effect row is maximal (the 8 broad effect kinds) without `#[slag]` justification"
                     .to_string()
             }
         }
@@ -397,9 +397,18 @@ fn fx_maximal_without_slag(
     slag.is_none() && boundary.is_none() && effect_row_is_maximal(fx)
 }
 
-/// `true` iff `fx` is an `EffectRow::Set` containing at least one occurrence of
-/// EVERY `Effect` variant kind (all 8). Covers the whole closed `Effect` enum
-/// (R-DEFER-8) — adding a 9th effect would force this predicate to be revisited.
+/// `true` iff `fx` is an `EffectRow::Set` covering the §7.1 (d) MAXIMAL set — the
+/// eight broad capability atoms (`read`/`write`/`net`/`alloc`/`time`/`rand`/
+/// `panic`/`diverge`) whose simultaneous presence is the "claims everything,
+/// proves nothing" smell the battery flags without `#[slag]`. The maximal set is
+/// pinned by the `conformance/vacuity/triage.json` `maximal_fx_no_slag` oracle
+/// (R-CHAR-3 — an EXTERNAL truth, not the toolchain's own output). The #106
+/// `Term` atom is DELIBERATELY EXCLUDED: `term` is a NARROW, single-syscall
+/// terminal-control grant (`ioctl`), not one of the broad I/O/capability atoms
+/// the maximal-row heuristic targets — a row that adds `term` to the eight is
+/// still maximal, and a row missing one of the eight is not (so `term` neither
+/// adds to nor is required for maximality). Covers the closed broad-atom set
+/// (R-DEFER-8); a future broad atom would force this predicate to be revisited.
 fn effect_row_is_maximal(fx: &EffectRow) -> bool {
     let EffectRow::Set(effects) = fx else {
         return false; // Pure is never maximal.
@@ -417,6 +426,9 @@ fn effect_row_is_maximal(fx: &EffectRow) -> bool {
             Effect::Rand => rand = true,
             Effect::Panic => panic = true,
             Effect::Diverge => diverge = true,
+            // `Term` (#106) is NOT part of the broad maximal set — a narrow
+            // terminal-control grant, exempt from the §7.1 (d) heuristic.
+            Effect::Term => {}
         }
     }
     read && write && net && alloc && time && rand && panic && diverge

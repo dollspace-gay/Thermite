@@ -379,3 +379,72 @@ fn no_sandbox_omits_prelude() {
     let lib = artifact_path_from_json(&stdout2);
     cleanup(&lib);
 }
+
+// ---- AC-6 (#106): the `fx term` grant adds ioctl:16; a non-term excludes it ----
+//
+// A `term` entry's transitive fx → the manifest-recorded seccomp allowlist INCLUDES
+// `ioctl`:16 (the termios raw-mode boundary syscall); a `pure`/`read`/`write` entry's
+// allowlist EXCLUDES it (the grant is SCOPED to the `term` effect, not folded into
+// `write`). Expected from runtime-sandbox.md REQ-7 (`TERM_SYSCALLS={ioctl:16}`) — a
+// design constant, never forge's own output (R-CHAR-3).
+
+#[test]
+fn term_grant_adds_ioctl_to_the_recorded_allowlist() {
+    // Manifest-only (no run): inspect the recorded allowlist. No seccomp needed.
+    let term_fixture = write_fixture(
+        "tf",
+        "fn tf(x: u32) -> u32 req x < 100 ens result <= x fx term { x }\n",
+    );
+    let (ok, stdout, stderr) =
+        run_forge_build(&[term_fixture.to_str().unwrap(), "--entry", "tf", "--json"]);
+    assert!(
+        ok,
+        "the term fixture build must compile:\n{stdout}\n{stderr}"
+    );
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("manifest JSON");
+    assert_eq!(v["sandbox"]["transitive_fx"], serde_json::json!(["term"]));
+    let allow: Vec<i64> = v["sandbox"]["syscall_allowlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_i64().unwrap())
+        .collect();
+    assert!(
+        allow.contains(&16),
+        "AC-6: fx term grants ioctl (16) in the recorded allowlist: {allow:?}"
+    );
+    let artifact = artifact_path_from_json(&stdout);
+    cleanup(&artifact);
+    let _ = std::fs::remove_file(&term_fixture);
+
+    // A pure / write entry's allowlist EXCLUDES ioctl — the grant is fx-DERIVED.
+    let write_fixture_path = write_fixture(
+        "wf",
+        "fn wf(x: u32) -> u32 req x < 100 ens result <= x fx write(out) { x }\n",
+    );
+    let (ok2, stdout2, stderr2) = run_forge_build(&[
+        write_fixture_path.to_str().unwrap(),
+        "--entry",
+        "wf",
+        "--json",
+    ]);
+    assert!(
+        ok2,
+        "the write fixture build must compile:\n{stdout2}\n{stderr2}"
+    );
+    let v2: serde_json::Value = serde_json::from_str(&stdout2).expect("manifest JSON");
+    let allow2: Vec<i64> = v2["sandbox"]["syscall_allowlist"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n.as_i64().unwrap())
+        .collect();
+    assert!(
+        !allow2.contains(&16),
+        "AC-6: a non-term (write) entry's allowlist EXCLUDES ioctl (16) — the grant is \
+         scoped to the term effect, not folded into write: {allow2:?}"
+    );
+    let artifact2 = artifact_path_from_json(&stdout2);
+    cleanup(&artifact2);
+    let _ = std::fs::remove_file(&write_fixture_path);
+}

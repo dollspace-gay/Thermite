@@ -1,0 +1,10 @@
+{
+  "uuid": "1729b1c0-b2a3-4be9-bdae-c6653c237c14",
+  "display_id": 126,
+  "title": "Editor: tighten cursor_col contract — pin the exact column (ens result == cursor - line_start), not just bound it (<= cursor); kills the surviving return-0 mutant",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T00:31:45.067698939Z",
+  "updated_at": "2026-06-08T00:31:45.067698939Z"
+}

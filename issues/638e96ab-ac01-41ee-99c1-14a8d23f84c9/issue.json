@@ -2,11 +2,12 @@
   "uuid": "638e96ab-ac01-41ee-99c1-14a8d23f84c9",
   "display_id": 128,
   "title": "forge build --out <path>: copy the built artifact to a user-named path so a binary runs standalone (./nano), no /tmp path / wrapper script needed",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T01:44:52.515844395Z",
-  "updated_at": "2026-06-08T01:44:54.082658768Z",
+  "updated_at": "2026-06-08T03:00:01.276046664Z",
+  "closed_at": "2026-06-08T03:00:01.276046664Z",
   "labels": [
     "feature"
   ]

@@ -701,3 +701,33 @@ crate_pattern = "thermite-lower/src/lower.rs"
 design = ".design/basis/13-map.md"
 reference = ["tests/golden/lower/map_kv.verus.rs"]
 conformance_ops = []
+
+# Contract-faithfulness translation validation (crosslink epic #139).
+# The new artifact is the INDEPENDENT reference encoder for the SpecTherm
+# contract sublanguage (thermite-tv) + the forge check phase that discharges
+# the per-clause Z3 equivalence obligation. Governed by contract-tv.md; the
+# reference is the corpus clause (sum) + its golden lowering (the faithful
+# production side the obligation compares against the reference encoding).
+[[route]]
+crate_pattern = "thermite-tv/src/ref_encode.rs"
+design = ".design/verified/contract-tv.md"
+reference = ["tests/golden/lower/sum.verus.rs"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-tv/src/obligation.rs"
+design = ".design/verified/contract-tv.md"
+reference = ["tests/golden/lower/sum.verus.rs"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "thermite-tv/src/gen.rs"
+design = ".design/verified/contract-tv.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/contract_tv.rs"
+design = ".design/verified/contract-tv.md"
+reference = ["conformance/sum.th"]
+conformance_ops = ["sum"]

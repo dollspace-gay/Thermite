@@ -1,0 +1,10 @@
+{
+  "uuid": "b458b2ab-f905-4d86-b0b3-38cb8833e8df",
+  "issue_uuid": "8aecfd35-4e75-4ec9-9fc8-c725205ed07c",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_byteview_collide_doubledef.rs (user_isdigit_plus_genuine_parse_use_no_double_def + user_countsep_plus_genuine_split_use_no_double_def) demonstrates the divergence. Forced (--ignored): 2 failed (lowering emits 2 definitions of is_digit / count_sep). Control arms (non-colliding names scan/piece) pass with exactly 1 generated def, so the divergence is the NAME COLLISION + genuine-use combination, not the generated emission. Test commit 4fe7df9. Root cause in thermite-lower/src/lower.rs: the shadow set suppresses the emission GATE only; it does not prevent the generated def-module (emitted by an independent non-shadowed trigger like parse_u64(s)/s.split(sep)) from materializing the collided name alongside the user spec fn. Authority: .design/basis/07-strings.md REQ-4 (SHAPE-keyed dispatch is collision-free).",
+  "created_at": "2026-06-08T02:14:48.171698855Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA7puZKH45a77Q69V490jiB98ZSgTIsdw9ita+ciz30RHgBCleA6BAbzE0C8rHotfhKl0D/watc0xyVwsYWbPyDg=="
+}

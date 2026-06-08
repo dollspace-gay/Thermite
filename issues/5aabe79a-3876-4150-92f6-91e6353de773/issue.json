@@ -2,11 +2,12 @@
   "uuid": "5aabe79a-3876-4150-92f6-91e6353de773",
   "display_id": 138,
   "title": "repo: ship the enforcement layer — spec-discipline/anti-pattern hooks + the route table + hook registration — so a clone is self-enforcing",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T17:41:30.373635184Z",
-  "updated_at": "2026-06-08T17:41:31.873712689Z",
+  "updated_at": "2026-06-08T17:44:06.757971699Z",
+  "closed_at": "2026-06-08T17:44:06.757971699Z",
   "labels": [
     "infra"
   ]

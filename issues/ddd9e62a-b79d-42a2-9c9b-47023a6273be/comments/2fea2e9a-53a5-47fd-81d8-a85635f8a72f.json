@@ -1,0 +1,10 @@
+{
+  "uuid": "2fea2e9a-53a5-47fd-81d8-a85635f8a72f",
+  "issue_uuid": "ddd9e62a-b79d-42a2-9c9b-47023a6273be",
+  "author": "Yffe",
+  "content": "Done. Workspace version set to 0.0.1: [workspace.package] version=0.0.1 + all 6 crates inherit via version.workspace=true. cargo build --workspace green (all compile as v0.0.1). Committed e7d5131. The v0.0.1 git tag + GitHub release remain the human's step (R-GIT-1); the 403 on gh release create is the fine-grained PAT lacking Contents:Read-and-write — fix the token perm or use the web releases/new UI.",
+  "created_at": "2026-06-08T13:58:04.791419269Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACQjYfeR6e4EWY3Dlzu0fXIZL+wKDFm1KZX3BpeiaT0YuCbG2N39f1B43ZyWQ/XypErG/5xNQtQTI1KskMGBWBw=="
+}

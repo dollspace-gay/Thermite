@@ -1,0 +1,10 @@
+{
+  "uuid": "a58e0e8c-1eeb-440e-bd1a-25437f9e44f9",
+  "issue_uuid": "3ef36cf6-f64f-4a2f-bf42-7ccfe3bf656d",
+  "author": "Yffe",
+  "content": "plan: pin the struct-invariant cast-< gap as an #[ignore]'d failing test in thermite-lower/tests/divergence_struct_inv_cast_lt.rs (discriminator: write test, do not fix). The fix (give lower_inv_operand the is_lt_leading cast guard) is for the fixer.",
+  "created_at": "2026-06-08T20:20:00.356206675Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAjM8jWQiet6ot5r9O1rSLX6Aftylw3AX011VjSpW+mp8My82nBpDl1bBCLWEcu22qFq8AeUNPmixZ5EKsmdMyAQ=="
+}

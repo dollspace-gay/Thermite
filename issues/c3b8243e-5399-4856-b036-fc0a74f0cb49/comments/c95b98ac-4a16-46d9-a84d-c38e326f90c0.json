@@ -1,0 +1,10 @@
+{
+  "uuid": "c95b98ac-4a16-46d9-a84d-c38e326f90c0",
+  "issue_uuid": "c3b8243e-5399-4856-b036-fc0a74f0cb49",
+  "author": "Yffe",
+  "content": "EPIC COMPLETE + critic-clean (c369425). The verified editor now runs CONFINED: a dedicated Effect::Term terminal-control effect (fx term -> ioctl) so forge build editor.th --entry run (NO --no-sandbox) compiles + runs under seccomp, exit 0 (raw mode + edit + Ctrl-S save), not SIGSYS. Required widening the Verus-proved effect-subsumption bitset u8->u16 + re-deriving the bit_vector proofs (the principled extensible-effect path, since REQ-7 requires term to be subsumption-checked). Critic NO DIVERGENCE. The --no-sandbox caveat in the docs is now obsolete (separate doc pass).",
+  "created_at": "2026-06-08T05:51:55.103540538Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAW0KlUiPHhNR0iAe7nQhYGFBBMJeljs/nm4oK/2EF8zBGtSYQGMPXWBDJqPPcMaTj46b8o13Qk9NdL3bCmRM5DA=="
+}

@@ -737,3 +737,25 @@ crate_pattern = "forge/src/contract_tv.rs"
 design = ".design/verified/contract-tv.md"
 reference = ["conformance/sum.th"]
 conformance_ops = ["sum"]
+
+# Exec-position (body) translation validation — step 2 (crosslink epic #151).
+# Step 2.1 extends TV from CONTRACT position (contract-tv.md, #139) to pure
+# EXEC-position EXPRESSIONS: an INDEPENDENT exec-VALUE reference denotation
+# (bounded u64/usize, NOT spec @/nat) wrapped as an exec-fn obligation
+# `fn tv_exec_wrap(..) ensures result == <reference> { <production exec lowering> }`,
+# discharged through forge::check::run_verus. Closes the #122/#146 cast-paren /
+# cast-< class GENERALLY (off-corpus). Governed by exec-tv.md; the reference is
+# the corpus sum body (the `acc = acc + xs[i] as u64` exec arithmetic shape).
+# (Step 2.2 — operational semantics for statements/loops/mutation — is framed in
+# exec-tv.md, kernel-gated, not yet routed.)
+[[route]]
+crate_pattern = "thermite-tv/src/exec_encode.rs"
+design = ".design/verified/exec-tv.md"
+reference = ["tests/golden/lower/sum.verus.rs"]
+conformance_ops = []
+
+[[route]]
+crate_pattern = "forge/src/exec_tv.rs"
+design = ".design/verified/exec-tv.md"
+reference = ["conformance/sum.th"]
+conformance_ops = ["sum"]

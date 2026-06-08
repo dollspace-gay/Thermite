@@ -1,0 +1,10 @@
+{
+  "uuid": "2f70699f-07a4-4130-bad4-de8b2e40d9d0",
+  "issue_uuid": "cc73f918-0157-48e3-a5d3-b6b2d7943c78",
+  "author": "Yffe",
+  "content": "Plan: author equivalent-mutants.md — a per-survivor Verus equivalence query (req |- B_mut == B_real); PROVED-equivalent drops from the kill-ratio denominator, unproven stays counted (sound-but-incomplete). Grounded: clamp_zero 1/3 WeakContract -> exclude 2 equivalent survivors -> 1/1 certifies; a distinguishing/killed mutant FAILS the equivalence check; a genuinely-weak loose contract's survivor stays counted (not laundered); an all-equivalent fn -> 0/0 still gated by #48. CHECK_SCHEMA_VERSION bump.",
+  "created_at": "2026-06-08T05:33:53.364181691Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA55E14T8Ngv60pNcR7T2HrTkmZl0lwGeURWLezWxz8Fgxyi1/8Bhn3k+1lD0UWSB96HOnTcDDsgNxAWN44m72Dg=="
+}

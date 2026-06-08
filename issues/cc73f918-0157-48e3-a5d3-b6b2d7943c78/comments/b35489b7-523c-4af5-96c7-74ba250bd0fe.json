@@ -1,0 +1,10 @@
+{
+  "uuid": "b35489b7-523c-4af5-96c7-74ba250bd0fe",
+  "issue_uuid": "cc73f918-0157-48e3-a5d3-b6b2d7943c78",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (cb1462d). Equivalent-mutant exclusion: a new thermite-lower seam lower_equivalence_obligation renders real+mutant bodies as spec fns + a proof fn (req |- mut==real), reusing the exec coercions; check::equivalence_proves_equal runs it per-survivor, excluding from the denominator ONLY on verus 'verified'. Critic NO DIVERGENCE on the cardinal laundering risk: the seam threads real!=mut faithfully (distinguishing mutants ALL fail the query), the (expr) as u64 coercion masks no difference (x*2/x-1/wraparound all FAIL), a weak contract STILL WeakContract (loose 0/2, pick 1/2 — none laundered), exclude only on a real proof (timeout/counterexample stays counted), 0/0 still #48-gated, killed mutants unchanged. clamp_zero 1/3 WeakContract -> 1/1 L3 (AC-1). 686 tests. CHECK_SCHEMA_VERSION 4->5.",
+  "created_at": "2026-06-08T06:33:58.537812170Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAjwmMuteY46Xn8MmsHc175B4JAgq9IVHB6elM6vhY52c5LPhsR+RfZeTIh4YcI2GM79sdWBHn9n8tyJNe8xhkAQ=="
+}

@@ -80,6 +80,26 @@ implements against; the seccomp mechanism is empirically grounded against real
   attempt at a syscall NOT on the entry's allowlist (`openat` for a pure filter) so the
   kill is observable; a normal pure run produces clean output.
 
+- **REQ-7 (the `term` terminal-control effect + the `ioctl` grant — issue #106):**
+  the §4.1 effect lattice gains a DEDICATED terminal-control atom, surfaced as the
+  `fx term` token, whose syscall-allowlist widening is `{ioctl:16}` (the
+  [mapping table](#fx--syscall-allowlist-mapping) `TERM_SYSCALLS` row). A fn that
+  reaches the terminal (the editor's `os::raw_mode_on`/`os::raw_mode_off`
+  `tcgetattr`/`tcsetattr` boundary, which issue the x86_64 `ioctl` syscall #16 with
+  the termios `TCGETS`/`TCSETS` cmds) declares `fx term`; its transitive caller's
+  allowlist then INCLUDES `ioctl`, so the binary runs CONFINED (raw mode allowed,
+  everything else still killed). A program WITHOUT `term` in its transitive `fx`
+  attempting `ioctl` is STILL `SIGSYS`-killed — the grant is scoped to the effect,
+  NOT folded into `write` (a dedicated atom keeps a plain `write`-program — `print`,
+  `write_file` — from silently acquiring `ioctl`). **The grant is `ioctl`-BROAD**
+  (any `ioctl` cmd, not only `TCGETS`/`TCSETS`): classic seccomp-bpf cannot filter
+  `ioctl` by its `cmd` argument without arg-inspection (the cmd is in a register, and
+  v0.1's filter compares only `seccomp_data.nr`), so the honest v1 grant is the whole
+  `ioctl` syscall under `term`, DOCUMENTED as the scope (see [OQ-5](#open-questions)).
+  Derived from §4.1 (the `fx` row is a runtime contract) + §4.2 (the editor as the
+  acceptance program whose raw-mode boundary needs `ioctl`). This is a NEW `Effect`
+  ATOM (`Effect::Term` in `ast.rs`) — see [the ripple](#the-term-atom-ripple-issue-106).
+
 ## Acceptance criteria
 
 Tied to a `conformance/sandbox/cases.json` oracle the orchestrator authors (the route
@@ -113,6 +133,21 @@ Tied to a `conformance/sandbox/cases.json` oracle the orchestrator authors (the 
   `--entry`) emits an rlib with NO seccomp prelude (REQ-4); and `--no-sandbox --entry`
   emits a runner with no prelude. Oracle: `no_prelude` cases asserting the emitted
   source contains no `PR_SET_SECCOMP` call.
+
+- **AC-6 (the `term` fx grants `ioctl`; a non-`term` program's `ioctl` → SIGSYS;
+  the editor runs FULLY sandboxed — issue #106):** an entry whose transitive `fx`
+  includes `term` → the installed allowlist INCLUDES `ioctl`:16 (so a `tcgetattr`
+  ioctl is ALLOWED); the SAME program with a `pure`/`read(_)`/`write(_)` (no `term`)
+  filter EXCLUDES `ioctl`:16 (so the editor's raw-mode `ioctl` is `SIGSYS`-killed,
+  exit 159 — the #106 bug as it stands TODAY). With `term` granted, the
+  `examples/editor/editor.th` `run` entry builds WITH the sandbox (NOT
+  `--no-sandbox`) and RUNS clean end-to-end on piped keystrokes: raw mode enters
+  (the `ioctl`), a key reads (`read`), an edit applies (the L3 ops), a frame writes
+  (`write`), and Ctrl-S SAVES the buffer to the file (the `read`/`write`-covered
+  `openat`/`write`) — exit 0. GROUNDED (see
+  [Grounding the #106 fix](#grounding-the-106-fix-real-forgerustc)). Oracle: a
+  `term_grants_ioctl` case (allowlist membership) + the `forge/tests/editor_runs.rs`
+  sandboxed editor run (exit 0, the frames + the saved file).
 
 ## Architecture
 
@@ -161,6 +196,7 @@ ran CLEAN under a kill-default filter with exactly this set; see Verification).
 | `alloc` | (already baseline: `mmap`/`munmap`/`brk`/`mprotect`) |
 | `time` | `clock_gettime`:228, `clock_nanosleep`:230 |
 | `rand` | `getrandom`:318 |
+| `term` (NEW, #106) | `ioctl`:16 (termios `TCGETS`/`TCSETS` — but seccomp can't filter the cmd; the whole `ioctl` is granted under `term`, OQ-5) |
 | `panic` | (baseline `write`+`exit_group`; panic unwinds + prints to stderr) |
 | `diverge` | (no added syscall; divergence is a non-termination effect) |
 
@@ -180,6 +216,120 @@ output). Under a `read(x)` filter, `openat` is allowlisted → the probe returns
 entry runs normally. The probe is NEVER emitted without the flag (production runners
 have no probe). This is the v0.1 demonstrability device; the genuine future trigger
 surface is foreign/boundary bodies, not pure Thermite.
+
+## The `term` atom ripple (issue #106)
+
+Granting `ioctl` is NOT a code-local sandbox-table tweak — the PRINCIPLED fix is a
+new effect ATOM, because the grant must be scoped to a declared effect (else any
+`write`-program acquires `ioctl`). A new `Effect::Term` (the `term` token) is the
+right home, and adding it ripples across the toolchain's Effect-exhaustive seams.
+This doc PINS the contract; the builder lands the atom under blocker **#132**. The
+ripple (all are `match`-exhaustive on `enum Effect`, so the compiler enforces an arm
+on each):
+
+1. **`thermite-syntax/src/ast.rs`** — add `Effect::Term` to `enum Effect` (alongside
+   `Read`/`Write`/`Net`/`Alloc`/`Time`/`Rand`/`Panic`/`Diverge`). A bare atom (no path
+   arg), like `time`/`rand`.
+2. **`thermite-syntax/src/parser.rs`** — add a `"term"` arm to `parse_effect` (the
+   bare-atom branch beside `"alloc"`/`"time"`/`"rand"`/`"panic"`/`"diverge"`).
+3. **`forge/src/manifest.rs`** — add `Effect::Term => "term".to_string()` to
+   `effect_token` (the exhaustive match `effects_of` projects through); the
+   `effects_of_covers_every_variant` test gains the atom.
+4. **`forge/src/sandbox.rs`** — add a `TERM_SYSCALLS: &[u32] = &[16 /* ioctl */]`
+   const and a `"term" => TERM_SYSCALLS` arm in `syscall_allowlist`'s leading-verb
+   match (beside `"read"`/`"write"`/`"net"`/`"time"`/`"rand"`); the `verus_anchor`
+   `mask_to_tokens` exhaustive-mask test gains the atom's bit (ioctl is NOT one of
+   the five sensitive user-I/O syscalls the `io_allow` soundness proof covers, so the
+   proved-bitset binding is unaffected — `ioctl` is a sixth, terminal-control grant).
+5. **The dynamic skill (`thermite-skill`)** — the effect-vocabulary table the skill
+   emits auto-requires an arm for each `Effect` variant; `term` gets a one-line row
+   (terminal control / `ioctl`). The ≤6,000-token budget is unaffected (one row).
+6. **The validator / lowering** — `term` is a valid `fx` atom subject to the SAME
+   §4.1 row-subsumption (`.design/lower/effect-subsumption.md`): every transitive
+   caller of a `fx term` fn must declare `term`. The lowering treats it like any
+   other atom (no special L1/L3 handling — it carries no proof obligation, only the
+   syscall grant).
+7. **`examples/editor/editor.th`** — `os::raw_mode_on` / `os::raw_mode_off` change
+   their declared `fx write(output)` to `fx term` (or `fx term, write(output)` if a
+   wrapper also writes; the termios wrappers issue only `ioctl`, so `fx term` is the
+   honest minimal row). The editor's `run` loop transitively unions `term` into its
+   row, so `forge build --entry run` derives an allowlist with `ioctl`.
+
+`effect_wrappers.rs` (the `os::raw_mode_on`/`os::raw_mode_off` `TERMIOS_RAW_MODE_SOURCE`
+wrapper) is UNCHANGED — the wrapper already issues `tcgetattr`/`tcsetattr` (the
+`ioctl`); only the *declared `fx`* of the editor's boundary fns and the sandbox table
+change. The honest-scope note: a `term` grant is `ioctl`-BROAD (any cmd) because
+classic seccomp-bpf compares only `seccomp_data.nr`, not the `cmd` register — a
+TCGETS-only filter would need an arg-inspecting filter (a future refinement, OQ-5).
+
+## Grounding the #106 fix (real `forge`/`rustc`)
+
+Grounded on this Linux host (`rustc 1.95.0`, kernel `6.6.87.2-microsoft-WSL2`,
+`/proc/sys/kernel/seccomp/actions_avail` ⊇ `kill_process`) against `forge` built from
+this tree. The atom is not yet implemented (no `Effect::Term`), so the grant was
+grounded by a PROBE — temporarily adding `16 // ioctl` to `WRITE_SYSCALLS` to prove
+`ioctl` is the EXACT missing syscall — then REVERTED (the tree is clean; the probe
+edit lived only during grounding). The PRINCIPLED landing is the dedicated `term`
+atom above (#132), but the grant's SHAPE (the one syscall, the kill→clean flip) is
+identical.
+
+**(1) The editor SIGSYS-dies sandboxed TODAY (the #106 bug).** `forge build
+examples/editor/editor.th --entry run` (default sandbox) → transitive
+`fx = [alloc, diverge, pure, read(input), write(output)]`, allowlist EXCLUDES
+`ioctl`:16. Run with piped keystrokes (`printf 'ab\x11'`, Ctrl-Q):
+
+```
+Bad system call (core dumped)
+=== sandboxed run exit: 159 ===          # 159 = 128 + SIGSYS(31), killed at tcgetattr
+```
+
+No output — the kill fires on the FIRST `tcgetattr` `ioctl` inside `raw_mode_on`,
+before any frame is written. This is why `forge/tests/editor_runs.rs` builds the
+editor `--no-sandbox` today (the honest seam it documents).
+
+**(2) With `ioctl` granted, the editor runs FULLY sandboxed (exit 0).** The probe
+adds `ioctl`:16; rebuild + `forge build … --entry run` (default sandbox) → allowlist
+INCLUDES 16. Run `printf 'XY\x13\x11'` (insert X, Y; Ctrl-S save; Ctrl-Q quit) over
+the demo file `hello world`:
+
+```
+=== SANDBOXED run exit: 0 ===
+stdout (od): [2J[H hello world [1;1H  ...  XYhello world [1;3H
+saved file: XYhello world
+```
+
+Raw mode enters (the `ioctl` ALLOWED), the frames render (`\x1b[2J\x1b[H` + buffer +
+the cursor coordinate `\x1b[1;3H`), the splice "XY" lands, and Ctrl-S SAVES
+`XYhello world` to the file — exit 0, NO stderr. **The editor runs FULLY sandboxed:
+every syscall it issues is granted by its transitive `fx`** (`ioctl` by `term`,
+`read`/`openat` by `read(input)`, `write`/`openat` by `write(output)`, the heap by
+the baseline). NO residual syscall gap (see the file-syscall note below).
+
+**(3) The grant is SCOPED — a non-`term` program's `ioctl` is still killed.** Under
+the probe (folded into `write` for grounding), a `pure` program's allowlist
+EXCLUDES `ioctl`:16, and a `read(src)` program's allowlist EXCLUDES `ioctl`:16:
+
+```
+pure:     ioctl(16) in allowlist: False   | fx: ['pure']
+readonly: ioctl(16) in allowlist: False   | fx: ['read(src)']
+```
+
+So a program without the terminal-control effect attempting `ioctl` is `SIGSYS`-killed
+— the grant is `fx`-DERIVED, not a global constant. (Under the principled `term`
+atom, even a `write(_)` program excludes `ioctl` — only `term` grants it. The probe
+folded it under `write` ONLY to ground the missing-syscall identity; the dedicated
+atom is tighter.) **Reverting the probe restores the kill**: the reverted-`forge`
+sandboxed editor run exits 159 again, confirming `ioctl` is the lone gating syscall.
+
+**The file-open/write syscalls (read_file/write_file) are COVERED — no residual gap.**
+The editor's `os::read_file` declares `fx read(input)` and `os::write_file` declares
+`fx write(output)`. `read(_)` widens with `openat`:257 (+`read`:0 baseline) and
+`write(_)` widens with `openat`:257 (+`write`:1 baseline) — so the Ctrl-S save's
+`std::fs::write` (`openat` + `write`) and the initial `std::fs::read` load (`openat` +
+`read`) are ALREADY granted by the editor's existing `read`/`write` fx. GROUNDED in
+(2): the Ctrl-S save wrote `XYhello world` to the file under the sandbox with NO extra
+syscall gap. The ONLY missing syscall was `ioctl` (the termios boundary); no separate
+"file effect" is needed.
 
 ## Verification
 
@@ -228,6 +378,13 @@ The discharging checks (post-implementation):
 - **OQ-3 (architecture portability):** the filter pins `AUDIT_ARCH_X86_64`. A non-x86_64
   Linux host (or non-Linux) needs a different table / a no-op `--no-sandbox` fallback.
   v0.1 is x86_64-Linux only (documented limitation), `--no-sandbox` is the escape.
+- **OQ-5 (`ioctl`-broad vs `TCGETS`/`TCSETS`-only — #106):** the `term` grant is the
+  WHOLE `ioctl` syscall (#16, any cmd), because classic seccomp-bpf compares only
+  `seccomp_data.nr` — it cannot gate `ioctl` by its `cmd` register without an
+  arg-inspecting filter (a `BPF_JEQ` on the second arg, a v1.1 refinement). The honest
+  v1 scope is therefore "`term` ⇒ any `ioctl`," DOCUMENTED in REQ-7 + the manifest's
+  recorded allowlist. A tighter `cmd`-filtered grant (only `TCGETS` 0x5401 / `TCSETS`
+  0x5402) is future work; it does not change the atom or the editor's declared `fx`.
 - **OQ-4 (vsyscall/VDSO `clock_gettime`):** `time` may resolve via the VDSO (no real
   syscall) on some libc/kernel combos; the syscall-number allowlist is then a
   belt-and-suspenders. Harmless (allowing an unused syscall is safe).
@@ -256,3 +413,4 @@ cite) and the route above. This doc does NOT author the oracle or the route (R-D
 | REQ-4 (sandbox-on-by-default for `--entry`, `--no-sandbox` opt-out) | SHIPPED | `build::SandboxConfig::default` is `SandboxMode::On`; `synthesize_entry_main` injects the prelude FIRST when on; `--no-sandbox` → `SandboxMode::Off` (no prelude); a library build emits no `main`. Consumer: `cli::run_build` (the `--sandbox`/`--no-sandbox` flags). Verified by `sandbox_conformance::no_sandbox_omits_prelude`. |
 | REQ-5 (reproducible prelude + manifest record) | SHIPPED | `emit_sandbox_prelude` is byte-deterministic (sorted allowlist); `build::BuildManifest::sandbox` (`SandboxRecord`) records the installed allowlist (the §9 audit surface). Verified by `sandbox::tests::prelude_installs_and_is_deterministic` + `sandbox_conformance::pure_runs_clean`. |
 | REQ-6 (demonstrable enforcement — probe + clean pure run) | SHIPPED | `sandbox::emit_probe` injects (under `--sandbox-self-test`, AFTER the filter) a raw `syscall(SYS_openat, ...)`. Consumer: `build::synthesize_entry_main`. Verified by `probe_killed` (exit 159 under pure) vs `probe_allowed_when_fx_widens` (exit 0 under read). The critical interaction — a contract violation still PANICS `[ens]` (exit 101), NOT seccomp-killed — is verified by `contract_violation_panics_not_killed` (the baseline allows the panic/abort path). |
+| REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106) | NOT-STARTED | open prereq blocker **#132**. There is NO `Effect::Term` atom: `enum Effect in ast.rs` is `{Read, Write, Net, Alloc, Time, Rand, Panic, Diverge}` (no `Term`); `parse_effect in parser.rs` accepts no `"term"` token; `syscall_allowlist in sandbox.rs` has no `TERM_SYSCALLS`/`"term"` arm (no `ioctl`:16 in any widening set — `WRITE_SYSCALLS` is `{fsync:74, openat:257, newfstatat:262}`). GROUNDED diagnostic: `forge build examples/editor/editor.th --entry run` (default sandbox) derives `fx=[alloc,diverge,pure,read(input),write(output)]`, the allowlist EXCLUDES `ioctl`:16, and the editor's `raw_mode_on` `tcgetattr` is `SIGSYS`-killed (exit 159) before any output — so `forge/tests/editor_runs.rs` builds the editor `--no-sandbox` today. A probe adding `ioctl`:16 made the SAME editor run FULLY sandboxed (exit 0: raw mode + edit + Ctrl-S save `XYhello world`), proving `ioctl` is the lone gating syscall and the file-I/O `openat`/`write` are already covered by `read`/`write` fx (no residual gap). The probe was REVERTED (the tree is clean); the principled landing is the `Effect::Term` atom + `TERM_SYSCALLS={ioctl:16}` + the editor's `raw_mode_on`/`off` declaring `fx term`, per [the ripple](#the-term-atom-ripple-issue-106). |

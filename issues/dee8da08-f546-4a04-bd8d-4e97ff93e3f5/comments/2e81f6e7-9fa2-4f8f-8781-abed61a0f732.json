@@ -1,0 +1,10 @@
+{
+  "uuid": "2e81f6e7-9fa2-4f8f-8781-abed61a0f732",
+  "issue_uuid": "dee8da08-f546-4a04-bd8d-4e97ff93e3f5",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (85e63e0 + #145 fix d7344ae). The independent reference encoder ref_contract_pred (thermite-tv crate, deps syntax+spec only, no thermite-lower — independence compile-enforced). Critic audited generality (!=/>/>=, exists_in/count_where, old, conjunction, implication, byteview shapes — all faithful) + coercion soundness (no false negatives — u64-level infidelity still caught). Found+fixed #145 (Index-arg combinators forall_below/forall_from were slice-@-viewed -> now per-kind dispatch via the registry arg_kinds: Slice->@, Index->as int, Pred->closure). 318 tests.",
+  "created_at": "2026-06-08T19:00:38.796083568Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACMasJ0MScTCAMDjgQOSAz1mMrp/aXTsWLUsbqn9IGC+NecBRzpPkICUtHyd4YW7d7XBACMt+vp/24WuAoF04AA=="
+}

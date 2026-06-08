@@ -43,6 +43,7 @@
 //! | REQ-7 (proof-aid emission, shape-keyed) | SHIPPED | `push_lemma_for`/`nonlinear_overflow_assert`/`lift_immutable_preconds`/`extensionality_at_exit`/`complementary_coverage_split`; each keys on AST/contract shape, documented at site. |
 //! | REQ-8 (golden-file contract — VERIFY) | SHIPPED | emitted output run through real `verus` in `lower_conformance.rs`; contracts asserted equivalent to the corpus (no weakening). |
 //! | REQ-9 (`LowerError`, no panics) | SHIPPED | `enum LowerError` (span-bearing, `Display`); `lower` returns `Result`; no `unwrap`/`expect`/`panic!` in this file. |
+//! | REQ-EQ (equivalent-mutant equivalence-obligation seam, #101) | SHIPPED | `pub fn lower_equivalence_obligation` (`.design/forge/equivalent-mutants.md` REQ-1 / `.design/lower/verus-lowering.md` REQ-EQ) renders `f`'s real body + a survivor mutant's body into the GROUNDED `spec fn equiv_real_<n>`/`spec fn equiv_mut_<n>` + `proof fn equiv_check_<n> requires <req> ensures mut == real {}` Verus unit, REUSING `lower_expr` + the design-grounded `(expr) as <ret>` exec coercion (`render_body_as_spec_value`/`coerce_obligation_expr`) — no hand-emitted Verus (R-CHAR-3). SCALAR-only (`scalar_obligation_type`, OQ-1): a non-scalar/non-forced-output shape returns `LowerError::Unsupported` so the survivor stays counted. Consumer: `forge::check::equivalence_proves_equal`. Verified: `thermite-lower/tests/equivalence_obligation.rs` (real verus). |
 //!
 //! ## #52 §9 boundary-composition arm (`.design/lower/boundary-composition.md`)
 //!
@@ -2356,6 +2357,272 @@ fn lower_external_body_fn(
     // slag body would re-introduce the obligation §8 exempts (OQ-2).
     out.push_str("{\n    unimplemented!()\n}\n");
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// The equivalent-mutant equivalence-obligation seam
+// (`.design/forge/equivalent-mutants.md` REQ-1, crosslink #101).
+// ---------------------------------------------------------------------------
+
+/// Lower the §7 equivalent-mutant EQUIVALENCE OBLIGATION for one survivor
+/// (`.design/forge/equivalent-mutants.md` REQ-1): given a fn `f` (its `req`,
+/// params, return type, and REAL body `f.body`) and a surviving mutant's body
+/// `mutant_body`, emit a complete Verus source file that asks Verus to PROVE
+/// that, under `f`'s `req`, the mutant body's observable result equals the real
+/// body's result FOR ALL inputs. A `verus` run that VERIFIES (`0 errors`) is a
+/// PROOF of observable equivalence (the survivor is a true equivalent mutant →
+/// dropped from the kill-ratio denominator, REQ-2); a counterexample
+/// (`postcondition not satisfied`) means a distinguishing input exists (the
+/// survivor STAYS counted, REQ-3).
+///
+/// The emitted shape is the GROUNDED form pinned in the design (verus
+/// `2 verified, 0 errors` for the equivalent case, `0 verified, 1 errors` for the
+/// distinguishing case):
+///
+/// ```verus
+/// spec fn equiv_real_<name>(x: u64) -> u64 { let y: u64 = (x + 0) as u64; y }
+/// spec fn equiv_mut_<name>(x: u64)  -> u64 { 0 }
+/// proof fn equiv_check_<name>(x: u64)
+///     requires x == 0,
+///     ensures equiv_mut_<name>(x) == equiv_real_<name>(x),
+/// {}
+/// ```
+///
+/// REUSE, NOT a hand-emitted Verus duplicate (`goal.md` R-CHAR-3): each body is
+/// rendered through the SAME `lower_expr` the L3 path uses, in a scalar spec
+/// context, with the EXEC arithmetic coercion (`(expr) as <ret>`) the design
+/// grounded — a naive spec rendering of `x + 0` over a `u64` return fails
+/// `verus` with `expected u64, found int`, exactly the seam-need the prior
+/// builder grounded. The `req` is lowered by `lower_expr` in the same spec
+/// context (the obligation's `requires`).
+///
+/// SCOPE (OQ-1, sound-but-incomplete): only SCALAR (`u32`/`u64`/`usize`/`bool`)
+/// params and return are rendered — observable equality is value equality. A
+/// non-scalar param/return, a non-pure body, or a body whose statements are not
+/// the simple let-chain-plus-tail / leading-early-return shape returns
+/// `LowerError::Unsupported`; the caller treats an un-renderable obligation as NO
+/// proof, so the survivor STAYS counted (the natural conservative fallback —
+/// never a laundered exclusion, R-DEFER-9).
+pub fn lower_equivalence_obligation(f: &FnItem, mutant_body: &Block) -> Result<String, LowerError> {
+    let real_body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "equivalence obligation reached a bodyless (boundary) fn; a boundary \
+               fn is never mutation-scored (equivalent-mutants.md OQ-2)"
+            .to_string(),
+        span: f.span,
+    })?;
+
+    // SCOPE gate (OQ-1): every param + the return must be a scalar primitive so
+    // observable equality is value equality. Any other shape → Unsupported → the
+    // survivor stays counted (sound-but-incomplete).
+    let ret_spelling = scalar_obligation_type(&f.ret).ok_or_else(|| LowerError::Unsupported {
+        what: format!(
+            "equivalence obligation supports only scalar (u32/u64/usize/bool) \
+             returns; `{}` returns a non-scalar type (equivalent-mutants.md OQ-1)",
+            f.name
+        ),
+        span: f.span,
+    })?;
+    for p in &f.params {
+        if scalar_obligation_type(&p.ty).is_none() {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "equivalence obligation supports only scalar params; `{}`'s \
+                     param `{}` is non-scalar (equivalent-mutants.md OQ-1)",
+                    f.name, p.name
+                ),
+                span: f.span,
+            });
+        }
+    }
+
+    // The scalar spec context: no slice-view names (every param is a scalar), no
+    // nat-fns. The SAME context the L3 spec path uses for a scalar predicate.
+    let ctx = Ctx::spec(NO_SLICES, NO_SLICES);
+
+    let params = obligation_param_list(&f.params)?;
+    let real_value = render_body_as_spec_value(real_body, &ret_spelling, ctx, f.span)?;
+    let mut_value = render_body_as_spec_value(mutant_body, &ret_spelling, ctx, f.span)?;
+    let req = lower_expr(&f.contract.req.expr, ctx, 0, f.span)?;
+
+    let name = &f.name;
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+    writeln!(
+        out,
+        "spec fn equiv_real_{name}({params}) -> {ret_spelling} {{ {real_value} }}"
+    )
+    .map_err(|_| fmt_err())?;
+    writeln!(
+        out,
+        "spec fn equiv_mut_{name}({params}) -> {ret_spelling} {{ {mut_value} }}"
+    )
+    .map_err(|_| fmt_err())?;
+    writeln!(out, "proof fn equiv_check_{name}({params})").map_err(|_| fmt_err())?;
+    // Omit a literal-`true` precondition (the obligation holds for ALL inputs).
+    if req != "true" {
+        writeln!(out, "    requires {req},").map_err(|_| fmt_err())?;
+    }
+    let arg_names = obligation_arg_names(&f.params);
+    writeln!(
+        out,
+        "    ensures equiv_mut_{name}({arg_names}) == equiv_real_{name}({arg_names}),"
+    )
+    .map_err(|_| fmt_err())?;
+    out.push_str("{}\n");
+    out.push_str("}\n");
+    out.push_str("fn main() {}\n");
+    Ok(out)
+}
+
+/// The Verus spelling of a SCALAR primitive type, or `None` for any non-scalar
+/// type (the equivalence-obligation scope gate, OQ-1). `bool` is included: a
+/// `bool`-returning forced-output fn's observable result is its boolean value.
+fn scalar_obligation_type(ty: &Type) -> Option<String> {
+    match ty {
+        Type::Prim(PrimType::U32) => Some("u32".to_string()),
+        Type::Prim(PrimType::U64) => Some("u64".to_string()),
+        Type::Prim(PrimType::Usize) => Some("usize".to_string()),
+        Type::Prim(PrimType::Bool) => Some("bool".to_string()),
+        _ => None,
+    }
+}
+
+/// `true` iff the obligation arithmetic-coerces to `ty` — an integer scalar gets
+/// the `(expr) as <ty>` coercion the design grounded; a `bool` result is left
+/// bare (Verus has no `as bool`).
+fn obligation_coerces(ty: &str) -> bool {
+    matches!(ty, "u32" | "u64" | "usize")
+}
+
+/// The `name: <ty>` parameter list for an equivalence-obligation spec/proof fn —
+/// the SCALAR param types verbatim (the gate already rejected non-scalars).
+fn obligation_param_list(params: &[Param]) -> Result<String, LowerError> {
+    let mut parts = Vec::with_capacity(params.len());
+    for p in params {
+        let ty = scalar_obligation_type(&p.ty).ok_or_else(|| LowerError::Unsupported {
+            what: format!("equivalence obligation param `{}` is non-scalar", p.name),
+            span: zero_span(),
+        })?;
+        parts.push(format!("{}: {ty}", p.name));
+    }
+    Ok(parts.join(", "))
+}
+
+/// The comma-separated argument names for the two spec-fn calls in the proof
+/// `ensures` (`equiv_mut_f(x, y) == equiv_real_f(x, y)`).
+fn obligation_arg_names(params: &[Param]) -> String {
+    params
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Render an exec body as the spec-fn body of an equivalence-obligation
+/// (REQ-1). The observable result of:
+///
+/// - a body whose FIRST statement is `return <e>;` (the early-return mutant) is
+///   `<e>` (coerced) — the rest of the body is dead;
+/// - a body of `let`s ending in a tail is the let-chain (each init coerced to
+///   its declared/return type) plus the coerced tail (the `{ let y = x+0; y }`
+///   forced-output shape).
+///
+/// Any other statement shape (an `Assign`, a nested `Loop`/`If`, a `Stmt::Expr`)
+/// → `Unsupported` (out of the scalar forced-output scope, OQ-1) so the survivor
+/// stays counted.
+fn render_body_as_spec_value(
+    body: &Block,
+    ret: &str,
+    ctx: Ctx,
+    span: Span,
+) -> Result<String, LowerError> {
+    // The early-return mutant: a leading `return <e>;` pins the observable result
+    // to `<e>` regardless of the dead tail (`mutation::early_return_value`).
+    if let Some(Stmt::Return(ret_expr)) = body.stmts.first() {
+        let e = ret_expr.as_ref().ok_or_else(|| LowerError::Unsupported {
+            what: "equivalence obligation: a value-less `return;` has no observable \
+                   result to compare"
+                .to_string(),
+            span,
+        })?;
+        let lowered = lower_expr(e, ctx, 0, span)?;
+        return Ok(coerce_obligation_expr(&lowered, ret));
+    }
+
+    // A let-chain plus tail: render each `let` (init coerced to its declared type,
+    // else the return type) and the coerced tail.
+    let mut out = String::new();
+    for stmt in &body.stmts {
+        match stmt {
+            Stmt::Let {
+                mutable: false,
+                name,
+                ty,
+                init,
+            } => {
+                let decl = match ty {
+                    Some(t) => {
+                        scalar_obligation_type(t).ok_or_else(|| LowerError::Unsupported {
+                            what: format!("equivalence obligation `let {name}` is non-scalar"),
+                            span,
+                        })?
+                    }
+                    None => ret.to_string(),
+                };
+                let init_lowered = lower_expr(init, ctx, 0, span)?;
+                let init_coerced = coerce_obligation_expr(&init_lowered, &decl);
+                write!(out, "let {name}: {decl} = {init_coerced}; ").map_err(|_| fmt_err())?;
+            }
+            other => {
+                return Err(LowerError::Unsupported {
+                    what: format!(
+                        "equivalence obligation supports only a leading early-return \
+                         or an immutable let-chain-plus-tail body; found {}",
+                        stmt_kind(other)
+                    ),
+                    span,
+                });
+            }
+        }
+    }
+    let tail = body.tail.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "equivalence obligation body has no tail value to compare".to_string(),
+        span,
+    })?;
+    let tail_lowered = lower_expr(tail, ctx, 0, span)?;
+    out.push_str(&coerce_obligation_expr(&tail_lowered, ret));
+    Ok(out)
+}
+
+/// Apply the EXEC arithmetic coercion the design grounded: an integer-result
+/// expression is wrapped `(expr) as <ty>` so the spec-position arithmetic (which
+/// Verus types as unbounded `int`) matches the bounded scalar return — without it
+/// `verus` rejects `x + 0` as `expected u64, found int`. A `bool` result is left
+/// bare (no `as bool`). Already-`as`-suffixed and bare-literal forms still take
+/// the wrap (it is idempotent for verification).
+fn coerce_obligation_expr(expr: &str, ret: &str) -> String {
+    if obligation_coerces(ret) {
+        format!("({expr}) as {ret}")
+    } else {
+        expr.to_string()
+    }
+}
+
+/// A short human label for an unexpected statement kind in an equivalence-
+/// obligation body (the `Unsupported` diagnostic).
+fn stmt_kind(stmt: &Stmt) -> &'static str {
+    match stmt {
+        Stmt::Let { mutable: true, .. } => "a mutable `let`",
+        Stmt::Let { .. } => "a `let`",
+        Stmt::Assign { .. } => "an assignment",
+        Stmt::Return(_) => "a non-leading `return`",
+        Stmt::If { .. } => "an `if` statement",
+        Stmt::Loop(_) => "a loop",
+        Stmt::Break => "a `break`",
+        Stmt::Continue => "a `continue`",
+        Stmt::Expr(_) => "an expression statement",
+    }
 }
 
 /// Emit the comma-separated parameter list. In spec context a slice param is the

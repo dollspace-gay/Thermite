@@ -110,11 +110,24 @@ pub fn classify_mutant(proved: bool) -> MutantOutcome {
 pub struct MutationScore {
     /// Mutants verus FAILED to prove (the contract caught them) — good.
     pub killed: usize,
-    /// Mutants that lowered + ran (the denominator). Excludes un-lowerable
-    /// mutants (OQ-5).
+    /// Mutants that lowered + ran AND were NOT proved equivalent (the kill-ratio
+    /// DENOMINATOR). Excludes un-lowerable mutants (OQ-5) AND mutants Verus PROVED
+    /// observably equivalent to the real body under the precondition
+    /// (`.design/forge/equivalent-mutants.md` REQ-2/REQ-4, #101 — a true
+    /// equivalent mutant is not contract weakness, so it drops from the
+    /// denominator rather than depressing the ratio).
     pub scored: usize,
+    /// The count of survivors Verus PROVED observably equivalent to the real body
+    /// under `req` (`.design/forge/equivalent-mutants.md` REQ-2/REQ-4, #101). A
+    /// proved-equivalent mutant is excluded from BOTH the survivor set AND
+    /// `scored`; this field records HOW MANY were so excluded (a transparency
+    /// datum, NOT a denominator input — `scored` is already net of them). `0`
+    /// when no survivor was proved equivalent (the entire pre-#101 corpus).
+    pub equivalent: usize,
     /// A representative surviving mutant's description (the §7 strengthening
-    /// prompt), or `None` if every scored mutant was killed.
+    /// prompt), or `None` if every scored mutant was killed or proved equivalent.
+    /// A PROVED-EQUIVALENT mutant is NEVER recorded here (it is not a survivor —
+    /// the soundness line is that only a DISTINGUISHING survivor remains, REQ-3).
     pub survivor: Option<String>,
 }
 
@@ -130,6 +143,14 @@ impl MutationScore {
     /// (`early_return_value` synthesizes one for ref/slice returns too), a 0/0
     /// score is unreachable for a real `fn` body; the backstop is the floor-of-
     /// last-resort for any genuinely un-synthesizable return type.
+    ///
+    /// The §7 equivalent-mutant exclusion (`.design/forge/equivalent-mutants.md`
+    /// REQ-4, #101) preserves this backstop: `scored` is already NET of
+    /// proved-equivalent mutants, so a fn ALL of whose mutants are killed or
+    /// proved-equivalent — and NONE killed — reduces to `0/0`, which this
+    /// backstop STILL gates `WeakContract` (the degenerate `refuse(x) req x == 0
+    /// ens result == 0 { x }`, AC-5). Exclusion narrows the denominator but never
+    /// opens a vacuous `1.0` pass for a fn the battery could not exercise.
     pub fn kill_ratio(&self) -> f64 {
         if self.scored == 0 {
             0.0
@@ -1183,6 +1204,7 @@ mod tests {
         let score = MutationScore {
             killed: 3,
             scored: 3,
+            equivalent: 0,
             survivor: None,
         };
         assert_eq!(score.kill_ratio(), 1.0);
@@ -1192,6 +1214,7 @@ mod tests {
         let weak = MutationScore {
             killed: 1,
             scored: 3,
+            equivalent: 0,
             survivor: Some("insert early `return 0` at body head".to_string()),
         };
         assert!((weak.kill_ratio() - 0.3333).abs() < 0.01);
@@ -1210,6 +1233,7 @@ mod tests {
         let score = MutationScore {
             killed: 0,
             scored: 0,
+            equivalent: 0,
             survivor: None,
         };
         assert_eq!(score.kill_ratio(), 0.0);
@@ -1297,6 +1321,7 @@ mod tests {
                     let score = MutationScore {
                         killed,
                         scored,
+                        equivalent: 0,
                         survivor: None,
                     };
                     // R-CHAR-3: the EXPECTED verdict is the verus-proved INTEGER spec.
@@ -1327,6 +1352,7 @@ mod tests {
             let empty = MutationScore {
                 killed: 0,
                 scored: 0,
+                equivalent: 0,
                 survivor: None,
             };
             assert!(

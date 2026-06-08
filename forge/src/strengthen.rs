@@ -534,6 +534,7 @@ mod tests {
         MutationScore {
             killed: 0,
             scored: 1,
+            equivalent: 0,
             survivor: Some("insert early `return 0` at body head".to_string()),
         }
     }
@@ -654,6 +655,7 @@ mod tests {
         let no_survivor = MutationScore {
             killed: 1,
             scored: 1,
+            equivalent: 0,
             survivor: None,
         };
         let candidates = generate_candidates(&pinning, &[], &no_survivor);
@@ -739,6 +741,7 @@ mod tests {
         let no_survivor = MutationScore {
             killed: 1,
             scored: 1,
+            equivalent: 0,
             survivor: None,
         };
         // Verify EVERYTHING (the candidates all hold for the body), so the ONLY

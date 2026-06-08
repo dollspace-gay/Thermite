@@ -2428,9 +2428,14 @@ fn mutation_score(
     let mutants = crate::mutation::generate(f, seed);
     let mut killed = 0usize;
     let mut scored = 0usize;
+    let mut equivalent = 0usize;
     let mut survivor: Option<String> = None;
 
     for mutant in mutants {
+        // Keep the mutant's `FnItem` so a SURVIVOR can be equivalence-checked
+        // against the real body (#101); clone what the obligation needs before
+        // moving the item into the sub-program.
+        let mutant_item = mutant.item.clone();
         let item = Item::Fn(mutant.item);
         // Weave the SAME §9 composition deps as the original `f` (#52) AND the
         // same #68 ADT decls: a mutant body still references the original's
@@ -2463,12 +2468,41 @@ fn mutation_score(
             mutant_outcome_is_survivor(&verus.outcome)
         };
 
-        scored += 1;
         if crate::mutation::classify_mutant(proved) == crate::mutation::MutantOutcome::Killed {
+            // A KILLED mutant is distinguished by definition — never equivalence-
+            // checked (`.design/forge/equivalent-mutants.md` scope: OUT). It counts.
+            scored += 1;
             killed += 1;
-        } else if survivor.is_none() {
-            // The FIRST survivor in deterministic enumeration order (REQ-2) is the
-            // representative strengthening prompt.
+            continue;
+        }
+
+        // The mutant SURVIVED (verus proved it against the unchanged contract).
+        // Issue the per-survivor EQUIVALENCE QUERY (#101 REQ-1): is the mutant
+        // body observably equal to the REAL body under `f`'s `req`, for ALL
+        // inputs? A VERIFIED query is a PROOF of equivalence → the survivor is a
+        // TRUE equivalent mutant (not contract weakness) and DROPS from the
+        // denominator (REQ-2). A counterexample / timeout / un-renderable
+        // obligation leaves it a COUNTED survivor (REQ-3, sound-but-incomplete —
+        // exclude ONLY on a proof; never launder a distinguishing mutant).
+        let proved_equivalent = equivalence_proves_equal(
+            f,
+            mutant_item.body.as_ref(),
+            seed,
+            rlimit,
+            verus_version,
+            cache_dir,
+            use_cache,
+        )?;
+        if proved_equivalent {
+            // REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`.
+            equivalent += 1;
+            continue;
+        }
+
+        // A genuinely-DISTINGUISHING survivor (REQ-3): stays counted, and is the
+        // representative strengthening prompt if first in enumeration order.
+        scored += 1;
+        if survivor.is_none() {
             survivor = Some(mutant.desc);
         }
     }
@@ -2476,8 +2510,75 @@ fn mutation_score(
     Ok(crate::mutation::MutationScore {
         killed,
         scored,
+        equivalent,
         survivor,
     })
+}
+
+/// The §7 equivalent-mutant EQUIVALENCE QUERY for one survivor
+/// (`.design/forge/equivalent-mutants.md` REQ-1, #101): lower the equivalence
+/// obligation (the `thermite_lower::lower_equivalence_obligation` SEAM — `under
+/// req, mutant_body == real_body` for all inputs), content-address it through the
+/// SAME #8 proof cache, and run the EXISTING `run_verus`. Returns `Ok(true)` iff
+/// verus PROVED the obligation (`0 errors` → the mutant is observably equivalent
+/// → REQ-2 exclude); `Ok(false)` on a counterexample, a timeout, OR an
+/// un-renderable obligation (a non-scalar / non-forced-output body the seam
+/// returns `Unsupported` for — OQ-1, the natural sound-but-incomplete fallback:
+/// no proof ⇒ the survivor STAYS counted, REQ-3). `Err` ONLY on an environment /
+/// VIR failure (R-CODE-4 — never a silent equivalence).
+///
+/// This is a NEW CALLER of the existing prover path, not a new prover (REQ-1):
+/// it reuses `lower_equivalence_obligation` (which reuses the L3 exec
+/// coercions — no hand-emitted Verus, R-CHAR-3), `cache::cache_key`/`load`/
+/// `store` (REQ-6, deterministic content-addressed verdict), and `run_verus`.
+/// The obligation is SELF-CONTAINED (the seam emits a whole
+/// `use vstd::prelude::*; verus! { .. } fn main() {}` unit over only scalar spec
+/// fns + a proof fn), so no §9/ADT composition deps are woven.
+fn equivalence_proves_equal(
+    f: &thermite_syntax::FnItem,
+    mutant_body: Option<&thermite_syntax::ast::Block>,
+    seed: u64,
+    rlimit: f64,
+    verus_version: &str,
+    cache_dir: &Path,
+    use_cache: bool,
+) -> Result<bool, ForgeError> {
+    let Some(body) = mutant_body else {
+        // A bodyless (boundary) mutant cannot arise (mutation never scores a
+        // boundary fn), but treat a missing body as no-proof (stays counted).
+        return Ok(false);
+    };
+    let obligation = match thermite_lower::lower_equivalence_obligation(f, body) {
+        Ok(s) => s,
+        // OQ-1: an un-renderable obligation (non-scalar / non-forced-output shape)
+        // yields NO proof — the survivor STAYS counted (sound-but-incomplete).
+        Err(_) => return Ok(false),
+    };
+    // The obligation is a complete Verus program (the seam emits the frame); run
+    // it as a single-item program for the `run_verus` scratch-dir/label machinery.
+    let label_program = Program {
+        items: vec![Item::Fn(f.clone())],
+    };
+    let key = cache::cache_key(&obligation, seed, verus_version, THERMITE_VERSION);
+    if use_cache {
+        if let Some(stored) = cache::load(cache_dir, &key) {
+            // A cached cert: the equivalence query PROVED iff the stored cert is
+            // L3 with no reject (the same `mutant_cert_is_survivor` polarity the
+            // mutant kill-check caches — a `Proved` obligation is "survivor"-true).
+            return Ok(mutant_cert_is_survivor(&stored));
+        }
+        let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
+        let proved = mutant_outcome_is_survivor(&verus.outcome);
+        // Cache the equivalence verdict (REQ-6 determinism): assemble + store the
+        // same cert shape the mutant kill-check stores, keyed on the obligation
+        // source so a re-`forge check` serves it without re-spawning verus.
+        let cert = assemble_certificate(&Item::Fn(f.clone()), &verus);
+        let _ = cache::store(cache_dir, &key, &cert);
+        Ok(proved)
+    } else {
+        let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
+        Ok(mutant_outcome_is_survivor(&verus.outcome))
+    }
 }
 
 /// Run the #14 §7 step-5 STRENGTHENING PROBE for `f`

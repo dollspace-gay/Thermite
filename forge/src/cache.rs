@@ -87,7 +87,17 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///       under schema 3 MUST be re-checked under schema 4 — the maintenance
 ///       contract above (else `forge check` serves the stale L0 cached on an
 ///       identical lowered-source key, REQ-2: a HIT must equal a fresh verify).
-const CHECK_SCHEMA_VERSION: u32 = 4;
+///   5 — blocker #101 (`.design/forge/equivalent-mutants.md` REQ-5): the §7
+///       mutation gate now EXCLUDES a survivor Verus PROVES observably
+///       equivalent to the real body under `req` from the kill-ratio DENOMINATOR
+///       (`check::mutation_score` → `equivalence_proves_equal`). This CHANGES the
+///       gate verdict for FORCED-OUTPUT fns (a `1/3` `WeakContract` `clamp_zero`
+///       becomes a certifying `1/1` once its two proved-equivalent survivors
+///       drop), so the check logic is no longer the same function of its inputs —
+///       every cert stored under schema 4 MUST be re-checked under schema 5
+///       (else `forge check` serves the stale `WeakContract` cached on an
+///       identical lowered-source key, REQ-2: a HIT must equal a fresh verify).
+const CHECK_SCHEMA_VERSION: u32 = 5;
 
 /// The project-local proof-cache directory (`.design/forge/proof-cache.md`
 /// REQ-6, OQ-1): `target/thermite-proof-cache/`. It is BUILD OUTPUT under the

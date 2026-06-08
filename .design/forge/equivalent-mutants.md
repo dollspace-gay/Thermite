@@ -144,15 +144,20 @@ Verus (`0.2026.05.24.ecee80a`) below in *Ground the path*.
   x + 0; y }`) has a SURVIVING early-`return 0` mutant that is NOT equivalent to
   the real body (under `x <= 100`, `0 != x` for `x = 5`), so its equivalence
   query FAILS → it STAYS counted → the score remains below floor → `WeakContract`
-  (`mutants_killed = "0/3"`, survivor reported). The exclusion does NOT launder
-  it (R-DEFER-9).
+  (`mutants_killed = "0/2"`, survivor reported). (The `x - 0` arithmetic-flip
+  mutant IS proved-equivalent — `x - 0 == x + 0` for all `x`, independent of
+  `req` — and is soundly excluded, dropping the denominator 3 → 2; the
+  DISTINGUISHING `return 0` survivor is what keeps the verdict `WeakContract`.)
+  The exclusion does NOT launder it (R-DEFER-9).
 
 - **AC-3 (the exclusion is Verus-PROVED, no heuristic):** a mutant is excluded
   ONLY when the equivalence query VERIFIES (`success: true, errors: 0`); a
   counterexample or timeout never excludes. A unit/conformance test asserts the
-  exclusion decision is the Verus verdict, not a syntactic shape match (e.g. the
-  `x - 0` flip and the `return 0` are excluded ONLY because `req x == 0` makes
-  them equal — under a looser `req` the SAME mutants are NOT excluded, AC-2).
+  exclusion decision is the Verus verdict, not a syntactic shape match: the
+  `return 0` mutant is excluded ONLY under `req x == 0` (which makes `0 == x`)
+  and STAYS counted under the looser `req x <= 100` (AC-2), whereas the `x - 0`
+  flip is excluded under ANY `req` (it equals `x + 0` for all `x`) — the verdict
+  tracks provable equivalence per precondition, not the mutant's shape.
 
 - **AC-4 (determinism — R-CODE-5):** scoring the SAME forced-output fixture twice
   yields the byte-identical reduced `mutants_killed` and the same exclusion set.
@@ -221,7 +226,7 @@ contract is scored against is unchanged (`goal.md` R-DEFER-9).
 - `forge/tests/mutation_conformance.rs` (extended) — the conformance oracle over
   `conformance/mutation/` runs real scoring (real Verus): the forced-output
   `accept` fixture (`clamp_zero` → certifies `1/1`, AC-1), the genuinely-weak
-  `reject` fixture (`loose` → `WeakContract` `0/3`, AC-2), and the `0/0`-backstop
+  `reject` fixture (`loose` → `WeakContract` `0/2`, AC-2), and the `0/0`-backstop
   `reject` fixture (`refuse` → `WeakContract` `0/0`, AC-5). Expected verdicts are
   hand-derived from §7 (R-CHAR-3).
 - `cargo clippy -p forge --all-targets -- -D warnings`, `cargo fmt --check`.
@@ -326,8 +331,9 @@ ens result <= 1000  { let y: u64 = x + 0; y }` — `forge check`:
 ```text
 item: loose
 level: L0
-reject: WeakContract — ... mutation kill ratio 0/3 is below the floor;
+reject: WeakContract — ... mutation kill ratio 0/2 is below the floor;
         mutant `insert early `return 0` at body head` survived ...
+        (the `x - 0` flip was proved-equivalent and excluded, 3 → 2)
 ```
 
 Its early-`return 0` survivor's equivalence query FAILS under the looser `req`
@@ -343,8 +349,10 @@ proof fn equiv_early(x: u64) requires x <= 100, ensures mut_early(x) == real_bod
 verification results:: 0 verified, 1 errors        (postcondition not satisfied)
 ```
 
-So `loose` stays `0/3` → STILL `WeakContract`. The exclusion narrows the
-denominator ONLY by prover-certified-indistinguishable mutants (REQ-3, R-DEFER-9).
+So `loose` stays `0/2` → STILL `WeakContract` (the distinguishing `return 0`
+survivor keeps it below floor; only the genuinely-equivalent `x - 0` flip was
+excluded). The exclusion narrows the denominator ONLY by prover-certified-
+indistinguishable mutants (REQ-3, R-DEFER-9).
 
 ## Open questions
 

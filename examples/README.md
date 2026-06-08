@@ -21,7 +21,7 @@ out to `rustc`; `--out` names the artifact so no wrapper script is needed.)
 
 ```sh
 # build the standalone editor binary (one time):
-cargo run -q -p forge -- build examples/editor/editor.th --entry run --no-sandbox --out ./nano
+cargo run -q -p forge -- build examples/editor/editor.th --entry run --out ./nano
 
 # run it directly — it self-sets raw mode (extern-C termios; no stty, no script):
 THERMITE_EDITOR_FILE=mydoc.txt ./nano
@@ -30,8 +30,10 @@ THERMITE_EDITOR_FILE=mydoc.txt ./nano
 Keys: type to insert · **Enter** newline · **↑↓** move between lines · **←→** within
 a line · **Backspace** delete · **Ctrl-S** save · **Ctrl-Q** quit. See
 [`editor/README.md`](editor/README.md) for the verified-vs-trusted breakdown.
-(`--no-sandbox` is a *build* flag — the seccomp set doesn't yet grant the terminal
-`ioctl`, crosslink #106; the binary is otherwise self-contained.)
+It runs **under the default seccomp sandbox** — its `raw_mode_on`/`raw_mode_off`
+boundaries declare `fx term`, whose `fx`-derived seccomp widening grants exactly the
+terminal `ioctl` the termios raw mode needs (crosslink #106), so the binary is
+effect-confined, not unsandboxed.
 
 ## The formatter / calculator / parser (runnable demos)
 

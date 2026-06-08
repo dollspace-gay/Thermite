@@ -1,0 +1,10 @@
+{
+  "uuid": "72fde526-a7ba-467e-ba8d-97b0376a40e7",
+  "display_id": 144,
+  "title": "contract-TV REQ-5: forge plug-in point — a new contract_tv check phase (alongside vacuity/mutation) over each req/ens/inv/dec clause; non-test consumer in forge::check",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T18:15:58.395783818Z",
+  "updated_at": "2026-06-08T18:15:58.395783818Z"
+}

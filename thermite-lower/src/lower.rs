@@ -2392,6 +2392,37 @@ pub fn lower_contract_expr(
     lower_expr(expr, ctx, 0, zero_span())
 }
 
+/// Lower ONE body-position (EXEC) expression to its PRODUCTION Verus EXEC
+/// expression text (`.design/verified/exec-tv.md` REQ-2 prerequisite, epic
+/// crosslink #151, blocker #152). This is the EXEC dual of [`lower_contract_expr`]:
+/// where the contract entry re-enters `lower_expr` in SPEC context (`Ctx::spec`,
+/// where slices/casts/indexing rewrite to `@`/`nat`/`int`), this re-enters in EXEC
+/// context (`Ctx::exec()`, `Pos::Exec`), where arithmetic stays BOUNDED `u64`/
+/// `usize` with the always-active runtime overflow checks, an index `xs[i]` lowers
+/// to the bounded Rust access `xs[i]` (not the spec `xs@[i as int]`), and a cast
+/// `(n - 1) as u8` carries the #122 inner-paren + the #146 cast-`<` outer-paren
+/// discipline (`lower_binary_operand`/`is_lt_leading`). It is the `P_production`
+/// the exec-TV obligation wraps as `fn tv_exec_wrap(..) ensures result == <ref> {
+/// <this> }`.
+///
+/// THE EXEC `Ctx` IS REACHABLE FOR A STANDALONE EXPR (the #1 feasibility unknown
+/// the design flagged): `Ctx::exec()` is a `Ctx<'static>` constructed with NO
+/// surrounding-fn context (empty `slices`/`nat_fns`/`variants`/`schemes`/…) — a
+/// pure exec EXPRESSION (`thermite-design.md` §4.1 arithmetic/cast/comparison/call/
+/// index subset) lowers with NO surrounding-fn frame (no `let`/loop/mutation, those
+/// are step 2.2). The body params the expr reads are bound by the OBLIGATION's
+/// signature (`thermite_tv::ExecObligationFrame`), not by this lowering. So a
+/// standalone exec expr lowers verbatim through the SAME `lower_expr` exec path the
+/// body uses (REUSE, not a re-derivation — `goal.md` R-CHAR-3).
+///
+/// This is a thin per-expr re-entry into the lowerer (NOT a new lowering rule);
+/// `forge::exec_tv` (the #156 next dispatch) is the eventual non-test consumer.
+/// Returns a [`LowerError`] (never a panic — R-CODE-2) for a construct the EXEC
+/// lowering does not cover.
+pub fn lower_exec_expr(expr: &Expr) -> Result<String, LowerError> {
+    lower_expr(expr, Ctx::exec(), 0, zero_span())
+}
+
 /// Lower a `#[boundary]`/`#[slag]` fn as a `#[verifier::external_body]` assumable
 /// SIGNATURE (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
 /// `#[verifier::external_body]` attribute makes the body OPAQUE: verus assumes
@@ -7727,4 +7758,81 @@ fn spec_dec(dec: &Clause, params: &[Param]) -> String {
     let strings = string_param_names(params);
     let ctx = Ctx::spec_seq().with_strings(&strings);
     lower_expr(&dec.expr, ctx, 0, zero_span()).unwrap_or_else(|_| "0".to_string())
+}
+
+#[cfg(test)]
+mod exec_expr_tests {
+    //! `lower_exec_expr` per-expr EXEC lowering (`.design/verified/exec-tv.md`
+    //! REQ-2 prerequisite, blocker #152). These pin the FAITHFUL production exec
+    //! shapes the exec-TV teeth (`thermite-tv/tests/exec_teeth.rs` E1–E4) wrap as
+    //! `P_production` — proving the exec `Ctx` IS reachable for a standalone expr
+    //! (the #1 feasibility unknown) and that the #122 inner-paren + #146 cast-`<`
+    //! outer-paren disciplines fire in EXEC position. The teeth-test (in the
+    //! INDEPENDENT `thermite-tv`, no `thermite-lower` dep) cannot import this, so
+    //! these tests are the cross-crate bridge that the faithful strings it hardcodes
+    //! DO match the real production lowering (R-CHAR-3 — the faithful column traces
+    //! to production here, the reference to `exec_encode`).
+    use super::*;
+    use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type};
+
+    fn path(name: &str) -> Expr {
+        Expr::Path(vec![name.to_string()])
+    }
+    fn int(value: u128) -> Expr {
+        Expr::IntLit {
+            value,
+            raw: value.to_string(),
+        }
+    }
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+    fn cast(inner: Expr, ty: Type) -> Expr {
+        Expr::Cast {
+            expr: Box::new(inner),
+            ty,
+        }
+    }
+
+    // E1 — `(n - 1) as u8`: the #122 inner-paren on the `Binary` inner.
+    #[test]
+    fn e1_cast_inner_paren_exec() {
+        let e = cast(
+            bin(BinOp::Sub, path("n"), int(1)),
+            Type::Named("u8".to_string()),
+        );
+        assert_eq!(lower_exec_expr(&e).unwrap(), "(n - 1) as u8");
+    }
+
+    // E2 — `x as u32 < 33`: the #146 cast-`<` OUTER-paren (a `Cast` left of `<`).
+    #[test]
+    fn e2_cast_lt_outer_paren_exec() {
+        let e = bin(
+            BinOp::Lt,
+            cast(path("x"), Type::Prim(PrimType::U32)),
+            int(33),
+        );
+        assert_eq!(lower_exec_expr(&e).unwrap(), "(x as u32) < 33");
+    }
+
+    // E3 — `a + b`: bounded exec add (NOT `wrapping_*`, NOT `nat`).
+    #[test]
+    fn e3_bounded_add_exec() {
+        let e = bin(BinOp::Add, path("a"), path("b"));
+        assert_eq!(lower_exec_expr(&e).unwrap(), "a + b");
+    }
+
+    // E4 — `xs[i]`: the bounded Rust access (exec index, NOT the spec `xs@[i as int]`).
+    #[test]
+    fn e4_slice_index_exec() {
+        let e = Expr::Index {
+            base: Box::new(path("xs")),
+            index: IndexArg::Single(Box::new(path("i"))),
+        };
+        assert_eq!(lower_exec_expr(&e).unwrap(), "xs[i]");
+    }
 }

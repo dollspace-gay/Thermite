@@ -48,11 +48,37 @@
 //! | REQ-3 (off-corpus generator) | SHIPPED | `gen::generate_clauses` (`gen.rs`) — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of well-typed `bool`-valued contract-position `Expr`s over the frozen sublanguage (all comparison `BinOp`s, logical connectives incl. nesting, the 8 combinators with the correct arg KINDS per `thermite_spec::lookup(_).arg_kinds`, `spec_sum` calls, `result`/`old(acc)`, byte-view method calls, casts). Non-test consumer: the forge off-corpus run `forge::contract_tv::run_generated` (lowers each via `thermite_lower::lower_contract_expr` → TV-checks via `equivalence_obligation`). Pure generation in this INDEPENDENT crate — no `thermite-lower` dep (AC-6 intact). Determinism + construct-coverage asserted in `gen::tests` + `forge/tests/contract_tv_conformance.rs` (AC-7). |
 //! | REQ-4 (the teeth — R-CHAR-3) | SHIPPED | `tests/teeth.rs` — F1 (comparison `==`/`<=`), F2 (combinator predicate `<`/`<=`), F3 (#127 byte-view index `0`/`1`), F4 (structural-drop conjunct): each FAITHFUL p_production VERIFIES + each INFIDEL produces a verus COUNTEREXAMPLE (`errors >= 1`). Skip-loudly if verus absent. |
 //! | REQ-5 (forge plug-in point) | NOT-STARTED | open prereq blocker #144 (next dispatch — `forge/src/contract_tv.rs` unbuilt; not on this manifest, independence-respecting). |
+//!
+//! ## EXEC-position extension — step 2 (`.design/verified/exec-tv.md`; epic #151)
+//!
+//! Contract-TV (above) certifies the CONTRACT (`req`/`ens`/`inv`/`dec`); it does
+//! NOT cover the EXEC BODY (where the #122/#146 infidelity classes GENERALLY
+//! live). This crate now adds **exec-position TV (step 2.1)**: an INDEPENDENT
+//! BOUNDED-VALUE reference denotation of a pure body-position exec expr
+//! ([`exec_encode`]) wrapped as an EXEC-FN obligation `fn tv_exec_wrap(..) ensures
+//! result == <reference> { <production exec lowering> }`
+//! ([`obligation::exec_equivalence_obligation`]). The exec reference is BOUNDED
+//! (`u64`/`usize`, NOT `nat`-coerced), so an overflow/wrapping infidelity is CAUGHT
+//! at the production type rather than masked. The same INDEPENDENCE CONSTRAINT
+//! holds (deps `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower`; the
+//! exec reference is authored from `thermite-design.md` §4.1/§6 exec semantics, NOT
+//! from `lower_exec_expr`).
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | exec-REQ-1 (exec-expr reference encoder) | SHIPPED | `exec_encode::exec_ref_value` (`exec_encode.rs`) — bounded `u64`/`u32`/`usize`/`bool` value, the #122 inner-paren + #146 cast-`<` outer-paren (independent `is_lt_leading`), the `xs[i as int]` element value; non-test consumer `obligation::exec_equivalence_obligation`; verified by `tests/exec_teeth.rs` E1–E4 under real verus. No `thermite-lower` dep (`Cargo.toml`, AC-6). |
+//! | exec-REQ-2 (exec-fn-wrapped obligation + discharge) | SHIPPED | `obligation::exec_equivalence_obligation` + `ExecObligationFrame`/`ExecParamDecl` (`obligation.rs`); emits the self-contained `fn tv_exec_wrap(..) requires <req>, ensures result == <ref> { <p_prod> }` EXEC-FN form; discharged by `tests/exec_teeth.rs` through real verus (the teeth-test is the non-test consumer of the obligation TEXT). |
+//! | exec-REQ-4 (the exec teeth — R-CHAR-3) | SHIPPED | `tests/exec_teeth.rs` — E1 (#122 cast-paren), E2 (#146 cast-`<`), E3 (wrong-op/overflow), E4 (off-by-one index): each FAITHFUL `p_production` (the real `lower_exec_expr`) VERIFIES + each INFIDEL is CAUGHT (E0308/parse error/postcondition counterexample). Skip-loudly if verus absent. |
 
+pub mod exec_encode;
 pub mod gen;
 pub mod obligation;
 pub mod ref_encode;
 
+pub use exec_encode::{exec_ref_value, ExecRefCtx};
 pub use gen::generate_clauses;
-pub use obligation::{equivalence_obligation, ObligationFrame, ParamDecl};
+pub use obligation::{
+    equivalence_obligation, exec_equivalence_obligation, ExecObligationFrame, ExecParamDecl,
+    ObligationFrame, ParamDecl,
+};
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};

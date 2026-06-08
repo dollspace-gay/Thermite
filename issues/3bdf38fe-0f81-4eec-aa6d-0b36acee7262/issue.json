@@ -1,0 +1,10 @@
+{
+  "uuid": "3bdf38fe-0f81-4eec-aa6d-0b36acee7262",
+  "display_id": 153,
+  "title": "exec-tv REQ-2: exec-fn-wrapped equivalence obligation (thermite-tv/src/obligation.rs exec_equivalence_obligation) — emit ; discharged through forge::check::run_verus. Verus reasons about the exec fn value via its ensures.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:21.994818512Z",
+  "updated_at": "2026-06-08T22:59:21.994818512Z"
+}

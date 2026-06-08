@@ -1,0 +1,10 @@
+{
+  "uuid": "a094f35f-237c-4fae-910b-14faf8bd7057",
+  "issue_uuid": "1729b1c0-b2a3-4be9-bdae-c6653c237c14",
+  "author": "Yffe",
+  "content": "Closed #126. (A) Fixed the toolchain gap in thermite-lower/src/lower.rs: lower_spec_fn_body / lower_spec_fn_body_with_schemes / spec_dec now thread a spec fn's &String params via .with_strings(..) (new string_param_names/is_string_ty helpers), so a &String-param byte_at(i) in a spec-fn body rewrites to spec_byte_at(i as int) (was bare → E0308 usize-vs-int) and a dec s.len() to s.spec_len(). Two narrowings for Verus's unbounded-int spec arithmetic: a recursive spec-fn-call arg i+1 → (i+1) as u64, a contract s.len() arg → s.spec_len() as u64 (gated on plain_user_spec_call); the s→s.data@ byte-view is gated on callee_takes_string_byteview so a user &String-param spec fn's self-call passes the &TString reference through. (B) Added spec_line_start (spec twin of exec line_start) and pinned cursor_col: ens result == b.cursor - spec_line_start(&b.text,0,b.cursor,0). cursor_col now L3 4/4 (return-0 and return-cursor mutants → L0); editor builds + runs identically. Gauntlet: cargo test --workspace 192 passed 0 failed; clippy + fmt clean.",
+  "created_at": "2026-06-08T00:59:12.348215525Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAnFqe22DRU9bubSvujIvmOqusKkphATmXS+6/wrTvHroV52/NbZdtejTFOnz86DGx5WoJkF8zYf5UGGDAQzfSAw=="
+}

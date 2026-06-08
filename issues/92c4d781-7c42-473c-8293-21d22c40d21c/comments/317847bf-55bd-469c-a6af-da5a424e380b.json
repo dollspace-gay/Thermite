@@ -1,0 +1,10 @@
+{
+  "uuid": "317847bf-55bd-469c-a6af-da5a424e380b",
+  "issue_uuid": "92c4d781-7c42-473c-8293-21d22c40d21c",
+  "author": "Yffe",
+  "content": "Landing #132: widen the PROVED subsumption bitset u8->u16 (thermite-verified, ATOM_COUNT/FX_ATOM_COUNT 8->9, subsumes_masks/spec_subsumes_mask/widen/io_allow + the bit_vector/compute proofs RE-DERIVED over u16, verus --no-cheating 27 verified 0 errors; subsumes bounded to <512 so the all-16-bit mask test == the 9-way subset conjunction; Term=bit8 NON-io-sensitive widen(8)==0 per REQ-7/OQ-5). Effect::Term in ast.rs + parse term; EffectKind::Term bit8/u16 in effects.rs; TERM_SYSCALLS={ioctl:16}+the term arm in sandbox.rs; the Effect ripple (manifest/lower/vacuity[term excluded from the broad maximal heuristic, pinned by the conformance oracle]/generate+skill regenerated); editor raw_mode_on/off declare fx term, run unions it. THE PAYOFF: editor builds+runs FULLY sandboxed (no --no-sandbox), ioctl(16) granted, exit 0, saved file, no SIGSYS; pure-caller-of-term REJECTED. Gauntlet: cargo test --workspace 677 passed 0 failed, clippy/fmt clean, budget 5325/6000.",
+  "created_at": "2026-06-08T05:24:36.773713625Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAU/iSIdl9aF/W8Rgmfv6vkxoOoXICd4rh7cQjh2FJzc0QTgoVJaEixMl+u6wMX+CqpSkhtisQjvXMyKdsP8JyAw=="
+}

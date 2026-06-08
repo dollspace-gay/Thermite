@@ -1,0 +1,20 @@
+[package]
+name = "thermite-tv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+# Contract-faithfulness translation validation (epic crosslink #139).
+#
+# THE INDEPENDENCE CONSTRAINT (`.design/verified/contract-tv.md`, the trust
+# model): this crate depends on `thermite-syntax` (the AST it encodes) and
+# `thermite-spec` (the FROZEN shared combinator ground truth `REGISTRY.verus_l3`)
+# ONLY. It MUST NOT depend on `thermite-lower` — the reference encoder is an
+# INDEPENDENT, deliberately-simple re-implementation of the contract
+# sublanguage's meaning (N-version differential validation). A `thermite-lower`
+# dependency would make `assert(P_production <==> P_reference)` vacuous (two copies
+# of the same `lower_expr` always agree). The dependency graph enforces the
+# boundary as a compile constraint (AC-6).
+[dependencies]
+thermite-syntax = { path = "../thermite-syntax" }
+thermite-spec = { path = "../thermite-spec" }

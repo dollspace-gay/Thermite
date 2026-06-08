@@ -709,6 +709,12 @@ conformance_ops = []
 # reference is the corpus clause (sum) + its golden lowering (the faithful
 # production side the obligation compares against the reference encoding).
 [[route]]
+crate_pattern = "thermite-tv/src/lib.rs"
+design = ".design/verified/contract-tv.md"
+reference = ["tests/golden/lower/sum.verus.rs"]
+conformance_ops = []
+
+[[route]]
 crate_pattern = "thermite-tv/src/ref_encode.rs"
 design = ".design/verified/contract-tv.md"
 reference = ["tests/golden/lower/sum.verus.rs"]

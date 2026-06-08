@@ -206,6 +206,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "thermite-tv"
+version = "0.0.1"
+dependencies = [
+ "thermite-spec",
+ "thermite-syntax",
+]
+
+[[package]]
 name = "thermite-verified"
 version = "0.0.1"
 

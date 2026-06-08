@@ -2,7 +2,12 @@
   "next_display_id": 1,
   "next_comment_id": 1,
   "display_id_map": {},
-  "locks": {},
+  "locks": {
+    "151": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-08T22:55:10.832728211Z"
+    }
+  },
   "issues": {},
   "unsigned_event_warnings": [
     {
@@ -1484,11 +1489,16 @@
       "agent_id": "Yffe",
       "agent_seq": 296,
       "timestamp": "2026-06-08T22:54:19.145168421Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 297,
+      "timestamp": "2026-06-08T22:55:10.832728211Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-08T22:54:19.145168421Z",
+    "timestamp": "2026-06-08T22:55:10.832728211Z",
     "agent_id": "Yffe",
-    "agent_seq": 296
+    "agent_seq": 297
   }
 }

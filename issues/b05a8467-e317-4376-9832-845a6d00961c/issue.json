@@ -1,0 +1,10 @@
+{
+  "uuid": "b05a8467-e317-4376-9832-845a6d00961c",
+  "display_id": 147,
+  "title": "thermite-tv ref_encode: two contract-TV coverage gaps — (1) Expr::Ref of an Index (&xs[..i]) is Unsupported (sum.loop#1.inv#2 Skipped); (2) a non-Eq comparison of a nat-coerce name to a nat term emits ambiguous \"as nat <\" / mismatches production Eq-only coercion. Off-corpus #142 findings; ref_encode.rs not on the #144 builder manifest",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T19:47:54.624345213Z",
+  "updated_at": "2026-06-08T19:47:54.624345213Z"
+}

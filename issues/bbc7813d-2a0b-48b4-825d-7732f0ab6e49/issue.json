@@ -2,11 +2,12 @@
   "uuid": "bbc7813d-2a0b-48b4-825d-7732f0ab6e49",
   "display_id": 142,
   "title": "contract-TV REQ-3: off-corpus generator of well-typed SpecTherm contract clauses + run the TV obligation on each (the corpus-bound escape — un-bounds the one fidelity layer that works, golden files)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T18:15:44.893124860Z",
-  "updated_at": "2026-06-08T18:15:46.362275046Z",
+  "updated_at": "2026-06-08T20:35:16.984800218Z",
+  "closed_at": "2026-06-08T20:35:16.984800218Z",
   "labels": [
     "blocker"
   ]

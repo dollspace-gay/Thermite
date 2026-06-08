@@ -85,7 +85,6 @@ fn forall_below_source() -> Expr {
 /// Slice), traceable to `thermite-design.md` §4.2 / the frozen REGISTRY — NOT the
 /// lowerer's output (R-CHAR-3).
 #[test]
-#[ignore = "divergence: ref_encode slice-@-views the int index arg of forall_below/forall_from (n -> n@, a type error); tracking #145 — un-ignore when fixed"]
 fn ref_encode_index_arg_not_slice_viewed() {
     let ctx = RefCtx::with_seq_bound(["xs"]);
     let encoded = ref_contract_pred(&forall_below_source(), &ctx)

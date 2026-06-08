@@ -353,26 +353,77 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
 /// SHARED frozen ground truth (`thermite_spec::lookup(name).verus_l3`), reused by
 /// BOTH production and this reference — sharing it is NOT a loss of independence
 /// (the registry is the external spec). What this RE-implements independently is
-/// the combinator's ARGUMENTS: the slice `@`-view and the predicate closure
-/// (`|x| <body>`) — exactly where a combinator-argument fidelity bug lives.
+/// the combinator's ARGUMENTS, dispatched PER REGISTRY ARG-KIND
+/// (`CombinatorSig.arg_kinds`, `thermite_spec::combinators`) — exactly where a
+/// combinator-argument fidelity bug lives.
+///
+/// Each i-th argument is encoded by its frozen kind (`thermite-design.md` §4.2):
+///
+/// - [`ArgKind::Slice`] → the slice→`@` view ([`encode_slice_arg`]): a `Seq<u32>`
+///   view of a slice param (F2's `xs` → `xs@`/`xs`).
+/// - [`ArgKind::Index`] → a SCALAR `int` ([`encode_index_value`]: `<path> as int`,
+///   a bare literal stays bare) — NEVER the `@`-view. This is the #145 fix:
+///   `forall_below`/`forall_from`'s `n: int` index bound is a scalar, and `n@`
+///   is a Verus type error (`no method view for int`).
+/// - [`ArgKind::Pred`] → the predicate closure `|x: u32| <body>`, body re-encoded
+///   by the SAME independent recursion (so F2's `x <= 10` vs `x < 10` is caught).
+/// - [`ArgKind::Value`] → the value as-is ([`encode`]).
+///
+/// The arity + arg-kinds are already validated by the registry/validator, so we
+/// index `arg_kinds` by position; a mismatch is an honest `Err` (never a panic).
 fn encode_combinator_call(
     name: &str,
     args: &[Expr],
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
+    // The registry entry is the frozen ground truth for the arg KINDS. The caller
+    // (`encode_call`) only reaches here when `lookup(name).is_some()`.
+    let sig = thermite_spec::lookup(name)
+        .ok_or_else(|| RefEncodeError::UnknownCallee(name.to_string()))?;
+    if args.len() != sig.arg_kinds.len() {
+        return Err(RefEncodeError::Unsupported(format!(
+            "combinator `{name}` arity mismatch (got {} args, registry declares {})",
+            args.len(),
+            sig.arg_kinds.len()
+        )));
+    }
+
     let encoded_args = args
         .iter()
-        .map(|a| encode_call_arg(a, ctx))
+        .zip(sig.arg_kinds.iter())
+        .map(|(arg, kind)| encode_combinator_arg(arg, *kind, ctx))
         .collect::<Result<Vec<_>, _>>()?;
     Ok(format!("{name}({})", encoded_args.join(", ")))
 }
 
-/// Encode a call argument. A predicate closure `|x| <body>` (a combinator's
-/// `Pred` slot) is RE-encoded to a Verus closure `|x: u32| <body>` — the body is
-/// encoded by the SAME independent recursion (so a closure-predicate infidelity,
-/// F2's `x <= 10` vs `x < 10`, is caught). Everything else is an ordinary
-/// sub-expression (the slice gets its `@`-view via [`encode`]'s path/var rules).
-fn encode_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
+/// Encode a single combinator argument BY ITS REGISTRY KIND (`#145`). This is the
+/// per-kind dispatch the frozen `CombinatorSig.arg_kinds` mandates; it replaces
+/// the old slice-`@`-view-everything path that mis-encoded the `int` Index arg.
+fn encode_combinator_arg(
+    arg: &Expr,
+    kind: thermite_spec::ArgKind,
+    ctx: &RefCtx,
+) -> Result<String, RefEncodeError> {
+    use thermite_spec::ArgKind;
+    match kind {
+        // A slice param → its `Seq` `@`-view (identity when bound as `Seq`).
+        ArgKind::Slice => encode_slice_arg(arg, ctx),
+        // An `int` index BOUND (`forall_below`/`forall_from`'s `n: int`) → a
+        // SCALAR `int`, NEVER the `@`-view. THE #145 FIX.
+        ArgKind::Index => encode_index_value(arg, ctx),
+        // The predicate closure slot.
+        ArgKind::Pred => encode_pred_arg(arg, ctx),
+        // A plain scalar value, as-is.
+        ArgKind::Value => encode(arg, ctx),
+    }
+}
+
+/// Encode a combinator `Pred`-kind argument: a predicate closure `|x| <body>` is
+/// RE-encoded to a Verus closure `|x: u32| <body>` — the body is encoded by the
+/// SAME independent recursion (so a closure-predicate infidelity, F2's `x <= 10`
+/// vs `x < 10`, is caught). A non-closure in a `Pred` slot is an honest `Err`
+/// (the registry says this slot MUST be a closure).
+fn encode_pred_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match arg {
         Expr::Closure { params, body } => {
             if params.len() != 1 {
@@ -388,6 +439,20 @@ fn encode_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
             let body_s = encode(body, ctx)?;
             Ok(format!("|{}: u32| {body_s}", params[0]))
         }
+        other => Err(RefEncodeError::Unsupported(format!(
+            "combinator predicate slot expects a closure, got {}",
+            node_kind(other)
+        ))),
+    }
+}
+
+/// Encode a call argument for a NAMED spec-fn call (not a combinator — combinator
+/// args dispatch per registry kind via [`encode_combinator_arg`]). A predicate
+/// closure is RE-encoded to a Verus closure `|x: u32| <body>`; everything else is
+/// an ordinary sub-expression (a slice gets its `@`-view via [`encode_slice_arg`]).
+fn encode_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
+    match arg {
+        Expr::Closure { .. } => encode_pred_arg(arg, ctx),
         other => encode_slice_arg(other, ctx),
     }
 }

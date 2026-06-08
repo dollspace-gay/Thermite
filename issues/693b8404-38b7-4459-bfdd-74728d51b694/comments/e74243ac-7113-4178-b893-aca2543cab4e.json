@@ -1,0 +1,10 @@
+{
+  "uuid": "e74243ac-7113-4178-b893-aca2543cab4e",
+  "issue_uuid": "693b8404-38b7-4459-bfdd-74728d51b694",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (43c9a6c). The exec teeth-test (thermite-tv/tests/exec_teeth.rs) against the orchestrator E1-E4 fixtures: E1 cast-paren #122 (faithful (n-1) as u8 verified, infidel n-1 as u8 -> E0308), E2 cast-< #146 (faithful (x as u32)<33 verified, infidel -> mis-parse), E3 wrong-op/overflow (faithful a+b verified, wrapping_sub -> postcondition fail), E4 off-by-one index (xs[i] verified, xs[i+1] -> fail). The cross-crate bridge (exec_expr_tests in lower.rs) pins the faithful column to the REAL lower_exec_expr output so production drift turns it red. Critic confirmed the teeth bite generally.",
+  "created_at": "2026-06-08T23:38:05.423865613Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAiYOwgZ7Aj/J+/sI+9Roc305JvjywgYe6KQ5EZE7QzIrbDMc8AMH7YJwJQVE24+CbkjfOg/4y/k0QJzcPxeYICQ=="
+}

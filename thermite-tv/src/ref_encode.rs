@@ -179,6 +179,16 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
             args,
         } => encode_method_call(receiver, name, args, ctx),
         Expr::Index { base, index } => encode_index(base, index, ctx),
+        // A reference `&e` in spec position (REQ-1; the `&xs[..i]` slice-range
+        // borrow). Production lowers a spec-context `&xs[..i]` to the SUBRANGE of
+        // the base's `@`-view (`xs@.subrange(0, i as int)`) — the `&`/`[..]` is the
+        // slice→`Seq`-subrange rewrite, NOT a Verus reference (Verus `Seq`s are
+        // value types, `&` over a spec slice is meaningless). We RE-implement that
+        // shape INDEPENDENTLY: a `&`-of-`Index` is encoded EXACTLY as the inner
+        // `Index` (the subrange), and a bare `&e` (`&xs` → `xs@`) drops the `&`
+        // to the base's view. This MATCHES production's `Expr::Ref` spec arm
+        // (which delegates `&xs[..i]` to its `lower_index`) without calling it.
+        Expr::Ref { expr: inner, .. } => encode_ref(inner, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         Expr::Field { receiver, name } => {
             let r = encode(receiver, ctx)?;
@@ -240,35 +250,58 @@ fn encode_binary(
     rhs: &Expr,
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
-    // THE COERCION FIX (declarative `lower_nat_equality` re-implementation): in a
-    // COMPARISON where one operand is a `nat`-valued term (a nat-returning
-    // spec-fn call) and the other is a bounded-int name declared in
-    // `nat_coerce`, coerce the int operand `as nat` (matching the golden `result
-    // as nat == spec_sum(xs@)`). This only fires for a comparison op AND only
-    // when the other side is nat-valued — an int-vs-int comparison (F4's `a ==
-    // b`) is left bare.
+    // THE COERCION FIX (declarative `lower_nat_equality` re-implementation): in an
+    // `==` COMPARISON where one operand is a `nat`-valued term (a nat-returning
+    // spec-fn call) and the other is a bounded-int name declared in `nat_coerce`,
+    // coerce the int operand `as nat` (matching the golden `result as nat ==
+    // spec_sum(xs@)`).
+    //
+    // CRITICAL — production's coercion is `Eq`-ONLY (`lower.rs`: `lower_nat_equality`
+    // fires only `if *op == BinOp::Eq`). A NON-`Eq` comparison of a bounded int to a
+    // `nat` term (`acc <= spec_sum(xs)`, `i < count_where(..)`, `acc != spec_sum`) is
+    // lowered BARE — production emits `acc <= spec_sum(xs)`, NEVER `acc as nat <=
+    // spec_sum(xs)` (verus accepts the mixed `u64`/`nat` comparison directly). So the
+    // reference MUST coerce ONLY on `Eq` too; coercing on `<=`/`<`/`>`/`>=`/`!=` would
+    // emit `acc as nat <= spec_sum` and DIVERGE from production's bare form (a spurious
+    // counterexample, NOT a meaning bug). This RE-implements production's Eq-only rule
+    // INDEPENDENTLY (a production coercion bug — coercing the wrong op — is still
+    // caught: the reference and production would then differ).
     if is_comparison(op) {
-        let lhs_nat = is_nat_valued(lhs);
-        let rhs_nat = is_nat_valued(rhs);
-        let l = encode_comparison_operand(lhs, rhs_nat, ctx)?;
-        let r = encode_comparison_operand(rhs, lhs_nat, ctx)?;
+        let coerce = op == BinOp::Eq;
+        let lhs_nat = coerce && is_nat_valued(rhs);
+        let rhs_nat = coerce && is_nat_valued(lhs);
+        let l = encode_comparison_operand(lhs, lhs_nat, op, true, ctx)?;
+        let r = encode_comparison_operand(rhs, rhs_nat, op, false, ctx)?;
         return Ok(format!("({l} {} {r})", binop_str(op)));
     }
-    let l = encode(lhs, ctx)?;
-    let r = encode(rhs, ctx)?;
+    let l = encode_binary_operand(lhs, op, true, ctx)?;
+    let r = encode_binary_operand(rhs, op, false, ctx)?;
     // Parenthesize the whole binary so precedence is explicit at every level
     // (the #122 paren discipline generalized: a sub-predicate never silently
     // re-associates). Z3 sees the SAME term regardless of nesting.
     Ok(format!("({l} {} {r})", binop_str(op)))
 }
 
-/// Is `op` a comparison (the operators whose operands may need a `nat`
-/// coercion)?
+/// Is `op` a comparison (the operators whose operands may carry a `nat`
+/// coercion / a cast-`<` paren)?
 fn is_comparison(op: BinOp) -> bool {
     matches!(
         op,
         BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
     )
+}
+
+/// Is `op` a `<`-LEADING operator (`<`, `<=`, `<<`)? A `Cast` LEFT operand of such
+/// an op MUST be wholly parenthesized — `x as u32 < 33` mis-parses the `u32 <` as
+/// the start of a generic-argument list (the #146/#148 cast-paren ambiguity, a HARD
+/// parse error in both Verus and Rust). This is the EXACT dual of production's
+/// `is_lt_leading in lower.rs` (`Lt | Le | Shl`), RE-stated INDEPENDENTLY here so
+/// the reference parenthesizes the same class — without it the reference would emit
+/// an un-parseable `as nat <`/`as u32 <` and the obligation would be Unverifiable
+/// (not a faithfulness verdict). `>`/`>=`/`>>`/`==`/`!=` do NOT trigger the generic
+/// ambiguity (excluded — keeps the non-`<` casts paren-minimal).
+fn is_lt_leading(op: BinOp) -> bool {
+    matches!(op, BinOp::Lt | BinOp::Le | BinOp::Shl)
 }
 
 /// Is `expr` a `nat`-valued term — i.e. a call to a `nat`-returning spec fn? The
@@ -280,22 +313,53 @@ fn is_nat_valued(expr: &Expr) -> bool {
     matches!(expr, Expr::Call { callee, .. } if matches!(callee.as_ref(), Expr::Path(_)))
 }
 
-/// Encode a comparison operand, applying the `as nat` coercion when the operand
-/// is a bounded-int name in `nat_coerce` AND the OTHER operand is `nat`-valued
-/// (THE COERCION FIX). Otherwise an ordinary sub-expression.
+/// Encode a comparison operand: apply the `as nat` coercion when `coerce_nat` (the
+/// `Eq`-only nat-coerce decided by [`encode_binary`]) AND the operand is a
+/// bounded-int name in `nat_coerce`; OTHERWISE encode the sub-expression and apply
+/// the cast-`<`-leading paren ([`encode_binary_operand`]) so a `Cast` left operand
+/// of a `<`-leading op is wholly parenthesized (the #146/#148 discipline).
 fn encode_comparison_operand(
     operand: &Expr,
-    other_is_nat: bool,
+    coerce_nat: bool,
+    op: BinOp,
+    is_left: bool,
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
-    if other_is_nat {
+    if coerce_nat {
         if let Expr::Path(segments) = operand {
             if segments.len() == 1 && ctx.needs_nat_coerce(&segments[0]) {
-                return Ok(format!("{} as nat", segments[0]));
+                // The coerced operand is itself an `as nat` cast — when it is the
+                // LEFT operand of a `<`-leading op it must be wholly parenthesized
+                // (`(acc as nat) <= …`), exactly as production parenthesizes a
+                // source-level `(result as nat) <= …` cast (#146/#148).
+                let cast = format!("{} as nat", segments[0]);
+                if is_left && is_lt_leading(op) {
+                    return Ok(format!("({cast})"));
+                }
+                return Ok(cast);
             }
         }
     }
-    encode(operand, ctx)
+    encode_binary_operand(operand, op, is_left, ctx)
+}
+
+/// Encode a binary operand, applying the cast-`<`-leading paren (#146/#148): a
+/// `Cast` that is the LEFT operand of a `<`-leading op (`<`/`<=`/`<<`) is wholly
+/// parenthesized — `(x as u32) < 33`, never the ambiguous `x as u32 < 33`. This is
+/// the dual of production's `lower_binary_operand`'s `is_lt_leading` guard, RE-stated
+/// INDEPENDENTLY. Every other operand is the plain [`encode`] (its own
+/// parenthesization is already explicit per the #122 discipline).
+fn encode_binary_operand(
+    operand: &Expr,
+    op: BinOp,
+    is_left: bool,
+    ctx: &RefCtx,
+) -> Result<String, RefEncodeError> {
+    let s = encode(operand, ctx)?;
+    if is_left && matches!(operand, Expr::Cast { .. }) && is_lt_leading(op) {
+        return Ok(format!("({s})"));
+    }
+    Ok(s)
 }
 
 fn encode_unary(op: UnaryOp, inner: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
@@ -580,6 +644,43 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &RefCtx) -> Result<String, R
             let h = encode_index_value(hi, ctx)?;
             Ok(format!("{recv}.subrange({l}, {h})"))
         }
+    }
+}
+
+/// Encode a reference `&inner` in spec position (REQ-1; the `&xs[..i]` /
+/// `&xs[a..b]` slice-range borrow + the bare `&xs`). A spec `Seq` is a value
+/// type — there is no Verus `&Seq` borrow in the contract sublanguage — so a `&`
+/// in spec position is ALWAYS the slice→`Seq` view/subrange rewrite, never a
+/// literal `&`. This RE-implements production's `Expr::Ref` spec arm
+/// (`lower.rs`: in spec position a `&`-of-`Index` delegates to `lower_index`, a
+/// bare `&e` over a slice param views it) INDEPENDENTLY:
+///
+/// - `&xs[..i]` / `&xs[a..b]` / `&xs[a..]` — the inner is an [`Expr::Index`]
+///   range; encode EXACTLY the inner `Index` (the `.subrange(..)` over the base
+///   view), so `&xs[..i]` and `xs[..i]` encode identically (matching production,
+///   which routes both through `lower_index`).
+/// - `&xs[i]` — a single-element borrow is the indexed element (the inner
+///   `Index`), same as above.
+/// - a bare `&xs` (a slice param) — the base's `@`-view ([`encode_slice_arg`]:
+///   `xs@` when not seq-bound, the identity `xs` when bound as `Seq`).
+///
+/// A `&` over anything else (a scalar, a non-slice expr) is outside the frozen
+/// contract sublanguage → an honest [`RefEncodeError`] (never a silent wrong
+/// encoding).
+fn encode_ref(inner: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
+    match inner {
+        // `&xs[..i]` / `&xs[a..b]` / `&xs[i]` — the slice-range/element borrow is
+        // the inner index/subrange itself (production routes `&`-of-`Index`
+        // straight through `lower_index`).
+        Expr::Index { base, index } => encode_index(base, index, ctx),
+        // A bare `&xs` over a slice param → its `Seq` `@`-view (the slice→`@`
+        // rewrite, the same dispatch `encode_slice_arg` applies at use sites).
+        Expr::Path(_) => encode_slice_arg(inner, ctx),
+        other => Err(RefEncodeError::Unsupported(format!(
+            "reference `&{}` (a spec `&` is only the slice→Seq view/subrange — \
+             over a slice index/range or a bare slice param)",
+            node_kind(other)
+        ))),
     }
 }
 

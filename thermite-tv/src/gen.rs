@@ -159,30 +159,34 @@ fn gen_bool(rng: &mut Rng, depth: usize) -> Expr {
     // `generate_clauses`) so a nested connective/combinator clause stays fully
     // off-corpus-checkable.
     let choice = if depth >= MAX_DEPTH {
-        rng.below(3)
+        rng.below(4)
     } else {
-        rng.below(6)
+        rng.below(7)
     };
     match choice {
         // (0) A comparison between two int/nat terms over any comparison BinOp.
         0 => gen_comparison(rng, depth),
         // (1) A combinator call (one of the 8 frozen, correct arg kinds).
         1 => gen_combinator(rng, depth),
-        // (2) A `result`/`old_acc` (nat-coerced) compared to `spec_sum(seq)`.
+        // (2) A `result`/`old_acc` compared to `spec_sum(seq)` over ANY op (the
+        //     `Eq` coercion shape + the NON-`Eq` bare shapes — #147 gap #2).
         2 => gen_nat_cmp(rng),
-        // (3) A logical AND of two sub-predicates (nesting).
-        3 => Expr::Binary {
+        // (3) A CAST-`<`-class comparison (`n as u32 < k`) — the #146/#148 off-corpus
+        //     regression guard (#147). A leaf form, so it appears at every depth.
+        3 => gen_cast_lt(rng, depth),
+        // (4) A logical AND of two sub-predicates (nesting).
+        4 => Expr::Binary {
             op: BinOp::And,
             lhs: Box::new(gen_bool(rng, depth + 1)),
             rhs: Box::new(gen_bool(rng, depth + 1)),
         },
-        // (4) A logical OR of two sub-predicates (nesting).
-        4 => Expr::Binary {
+        // (5) A logical OR of two sub-predicates (nesting).
+        5 => Expr::Binary {
             op: BinOp::Or,
             lhs: Box::new(gen_bool(rng, depth + 1)),
             rhs: Box::new(gen_bool(rng, depth + 1)),
         },
-        // (5) A logical NOT of a sub-predicate (nesting).
+        // (6) A logical NOT of a sub-predicate (nesting).
         _ => Expr::Unary {
             op: UnaryOp::Not,
             expr: Box::new(gen_bool(rng, depth + 1)),
@@ -236,24 +240,42 @@ fn gen_int(rng: &mut Rng, depth: usize) -> Expr {
     }
 }
 
-/// A `result`/`old_acc` (a bounded `u64` that nat-coerces) compared to a
-/// `nat`-valued `spec_sum(seq)` call — the F1 coercion shape over the off-corpus
-/// space (`result == spec_sum(xs)`). The op is `==`: production's `u64`→`nat`
-/// coercion (`lower_nat_equality`) fires ONLY for `==` (the corpus's `ens result ==
-/// spec_sum(xs)` shape), so an `==` clause is the one production lowers FAITHFULLY
-/// against the reference. A `<`/`>`-vs-`spec_sum` clause would compare a `u64` to a
-/// `nat` UNCOERCED (a Verus type mismatch on BOTH encoders), so it is not generated
-/// — the F1 `==`/`<=` infidelity DISTINCTION is still exercised by the obligation
-/// (it asserts the production `==` is equivalent to the reference `==`; a `<=`
-/// MISlowering of this `==` source is exactly what would diverge).
+/// The NON-`Eq` nat-comparison ops the generator now EXERCISES (#147 / regression-
+/// guarding #146/#148 off-corpus). Production coerces `as nat` ONLY on `Eq`
+/// (`lower_nat_equality` is `Eq`-only); a `<=`/`<`/`>`/`>=`/`!=` comparison of a
+/// bounded `u64` to a `nat`-valued `spec_sum(seq)` is lowered BARE (`acc <=
+/// spec_sum(xs)`), which verus accepts as a mixed `u64`/`nat` comparison. These are
+/// exactly the clauses #147 gap #2 added to `ref_encode` (Eq-only coercion), so
+/// generating them CONFIRMS the reference matches production's Eq-only rule
+/// off-corpus (a divergence here = the reference coerced the wrong op).
+const NAT_CMP_OPS: &[BinOp] = &[
+    BinOp::Eq,
+    BinOp::Ne,
+    BinOp::Lt,
+    BinOp::Le,
+    BinOp::Gt,
+    BinOp::Ge,
+];
+
+/// A `result`/`old_acc` (a bounded `u64`) compared to a `nat`-valued
+/// `spec_sum(seq)` call over ANY comparison op (#147): the `Eq` coercion shape
+/// (`result == spec_sum(xs)` → `result as nat == spec_sum(xs)`) AND — newly (#147
+/// gap #2) — the NON-`Eq` BARE shapes (`acc <= spec_sum(xs)`, `i != spec_sum`),
+/// which production lowers WITHOUT the `as nat` coercion (it is `Eq`-only). The
+/// off-corpus run thus exercises BOTH coercion branches: a divergence on a non-`Eq`
+/// clause = the reference applied the coercion on the wrong op (the #147 gap #2
+/// regression guard). Verus accepts the mixed `u64`/`nat` comparison directly, so
+/// every op is well-typed on BOTH encoders.
 fn gen_nat_cmp(rng: &mut Rng) -> Expr {
-    let op = BinOp::Eq;
+    let op = rng.pick(NAT_CMP_OPS);
     let scalar = path(rng.pick(NAT_COERCE_NAMES));
     let call = Expr::Call {
         callee: Box::new(path("spec_sum")),
         args: vec![path(rng.pick(SEQ_NAMES))],
     };
-    // Randomize which side the nat call is on (both orders are valid clauses).
+    // Randomize which side the nat call is on (both orders are valid clauses). For a
+    // non-`Eq` op the SIDE matters to production's text (`acc <= spec_sum` vs
+    // `spec_sum <= acc`) but BOTH lower bare — the reference matches either way.
     if rng.below(2) == 0 {
         Expr::Binary {
             op,
@@ -266,6 +288,45 @@ fn gen_nat_cmp(rng: &mut Rng) -> Expr {
             lhs: Box::new(call),
             rhs: Box::new(scalar),
         }
+    }
+}
+
+/// A CAST-`<`-class comparison (#147 — the off-corpus regression guard for the
+/// #146/#148 cast-paren fix): a `Cast` LEFT operand of a `<`-LEADING comparison op
+/// (`<`/`<=`), e.g. `n as u32 < k`, `n as nat <= m`. This is EXACTLY the class the
+/// generator previously AVOIDED (`CAST_SAFE_CMP_OPS` / the `gen_pred_closure`
+/// cast-LHS only used non-`<`-leading ops) because `x as u32 < 33` mis-parsed as a
+/// generic-arg list — the bug #146/#148 FIXED in production (`lower_binary_operand`)
+/// and #147 gap #2 mirrored in `ref_encode` (`encode_binary_operand`). Generating it
+/// now CONFIRMS the fix holds off-corpus on BOTH encoders: a DIVERGENCE here is a
+/// real off-corpus hole in the #146/#148 fix (report loudly + file a blocker).
+///
+/// The cast target is an integer prim (`u32`) or `nat`; the RHS is an `int` scalar
+/// term (so the comparison is well-typed: `n as u32` is `u32`, `n as nat`/`int` is
+/// the arithmetic ladder — both compare to a small literal / int var). The op is
+/// drawn from the `<`-leading set ONLY (the class under guard).
+fn gen_cast_lt(rng: &mut Rng, depth: usize) -> Expr {
+    // The `<`-leading comparison ops — the exact ambiguity surface (#146/#148).
+    const LT_LEADING_CMP: &[BinOp] = &[BinOp::Lt, BinOp::Le];
+    let op = rng.pick(LT_LEADING_CMP);
+    // Cast an `int` scalar to a `u32` (the bounded-prim cast) or `nat`/`int` (the
+    // arithmetic-ladder cast) — both are the cast LEFT operand the paren guards.
+    let cast_ty = match rng.below(3) {
+        0 => Type::Prim(PrimType::U32),
+        1 => Type::Named("nat".to_string()),
+        _ => Type::Named("int".to_string()),
+    };
+    let lhs = Expr::Cast {
+        expr: Box::new(gen_int(rng, depth + 1)),
+        ty: cast_ty,
+    };
+    // The RHS: a small literal (a `u32`/`int`-comparable bound) — keeps the
+    // comparison well-typed against any cast target.
+    let rhs = int_lit(rng.below(64) as u128);
+    Expr::Binary {
+        op,
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
     }
 }
 
@@ -367,31 +428,26 @@ fn gen_combinator(rng: &mut Rng, depth: usize) -> Expr {
     }
 }
 
-/// The non-`<`-leading comparison ops (`>`, `>=`, `==`, `!=`). A `cast`-LHS
-/// comparison MUST use one of these: `x as u32 < 33` is a HARD parse ambiguity in
-/// BOTH the production lowering AND the independent reference encoding (the `u32 <`
-/// reads as the start of a generic-argument list — the #139/#142 finding, blocker).
-/// `x as u32 > 33` / `== 33` are unambiguous. So a generated cast-LHS closure body
-/// draws its op from here, keeping every generated clause a VALID Verus predicate
-/// on BOTH encoders (the off-corpus run stays clean — a `cast <` clause would
-/// otherwise be `Unverifiable` on both sides until the paren fix lands).
-const CAST_SAFE_CMP_OPS: &[BinOp] = &[BinOp::Gt, BinOp::Ge, BinOp::Eq, BinOp::Ne];
-
 /// A predicate closure `|x| <bool predicate over x>` for a combinator `Pred` slot.
 /// The body is a comparison of the closure-bound element `x` (a `u32`) against a
 /// small literal — the F2 closure-predicate surface (`x <= 10` vs `x < 10` is the
 /// canonical wrong-predicate infidelity the obligation catches).
 fn gen_pred_closure(rng: &mut Rng) -> Expr {
     // Occasionally cast the bound element `as u32` (exercises the #122 cast path).
-    // A cast-LHS comparison uses ONLY a non-`<`-leading op (`CAST_SAFE_CMP_OPS`) —
-    // `x as u32 < 33` is a parse ambiguity on both encoders (#139/#142 finding).
+    // #147: the cast-LHS body now uses ANY comparison op INCLUDING the `<`-leading
+    // `<`/`<=` — the EXACT class #146/#148 fixed (production `lower_binary_operand`)
+    // and #147 gap #2 mirrored (`ref_encode::encode_binary_operand`). Previously the
+    // generator AVOIDED `<`-leading ops on a cast LHS (the now-removed
+    // `CAST_SAFE_CMP_OPS`) because `x as u32 < 33` mis-parsed as a generic-arg list;
+    // emitting it now CONFIRMS the paren fix holds off-corpus on BOTH encoders inside
+    // a combinator predicate (a divergence here = a hole in the #146/#148 fix).
     let (lhs, op) = if rng.below(3) == 0 {
         (
             Expr::Cast {
                 expr: Box::new(path("x")),
                 ty: Type::Prim(PrimType::U32),
             },
-            rng.pick(CAST_SAFE_CMP_OPS),
+            rng.pick(CMP_OPS),
         )
     } else {
         (path("x"), rng.pick(CMP_OPS))
@@ -451,6 +507,16 @@ mod tests {
         assert!(cov.combinators >= 5, "combinators: {}", cov.combinators);
         assert!(cov.byteview >= 5, "byteview: {}", cov.byteview);
         assert!(cov.casts >= 1, "casts: {}", cov.casts);
+        // #147: the off-corpus run must now EXERCISE the cast-`<` class (a `Cast`
+        // left operand of a `<`-leading op) AND non-`Eq` nat comparisons — the
+        // #146/#148 regression-guard surface. Both must appear (else the guard is
+        // vacuous).
+        assert!(cov.cast_lt >= 1, "cast-`<` clauses: {}", cov.cast_lt);
+        assert!(
+            cov.non_eq_nat_cmp >= 1,
+            "non-Eq nat comparisons: {}",
+            cov.non_eq_nat_cmp
+        );
         // Not all the same clause (diversity sanity).
         let first = &clauses[0];
         assert!(
@@ -469,6 +535,25 @@ mod tests {
         combinators: usize,
         byteview: usize,
         casts: usize,
+        /// A `Cast` LEFT operand of a `<`-leading comparison op (`<`/`<=`) — the
+        /// #146/#148 ambiguity class the generator now EXERCISES (#147).
+        cast_lt: usize,
+        /// A NON-`Eq` comparison whose other operand is a `nat`-valued spec-fn /
+        /// combinator call (`acc <= spec_sum(xs)`, `k < count_where(..)`) — the
+        /// #147 gap #2 non-Eq-coercion surface.
+        non_eq_nat_cmp: usize,
+    }
+
+    /// Is `e` a call to a `nat`-returning spec fn / combinator (`spec_sum` or
+    /// `count_where`) — the nat-valued term in a comparison (mirrors the off-corpus
+    /// `nat_fns`)?
+    fn is_nat_call(e: &Expr) -> bool {
+        if let Expr::Call { callee, .. } = e {
+            if let Expr::Path(segs) = callee.as_ref() {
+                return matches!(segs.join("::").as_str(), "spec_sum" | "count_where");
+            }
+        }
+        false
     }
 
     fn coverage(clauses: &[Expr]) -> Coverage {
@@ -489,6 +574,17 @@ mod tests {
                     BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
                 ) {
                     c.comparisons += 1;
+                    // A `Cast` LEFT operand of a `<`-leading op — the #146/#148
+                    // ambiguity class (#147).
+                    if matches!(op, BinOp::Lt | BinOp::Le)
+                        && matches!(lhs.as_ref(), Expr::Cast { .. })
+                    {
+                        c.cast_lt += 1;
+                    }
+                    // A NON-`Eq` comparison against a `nat`-valued call (#147 gap #2).
+                    if !matches!(op, BinOp::Eq) && (is_nat_call(lhs) || is_nat_call(rhs)) {
+                        c.non_eq_nat_cmp += 1;
+                    }
                 }
                 tally(lhs, c);
                 tally(rhs, c);

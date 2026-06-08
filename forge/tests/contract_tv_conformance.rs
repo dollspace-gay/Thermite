@@ -83,6 +83,16 @@ fn corpus_counts(report: &Value) -> (u64, u64, u64) {
     )
 }
 
+/// The verdict string for a named corpus clause (`"faithful"`/`"divergent"`/
+/// `"skipped"`/`"unverifiable"`), or `None` if the clause is absent.
+fn corpus_clause_verdict<'a>(report: &'a Value, clause: &str) -> Option<&'a str> {
+    report["corpus"]["clauses"]
+        .as_array()?
+        .iter()
+        .find(|c| c["clause"].as_str() == Some(clause))?["verdict"]
+        .as_str()
+}
+
 // ---- AC: corpus no-false-positive -----------------------------------------
 
 /// REQ-5 / the key AC: `forge tv sum.th` checks the REAL contract clauses and
@@ -108,6 +118,35 @@ fn sum_corpus_zero_divergent() {
     assert_eq!(
         faithful, checked,
         "every checked sum clause must be faithful"
+    );
+
+    // #147 — the `&xs[..i]` slice-ref class: the ref-encoder gap is CLOSED
+    // (`ref_encode::encode_ref` now encodes the subrange), so `sum.loop#1.inv#2`
+    // (`acc == spec_sum(&xs[..i])`) is NO LONGER `skipped` for "unsupported
+    // construct: reference". It currently discharges as `unverifiable` (NOT
+    // `faithful`) because of a downstream FRAMING mismatch the ref-encoder does not
+    // own: production's `lower_index` emits `xs@.subrange(..)` (an unconditional
+    // `Seq::view`), but the obligation binds the slice param as `Seq<u32>`, which has
+    // no `view()` — so the PRODUCTION column does not typecheck. Closing it to
+    // `faithful` needs a `forge::contract_tv` frame change (bind the indexed slice as
+    // `Vec<u32>` + pass it via the production `slices` list so production's `@` is
+    // consistent) — a follow-on blocker outside #147's manifest. This assertion pins
+    // the HONEST current state (not `skipped`, not a false `faithful`); flip it to
+    // `faithful` when the frame fix lands.
+    let inv2 = corpus_clause_verdict(&report, "sum.loop#1.inv#2");
+    assert_ne!(
+        inv2,
+        Some("skipped"),
+        "the `&xs[..i]` slice-ref ref-encoder gap is closed (#147) — inv#2 must no \
+         longer be `skipped` for an unsupported reference construct. report: {report}"
+    );
+    assert_eq!(
+        inv2,
+        Some("unverifiable"),
+        "inv#2 (`acc == spec_sum(&xs[..i])`) is `unverifiable` pending the \
+         `forge::contract_tv` frame fix (production `xs@.subrange` vs the `Seq`-bound \
+         obligation param) — flip to `faithful` when the frame binds the indexed \
+         slice with a view. report: {report}"
     );
 }
 
@@ -200,4 +239,17 @@ fn off_corpus_generated_run_all_faithful() {
         "the 200-clause generated run checked only {checked} clauses — too many \
          skipped; the off-corpus coverage is not substantive. report: {gen}"
     );
+
+    // #147 — the cast-`<` / non-Eq-nat REGRESSION GUARD for #146/#148 off-corpus.
+    // The generator now emits a `Cast` left operand of a `<`-leading op (`n as u32 <
+    // k`) and non-`Eq` nat comparisons (`acc <= spec_sum(xs)`); every such CHECKED
+    // clause being `faithful` (0 divergent, asserted above) confirms the #146/#148
+    // cast-paren fix + the #147 gap #2 Eq-only coercion hold off-corpus on BOTH
+    // encoders. A `divergent`/`unverifiable` here = a real off-corpus hole. The
+    // construct PRESENCE (so this guard is not vacuous) is asserted directly on the
+    // deterministic generator in `thermite_tv::gen::tests::diverse_construct_coverage`
+    // (`cast_lt >= 1`, `non_eq_nat_cmp >= 1`); here we re-confirm the run is the
+    // EXTENDED one by requiring the clause count grew past the old 175-checked ceiling
+    // is NOT asserted (byte-view ratio varies by seed) — the load-bearing guard is the
+    // `divergent == 0 && unverifiable == 0` over the cast-`<`-bearing stream above.
 }

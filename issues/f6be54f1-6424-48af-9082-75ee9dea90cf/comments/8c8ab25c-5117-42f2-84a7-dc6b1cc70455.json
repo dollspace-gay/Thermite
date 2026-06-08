@@ -1,0 +1,10 @@
+{
+  "uuid": "8c8ab25c-5117-42f2-84a7-dc6b1cc70455",
+  "issue_uuid": "f6be54f1-6424-48af-9082-75ee9dea90cf",
+  "author": "Yffe",
+  "content": "Fixed in 8d86189. Parenthesized the cast inner ONLY for an Expr::Binary/Unary inner across the whole class of cast-emit sites in thermite-lower/src/lower.rs + l1.rs: the Expr::Cast arm (both files), the byte_at/slice 'as usize' index coercion (both), the split 'as u8' separator coercion (both), and lower_index_arg's combinator 'as int' (lower.rs). A simple inner is left unparenthesized so the corpus/golden simple casts (i as int, acc as nat, 0 as usize) stay byte-identical. Verified against real verus 0.2026.05.24: (k-1) as nat spec fn -> L3; byte_at(i-1) in a contract -> L3 (11 obligations, no u64/usize mismatch); forge build of byte_at(i-1) -> L1 built. Added regression pin thermite-lower/tests/divergence_cast_paren.rs (4/4). Gauntlet: cargo test --workspace 667 passed/0 failed; clippy -D warnings PASS; fmt --check PASS.",
+  "created_at": "2026-06-08T00:31:05.671742017Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA41yM03aFRbTwGJVVcipiZxFGQccoCgv+u+N853UVwCazCuHxWNYBORKH0J1XRs6/mODevW0w7xgOQrbryKD2AQ=="
+}

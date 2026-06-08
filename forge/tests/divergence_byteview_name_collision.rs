@@ -111,7 +111,6 @@ spec fn __NAME__(s: &String, i: u64, target: u64, acc: u64) -> u64
 ";
 
 #[test]
-#[ignore = "blocker #127 — un-ignore when fixed: byteview dispatch must be SHAPE-keyed, not callee-NAME-keyed"]
 fn user_spec_fn_named_like_a_generated_byteview_fn_still_certifies_l3() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — #127 byteview name-collision not run.");

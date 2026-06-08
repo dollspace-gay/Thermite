@@ -2,11 +2,12 @@
   "uuid": "c4317cf2-b030-40d7-bda4-d782c70693fc",
   "display_id": 150,
   "title": "contract-TV residual construct coverage (tracked): ref_encode honestly Skips Option/Result ens-match clauses + String byte-view receivers + Map/Option fn signatures; extend coverage so binary_search Option-match-ens + map_kv signatures + string corpus are Checked not Skipped",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-08T21:49:26.845530495Z",
-  "updated_at": "2026-06-08T21:49:28.300162983Z",
+  "updated_at": "2026-06-08T22:54:17.659729146Z",
+  "closed_at": "2026-06-08T22:54:17.659729146Z",
   "labels": [
     "enhancement"
   ]

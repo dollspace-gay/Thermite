@@ -1,0 +1,10 @@
+{
+  "uuid": "6c6fb52e-b650-4cfa-9a24-cf689cbffbc8",
+  "issue_uuid": "98ea1b10-48e1-4784-b269-a92cc64ad31f",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean. equivalence_obligation + ObligationFrame: emits the self-contained Verus proof fn { assert(P_production <==> P_reference); } discharged by real verus. Grounded: faithful -> verified, infidel -> counterexample, across F1-F4 + the critic's extended cases.",
+  "created_at": "2026-06-08T19:00:40.828891021Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAU7YFyC9mBZxiS/dssKKk/5ykGKYqu7ylmFnfAGDl7FTbf1XiQMdXyA/1pJ6k/qU+OC73Pb3uyQ/UTkS47+PrDw=="
+}

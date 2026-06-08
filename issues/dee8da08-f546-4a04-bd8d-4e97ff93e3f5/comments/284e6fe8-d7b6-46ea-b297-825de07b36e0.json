@@ -1,0 +1,10 @@
+{
+  "uuid": "284e6fe8-d7b6-46ea-b297-825de07b36e0",
+  "issue_uuid": "dee8da08-f546-4a04-bd8d-4e97ff93e3f5",
+  "author": "Yffe",
+  "content": "Builder dispatch (epic #139): ship thermite-tv crate core — REQ-1 independent reference encoder (ref_encode::ref_contract_pred, deps thermite-syntax+thermite-spec ONLY, no thermite-lower), REQ-2 obligation builder (equivalence_obligation), REQ-4 teeth-test F1-F4 against real verus (faithful verifies / infidel counterexample). Manifest: Cargo.toml, thermite-tv crate (Cargo.toml, src/lib.rs, src/ref_encode.rs, src/obligation.rs, tests/teeth.rs), contract-tv.md, spec-routes.toml lib.rs route. Not closing — critic re-audits.",
+  "created_at": "2026-06-08T18:38:27.252413417Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAhzTefkBogzJ4Rc1nwWO72I9QwtuBBbedmAtLlc7XG5EUXaLFQVMggf1xHeWqhe1dUhag/C92q0xCjuHOgrFECQ=="
+}

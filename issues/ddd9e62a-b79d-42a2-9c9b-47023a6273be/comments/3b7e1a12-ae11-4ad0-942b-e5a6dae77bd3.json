@@ -1,0 +1,10 @@
+{
+  "uuid": "3b7e1a12-ae11-4ad0-942b-e5a6dae77bd3",
+  "issue_uuid": "ddd9e62a-b79d-42a2-9c9b-47023a6273be",
+  "author": "Yffe",
+  "content": "Plan: align crate versions to v0.0.1 (the release tag). Centralize into [workspace.package] version=0.0.1 + each member inherits version.workspace=true (single source of truth, like edition). Path-deps carry no version pin so resolution is unaffected. cargo build --workspace green (all 6 crates compile as v0.0.1).",
+  "created_at": "2026-06-08T13:57:45.090035180Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA5JzplrLiDSpEG2R7IlvqvY6jQyOfmS1zvDZBzbYYsuElmesRlAr0TRf69iF4GM298iZYsF1eqaIYEAyyQ9rRCw=="
+}

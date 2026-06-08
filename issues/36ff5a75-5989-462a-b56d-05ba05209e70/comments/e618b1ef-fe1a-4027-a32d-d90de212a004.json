@@ -1,0 +1,10 @@
+{
+  "uuid": "e618b1ef-fe1a-4027-a32d-d90de212a004",
+  "issue_uuid": "36ff5a75-5989-462a-b56d-05ba05209e70",
+  "author": "Yffe",
+  "content": "Done. NEW examples/README.md (4 programs + forge build --out + run + forge check). Main README: fixed the stale run.sh reference -> standalone binary, added examples/ row. Skill dynamic/fresh.",
+  "created_at": "2026-06-08T02:45:36.177978012Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAaaWKHXZDwXGWwbFpjw9Yie91YLB9f6FHEIprarHVQGhDBWkSsJmFyrFrkjKyR+nWLOudyLtzj9vH1kxtq+eJCw=="
+}

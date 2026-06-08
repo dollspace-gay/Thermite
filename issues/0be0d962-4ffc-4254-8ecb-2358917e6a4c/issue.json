@@ -2,11 +2,12 @@
   "uuid": "0be0d962-4ffc-4254-8ecb-2358917e6a4c",
   "display_id": 149,
   "title": "contract-TV: obligation frame binds slices as bare Seq (no .view()), so production xs@.subrange typechecks fail -> sum.loop#1.inv#2 Unverifiable not Faithful; bind slices view-consistently so the &xs[..i] clause discharges Faithful",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T21:17:58.189428709Z",
-  "updated_at": "2026-06-08T21:17:59.568658863Z",
+  "updated_at": "2026-06-08T21:34:00.476235834Z",
+  "closed_at": "2026-06-08T21:34:00.476235834Z",
   "labels": [
     "blocker"
   ]

@@ -1,0 +1,10 @@
+{
+  "uuid": "4f40332e-3af6-4ee0-8826-f4fe685cdd8d",
+  "issue_uuid": "638e96ab-ac01-41ee-99c1-14a8d23f84c9",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (5cda1db). forge build --out/-o <path> copies the artifact to a named path -> a standalone ./binary, no /tmp-path / wrapper script. Critic (the #127+#128 audit) verified --out is VERIFICATION-NEUTRAL: the artifact is byte-IDENTICAL with/without --out (cmp equal), the cert/level/fx unchanged (--out only copies), a bad path -> structured ForgeError (no panic), without --out the /tmp path is unchanged. The one residual it found was #130 (a #127 byteview-collision residual, since fixed + critic-clean). The editor now runs standalone: forge build editor.th --entry run --no-sandbox --out ./nano && ./nano. 675 tests.",
+  "created_at": "2026-06-08T02:59:52.846693546Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA84xmb6/mu7nIDfS+0BARzj1Bxk+C8mhjYpR1jb2ewQtfKFhPfaOAK4jvX0Cp8B2TuEBsdJp8Wy0zZ2Gyd1QTCA=="
+}

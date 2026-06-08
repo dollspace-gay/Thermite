@@ -156,10 +156,11 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
 /// `result` + `old(_)`), lowered, encoded, and discharged.
 fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut TvReport) {
     // The fn's `nat`-returning spec fns (drive the `as nat` coercion the signature
-    // path emits). We pass an EMPTY `slices` to the per-clause lowering and bind
-    // slice params directly as `Seq` (the obligation's coercion-matching contract),
-    // so the production side emits the bare seq name (matching the reference's
-    // seq-bound identity `@`-view).
+    // path emits). Slice params are bound VIEW-CONSISTENTLY as `&[elem]` (#149) and
+    // threaded as production's `slices` (per clause, in `tv_clause`), so production
+    // emits `xs@` for EVERY slice use (bare `spec_sum(xs@)` AND indexed
+    // `xs@.subrange(..)`) — MIRRORING the real fn signature path — and the reference
+    // emits the matching `xs@`; both columns typecheck under the one binding.
     let nat_fns = nat_fn_names(f);
 
     // Build the base frame from the params (+ `result` when it is framable). A
@@ -353,11 +354,15 @@ fn tv_clause(
     rlimit: f64,
     report: &mut TvReport,
 ) {
-    // P_production — the REAL production lowering of this clause (slices empty so
-    // a slice param spelled `xs` stays bare against its `Seq`-bound obligation
-    // param; nat_fns drive the `as nat` coercion the signature path emits).
+    // P_production — the REAL production lowering of this clause. The frame's
+    // slice params (bound `&[elem]`, #149) are passed as production's `slices` so a
+    // slice use takes its `@`-view (`spec_sum(xs@)` / `xs@.subrange(..)`) — MIRRORING
+    // the real fn signature path (`tests/golden/lower/sum.verus.rs`) — and typechecks
+    // against the `&[elem]` binding. nat_fns drive the `as nat` coercion.
+    let slice_params = slice_param_names(base_frame);
+    let slices: Vec<&str> = slice_params.iter().map(String::as_str).collect();
     let p_production =
-        match thermite_lower::lower_contract_expr(&clause.expr, &[], nat_fns, &[], &[], &[]) {
+        match thermite_lower::lower_contract_expr(&clause.expr, &slices, nat_fns, &[], &[], &[]) {
             Ok(p) => p,
             Err(e) => {
                 report.clauses.push(ClauseResult {
@@ -604,17 +609,29 @@ fn capture_block(lines: &[&str], start: usize) -> (String, usize) {
 /// struct/enum) — the clause is then reported `Skipped` (honest, not a false pass).
 fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     let mut params = Vec::new();
-    let mut seq_params = Vec::new();
+    // No signature SLICE param is seq-bound (#149): slices are bound `&[elem]` and
+    // viewed `@` on BOTH columns. `seq_params` stays empty here; a loop frame adds
+    // its OWN `Seq<_>`-bound locals (the loop-local seq-bound identity).
+    let seq_params = Vec::new();
     let mut nat_coerce_params = Vec::new();
 
     for p in &f.params {
         let spec_ty = spec_type_of(&p.ty)?;
         match &spec_ty {
-            SpecType::Seq(_) => seq_params.push(p.name.clone()),
+            // A slice param is bound VIEW-CONSISTENTLY as `&[elem]` (#149) — NOT
+            // seq-bound. Production emits `xs@` for every slice use (bare AND
+            // indexed); the reference (param NOT in `seq_params`) emits the matching
+            // `xs@`, so both columns typecheck under the `&[elem]` binding and Z3
+            // proves them equivalent. (Under the old `Seq` binding the indexed
+            // `xs@.subrange(..)` was a type error → Unverifiable.)
+            SpecType::Seq(_) => {}
             SpecType::BoundedInt => nat_coerce_params.push(p.name.clone()),
             SpecType::Bool => {}
         }
-        params.push(ParamDecl::new(p.name.clone(), spec_ty.verus_spelling()));
+        params.push(ParamDecl::new(
+            p.name.clone(),
+            spec_ty.verus_param_spelling(),
+        ));
     }
 
     // `result` — bound when the return is non-unit AND framable (so an `ens` may
@@ -627,10 +644,13 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         if let Some(ret_ty) = spec_type_of(&f.ret) {
             match &ret_ty {
                 SpecType::BoundedInt => nat_coerce_params.push("result".to_string()),
-                SpecType::Seq(_) => seq_params.push("result".to_string()),
+                // A slice `result` is bound VIEW-CONSISTENTLY as `&[elem]` (#149,
+                // the same rule as a slice param) — NOT seq-bound; both columns
+                // emit `result@`.
+                SpecType::Seq(_) => {}
                 SpecType::Bool => {}
             }
-            params.push(ParamDecl::new("result", ret_ty.verus_spelling()));
+            params.push(ParamDecl::new("result", ret_ty.verus_param_spelling()));
         }
     }
 
@@ -641,6 +661,21 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         seq_params,
         nat_coerce_params,
     })
+}
+
+/// The frame params bound VIEW-CONSISTENTLY as a slice `&[elem]` (#149) — the
+/// production `slices` set for this clause, so a slice use takes its `@`-view
+/// (matching the `&[elem]` binding). Keyed on the `&[` binding spelling
+/// `signature_frame` emits (NOT a name list), so it stays in lockstep with the
+/// param binding. A `Seq<_>`-bound LOCAL (a loop-frame seq local) is NOT a slice
+/// param and is excluded (it keeps the seq-bound identity `@`-view).
+fn slice_param_names(frame: &ObligationFrame) -> Vec<String> {
+    frame
+        .params
+        .iter()
+        .filter(|p| p.type_str.starts_with("&["))
+        .map(|p| p.name.clone())
+        .collect()
 }
 
 /// The spec-context type of a framed param/return. A `&[T]`/`Vec<T>`/`String`
@@ -664,6 +699,25 @@ impl SpecType {
             SpecType::Seq(elem) => format!("Seq<{elem}>"),
             SpecType::BoundedInt => "u64".to_string(),
             SpecType::Bool => "bool".to_string(),
+        }
+    }
+
+    /// The VIEW-CONSISTENT obligation-signature spelling for a SLICE-typed
+    /// parameter (#149). A slice param is bound as the SLICE type `&[elem]` (NOT a
+    /// bare `Seq<elem>`) so production's UNCONDITIONAL `@`-view — emitted by
+    /// `lower_index` for an indexed/ranged use (`xs@.subrange(0, i as int)`) AND by
+    /// the signature path for a bare combinator/spec-fn arg (`spec_sum(xs@)`) —
+    /// typechecks: `xs@` is the `Seq<elem>` view of `xs: &[elem]`. Under a bare
+    /// `Seq<elem>` binding, `xs@` is a type error (`Seq` has no `view`), so the
+    /// indexed clause `acc == spec_sum(&xs[..i])` could not discharge (Unverifiable).
+    /// This MIRRORS the real fn lowering (`tests/golden/lower/sum.verus.rs`:
+    /// `fn sum(xs: &[u32])` emits `xs@` everywhere); the reference encoder then
+    /// emits the matching `xs@` form (the param is NOT seq-bound), so BOTH columns
+    /// typecheck under ONE binding and Z3 proves them equivalent.
+    fn verus_param_spelling(&self) -> String {
+        match self {
+            SpecType::Seq(elem) => format!("&[{elem}]"),
+            other => other.verus_spelling(),
         }
     }
 }

@@ -120,33 +120,24 @@ fn sum_corpus_zero_divergent() {
         "every checked sum clause must be faithful"
     );
 
-    // #147 — the `&xs[..i]` slice-ref class: the ref-encoder gap is CLOSED
-    // (`ref_encode::encode_ref` now encodes the subrange), so `sum.loop#1.inv#2`
-    // (`acc == spec_sum(&xs[..i])`) is NO LONGER `skipped` for "unsupported
-    // construct: reference". It currently discharges as `unverifiable` (NOT
-    // `faithful`) because of a downstream FRAMING mismatch the ref-encoder does not
-    // own: production's `lower_index` emits `xs@.subrange(..)` (an unconditional
-    // `Seq::view`), but the obligation binds the slice param as `Seq<u32>`, which has
-    // no `view()` — so the PRODUCTION column does not typecheck. Closing it to
-    // `faithful` needs a `forge::contract_tv` frame change (bind the indexed slice as
-    // `Vec<u32>` + pass it via the production `slices` list so production's `@` is
-    // consistent) — a follow-on blocker outside #147's manifest. This assertion pins
-    // the HONEST current state (not `skipped`, not a false `faithful`); flip it to
-    // `faithful` when the frame fix lands.
+    // #147 + #149 — the `&xs[..i]` slice-ref class is now FULLY FAITHFUL. The
+    // ref-encoder gap was closed by #147 (`ref_encode::encode_ref` encodes the
+    // subrange); the FRAMING mismatch is closed by #149: `forge::contract_tv` now
+    // binds a slice param VIEW-CONSISTENTLY as `&[elem]` (NOT a bare `Seq<elem>`)
+    // and threads it as production's `slices`, so production's UNCONDITIONAL
+    // `xs@.subrange(0, i as int)` (`lower_index`) typechecks against the `&[elem]`
+    // binding, the reference emits the matching `xs@.subrange(..)`, and Z3 proves
+    // the two equivalent. inv#2 (`acc == spec_sum(&xs[..i])`) therefore discharges
+    // `faithful` (genuinely — a production subrange/view bug would diverge from the
+    // independent reference, NOT a vacuous pass).
     let inv2 = corpus_clause_verdict(&report, "sum.loop#1.inv#2");
-    assert_ne!(
-        inv2,
-        Some("skipped"),
-        "the `&xs[..i]` slice-ref ref-encoder gap is closed (#147) — inv#2 must no \
-         longer be `skipped` for an unsupported reference construct. report: {report}"
-    );
     assert_eq!(
         inv2,
-        Some("unverifiable"),
-        "inv#2 (`acc == spec_sum(&xs[..i])`) is `unverifiable` pending the \
-         `forge::contract_tv` frame fix (production `xs@.subrange` vs the `Seq`-bound \
-         obligation param) — flip to `faithful` when the frame binds the indexed \
-         slice with a view. report: {report}"
+        Some("faithful"),
+        "inv#2 (`acc == spec_sum(&xs[..i])`) must discharge `faithful` — the #149 \
+         view-consistent slice binding (`&[elem]` + production `slices`) makes \
+         production's `xs@.subrange(..)` and the reference's matching subrange \
+         typecheck under one binding and Z3 prove them equivalent. report: {report}"
     );
 }
 

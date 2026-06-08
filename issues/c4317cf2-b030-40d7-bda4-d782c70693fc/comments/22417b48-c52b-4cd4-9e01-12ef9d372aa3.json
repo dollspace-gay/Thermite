@@ -1,0 +1,10 @@
+{
+  "uuid": "22417b48-c52b-4cd4-9e01-12ef9d372aa3",
+  "issue_uuid": "c4317cf2-b030-40d7-bda4-d782c70693fc",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (579d3d4). All three residual classes closed -> contract-TV TOTAL on the whole corpus: Option/Result match-in-ens, String byte-view receivers, Map/Option/Result frame binding. Critic NO DIVERGENCE: each class catches a unilateral misdispatch; atomic identical-text clauses safe; Map well_formed weave non-vacuous. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7, generated 200/200, all 0-skipped. No regression.",
+  "created_at": "2026-06-08T22:54:10.638459043Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAAlTHA4Qt4veExob9tv758klvLwcHHrbKA7tM7GmAClpKKiskKVsuroIagVhOwIqvqr8SC8GJNNOVGkWetA+HDg=="
+}

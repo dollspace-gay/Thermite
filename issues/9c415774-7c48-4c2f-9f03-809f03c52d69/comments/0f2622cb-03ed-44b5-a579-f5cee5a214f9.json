@@ -1,0 +1,10 @@
+{
+  "uuid": "0f2622cb-03ed-44b5-a579-f5cee5a214f9",
+  "issue_uuid": "9c415774-7c48-4c2f-9f03-809f03c52d69",
+  "author": "Yffe",
+  "content": "Fixed in d7344ae. Root cause: encode_combinator_call routed EVERY combinator arg through encode_slice_arg, appending the slice @-view to bare Paths, so forall_below/forall_from's int index arg n became n@ (a Verus type error: no view on int), a silent wrong encoding (contract-tv.md REQ-1). Fix (single file thermite-tv/src/ref_encode.rs): encode_combinator_call now consults the matched CombinatorSig.arg_kinds and dispatches the i-th arg via encode_combinator_arg per kind: Slice to @-view, Index to scalar (n as int, no @), Pred to closure, Value as-is. Covers all 8 frozen combinators by kind. Verified against real verus: forall_below/forall_from faithful obligations COMPILE and verify (1 verified, 0 errors); infidel gives counterexample (0 verified, 1 errors). Un-ignored pin ref_encode_index_arg_not_slice_viewed PASSES; teeth F1-F4 green. Gauntlet: cargo test --workspace 318 passed 0 failed; clippy -D warnings PASS; fmt --check PASS.",
+  "created_at": "2026-06-08T18:59:08.812530860Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkC4mX+PCvhyeUtLw3M/jy7bs67bZpiUw6KM7Q9i1AL712NkXIWIizrHgNQv5HL2jviuwwAB1GYtFZINCre3SAA=="
+}

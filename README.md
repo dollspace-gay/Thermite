@@ -69,6 +69,7 @@ Roadmap (all shipped): v0.1 kernel → v0.2 Kani-backed L2 + degrade protocol �
 | `examples/` | Runnable example programs (the verified text editor, formatter, calculator, parser) + how to `forge build` + run each |
 | `.design/` | Per-component design docs (the contract between the thesis and the code) |
 | `tooling/` | The spec-discipline + anti-pattern gates and the route table |
+| `.claude/agents/` | The four ACToR sub-agents (`acto-doc-author`/`builder`/`critic`/`fixer`) — auto-discovered by Claude Code (see below) |
 | `thermite-*/`, `forge/` | The toolchain crates: `thermite-syntax`, `thermite-spec`, `thermite-lower`, `forge` (the CLI), `thermite-skill` |
 
 ## A taste of the surface language
@@ -93,3 +94,60 @@ fn sum(xs: &[u32]) -> u64
 ```
 
 `forge check` turns this into a certificate: `L3`, contract non-vacuous, mutants killed — the deliverable's trust statement. `forge build --entry sum` compiles it to a native binary whose contract checks fire at runtime and whose `fx pure` is seccomp-enforced.
+
+## Working on Thermite as an agent — the ACToR loop
+
+Thermite is built by AI agents using a four-role adversarial loop, and everything an
+agent needs to work the repo **ships in the repo**:
+
+- **`goal.md`** — the binding contract: the full ACToR loop, the verification model
+  (corpus + golden oracles), **R-CHAR-3** (the toolchain never authors its own
+  oracle), and the anti-drift rules. Read it first, every session.
+- **`THERMITE.skill.md`** — the entire surface language + toolchain in ≤ 6,000 tokens,
+  generated from the registry (CI-gated). Load it as context before writing any `.th`.
+- **`.claude/agents/acto-*.md`** — the four sub-agents below, auto-discovered by Claude
+  Code as the `acto-doc-author` / `acto-builder` / `acto-critic` / `acto-fixer`
+  subagent types (dispatch them with the Task/Agent tool — no setup needed).
+- **`tooling/` + `.claude/hooks/`** — the spec-discipline gate (a routed file can't be
+  edited until its `.design/` doc exists) and the anti-pattern gate (no stubs/TODOs),
+  enforced as hooks. A `.crosslink/` issue must be active before any edit.
+
+### The four roles
+
+| Agent | Does | Never |
+|---|---|---|
+| **acto-doc-author** | Writes `.design/<area>/<doc>.md` grounded in real code + the thesis; classifies each REQ **SHIPPED** or **NOT-STARTED** (+ a blocker #). | Touches toolchain code. |
+| **acto-builder** | Ships a missing component against a pre-declared ≤ ~10-file manifest; tests + production in one commit. | Widens scope mid-dispatch. |
+| **acto-critic** | Adversarially audits a "done" claim; pins each divergence as a **failing test** + files a `-l blocker`. | Fixes anything. |
+| **acto-fixer** | Minimal fix for **one** pinned divergence, root cause in the owning crate. | Bundles fixes / refactors. |
+
+The loop: **doc-author → (orchestrator hand-authors the R-CHAR-3 oracle) → builder →
+critic → (GENERATOR MUST FIX) → fixer → critic → … until clean.** Every builder/fixer
+on novel code is followed by a critic. A "divergence" is anchored to two things the
+toolchain may not author for itself — the **conformance corpus**
+(`conformance/<name>.cert.json`) and the **Verus golden lowerings**
+(`tests/golden/lower/<name>.verus.rs`).
+
+### Session start (any Claude on this machine)
+
+1. Read `goal.md`.
+2. Load the language reference. Install it once as a user-level skill so every future
+   session auto-discovers it (or just read `THERMITE.skill.md` directly):
+   ```sh
+   mkdir -p ~/.claude/skills/thermite
+   { printf -- '---\nname: thermite\ndescription: Thermite language + Forge toolchain reference.\n---\n\n'; cat THERMITE.skill.md; } > ~/.claude/skills/thermite/SKILL.md
+   ```
+3. Work the loop. The orchestrator stays hands-on-the-wheel: load context, hand off
+   implementation with a clear manifest, and **verify every result** — read the diff,
+   re-run the gauntlet, cross-check the critic. Agents are capable and also make
+   mistakes; the loop's adversarial structure is what keeps them honest.
+
+Every change must pass the gauntlet (also the CI gate in `.github/workflows/ci.yml`):
+
+```sh
+cargo build --workspace
+cargo test --workspace          # with `verus` on PATH for the L3 tier
+cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+cargo run -p thermite-skill -- --check-budget
+```

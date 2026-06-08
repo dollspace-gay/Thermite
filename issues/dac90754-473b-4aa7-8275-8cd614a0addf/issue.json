@@ -1,0 +1,10 @@
+{
+  "uuid": "dac90754-473b-4aa7-8275-8cd614a0addf",
+  "display_id": 139,
+  "title": "Lowering soundness step 1: contract-faithfulness translation validation — an independent reference semantics for the spec/contract sublanguage + a Z3 equivalence check that catches ==-vs-<=-class infidelity the vacuity/mutation gates structurally cannot see",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T18:07:35.416127296Z",
+  "updated_at": "2026-06-08T18:07:35.416127296Z"
+}

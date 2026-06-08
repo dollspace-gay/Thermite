@@ -102,6 +102,21 @@ builder implements against; it is grounded against real `rustc` (see Verificatio
   sandbox (that is #57; effects are compile-time-only in v0.1, R-SPEC-5) — it only
   emits these hooks.
 
+- **REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path).** Derived
+  from §3 (the artifact is a real compiled deliverable) + the #128 motivation. By
+  default the compiled artifact lives at a stable per-run `/tmp/forge_*_build_out_<pid>/`
+  output dir (REQ-2 — it is copied out of the ScratchDir before cleanup so it survives
+  #53), which forces a wrapper script to run it. `forge build --out <PATH>` (and the
+  short `-o <PATH>`) COPIES that artifact to the user-named `<PATH>` and marks it
+  executable, so a built binary is a real `./<PATH>` run directly (the verified editor
+  becomes a standalone `./nano`). An existing `<PATH>` is OVERWRITTEN (a build output is
+  regenerable). The build manifest / human + `--json` output reports the FINAL path
+  (`<PATH>` when `--out`, else the existing /tmp path). This is a build-output PLACEMENT
+  convenience only — it does NOT change verification/lowering; the artifact is
+  BYTE-IDENTICAL, just placed at `<PATH>`. A copy failure (bad directory, permission) is
+  a structured `ForgeError::Io` (R-CODE-4), never a panic; `<PATH>` is never partially
+  written on failure.
+
 ## Acceptance criteria
 
 All ACs are mechanically checkable. They tie to a `conformance/build/` oracle the
@@ -152,6 +167,15 @@ below (Verification) against real rustc.
 - **AC-7 (exit-status discipline).** A `rustc` failure (e.g. an intentionally
   un-compilable injected fixture) yields a non-zero `forge build` exit and a structured
   `ForgeError`, never a silent success (R-CODE-4).
+
+- **AC-8 (`--out` places a runnable binary).** `forge build conformance/sum.th --entry
+  sum --out <tmpdir>/sum` places the compiled binary at EXACTLY `<tmpdir>/sum` (the
+  manifest's `artifact` is that path), the file is executable, and running it DIRECTLY
+  prints `6` (the hand-derived `sum(&[1,2,3]) == 6`). The short `-o <PATH>` is
+  equivalent. Without `--out` the existing /tmp output path is reported (unchanged). A
+  `--out` under a non-existent directory yields a non-zero exit + a structured
+  `ForgeError::Io`, never a panic, and writes no artifact (`build_conformance::
+  out_places_runnable_binary` + `out_bad_path_is_structured_error`).
 
 ## Architecture
 
@@ -315,3 +339,4 @@ must:
 | REQ-4 (L1 checks baked in, all profiles) | SHIPPED | the artifact is `lower_l1`'s output verbatim (the always-active `thermite_check!`, NOT `debug_assert!`); `build_file` never strips it. Verified by `ens_violation_fires_at_runtime` (the runtime `[ens]` check fires, non-zero exit) + `checks_are_baked_in` (AC-2: macro present, no `debug_assert`). |
 | REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `struct BuildManifest in build.rs` composes the artifact path + `CrateType`, the assurance string `"L1 (built, runtime-checked)"`, the per-fn `fx` rows (`effects_of` via `build_functions`), and the `Reproducibility` block (pinned `rustc` identity via `resolve_rustc_version` + `SOURCE_DATE_EPOCH=0`). Consumer: `cli::run_build` (human `render_build` + `--json`). Verified by `rebuilt_library_is_byte_identical` (AC-6: byte-identical rlib via `SOURCE_DATE_EPOCH` + `--remap-path-prefix`). |
 | REQ-6 (#57 hook: runnable exe + fx rows) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (`sum` → `["pure"]`); v0.1 installs no sandbox (R-SPEC-5). Verified by `sum_runs` (`fx == ["pure"]` + the binary runs). |
+| REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path) | SHIPPED | `build_file(.., out: Option<&Path>)` copies the stable /tmp artifact to `<PATH>` via `place_artifact in build.rs` (overwrite + `chmod +x`; #128), reports `<PATH>` as `BuildManifest::artifact`; `None` keeps the existing /tmp path; a bad `<PATH>` → `ForgeError::Io`. Consumer: `cli::run_build` threads the `--out`/`-o` flag (`Command::Build.out`). Verified by `build_conformance::out_places_runnable_binary` (AC-8: placed, executable, runs, prints 6) + `out_bad_path_is_structured_error` (structured error, no panic) + `cli::parses_build_out_flag`. |

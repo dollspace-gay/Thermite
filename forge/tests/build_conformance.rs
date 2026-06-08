@@ -122,6 +122,139 @@ fn sum_runs() {
     }
 }
 
+// ---- #128 (`--out <PATH>`): the artifact is placed at a user-named path --------
+//
+// `forge build sum.th --entry sum --out <tmpdir>/sum` places the compiled binary
+// at exactly `<tmpdir>/sum` (NOT the awkward /tmp/..._build_out_<pid>/ path), the
+// file is executable, and running `./<tmpdir>/sum` directly prints 6 (the
+// hand-derived sum(&[1,2,3]) value). The manifest's `artifact` field is the FINAL
+// `<PATH>`. The `-o` short form is equivalent. A bad `--out` (a path under a
+// non-existent directory) yields a structured ForgeError + non-zero exit, never a
+// panic. Without `--out` the existing /tmp path behavior is unchanged (covered by
+// `sum_runs`/`sum_builds_as_library`).
+
+#[test]
+fn out_places_runnable_binary() {
+    let sum = corpus_dir().join("sum.th");
+    // A unique user-named destination under the temp dir (the #128 scenario: a real
+    // `./nano`-style path, not the /tmp/..._build_out_<pid>/ path).
+    let dest = std::env::temp_dir().join(format!("forge_out_test_sum_{}", std::process::id()));
+    let _ = std::fs::remove_file(&dest);
+
+    let (ok, stdout, stderr) = run_forge_build(&[
+        sum.to_str().unwrap(),
+        "--entry",
+        "sum",
+        "--out",
+        dest.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(
+        ok,
+        "forge build sum.th --entry sum --out <dest> must succeed:\nstdout:{stdout}\nstderr:{stderr}"
+    );
+
+    // The manifest reports the FINAL path = `<dest>` (the --out path, not the /tmp
+    // path).
+    let artifact = artifact_path_from_json(&stdout);
+    assert_eq!(
+        artifact, dest,
+        "the manifest's artifact path must be the --out <PATH>:\n{stdout}"
+    );
+
+    // The binary exists at exactly `<dest>` and is executable.
+    assert!(
+        dest.exists(),
+        "the built binary must be placed at the --out path: {}",
+        dest.display()
+    );
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&dest)
+            .expect("stat the placed binary")
+            .permissions()
+            .mode();
+        assert!(
+            mode & 0o111 != 0,
+            "the placed binary must be executable (mode {mode:o})"
+        );
+    }
+
+    // Running `<dest>` DIRECTLY (the #128 motivation: a standalone `./binary`) prints
+    // the hand-derived value 6.
+    let (ran, output) = run_artifact(&dest);
+    assert!(
+        ran,
+        "the placed binary must run directly (exit 0):\n{output}"
+    );
+    assert!(
+        output.contains('6'),
+        "the placed sum binary must print 6 (sum(&[1,2,3]) == 6, hand-derived):\n{output}"
+    );
+
+    // The `-o` short form is equivalent: it places a runnable binary at `<dest2>`.
+    let dest2 =
+        std::env::temp_dir().join(format!("forge_out_test_sum_short_{}", std::process::id()));
+    let _ = std::fs::remove_file(&dest2);
+    let (ok2, stdout2, stderr2) = run_forge_build(&[
+        sum.to_str().unwrap(),
+        "--entry",
+        "sum",
+        "-o",
+        dest2.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(
+        ok2,
+        "forge build ... -o <dest2> (short form) must succeed:\nstdout:{stdout2}\nstderr:{stderr2}"
+    );
+    assert_eq!(
+        artifact_path_from_json(&stdout2),
+        dest2,
+        "the -o short form must place the artifact at <dest2>:\n{stdout2}"
+    );
+    let (ran2, output2) = run_artifact(&dest2);
+    assert!(
+        ran2 && output2.contains('6'),
+        "-o binary must run + print 6:\n{output2}"
+    );
+
+    let _ = std::fs::remove_file(&dest);
+    let _ = std::fs::remove_file(&dest2);
+}
+
+#[test]
+fn out_bad_path_is_structured_error() {
+    let sum = corpus_dir().join("sum.th");
+    // A destination under a directory that does not exist: `std::fs::copy` fails with
+    // a structured ForgeError::Io (R-CODE-4), never a panic / silent success.
+    let bad = std::env::temp_dir()
+        .join(format!("forge_out_nonexistent_{}", std::process::id()))
+        .join("deeper")
+        .join("sum");
+    let (ok, stdout, stderr) = run_forge_build(&[
+        sum.to_str().unwrap(),
+        "--entry",
+        "sum",
+        "--out",
+        bad.to_str().unwrap(),
+    ]);
+    assert!(
+        !ok,
+        "forge build --out <bad path> must FAIL (non-zero), never a panic:\nstdout:{stdout}\nstderr:{stderr}"
+    );
+    assert!(
+        stderr.contains("io error"),
+        "the failure must be a structured ForgeError::Io, never swallowed:\nstderr:{stderr}"
+    );
+    assert!(
+        !bad.exists(),
+        "no artifact should be placed at the bad path: {}",
+        bad.display()
+    );
+}
+
 // ---- AC-1 (library form) ----------------------------------------------------
 //
 // The default (no --entry) build is a compiled library (rlib) of the L1-checked

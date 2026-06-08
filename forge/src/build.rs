@@ -20,6 +20,9 @@
 //! every exit path (the #53 leak lesson; a compiled `.rlib`/binary is large). The
 //! emitted artifact is COPIED out of the scratch dir to a stable per-run output
 //! directory before the scratch dir is dropped, so the artifact survives cleanup.
+//! `forge build --out <PATH>` (`-o`) then COPIES that artifact to a user-named path
+//! (executable; REQ-7), so a built binary is a real `./<name>` you run directly —
+//! no awkward `/tmp/forge_*_build_out_<pid>/` path / wrapper script (#128).
 //!
 //! ## Artifact form (REQ-3, OQ-1 decision (b))
 //!
@@ -46,6 +49,7 @@
 //! | REQ-4 (L1 checks baked in, all profiles) | SHIPPED | the artifact is `lower_l1`'s output verbatim (the always-active `thermite_check!`, NOT `debug_assert!`); `build_file` never strips it. Verified by `ens_violation_fires_at_runtime` (the runtime check fires). |
 //! | REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `BuildManifest` composes the artifact path + `CrateType`, the achieved assurance string, the per-fn `fx` rows (`effects_of`), and the `Reproducibility` block (pinned rustc identity + `SOURCE_DATE_EPOCH`). Consumer: `cli::run_build` (human + `--json`). |
 //! | REQ-6 (#57 hook: runnable exe + fx rows + the seccomp sandbox) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (e.g. `sum` → `["pure"]`); `synthesize_entry_main` now injects the #57 `sandbox::emit_sandbox_prelude` (the fx-derived seccomp filter) as the FIRST statements of the generated `main` (`SandboxConfig`, on by default for `--entry`), recording the installed allowlist in `BuildManifest::sandbox`. Verified by `sum_runs` (`fx == ["pure"]`) + `sandbox_conformance` (pure runs clean, the openat probe killed/allowed). |
+//! | REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path) | SHIPPED | `build_file(.., out: Option<&Path>)` copies the stable /tmp artifact to `<PATH>` via `place_artifact` (overwrite + `chmod +x` so `./<PATH>` runs directly; #128), reports `<PATH>` as `BuildManifest::artifact`; `None` keeps the existing /tmp path unchanged; a bad `<PATH>` → `ForgeError::Io`. Consumer: `cli::run_build` (threads the `--out`/`-o` flag). Verified by `build_conformance::out_places_runnable_binary`. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -213,6 +217,7 @@ pub fn build_file(
     path: impl AsRef<Path>,
     entry: Option<&str>,
     sandbox: SandboxConfig,
+    out: Option<&Path>,
 ) -> Result<BuildManifest, ForgeError> {
     let path = path.as_ref();
     // The full compiled source (lower_l1 + any --entry runner + the #57 sandbox
@@ -233,7 +238,18 @@ pub fn build_file(
     // 5. rustc: write the crate into a per-run scratch dir, compile, copy the
     // artifact out, and clean the scratch dir wholesale on every exit path (#53).
     let crate_name = crate_name_for(path);
-    let artifact = invoke_rustc(&crate_name, &source, crate_type)?;
+    let built = invoke_rustc(&crate_name, &source, crate_type)?;
+
+    // REQ-7 (`--out <PATH>`): the artifact lives at a stable per-run /tmp output
+    // dir (`built`). When `--out <PATH>` is given, COPY it to the user-named path
+    // (overwriting — a build output), mark it executable, and report `<PATH>` as
+    // the FINAL artifact path. Without `--out`, the existing /tmp path is the
+    // artifact (unchanged). The copy is a pure placement step: the artifact is
+    // BYTE-IDENTICAL (verification/lowering are untouched, R-CODE-5).
+    let artifact = match out {
+        Some(dest) => place_artifact(&built, dest)?,
+        None => built,
+    };
 
     // REQ-5/REQ-6: the build record — per-fn `fx` rows + the #57 sandbox record +
     // reproducibility. The sandbox is only INSTALLED for an `--entry` runner with
@@ -634,6 +650,51 @@ fn invoke_rustc(
     // wholesale (#53). The copied-out artifact survives.
     drop(scratch);
     Ok(artifact)
+}
+
+/// Copy the freshly-built artifact `built` (the stable per-run /tmp path) to the
+/// user-named `dest` (`forge build --out <PATH>`, REQ-7), OVERWRITING any existing
+/// file (a build output is regenerable), mark it executable, and return `dest` as
+/// the FINAL artifact path. This is a pure PLACEMENT step — the bytes are
+/// identical to `built` (the verification/lowering are untouched), it only moves a
+/// runnable binary out of the awkward `/tmp/..._build_out_<pid>/` dir to a real
+/// `./<name>` the user runs directly. An unwritable `dest` (bad directory,
+/// permission) is a structured `ForgeError::Io`, never a panic (R-CODE-2).
+fn place_artifact(built: &Path, dest: &Path) -> Result<PathBuf, ForgeError> {
+    // `std::fs::copy` overwrites the destination if it exists and preserves the
+    // source's permission bits (so a `bin` stays executable). It does NOT create
+    // missing parent directories — a `--out dir/that/does/not/exist/name` surfaces
+    // the OS error as a structured `ForgeError::Io` (R-CODE-4), never a panic.
+    std::fs::copy(built, dest).map_err(|e| ForgeError::Io {
+        path: dest.display().to_string(),
+        source: e,
+    })?;
+
+    // Ensure the placed artifact is executable so `./<dest>` runs directly (the #128
+    // motivation). `std::fs::copy` preserves the source mode, but an `--out` over an
+    // existing non-executable file (or a platform/umask quirk) could leave it
+    // non-`+x`; set the owner/group/other execute bits explicitly on Unix. A
+    // metadata/permission failure is a structured `ForgeError::Io` (R-CODE-2).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(dest)
+            .map_err(|e| ForgeError::Io {
+                path: dest.display().to_string(),
+                source: e,
+            })?
+            .permissions();
+        // OR-in the execute bits (rwxr-xr-x ∪ existing), preserving the read/write
+        // bits the copy carried over. `0o111` = u+x,g+x,o+x.
+        let mode = perms.mode() | 0o111;
+        perms.set_mode(mode);
+        std::fs::set_permissions(dest, perms).map_err(|e| ForgeError::Io {
+            path: dest.display().to_string(),
+            source: e,
+        })?;
+    }
+
+    Ok(dest.to_path_buf())
 }
 
 /// Resolve the rustc version that the [`BuildManifest`] records as the pinned

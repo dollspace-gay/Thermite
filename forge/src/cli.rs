@@ -285,12 +285,14 @@ enum Command {
         json: bool,
         reviewer: Option<String>,
     },
-    /// `forge build <file> [--entry <fn>] [--json]` — lower a Thermite program to
-    /// executable Rust and compile it with `rustc` into a contract-checked artifact
-    /// (issue #56; `.design/forge/build.md` REQ-1). Default → a compiled library
-    /// (`rlib`); `--entry <fn>` → a runnable executable whose generated `main`
-    /// calls `fn` with deterministic synthesized inputs (REQ-3), so the always-
-    /// active `thermite_check!`s are observable at runtime (the #57 hook).
+    /// `forge build <file> [--entry <fn>] [--out <PATH>] [--json]` — lower a Thermite
+    /// program to executable Rust and compile it with `rustc` into a contract-checked
+    /// artifact (issue #56; `.design/forge/build.md` REQ-1). Default → a compiled
+    /// library (`rlib`); `--entry <fn>` → a runnable executable whose generated `main`
+    /// calls `fn` with deterministic synthesized inputs (REQ-3), so the always-active
+    /// `thermite_check!`s are observable at runtime (the #57 hook). `--out <PATH>` /
+    /// `-o <PATH>` (#128; REQ-7) places the compiled artifact at a user-named,
+    /// runnable path (`./<PATH>`) instead of the awkward /tmp output path.
     Build {
         file: PathBuf,
         entry: Option<String>,
@@ -300,6 +302,11 @@ enum Command {
         /// `openat` probe). A library build (no `--entry`) ignores it (an rlib has
         /// no `main` to inject into).
         sandbox: build::SandboxConfig,
+        /// `--out <PATH>` / `-o <PATH>` (#128; `.design/forge/build.md` REQ-7): the
+        /// user-named path the compiled artifact is placed at (executable, so
+        /// `./<PATH>` runs directly — no `/tmp/..._build_out_<pid>/` path / wrapper
+        /// script). `None` keeps the existing stable /tmp output path.
+        out: Option<PathBuf>,
     },
 }
 
@@ -571,11 +578,15 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // without it the default library (`rlib`) is produced. The #57 sandbox is
             // ON BY DEFAULT for `--entry`; `--no-sandbox` opts out; `--sandbox` is the
             // explicit-default form; `--sandbox-self-test` injects the `openat` probe.
+            // `--out <PATH>` / `-o <PATH>` (#128; `.design/forge/build.md` REQ-7) places
+            // the compiled artifact at a user-named, runnable path (a missing value is a
+            // Usage error); without it the existing stable /tmp output path is reported.
             let mut file: Option<PathBuf> = None;
             let mut entry: Option<String> = None;
             let mut json = false;
             let mut sandbox_mode = build::SandboxConfig::default().mode;
             let mut self_test = false;
+            let mut out: Option<PathBuf> = None;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
@@ -590,10 +601,24 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         })?;
                         entry = Some(value.to_string());
                     }
+                    "--out" | "-o" => {
+                        // `--out <PATH>` / `-o <PATH>` (#128; REQ-7). The value is a
+                        // separate token; a missing value is a Usage error, never a
+                        // silent default. The artifact is COPIED to `<PATH>` (executable)
+                        // so `./<PATH>` runs directly.
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--out`/`-o` requires a <PATH> value (where the compiled \
+                                 artifact is placed)"
+                                    .to_string(),
+                            )
+                        })?;
+                        out = Some(PathBuf::from(value));
+                    }
                     "--sandbox" => sandbox_mode = SandboxMode::On,
                     "--no-sandbox" => sandbox_mode = SandboxMode::Off,
                     "--sandbox-self-test" => self_test = true,
-                    flag if flag.starts_with("--") => {
+                    flag if flag.starts_with('-') => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
                     positional => {
@@ -608,7 +633,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             }
             let file = file.ok_or_else(|| {
                 ForgeError::Usage(
-                    "`forge build` requires a <file> [--entry <fn>] in v0.1".to_string(),
+                    "`forge build` requires a <file> [--entry <fn>] [--out <PATH>] in v0.1"
+                        .to_string(),
                 )
             })?;
             Ok(Command::Build {
@@ -619,6 +645,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     mode: sandbox_mode,
                     self_test,
                 },
+                out,
             })
         }
         other => Err(ForgeError::Usage(format!(
@@ -633,7 +660,7 @@ fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
      [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
-     [--json] [--no-sandbox] [--sandbox-self-test]"
+     [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -679,7 +706,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             entry,
             json,
             sandbox,
-        } => run_build(&file, entry.as_deref(), json, sandbox),
+            out,
+        } => run_build(&file, entry.as_deref(), json, sandbox, out.as_deref()),
     }
 }
 
@@ -932,6 +960,11 @@ fn run_review(
 /// `--no-sandbox` opts out and `--sandbox-self-test` injects the `openat` probe. The
 /// installed allowlist is recorded in `BuildManifest::sandbox`.
 ///
+/// `--out <PATH>` (`-o`) (#128; REQ-7) places the compiled artifact at a user-named,
+/// executable path (overwriting), so a built binary is a real `./<PATH>` run directly;
+/// `None` keeps the existing stable /tmp output path. The reported
+/// `BuildManifest::artifact` is the FINAL path (`<PATH>` when `--out`).
+///
 /// `forge build` does NOT itself RUN the produced `--entry` executable: running is
 /// left to the consumer / the conformance test (which exercises the runtime
 /// `thermite_check!` + seccomp behavior directly). This keeps `forge build` a pure
@@ -948,8 +981,9 @@ fn run_build(
     entry: Option<&str>,
     json: bool,
     sandbox: build::SandboxConfig,
+    out: Option<&Path>,
 ) -> Result<ExitCode, ForgeError> {
-    let manifest = build::build_file(file, entry, sandbox)?;
+    let manifest = build::build_file(file, entry, sandbox, out)?;
     if json {
         let doc = serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::RustcOutput {
             detail: format!("failed to serialize the build manifest JSON: {e}"),
@@ -1584,7 +1618,7 @@ mod tests {
     // `--no-sandbox` opts out; `--sandbox-self-test` injects the probe.
     #[test]
     fn parses_build_sandbox_flags() {
-        // Default: sandbox on, no self-test.
+        // Default: sandbox on, no self-test, no --out (the existing /tmp path).
         assert_eq!(
             parse_args(&argv(&["build", "a.th", "--entry", "f"])).ok(),
             Some(Command::Build {
@@ -1595,6 +1629,7 @@ mod tests {
                     mode: SandboxMode::On,
                     self_test: false,
                 },
+                out: None,
             })
         );
         // --no-sandbox opts out.
@@ -1629,6 +1664,40 @@ mod tests {
                 self_test: true,
             })
         );
+    }
+
+    // #128 (`.design/forge/build.md` REQ-7): `--out <PATH>` / `-o <PATH>` parses to
+    // the user-named artifact path; a missing value is a Usage error; the long and
+    // short forms are equivalent; without it `out` is `None` (the /tmp path).
+    #[test]
+    fn parses_build_out_flag() {
+        let out_of = |args: &[&str]| -> Option<Option<PathBuf>> {
+            parse_args(&argv(args)).ok().and_then(|c| match c {
+                Command::Build { out, .. } => Some(out),
+                _ => None,
+            })
+        };
+        // `--out <PATH>`.
+        assert_eq!(
+            out_of(&["build", "a.th", "--entry", "f", "--out", "./nano"]),
+            Some(Some(PathBuf::from("./nano")))
+        );
+        // `-o <PATH>` short form is equivalent.
+        assert_eq!(
+            out_of(&["build", "a.th", "--entry", "f", "-o", "./nano"]),
+            Some(Some(PathBuf::from("./nano")))
+        );
+        // Without the flag, `out` is None (the existing /tmp output path).
+        assert_eq!(out_of(&["build", "a.th"]), Some(None));
+        // A missing value is a Usage error, never a silent default.
+        assert!(matches!(
+            parse_args(&argv(&["build", "a.th", "--out"])),
+            Err(ForgeError::Usage(_))
+        ));
+        assert!(matches!(
+            parse_args(&argv(&["build", "a.th", "-o"])),
+            Err(ForgeError::Usage(_))
+        ));
     }
 
     // AC-1: no args / unknown verb / missing positional → Usage error, never a

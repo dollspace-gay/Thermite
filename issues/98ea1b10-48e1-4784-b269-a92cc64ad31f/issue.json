@@ -2,11 +2,12 @@
   "uuid": "98ea1b10-48e1-4784-b269-a92cc64ad31f",
   "display_id": 141,
   "title": "contract-TV REQ-2: per-clause Z3 equivalence obligation (proof fn { assert(P_production <==> P_reference) } with clause free vars + result/old bound as params, spec-fn+combinator deps in scope) discharged via forge::check::run_verus/item_subprogram",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T18:15:37.907635934Z",
-  "updated_at": "2026-06-08T18:15:39.513392342Z",
+  "updated_at": "2026-06-08T19:00:57.664898455Z",
+  "closed_at": "2026-06-08T19:00:57.664898455Z",
   "labels": [
     "blocker"
   ]

@@ -1,0 +1,10 @@
+{
+  "uuid": "4a2b077c-10fe-4cc0-8535-444c15b31e31",
+  "issue_uuid": "7235d448-530d-43aa-b53a-ab7986f4905e",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_byteview_name_collision.rs::user_spec_fn_named_like_a_generated_byteview_fn_still_certifies_l3 demonstrates the divergence: two byte-identical String-scanning spec fns (the proven #126 spec_scan/spec_line_start shape) certify DIFFERENTLY by NAME. Control 'scan_x' -> L3; rename to 'is_digit' (a name in the fixed callee_takes_string_byteview set parse_le/parse_be/all_digits/is_digit/occurs_at/contains_sub/count_sep/sep_free) -> L0. The &String self-call arg is misrouted to .data@ (Seq<u8>) against the &TString param the lowered signature declares (E0308). Root cause: callee_takes_string_byteview keys the byte-view rewrite on callee NAME, not the &String param SHAPE. Authority: .design/basis/07-strings.md REQ-4 (String-scanning spec fn MUST lower + certify; the set is SHAPE-derived). Reproduced directly: forge check on /tmp fixtures, is_digit L0 vs scan_x L3, isolated by rename-only. Fix is generator's (owning crate thermite-lower).",
+  "created_at": "2026-06-08T01:21:39.435326843Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA+W847qxmeezehosS2hLFyQblsY1ltz+QIULd3n3ixnjgS2EGHsx8qT+MxLyTr2MkJvEtSTEPE3bKMz4+8MFIDw=="
+}

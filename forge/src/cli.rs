@@ -308,7 +308,29 @@ enum Command {
         /// script). `None` keeps the existing stable /tmp output path.
         out: Option<PathBuf>,
     },
+    /// `forge tv <file> [--generated [N]] [--json]` — the CONTRACT-FAITHFULNESS
+    /// TRANSLATION-VALIDATION deeper audit (epic #139, #144;
+    /// `.design/verified/contract-tv.md` REQ-5). A SEPARATE opt-in command (NOT
+    /// folded into `forge check`, which stays fast): for each `req`/`ens`/loop-
+    /// `inv`/`dec` clause it discharges the per-clause Z3 equivalence obligation
+    /// `P_production <==> P_reference` (the production lowering vs the INDEPENDENT
+    /// `thermite-tv` reference encoder) through verus, reporting each clause
+    /// faithful or DIVERGENT (a real lowering-fidelity finding). `--generated [N]`
+    /// ALSO runs the off-corpus generated clause space (REQ-3, the corpus-bound
+    /// escape; default N = [`TV_GENERATED_DEFAULT_N`]).
+    Tv {
+        file: PathBuf,
+        json: bool,
+        /// `--generated [N]` — ALSO run the off-corpus generated TV space (REQ-3).
+        /// `Some(n)` requests `n` generated clauses; `None` skips the generated run.
+        generated: Option<usize>,
+    },
 }
+
+/// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
+/// A bounded N keeps the opt-in audit tractable while exercising a diverse
+/// off-corpus space.
+pub const TV_GENERATED_DEFAULT_N: usize = 200;
 
 /// The assurance rung `forge check` targets (`.design/lower/l2-kani.md` REQ-7,
 /// OQ-1: the `--level l2` flag). The DEFAULT stays `L3` (the verus path); `--level
@@ -648,6 +670,57 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 out,
             })
         }
+        "tv" => {
+            // `forge tv <file> [--generated [N]] [--json]` (#144;
+            // `.design/verified/contract-tv.md` REQ-5). The first positional is the
+            // file (required). `--generated` opts into the off-corpus generated run
+            // (REQ-3); an OPTIONAL numeric token after it sets N (else the default).
+            // Like the other deeper-audit verbs, it runs at the pinned default
+            // verus config (the deterministic budget) — no exploratory levers.
+            let mut file: Option<PathBuf> = None;
+            let mut json = false;
+            let mut generated: Option<usize> = None;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--generated" => {
+                        // An OPTIONAL numeric token immediately after `--generated`
+                        // sets N; otherwise the default. A non-numeric next token is
+                        // a separate arg (e.g. another flag), not N.
+                        let n = match iter.peek().and_then(|t| t.parse::<usize>().ok()) {
+                            Some(parsed) => {
+                                iter.next(); // consume the numeric token
+                                parsed
+                            }
+                            None => TV_GENERATED_DEFAULT_N,
+                        };
+                        generated = Some(n);
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_some() {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge tv` takes at most one <file>; unexpected `{positional}`"
+                            )));
+                        }
+                        file = Some(PathBuf::from(positional));
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge tv` requires a <file> [--generated [N]] [--json]".to_string(),
+                )
+            })?;
+            Ok(Command::Tv {
+                file,
+                json,
+                generated,
+            })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -660,7 +733,8 @@ fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
      [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
-     [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test]"
+     [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv <file> \
+     [--generated [N]] [--json]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -708,6 +782,11 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             sandbox,
             out,
         } => run_build(&file, entry.as_deref(), json, sandbox, out.as_deref()),
+        Command::Tv {
+            file,
+            json,
+            generated,
+        } => run_tv(&file, json, generated),
     }
 }
 
@@ -993,6 +1072,119 @@ fn run_build(
         print!("{}", render_build(&manifest));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge tv`: the CONTRACT-FAITHFULNESS TRANSLATION-VALIDATION deeper audit
+/// (#144; `.design/verified/contract-tv.md` REQ-5). Discharges the per-clause Z3
+/// equivalence obligation (`P_production <==> P_reference`) over every
+/// `req`/`ens`/loop-`inv`/`dec` clause of the file (the CORPUS run,
+/// `contract_tv::tv_file`) and — with `--generated` — over the off-corpus
+/// generated clause space (REQ-3, `contract_tv::run_generated`). Reports each
+/// clause faithful / DIVERGENT / skipped, the headline counts, and (for the
+/// generated run) confirms the lowerer is faithful off-corpus.
+///
+/// Exit code: a clean audit (no DIVERGENT clause) exits 0; ANY divergent clause is
+/// a real lowering-fidelity FINDING surfaced as a verification-failure exit (the
+/// meaning-mismatch verdict, distinct from `forge check`'s obligation verdict). An
+/// environment failure (file unreadable, parse failure) propagates as a
+/// `ForgeError` (the environment exit). A verus-absent run reports `unverifiable`
+/// clauses (surfaced, never a silent pass — R-CODE-4) and does NOT fail the exit.
+fn run_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode, ForgeError> {
+    use crate::contract_tv::{self, TV_DEFAULT_RLIMIT, TV_DEFAULT_SEED};
+
+    let corpus = contract_tv::tv_file(file, TV_DEFAULT_SEED, TV_DEFAULT_RLIMIT)?;
+    let gen_report = match generated {
+        Some(n) => Some(contract_tv::run_generated(
+            TV_DEFAULT_SEED,
+            n,
+            TV_DEFAULT_RLIMIT,
+        )?),
+        None => None,
+    };
+
+    let corpus_counts = corpus.counts();
+    let gen_counts = gen_report.as_ref().map(|r| r.counts());
+
+    if json {
+        let doc = tv_report_json(file, &corpus, gen_report.as_ref());
+        let rendered = serde_json::to_string_pretty(&doc).map_err(|e| ForgeError::VerusOutput {
+            detail: format!("failed to serialize the contract-TV report JSON: {e}"),
+        })?;
+        println!("{rendered}");
+    } else {
+        print!(
+            "{}",
+            contract_tv::render_report(
+                &corpus,
+                &format!("contract-TV (corpus) {}", file.display())
+            )
+        );
+        if let Some(r) = &gen_report {
+            print!(
+                "{}",
+                contract_tv::render_report(r, "contract-TV (off-corpus generated)")
+            );
+        }
+    }
+
+    // Any DIVERGENT clause (corpus OR generated) is a real lowering-fidelity finding
+    // → verification-failure exit (surfaced loudly). A clean audit exits 0.
+    let divergent = corpus_counts.divergent + gen_counts.map(|c| c.divergent).unwrap_or(0);
+    if divergent == 0 {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Build the `--json` document for a contract-TV run (#144; §5.1 structured
+/// output). A hand-built stable surface a calling agent reads: the per-clause
+/// verdicts + the headline counts for the corpus run and (when present) the
+/// generated run.
+fn tv_report_json(
+    file: &Path,
+    corpus: &crate::contract_tv::TvReport,
+    generated: Option<&crate::contract_tv::TvReport>,
+) -> serde_json::Value {
+    use serde_json::json;
+    let clauses_json = |r: &crate::contract_tv::TvReport| -> Vec<serde_json::Value> {
+        r.clauses
+            .iter()
+            .map(|c| {
+                let (verdict, detail) = match &c.verdict {
+                    crate::contract_tv::ClauseVerdict::Faithful => ("faithful", None),
+                    crate::contract_tv::ClauseVerdict::Divergent { detail } => {
+                        ("divergent", Some(detail.clone()))
+                    }
+                    crate::contract_tv::ClauseVerdict::Skipped { reason } => {
+                        ("skipped", Some(reason.clone()))
+                    }
+                    crate::contract_tv::ClauseVerdict::Unverifiable => ("unverifiable", None),
+                };
+                json!({ "clause": c.label, "verdict": verdict, "detail": detail })
+            })
+            .collect()
+    };
+    let counts_json = |c: crate::contract_tv::TvCounts| {
+        json!({
+            "checked": c.checked(),
+            "faithful": c.faithful,
+            "divergent": c.divergent,
+            "skipped": c.skipped,
+            "unverifiable": c.unverifiable,
+        })
+    };
+    json!({
+        "file": file.display().to_string(),
+        "corpus": {
+            "counts": counts_json(corpus.counts()),
+            "clauses": clauses_json(corpus),
+        },
+        "generated": generated.map(|r| json!({
+            "counts": counts_json(r.counts()),
+            "clauses": clauses_json(r),
+        })),
+    })
 }
 
 /// Render the [`BuildManifest`] as human-readable text (#56;

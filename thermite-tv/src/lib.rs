@@ -45,12 +45,14 @@
 //! |---|---|---|
 //! | REQ-1 (independent reference encoder) | SHIPPED | `ref_encode::ref_contract_pred` (`ref_encode.rs`); non-test consumer `obligation::equivalence_obligation`; verified by `tests/teeth.rs` F1–F4 under real verus. Deps `thermite-syntax` + `thermite-spec` ONLY (`Cargo.toml`) — no `thermite-lower` (AC-6). |
 //! | REQ-2 (per-clause Z3 equivalence obligation + discharge) | SHIPPED | `obligation::equivalence_obligation` + `ObligationFrame` (`obligation.rs`); emits a self-contained `proof fn tv_check(<params>) requires <req> { assert((P_production) <==> (P_reference)); }`; discharged by `tests/teeth.rs` through real verus (the teeth-test is the non-test consumer of the obligation TEXT). |
-//! | REQ-3 (off-corpus generator) | NOT-STARTED | open prereq blocker #142 (next dispatch — `src/gen.rs` unbuilt; not on this manifest). |
+//! | REQ-3 (off-corpus generator) | SHIPPED | `gen::generate_clauses` (`gen.rs`) — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of well-typed `bool`-valued contract-position `Expr`s over the frozen sublanguage (all comparison `BinOp`s, logical connectives incl. nesting, the 8 combinators with the correct arg KINDS per `thermite_spec::lookup(_).arg_kinds`, `spec_sum` calls, `result`/`old(acc)`, byte-view method calls, casts). Non-test consumer: the forge off-corpus run `forge::contract_tv::run_generated` (lowers each via `thermite_lower::lower_contract_expr` → TV-checks via `equivalence_obligation`). Pure generation in this INDEPENDENT crate — no `thermite-lower` dep (AC-6 intact). Determinism + construct-coverage asserted in `gen::tests` + `forge/tests/contract_tv_conformance.rs` (AC-7). |
 //! | REQ-4 (the teeth — R-CHAR-3) | SHIPPED | `tests/teeth.rs` — F1 (comparison `==`/`<=`), F2 (combinator predicate `<`/`<=`), F3 (#127 byte-view index `0`/`1`), F4 (structural-drop conjunct): each FAITHFUL p_production VERIFIES + each INFIDEL produces a verus COUNTEREXAMPLE (`errors >= 1`). Skip-loudly if verus absent. |
 //! | REQ-5 (forge plug-in point) | NOT-STARTED | open prereq blocker #144 (next dispatch — `forge/src/contract_tv.rs` unbuilt; not on this manifest, independence-respecting). |
 
+pub mod gen;
 pub mod obligation;
 pub mod ref_encode;
 
+pub use gen::generate_clauses;
 pub use obligation::{equivalence_obligation, ObligationFrame, ParamDecl};
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};

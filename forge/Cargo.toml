@@ -15,6 +15,13 @@ thermite-syntax = { path = "../thermite-syntax" }
 thermite-spec = { path = "../thermite-spec" }
 thermite-lower = { path = "../thermite-lower" }
 thermite-skill = { path = "../thermite-skill" }
+# contract-TV (epic #139, #144): the INDEPENDENT contract-faithfulness reference
+# encoder + the per-clause Z3 equivalence obligation. forge is the ONLY place the
+# independent `thermite-tv` reference meets the production `thermite-lower`
+# lowering (`contract_tv.rs` discharges `P_production <==> P_reference`);
+# `thermite-tv` itself stays free of any `thermite-lower` dep (the N-version
+# independence boundary, AC-6).
+thermite-tv = { path = "../thermite-tv" }
 # #5: the certificate schema (`manifest.rs`) is serde-serialized to the §5.1
 # stable JSON; `check.rs` parses verus's `--output-json` summary with serde_json.
 serde = { version = "1", features = ["derive"] }

@@ -31,4 +31,4 @@ pub mod lower;
 pub use effects::{check_effects, subsumes};
 pub use l1::lower_l1;
 pub use l2::{bound_string, lower_l2};
-pub use lower::{lower, lower_equivalence_obligation, LowerError};
+pub use lower::{lower, lower_contract_expr, lower_equivalence_obligation, LowerError};

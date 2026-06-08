@@ -26,6 +26,7 @@ mod cache;
 mod check;
 mod cli;
 mod closure;
+mod contract_tv;
 mod degrade;
 mod effect_wrappers;
 mod kani;

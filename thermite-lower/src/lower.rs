@@ -2315,6 +2315,57 @@ fn lower_fn_signature(
     Ok(out)
 }
 
+/// Lower ONE contract-position [`Expr`] to its PRODUCTION Verus predicate
+/// (`.design/verified/contract-tv.md` REQ-5 prerequisite; epic crosslink #139 /
+/// blocker #144). This is `P_production` for a single contract clause — the
+/// artifact-under-test the contract-faithfulness translation-validation (TV)
+/// engine compares against the INDEPENDENT reference encoding
+/// `thermite_tv::ref_encode::ref_contract_pred`.
+///
+/// It REUSES the EXACT spec-context [`lower_expr`] path `lower_fn_signature` uses
+/// for a fn's `requires`/`ensures` clauses (and the loop `inv`/`dec` lowering
+/// uses), threaded with the SAME spec context inputs: `slices` (the `&[T]` param
+/// names whose use sites take the `@`-view), `nat_fns` (the `nat`-returning spec
+/// fn names that drive the `as nat` coercion of a compared scalar), `strings`
+/// (the `String`/`&String` value names whose `.len()`/`.byte_at(i)` rewrite to
+/// the wrapper spec fns), `string_fields` (the `String`-typed FIELD names), and
+/// `user_string_spec_fns` (the #127 byte-view-dispatch shape key). Passing the
+/// SAME context the signature path computes (`slice_param_names`/
+/// `string_value_names`/the program-wide field + user-spec-fn sets) makes
+/// `lower_contract_expr(clause.expr, …)` produce a clause's predicate
+/// BYTE-IDENTICAL to the line `lower_fn_signature` emits for it — so the forge TV
+/// phase checks the REAL production lowering, not a re-derivation. (The forge
+/// phase binds slice params directly as `Seq<T>` in the obligation and so passes
+/// an EMPTY `slices`, matching the reference encoder's seq-bound identity `@`-view
+/// — the per-clause obligation's coercion-matching contract, contract-tv.md
+/// Architecture.)
+///
+/// This is a thin per-clause re-entry into the lowerer (NOT a new lowering rule);
+/// `forge::contract_tv` is the non-test consumer (R-DEFER-1). Returns a
+/// [`LowerError`] (never a panic — R-CODE-2) for a construct the spec-context
+/// lowering does not cover.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the spec-context inputs mirror lower_fn_signature's threaded ctx \
+        (slices/nat_fns/strings/string_fields/user_string_spec_fns) — a struct \
+        would obscure the 1-to-1 correspondence with the signature path this \
+        re-enters"
+)]
+pub fn lower_contract_expr(
+    expr: &Expr,
+    slices: &[&str],
+    nat_fns: &[&str],
+    strings: &[&str],
+    string_fields: &[&str],
+    user_string_spec_fns: &[&str],
+) -> Result<String, LowerError> {
+    let ctx = Ctx::spec(slices, nat_fns)
+        .with_strings(strings)
+        .with_string_fields(string_fields)
+        .with_user_string_spec_fns(user_string_spec_fns);
+    lower_expr(expr, ctx, 0, zero_span())
+}
+
 /// Lower a `#[boundary]`/`#[slag]` fn as a `#[verifier::external_body]` assumable
 /// SIGNATURE (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
 /// `#[verifier::external_body]` attribute makes the body OPAQUE: verus assumes
@@ -6730,7 +6781,31 @@ fn lower_binary_operand(
             return Ok(format!("({s})"));
         }
     }
+    // Blocker (#139/#142 off-corpus TV finding): a `Cast` operand IMMEDIATELY
+    // followed by a `<`-leading operator (`<`, `<=`, or `<<`) is AMBIGUOUS in both
+    // Verus's and Rust's grammar — `x as u32 < 33` parses the `u32 <` as the start
+    // of a GENERIC argument list (`u32<33, …>`), a hard parse error ("expected
+    // `,`"). The fix is the dual of the #122 cast-INNER paren: parenthesize the
+    // WHOLE cast when it is the LEFT operand of a `<`-leading op (`(x as u32) <
+    // 33`). Keyed on (left operand is a `Cast`) AND (parent op begins with `<`), so
+    // the corpus/goldens — whose casts feed `==`/`*`/`+`/`-`/`>`(`acc as nat ==`,
+    // `i as u64 * …`, `xs.len() as u64 * …`) — stay BYTE-IDENTICAL (no churn). The
+    // independent `thermite_tv::ref_encode` already parenthesizes every cast, so
+    // this aligns production with the reference for the whole class of
+    // `cast < operand` clauses the generator surfaced.
+    if is_left && matches!(operand, Expr::Cast { .. }) && is_lt_leading(parent) {
+        return Ok(format!("({s})"));
+    }
     Ok(s)
+}
+
+/// Is `op` a `<`-leading operator (`<`, `<=`, `<<`)? A `Cast` left-operand of such
+/// an op MUST be parenthesized — `x as u32 < 33` mis-parses the `u32 <` as a
+/// generic-argument list (the off-corpus TV finding, #139/#142). `>`/`>=`/`>>` and
+/// `==`/`!=` do NOT trigger the generic-parse ambiguity, so they are excluded
+/// (keeps the corpus/goldens byte-identical).
+fn is_lt_leading(op: BinOp) -> bool {
+    matches!(op, BinOp::Lt | BinOp::Le | BinOp::Shl)
 }
 
 // ---------------------------------------------------------------------------

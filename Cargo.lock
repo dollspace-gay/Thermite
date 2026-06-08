@@ -57,6 +57,7 @@ dependencies = [
  "thermite-skill",
  "thermite-spec",
  "thermite-syntax",
+ "thermite-tv",
  "thermite-verified",
 ]
 

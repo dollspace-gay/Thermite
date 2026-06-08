@@ -1,0 +1,10 @@
+{
+  "uuid": "f3425787-bdde-4866-99c4-b6c5bb6ff202",
+  "issue_uuid": "e09392a0-e018-48dc-b8e7-f490d3e7d015",
+  "author": "Yffe",
+  "content": "Plan: the 4 ACToR agent files already exist + are git-tracked in .claude/agents/ (Thermite-tuned, confirmed clean — acto-critic's 'upstream' line correctly states there is none). goal.md already holds the full loop contract. The gap was the README on-ramp: add a 'Working on Thermite as an agent — the ACToR loop' section (the 4 roles table, the loop, the session-start steps + skill-install recipe + the gauntlet) pointing at goal.md/THERMITE.skill.md/.claude/agents, plus a .claude/agents/ row in the repo-layout table. No agent-file edits needed.",
+  "created_at": "2026-06-08T17:31:34.883599152Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAoN1WX4Cb8k34t7Dd9kMtA4a648E4Bz5t1KGtrQucCpYv1Uo6dUw3krNw7+kpucsYZa2OTK1AAVFovY60QjgvAQ=="
+}

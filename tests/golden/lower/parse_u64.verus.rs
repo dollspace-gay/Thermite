@@ -75,24 +75,24 @@ impl TString {
     }
 }
 
-pub open spec fn pow10(k: nat) -> nat
+pub open spec fn __thermite_pow10(k: nat) -> nat
     decreases k
-{ if k == 0 { 1 } else { 10 * pow10((k - 1) as nat) } }
-pub open spec fn parse_le(s: Seq<u8>) -> nat
+{ if k == 0 { 1 } else { 10 * __thermite_pow10((k - 1) as nat) } }
+pub open spec fn __thermite_parse_le(s: Seq<u8>) -> nat
     decreases s.len()
 { if s.len() == 0 { 0 }
-  else { ((s[0] - 48) as nat) + 10 * parse_le(s.subrange(1, s.len() as int)) } }
-pub open spec fn parse_be(s: Seq<u8>) -> nat
+  else { ((s[0] - 48) as nat) + 10 * __thermite_parse_le(s.subrange(1, s.len() as int)) } }
+pub open spec fn __thermite_parse_be(s: Seq<u8>) -> nat
     decreases s.len()
 { if s.len() == 0 { 0 }
-  else { parse_be(s.subrange(0, (s.len() - 1) as int)) * 10 + ((s[(s.len() - 1) as int] - 48) as nat) } }
-pub open spec fn seq_reverse(s: Seq<u8>) -> Seq<u8>
+  else { __thermite_parse_be(s.subrange(0, (s.len() - 1) as int)) * 10 + ((s[(s.len() - 1) as int] - 48) as nat) } }
+pub open spec fn __thermite_seq_reverse(s: Seq<u8>) -> Seq<u8>
     decreases s.len()
 { if s.len() == 0 { Seq::<u8>::empty() }
-  else { seq_reverse(s.subrange(1, s.len() as int)).push(s[0]) } }
+  else { __thermite_seq_reverse(s.subrange(1, s.len() as int)).push(s[0]) } }
 
-proof fn lemma_parse_push(s: Seq<u8>, d: u8)
-    ensures parse_le(s.push(d)) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()),
+proof fn __thermite_lemma_parse_push(s: Seq<u8>, d: u8)
+    ensures __thermite_parse_le(s.push(d)) == __thermite_parse_le(s) + ((d - 48) as nat) * __thermite_pow10(s.len()),
     decreases s.len(),
 {
     let sd = s.push(d);
@@ -100,38 +100,38 @@ proof fn lemma_parse_push(s: Seq<u8>, d: u8)
         assert(sd.len() == 1);
         assert(sd[0] == d);
         assert(sd.subrange(1, sd.len() as int) =~= Seq::<u8>::empty());
-        assert(parse_le(sd.subrange(1, sd.len() as int)) == 0);
-        assert(parse_le(sd) == ((d - 48) as nat));
-        assert(parse_le(s) == 0);
-        assert(pow10(0) == 1);
-        assert(((d - 48) as nat) * pow10(0) == ((d - 48) as nat)) by(nonlinear_arith);
-        assert(parse_le(sd) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()));
+        assert(__thermite_parse_le(sd.subrange(1, sd.len() as int)) == 0);
+        assert(__thermite_parse_le(sd) == ((d - 48) as nat));
+        assert(__thermite_parse_le(s) == 0);
+        assert(__thermite_pow10(0) == 1);
+        assert(((d - 48) as nat) * __thermite_pow10(0) == ((d - 48) as nat)) by(nonlinear_arith);
+        assert(__thermite_parse_le(sd) == __thermite_parse_le(s) + ((d - 48) as nat) * __thermite_pow10(s.len()));
     } else {
         let t = s.subrange(1, s.len() as int);
-        lemma_parse_push(t, d);
+        __thermite_lemma_parse_push(t, d);
         assert(sd.len() == s.len() + 1);
         assert(sd[0] == s[0]);
         assert(sd.subrange(1, sd.len() as int) =~= t.push(d));
         assert(t.len() == s.len() - 1);
         assert(sd.subrange(1, sd.len() as int) == t.push(d));
-        assert(parse_le(sd) == ((sd[0] - 48) as nat) + 10 * parse_le(sd.subrange(1, sd.len() as int)));
-        assert(parse_le(sd) == ((s[0] - 48) as nat) + 10 * parse_le(t.push(d)));
-        assert(parse_le(s) == ((s[0] - 48) as nat) + 10 * parse_le(t));
-        assert(pow10(s.len()) == 10 * pow10(t.len()));
-        assert(10 * (((d - 48) as nat) * pow10(t.len())) == ((d - 48) as nat) * pow10(s.len()))
+        assert(__thermite_parse_le(sd) == ((sd[0] - 48) as nat) + 10 * __thermite_parse_le(sd.subrange(1, sd.len() as int)));
+        assert(__thermite_parse_le(sd) == ((s[0] - 48) as nat) + 10 * __thermite_parse_le(t.push(d)));
+        assert(__thermite_parse_le(s) == ((s[0] - 48) as nat) + 10 * __thermite_parse_le(t));
+        assert(__thermite_pow10(s.len()) == 10 * __thermite_pow10(t.len()));
+        assert(10 * (((d - 48) as nat) * __thermite_pow10(t.len())) == ((d - 48) as nat) * __thermite_pow10(s.len()))
             by(nonlinear_arith)
-            requires pow10(s.len()) == 10 * pow10(t.len());
-        assert(10 * (parse_le(t) + ((d - 48) as nat) * pow10(t.len()))
-            == 10 * parse_le(t) + 10 * (((d - 48) as nat) * pow10(t.len()))) by(nonlinear_arith);
-        assert(parse_le(t.push(d)) == parse_le(t) + ((d - 48) as nat) * pow10(t.len()));
-        assert(10 * parse_le(t.push(d))
-            == 10 * parse_le(t) + ((d - 48) as nat) * pow10(s.len()));
-        assert(parse_le(sd) == parse_le(s) + ((d - 48) as nat) * pow10(s.len()));
+            requires __thermite_pow10(s.len()) == 10 * __thermite_pow10(t.len());
+        assert(10 * (__thermite_parse_le(t) + ((d - 48) as nat) * __thermite_pow10(t.len()))
+            == 10 * __thermite_parse_le(t) + 10 * (((d - 48) as nat) * __thermite_pow10(t.len()))) by(nonlinear_arith);
+        assert(__thermite_parse_le(t.push(d)) == __thermite_parse_le(t) + ((d - 48) as nat) * __thermite_pow10(t.len()));
+        assert(10 * __thermite_parse_le(t.push(d))
+            == 10 * __thermite_parse_le(t) + ((d - 48) as nat) * __thermite_pow10(s.len()));
+        assert(__thermite_parse_le(sd) == __thermite_parse_le(s) + ((d - 48) as nat) * __thermite_pow10(s.len()));
     }
 }
 
-proof fn lemma_parse_be_push(s: Seq<u8>, d: u8)
-    ensures parse_be(s.push(d)) == parse_be(s) * 10 + ((d - 48) as nat),
+proof fn __thermite_lemma_parse_be_push(s: Seq<u8>, d: u8)
+    ensures __thermite_parse_be(s.push(d)) == __thermite_parse_be(s) * 10 + ((d - 48) as nat),
 {
     let sd = s.push(d);
     assert(sd.len() == s.len() + 1);
@@ -139,41 +139,41 @@ proof fn lemma_parse_be_push(s: Seq<u8>, d: u8)
     assert(sd.subrange(0, (sd.len() - 1) as int) =~= s);
 }
 
-proof fn lemma_parse_be_reverse(s: Seq<u8>)
-    ensures parse_be(seq_reverse(s)) == parse_le(s),
+proof fn __thermite_lemma_parse_be_reverse(s: Seq<u8>)
+    ensures __thermite_parse_be(__thermite_seq_reverse(s)) == __thermite_parse_le(s),
     decreases s.len(),
 {
     if s.len() == 0 {
-        assert(seq_reverse(s) =~= Seq::<u8>::empty());
+        assert(__thermite_seq_reverse(s) =~= Seq::<u8>::empty());
     } else {
         let t = s.subrange(1, s.len() as int);
-        lemma_parse_be_reverse(t);
-        lemma_parse_be_push(seq_reverse(t), s[0]);
+        __thermite_lemma_parse_be_reverse(t);
+        __thermite_lemma_parse_be_push(__thermite_seq_reverse(t), s[0]);
     }
 }
 
-proof fn lemma_pow10_le(a: nat, b: nat)
+proof fn __thermite_lemma_pow10_le(a: nat, b: nat)
     requires a <= b,
-    ensures pow10(a) <= pow10(b),
+    ensures __thermite_pow10(a) <= __thermite_pow10(b),
     decreases b,
 {
     if a < b {
-        lemma_pow10_le(a, (b - 1) as nat);
-        assert(pow10(b) == 10 * pow10((b - 1) as nat));
-        assert(pow10((b - 1) as nat) <= 10 * pow10((b - 1) as nat)) by(nonlinear_arith);
+        __thermite_lemma_pow10_le(a, (b - 1) as nat);
+        assert(__thermite_pow10(b) == 10 * __thermite_pow10((b - 1) as nat));
+        assert(__thermite_pow10((b - 1) as nat) <= 10 * __thermite_pow10((b - 1) as nat)) by(nonlinear_arith);
     }
 }
 
-proof fn lemma_pow10_20_gt_u64max()
-    ensures pow10(20) > u64::MAX as nat,
+proof fn __thermite_lemma_pow10_20_gt_u64max()
+    ensures __thermite_pow10(20) > u64::MAX as nat,
 {
-    reveal_with_fuel(pow10, 21);
-    assert(pow10(20) == 100_000_000_000_000_000_000nat) by(compute);
+    reveal_with_fuel(__thermite_pow10, 21);
+    assert(__thermite_pow10(20) == 100_000_000_000_000_000_000nat) by(compute);
 }
 
-pub fn u64_to_string(n: u64) -> (result: TString)
+pub fn __thermite_u64_to_string(n: u64) -> (result: TString)
     ensures
-        parse_be(result.data@) == n as nat,
+        __thermite_parse_be(result.data@) == n as nat,
         result.data.len() >= 1,
         result.data.len() <= 20,
 {
@@ -181,9 +181,9 @@ pub fn u64_to_string(n: u64) -> (result: TString)
     let mut m: u64 = n;
     proof {
         assert(data@ =~= Seq::<u8>::empty());
-        assert(parse_le(data@) == 0);
-        assert(pow10(0) == 1);
-        assert((n as nat) * pow10(0) == n as nat) by(nonlinear_arith);
+        assert(__thermite_parse_le(data@) == 0);
+        assert(__thermite_pow10(0) == 1);
+        assert((n as nat) * __thermite_pow10(0) == n as nat) by(nonlinear_arith);
     }
     if m == 0 {
         data.push(48u8);
@@ -191,16 +191,16 @@ pub fn u64_to_string(n: u64) -> (result: TString)
             assert(data@.len() == 1);
             assert(data@[0] == 48u8);
             assert(data@.subrange(1, data@.len() as int) =~= Seq::<u8>::empty());
-            assert(parse_le(data@.subrange(1, data@.len() as int)) == 0);
-            assert(parse_le(data@) == 0);
+            assert(__thermite_parse_le(data@.subrange(1, data@.len() as int)) == 0);
+            assert(__thermite_parse_le(data@) == 0);
             assert((m as nat) == 0);
-            assert((m as nat) * pow10(data.len() as nat) == 0) by(nonlinear_arith)
+            assert((m as nat) * __thermite_pow10(data.len() as nat) == 0) by(nonlinear_arith)
                 requires (m as nat) == 0;
         }
     }
     while m > 0
         invariant
-            parse_le(data@) + (m as nat) * pow10(data.len() as nat) == n as nat,
+            __thermite_parse_le(data@) + (m as nat) * __thermite_pow10(data.len() as nat) == n as nat,
             data.len() >= 1 || m > 0,
             data.len() <= 20,
         decreases m,
@@ -211,27 +211,27 @@ pub fn u64_to_string(n: u64) -> (result: TString)
         let ghost old_len = data.len() as nat;
         proof {
             if data.len() == 20 {
-                lemma_pow10_20_gt_u64max();
-                assert(pow10(20) <= (m as nat) * pow10(20)) by(nonlinear_arith)
+                __thermite_lemma_pow10_20_gt_u64max();
+                assert(__thermite_pow10(20) <= (m as nat) * __thermite_pow10(20)) by(nonlinear_arith)
                     requires (m as nat) >= 1;
-                assert((m as nat) * pow10(data.len() as nat) <= n as nat);
+                assert((m as nat) * __thermite_pow10(data.len() as nat) <= n as nat);
                 assert(false);
             }
         }
         data.push(d);
         proof {
-            lemma_parse_push(old_data, d);
+            __thermite_lemma_parse_push(old_data, d);
             assert((m as nat) == 10 * ((m / 10) as nat) + ((m % 10) as nat)) by(nonlinear_arith);
-            assert(pow10((old_len + 1) as nat) == 10 * pow10(old_len));
+            assert(__thermite_pow10((old_len + 1) as nat) == 10 * __thermite_pow10(old_len));
         }
         m = m / 10;
         proof {
-            assert(old_m * pow10(old_len)
-                == ((d - 48) as nat) * pow10(old_len) + (m as nat) * pow10((old_len + 1) as nat))
+            assert(old_m * __thermite_pow10(old_len)
+                == ((d - 48) as nat) * __thermite_pow10(old_len) + (m as nat) * __thermite_pow10((old_len + 1) as nat))
                 by(nonlinear_arith)
                 requires
                     old_m == 10 * (m as nat) + ((d - 48) as nat),
-                    pow10((old_len + 1) as nat) == 10 * pow10(old_len);
+                    __thermite_pow10((old_len + 1) as nat) == 10 * __thermite_pow10(old_len);
         }
     }
     assert(data.len() >= 1);
@@ -243,7 +243,7 @@ pub fn u64_to_string(n: u64) -> (result: TString)
             i <= data.len(),
             data.len() <= 20,
             out.len() == i,
-            out@ =~= seq_reverse(data@.subrange((data.len() - i) as int, data.len() as int)),
+            out@ =~= __thermite_seq_reverse(data@.subrange((data.len() - i) as int, data.len() as int)),
         decreases data.len() - i,
     {
         let ghost prefix = data@.subrange((data.len() - i) as int, data.len() as int);
@@ -255,23 +255,23 @@ pub fn u64_to_string(n: u64) -> (result: TString)
             assert(whole.len() > 0);
             assert(whole[0] == data@[lo]);
             assert(whole.subrange(1, whole.len() as int) =~= prefix);
-            assert(seq_reverse(whole) =~= seq_reverse(prefix).push(data@[lo]));
+            assert(__thermite_seq_reverse(whole) =~= __thermite_seq_reverse(prefix).push(data@[lo]));
         }
     }
     proof {
         assert(data@.subrange(0, data@.len() as int) =~= data@);
-        lemma_parse_be_reverse(data@);
+        __thermite_lemma_parse_be_reverse(data@);
     }
     TString { data: out }
 }
 
-pub open spec fn is_digit(b: u8) -> bool { 48 <= b && b <= 57 }
-pub open spec fn all_digits(s: Seq<u8>) -> bool
-{ forall|i: int| 0 <= i < s.len() ==> is_digit(#[trigger] s[i]) }
+pub open spec fn __thermite_is_digit(b: u8) -> bool { 48 <= b && b <= 57 }
+pub open spec fn __thermite_all_digits(s: Seq<u8>) -> bool
+{ forall|i: int| 0 <= i < s.len() ==> __thermite_is_digit(#[trigger] s[i]) }
 
-proof fn lemma_parse_be_prefix_le(s: Seq<u8>, k: int)
+proof fn __thermite_lemma_parse_be_prefix_le(s: Seq<u8>, k: int)
     requires 0 <= k <= s.len(),
-    ensures parse_be(s.subrange(0, k)) <= parse_be(s),
+    ensures __thermite_parse_be(s.subrange(0, k)) <= __thermite_parse_be(s),
     decreases s.len() - k,
 {
     if k == s.len() {
@@ -279,20 +279,20 @@ proof fn lemma_parse_be_prefix_le(s: Seq<u8>, k: int)
     } else {
         let m = (s.len() - 1) as int;
         assert(s.subrange(0, m).subrange(0, k) =~= s.subrange(0, k));
-        lemma_parse_be_prefix_le(s.subrange(0, m), k);
-        assert(parse_be(s) == parse_be(s.subrange(0, m)) * 10 + ((s[m] - 48) as nat));
-        assert(parse_be(s.subrange(0, m)) * 10 >= parse_be(s.subrange(0, m))) by(nonlinear_arith);
+        __thermite_lemma_parse_be_prefix_le(s.subrange(0, m), k);
+        assert(__thermite_parse_be(s) == __thermite_parse_be(s.subrange(0, m)) * 10 + ((s[m] - 48) as nat));
+        assert(__thermite_parse_be(s.subrange(0, m)) * 10 >= __thermite_parse_be(s.subrange(0, m))) by(nonlinear_arith);
     }
 }
 
-pub fn parse_u64(s: &TString) -> (result: Option<u64>)
+pub fn __thermite_parse_u64(s: &TString) -> (result: Option<u64>)
     ensures
-        (all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) <= u64::MAX) ==> result is Some,
+        (__thermite_all_digits(s.data@) && s.data.len() >= 1 && __thermite_parse_be(s.data@) <= u64::MAX) ==> result is Some,
         match result {
-            Some(v) => all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat,
+            Some(v) => __thermite_all_digits(s.data@) && s.data.len() >= 1 && __thermite_parse_be(s.data@) == v as nat,
             None => true,
         },
-        result is None ==> (!all_digits(s.data@) || s.data.len() == 0 || parse_be(s.data@) > u64::MAX),
+        result is None ==> (!__thermite_all_digits(s.data@) || s.data.len() == 0 || __thermite_parse_be(s.data@) > u64::MAX),
 {
     if s.data.len() == 0 { return None; }
     let mut acc: u64 = 0;
@@ -300,29 +300,29 @@ pub fn parse_u64(s: &TString) -> (result: Option<u64>)
     while i < s.data.len()
         invariant
             i <= s.data.len(),
-            all_digits(s.data@.subrange(0, i as int)),
-            parse_be(s.data@.subrange(0, i as int)) == acc as nat,
+            __thermite_all_digits(s.data@.subrange(0, i as int)),
+            __thermite_parse_be(s.data@.subrange(0, i as int)) == acc as nat,
         decreases s.data.len() - i,
     {
         let b: u8 = s.data[i];
         if b < 48 || b > 57 {
-            assert(!is_digit(s.data@[i as int]));
-            assert(!all_digits(s.data@));
+            assert(!__thermite_is_digit(s.data@[i as int]));
+            assert(!__thermite_all_digits(s.data@));
             return None;
         }
         let digit: u64 = (b - 48) as u64;
         let ghost old_i = i as int;
         assert(s.data@.subrange(0, (i + 1) as int).subrange(0, old_i) =~= s.data@.subrange(0, old_i));
         assert(s.data@.subrange(0, (i + 1) as int)[old_i] == b);
-        assert(parse_be(s.data@.subrange(0, (i + 1) as int)) == parse_be(s.data@.subrange(0, old_i)) * 10 + ((b - 48) as nat));
+        assert(__thermite_parse_be(s.data@.subrange(0, (i + 1) as int)) == __thermite_parse_be(s.data@.subrange(0, old_i)) * 10 + ((b - 48) as nat));
         if acc > (u64::MAX - digit) / 10 {
             proof {
                 assert(digit <= 9);
                 assert((acc as nat) * 10 + (digit as nat) > u64::MAX as nat) by(nonlinear_arith)
                     requires acc as nat > ((u64::MAX - digit) / 10) as nat, digit <= 9;
-                assert(parse_be(s.data@.subrange(0, (i + 1) as int)) > u64::MAX);
-                if all_digits(s.data@) {
-                    lemma_parse_be_prefix_le(s.data@, (i + 1) as int);
+                assert(__thermite_parse_be(s.data@.subrange(0, (i + 1) as int)) > u64::MAX);
+                if __thermite_all_digits(s.data@) {
+                    __thermite_lemma_parse_be_prefix_le(s.data@, (i + 1) as int);
                 }
             }
             return None;
@@ -335,27 +335,27 @@ pub fn parse_u64(s: &TString) -> (result: Option<u64>)
 }
 
 fn parse_valid(s: TString) -> (result: Option<u64>)
-    requires all_digits(s.data@) && s.spec_len() >= 1 && parse_be(s.data@) <= 18446744073709551615,
+    requires __thermite_all_digits(s.data@) && s.spec_len() >= 1 && __thermite_parse_be(s.data@) <= 18446744073709551615,
     ensures
         (result is Some),
         match result {
-            Some(v) => v as nat == parse_be(s.data@),
+            Some(v) => v as nat == __thermite_parse_be(s.data@),
             None => true,
         },
 {
-    parse_u64(&s)
+    __thermite_parse_u64(&s)
 }
 
 
 fn parse_rejects_nondigit(s: TString) -> (result: Option<u64>)
-    requires s.spec_len() >= 1 && !all_digits(s.data@),
+    requires s.spec_len() >= 1 && !__thermite_all_digits(s.data@),
     ensures
         match result {
             Some(v) => false,
             None => true,
         },
 {
-    parse_u64(&s)
+    __thermite_parse_u64(&s)
 }
 
 

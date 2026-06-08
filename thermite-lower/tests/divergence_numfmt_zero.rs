@@ -72,10 +72,14 @@ fn divergence_numfmt_l3_zero_handling_matches_l1() {
     // (the commit claims byte-for-byte equality). Pin: the L3 exec body must carry
     // the same zero-guard. It currently does NOT (the `while m > 0` loop is the only
     // digit source), so this assertion FAILS — the divergence.
+    // #130: the L3 generated formatter is RESERVED-named (`__thermite_u64_to_string`)
+    // so it never collides with a user `fn`/`spec fn`. The L1 runtime (separate
+    // self-consistent namespace) keeps the bare name. The zero-guard property below
+    // is unchanged by the rename.
     let exec = l3
-        .find("pub fn u64_to_string")
+        .find("pub fn __thermite_u64_to_string")
         .map(|i| &l3[i..])
-        .expect("L3 must emit u64_to_string");
+        .expect("L3 must emit __thermite_u64_to_string");
     assert!(
         exec.contains("m == 0") && exec.contains("48"),
         "07-strings.md REQ-8 + R-DEFER-9: the L3 `u64_to_string` must emit the digit \

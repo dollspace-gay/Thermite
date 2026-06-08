@@ -4108,7 +4108,15 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     // `external_body` — R-DEFER-9): the predicate scans `14 verified, 0 errors`,
     // `split` `7 verified, 0 errors`, `trim` `8 verified, 0 errors`.
     if program_uses_string_search(program) {
-        emit_string_search_methods(&mut out, cap);
+        // Blocker #130: the search methods INTER-CALL the generated free fns
+        // (`occurs_at`/`contains_sub`/`count_sep`/`sep_free`/`lemma_count_push`), so
+        // build them into a local buffer, rewrite those references to the reserved
+        // names, then append — matching the reserved-named defs (`emit_string_search_
+        // defs`). The METHOD names themselves (`matches_at`/`split`/…) are inherent
+        // (namespaced under the impl), so they are not reserved.
+        let mut methods = String::new();
+        emit_string_search_methods(&mut methods, cap);
+        out.push_str(&reserve_generated_names(&methods));
     }
     out.push_str("}\n");
     Ok(out)
@@ -4595,7 +4603,12 @@ fn emit_string_search_defs(program: &Program) -> Result<String, LowerError> {
     );
     out.push_str("    }\n");
     out.push_str("}\n");
-    Ok(out)
+    // Blocker #130: the C5 search defs (`occurs_at`/`contains_sub`/`count_sep`/
+    // `sep_free`/`is_space` + `lemma_count_push`) emit under the reserved namespace,
+    // so a user `spec fn count_sep(&String, ..)` is a DISTINCT name from the
+    // generated `count_sep(Seq<u8>, u8)` even when `s.split(sep)` genuinely pulls in
+    // this module — no double definition (E0428).
+    Ok(reserve_generated_names(&out))
 }
 
 /// True if the program uses `n.to_string()` anywhere (a `to_string` `MethodCall`)
@@ -5016,7 +5029,12 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("    }\n");
     out.push_str("    TString { data: out }\n");
     out.push_str("}\n");
-    Ok(out)
+    // Blocker #130: the C4 numfmt round-trip defs (`pow10`/`parse_le`/`parse_be`/
+    // `seq_reverse` + the lemmas + `u64_to_string`) emit under the reserved
+    // namespace, so a user `spec fn parse_be(&String, ..)` is a DISTINCT name from
+    // the generated `parse_be(Seq<u8>)` even when `n.to_string()` genuinely pulls in
+    // this module — no double definition (E0428).
+    Ok(reserve_generated_names(&out))
 }
 
 /// The GENERATED `String`→`u64` parser spec-fn / fn names (Cluster C7,
@@ -5027,6 +5045,133 @@ fn emit_numfmt_defs(program: &Program) -> Result<String, LowerError> {
 /// so it is NOT in this list — `emit_parse_defs` keys its own `parse_be` emission
 /// off whether numfmt already emitted it (dedup).
 const GENERATED_PARSE_FNS: &[&str] = &["parse_u64", "all_digits", "is_digit"];
+
+/// The reserved prefix the lowerer mints its generated FREE-fn names under
+/// (`.design/basis/07-strings.md` REQ-4 — the byte-view namespace is collision-free,
+/// blocker #130). Every module-scope spec/exec/proof fn the lowerer SYNTHESIZES
+/// (the C4 numfmt round-trip, the C7 parser, the C5 search/transform helpers, and
+/// their proof lemmas) is emitted under this prefix, so a USER `spec fn`/`fn` whose
+/// surface name coincides with a generated one (`spec fn is_digit(s: &String, ..)`,
+/// `spec fn count_sep(s: &String, ..)`) is a DISTINCT name from the generated def —
+/// no double definition (E0428), even when the generated module is GENUINELY pulled
+/// in through a different, non-shadowed trigger (`parse_u64(s)` / `s.split(sep)`).
+/// `thermite-spec/src/validator.rs` FORBIDS a user declaring a name with this prefix
+/// (`SpecError::ReservedName`), so the reserved namespace is the lowerer's alone.
+const THERMITE_RESERVED_PREFIX: &str = "__thermite_";
+
+/// The complete set of GENERATED module-scope FREE-fn names the lowerer synthesizes
+/// (the C4 numfmt, C7 parser, and C5 search/transform defs + their proof lemmas).
+/// These are RESERVED-NAMED (`THERMITE_RESERVED_PREFIX`) at emission so they never
+/// collide with a user `spec fn`/`fn` of the same surface name (blocker #130). The
+/// `TString` METHODS (`matches_at`/`starts_with`/`split`/…) are NOT here: they are
+/// inherent methods, namespaced under the `TString` impl, so they cannot collide
+/// with a user free fn. `parse_u64`/`u64_to_string` ARE here — they are free fns the
+/// user invokes at the surface (`parse_u64(s)`, `n.to_string()`), so their call
+/// sites are rewritten to the reserved name (the dispatch keys on the SURFACE name,
+/// which it still sees on the un-rewritten AST).
+const GENERATED_FREE_FNS: &[&str] = &[
+    // C7 parser (REQ-9) + C4 numfmt round-trip (REQ-8) spec fns
+    "is_digit",
+    "all_digits",
+    "parse_be",
+    "parse_le",
+    "pow10",
+    "seq_reverse",
+    // C5 search/transform spec fns (REQ-13..16)
+    "occurs_at",
+    "contains_sub",
+    "count_sep",
+    "sep_free",
+    "is_space",
+    // generated exec fns (surface-invoked)
+    "parse_u64",
+    "u64_to_string",
+    // generated proof lemmas
+    "lemma_parse_push",
+    "lemma_parse_be_push",
+    "lemma_parse_be_reverse",
+    "lemma_pow10_le",
+    "lemma_pow10_20_gt_u64max",
+    "lemma_count_push",
+    "lemma_parse_be_prefix_le",
+];
+
+/// The reserved name for a generated free fn surface name (`is_digit` →
+/// `__thermite_is_digit`). The single mint point for the reserved scheme.
+fn reserved_name(surface: &str) -> String {
+    format!("{THERMITE_RESERVED_PREFIX}{surface}")
+}
+
+/// True iff `name` is a generated free-fn surface name the lowerer reserves
+/// (`GENERATED_FREE_FNS`). Used at a call site to decide whether to rewrite the
+/// callee to its reserved name (`reserved_name`).
+fn is_generated_free_fn(name: &str) -> bool {
+    GENERATED_FREE_FNS.contains(&name)
+}
+
+/// Rewrite every WHOLE-IDENTIFIER occurrence of a generated free-fn name
+/// (`GENERATED_FREE_FNS`) in a block of EMITTED generated source to its reserved
+/// name (`THERMITE_RESERVED_PREFIX`). Applied to the lowerer's own synthesized
+/// def/method blocks (the `emit_parse_defs`/`emit_numfmt_defs`/`emit_string_search_
+/// defs` defs and the search METHODS), so the generated module both DEFINES and
+/// INTER-CALLS the reserved names — never the bare surface names a user `spec fn`
+/// (blocker #130). Whole-identifier matching (an ASCII-alphanumeric/`_` neighbour on
+/// either side suppresses the rewrite) so `parse_be` is rewritten but
+/// `parse_be_prefix_le` (matched separately as its own name) is not partially hit,
+/// and a `.data@`-suffixed token is left intact. Operates ONLY on lowerer-generated
+/// text (no user expression flows through here), so it is self-contained and
+/// byte-stable. Deterministic: the names are scanned in `GENERATED_FREE_FNS` order
+/// but whole-identifier matching makes the result order-independent.
+fn reserve_generated_names(src: &str) -> String {
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let bytes = src.as_bytes();
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        // At an identifier boundary? (start of string or non-ident left neighbour)
+        let at_boundary = i == 0 || !is_ident(bytes[i - 1]);
+        let mut matched = false;
+        if at_boundary && is_ident(bytes[i]) {
+            for name in GENERATED_FREE_FNS {
+                let nb = name.as_bytes();
+                let end = i + nb.len();
+                if end <= bytes.len()
+                    && &bytes[i..end] == nb
+                    && (end == bytes.len() || !is_ident(bytes[end]))
+                {
+                    out.push_str(THERMITE_RESERVED_PREFIX);
+                    out.push_str(name);
+                    i = end;
+                    matched = true;
+                    break;
+                }
+            }
+        }
+        if !matched {
+            // Advance past a whole identifier (so a non-matching ident is not
+            // re-scanned mid-token, which could false-match a generated name that is
+            // a SUFFIX of a longer ident).
+            if at_boundary && is_ident(bytes[i]) {
+                let start = i;
+                while i < bytes.len() && is_ident(bytes[i]) {
+                    i += 1;
+                }
+                out.push_str(&src[start..i]);
+            } else {
+                // Push one full UTF-8 char (the source is ASCII generated code, but
+                // stay char-safe — advance by the char's byte length).
+                match src[i..].chars().next() {
+                    Some(ch) => {
+                        out.push(ch);
+                        i += ch.len_utf8();
+                    }
+                    None => break,
+                }
+            }
+        }
+    }
+    out
+}
 
 /// True if the program uses the `String`→`u64` parser anywhere (REQ-5): a
 /// `parse_u64` call (the surface `parse_u64(s)`) or an `all_digits`/`is_digit`
@@ -5280,7 +5425,11 @@ fn emit_parse_defs(program: &Program) -> Result<String, LowerError> {
     out.push_str("    assert(s.data@.subrange(0, i as int) =~= s.data@);\n");
     out.push_str("    Some(acc)\n");
     out.push_str("}\n");
-    Ok(out)
+    // Blocker #130: emit the generated FREE fns under the reserved namespace so a
+    // user `spec fn is_digit(&String, ..)` (a DISTINCT name) never double-defines
+    // with the generated `is_digit(b: u8)` — even when `parse_u64(s)` (a non-shadowed
+    // trigger) genuinely pulls this module in alongside the user fn.
+    Ok(reserve_generated_names(&out))
 }
 
 // ---------------------------------------------------------------------------
@@ -5372,16 +5521,47 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // callee NAME `parse_u64` + the arg being an owned-`String` bare path.
             if !ctx.is_spec() {
                 if let Expr::Path(csegs) = callee.as_ref() {
-                    if csegs.last().map(|s| s.as_str()) == Some("parse_u64") {
+                    if csegs.last().map(|s| s.as_str()) == Some("parse_u64")
+                        && !ctx.is_user_string_spec_fn("parse_u64")
+                    {
                         if let [Expr::Path(asegs)] = args.as_slice() {
                             if asegs.len() == 1 && ctx.is_owned_string(&asegs[0]) {
-                                return Ok(format!("parse_u64(&{})", asegs[0]));
+                                // Blocker #130: the generated parser is reserved-named
+                                // (`__thermite_parse_u64`); rewrite the surface call.
+                                return Ok(format!(
+                                    "{}(&{})",
+                                    reserved_name("parse_u64"),
+                                    asegs[0]
+                                ));
                             }
                         }
                     }
                 }
             }
-            let c = lower_expr(callee, ctx, d, span)?;
+            let mut c = lower_expr(callee, ctx, d, span)?;
+            // Blocker #130: a call whose callee names a GENERATED free fn
+            // (`GENERATED_FREE_FNS` — `parse_be`/`count_sep`/`occurs_at`/`parse_u64`/…)
+            // resolves to the lowerer-synthesized def, which is emitted under the
+            // reserved namespace (`THERMITE_RESERVED_PREFIX`). Rewrite the lowered
+            // callee to the reserved name so a surface contract reference (`ens
+            // parse_be(result) == n`, `ens result == contains_sub(s, p)`) or an exec
+            // `parse_u64(s)` (a `&String` param, not the owned-borrow case above)
+            // binds to the generated def. A USER `spec fn` of the same name
+            // (`is_user_string_spec_fn` — declares a `String`/`&String` param) lives
+            // in the user namespace and is NOT rewritten, so a user `spec fn
+            // is_digit(&String, ..)` self-call passes through as `is_digit` (the
+            // user's), distinct from `__thermite_is_digit`. Keyed on the SURFACE name
+            // (the un-rewritten `callee` Expr the dispatch below also inspects).
+            if let Expr::Path(csegs) = callee.as_ref() {
+                if let Some(last) = csegs.last() {
+                    if csegs.len() == 1
+                        && is_generated_free_fn(last)
+                        && !ctx.is_user_string_spec_fn(last)
+                    {
+                        c = reserved_name(last);
+                    }
+                }
+            }
             // In spec position, a bare slice-param argument to a spec fn or a
             // combinator is passed as its `Seq` view `xs@` (REQ-5). Keyed on the
             // in-scope slice-param SHAPE set (`ctx.is_slice`), not on names. A
@@ -5518,7 +5698,9 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
             // position only (a constructing op, `fx alloc`); `to_string` never appears
             // in a contract (the round-trip is named via `parse_le`, not `to_string`).
             if !ctx.is_spec() && name == "to_string" && args.is_empty() {
-                return Ok(format!("u64_to_string({r})"));
+                // Blocker #130: the generated formatter is reserved-named
+                // (`__thermite_u64_to_string`).
+                return Ok(format!("{}({r})", reserved_name("u64_to_string")));
             }
             // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): in SPEC
             // position the bounded-`Vec` accessor `v.get(i)` (a contract naming the

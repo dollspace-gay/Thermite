@@ -1,0 +1,10 @@
+{
+  "uuid": "7235d448-530d-43aa-b53a-ab7986f4905e",
+  "display_id": 127,
+  "title": "Divergence: callee_takes_string_byteview name-collision misroutes a user String-scanning spec fn — lower.rs callee_takes_string_byteview diverges from .design/basis/07-strings.md REQ-4",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T01:20:30.205263186Z",
+  "updated_at": "2026-06-08T01:20:30.205263186Z"
+}

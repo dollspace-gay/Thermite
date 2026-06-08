@@ -2,11 +2,12 @@
   "uuid": "9c415774-7c48-4c2f-9f03-809f03c52d69",
   "display_id": 145,
   "title": "Divergence: thermite-tv ref_encode mis-encodes Index-arg combinators (forall_below/forall_from) — int index arg gets spurious @-view, faithful clause is a type error",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T18:43:46.754648402Z",
-  "updated_at": "2026-06-08T18:43:48.542454333Z",
+  "updated_at": "2026-06-08T18:59:14.398999685Z",
+  "closed_at": "2026-06-08T18:59:14.398999685Z",
   "labels": [
     "blocker"
   ]

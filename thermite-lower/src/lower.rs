@@ -938,6 +938,23 @@ fn lower_inv_expr(
             }
             Ok(format!("{r}.{name}({})", parts.join(", ")))
         }
+        // A cast inside the `well_formed` predicate (`inv (x as u32) < cap`,
+        // blocker #148): the cast INNER must recurse through `lower_inv_expr` so a
+        // bare field name is rewritten to `self.<field>` (the catch-all
+        // `lower_expr` would emit the bare `x as u32` — `cannot find value x`).
+        // The #122 inner-paren discipline is preserved (a `Binary`/`Unary` inner is
+        // parenthesized: `(a - b) as T`). The target type lowers via `lower_type`
+        // (a struct invariant is `bool`-returning, never `nat_ret`).
+        Expr::Cast { expr: inner, ty } => {
+            let e = lower_inv_expr(inner, field_names, string_fields, d, span)?;
+            let t = lower_type(ty)?;
+            let e = if matches!(inner.as_ref(), Expr::Binary { .. } | Expr::Unary { .. }) {
+                format!("({e})")
+            } else {
+                e
+            };
+            Ok(format!("{e} as {t}"))
+        }
         // A literal / other leaf lowers exactly as the shared spec lowering would
         // (the field rewrite only matters for bare paths and their parents).
         _ => lower_expr(expr, Ctx::spec_seq(), depth, span),
@@ -964,6 +981,15 @@ fn lower_inv_operand(
         if needs {
             return Ok(format!("({s})"));
         }
+    }
+    // Blocker #148 (the #146/#139/#142 cast-`<` class, on the struct
+    // type-invariant path this parenthesizer missed): a `Cast` LEFT operand of a
+    // `<`-leading op (`<`/`<=`/`<<`) is AMBIGUOUS — `self.x as u32 < self.cap`
+    // mis-parses the `u32 <` as a generic-argument list (`u32<…>`, "expected
+    // `,`"). Same guard, same `is_lt_leading` predicate as `lower_binary_operand`
+    // (R-DEFER-8: the cast-`<` convention is uniform across every emission site).
+    if is_left && matches!(operand, Expr::Cast { .. }) && is_lt_leading(parent) {
+        return Ok(format!("({s})"));
     }
     Ok(s)
 }

@@ -32,7 +32,6 @@
 /// `x as u32 < cap` (which Verus/Rust reads as `u32<cap, …>` — "expected `,`").
 /// This is the #146 cast-`<` fix on the struct type-invariant path it missed.
 #[test]
-#[ignore = "blocker #148: lower_inv_operand misses the #146 cast-< paren fix (struct type-invariant)"]
 fn struct_invariant_cast_lt_is_parenthesized() {
     // `Gauge`'s invariant casts `x` then compares with `<` — the cast-`<`
     // ambiguity. (The source parens are stripped + re-emitted through

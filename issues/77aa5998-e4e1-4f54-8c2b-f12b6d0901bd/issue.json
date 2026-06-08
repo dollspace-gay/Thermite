@@ -1,0 +1,10 @@
+{
+  "uuid": "77aa5998-e4e1-4f54-8c2b-f12b6d0901bd",
+  "display_id": 129,
+  "title": "docs: remove editor run.sh wrapper, document the standalone binary (forge build --out ./nano; run ./nano)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T02:00:39.701975600Z",
+  "updated_at": "2026-06-08T02:00:39.701975600Z"
+}

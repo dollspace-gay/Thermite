@@ -1,0 +1,10 @@
+{
+  "uuid": "845297ba-e87a-470d-a193-19a9e6a7540c",
+  "issue_uuid": "bbc7813d-2a0b-48b4-825d-7732f0ab6e49",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (167b9f4). The off-corpus clause generator (thermite-tv/src/gen.rs, deterministic SplitMix64, no rand/clock) over the frozen sublanguage (all comparison BinOps, nested connectives, 8 combinators with registry arg-kinds, spec-fn calls, result/old, byteview, casts). Critic confirmed the generated run genuinely DISCHARGES diverse non-trivial obligations (175/200 checked + 25 honest byteview-scope skips; not inflated by trivial obligations). THIS IS THE THESIS PAYOFF: running TV over generated clauses immediately surfaced a REAL off-corpus lowering bug (#146 cast-< mis-parse) the corpus-bounded golden files structurally could not catch.",
+  "created_at": "2026-06-08T20:35:02.697846354Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAmhtaZSpocFfhCqXR6JWNw8wp9KEv3onKHhM4neAPEYPj/imcmz7IedNUhTBjHv7AmnxaleEgpjcumY7dflbXDw=="
+}

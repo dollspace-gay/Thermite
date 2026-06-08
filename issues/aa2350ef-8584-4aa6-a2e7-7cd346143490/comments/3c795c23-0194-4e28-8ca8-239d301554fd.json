@@ -1,0 +1,10 @@
+{
+  "uuid": "3c795c23-0194-4e28-8ca8-239d301554fd",
+  "issue_uuid": "aa2350ef-8584-4aa6-a2e7-7cd346143490",
+  "author": "Yffe",
+  "content": "Done. Editor command drops --no-sandbox; caveat -> effect-confined-via-fx-term. Status: C10-C12 + #106 + #101 shipped; deferred trimmed to #21 + basis v1.1. equivalent-mutants AC-2 ratio 0/3->0/2 (verdict unchanged). Skill fresh.",
+  "created_at": "2026-06-08T06:36:57.728472402Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAQweqmLl7t5HJPDmryqUeZOg30OtcjqydzxzC/i/TfhaBijU4pc9aX4+KMwFXDp6QcC1fcRLtvG3h/j6MpECXCg=="
+}

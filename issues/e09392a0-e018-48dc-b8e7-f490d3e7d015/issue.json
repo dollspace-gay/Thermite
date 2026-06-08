@@ -2,11 +2,12 @@
   "uuid": "e09392a0-e018-48dc-b8e7-f490d3e7d015",
   "display_id": 137,
   "title": "repo: commit the ACToR loop agent files (doc-author/builder/critic/fixer) + README how-to-load (agents + thermite skill)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T17:27:50.229838843Z",
-  "updated_at": "2026-06-08T17:27:53.507457490Z",
+  "updated_at": "2026-06-08T17:32:02.786371430Z",
+  "closed_at": "2026-06-08T17:32:02.786371430Z",
   "labels": [
     "docs"
   ]

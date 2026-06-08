@@ -1,0 +1,10 @@
+{
+  "uuid": "0aa448a4-5495-4e9b-84c5-987072d01a43",
+  "issue_uuid": "3ef36cf6-f64f-4a2f-bf42-7ccfe3bf656d",
+  "author": "Yffe",
+  "content": "FIXED in fd67cd3 (thermite-lower/src/lower.rs). Two-part single-file fix on the struct type-invariant path: (1) lower_inv_operand now carries the SAME cast-< guard lower_binary_operand got in 167b9f4, REUSING the shared is_lt_leading predicate (Lt/Le/Shl) — no duplication, the convention is uniform across both emission sites; (2) lower_inv_expr gained an explicit Expr::Cast arm so the cast inner recurses through lower_inv_expr (field rewrite x->self.x) while preserving the #122 inner-paren discipline — needed because the catch-all lower_expr emitted the bare 'x as u32' (cannot find value x) even once the outer paren landed. before: 'self.x as u32 < self.cap' (L0 'expected ,'); after: '(self.x as u32) < self.cap'. <=/<< parenthesize; ==/> UNCHANGED (matches #146). forge check (real verus) on the Gauge fixture now reaches L3 (was L0 mis-parse). Gauntlet: cargo test --workspace 684 passed/0 failed; divergence_struct_inv_cast_lt (un-ignored) 1 passed; divergence_cast_paren (#122/#146) 4 passed; clippy PASS; fmt PASS. Hand back for acto-critic re-audit.",
+  "created_at": "2026-06-08T20:33:29.601402415Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAjXiAQqoa95Ebx+DJQ86Kkv8eUwKZN6vfPgNGWvXjMNy+Egtk6MVASxp+WfCwTX2Drt4xQ1XJN8IqlR4QmhmrCA=="
+}

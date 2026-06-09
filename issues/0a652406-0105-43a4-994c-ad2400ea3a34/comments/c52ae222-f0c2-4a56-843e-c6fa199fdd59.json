@@ -1,0 +1,10 @@
+{
+  "uuid": "c52ae222-f0c2-4a56-843e-c6fa199fdd59",
+  "issue_uuid": "0a652406-0105-43a4-994c-ad2400ea3a34",
+  "author": "Yffe",
+  "content": "FIX PLAN (acto-fixer, doc-only single-file): close the AC-1 completeness gap honestly. ref_encode.rs::encode Expr::Field (result.x -> {r}.{name}) and Expr::TupleProj (result.0 -> {r}.{index}) are live arms with NO Lean Expr constructor (Ast.lean has field/tupleProj nowhere). CORRECT fix is an explicit RESIDUAL, not a fabricated correspondence row. Adding Discrepancy D6 (quoted arms + no-Lean-S_C-counterpart + consequence: per-run Z3 TV only, no T1 backing + future-brick note), Table 1H (exhaustive 15-arm encode inventory: rows or D6 or honest Err catch-all), the residual line in 'does NOT cover', and corrected AC-1/REQ-1 cells. No code/Lean change. lake build + cargo build --workspace stay green.",
+  "created_at": "2026-06-09T21:26:50.434672067Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAS6HuGCaShvfIo5aEUj0411sgchs0+k4PGY/o3EV+tWaGF9NvANTavwShkhBosZ8Hj2XztVYv1O08DU69bmU2AA=="
+}

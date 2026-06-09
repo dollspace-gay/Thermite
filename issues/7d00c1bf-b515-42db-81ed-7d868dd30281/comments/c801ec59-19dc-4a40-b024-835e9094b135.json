@@ -1,0 +1,10 @@
+{
+  "uuid": "c801ec59-19dc-4a40-b024-835e9094b135",
+  "issue_uuid": "7d00c1bf-b515-42db-81ed-7d868dd30281",
+  "author": "Yffe",
+  "content": "MILESTONE — CONTRACT SUBLANGUAGE S_C COMPLETE (8/8 construct classes kernel-checked in Lean). Layer 1 DONE: #170 1a comparison/logical, #176 1b arithmetic+partiality, #177 1c casts (#122/#146 class), #178 1f spec-context rewrites (#127 class), #179 1d-i 6 bounded combinators (#145 class), #180 1g match/is (C7, Option/Result), #181 1e spec-fn calls (fully-general recursive registry, core-Lean WF recursion), #182 1d-ii count_where+permutation_of. theorem ref_sound proves the reference encoder denotation-faithful over ALL of S_C (lake build green, axioms [propext, Classical.choice, Quot.sound] — standard only). 13 negative lemmas: the 5 infidelity classes we found EMPIRICALLY (==/<=, #122/#146 cast-paren, #127 byteview, #145 arg-kind, multiset-vs-set) are now machine-refuted theorems. NEXT: Layer 2 (exec) — #171 2a exec-expr S_E + exec_ref_value, #172 2b exec-body S_B + body_ref_state, #163 2c loops. Then Layer 3 compose (#174/#183) + Layer 4 trust (#184/#185). NOTED future brick: user-ADT match/is (01-adts REQ-6, beyond the frozen subset).",
+  "created_at": "2026-06-09T19:42:45.101060900Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADtNiqMpfXpE84VWAY0WEtpM8dd1wdbcRe4dMnnuAXXk9JgXaV+cBz3C06ZV5wyg4djugEh5ph5u5nGG0fH90Dw=="
+}

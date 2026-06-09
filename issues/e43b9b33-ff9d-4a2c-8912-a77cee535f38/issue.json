@@ -2,11 +2,12 @@
   "uuid": "e43b9b33-ff9d-4a2c-8912-a77cee535f38",
   "display_id": 181,
   "title": "step-3 increment 1e: contract S_C named spec-fn calls (well-founded recursive denotation) + ref_sound in Lean — substantial (epic #169)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T16:54:36.306140844Z",
-  "updated_at": "2026-06-09T16:54:37.907126740Z",
+  "updated_at": "2026-06-09T19:20:05.824375852Z",
+  "closed_at": "2026-06-09T19:20:05.824375852Z",
   "labels": [
     "blocker"
   ]

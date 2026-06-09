@@ -2,11 +2,12 @@
   "uuid": "9da609fd-583b-44f7-bed1-6338f65a528e",
   "display_id": 151,
   "title": "Lowering soundness step 2: body/exec-position translation validation — extend TV to EXEC-position expression lowering (closes the #122/#146 class generally, off-corpus) + frame the kernel-gated operational semantics for statements/loops/mutation",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T22:55:05.881221744Z",
-  "updated_at": "2026-06-08T22:55:07.536401849Z",
+  "updated_at": "2026-06-09T00:38:42.032801449Z",
+  "closed_at": "2026-06-09T00:38:42.032801449Z",
   "labels": [
     "epic"
   ]

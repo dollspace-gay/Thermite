@@ -146,12 +146,21 @@
       registry is the external ground truth, like the combinator registry `lookup`). Carried in the
       `Env` (`Denote.lean` `Env.specs`).
 
+  THE 2 RECURSIVE / AGGREGATE COMBINATORS (#182, increment 1d-ii — the LAST contract brick,
+  COMPLETING the closed 8-combinator set 8/8). `count_where` (a recursive `nat` COUNT) and
+  `permutation_of` (MULTISET equality) are now EMBEDDED (`CombName.countWhere`/`permutationOf`,
+  reusing the `Expr.comb` constructor). `count_where` is a VALUE-combinator — it threads
+  `intVal`/`refIntVal` (read at its integer count), faithful to the recursive `verus_l3`
+  (`Denote.lean` `countWhereVal`, STRUCTURAL recursion on the source `List` — core Lean, NO Mathlib,
+  NO fuel: the list shrinks by `List.tail`/`drop_first`). `permutation_of` threads `denote`/
+  `refDenote` (a `Prop`), modelled via the COUNT-CHARACTERIZATION `∀ x, a.count x = b.count x`
+  (core `List.count` — NOT Mathlib's `Multiset`; this IS multiset equality, and is what makes the
+  multiset-vs-SET teeth `[1,1,2]`/`[1,2,2]` bite). Core Lean sufficed — NO Mathlib wall.
+
   DEFERRED — NOT embedded here, and DELIBERATELY NOT (no `sorry`-behind-a-variant;
-  embedding-then-`sorry` is forbidden). These are the remaining sub-increments:
-    - the 2 RECURSIVE / aggregate combinators (`count_where`/`permutation_of` — their
-      well-founded-recursive / multiset `verus_l3` forms; Mathlib) (#182 / 1d-ii)
+  embedding-then-`sorry` is forbidden). The remaining sub-increment:
     - general USER-ADT match/is (beyond the built-in Option/Result) — see above.
-  Each is a real future inductive case, listed (not stubbed) so the deferral is honest.
+  It is a real future inductive case, listed (not stubbed) so the deferral is honest.
 -/
 
 namespace Thermite
@@ -209,6 +218,21 @@ inductive CombName where
   | forallBelow   -- `forall_below(s,n,p)`= `∀ i, 0 ≤ i < n ∧ i < s.len() → p(s[i])`
   | forallFrom    -- `forall_from(s,n,p)` = `∀ i, n ≤ i < s.len() → p(s[i])`
   | disjoint      -- `disjoint(a, b)`     = `∀ i j, (0≤i<a.len() ∧ 0≤j<b.len()) → a[i]≠b[j]`
+  -- THE 2 RECURSIVE / AGGREGATE COMBINATORS (#182, increment 1d-ii — the LAST contract brick,
+  -- completing the closed 8-combinator set). Mirrors the FROZEN `verus_l3` of
+  -- `thermite-spec/src/combinators.rs` (matched EXACTLY):
+  | countWhere    -- `count_where(s, p)` : a VALUE (`nat`/`Int`), the recursive COUNT of the elements
+                  --   of `s` satisfying `p`. `verus_l3` (recursive, `decreases s.len()`):
+                  --     `if s.len()==0 { 0 } else { (if p(s[0]) {1} else {0}) + count_where(s.drop_first(), p) }`
+                  --   `arg_kinds = [Slice, Pred]`, `result = Usize` (`ResultKind::Usize`). Threads the
+                  --   `intVal`/`refIntVal` side (a value-combinator) — UNLIKE the 6 bounded combinators
+                  --   (which are `Prop` via `denote`/`refDenote`).
+  | permutationOf -- `permutation_of(a, b)` : a `Prop` (`bool`), `a` is a permutation of `b`.
+                  --   `verus_l3`: `a.to_multiset() == b.to_multiset()` (MULTISET equality — NOT set).
+                  --   Modelled WITHOUT Mathlib's `Multiset` via the COUNT-CHARACTERIZATION
+                  --   `∀ x, a.count x = b.count x` (core `List.count`), which is exactly multiset
+                  --   equality. `arg_kinds = [Slice, Slice]`, `result = Bool`. Threads `denote`/
+                  --   `refDenote` (a `Prop`-combinator like `disjoint`, two slice args, no predicate).
   deriving DecidableEq, Repr
 
 /-- The cast targets of the frozen contract sublanguage (#177) — mirrors the
@@ -325,7 +349,12 @@ inductive Expr where
                    `ArgKind::Index` → a scalar `int`, NOT a slice `@`-view — THE #145 BUG
                    CLASS lives in this arg-kind's dispatch).
         - `pred` : the predicate closure (`ArgKind::Pred`; absent for `sorted`/`disjoint`).
-      BOOLEAN/`Prop`-sorted (a combinator result is `bool`). -/
+      BOOLEAN/`Prop`-sorted (a combinator result is `bool`) — EXCEPT `countWhere` (#182), which is
+      VALUE-sorted (`ResultKind::Usize`): it threads `intVal`/`refIntVal` (read at its integer COUNT),
+      not `denote`/`refDenote`. The two #182 recursive/aggregate combinators populate the fields as:
+        - `countWhere`    : `seq` = `s`, `pred` = `some p`     (`arg_kinds = [Slice, Pred]`).
+        - `permutationOf` : `seq` = `a`, `seq2` = `some b`     (`arg_kinds = [Slice, Slice]`; like
+          `disjoint` — two slices, no predicate). `Prop`-sorted (multiset equality). -/
   | comb (c : CombName) (seq : Expr) (seq2 : Option Expr) (idx : Option Expr)
          (pred : Option Pred)
   /-- A free `Option`/`Result`-valued variable (#180): the scrutinee of a contract-position

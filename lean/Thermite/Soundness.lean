@@ -66,6 +66,20 @@ theorem byteView_encByteAt (s : List Int) (i : Int) :
 theorem byteView_encLen (s : List Int) (i : Int) :
     byteView encLen s i = (s.length : Int) := rfl
 
+/-- `count_where`'s COUNT depends on the predicate ONLY through its TRUTH at each element (#182):
+    two pointwise-EQUIVALENT predicates (`∀ x, p x ↔ q x`) yield the SAME `countWhereVal`. This is
+    the congruence the `count_where` soundness case needs — the encoder and source predicates
+    (`refDenote body` vs `denote body`) are pointwise-equivalent by the recursive `ref_sound` IH on
+    the FLAT closure body, so the two counts coincide. Proved by structural recursion on the list,
+    rewriting each `if p x` to `if q x` via `propext`. -/
+theorem countWhereVal_congr (p q : Int → Prop) (hpq : ∀ x, p x ↔ q x) :
+    ∀ s : List Int, countWhereVal p s = countWhereVal q s
+  | [] => rfl
+  | x :: xs => by
+      rw [countWhereVal_cons, countWhereVal_cons, countWhereVal_congr p q hpq xs]
+      have hx : (p x) = (q x) := propext (hpq x)
+      rw [hx]
+
 /- The COMBINED meaning-coincidence (#178): the encoder's `refIntVal` equals the
    source `intVal` AND `refSeqVal` equals `seqVal`, simultaneously, on every term, with
    a companion lemma threading a `RangeArg`'s bounds. Because `Expr`/`RangeArg` are
@@ -123,8 +137,33 @@ theorem refVal_eq : ∀ (fuel : Nat) (e : Expr) (env : Env),
       refine ⟨?_, by simp [refSeqVal, seqVal]⟩
       simp only [refIntVal, intVal, byteView_encByteAt,
                  (refVal_eq fuel base env).2, (refVal_eq fuel i env).1]
-  | fuel, Expr.comb c seq seq2 idx pred, env =>
-      ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+  -- THE COMBINATORS. The 6 BOUNDED combinators + `permutationOf` are `Prop`-sorted: their
+  -- `refIntVal`/`intVal` both bottom to `0` and `refSeqVal`/`seqVal` to `[]`. THE #182 `countWhere`
+  -- is VALUE-sorted: its `refIntVal`/`intVal` are `countWhereVal` over the `@`-view, equal by
+  -- `countWhereVal_congr` (the slice agrees via `(refVal_eq fuel seq env).2`; the per-element
+  -- predicate agrees via the recursive `ref_sound fuel body` IH on the FLAT closure body, smaller by
+  -- `sizeOf` at the SAME fuel — the well-founded decrease).
+  | fuel, Expr.comb c seq seq2 idx pred, env => by
+      cases c with
+      | countWhere =>
+          refine ⟨?_, by simp [refSeqVal, seqVal]⟩
+          simp only [refIntVal, intVal]
+          have hs : refSeqVal fuel seq env = seqVal fuel seq env := (refVal_eq fuel seq env).2
+          rw [hs]
+          cases pred with
+          | none => rfl
+          | some pr => cases pr with
+            | mk bound body =>
+                apply countWhereVal_congr
+                intro x
+                exact ref_sound fuel body (env.bindInt bound x)
+      | forallIn => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+      | existsIn => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+      | sorted => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+      | forallBelow => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+      | forallFrom => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+      | disjoint => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+      | permutationOf => exact ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.optResVar x, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.match_ scrut arms, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.is_ scrut variant, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
@@ -166,19 +205,7 @@ theorem refIntValArgs_eq : ∀ (fuel : Nat) (args : List Expr) (env : Env),
     all_goals first
       | (apply Prod.Lex.left; omega)
       | (apply Prod.Lex.right; omega)
-end
 
-/-- The integer-term meanings coincide (the projection of `refVal_eq` used by the
-    `cmp`/`idx`/… cases of `ref_sound`). -/
-theorem refIntVal_eq_intVal (fuel : Nat) (e : Expr) (env : Env) :
-    refIntVal fuel e env = intVal fuel e env := (refVal_eq fuel e env).1
-
-/-- The sequence-term meanings coincide (the `@`-view/`subrange` projection of
-    `refVal_eq`). -/
-theorem refSeqVal_eq_seqVal (fuel : Nat) (e : Expr) (env : Env) :
-    refSeqVal fuel e env = seqVal fuel e env := (refVal_eq fuel e env).2
-
-mutual
 /--
   **(T1) — verified-validator soundness, comparison/logical/arithmetic/cast/
   spec-context-rewrite fragment.**
@@ -216,7 +243,7 @@ theorem ref_sound : ∀ (fuel : Nat) (e : Expr) (env : Env), refDenote fuel e en
       -- the operator round-trip `tokRel (encOp op)` = the source relation is settled per-operator.
       cases op <;>
         simp [refDenote, denote, encOp, tokRel,
-              refIntVal_eq_intVal fuel a env, refIntVal_eq_intVal fuel b env]
+              (refVal_eq fuel a env).1, (refVal_eq fuel b env).1]
   | fuel, Expr.logic op a b, env => by
       cases op <;>
         simp [refDenote, denote, encLog, tokConn, ref_sound fuel a env, ref_sound fuel b env]
@@ -234,7 +261,7 @@ theorem ref_sound : ∀ (fuel : Nat) (e : Expr) (env : Env), refDenote fuel e en
       -- THE 6 BOUNDED-QUANTIFIER COMBINATORS (#179). Both sides expand to the SAME frozen
       -- quantifier FORM; differ only in the per-arg-kind threading. Establish those agree, then
       -- the quantifier forms are equivalent by congruence.
-      have hs : refSeqVal fuel seq env = seqVal fuel seq env := refSeqVal_eq_seqVal fuel seq env
+      have hs : refSeqVal fuel seq env = seqVal fuel seq env := (refVal_eq fuel seq env).2
       have hp : ∀ v : Int,
           (match pred with
             | some (Pred.mk bound body) => refDenote fuel body (env.bindInt bound v)
@@ -262,7 +289,7 @@ theorem ref_sound : ∀ (fuel : Nat) (e : Expr) (env : Env), refDenote fuel e en
               simp only [refDenote, denote, hs]
               exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
           | some e =>
-              simp only [refDenote, denote, hs, refIntVal_eq_intVal fuel e env]
+              simp only [refDenote, denote, hs, (refVal_eq fuel e env).1]
               exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
       | forallFrom =>
           cases idx with
@@ -270,12 +297,22 @@ theorem ref_sound : ∀ (fuel : Nat) (e : Expr) (env : Env), refDenote fuel e en
               simp only [refDenote, denote, hs]
               exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
           | some e =>
-              simp only [refDenote, denote, hs, refIntVal_eq_intVal fuel e env]
+              simp only [refDenote, denote, hs, (refVal_eq fuel e env).1]
               exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
       | disjoint =>
           cases seq2 with
           | none => simp only [refDenote, denote, hs]
-          | some e => simp only [refDenote, denote, hs, refSeqVal_eq_seqVal fuel e env]
+          | some e => simp only [refDenote, denote, hs, (refVal_eq fuel e env).2]
+      -- THE #182 `permutation_of(a, b)` (`Prop`-sorted, MULTISET equality `permEq`). Both sides reduce
+      -- to `permEq` over the two `@`-views; the views agree (`hs` for `a`, `(refVal_eq …).2` for `b`),
+      -- so the two `permEq`s are DEFINITIONALLY the same `Prop` once the views are rewritten.
+      | permutationOf =>
+          cases seq2 with
+          | none => simp only [refDenote, denote, hs]
+          | some e => simp only [refDenote, denote, hs, (refVal_eq fuel e env).2]
+      -- THE #182 `count_where` as a TOP-LEVEL PREDICATE: value-sorted, so both `refDenote`/`denote`
+      -- bottom to the SHARED `True` (it is read on the `intVal` side, settled by `refVal_eq`). `Iff.rfl`.
+      | countWhere => simp only [refDenote, denote]
   | fuel, Expr.optResVar x, env => by simp [refDenote, denote]
   -- THE MATCH-IN-ENS form (#180). Threads `ref_sound_arms` at the SAME fuel.
   | fuel, Expr.match_ scrut arms, env => by
@@ -335,6 +372,15 @@ theorem ref_sound_arms : ∀ (fuel : Nat) (scrut : OptResVal) (arms : List Match
       | (apply Prod.Lex.left; omega)
       | (apply Prod.Lex.right; omega)
 end
+
+/-- The integer-term meanings coincide (the projection of `refVal_eq` used by the teeth/positive
+    lemmas below). -/
+theorem refIntVal_eq_intVal (fuel : Nat) (e : Expr) (env : Env) :
+    refIntVal fuel e env = intVal fuel e env := (refVal_eq fuel e env).1
+
+/-- The sequence-term meanings coincide (the `@`-view/`subrange` projection of `refVal_eq`). -/
+theorem refSeqVal_eq_seqVal (fuel : Nat) (e : Expr) (env : Env) :
+    refSeqVal fuel e env = seqVal fuel e env := (refVal_eq fuel e env).2
 
 /-- A convenient `Prop`-equality corollary (propositional extensionality) — the
     `⟦R(P)⟧ = ⟦P⟧_S` form (T2's transitivity step composes on this equality, AC-3). -/
@@ -406,7 +452,7 @@ theorem eq_le_infidelity_breaks_soundness :
 
 /-- The FAITHFUL cast denotation of `(n - 1) as nat` — what the real `encode_cast`
     (its `({inner}) as nat` paren) produces: the cast applies to the WHOLE inner. -/
-def castInnerFaithful (env : Env) : Int :=
+noncomputable def castInnerFaithful (env : Env) : Int :=
   refIntVal 0 (Expr.cast (Expr.arith ArithOp.sub (Expr.var "n") (Expr.intLit 1)) CastTy.nat) env
 
 /-- The PAREN-DROPPED cast denotation — the #122 bug. The buggy encoder emits the
@@ -414,7 +460,7 @@ def castInnerFaithful (env : Env) : Int :=
     the atom `1`, and the subtraction sits OUTSIDE the cast. We model that re-parsed
     AST and take its faithful `refIntVal` (the bug is the ENCODER's missing paren, not
     a second meaning function — the re-parse is what the dropped paren denotes). -/
-def castInnerParenDropped (env : Env) : Int :=
+noncomputable def castInnerParenDropped (env : Env) : Int :=
   refIntVal 0
     (Expr.arith ArithOp.sub (Expr.var "n") (Expr.cast (Expr.intLit 1) CastTy.nat)) env
 
@@ -471,21 +517,21 @@ theorem eq_faithful_is_sound :
 
 /-- The FAITHFUL byte-view of `s.byte_at(0)` — what the real `encode_string_byteview`
     (its `spec_byte_at(0)` dispatch) produces: the 0-th byte. -/
-def byteAtFaithful (env : Env) : Int :=
+noncomputable def byteAtFaithful (env : Env) : Int :=
   refIntVal 0 (Expr.byteAt (Expr.strVar "s") (Expr.intLit 0)) env
 
 /-- THE #127 WRONG-INDEX BUG (instance A): a buggy encoder emits `s.spec_byte_at(0 + 1)`
     for the source `s.byte_at(0)` — an off-by-one byte-view index (the misdispatch reads
     the wrong byte). Modelled as the byte-view at index `0 + 1` (the dispatch is the
     faithful `encByteAt`, but the INDEX is wrong — the #127 misdispatch shape). -/
-def byteAtWrongIndex (env : Env) : Int :=
+noncomputable def byteAtWrongIndex (env : Env) : Int :=
   byteView encByteAt (refSeqVal 0 (Expr.strVar "s") env)
     (refIntVal 0 (Expr.arith ArithOp.add (Expr.intLit 0) (Expr.intLit 1)) env)
 
 /-- THE #127 WRONG-METHOD BUG (instance B): a buggy encoder mis-dispatches the
     `byte_at` call to the LENGTH spec fn (`encLen` = `spec_len`) — the name-collision
     misdispatch. It reads the sequence LENGTH where the source reads a byte. -/
-def byteAtWrongMethod (env : Env) : Int :=
+noncomputable def byteAtWrongMethod (env : Env) : Int :=
   byteView encLen (refSeqVal 0 (Expr.strVar "s") env)
     (refIntVal 0 (Expr.intLit 0) env)
 
@@ -832,13 +878,13 @@ def envSpec : Env :=
 
 /-- The FAITHFUL `sub_fn(a, b)` source meaning — args in source order (`p ↦ a = 1`, `q ↦ b = 2`),
     body `p - q = -1`. -/
-def subCallFaithful : Int :=
+noncomputable def subCallFaithful : Int :=
   intVal 1 (Expr.specCall "sub_fn" [Expr.var "a", Expr.var "b"]) envSpec
 
 /-- THE #181 WRONG-ARG-ORDER BUG: the encoder emits `sub_fn(b, a)` for the source `sub_fn(a, b)` —
     the args swapped (`encode_call_arg` pairing each arg with the WRONG param position). Modelled as
     the encoder meaning of the swapped-arg call. -/
-def subCallArgSwapped : Int :=
+noncomputable def subCallArgSwapped : Int :=
   refIntVal 1 (Expr.specCall "sub_fn" [Expr.var "b", Expr.var "a"]) envSpec
 
 /-- **Teeth (negative sanity, the #181 wrong-arg-order case).** At `envSpec` (`a := 1`, `b := 2`,
@@ -865,7 +911,7 @@ theorem specfn_arg_order_breaks_soundness :
 /-- THE #181 WRONG-RESOLUTION BUG: the encoder emits `add_fn(a, b)` where the source resolves to
     `sub_fn(a, b)` — the callee NAME mis-resolved in the registry. Modelled as the encoder meaning of
     the `add_fn`-named call (resolving the WRONG registry entry). -/
-def addCallWrongResolution : Int :=
+noncomputable def addCallWrongResolution : Int :=
   refIntVal 1 (Expr.specCall "add_fn" [Expr.var "a", Expr.var "b"]) envSpec
 
 /-- **Teeth (negative sanity, the #181 wrong-registry-resolution case).** At `envSpec` (`a := 1`,
@@ -899,5 +945,150 @@ theorem specfn_call_faithful_is_sound (fuel : Nat) :
     refDenote fuel (Expr.specCall "g" [Expr.var "p"]) envSpec
       ↔ denote fuel (Expr.specCall "g" [Expr.var "p"]) envSpec :=
   ref_sound _ _ _
+
+/-! ## Negative sanity lemma 10 — the #182 `count_where` teeth (WRONG-PREDICATE + OFF-BY-ONE count)
+
+  The dispatch's explicit requirement (a): demonstrate that a `count_where` encoded with a WRONG
+  predicate OR an off-by-one count FAILS soundness. `count_where` is a VALUE-combinator (`intVal`),
+  so the teeth are an INEQUALITY of counts (not an `Iff` of `Prop`s).
+
+  Source clause: `count_where(s, |x| x ≤ 15)` at `envAB` (`s := [10, 20, 30]`) — exactly ONE element
+  (`10`) is ≤ 15, so the faithful count is `1`.
+    (A) WRONG PREDICATE: `count_where(s, |x| x ≤ 25)` counts TWO (`10`, `20`) → `2 ≠ 1`.
+    (B) OFF-BY-ONE: a buggy encoder whose count is `count_where(..) + 1` reads `2 ≠ 1`. -/
+
+/-- The source `count_where(s, |x| x ≤ 15)` clause (#182) — a VALUE-combinator (the `pred` slot is
+    `|x| x ≤ 15`; `seq` is `s`). At `envAB` (`s := [10,20,30]`) its faithful count is `1`. -/
+def countWhereClause : Expr :=
+  Expr.comb CombName.countWhere (Expr.strVar "s") none none (some predLe15)
+
+/-- THE #182 WRONG-PREDICATE BUG: `count_where(s, |x| x ≤ 25)` where the source predicate is
+    `|x| x ≤ 15` — the closure body infidelity (`encode_pred_arg` re-encoding the WRONG body). At
+    `envAB` (`s := [10,20,30]`) it counts `2` (`10`, `20`) ≠ the faithful `1`. -/
+def countWhereWrongPred : Expr :=
+  Expr.comb CombName.countWhere (Expr.strVar "s") none none
+    (some (Pred.mk "x" (Expr.cmp CmpOp.le (Expr.var "x") (Expr.intLit 25))))
+
+/-- **Teeth (negative sanity, the #182 wrong-predicate `count_where` case).** At `envAB`
+    (`s := [10,20,30]`) the faithful `count_where(s, |x| x ≤ 15)` = `1` while the wrong-predicate
+    `count_where(s, |x| x ≤ 25)` = `2` — they DISAGREE, so a `count_where` with a corrupted predicate
+    does NOT satisfy the soundness equation. This PINS the `count_where` predicate encoding (the
+    `count_where` case of `refVal_eq` threads the body via the recursive `ref_sound` IH). -/
+theorem count_where_wrong_pred_breaks_soundness :
+    intVal 0 countWhereClause envAB ≠ intVal 0 countWhereWrongPred envAB := by
+  -- faithful: count {10,20,30 | ≤15} = 1 ; wrong: count {10,20,30 | ≤25} = 2
+  simp [countWhereClause, countWhereWrongPred, predLe15, predLe15Body, intVal, seqVal,
+        countWhereVal, countWhereVal_cons, denote, Env.bindInt, envAB]
+
+/-- **Teeth (negative sanity, the #182 OFF-BY-ONE `count_where` case).** The faithful count of
+    `count_where(s, |x| x ≤ 15)` at `envAB` is `1`; an off-by-one encoder reading `count + 1` would
+    yield `2`. `1 ≠ 2` — an off-by-one count breaks soundness. (The faithful count is fixed to the
+    concrete `1`, so any encoder emitting a different integer — incl. `+1` — disagrees.) -/
+theorem count_where_off_by_one_breaks_soundness :
+    intVal 0 countWhereClause envAB ≠ intVal 0 countWhereClause envAB + 1 := by
+  have h : intVal 0 countWhereClause envAB = 1 := by
+    simp [countWhereClause, predLe15, predLe15Body, intVal, seqVal,
+          countWhereVal, countWhereVal_cons, denote, Env.bindInt, envAB]
+  rw [h]; decide
+
+/-- The faithful POSITIVE counterpart, for contrast (#182): with the REAL `count_where` encoding the
+    `count_where(s, |x| x ≤ 15)` clause's encoder meaning EQUALS the source count (`1`), by
+    `refIntVal_eq_intVal`. Confirms the teeth bite ONLY the corrupted predicate / off-by-one, not the
+    faithful encoder; and that the recursive count is NON-VACUOUS (the genuine `1`, not a bottom). -/
+theorem count_where_faithful_intval_matches_source :
+    refIntVal 0 countWhereClause envAB = intVal 0 countWhereClause envAB :=
+  refIntVal_eq_intVal _ _ _
+
+/-- The faithful count is the GENUINE `1` (the recursive `countWhereVal` actually fires over
+    `[10,20,30]`, NOT a vacuous `0`) — the non-vacuity of the `count_where` recursion mechanism. -/
+theorem count_where_value_is_one :
+    intVal 0 countWhereClause envAB = 1 := by
+  simp [countWhereClause, predLe15, predLe15Body, intVal, seqVal,
+        countWhereVal, countWhereVal_cons, denote, Env.bindInt, envAB]
+
+/-! ## Negative sanity lemma 11 — the #182 `permutation_of` MULTISET-vs-SET teeth (the KEY fidelity)
+
+  The dispatch's explicit requirement (b): demonstrate that `permutation_of` mis-modelled as SET
+  equality (membership) instead of MULTISET (counts) FAILS. THE CANONICAL WITNESS: `a := [1,1,2]`,
+  `b := [1,2,2]` have the SAME SET `{1,2}` but DIFFERENT MULTISETS (`count 1` is `2` in `a` vs `1` in
+  `b`; `count 2` is `1` vs `2`). So `permutation_of(a, b)` is FALSE (the faithful multiset model
+  `permEq` — `a.to_multiset() ≠ b.to_multiset()`), while a SET-based model wrongly says TRUE. This is
+  the fidelity check that `permutation_of`'s `verus_l3` is `to_multiset()` equality, NOT set equality. -/
+
+/-- A fresh env for the `permutation_of` multiset-vs-set teeth (#182): `a := [1,1,2]`, `b := [1,2,2]`
+    (the canonical SAME-set / DIFFERENT-multiset witness). Everything else empty / `None` / no spec. -/
+def envPerm : Env :=
+  { ints := fun _ => 0
+    seqs := fun nm => if nm = "a" then [1, 1, 2] else if nm = "b" then [1, 2, 2] else []
+    optres := fun _ => OptResVal.none_
+    specs := fun _ => none }
+
+theorem envPerm_a : envPerm.seqs "a" = [1, 1, 2] := rfl
+theorem envPerm_b : envPerm.seqs "b" = [1, 2, 2] := rfl
+
+/-- The source `permutation_of(a, b)` clause (#182) — a `Prop`-combinator (two slice args, `seq` = `a`,
+    `seq2` = `some b`, no predicate). The FAITHFUL MULTISET model `permEq` over the `@`-views. -/
+def permClause : Expr :=
+  Expr.comb CombName.permutationOf (Expr.seqVar "a") (some (Expr.seqVar "b")) none none
+
+/-- The (WRONG) SET-EQUALITY model of `permutation_of` — membership, NOT counts: `∀ x, (x ∈ a ↔ x ∈ b)`.
+    This is the infidelity the dispatch names: modelling `to_multiset()` equality as SET equality. At
+    `a := [1,1,2]`, `b := [1,2,2]` it is TRUE (both have set `{1,2}`), whereas the faithful `permEq`
+    (counts) is FALSE — the multiset-vs-set teeth. -/
+def permSetModel (a b : List Int) : Prop :=
+  ∀ x : Int, (x ∈ a ↔ x ∈ b)
+
+/-- **Teeth (negative sanity, the #182 permutation_of MULTISET-vs-SET case — THE key fidelity check).**
+    At `a := [1,1,2]`, `b := [1,2,2]` the SET model (`permSetModel`) is TRUE (same set `{1,2}`) while
+    the source `permutation_of` (the faithful MULTISET `permEq`) is FALSE (`count 1` is `2` vs `1`).
+    TRUE vs FALSE — they DISAGREE, so an encoder that modelled `permutation_of` as SET equality does
+    NOT satisfy soundness. This PROVES `permutation_of`'s `verus_l3` is `to_multiset()` equality (the
+    count-characterization), NOT set/membership equality. -/
+theorem permutation_set_model_breaks_soundness :
+    ¬ (permSetModel (envPerm.seqs "a") (envPerm.seqs "b")
+        ↔ denote 0 permClause envPerm) := by
+  intro h
+  -- The SET model is TRUE: [1,1,2] and [1,2,2] have the same membership (both = `x = 1 ∨ x = 2`).
+  have hSet : permSetModel (envPerm.seqs "a") (envPerm.seqs "b") := by
+    intro x
+    rw [envPerm_a, envPerm_b]
+    simp only [List.mem_cons, List.not_mem_nil, or_false]
+    omega
+  -- So `permutation_of` (the faithful multiset `permEq`) would have to be TRUE — but it is FALSE:
+  -- `count 1` is `2` in `[1,1,2]` vs `1` in `[1,2,2]`.
+  have hPerm := h.mp hSet
+  rw [permClause, denote.eq_def] at hPerm
+  simp only [seqVal, permEq] at hPerm
+  have h1 := hPerm 1
+  rw [envPerm_a, envPerm_b] at h1
+  simp at h1
+
+/-- The faithful POSITIVE counterpart, for contrast (#182): with the REAL `permutation_of` (the
+    MULTISET `permEq`) the clause IS sound — its encoder meaning is equivalent to the source, by
+    `ref_sound`. Confirms the teeth bite ONLY the set-model infidelity, not the faithful encoder. -/
+theorem permutation_faithful_is_sound :
+    refDenote 0 permClause envPerm ↔ denote 0 permClause envPerm :=
+  ref_sound _ _ _
+
+/-- A faithful POSITIVE witness that `permutation_of` is NON-VACUOUS and IS satisfied by a genuine
+    permutation (#182): `[1,2,3]` is a permutation of `[3,1,2]` (same multiset) — the source
+    `permutation_of` is TRUE here (every count agrees), showing `permEq` is not trivially false. -/
+def envPermTrue : Env :=
+  { ints := fun _ => 0
+    seqs := fun nm => if nm = "a" then [1, 2, 3] else if nm = "b" then [3, 1, 2] else []
+    optres := fun _ => OptResVal.none_
+    specs := fun _ => none }
+
+theorem envPermTrue_a : envPermTrue.seqs "a" = [1, 2, 3] := rfl
+theorem envPermTrue_b : envPermTrue.seqs "b" = [3, 1, 2] := rfl
+
+theorem permutation_true_on_real_permutation :
+    denote 0 permClause envPermTrue := by
+  rw [permClause, denote.eq_def]
+  simp only [seqVal, permEq]
+  intro x
+  rw [envPermTrue_a, envPermTrue_b]
+  -- `[1,2,3]` is a permutation of `[3,1,2]` (`decide`), so per-element counts agree.
+  exact (by decide : ([1, 2, 3] : List Int).Perm [3, 1, 2]).count_eq x
 
 end Thermite

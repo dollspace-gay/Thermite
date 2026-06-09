@@ -193,6 +193,46 @@ def seqIdx (s : List Int) (i : Int) : Int :=
 def seqSub (s : List Int) (lo hi : Int) : List Int :=
   (s.drop lo.toNat).take (hi.toNat - lo.toNat)
 
+/-- The SHARED recursive COUNT of a `count_where` combinator (#182), defined FAITHFULLY to the
+    frozen `verus_l3` (`thermite-spec/src/combinators.rs`):
+
+      `spec fn count_where(s, p) -> nat decreases s.len() {`
+      `  if s.len() == 0 { 0 } else { (if p(s[0]) {1} else {0}) + count_where(s.drop_first(), p) } }`
+
+    This is STRUCTURAL recursion over the source `List Int` (core Lean — NO Mathlib, NO fuel: the
+    list shrinks by `List.tail`, mirroring Verus's `s.drop_first()` / `decreases s.len()`). The
+    per-element predicate is a `p : Int → Prop` (the closure body's denotation at the element); the
+    `if p(s[0])` test uses `Classical` decidability (the soundness axiom set already admits
+    `Classical`), so the `verus_l3` `(if p(s[0]) {1nat} else {0nat})` is modelled EXACTLY. SHARED by
+    `intVal` (source) and `RefEncode.refIntVal` (encoder): BOTH pass the SAME structural-count
+    function the SAME slice + predicate, so the soundness content is purely whether the slice + the
+    per-element predicate agree (the `refSeqVal_eq_seqVal` + the recursive `ref_sound` IH on the
+    flat closure body) — exactly mirroring how the bounded combinators reuse the frozen body.
+    `noncomputable` because the per-element test uses `Classical.propDecidable` (the soundness axiom
+    set already admits `Classical`); the artifact is a PROOF object, not run. -/
+noncomputable def countWhereVal (p : Int → Prop) : List Int → Int
+  | []      => 0
+  | x :: xs => (@ite _ (p x) (Classical.propDecidable _) (1 : Int) 0) + countWhereVal p xs
+
+/-- `count_where`'s `verus_l3` head-then-tail step, made explicit for the soundness proof: the count
+    of `x :: xs` is `(if p x then 1 else 0) + countWhereVal p xs`. Holds by `rfl` (the defining
+    equation). Mirrors the `verus_l3` `else` branch `(if p(s[0]) {1} else {0}) + count_where(s.drop_first(), p)`. -/
+theorem countWhereVal_cons (p : Int → Prop) (x : Int) (xs : List Int) :
+    countWhereVal p (x :: xs)
+      = (@ite _ (p x) (Classical.propDecidable _) (1 : Int) 0) + countWhereVal p xs := rfl
+
+/-- The COUNT-CHARACTERIZATION of MULTISET equality (#182), modelling `permutation_of`'s frozen
+    `verus_l3` `a.to_multiset() == b.to_multiset()` WITHOUT Mathlib's `Multiset`: two sequences are
+    permutations iff EVERY value occurs the SAME number of times in both (core `List.count`). This IS
+    multiset equality (two multisets are equal iff their per-element multiplicities coincide) — and
+    is precisely what distinguishes it from SET equality (membership): `[1,1,2]` and `[1,2,2]` have
+    the SAME set `{1,2}` but DIFFERENT multisets (`count 1` is `2` vs `1`), so `permEq` is FALSE on
+    them while a set-based model would wrongly say TRUE (the multiset-vs-set teeth). SHARED by
+    `denote`/`refDenote` (both compute the SAME `permEq` over the two `@`-viewed slices; the
+    soundness content is purely that the two slices agree). -/
+def permEq (a b : List Int) : Prop :=
+  ∀ x : Int, a.count x = b.count x
+
 /-- The SHARED integer meaning of an arithmetic operator over two `Int` operand
     VALUES (#176). Defined ONCE here so BOTH `denote` (source) and
     `RefEncode.refDenote` (encoder) route through it — the soundness content for
@@ -271,7 +311,7 @@ def scrutVal : Expr → Env → OptResVal
 mutual
 /-- `⟦·⟧_{S_C}` on the SEQUENCE-valued terms (#178), fuel-indexed (#181). See the block comment.
     Fuel is threaded UNCHANGED to the base/bound subterms (a subrange base/bound is smaller). -/
-def seqVal : Nat → Expr → Env → List Int
+noncomputable def seqVal : Nat → Expr → Env → List Int
   | _,    Expr.seqVar x, env => env.seqs x
   | _,    Expr.strVar x, env => env.seqs x
   | fuel, Expr.subrange base r, env =>
@@ -281,6 +321,7 @@ def seqVal : Nat → Expr → Env → List Int
       | RangeArg.range lo hi   => seqSub s (intVal fuel lo env) (intVal fuel hi env)
       | RangeArg.rangeFrom lo  => seqSub s (intVal fuel lo env) (s.length : Int)
   | _, _, _ => []
+  termination_by fuel e _ => (fuel, sizeOf e)
 
 /-- `⟦·⟧_{S_C}` on the INTEGER-valued terms (the operands of a comparison), fuel-indexed (#181): a
     literal denotes itself, a variable denotes its environment value, an arithmetic term denotes the
@@ -291,7 +332,7 @@ def seqVal : Nat → Expr → Env → List Int
     denotes the BODY at the CONSUMED fuel (`⟦body⟧[params ↦ ⟦args⟧]`). At fuel `0` (or an unresolved
     name) it bottoms to the shared default `0` (NOT a dodge — `refIntVal` bottoms IDENTICALLY, so T1
     holds at fuel `0`; the soundness is fuel-uniform). Mutual with `seqVal`/`intValArgs`. -/
-def intVal : Nat → Expr → Env → Int
+noncomputable def intVal : Nat → Expr → Env → Int
   | fuel, Expr.arith op a b,  env => arithDenote op (intVal fuel a env) (intVal fuel b env)
   | fuel, Expr.cast inner ty, env => castDenote ty (intVal fuel inner env)
   | fuel, Expr.idx base i,    env => seqIdx (seqVal fuel base env) (intVal fuel i env)
@@ -301,6 +342,19 @@ def intVal : Nat → Expr → Env → Int
       match env.specs name with
       | some fn => intVal fuel fn.body (env.bindParams fn.params (intValArgs (fuel+1) args env))
       | none    => 0
+  -- THE #182 `count_where` VALUE-combinator: a recursive `nat` COUNT (`ResultKind::Usize`). Read on
+  -- the INTEGER side (`intVal`), faithful to the frozen `verus_l3` recursive count. The per-element
+  -- predicate is the closure body denoted at the element (`denote fuel body (env.bindInt bound ·)`,
+  -- the SAME closure-at-element shape the bounded combinators use via `Env.bindInt`); a missing
+  -- predicate (never well-formed — `count_where` declares a `Pred` slot) counts `True` everywhere.
+  -- The count itself is the SHARED structural `countWhereVal` over the slice's `@`-view (`seqVal`).
+  | fuel, Expr.comb CombName.countWhere seq _ _ pred, env =>
+      let s := seqVal fuel seq env
+      let p : Int → Prop := fun x =>
+        match pred with
+        | some (Pred.mk bound body) => denote fuel body (env.bindInt bound x)
+        | none => True
+      countWhereVal p s
   | _,    Expr.intLit n,      _   => n
   | _,    Expr.var x,         env => env.ints x
   -- A boolean-sorted node never appears as a comparison operand in a well-formed
@@ -309,15 +363,17 @@ def intVal : Nat → Expr → Env → Int
   -- theorem only evaluates `intVal` on integer-sorted subterms, so this default is
   -- never observed there; it keeps `intVal` TOTAL without a `sorry`.
   | _, _, _ => 0
+  termination_by fuel e _ => (fuel, sizeOf e)
 
 /-- The denoted ARG VALUES of a `specCall` (#181): each arg's `intVal` at the SAME fuel (an arg is a
     structural subterm of the call — smaller by `sizeOf`). SHARED structure with the encoder's
     `refIntValArgs` (the per-arg encoding is `encode_call_arg`; the soundness content is that the
     args agree, settled by the recursive `ref_sound`/`refVal_eq` IH on each arg). Mutual with
     `intVal`. -/
-def intValArgs : Nat → List Expr → Env → List Int
+noncomputable def intValArgs : Nat → List Expr → Env → List Int
   | _,    [],        _   => []
   | fuel, a :: rest, env => intVal fuel a env :: intValArgs fuel rest env
+  termination_by fuel args _ => (fuel, sizeOf args)
 
 /-- `⟦·⟧_{S_C}` — the SOURCE meaning of a contract predicate as a Lean `Prop`, fuel-indexed (#181).
     Each comparison/logical/negation denotes the STANDARD mathematical relation (the `S_C` inference
@@ -327,7 +383,7 @@ def intValArgs : Nat → List Expr → Env → List Int
     binds params to the denoted args, and denotes the BODY at the CONSUMED fuel (the body's
     soundness is the EXISTING fragment applied to it). Mutual with `seqVal`/`intVal`/`intValArgs`/
     `denoteArms`. -/
-def denote : Nat → Expr → Env → Prop
+noncomputable def denote : Nat → Expr → Env → Prop
   | _,    Expr.boolLit b, _   => (b = true)
   | fuel, Expr.cmp op a b, env =>
       let x := intVal fuel a env
@@ -376,6 +432,14 @@ def denote : Nat → Expr → Env → Prop
           ∀ i j : Int,
             ((0 ≤ i ∧ i < (s.length : Int)) ∧ (0 ≤ j ∧ j < (s2.length : Int))) →
               seqIdx s i ≠ seqIdx s2 j
+      -- THE #182 `permutation_of(a, b)` Prop-combinator: MULTISET equality `a.to_multiset() ==
+      -- b.to_multiset()`, modelled via the count-characterization `permEq` over the two `@`-viewed
+      -- slices (`s` = `a`, `s2` = `b`). Like `disjoint`, it threads two slices, no predicate.
+      | CombName.permutationOf => permEq s s2
+      -- `count_where` is a VALUE-combinator (`ResultKind::Usize`) — it is READ on the `intVal` side
+      -- (above), never as a top-level predicate; here (its `denote` arm, unreachable in a well-formed
+      -- clause where `count_where(..)` appears as a `nat` operand) it denotes the canonical `True`.
+      | CombName.countWhere => True
   -- THE #181 SPEC-FN CALL as a top-level PREDICATE (a boolean-returning spec fn): resolve `name`,
   -- bind params to the denoted args, denote the body at the CONSUMED fuel. At fuel `0` / an
   -- unresolved name it bottoms to `True` (IDENTICAL to `refDenote`'s bottom — T1 holds at fuel `0`).
@@ -386,13 +450,14 @@ def denote : Nat → Expr → Env → Prop
   -- An integer-sorted leaf/term as a top-level predicate denotes `True` vacuously (never reached
   -- by the soundness theorem, whose top-level `Expr`s are predicates). Keeps `denote` TOTAL.
   | _, _, _ => True
+  termination_by fuel e _ => (fuel, sizeOf e)
 
 /-- The `match`-arm SELECTION + payload BINDING (#180), fuel-indexed (#181), SHARED structure for
     `denote` and `RefEncode.refDenote` (the encoder reuses the Verus `match` semantics verbatim).
     Walks the arms in source order; for the FIRST arm whose `Variant` matches, denotes that arm's
     body with the payload bound (fuel threaded unchanged — a body is a structural subterm). Mutual
     with `denote`. -/
-def denoteArms : Nat → OptResVal → List MatchArm → Env → Prop
+noncomputable def denoteArms : Nat → OptResVal → List MatchArm → Env → Prop
   | _,    _,     [], _ => True
   | fuel, scrut, MatchArm.mk variant binder body :: rest, env =>
       if scrut.variant = variant then
@@ -401,6 +466,7 @@ def denoteArms : Nat → OptResVal → List MatchArm → Env → Prop
         | none   => denote fuel body env
       else
         denoteArms fuel scrut rest env
+  termination_by fuel _ arms _ => (fuel, sizeOf arms)
 end
 
 end Thermite

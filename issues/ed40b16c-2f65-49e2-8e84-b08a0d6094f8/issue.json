@@ -2,11 +2,12 @@
   "uuid": "ed40b16c-2f65-49e2-8e84-b08a0d6094f8",
   "display_id": 161,
   "title": "thermite-lower: lower_exec_body — per-body EXEC-context production lowering entry (a Block → final-state-bearing exec fn body) reachable from thermite-tv-driven obligations, analogous to the lower_exec_expr step-2.1 prerequisite. Needed so the body-TV obligation can wrap real production output. .design/verified/exec-stmt-tv.md REQ-3 prereq.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T00:52:53.498285846Z",
-  "updated_at": "2026-06-09T00:52:57.552164983Z",
+  "updated_at": "2026-06-09T03:05:20.496277582Z",
+  "closed_at": "2026-06-09T03:05:20.496277582Z",
   "labels": [
     "blocker"
   ]

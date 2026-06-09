@@ -1,0 +1,10 @@
+{
+  "uuid": "fcda46df-e569-4252-8a63-30702861297b",
+  "issue_uuid": "96f58658-021c-4ebf-a023-fbdf80db57d7",
+  "author": "Yffe",
+  "content": "Increment 2b: mechanize S_B as a big-step STATE TRANSFORMER (bodyDenote/blockThread/stmtDenote) over the frozen straight-line Stmt/Block forms (letS/assign/exprS/ifElse/seq/tail) in lean/Thermite/Exec/Stmt.lean (namespace Thermite.Exec). Reuse 2a's ExecExpr/execDenote/ExecVal/ExecEnv for every per-RHS / condition / tail value; add ONLY the state threading + scalar-cell mutation rebind + branch composition + tail projection. Model body_ref_state's operational threading as bodyRefState (independent, via execRefValue) and prove theorem body_ref_sound by lifting exec_ref_sound through the threading. Faithful to exec_stmt_encode.rs::body_ref_state (scalar mutation only; xs[i]=e + loops + mid-body return are Unsupported = honestly OUT, 2c #163). 3 negative lemmas: wrong-var assign, sequencing-order, mutation-not-applied. lake build green, axioms propext/Quot.sound only, no sorry.",
+  "created_at": "2026-06-09T20:06:57.117679994Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA7K9CmOXyLNHr4aokQkjKE1P9/wQqGJ4PLDPWSulMZ8AAxTGP8eb/ET8k+PxG3IlU6827D1f0c1D2uC0W5tb2CQ=="
+}

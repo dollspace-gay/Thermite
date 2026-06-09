@@ -1,0 +1,10 @@
+{
+  "uuid": "1c5c90c3-c37d-43af-8784-d6e5d23a742f",
+  "issue_uuid": "b89550fc-cc13-4fd6-92ab-783e9554082a",
+  "author": "Yffe",
+  "content": "Forge-level Divergent teeth landed (test-only). Added `#[cfg(test)] mod divergent_teeth` in forge/src/exec_tv.rs (+193 LOC, no production-logic change; `discharge` reached via `super::` — no visibility tweak needed since a child mod sees parent-private items).\n\nPins the forge classification mapping the obligation-layer E1-E4 teeth do not reach:\n- faithful_production_classifies_faithful: P=`a + b` (faithful) -> ExecVerdict::Faithful (positive control).\n- wrong_value_production_classifies_divergent: P=`a.wrapping_sub(b)` for `a + b` -> verus postcondition counterexample (errors>=1 arm) -> Divergent.\n- non_compiling_production_classifies_divergent: P=`n - 1 as u8` for `(n - 1) as u8` (#122 paren-drop, E0308) -> verus compile abort (!status.success no-results arm) -> Divergent.\n- degenerate_no_obligation_classifies_unverifiable: zero-obligation program (0 verified, 0 errors, success) -> Unverifiable (pins the Divergent-vs-Unverifiable boundary, the masking-path concern).\n\nVerified under real verus (all 4 ran, none hit the skip path). BOTH Divergent triggers covered (counterexample + non-compile).\n\nGauntlet: build OK; cargo test --workspace 756 passed, 0 failed; clippy -D warnings clean; fmt --check clean; cargo tree -p thermite-tv has no thermite-lower (N-version boundary intact).\n\ncontract_tv.rs has the analogous untested-Divergent seam (private `discharge` + `ClauseVerdict::Divergent`); deliberately NOT widened here (#157 is scoped to exec-tv) — left for its own blocker.",
+  "created_at": "2026-06-09T02:58:52.923758986Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtG3uwTFvNpAkxGk1/TQbApXQY+M5f+sFwWNbNHmBsp9SJ+0/dF8+g4sqyu21C3FQc/iaE5O59AQR/WTw0nkhCQ=="
+}

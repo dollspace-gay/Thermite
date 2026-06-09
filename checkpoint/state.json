@@ -3,10 +3,6 @@
   "next_comment_id": 1,
   "display_id_map": {},
   "locks": {
-    "151": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-08T22:55:10.832728211Z"
-    },
     "157": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-09T00:37:10.428220660Z"
@@ -1553,11 +1549,16 @@
       "agent_id": "Yffe",
       "agent_seq": 308,
       "timestamp": "2026-06-09T00:37:10.428220660Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 309,
+      "timestamp": "2026-06-09T00:38:45.013522616Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-09T00:37:10.428220660Z",
+    "timestamp": "2026-06-09T00:38:45.013522616Z",
     "agent_id": "Yffe",
-    "agent_seq": 308
+    "agent_seq": 309
   }
 }

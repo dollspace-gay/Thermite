@@ -1,0 +1,10 @@
+{
+  "uuid": "5634ec68-f711-4534-9538-53ab9b266812",
+  "issue_uuid": "7d00c1bf-b515-42db-81ed-7d868dd30281",
+  "author": "Yffe",
+  "content": "MILESTONE — THE PROOF SPINE IS COMPLETE. Layer 1 (contract S_C) 8/8 DONE; Layer 2 (exec) DONE for the straight-line frozen subset (#171 S_E exec-expr, #172 S_B exec-body — incl. the #186 ifElse-scope divergence found+fixed+re-verified by the ACToR loop); Layer 3 (compose) DONE — #174+#183 the T2 capstone lowering_faithful: forall P passing TV, denote(lower(P))=denote_S(P), the existential->universal conversion as a kernel-checked Lean theorem relative to {Z3, S=intended-meaning, Lean kernel}. The boss's exact demand — a proof over ALL thermite programs — is now MET (relative to the named trust base). REMAINING (qualitatively different — trust-shrink/residual/gated, NOT the construct grind): #184 4a Z3-demotion (FRONTIER — Lean-SMT cvc5 reconstruction; investigation+PoC, Verus doesn't emit certificates today), #185 4b Rust<->Lean correspondence (RESIDUAL — audit-by-inspection now vs an extraction bridge), #163 2c loops (KERNEL-GATED). Plus the noted future brick: user-ADT match/is (01-adts REQ-6, beyond the frozen subset).",
+  "created_at": "2026-06-09T20:36:13.241405261Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABArzAx9Qx8TgLIRuNvj1kpVr2tm8K1AJbQkjyCrsO/703cBJm3RWnU0u/UKALpMDOXf2lt5GoKceWjaTJk4YFfAQ=="
+}

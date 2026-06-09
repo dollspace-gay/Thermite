@@ -1,0 +1,10 @@
+{
+  "uuid": "80f5e70e-3bdc-4b1d-b4f0-5f22ea09e758",
+  "issue_uuid": "9cdf82c8-7db7-4c2e-aeec-5d0fab7b531b",
+  "author": "Yffe",
+  "content": "Plan: add scripts/audit.sh + a Makefile 'audit' target + a README 'Auditing the claim' section. The script builds forge from source then runs A (faithful binary_search -> L3), B (inject return Some(mid+1) -> REFUSED, postcondition not satisfied), D (third-party verus directly on the emitted golden, forge excluded -> 2 verified 0 errors), with PASS/FAIL verdicts + a non-zero exit on any failure. Verified end-to-end: make audit -> AUDIT PASSED, exit 0.",
+  "created_at": "2026-06-09T13:47:23.146524159Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA44jiaEYhTt8fTb8HtccEC97+LkPL6ihcrlrOu3NQjPEOs1FJ/wFTDYbK1jK2MucsSzcytn8jeziccwEWuKKzBg=="
+}

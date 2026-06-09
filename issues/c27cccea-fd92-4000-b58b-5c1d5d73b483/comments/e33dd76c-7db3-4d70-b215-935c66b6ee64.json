@@ -1,0 +1,10 @@
+{
+  "uuid": "e33dd76c-7db3-4d70-b215-935c66b6ee64",
+  "issue_uuid": "c27cccea-fd92-4000-b58b-5c1d5d73b483",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean across the full arc. (design 5cf61ff8) loop-tv.md: approach (a) — three per-run Z3 obligations + a Lean-proven while-rule; v1 freeze = single while+inv+dec, straight-line body, last-before-tail; partial correctness (termination = the per-run Verus decreases residual). (increment i, 21b84c5f) Rust: loop_ref_obligations + ENTRY/PRESERVATION/EXIT obligations reusing the shipped body_ref_state; loop_teeth 11 tests vs REAL Verus (faithful 1-verified-0-errors; lo+2 mutant caught postcondition-not-satisfied; exit over-claim caught assertion-failed; 5 out-of-subset forms honestly Skipped); critic clean incl. an independent 3-mutant battery + the missed-cell hunt (branch-mutated cells honestly Skipped). (increment ii, 65504c18) Lean Exec/Loop.lean: WhileLoop around the UNTOUCHED proven blockThread (faithful to the Rust separate-form architecture), fuel-indexed loopDenote, theorem while_rule by genuine fuel induction + tv_meta_loop (the h_tv capstone pattern), L2/L3 negative mirrors + the L1 witness; [propext,Quot.sound]; critic clean on the two subtle cruxes (premise directionality Z3=>h_pres; cond-none propagates, no exit-on-overflow hole). Increment (iii) = the forge wiring = #162 (REQ-5, stays open there).",
+  "created_at": "2026-06-09T23:28:48.022815291Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAeOoGBVOF5htqxLj+hf0UYf9WvuLSX+pWMU5Zu9FV+4NzxiQwncN7HLCXTe/iP6KtJYhbPjSmLD+xPKW/PDTSDQ=="
+}

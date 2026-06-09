@@ -2,11 +2,12 @@
   "uuid": "0a652406-0105-43a4-994c-ad2400ea3a34",
   "display_id": 187,
   "title": "Divergence: rust-lean-correspondence.md violates its own AC-1 — ref_encode.rs::encode Expr::Field + Expr::TupleProj arms have no table row and no documented residual (and no Lean Expr constructor)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T21:22:26.257563550Z",
-  "updated_at": "2026-06-09T21:22:27.839674054Z",
+  "updated_at": "2026-06-09T21:28:15.891836105Z",
+  "closed_at": "2026-06-09T21:28:15.891836105Z",
   "labels": [
     "blocker"
   ]

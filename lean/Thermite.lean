@@ -11,8 +11,20 @@
   semantic-preservation proof. The remaining deferred constructs (the 2 recursive
   combinators `count_where`/`permutation_of` #182, general user-ADT match/is) are the
   future sub-increments, listed in `Ast.lean` (NOT embedded-then-`sorry`).
+
+  LAYER 2 (the exec side) is now OPEN: increment 2a (#171) mechanizes the
+  EXEC-EXPRESSION bounded-value denotation `S_E` (`Thermite.Exec`) and proves (T1)
+  `∀ pure exec Expr P, ⟦exec_ref_value(P)⟧ = ⟦P⟧_{S_E}` (`Thermite.Exec.exec_ref_sound`).
+  `S_E` is a DIFFERENT semantics from `S_C`: a BOUNDED `u64`/`u32`/`usize`/`bool` value
+  (NEVER nat-coerced), with arithmetic OVERFLOW carried as a PROOF OBLIGATION (the value
+  is the mathematical result GIVEN no overflow; an overflowing op has NO value). The
+  exec-BODY (2b #172) + loops (2c #163) remain.
 -/
 import Thermite.Ast
 import Thermite.Denote
 import Thermite.RefEncode
 import Thermite.Soundness
+-- LAYER 2 (the exec side, increment 2a, #171): the exec-expression bounded-value
+-- denotation `S_E` + the (T1) soundness proof for `exec_ref_value`. SEPARATE namespace
+-- `Thermite.Exec` (bounded, overflow-as-obligation, NEVER nat-coerced — `S_E ≠ S_C`).
+import Thermite.Exec

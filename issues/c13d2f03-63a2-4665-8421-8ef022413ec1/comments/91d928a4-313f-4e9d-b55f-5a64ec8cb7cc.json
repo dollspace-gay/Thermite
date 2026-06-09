@@ -1,0 +1,10 @@
+{
+  "uuid": "91d928a4-313f-4e9d-b55f-5a64ec8cb7cc",
+  "issue_uuid": "c13d2f03-63a2-4665-8421-8ef022413ec1",
+  "author": "Yffe",
+  "content": "1g build: extend the contract-sublanguage soundness proof (lean/Thermite/{Ast,Denote,RefEncode,Soundness}.lean) to the C7 match-in-ens / is payload-in-contract forms — Option/Result match (Some/None/Ok/Err) with payload binding + the is-variant test, faithful to ref_encode.rs encode_match/encode_pattern + the Expr::Is arm. Model OptResVal in the env; mutual denote/denoteArms + refDenote/refDenoteArms + ref_sound/ref_sound_arms. Negative lemmas: arm-swap + wrong-is-variant. Core Lean only; lake build green, axioms [propext, Quot.sound]. Update thermite-semantics.md REQ-2/REQ-6 SHIPPED-for-fragment. Commit (#180) ref #169, do not close (critic re-audits).",
+  "created_at": "2026-06-09T18:33:23.842565768Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAati0Nige1uKqUoSzoT7oDeg/YwI8VtUOMl5JdmBqUh3+Fore+dgbViESHP1YCByQxS1A3xK8hxyZHCse34rABQ=="
+}

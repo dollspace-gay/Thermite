@@ -66,9 +66,32 @@
   CONTRACT level they denote the value unchanged. Again the convention is SHARED
   by `denote` and `refDenote` (`castDenote`), so T1 is insensitive to the clamp.
 
+  THE NAMED SPEC-FN CALLS (#181, increment 1e — the WELL-FOUNDED RECURSIVE fragment). A
+  `specCall name args` (`ast.rs` `Expr::Call` for a non-combinator/non-`old` callee — the
+  `ref_encode.rs::encode_call` case (3)) denotes by RESOLVING the name in the SHARED `Registry`
+  (`Env.specs`) to a `SpecFn { params, body }`, BINDING the params to the denoted args, and denoting
+  the BODY. The body is an `Expr` of the SAME fragment and MAY contain further `specCall`s
+  (recursion). §4.2 mandates a `dec` termination measure on every spec fn ⟹ the recursion terminates
+  ⟹ the denotation is a well-founded fixpoint (the design `⟦Call(f,args)⟧ = ⟦body_of(f)⟧[params ↦
+  ⟦args⟧]`, "well-defined because §4.2 mandates a `dec` measure").
+
+  THE WELL-FOUNDED DENOTATION (the genuine difficulty). Rather than re-derive each registry's `dec`
+  measure inside Lean, the denotation is FUEL-INDEXED: `denote (fuel : Nat) …`. A `specCall` consumes
+  one unit of fuel (`fuel+1 → fuel` for the body); a structural subterm keeps the SAME fuel (it is
+  smaller by `sizeOf`). The recursion is then well-founded on the lexicographic `(fuel, sizeOf e)`
+  (Lean's `termination_by`/`decreasing_by`, CORE — no Mathlib). THIS IS NOT A FUEL-CAP VACUITY
+  DODGE: (i) the soundness theorem `ref_sound` is proved for ALL `fuel` (∀-quantified); (ii) the
+  SOURCE (`denote`) and the ENCODER (`refDenote`) use the SAME `fuel` and the SAME `Registry`, so at
+  EVERY fuel — including the fuel-`0` bottom, where both bottom out to the IDENTICAL shared default
+  `True`/`0` — the two sides AGREE (the call-site soundness is exactly "args agree by the IH + the
+  SAME registry resolves the SAME body, denoted at the SAME fuel"). The `dec`-bounded source spec fn
+  terminates, so for a real call there is always a fuel at which the fixpoint is reached; T1 holds
+  uniformly across fuel, which is STRONGER than holding at one fuel.
+
   An `Env` maps each free name (a param / `result` / `old(x)`) to an `Int` — exactly
-  the per-clause obligation binding `ref_encode.rs` describes. The denotation is a
-  TOTAL structural recursion (a clause is a pure predicate; no state, no loops).
+  the per-clause obligation binding `ref_encode.rs` describes — and carries the SHARED spec-fn
+  `Registry` (#181). The non-spec-fn fragment is a TOTAL structural recursion (a clause is a pure
+  predicate; no state, no loops); the spec-fn calls add the fuel-indexed well-founded layer.
 -/
 import Thermite.Ast
 
@@ -101,6 +124,11 @@ structure Env where
   seqs : String → List Int
   /-- The `Option`/`Result`-valued free names (a `match`/`is` scrutinee — #180). -/
   optres : String → OptResVal
+  /-- The SHARED spec-fn `Registry` (#181): the name→`SpecFn` map a `specCall` resolves
+      against. SHARED between `denote` and `refDenote` (the body is lowered ONCE + sound by the
+      fragment; the registry is the external ground truth), which is what makes the call-site
+      soundness "the SAME registry resolves the SAME body". -/
+  specs : Registry
 
 /-- Bind an integer name to a value in an environment (#179): used to interpret a
     predicate closure `|x| <body>` at a concrete element — the bound var `x` is set to
@@ -110,6 +138,21 @@ structure Env where
     own integer/sequence subterms (settled by `refVal_eq`). -/
 def Env.bindInt (env : Env) (name : String) (v : Int) : Env :=
   { env with ints := fun s => if s = name then v else env.ints s }
+
+/-- Bind a spec fn's PARAMS to its (already-denoted) ARG VALUES (#181): the call
+    `foo(args)` binds each `params[k]` to `vals[k]` as an integer name, then denotes the
+    body in that env (`⟦body_of(f)⟧[params ↦ ⟦args⟧]`). SHARED by `denote`/`refDenote` (the
+    param binding is the call's calling convention — identical on both sides; the only call-site
+    content is whether the args agree, settled by the soundness IH). A length mismatch (a
+    mis-arity call — rejected by the validator upstream) simply binds the common prefix; a
+    well-formed call has `|params| = |args|`. The spec-fn body sees ONLY its params (a spec fn is
+    closed over its params — §4.2), so the rest of the env is irrelevant to the body, but is carried
+    so the SHARED `specs` registry stays in scope for nested `specCall`s. -/
+def Env.bindParams (env : Env) (params : List String) (vals : List Int) : Env :=
+  match params, vals with
+  | [], _ => env
+  | _, [] => env
+  | p :: ps, v :: vs => (env.bindInt p v).bindParams ps vs
 
 /-- The VARIANT an `OptResVal` is (#180): the discriminant a `match` arm selects on / an
     `is`-test reads. Shared by `denote`/`refDenote` (the Verus `match`/`is` discriminant is the
@@ -203,64 +246,92 @@ def castDenote : CastTy → Int → Int
    observed by the soundness theorem, which only evaluates `seqVal` on sequence-sorted
    bases — keeps it TOTAL without a `sorry`). Mutual with `intVal` (`subrange`'s bounds
    are integer terms). -/
-mutual
-/-- `⟦·⟧_{S_C}` on the SEQUENCE-valued terms (#178). See the block comment above. -/
-def seqVal : Expr → Env → List Int
-  | Expr.seqVar x, env => env.seqs x
-  | Expr.strVar x, env => env.seqs x
-  | Expr.subrange base r, env =>
-      let s := seqVal base env
-      match r with
-      | RangeArg.rangeTo hi    => seqSub s 0 (intVal hi env)
-      | RangeArg.range lo hi   => seqSub s (intVal lo env) (intVal hi env)
-      | RangeArg.rangeFrom lo  => seqSub s (intVal lo env) (s.length : Int)
-  | _, _ => []
-
-/-- `⟦·⟧_{S_C}` on the INTEGER-valued terms (the operands of a comparison): a
-    literal denotes itself, a variable denotes its environment value, an arithmetic
-    term denotes the shared `arithDenote` of its operands, a cast denotes the shared
-    `castDenote` of its inner. EXTENDED (#178) with the sequence-reading integer terms:
-    `idx` = the i-th element (`seqIdx`), `seqLen` = the length, `byteAt` = the i-th byte
-    (`seqIdx` over the `String` byte sequence). These are the integer-term rules of
-    `S_C`. Mutual with `seqVal`. -/
-def intVal : Expr → Env → Int
-  | Expr.intLit n,      _   => n
-  | Expr.var x,         env => env.ints x
-  | Expr.arith op a b,  env => arithDenote op (intVal a env) (intVal b env)
-  | Expr.cast inner ty, env => castDenote ty (intVal inner env)
-  | Expr.idx base i,    env => seqIdx (seqVal base env) (intVal i env)
-  | Expr.seqLen base,   env => (seqVal base env).length
-  | Expr.byteAt base i, env => seqIdx (seqVal base env) (intVal i env)
-  -- A boolean-sorted node never appears as a comparison operand in a well-formed
-  -- clause; it has no integer meaning, so it denotes the canonical `0`. (The
-  -- soundness theorem only ever evaluates `intVal` on integer-sorted subterms —
-  -- the operands `cmp`/`arith`/`cast`/`idx`/`seqLen`/`byteAt` build — so this default
-  -- is never observed there; it keeps `intVal` TOTAL without a `sorry`/partial
-  -- annotation.)
-  | _, _ => 0
-end
-
 /-- The `OptResVal` a `match`/`is` SCRUTINEE denotes (#180): an `optResVar` reads its env
     `optres` value; any other node is not an `Option`/`Result` scrutinee in a well-formed C7
     clause, so it denotes the canonical `none` (never observed — the soundness theorem only
     evaluates this on an `optResVar` scrutinee; keeps it total without a `sorry`). Shared by
-    `denote`/`refDenote` (the scrutinee value is a free name, the SAME on both sides). -/
+    `denote`/`refDenote` (the scrutinee value is a free name, the SAME on both sides). This is
+    fuel-free: a scrutinee is a free name, never a `specCall` (the C7 corpus scrutinees are
+    params/`result`), so it reads the env directly. -/
 def scrutVal : Expr → Env → OptResVal
   | Expr.optResVar x, env => env.optres x
   | _, _ => OptResVal.none_
 
+/- THE FUEL-INDEXED DENOTATION (#178/#179/#180 fragment EXTENDED with #181 spec-fn calls).
+   The non-spec-fn fragment is a structural recursion (fuel threaded UNCHANGED to subterms — a
+   subterm is smaller by `sizeOf`); a `specCall` CONSUMES one unit of fuel (`fuel+1 → fuel` for the
+   resolved body), so the whole recursion is well-founded on the lexicographic `(fuel, sizeOf e)`
+   (`termination_by`/`decreasing_by`, CORE Lean — no Mathlib). The fuel is SHARED with the encoder
+   (`RefEncode.lean`'s identically-fuelled `refDenote`), so the call-site soundness is fuel-uniform
+   (see the module header — NOT a fuel-cap vacuity dodge: T1 holds for ALL fuel, both sides agree at
+   every fuel including the fuel-`0` shared bottom). The block is `seqVal`/`intVal`/`intValArgs`/
+   `denote`/`denoteArms`, all fuel-indexed and mutually recursive (the #181 `specCall` is BOTH an
+   integer term — `intVal` — and a predicate — `denote` — depending on the spec fn's return sort,
+   so both route to the body denotation at the consumed fuel). -/
 mutual
-/-- `⟦·⟧_{S_C}` — the SOURCE meaning of a contract predicate as a Lean `Prop`.
-    Each comparison/logical/negation denotes the STANDARD mathematical relation
-    (the `S_C` inference rules), defined HERE following the SOURCE meaning — to be
-    proved equal to `RefEncode.refDenote` (which follows the ENCODER's structure),
-    so the soundness theorem has content. Mutual with `denoteArms` (#180: the `match_`
-    arm selection denotes the selected arm's body, an `Expr` subterm). -/
-def denote : Expr → Env → Prop
-  | Expr.boolLit b, _   => (b = true)
-  | Expr.cmp op a b, env =>
-      let x := intVal a env
-      let y := intVal b env
+/-- `⟦·⟧_{S_C}` on the SEQUENCE-valued terms (#178), fuel-indexed (#181). See the block comment.
+    Fuel is threaded UNCHANGED to the base/bound subterms (a subrange base/bound is smaller). -/
+def seqVal : Nat → Expr → Env → List Int
+  | _,    Expr.seqVar x, env => env.seqs x
+  | _,    Expr.strVar x, env => env.seqs x
+  | fuel, Expr.subrange base r, env =>
+      let s := seqVal fuel base env
+      match r with
+      | RangeArg.rangeTo hi    => seqSub s 0 (intVal fuel hi env)
+      | RangeArg.range lo hi   => seqSub s (intVal fuel lo env) (intVal fuel hi env)
+      | RangeArg.rangeFrom lo  => seqSub s (intVal fuel lo env) (s.length : Int)
+  | _, _, _ => []
+
+/-- `⟦·⟧_{S_C}` on the INTEGER-valued terms (the operands of a comparison), fuel-indexed (#181): a
+    literal denotes itself, a variable denotes its environment value, an arithmetic term denotes the
+    shared `arithDenote` of its operands, a cast the shared `castDenote` of its inner; `idx`/`seqLen`
+    /`byteAt` read the sequence (#178). THE #181 `specCall` arm: an integer-returning spec fn call
+    `name(args)` resolves `name` in the SHARED `Env.specs` registry to a `SpecFn { params, body }`,
+    binds the params to the denoted args (`intValArgs` — at the SAME fuel, the args are smaller), and
+    denotes the BODY at the CONSUMED fuel (`⟦body⟧[params ↦ ⟦args⟧]`). At fuel `0` (or an unresolved
+    name) it bottoms to the shared default `0` (NOT a dodge — `refIntVal` bottoms IDENTICALLY, so T1
+    holds at fuel `0`; the soundness is fuel-uniform). Mutual with `seqVal`/`intValArgs`. -/
+def intVal : Nat → Expr → Env → Int
+  | fuel, Expr.arith op a b,  env => arithDenote op (intVal fuel a env) (intVal fuel b env)
+  | fuel, Expr.cast inner ty, env => castDenote ty (intVal fuel inner env)
+  | fuel, Expr.idx base i,    env => seqIdx (seqVal fuel base env) (intVal fuel i env)
+  | fuel, Expr.seqLen base,   env => (seqVal fuel base env).length
+  | fuel, Expr.byteAt base i, env => seqIdx (seqVal fuel base env) (intVal fuel i env)
+  | fuel+1, Expr.specCall name args, env =>
+      match env.specs name with
+      | some fn => intVal fuel fn.body (env.bindParams fn.params (intValArgs (fuel+1) args env))
+      | none    => 0
+  | _,    Expr.intLit n,      _   => n
+  | _,    Expr.var x,         env => env.ints x
+  -- A boolean-sorted node never appears as a comparison operand in a well-formed
+  -- clause; it has no integer meaning, so it denotes the canonical `0` (a fuel-`0`
+  -- `specCall` likewise bottoms here — IDENTICAL on the encoder side). The soundness
+  -- theorem only evaluates `intVal` on integer-sorted subterms, so this default is
+  -- never observed there; it keeps `intVal` TOTAL without a `sorry`.
+  | _, _, _ => 0
+
+/-- The denoted ARG VALUES of a `specCall` (#181): each arg's `intVal` at the SAME fuel (an arg is a
+    structural subterm of the call — smaller by `sizeOf`). SHARED structure with the encoder's
+    `refIntValArgs` (the per-arg encoding is `encode_call_arg`; the soundness content is that the
+    args agree, settled by the recursive `ref_sound`/`refVal_eq` IH on each arg). Mutual with
+    `intVal`. -/
+def intValArgs : Nat → List Expr → Env → List Int
+  | _,    [],        _   => []
+  | fuel, a :: rest, env => intVal fuel a env :: intValArgs fuel rest env
+
+/-- `⟦·⟧_{S_C}` — the SOURCE meaning of a contract predicate as a Lean `Prop`, fuel-indexed (#181).
+    Each comparison/logical/negation denotes the STANDARD mathematical relation (the `S_C` inference
+    rules), defined HERE following the SOURCE meaning — to be proved equal to `RefEncode.refDenote`
+    (which follows the ENCODER's structure), so the soundness theorem has content. THE #181
+    `specCall` arm: a boolean-returning spec fn call resolves `name` in the SHARED `Env.specs`,
+    binds params to the denoted args, and denotes the BODY at the CONSUMED fuel (the body's
+    soundness is the EXISTING fragment applied to it). Mutual with `seqVal`/`intVal`/`intValArgs`/
+    `denoteArms`. -/
+def denote : Nat → Expr → Env → Prop
+  | _,    Expr.boolLit b, _   => (b = true)
+  | fuel, Expr.cmp op a b, env =>
+      let x := intVal fuel a env
+      let y := intVal fuel b env
       match op with
       | CmpOp.eq => x = y
       | CmpOp.ne => x ≠ y
@@ -268,40 +339,27 @@ def denote : Expr → Env → Prop
       | CmpOp.le => x ≤ y
       | CmpOp.gt => x > y
       | CmpOp.ge => x ≥ y
-  | Expr.logic op a b, env =>
+  | fuel, Expr.logic op a b, env =>
       match op with
-      | LogOp.and => denote a env ∧ denote b env
-      | LogOp.or  => denote a env ∨ denote b env
-  | Expr.neg e, env => ¬ denote e env
+      | LogOp.and => denote fuel a env ∧ denote fuel b env
+      | LogOp.or  => denote fuel a env ∨ denote fuel b env
+  | fuel, Expr.neg e, env => ¬ denote fuel e env
   -- The MATCH-IN-ENS form (#180): the arm SELECTED by the scrutinee's variant denotes its body
-  -- with the payload BOUND (the C7 `match result { Some(v) => P(v), None => Q }`). `scrutVal`
-  -- reads the scrutinee's `OptResVal`; `denoteArms` walks the arms, selecting the one whose
-  -- `Variant` matches and binding its payload into the body (`Env.bindInt`). Faithful to
-  -- `encode_match`: scrutinee + bodies via the SAME recursion, the pattern's variant+binder via
-  -- `encode_pattern`. The selection-by-variant is the Verus `match` meaning (shared, not
-  -- re-derived); the soundness content is the scrutinee/body encoding.
-  | Expr.match_ scrut arms, env =>
-      denoteArms (scrutVal scrut env) arms env
-  -- The `is`-test (#180): the variant DISCRIMINANT test `scrut is variant`. True iff the
-  -- scrutinee's value is that variant (`OptResVal.isVariant`, the shared Verus `is` meaning).
-  | Expr.is_ scrut variant, env =>
+  -- with the payload BOUND (the C7 `match result { Some(v) => P(v), None => Q }`).
+  | fuel, Expr.match_ scrut arms, env =>
+      denoteArms fuel (scrutVal scrut env) arms env
+  -- The `is`-test (#180): the variant DISCRIMINANT test `scrut is variant`.
+  | _,    Expr.is_ scrut variant, env =>
       ((scrutVal scrut env).isVariant variant = true)
-  -- The 6 BOUNDED-QUANTIFIER combinators (#179): each denotes its FROZEN `verus_l3`
-  -- quantifier form (`combinators.rs`), with the slice = `seqVal` of the slice arg, the
-  -- index = `intVal` of the scalar index arg, and `p(s[i])` = the predicate body denoted
-  -- with the bound element var ↦ the i-th element (`seqIdx s i`). The optional `seq2`/
-  -- `idx`/`pred` default to the empty sequence / `0` / a vacuous predicate when a
-  -- combinator does not carry that arg (never observed — each combinator populates only
-  -- its own arg-kinds; keeps `denote` TOTAL with no `sorry`).
-  | Expr.comb c seq seq2 idx pred, env =>
-      let s := seqVal seq env
-      let s2 := match seq2 with | some e => seqVal e env | none => []
-      let n := match idx with | some e => intVal e env | none => 0
-      -- Apply the predicate closure body at the i-th element of `s` (the bound var ↦
-      -- `seqIdx s i`); a missing predicate (sorted/disjoint) is `True` (unused).
+  -- The 6 BOUNDED-QUANTIFIER combinators (#179): each denotes its FROZEN `verus_l3` quantifier
+  -- form, fuel threaded unchanged to the predicate body (the body is a structural subterm).
+  | fuel, Expr.comb c seq seq2 idx pred, env =>
+      let s := seqVal fuel seq env
+      let s2 := match seq2 with | some e => seqVal fuel e env | none => []
+      let n := match idx with | some e => intVal fuel e env | none => 0
       let p : Int → Prop := fun i =>
         match pred with
-        | some (Pred.mk bound body) => denote body (env.bindInt bound (seqIdx s i))
+        | some (Pred.mk bound body) => denote fuel body (env.bindInt bound (seqIdx s i))
         | none => True
       match c with
       | CombName.forallIn =>
@@ -318,34 +376,31 @@ def denote : Expr → Env → Prop
           ∀ i j : Int,
             ((0 ≤ i ∧ i < (s.length : Int)) ∧ (0 ≤ j ∧ j < (s2.length : Int))) →
               seqIdx s i ≠ seqIdx s2 j
-  -- An integer-sorted leaf/term (`intLit`/`var`/`arith`/`cast`) is not a predicate
-  -- on its own; in a well-formed clause it only appears as a comparison operand
-  -- (handled by `intVal` above). As a top-level predicate it denotes `True`
-  -- vacuously — never reached by the soundness theorem (whose top-level `Expr`s are
-  -- always cmp/logic/neg/bool). Keeps `denote` TOTAL with no `sorry`.
-  | _, _ => True
+  -- THE #181 SPEC-FN CALL as a top-level PREDICATE (a boolean-returning spec fn): resolve `name`,
+  -- bind params to the denoted args, denote the body at the CONSUMED fuel. At fuel `0` / an
+  -- unresolved name it bottoms to `True` (IDENTICAL to `refDenote`'s bottom — T1 holds at fuel `0`).
+  | fuel+1, Expr.specCall name args, env =>
+      match env.specs name with
+      | some fn => denote fuel fn.body (env.bindParams fn.params (intValArgs (fuel+1) args env))
+      | none    => True
+  -- An integer-sorted leaf/term as a top-level predicate denotes `True` vacuously (never reached
+  -- by the soundness theorem, whose top-level `Expr`s are predicates). Keeps `denote` TOTAL.
+  | _, _, _ => True
 
-/-- The `match`-arm SELECTION + payload BINDING (#180), SHARED structure for `denote` and
-    `RefEncode.refDenote` (the encoder reuses the Verus `match` semantics verbatim — the
-    arm selection by variant is the Verus `match` meaning, NOT re-implemented; the soundness
-    content is the per-body encoding, threaded by the `match_` case of `ref_sound`).
-
-    Walks the arms in source order; for the FIRST arm whose `Variant` matches the scrutinee
-    value's variant, denotes that arm's body with the payload bound (the binder ↦ the scrutinee
-    payload via `Env.bindInt`; a `None`/binder-less arm leaves the env unchanged). A
-    non-matching arm is skipped. A well-formed C7 `match` is EXHAUSTIVE (the corpus 2-arm
-    `Some/None`/`Ok/Err`), so the matching arm always exists; an empty/non-exhaustive remainder
-    denotes `True` (out of the fragment — never reached by the soundness theorem's exhaustive
-    `match`es). -/
-def denoteArms : OptResVal → List MatchArm → Env → Prop
-  | _, [], _ => True
-  | scrut, MatchArm.mk variant binder body :: rest, env =>
+/-- The `match`-arm SELECTION + payload BINDING (#180), fuel-indexed (#181), SHARED structure for
+    `denote` and `RefEncode.refDenote` (the encoder reuses the Verus `match` semantics verbatim).
+    Walks the arms in source order; for the FIRST arm whose `Variant` matches, denotes that arm's
+    body with the payload bound (fuel threaded unchanged — a body is a structural subterm). Mutual
+    with `denote`. -/
+def denoteArms : Nat → OptResVal → List MatchArm → Env → Prop
+  | _,    _,     [], _ => True
+  | fuel, scrut, MatchArm.mk variant binder body :: rest, env =>
       if scrut.variant = variant then
         match binder with
-        | some x => denote body (env.bindInt x scrut.payload)
-        | none   => denote body env
+        | some x => denote fuel body (env.bindInt x scrut.payload)
+        | none   => denote fuel body env
       else
-        denoteArms scrut rest env
+        denoteArms fuel scrut rest env
 end
 
 end Thermite

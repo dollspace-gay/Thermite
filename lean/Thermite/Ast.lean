@@ -121,11 +121,35 @@
   embed-then-`sorry`). A general-ADT match (with the variant→discriminant + payload model) is a
   future increment if/when the encoder admits user variants.
 
+  NAMED SPEC-FN CALLS (#181, increment 1e — THE WELL-FOUNDED RECURSIVE FRAGMENT). A user
+  `spec fn foo(p0, p1, …) -> R { <body> } dec <measure>` (`thermite-syntax::ast::SpecFnItem`:
+  `params`/`ret`/`dec`/`body`) referenced in a contract is an `Expr::Call` whose callee path is
+  NOT a frozen combinator and NOT `old` (`ref_encode.rs::encode_call` case (3)). The encoder emits
+  `name(<encoded args>)` — it does NOT inline the body; the body is lowered ONCE as its own Verus
+  `spec fn` (the registry entry), and the call site is a CALL to that fn. To embed this `Ast.lean`
+  gains:
+    - `Expr.specCall (name : String) (args : List Expr)` — the call form, mirroring
+      `Expr::Call { callee := Path [name], args }` for a NON-combinator/NON-`old` callee
+      (`encode_call`'s case (3)). The args are `Expr`s of the SAME fragment (re-encoded by
+      `encode_call_arg`). MUTUAL with `Expr` (the args are a `List Expr`). INTEGER- or
+      BOOLEAN/`Prop`-sorted per the spec fn's return type (the corpus spec fns return `nat`/`int`
+      or `bool`; the denotation reads the integer or boolean meaning of the resolved body).
+    - `SpecFn` (a `structure`) — a spec fn's signature/body: `params : List String` (the param
+      NAMES, bound to the denoted args), `body : Expr` (the body over the SAME fragment, MAY contain
+      further `specCall`s — recursion). Mirrors `SpecFnItem.params`/`body`. (The `dec` measure
+      lives in the TERMINATION argument of the denotation, not in this datum — see `Denote.lean`'s
+      fuel-indexed well-founded denotation: the spec fn is total/terminating by §4.2's mandatory
+      `dec`, modelled as "the denotation holds for ALL fuel"; the encoder + source share the same
+      fuel, so T1 is fuel-uniform — NOT a fuel-cap vacuity dodge.)
+    - `Registry` — `String → Option SpecFn`, the spec-fn registry SHARED between `denote` and
+      `refDenote` (the body's meaning is the same; it is lowered ONCE + sound by the fragment — the
+      registry is the external ground truth, like the combinator registry `lookup`). Carried in the
+      `Env` (`Denote.lean` `Env.specs`).
+
   DEFERRED — NOT embedded here, and DELIBERATELY NOT (no `sorry`-behind-a-variant;
   embedding-then-`sorry` is forbidden). These are the remaining sub-increments:
     - the 2 RECURSIVE / aggregate combinators (`count_where`/`permutation_of` — their
       well-founded-recursive / multiset `verus_l3` forms; Mathlib) (#182 / 1d-ii)
-    - named spec-fn calls (the well-founded recursive `S_C` fixpoint) (#181)
     - general USER-ADT match/is (beyond the built-in Option/Result) — see above.
   Each is a real future inductive case, listed (not stubbed) so the deferral is honest.
 -/
@@ -321,6 +345,16 @@ inductive Expr where
       `is None` / `is Ok` / `is Err`. `BOOLEAN`/`Prop`-sorted, true iff the scrutinee's value is
       that variant. Mirrors `ref_encode.rs`'s `Expr::Is` arm `({s} is {variant})`. -/
   | is_ (scrut : Expr) (variant : Variant)
+  /-- A NAMED SPEC-FN CALL `name(args)` (#181; `Expr::Call` for a NON-combinator/NON-`old`
+      callee — `ref_encode.rs::encode_call`'s case (3), which emits `name(<encoded args>)`,
+      NOT inlining the body). The `name` resolves in the SHARED `Registry` (carried in the
+      `Env`) to a `SpecFn` whose `body` (over the SAME fragment, MAY recurse via further
+      `specCall`s) is denoted with the params bound to the denoted args. INTEGER- or
+      BOOLEAN/`Prop`-sorted per the spec fn's return type. MUTUAL with `Expr` (the `args` are a
+      `List Expr` of the same fragment). The well-founded denotation (the `dec` measure ⟹
+      termination ⟹ the fixpoint) is the fuel-indexed `Denote.lean`/`RefEncode.lean` recursion,
+      proved sound for ALL fuel (the source + encoder SHARE the fuel — not a fuel-cap dodge). -/
+  | specCall (name : String) (args : List Expr)
   /-- A FLAT predicate closure `|x| <body>` (#179; `ArgKind::Pred`; `Expr::Closure` with
       one param over the frozen `Seq<u32>` element type `u32`). `bound` is the element
       var name the closure binds (`encode_pred_arg`'s `params[0]`); `body` is the
@@ -360,5 +394,29 @@ deriving instance Repr for Expr
 deriving instance Repr for Pred
 deriving instance Repr for RangeArg
 deriving instance Repr for MatchArm
+
+/-- A NAMED SPEC FN (#181) — its signature/body as the registry stores it. Mirrors
+    `thermite-syntax::ast::SpecFnItem`'s `params`/`body` (the `name` is the registry key; the
+    `ret` type only fixes whether the call is read at the integer or boolean meaning; the `dec`
+    measure lives in the denotation's TERMINATION argument, not here):
+      - `params` — the param NAMES, in order, bound to the denoted call args (`SpecFnItem.params`,
+        their `Param.name`s).
+      - `body`   — the body `Expr` over the SAME contract fragment (`SpecFnItem.body`); MAY contain
+        further `specCall`s (recursion). The body is lowered ONCE as its own Verus `spec fn`
+        (`ref_encode.rs` does NOT inline — `encode_call`'s case (3) emits a CALL), so the body's
+        soundness is the EXISTING fragment applied to `body`, and the call-site soundness is the
+        generic "args sound (IH) + SAME registry resolves the name". -/
+structure SpecFn where
+  params : List String
+  body : Expr
+
+/-- The SPEC-FN REGISTRY (#181): the name→`SpecFn` map, SHARED between `denote` and `refDenote`
+    (the body's meaning is the same — it is lowered ONCE and sound by the fragment; the registry is
+    the external ground truth, exactly like the frozen combinator registry `thermite_spec::lookup`).
+    Carried in the `Env` (`Denote.lean` `Env.specs`), so BOTH denotations resolve a `specCall`
+    against the SAME registry — which is the load-bearing fact for the call-site soundness. A name
+    absent from the registry denotes a canonical default (never observed by the soundness theorem,
+    which only evaluates a `specCall` whose name the registry resolves). -/
+abbrev Registry := String → Option SpecFn
 
 end Thermite

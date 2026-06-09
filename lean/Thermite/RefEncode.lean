@@ -3,8 +3,22 @@
   denotation, for the comparison + logical fragment (#170) EXTENDED with the
   ARITHMETIC operators (#176), the CASTS (#177), the SPEC-CONTEXT REWRITES
   (#178 — slice→`@`/subrange, indexing, the `String` byte-view DISPATCH, the #127 class),
-  the 6 BOUNDED-QUANTIFIER COMBINATORS (#179), and the MATCH-IN-ENS / `is` PAYLOAD-IN-CONTRACT
-  forms (#180 / 1g — `encode_match`/`encode_pattern` [the #150 work] + the `Expr::Is` arm).
+  the 6 BOUNDED-QUANTIFIER COMBINATORS (#179), the MATCH-IN-ENS / `is` PAYLOAD-IN-CONTRACT
+  forms (#180 / 1g — `encode_match`/`encode_pattern` [the #150 work] + the `Expr::Is` arm), and the
+  NAMED SPEC-FN CALLS (#181 / 1e — `encode_call`'s case (3)).
+
+  WHAT THE #181 SPEC-FN CALLS MODEL (faithful to `ref_encode.rs::encode_call`'s case (3)). A
+  `specCall name args` — an `Expr::Call` whose callee path is NOT `old` and NOT a frozen combinator
+  (`thermite_spec::lookup(name).is_none()`) — is lowered to a Verus spec-fn CALL `name(<encoded
+  args>)`: the encoder does NOT inline the body (`Ok(format!("{name}({})", encoded_args.join(", ")))`
+  — the body is lowered ONCE as its own Verus `spec fn`, the registry entry). So the encoder's
+  meaning of a call is: resolve `name` in the SAME `Env.specs` registry the source uses, bind the
+  params to the ENCODER-denoted args (`refIntValArgs`, the per-arg `encode_call_arg` — a slice gets
+  its `@`-view, a closure its `|x: u32|` form; for the corpus the args are scalar/slice terms of the
+  ALREADY-PROVEN fragment), and denote the SAME body at the CONSUMED fuel. The call-site soundness is
+  therefore the GENERIC theorem "the args agree (the `refVal_eq` IH) + the SAME registry resolves the
+  SAME body, denoted at the SAME fuel" — exactly the brief. The fuel is SHARED with the source
+  (`Denote.lean`), so T1 is fuel-uniform (both sides bottom out IDENTICALLY at fuel `0`).
 
   WHAT THE #180 MATCH/`is` MODELS (faithful to `thermite-tv/src/ref_encode.rs`). In contract
   position a built-in `Option`/`Result` value is PROJECTED by a spec-`match` or TESTED by `is`:
@@ -277,48 +291,66 @@ def byteView : VerusByteView → List Int → Int → Int
      dispatches `byte_at`→`spec_byte_at(i)`; the i-th byte. THE #127 class: the
      dispatch CHOICE is the content (the negative lemma mis-dispatches). -/
 mutual
-/-- The integer-operand meaning the encoder assigns to a term. See the block comment. -/
-def refIntVal : Expr → Env → Int
-  | Expr.intLit n,      _   => n
-  | Expr.var x,         env => env.ints x
-  | Expr.arith op a b,  env => tokArith (encArith op) (refIntVal a env) (refIntVal b env)
-  | Expr.cast inner ty, env => tokCast (encCast ty) (refIntVal inner env)
-  | Expr.idx base i,    env => byteView encByteAt (refSeqVal base env) (refIntVal i env)
-  | Expr.seqLen base,   env => byteView encLen (refSeqVal base env) 0
-  | Expr.byteAt base i, env => byteView encByteAt (refSeqVal base env) (refIntVal i env)
-  | _, _ => 0
+/-- The integer-operand meaning the encoder assigns to a term, fuel-indexed (#181). See the block
+    comment. THE #181 `specCall` arm: an integer-returning spec-fn call `name(args)` is lowered to
+    the Verus CALL `name(<encoded args>)` (`encode_call`'s case (3), NOT inlined) — modelled by
+    resolving `name` in the SAME `Env.specs` registry, binding params to the ENCODER-denoted args
+    (`refIntValArgs`), and denoting the SAME body at the CONSUMED fuel. At fuel `0` / an unresolved
+    name it bottoms to `0` — IDENTICAL to `intVal`'s bottom, so T1 holds at fuel `0`. -/
+def refIntVal : Nat → Expr → Env → Int
+  | fuel, Expr.arith op a b,  env => tokArith (encArith op) (refIntVal fuel a env) (refIntVal fuel b env)
+  | fuel, Expr.cast inner ty, env => tokCast (encCast ty) (refIntVal fuel inner env)
+  | fuel, Expr.idx base i,    env => byteView encByteAt (refSeqVal fuel base env) (refIntVal fuel i env)
+  | fuel, Expr.seqLen base,   env => byteView encLen (refSeqVal fuel base env) 0
+  | fuel, Expr.byteAt base i, env => byteView encByteAt (refSeqVal fuel base env) (refIntVal fuel i env)
+  | fuel+1, Expr.specCall name args, env =>
+      match env.specs name with
+      | some fn => refIntVal fuel fn.body (env.bindParams fn.params (refIntValArgs (fuel+1) args env))
+      | none    => 0
+  | _,    Expr.intLit n,      _   => n
+  | _,    Expr.var x,         env => env.ints x
+  | _, _, _ => 0
 
-/-- The encoder's SEQUENCE-valued meaning (#178): a slice var `xs`→`xs@` is the
-    IDENTITY on the sequence value (`encode_slice_arg`); a `String` byte receiver is
-    emitted bare and its bytes are the same sequence; a `subrange` is the encoder's
-    `.subrange(lo, hi)` (`encode_index`'s range arms), `seqSub` over the re-encoded
-    base. Routes through the SAME `seqSub` as the source — the rewrite preserves the
-    sub-sequence. Mutual with `refIntVal` (`subrange`'s bounds are integer terms). -/
-def refSeqVal : Expr → Env → List Int
-  | Expr.seqVar x, env => env.seqs x
-  | Expr.strVar x, env => env.seqs x
-  | Expr.subrange base r, env =>
-      let s := refSeqVal base env
+/-- The encoder's SEQUENCE-valued meaning (#178), fuel-indexed (#181): a slice var `xs`→`xs@` is the
+    IDENTITY on the sequence value (`encode_slice_arg`); a `String` byte receiver is emitted bare and
+    its bytes are the same sequence; a `subrange` is the encoder's `.subrange(lo, hi)`
+    (`encode_index`'s range arms), `seqSub` over the re-encoded base. Routes through the SAME
+    `seqSub` as the source. Mutual with `refIntVal` (`subrange`'s bounds are integer terms). -/
+def refSeqVal : Nat → Expr → Env → List Int
+  | _,    Expr.seqVar x, env => env.seqs x
+  | _,    Expr.strVar x, env => env.seqs x
+  | fuel, Expr.subrange base r, env =>
+      let s := refSeqVal fuel base env
       match r with
-      | RangeArg.rangeTo hi    => seqSub s 0 (refIntVal hi env)
-      | RangeArg.range lo hi   => seqSub s (refIntVal lo env) (refIntVal hi env)
-      | RangeArg.rangeFrom lo  => seqSub s (refIntVal lo env) (s.length : Int)
-  | _, _ => []
+      | RangeArg.rangeTo hi    => seqSub s 0 (refIntVal fuel hi env)
+      | RangeArg.range lo hi   => seqSub s (refIntVal fuel lo env) (refIntVal fuel hi env)
+      | RangeArg.rangeFrom lo  => seqSub s (refIntVal fuel lo env) (s.length : Int)
+  | _, _, _ => []
+
+/-- The ENCODER-denoted ARG VALUES of a `specCall` (#181): each arg's `refIntVal` at the SAME fuel
+    (the per-arg `encode_call_arg`). STRUCTURALLY identical to the source `intValArgs`; the soundness
+    content is that each arg agrees (the `refVal_eq` IH). Mutual with `refIntVal`. -/
+def refIntValArgs : Nat → List Expr → Env → List Int
+  | _,    [],        _   => []
+  | fuel, a :: rest, env => refIntVal fuel a env :: refIntValArgs fuel rest env
 end
 
 mutual
 /-- `⟦ ref_contract_pred(P) ⟧` — the meaning, under the standard model, of the Verus
-    predicate string the reference encoder produces. Structured as
+    predicate string the reference encoder produces, fuel-indexed (#181). Structured as
     ENCODE-THEN-INTERPRET (`tokRel (encOp op) …`), following the ENCODER, so the
-    equality with `denote` is a real theorem. Mutual with `refDenoteArms` (#180: the
-    `encode_match` arm bodies are encoded by the SAME recursion). -/
-def refDenote : Expr → Env → Prop
-  | Expr.boolLit b, _   => (b = true)
-  | Expr.cmp op a b, env =>
-      tokRel (encOp op) (refIntVal a env) (refIntVal b env)
-  | Expr.logic op a b, env =>
-      tokConn (encLog op) (refDenote a env) (refDenote b env)
-  | Expr.neg e, env => ¬ refDenote e env
+    equality with `denote` is a real theorem. THE #181 `specCall` arm: a boolean-returning spec-fn
+    call is lowered to the Verus CALL `name(<encoded args>)` (NOT inlined), modelled by resolving
+    `name` in the SAME `Env.specs`, binding params to the ENCODER-denoted args, and denoting the
+    SAME body at the CONSUMED fuel. Mutual with `refDenoteArms` (#180) and the fuel-indexed
+    `refIntVal`/`refIntValArgs` (#181). -/
+def refDenote : Nat → Expr → Env → Prop
+  | _,    Expr.boolLit b, _   => (b = true)
+  | fuel, Expr.cmp op a b, env =>
+      tokRel (encOp op) (refIntVal fuel a env) (refIntVal fuel b env)
+  | fuel, Expr.logic op a b, env =>
+      tokConn (encLog op) (refDenote fuel a env) (refDenote fuel b env)
+  | fuel, Expr.neg e, env => ¬ refDenote fuel e env
   -- The MATCH-IN-ENS form (#180; `encode_match`). The encoder emits a Verus `match` EXPRESSION
   -- `match {scrut} { {pat} => {body}, … }` whose ARM-SELECTION-BY-VARIANT is the Verus `match`
   -- meaning (the shared `scrutVal`/arm-walk, NOT re-implemented — `encode_match` reuses Verus's
@@ -327,13 +359,13 @@ def refDenote : Expr → Env → Prop
   -- built-in `Some(x)`/`None`/`Ok(x)`/`Err(e)` — the variant + payload-binder choice), and each
   -- arm's BODY (the SAME independent `refDenote` recursion — so a swapped/corrupted arm body is
   -- caught). The pattern-bound payload var is in scope in the body exactly as production binds it.
-  | Expr.match_ scrut arms, env =>
-      refDenoteArms (scrutVal scrut env) arms env
+  | fuel, Expr.match_ scrut arms, env =>
+      refDenoteArms fuel (scrutVal scrut env) arms env
   -- The `is`-test (#180; `ref_encode.rs`'s `Expr::Is` arm `({s} is {variant})`). The encoder emits
   -- the Verus `(scrut is Variant)` discriminant test; its meaning is the shared `isVariant` (the
   -- Verus `is` semantics, NOT re-implemented). The faithfulness content is the VARIANT CHOICE — a
   -- wrong variant (`is Some` emitted as `is None`) is a DIFFERENT meaning (the negative lemma).
-  | Expr.is_ scrut variant, env =>
+  | _,    Expr.is_ scrut variant, env =>
       ((scrutVal scrut env).isVariant variant = true)
   -- The 6 BOUNDED-QUANTIFIER combinators (#179). The encoder REUSES the SHARED frozen
   -- `lookup(C).verus_l3` quantifier BODY verbatim (`encode_combinator_call` emits
@@ -349,13 +381,13 @@ def refDenote : Expr → Env → Prop
   --   - `ArgKind::Pred` → `encode_pred_arg`'s `|x: u32| <body>`, the body re-encoded by the
   --     SAME independent `refDenote`/`refIntVal` recursion (so a predicate infidelity is
   --     caught), applied at the i-th element via the SHARED `Env.bindInt`.
-  | Expr.comb c seq seq2 idx pred, env =>
-      let s := refSeqVal seq env
-      let s2 := match seq2 with | some e => refSeqVal e env | none => []
-      let n := match idx with | some e => refIntVal e env | none => 0
+  | fuel, Expr.comb c seq seq2 idx pred, env =>
+      let s := refSeqVal fuel seq env
+      let s2 := match seq2 with | some e => refSeqVal fuel e env | none => []
+      let n := match idx with | some e => refIntVal fuel e env | none => 0
       let p : Int → Prop := fun i =>
         match pred with
-        | some (Pred.mk bound body) => refDenote body (env.bindInt bound (seqIdx s i))
+        | some (Pred.mk bound body) => refDenote fuel body (env.bindInt bound (seqIdx s i))
         | none => True
       match c with
       | CombName.forallIn =>
@@ -372,7 +404,16 @@ def refDenote : Expr → Env → Prop
           ∀ i j : Int,
             ((0 ≤ i ∧ i < (s.length : Int)) ∧ (0 ≤ j ∧ j < (s2.length : Int))) →
               seqIdx s i ≠ seqIdx s2 j
-  | _, _ => True
+  -- THE #181 SPEC-FN CALL as a top-level PREDICATE (`encode_call`'s case (3) — the Verus CALL,
+  -- NOT inlined): resolve `name` in the SAME `Env.specs`, bind params to the ENCODER-denoted args,
+  -- denote the SAME body at the CONSUMED fuel. At fuel `0` / an unresolved name → `True`, IDENTICAL
+  -- to `denote`'s bottom (T1 holds at fuel `0`). The call-site soundness is the GENERIC theorem:
+  -- the args agree (the `refVal_eq` IH) + the SAME registry resolves the SAME body (`ref_sound` IH).
+  | fuel+1, Expr.specCall name args, env =>
+      match env.specs name with
+      | some fn => refDenote fuel fn.body (env.bindParams fn.params (refIntValArgs (fuel+1) args env))
+      | none    => True
+  | _, _, _ => True
 
 /-- The encoder's `match`-arm SELECTION + payload BINDING (#180; `encode_match`). STRUCTURALLY
     IDENTICAL to `denoteArms` (the arm selection by variant is the Verus `match` meaning, which
@@ -381,15 +422,15 @@ def refDenote : Expr → Env → Prop
     are `encode_pattern`'s built-in `Some(x)`/`None`/`Ok(x)`/`Err(e)` choice, modelled as the
     arm's `Variant` + binder. The `match_` case of `ref_sound` proves this equals `denoteArms`
     (by the recursive IH on each body). -/
-def refDenoteArms : OptResVal → List MatchArm → Env → Prop
-  | _, [], _ => True
-  | scrut, MatchArm.mk variant binder body :: rest, env =>
+def refDenoteArms : Nat → OptResVal → List MatchArm → Env → Prop
+  | _,    _,     [], _ => True
+  | fuel, scrut, MatchArm.mk variant binder body :: rest, env =>
       if scrut.variant = variant then
         match binder with
-        | some x => refDenote body (env.bindInt x scrut.payload)
-        | none   => refDenote body env
+        | some x => refDenote fuel body (env.bindInt x scrut.payload)
+        | none   => refDenote fuel body env
       else
-        refDenoteArms scrut rest env
+        refDenoteArms fuel scrut rest env
 end
 
 end Thermite

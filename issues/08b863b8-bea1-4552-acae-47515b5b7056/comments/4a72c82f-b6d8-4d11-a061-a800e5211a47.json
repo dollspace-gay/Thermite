@@ -1,0 +1,10 @@
+{
+  "uuid": "4a72c82f-b6d8-4d11-a061-a800e5211a47",
+  "issue_uuid": "08b863b8-bea1-4552-acae-47515b5b7056",
+  "author": "Yffe",
+  "content": "Plan: author exec-stmt-tv.md — FREEZE the exec-statement subset v1 (let/assign/Block-sequencing+tail/if/Stmt::Expr/tail-return IN; Loop/Break/Continue in-set-deferred-to-2.2.2; non-scalar mutation/mid-body-early-return/match-stmt/recursion-stmt OUT) + a big-step state-transformer operational semantics (independent, composes exec_ref_value per-RHS + state threading) + body behavioral-refinement TV. GROUNDED 2.2.1 (straight-line): faithful body verifies; dropped statement, reordered mutation, if-branch swap all CAUGHT. 2.2.2 loops = kernel-gated horizon (fixpoint); no_std target = sibling. The frozen subset = the verified-microkernel exec language v1 (the convergence). Blockers #159-#164.",
+  "created_at": "2026-06-09T00:58:30.700589138Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAgTSHZhu+TDmDw/42XWCKsn4t8jFyo55gtZAD5dSkWEZsMO5TKNI4Z4y9niPUkQw6fokA9R8QlEgeMcukMzcyBA=="
+}

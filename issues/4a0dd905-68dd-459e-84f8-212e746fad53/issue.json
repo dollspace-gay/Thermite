@@ -1,0 +1,10 @@
+{
+  "uuid": "4a0dd905-68dd-459e-84f8-212e746fad53",
+  "display_id": 170,
+  "title": "thermite-semantics increment (a): spec/contract-sublanguage denotation S_C + PROVE (T1) for ref_contract_pred — ∀ contract Expr P, ⟦ref_contract_pred(P)⟧ = ⟦P⟧_S. The first, smallest, highest-value increment (the ==-vs-<= faithfulness lives here). Mechanize S_C over the contract Expr subset + the 8 combinators' frozen verus_l3 + prove the encoder sound by structural induction. Prover TBD (fork, see thermite-semantics.md tooling assessment). Keystone of epic #169.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:12:53.706585958Z",
+  "updated_at": "2026-06-09T14:12:53.706585958Z"
+}

@@ -2,11 +2,12 @@
   "uuid": "7456c0bf-8a73-469d-bb87-0380722c1e26",
   "display_id": 176,
   "title": "step-3 increment 1b: contract S_C arithmetic operators (+ - * / % << >> & | ^) + partiality (div/shift-by-zero rejected) — extend the Lean fragment + prove ref_sound for arithmetic (epic #169)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T16:53:41.538867894Z",
-  "updated_at": "2026-06-09T16:53:45.410449213Z",
+  "updated_at": "2026-06-09T17:16:47.810660508Z",
+  "closed_at": "2026-06-09T17:16:47.810660508Z",
   "labels": [
     "blocker"
   ]

@@ -30,6 +30,20 @@ Thermite **transpiles to Rust** — `rustc` is the backend, so there is no separ
 
 See [`thermite-design.md`](./thermite-design.md) for the full design (thesis, surface language, the Forge REPL, the ladder, the vacuity battery, `#[slag]`, FFI, roadmap).
 
+## Auditing the claim (don't trust the label)
+
+"L3" is only worth what an outsider can independently re-derive. **`make audit`** does exactly that — it trusts neither the agent nor the `L3` label, builds the toolchain from source, and runs three checks on a real program (binary search):
+
+```sh
+make audit          # requires the Verus/Z3 prover (VERUS_BIN, on PATH, or ~/.local/bin/verus)
+```
+
+- **(A)** the faithful program **certifies L3** (proven for all inputs);
+- **(B)** the *same* program with one line changed to return the wrong index is **REFUSED** — the prover reports `postcondition not satisfied` and hard-fails (a rubber stamp would still say L3 here; this is the proof the prover has teeth);
+- **(D)** the emitted proof file **re-verifies under third-party Verus with `forge` excluded** (`2 verified, 0 errors`).
+
+A passing audit means trust reduces to a small *named* set — `{ Z3/Verus soundness, the Thermite→Verus lowering }` — and every other step reproduces on the auditor's own machine. (See [`scripts/audit.sh`](./scripts/audit.sh); the lowering link is what the translation-validation work narrows.)
+
 ## Status
 
 **v0.1–v0.5 + the universal verified primitive basis (Stages 1–8) + the primitive-completeness campaign (C1–C12) — the language composes into real programs that run, effect-confined.** A Thermite program goes from source to a verified, **runnable, contract-checked, seccomp-sandboxed native binary**. Beyond the basis, the surface now has **general literals + integer operators, `break`/`continue`, `u64`↔`String` (round-trip proven), string search/transform (`split`/`find`/`contains`/`trim`), `Vec` completeness incl. non-Copy `Vec<String>`, built-in `Option`/`Result` with payload-in-contract, plain-`fn` and mutual recursion, tuples + tuple destructuring, `for`-loops / match guards / or-patterns / `if let`, and a bounded verified `Map<K, V>`** — and **all four acceptance programs certify L3 *and* build+run**: a **verified multi-line text editor that runs under the seccomp sandbox** (editing, line-navigation, and cursor-layout logic all L3; only the raw syscalls trusted), a number formatter, a calculator, and a line/CSV parser. Every cluster was grounded in real Verus and adversarially verified by the ACToR critic loop (every divergence it surfaced — ~20 across the campaign — caught and fixed, never skipped), and the toolchain's soundness-critical core is **itself Verus-verified** (`thermite-verified`), down to a mutation gate that **excludes only prover-proved-equivalent mutants** so an honest contract is never falsely flagged weak.

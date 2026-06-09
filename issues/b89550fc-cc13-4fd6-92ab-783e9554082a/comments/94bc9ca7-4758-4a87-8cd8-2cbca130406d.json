@@ -1,0 +1,10 @@
+{
+  "uuid": "94bc9ca7-4758-4a87-8cd8-2cbca130406d",
+  "issue_uuid": "b89550fc-cc13-4fd6-92ab-783e9554082a",
+  "author": "Yffe",
+  "content": "Add a test-only forge-level Divergent teeth in forge/src/exec_tv.rs: a #[cfg(test)] mod that builds real exec obligations with a deliberately-wrong P_production and discharges them through the actual private `discharge` fn (reached via super::, no visibility tweak), asserting Faithful (control), Divergent via postcondition counterexample, Divergent via non-compile (#122 paren-drop), and Unverifiable for a degenerate zero-obligation program. No production-logic change. Gauntlet: build + test --workspace + clippy -D warnings + fmt --check + cargo tree -p thermite-tv (no thermite-lower).",
+  "created_at": "2026-06-09T03:00:10.737478973Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAbVOCG847xxeXp8VYndj8+Sc12vtoaZOxrYSSwYctSG1kF+cl4VM4HuSAVswaD/wbnujAxkiux+/qcAfIGQpDDQ=="
+}

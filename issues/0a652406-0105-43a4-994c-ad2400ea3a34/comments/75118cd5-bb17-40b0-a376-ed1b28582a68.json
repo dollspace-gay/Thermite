@@ -1,0 +1,10 @@
+{
+  "uuid": "75118cd5-bb17-40b0-a376-ed1b28582a68",
+  "issue_uuid": "0a652406-0105-43a4-994c-ad2400ea3a34",
+  "author": "Yffe",
+  "content": "RESULT (commit 1bea449d, main, NOT closed — critic re-audits). Single-file doc fix to .design/verified/rust-lean-correspondence.md. Added: (1) Discrepancy D6 — quotes the two live encode arms [Expr::Field {receiver,name} => Ok(format!(\"{r}.{name}\")) and Expr::TupleProj {receiver,index} => Ok(format!(\"{r}.{index}\"))], states the Lean Expr inductive has no field/tupleProj constructor (member access OUTSIDE S_C, like Map D3 / guards D4), the consequence (a contract using result.x/result.0 relies on per-run Z3 TV alone for that arm WITHOUT the Lean T1/ref_sound backing), and the future-brick note (extend S_C with field/tupleProj — same shape as the proven rewrites). D6 distinguished from D5 (D5 = exec-body obligation SHAPE). (2) Table 1H — exhaustive 15-arm encode inventory: IntLit/BoolLit/Path/Binary/Unary/Call/MethodCall/Index/Ref/Cast/Is/Match are rows, Field/TupleProj are D6, the trailing Err is the honest catch-all. No other uncovered arm. (3) Residual line in 'What this inspection does NOT cover' next to Map D3. (4) Corrected AC-1 + REQ-1 SHIPPED cell so the completeness claim is TRUE (D1-D6). NO code/Lean changes. Gauntlet green: cd lean && lake build = Build completed successfully (10 jobs); cargo build --workspace = Finished.",
+  "created_at": "2026-06-09T21:27:05.342184992Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAoL/hEfi/ZDNQziMbdbOP1W/VMf3+VkSDoPwpzt9OXc42Gj8uymIGlJDIvbgHu7J/yMSorRAuu5Pxj1snYThzBw=="
+}

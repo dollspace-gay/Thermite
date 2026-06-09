@@ -613,6 +613,8 @@ per-run TV check still bites on any divergence between the actual Rust encoder o
 (it just cannot confirm the Rust encoder matches the Lean model — only a human audit closes that).
 This gap is enumerated in the reduced-trusted-base table (item 3) and is NOT hidden.
 
+**CLOSED AT THE AUDIT-BY-INSPECTION TIER (#185).** The rigorous, arm-by-arm audit that the Rust encoders match the Lean-proved algorithm is now `.design/verified/rust-lean-correspondence.md` (Tables 1–3 quote every `ref_encode`/`exec_encode`/`exec_stmt_encode` arm beside its Lean model arm, with the pinning theorem + negative lemma, the audited commit SHAs, the bridge assumptions A1–A3, and the discrepancies D1–D5). The extraction-bridge tier (Lean→Rust extraction / a Rust-side proof) stays the named stronger future option (mitigation (1) made rigorous; the gap is now documented, not just asserted).
+
 ## REQ-7 — the ARCHITECTURE DECISION: a verified validator (DECIDED; #173)
 
 The architecture is DECIDED (this resolves the doc's own open question — research finding #1 +

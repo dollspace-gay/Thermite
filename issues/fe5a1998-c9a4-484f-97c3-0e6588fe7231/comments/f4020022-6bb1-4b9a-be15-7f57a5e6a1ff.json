@@ -1,0 +1,10 @@
+{
+  "uuid": "f4020022-6bb1-4b9a-be15-7f57a5e6a1ff",
+  "issue_uuid": "fe5a1998-c9a4-484f-97c3-0e6588fe7231",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (65513d81) — TIER 3 reached. Z3-demotion PoC: Lean-SMT (smt 7d1d823 + lean-cvc5 4ecae27 vendoring cvc5 1.3.2 FFI + Mathlib, toolchain pinned v4.30.0->v4.29.0, spine green 366 jobs) discharges TWO real TV-shaped equivalence obligations (the obligation.rs (P_prod)<=>(P_ref) shape, hand-translated, stated as such) via the smt tactic, KERNEL-CHECKED with standard axioms only [propext,Classical.choice,Quot.sound] — the cvc5 proof is genuinely replayed in the kernel, cvc5 NOT in the trust base for these obligations. Critic NO DIVERGENCE: tactic identity live-probed (skip->unsolved; trace.smt shows cvc5 invocation+unsat core); no silent omega fallback; spine unperturbed; doc HONEST — PARTIAL-scope demotion (QF-linear-int only; QF_BV blocked by a verified upstream sorry in Smt/Reconstruct/BitVec/Bitblast.lean:36; quantified combinators weak; Verus/Z3 emit no certificates so the architecture RE-solves; hand-translation residual named; production h_tv REMAINS Z3-trusted — no overclaim). Upstream asks recorded in .design/verified/z3-demotion.md.",
+  "created_at": "2026-06-09T22:24:24.539923861Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA5roctqpCkpjgmD9R1GvZvQOofvdut10gTRfYA+SyVha4iNAsTNz+Ql+FVeo7sKm4rRqf0dDX7+3iYRL35cj/DA=="
+}

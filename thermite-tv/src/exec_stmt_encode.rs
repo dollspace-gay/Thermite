@@ -71,11 +71,34 @@
 //! |---|---|---|
 //! | REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT subset is PINNED IN CODE here: [`body_ref_state`] ADMITS exactly `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + `Block` sequencing/tail, and HONESTLY REJECTS (an `Unsupported` `Err`) `Stmt::Loop`/`Break`/`Continue` (2.2.2), a mid-`if`-branch early return, `match`-stmt, non-scalar mutation, and a re-shadow — the design-amendment-gated stable set; non-test consumer `crate::obligation::body_equivalence_obligation`; verified by `thermite-tv/tests/body_teeth.rs` B1-B4 (faithful VERIFIES, infidel CAUGHT) + the in-module honest-skip tests. |
 //! | REQ-2 (operational-semantics reference state-denotation — independent) | SHIPPED | `pub fn body_ref_state` here — the big-step state-transformer (let/assign substitution-threading, mutation-ORDER sensitivity, `if`-branch composition, multi-cell TUPLE projection), composing `crate::exec_encode::exec_ref_value` on each env-substituted RHS / condition / tail; non-test consumer `crate::obligation::body_equivalence_obligation`; verified by `tests/body_teeth.rs` B1-B4 against real verus (B2 the mutation-ORDER teeth, B4 the multi-cell tuple). Deps `thermite-syntax` + `thermite-spec` ONLY (`Cargo.toml`, AC-6) — no `thermite-lower`. |
+//!
+//! ## LOOP extension — step 2.2.2-i (`.design/verified/loop-tv.md`; epic #169, blocker #163)
+//!
+//! [`loop_ref_obligations`] extends the straight-line state-transformer to a v1
+//! frozen-subset `while` loop (`loop-tv.md` REQ-1/REQ-2): a single `while <cond>`
+//! with declared `inv`+`dec`, a straight-line scalar body, the loop the LAST
+//! statement before the tail. It produces the THREE per-run reference pieces the
+//! obligation emitters in [`crate::obligation`] turn into Z3-checkable Verus units —
+//! ENTRY (`inv` holds on the pre-loop entry state), PRESERVATION (one iteration of the
+//! body carries `inv ∧ cond` to `inv`, REUSING the SHIPPED [`body_ref_state`] step),
+//! and EXIT (the after-loop state is `inv ∧ ¬cond`-constrained). The after-loop state
+//! threads as the design's OPAQUE-but-invariant-constrained fresh cells: a loop cannot
+//! produce a closed form (it is a fixpoint), so the post-loop cells are havocked +
+//! re-constrained to `inv ∧ ¬cond` (the honest analogue of how Verus itself models a
+//! loop's after-state). Every OUT-of-v1 loop (`loop`-kind, `break`/`continue`, a
+//! mid-body `return`, a nested loop, non-scalar state, a trivially-weak `inv`) is an
+//! honest [`RefEncodeError::Unsupported`] (R-HONEST-3 — Skipped, NEVER silently
+//! Faithful).
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | loop-REQ-1 (loop surface + v1 frozen loop subset) | SHIPPED | the v1 IN/OUT subset is PINNED IN CODE: [`loop_ref_obligations`] (+ [`recognize_v1_loop`]) ADMITS exactly a single `while <cond>` with non-empty `invs` + `dec` + a straight-line scalar body as the LAST statement before the tail, and HONESTLY REJECTS (an `Unsupported` `Err`) the `loop`-kind, `break`/`continue`, a mid-body `return`, a nested loop, non-scalar state, and a trivially-weak `inv` (`inv true`) — the design-amendment-gated stable set; non-test consumer `crate::obligation::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}`; verified by `thermite-tv/tests/loop_teeth.rs` L1 (faithful VERIFIES) + L4 (each OUT form Skipped). |
+//! | loop-REQ-2 (the three per-run loop obligations) | SHIPPED | `pub fn loop_ref_obligations` here returns [`LoopObligations`] carrying the three reference pieces (`entry_pred` = `inv[cells:=entry]`; `cond` + `inv` for the preservation step's `requires`/`ensures` over the SHIPPED [`body_ref_state`] step; `after_loop` = `inv ∧ ¬cond` over the opaque cells); the per-cond/inv VALUE encoding REUSES [`exec_ref_value`] on the env-substituted [`Expr`] (independence preserved — no `thermite-lower` dep). The three Verus-unit emitters are `crate::obligation::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}`; verified by `tests/loop_teeth.rs` L1–L4 against real verus (L1 all three VERIFY, L2 broken-preservation CAUGHT, L3 wrong-exit CAUGHT, L4 weak-inv/loop-kind/break/return Skipped). |
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use thermite_syntax::ast::{BinOp, Block, Expr, IndexArg, Stmt};
+use thermite_syntax::ast::{BinOp, Block, Clause, Expr, IndexArg, LoopKind, LoopNode, Stmt};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
@@ -190,6 +213,378 @@ pub fn body_ref_state_ensures(
     // The single-cell (scalar / bool / if-tail) body: the plain scalar equality.
     let reference = body_ref_state(block, ctx)?;
     Ok(format!("{result_name} == {reference}"))
+}
+
+// =============================================================================
+// LOOP extension — step 2.2.2-i (`.design/verified/loop-tv.md` REQ-1/REQ-2)
+// =============================================================================
+
+/// The three per-run loop reference pieces a v1 frozen-subset `while` loop produces
+/// (`loop-tv.md` REQ-2), consumed by the obligation emitters in [`crate::obligation`]
+/// to build the three Z3-checkable Verus units (ENTRY / PRESERVATION / EXIT). Each
+/// field is an INDEPENDENT reference encoding (composing [`exec_ref_value`] on the
+/// env-substituted cond / inv / cell exprs — no `thermite-lower` symbol, AC-7).
+///
+/// The loop is the v1 frozen subset: a single `while <cond>` with non-empty `invs` +
+/// a `dec`, a STRAIGHT-LINE SCALAR body, the loop the LAST statement before the tail.
+/// The mutated cells are the bare scalar names the body rebinds (the design's `lo`/
+/// `hi`); they are bound as the loop-step parameters in the preservation obligation
+/// and as the OPAQUE-but-invariant-constrained after-loop cells in the exit
+/// obligation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopObligations {
+    /// The mutated scalar cell names (the body-rebound cells), in a stable
+    /// (sorted) order — the order they are declared/projected in the obligations.
+    pub cells: Vec<String>,
+    /// ENTRY (`loop-tv.md` REQ-2.1): the conjoined `inv` with each cell SUBSTITUTED
+    /// by its pre-loop ENTRY value (the prefix straight-line state, encoded by the
+    /// SHIPPED [`body_ref_state`] threading). The entry obligation asserts this
+    /// predicate holds (`entry-state ⟹ inv`).
+    pub entry_pred: String,
+    /// The loop condition `<cond>` over the FREE cells (cells as the loop-step
+    /// params) — the preservation obligation's `requires inv && cond` guard and the
+    /// negated `!(cond)` in the exit characterization.
+    pub cond: String,
+    /// The conjoined loop `inv` over the FREE cells — the preservation obligation's
+    /// `requires inv` guard and (negated-cond conjunct) the exit characterization.
+    pub inv: String,
+    /// PRESERVATION (`loop-tv.md` REQ-2.2): per-cell, the SINGLE-ITERATION stepped
+    /// value — the SHIPPED [`body_ref_state`] step of the loop body (the loop body
+    /// IS a straight-line `Block`). `step_cells[i]` is the closed form cell `i` holds
+    /// AFTER one iteration, as a function of the entry cells. The obligation's
+    /// `ensures` is `result.i == step_cells[i]` (the body-TV REUSE, AC-5) AND the inv
+    /// at the stepped state (the preservation conjunct, AC-2).
+    pub step_cells: Vec<String>,
+    /// PRESERVATION: the conjoined `inv` with each cell SUBSTITUTED by its stepped
+    /// value (`step_cells`) — the obligation's preservation `ensures` conjunct
+    /// (`inv ∧ cond` carried to `inv` by one iteration).
+    pub inv_at_step: String,
+}
+
+/// Recognize + encode the v1 frozen-subset `while` loop in `block`, producing the
+/// three per-run reference pieces ([`LoopObligations`]) the [`crate::obligation`]
+/// emitters turn into Z3-checkable Verus units (`loop-tv.md` REQ-1/REQ-2). The loop
+/// MUST be the LAST statement before the tail (the `binary_search` shape — v1's
+/// after-loop continuation is in scope ONLY there); a prefix of straight-line
+/// statements establishes the pre-loop entry state.
+///
+/// REUSES the SHIPPED [`body_ref_state`] threading for both the pre-loop entry state
+/// and the single-iteration body step (the loop body is itself a straight-line
+/// `Block`); the cond / inv VALUE encoding REUSES [`exec_ref_value`] on the
+/// env-substituted [`Expr`] (independence preserved — no `thermite-lower` dep).
+///
+/// Returns [`RefEncodeError::Unsupported`] (NEVER a panic / silent wrong encoding,
+/// R-HONEST-3) for an OUT-of-v1 loop: a `loop`-kind (multi-exit), a `break`/
+/// `continue` / mid-body `return` in the body (multi-exit CPS), a NESTED loop, a
+/// non-scalar-state body, or a TRIVIALLY-WEAK `inv` (`inv true` — the after-loop
+/// `true ∧ ¬cond` is vacuous, cannot enter the (a) rule). Each is Skipped HONESTLY,
+/// never silently Faithful (the honest 2.2.2 boundary in the certificate).
+pub fn loop_ref_obligations(
+    block: &Block,
+    ctx: &BodyRefCtx,
+) -> Result<LoopObligations, RefEncodeError> {
+    let (prefix, loop_node) = recognize_v1_loop(block)?;
+    let cond_expr = match &loop_node.kind {
+        LoopKind::While(c) => c.as_ref(),
+        LoopKind::Loop => {
+            // Unreachable: recognize_v1_loop rejects the `loop`-kind. Kept exhaustive
+            // (no `_`/panic — R-APG-1).
+            return Err(RefEncodeError::Unsupported(
+                "`loop`-kind (the infinite-loop form is a multi-exit CPS shape — OUT \
+                 of the v1 single-`while` subset, Skipped honestly)"
+                    .to_string(),
+            ));
+        }
+    };
+
+    // A TRIVIALLY-WEAK `inv` (the conjunction is the bare `true`) is OUT of v1 (the
+    // after-loop `true ∧ ¬cond` is vacuous) — honest Err, checked before encoding.
+    if invariant_is_vacuous(&loop_node.invs) {
+        return Err(RefEncodeError::Unsupported(
+            "trivially-weak loop invariant (`inv true` — the after-loop `true ∧ ¬cond` \
+             characterization is vacuous; the loop cannot enter the (a) rule, Skipped \
+             honestly — bounded unrolling is the future v0.2 L2 fallback)"
+                .to_string(),
+        ));
+    }
+
+    // The mutated scalar cells: the bare names the loop body REBINDS (a v1 scalar
+    // mutation is a `Stmt::Assign` to a bare in-scope name — recognize_v1_loop has
+    // already rejected non-scalar / out-of-subset bodies). Sorted for a stable
+    // declaration/projection order across the three obligations.
+    let mut cells: Vec<String> = collect_assigned_cells(&loop_node.body)?
+        .into_iter()
+        .collect();
+    cells.sort();
+    if cells.is_empty() {
+        return Err(RefEncodeError::Unsupported(
+            "v1 `while` loop with no scalar cell mutation (a loop whose body mutates \
+             no in-scope scalar cell carries no per-iteration state step — OUT of the \
+             v1 subset)"
+                .to_string(),
+        ));
+    }
+
+    // The ENTRY state: thread the pre-loop prefix straight-line statements (the
+    // `let mut lo = 0; let mut hi = haystack.len();` prefix) into the entry env — the
+    // closed-form value of EVERY prefix-introduced binding (cells AND read-only
+    // in-scope bindings the inv/cond reference) in the fn inputs. The entry invariant
+    // substitutes the WHOLE entry env (so a referenced `hi |-> n` is resolved, not
+    // left free); the fn inputs are the only surviving free vars. Every CELL must have
+    // a prefix `let mut` binding (an assigned cell needs an in-scope introducer) —
+    // honest Err otherwise.
+    let mut entry_env: Env = Env::new();
+    for stmt in prefix {
+        thread_stmt(stmt, &mut entry_env)?;
+    }
+    for cell in &cells {
+        if !entry_env.contains_key(cell) {
+            return Err(RefEncodeError::Unsupported(format!(
+                "loop cell `{cell}` has no pre-loop `let mut` binding in the straight-\
+                 line prefix (malformed v1 loop — the entry state is undefined)"
+            )));
+        }
+    }
+    let entry_subst = entry_env;
+
+    // The STEPPED state: thread ONE iteration of the loop body (the SHIPPED
+    // straight-line state-transformer, the loop body IS a straight-line Block). Each
+    // cell starts free (bound to itself — the loop-step's param), so the stepped
+    // value is a closed form in the ENTRY cells. A cell the body does NOT rebind keeps
+    // its identity binding (unchanged across the iteration).
+    let mut step_env: Env = Env::new();
+    for cell in &cells {
+        step_env.insert(cell.clone(), Expr::Path(vec![cell.clone()]));
+    }
+    for stmt in &loop_node.body.stmts {
+        thread_stmt(stmt, &mut step_env)?;
+    }
+    // The per-cell stepped CLOSED FORM (in the entry cells) + the cell→stepped-form
+    // substitution env — both read from `step_env`, where every `cell` is present (it
+    // was seeded with its identity binding above, never removed by threading); an
+    // absent key is handled honestly (the identity), no panic.
+    let mut step_subst: Env = Env::new();
+    let mut step_cells: Vec<String> = Vec::with_capacity(cells.len());
+    for cell in &cells {
+        let stepped = match step_env.get(cell) {
+            Some(expr) => expr.clone(),
+            None => Expr::Path(vec![cell.clone()]),
+        };
+        step_cells.push(encode_value(&stepped, &Env::new(), ctx)?);
+        step_subst.insert(cell.clone(), stepped);
+    }
+
+    // The condition + the invariant over the FREE cells (encoded as bool-valued exec
+    // predicates — REUSE exec_ref_value on the env-substituted cond / inv).
+    let cond = encode_predicate(cond_expr, &Env::new(), ctx)?;
+    let inv = encode_inv_clauses(&loop_node.invs, &Env::new(), ctx)?.join(" && ");
+
+    // The entry-substituted invariant (cells → entry values) and the step-substituted
+    // invariant (cells → stepped values) — REUSE the same inv-clause encoder under the
+    // substitution env.
+    let entry_pred = encode_inv_clauses(&loop_node.invs, &entry_subst, ctx)?.join(" && ");
+    let inv_at_step = encode_inv_clauses(&loop_node.invs, &step_subst, ctx)?.join(" && ");
+
+    Ok(LoopObligations {
+        cells,
+        entry_pred,
+        cond,
+        inv,
+        step_cells,
+        inv_at_step,
+    })
+}
+
+/// Recognize the v1 frozen-subset `while` loop: `block`'s LAST statement must be a
+/// `Stmt::Loop` with `kind: While(_)`, non-empty `invs`, a `dec`, and a STRAIGHT-LINE
+/// SCALAR body containing NO nested loop / `break` / `continue` / mid-body `return`.
+/// Returns the pre-loop prefix statements + the loop node, or an honest
+/// [`RefEncodeError::Unsupported`] naming the precise OUT-of-v1 reason (Skipped, never
+/// silently Faithful — R-HONEST-3).
+fn recognize_v1_loop(block: &Block) -> Result<(&[Stmt], &LoopNode), RefEncodeError> {
+    let Some((last, prefix)) = block.stmts.split_last() else {
+        return Err(RefEncodeError::Unsupported(
+            "no loop statement (the v1 loop arm requires a `while` loop as the last \
+             statement before the tail)"
+                .to_string(),
+        ));
+    };
+    let Stmt::Loop(loop_node) = last else {
+        return Err(RefEncodeError::Unsupported(
+            "the last statement before the tail is not a loop (v1's after-loop \
+             continuation is in scope ONLY when the loop is the last statement — a \
+             loop followed by further straight-line mutation is a v1.1 extension)"
+                .to_string(),
+        ));
+    };
+    // The PREFIX must itself be straight-line (no earlier loop / break / continue /
+    // mid-body return) — reuse the SHIPPED thread_stmt rejection by threading it.
+    let mut probe: Env = Env::new();
+    for stmt in prefix {
+        thread_stmt(stmt, &mut probe)?;
+    }
+    if !matches!(loop_node.kind, LoopKind::While(_)) {
+        return Err(RefEncodeError::Unsupported(
+            "`loop`-kind (the infinite-loop form is a multi-exit CPS shape — the corpus \
+             `binary_search` uses `loop { if .. { return .. } }`; OUT of the v1 \
+             single-`while` subset, Skipped honestly)"
+                .to_string(),
+        ));
+    }
+    if loop_node.invs.is_empty() {
+        // Structurally LoopNode carries a non-empty invs (the parser enforces §4.1);
+        // the honest Err keeps the rule total even against a hand-built node.
+        return Err(RefEncodeError::Unsupported(
+            "`while` loop with no `inv` (v1's after-loop characterization needs a \
+             usable invariant — Skipped honestly)"
+                .to_string(),
+        ));
+    }
+    // The body must be straight-line SCALAR with NO nested loop-control / loop /
+    // mid-body return — reject any of those before encoding.
+    reject_out_of_subset_body(&loop_node.body)?;
+    Ok((prefix, loop_node))
+}
+
+/// Reject an OUT-of-v1 loop body: a NESTED `Stmt::Loop`, a `break`/`continue`, or a
+/// mid-body `return` (the multi-exit CPS forms) → an honest
+/// [`RefEncodeError::Unsupported`]. Recurses into `if`-branch bodies (a `break` /
+/// `return` nested in an `if` is just as OUT). A straight-line scalar body (the v1
+/// IN set: `let`/`assign`/`if`/`expr`) passes; the per-statement value/scalar
+/// rejection is left to the SHIPPED [`thread_stmt`] (e.g. a non-scalar assignment is
+/// already an honest Err there).
+fn reject_out_of_subset_body(body: &Block) -> Result<(), RefEncodeError> {
+    for stmt in &body.stmts {
+        reject_out_of_subset_stmt(stmt)?;
+    }
+    Ok(())
+}
+
+fn reject_out_of_subset_stmt(stmt: &Stmt) -> Result<(), RefEncodeError> {
+    match stmt {
+        Stmt::Loop(_) => Err(RefEncodeError::Unsupported(
+            "NESTED loop in a v1 loop body (the inner loop's after-state is itself a \
+             fixpoint inside the outer body-step — OUT of v1, Skipped honestly)"
+                .to_string(),
+        )),
+        Stmt::Break => Err(RefEncodeError::Unsupported(
+            "`break` in a v1 loop body (a `break` is a multi-exit form — the after-loop \
+             characterization needs per-exit invariant conjuncts, a v2 extension; \
+             Skipped honestly)"
+                .to_string(),
+        )),
+        Stmt::Continue => Err(RefEncodeError::Unsupported(
+            "`continue` in a v1 loop body (a back-edge is a multi-exit control form — \
+             OUT of v1, Skipped honestly)"
+                .to_string(),
+        )),
+        Stmt::Return(_) => Err(RefEncodeError::Unsupported(
+            "mid-body `return` in a v1 loop body (the corpus `binary_search` uses \
+             `return None`/`return Some(mid)` — a multi-exit CPS form, OUT of v1; \
+             Skipped honestly)"
+                .to_string(),
+        )),
+        Stmt::If { then, else_, .. } => {
+            reject_out_of_subset_body(then)?;
+            if let Some(else_block) = else_ {
+                reject_out_of_subset_body(else_block)?;
+            }
+            Ok(())
+        }
+        Stmt::Let { .. } | Stmt::Assign { .. } | Stmt::Expr(_) => Ok(()),
+    }
+}
+
+/// Collect the bare scalar cell names a straight-line loop body REBINDS (a v1
+/// `Stmt::Assign` to a bare in-scope name). Recurses into `if`-branch bodies (a cell
+/// mutated in a branch is a mutated cell). A `let`-introduced branch-local binding is
+/// NOT a mutated outer cell (it does not leak — the body_ref_state semantics), so a
+/// branch-local `let mid = ..` is excluded. Returns an honest Err only on a malformed
+/// non-bare-name target (left to the SHIPPED threading otherwise).
+fn collect_assigned_cells(body: &Block) -> Result<BTreeSet<String>, RefEncodeError> {
+    let mut cells = BTreeSet::new();
+    collect_assigned_cells_block(body, &mut cells)?;
+    Ok(cells)
+}
+
+fn collect_assigned_cells_block(
+    body: &Block,
+    cells: &mut BTreeSet<String>,
+) -> Result<(), RefEncodeError> {
+    for stmt in &body.stmts {
+        match stmt {
+            Stmt::Assign { target, .. } => match target {
+                Expr::Path(segments) if segments.len() == 1 => {
+                    cells.insert(segments[0].clone());
+                }
+                _ => {
+                    return Err(RefEncodeError::Unsupported(
+                        "assignment to a non-scalar / non-bare-name target in a v1 loop \
+                         body (the v1 loop state mutates only bare scalar cells — an \
+                         indexed / field target is OUT, a v2 sequence/struct theory)"
+                            .to_string(),
+                    ));
+                }
+            },
+            Stmt::If { then, else_, .. } => {
+                collect_assigned_cells_block(then, cells)?;
+                if let Some(else_block) = else_ {
+                    collect_assigned_cells_block(else_block, cells)?;
+                }
+            }
+            // A `let` introduces a fresh (branch-local or body-local) binding, not a
+            // mutated OUTER cell; an `Expr`-stmt has no state effect. Neither
+            // contributes a mutated loop cell.
+            Stmt::Let { .. } | Stmt::Expr(_) => {}
+            // The multi-exit / nested forms are already rejected by
+            // reject_out_of_subset_body before this is reached; kept exhaustive.
+            Stmt::Loop(_) | Stmt::Break | Stmt::Continue | Stmt::Return(_) => {}
+        }
+    }
+    Ok(())
+}
+
+/// Encode a bool-valued PREDICATE (a loop `cond` / `inv` clause) under `env` — the
+/// cells are SUBSTITUTED by their env value (entry / stepped) then the predicate is
+/// REUSED through [`exec_ref_value`] (the bounded comparison / logical reference — the
+/// same independent encoder the per-RHS value uses). A predicate outside the bounded
+/// exec sublanguage (a quantifier, a spec-only combinator) is an honest Err from
+/// [`exec_ref_value`] — the v1 loop subset is scalar-comparison invariants (`lo <=
+/// hi`, `i <= n`), never a `forall_*` (those are the `binary_search` v2 forms).
+fn encode_predicate(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
+    let substituted = substitute(expr, env)?;
+    exec_ref_value(&substituted, &ctx.exec_ref_ctx())
+}
+
+/// Encode each loop `inv` Clause to a bool-valued predicate string (under `env` — the
+/// cell substitution for the entry / stepped invariant), via [`encode_predicate`].
+fn encode_inv_clauses(
+    invs: &[Clause],
+    env: &Env,
+    ctx: &BodyRefCtx,
+) -> Result<Vec<String>, RefEncodeError> {
+    invs.iter()
+        .map(|clause| encode_predicate(&clause.expr, env, ctx))
+        .collect()
+}
+
+/// Whether the loop's invariant conjunction is TRIVIALLY WEAK (every clause is the
+/// literal `true`) — the after-loop `true ∧ ¬cond` is vacuous, so the loop cannot
+/// enter the (a) rule (`loop-tv.md` REQ-1 OUT — Skipped honestly, NOT Faithful). A
+/// single `inv true` or several all-`true` clauses are vacuous; ANY non-`true`
+/// conjunct makes the invariant usable.
+fn invariant_is_vacuous(invs: &[Clause]) -> bool {
+    invs.iter()
+        .all(|clause| matches!(clause.expr, Expr::BoolLit(true)))
+}
+
+/// Build the negated-condition string `(!(<cond>))` for the exit characterization
+/// (`loop-tv.md` REQ-2.3: after-loop = `inv ∧ ¬cond`). REUSES the SHIPPED
+/// [`exec_ref_value`] `Not`-encoding (the bounded logical-not reference) over the
+/// already-encoded condition — wrapped so the `&&` with the invariant binds the whole
+/// negated predicate.
+pub fn negate_condition(cond: &str) -> String {
+    format!("(!({cond}))")
 }
 
 /// Thread `block`'s statements through `env` (in order), then encode its TAIL value

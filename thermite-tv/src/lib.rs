@@ -78,11 +78,15 @@ pub mod obligation;
 pub mod ref_encode;
 
 pub use exec_encode::{exec_ref_value, ExecRefCtx};
-pub use exec_stmt_encode::{body_ref_state, body_ref_state_ensures, BodyRefCtx};
+pub use exec_stmt_encode::{
+    body_ref_state, body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
+    LoopObligations,
+};
 pub use gen::{gen_exec_exprs, generate_clauses, ExecClause};
 pub use obligation::{
     body_equivalence_obligation, equivalence_obligation, exec_equivalence_obligation,
-    BodyObligationFrame, BodyParamDecl, ExecObligationFrame, ExecParamDecl, ObligationFrame,
-    ParamDecl,
+    loop_entry_obligation, loop_exit_obligation, loop_preservation_obligation, BodyObligationFrame,
+    BodyParamDecl, ExecObligationFrame, ExecParamDecl, LoopObligationFrame, LoopParamDecl,
+    ObligationFrame, ParamDecl,
 };
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};

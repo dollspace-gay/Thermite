@@ -47,11 +47,34 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-2 (exec-fn-wrapped equivalence obligation + discharge) | SHIPPED | `pub fn exec_equivalence_obligation` + `pub struct ExecObligationFrame`/`ExecParamDecl` here; non-test consumer `thermite_tv::lib` re-export → `tests/exec_teeth.rs` discharges E1–E4 through real verus (faithful VERIFIES, infidel CAUGHT). Emits the EXEC-FN form (`exec-tv.md` Architecture), discharged through the existing verus path. |
+//!
+//! ## LOOP-position extension — step 2.2.2-i (`.design/verified/loop-tv.md`; epic #169)
+//!
+//! [`loop_entry_obligation`] / [`loop_preservation_obligation`] /
+//! [`loop_exit_obligation`] are the THREE per-run loop obligations (`loop-tv.md`
+//! REQ-2), siblings to [`body_equivalence_obligation`]. They consume
+//! [`crate::exec_stmt_encode::loop_ref_obligations`] (the v1-frozen-subset recognizer +
+//! the three reference pieces) and emit the self-contained Verus units the existing
+//! `forge::check::run_verus` discharges — ENTRY (`proof fn` asserting `inv` on the
+//! pre-loop entry state — a wrong pre-loop init FAILS), PRESERVATION (`fn` with
+//! `requires inv && cond`, `ensures result.i == <body_ref_state step_i> && inv_at_step`
+//! — a per-iteration body infidelity or a broken invariant FAILS `postcondition not
+//! satisfied`), and EXIT (`proof fn` with `requires inv && !cond` asserting the claimed
+//! after-loop characterization — an OVER-CLAIM stronger than `inv ∧ ¬cond` FAILS). The
+//! single-iteration step REUSES the SHIPPED `body_ref_state` (no new body machinery,
+//! AC-5); a loop OUT of v1 is an honest `Unsupported` from `loop_ref_obligations`
+//! (Skipped, NEVER silently Faithful, R-HONEST-3).
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | loop-REQ-2 (the three per-run loop obligations + discharge) | SHIPPED | `pub fn loop_entry_obligation` / `loop_preservation_obligation` / `loop_exit_obligation` + `pub struct LoopObligationFrame`/`LoopParamDecl` here; each emits a self-contained Verus unit (ENTRY `proof fn { assert(inv[cells:=entry]); }`; PRESERVATION `fn tv_loop_step(cells, inputs) requires inv && cond, ensures result.i == <step_i>, <inv_at_step> { <p_production> }`; EXIT `proof fn tv_loop_exit(cells, inputs) requires inv && (!cond) { assert(<claimed_after_loop>); }`); non-test consumer `thermite_tv::lib` re-export → `tests/loop_teeth.rs` L1–L4 discharge through real verus (L1 all three VERIFY, L2 broken-preservation + L3 wrong-exit CAUGHT, L4 OUT-of-v1 Skipped). The single-step REUSES `loop_ref_obligations`/`body_ref_state` (AC-5); discharged through the existing verus path. |
 
 use thermite_syntax::ast::{Block, Expr};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
-use crate::exec_stmt_encode::{body_ref_state_ensures, BodyRefCtx};
+use crate::exec_stmt_encode::{
+    body_ref_state_ensures, loop_ref_obligations, negate_condition, BodyRefCtx,
+};
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
 
 /// One obligation parameter declaration: a Verus `name: type` binding for a
@@ -526,6 +549,324 @@ pub fn body_equivalence_obligation(
     out.push_str(p_production);
     out.push_str("}\n");
 
+    out.push_str("\n}\nfn main() {}\n");
+    Ok(out)
+}
+
+// =============================================================================
+// LOOP obligations — step 2.2.2-i (`.design/verified/loop-tv.md` REQ-2)
+// =============================================================================
+
+/// One LOOP-obligation parameter declaration: a Verus `name: type` binding for a
+/// loop's free var — a fn INPUT (`n: usize`, a slice `&[u32]`) or a mutated CELL
+/// (`lo: usize`/`hi: usize`) at its BOUNDED exec type (NEVER `nat`/`int` — the loop
+/// obligation reasons at the production VALUE TYPE so an overflow / wrong-state
+/// infidelity is caught, not coerced away). Identical in SHAPE to [`BodyParamDecl`];
+/// a distinct type keeps the loop obligation surface self-documenting.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopParamDecl {
+    /// The parameter name (as it appears in the signature and the predicates).
+    pub name: String,
+    /// The Verus EXEC value-type spelling (`usize` / `u64` / `&[u32]` / `bool`).
+    pub type_str: String,
+}
+
+impl LoopParamDecl {
+    /// Construct a loop-obligation parameter declaration.
+    pub fn new(name: impl Into<String>, type_str: impl Into<String>) -> Self {
+        LoopParamDecl {
+            name: name.into(),
+            type_str: type_str.into(),
+        }
+    }
+}
+
+/// The frame carrying everything the three per-run loop obligations need besides the
+/// reference pieces (`loop-tv.md` REQ-2): the spec-fn defs, the fn INPUT params (at
+/// their exec types — the slices / scalars the entry state + the inv/cond reference),
+/// the mutated CELL params (at their exec types — `lo: usize`/`hi: usize`, declared in
+/// the same SORTED order [`crate::exec_stmt_encode::loop_ref_obligations`] uses), the
+/// enclosing fn `requires` (the well-formedness frame the ENTRY obligation discharges
+/// `inv` under), and the slice-param set (so an index in the inv/cond/cell encodes to
+/// the spec-view element value).
+///
+/// This is the LOOP analogue of [`BodyObligationFrame`]. The CELLS are distinguished
+/// from the INPUTS because they play a structurally different role: in the ENTRY
+/// obligation the cells are SUBSTITUTED away (the entry-state closed form in the
+/// inputs), while in the PRESERVATION + EXIT obligations they are FREE params (the
+/// loop-step's arbitrary-iteration state — havocked + invariant-constrained, the
+/// design's opaque-but-invariant-constrained after-loop cells).
+#[derive(Debug, Clone, Default)]
+pub struct LoopObligationFrame {
+    /// The Verus `spec fn` defs the inv / cond / body depend on, emitted verbatim
+    /// BEFORE the obligation fn. Usually EMPTY for a scalar-comparison-invariant loop.
+    pub spec_defs: Vec<String>,
+    /// The fn INPUT params (the slices / scalars the entry state + the inv/cond
+    /// reference), at their EXEC types, in signature order. Does NOT include the
+    /// mutated cells (those are [`Self::cells`]).
+    pub inputs: Vec<LoopParamDecl>,
+    /// The mutated CELL params (`lo: usize`/`hi: usize`), at their EXEC types, in the
+    /// SORTED order `loop_ref_obligations` reports them (so a `result.i` projection in
+    /// the preservation `ensures` lines up with `step_cells[i]`).
+    pub cells: Vec<LoopParamDecl>,
+    /// The enclosing fn `requires` (the well-formedness / no-overflow frame the ENTRY
+    /// obligation discharges `inv` under — `n <= 1000`). `None` emits no `requires`.
+    pub req: Option<String>,
+    /// The names of params bound as a slice (`&[T]`) — their index in the inv / cond /
+    /// cell encodes to the spec-view element value (`xs[i as int]`). Read by
+    /// [`BodyRefCtx::with_slice_bound`].
+    pub slice_params: Vec<String>,
+}
+
+impl LoopObligationFrame {
+    /// Build the [`BodyRefCtx`] the reference state-denotation + predicate encoder use
+    /// for this frame: the `slice_params` are the names indexed as the spec-view
+    /// element value.
+    fn body_ref_ctx(&self) -> BodyRefCtx {
+        BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+    }
+
+    /// The Verus parameter list for the ENTRY obligation: the fn INPUTS only (the
+    /// cells are substituted away into the entry-state closed form).
+    fn input_param_list(&self) -> String {
+        self.inputs
+            .iter()
+            .map(|p| format!("{}: {}", p.name, p.type_str))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The Verus parameter list for the PRESERVATION + EXIT obligations: the mutated
+    /// CELLS first (the loop-step's free state), then the fn INPUTS (the slices /
+    /// scalars the inv/cond reference).
+    fn cell_and_input_param_list(&self) -> String {
+        self.cells
+            .iter()
+            .chain(self.inputs.iter())
+            .map(|p| format!("{}: {}", p.name, p.type_str))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The result-tuple type for the preservation step's `(cell0', cell1', …)` return:
+    /// a SINGLE cell is the bare type, MULTIPLE cells a tuple `(T0, T1)`.
+    fn cell_tuple_type(&self) -> String {
+        if self.cells.len() == 1 {
+            self.cells[0].type_str.clone()
+        } else {
+            format!(
+                "({})",
+                self.cells
+                    .iter()
+                    .map(|p| p.type_str.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+    }
+}
+
+/// Build the ENTRY loop obligation (`loop-tv.md` REQ-2.1): the loop is reached with
+/// the pre-loop straight-line entry state; the obligation asserts the invariant holds
+/// there (`entry-state ⟹ inv`). `block` is the enclosing straight-line `Block` whose
+/// LAST statement is the v1-frozen-subset `while` loop (the prefix establishes the
+/// entry state); `frame` carries the input params + the enclosing `requires`.
+///
+/// Emitted shape (a proof fn — the entry state is a closed form, no exec body needed):
+///
+/// ```text
+/// use vstd::prelude::*;
+/// verus! {
+///     <frame.spec_defs>
+///     proof fn tv_loop_entry(<frame.inputs>)
+///         requires <frame.req>,
+///     {
+///         assert(<inv[cells := entry-state]>);
+///     }
+/// }
+/// fn main() {}
+/// ```
+///
+/// VERIFIED ⟺ the invariant genuinely holds on entry; an `assertion failed`
+/// counterexample ⟺ the entry state violates the claimed invariant (a wrong pre-loop
+/// initialization). Returns [`ExecRefEncodeError`] if the loop is OUTSIDE the v1
+/// frozen subset (an honest Skipped, never a panic / silent wrong encoding).
+pub fn loop_entry_obligation(
+    block: &Block,
+    frame: &LoopObligationFrame,
+) -> Result<String, ExecRefEncodeError> {
+    let obs = loop_ref_obligations(block, &frame.body_ref_ctx())?;
+
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+    for def in &frame.spec_defs {
+        out.push('\n');
+        out.push_str(def);
+        out.push('\n');
+    }
+    out.push_str("\nproof fn tv_loop_entry(");
+    out.push_str(&frame.input_param_list());
+    out.push(')');
+    if let Some(req) = &frame.req {
+        out.push_str("\n    requires ");
+        out.push_str(req);
+        out.push(',');
+    }
+    // The entry obligation: the invariant (cells substituted by their pre-loop entry
+    // values) holds under the enclosing `requires`. VERIFIED ⟺ the invariant holds on
+    // entry; a counterexample ⟺ a wrong pre-loop initialization.
+    out.push_str("\n{\n    assert(");
+    out.push_str(&obs.entry_pred);
+    out.push_str(");\n}\n");
+    out.push_str("\n}\nfn main() {}\n");
+    Ok(out)
+}
+
+/// Build the PRESERVATION loop obligation (`loop-tv.md` REQ-2.2): one straight-line
+/// iteration of the loop body carries `inv ∧ cond` to `inv`. The single-iteration body
+/// IS a straight-line `Block`, so its state step REUSES the SHIPPED
+/// [`crate::exec_stmt_encode::body_ref_state`] (no new body machinery, AC-5).
+/// `p_production` is the VERBATIM production loop-body lowering shaped to mutate the
+/// cell shadows and RETURN the stepped cells as a `(cell0', cell1', …)` tuple (the
+/// artifact under test); `frame` carries the cell + input params.
+///
+/// Emitted shape:
+///
+/// ```text
+/// use vstd::prelude::*;
+/// verus! {
+///     <frame.spec_defs>
+///     fn tv_loop_step(<cells>, <inputs>) -> (result: (<cell types>))
+///         requires <inv> && <cond>,
+///         ensures
+///             result.0 == <step_cells[0]>, result.1 == <step_cells[1]>,  // body-TV (AC-5)
+///             <inv[cells := step_cells]>,                                 // preservation (AC-2)
+///     {
+///         <p_production — returns (cell0', cell1')>
+///     }
+/// }
+/// fn main() {}
+/// ```
+///
+/// VERIFIED ⟺ one faithful iteration preserves the invariant (and production computes
+/// the reference step); a `postcondition not satisfied` ⟺ a per-iteration state-lowering
+/// infidelity (a dropped / reordered / wrong-cell body mutation — the SAME teeth
+/// `body_ref_sound`'s negative lemmas bite) OR a broken-invariant body (the source step
+/// does not re-establish `inv`). Returns [`ExecRefEncodeError`] if the loop is OUTSIDE
+/// the v1 frozen subset (an honest Skipped).
+pub fn loop_preservation_obligation(
+    block: &Block,
+    p_production: &str,
+    frame: &LoopObligationFrame,
+) -> Result<String, ExecRefEncodeError> {
+    let obs = loop_ref_obligations(block, &frame.body_ref_ctx())?;
+
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+    for def in &frame.spec_defs {
+        out.push('\n');
+        out.push_str(def);
+        out.push('\n');
+    }
+    out.push_str("\nfn tv_loop_step(");
+    out.push_str(&frame.cell_and_input_param_list());
+    out.push_str(") -> (result: ");
+    out.push_str(&frame.cell_tuple_type());
+    out.push(')');
+    // The loop-step's frame is the loop-head assumption `inv ∧ cond` (NOT the
+    // enclosing fn `requires` — Verus havocs the cells and assumes the invariant, so
+    // the body proof is over a SINGLE arbitrary iteration).
+    out.push_str("\n    requires ");
+    out.push_str(&obs.inv);
+    out.push_str(" && ");
+    out.push_str(&obs.cond);
+    out.push(',');
+    // The `ensures`: (a) production's result equals the reference single-step state
+    // (the body-TV REUSE of `body_ref_state` — a per-iteration infidelity is caught
+    // here, AC-5); (b) the invariant at the stepped state (the preservation conjunct —
+    // a broken-invariant body is caught here, AC-2).
+    out.push_str("\n    ensures\n");
+    let proj = |i: usize| {
+        if frame.cells.len() == 1 {
+            "result".to_string()
+        } else {
+            format!("result.{i}")
+        }
+    };
+    for (i, step) in obs.step_cells.iter().enumerate() {
+        out.push_str(&format!("        {} == {step},\n", proj(i)));
+    }
+    out.push_str(&format!("        {},\n", obs.inv_at_step));
+    out.push_str("{\n");
+    out.push_str(p_production);
+    out.push_str("}\n");
+    out.push_str("\n}\nfn main() {}\n");
+    Ok(out)
+}
+
+/// Build the EXIT loop obligation (`loop-tv.md` REQ-2.3): on exit the loop guarantees
+/// `inv ∧ ¬cond`; the obligation pins that the production's after-loop characterization
+/// `claimed_after_loop` (the statements FOLLOWING the loop read the opaque cells as)
+/// genuinely FOLLOWS from `inv ∧ ¬cond`. `claimed_after_loop` is the VERBATIM
+/// production after-loop characterization (the artifact under test); `frame` carries
+/// the cell + input params.
+///
+/// Emitted shape (a proof fn — the cells are the OPAQUE-but-invariant-constrained
+/// after-loop state, havocked + re-constrained to `inv ∧ ¬cond`, exactly how Verus
+/// itself models a loop's after-state):
+///
+/// ```text
+/// use vstd::prelude::*;
+/// verus! {
+///     <frame.spec_defs>
+///     proof fn tv_loop_exit(<cells>, <inputs>)
+///         requires <inv> && (!(<cond>)),    // the genuine after-loop facts (assumed)
+///     {
+///         assert(<claimed_after_loop>);     // the production's after-loop claim
+///     }
+/// }
+/// fn main() {}
+/// ```
+///
+/// VERIFIED ⟺ the after-loop continuation reads exactly the `inv ∧ ¬cond` state (the
+/// claim follows); an `assertion failed` counterexample ⟺ a wrong after-loop
+/// characterization (an OVER-STRONG claim about the exit state — stronger than
+/// `inv ∧ ¬cond`). Returns [`ExecRefEncodeError`] if the loop is OUTSIDE the v1 frozen
+/// subset (an honest Skipped).
+pub fn loop_exit_obligation(
+    block: &Block,
+    claimed_after_loop: &str,
+    frame: &LoopObligationFrame,
+) -> Result<String, ExecRefEncodeError> {
+    let obs = loop_ref_obligations(block, &frame.body_ref_ctx())?;
+
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+    for def in &frame.spec_defs {
+        out.push('\n');
+        out.push_str(def);
+        out.push('\n');
+    }
+    out.push_str("\nproof fn tv_loop_exit(");
+    out.push_str(&frame.cell_and_input_param_list());
+    out.push(')');
+    // The after-loop facts Verus assumes for the continuation: `inv ∧ ¬cond` over the
+    // opaque (havocked) cells — the honest analogue of how Verus models a loop's
+    // after-state.
+    out.push_str("\n    requires ");
+    out.push_str(&obs.inv);
+    out.push_str(" && ");
+    out.push_str(&negate_condition(&obs.cond));
+    out.push(',');
+    // The exit obligation: the production's after-loop characterization claim FOLLOWS
+    // from `inv ∧ ¬cond`. VERIFIED ⟺ the continuation reads the `inv ∧ ¬cond` state; a
+    // counterexample ⟺ an OVER-CLAIM (stronger than `inv ∧ ¬cond`).
+    out.push_str("\n{\n    assert(");
+    out.push_str(claimed_after_loop);
+    out.push_str(");\n}\n");
     out.push_str("\n}\nfn main() {}\n");
     Ok(out)
 }

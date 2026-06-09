@@ -325,6 +325,26 @@ enum Command {
         /// `Some(n)` requests `n` generated clauses; `None` skips the generated run.
         generated: Option<usize>,
     },
+    /// `forge exec-tv <file> [--generated [N]] [--json]` — the EXEC-POSITION (body)
+    /// TRANSLATION-VALIDATION deeper audit (epic #151, #154/#156;
+    /// `.design/verified/exec-tv.md` REQ-5). A SEPARATE opt-in command (like `forge
+    /// tv`, NOT folded into `forge check`): the GENERATED run (PRIMARY) discharges
+    /// the exec-fn obligation `result == <bounded exec reference>` over N
+    /// deterministically generated, well-framed exec exprs (the off-corpus #122/#146
+    /// regression guard); the CORPUS body-expr check (best-effort) TV-checks the
+    /// derivable-frame body exprs (a `let`-RHS / tail / `return`), SKIPPING
+    /// statements/loops/mutation honestly. Each expr is Faithful / DIVERGENT /
+    /// Unverifiable / Skipped. `--generated [N]` sets N (default
+    /// [`crate::exec_tv::EXEC_TV_GENERATED_DEFAULT_N`]); the generated run is ON BY DEFAULT
+    /// (it is the primary value) unless `--no-generated` is passed.
+    ExecTv {
+        file: PathBuf,
+        json: bool,
+        /// `--generated [N]` / the default — the off-corpus generated exec run
+        /// (REQ-3, PRIMARY). `Some(n)` runs `n` generated exprs; `None` (via
+        /// `--no-generated`) runs only the corpus body-expr check.
+        generated: Option<usize>,
+    },
 }
 
 /// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
@@ -721,6 +741,59 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 generated,
             })
         }
+        "exec-tv" => {
+            // `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]`
+            // (#154/#156; `.design/verified/exec-tv.md` REQ-5). The first positional
+            // is the file (required). The off-corpus generated run is the PRIMARY
+            // value, so it is ON BY DEFAULT (default N); `--generated N` overrides N;
+            // `--no-generated` runs ONLY the corpus body-expr check. Like the other
+            // deeper-audit verbs, it runs at the pinned default verus config.
+            let mut file: Option<PathBuf> = None;
+            let mut json = false;
+            let mut generated: Option<usize> = Some(crate::exec_tv::EXEC_TV_GENERATED_DEFAULT_N);
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    "--no-generated" => generated = None,
+                    "--generated" => {
+                        // An OPTIONAL numeric token immediately after sets N; else
+                        // the default. A non-numeric next token is a separate arg.
+                        let n = match iter.peek().and_then(|t| t.parse::<usize>().ok()) {
+                            Some(parsed) => {
+                                iter.next();
+                                parsed
+                            }
+                            None => crate::exec_tv::EXEC_TV_GENERATED_DEFAULT_N,
+                        };
+                        generated = Some(n);
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_some() {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge exec-tv` takes at most one <file>; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                        file = Some(PathBuf::from(positional));
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge exec-tv` requires a <file> [--generated [N]] [--no-generated] [--json]"
+                        .to_string(),
+                )
+            })?;
+            Ok(Command::ExecTv {
+                file,
+                json,
+                generated,
+            })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -734,7 +807,8 @@ fn usage_text() -> &'static str {
      [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
      [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv <file> \
-     [--generated [N]] [--json]"
+     [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
+     [--json]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -787,6 +861,11 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             generated,
         } => run_tv(&file, json, generated),
+        Command::ExecTv {
+            file,
+            json,
+            generated,
+        } => run_exec_tv(&file, json, generated),
     }
 }
 
@@ -1135,6 +1214,141 @@ fn run_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode,
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
     }
+}
+
+/// Run `forge exec-tv`: the EXEC-POSITION (body) TRANSLATION-VALIDATION deeper audit
+/// (#154/#156; `.design/verified/exec-tv.md` REQ-5). The GENERATED run (PRIMARY)
+/// discharges the exec-fn obligation `result == <bounded exec reference>` over N
+/// deterministically generated, well-framed exec exprs (`exec_tv::run_generated` —
+/// the off-corpus #122/#146 regression guard); the CORPUS body-expr check
+/// (best-effort) TV-checks the derivable-frame body exprs (`exec_tv::exec_tv_file`),
+/// SKIPPING statements/loops/mutation honestly. Reports each expr Faithful /
+/// DIVERGENT / Unverifiable / Skipped, the headline counts, and the generated run's
+/// construct coverage.
+///
+/// Exit code: a clean audit (no DIVERGENT expr) exits 0; ANY divergent expr is a
+/// real exec-lowering FINDING surfaced as a verification-failure exit (the off-corpus
+/// #122/#146 catch). An environment failure (file unreadable, parse failure)
+/// propagates as a `ForgeError`. A verus-absent run reports `unverifiable` exprs
+/// (surfaced, never a silent pass — R-CODE-4) and does NOT fail the exit.
+fn run_exec_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode, ForgeError> {
+    use crate::exec_tv::{self, EXEC_TV_DEFAULT_RLIMIT, EXEC_TV_DEFAULT_SEED};
+
+    // The corpus body-expr check (best-effort, honest coverage).
+    let corpus = exec_tv::exec_tv_file(file, EXEC_TV_DEFAULT_SEED, EXEC_TV_DEFAULT_RLIMIT)?;
+    // The generated run (PRIMARY) — on by default unless `--no-generated`.
+    let generated_run = match generated {
+        Some(n) => Some(exec_tv::run_generated(
+            EXEC_TV_DEFAULT_SEED,
+            n,
+            EXEC_TV_DEFAULT_RLIMIT,
+        )?),
+        None => None,
+    };
+
+    let corpus_counts = corpus.counts();
+    let gen_counts = generated_run.as_ref().map(|(r, _)| r.counts());
+
+    if json {
+        let doc = exec_tv_report_json(file, &corpus, generated_run.as_ref());
+        let rendered = serde_json::to_string_pretty(&doc).map_err(|e| ForgeError::VerusOutput {
+            detail: format!("failed to serialize the exec-TV report JSON: {e}"),
+        })?;
+        println!("{rendered}");
+    } else {
+        if let Some((r, cov)) = &generated_run {
+            print!(
+                "{}",
+                exec_tv::render_report(r, "exec-TV (off-corpus generated — PRIMARY)")
+            );
+            print!("{}", exec_tv::render_coverage(cov));
+        }
+        print!(
+            "{}",
+            exec_tv::render_report(
+                &corpus,
+                &format!(
+                    "exec-TV (corpus body exprs — best-effort) {}",
+                    file.display()
+                )
+            )
+        );
+    }
+
+    // Any DIVERGENT expr (corpus OR generated) is a real exec-lowering finding →
+    // verification-failure exit (surfaced loudly). A clean audit exits 0.
+    let divergent = corpus_counts.divergent + gen_counts.map(|c| c.divergent).unwrap_or(0);
+    if divergent == 0 {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Build the `--json` document for an exec-TV run (#154/#156; §5.1 structured
+/// output). A hand-built stable surface: the per-expr four-way verdicts + the
+/// headline counts for the corpus body-expr check and (when present) the generated
+/// run + its construct coverage.
+fn exec_tv_report_json(
+    file: &Path,
+    corpus: &crate::exec_tv::ExecTvReport,
+    generated: Option<&(
+        crate::exec_tv::ExecTvReport,
+        crate::exec_tv::ExecConstructCoverage,
+    )>,
+) -> serde_json::Value {
+    use serde_json::json;
+    let exprs_json = |r: &crate::exec_tv::ExecTvReport| -> Vec<serde_json::Value> {
+        r.results
+            .iter()
+            .map(|e| {
+                let (verdict, detail) = match &e.verdict {
+                    crate::exec_tv::ExecVerdict::Faithful => ("faithful", None),
+                    crate::exec_tv::ExecVerdict::Divergent { detail } => {
+                        ("divergent", Some(detail.clone()))
+                    }
+                    crate::exec_tv::ExecVerdict::Unverifiable { reason } => {
+                        ("unverifiable", Some(reason.clone()))
+                    }
+                    crate::exec_tv::ExecVerdict::Skipped { reason } => {
+                        ("skipped", Some(reason.clone()))
+                    }
+                };
+                json!({ "expr": e.label, "verdict": verdict, "detail": detail })
+            })
+            .collect()
+    };
+    let counts_json = |c: crate::exec_tv::ExecCounts| {
+        json!({
+            "checked": c.checked(),
+            "faithful": c.faithful,
+            "divergent": c.divergent,
+            "unverifiable": c.unverifiable,
+            "skipped": c.skipped,
+        })
+    };
+    let coverage_json = |cov: &crate::exec_tv::ExecConstructCoverage| {
+        json!({
+            "cast_lt": cov.cast_lt,
+            "arith": cov.arith,
+            "casts": cov.casts,
+            "index": cov.index,
+            "shifts": cov.shifts,
+            "bitops": cov.bitops,
+        })
+    };
+    json!({
+        "file": file.display().to_string(),
+        "corpus": {
+            "counts": counts_json(corpus.counts()),
+            "exprs": exprs_json(corpus),
+        },
+        "generated": generated.map(|(r, cov)| json!({
+            "counts": counts_json(r.counts()),
+            "coverage": coverage_json(cov),
+            "exprs": exprs_json(r),
+        })),
+    })
 }
 
 /// Build the `--json` document for a contract-TV run (#144; §5.1 structured

@@ -1,0 +1,10 @@
+{
+  "uuid": "df702d8c-b4ff-4510-a98b-4d850d87c9c3",
+  "issue_uuid": "0a652406-0105-43a4-994c-ad2400ea3a34",
+  "author": "Yffe",
+  "content": "FIXED (1bea449d, doc-only). D6 added: Expr::Field + Expr::TupleProj quoted, classified honest inspection-only residual (no Lean field/tupleProj constructor — same class as Map D3/guards D4), consequence stated (result.x/result.0 contracts rely on per-run TV without Lean T1 backing for that arm), future-brick note (extend S_C with field/tupleProj + ref_sound case + negative lemma, promoting D6 to T1-backed). Table 1H added: exhaustive 15-arm encode dispatch inventory (IntLit/BoolLit/Path now rowed; Err catch-all = the faithful out-of-S_C boundary). AC-1 corrected and now TRUE. Verified directly against the actual encode() match (L224-259) — 1:1 with the critic's pinned enumeration. Builds green, no code touched.",
+  "created_at": "2026-06-09T21:28:02.876809592Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAFiVHpoK/CAwdM/JiCTrGraN4nLjjSqgC32OEw/hv0r0Bls2CBLPbNfMmMRLuHa6kPZrL6Ni4yuh4FW4Yz3JKAg=="
+}

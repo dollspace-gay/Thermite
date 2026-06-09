@@ -6,5 +6,8 @@
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-09T03:03:38.519431969Z",
-  "updated_at": "2026-06-09T03:03:38.519431969Z"
+  "updated_at": "2026-06-09T03:03:40.475160513Z",
+  "labels": [
+    "enhancement"
+  ]
 }

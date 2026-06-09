@@ -1,0 +1,10 @@
+{
+  "uuid": "79d96442-b64d-4f36-9dc7-da94eb222dec",
+  "display_id": 164,
+  "title": "freestanding/no_std kernel target — forge build --target kernel emits no_std freestanding Verus-Rust (the verified-microkernel enablement). SIBLING groundwork to the exec-statement TV (NOT a step-2.2 prereq); the frozen exec subset + operational semantics are the kernel exec-language foundation. .design/verified/exec-stmt-tv.md (kernel-convergence note).",
+  "status": "open",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:53:44.722163305Z",
+  "updated_at": "2026-06-09T00:53:44.722163305Z"
+}

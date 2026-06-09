@@ -94,6 +94,14 @@ corresponding table section and requires re-audit (see "Drift" below).**
 - **AC-1 (completeness)** — every match arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state`
   (and the combinator registry `verus_l3` forms the encoders reference) appears as a row, OR is
   recorded as an explicit out-of-Lean-scope residual in "What this inspection does NOT cover."
+  The `ref_encode.rs::encode` dispatch is enumerated exhaustively in Table 1H (all 15 arms). Two of
+  its live arms — `Expr::Field` (struct-field access `result.x`) and `Expr::TupleProj` (tuple
+  projection `result.0`) — have NO Lean `Expr` constructor and are recorded as the explicit
+  out-of-Lean-scope residual **Discrepancy D6** (inspection-only, like the Map accessor D3 and the
+  guard-arm path D4); they are NOT correspondence rows, because no correspondence exists to claim.
+  The leaf arms (`IntLit`/`BoolLit`/`Path`) ARE rowed (Table 1H) with their Lean `intLit`/`boolLit`/
+  `var` counterparts. The catch-all `Err` arm is the faithful out-of-`S_C` boundary. So every live
+  `encode` arm is now a row OR an explicitly-listed residual — AC-1 is true, not merely asserted.
 - **AC-2 (groundedness)** — every row quotes the actual Rust arm and the actual Lean arm (short exact
   excerpts), never a paraphrase. A row that cannot be grounded is a discrepancy, recorded in
   "Discrepancies found."
@@ -269,6 +277,33 @@ spec fn carries a mandatory `dec` measure, §4.2). The Rust encoder does NOT inl
 so there is no recursion to bound on the Rust side; the fuel models the *meaning* of the resulting
 recursive spec-fn definition. See Bridge Assumption A2.
 
+### 1H. The `encode` dispatch inventory (AC-1 completeness for `ref_encode.rs`)
+
+The `ref_contract_pred`→`encode` `match` (`ref_encode.rs`) has 15 arms. AC-1 requires each to be a
+row above OR an explicit residual. The full enumeration:
+
+| `encode` arm | Disposition |
+|---|---|
+| `Expr::IntLit { value, .. } => Ok(value.to_string())` | leaf — Lean `Expr.intLit value`; the integer-literal denotation (`refIntVal Expr.intLit => value`). Pinned by `ref_sound` (intLit case). Benign, rowed here. |
+| `Expr::BoolLit(b) => Ok(b.to_string())` | leaf — Lean `Expr.boolLit value`; the bool-literal denotation. Pinned by `ref_sound` (boolLit case). Benign, rowed here. |
+| `Expr::Path(segments) => encode_path(..)` | the var leaf — Lean `Expr.var`/`Expr.seqVar`/`Expr.strVar`/`Expr.optResVar` (a free obligation param; `result`/`old(x)` are free names). Pinned by `ref_sound` (var case); the `old(x)` form is Table 1G row 1. |
+| `Expr::Binary { op, lhs, rhs }` | Table 1A (the binop map + the Eq nat-coercion). |
+| `Expr::Unary { op, expr }` | Table 1A (`Not`). |
+| `Expr::Call { callee, args }` | Tables 1E (combinators) + 1G (`old`/named spec-fn calls). |
+| `Expr::MethodCall { .. }` | Table 1D (byte-view / Map / slice `.len()`). |
+| `Expr::Index { base, index }` | Table 1C. |
+| `Expr::Ref { expr: inner, .. }` | Table 1C (the `&xs[..i]` / bare `&xs` slice-view rewrite). |
+| `Expr::Cast { expr, ty }` | Table 1B. |
+| `Expr::Field { receiver, name }` | **RESIDUAL — Discrepancy D6.** No Lean `Expr` constructor (`field`); struct-field access is OUTSIDE the Lean `S_C` fragment. Inspection-only. |
+| `Expr::TupleProj { receiver, index }` | **RESIDUAL — Discrepancy D6.** No Lean `Expr` constructor (`tupleProj`); tuple-projection access is OUTSIDE the Lean `S_C` fragment. Inspection-only. |
+| `Expr::Is { scrutinee, variant }` | Table 1F (last row). |
+| `Expr::Match { scrutinee, arms }` | Table 1F. |
+| `other => Err(RefEncodeError::Unsupported(node_kind(other)))` | the honest catch-all — every `Expr` variant NOT above (`Closure` outside a pred slot, `If`, `StructLit`, `Deref`, `StrLit`, `Tuple`) is a real `Err`, never a silent wrong encoding (faithful absence; out of `S_C`). |
+
+Every live `encode` arm is now a row (Tables 1A–1G + the leaf rows here) OR an explicit residual
+(`Field`/`TupleProj` → D6), and the catch-all `Err` is the faithful out-of-`S_C` boundary. AC-1 holds
+for `ref_encode.rs`.
+
 ---
 
 ## Table 2 — `thermite-tv/src/exec_encode.rs` ↔ `lean/Thermite/Exec.lean`
@@ -427,6 +462,11 @@ on any tier that targets Verus text).
   (`contains_key`→`spec_contains_key`, `len`→`len`) and the `RefCtx` Map/Option frame are in the Rust
   encoder but NOT in the Lean `S_C` fragment (which covers Option/Result via `match`/`is` but not Map
   membership) — see Discrepancy D3.
+- **Struct-field / tuple-projection access in contract position.** The `ref_encode.rs::encode`
+  `Expr::Field` arm (`result.x` → `{r}.{name}`) and `Expr::TupleProj` arm (`result.0` → `{r}.{index}`)
+  are live in the Rust encoder but have NO Lean `Expr` constructor — the Lean `S_C` fragment does not
+  model member access. Reachable in a struct-field / tuple-projection `ens`; inspection-only (no T1
+  theorem) — see Discrepancy D6.
 - **The extraction-bridge tier (REQ-2, the named stronger closure).** A Lean→Rust extraction (or a
   Rust-side proof) would make the Rust encoder equal the Lean model BY CONSTRUCTION, discharging A2/A3
   and the inspection entirely. There is no Lean→Rust extraction tooling for this encoder shape today
@@ -480,9 +520,50 @@ sides are not arm-for-arm identical.
   construction, cross-checked by the in-Rust `b4_multi_cell_tuple_state` test, not by a distinct Lean
   theorem. The state denotation (the cells' closed forms) IS pinned; the obligation packaging is
   inspection-only.
+- **D6 (struct-field / tuple-projection ACCESS in contract position is a Rust-encoder residual, not
+  in Lean `S_C`).** The `ref_encode.rs::encode` dispatch has two live arms that emit a Verus
+  projection-access string and have NO corresponding Lean `Expr` constructor:
 
-None of D1–D5 is a denotation mismatch. The arm-by-arm correspondence holds at the meaning level for
-every construct in the frozen subset.
+  ```rust
+  Expr::Field { receiver, name } => {
+      let r = encode(receiver, ctx)?;
+      Ok(format!("{r}.{name}"))          // struct-field access  result.x
+  }
+  Expr::TupleProj { receiver, index } => {
+      let r = encode(receiver, ctx)?;
+      Ok(format!("{r}.{index}"))         // tuple projection     result.0
+  }
+  ```
+
+  They emit the Verus member-access token `<receiver>.<name>` / `<receiver>.<index>` (the receiver
+  recursively re-encoded). They are reachable in the frozen contract subset for a struct-field `ens`
+  (`result.x == 0`) and a tuple-projection `ens` (`result.0 == a`) — the multi-cell/struct CONTRACT
+  surface. (This is DISTINCT from D5: D5 covers the EXEC-BODY tuple obligation SHAPE built by
+  `body_ref_state_ensures`, i.e. the `result.{i} == {cell}` conjunction the body-refinement emits;
+  D6 covers these `ref_encode.rs::encode` CONTRACT-position projection arms.) The Lean `Expr`
+  inductive (constructors `intLit/boolLit/var/cmp/logic/neg/arith/cast/seqVar/strVar/idx/subrange/`
+  `seqLen/byteAt/comb/optResVar/match_/is_/specCall`, `lean/Thermite/Ast.lean`) has NO `field` or
+  `tupleProj` constructor, so the Lean `S_C` fragment does not model struct-field / tuple-projection
+  access at all. These two arms therefore have NO Lean counterpart and NO (T1) theorem backing —
+  exactly like the Map accessor (D3) and the guard-arm path (D4): a Rust-encoder arm covering MORE
+  than the Lean fragment, not a meaning mismatch.
+
+  **Consequence.** A contract that uses `result.x` (struct field) or `result.0` (tuple projection)
+  relies on the per-run Z3 translation validation alone for that arm, WITHOUT the Lean T1
+  (`ref_sound`) backing the rest of the contract subset enjoys: the per-run `h_tv` attestation still
+  checks the production lowering against this reference arm, but CORR for this arm rests on the
+  inspection of the two quoted lines above (the emitted `{r}.{name}` / `{r}.{index}` IS the Verus
+  member-access denotation), not on a kernel-checked Lean theorem.
+
+  **Future brick.** Extending Lean `S_C` with a `field`/`tupleProj` constructor (a value projection
+  over a struct/tuple `ExecVal`/`RefVal`, denoting member access) is a candidate next increment —
+  the SAME shape as the proven rewrites (a structural arm with a `ref_sound` case + a negative lemma
+  pinning the projection choice), which would promote D6 from inspection-only to T1-backed.
+
+None of D1–D6 is a denotation mismatch. The arm-by-arm correspondence holds at the meaning level for
+every construct in the frozen subset; D3/D4/D6 are Rust-encoder arms that lie OUTSIDE the Lean
+fragment (inspection-only, no Lean counterpart), enumerated so a re-auditor knows exactly where the
+two sides are not arm-for-arm identical.
 
 ## Verification
 
@@ -508,5 +589,5 @@ existence of the cited Lean theorems. The Lean spine builds clean and `sorry`-fr
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the arm-by-arm correspondence map) | SHIPPED | This doc IS the deliverable. Every arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state` and the 8 combinator `verus_l3` forms is a row in Tables 1–3, each quoting the actual Rust arm (`thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs` @ `579d3d48`/`43c9a6c8`/`b9dc22fd`; `thermite-spec/src/combinators.rs` @ `c0b1d8a3`) beside the actual Lean arm (`lean/Thermite/{RefEncode,Denote,Exec}.lean` + `Exec/Stmt.lean` @ `7c85da25`), the Verus-meaning bridge, and the pinning Lean theorem + negative lemma. Bridge assumptions A1–A3 enumerated; residuals + discrepancies D1–D5 recorded honestly. Closes the `thermite-semantics.md` REQ-6 correspondence residual at the audit-by-inspection tier. |
+| REQ-1 (the arm-by-arm correspondence map) | SHIPPED | This doc IS the deliverable. Every arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state` and the 8 combinator `verus_l3` forms is EITHER a row in Tables 1–3 OR an explicitly-listed out-of-Lean-scope residual (the `ref_encode.rs::encode` dispatch is enumerated exhaustively in Table 1H — its `Expr::Field`/`Expr::TupleProj` arms are residual D6, no Lean counterpart). Each row quotes the actual Rust arm (`thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs` @ `579d3d48`/`43c9a6c8`/`b9dc22fd`; `thermite-spec/src/combinators.rs` @ `c0b1d8a3`) beside the actual Lean arm (`lean/Thermite/{RefEncode,Denote,Exec}.lean` + `Exec/Stmt.lean` @ `7c85da25`), the Verus-meaning bridge, and the pinning Lean theorem + negative lemma. Bridge assumptions A1–A3 enumerated; residuals + discrepancies D1–D6 recorded honestly. Closes the `thermite-semantics.md` REQ-6 correspondence residual at the audit-by-inspection tier. |
 | REQ-2 (the extraction bridge — Lean→Rust extraction or a Rust-side proof) | NOT-STARTED | open prereq blocker #185 (this doc's blocker tracks both tiers; the inspection tier is REQ-1 SHIPPED, the extraction tier stays open). Gap: there is no Lean→Rust extraction tooling for this encoder shape — the encoders are hand-written Rust producing Verus STRINGS, not Lean-extracted code, so the inspection (this doc) is the accepted interim per `thermite-semantics.md` REQ-6 / the reduced-trusted-base table item #3. The named stronger closure (extraction or a Rust-side proof making the Rust encoder equal the Lean model by construction) is future work; until then A2/A3 stay inspection-trusted and a CI drift-guard (recommended above) is the cheap interim hardening. |

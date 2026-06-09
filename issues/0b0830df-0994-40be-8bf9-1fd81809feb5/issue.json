@@ -2,11 +2,12 @@
   "uuid": "0b0830df-0994-40be-8bf9-1fd81809feb5",
   "display_id": 159,
   "title": "thermite-tv: exec_stmt_encode — independent operational-semantics reference state-denotation for the FROZEN kernel exec-statement subset (let/assign/mutation/seq/if). Maps a straight-line Block to a Verus spec-fn state-transformer (final state as a fn of initial state). Step-2.2.1 prereq, governed by .design/verified/exec-stmt-tv.md REQ-2.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T00:52:23.600531679Z",
-  "updated_at": "2026-06-09T00:52:25.526457911Z",
+  "updated_at": "2026-06-09T03:05:08.976257371Z",
+  "closed_at": "2026-06-09T03:05:08.976257371Z",
   "labels": [
     "blocker"
   ]

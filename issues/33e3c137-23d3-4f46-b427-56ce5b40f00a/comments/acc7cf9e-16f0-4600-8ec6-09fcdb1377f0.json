@@ -1,0 +1,10 @@
+{
+  "uuid": "acc7cf9e-16f0-4600-8ec6-09fcdb1377f0",
+  "issue_uuid": "33e3c137-23d3-4f46-b427-56ce5b40f00a",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-audited (7a7db884 + fix 1bea449d). .design/verified/rust-lean-correspondence.md: the arm-by-arm Rust<->Lean correspondence audit — ~78 quoted-code rows across 3 encoder tables (+ Table 1H exhaustive dispatch inventory), bridge assumptions A1-A3 enumerated, audited commit SHAs pinned, discrepancies D1-D6 honestly recorded (none a denotation mismatch; D6 = Field/TupleProj inspection-only residual found by the critic #187 and fixed). Critic spot-verified 15+ quotes EXACT, completeness sweep now exhaustive, trust framing honest (inspection-tier only; REQ-2 extraction bridge NOT-STARTED). The thermite-semantics.md REQ-6 Rust<->Lean residual is CLOSED at the audit-by-inspection tier.",
+  "created_at": "2026-06-09T21:28:19.763838447Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAaz0emlAkeNF+QWRN/xJSzdoBce+2GhpD7MMSO8QC/B0HBxE/gl3Kg3MwiUoFxhVidjWLtlyIw5U5zexqRoXaBw=="
+}

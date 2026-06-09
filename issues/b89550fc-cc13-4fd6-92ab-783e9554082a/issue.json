@@ -2,11 +2,12 @@
   "uuid": "b89550fc-cc13-4fd6-92ab-783e9554082a",
   "display_id": 157,
   "title": "exec-TV coverage seam: the forge-level ExecVerdict::Divergent mapping is not directly asserted by a test (discharge is private + the faithful lowerer never triggers it; teeth bite at the obligation layer E1-E4). Add a forge-level end-to-end teeth (test-only fault-inject a wrong production -> assert Divergent)",
-  "status": "open",
+  "status": "closed",
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-09T00:36:56.533188933Z",
-  "updated_at": "2026-06-09T00:36:59.322538390Z",
+  "updated_at": "2026-06-09T03:02:28.967591055Z",
+  "closed_at": "2026-06-09T03:02:28.967591055Z",
   "labels": [
     "enhancement"
   ]

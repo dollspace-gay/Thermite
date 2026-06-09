@@ -1,0 +1,18 @@
+# The Lean 4 side of the Thermite toolchain — the verified-validator metatheory
+# (.design/verified/thermite-semantics.md REQ-6/REQ-7; epic #169, increment (a) #170).
+#
+# DEPENDENCIES: Lean 4 core ONLY. This first increment proves T1 on the
+# comparison/logical contract fragment, which needs only core `Int`/`Bool`/`Prop`
+# + the core tactics (`decide`/`omega`/`simp`/`rfl`/`cases`/`induction`). Mathlib +
+# Lean-SMT (REQ-6's eventual deps) are NOT pulled in: a heavy Mathlib download risks
+# a non-building first increment, and Lean-SMT is the LATER Z3-demotion increment, not
+# this one. They are added when a proof genuinely needs them (a documented honest
+# deviation from REQ-6's dependency list — see the builder report + the doc REQ-6
+# status note). `omega` is in core Lean 4, so the integer-comparison reasoning here
+# is fully discharged core-only.
+
+name = "thermite"
+defaultTargets = ["Thermite"]
+
+[[lean_lib]]
+name = "Thermite"

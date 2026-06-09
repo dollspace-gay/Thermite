@@ -47,3 +47,15 @@ import Thermite.Exec.Stmt
 -- meaning, the Lean kernel}. `h_tv` is the Z3-TRUSTED premise (NOT Lean-proven; #184
 -- demotes Z3). Loops (#163) + the Rust↔Lean correspondence (#185) are named residuals.
 import Thermite.Faithfulness
+-- LAYER 4 (trust-shrink), increment 4a (#184): the Z3-DEMOTION proof-of-concept. Wires
+-- Lean-SMT (cvc5 proof reconstruction) so a per-run TV equivalence obligation
+-- (`P_production ⟺ P_reference`, `thermite-tv/src/obligation.rs`) is KERNEL-CHECKED by the
+-- `smt` tactic rather than Z3-TRUSTED — the route to demote the `h_tv` premise of
+-- `Thermite.lowering_faithful`. Tier 3 reached: two REAL TV equivalence obligations
+-- (hand-translated, the gap an exporter closes) discharged by `smt` and kernel-checked,
+-- `#print axioms` = [propext, Classical.choice, Quot.sound] (STANDARD only — the cvc5 proof
+-- is genuinely replayed, not oracle-trusted). The WALLS (toolchain v4.29.0 + full Mathlib +
+-- vendored cvc5 1.3.2; the hand-translation residual; the BitVec-reconstruction `sorry`
+-- excluding bitwise obligations; Verus/Z3 not emitting reconstructable certificates) are in
+-- `.design/verified/z3-demotion.md`.
+import Thermite.SmtDemo

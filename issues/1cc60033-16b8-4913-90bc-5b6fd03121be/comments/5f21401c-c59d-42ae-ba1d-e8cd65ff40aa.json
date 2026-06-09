@@ -1,0 +1,10 @@
+{
+  "uuid": "5f21401c-c59d-42ae-ba1d-e8cd65ff40aa",
+  "issue_uuid": "1cc60033-16b8-4913-90bc-5b6fd03121be",
+  "author": "Yffe",
+  "content": "DONE. Report at .design/research/formal-methods-sota.md (committed). 8 adversarially-verified findings + terminology map + architecture implications + proof-assistant landscape + honest gaps (economic thesis unverified; verified-bounded-validator-vs-universal-proof is the first open architectural question). Feeds #169 + the #173 proof-assistant fork.",
+  "created_at": "2026-06-09T15:15:17.784779289Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAfNEkXzRWC8eOXriekCmtgAtxBwkq7x1Lr0hmbe5XXC6JkQNMT5/9o6eAU1jU4TYL5bDHO0eNEp6TMnm5GDLyDA=="
+}

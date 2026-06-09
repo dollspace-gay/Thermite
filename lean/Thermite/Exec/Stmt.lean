@@ -175,6 +175,22 @@ def State.setVar (st : State) (name : String) (v : ExecVal) : State :=
 def State.bind (st : State) (name : String) : State :=
   { st with scope := fun s => if s = name then true else st.scope s }
 
+/-- Project a branch's resulting state `branch` back onto the PRE-`if` cell/scope set
+    of `pre` (the encoder's `env.keys()` recomposition in `thread_stmt`'s `Stmt::If`
+    arm). KEEPS the pre-`if` cells' (possibly branch-mutated) VALUES — a branch's
+    `assign` to an in-scope cell persists, exactly as the encoder composes the
+    branch-cell value into the post-`if` env — but DISCARDS any branch-local `let`
+    (a cell NOT in the pre-`if` scope set, which lived only in the branch-env clone).
+    The post-`if` scope set is the pre-`if` scope set; an in-scope cell takes the
+    branch's value, a non-pre-`if` name keeps the pre-`if` valuation (the branch-local
+    `let` does not leak). This mirrors `Stmt::If`'s `then_env = env.clone()` discipline
+    (`thermite-tv/src/exec_stmt_encode.rs`; `.design/verified/exec-stmt-tv.md`
+    REQ-2). -/
+def State.restoreScope (pre branch : State) : State :=
+  { env := { vars := fun s => if pre.scope s then branch.env.vars s else pre.env.vars s
+             slices := pre.env.slices }
+    scope := pre.scope }
+
 /-! THE SOURCE `S_B` DENOTATION — the big-step state transformer over a straight-line
     `Block` (`stmtDenote` per statement; `blockThread` for the statement sequence).
     Threads the state through the statement sequence (left to right), then `bodyDenote`
@@ -210,8 +226,15 @@ mutual
         -- branch state-transformers into a Verus `if`-expression; under a concrete
         -- state that `if`-expression evaluates to the TAKEN branch's state). A
         -- non-bool condition is an exec type error → `none` (the `asBool` partiality).
+        -- The taken branch threads over the PRE-`if` state; its resulting state is then
+        -- PROJECTED BACK onto the pre-`if` cell/scope set (`State.restoreScope`) — a
+        -- branch-local `let` does NOT leak past the `if` (the encoder's `Stmt::If`
+        -- `then_env = env.clone()` + `env.keys()` recomposition discipline). The
+        -- branch's `assign` effects on pre-`if` cells persist; the branch-local `let`s
+        -- are discarded (so a post-`if` `let` of a branch-local name is a FRESH bind).
         let c ← asBool (← execDenote cond st.env)
-        if c then blockThread thenB st else blockThread elseB st
+        let branch ← (if c then blockThread thenB st else blockThread elseB st)
+        some (st.restoreScope branch)
 
   /-- Thread a `Block`'s STATEMENTS through the state (the sequencing — left to right),
       yielding the FINAL state (NOT yet the tail value). Composes the per-statement
@@ -262,8 +285,14 @@ mutual
         let _ ← execRefValue e st.env
         some st
     | .ifElse cond thenB elseB, st => do
+        -- SAME branch-env-clone discipline as `stmtDenote.ifElse`: thread the taken
+        -- branch over the pre-`if` state, then PROJECT BACK onto the pre-`if`
+        -- cell/scope set (`State.restoreScope`) — a branch-local `let` is DISCARDED
+        -- (the encoder's `then_env = env.clone()` + `env.keys()` recomposition). Both
+        -- sides discard identically so `body_ref_sound` still holds.
         let c ← asBool (← execRefValue cond st.env)
-        if c then refBlockThread thenB st else refBlockThread elseB st
+        let branch ← (if c then refBlockThread thenB st else refBlockThread elseB st)
+        some (st.restoreScope branch)
 
   /-- Model `encode_block_tail`'s statement loop: thread the block's statements
       left-to-right through the env (the encoder's sequencing). -/

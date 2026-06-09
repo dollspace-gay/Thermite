@@ -67,25 +67,29 @@ def d1_branch_local_then_rebind : Block :=
       .letS "k" (.intLit .u64 5) ]
     (some (.var "k"))
 
-/-- **D1a — PROOF of the disagreement: the Lean `S_B` model is `none` on the body
-    the REAL `body_ref_state` certifies with the tail value `5`.** The `ifElse`
-    leaks the branch-local `let k` scope, so the post-`if` `let k = 5` re-shadows and
-    `bodyDenote = none`. (This is the fidelity gap, mechanically witnessed.) -/
+/-- **D1a — RESOLVED: the Lean `S_B` model now AGREES with the REAL `body_ref_state`,
+    producing the tail value `5`.** The `ifElse` arm threads each branch over the
+    pre-`if` state and PROJECTS the result back onto the pre-`if` cell/scope set
+    (`State.restoreScope` — the encoder's `then_env = env.clone()` + `env.keys()`
+    recomposition). The branch-local `let k = 1` lives only in the branch projection
+    and is DISCARDED past the `if`, so the post-`if` `let k = 5` is a FRESH bind (NOT
+    a re-shadow) and the body has the closed-form tail value `5` — exactly the REAL
+    `body_ref_state`'s `Ok("5")`. (This is the fidelity gap, now CLOSED.) -/
 theorem d1_lean_model_is_none :
-    bodyDenote d1_branch_local_then_rebind inputState = none := by
+    bodyDenote d1_branch_local_then_rebind inputState = some (.int ⟨.u64, 5⟩) := by
   simp only [d1_branch_local_then_rebind, bodyDenote, blockThread, stmtDenote,
-        inputState, State.setVar, State.bind, execDenote, asInt, asBool, evalArith,
-        rawArith, cmpVal, IntTy.bound, IntTy.width]
+        inputState, State.setVar, State.bind, State.restoreScope, execDenote, asInt,
+        asBool, evalArith, rawArith, cmpVal, IntTy.bound, IntTy.width]
   decide
 
-/-- **D1 — DIVERGENCE PIN (FAILS).** The authority (the REAL `body_ref_state`,
-    confirmed `Ok("5")` at commit `3b53d5aa`) produces a DEFINED result, so a
-    FAITHFUL `S_B` model MUST also be defined here: `(bodyDenote …).isSome = true`.
-    The Lean model is `none` (`d1_lean_model_is_none`), so `isSome = false ≠ true`.
-    This theorem therefore does NOT hold under the current `ifElse` arm — it pins
-    the branch-local-`let`-scope-leak fidelity gap. Closing it requires the `ifElse`
-    arm to thread each branch over a SCOPE-RESTORED copy (the encoder's
-    `env.clone()` discipline — a branch-local `let` does not leak past the `if`). -/
+/-- **D1 — DIVERGENCE PIN (now PASSES — the divergence is CLOSED).** The authority
+    (the REAL `body_ref_state`, confirmed `Ok("5")` at commit `3b53d5aa`) produces a
+    DEFINED result, so a FAITHFUL `S_B` model MUST also be defined here:
+    `(bodyDenote …).isSome = true`. After the `ifElse` arm threads each branch over a
+    SCOPE-RESTORED copy (the encoder's `env.clone()` discipline — a branch-local `let`
+    does not leak past the `if`), the Lean model HAS the result `5`
+    (`d1_lean_model_is_none`), so `isSome = true` holds. The branch-local-`let`-scope
+    -leak fidelity gap is closed. -/
 theorem d1_faithful_model_should_have_result :
     (bodyDenote d1_branch_local_then_rebind inputState).isSome = true := by
   rw [d1_lean_model_is_none]

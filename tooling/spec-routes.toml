@@ -746,8 +746,14 @@ conformance_ops = ["sum"]
 # discharged through forge::check::run_verus. Closes the #122/#146 cast-paren /
 # cast-< class GENERALLY (off-corpus). Governed by exec-tv.md; the reference is
 # the corpus sum body (the `acc = acc + xs[i] as u64` exec arithmetic shape).
-# (Step 2.2 — operational semantics for statements/loops/mutation — is framed in
-# exec-tv.md, kernel-gated, not yet routed.)
+# (Step 2.2 — operational semantics for statements/loops/mutation — is DESIGNED in
+# .design/verified/exec-stmt-tv.md (crosslink epic #158): REQ-1 freezes the kernel
+# exec-statement subset v1, REQ-2 the operational state-denotation, REQ-3 the GROUNDED
+# straight-line body state-refinement TV (2.2.1), REQ-4 frames loops (2.2.2, kernel-
+# gated). The governed code — thermite-tv/src/exec_stmt_encode.rs, forge/src/body_tv.rs,
+# thermite-lower lower_exec_body — is unbuilt (blockers #159/#160/#161/#162); routes are
+# added by the builder at manifest time, exactly as the exec_encode.rs/exec_tv.rs routes
+# below were added when step 2.1 shipped.)
 [[route]]
 crate_pattern = "thermite-tv/src/exec_encode.rs"
 design = ".design/verified/exec-tv.md"

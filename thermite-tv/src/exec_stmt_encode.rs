@@ -75,7 +75,7 @@
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 
-use thermite_syntax::ast::{Block, Expr, IndexArg, Stmt};
+use thermite_syntax::ast::{BinOp, Block, Expr, IndexArg, Stmt};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError};
 
@@ -281,12 +281,71 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
             let _ = substitute(e, env)?;
             Ok(())
         }
-        Stmt::If { .. } => Err(RefEncodeError::Unsupported(
-            "`if` as a non-tail STATEMENT (a mid-body branch mutating the state per \
-             arm is OUT of v1 — the state-denotation composes an `if` only in TAIL \
-             position; a per-arm-mutating `if` is a 2.2.2-adjacent multi-exit form)"
-                .to_string(),
-        )),
+        // An `if` STATEMENT that MUTATES outer cells per arm (the GROUNDED AC-4 form
+        // `if x < 10 { r = r + 1; } else { r = r + 2; }` — `exec-stmt-tv.md` REQ-1
+        // lists the `if`-statement as IN the frozen 2.2.1 subset, AC-4 grounds it
+        // `verified: 1`). It is a state-transformer: thread the then-branch into a
+        // COPY of the current env (-> the then-env) and the else-branch into another
+        // copy (-> the else-env, an ABSENT else == identity), then for EACH cell
+        // either branch mutated, the post-if value becomes the Verus if-EXPRESSION
+        // `if <cond> { <then-cell> } else { <else-cell> }` composing the two branch
+        // states (the state-transformer semantics — exec-stmt-tv.md REQ-2 / AC-4). A
+        // cell mutated in neither branch is unchanged. The recursion handles a NESTED
+        // `if`-statement in a branch; an out-of-subset branch construct (a loop, a
+        // non-scalar mutation, a mid-branch return) PROPAGATES its honest `Err`.
+        Stmt::If { cond, then, else_ } => {
+            // The condition is itself an exec value — substitute it under the
+            // pre-`if` env so the composed value is a closed form in the inputs.
+            let cond_subst = substitute(cond, env)?;
+
+            // Thread each branch into its OWN copy of the pre-`if` env. A branch-tail
+            // VALUE (a value-discarding `if c { ..; v }` statement) is OUT of the v1
+            // mutation subset — an honest `Err` (the state-denotation only composes a
+            // branch that mutates cells, never a discarded branch value).
+            let mut then_env = env.clone();
+            thread_branch(then, &mut then_env)?;
+            let mut else_env = env.clone();
+            if let Some(else_block) = else_ {
+                thread_branch(else_block, &mut else_env)?;
+            }
+
+            // For each cell ALREADY in scope before the `if` (a branch-local `let`
+            // does not leak past the branch — it lives only in the branch-env clone),
+            // recompose: if either branch changed it, the post-`if` value is the
+            // branch-composed Verus `if`-expression (an absent else / a non-mutating
+            // branch contributes the cell's pre-`if` value, i.e. identity — exactly
+            // what the cloned env preserves). A cell mutated in neither branch keeps
+            // its pre-`if` value untouched.
+            let cell_names: Vec<String> = env.keys().cloned().collect();
+            for name in cell_names {
+                let then_val = then_env
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_else(|| Expr::Path(vec![name.clone()]));
+                let else_val = else_env
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_else(|| Expr::Path(vec![name.clone()]));
+                let pre_val = env.get(&name);
+                if pre_val == Some(&then_val) && pre_val == Some(&else_val) {
+                    // Unchanged by both branches — leave the cell as-is.
+                    continue;
+                }
+                let composed = Expr::If {
+                    cond: Box::new(cond_subst.clone()),
+                    then: Block {
+                        stmts: vec![],
+                        tail: Some(Box::new(then_val)),
+                    },
+                    else_: Block {
+                        stmts: vec![],
+                        tail: Some(Box::new(else_val)),
+                    },
+                };
+                env.insert(name, composed);
+            }
+            Ok(())
+        }
         Stmt::Return(_) => Err(RefEncodeError::Unsupported(
             "early `return` in non-tail position (v1 admits `return` only in TAIL \
              position — a mid-body early return is a multi-exit CPS form, OUT of the \
@@ -308,23 +367,114 @@ fn thread_stmt(stmt: &Stmt, env: &mut Env) -> Result<(), RefEncodeError> {
     }
 }
 
+/// Thread an `if`-STATEMENT BRANCH `Block`'s statements through `env` (in order),
+/// REUSING the per-statement [`thread_stmt`] recursively (so a NESTED `if`-statement
+/// in the branch is composed, and an out-of-subset branch construct — a loop, a
+/// non-scalar mutation, a mid-branch early return — propagates its honest `Err`). A
+/// branch in the v1 mutation subset is value-LESS (`tail: None`): it mutates outer
+/// cells via `Stmt::Assign`, it does not produce a discarded value. A branch with a
+/// TAIL VALUE (`if c { ..; v }` as a statement) is OUT of the v1 mutation subset — an
+/// honest [`RefEncodeError::Unsupported`], never a silent discard.
+fn thread_branch(branch: &Block, env: &mut Env) -> Result<(), RefEncodeError> {
+    for stmt in &branch.stmts {
+        thread_stmt(stmt, env)?;
+    }
+    match &branch.tail {
+        None => Ok(()),
+        Some(_) => Err(RefEncodeError::Unsupported(
+            "`if`-statement branch with a tail VALUE (a value-discarding \
+             `if c { ..; v }` statement is OUT of the v1 mutation subset — a branch \
+             mutates outer cells, it does not produce a discarded value)"
+                .to_string(),
+        )),
+    }
+}
+
+/// Strip exactly ONE layer of fully-enclosing parentheses from `s`, used ONLY for
+/// the `if`-condition syntax position (`if <cond> { .. }`), where the canonical
+/// reference form is the bare predicate (`exec-stmt-tv.md` AC-4 `if x < 10 { .. }`).
+/// `exec_ref_value` wholly parenthesizes a `Binary` (the #122 discipline), so the
+/// encoded comparison condition arrives as `(x < 10)`; this removes the redundant
+/// outer pair (Verus parses `if x < 10` identically). The strip is conservative: it
+/// removes the pair ONLY when the leading `(` matches the trailing `)` AND that pair
+/// encloses the WHOLE string (a `(a) + (b)` is left untouched — its outer chars are
+/// not a single enclosing pair). A string with no enclosing pair is returned as-is.
+fn strip_one_enclosing_paren(s: &str) -> String {
+    let bytes = s.as_bytes();
+    if bytes.first() != Some(&b'(') || bytes.last() != Some(&b')') {
+        return s.to_string();
+    }
+    // Walk the depth; the opening `(` encloses the whole string only if depth returns
+    // to 0 EXACTLY at the final char (never reaching 0 before the end).
+    let mut depth = 0i32;
+    for (i, &b) in bytes.iter().enumerate() {
+        match b {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 && i != bytes.len() - 1 {
+                    // The leading `(` closed before the end — not a single enclosing
+                    // pair (e.g. `(a) + (b)`). Leave the string untouched.
+                    return s.to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    // The leading `(` and trailing `)` are a single enclosing pair — strip them.
+    s[1..s.len() - 1].to_string()
+}
+
 /// Encode a body VALUE position (a tail expr, a branch tail, a tail-`return`'s
 /// expr) under `env` (REQ-2). An `if`-EXPRESSION composes the two branch
 /// state-transformers; a TUPLE projects the multi-cell final state; everything else
 /// is an exec VALUE -> SUBSTITUTE the env then REUSE [`exec_ref_value`].
 fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefEncodeError> {
-    match expr {
-        // The `if` state-transformer (`exec-stmt-tv.md` AC-4): compose the two
-        // branch transformers into a Verus `if`-expression over the env-substituted
-        // condition. Each branch is its OWN straight-line block (a fresh env CLONE
-        // — a branch-local `let` does not leak past the branch), and the branch
-        // VALUE is the branch's tail.
+    // SUBSTITUTE the env FIRST so a tail / branch-tail that NAMES a cell composed by
+    // an `if`-statement (the AC-4 form: the tail `r` whose env value is the
+    // branch-composed `Expr::If`) dispatches on the cell's COMPOSED value, not on the
+    // bare `Path` (which `exec_ref_value` would reject as an `if expression`). For a
+    // syntactic `Expr::If` / `Expr::Tuple` tail `substitute` is the identity (it does
+    // not recurse into those nodes), so the B3 if-tail / B4 tuple-tail are unchanged.
+    let substituted = substitute(expr, env)?;
+    match &substituted {
+        // The `if` state-transformer (`exec-stmt-tv.md` AC-4): compose the two branch
+        // transformers into a Verus `if`-expression over the (already-substituted)
+        // condition. The condition and the branch tails are encoded as exec VALUES.
+        // For a SYNTACTIC if-tail (B3) the branches are still source blocks (a fresh
+        // env CLONE — a branch-local `let` does not leak); for a cell composed by an
+        // `if`-statement the branch blocks are `{ tail: <closed-form> }` (already
+        // threaded), and `encode_block_tail` re-encodes that closed form unchanged.
         Expr::If { cond, then, else_ } => {
-            let c = encode_value(cond, env, ctx)?;
+            // The condition sits in Verus `if <cond> { .. }` syntax position, where a
+            // bare predicate is the canonical form (`exec-stmt-tv.md` AC-4 reference
+            // `if x < 10 { x+1 } else { x+2 }`, B3 `if c { .. }`). `exec_ref_value`
+            // wholly parenthesizes a `Binary` (the #122 discipline), so strip exactly
+            // ONE layer of fully-enclosing parens for the condition — Verus parses
+            // `if x < 10` identically to `if (x < 10)`, and this matches the pinned
+            // reference form. A non-parenthesized cond (a bare path `c`) is unchanged.
+            let c = strip_one_enclosing_paren(&encode_value(cond, env, ctx)?);
             let mut then_env = env.clone();
             let t = encode_block_tail(then, &mut then_env, ctx)?;
             let mut else_env = env.clone();
             let e = encode_block_tail(else_, &mut else_env, ctx)?;
+
+            // Verus requires the two `if`/`else` arms to share a TYPE. `exec_ref_value`
+            // encodes spec ARITHMETIC (a `Binary` over `+`/`-`/`*`/...) as `int`, but a
+            // bare cell value (the IDENTITY arm of a no-else `if c { r = r + 1; } r` —
+            // the else is the unchanged `r`, a `u64`) stays bounded. If the two arms
+            // DISAGREE on int-ness, coerce the bounded (non-`int`) arm with `as int` so
+            // the arms unify (Verus parses `(x as int)` and the `result: u64 == <int>`
+            // comparison coerces fine). When BOTH arms are arithmetic (the GROUNDED
+            // AC-4 `(x + 1)`/`(x + 2)`, B3 `(x + 1)`/`(x - 1)`) no coercion is applied —
+            // the pinned reference form is preserved.
+            let t_int = branch_is_int_typed(then, env)?;
+            let e_int = branch_is_int_typed(else_, env)?;
+            let (t, e) = match (t_int, e_int) {
+                (true, false) => (t, format!("({e} as int)")),
+                (false, true) => (format!("({t} as int)"), e),
+                _ => (t, e),
+            };
             Ok(format!("if {c} {{ {t} }} else {{ {e} }}"))
         }
         // The multi-cell TUPLE projection (`exec-stmt-tv.md` REQ-2, the design's
@@ -338,13 +488,47 @@ fn encode_value(expr: &Expr, env: &Env, ctx: &BodyRefCtx) -> Result<String, RefE
             Ok(format!("({})", parts.join(", ")))
         }
         // Every other value (a path, arithmetic, a cast, a call, an index, ...) is a
-        // step-2.1 exec VALUE: substitute the env into it, then REUSE the
-        // independent per-RHS encoder (the #122/#146/overflow disciplines unchanged).
-        other => {
-            let substituted = substitute(other, env)?;
-            exec_ref_value(&substituted, &ctx.exec_ref_ctx())
-        }
+        // step-2.1 exec VALUE -> REUSE the independent per-RHS encoder (the
+        // #122/#146/overflow disciplines unchanged). Already substituted above.
+        _ => exec_ref_value(&substituted, &ctx.exec_ref_ctx()),
     }
+}
+
+/// Whether the VALUE an `if`-EXPRESSION branch `block` yields is encoded by
+/// [`exec_ref_value`] as a spec `int` (vs a bounded `u64`/.../`bool`). Used ONLY to
+/// unify the two arms' Verus types (`exec_ref_value` encodes a `Binary` ARITHMETIC as
+/// `int`; a bare cell value — the identity arm of a no-else `if` — stays bounded). It
+/// threads the branch's own stmts into a clone of `env` then classifies the
+/// (substituted) branch-tail [`Expr`]: spec ARITHMETIC (`Binary` over `+`/`-`/`*`/
+/// `/`/`%`/shift/bit-ops) is `int`; a comparison `Binary` is `bool` (not `int`);
+/// everything else (a bare path cell, a literal, a cast, an index, a call) is the
+/// bounded type (not `int`). A branch with no tail value would already be an `Err`
+/// from [`encode_block_tail`]; here an absent tail is conservatively NOT-`int`.
+fn branch_is_int_typed(block: &Block, env: &Env) -> Result<bool, RefEncodeError> {
+    let mut branch_env = env.clone();
+    for stmt in &block.stmts {
+        thread_stmt(stmt, &mut branch_env)?;
+    }
+    let Some(tail) = &block.tail else {
+        return Ok(false);
+    };
+    let value = substitute(tail, &branch_env)?;
+    Ok(matches!(
+        value,
+        Expr::Binary {
+            op: BinOp::Add
+                | BinOp::Sub
+                | BinOp::Mul
+                | BinOp::Div
+                | BinOp::Rem
+                | BinOp::Shl
+                | BinOp::Shr
+                | BinOp::BitAnd
+                | BinOp::BitOr
+                | BinOp::BitXor,
+            ..
+        }
+    ))
 }
 
 /// Substitute the env into an [`Expr`] (REQ-2): replace each free `Path` leaf that

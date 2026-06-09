@@ -1,0 +1,10 @@
+{
+  "uuid": "64c965aa-1958-4518-a719-a1b6b440724a",
+  "issue_uuid": "ed40b16c-2f65-49e2-8e84-b08a0d6094f8",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (164039f + b9dc22f). lower_exec_body (thermite-lower) — the production per-body exec lowering; the body exec Ctx IS reachable for a standalone straight-line block (Ctx::exec(), free vars bound by the obligation sig); a loop body -> honest Unsupported = the 2.2.1/2.2.2 boundary. Cross-crate bridge exec_body_tests pins the real output. Consumer loop closes at #162 (forge body-tv).",
+  "created_at": "2026-06-09T03:04:46.442703256Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAcJjQ9FhC6eJ6/rHZRp8idhaISRIBsgJ4u02voW+TgjMk5qmjZMJm2Tnbhb5Sv17VcWloHQBoh7/IlbZ/QisnBQ=="
+}

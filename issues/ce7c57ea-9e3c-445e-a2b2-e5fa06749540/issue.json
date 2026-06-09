@@ -1,0 +1,10 @@
+{
+  "uuid": "ce7c57ea-9e3c-445e-a2b2-e5fa06749540",
+  "display_id": 162,
+  "title": "forge: body-tv check phase (forge body-tv <file>) — runs the straight-line body state-refinement TV over each checked item's exec body, four-way Faithful/Divergent/Unverifiable/Skipped (loops Skipped HONESTLY = step 2.2.2). Sibling to forge::exec_tv. .design/verified/exec-stmt-tv.md REQ-3/REQ-5.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:53:10.327861744Z",
+  "updated_at": "2026-06-09T00:53:10.327861744Z"
+}

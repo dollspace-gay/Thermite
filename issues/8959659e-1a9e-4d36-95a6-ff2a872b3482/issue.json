@@ -1,0 +1,10 @@
+{
+  "uuid": "8959659e-1a9e-4d36-95a6-ff2a872b3482",
+  "display_id": 171,
+  "title": "thermite-semantics increment (b): exec-expression denotation S_E (bounded u64/u32/usize/bool value) + PROVE (T1) for exec_ref_value — ∀ pure exec Expr P, ⟦exec_ref_value(P)⟧ = ⟦P⟧_{S_E} at the BOUNDED type (overflow obligation carried, never nat-coerced). Builds on increment (a)'s prover choice. Epic #169.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:14:09.998511764Z",
+  "updated_at": "2026-06-09T14:14:09.998511764Z"
+}

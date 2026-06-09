@@ -2,11 +2,12 @@
   "uuid": "1cc60033-16b8-4913-90bc-5b6fd03121be",
   "display_id": 175,
   "title": "step-3 architecture: deep-research the formal-methods SOTA (verified compilation vs translation validation, mechanized semantics, SMT-vs-foundational + the Z3-trust/proof-reconstruction problem, refinement/semantic-preservation vocabulary, effect verification, proof-assistant landscape, LLM-assisted verification) + a terminology map to correct lexical drift, before committing the mechanized-semantics architecture",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T14:34:34.210806914Z",
-  "updated_at": "2026-06-09T14:35:26.927627997Z",
+  "updated_at": "2026-06-09T15:15:43.974995812Z",
+  "closed_at": "2026-06-09T15:15:43.974995812Z",
   "labels": [
     "research"
   ]

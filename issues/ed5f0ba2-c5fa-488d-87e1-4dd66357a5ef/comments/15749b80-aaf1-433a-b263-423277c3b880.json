@@ -1,0 +1,10 @@
+{
+  "uuid": "15749b80-aaf1-433a-b263-423277c3b880",
+  "issue_uuid": "ed5f0ba2-c5fa-488d-87e1-4dd66357a5ef",
+  "author": "Yffe",
+  "content": "FIXED + re-critic-clean (6050b4cb). State.restoreScope projects the branch state back onto the pre-if cell/scope set (the encoder's env.clone()+env.keys() recomposition): branch-local lets DISCARDED, assigned pre-if cells keep the branch value, untouched cells unchanged, in-branch re-shadow still guarded. Re-critic NO DIVERGENCE: the pin passes because the model genuinely computes 5 (decide through restoreScope, matching body_ref_state's Ok(5)) — not gamed (the scenario body is byte-identical pre/post); restoreScope faithful for the GENERAL case (4 scenarios verified vs the Stmt::If arm); body_ref_sound still has content + clean axioms [propext,Quot.sound]; the 2b negatives still bite + value-state preserved; no regression (2a + S_C untouched). The 1g-style scoping fidelity gap is closed.",
+  "created_at": "2026-06-09T20:23:46.333375422Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAhF9hPDZ0OsvCyHSAXOpBYCIYkFInr93dt01rpNcb+wjC6CSBPLlfny1Fsi7wa2BSTSDOsN7z+bzRN7/l+mS1CQ=="
+}

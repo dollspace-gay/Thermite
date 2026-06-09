@@ -1,0 +1,10 @@
+{
+  "uuid": "970f0edf-0113-4d93-b544-ec1ebe3e4c81",
+  "issue_uuid": "6b757948-03fd-428c-85b9-34ce187c8614",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (7ec8cef). gen_exec_exprs + ExecClause (thermite-tv/src/gen.rs): deterministic well-framed exec-position expr generator (arith/casts/cast-</shifts/bitops/index, each with an adequate no-overflow frame so faithful verifies). Generated run 200/200 faithful, coverage cast-<=15/arith=33/casts=127/index=31/shifts=25/bitops=27 — the #122/#146 off-corpus regression guard, all classes exercised. Critic confirmed non-vacuous (satisfiable frames, injected wrong shift/bitop bodies CAUGHT).",
+  "created_at": "2026-06-09T00:36:21.690239662Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA4GQFY2AYVSPJFpiaITfNGvUOXE6ECDb9GWhI76HQrWAZd/9UL/Cu56oEfHBAa5toMrIWJyOYw2SpC2Ku1cGDBg=="
+}

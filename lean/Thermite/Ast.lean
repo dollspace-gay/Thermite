@@ -82,12 +82,51 @@
       an OPTIONAL predicate `pred` (`ArgKind::Pred`). Each combinator populates exactly
       the fields its `arg_kinds` declares (the others `none`).
 
+  THE MATCH-IN-ENS / `is` PAYLOAD-IN-CONTRACT FORMS (#180, increment 1g — the C7
+  payload-in-contract class, `.design/basis/09-option-result.md`). In contract position a
+  built-in `Option`/`Result` value (a param / `result`) may be PROJECTED by a spec-`match`
+  or TESTED by `is`:
+    - `match e { Some(v) => P(v), None => Q }`  (the Option form), and
+      `match e { Ok(v) => P(v), Err(err) => Q(err) }`  (the Result form): the arm SELECTED
+      by `e`'s variant, with the payload BOUND in the arm predicate. Mirrors `ast.rs`
+      `Expr::Match`/`MatchArm`/`Pattern` + `ref_encode.rs`'s `encode_match`/`encode_pattern`
+      (the #150 work): the scrutinee + each arm body encode by the SAME recursion, the
+      pattern is `encode_pattern`'s built-in `Some(x)`/`None`/`Ok(x)`/`Err(e)` form.
+    - `e is Some` / `e is None` / `e is Ok` / `e is Err`: the variant DISCRIMINANT test
+      (`ast.rs` `Expr::Is`; `ref_encode.rs`'s `Expr::Is` arm `({s} is {variant})`). `Prop`-
+      sorted, true iff `e`'s value is that variant.
+  To embed these `Ast.lean` gains:
+    - `OptResVar`            — a free `Option`/`Result`-valued name (the scrutinee of a
+      `match`/`is`; a param or `result`). Its VALUE (`none`/`some v`/`ok v`/`err e`) lives in
+      the env (`Denote.lean` `Env.optres`); the payload `v`/`e` is an `Int` (the C7 corpus
+      payloads are integer-valued — `i`/`v`/`err`; faithful to the corpus, NOT general ADTs).
+    - `Variant`              — the 4 built-in variants `Some`/`None`/`Ok`/`Err`
+      (`encode_pattern`'s `is_builtin_variant` set; a USER enum variant is DELIBERATELY
+      ABSENT — `encode_pattern` honestly `Err`s on it, so it is OUT of `S_C` and not embedded).
+    - `MatchArm`             — a variant PATTERN (the matched `Variant` + an optional payload
+      binder name, `Pattern::Enum`'s `fields[0]` binding / `Pattern::Binding`) + an arm-body
+      `Expr` (the flat arm predicate). The C7 `match` arms are FLAT predicates over the bound
+      payload (§4.2 cage), so the body REUSES the existing `Expr`. (Guards / wildcard arms are
+      out of the C7 fragment — the corpus matches are exhaustive 2-arm `Some/None`/`Ok/Err`.)
+    - `Expr.match_`          — a contract-position `match scrut arms`: the scrutinee `Expr`
+      (an `optResVar`) + the arms. `Prop`-sorted (a `match`-in-`ens` is a predicate; each arm
+      body is a flat `bool`).
+    - `Expr.is_`             — a variant test `scrut is variant`: the scrutinee `Expr` + the
+      tested `Variant`. `Prop`-sorted.
+
+  GENERAL USER ADTs are NOT covered (scoped to Option/Result, honestly): `encode_pattern`
+  itself only admits the built-in `Some/None/Ok/Err` (its `is_builtin_variant` gate `Err`s on a
+  user variant, lacking the enum-qualification map), so user ADTs are OUT of what the encoder
+  produces — they are not in `S_C` for this increment and are deliberately NOT embedded (no
+  embed-then-`sorry`). A general-ADT match (with the variant→discriminant + payload model) is a
+  future increment if/when the encoder admits user variants.
+
   DEFERRED — NOT embedded here, and DELIBERATELY NOT (no `sorry`-behind-a-variant;
   embedding-then-`sorry` is forbidden). These are the remaining sub-increments:
     - the 2 RECURSIVE / aggregate combinators (`count_where`/`permutation_of` — their
       well-founded-recursive / multiset `verus_l3` forms; Mathlib) (#182 / 1d-ii)
     - named spec-fn calls (the well-founded recursive `S_C` fixpoint) (#181)
-    - `Expr::Match` / `Expr::Is` in contract position (#180)
+    - general USER-ADT match/is (beyond the built-in Option/Result) — see above.
   Each is a real future inductive case, listed (not stubbed) so the deferral is honest.
 -/
 
@@ -160,6 +199,19 @@ inductive CastTy where
   | usize
   | nat
   | int
+  deriving DecidableEq, Repr
+
+/-- The 4 built-in `Option`/`Result` VARIANTS of the C7 payload-in-contract fragment
+    (#180) — mirrors `ref_encode.rs::is_builtin_variant`'s set `{"Some","None","Ok","Err"}`
+    (the only variants `encode_pattern` admits unqualified; a USER variant is an honest
+    `RefEncodeError`, so OUT of `S_C` and ABSENT here). These are BOTH the `match`-arm
+    pattern heads (`Some(v)`/`None`/`Ok(v)`/`Err(e)`) and the `is`-test discriminants
+    (`e is Some`/`e is None`/`e is Ok`/`e is Err`). -/
+inductive Variant where
+  | some_   -- `Some(v)` / `is Some`
+  | none_   -- `None`     / `is None`
+  | ok      -- `Ok(v)`    / `is Ok`
+  | err     -- `Err(e)`   / `is Err`
   deriving DecidableEq, Repr
 
 /- The contract-sublanguage expression. Four syntactic sorts are distinguished by
@@ -252,6 +304,23 @@ inductive Expr where
       BOOLEAN/`Prop`-sorted (a combinator result is `bool`). -/
   | comb (c : CombName) (seq : Expr) (seq2 : Option Expr) (idx : Option Expr)
          (pred : Option Pred)
+  /-- A free `Option`/`Result`-valued variable (#180): the scrutinee of a contract-position
+      `match`/`is` (a param or `result`). Its VALUE — `none`/`some v`/`ok v`/`err e` (the
+      payload an `Int`, the C7 corpus shape) — lives in the env (`Denote.lean` `Env.optres`).
+      Mirrors the `Expr::Path` scrutinee of an `Expr::Match`/`Expr::Is` whose type is the
+      built-in `Option`/`Result`. OPTION/RESULT-sorted (observed only through `match_`/`is_`). -/
+  | optResVar (name : String)
+  /-- A contract-position `match scrut { <arms> }` (#180; `Expr::Match`) — the C7
+      payload-in-contract projection `ens match result { Some(v) => P(v), None => Q }` (and the
+      `Ok`/`Err` Result form). The arm SELECTED by the scrutinee's variant denotes its body with
+      the payload BOUND (the binder ↦ the variant's payload value). `BOOLEAN`/`Prop`-sorted (each
+      arm body is a flat `bool`). Mirrors `encode_match`: the scrutinee + arm bodies via the SAME
+      recursion, the patterns via `encode_pattern`. MUTUAL with `MatchArm`. -/
+  | match_ (scrut : Expr) (arms : List MatchArm)
+  /-- A variant DISCRIMINANT test `scrut is variant` (#180; `Expr::Is`) — `result is Some` /
+      `is None` / `is Ok` / `is Err`. `BOOLEAN`/`Prop`-sorted, true iff the scrutinee's value is
+      that variant. Mirrors `ref_encode.rs`'s `Expr::Is` arm `({s} is {variant})`. -/
+  | is_ (scrut : Expr) (variant : Variant)
   /-- A FLAT predicate closure `|x| <body>` (#179; `ArgKind::Pred`; `Expr::Closure` with
       one param over the frozen `Seq<u32>` element type `u32`). `bound` is the element
       var name the closure binds (`encode_pred_arg`'s `params[0]`); `body` is the
@@ -261,6 +330,16 @@ inductive Expr where
       i-th element. MUTUAL with `Expr` (the body IS an `Expr`). -/
 inductive Pred where
   | mk (bound : String) (body : Expr)
+  /-- A contract-position `match` ARM (#180) — mirrors `thermite-syntax::ast::MatchArm` +
+      `Pattern` RESTRICTED to the C7 built-in payload patterns `encode_pattern` admits:
+      the matched `Variant` (`Some`/`None`/`Ok`/`Err` — the pattern HEAD) + an OPTIONAL payload
+      binder name (the `Pattern::Enum`'s single field binding `Some(v)`/`Ok(v)`/`Err(e)`; `None`
+      binds nothing) + the arm-body `Expr` (the flat arm predicate over the bound payload). A
+      guard / wildcard / nested pattern is OUT of the C7 fragment (the corpus matches are
+      exhaustive 2-arm `Some/None`/`Ok/Err`), so it is not modelled. MUTUAL with `Expr` (the
+      body IS an `Expr`). -/
+inductive MatchArm where
+  | mk (variant : Variant) (binder : Option String) (body : Expr)
   /-- A range argument of a spec-context slice borrow (#178) — mirrors the
       `thermite-syntax::ast::IndexArg` arms `encode_index`/`encode_ref` accept:
       `RangeTo(i)` (`&xs[..i]`), `Range(a, b)` (`&xs[a..b]`), `RangeFrom(a)`
@@ -280,5 +359,6 @@ end
 deriving instance Repr for Expr
 deriving instance Repr for Pred
 deriving instance Repr for RangeArg
+deriving instance Repr for MatchArm
 
 end Thermite

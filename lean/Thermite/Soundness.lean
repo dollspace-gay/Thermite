@@ -1,7 +1,18 @@
 /-
   Thermite/Soundness.lean — the (T1) soundness theorem for the comparison + logical
-  fragment (#170) EXTENDED with the ARITHMETIC operators (#176) and the CASTS (#177);
-  epic #169.
+  fragment (#170) EXTENDED with the ARITHMETIC operators (#176), the CASTS (#177), the
+  SPEC-CONTEXT REWRITES (#178), the 6 BOUNDED-QUANTIFIER COMBINATORS (#179), and the
+  MATCH-IN-ENS / `is` PAYLOAD-IN-CONTRACT forms (#180 / 1g — the C7 class); epic #169.
+
+  THE #180 MATCH/`is` EXTENSION. `ref_sound` gains the `optResVar`/`match_`/`is_` cases; the
+  `match_` case threads a MUTUAL `ref_sound_arms` (the arm-walk soundness — each arm body via the
+  recursive `ref_sound` IH, the selection-by-variant + payload-binding SHARED with the source).
+  NON-VACUOUS: the negative `match_arm_swap_breaks_soundness` (a `Some`/`None` body swap DISAGREES
+  at `result := Some 7`) and `is_wrong_variant_breaks_soundness` (`is Some` tested as `is None`
+  DISAGREES) bite; the positives `match_faithful_is_sound`/`match_result_faithful_is_sound`/
+  `is_faithful_is_sound` confirm the faithful encoder is sound. Scoped to Option/Result (the
+  built-in `Some/None/Ok/Err` `encode_pattern` admits); general user ADTs are OUT (the encoder
+  honestly `Err`s on them) and DELIBERATELY not embedded.
 
   Governing design: `.design/verified/thermite-semantics.md` REQ-2 (T1: the
   verified-validator obligation `∀ P, ⟦R(P)⟧ = ⟦P⟧_S`, proved by structural induction)
@@ -119,6 +130,13 @@ theorem refVal_eq (e : Expr) (env : Env) :
       -- `_` defaults — a combinator is never a comparison operand / a sequence base; its
       -- predicate equivalence is handled by the `comb` case of `ref_sound`, not here).
       exact ⟨rfl, rfl⟩
+  -- The #180 match/is forms are OPTION/RESULT- or BOOLEAN/`Prop`-sorted: as an INTEGER term
+  -- each falls to `0` and as a SEQUENCE term to `[]` (the `_` defaults — a `match`/`is`/
+  -- `optResVar` is never a comparison operand / a sequence base; the match/is equivalence is
+  -- the `match_`/`is_` case of `ref_sound`, not here).
+  | optResVar x => exact ⟨rfl, rfl⟩
+  | match_ scrut arms => exact ⟨rfl, rfl⟩
+  | is_ scrut variant => exact ⟨rfl, rfl⟩
 end
 
 /-- The integer-term meanings coincide (the projection of `refVal_eq` used by the
@@ -131,6 +149,7 @@ theorem refIntVal_eq_intVal (e : Expr) (env : Env) :
 theorem refSeqVal_eq_seqVal (e : Expr) (env : Env) :
     refSeqVal e env = seqVal e env := (refVal_eq e env).2
 
+mutual
 /--
   **(T1) — verified-validator soundness, comparison/logical/arithmetic/cast/
   spec-context-rewrite fragment.**
@@ -154,9 +173,10 @@ theorem refSeqVal_eq_seqVal (e : Expr) (env : Env) :
   byte-view-dispatch teeth) below.
 -/
 theorem ref_sound (e : Expr) (env : Env) : refDenote e env ↔ denote e env := by
-  -- `Expr` is mutually inductive (with `RangeArg`), so `induction` is unavailable;
+  -- `Expr` is mutually inductive (with `RangeArg`/`MatchArm`), so `induction` is unavailable;
   -- proceed by `cases` with RECURSIVE `ref_sound` calls on the predicate subterms
-  -- (`logic`/`neg`) — the recursion IS the structural induction Lean checks.
+  -- (`logic`/`neg`/the `match_` arm bodies via `ref_sound_arms`) — the recursion IS the
+  -- structural induction Lean checks.
   cases e with
   | intLit n => simp [refDenote, denote]
   | boolLit b => simp [refDenote, denote]
@@ -246,6 +266,45 @@ theorem ref_sound (e : Expr) (env : Env) : refDenote e env ↔ denote e env := b
           cases seq2 with
           | none => simp only [refDenote, denote, hs]
           | some e => simp only [refDenote, denote, hs, refSeqVal_eq_seqVal e env]
+  -- An `optResVar` is OPTION/RESULT-sorted: top-level it is not a predicate (it is only ever a
+  -- `match`/`is` scrutinee, read by the shared `scrutVal`), so both sides fall to `True`.
+  | optResVar x => simp [refDenote, denote]
+  -- THE MATCH-IN-ENS form (#180). The scrutinee value `scrutVal scrut env` is a FREE name (the
+  -- SAME on both sides — `scrutVal` reads `env.optres`); the arm SELECTION-by-variant is the
+  -- shared Verus `match` meaning (`refDenoteArms`/`denoteArms` are STRUCTURALLY identical); the
+  -- ONLY difference is each arm BODY (`refDenote` vs `denote`), settled by `ref_sound_arms` (the
+  -- recursive IH on the arm bodies, each a structural subterm of `match_`).
+  | match_ scrut arms =>
+      simp only [refDenote, denote]
+      exact ref_sound_arms (scrutVal scrut env) arms env
+  -- THE `is`-TEST (#180). Both sides are DEFINITIONALLY `((scrutVal scrut env).isVariant
+  -- variant = true)` (the shared Verus `is` discriminant test); the iff is reflexive.
+  | is_ scrut variant => simp only [refDenote, denote]
+
+/-- THE MATCH-ARM soundness (#180), MUTUAL with `ref_sound`: the encoder's arm walk
+    `refDenoteArms` is equivalent to the source `denoteArms` at the SAME scrutinee value, by
+    structural recursion on the arm list. Each step is either the SELECTED arm's body
+    (`ref_sound` on the body — a structural subterm of the `match_`, so the recursion is
+    well-founded) or the recursive tail. The selection condition (`scrut.variant = variant`) +
+    the payload binding (`Env.bindInt … scrut.payload`) are SHARED (identical on both sides — the
+    Verus `match` semantics the encoder reuses verbatim), so the only content is the per-body
+    `ref_sound`. -/
+theorem ref_sound_arms (scrut : OptResVal) (arms : List MatchArm) (env : Env) :
+    refDenoteArms scrut arms env ↔ denoteArms scrut arms env := by
+  cases arms with
+  | nil => simp [refDenoteArms, denoteArms]
+  | cons arm rest =>
+      cases arm with
+      | mk variant binder body =>
+          simp only [refDenoteArms, denoteArms]
+          by_cases h : scrut.variant = variant
+          · simp only [h, if_true]
+            cases binder with
+            | none => exact ref_sound body env
+            | some x => exact ref_sound body (env.bindInt x scrut.payload)
+          · simp only [h, if_false]
+            exact ref_sound_arms scrut rest env
+end
 
 /-- A convenient `Prop`-equality corollary (propositional extensionality) — the
     `⟦R(P)⟧ = ⟦P⟧_S` form (T2's transitivity step composes on this equality, AC-3). -/
@@ -279,7 +338,10 @@ def refDenoteFaultyCmp (op : CmpOp) (a b : Expr) (env : Env) : Prop :=
 def envAB : Env :=
   { ints := fun s => if s = "a" then 1 else if s = "b" then 2
                      else if s = "n" then -1 else 0
-    seqs := fun s => if s = "s" then [10, 20, 30] else [] }
+    seqs := fun s => if s = "s" then [10, 20, 30] else []
+    -- The #180 option/result binding: `result := Some 7` (the C7 match/is scrutinee witness —
+    -- a `Some`-valued result carrying the integer payload 7; everything else `None`).
+    optres := fun s => if s = "result" then OptResVal.some_ 7 else OptResVal.none_ }
 
 /-- **Teeth (negative sanity, the `==`-vs-`<=` case, #170).** At `envAB` the faulty
     `Eq→<=` encoding of `a == b` is TRUE (`1 ≤ 2`) while the source meaning of
@@ -519,7 +581,8 @@ theorem wrong_combinator_breaks_soundness :
     observable. -/
 def envIdx : Env :=
   { ints := fun nm => if nm = "n" then 1 else 0
-    seqs := fun nm => if nm = "s" ∨ nm = "n" then [10, 20, 30] else [] }
+    seqs := fun nm => if nm = "s" ∨ nm = "n" then [10, 20, 30] else []
+    optres := fun _ => OptResVal.none_ }
 
 /-- The FAITHFUL `forall_below(s, n, |x| x ≤ 15)` source meaning — the `n` bound is the
     SCALAR `intVal n` (= 1), as `encode_index_value` (the #145 fix) threads it. -/
@@ -576,6 +639,116 @@ theorem forall_below_faithful_is_sound :
       ↔ denote
         (Expr.comb CombName.forallBelow (Expr.strVar "s")
           none (some (Expr.var "n")) (some predLe15)) envIdx :=
+  ref_sound _ _
+
+/-! ## Negative sanity lemma 6 — the #180 MATCH-ARM-SWAP teeth (the C7 match-in-ens class)
+
+  The dispatch's explicit requirement (a): demonstrate that an encoder that SWAPPED the match
+  arm bodies (the `Some`/`None` bodies exchanged — `encode_match` emitting each arm's body
+  under the WRONG pattern) does NOT satisfy soundness at a concrete `OptResVal`. This is the
+  match-in-ens analogue of the `==`-vs-`<=` / wrong-combinator teeth: which arm body goes under
+  which pattern (`encode_match` pairing `encode_pattern(arm.pattern)` with `encode(arm.body)`) is
+  load-bearing.
+
+  Source clause: `match result { Some(v) => v == 7, None => false }`, i.e.
+    `Expr.match_ (optResVar "result")
+        [MatchArm.mk Some (some "v") (v == 7), MatchArm.mk None none false]`.
+  At `envAB` (`result := Some 7`) the source selects the `Some` arm → `7 == 7` → TRUE.
+  The SWAPPED encoder emits `match result { Some(v) => false, None => v == 7 }` (the bodies
+  exchanged). At `result := Some 7` the swapped clause selects the `Some` arm → `false` → FALSE.
+  TRUE vs FALSE — they DISAGREE, so an arm-body-swapping encoder does NOT satisfy soundness. -/
+
+/-- The `Some`-arm body `v == 7` (the payload test the C7 match projects). -/
+def someBodyEq7 : Expr := Expr.cmp CmpOp.eq (Expr.var "v") (Expr.intLit 7)
+
+/-- The source `match result { Some(v) => v == 7, None => false }` clause (#180). -/
+def matchSomeClause : Expr :=
+  Expr.match_ (Expr.optResVar "result")
+    [MatchArm.mk Variant.some_ (some "v") someBodyEq7,
+     MatchArm.mk Variant.none_ none (Expr.boolLit false)]
+
+/-- THE ARM-SWAP BUG: the encoder emits the `Some`/`None` arm BODIES exchanged — `Some(v) => false,
+    None => v == 7` — a real `encode_match` infidelity (pairing each body with the WRONG pattern).
+    Modelled as `refDenote` of the swapped-arm `match_` over the SAME scrutinee. -/
+def matchArmSwapped : Expr :=
+  Expr.match_ (Expr.optResVar "result")
+    [MatchArm.mk Variant.some_ (some "v") (Expr.boolLit false),
+     MatchArm.mk Variant.none_ none someBodyEq7]
+
+/-- **Teeth (negative sanity, the #180 match-arm-swap case).** At `envAB` (`result := Some 7`)
+    the source `match result { Some(v) => v == 7, None => false }` is TRUE (the `Some` arm,
+    `7 == 7`) while the arm-SWAPPED encoding `match result { Some(v) => false, None => v == 7 }`
+    is FALSE (the `Some` arm, `false`) — they DISAGREE, so an arm-body-swapping encoder does NOT
+    satisfy the soundness equation `refDenote = denote` for this clause. This is the Lean-level
+    witness that `ref_sound`'s `match_` case PINS the encoder's pattern↔body pairing. -/
+theorem match_arm_swap_breaks_soundness :
+    ¬ (refDenote matchArmSwapped envAB ↔ denote matchSomeClause envAB) := by
+  -- denote matchSomeClause   = (Some 7 selects Some arm) → 7 = 7 → True
+  -- refDenote matchArmSwapped = (Some 7 selects Some arm) → False
+  simp [matchSomeClause, matchArmSwapped, someBodyEq7, refDenote, denote,
+        refDenoteArms, denoteArms, scrutVal, OptResVal.variant, OptResVal.payload,
+        Env.bindInt, intVal, envAB]
+
+/-- The faithful POSITIVE counterpart, for contrast: with the REAL `encode_match` (each body under
+    its OWN pattern) the `match result { Some(v) => v == 7, None => false }` clause IS sound — its
+    encoder meaning is equivalent to the source, by `ref_sound`. Confirms the teeth bite ONLY the
+    arm-swap, not the faithful encoder. -/
+theorem match_faithful_is_sound :
+    refDenote matchSomeClause envAB ↔ denote matchSomeClause envAB :=
+  ref_sound _ _
+
+/-! ## Negative sanity lemma 7 — the #180 WRONG-`is`-VARIANT teeth (the C7 `is` class)
+
+  The dispatch's explicit requirement (b): demonstrate that an encoder that emitted the WRONG
+  `is`-variant — `result is Some` lowered as `result is None` (`ref_encode.rs`'s `Expr::Is` arm
+  emitting the WRONG `variant.join("::")`) — does NOT satisfy soundness at a concrete `OptResVal`.
+  Which variant the discriminant tests is load-bearing.
+
+  Source clause: `result is Some`, i.e. `Expr.is_ (optResVar "result") Variant.some_`.
+  At `envAB` (`result := Some 7`) the source `is Some` is TRUE; the WRONG `result is None` is
+  FALSE. TRUE vs FALSE — they DISAGREE, so an encoder that tested the wrong variant does NOT
+  satisfy soundness. -/
+
+/-- The source `result is Some` clause (#180). -/
+def isSomeClause : Expr := Expr.is_ (Expr.optResVar "result") Variant.some_
+
+/-- THE WRONG-`is`-VARIANT BUG: the encoder tests `is None` where the source tests `is Some`
+    (`Expr::Is` emitting the wrong variant). Modelled as `refDenote` of the `is None` test over
+    the SAME scrutinee. -/
+def isNoneWrong : Expr := Expr.is_ (Expr.optResVar "result") Variant.none_
+
+/-- **Teeth (negative sanity, the #180 wrong-`is`-variant case).** At `envAB` (`result := Some 7`)
+    the WRONG `result is None` encoding (FALSE) is NOT equivalent to the source `result is Some`
+    meaning (TRUE), so an encoder that tested the wrong variant does NOT satisfy soundness. This is
+    the Lean-level witness that `ref_sound`'s `is_` case PINS the encoder's variant choice. -/
+theorem is_wrong_variant_breaks_soundness :
+    ¬ (refDenote isNoneWrong envAB ↔ denote isSomeClause envAB) := by
+  -- refDenote isNoneWrong = (Some 7).isVariant None = false ; denote isSomeClause = (Some 7).isVariant Some = true
+  simp [isSomeClause, isNoneWrong, refDenote, denote, scrutVal,
+        OptResVal.isVariant, OptResVal.variant, envAB]
+
+/-- The faithful POSITIVE counterpart, for contrast: with the REAL `is`-variant the `result is
+    Some` clause IS sound (both `(Some 7).isVariant Some = true`), by `ref_sound`. Confirms the
+    teeth bite ONLY the wrong variant, not the faithful encoder. -/
+theorem is_faithful_is_sound :
+    refDenote isSomeClause envAB ↔ denote isSomeClause envAB :=
+  ref_sound _ _
+
+/-- A faithful POSITIVE witness for the RESULT form (#180): `match result { Ok(v) => v == 7,
+    Err(e) => e == 0 }` — the `Ok`/`Err` payload projection — has the encoder meaning EQUAL to the
+    source, by `ref_sound`. Exercises the `Ok`/`Err` variant + payload-binding path (the Result
+    half of the C7 fragment), confirming both Option and Result are covered. -/
+theorem match_result_faithful_is_sound :
+    refDenote
+        (Expr.match_ (Expr.optResVar "result")
+          [MatchArm.mk Variant.ok (some "v") (Expr.cmp CmpOp.eq (Expr.var "v") (Expr.intLit 7)),
+           MatchArm.mk Variant.err (some "e") (Expr.cmp CmpOp.eq (Expr.var "e") (Expr.intLit 0))])
+        envAB
+      ↔ denote
+        (Expr.match_ (Expr.optResVar "result")
+          [MatchArm.mk Variant.ok (some "v") (Expr.cmp CmpOp.eq (Expr.var "v") (Expr.intLit 7)),
+           MatchArm.mk Variant.err (some "e") (Expr.cmp CmpOp.eq (Expr.var "e") (Expr.intLit 0))])
+        envAB :=
   ref_sound _ _
 
 end Thermite

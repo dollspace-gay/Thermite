@@ -6,7 +6,16 @@
   BOUNDED-QUANTIFIER COMBINATORS (#179 / 1d-i — `forall_in`/`exists_in`/`sorted`/
   `forall_below`/`forall_from`/`disjoint`, each denoting its FROZEN `verus_l3`
   quantifier form from `thermite-spec/src/combinators.rs`, with the predicate closure
-  `p(s[i])` applied at the i-th element via `Env.bindInt`).
+  `p(s[i])` applied at the i-th element via `Env.bindInt`), and the MATCH-IN-ENS / `is`
+  PAYLOAD-IN-CONTRACT forms (#180 / 1g — `match scrut { Some(v) => P(v), None => Q }` /
+  `Ok`/`Err`, and `scrut is Variant`: the arm SELECTED by the scrutinee's `OptResVal` variant
+  denotes its body with the payload BOUND via `Env.bindInt`; the `is`-test reads the variant).
+
+  THE OPTION/RESULT ENVIRONMENT (#180). A `match`/`is` scrutinee (a param / `result` of a
+  built-in `Option`/`Result` type) denotes an `OptResVal` (`none`/`some v`/`ok v`/`err e`, the
+  payload an `Int` — the C7 corpus shape). The `Env` gains an `optres` map. The SOURCE meaning:
+  `match scrut arms` = the body of the arm whose pattern variant matches `scrut`'s variant,
+  denoted with the payload bound (`denoteArms`); `scrut is V` = `scrut`'s variant is `V`.
 
   THE SEQUENCE ENVIRONMENT (#178). A slice param `xs: &[u32]` and a `String`'s bytes
   denote a SEQUENCE (`List Int`), not a scalar. The `Env` is therefore extended to map
@@ -65,11 +74,24 @@ import Thermite.Ast
 
 namespace Thermite
 
+/-- An `Option`/`Result` VALUE (#180, the C7 payload-in-contract fragment): the value an
+    `optResVar` scrutinee denotes. `none`/`some v`/`ok v`/`err e` — the payload `v`/`e` an
+    `Int` (the C7 corpus payloads are integer-valued; faithful to the corpus, NOT general
+    ADTs). The `match`-arm selection reads the variant; the `is`-test reads the variant; the
+    payload is bound into the arm's predicate via `Env.bindInt`. -/
+inductive OptResVal where
+  | none_
+  | some_ (v : Int)
+  | ok    (v : Int)
+  | err   (e : Int)
+  deriving DecidableEq, Repr
+
 /-- The denotation environment: a valuation of free names. Integer names (params,
     `result`, `old(x)`) map to `Int`; SEQUENCE names (a `&[u32]` slice / a `String`'s
-    bytes — #178) map to `List Int`. `S_C`'s `Env` extended to the sequence domain.
-    The two maps are independent (a name is bound at exactly one sort by the
-    obligation's parameter binding). -/
+    bytes — #178) map to `List Int`; OPTION/RESULT names (a `match`/`is` scrutinee — #180)
+    map to an `OptResVal`. `S_C`'s `Env` extended to the sequence + option/result domains.
+    The maps are independent (a name is bound at exactly one sort by the obligation's
+    parameter binding). -/
 structure Env where
   /-- The integer-valued free names (params / `result` / `old(x)`). -/
   ints : String → Int
@@ -77,6 +99,8 @@ structure Env where
       `@`-view is the IDENTITY on this value — a slice and its `@`-view are the same
       `List Int` (#178). -/
   seqs : String → List Int
+  /-- The `Option`/`Result`-valued free names (a `match`/`is` scrutinee — #180). -/
+  optres : String → OptResVal
 
 /-- Bind an integer name to a value in an environment (#179): used to interpret a
     predicate closure `|x| <body>` at a concrete element — the bound var `x` is set to
@@ -86,6 +110,30 @@ structure Env where
     own integer/sequence subterms (settled by `refVal_eq`). -/
 def Env.bindInt (env : Env) (name : String) (v : Int) : Env :=
   { env with ints := fun s => if s = name then v else env.ints s }
+
+/-- The VARIANT an `OptResVal` is (#180): the discriminant a `match` arm selects on / an
+    `is`-test reads. Shared by `denote`/`refDenote` (the Verus `match`/`is` discriminant is the
+    SAME meaning on both sides — the encoder reuses Verus's variant semantics verbatim). -/
+def OptResVal.variant : OptResVal → Variant
+  | OptResVal.none_  => Variant.none_
+  | OptResVal.some_ _ => Variant.some_
+  | OptResVal.ok _    => Variant.ok
+  | OptResVal.err _   => Variant.err
+
+/-- The PAYLOAD an `OptResVal` carries (#180): the `Int` bound into a `Some(v)`/`Ok(v)`/`Err(e)`
+    arm's predicate. `None` carries no payload — modelled as `0` (a `None` arm has no binder, so
+    the payload is never observed; the `0` keeps the read total). Shared by `denote`/`refDenote`. -/
+def OptResVal.payload : OptResVal → Int
+  | OptResVal.none_   => 0
+  | OptResVal.some_ v => v
+  | OptResVal.ok v    => v
+  | OptResVal.err e   => e
+
+/-- The `is`-test result (#180): does an `OptResVal` have the tested `Variant`? Shared by
+    `denote`/`refDenote` (the Verus `(e is V)` discriminant test is the SAME meaning on both
+    sides — `ref_encode.rs`'s `Expr::Is` arm reuses Verus's `is`). -/
+def OptResVal.isVariant (v : OptResVal) (target : Variant) : Bool :=
+  decide (v.variant = target)
 
 /-- The shared TOTAL sequence-index access (#178): the i-th element, or `0` when the
     index is out of range (negative or ≥ length). The in-range obligation `0 ≤ i < |s|`
@@ -192,11 +240,22 @@ def intVal : Expr → Env → Int
   | _, _ => 0
 end
 
+/-- The `OptResVal` a `match`/`is` SCRUTINEE denotes (#180): an `optResVar` reads its env
+    `optres` value; any other node is not an `Option`/`Result` scrutinee in a well-formed C7
+    clause, so it denotes the canonical `none` (never observed — the soundness theorem only
+    evaluates this on an `optResVar` scrutinee; keeps it total without a `sorry`). Shared by
+    `denote`/`refDenote` (the scrutinee value is a free name, the SAME on both sides). -/
+def scrutVal : Expr → Env → OptResVal
+  | Expr.optResVar x, env => env.optres x
+  | _, _ => OptResVal.none_
+
+mutual
 /-- `⟦·⟧_{S_C}` — the SOURCE meaning of a contract predicate as a Lean `Prop`.
     Each comparison/logical/negation denotes the STANDARD mathematical relation
     (the `S_C` inference rules), defined HERE following the SOURCE meaning — to be
     proved equal to `RefEncode.refDenote` (which follows the ENCODER's structure),
-    so the soundness theorem has content. -/
+    so the soundness theorem has content. Mutual with `denoteArms` (#180: the `match_`
+    arm selection denotes the selected arm's body, an `Expr` subterm). -/
 def denote : Expr → Env → Prop
   | Expr.boolLit b, _   => (b = true)
   | Expr.cmp op a b, env =>
@@ -214,6 +273,19 @@ def denote : Expr → Env → Prop
       | LogOp.and => denote a env ∧ denote b env
       | LogOp.or  => denote a env ∨ denote b env
   | Expr.neg e, env => ¬ denote e env
+  -- The MATCH-IN-ENS form (#180): the arm SELECTED by the scrutinee's variant denotes its body
+  -- with the payload BOUND (the C7 `match result { Some(v) => P(v), None => Q }`). `scrutVal`
+  -- reads the scrutinee's `OptResVal`; `denoteArms` walks the arms, selecting the one whose
+  -- `Variant` matches and binding its payload into the body (`Env.bindInt`). Faithful to
+  -- `encode_match`: scrutinee + bodies via the SAME recursion, the pattern's variant+binder via
+  -- `encode_pattern`. The selection-by-variant is the Verus `match` meaning (shared, not
+  -- re-derived); the soundness content is the scrutinee/body encoding.
+  | Expr.match_ scrut arms, env =>
+      denoteArms (scrutVal scrut env) arms env
+  -- The `is`-test (#180): the variant DISCRIMINANT test `scrut is variant`. True iff the
+  -- scrutinee's value is that variant (`OptResVal.isVariant`, the shared Verus `is` meaning).
+  | Expr.is_ scrut variant, env =>
+      ((scrutVal scrut env).isVariant variant = true)
   -- The 6 BOUNDED-QUANTIFIER combinators (#179): each denotes its FROZEN `verus_l3`
   -- quantifier form (`combinators.rs`), with the slice = `seqVal` of the slice arg, the
   -- index = `intVal` of the scalar index arg, and `p(s[i])` = the predicate body denoted
@@ -252,5 +324,28 @@ def denote : Expr → Env → Prop
   -- vacuously — never reached by the soundness theorem (whose top-level `Expr`s are
   -- always cmp/logic/neg/bool). Keeps `denote` TOTAL with no `sorry`.
   | _, _ => True
+
+/-- The `match`-arm SELECTION + payload BINDING (#180), SHARED structure for `denote` and
+    `RefEncode.refDenote` (the encoder reuses the Verus `match` semantics verbatim — the
+    arm selection by variant is the Verus `match` meaning, NOT re-implemented; the soundness
+    content is the per-body encoding, threaded by the `match_` case of `ref_sound`).
+
+    Walks the arms in source order; for the FIRST arm whose `Variant` matches the scrutinee
+    value's variant, denotes that arm's body with the payload bound (the binder ↦ the scrutinee
+    payload via `Env.bindInt`; a `None`/binder-less arm leaves the env unchanged). A
+    non-matching arm is skipped. A well-formed C7 `match` is EXHAUSTIVE (the corpus 2-arm
+    `Some/None`/`Ok/Err`), so the matching arm always exists; an empty/non-exhaustive remainder
+    denotes `True` (out of the fragment — never reached by the soundness theorem's exhaustive
+    `match`es). -/
+def denoteArms : OptResVal → List MatchArm → Env → Prop
+  | _, [], _ => True
+  | scrut, MatchArm.mk variant binder body :: rest, env =>
+      if scrut.variant = variant then
+        match binder with
+        | some x => denote body (env.bindInt x scrut.payload)
+        | none   => denote body env
+      else
+        denoteArms scrut rest env
+end
 
 end Thermite

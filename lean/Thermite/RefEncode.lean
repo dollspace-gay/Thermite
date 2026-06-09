@@ -1,8 +1,24 @@
 /-
   Thermite/RefEncode.lean — a Lean model of the REFERENCE ENCODER's output as a
   denotation, for the comparison + logical fragment (#170) EXTENDED with the
-  ARITHMETIC operators (#176), the CASTS (#177), and the SPEC-CONTEXT REWRITES
-  (#178 — slice→`@`/subrange, indexing, the `String` byte-view DISPATCH, the #127 class).
+  ARITHMETIC operators (#176), the CASTS (#177), the SPEC-CONTEXT REWRITES
+  (#178 — slice→`@`/subrange, indexing, the `String` byte-view DISPATCH, the #127 class),
+  the 6 BOUNDED-QUANTIFIER COMBINATORS (#179), and the MATCH-IN-ENS / `is` PAYLOAD-IN-CONTRACT
+  forms (#180 / 1g — `encode_match`/`encode_pattern` [the #150 work] + the `Expr::Is` arm).
+
+  WHAT THE #180 MATCH/`is` MODELS (faithful to `thermite-tv/src/ref_encode.rs`). In contract
+  position a built-in `Option`/`Result` value is PROJECTED by a spec-`match` or TESTED by `is`:
+    - `match scrut { Some(v) => P(v), None => Q }` (and `Ok`/`Err`) → a Verus `match`
+      EXPRESSION (`encode_match`): the scrutinee + each arm body via the SAME `refDenote`
+      recursion, each arm pattern via `encode_pattern` (the built-in `Some(x)`/`None`/`Ok(x)`/
+      `Err(e)` variant + payload binder). The arm SELECTION-by-variant is the Verus `match`
+      meaning (the shared `scrutVal`/`refDenoteArms` walk); the soundness content is the
+      scrutinee/body encoding + the variant/binder choice. A SWAPPED arm body (Some/None bodies
+      exchanged) is a DIFFERENT meaning — the negative `match_arm_swap_breaks_soundness`.
+    - `scrut is Variant` → the Verus `(scrut is V)` discriminant test (`Expr::Is` arm); its
+      meaning is the shared `isVariant`. The faithfulness content is the VARIANT CHOICE — a wrong
+      variant (`is Some` emitted as `is None`) is a DIFFERENT meaning — the negative
+      `is_wrong_variant_breaks_soundness`.
 
   WHAT THE #178 REWRITES MODEL (faithful to `thermite-tv/src/ref_encode.rs`). In
   contract position the encoder REWRITES slice/`String` use sites; this module models
@@ -290,10 +306,12 @@ def refSeqVal : Expr → Env → List Int
   | _, _ => []
 end
 
+mutual
 /-- `⟦ ref_contract_pred(P) ⟧` — the meaning, under the standard model, of the Verus
     predicate string the reference encoder produces. Structured as
     ENCODE-THEN-INTERPRET (`tokRel (encOp op) …`), following the ENCODER, so the
-    equality with `denote` is a real theorem. -/
+    equality with `denote` is a real theorem. Mutual with `refDenoteArms` (#180: the
+    `encode_match` arm bodies are encoded by the SAME recursion). -/
 def refDenote : Expr → Env → Prop
   | Expr.boolLit b, _   => (b = true)
   | Expr.cmp op a b, env =>
@@ -301,6 +319,22 @@ def refDenote : Expr → Env → Prop
   | Expr.logic op a b, env =>
       tokConn (encLog op) (refDenote a env) (refDenote b env)
   | Expr.neg e, env => ¬ refDenote e env
+  -- The MATCH-IN-ENS form (#180; `encode_match`). The encoder emits a Verus `match` EXPRESSION
+  -- `match {scrut} { {pat} => {body}, … }` whose ARM-SELECTION-BY-VARIANT is the Verus `match`
+  -- meaning (the shared `scrutVal`/arm-walk, NOT re-implemented — `encode_match` reuses Verus's
+  -- match). What `encode_match` RE-encodes (the faithfulness surface) is: the scrutinee (the same
+  -- recursion — `scrutVal` reads the free name, shared), each arm's PATTERN (`encode_pattern`'s
+  -- built-in `Some(x)`/`None`/`Ok(x)`/`Err(e)` — the variant + payload-binder choice), and each
+  -- arm's BODY (the SAME independent `refDenote` recursion — so a swapped/corrupted arm body is
+  -- caught). The pattern-bound payload var is in scope in the body exactly as production binds it.
+  | Expr.match_ scrut arms, env =>
+      refDenoteArms (scrutVal scrut env) arms env
+  -- The `is`-test (#180; `ref_encode.rs`'s `Expr::Is` arm `({s} is {variant})`). The encoder emits
+  -- the Verus `(scrut is Variant)` discriminant test; its meaning is the shared `isVariant` (the
+  -- Verus `is` semantics, NOT re-implemented). The faithfulness content is the VARIANT CHOICE — a
+  -- wrong variant (`is Some` emitted as `is None`) is a DIFFERENT meaning (the negative lemma).
+  | Expr.is_ scrut variant, env =>
+      ((scrutVal scrut env).isVariant variant = true)
   -- The 6 BOUNDED-QUANTIFIER combinators (#179). The encoder REUSES the SHARED frozen
   -- `lookup(C).verus_l3` quantifier BODY verbatim (`encode_combinator_call` emits
   -- `name(args)` to the registry `spec fn` — the body is the shared ground truth, NOT
@@ -339,5 +373,23 @@ def refDenote : Expr → Env → Prop
             ((0 ≤ i ∧ i < (s.length : Int)) ∧ (0 ≤ j ∧ j < (s2.length : Int))) →
               seqIdx s i ≠ seqIdx s2 j
   | _, _ => True
+
+/-- The encoder's `match`-arm SELECTION + payload BINDING (#180; `encode_match`). STRUCTURALLY
+    IDENTICAL to `denoteArms` (the arm selection by variant is the Verus `match` meaning, which
+    `encode_match` reuses verbatim) — the ONLY difference is that each arm BODY is denoted by the
+    encoder's `refDenote` (so a body infidelity is caught). The pattern's variant + payload-binder
+    are `encode_pattern`'s built-in `Some(x)`/`None`/`Ok(x)`/`Err(e)` choice, modelled as the
+    arm's `Variant` + binder. The `match_` case of `ref_sound` proves this equals `denoteArms`
+    (by the recursive IH on each body). -/
+def refDenoteArms : OptResVal → List MatchArm → Env → Prop
+  | _, [], _ => True
+  | scrut, MatchArm.mk variant binder body :: rest, env =>
+      if scrut.variant = variant then
+        match binder with
+        | some x => refDenote body (env.bindInt x scrut.payload)
+        | none   => refDenote body env
+      else
+        refDenoteArms scrut rest env
+end
 
 end Thermite

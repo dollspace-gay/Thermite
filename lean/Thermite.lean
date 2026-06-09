@@ -18,7 +18,9 @@
   `S_E` is a DIFFERENT semantics from `S_C`: a BOUNDED `u64`/`u32`/`usize`/`bool` value
   (NEVER nat-coerced), with arithmetic OVERFLOW carried as a PROOF OBLIGATION (the value
   is the mathematical result GIVEN no overflow; an overflowing op has NO value). The
-  exec-BODY (2b #172) + loops (2c #163) remain.
+  exec-BODY is now mechanized (2b #172): the big-step STATE TRANSFORMER `S_B` over
+  straight-line blocks + the (T1) soundness proof for `body_ref_state`
+  (`Thermite.Exec.body_ref_sound`). LOOPS (2c #163) remain kernel-gated.
 -/
 import Thermite.Ast
 import Thermite.Denote
@@ -28,3 +30,10 @@ import Thermite.Soundness
 -- denotation `S_E` + the (T1) soundness proof for `exec_ref_value`. SEPARATE namespace
 -- `Thermite.Exec` (bounded, overflow-as-obligation, NEVER nat-coerced — `S_E ≠ S_C`).
 import Thermite.Exec
+-- LAYER 2 (the exec side, increment 2b, #172): the exec-BODY big-step STATE
+-- TRANSFORMER `S_B` over straight-line blocks + the (T1) soundness proof for
+-- `body_ref_state` (`Thermite.Exec.body_ref_sound`). Builds on 2a's `ExecExpr`/
+-- `execDenote`/`ExecVal`/`ExecEnv` for every per-RHS / condition / tail value; adds
+-- ONLY the state threading / scalar-mutation rebind / branch composition / tail
+-- projection. LOOPS remain OUT (2c #163, kernel-gated).
+import Thermite.Exec.Stmt

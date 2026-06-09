@@ -7,10 +7,6 @@
       "agent_id": "Yffe",
       "claimed_at": "2026-06-09T00:46:56.100087445Z"
     },
-    "159": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-09T00:52:30.826430829Z"
-    },
     "160": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-09T00:52:49.004635588Z"
@@ -1637,11 +1633,16 @@
       "agent_id": "Yffe",
       "agent_seq": 320,
       "timestamp": "2026-06-09T03:03:46.186708913Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 321,
+      "timestamp": "2026-06-09T03:05:12.054138781Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-09T03:03:46.186708913Z",
+    "timestamp": "2026-06-09T03:05:12.054138781Z",
     "agent_id": "Yffe",
-    "agent_seq": 320
+    "agent_seq": 321
   }
 }

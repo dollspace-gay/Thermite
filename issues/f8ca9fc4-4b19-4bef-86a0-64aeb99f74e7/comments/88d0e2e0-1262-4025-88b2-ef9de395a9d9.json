@@ -1,0 +1,10 @@
+{
+  "uuid": "88d0e2e0-1262-4025-88b2-ef9de395a9d9",
+  "issue_uuid": "f8ca9fc4-4b19-4bef-86a0-64aeb99f74e7",
+  "author": "Yffe",
+  "content": "Build exec-TV forge phase (#156) + generator (#154): gen_exec_exprs in thermite-tv/src/gen.rs (well-framed exec exprs, seeded SplitMix64), forge/src/exec_tv.rs (generated run PRIMARY + corpus body-expr best-effort, four-way classification Faithful/Divergent/Unverifiable/Skipped), forge exec-tv subcommand wiring cli.rs/main.rs. Commit to main; do not close (critic re-audits).",
+  "created_at": "2026-06-09T00:21:45.570238687Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAk1NtlplCNZTfhmGFOHLUnZ2VdrSNCN2r9oAa/iiFAJzT2dfqKjUhlpiZj87ZtGW7bs7MnNMb43tXApcQeS4UAw=="
+}

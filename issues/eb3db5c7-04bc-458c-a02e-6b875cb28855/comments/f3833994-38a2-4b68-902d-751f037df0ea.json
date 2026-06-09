@@ -1,0 +1,10 @@
+{
+  "uuid": "f3833994-38a2-4b68-902d-751f037df0ea",
+  "issue_uuid": "eb3db5c7-04bc-458c-a02e-6b875cb28855",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (e82aac97). Contract S_C spec-context rewrites (slice->@/subrange, single-index + 3 range forms, byte-view) proven denotation-preserving; ref_sound extended (lake build green, [propext]). Critic NO DIVERGENCE: faithful to ref_encode.rs (subrange bounds exact); mutual recursion well-founded + all constructors covered; the #127 byte-view negative lemmas bite. The #127 class retired as a proven fragment on the contract side.",
+  "created_at": "2026-06-09T17:47:38.828778171Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkpiFMrWfwciqczUneYJYBugrw4iDkq8LTT5qJPWLO8uIAGAu2FCAE4pULAHvFiorxsrhs5ixih+GmOk7D4WfAg=="
+}

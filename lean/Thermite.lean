@@ -37,6 +37,14 @@ import Thermite.Exec
 -- ONLY the state threading / scalar-mutation rebind / branch composition / tail
 -- projection. LOOPS remain OUT (2c #163, kernel-gated).
 import Thermite.Exec.Stmt
+-- LAYER 2 (the exec side, increment 2c, #163): the v1 `while`-LOOP extension of `S_B` —
+-- the fuel-indexed iteration semantics `loopDenote` (iterating the SHIPPED `blockThread`),
+-- the PARTIAL-CORRECTNESS WHILE-RULE `while_rule` (premises ⟹ after-loop = inv ∧ ¬cond,
+-- by fuel induction), its TV meta-theorem `tv_meta_loop`, the L1 non-vacuity witness +
+-- the L2/L3 negative lemmas. A SEPARATE `WhileLoop` AROUND the proven `blockThread`
+-- (faithful to the Rust `loop_ref_obligations` separate-form treatment; `Exec/Stmt.lean`
+-- UNCHANGED). PARTIAL correctness — termination is the per-run Verus `decreases` residual.
+import Thermite.Exec.Loop
 -- LAYER 3 (compose), increments (d) #174 + 3b #183: the TRANSLATION-VALIDATION
 -- META-THEOREM capstone. Composes the three proven (T1) theorems (`ref_sound_eq`,
 -- `Exec.exec_ref_sound`, `Exec.body_ref_sound`) with the per-run TV result (the

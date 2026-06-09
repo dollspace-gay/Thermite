@@ -175,12 +175,20 @@ effects).
 - Rust's borrow checker / LLVM codegen (the `Rust → machine code` link, `thermite-design.md` §3
   stack) — inherited from the Rust toolchain, out of scope (this is the CompCert/RustBelt
   boundary; Stacked Borrows is the model the target is reconciled against, finding #7).
-- Loops in the exec-statement subset (`while`/`loop`/`break`/`continue`) — kernel-gated, framed
-  in `exec-stmt-tv.md` step 2.2.2 (blocker #163); `S_B` here is the STRAIGHT-LINE fragment (the
-  straight-line `S_B` is now MECHANIZED + `body_ref_state` proved sound, #172 SHIPPED — see the
-  S_B Architecture section). A loop body's lowering stays checked by per-run TV-with-invariant +
-  golden files until #163; a mid-body early `return` (multi-exit CPS) and a non-scalar mutation
-  `xs[i]=e` are likewise OUT of the straight-line fragment (`Unsupported` in `body_ref_state`).
+- Loops in the exec-statement subset — the v1 single-`while` form is now MECHANIZED + the
+  WHILE-RULE proved (#163 increment 2.2.2-ii, SHIPPED): `lean/Thermite/Exec/Loop.lean` adds a
+  SEPARATE `structure WhileLoop` + `def loopDenote` (the genuine fuel-indexed iteration of the
+  SHIPPED `blockThread`) + `theorem while_rule` (PARTIAL CORRECTNESS: `h_entry ∧ h_pres ∧ the loop
+  EXITS ⟹ after-loop = inv ∧ ¬cond`, by fuel induction, axioms `[propext, Quot.sound]` only) +
+  `tv_meta_loop` (the capstone composition). The straight-line restriction is thus LIFTED to the
+  v1-`while` form FOR THE RULE: the loop is treated as a SEPARATE recognized form AROUND the proven
+  straight-line `blockThread` (faithful to the Rust `loop_ref_obligations` — `Exec/Stmt.lean` /
+  `body_ref_sound` UNCHANGED, NO new `Stmt` inductive case, so no reproving over a changed type).
+  TERMINATION is the per-run Verus `decreases` residual (the `h_run` loop-EXITS hypothesis, NOT a
+  Lean premise — partial correctness is the honest v1, `loop-tv.md` REQ-4). The `loop`-kind /
+  `break`/`continue` / a mid-body early `return` (multi-exit CPS) / nested loops / non-scalar
+  mutation `xs[i]=e` remain OUT (Skipped honestly; `Unsupported` in `body_ref_state` /
+  `loop_ref_obligations`).
 - **The whole-translation universal forward-simulation proof is EXPLICITLY NOT the target.** We do
   not verify the production lowerer, and we do not commit to a once-for-all simulation proof of the
   entire translation. The verified PER-RUN validator (T1 + the per-run TV check = T2) suffices for
@@ -404,8 +412,13 @@ sequencing/tail. Inference rules (big-step `⟨B, σ⟩ ⇓ ⟨σ', v⟩`):
 
 `S_B` composes `S_E` on each statement's RHS / `if` condition / tail (the per-RHS value
 denotation), adding ONLY the state-threading / mutation-substitution / branch-composition. The
-loop rules (`Stmt::Loop`/`Break`/`Continue`) are OUT of `S_B` here (kernel-gated, #163): a loop's
-denotation is a fixpoint, not a finite substitution. `S_B` is increment (c) (#172).
+loop rules are NOT a new `S_B` `Stmt` case: the v1 single-`while` form is mechanized SEPARATELY as
+`S_Loop` (`lean/Thermite/Exec/Loop.lean`, `def loopDenote` = the fuel-indexed iteration of `S_B`'s
+SHIPPED `blockThread`) + the `while_rule` (#163 increment 2.2.2-ii, SHIPPED — see the loops bullet
+in "What is NOT proved" and `loop-tv.md` REQ-3); a loop's denotation is a fixpoint over the
+finite-substitution body step, so it is composed AROUND `blockThread`, not embedded in the `Stmt`
+inductive (`Exec/Stmt.lean` UNCHANGED). The straight-line `S_B` is increment (c) (#172); the
+v1-`while` loop extension is (2c, #163).
 
 **SHIPPED (#172) — `S_B` mechanized + `body_ref_state` proved sound for the straight-line block
 fragment, in Lean 4 (`lean/Thermite/Exec/Stmt.lean`, namespace `Thermite.Exec`).** `S_B` is the
@@ -538,7 +551,7 @@ the highest-value preservation content lives) and respects the dependency order 
 |---|---|---|---|---|---|
 | (a) | spec/contract-sublanguage `S_C` + prove `ref_contract_pred` sound | `S_C` | `ref_contract_pred` | **#170 (NEXT BUILD)** | SMALLEST + most stable (a clause is a pure predicate, no state); HIGHEST value (the boss's `==`-vs-`<=`, the #122/#127 classes); closed 8-combinator induction (Case 2) most tractable. Also stands up the `lean/` project (REQ-6). FIRST. |
 | (b) | exec-expression `S_E` + prove `exec_ref_value` sound | `S_E` | `exec_ref_value` | **#171 (SHIPPED — Layer 2 OPENED)** | bounded-value denotation (`Thermite.Exec`, `lean/Thermite/Exec.lean`); `theorem exec_ref_sound` kernel-checked; `S_E ≠ S_C` (BOUNDED, overflow-as-OBLIGATION, NEVER nat-coerced); the nat-coercion negative lemma `nat_coercion_underflow_breaks_soundness` bites; reuses the (a) Lean project. |
-| (c) | exec-statement `S_B` + prove `body_ref_state` sound | `S_B` (straight-line) | `body_ref_state` | **#172 (SHIPPED — straight-line block fragment)** | the big-step STATE TRANSFORMER (`Thermite.Exec.Stmt`, `lean/Thermite/Exec/Stmt.lean`); `theorem body_ref_sound` kernel-checked (axioms `propext`/`Quot.sound` only, no `sorry`). `S_B` is a `State → Option (State × tail value)` over the frozen straight-line `Stmt`/`Block` forms (`letS`/`assign`/`exprS`/`ifElse`/sequencing/tail), UNIFIED from exec-stmt-tv.md REQ-2; composes 2a's `execDenote` per RHS / condition / tail (the obligation-`none` PROPAGATES). 3 negative lemmas bite: `wrong_var_assign_breaks_soundness`, `sequencing_order_breaks_soundness`, `mutation_not_applied_breaks_soundness`. LOOPS stay kernel-gated (#163). |
+| (c) | exec-statement `S_B` + prove `body_ref_state` sound | `S_B` (straight-line) | `body_ref_state` | **#172 (SHIPPED — straight-line block fragment)** | the big-step STATE TRANSFORMER (`Thermite.Exec.Stmt`, `lean/Thermite/Exec/Stmt.lean`); `theorem body_ref_sound` kernel-checked (axioms `propext`/`Quot.sound` only, no `sorry`). `S_B` is a `State → Option (State × tail value)` over the frozen straight-line `Stmt`/`Block` forms (`letS`/`assign`/`exprS`/`ifElse`/sequencing/tail), UNIFIED from exec-stmt-tv.md REQ-2; composes 2a's `execDenote` per RHS / condition / tail (the obligation-`none` PROPAGATES). 3 negative lemmas bite: `wrong_var_assign_breaks_soundness`, `sequencing_order_breaks_soundness`, `mutation_not_applied_breaks_soundness`. The v1 single-`while` LOOP extension (2c, #163) is now SHIPPED SEPARATELY as `S_Loop` (`lean/Thermite/Exec/Loop.lean`: `loopDenote` iterating `blockThread` + `theorem while_rule` partial-correctness, axioms `[propext, Quot.sound]`) — composed AROUND this proven `blockThread`, `Exec/Stmt.lean` UNCHANGED; the `loop`-kind / multi-exit / nested / non-scalar forms stay OUT. |
 | (d) | COMPOSE → the whole-frozen-subset semantic-preservation theorem | `S = S_C ⊔ S_E ⊔ S_B` | all three | **#174 + #183 (SHIPPED — the T2 capstone for the straight-line frozen subset)** | the capstone (T2) `∀ P passing TV, ⟦lower(P)⟧ = ⟦P⟧_S` over the whole straight-line frozen subset, MECHANIZED in `lean/Thermite/Faithfulness.lean` as `tv_meta_{contract,exec,body}` (per-layer `h_tv.trans (T1)`) + the composed `lowering_faithful (w : FnTvWitness)`. The existential→universal conversion, relative to {Z3, S = intended meaning, the Lean kernel}; `h_tv` is the Z3-discharged premise (the trust boundary, EXPLICIT; #184 demotes Z3). `#print axioms lowering_faithful → [propext, Classical.choice, Quot.sound]` (standard only). Loops (#163) remain OUT (`tv_meta_body` ranges over the straight-line `Block`). |
 
 Each increment is a future blocker; none is started (this doc is the skeleton + committed

@@ -1,0 +1,10 @@
+{
+  "uuid": "7d00c1bf-b515-42db-81ed-7d868dd30281",
+  "display_id": 169,
+  "title": "Lowering soundness step 3 (the keystone): mechanized operational semantics of Thermite + the lowering-faithfulness SOUNDNESS THEOREM (translation-validation-as-meta-theorem) — converts TV from existential evidence to a universal proof that L3-certified programs are faithfully lowered",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:02:32.533101211Z",
+  "updated_at": "2026-06-09T14:02:32.533101211Z"
+}

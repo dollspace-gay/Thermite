@@ -2,11 +2,12 @@
   "uuid": "33e3c137-23d3-4f46-b427-56ce5b40f00a",
   "display_id": 185,
   "title": "step-3 increment 4b: Rust<->Lean encoder correspondence — the Rust ref_encode matches the Lean-proved algorithm (audit-by-inspection now; Lean->Rust extraction or a Rust-side proof eventually) (epic #169)",
-  "status": "open",
+  "status": "closed",
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-09T16:55:09.525486873Z",
-  "updated_at": "2026-06-09T16:55:11.080233423Z",
+  "updated_at": "2026-06-09T21:28:28.680742090Z",
+  "closed_at": "2026-06-09T21:28:28.680742090Z",
   "labels": [
     "blocker"
   ]

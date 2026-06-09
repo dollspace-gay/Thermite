@@ -37,3 +37,13 @@ import Thermite.Exec
 -- ONLY the state threading / scalar-mutation rebind / branch composition / tail
 -- projection. LOOPS remain OUT (2c #163, kernel-gated).
 import Thermite.Exec.Stmt
+-- LAYER 3 (compose), increments (d) #174 + 3b #183: the TRANSLATION-VALIDATION
+-- META-THEOREM capstone. Composes the three proven (T1) theorems (`ref_sound_eq`,
+-- `Exec.exec_ref_sound`, `Exec.body_ref_sound`) with the per-run TV result (the
+-- Z3-discharged `h_tv` premise) into the (T2) UNIVERSAL semantic-preservation guarantee
+-- `∀ P passing TV, ⟦lower(P)⟧ = ⟦P⟧_S` — the existential → universal conversion, the
+-- verified-validator architecture's conclusion. Per-layer `tv_meta_{contract,exec,body}`
+-- + the composed whole-program `lowering_faithful`, RELATIVE to {Z3, S = intended
+-- meaning, the Lean kernel}. `h_tv` is the Z3-TRUSTED premise (NOT Lean-proven; #184
+-- demotes Z3). Loops (#163) + the Rust↔Lean correspondence (#185) are named residuals.
+import Thermite.Faithfulness

@@ -1,0 +1,10 @@
+{
+  "uuid": "6c34862c-22d0-49e8-8da6-83fb03348776",
+  "display_id": 183,
+  "title": "step-3 increment 3b: the translation-validation META-THEOREM capstone — [Z3 |- lower(P)<->ref(P)] AND T1 ==> denote(lower(P))=denote_S(P) for ALL P passing TV (epic #169)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:54:53.050538351Z",
+  "updated_at": "2026-06-09T16:54:53.050538351Z"
+}

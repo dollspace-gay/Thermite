@@ -2,11 +2,12 @@
   "uuid": "8c2d95a6-34fe-4a4f-bce0-88a55e76e259",
   "display_id": 160,
   "title": "thermite-tv: body_equivalence_obligation — exec-fn-wrapped STATE-refinement obligation (fn tv_body_wrap(<inputs>) ensures result-state == <ref state-denotation> { <production lowered body> }) for straight-line bodies. Sibling to exec_equivalence_obligation but over STATE not a single value. Step-2.2.1, .design/verified/exec-stmt-tv.md REQ-3.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T00:52:38.077567089Z",
-  "updated_at": "2026-06-09T00:52:42.156128805Z",
+  "updated_at": "2026-06-09T03:05:14.982749058Z",
+  "closed_at": "2026-06-09T03:05:14.982749058Z",
   "labels": [
     "blocker"
   ]

@@ -1,1 +1,9 @@
-[]
+[
+  {
+    "agent_id": "Yffe",
+    "event_description": "LockClaimed(#167)",
+    "event_timestamp": "2026-06-09T13:16:53.365770036Z",
+    "commit_timestamp": "2026-06-09T13:19:34Z",
+    "skew_seconds": 160
+  }
+]

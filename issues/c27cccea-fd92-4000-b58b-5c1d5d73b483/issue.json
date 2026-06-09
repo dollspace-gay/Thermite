@@ -1,0 +1,10 @@
+{
+  "uuid": "c27cccea-fd92-4000-b58b-5c1d5d73b483",
+  "display_id": 163,
+  "title": "thermite-tv/verified: step 2.2.2 LOOP body state-refinement — the after-loop state needs the loop invariant / bounded unrolling / a fixpoint. KERNEL-GATED (frozen subset prereq). Candidate approaches: (a) TV the single-iteration state-step + rely on production invariant; (b) bounded unrolling for a small bound. .design/verified/exec-stmt-tv.md REQ-4 horizon.",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:53:30.186743655Z",
+  "updated_at": "2026-06-09T00:53:30.186743655Z"
+}

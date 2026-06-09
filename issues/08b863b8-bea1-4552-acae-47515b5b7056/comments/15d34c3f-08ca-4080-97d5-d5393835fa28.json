@@ -1,0 +1,10 @@
+{
+  "uuid": "15d34c3f-08ca-4080-97d5-d5393835fa28",
+  "issue_uuid": "08b863b8-bea1-4552-acae-47515b5b7056",
+  "author": "Yffe",
+  "content": "GROUNDWORK STARTED + LANDED (design 428b4c8 + 2.2.1 core 164039f + #165 if-statement-threading fix b9dc22f). The frozen exec-statement subset v1 is pinned, the big-step state-transformer operational semantics is designed + the independent reference encoder (body_ref_state) built, and step-2.2.1 straight-line body-refinement TV is shipped + critic-clean (state-threading sound: mutation-order/data-dep/multi-cell/if-statement-branch composition all caught; boundary honest: loops/out-of-subset -> Unsupported). The frozen subset = the verified-microkernel exec language v1 (the convergence). Remaining build-out (tracked, not groundwork): #162 forge body-tv phase, #163 loops (kernel-gated), #164 no_std target (sibling). Epic stays open for the build-out.",
+  "created_at": "2026-06-09T02:38:41.153488315Z",
+  "kind": "progress",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGFVuO7XS+1GerrnrpIteyUXLkbXJdF3ABOmO3XVybJ524shm/oxhw+5g4eBKzZt2FNQUE3WEDQkoLqhqJxQFDg=="
+}

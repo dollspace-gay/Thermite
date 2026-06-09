@@ -2,11 +2,12 @@
   "uuid": "ed5f0ba2-c5fa-488d-87e1-4dd66357a5ef",
   "display_id": 186,
   "title": "Divergence: Thermite.Exec.Stmt::ifElse leaks branch-local let scope; body_ref_state DISCARDS it (Stmt::If env.clone)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T20:13:09.299449956Z",
-  "updated_at": "2026-06-09T20:13:10.822916311Z",
+  "updated_at": "2026-06-09T20:23:58.397397066Z",
+  "closed_at": "2026-06-09T20:23:58.397397066Z",
   "labels": [
     "blocker"
   ]

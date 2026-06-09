@@ -72,14 +72,17 @@
 //! | exec-REQ-4 (the exec teeth — R-CHAR-3) | SHIPPED | `tests/exec_teeth.rs` — E1 (#122 cast-paren), E2 (#146 cast-`<`), E3 (wrong-op/overflow), E4 (off-by-one index): each FAITHFUL `p_production` (the real `lower_exec_expr`) VERIFIES + each INFIDEL is CAUGHT (E0308/parse error/postcondition counterexample). Skip-loudly if verus absent. |
 
 pub mod exec_encode;
+pub mod exec_stmt_encode;
 pub mod gen;
 pub mod obligation;
 pub mod ref_encode;
 
 pub use exec_encode::{exec_ref_value, ExecRefCtx};
+pub use exec_stmt_encode::{body_ref_state, body_ref_state_ensures, BodyRefCtx};
 pub use gen::{gen_exec_exprs, generate_clauses, ExecClause};
 pub use obligation::{
-    equivalence_obligation, exec_equivalence_obligation, ExecObligationFrame, ExecParamDecl,
-    ObligationFrame, ParamDecl,
+    body_equivalence_obligation, equivalence_obligation, exec_equivalence_obligation,
+    BodyObligationFrame, BodyParamDecl, ExecObligationFrame, ExecParamDecl, ObligationFrame,
+    ParamDecl,
 };
 pub use ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};

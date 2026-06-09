@@ -760,6 +760,23 @@ design = ".design/verified/exec-tv.md"
 reference = ["tests/golden/lower/sum.verus.rs"]
 conformance_ops = []
 
+# Step 2.2.1 — straight-line exec-BODY translation validation (crosslink epic #158).
+# Extends exec-position TV from EXPRESSIONS (exec-tv.md, #151) to straight-line exec
+# BODIES (let/assign/mutation/if/sequencing/tail, NO loops): an INDEPENDENT
+# operational-semantics state-DENOTATION (the big-step state-transformer reference,
+# #159) wrapped as a body state-refinement obligation `fn tv_body_wrap(..) ensures
+# result == <body_ref_state(source)> { <production lower_exec_body> }` (#160),
+# discharged through forge::check::run_verus. The production side is the per-body
+# exec entry thermite_lower::lower_exec_body (#161, the lower_exec_expr analogue).
+# Governed by exec-stmt-tv.md; the reference is the corpus sum body (the exec
+# let/assign/tail shape). The forge phase (#162), loops (#163, kernel-gated), and
+# the no_std target (#164) are LATER dispatches.
+[[route]]
+crate_pattern = "thermite-tv/src/exec_stmt_encode.rs"
+design = ".design/verified/exec-stmt-tv.md"
+reference = ["tests/golden/lower/sum.verus.rs"]
+conformance_ops = []
+
 [[route]]
 crate_pattern = "forge/src/exec_tv.rs"
 design = ".design/verified/exec-tv.md"

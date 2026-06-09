@@ -48,9 +48,10 @@
 //! |---|---|---|
 //! | REQ-2 (exec-fn-wrapped equivalence obligation + discharge) | SHIPPED | `pub fn exec_equivalence_obligation` + `pub struct ExecObligationFrame`/`ExecParamDecl` here; non-test consumer `thermite_tv::lib` re-export → `tests/exec_teeth.rs` discharges E1–E4 through real verus (faithful VERIFIES, infidel CAUGHT). Emits the EXEC-FN form (`exec-tv.md` Architecture), discharged through the existing verus path. |
 
-use thermite_syntax::ast::Expr;
+use thermite_syntax::ast::{Block, Expr};
 
 use crate::exec_encode::{exec_ref_value, ExecRefCtx, RefEncodeError as ExecRefEncodeError};
+use crate::exec_stmt_encode::{body_ref_state_ensures, BodyRefCtx};
 use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
 
 /// One obligation parameter declaration: a Verus `name: type` binding for a
@@ -356,6 +357,174 @@ pub fn exec_equivalence_obligation(
     out.push_str(",\n{\n    ");
     out.push_str(p_production);
     out.push_str("\n}\n");
+
+    out.push_str("\n}\nfn main() {}\n");
+    Ok(out)
+}
+
+/// One BODY-obligation parameter declaration: a Verus `name: type` binding for a
+/// straight-line body's free var (REQ-3). The `type_str` is the EXEC value-type
+/// spelling — the BOUNDED `u64`/`u32`/`usize`/`bool` or a slice `&[u32]` (NEVER
+/// `nat`/`int`: the body obligation reasons at the production VALUE TYPE so an
+/// overflow / wrong-state infidelity is caught, not coerced away). Identical in
+/// SHAPE to [`ExecParamDecl`] (the per-expr param); a distinct type keeps the body
+/// obligation's surface self-documenting (a body input vs a single-expr input).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BodyParamDecl {
+    /// The parameter name as it appears in the obligation signature and the body.
+    pub name: String,
+    /// The Verus EXEC value-type spelling (`u64` / `usize` / `&[u32]` / `bool`).
+    pub type_str: String,
+}
+
+impl BodyParamDecl {
+    /// Construct a body-obligation parameter declaration.
+    pub fn new(name: impl Into<String>, type_str: impl Into<String>) -> Self {
+        BodyParamDecl {
+            name: name.into(),
+            type_str: type_str.into(),
+        }
+    }
+}
+
+/// The frame carrying everything the self-contained BODY-state-refinement obligation
+/// program needs besides the production body + the reference state-denotation
+/// (REQ-3; `.design/verified/exec-stmt-tv.md`): the param declarations for the
+/// body's free vars (at their EXEC types), the RESULT type (the final-state
+/// projection's type — a scalar `u64`/`bool` for a single-cell body, a tuple
+/// `(u64, u64)` for a multi-cell body), an optional enclosing `requires` (the body's
+/// well-formedness / no-overflow frame — `x <= 1000`), and the slice-param set.
+///
+/// This is the BODY analogue of [`ExecObligationFrame`] (which frames a single exec
+/// EXPRESSION's value obligation): where the exec frame's obligation compares one
+/// VALUE, the body frame's obligation compares the body's FINAL STATE (the
+/// `body_ref_state` denotation). It deliberately carries NO `nat`-coerce set — the
+/// body obligation is bounded-typed (the same as step 2.1).
+#[derive(Debug, Clone, Default)]
+pub struct BodyObligationFrame {
+    /// The Verus `spec fn` definitions the body / its `requires` depend on, emitted
+    /// verbatim into the `verus! { ... }` frame BEFORE `tv_body_wrap`. Usually EMPTY
+    /// for a scalar straight-line body (B1-B4 carry none).
+    pub spec_defs: Vec<String>,
+    /// The obligation parameter declarations (the body's free vars), in signature
+    /// order, at their EXEC value types.
+    pub params: Vec<BodyParamDecl>,
+    /// The RESULT type spelling — the body's final-state projection type: a scalar
+    /// (`u64`/`bool`/`usize`) for a single-cell body (B1/B2/B3), a tuple
+    /// (`(u64, u64)`) for a multi-cell body (B4).
+    pub ret_type: String,
+    /// The optional enclosing `requires` predicate (the body's well-formedness /
+    /// no-overflow frame — `x <= 1000`). `None` emits no `requires`. Emitted
+    /// VERBATIM (the obligation's own precondition, authored from the source frame,
+    /// not lowered here — `exec-stmt-tv.md` REQ-3).
+    pub req: Option<String>,
+    /// The names of params bound as a slice (`&[T]`) — their index in any RHS / tail
+    /// encodes to the spec-view element value (`xs[i as int]`) in the reference
+    /// state-denotation. Read by [`BodyRefCtx::with_slice_bound`].
+    pub slice_params: Vec<String>,
+}
+
+impl BodyObligationFrame {
+    /// Build the [`BodyRefCtx`] the reference state-denotation uses for this frame:
+    /// the `slice_params` are the names indexed as the spec-view element value.
+    fn body_ref_ctx(&self) -> BodyRefCtx {
+        BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
+    }
+
+    /// The Verus parameter list `name: type, ...`.
+    fn param_list(&self) -> String {
+        self.params
+            .iter()
+            .map(|p| format!("{}: {}", p.name, p.type_str))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// Build the self-contained Verus BODY-state-refinement obligation for one
+/// straight-line exec body (REQ-3; `.design/verified/exec-stmt-tv.md`). `body` is
+/// the source straight-line [`Block`] (encoded INDEPENDENTLY to the reference FINAL
+/// STATE via [`body_ref_state`]); `p_production` is the VERBATIM production
+/// body-lowered text (the artifact under test — `thermite_lower::lower_exec_body`);
+/// `frame` carries the param decls (at EXEC types), the result type, the optional
+/// `requires`, and the slice-param set.
+///
+/// This is the STATE analogue of [`exec_equivalence_obligation`] (which compares a
+/// single VALUE): the emitted shape wraps the production body as the BODY of an exec
+/// fn whose `ensures` compares the fn RESULT (the body's final-state projection — the
+/// tail value a single-exit straight-line body returns) to the reference
+/// state-denotation:
+///
+/// ```text
+/// use vstd::prelude::*;
+/// verus! {
+///     <frame.spec_defs>
+///     fn tv_body_wrap(<frame.params>) -> (result: <frame.ret_type>)
+///         requires <frame.req>,
+///         ensures result == <body_ref_state(body)>,
+///     {
+///         <p_production>
+///     }
+/// }
+/// fn main() {}
+/// ```
+///
+/// VERIFIED (`verified: 1, errors: 0`) <=> the production body's STATE
+/// TRANSFORMATION produces the reference FINAL STATE for ALL inputs (Z3) <=>
+/// faithful. A `postcondition not satisfied` counterexample <=> a
+/// state-transformation infidelity — a DROPPED statement, a REORDERED mutation, a
+/// SWAPPED `if`-branch (each changes the final state while every sub-expression stays
+/// value-faithful — the STATE-SEQUENCING teeth that per-EXPRESSION step-2.1 TV cannot
+/// see). The production body is an EXEC `fn` (not `proof`/`spec`), so the
+/// always-active runtime overflow checks are LIVE (the same structural reason the
+/// step-2.1 obligation is an exec fn).
+///
+/// Returns the obligation PROGRAM TEXT (`thermite-tv` does not run verus — the
+/// teeth-test / the future forge plug-in discharge it). Returns
+/// [`ExecRefEncodeError`] if the source body is outside the frozen straight-line
+/// subset (a loop / mid-branch early return / non-scalar mutation / re-shadow — an
+/// honest error, never a panic / silent wrong encoding).
+pub fn body_equivalence_obligation(
+    body: &Block,
+    p_production: &str,
+    frame: &BodyObligationFrame,
+) -> Result<String, ExecRefEncodeError> {
+    let ensures_pred = body_ref_state_ensures(body, "result", &frame.body_ref_ctx())?;
+
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+
+    for def in &frame.spec_defs {
+        out.push('\n');
+        out.push_str(def);
+        out.push('\n');
+    }
+
+    out.push_str("\nfn tv_body_wrap(");
+    out.push_str(&frame.param_list());
+    out.push_str(") -> (result: ");
+    out.push_str(&frame.ret_type);
+    out.push(')');
+    if let Some(req) = &frame.req {
+        out.push_str("\n    requires ");
+        out.push_str(req);
+        out.push(',');
+    }
+    // The obligation: the production body's RESULT (its final-state projection) EQUALS
+    // the INDEPENDENT reference FINAL STATE for all inputs (Z3), at the BOUNDED
+    // production type. For a single-cell body this is `result == <ref>`; for a
+    // multi-cell tuple body it is the per-projection conjunction `result.0 == <c0> &&
+    // result.1 == <c1>` (Verus has no SpecEq on a `(u64,u64)` vs a `(int,int)` tuple
+    // literal — the per-projection compare is element-wise at the bounded type, B4).
+    // VERIFIED <=> faithful state transformation; a postcondition counterexample <=>
+    // a state-transformation infidelity (dropped stmt / reordered mutation / swapped
+    // branch / wrong cell).
+    out.push_str("\n    ensures ");
+    out.push_str(&ensures_pred);
+    out.push_str(",\n{\n");
+    out.push_str(p_production);
+    out.push_str("}\n");
 
     out.push_str("\n}\nfn main() {}\n");
     Ok(out)

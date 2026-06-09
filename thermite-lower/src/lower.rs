@@ -2423,6 +2423,45 @@ pub fn lower_exec_expr(expr: &Expr) -> Result<String, LowerError> {
     lower_expr(expr, Ctx::exec(), 0, zero_span())
 }
 
+/// Lower a STRAIGHT-LINE exec BODY (a [`Block`]) to its PRODUCTION Verus EXEC body
+/// text (`.design/verified/exec-stmt-tv.md` REQ-3, blocker #161; epic crosslink
+/// #158). This is the per-BODY analogue of [`lower_exec_expr`]: where the per-expr
+/// entry re-enters `lower_expr` in EXEC context for a single value, this re-enters
+/// the EXISTING [`lower_block_inner`] / [`lower_stmt`] EXEC path for a whole
+/// straight-line block (its `let`/`mut`-let / assignment / `if`-statement /
+/// `Stmt::Expr` / tail), threading the SAME `Ctx::exec()` frame. It is the
+/// `P_production` the body-TV obligation (`thermite_tv::body_equivalence_obligation`)
+/// wraps as `fn tv_body_wrap(..) ensures result == <body_ref_state(source)> {
+/// <this> }`.
+///
+/// THE BODY EXEC `Ctx` IS REACHABLE FOR A STANDALONE BLOCK (the #161 feasibility
+/// the design flagged — `lower_block_inner` is private + fn-context-bound).
+/// RESOLVED exactly as step 2.1 resolved `lower_exec_expr`: the body's FREE VARS
+/// (the fn params) are bound by the OBLIGATION's signature
+/// (`thermite_tv::BodyObligationFrame`), NOT by this lowering, so a straight-line
+/// body needs NO surrounding-fn aids (no `slices`/`nat_fns`/`variants`/`schemes`/…
+/// — those drive contract/spec rewrites and loop proof-aids, none of which a
+/// straight-line EXEC body uses). The minimal `Ctx::exec()` frame (a `Ctx<'static>`
+/// with every aid empty) is therefore the correct per-body entry; the block lowers
+/// VERBATIM through the SAME `lower_block_inner` exec path the fn body uses (REUSE,
+/// not a re-derivation — `goal.md` R-CHAR-3). The result is the lowered statement
+/// sequence followed by the tail expression (the body's final-state projection),
+/// one statement per line, matching production's fn-body emission.
+///
+/// FROZEN-SUBSET HONESTY (`.design/verified/exec-stmt-tv.md` REQ-1): a body
+/// containing a `Stmt::Loop` (step 2.2.2, OUT of 2.2.1) is NOT silently lowered —
+/// `lower_stmt`'s `Stmt::Loop` arm returns [`LowerError::Unsupported`] (a standalone
+/// loop needs the fn-aid loop proof-aid context — `lower_loop`), so an
+/// out-of-frozen-subset body is an honest `Err` here, never a wrong lowering. The
+/// in-frozen-subset constructs (`Let`/`Assign`/`If`/`Expr`/tail-`Return`) lower
+/// through `lower_stmt`/`lower_block_inner` exactly as in a fn body.
+///
+/// Returns a [`LowerError`] (never a panic — R-CODE-2) for a construct the EXEC body
+/// lowering does not cover.
+pub fn lower_exec_body(block: &Block) -> Result<String, LowerError> {
+    lower_block_inner(block, Ctx::exec(), 0, zero_span())
+}
+
 /// Lower a `#[boundary]`/`#[slag]` fn as a `#[verifier::external_body]` assumable
 /// SIGNATURE (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
 /// `#[verifier::external_body]` attribute makes the body OPAQUE: verus assumes
@@ -7834,5 +7873,166 @@ mod exec_expr_tests {
             index: IndexArg::Single(Box::new(path("i"))),
         };
         assert_eq!(lower_exec_expr(&e).unwrap(), "xs[i]");
+    }
+}
+
+#[cfg(test)]
+mod exec_body_tests {
+    //! `lower_exec_body` per-BODY straight-line EXEC lowering
+    //! (`.design/verified/exec-stmt-tv.md` REQ-3, blocker #161; epic #158). These
+    //! pin the FAITHFUL production exec BODY shapes the body-TV teeth
+    //! (`thermite-tv/tests/body_teeth.rs` B1-B4) wrap as `P_production` - proving
+    //! the body exec `Ctx` IS reachable for a standalone straight-line `Block` (the
+    //! #161 feasibility unknown: `lower_block_inner` is private + fn-context-bound,
+    //! reached here through the minimal `Ctx::exec()` frame) and that the
+    //! `let`/`mut`-let / assignment / `if`-statement / tail thread the SAME exec
+    //! path the fn body uses. The teeth-test (in the INDEPENDENT `thermite-tv`, NO
+    //! `thermite-lower` dep) cannot import this, so these tests are the cross-crate
+    //! bridge that the faithful strings it hardcodes DO match the real production
+    //! lowering (R-CHAR-3 - the faithful column traces to production HERE, the
+    //! reference to `exec_stmt_encode`). A loop body is an honest `Err` (the frozen
+    //! 2.2.1-vs-2.2.2 boundary), NEVER a silent lowering.
+    use super::*;
+    use thermite_syntax::ast::{BinOp, Block, Clause, Expr, LoopKind, LoopNode, Stmt};
+
+    fn path(name: &str) -> Expr {
+        Expr::Path(vec![name.to_string()])
+    }
+    fn int(value: u128) -> Expr {
+        Expr::IntLit {
+            value,
+            raw: value.to_string(),
+        }
+    }
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+    fn let_(mutable: bool, name: &str, init: Expr) -> Stmt {
+        Stmt::Let {
+            mutable,
+            name: name.to_string(),
+            ty: None,
+            init,
+        }
+    }
+    fn assign(target: &str, value: Expr) -> Stmt {
+        Stmt::Assign {
+            target: path(target),
+            value,
+        }
+    }
+
+    // B1 straight-line: { let a = x + 1; let b = a * 2; b }
+    #[test]
+    fn b1_straight_line_let_chain() {
+        let block = Block {
+            stmts: vec![
+                let_(false, "a", bin(BinOp::Add, path("x"), int(1))),
+                let_(false, "b", bin(BinOp::Mul, path("a"), int(2))),
+            ],
+            tail: Some(Box::new(path("b"))),
+        };
+        assert_eq!(
+            lower_exec_body(&block).unwrap(),
+            "    let a = x + 1;\n    let b = a * 2;\n    b\n"
+        );
+    }
+
+    // B2 mutation-order: { let mut s = x; s = s + 1; s = s * 2; s }
+    #[test]
+    fn b2_mutation_order() {
+        let block = Block {
+            stmts: vec![
+                let_(true, "s", path("x")),
+                assign("s", bin(BinOp::Add, path("s"), int(1))),
+                assign("s", bin(BinOp::Mul, path("s"), int(2))),
+            ],
+            tail: Some(Box::new(path("s"))),
+        };
+        assert_eq!(
+            lower_exec_body(&block).unwrap(),
+            "    let mut s = x;\n    s = s + 1;\n    s = s * 2;\n    s\n"
+        );
+    }
+
+    // B3 if-branch: { if c { x + 1 } else { x - 1 } }  (tail = if-EXPR)
+    #[test]
+    fn b3_if_branch_tail() {
+        let then = Block {
+            stmts: vec![],
+            tail: Some(Box::new(bin(BinOp::Add, path("x"), int(1)))),
+        };
+        let els = Block {
+            stmts: vec![],
+            tail: Some(Box::new(bin(BinOp::Sub, path("x"), int(1)))),
+        };
+        let block = Block {
+            stmts: vec![],
+            tail: Some(Box::new(Expr::If {
+                cond: Box::new(path("c")),
+                then,
+                else_: els,
+            })),
+        };
+        assert_eq!(
+            lower_exec_body(&block).unwrap(),
+            "    if c { x + 1 } else { x - 1 }\n"
+        );
+    }
+
+    // B4 multi-cell tuple:
+    //   { let mut a = x; let mut b = y; a = a + 1; b = b + a; (a, b) }
+    #[test]
+    fn b4_multi_cell_tuple() {
+        let block = Block {
+            stmts: vec![
+                let_(true, "a", path("x")),
+                let_(true, "b", path("y")),
+                assign("a", bin(BinOp::Add, path("a"), int(1))),
+                assign("b", bin(BinOp::Add, path("b"), path("a"))),
+            ],
+            tail: Some(Box::new(Expr::Tuple(vec![path("a"), path("b")]))),
+        };
+        assert_eq!(
+            lower_exec_body(&block).unwrap(),
+            "    let mut a = x;\n    let mut b = y;\n    a = a + 1;\n    b = b + a;\n    (a, b)\n"
+        );
+    }
+
+    // FROZEN-SUBSET HONESTY (REQ-1): a body containing a `Stmt::Loop` is OUT of the
+    // 2.2.1 straight-line slice (step 2.2.2). `lower_exec_body` returns an honest
+    // `Err` (via `lower_stmt`'s `Stmt::Loop` arm), NEVER a silent / wrong lowering.
+    #[test]
+    fn loop_body_is_err_not_silent() {
+        let loop_node = LoopNode {
+            kind: LoopKind::While(Box::new(path("c"))),
+            invs: vec![Clause {
+                expr: Expr::BoolLit(true),
+                text: "true".to_string(),
+                span: zero_span(),
+            }],
+            dec: Clause {
+                expr: int(0),
+                text: "0".to_string(),
+                span: zero_span(),
+            },
+            body: Block {
+                stmts: vec![],
+                tail: None,
+            },
+            span: zero_span(),
+        };
+        let block = Block {
+            stmts: vec![Stmt::Loop(loop_node)],
+            tail: None,
+        };
+        assert!(matches!(
+            lower_exec_body(&block),
+            Err(LowerError::Unsupported { .. })
+        ));
     }
 }

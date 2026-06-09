@@ -1,0 +1,10 @@
+{
+  "uuid": "3f2aed1a-db18-4e80-8794-a1c055b5ef30",
+  "issue_uuid": "ed5f0ba2-c5fa-488d-87e1-4dd66357a5ef",
+  "author": "Yffe",
+  "content": "Failing pin at lean/Thermite/Exec/StmtDivergence.lean::Thermite.Exec.d1_faithful_model_should_have_result demonstrates the divergence. AUTHORITY: the REAL thermite-tv/src/exec_stmt_encode.rs::body_ref_state, confirmed at commit 3b53d5aa, returns Ok(\"5\") for the body { let mut r = x; if x < 10 { let k = 1; r = r + k; } else { r = r + 2; } let k = 5; k } — its Stmt::If arm threads each branch into its OWN env.clone() (then_env/else_env), so the branch-local 'let k = 1' lives only in the clone and is DISCARDED when the if recomposes pre-if cells (env.keys()); the post-if 'let k = 5' is therefore a FRESH bind (NOT a re-shadow) and the body has a defined closed form. LEAN MODEL (Thermite.Exec.Stmt ifElse arm in stmtDenote/refStmt) runs the taken branch as 'blockThread thenB st' and returns the branch's FULL final state incl scope 'k'=true; the post-if 'let k = 5' then hits the re-shadow guard 'if st.scope name then none', so bodyDenote = none. d1_lean_model_is_none PROVES the Lean model is none (the disagreement); the pin asserts the authority's (.isSome = true) and FAILS at none.isSome = true. body_ref_sound stays internally true (both Lean sides leak identically) but certifies the WRONG state transformer — the 1g-style scoping fidelity make-or-break. Authority: .design/verified/exec-stmt-tv.md REQ-1/REQ-2 + exec_stmt_encode.rs thread_stmt Stmt::If arm. Fix: ifElse must thread each branch over a scope-restored copy (the encoder's env.clone discipline).",
+  "created_at": "2026-06-09T20:13:27.261644667Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1k2fZnn6LOoKpaO5t+sDM/a9KuzMPJ9FFEvz98ALzV2zkwd5NK8ewiHNm6s+bocc9yqRfJlk10K924IqmE0ZDA=="
+}

@@ -1,0 +1,642 @@
+# Thermite Mechanized Semantics + the Semantic-Preservation Soundness Theorem (the keystone)
+
+<!--
+tier: 3-component
+status: committed-architecture (prover + vocabulary + architecture LOCKED; increments unbuilt)
+governs: lean/  (the Lean 4 development — created by the builder next dispatch, increment (a);
+          no production .rs is added/changed by this doc — this is the meta-theorem layer.
+          It is GROUNDED in the existing reference encoders
+          thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs and the frozen
+          thermite-spec/src/combinators.rs. The semantics S is mechanized in Lean 4
+          (Mathlib + Lean-SMT) — DECIDED, see "Tooling: the committed prover".)
+thesis-refs:
+  - thermite-design.md §1 (trust relocated: code → spec → spec-intent; "a skeptical third party can audit in minutes")
+  - thermite-design.md §4.1 (contract-first functions; the exec body they guard)
+  - thermite-design.md §4.2 (the deliberately-weak SpecTherm sublanguage; the frozen combinator cage; spec fns are total/terminating/executable)
+  - thermite-design.md §6 (the verification ladder; L3 = Verus-derived SMT proof; L1 bounded exec values)
+  - thermite-design.md §13 (roadmap; the verified-microkernel convergence)
+field-refs:                              # the corrective vocabulary (lexical-drift fix, issue #175)
+  - formal-methods-sota.md finding #1/#2 (semantic preservation; forward simulation; Leroy/CompCert)
+  - formal-methods-sota.md finding #3 (reduced-trusted-base; the source semantics is the delicate item)
+  - formal-methods-sota.md finding #4 (bounded translation validation; Alive2; "sound-for-reported-violations, incomplete")
+  - formal-methods-sota.md finding #8 (proof-PRODUCING SMT + reconstruction; Lean-SMT/cvc5; the Z3-demotion path)
+epic: crosslink #169
+prover-fork: #173 (RESOLVED — Lean 4 / Mathlib / Lean-SMT; see "Tooling: the committed prover")
+increment-(a)-blocker: #170 (spec-sublanguage S_C + prove ref_contract_pred sound, in Lean — NEXT BUILD)
+increment-(b)-blocker: #171 (exec-expression S_E + prove exec_ref_value sound, in Lean)
+increment-(c)-blocker: #172 (exec-statement S_B + prove body_ref_state sound, in Lean)
+increment-(d)-blocker: #174 (compose → whole-frozen-subset semantic-preservation theorem, in Lean)
+research: #175 (the formal-methods SOTA survey + terminology map — the source of the field vocabulary below)
+prior-arc:
+  - .design/verified/contract-tv.md (#139 — the contract TV reference encoder R_C, SHIPPED + total on corpus)
+  - .design/verified/exec-tv.md (#151 — the exec-expression TV reference encoder R_E, SHIPPED)
+  - .design/verified/exec-stmt-tv.md (#158 — the straight-line body state-transformer R_B, SHIPPED; the EXISTING state-transformer semantics this doc UNIFIES)
+-->
+
+## Summary
+
+This is Thermite's CompCert moment — and the formal-methods SOTA survey (issue #175) names it
+precisely: the architecture is a **verified validator** in Leroy's sense (CompCert/CACM), and the
+property is **semantic preservation** (`S ≈ C`), stated as a **forward simulation**. We were not
+reinventing the technique; the survey corrects the lexical drift ("lowering faithfulness" → the
+field's *semantic preservation* / *forward simulation*) and pins the cheap, load-bearing
+architecture.
+
+The lowering-soundness arc (epic #169) has a single open link: the production lowerer
+(`thermite-lower`, thousands of lines) is checked PER RUN by translation validation (TV) — Z3
+proves `lower(P) ⟺ R(P)` against a small independent reference encoder `R` — but that gives only
+EXISTENTIAL evidence: *for the programs we ran, the lowering agreed with `R`*. It does not yet say
+the reference `R` is itself CORRECT, so it does not yet say anything UNIVERSAL about meaning.
+
+**The committed architecture (decided; resolves this doc's own open question):** a VERIFIED
+VALIDATOR, NOT a verified lowerer, and NOT (necessarily) a full universal forward-simulation proof
+of the whole translation. The survey's load-bearing insight (Leroy, finding #1; Necula PLDI'00) is
+that **a verified validator composed with an unverified compiler is as strong as a verified
+compiler, "provided the validator is smaller and simpler than the compiler," at ≈ one
+compiler-pass of effort.** We ALREADY have the per-run validator: the TV reference encoder
+(`ref_contract_pred` / `exec_ref_value` / `body_ref_state`) + the Z3 equivalence check. The missing
+piece — and THE chosen target — is **proving the reference encoder SOUND against the mechanized
+semantics `S` (the T1 obligation), in Lean 4.**
+
+So this doc defines a mechanized semantics **S** — the formal meaning `⟦·⟧_S` of a Thermite
+program — and states the **soundness theorem** that turns the per-run TV check into a universal
+guarantee:
+
+1. **(T1) — validator soundness.** Prove the SMALL reference encoders sound against `S`:
+   `∀ P, ⟦R(P)⟧ = ⟦P⟧_S`. Tractable because `R` (`ref_contract_pred`, `exec_ref_value`,
+   `body_ref_state` — all already SHIPPED in `thermite-tv`) is small, declarative, and INDEPENDENT
+   of the production lowerer. This is the verified-validator obligation (Leroy, finding #1).
+2. **(T2) — semantic preservation, stated as forward simulation.** Compose: the existing per-run
+   check `[Z3 ⊢ lower(P) ⟺ R(P)]` together with **(T1)** yields, for ALL `P` passing TV,
+   `⟦lower(P)⟧ = ⟦P⟧_S` — the lowering PRESERVES MEANING (`S ≈ C`), relative only to
+   `{Z3 soundness, S being the intended meaning}`. The relation `∼` of the forward simulation, and
+   what "observable" means, are DEFINED by the caged quantifier fragment + the effect rows
+   (finding #2).
+
+The key economy (Leroy, finding #1; Necula, finding #4): you verify the small reference encoder
+against `S` (auditable, structural induction, ≈ one-pass effort), NOT the big production lowerer
+(the verify-the-compiler path, intractable here). The full `∀`-proof is multi-cycle
+(CompCert/seL4-class); this doc is HONEST about that boundary throughout.
+
+This is the project's answer to the boss's "what does Thermite add over Verus": Verus verifies a
+Rust program against an annotation; Thermite additionally proves **semantic preservation** from the
+Thermite surface to that annotated Rust — a verified-validator meta-theorem Verus does not provide
+for its own front end.
+
+## Field vocabulary — the lexical-drift fix (issue #175; cite, do not reinvent)
+
+The SOTA survey's central corrective: state the work in the field's established vocabulary, with
+citations. This section is the authoritative term map; the rest of the doc uses the field terms.
+
+| Thermite term (was) | Field term (now) | Citation |
+|---|---|---|
+| "lowering faithfulness" | **semantic preservation** (`S ≈ C`), established via a **forward simulation** | Leroy, *Formal verification of a realistic compiler* (CompCert), CACM (finding #1/#2) |
+| "certificate + enumerable trusted base" | CompCert's **reduced-trusted-base** framing | Leroy CACM (finding #3) |
+| "translation validation as existential→universal" | the **TV-vs-verified-compilation** axis; a *verified* validator ≡ a verified compiler | Leroy CACM; Pnueli/Siegel/Singerman, *Translation Validation*, TACAS'98; Necula, *Translation validation for an optimizing compiler*, PLDI'00 (findings #1/#4) |
+| L3 (SMT total-correctness over the caged fragment) | SMT-discharged verification; the **cage = a decidability/automation lever** | finding #4; Verus/Z3 |
+| L2 (bounded model check) | **bounded translation validation / BMC** — "sound-for-reported-violations, incomplete" | Lopes et al., *Alive2*, PLDI'21; CBMC (finding #4) |
+| L1 (runtime contract checks) | **runtime contract monitoring** | finding #4 (terminology map) |
+| L0 (`#[slag]`, trusted-by-fiat) | **an enumerated trusted axiom** (CompCert's trusted-base concept, made per-function) | Leroy CACM (finding #3) |
+
+**Forward simulation — the precise statement of (T2).** Per Leroy/CompCert (finding #2): semantic
+preservation for a deterministic language is the relaxed "non-going-wrong" property
+`∀ B ∉ Wrong, S ⇓ B ⟹ C ⇓ B`, proved by a **simulation diagram** — each source transition
+corresponds to target transitions with the SAME OBSERVABLE EFFECTS, preserving a binary relation
+`∼` between source states and target states. For Thermite:
+
+- `∼` relates a Thermite state to its emitted (Verus-annotated) Rust target state.
+- **"Observable" is DEFINED by the caged quantifier fragment + the effect rows.** A behavior is
+  observable iff it is expressible in the frozen contract sublanguage `S_C` (the predicate the
+  program is checked against) or recorded in the static `fx` effect row. This is the project-local
+  content the field's "observable effects" slot is filled with — and it is a GENUINE EXTENSION
+  (below).
+
+**Reduced trusted base (cite CompCert, finding #3).** Verification never *eliminates* the trusted
+base; it reduces it to an ENUMERABLE set. Leroy enumerates CompCert's residual trust:
+(1) the formal semantics of source + target; (2) the unverified passes (parser, assembler,
+linker); (3) extraction + the OCaml runtime; (4) Coq itself. Thermite's analogous enumeration:
+
+| # | CompCert residual trust | Thermite analogue |
+|---|---|---|
+| 1 | formal semantics of source + target | the Thermite operational semantics `S` + the Verus/Rust target semantics — **THE MOST DELICATE ITEM** (see below) |
+| 2 | unverified passes (parser/assembler/linker) | the unverified production lowerer `thermite-lower` (replaced per-run by the *verified* validator), plus the Thermite lexer/parser |
+| 3 | extraction + runtime | the Rust↔Lean encoder-correspondence (the Rust `thermite-tv` code matching the Lean-proved algorithm — see "The Rust↔Lean correspondence gap"), rustc/LLVM/the build chain |
+| 4 | Coq itself | **the Lean 4 kernel** + (today) Z3/Verus, with the Lean-SMT cvc5-reconstruction path the route to demote Z3 (finding #8) |
+
+**The source semantics is the irreducible residue (finding #3, Leroy's item (1)).** `S`'s agreement
+with the *intended* meaning of Thermite is the single most delicate item — an
+unprovable-from-within assumption (Gödel; the §1 "spec-intent alignment" slot). It is STATED, never
+hidden, never machine-closed.
+
+**Genuine extensions — labeled as such (finding #1 terminology map; no direct analogue in the
+surveyed verified-compilation literature).** These are Thermite-original and are NOT renamed to a
+field term:
+
+- **The caged quantifier fragment** (the 8 frozen combinators + frozen triggers) — a deliberate
+  decidability/automation lever. (Novelty needs a targeted survey to confirm; asserted-by-absence.)
+- **The anti-Goodhart battery** (mutation-kill-ratio + vacuity/tautology detection) — spec-quality
+  / spec-mutation, no analogue in the surveyed verified-compilation lit.
+- **The static-effect-rows (`fx`) + seccomp confinement hybrid** — the surveyed effect literature
+  (Iris/separation logic, finding #7) does not combine static effect typing with runtime syscall
+  confinement. The *hybrid* is the extension (Stacked Borrows, POPL'20, is the reference our
+  Verus-annotated-Rust *target* must be reconciled against — finding #7).
+
+## What this covers, and what it inherits (the relativity — state it plainly, Gödel)
+
+The semantic-preservation theorem is NOT unconditional. It is RELATIVE to two named assumptions:
+
+- **Z3 soundness.** TV's per-run agreement is `Z3 ⊢ lower(P) ⟺ R(P)`. If Z3 is unsound on a
+  query, (T2) inherits that unsoundness. (This is the same trust Verus/CompCert's SMT-backed
+  obligations carry; it is the floor of any SMT-discharged result, not a Thermite-specific gap.)
+  **The path to demote Z3 from *trusted* to *kernel-checked* is proof reconstruction (Lean-SMT's
+  cvc5 path, finding #8) — this is a primary reason Lean 4 was chosen (below); it is NOT in place
+  today, so an L3 certificate currently enumerates Z3 + Verus.**
+- **`S` being the intended meaning.** (T1)/(T2) say `⟦lower(P)⟧ = ⟦P⟧_S`. They do NOT prove that
+  `S` is the meaning the *human wanted* — that residue is exactly the §1 "spec-intent alignment"
+  slot, surfaced for review, never machine-closed (Gödel forbids a system certifying its own
+  intended-meaning fixpoint; this is Leroy's delicate item (1), finding #3). `S` is a HUMAN-AUDITED
+  definition; its auditability (small, declarative, mechanized in a small-kernel prover) is the
+  whole design goal, mirroring why `R` is auditable.
+
+**What the theorem COVERS:** the LOWERING link of the semantic-preservation chain
+`Thermite surface → emitted Verus-annotated Rust`. For every `P` passing TV, the emitted artifact
+MEANS what `P` means under `S` (the forward-simulation relation `∼` holds, preserving observable
+effects).
+
+**What it does NOT cover (inherited, unchanged):**
+
+- The Verus VC-generator and Z3 (the `emitted Rust → SMT obligation → proof` link) stay inherited
+  trusted components — exactly as in every Verus-based result. This doc does not re-verify them.
+- Rust's borrow checker / LLVM codegen (the `Rust → machine code` link, `thermite-design.md` §3
+  stack) — inherited from the Rust toolchain, out of scope (this is the CompCert/RustBelt
+  boundary; Stacked Borrows is the model the target is reconciled against, finding #7).
+- Loops in the exec-statement subset (`while`/`loop`/`break`/`continue`) — kernel-gated, framed
+  in `exec-stmt-tv.md` step 2.2.2 (blocker #163); `S_B` here is the STRAIGHT-LINE fragment.
+  A loop body's lowering stays checked by per-run TV-with-invariant + golden files until #163.
+- **The whole-translation universal forward-simulation proof is EXPLICITLY NOT the target.** We do
+  not verify the production lowerer, and we do not commit to a once-for-all simulation proof of the
+  entire translation. The verified PER-RUN validator (T1 + the per-run TV check = T2) suffices for
+  the threat model (Leroy: a verified validator ≡ a verified compiler, at ≈ one-pass cost).
+
+So the theorem upgrades ONE link (lowering) from existential to universal SEMANTIC PRESERVATION,
+and is explicit that the other links stay where they were. That honesty is the deliverable.
+
+## Requirements
+
+- **REQ-1 (the semantics S — a denotation over the frozen AST subset, mechanized in Lean 4)** —
+  define `⟦·⟧_S` as inference rules / a denotation function over the `thermite-syntax::ast` node
+  set, UNIFYING three sub-denotations: `S_C` (contract/spec sublanguage → a logical predicate),
+  `S_E` (exec expression → a bounded value), `S_B` (exec body → a state transformer, unified from
+  the EXISTING `exec-stmt-tv.md` REQ-2 big-step semantics). The math is stated prover-neutrally
+  here (inference rules) AND mechanized as Lean 4 definitions (REQ-6). Covers the frozen subset:
+  the contract `Expr` subset + the 8 frozen combinators (`combinators.rs` `verus_l3`), the
+  pure-exec `Expr` subset, and the frozen straight-line exec-statement subset (`exec-stmt-tv.md`
+  REQ-1). Derived from `thermite-design.md` §4.1/§4.2/§6. **Blocker #169 (epic); per-sub-denotation
+  #170/#171/#172.**
+- **REQ-2 (the verified-validator soundness theorem T1 — reference-encoder correctness w.r.t. S)**
+  — state precisely: `∀ P, ⟦R(P)⟧ = ⟦P⟧_S`, where `R ∈ {ref_contract_pred, exec_ref_value,
+  body_ref_state}` (the SHIPPED `thermite-tv` encoders) and `⟦R(P)⟧` is the meaning under `S` of
+  the Verus STRING `R` produces. This is the VERIFIED-VALIDATOR obligation (Leroy, finding #1): the
+  thing to PROVE, by structural induction over the AST subset, as a Lean `theorem`. Sketch ONE
+  obligation concretely (below) to show it is non-vacuous.
+- **REQ-3 (the composition T2 — semantic preservation, as forward simulation)** — state precisely:
+  `[ TV: Z3 ⊢ lower(P) ⟺ R(P) ] ∧ (T1) ⟹ ⟦lower(P)⟧ = ⟦P⟧_S`, quantified over all `P` passing TV.
+  State it in forward-simulation vocabulary (the relation `∼`, observable effects = caged fragment
+  + effect rows; finding #2), the relativity (`{Z3, S}`), and what it does/does-not cover (above).
+  This is the payoff: TV evidence + a verified validator (T1) = universal semantic preservation.
+- **REQ-4 (the increment roadmap — Lean-targeted, honest, multi-cycle)** — the spec-first ordering
+  (a) `S_C` + prove `ref_contract_pred` IN LEAN; (b) `S_E` + `exec_ref_value`; (c) `S_B` +
+  `body_ref_state`; (d) compose. Each a future blocker (#170/#171/#172/#174); **increment (a),
+  #170, is the NEXT BUILD.** Honest magnitude: CompCert/seL4-class.
+- **REQ-5 (the tooling decision — COMMITTED: Lean 4 / Mathlib / Lean-SMT)** — record the DECIDED
+  prover (was: "assess, do not decide"; the #173 fork is RESOLVED). Rationale: the Lean-SMT cvc5
+  proof-reconstruction path is the live route to demote Z3 from *trusted* to *kernel-checked* (the
+  TCB-shrink goal, finding #8); modern ecosystem. Coq / Isabelle / Verus-native recorded as
+  considered-and-deferred with a one-line reason each. **Blocker #173 RESOLVED.**
+- **REQ-6 (the Lean project setup — pin it for the builder)** — specify the new top-level `lean/`
+  directory: a `lakefile.toml` depending on Mathlib + Lean-SMT, the toolchain pinned via
+  `lean-toolchain`; the module layout — (a) the Thermite AST as a Lean inductive (the frozen subset,
+  mirroring `thermite-syntax/src/ast.rs`); (b) the denotation `⟦·⟧_S` as a Lean function/relation
+  (the contract sublanguage `S_C` first); (c) a Lean model of the reference encoder
+  `ref_contract_pred`'s output; (d) the soundness theorem T1 as a Lean `theorem`. Document the
+  Rust↔Lean correspondence honestly (below). **The builder writes this project next dispatch
+  (increment (a), #170); this REQ is the spec it builds to.**
+- **REQ-7 (the architecture decision — a verified validator)** — record the DECIDED architecture
+  (was: this doc's own open question): a VERIFIED VALIDATOR (prove `R` sound against `S` = T1),
+  NOT a verified lowerer, and NOT (necessarily) a full universal forward-simulation proof of the
+  whole translation. The per-run verified validator suffices for the threat model (Leroy, finding
+  #1; Necula, finding #4). This resolves the open architectural question (finding #1 + open-question
+  #2 of the research doc).
+
+## Acceptance criteria
+
+This component is the META-THEOREM layer + the committed architecture; its ACs are
+STATEMENT-COMPLETENESS + NON-VACUITY + GROUNDEDNESS + DECISION-RECORDED, not a `cargo test` (the
+mechanization is increment (a), #170, the next build). The mechanical discharge of each soundness AC
+moves to the per-increment Lean blockers as they land.
+
+- **AC-1 (S is stated over the exact frozen subset)** — every node admitted by the SHIPPED
+  encoders has a denotation rule here: the contract `Expr` subset that `ref_contract_pred`
+  admits, the pure-exec subset `exec_ref_value` admits, and the straight-line exec-statement
+  subset `body_ref_state` admits (`exec-stmt-tv.md` REQ-1 IN set). A node the encoders honestly
+  `Err`/Skip on (`RefEncodeError::Unsupported`) is OUT of `S` and explicitly marked OUT here.
+  Mechanically: the denotation domain = the union of the three encoders' admitted-node sets.
+- **AC-2 (T1 is non-vacuous — a concrete obligation exists)** — at least one (T1) obligation is
+  written out fully: the denotation `⟦P⟧_S`, the encoder output `R(P)`, the meaning `⟦R(P)⟧`, and
+  the equality to prove, for a real clause. GROUNDED below for `ens result == spec_sum(xs)` and
+  for the `forall_in` combinator. The obligation is NOT `X = X` (the production-coercion / binop
+  re-statement is where the content lives — the same `==`-vs-`<=` content the TV teeth bite on).
+- **AC-3 (T2 composition is valid given T1)** — the composition is a one-line logical step (modus
+  ponens over `⟺` and `=`) once (T1) holds; stated below with its relativity and its
+  forward-simulation reading. Mechanically: the proof of (T2) from (T1) + the TV obligation is the
+  trivial transitivity `⟦lower(P)⟧ = ⟦R(P)⟧` (from `Z3 ⊢ lower(P) ⟺ R(P)` interpreted under S)
+  `= ⟦P⟧_S` (from T1).
+- **AC-4 (the relativity is explicit + the coverage boundary stated, in the reduced-trusted-base
+  framing)** — the `{Z3, S}` relativity, the CompCert-style trusted-base enumeration (cite Leroy,
+  finding #3), and the inherited links (Verus VC-gen, borrow checker, LLVM, loops) are named (above
+  + below), so no reader mistakes the theorem for unconditional or whole-toolchain preservation.
+- **AC-5 (the tooling + architecture decisions are RECORDED)** — Lean 4 (Mathlib + Lean-SMT) is
+  recorded as COMMITTED with its TCB-shrink rationale; Coq/Isabelle/Verus-native as
+  considered-and-deferred; the verified-validator architecture (not a verified lowerer, not a full
+  universal simulation) is recorded as DECIDED. (#173 RESOLVED.)
+- **AC-6 (the Lean project is specified for the builder)** — the `lean/` directory layout,
+  `lakefile.toml` deps (Mathlib + Lean-SMT), `lean-toolchain` pin, and the four-module structure
+  (AST inductive / denotation / encoder model / T1 theorem) are specified, with the Rust↔Lean
+  correspondence gap stated. This is the spec increment (a) (#170) builds to.
+
+## Architecture — the semantics S (the denotation)
+
+`S` is a denotation function `⟦·⟧_S` from the frozen `thermite-syntax::ast` subset to a
+mathematical meaning. It UNIFIES three sub-denotations into one program meaning. The metavariable
+`P` ranges over a Thermite fn-or-clause; `lower(P)` is the production-emitted Verus-annotated Rust;
+`R(P)` is the reference-encoder output (a Verus string). `⟦·⟧` applied to a Verus string is its
+meaning in the standard Verus/vstd model (the model Verus itself denotes into — `S` does not
+re-define Verus's meaning, it ANCHORS to it; this is the same move `ref_contract_pred` makes when
+it reuses `lookup(name).verus_l3` as the combinator denotation). In the forward-simulation framing
+(finding #2), `⟦lower(P)⟧ = ⟦P⟧_S` IS the relation `∼` holding between `P`'s Thermite state and
+`lower(P)`'s target state, preserving the observable effects (the caged fragment + the `fx` rows).
+
+### S_C — the spec/contract sublanguage (smallest, most stable — START HERE)
+
+The contract denotation `⟦·⟧_{S_C} : ContractExpr → Predicate`. A `Clause` holds an ordinary
+`Expr` (`ast.rs` `struct Clause { expr, .. }`); there are NO statements/loops/mutation in a clause
+(`contract-tv.md` Architecture), so `S_C` is a TOTAL structural recursion. Inference rules over the
+admitted `Expr` subset:
+
+```
+                                                       (literals / refs denote themselves)
+⟦ IntLit{value=n} ⟧_{S_C}     = n                     (the integer n)
+⟦ BoolLit(b) ⟧_{S_C}          = b
+⟦ Path([x]) ⟧_{S_C}           = x                      (a free var: a param, or result/old(_))
+⟦ result ⟧_{S_C}              = result                 (the distinguished return binding)
+⟦ Call(old, [x]) ⟧_{S_C}      = old(x)                 (the pre-state binding; a free var)
+
+                                                       (comparisons / logical / arithmetic
+                                                        denote the corresponding math relation,
+                                                        re-stated INDEPENDENTLY — the binop map)
+⟦ Binary(Eq, a, b) ⟧_{S_C}    = ( ⟦a⟧ = ⟦b⟧ )         ⟦ Binary(Le, a, b) ⟧ = ( ⟦a⟧ ≤ ⟦b⟧ )
+⟦ Binary(Lt, a, b) ⟧_{S_C}    = ( ⟦a⟧ < ⟦b⟧ )         ... (Ne/Gt/Ge analogous)
+⟦ Binary(And, a, b) ⟧_{S_C}   = ( ⟦a⟧ ∧ ⟦b⟧ )         ⟦ Binary(Or, a, b) ⟧ = ( ⟦a⟧ ∨ ⟦b⟧ )
+⟦ Unary(Not, a) ⟧_{S_C}       = ¬ ⟦a⟧
+⟦ Binary(Add, a, b) ⟧_{S_C}   = ⟦a⟧ + ⟦b⟧             (arithmetic in subterms; at the
+                                                        spec-context numeric domain — see coercions)
+
+                                                       (spec-fn calls denote their recursive,
+                                                        dec-measured, TERMINATING denotation)
+⟦ Call(f, args) ⟧_{S_C}       = ⟦body_of(f)⟧_{S_C}[params ↦ ⟦args⟧]     when f is a named spec fn
+                                                        (well-defined because §4.2 mandates a `dec`
+                                                         measure ⟹ the recursion terminates ⟹ the
+                                                         denotation is a well-founded fixpoint)
+
+                                                       (the 8 frozen combinators denote their
+                                                        FROZEN verus_l3 quantifier form — these ARE
+                                                        a denotation already, combinators.rs)
+⟦ Call(C, args) ⟧_{S_C}       = ⟦ lookup(C).verus_l3 [formals ↦ ⟦args⟧] ⟧
+                                  for C ∈ {sorted, forall_in, exists_in, count_where,
+                                           permutation_of, disjoint, forall_below, forall_from}
+```
+
+**The spec-context rewrites are DENOTATION-PRESERVING COERCIONS to pin (the content of S_C).**
+These are exactly where production fidelity bugs live (`contract-tv.md`: the #122/#127/#146
+classes), so they are the load-bearing part of `S_C`'s definition AND of the (T1) proof:
+
+- **slice → `@` view.** A slice term in spec position denotes its `Seq` view: `⟦xs⟧` (slice) is the
+  sequence `xs@`. `⟦Ref(Index(xs, RangeTo(i)))⟧` (`&xs[..i]`) = `xs@.subrange(0, ⟦i⟧ as int)`.
+  These are denotation-PRESERVING: the `@`/subrange is the identity-on-meaning coercion from the
+  exec slice to its spec sequence (the meaning is the same sequence of elements).
+- **method → `spec_*` byte-view.** `⟦s.len()⟧` = `s.spec_len()`, `⟦s.byte_at(i)⟧` =
+  `s.spec_byte_at(⟦i⟧ as int)` for a `String`/`&TString` receiver — the wrapper spec fns denote the
+  same length/byte (the #127 class: a wrong index is a DIFFERENT meaning, caught).
+- **cast → `nat`/`int`.** In spec position an integer cast denotes the value as an unbounded
+  `nat`/`int` (no wrap — spec arithmetic is mathematical), e.g. `⟦(n - 1) as nat⟧` = the natural
+  number `⟦n⟧ - 1` under the `⟦n⟧ ≥ 1` frame. The PARENTHESIZATION (the #122 class) is a property of
+  the production STRING, not the meaning; `S_C` denotes the AST, so the (T1) obligation is precisely
+  "does the production string PARSE to an AST whose denotation matches" — which is why the
+  paren-drop is a (T1) failure (a different parse = a different denotation).
+
+`S_C` is the MOST stable + smallest sub-denotation (a clause is a pure predicate), so it is
+increment (a) (#170) — and it is where the boss's canonical `==`-vs-`<=` semantic-preservation
+question lives.
+
+### S_E — the exec-expression sublanguage (bounded values)
+
+`⟦·⟧_{S_E} : ExecExpr → BoundedValue` where `BoundedValue ∈ {u64, u32, usize, bool}` — NOT
+unbounded `nat`/`int` (the load-bearing dual of `S_C`'s coercion soundness, `exec-tv.md` "the
+exec-value semantics"). An exec expression denotes a value AT ITS BOUNDED TYPE, carrying the
+always-active L1 overflow semantics (`thermite-design.md` §6):
+
+```
+⟦ Binary(Add, a, b) ⟧_{S_E}   = ⟦a⟧ +_{checked} ⟦b⟧      (bounded add; DEFINED only when no
+                                                            overflow — the overflow obligation;
+                                                            a wrapping_add is a DIFFERENT denotation)
+⟦ Cast(e, T) ⟧_{S_E}          = narrow_T(⟦e⟧)             (narrowing/wrapping AT the target type T)
+⟦ Binary(Lt, a, b) ⟧_{S_E}    = ( ⟦a⟧ < ⟦b⟧ ) : bool
+⟦ Index(xs, Single(i)) ⟧_{S_E} = ⟦xs⟧[⟦i⟧]               (the element value; the spec view xs[i as int]
+                                                            denotes the SAME element)
+⟦ Call(f, args) ⟧_{S_E}       = the exec value of f applied to ⟦args⟧
+```
+
+The denotation is NEVER nat-coerced (a `nat`-coerced exec reference would mask the wrap point —
+exactly the soundness hole `exec-tv.md` AC-4 catches). `S_E` is increment (b) (#171).
+
+### S_B — the exec-body sublanguage (state transformer; UNIFIED from exec-stmt-tv.md)
+
+`S_B` is NOT re-invented — it is the EXISTING big-step state-transformer designed + GROUNDED in
+`.design/verified/exec-stmt-tv.md` REQ-2, lifted into `S`. In the forward-simulation framing, the
+body's big-step transition is exactly a source transition whose target counterpart must preserve
+the relation `∼` (finding #2). Quoting that doc's semantics verbatim (it is already the operational
+meaning of the frozen straight-line subset):
+
+> a statement sequence is a STATE TRANSFORMER. The **program state** is the environment of
+> in-scope mutable + immutable bindings (name → bounded-scalar value). For a straight-line body the
+> denotation is a **big-step** evaluation threading an initial environment (the fn params) through
+> the statement sequence to a FINAL environment, and the body's value is the tail expression
+> evaluated in that final environment.
+
+So `⟦·⟧_{S_B} : Block × Env → Env × BoundedValue`, big-step over the FROZEN straight-line subset
+(`exec-stmt-tv.md` REQ-1 IN set): `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + `Block`
+sequencing/tail. Inference rules (big-step `⟨B, σ⟩ ⇓ ⟨σ', v⟩`):
+
+```
+                ⟨init, σ⟩ ⇓_{S_E} v
+─────────────────────────────────────────────────  (LET — extend env)
+⟨ Let{name, init} ; rest, σ⟩ ⇓ ⟨σ'', v''⟩    where ⟨rest, σ[name ↦ v]⟩ ⇓ ⟨σ'', v''⟩
+
+                ⟨value, σ⟩ ⇓_{S_E} v
+─────────────────────────────────────────────────  (ASSIGN — update cell, ORDER-SENSITIVE)
+⟨ Assign{target=x, value} ; rest, σ⟩ ⇓ ⟨σ'', v''⟩   where ⟨rest, σ[x ↦ v]⟩ ⇓ ⟨σ'', v''⟩
+
+⟨cond, σ⟩ ⇓_{S_E} true     ⟨then, σ⟩ ⇓ ⟨σ', _⟩
+─────────────────────────────────────────────────  (IF-THEN; IF-ELSE symmetric — branch compose)
+⟨ If{cond, then, else_} ; rest, σ⟩ ⇓ ⟨σ'', v''⟩     where ⟨rest, σ', ⟩ ⇓ ⟨σ'', v''⟩
+
+──────────────────────────────────  (TAIL — the body value = the projection of the final env)
+⟨ {stmts ; tail}, σ⟩ ⇓ ⟨σ_final, ⟦tail⟧_{S_E} in σ_final⟩
+```
+
+`S_B` composes `S_E` on each statement's RHS / `if` condition / tail (the per-RHS value
+denotation), adding ONLY the state-threading / mutation-substitution / branch-composition. The
+loop rules (`Stmt::Loop`/`Break`/`Continue`) are OUT of `S_B` here (kernel-gated, #163): a loop's
+denotation is a fixpoint, not a finite substitution. `S_B` is increment (c) (#172).
+
+`S = S_C ⊔ S_E ⊔ S_B` is the unified program meaning. A whole fn's meaning is: its `req`/`ens`
+clauses denote under `S_C` (the predicate the body must satisfy), its body denotes under `S_B` (the
+state transformer over `S_E`-valued statements), and semantic preservation of the whole fn is
+preservation of all three sub-denotations composed (increment (d), #174).
+
+## The SOUNDNESS THEOREM (T1 + T2), stated precisely
+
+Let `R` denote whichever reference encoder applies to `P`'s syntactic class:
+`R_C = ref_contract_pred` for a contract clause, `R_E = exec_ref_value` for a pure exec expr,
+`R_B = body_ref_state` for a straight-line body. All three are SHIPPED in `thermite-tv` and are
+INDEPENDENT of the production lowerer (a COMPILE constraint: `cargo tree -p thermite-tv` =
+`thermite-syntax` + `thermite-spec` only — no `thermite-lower`; `contract-tv.md` AC-6). In Leroy's
+terms (finding #1), `R` + the per-run Z3 check IS the validator; (T1) is what makes it a *verified*
+validator.
+
+> **(T1) — verified-validator soundness (reference-encoder correctness w.r.t. S).**
+> `∀ P, ⟦ R(P) ⟧ = ⟦ P ⟧_S`
+>
+> i.e. the meaning (under the Verus/vstd model `S` anchors to) of the Verus STRING the reference
+> encoder produces EQUALS the denotation of the source `P` under `S`. This is the OBLIGATION TO
+> PROVE, by structural induction over the frozen AST subset (one case per inference rule above),
+> as a Lean 4 `theorem` (REQ-6).
+
+> **(T2) — semantic preservation, stated as a forward simulation.**
+> For all `P` that PASS translation validation,
+> `[ TV:  Z3 ⊢ lower(P) ⟺ R(P) ]  ∧  (T1)  ⟹  ⟦ lower(P) ⟧ = ⟦ P ⟧_S`
+>
+> i.e. `S ≈ C` for this `P`: the relation `∼` holds between `P`'s Thermite state and `lower(P)`'s
+> target state, preserving the observable effects (the caged fragment + the `fx` rows define
+> "observable", finding #2).
+>
+> PROOF (the one-line modus-ponens, AC-3): TV gives `lower(P) ⟺ R(P)` (Z3-proved; interpreted
+> under `S`'s anchor model this is `⟦lower(P)⟧ = ⟦R(P)⟧`). (T1) gives `⟦R(P)⟧ = ⟦P⟧_S`. Transitivity:
+> `⟦lower(P)⟧ = ⟦R(P)⟧ = ⟦P⟧_S`. ∎ (relative to {Z3 soundness, S = intended meaning})
+
+**What (T2) buys (the existential → universal upgrade; Leroy finding #1).** Before: TV gave "for the
+programs we ran, `lower(P) ⟺ R(P)`" — existential, and silent on whether `R` is correct. After: for
+ANY `P` passing TV, the LOWERING IS SEMANTICS-PRESERVING w.r.t. `S`. The per-run Z3 check is
+unchanged; (T1) is the one-time, structural-induction investment (≈ one compiler-pass of effort,
+Necula finding #4) that makes every future TV pass a universal semantic-preservation guarantee. The
+production lowerer STAYS UNVERIFIED — it is checked per-run against a now-VERIFIED reference (a
+verified validator ≡ a verified compiler, Leroy).
+
+**The relativity, restated (Gödel, AC-4):** (T2) is NOT unconditional. It is relative to
+`{Z3 soundness (the TV check's discharge), S being the intended meaning (a human-audited
+definition — Leroy's delicate item (1), finding #3)}`. It covers the LOWERING link only; the Verus
+VC-gen, the borrow checker, LLVM, and loops stay inherited / kernel-gated. No reader should read
+(T2) as whole-toolchain or unconditional preservation.
+
+## The concrete (T1) obligation, written out (AC-2 — proof that the theorem is not vacuous)
+
+We cannot fully MECHANIZE (T1) yet (the Lean project is increment (a), #170, the next build). But
+the obligation is concrete and non-trivial. Two cases.
+
+### Case 1 — `ens result == spec_sum(xs)` (the boss's ==-vs-<= surface lives here)
+
+The source clause `P = Binary(Eq, result, Call(spec_sum, [xs]))`.
+
+- **`⟦P⟧_{S_C}`** (the denotation, by the rules above):
+  `( ⟦result⟧ = ⟦Call(spec_sum, [xs])⟧ )` = `( result = spec_sum(xs@) )`, where `spec_sum(xs@)` is
+  the well-founded recursive denotation of the `dec`-measured `spec fn spec_sum`, and `xs@` is the
+  slice→`Seq` coercion (denotation-preserving). Numeric domain: spec `nat` (the cast coercion).
+- **`R_C(P)` (the SHIPPED encoder output)**: `result as nat == spec_sum(xs)` — note the `as nat`
+  coercion `ref_contract_pred` infers (its `RefCtx` `nat_coerce` rule, independently re-stating
+  production's `lower_nat_equality`, `contract-tv.md` REQ-1).
+- **`⟦R_C(P)⟧`** (the meaning of that Verus string under the vstd model):
+  `( (result as nat) = spec_sum(xs) )` — `xs` bound as `Seq<u32>` so `spec_sum(xs)` is the same
+  recursive sum; `result as nat` is the same coercion to the spec `nat` domain.
+- **The (T1) obligation:** prove `⟦R_C(P)⟧ = ⟦P⟧_{S_C}`, i.e.
+  `( (result as nat) = spec_sum(xs) )  =  ( result = spec_sum(xs@) )` — discharged by: the `as nat`
+  coercion is the identity-on-value injection into the `nat` domain (the spec numeric domain `S_C`
+  denotes into), and `xs ≡ xs@` (the slice→`Seq` view is the identity-on-meaning coercion). NOT
+  vacuous: if production had emitted `result as nat <= spec_sum(xs)` (the `<=` infidelity), the
+  encoder's `==` would denote a DIFFERENT predicate, the TV `⟺` would FAIL (Z3 counterexample,
+  `contract-tv.md` AC-2), and the chain would correctly refuse to conclude preservation. The
+  content of the obligation is exactly the binop + coercion re-statement `S_C` defines
+  INDEPENDENTLY of production — which is why a production binop/coercion bug is visible.
+
+### Case 2 — the `forall_in` combinator (the combinator denotation is the frozen verus_l3)
+
+The source clause uses `forall_in(xs, |x| x <= 10)`, `P = Call(forall_in, [xs, |x| x <= 10])`.
+
+- **`⟦P⟧_{S_C}`** = `⟦ lookup("forall_in").verus_l3 [s ↦ xs@, p ↦ (λx. x ≤ 10)] ⟧`. From
+  `combinators.rs` the frozen `verus_l3` is
+  `forall|i: int| 0 <= i < s.len() ==> #[trigger] p(s[i])`, so the denotation is the bounded
+  universal `∀ i. 0 ≤ i < |xs@| ⟹ (xs@[i] ≤ 10)`.
+- **`R_C(P)`** reuses the SAME frozen `lookup("forall_in").verus_l3` (the shared external ground
+  truth, `contract-tv.md` Architecture "REUSED") for the combinator BODY, while INDEPENDENTLY
+  encoding the slice→`@` of the slice arg and the predicate closure `|x| x <= 10`.
+- **The (T1) obligation:** `⟦R_C(P)⟧ = ⟦P⟧_{S_C}` — discharged by: the combinator body is shared
+  verbatim (so its denotation is identical by construction — this case of the induction is the
+  trivial reflexivity ON THE BODY), and the obligation's CONTENT is the ARGUMENT rewrites (the
+  slice `@`-view + the predicate-closure encoding), which `R_C` re-implements independently. NOT
+  vacuous: a wrong predicate (`|x| x < 10` for source `|x| x <= 10`) is a different denotation, TV
+  fails (`contract-tv.md` AC-3). NOTE the induction structure: the combinators are a CLOSED set of
+  8, so the combinator-body cases are 8 base cases (no recursion — the bodies are frozen strings),
+  and `forall_in`'s denotation is well-defined because the predicate-closure body is a FLAT
+  predicate (§4.2 "no anonymous nested quantifiers"), so the structural induction on the closure
+  body terminates. This is the strongest reason to believe (T1) IS provable by structural
+  induction for `S_C` (see least-confident note).
+
+## REQ-4 — the increment roadmap (Lean-targeted, honest, multi-cycle; spec-first)
+
+The full `∀`-proof is multi-cycle. The ordering maximizes value-per-increment (spec-first, where
+the highest-value preservation content lives) and respects the dependency order (compose last).
+**All four increments are now Lean 4 proofs (the #173 fork is resolved).**
+
+| # | Increment | Sub-denotation | Encoder to prove (in Lean) | Blocker | Why this order |
+|---|---|---|---|---|---|
+| (a) | spec/contract-sublanguage `S_C` + prove `ref_contract_pred` sound | `S_C` | `ref_contract_pred` | **#170 (NEXT BUILD)** | SMALLEST + most stable (a clause is a pure predicate, no state); HIGHEST value (the boss's `==`-vs-`<=`, the #122/#127 classes); closed 8-combinator induction (Case 2) most tractable. Also stands up the `lean/` project (REQ-6). FIRST. |
+| (b) | exec-expression `S_E` + prove `exec_ref_value` sound | `S_E` | `exec_ref_value` | **#171** | bounded-value denotation; the #122/#146 exec-class; reuses the (a) Lean project. |
+| (c) | exec-statement `S_B` + prove `body_ref_state` sound | `S_B` (straight-line) | `body_ref_state` | **#172** | the state-transformer (UNIFIED from exec-stmt-tv.md); composes `S_E`; loops stay kernel-gated (#163). |
+| (d) | COMPOSE → the whole-frozen-subset semantic-preservation theorem | `S = S_C ⊔ S_E ⊔ S_B` | all three | **#174** | the capstone (T2) over the whole frozen subset; depends on (a)(b)(c). |
+
+Each increment is a future blocker; none is started (this doc is the skeleton + committed
+architecture). The honest magnitude: this is CompCert/seL4-class effort. CompCert took
+person-decades to verify a C compiler in Coq; Thermite's economy (Leroy finding #1, Necula finding
+#4) is that it verifies the SMALL reference VALIDATOR (auditable; increment (a) is a few-hundred-line
+structural induction over a closed AST subset, ≈ one compiler-pass of effort), NOT the production
+lowerer — but even that is multi-cycle.
+
+## REQ-5 — the TOOLING DECISION: Lean 4 (Mathlib + Lean-SMT) — COMMITTED (#173 RESOLVED)
+
+The proof-assistant fork (#173) is RESOLVED. `S` is mechanized and (T1) is proved in **Lean 4**,
+with **Mathlib** and **Lean-SMT**.
+
+**Rationale (the TCB-shrink goal, finding #8).** Lean-SMT dispatches to **cvc5** and "reconstructs
+SMT proofs into native Lean proofs ... submitted to the Lean kernel" (Lean-SMT, arXiv 2505.15796) —
+the live route to demote Z3 (the TV check's discharge) from a *trusted* component to a
+*kernel-checked* one, shrinking Thermite's enumerable trusted base (the §1 "skeptical third party
+audits in minutes" residue, and Leroy's reduced-trusted-base item (4), finding #3). Lean 4 also has
+a small, auditable kernel and a modern ecosystem (Mathlib). A (T1) proof that type-checks in Lean
+lands the verified-validator theorem in a small, independently-auditable TCB.
+
+**Considered and DEFERRED (one-line reasons):**
+
+- **Coq** — the precedent-strongest alternative (CompCert, RustBelt/Iris, Stacked Borrows all live
+  in Coq; finding #6/#7). DEFERRED: kept as the mature fallback IF the lowering-target Rust
+  semantics are later brought into scope (CompCert/RustBelt reuse); for the NARROW (T1) object over
+  Thermite's small AST, it has no cvc5-reconstruction path as live as Lean-SMT, so it does not
+  advance the Z3-demotion goal as directly.
+- **Isabelle/HOL** — the kernel-direction pick (seL4 / L4.verified; finding, proof-assistant
+  landscape). DEFERRED: chosen only if the verified-microkernel direction (§13) later dominates; not
+  the modern choice for this object and no live cvc5-reconstruction route.
+- **Verus-native** — lowest integration cost (one tool, no new dependency). DEFERRED / recommended
+  AGAINST for the (T1) proof: a Verus proof is discharged by Z3, so it folds the metatheory's trust
+  BACK into Z3 (no TCB shrink — the opposite of the goal), and a metatheorem over a STRING-PRODUCING
+  encoder is awkward in Verus (it reasons about values, not string semantics). The per-run TV check
+  itself correctly STAYS in Verus/Z3 (a Rust-program-verification task, Verus's home); only the
+  (T1) metatheorem moves to Lean.
+
+## REQ-6 — the Lean project setup (pinned for the builder; increment (a), #170)
+
+A NEW top-level directory **`lean/`** holds the Lean 4 development. (Chosen over
+`thermite-semantics/` to avoid colliding with the crate-naming convention and to read as "the Lean
+side of the toolchain".) It is NOT a Cargo crate and is NOT routed in `tooling/spec-routes.toml`
+(which routes `thermite-*/src/**/*.rs` + `forge/src/**/*.rs`); it is governed by THIS doc directly.
+
+**Build files (the builder writes these — this doc does not):**
+
+- `lean/lakefile.toml` — a Lake package depending on **Mathlib** and **Lean-SMT** (confirm the exact
+  Lake `require` names against the Lean-SMT repository at build time; per arXiv 2505.15796 it is the
+  cvc5-reconstruction project — the dependency name should be taken from its `lakefile`, not guessed
+  here).
+- `lean/lean-toolchain` — pins the Lean 4 toolchain version (must match the Mathlib + Lean-SMT pin;
+  Mathlib's `lean-toolchain` is the constraint to follow).
+
+**Module layout (the four pieces, in increment (a) order):**
+
+| Module (proposed) | Content | Grounded in (Rust side) |
+|---|---|---|
+| (a) `Thermite/Ast.lean` | the Thermite AST embedded as a Lean `inductive` — the FROZEN contract subset first (`Expr`: `IntLit`/`BoolLit`/`Path`/`Call`/`Binary`/`Unary`/the slice & method forms) | mirrors `thermite-syntax/src/ast.rs` (the `Expr`/`Clause` node set the encoders admit) |
+| (b) `Thermite/Denote.lean` | the denotation `⟦·⟧_S` as a Lean function/relation — `S_C` first (the combinators via their frozen `verus_l3` forms, comparisons/logical/spec-fns/the coercion rewrites above) | the `S_C` inference rules above; `thermite-spec/src/combinators.rs` (`verus_l3`) |
+| (c) `Thermite/RefEncode.lean` | a Lean model of the reference encoder `ref_contract_pred`'s OUTPUT (the algorithm it implements, as a Lean function) | models `thermite-tv/src/ref_encode.rs` (`ref_contract_pred`) |
+| (d) `Thermite/Soundness.lean` | the soundness theorem **T1** as a Lean `theorem`: `∀ P, ⟦R(P)⟧ = ⟦P⟧_S` (proved by `induction` on the AST, one case per rule) | (T1) above |
+
+**The Rust↔Lean correspondence gap (state it honestly — a residual trusted item, finding #3 item
+(3)).** The Lean side proves the ALGORITHM the Rust encoder implements is sound. That the Rust code
+in `thermite-tv` ACTUALLY MATCHES the Lean-proved algorithm is NOT itself proved by Lean — it is a
+gap (analogous to CompCert's extraction/runtime trust, Leroy's item (3)). Two honest mitigations,
+neither a proof: (1) keep the `ref_contract_pred` algorithm SIMPLE ENOUGH to audit by inspection
+against the Lean model (`contract-tv.md` already constrains it to be small + declarative); (2) the
+per-run TV check still bites on any divergence between the actual Rust encoder output and production
+(it just cannot confirm the Rust encoder matches the Lean model — only a human audit closes that).
+This gap is enumerated in the reduced-trusted-base table (item 3) and is NOT hidden.
+
+## REQ-7 — the ARCHITECTURE DECISION: a verified validator (DECIDED; #173)
+
+The architecture is DECIDED (this resolves the doc's own open question — research finding #1 +
+open-question #2):
+
+- **A VERIFIED VALIDATOR** — prove the reference encoder `R` sound against `S` (= T1), so the
+  existing per-run TV check becomes a *verified* validator. Leroy (finding #1): a verified validator
+  composed with an unverified compiler is as strong as a verified compiler, "provided the validator
+  is smaller and simpler than the compiler"; Necula (finding #4): ≈ one compiler-pass of effort. We
+  already HAVE the validator (`ref_contract_pred`/`exec_ref_value`/`body_ref_state` + Z3); the
+  missing piece is its soundness proof (T1).
+- **NOT a verified lowerer.** We do NOT verify `thermite-lower` (the verify-the-compiler path —
+  intractable for a thousands-of-lines production lowerer; the whole economy is to avoid it).
+- **NOT (necessarily) a full universal forward-simulation proof of the whole translation.** The
+  verified PER-RUN validator (T1 + the per-run TV check = T2) suffices for the threat model. We do
+  not commit to a once-for-all simulation proof of the entire translation; (T2) is a per-run
+  semantic-preservation guarantee that becomes universal-over-passing-`P` once (T1) holds.
+
+## Honest scope (do NOT overclaim)
+
+- This doc is the FORMAL SKELETON + the committed architecture (prover + vocabulary + verified-
+  validator) + the Lean project spec + the first-increment plan. It is NOT the proof. The full
+  `∀`-proof of (T1) across `S_C`/`S_E`/`S_B` + the (T2) composition is MULTI-CYCLE,
+  CompCert/seL4-class work.
+- **The economic thesis is an ACCEPTED PREMISE, not a finding.** Thermite's central thesis — that
+  AI agents make the historically-prohibitive annotation/proof burden affordable by paying it in
+  compute — is UNVERIFIED by the SOTA evidence set (finding, honest gap #1: the autoformalization /
+  LLM-proof angle did not survive adversarial verification). It is the HUMAN'S CALL to accept it as
+  a load-bearing PREMISE of the project; this doc records it as an accepted premise, NOT something to
+  be formally proven here. (It warrants its own targeted survey; out of scope for #169.)
+- **The Rust↔Lean encoder-correspondence gap is real** (REQ-6 above): Lean proves the ALGORITHM
+  sound; that the Rust `thermite-tv` code matches the algorithm is a residual trusted item (audit by
+  inspection + simple encoders, not a proof). Enumerated in the reduced-trusted-base table (item 3).
+- (T2) is RELATIVE, not unconditional: `{Z3 soundness, S = intended meaning}`, lowering-link only,
+  loops kernel-gated, Verus-VC-gen/borrow-checker/LLVM inherited (the reduced-trusted-base framing,
+  Leroy finding #3).
+- The Lean-SMT Z3-demotion path is the GOAL, not a present fact: Lean-SMT's cvc5 reconstruction
+  covers ~30% of cvc5's proof rules today (finding #8), and Verus/Z3 do not emit reconstructable
+  proofs by default — so TODAY an L3 certificate still enumerates Z3 + Verus. The DEMOTION is the
+  reason Lean was chosen; whether Lean-SMT is mature enough to actually demote Z3 for OUR VCs is
+  flagged least-confident (below).
+- This is the soundness ARC's keystone, not its completion. The keystone makes the arch STATEABLE +
+  load-bearing; the increments (#170/#171/#172/#174) build it, in Lean.
+
+## REQ status
+
+| REQ | Status | Evidence |
+|---|---|---|
+| REQ-1 (the semantics S — denotation over the frozen subset, mechanized in Lean 4) | NOT-STARTED | open blocker #170 (S_C) + #171 (S_E) + #172 (S_B). `S` is stated as inference rules ABOVE (Architecture), GROUNDED in the SHIPPED encoders' admitted-node sets (`ref_contract_pred`/`exec_ref_value`/`body_ref_state` in `thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs`) and the frozen `lookup(C).verus_l3` (`thermite-spec/src/combinators.rs`) and UNIFIES the EXISTING state-transformer from `exec-stmt-tv.md` REQ-2. The Lean mechanization target is now PINNED (REQ-6: `lean/Thermite/{Ast,Denote}.lean`) but the formal artifact is unbuilt — increment (a), #170, the next build. |
+| REQ-2 (T1 — verified-validator / reference-encoder soundness w.r.t. S) | NOT-STARTED | open blocker #170 (the first proof, S_C, in Lean). (T1) `∀ P, ⟦R(P)⟧ = ⟦P⟧_S` is STATED precisely above (in verified-validator vocabulary, Leroy finding #1) + the obligation is written out CONCRETELY for two cases (`ens result == spec_sum(xs)` and `forall_in`, AC-2 — non-vacuous: the `==`-vs-`<=` content is the obligation's content). The Lean `theorem` (`Thermite/Soundness.lean`) is unbuilt. |
+| REQ-3 (T2 — semantic preservation, as forward simulation) | NOT-STARTED | open blocker #174 (compose). (T2) `[Z3 ⊢ lower(P) ⟺ R(P)] ∧ (T1) ⟹ ⟦lower(P)⟧ = ⟦P⟧_S` is STATED in forward-simulation vocabulary (the relation `∼`, observable = caged fragment + `fx` rows; Leroy/CompCert finding #2) with its one-line modus-ponens proof + its `{Z3, S}` relativity + the reduced-trusted-base coverage boundary (AC-3/AC-4, finding #3). Contingent on (T1) (#170/#171/#172). Unbuilt because (T1) is unbuilt. |
+| REQ-4 (the increment roadmap — Lean-targeted, honest, multi-cycle) | SHIPPED | the spec-first ordering table above ((a) #170 → (b) #171 → (c) #172 → (d) #174), all four now Lean 4 proofs, with per-increment rationale + the honest-magnitude statement (≈ one-pass effort, Necula finding #4). The plan is authored + the blockers are filed (#170–#174 all open). Non-doc consumer: the five filed blockers reference back to this doc; increment (a) #170 is teed up as the next build. |
+| REQ-5 (the tooling decision — Lean 4 / Mathlib / Lean-SMT, COMMITTED) | SHIPPED | the decision is RECORDED above with its TCB-shrink rationale (Lean-SMT cvc5 reconstruction = the Z3-demotion path, finding #8) and Coq / Isabelle / Verus-native recorded as considered-and-deferred with one-line reasons. Blocker #173 RESOLVED (the human's call, per the #173 result comment). The DECISION is taken; this is no longer an open fork. |
+| REQ-6 (the Lean project setup — pinned for the builder) | NOT-STARTED | open blocker #170 (the builder writes the `lean/` project as increment (a)). The SPEC is authored above (the `lean/` dir, `lakefile.toml` deps = Mathlib + Lean-SMT, `lean-toolchain` pin, the four-module layout `Ast`/`Denote`/`RefEncode`/`Soundness`, the Rust↔Lean correspondence gap stated). The project files do not yet exist on disk (no `lean/` directory) — this REQ is the spec increment (a) builds to. |
+| REQ-7 (the architecture decision — a verified validator) | SHIPPED | the decision is RECORDED above (REQ-7 section): a VERIFIED VALIDATOR (prove `R` sound = T1), NOT a verified lowerer, NOT a full universal simulation proof — Leroy finding #1 + Necula finding #4. This resolves the doc's own open architectural question (research open-question #2). Recorded in #173's result comment. Non-doc consumer: the #173 resolution + the increment blockers #170–#174 build to this architecture. |

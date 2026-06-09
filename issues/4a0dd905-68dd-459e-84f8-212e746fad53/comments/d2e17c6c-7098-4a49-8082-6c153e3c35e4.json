@@ -1,0 +1,10 @@
+{
+  "uuid": "d2e17c6c-7098-4a49-8082-6c153e3c35e4",
+  "issue_uuid": "4a0dd905-68dd-459e-84f8-212e746fad53",
+  "author": "Yffe",
+  "content": "FORK RESOLVED (#173): prover = Lean 4 (Mathlib + Lean-SMT). Architecture = VERIFIED VALIDATOR (prove ref_contract_pred sound against S_C in Lean; NOT a verified lowerer, NOT a full universal simulation). This increment ALSO stands up the lean/ project (see .design/verified/thermite-semantics.md REQ-6: lean/lakefile.toml deps Mathlib+Lean-SMT, lean-toolchain pin, modules Thermite/{Ast,Denote,RefEncode,Soundness}.lean). T1 = ∀ contract Expr P, ⟦ref_contract_pred(P)⟧ = ⟦P⟧_S_C, as a Lean theorem by induction. Vocabulary: semantic preservation / forward simulation (Leroy/CompCert). This is the NEXT BUILD.",
+  "created_at": "2026-06-09T15:44:04.156180576Z",
+  "kind": "note",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAYHmDO9OtnneseaYinDwwbLszG8bFLbVdoyvQ2PPPxk++5l1YMgcsTBVFj83HA3rRfNF1vp6wJR4sl1FbiB/kDw=="
+}

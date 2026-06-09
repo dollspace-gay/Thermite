@@ -1,0 +1,10 @@
+{
+  "uuid": "0fc5e05f-7285-4dbf-a4a3-85ae45275528",
+  "issue_uuid": "4a0dd905-68dd-459e-84f8-212e746fad53",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (91ee68b4). The FIRST kernel-checked piece of the universal lowering-soundness proof: lean/ project (core Lean 4, no Mathlib/Lean-SMT yet) + Ast/Denote/RefEncode/Soundness; theorem Thermite.ref_sound (refDenote e env <-> denote e env) for the contract comparison/logical fragment, proved by structural induction, lake build green, #print axioms -> [propext] only (no sorry/axiom/native_decide). Critic NO DIVERGENCE on the three load-bearing probes: FIDELITY (the Lean encoder model matches Rust ref_encode.rs binop_str on all 9 ops Eq/Ne/Lt/Le/Gt/Ge/And/Or/Not; the as-nat coercion can't fire — Call not embedded, honestly deferred); NON-VACUITY (refDenote/denote independent — Iff.rfl FAILS, logical cases need the IHs+propext; the negative eq_le_infidelity_breaks_soundness genuinely bites at a=1,b=2); NO CHEATS + deferred constructs honestly absent (not embedded-then-sorry). The ==-vs-<= faithfulness is now a Lean kernel theorem. Rust↔Lean correspondence remains the enumerated audit-by-inspection residual (REQ-6). Deferred to #171+: arithmetic+casts (#122 class), the 8 combinators, spec-fns, method/byteview (#127 class), match/is.",
+  "created_at": "2026-06-09T16:06:59.981127433Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAsfIVxi6fSMf1CO3UDP+we1Bot6enlrfbWc9NTKlhsXRcMDiHVd2Afhpa1mYDBBoED8hYKnYrv5jDIR+O81UzDQ=="
+}

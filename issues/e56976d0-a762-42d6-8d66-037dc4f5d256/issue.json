@@ -1,0 +1,10 @@
+{
+  "uuid": "e56976d0-a762-42d6-8d66-037dc4f5d256",
+  "display_id": 179,
+  "title": "step-3 increment 1d-i: contract S_C the 6 bounded-quantifier combinators (forall_in/exists_in/sorted/forall_below/forall_from/disjoint) denotation via verus_l3 + ref_sound in Lean (epic #169)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:54:21.289825500Z",
+  "updated_at": "2026-06-09T16:54:21.289825500Z"
+}

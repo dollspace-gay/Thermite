@@ -1,7 +1,9 @@
 /-
   Thermite/Ast.lean — the contract-sublanguage AST as a Lean `inductive`, for the
   COMPARISON + LOGICAL fragment (increment (a), #170) EXTENDED with the ARITHMETIC
-  operators (increment (b), #176) and the CASTS (increment (c), #177); epic #169.
+  operators (increment (b), #176), the CASTS (increment (c), #177), and the
+  SPEC-CONTEXT REWRITES (increment (f), #178 — slice→`@`/subrange, indexing, and the
+  method→`spec_*` byte-view DISPATCH, the #127 class); epic #169.
 
   Governing design: `.design/verified/thermite-semantics.md` REQ-1/REQ-6 (the
   `S_C` denotation domain; the Lean module layout) + AC-1 (S is stated over the
@@ -35,13 +37,32 @@
   precondition, not part of the binop's meaning when the precondition holds —
   Euclidean-consistent, see `Denote.lean`).
 
+  THE SPEC-CONTEXT REWRITES (#178). In contract position a slice/`String` param does
+  NOT denote a scalar — it denotes a SEQUENCE, and the encoder REWRITES the use sites:
+    - a slice param `xs`            → `xs@` (the `Seq` view; the identity on the value)
+    - `xs[i]`                       → `xs@[i]` (the i-th element)
+    - `&xs[..i]` / `&xs[a..b]`      → `xs@.subrange(0, i as int)` / `xs@.subrange(a, b)`
+    - a `String` receiver `s.byte_at(i)` → `s.spec_byte_at(i)` (the byte-view DISPATCH)
+    - `s.len()`                     → `s.spec_len()`             (the byte-view DISPATCH)
+  The THEOREM (`ref_sound`): these rewrites PRESERVE MEANING (`@`/subrange/`spec_*` is
+  the identity-on-meaning coercion from the exec slice/`String` to its spec sequence).
+  The #127 NEGATIVE lemma shows a WRONG dispatch (wrong index / wrong receiver-method)
+  FAILS soundness. To model this `Ast.lean` gains:
+    - `SeqVar`             — a free SEQUENCE name (a `&[u32]` slice / a `String`'s bytes)
+    - `Expr.idx`           — `xs[i]` over a sequence var at an integer index
+    - `RangeArg` + `Expr.subrange` — the `&xs[..i]`/`&xs[a..b]`/`&xs[a..]` range borrow
+    - `Expr.seqLen`        — `xs.len()` / `s.len()` (the sequence length, → `spec_len`)
+    - `Expr.byteAt`        — `s.byte_at(i)` (the i-th byte, → `spec_byte_at`)
+  These are integer-valued (an element / a byte / a length) except `subrange`, which is
+  sequence-valued and feeds another `idx`/`seqLen`/`byteAt` (so the prefix's meaning is
+  observed through a later element/length read — exactly how a contract clause uses it).
+
   DEFERRED — NOT embedded here, and DELIBERATELY NOT (no `sorry`-behind-a-variant;
-  embedding-then-`sorry` is forbidden). These are the #178+ sub-increments:
+  embedding-then-`sorry` is forbidden). These are the remaining sub-increments:
     - the 8 frozen combinators (`forall_in`/`sorted`/… — their `verus_l3` forms),
-      incl. RECURSIVE / quantified bodies
-    - named spec-fn calls (the well-founded recursive `S_C` fixpoint)
-    - method calls / the slice→`@` view / the `spec_*` byte-view (the #127 class)
-    - `Expr::Match` / `Expr::Is` in contract position
+      incl. RECURSIVE / quantified bodies (#179/#182)
+    - named spec-fn calls (the well-founded recursive `S_C` fixpoint) (#181)
+    - `Expr::Match` / `Expr::Is` in contract position (#180)
   Each is a real future inductive case, listed (not stubbed) so the deferral is honest.
 -/
 
@@ -101,11 +122,19 @@ inductive CastTy where
   | int
   deriving DecidableEq, Repr
 
-/-- The contract-sublanguage expression. Three syntactic sorts are distinguished by
-    the inductive shape: `intLit`/`var`/`arith`/`cast` build INTEGER terms (operands
-    of a comparison); `cmp`/`logic`/`neg`/`boolLit` build BOOLEAN/`Prop` terms. A
-    `var` carries a `String` name (a param, `result`, or the `old(x)` pre-state
-    binding — all free integer names, per `S_C`). -/
+/- The contract-sublanguage expression. Four syntactic sorts are distinguished by
+   the inductive shape: `intLit`/`var`/`arith`/`cast`/`idx`/`seqLen`/`byteAt` build
+   INTEGER terms (operands of a comparison / an element / a byte / a length);
+   `cmp`/`logic`/`neg`/`boolLit` build BOOLEAN/`Prop` terms; `seqVar`/`subrange`
+   build SEQUENCE terms (the slice→`@`-view + the `subrange` borrow, observed through
+   a later `idx`/`seqLen`/`byteAt`). A `var` carries a `String` name (a param,
+   `result`, or the `old(x)` pre-state binding — all free integer names, per `S_C`);
+   a `seqVar`/`strVar` carries a free SEQUENCE name (#178).
+
+   `RangeArg` (the slice-borrow range) is a MUTUAL inductive with `Expr` because its
+   bounds are integer-valued `Expr`s (cast `as int` by the encoder). -/
+mutual
+/-- The contract-sublanguage expression (the integer/bool/sequence terms). -/
 inductive Expr where
   /-- An integer literal `IntLit { value }`. Lean models the value as `Int`
       (the spec numeric domain `S_C` denotes into is unbounded `int`). -/
@@ -133,6 +162,58 @@ inductive Expr where
       the cast wraps a WHOLE subexpression as its operand, dropping the paren would
       re-parse a compound `inner` and change the denotation (the negative lemma). -/
   | cast (inner : Expr) (ty : CastTy)
-  deriving Repr
+  /-- A free SEQUENCE variable: a `&[u32]` slice param (#178). In contract position
+      the encoder REWRITES it to its `@`-view (`xs` → `xs@`), which is the identity on
+      the value (the same sequence of elements). Mirrors `encode_slice_arg`'s
+      `Expr::Path` arm. SEQUENCE-sorted — observed only through `idx`/`subrange`/
+      `seqLen` (a bare sequence is not a `Prop`). -/
+  | seqVar (name : String)
+  /-- A free `String` variable whose BYTES are the sequence (#178; the #127 byte-view
+      class). The encoder dispatches its `.len()`/`.byte_at(i)` to the wrapper SPEC
+      fns `spec_len`/`spec_byte_at` (`encode_string_byteview`); the BYTES it denotes
+      over are the same sequence. SEQUENCE-sorted (a `List` of byte values, modelled
+      as `Int`). -/
+  | strVar (name : String)
+  /-- `xs[i]` — a single-element index (#178; `Expr::Index { index := Single(i) }`).
+      The encoder rewrites to `xs@[i as int]` (`encode_index`'s `Single` arm over the
+      receiver's `@`-view); the meaning is the i-th element. INTEGER-sorted. `base` is
+      a SEQUENCE term (a `seqVar` or a `subrange`), `idx` an integer term. -/
+  | idx (base : Expr) (index : Expr)
+  /-- `&xs[..i]` / `&xs[a..b]` / `&xs[a..]` — a slice-range borrow (#178;
+      `Expr::Ref` of an `Expr::Index` of a range, routed through `encode_ref`→
+      `encode_index`). The encoder rewrites to `xs@.subrange(lo, hi)`; the meaning is
+      the corresponding contiguous SUB-sequence. SEQUENCE-sorted (`base` a sequence
+      term, the range an integer-bounded `RangeArg`). -/
+  | subrange (base : Expr) (range : RangeArg)
+  /-- `xs.len()` / `s.len()` — the sequence length (#178; `Expr::MethodCall` `len`).
+      For a slice it rewrites to `xs@.len()` (`encode_method_call`'s `len` arm); for a
+      `String` to `s.spec_len()` (`encode_string_byteview`'s `len` arm). The meaning is
+      the length of the sequence. INTEGER-sorted. -/
+  | seqLen (base : Expr)
+  /-- `s.byte_at(i)` — the i-th byte of a `String`'s byte sequence (#178; the #127
+      byte-view DISPATCH; `Expr::MethodCall` `byte_at`). The encoder rewrites to
+      `s.spec_byte_at(i)` (`encode_string_byteview`'s `byte_at` arm). The meaning is
+      the i-th byte. INTEGER-sorted. `base` is a `String`-sequence term, `index` an
+      integer term. THE #127 CLASS lives here: a wrong index / a wrong receiver-method
+      is a DIFFERENT meaning (the negative lemma). -/
+  | byteAt (base : Expr) (index : Expr)
+  /-- A range argument of a spec-context slice borrow (#178) — mirrors the
+      `thermite-syntax::ast::IndexArg` arms `encode_index`/`encode_ref` accept:
+      `RangeTo(i)` (`&xs[..i]`), `Range(a, b)` (`&xs[a..b]`), `RangeFrom(a)`
+      (`&xs[a..]`). A `Single(i)` is NOT here — a single-index borrow is the element
+      form `Expr.idx` (`encode_index`'s `IndexArg::Single` arm), not a subrange. Each
+      bound is an integer-valued `Expr` (cast `as int` by the encoder,
+      `encode_index_value`). -/
+inductive RangeArg where
+  /-- `..i` (`&xs[..i]`) → `xs@.subrange(0, i as int)` (`encode_index`'s `RangeTo`). -/
+  | rangeTo (hi : Expr)
+  /-- `a..b` (`&xs[a..b]`) → `xs@.subrange(a, b)` (`encode_index`'s `Range`). -/
+  | range (lo hi : Expr)
+  /-- `a..` (`&xs[a..]`) → `xs@.subrange(a, xs@.len())` (`encode_index`'s `RangeFrom`). -/
+  | rangeFrom (lo : Expr)
+end
+
+deriving instance Repr for Expr
+deriving instance Repr for RangeArg
 
 end Thermite

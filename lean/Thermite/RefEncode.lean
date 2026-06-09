@@ -1,7 +1,31 @@
 /-
   Thermite/RefEncode.lean — a Lean model of the REFERENCE ENCODER's output as a
   denotation, for the comparison + logical fragment (#170) EXTENDED with the
-  ARITHMETIC operators (#176) and the CASTS (#177).
+  ARITHMETIC operators (#176), the CASTS (#177), and the SPEC-CONTEXT REWRITES
+  (#178 — slice→`@`/subrange, indexing, the `String` byte-view DISPATCH, the #127 class).
+
+  WHAT THE #178 REWRITES MODEL (faithful to `thermite-tv/src/ref_encode.rs`). In
+  contract position the encoder REWRITES slice/`String` use sites; this module models
+  the MEANING of the rewritten Verus the encoder produces, FAITHFULLY:
+
+    - slice var `xs` → `xs@`  (`encode_slice_arg`'s `Expr::Path` arm): the `@`-view is
+      the IDENTITY on the sequence value (`refSeqVal (seqVar x) = env.seqs x`).
+    - `xs[i]` → `xs@[i as int]`  (`encode_index`'s `IndexArg::Single` arm over
+      `encode_receiver`'s `@`-view): the i-th element — `seqIdx (view) i`.
+    - `&xs[..i]` → `xs@.subrange(0, i as int)`  (`encode_ref`→`encode_index`'s `RangeTo`
+      arm); `&xs[a..b]` → `.subrange(a, b)` (`Range`); `&xs[a..]` →
+      `.subrange(a, xs@.len() as int)` (`RangeFrom`): the contiguous sub-sequence —
+      `seqSub`.
+    - `s.byte_at(i)` → `s.spec_byte_at(i)`  (`encode_string_byteview`'s `byte_at` arm —
+      the #127 byte-view DISPATCH): the i-th byte — `seqIdx (bytes) i`.
+    - `s.len()` → `s.spec_len()`  (`encode_string_byteview`'s `len` arm) / `xs@.len()`
+      (`encode_method_call`'s `len` arm): the length — `(view).length`.
+
+  THE #127 DISPATCH is modelled as an EXPLICIT STEP (`encByteView` : the method name →
+  the byte-view spec fn). THE FAITHFULNESS DECISION POINT for #178 lives there: a
+  misdispatch (`byte_at`→a wrong index, OR `byte_at`→the length spec fn) is a DIFFERENT
+  meaning — the negative lemma `byteview_misdispatch_breaks_soundness` shows it FAILS
+  soundness at a concrete sequence env (mirroring `cast_paren_drop_breaks_soundness`).
 
   Governing design: `.design/verified/thermite-semantics.md` REQ-2/REQ-6 (model what
   `thermite-tv`'s `ref_contract_pred` PRODUCES) + the (T1) obligation §"The concrete
@@ -176,27 +200,95 @@ def tokCast : VerusCastTok → Int → Int
   | VerusCastTok.natTok,   v => castDenote CastTy.nat v
   | VerusCastTok.intTok,   v => castDenote CastTy.int v
 
-/-- The integer-operand meaning the encoder assigns to a term. `ref_encode.rs`
-    emits `value.to_string()` for an `IntLit`, the joined path for a `var`, the
-    parenthesized `({l} {op} {r})` for an arithmetic binary (`encode_binary`'s
-    non-comparison arm), and `({inner}) as {target}` for a cast (`encode_cast`).
-    Structured as ENCODE-THEN-INTERPRET on the OPERATOR / CAST-TARGET map, following
-    the ENCODER:
+/-- A Verus BYTE-VIEW SPEC-FN TOKEN — the thing `encode_string_byteview` dispatches a
+    `String`-receiver method to (`.spec_byte_at(i)` for the i-th byte, `.spec_len()` for
+    the length), modelled as a Lean datum so the encoder's byte-view DISPATCH CHOICE is
+    an explicit, independent step. THE #127 FAITHFULNESS DECISION POINT: a misdispatch
+    (the name-collision bug — `byte_at` routed to the wrong spec fn / index) lives HERE.
+    `specByteAt` reads the i-th byte; `specLen` reads the length (a `slice`/`Seq`
+    receiver's `.len()`→`recv.len()` is the same length meaning). -/
+inductive VerusByteView where
+  | specByteAt  -- "spec_byte_at(i)" — the i-th byte (Seq index over the byte view)
+  | specLen     -- "spec_len()" / ".len()" — the length
+  deriving DecidableEq, Repr
 
-    - `arith`: `tokArith (encArith op)` of the two re-encoded operands — the encoder
-      wholly parenthesizes a binary (`encode_binary`: `format!("({l} {} {r})")`), so
-      the operands are bound correctly and the operator map is the only content.
-    - `cast`: `tokCast (encCast ty)` of the re-encoded WHOLE inner — the encoder
-      wraps the inner in parens (`encode_cast`: `format!("({e}) as {target}")`), so
-      the cast binds the entire `refIntVal inner` (no re-association). THE #122
-      DISCIPLINE: dropping that paren would make a compound inner re-parse and the
-      cast bind only a sub-term (the negative lemma). -/
+/-- The encoder's BYTE-VIEW DISPATCH for the `byte_at` method — mirrors
+    `encode_string_byteview`'s `"byte_at" => …spec_byte_at(idx)` arm. THE #127
+    FAITHFULNESS DECISION POINT: routes `byte_at` to the i-th-byte spec fn. -/
+def encByteAt : VerusByteView := VerusByteView.specByteAt
+
+/-- The encoder's BYTE-VIEW DISPATCH for the `len` method — mirrors
+    `encode_string_byteview`'s `"len" => …spec_len()` arm (and `encode_method_call`'s
+    `"len"` slice arm). Routes `len` to the length spec fn. -/
+def encLen : VerusByteView := VerusByteView.specLen
+
+/-- The standard-model interpretation of a Verus BYTE-VIEW spec fn over a sequence and
+    an index — the meaning `⟦·⟧` of the emitted `.spec_byte_at(i)` / `.spec_len()`.
+    `specByteAt` reads the i-th byte (`seqIdx`, the shared total access); `specLen`
+    reads the length (the index argument is ignored). Routes through the SHARED
+    `seqIdx`/`List.length` (`Denote.lean`) — the dispatch token determines WHICH read,
+    so the encoder's #127 faithfulness is `byteView encByteAt = the byte`/`byteView
+    encLen = the length`, the property the soundness theorem discharges. -/
+def byteView : VerusByteView → List Int → Int → Int
+  | VerusByteView.specByteAt, s, i => seqIdx s i
+  | VerusByteView.specLen,    s, _ => (s.length : Int)
+
+/- The integer-operand meaning the encoder assigns to a term (`refIntVal`) + the
+   sequence-valued meaning (`refSeqVal`), MUTUAL (#178: `idx`/`subrange` cross sorts).
+   `ref_encode.rs` emits `value.to_string()` for an `IntLit`, the joined path for a
+   `var`, the parenthesized `({l} {op} {r})` for an arithmetic binary
+   (`encode_binary`'s non-comparison arm), `({inner}) as {target}` for a cast
+   (`encode_cast`), the indexed `recv[idx]` for `xs[i]` (`encode_index`'s `Single`
+   arm), and the byte-view spec fns for the `String` method calls
+   (`encode_string_byteview`). Structured as ENCODE-THEN-INTERPRET on the OPERATOR /
+   CAST-TARGET / BYTE-VIEW map, following the ENCODER:
+
+   - `arith`: `tokArith (encArith op)` of the two re-encoded operands — the encoder
+     wholly parenthesizes a binary (`encode_binary`: `format!("({l} {} {r})")`), so
+     the operands are bound correctly and the operator map is the only content.
+   - `cast`: `tokCast (encCast ty)` of the re-encoded WHOLE inner — the encoder
+     wraps the inner in parens (`encode_cast`: `format!("({e}) as {target}")`), so
+     the cast binds the entire `refIntVal inner` (no re-association). THE #122
+     DISCIPLINE: dropping that paren would make a compound inner re-parse and the
+     cast bind only a sub-term (the negative lemma).
+   - `idx`: `byteView encByteAt (refSeqVal base) (refIntVal i)` — `encode_index` emits
+     `recv[idx]` over the receiver's `@`-view (the index `as int`); the meaning is the
+     i-th element of the view (`refSeqVal` is the same sequence — the `@`-view is the
+     identity). #178.
+   - `seqLen`: `byteView encLen (refSeqVal base) 0` — the encoder dispatches
+     `len`→`spec_len()` / `.len()`; the meaning is the length of the view. #178.
+   - `byteAt`: `byteView encByteAt (refSeqVal base) (refIntVal i)` — the encoder
+     dispatches `byte_at`→`spec_byte_at(i)`; the i-th byte. THE #127 class: the
+     dispatch CHOICE is the content (the negative lemma mis-dispatches). -/
+mutual
+/-- The integer-operand meaning the encoder assigns to a term. See the block comment. -/
 def refIntVal : Expr → Env → Int
   | Expr.intLit n,      _   => n
-  | Expr.var x,         env => env x
+  | Expr.var x,         env => env.ints x
   | Expr.arith op a b,  env => tokArith (encArith op) (refIntVal a env) (refIntVal b env)
   | Expr.cast inner ty, env => tokCast (encCast ty) (refIntVal inner env)
+  | Expr.idx base i,    env => byteView encByteAt (refSeqVal base env) (refIntVal i env)
+  | Expr.seqLen base,   env => byteView encLen (refSeqVal base env) 0
+  | Expr.byteAt base i, env => byteView encByteAt (refSeqVal base env) (refIntVal i env)
   | _, _ => 0
+
+/-- The encoder's SEQUENCE-valued meaning (#178): a slice var `xs`→`xs@` is the
+    IDENTITY on the sequence value (`encode_slice_arg`); a `String` byte receiver is
+    emitted bare and its bytes are the same sequence; a `subrange` is the encoder's
+    `.subrange(lo, hi)` (`encode_index`'s range arms), `seqSub` over the re-encoded
+    base. Routes through the SAME `seqSub` as the source — the rewrite preserves the
+    sub-sequence. Mutual with `refIntVal` (`subrange`'s bounds are integer terms). -/
+def refSeqVal : Expr → Env → List Int
+  | Expr.seqVar x, env => env.seqs x
+  | Expr.strVar x, env => env.seqs x
+  | Expr.subrange base r, env =>
+      let s := refSeqVal base env
+      match r with
+      | RangeArg.rangeTo hi    => seqSub s 0 (refIntVal hi env)
+      | RangeArg.range lo hi   => seqSub s (refIntVal lo env) (refIntVal hi env)
+      | RangeArg.rangeFrom lo  => seqSub s (refIntVal lo env) (s.length : Int)
+  | _, _ => []
+end
 
 /-- `⟦ ref_contract_pred(P) ⟧` — the meaning, under the standard model, of the Verus
     predicate string the reference encoder produces. Structured as

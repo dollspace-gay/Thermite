@@ -1,0 +1,10 @@
+{
+  "uuid": "eb3db5c7-04bc-458c-a02e-6b875cb28855",
+  "display_id": 178,
+  "title": "step-3 increment 1f: contract S_C spec-context rewrites (slice->@/subrange, method->spec_* byte-view, the #127 class) proven denotation-preserving + ref_sound in Lean (epic #169)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:54:13.665680170Z",
+  "updated_at": "2026-06-09T16:54:13.665680170Z"
+}

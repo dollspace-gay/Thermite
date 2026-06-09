@@ -2,11 +2,12 @@
   "uuid": "6b757948-03fd-428c-85b9-34ce187c8614",
   "display_id": 154,
   "title": "exec-tv REQ-3: generator extension for EXEC-position exprs (thermite-tv/src/gen.rs gen_exec_exprs) — typed exec Expr trees: arithmetic over u64/usize, narrowing/widening casts, cast-< (#146), comparisons, indexing of a &[u32] param; deterministic SplitMix64.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-08T22:59:29.485393361Z",
-  "updated_at": "2026-06-08T22:59:31.020017928Z",
+  "updated_at": "2026-06-09T00:36:44.674370857Z",
+  "closed_at": "2026-06-09T00:36:44.674370857Z",
   "labels": [
     "blocker"
   ]

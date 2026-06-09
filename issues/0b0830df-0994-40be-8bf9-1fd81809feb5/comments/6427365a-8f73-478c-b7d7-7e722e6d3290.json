@@ -1,0 +1,10 @@
+{
+  "uuid": "6427365a-8f73-478c-b7d7-7e722e6d3290",
+  "issue_uuid": "0b0830df-0994-40be-8bf9-1fd81809feb5",
+  "author": "Yffe",
+  "content": "Built step-2.2.1 body-refinement TV core (#159 state encoder + #160 obligation + #161 lower_exec_body; epic #158). thermite-lower: lower_exec_body (lower_block_inner over the minimal Ctx::exec() standalone-body frame — the #161 feasibility; loop -> Unsupported) + exec_body_tests B1-B4 cross-crate bridge. thermite-tv: exec_stmt_encode::body_ref_state (independent big-step state-transformer: substitution-threading, mutation-ORDER, if-branch composition, multi-cell tuple projection; composes exec_ref_value; NO thermite-lower dep) + obligation::body_equivalence_obligation + tests/body_teeth.rs. Verified real verus: 4 faithful VERIFIED, 4 infidel CAUGHT (B2 reorder, B4 wrong-cell). Workspace 751 passed/0 failed, clippy+fmt clean. REQ-1/2/3 SHIPPED; REQ-4 (#163)/REQ-5 (#162) NOT-STARTED. Commit to main, no push, no close (critic re-audits).",
+  "created_at": "2026-06-09T01:39:20.794699741Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABABcNlzQD50SM2RYETjVu8QbpCn7CqYQBT/X3Jp9/6hRDmRovLoA8EaixZAMyBWqzDWkqFcGZzYhdelq3UUv+2AA=="
+}

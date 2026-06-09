@@ -1,0 +1,10 @@
+{
+  "uuid": "1d69e66b-9c43-43c1-bb14-3bc184eee8bd",
+  "issue_uuid": "8959659e-1a9e-4d36-95a6-ff2a872b3482",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (1c3c58a3). Layer 2 OPENED: exec-expression denotation S_E (bounded BVal carrying its type bound; overflow/div-zero/oob -> none = the obligation; casts wrap at width via value%bound, NEVER nat) in a separate Thermite.Exec namespace; theorem exec_ref_sound proved (lake build green, [propext,Quot.sound]). Critic NO DIVERGENCE: execRefValue faithful to exec_encode.rs::exec_ref_value (operator map + cast targets u8/u16/u32/u64/usize, NO nat/int arm confirmed in the REAL Rust — the never-nat-coerced property holds in the actual encoder); bounded/overflow GENUINE (overflow->none not silent-unbounded; partiality is the obligation not blanket; source+encoder none-agree via the shared evalArith; content on the some cases); the nat-coercion negative bites (subNatCoerced clamps 0-1 to 0 vs faithful none); all 9 ExecExpr constructors covered; S_C untouched + still builds.",
+  "created_at": "2026-06-09T19:55:14.833312885Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9Z3sLT//lUrmeSRkhYUGxDKwZW+eUMFBUiCHZKRkmP19tHn+LByqbylEDMI+9ECCrL+rJ7KA9Ip7fQQAGZ9FAw=="
+}

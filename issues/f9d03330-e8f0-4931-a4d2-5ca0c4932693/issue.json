@@ -2,11 +2,12 @@
   "uuid": "f9d03330-e8f0-4931-a4d2-5ca0c4932693",
   "display_id": 173,
   "title": "thermite-semantics TOOLING FORK (orchestrator → human): choose where to mechanize S + prove (T1). Candidates assessed in .design/verified/thermite-semantics.md: (i) Lean 4 (small TCB, manual proofs, new dep — recommended); (ii) Coq (CompCert's home); (iii) Verus-native (one tool, but a metatheorem over an AST denotation / string-producing encoder is awkward — feasibility flagged least-confident). Decision gates increment (a). Epic #169.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T14:17:11.055702530Z",
-  "updated_at": "2026-06-09T14:17:39.910576164Z",
+  "updated_at": "2026-06-09T15:36:47.981304970Z",
+  "closed_at": "2026-06-09T15:36:47.981304970Z",
   "labels": [
     "blocker"
   ]

@@ -1,0 +1,10 @@
+{
+  "uuid": "9cdf82c8-7db7-4c2e-aeec-5d0fab7b531b",
+  "display_id": 168,
+  "title": "audit harness: one-command make audit (faithful L3 + falsification + third-party Verus re-check) so a skeptic reproduces the L3 claim from source",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T13:41:15.338079869Z",
+  "updated_at": "2026-06-09T13:41:15.338079869Z"
+}

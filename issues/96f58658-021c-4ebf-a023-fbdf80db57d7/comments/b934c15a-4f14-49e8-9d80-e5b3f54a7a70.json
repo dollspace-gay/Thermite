@@ -1,0 +1,10 @@
+{
+  "uuid": "b934c15a-4f14-49e8-9d80-e5b3f54a7a70",
+  "issue_uuid": "96f58658-021c-4ebf-a023-fbdf80db57d7",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (3b53d5aa, fix 6050b4cb). Exec-body big-step state-transformer S_B (let/assign/expr-stmt/ifElse/seq/tail) + theorem body_ref_sound for straight-line blocks. The critic found a real divergence #186 (ifElse branch-local-let scope leak) -> fixer closed it (State.restoreScope, the encoder's env.clone()+env.keys() discipline) -> re-critic NO DIVERGENCE. Faithful to exec_stmt_encode.rs::body_ref_state (3 narrowings confirmed genuine encoder gates: re-shadow Err, unbound-target Err, xs[i]=e Unsupported); negatives bite (wrong-var assign, sequencing-order, mutation-not-applied); obligation-none propagates. Loops remain OUT (2c #163, kernel-gated).",
+  "created_at": "2026-06-09T20:24:09.887552545Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACvKjE2dYwB58KVVMDgd0VmVNlnampCvqpSDCDNOOgKuGCzDXwDO773tgNgu/NuZRueDq2yKemzcfPzLAuHtzCQ=="
+}

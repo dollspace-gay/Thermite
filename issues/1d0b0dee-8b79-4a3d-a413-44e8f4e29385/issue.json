@@ -2,11 +2,12 @@
   "uuid": "1d0b0dee-8b79-4a3d-a413-44e8f4e29385",
   "display_id": 174,
   "title": "thermite-semantics increment (d): COMPOSE S_C + S_E + S_B into the whole-frozen-subset denotation S and discharge the composed (T2) universal: for all P passing TV, denotation of lower(P) = denotation of P under S — lowering faithfulness relative to {Z3, S = intended meaning}. Depends on increments (a)(b)(c) (#170/#171/#172). The CompCert-class capstone of epic #169.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T14:17:44.706427122Z",
-  "updated_at": "2026-06-09T14:18:09.447168200Z",
+  "updated_at": "2026-06-09T20:36:05.237843904Z",
+  "closed_at": "2026-06-09T20:36:05.237843904Z",
   "labels": [
     "blocker"
   ]

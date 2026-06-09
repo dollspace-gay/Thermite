@@ -301,6 +301,43 @@ def refDenote : Expr → Env → Prop
   | Expr.logic op a b, env =>
       tokConn (encLog op) (refDenote a env) (refDenote b env)
   | Expr.neg e, env => ¬ refDenote e env
+  -- The 6 BOUNDED-QUANTIFIER combinators (#179). The encoder REUSES the SHARED frozen
+  -- `lookup(C).verus_l3` quantifier BODY verbatim (`encode_combinator_call` emits
+  -- `name(args)` to the registry `spec fn` — the body is the shared ground truth, NOT
+  -- re-implemented), so the quantifier FORM here is structurally identical to `denote`'s.
+  -- What the encoder RE-implements (the faithfulness surface, `encode_combinator_arg`) is
+  -- the per-arg-kind THREADING:
+  --   - `ArgKind::Slice` → `encode_slice_arg`'s `@`-view = `refSeqVal` (the identity on
+  --     the sequence value).
+  --   - `ArgKind::Index` → `encode_index_value`'s SCALAR `<n> as int` = `refIntVal` of a
+  --     scalar — NEVER the slice `@`-view. THE #145 FIX (`forall_below`/`forall_from`'s
+  --     `n: int`; `n@` would be a Verus type error / a wrong meaning — the negative lemma).
+  --   - `ArgKind::Pred` → `encode_pred_arg`'s `|x: u32| <body>`, the body re-encoded by the
+  --     SAME independent `refDenote`/`refIntVal` recursion (so a predicate infidelity is
+  --     caught), applied at the i-th element via the SHARED `Env.bindInt`.
+  | Expr.comb c seq seq2 idx pred, env =>
+      let s := refSeqVal seq env
+      let s2 := match seq2 with | some e => refSeqVal e env | none => []
+      let n := match idx with | some e => refIntVal e env | none => 0
+      let p : Int → Prop := fun i =>
+        match pred with
+        | some (Pred.mk bound body) => refDenote body (env.bindInt bound (seqIdx s i))
+        | none => True
+      match c with
+      | CombName.forallIn =>
+          ∀ i : Int, (0 ≤ i ∧ i < (s.length : Int)) → p i
+      | CombName.existsIn =>
+          ∃ i : Int, (0 ≤ i ∧ i < (s.length : Int)) ∧ p i
+      | CombName.sorted =>
+          ∀ i j : Int, (0 ≤ i ∧ i ≤ j ∧ j < (s.length : Int)) → seqIdx s i ≤ seqIdx s j
+      | CombName.forallBelow =>
+          ∀ i : Int, (0 ≤ i ∧ i < n ∧ i < (s.length : Int)) → p i
+      | CombName.forallFrom =>
+          ∀ i : Int, (n ≤ i ∧ i < (s.length : Int)) → p i
+      | CombName.disjoint =>
+          ∀ i j : Int,
+            ((0 ≤ i ∧ i < (s.length : Int)) ∧ (0 ≤ j ∧ j < (s2.length : Int))) →
+              seqIdx s i ≠ seqIdx s2 j
   | _, _ => True
 
 end Thermite

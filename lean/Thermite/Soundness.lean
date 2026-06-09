@@ -113,6 +113,12 @@ theorem refVal_eq (e : Expr) (env : Env) :
       refine ⟨?_, rfl⟩
       simp only [refIntVal, intVal, byteView_encByteAt,
                  (refVal_eq base env).2, (refVal_eq i env).1]
+  | comb c seq seq2 idx pred =>
+      -- A combinator is BOOLEAN/`Prop`-sorted: as an INTEGER term it falls to `0` and as
+      -- a SEQUENCE term to `[]` in BOTH `refIntVal`/`intVal` and `refSeqVal`/`seqVal` (the
+      -- `_` defaults — a combinator is never a comparison operand / a sequence base; its
+      -- predicate equivalence is handled by the `comb` case of `ref_sound`, not here).
+      exact ⟨rfl, rfl⟩
 end
 
 /-- The integer-term meanings coincide (the projection of `refVal_eq` used by the
@@ -187,6 +193,59 @@ theorem ref_sound (e : Expr) (env : Env) : refDenote e env ↔ denote e env := b
   | subrange base r => simp [refDenote, denote]
   | seqLen base => simp [refDenote, denote]
   | byteAt base i => simp [refDenote, denote]
+  | comb c seq seq2 idx pred =>
+      -- THE 6 BOUNDED-QUANTIFIER COMBINATORS (#179). Both `refDenote` and `denote` expand
+      -- to the SAME frozen `verus_l3` quantifier FORM (the body is the shared registry
+      -- ground truth — `encode_combinator_call` reuses it verbatim); they differ ONLY in
+      -- the per-arg-kind threading: the slice (`refSeqVal` vs `seqVal`), the second slice,
+      -- the scalar index (`refIntVal` vs `intVal` — the #145 arg-kind), and the predicate
+      -- body (`refDenote` vs `denote`, applied at the i-th element). Establish those agree,
+      -- then the quantifier forms are equivalent by congruence.
+      have hs : refSeqVal seq env = seqVal seq env := refSeqVal_eq_seqVal seq env
+      -- The pointwise predicate-application equivalence: at every element value `v`, the
+      -- encoder's predicate body and the source's agree (the recursive IH `ref_sound` on
+      -- the FLAT closure body — `body` is a structural subterm of `comb`).
+      have hp : ∀ v : Int,
+          (match pred with
+            | some (Pred.mk bound body) => refDenote body (env.bindInt bound v)
+            | none => True) ↔
+          (match pred with
+            | some (Pred.mk bound body) => denote body (env.bindInt bound v)
+            | none => True) := by
+        intro v
+        cases pred with
+        | none => exact Iff.rfl
+        | some pr => cases pr with
+          | mk bound body => exact ref_sound body (env.bindInt bound v)
+      cases c with
+      | forallIn =>
+          simp only [refDenote, denote, hs]
+          exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
+      | existsIn =>
+          simp only [refDenote, denote, hs]
+          exact exists_congr (fun i => and_congr_right (fun _ => hp _))
+      | sorted =>
+          simp only [refDenote, denote, hs]
+      | forallBelow =>
+          cases idx with
+          | none =>
+              simp only [refDenote, denote, hs]
+              exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
+          | some e =>
+              simp only [refDenote, denote, hs, refIntVal_eq_intVal e env]
+              exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
+      | forallFrom =>
+          cases idx with
+          | none =>
+              simp only [refDenote, denote, hs]
+              exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
+          | some e =>
+              simp only [refDenote, denote, hs, refIntVal_eq_intVal e env]
+              exact forall_congr' (fun i => imp_congr_right (fun _ => hp _))
+      | disjoint =>
+          cases seq2 with
+          | none => simp only [refDenote, denote, hs]
+          | some e => simp only [refDenote, denote, hs, refSeqVal_eq_seqVal e env]
 
 /-- A convenient `Prop`-equality corollary (propositional extensionality) — the
     `⟦R(P)⟧ = ⟦P⟧_S` form (T2's transitivity step composes on this equality, AC-3). -/
@@ -378,5 +437,145 @@ theorem subrange_index_faithful_matches_source :
         (Expr.idx (Expr.subrange (Expr.seqVar "s") (RangeArg.rangeTo (Expr.intLit 2)))
           (Expr.intLit 1)) envAB :=
   refIntVal_eq_intVal _ _
+
+/-! ## Negative sanity lemma 4 — the WRONG-COMBINATOR teeth (#179)
+
+  The dispatch's explicit requirement (a): demonstrate that an encoder that emitted the
+  WRONG combinator — `forall_in` (a bounded `∀`) lowered as `exists_in` (a bounded `∃`)
+  — does NOT satisfy soundness at a concrete sequence. The two quantifier forms differ
+  (`∀ i, .. → p(s[i])` vs `∃ i, .. ∧ p(s[i])`) precisely when SOME element satisfies the
+  predicate and some does not. This is the combinator analogue of the `==`-vs-`<=` teeth:
+  the encoder's choice of WHICH frozen `verus_l3` quantifier (`encode_call`'s
+  `lookup(name)` dispatch — referencing the RIGHT combinator) is load-bearing.
+
+  Source clause: `forall_in(s, |x| x ≤ 15)`, i.e.
+    `Expr.comb forallIn (strVar "s") none none (some (Pred.mk "x" (x ≤ 15)))`.
+  At `envAB` (`s := [10, 20, 30]`) the source `∀ i, 0≤i<3 → s[i] ≤ 15` is FALSE (`20 > 15`),
+  while the WRONG `exists_in` form `∃ i, 0≤i<3 ∧ s[i] ≤ 15` is TRUE (`10 ≤ 15`). FALSE vs
+  TRUE — they DISAGREE, so an encoder that referenced the wrong combinator does NOT satisfy
+  the soundness equation. -/
+
+/-- The flat predicate body `x ≤ 15` (the #179 combinator predicate slot's `body`). -/
+def predLe15Body : Expr := Expr.cmp CmpOp.le (Expr.var "x") (Expr.intLit 15)
+
+/-- The flat predicate closure `|x| x ≤ 15` (the #179 combinator predicate slot). -/
+def predLe15 : Pred := Pred.mk "x" predLe15Body
+
+/-- The source `forall_in(s, |x| x ≤ 15)` clause. -/
+def forallInClause : Expr :=
+  Expr.comb CombName.forallIn (Expr.strVar "s") none none (some predLe15)
+
+/-- THE WRONG-COMBINATOR BUG: the encoder emits `exists_in` where the source is
+    `forall_in` (a bounded `∃` for a bounded `∀` — `encode_call` referencing the wrong
+    `lookup(name)` form). Modelled as `refDenote` of the `exists_in` combinator over the
+    SAME slice + predicate. -/
+def existsInWrong : Expr :=
+  Expr.comb CombName.existsIn (Expr.strVar "s") none none (some predLe15)
+
+/-- **Teeth (negative sanity, the wrong-combinator case, #179).** At `envAB`
+    (`s := [10, 20, 30]`) the WRONG `exists_in` encoding (`∃ i, 0≤i<3 ∧ s[i] ≤ 15`, TRUE)
+    is NOT equivalent to the source `forall_in` meaning (`∀ i, 0≤i<3 → s[i] ≤ 15`, FALSE),
+    so an encoder that referenced the wrong combinator does NOT satisfy soundness. -/
+theorem wrong_combinator_breaks_soundness :
+    ¬ (refDenote existsInWrong envAB ↔ denote forallInClause envAB) := by
+  -- refDenote existsInWrong = ∃ i, 0≤i<3 ∧ [10,20,30][i] ≤ 15  (TRUE, witness i = 0)
+  -- denote forallInClause   = ∀ i, 0≤i<3 → [10,20,30][i] ≤ 15  (FALSE, counter i = 1)
+  intro h
+  have hExists : refDenote existsInWrong envAB := by
+    refine ⟨0, ⟨by decide, by decide⟩, ?_⟩
+    simp [predLe15Body, refDenote, refIntVal, encOp, tokRel,
+          Env.bindInt, seqIdx, refSeqVal, envAB]
+  have hForall := h.mp hExists
+  have hAt1 : (seqIdx (envAB.seqs "s") 1) ≤ 15 := by
+    have := hForall 1 ⟨by decide, by decide⟩
+    simpa [predLe15Body, denote, intVal, Env.bindInt] using this
+  simp [seqIdx, envAB] at hAt1
+
+/-! ## Negative sanity lemma 5 — the #145 ARG-KIND teeth (the retired class)
+
+  The dispatch's explicit requirement (b): demonstrate the #145 (`divergence_index_
+  combinator`) bug — `forall_below`/`forall_from`'s `ArgKind::Index` bound `n` (a SCALAR
+  `int`) ENCODED AS A SLICE `@`-view instead of a scalar. `encode_combinator_arg`'s `#145`
+  fix dispatches `ArgKind::Index → encode_index_value` (the scalar `<n> as int`), NOT
+  `encode_slice_arg` (the `@`-view). A buggy encoder that slice-`@`-viewed the index would
+  produce `n@` (a Verus type error in production; on the contract side, a DIFFERENT
+  quantifier bound — the LENGTH of `n`'s view rather than the scalar `n`).
+
+  Source clause: `forall_below(s, n, |x| x ≤ 15)` with the index `n` a SCALAR. We model the
+  #145 bug as the SAME `forall_below` form but with the quantifier bound taken from the
+  SLICE-`@`-VIEW length of the index arg (`(refSeqVal n).length`) instead of the scalar
+  `intVal n`. At an env where the scalar `n` (= 1) differs from the slice-view length
+  (`n@` bound to `[10,20,30]`, length 3) and `s := [10,20,30]` with `|x| x ≤ 15`:
+    - faithful bound `n = 1`: `∀ i, 0≤i<1 ∧ i<3 → s[i] ≤ 15` — only `i=0` (`10 ≤ 15`) → TRUE.
+    - #145-buggy bound `= 3`: `∀ i, 0≤i<3 ∧ i<3 → s[i] ≤ 15` — `i=1` (`20 ≤ 15`) → FALSE.
+  TRUE vs FALSE — they DISAGREE, so slice-`@`-viewing the Index arg breaks T1. This is the
+  proven retirement of the #145 arg-kind class on the contract side: `encode_combinator_arg`
+  threading `ArgKind::Index` as a SCALAR (not a `@`-view) is exactly what `ref_sound`'s
+  `comb` case pins (its `forallBelow` arm uses `refIntVal_eq_intVal` on the SCALAR index). -/
+
+/-- A concrete env for the #145 teeth: the index var `n` is the SCALAR `1`, while `n`'s
+    SLICE `@`-view (the buggy reading) is `[10, 20, 30]` (length `3`); `s := [10, 20, 30]`.
+    The scalar value (1) and the view-length (3) DIFFER — so a slice-`@`-viewed index is
+    observable. -/
+def envIdx : Env :=
+  { ints := fun nm => if nm = "n" then 1 else 0
+    seqs := fun nm => if nm = "s" ∨ nm = "n" then [10, 20, 30] else [] }
+
+/-- The FAITHFUL `forall_below(s, n, |x| x ≤ 15)` source meaning — the `n` bound is the
+    SCALAR `intVal n` (= 1), as `encode_index_value` (the #145 fix) threads it. -/
+def forallBelowFaithful : Prop :=
+  denote
+    (Expr.comb CombName.forallBelow (Expr.strVar "s")
+      none (some (Expr.var "n")) (some predLe15)) envIdx
+
+/-- THE #145 ARG-KIND BUG: the encoder slice-`@`-views the Index arg `n` instead of
+    threading it as a scalar — the quantifier bound becomes `(n@).length` (= 3), NOT the
+    scalar `n` (= 1). Modelled as the `forall_below` quantifier with the bound taken from
+    the slice-`@`-view length of the index arg (`refSeqVal (seqVar "n")` — the encoder
+    WRONGLY dispatching `ArgKind::Index` through `encode_slice_arg`). -/
+def forallBelowIndexSliceViewed : Prop :=
+  let s := refSeqVal (Expr.strVar "s") envIdx
+  let nBad := ((refSeqVal (Expr.seqVar "n") envIdx).length : Int)  -- the #145 `n@.len()`
+  ∀ i : Int, (0 ≤ i ∧ i < nBad ∧ i < (s.length : Int)) →
+    denote predLe15Body (envIdx.bindInt "x" (seqIdx s i))
+
+/-- **Teeth (negative sanity, the #145 arg-kind case).** At `envIdx` (`n` scalar `= 1`,
+    `n@` = `[10,20,30]` length `3`, `s := [10,20,30]`) the FAITHFUL `forall_below` (scalar
+    bound `1`) is TRUE (`10 ≤ 15`) while the #145-buggy SLICE-`@`-viewed-index form (bound
+    `3`) is FALSE (`20 ≤ 15` fails at `i = 1`) — they DISAGREE, so slice-`@`-viewing the
+    `ArgKind::Index` bound breaks T1. The faithful `encode_index_value` SCALAR threading is
+    what `ref_sound`'s `comb`/`forallBelow` arm pins. -/
+theorem index_argkind_slice_view_breaks_soundness :
+    forallBelowFaithful ≠ forallBelowIndexSliceViewed := by
+  intro h
+  -- forallBelowFaithful is TRUE; forallBelowIndexSliceViewed is FALSE → contradiction.
+  have hF : forallBelowFaithful := by
+    show ∀ i : Int,
+        (0 ≤ i ∧ i < intVal (Expr.var "n") envIdx ∧ i < ((seqVal (Expr.strVar "s") envIdx).length : Int)) →
+        denote predLe15Body (envIdx.bindInt "x" (seqIdx (seqVal (Expr.strVar "s") envIdx) i))
+    intro i hi
+    -- bound n = 1, so 0 ≤ i < 1 forces i = 0; s[0] = 10 ≤ 15.
+    obtain ⟨hi0, hi1, _⟩ := hi
+    have hi0eq : i = 0 := by
+      simp only [intVal, envIdx] at hi1; omega
+    subst hi0eq
+    simp [predLe15Body, denote, intVal, Env.bindInt, seqIdx, seqVal, envIdx]
+  rw [h] at hF
+  -- the buggy form (bound 3) fails at i = 1 (s[1] = 20 > 15).
+  have hBad := hF 1 ⟨by decide, by decide, by decide⟩
+  simp [predLe15Body, denote, intVal, Env.bindInt, seqIdx, refSeqVal, envIdx] at hBad
+
+/-- The faithful POSITIVE counterpart, for contrast: with the REAL combinator dispatch +
+    the SCALAR index threading the `forall_below(s, n, |x| x ≤ 15)` clause IS sound — its
+    encoder meaning is equivalent to the source, by `ref_sound`. Confirms the #179/#145
+    teeth bite ONLY the wrong-combinator / slice-viewed-index, not the faithful encoder. -/
+theorem forall_below_faithful_is_sound :
+    refDenote
+        (Expr.comb CombName.forallBelow (Expr.strVar "s")
+          none (some (Expr.var "n")) (some predLe15)) envIdx
+      ↔ denote
+        (Expr.comb CombName.forallBelow (Expr.strVar "s")
+          none (some (Expr.var "n")) (some predLe15)) envIdx :=
+  ref_sound _ _
 
 end Thermite

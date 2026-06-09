@@ -1,8 +1,12 @@
 /-
   Thermite/Denote.lean — the SOURCE denotation `⟦·⟧_{S_C}` for the comparison +
   logical contract fragment (increment (a), #170) EXTENDED with the ARITHMETIC
-  operators (#176), the CASTS (#177), and the SPEC-CONTEXT REWRITES (#178 — slice→
-  `@`/subrange, indexing, the `String` byte-view length/byte-at).
+  operators (#176), the CASTS (#177), the SPEC-CONTEXT REWRITES (#178 — slice→
+  `@`/subrange, indexing, the `String` byte-view length/byte-at), and the 6
+  BOUNDED-QUANTIFIER COMBINATORS (#179 / 1d-i — `forall_in`/`exists_in`/`sorted`/
+  `forall_below`/`forall_from`/`disjoint`, each denoting its FROZEN `verus_l3`
+  quantifier form from `thermite-spec/src/combinators.rs`, with the predicate closure
+  `p(s[i])` applied at the i-th element via `Env.bindInt`).
 
   THE SEQUENCE ENVIRONMENT (#178). A slice param `xs: &[u32]` and a `String`'s bytes
   denote a SEQUENCE (`List Int`), not a scalar. The `Env` is therefore extended to map
@@ -73,6 +77,15 @@ structure Env where
       `@`-view is the IDENTITY on this value — a slice and its `@`-view are the same
       `List Int` (#178). -/
   seqs : String → List Int
+
+/-- Bind an integer name to a value in an environment (#179): used to interpret a
+    predicate closure `|x| <body>` at a concrete element — the bound var `x` is set to
+    the i-th element while the sequence names are unchanged. The SHARED env-update both
+    `denote` (source) and `RefEncode.refDenote` (encoder) route a combinator predicate
+    through, so the predicate's denotation is identical on both sides modulo the body's
+    own integer/sequence subterms (settled by `refVal_eq`). -/
+def Env.bindInt (env : Env) (name : String) (v : Int) : Env :=
+  { env with ints := fun s => if s = name then v else env.ints s }
 
 /-- The shared TOTAL sequence-index access (#178): the i-th element, or `0` when the
     index is out of range (negative or ≥ length). The in-range obligation `0 ≤ i < |s|`
@@ -201,6 +214,38 @@ def denote : Expr → Env → Prop
       | LogOp.and => denote a env ∧ denote b env
       | LogOp.or  => denote a env ∨ denote b env
   | Expr.neg e, env => ¬ denote e env
+  -- The 6 BOUNDED-QUANTIFIER combinators (#179): each denotes its FROZEN `verus_l3`
+  -- quantifier form (`combinators.rs`), with the slice = `seqVal` of the slice arg, the
+  -- index = `intVal` of the scalar index arg, and `p(s[i])` = the predicate body denoted
+  -- with the bound element var ↦ the i-th element (`seqIdx s i`). The optional `seq2`/
+  -- `idx`/`pred` default to the empty sequence / `0` / a vacuous predicate when a
+  -- combinator does not carry that arg (never observed — each combinator populates only
+  -- its own arg-kinds; keeps `denote` TOTAL with no `sorry`).
+  | Expr.comb c seq seq2 idx pred, env =>
+      let s := seqVal seq env
+      let s2 := match seq2 with | some e => seqVal e env | none => []
+      let n := match idx with | some e => intVal e env | none => 0
+      -- Apply the predicate closure body at the i-th element of `s` (the bound var ↦
+      -- `seqIdx s i`); a missing predicate (sorted/disjoint) is `True` (unused).
+      let p : Int → Prop := fun i =>
+        match pred with
+        | some (Pred.mk bound body) => denote body (env.bindInt bound (seqIdx s i))
+        | none => True
+      match c with
+      | CombName.forallIn =>
+          ∀ i : Int, (0 ≤ i ∧ i < (s.length : Int)) → p i
+      | CombName.existsIn =>
+          ∃ i : Int, (0 ≤ i ∧ i < (s.length : Int)) ∧ p i
+      | CombName.sorted =>
+          ∀ i j : Int, (0 ≤ i ∧ i ≤ j ∧ j < (s.length : Int)) → seqIdx s i ≤ seqIdx s j
+      | CombName.forallBelow =>
+          ∀ i : Int, (0 ≤ i ∧ i < n ∧ i < (s.length : Int)) → p i
+      | CombName.forallFrom =>
+          ∀ i : Int, (n ≤ i ∧ i < (s.length : Int)) → p i
+      | CombName.disjoint =>
+          ∀ i j : Int,
+            ((0 ≤ i ∧ i < (s.length : Int)) ∧ (0 ≤ j ∧ j < (s2.length : Int))) →
+              seqIdx s i ≠ seqIdx s2 j
   -- An integer-sorted leaf/term (`intLit`/`var`/`arith`/`cast`) is not a predicate
   -- on its own; in a well-formed clause it only appears as a comparison operand
   -- (handled by `intVal` above). As a top-level predicate it denotes `True`

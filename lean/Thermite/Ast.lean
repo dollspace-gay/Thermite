@@ -57,10 +57,35 @@
   sequence-valued and feeds another `idx`/`seqLen`/`byteAt` (so the prefix's meaning is
   observed through a later element/length read — exactly how a contract clause uses it).
 
+  THE 6 BOUNDED-QUANTIFIER COMBINATORS (#179, increment 1d-i). In contract position a
+  combinator CALL `Call(C, args)` denotes its FROZEN `verus_l3` quantifier form
+  (`thermite-spec/src/combinators.rs`), with each argument threaded PER ITS REGISTRY
+  ARG-KIND (`CombinatorSig.arg_kinds`/`ArgKind`):
+    - `forall_in(s, p)`    = `∀ i, 0 ≤ i < s.len() → p(s[i])`
+    - `exists_in(s, p)`    = `∃ i, 0 ≤ i < s.len() ∧ p(s[i])`
+    - `sorted(s)`          = `∀ i j, 0 ≤ i ≤ j < s.len() → s[i] ≤ s[j]`
+    - `forall_below(s,n,p)`= `∀ i, 0 ≤ i < n ∧ i < s.len() → p(s[i])`
+    - `forall_from(s,n,p)` = `∀ i, n ≤ i < s.len() → p(s[i])`
+    - `disjoint(a, b)`     = `∀ i j, (0 ≤ i < a.len() ∧ 0 ≤ j < b.len()) → a[i] ≠ b[j]`
+  To embed these `Ast.lean` gains:
+    - `CombName`           — the 6 frozen names (the closed combinator set, sans the 2
+      RECURSIVE combinators `count_where`/`permutation_of`, which are #182 / 1d-ii and
+      DELIBERATELY ABSENT — no embed-then-`sorry`).
+    - `Pred`               — a FLAT predicate closure `|x| <body>` (`ArgKind::Pred`): a
+      bound element-var name + a body `Expr` over the comparison/logical/arithmetic
+      fragment (§4.2 "no anonymous nested quantifiers" — so the body REUSES the existing
+      `Expr`). `p(s[i])` denotes as the body with the bound var ↦ the i-th element.
+    - `Expr.comb`          — a combinator call carrying: the name `c`; a primary slice
+      `seq` (`ArgKind::Slice` → the `@`-view, #178/1f); an OPTIONAL second slice `seq2`
+      (only `disjoint`); an OPTIONAL scalar index `idx` (only `forall_below`/`forall_from`
+      — `ArgKind::Index`, a SCALAR `int`, NOT a slice `@`-view: THE #145 BUG CLASS); and
+      an OPTIONAL predicate `pred` (`ArgKind::Pred`). Each combinator populates exactly
+      the fields its `arg_kinds` declares (the others `none`).
+
   DEFERRED — NOT embedded here, and DELIBERATELY NOT (no `sorry`-behind-a-variant;
   embedding-then-`sorry` is forbidden). These are the remaining sub-increments:
-    - the 8 frozen combinators (`forall_in`/`sorted`/… — their `verus_l3` forms),
-      incl. RECURSIVE / quantified bodies (#179/#182)
+    - the 2 RECURSIVE / aggregate combinators (`count_where`/`permutation_of` — their
+      well-founded-recursive / multiset `verus_l3` forms; Mathlib) (#182 / 1d-ii)
     - named spec-fn calls (the well-founded recursive `S_C` fixpoint) (#181)
     - `Expr::Match` / `Expr::Is` in contract position (#180)
   Each is a real future inductive case, listed (not stubbed) so the deferral is honest.
@@ -106,6 +131,21 @@ inductive ArithOp where
   | bitAnd
   | bitOr
   | bitXor
+  deriving DecidableEq, Repr
+
+/-- The 6 BOUNDED-QUANTIFIER combinator names (#179) — the frozen `verus_l3` forms of
+    `thermite-spec/src/combinators.rs` whose denotation is a BOUNDED `∀`/`∃` over a
+    slice. The 2 RECURSIVE / aggregate combinators (`count_where`/`permutation_of`) are
+    #182 (1d-ii) and DELIBERATELY ABSENT — their `verus_l3` is a well-founded recursion /
+    a multiset equality, not a bounded quantifier, so embedding them here would force a
+    `sorry` (forbidden). This enum is therefore the CLOSED bounded-quantifier subset. -/
+inductive CombName where
+  | forallIn      -- `forall_in(s, p)`    = `∀ i, 0 ≤ i < s.len() → p(s[i])`
+  | existsIn      -- `exists_in(s, p)`    = `∃ i, 0 ≤ i < s.len() ∧ p(s[i])`
+  | sorted        -- `sorted(s)`          = `∀ i j, 0 ≤ i ≤ j < s.len() → s[i] ≤ s[j]`
+  | forallBelow   -- `forall_below(s,n,p)`= `∀ i, 0 ≤ i < n ∧ i < s.len() → p(s[i])`
+  | forallFrom    -- `forall_from(s,n,p)` = `∀ i, n ≤ i < s.len() → p(s[i])`
+  | disjoint      -- `disjoint(a, b)`     = `∀ i j, (0≤i<a.len() ∧ 0≤j<b.len()) → a[i]≠b[j]`
   deriving DecidableEq, Repr
 
 /-- The cast targets of the frozen contract sublanguage (#177) — mirrors the
@@ -197,6 +237,30 @@ inductive Expr where
       integer term. THE #127 CLASS lives here: a wrong index / a wrong receiver-method
       is a DIFFERENT meaning (the negative lemma). -/
   | byteAt (base : Expr) (index : Expr)
+  /-- A BOUNDED-QUANTIFIER combinator call (#179) — `Call(C, args)` for `C` in the 6
+      frozen bounded combinators. Denotes its FROZEN `verus_l3` quantifier form
+      (`combinators.rs`) with each argument threaded PER ITS REGISTRY ARG-KIND. The
+      fields carry the per-kind args; each combinator populates exactly the fields its
+      `CombinatorSig.arg_kinds` declares (`none` otherwise):
+        - `seq`  : the primary slice (`ArgKind::Slice` → the `@`-view; SEQUENCE-sorted —
+                   a `seqVar`/`strVar`/`subrange`).
+        - `seq2` : the SECOND slice (only `disjoint`'s `b`; `ArgKind::Slice`).
+        - `idx`  : the SCALAR index bound (only `forall_below`/`forall_from`'s `n`;
+                   `ArgKind::Index` → a scalar `int`, NOT a slice `@`-view — THE #145 BUG
+                   CLASS lives in this arg-kind's dispatch).
+        - `pred` : the predicate closure (`ArgKind::Pred`; absent for `sorted`/`disjoint`).
+      BOOLEAN/`Prop`-sorted (a combinator result is `bool`). -/
+  | comb (c : CombName) (seq : Expr) (seq2 : Option Expr) (idx : Option Expr)
+         (pred : Option Pred)
+  /-- A FLAT predicate closure `|x| <body>` (#179; `ArgKind::Pred`; `Expr::Closure` with
+      one param over the frozen `Seq<u32>` element type `u32`). `bound` is the element
+      var name the closure binds (`encode_pred_arg`'s `params[0]`); `body` is the
+      predicate over that element, REUSING the comparison/logical/arithmetic `Expr`
+      fragment (§4.2 "no anonymous nested quantifiers" — the body is FLAT, so the
+      structural recursion terminates). `p(s[i])` denotes as `body` with `bound ↦` the
+      i-th element. MUTUAL with `Expr` (the body IS an `Expr`). -/
+inductive Pred where
+  | mk (bound : String) (body : Expr)
   /-- A range argument of a spec-context slice borrow (#178) — mirrors the
       `thermite-syntax::ast::IndexArg` arms `encode_index`/`encode_ref` accept:
       `RangeTo(i)` (`&xs[..i]`), `Range(a, b)` (`&xs[a..b]`), `RangeFrom(a)`
@@ -214,6 +278,7 @@ inductive RangeArg where
 end
 
 deriving instance Repr for Expr
+deriving instance Repr for Pred
 deriving instance Repr for RangeArg
 
 end Thermite

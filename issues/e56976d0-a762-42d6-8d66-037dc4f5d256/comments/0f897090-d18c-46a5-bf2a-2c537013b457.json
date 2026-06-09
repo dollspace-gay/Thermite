@@ -1,0 +1,10 @@
+{
+  "uuid": "0f897090-d18c-46a5-bf2a-2c537013b457",
+  "issue_uuid": "e56976d0-a762-42d6-8d66-037dc4f5d256",
+  "author": "Yffe",
+  "content": "Build 1d-i: extend the contract-sublanguage T1 proof (the #170/#176/#177/#178 fragment) to the 6 bounded-quantifier combinators (forall_in/exists_in/sorted/forall_below/forall_from/disjoint). Ast.lean += CombName + mutual Pred + Expr.comb (args per CombinatorSig.arg_kinds); Denote.lean += Env.bindInt + denote comb arm (frozen verus_l3 quantifier forms, matched EXACTLY to combinators.rs); RefEncode.lean += refDenote comb arm (same form, args threaded per arg-kind: Slice->@-view, Index->SCALAR int #145, Pred->flat closure body); Soundness.lean += ref_sound/refVal_eq comb case + negatives wrong_combinator_breaks_soundness and index_argkind_slice_view_breaks_soundness (#145). Core Lean only; the 2 recursive combinators remain #182, absent (no sorry). lake build green, axioms [propext, Quot.sound], Rust unaffected.",
+  "created_at": "2026-06-09T18:08:31.865458394Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABACOcltH4/p3tUFPDNoh0onOyOtYizBjMTgW79LCjE5CDBJ317WbusZfNPOVToPZ0KaLSmammnK2zW3D2Ov9M3Dg=="
+}

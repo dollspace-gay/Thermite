@@ -878,3 +878,196 @@ pub const EXEC_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 /// The default generated-exec-expr count for `forge exec-tv --generated` (REQ-3 /
 /// AC-7).
 pub const EXEC_TV_GENERATED_DEFAULT_N: usize = 200;
+
+// ---- the forge-level Divergent teeth (REQ-5; blocker #157) -----------------
+//
+// The obligation-layer teeth (`thermite-tv/tests/exec_teeth.rs` E1-E4) prove a
+// WRONG `P_production` -> a real verus error. They do NOT exercise the FORGE-level
+// step that MAPS that verus error to `ExecVerdict::Divergent`: `discharge`'s
+// four-way classification. Over the generated/corpus space the faithful lowerer
+// never produces a Divergent, so the Divergent ARM had NO direct test coverage.
+//
+// This module is the end-to-end teeth for the FORGE classification: it builds a
+// REAL exec obligation with a DELIBERATELY-WRONG production (the same E1/E3
+// infidelity shapes the obligation layer pins), discharges it through the ACTUAL
+// `discharge` fn, and asserts the verdict. It covers BOTH Divergent triggers
+// (postcondition-counterexample AND non-compile) plus the positive control
+// (faithful -> Faithful) and the degenerate boundary (no obligation ->
+// Unverifiable, NOT Divergent -- the masking path the four-way classification must
+// keep distinct).
+//
+// TEST-ONLY: no production-logic change. `discharge` is a private sibling fn,
+// reachable here via `super::` (a child mod sees the parent's private items), so
+// NO visibility tweak is needed either. The teeth are GENUINE: a real wrong
+// production -> a real verus error -> the real `discharge` mapping, never a mocked
+// verdict. Mirrors `thermite-tv/tests/exec_teeth.rs`'s skip-loudly verus gate --
+// `discharge` spawns a bare `verus`, so the test gates on the same PATH-resolvable
+// binary and SKIPS LOUDLY when it is genuinely absent.
+#[cfg(test)]
+mod divergent_teeth {
+    use super::*;
+    use thermite_syntax::ast::BinOp;
+
+    /// `true` iff a bare `verus` is spawnable (the SAME resolution `discharge`
+    /// uses -- `Command::new("verus")`, i.e. PATH). SKIP LOUDLY otherwise so the
+    /// teeth never silently pass when the discharge cannot reach a solver.
+    fn verus_on_path() -> bool {
+        Command::new("verus").arg("--version").output().is_ok()
+    }
+
+    fn path(name: &str) -> Expr {
+        Expr::Path(vec![name.to_string()])
+    }
+
+    fn int(value: u128) -> Expr {
+        Expr::IntLit {
+            value,
+            raw: value.to_string(),
+        }
+    }
+
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    // Pinned deterministic discharge config (mirrors `forge exec-tv`'s defaults).
+    const SEED: u64 = EXEC_TV_DEFAULT_SEED;
+    const RLIMIT: f64 = EXEC_TV_DEFAULT_RLIMIT;
+
+    /// The E3 source `a + b` with the no-overflow frame `a + b <= 0xFFFF` (the
+    /// faithful checked add is total, so a counterexample on a wrong production is
+    /// a VALUE difference). Reused for both the positive control + the
+    /// postcondition-counterexample Divergent trigger.
+    fn e3_source() -> Expr {
+        bin(BinOp::Add, path("a"), path("b"))
+    }
+
+    fn e3_frame() -> ExecObligationFrame {
+        ExecObligationFrame {
+            params: vec![
+                ExecParamDecl::new("a", "u64"),
+                ExecParamDecl::new("b", "u64"),
+            ],
+            ret_type: "u64".to_string(),
+            req: Some("a + b <= 0xFFFF".to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// POSITIVE CONTROL: a FAITHFUL production (`a + b`, the exact lowering of the
+    /// source) -> the forge classification is `ExecVerdict::Faithful`. Without this,
+    /// a `discharge` that returned Divergent unconditionally would pass the
+    /// Divergent assertions vacuously.
+    #[test]
+    fn faithful_production_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH -- the forge-level Faithful control not discharged."
+            );
+            return;
+        }
+        let prog = exec_equivalence_obligation(&e3_source(), "a + b", &e3_frame())
+            .expect("faithful exec obligation builds");
+        let verdict = discharge(&prog, "teeth.faithful", SEED, RLIMIT);
+        assert_eq!(
+            verdict,
+            ExecVerdict::Faithful,
+            "a FAITHFUL production exec lowering must classify Faithful (a forge-level \
+             false positive otherwise)"
+        );
+    }
+
+    /// DIVERGENT trigger #1 (postcondition counterexample): a production that
+    /// TYPECHECKS but computes the WRONG value (`a.wrapping_sub(b)` for source
+    /// `a + b`) -> verus finds a counterexample on `ensures result == (a + b)` ->
+    /// `discharge` maps `errors >= 1` to `ExecVerdict::Divergent`. This is the arm
+    /// `Some((_v, errors)) if errors >= 1` of the four-way classification.
+    #[test]
+    fn wrong_value_production_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH -- the forge-level Divergent (counterexample) \
+                 teeth not discharged."
+            );
+            return;
+        }
+        let prog = exec_equivalence_obligation(&e3_source(), "a.wrapping_sub(b)", &e3_frame())
+            .expect("wrong-value exec obligation builds");
+        let verdict = discharge(&prog, "teeth.counterexample", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, ExecVerdict::Divergent { .. }),
+            "a WRONG-VALUE production (a.wrapping_sub(b) for a + b) must classify \
+             Divergent via a postcondition counterexample; got {verdict:?}"
+        );
+    }
+
+    /// DIVERGENT trigger #2 (non-compile): the #122 paren-drop production
+    /// `n - 1 as u8` (= `n - (1 as u8)`, a `u64 - u8` type mix) for source
+    /// `(n - 1) as u8` -> verus ABORTS with `E0308`/`mismatched types` BEFORE
+    /// verification (no parseable results line, non-success exit) -> `discharge`
+    /// maps the `!status.success()` no-results branch to `ExecVerdict::Divergent`.
+    /// This is the `_ => if !output.status.success()` arm of the classification.
+    #[test]
+    fn non_compiling_production_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH -- the forge-level Divergent (non-compile) \
+                 teeth not discharged."
+            );
+            return;
+        }
+        let source = Expr::Cast {
+            expr: Box::new(bin(BinOp::Sub, path("n"), int(1))),
+            ty: Type::Named("u8".to_string()),
+        };
+        let frame = ExecObligationFrame {
+            params: vec![ExecParamDecl::new("n", "u64")],
+            ret_type: "u8".to_string(),
+            req: Some("n >= 1, n - 1 <= 255".to_string()),
+            ..Default::default()
+        };
+        // The #122 paren-drop: `n - 1 as u8` parses as `n - (1 as u8)`, a u64 - u8
+        // mix -> an E0308 type error that aborts verus before verification.
+        let prog = exec_equivalence_obligation(&source, "n - 1 as u8", &frame)
+            .expect("non-compiling exec obligation builds");
+        let verdict = discharge(&prog, "teeth.noncompile", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, ExecVerdict::Divergent { .. }),
+            "a NON-COMPILING production (the #122 paren-drop -> E0308) must classify \
+             Divergent via the compile/parse-abort branch; got {verdict:?}"
+        );
+    }
+
+    /// The DIVERGENT-vs-UNVERIFIABLE boundary (the critic's masking-path concern):
+    /// a DEGENERATE program with ZERO exec obligations verifies as `0 verified,
+    /// 0 errors` (verus succeeds, but no obligation reached a faithfulness verdict)
+    /// -> `discharge` maps it to `ExecVerdict::Unverifiable`, NEVER `Divergent` and
+    /// NEVER `Faithful`. This pins the `_ => if status.success()` arm so the
+    /// non-infidelity no-discharge case stays DISTINCT from a real Divergent
+    /// (errors >= 1) / a real Faithful (verified >= 1).
+    #[test]
+    fn degenerate_no_obligation_classifies_unverifiable() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH -- the forge-level Unverifiable boundary not \
+                 discharged."
+            );
+            return;
+        }
+        // A well-formed verus program with NO proof/exec obligation: verus reports
+        // `0 verified, 0 errors` and exits success -- neither verified >= 1
+        // (Faithful) nor errors >= 1 (Divergent), so the four-way classification
+        // must report Unverifiable (distinct, never masked as either).
+        let degenerate = "use vstd::prelude::*;\nverus! {\n}\nfn main() {}\n";
+        let verdict = discharge(degenerate, "teeth.degenerate", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, ExecVerdict::Unverifiable { .. }),
+            "a degenerate zero-obligation program must classify Unverifiable (the \
+             Divergent-vs-Unverifiable boundary), never Divergent/Faithful; got {verdict:?}"
+        );
+    }
+}

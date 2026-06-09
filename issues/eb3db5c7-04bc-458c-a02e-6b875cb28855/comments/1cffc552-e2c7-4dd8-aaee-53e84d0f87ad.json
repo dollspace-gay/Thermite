@@ -1,0 +1,10 @@
+{
+  "uuid": "1cffc552-e2c7-4dd8-aaee-53e84d0f87ad",
+  "issue_uuid": "eb3db5c7-04bc-458c-a02e-6b875cb28855",
+  "author": "Yffe",
+  "content": "Increment 1f build: extend the Lean S_C fragment to the SPEC-CONTEXT REWRITES, proven denotation-preserving + ref_sound. Ast.lean += mutual Expr/RangeArg with seqVar/strVar/idx/subrange/seqLen/byteAt (mirror Expr::Index/Ref/MethodCall, IndexArg). Denote.lean += structure Env{ints,seqs}, seqIdx/seqSub, mutual seqVal/intVal (the source @/element/prefix/byte/length meanings). RefEncode.lean += VerusByteView + encByteAt/encLen/byteView (the #127 dispatch), mutual refSeqVal/refIntVal faithful to ref_encode.rs encode_slice_arg/encode_index/encode_ref/encode_string_byteview. Soundness.lean += combined refVal_eq (mutual structural recursion) + byteView round-trips + the #127 negatives byteview_wrong_index_breaks_soundness / byteview_misdispatch_breaks_soundness. lake build green, axioms [propext], no sorry. Lean core only. Commit to main (#178) ref #169, do not close (critic re-audits).",
+  "created_at": "2026-06-09T17:37:10.766347822Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAgS7qD9eaVTN8vbTPvv79domVvyWEDfymwzIVBWa2pEW+9BJnGXJzz33w2Db9Gv1Bo1hXNLgmAZZJBeAC+n5VAg=="
+}

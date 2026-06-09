@@ -1,0 +1,10 @@
+{
+  "uuid": "df950577-5ef5-461d-9963-d3ed8b4ff282",
+  "issue_uuid": "7456c0bf-8a73-469d-bb87-0380722c1e26",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (bcaba0a). Contract S_C arithmetic (Add/Sub/Mul/Div/Rem/Shl/Shr/BitAnd/BitOr/BitXor) — Lean fragment extended, ref_sound proved (lake build green, [propext]). Critic NO DIVERGENCE: encArith matches ref_encode.rs binop_str arm-for-arm (all 10); denote uses Euclidean Int.ediv/emod + unbounded-int Sub matching Verus spec semantics; partiality (div/shift-by-zero) held consistent between denote/refDenote (T1-insensitive, not a vacuity dodge); non-vacuous (rfl fails; a faulty Add->minus map breaks the round-trip).",
+  "created_at": "2026-06-09T17:16:20.958237511Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAryZuYijermv+PpxSvfUW/kxgyd/AZbhUpB15petpz7CQ+yYY2gmgjd+GBw98sU/zGwtYFa1/+bf8PCv/Ru2LBg=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "8e730864-151b-4753-b710-f0cb143158aa",
+  "issue_uuid": "33e3c137-23d3-4f46-b427-56ce5b40f00a",
+  "author": "Yffe",
+  "content": "Authored .design/verified/rust-lean-correspondence.md: the rigorous arm-by-arm audit closing the Rust<->Lean correspondence residual at the audit-by-inspection tier. Tables 1-3 quote every ref_encode/exec_encode/exec_stmt_encode arm + the 8 combinator verus_l3 forms beside the Lean model arm, with the Verus-meaning bridge, the pinning Lean theorem + negative lemma, the pinned audited SHAs (579d3d48/43c9a6c8/b9dc22fd/c0b1d8a3 + Lean 7c85da25), bridge assumptions A1-A3, and discrepancies D1-D5. REQ-1 SHIPPED (the map); REQ-2 NOT-STARTED (the extraction-bridge tier, stays #185). Plus a 1-paragraph pointer in thermite-semantics.md REQ-6. Commit to main, no push, no close (critic re-audits).",
+  "created_at": "2026-06-09T21:18:29.776410057Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/OLfZx+4hzlIi/86FAtIhGU458P2BAbPPAD1PCnxLic3xX+ZpOAlmu0tvPPKDxxx0K6RuRJSFhn/UCY9KpXmDQ=="
+}

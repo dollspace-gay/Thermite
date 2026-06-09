@@ -1,0 +1,10 @@
+{
+  "uuid": "a00f70ba-0e4f-4083-a78d-da3a530e0ab6",
+  "issue_uuid": "e43b9b33-ff9d-4a2c-8912-a77cee535f38",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean (5d8aceeb). Named spec-fn calls — PATH 1 (fully-general recursive registry, proved for-all-fuel for-all-registry via core Lean well-founded recursion on (fuel,sizeOf)); ref_sound extended (lake build green, [propext,Quot.sound]). Critic NO DIVERGENCE on the make-or-break fuel-vacuity probe: the recursive witness genuinely exercises recursion (g(5)=4 at fuel 2, default at fuel 0/1, IDENTICAL on source+encoder per the eval table), source+encoder consume fuel in lockstep (no desync), ref_sound is for-all-fuel (no cap) so fuel-0 agreement is harmless. NO REGRESSION: all 8 prior negatives still bite (spec-fn-free constructs compute real values at fuel 0). Faithful to encode_call case 3 (a CALL, not inlined; old/combinators routed to distinct constructors, no mis-route). WF recursion genuine (header fuel-matching exposes n+1->n). 7 of 8 contract construct classes now proven.",
+  "created_at": "2026-06-09T19:19:35.367740246Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAvdQubQSKj1EeeZbSCfbgnYdr1dvFMHLm2SgSTP4dQTnemevsJeSH6531p4P/T1KEihWELe0Ktjk/IF5i8lU+Cw=="
+}

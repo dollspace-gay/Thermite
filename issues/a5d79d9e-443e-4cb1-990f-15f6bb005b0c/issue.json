@@ -1,0 +1,10 @@
+{
+  "uuid": "a5d79d9e-443e-4cb1-990f-15f6bb005b0c",
+  "display_id": 177,
+  "title": "step-3 increment 1c: contract S_C casts (as u64/u32/usize/nat/int) + nat-coercion + the #122/#146 paren discipline — extend the Lean fragment + prove ref_sound for casts (epic #169)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:54:02.327846648Z",
+  "updated_at": "2026-06-09T16:54:02.327846648Z"
+}

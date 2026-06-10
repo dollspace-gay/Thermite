@@ -1,0 +1,10 @@
+{
+  "uuid": "21e752da-9805-4a77-8b30-9edb4c8199ac",
+  "issue_uuid": "3aa390a9-8404-4f26-a108-58167a01d749",
+  "author": "Yffe",
+  "content": "DONE through the full loop (61f6f763 + 4509f1a2). contract_tv divergent_teeth added (faithful->Faithful, <=-for-== -> Divergent, frame-abort->Unverifiable, rlimit both ways — live verus, hand-derived); found + fixed the #189-class rlimit->Divergent fabrication in contract_tv; the critic then found the phrase DRIFT (#192) -> root-cause fix: the shared tv_signal helper across all 3 TV phases incl. exec_tv's previously-missing gate. Re-critic NO DIVERGENCE.",
+  "created_at": "2026-06-10T04:35:34.944005233Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/on78304fzebfaRBiw6g4AUAlFhAVHnYgsGtdjqdkbUgaDifbKmuzvNxjrxUUH69gYIAqAR0dFvIdc7uoySvBw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "aee2f772-c27f-41cf-b69c-4bc8aea9e0a5",
+  "issue_uuid": "08b863b8-bea1-4552-acae-47515b5b7056",
+  "author": "Yffe",
+  "content": "COMPLETE — every step-2.2 objective shipped + critic-clean. (1) The exec-STATEMENT subset FROZEN: exec-stmt-tv.md REQ-1, pinned in code (body_ref_state admits Let/Assign/If/Expr/tail + Block sequencing; honest Unsupported for the rest). (2) The operational semantics MECHANIZED: Lean S_B big-step state-transformer + body_ref_sound (#172, incl. the #186 restoreScope fix) + the v1 while-loop semantics + the kernel-checked WHILE-RULE (#163, Exec/Loop.lean). (3) Body behavioral-refinement TV DESIGNED + SHIPPED: exec-stmt-tv.md + loop-tv.md; thermite-tv body/loop obligations + teeth; the forge body-tv four-way phase (#162, incl. the #189 honesty fix). The kernel-convergence groundwork is done; the kernel target itself remains #164/#21.",
+  "created_at": "2026-06-10T02:59:14.537930549Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAkX+p++sAnEcSOpxSkojMmlfwcmlxzq8rBRbgG61tXLM7MVdFRUfVnmnSdfvWRVHHKvHD8RykmFu6j9oYPkdaBg=="
+}

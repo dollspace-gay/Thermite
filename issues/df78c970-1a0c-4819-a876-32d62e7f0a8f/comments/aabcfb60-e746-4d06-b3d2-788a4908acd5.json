@@ -1,0 +1,10 @@
+{
+  "uuid": "aabcfb60-e746-4d06-b3d2-788a4908acd5",
+  "issue_uuid": "df78c970-1a0c-4819-a876-32d62e7f0a8f",
+  "author": "Yffe",
+  "content": "README uses #the-ladder-l3-l2-l1-l0, #the-cage-seccomp-sandbox, #translation-validation-the-lean-proof-spine, #typed-holes-n-the-goal-repl. GitHub's slugger strips '/' and '+' but keeps BOTH surrounding spaces, each becoming a hyphen: actual slugs are the-ladder-l3--l2--l1--l0, the-cage--seccomp-sandbox, translation-validation--the-lean-proof-spine, typed-holes-n--the-goal-repl (double hyphens). All 4 anchors dead on GitHub; commit message claims 'Every anchor resolves'. Demonstrated by slug-algorithm replay over both files (7 of 11 anchors OK, these 4 MISS). Fix: rename headings to avoid ' / '/' + ' or correct the anchors.",
+  "created_at": "2026-06-10T20:15:07.024812682Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANAobLJKkaXgn9yN4KWSQ11QzM+5hF1+s7wovhhOsZjLR0DV4h8/bS0UGOZBDIFGT54TBu4dQvIgstn+T46sIBg=="
+}

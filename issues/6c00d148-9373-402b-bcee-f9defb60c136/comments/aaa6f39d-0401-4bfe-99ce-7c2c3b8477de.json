@@ -1,0 +1,10 @@
+{
+  "uuid": "aaa6f39d-0401-4bfe-99ce-7c2c3b8477de",
+  "issue_uuid": "6c00d148-9373-402b-bcee-f9defb60c136",
+  "author": "Yffe",
+  "content": "Pin: forge/src/check.rs::mutation_score excludes a proven-EQUIVALENT survivor from BOTH the survivor set AND 'scored' ('REQ-2/REQ-4: excluded from BOTH the survivor set AND scored' — the equivalent += 1; continue branch after equivalence_proves_equal). So shipped denominator = attempted MINUS proven-equivalent, and shipped survivor set = Proved MINUS proven-equivalent. proof-backends.md §7 states 'The survivor set = Proved mutants ONLY' and 'The denominator = ATTEMPTED mutants (preserving the shipped behavior: today every generated-and-lowerable mutant is run, and the OQ-5 rule already DROPS un-lowerable mutants…)' — omitting the #101 equivalence drop entirely from the normative kill/denominator/floor rules (AC-7 and REQ-9 repeat 'denominator = attempted'). The 'preserving the shipped behavior' claim is therefore false as stated, and a literal increment-(iii) implementation regresses equivalent-mutant handling: equivalent mutants re-enter the denominator as survivors → spurious WeakContract floor failures. The doc's own §0 substrate bullet says mutation_score 'counts killed/scored/equivalent', so §7's restatement is internally inconsistent with §0 as well.",
+  "created_at": "2026-06-10T19:10:09.947162523Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAu5J1RFolOMEddQGwtZi+YNwSXGHI0I5sYz8kuFOaB3B/IrDr2GD7d+ymDOSR1YxEwjeBlbiaBRWr/TwJq9v4Cw=="
+}

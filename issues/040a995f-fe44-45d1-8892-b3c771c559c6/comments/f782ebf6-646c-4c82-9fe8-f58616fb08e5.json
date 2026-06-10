@@ -1,0 +1,10 @@
+{
+  "uuid": "f782ebf6-646c-4c82-9fe8-f58616fb08e5",
+  "issue_uuid": "040a995f-fe44-45d1-8892-b3c771c559c6",
+  "author": "Yffe",
+  "content": "DONE (99612e39 + fixes 241343ea). RATIONALE.md: 14 entries, each Definition (standard-vocabulary + lineage) / Mechanism (real file:symbol pointers, 14/14 spot-verified) / Why-vs-alternatives / honest Limits / Direction; the hostile-academic critic verified every lineage attribution (one seccomp-mechanics error found + fixed: BPF filters arg VALUES, cannot DEREFERENCE pointers — the anti-TOCTOU truth), killed an old(_) overclaim, restored the novelty hedges, fixed the trust-base under-enumeration + 4 dead anchors (now 11/11 resolve). README anchors every metaphor without losing the plain register.",
+  "created_at": "2026-06-10T20:21:40.255667370Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADgjBkcFNKmVK70RVrXI0Uu0EC5r2+Esz9+BJeBFXnkO+GBMctWikbDgs2dkj/QqON/Q/azkQqhUm8DCxprSyCQ=="
+}

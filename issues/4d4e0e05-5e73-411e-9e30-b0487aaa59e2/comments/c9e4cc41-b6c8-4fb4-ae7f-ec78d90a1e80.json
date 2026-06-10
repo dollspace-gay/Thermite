@@ -1,0 +1,10 @@
+{
+  "uuid": "c9e4cc41-b6c8-4fb4-ae7f-ec78d90a1e80",
+  "issue_uuid": "4d4e0e05-5e73-411e-9e30-b0487aaa59e2",
+  "author": "Yffe",
+  "content": "DONE (995407a1 + fdfd8855). README Forge bullet gains the shipped TV phases (tv/exec-tv/body-tv); deferred line drops #162; skill engine forge-verb table gains review + the 3 TV verbs (regenerated, 5625/6000, 23 tests green incl. freshness, installed copy synced); skill-generator.md AC-4 notes the post-Appendix-B shipped verbs; thermite-semantics.md REQ-1 + REQ-2 NOT-STARTED -> SHIPPED for the frozen subset (S fully mechanized; T1 kernel-checked end-to-end) with residuals kept named; all stale open-blocker cross-references corrected; loop-tv.md test-filename fix (body_tv.rs). Axiom citations verified by the orchestrator earlier this session (body_ref_sound/while_rule [propext,Quot.sound]).",
+  "created_at": "2026-06-10T03:13:24.472160279Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANM6tjKUFSgfE756RW40GnSFnhJ2L3jMPoZvzuX4ovwoyGyj0bW1Gbn6FfEcMIcoWwi+JWUlKqPSo3uF6ASniBg=="
+}

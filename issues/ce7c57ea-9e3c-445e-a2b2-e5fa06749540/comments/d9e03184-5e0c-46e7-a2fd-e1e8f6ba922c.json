@@ -1,0 +1,10 @@
+{
+  "uuid": "d9e03184-5e0c-46e7-a2fd-e1e8f6ba922c",
+  "issue_uuid": "ce7c57ea-9e3c-445e-a2b2-e5fa06749540",
+  "author": "Yffe",
+  "content": "SHIPPED + critic-clean through the full loop (540cea0d + fix c00600c3). forge body-tv <file>: the straight-line body state-refinement TV + the v1 while-loop obligations (entry/preservation/exit) over each checked item, four-way Faithful/Divergent/Unverifiable/Skipped reported DISTINCTLY (R-HONEST-3), exit nonzero iff Divergent (the exec_tv convention). Consumes only thermite-tv pub APIs (body_equivalence_obligation, loop_*_obligation, loop_ref_obligations + frames); production side genuinely thermite-lower's lower_exec_body (no self-comparison). Tests: faithful straight-line + faithful v1 while -> Faithful (live verus), mutated production -> Divergent, binary_search loop-kind -> Skipped with reason, exit conventions. The critic found #189 (frame compile abort fabricated as Divergent) -> fixed (req gate + mapping hardening + teeth) -> re-critic NO DIVERGENCE. exec-stmt-tv.md REQ-5 + loop-tv.md REQ-5 SHIPPED. The last integration seam of the lowering-soundness program is closed.",
+  "created_at": "2026-06-10T02:58:34.172966778Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAzdAQFGvnQQT1FU79MK9EDOijy9IoYYWns6JaWdyz+ymNoC05eQLKr6w4yzURzeXJNvjo7POXXMx1N+quJj4LDA=="
+}

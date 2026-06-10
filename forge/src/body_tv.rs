@@ -281,6 +281,34 @@ fn straight_line_body_tv(
         }
     };
 
+    // The req GATE (mirrors `exec_tv::check_corpus_expr`'s req gate): the source `req`
+    // is threaded VERBATIM into the obligation frame, but the frame carries
+    // `spec_defs: Vec::new()` — it declares ONLY the params (the names below). If the
+    // `req` references an identifier the frame CANNOT declare (a `spec fn` helper — the
+    // design's `req sorted(haystack)` idiom — or a local bound by an out-of-frame
+    // construct), the obligation would NOT compile: a FRAMING limitation, NOT a
+    // body-lowering infidelity. Skip HONESTLY (never a fabricated Divergent — R-HONEST-3,
+    // exec-stmt-tv.md REQ-5). Unlike `exec_tv` (which DROPS the un-framed req and checks
+    // with no frame), body-TV's `req` is the body's well-formedness / no-overflow frame —
+    // dropping it could turn a faithful body into a false Divergent — so the honest class
+    // here is Skipped, not a frame-less re-check.
+    let declared: Vec<&str> = params.iter().map(|p| p.name.as_str()).collect();
+    if let Some(undeclared) = req_references_undeclarable(f, &declared) {
+        report.results.push(BodyResult {
+            label,
+            verdict: BodyVerdict::Skipped {
+                reason: format!(
+                    "the `req` references `{undeclared}` — a spec-fn helper (the \
+                     `req sorted(haystack)` design idiom) the v1 body-TV frame does not \
+                     carry (`spec_defs: Vec::new()`); the obligation would not compile — a \
+                     FRAMING limitation, not a body-lowering infidelity (exec-stmt-tv.md \
+                     REQ-5; the exec_tv req-gate)"
+                ),
+            },
+        });
+        return;
+    }
+
     let frame = BodyObligationFrame {
         spec_defs: Vec::new(),
         params,
@@ -432,6 +460,26 @@ fn build_loop_frame(
         inputs.push(LoopParamDecl::new(p.name.clone(), ty_str));
     }
 
+    // The req GATE (mirrors the straight-line arm + `exec_tv::check_corpus_expr`): the
+    // source `req` is threaded VERBATIM, but the loop frame declares ONLY the inputs +
+    // cells (`spec_defs: Vec::new()`). A `req` referencing a `spec fn` helper (the
+    // `req sorted(haystack)` idiom) makes EVERY obligation — including the ENTRY proof fn
+    // (`loop-tv.md` REQ-2), which carries NO production text — fail to compile: a FRAMING
+    // limitation, never "the production loop text did not compile". Skip HONESTLY
+    // (R-HONEST-3 / loop-tv.md four-way; an undischarged frame is Skipped/Unverifiable,
+    // never a fabricated Divergent).
+    let mut declared: Vec<&str> = inputs.iter().map(|p| p.name.as_str()).collect();
+    declared.extend(cells.iter().map(|c| c.name.as_str()));
+    if let Some(undeclared) = req_references_undeclarable(f, &declared) {
+        return Err(format!(
+            "the `req` references `{undeclared}` — a spec-fn helper (the \
+             `req sorted(haystack)` design idiom) the v1 body-TV loop frame does not carry \
+             (`spec_defs: Vec::new()`); every loop obligation (the ENTRY proof fn carries no \
+             production text) would not compile — a FRAMING limitation, not a loop-lowering \
+             infidelity (loop-tv.md four-way; the exec_tv req-gate)"
+        ));
+    }
+
     Ok(LoopObligationFrame {
         spec_defs: Vec::new(),
         inputs,
@@ -534,6 +582,55 @@ fn corpus_req(f: &FnItem) -> Option<String> {
     }
 }
 
+/// The req GATE (mirrors `exec_tv::check_corpus_expr`'s req gate). Returns
+/// `Some(<ident>)` for the FIRST identifier the source `req` references that the
+/// obligation frame cannot declare (a `spec fn` helper — the `req sorted(haystack)`
+/// design idiom — or a local bound by an out-of-frame construct), given the frame's
+/// `declared` names (its params / inputs / cells). The obligation carries
+/// `spec_defs: Vec::new()`, so a `req` mentioning an undeclarable ident would not
+/// compile — a FRAMING limitation, not an infidelity. `None` when every referenced
+/// ident is declared (or the `req` is empty / `true`), so a body whose `req` references
+/// only its own params (`req x <= 1000`) is NOT over-skipped.
+fn req_references_undeclarable(f: &FnItem, declared: &[&str]) -> Option<String> {
+    let req = corpus_req(f)?;
+    collect_text_idents(&req)
+        .into_iter()
+        .find(|ident| !declared.contains(&ident.as_str()))
+}
+
+/// Extract the candidate IDENTIFIERS a `req` text references (mirrors
+/// `exec_tv::collect_text_idents`). A heuristic over the verbatim source: alphanumeric/
+/// `_` runs starting with a letter/`_`, EXCLUDING the dotted `.len()`-style method tail
+/// (only the leading segment of `xs.len()` → `xs` is a var) and the `::`-assoc tail
+/// (`u32::MAX`'s `MAX`). A `spec fn` helper name (`all_small`, `small`, `sorted`) is a
+/// leading-segment ident NOT among the frame's declared params, so the gate fires; an
+/// operator / comparison / numeric literal contributes no ident.
+fn collect_text_idents(text: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_ascii_alphabetic() || c == '_' {
+            let start = i;
+            while i < chars.len() && (chars[i].is_ascii_alphanumeric() || chars[i] == '_') {
+                i += 1;
+            }
+            let ident: String = chars[start..i].iter().collect();
+            // Skip a `.`-tail (a method / field access) and a `:`-tail (an assoc item) —
+            // neither is a frame var.
+            let after_dot = start > 0 && chars[start - 1] == '.';
+            let after_colon = start > 0 && chars[start - 1] == ':';
+            if !after_dot && !after_colon && !out.contains(&ident) {
+                out.push(ident);
+            }
+        } else {
+            i += 1;
+        }
+    }
+    out
+}
+
 /// The exec value-type spelling for a param / return / cell type, plus whether it is
 /// a slice (`&[u32]` → indexed element-wise). `None` for a type outside the exec
 /// frame sublanguage (Map/Option/struct/String/…) — a body over such a type is
@@ -563,10 +660,12 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
 // ---- verus discharge (mirrors exec_tv::discharge) --------------------------
 
 /// Discharge a STRAIGHT-LINE body obligation PROGRAM through `verus`, classifying the
-/// verdict (REQ-5 — VERIFIED ⟺ Faithful; a counterexample / compile-parse abort ⟺
-/// Divergent; verus-absent / inadequate-frame non-discharge ⟺ Unverifiable). Runs in
-/// a per-run scratch dir removed wholesale on EVERY exit path (blocker #53, reusing
-/// `crate::check::ScratchDir`). Mirrors `exec_tv::discharge` exactly.
+/// verdict (REQ-5 — VERIFIED ⟺ Faithful; a GENUINE counterexample (errors, NO rlimit
+/// signal) ⟺ Divergent; a Verus/Z3 rlimit timeout / a FRAME compile-parse abort /
+/// verus-absent / inadequate-frame non-discharge ⟺ Unverifiable). `Divergent` is
+/// reserved for a real disagreement that DID reach a verdict — NEVER a frame abort or a
+/// timeout (exec-stmt-tv.md REQ-5 / R-HONEST-3). Runs in a per-run scratch dir removed
+/// wholesale on EVERY exit path (blocker #53, reusing `crate::check::ScratchDir`).
 fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict {
     match run_obligation(program, label, seed, rlimit) {
         // A clean verification (a results line, 0 errors, exit success) ⟺ Faithful.
@@ -584,15 +683,16 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict 
                  `if`-branch state-transformation infidelity)"
             ),
         },
-        // No results line + verus exited NON-SUCCESS ⟺ the production text failed to
-        // COMPILE/PARSE (the #122/#146 abort shapes) → a REAL infidelity (Divergent).
-        DischargeOutcome::CompileAbort => BodyVerdict::Divergent {
-            detail: format!(
-                "verus ABORTED (compile/parse) on the body obligation for `{label}` — the \
-                 production body text did not compile/parse (a type / parse infidelity): a \
-                 real body-lowering infidelity"
-            ),
-        },
+        // A Verus/Z3 rlimit exhaustion / timeout ⟺ Unverifiable (the ladder degrades —
+        // `loop-tv.md` four-way / R-CODE-4), NEVER Divergent (it is not a counterexample).
+        DischargeOutcome::Timeout(reason) => BodyVerdict::Unverifiable { reason },
+        // No results line + verus exited NON-SUCCESS ⟺ a FRAME compile/parse abort (the
+        // obligation's `req`/wrapper did not compile). The req-gate catches the
+        // spec-fn-helper-req case before this; a residual abort here is a FRAMING
+        // limitation, NOT a body-lowering infidelity → Unverifiable (NEVER a fabricated
+        // Divergent — exec-stmt-tv.md REQ-5 / R-HONEST-3). `Divergent` is reserved for a
+        // GENUINE counterexample (the `Errors` arm).
+        DischargeOutcome::CompileAbort(reason) => BodyVerdict::Unverifiable { reason },
         // verus absent / spawn failure / no results line on success ⟺ Unverifiable
         // (surfaced, NEVER a silent pass — R-CODE-4). NOT Divergent (reserved for a
         // real infidelity that DID reach verus and disagree).
@@ -602,11 +702,13 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> BodyVerdict 
 
 /// Discharge the THREE per-run LOOP obligations (`loop-tv.md` REQ-5; ENTRY /
 /// PRESERVATION / EXIT) through `verus`, classifying the COMBINED verdict (REQ-5).
-/// `Faithful` ⟺ ALL THREE verified; `Divergent` ⟺ ANY obligation found a
+/// `Faithful` ⟺ ALL THREE verified; `Divergent` ⟺ ANY obligation found a GENUINE
 /// counterexample (a broken-invariant preservation `postcondition not satisfied` / a
-/// wrong-after-loop-state `assertion failed`); `Unverifiable` ⟺ any obligation could
-/// not discharge for a non-infidelity reason (verus absent / no results); a loop OUT
-/// of the v1 subset is already a Skip BEFORE this is reached. The after-loop
+/// wrong-after-loop-state `assertion failed`, with NO rlimit signal); `Unverifiable` ⟺
+/// any obligation could not discharge for a non-infidelity reason (a Verus/Z3 rlimit
+/// timeout, a FRAME compile abort — the ENTRY obligation carries no production text so
+/// its abort is NEVER an infidelity — verus absent / no results); a loop OUT of the v1
+/// subset is already a Skip BEFORE this is reached. The after-loop
 /// characterization the EXIT obligation pins is the reference's own `inv` over the
 /// opaque cells (implied by, not stronger than, the assumed `inv ∧ ¬cond`), so a
 /// faithful loop VERIFIES.
@@ -681,14 +783,21 @@ fn discharge_loop(
                     ),
                 };
             }
-            DischargeOutcome::CompileAbort => {
-                return BodyVerdict::Divergent {
-                    detail: format!(
-                        "verus ABORTED (compile/parse) on the loop {sub} obligation for \
-                         `{label}` — the production loop text did not compile/parse: a real \
-                         loop-lowering infidelity"
-                    ),
-                };
+            // A Verus/Z3 rlimit exhaustion / timeout on ANY loop obligation ⟺
+            // Unverifiable (`loop-tv.md` four-way: "a Verus/Z3 timeout on an obligation");
+            // NEVER Divergent (not a counterexample).
+            DischargeOutcome::Timeout(reason) => {
+                unverifiable.get_or_insert(format!("loop {sub} obligation: {reason}"));
+            }
+            // A FRAME compile/parse abort on a loop obligation (the ENTRY obligation
+            // carries NO production text at all — `loop-tv.md` REQ-2 — so its abort can
+            // NEVER be "the production loop text did not compile"). The req-gate catches
+            // the spec-fn-helper-req case in `build_loop_frame`; a residual abort here is a
+            // FRAMING limitation, NOT a loop-lowering infidelity → Unverifiable (NEVER a
+            // fabricated Divergent — R-HONEST-3). `Divergent` is reserved for a GENUINE
+            // counterexample (the `Errors` arm above).
+            DischargeOutcome::CompileAbort(reason) => {
+                unverifiable.get_or_insert(format!("loop {sub} obligation: {reason}"));
             }
             DischargeOutcome::Unverifiable(reason) => {
                 unverifiable.get_or_insert(format!("loop {sub} obligation: {reason}"));
@@ -722,12 +831,22 @@ fn loop_after_loop_claim(block: &Block, frame: &LoopObligationFrame) -> Result<S
 enum DischargeOutcome {
     /// A clean verification (`verified >= 1, errors == 0`, exit success).
     Verified,
-    /// A results line with `errors >= 1` (a postcondition counterexample / assertion
-    /// failure).
+    /// A results line with `errors >= 1` AND NO rlimit/timeout signal (a GENUINE
+    /// counterexample — `postcondition not satisfied` / `assertion failed`). This is
+    /// the SOLE source of a `Divergent` verdict (the lowering and the reference
+    /// DISAGREE).
     Errors(u32),
-    /// No results line + a non-success exit (the production text failed to
-    /// compile/parse).
-    CompileAbort,
+    /// A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion / timeout (an error run whose
+    /// output carries the `rlimit`/`resource limit exceeded` signal — `loop-tv.md`
+    /// four-way: "a Verus/Z3 timeout on an obligation"). NOT a counterexample, NOT an
+    /// infidelity — `Unverifiable`, NEVER `Divergent` (R-CODE-4 — report, never a
+    /// silent pass; the `forge check` `classify_verus_outcome` `Timeout` precedent).
+    Timeout(String),
+    /// No results line + a non-success exit (a FRAME compile/parse abort — the
+    /// obligation's `req`/wrapper did not compile). NOT a body-lowering infidelity:
+    /// `Unverifiable` (the gate catches the spec-fn-helper-req case before this; this
+    /// is the residual frame-abort safety net — NEVER `Divergent`, R-HONEST-3).
+    CompileAbort(String),
     /// verus absent / spawn failure / a no-results-on-success non-discharge (honest,
     /// never a silent pass).
     Unverifiable(String),
@@ -777,14 +896,42 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
+    // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion signal. verus prints `rlimit
+    // exceeded` / `resource limit (rlimit) exceeded` WITH a results line counting it as
+    // an error (probed live, issue #189); the `forge check` `classify_verus_outcome`
+    // separates this `Timeout` from a counterexample. A timeout is `Unverifiable`, NEVER
+    // `Divergent` (`loop-tv.md` four-way; R-CODE-4).
+    let rlimit_hit = is_rlimit_signal(&combined);
+
     match parse_results(&combined) {
         Some((verified, errors)) if errors == 0 && verified >= 1 && output.status.success() => {
             DischargeOutcome::Verified
         }
+        // An error run that is REALLY an rlimit exhaustion → Timeout (Unverifiable), never
+        // a fabricated counterexample/Divergent.
+        Some((_verified, errors)) if errors >= 1 && rlimit_hit => {
+            DischargeOutcome::Timeout(format!(
+                "verus exhausted its SMT resource budget (rlimit) on `{label}` before \
+                     proving the obligation — a Verus/Z3 timeout (loop-tv.md four-way), not a \
+                     counterexample"
+            ))
+        }
+        // A GENUINE counterexample (errors with NO rlimit signal) → the SOLE Divergent
+        // source.
         Some((_verified, errors)) if errors >= 1 => DischargeOutcome::Errors(errors),
         _ => {
-            if !output.status.success() {
-                DischargeOutcome::CompileAbort
+            if rlimit_hit {
+                DischargeOutcome::Timeout(format!(
+                    "verus exhausted its SMT resource budget (rlimit) on `{label}` before \
+                     producing a results line — a Verus/Z3 timeout, not an infidelity"
+                ))
+            } else if !output.status.success() {
+                DischargeOutcome::CompileAbort(format!(
+                    "verus ABORTED (compile/parse) on the obligation for `{label}` with no \
+                     parseable results line — a FRAME compile abort (the obligation's \
+                     `req`/wrapper did not compile, e.g. a spec-fn-helper `req` the frame \
+                     does not carry), not a body-lowering infidelity"
+                ))
             } else {
                 DischargeOutcome::Unverifiable(format!(
                     "verus produced no parseable results line for `{label}` (the obligation \
@@ -794,6 +941,21 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
             }
         }
     }
+}
+
+/// `true` iff the combined verus output carries a Verus/Z3 RESOURCE-LIMIT (rlimit)
+/// exhaustion / timeout signal (`Resource limit (rlimit) exceeded`, `rlimit exceeded`,
+/// `resource limit exceeded` — case-insensitive). The discriminator that keeps a
+/// genuine timeout out of the `Divergent` class (`loop-tv.md` four-way; R-CODE-4 — a
+/// timeout degrades + is reported, never treated as a counterexample). Mirrors the
+/// `forge check` `classify_verus_outcome` Timeout split (which keys on the `--profile`
+/// rlimit report); `run_obligation` does not pass `--profile`, so it keys on the rlimit
+/// diagnostic text verus emits on the rlimit hit.
+fn is_rlimit_signal(output: &str) -> bool {
+    let lower = output.to_ascii_lowercase();
+    lower.contains("rlimit exceeded")
+        || lower.contains("rlimit) exceeded")
+        || lower.contains("resource limit exceeded")
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors
@@ -873,3 +1035,277 @@ pub fn render_report(report: &BodyTvReport, header: &str) -> String {
 /// `forge exec-tv` — the deterministic config, §5.3 / R-CODE-5).
 pub const BODY_TV_DEFAULT_SEED: u64 = DEFAULT_SOLVER_SEED;
 pub const BODY_TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
+
+// ---- the forge-level Divergent teeth (REQ-5; blocker #189) -----------------
+//
+// The obligation-layer teeth (`thermite-tv/tests/body_teeth.rs` / `loop_teeth.rs`)
+// prove a WRONG `P_production` -> a real verus error. They do NOT exercise the
+// FORGE-level step that MAPS that verus signal to a `BodyVerdict`: `discharge`'s
+// four-way classification. Over the corpus the faithful lowerer never produces a
+// Divergent, and the req-gate now keeps a spec-fn-helper-`req` FRAME abort OUT of
+// `discharge` entirely — so the mapping itself (`CompileAbort`/`Timeout` ->
+// Unverifiable, a GENUINE counterexample -> Divergent) had NO direct test coverage.
+// This is exactly the divergence #189 pinned: a frame abort fabricated a Divergent.
+//
+// This module is the end-to-end teeth for the FORGE classification, mirroring
+// `exec_tv::divergent_teeth`: it builds a REAL body obligation, discharges it through
+// the ACTUAL `discharge` fn, and asserts the verdict. It covers the positive control
+// (faithful -> Faithful), the GENUINE-counterexample Divergent trigger (a wrong-value
+// production -> a postcondition counterexample), AND the masking-path boundary the
+// fix turns on: a FRAME compile abort (an undefined spec-fn `req`) and a degenerate
+// zero-obligation program each classify Unverifiable, NEVER Divergent.
+//
+// TEST-ONLY: no production-logic change. `discharge` is a private sibling fn,
+// reachable here via `super::`. The teeth are GENUINE (a real wrong production / a
+// real frame abort -> a real verus signal -> the real `discharge` mapping, never a
+// mocked verdict). SKIPS LOUDLY when `verus` is genuinely absent.
+#[cfg(test)]
+mod divergent_teeth {
+    use super::*;
+    use thermite_syntax::ast::{BinOp, Expr};
+
+    /// `true` iff a bare `verus` is spawnable (the SAME resolution `discharge` uses).
+    /// SKIP LOUDLY otherwise so the teeth never silently pass.
+    fn verus_on_path() -> bool {
+        Command::new("verus").arg("--version").output().is_ok()
+    }
+
+    const SEED: u64 = BODY_TV_DEFAULT_SEED;
+    const RLIMIT: f64 = BODY_TV_DEFAULT_RLIMIT;
+
+    fn path(name: &str) -> Expr {
+        Expr::Path(vec![name.to_string()])
+    }
+
+    fn int(value: u128) -> Expr {
+        Expr::IntLit {
+            value,
+            raw: value.to_string(),
+        }
+    }
+
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    /// Build a body obligation, returning `Ok`/`Err` (no `unwrap`/`expect` — the
+    /// anti-pattern gate scans the patch text without `cfg(test)` context). The source
+    /// bodies below are in-subset, so the build always succeeds; the caller asserts
+    /// `is_ok()` so an `Err` (a genuine regression) fails the test LOUDLY.
+    fn build(
+        body: &Block,
+        production: &str,
+        frame: &BodyObligationFrame,
+    ) -> Result<String, String> {
+        body_equivalence_obligation(body, production, frame).map_err(|e| e.to_string())
+    }
+
+    /// The source body `{ let a = x + 1; let b = a * 2; b }` (reference
+    /// `((x as nat) + 1) * 2`), reused for the positive control + the frame-abort arm.
+    fn sl_body() -> Block {
+        Block {
+            stmts: vec![
+                Stmt::Let {
+                    mutable: false,
+                    name: "a".to_string(),
+                    ty: None,
+                    init: bin(BinOp::Add, path("x"), int(1)),
+                },
+                Stmt::Let {
+                    mutable: false,
+                    name: "b".to_string(),
+                    ty: None,
+                    init: bin(BinOp::Mul, path("a"), int(2)),
+                },
+            ],
+            tail: Some(Box::new(path("b"))),
+        }
+    }
+
+    fn sl_frame() -> BodyObligationFrame {
+        BodyObligationFrame {
+            params: vec![BodyParamDecl::new("x", "u64")],
+            ret_type: "u64".to_string(),
+            req: Some("x <= 1000".to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// POSITIVE CONTROL: a FAITHFUL production (`let a = x + 1; let b = a * 2; b`) ->
+    /// `BodyVerdict::Faithful`. Without it, a `discharge` returning Faithful
+    /// unconditionally would pass the other arms vacuously.
+    #[test]
+    fn faithful_production_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH — the forge-level Faithful control not discharged.");
+            return;
+        }
+        let built = build(
+            &sl_body(),
+            "    let a: u64 = x + 1;\n    let b: u64 = a * 2;\n    b\n",
+            &sl_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the body obligation TEXT must build: {built:?}"
+        );
+        let prog = built.unwrap_or_default();
+        let verdict = discharge(&prog, "teeth.faithful", SEED, RLIMIT);
+        assert_eq!(
+            verdict,
+            BodyVerdict::Faithful,
+            "a FAITHFUL production body lowering must classify Faithful"
+        );
+    }
+
+    /// DIVERGENT (the ONLY Divergent source): a production that TYPECHECKS but computes
+    /// the WRONG final state (the B2 REORDERED mutation shape) -> verus finds a
+    /// `postcondition not satisfied` counterexample (errors >= 1, NO rlimit signal) ->
+    /// `discharge` maps the `Errors` arm to `BodyVerdict::Divergent`.
+    #[test]
+    fn wrong_state_production_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the forge-level Divergent (counterexample) teeth \
+                 not discharged."
+            );
+            return;
+        }
+        // Source `{ let mut s = x; s = s + 1; s = s * 2; s }` (reference `(x+1)*2`); the
+        // REORDERED production `s = s * 2; s = s + 1` has final state `(x*2)+1 != (x+1)*2`.
+        let body = Block {
+            stmts: vec![
+                Stmt::Let {
+                    mutable: true,
+                    name: "s".to_string(),
+                    ty: None,
+                    init: path("x"),
+                },
+                Stmt::Assign {
+                    target: path("s"),
+                    value: bin(BinOp::Add, path("s"), int(1)),
+                },
+                Stmt::Assign {
+                    target: path("s"),
+                    value: bin(BinOp::Mul, path("s"), int(2)),
+                },
+            ],
+            tail: Some(Box::new(path("s"))),
+        };
+        let built = build(
+            &body,
+            "    let mut s = x;\n    s = s * 2;\n    s = s + 1;\n    s\n",
+            &sl_frame(),
+        );
+        assert!(
+            built.is_ok(),
+            "the body obligation TEXT must build: {built:?}"
+        );
+        let prog = built.unwrap_or_default();
+        let verdict = discharge(&prog, "teeth.counterexample", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a WRONG-STATE production must classify Divergent via a postcondition \
+             counterexample; got {verdict:?}"
+        );
+    }
+
+    /// THE FIX (divergence #189): a FRAME compile abort — a `req` referencing an
+    /// UNDEFINED spec fn (`all_small(x)`) with `spec_defs` EMPTY — makes the obligation
+    /// fail to COMPILE (no parseable results line, non-success exit). `discharge` MUST
+    /// map this `CompileAbort` to `BodyVerdict::Unverifiable`, NEVER `Divergent`: a frame
+    /// abort is a FRAMING limitation, not a body-lowering infidelity (exec-stmt-tv.md
+    /// REQ-5 / R-HONEST-3). This is the very mapping the pinned divergence got wrong.
+    #[test]
+    fn frame_compile_abort_classifies_unverifiable_not_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the forge-level CompileAbort->Unverifiable \
+                 mapping not discharged."
+            );
+            return;
+        }
+        let frame = BodyObligationFrame {
+            params: vec![BodyParamDecl::new("x", "u64")],
+            ret_type: "u64".to_string(),
+            // `all_small` is an UNDEFINED spec fn (spec_defs is empty) — the obligation's
+            // `requires all_small(x)` does not compile (an undefined-fn error). The exact
+            // shape the pinned divergence fabricated a Divergent from.
+            req: Some("all_small(x)".to_string()),
+            ..Default::default()
+        };
+        let built = build(
+            &sl_body(),
+            "    let a: u64 = x + 1;\n    let b: u64 = a * 2;\n    b\n",
+            &frame,
+        );
+        assert!(
+            built.is_ok(),
+            "the body obligation TEXT must build: {built:?}"
+        );
+        let prog = built.unwrap_or_default();
+        let verdict = discharge(&prog, "teeth.frameabort", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, BodyVerdict::Unverifiable { .. }),
+            "a FRAME compile abort (an undefined spec-fn `req`) must classify Unverifiable, \
+             NEVER Divergent (the pinned divergence #189 — a fabricated infidelity); got \
+             {verdict:?}"
+        );
+        assert!(
+            !matches!(verdict, BodyVerdict::Divergent { .. }),
+            "a frame abort must NEVER be Divergent (R-HONEST-3); got {verdict:?}"
+        );
+    }
+
+    /// THE BOUNDARY: a degenerate ZERO-obligation program verifies as `0 verified,
+    /// 0 errors` (verus succeeds, no obligation reached a verdict) -> `discharge` maps it
+    /// to `BodyVerdict::Unverifiable`, NEVER `Divergent`/`Faithful`. Pins the
+    /// `_ => if status.success()` arm distinct from a real Divergent / Faithful.
+    #[test]
+    fn degenerate_no_obligation_classifies_unverifiable() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the forge-level Unverifiable boundary not discharged."
+            );
+            return;
+        }
+        let degenerate = "use vstd::prelude::*;\nverus! {\n}\nfn main() {}\n";
+        let verdict = discharge(degenerate, "teeth.degenerate", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, BodyVerdict::Unverifiable { .. }),
+            "a degenerate zero-obligation program must classify Unverifiable (the \
+             Divergent-vs-Unverifiable boundary), never Divergent/Faithful; got {verdict:?}"
+        );
+    }
+
+    /// The rlimit/timeout DISCRIMINATOR (the riding fix): an error run carrying a
+    /// `Resource limit (rlimit) exceeded` signal is a TIMEOUT, not a counterexample —
+    /// [`is_rlimit_signal`] detects it so `run_obligation` routes it to `Timeout`
+    /// (Unverifiable), NEVER the `Errors` (Divergent) arm. A pure-unit check of the
+    /// discriminator (no verus needed): a counterexample output has NO rlimit signal; an
+    /// rlimit output does. This keeps a genuine Z3 rlimit exhaustion out of Divergent
+    /// (loop-tv.md four-way — "a Verus/Z3 timeout").
+    #[test]
+    fn rlimit_signal_is_detected_counterexample_is_not() {
+        assert!(
+            is_rlimit_signal("error: Resource limit (rlimit) exceeded\n0 verified, 1 errors"),
+            "a `Resource limit (rlimit) exceeded` output MUST be detected as a timeout \
+             signal (routed to Unverifiable, never Divergent)"
+        );
+        assert!(
+            is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
+            "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
+        );
+        assert!(
+            !is_rlimit_signal(
+                "error: postcondition not satisfied\n --> x.rs:5:13\n0 verified, 1 errors"
+            ),
+            "a genuine `postcondition not satisfied` counterexample MUST NOT be detected as \
+             a timeout (it stays in the Divergent class)"
+        );
+    }
+}

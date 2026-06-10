@@ -1,0 +1,10 @@
+{
+  "uuid": "22a9cc75-9c15-48fb-b97b-3e1356611851",
+  "issue_uuid": "3529f87b-95ba-4213-8120-3b129d3da9ea",
+  "author": "Yffe",
+  "content": "FIXED + re-critic-clean (c00600c3). The exec_tv-mirroring req gate (collect_text_idents character-identical to the sibling; undeclarable req -> Skipped with an honest framing-limitation reason, never blamed on the production) + the mapping hardening (CompileAbort -> Unverifiable in both arms; new Timeout via is_rlimit_signal -> Unverifiable; Divergent reachable ONLY from a genuine counterexample with no rlimit signal) + an in-file divergent_teeth mod (5 live tests incl. frame-abort->Unverifiable + the rlimit discriminator both ways). Re-critic NO DIVERGENCE: pins pass for the right reason (oracle unchanged); the gate does not over-skip (5 live boundary probes — param-only reqs + slice-len reqs still Faithful; u32::MAX/as-cast shapes Skipped, sibling-consistent); a real counterexample cannot carry the rlimit phrase (reasoned + teeth-pinned); loop combine still worst-wins; full gauntlet green.",
+  "created_at": "2026-06-10T02:58:17.993987001Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAY97M+r/JpHZxua0s0bd3pVxi4znzQllJqM4zcdBYkqri3XqLETE0w/vlWD7tsz2gGDtI3D0qen0CaGwXJbiMAw=="
+}

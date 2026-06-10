@@ -2,11 +2,12 @@
   "uuid": "4d4e0e05-5e73-411e-9e30-b0487aaa59e2",
   "display_id": 191,
   "title": "docs: post-162 refresh — README body-tv shipped + deferred line, skill engine forge-verb table gains the TV verbs, regenerate + sync installed skill, design-doc roadmap currency",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T03:03:48.177676554Z",
-  "updated_at": "2026-06-10T03:03:49.726235172Z",
+  "updated_at": "2026-06-10T03:13:33.900081991Z",
+  "closed_at": "2026-06-10T03:13:33.900081991Z",
   "labels": [
     "docs"
   ]

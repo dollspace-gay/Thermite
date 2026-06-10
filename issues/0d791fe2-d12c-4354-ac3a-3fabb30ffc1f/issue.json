@@ -2,11 +2,12 @@
   "uuid": "0d791fe2-d12c-4354-ac3a-3fabb30ffc1f",
   "display_id": 220,
   "title": "Divergence: RATIONALE contract entry claims 'old(_) pre-state bindings' — no old() construct exists anywhere in the language",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T20:14:36.501929919Z",
-  "updated_at": "2026-06-10T20:14:37.943691813Z",
+  "updated_at": "2026-06-10T20:21:29.070532888Z",
+  "closed_at": "2026-06-10T20:21:29.070532888Z",
   "labels": [
     "blocker"
   ]

@@ -1,0 +1,10 @@
+{
+  "uuid": "ad1ef2de-5b67-4b3a-85de-91508cd9b887",
+  "issue_uuid": "ef1726e8-4481-4d6a-b34c-ee9cff8350c1",
+  "author": "Yffe",
+  "content": "Cycle-7 verification: resolution at 78dcfe7f verified. (1) Closure now seed req∪ens∪body∪dec(item), step body∪dec per reached spec-fn — exhaustive against every expression class the designed exports denote (LOOP inv/cond/dec are syntactic constituents of body and the named forge mirror collect_stmt_spec_fn_calls walks node.invs/node.dec/cond; EXEC/BODY/OVERFLOW denote in ExecExpr/S_B which has NO specCall constructor — specCall-free by construction; spine loop inv is State→Prop, registry-free; increment-(iv) loop/exec export is explicitly un-designed and governed by the universal expression-position principle). (2) fails-CLOSED claim verified: Item::Fn weaves whole-file spec_items (no omission possible); a checked Item::SpecFn with a dec-only callee lowers a decreases referencing an undefined fn → real verus errors (lower_spec_fn emits spec_dec except non-recursive scheme-call bodies, where no obligation denotes the measure). (3) PinDecMeasure.lean untouched by the doc commit, builds clean (lake build OK), wired as fourth oracle in §4 consistency list + gate oracles (both directions) + Verification (ii). (4) Residual req∪ens[∪body]-without-dec mentions (431/875/911/924/928) are all historical references to the retired cycle-2/5 scopes. No divergence remains.",
+  "created_at": "2026-06-10T22:50:13.027719199Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAN9mcuHLPm6aeHWr7/bs4d7JAB5X7hCXKkb70KE/NnsDKQDdQUi+PwF60jIStaaCu2w4+NXuoo/LFX1riY3jOCw=="
+}

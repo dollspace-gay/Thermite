@@ -1,0 +1,10 @@
+{
+  "uuid": "52b02e99-b852-4597-99be-986092be5d70",
+  "issue_uuid": "69b84e4d-1285-46a0-88ba-fd3f566b57e8",
+  "author": "Yffe",
+  "content": "Failing tests at forge/tests/divergence_holed_lowering.rs::{divergence_build_emits_artifact_for_holed_item, divergence_body_tv_reports_holed_body_faithful} demonstrate the divergence. Root cause: only check::check_file_with_options consults FnItem.holes; because a hole is NOT a Stmt variant, every other lowering path (build::build_file front, body_tv, exec_tv corpus mode) lowers the hole-stripped body — the open goal vanishes into a valid program. Observed: forge build on 'fn main { ?0  42 }' emits an rlib + 'assurance: L1' manifest, exit 0; body-tv reports 'main — faithful'. Authority: goal-repl.md REQ-4/REQ-5 (no lowering, no verus; L0-equivalent until every hole is filled), ast.rs FnItem.holes contract ('a holed item never lowers'), thermite-design.md §6 (the build manifest is the trust statement).",
+  "created_at": "2026-06-10T06:16:55.366059296Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAvlYLJSAqGRzIvpeBX5YGT8h84lPSTJ0Odz81BItbOY6mg4vE58xGuGdU9cjURF8f7lfLAIMrBQ7aeAOFJjo9DQ=="
+}

@@ -2,11 +2,12 @@
   "uuid": "c1e379ce-27f0-4805-afb5-2f3b345b4049",
   "display_id": 208,
   "title": "Divergence: proof-backends.md REQ-7 staleness/REQ-2(d) evidence key omit the engine-toolchain + Lean-spine versions (and misquote cache_key as hashing ast_slice+env)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T18:54:05.402014069Z",
-  "updated_at": "2026-06-10T18:54:06.905002473Z",
+  "updated_at": "2026-06-10T22:51:18.399277831Z",
+  "closed_at": "2026-06-10T22:51:18.399277831Z",
   "labels": [
     "blocker"
   ]

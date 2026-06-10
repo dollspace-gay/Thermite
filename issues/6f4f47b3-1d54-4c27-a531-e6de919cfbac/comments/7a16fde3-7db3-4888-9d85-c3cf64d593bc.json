@@ -1,0 +1,10 @@
+{
+  "uuid": "7a16fde3-7db3-4888-9d85-c3cf64d593bc",
+  "issue_uuid": "6f4f47b3-1d54-4c27-a531-e6de919cfbac",
+  "author": "Yffe",
+  "content": "Kernel-checked pin at lean/Thermite/PinBodyRegistry.lean demonstrates the divergence. §4's hard gate computes calledSpecFns(item) from req ∪ ens only, and R_item is 'exactly calledSpecFns(item)' — but the #214 form binds the result through '∀ r, stabilizes body_expr env r', making the BODY's spec-calls load-bearing. Spine ground truth (Denote.lean intVal): an UNRESOLVED specCall denotes 0 at EVERY fuel, so an omitted body-called spec-fn STABILIZES to the bottom; uniqueness (the doc's own #214 lever) forces r=0; wrong_contract_certifies_under_body_omission discharges ens: result == 0 for an item whose true result is 5 (h(x)=5), while wrong_contract_fails_with_full_registry shows the same obligation REFUTED with the registry complete. REGISTRY-TERMINATION (REQ-1.2) does not close it: R_item = ∅ means the class is not even assigned. The §4 soundness paragraph already says 'reachable from req/ens/the body' and §6.1 tier (a) tests req/ens/body — only the gate, R_item population, and the per-name decide lemmas omit the body. Fix: extend the reachability set to req ∪ ens ∪ body_expr.",
+  "created_at": "2026-06-10T21:04:07.439747841Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAVeToY55ED0XGK1zDrdCHui7SDdxUclsimjlxRpkqzu91myU4bLNZl6TaPlMk04LuGy8nfdCmnkMwuCWlepeoAQ=="
+}

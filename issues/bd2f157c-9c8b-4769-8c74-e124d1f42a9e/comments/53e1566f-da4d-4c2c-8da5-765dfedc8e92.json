@@ -1,0 +1,10 @@
+{
+  "uuid": "53e1566f-da4d-4c2c-8da5-765dfedc8e92",
+  "issue_uuid": "bd2f157c-9c8b-4769-8c74-e124d1f42a9e",
+  "author": "Yffe",
+  "content": "Code: check.rs mutation_score step 3 — 'a Proved mutant SURVIVED; a Counterexample / Timeout mutant is KILLED'; mutant_outcome_is_survivor = matches!(Proved); mutation.rs REQ-4 'Killed (counterexample / timeout)'. The doc claims its rule is 'exactly today's mutant_outcome_is_survivor inverted, but now over Verdict::Refuted' — false: inverted-survivor = Refuted UNION Unknown. Restricting kills to Refuted reclassifies every Timeout-killed mutant as 'untested'/dropped — a semantics CHANGE to the shipped battery presented as a faithful generalization, and the OQ-5 cite covers only lowering failures (timeouts are NOT dropped today). Undecided consequence the doc must rule on: with untested mutants dropped from the denominator, an item passes MUTATION_FLOOR (meets_floor, 0.60) at 1 killed / 1 tested with N mutants untested — '§7 floor unchanged' is asserted without a minimum-tested rule or untested-counts-as-unkilled decision (the scored==0 -> below-floor backstop covers only the all-untested case). Correction: state the shipped Timeout=KILLED semantics accurately, mark the Refuted-only kill definition as a deliberate change with rationale, and decide the floor denominator rule.",
+  "created_at": "2026-06-10T18:53:37.946551626Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKaqBQoUwNi4L/4CoLKVL8HDCRc0/cnP51z0DET/lny0lhv0WToP40/wp1hKjun//2zvvvf3VIB2O+Nis6pfbAA=="
+}

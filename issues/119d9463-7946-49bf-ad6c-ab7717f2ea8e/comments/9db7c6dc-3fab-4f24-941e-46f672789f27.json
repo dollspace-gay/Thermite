@@ -1,0 +1,10 @@
+{
+  "uuid": "9db7c6dc-3fab-4f24-941e-46f672789f27",
+  "issue_uuid": "119d9463-7946-49bf-ad6c-ab7717f2ea8e",
+  "author": "Yffe",
+  "content": "Critic pin per the ACToR discriminator cycle: commit the failing test forge/tests/divergence_kernel_time_boundary.rs (asserts the kernel-target.md OQ-2 admit pin — a fx time boundary program builds a kernel rlib) un-ignored as the release block; no production code touched (fix is the generator's).",
+  "created_at": "2026-06-10T07:49:28.586315334Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABArGxTq2BfrHHcAfTZ0oVTCpOjkXGB48VzEhs54NnzHEFHPwpNZG0/k2arCyTZcfLRkJmTMnyA7uRhCgl0U/mHBA=="
+}

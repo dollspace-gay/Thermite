@@ -408,6 +408,21 @@ design = ".design/basis/08-runnable-effect-link.md"
 reference = ["conformance/effect-link", "conformance/build"]
 conformance_ops = ["now_runs", "read_runs", "now_sandbox_confined"]
 
+# Freestanding no_std kernel build target (crosslink #164, epic #169): forge build
+# --target kernel emits a no_std+alloc rlib (no main, no seccomp, panic=abort) and
+# REJECTS an fx row carrying an ambient syscall (read/write/net/term — kernel code
+# has no userspace syscall surface); the L3 (Verus) path is target-independent and
+# untouched. build.rs forks the verb at build_file/emit_source/invoke_rustc (a
+# BuildTarget Std/Kernel). Governed by kernel-target.md; the reference is the corpus
+# sum (the pure fn that compiles to a no_std kernel rlib) + the build oracle. The
+# governed change site (build.rs) is UNBUILT (blocker #197); this route is added at
+# manifest time so the spec-discipline hook routes the builder's edit.
+[[route]]
+crate_pattern = "forge/src/build.rs"
+design = ".design/build/kernel-target.md"
+reference = ["conformance/build"]
+conformance_ops = ["sum"]
+
 [[route]]
 crate_pattern = "forge/src/effect_wrappers.rs"
 design = ".design/basis/08-runnable-effect-link.md"

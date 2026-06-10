@@ -1,0 +1,10 @@
+{
+  "uuid": "563d59cc-84c6-4ac5-8b5c-cc8b0f7f917e",
+  "issue_uuid": "f6e21faa-b7e9-4823-bfac-2e3db69a20a7",
+  "author": "Yffe",
+  "content": "RATIONALE preamble quotes the SOTA survey as recording all three novel pieces as 'GENUINE EXTENSION — no analogue in the surveyed verified-compilation literature'. That quote matches the anti-Goodhart battery row exactly, but the caged-quantifier-fragment row (.design/research/formal-methods-sota.md terminology map) reads 'no DIRECT analogue in the surveyed verified-compilation lit; NEEDS A TARGETED SURVEY TO CONFIRM NOVELTY'. The preamble flattens that hedge across all three claims (the combinator-cage entry's 'novel-by-absence' is closer but still drops the explicit caveat). A hostile reader who opens the cited survey sees the dropped qualifier — the marketing-overclaim charge, self-inflicted.",
+  "created_at": "2026-06-10T20:15:30.093909332Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAhDfGiqBDWvhKMqde90zeTpy5jziBprzkjGAfc1kLnkRwx/EtNnVvyK2caTTAvIc5uowPJxn3JznLpD4T/xCHBA=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "ffef8e38-2cce-417c-9850-45fb52c42056",
+  "issue_uuid": "32fb25fc-c97d-4605-a950-06f65041bea2",
+  "author": "Yffe",
+  "content": "DONE (7bc94048). README: Auditing section + new Status bullet for the lowering-soundness program (thermite-tv per-run TV + the Lean proof spine, named trust base, negative lemmas, correspondence audit, Z3-demotion PoC); layout gains lean/ + thermite-tv; deferred line names #162 + the spine residuals. Skill: generator (generate.rs REQ-3 curated ladder prose) gains the TV+Lean trust story, regenerated, budget 5448/6000, all 23 thermite-skill tests green (incl. committed==generate() freshness), installed copy ~/.claude/skills/thermite/SKILL.md synced (frontmatter preserved). Generator verified correct: committed skill byte-identical to --emit; exhaustive-match/registry mechanisms intact. acto-critic.md model->fable committed. thermite-design.md checked — no now-false trust claims (its TCB line remains honest). Gauntlet: build/clippy/fmt green.",
+  "created_at": "2026-06-10T01:01:13.834176055Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAwIiQtjLKw8HUTBVeQUS3V+WvCS6f/+moDRbz0KWHqeAiEpODrZrfr5zVlWa5/EN64YKm4hG54W4SUM6Zc/kOBw=="
+}

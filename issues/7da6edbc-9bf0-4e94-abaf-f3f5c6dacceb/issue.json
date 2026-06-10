@@ -1,0 +1,10 @@
+{
+  "uuid": "7da6edbc-9bf0-4e94-abaf-f3f5c6dacceb",
+  "display_id": 203,
+  "title": "design: proof-backend interface + Lean as engine 2 — backend-neutral obligations over the mechanized semantics, engine trust profiles, the Thermite-to-Lean obligation exporter, certificate attribution; iterate doc via fable-critic until clean",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:38:29.555964581Z",
+  "updated_at": "2026-06-10T18:38:29.555964581Z"
+}

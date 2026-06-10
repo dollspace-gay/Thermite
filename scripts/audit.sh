@@ -278,12 +278,18 @@ else
     prog_div=0; prog_admit=1
     for sub in tv exec-tv body-tv; do
       out="$("$FORGE" "$sub" "$f" 2>&1)"; src=$?
-      if [ "$src" -ne 0 ]; then
-        # forge refused to admit / errored — note it, count as not-admitted for that sub
+      # PARSE-FIRST (do NOT branch on the exit code): forge tv/exec-tv/body-tv exit
+      # NONZERO (EXIT_VERIFICATION_FAILURE) precisely WHEN a clause is Divergent — so
+      # treating every nonzero exit as "not admitted" would SWALLOW the one finding this
+      # gate exists to catch. Authority: forge/src/cli.rs::run_tv (Divergent ⇒ nonzero
+      # exit) + render_report's header. Locate the report line ("… N clause(s)/expr(s)/
+      # bod… checked, …") wherever it sits; if there is NO report line, forge genuinely
+      # refused (usage/parse error) → count as not-admitted for that sub and move on.
+      hdr="$(printf '%s' "$out" | grep -iE '[0-9]+ (clause|expr|bod)[a-z()/]* checked' | head -1)"
+      if [ -z "$hdr" ]; then
         prog_admit=0
         continue
       fi
-      hdr="$(printf '%s' "$out" | head -1)"
       c="$(parse_num "$hdr" "(expr\\(s\\)|clause\\(s\\)|bod(y|ies)) checked")"
       [ -z "$c" ] && c="$(printf '%s' "$hdr" | grep -oE '[0-9]+ (clause|expr|bod)' | head -1 | grep -oE '[0-9]+')"
       ck="$(printf '%s' "$hdr" | grep -oiE '[0-9]+ (clause\(s\)|expr\(s\)|body|bodies) checked' | grep -oE '[0-9]+' | head -1)"
@@ -489,6 +495,10 @@ elif [ "$RC" -eq 0 ] && [ "$GUARANTEE_SKIPS" -gt 0 ]; then
   printf '  %sDEEP AUDIT INCONCLUSIVE%s — no check FAILED, but a guarantee-bearing check SKIPPED:\n' "$Y" "$Z"
   for s in "${SKIPPED_GUARANTEES[@]}"; do printf '       %s- %s%s\n' "$Y" "$s" "$Z"; done
   note "Install the missing tool(s) and re-run for a full re-derivation."
+  # INCONCLUSIVE is NOT a pass: a guarantee-bearing link was never re-derived. Exit
+  # NONZERO (3, distinct from FAILED's 1) so automation cannot read a skipped-guarantee
+  # run as green (R-HONEST-3: no false assurance from an un-run check).
+  RC=3
 else
   printf '  %sDEEP AUDIT FAILED%s — a guarantee-bearing check did NOT hold (see the FAIL lines above).\n' "$R" "$Z"
   if [ "$GUARANTEE_SKIPS" -gt 0 ]; then

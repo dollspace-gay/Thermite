@@ -220,12 +220,33 @@ pub fn build_file(
     out: Option<&Path>,
 ) -> Result<BuildManifest, ForgeError> {
     let path = path.as_ref();
+    let program = parse_program(path)?;
+
+    // #193/#195 OPEN-HOLE refusal (`.design/forge/goal-repl.md` REQ-4/REQ-5;
+    // `thermite-design.md` §6): a fn carrying ANY open body hole (`?N`) is
+    // L0-equivalent (incomplete) and NEVER lowers — because a hole is recorded on
+    // `FnItem.holes` (NOT a `Stmt` variant), lowering a holed body would silently
+    // DELETE the open goal and emit a trust-stamped artifact for an incomplete
+    // program (the §6 build manifest is the deliverable's trust statement). So
+    // `build` REFUSES BEFORE `emit_source`/`lower_l1` — a structured error naming
+    // the open hole(s), nonzero exit, NO artifact — mirroring `check`'s `OpenHole`
+    // reject (the SHARED `goal_repl::open_hole_reason`, the #192 single-copy lesson).
+    if let Some(detail) = program.items.iter().find_map(|i| match i {
+        Item::Fn(f) => crate::goal_repl::open_hole_reason(f),
+        Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+    }) {
+        return Err(ForgeError::Usage(format!(
+            "`forge build` refuses a holed item: {detail} `forge build` lowers to a \
+             trust-stamped artifact, so a holed body would silently drop the open goal \
+             — fill every hole first (`forge fill`)."
+        )));
+    }
+
     // The full compiled source (lower_l1 + any --entry runner + the #57 sandbox
     // prelude) — the SAME byte-deterministic emission the reproducibility check
     // (AC-6) asserts is stable (`emit_source` is this build's source-of-truth,
     // REQ-5).
     let source = emit_source(path, entry, sandbox)?;
-    let program = parse_program(path)?;
 
     // REQ-3: a `--entry` produced the deterministic generated runner inside
     // `emit_source` → a runnable executable; the default is a library (rlib) of the

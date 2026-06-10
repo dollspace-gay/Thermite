@@ -187,6 +187,22 @@ fn body_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut BodyTvReport) {
         return; // a boundary fn has no in-language body.
     };
 
+    // #193/#195 OPEN-HOLE gate (`.design/forge/goal-repl.md` REQ-5; the four-way's
+    // out-of-subset class): a fn carrying ANY open body hole (`?N`) is INCOMPLETE —
+    // a hole is recorded on `FnItem.holes`, NOT in the `Stmt` stream, so lowering
+    // `body` here would silently DROP the open goal and ship a hole-stripped body to
+    // verus, fabricating `Faithful` for an unfinished body. An incomplete body is not
+    // checkable, so it is Skipped HONESTLY with the OpenHole reason (NEVER Faithful —
+    // R-HONEST-3) BEFORE the body lowers, mirroring `check`'s `OpenHole` reject
+    // (the SHARED `goal_repl::open_hole_reason`, the #192 single-copy lesson).
+    if let Some(reason) = crate::goal_repl::open_hole_reason(f) {
+        report.results.push(BodyResult {
+            label: f.name.clone(),
+            verdict: BodyVerdict::Skipped { reason },
+        });
+        return;
+    }
+
     if matches!(body.stmts.last(), Some(Stmt::Loop(_))) {
         loop_body_tv(f, body, seed, rlimit, report);
     } else {

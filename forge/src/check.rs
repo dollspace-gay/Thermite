@@ -300,30 +300,14 @@ pub fn check_file_with_options(
         // detail names every open hole address so `forge goal`/`forge fill` can list
         // them (R-CODE-5 — a pure function of the fn's holes).
         if let Item::Fn(f) = item {
-            if let Some(first) = f.holes.first() {
-                let addrs: Vec<String> = f
-                    .holes
-                    .iter()
-                    .map(|h| format!("{}.?{}", f.name, h.number))
-                    .collect();
+            if let Some(detail) = crate::goal_repl::open_hole_reason(f) {
                 certs.push(Certificate::rejected(
                     f.name.clone(),
                     effects_of(&f.contract.fx),
                     f.slag.is_some(),
                     RejectReason {
                         cause: "OpenHole".to_string(),
-                        detail: format!(
-                            "`{}` has {} open body hole(s) [{}] — an item with any `?N` hole is \
-                             L0-equivalent (incomplete) and does NOT certify until every hole is \
-                             filled (`forge fill {} <code>`). First open goal: hole `?{}` at byte \
-                             {} (`.design/forge/goal-repl.md` REQ-5).",
-                            f.name,
-                            f.holes.len(),
-                            addrs.join(", "),
-                            addrs[0],
-                            first.number,
-                            first.span.start,
-                        ),
+                        detail,
                     },
                 ));
                 continue;

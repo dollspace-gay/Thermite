@@ -154,3 +154,27 @@ fn divergence_body_tv_reports_holed_body_faithful() {
          stdout:\n{stdout}\nstderr:\n{stderr}"
     );
 }
+
+/// Divergence (same class as body-TV, transitive per the pin header): `forge
+/// exec-tv` corpus mode lowers the holed body's tail expr and reports it
+/// `faithful` — certifying fidelity of an INCOMPLETE body whose open goal `?0` was
+/// silently deleted. Authority: `.design/forge/goal-repl.md` REQ-5 + the
+/// `FnItem.holes` contract ("a holed item never lowers"). Expected: NO sub-result
+/// of the holed `main` is `faithful` (the honest class is an explicit Skip naming
+/// the open hole — the four-way's out-of-subset class).
+#[test]
+fn divergence_exec_tv_reports_holed_tail_faithful() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not reachable; exec-tv would report unverifiable, not faithful");
+        return;
+    }
+    let file = temp_th("exectv");
+    let (stdout, stderr, _ok) = run_forge(&["exec-tv", file.to_str().unwrap()]);
+    let _ = std::fs::remove_file(&file);
+    assert!(
+        !stdout.contains("main.tail — faithful") && !stdout.contains("main.return — faithful"),
+        "AUTHORITY (goal-repl.md REQ-5; ast.rs FnItem.holes contract): a holed body never \
+         lowers and never reaches verus — exec-TV must not certify any sub-expr of it \
+         `faithful`.\nstdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+}

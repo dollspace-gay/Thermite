@@ -339,6 +339,22 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
         return; // a boundary fn has no in-language body.
     };
 
+    // #193/#195 OPEN-HOLE gate (`.design/forge/goal-repl.md` REQ-5; the four-way's
+    // out-of-subset class): a fn carrying ANY open body hole (`?N`) is INCOMPLETE —
+    // a hole is recorded on `FnItem.holes`, NOT in the `Stmt` stream, so checking the
+    // body's exprs here would lower a hole-stripped body and fabricate `Faithful` for
+    // the tail expr of an unfinished body. An incomplete body is not checkable, so it
+    // is Skipped HONESTLY with the OpenHole reason (NEVER Faithful — R-HONEST-3) BEFORE
+    // any expr lowers, mirroring `check`'s `OpenHole` reject (the SHARED
+    // `goal_repl::open_hole_reason`, the #192 single-copy lesson).
+    if let Some(reason) = crate::goal_repl::open_hole_reason(f) {
+        report.results.push(ExecResult {
+            label: f.name.clone(),
+            verdict: ExecVerdict::Skipped { reason },
+        });
+        return;
+    }
+
     // The signature env: each param at its exec value type. A param of a type the
     // exec frame cannot spell (Map/Option/struct/…) is recorded as un-spellable;
     // an expr that references it is then Skipped (non-derivable frame).

@@ -341,6 +341,36 @@ fn contract_of<'p>(program: &'p Program, item: &str) -> Option<&'p Contract> {
     })
 }
 
+/// The SHARED open-hole refusal text for a holed exec fn (#193/#195,
+/// goal-repl.md REQ-4/REQ-5). Returns `Some(detail)` iff `f` carries ANY open body
+/// hole (`?N`), naming EVERY `<fn>.?N` address + the first open goal, mirroring the
+/// `check::check_file_with_options` `OpenHole` reject language VERBATIM so every
+/// lowering path (`build::build_file`, `body_tv`, `exec_tv`) refuses/skips a holed
+/// item with ONE honest message rather than three drifting copies (the #192 lesson).
+/// `None` for a hole-free fn. A holed item is L0-equivalent (incomplete) and NEVER
+/// lowers — `check.rs`'s per-item loop, `build_file`, and the two TV phases all gate
+/// on this. Pure function of `f.holes` (R-CODE-5).
+pub(crate) fn open_hole_reason(f: &thermite_syntax::FnItem) -> Option<String> {
+    let first = f.holes.first()?;
+    let addrs: Vec<String> = f
+        .holes
+        .iter()
+        .map(|h| format!("{}.?{}", f.name, h.number))
+        .collect();
+    Some(format!(
+        "`{}` has {} open body hole(s) [{}] — an item with any `?N` hole is \
+         L0-equivalent (incomplete) and does NOT certify until every hole is \
+         filled (`forge fill {} <code>`). First open goal: hole `?{}` at byte \
+         {} (`.design/forge/goal-repl.md` REQ-5).",
+        f.name,
+        f.holes.len(),
+        addrs.join(", "),
+        addrs[0],
+        first.number,
+        first.span.start,
+    ))
+}
+
 /// The open body holes (`?N`) of the named `fn` item, in document order (#193,
 /// goal-repl.md REQ-4). EMPTY for a hole-free fn / a `spec fn`/`struct`/`enum`.
 /// The source of the §5.1 `holes:` render section.

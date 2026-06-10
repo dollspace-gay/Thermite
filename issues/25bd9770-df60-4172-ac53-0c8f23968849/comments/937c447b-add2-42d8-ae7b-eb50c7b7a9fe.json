@@ -1,0 +1,10 @@
+{
+  "uuid": "937c447b-add2-42d8-ae7b-eb50c7b7a9fe",
+  "issue_uuid": "25bd9770-df60-4172-ac53-0c8f23968849",
+  "author": "Yffe",
+  "content": "Failing tests at forge/tests/divergence_rlimit_phrase_drift.rs::{divergence_contract_tv_rlimit_phrases_drifted_from_body_tv, divergence_z3_resourceout_phrase_escapes_contract_tv_rlimit_gate} demonstrate the divergence (run with -- --ignored). contract_tv's phrase set is [\"rlimit exceeded\", \"rlimit) exceeded\"]; body_tv's (#189 authority) adds \"resource limit exceeded\", which is what catches Z3's own resourceout literal 'max. resource limit exceeded' (present in the distributed z3 binary). Fix: add the third clause to contract_tv::is_rlimit_signal, then un-ignore both pins.",
+  "created_at": "2026-06-10T03:58:15.760500401Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAku190GeLI8Ta3miqulPrdCDUH8gPnDInXUyTsM3srOwYZb7gowR8RGLK5xlwteZL4hKOvseL9j94k5FSF4/NBw=="
+}

@@ -2,11 +2,12 @@
   "uuid": "ef1726e8-4481-4d6a-b34c-ee9cff8350c1",
   "display_id": 226,
   "title": "Divergence: proof-backends §4 #224 closure (req ∪ ens ∪ body, body-closed) omits dec-MEASURE-position spec-calls; a measure denoted against the closure R_item affirms descent the source measure lacks, falsely discharging REGISTRY-TERMINATION (REQ-1.2) and re-opening Pin B",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T22:33:04.115274560Z",
-  "updated_at": "2026-06-10T22:33:05.986291171Z",
+  "updated_at": "2026-06-10T22:51:56.524937445Z",
+  "closed_at": "2026-06-10T22:51:56.524937445Z",
   "labels": [
     "blocker"
   ]

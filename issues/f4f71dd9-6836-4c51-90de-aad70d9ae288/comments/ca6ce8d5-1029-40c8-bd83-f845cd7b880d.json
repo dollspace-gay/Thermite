@@ -1,0 +1,10 @@
+{
+  "uuid": "ca6ce8d5-1029-40c8-bd83-f845cd7b880d",
+  "issue_uuid": "f4f71dd9-6836-4c51-90de-aad70d9ae288",
+  "author": "Yffe",
+  "content": "FIXED (5b8033ad). render_battery_item now checks cert.reject FIRST (mirroring the already-correct render_goal_item — same source, no verdict re-derivation, REQ-1 view discipline): a triage-rejected cert renders VACUOUS — EnsIsTrivial instead of the forward_declared placeholder non-vacuous line. Pin passes UNCHANGED (R-CHAR-3 oracle from conformance/vacuity/triage.json); the 5 goal_repl integration tests + units green; non-rejected path byte-identical. The fix is exactly the critic's prescribed shape on an audited sibling pattern.",
+  "created_at": "2026-06-10T05:26:01.838598306Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtjDob7y9vw4L2PLU7SzUO2ukiS55bUUsmAqcpcM7BgG0Czg8Qxz7aBF/wa0GMm8PFjNdK8o4/fCa0lM6W3agBg=="
+}

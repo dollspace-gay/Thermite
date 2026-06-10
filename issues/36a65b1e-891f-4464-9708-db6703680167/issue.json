@@ -1,0 +1,10 @@
+{
+  "uuid": "36a65b1e-891f-4464-9708-db6703680167",
+  "display_id": 201,
+  "title": "Divergence: scripts/audit.sh check [2] swallows DIVERGENT via forge's nonzero exit — the zero-Divergent corpus gate can never fire (false assurance)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T17:02:13.895260488Z",
+  "updated_at": "2026-06-10T17:02:13.895260488Z"
+}

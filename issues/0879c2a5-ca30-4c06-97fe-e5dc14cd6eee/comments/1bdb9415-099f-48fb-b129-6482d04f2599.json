@@ -1,0 +1,10 @@
+{
+  "uuid": "1bdb9415-099f-48fb-b129-6482d04f2599",
+  "issue_uuid": "0879c2a5-ca30-4c06-97fe-e5dc14cd6eee",
+  "author": "Yffe",
+  "content": "Groundedness gap (no kernel pin possible — the defect is an ABSENCE). §4's exported obligation is '∀ v : Env, stabilizesProp req {v with specs := R_item} → stabilizesProp ens …' — an ∃N∀fuel statement over the deep embedding (denote/intVal applied to Expr encodings). REQ-7(i)/§8/Verification-(ii) claim the AUTO battery (omega/simp/decide/Lean-SMT smt) discharges the scalar-contract corpus obligations, grounded in z3-demotion.md — but that PoC discharged SHALLOW QF_LIA theorems (z3-demotion.md: 'tv_obligation_arith_cmp (a b c : Int) : (a - b ≤ c) ↔ (a ≤ c + b)'), hand-translated, with no denote, no stabilizesProp wrapper. Lean-SMT's smt will not chew ∃N∀fuel goals over a deep embedding; decide/simp cannot synthesize the env-dependent ∃N witness (N depends on |xs| for recursive specs — needs induction). The doc's only bridge is the fuel₀-hint sentence (an unfolding budget — addresses neither ∃N elimination nor deep→shallow normalization). Missing: a named normalization story, e.g. a fuel-irrelevance lemma (specCall-free e ⇒ denote fuel-independent ⇒ stabilizesProp ↔ denote 0) letting the exporter emit FUEL-FREE shallow statements for the auto fragment — without it increment (ii)'s AC fails by design.",
+  "created_at": "2026-06-10T19:48:14.781150104Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADs0rPOdzb5rl1/yTD1zWuyMblpQNOjCquI7un31o7mZjZLmA6YmSlvuVnXq/Ufnm456gNar1YtFClYwGYBubCg=="
+}

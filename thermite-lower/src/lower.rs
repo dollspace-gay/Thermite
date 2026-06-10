@@ -40,7 +40,7 @@
 //! | REQ-4 (statement + loop lowering) | SHIPPED | `lower_stmt`/`lower_loop` emit every `inv`→`invariant` + `dec`→`decreases`; consumer `lower_block`. |
 //! | REQ-5 (spec-context `Seq` lowering) | SHIPPED | `lower_expr` with `Ctx::spec_seq()` (`xs@`/`subrange`/`@[i as int]`); `spec_sum` recursion via `lower_spec_fn` Seq form. |
 //! | REQ-6 (combinator Verus(L3) defs) | SHIPPED | `emit_combinator_defs` reads `thermite_spec::CombinatorSig.verus_l3`; closes OQ-2 (R-DEFER-1 consumer of the #2 registry seam). |
-//! | REQ-7 (proof-aid emission, shape-keyed) | SHIPPED | `push_lemma_for`/`nonlinear_overflow_assert`/`lift_immutable_preconds`/`extensionality_at_exit`/`complementary_coverage_split`; each keys on AST/contract shape, documented at site. |
+//! | REQ-7 (proof-aid emission, shape-keyed) | SHIPPED | `push_lemma_for`/`nonlinear_overflow_assert`/`lift_immutable_preconds`/`extensionality_at_exit`/`complementary_coverage_split`/`req_bounded_mul_asserts` (#196 — the var*var overflow discharge: a `Binary{Mul}` of req-bounded non-literal operands gets one `assert((EXPR) <= BOUND) by(nonlinear_arith) requires <req conjuncts>;` at its enclosing block's start, fn-body via `render_mul_proof_block` in `lower_fn_body`, in-loop via the same in `lower_loop`); each keys on AST/contract shape, documented at site. Consumer: `lower` (via `lower_fn_body`/`lower_loop`). Verified: `thermite-lower/tests/req_bounded_mul_aid.rs` (6/6 — hand-derived `n*n <= 900` aid, 3-var chain, in-loop placement, honest-skip of unbounded/non-mul/mutated-local) + `forge/tests/req_bounded_mul_conformance.rs` (live verus: `sq` → L3, unbounded `n*m` → NOT L3). |
 //! | REQ-8 (golden-file contract — VERIFY) | SHIPPED | emitted output run through real `verus` in `lower_conformance.rs`; contracts asserted equivalent to the corpus (no weakening). |
 //! | REQ-9 (`LowerError`, no panics) | SHIPPED | `enum LowerError` (span-bearing, `Display`); `lower` returns `Result`; no `unwrap`/`expect`/`panic!` in this file. |
 //! | REQ-EQ (equivalent-mutant equivalence-obligation seam, #101) | SHIPPED | `pub fn lower_equivalence_obligation` (`.design/forge/equivalent-mutants.md` REQ-1 / `.design/lower/verus-lowering.md` REQ-EQ) renders `f`'s real body + a survivor mutant's body into the GROUNDED `spec fn equiv_real_<n>`/`spec fn equiv_mut_<n>` + `proof fn equiv_check_<n> requires <req> ensures mut == real {}` Verus unit, REUSING `lower_expr` + the design-grounded `(expr) as <ret>` exec coercion (`render_body_as_spec_value`/`coerce_obligation_expr`) — no hand-emitted Verus (R-CHAR-3). SCALAR-only (`scalar_obligation_type`, OQ-1): a non-scalar/non-forced-output shape returns `LowerError::Unsupported` so the survivor stays counted. Consumer: `forge::check::equivalence_proves_equal`. Verified: `thermite-lower/tests/equivalence_obligation.rs` (real verus). |
@@ -6928,10 +6928,310 @@ fn lower_fn_body(
             .to_string(),
         span: f.span,
     })?;
+    // template (req-bounded-mul): the var*var overflow discharge, for products
+    // DIRECTLY in the fn body (not inside a loop — a loop body verifies in
+    // isolation from its invariants, so a product inside a loop gets its own
+    // proof block at the loop body's start, emitted by `lower_loop`). REQ-7.
+    let mul_aids = req_bounded_mul_asserts(f, body)?;
+    out.push_str(&render_mul_proof_block(&mul_aids, 1));
     let inner = lower_block_with_fn_aids(body, f, nat_fns, string_fields, variants, 1)?;
     out.push_str(&inner);
     out.push_str("}\n");
     Ok(out)
+}
+
+/// template (req-bounded-mul): discharge `var * var` overflow obligations in
+/// exec bodies (REQ-7, shape-keyed, #196). Verus's default linear solver fails
+/// ANY product of two non-literal operands — even `n * n` under `req n <= 30`
+/// (the obligation is "possible arithmetic underflow/overflow"; probed live
+/// against verus 0.2026.05.24 on 2026-06-10).
+///
+/// SHAPE: a `Binary{Mul}` node, NEITHER operand a literal, every variable in
+/// the product carrying a `v <= CONST` (or `v < CONST`, read as `<= CONST-1`)
+/// conjunct in the fn's `req`. AID: one
+/// `assert((EXPR) <= BOUND) by(nonlinear_arith) requires <the req conjuncts
+/// used>;` per distinct product node.
+///
+/// SOUNDNESS (#196): the aid is an `assert ... by(nonlinear_arith)` — it can
+/// only FAIL, never prove a false thing; and its `requires` hypotheses are
+/// EXACTLY req conjuncts (no invented bound — the `requires` is itself
+/// discharged from the fn's `req` at the assert site). A product whose
+/// variables are NOT all req-bounded params is SKIPPED (`req_expr_upper_bound`
+/// returns `None`), so the honest obligation stands — no fabricated assert. A
+/// variable shadowed by a `let`/assignment in the body is also skipped (the
+/// req conjunct would refer to the param, not the rebound local — `is_rebound`).
+///
+/// PLACEMENT: this returns the asserts for products DIRECTLY in `body` only —
+/// it does NOT descend into nested `Stmt::Loop` bodies. A loop body verifies
+/// in ISOLATION from its invariants (a body-start fact does NOT flow past the
+/// loop head), so a product inside a loop owes its discharge to a proof block
+/// at THAT loop body's start, which `lower_loop` emits via this same function
+/// over the loop body. Params are immutable in Thermite, so the req bounds hold
+/// at every block start (the loop head included), making per-block placement
+/// sound. `If`/`Match` branches in the SAME (non-loop) context inherit the
+/// block-start facts (an `if` adds a path condition, it does not reset state),
+/// so their products are covered by the enclosing block's proof block.
+fn req_bounded_mul_asserts(f: &FnItem, body: &Block) -> Result<Vec<String>, LowerError> {
+    let mut bounds = std::collections::BTreeMap::new();
+    collect_req_upper_bounds(&f.contract.req.expr, &mut bounds);
+    if bounds.is_empty() {
+        return Ok(vec![]);
+    }
+    // Drop any bound whose variable is rebound (shadowed/mutated) anywhere in
+    // the body: the `req v <= C` refers to the immutable param, but a rebound
+    // local of the same name would make the emitted `requires v <= C` refer to
+    // the local — an honest verus failure, but a spurious one. Skip such names.
+    bounds.retain(|name, _| !block_rebinds(body, name));
+    if bounds.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut muls: Vec<Expr> = Vec::new();
+    collect_block_local_muls(body, &mut muls);
+    let mut lines = Vec::new();
+    for m in &muls {
+        let mut used = std::collections::BTreeSet::new();
+        let Some(bound) = req_expr_upper_bound(m, &bounds, &mut used) else {
+            continue; // not req-derivable: leave the obligation honestly as-is
+        };
+        // Render the product in EXEC context — this is an exec-position assert
+        // (the operands are scalar params/literals/casts/arith, for which exec
+        // and spec rendering coincide; exec is the context-correct choice).
+        let text = lower_expr(m, Ctx::exec(), 0, f.span)?;
+        let hyps = used
+            .iter()
+            .map(|v| format!("{v} <= {b}", b = bounds[v]))
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(format!(
+            "assert(({text}) <= {bound}) by(nonlinear_arith) requires {hyps};"
+        ));
+    }
+    Ok(lines)
+}
+
+/// Render the var*var proof block at `indent` levels of 4-space indentation,
+/// or the empty string when there are no asserts (byte-stable for every fn
+/// the template does not fire on). Emitted at a block's start (#196).
+fn render_mul_proof_block(asserts: &[String], indent: usize) -> String {
+    if asserts.is_empty() {
+        return String::new();
+    }
+    let pad = "    ".repeat(indent);
+    let inner = "    ".repeat(indent + 1);
+    let mut out = format!("{pad}proof {{\n");
+    for line in asserts {
+        out.push_str(&inner);
+        out.push_str(line);
+        out.push('\n');
+    }
+    out.push_str(&pad);
+    out.push_str("}\n");
+    out
+}
+
+/// Collect `v <= C` / `v < C` conjuncts from a req expression into upper
+/// bounds (strict `<` stores `C - 1`). Only `&&`-connected leaves are read;
+/// any other shape contributes nothing (conservative — REQ-7).
+fn collect_req_upper_bounds(e: &Expr, bounds: &mut std::collections::BTreeMap<String, u128>) {
+    match e {
+        Expr::Binary {
+            op: BinOp::And,
+            lhs,
+            rhs,
+        } => {
+            collect_req_upper_bounds(lhs, bounds);
+            collect_req_upper_bounds(rhs, bounds);
+        }
+        Expr::Binary { op, lhs, rhs } if matches!(op, BinOp::Le | BinOp::Lt) => {
+            if let (Expr::Path(segs), Expr::IntLit { value, .. }) = (lhs.as_ref(), rhs.as_ref()) {
+                if let [v] = segs.as_slice() {
+                    let b = if *op == BinOp::Lt {
+                        value.saturating_sub(1)
+                    } else {
+                        *value
+                    };
+                    // Keep the TIGHTEST bound if the req states several for `v`.
+                    bounds
+                        .entry(v.clone())
+                        .and_modify(|cur| *cur = (*cur).min(b))
+                        .or_insert(b);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// A syntactic upper bound for `e` from req-derived variable bounds, marking
+/// every bound used in `used`. `None` = not derivable (the aid is skipped, the
+/// obligation stands honestly). Unsigned (Verus `u*`) semantics: `a - b <= a`,
+/// `a / b <= a`, `a % b <= a` (the right operand only ever shrinks the value).
+fn req_expr_upper_bound(
+    e: &Expr,
+    bounds: &std::collections::BTreeMap<String, u128>,
+    used: &mut std::collections::BTreeSet<String>,
+) -> Option<u128> {
+    match e {
+        Expr::IntLit { value, .. } => Some(*value),
+        Expr::Path(segs) => {
+            let [v] = segs.as_slice() else { return None };
+            let b = bounds.get(v)?;
+            used.insert(v.clone());
+            Some(*b)
+        }
+        Expr::Binary { op, lhs, rhs } => match op {
+            BinOp::Add => req_expr_upper_bound(lhs, bounds, used)?
+                .checked_add(req_expr_upper_bound(rhs, bounds, used)?),
+            BinOp::Mul => req_expr_upper_bound(lhs, bounds, used)?
+                .checked_mul(req_expr_upper_bound(rhs, bounds, used)?),
+            // Unsigned `a - b`/`a / b`/`a % b` never EXCEED `a`'s bound. The
+            // rhs is NOT recursed into (it does not contribute to the upper
+            // bound), so it is not added to `used` — the emitted `requires`
+            // lists only the conjuncts the bound truly depends on.
+            BinOp::Sub | BinOp::Div | BinOp::Rem => req_expr_upper_bound(lhs, bounds, used),
+            _ => None,
+        },
+        Expr::Cast { expr, .. } => req_expr_upper_bound(expr, bounds, used),
+        _ => None,
+    }
+}
+
+/// Collect distinct `Binary{Mul}` nodes (neither operand a literal) that live
+/// DIRECTLY in `block` — descending through `If`/`Match`/expression structure
+/// but NOT into nested `Stmt::Loop` bodies (a loop body gets its own proof
+/// block, #196). De-duplicates by structural equality so a product written
+/// twice yields one assert.
+fn collect_block_local_muls(block: &Block, muls: &mut Vec<Expr>) {
+    fn note(e: &Expr, muls: &mut Vec<Expr>) {
+        if let Expr::Binary {
+            op: BinOp::Mul,
+            lhs,
+            rhs,
+        } = e
+        {
+            if !matches!(lhs.as_ref(), Expr::IntLit { .. })
+                && !matches!(rhs.as_ref(), Expr::IntLit { .. })
+                && !muls.contains(e)
+            {
+                muls.push(e.clone());
+            }
+        }
+    }
+    fn walk_expr(e: &Expr, muls: &mut Vec<Expr>) {
+        match e {
+            Expr::Binary { lhs, rhs, .. } => {
+                walk_expr(lhs, muls);
+                walk_expr(rhs, muls);
+            }
+            Expr::Unary { expr, .. }
+            | Expr::Cast { expr, .. }
+            | Expr::Ref { expr, .. }
+            | Expr::Deref(expr) => walk_expr(expr, muls),
+            Expr::Call { callee, args } => {
+                walk_expr(callee, muls);
+                for a in args {
+                    walk_expr(a, muls);
+                }
+            }
+            Expr::MethodCall { receiver, args, .. } => {
+                walk_expr(receiver, muls);
+                for a in args {
+                    walk_expr(a, muls);
+                }
+            }
+            Expr::Field { receiver, .. } | Expr::TupleProj { receiver, .. } => {
+                walk_expr(receiver, muls)
+            }
+            Expr::Is { scrutinee, .. } => walk_expr(scrutinee, muls),
+            Expr::If { cond, then, else_ } => {
+                walk_expr(cond, muls);
+                collect_block_local_muls(then, muls);
+                collect_block_local_muls(else_, muls);
+            }
+            Expr::Match { scrutinee, arms } => {
+                walk_expr(scrutinee, muls);
+                for arm in arms {
+                    if let Some(g) = &arm.guard {
+                        walk_expr(g, muls);
+                    }
+                    walk_expr(&arm.body, muls);
+                }
+            }
+            Expr::StructLit { fields, .. } => {
+                for (_, v) in fields {
+                    walk_expr(v, muls);
+                }
+            }
+            Expr::Tuple(elems) => {
+                for el in elems {
+                    walk_expr(el, muls);
+                }
+            }
+            Expr::Index { base, index } => {
+                walk_expr(base, muls);
+                match index {
+                    IndexArg::Single(i) | IndexArg::RangeTo(i) | IndexArg::RangeFrom(i) => {
+                        walk_expr(i, muls)
+                    }
+                    IndexArg::Range(a, b) => {
+                        walk_expr(a, muls);
+                        walk_expr(b, muls);
+                    }
+                }
+            }
+            // A closure body is a SPEC predicate (no exec overflow obligation);
+            // literals/paths/strings carry no nested product. No-op.
+            Expr::Closure { .. }
+            | Expr::IntLit { .. }
+            | Expr::BoolLit(_)
+            | Expr::Path(_)
+            | Expr::StrLit(_) => {}
+        }
+        note(e, muls);
+    }
+    for stmt in &block.stmts {
+        match stmt {
+            Stmt::Let { init, .. } => walk_expr(init, muls),
+            Stmt::Assign { target, value } => {
+                walk_expr(target, muls);
+                walk_expr(value, muls);
+            }
+            Stmt::Return(Some(e)) | Stmt::Expr(e) => walk_expr(e, muls),
+            Stmt::Return(None) | Stmt::Break | Stmt::Continue => {}
+            Stmt::If { cond, then, else_ } => {
+                walk_expr(cond, muls);
+                collect_block_local_muls(then, muls);
+                if let Some(b) = else_ {
+                    collect_block_local_muls(b, muls);
+                }
+            }
+            // Do NOT descend into a nested loop body — it owes its own proof
+            // block (emitted by `lower_loop`), since a body-start fact does not
+            // flow past the loop head (#196).
+            Stmt::Loop(_) => {}
+        }
+    }
+    if let Some(tail) = &block.tail {
+        walk_expr(tail, muls);
+    }
+}
+
+/// Does `block` (or a nested block, including loop bodies) REBIND `name` via a
+/// `let` or an assignment? Used to skip the var*var aid when a product variable
+/// is shadowed/mutated rather than an immutable param (#196 soundness guard).
+fn block_rebinds(block: &Block, name: &str) -> bool {
+    block.stmts.iter().any(|stmt| match stmt {
+        Stmt::Let { name: n, .. } => n == name,
+        Stmt::Assign {
+            target: Expr::Path(segs),
+            ..
+        } => segs.len() == 1 && segs[0] == name,
+        Stmt::If { then, else_, .. } => {
+            block_rebinds(then, name) || else_.as_ref().is_some_and(|b| block_rebinds(b, name))
+        }
+        Stmt::Loop(l) => block_rebinds(&l.body, name),
+        _ => false,
+    })
 }
 
 /// Lower a block with the enclosing `fn`'s contract in scope, so loop lowering
@@ -7163,6 +7463,15 @@ fn lower_loop(
     if let Some(assert_line) = nonlinear_overflow_assert(f, &l.invs, &l.body)? {
         writeln!(out, "{ipad}{assert_line}").map_err(|_| fmt_err())?;
     }
+    // template (req-bounded-mul, #196): a `var * var` product DIRECTLY in THIS
+    // loop body owes its overflow discharge to a proof block at the loop body's
+    // START — a body-start fact does not flow past the loop head, so the
+    // fn-body proof block (`lower_fn_body`) cannot reach an in-loop product.
+    // Params are immutable, so the req bounds still hold at the loop head. This
+    // collects only products directly in `l.body` (NOT a deeper nested loop —
+    // that loop emits its own block when `lower_loop` recurses through it).
+    let loop_mul_aids = req_bounded_mul_asserts(f, &l.body)?;
+    out.push_str(&render_mul_proof_block(&loop_mul_aids, indent + 1));
 
     // The body statements, with the loop-exit coverage split injected into the
     // matching `if` branch (template e).

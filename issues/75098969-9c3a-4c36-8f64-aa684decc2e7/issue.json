@@ -2,11 +2,12 @@
   "uuid": "75098969-9c3a-4c36-8f64-aa684decc2e7",
   "display_id": 205,
   "title": "Divergence: proof-backends.md REQ-2 Verus discharge mapping (Counterexample→Refuted) contradicts REQ-3 (unknown-is-never-Refuted); the classify_verus_outcome fast-unknown absorption is hedged, not decided",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T18:52:55.559091994Z",
-  "updated_at": "2026-06-10T18:52:57.173566191Z",
+  "updated_at": "2026-06-10T22:51:05.644829119Z",
+  "closed_at": "2026-06-10T22:51:05.644829119Z",
   "labels": [
     "blocker"
   ]

@@ -2,11 +2,12 @@
   "uuid": "3aa390a9-8404-4f26-a108-58167a01d749",
   "display_id": 166,
   "title": "contract-TV parallel seam (the #157 analog): forge/src/contract_tv.rs ClauseVerdict::Divergent mapping is not directly test-asserted either; add the forge-level contract Divergent teeth (wrong production -> Divergent, faithful -> Faithful, degenerate -> Unverifiable) mirroring exec_tv's divergent_teeth",
-  "status": "open",
+  "status": "closed",
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-09T03:03:38.519431969Z",
-  "updated_at": "2026-06-09T03:03:40.475160513Z",
+  "updated_at": "2026-06-10T04:35:44.242752602Z",
+  "closed_at": "2026-06-10T04:35:44.242752602Z",
   "labels": [
     "enhancement"
   ]

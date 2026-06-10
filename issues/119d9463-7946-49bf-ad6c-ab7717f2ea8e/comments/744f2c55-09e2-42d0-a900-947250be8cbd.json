@@ -1,0 +1,10 @@
+{
+  "uuid": "744f2c55-09e2-42d0-a900-947250be8cbd",
+  "issue_uuid": "119d9463-7946-49bf-ad6c-ab7717f2ea8e",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_kernel_time_boundary.rs::admitted_time_fx_boundary_builds_kernel_rlib demonstrates divergence: forge build --target kernel conformance/effect_link_demo.th (fx time — on the kernel-target.md OQ-2 ADMIT list) exits 2 with a raw rustc E0433 (std::time::SystemTime in the emitted mod os under #![no_std]) instead of building a kernel rlib. reject_ambient_fx_for_kernel covers only read/write/net/term, so a time boundary survives with a non-empty reachable_boundary_targets set, falsifying the design's empty-target-set invariant (Architecture section). Fix is the generator's call: a no_std wrapper path, or a design amendment extending the reject to boundary-carrying admitted effects + a structured NAMED-effect refusal (REQ-3 shape).",
+  "created_at": "2026-06-10T07:48:44.472736710Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA4G+4PfWVksjAnO9OdKU0bTEZBvm5im7ZmWEOd9Qe9ZWqnUF0OWcrDyyf5j2ecnmECa4vdrlk3GTA9BMuVQZoCg=="
+}

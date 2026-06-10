@@ -1,0 +1,10 @@
+{
+  "uuid": "c323a972-0722-412b-84fb-afad50088600",
+  "issue_uuid": "19faeca5-da99-4239-9e49-0739fd3d5375",
+  "author": "Yffe",
+  "content": "Authored .design/build/kernel-target.md (forge build --target kernel design) + added the build.rs spec-route. v1 scope per #164's plan: no_std+alloc rlib (no main, no seccomp, panic=abort), reject ambient-syscall fx (read/write/net/term), L3 path identical. 5 REQs, all NOT-STARTED behind this blocker. NEXT: acto-builder implements the BuildTarget Std/Kernel fork at build_file/emit_source/invoke_rustc + forge/tests/kernel_target.rs freestanding compile check.",
+  "created_at": "2026-06-10T07:21:56.304618486Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAscWsX169r2NWWmdRnyj5sFwtvvTY8XbxQ455fU5cHxaht8njCNP0/Qe2JpimbWzlxrH/l7FEuHJhoy5+13shBA=="
+}

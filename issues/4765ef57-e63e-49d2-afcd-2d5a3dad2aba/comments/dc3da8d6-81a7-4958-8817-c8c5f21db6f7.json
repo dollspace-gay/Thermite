@@ -1,0 +1,10 @@
+{
+  "uuid": "dc3da8d6-81a7-4958-8817-c8c5f21db6f7",
+  "issue_uuid": "4765ef57-e63e-49d2-afcd-2d5a3dad2aba",
+  "author": "Yffe",
+  "content": "Type-direct the spec-call narrowing cast (single-file, root cause in thermite-lower/src/lower.rs).\n\nRoot cause: the plain_user_spec_call arm in lower_expr's Call path hardcoded 'as u64' on arithmetic/nat-len args regardless of the callee's declared param type, so a recursive spec fn s_dec(n: u32) self-call s_dec(n - 1) emitted s_dec((n - 1) as u64) -> ill-typed Verus (expected u32, found u64), killing the item at L0.\n\nFix: spec_fn_param_type_map(program) collects each user spec fn's declared param prim-types in source order; threaded via Ctx::spec_fn_param_types into the lower_fn/lower_fn_signature/lower_spec_fn body paths; Ctx::spec_call_param_cast(callee, pos) maps the declared type to u32/u64/usize (bool/absent -> u64 fallback, byte-stable for u64 sites). Both Call-arm casts now read the map and the ends_with short-circuit matches the resolved target. REQ-4 note corrected (false premise removed).\n\nTests (R-CHAR-3, hand-derived oracle): thermite-lower/tests/divergence_spec_call_param_cast.rs (u32->as u32, usize->as usize, u64->as u64 regression) + forge/tests/divergence_spec_call_param_cast.rs (live verus: u32 recursive spec fn + exec twin + contract-naming fn all L3; broken twin rejects below L3).\n\nGauntlet: cargo test --workspace 0 failed (no golden regressions); clippy/fmt clean on the three manifest files. Commit (#225), do not push, do not close (critic re-audits).",
+  "created_at": "2026-06-10T22:11:17.151771825Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAesB/zJUGC8zLQrOtDfcNQYZXtf3WpoU1NEl6+hdWblz230oJAw/KoBafVdU7LZyeUHisaOR/Zf3OyWPYDGS7BQ=="
+}

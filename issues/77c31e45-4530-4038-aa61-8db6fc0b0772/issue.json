@@ -2,11 +2,12 @@
   "uuid": "77c31e45-4530-4038-aa61-8db6fc0b0772",
   "display_id": 219,
   "title": "Divergence: RATIONALE cage entry misstates seccomp-BPF mechanics (claims BPF cannot read argument registers; contradicts own Direction)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T20:14:21.041437372Z",
-  "updated_at": "2026-06-10T20:14:23.908283617Z",
+  "updated_at": "2026-06-10T20:21:25.285533118Z",
+  "closed_at": "2026-06-10T20:21:25.285533118Z",
   "labels": [
     "blocker"
   ]

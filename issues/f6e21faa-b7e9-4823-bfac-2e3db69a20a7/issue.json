@@ -2,11 +2,12 @@
   "uuid": "f6e21faa-b7e9-4823-bfac-2e3db69a20a7",
   "display_id": 222,
   "title": "Divergence: RATIONALE preamble drops the SOTA survey's novelty hedge for the caged quantifier fragment ('needs a targeted survey to confirm novelty')",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T20:14:50.825127285Z",
-  "updated_at": "2026-06-10T20:14:52.375980700Z",
+  "updated_at": "2026-06-10T20:21:36.566162303Z",
+  "closed_at": "2026-06-10T20:21:36.566162303Z",
   "labels": [
     "blocker"
   ]

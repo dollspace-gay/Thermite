@@ -1,0 +1,10 @@
+{
+  "uuid": "58fc6798-1523-4908-a742-362fefb9e433",
+  "issue_uuid": "36a65b1e-891f-4464-9708-db6703680167",
+  "author": "Yffe",
+  "content": "Critic pin (audits #200/a0d8ea64): commit the failing test forge/tests/divergence_audit_check2_exit_swallow.rs. It extracts audit.sh check [2] verbatim and runs it against a fake forge reproducing cli.rs::run_tv's real contract (render_report header '1 DIVERGENT' + EXIT_VERIFICATION_FAILURE=1). Current script treats the nonzero exit as 'not admitted' (prog_admit=0; continue), never parses the report, prints green 'ok <name> 0 divergent' and 'PASS ZERO divergent across the whole corpus' with RC=0. Control probe (same output, exit 0) trips the gate — the swallow is isolated to the exit-code branch. Authority: the script's own 'PASS iff ZERO Divergent' contract, R-HONEST-3/R-DEFER-9. Generator must consume the verification-failure exit as a finding (parse the report on exit 1, or fail the program) — not reclassify it.",
+  "created_at": "2026-06-10T17:04:14.835638461Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJWr6WM+e5iThzp6EkW8zW195+9FDnb951UBVRbvi5166BETSS5Q5/NRKqknMs8irF1WXUdlcOnhsDGLLl1gJBQ=="
+}

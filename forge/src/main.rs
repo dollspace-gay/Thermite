@@ -40,6 +40,7 @@ mod review;
 mod sandbox;
 mod slag;
 mod strengthen;
+mod tv_signal;
 mod vacuity;
 mod vacuity_solver;
 

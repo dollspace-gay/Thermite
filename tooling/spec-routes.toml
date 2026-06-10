@@ -801,3 +801,21 @@ crate_pattern = "forge/src/body_tv.rs"
 design = ".design/verified/exec-stmt-tv.md"
 reference = ["conformance/binary_search.th"]
 conformance_ops = ["binary_search"]
+
+# The SHARED Verus/Z3 rlimit/timeout signal discriminator (crosslink #192, ref #166,
+# #189). The #192 ROOT-CAUSE fix: forge had THREE per-phase copies of is_rlimit_signal
+# (contract_tv/body_tv/exec_tv) and they DRIFTED — contract_tv dropped the z3-phrased
+# `resource limit exceeded` clause, exec_tv had no rlimit gate at all. This module is
+# the ONE shared discriminator (pub(crate) fn is_rlimit_signal) consumed by all three
+# TV-phase verus-discharge paths so an `errors >= 1` rlimit-hit run routes to their
+# Unverifiable-equivalent verdict, NEVER Divergent (a solver-budget timeout is never
+# fabricated into an infidelity — R-HONEST-3 / R-CODE-4). Governed by exec-stmt-tv.md
+# (REQ-5's four-way Faithful/Divergent/Unverifiable/Skipped — the rlimit→Unverifiable
+# mapping the body-TV #189 fix established, now centralized). The reference is the
+# corpus binary_search loop (the same body-TV reference; the discriminator is the
+# body-TV four-way's degrade gate).
+[[route]]
+crate_pattern = "forge/src/tv_signal.rs"
+design = ".design/verified/exec-stmt-tv.md"
+reference = ["conformance/binary_search.th"]
+conformance_ops = ["binary_search"]

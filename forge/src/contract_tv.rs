@@ -37,7 +37,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. **#150 whole-corpus totality:** `signature_frame` now binds the three previously-Skipped construct classes — `String`→`&TString` (`SpecType::Strng`, threaded as production's `strings`), `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires` weave), `Option`/`Result` params + result natively (`SpecType::Opt`/`Res`) — so the C7 `match`-in-ens, the String byte-view, and the Map/Option signature clauses all reach verus + discharge. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped/unverifiable; the 200-clause off-corpus run is TOTAL (0 skipped, the byte-view now over a `&TString` receiver `t`). |
+//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. **#150 whole-corpus totality:** `signature_frame` now binds the three previously-Skipped construct classes — `String`→`&TString` (`SpecType::Strng`, threaded as production's `strings`), `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires` weave), `Option`/`Result` params + result natively (`SpecType::Opt`/`Res`) — so the C7 `match`-in-ens, the String byte-view, and the Map/Option signature clauses all reach verus + discharge. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped/unverifiable; the 200-clause off-corpus run is TOTAL (0 skipped, the byte-view now over a `&TString` receiver `t`). **#192 (ref #166, #189):** the rlimit gate's discriminator is now the SHARED `crate::tv_signal::is_rlimit_signal` (the prior private copy had DROPPED z3's `resource limit exceeded` phrase — a Z3-phrased resourceout on an errors>=1 run was fabricated into `Divergent`); `discharge`'s `errors >= 1 && rlimit_hit -> Unverifiable` arm now consumes the shared full-phrase-set discriminator. |
 
 use std::path::Path;
 use std::process::Command;
@@ -1033,13 +1033,15 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
     // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion / timeout: verus prints `rlimit
-    // exceeded` / `resource limit (rlimit) exceeded` AND a results line counting the
-    // exhausted obligation as an error. That is a DISCHARGE failure, NOT a meaning
-    // mismatch — the #189-class hardening (the body-TV `is_rlimit_signal` gate): an
-    // rlimit-hit error run is routed to Unverifiable, never the `errors >= 1` Divergent
+    // exceeded` / `Resource limit (rlimit) exceeded`, or z3's own `max. resource limit
+    // exceeded`, AND a results line counting the exhausted obligation as an error. That
+    // is a DISCHARGE failure, NOT a meaning mismatch — the #189-class hardening via the
+    // SHARED `crate::tv_signal::is_rlimit_signal` discriminator (#192 root-cause fix: the
+    // prior per-phase copy had DROPPED the z3-phrased `resource limit exceeded` clause):
+    // an rlimit-hit error run is routed to Unverifiable, never the `errors >= 1` Divergent
     // arm, so a genuine solver-budget timeout is never fabricated into a contract
     // infidelity (R-HONEST-3 / R-CODE-4 — a timeout degrades, never a false finding).
-    let rlimit_hit = is_rlimit_signal(&combined);
+    let rlimit_hit = crate::tv_signal::is_rlimit_signal(&combined);
 
     match parse_results(&combined) {
         Some((_verified, errors)) if errors == 0 && output.status.success() => {
@@ -1066,16 +1068,6 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
         // (R-CODE-4) and never a fabricated Divergent (R-HONEST-3).
         _ => ClauseVerdict::Unverifiable,
     }
-}
-
-/// `true` iff the combined verus output carries a Verus/Z3 RESOURCE-LIMIT (rlimit)
-/// exhaustion / timeout signal (`Resource limit (rlimit) exceeded`, `rlimit
-/// exceeded`). Such an error run is a DISCHARGE failure (the solver ran out of
-/// budget), NOT a meaning mismatch, so [`discharge`] routes it to `Unverifiable`,
-/// never `Divergent` (the #189-class hardening; mirrors `body_tv::is_rlimit_signal`).
-fn is_rlimit_signal(output: &str) -> bool {
-    let lower = output.to_ascii_lowercase();
-    lower.contains("rlimit exceeded") || lower.contains("rlimit) exceeded")
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors the
@@ -1382,6 +1374,7 @@ mod divergent_teeth {
     /// the SAME #189-class divergence, here in `contract_tv`.
     #[test]
     fn rlimit_signal_is_detected_counterexample_is_not() {
+        use crate::tv_signal::is_rlimit_signal;
         assert!(
             is_rlimit_signal("error: Resource limit (rlimit) exceeded\n0 verified, 1 errors"),
             "a `Resource limit (rlimit) exceeded` output MUST be detected as a timeout \
@@ -1390,6 +1383,14 @@ mod divergent_teeth {
         assert!(
             is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
             "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
+        );
+        // The distributed z3 binary's OWN resourceout literal (#192 — the #166-dropped
+        // clause the shared discriminator restores): `resource limit exceeded` with no
+        // `rlimit` token.
+        assert!(
+            is_rlimit_signal("unknown: max. resource limit exceeded\n0 verified, 1 errors"),
+            "z3's own `max. resource limit exceeded` resourceout literal MUST be detected \
+             (the #166-dropped, now-shared clause)"
         );
         assert!(
             !is_rlimit_signal("error: assertion failed\n --> x.rs:5:12\n0 verified, 1 errors"),
@@ -1413,6 +1414,7 @@ mod divergent_teeth {
     /// discriminator, exactly as `body_tv`'s `is_rlimit_signal` unit teeth do.
     #[test]
     fn rlimit_output_text_is_not_a_divergence() {
+        use crate::tv_signal::is_rlimit_signal;
         // A counterexample output (NO rlimit) IS a Divergent signal; the rlimit output is
         // NOT — the discriminator that keeps the two classes distinct in `discharge`.
         let counterexample = "error: assertion failed\n0 verified, 1 errors";

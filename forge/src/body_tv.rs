@@ -60,7 +60,7 @@
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | exec-stmt-tv REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `pub fn body_tv_file` walks each fn body; a STRAIGHT-LINE body lowers via `thermite_lower::lower_exec_body` + builds `thermite_tv::body_equivalence_obligation` + discharges through `verus` (the `discharge` helper, reusing `crate::check::ScratchDir` / #53). The four-way `BodyVerdict` (Faithful / Divergent / Unverifiable / Skipped) is REPORTED DISTINCTLY (R-HONEST-3). Non-test consumer: `cli::run_body_tv` (the `forge body-tv <file>` subcommand) — nonzero exit on Divergent, zero on Faithful/Skipped/Unverifiable. Verified by `forge/tests/body_tv.rs` (faithful straight-line → Faithful, mutated → Divergent, out-of-subset → Skipped) under real verus. This closes the `lower_exec_body` consumer loop (R-DEFER-1). |
-//! | loop-tv REQ-5 (the forge `body_tv` loop wiring — increment 2.2.2-iii) | SHIPPED | `body_tv_file` recognizes a v1 frozen-subset `while` loop as the body's last statement and discharges the THREE per-run obligations via `thermite_tv::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}` (`loop_body_tv` / `discharge_loop`); all-three-VERIFY → Faithful, any counterexample → Divergent, an OUT-of-v1 loop (`loop`-kind / `break` / mid-body `return` / nested / non-scalar / weak `inv`) → an honest `Unsupported` → Skipped with reason (NEVER Faithful, R-HONEST-3). Verified by `forge/tests/body_tv.rs` (faithful `while` → Faithful all three; broken-invariant → Divergent; `binary_search.th`'s `loop`-kind body → Skipped-with-reason). |
+//! | loop-tv REQ-5 (the forge `body_tv` loop wiring — increment 2.2.2-iii) | SHIPPED | `body_tv_file` recognizes a v1 frozen-subset `while` loop as the body's last statement and discharges the THREE per-run obligations via `thermite_tv::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}` (`loop_body_tv` / `discharge_loop`); all-three-VERIFY → Faithful, any counterexample → Divergent, an OUT-of-v1 loop (`loop`-kind / `break` / mid-body `return` / nested / non-scalar / weak `inv`) → an honest `Unsupported` → Skipped with reason (NEVER Faithful, R-HONEST-3). Verified by `forge/tests/body_tv.rs` (faithful `while` → Faithful all three; broken-invariant → Divergent; `binary_search.th`'s `loop`-kind body → Skipped-with-reason). **#192:** the rlimit discriminator `run_obligation` consumes is now the SHARED `crate::tv_signal::is_rlimit_signal` (the #189 phrase set, centralized as the SOLE copy across the three TV phases — body_tv was the authority the drifted contract_tv / missing exec_tv copies are now unified onto). |
 
 use std::path::Path;
 use std::process::Command;
@@ -897,11 +897,13 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
     // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion signal. verus prints `rlimit
-    // exceeded` / `resource limit (rlimit) exceeded` WITH a results line counting it as
-    // an error (probed live, issue #189); the `forge check` `classify_verus_outcome`
-    // separates this `Timeout` from a counterexample. A timeout is `Unverifiable`, NEVER
-    // `Divergent` (`loop-tv.md` four-way; R-CODE-4).
-    let rlimit_hit = is_rlimit_signal(&combined);
+    // exceeded` / `Resource limit (rlimit) exceeded` (and z3 its own `max. resource
+    // limit exceeded`) WITH a results line counting it as an error (probed live, issue
+    // #189); the `forge check` `classify_verus_outcome` separates this `Timeout` from a
+    // counterexample. A timeout is `Unverifiable`, NEVER `Divergent` (`loop-tv.md`
+    // four-way; R-CODE-4). The discriminator is the SHARED `crate::tv_signal::
+    // is_rlimit_signal` (#192 — the SOLE copy across all three TV phases).
+    let rlimit_hit = crate::tv_signal::is_rlimit_signal(&combined);
 
     match parse_results(&combined) {
         Some((verified, errors)) if errors == 0 && verified >= 1 && output.status.success() => {
@@ -941,21 +943,6 @@ fn run_obligation(program: &str, label: &str, seed: u64, rlimit: f64) -> Dischar
             }
         }
     }
-}
-
-/// `true` iff the combined verus output carries a Verus/Z3 RESOURCE-LIMIT (rlimit)
-/// exhaustion / timeout signal (`Resource limit (rlimit) exceeded`, `rlimit exceeded`,
-/// `resource limit exceeded` — case-insensitive). The discriminator that keeps a
-/// genuine timeout out of the `Divergent` class (`loop-tv.md` four-way; R-CODE-4 — a
-/// timeout degrades + is reported, never treated as a counterexample). Mirrors the
-/// `forge check` `classify_verus_outcome` Timeout split (which keys on the `--profile`
-/// rlimit report); `run_obligation` does not pass `--profile`, so it keys on the rlimit
-/// diagnostic text verus emits on the rlimit hit.
-fn is_rlimit_signal(output: &str) -> bool {
-    let lower = output.to_ascii_lowercase();
-    lower.contains("rlimit exceeded")
-        || lower.contains("rlimit) exceeded")
-        || lower.contains("resource limit exceeded")
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors
@@ -1291,6 +1278,7 @@ mod divergent_teeth {
     /// (loop-tv.md four-way — "a Verus/Z3 timeout").
     #[test]
     fn rlimit_signal_is_detected_counterexample_is_not() {
+        use crate::tv_signal::is_rlimit_signal;
         assert!(
             is_rlimit_signal("error: Resource limit (rlimit) exceeded\n0 verified, 1 errors"),
             "a `Resource limit (rlimit) exceeded` output MUST be detected as a timeout \
@@ -1299,6 +1287,12 @@ mod divergent_teeth {
         assert!(
             is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
             "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
+        );
+        // The distributed z3 binary's OWN resourceout literal (#192 — now the shared
+        // discriminator): `resource limit exceeded` with no `rlimit` token.
+        assert!(
+            is_rlimit_signal("unknown: max. resource limit exceeded\n0 verified, 1 errors"),
+            "z3's own `max. resource limit exceeded` resourceout literal MUST be detected"
         );
         assert!(
             !is_rlimit_signal(

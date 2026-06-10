@@ -46,7 +46,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn run_generated` (the off-corpus exec run — PRIMARY) + `pub fn exec_tv_file` (the corpus body-expr check — best-effort) here; both compute `P_production` via `thermite_lower::lower_exec_expr`, build the obligation via `thermite_tv::exec_equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_exec_tv` (the `forge exec-tv <file>` subcommand). The four-way classification (Faithful / Divergent / Unverifiable / Skipped) is REPORTED DISTINCTLY (never masking infidelity, R-HONEST-3). Verified by `forge/tests/exec_tv_conformance.rs` (the 200-clause generated all-faithful + the corpus honest coverage) under real verus. This closes the `lower_exec_expr` consumer loop (R-DEFER-1). |
+//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn run_generated` (the off-corpus exec run — PRIMARY) + `pub fn exec_tv_file` (the corpus body-expr check — best-effort) here; both compute `P_production` via `thermite_lower::lower_exec_expr`, build the obligation via `thermite_tv::exec_equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_exec_tv` (the `forge exec-tv <file>` subcommand). The four-way classification (Faithful / Divergent / Unverifiable / Skipped) is REPORTED DISTINCTLY (never masking infidelity, R-HONEST-3). **#192 (ref #189):** `discharge` now gates an `errors >= 1` rlimit-hit run to Unverifiable AHEAD of the Divergent arm — via the SHARED `crate::tv_signal::is_rlimit_signal` discriminator (the prior copy-drift root cause: exec_tv had NO rlimit gate, mapping every error run to Divergent unconditionally) — so a Verus/Z3 solver-budget timeout is never fabricated into an exec infidelity. Verified by `forge/tests/exec_tv_conformance.rs` (the 200-clause generated all-faithful + the corpus honest coverage) under real verus + the `divergent_teeth` rlimit gate. This closes the `lower_exec_expr` consumer loop (R-DEFER-1). |
 
 use std::path::Path;
 use std::process::Command;
@@ -701,10 +701,14 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
 // ---- verus discharge (mirrors contract_tv::discharge) -----------------------
 
 /// Discharge one exec obligation PROGRAM through `verus`, classifying the verdict
-/// (REQ-5 — VERIFIED ⟺ Faithful; a counterexample / compile-parse abort ⟺
-/// Divergent; verus-absent / inadequate-frame non-discharge ⟺ Unverifiable). Runs in
-/// a per-run scratch dir removed wholesale on EVERY exit path (blocker #53, reusing
-/// `crate::check::ScratchDir`).
+/// (REQ-5 — VERIFIED ⟺ Faithful; a GENUINE counterexample (errors, NO rlimit signal) /
+/// compile-parse abort ⟺ Divergent; a Verus/Z3 rlimit timeout / verus-absent /
+/// inadequate-frame non-discharge ⟺ Unverifiable). An `errors >= 1` run carrying a
+/// rlimit signal degrades to Unverifiable AHEAD of the Divergent arm (the #189-class
+/// gate via the shared `crate::tv_signal::is_rlimit_signal`; #192), so a solver-budget
+/// timeout is never fabricated into an exec-lowering infidelity (R-HONEST-3 / R-CODE-4).
+/// Runs in a per-run scratch dir removed wholesale on EVERY exit path (blocker #53,
+/// reusing `crate::check::ScratchDir`).
 fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict {
     let stem = sanitize_stem(label);
     let scratch = ScratchDir {
@@ -747,13 +751,38 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
+    // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion / timeout: verus prints an rlimit
+    // diagnostic (`rlimit exceeded` / `Resource limit (rlimit) exceeded` / z3's own
+    // `max. resource limit exceeded`) AND a results line counting the exhausted
+    // obligation as an error. That is a DISCHARGE failure (the solver ran out of
+    // budget), NOT a value mismatch — the #189-class hardening (the #192 root-cause fix:
+    // the SHARED `crate::tv_signal::is_rlimit_signal` discriminator, mirroring body_tv /
+    // contract_tv). An rlimit-hit error run is routed to Unverifiable, NEVER the
+    // `errors >= 1` Divergent arm, so a genuine solver-budget timeout is never fabricated
+    // into an exec-lowering infidelity (R-HONEST-3 / R-CODE-4 — a timeout degrades + is
+    // reported, never a false finding).
+    let rlimit_hit = crate::tv_signal::is_rlimit_signal(&combined);
+
     match parse_results(&combined) {
         // A clean verification (a results line, 0 errors, exit success) ⟺ Faithful.
         Some((verified, errors)) if errors == 0 && verified >= 1 && output.status.success() => {
             ExecVerdict::Faithful
         }
-        // A results line with errors ⟺ a postcondition counterexample — the
-        // production exec value differs from the bounded reference: a REAL infidelity.
+        // An error run that is REALLY an rlimit exhaustion → Unverifiable, never
+        // Divergent (the #189-class mapping fix; this arm precedes the Divergent arm,
+        // mirroring body_tv::run_obligation / contract_tv::discharge).
+        Some((_verified, errors)) if errors >= 1 && rlimit_hit => {
+            let _ = errors;
+            ExecVerdict::Unverifiable {
+                reason: format!(
+                    "verus exhausted its SMT resource budget (rlimit) on `{label}` before \
+                     proving the obligation — a Verus/Z3 timeout, not a counterexample \
+                     (routed to Unverifiable, never Divergent)"
+                ),
+            }
+        }
+        // A results line with errors (NO rlimit signal) ⟺ a postcondition counterexample
+        // — the production exec value differs from the bounded reference: a REAL infidelity.
         Some((_verified, errors)) if errors >= 1 => ExecVerdict::Divergent {
             detail: format!(
                 "verus found {errors} error(s) on the exec equivalence obligation — \
@@ -1068,6 +1097,49 @@ mod divergent_teeth {
             matches!(verdict, ExecVerdict::Unverifiable { .. }),
             "a degenerate zero-obligation program must classify Unverifiable (the \
              Divergent-vs-Unverifiable boundary), never Divergent/Faithful; got {verdict:?}"
+        );
+    }
+
+    /// THE #192/#189-class GATE (the missing-gate fix): `discharge` adds an
+    /// `errors >= 1 && rlimit_hit -> Unverifiable` arm AHEAD of the Divergent arm, so
+    /// a Verus/Z3 solver-budget timeout (an error run carrying a rlimit signal) is
+    /// NEVER fabricated into an exec-lowering infidelity. exec_tv previously had NO
+    /// rlimit gate at all (every `errors >= 1` run -> Divergent unconditionally — the
+    /// same #189 class body_tv/contract_tv fixed); #192 centralizes the discriminator
+    /// in `crate::tv_signal::is_rlimit_signal` and consumes it here.
+    ///
+    /// HAND-DERIVED (R-CHAR-3): a real Z3 rlimit exhaustion is not deterministically
+    /// forcible, so this pins the discriminator that DRIVES the gate (the same seam
+    /// body_tv / contract_tv pin). The full phrase set is detected (verus's two
+    /// phrasings + z3's own `max. resource limit exceeded`); a genuine
+    /// `postcondition not satisfied` counterexample is NOT (it stays in the Divergent
+    /// class). The `discharge` source routes `errors >= 1 && rlimit_hit` to
+    /// Unverifiable AHEAD of the `errors >= 1` Divergent arm, so the discriminator
+    /// firing is exactly the gate firing.
+    #[test]
+    fn rlimit_signal_is_detected_counterexample_is_not() {
+        use crate::tv_signal::is_rlimit_signal;
+        assert!(
+            is_rlimit_signal("error: Resource limit (rlimit) exceeded\n0 verified, 1 errors"),
+            "a `Resource limit (rlimit) exceeded` output MUST be detected as a timeout \
+             signal (routed to Unverifiable, never Divergent — the #192 exec_tv gate)"
+        );
+        assert!(
+            is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
+            "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
+        );
+        // The distributed z3 binary's OWN resourceout literal (#192 — the shared
+        // discriminator): `resource limit exceeded` with no `rlimit` token.
+        assert!(
+            is_rlimit_signal("unknown: max. resource limit exceeded\n0 verified, 1 errors"),
+            "z3's own `max. resource limit exceeded` resourceout literal MUST be detected"
+        );
+        assert!(
+            !is_rlimit_signal(
+                "error: postcondition not satisfied\n --> x.rs:5:12\n0 verified, 1 errors"
+            ),
+            "a genuine `postcondition not satisfied` counterexample MUST NOT be detected as \
+             a timeout (it stays in the Divergent class — the exec gate must not over-fire)"
         );
     }
 }

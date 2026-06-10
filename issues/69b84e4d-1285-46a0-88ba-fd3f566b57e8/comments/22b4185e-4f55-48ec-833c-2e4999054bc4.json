@@ -1,0 +1,10 @@
+{
+  "uuid": "22b4185e-4f55-48ec-833c-2e4999054bc4",
+  "issue_uuid": "69b84e4d-1285-46a0-88ba-fd3f566b57e8",
+  "author": "Yffe",
+  "content": "FIXED + re-critic-clean (d2d1d445). One shared open_hole_reason helper gates build (refusal, no artifact) + body-tv/exec-tv (Skipped OpenHole, never Faithful) + check (refactor byte-identical); gates fire pre-lowering; no over-gate (hole-free corpus green); 3 pins pass live unchanged-as-oracle.",
+  "created_at": "2026-06-10T07:15:07.713764948Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA96/ESTW0oc8v6ndJKFqrY/vUJZ+pq3uXxrgS9QuaVbM7mLbD7bvIU59NZLTcjO9EZj6D3vOC/wDSF/XTnZYJBw=="
+}

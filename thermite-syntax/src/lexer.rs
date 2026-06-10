@@ -25,6 +25,18 @@
 //! | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators before 1-char (`<=`, `==`, `->`, `::`, `..`, `#[`, and the #92 shifts `<<`/`>>`); the single-char branch adds `%`→`Percent` / `^`→`Caret` (#92). |
 //! | REQ-7 (spans) | SHIPPED | every `Token` carries a `Span { start, len }`; used by parser diagnostics + addressing. |
 //! | REQ-8 (Result discipline) | SHIPPED | `tokenize` returns `(Vec<Token>, Vec<SyntaxError>)`; stray chars become diagnostics, no panic. |
+//!
+//! ## `?N` hole token (`.design/forge/goal-repl.md` REQ-4, #193)
+//!
+//! The body-position structural hole `?N` lexes to a single `TokKind::Hole(N)`
+//! token: the `'?'` branch in `tokenize` → `lex_hole` reads `?` + a run of ASCII
+//! digits into the verbatim hole NUMBER (`?0` → `Hole(0)`). A bare `?` with no
+//! following digit is a stray-char `SyntaxError` (REQ-8; Thermite has no
+//! `?`-operator — §2.3), never a partial token, never a panic. The lexer lexes
+//! `?N` ANYWHERE the scanner sees it; the PARSER (`parser.md` REQ-11) restricts a
+//! hole to fn-body STATEMENT position (a `?N` in expression / clause / signature
+//! position is a parse error). Consumer: `parse_block`'s statement dispatch in
+//! `parser.rs`.
 
 use crate::parser::SyntaxError;
 
@@ -143,6 +155,15 @@ pub enum TokKind {
     Pipe,
     Bang,
 
+    /// A body-position structural HOLE `?N` (`.design/forge/goal-repl.md` REQ-4,
+    /// #193). The `u32` is the verbatim hole NUMBER as written (`?0` → `0`); it is
+    /// the surface ordinal the agent typed, NOT a document-order index (the parser
+    /// records holes in document order for `<fn>.?N` addressing — `parser.md` /
+    /// `semantic-addressing.md`). A hole is a research-spike token: it lexes
+    /// EVERYWHERE the scanner sees `?<digits>`, and the PARSER restricts it to
+    /// fn-body statement position (a `?N` elsewhere is a parse error — `parser.md`).
+    Hole(u32),
+
     Eof,
 }
 
@@ -241,6 +262,30 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
                     let next = err.recover_to;
                     errors.push(err.error);
                     i = next;
+                }
+            }
+        } else if c == b'?' {
+            // A body-position structural hole `?N` (lexer.md / goal-repl.md REQ-4,
+            // #193). `?` followed by one-or-more ASCII digits lexes to a single
+            // `Hole(N)` token carrying the verbatim hole number. A `?` with no
+            // following digit is an unrecognized character (a structured
+            // diagnostic, never a panic — REQ-8): Thermite has no `?`-operator
+            // (no try/Result-propagation surface — §2.3), so a bare `?` is a stray
+            // char, not a partial token.
+            match lex_hole(bytes, i) {
+                Some((kind, len)) => {
+                    tokens.push(Token {
+                        kind,
+                        span: Span::new(i, len),
+                    });
+                    i += len;
+                }
+                None => {
+                    errors.push(SyntaxError::stray_char(
+                        src[i..(i + 1).min(n)].to_string(),
+                        Span::new(i, 1),
+                    ));
+                    i += 1;
                 }
             }
         } else if is_ident_start(c) {
@@ -389,6 +434,31 @@ fn lex_int(bytes: &[u8], i: usize) -> Result<(Token, usize), SyntaxError> {
         },
         last_digit,
     ))
+}
+
+/// Lex a body-position structural hole `?N` (lexer.md / `.design/forge/goal-repl.md`
+/// REQ-4, #193). `bytes[i]` is the `?`; the hole NUMBER is the run of ASCII digits
+/// immediately following. Returns the `Hole(N)` token kind + its byte length, or
+/// `None` if no digit follows the `?` (a bare `?` is a stray char — REQ-8). The
+/// number is parsed deterministically (R-CODE-5); an over-long digit run that
+/// overflows `u32` saturates (a hole number is a small surface ordinal — there is
+/// no semantic difference between `?4000000000` and `?u32::MAX`, both name a hole
+/// the agent must address, and saturation keeps the lexer total + panic-free, REQ-8).
+fn lex_hole(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
+    let n = bytes.len();
+    let mut j = i + 1; // past the `?`
+    let mut value: u32 = 0;
+    let mut saw_digit = false;
+    while j < n && bytes[j].is_ascii_digit() {
+        let d = (bytes[j] - b'0') as u32;
+        value = value.saturating_mul(10).saturating_add(d);
+        saw_digit = true;
+        j += 1;
+    }
+    if !saw_digit {
+        return None;
+    }
+    Some((TokKind::Hole(value), j - i))
 }
 
 /// Map an ASCII digit to its value `0..radix`, or `None` if it is not a digit of

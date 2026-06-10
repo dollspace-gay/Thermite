@@ -387,6 +387,19 @@ enum Command {
         addr: String,
         replace: String,
     },
+    /// `forge fill <file> <hole-addr> <code>` — fill a body hole `?N` (#193
+    /// increment (iii); `.design/forge/goal-repl.md` REQ-6). A specialization of
+    /// `edit` whose address names a `?N` hole (`<fn>.?N`): splices the `<code>`
+    /// SOURCE TEXT at the hole's span IN THE FILE, re-emits, re-checks the affected
+    /// item, and prints the new GOAL STATE (which may surface NEW holes the filled
+    /// code introduces — the §5.1 fill loop). The two positionals AFTER the file are
+    /// the hole address and the fill code; a non-hole address is an honest error
+    /// (use `forge edit` for non-hole nodes).
+    Fill {
+        file: PathBuf,
+        addr: String,
+        code: String,
+    },
 }
 
 /// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
@@ -963,6 +976,52 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 replace,
             })
         }
+        "fill" => {
+            // `forge fill <file> <hole-addr> <code>` (#193 increment (iii);
+            // `.design/forge/goal-repl.md` REQ-6). Three required positionals: the
+            // file, the `<fn>.?N` hole address, and the fill code (a single token —
+            // the shell quotes multi-word code, like `edit`'s `--replace` value).
+            // A missing positional is a Usage error.
+            let mut file: Option<PathBuf> = None;
+            let mut addr: Option<String> = None;
+            let mut code: Option<String> = None;
+            for arg in iter {
+                match arg.as_str() {
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_none() {
+                            file = Some(PathBuf::from(positional));
+                        } else if addr.is_none() {
+                            addr = Some(positional.to_string());
+                        } else if code.is_none() {
+                            code = Some(positional.to_string());
+                        } else {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge fill` takes <file> <hole-addr> <code>; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage("`forge fill` requires <file> <hole-addr> <code>".to_string())
+            })?;
+            let addr = addr.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge fill` requires a <hole-addr> (e.g. `binary_search.?0`)".to_string(),
+                )
+            })?;
+            let code = code.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge fill` requires the fill <code> (the source text spliced at the hole)"
+                        .to_string(),
+                )
+            })?;
+            Ok(Command::Fill { file, addr, code })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -978,7 +1037,7 @@ fn usage_text() -> &'static str {
      [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv <file> \
      [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
      [--json] | forge body-tv <file> [--json] | forge goal <file> [item] | forge battery <file> \
-     [item] | forge edit <file> <addr> --replace <code>"
+     [item] | forge edit <file> <addr> --replace <code> | forge fill <file> <hole-addr> <code>"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -1044,6 +1103,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             addr,
             replace,
         } => run_edit(&file, &addr, &replace),
+        Command::Fill { file, addr, code } => run_fill(&file, &addr, &code),
     }
 }
 
@@ -1087,6 +1147,20 @@ fn run_battery(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> 
 /// code; never a panic — REQ-7).
 fn run_edit(file: &Path, addr: &str, replace: &str) -> Result<ExitCode, ForgeError> {
     let rendered = goal_repl::edit_file(file, addr, replace)?;
+    print!("{rendered}");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge fill <file> <hole-addr> <code>`: fill a body hole `?N` and print the
+/// new GOAL STATE (#193 increment (iii); `.design/forge/goal-repl.md` REQ-6). The
+/// fill splices the code at the hole's span, re-checks the affected item, and
+/// renders the new goal state (the §5.1 loop — which may surface NEW holes the fill
+/// introduced). Exit code SUCCESS: a fill is a view-producing query (the verdict
+/// lives IN the rendered goal state, like `goal`); a bad/unresolvable hole address,
+/// a non-hole target, or a re-parse failure after the splice propagates as a
+/// `ForgeError`.
+fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError> {
+    let rendered = goal_repl::fill_hole(file, addr, code)?;
     print!("{rendered}");
     Ok(ExitCode::SUCCESS)
 }

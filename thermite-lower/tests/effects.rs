@@ -58,6 +58,7 @@ fn fn_calling(name: &str, fx: EffectRow, calls: &[&str]) -> Item {
         },
         dec: None,
         body: Some(Block { stmts, tail: None }),
+        holes: Vec::new(),
         span: span(),
     })
 }
@@ -460,6 +461,7 @@ fn deeply_nested_body_returns_result_not_panic() {
             stmts: vec![],
             tail: Some(Box::new(expr)),
         }),
+        holes: Vec::new(),
         span: span(),
     });
     let prog = Program { items: vec![item] };

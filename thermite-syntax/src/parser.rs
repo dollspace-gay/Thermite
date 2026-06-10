@@ -29,6 +29,12 @@
 //! | REQ-8 (operator tiers `% << >> & \| ^ !`, #92) | SHIPPED | `parse_mul`+`%`→`Rem`; new tiers `parse_shift`/`parse_bitand`/`parse_bitxor`/`parse_bitor` (threaded `parse_is`→`parse_bitor`→…→`parse_add`, `is` above the bitwise tiers); `parse_unary` builds the prefix `!`→`Unary { Not }`. Binary `&`/`\|` vs prefix ref/closure disambiguated by position. Tests `tests/operators_parse.rs`. |
 //! | REQ-9 (partiality not a parse concern, #92) | SHIPPED | `parse_mul`/`parse_shift` build the `Binary` node UNCONDITIONALLY — no `req` injection; the div-by-zero / shift-bound obligation is a §7 proof obligation (`ast.md` REQ-11), GROUNDED L0-without/L3-with in `forge/tests/operators_conformance.rs`. |
 //!
+//! ## #193 body-position holes (`.design/forge/goal-repl.md` REQ-4)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | goal-repl REQ-4 (parser accepts `?N` in fn-body statement position ONLY) | SHIPPED | `parse_block`'s statement dispatch gains a `TokKind::Hole(_)` arm → `parse_hole`, which records the hole (`Hole { number, span }`) on `self.pending_holes` (document order, pulled into `FnItem.holes` by `parse_fn`) and emits NO `Stmt`. The fn-body scope is `self.fn_body_depth` (incremented around the exec-fn body parse in `parse_fn`, NOT around a `spec fn` body): a `?N` at depth 0 (a `spec fn` body, a clause, an expr) is a structural `SyntaxError::HoleOutsideFnBody` (the v1 scope pin); a `?N` in expression / clause / signature position is not a primary, so it surfaces as a normal unexpected-token error. A holed fn parses CLEAN (a well-formed holed AST); it never lowers (`forge check` short-circuits it, `goal-repl.md` REQ-5). Verified: `forge/tests/goal_repl_fill.rs` (a `body = ?0` fn parses to `holes: [?0]`; a `spec fn` hole / nested-block hole behavior). |
+//!
 //! ## Cluster C7 — Option/Result type parsing (`.design/basis/09-option-result.md`, #95)
 //!
 //! | REQ | Status | Evidence |
@@ -105,6 +111,12 @@ pub enum SyntaxError {
     /// rule) — break/continue are loop-control statements and have no meaning at
     /// a function-body top level; `keyword` is `"break"` or `"continue"`.
     BreakContinueOutsideLoop { keyword: String, span: Span },
+    /// A body-position hole `?N` parsed OUTSIDE an exec-fn body
+    /// (`.design/forge/goal-repl.md` REQ-4, #193). The v1 scope pin: holes are
+    /// EXEC-fn-body statement position ONLY — a `?N` in a `spec fn` body, a clause,
+    /// an expression, or a signature is a structural parse error (`number` is the
+    /// verbatim hole number written).
+    HoleOutsideFnBody { number: u32, span: Span },
 }
 
 /// The maximum recursive-descent nesting depth the parser will follow before
@@ -154,7 +166,8 @@ impl SyntaxError {
             | SyntaxError::ClauseOrder { span, .. }
             | SyntaxError::UnexpectedEof { span, .. }
             | SyntaxError::ExpressionTooDeep { span, .. }
-            | SyntaxError::BreakContinueOutsideLoop { span, .. } => *span,
+            | SyntaxError::BreakContinueOutsideLoop { span, .. }
+            | SyntaxError::HoleOutsideFnBody { span, .. } => *span,
         }
     }
 }
@@ -200,6 +213,13 @@ impl std::fmt::Display for SyntaxError {
             SyntaxError::BreakContinueOutsideLoop { keyword, span } => write!(
                 f,
                 "`{keyword}` outside of a loop body at byte {}",
+                span.start
+            ),
+            SyntaxError::HoleOutsideFnBody { number, span } => write!(
+                f,
+                "hole `?{number}` outside an exec-fn body at byte {} (a `?N` hole is \
+                 valid only in `fn`-body statement position, not in a `spec fn`, a \
+                 clause, or an expression)",
                 span.start
             ),
         }
@@ -281,6 +301,21 @@ struct Parser<'a> {
     /// (REQ-2): the parser owns presence/position; Verus owns the invariant/
     /// decreases semantics (`verus-lowering.md` REQ-12).
     loop_depth: usize,
+    /// Current EXEC-fn-body nesting depth (`.design/forge/goal-repl.md` REQ-4,
+    /// #193). Incremented around the body parse of an `Item::Fn` (`parse_fn`),
+    /// decremented after; a nested `loop`/`if`/`while` block keeps it > 0 (a hole
+    /// in a nested block within a fn body is still in "fn-body statement position").
+    /// A `?N` parsed at depth 0 (a `spec fn` body — which parses at depth 0 — or
+    /// any non-fn-body context) is a structural `SyntaxError::HoleOutsideFnBody`
+    /// (the v1 scope pin: holes are EXEC-fn-body statement position ONLY). A `spec
+    /// fn` body is parsed WITHOUT incrementing this, so its holes are rejected.
+    fn_body_depth: usize,
+    /// The OPEN HOLES (`?N`) accumulated while parsing the CURRENT exec-fn body, in
+    /// document order (`.design/forge/goal-repl.md` REQ-4, #193). `parse_fn` saves
+    /// then clears this around the body parse and pulls the collected holes into the
+    /// `FnItem.holes` field, so holes from a nested fn (none in v0.1) / sibling fn
+    /// never leak. A `?N` statement-dispatch arm in `parse_block` pushes here.
+    pending_holes: Vec<Hole>,
 }
 
 impl<'a> Parser<'a> {
@@ -294,6 +329,8 @@ impl<'a> Parser<'a> {
             recursion_depth: 0,
             no_struct_literal: false,
             loop_depth: 0,
+            fn_body_depth: 0,
+            pending_holes: Vec::new(),
         }
     }
 
@@ -668,6 +705,9 @@ impl<'a> Parser<'a> {
         // The `;` body is VALID ONLY when `boundary.is_some()`: a bodyless fn
         // WITHOUT `#[boundary]` is a clear parse error, never silently a boundary
         // fn (a normal fn missing its body must not be mistaken for a foreign one).
+        // The open holes (`?N`) the body carries (`.design/forge/goal-repl.md`
+        // REQ-4); EMPTY for a boundary fn (no Thermite body) and for a hole-free fn.
+        let mut holes: Vec<Hole> = Vec::new();
         let body = if boundary.is_some() {
             // A foreign fn MUST be bodyless: `;`, not `{ }`. A `{ }` body on a
             // `#[boundary]` fn is an error — there is no Thermite body to prove.
@@ -697,7 +737,16 @@ impl<'a> Parser<'a> {
                     span: self.peek_span(),
                 });
             }
-            Some(self.parse_block()?)
+            // Parse the EXEC fn body inside a fn-body scope so a `?N` hole is
+            // accepted in statement position (`.design/forge/goal-repl.md` REQ-4):
+            // save + clear the hole accumulator, mark the fn-body depth, parse, then
+            // pull the holes back. Holes from a sibling/prior fn never leak in.
+            let saved_holes = std::mem::take(&mut self.pending_holes);
+            self.fn_body_depth += 1;
+            let body_result = self.parse_block();
+            self.fn_body_depth -= 1;
+            holes = std::mem::replace(&mut self.pending_holes, saved_holes);
+            Some(body_result?)
         };
         let span = start_span.to(self.prev_span());
         Ok(Item::Fn(FnItem {
@@ -709,6 +758,7 @@ impl<'a> Parser<'a> {
             contract,
             dec,
             body,
+            holes,
             span,
         }))
     }
@@ -1034,6 +1084,19 @@ impl<'a> Parser<'a> {
                 // rule — `self.loop_depth > 0`).
                 TokKind::Break => stmts.push(self.parse_break_continue(true)?),
                 TokKind::Continue => stmts.push(self.parse_break_continue(false)?),
+                // A body-position structural hole `?N` (`.design/forge/goal-repl.md`
+                // REQ-4, #193). Valid ONLY in EXEC-fn-body statement position
+                // (`self.fn_body_depth > 0`): record it on the fn's hole list (the
+                // parser's accumulator, document order) and emit NOTHING into the
+                // statement stream — a hole is not a `Stmt` (it never lowers; the
+                // holed item short-circuits at `forge check`). A `?N` in a `spec fn`
+                // body (depth 0) or any non-fn-body context is a structural
+                // `SyntaxError::HoleOutsideFnBody` (the v1 scope pin: holes are
+                // exec-fn-body statement position only). A `?N` in expression /
+                // clause / signature position is unreachable here — those are parsed
+                // by `parse_primary`/`parse_clause`, where `TokKind::Hole` is not a
+                // primary, so it surfaces as a normal "unexpected token" parse error.
+                TokKind::Hole(_) => self.parse_hole()?,
                 // `if let P = e { T } else { E }` — the C10 ergonomic (REQ-5),
                 // distinguished by a `let` after `if`. It desugars to the SHIPPED
                 // `Expr::Match { e, [P => T, _ => E] }`. In tail position (an `else`
@@ -1478,6 +1541,37 @@ impl<'a> Parser<'a> {
         } else {
             Stmt::Continue
         })
+    }
+
+    /// Parse a body-position structural hole `?N` (`.design/forge/goal-repl.md`
+    /// REQ-4, #193). Records the hole (number + span) on the parser's accumulator
+    /// (`pending_holes`, document order — pulled into `FnItem.holes` by `parse_fn`)
+    /// and consumes the token, emitting NO statement (a hole is not a `Stmt`). A
+    /// hole is value-less + payload-less and takes NO trailing `;` (the §5.1
+    /// `body = ?0` shape). It is valid ONLY in EXEC-fn-body statement position
+    /// (`self.fn_body_depth > 0`); a `?N` in a `spec fn` body (depth 0) is a
+    /// structural `SyntaxError::HoleOutsideFnBody` (the v1 scope pin). Returns
+    /// `Ok(())` — `parse_block` pushes nothing into `stmts`.
+    fn parse_hole(&mut self) -> PResult<()> {
+        let span = self.peek_span();
+        let number = match self.peek() {
+            TokKind::Hole(n) => *n,
+            // Unreachable: the caller dispatches here only on a `TokKind::Hole`.
+            // A structured error (NO panic — R-CODE-2) keeps the parser total.
+            other => {
+                return Err(SyntaxError::Unexpected {
+                    expected: "a hole `?N`".to_string(),
+                    found: describe(other),
+                    span,
+                });
+            }
+        };
+        self.bump(); // consume the `?N` token
+        if self.fn_body_depth == 0 {
+            return Err(SyntaxError::HoleOutsideFnBody { number, span });
+        }
+        self.pending_holes.push(Hole { number, span });
+        Ok(())
     }
 
     fn parse_return(&mut self) -> PResult<Stmt> {
@@ -2530,6 +2624,7 @@ fn describe(kind: &TokKind) -> String {
         TokKind::Int { value, .. } => format!("integer `{value}`"),
         TokKind::Bool(b) => format!("`{b}`"),
         TokKind::Str(s) => format!("string {s:?}"),
+        TokKind::Hole(n) => format!("hole `?{n}`"),
         TokKind::Eof => "end of input".to_string(),
         other => format!("`{}`", token_text(other)),
     }
@@ -2599,6 +2694,10 @@ fn token_text(kind: &TokKind) -> &'static str {
         | TokKind::Int { .. }
         | TokKind::Bool(_)
         | TokKind::Str(_)
+        // A `?N` hole has no fixed surface text (the number varies); `describe`
+        // formats it dynamically (#193). It is listed here only to keep this match
+        // exhaustive without a `_` wildcard (R-APG-1).
+        | TokKind::Hole(_)
         | TokKind::Eof => "<token>",
     }
 }

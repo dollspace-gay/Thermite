@@ -21,6 +21,7 @@
 //! | REQ-4 (dec address) | SHIPPED | each loop's single `dec` is `<loop>.dec` (no ordinal). |
 //! | REQ-5 (stability under unrelated edits) | SHIPPED | numbering reads only the enclosing item; `tests/conformance.rs` stability fixture. |
 //! | REQ-6 (deterministic + bidirectional) | SHIPPED | `addresses_of` (node->addr) + `resolve` (addr->node); bad addr -> `AddressError`, no panic. |
+//! | goal-repl REQ-4 (`<fn>.?N` hole address, #193) | SHIPPED | `addresses_of` emits a `AddrKind::Hole` entry `<fn>.?N` per `FnItem.holes` member (verbatim surface number, document order); `validate_segments` accepts a `?N` segment (a bare `?`/non-digit is `Malformed`). The operand of `forge fill <fn>.?N <code>`. Resolves through the same `resolve` path (a `<fn>.?9` for an absent hole → `NotFound`, never a panic). Consumer: `forge::goal_repl::fill_hole`. |
 
 use crate::ast::{Block, Item, LoopNode, Program, Stmt};
 use std::fmt;
@@ -54,6 +55,10 @@ pub enum AddrKind {
     Loop,
     Inv,
     Dec,
+    /// An open body HOLE `?N` (`.design/forge/goal-repl.md` REQ-4, #193). Addressed
+    /// `<fn>.?N` where `N` is the hole's verbatim surface number. The operand of
+    /// `forge fill <fn>.?N <code>`.
+    Hole,
 }
 
 /// A computed address with the kind of node it names and, for `inv`/`dec`, the
@@ -87,6 +92,21 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
                 // carries a body whose loops are numbered as before.
                 if let Some(body) = &f.body {
                     collect_block_loops(&f.name, body, &mut out);
+                }
+                // Open body holes (`?N`) are addressed `<fn>.?N` by their verbatim
+                // surface number (`.design/forge/goal-repl.md` REQ-4, #193), in
+                // document order — the operand of `forge fill <fn>.?N <code>`. EMPTY
+                // for every hole-free fn (the entire pre-#193 corpus), so this is a
+                // purely additive set of addresses; a holed fn never certifies
+                // (`forge check` short-circuits it), so these addresses exist only to
+                // let `forge fill` name the hole to splice.
+                for hole in &f.holes {
+                    out.push(AddressEntry {
+                        addr: format!("{}.?{}", f.name, hole.number),
+                        kind: AddrKind::Hole,
+                        surface_keyword: None,
+                        text: None,
+                    });
                 }
             }
             Item::SpecFn(s) => {
@@ -198,6 +218,15 @@ fn validate_segments(addr: &str) -> Result<(), AddressError> {
     }
     for seg in segs {
         if seg == "dec" {
+            continue;
+        }
+        // A hole segment `?N` (`.design/forge/goal-repl.md` REQ-4, #193): the `?`
+        // prefix + a non-empty ASCII-digit run. `?` with no digits / non-digits is
+        // Malformed (mirroring `loop#`/`inv#`).
+        if let Some(n) = seg.strip_prefix('?') {
+            if n.is_empty() || !n.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(AddressError::Malformed(addr.to_string()));
+            }
             continue;
         }
         if let Some(n) = seg

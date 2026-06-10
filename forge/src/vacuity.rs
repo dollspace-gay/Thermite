@@ -470,6 +470,7 @@ mod tests {
                         stmts: Vec::new(),
                         tail: None,
                     }),
+                    holes: Vec::new(),
                     span: dummy_span(),
                 }
             }

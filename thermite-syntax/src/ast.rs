@@ -33,6 +33,12 @@
 //! | REQ-10 (binary + unary operator set, #92) | SHIPPED | `enum BinOp` += `Rem`/`Shl`/`Shr`/`BitAnd`/`BitOr`/`BitXor`; `enum UnaryOp { Not }` + `Expr::Unary { op, expr }` (the prefix `!`). Built by the `parser.rs` precedence ladder; the workspace match-arm ripple (lower/l1/effects/validator/mutation/vacuity/closure/review/check/strengthen/skill) is closed (no `_`/panic). GROUNDED L3 for all 7 forms (`forge/tests/operators_conformance.rs`). |
 //! | REQ-11 (partial-operator obligations, #92) | SHIPPED | `lower.rs`/`l1.rs` `binop` emit the BARE Verus `%`/`<<`/`>>` (no `external`/`assume`, R-DEFER-9); Verus raises the div-by-zero / shift-bound obligation. GROUNDED: `%`/`<<` WITH their `req` → L3, WITHOUT → L0 (`forge/tests/operators_conformance.rs`). |
 //!
+//! ## #193 body-position holes (`.design/forge/goal-repl.md` REQ-4)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | goal-repl REQ-4 (AST hole node) | SHIPPED | `struct Hole { number: u32, span: Span }` + `FnItem.holes: Vec<Hole>` (document order). PURELY ADDITIVE (`holes: Vec::new()` on every hole-free literal, the `dec: None` precedent) — a hole is recorded on the fn, NOT as a `Stmt` variant, so the `enum Stmt` and every exhaustive `match Stmt` in the workspace are UNTOUCHED (a holed item never lowers — it short-circuits at `forge check`, REQ-5). Built by `parse_block`'s `TokKind::Hole` arm in `parser.rs` (`parser.md` REQ-11); addressed `<fn>.?N` by `address.rs` (`AddrKind::Hole`); short-circuited to L0 `OpenHole` by `forge::check`; filled by `forge::goal_repl::fill_hole`. |
+//!
 //! ## Basis Stage 1a — ADT SURFACE AST nodes (`.design/basis/01-adts.md`)
 //!
 //! SURFACE-only (parse-into-the-right-AST); the VALIDATOR rules (1b) and Verus
@@ -237,6 +243,39 @@ pub struct FnItem {
     /// The Thermite body — `Some(Block)` for an in-language fn, `None` for a
     /// boundary fn (the body is foreign; ffi REQ-2).
     pub body: Option<Block>,
+    /// The OPEN BODY HOLES (`?N`) this fn carries (`.design/forge/goal-repl.md`
+    /// REQ-4, #193), in DOCUMENT (source) order — the order their `<fn>.?N`
+    /// addresses are numbered (`semantic-addressing.md` / `address.rs`) and the
+    /// order `forge goal` lists them. EMPTY for every hole-free fn (the entire
+    /// pre-#193 corpus), so this is a PURELY ADDITIVE field: a non-hole `FnItem`
+    /// literal sets `holes: Vec::new()`, exactly mirroring the `dec: None` additive
+    /// precedent (C9-A). A fn with ANY hole NEVER certifies — `forge check`
+    /// short-circuits it to a non-certified L0 cert with an `OpenHole` cause BEFORE
+    /// lowering (`.design/forge/goal-repl.md` REQ-5; the same short-circuit shape
+    /// the vacuity gate uses), so a hole is recorded HERE (not threaded into the
+    /// statement stream — it never lowers, so the `Stmt` enum and every exhaustive
+    /// `match Stmt` stay untouched). The parser records a hole here when it sees a
+    /// `?N` in fn-body statement position (`parser.md` REQ-11).
+    pub holes: Vec<Hole>,
+    pub span: Span,
+}
+
+/// An OPEN BODY HOLE `?N` (`.design/forge/goal-repl.md` REQ-4, #193). A hole is a
+/// structural placeholder the agent fills via `forge fill <fn>.?N <code>`. It
+/// carries the verbatim hole NUMBER as written (`number`, the surface ordinal —
+/// `?0` → `0`) and the source SPAN of the `?N` token so `forge fill` can splice
+/// replacement source text at exactly that position (`goal_repl::fill_hole`). A
+/// hole is NOT a `Stmt` (it never lowers — a holed item short-circuits at
+/// `forge check`, REQ-5) and is NOT separately addressable beyond its `<fn>.?N`
+/// address (`address.rs`). The address ORDINAL is the hole's DOCUMENT-ORDER index
+/// among the fn's holes (`AddrKind::Hole`), which may differ from the surface
+/// `number` if the agent reuses or skips numbers (the oracle re-presents the
+/// addresses every turn — §5.1 property 1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hole {
+    /// The verbatim hole number as the agent wrote it (`?0` → `0`).
+    pub number: u32,
+    /// The source span of the `?N` token (the splice target for `forge fill`).
     pub span: Span,
 }
 

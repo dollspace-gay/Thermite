@@ -277,6 +277,7 @@ fn validate_never_panics_on_deep_nesting() {
                     raw: "0".to_string(),
                 })),
             }),
+            holes: Vec::new(),
             span,
         })],
     };

@@ -1,0 +1,70 @@
+{
+  "note": "The §5.1 binary_search goal-state dialogue, the AC-6 acceptance oracle for the forge goal/fill REPL (.design/forge/goal-repl.md). HAND-DERIVED from thermite-design.md §5.1's verbatim dialogue text + the design-doc AC-6 (goal.md R-CHAR-3) — NEVER regenerated from the verbs' output. See README.md for the structural-oracle vs illustrative split.",
+  "thesis_ref": "thermite-design.md §5.1",
+  "design_ref": ".design/forge/goal-repl.md AC-6",
+  "oracle_kind": "structure-of-the-dialogue (the given/want/holes/discharged-vs-open/counterexample-presence transitions), NOT exact timings/mutant-counts (illustrative — see README)",
+  "turns": [
+    {
+      "turn": 1,
+      "agent_move": "declare fn binary_search signature + contract, body = hole ?0",
+      "verb": "forge goal binary_search.dialogue.th binary_search",
+      "expect_structure": {
+        "given_present": true,
+        "given_substring": "sorted(haystack)",
+        "want_present": true,
+        "holes_open": ["binary_search.?0"],
+        "certified": false,
+        "level": "L0",
+        "reject_cause": "OpenHole"
+      },
+      "design_basis": "§5.1: forge → agent: GOAL STATE  given: sorted(haystack)  want: match result {...}  holes: ?0 : body"
+    },
+    {
+      "turn": 2,
+      "agent_move": "fill ?0 with the loop skeleton + invariants, introducing two new holes ?1 ?2 (the branch bodies)",
+      "verb": "forge fill binary_search.dialogue.th binary_search.?0 <loop-skeleton-with-?1-?2>",
+      "expect_structure": {
+        "holes_open": ["binary_search.?1", "binary_search.?2"],
+        "certified": false,
+        "level": "L0",
+        "reject_cause": "OpenHole",
+        "note": "the fill re-numbers holes on re-parse (no incremental hole-id stability in v1 — the oracle re-presents, §5.1 property 1); the STRUCTURAL fact is that two open holes remain after the loop-skeleton fill"
+      },
+      "design_basis": "§5.1: agent → forge: fill ?0 with loop skeleton, invariants, two new holes ?1 ?2"
+    },
+    {
+      "turn": 3,
+      "agent_move": "fill one branch hole correctly (a discharged sub-goal) and leave the other with the unguarded branch that breaks the invariant — observe one discharged, one open WITH a concrete counterexample",
+      "verb": "forge fill ... then forge goal",
+      "expect_structure": {
+        "some_hole_filled": true,
+        "remaining_open_has_counterexample": true,
+        "counterexample_is_concrete_not_adjective": true,
+        "certified": false,
+        "design_illustrative_counterexample": "lo=3, hi=3, mid=3 → lo=4 > hi=3",
+        "design_illustrative_obligation": "lo <= hi preserved across `lo = mid + 1`"
+      },
+      "design_basis": "§5.1: forge → agent: GOAL STATE  ?1 discharged ✓ (L3, 0.4s)  ?2 open — obligation: lo <= hi preserved across `lo = mid + 1`  counterexample: lo=3, hi=3, mid=3 → lo=4 > hi=3  (§5.1 property 2: counterexamples, not adjectives)"
+    },
+    {
+      "turn": 4,
+      "agent_move": "guard the branch (fill the last hole with the guarded body that preserves the invariant) — all holes closed, the item certifies",
+      "verb": "forge fill ... then forge goal",
+      "expect_structure": {
+        "holes_open": [],
+        "all_goals_discharged": true,
+        "certified": true,
+        "level": "L3",
+        "battery_line_present": true,
+        "vacuity": "non-vacuous"
+      },
+      "design_basis": "§5.1: forge → agent: ALL GOALS DISCHARGED ✓  binary_search certified L3  contract score: non-vacuous ✓, mutants killed 23/24 (§7)"
+    }
+  ],
+  "illustrative_not_asserted": {
+    "solver_time_ms": "§5.1 shows `0.4s` — wall-clock, non-deterministic, EXCLUDED (conformance/README.md, the cert-oracle contract)",
+    "mutants_killed_ratio": "§5.1 shows `23/24`; the live tool computes its own ratio for the actual mutant set — the RATIO is illustrative, the STRUCTURAL fact asserted is `non-vacuous` (tautology=false, vacuous_precondition=false)",
+    "exact_hole_numbers": "§5.1 names ?0/?1/?2; v1 re-numbers holes on re-parse (no incremental id stability — §5.1 property 1 'the oracle re-presents'), so the ASSERTED fact is the COUNT + open/discharged transition, not literal ?N identity across turns",
+    "exact_counterexample_witness": "§5.1's `lo=3, hi=3, mid=3` is the design's illustrative witness; the asserted fact is that an open obligation carries a CONCRETE witness (a non-empty diagnostic), not an adjective (§5.1 property 2)"
+  }
+}

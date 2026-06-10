@@ -289,6 +289,47 @@ pub fn check_file_with_options(
             }
         }
 
+        // #193 OPEN-HOLE short-circuit (`.design/forge/goal-repl.md` REQ-5): a fn
+        // carrying ANY open body hole (`?N`) NEVER certifies — it is incomplete.
+        // It short-circuits HERE, BEFORE the #6 gate / lowering / verus (the SAME
+        // short-circuit shape the vacuity gate uses for a rejected item), to a
+        // non-certified L0 cert with an `OpenHole` cause naming the FIRST open hole
+        // (the goal-state's open GOAL — the §5.1 `holes: ?N : body` line). A holed
+        // item never reaches verus, so it can never accidentally certify; `forge
+        // fill` must close every hole before the item proceeds to the L3 path. The
+        // detail names every open hole address so `forge goal`/`forge fill` can list
+        // them (R-CODE-5 — a pure function of the fn's holes).
+        if let Item::Fn(f) = item {
+            if let Some(first) = f.holes.first() {
+                let addrs: Vec<String> = f
+                    .holes
+                    .iter()
+                    .map(|h| format!("{}.?{}", f.name, h.number))
+                    .collect();
+                certs.push(Certificate::rejected(
+                    f.name.clone(),
+                    effects_of(&f.contract.fx),
+                    f.slag.is_some(),
+                    RejectReason {
+                        cause: "OpenHole".to_string(),
+                        detail: format!(
+                            "`{}` has {} open body hole(s) [{}] — an item with any `?N` hole is \
+                             L0-equivalent (incomplete) and does NOT certify until every hole is \
+                             filled (`forge fill {} <code>`). First open goal: hole `?{}` at byte \
+                             {} (`.design/forge/goal-repl.md` REQ-5).",
+                            f.name,
+                            f.holes.len(),
+                            addrs.join(", "),
+                            addrs[0],
+                            first.number,
+                            first.span.start,
+                        ),
+                    },
+                ));
+                continue;
+            }
+        }
+
         // #6 gate: structural vacuity triage + `#[slag]` short-circuit run BEFORE
         // the L3 proof ("a function does not certify until its contract
         // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),

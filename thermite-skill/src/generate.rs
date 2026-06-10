@@ -703,6 +703,10 @@ fn item_inventory() -> Vec<Item> {
             // representative non-recursive item (the additive-field ripple).
             dec: None,
             body: Some(empty_block()),
+            // #193 (`.design/forge/goal-repl.md` REQ-4): the open body holes. EMPTY
+            // for this representative complete skill-inventory item (the additive
+            // `FnItem.holes` ripple — a skill example is never a holed item).
+            holes: Vec::new(),
             span,
         }),
         Item::SpecFn(SpecFnItem {

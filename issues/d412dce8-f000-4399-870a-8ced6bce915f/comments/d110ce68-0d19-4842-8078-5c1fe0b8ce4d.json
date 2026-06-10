@@ -1,0 +1,10 @@
+{
+  "uuid": "d110ce68-0d19-4842-8078-5c1fe0b8ce4d",
+  "issue_uuid": "d412dce8-f000-4399-870a-8ced6bce915f",
+  "author": "Yffe",
+  "content": "Land the recovered req-bounded var*var overflow discharge in thermite-lower. HOSTILE REVIEW of the unaudited code found three defects: (1) a THERMITE_NO_MUL_AID env backdoor in the codegen path (R-CODE-5 determinism violation) — removed; (2) in-loop products got an INERT body-start aid (a body-start fact does not flow past a Verus loop head) — fixed by placing each aid at its enclosing block's start (fn body via render_mul_proof_block in lower_fn_body, loop body via the same in lower_loop, walker no longer descends into nested loops); (3) no shadowing guard — added block_rebinds so a product over a mutated/shadowed local is skipped. Soundness: assert ... by(nonlinear_arith) requires <exactly the req conjuncts>; can only fail, never prove false; non-param/unbounded operands are skipped so the honest obligation stands (R-DEFER-9). Validated live against verus: sq->L3, a*b*c->L3, in-loop n*n->L3, unbounded n*m->honest fail, mutated acc*n->honest fail, lo+(hi-lo)/2 non-mul->no aid. New tests: thermite-lower/tests/req_bounded_mul_aid.rs (6), forge/tests/req_bounded_mul_conformance.rs (2 live). No golden touched.",
+  "created_at": "2026-06-10T07:06:12.554791047Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1C/4EJUYGh21e2WG0WINm67u1SjakdbT4FRh/Wd//mCfK611PMxhLt6qVMtKObk73MFdv7dd4KT80RpThvhHCQ=="
+}

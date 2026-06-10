@@ -1,0 +1,10 @@
+{
+  "uuid": "bd2f157c-9c8b-4769-8c74-e124d1f42a9e",
+  "display_id": 206,
+  "title": "Divergence: proof-backends.md REQ-9/§7 misstates mutation_score's SHIPPED kill semantics (Timeout counts as KILLED today, not Refuted-only) and leaves the floor-vs-shrunken-denominator rule undecided",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:53:17.199024026Z",
+  "updated_at": "2026-06-10T18:53:17.199024026Z"
+}

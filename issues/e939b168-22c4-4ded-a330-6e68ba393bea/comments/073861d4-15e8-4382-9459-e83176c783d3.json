@@ -1,0 +1,10 @@
+{
+  "uuid": "073861d4-15e8-4382-9459-e83176c783d3",
+  "issue_uuid": "e939b168-22c4-4ded-a330-6e68ba393bea",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_spec_call_cast_unthreaded_paths.rs::contract_tv_production_column_matches_real_signature_lowering demonstrates the divergence (run with --ignored; FAILS: lower_contract_expr emits result == s_dec((n - 1) as u64) where the real post-#225 signature lowering emits as u32). Authority: .design/verified/contract-tv.md REQ-2 — 'The production side reuses lower_fn_signature in lower.rs's clause output verbatim (the artifact under test)'. lower_contract_expr has no spec_fn_param_types input and forge::contract_tv::tv_clause passes none, so forge tv discharges a NON-production predicate for u32/usize spec-call-arith clauses. Observable today: honest Unverifiable (not a wrong verdict) because contract_tv's SpecType::BoundedInt frames every int param as u64, so the u32 spec_defs type-clash first (live: forge tv on a u32 s_dec fixture -> ens clauses Unverifiable, reqs faithful). The reference encoder (ref_encode.rs encode_call case 3 / encode_call_arg) emits NO narrowing cast on arith args at all — when the generator extends the frame to u32, both the production column threading AND the reference/frame typing need the declared-param-type rule or every such clause stays Unverifiable. The lower_contract_expr doc comment's byte-identity claim is stale on this clause class.",
+  "created_at": "2026-06-10T23:53:55.333458501Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABADrnVgNiL2QdZWNMlz8m/+ZfSEym1c8FhhjuQq3eWOksMAoR1Wm3EPMuMvgZWkxROuj2IrFitsUM7TTRvW660BA=="
+}

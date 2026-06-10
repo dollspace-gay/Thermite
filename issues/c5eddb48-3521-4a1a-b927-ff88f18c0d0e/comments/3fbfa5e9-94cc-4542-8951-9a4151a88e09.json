@@ -1,0 +1,10 @@
+{
+  "uuid": "3fbfa5e9-94cc-4542-8951-9a4151a88e09",
+  "issue_uuid": "c5eddb48-3521-4a1a-b927-ff88f18c0d0e",
+  "author": "Yffe",
+  "content": "Code: lean/Thermite/Denote.lean denote's specCall arm — at fuel 0 OR an unresolved Env.specs name it bottoms to True ('At fuel 0 / an unresolved name it bottoms to True (IDENTICAL to refDenote's bottom — T1 holds at fuel 0)'). That dodge is sound for T1 (an EQUALITY of two identically-fuelled denotations) but NOT for the one-sided exported obligation the doc sketches in §1/§4 ('theorem item_xyz : forall env, reqDenote ... -> denote fuel ens ... ' with fuel free/unspecified): stated existentially or at insufficient fuel, a spec-fn-calling ens denotes True and a WRONG program certifies vacuously; likewise an exporter that fails to populate the registry for a called spec-fn makes the obligation True at EVERY fuel. The doc lists 'spec-fns via the fuel-indexed registry' IN (§8/AC-6) and never names the fuel-adequacy question; the spine's fuel-uniformity argument it leans on (thermite-semantics.md) covers T1 only. Correction: REQ-6 must pin the obligation's fuel form (e.g. forall fuel >= a derived sufficient bound from the dec-bounded registry, or an adequacy lemma), and the EXP trust item must explicitly include registry-population faithfulness (an omitted spec-fn = a vacuously-true obligation).",
+  "created_at": "2026-06-10T18:54:49.249529086Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABALOihw4cSC4tw9HZzlOgRZOTeBC/F595AgSXSGqMm/Qr12/6ouWXTcuIqGqsWYJildcgVWAhEbDKkpofwFFShDQ=="
+}

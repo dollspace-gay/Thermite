@@ -2,6 +2,8 @@
 
 **A programming language where the code has to prove it works.**
 
+*Every plain-language term in this README resolves to a precise mechanism in [RATIONALE.md](RATIONALE.md).*
+
 > Thermite is what you get when you add energy to rust. Iron oxide plus aluminum: inert powder until ignited, then it burns at 2,500 °C and cuts through steel. Take Rust's substrate, add the energy budget AI agents bring (compute, patience, token spend), and produce something hot enough to weld trust into software.
 
 ## The problem
@@ -20,24 +22,24 @@ So Thermite is deliberately strict in a way no human would tolerate. Humans aren
 - `ens` — *"here's what I guarantee about my answer"* (e.g. "if I return an index, the item is really there")
 - `fx` — *"here's everything I'm allowed to touch"* (e.g. "nothing — I'm pure", or "I may read this one file")
 
-**Every promise gets graded.** The toolchain (`forge`) tries to keep every function at the top rung of a ladder:
+**Every promise gets graded.** The toolchain (`forge`) tries to keep every function at the top rung of a ladder (the four rungs are four standard verification techniques — see [RATIONALE.md](RATIONALE.md#the-ladder-l3-l2-l1-l0)):
 
 | Rung | What it means |
 |---|---|
-| **L3** | A machine-checked **mathematical proof** that the promise holds for *every possible input*. Not tested — proven. |
-| **L2** | Proven for all inputs up to a stated size. |
-| **L1** | The promise is checked **while the program runs**; violations stop it on the spot. |
-| **L0** | Trusted by fiat. The escape hatch — spelled `#[slag]`, deliberately ugly, so `grep slag` lists every line of code anyone is taking on faith. |
+| **L3** | A machine-checked **mathematical proof** that the promise holds for *every possible input*. Not tested — proven. (SMT-backed deductive verification via the Verus prover + the Z3 logic engine.) |
+| **L2** | Proven for all inputs up to a stated size. (Bounded model checking, via Kani/CBMC.) |
+| **L1** | The promise is checked **while the program runs**; violations stop it on the spot. (Runtime contract monitoring.) |
+| **L0** | Trusted by fiat. The escape hatch — spelled `#[slag]` (a loud, greppable [trusted-code annotation](RATIONALE.md#slag), cf. `unsafe`/`axiom`/`admit`), deliberately ugly, so `grep slag` lists every line of code anyone is taking on faith. |
 
 It always aims for L3 and only slides down honestly. One thing never slides: if the prover finds an actual **counterexample** — *"your code is wrong when n = 3"* — that's a hard failure. It is never softened into a lower grade.
 
-**You can't cheat the grade.** A promise that promises nothing (`ens true`) would technically always pass. So every contract is audited for emptiness, and then dozens of deliberately-broken mutant copies of your code are generated — the contract must *catch* them. A contract too weak to notice sabotage is rejected.
+**You can't cheat the grade.** A promise that promises nothing (`ens true`) would technically always pass. So every contract is run through an anti-Goodhart battery ([vacuity detection + mutation testing](RATIONALE.md#the-vacuity-battery-the-anti-goodhart-layer)): it is audited for emptiness, and then dozens of deliberately-broken mutant copies of your code are generated — the contract must *catch* them. A contract too weak to notice sabotage is rejected.
 
-**The `fx` promise has teeth at runtime too.** When you build a real binary, Thermite derives an operating-system-level cage from the declared effects. A function that said "I'm pure" and then tries to open a network connection gets killed by the OS mid-syscall. Belt, suspenders, and a tripwire.
+**The `fx` promise has teeth at runtime too.** When you build a real binary, Thermite derives an operating-system-level cage from the declared effects — a syscall-level filter (**seccomp-BPF**, the same kernel mechanism Docker and Chrome use; see [RATIONALE.md](RATIONALE.md#the-cage-seccomp-sandbox)). A function that said "I'm pure" and then tries to open a network connection gets killed by the OS mid-syscall. Belt, suspenders, and a tripwire.
 
-**How an agent actually writes it.** Like a conversation. Declare the contract first with a hole where the body goes (literally `?0`). `forge goal` shows what's given and what must be achieved. `forge fill` drops code into the hole and immediately re-checks — failures come back as concrete counterexamples, not vibes. Repeat until: `ALL GOALS DISCHARGED ✓ certified L3`. A program with an unfilled hole physically cannot be built or certified.
+**How an agent actually writes it.** Like a conversation. Declare the contract first with a hole where the body goes (literally `?0` — a [typed hole](RATIONALE.md#typed-holes-n-the-goal-repl), the Agda/Idris/Lean-`sorry` idea). `forge goal` shows what's given and what must be achieved. `forge fill` drops code into the hole and immediately re-checks — failures come back as concrete counterexamples, not vibes. Repeat until: `ALL GOALS DISCHARGED ✓ certified L3`. A program with an unfilled hole physically cannot be built or certified.
 
-Under the hood, Thermite translates to Rust (annotated for the [Verus](https://github.com/verus-lang/verus) prover, which uses the Z3 logic engine), so it inherits Rust's compiler, optimizer, and ecosystem. The full design rationale lives in [`thermite-design.md`](./thermite-design.md).
+Under the hood, Thermite translates to Rust (annotated for the [Verus](https://github.com/verus-lang/verus) prover, which uses the Z3 logic engine), so it inherits Rust's compiler, optimizer, and ecosystem. The specification language is a deliberately small [caged quantifier fragment](RATIONALE.md#the-combinator-cage) — a fixed set of bounded combinators with frozen SMT triggers, no raw `forall` — and that small, [frozen subset](RATIONALE.md#the-frozen-subset-the-central-design-why) is precisely what makes the machine-checked soundness proof below feasible. The full design rationale lives in [`thermite-design.md`](./thermite-design.md).
 
 ## The proof it isn't a toy
 
@@ -64,11 +66,11 @@ fn sum(xs: &[u32]) -> u64
 }
 ```
 
-`forge check` turns that into a certificate: proven for all inputs, promise non-empty, mutants killed. `forge build` turns it into a runnable binary with the cage on.
+`forge check` turns that into a certificate (a JSON manifest — [schema](RATIONALE.md#the-certificate)): proven for all inputs, promise non-empty, mutants killed. `forge build` turns it into a runnable binary with the cage on.
 
 ## Don't trust us — audit it
 
-Every claim above is the kind of thing a liar could also type. So the repo ships an audit that **re-derives the trust chain on your machine**:
+Every claim above is the kind of thing a liar could also type. So the repo ships an audit ([`make audit`](RATIONALE.md#make-audit)) that **re-derives the trust chain on your machine**:
 
 ```sh
 make audit        # the full re-derivation (slow — minutes)
@@ -101,7 +103,7 @@ Two answers, both machine-checked:
 1. **Every program, every run:** a second, independent translator (forbidden by the build system from sharing code with the first) re-translates your contracts and bodies, and Z3 must prove both translations equivalent — on *your* program, *every* check. A mistranslation can't slip through quietly on any run.
 2. **All programs, once and forever:** that independent translator is small enough that we **proved it correct in Lean** — a machine-checked theorem ([`lean/`](lean/), `Thermite.lowering_faithful`) saying that *every* program passing the cross-check was translated meaning-for-meaning. Quantified over all programs, checked by Lean's kernel, re-checkable by yours (audit check [1]). Every translation bug we ever caught by testing is now individually *refuted by a theorem* — that class of mistake can't silently come back.
 
-This is the [verified-validator architecture](.design/research/formal-methods-sota.md) from the compiler-verification literature (the CompCert lineage), and it has a useful consequence: Thermite's *meaning* is defined by the Lean semantics, not by Verus. Verus is the first proof engine, proven faithful — not the foundation.
+This is the [verified-validator architecture](RATIONALE.md#translation-validation-the-lean-proof-spine) from the compiler-verification literature (the CompCert lineage; translation validation + the kernel-checked Lean proof spine), and it has a useful consequence: Thermite's *meaning* is defined by the Lean semantics, not by Verus. Verus is the first proof engine, proven faithful — not the foundation.
 
 ## What works today
 
@@ -110,7 +112,7 @@ The short version: **the language is complete enough to write real programs, and
 - A general-purpose surface: integers, strings, vectors, maps, structs/enums with invariants, pattern matching, tuples, recursion (including mutual), `for`/`while` loops, `Option`/`Result` — all provable to L3.
 - Four finished example programs, all proven and runnable — including the sandboxed text editor.
 - The conversational workflow (`forge goal` / `fill` / `edit`) with holes, for incremental agent-driven development.
-- A `--target kernel` build mode that emits freestanding, OS-less libraries (the road toward a verified microkernel) — code that needs ambient OS access is refused at compile time.
+- A [`--target kernel`](RATIONALE.md#the-kernel-target) build mode that emits freestanding, OS-less libraries (the road toward a verified microkernel) — code that needs ambient OS access is refused at compile time.
 - The toolchain audits *itself*: its soundness-critical core is Verus-verified, and the translation layer carries the Lean theorem above.
 - Built almost entirely by AI agents, adversarially: every component was audited by an independent critic agent whose job is to break it; every divergence found (dozens) was pinned by a failing test and fixed — never skipped.
 

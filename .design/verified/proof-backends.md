@@ -41,11 +41,15 @@ build-blockers:
     SPINE PREREQUISITE (a small NAMED Lean addition, part of THIS increment, NOT yet built — the
     #213 fix): the `stabilizes` relation (`stabilizes : Expr → Env → Int → Prop` for `intVal`, and
     the Prop analogue for `denote`) + the supporting lemma `stabilization_exists_for_dec_bounded`
-    (for a dec-measured/terminating registry every spec-call has a FINITE per-env unfolding depth,
+    (for a dec-VALID/terminating registry every spec-call has a FINITE per-env unfolding depth,
     so the stabilized value exists). The §4 obligation form is stated against `stabilizes`, NOT a
-    raw fuel index; the lemma is what increment (ii) must land in the spine BEFORE the exporter can
-    target the form. (Tracked in THIS #204-chain as an AMENDMENT to increment (ii) — no new issue;
-    see §4 "the stabilized form" + the build blocker note there.)
+    raw fuel index, and the RESULT value is bound THROUGH `stabilizes` (the #214 fix); the lemma is
+    what increment (ii) must land in the spine BEFORE the exporter can target the form. ALSO part of
+    this increment: the FUEL-IRRELEVANCE lemma (`specCallFree e → intVal f e env = intVal g e env`
+    for all fuels, + the Prop analogue) that lets the exporter emit FUEL-FREE shallow statements for
+    the specCall-free auto fragment (the #216 normalization story, §4/§6). (Tracked in THIS
+    #204-chain as an AMENDMENT to increment (ii) — no new issue; see §4 "the stabilized form" +
+    "the normalization story" + the build blocker note there.)
   - increment (iii): FUTURE (interactive proofs + per-obligation certificate attribution + the
     engine-generic anti-Goodhart battery)
   - increment (iv): FUTURE (the full exportable fragment — exec exprs, straight-line bodies,
@@ -79,11 +83,14 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   semantics (`S`), INDEPENDENT of any prover's input language. `class` ∈ the obligation classes the
   pipeline already discharges (CONTRACT-equivalence, EXEC-value, BODY-state,
   LOOP-{entry,preservation,exit}, plus the auxiliary classes Verus discharges inside an item:
-  overflow/bounds via the bounded `S_E`, termination via `dec`). `role` is the polarity/intent
-  discriminator (CERTIFICATION vs the meta/battery queries of §0.1) that REQ-3 keys its discipline
-  on. Today these bits exist only MATERIALIZED as Verus text (`obligation.rs`); REQ-1 is the
-  reification of the same content as a prover-neutral value. Derived from §6 + the obligation
-  machinery `thermite-tv/src/obligation.rs` already emits. **Increment (i), blocker #204.**
+  overflow/bounds via the bounded `S_E`, termination via `dec`), PLUS the **REGISTRY-TERMINATION**
+  class (REQ-1.2, the #215 fix): for an item with a NON-EMPTY spec-fn registry, EVERY spec-fn in
+  `R_item` carries a per-spec-fn obligation that its `dec` measure is VALID (well-founded descent),
+  conjoined item-wide by the conjunction rule. `role` is the polarity/intent discriminator
+  (CERTIFICATION vs the meta/battery queries of §0.1) that REQ-3 keys its discipline on. Today these
+  bits exist only MATERIALIZED as Verus text (`obligation.rs`); REQ-1 is the reification of the same
+  content as a prover-neutral value. Derived from §6 + the obligation machinery
+  `thermite-tv/src/obligation.rs` already emits. **Increment (i), blocker #204.**
 - **REQ-2 (the Engine interface)** — an engine provides four things: (a) a FRAGMENT — the obligation
   classes / construct sets it can ATTEMPT; (b) DISCHARGE — `Obligation → {Proven(evidence),
   Refuted(counterexample), Unknown(reason)}` with the strict mapping discipline below (a
@@ -119,7 +126,8 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   statement over the EXISTING spine encodings (`Expr`/`Block` inductives + `denote`/`bodyDenote`/
   `loopDenote` in `lean/Thermite/`); the exporter emits Lean SOURCE instantiating those, with the
   FUEL form pinned by §4 (the obligation must be sound against `Denote.lean`'s fuel-0-bottom = True
-  semantics — see §4 "the stabilized form", #213-corrected). Its faithfulness is the SAME correspondence class as the
+  semantics — see §4 "the stabilized form", #213-corrected, with the RESULT value bound THROUGH
+  stabilization, #214-corrected). Its faithfulness is the SAME correspondence class as the
   Rust↔Lean encoder correspondence (`rust-lean-correspondence.md`): arm-by-arm inspection + the
   deep-audit drift tripwire — AND it must include registry-population faithfulness (the exported
   registry contains exactly the item's spec-fns with their real bodies; §4 EXP). Named here as a NEW
@@ -127,14 +135,18 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   inspection-tier discipline. **Increment (ii)/(iv), FUTURE.**
 - **REQ-7 (the Lean engine — discharge modes + termination)** — (i) AUTO: a tactic battery
   (`omega`/`simp`/`decide`/Lean-SMT's `smt`) over the fragment the z3-demotion PoC PROVES
-  reconstructable (scalar/QF-linear-integer contract clauses, kernel-clean); (ii) INTERACTIVE: an
-  agent authors a proof file checked in next to the source, replayed in CI; staleness = the
-  EVIDENCE KEY changes (§2(d): obligation hash + engine + engine-toolchain version + the targeted
-  spine content hash) → the proof is INVALIDATED, never silently reused. TERMINATION: the Lean
-  engine's obligation set must include the `dec` measure or the certificate honestly says
-  PARTIAL-CORRECTNESS-only (tied to `while_rule`'s `h_run` premise). Derived from `z3-demotion.md`
-  (the reachable fragment) + `thermite-semantics.md` (the partial-correctness `while_rule`).
-  **Increment (ii)/(iii), FUTURE.**
+  reconstructable (scalar/QF-linear-integer contract clauses, kernel-clean), where the exporter emits
+  FUEL-FREE shallow statements for the specCall-free goals via the FUEL-IRRELEVANCE lemma (or, for a
+  non-recursive registry, via static UNFOLDING to finite depth) — the three-tier normalization story
+  of §4/§6, the #216 fix; (ii) INTERACTIVE: an agent authors a proof file checked in next to the
+  source, replayed in CI; staleness = the EVIDENCE KEY changes (§2(d): obligation hash + engine +
+  engine-toolchain version + the targeted spine content hash) → the proof is INVALIDATED, never
+  silently reused. The ∃N∀fuel stabilization forms remain ONLY for this INTERACTIVE path (recursive
+  registries). TERMINATION: the Lean engine's obligation set must include the item's `dec` measure or
+  the certificate honestly says PARTIAL-CORRECTNESS-only (tied to `while_rule`'s `h_run` premise),
+  AND — per REQ-1.2 / the #215 fix — the REGISTRY-TERMINATION class for every spec-fn in `R_item`.
+  Derived from `z3-demotion.md` (the reachable fragment) + `thermite-semantics.md` (the
+  partial-correctness `while_rule`). **Increment (ii)/(iii), FUTURE.**
 - **REQ-8 (engine ordering + the ladder placement)** — DEFAULT order: Verus first (fast,
   push-button), Lean-auto second, Lean-interactive on demand (surface: `forge check --engine lean`
   + a per-item `#[engine(lean)]` annotation — see OQ-1); THEN the existing L2/L1 degrade. The
@@ -153,9 +165,7 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   step) so equivalent mutants never re-enter as spurious survivors. The equivalence probe is one of
   the §0.1 meta-queries — consistent with F3, it stays OUTSIDE the Engine interface in v1 (a direct
   verus query). The floor is per the SHIPPED `meets_floor` with an ADDED minimum-attempted guard.
-  Designed against the actual `mutation_score` mechanics (which today re-runs `run_verus` per mutant
-  through the #8 cache and runs the #101 equivalence query on each survivor). Derived from §7 +
-  R-DEFER-9. **Increment (iii), FUTURE.**
+  Derived from §7 + R-DEFER-9. **Increment (iii), FUTURE.**
 
 ## Acceptance criteria
 
@@ -170,14 +180,16 @@ see REQ-3.1 / the Verification section.)
   obligation the SHIPPED `obligation.rs` family materializes has a backend-neutral `class`: CONTRACT
   (`equivalence_obligation`), EXEC (`exec_equivalence_obligation`), BODY (`body_equivalence_
   obligation`), LOOP-ENTRY/PRESERVATION/EXIT (`loop_{entry,preservation,exit}_obligation`), plus the
-  in-item Verus-discharged auxiliaries (overflow/bounds, termination/`dec`). The THREE additional
+  in-item Verus-discharged auxiliaries (overflow/bounds, termination/`dec`), PLUS the
+  REGISTRY-TERMINATION class (REQ-1.2) for an item with a non-empty registry. The THREE additional
   SHIPPED verus-query classes that are NOT item-correctness certifications — the solver-vacuity
   harnesses (`solver_vacuity_check`, INVERTED polarity), the #101 survivor-equivalence query
   (`equivalence_proves_equal`), and the strengthen probe (`strengthen::probe`) — are enumerated in
   §0.1 and scoped explicitly OUT of the Engine interface in v1 (direct verus invocations, named as a
   deliberate v1 boundary + OQ-5). A class Verus discharges but the Obligation cannot yet represent is
   recorded OUT here. Mechanically: the `class` enum's variants = the union of the `obligation.rs`
-  emitters + the §6/§7 in-item auxiliaries; the meta/battery queries carry a distinct `role`.
+  emitters + the §6/§7 in-item auxiliaries + REGISTRY-TERMINATION; the meta/battery queries carry a
+  distinct `role`.
 - **AC-2 (the Engine interface is non-vacuous — Verus instantiates all four slots)** — the FRAGMENT
   (the whole frozen subset via the lowering), DISCHARGE (the `classify_verus_outcome` three-way map,
   WITH the REQ-3.1 fast-unknown remap), TRUST PROFILE ({Z3, Verus VC-gen} + the TV/lowering
@@ -198,7 +210,10 @@ see REQ-3.1 / the Verification section.)
   exportable fragment = what `S`'s spine covers TODAY (contracts 8/8 classes, exec exprs,
   straight-line bodies, v1 while, spec-fns via the fuel registry); the OUT set is enumerated; the
   exporter's faithfulness is named as a NEW arm-by-arm-inspection + drift-tripwire trust item,
-  INCLUDING the stabilized form (§4, the #213-corrected obligation stated against `stabilizes`, NOT a raw fuel index) and registry-population faithfulness (EXP).
+  INCLUDING the stabilized form (§4, the #213-corrected obligation stated against `stabilizes`, NOT a
+  raw fuel index, with the RESULT value bound THROUGH stabilization, #214) and registry-population
+  faithfulness (EXP), AND the three-tier export story (§4/§6 — fuel-free auto via fuel-irrelevance or
+  static unfolding; ∃N∀fuel forms only for the interactive recursive path, #216).
 - **AC-7 (the mutation-battery v1 is honest)** — the engine-generic battery is specified against
   `mutation_score`'s real mechanics (the per-mutant `run_verus` + #8 cache loop + the per-survivor
   #101 `equivalence_proves_equal` query). The kill semantics is stated ACCURATELY against the shipped
@@ -346,10 +361,55 @@ with an inverted certify rule). Recorded OUT here so increment (i) does not sile
 For a checked item, the verification question stated against `S`: for a contract clause,
 `∀ inputs, ⟦req⟧_S → ⟦ens[result := body]⟧_S` — i.e. the (T1)-style equality the spine already
 proves the reference encoder satisfies, lifted to the per-item obligation. The FUEL quantification of
-this one-sided statement is pinned in §4 (the stabilized form — `stabilizes`, NOT a raw fuel index; #213), NOT left free. Plus the auxiliary
+this one-sided statement is pinned in §4 (the stabilized form — `stabilizes`, NOT a raw fuel index, with the
+RESULT value bound THROUGH `stabilizes`, #214), NOT left free. Plus the auxiliary
 classes the pipeline discharges INSIDE an item: overflow/bounds (via the bounded `S_E` — `execDenote
 = none` exactly at overflow), loop entry/preservation/exit (via `loopDenote` + `while_rule`),
-termination (via the source `dec` measure → the well-founded fixpoint of the fuel-indexed denotation).
+termination (via the source `dec` measure → the well-founded fixpoint of the fuel-indexed denotation),
+AND the REGISTRY-TERMINATION class (REQ-1.2 below — the spec-fn registry's own well-foundedness).
+
+#### 1.2 The REGISTRY-TERMINATION obligation class (REQ-1.2, the #215 fix)
+
+**The gap (the critic's Pin B, `PinStabilization.lean`).** §4's stabilization soundness is scoped
+"for a DEC-VALID (terminating) registry", but on the Lean path NOTHING discharges that hypothesis.
+The parser enforces dec PRESENCE only (`SpecFnItem::dec` mandatory, `thermite-syntax/src/ast.rs`);
+dec VALIDITY — that the measure actually DECREASES — is proven ONLY by Verus, and the Lean rung sits
+exactly DOWNSTREAM of a Verus `Unknown` (REQ-3.1 remaps a witness-less failure, INCLUDING a failed
+spec-fn termination proof, to `Unknown` → degrade → Lean attempts). For a divergent registry
+`f(x) = f(x)`, the fuel denotation is CONSTANTLY the bottom 0 (the pin's
+`divergent_call_is_const_bottom`), so `stabilizes` HOLDS with the bottom value
+(`divergent_registry_stabilizes_to_bottom`) and `ens: result == f(x)` STABILIZES TO TRUE at
+result = 0 (`divergent_contract_certifies`) — the obligation is provable with a BOTTOM-POISONED
+meaning, NOT safely unprovable. Without a registry-termination obligation, a divergent spec-fn
+silently self-certifies.
+
+**The class.** REQ-1 gains a REGISTRY-TERMINATION obligation class: for an item with a NON-EMPTY
+spec-fn registry, EVERY spec-fn `s ∈ R_item` carries a per-spec-fn obligation that `s.dec` is a
+VALID well-founded measure (it strictly descends on every recursive call, well-founded under the
+sort's order). This class is ASSIGNED to every item that has a non-empty registry, and is conjoined
+ITEM-WIDE by the conjunction rule of §4.1 — i.e. an item certifies only when its REGISTRY-TERMINATION
+class is discharged ALONGSIDE its CONTRACT/EXEC/BODY/LOOP/OVERFLOW classes. The parser's dec PRESENCE
+guarantee is the SYNTACTIC precondition; this class is the SEMANTIC one (validity), and it is NEVER
+assumed.
+
+**Discharge (two admitted paths).** (a) THE COMMON PATH: Verus's existing dec-check, which certifies
+the spec-fns when Verus discharges the item — a Verus-discharged item's spec-fns have ALREADY passed
+Verus's recursion/decreases check, so the class is discharged by the Verus engine. (b) THE ENGINE-#2
+PATH: a Lean well-foundedness proof of the `dec` measure (a `termination_by`/`decreasing_by`-shaped
+obligation over the encoded `R_item`, in the AUTO battery where the measure is scalar/linear,
+otherwise INTERACTIVE). Either path discharges REGISTRY-TERMINATION; the conjunction rule requires
+ONE of them per spec-fn.
+
+**The closure (the regression oracle: Pin B).** A divergent spec-fn `f(x) = f(x)` FAILS this class
+on BOTH paths (Verus's dec-check rejects the non-decreasing measure; a Lean well-foundedness proof
+cannot be authored for it). So the conjunction rule BLOCKS the certificate BEFORE the
+poisoned-bottom stabilization can certify anything — the `divergent_contract_certifies` discharge the
+pin records can no longer reach a certificate, because the item never clears REGISTRY-TERMINATION.
+`lean/Thermite/PinStabilization.lean` (Pin B) is the kernel-checked regression oracle for this class:
+its `divergent_registry_stabilizes_to_bottom` / `divergent_contract_certifies` are exactly the
+bottom-poisoned discharge this class must keep UNREACHABLE at the certificate level. (The pin is the
+critic's audit artifact and is NOT touched by this doc.) **NOT-STARTED — increment (ii) lands the
+Lean-path discharge; the class assignment is increment (i)'s REQ-1 reification.**
 
 The artifact reifies the content `obligation.rs` materializes, prover-neutrally:
 
@@ -357,8 +417,9 @@ The artifact reifies the content `obligation.rs` materializes, prover-neutrally:
 Obligation {
   item:      ItemId,              // the fn / spec-fn the obligation belongs to (§5.3 per-item)
   class:     ObligationClass,     // CONTRACT | EXEC | BODY | LOOP_ENTRY | LOOP_PRESERVATION
-                                  //   | LOOP_EXIT | OVERFLOW | TERMINATION   (AC-1: = the
-                                  //   obligation.rs emitters ∪ the §6/§7 in-item auxiliaries)
+                                  //   | LOOP_EXIT | OVERFLOW | TERMINATION | REGISTRY_TERMINATION
+                                  //   (AC-1: = the obligation.rs emitters ∪ the §6/§7 in-item
+                                  //   auxiliaries ∪ REQ-1.2's registry-termination class)
   role:      ObligationRole,      // CERTIFICATION (REQ-3's discipline applies). The §0.1 meta
                                   //   queries (vacuity/equivalence/strengthen) are NOT minted as
                                   //   Obligations in v1 (they stay direct verus, OQ-5); the field
@@ -373,7 +434,8 @@ Obligation {
     spec_defs:     Vec<SpecFnId>,               // the in-scope spec-fn / combinator defs (by id,
                                                 //   resolved against the SHARED frozen registry);
                                                 //   §4 EXP requires the EXPORTED registry contain
-                                                //   exactly these with their REAL bodies
+                                                //   exactly these with their REAL bodies, AND each
+                                                //   carries a REGISTRY_TERMINATION obligation (REQ-1.2)
     seq/string/map/nat_coerce: …                // the coercion-frame bits ObligationFrame carries,
                                                 //   kept ENGINE-NEUTRAL (a Verus engine renders the
                                                 //   @-view / as-nat; a Lean engine renders the
@@ -417,7 +479,8 @@ The first instance refactors Verus byte-identically EXCEPT the named REQ-3.1 fas
 
 - **FRAGMENT** = the whole frozen subset reachable via the lowering (everything `thermite_lower::
   lower` + `run_verus` handle today: contracts, exec, straight-line bodies, v1 while, spec-fns,
-  ADTs, the boundary/slag short-circuits stay engine-independent gates AHEAD of discharge).
+  ADTs, the boundary/slag short-circuits stay engine-independent gates AHEAD of discharge). Verus
+  ADMITS the REGISTRY_TERMINATION class (its dec-check is the common discharge path, REQ-1.2(a)).
 - **DISCHARGE** = `classify_verus_outcome`'s three-way map, lifted to `Verdict`: `Proved` →
   `Proven`; `Timeout` → `Unknown(VerusTimeout + the SolverProfile)`; and `Counterexample` SPLIT by
   REQ-3.1 — a `Counterexample` carrying a parsed WITNESSING obligation result → `Refuted`, a
@@ -507,6 +570,13 @@ is UNVIOLATED because it applies to genuine WITNESSED countermodels, and those s
 (a previously-hard-failed witness-less-unknown case now degrades) as the sole exception to the
 byte-identical cert-oracle regression.
 
+**A note on a failed registry-termination proof (REQ-1.2 interaction).** A spec-fn whose `dec`
+fails Verus's decreases-check produces a witness-less Verus failure → `Unknown` → degrade → Lean
+attempts. Per REQ-1.2 this does NOT let a divergent registry sneak through: the Lean rung must still
+discharge the REGISTRY-TERMINATION class (a Lean well-foundedness proof), which a divergent spec-fn
+cannot satisfy, so the conjunction rule blocks the item. The remap routes a failed termination proof
+to a re-attempt, not to a silent certification.
+
 **The interactions this closes (F1):**
 - **No spurious Proven⊕Refuted halt (REQ-5).** A Verus fast-`unknown` can no longer be misread as
   `Refuted`, so a Lean kernel `Proven` + a Verus fast-`unknown` is now `Proven ⊕ Unknown` (benign),
@@ -536,13 +606,16 @@ kernel-proven `S` definitions for the construct it exports, AND populates the sp
 faithfully** (see "registry faithfulness" below). It is NOT a stronger extraction bridge; it is the
 inspection tier, honestly. **NOT-STARTED — increment (ii)/(iv).**
 
-**The stabilized form (REQ-6, F5 DECISION — restated for #213; supersedes the cycle-2 "fuel form").**
-The exported obligation is stated against a STABILIZATION RELATION, not a raw fuel index. This is the
+**The stabilized form (REQ-6, F5 DECISION — restated for #213; the result-binding fix for #214;
+supersedes the cycle-2 "fuel form").**
+The exported obligation is stated against a STABILIZATION RELATION, not a raw fuel index, and the
+RESULT value is bound THROUGH that relation, not at a concrete value. This is the
 load-bearing soundness choice, and the cycle-2 "∀ fuel ≥ fuel₀" form is RETIRED — it was FALSE for
-correct items. The correction credits the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`
-(`obligation_form_is_false`), which is KEPT as the regression oracle for this section (the new form
-must stay consistent with it — see "consistency with the pin" below). `PinIntBottom.lean` is the
-critic's audit artifact and is NOT touched by this doc.
+correct items. The correction credits the critic's kernel-checked pins `lean/Thermite/PinIntBottom.lean`
+(`obligation_form_is_false`, the #213 oracle) and `lean/Thermite/PinStabilization.lean` (Pin A, the
+#214 oracle), which are KEPT as the regression oracles for this section (the new form must stay
+consistent with BOTH — see "consistency with the pins" below). Both pin files are the critic's audit
+artifacts and are NOT touched by this doc.
 
 **Why the fuel form was false (the #213 ground truth, against the spine).** `Denote.lean`'s `intVal`
 bottoms an INT-position `specCall` to `0` (the `fuel+1, Expr.specCall …` arm resolves `| none => 0`,
@@ -561,6 +634,21 @@ the headline recursive item. fuel₀ is RETIRED from the form (it survives ONLY 
 exporter HINT to seed the auto-tactics' unfolding budget — see "fuel₀ as a hint" — it is NOT part of
 the obligation statement).
 
+**Why the result must be bound through stabilization (the #214 ground truth, Pin A).** The cycle-3
+form displayed `stabilizesProp ens (Env.bindInt env "result" rbody)` with `rbody` bound by NOTHING —
+no quantifier, only the prose "binds via `Env.bindInt` after stabilization" and the fuel₀ hint as the
+only computational story. For an ENV-DEPENDENT body there is NO concrete value computable at export
+time, so the prose cannot be implemented as a value — and the only computational rendering §4 offered
+(the fuel hint) RE-INTRODUCES the #213 Int-bottom unsoundness on the BODY side: the critic's Pin A
+registry (`f(x)=g(x)`, `g(x)=5`) has the body `f(x)` stabilizing to 5 (`body_stabilizes_to_5`) but
+bottoming to 0 at the hint fuel 1 (`rbody_at_hint_fuel_is_bottom`), and the WRONG contract
+`ens: result == 0` DISCHARGES under the hint-fuel rendering (`wrong_contract_certifies_with_
+underfuelled_rbody`) while being REFUTED at the true value 5 (`wrong_contract_fails_at_true_value`).
+The fix: BIND the result THROUGH the stabilization relation — quantify `r` and require the body to
+STABILIZE to it, asserting NO concrete export-time value. By the uniqueness of stabilization (a
+per-env `N` beyond which `intVal` has stopped changing pins ONE value — argued below), `r` is forced
+to the body's TRUE stabilized value; there is nothing for the exporter to compute and emit.
+
 **The form: stabilization.** Define (the increment-(ii) spine prerequisite, a small Lean addition —
 see the build-blocker note below) the stabilization relation, per-env, on the INT side and its Prop
 analogue on the Prop side:
@@ -578,9 +666,15 @@ def stabilizesProp (e : Expr) (env : Env) : Prop :=     -- the Prop-position ana
 and equals `v`. `stabilizesProp e env` says: there is a per-env `N` beyond which `denote` is `True`.
 The threshold `N` is PER-ENV — it is NOT a global `fuel₀`; this is exactly what fixes the critic's
 value-dependent-depth counterexample (an env with a large |xs| simply has a large `N`, and there is no
-claim of one finite fuel that works for all envs). The exported obligation, for a CONTRACT clause over
-the concretely-fixed registry `R_item` (still held fixed — see the registry hard gate below, which is
-UNCHANGED), is:
+claim of one finite fuel that works for all envs). **Uniqueness of stabilization (the #214 lever):**
+`stabilizes e env v` determines `v` UNIQUELY — if `stabilizes e env v₁` and `stabilizes e env v₂`,
+then at any `fuel ≥ max(N₁, N₂)` we have `v₁ = intVal fuel e env = v₂`. This is what makes binding the
+result THROUGH the relation (rather than at a concrete export-time value) well-defined: the bound `r`
+below is forced to the body's true stabilized value, and an env-dependent body needs no export-time
+value at all.
+
+The exported obligation, for a CONTRACT clause over the concretely-fixed registry `R_item` (still
+held fixed — see the registry hard gate below, which is UNCHANGED), is:
 
 ```
 -- the EXPORTED file fixes the registry concretely (UNCHANGED — see the hard gate below):
@@ -592,59 +686,117 @@ def R_item : Thermite.Registry := fun name =>
 
 -- reqStable / ensStable: each clause STABILIZES to True at the env (Prop side); a comparison whose
 -- operand is an Int-position specCall stabilizes via the underlying `stabilizes` on that operand.
+-- The RESULT value is bound THROUGH `stabilizes body_expr env r` (the #214 fix) — NO concrete
+-- export-time value; uniqueness of stabilization forces r to the body's true stabilized value.
 theorem item_xyz :
   ∀ (v : Env),
     let env := { v with specs := R_item }                 -- registry HELD FIXED
+    ∀ (r : Int),                                          -- the result value, quantified
+    stabilizes body_expr env r →                          -- ... and BOUND through stabilization
     stabilizesProp req env →                               -- reqStable(env): req stabilizes to True
-    stabilizesProp ens (Env.bindInt env "result" rbody)    -- ensStable: ens stabilizes to True
+    stabilizesProp ens (Env.bindInt env "result" r)        -- ensStable: ens stabilizes to True at r
 ```
 
 (`{ v with specs := R_item }` is the Lean env-composition: `v` provides the `ints`/`seqs`/`optres`
-valuation, `R_item` OVERRIDES `specs`. `req`/`ens` are the encoded contract `Expr`s; `rbody` is the
-PURE-CONTRACT item's result value — see §4.1 for why this is an `Int` denoting via `intVal` ONLY for
-the pure-contract class scoped here, and why the general exec-body bridge is increment (iv)'s own
-work. The prose names `reqStable`/`ensStable` are `stabilizesProp req env` / `stabilizesProp ens …`.)
+valuation, `R_item` OVERRIDES `specs`. `req`/`ens`/`body_expr` are the encoded contract / body
+`Expr`s; `r` is the PURE-CONTRACT item's result value, bound THROUGH `stabilizes body_expr env r` —
+see §4.1 for why this is an `Int` denoting via `intVal` ONLY for the pure-contract class scoped here,
+and why the general exec-body bridge is increment (iv)'s own work. The prose names
+`reqStable`/`ensStable` are `stabilizesProp req env` / `stabilizesProp ens …`. The `∀ r, stabilizes
+body_expr env r →` premise is the #214 result-binding fix — the exporter emits NO concrete `rbody`
+value; uniqueness of stabilization makes `r` the body's true stabilized value.)
 
-**Soundness argument (one paragraph — crediting the critic's #213 PinIntBottom counterexample).** The
-obligation says: at every env, IF `req` stabilizes to True THEN `ens` stabilizes to True. This is
-sound for a DEC-MEASURED (terminating) registry by the supporting lemma `stabilization_exists_for_dec_
-bounded`: because the source `dec` measure makes every spec-fn's recursion well-founded, each
-`specCall` reachable from `req`/`ens` has a FINITE unfolding depth PER ENV, so `intVal`/`denote` reach
-a fixed value at some finite per-env `N` and STAY there — the stabilized value EXISTS and equals `S`'s
-intended meaning of the clause at that env. Crucially the existential `N` is PER ENV: no global finite
-`fuel₀` is claimed, so the value-dependent-depth counterexample the critic recorded (an env with
-|xs| > any fixed fuel) is no longer a falsifier — that env simply has a larger `N`. The Int-bottom
-(`intVal`'s `0` arm) and the Prop-bottom (`denote`'s `True` arm) live ONLY at fuels BELOW `N` — below
-the per-env stabilization threshold — and the stabilized value is by definition the value at fuels
-`≥ N`, so the bottom arms NEVER touch the stabilized value the obligation quantifies over. (Contrast:
+**Soundness argument (one paragraph — crediting the critic's #213/#214 pins).** The
+obligation says: at every env, for the (unique) value `r` the body STABILIZES to, IF `req` stabilizes
+to True THEN `ens` stabilizes to True at `result = r`. This is
+sound for a DEC-VALID (terminating) registry by the supporting lemma `stabilization_exists_for_dec_
+bounded`: because the source `dec` measure makes every spec-fn's recursion well-founded — a property
+the REGISTRY-TERMINATION class (REQ-1.2) DISCHARGES rather than assumes — each
+`specCall` reachable from `req`/`ens`/the body has a FINITE unfolding depth PER ENV, so
+`intVal`/`denote` reach a fixed value at some finite per-env `N` and STAY there — the stabilized value
+EXISTS and equals `S`'s intended meaning of the clause at that env. The body's `r` is bound THROUGH
+`stabilizes body_expr env r`, so it is the body's TRUE stabilized value, NOT a fuel-bottomed artifact;
+uniqueness of stabilization makes it the only `r` the premise admits. Crucially the existential `N` is
+PER ENV: no global finite `fuel₀` is claimed, so the value-dependent-depth counterexample the critic
+recorded (an env with |xs| > any fixed fuel) is no longer a falsifier — that env simply has a larger
+`N`. The Int-bottom (`intVal`'s `0` arm) and the Prop-bottom (`denote`'s `True` arm) live ONLY at
+fuels BELOW `N` — below the per-env stabilization threshold — and the stabilized value is by
+definition the value at fuels `≥ N`, so the bottom arms NEVER touch the stabilized value the
+obligation quantifies over (for `req`/`ens` OR for the body's `r`). (Contrast:
 the retired ∀-fuel form quantified over fuels BELOW `N` too, which is exactly where the `0`/`True`
-bottoms made a correct item's conjunct false — the bug the pin disproves.) The obligation is therefore
-faithful to `S`'s intended per-env meaning and free of the under-fuel artifact.
+bottoms made a correct item's conjunct false — the bug `PinIntBottom.lean` disproves; and the cycle-3
+unbound-`rbody` form rendered the body at the hint fuel, where the body's `0`-bottom certified a wrong
+contract — the bug `PinStabilization.lean` Pin A disproves.) The obligation is therefore
+faithful to `S`'s intended per-env meaning and free of the under-fuel artifact on BOTH the clause and
+the result-binding sides.
 
-**Consistency with the pin (`PinIntBottom.lean`, the regression oracle).** The pin's registry
-(`f(x)=g(x)`, `g(x)=x`) is dec-bounded and complete; at its env (`x=1`, `result=1`, the CORRECT item)
-`intVal fuel (f x) env` is `0` at fuel 1 (the bottom) but `1` at every fuel ≥ 2 — so it STABILIZES to
-`1`, and `ens = (result == f(x))` stabilizes to `result = 1`, i.e. to True. Under the new form the
-obligation HOLDS at this env (the stabilized value is 1, `result = 1`), exactly as it should for a
-correct item — whereas the retired ∀-fuel form was FALSE here (the pin's `obligation_form_is_false`).
-So the new form is consistent with the pin: the pin disproves the OLD form and the NEW form passes the
-pin's correct-item env. Any future change to this section must re-check against `PinIntBottom.lean`.
+**Consistency with the pins (the regression oracles).** TWO pins gate this section, and the new form
+must pass both:
+- **`PinIntBottom.lean` (the #213 oracle).** The pin's registry (`f(x)=g(x)`, `g(x)=x`) is dec-bounded
+  and complete; at its env (`x=1`, `result=1`, the CORRECT item) `intVal fuel (f x) env` is `0` at
+  fuel 1 (the bottom) but `1` at every fuel ≥ 2 — so it STABILIZES to `1`, and `ens = (result == f(x))`
+  stabilizes to `result = 1`, i.e. to True. Under the new form the obligation HOLDS at this env (the
+  stabilized value is 1, `result = 1`), exactly as it should for a correct item — whereas the retired
+  ∀-fuel form was FALSE here (the pin's `obligation_form_is_false`).
+- **`PinStabilization.lean` Pin A (the #214 oracle).** The pin's registry (`f(x)=g(x)`, `g(x)=5`,
+  dec-bounded, complete — every §4 gate passes) makes the body `f(x)` STABILIZE to 5
+  (`body_stabilizes_to_5`), so under the NEW form the result `r` is bound THROUGH `stabilizes body
+  env r` and forced to `r = 5`. The wrong contract `ens: result == 0` is now UNPROVABLE: with `r = 5`
+  the obligation requires `stabilizesProp (result == 0) (bindInt env "result" 5)`, which is exactly
+  the pin's `wrong_contract_fails_at_true_value` (REFUTED). The unsound discharge the pin records
+  (`wrong_contract_certifies_with_underfuelled_rbody`) relied on rendering `rbody` at the hint fuel 1
+  (where the body is the bottom 0); the new form NEVER renders the result at a fuel — it binds `r`
+  through stabilization — so that discharge path is gone. So the new form is consistent with Pin A:
+  the WRONG contract is unprovable (r=5 is forced) and a CORRECT contract (`result == 5`) holds.
+Any future change to this section must re-check against BOTH `PinIntBottom.lean` and
+`PinStabilization.lean`.
 
 **fuel₀ as a non-load-bearing hint.** fuel₀ (the exporter-computed static-nesting bound) no longer
-appears in the obligation. It MAY survive as an EXPORTER HINT — a starting unfolding budget the
+appears in the obligation. **It explicitly CANNOT influence the theorem's truth** — it is a TACTIC
+HINT ONLY. It MAY survive as an EXPORTER HINT — a starting unfolding budget the
 auto-tactic battery (§4 DISCHARGE / `decide`/`simp` unfolding) seeds itself with to find the
 stabilized value faster. It is EXPLICITLY non-load-bearing: an under-computed hint costs the tactic
 more unfolding steps, never soundness, because the obligation is stated over `stabilizes` (the
-∃-N form), not over a fuel the hint pins.
+∃-N form) and binds the result THROUGH `stabilizes` (not at any fuel the hint pins). Pin A is precisely
+the demonstration of what goes wrong if the hint EVER becomes load-bearing (it rendered the result at
+the hint fuel and certified a wrong contract) — which is why the form binds `r` through stabilization
+and the hint is restated here as a tactic hint that cannot touch the theorem's truth.
 
-**BUILD-BLOCKER NOTE (the #204-chain amendment, NOT a new issue — #213 fix).** The `stabilizes` /
-`stabilizesProp` relations and the supporting lemma `stabilization_exists_for_dec_bounded` (for a
-dec-measured registry every reachable `specCall` has a finite per-env unfolding depth, so the
-stabilized value exists and equals `S`'s intended meaning) are a SMALL NAMED Lean addition that
+**The normalization story — how the AUTO fragment is actually dischargeable (the #216 fix; see §6).**
+The exported obligation above is an `∃N∀fuel` statement over the DEEP embedding (`denote`/`intVal`
+applied to `Expr` encodings). A `decide`/`simp`/Lean-SMT `smt` battery will NOT chew an `∃N∀fuel` goal
+over the deep embedding — and the z3-demotion PoC that grounds the AUTO claim discharged SHALLOW QF_LIA
+theorems (`tv_obligation_arith_cmp`), hand-translated, with NO `denote`, NO `stabilizesProp` wrapper.
+The reconciliation is a THREE-TIER export story, detailed in §6, that makes the auto fragment's actual
+SHAPE fuel-free and shallow (matching the z3-demotion grounding) and reserves the `∃N∀fuel` forms for
+the interactive path only. The spine prerequisite this adds (increment (ii), see the build-blocker
+note) is the FUEL-IRRELEVANCE lemma:
+
+```
+-- the FUEL-IRRELEVANCE lemma (increment (ii) spine prerequisite, NOT yet built):
+theorem intVal_fuel_irrelevant (e : Expr) (env : Env) (h : specCallFree e) :
+    ∀ f g, intVal f e env = intVal g e env
+theorem denote_fuel_irrelevant (e : Expr) (env : Env) (h : specCallFree e) :
+    ∀ f g, denote f e env = denote g e env     -- the Prop analogue
+```
+
+`specCallFree e` (a decidable predicate the exporter computes) means `e` contains NO `specCall` — so
+its denotation does NOT depend on fuel (fuel only matters at a `specCall` unfolding). For such `e`,
+`stabilizesProp e env ↔ denote 0 e env` (the witness `N = 0` works because the value is constant in
+fuel), so the exporter can emit the FUEL-FREE shallow statement `denote 0 e env` — exactly the QF
+shape the z3-demotion PoC discharges. This is the bridge §6 tier (a) builds on.
+
+**BUILD-BLOCKER NOTE (the #204-chain amendment, NOT a new issue — #213/#214/#215/#216 fixes).** The
+`stabilizes` / `stabilizesProp` relations, the supporting lemma `stabilization_exists_for_dec_bounded`
+(for a dec-VALID registry every reachable `specCall` has a finite per-env unfolding depth, so the
+stabilized value exists and equals `S`'s intended meaning), the uniqueness-of-stabilization fact (the
+#214 lever), the FUEL-IRRELEVANCE lemma (`intVal_fuel_irrelevant`/`denote_fuel_irrelevant`, the #216
+normalization bridge), and the Lean-path REGISTRY-TERMINATION discharge (the #215 well-foundedness
+proof obligation, REQ-1.2(b)) are a SMALL NAMED Lean addition that
 increment (ii) MUST land in the spine BEFORE the exporter can target this form. This is recorded as an
 AMENDMENT to increment (ii) inside the existing #204 build-blocker chain (see the header
-`build-blockers:` block) — NOT a separately-filed issue. The form here is the DESIGN; the lemma is the
-spine work increment (ii) owns.
+`build-blockers:` block) — NOT a separately-filed issue. The form here is the DESIGN; the lemmas are
+the spine work increment (ii) owns.
 
 **Registry population is an EXPORTER-SIDE HARD GATE (F5, the #210 fix) — not a hypothesis.** Two
 mechanisms, belt-and-suspenders:
@@ -665,17 +817,25 @@ mechanisms, belt-and-suspenders:
    independent of the build-time gate. Both stated: the gate refuses to emit, and the emitted lemmas
    refuse to compile.
 
+**Registry PRESENCE ≠ registry TERMINATION (the #215 boundary).** The hard gate above guarantees the
+registry is POPULATED (every called spec-fn is present, real-bodied). It does NOT guarantee the
+spec-fns TERMINATE — a present-but-divergent `f(x)=f(x)` clears the gate (it is complete and
+real-bodied; the pin's `Rdiv` passes the per-name `decide` lemmas). Registry VALIDITY (well-founded
+descent) is the SEPARATE REGISTRY-TERMINATION obligation class (REQ-1.2), discharged by Verus's
+dec-check or a Lean well-foundedness proof, and conjoined item-wide — NEVER assumed. The parser
+guarantees dec PRESENCE only; this class is dec VALIDITY. §1.2 is the closure.
+
 **Registry faithfulness stays part of EXP (the inspection tier).** Beyond presence (the hard gate
 above), the EXPORTED `R_item` must bind each name to its REAL `Denote`-encoded body — a WRONG body is
 an unsound certification the gate cannot catch. So body-faithfulness (each `SpecFnId` in
 `Obligation.env.spec_defs` ↦ its `R_item` entry with the matching `Expr` body) remains part of the
 arm-by-arm EXP inspection + drift-tripwire discipline. The hard gate guarantees PRESENCE mechanically;
-EXP inspection guarantees the BODIES are right.
+REGISTRY-TERMINATION guarantees TERMINATION (REQ-1.2); EXP inspection guarantees the BODIES are right.
 
 **§4 SCOPE — this sketch covers increment (ii)'s PURE-CONTRACT items ONLY (the #212 fix).** The
 stabilized form above types and is sound for exactly ONE class: PURE-CONTRACT items — defined
 precisely as items whose body is a PURE EXPRESSION denoting in `intVal` (the `S_C` domain), so the
-result `rbody` is an `Int` that binds via `Env.bindInt` after stabilization. For these items, `req`,
+result `r` is an `Int` that binds via `Env.bindInt` after stabilization. For these items, `req`,
 `ens`, and the body all live in `S_C`, the `Env` is the right structure, and `stabilizesProp` /
 `stabilizes` are the right relations. The FULL exec-body bridge — binding a body that denotes in the
 BOUNDED `S_E`/`S_B` domain (`bodyDenote : Block → State → Option ExecVal`, `Exec/Stmt.lean`) into a
@@ -725,7 +885,10 @@ certify (and the degrade ladder applies ITEM-WIDE, not per-class — an item wit
 degrades as a whole). This forbids the hole the critic named: nothing previously stopped an engine
 from certifying an item on the CONTRACT class ALONE while ignoring its OVERFLOW/BODY classes. With the
 conjunction rule, that is impossible — the OVERFLOW class is MANDATORILY conjoined for any item with an
-exec body.
+exec body, AND (REQ-1.2) the REGISTRY-TERMINATION class is MANDATORILY conjoined for any item with a
+non-empty spec-fn registry. This is the rule that closes the #215 divergent-registry hole: a divergent
+spec-fn fails REGISTRY-TERMINATION, the conjunction rule blocks the item, and the bottom-poisoned
+stabilization (Pin B's `divergent_contract_certifies`) can never reach a certificate.
 
 **Resolution of #212(b) — the Option position takes the HYPOTHESIZE form.** `bodyDenote` is `none`
 exactly when an exec obligation fails (overflow / div-by-zero / out-of-bounds). The exec-body
@@ -738,21 +901,30 @@ certify regardless of the vacuously-satisfied CONTRACT class. The HYPOTHESIZE fo
 the conjoined OVERFLOW class is what rules out the vacuity, not a `∧ bodyDenote v = some r` baked into
 the contract obligation (which would make REQ-1's separate OVERFLOW class redundant). This resolves the
 critic's (i)-vs-(ii) tension explicitly in favor of (ii), referencing the conjunction rule as the
-soundness condition.
+soundness condition. (Note the parallel with the PURE-CONTRACT result-binding of §4: there the result
+is bound THROUGH `stabilizes body_expr env r` — the #214 form — which is the pure-`S_C` analogue of
+this `bodyStabilizes v = some r →` HYPOTHESIZE position.)
 
 **DISCHARGE MODES (REQ-7).**
 - **(i) AUTO** — a tactic battery `omega`/`simp`/`decide`/Lean-SMT's `smt` (where applicable). The
   z3-demotion PoC (`z3-demotion.md`) pins what is REACHABLE TODAY, kernel-clean: scalar comparisons
   + logical connectives + LINEAR integer arithmetic (QF_LIA) over the contract sublanguage —
   `tv_obligation_arith_cmp` / `tv_obligation_or_le` discharge with axioms `{propext,
-  Classical.choice, Quot.sound}` ONLY (no `sorryAx`, no cvc5 oracle axiom). OUT of auto today: the
+  Classical.choice, Quot.sound}` ONLY (no `sorryAx`, no cvc5 oracle axiom). **The AUTO fragment's
+  ACTUAL SHAPE is FUEL-FREE shallow goals** (the #216 reconciliation, §6 tiers (a)/(b)): the exporter
+  emits `denote 0 e env`-style statements for specCall-free obligations (via the fuel-irrelevance
+  lemma) or statically-unfolded goals for non-recursive registries — exactly the QF shape the PoC's
+  `tv_obligation_*` theorems are, NOT raw `∃N∀fuel` goals. OUT of auto today: the
   QF_BV bitwise fragment (blocked by an upstream `sorry` in Lean-SMT's `Bitblast.lean`), the bounded
   quantifier combinators (~30% cvc5-rule reconstruction coverage — may FAIL, i.e. `Unknown`, never
-  unsound), and recursive spec-fns / `permutation_of` (need the recursive def axiomatized). So the
-  Lean-auto FRAGMENT (REQ-2(a)) is precisely the scalar/linear contract clause — the "cheapest real
-  win" (increment (ii)).
+  unsound), and recursive spec-fns / `permutation_of` (need the `∃N∀fuel` stabilization form + an
+  induction on the per-env depth — INTERACTIVE only, §6 tier (c)). So the
+  Lean-auto FRAGMENT (REQ-2(a)) is precisely the scalar/linear contract clause exported FUEL-FREE —
+  the "cheapest real win" (increment (ii)).
 - **(ii) INTERACTIVE** — an agent authors a proof file checked in NEXT TO the source, replayed in CI.
-  Proof-artifact management: the proof lives at a deterministic path keyed on the item +
+  This is the path for the `∃N∀fuel` stabilization forms (recursive registries) — where synthesizing
+  the per-env `∃N` witness needs induction a tactic battery cannot do. Proof-artifact management: the
+  proof lives at a deterministic path keyed on the item +
   the EVIDENCE KEY (§2(d): obligation content + engine + engine-toolchain version + the targeted
   spine content hash); STALENESS is defined as the EVIDENCE KEY changing — so a changed obligation,
   a Lean-toolchain/mathlib/Lean-SMT bump, OR a change to the targeted `lean/Thermite/` spine
@@ -763,16 +935,22 @@ soundness condition.
   **NOT-STARTED — increment (iii).**
 
 **TERMINATION (REQ-7).** The Lean engine's obligation set for a looping/recursive item MUST include
-the `dec` measure (the termination obligation class) — OR the certificate honestly records
+the item's `dec` measure (the termination obligation class) — OR the certificate honestly records
 PARTIAL-CORRECTNESS-ONLY for that item. This ties directly to `while_rule`'s `h_run` premise: the
 SHIPPED `while_rule` is partial correctness ("after-loop holds IF the loop EXITS"); termination is
 the per-run residual (the source `dec`). A Lean engine that proves preservation+exit but NOT
 termination certifies partial correctness, and the certificate must SAY so (it cannot silently claim
-L3-total). **NOT-STARTED — increment (iii)/(iv).**
+L3-total). **And, distinctly, the REGISTRY-TERMINATION class (REQ-1.2):** the item's spec-fn registry
+`R_item` carries a per-spec-fn well-foundedness obligation that the `dec` measure VALIDLY descends —
+discharged by Verus's dec-check (the common path) or a Lean well-foundedness proof (the engine-#2
+path), conjoined item-wide. This is the registry analogue of the item's own `while_rule` termination,
+and is what keeps the stabilized form sound (a divergent registry fails it; §1.2). **NOT-STARTED —
+increment (ii) lands the Lean REGISTRY-TERMINATION discharge; increment (iii)/(iv) the item-loop
+termination policy.**
 
 **TRUST PROFILE.** A Lean L3 enumerates `{Lean kernel + the 3 standard axioms (propext,
 Classical.choice, Quot.sound)}` + the exporter correspondence (EXP, now including the stabilized form (#213) +
-registry faithfulness). For the AUTO path via Lean-SMT, cvc5 is NOT in the base (its proof is
+the result-binding form (#214) + registry faithfulness). For the AUTO path via Lean-SMT, cvc5 is NOT in the base (its proof is
 RE-CHECKED in the kernel — `z3-demotion.md`'s honesty crux), so the base is the kernel + standard
 axioms + EXP. This base is SMALLER than the Verus base ALONG THE NAMED AXES (no Z3, no Verus VC-gen)
 — the auditor-visible difference REQ-4 exposes. Whether this is a STRICT ORDER (a trust lattice) or
@@ -824,12 +1002,56 @@ are sketched; the per-item annotation is preferred for "this one function wants 
 without changing the whole-file default). THEN the existing L2 (Kani) / L1 (runtime) degrade rungs,
 unchanged.
 
+#### 6.1 The three-tier export story (REQ-7, the #216 fix — what the Lean engine ACTUALLY emits)
+
+The exported obligation of §4 is an `∃N∀fuel` statement over the DEEP embedding. An auto battery
+(`omega`/`simp`/`decide`/Lean-SMT `smt`) cannot discharge such a goal — and the z3-demotion PoC that
+grounds the AUTO claim discharged SHALLOW QF_LIA theorems with no `denote`, no `stabilizesProp`. The
+reconciliation: the exporter emits one of THREE tiers depending on the obligation's registry shape, so
+the AUTO tiers produce exactly the fuel-free shallow goals the PoC demonstrates, and only the
+INTERACTIVE tier carries the `∃N∀fuel` form.
+
+- **(a) FUEL-FREE export for specCall-free obligations (AUTO).** When the obligation's `Expr`s are
+  `specCallFree` (the common scalar-contract case — no spec-fn appears in `req`/`ens`/body), the
+  exporter emits the FUEL-FREE statement `denote 0 e env` / `intVal 0 e env = …` rather than the
+  `∃N∀fuel` wrapper. This is sound by the FUEL-IRRELEVANCE lemma (§4: `specCallFree e → ∀ f g, intVal
+  f e env = intVal g e env`, and the Prop analogue) — for a specCall-free `e`, `stabilizesProp e env ↔
+  denote 0 e env`, so the fuel-free goal is EQUIVALENT to the stabilized form but is a SHALLOW QF goal.
+  This is the auto fragment's ACTUAL shape and reconciles the z3-demotion grounding: the PoC's shallow
+  QF goals (`tv_obligation_arith_cmp`) are PRECISELY what fuel-free export produces. The exporter emits
+  the fuel-irrelevance discharge inline (or the goal is already fuel-free after `denote 0` reduction),
+  so the `smt`/`omega`/`decide` battery sees a QF_LIA goal, kernel-clean.
+- **(b) STATIC UNFOLDING for NON-recursive registries (AUTO).** When the registry is non-empty but
+  NON-RECURSIVE (every spec-fn's body calls only strictly-earlier spec-fns — a finite DAG), the
+  exporter may STATICALLY UNFOLD every spec-fn call to its FINITE depth at export time, producing a
+  specCall-free `Expr`, then apply tier (a). The unfolding depth is exactly the DAG depth (bounded,
+  computed at export), so the unfolded goal is again a fuel-free SHALLOW goal the auto battery
+  discharges. (The exporter's unfolding is itself part of EXP — the unfolded `Expr` must equal the
+  spec-fn's real body substituted, arm-by-arm; a wrong unfolding is an unsound export the inspection
+  tier catches.)
+- **(c) The `∃N∀fuel` STABILIZATION form for RECURSIVE registries (INTERACTIVE only).** When the
+  registry is RECURSIVE (a spec-fn whose unfolding depth is ENV-dependent — `spec_sum(xs)` with depth
+  |xs|), there is NO finite static unfolding and NO fuel-free shape: the per-env `∃N` witness genuinely
+  depends on the input (`N` grows with |xs|) and requires INDUCTION to synthesize. These obligations
+  take the §4 `∃N∀fuel` stabilization form and are reserved for the INTERACTIVE path (REQ-7(ii)) —
+  a human/agent-authored proof handles the induction; the auto battery does NOT attempt them (its
+  fragment, REQ-2(a), does not ADMIT a recursive-registry obligation, so per REQ-9 it is "untested by
+  Lean-auto," not a false kill or an `Unknown`). This is the honest boundary: AUTO reaches tiers
+  (a)/(b) (fuel-free, the z3-demotion-grounded fragment); INTERACTIVE owns tier (c) (`∃N∀fuel`).
+
+The §4 `∃N∀fuel` form is therefore the SEMANTIC SPECIFICATION of every obligation (it is what
+soundness is argued against — §4, both pins), but the EXPORTED ARTIFACT for tiers (a)/(b) is the
+fuel-free shallow equivalent (proven equivalent by fuel-irrelevance), and only tier (c) ships the
+`∃N∀fuel` form to an interactive prover. This is the reconciliation the #216 finding demanded between
+the deep-embedded obligation form and the shallow QF_LIA z3-demotion grounding.
+
 This slots into the SHIPPED `degrade::run_ladder` as additional rungs BEFORE L2: the ladder already
 takes closures for L2/L1 attempts; the engine rungs are the same shape (an `attempt_engine` closure
 per engine in order). The SKIP/Unknown accounting per engine is reported in the cert (which engines
 attempted, which returned Unknown and why) — generalizing the SHIPPED `SolverProfile` + the
 "untested against engine X" honesty of REQ-9. **NOT-STARTED — increment (i) adds the ordering hook
-(Verus-only, so byte-identical modulo REQ-3.1); (ii) adds the Lean-auto rung.**
+(Verus-only, so byte-identical modulo REQ-3.1); (ii) adds the Lean-auto rung (tiers (a)/(b)); (iii)
+adds the interactive tier (c).**
 
 ### 7. The anti-Goodhart battery, engine-generic (REQ-9, the honest v1)
 
@@ -863,7 +1085,8 @@ The engine-generic v1 (DECISION, F2) — preserving that #101 exclusion exactly:
   interface in v1 (a direct verus invocation, OQ-5) — so in v1 the equivalence-exclusion step runs as
   the SHIPPED Verus query regardless of which engine discharged the mutant's certification obligation.
 - **"Untested against engine X" = NEVER ATTEMPTED.** A mutant whose obligation NO engine's fragment
-  ADMITS (e.g. outside Lean-auto's scalar fragment AND un-lowerable for Verus) is "untested" — it is
+  ADMITS (e.g. outside Lean-auto's scalar fragment AND un-lowerable for Verus, OR a recursive-registry
+  obligation that only the §6 tier-(c) interactive path admits) is "untested" — it is
   NOT counted as killed (which would inflate the ratio, violating §7 + R-DEFER-9) and NOT counted as
   a survivor (no engine ever tried it). This is distinct from `Unknown-after-attempt` (which IS a
   kill): untested = no fragment admits it; unknown = a fragment admitted it and the engine could not
@@ -904,18 +1127,24 @@ The exportable/dischargeable fragment for the Lean engine = what the spine's `S`
 (`S_E`, bounded value / overflow-as-`none`), straight-line bodies (`S_B`), the v1 `while` form
 (`loopDenote` + partial-correctness `while_rule`), spec-fns via the fuel-indexed registry — under the
 §4 STABILIZED form (the obligation stated against `stabilizes`/`stabilizesProp` — the per-env ∃-N
-stabilization relation, NOT a raw fuel index; #213 — with `specs := R_item` HELD FIXED and the
-export-time hard gate on registry population), scoped to the PURE-CONTRACT class (§4.1: the exec-body
-bridge is increment (iv) design work) and EXP registry-body faithfulness. For
-AUTO discharge specifically, the IN set NARROWS to the z3-demotion-reachable scalar/QF-linear core;
-the richer IN constructs need INTERACTIVE proofs (or stay on Verus).
+stabilization relation, NOT a raw fuel index, #213 — with the RESULT value bound THROUGH `stabilizes
+body_expr env r`, #214, with `specs := R_item` HELD FIXED, the export-time hard gate on registry
+population, AND the REGISTRY-TERMINATION class on `R_item`'s spec-fns, #215), scoped to the
+PURE-CONTRACT class (§4.1: the exec-body bridge is increment (iv) design work) and EXP registry-body
+faithfulness. For
+AUTO discharge specifically, the IN set NARROWS to the z3-demotion-reachable scalar/QF-linear core
+exported FUEL-FREE (§6 tiers (a)/(b): specCall-free goals via fuel-irrelevance, or non-recursive
+registries via static unfolding, #216); the recursive-registry `∃N∀fuel` obligations (§6 tier (c))
+need INTERACTIVE proofs (or stay on Verus).
 
 **OUT.** User ADTs in match-position (the Lean `Variant` has only the 4 built-in Option/Result
 variants — `rust-lean-correspondence.md` D6/the user-variant residual); post-v1 loops (`loop`/
 `break`/`continue`/multi-exit early return/nested loops/non-scalar mutation `xs[i]=e` — all honest
 `Unsupported` in the encoders + absent from the Lean inductives); open body holes (`?N` —
 short-circuited L0 before any engine); slag bodies (fiat-trusted, no engine); boundary items
-(foreign body, L1, no engine). These remain OUT exactly as they are OUT of `S` today. The three §0.1
+(foreign body, L1, no engine); divergent spec-fns (a non-well-founded `dec` — REJECTED by the
+REGISTRY-TERMINATION class before any contract obligation is reached, §1.2). These remain OUT exactly
+as they are OUT of `S` today. The three §0.1
 meta/battery query classes (vacuity / equivalence / strengthen) are OUT of the Engine interface in v1
 (OQ-5).
 
@@ -925,15 +1154,19 @@ meta/battery query classes (vacuity / equivalence / strengthen) are OUT of the E
   interface, behavior BYTE-IDENTICAL EXCEPT the named REQ-3.1 fast-unknown remap (a previously
   hard-failed witness-less unknown now degrades). The conformance cert oracle
   `conformance/*.cert.json` is unperturbed apart from that one fixture (the AC for this increment).
-  No new engine. **FILED: blocker #204.**
+  The REGISTRY-TERMINATION class is ASSIGNED here (REQ-1 reification; Verus's dec-check is its common
+  discharge). No new engine. **FILED: blocker #204.**
 - **(ii) The Lean exporter + auto-discharge for the PURE-CONTRACT class** — the cheapest real win
-  (the z3-demotion scalar/linear fragment, kernel-clean), behind the Lean-auto rung; the §4 STABILIZED form (#213)
-  + EXP registry faithfulness are built here, AND the SPINE PREREQUISITE this increment lands: the
-  `stabilizes` relation + the `stabilization_exists_for_dec_bounded` lemma (the §4 build-blocker note). **FUTURE.**
+  (the z3-demotion scalar/linear fragment, kernel-clean, exported FUEL-FREE per §6 tiers (a)/(b)),
+  behind the Lean-auto rung; the §4 STABILIZED form (#213) + the result-binding form (#214)
+  + EXP registry faithfulness are built here, AND the SPINE PREREQUISITES this increment lands: the
+  `stabilizes` relation + the `stabilization_exists_for_dec_bounded` lemma + uniqueness-of-stabilization
+  (#214) + the FUEL-IRRELEVANCE lemma (#216) + the Lean-path REGISTRY-TERMINATION well-foundedness
+  discharge (#215, REQ-1.2(b)) (the §4 build-blocker note). **FUTURE.**
 - **(iii) Interactive proofs + certificate attribution + the engine-generic battery + the
   disagreement alarm** — the per-obligation `{engine, trust_profile}` attribution, the
   Proven⊕Refuted halt, the honest mutation v1 (the `Refuted ∪ Unknown-after-attempt` kill + the
-  floor guards). **FUTURE.**
+  floor guards), AND the §6 tier-(c) interactive `∃N∀fuel` path for recursive registries. **FUTURE.**
 - **(iv) The full exportable fragment** — exec exprs, straight-line bodies, v1 while, spec-fns via
   the fuel registry, under the Lean engine. **FUTURE.**
 
@@ -947,15 +1180,26 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
   that the remap fires and the case degrades rather than hard-fails). Plus `cargo clippy`/`fmt`.
 - **(ii):** the Lean-auto rung discharges the scalar-contract corpus obligations with `#print axioms`
   = `{propext, Classical.choice, Quot.sound}` only (the z3-demotion kernel-clean bar), and a
-  Lean-proven cert carries the smaller trust profile. A spec-fn-calling contract obligation exported
-  at fuel below `fuel₀` (or with an omitted registry entry) FAILS a vacuity-tripwire test (the
+  Lean-proven cert carries the smaller trust profile. **The AUTO obligations are emitted FUEL-FREE**
+  (§6 tiers (a)/(b): specCall-free goals reduced via `intVal_fuel_irrelevant` to `denote 0`-shape, or
+  non-recursive registries statically unfolded) — a test asserts the exported AUTO goal is shallow/QF
+  (the z3-demotion `tv_obligation_*` shape), NOT a raw `∃N∀fuel` goal; the `∃N∀fuel` form is exported
+  ONLY for recursive registries on the interactive path. A spec-fn-calling contract obligation with an
+  under-fuelled body OR an omitted registry entry FAILS a vacuity-tripwire test (the
   obligation must NOT be provable by the below-`N` Int-`0`/Prop-`True` bottom — §4; the regression
-  oracle is `lean/Thermite/PinIntBottom.lean` (`obligation_form_is_false`), which the new form passes).
+  oracles are `lean/Thermite/PinIntBottom.lean` (`obligation_form_is_false`, the #213 form) and
+  `lean/Thermite/PinStabilization.lean` Pin A (`wrong_contract_certifies_with_underfuelled_rbody` must
+  NOT be reachable once the result is bound through stabilization, the #214 form), which the new forms
+  pass). **A DIVERGENT spec-fn registry FAILS the REGISTRY-TERMINATION class** (#215, REQ-1.2): a test
+  asserts `f(x)=f(x)` is REJECTED before any contract obligation certifies (the regression oracle is
+  `lean/Thermite/PinStabilization.lean` Pin B (`divergent_contract_certifies`) — that bottom-poisoned
+  discharge must NOT reach a certificate, blocked by the conjunction rule).
 - **(iii):** an injected Proven⊕Refuted disagreement HALTS (a test asserting the alarm fires, not a
   favorable pick); a Verus fast-unknown + Lean Proven does NOT halt (REQ-3.1 guard); a mutant outside
   every engine's fragment is reported "untested," never counted as killed, and an item with
   `attempted < generated` carries the untested-count qualifier; the attribution field round-trips the
-  frozen golden.
+  frozen golden; a recursive-registry obligation routed to the §6 tier-(c) interactive path replays
+  its proof artifact (staleness on the evidence-key change).
 - **(iv):** the Lean engine's fragment-coverage tests over the full frozen subset, with the OUT set
   honestly Skipped.
 
@@ -963,15 +1207,15 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the Obligation artifact) | NOT-STARTED | open build blocker #204. The content is SHIPPED only as transient Verus text: `pub fn equivalence_obligation` / `exec_equivalence_obligation` / `body_equivalence_obligation` / `loop_{entry,preservation,exit}_obligation` in `thermite-tv/src/obligation.rs` ("`thermite-tv` does NOT run verus itself: it emits the obligation TEXT") + `pub struct ObligationFrame` (the env/typing ctx). The prover-NEUTRAL artifact (AST slice + Thermite types + coercion flags + the `role` discriminator, pre-rendering) is unbuilt — that is the gap. The three §0.1 meta queries are scoped OUT (OQ-5). REQ-1.1 (the per-item CLASS-CONJUNCTION RULE — an item certifies only when EVERY class REQ-1 assigns it is discharged; the degrade ladder applies item-wide; #212(b)) + the exec-body bridge scoping (§4.1) are stated NORMATIVELY in §4/§4.1 but likewise unbuilt — increment (iv) for the bridge, increment (i)/(iii) for the per-item conjunction at the certificate level. |
+| REQ-1 (the Obligation artifact) | NOT-STARTED | open build blocker #204. The content is SHIPPED only as transient Verus text: `pub fn equivalence_obligation` / `exec_equivalence_obligation` / `body_equivalence_obligation` / `loop_{entry,preservation,exit}_obligation` in `thermite-tv/src/obligation.rs` ("`thermite-tv` does NOT run verus itself: it emits the obligation TEXT") + `pub struct ObligationFrame` (the env/typing ctx). The prover-NEUTRAL artifact (AST slice + Thermite types + coercion flags + the `role` discriminator, pre-rendering) is unbuilt — that is the gap. The three §0.1 meta queries are scoped OUT (OQ-5). REQ-1.1 (the per-item CLASS-CONJUNCTION RULE — an item certifies only when EVERY class REQ-1 assigns it is discharged; the degrade ladder applies item-wide; #212(b)) + REQ-1.2 (the REGISTRY-TERMINATION class — every spec-fn in a non-empty `R_item` carries a dec-VALIDITY/well-foundedness obligation, conjoined item-wide; discharged by Verus's dec-check or a Lean well-foundedness proof; closes the #215 divergent-registry bottom-poisoning per Pin B) + the exec-body bridge scoping (§4.1) are stated NORMATIVELY in §1.2/§4/§4.1 but likewise unbuilt — increment (iv) for the bridge, increment (i)/(iii) for the per-item conjunction at the certificate level, increment (ii) for the Lean-path registry-termination discharge. |
 | REQ-2 (the Engine interface) | NOT-STARTED | open build blocker #204. The discharge path is SHIPPED but Verus-welded: `forge::check::check_file_with_options` calls `run_verus` directly + `classify_verus_outcome` (the three-way `Proved`/`Timeout`/`Counterexample` split) in `forge/src/check.rs`. No `trait Engine`, no fragment/trust-profile/evidence abstraction. The Verus instance maps onto the SHIPPED outcome classifier WITH the REQ-3.1 fast-unknown remap (AC-2); the EVIDENCE slot generalizes the SHIPPED `cache::cache_key` (lowered_src+seed+verus_version+thermite_version+CHECK_SCHEMA_VERSION) per §2(d). |
-| REQ-3 (Unknown degrades / Refuted hard-fails, engine-generic) | NOT-STARTED | open blocker #204. The discipline is SHIPPED for Verus: `degrade::ladder_action_l3` maps `Counterexample → LadderAction::HardFail` ("a `VerusOutcome::Counterexample` … is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat)", `forge/src/check.rs`); `Timeout` degrades via `degrade::run_ladder` (`forge/src/degrade.rs`). The generalization off "verus" + the failure-WITHOUT-witness-is-Unknown rule + the REQ-3.1 fast-unknown remap (a witness-less `Counterexample` → `Unknown`, today absorbed into the `Counterexample` bucket per the `VerusOutcome::Counterexample` doc) are unbuilt. |
+| REQ-3 (Unknown degrades / Refuted hard-fails, engine-generic) | NOT-STARTED | open blocker #204. The discipline is SHIPPED for Verus: `degrade::ladder_action_l3` maps `Counterexample → LadderAction::HardFail` ("a `VerusOutcome::Counterexample` … is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat)", `forge/src/check.rs`); `Timeout` degrades via `degrade::run_ladder` (`forge/src/degrade.rs`). The generalization off "verus" + the failure-WITHOUT-witness-is-Unknown rule + the REQ-3.1 fast-unknown remap (a witness-less `Counterexample` → `Unknown`, today absorbed into the `Counterexample` bucket per the `VerusOutcome::Counterexample` doc; INCLUDING a failed spec-fn dec/termination proof, which routes to a Lean re-attempt that must still discharge REGISTRY-TERMINATION, REQ-1.2) are unbuilt. |
 | REQ-4 (certificate attribution — per-obligation engine + trust profile) | NOT-STARTED | FUTURE (increment (iii)). The cert + honest-min are SHIPPED: `manifest::Certificate { level: Level, .. }`, `enum Level { L0, L1, L2, L3 }` (`#[derive(Ord)]`), `AssuranceManifest::aggregate → ProjectAssurance::Certified(min)` (VERUS-ANCHORED to `thermite_verified::aggregate_level`). NO per-obligation `{engine, trust_profile}` field exists; the additive-field precedent (`boundary`/`slag`/`lowered_assurance`/`assurance_scope`, all `#[serde(default)]`) is the schema model. The "smaller base" claim is along the named axes; the ordering formalization is OQ-3. |
 | REQ-5 (engine disagreement = soundness alarm) | NOT-STARTED | FUTURE (increment (iii)). No second engine exists yet, so no disagreement path. The anti-cheat ANCESTOR is SHIPPED: a counterexample never degrades (`ladder_action_l3` → `HardFail`). The Proven⊕Refuted halt (vs benign Proven⊕Unknown), guarded against the REQ-3.1 fast-unknown spurious trigger, is unbuilt. |
-| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). Critically (#213, the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`): `intVal` bottoms an INT-position `specCall` to `0` (`| none => 0` + fuel-0 catch-all `| _, _, _ => 0`), NOT to `True` — so the cycle-2 `∀ fuel ≥ fuel₀` form is FALSE for correct items (the pin's `obligation_form_is_false`) and is RETIRED. §4 RESTATES the obligation against a STABILIZATION relation (`stabilizes : Expr → Env → Int → Prop := ∃ N, ∀ fuel ≥ N, intVal fuel e env = v`, + the Prop analogue for `denote`): `reqStable(env) → ensStable(env)`, per-env ∃-N (no global `fuel₀`, fixing the value-dependent-depth counterexample), with `specs := R_item` held fixed + the export-time HARD GATE (refuse-to-emit + per-name `decide` lemmas) when `calledSpecFns(item) ⊄ dom(R_item)` — no resolution PREMISE. SCOPED to the PURE-CONTRACT class (§4.1: the exec-body S_C×S_E/S_B bridge — value bridge, bool sort, optres, env→State — is increment (iv)'s own design obligation). The SPINE PREREQUISITE (increment (ii), NOT yet built): the `stabilizes` relation + the `stabilization_exists_for_dec_bounded` lemma. The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
-| REQ-7 (Lean discharge modes + termination) | NOT-STARTED | FUTURE (increment (ii)/(iii)). The AUTO fragment is PROVEN-REACHABLE: `z3-demotion.md` shows `tv_obligation_arith_cmp`/`tv_obligation_or_le` (scalar/QF-linear contract clauses) discharged by Lean-SMT's `smt` tactic, kernel-clean (`#print axioms` = standard set only; no `sorryAx`/cvc5 oracle). The interactive/proof-artifact mode (staleness = the §2(d) EVIDENCE KEY changing: obligation + engine + engine-toolchain version + targeted-spine content hash) + the `dec`/partial-correctness termination policy (tied to the SHIPPED `while_rule` `h_run` premise) are unbuilt. |
+| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). Critically (#213, the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`): `intVal` bottoms an INT-position `specCall` to `0` (`| none => 0` + fuel-0 catch-all `| _, _, _ => 0`), NOT to `True` — so the cycle-2 `∀ fuel ≥ fuel₀` form is FALSE for correct items (the pin's `obligation_form_is_false`) and is RETIRED. §4 RESTATES the obligation against a STABILIZATION relation (`stabilizes : Expr → Env → Int → Prop := ∃ N, ∀ fuel ≥ N, intVal fuel e env = v`, + the Prop analogue for `denote`): `∀ r, stabilizes body_expr env r → reqStable(env) → ensStable(env at r)`, per-env ∃-N (no global `fuel₀`, fixing the value-dependent-depth counterexample), with the RESULT value BOUND THROUGH stabilization (the #214 fix — Pin A's `wrong_contract_certifies_with_underfuelled_rbody` is now UNPROVABLE because uniqueness of stabilization forces `r` to the body's true value, `wrong_contract_fails_at_true_value`), `specs := R_item` held fixed + the export-time HARD GATE (refuse-to-emit + per-name `decide` lemmas) when `calledSpecFns(item) ⊄ dom(R_item)` — no resolution PREMISE. SCOPED to the PURE-CONTRACT class (§4.1: the exec-body S_C×S_E/S_B bridge — value bridge, bool sort, optres, env→State — is increment (iv)'s own design obligation). The SPINE PREREQUISITES (increment (ii), NOT yet built): `stabilizes` + `stabilization_exists_for_dec_bounded` + uniqueness-of-stabilization (#214) + the FUEL-IRRELEVANCE lemma (#216) + the REGISTRY-TERMINATION discharge (#215). The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
+| REQ-7 (Lean discharge modes + termination) | NOT-STARTED | FUTURE (increment (ii)/(iii)). The AUTO fragment is PROVEN-REACHABLE: `z3-demotion.md` shows `tv_obligation_arith_cmp`/`tv_obligation_or_le` (scalar/QF-linear contract clauses) discharged by Lean-SMT's `smt` tactic, kernel-clean (`#print axioms` = standard set only; no `sorryAx`/cvc5 oracle) — and these are SHALLOW QF goals with NO `denote`/`stabilizesProp` wrapper. §6.1 reconciles the deep-embedded §4 form to that grounding via the THREE-TIER export story (#216): (a) FUEL-FREE export for specCall-free obligations via the `intVal_fuel_irrelevant`/`denote_fuel_irrelevant` lemma (`stabilizesProp e env ↔ denote 0 e env` for specCall-free `e`) — the auto fragment's actual fuel-free shallow shape, matching the PoC; (b) STATIC UNFOLDING of non-recursive registries to finite depth, again yielding fuel-free goals; (c) the `∃N∀fuel` stabilization form reserved for RECURSIVE registries on the INTERACTIVE path only (the per-env `∃N` witness needs induction). The interactive/proof-artifact mode (staleness = the §2(d) EVIDENCE KEY changing: obligation + engine + engine-toolchain version + targeted-spine content hash) + the `dec`/partial-correctness termination policy (tied to the SHIPPED `while_rule` `h_run` premise) + the REGISTRY-TERMINATION class (#215, REQ-1.2) are unbuilt. |
 | REQ-8 (engine ordering + ladder placement) | NOT-STARTED | open blocker #204 (the Verus-only hook) + FUTURE (the Lean rung). The ladder substrate is SHIPPED: `degrade::run_ladder` takes per-rung closures (`attempt_l2`/`attempt_l1`); the engine rungs are the same closure shape. The `--engine lean` / `#[engine(lean)]` surface (OQ-1) and the per-engine SKIP/Unknown accounting are unbuilt. |
-| REQ-9 (engine-generic anti-Goodhart battery, honest v1) | NOT-STARTED | FUTURE (increment (iii)). The battery is SHIPPED Verus-only: `forge::check::mutation_score` generates mutants + re-`run_verus`es each through the #8 cache; its kill rule is "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"); and each SURVIVOR is run through the #101 `equivalence_proves_equal` query — a proven-equivalent survivor is excluded from BOTH the survivor set AND `scored` (`if proved_equivalent { equivalent += 1; continue; }`, "REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`"), so the SHIPPED `scored` = attempted MINUS proven-equivalent. OQ-5 already DROPS un-lowerable mutants from the denominator. The engine-generic kill (`Refuted ∪ Unknown-after-attempt`, = the shipped `Counterexample ∪ Timeout`), the "untested = never-attempted" rule, the #101-preserving floor (survivor/denominator both MINUS proven-equivalent; the equivalence probe a §0.1 meta-query outside the Engine interface, F3), and the floor guards (minimum-attempted qualifier + the 0/0 backstop) are unbuilt. |
+| REQ-9 (engine-generic anti-Goodhart battery, honest v1) | NOT-STARTED | FUTURE (increment (iii)). The battery is SHIPPED Verus-only: `forge::check::mutation_score` generates mutants + re-`run_verus`es each through the #8 cache; its kill rule is "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"); and each SURVIVOR is run through the #101 `equivalence_proves_equal` query — a proven-equivalent survivor is excluded from BOTH the survivor set AND `scored` (`if proved_equivalent { equivalent += 1; continue; }`, "REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`"), so the SHIPPED `scored` = attempted MINUS proven-equivalent. OQ-5 already DROPS un-lowerable mutants from the denominator. The engine-generic kill (`Refuted ∪ Unknown-after-attempt`, = the shipped `Counterexample ∪ Timeout`), the "untested = never-attempted" rule (now including recursive-registry obligations that only the §6 tier-(c) interactive path admits), the #101-preserving floor (survivor/denominator both MINUS proven-equivalent; the equivalence probe a §0.1 meta-query outside the Engine interface, F3), and the floor guards (minimum-attempted qualifier + the 0/0 backstop) are unbuilt. |
 
 ## Open questions (for co-authorship)
 

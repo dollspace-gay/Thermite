@@ -1,0 +1,10 @@
+{
+  "uuid": "50729036-afe6-4e99-850d-56d3f5e5d04f",
+  "issue_uuid": "ef1726e8-4481-4d6a-b34c-ee9cff8350c1",
+  "author": "Yffe",
+  "content": "Kernel-checked pin at lean/Thermite/PinDecMeasure.lean (builds clean against the shipped spine). Measure x - t(x), true registry t(x)=x: closure_measure_strictly_descends (denoted against the #224-closure R_item, t omitted, the dec call bottoms to 0 → measure denotes x, strictly descends on x → x-1) vs true_measure_never_descends (real measure x - x = 0, constant — the non-well-founded case REGISTRY-TERMINATION exists to reject). Authority: §4 hard gate's calledSpecFns seed = req ∪ ens ∪ body, closure step = spec-fn BODIES only — dec clauses (item's and reached spec-fns') are in no covered position; §1.2 binds REQ-1.2 to 'the SAME reachability set' while its obligations are ABOUT the dec measures; §1.2/§3.1 claim a divergent spec-fn 'FAILS this class on BOTH paths' — unjustified for spec-call-bearing measures (SpecFnItem.dec is a full Clause/Expr; nothing in thermite-design.md §4.1/§4.2 restricts it; shipped forge reachable_spec_fn_deps/collect_block_spec_fn_calls walk decl.body only, never decl.dec). Fix direction: extend the closure seed+step to include dec clauses, or normatively restrict dec to specCall-free and gate it.",
+  "created_at": "2026-06-10T22:33:29.206616332Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAciM4Ynb8xmzG+gcVJ01K9KF/JiOBcCM65GRvzfbRhw7Wdf2RL71ArLV8pClWFxdB1IO4ZIGSOJ9KZkAPdA1nDw=="
+}

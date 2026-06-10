@@ -1,0 +1,10 @@
+{
+  "uuid": "a57fa85a-0f41-4fe8-a030-458e743ef252",
+  "issue_uuid": "7d00c1bf-b515-42db-81ed-7d868dd30281",
+  "author": "Yffe",
+  "content": "EPIC COMPLETE — the universal lowering-soundness program is shipped end-to-end, every increment critic-audited. LAYER 1 contract S_C 8/8 (#170/#176/#177/#178/#179/#180/#181/#182). LAYER 2 exec: S_E (#171), S_B (#172 + #186 fix), loops v1 (#163: design + Rust obligations + the kernel-checked WHILE-RULE). LAYER 3 compose: the T2 capstone lowering_faithful (#174/#183) — for all P passing TV, denote(lower(P)) = denote_S(P), relative to the named trust base {Lean kernel+propext, Z3 (the h_tv premise), S=intended meaning, Verus VC-gen, rustc/LLVM}. LAYER 4 trust: #185 Rust<->Lean correspondence closed at the inspection tier (arm-by-arm, D1-D6, + #187 fix); #184 Z3-demotion Tier-3 PoC (Lean-SMT/cvc5 kernel replay for QF-linear; walls documented). INTEGRATION: #162 forge body-tv (+ #189 honesty fix). 13+ negative lemmas machine-refute the empirical infidelity classes. Docs current: README + skill (#188), thermite-semantics.md, the SOTA survey. REMAINING (tracked separately, out of this epic): #166 contract-TV parallel seam (low), #164/#21 the kernel target, the named residuals in their docs (full Z3 demotion upstream-gated; extraction bridge; user-ADT match/is). The boss's demand — a proof over ALL thermite programs, not an existential — is MET relative to the enumerated trust base.",
+  "created_at": "2026-06-10T03:00:07.089208140Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJvZieIEUZzLfG2XvpmurOWCZw2hLdc6LGOAj8ckHVLgo6YPM//pYffDkJlcr3hW/hfKFkeChlgUGYEwQuPlvAQ=="
+}

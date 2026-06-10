@@ -1,0 +1,10 @@
+{
+  "uuid": "cef229a7-02ed-4a22-96a1-c832feb664e1",
+  "issue_uuid": "ef1726e8-4481-4d6a-b34c-ee9cff8350c1",
+  "author": "Yffe",
+  "content": "Critic plan: pin the divergence kernel-checked (lean/Thermite/PinDecMeasure.lean, builds clean against the shipped spine) and commit it as the audit artifact per the ACToR discriminator protocol; the generator owns the doc fix (extend the #224 closure to dec clauses, or restrict dec measures to specCall-free and gate it).",
+  "created_at": "2026-06-10T22:34:16.362561493Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAcLttGB2vVqwZf8sFUaFrTJ7bQ/0slaWQNv3ZSEFyEMod5502QvszAWtiI6nzwgjquyOcpSsaaPGWBHR3CeQkCQ=="
+}

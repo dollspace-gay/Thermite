@@ -1,0 +1,10 @@
+{
+  "uuid": "f555fc1a-5b21-4a85-a950-6556157080df",
+  "issue_uuid": "25bd9770-df60-4172-ac53-0c8f23968849",
+  "author": "Yffe",
+  "content": "Plan: pin the drift with two #[ignore]d failing tests at forge/tests/divergence_rlimit_phrase_drift.rs (source-seam extraction of the contains() phrase literals — the fns are private to the forge bin and a real Z3 rlimit hit is not deterministically forcible), citing body_tv::is_rlimit_signal (#189) + the z3 binary literal 'max. resource limit exceeded' as authority; commit on main per critic discipline. Fix is the generator's: add the 'resource limit exceeded' clause to contract_tv::is_rlimit_signal, then un-ignore.",
+  "created_at": "2026-06-10T03:59:13.935518695Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA+cqBoL0Ke7i/boX/0jgddvg8OQD3bJRjm+c1UkvEv5EsmDAY0jQq3r0osyAQ4sxsKG/5zQS6ruYlU7oU9GNBDw=="
+}

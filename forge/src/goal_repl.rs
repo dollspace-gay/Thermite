@@ -181,9 +181,24 @@ fn render_goal_item(cert: &Certificate, program: &Program) -> String {
 /// kill-ratio (+ the surviving mutant, if any) — read straight off the cert's
 /// `contract_quality`, never recomputed.
 fn render_battery_item(cert: &Certificate) -> String {
-    let q = &cert.contract_quality;
     let mut out = String::new();
     out.push_str(&format!("battery — {}\n", cert.item));
+
+    // A gate-rejected cert (a §7.1 vacuity / §13 slag reject — Level::L0 with a
+    // `reject` cause) keeps `contract_quality` at `forward_declared()` placeholder
+    // `false`s, NOT a clean verdict. Surface the gate's reject cause — mirroring
+    // `render_goal_item` — never the placeholder non-vacuous line or `mutants
+    // killed 0/0`. (REQ-1: a VIEW re-defines no verdict; the pipeline's verdict
+    // for a triage-rejected item is the reject.)
+    if let Some(reject) = &cert.reject {
+        out.push_str(&format!(
+            "  vacuity: VACUOUS — {} ({})\n",
+            reject.cause, reject.detail
+        ));
+        return out;
+    }
+
+    let q = &cert.contract_quality;
     out.push_str(&format!(
         "  vacuity: {}\n",
         if q.tautology || q.vacuous_precondition {

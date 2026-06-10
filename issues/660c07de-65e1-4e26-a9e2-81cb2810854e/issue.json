@@ -1,0 +1,10 @@
+{
+  "uuid": "660c07de-65e1-4e26-a9e2-81cb2810854e",
+  "display_id": 221,
+  "title": "Divergence: RATIONALE spine entry's 'enumerated trust base' lists 4 residuals, omitting the Lean kernel+axioms (audit.sh/README/make-audit entry list 5)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T20:14:43.564706687Z",
+  "updated_at": "2026-06-10T20:14:43.564706687Z"
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "9ccf9585-7cbb-4168-9fd2-e6eda510e21d",
+  "issue_uuid": "77c31e45-4530-4038-aa61-8db6fc0b0772",
+  "author": "Yffe",
+  "content": "RATIONALE 'cage' Limits: 'Classic seccomp-BPF compares seccomp_data.nr, not argument registers — so it cannot filter ioctl by its cmd... subject to TOCTOU on pointer arguments it does not inspect.' Factually wrong about the mechanism: struct seccomp_data exposes args[0..5] and classic BPF filters routinely compare argument VALUES (Chrome's sandbox filters ioctl by cmd this way). The true mechanism limit: BPF cannot DEREFERENCE pointer arguments (kernel forbids it precisely to avoid TOCTOU), so paths can't be scoped. As written it (a) attributes this filter's v0.1 implementation choice (nr-only) to seccomp-BPF itself, (b) muddles TOCTOU (BPF can't inspect pointed-to memory at all; TOCTOU is the documented reason dereference is prohibited), and (c) contradicts the entry's own Direction, which proposes 'a BPF_JEQ on the ioctl cmd register' — impossible if the mechanism 'compares only nr'. forge/src/sandbox.rs doc comment near TERM_SYSCALLS repeats the same error. An OS/systems reviewer catches this in one read.",
+  "created_at": "2026-06-10T20:15:11.753973403Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA5MAyZIL/NKO8enaN89l6YrSXIiUeX7BKpalgW28nUBvchMSZ9V752JaxNDvsKU6BwIjb+4GwvdhLXGCsM1wRBg=="
+}

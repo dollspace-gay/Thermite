@@ -1,0 +1,10 @@
+{
+  "uuid": "ca0f3807-8f28-4d91-9904-dad49e0d2073",
+  "issue_uuid": "7da6edbc-9bf0-4e94-abaf-f3f5c6dacceb",
+  "author": "Yffe",
+  "content": "Authored .design/verified/proof-backends.md: the backend-neutral Obligation artifact + Engine interface (fragment/discharge/trust-profile/evidence), certificate per-obligation attribution with honest-min preserved + the Proven-vs-Refuted disagreement halt, and Lean as engine #2 (the exporter over the kernel-proven lean/Thermite/ S spine, the z3-demotion auto fragment, interactive proofs, partial-correctness termination). 9 REQs all NOT-STARTED (v-next interface layer); SHIPPED substrates quoted-grounded. Filed increment-(i) build blocker #204; (ii)/(iii)/(iv) named future. 4 OQs left open for a co-author.",
+  "created_at": "2026-06-10T18:45:11.681931890Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA24Xj/Z2ups7wYyJ9Sh/abnj/NwPAS/1rNUSfzUIx5MWYKuyRh0BEUiVaboqtzc9H6jwbVFo43FLSLmFXQe7QCg=="
+}

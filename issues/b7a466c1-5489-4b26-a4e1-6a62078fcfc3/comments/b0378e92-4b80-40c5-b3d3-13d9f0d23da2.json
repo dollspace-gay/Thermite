@@ -1,0 +1,10 @@
+{
+  "uuid": "b0378e92-4b80-40c5-b3d3-13d9f0d23da2",
+  "issue_uuid": "b7a466c1-5489-4b26-a4e1-6a62078fcfc3",
+  "author": "Yffe",
+  "content": "Re-audit of c00600c3 complete: NO DIVERGENCE FOUND. Pins (forge/tests/divergence_body_tv_frame.rs) unchanged by the fix and pass for the right reason (Skipped, framing-limitation reason, exit 0). Over-skip boundary probed live: req over params/slice-len still checks Faithful (straight-line + loop arms); u32::MAX / as-cast req shapes are gated Skipped — the collect_text_idents heuristic is character-identical to exec_tv's (same false-positive surface; sibling-consistent; exec_tv drops the req and rechecks, body_tv Skips with a stated justification — honest class, not worse). Mapping re-derived: Divergent only from errors>=1 with no rlimit signal; CompileAbort/Timeout/degenerate -> Unverifiable; loop worst-wins preserved. is_rlimit_signal cannot false-positive on a counterexample (space-separated phrases cannot appear in lowered code or idents). Full gauntlet green: cargo test -p forge all pass, build/clippy/fmt green, binary_search demo unchanged (1 skipped, exit 0), teeth discharge live verus (frame abort 50ms, genuine).",
+  "created_at": "2026-06-10T02:57:16.068369006Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGF1rnuSX4AoQrBPAJRyO7CI4gdHIIMImpz0joi2VAECr6XuiPSQ6OkmibklHaRQZHSWLlo0dZETVDrW8VwWKAA=="
+}

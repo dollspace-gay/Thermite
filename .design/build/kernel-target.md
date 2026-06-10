@@ -252,8 +252,26 @@ in `build.rs` — `build.rs` already carries multiple routes: `build.md`, `08-ru
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (`--target kernel` verb fork) | NOT-STARTED | open prereq blocker #197. No `BuildTarget`/`--target` exists: `build.rs` `pub fn build_file(path, entry, sandbox, out)` has no target parameter and `cli.rs` `Command::Build` parses only `--entry`/`--out`/`--json`/`--sandbox`/`--no-sandbox` (no `--target`). The fork seams are identified (`build_file`/`emit_source`/`invoke_rustc`) but unbuilt. |
-| REQ-2 (`no_std + alloc` emission profile) | NOT-STARTED | open prereq blocker #197. `emit_source` emits only the std profile (`effect_wrappers::emit_mod_os` + `lower_l1` + optional `synthesize_entry_main`); no `#![no_std]`/`extern crate alloc` prelude and `invoke_rustc` passes no `-C panic=abort`. The grounding (the L1 lib body is `alloc`-clean: `panic!` is core, `Vec`/`String` are `alloc` prelude per l1.rs `emit_check_macro`/`emit_string_runtime_l1`) is established but the profile is unbuilt. |
-| REQ-3 (ambient-syscall `fx` reject) | NOT-STARTED | open prereq blocker #197. No reject exists; `build_file` builds any well-formed program at L1. The reject would reuse `sandbox::transitive_fx` (`forge/src/sandbox.rs`, the shipped transitive-`fx` walk consumed by the #57 allowlist) read in reverse, but is unbuilt. |
-| REQ-4 (L1 runtime checks in the kernel profile) | NOT-STARTED | open prereq blocker #197. The L1 checks SHIP and are target-independent (`thermite_lower::lower_l1` → `emit_check_macro`'s `thermite_check!` + `panic!`-based `thermite_contract_violation`, l1.rs), and `panic!` is no_std-valid, so the checks WILL fire under the kernel profile — but the kernel profile that emits them under `#![no_std]`/`panic=abort` does not yet exist. |
-| REQ-5 (L3 verification path identical) | NOT-STARTED | open prereq blocker #197. The claim (Verus/`forge check` is target-independent — `.design/verified/exec-stmt-tv.md` "Kernel convergence" note; §3 realization note) is true of the SHIPPED toolchain, but the kernel target that this REQ asserts leaves `check.rs` untouched is unbuilt, so the AC (a no-op diff to the L3 path) is not yet discharged by a test. |
+| REQ-1 (`--target kernel` verb fork) | SHIPPED | `build.rs` `enum BuildTarget { Std, Kernel }` threaded `cli::run_build` → `build::build_file` → `emit_source` → `invoke_rustc`; `cli.rs` parses `--target std\|kernel` (default `Std`, unknown/missing value → `Usage`). Consumer: `cli::run_build`. Verified by `cli::tests::parses_build_target_flag` + `forge/tests/kernel_target.rs::pure_fn_builds_no_std_kernel_rlib`; the std default is byte-unchanged (`default_target_source_is_byte_identical_to_no_target_flag` + the unaffected `build_conformance` suite, AC-4). |
+| REQ-2 (`no_std + alloc` emission profile) | SHIPPED | `emit_source` prepends `KERNEL_PRELUDE` (`#![no_std]` + `extern crate alloc;` + `use alloc::vec::Vec;`) under `BuildTarget::Kernel`, reuses `lower_l1`'s output VERBATIM, emits NO `synthesize_entry_main`; `invoke_rustc` forces `--crate-type=rlib` + `-C panic=abort`. Consumer: `cli::run_build`. Verified by `kernel_target.rs::pure_fn_builds_no_std_kernel_rlib` (rustc exit 0 + reconstructed-source freestanding compile) + `pure_and_alloc_fx_fns_build_for_kernel`. |
+| REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX = ["read","write","net","term"]` → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target.rs::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error`; `pure`/`alloc`/`time`/`rand`/`panic`/`diverge` admit (OQ-2; `pure_and_alloc_fx_fns_build_for_kernel`). |
+| REQ-4 (L1 runtime checks in the kernel profile) | SHIPPED | `lower_l1`'s `thermite_check!` / `thermite_contract_violation` (`panic!`) is emitted UNCHANGED (NOT stripped, NOT `debug_assert!`); under `#![no_std]`/`panic=abort` it routes to the host `#[panic_handler]` (OQ-1: forge emits neither handler nor allocator — the test supplies the stand-in). Consumer: `emit_source` (no strip). Verified by `kernel_target.rs::l1_checks_emitted_verbatim_in_kernel_source` (macro + handler + `panic!` present, no `debug_assert!`, compiles with a test `#[panic_handler]`/`#[global_allocator]`). |
+| REQ-5 (L3 verification path identical) | SHIPPED | `--target kernel` touches ONLY `build.rs`/`cli.rs` (the rustc codegen side); NO edit to `check.rs` or the L3 lowering. The existing `forge check` suites stay green (no diff). Verified: no `check.rs` change in the increment + the full `cargo test -p forge` green. |
+
+## OQ resolutions (this increment)
+
+- **OQ-1** — forge emits NEITHER `#[panic_handler]` NOR `#[global_allocator]`; the
+  kernel-target rlib compiles `no_std` without them (only a final bin/staticlib link
+  needs them). The `kernel_target.rs` freestanding-compile supplies a test
+  `#[panic_handler]` + a `NullAlloc` `#[global_allocator]` (the kernel-host stand-in).
+- **OQ-2** — v1 follows the plan literally: ONLY `read`/`write`/`net`/`term` are
+  rejected; `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are admitted (a kernel
+  emission carries no syscall mapping at all, so `time`/`rand` are benign here). The
+  critic may revisit whether `time`/`rand` warrant a kernel reject.
+- **OQ-3** — CONFIRMED no `std::`-qualified path is emitted in any reachable
+  collection/string lowering: the l1.rs `std::vec::Vec` PROSE is in `//`/`//!`
+  comments only; the emitted CODE uses bare `Vec`/`Vec::new()` (`TString { data:
+  Vec<u8> }`, the `TVec*`/`TMap*` wrappers) and `use TString as String;` for the
+  surface `String`. So the kernel prelude imports ONLY `Vec` (importing `String` from
+  `alloc` would collide with the `as String` alias — `E0252`). No lowerer change
+  needed (no NOT-STARTED blocker against the lowerer).

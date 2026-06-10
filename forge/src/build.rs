@@ -50,6 +50,16 @@
 //! | REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `BuildManifest` composes the artifact path + `CrateType`, the achieved assurance string, the per-fn `fx` rows (`effects_of`), and the `Reproducibility` block (pinned rustc identity + `SOURCE_DATE_EPOCH`). Consumer: `cli::run_build` (human + `--json`). |
 //! | REQ-6 (#57 hook: runnable exe + fx rows + the seccomp sandbox) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (e.g. `sum` → `["pure"]`); `synthesize_entry_main` now injects the #57 `sandbox::emit_sandbox_prelude` (the fx-derived seccomp filter) as the FIRST statements of the generated `main` (`SandboxConfig`, on by default for `--entry`), recording the installed allowlist in `BuildManifest::sandbox`. Verified by `sum_runs` (`fx == ["pure"]`) + `sandbox_conformance` (pure runs clean, the openat probe killed/allowed). |
 //! | REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path) | SHIPPED | `build_file(.., out: Option<&Path>)` copies the stable /tmp artifact to `<PATH>` via `place_artifact` (overwrite + `chmod +x` so `./<PATH>` runs directly; #128), reports `<PATH>` as `BuildManifest::artifact`; `None` keeps the existing /tmp path unchanged; a bad `<PATH>` → `ForgeError::Io`. Consumer: `cli::run_build` (threads the `--out`/`-o` flag). Verified by `build_conformance::out_places_runnable_binary`. |
+//!
+//! ## `.design/build/kernel-target.md` REQ status (`forge build --target kernel`, #197)
+//!
+//! | REQ | Status | Evidence |
+//! |---|---|---|
+//! | REQ-1 (`--target kernel` verb fork) | SHIPPED | `enum BuildTarget` (`Std`/`Kernel`) threaded `cli::run_build` → `build::build_file` → `emit_source` → `invoke_rustc`; `cli.rs` parses `--target std\|kernel` (default `Std`). Consumer: `cli::run_build`. Verified by `cli::tests::parses_build_target_flag` + `kernel_target::pure_fn_builds_no_std_kernel_rlib`; the std default is byte-unchanged (`default_target_source_is_byte_identical_to_no_target_flag` + the unaffected `build_conformance` suite, AC-4). |
+//! | REQ-2 (`no_std + alloc` emission profile) | SHIPPED | `emit_source` prepends `KERNEL_PRELUDE` (`#![no_std]` + `extern crate alloc;` + `use alloc::vec::Vec;`) under `BuildTarget::Kernel`, REUSING `lower_l1`'s output verbatim, emits NO `synthesize_entry_main`; `invoke_rustc` forces `--crate-type=rlib` + `-C panic=abort` (kernel is never a bin). OQ-3 resolved: the L1 emission carries NO `std::`-qualified path (bare `Vec`/`Vec::new()`; surface `String` is the `use TString as String;` alias), so the prelude imports only `Vec`. Consumer: `cli::run_build`. Verified by `kernel_target::pure_fn_builds_no_std_kernel_rlib` (rustc exit 0, freestanding compile) + `pure_and_alloc_fx_fns_build_for_kernel` (an `alloc`-fx string program). |
+//! | REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX` (`read`/`write`/`net`/`term`) → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error`; `pure`/`alloc` admit (`pure_and_alloc_fx_fns_build_for_kernel`). |
+//! | REQ-4 (L1 runtime checks in the kernel profile) | SHIPPED | `lower_l1`'s `thermite_check!` / `thermite_contract_violation` (`panic!`) is emitted UNCHANGED (NOT stripped, NOT `debug_assert!`); under `#![no_std]` / `panic=abort` it routes to the host `#[panic_handler]` (OQ-1: forge emits neither handler nor allocator — the test harness supplies the stand-in). Consumer: `emit_source` (no strip). Verified by `kernel_target::l1_checks_emitted_verbatim_in_kernel_source` (the macro + handler + `panic!` present, no `debug_assert!`, compiles with a test `#[panic_handler]`). |
+//! | REQ-5 (L3 verification path identical) | SHIPPED | `--target kernel` touches ONLY `build.rs`/`cli.rs` (the rustc codegen side); NO edit to `check.rs` or the L3 lowering. The existing `forge check` suites (`check_conformance`, `string_l3_completeness`, …) are unchanged and stay green. Verified: no `check.rs` diff in the increment + the full `cargo test -p forge` green. |
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -78,6 +88,49 @@ const EDITION: &str = "2021";
 /// build` builds any well-formed program; the runtime check is the assurance, not
 /// an SMT proof. NOT a forged L3 claim (R-DEFER-9).
 const ASSURANCE_L1: &str = "L1 (built, runtime-checked)";
+
+/// The codegen TARGET profile `forge build --target` selects
+/// (`.design/build/kernel-target.md` REQ-1). The default ([`BuildTarget::Std`])
+/// is the unchanged hosted profile; [`BuildTarget::Kernel`] emits a freestanding
+/// `no_std + alloc` library crate (no `main`, no seccomp, `panic=abort`) and
+/// refuses ambient-syscall `fx` rows. A "target" is purely a rustc-invocation +
+/// crate-prelude choice (rustc is the codegen backend — `thermite-design.md` §3);
+/// the pipeline FRONT and the L1 lowering are SHARED across targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BuildTarget {
+    /// The default hosted profile: the std crate, seccomp sandbox available for an
+    /// `--entry` runner, the existing `forge build` corpus byte-unchanged
+    /// (`.design/build/kernel-target.md` AC-4).
+    Std,
+    /// The freestanding profile (REQ-1/REQ-2): a `#![no_std]` + `extern crate
+    /// alloc;` LIBRARY crate compiled `--crate-type=rlib -C panic=abort`, with NO
+    /// `main`/seccomp prelude, suitable for linking into a verified microkernel. An
+    /// ambient-syscall `fx` row (`read`/`write`/`net`/`term`) is refused (REQ-3).
+    Kernel,
+}
+
+/// The freestanding `#![no_std] + alloc` crate prelude PREPENDED to `lower_l1`'s
+/// output under [`BuildTarget::Kernel`] (REQ-2). `#![no_std]` drops the std
+/// prelude; `extern crate alloc;` + `use alloc::vec::Vec;` resolves the bare `Vec`
+/// the L1 collection wrappers (`TString { data: Vec<u8> }`, the `TVec*`/`TMap*`
+/// runtime) spell (OQ-3: the L1 emission carries NO `std::`-qualified path — the
+/// `Vec`/`Vec::new()` spellings are bare prelude names, and the surface `String` is
+/// the emitted `use TString as String;` alias, NOT `alloc::string::String`, so the
+/// prelude must NOT re-import `String` — that would be a duplicate `as String`
+/// import (`E0252`)). `panic!` is a CORE macro (no import needed); it routes to the
+/// kernel host's `#[panic_handler]` under `panic=abort` (REQ-4, OQ-1). The
+/// `#![allow(internal_features)]`-free, deterministic fixed string (R-CODE-5).
+const KERNEL_PRELUDE: &str = "#![no_std]\nextern crate alloc;\nuse alloc::vec::Vec;\n\n";
+
+/// The ambient-syscall effect verbs a [`BuildTarget::Kernel`] build REFUSES (REQ-3):
+/// `read`/`write`/`net`/`term` carry a USERSPACE syscall surface (the #57 seccomp
+/// allowlist maps them to `openat`/`socket`/`ioctl`/…) with no kernel analogue, so a
+/// fn whose transitive `fx` carries any of them cannot be a freestanding kernel
+/// library item. `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are NOT rejected in
+/// v1 (the design's pinned admit list; OQ-2). Matched by the leading verb of each
+/// `effects_of` token (`read(stdin)` → `read`), mirroring `sandbox::syscall_allowlist`.
+const KERNEL_REJECTED_FX: &[&str] = &["read", "write", "net", "term"];
 
 /// The artifact kind `forge build` produces (REQ-3). The default is a library;
 /// `--entry <fn>` produces a runnable executable.
@@ -218,9 +271,37 @@ pub fn build_file(
     entry: Option<&str>,
     sandbox: SandboxConfig,
     out: Option<&Path>,
+    target: BuildTarget,
 ) -> Result<BuildManifest, ForgeError> {
     let path = path.as_ref();
     let program = parse_program(path)?;
+
+    // `.design/build/kernel-target.md` REQ-1/REQ-3: a kernel build is a LIBRARY
+    // (no `main`), so `--target kernel` + `--entry` is a usage error — a kernel
+    // crate has no userspace process entry point / seccomp sandbox.
+    if matches!(target, BuildTarget::Kernel) {
+        if let Some(name) = entry {
+            return Err(ForgeError::Usage(format!(
+                "`forge build --target kernel` emits a no_std LIBRARY crate and takes no \
+                 `--entry` (a kernel crate has no userspace `main`/seccomp surface); drop \
+                 `--entry {name}` to build the kernel rlib"
+            )));
+        }
+    }
+
+    // REQ-3: under the kernel target, REFUSE any fn whose transitive `fx` carries an
+    // ambient-syscall effect (`read`/`write`/`net`/`term`) — kernel code has no
+    // ambient userspace syscall surface (the `sandbox.rs` `fx`→syscall mapping is a
+    // USERSPACE seccomp concept). The reject is a NAMED-effect, nonzero-exit,
+    // NO-artifact structured error BEFORE codegen, reusing the SAME `sandbox::
+    // transitive_fx` walk the #57 allowlist is derived from (read in REVERSE: where
+    // the userspace target MAPS these to syscalls, the kernel target REJECTS them).
+    // `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are admitted (OQ-2). Every
+    // in-language fn is scanned (the whole class, not just an `--entry` closure) so
+    // a library exporting an ambient-`fx` fn is refused regardless of call site.
+    if matches!(target, BuildTarget::Kernel) {
+        reject_ambient_fx_for_kernel(&program)?;
+    }
 
     // #193/#195 OPEN-HOLE refusal (`.design/forge/goal-repl.md` REQ-4/REQ-5;
     // `thermite-design.md` §6): a fn carrying ANY open body hole (`?N`) is
@@ -246,7 +327,7 @@ pub fn build_file(
     // prelude) — the SAME byte-deterministic emission the reproducibility check
     // (AC-6) asserts is stable (`emit_source` is this build's source-of-truth,
     // REQ-5).
-    let source = emit_source(path, entry, sandbox)?;
+    let source = emit_source(path, entry, sandbox, target)?;
 
     // REQ-3: a `--entry` produced the deterministic generated runner inside
     // `emit_source` → a runnable executable; the default is a library (rlib) of the
@@ -259,7 +340,7 @@ pub fn build_file(
     // 5. rustc: write the crate into a per-run scratch dir, compile, copy the
     // artifact out, and clean the scratch dir wholesale on every exit path (#53).
     let crate_name = crate_name_for(path);
-    let built = invoke_rustc(&crate_name, &source, crate_type)?;
+    let built = invoke_rustc(&crate_name, &source, crate_type, target)?;
 
     // REQ-7 (`--out <PATH>`): the artifact lives at a stable per-run /tmp output
     // dir (`built`). When `--out <PATH>` is given, COPY it to the user-named path
@@ -342,26 +423,78 @@ pub fn emit_source(
     path: impl AsRef<Path>,
     entry: Option<&str>,
     sandbox: SandboxConfig,
+    target: BuildTarget,
 ) -> Result<String, ForgeError> {
     let path = path.as_ref();
     let program = parse_program(path)?;
     let lowered = thermite_lower::lower_l1(&program).map_err(ForgeError::Lower)?;
+
+    // `.design/build/kernel-target.md` REQ-2: under the kernel target, PREPEND the
+    // `#![no_std]` + `extern crate alloc;` + `use alloc::vec::Vec;` prelude (a crate
+    // inner attribute MUST be the first token) before the lowered body. The std
+    // default prepends NOTHING (the existing emission is byte-unchanged, AC-4). The
+    // L1 body itself is emitted VERBATIM (REQ-4: the always-active `thermite_check!`/
+    // `panic!` is `alloc`-clean — OQ-3 — and resolves against the prelude).
+    let mut source = match target {
+        BuildTarget::Std => String::new(),
+        BuildTarget::Kernel => KERNEL_PRELUDE.to_string(),
+    };
 
     // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-2): emit a
     // self-contained `mod os { … }` carrying EXACTLY the wrappers the program's
     // `#[boundary("os::<name>")]` targets name, PREPENDED to the lowered code so
     // `lower_boundary_fn_l1`'s `let result = os::<name>(args);` crossing RESOLVES
     // under raw rustc (closing the GROUNDED `E0433`). A program with no `os::`
-    // boundary emits no module (the pure corpus is byte-unaffected, AC-7).
+    // boundary emits no module (the pure corpus is byte-unaffected, AC-7). Under the
+    // kernel target the ambient-`fx` reject (REQ-3) guarantees no `read`/`write`/
+    // `net`/`term` boundary survives, so `reachable_boundary_targets` is empty and
+    // `emit_mod_os` emits nothing (no userspace syscall wrapper in a kernel crate).
     let targets = reachable_boundary_targets(&program);
-    let mut source = effect_wrappers::emit_mod_os(&targets)?;
+    source.push_str(&effect_wrappers::emit_mod_os(&targets)?);
     source.push_str(&lowered);
 
-    if let Some(name) = entry {
+    // REQ-2: a kernel build is a LIBRARY — NO `synthesize_entry_main` (no `main`, no
+    // seccomp prelude). `build_file` already rejected `--target kernel` + `--entry`,
+    // so `entry` is `None` here under the kernel target; the guard keeps the
+    // invariant local and explicit.
+    if let (Some(name), BuildTarget::Std) = (entry, target) {
         let f = find_entry_fn(&program, name)?;
         source.push_str(&synthesize_entry_main(&program, f, sandbox)?);
     }
     Ok(source)
+}
+
+/// Refuse a [`BuildTarget::Kernel`] build of `program` if ANY in-language `fn`'s
+/// transitive `fx` carries an ambient-syscall effect (`read`/`write`/`net`/`term`,
+/// [`KERNEL_REJECTED_FX`]) — REQ-3. Kernel code has no ambient userspace syscall
+/// surface, so an item carrying one cannot be a freestanding kernel library item.
+/// Reuses `sandbox::transitive_fx` (the SAME #57 reachability walk the userspace
+/// seccomp allowlist is derived from) per `Item::Fn`, scanning the WHOLE function
+/// class (not just an `--entry` closure — a kernel build has no `--entry`). Returns
+/// a structured `ForgeError::Usage` naming the rejected effect + the carrying fn on
+/// the FIRST offender (source order, deterministic — R-CODE-5); `Ok(())` when every
+/// fn is ambient-syscall-free (`pure`/`alloc`/`panic`/`diverge`/`time`/`rand` admit).
+fn reject_ambient_fx_for_kernel(program: &Program) -> Result<(), ForgeError> {
+    for item in &program.items {
+        let Item::Fn(f) = item else { continue };
+        let fx = sandbox::transitive_fx(program, &f.name);
+        for tok in &fx {
+            // Match the leading verb (before any `(`), mirroring
+            // `sandbox::syscall_allowlist` so `read(stdin)` → `read`.
+            let verb = tok.split('(').next().unwrap_or(tok);
+            if KERNEL_REJECTED_FX.contains(&verb) {
+                return Err(ForgeError::Usage(format!(
+                    "`forge build --target kernel` refuses `{}`: its transitive effect row \
+                     carries the ambient-syscall effect `{tok}` (a `{verb}` userspace syscall), \
+                     which kernel code has no ambient surface for. The admitted kernel effects \
+                     are pure/alloc/panic/diverge/time/rand; build it for the default (std) \
+                     target, or remove the `{verb}` effect.",
+                    f.name
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Collect the DISTINCT `#[boundary("os::<name>")]` foreign targets the built
@@ -579,6 +712,7 @@ fn invoke_rustc(
     crate_name: &str,
     source: &str,
     crate_type: CrateType,
+    target: BuildTarget,
 ) -> Result<PathBuf, ForgeError> {
     // Per-run scratch dir (the source + rustc's intermediate artifacts land here),
     // removed wholesale via the `ScratchDir` Drop guard on every exit path (#53).
@@ -606,7 +740,8 @@ fn invoke_rustc(
     };
     let scratch_out = scratch.path.join(&out_name);
 
-    let output = Command::new("rustc")
+    let mut command = Command::new("rustc");
+    command
         .arg("--crate-name")
         .arg(crate_name)
         .arg("--edition")
@@ -626,17 +761,28 @@ fn invoke_rustc(
         // Reproducibility (REQ-5, §5.3): pin SOURCE_DATE_EPOCH so the archive
         // member-mtime is fixed, making the codegen reproducible modulo nothing.
         .env("SOURCE_DATE_EPOCH", SOURCE_DATE_EPOCH)
-        .current_dir(&scratch.path)
-        .output()
-        .map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                ForgeError::RustcAbsent {
-                    binary: "rustc".to_string(),
-                }
-            } else {
-                ForgeError::RustcSpawn { source: e }
+        .current_dir(&scratch.path);
+
+    // `.design/build/kernel-target.md` REQ-2: a freestanding crate cannot unwind, so
+    // pin `-C panic=abort` under the kernel target (`--edition`/`--crate-name`/
+    // `SOURCE_DATE_EPOCH`/`--remap-path-prefix` are target-independent, unchanged).
+    // The std default adds NOTHING here, so the existing build is byte-unchanged
+    // (AC-4). The kernel `#![no_std]` rlib needs no `#[panic_handler]`/allocator to
+    // COMPILE (only a final bin/staticlib link does — OQ-1; the test harness supplies
+    // a stub for the freestanding-compile AC).
+    if matches!(target, BuildTarget::Kernel) {
+        command.arg("-C").arg("panic=abort");
+    }
+
+    let output = command.output().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ForgeError::RustcAbsent {
+                binary: "rustc".to_string(),
             }
-        })?;
+        } else {
+            ForgeError::RustcSpawn { source: e }
+        }
+    })?;
 
     // R-CODE-4: a non-zero rustc exit is a structured error, never swallowed. A
     // contract-VIOLATING body still COMPILES (only the runtime check fires), so a

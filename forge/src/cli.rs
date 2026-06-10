@@ -35,7 +35,7 @@ use thermite_spec::SpecError;
 use thermite_syntax::SyntaxError;
 
 use crate::audit::{self, AuditManifest};
-use crate::build::{self, BuildManifest, CrateType};
+use crate::build::{self, BuildManifest, BuildTarget, CrateType};
 use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::goal_repl;
 use crate::manifest::{
@@ -308,6 +308,12 @@ enum Command {
         /// `./<PATH>` runs directly — no `/tmp/..._build_out_<pid>/` path / wrapper
         /// script). `None` keeps the existing stable /tmp output path.
         out: Option<PathBuf>,
+        /// `--target std|kernel` (#197; `.design/build/kernel-target.md` REQ-1): the
+        /// codegen profile. The default ([`BuildTarget::Std`]) is the unchanged
+        /// hosted build; `--target kernel` emits a freestanding `no_std + alloc`
+        /// LIBRARY rlib (no `main`/seccomp, `panic=abort`) and refuses ambient-syscall
+        /// `fx` rows. `--target kernel` + `--entry` is a usage error.
+        target: BuildTarget,
     },
     /// `forge tv <file> [--generated [N]] [--json]` — the CONTRACT-FAITHFULNESS
     /// TRANSLATION-VALIDATION deeper audit (epic #139, #144;
@@ -684,10 +690,32 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut sandbox_mode = build::SandboxConfig::default().mode;
             let mut self_test = false;
             let mut out: Option<PathBuf> = None;
+            let mut target = BuildTarget::Std;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
                     "--json" => json = true,
+                    "--target" => {
+                        // `--target std|kernel` (#197; `.design/build/kernel-target.md`
+                        // REQ-1). The value is a separate token; a missing or unknown
+                        // value is a Usage error, never a silent default. `kernel`
+                        // selects the freestanding no_std+alloc rlib profile.
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--target` requires a value (`std` or `kernel`)".to_string(),
+                            )
+                        })?;
+                        target = match value.as_str() {
+                            "std" => BuildTarget::Std,
+                            "kernel" => BuildTarget::Kernel,
+                            other => {
+                                return Err(ForgeError::Usage(format!(
+                                    "unknown `--target` value `{other}` (expected `std` or \
+                                     `kernel`)"
+                                )));
+                            }
+                        };
+                    }
                     "--entry" => {
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
@@ -743,6 +771,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     self_test,
                 },
                 out,
+                target,
             })
         }
         "tv" => {
@@ -1034,7 +1063,8 @@ fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
      [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
-     [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv <file> \
+     [--out <PATH>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv \
+     <file> \
      [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
      [--json] | forge body-tv <file> [--json] | forge goal <file> [item] | forge battery <file> \
      [item] | forge edit <file> <addr> --replace <code> | forge fill <file> <hole-addr> <code>"
@@ -1084,7 +1114,15 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             sandbox,
             out,
-        } => run_build(&file, entry.as_deref(), json, sandbox, out.as_deref()),
+            target,
+        } => run_build(
+            &file,
+            entry.as_deref(),
+            json,
+            sandbox,
+            out.as_deref(),
+            target,
+        ),
         Command::Tv {
             file,
             json,
@@ -1436,8 +1474,9 @@ fn run_build(
     json: bool,
     sandbox: build::SandboxConfig,
     out: Option<&Path>,
+    target: BuildTarget,
 ) -> Result<ExitCode, ForgeError> {
-    let manifest = build::build_file(file, entry, sandbox, out)?;
+    let manifest = build::build_file(file, entry, sandbox, out, target)?;
     if json {
         let doc = serde_json::to_string_pretty(&manifest).map_err(|e| ForgeError::RustcOutput {
             detail: format!("failed to serialize the build manifest JSON: {e}"),
@@ -2415,6 +2454,7 @@ mod tests {
                     self_test: false,
                 },
                 out: None,
+                target: BuildTarget::Std,
             })
         );
         // --no-sandbox opts out.
@@ -2481,6 +2521,41 @@ mod tests {
         ));
         assert!(matches!(
             parse_args(&argv(&["build", "a.th", "-o"])),
+            Err(ForgeError::Usage(_))
+        ));
+    }
+
+    // #197 (`.design/build/kernel-target.md` REQ-1): `--target std|kernel` parses to
+    // the codegen profile; the default is `Std`; an unknown / missing value is a
+    // Usage error, never a silent default.
+    #[test]
+    fn parses_build_target_flag() {
+        let target_of = |args: &[&str]| -> Option<BuildTarget> {
+            parse_args(&argv(args)).ok().and_then(|c| match c {
+                Command::Build { target, .. } => Some(target),
+                _ => None,
+            })
+        };
+        // The default (no `--target`) is the unchanged std profile.
+        assert_eq!(target_of(&["build", "a.th"]), Some(BuildTarget::Std));
+        // `--target kernel` selects the freestanding profile.
+        assert_eq!(
+            target_of(&["build", "a.th", "--target", "kernel"]),
+            Some(BuildTarget::Kernel)
+        );
+        // `--target std` is the explicit-default form.
+        assert_eq!(
+            target_of(&["build", "a.th", "--target", "std"]),
+            Some(BuildTarget::Std)
+        );
+        // An unknown value is a Usage error.
+        assert!(matches!(
+            parse_args(&argv(&["build", "a.th", "--target", "wasm"])),
+            Err(ForgeError::Usage(_))
+        ));
+        // A missing value is a Usage error, never a silent default.
+        assert!(matches!(
+            parse_args(&argv(&["build", "a.th", "--target"])),
             Err(ForgeError::Usage(_))
         ));
     }

@@ -1,0 +1,10 @@
+{
+  "uuid": "7c5890a1-ccc5-4c1b-ab01-12f414051572",
+  "issue_uuid": "6c00d148-9373-402b-bcee-f9defb60c136",
+  "author": "Yffe",
+  "content": "Cycle-3 verification: RESOLVED (commit e20e4034). §7, REQ-9, AC-7 and the REQ-status row now all carry the #101 exclusion consistently: survivor = Proved-after-attempt MINUS proven-equivalent; denominator = attempted MINUS proven-equivalent (the shipped 'scored'); the 'preserving the shipped behavior' claim is now true as stated; the floor rule names the exclusion NORMATIVE so a literal increment-(iii) implementation cannot regress equivalent-mutant handling; the 0/0 backstop covers the all-equivalent case. Re-grounded against forge/src/check.rs (the 'proved_equivalent { equivalent += 1; continue; }' site) and mutation.rs REQ-4/REQ-5 — quotes accurate.",
+  "created_at": "2026-06-10T19:26:16.677705770Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAmXEm44VUVViprRwfdgoXuks67rsIFFfKWQVE2ljudGngyvGdB6MNvhvmUOeshgwrDQTp/UpRaddCV8ZUla9qDw=="
+}

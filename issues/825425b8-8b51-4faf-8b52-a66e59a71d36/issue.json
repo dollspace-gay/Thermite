@@ -1,0 +1,10 @@
+{
+  "uuid": "825425b8-8b51-4faf-8b52-a66e59a71d36",
+  "display_id": 200,
+  "title": "audit: make audit re-derives the WHOLE trust chain — local Lean kernel re-check of the universal theorem + axiom inventory, full-corpus TV cross-validation, the multi-class falsification battery, correspondence drift tripwire, third-party verus re-check, and an honest residual-trust statement",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T15:39:59.115707522Z",
+  "updated_at": "2026-06-10T15:39:59.115707522Z"
+}

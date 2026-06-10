@@ -1,0 +1,10 @@
+{
+  "uuid": "b132148c-8477-46cd-b50c-fb09b499afa7",
+  "display_id": 213,
+  "title": "Divergence: proof-backends.md §4 soundness argument misgrounds Denote.lean — intVal bottoms an Int-position specCall to 0 (not True), so an under-fuelled conjunct of the ∀ fuel ≥ fuel₀ form is FALSE for a correct item (kernel-checked counterexample); the form is FALSE for the canonical 'result == spec_f(xs)' recursive items",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:24:53.543969083Z",
+  "updated_at": "2026-06-10T19:24:53.543969083Z"
+}

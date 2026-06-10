@@ -2,11 +2,12 @@
   "uuid": "d412dce8-f000-4399-870a-8ced6bce915f",
   "display_id": 196,
   "title": "lower: var*var overflow discharge — Verus's linear solver fails n*n even under req n <= 30; emit a req-bounded-mul by(nonlinear_arith) proof aid (REQ-7 shape-keyed)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T06:39:11.145224091Z",
-  "updated_at": "2026-06-10T06:39:12.950953118Z",
+  "updated_at": "2026-06-10T07:15:39.171488150Z",
+  "closed_at": "2026-06-10T07:15:39.171488150Z",
   "labels": [
     "bug"
   ]

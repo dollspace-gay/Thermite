@@ -37,11 +37,24 @@ build-blockers:
   - increment (i): crosslink #204 (FILED — the Obligation artifact + the Engine trait in forge;
     Verus refactored behind the interface, behavior byte-identical EXCEPT the named fast-unknown
     remap of §2/REQ-3.1; the conformance cert oracle unperturbed; no new engine)
-  - increment (ii): FUTURE (the Lean exporter + auto-discharge for the PURE-CONTRACT class)
+  - increment (ii): FUTURE (the Lean exporter + auto-discharge for the PURE-CONTRACT class).
+    SPINE PREREQUISITE (a small NAMED Lean addition, part of THIS increment, NOT yet built — the
+    #213 fix): the `stabilizes` relation (`stabilizes : Expr → Env → Int → Prop` for `intVal`, and
+    the Prop analogue for `denote`) + the supporting lemma `stabilization_exists_for_dec_bounded`
+    (for a dec-measured/terminating registry every spec-call has a FINITE per-env unfolding depth,
+    so the stabilized value exists). The §4 obligation form is stated against `stabilizes`, NOT a
+    raw fuel index; the lemma is what increment (ii) must land in the spine BEFORE the exporter can
+    target the form. (Tracked in THIS #204-chain as an AMENDMENT to increment (ii) — no new issue;
+    see §4 "the stabilized form" + the build blocker note there.)
   - increment (iii): FUTURE (interactive proofs + per-obligation certificate attribution + the
     engine-generic anti-Goodhart battery)
   - increment (iv): FUTURE (the full exportable fragment — exec exprs, straight-line bodies,
-    v1 while, spec-fns via the fuel registry)
+    v1 while, spec-fns via the fuel registry). OWNS the EXEC-BODY BRIDGE (§4.1, the first
+    S_C×S_E/S_B domain-tying artifact) as its OWN design obligation (the #212 fix): the BVal.value
+    value bridge, the bool-result binding (a `bindBool` spine addition — an increment-(iv)
+    prerequisite, since `Env` has no bool sort), the optres binding, and the env→State
+    correspondence. §4 here designs only increment (ii)'s PURE-CONTRACT class; §4.1 NAMES the
+    bridge as open increment-(iv) work.
 -->
 
 ## Summary
@@ -106,7 +119,7 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   statement over the EXISTING spine encodings (`Expr`/`Block` inductives + `denote`/`bodyDenote`/
   `loopDenote` in `lean/Thermite/`); the exporter emits Lean SOURCE instantiating those, with the
   FUEL form pinned by §4 (the obligation must be sound against `Denote.lean`'s fuel-0-bottom = True
-  semantics — see §4 "the fuel form"). Its faithfulness is the SAME correspondence class as the
+  semantics — see §4 "the stabilized form", #213-corrected). Its faithfulness is the SAME correspondence class as the
   Rust↔Lean encoder correspondence (`rust-lean-correspondence.md`): arm-by-arm inspection + the
   deep-audit drift tripwire — AND it must include registry-population faithfulness (the exported
   registry contains exactly the item's spec-fns with their real bodies; §4 EXP). Named here as a NEW
@@ -185,7 +198,7 @@ see REQ-3.1 / the Verification section.)
   exportable fragment = what `S`'s spine covers TODAY (contracts 8/8 classes, exec exprs,
   straight-line bodies, v1 while, spec-fns via the fuel registry); the OUT set is enumerated; the
   exporter's faithfulness is named as a NEW arm-by-arm-inspection + drift-tripwire trust item,
-  INCLUDING the fuel form (§4) and registry-population faithfulness (EXP).
+  INCLUDING the stabilized form (§4, the #213-corrected obligation stated against `stabilizes`, NOT a raw fuel index) and registry-population faithfulness (EXP).
 - **AC-7 (the mutation-battery v1 is honest)** — the engine-generic battery is specified against
   `mutation_score`'s real mechanics (the per-mutant `run_verus` + #8 cache loop + the per-survivor
   #101 `equivalence_proves_equal` query). The kill semantics is stated ACCURATELY against the shipped
@@ -259,12 +272,16 @@ starting point:
   iteration, PARTIAL correctness via the `h_run` exits-hypothesis). The (T1) soundness theorems
   (`ref_sound_eq`, `exec_ref_sound`, `body_ref_sound`) and the (T2) capstone `lowering_faithful`
   (`Faithfulness.lean`) are kernel-checked with axioms `{propext, Classical.choice, Quot.sound}`.
-  **Critically for §4 (the fuel form):** `Denote.lean`'s `denote` `specCall` arm is FUEL-INDEXED and
-  bottoms to `True` at fuel `0` (the `fuel+1, Expr.specCall …` arm is not matched, so the catch-all
-  `| _, _, _ => True` fires) AND at an unresolved registry name (`match env.specs name with | …
-  | none => True`). This `True` bottom is sound for T1 (an EQUALITY of two IDENTICALLY-fuelled
-  denotations — `refDenote` bottoms identically) but is the trap §4 must close for the ONE-SIDED
-  exported obligation. **SHIPPED (epic #169 complete for the frozen subset).**
+  **Critically for §4 (the stabilized form, #213):** the `specCall` arm is FUEL-INDEXED and bottoms
+  in TWO sorts (the #213 ground truth, against the spine): in PROP position `denote`'s `specCall`
+  bottoms to `True` (the `fuel+1, Expr.specCall …` arm unmatched at fuel 0 → catch-all
+  `| _, _, _ => True`, AND `| none => True` at an unresolved name); in INT position `intVal`'s
+  `specCall` bottoms to `0` (`| none => 0` + fuel-0 catch-all `| _, _, _ => 0` — `Denote.lean`).
+  Both bottoms are sound for T1 (an EQUALITY of two IDENTICALLY-fuelled denotations — `refDenote`
+  bottoms identically) but are the trap §4 must close for the ONE-SIDED exported obligation — and
+  the INT-position `0` bottom (the CANONICAL `result == spec_sum(xs)` shape) is exactly what made the
+  cycle-2 fuel form FALSE for correct items (the critic's pin `PinIntBottom.lean`); §4 closes it with
+  the STABILIZATION form, not a fuel index. **SHIPPED (epic #169 complete for the frozen subset).**
 - **The anti-Goodhart battery is engine-blind.** `forge::check::mutation_score` generates mutants
   (`mutation::generate`), lowers + re-`run_verus`-es each (through the #8 cache), and counts
   `killed`/`scored`/`equivalent`. Its SHIPPED kill rule (step 3): "a `Proved` mutant SURVIVED; a
@@ -329,7 +346,7 @@ with an inverted certify rule). Recorded OUT here so increment (i) does not sile
 For a checked item, the verification question stated against `S`: for a contract clause,
 `∀ inputs, ⟦req⟧_S → ⟦ens[result := body]⟧_S` — i.e. the (T1)-style equality the spine already
 proves the reference encoder satisfies, lifted to the per-item obligation. The FUEL quantification of
-this one-sided statement is pinned in §4 (the fuel form), NOT left free. Plus the auxiliary
+this one-sided statement is pinned in §4 (the stabilized form — `stabilizes`, NOT a raw fuel index; #213), NOT left free. Plus the auxiliary
 classes the pipeline discharges INSIDE an item: overflow/bounds (via the bounded `S_E` — `execDenote
 = none` exactly at overflow), loop entry/preservation/exit (via `loopDenote` + `while_rule`),
 termination (via the source `dec` measure → the well-founded fixpoint of the fuel-indexed denotation).
@@ -519,72 +536,115 @@ kernel-proven `S` definitions for the construct it exports, AND populates the sp
 faithfully** (see "registry faithfulness" below). It is NOT a stronger extraction bridge; it is the
 inspection tier, honestly. **NOT-STARTED — increment (ii)/(iv).**
 
-**The fuel form (REQ-6, F5 DECISION).** The exported obligation's fuel quantification is DECIDED, and
-is the load-bearing soundness choice. `Denote.lean`'s `denote` `specCall` arm bottoms to `True` at
-fuel `0` (the `fuel+1, Expr.specCall …` arm is not matched at fuel 0, so the total catch-all
-`| _, _, _ => True` fires) AND at an unresolved registry name (`| none => True`). For T1 — an
-EQUALITY `denote fuel e env = refDenote fuel e env` of two IDENTICALLY-fuelled denotations — this
-bottom is harmless (both sides agree at fuel 0). But for the ONE-SIDED exported obligation
-`reqDenote … → denote fuel ens env` it is a vacuity trap: at fuel 0, or at any fuel below the
-unfolding depth of a called spec-fn, a spec-fn-calling `ens` denotes `True` and a WRONG program
-certifies vacuously.
+**The stabilized form (REQ-6, F5 DECISION — restated for #213; supersedes the cycle-2 "fuel form").**
+The exported obligation is stated against a STABILIZATION RELATION, not a raw fuel index. This is the
+load-bearing soundness choice, and the cycle-2 "∀ fuel ≥ fuel₀" form is RETIRED — it was FALSE for
+correct items. The correction credits the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`
+(`obligation_form_is_false`), which is KEPT as the regression oracle for this section (the new form
+must stay consistent with it — see "consistency with the pin" below). `PinIntBottom.lean` is the
+critic's audit artifact and is NOT touched by this doc.
 
-The chosen form **FIXES the registry CONCRETELY in the exported file** and quantifies the env ONLY
-over the scalar/sequence/option-result valuation, with the spec-fn registry HELD FIXED. The exported
-Lean file first DEFINES the item's registry as a concrete `Registry` value — `R_item : Registry`
-binding each of the item's called spec-fn names to a `SpecFn { params, body }` carrying its REAL
-`Denote`-encoded body (instantiated from the spine's `Expr` encodings) — and the theorem holds
-`specs := R_item` FIXED while quantifying the rest of the env (`Denote.lean`'s `Env` is the structure
-`{ ints : String → Int, seqs : String → List Int, optres : String → OptResVal, specs : Registry }`;
-the scalar/sequence valuation is the `{ ints, seqs, optres }` part, the registry is `specs`):
+**Why the fuel form was false (the #213 ground truth, against the spine).** `Denote.lean`'s `intVal`
+bottoms an INT-position `specCall` to `0` (the `fuel+1, Expr.specCall …` arm resolves `| none => 0`,
+and the fuel-0 catch-all is `| _, _, _ => 0`) — NOT to `True`. The CANONICAL contract shape
+(`result == spec_sum(xs)` — the doc's own flagship, quoted in `Exec.lean`'s header) puts the
+`specCall` in INT (comparison-operand) position, where `intVal` governs. So at a fuel BELOW the call's
+unfolding depth the conjunct is the CONTENTFUL `result = 0` (the bottomed value), which is FALSE for a
+CORRECT item — not a trivially-true conjunct. The cycle-2 claims — "`denote` can only make the
+obligation EASIER by bottoming a `specCall` to `True`" and "an under-computed fuel₀ only adds a
+TRIVIALLY-TRUE conjunct" — are therefore both FALSE; only the PROP-position bottom (`denote`'s
+`specCall` arm, `| none => True` / fuel-0 catch-all `True`) is `True`, and the canonical case is the
+Int-position one. Worse (the value-dependent corollary the pin records): for `result == spec_f(xs)`
+with unfolding depth |xs| and `v` ∀-quantified over unbounded seqs, EVERY finite fuel admits an env
+with |xs| > fuel whose conjunct is false — so NO globally-fixed `fuel₀` makes the ∀-fuel form hold for
+the headline recursive item. fuel₀ is RETIRED from the form (it survives ONLY as a non-load-bearing
+exporter HINT to seed the auto-tactics' unfolding budget — see "fuel₀ as a hint" — it is NOT part of
+the obligation statement).
+
+**The form: stabilization.** Define (the increment-(ii) spine prerequisite, a small Lean addition —
+see the build-blocker note below) the stabilization relation, per-env, on the INT side and its Prop
+analogue on the Prop side:
 
 ```
--- the EXPORTED file fixes the registry concretely:
+-- the SPINE PREREQUISITE (increment (ii) lands this in lean/Thermite/, NOT yet built):
+def stabilizes (e : Expr) (env : Env) (v : Int) : Prop :=
+  ∃ N, ∀ fuel, fuel ≥ N → intVal fuel e env = v        -- the INT-position stabilized value
+
+def stabilizesProp (e : Expr) (env : Env) : Prop :=     -- the Prop-position analogue
+  ∃ N, ∀ fuel, fuel ≥ N → denote fuel e env             -- "denote stabilizes to True"
+```
+
+`stabilizes e env v` says: there is a per-env threshold `N` beyond which `intVal` has stopped changing
+and equals `v`. `stabilizesProp e env` says: there is a per-env `N` beyond which `denote` is `True`.
+The threshold `N` is PER-ENV — it is NOT a global `fuel₀`; this is exactly what fixes the critic's
+value-dependent-depth counterexample (an env with a large |xs| simply has a large `N`, and there is no
+claim of one finite fuel that works for all envs). The exported obligation, for a CONTRACT clause over
+the concretely-fixed registry `R_item` (still held fixed — see the registry hard gate below, which is
+UNCHANGED), is:
+
+```
+-- the EXPORTED file fixes the registry concretely (UNCHANGED — see the hard gate below):
 def R_item : Thermite.Registry := fun name =>
   match name with
   | "spec_sum" => some { params := ["xs"], body := <Expr-encoding of spec_sum's real body> }
   | …          => …                       -- exactly calledSpecFns(item), each real-bodied
   | _          => none
 
+-- reqStable / ensStable: each clause STABILIZES to True at the env (Prop side); a comparison whose
+-- operand is an Int-position specCall stabilizes via the underlying `stabilizes` on that operand.
 theorem item_xyz :
-  ∀ (v : Env) (fuel : Nat),
-    fuel ≥ fuel₀(item) →                        -- fuel₀ = the exporter-computed unfolding-depth
-    denote fuel req { v with specs := R_item } →  --   bound (max spec-fn nesting reachable from
-    denote fuel ens (Env.bindInt { v with specs := R_item } "result" body)  --   req ∪ ens)
+  ∀ (v : Env),
+    let env := { v with specs := R_item }                 -- registry HELD FIXED
+    stabilizesProp req env →                               -- reqStable(env): req stabilizes to True
+    stabilizesProp ens (Env.bindInt env "result" rbody)    -- ensStable: ens stabilizes to True
 ```
 
-(`{ v with specs := R_item }` is the actual Lean env-composition: the quantified `v` provides the
-`ints`/`seqs`/`optres` valuation and `R_item` OVERRIDES `specs`. `Denote.lean` exposes `denote : Nat
-→ Expr → Env → Prop`; `req`/`ens` are the encoded `Expr`s; the `result`-binding uses the SHIPPED
-`Env.bindInt`. The prose names `reqDenote`/`ensDenote` elsewhere in this doc are conceptual aliases
-for `denote fuel · ·` over the contract sublanguage.) Because `specs := R_item` is HELD FIXED, the
-theorem no longer quantifies over all possible registries — this **kills the all-registries
-incoherence** the critic flagged (a `∀ env` that ranged `env.specs` over wrong-body registries was
-either an unprovable wrong statement or, read as a closed proposition, self-certifying on an omitted
-entry). There is NO registry-resolution premise in the theorem at all (see the hard gate below).
+(`{ v with specs := R_item }` is the Lean env-composition: `v` provides the `ints`/`seqs`/`optres`
+valuation, `R_item` OVERRIDES `specs`. `req`/`ens` are the encoded contract `Expr`s; `rbody` is the
+PURE-CONTRACT item's result value — see §4.1 for why this is an `Int` denoting via `intVal` ONLY for
+the pure-contract class scoped here, and why the general exec-body bridge is increment (iv)'s own
+work. The prose names `reqStable`/`ensStable` are `stabilizesProp req env` / `stabilizesProp ens …`.)
 
-**Soundness argument (one paragraph, PROVE-style — crediting the critic's #210 fuel₀ analysis).**
-The danger is the bottoming direction: `denote` can only make the obligation EASIER (more vacuously
-true) by bottoming a `specCall` to `True`, never harder. The bottom fires in exactly two cases — fuel
-below the call's value-dependent unfolding depth, and an unresolved registry name — and the chosen
-form, plus the export-time hard gate, forecloses both WITHOUT relying on the FALSE claim that "the
-`=> True` arm is NEVER taken." That claim is wrong for value-dependent recursion: static spec-fn
-nesting depth ≠ value-dependent unfolding depth (`Denote.lean`: a spec-fn body "MAY contain further
-specCalls"), so a fuel₀ computed from static nesting can be UNDER-computed and some `specCall` may
-still bottom to `True` at a given fuel. The form is sound anyway, per the critic's written-out
-analysis, which this doc credits: (1) the obligation is `∀ fuel ≥ fuel₀`, and `∀`-quantification
-CONJOINS every fuel instance — an UNDER-computed fuel₀ (or any fuel at which some subterm still
-bottoms) only adds a TRIVIALLY-TRUE conjunct (the bottomed-out instance), which cannot WEAKEN the
-conjunction; the higher fuels at which the call IS fully unfolded carry the real content. The
-load-bearing soundness is that we do NOT use `∃ fuel` (which could satisfy itself at a vacuous fuel)
-— the `∀` makes the content carried by the adequate-fuel conjuncts, and `≥ fuel₀` is a tightening for
-readability, not a soundness requirement. (2) A spec-fn that genuinely NON-TERMINATES at every fuel is
-assigned `True` by `S` ITSELF (the fuel-indexed `specCall` bottoms at every fuel) — so the obligation
-staying `True` there is FAITHFUL to `S`, not a vacuity artifact: the obligation says exactly what `S`
-says. (3) The unresolved-name bottom is foreclosed not by a premise but by the export-time hard gate
-below: every called spec-fn is in `dom(R_item)`, so no `specCall` reaches the `| none => True` arm.
-Together: the obligation is `∃`-free in its fuel, evaluated against the concretely-fixed `R_item`, and
-faithful to `S` even where `S` itself bottoms — so it cannot be made vacuously true by either path.
+**Soundness argument (one paragraph — crediting the critic's #213 PinIntBottom counterexample).** The
+obligation says: at every env, IF `req` stabilizes to True THEN `ens` stabilizes to True. This is
+sound for a DEC-MEASURED (terminating) registry by the supporting lemma `stabilization_exists_for_dec_
+bounded`: because the source `dec` measure makes every spec-fn's recursion well-founded, each
+`specCall` reachable from `req`/`ens` has a FINITE unfolding depth PER ENV, so `intVal`/`denote` reach
+a fixed value at some finite per-env `N` and STAY there — the stabilized value EXISTS and equals `S`'s
+intended meaning of the clause at that env. Crucially the existential `N` is PER ENV: no global finite
+`fuel₀` is claimed, so the value-dependent-depth counterexample the critic recorded (an env with
+|xs| > any fixed fuel) is no longer a falsifier — that env simply has a larger `N`. The Int-bottom
+(`intVal`'s `0` arm) and the Prop-bottom (`denote`'s `True` arm) live ONLY at fuels BELOW `N` — below
+the per-env stabilization threshold — and the stabilized value is by definition the value at fuels
+`≥ N`, so the bottom arms NEVER touch the stabilized value the obligation quantifies over. (Contrast:
+the retired ∀-fuel form quantified over fuels BELOW `N` too, which is exactly where the `0`/`True`
+bottoms made a correct item's conjunct false — the bug the pin disproves.) The obligation is therefore
+faithful to `S`'s intended per-env meaning and free of the under-fuel artifact.
+
+**Consistency with the pin (`PinIntBottom.lean`, the regression oracle).** The pin's registry
+(`f(x)=g(x)`, `g(x)=x`) is dec-bounded and complete; at its env (`x=1`, `result=1`, the CORRECT item)
+`intVal fuel (f x) env` is `0` at fuel 1 (the bottom) but `1` at every fuel ≥ 2 — so it STABILIZES to
+`1`, and `ens = (result == f(x))` stabilizes to `result = 1`, i.e. to True. Under the new form the
+obligation HOLDS at this env (the stabilized value is 1, `result = 1`), exactly as it should for a
+correct item — whereas the retired ∀-fuel form was FALSE here (the pin's `obligation_form_is_false`).
+So the new form is consistent with the pin: the pin disproves the OLD form and the NEW form passes the
+pin's correct-item env. Any future change to this section must re-check against `PinIntBottom.lean`.
+
+**fuel₀ as a non-load-bearing hint.** fuel₀ (the exporter-computed static-nesting bound) no longer
+appears in the obligation. It MAY survive as an EXPORTER HINT — a starting unfolding budget the
+auto-tactic battery (§4 DISCHARGE / `decide`/`simp` unfolding) seeds itself with to find the
+stabilized value faster. It is EXPLICITLY non-load-bearing: an under-computed hint costs the tactic
+more unfolding steps, never soundness, because the obligation is stated over `stabilizes` (the
+∃-N form), not over a fuel the hint pins.
+
+**BUILD-BLOCKER NOTE (the #204-chain amendment, NOT a new issue — #213 fix).** The `stabilizes` /
+`stabilizesProp` relations and the supporting lemma `stabilization_exists_for_dec_bounded` (for a
+dec-measured registry every reachable `specCall` has a finite per-env unfolding depth, so the
+stabilized value exists and equals `S`'s intended meaning) are a SMALL NAMED Lean addition that
+increment (ii) MUST land in the spine BEFORE the exporter can target this form. This is recorded as an
+AMENDMENT to increment (ii) inside the existing #204 build-blocker chain (see the header
+`build-blockers:` block) — NOT a separately-filed issue. The form here is the DESIGN; the lemma is the
+spine work increment (ii) owns.
 
 **Registry population is an EXPORTER-SIDE HARD GATE (F5, the #210 fix) — not a hypothesis.** Two
 mechanisms, belt-and-suspenders:
@@ -611,6 +671,74 @@ an unsound certification the gate cannot catch. So body-faithfulness (each `Spec
 `Obligation.env.spec_defs` ↦ its `R_item` entry with the matching `Expr` body) remains part of the
 arm-by-arm EXP inspection + drift-tripwire discipline. The hard gate guarantees PRESENCE mechanically;
 EXP inspection guarantees the BODIES are right.
+
+**§4 SCOPE — this sketch covers increment (ii)'s PURE-CONTRACT items ONLY (the #212 fix).** The
+stabilized form above types and is sound for exactly ONE class: PURE-CONTRACT items — defined
+precisely as items whose body is a PURE EXPRESSION denoting in `intVal` (the `S_C` domain), so the
+result `rbody` is an `Int` that binds via `Env.bindInt` after stabilization. For these items, `req`,
+`ens`, and the body all live in `S_C`, the `Env` is the right structure, and `stabilizesProp` /
+`stabilizes` are the right relations. The FULL exec-body bridge — binding a body that denotes in the
+BOUNDED `S_E`/`S_B` domain (`bodyDenote : Block → State → Option ExecVal`, `Exec/Stmt.lean`) into a
+contract `ens` over `Env` — is NOT designed here. It is increment (iv)'s OWN design obligation, and is
+named (not waved at) in §4.1. The doc STOPS presenting a unified S_C×S_E sketch it cannot type.
+
+#### 4.1 The exec-body bridge (increment (iv), NOT designed here) (REQ-1.1, the #212 fix)
+
+The cycle-2 sketch wrote `Env.bindInt { … } "result" body` with `body` an item body — which does NOT
+typecheck against the spine: `Env.bindInt : Env → String → Int → Env` (`Denote.lean`) takes an `Int`,
+but a general item body is a `Block` denoting via `Thermite.Exec.bodyDenote : Block → State → Option
+ExecVal` (`Exec/Stmt.lean`) in the BOUNDED domain. Tying `S_C` (the contract `Env`) to `S_E`/`S_B`
+(the exec `State`) in one statement is a NOVELTY — the spine's own theorems relate `refDenote`/`denote`
+and `bodyRefState`/`bodyDenote` SEPARATELY; there is NO single artifact tying `S_C` and `S_E`/`S_B`
+today. This sketch would be the FIRST, and the doc OWNS that this is unbuilt, open increment-(iv)
+design work. The pieces increment (iv) must design (each enumerated, none designed here):
+
+- **(value bridge)** `bodyDenote` yields `Option ExecVal` where `ExecVal = int (BVal) | bool (Bool)`
+  (`Exec.lean`); `BVal { ty, value : Int }` carries its type-bound. Binding a bounded INT result into
+  a contract `ens` over `Env` needs the `BVal.value : Int` extraction (the `S_E → S_C` value bridge) —
+  stated NOWHERE today. (`asInt`/`asBool` project an `ExecVal`; `BVal.value` reads the bounded int.)
+- **(bool sort — a SPINE ADDITION, the increment-(iv) prerequisite)** A bool-typed result has NO
+  binding site: `Env` has `ints`/`seqs`/`optres` only — no bool sort, no `bindBool`. DECISION: add a
+  `bindBool` to the spine (an increment-(iv) prerequisite Lean addition) rather than encoding bool as
+  `Int 0/1` — the bool-sort addition keeps the bridge faithful to `ExecVal`'s `bool` variant. Named
+  here as increment (iv)'s spine prerequisite (parallel to increment (ii)'s `stabilizes`).
+- **(optres binding)** Option/Result-typed results (the #180 match-in-ens fragment, IN per §8) bind
+  via the EXISTING `optres` env slot (`env.optres : String → OptResVal`, `Denote.lean`) — increment
+  (iv) wires the body's `OptResVal` result into `optres` (the binding helper is open).
+- **(env → State correspondence)** The contract `Env { ints, seqs, optres, specs }` and the exec
+  `State { env : ExecEnv { vars, slices }, scope }` (`Exec/Stmt.lean`) are DISJOINT structures. The
+  bridge needs the correspondence map: params → in-range `BVal` cells at their widths, `seqs : List
+  Int` → `slices : List BVal`. This correspondence is specified NOWHERE; it is increment (iv)'s to
+  design (it is the same correspondence class as the spine's separate `bodyRefState`/`bodyDenote`
+  relation, now to be TIED to the contract side).
+- **(the novelty owned)** This is the FIRST S_C×S_E/S_B-tying artifact; increment (iv) owns its
+  soundness story (the env→State correspondence + the value/bool/optres bridges composed with the
+  stabilized contract form of §4). Until then, the Lean engine's IN set (§8) is honestly the
+  PURE-CONTRACT class for the exporter's body-binding; exec/body/loop obligations are exported as
+  their OWN obligation classes (CONTRACT over the result is the increment-(iv) tie).
+
+**THE CONJUNCTION RULE (new, NORMATIVE — closes the Option-position hole) (REQ-1.1, the #212(b) fix).**
+An ITEM certifies at level L via engine E only when EVERY obligation class REQ-1 assigns to that item
+is discharged — each by E or by another ADMITTED engine. The certificate's per-item entry LISTS the
+classes and their per-class engine attribution (REQ-4); a MISSING class means the item does NOT
+certify (and the degrade ladder applies ITEM-WIDE, not per-class — an item with one undischarged class
+degrades as a whole). This forbids the hole the critic named: nothing previously stopped an engine
+from certifying an item on the CONTRACT class ALONE while ignoring its OVERFLOW/BODY classes. With the
+conjunction rule, that is impossible — the OVERFLOW class is MANDATORILY conjoined for any item with an
+exec body.
+
+**Resolution of #212(b) — the Option position takes the HYPOTHESIZE form.** `bodyDenote` is `none`
+exactly when an exec obligation fails (overflow / div-by-zero / out-of-bounds). The exec-body
+obligation (increment (iv)) takes the HYPOTHESIZE position — `bodyStabilizes v = some r → ensStable(r)`
+(i.e. IF the body produces a result `r`, THEN `ens` stabilizes to True at `r`). The vacuous-on-overflow
+case (an always-overflowing body satisfies `ens` vacuously because `bodyDenote = none` makes the
+antecedent false) is SOUND precisely because the OVERFLOW class is MANDATORILY conjoined per the
+conjunction rule above: an always-overflowing body FAILS its OVERFLOW class, so the item does not
+certify regardless of the vacuously-satisfied CONTRACT class. The HYPOTHESIZE form is therefore safe —
+the conjoined OVERFLOW class is what rules out the vacuity, not a `∧ bodyDenote v = some r` baked into
+the contract obligation (which would make REQ-1's separate OVERFLOW class redundant). This resolves the
+critic's (i)-vs-(ii) tension explicitly in favor of (ii), referencing the conjunction rule as the
+soundness condition.
 
 **DISCHARGE MODES (REQ-7).**
 - **(i) AUTO** — a tactic battery `omega`/`simp`/`decide`/Lean-SMT's `smt` (where applicable). The
@@ -643,7 +771,7 @@ termination certifies partial correctness, and the certificate must SAY so (it c
 L3-total). **NOT-STARTED — increment (iii)/(iv).**
 
 **TRUST PROFILE.** A Lean L3 enumerates `{Lean kernel + the 3 standard axioms (propext,
-Classical.choice, Quot.sound)}` + the exporter correspondence (EXP, now including the fuel form +
+Classical.choice, Quot.sound)}` + the exporter correspondence (EXP, now including the stabilized form (#213) +
 registry faithfulness). For the AUTO path via Lean-SMT, cvc5 is NOT in the base (its proof is
 RE-CHECKED in the kernel — `z3-demotion.md`'s honesty crux), so the base is the kernel + standard
 axioms + EXP. This base is SMALLER than the Verus base ALONG THE NAMED AXES (no Z3, no Verus VC-gen)
@@ -775,8 +903,10 @@ The exportable/dischargeable fragment for the Lean engine = what the spine's `S`
 **IN.** Contracts (all 8 frozen combinator classes + the `S_C` `Expr` subset), exec expressions
 (`S_E`, bounded value / overflow-as-`none`), straight-line bodies (`S_B`), the v1 `while` form
 (`loopDenote` + partial-correctness `while_rule`), spec-fns via the fuel-indexed registry — under the
-§4 fuel form (`∀ fuel ≥ fuel₀` over the scalar/seq valuation with `specs := R_item` HELD FIXED; the
-export-time hard gate on registry population) and EXP registry-body faithfulness. For
+§4 STABILIZED form (the obligation stated against `stabilizes`/`stabilizesProp` — the per-env ∃-N
+stabilization relation, NOT a raw fuel index; #213 — with `specs := R_item` HELD FIXED and the
+export-time hard gate on registry population), scoped to the PURE-CONTRACT class (§4.1: the exec-body
+bridge is increment (iv) design work) and EXP registry-body faithfulness. For
 AUTO discharge specifically, the IN set NARROWS to the z3-demotion-reachable scalar/QF-linear core;
 the richer IN constructs need INTERACTIVE proofs (or stay on Verus).
 
@@ -797,8 +927,9 @@ meta/battery query classes (vacuity / equivalence / strengthen) are OUT of the E
   `conformance/*.cert.json` is unperturbed apart from that one fixture (the AC for this increment).
   No new engine. **FILED: blocker #204.**
 - **(ii) The Lean exporter + auto-discharge for the PURE-CONTRACT class** — the cheapest real win
-  (the z3-demotion scalar/linear fragment, kernel-clean), behind the Lean-auto rung; the §4 fuel form
-  + EXP registry faithfulness are built here. **FUTURE.**
+  (the z3-demotion scalar/linear fragment, kernel-clean), behind the Lean-auto rung; the §4 STABILIZED form (#213)
+  + EXP registry faithfulness are built here, AND the SPINE PREREQUISITE this increment lands: the
+  `stabilizes` relation + the `stabilization_exists_for_dec_bounded` lemma (the §4 build-blocker note). **FUTURE.**
 - **(iii) Interactive proofs + certificate attribution + the engine-generic battery + the
   disagreement alarm** — the per-obligation `{engine, trust_profile}` attribution, the
   Proven⊕Refuted halt, the honest mutation v1 (the `Refuted ∪ Unknown-after-attempt` kill + the
@@ -818,7 +949,8 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
   = `{propext, Classical.choice, Quot.sound}` only (the z3-demotion kernel-clean bar), and a
   Lean-proven cert carries the smaller trust profile. A spec-fn-calling contract obligation exported
   at fuel below `fuel₀` (or with an omitted registry entry) FAILS a vacuity-tripwire test (the
-  obligation must NOT be provable by the fuel-0 `True` bottom — §4).
+  obligation must NOT be provable by the below-`N` Int-`0`/Prop-`True` bottom — §4; the regression
+  oracle is `lean/Thermite/PinIntBottom.lean` (`obligation_form_is_false`), which the new form passes).
 - **(iii):** an injected Proven⊕Refuted disagreement HALTS (a test asserting the alarm fires, not a
   favorable pick); a Verus fast-unknown + Lean Proven does NOT halt (REQ-3.1 guard); a mutant outside
   every engine's fragment is reported "untested," never counted as killed, and an item with
@@ -831,12 +963,12 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the Obligation artifact) | NOT-STARTED | open build blocker #204. The content is SHIPPED only as transient Verus text: `pub fn equivalence_obligation` / `exec_equivalence_obligation` / `body_equivalence_obligation` / `loop_{entry,preservation,exit}_obligation` in `thermite-tv/src/obligation.rs` ("`thermite-tv` does NOT run verus itself: it emits the obligation TEXT") + `pub struct ObligationFrame` (the env/typing ctx). The prover-NEUTRAL artifact (AST slice + Thermite types + coercion flags + the `role` discriminator, pre-rendering) is unbuilt — that is the gap. The three §0.1 meta queries are scoped OUT (OQ-5). |
+| REQ-1 (the Obligation artifact) | NOT-STARTED | open build blocker #204. The content is SHIPPED only as transient Verus text: `pub fn equivalence_obligation` / `exec_equivalence_obligation` / `body_equivalence_obligation` / `loop_{entry,preservation,exit}_obligation` in `thermite-tv/src/obligation.rs` ("`thermite-tv` does NOT run verus itself: it emits the obligation TEXT") + `pub struct ObligationFrame` (the env/typing ctx). The prover-NEUTRAL artifact (AST slice + Thermite types + coercion flags + the `role` discriminator, pre-rendering) is unbuilt — that is the gap. The three §0.1 meta queries are scoped OUT (OQ-5). REQ-1.1 (the per-item CLASS-CONJUNCTION RULE — an item certifies only when EVERY class REQ-1 assigns it is discharged; the degrade ladder applies item-wide; #212(b)) + the exec-body bridge scoping (§4.1) are stated NORMATIVELY in §4/§4.1 but likewise unbuilt — increment (iv) for the bridge, increment (i)/(iii) for the per-item conjunction at the certificate level. |
 | REQ-2 (the Engine interface) | NOT-STARTED | open build blocker #204. The discharge path is SHIPPED but Verus-welded: `forge::check::check_file_with_options` calls `run_verus` directly + `classify_verus_outcome` (the three-way `Proved`/`Timeout`/`Counterexample` split) in `forge/src/check.rs`. No `trait Engine`, no fragment/trust-profile/evidence abstraction. The Verus instance maps onto the SHIPPED outcome classifier WITH the REQ-3.1 fast-unknown remap (AC-2); the EVIDENCE slot generalizes the SHIPPED `cache::cache_key` (lowered_src+seed+verus_version+thermite_version+CHECK_SCHEMA_VERSION) per §2(d). |
 | REQ-3 (Unknown degrades / Refuted hard-fails, engine-generic) | NOT-STARTED | open blocker #204. The discipline is SHIPPED for Verus: `degrade::ladder_action_l3` maps `Counterexample → LadderAction::HardFail` ("a `VerusOutcome::Counterexample` … is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat)", `forge/src/check.rs`); `Timeout` degrades via `degrade::run_ladder` (`forge/src/degrade.rs`). The generalization off "verus" + the failure-WITHOUT-witness-is-Unknown rule + the REQ-3.1 fast-unknown remap (a witness-less `Counterexample` → `Unknown`, today absorbed into the `Counterexample` bucket per the `VerusOutcome::Counterexample` doc) are unbuilt. |
 | REQ-4 (certificate attribution — per-obligation engine + trust profile) | NOT-STARTED | FUTURE (increment (iii)). The cert + honest-min are SHIPPED: `manifest::Certificate { level: Level, .. }`, `enum Level { L0, L1, L2, L3 }` (`#[derive(Ord)]`), `AssuranceManifest::aggregate → ProjectAssurance::Certified(min)` (VERUS-ANCHORED to `thermite_verified::aggregate_level`). NO per-obligation `{engine, trust_profile}` field exists; the additive-field precedent (`boundary`/`slag`/`lowered_assurance`/`assurance_scope`, all `#[serde(default)]`) is the schema model. The "smaller base" claim is along the named axes; the ordering formalization is OQ-3. |
 | REQ-5 (engine disagreement = soundness alarm) | NOT-STARTED | FUTURE (increment (iii)). No second engine exists yet, so no disagreement path. The anti-cheat ANCESTOR is SHIPPED: a counterexample never degrades (`ladder_action_l3` → `HardFail`). The Proven⊕Refuted halt (vs benign Proven⊕Unknown), guarded against the REQ-3.1 fast-unknown spurious trigger, is unbuilt. |
-| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). The `denote` `specCall` arm bottoms to `True` at fuel 0 + unresolved name (`Denote.lean`, the `fuel+1, Expr.specCall` arm + `| none => True`) — the fuel trap §4 closes by fixing the registry CONCRETELY (`R_item : Registry`) in the exported file, quantifying the env only over `{ints,seqs,optres}` with `specs := R_item` held fixed, `∀ fuel ≥ fuel₀`, and an export-time HARD GATE refusing to emit (plus per-name `decide` resolution lemmas) when `calledSpecFns(item) ⊄ dom(R_item)` — no resolution PREMISE in the theorem. The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
+| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). Critically (#213, the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`): `intVal` bottoms an INT-position `specCall` to `0` (`| none => 0` + fuel-0 catch-all `| _, _, _ => 0`), NOT to `True` — so the cycle-2 `∀ fuel ≥ fuel₀` form is FALSE for correct items (the pin's `obligation_form_is_false`) and is RETIRED. §4 RESTATES the obligation against a STABILIZATION relation (`stabilizes : Expr → Env → Int → Prop := ∃ N, ∀ fuel ≥ N, intVal fuel e env = v`, + the Prop analogue for `denote`): `reqStable(env) → ensStable(env)`, per-env ∃-N (no global `fuel₀`, fixing the value-dependent-depth counterexample), with `specs := R_item` held fixed + the export-time HARD GATE (refuse-to-emit + per-name `decide` lemmas) when `calledSpecFns(item) ⊄ dom(R_item)` — no resolution PREMISE. SCOPED to the PURE-CONTRACT class (§4.1: the exec-body S_C×S_E/S_B bridge — value bridge, bool sort, optres, env→State — is increment (iv)'s own design obligation). The SPINE PREREQUISITE (increment (ii), NOT yet built): the `stabilizes` relation + the `stabilization_exists_for_dec_bounded` lemma. The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
 | REQ-7 (Lean discharge modes + termination) | NOT-STARTED | FUTURE (increment (ii)/(iii)). The AUTO fragment is PROVEN-REACHABLE: `z3-demotion.md` shows `tv_obligation_arith_cmp`/`tv_obligation_or_le` (scalar/QF-linear contract clauses) discharged by Lean-SMT's `smt` tactic, kernel-clean (`#print axioms` = standard set only; no `sorryAx`/cvc5 oracle). The interactive/proof-artifact mode (staleness = the §2(d) EVIDENCE KEY changing: obligation + engine + engine-toolchain version + targeted-spine content hash) + the `dec`/partial-correctness termination policy (tied to the SHIPPED `while_rule` `h_run` premise) are unbuilt. |
 | REQ-8 (engine ordering + ladder placement) | NOT-STARTED | open blocker #204 (the Verus-only hook) + FUTURE (the Lean rung). The ladder substrate is SHIPPED: `degrade::run_ladder` takes per-rung closures (`attempt_l2`/`attempt_l1`); the engine rungs are the same closure shape. The `--engine lean` / `#[engine(lean)]` surface (OQ-1) and the per-engine SKIP/Unknown accounting are unbuilt. |
 | REQ-9 (engine-generic anti-Goodhart battery, honest v1) | NOT-STARTED | FUTURE (increment (iii)). The battery is SHIPPED Verus-only: `forge::check::mutation_score` generates mutants + re-`run_verus`es each through the #8 cache; its kill rule is "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"); and each SURVIVOR is run through the #101 `equivalence_proves_equal` query — a proven-equivalent survivor is excluded from BOTH the survivor set AND `scored` (`if proved_equivalent { equivalent += 1; continue; }`, "REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`"), so the SHIPPED `scored` = attempted MINUS proven-equivalent. OQ-5 already DROPS un-lowerable mutants from the denominator. The engine-generic kill (`Refuted ∪ Unknown-after-attempt`, = the shipped `Counterexample ∪ Timeout`), the "untested = never-attempted" rule, the #101-preserving floor (survivor/denominator both MINUS proven-equivalent; the equivalence probe a §0.1 meta-query outside the Engine interface, F3), and the floor guards (minimum-attempted qualifier + the 0/0 backstop) are unbuilt. |

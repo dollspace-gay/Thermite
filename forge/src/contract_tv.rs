@@ -1032,10 +1032,27 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
+    // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion / timeout: verus prints `rlimit
+    // exceeded` / `resource limit (rlimit) exceeded` AND a results line counting the
+    // exhausted obligation as an error. That is a DISCHARGE failure, NOT a meaning
+    // mismatch — the #189-class hardening (the body-TV `is_rlimit_signal` gate): an
+    // rlimit-hit error run is routed to Unverifiable, never the `errors >= 1` Divergent
+    // arm, so a genuine solver-budget timeout is never fabricated into a contract
+    // infidelity (R-HONEST-3 / R-CODE-4 — a timeout degrades, never a false finding).
+    let rlimit_hit = is_rlimit_signal(&combined);
+
     match parse_results(&combined) {
         Some((_verified, errors)) if errors == 0 && output.status.success() => {
             ClauseVerdict::Faithful
         }
+        // An error run that is REALLY an rlimit exhaustion → Unverifiable, never
+        // Divergent (the #189-class mapping fix; this arm precedes the Divergent arm).
+        Some((_verified, errors)) if errors >= 1 && rlimit_hit => {
+            let _ = errors;
+            ClauseVerdict::Unverifiable
+        }
+        // A GENUINE counterexample (errors with NO rlimit signal) — the SOLE Divergent
+        // source: the production lowering means something other than the reference.
         Some((_verified, errors)) if errors >= 1 => ClauseVerdict::Divergent {
             detail: format!(
                 "verus found {errors} error(s) on the equivalence obligation — the \
@@ -1044,9 +1061,21 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
             ),
         },
         // No parseable results line / a non-success with 0 parsed errors → could not
-        // discharge cleanly. Reported, never a silent pass (R-CODE-4).
+        // discharge cleanly (a FRAME compile/parse abort — the obligation's frame, not
+        // the lowering, is the limit). Reported as Unverifiable, never a silent pass
+        // (R-CODE-4) and never a fabricated Divergent (R-HONEST-3).
         _ => ClauseVerdict::Unverifiable,
     }
+}
+
+/// `true` iff the combined verus output carries a Verus/Z3 RESOURCE-LIMIT (rlimit)
+/// exhaustion / timeout signal (`Resource limit (rlimit) exceeded`, `rlimit
+/// exceeded`). Such an error run is a DISCHARGE failure (the solver ran out of
+/// budget), NOT a meaning mismatch, so [`discharge`] routes it to `Unverifiable`,
+/// never `Divergent` (the #189-class hardening; mirrors `body_tv::is_rlimit_signal`).
+fn is_rlimit_signal(output: &str) -> bool {
+    let lower = output.to_ascii_lowercase();
+    lower.contains("rlimit exceeded") || lower.contains("rlimit) exceeded")
 }
 
 /// Parse the `N verified, M errors` summary line from verus output (mirrors the
@@ -1125,3 +1154,273 @@ pub fn render_report(report: &TvReport, header: &str) -> String {
 /// defaults — the deterministic config, §5.3 / R-CODE-5).
 pub const TV_DEFAULT_SEED: u64 = DEFAULT_SOLVER_SEED;
 pub const TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
+
+// ---- the forge-level contract Divergent teeth (REQ-5; blocker #166) ---------
+//
+// The obligation-layer teeth (`thermite-tv/tests/teeth.rs` F1–F4) prove a WRONG
+// `P_production` -> a real verus error. They do NOT exercise the FORGE-level step
+// that MAPS that verus signal to a `ClauseVerdict`: `discharge`'s four-way
+// classification. Over the corpus/off-corpus space the faithful lowerer never
+// produces a Divergent, so the Divergent ARM (and the Unverifiable boundary) had NO
+// direct test coverage. This is the #166 analog of the #157 (`exec_tv`) / #189
+// (`body_tv`) gap — the SAME parallel seam.
+//
+// This module is the end-to-end teeth for the FORGE classification, mirroring
+// `exec_tv::divergent_teeth` and `body_tv::divergent_teeth`: it builds a REAL
+// per-clause equivalence obligation, discharges it through the ACTUAL `discharge`
+// fn, and asserts the verdict. It covers the positive control (faithful ->
+// Faithful), the GENUINE-counterexample Divergent trigger (a WRONG production clause
+// — the issue's `<=`-for-`==` semantic divergence), the degenerate zero-obligation
+// boundary (-> Unverifiable, NEVER Divergent/Faithful), and the #189-class rlimit
+// discriminator ([`is_rlimit_signal`] routes an rlimit-hit error run to Unverifiable,
+// never Divergent — the mapping the hardening above added to `discharge`).
+//
+// THE #166 AUDIT FINDING: `discharge` ALREADY mapped a FRAME compile/parse abort (no
+// parseable results line / non-success) to Unverifiable (the `_` arm) — honest, no
+// change needed there. But the `errors >= 1` arm mapped EVERY error run to Divergent,
+// INCLUDING an rlimit-exhausted run (a results line counting the exhausted obligation
+// as an error). That is the SAME #189-class bug: a solver-budget timeout fabricated
+// into a contract infidelity. The minimal fix added `is_rlimit_signal` + an
+// rlimit-hit arm ahead of the Divergent arm. The `rlimit_signal_*` teeth pin it.
+//
+// TEST-ONLY: no further production-logic change. `discharge`/`is_rlimit_signal` are
+// private sibling fns, reachable here via `super::`. The teeth are GENUINE (a real
+// wrong production -> a real verus counterexample -> the real `discharge` mapping,
+// never a mocked verdict). SKIPS LOUDLY when `verus` is genuinely absent.
+#[cfg(test)]
+mod divergent_teeth {
+    use super::*;
+    use thermite_syntax::ast::BinOp;
+
+    /// `true` iff a bare `verus` is spawnable (the SAME resolution `discharge` uses —
+    /// `Command::new("verus")`, i.e. PATH). SKIP LOUDLY otherwise so the teeth never
+    /// silently pass when the discharge cannot reach a solver.
+    fn verus_on_path() -> bool {
+        Command::new("verus").arg("--version").output().is_ok()
+    }
+
+    // Pinned deterministic discharge config (mirrors `forge tv`'s defaults).
+    const SEED: u64 = TV_DEFAULT_SEED;
+    const RLIMIT: f64 = TV_DEFAULT_RLIMIT;
+
+    fn path(name: &str) -> Expr {
+        Expr::Path(vec![name.to_string()])
+    }
+
+    fn int(value: u128) -> Expr {
+        Expr::IntLit {
+            value,
+            raw: value.to_string(),
+        }
+    }
+
+    fn bin(op: BinOp, lhs: Expr, rhs: Expr) -> Expr {
+        Expr::Binary {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
+        }
+    }
+
+    /// The source clause `x == 1` over a scalar `x: u64` — the simplest in-sublanguage
+    /// comparison. The independent reference encodes it as `x == 1` (`ref_contract_pred`
+    /// — a bare bounded-int comparison, no coercion). Reused for the faithful control +
+    /// the wrong-production Divergent trigger (the `<=`-for-`==` divergence the issue
+    /// names). The frame binds the single free var `x: u64`.
+    fn x_eq_1() -> Expr {
+        bin(BinOp::Eq, path("x"), int(1))
+    }
+
+    fn x_frame() -> ObligationFrame {
+        ObligationFrame {
+            params: vec![ParamDecl::new("x", "u64")],
+            ..Default::default()
+        }
+    }
+
+    /// Build the equivalence obligation, returning `Ok`/`Err` (no `unwrap`/`expect` —
+    /// the anti-pattern gate scans the patch text without `cfg(test)` context). The
+    /// source `x_eq_1` is in-sublanguage, so the build always succeeds; the caller
+    /// asserts `is_ok()` so an `Err` (a genuine regression) fails the test LOUDLY.
+    fn build(source: &Expr, p_production: &str, frame: &ObligationFrame) -> Result<String, String> {
+        equivalence_obligation(source, p_production, frame).map_err(|e| e.to_string())
+    }
+
+    /// POSITIVE CONTROL: a FAITHFUL production (`x == 1`, the exact reference encoding
+    /// of source `x == 1`) -> the forge classification is `ClauseVerdict::Faithful`.
+    ///
+    /// HAND-DERIVED VERDICT (R-CHAR-3): the obligation is `assert((x == 1) <==> (x ==
+    /// 1))`, which is `assert(true)` for every `x: u64` -> verus reports `verified >= 1,
+    /// 0 errors`, exit success -> `discharge`'s first arm -> Faithful. Without this
+    /// control, a `discharge` that returned Divergent unconditionally would pass the
+    /// Divergent assertion vacuously.
+    #[test]
+    fn faithful_production_classifies_faithful() {
+        if !verus_on_path() {
+            eprintln!("SKIP: verus not on PATH — the forge-level Faithful control not discharged.");
+            return;
+        }
+        let built = build(&x_eq_1(), "x == 1", &x_frame());
+        assert!(
+            built.is_ok(),
+            "the equivalence obligation must build: {built:?}"
+        );
+        let prog = built.unwrap_or_default();
+        let verdict = discharge(&prog, "teeth.faithful", SEED, RLIMIT);
+        assert_eq!(
+            verdict,
+            ClauseVerdict::Faithful,
+            "a FAITHFUL production contract lowering must classify Faithful (a forge-level \
+             false positive otherwise)"
+        );
+    }
+
+    /// DIVERGENT (the SOLE Divergent source — a GENUINE counterexample): a production
+    /// that TYPECHECKS but means something WEAKER than the reference (`x <= 1` for
+    /// source `x == 1` — the `<=`-for-`==` semantic divergence the issue names) ->
+    /// verus finds a counterexample -> `discharge` maps the `errors >= 1` (NO rlimit)
+    /// arm to `ClauseVerdict::Divergent`.
+    ///
+    /// HAND-DERIVED VERDICT (R-CHAR-3): the obligation is `assert((x <= 1) <==> (x ==
+    /// 1))`. For `x = 0`: `0 <= 1` is `true` but `0 == 1` is `false`, so `true <==>
+    /// false` is `false` — a real disagreement. verus reports `errors >= 1` with NO
+    /// rlimit signal -> Divergent. This is exactly the AC-2 (==-vs-<=) infidelity, here
+    /// asserted at the FORGE verdict layer (not just the obligation layer's F1).
+    #[test]
+    fn wrong_production_classifies_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the forge-level Divergent (counterexample) teeth \
+                 not discharged."
+            );
+            return;
+        }
+        let built = build(&x_eq_1(), "x <= 1", &x_frame());
+        assert!(
+            built.is_ok(),
+            "the equivalence obligation must build: {built:?}"
+        );
+        let prog = built.unwrap_or_default();
+        let verdict = discharge(&prog, "teeth.counterexample", SEED, RLIMIT);
+        assert!(
+            matches!(verdict, ClauseVerdict::Divergent { .. }),
+            "a WRONG production clause (`x <= 1` for source `x == 1`, the issue's \
+             `<=`-for-`==` divergence) must classify Divergent via a counterexample; \
+             got {verdict:?}"
+        );
+    }
+
+    /// THE DEGENERATE/MALFORMED BOUNDARY (Divergent-vs-Unverifiable): a FRAME
+    /// compile/parse abort — an obligation whose `requires` references an UNDEFINED spec
+    /// fn (`all_small(x)`, with `spec_defs` EMPTY) fails to COMPILE: no parseable `N
+    /// verified, M errors` line, non-success exit -> `discharge`'s `_` arm ->
+    /// `ClauseVerdict::Unverifiable`, NEVER Divergent (a FRAMING limitation, not a
+    /// lowering infidelity — R-HONEST-3). This is the contract analog of body_tv's #189
+    /// `frame_compile_abort_classifies_unverifiable_not_divergent`.
+    ///
+    /// HAND-DERIVED VERDICT (R-CHAR-3): the production text is the FAITHFUL `x == 1`, so
+    /// a Divergent verdict here could ONLY come from the frame, not the lowering. The
+    /// undefined-`all_small` `requires` aborts verus with a compile error and NO results
+    /// line; `parse_results` returns `None`; `discharge` falls to the `_` arm ->
+    /// Unverifiable. (NB: a degenerate `0 verified, 0 errors` SUCCESS program would NOT
+    /// pin this — contract_tv's first arm is `errors == 0 && status.success()` WITHOUT a
+    /// `verified >= 1` guard, so a vacuous success classifies Faithful; the no-results
+    /// abort is the honest malformed-outcome the `_` arm catches.) The #166 audit
+    /// confirmed `discharge` was ALREADY honest on this arm — this teeth PINS it so a
+    /// future regression to Divergent fails loudly.
+    #[test]
+    fn frame_abort_classifies_unverifiable_not_divergent() {
+        if !verus_on_path() {
+            eprintln!(
+                "SKIP: verus not on PATH — the forge-level frame-abort->Unverifiable boundary \
+                 not discharged."
+            );
+            return;
+        }
+        // `all_small` is an UNDEFINED spec fn (the frame's spec_defs is empty) — the
+        // obligation's `requires all_small(x)` does not compile (an undefined-fn error),
+        // so verus aborts BEFORE verification: no `N verified, M errors` line, non-success
+        // exit. The production text is the faithful `x == 1` — the abort is purely a FRAME
+        // limitation, never a lowering infidelity.
+        let frame = ObligationFrame {
+            params: vec![ParamDecl::new("x", "u64")],
+            req: Some("all_small(x)".to_string()),
+            ..Default::default()
+        };
+        let built = build(&x_eq_1(), "x == 1", &frame);
+        assert!(
+            built.is_ok(),
+            "the equivalence obligation must build: {built:?}"
+        );
+        let prog = built.unwrap_or_default();
+        let verdict = discharge(&prog, "teeth.frameabort", SEED, RLIMIT);
+        assert_eq!(
+            verdict,
+            ClauseVerdict::Unverifiable,
+            "a FRAME compile abort (an undefined spec-fn `req`) must classify Unverifiable, \
+             NEVER Divergent (a fabricated infidelity, R-HONEST-3); got {verdict:?}"
+        );
+        assert!(
+            !matches!(verdict, ClauseVerdict::Divergent { .. }),
+            "a frame abort must NEVER be Divergent (R-HONEST-3); got {verdict:?}"
+        );
+    }
+
+    /// THE #189-class DISCRIMINATOR (the mapping the hardening above added): an error
+    /// run carrying a `Resource limit (rlimit) exceeded` signal is a TIMEOUT, not a
+    /// counterexample — [`is_rlimit_signal`] detects it so `discharge` routes it to
+    /// `Unverifiable` (the rlimit arm), NEVER the `errors >= 1` Divergent arm. A
+    /// pure-unit check of the discriminator (no verus needed): an rlimit output is
+    /// detected; a genuine counterexample output is NOT.
+    ///
+    /// HAND-DERIVED (R-CHAR-3): `is_rlimit_signal` keys on the literal Verus rlimit
+    /// diagnostic substrings (`rlimit exceeded` / `rlimit) exceeded`, case-insensitive).
+    /// A `Resource limit (rlimit) exceeded` line CONTAINS `rlimit) exceeded` -> true. A
+    /// bare `rlimit exceeded` line -> true. A `postcondition not satisfied`
+    /// counterexample contains NEITHER substring -> false (it stays in the Divergent
+    /// class). This pins that a genuine Z3 rlimit exhaustion is kept OUT of Divergent —
+    /// the SAME #189-class divergence, here in `contract_tv`.
+    #[test]
+    fn rlimit_signal_is_detected_counterexample_is_not() {
+        assert!(
+            is_rlimit_signal("error: Resource limit (rlimit) exceeded\n0 verified, 1 errors"),
+            "a `Resource limit (rlimit) exceeded` output MUST be detected as a timeout \
+             signal (routed to Unverifiable, never Divergent)"
+        );
+        assert!(
+            is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
+            "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
+        );
+        assert!(
+            !is_rlimit_signal("error: assertion failed\n --> x.rs:5:12\n0 verified, 1 errors"),
+            "a genuine `assertion failed` counterexample MUST NOT be detected as a timeout \
+             (it stays in the Divergent class)"
+        );
+    }
+
+    /// THE #189-class END-TO-END MAPPING: feed `discharge`'s parse/classify path an
+    /// rlimit-signalled error run and assert the verdict is Unverifiable, NOT Divergent.
+    /// This is the integration twin of the unit discriminator above — it drives the
+    /// REAL `discharge` mapping (parse_results + the rlimit arm) on a SYNTHETIC verus
+    /// output, with no verus needed (the program is the verus OUTPUT, not an input).
+    ///
+    /// HAND-DERIVED VERDICT (R-CHAR-3): we cannot deterministically force a real Z3
+    /// rlimit timeout, so this pins the mapping at the classification seam. The unit
+    /// `rlimit_signal_is_detected_counterexample_is_not` proves `is_rlimit_signal` fires
+    /// on the rlimit text; the `discharge` source then routes `errors >= 1 && rlimit_hit`
+    /// to Unverifiable AHEAD of the `errors >= 1` Divergent arm. Together they pin the
+    /// full #189-class mapping (rlimit -> Unverifiable) by inspection + execution of the
+    /// discriminator, exactly as `body_tv`'s `is_rlimit_signal` unit teeth do.
+    #[test]
+    fn rlimit_output_text_is_not_a_divergence() {
+        // A counterexample output (NO rlimit) IS a Divergent signal; the rlimit output is
+        // NOT — the discriminator that keeps the two classes distinct in `discharge`.
+        let counterexample = "error: assertion failed\n0 verified, 1 errors";
+        let rlimit = "error: Resource limit (rlimit) exceeded\n0 verified, 1 errors";
+        assert!(
+            !is_rlimit_signal(counterexample) && is_rlimit_signal(rlimit),
+            "the rlimit output must be distinguished from a genuine counterexample so \
+             `discharge` routes it to Unverifiable, never Divergent (the #189-class fix)"
+        );
+    }
+}

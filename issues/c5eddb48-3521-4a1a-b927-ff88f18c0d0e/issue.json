@@ -2,11 +2,12 @@
   "uuid": "c5eddb48-3521-4a1a-b927-ff88f18c0d0e",
   "display_id": 209,
   "title": "Divergence: proof-backends.md leaves the exported obligation's FUEL quantification unspecified while denote's fuel-0 specCall bottom is True — an existential/low-fuel statement vacuously certifies any spec-fn-calling contract",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T18:54:29.032386893Z",
-  "updated_at": "2026-06-10T18:54:30.494752430Z",
+  "updated_at": "2026-06-10T22:51:22.191333485Z",
+  "closed_at": "2026-06-10T22:51:22.191333485Z",
   "labels": [
     "blocker"
   ]

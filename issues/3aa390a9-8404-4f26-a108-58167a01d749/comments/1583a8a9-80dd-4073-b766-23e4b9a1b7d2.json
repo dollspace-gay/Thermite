@@ -1,0 +1,10 @@
+{
+  "uuid": "1583a8a9-80dd-4073-b766-23e4b9a1b7d2",
+  "issue_uuid": "3aa390a9-8404-4f26-a108-58167a01d749",
+  "author": "Yffe",
+  "content": "Approach (acto-fixer, single file forge/src/contract_tv.rs): AUDIT — contract_tv discharge mapped every errors>=1 run to Divergent, including an rlimit-exhausted run (a results line counting the exhausted obligation as an error). Same #189-class bug body_tv fixed: a solver-budget timeout fabricated into a contract infidelity. The CompileAbort case was ALREADY honest (no parseable results line -> the _ arm -> Unverifiable). MINIMAL FIX: added is_rlimit_signal + an 'errors>=1 && rlimit_hit -> Unverifiable' arm AHEAD of the Divergent arm in discharge (mirrors body_tv::is_rlimit_signal). TEETH: a #[cfg(test)] mod divergent_teeth mirroring exec_tv/body_tv — faithful (x==1 prod==ref) -> Faithful; wrong prod (x<=1 for x==1, the <=-for-== divergence) -> Divergent; frame compile abort (undefined spec-fn req) -> Unverifiable; rlimit discriminator -> kept out of Divergent. Hand-derived verdicts (R-CHAR-3). Faithful corpus path unchanged.",
+  "created_at": "2026-06-10T03:35:13.523574738Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHy2D44glOsegkMrmfy8NcJumvvIRi1R/OBFdDbwbYDZwx0cLdr2asszgmZypGBZUJcfzvf3Cwa7Ckjs9pCGXAw=="
+}

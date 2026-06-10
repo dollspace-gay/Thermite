@@ -1,0 +1,10 @@
+{
+  "uuid": "25bd9770-df60-4172-ac53-0c8f23968849",
+  "display_id": 192,
+  "title": "Divergence: contract_tv::is_rlimit_signal is a drifted copy of body_tv's — drops the 'resource limit exceeded' clause, so a Z3-phrased resourceout ('max. resource limit exceeded', literal in the distributed z3 binary) on an errors>=1 run is fabricated into ClauseVerdict::Divergent (the exact #189-class false finding the #166 fix claims to close)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T03:56:56.371434511Z",
+  "updated_at": "2026-06-10T03:56:56.371434511Z"
+}

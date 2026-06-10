@@ -1,0 +1,10 @@
+{
+  "uuid": "0b566c6b-7d5b-450b-8903-850491a96035",
+  "issue_uuid": "df78c970-1a0c-4819-a876-32d62e7f0a8f",
+  "author": "Yffe",
+  "content": "Batch doc-only fix of the five pinned findings #218-#222 in RATIONALE.md + README.md (single commit, ref #217). #218: correct 4 README anchors to GitHub double-hyphen slugs (verified by a scripted slugifier over the actual headings, 11/11 resolve). #219: rewrite cage Limits — seccomp-BPF DOES filter scalar args[0..5], the true limit is no pointer dereference (TOCTOU); Direction made consistent. #220: drop old(_) (no such construct; ens ranges over result + params), fix Per/postconditions typo. #221: spine trust base to 5 items matching audit.sh check [6], Lean kernel + 3 axioms as item 1. #222: restore the survey's per-claim novelty hedge across preamble + all three extension notes. Cause-level: corrected the docs to match the authorities (GitHub slugger, seccomp man-page mechanics, spec grammar, audit.sh, SOTA survey).",
+  "created_at": "2026-06-10T20:20:27.376531061Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA16lCqkHJNWR8RYCCZqKI/AeLgKGqO/h/OJUDRRPPt3j3MRyfCz3QMdJHMDETl7vhqSAKKMDd0til6EgqC5moCg=="
+}

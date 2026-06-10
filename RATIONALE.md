@@ -12,9 +12,21 @@ Lineage attributions are to the published literature; they are *context*, not
 project claims. The three pieces this project asserts as genuinely novel — the
 caged quantifier fragment, the anti-Goodhart battery, and the effect-row→seccomp
 derivation — are marked as such and cite the SOTA survey
-([`.design/research/formal-methods-sota.md`](.design/research/formal-methods-sota.md),
-which records them as "GENUINE EXTENSION — no analogue in the surveyed
-verified-compilation literature").
+([`.design/research/formal-methods-sota.md`](.design/research/formal-methods-sota.md)),
+which records each as a **GENUINE EXTENSION** but with the survey's *own* hedge on
+each, not a flat claim:
+
+- the **caged quantifier fragment** — "no *direct* analogue in the surveyed
+  verified-compilation lit; **needs a targeted survey to confirm novelty**";
+- the **anti-Goodhart battery** — "no analogue in the surveyed
+  verified-compilation lit";
+- the **effect-row→seccomp hybrid** — the surveyed effect lit "does not combine
+  static effect typing with runtime syscall confinement," so the hybrid is
+  asserted *by absence* and (survey gap #3) "**needs its own survey**" of the
+  row-effect + seccomp/CHERI literature.
+
+Each is "no analogue *in the surveyed literature*" — a bounded, falsifiable claim
+about a specific survey, not an absolute novelty assertion.
 
 No new claims are made here. This document only assembles, in standard
 vocabulary, what the code and the `.design/` docs already establish.
@@ -23,11 +35,13 @@ vocabulary, what the code and the `.design/` docs already establish.
 
 ## The contract (`req` / `ens` / `fx`)
 
-**Definition.** Per/postconditions plus an effect annotation — **design-by-contract**
+**Definition.** Pre/postconditions plus an effect annotation — **design-by-contract**
 (Meyer/Eiffel) realized as machine-checked **Hoare logic** (Hoare 1969;
 modern push-button precedent: Dafny, Verus, F*). `req` is the precondition, `ens`
-the postcondition (over a distinguished `result` binding and `old(_)` pre-state
-bindings), `fx` an **effect row** (its own entry below). Thermite's departure
+the postcondition (over a distinguished `result` binding and the function's
+parameters — Thermite has no `old(_)` pre-state construct; the spec grammar
+exposes `result` plus the in-scope parameters, nothing more), `fx` an **effect
+row** (its own entry below). Thermite's departure
 from the lineage is that all three are **mandatory syntax**: omitting one is a
 compile error, not a lint.
 
@@ -167,14 +181,21 @@ boundary, with no trusted supervisor process and minimal runtime cost.
 - **Linux-only, x86_64-only** in v0.1: the filter pins `AUDIT_ARCH_X86_64`;
   other platforms get the `--no-sandbox` no-op fallback
   (`.design/forge/runtime-sandbox.md` OQ-3).
-- **Syscall-number granularity only.** Classic seccomp-BPF compares
-  `seccomp_data.nr`, not argument registers — so it cannot filter `ioctl` by its
-  `cmd`, cannot scope a path argument, and is subject to TOCTOU on
-  pointer arguments it does not inspect. The `term`→`ioctl` grant is therefore
+- **Syscall-number granularity only *in v0.1* — a filter choice, not a mechanism
+  limit.** Classic seccomp-BPF exposes the syscall's scalar argument *values* in
+  `seccomp_data.args[0..5]`, and a BPF program can `BPF_JEQ` on them (Chrome's
+  sandbox filters `ioctl` by its `cmd` exactly this way). What classic seccomp-BPF
+  *cannot* do is **dereference a pointer argument** — the kernel forbids reading
+  pointed-to memory from a filter precisely to avoid TOCTOU (the argument could be
+  rewritten between the filter check and the syscall). So a `cmd` (a scalar) is
+  filterable, but a *path* or any other string behind a pointer is not inspectable
+  at this layer at all. v0.1's filter matches on `nr` only — an implementation
+  choice, not a mechanism ceiling — so the `term`→`ioctl` grant is currently
   `ioctl`-*broad* (any cmd), documented as the v1 scope
   (`.design/forge/runtime-sandbox.md` OQ-5). **Path-scoping is enforced at the
-  language level** (the `fx read(path)` row, compile-time), with seccomp as the
-  coarse syscall backstop — the two layers are complementary, not redundant.
+  language level** (the `fx read(path)` row, compile-time) because seccomp
+  *structurally cannot* read the path string — with seccomp as the coarse syscall
+  backstop, the two layers are complementary, not redundant.
 - **Memory safety is not this layer's job** — that is Rust's borrow checker /
   LLVM (the target's responsibility, the RustBelt/Stacked Borrows boundary,
   SOTA finding #7).
@@ -185,17 +206,21 @@ boundary, with no trusted supervisor process and minimal runtime cost.
   `--sandbox-self-test` probe (a denied `openat` → exit 159 = 128+SIGSYS, vs a
   clean pure run).
 
-**This is a genuine extension.** The *hybrid* — a static effect row (`fx`) that
-is *both* the compile-time subsumption lattice *and* the source of the runtime
-syscall allowlist — has no analogue in the surveyed effect literature
-(Koka/Eff/Frank do row effects; seccomp/CHERI do confinement; nobody derives the
-second from the first). Asserted as novel-by-absence,
+**This is a genuine extension (asserted by absence, survey pending).** The
+*hybrid* — a static effect row (`fx`) that is *both* the compile-time subsumption
+lattice *and* the source of the runtime syscall allowlist — has no analogue in the
+surveyed effect literature (Koka/Eff/Frank do row effects; seccomp/CHERI do
+confinement; nobody derives the second from the first). The survey is explicit
+that this is **asserted by absence and still needs its own targeted survey** of the
+row-effect + seccomp/CHERI literature to confirm (survey gap #3),
 [`.design/research/formal-methods-sota.md`](.design/research/formal-methods-sota.md)
 terminology-map row "static effect-rows (`fx`) + seccomp confinement."
 
-**Direction.** An argument-inspecting filter (a `BPF_JEQ` on the `ioctl` cmd
-register, narrowing `term` to `TCGETS`/`TCSETS`) and non-Linux backends are
-future refinements (`.design/forge/runtime-sandbox.md` OQ-5/OQ-3).
+**Direction.** A scalar-argument-filtering build (a `BPF_JEQ` on the `ioctl` cmd
+register — a scalar, so this is squarely within classic seccomp-BPF's ability,
+narrowing `term` to `TCGETS`/`TCSETS`) and non-Linux backends are future
+refinements (`.design/forge/runtime-sandbox.md` OQ-5/OQ-3). Pointer-behind
+arguments (paths) stay at the language layer by mechanism, not schedule.
 
 ---
 
@@ -307,11 +332,12 @@ golden string (`mutation-scoring.md` OQ-1). A timeout-on-a-mutant is
 conservatively counted *killed* (an unproved mutant is not a survivor;
 `mutation-scoring.md` OQ-4).
 
-**This is a genuine extension.** The anti-Goodhart battery (mutation-kill-ratio +
-vacuity/tautology detection applied to *contract quality*) has no analogue in the
-surveyed verified-compilation literature
+**This is a genuine extension (bounded to the survey).** The anti-Goodhart battery
+(mutation-kill-ratio + vacuity/tautology detection applied to *contract quality*)
+has "no analogue in the surveyed verified-compilation lit"
 ([`.design/research/formal-methods-sota.md`](.design/research/formal-methods-sota.md)
-"anti-Goodhart battery" → GENUINE EXTENSION).
+terminology-map row "anti-Goodhart battery" → GENUINE EXTENSION) — a claim about
+*that* survey, not an absolute first.
 
 **Direction.** The battery becomes engine-generic
 ([`.design/verified/proof-backends.md`](.design/verified/proof-backends.md)
@@ -408,10 +434,14 @@ quantifier is a bounded combinator with a frozen trigger; composition is named
 (`spec fn`, each `dec`-measured) and never anonymous" — depth is named + bounded,
 not zero (`spectherm-combinators.md` "Thesis-clarification note").
 
-**This is a genuine extension.** The caged quantifier fragment (the specific
-bounded-combinator set + frozen triggers) is asserted novel-by-absence
+**This is a genuine extension (with the survey's hedge).** The caged quantifier
+fragment (the specific bounded-combinator set + frozen triggers) is asserted
+novel-by-absence: the SOTA survey records "no *direct* analogue in the surveyed
+verified-compilation lit" and explicitly adds it "**needs a targeted survey to
+confirm novelty**"
 ([`.design/research/formal-methods-sota.md`](.design/research/formal-methods-sota.md)
-"caged quantifier fragment" → GENUINE EXTENSION).
+terminology-map row "caged quantifier fragment"). The claim is bounded to that
+survey, not absolute.
 
 **Direction.** New combinators arrive only through the RFC process (§11); the
 flat-closure rule (REQ-6, `#40`) tightens the cage where the early
@@ -509,18 +539,25 @@ machine).
 **The enumerated trust base (the residuals — stated, never hidden).** Following
 CompCert's reduced-trusted-base framing (SOTA finding #3, Leroy's "verification
 never eliminates the trusted base, it reduces it to an enumerable set"), an L3
-certificate currently trusts:
+certificate currently trusts (this is exactly `scripts/audit.sh` check [6]'s
+five-item residual-trust block — the checker the spine itself leans on is item 1):
 
-1. **`S` agrees with the *intended* meaning of Thermite** — the single most
-   delicate item, an unprovable-from-within assumption (Gödel; the §1 spec-intent
-   slot). `S` is human-audited; its auditability is the design goal.
+1. **The Lean kernel + its three standard axioms** — `{propext,
+   Classical.choice, Quot.sound}`. The five load-bearing theorems are checked by
+   the Lean kernel, so the kernel's soundness and that small, standard axiom set
+   are themselves trusted; `make audit` check [1] re-runs the kernel on the
+   skeptic's machine and parses exactly this axiom footprint (no `sorry`, no custom
+   axiom).
 2. **Z3 / Verus soundness** — the per-run TV equivalence is `Z3 ⊢ lower(P) ⟺
    R(P)`; if Z3 is unsound on a query, (T2) inherits it. This is the floor of any
    SMT-discharged result, not a Thermite-specific gap.
-3. **The Rust↔Lean encoder correspondence** — that the *Rust* encoders match the
+3. **`S` agrees with the *intended* meaning of Thermite** — the single most
+   delicate item, an unprovable-from-within assumption (Gödel; the §1 spec-intent
+   slot). `S` is human-audited; its auditability is the design goal.
+4. **The Rust↔Lean encoder correspondence** — that the *Rust* encoders match the
    *Lean*-proved algorithm, discharged at the **inspection tier** (arm-by-arm
    audit + a SHA-pinned drift tripwire), not yet a mechanized extraction bridge.
-4. **rustc / LLVM / the build chain** — the `Rust → machine code` link, inherited
+5. **rustc / LLVM / the build chain** — the `Rust → machine code` link, inherited
    from the Rust toolchain (the RustBelt/Stacked Borrows boundary).
 
 **Z3 demotion (the path to shrink residual 2).** The route to demote Z3 from
@@ -556,7 +593,8 @@ multi-exit early `return`, nested loops, and non-scalar mutation `xs[i]=e` are
 honestly out of the proven fragment (`thermite-semantics.md` coverage section).
 
 **Direction.** Full Z3 demotion (upstream-gated), the Lean→Rust extraction bridge
-(to upgrade residual 3 from inspection to mechanization), and Lean as proof
+(to upgrade residual 4, the Rust↔Lean correspondence, from inspection to
+mechanization), and Lean as proof
 engine #2
 ([`.design/verified/proof-backends.md`](.design/verified/proof-backends.md), in
 critique cycles now).

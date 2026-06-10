@@ -782,3 +782,22 @@ crate_pattern = "forge/src/exec_tv.rs"
 design = ".design/verified/exec-tv.md"
 reference = ["conformance/sum.th"]
 conformance_ops = ["sum"]
+
+# Step 2.2.1 / 2.2.2-iii — the forge body-TV check phase (crosslink #162, epic #169).
+# The state analogue of forge/src/exec_tv.rs: the `forge body-tv <file>` verb runs the
+# straight-line body state-refinement TV (exec-stmt-tv.md REQ-5) AND the v1 `while`-loop
+# three per-run obligations (loop-tv.md REQ-5 / increment 2.2.2-iii) over each checked
+# item's exec body, with four-way Faithful/Divergent/Unverifiable/Skipped reporting
+# (R-HONEST-3 — an out-of-v1 loop / non-scalar mutation / mid-body return is Skipped
+# honestly, never masking an infidelity). It lowers each body via
+# thermite_lower::lower_exec_body, builds the obligation via
+# thermite_tv::{body_equivalence_obligation, loop_entry/preservation/exit_obligation},
+# and discharges through verus (reusing the ScratchDir #53 cleanup, exactly as exec_tv).
+# Governed by exec-stmt-tv.md (REQ-5 is binding here); the reference is the corpus
+# binary_search loop (whose loop-kind / mid-body returns come out Skipped-with-reason —
+# the honest expected result).
+[[route]]
+crate_pattern = "forge/src/body_tv.rs"
+design = ".design/verified/exec-stmt-tv.md"
+reference = ["conformance/binary_search.th"]
+conformance_ops = ["binary_search"]

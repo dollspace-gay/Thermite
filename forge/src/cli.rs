@@ -345,6 +345,21 @@ enum Command {
         /// `--no-generated`) runs only the corpus body-expr check.
         generated: Option<usize>,
     },
+    /// `forge body-tv <file> [--json]` — the EXEC-BODY (statement / state-refinement)
+    /// TRANSLATION-VALIDATION deeper audit (epic #169, blocker #162;
+    /// `.design/verified/exec-stmt-tv.md` REQ-5 + `.design/verified/loop-tv.md`
+    /// REQ-5). The STATE analogue of `forge exec-tv` (which checks a single
+    /// body-position VALUE): for each checked fn body it runs the straight-line body
+    /// state-refinement TV (`fn tv_body_wrap(..) ensures result == <body_ref_state>
+    /// { <production lower_exec_body> }`) — or, when the body's last statement is a v1
+    /// frozen-subset `while` loop, the three per-run loop obligations (entry /
+    /// preservation / exit) — discharging each through `verus`. Each body is Faithful
+    /// / DIVERGENT / Unverifiable / Skipped (an out-of-v1 loop / non-scalar mutation /
+    /// mid-body return / non-derivable frame is Skipped HONESTLY, never masking an
+    /// infidelity — R-HONEST-3). A SEPARATE opt-in command (like `forge tv` / `forge
+    /// exec-tv`, NOT folded into `forge check`), run at the pinned default verus
+    /// config.
+    BodyTv { file: PathBuf, json: bool },
 }
 
 /// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
@@ -794,6 +809,36 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 generated,
             })
         }
+        "body-tv" => {
+            // `forge body-tv <file> [--json]` (#162; `.design/verified/exec-stmt-tv.md`
+            // REQ-5 + `.design/verified/loop-tv.md` REQ-5). The first positional is the
+            // file (required). Like the other deeper-audit verbs, it runs at the pinned
+            // default verus config (the deterministic budget) — no exploratory levers,
+            // no generated run (the body-state TV is over the corpus item bodies).
+            let mut file: Option<PathBuf> = None;
+            let mut json = false;
+            for arg in iter {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_some() {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge body-tv` takes at most one <file>; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                        file = Some(PathBuf::from(positional));
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage("`forge body-tv` requires a <file> [--json]".to_string())
+            })?;
+            Ok(Command::BodyTv { file, json })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -808,7 +853,7 @@ fn usage_text() -> &'static str {
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
      [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv <file> \
      [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
-     [--json]"
+     [--json] | forge body-tv <file> [--json]"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -866,6 +911,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             json,
             generated,
         } => run_exec_tv(&file, json, generated),
+        Command::BodyTv { file, json } => run_body_tv(&file, json),
     }
 }
 
@@ -1348,6 +1394,89 @@ fn exec_tv_report_json(
             "coverage": coverage_json(cov),
             "exprs": exprs_json(r),
         })),
+    })
+}
+
+/// Run `forge body-tv`: the EXEC-BODY (statement / state-refinement)
+/// TRANSLATION-VALIDATION deeper audit (#162; `.design/verified/exec-stmt-tv.md`
+/// REQ-5 + `.design/verified/loop-tv.md` REQ-5). For each checked fn body it
+/// discharges the body state-refinement obligation (straight-line) or the three
+/// per-run loop obligations (a v1 `while` loop) through verus
+/// (`body_tv::body_tv_file`), reporting each body Faithful / DIVERGENT / Unverifiable
+/// / Skipped (an out-of-v1 loop / non-scalar mutation / mid-body return / non-derivable
+/// frame is Skipped HONESTLY — never masking an infidelity).
+///
+/// Exit code: a clean audit (no DIVERGENT body) exits 0; ANY divergent body is a real
+/// body-lowering state-transformation FINDING surfaced as a verification-failure exit
+/// (the meaning-mismatch verdict, distinct from `forge check`'s obligation verdict —
+/// the SAME convention `forge tv` / `forge exec-tv` use). An environment failure (file
+/// unreadable, parse failure) propagates as a `ForgeError` (the environment exit). A
+/// verus-absent run reports `unverifiable` bodies (surfaced, never a silent pass —
+/// R-CODE-4) and does NOT fail the exit (a Skipped / Unverifiable is zero, only a
+/// Divergent is nonzero).
+fn run_body_tv(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
+    use crate::body_tv::{self, BODY_TV_DEFAULT_RLIMIT, BODY_TV_DEFAULT_SEED};
+
+    let report = body_tv::body_tv_file(file, BODY_TV_DEFAULT_SEED, BODY_TV_DEFAULT_RLIMIT)?;
+    let counts = report.counts();
+
+    if json {
+        let doc = body_tv_report_json(file, &report);
+        let rendered = serde_json::to_string_pretty(&doc).map_err(|e| ForgeError::VerusOutput {
+            detail: format!("failed to serialize the body-TV report JSON: {e}"),
+        })?;
+        println!("{rendered}");
+    } else {
+        print!(
+            "{}",
+            body_tv::render_report(&report, &format!("body-TV {}", file.display()))
+        );
+    }
+
+    // Any DIVERGENT body is a real body-lowering state-transformation finding →
+    // verification-failure exit (surfaced loudly). A clean audit (Faithful / Skipped /
+    // Unverifiable only) exits 0 (the SAME convention `forge exec-tv` uses).
+    if counts.divergent == 0 {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
+    }
+}
+
+/// Build the `--json` document for a body-TV run (#162; §5.1 structured output). A
+/// hand-built stable surface: the per-body four-way verdicts + the headline counts.
+fn body_tv_report_json(file: &Path, report: &crate::body_tv::BodyTvReport) -> serde_json::Value {
+    use serde_json::json;
+    let bodies: Vec<serde_json::Value> = report
+        .results
+        .iter()
+        .map(|r| {
+            let (verdict, detail) = match &r.verdict {
+                crate::body_tv::BodyVerdict::Faithful => ("faithful", None),
+                crate::body_tv::BodyVerdict::Divergent { detail } => {
+                    ("divergent", Some(detail.clone()))
+                }
+                crate::body_tv::BodyVerdict::Unverifiable { reason } => {
+                    ("unverifiable", Some(reason.clone()))
+                }
+                crate::body_tv::BodyVerdict::Skipped { reason } => {
+                    ("skipped", Some(reason.clone()))
+                }
+            };
+            json!({ "body": r.label, "verdict": verdict, "detail": detail })
+        })
+        .collect();
+    let c = report.counts();
+    json!({
+        "file": file.display().to_string(),
+        "counts": {
+            "checked": c.checked(),
+            "faithful": c.faithful,
+            "divergent": c.divergent,
+            "unverifiable": c.unverifiable,
+            "skipped": c.skipped,
+        },
+        "bodies": bodies,
     })
 }
 

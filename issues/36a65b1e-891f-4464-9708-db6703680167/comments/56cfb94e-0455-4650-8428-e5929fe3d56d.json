@@ -1,0 +1,10 @@
+{
+  "uuid": "56cfb94e-0455-4650-8428-e5929fe3d56d",
+  "issue_uuid": "36a65b1e-891f-4464-9708-db6703680167",
+  "author": "Yffe",
+  "content": "Failing test committed at forge/tests/divergence_audit_check2_exit_swallow.rs::divergence_audit_check2_swallows_divergent_exit — fails against a0d8ea64 (FINAL_RC=0 + green zero-divergent PASS over a 1-DIVERGENT corpus). Un-ignored (release blocker: false assurance in the audit script).",
+  "created_at": "2026-06-10T17:04:29.421617493Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJJQn1Z+3XkKHlgY1F+IHIgtOPzoFLk6jV+V1aESCl6Q1UZbaf+oI6q0eSn92OfQY9hrthmb0vQVuY//cyzI5AQ=="
+}

@@ -1254,6 +1254,14 @@ forge build [item] --entry <fn>    lower to Rust + rustc -> a native binary whos
                                    contract checks fire at runtime, fx-sandboxed
 forge battery [item]               run vacuity battery + mutation scoring
 forge audit                        full slag + boundary + assurance inventory
+forge review <file> [item]         pluggable spec-intent review slot
+forge tv <file>                    translation-validate each item's CONTRACT
+                                   lowering against the independent reference
+                                   encoder (Z3 equivalence; off-corpus generator)
+forge exec-tv <file>               translation-validate exec EXPRESSION lowering
+forge body-tv <file>               translation-validate the exec BODY state
+                                   (straight-line + v1 while-loop obligations);
+                                   Faithful/Divergent/Unverifiable/Skipped
 forge skill                        emit the canonical THERMITE.skill.md
 forge repair [item]                background L1/L2 -> L3 upgrade loop
 ```

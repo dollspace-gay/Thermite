@@ -336,7 +336,11 @@ change owned by the forge CLI design doc, recorded in OQ-5, not authored here.
   mandatory grammar clause keywords (`req`/`ens`/`fx`/`inv`/`dec`/`spec fn`/
   `#[slag]`). Expected strings from Appendix B / §8 / §4. Note: `forge build` is
   added to this list (it shipped in `forge/src/cli.rs` `Command::Build` and was
-  one of the historically-missed verbs). (REQ-3, REQ-11)
+  one of the historically-missed verbs). The curated table additionally carries
+  the post-Appendix-B SHIPPED verbs — `forge review` and the translation-
+  validation phases `forge tv` / `forge exec-tv` / `forge body-tv` (the
+  lowering-soundness program, epic #169/#162) — kept honest by the same REQ-5
+  freshness test. (REQ-3, REQ-11)
 
 - **AC-9 (recursion-scheme coverage — every entry in `schemes::all()`, with an
   example):** for every `SchemeSig` in `thermite_spec::schemes::all()`,

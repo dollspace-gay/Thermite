@@ -1,0 +1,10 @@
+{
+  "uuid": "9b21725e-34b0-4d70-9ecf-bebe42de0f92",
+  "issue_uuid": "6f4f47b3-1d54-4c27-a531-e6de919cfbac",
+  "author": "Yffe",
+  "content": "Plan: commit the kernel-checked pin lean/Thermite/PinBodyRegistry.lean as the cycle-5 audit artifact (critic test commit; no production code touched).",
+  "created_at": "2026-06-10T21:04:39.238764075Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA16GeAgcoO/96eEIEoaCu+7xApWZbu8tQw+zpo8en2rsK9KocfCvzuCX0eY6vmf2k9vizd85rGDnkJ17Gg5+LBA=="
+}

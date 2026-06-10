@@ -1,0 +1,10 @@
+{
+  "uuid": "69b84e4d-1285-46a0-88ba-fd3f566b57e8",
+  "display_id": 195,
+  "title": "Divergence: build::build_file + body_tv (+exec_tv) bypass the #193 open-hole validator — a holed fn lowers with the hole silently dropped (forge build emits an artifact, body-tv reports faithful)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T06:16:37.904436361Z",
+  "updated_at": "2026-06-10T06:16:37.904436361Z"
+}

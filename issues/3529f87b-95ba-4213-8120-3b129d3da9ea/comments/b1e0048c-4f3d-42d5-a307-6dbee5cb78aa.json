@@ -1,0 +1,10 @@
+{
+  "uuid": "b1e0048c-4f3d-42d5-a307-6dbee5cb78aa",
+  "issue_uuid": "3529f87b-95ba-4213-8120-3b129d3da9ea",
+  "author": "Yffe",
+  "content": "Critic discriminator plan: pin the divergence with two failing integration tests (forge/tests/divergence_body_tv_frame.rs) that spawn the forge binary on scratch .th fixtures (straight-line + v1 while-loop, each with a spec-fn-helper req) and assert the authority's expected classification (divergent == 0, exit 0 — exec-stmt-tv.md REQ-5 / loop-tv.md four-way / R-HONEST-3). Commit the failing pins to main as the block; the generator fixes (gate the req like exec_tv or thread spec_defs).",
+  "created_at": "2026-06-10T01:37:49.138054374Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAePi4eUZP8tHoSAy08WrSD1sdNIJnW97oZJKeRXf13rXurKaVsPtgC6VzfGXmEmFKWGmH5xjDwcgPG5nTI5qZBA=="
+}

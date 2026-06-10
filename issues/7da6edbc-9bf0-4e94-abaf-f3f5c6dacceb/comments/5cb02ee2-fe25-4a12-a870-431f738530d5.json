@@ -1,0 +1,10 @@
+{
+  "uuid": "5cb02ee2-fe25-4a12-a870-431f738530d5",
+  "issue_uuid": "7da6edbc-9bf0-4e94-abaf-f3f5c6dacceb",
+  "author": "Yffe",
+  "content": "Cycle-2 revision of proof-backends.md resolving critic findings #210 and #211. #210: replaced the hypothesis fuel-form with a concrete-registry form (exported file defines R_item:Registry with real-bodied spec-fns; theorem holds specs:=R_item fixed, quantifies env only over {ints,seqs,optres} via {v with specs:=R_item}), killing all-registries incoherence; registry population becomes an exporter-side HARD GATE (refuse-to-emit + per-name decide/rfl lemmas), no resolution premise; rewrote soundness paragraph per the critic's fuel0 analysis. #211: §7/REQ-9/AC-7 floor rules now incorporate the SHIPPED #101 equivalence exclusion (survivor and denominator both MINUS proven-equivalent), equivalence probe scoped as a §0.1 meta-query (F3). Also fixed 'spine spine' typo and restated cache_key precisely (4 args + CHECK_SCHEMA_VERSION). Nothing the critic re-verified sound was touched.",
+  "created_at": "2026-06-10T19:16:14.573059794Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJm6LvnG0Eyaupo1W4+INstvUcMIBjwdrtukI7io+KgleSsmEpAPfR7n3xGvlOddIECQhsU72nSQRZQl9uVriAA=="
+}

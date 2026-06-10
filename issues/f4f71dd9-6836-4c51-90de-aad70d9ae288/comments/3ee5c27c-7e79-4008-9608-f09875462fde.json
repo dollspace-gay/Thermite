@@ -1,0 +1,10 @@
+{
+  "uuid": "3ee5c27c-7e79-4008-9608-f09875462fde",
+  "issue_uuid": "f4f71dd9-6836-4c51-90de-aad70d9ae288",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_battery_vacuous.rs::battery_view_reports_gate_vacuity_reject demonstrates the divergence. Input: the conformance/vacuity/triage.json reject fixture ens_is_true (fn f() -> () req true ens true fx pure { }). Expected (thermite-design.md §7.1 (a) + goal-repl.md REQ-1: a VIEW that re-defines no verdict): the battery render surfaces the gate's EnsIsTrivial reject. Actual: 'vacuity: non-vacuous (tautology=false, vacuous_precondition=false)' + 'mutants killed: 0/0', exit 0 — because Certificate::rejected keeps contract_quality at forward_declared() (NOT-ASSERTED bools) and goal_repl::render_battery_item reads only the bools, never cert.reject. render_goal_item handles the same cert correctly (NOT CERTIFIED — EnsIsTrivial). Committed failing (un-ignored) per the divergence_* house pattern — the block until the generator fixes.",
+  "created_at": "2026-06-10T05:12:14.185265860Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJcm794CupAAMiBBeHBCf5lGv15+LCTHS4hi7Cx6B4XnaEchh+FQ+NLPmq3oHLuaIZ2ytan0P+7g0tkVaBIImCw=="
+}

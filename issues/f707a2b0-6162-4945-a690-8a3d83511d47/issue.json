@@ -1,0 +1,10 @@
+{
+  "uuid": "f707a2b0-6162-4945-a690-8a3d83511d47",
+  "display_id": 215,
+  "title": "Divergence: proof-backends.md §4 stabilization soundness rests on dec-VALIDITY no one discharges on the Lean path — a non-dec registry stabilizes to bottom-poisoned values, not unprovable (PinStabilization Pin B)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:47:32.246171428Z",
+  "updated_at": "2026-06-10T19:47:32.246171428Z"
+}

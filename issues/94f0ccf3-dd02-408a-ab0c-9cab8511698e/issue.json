@@ -2,11 +2,12 @@
   "uuid": "94f0ccf3-dd02-408a-ab0c-9cab8511698e",
   "display_id": 207,
   "title": "Divergence: proof-backends.md AC-1 'covers exactly the classes the pipeline discharges TODAY' omits three SHIPPED verus-discharged query classes (solver-vacuity harnesses w/ INVERTED polarity, #101 equivalence queries, strengthen probes)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T18:53:39.943250690Z",
-  "updated_at": "2026-06-10T18:53:42.941678518Z",
+  "updated_at": "2026-06-10T22:51:14.227095968Z",
+  "closed_at": "2026-06-10T22:51:14.227095968Z",
   "labels": [
     "blocker"
   ]

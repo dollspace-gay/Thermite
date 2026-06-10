@@ -1,0 +1,10 @@
+{
+  "uuid": "a687d50d-822a-4e4c-b410-18b3d58df86b",
+  "issue_uuid": "75098969-9c3a-4c36-8f64-aa684decc2e7",
+  "author": "Yffe",
+  "content": "RESOLVED against code: forge/src/check.rs VerusOutcome::Counterexample doc + classify_verus_outcome branch (b) confirm the fast-unknown incompleteness edge IS absorbed into Counterexample ('an unknown returned FAST without exhausting the rlimit -> no profile -> the failure path'), and the witness-less fallback emits a generic ObligationResult::failed with NO witnessing input. So the byte-identical Verus engine of increment (i) maps an SMT unknown to Verdict::Refuted -> ladder_action_l3 HardFail, violating REQ-3/AC-3 ('an SMT unknown (incompleteness) is Unknown, never Refuted'; 'Refutation requires ... a witnessing input') from day one. The doc's hedge points to 'REQ-3 + OQ-3' but OQ-3 is the trust-lattice question and says nothing about this; no OQ or decision covers it. Unstated interactions: (1) REQ-5's Proven+Refuted soundness HALT becomes spuriously triggerable (Verus fast-unknown misread as Refuted + Lean kernel proof = false alarm); (2) REQ-9's killed-iff-Refuted counts a fast-unknown mutant as killed (ratio inflation, R-DEFER-9). Correction: REQ-2 must define Verus Refuted = Counterexample WITH a parsed structured witness, error-without-profile-and-without-witness = Unknown (or explicitly record the byte-identical exception as a named pre-existing seam + quarantine it from REQ-5/REQ-9).",
+  "created_at": "2026-06-10T18:53:15.321543794Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAjiG1wVauMK8vOuCIymT8R0YDayKQPIa+3/e99sGZLW0YQohtuHfZASRWg4RkL3m20UpGu/70J4wFNH0qvw1cCA=="
+}

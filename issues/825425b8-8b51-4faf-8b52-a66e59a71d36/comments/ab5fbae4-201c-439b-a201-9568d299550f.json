@@ -1,0 +1,10 @@
+{
+  "uuid": "ab5fbae4-201c-439b-a201-9568d299550f",
+  "issue_uuid": "825425b8-8b51-4faf-8b52-a66e59a71d36",
+  "author": "Yffe",
+  "content": "SHIPPED through the full loop (a0d8ea64 + re-pin 28ea1523 + fix a0cf5ad8). make audit is now a six-check TRUST-CHAIN RE-DERIVATION: [1] the universal theorem re-checked by the auditor's own Lean kernel + axiom-subset gate; [2] full-corpus TV (15 programs, ~3057 obligations live via Z3, zero-Divergent gate — the #201 dead-gate found by the critic and fixed parse-first); [3] the falsification battery (40 teeth across the infidelity classes + the visible mutant); [4] the correspondence drift tripwire (fired correctly on first run — re-pinned after verified-additive diff review); [5] third-party verus re-check; [6] verdict + the honest 5-item residual-trust statement; INCONCLUSIVE exits nonzero. make audit-fast = the legacy existence demo, labeled as such. README rewritten accordingly. Critic force-failed every gate and confirmed each is real; skip discipline verdict-honest.",
+  "created_at": "2026-06-10T18:07:42.664466065Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAthuaZ3T3qRJZ+lpyDpRXDUCzMMV2VziGi1aokDX/9t2DIUT1WwV7WnaDL7EXRjsxpGcJg34PQYLD+N4XQf37Bw=="
+}

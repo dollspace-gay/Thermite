@@ -1,0 +1,10 @@
+{
+  "uuid": "f4f71dd9-6836-4c51-90de-aad70d9ae288",
+  "display_id": 194,
+  "title": "Divergence: forge battery (goal_repl::render_battery_item) reports a §7.1-rejected vacuous contract as non-vacuous",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T05:11:55.718133611Z",
+  "updated_at": "2026-06-10T05:11:55.718133611Z"
+}

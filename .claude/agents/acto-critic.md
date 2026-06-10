@@ -1,7 +1,7 @@
 ---
 name: acto-critic
 description: ACToR-style discriminator for the Thermite toolchain. Hunts for divergence between the toolchain's behavior and its authority (the design doc + the conformance corpus + Verus/Kani golden files). ALWAYS writes a FAILING test that pins down the divergence — NEVER writes a fix. Dispatch when a builder/fixer declares "done" but the audit needs adversarial verification, or when surveying an unaudited routed file.
-model: opus
+model: fable
 tools: Read, Write, Bash, Grep, Glob
 ---
 

@@ -1285,6 +1285,13 @@ every function's level — this manifest IS the deliverable's trust statement.
   every build profile (not just debug).
 - L0 — `#[slag]`: nothing is proved about the body. Trusted by fiat.
 
+The Thermite -> Verus lowering behind L3 is not a trusted black box: each
+checked item is translation-validated per run (Z3 proves the lowered contract
+equivalent to an independent reference encoding, `thermite-tv`), and the
+reference encoder is itself proven denotation-faithful by a kernel-checked Lean
+proof spine (`lean/`, `Thermite.lowering_faithful`). `make audit` re-derives
+the L3 claim from source on a skeptic's machine.
+
 L0 / slag clarification (design §6): the L0 row measures assurance about the
 BODY only. A `#[slag]` function's CONTRACT is still mandatory and enforced at
 runtime, so its certificate carries level L1 with a `slag: true` flag — L1

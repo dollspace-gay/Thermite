@@ -1,0 +1,10 @@
+{
+  "uuid": "54b961cb-ad6a-416c-97cc-bda60c9421e3",
+  "issue_uuid": "c89c9918-87af-48f0-b195-81e66e45160a",
+  "author": "Yffe",
+  "content": "COMPLETE. Item 1 (runtime sandbox): shipped #57. Item 2 (direct MIR): RETIRED with the thesis amendment 01c36f7c (transpile-to-Verus-Rust satisfies the thesis transitively; rustc performs the MIR lowering). Item 3 (goal-state REPL): SHIPPED via #193 — forge goal/fill/edit/battery all live, the ?N holes + OpenHole gate + the 5.1 dialogue golden. Nothing remains tracked here.",
+  "created_at": "2026-06-10T07:16:00.108118995Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAxrIkRqFfCv5cp5J/2F7pEdzbkEGLQtTb1twfGveZXY9E7NVHdsijo72Zrubv/lTbPSZbnyWZ3KjvwmCEeNfiDA=="
+}

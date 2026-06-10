@@ -1,0 +1,10 @@
+{
+  "uuid": "6f4f47b3-1d54-4c27-a531-e6de919cfbac",
+  "display_id": 224,
+  "title": "Divergence: proof-backends §4 registry hard gate excludes the BODY's spec-calls — under the #214 ∀r form an omitted body-called spec-fn stabilizes to the Int-bottom 0, forces r=0, and a wrong contract certifies (kernel-checked pin)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T21:02:20.231202705Z",
+  "updated_at": "2026-06-10T21:02:20.231202705Z"
+}

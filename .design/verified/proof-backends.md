@@ -84,7 +84,9 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   pipeline already discharges (CONTRACT-equivalence, EXEC-value, BODY-state,
   LOOP-{entry,preservation,exit}, plus the auxiliary classes Verus discharges inside an item:
   overflow/bounds via the bounded `S_E`, termination via `dec`), PLUS the **REGISTRY-TERMINATION**
-  class (REQ-1.2, the #215 fix): for an item with a NON-EMPTY spec-fn registry, EVERY spec-fn in
+  class (REQ-1.2, the #215 fix): for an item with `calledSpecFns(item) ≠ ∅` (the #224 condition —
+  the SAME reachability set the §4 hard gate uses: every spec-fn reachable from `req ∪ ens ∪ body`,
+  transitively), EVERY spec-fn in
   `R_item` carries a per-spec-fn obligation that its `dec` measure is VALID (well-founded descent),
   conjoined item-wide by the conjunction rule. `role` is the polarity/intent discriminator
   (CERTIFICATION vs the meta/battery queries of §0.1) that REQ-3 keys its discipline on. Today these
@@ -181,7 +183,8 @@ see REQ-3.1 / the Verification section.)
   (`equivalence_obligation`), EXEC (`exec_equivalence_obligation`), BODY (`body_equivalence_
   obligation`), LOOP-ENTRY/PRESERVATION/EXIT (`loop_{entry,preservation,exit}_obligation`), plus the
   in-item Verus-discharged auxiliaries (overflow/bounds, termination/`dec`), PLUS the
-  REGISTRY-TERMINATION class (REQ-1.2) for an item with a non-empty registry. The THREE additional
+  REGISTRY-TERMINATION class (REQ-1.2) for an item with `calledSpecFns(item) ≠ ∅` (§4's reachability
+  set: `req ∪ ens ∪ body`, transitively — the #224 condition). The THREE additional
   SHIPPED verus-query classes that are NOT item-correctness certifications — the solver-vacuity
   harnesses (`solver_vacuity_check`, INVERTED polarity), the #101 survivor-equivalence query
   (`equivalence_proves_equal`), and the strengthen probe (`strengthen::probe`) — are enumerated in
@@ -383,10 +386,13 @@ result = 0 (`divergent_contract_certifies`) — the obligation is provable with 
 meaning, NOT safely unprovable. Without a registry-termination obligation, a divergent spec-fn
 silently self-certifies.
 
-**The class.** REQ-1 gains a REGISTRY-TERMINATION obligation class: for an item with a NON-EMPTY
-spec-fn registry, EVERY spec-fn `s ∈ R_item` carries a per-spec-fn obligation that `s.dec` is a
+**The class.** REQ-1 gains a REGISTRY-TERMINATION obligation class: for an item with
+`calledSpecFns(item) ≠ ∅` (the #224 assignment condition — the SAME `req ∪ ens ∪ body` transitive
+reachability set the §4 hard gate computes, NOT "non-empty registry"; a body-only spec-call therefore
+triggers BOTH the gate and this termination class), EVERY spec-fn `s ∈ R_item` carries a per-spec-fn
+obligation that `s.dec` is a
 VALID well-founded measure (it strictly descends on every recursive call, well-founded under the
-sort's order). This class is ASSIGNED to every item that has a non-empty registry, and is conjoined
+sort's order). This class is ASSIGNED to every item whose `calledSpecFns(item) ≠ ∅`, and is conjoined
 ITEM-WIDE by the conjunction rule of §4.1 — i.e. an item certifies only when its REGISTRY-TERMINATION
 class is discharged ALONGSIDE its CONTRACT/EXEC/BODY/LOOP/OVERFLOW classes. The parser's dec PRESENCE
 guarantee is the SYNTACTIC precondition; this class is the SEMANTIC one (validity), and it is NEVER
@@ -681,7 +687,9 @@ held fixed — see the registry hard gate below, which is UNCHANGED), is:
 def R_item : Thermite.Registry := fun name =>
   match name with
   | "spec_sum" => some { params := ["xs"], body := <Expr-encoding of spec_sum's real body> }
-  | …          => …                       -- exactly calledSpecFns(item), each real-bodied
+  | …          => …                       -- exactly calledSpecFns(item) (§4 hard gate: every
+  --                                          spec-fn reachable from req ∪ ens ∪ body, TRANSITIVELY;
+  --                                          #224), each real-bodied
   | _          => none
 
 -- reqStable / ensStable: each clause STABILIZES to True at the env (Prop side); a comparison whose
@@ -712,7 +720,8 @@ to True THEN `ens` stabilizes to True at `result = r`. This is
 sound for a DEC-VALID (terminating) registry by the supporting lemma `stabilization_exists_for_dec_
 bounded`: because the source `dec` measure makes every spec-fn's recursion well-founded — a property
 the REGISTRY-TERMINATION class (REQ-1.2) DISCHARGES rather than assumes — each
-`specCall` reachable from `req`/`ens`/the body has a FINITE unfolding depth PER ENV, so
+`specCall` reachable from `req`/`ens`/the body — the FULL `calledSpecFns(item)` transitive closure the
+hard gate populates `R_item` with (#224) — has a FINITE unfolding depth PER ENV, so
 `intVal`/`denote` reach a fixed value at some finite per-env `N` and STAY there — the stabilized value
 EXISTS and equals `S`'s intended meaning of the clause at that env. The body's `r` is bound THROUGH
 `stabilizes body_expr env r`, so it is the body's TRUE stabilized value, NOT a fuel-bottomed artifact;
@@ -748,8 +757,9 @@ must pass both:
   (where the body is the bottom 0); the new form NEVER renders the result at a fuel — it binds `r`
   through stabilization — so that discharge path is gone. So the new form is consistent with Pin A:
   the WRONG contract is unprovable (r=5 is forced) and a CORRECT contract (`result == 5`) holds.
-Any future change to this section must re-check against BOTH `PinIntBottom.lean` and
-`PinStabilization.lean`.
+Any future change to this section must re-check against `PinIntBottom.lean` (#213),
+`PinStabilization.lean` (#214/#215), AND `PinBodyRegistry.lean` (the #224 gate oracle — see the
+registry hard gate below).
 
 **fuel₀ as a non-load-bearing hint.** fuel₀ (the exporter-computed static-nesting bound) no longer
 appears in the obligation. **It explicitly CANNOT influence the theorem's truth** — it is a TACTIC
@@ -802,20 +812,53 @@ the spine work increment (ii) owns.
 mechanisms, belt-and-suspenders:
 
 1. **The export refuses to emit on an incomplete registry.** The exporter computes
-   `calledSpecFns(item)` (every spec-fn name reachable from `req ∪ ens`) and FAILS the export —
+   `calledSpecFns(item)` and FAILS the export —
    refuses to write the Lean file — if `calledSpecFns(item) ⊄ dom(R_item)`. This is a mechanical
-   check at export time. Because the theorem holds `specs := R_item` fixed and carries NO resolution
+   check at export time. **`calledSpecFns(item)` is defined (the #224 fix) as every spec-fn name
+   reachable from `req ∪ ens ∪ body` — TRANSITIVELY: the set is closed under "a reachable spec-fn's
+   OWN body may call further spec-fns," so it is the transitive closure of the call relation seeded by
+   the union of the item's `req`, `ens`, AND `body` Expr(s)** (not `req ∪ ens` only — the cycle-2
+   scope, which the #214 `∀ r, stabilizes body_expr env r → …` result-binding form made unsound: an
+   omitted body-called spec-fn STABILIZES to the `intVal` Int-bottom `0` at every fuel, uniqueness
+   forces `r = 0`, and a wrong contract `ens: result == 0` certifies kernel-clean —
+   `lean/Thermite/PinBodyRegistry.lean`'s `wrong_contract_certifies_under_body_omission`). Including
+   the body — transitively — in the reachability set is what closes that hole: the body-called spec-fn
+   is now in `calledSpecFns(item)`, so an omission FAILS this gate. Because the theorem holds `specs := R_item` fixed and carries NO resolution
    premise, an omission cannot self-certify a vacuous obligation: an unbuildable export is a hard
    error, not a True-bottom that proves itself. (Contrast the rejected hypothesis form, where an
    omitted entry FALSIFIED a resolution antecedent and the whole obligation followed from the false
    premise — kernel-clean but meaningless.)
 2. **Per-name `decide`/`rfl` resolution lemmas are emitted ALONGSIDE.** For each
-   `name ∈ calledSpecFns(item)` the exporter also emits a resolution lemma of the form
+   `name ∈ calledSpecFns(item)` — i.e. for every spec-fn reachable from `req ∪ ens ∪ body`
+   transitively (the #224 definition above), so a body-only call gets a lemma TOO — the exporter also
+   emits a resolution lemma of the form
    `example : R_item "spec_sum" ≠ none := by decide` (or the `rfl`/`Option.isSome`-shaped variant
    that `decide`s on the concrete `R_item`). If the exporter ever omits a called spec-fn from
    `R_item`, the corresponding lemma FAILS TO COMPILE — so an omission also breaks the kernel check,
    independent of the build-time gate. Both stated: the gate refuses to emit, and the emitted lemmas
    refuse to compile.
+
+**The gate's regression oracle (the #224 pin — BOTH directions).** `lean/Thermite/PinBodyRegistry.lean`
+is the kernel-checked regression oracle for the `req ∪ ens ∪ body` reachability definition, against the
+shipped spine (its `stabilizes`/`stabilizesProp` are copied VERBATIM from the §4 definition block):
+- **the omitted-registry form must be UNREACHABLE through the gate.** The pin's
+  `wrong_contract_certifies_under_body_omission` discharges `ens: result == 0` for an item whose body
+  `h(x)` (a spec-call reachable from the BODY only, true result 5) is OMITTED from `R_item` — under the
+  cycle-2 `req ∪ ens`-only `calledSpecFns`, that omission passed the gate vacuously
+  (`calledSpecFns = ∅`, `∅ ⊆ dom(R_item)`) and ZERO per-name lemmas were emitted, so the spine bottoms
+  the unresolved call to `0` (`body_bottoms_at_every_fuel`), it STABILIZES to the bottom
+  (`omitted_body_stabilizes_to_bottom`), uniqueness forces `r = 0` (`omission_forces_r_zero`), and the
+  wrong contract certifies kernel-clean. Under the #224 definition `h ∈ calledSpecFns(item)` (it is
+  body-reachable), so the export REFUSES to emit (mechanism 1) AND the `h` resolution lemma fails to
+  compile (mechanism 2) — the `wrong_contract_certifies_under_body_omission` form can no longer be
+  EXPORTED, so the unsound discharge is unreachable through the gate.
+- **the complete-registry obligation correctly REFUSES the wrong contract.** With `R_item` populated to
+  the full `calledSpecFns` (`h(x) = 5` present), the body stabilizes to 5
+  (`body_stabilizes_to_5_with_full_registry`), uniqueness forces `r = 5`
+  (`full_registry_forces_r_five`), and the same `ens: result == 0` obligation is REFUTED
+  (`wrong_contract_fails_with_full_registry`) — confirming the omission discharge was PURELY the
+  gate's old `req ∪ ens`-only scope, exactly what the #224 redefinition closes. (The pin is the
+  critic's audit artifact and is NOT touched by this doc.)
 
 **Registry PRESENCE ≠ registry TERMINATION (the #215 boundary).** The hard gate above guarantees the
 registry is POPULATED (every called spec-fn is present, real-bodied). It does NOT guarantee the
@@ -828,7 +871,9 @@ guarantees dec PRESENCE only; this class is dec VALIDITY. §1.2 is the closure.
 **Registry faithfulness stays part of EXP (the inspection tier).** Beyond presence (the hard gate
 above), the EXPORTED `R_item` must bind each name to its REAL `Denote`-encoded body — a WRONG body is
 an unsound certification the gate cannot catch. So body-faithfulness (each `SpecFnId` in
-`Obligation.env.spec_defs` ↦ its `R_item` entry with the matching `Expr` body) remains part of the
+`Obligation.env.spec_defs` ↦ its `R_item` entry with the matching `Expr` body — for EVERY name in
+the `req ∪ ens ∪ body` transitive `calledSpecFns(item)`, #224, including the body-only and
+transitively-reached names) remains part of the
 arm-by-arm EXP inspection + drift-tripwire discipline. The hard gate guarantees PRESENCE mechanically;
 REGISTRY-TERMINATION guarantees TERMINATION (REQ-1.2); EXP inspection guarantees the BODIES are right.
 
@@ -885,8 +930,9 @@ certify (and the degrade ladder applies ITEM-WIDE, not per-class — an item wit
 degrades as a whole). This forbids the hole the critic named: nothing previously stopped an engine
 from certifying an item on the CONTRACT class ALONE while ignoring its OVERFLOW/BODY classes. With the
 conjunction rule, that is impossible — the OVERFLOW class is MANDATORILY conjoined for any item with an
-exec body, AND (REQ-1.2) the REGISTRY-TERMINATION class is MANDATORILY conjoined for any item with a
-non-empty spec-fn registry. This is the rule that closes the #215 divergent-registry hole: a divergent
+exec body, AND (REQ-1.2) the REGISTRY-TERMINATION class is MANDATORILY conjoined for any item with
+`calledSpecFns(item) ≠ ∅` (the §4/#224 `req ∪ ens ∪ body` transitive set — so a body-only spec-call
+conjoins it too). This is the rule that closes the #215 divergent-registry hole: a divergent
 spec-fn fails REGISTRY-TERMINATION, the conjunction rule blocks the item, and the bottom-poisoned
 stabilization (Pin B's `divergent_contract_certifies`) can never reach a certificate.
 
@@ -1012,7 +1058,10 @@ the AUTO tiers produce exactly the fuel-free shallow goals the PoC demonstrates,
 INTERACTIVE tier carries the `∃N∀fuel` form.
 
 - **(a) FUEL-FREE export for specCall-free obligations (AUTO).** When the obligation's `Expr`s are
-  `specCallFree` (the common scalar-contract case — no spec-fn appears in `req`/`ens`/body), the
+  `specCallFree` (the common scalar-contract case — no spec-fn appears in `req`/`ens`/body — i.e.
+  `calledSpecFns(item) = ∅` under the #224 `req ∪ ens ∪ body` definition; this tier already ranged
+  over the body, so the §4 hard-gate redefinition RECONCILES the gate WITH this tier rather than
+  changing it), the
   exporter emits the FUEL-FREE statement `denote 0 e env` / `intVal 0 e env = …` rather than the
   `∃N∀fuel` wrapper. This is sound by the FUEL-IRRELEVANCE lemma (§4: `specCallFree e → ∀ f g, intVal
   f e env = intVal g e env`, and the Prop analogue) — for a specCall-free `e`, `stabilizesProp e env ↔
@@ -1187,9 +1236,14 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
   ONLY for recursive registries on the interactive path. A spec-fn-calling contract obligation with an
   under-fuelled body OR an omitted registry entry FAILS a vacuity-tripwire test (the
   obligation must NOT be provable by the below-`N` Int-`0`/Prop-`True` bottom — §4; the regression
-  oracles are `lean/Thermite/PinIntBottom.lean` (`obligation_form_is_false`, the #213 form) and
+  oracles are `lean/Thermite/PinIntBottom.lean` (`obligation_form_is_false`, the #213 form),
   `lean/Thermite/PinStabilization.lean` Pin A (`wrong_contract_certifies_with_underfuelled_rbody` must
-  NOT be reachable once the result is bound through stabilization, the #214 form), which the new forms
+  NOT be reachable once the result is bound through stabilization, the #214 form), AND
+  `lean/Thermite/PinBodyRegistry.lean` (the #224 gate oracle:
+  `wrong_contract_certifies_under_body_omission` must NOT be EXPORTABLE — the `req ∪ ens ∪ body`
+  transitive `calledSpecFns` puts the body-only spec-fn in `R_item`, so the gate refuses the
+  omitted-registry form; `wrong_contract_fails_with_full_registry` shows the complete-registry
+  obligation correctly REFUSES the wrong contract), which the new forms
   pass). **A DIVERGENT spec-fn registry FAILS the REGISTRY-TERMINATION class** (#215, REQ-1.2): a test
   asserts `f(x)=f(x)` is REJECTED before any contract obligation certifies (the regression oracle is
   `lean/Thermite/PinStabilization.lean` Pin B (`divergent_contract_certifies`) — that bottom-poisoned
@@ -1207,12 +1261,12 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the Obligation artifact) | NOT-STARTED | open build blocker #204. The content is SHIPPED only as transient Verus text: `pub fn equivalence_obligation` / `exec_equivalence_obligation` / `body_equivalence_obligation` / `loop_{entry,preservation,exit}_obligation` in `thermite-tv/src/obligation.rs` ("`thermite-tv` does NOT run verus itself: it emits the obligation TEXT") + `pub struct ObligationFrame` (the env/typing ctx). The prover-NEUTRAL artifact (AST slice + Thermite types + coercion flags + the `role` discriminator, pre-rendering) is unbuilt — that is the gap. The three §0.1 meta queries are scoped OUT (OQ-5). REQ-1.1 (the per-item CLASS-CONJUNCTION RULE — an item certifies only when EVERY class REQ-1 assigns it is discharged; the degrade ladder applies item-wide; #212(b)) + REQ-1.2 (the REGISTRY-TERMINATION class — every spec-fn in a non-empty `R_item` carries a dec-VALIDITY/well-foundedness obligation, conjoined item-wide; discharged by Verus's dec-check or a Lean well-foundedness proof; closes the #215 divergent-registry bottom-poisoning per Pin B) + the exec-body bridge scoping (§4.1) are stated NORMATIVELY in §1.2/§4/§4.1 but likewise unbuilt — increment (iv) for the bridge, increment (i)/(iii) for the per-item conjunction at the certificate level, increment (ii) for the Lean-path registry-termination discharge. |
+| REQ-1 (the Obligation artifact) | NOT-STARTED | open build blocker #204. The content is SHIPPED only as transient Verus text: `pub fn equivalence_obligation` / `exec_equivalence_obligation` / `body_equivalence_obligation` / `loop_{entry,preservation,exit}_obligation` in `thermite-tv/src/obligation.rs` ("`thermite-tv` does NOT run verus itself: it emits the obligation TEXT") + `pub struct ObligationFrame` (the env/typing ctx). The prover-NEUTRAL artifact (AST slice + Thermite types + coercion flags + the `role` discriminator, pre-rendering) is unbuilt — that is the gap. The three §0.1 meta queries are scoped OUT (OQ-5). REQ-1.1 (the per-item CLASS-CONJUNCTION RULE — an item certifies only when EVERY class REQ-1 assigns it is discharged; the degrade ladder applies item-wide; #212(b)) + REQ-1.2 (the REGISTRY-TERMINATION class — for `calledSpecFns(item) ≠ ∅` (the #224 condition: every spec-fn reachable from `req ∪ ens ∪ body` transitively, the SAME set the §4 hard gate populates `R_item` with), every spec-fn in `R_item` carries a dec-VALIDITY/well-foundedness obligation, conjoined item-wide; discharged by Verus's dec-check or a Lean well-foundedness proof; closes the #215 divergent-registry bottom-poisoning per Pin B) + the exec-body bridge scoping (§4.1) are stated NORMATIVELY in §1.2/§4/§4.1 but likewise unbuilt — increment (iv) for the bridge, increment (i)/(iii) for the per-item conjunction at the certificate level, increment (ii) for the Lean-path registry-termination discharge. |
 | REQ-2 (the Engine interface) | NOT-STARTED | open build blocker #204. The discharge path is SHIPPED but Verus-welded: `forge::check::check_file_with_options` calls `run_verus` directly + `classify_verus_outcome` (the three-way `Proved`/`Timeout`/`Counterexample` split) in `forge/src/check.rs`. No `trait Engine`, no fragment/trust-profile/evidence abstraction. The Verus instance maps onto the SHIPPED outcome classifier WITH the REQ-3.1 fast-unknown remap (AC-2); the EVIDENCE slot generalizes the SHIPPED `cache::cache_key` (lowered_src+seed+verus_version+thermite_version+CHECK_SCHEMA_VERSION) per §2(d). |
 | REQ-3 (Unknown degrades / Refuted hard-fails, engine-generic) | NOT-STARTED | open blocker #204. The discipline is SHIPPED for Verus: `degrade::ladder_action_l3` maps `Counterexample → LadderAction::HardFail` ("a `VerusOutcome::Counterexample` … is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat)", `forge/src/check.rs`); `Timeout` degrades via `degrade::run_ladder` (`forge/src/degrade.rs`). The generalization off "verus" + the failure-WITHOUT-witness-is-Unknown rule + the REQ-3.1 fast-unknown remap (a witness-less `Counterexample` → `Unknown`, today absorbed into the `Counterexample` bucket per the `VerusOutcome::Counterexample` doc; INCLUDING a failed spec-fn dec/termination proof, which routes to a Lean re-attempt that must still discharge REGISTRY-TERMINATION, REQ-1.2) are unbuilt. |
 | REQ-4 (certificate attribution — per-obligation engine + trust profile) | NOT-STARTED | FUTURE (increment (iii)). The cert + honest-min are SHIPPED: `manifest::Certificate { level: Level, .. }`, `enum Level { L0, L1, L2, L3 }` (`#[derive(Ord)]`), `AssuranceManifest::aggregate → ProjectAssurance::Certified(min)` (VERUS-ANCHORED to `thermite_verified::aggregate_level`). NO per-obligation `{engine, trust_profile}` field exists; the additive-field precedent (`boundary`/`slag`/`lowered_assurance`/`assurance_scope`, all `#[serde(default)]`) is the schema model. The "smaller base" claim is along the named axes; the ordering formalization is OQ-3. |
 | REQ-5 (engine disagreement = soundness alarm) | NOT-STARTED | FUTURE (increment (iii)). No second engine exists yet, so no disagreement path. The anti-cheat ANCESTOR is SHIPPED: a counterexample never degrades (`ladder_action_l3` → `HardFail`). The Proven⊕Refuted halt (vs benign Proven⊕Unknown), guarded against the REQ-3.1 fast-unknown spurious trigger, is unbuilt. |
-| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). Critically (#213, the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`): `intVal` bottoms an INT-position `specCall` to `0` (`| none => 0` + fuel-0 catch-all `| _, _, _ => 0`), NOT to `True` — so the cycle-2 `∀ fuel ≥ fuel₀` form is FALSE for correct items (the pin's `obligation_form_is_false`) and is RETIRED. §4 RESTATES the obligation against a STABILIZATION relation (`stabilizes : Expr → Env → Int → Prop := ∃ N, ∀ fuel ≥ N, intVal fuel e env = v`, + the Prop analogue for `denote`): `∀ r, stabilizes body_expr env r → reqStable(env) → ensStable(env at r)`, per-env ∃-N (no global `fuel₀`, fixing the value-dependent-depth counterexample), with the RESULT value BOUND THROUGH stabilization (the #214 fix — Pin A's `wrong_contract_certifies_with_underfuelled_rbody` is now UNPROVABLE because uniqueness of stabilization forces `r` to the body's true value, `wrong_contract_fails_at_true_value`), `specs := R_item` held fixed + the export-time HARD GATE (refuse-to-emit + per-name `decide` lemmas) when `calledSpecFns(item) ⊄ dom(R_item)` — no resolution PREMISE. SCOPED to the PURE-CONTRACT class (§4.1: the exec-body S_C×S_E/S_B bridge — value bridge, bool sort, optres, env→State — is increment (iv)'s own design obligation). The SPINE PREREQUISITES (increment (ii), NOT yet built): `stabilizes` + `stabilization_exists_for_dec_bounded` + uniqueness-of-stabilization (#214) + the FUEL-IRRELEVANCE lemma (#216) + the REGISTRY-TERMINATION discharge (#215). The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
+| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). Critically (#213, the critic's kernel-checked pin `lean/Thermite/PinIntBottom.lean`): `intVal` bottoms an INT-position `specCall` to `0` (`| none => 0` + fuel-0 catch-all `| _, _, _ => 0`), NOT to `True` — so the cycle-2 `∀ fuel ≥ fuel₀` form is FALSE for correct items (the pin's `obligation_form_is_false`) and is RETIRED. §4 RESTATES the obligation against a STABILIZATION relation (`stabilizes : Expr → Env → Int → Prop := ∃ N, ∀ fuel ≥ N, intVal fuel e env = v`, + the Prop analogue for `denote`): `∀ r, stabilizes body_expr env r → reqStable(env) → ensStable(env at r)`, per-env ∃-N (no global `fuel₀`, fixing the value-dependent-depth counterexample), with the RESULT value BOUND THROUGH stabilization (the #214 fix — Pin A's `wrong_contract_certifies_with_underfuelled_rbody` is now UNPROVABLE because uniqueness of stabilization forces `r` to the body's true value, `wrong_contract_fails_at_true_value`), `specs := R_item` held fixed + the export-time HARD GATE (refuse-to-emit + per-name `decide` lemmas) when `calledSpecFns(item) ⊄ dom(R_item)`, where `calledSpecFns(item)` is (the #224 fix) every spec-fn reachable from `req ∪ ens ∪ body` TRANSITIVELY (NOT `req ∪ ens` only — the cycle-2 scope, which the #214 `∀ r, stabilizes body_expr env r → …` form made unsound: an omitted body-called spec-fn stabilizes to the Int-bottom `0`, uniqueness forces `r = 0`, and `ens: result == 0` certifies kernel-clean — the critic's pin `lean/Thermite/PinBodyRegistry.lean`'s `wrong_contract_certifies_under_body_omission`, REFUTED with the full registry by `wrong_contract_fails_with_full_registry`) — no resolution PREMISE. SCOPED to the PURE-CONTRACT class (§4.1: the exec-body S_C×S_E/S_B bridge — value bridge, bool sort, optres, env→State — is increment (iv)'s own design obligation). The SPINE PREREQUISITES (increment (ii), NOT yet built): `stabilizes` + `stabilization_exists_for_dec_bounded` + uniqueness-of-stabilization (#214) + the FUEL-IRRELEVANCE lemma (#216) + the REGISTRY-TERMINATION discharge (#215). The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
 | REQ-7 (Lean discharge modes + termination) | NOT-STARTED | FUTURE (increment (ii)/(iii)). The AUTO fragment is PROVEN-REACHABLE: `z3-demotion.md` shows `tv_obligation_arith_cmp`/`tv_obligation_or_le` (scalar/QF-linear contract clauses) discharged by Lean-SMT's `smt` tactic, kernel-clean (`#print axioms` = standard set only; no `sorryAx`/cvc5 oracle) — and these are SHALLOW QF goals with NO `denote`/`stabilizesProp` wrapper. §6.1 reconciles the deep-embedded §4 form to that grounding via the THREE-TIER export story (#216): (a) FUEL-FREE export for specCall-free obligations via the `intVal_fuel_irrelevant`/`denote_fuel_irrelevant` lemma (`stabilizesProp e env ↔ denote 0 e env` for specCall-free `e`) — the auto fragment's actual fuel-free shallow shape, matching the PoC; (b) STATIC UNFOLDING of non-recursive registries to finite depth, again yielding fuel-free goals; (c) the `∃N∀fuel` stabilization form reserved for RECURSIVE registries on the INTERACTIVE path only (the per-env `∃N` witness needs induction). The interactive/proof-artifact mode (staleness = the §2(d) EVIDENCE KEY changing: obligation + engine + engine-toolchain version + targeted-spine content hash) + the `dec`/partial-correctness termination policy (tied to the SHIPPED `while_rule` `h_run` premise) + the REGISTRY-TERMINATION class (#215, REQ-1.2) are unbuilt. |
 | REQ-8 (engine ordering + ladder placement) | NOT-STARTED | open blocker #204 (the Verus-only hook) + FUTURE (the Lean rung). The ladder substrate is SHIPPED: `degrade::run_ladder` takes per-rung closures (`attempt_l2`/`attempt_l1`); the engine rungs are the same closure shape. The `--engine lean` / `#[engine(lean)]` surface (OQ-1) and the per-engine SKIP/Unknown accounting are unbuilt. |
 | REQ-9 (engine-generic anti-Goodhart battery, honest v1) | NOT-STARTED | FUTURE (increment (iii)). The battery is SHIPPED Verus-only: `forge::check::mutation_score` generates mutants + re-`run_verus`es each through the #8 cache; its kill rule is "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"); and each SURVIVOR is run through the #101 `equivalence_proves_equal` query — a proven-equivalent survivor is excluded from BOTH the survivor set AND `scored` (`if proved_equivalent { equivalent += 1; continue; }`, "REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`"), so the SHIPPED `scored` = attempted MINUS proven-equivalent. OQ-5 already DROPS un-lowerable mutants from the denominator. The engine-generic kill (`Refuted ∪ Unknown-after-attempt`, = the shipped `Counterexample ∪ Timeout`), the "untested = never-attempted" rule (now including recursive-registry obligations that only the §6 tier-(c) interactive path admits), the #101-preserving floor (survivor/denominator both MINUS proven-equivalent; the equivalence probe a §0.1 meta-query outside the Engine interface, F3), and the floor guards (minimum-attempted qualifier + the 0/0 backstop) are unbuilt. |

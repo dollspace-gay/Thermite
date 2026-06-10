@@ -1,0 +1,236 @@
+# Forge Goal-State REPL — `goal` / `fill` / `edit` / `battery`
+<!--
+tier: 3-component
+status: draft
+governs: forge/src/goal_repl.rs (future), forge/src/cli.rs (verb dispatch), thermite-syntax/src/parser.rs (hole token, future)
+thesis-refs:
+  - thermite-design.md §5
+  - thermite-design.md §5.1
+  - thermite-design.md Appendix B
+-->
+
+## Summary
+
+The Lean-style incremental goal-state REPL is the LAST unshipped surface of the
+v0.1 thesis (issue #21 item 3): `forge goal <item>`, `forge fill <addr> <code>`,
+`forge edit <addr> --replace <code>`, and `forge battery [item]`. None of these
+verbs ship today. This doc grounds them as VIEWS over already-SHIPPED machinery
+(semantic addressing, per-obligation `forge check` results + counterexamples, and
+the vacuity+mutation battery that runs inside the gate) plus ONE genuinely new
+research-spike capability: a body-position hole token (`?N`) and a `fill` that
+splices code at a hole address and re-checks. The doc adapts to what exists; it
+proposes no change to the shipped substrates, only documents the contract the new
+verbs must satisfy and pins their v1 scope honestly.
+
+## Requirements
+
+- REQ-1 (`forge battery [item]` — standalone battery view): expose the vacuity
+  triage (`vacuity::triage`), solver-backed vacuity (`vacuity_solver::solver_vacuity_check`),
+  and mutation scoring (`check::mutation_score`) that ALREADY run inside the gate
+  as a standalone verb that reports the §7 anti-Goodhart battery for one item or
+  the whole file, WITHOUT re-defining any verdict. A thin VIEW over the existing
+  per-item pipeline. Derived from `thermite-design.md` §7 + Appendix B
+  (`forge battery [item]   run vacuity battery + mutation scoring`).
+
+- REQ-2 (`forge goal <item>` — goal-state render): render the goal state for an
+  item as the §5.1 four-part view (given / want / holes / per-obligation status
+  with counterexamples), as a VIEW over the existing `forge check` per-item
+  `Vec<Certificate>` + `ObligationResult` collection. An item with no holes and a
+  clean cert renders `ALL GOALS DISCHARGED`; an item with a counterexample renders
+  the failed obligation's concrete witness (never an adjective, §5.1 property 2);
+  an item with open holes renders `holes: ?N : <position>`. Derived from §5/§5.1.
+
+- REQ-3 (`forge edit <addr> --replace <code>` — semantic edit by address): locate
+  a node by its stable semantic address (`thermite_syntax::address::resolve`),
+  splice the replacement SOURCE TEXT at that node's span IN THE FILE, re-emit the
+  file, and re-check the affected item, printing the new goal state. Derived from
+  §4.3 + Appendix B (`forge edit <addr> --replace <code>   semantic edit by
+  address`). The proof cache (§5.3) means an edit to one item cannot invalidate an
+  unrelated item's certificate.
+
+- REQ-4 (body-position hole token `?N` — parser): the parser accepts a `?N` token
+  in fn-BODY statement position ONLY as a structural hole. A holed item is a
+  well-formed AST that carries its open holes; it is NEVER certified (an item with
+  any open hole is L0-equivalent until every hole is filled). Derived from §5.1
+  (`body = hole ?0`). NEW capability — the parser today has no hole support.
+
+- REQ-5 (open-hole validator — a holed item never certifies): the check pipeline
+  reports each open hole as an OPEN GOAL and short-circuits the holed item to a
+  non-certifying cert (no lowering, no verus) BEFORE the L3 path, exactly as the
+  vacuity gate short-circuits a rejected item. A holed item carries `Level::L0`
+  with an `OpenHole` reject cause and the hole's address as the obligation. Derived
+  from §5.1 + the existing `gate_fn` short-circuit pattern.
+
+- REQ-6 (`forge fill <addr> <code>` — fill a hole + re-check): a specialization of
+  `edit` whose address names a hole (`?N` at a body position). It splices the code
+  at the hole address, re-parses, re-checks the item, and prints the new goal state
+  (which may surface NEW holes the filled code introduces, per the §5.1 dialogue).
+  Derived from §5.1 + Appendix B (`forge fill <hole-addr> <code>   fill a hole;
+  returns new goal state`).
+
+- REQ-7 (determinism + Result discipline): every verb is deterministic (R-CODE-5 —
+  the goal render is a pure function of the cert collection + AST; the splice is a
+  pure function of the span + replacement text) and returns `Result<_, ForgeError>`
+  with no panic on a bad address / malformed hole (R-CODE-2; reuse
+  `address::AddressError`). Derived from `goal.md` R-CODE-2/R-CODE-5 + §5.3.
+
+## Acceptance criteria
+
+- AC-1 (battery view fidelity): `forge battery conformance/sum.th` reports the SAME
+  vacuity verdict and mutation kill-ratio that `forge check conformance/sum.th`
+  computes internally — the standalone verb is a VIEW, not a re-derivation. Anchored
+  to `conformance/sum.cert.json` (`mutants 17/18`, non-vacuous) — NEVER copied from
+  the verb's own output (R-CHAR-3).
+
+- AC-2 (goal render — discharged): `forge goal sum` on a clean `sum.th` renders
+  `ALL GOALS DISCHARGED` + the L3 level + the §7 battery line, matching the
+  obligations in `conformance/sum.cert.json`.
+
+- AC-3 (goal render — counterexample): `forge goal <item>` on an item with a failed
+  obligation renders the concrete witness from the `ObligationResult.diagnostic` +
+  `location` (the §5.1 `lo=3, hi=3, mid=3` shape), never a bare "verification
+  failed".
+
+- AC-4 (edit by address): `forge edit binary_search.loop#1.inv#2 --replace "<text>"`
+  resolves the address via `thermite_syntax::address::resolve` against
+  `conformance/binary_search.th`, splices the new clause at that span, and the
+  re-emitted file re-parses to the SAME address set with the new `inv#2` text. A
+  bad address (`binary_search.loop#9`, in `conformance/address/binary_search.addresses.json`
+  `must_error[]`) yields a structured `AddressError`, never a panic.
+
+- AC-5 (hole never certifies): a `.th` file whose fn body is `?0` parses, and
+  `forge check` / `forge goal` on it reports the item as L0 with an OPEN GOAL at
+  `<fn>.?0` and the project assurance as non-certified. No lowering, no verus.
+
+- AC-6 (the §5.1 dialogue as golden scenario): the full §5.1 `binary_search`
+  dialogue is the end-to-end golden conformance scenario — declare with `body = ?0`,
+  `fill` the loop skeleton + invariants introducing `?1 ?2`, observe `?1 discharged`
+  and `?2 open` with its counterexample, guard the branch via a final `fill`/`edit`,
+  observe `ALL GOALS DISCHARGED ✓ binary_search certified L3` with the battery line.
+  This scenario is the acceptance oracle for the whole component (golden fixture
+  under `conformance/goal/binary_search.dialogue.json`, hand-derived from §5.1 —
+  R-CHAR-3, NEVER regenerated from the verbs).
+
+## Architecture
+
+The component is a thin REPL/view layer (`forge/src/goal_repl.rs`-ish) over three
+SHIPPED substrates, plus one parser/validator extension.
+
+**Substrate 1 — semantic addressing (SHIPPED).** `thermite_syntax::address` is the
+operand layer for `edit`/`fill`. `pub fn resolve in address.rs` maps an address
+string to an `AddressEntry { addr, kind, surface_keyword, text }` or a structured
+`AddressError` (`Malformed` / `NotFound`), and `pub fn addresses_of in address.rs`
+enumerates every address in document order. Addresses are stable under unrelated
+edits (a block's address is a function of its position within its enclosing item
+only — semantic-addressing.md REQ-5), which is exactly what makes `edit` and the
+per-item proof cache (§5.3) sound. The address namespace covers `fn`/`spec fn`
+roots and `loop#N`/`inv#M`/`dec` inner nodes; `edit` operates on the `inv`/`dec`
+nodes whose `text` field the resolver already returns. The hole address space
+(`<fn>.?N`) is NEW (REQ-4) and extends this namespace at body-statement positions.
+
+**Substrate 2 — per-obligation results + counterexamples (SHIPPED).** `forge check`
+emits, per item, a `manifest::Certificate` carrying a `Vec<ObligationResult>` where
+each `ObligationResult` (`manifest.rs`) is `Discharged` or `Failed` with a
+`location` (`file:line:col`) and a `diagnostic` (verus's `error: <clause>` — the
+§5.1 "counterexample, not adjective"). `pub fn check_file in check.rs` is the
+pipeline; `pub fn check_file_with_options in check.rs` is the configurable entry.
+`forge goal` (REQ-2) is a RENDER over this collection: it groups obligations by
+item, formats discharged vs failed-with-witness, and lists open holes. It adds NO
+verification — `render_human in cli.rs` is the existing precedent for a cert
+renderer; `goal` is a goal-state-shaped sibling.
+
+**Substrate 3 — the battery, inside the gate (SHIPPED).** The §7 anti-Goodhart
+battery already runs inside the check gate per item: `vacuity::triage` (structural,
+in `gate_fn`), `vacuity_solver::solver_vacuity_check` (solver-backed, after the
+gate, before L3), and `fn mutation_score in check.rs` (re-lower-and-re-verify each
+`mutation::generate` mutant against the same contract, kill-ratio vs
+`mutation::MUTATION_FLOOR`). `forge battery [item]` (REQ-1) is a THIN verb that
+runs the same per-item pipeline and reports just these verdicts standalone — a view
+over `check_file_with_options`, not a new battery.
+
+**Extension — holes + the splice (NEW, the research spike).** A hole is a
+body-position-only `?N` token (REQ-4). The minimal v1:
+- The lexer emits a `Hole(N)` token for `?<digits>`; the parser accepts it ONLY in
+  fn-body statement position (an `Item::Fn` body block statement). A `?N` anywhere
+  else (expression position, a spec clause, a `spec fn`) is a parse error. No
+  nested holes-in-holes ordering games (a hole's filled code may itself introduce
+  new holes, but the v1 parser does not track containment beyond document-order
+  numbering).
+- A holed `FnItem` carries its open holes; `addresses_of` gains a `<fn>.?N` address
+  per hole (REQ-4) so `fill`/`edit` can name them.
+- The validator (REQ-5) short-circuits a holed item to a non-certifying L0 cert
+  with an `OpenHole` reject cause BEFORE lowering — the SAME short-circuit shape
+  `gate_fn` uses for a vacuity rejection (`GateOutcome`). A holed item NEVER reaches
+  verus; it can never accidentally certify.
+- `forge edit <addr> --replace <code>` (REQ-3) resolves the address, computes its
+  source span, splices the replacement text into the FILE IN PLACE, re-parses, and
+  re-checks the affected item. `forge fill <addr> <code>` (REQ-6) is `edit` whose
+  address is a hole — splice at the `?N` position, re-check, print the new goal
+  state. Both operate on the file in place and print the new goal state (REQ-6).
+
+**v1 scope pinned honestly** (the research-spike boundary, §5.1 + R-DEFER-5):
+- Holes are fn-BODY STATEMENT position only. No holes in expressions, spec clauses,
+  signatures, or `spec fn`.
+- No nested-hole ORDERING semantics: holes are numbered in document order; filling
+  a hole that introduces new holes re-numbers on re-parse. There is no incremental
+  hole-id stability across fills in v1 (the address is re-derived each turn — the
+  oracle re-presents, §5.1 property 1).
+- `fill`/`edit` mutate the file in place and re-run the WHOLE-ITEM check (the v0.1
+  check is whole-item per §13/issue #21); they do not do incremental obligation-
+  level re-solving. The proof cache (§5.3) makes the re-check cheap for unaffected
+  items.
+- `goal`/`battery` add NO verification; they are pure views over the existing cert
+  collection and battery verdicts.
+
+## Verification
+
+- `cargo test -p forge` — unit tests for the goal render (discharged / counter-
+  example / open-hole shapes), the battery view (equals the in-gate verdict), the
+  address-splice (round-trips to the same address set), and the hole short-circuit
+  (a holed item is non-certifying, never lowered).
+- `cargo test -p thermite-syntax` — the `Hole(N)` lexer token, the body-position-
+  only parse acceptance + the expression/clause-position parse REJECTION, and the
+  `<fn>.?N` address enumeration.
+- Conformance: `conformance/goal/binary_search.dialogue.json` (AC-6, the §5.1
+  golden dialogue — hand-derived from the thesis, R-CHAR-3) drives the end-to-end
+  scenario; `conformance/sum.cert.json` anchors the battery view (AC-1) and the
+  discharged goal render (AC-2); `conformance/address/binary_search.addresses.json`
+  `must_error[]` anchors the bad-address path (AC-4).
+- Gauntlet (R-DEFER-6): `cargo test -p forge`, `cargo test -p thermite-syntax`,
+  `cargo clippy -p forge -p thermite-syntax --all-targets -- -D warnings`,
+  `cargo fmt --check`, plus the conformance corpus where `forge`/`thermite-lower`
+  is touched.
+
+## Increment plan
+
+The build is sequential (R-DEFER-7); the three increments are ordered by dependency
+(views first, then the addressing splice, then the parser/validator spike):
+
+- **(i) `forge battery` + `forge goal`** — VIEWS over existing machinery, smallest.
+  Two new verbs in `cli.rs` + a `goal_repl.rs` renderer; no new verification, no
+  parser change. Discharges REQ-1, REQ-2 (and AC-1, AC-2, AC-3).
+- **(ii) `forge edit`** — addressing + source-text splice. Resolves an `inv`/`dec`/
+  loop address, splices the replacement at its span, re-emits + re-checks. No holes
+  yet. Discharges REQ-3 (and AC-4).
+- **(iii) holes + `forge fill`** — the research spike: the `?N` lexer/parser token
+  (thermite-syntax), the open-hole validator short-circuit (forge check), the
+  `<fn>.?N` address, and the REPL fill loop. Discharges REQ-4, REQ-5, REQ-6 (and
+  AC-5, AC-6 — the §5.1 golden dialogue).
+
+REQ-7 (determinism + Result discipline) is a cross-cutting constraint discharged
+across all three increments.
+
+## REQ status
+
+| REQ | Status | Evidence |
+|---|---|---|
+| Substrate: semantic addressing | SHIPPED | `pub fn resolve` + `pub fn addresses_of` in `address.rs` map address ↔ `AddressEntry`, bad addr → `AddressError` (no panic). Non-test consumer: `forge edit`/`fill` are the design-intended consumers (NOT-STARTED below); addressing is ALREADY consumed by `tests/conformance.rs` against `conformance/address/binary_search.addresses.json`. The operand layer for REQ-3/REQ-6 is present and verified. |
+| Substrate: per-obligation results + counterexamples | SHIPPED | `pub struct ObligationResult` + `pub enum ObligationStatus` (`Discharged`/`Failed` with `location` + `diagnostic`) in `manifest.rs`; produced by `pub fn check_file` in `check.rs`. Non-test consumer: `fn run_check` → `fn render_human` in `cli.rs` (renders the cert collection today). The goal render (REQ-2) is a VIEW over this; the substrate is shipped + verified against `conformance/sum.cert.json`. |
+| Substrate: the §7 battery inside the gate | SHIPPED | `vacuity::triage` + `vacuity_solver::solver_vacuity_check` + `fn mutation_score` in `check.rs` (kill-ratio vs `mutation::MUTATION_FLOOR`) all run per item inside `pub fn check_file_with_options`. Non-test consumer: `fn run_check` in `cli.rs` (the gate result drives the exit code). `forge battery` (REQ-1) exposes it standalone; the substrate is shipped + anchored to `conformance/sum.cert.json` (`mutants 17/18`). |
+| REQ-1 (`forge battery [item]`) | NOT-STARTED | open build blocker #193. No `Command::Battery` arm in `cli.rs`; the battery verdicts are computed but never surfaced as a standalone verb. |
+| REQ-2 (`forge goal <item>`) | NOT-STARTED | open build blocker #193. No `Command::Goal` arm in `cli.rs`; no goal-state renderer (only `render_human` for the cert). |
+| REQ-3 (`forge edit <addr> --replace`) | NOT-STARTED | open build blocker #193. No `Command::Edit` arm; `address::resolve` is consumed only by tests, never by a splice path. No source-text splice machinery exists. |
+| REQ-4 (body-position hole `?N` — parser) | NOT-STARTED | open build blocker #193. Confirmed absent: `grep` for `Hole`/`Question`/`?N` in `thermite-syntax/src/{lexer,parser,ast}.rs` finds no hole token or AST node. The parser has zero hole support. |
+| REQ-5 (open-hole validator — never certifies) | NOT-STARTED | open build blocker #193. Depends on REQ-4 (no hole AST to gate). No `OpenHole` reject cause in `manifest::RejectReason`; `gate_fn` has no hole short-circuit arm. |
+| REQ-6 (`forge fill <addr> <code>`) | NOT-STARTED | open build blocker #193. Depends on REQ-3 (splice) + REQ-4/REQ-5 (holes). No `Command::Fill` arm; no fill loop. |
+| REQ-7 (determinism + Result discipline) | NOT-STARTED | open build blocker #193. A cross-cutting constraint on the verbs above; none of the verbs exist yet to carry it. |

@@ -383,6 +383,16 @@ design = ".design/forge/multi-agent.md"
 reference = []
 conformance_ops = []
 
+# Goal-state REPL — forge goal/fill/edit/battery (issue #21 item 3, #193).
+# The last unshipped thesis surface (design 5/5.1, Appendix B): views over the
+# shipped check pipeline (per-obligation results + the vacuity/mutation battery)
+# + semantic-address splice (edit/fill) + the body-position `?N` hole spike.
+[[route]]
+crate_pattern = "forge/src/goal_repl.rs"
+design = ".design/forge/goal-repl.md"
+reference = ["conformance/sum.th", "conformance/address/binary_search.addresses.json"]
+conformance_ops = ["sum", "binary_search"]
+
 # forge build — lower to Rust + rustc -> compiled artifact (issue #56)
 [[route]]
 crate_pattern = "forge/src/build.rs"

@@ -60,6 +60,8 @@ A Thermite artifact ships with a certificate that says: *the implementation sati
 
 Thermite lowers to Rust MIR, inheriting the borrow checker, the optimizer, and `crates.io` interop (through a contract-wrapped FFI boundary — see §9). Verification reuses the Verus and Kani toolchains rather than reinventing solvers.
 
+> **Realization note (#21 decision).** As shipped (v0.1–v0.5), this is realized as *source-level transpilation to Verus-annotated Rust* (`thermite-lower`); `forge build` shells to `rustc`, which performs the MIR lowering internally. The thesis — inherit the borrow checker, the optimizer, and the `crates.io` ecosystem — is therefore satisfied *transitively* through `rustc`. Direct MIR emission was retired as an unneeded rewrite; the diagram below keeps its intent (Rust/MIR is the substrate), only the emission boundary moved up to Rust source.
+
 ---
 
 ## 4. Surface Language
@@ -304,7 +306,7 @@ Thermite explicitly does not try to be:
 
 ## 13. Roadmap
 
-- **v0.1 (kernel):** surface language §4, lowering to Rust MIR, L3/L1 rungs via Verus passthrough, structural vacuity checks, `forge` CLI with goal-state output, skill generator + CI budget.
+- **v0.1 (kernel):** surface language §4, lowering to Rust MIR (realized as source-level transpilation to Verus-Rust; `rustc` performs the MIR lowering — direct MIR emission retired as unneeded, #21 decision), L3/L1 rungs via Verus passthrough, structural vacuity checks, `forge` CLI with goal-state output, skill generator + CI budget.
 - **v0.2 (ladder):** Kani-backed L2 with type-driven bound inference, automatic degrade protocol, solver profiles, proof cache.
 - **v0.3 (battery):** mutation scoring, strengthening probes, tautology/vacuity solver checks in the gate, audit manifest format v1.
 - **v0.4 (boundary):** crates.io boundary modules, L1-enforced FFI contracts, end-to-end vs to-the-boundary certification in the manifest.

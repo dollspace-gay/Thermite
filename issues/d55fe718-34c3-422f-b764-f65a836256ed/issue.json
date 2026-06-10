@@ -1,0 +1,10 @@
+{
+  "uuid": "d55fe718-34c3-422f-b764-f65a836256ed",
+  "display_id": 227,
+  "title": "Divergence: #225 type-directed spec-call cast not threaded to lower_loop (inv/dec) or spec_dec — u32 spec-call args in loop invariants still die at L0",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T23:41:54.785263220Z",
+  "updated_at": "2026-06-10T23:41:54.785263220Z"
+}

@@ -2,11 +2,12 @@
   "uuid": "119d9463-7946-49bf-ad6c-ab7717f2ea8e",
   "display_id": 198,
   "title": "Divergence: forge build --target kernel leaks rustc E0433 on a design-ADMITTED fx time boundary (emit_mod_os emits the std::-bodied os::now wrapper into the #![no_std] crate)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T07:48:27.009966392Z",
-  "updated_at": "2026-06-10T07:48:28.482884807Z",
+  "updated_at": "2026-06-10T08:16:09.474181946Z",
+  "closed_at": "2026-06-10T08:16:09.474181946Z",
   "labels": [
     "blocker"
   ]

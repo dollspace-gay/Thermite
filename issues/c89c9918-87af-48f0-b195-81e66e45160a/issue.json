@@ -2,11 +2,12 @@
   "uuid": "c89c9918-87af-48f0-b195-81e66e45160a",
   "display_id": 21,
   "title": "Track deferred kernel scope: runtime effect sandbox, MIR lowering, incremental goal-state holes",
-  "status": "open",
+  "status": "closed",
   "priority": "low",
   "created_by": "Yffe",
   "created_at": "2026-06-04T17:48:17.770832410Z",
-  "updated_at": "2026-06-04T17:48:21.314968580Z",
+  "updated_at": "2026-06-10T07:16:11.292706206Z",
+  "closed_at": "2026-06-10T07:16:11.292706206Z",
   "labels": [
     "chore"
   ],

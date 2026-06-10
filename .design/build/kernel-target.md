@@ -21,8 +21,9 @@ verified microkernel. It is a NEW fork of the existing `forge build` verb (`buil
 `emit_source` / `invoke_rustc` in `build.rs`): the L1 lowering and the verification (L3) path are
 **target-independent** (Verus and `thermite_lower::lower_l1` are the same), so the kernel target
 changes only the EMISSION PROFILE (the crate prelude + the rustc invocation) and adds one new
-**reject**: an `fx` row carrying an ambient-syscall effect (`read`/`write`/`net`/`term`) is refused,
-because kernel code has no ambient userspace syscall surface.
+**reject**: an `fx` row carrying an ambient-syscall effect (`read`/`write`/`net`/`term`/`time`/`rand`)
+is refused, because kernel code has no ambient userspace syscall surface (and no ambient clock/entropy
+— OQ-2, amended by #198).
 
 This component is currently UNBUILT — every REQ below is NOT-STARTED behind the single build blocker
 (below). The doc is the contract the builder edits `build.rs` against; it documents the v1 scope
@@ -45,11 +46,12 @@ sandbox code.
 - **`panic=abort`.** A freestanding crate cannot unwind; the rustc invocation pins `-C panic=abort`
   (and the kernel host supplies the `#[panic_handler]` / `#[global_allocator]` — they are NOT emitted
   by forge, see OQ-1).
-- **REJECT ambient-syscall `fx` rows.** A fn whose transitive `fx` carries `read`/`write`/`net`/`term`
-  is refused with a structured `ForgeError` BEFORE codegen — kernel code has no ambient userspace
-  syscall (the `read`/`write`/`net`/`term` → syscall-allowlist mapping in `sandbox.rs` is a USERSPACE
-  seccomp concept with no kernel analogue). `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are NOT
-  rejected in v1 (they carry no userspace-syscall semantics in the kernel emission; OQ-2).
+- **REJECT ambient-syscall `fx` rows.** A fn whose transitive `fx` carries
+  `read`/`write`/`net`/`term`/`time`/`rand` is refused with a structured `ForgeError` BEFORE codegen —
+  kernel code has no ambient userspace syscall (the `read`/`write`/`net`/`term` → syscall-allowlist
+  mapping in `sandbox.rs` is a USERSPACE seccomp concept with no kernel analogue, and `time`/`rand`
+  carry std-bodied effect wrappers — `clock_gettime`/`getrandom` — with no kernel ambient clock/entropy
+  either; OQ-2, amended by #198). The admit set is EXACTLY `pure`/`alloc`/`panic`/`diverge`.
 - **L3 path IDENTICAL.** `forge check` (the Verus L3 proof) is target-independent — Verus verifies the
   SAME lowered program regardless of the eventual codegen target. `--target kernel` touches ONLY
   `forge build` (the rustc codegen side), never `forge check`. (`.design/verified/exec-stmt-tv.md`
@@ -121,11 +123,12 @@ through these):
   `synthesize_entry_main`, no seccomp prelude. Compiled `--crate-type=rlib -C panic=abort`. Derived
   from §3 + the emitted-std-surface grounding above. **Blocker #164.**
 - **REQ-3 (ambient-syscall `fx` reject)** — a fn whose transitive `fx` (via `sandbox::transitive_fx` /
-  `manifest::effects_of`) carries `read`/`write`/`net`/`term` is refused with a structured
-  `ForgeError` (a NAMED-effect, nonzero-exit, NO-artifact reject) BEFORE codegen — kernel code has no
-  ambient userspace syscall surface. `--target kernel` + `--entry` is likewise a usage error. Derived
-  from §13 (kernel scope) + the `sandbox.rs` `fx`→syscall mapping being a USERSPACE concept. **Blocker
-  #164.**
+  `manifest::effects_of`) carries `read`/`write`/`net`/`term`/`time`/`rand` is refused with a
+  structured `ForgeError` (a NAMED-effect, nonzero-exit, NO-artifact reject) BEFORE codegen — kernel
+  code has no ambient userspace syscall surface, and `time`/`rand` carry std-bodied effect wrappers
+  (`clock_gettime`/`getrandom`) with no kernel ambient clock/entropy (OQ-2, amended by #198).
+  `--target kernel` + `--entry` is likewise a usage error. Derived from §13 (kernel scope) + the
+  `sandbox.rs` `fx`→syscall mapping being a USERSPACE concept. **Blocker #164.**
 - **REQ-4 (L1 runtime checks in the kernel profile)** — the always-active `thermite_check!` /
   `thermite_contract_violation` (`panic!`) is emitted UNCHANGED; under `#![no_std]` / `panic=abort` it
   routes to the kernel host's `#[panic_handler]` rather than std's unwinder. The L1 assurance rung
@@ -148,9 +151,10 @@ through these):
   profile flags.)
 - **AC-2 (ambient-`fx` fn → structured refusal)** — `forge build --target kernel` on a fn carrying
   `fx read(src)` (the oracle `rf` shape) returns a `ForgeError` naming the rejected effect, nonzero
-  exit, NO artifact — NOT a silent build. A `fx write`/`net`/`term` fn refuses identically; a `fx
-  pure`/`alloc`/`diverge` fn builds. (Verification: a `kernel_target.rs` reject case + a `pure`/`alloc`
-  accept case.)
+  exit, NO artifact — NOT a silent build. A `fx write`/`net`/`term`/`time`/`rand` fn refuses
+  identically (the admitted-`fx time` boundary `effect_link_demo.th` is REFUSED naming `time`, the
+  #198 amendment); a `fx pure`/`alloc`/`diverge` fn builds. (Verification: a `kernel_target.rs` reject
+  case + a `pure`/`alloc` accept case + the `divergence_kernel_time_boundary.rs` `time`-refusal pin.)
 - **AC-3 (L1 checks fire in the kernel profile — documented)** — the kernel rlib's emitted source
   carries the always-active `thermite_check!` / `thermite_contract_violation` (`panic!`) verbatim
   (NOT stripped, NOT `debug_assert!`); under `panic=abort` a violation aborts. v1 GROUNDS this as
@@ -202,7 +206,9 @@ The increment ships a `forge/tests/kernel_target.rs` conformance test shelling t
 
 - AC-1: `sum.th` → kernel rlib, rustc exit 0, emitted source asserted to contain `#![no_std]` /
   `extern crate alloc;` and NOT `fn main` / NOT `PR_SET_SECCOMP`.
-- AC-2: a `fx read(src)` fn → `ForgeError` naming `read`, no artifact; a `fx pure`/`alloc` fn builds.
+- AC-2: a `fx read(src)`/`time` fn → `ForgeError` naming the effect, no artifact; a `fx pure`/`alloc`
+  fn builds. (The `fx time` boundary `effect_link_demo.th` refusal is pinned by
+  `divergence_kernel_time_boundary.rs`, #198.)
 - AC-3: the emitted kernel source contains `thermite_check` + `panic!`; the freestanding compile
   links a test-supplied `#[panic_handler]` (the kernel-host stand-in) so the `no_std` rlib genuinely
   compiles.
@@ -236,11 +242,15 @@ in `build.rs` — `build.rs` already carries multiple routes: `build.md`, `08-ru
   `#[global_allocator]` (the kernel HOST supplies them; an rlib needs neither to COMPILE under
   `no_std`, only a final `bin`/`staticlib` link does — the test harness supplies a stub). Whether a
   future `--target kernel-bin` profile emits a default abort handler is OUT of v1.
-- **OQ-2 (non-ambient effect atoms)** — `time`/`rand` carry userspace-syscall semantics in the std
-  seccomp table (`clock_gettime`/`getrandom`) but are NOT in the v1 reject set (the plan names only
-  `read`/`write`/`net`/`term`). v1 follows the plan literally; the critic should decide whether
-  `time`/`rand` ALSO warrant a kernel reject (a kernel has no `getrandom` syscall either) or are
-  benign because the kernel emission carries no syscall mapping at all.
+- **OQ-2 (non-ambient effect atoms) — RESOLVED (REJECT; amended by #198).** The original v1 premise —
+  "`time`/`rand` are benign for the kernel because the kernel emission carries no syscall mapping" —
+  was FALSIFIED by #198: an admitted `fx time` boundary (`#[boundary("os::now")]`) carries a
+  std-bodied effect wrapper (`effect_wrappers::WRAPPERS` `os::now` = `std::time::SystemTime::now()`),
+  which `emit_mod_os` emits into the `#![no_std]` kernel crate and leaks a raw rustc `E0433`. A kernel
+  has no ambient clock (`clock_gettime`) or entropy (`getrandom`) any more than it has `read`/`write`,
+  so `time`/`rand` MOVE INTO the reject set: the v1 kernel admit set is now EXACTLY
+  `pure`/`alloc`/`panic`/`diverge`, and `KERNEL_REJECTED_FX = ["read","write","net","term","time","rand"]`
+  (the same structured NAMED-effect refusal mechanism as REQ-3).
 - **OQ-3 (`std::`-qualified paths in collection lowerings)** — the l1.rs PROSE says "`std::vec::Vec`"
   but the emitted CODE spellings observed are bare `Vec`/`Vec::new()`/`String`. The builder must
   confirm NO `std::`-qualified path is emitted in any reachable collection/string lowering (a
@@ -254,7 +264,7 @@ in `build.rs` — `build.rs` already carries multiple routes: `build.md`, `08-ru
 |---|---|---|
 | REQ-1 (`--target kernel` verb fork) | SHIPPED | `build.rs` `enum BuildTarget { Std, Kernel }` threaded `cli::run_build` → `build::build_file` → `emit_source` → `invoke_rustc`; `cli.rs` parses `--target std\|kernel` (default `Std`, unknown/missing value → `Usage`). Consumer: `cli::run_build`. Verified by `cli::tests::parses_build_target_flag` + `forge/tests/kernel_target.rs::pure_fn_builds_no_std_kernel_rlib`; the std default is byte-unchanged (`default_target_source_is_byte_identical_to_no_target_flag` + the unaffected `build_conformance` suite, AC-4). |
 | REQ-2 (`no_std + alloc` emission profile) | SHIPPED | `emit_source` prepends `KERNEL_PRELUDE` (`#![no_std]` + `extern crate alloc;` + `use alloc::vec::Vec;`) under `BuildTarget::Kernel`, reuses `lower_l1`'s output VERBATIM, emits NO `synthesize_entry_main`; `invoke_rustc` forces `--crate-type=rlib` + `-C panic=abort`. Consumer: `cli::run_build`. Verified by `kernel_target.rs::pure_fn_builds_no_std_kernel_rlib` (rustc exit 0 + reconstructed-source freestanding compile) + `pure_and_alloc_fx_fns_build_for_kernel`. |
-| REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX = ["read","write","net","term"]` → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target.rs::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error`; `pure`/`alloc`/`time`/`rand`/`panic`/`diverge` admit (OQ-2; `pure_and_alloc_fx_fns_build_for_kernel`). |
+| REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX = ["read","write","net","term","time","rand"]` → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target.rs::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error` + `divergence_kernel_time_boundary.rs` (the `fx time` boundary refused naming `time`, #198); `pure`/`alloc`/`panic`/`diverge` admit (OQ-2 amended by #198; `pure_and_alloc_fx_fns_build_for_kernel`). |
 | REQ-4 (L1 runtime checks in the kernel profile) | SHIPPED | `lower_l1`'s `thermite_check!` / `thermite_contract_violation` (`panic!`) is emitted UNCHANGED (NOT stripped, NOT `debug_assert!`); under `#![no_std]`/`panic=abort` it routes to the host `#[panic_handler]` (OQ-1: forge emits neither handler nor allocator — the test supplies the stand-in). Consumer: `emit_source` (no strip). Verified by `kernel_target.rs::l1_checks_emitted_verbatim_in_kernel_source` (macro + handler + `panic!` present, no `debug_assert!`, compiles with a test `#[panic_handler]`/`#[global_allocator]`). |
 | REQ-5 (L3 verification path identical) | SHIPPED | `--target kernel` touches ONLY `build.rs`/`cli.rs` (the rustc codegen side); NO edit to `check.rs` or the L3 lowering. The existing `forge check` suites stay green (no diff). Verified: no `check.rs` change in the increment + the full `cargo test -p forge` green. |
 
@@ -264,10 +274,13 @@ in `build.rs` — `build.rs` already carries multiple routes: `build.md`, `08-ru
   kernel-target rlib compiles `no_std` without them (only a final bin/staticlib link
   needs them). The `kernel_target.rs` freestanding-compile supplies a test
   `#[panic_handler]` + a `NullAlloc` `#[global_allocator]` (the kernel-host stand-in).
-- **OQ-2** — v1 follows the plan literally: ONLY `read`/`write`/`net`/`term` are
-  rejected; `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are admitted (a kernel
-  emission carries no syscall mapping at all, so `time`/`rand` are benign here). The
-  critic may revisit whether `time`/`rand` warrant a kernel reject.
+- **OQ-2 (REJECT; amended by #198)** — the original "benign" resolution was FALSIFIED:
+  an admitted `fx time` boundary carries a std-bodied effect wrapper
+  (`os::now` = `std::time::SystemTime::now()`) that leaks a raw rustc `E0433` into the
+  `#![no_std]` crate. `time`/`rand` therefore JOIN the reject set — a kernel has no
+  ambient clock (`clock_gettime`) or entropy (`getrandom`) any more than `read`/`write`.
+  `KERNEL_REJECTED_FX = ["read","write","net","term","time","rand"]`; the admit set is
+  EXACTLY `pure`/`alloc`/`panic`/`diverge`.
 - **OQ-3** — CONFIRMED no `std::`-qualified path is emitted in any reachable
   collection/string lowering: the l1.rs `std::vec::Vec` PROSE is in `//`/`//!`
   comments only; the emitted CODE uses bare `Vec`/`Vec::new()` (`TString { data:

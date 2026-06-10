@@ -57,7 +57,7 @@
 //! |---|---|---|
 //! | REQ-1 (`--target kernel` verb fork) | SHIPPED | `enum BuildTarget` (`Std`/`Kernel`) threaded `cli::run_build` → `build::build_file` → `emit_source` → `invoke_rustc`; `cli.rs` parses `--target std\|kernel` (default `Std`). Consumer: `cli::run_build`. Verified by `cli::tests::parses_build_target_flag` + `kernel_target::pure_fn_builds_no_std_kernel_rlib`; the std default is byte-unchanged (`default_target_source_is_byte_identical_to_no_target_flag` + the unaffected `build_conformance` suite, AC-4). |
 //! | REQ-2 (`no_std + alloc` emission profile) | SHIPPED | `emit_source` prepends `KERNEL_PRELUDE` (`#![no_std]` + `extern crate alloc;` + `use alloc::vec::Vec;`) under `BuildTarget::Kernel`, REUSING `lower_l1`'s output verbatim, emits NO `synthesize_entry_main`; `invoke_rustc` forces `--crate-type=rlib` + `-C panic=abort` (kernel is never a bin). OQ-3 resolved: the L1 emission carries NO `std::`-qualified path (bare `Vec`/`Vec::new()`; surface `String` is the `use TString as String;` alias), so the prelude imports only `Vec`. Consumer: `cli::run_build`. Verified by `kernel_target::pure_fn_builds_no_std_kernel_rlib` (rustc exit 0, freestanding compile) + `pure_and_alloc_fx_fns_build_for_kernel` (an `alloc`-fx string program). |
-//! | REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX` (`read`/`write`/`net`/`term`) → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error`; `pure`/`alloc` admit (`pure_and_alloc_fx_fns_build_for_kernel`). |
+//! | REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX` (`read`/`write`/`net`/`term`/`time`/`rand` — `time`/`rand` joined the reject set in #198, their std-bodied effect wrappers leak into `#![no_std]`) → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error` + `divergence_kernel_time_boundary` (the `fx time` boundary refused naming `time`); `pure`/`alloc` admit (`pure_and_alloc_fx_fns_build_for_kernel`). |
 //! | REQ-4 (L1 runtime checks in the kernel profile) | SHIPPED | `lower_l1`'s `thermite_check!` / `thermite_contract_violation` (`panic!`) is emitted UNCHANGED (NOT stripped, NOT `debug_assert!`); under `#![no_std]` / `panic=abort` it routes to the host `#[panic_handler]` (OQ-1: forge emits neither handler nor allocator — the test harness supplies the stand-in). Consumer: `emit_source` (no strip). Verified by `kernel_target::l1_checks_emitted_verbatim_in_kernel_source` (the macro + handler + `panic!` present, no `debug_assert!`, compiles with a test `#[panic_handler]`). |
 //! | REQ-5 (L3 verification path identical) | SHIPPED | `--target kernel` touches ONLY `build.rs`/`cli.rs` (the rustc codegen side); NO edit to `check.rs` or the L3 lowering. The existing `forge check` suites (`check_conformance`, `string_l3_completeness`, …) are unchanged and stay green. Verified: no `check.rs` diff in the increment + the full `cargo test -p forge` green. |
 
@@ -125,12 +125,17 @@ const KERNEL_PRELUDE: &str = "#![no_std]\nextern crate alloc;\nuse alloc::vec::V
 
 /// The ambient-syscall effect verbs a [`BuildTarget::Kernel`] build REFUSES (REQ-3):
 /// `read`/`write`/`net`/`term` carry a USERSPACE syscall surface (the #57 seccomp
-/// allowlist maps them to `openat`/`socket`/`ioctl`/…) with no kernel analogue, so a
-/// fn whose transitive `fx` carries any of them cannot be a freestanding kernel
-/// library item. `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are NOT rejected in
-/// v1 (the design's pinned admit list; OQ-2). Matched by the leading verb of each
-/// `effects_of` token (`read(stdin)` → `read`), mirroring `sandbox::syscall_allowlist`.
-const KERNEL_REJECTED_FX: &[&str] = &["read", "write", "net", "term"];
+/// allowlist maps them to `openat`/`socket`/`ioctl`/…) with no kernel analogue, and
+/// `time`/`rand` carry std-bodied effect wrappers (`effect_wrappers::WRAPPERS`
+/// `os::now` = `std::time::SystemTime::now()` → `clock_gettime`; `getrandom`) which
+/// `emit_mod_os` would emit into the `#![no_std]` crate (a raw `E0433` leak) — a kernel
+/// has no ambient clock/entropy any more than it has `read`/`write`. So a fn whose
+/// transitive `fx` carries any of these cannot be a freestanding kernel library item.
+/// The admit set is EXACTLY `pure`/`alloc`/`panic`/`diverge` (`.design/build/
+/// kernel-target.md` OQ-2, amended by #198 — the original "time/rand benign" premise
+/// was FALSIFIED by the std-bodied `os::now` wrapper). Matched by the leading verb of
+/// each `effects_of` token (`read(stdin)` → `read`), mirroring `sandbox::syscall_allowlist`.
+const KERNEL_REJECTED_FX: &[&str] = &["read", "write", "net", "term", "time", "rand"];
 
 /// The artifact kind `forge build` produces (REQ-3). The default is a library;
 /// `--entry <fn>` produces a runnable executable.
@@ -296,8 +301,9 @@ pub fn build_file(
     // NO-artifact structured error BEFORE codegen, reusing the SAME `sandbox::
     // transitive_fx` walk the #57 allowlist is derived from (read in REVERSE: where
     // the userspace target MAPS these to syscalls, the kernel target REJECTS them).
-    // `pure`/`alloc`/`panic`/`diverge`/`time`/`rand` are admitted (OQ-2). Every
-    // in-language fn is scanned (the whole class, not just an `--entry` closure) so
+    // `pure`/`alloc`/`panic`/`diverge` are admitted; `time`/`rand` are REJECTED too
+    // (#198 — their std-bodied effect wrappers leak into `#![no_std]`; OQ-2 amended).
+    // Every in-language fn is scanned (the whole class, not just an `--entry` closure) so
     // a library exporting an ambient-`fx` fn is refused regardless of call site.
     if matches!(target, BuildTarget::Kernel) {
         reject_ambient_fx_for_kernel(&program)?;
@@ -473,7 +479,9 @@ pub fn emit_source(
 /// class (not just an `--entry` closure — a kernel build has no `--entry`). Returns
 /// a structured `ForgeError::Usage` naming the rejected effect + the carrying fn on
 /// the FIRST offender (source order, deterministic — R-CODE-5); `Ok(())` when every
-/// fn is ambient-syscall-free (`pure`/`alloc`/`panic`/`diverge`/`time`/`rand` admit).
+/// fn is ambient-syscall-free (`pure`/`alloc`/`panic`/`diverge` admit; `time`/`rand`
+/// are REJECTED — #198, their std-bodied effect wrappers leak into the `#![no_std]`
+/// crate and a kernel has no ambient clock/entropy).
 fn reject_ambient_fx_for_kernel(program: &Program) -> Result<(), ForgeError> {
     for item in &program.items {
         let Item::Fn(f) = item else { continue };
@@ -487,8 +495,8 @@ fn reject_ambient_fx_for_kernel(program: &Program) -> Result<(), ForgeError> {
                     "`forge build --target kernel` refuses `{}`: its transitive effect row \
                      carries the ambient-syscall effect `{tok}` (a `{verb}` userspace syscall), \
                      which kernel code has no ambient surface for. The admitted kernel effects \
-                     are pure/alloc/panic/diverge/time/rand; build it for the default (std) \
-                     target, or remove the `{verb}` effect.",
+                     are pure/alloc/panic/diverge; build it for the default (std) target, or \
+                     remove the `{verb}` effect.",
                     f.name
                 )));
             }
@@ -902,4 +910,58 @@ fn resolve_rustc_version() -> Result<String, ForgeError> {
         });
     }
     Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn corpus(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("conformance")
+            .join(name)
+    }
+
+    /// #198 (critic audit-note gap): no test inspected forge's ACTUAL emitted kernel
+    /// source — only `kernel_target.rs::reconstruct_kernel_source` (an INDEPENDENT
+    /// N-version reconstruction). Close the gap directly against `emit_source`: the
+    /// REAL kernel emission for the pure corpus item `sum.th` must carry the
+    /// design-pinned `#![no_std]` prelude (`.design/build/kernel-target.md` REQ-2:
+    /// [`KERNEL_PRELUDE`]) and NOT a `std::`-qualified path / `fn main` (a pure lib).
+    #[test]
+    fn kernel_emit_source_carries_no_std_prelude() -> Result<(), ForgeError> {
+        let source = emit_source(
+            corpus("sum.th"),
+            None,
+            SandboxConfig::default(),
+            BuildTarget::Kernel,
+        )?;
+
+        // The actual emission begins with the design-pinned freestanding prelude.
+        assert!(
+            source.starts_with("#![no_std]"),
+            "forge's actual kernel emission must START with `#![no_std]` (a crate inner \
+             attribute is the first token):\n{source}"
+        );
+        assert!(
+            source.contains("extern crate alloc;"),
+            "the kernel emission must carry `extern crate alloc;`:\n{source}"
+        );
+        assert!(
+            source.contains("use alloc::vec::Vec;"),
+            "the kernel emission must import the bare `Vec` from the alloc prelude:\n{source}"
+        );
+        // A pure (boundary-free) library: no `mod os` userspace wrapper, no `main`, no
+        // `std::`-qualified leak (the #198 divergence class).
+        assert!(
+            !source.contains("std::"),
+            "the kernel emission must carry NO `std::`-qualified path (REQ-2/OQ-3):\n{source}"
+        );
+        assert!(
+            !source.contains("fn main"),
+            "a kernel LIBRARY emits no `fn main`:\n{source}"
+        );
+        Ok(())
+    }
 }

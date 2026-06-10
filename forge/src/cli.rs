@@ -37,6 +37,7 @@ use thermite_syntax::SyntaxError;
 use crate::audit::{self, AuditManifest};
 use crate::build::{self, BuildManifest, CrateType};
 use crate::check::{self, CheckOptions, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
+use crate::goal_repl;
 use crate::manifest::{
     AssuranceManifest, AssuranceScope, Certificate, Level, ObligationStatus, ProjectAssurance,
     ProjectScope,
@@ -360,6 +361,32 @@ enum Command {
     /// exec-tv`, NOT folded into `forge check`), run at the pinned default verus
     /// config.
     BodyTv { file: PathBuf, json: bool },
+    /// `forge goal <file> [item]` — print the §5.1 GOAL STATE for an item (or every
+    /// item) of `file` (#193 increment (i); `.design/forge/goal-repl.md` REQ-2). A
+    /// pure VIEW over the SHIPPED `check::check_file` cert collection + the re-parsed
+    /// AST contract (given/want); adds NO verification. An OPTIONAL second positional
+    /// restricts the render to one item. Holes (`?N`) are increment (iii) — NOT in
+    /// this verb yet.
+    Goal { file: PathBuf, item: Option<String> },
+    /// `forge battery <file> [item]` — print the §7 anti-Goodhart battery (vacuity
+    /// triage + solver vacuity + mutation kill-ratio) for an item (or every item) of
+    /// `file` (#193 increment (i); `.design/forge/goal-repl.md` REQ-1). A pure VIEW
+    /// over each cert's `contract_quality` block — the verdicts the gate ALREADY
+    /// computed inside `check_file` (AC-1: a view, never a re-derivation). An OPTIONAL
+    /// second positional restricts the render to one item.
+    Battery { file: PathBuf, item: Option<String> },
+    /// `forge edit <file> <addr> --replace <code>` — a semantic edit by address
+    /// (#193 increment (ii); `.design/forge/goal-repl.md` REQ-3). Resolves the
+    /// stable semantic address (`thermite_syntax::address::resolve`), splices the
+    /// `--replace <code>` SOURCE TEXT at the addressed node's byte span IN THE FILE,
+    /// re-emits, re-checks the affected item, and prints the new GOAL STATE. v1 edits
+    /// a loop `inv`/`dec` clause (the addressable forms semantic-addressing pins); a
+    /// bad address is an honest structured error, never a panic.
+    Edit {
+        file: PathBuf,
+        addr: String,
+        replace: String,
+    },
 }
 
 /// The default generated-clause count for `forge tv --generated` (REQ-3 / AC-7).
@@ -839,6 +866,103 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             })?;
             Ok(Command::BodyTv { file, json })
         }
+        "goal" | "battery" => {
+            // `forge goal <file> [item]` / `forge battery <file> [item]` (#193
+            // increment (i); `.design/forge/goal-repl.md` REQ-1/REQ-2). The first
+            // positional is the file (required); an OPTIONAL second positional
+            // restricts the render to one item. Pure views — no flags.
+            let mut file: Option<PathBuf> = None;
+            let mut item: Option<String> = None;
+            for arg in iter {
+                match arg.as_str() {
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_none() {
+                            file = Some(PathBuf::from(positional));
+                        } else if item.is_none() {
+                            item = Some(positional.to_string());
+                        } else {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge {verb}` takes at most <file> [item]; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage(format!("`forge {verb}` requires a <file> [item]"))
+            })?;
+            if verb == "goal" {
+                Ok(Command::Goal { file, item })
+            } else {
+                Ok(Command::Battery { file, item })
+            }
+        }
+        "edit" => {
+            // `forge edit <file> <addr> --replace <code>` (#193 increment (ii);
+            // `.design/forge/goal-repl.md` REQ-3). Two required positionals (the
+            // file then the semantic address) + the required `--replace <code>`
+            // flag (the replacement SOURCE TEXT, a separate token). A missing
+            // positional / a missing `--replace` value is a Usage error.
+            let mut file: Option<PathBuf> = None;
+            let mut addr: Option<String> = None;
+            let mut replace: Option<String> = None;
+            let mut iter = iter.peekable();
+            while let Some(arg) = iter.next() {
+                match arg.as_str() {
+                    "--replace" => {
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--replace` requires a <code> value (the replacement source text \
+                                 spliced at the addressed span)"
+                                    .to_string(),
+                            )
+                        })?;
+                        replace = Some(value.to_string());
+                    }
+                    flag if flag.starts_with("--") => {
+                        return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
+                    }
+                    positional => {
+                        if file.is_none() {
+                            file = Some(PathBuf::from(positional));
+                        } else if addr.is_none() {
+                            addr = Some(positional.to_string());
+                        } else {
+                            return Err(ForgeError::Usage(format!(
+                                "`forge edit` takes <file> <addr> --replace <code>; unexpected \
+                                 `{positional}`"
+                            )));
+                        }
+                    }
+                }
+            }
+            let file = file.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge edit` requires <file> <addr> --replace <code>".to_string(),
+                )
+            })?;
+            let addr = addr.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge edit` requires a semantic <addr> (e.g. `binary_search.loop#1.inv#2`)"
+                        .to_string(),
+                )
+            })?;
+            let replace = replace.ok_or_else(|| {
+                ForgeError::Usage(
+                    "`forge edit` requires `--replace <code>` (the replacement source text)"
+                        .to_string(),
+                )
+            })?;
+            Ok(Command::Edit {
+                file,
+                addr,
+                replace,
+            })
+        }
         other => Err(ForgeError::Usage(format!(
             "unknown command `{other}`. {}",
             usage_text()
@@ -853,7 +977,8 @@ fn usage_text() -> &'static str {
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
      [--out <PATH>] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv <file> \
      [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
-     [--json] | forge body-tv <file> [--json]"
+     [--json] | forge body-tv <file> [--json] | forge goal <file> [item] | forge battery <file> \
+     [item] | forge edit <file> <addr> --replace <code>"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -912,7 +1037,58 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             generated,
         } => run_exec_tv(&file, json, generated),
         Command::BodyTv { file, json } => run_body_tv(&file, json),
+        Command::Goal { file, item } => run_goal(&file, item.as_deref()),
+        Command::Battery { file, item } => run_battery(&file, item.as_deref()),
+        Command::Edit {
+            file,
+            addr,
+            replace,
+        } => run_edit(&file, &addr, &replace),
     }
+}
+
+/// Run `forge goal <file> [item]`: print the §5.1 GOAL STATE (#193 increment (i);
+/// `.design/forge/goal-repl.md` REQ-2). A pure VIEW over the SHIPPED
+/// `check::check_file` cert collection — given/want from the re-parsed contract,
+/// per-obligation status with counterexamples from the cert's `obligations`.
+///
+/// Exit code: a render is a successful query (SUCCESS) — the verdict (discharged /
+/// open obligation) lives IN the rendered goal state, not in the exit code (the
+/// goal REPL is a view, not a gate). An environment failure (verus absent, file
+/// unreadable, parse failure) propagates as a `ForgeError`.
+fn run_goal(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> {
+    let rendered = goal_repl::render_goal(file, item)?;
+    print!("{rendered}");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge battery <file> [item]`: print the §7 anti-Goodhart battery (#193
+/// increment (i); `.design/forge/goal-repl.md` REQ-1). A pure VIEW over each
+/// cert's `contract_quality` block — the vacuity + mutation verdicts the gate
+/// ALREADY computed inside `check_file` (AC-1: a view, never a re-derivation).
+///
+/// Exit code: a render is a successful query (SUCCESS); an environment failure
+/// propagates as a `ForgeError`.
+fn run_battery(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> {
+    let rendered = goal_repl::render_battery(file, item)?;
+    print!("{rendered}");
+    Ok(ExitCode::SUCCESS)
+}
+
+/// Run `forge edit <file> <addr> --replace <code>`: a semantic edit by address
+/// (#193 increment (ii); `.design/forge/goal-repl.md` REQ-3). Resolves the address
+/// via `thermite_syntax::address::resolve`, splices the replacement source text at
+/// the addressed node's span IN THE FILE, re-emits, re-checks the affected item,
+/// and prints the new GOAL STATE.
+///
+/// Exit code: a successful edit + re-check is SUCCESS (the new goal state is the
+/// output). A bad/unresolvable address, a re-parse failure after the splice, or an
+/// IO / environment failure propagates as a `ForgeError` (the environment exit
+/// code; never a panic — REQ-7).
+fn run_edit(file: &Path, addr: &str, replace: &str) -> Result<ExitCode, ForgeError> {
+    let rendered = goal_repl::edit_file(file, addr, replace)?;
+    print!("{rendered}");
+    Ok(ExitCode::SUCCESS)
 }
 
 /// Run `forge check`: drive the pipeline, render every certificate, and map the

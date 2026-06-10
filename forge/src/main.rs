@@ -31,6 +31,7 @@ mod contract_tv;
 mod degrade;
 mod effect_wrappers;
 mod exec_tv;
+mod goal_repl;
 mod kani;
 mod manifest;
 mod mutation;

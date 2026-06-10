@@ -134,9 +134,15 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   against engine X" HONESTLY rather than inflating the ratio. The ENGINE-GENERIC kill semantics =
   `Refuted ∪ Unknown-after-attempt` (the mutant was attempted and NOT proven — matching today's
   `Counterexample ∪ Timeout` exactly); "untested" = no engine's fragment ADMITS the mutant (never
-  attempted). The floor is per the SHIPPED `meets_floor` with an ADDED minimum-attempted guard.
+  attempted). The §7 floor rules INCORPORATE the SHIPPED #101 equivalence exclusion: survivor =
+  (`Proved`-after-attempt) MINUS proven-equivalent; denominator = attempted MINUS proven-equivalent
+  (the SHIPPED `scored`); the proven-equivalent are dropped from BOTH (the `equivalence_proves_equal`
+  step) so equivalent mutants never re-enter as spurious survivors. The equivalence probe is one of
+  the §0.1 meta-queries — consistent with F3, it stays OUTSIDE the Engine interface in v1 (a direct
+  verus query). The floor is per the SHIPPED `meets_floor` with an ADDED minimum-attempted guard.
   Designed against the actual `mutation_score` mechanics (which today re-runs `run_verus` per mutant
-  through the #8 cache). Derived from §7 + R-DEFER-9. **Increment (iii), FUTURE.**
+  through the #8 cache and runs the #101 equivalence query on each survivor). Derived from §7 +
+  R-DEFER-9. **Increment (iii), FUTURE.**
 
 ## Acceptance criteria
 
@@ -181,11 +187,14 @@ see REQ-3.1 / the Verification section.)
   exporter's faithfulness is named as a NEW arm-by-arm-inspection + drift-tripwire trust item,
   INCLUDING the fuel form (§4) and registry-population faithfulness (EXP).
 - **AC-7 (the mutation-battery v1 is honest)** — the engine-generic battery is specified against
-  `mutation_score`'s real mechanics (the per-mutant `run_verus` + #8 cache loop). The kill semantics
-  is stated ACCURATELY against the shipped `Counterexample ∪ Timeout` = killed, generalized to
-  `Refuted ∪ Unknown-after-attempt`; "untested against engine X" = never-attempted (no fragment
-  admits it); the floor rule (denominator = attempted, + the minimum-attempted guard + the 0/0
-  backstop) is DECIDED; NO inflation of the kill ratio.
+  `mutation_score`'s real mechanics (the per-mutant `run_verus` + #8 cache loop + the per-survivor
+  #101 `equivalence_proves_equal` query). The kill semantics is stated ACCURATELY against the shipped
+  `Counterexample ∪ Timeout` = killed, generalized to `Refuted ∪ Unknown-after-attempt`; "untested
+  against engine X" = never-attempted (no fragment admits it). The floor rule incorporates the SHIPPED
+  #101 exclusion — survivor = (Proved-after-attempt) MINUS proven-equivalent, denominator = attempted
+  MINUS proven-equivalent (the SHIPPED `scored`), the equivalence probe a §0.1 meta-query OUTSIDE the
+  Engine interface in v1 (F3) — plus the minimum-attempted guard + the 0/0 backstop; DECIDED; NO
+  inflation of the kill ratio and NO regression of equivalent-mutant handling.
 - **AC-8 (the increment plan + the one filed blocker)** — the four increments are recorded, each its
   own build blocker; increment (i) is FILED (#204) and named; (ii)/(iii)/(iv) are named as future.
 
@@ -258,11 +267,19 @@ starting point:
   exported obligation. **SHIPPED (epic #169 complete for the frozen subset).**
 - **The anti-Goodhart battery is engine-blind.** `forge::check::mutation_score` generates mutants
   (`mutation::generate`), lowers + re-`run_verus`-es each (through the #8 cache), and counts
-  killed/scored/equivalent. Its SHIPPED kill rule (step 3): "a `Proved` mutant SURVIVED; a
+  `killed`/`scored`/`equivalent`. Its SHIPPED kill rule (step 3): "a `Proved` mutant SURVIVED; a
   `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor =
-  matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"). It is hardcoded to
-  Verus. REQ-9 generalizes it — see §7 for the accurate restatement of this `Counterexample ∪
-  Timeout` semantics. **SHIPPED (Verus-only).**
+  matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"). **Critically (the #101
+  equivalence exclusion):** a surviving (`Proved`) mutant is then run through the
+  `equivalence_proves_equal` query (`check.rs`); if it is PROVEN semantically equal to the real body
+  it is EXCLUDED from BOTH the survivor set AND `scored` (the code: `if proved_equivalent { equivalent
+  += 1; continue; }`, commented "REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`"). So
+  the SHIPPED denominator `scored` = attempted MINUS proven-equivalent, and the SHIPPED survivor set =
+  `Proved`-after-attempt MINUS proven-equivalent. The kill ratio is `killed / scored` over that
+  reduced denominator. It is hardcoded to Verus, and `equivalence_proves_equal` is one of the §0.1
+  meta-queries (scoped OUT of the Engine interface in v1, OQ-5). REQ-9 generalizes it — see §7 for the
+  accurate restatement of this `Counterexample ∪ Timeout` kill semantics WITH the #101 exclusion.
+  **SHIPPED (Verus-only).**
 
 ### 0.1 The three SHIPPED verus-query classes that are NOT certification obligations (AC-1, F3)
 
@@ -403,16 +420,21 @@ The first instance refactors Verus byte-identically EXCEPT the named REQ-3.1 fas
     `verus_version` slot), and for a Lean engine it is the `lean-toolchain` rev + the `lake-manifest`
     revs (mathlib / Lean-SMT / cvc5) — the Lean analog the shipped key has NONE of;
   - the TARGETED-SPINE content hash is the `lean/Thermite/` definitions the exported theorem
-    INSTANTIATES (a content hash of the spine spine, or a pinned tag) — so a change to `Denote.lean`/
+    INSTANTIATES (a content hash of the spine, or a pinned tag) — so a change to `Denote.lean`/
     `Exec/*` that the obligation depends on invalidates a cached `Proven`;
   - a toolchain OR spine bump therefore forces a universal MISS (matching the shipped
     `verus_version`/`CHECK_SCHEMA_VERSION` version-keyed invalidation, `cache.rs` REQ-5), so a cache
     HIT == a FRESH verify against the CURRENT semantics + toolchain (`cache.rs` REQ-2). CI replays
     evidence: on a toolchain/spine bump the affected cache entries MISS and the proofs re-run in CI
-    (a hit skips replay, so the version axes — not CI alone — are what guarantees freshness). The
-    Obligation/Evidence hash MUST include all five real inputs: the semantics version (the spine
-    content hash / pinned tag), the engine-toolchain version, the obligation schema version, the
-    seed, and the item content.
+    (a hit skips replay, so the version axes — not CI alone — are what guarantees freshness). For
+    grounding: the SHIPPED `cache::cache_key(lowered_src, seed, verus_version, thermite_version)`
+    takes FOUR arguments and folds the `CHECK_SCHEMA_VERSION` constant in internally (`cache.rs`:
+    "hashes the four args PLUS the `CHECK_SCHEMA_VERSION`"), so the shipped key composes FIVE inputs:
+    {lowered source, seed, verus_version, thermite_version, CHECK_SCHEMA_VERSION}. The generalized
+    `evidence_key` (F4) likewise composes the verdict-determining inputs: the item/obligation content,
+    the seed, the ENGINE name, the ENGINE-TOOLCHAIN version (the `verus_version` analog), the
+    TARGETED-SPINE content hash / pinned tag (the semantics version), the thermite_version, and the
+    obligation schema version.
 
 The Lean engine instantiates the same four slots (§4). **NOT-STARTED — increment (i) builds the
 trait + the Verus instance; blocker #204.**
@@ -507,46 +529,88 @@ bottom is harmless (both sides agree at fuel 0). But for the ONE-SIDED exported 
 unfolding depth of a called spec-fn, a spec-fn-calling `ens` denotes `True` and a WRONG program
 certifies vacuously.
 
-The chosen form: **a UNIVERSALLY-quantified obligation over all fuel AT OR ABOVE the exporter-computed
-unfolding depth, conjoined with registry-resolution of every called spec-fn:**
+The chosen form **FIXES the registry CONCRETELY in the exported file** and quantifies the env ONLY
+over the scalar/sequence/option-result valuation, with the spec-fn registry HELD FIXED. The exported
+Lean file first DEFINES the item's registry as a concrete `Registry` value — `R_item : Registry`
+binding each of the item's called spec-fn names to a `SpecFn { params, body }` carrying its REAL
+`Denote`-encoded body (instantiated from the spine's `Expr` encodings) — and the theorem holds
+`specs := R_item` FIXED while quantifying the rest of the env (`Denote.lean`'s `Env` is the structure
+`{ ints : String → Int, seqs : String → List Int, optres : String → OptResVal, specs : Registry }`;
+the scalar/sequence valuation is the `{ ints, seqs, optres }` part, the registry is `specs`):
 
 ```
+-- the EXPORTED file fixes the registry concretely:
+def R_item : Thermite.Registry := fun name =>
+  match name with
+  | "spec_sum" => some { params := ["xs"], body := <Expr-encoding of spec_sum's real body> }
+  | …          => …                       -- exactly calledSpecFns(item), each real-bodied
+  | _          => none
+
 theorem item_xyz :
-  ∀ (env : Env) (fuel : Nat),
-    fuel ≥ fuel₀(item) →                       -- fuel₀ = the registry-depth bound the
-    (∀ name ∈ calledSpecFns(item),             --   exporter computes (max nesting depth of
-       env.specs name ≠ none) →                --   spec-fn calls reachable from req ∪ ens)
-    reqDenote fuel req env →
-    denote fuel ens (envWith result body) = True
+  ∀ (v : Env) (fuel : Nat),
+    fuel ≥ fuel₀(item) →                        -- fuel₀ = the exporter-computed unfolding-depth
+    denote fuel req { v with specs := R_item } →  --   bound (max spec-fn nesting reachable from
+    denote fuel ens (Env.bindInt { v with specs := R_item } "result" body)  --   req ∪ ens)
 ```
 
-**Soundness argument (one paragraph, PROVE-style).** The danger is the bottoming direction: `denote`
-can only make the obligation EASIER (more vacuously true) by bottoming a `specCall` to `True`, never
-harder. The bottom fires in exactly two cases — fuel below the call's unfolding depth, and an
-unresolved registry name — and the chosen form forecloses BOTH. (1) Quantifying `∀ fuel ≥ fuel₀(item)`
-where `fuel₀` is the exporter-computed maximum spec-fn nesting depth means every `specCall` reachable
-from the obligation is fully unfolded at every fuel in range, so the fuel-0 catch-all `=> True` arm
-is NEVER taken for any obligation subterm — the obligation is evaluated at its REAL denotation, not
-its bottom. (Note the naive `∀ fuel` form is UNSOUND-against-vacuity in the OTHER direction one might
-naively fear — it INCLUDES fuel 0, where ens-denote is `True` trivially; but `∀`-quantification
-CONJOINS the fuel-0 instance with all higher fuels, so the fuel-0-trivial-`True` instance does not
-WEAKEN the conjunction — it is simply a true-but-uninformative conjunct, and the high-fuel conjuncts
-carry the real content. The `≥ fuel₀` lower bound is therefore a tightening, not a soundness
-requirement, kept so a reviewer reads the obligation as "holds at every adequate fuel" rather than
-"holds including where it is vacuous"; the load-bearing soundness is that we do NOT use `∃ fuel`,
-which COULD satisfy itself at fuel 0 vacuously.) (2) The `∀ name ∈ calledSpecFns(item),
-env.specs name ≠ none` conjunct (paired with EXP registry faithfulness below) forbids the
-unresolved-name bottom: an obligation that resolves every called spec-fn cannot reach the
-`| none => True` arm. Together: the obligation is `∃`-free in its fuel, requires every called spec-fn
-resolved, and is evaluated at fuels where no `specCall` bottoms — so it cannot be made vacuously true
-by either bottoming path.
+(`{ v with specs := R_item }` is the actual Lean env-composition: the quantified `v` provides the
+`ints`/`seqs`/`optres` valuation and `R_item` OVERRIDES `specs`. `Denote.lean` exposes `denote : Nat
+→ Expr → Env → Prop`; `req`/`ens` are the encoded `Expr`s; the `result`-binding uses the SHIPPED
+`Env.bindInt`. The prose names `reqDenote`/`ensDenote` elsewhere in this doc are conceptual aliases
+for `denote fuel · ·` over the contract sublanguage.) Because `specs := R_item` is HELD FIXED, the
+theorem no longer quantifies over all possible registries — this **kills the all-registries
+incoherence** the critic flagged (a `∀ env` that ranged `env.specs` over wrong-body registries was
+either an unprovable wrong statement or, read as a closed proposition, self-certifying on an omitted
+entry). There is NO registry-resolution premise in the theorem at all (see the hard gate below).
 
-**Registry faithfulness (EXP, F5).** The exporter trust item (EXP) GAINS an explicit clause: the
-EXPORTED `Env.specs` registry must contain EXACTLY the item's called spec-fns, bound to their REAL
-`Denote`-encoded bodies. An OMITTED spec-fn = an `env.specs name = none` = a `True` bottom = a
-vacuously-true obligation; a WRONG body = an unsound certification. So registry population is part of
-the arm-by-arm inspection (each `SpecFnId` in `Obligation.env.spec_defs` ↦ its registry entry with
-the matching `Expr` body), under the same drift-tripwire discipline.
+**Soundness argument (one paragraph, PROVE-style — crediting the critic's #210 fuel₀ analysis).**
+The danger is the bottoming direction: `denote` can only make the obligation EASIER (more vacuously
+true) by bottoming a `specCall` to `True`, never harder. The bottom fires in exactly two cases — fuel
+below the call's value-dependent unfolding depth, and an unresolved registry name — and the chosen
+form, plus the export-time hard gate, forecloses both WITHOUT relying on the FALSE claim that "the
+`=> True` arm is NEVER taken." That claim is wrong for value-dependent recursion: static spec-fn
+nesting depth ≠ value-dependent unfolding depth (`Denote.lean`: a spec-fn body "MAY contain further
+specCalls"), so a fuel₀ computed from static nesting can be UNDER-computed and some `specCall` may
+still bottom to `True` at a given fuel. The form is sound anyway, per the critic's written-out
+analysis, which this doc credits: (1) the obligation is `∀ fuel ≥ fuel₀`, and `∀`-quantification
+CONJOINS every fuel instance — an UNDER-computed fuel₀ (or any fuel at which some subterm still
+bottoms) only adds a TRIVIALLY-TRUE conjunct (the bottomed-out instance), which cannot WEAKEN the
+conjunction; the higher fuels at which the call IS fully unfolded carry the real content. The
+load-bearing soundness is that we do NOT use `∃ fuel` (which could satisfy itself at a vacuous fuel)
+— the `∀` makes the content carried by the adequate-fuel conjuncts, and `≥ fuel₀` is a tightening for
+readability, not a soundness requirement. (2) A spec-fn that genuinely NON-TERMINATES at every fuel is
+assigned `True` by `S` ITSELF (the fuel-indexed `specCall` bottoms at every fuel) — so the obligation
+staying `True` there is FAITHFUL to `S`, not a vacuity artifact: the obligation says exactly what `S`
+says. (3) The unresolved-name bottom is foreclosed not by a premise but by the export-time hard gate
+below: every called spec-fn is in `dom(R_item)`, so no `specCall` reaches the `| none => True` arm.
+Together: the obligation is `∃`-free in its fuel, evaluated against the concretely-fixed `R_item`, and
+faithful to `S` even where `S` itself bottoms — so it cannot be made vacuously true by either path.
+
+**Registry population is an EXPORTER-SIDE HARD GATE (F5, the #210 fix) — not a hypothesis.** Two
+mechanisms, belt-and-suspenders:
+
+1. **The export refuses to emit on an incomplete registry.** The exporter computes
+   `calledSpecFns(item)` (every spec-fn name reachable from `req ∪ ens`) and FAILS the export —
+   refuses to write the Lean file — if `calledSpecFns(item) ⊄ dom(R_item)`. This is a mechanical
+   check at export time. Because the theorem holds `specs := R_item` fixed and carries NO resolution
+   premise, an omission cannot self-certify a vacuous obligation: an unbuildable export is a hard
+   error, not a True-bottom that proves itself. (Contrast the rejected hypothesis form, where an
+   omitted entry FALSIFIED a resolution antecedent and the whole obligation followed from the false
+   premise — kernel-clean but meaningless.)
+2. **Per-name `decide`/`rfl` resolution lemmas are emitted ALONGSIDE.** For each
+   `name ∈ calledSpecFns(item)` the exporter also emits a resolution lemma of the form
+   `example : R_item "spec_sum" ≠ none := by decide` (or the `rfl`/`Option.isSome`-shaped variant
+   that `decide`s on the concrete `R_item`). If the exporter ever omits a called spec-fn from
+   `R_item`, the corresponding lemma FAILS TO COMPILE — so an omission also breaks the kernel check,
+   independent of the build-time gate. Both stated: the gate refuses to emit, and the emitted lemmas
+   refuse to compile.
+
+**Registry faithfulness stays part of EXP (the inspection tier).** Beyond presence (the hard gate
+above), the EXPORTED `R_item` must bind each name to its REAL `Denote`-encoded body — a WRONG body is
+an unsound certification the gate cannot catch. So body-faithfulness (each `SpecFnId` in
+`Obligation.env.spec_defs` ↦ its `R_item` entry with the matching `Expr` body) remains part of the
+arm-by-arm EXP inspection + drift-tripwire discipline. The hard gate guarantees PRESENCE mechanically;
+EXP inspection guarantees the BODIES are right.
 
 **DISCHARGE MODES (REQ-7).**
 - **(i) AUTO** — a tactic battery `omega`/`simp`/`decide`/Lean-SMT's `smt` (where applicable). The
@@ -646,9 +710,14 @@ SHIPPED semantics, stated ACCURATELY (F2): `mutation_score` calls `mutation::gen
 per mutant lowers + content-addresses + `run_verus`es through the #8 cache, and step 3's kill rule is
 "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED"
 (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample /
-timeout)"). So a TIMEOUT-killed mutant counts as killed TODAY — kills are NOT Refuted-only.
+timeout)"). So a TIMEOUT-killed mutant counts as killed TODAY — kills are NOT Refuted-only. **And a
+surviving (`Proved`) mutant is then run through `equivalence_proves_equal` (#101, a §0.1 meta-query):
+a mutant PROVEN semantically equal to the real body is EXCLUDED from BOTH the survivor set AND `scored`
+(`if proved_equivalent { equivalent += 1; continue; }`).** So the SHIPPED accounting is:
+`scored` (the denominator) = attempted MINUS proven-equivalent; survivor set = `Proved`-after-attempt
+MINUS proven-equivalent; `kill_ratio = killed / scored`.
 
-The engine-generic v1 (DECISION, F2):
+The engine-generic v1 (DECISION, F2) — preserving that #101 exclusion exactly:
 
 - **Engine-generic kill = `Refuted ∪ Unknown-after-attempt`.** A mutant is "killed" if SOME engine in
   whose fragment the mutant falls (i) `Refuted`s it (a witnessed countermodel — the mutated body
@@ -656,9 +725,15 @@ The engine-generic v1 (DECISION, F2):
   NOT proven). This maps EXACTLY onto today's `Counterexample ∪ Timeout` = killed (a Verus `Timeout`
   / fast-`unknown` becomes `Unknown-after-attempt`, a Verus witnessed `Counterexample` becomes
   `Refuted`), so the shipped behavior is PRESERVED — this is a faithful generalization, NOT the
-  Refuted-only narrowing an earlier draft mis-stated. The survivor set = `Proved` mutants ONLY (a
-  proven mutant means the mutation did not break the contract — a genuine survivor → the
-  strengthening prompt).
+  Refuted-only narrowing an earlier draft mis-stated.
+- **The survivor set = (`Proved`-after-attempt) MINUS the proven-equivalent (#101 exclusion).** A
+  proven mutant means the mutation did not break the contract — a SURVIVOR — UNLESS it is then proven
+  semantically EQUAL to the real body, in which case it is an equivalent mutant and is dropped from
+  BOTH the survivor set AND the denominator (the SHIPPED `equivalence_proves_equal` step). Only a
+  genuinely-DISTINGUISHING `Proved` mutant is a survivor → the strengthening prompt. The equivalence
+  probe is one of the §0.1 meta-queries; consistent with the F3 scoping, it stays OUTSIDE the Engine
+  interface in v1 (a direct verus invocation, OQ-5) — so in v1 the equivalence-exclusion step runs as
+  the SHIPPED Verus query regardless of which engine discharged the mutant's certification obligation.
 - **"Untested against engine X" = NEVER ATTEMPTED.** A mutant whose obligation NO engine's fragment
   ADMITS (e.g. outside Lean-auto's scalar fragment AND un-lowerable for Verus) is "untested" — it is
   NOT counted as killed (which would inflate the ratio, violating §7 + R-DEFER-9) and NOT counted as
@@ -666,20 +741,29 @@ The engine-generic v1 (DECISION, F2):
   kill): untested = no fragment admits it; unknown = a fragment admitted it and the engine could not
   decide.
 
-**The floor (DECISION, F2).** The denominator = ATTEMPTED mutants (preserving the shipped behavior:
-today every generated-and-lowerable mutant is run, and the OQ-5 rule already DROPS un-lowerable
-mutants from the denominator — "don't count what you couldn't fairly test"). The
-`MUTATION_FLOOR` (default 0.60) gate via the SHIPPED `meets_floor` is UNCHANGED on the
-attempted-denominator ratio. Two ADDED guards close the shrunken-denominator hole the critic named:
+**The floor (DECISION, F2).** The denominator = ATTEMPTED mutants MINUS the proven-equivalent — i.e.
+exactly the SHIPPED `scored` (attempted MINUS proven-equivalent), generalized: every generated mutant
+that SOME engine's fragment admits is attempted (the OQ-5 rule already DROPS un-lowerable mutants), and
+of those, the proven-equivalent are removed from BOTH the numerator-eligible survivor set and the
+denominator (the #101 exclusion). The `MUTATION_FLOOR` (default 0.60) gate via the SHIPPED
+`meets_floor` is UNCHANGED on that ratio. Stating the v1 rule precisely so a literal implementation
+does NOT regress #101: survivor = (Proved-after-attempt) MINUS proven-equivalent; denominator =
+attempted MINUS proven-equivalent; `kill_ratio = killed / denominator`. A naive "denominator =
+attempted, survivor = Proved" implementation would re-admit equivalent mutants as survivors → spurious
+`WeakContract` floor failures; the #101 exclusion is therefore NORMATIVE here. Two ADDED guards close
+the shrunken-denominator hole the critic named:
 
 1. **Minimum-attempted reporting + qualifier.** If `attempted < generated` (some mutants were never
    attempted by any engine), the certificate REPORTS the untested count PER ENGINE, AND the
    kill-ratio line carries a qualifier (e.g. "1.00 over 1 attempted; N untested" — so a `1/1` ratio
    with N untested mutants can never read as a clean `1.00` without the untested count beside it). An
-   auditor sees the shrunken denominator; the ratio cannot silently launder coverage gaps.
+   auditor sees the shrunken denominator; the ratio cannot silently launder coverage gaps. (The
+   proven-equivalent drop is the SHIPPED behavior and is reported separately as `equivalent`, distinct
+   from `untested` — an equivalent mutant WAS attempted and proven; an untested one was never tried.)
 2. **The 0-attempted backstop.** The shipped `scored == 0 → below-floor` backstop is KEPT: if NO
-   engine attempted ANY mutant, the item is below floor (the shipped `0/0` floor backstop) — an item
-   cannot certify on an all-untested mutation set.
+   engine attempted ANY mutant, OR every attempted mutant proved equivalent (so `scored == 0`), the
+   item is below floor (the shipped `0/0` floor backstop) — an item cannot certify on an all-untested
+   or all-equivalent mutation set.
 
 **NOT-STARTED — increment (iii).**
 
@@ -691,7 +775,8 @@ The exportable/dischargeable fragment for the Lean engine = what the spine's `S`
 **IN.** Contracts (all 8 frozen combinator classes + the `S_C` `Expr` subset), exec expressions
 (`S_E`, bounded value / overflow-as-`none`), straight-line bodies (`S_B`), the v1 `while` form
 (`loopDenote` + partial-correctness `while_rule`), spec-fns via the fuel-indexed registry — under the
-§4 fuel form (`∀ fuel ≥ fuel₀` + every called spec-fn resolved) and EXP registry faithfulness. For
+§4 fuel form (`∀ fuel ≥ fuel₀` over the scalar/seq valuation with `specs := R_item` HELD FIXED; the
+export-time hard gate on registry population) and EXP registry-body faithfulness. For
 AUTO discharge specifically, the IN set NARROWS to the z3-demotion-reachable scalar/QF-linear core;
 the richer IN constructs need INTERACTIVE proofs (or stay on Verus).
 
@@ -751,10 +836,10 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
 | REQ-3 (Unknown degrades / Refuted hard-fails, engine-generic) | NOT-STARTED | open blocker #204. The discipline is SHIPPED for Verus: `degrade::ladder_action_l3` maps `Counterexample → LadderAction::HardFail` ("a `VerusOutcome::Counterexample` … is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat)", `forge/src/check.rs`); `Timeout` degrades via `degrade::run_ladder` (`forge/src/degrade.rs`). The generalization off "verus" + the failure-WITHOUT-witness-is-Unknown rule + the REQ-3.1 fast-unknown remap (a witness-less `Counterexample` → `Unknown`, today absorbed into the `Counterexample` bucket per the `VerusOutcome::Counterexample` doc) are unbuilt. |
 | REQ-4 (certificate attribution — per-obligation engine + trust profile) | NOT-STARTED | FUTURE (increment (iii)). The cert + honest-min are SHIPPED: `manifest::Certificate { level: Level, .. }`, `enum Level { L0, L1, L2, L3 }` (`#[derive(Ord)]`), `AssuranceManifest::aggregate → ProjectAssurance::Certified(min)` (VERUS-ANCHORED to `thermite_verified::aggregate_level`). NO per-obligation `{engine, trust_profile}` field exists; the additive-field precedent (`boundary`/`slag`/`lowered_assurance`/`assurance_scope`, all `#[serde(default)]`) is the schema model. The "smaller base" claim is along the named axes; the ordering formalization is OQ-3. |
 | REQ-5 (engine disagreement = soundness alarm) | NOT-STARTED | FUTURE (increment (iii)). No second engine exists yet, so no disagreement path. The anti-cheat ANCESTOR is SHIPPED: a counterexample never degrades (`ladder_action_l3` → `HardFail`). The Proven⊕Refuted halt (vs benign Proven⊕Unknown), guarded against the REQ-3.1 fast-unknown spurious trigger, is unbuilt. |
-| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). The `denote` `specCall` arm bottoms to `True` at fuel 0 + unresolved name (`Denote.lean`, the `fuel+1, Expr.specCall` arm + `| none => True`) — the fuel trap §4 closes with the `∀ fuel ≥ fuel₀` + registry-resolved form. The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
+| REQ-6 (the Lean exporter) | NOT-STARTED | FUTURE (increment (ii)/(iv)). The TARGET is SHIPPED: `lean/Thermite/` mechanizes `S` (`denote`/`refDenote`/`Denote.lean`, `execDenote`/`Exec.lean`, `bodyDenote`/`Exec/Stmt.lean`, `loopDenote`+`while_rule`/`Exec/Loop.lean`) over the `Expr`/`Block` inductives, kernel-checked (axioms `{propext, Classical.choice, Quot.sound}`). The `denote` `specCall` arm bottoms to `True` at fuel 0 + unresolved name (`Denote.lean`, the `fuel+1, Expr.specCall` arm + `| none => True`) — the fuel trap §4 closes by fixing the registry CONCRETELY (`R_item : Registry`) in the exported file, quantifying the env only over `{ints,seqs,optres}` with `specs := R_item` held fixed, `∀ fuel ≥ fuel₀`, and an export-time HARD GATE refusing to emit (plus per-name `decide` resolution lemmas) when `calledSpecFns(item) ⊄ dom(R_item)` — no resolution PREMISE in the theorem. The Rust→Lean exporter that emits source instantiating those (with EXP = arm-by-arm + drift-tripwire + registry-body faithfulness) is unbuilt; the z3-demotion doc names it "the #185-adjacent correspondence-bridge work … NOT built." |
 | REQ-7 (Lean discharge modes + termination) | NOT-STARTED | FUTURE (increment (ii)/(iii)). The AUTO fragment is PROVEN-REACHABLE: `z3-demotion.md` shows `tv_obligation_arith_cmp`/`tv_obligation_or_le` (scalar/QF-linear contract clauses) discharged by Lean-SMT's `smt` tactic, kernel-clean (`#print axioms` = standard set only; no `sorryAx`/cvc5 oracle). The interactive/proof-artifact mode (staleness = the §2(d) EVIDENCE KEY changing: obligation + engine + engine-toolchain version + targeted-spine content hash) + the `dec`/partial-correctness termination policy (tied to the SHIPPED `while_rule` `h_run` premise) are unbuilt. |
 | REQ-8 (engine ordering + ladder placement) | NOT-STARTED | open blocker #204 (the Verus-only hook) + FUTURE (the Lean rung). The ladder substrate is SHIPPED: `degrade::run_ladder` takes per-rung closures (`attempt_l2`/`attempt_l1`); the engine rungs are the same closure shape. The `--engine lean` / `#[engine(lean)]` surface (OQ-1) and the per-engine SKIP/Unknown accounting are unbuilt. |
-| REQ-9 (engine-generic anti-Goodhart battery, honest v1) | NOT-STARTED | FUTURE (increment (iii)). The battery is SHIPPED Verus-only: `forge::check::mutation_score` generates mutants + re-`run_verus`es each through the #8 cache; its kill rule is "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"). OQ-5 already DROPS un-lowerable mutants from the denominator. The engine-generic kill (`Refuted ∪ Unknown-after-attempt`, = the shipped `Counterexample ∪ Timeout`), the "untested = never-attempted" rule, and the floor guards (minimum-attempted qualifier + the 0/0 backstop) are unbuilt. |
+| REQ-9 (engine-generic anti-Goodhart battery, honest v1) | NOT-STARTED | FUTURE (increment (iii)). The battery is SHIPPED Verus-only: `forge::check::mutation_score` generates mutants + re-`run_verus`es each through the #8 cache; its kill rule is "a `Proved` mutant SURVIVED; a `Counterexample` / `Timeout` mutant is KILLED" (`mutant_outcome_is_survivor = matches!(Proved)`; `mutation.rs` REQ-4 "Killed (counterexample / timeout)"); and each SURVIVOR is run through the #101 `equivalence_proves_equal` query — a proven-equivalent survivor is excluded from BOTH the survivor set AND `scored` (`if proved_equivalent { equivalent += 1; continue; }`, "REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`"), so the SHIPPED `scored` = attempted MINUS proven-equivalent. OQ-5 already DROPS un-lowerable mutants from the denominator. The engine-generic kill (`Refuted ∪ Unknown-after-attempt`, = the shipped `Counterexample ∪ Timeout`), the "untested = never-attempted" rule, the #101-preserving floor (survivor/denominator both MINUS proven-equivalent; the equivalence probe a §0.1 meta-query outside the Engine interface, F3), and the floor guards (minimum-attempted qualifier + the 0/0 backstop) are unbuilt. |
 
 ## Open questions (for co-authorship)
 

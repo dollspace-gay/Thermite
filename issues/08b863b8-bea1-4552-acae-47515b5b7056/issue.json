@@ -2,11 +2,12 @@
   "uuid": "08b863b8-bea1-4552-acae-47515b5b7056",
   "display_id": 158,
   "title": "Lowering soundness step 2.2 / kernel groundwork: freeze the exec-STATEMENT subset + mechanize its operational semantics + design body behavioral-refinement TV (statements/loops/mutation) — the convergence point with the verified-microkernel prerequisite",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-09T00:46:18.517565909Z",
-  "updated_at": "2026-06-09T00:46:31.390511454Z",
+  "updated_at": "2026-06-10T02:59:27.810500500Z",
+  "closed_at": "2026-06-10T02:59:27.810500500Z",
   "labels": [
     "epic"
   ]

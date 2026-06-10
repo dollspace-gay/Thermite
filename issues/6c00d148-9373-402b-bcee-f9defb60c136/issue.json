@@ -1,0 +1,10 @@
+{
+  "uuid": "6c00d148-9373-402b-bcee-f9defb60c136",
+  "display_id": 211,
+  "title": "Divergence: proof-backends.md §7/AC-7/REQ-9 'denominator = attempted' + 'survivor = Proved only' contradict shipped mutation_score's #101 equivalence exclusion it claims to preserve",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:09:39.989127843Z",
+  "updated_at": "2026-06-10T19:09:39.989127843Z"
+}

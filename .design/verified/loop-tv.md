@@ -328,10 +328,14 @@ proof, then the forge seam). Three increments, each a future blocker under #163:
 
 **Increment 2.2.2-iii — the forge `body_tv` loop wiring (the #162 seam).**
 - Manifest: `forge/src/body_tv.rs` (the loop branch of the four-way report — Faithful/Divergent/
-  Unverifiable/Skipped — reusing the #162 phase scaffold), `forge/tests/loop_tv_conformance.rs`.
+  Unverifiable/Skipped — reusing the #162 phase scaffold), `forge/tests/body_tv.rs` (the SHIPPED
+  test file — commit `540cea0d`).
 - AC: `binary_search.th`'s loop reaches the phase as `Skipped` (it is a `loop`-kind with mid-body
   returns — OUT of v1, honestly); a v1-subset faithful `while` corpus fixture → `Faithful`; a
   broken-invariant fixture → `Divergent` with a counterexample. (#162 is the prerequisite seam.)
+- **SHIPPED (#162 + the #189 honesty fix):** `forge::body_tv` (`forge/src/body_tv.rs`) ships the
+  loop branch; verified by `forge/tests/body_tv.rs` (see REQ-5 below). The earlier name
+  `loop_tv_conformance.rs` was a plan placeholder; the wiring landed in the existing `body_tv.rs`.
 
 ## Acceptance criteria
 
@@ -361,7 +365,7 @@ proof, then the forge seam). Three increments, each a future blocker under #163:
 When built, GROUNDED end-to-end against the real `verus` binary (exactly as 2.1 / 2.2.1): the three
 obligations replayed through `forge::check::run_verus` (`thermite-tv/tests/loop_teeth.rs` L1–L4); the
 Lean WHILE-RULE + negative lemmas under `lake build` (`lean/Thermite/Exec/Loop.lean`); the forge phase
-under `forge/tests/loop_tv_conformance.rs`. Crate gauntlet: `cargo test -p thermite-tv`, `cargo test -p
+under `forge/tests/body_tv.rs` (the SHIPPED test file, commit `540cea0d`). Crate gauntlet: `cargo test -p thermite-tv`, `cargo test -p
 forge`, `cargo clippy -p thermite-tv -p forge --all-targets -- -D warnings`, `cargo fmt --check`; `lake
 build` green for the Lean increment.
 

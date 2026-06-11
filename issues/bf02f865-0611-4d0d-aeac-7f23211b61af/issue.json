@@ -2,11 +2,12 @@
   "uuid": "bf02f865-0611-4d0d-aeac-7f23211b61af",
   "display_id": 241,
   "title": "Divergence: Stabilize.lean RegistryTerminating/stabilization_exists diverges from proof-backends.md §1.2/§4 — hypothesis is the conclusion (identity lemma) and is SATISFIED by the divergent registry the class must reject",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T07:51:29.344313010Z",
-  "updated_at": "2026-06-11T07:51:31.955419853Z",
+  "updated_at": "2026-06-11T14:34:26.225684541Z",
+  "closed_at": "2026-06-11T14:34:26.225684541Z",
   "labels": [
     "blocker"
   ]

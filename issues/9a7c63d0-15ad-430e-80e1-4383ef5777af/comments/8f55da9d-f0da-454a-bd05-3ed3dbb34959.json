@@ -1,0 +1,10 @@
+{
+  "uuid": "8f55da9d-f0da-454a-bd05-3ed3dbb34959",
+  "issue_uuid": "9a7c63d0-15ad-430e-80e1-4383ef5777af",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_252_indented_command_escape.rs::divergence_interactive_indented_command_escapes_allowlist demonstrates the divergence LIVE: forge check --engine lean certifies item f at L3 from a proof of True. ROOT: engine::disallowed_helper_command skips any line where raw.starts_with(char::is_whitespace) (its 'INDENTED lines are a declaration body/continuation, never a command START' assumption); engine::author_helpers preserves leading whitespace (trim_end only). But Lean 4 is whitespace-insensitive at the top level — an INDENTED 'notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)' elaborates as a top-level command, re-defines the spine symbol, and the byte-identical canonical conclusion re-elaborates to True (proven by trivial, clean axioms [propext, Classical.choice, Quot.sound], statements_match passes). Verified live in isolation: with the indented notation the proof closes clean; without it the same proof fails (Tactic assumption failed). The #251 allowlist must tokenize commands position-independently (or normalize/strip leading whitespace before column-0 detection), and the same gap applies to indented open/set_option/instance/macro. Authority: .design/verified/proof-backends.md REQ-6/REQ-4/§1; thermite-design.md §1; R-DEFER-9.",
+  "created_at": "2026-06-11T20:40:25.882173706Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA8QyU3iuQmeoo1rE1SbO3IzbbCyLl8++6Hpqz0Mq63amPyg+vAbAOQ0MtSBQUGyIPoJvhQwl56Cx7IxtREgQDCw=="
+}

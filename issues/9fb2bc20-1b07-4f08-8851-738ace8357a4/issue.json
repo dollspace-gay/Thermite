@@ -1,0 +1,10 @@
+{
+  "uuid": "9fb2bc20-1b07-4f08-8851-738ace8357a4",
+  "display_id": 234,
+  "title": "Divergence: thermite-lower sep_fn (count_sep/sep_free) u8 separator coercion keeps the textual ends_with('as u8') heuristic #231 removed elsewhere AND drops the #122 inner paren on a Binary arg — 'sep + 1 as u8' = int, E0308, L0 death on correct source",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T03:24:13.357753237Z",
+  "updated_at": "2026-06-11T03:24:13.357753237Z"
+}

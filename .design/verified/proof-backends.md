@@ -189,9 +189,11 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
 This is the INTERFACE/architecture layer; its ACs are DEFINITION-COMPLETENESS + GROUNDEDNESS +
 NON-VACUITY + DECISION-RECORDED, not a `cargo test`. The mechanical discharge of each AC moves to the
 per-increment build blockers as they land. (Increment (i), #204, is the first build: its AC is the
-cert-oracle regression — `conformance/*.cert.json` unchanged after Verus moves behind the interface,
-WITH the single named exception that a previously-hard-failed fast-`unknown` fixture now degrades;
-see REQ-3.1 / the Verification section.)
+cert-oracle regression — `conformance/*.cert.json` byte-identical after Verus moves behind the
+interface, with NO exception: the REQ-3.1 fast-`unknown` remap is shipped as a NARROW signature that
+matches no grounded verus output today and is therefore INERT (the behavioral delta is undelivered
+until Z3's `:reason-unknown` is surfaced — `solver-profiles.md` OQ-1); see REQ-3.1 / the Verification
+section.)
 
 - **AC-1 (the Obligation covers exactly the classes the pipeline discharges TODAY)** — every
   obligation the SHIPPED `obligation.rs` family materializes has a backend-neutral `class`: CONTRACT
@@ -531,10 +533,20 @@ The first instance refactors Verus byte-identically EXCEPT the named REQ-3.1 fas
   ADMITS the REGISTRY_TERMINATION class (its dec-check is the common discharge path, REQ-1.2(a)).
 - **DISCHARGE** = `classify_verus_outcome`'s three-way map, lifted to `Verdict`: `Proved` →
   `Proven`; `Timeout` → `Unknown(VerusTimeout + the SolverProfile)`; and `Counterexample` SPLIT by
-  REQ-3.1 — a `Counterexample` carrying a parsed WITNESSING obligation result → `Refuted`, a
-  witness-LESS failure (the fast-`unknown` incompleteness edge `classify_verus_outcome` today absorbs
-  into the `Counterexample` bucket) → `Unknown(VerusIncompleteUnknown)`. This is the ONE place the
-  Verus engine is NOT byte-identical to the shipped pipeline; the delta is decided in REQ-3.1.
+  REQ-3.1 — `Refuted` is reserved for a genuine WITNESSED countermodel OR a definitive FRONTEND
+  rejection (an ill-typed lowered unit — the IFC un-typeable-by-design tooth, which the provenance
+  corpus `06-provenance/cases.json` pins at L0; e.g. the `careless_query` E0308 path). The remap to
+  `Unknown(VerusIncompleteUnknown)` is implemented as a NARROW signature — a span-less diagnostic
+  whose text carries the SMT-`unknown` substring AND no frontend `error[E…]` — which, per the
+  grounded verus-output study (`solver-profiles.md`: a genuine fast SMT-`unknown` prints `error:
+  postcondition not satisfied` VERBATIM WITH a span, the SAME spanned string a witnessed
+  counterexample prints), matches NO grounded verus output today and is therefore INERT. Degrading
+  genuine fast-unknowns requires Z3's `:reason-unknown` surfaced (the `solver-profiles.md` OQ-1
+  prerequisite — `(incomplete quantifiers)` vs `resourceout` vs `sat`); until that activation
+  condition lands the narrow remap fires on no real input and the conservative hard-fail stands
+  (remapping on the available spanned signal would launder genuine countermodels to L1 — the
+  anti-cheat catastrophe). So the refactor is byte-identical to the shipped pipeline: the seam is
+  shipped, the behavioral delta is not yet deliverable. See REQ-3.1.
 - **TRUST PROFILE** = `{Z3, Verus VC-gen}` + the TV/lowering theorem (`lowering_faithful`, RELATIVE
   to `{Z3 soundness, S = intended meaning, Lean kernel}` per `Faithfulness.lean`). I.e. a Verus L3
   enumerates Z3 + the Verus VC generator + the per-run TV's Z3-trusted `h_tv` premise.
@@ -601,22 +613,38 @@ this fast-`unknown` to `Verdict::Refuted` → `ladder_action_l3` HardFail — wh
 ("an SMT unknown is `Unknown`, never `Refuted`; refutation requires a witnessing input") from day
 one.
 
-**DECISION (increment (i) REMAPS it).** The Verus engine's Verdict mapping sends a witness-LESS
-failure (a `Counterexample` outcome carrying NO parsed structured witnessing input) to
-`Unknown(VerusIncompleteUnknown)`; ONLY a witnessed countermodel (a `Counterexample` with a parsed
-failing input) becomes `Refuted`. This is the single named exception to increment (i)'s
-"byte-identical" claim — the refactor is byte-identical EXCEPT this remap.
+**DECISION (increment (i) ships a NARROW remap; it is currently INERT).** `Refuted` is reserved for
+two definitive signals: (1) a genuine WITNESSED countermodel (a `Counterexample` carrying a parsed
+failing input — a real disproof), and (2) a definitive FRONTEND rejection — an ill-typed lowered unit,
+the IFC un-typeable-by-design tooth, which the provenance corpus `06-provenance/cases.json` pins at L0
+(e.g. the `careless_query` E0308 path; a literal "witness-less ⇒ Unknown" reading would WRONGLY degrade
+this corpus-pinned L0 frontend rejection — that is why the discriminator is narrow, not broad). The
+remap to `Unknown(VerusIncompleteUnknown)` is implemented as a NARROW positive signature
+(`engine::counterexample_is_incompleteness_unknown`): a span-less diagnostic whose text carries the
+SMT-`unknown` substring AND no frontend `error[E…]`. **This narrow signature matches NO grounded verus
+output today, so the remap is INERT.** Per the grounded verus-output study (`solver-profiles.md`:
+"The reliable signal is Z3's `:reason-unknown`"; the `--output-json` summary CANNOT tell a fast SMT
+`unknown` from a counterexample), a genuine fast SMT-`unknown` prints `error: postcondition not
+satisfied` VERBATIM WITH a span — the SAME spanned string a witnessed countermodel prints (live repro:
+a VALID Cauchy-Schwarz contract `(a²+…+e²)*5 ≥ (a+…+e)²` under `req a<10…` has NO countermodel yet
+forge gives an L0 hard-fail in ~214ms with a spanned `postcondition not satisfied`, NO degrade). So the
+span-less + `unknown`-substring positive signal never fires on real stderr.
 
-**Behavioral delta, stated honestly.** Today's pipeline HARD-FAILS a fast-`unknown` (the witness-less
-`Counterexample` → `ladder_action_l3` HardFail, no degrade). Behind the interface it DEGRADES instead
-(`Unknown` → `run_ladder` → L2/L1). **Justification:** this matches thermite-design §6's
-degrade-on-timeout intent — a fast-`unknown` is an INCOMPLETENESS event (the solver could not decide,
-not a disproof), semantically the same class as a timeout, and §6 says an undecided obligation
-degrades, it does not fail. The counterexample-NEVER-degrades rule (§7 / `degrade-ladder.md` REQ-2)
-is UNVIOLATED because it applies to genuine WITNESSED countermodels, and those still map to `Refuted`
-→ HardFail unchanged. The conformance AC for increment (i) records this one fixture-level change
-(a previously-hard-failed witness-less-unknown case now degrades) as the sole exception to the
-byte-identical cert-oracle regression.
+**Behavioral delta, stated honestly — undelivered and not-yet-deliverable.** The seam is shipped; the
+behavioral delta is NOT, because no real input reaches the remap. Today's pipeline HARD-FAILS a genuine
+fast-`unknown` (spanned `postcondition not satisfied` → the witnessed-`Counterexample` path →
+`ladder_action_l3` HardFail), and the narrow remap does NOT change that — its span-less +
+`unknown`-substring trigger is absent from grounded verus output. **The activation condition** for a
+LIVE remap (a future increment) is Z3's `:reason-unknown` surfaced — distinguishing
+`(incomplete quantifiers)` (degrade) from `resourceout` (timeout-degrade) from `sat`
+(witnessed-refute) — i.e. the `solver-profiles.md` OQ-1 prerequisite (the `--log-all`-artifact
+mechanism). **Until then the conservative hard-fail STANDS, and is justified:** degrading on the only
+signal currently available (a spanned `postcondition not satisfied`) would launder genuine WITNESSED
+countermodels to L1 — the anti-cheat catastrophe (§7 / `degrade-ladder.md` REQ-2: a counterexample
+NEVER degrades). The conformance cert-oracle regression is therefore byte-identical with NO exception:
+the corpus contains witnessed failures + E0308 frontend rejections (both stay `Refuted` → hard-fail)
+but no genuine SMT-`unknown` matching the narrow signature, so every `conformance/*.cert.json` is
+unchanged.
 
 **A note on a failed registry-termination proof (REQ-1.2 interaction).** A spec-fn whose `dec`
 fails Verus's decreases-check produces a witness-less Verus failure → `Unknown` → degrade → Lean
@@ -1279,9 +1307,11 @@ meta/battery query classes (vacuity / equivalence / strengthen) are OUT of the E
 ### 9. The increment plan + the build blockers (AC-8)
 
 - **(i) The Obligation reification + the Engine trait in forge** — Verus refactored behind the
-  interface, behavior BYTE-IDENTICAL EXCEPT the named REQ-3.1 fast-unknown remap (a previously
-  hard-failed witness-less unknown now degrades). The conformance cert oracle
-  `conformance/*.cert.json` is unperturbed apart from that one fixture (the AC for this increment).
+  interface, behavior BYTE-IDENTICAL. The named REQ-3.1 fast-unknown remap is shipped as a NARROW
+  signature (span-less + `unknown`-substring) that matches no grounded verus output today and is
+  therefore INERT — the behavioral delta is undelivered until Z3's `:reason-unknown` is surfaced
+  (`solver-profiles.md` OQ-1). The conformance cert oracle `conformance/*.cert.json` is unperturbed
+  with NO exception (the AC for this increment).
   The REGISTRY-TERMINATION class is ASSIGNED here (REQ-1 reification; Verus's dec-check is its common
   discharge). No new engine. **FILED: blocker #204.**
 - **(ii) The Lean exporter + auto-discharge for the PURE-CONTRACT class** — the cheapest real win
@@ -1302,10 +1332,13 @@ meta/battery query classes (vacuity / equivalence / strengthen) are OUT of the E
 
 Per increment (this doc's own ACs are statement-completeness, discharged by review):
 - **(i), #204:** `cargo test -p forge` green AND the conformance cert oracle UNCHANGED — every
-  `conformance/<name>.cert.json` byte-stable after Verus moves behind the `Engine` trait, WITH the
-  single named exception of the REQ-3.1 fast-unknown fixture (a witness-less-unknown case that
-  previously hard-failed now DEGRADES — a deliberate, fixture-level cert change, asserted by a test
-  that the remap fires and the case degrades rather than hard-fails). Plus `cargo clippy`/`fmt`.
+  `conformance/<name>.cert.json` byte-stable after Verus moves behind the `Engine` trait, with NO
+  exception: the REQ-3.1 fast-unknown remap is shipped as a NARROW signature (span-less +
+  `unknown`-substring) that matches no grounded verus output today, so it is INERT and no cert
+  changes (the behavioral delta is undelivered until Z3's `:reason-unknown` is surfaced — the
+  `solver-profiles.md` OQ-1 activation condition). A unit test asserts the discriminator is narrow
+  (a witnessed countermodel AND an E0308 frontend rejection both stay `Refuted` → hard-fail). Plus
+  `cargo clippy`/`fmt`.
 - **(ii):** the Lean-auto rung discharges the scalar-contract corpus obligations with `#print axioms`
   = `{propext, Classical.choice, Quot.sound}` only (the z3-demotion kernel-clean bar), and a
   Lean-proven cert carries the smaller trust profile. **The AUTO obligations are emitted FUEL-FREE**

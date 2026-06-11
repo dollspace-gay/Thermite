@@ -39,10 +39,10 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-2 (the Engine interface — 4 slots) | SHIPPED (Verus instance) | `pub trait Engine { name, fragment, discharge, trust_profile, evidence_key }` + `pub enum Verdict`/`Evidence`/`Counterexample`/`Reason` + `pub struct TrustProfile`/`Fragment`/`CacheKey`; the `pub struct VerusEngine` fills all four slots from SHIPPED code (FRAGMENT = the frozen lowering subset; DISCHARGE = `classify_verus_outcome`'s three-way map lifted to `Verdict` with the REQ-3.1 remap; TRUST PROFILE = {Z3, Verus VC-gen} + the TV/lowering theorem; EVIDENCE = the content-addressed `cache::cache_key` generalized with an engine discriminator). Non-test consumer: `check::run_l3_engine` routes the per-item L3 certification discharge through `VerusEngine`. The Lean engine (`LeanAuto`/`LeanInteractive`) is increment (ii), NOT-STARTED. |
-//! | REQ-3 (discharge discipline — Unknown degrades, Refuted hard-fails) | SHIPPED | `pub fn verdict_ladder_action` maps a `Verdict` to the SHIPPED `degrade::L3Verdict` for a `role = Certification` obligation: `Proven` → the proved L3 cert (CertifyL3); `Unknown` → `Timeout`-shaped degrade trigger (`run_ladder` → L2/L1); `Refuted` → `Counterexample` (HARD FAIL, never degrades). Consumer: `check::run_l3_engine` → `ladder_for_timeout`. Generalized off `degrade::ladder_action_l3`. |
+//! | REQ-2 (the Engine interface — 4 slots) | SHIPPED (Verus instance) | `pub trait Engine { name, fragment, discharge, trust_profile, evidence_key }` + `pub enum Verdict`/`Evidence`/`Counterexample`/`Reason` + `pub struct TrustProfile`/`Fragment`/`CacheKey`; the `pub struct VerusEngine` fills all four slots from SHIPPED code (FRAGMENT = the frozen lowering subset; DISCHARGE = `classify_verus_outcome`'s three-way map lifted to `Verdict` with the REQ-3.1 remap; TRUST PROFILE = {Z3, Verus VC-gen} + the TV/lowering theorem; EVIDENCE = the content-addressed `cache::cache_key` generalized with an engine discriminator). Non-test consumer: `check::ladder_for_timeout` routes the per-item L3 certification discharge through `VerusEngine`. The Lean engine (`LeanAuto`/`LeanInteractive`) is increment (ii), NOT-STARTED. |
+//! | REQ-3 (discharge discipline — Unknown degrades, Refuted hard-fails) | SHIPPED | `pub fn verdict_ladder_action` maps a `Verdict` to the SHIPPED `degrade::L3Verdict` for a `role = Certification` obligation: `Proven` → the proved L3 cert (CertifyL3); `Unknown` → `Timeout`-shaped degrade trigger (`run_ladder` → L2/L1); `Refuted` → `Counterexample` (HARD FAIL, never degrades). Consumer: `check::ladder_for_timeout`. Generalized off `degrade::ladder_action_l3`. |
 //! | REQ-3.1 (the fast-unknown remap) | SHIPPED | `VerusEngine::verdict_of` splits `VerusOutcome::Counterexample` by `counterexample_is_incompleteness_unknown` (the NARROW SMT-`unknown` signature): ONLY a span-less failure carrying the SMT-`unknown` signal (no frontend `error[E` / no parsed `--> span`) → `Unknown(Reason::IncompleteUnknown)` (degrade); a witnessed countermodel AND a frontend type error (E0308) stay `Refuted` (hard-fail). The remap is INERT on the corpus (witnessed + E0308 cases stay hard-fail). Tested: a synthetic SMT-`unknown` degrades, a witnessed countermodel + an E0308 type error both hard-fail (`engine.rs` tests + `forge/tests/engine_interface.rs`). |
-//! | REQ-8 (engine ordering hook) | SHIPPED (Verus rung) | `pub fn default_engines` returns the ordered engine list (Verus first); increment (i) wires the hook with the single Verus rung, increment (ii) adds the Lean rungs. Consumer: `check::run_l3_engine` reads the first engine (Verus). |
+//! | REQ-8 (engine ordering hook) | SHIPPED (Verus rung) | `pub fn default_engines` returns the ordered engine list (Verus first); increment (i) wires the hook with the single Verus rung, increment (ii) adds the Lean rungs. Consumer: `check::ladder_for_timeout` reads the first engine (Verus). |
 
 use crate::obligation::{Obligation, ObligationRole};
 
@@ -328,7 +328,7 @@ impl Engine for VerusEngine {
         let _ = o;
         Verdict::Unknown(Reason::IncompleteUnknown(
             "the Verus engine discharges per-item obligations through \
-             check::run_l3_engine (the run_verus path); a bare trait discharge \
+             check::ladder_for_timeout (the run_verus path); a bare trait discharge \
              with no run is undecided (REQ-3: never a witness-less Refuted)"
                 .to_string(),
         ))
@@ -369,7 +369,7 @@ impl Engine for VerusEngine {
 /// first (fast, push-button). Increment (i) wires the ordering hook with the single
 /// Verus rung; increment (ii) adds the Lean-auto / Lean-interactive rungs AFTER
 /// Verus, THEN the existing L2/L1 degrade. Returns the ordered engine names so the
-/// caller (`check::run_l3_engine`) reads the first (Verus) rung.
+/// caller (`check::ladder_for_timeout`) reads the first (Verus) rung.
 #[must_use]
 pub fn default_engines() -> Vec<EngineName> {
     // Increment (i): Verus only. The Lean rungs (REQ-8 "Lean-auto second,

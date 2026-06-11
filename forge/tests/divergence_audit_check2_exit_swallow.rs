@@ -71,12 +71,12 @@ fn divergence_audit_check2_swallows_divergent_exit() {
     let script = fs::read_to_string(root.join("scripts/audit.sh")).expect("read scripts/audit.sh");
 
     // Extract check [2] verbatim between its section banners.
-    let start = script
-        .find("# CHECK 2 ")
-        .expect("scripts/audit.sh: '# CHECK 2' banner not found (script restructured? re-anchor this pin)");
-    let end = script
-        .find("# CHECK 3 ")
-        .expect("scripts/audit.sh: '# CHECK 3' banner not found (script restructured? re-anchor this pin)");
+    let start = script.find("# CHECK 2 ").expect(
+        "scripts/audit.sh: '# CHECK 2' banner not found (script restructured? re-anchor this pin)",
+    );
+    let end = script.find("# CHECK 3 ").expect(
+        "scripts/audit.sh: '# CHECK 3' banner not found (script restructured? re-anchor this pin)",
+    );
     assert!(start < end, "CHECK 2 banner must precede CHECK 3");
     let check2 = &script[start..end];
     assert!(

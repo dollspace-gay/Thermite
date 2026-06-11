@@ -170,8 +170,13 @@ fn binary_search_cert_oracle_identical_post_engine_refactor() {
         return;
     }
     let (code, certs) = run_check_json(&corpus_dir().join("binary_search.th"));
-    // binary_search certifies (exit 0); assert the searcher fn reaches its golden
-    // level via the engine-routed discharge. The golden file is the oracle.
+    // binary_search certifies (exit 0); assert the engine-routed discharge yields an
+    // L3 cert on this multi-spec-fn / loop item. NOTE: there is no
+    // `conformance/binary_search.cert.json` golden, so this is NOT a golden-oracle
+    // diff — it asserts (a) exit 0 and (b) at least one L3 cert is produced behind the
+    // Engine interface (a regression guard that the refactor did not drop the item to
+    // a lower level); the byte-identical golden-oracle diff lives in the `sum` /
+    // `spec_sum` cases above, which DO load `conformance/sum.cert.json`.
     assert_eq!(code, Some(0), "binary_search must exit 0 (fully verified)");
     assert!(
         certs.iter().any(|c| c["level"] == "L3"),

@@ -1,0 +1,10 @@
+{
+  "uuid": "5d659c08-23a3-4907-ba77-1d3bf54488f4",
+  "display_id": 246,
+  "title": "Divergence: LeanEngine::evidence_key omits the obligation CONTENT (+ seed, thermite_version) — a changed contract on a same-named item keeps the same key (§2(d)/REQ-7 staleness)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T16:07:48.071176802Z",
+  "updated_at": "2026-06-11T16:07:48.071176802Z"
+}

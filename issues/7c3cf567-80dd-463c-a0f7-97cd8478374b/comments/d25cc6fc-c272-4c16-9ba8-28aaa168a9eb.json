@@ -1,0 +1,10 @@
+{
+  "uuid": "d25cc6fc-c272-4c16-9ba8-28aaa168a9eb",
+  "issue_uuid": "7c3cf567-80dd-463c-a0f7-97cd8478374b",
+  "author": "Yffe",
+  "content": "Plan (critic): commit the three failing-test pins (divergence_spec_call_bool_arg_cast.rs #233, divergence_sep_fn_arith_arg_paren.rs #234, divergence_combinator_private_vs_pub_open_spec_fn.rs #235) as the audit artifact of the caa38848+2f327b63 re-audit. All #[ignore]d with blocker tracking; generator to fix. No production code touched.",
+  "created_at": "2026-06-11T03:40:49.153556757Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA7S3+SpNnI6rbKFh7Og1h1ZnOlQyzVB7R84igl7KUmROuIIVE0vlRp3dSb9Nbi6IykhzfNWFKC3MgusglvbpYAQ=="
+}

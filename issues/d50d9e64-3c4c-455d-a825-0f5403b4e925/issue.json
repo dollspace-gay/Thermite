@@ -1,0 +1,10 @@
+{
+  "uuid": "d50d9e64-3c4c-455d-a825-0f5403b4e925",
+  "display_id": 233,
+  "title": "Divergence: thermite-lower lower_expr/lower_inv_expr Call arms cast a bool-typed Binary/Unary spec-call arg 'as u64' (spec_call_param_cast bool=>None collapses into the unwrap_or(u64) fallback) — E0308, L0 death on correct source",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T03:23:57.538248120Z",
+  "updated_at": "2026-06-11T03:23:57.538248120Z"
+}

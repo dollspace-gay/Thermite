@@ -1,0 +1,10 @@
+{
+  "uuid": "1daad1bc-73a9-4b68-a808-afca1c599197",
+  "display_id": 230,
+  "title": "lower: top-level user spec fns emit as bare 'spec fn' — a pub open spec fn (struct well_formed) naming one fails Verus privacy (E0425) -> correct source dies at L0; emit pub open spec fn for user spec fns (the REQ-8 visibility tier extended)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T01:53:57.360997799Z",
+  "updated_at": "2026-06-11T01:53:57.360997799Z"
+}

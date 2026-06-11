@@ -2,11 +2,12 @@
   "uuid": "e939b168-22c4-4ded-a330-6e68ba393bea",
   "display_id": 228,
   "title": "Divergence: lower_contract_expr (contract-TV production column) omits spec_fn_param_types — TV checks a non-production u64-cast lowering for u32/usize spec-call args (contract-tv.md REQ-2 verbatim miss)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T23:42:15.321165778Z",
-  "updated_at": "2026-06-10T23:42:16.873335798Z",
+  "updated_at": "2026-06-11T04:04:38.983444871Z",
+  "closed_at": "2026-06-11T04:04:38.983444871Z",
   "labels": [
     "blocker"
   ]

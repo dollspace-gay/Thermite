@@ -11,10 +11,10 @@
 //!
 //! The #250 fix (`engine::reconstruct_replay`, commit 2367628c) RECONSTRUCTS the replay
 //! file from the canonical exporter source, splicing in the author's extracted PROOF term
-//! + their HELPER lemmas (`engine::author_helpers`) BEFORE the canonical theorem. It
+//! plus their HELPER lemmas (`engine::author_helpers`) BEFORE the canonical theorem. It
 //! argues the statement, name, and `#print axioms` target are then "the same generator-
 //! emitted declaration BY CONSTRUCTION". This pin shows that argument is INCOMPLETE: the
-//! splice is purely TEXTUAL and `author_helpers` keeps ANY non-`#`, non-preamble line —
+//! splice is purely TEXTUAL and `author_helpers` keeps ANY non-`#`, non-preamble line,
 //! including a Lean 4 `notation`/`macro`/`macro_rules` command. A helper
 //!
 //!     notation:max "Thermite.stabilizesProp" => (fun (_ : Thermite.Expr) (_ : Thermite.Env) => True)
@@ -127,7 +127,10 @@ fn divergence_interactive_notation_poison_reelaborates_obligation_to_true() {
             .unwrap_or(0)
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    assert!(std::fs::create_dir_all(&dir).is_ok(), "scratch dir creatable");
+    assert!(
+        std::fs::create_dir_all(&dir).is_ok(),
+        "scratch dir creatable"
+    );
     let th = dir.join("div.th");
     assert!(std::fs::write(&th, TH_SRC).is_ok(), "source writable");
 

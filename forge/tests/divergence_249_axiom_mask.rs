@@ -107,7 +107,10 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
             .unwrap_or(0)
     ));
     let _ = std::fs::remove_dir_all(&dir);
-    assert!(std::fs::create_dir_all(&dir).is_ok(), "scratch dir creatable");
+    assert!(
+        std::fs::create_dir_all(&dir).is_ok(),
+        "scratch dir creatable"
+    );
     let th = dir.join("div.th");
     assert!(std::fs::write(&th, TH_SRC).is_ok(), "source writable");
 

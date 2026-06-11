@@ -1,0 +1,10 @@
+{
+  "uuid": "21ca141f-dbfd-4236-88cc-b399a8071985",
+  "issue_uuid": "678f5cfb-34af-47c2-a330-b533e51b327c",
+  "author": "Yffe",
+  "content": "Pinned: lean/Thermite/PinExportUndefinedCallee.lean (kernel-checked). collect_expr_calls filters candidates through decls.contains_key, so a callee with NO in-program definition is invisible to BOTH gate directions in export_item AND to expr_has_spec_call/tier_of. Live repro: 'fn f(x: u64) -> u64 req true ens result == mystery(x as int) as u64 fx pure { 0 }' exports Ok{FuelFreeAuto, registry=[]} instead of Err(IncompleteRegistry([mystery])); the emitted theorem carries Expr.specCall \"mystery\" at fuel 0 (intVal bottom 0), lake kernel-ACCEPTS it, LeanEngine::discharge returns Proven for a contract about an undefined symbol. Authority: proof-backends.md §4 mechanism 1 (full expression-position principle: EVERY expression the export denotes against R_item contributes its spec-calls).",
+  "created_at": "2026-06-11T16:06:57.505315643Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAO+FtRxDSVlMySPu9gvUCqHPvci37NRp4UT2hnUdBv+8UyDTSkLNC1uWK/vEKoush1WW5/IlnKp+tjT3+Gto8BA=="
+}

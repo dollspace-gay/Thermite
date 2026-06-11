@@ -1,0 +1,10 @@
+{
+  "uuid": "eb328f52-06e6-4380-9cd5-7cbab0c52a1d",
+  "issue_uuid": "bf02f865-0611-4d0d-aeac-7f23211b61af",
+  "author": "Yffe",
+  "content": "Kernel pin at lean/Thermite/PinRegistryTerminating.lean (Pin E) demonstrates the divergence: (E.0) hypothesis_is_conclusion — RegistryTerminating env e = (∃ v, stabilizes e env v) by rfl, so stabilization_exists (shipped under the design name stabilization_exists_for_dec_bounded) is the identity, zero proof content; the §4 load-bearing implication dec-valid ⇒ stabilized-value-exists-and-equals-intended-meaning is proven nowhere while the build-blockers row says SHIPPED. (E.1) divergent_registry_clears_the_hypothesis — Pin B's divergent f(x)=f(x) registry SATISFIES RegistryTerminating (stabilizes to the Int-bottom 0), but §1.2 'The closure' mandates the REGISTRY-TERMINATION class FAIL for it on BOTH discharge paths; stabilization_exists_affirms_the_divergent_registry + the_affirmed_value_is_the_bottom show the named lemma affirming the bottom-poisoned 0 as the unique ∀r-premise value. The amended doc claim 'the hypothesis is EXACTLY what REQ-1.2 discharges' is false in both directions: §1.2's discharge artifacts are descent facts (Verus dec-check / Lean decreasing_by), not terms of type ∃v-stabilizes (the unproven bridge the doc-author flagged), and the converse is kernel-refuted by Pin E.",
+  "created_at": "2026-06-11T07:51:50.626495355Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAlE0xXeyWf0CfRRtXXrF7tYaKEbFCQWtofwlQzWdeDMc31JfHnureFshTyRvCkua+ja44NIHmErB+475a6E2wDA=="
+}

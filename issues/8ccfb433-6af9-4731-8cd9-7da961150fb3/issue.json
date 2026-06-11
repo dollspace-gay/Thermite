@@ -2,11 +2,12 @@
   "uuid": "8ccfb433-6af9-4731-8cd9-7da961150fb3",
   "display_id": 231,
   "title": "Divergence: spec_call_param_cast dedupe suffix heuristic (ends_with 'as <cast>') skips the REQ-5 narrowing on an int-typed arg whose lowering merely ENDS in a cast — req s_dec(k + j as u32) emits un-narrowed int arg, E0308 -> correct source dies at L0 (live-confirmed); shared by lower_expr Call arm (both branches) + the c116360c lower_inv_expr Call arm",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T02:18:53.839676043Z",
-  "updated_at": "2026-06-11T02:18:56.814232634Z",
+  "updated_at": "2026-06-11T04:04:50.235848692Z",
+  "closed_at": "2026-06-11T04:04:50.235848692Z",
   "labels": [
     "blocker"
   ]

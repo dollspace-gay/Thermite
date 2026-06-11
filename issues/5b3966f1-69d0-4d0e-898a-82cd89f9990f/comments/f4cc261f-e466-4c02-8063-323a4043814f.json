@@ -1,0 +1,10 @@
+{
+  "uuid": "f4cc261f-e466-4c02-8063-323a4043814f",
+  "issue_uuid": "5b3966f1-69d0-4d0e-898a-82cd89f9990f",
+  "author": "Yffe",
+  "content": "Pinned: lean/Thermite/PinExportBoolResult.lean (kernel-checked, BOTH polarity theorems prove). export_item checks only pure_tail_of_block (body SHAPE), never the result SORT. §4 scopes the pure-contract class to bodies denoting in intVal (result r : Int); §4.1 names the bool-result binding (bindBool) as increment-(iv) — so a -> bool item must be ExportRefusal::NotPureContract. Instead it exports tier (a); Denote.lean's intVal bottoms every bool-sorted node to 0, so result binds to 0 for ANY bool body and true/false literals also denote 0: live, 'fn always(a: u32) -> bool req true ens result == true fx pure { false }' (a FALSE contract Verus refutes) is lake-ACCEPTED -> Verdict::Proven, and so is its negation — a REQ-5 Proven+Refuted disagreement seed on a frozen-subset item.",
+  "created_at": "2026-06-11T16:07:20.408865237Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAGcA5c67SeNZeqht/YAlXCTulc4oG2KWfa0o430Gbh69HMdZQo7XSu3zh1j9YC0aaVB884b6P16RdxTB32VvhCA=="
+}

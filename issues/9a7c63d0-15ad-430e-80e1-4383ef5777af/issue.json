@@ -1,0 +1,10 @@
+{
+  "uuid": "9a7c63d0-15ad-430e-80e1-4383ef5777af",
+  "display_id": 252,
+  "title": "Divergence: engine::disallowed_helper_command scans only column-0 lines; an INDENTED Lean top-level command (notation/open/set_option) escapes the #251 helper allowlist and forges L3 from a proof of True",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T20:40:09.032046587Z",
+  "updated_at": "2026-06-11T20:40:09.032046587Z"
+}

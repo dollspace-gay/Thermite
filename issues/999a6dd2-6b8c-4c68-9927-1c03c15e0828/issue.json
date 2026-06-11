@@ -1,0 +1,10 @@
+{
+  "uuid": "999a6dd2-6b8c-4c68-9927-1c03c15e0828",
+  "display_id": 249,
+  "title": "Divergence: forge engine::nonstandard_axiom binds to the FIRST #print axioms line, not the obligation theorem's — earlier clean #print masks a smuggled axiom (#248 allowlist bypass)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T18:41:11.341874890Z",
+  "updated_at": "2026-06-11T18:41:11.341874890Z"
+}

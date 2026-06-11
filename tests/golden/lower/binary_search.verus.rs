@@ -1,19 +1,19 @@
 use vstd::prelude::*;
 verus! {
 
-spec fn sorted(s: Seq<u32>) -> bool {
+pub open spec fn sorted(s: Seq<u32>) -> bool {
     forall|i: int, j: int| 0 <= i <= j < s.len() ==> s[i] <= s[j]
 }
 
-spec fn forall_in(s: Seq<u32>, p: spec_fn(u32) -> bool) -> bool {
+pub open spec fn forall_in(s: Seq<u32>, p: spec_fn(u32) -> bool) -> bool {
     forall|i: int| 0 <= i < s.len() ==> #[trigger] p(s[i])
 }
 
-spec fn forall_below(s: Seq<u32>, n: int, p: spec_fn(u32) -> bool) -> bool {
+pub open spec fn forall_below(s: Seq<u32>, n: int, p: spec_fn(u32) -> bool) -> bool {
     forall|i: int| 0 <= i < n && i < s.len() ==> #[trigger] p(s[i])
 }
 
-spec fn forall_from(s: Seq<u32>, n: int, p: spec_fn(u32) -> bool) -> bool {
+pub open spec fn forall_from(s: Seq<u32>, n: int, p: spec_fn(u32) -> bool) -> bool {
     forall|i: int| n <= i < s.len() ==> #[trigger] p(s[i])
 }
 

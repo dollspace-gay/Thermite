@@ -49,7 +49,6 @@ fn f(x: u32, y: u32) -> u32
 ";
 
 #[test]
-#[ignore = "divergence: bool-typed Binary spec-call arg cast `as u64` (spec_call_param_cast bool=>None collapses into the u64 fallback) -> E0308 -> L0; tracking #233"]
 fn spec_call_bool_binary_arg_takes_no_cast() {
     let out = lower(BOOL_BINARY_PROGRAM);
     // REQ-5/§4.4: `x < y` is bool, matching `b: bool` exactly — no cast.
@@ -80,7 +79,6 @@ fn f(flag: bool) -> u32
 ";
 
 #[test]
-#[ignore = "divergence: bool-typed Unary (`!`) spec-call arg cast `as u64` -> E0308 -> L0; tracking #233"]
 fn spec_call_bool_unary_arg_takes_no_cast() {
     let out = lower(BOOL_UNARY_PROGRAM);
     assert!(

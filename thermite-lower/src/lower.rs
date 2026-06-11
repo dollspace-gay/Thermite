@@ -482,20 +482,27 @@ impl<'a> Ctx<'a> {
     /// is `bool` (an arithmetic arg is integer-typed, so a bool param never needs a
     /// cast). The TARGET is the declared type, never a hardcoded `u64` — the false
     /// premise #225 fixes.
-    fn spec_call_param_cast(&self, callee: &str, arg_pos: usize) -> Option<&'static str> {
+    fn spec_call_param_cast(&self, callee: &str, arg_pos: usize) -> Option<Option<&'static str>> {
         let params = self
             .spec_fn_param_types
             .iter()
             .find(|(name, _)| *name == callee)
             .map(|(_, ps)| *ps)?;
         match params.get(arg_pos)? {
-            PrimType::U32 => Some("u32"),
-            PrimType::U64 => Some("u64"),
-            PrimType::Usize => Some("usize"),
-            // A `bool` param takes no narrowing cast — an arithmetic/unary arg is
-            // integer-typed, so this arm is defensive (the bug site never produces
-            // a bool-targeted arithmetic arg) and yields a no-cast pass-through.
-            PrimType::Bool => None,
+            PrimType::U32 => Some(Some("u32")),
+            PrimType::U64 => Some(Some("u64")),
+            PrimType::Usize => Some(Some("usize")),
+            // A `bool` param takes NO narrowing cast: the surface unary set is
+            // exactly `!` (`UnaryOp::Not`, REQ-10 #92) so every `Expr::Unary` arg is
+            // bool-typed, and a comparison `x < y` is a bool-typed `Expr::Binary` —
+            // both already carry the callee's declared `bool` param type and per
+            // thermite-design.md §4.4 must flow UNCAST (`(x < y) as u64` is E0308,
+            // expected bool found u64 → L0; #233). The DISTINCTION matters: this
+            // `Some(None)` (callee resolved, bool param → no cast) is NOT the outer
+            // `None` (callee absent / position out of range → the consumer's `u64`
+            // integer fallback). Collapsing both with `.unwrap_or("u64")` was the
+            // #233 divergence.
+            PrimType::Bool => Some(None),
         }
     }
     /// True if `name` is a USER `spec fn` declaring a `String`/`&String` param (the
@@ -1109,13 +1116,20 @@ fn lower_inv_expr(
                 let lowered =
                     lower_inv_expr(a, field_names, string_fields, spec_fn_param_types, d, span)?;
                 if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
-                    let cast = callee_name
-                        .and_then(|n| cast_ctx.spec_call_param_cast(n, i))
-                        .unwrap_or("u64");
-                    if arg_is_toplevel_cast_to(a, cast) {
-                        parts.push(lowered);
-                    } else {
-                        parts.push(format!("({lowered}) as {cast}"));
+                    // #233: a bool-param position (`Some(None)`) takes NO cast — a
+                    // comparison `x < y` / a `!flag` arg is already bool-typed and
+                    // `(…) as u64` is E0308. Only an UNKNOWN callee (outer `None`)
+                    // falls back to the historic `u64` integer default.
+                    match callee_name.and_then(|n| cast_ctx.spec_call_param_cast(n, i)) {
+                        Some(None) => parts.push(lowered),
+                        resolved => {
+                            let cast = resolved.flatten().unwrap_or("u64");
+                            if arg_is_toplevel_cast_to(a, cast) {
+                                parts.push(lowered);
+                            } else {
+                                parts.push(format!("({lowered}) as {cast}"));
+                            }
+                        }
                     }
                 } else {
                     parts.push(lowered);
@@ -1304,7 +1318,22 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
             span: *span,
         })?;
         out.push('\n');
-        out.push_str(sig.verus_l3);
+        // #235 (regression of #230): #230 promoted every USER `spec fn` to
+        // `pub open spec fn`, but the woven combinator defs stayed private — and
+        // a `pub open` body may name ONLY `pub` items (verus-lowering.md REQ-8's
+        // own grounding finding). A validator-legal combinator call in a user
+        // spec-fn body (spectherm-combinators.md REQ-3) then emitted a `pub open`
+        // body naming a PRIVATE woven `spec fn`, which verus rejects ("in pub open
+        // spec function, cannot refer to private function" → L0). The frozen
+        // `verus_l3` registry text begins `spec fn …`; promote it to the SAME
+        // visibility tier (`pub open spec fn …`). Prefix-only golden delta.
+        match sig.verus_l3.strip_prefix("spec fn ") {
+            Some(rest) => {
+                out.push_str("pub open spec fn ");
+                out.push_str(rest);
+            }
+            None => out.push_str(sig.verus_l3),
+        }
         out.push('\n');
         emitted.push(sig.name);
     }
@@ -6398,9 +6427,21 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                 if is_index && ctx.is_spec() {
                     parts.push(lower_index_arg(a, ctx, d, span)?);
                 } else if sep_fn && i == 1 {
+                    // #234: the C5 `count_sep`/`sep_free` `u8` separator coercion.
+                    // STRUCTURAL dedupe (#231): skip the cast only when the arg is a
+                    // bare int literal OR already a TOP-LEVEL `Expr::Cast` to `u8` —
+                    // NOT the textual `lowered.ends_with("as u8")` heuristic (which
+                    // mis-matched any arg whose lowering merely ENDS in a `u8` cast,
+                    // e.g. `k + j as u8` = `k + (j as u8)`, still int). And #122
+                    // paren discipline: `as` binds tighter than `+`/`-`, so a
+                    // compound `Binary`/`Unary` arg must be inner-parenthesized —
+                    // `(sep + 1) as u8`, never `sep + 1 as u8` (= `sep + (1 as u8)`,
+                    // int → E0308 against the `sep: u8` param → L0).
                     let lowered = lower_spec_arg(a, ctx, string_as_byteview, d, span)?;
-                    if matches!(a, Expr::IntLit { .. }) || lowered.ends_with("as u8") {
+                    if matches!(a, Expr::IntLit { .. }) || arg_is_toplevel_cast_to(a, "u8") {
                         parts.push(lowered);
+                    } else if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
+                        parts.push(format!("({lowered}) as u8"));
                     } else {
                         parts.push(format!("{lowered} as u8"));
                     }
@@ -6421,13 +6462,22 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                     // of range / `bool`) falls back to `u64` — the historic default,
                     // byte-stable for every existing u64-param call site.
                     let lowered = lower_spec_arg(a, ctx, string_as_byteview, d, span)?;
-                    let cast = callee_name
-                        .and_then(|n| ctx.spec_call_param_cast(n, i))
-                        .unwrap_or("u64");
-                    if arg_is_toplevel_cast_to(a, cast) {
-                        parts.push(lowered);
-                    } else {
-                        parts.push(format!("({lowered}) as {cast}"));
+                    // #233: a bool-param position (`Some(None)`) takes NO cast — a
+                    // bool-typed comparison `x < y` or `!flag` arg already carries
+                    // the callee's declared `bool` param type, so `(…) as u64` is
+                    // E0308 (expected bool, found u64 → L0). Only an UNKNOWN callee
+                    // (outer `None`) falls back to the historic `u64` integer
+                    // default; a resolved integer param casts to its declared type.
+                    match callee_name.and_then(|n| ctx.spec_call_param_cast(n, i)) {
+                        Some(None) => parts.push(lowered),
+                        resolved => {
+                            let cast = resolved.flatten().unwrap_or("u64");
+                            if arg_is_toplevel_cast_to(a, cast) {
+                                parts.push(lowered);
+                            } else {
+                                parts.push(format!("({lowered}) as {cast}"));
+                            }
+                        }
                     }
                 } else if plain_user_spec_call && spec_arg_is_nat_len(a) {
                     // A `String`-`.len()` in a CONTRACT argument lowers to the SPEC
@@ -6437,13 +6487,21 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                     // (`spec_scan(s, 0, s.spec_len(), 0)` → `… s.spec_len() as u64 …`).
                     // Verus proves no truncation from `well_formed` (`len <= CAP`).
                     let lowered = lower_spec_arg(a, ctx, string_as_byteview, d, span)?;
-                    let cast = callee_name
-                        .and_then(|n| ctx.spec_call_param_cast(n, i))
-                        .unwrap_or("u64");
-                    if arg_is_toplevel_cast_to(a, cast) {
-                        parts.push(lowered);
-                    } else {
-                        parts.push(format!("{lowered} as {cast}"));
+                    // #233: a resolved bool param (`Some(None)`) takes NO cast (a
+                    // `.spec_len()` arg is integer-shaped so this is unreachable
+                    // here, but the distinction is uniform with the arithmetic
+                    // branch); an UNKNOWN callee (outer `None`) keeps the historic
+                    // `u64` integer fallback.
+                    match callee_name.and_then(|n| ctx.spec_call_param_cast(n, i)) {
+                        Some(None) => parts.push(lowered),
+                        resolved => {
+                            let cast = resolved.flatten().unwrap_or("u64");
+                            if arg_is_toplevel_cast_to(a, cast) {
+                                parts.push(lowered);
+                            } else {
+                                parts.push(format!("{lowered} as {cast}"));
+                            }
+                        }
                     }
                 } else {
                     parts.push(lower_spec_arg(a, ctx, string_as_byteview, d, span)?);
@@ -6622,7 +6680,7 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                     }
                 } else if coerce_u8
                     && !matches!(a, Expr::IntLit { .. })
-                    && !lowered.ends_with("as u8")
+                    && !arg_is_toplevel_cast_to(a, "u8")
                 {
                     // Issue #122: same precedence-safety as the `as usize` arm —
                     // a binary/unary separator (`split(sep - 1)`) is parenthesized

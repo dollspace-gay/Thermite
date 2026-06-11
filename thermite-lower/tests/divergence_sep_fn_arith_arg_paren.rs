@@ -41,7 +41,6 @@ fn g(s: String, sep: u64) -> u64
 ";
 
 #[test]
-#[ignore = "divergence: sep_fn u8 coercion drops the #122 inner paren on a Binary arg (`sep + 1 as u8` = `sep + (1 as u8)` = int) -> E0308 -> L0; tracking #234"]
 fn count_sep_arith_separator_arg_parenthesizes_before_u8_cast() {
     let out = lower(SEP_ARITH_PROGRAM);
     // REQ-15 (`sep: u8`) + #122 (`as` binds tighter than `+`): the compound

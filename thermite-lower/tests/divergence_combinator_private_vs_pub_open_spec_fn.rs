@@ -91,7 +91,6 @@ fn k(xs: &[u32]) -> u32
 ";
 
 #[test]
-#[ignore = "divergence: #230 made user spec fns `pub open` but woven combinator defs stay private -> verus `cannot refer to private function` -> L0; tracking #235"]
 fn pub_open_user_spec_fn_calling_combinator_verifies() {
     let emitted = lower(COMBINATOR_IN_SPEC_FN_BODY);
     // Non-vacuity: the divergent shape is genuinely present in the unit.

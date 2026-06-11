@@ -1,0 +1,10 @@
+{
+  "uuid": "3b6cf627-bf2a-4644-ae3f-305cbca5c0dd",
+  "issue_uuid": "999a6dd2-6b8c-4c68-9927-1c03c15e0828",
+  "author": "Yffe",
+  "content": "Plan: commit the failing live pin forge/tests/divergence_axiom_marker_mask.rs that demonstrates the #248 allowlist bypass (earlier clean #print axioms masks the obligation theorem's smuggled axiom). Not #[ignore]d — release-blocker proof cheat. No production code changed (critic role).",
+  "created_at": "2026-06-11T18:41:57.581300061Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAi5S+4J86xeffyIh08EJFl3/0rN2GpXOQAaQnAKAS4PkNQ+4sjqWY9GN986AbewANMkVpH8TCjsnKRHjiBhHLAA=="
+}

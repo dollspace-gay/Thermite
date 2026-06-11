@@ -80,9 +80,21 @@ pub enum ExportRefusal {
     /// `req ∪ ens ∪ body ∪ dec(item)` is MISSING a definition
     /// (`calledSpecFns(item) ⊄ dom(R_item)`). The export refuses to emit rather
     /// than emit an incomplete `R_item` whose unresolved `specCall` would bottom to
-    /// the `intVal` Int-`0` and self-certify (Pin B / Pin C). Carries the missing
-    /// name(s).
+    /// the `intVal` Int-`0` and self-certify (Pin B / Pin C / Pin G). Carries the
+    /// missing name(s) — INCLUDING an UNDEFINED callee with no in-program definition
+    /// at all (the `mystery(x)` Pin G: `calledSpecFns` is collected WITHOUT the
+    /// defined-names filter, so an undefined symbol is a missing name, not invisible).
     IncompleteRegistry(Vec<String>),
+    /// THE RESULT-SORT GATE (§4 SCOPE / §4.1 — the Pin H bool-result class): the
+    /// item's body does NOT denote in `intVal` (its declared result type is not an
+    /// integer sort — `bool`/unit/ADT). The §4 pure-contract class is scoped to a
+    /// body denoting in `intVal` (the result `r : Int`); `Denote.lean`'s `intVal`
+    /// bottoms EVERY non-integer-sorted node to the canonical `0`, so a `-> bool`
+    /// item would have `result` bound to `0` for ANY body and a contract AND its
+    /// negation would BOTH certify. The bool/unit/ADT-result binding is the
+    /// increment-(iv) `bindBool` bridge; until then a non-integer result REFUSES
+    /// (an honest skip). Carries the offending result type.
+    NonIntResult(String),
     /// The item carries an open body hole (`?N`) — short-circuited L0 before any
     /// engine (§8 OUT set); not exportable.
     OpenHole(String),
@@ -104,6 +116,11 @@ impl std::fmt::Display for ExportRefusal {
                 f,
                 "incomplete registry (the §4 hard gate): reachable spec-fn(s) {names:?} \
                  have no definition — calledSpecFns ⊄ dom(R_item)"
+            ),
+            ExportRefusal::NonIntResult(ty) => write!(
+                f,
+                "non-integer result sort (the §4 pure-contract scope is intVal-denoting \
+                 bodies; bool/unit/ADT is the increment-(iv) bindBool bridge): {ty}"
             ),
             ExportRefusal::OpenHole(d) => write!(f, "open body hole (L0, no engine): {d}"),
         }
@@ -825,6 +842,97 @@ fn collect_expr_calls(e: &Expr, decls: &BTreeMap<String, SpecFnItem>, out: &mut 
     }
 }
 
+/// Collect EVERY spec-call-position callee name in an `Expr` — WITHOUT the
+/// defined-names filter (the §4 mechanism-1 fix for the Pin G undefined-callee:
+/// `collect_expr_calls` filters through `decls.contains_key`, so an UNDEFINED callee
+/// `mystery(x)` is invisible to the hard gate and the emitted goal silently carries
+/// `Expr.specCall "mystery"` at fuel 0, bottoming to `0` and self-certifying). A
+/// callee is a spec-call position iff it is a simple single-segment `Path` that is
+/// NEITHER a frozen combinator (`forall_in`/…) NOR `old` — i.e. EXACTLY the calls
+/// `encode_call` emits as `Expr.specCall`. This is the full-expression-position
+/// principle (§4 mechanism 1): every expression the export denotes against `R_item`
+/// contributes its spec-calls, defined or not.
+fn collect_all_call_names(e: &Expr, out: &mut Vec<String>) {
+    match e {
+        Expr::Call { callee, args } => {
+            if let Expr::Path(segs) = callee.as_ref() {
+                if segs.len() == 1 && segs[0] != "old" && combinator_name(&segs[0]).is_none() {
+                    out.push(segs[0].clone());
+                }
+            }
+            for a in args {
+                collect_all_call_names(a, out);
+            }
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            collect_all_call_names(lhs, out);
+            collect_all_call_names(rhs, out);
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
+            collect_all_call_names(expr, out)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            collect_all_call_names(receiver, out);
+            for a in args {
+                collect_all_call_names(a, out);
+            }
+        }
+        Expr::Index { base, index } => {
+            collect_all_call_names(base, out);
+            match index {
+                IndexArg::Single(i) | IndexArg::RangeTo(i) | IndexArg::RangeFrom(i) => {
+                    collect_all_call_names(i, out)
+                }
+                IndexArg::Range(a, b) => {
+                    collect_all_call_names(a, out);
+                    collect_all_call_names(b, out);
+                }
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            collect_all_call_names(scrutinee, out);
+            for arm in arms {
+                collect_all_call_names(&arm.body, out);
+            }
+        }
+        Expr::Is { scrutinee, .. } => collect_all_call_names(scrutinee, out),
+        Expr::Closure { body, .. } => collect_all_call_names(body, out),
+        Expr::If { cond, then, else_ } => {
+            collect_all_call_names(cond, out);
+            collect_all_block_call_names(then, out);
+            collect_all_block_call_names(else_, out);
+        }
+        _ => {}
+    }
+}
+
+/// Collect EVERY spec-call-position callee name in a `Block` (unfiltered; the Pin G
+/// companion of [`collect_all_call_names`] over a spec-fn body's statements + tail).
+fn collect_all_block_call_names(b: &Block, out: &mut Vec<String>) {
+    for stmt in &b.stmts {
+        if let Stmt::Let { init, .. } = stmt {
+            collect_all_call_names(init, out);
+        }
+    }
+    if let Some(tail) = &b.tail {
+        collect_all_call_names(tail, out);
+    }
+}
+
+/// Does a declared result [`Type`] denote in `intVal` (the §4 pure-contract scope —
+/// the Pin H result-sort gate)? An integer sort (`u32`/`u64`/`usize` or the spec
+/// `int`/`nat`) binds `result : Int` faithfully; a `bool`/unit/ADT/collection result
+/// does NOT (`Denote.lean`'s `intVal` bottoms it to `0`, so a contract and its
+/// negation both certify). Only the integer sorts are admitted; everything else is
+/// the increment-(iv) `bindBool`/ADT bridge → [`ExportRefusal::NonIntResult`].
+fn result_is_int_sorted(ty: &Type) -> bool {
+    match ty {
+        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => true,
+        Type::Named(n) => n == "int" || n == "nat",
+        _ => false,
+    }
+}
+
 /// STATICALLY UNFOLD every in-program spec-fn call in an `Expr` to its body, with
 /// the params substituted by the call args (`.design/verified/proof-backends.md`
 /// §6.1(b) — "the exporter STATICALLY UNFOLDS every spec-fn call to its FINITE
@@ -837,7 +945,10 @@ fn collect_expr_calls(e: &Expr, decls: &BTreeMap<String, SpecFnItem>, out: &mut 
 /// DAG assumption is violated (it then leaves residual calls → the fuel-free goal
 /// would carry a `specCall`, which the encoder rejects as still-present, an honest
 /// non-proof, NEVER a silent self-cert).
-fn unfold_spec_calls(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> Expr {
+fn unfold_spec_calls(
+    e: &Expr,
+    decls: &BTreeMap<String, SpecFnItem>,
+) -> Result<Expr, ExportRefusal> {
     // The DAG depth is bounded by the number of distinct spec-fns; iterate that many
     // times + 1 as the safety bound (a recursive registry never reaches here — tier
     // (c) — but the bound keeps the function total regardless).
@@ -847,17 +958,23 @@ fn unfold_spec_calls(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> Expr {
         if !expr_has_spec_call(&cur, decls) {
             break;
         }
-        cur = unfold_once(&cur, decls);
+        cur = unfold_once(&cur, decls)?;
     }
-    cur
+    Ok(cur)
 }
 
 /// One unfolding pass: replace each in-program spec-fn `Call(f, args)` with `f`'s
-/// body (a pure tail expr) with `f.params` substituted by the UNFOLDED args.
-fn unfold_once(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> Expr {
-    match e {
+/// body (a pure tail expr) with `f.params` substituted by the UNFOLDED args. Returns
+/// an [`ExportRefusal::OutOfFragment`] (capture-unsafe) if the §6.1(b) substitution
+/// would CAPTURE a caller free var under a body binder (the Pin I fix; see
+/// [`substitute`]).
+fn unfold_once(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> Result<Expr, ExportRefusal> {
+    Ok(match e {
         Expr::Call { callee, args } => {
-            let unfolded_args: Vec<Expr> = args.iter().map(|a| unfold_once(a, decls)).collect();
+            let unfolded_args: Vec<Expr> = args
+                .iter()
+                .map(|a| unfold_once(a, decls))
+                .collect::<Result<_, _>>()?;
             if let Expr::Path(segs) = callee.as_ref() {
                 if segs.len() == 1 {
                     if let Some(decl) = decls.get(&segs[0]) {
@@ -880,160 +997,283 @@ fn unfold_once(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> Expr {
         }
         Expr::Binary { op, lhs, rhs } => Expr::Binary {
             op: *op,
-            lhs: Box::new(unfold_once(lhs, decls)),
-            rhs: Box::new(unfold_once(rhs, decls)),
+            lhs: Box::new(unfold_once(lhs, decls)?),
+            rhs: Box::new(unfold_once(rhs, decls)?),
         },
         Expr::Unary { op, expr } => Expr::Unary {
             op: *op,
-            expr: Box::new(unfold_once(expr, decls)),
+            expr: Box::new(unfold_once(expr, decls)?),
         },
         Expr::Cast { expr, ty } => Expr::Cast {
-            expr: Box::new(unfold_once(expr, decls)),
+            expr: Box::new(unfold_once(expr, decls)?),
             ty: ty.clone(),
         },
         Expr::Ref { mutable, expr } => Expr::Ref {
             mutable: *mutable,
-            expr: Box::new(unfold_once(expr, decls)),
+            expr: Box::new(unfold_once(expr, decls)?),
         },
         Expr::MethodCall {
             receiver,
             name,
             args,
         } => Expr::MethodCall {
-            receiver: Box::new(unfold_once(receiver, decls)),
+            receiver: Box::new(unfold_once(receiver, decls)?),
             name: name.clone(),
-            args: args.iter().map(|a| unfold_once(a, decls)).collect(),
+            args: args
+                .iter()
+                .map(|a| unfold_once(a, decls))
+                .collect::<Result<_, _>>()?,
         },
         Expr::Index { base, index } => Expr::Index {
-            base: Box::new(unfold_once(base, decls)),
-            index: unfold_index(index, decls),
+            base: Box::new(unfold_once(base, decls)?),
+            index: unfold_index(index, decls)?,
         },
         Expr::Match { scrutinee, arms } => Expr::Match {
-            scrutinee: Box::new(unfold_once(scrutinee, decls)),
+            scrutinee: Box::new(unfold_once(scrutinee, decls)?),
             arms: arms
                 .iter()
-                .map(|a| thermite_syntax::MatchArm {
-                    pattern: a.pattern.clone(),
-                    guard: a.guard.clone(),
-                    body: unfold_once(&a.body, decls),
+                .map(|a| {
+                    Ok(thermite_syntax::MatchArm {
+                        pattern: a.pattern.clone(),
+                        guard: a.guard.clone(),
+                        body: unfold_once(&a.body, decls)?,
+                    })
                 })
-                .collect(),
+                .collect::<Result<_, _>>()?,
         },
         Expr::Is { scrutinee, variant } => Expr::Is {
-            scrutinee: Box::new(unfold_once(scrutinee, decls)),
+            scrutinee: Box::new(unfold_once(scrutinee, decls)?),
             variant: variant.clone(),
         },
         Expr::Closure { params, body } => Expr::Closure {
             params: params.clone(),
-            body: Box::new(unfold_once(body, decls)),
+            body: Box::new(unfold_once(body, decls)?),
         },
         other => other.clone(),
-    }
+    })
 }
 
 /// Unfold spec-calls inside an [`IndexArg`]'s bounds.
-fn unfold_index(index: &IndexArg, decls: &BTreeMap<String, SpecFnItem>) -> IndexArg {
-    match index {
-        IndexArg::Single(i) => IndexArg::Single(Box::new(unfold_once(i, decls))),
-        IndexArg::RangeTo(i) => IndexArg::RangeTo(Box::new(unfold_once(i, decls))),
-        IndexArg::RangeFrom(i) => IndexArg::RangeFrom(Box::new(unfold_once(i, decls))),
+fn unfold_index(
+    index: &IndexArg,
+    decls: &BTreeMap<String, SpecFnItem>,
+) -> Result<IndexArg, ExportRefusal> {
+    Ok(match index {
+        IndexArg::Single(i) => IndexArg::Single(Box::new(unfold_once(i, decls)?)),
+        IndexArg::RangeTo(i) => IndexArg::RangeTo(Box::new(unfold_once(i, decls)?)),
+        IndexArg::RangeFrom(i) => IndexArg::RangeFrom(Box::new(unfold_once(i, decls)?)),
         IndexArg::Range(a, b) => IndexArg::Range(
-            Box::new(unfold_once(a, decls)),
-            Box::new(unfold_once(b, decls)),
+            Box::new(unfold_once(a, decls)?),
+            Box::new(unfold_once(b, decls)?),
         ),
+    })
+}
+
+/// Collect the FREE single-segment `Path` names of an `Expr` (the caller-var
+/// support of a substituted argument; the Pin I capture test). A closure / match-arm
+/// binder REMOVES its bound name from the free set of its body (it is bound there),
+/// matching the same scoping [`substitute`] respects.
+fn free_path_names(
+    e: &Expr,
+    bound: &mut Vec<String>,
+    out: &mut std::collections::BTreeSet<String>,
+) {
+    match e {
+        Expr::Path(segs) if segs.len() == 1 && !bound.iter().any(|b| b == &segs[0]) => {
+            out.insert(segs[0].clone());
+        }
+        Expr::Call { callee, args } => {
+            free_path_names(callee, bound, out);
+            for a in args {
+                free_path_names(a, bound, out);
+            }
+        }
+        Expr::Binary { lhs, rhs, .. } => {
+            free_path_names(lhs, bound, out);
+            free_path_names(rhs, bound, out);
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Ref { expr, .. } => {
+            free_path_names(expr, bound, out)
+        }
+        Expr::MethodCall { receiver, args, .. } => {
+            free_path_names(receiver, bound, out);
+            for a in args {
+                free_path_names(a, bound, out);
+            }
+        }
+        Expr::Index { base, index } => {
+            free_path_names(base, bound, out);
+            match index {
+                IndexArg::Single(i) | IndexArg::RangeTo(i) | IndexArg::RangeFrom(i) => {
+                    free_path_names(i, bound, out)
+                }
+                IndexArg::Range(a, b) => {
+                    free_path_names(a, bound, out);
+                    free_path_names(b, bound, out);
+                }
+            }
+        }
+        Expr::Match { scrutinee, arms } => {
+            free_path_names(scrutinee, bound, out);
+            for arm in arms {
+                let mut inner = bound.clone();
+                if let Pattern::Enum { fields: fs, .. } = &arm.pattern {
+                    if let [Pattern::Binding(b)] = fs.as_slice() {
+                        inner.push(b.clone());
+                    }
+                }
+                free_path_names(&arm.body, &mut inner, out);
+            }
+        }
+        Expr::Is { scrutinee, .. } => free_path_names(scrutinee, bound, out),
+        Expr::Closure { params, body } => {
+            let mut inner = bound.clone();
+            inner.extend(params.iter().cloned());
+            free_path_names(body, &mut inner, out);
+        }
+        _ => {}
     }
 }
 
+/// The set of free names a substitution `subst` would INTRODUCE (the union of the
+/// free names of every substituted argument) — the names a body binder must NOT
+/// shadow, on pain of CAPTURE (the Pin I test).
+fn subst_free_names(subst: &BTreeMap<String, Expr>) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for arg in subst.values() {
+        let mut bound = Vec::new();
+        free_path_names(arg, &mut bound, &mut out);
+    }
+    out
+}
+
 /// Substitute free `Path` names by their bound exprs (the spec-fn param→arg
-/// substitution of static unfolding). A `Path([name])` that is a key in `subst` is
-/// replaced; everything else recurses structurally. A bound closure/match-arm
-/// binder SHADOWS a param of the same name (the spec-fn body is closed over its
-/// params, §4.2, so a shadowed name is the closure's element, not the param — kept
-/// correct by removing the shadowed key in that scope).
-fn substitute(e: &Expr, subst: &BTreeMap<String, Expr>) -> Expr {
-    match e {
+/// substitution of static unfolding, §6.1(b)). A `Path([name])` that is a key in
+/// `subst` is replaced; everything else recurses structurally. A bound closure/
+/// match-arm binder SHADOWS a param of the same name (the spec-fn body is closed
+/// over its params, §4.2, so a shadowed name is the closure's element, not the
+/// param — kept correct by removing the shadowed key in that scope).
+///
+/// CAPTURE-SAFETY (the Pin I fix, §6.1(b) "the unfolded `Expr` MUST equal the real
+/// body substituted"): a body binder (a closure element var / a match payload
+/// binder) that EQUALS a free name of a STILL-LIVE substituted argument would
+/// CAPTURE that caller var — silently changing meaning (`cntk(xs, k as int)` with
+/// `|k| … == v` becomes the tautology `|k| … == k`). This is detected and the
+/// substitution REFUSES (`ExportRefusal::OutOfFragment`, capture-unsafe) → the item
+/// is NOT tier-(b)-unfoldable and the engine SKIPs it to the tier-(c) interactive
+/// path (an honest skip, NEVER a silent capture, NEVER a wrong-program proof). The
+/// shadowing direction (where NO live arg uses the binder name) is still handled by
+/// removing the shadowed key — that is sound, not a capture.
+fn substitute(e: &Expr, subst: &BTreeMap<String, Expr>) -> Result<Expr, ExportRefusal> {
+    Ok(match e {
         Expr::Path(segs) if segs.len() == 1 => {
             subst.get(&segs[0]).cloned().unwrap_or_else(|| e.clone())
         }
         Expr::Call { callee, args } => Expr::Call {
-            callee: Box::new(substitute(callee, subst)),
-            args: args.iter().map(|a| substitute(a, subst)).collect(),
+            callee: Box::new(substitute(callee, subst)?),
+            args: args
+                .iter()
+                .map(|a| substitute(a, subst))
+                .collect::<Result<_, _>>()?,
         },
         Expr::Binary { op, lhs, rhs } => Expr::Binary {
             op: *op,
-            lhs: Box::new(substitute(lhs, subst)),
-            rhs: Box::new(substitute(rhs, subst)),
+            lhs: Box::new(substitute(lhs, subst)?),
+            rhs: Box::new(substitute(rhs, subst)?),
         },
         Expr::Unary { op, expr } => Expr::Unary {
             op: *op,
-            expr: Box::new(substitute(expr, subst)),
+            expr: Box::new(substitute(expr, subst)?),
         },
         Expr::Cast { expr, ty } => Expr::Cast {
-            expr: Box::new(substitute(expr, subst)),
+            expr: Box::new(substitute(expr, subst)?),
             ty: ty.clone(),
         },
         Expr::Ref { mutable, expr } => Expr::Ref {
             mutable: *mutable,
-            expr: Box::new(substitute(expr, subst)),
+            expr: Box::new(substitute(expr, subst)?),
         },
         Expr::MethodCall {
             receiver,
             name,
             args,
         } => Expr::MethodCall {
-            receiver: Box::new(substitute(receiver, subst)),
+            receiver: Box::new(substitute(receiver, subst)?),
             name: name.clone(),
-            args: args.iter().map(|a| substitute(a, subst)).collect(),
+            args: args
+                .iter()
+                .map(|a| substitute(a, subst))
+                .collect::<Result<_, _>>()?,
         },
         Expr::Index { base, index } => Expr::Index {
-            base: Box::new(substitute(base, subst)),
+            base: Box::new(substitute(base, subst)?),
             index: match index {
-                IndexArg::Single(i) => IndexArg::Single(Box::new(substitute(i, subst))),
-                IndexArg::RangeTo(i) => IndexArg::RangeTo(Box::new(substitute(i, subst))),
-                IndexArg::RangeFrom(i) => IndexArg::RangeFrom(Box::new(substitute(i, subst))),
+                IndexArg::Single(i) => IndexArg::Single(Box::new(substitute(i, subst)?)),
+                IndexArg::RangeTo(i) => IndexArg::RangeTo(Box::new(substitute(i, subst)?)),
+                IndexArg::RangeFrom(i) => IndexArg::RangeFrom(Box::new(substitute(i, subst)?)),
                 IndexArg::Range(a, b) => IndexArg::Range(
-                    Box::new(substitute(a, subst)),
-                    Box::new(substitute(b, subst)),
+                    Box::new(substitute(a, subst)?),
+                    Box::new(substitute(b, subst)?),
                 ),
             },
         },
-        Expr::Match { scrutinee, arms } => Expr::Match {
-            scrutinee: Box::new(substitute(scrutinee, subst)),
-            arms: arms
-                .iter()
-                .map(|a| {
-                    // The arm payload binder SHADOWS a param of the same name.
-                    let mut inner = subst.clone();
-                    if let Pattern::Enum { fields: fs, .. } = &a.pattern {
-                        if let [Pattern::Binding(b)] = fs.as_slice() {
-                            inner.remove(b);
-                        }
+        Expr::Match { scrutinee, arms } => {
+            let scrut = Box::new(substitute(scrutinee, subst)?);
+            let mut new_arms = Vec::with_capacity(arms.len());
+            for a in arms {
+                // The arm payload binder SHADOWS a param of the same name.
+                let mut inner = subst.clone();
+                if let Pattern::Enum { fields: fs, .. } = &a.pattern {
+                    if let [Pattern::Binding(b)] = fs.as_slice() {
+                        check_no_capture(b, &inner)?;
+                        inner.remove(b);
                     }
-                    thermite_syntax::MatchArm {
-                        pattern: a.pattern.clone(),
-                        guard: a.guard.clone(),
-                        body: substitute(&a.body, &inner),
-                    }
-                })
-                .collect(),
-        },
+                }
+                new_arms.push(thermite_syntax::MatchArm {
+                    pattern: a.pattern.clone(),
+                    guard: a.guard.clone(),
+                    body: substitute(&a.body, &inner)?,
+                });
+            }
+            Expr::Match {
+                scrutinee: scrut,
+                arms: new_arms,
+            }
+        }
         Expr::Is { scrutinee, variant } => Expr::Is {
-            scrutinee: Box::new(substitute(scrutinee, subst)),
+            scrutinee: Box::new(substitute(scrutinee, subst)?),
             variant: variant.clone(),
         },
         Expr::Closure { params, body } => {
             // The closure element var SHADOWS a param of the same name.
             let mut inner = subst.clone();
             for p in params {
+                check_no_capture(p, &inner)?;
                 inner.remove(p);
             }
             Expr::Closure {
                 params: params.clone(),
-                body: Box::new(substitute(body, &inner)),
+                body: Box::new(substitute(body, &inner)?),
             }
         }
         other => other.clone(),
+    })
+}
+
+/// CAPTURE GUARD (the Pin I fix, §6.1(b)): a body binder `binder` may safely shadow
+/// a param key in `subst` ONLY if NO still-live substituted argument carries
+/// `binder` as a free name — otherwise removing the key would let the binder CAPTURE
+/// that caller var. On a collision the tier-(b) unfolding REFUSES (capture-unsafe).
+fn check_no_capture(binder: &str, subst: &BTreeMap<String, Expr>) -> Result<(), ExportRefusal> {
+    if subst_free_names(subst).contains(binder) {
+        return Err(ExportRefusal::OutOfFragment(format!(
+            "tier-(b) static unfolding would CAPTURE caller variable `{binder}` under a \
+             body binder (§6.1(b) capture-unsafe substitution); refusing tier (b) — the \
+             item routes to the tier-(c) interactive path (an honest skip, never a silent \
+             capture / wrong-program proof)"
+        )));
     }
+    Ok(())
 }
 
 /// Does an `Expr` contain a `specCall` reachable to an in-program spec-fn? (The §6.1
@@ -1230,6 +1470,16 @@ pub fn export_item(
                     ))
                 })?
                 .clone();
+            // THE RESULT-SORT GATE (§4 SCOPE / Pin H): the pure-contract class is
+            // intVal-denoting bodies (result `r : Int`). A `-> bool`/unit/ADT result
+            // bottoms to `0` in `intVal` (a contract AND its negation both certify) —
+            // refuse (the increment-(iv) bindBool bridge).
+            if !result_is_int_sorted(&f.ret) {
+                return Err(ExportRefusal::NonIntResult(format!(
+                    "fn `{}` returns {:?}",
+                    f.name, f.ret
+                )));
+            }
             (
                 Some(f.contract.req.expr.clone()),
                 f.contract.ens.iter().map(|c| c.expr.clone()).collect(),
@@ -1247,6 +1497,15 @@ pub fn export_item(
                     ))
                 })?
                 .clone();
+            // THE RESULT-SORT GATE (§4 SCOPE / Pin H): a spec fn's body must denote
+            // in `intVal` (the degenerate ens `result == body` binds `result : Int`).
+            // A `-> bool`/ADT spec fn would bottom to `0` — refuse.
+            if !result_is_int_sorted(&s.ret) {
+                return Err(ExportRefusal::NonIntResult(format!(
+                    "spec fn `{}` returns {:?}",
+                    s.name, s.ret
+                )));
+            }
             // A spec fn has no req/ens; its certification obligation is its body
             // characterization. We export a degenerate ens `result == body` so the
             // same theorem shape applies (the body's stabilized value IS the result).
@@ -1271,36 +1530,43 @@ pub fn export_item(
     // encoding:
     //
     // (i) every spec-call ACTUALLY appearing in `req ∪ ens ∪ body ∪ dec` must be in
-    //     the obligation's `called` closure. This catches a BUGGY/omitting closure
-    //     (the Pin B/C/E/F bottom-poisoning: an omitted body- or measure-called
-    //     spec-fn would bottom to the Int-`0` and self-certify). The exporter does
-    //     NOT trust the closure blindly — it RE-CHECKS coverage against the exprs it
-    //     is about to denote (this is the gate's load-bearing soundness, not a
-    //     redundant closure: the #192 lesson is "ONE closure builds `R_item`", not
+    //     the obligation's `called` closure AND must RESOLVE to a definition. This
+    //     catches a BUGGY/omitting closure (the Pin B/C/E/F bottom-poisoning: an
+    //     omitted body- or measure-called spec-fn would bottom to the Int-`0` and
+    //     self-certify) AND an UNDEFINED callee (the Pin G `mystery(x)`: a callee with
+    //     NO in-program definition). The collection here is UNFILTERED
+    //     (`collect_all_call_names`, NOT `collect_expr_calls`) — the defined-names
+    //     filter was the shared blind spot that made `mystery` invisible to the gate
+    //     (§4 full-expression-position principle: EVERY spec-call position the export
+    //     denotes against `R_item` contributes its name, defined or not). The exporter
+    //     does NOT trust the closure blindly — it RE-CHECKS coverage against the exprs
+    //     it is about to denote (the #192 lesson is "ONE closure builds `R_item`", not
     //     "skip the coverage check").
     // (ii) every name in `called` must resolve to a definition (`build_registry`'s
     //      `calledSpecFns ⊆ dom(R_item)` check).
     let called = &obligation.env.spec_defs;
     let mut direct: Vec<String> = Vec::new();
     if let Some(r) = &req {
-        collect_expr_calls(r, &decls, &mut direct);
+        collect_all_call_names(r, &mut direct);
     }
     for e in &ens {
-        collect_expr_calls(e, &decls, &mut direct);
+        collect_all_call_names(e, &mut direct);
     }
-    collect_expr_calls(&body, &decls, &mut direct);
+    collect_all_call_names(&body, &mut direct);
     if let Some(d) = &dec {
-        collect_expr_calls(d, &decls, &mut direct);
+        collect_all_call_names(d, &mut direct);
     }
     let mut present: std::collections::BTreeSet<String> = direct.into_iter().collect();
-    // Also close over each reached spec-fn's body+dec (the transitive set the
+    // Close over each reached DEFINED spec-fn's body+dec (the transitive set the
     // measure/body-position calls reach — the #226 full-expression-position closure).
+    // The closure walk is UNFILTERED too, so a transitively-reached UNDEFINED callee
+    // is also a present name the resolution check below catches.
     let mut worklist: Vec<String> = present.iter().cloned().collect();
     while let Some(n) = worklist.pop() {
         if let Some(d) = decls.get(&n) {
             let mut sub = Vec::new();
-            collect_block_calls(&d.body, &decls, &mut sub);
-            collect_expr_calls(&d.dec.expr, &decls, &mut sub);
+            collect_all_block_call_names(&d.body, &mut sub);
+            collect_all_call_names(&d.dec.expr, &mut sub);
             for c in sub {
                 if present.insert(c.clone()) {
                     worklist.push(c);
@@ -1308,13 +1574,25 @@ pub fn export_item(
             }
         }
     }
+    // An UNDEFINED present name (no in-program definition — the Pin G `mystery`) → the
+    // hard-gate refusal (`calledSpecFns ⊄ dom(R_item)`): its emitted `specCall` would
+    // bottom to `0` and self-certify.
+    let undefined: Vec<String> = present
+        .iter()
+        .filter(|n| !decls.contains_key(*n))
+        .cloned()
+        .collect();
+    if !undefined.is_empty() {
+        return Err(ExportRefusal::IncompleteRegistry(undefined));
+    }
+    // A DEFINED present name OMITTED from the closure → refuse (the Pin B/C/E/F
+    // mirror: the bottom-poisoning of a reachable-but-unregistered call).
     let omitted: Vec<String> = present
         .iter()
         .filter(|n| !called.iter().any(|c| c == *n))
         .cloned()
         .collect();
     if !omitted.is_empty() {
-        // The closure OMITTED a reachable spec-fn — refuse (the Pin B/C/E/F mirror).
         return Err(ExportRefusal::IncompleteRegistry(omitted));
     }
     let (registry_block, registry_names) = build_registry(called, &decls)?;
@@ -1326,15 +1604,25 @@ pub fn export_item(
     // finite DAG depth, producing specCall-FREE exprs the fuel-free tier-(a) form is
     // sound for (§6.1(b)). Tier (a) is already specCall-free; tier (c) keeps the
     // calls (the `∃N∀fuel` interactive form denotes against `R_item`).
-    let (req_e, ens_e, body_e) = if tier == ExportTier::StaticUnfoldAuto {
-        (
-            req.as_ref().map(|r| unfold_spec_calls(r, &decls)),
-            ens.iter().map(|e| unfold_spec_calls(e, &decls)).collect(),
-            unfold_spec_calls(&body, &decls),
-        )
-    } else {
-        (req.clone(), ens.clone(), body.clone())
-    };
+    // The unfolding is CAPTURE-SAFE (Pin I): a substitution that would capture a
+    // caller var under a body binder REFUSES tier (b) here (`?` propagates the
+    // `ExportRefusal::OutOfFragment` — an honest skip to the tier-(c) interactive
+    // path, never a silent capture / wrong-program proof).
+    let (req_e, ens_e, body_e): (Option<Expr>, Vec<Expr>, Expr) =
+        if tier == ExportTier::StaticUnfoldAuto {
+            (
+                match &req {
+                    Some(r) => Some(unfold_spec_calls(r, &decls)?),
+                    None => None,
+                },
+                ens.iter()
+                    .map(|e| unfold_spec_calls(e, &decls))
+                    .collect::<Result<_, _>>()?,
+                unfold_spec_calls(&body, &decls)?,
+            )
+        } else {
+            (req.clone(), ens.clone(), body.clone())
+        };
 
     // Encode ALL exprs FIRST (so an OUT-of-fragment construct refuses before we emit
     // the file — an honest skip, never a partial file). For tier (b) the unfolded
@@ -1366,11 +1654,47 @@ pub fn export_item(
         tier = tier.tag(),
     );
 
+    // THE INDEPENDENT RE-CHECK (§4 mechanism 1, the Pin G blind-spot fix): walk the
+    // EMITTED Lean THEOREM TERMS for `Expr.specCall "NAME"` occurrences and demand
+    // each `NAME ∈ dom(R_item)` (= `registry_names`). This is GENUINELY independent of
+    // the source-side gate above — it inspects the bytes actually handed to the
+    // kernel, NOT the Thermite AST — so a future encoder bug that emitted a `specCall`
+    // for a name the gate never saw (the shared `decls.contains_key` blind spot the
+    // critic showed) is caught here, NEVER kernel-accepted with an unresolved bottom.
+    // Only the theorem is scanned (the `R_item` def legitimately matches names in its
+    // own body); a residual `specCall` in the goal whose name is not registered means
+    // the registry does NOT cover the denoted term → refuse.
+    for name in emitted_spec_call_names(&theorem) {
+        if !registry_names.iter().any(|r| r == &name) {
+            return Err(ExportRefusal::IncompleteRegistry(vec![name]));
+        }
+    }
+
     Ok(ExportedObligation {
         source,
         tier,
         registry_names,
     })
+}
+
+/// Scan an emitted Lean term string for `Thermite.Expr.specCall "NAME"` occurrences
+/// and return the `NAME`s (the GENUINELY-INDEPENDENT re-check support, Pin G). This
+/// inspects the RENDERED bytes the kernel sees — NOT the Thermite AST — so it has no
+/// shared blind spot with the AST-side gate. Deterministic (R-CODE-5).
+fn emitted_spec_call_names(term: &str) -> Vec<String> {
+    const MARKER: &str = "Thermite.Expr.specCall \"";
+    let mut out = Vec::new();
+    let mut rest = term;
+    while let Some(pos) = rest.find(MARKER) {
+        let after = &rest[pos + MARKER.len()..];
+        if let Some(end) = after.find('"') {
+            out.push(after[..end].to_string());
+            rest = &after[end + 1..];
+        } else {
+            break;
+        }
+    }
+    out
 }
 
 /// A Lean-identifier-safe form of an item name (the theorem name). Replaces any
@@ -1497,6 +1821,150 @@ mod tests {
             registry_is_recursive(&["r".to_string()], &decls2),
             "r is recursive (a self-call cycle)"
         );
+    }
+
+    // Build a CONTRACT obligation for a named fn, asserting it is present + a fn (no
+    // unwrap/panic — the anti-pattern gate is clean). The default obligation is only
+    // returned on the already-failed assert path.
+    fn fn_obl(p: &Program, name: &str, called: Vec<String>) -> Obligation {
+        let item = find_item(p, name);
+        assert!(
+            matches!(item, Some(Item::Fn(_))),
+            "fn `{name}` must be present, got {item:?}"
+        );
+        if let Some(Item::Fn(f)) = item {
+            Obligation::contract_for_fn(f, called)
+        } else {
+            // Reached only after the assert above has failed the test; a degenerate
+            // obligation keeps the helper total without an unwrap/panic.
+            Obligation {
+                item: name.to_string(),
+                class: crate::obligation::ObligationClass::Contract,
+                role: crate::obligation::ObligationRole::Certification,
+                ast_slice: crate::obligation::AstSlice::Block(Box::new(Block {
+                    stmts: Vec::new(),
+                    tail: None,
+                })),
+                env: crate::obligation::ObligationEnv::default(),
+            }
+        }
+    }
+
+    // #243 / Pin G — THE UNDEFINED-CALLEE HARD GATE: a contract spec-call whose
+    // callee has NO in-program definition (`mystery`) must REFUSE the export with
+    // `IncompleteRegistry(["mystery"])`, NOT export an empty registry that bottoms to
+    // 0 and self-certifies. Expected from §4 mechanism 1 (full-expression-position
+    // principle; R-CHAR-3) — the live repro the pin's `thermite_obligation_f` pins.
+    #[test]
+    fn undefined_callee_refuses_export() {
+        let p = parse_one(
+            "fn f(x: u64) -> u64 req true ens result == mystery(x as int) as u64 fx pure { 0 }",
+        );
+        // The closure is EMPTY (mystery is undefined, so no closure could list it).
+        let o = fn_obl(&p, "f", vec![]);
+        if let Some(item) = find_item(&p, "f") {
+            match export_item(&o, &p, item) {
+                Err(ExportRefusal::IncompleteRegistry(names)) => assert!(
+                    names.contains(&"mystery".to_string()),
+                    "the undefined callee is named in the refusal: {names:?}"
+                ),
+                other => assert!(
+                    matches!(other, Err(ExportRefusal::IncompleteRegistry(_))),
+                    "an undefined callee must REFUSE (IncompleteRegistry): {other:?}"
+                ),
+            }
+        }
+    }
+
+    // #244 / Pin H — THE RESULT-SORT GATE: a `-> bool` item must REFUSE with
+    // `NonIntResult` (its body bottoms to 0 in intVal, so a contract AND its negation
+    // both certify). Expected from §4 SCOPE / §4.1 (R-CHAR-3) — the pin's
+    // `thermite_obligation_always_ens_{true,false}` both-prove degeneracy.
+    #[test]
+    fn bool_result_item_refuses_export() {
+        let p =
+            parse_one("fn always(a: u32) -> bool req true ens result == true fx pure { false }");
+        let o = fn_obl(&p, "always", vec![]);
+        if let Some(item) = find_item(&p, "always") {
+            assert!(
+                matches!(
+                    export_item(&o, &p, item),
+                    Err(ExportRefusal::NonIntResult(_))
+                ),
+                "a bool-returning item must REFUSE (NonIntResult)"
+            );
+        }
+        // The negated contract on the SAME bool item ALSO refuses (the pin's both-prove
+        // degeneracy is walled off at export for both polarities).
+        let p2 =
+            parse_one("fn always(a: u32) -> bool req true ens result == false fx pure { false }");
+        let o2 = fn_obl(&p2, "always", vec![]);
+        if let Some(item2) = find_item(&p2, "always") {
+            assert!(
+                matches!(
+                    export_item(&o2, &p2, item2),
+                    Err(ExportRefusal::NonIntResult(_))
+                ),
+                "the negated bool contract also refuses"
+            );
+        }
+    }
+
+    // #245 / Pin I — CAPTURE-SAFE UNFOLDING: a tier-(b) item whose unfolding would
+    // CAPTURE a caller var under a predicate binder (`cntk(xs, k as int)` with
+    // `|k| … == v`) must REFUSE tier (b) (`OutOfFragment`, capture-unsafe), NEVER
+    // silently emit the captured tautology. Expected from §6.1(b) (R-CHAR-3) — the
+    // pin's `capture_changes_meaning`.
+    #[test]
+    fn capture_unsafe_unfolding_refuses() {
+        let p = parse_one(
+            "spec fn cntk(xs: &[u32], v: int) -> int dec xs.len() \
+               { count_where(xs, |k| k as int == v) } \
+             spec fn cntall(xs: &[u32]) -> int dec xs.len() \
+               { count_where(xs, |k| k as int == k as int) } \
+             fn f3(xs: &[u32], k: u32) -> u64 req true \
+               ens cntk(xs, k as int) == cntall(xs) fx pure { 0 }",
+        );
+        let o = fn_obl(&p, "f3", vec!["cntk".to_string(), "cntall".to_string()]);
+        if let Some(item) = find_item(&p, "f3") {
+            match export_item(&o, &p, item) {
+                Err(ExportRefusal::OutOfFragment(d)) => assert!(
+                    d.contains("CAPTURE") && d.contains('k'),
+                    "the capture-unsafe refusal names the captured binder: {d}"
+                ),
+                other => assert!(
+                    matches!(other, Err(ExportRefusal::OutOfFragment(_))),
+                    "a capture-unsafe unfolding must REFUSE tier (b): {other:?}"
+                ),
+            }
+        }
+    }
+
+    // #245 OVER-REFUSAL GUARD: a tier-(b) item whose unfolding does NOT capture
+    // (the arg's free vars are disjoint from the body binder) still UNFOLDS + exports
+    // (the capture guard is sound, not a blanket refusal). `dbl(x) = x + x` has no
+    // binder; substituting `x ↦ (y as int)` cannot capture.
+    #[test]
+    fn non_capturing_unfolding_still_exports() {
+        let p = parse_one(
+            "spec fn dbl(x: int) -> int dec x { x + x } \
+             fn g(y: u32) -> u32 req y < 100 ens result as int == dbl(y as int) fx pure { y + y }",
+        );
+        let o = fn_obl(&p, "g", vec!["dbl".to_string()]);
+        if let Some(item) = find_item(&p, "g") {
+            match export_item(&o, &p, item) {
+                Ok(exported) => {
+                    assert_eq!(exported.tier, ExportTier::StaticUnfoldAuto);
+                    // The unfolded goal is specCall-free (dbl unfolded away) — the
+                    // independent re-check passes (no residual specCall).
+                    assert!(!exported.source.contains("Expr.specCall"));
+                }
+                other => assert!(
+                    other.is_ok(),
+                    "non-capturing tier-(b) still exports: {other:?}"
+                ),
+            }
+        }
     }
 
     // REQ-6: a full pure-contract export of a scalar item produces a self-contained

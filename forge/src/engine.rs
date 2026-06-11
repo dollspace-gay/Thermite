@@ -405,7 +405,7 @@ pub fn engine_cache_key(engine: EngineName, content_address: String) -> CacheKey
 /// changes (the analogue of `cache::CHECK_SCHEMA_VERSION` for the Lean engine), so a
 /// cached Lean `Proven` is invalidated when the exporter logic changes — a HIT is a
 /// fresh verify against the CURRENT exporter + spine.
-pub const LEAN_SCHEMA_VERSION: u32 = 1;
+pub const LEAN_SCHEMA_VERSION: u32 = 2;
 
 /// The Thermite→Lean obligation ENGINE (`.design/verified/proof-backends.md` REQ-6/
 /// REQ-7/REQ-8 — engine #2; increment (ii-b), the #240 chain). Implements the
@@ -540,35 +540,91 @@ impl LeanEngine {
 
     /// A content hash of the `lean/Thermite/` spine the exported theorem
     /// INSTANTIATES (`.design/verified/proof-backends.md` §2(d) — "the TARGETED-SPINE
-    /// content hash"). Hashes the spine source files (sorted, content-addressed) so a
-    /// change to `Denote.lean`/`Stabilize.lean`/etc. invalidates a cached `Proven`.
-    /// Returns a short hex digest; on a read error the digest degrades to a marker
-    /// (never a panic — R-CODE-2).
+    /// content hash"). Walks `lean/Thermite/**` RECURSIVELY (the #246 widening — the
+    /// non-recursive walk left `lean/Thermite/Exec/**` unhashed, so an Exec-subtree
+    /// edit kept the SAME key; increment (iv) targets Exec, so the spine hash must
+    /// cover the WHOLE subtree). Files are content-addressed by their path RELATIVE to
+    /// the spine root (so a moved/renamed file changes the key) and sorted for
+    /// determinism (R-CODE-5). On a read error the digest degrades to a marker (never
+    /// a panic — R-CODE-2).
     fn spine_content_hash(&self) -> String {
         use sha2::{Digest, Sha256};
         let spine_dir = self.lean_root.join("Thermite");
-        let mut entries: Vec<PathBuf> = match std::fs::read_dir(&spine_dir) {
-            Ok(rd) => rd
-                .filter_map(|e| e.ok().map(|e| e.path()))
-                .filter(|p| p.extension().is_some_and(|x| x == "lean"))
-                .collect(),
-            Err(_) => return "spine-unreadable".to_string(),
-        };
-        entries.sort();
+        let mut entries: Vec<PathBuf> = Vec::new();
+        if !Self::collect_lean_files(&spine_dir, &mut entries) {
+            return "spine-unreadable".to_string();
+        }
+        // Sort by the path RELATIVE to the spine root (stable across cwd; covers the
+        // whole recursive subtree).
+        entries.sort_by(|a, b| {
+            let ra = a.strip_prefix(&spine_dir).unwrap_or(a);
+            let rb = b.strip_prefix(&spine_dir).unwrap_or(b);
+            ra.cmp(rb)
+        });
         let mut hasher = Sha256::new();
-        hasher.update(b"thermite-lean-spine-v1");
+        // The marker is BUMPED to v2 with the recursive widening, so a prior cached
+        // key (non-recursive v1) universally MISSES.
+        hasher.update(b"thermite-lean-spine-v2-recursive");
         for path in entries {
             if let Ok(bytes) = std::fs::read(&path) {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    hasher.update((name.len() as u64).to_le_bytes());
-                    hasher.update(name.as_bytes());
-                }
+                let rel = path.strip_prefix(&spine_dir).unwrap_or(&path);
+                let rel_str = rel.to_string_lossy();
+                hasher.update((rel_str.len() as u64).to_le_bytes());
+                hasher.update(rel_str.as_bytes());
                 hasher.update((bytes.len() as u64).to_le_bytes());
                 hasher.update(&bytes);
             }
         }
         let digest = hasher.finalize();
         digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// Recursively collect every `.lean` file under `dir` into `out`
+    /// (`.design/verified/proof-backends.md` §2(d), the #246 recursive widening).
+    /// Returns `false` if the ROOT directory is unreadable (the degrade-to-marker
+    /// signal); a subdirectory read error is skipped (best-effort, never a panic —
+    /// R-CODE-2). Deterministic given the filesystem.
+    fn collect_lean_files(dir: &std::path::Path, out: &mut Vec<PathBuf>) -> bool {
+        let rd = match std::fs::read_dir(dir) {
+            Ok(rd) => rd,
+            Err(_) => return false,
+        };
+        for entry in rd.filter_map(Result::ok) {
+            let path = entry.path();
+            if path.is_dir() {
+                // A subdirectory read failure is skipped (best-effort), not fatal.
+                let _ = Self::collect_lean_files(&path, out);
+            } else if path.extension().is_some_and(|x| x == "lean") {
+                out.push(path);
+            }
+        }
+        true
+    }
+
+    /// The OBLIGATION-CONTENT hash (`.design/verified/proof-backends.md` §2(d) /
+    /// REQ-7(ii), the #246 fix): the canonical emitted Lean terms for `req`/`ens`/
+    /// `body`/`dec` PLUS the registry bodies — i.e. the EXPORTER'S RENDERED SOURCE,
+    /// which contains exactly those terms. Hashing the rendered source means editing
+    /// `ens result >= a` to `ens result >= b` (or editing a reached spec-fn's body)
+    /// CHANGES the key (the staleness REQ-7(ii) demands — a cached/replayed `Proven`
+    /// can NEVER silently survive a contract change). On an export refusal (the item
+    /// is not exportable) the content degrades to a STRUCTURED refusal marker (still a
+    /// stable, content-distinguishing string — a refused item never reaches a cached
+    /// `Proven` anyway). Deterministic (R-CODE-5); never a panic (R-CODE-2).
+    fn obligation_content_hash(&self, o: &Obligation) -> String {
+        let content = match find_item(&self.program, &o.item) {
+            Some(item) => match export_item(o, &self.program, item) {
+                Ok(exported) => exported.source,
+                Err(refusal) => format!("export-refused::{refusal}"),
+            },
+            None => format!("item-absent::{}", o.item),
+        };
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(b"thermite-lean-obligation-content-v1");
+        h.update(content.as_bytes());
+        let digest = h.finalize();
+        digest.iter().map(|b| format!("{b:02x}")).collect()
     }
 
     /// The lean-toolchain + lake-manifest revision string (`.design/verified/
@@ -678,13 +734,18 @@ impl Engine for LeanEngine {
         // semantics + toolchain).
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
-        h.update(b"thermite-lean-evidence-v1");
+        h.update(b"thermite-lean-evidence-v2");
         h.update(o.item.as_bytes());
         h.update(o.class.tag().as_bytes());
         h.update(o.role.tag().as_bytes());
         for name in &o.env.spec_defs {
             h.update(name.as_bytes());
         }
+        // The OBLIGATION CONTENT (#246 / REQ-7(ii)): the canonical emitted Lean terms
+        // for req/ens/body/dec + the registry bodies (the rendered exporter source).
+        // Two same-named items with DIFFERENT ens (or a reached spec-fn body edit) →
+        // different content hash → different key (no silent stale-Proven reuse).
+        h.update(self.obligation_content_hash(o).as_bytes());
         h.update(self.toolchain_rev().as_bytes());
         h.update(self.spine_content_hash().as_bytes());
         h.update(LEAN_SCHEMA_VERSION.to_le_bytes());
@@ -1232,20 +1293,23 @@ mod tests {
         );
     }
 
-    // (5) REQ-6 §4 SCOPE: an OUT-of-fragment item (a tuple projection in the ens) is
-    // SKIPPED (the fragment rejects it) → the export REFUSES and the engine returns
-    // `Unknown`. Expected from the §4 OUT-of-spine refusal rule (R-CHAR-3). NO lake.
+    // (5) REQ-6 §4 SCOPE: an OUT-of-fragment item (an out-of-spine struct-field
+    // access in the ens, on an int-RESULT fn so the #244 result-sort gate does NOT
+    // pre-empt it) is SKIPPED (the fragment rejects it) → the export REFUSES and the
+    // engine returns `Unknown`. Expected from the §4 OUT-of-spine refusal rule
+    // (R-CHAR-3). NO lake.
     #[test]
     fn out_of_fragment_item_is_skipped() {
-        let src = "fn pick(a: u32, b: u32) -> (u32, u32) req true \
-                   ens result.0 == a fx pure { (a, b) }";
+        let src = "struct P { x: u32 } \
+                   fn pick(p: P) -> u32 req true \
+                   ens result == p.x fx pure { 0 }";
         let p = parse_program(src);
         let o = fn_obligation(&p, "pick", vec![]);
         if let Some(item) = crate::lean_export::find_item(&p, "pick") {
             let r = export_item(&o, &p, item);
             assert!(
                 matches!(r, Err(ExportRefusal::OutOfFragment(_))),
-                "a tuple-projection ens is out-of-fragment: {r:?}"
+                "a struct-field ens is out-of-fragment: {r:?}"
             );
         }
         let engine = LeanEngine::new(p, lean_root());
@@ -1312,5 +1376,65 @@ mod tests {
         let key = engine.evidence_key(&o);
         assert_eq!(key.engine, EngineName::LeanAuto);
         assert_eq!(key.content_address.len(), 64, "sha256 hex content address");
+    }
+
+    // #246 / REQ-7(ii) — STALENESS: two SAME-NAMED items with DIFFERENT `ens` must
+    // produce DIFFERENT evidence keys (the obligation CONTENT is hashed, so a contract
+    // edit can NEVER silently reuse a cached `Proven`). Hand-derived (R-CHAR-3): the
+    // only delta is the ens RHS (`>= a` vs `>= b`); the content hash distinguishes them.
+    #[test]
+    fn evidence_key_differs_on_different_ens() {
+        let p1 =
+            parse_program("fn m(a: u32, b: u32) -> u32 req true ens result >= a fx pure { a }");
+        let p2 =
+            parse_program("fn m(a: u32, b: u32) -> u32 req true ens result >= b fx pure { a }");
+        let o1 = fn_obligation(&p1, "m", vec![]);
+        let o2 = fn_obligation(&p2, "m", vec![]);
+        let e1 = LeanEngine::new(p1, lean_root());
+        let e2 = LeanEngine::new(p2, lean_root());
+        let k1 = e1.evidence_key(&o1);
+        let k2 = e2.evidence_key(&o2);
+        assert_ne!(
+            k1.content_address, k2.content_address,
+            "two same-named items with DIFFERENT ens must have DIFFERENT keys (#246 staleness)"
+        );
+    }
+
+    // #246 — TARGETED-SPINE STALENESS: an edit ANYWHERE under `lean/Thermite/**`
+    // (including a NESTED subdirectory — the recursive widening) must change the
+    // evidence key. Hand-derived: a synthetic spine root with a nested `Exec/x.lean`
+    // file; appending a byte to the nested file changes `spine_content_hash`, hence
+    // the key. Uses a temp dir (no mutation of the real spine).
+    #[test]
+    fn evidence_key_differs_on_nested_spine_edit() {
+        let tmp = std::env::temp_dir().join(format!("forge_spine_test_{}", std::process::id()));
+        let nested = tmp.join("Thermite").join("Exec");
+        assert!(
+            std::fs::create_dir_all(&nested).is_ok(),
+            "scratch spine dir must be creatable"
+        );
+        // A toolchain marker so toolchain_rev is stable across the two reads.
+        let _ = std::fs::write(tmp.join("lean-toolchain"), "leanprover/lean4:test");
+        let _ = std::fs::write(tmp.join("Thermite").join("Ast.lean"), "-- ast\n");
+        let nested_file = nested.join("x.lean");
+        let _ = std::fs::write(&nested_file, "-- exec v1\n");
+
+        let p = parse_program("fn id(x: u64) -> u64 req true ens result == x fx pure { x }");
+        let o = fn_obligation(&p, "id", vec![]);
+        let e_before = LeanEngine::new(p.clone(), tmp.clone());
+        let k_before = e_before.evidence_key(&o);
+
+        // Edit the NESTED spine file (the case the non-recursive walk MISSED).
+        let _ = std::fs::write(&nested_file, "-- exec v2 EDITED\n");
+        let e_after = LeanEngine::new(p, tmp.clone());
+        let k_after = e_after.evidence_key(&o);
+
+        // Cleanup before the assert (so a failure still leaves a clean tree).
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        assert_ne!(
+            k_before.content_address, k_after.content_address,
+            "a nested lean/Thermite/Exec/** edit must change the key (#246 recursive spine hash)"
+        );
     }
 }

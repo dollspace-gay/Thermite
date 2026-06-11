@@ -1,0 +1,10 @@
+{
+  "uuid": "2c91f688-97b3-467a-94c2-4b92303f87bc",
+  "issue_uuid": "bf02f865-0611-4d0d-aeac-7f23211b61af",
+  "author": "Yffe",
+  "content": "Critic audit of 4afd8661 (#240 part ii-a): pin the divergence as a kernel-checked Lean pin (PinRegistryTerminating.lean, Pin E) — prove (E.0) the shipped stabilization_exists hypothesis is its conclusion by rfl, (E.1) the divergent f(x)=f(x) registry satisfies RegistryTerminating despite §1.2 mandating the class fail for it, and the affirmed value is the bottom 0. Commit the pin as the audit artifact; no production code touched.",
+  "created_at": "2026-06-11T07:52:28.192554771Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAQuNDMWIrcj5HOLejY+aDeP6jqbTJYwuM2un/hcnhJrAJj80brs+C/BqS+Fz3f16jNAi4cvLjhx/KXA+oMHi+Cg=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "3913136c-041e-4798-934f-a72b53142d25",
+  "display_id": 232,
+  "title": "Divergence: forge check item_subprogram Struct arm builds the sub-program as the item ALONE — a struct inv naming a user spec fn dies at L0 (E0425, def never woven; param-type map empty -> as u64 fallback); the 'Dead-in-1a: dies at the validator' premise comment is stale; #230's pub-open fix alone cannot revive the shape",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T02:19:24.788946940Z",
+  "updated_at": "2026-06-11T02:19:24.788946940Z"
+}

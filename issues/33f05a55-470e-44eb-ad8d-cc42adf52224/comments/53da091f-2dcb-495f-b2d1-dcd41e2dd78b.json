@@ -1,0 +1,10 @@
+{
+  "uuid": "53da091f-2dcb-495f-b2d1-dcd41e2dd78b",
+  "issue_uuid": "33f05a55-470e-44eb-ad8d-cc42adf52224",
+  "author": "Yffe",
+  "content": "Critic pin approach: pin the gap as kernel-checked Lean theorems in lean/Thermite/PinCombPredGap.lean (Pin F, the f7d288ef precedent) — construct eDeep = count_where over a forall_in whose predicate body calls the divergent f(x)=f(x), prove intValNB = some 0 at every fuel, hence RegistryTerminating is FORGED and stabilization_exists delivers the bottom-poisoned 0. Commit the pin as the audit artifact; generator must fix the denoteNB comb arm (or the doc/discipline) at the root.",
+  "created_at": "2026-06-11T08:43:14.448314987Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANG5RLYxfzZVSA7Z3j7RaZDY2KGUdIOiPnGDcouXprVnTBKXuzX9Ei/7yu+aiFQKc06Ah6Bid0b28epGLJfWEBg=="
+}

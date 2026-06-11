@@ -235,6 +235,29 @@ design = ".design/lower/boundary-composition.md"
 reference = ["conformance/composition"]
 conformance_ops = ["direct_boundary_caller", "transitive_boundary_caller", "req_violating_caller"]
 
+# proof-backends increment (i), crosslink #204: the backend-neutral Obligation
+# artifact (`obligation.rs`) + the Engine trait & the Verus engine (`engine.rs`),
+# and the L3-discharge refactor that routes the per-item certification path through
+# the engine + the REQ-3.1 fast-unknown remap (`check.rs`). Governed by
+# proof-backends.md; verified against the conformance cert oracle (byte-identical).
+[[route]]
+crate_pattern = "forge/src/obligation.rs"
+design = ".design/verified/proof-backends.md"
+reference = ["conformance"]
+conformance_ops = ["sum"]
+
+[[route]]
+crate_pattern = "forge/src/engine.rs"
+design = ".design/verified/proof-backends.md"
+reference = ["conformance"]
+conformance_ops = ["sum"]
+
+[[route]]
+crate_pattern = "forge/src/check.rs"
+design = ".design/verified/proof-backends.md"
+reference = ["conformance"]
+conformance_ops = ["sum"]
+
 [[route]]
 crate_pattern = "forge/src/manifest.rs"
 design = ".design/forge/certificate-manifest.md"

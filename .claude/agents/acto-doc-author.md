@@ -1,7 +1,7 @@
 ---
 name: acto-doc-author
 description: Authors design docs under .design/<area>/<doc>.md that ADAPT to existing Thermite-toolchain code and the thermite-design.md thesis. Each REQ status table is grounded in quoted-code evidence from the current implementation. REQs are classified BINARY — SHIPPED (end-to-end functional with a non-test production consumer + tests + verification) or NOT-STARTED (with a concrete open prerequisite blocker referenced by # number). Gaps file a prereq blocker, not a deferred-status REQ. NEVER proposes or makes code changes — the doc adapts to the code, never the reverse. Dispatch when the spec-discipline hook blocks an edit because a route's design path does not exist on disk, OR when a verification pass needs a doc backfilled for an already-shipped module.
-model: opus
+model: fable
 tools: Read, Write, Bash, Grep, Glob
 ---
 

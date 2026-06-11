@@ -51,18 +51,31 @@ build-blockers:
     `R_item`/stabilization path (the bottom-to-`0` denotation), NOT the Verus path. The correction
     is recorded HERE as a named increment-(i) work item (NOT a separate issue).
   - increment (ii): FUTURE (the Lean exporter + auto-discharge for the PURE-CONTRACT class).
-    SPINE PREREQUISITE (a small NAMED Lean addition, part of THIS increment, NOT yet built — the
-    #213 fix): the `stabilizes` relation (`stabilizes : Expr → Env → Int → Prop` for `intVal`, and
-    the Prop analogue for `denote`) + the supporting lemma `stabilization_exists_for_dec_bounded`
-    (for a dec-VALID/terminating registry every spec-call has a FINITE per-env unfolding depth,
-    so the stabilized value exists). The §4 obligation form is stated against `stabilizes`, NOT a
-    raw fuel index, and the RESULT value is bound THROUGH `stabilizes` (the #214 fix); the lemma is
-    what increment (ii) must land in the spine BEFORE the exporter can target the form. ALSO part of
-    this increment: the FUEL-IRRELEVANCE lemma (`specCallFree e → intVal f e env = intVal g e env`
-    for all fuels, + the Prop analogue) that lets the exporter emit FUEL-FREE shallow statements for
-    the specCall-free auto fragment (the #216 normalization story, §4/§6). (Tracked in THIS
-    #204-chain as an AMENDMENT to increment (ii) — no new issue; see §4 "the stabilized form" +
-    "the normalization story" + the build blocker note there.)
+    SPINE PREREQUISITE (a small NAMED Lean addition, part of THIS increment) — SHIPPED in
+    `lean/Thermite/Stabilize.lean` (#240, ref #203; imported by `lean/Thermite.lean`),
+    kernel-checked with the standard axiom set `{propext, Classical.choice, Quot.sound}` (NO
+    `sorryAx`): the `stabilizes` relation (`stabilizes (e : Expr) (env : Env) (v : Int) : Prop` for
+    `intVal`, and `stabilizesProp` for `denote`, matching `Denote.lean`'s signatures/universes) +
+    `stabilizes_unique` (the #214 uniqueness lever, overlap-at-max) + the supporting lemma
+    `stabilization_exists` (the design's `stabilization_exists_for_dec_bounded`) — SHIPPED in the
+    HYPOTHESIS form keyed on `RegistryTerminating env e := ∃ v, stabilizes e env v` (the
+    fully-general core-Lean form is NOT provable: the registry is an arbitrary `String → Option
+    SpecFn` with no spine-available well-foundedness, and a divergent registry sits at the fuel-0
+    Int-bottom for all fuel; the hypothesis is EXACTLY what the per-item REGISTRY-TERMINATION
+    obligation class REQ-1.2 discharges, so it is the named separately-discharged obligation, NOT an
+    assumed-away premise). The §4 obligation form is stated against `stabilizes`, NOT a raw fuel
+    index, and the RESULT value is bound THROUGH `stabilizes` (the #214 fix). ALSO SHIPPED in the
+    same module: the FUEL-IRRELEVANCE lemma (`specCallFree e → intVal f e env = intVal g e env` for
+    all fuels — `intVal_fuel_irrelevant`/`denote_fuel_irrelevant`, the Prop analogue, by the mutual
+    well-founded recursion over `intVal`/`seqVal`/`denote`/`denoteArms` with `env` generalized;
+    `specCallFree` is a Bool predicate over the FULL mutual AST Expr/Pred/MatchArm/RangeArg) + the
+    FUEL-FREE tier-(a) export keys `stabilizesProp_iff_denote_zero` / `stabilizes_iff_intVal_zero`
+    (for spec-call-free `e`, the `∃N∀` relation collapses to the fuel-0 value — the #216
+    normalization bridge that lets the exporter emit FUEL-FREE shallow statements for the
+    specCall-free auto fragment, §4/§6). (Tracked in THIS #204-chain as an AMENDMENT to increment
+    (ii) — no new issue; see §4 "the stabilized form" + "the normalization story" + the build
+    blocker note there. The four critic pins keep their own local `stabilizes`/`stabilizesProp`
+    copies and still build green against the new defs.)
   - increment (iii): FUTURE (interactive proofs + per-obligation certificate attribution + the
     engine-generic anti-Goodhart battery)
   - increment (iv): FUTURE (the full exportable fragment — exec exprs, straight-line bodies,
@@ -882,10 +895,32 @@ stabilized value exists and equals `S`'s intended meaning), the uniqueness-of-st
 #214 lever), the FUEL-IRRELEVANCE lemma (`intVal_fuel_irrelevant`/`denote_fuel_irrelevant`, the #216
 normalization bridge), and the Lean-path REGISTRY-TERMINATION discharge (the #215 well-foundedness
 proof obligation, REQ-1.2(b)) are a SMALL NAMED Lean addition that
-increment (ii) MUST land in the spine BEFORE the exporter can target this form. This is recorded as an
-AMENDMENT to increment (ii) inside the existing #204 build-blocker chain (see the header
-`build-blockers:` block) — NOT a separately-filed issue. The form here is the DESIGN; the lemmas are
-the spine work increment (ii) owns.
+increment (ii) MUST land in the spine BEFORE the exporter can target this form.
+
+**SHIPPED (the spine prerequisites — #240, ref #203, `lean/Thermite/Stabilize.lean`).** The
+relations `stabilizes`/`stabilizesProp` (matching `Denote.lean`'s `intVal`/`denote`), the
+uniqueness-of-stabilization fact `stabilizes_unique` (the #214 lever, overlap-at-max), the
+FUEL-IRRELEVANCE lemma `intVal_fuel_irrelevant`/`denote_fuel_irrelevant` (+ `seqVal`/`denoteArms`
+mutual companions; over the decidable Bool predicate `specCallFree` ranging the FULL mutual AST), and
+the tier-(a) fuel-free corollaries `stabilizesProp_iff_denote_zero`/`stabilizes_iff_intVal_zero` are
+all kernel-checked with `{propext, Classical.choice, Quot.sound}` (NO `sorryAx`). **The supporting
+lemma `stabilization_exists_for_dec_bounded` SHIPPED in the HYPOTHESIS form** (`stabilization_exists`
+keyed on `RegistryTerminating env e := ∃ v, stabilizes e env v`), recording the doc-author's
+least-confident-assertion flag honestly: the fully-general core-Lean form is NOT provable (the spine
+registry is an arbitrary `String → Option SpecFn` with no available well-foundedness, and a divergent
+registry stays at the fuel-0 Int-bottom for all fuel — the #213/#214/#215 trap, not a genuine
+stabilized value), so no env-indexed measure exists in core Lean to discharge it unconditionally. The
+hypothesis `RegistryTerminating` is EXACTLY the per-item REGISTRY-TERMINATION obligation class
+(REQ-1.2) — the dec-validity proof of each spec-fn in `R_item` supplies it — so it is the named,
+separately-discharged obligation the conjunction rule already requires, NOT an assumed-away premise
+(§1.2). The spec-call-free fragment stabilizes UNCONDITIONALLY (`stabilization_exists_specCallFree`,
+no hypothesis — its witness is the fuel-0 value), so the tier-(a) auto fragment's stabilization is
+free. The four critic pins (PinIntBottom/PinStabilization/PinBodyRegistry/PinDecMeasure) keep their
+own local `stabilizes`/`stabilizesProp` copies and still build green against the new defs (their
+theorems' axioms are the standard set). The exporter targeting (REQ-6/REQ-7) and the REGISTRY-
+TERMINATION Lean-path well-foundedness discharge (REQ-1.2(b)) remain increment-(ii)/(iv) work. This
+is recorded as an AMENDMENT to increment (ii) inside the existing #204 build-blocker chain (see the
+header `build-blockers:` block) — NOT a separately-filed issue.
 
 **Registry population is an EXPORTER-SIDE HARD GATE (F5, the #210 fix) — not a hypothesis.** Two
 mechanisms, belt-and-suspenders:

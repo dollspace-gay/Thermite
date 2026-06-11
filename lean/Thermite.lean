@@ -67,3 +67,14 @@ import Thermite.Faithfulness
 -- excluding bitwise obligations; Verus/Z3 not emitting reconstructable certificates) are in
 -- `.design/verified/z3-demotion.md`.
 import Thermite.SmtDemo
+-- THE STABILIZATION SPINE PREREQUISITE (increment (ii), #240, ref #203;
+-- `.design/verified/proof-backends.md` §4/§6.1): the `stabilizes`/`stabilizesProp`
+-- relations (the §4 stabilized-form keys, NOT a raw fuel index), `stabilizes_unique`
+-- (the #214 result-binding lever), the `specCallFree` predicate + the FUEL-IRRELEVANCE
+-- lemma `intVal_fuel_irrelevant`/`denote_fuel_irrelevant` (the #216 normalization bridge —
+-- the fuel-free tier-(a) export keys `stabilizes_iff_intVal_zero` /
+-- `stabilizesProp_iff_denote_zero`), and `stabilization_exists` (the design's
+-- `stabilization_exists_for_dec_bounded`, shipped in the `RegistryTerminating` HYPOTHESIS
+-- form — the per-item REGISTRY-TERMINATION obligation discharges it). The exporter
+-- targets the §4 form against these; the four critic pins keep their own local copies.
+import Thermite.Stabilize

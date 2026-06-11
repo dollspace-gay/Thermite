@@ -1,0 +1,10 @@
+{
+  "uuid": "53fec43b-899d-40b5-93a2-d790dae59c5d",
+  "issue_uuid": "a6d24a4c-33b4-4797-87cf-1fb632f81ba9",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_axiom_smuggling.rs::divergence_interactive_replay_accepts_nonstandard_axiom demonstrates the divergence. AUTHORITY: proof-backends.md REQ-4 (L3-via-Lean base = {Lean kernel + 3 standard axioms, EXP}), thermite-design.md §1 (enumerable trusted base), REQ-7(ii) z3-demotion bar (#print axioms = standard set only), R-DEFER-9 (no proof cheats). TOOLCHAIN: engine::replay_present_proof (forge/src/engine.rs) gates a replayed proof only on (1) the evidence-key header match + (2) engine::proof_has_sorry; proof_has_sorry/axioms_contain_sorry scans ONLY for 'sorry'/'sorryAx', NOT a trust-base axiom allowlist. INPUT: a tier-(c) recursive item f whose checked-in .lean-proofs/f.lean keeps the fresh evidence-key header but proves 'theorem thermite_obligation_f : True := thermite_cheat _' with 'axiom thermite_cheat : ∀ (p:Prop), p'. EXPECTED: f rejected/skipped (the base would be a lie). ACTUAL: f certifies L3 with engine_attribution.trust_profile = {Lean kernel, propext, Classical.choice, Quot.sound, EXP, author} — omitting thermite_cheat. Live-verified (lake+verus present). The replay also does not bind the proven theorem STATEMENT to the obligation (the cheat proves ': True', not the ens), a related hole in the same gate.",
+  "created_at": "2026-06-11T18:02:12.447566757Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAUVwFSkgqjahPToI/GuG/IsBNerja1XaLqNGku1LxzR70HVnKQVfI81hi1SRrxummZIhRnnOBwdKlBV5rtQtECQ=="
+}

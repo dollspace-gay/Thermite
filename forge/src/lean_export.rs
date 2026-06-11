@@ -40,6 +40,22 @@
 //!     returns the file (for increment-(iii) use) but [`crate::engine::LeanEngine`]
 //!     does NOT invoke lake (it returns `Unknown("interactive-only")`).
 //!
+//! ## The exec-body bridge (§4.1 / REQ-10, increment (iv-b))
+//!
+//! Beyond the pure-contract class, [`export_item`] routes a STRAIGHT-LINE-BODY item
+//! (a body with statements — `let`/`assign`/`expr`/`if`-statement/sequencing — OR a
+//! `bool` result) to [`export_straight_line_body`], which serializes the body into the
+//! spine's `Exec/Stmt.lean` `Block`/`Stmt` encodings ([`encode_exec_block`]/
+//! [`encode_exec_stmt`]/[`encode_exec_expr`]) and emits `stateOf`/`InRangeParams`/the
+//! per-param `rfl`-lemmas ([`emit_state_of`]) + the HYPOTHESIZE CONTRACT theorem AND
+//! the conjoined OVERFLOW theorem ([`emit_body_theorems`], the §4.1.5 conjunction
+//! rule). The result binds via `bindResult` (int → `bindInt … r.value`; bool →
+//! `bindBool … b`). Loops/`while`/`break`/`continue`/mid-body-`return`/non-scalar
+//! mutation → [`ExportRefusal::LoopBody`] (§4.1.7); an Option/Result result →
+//! [`ExportRefusal::OptResResult`] (#254). `bodyDenote` is FUEL-FREE (`ExecExpr` has
+//! no `specCall`), so there is NO NB/none-propagating layer — the `Option` itself
+//! distinguishes a genuine failure from a value.
+//!
 //! This module is NOT wired into the default `check` path (Verus stays the sole
 //! default engine — byte-identical); the [`crate::engine::LeanEngine`] constructs
 //! it directly, and the `--engine` surface is increment (iii).
@@ -50,6 +66,9 @@
 //! |---|---|---|
 //! | REQ-6 (the Lean exporter — emit source instantiating `S`; the hard gate; EXP arm-by-arm) | SHIPPED (pure-contract class, tiers (a)/(b)/(c)) | `pub fn export_item` emits a self-contained Lean file: `encode_expr` maps each frozen-subset `Expr` arm-by-arm to its `Ast.lean` constructor (OUT-of-spine → `ExportRefusal::OutOfFragment`); `build_registry` populates `R_item` from the `called_spec_fns` closure with the HARD GATE (`ExportRefusal::IncompleteRegistry` when a reached name is undefined) + the per-name `decide` resolution lemmas; `emit_theorem` emits the §4 stabilized form (tier (c)) or the fuel-free tier-(a)/(b) form. Non-test consumer: `engine::LeanEngine::{fragment,discharge}` calls `export_item` + `tier_of` on the live discharge path. The arms table is pinned in `.design/verified/rust-lean-correspondence.md` Table 4 (the EXP drift tripwire). |
 //! | REQ-7 (Lean discharge modes — AUTO tiers (a)/(b) fuel-free; tier (c) interactive) | SHIPPED (AUTO tiers (a)/(b); tier (c) interactive-marked) | `tier_of` classifies the obligation by registry shape (`ExportTier::{FuelFreeAuto,StaticUnfoldAuto,RecursiveInteractive}`); tiers (a)/(b) emit a fuel-free goal + the `decide`/`simp`/`omega` battery (`auto_tactic_battery`); tier (c) emits the `∃N∀fuel` stabilized form marked interactive (the engine returns `Unknown`, NOT lake-invoked). The recursive-registry detection is `registry_is_recursive`. |
+//! | REQ-10.3 (the env→State correspondence emission — `stateOf`/`InRangeParams`/per-param `rfl`-lemmas) | SHIPPED (increment (iv-b), #253) | `pub fn export_item` routes a straight-line-body `Item::Fn` (a body with statements OR a bool result) to `export_straight_line_body`, which calls `emit_state_of` — emitting `def stateOf : Thermite.Env → Thermite.Exec.State` (params → State cells: int → `.int ⟨uW, v.ints x⟩`, bool → `.bool (v.bools p)`, slice → `(v.seqs xs).map (⟨uW, ·⟩)`; `scope := fun _ => false`, the spine's `inputState` exemplar) + the `InRangeParams` typed-input premise + the per-param correspondence `rfl`-lemmas (`asInt … = some ⟨uW, v.ints x⟩` / `asBool …` / `slices.map BVal.value = v.seqs xs`, the §4.1.4 compile-time tripwire). Non-test consumer: `engine::LeanEngine::discharge` exports + lake-checks the emitted file. Verified LIVE: `engine::tests::live_straight_line_body_is_proven` (incl. the OVERFLOW conjunct), `live_bool_result_body_is_proven_via_bindbool`. The `scope := false` EXP row is VERIFIED faithful against `thermite-tv::exec_stmt_encode::body_ref_state` (its initial `Env::new()` is empty — params are free inputs, not assignable cells; a body `assign` to a param is `none`/`Err` on both sides — `PinExecStateMisMap.lean`). |
+//! | REQ-10.4 (the HYPOTHESIZE obligation + the conjoined OVERFLOW theorem) | SHIPPED (increment (iv-b), #253) | `emit_body_theorems` emits BOTH the HYPOTHESIZE CONTRACT theorem (`bodyConverges body_block (stateOf v) r → denote 0 req … → denote 0 ens (bindResult … r)`, the result bound THROUGH `bodyConverges` — uniqueness FREE) AND the conjoined OVERFLOW theorem (`(bodyDenote body_block (stateOf v)).isSome` under `req`) in the SAME emitted file (the §4.1.5 conjunction rule). Result binding via `bindResult` (int → `bindInt … r.value`, bool → `bindBool … b`). The auto battery is `exec_body_tactic_battery`/`exec_overflow_tactic_battery`. Verified LIVE: `live_always_overflow_body_is_not_proven` — an always-overflow body's vacuous CONTRACT does NOT certify because the OVERFLOW conjunct FAILS (the PinExecOverflowVacuity Rust mirror). |
+//! | REQ-10.6 (the loop-class STRUCTURED refusal narrowed out of `NotPureContract`) | SHIPPED (increment (iv-b), #253) | `encode_exec_stmt` returns `ExportRefusal::LoopBody` for a `loop`/`while`/`break`/`continue`/mid-body-`return`/non-scalar-mutation (§4.1.7 — `S_B` mechanizes NO loop form); an Option/Result result is `ExportRefusal::OptResResult` (#254 — no `ExecVal` optres variant). Consumer: `LeanEngine::discharge` maps both to `Unknown` (an honest skip). Verified: `while_body_item_refuses_export`, `optres_result_item_refuses_export`. |
 
 use crate::obligation::Obligation;
 use std::collections::BTreeMap;
@@ -98,6 +117,25 @@ pub enum ExportRefusal {
     /// The item carries an open body hole (`?N`) — short-circuited L0 before any
     /// engine (§8 OUT set); not exportable.
     OpenHole(String),
+    /// THE LOOP-CLASS STRUCTURED REFUSAL (§4.1.7 / REQ-10.6): a body containing a
+    /// `loop`/`while`/`break`/`continue`/mid-body-`return`/non-scalar-mutation —
+    /// constructs `Exec/Stmt.lean`'s `S_B` does NOT mechanize ("LOOPS are EXPLICITLY
+    /// OUT (increment 2c, #163)"). Composing `Exec/Loop.lean`'s `loopDenote` +
+    /// `while_rule` into a body obligation is its OWN future design, NOT smuggled
+    /// into #253 — an honest skip (the cert reports it via the `LeanUnverifiable`
+    /// path), NEVER an attempt to denote what `S_B` does not model. Carries the
+    /// offending construct.
+    LoopBody(String),
+    /// THE OPTION/RESULT-RESULT REFUSAL (§4.1.3 / REQ-10, blocker #254): a
+    /// straight-line body whose declared RESULT type is `Option<_>`/`Result<_,_>`.
+    /// The BINDING side (`env.optres` / `Env.bindOptRes`) is free, but the
+    /// ANTECEDENT side is NOT representable: `Exec.lean`'s `ExecVal` is `int (BVal) |
+    /// bool (Bool)` ONLY — `bodyDenote` CANNOT produce an Option/Result result, and
+    /// no `ExecExpr`/`Stmt` form constructs one. So an optres-typed straight-line
+    /// body stays REFUSED (an honest structured skip); the spine extension (an
+    /// `ExecVal` optres variant + the producing arms + `Env.bindOptRes`) is the FILED
+    /// follow-on blocker #254, NOT silently waved into #253. Carries the result type.
+    OptResResult(String),
 }
 
 impl std::fmt::Display for ExportRefusal {
@@ -123,6 +161,16 @@ impl std::fmt::Display for ExportRefusal {
                  bodies; bool/unit/ADT is the increment-(iv) bindBool bridge): {ty}"
             ),
             ExportRefusal::OpenHole(d) => write!(f, "open body hole (L0, no engine): {d}"),
+            ExportRefusal::LoopBody(d) => write!(
+                f,
+                "loop-class body (§4.1.7 — S_B mechanizes NO loop form; the while/loop \
+                 residual is the FUTURE increment, not #253): {d}"
+            ),
+            ExportRefusal::OptResResult(ty) => write!(
+                f,
+                "Option/Result-typed straight-line-body result (§4.1.3 — ExecVal has no \
+                 optres variant; the spine extension is blocker #254): {ty}"
+            ),
         }
     }
 }
@@ -1420,6 +1468,587 @@ fn conjoin(terms: &[String]) -> String {
     }
 }
 
+// ============================================================================
+// THE EXEC-BODY BRIDGE (§4.1 / REQ-10; increment (iv-b), blocker #253) — the
+// STRAIGHT-LINE-BODY exporter. Extends the pure-contract exporter past a single
+// tail `Expr` to a body that is the `S_B` straight-line `Block`
+// (let/assign/expr/if-statement/sequencing + a tail exec expr) the spine
+// mechanizes as `Thermite.Exec.bodyDenote` (`lean/Thermite/Exec/Stmt.lean`).
+//
+// The emitted file carries (over `R_item`, the SAME registry machinery):
+//   - `stateOf : Thermite.Env → Thermite.Exec.State` (§4.1.4) — the env→State map,
+//     `scope := fun _ => false` (params are free INPUTS, the spine's `inputState`
+//     exemplar — EXP-verified faithful against `body_ref_state`'s EMPTY initial env;
+//     a body `assign` to a param is `none` on both sides);
+//   - the per-param correspondence `rfl`-lemmas (the §4.1.4 compile-time tripwire);
+//   - the HYPOTHESIZE CONTRACT theorem (§4.1.5) — `bodyConverges body (stateOf v) r
+//     → … → ens@(bindResult … r)`, the result bound THROUGH `bodyConverges` (uniqueness
+//     free: `bodyDenote` is a function); and
+//   - the conjoined OVERFLOW theorem (§4.1.5) — `(bodyDenote body (stateOf v)).isSome`
+//     under `req`, the soundness condition that makes the HYPOTHESIZE vacuity harmless
+//     (an always-overflowing body fails OVERFLOW so cannot certify — the conjunction
+//     rule, PinExecOverflowVacuity's Rust mirror).
+// ============================================================================
+
+/// The exec int width for the §4.1.1 `BVal.value` bridge + the exec `intLit`/`var`
+/// cells. A scalar Thermite type → its `IntTy` constructor; a non-int sort has no
+/// exec int width (the bool sort routes through the §4.1.2 `bindBool` bridge instead).
+fn exec_int_ty(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::Ref { inner, .. } => exec_int_ty(inner),
+        Type::Prim(PrimType::U32) => Some("Thermite.Exec.IntTy.u32"),
+        Type::Prim(PrimType::U64) => Some("Thermite.Exec.IntTy.u64"),
+        Type::Prim(PrimType::Usize) => Some("Thermite.Exec.IntTy.usize"),
+        _ => None,
+    }
+}
+
+/// The exec result kind of a declared item return type (§4.1.1/§4.1.2/§4.1.3): an int
+/// sort binds via `BVal.value`, a `bool` via `bindBool`, an Option/Result is REFUSED
+/// (#254 — no `ExecVal` optres variant), anything else is out-of-fragment.
+enum ExecResult {
+    /// An int-sorted result (`u32`/`u64`/`usize`); the `.int r` antecedent + the
+    /// `bindResult … (.int r)` = `bindInt … r.value` bridge (the bridge is the IDENTITY
+    /// on `BVal.value` — the result's declared width is NOT carried into the unbounded
+    /// `S_C` `Env`, which compares mathematical values).
+    Int,
+    /// A `bool` result; the `.bool b` antecedent + `bindResult … (.bool b)` =
+    /// `bindBool … b` (the §4.1.2 spine prerequisite).
+    Bool,
+}
+
+/// Classify a straight-line item's declared result type into its exec result kind, or
+/// the structured refusal (§4.1.3: optres → #254; else out-of-fragment).
+fn exec_result_of(ty: &Type) -> Result<ExecResult, ExportRefusal> {
+    if exec_int_ty(ty).is_some() {
+        return Ok(ExecResult::Int);
+    }
+    match ty {
+        Type::Prim(PrimType::Bool) => Ok(ExecResult::Bool),
+        // `Option<_>`/`Result<_,_>` are dedicated `Type` nodes (C7) — the optres
+        // result position is OUT (#254: `ExecVal` has no optres variant).
+        Type::Option(_) | Type::Result(_, _) => Err(ExportRefusal::OptResResult(format!("{ty:?}"))),
+        other => Err(ExportRefusal::OutOfFragment(format!(
+            "straight-line-body result type {other:?} is not an exec int/bool sort \
+             (§4.1 — the value bridge is over `ExecVal = int (BVal) | bool (Bool)`)"
+        ))),
+    }
+}
+
+/// The exec-body encoding context: the per-param exec widths (so a `var`/`intLit`
+/// reads at the right `IntTy`), the slice-param names (an `Index` over a slice base is
+/// `Exec.ExecExpr.index`), and the bound `let`/`assign` cell names (their declared
+/// width for re-reads). The exec side is fuel-free and has no spec-calls, so the
+/// context is purely the typing frame.
+#[derive(Debug, Clone, Default)]
+struct ExecCtx {
+    /// Scalar int param/cell name → its exec width ctor (`Thermite.Exec.IntTy.uW`).
+    int_width: BTreeMap<String, &'static str>,
+    /// Slice param names (`&[uW]`) → the element width ctor.
+    slice_elem: BTreeMap<String, &'static str>,
+    /// Bool param/cell names (read as a `boolLit`-shaped exec var — but the spine
+    /// `ExecExpr` has no bool-named var; a bool param/cell is read via `var`, whose
+    /// env value is a `.bool`, which `asInt` rejects in an int position and `asBool`
+    /// accepts in a bool position — so it is tracked for completeness only).
+    bool_names: std::collections::BTreeSet<String>,
+}
+
+impl ExecCtx {
+    /// The exec width ctor for a name (a param or a `let`/`assign` cell), defaulting to
+    /// `u64` (the dominant exec target) for an untyped fresh `let` cell whose width the
+    /// body does not pin — the literal/var width the spine reads at.
+    fn width_of(&self, name: &str) -> &'static str {
+        self.int_width
+            .get(name)
+            .copied()
+            .unwrap_or("Thermite.Exec.IntTy.u64")
+    }
+}
+
+/// Build the exec context from the item's params (the typing frame the exec-body
+/// encoder threads).
+fn exec_ctx_for_params(params: &[thermite_syntax::Param]) -> ExecCtx {
+    let mut ctx = ExecCtx::default();
+    for p in params {
+        sort_exec_param(&p.name, &p.ty, &mut ctx);
+    }
+    ctx
+}
+
+/// Sort one param into the exec typing frame: a slice `&[uW]` → a slice elem width; a
+/// scalar `uW` → its int width; a `bool` → the bool set.
+fn sort_exec_param(name: &str, ty: &Type, ctx: &mut ExecCtx) {
+    match ty {
+        Type::Ref { inner, .. } => sort_exec_param(name, inner, ctx),
+        Type::Slice(elem) => {
+            if let Some(w) = exec_int_ty(elem) {
+                ctx.slice_elem.insert(name.to_string(), w);
+            }
+        }
+        Type::Prim(PrimType::Bool) => {
+            ctx.bool_names.insert(name.to_string());
+        }
+        _ => {
+            if let Some(w) = exec_int_ty(ty) {
+                ctx.int_width.insert(name.to_string(), w);
+            }
+        }
+    }
+}
+
+/// Encode a Thermite [`Expr`] in EXEC position into its `Thermite.Exec.ExecExpr`
+/// constructor TERM (§4.1 — the exec-body value bridge; the `ExecExpr` arms of
+/// `Exec.lean`: `intLit`/`boolLit`/`var`/`arith`/`cmp`/`logic`/`not`/`cast`/`index`).
+/// `width` is the contextual int width a bare literal/var sits at. An OUT-of-`S_E`
+/// construct is a structured [`ExportRefusal`] — NEVER a silent omission.
+fn encode_exec_expr(e: &Expr, width: &str, ctx: &ExecCtx) -> Result<String, ExportRefusal> {
+    match e {
+        Expr::IntLit { value, .. } => {
+            Ok(format!("(Thermite.Exec.ExecExpr.intLit {width} {value})"))
+        }
+        Expr::BoolLit(b) => Ok(format!("(Thermite.Exec.ExecExpr.boolLit {b})")),
+        Expr::Path(segs) => {
+            if segs.len() != 1 {
+                return Err(ExportRefusal::OutOfFragment(format!(
+                    "qualified path {segs:?} in exec position (only single-segment names)"
+                )));
+            }
+            Ok(format!(
+                "(Thermite.Exec.ExecExpr.var {})",
+                lean_str(&segs[0])
+            ))
+        }
+        Expr::Binary { op, lhs, rhs } => encode_exec_binary(*op, lhs, rhs, width, ctx),
+        Expr::Unary { op, expr } => match op {
+            UnaryOp::Not => Ok(format!(
+                "(Thermite.Exec.ExecExpr.not {})",
+                encode_exec_expr(expr, width, ctx)?
+            )),
+        },
+        Expr::Cast { expr, ty } => {
+            let target = exec_cast_target(ty)?;
+            // The cast inner is read at its OWN width; the cast retypes to `target`.
+            Ok(format!(
+                "(Thermite.Exec.ExecExpr.cast {} {target})",
+                encode_exec_expr(expr, width, ctx)?
+            ))
+        }
+        Expr::Index { base, index } => encode_exec_index(base, index, ctx),
+        Expr::Ref { expr, .. } => encode_exec_expr(expr, width, ctx),
+        // OUT of `S_E`'s frozen subset (an honest refusal — §4.1 / §8 OUT):
+        Expr::MethodCall { name, .. } => Err(ExportRefusal::OutOfFragment(format!(
+            "method call `.{name}(..)` in exec-body position (S_E has no method calls)"
+        ))),
+        Expr::Call { .. } => Err(ExportRefusal::OutOfFragment(
+            "call in exec-body position (S_E has no spec-calls / fn-calls)".to_string(),
+        )),
+        Expr::If { .. } => Err(ExportRefusal::OutOfFragment(
+            "if-EXPRESSION in exec-value position (S_E has no if-expr; an if-STATEMENT \
+             is the `Stmt.ifElse` form)"
+                .to_string(),
+        )),
+        Expr::Match { .. } => Err(ExportRefusal::OutOfFragment(
+            "match in exec-body position (S_E has no match)".to_string(),
+        )),
+        other => Err(ExportRefusal::OutOfFragment(format!(
+            "exec-body construct {other:?} is outside S_E's frozen subset"
+        ))),
+    }
+}
+
+/// Encode a binary exec expr — comparison / logical / arithmetic — to the matching
+/// `Exec.lean` `ExecExpr` constructor (`cmp`/`logic`/`arith` over `COp`/`LOp`/`AOp`).
+fn encode_exec_binary(
+    op: BinOp,
+    lhs: &Expr,
+    rhs: &Expr,
+    width: &str,
+    ctx: &ExecCtx,
+) -> Result<String, ExportRefusal> {
+    let l = encode_exec_expr(lhs, width, ctx)?;
+    let r = encode_exec_expr(rhs, width, ctx)?;
+    let (ctor, op_name): (&str, &str) = match op {
+        BinOp::Eq => ("cmp", "Thermite.Exec.COp.eq"),
+        BinOp::Ne => ("cmp", "Thermite.Exec.COp.ne"),
+        BinOp::Lt => ("cmp", "Thermite.Exec.COp.lt"),
+        BinOp::Le => ("cmp", "Thermite.Exec.COp.le"),
+        BinOp::Gt => ("cmp", "Thermite.Exec.COp.gt"),
+        BinOp::Ge => ("cmp", "Thermite.Exec.COp.ge"),
+        BinOp::And => ("logic", "Thermite.Exec.LOp.and"),
+        BinOp::Or => ("logic", "Thermite.Exec.LOp.or"),
+        BinOp::Add => ("arith", "Thermite.Exec.AOp.add"),
+        BinOp::Sub => ("arith", "Thermite.Exec.AOp.sub"),
+        BinOp::Mul => ("arith", "Thermite.Exec.AOp.mul"),
+        BinOp::Div => ("arith", "Thermite.Exec.AOp.div"),
+        BinOp::Rem => ("arith", "Thermite.Exec.AOp.rem"),
+        BinOp::Shl => ("arith", "Thermite.Exec.AOp.shl"),
+        BinOp::Shr => ("arith", "Thermite.Exec.AOp.shr"),
+        BinOp::BitAnd => ("arith", "Thermite.Exec.AOp.bitAnd"),
+        BinOp::BitOr => ("arith", "Thermite.Exec.AOp.bitOr"),
+        BinOp::BitXor => ("arith", "Thermite.Exec.AOp.bitXor"),
+    };
+    Ok(format!("(Thermite.Exec.ExecExpr.{ctor} {op_name} {l} {r})"))
+}
+
+/// Encode an exec cast target to a `Thermite.Exec.IntTy` (the bounded-wrap cast,
+/// `Exec.lean`'s `castVal`). The exec domain wraps only to bounded int sorts (never
+/// `nat`/`int` — those are the unbounded `S_C` casts, OUT of `S_E`).
+fn exec_cast_target(ty: &Type) -> Result<&'static str, ExportRefusal> {
+    exec_int_ty(ty).ok_or_else(|| {
+        ExportRefusal::OutOfFragment(format!(
+            "exec cast target {ty:?} (S_E casts only to bounded u32/u64/usize)"
+        ))
+    })
+}
+
+/// Encode an exec `xs[i]` index over a SLICE param (`Exec.lean`'s `ExecExpr.index`).
+/// Only a single-element index over a slice-bound base is in `S_E` (a range borrow is
+/// a contract-side `S_C` form, not an exec value).
+fn encode_exec_index(
+    base: &Expr,
+    index: &IndexArg,
+    ctx: &ExecCtx,
+) -> Result<String, ExportRefusal> {
+    let slice_name = match base {
+        Expr::Path(segs) if segs.len() == 1 && ctx.slice_elem.contains_key(&segs[0]) => {
+            segs[0].clone()
+        }
+        other => {
+            return Err(ExportRefusal::OutOfFragment(format!(
+                "exec index base {other:?} is not a slice param (S_E indexes a slice param only)"
+            )))
+        }
+    };
+    match index {
+        IndexArg::Single(i) => Ok(format!(
+            "(Thermite.Exec.ExecExpr.index {} {})",
+            lean_str(&slice_name),
+            // The index expr is read at `usize` width (the exec index sort).
+            encode_exec_expr(i, "Thermite.Exec.IntTy.usize", ctx)?
+        )),
+        _ => Err(ExportRefusal::OutOfFragment(
+            "exec range index (S_E has only single-element `xs[i]`; a range is a \
+             contract-side subrange)"
+                .to_string(),
+        )),
+    }
+}
+
+/// Encode a straight-line `Block` (the `S_B` subset) into its `Thermite.Exec.Block`
+/// constructor TERM (§4.1 — the `Stmt`/`Block` arms of `Exec/Stmt.lean`:
+/// `letS`/`assign`/`exprS`/`ifElse` + the `Block.mk stmts tail`). A loop / break /
+/// continue / mid-body return / non-scalar mutation is a structured
+/// [`ExportRefusal::LoopBody`] (§4.1.7). `ctx` threads the declared widths (a fresh
+/// `let` cell records its annotated width, else `u64`).
+fn encode_exec_block(b: &Block, ctx: &ExecCtx) -> Result<String, ExportRefusal> {
+    let mut ctx = ctx.clone();
+    let mut stmt_terms = Vec::new();
+    for stmt in &b.stmts {
+        stmt_terms.push(encode_exec_stmt(stmt, &mut ctx)?);
+    }
+    let tail = match &b.tail {
+        Some(t) => format!(
+            "(some {})",
+            encode_exec_expr(t, "Thermite.Exec.IntTy.u64", &ctx)?
+        ),
+        None => "none".to_string(),
+    };
+    Ok(format!(
+        "(Thermite.Exec.Block.mk [{}] {tail})",
+        stmt_terms.join(", ")
+    ))
+}
+
+/// Encode one straight-line `Stmt` into its `Thermite.Exec.Stmt` constructor TERM
+/// (§4.1 — `letS`/`assign`/`exprS`/`ifElse`). Mutates `ctx` to record a fresh `let`
+/// cell's width. A loop-class / non-scalar-mutation / mid-body-return / break /
+/// continue statement is a structured [`ExportRefusal::LoopBody`] (§4.1.7).
+fn encode_exec_stmt(stmt: &Stmt, ctx: &mut ExecCtx) -> Result<String, ExportRefusal> {
+    match stmt {
+        Stmt::Let { name, ty, init, .. } => {
+            // A `let x = e`: the RHS reads at the cell's declared width (or `u64`).
+            let width = ty
+                .as_ref()
+                .and_then(exec_int_ty)
+                .unwrap_or("Thermite.Exec.IntTy.u64");
+            let init_term = encode_exec_expr(init, width, ctx)?;
+            // Record the cell's width so a later `var x` reads at it.
+            if let Some(w) = ty.as_ref().and_then(exec_int_ty) {
+                ctx.int_width.insert(name.clone(), w);
+            } else {
+                ctx.int_width.insert(name.clone(), width);
+            }
+            Ok(format!(
+                "(Thermite.Exec.Stmt.letS {} {init_term})",
+                lean_str(name)
+            ))
+        }
+        Stmt::Assign { target, value } => {
+            // The v1 mutation form is `x = e` over a bare scalar `Path[x]` target; a
+            // non-scalar `xs[i] = e` / `m.field = e` is OUT (§4.1.7).
+            let name = match target {
+                Expr::Path(segs) if segs.len() == 1 => segs[0].clone(),
+                other => {
+                    return Err(ExportRefusal::LoopBody(format!(
+                        "non-scalar assignment target {other:?} (S_B mutates only a bare \
+                         scalar cell; `xs[i]=e` / `m.field=e` is OUT)"
+                    )))
+                }
+            };
+            let width = ctx.width_of(&name);
+            let value_term = encode_exec_expr(value, width, ctx)?;
+            Ok(format!(
+                "(Thermite.Exec.Stmt.assign {} {value_term})",
+                lean_str(&name)
+            ))
+        }
+        Stmt::Expr(e) => Ok(format!(
+            "(Thermite.Exec.Stmt.exprS {})",
+            encode_exec_expr(e, "Thermite.Exec.IntTy.u64", ctx)?
+        )),
+        Stmt::If { cond, then, else_ } => {
+            // An if-STATEMENT (`Stmt.ifElse`) over sub-blocks. An `if` with no `else`
+            // has an empty (tail-less) else block — the spine's `ifElse` requires both
+            // branches, so a missing else is the empty block `Block.mk [] none`.
+            let cond_term = encode_exec_expr(cond, "Thermite.Exec.IntTy.u64", ctx)?;
+            let then_term = encode_exec_block(then, ctx)?;
+            let else_term = match else_ {
+                Some(eb) => encode_exec_block(eb, ctx)?,
+                None => "(Thermite.Exec.Block.mk [] none)".to_string(),
+            };
+            Ok(format!(
+                "(Thermite.Exec.Stmt.ifElse {cond_term} {then_term} {else_term})"
+            ))
+        }
+        Stmt::Return(_) => Err(ExportRefusal::LoopBody(
+            "mid-body `return` (S_B has no early return — the body's result is its tail)"
+                .to_string(),
+        )),
+        Stmt::Loop(node) => Err(ExportRefusal::LoopBody(format!(
+            "`{}` loop body (§4.1.7 — S_B mechanizes NO loop form; the while/loop \
+             residual is the future increment)",
+            node.kind.surface_keyword()
+        ))),
+        Stmt::Break => Err(ExportRefusal::LoopBody(
+            "`break` (a loop-control statement; S_B has no loops — §4.1.7)".to_string(),
+        )),
+        Stmt::Continue => Err(ExportRefusal::LoopBody(
+            "`continue` (a loop-control statement; S_B has no loops — §4.1.7)".to_string(),
+        )),
+    }
+}
+
+/// Emit the generator's `stateOf : Thermite.Env → Thermite.Exec.State` (§4.1.4), the
+/// `InRangeParams` typed-input premise, and the per-param correspondence `rfl`-lemmas
+/// (the §4.1.4 compile-time tripwire). Returns `(state_of_def, lemmas, in_range_pred)`.
+///
+/// `scope := fun _ => false` — params are free INPUTS, not `let`-bound cells (the
+/// spine's `inputState` exemplar; EXP-verified faithful against `body_ref_state`'s
+/// EMPTY initial env — a body `assign` to a param is `none` on both sides).
+fn emit_state_of(params: &[thermite_syntax::Param]) -> (String, String, String) {
+    // The `vars` arms: each int/bool scalar param → its State cell; the slice arm:
+    // each slice param → its element sequence at the elem width.
+    let mut var_arms: Vec<String> = Vec::new();
+    let mut slice_arms: Vec<String> = Vec::new();
+    let mut lemmas: Vec<String> = Vec::new();
+    let mut in_range: Vec<String> = Vec::new();
+    for p in params {
+        let name = &p.name;
+        let ls = lean_str(name);
+        if let Some(ctor) = exec_int_ty(&p.ty) {
+            // A scalar int param: cell `.int ⟨ctor, v.ints name⟩`.
+            var_arms.push(format!(
+                "if s = {ls} then Thermite.Exec.ExecVal.int ⟨{ctor}, v.ints {ls}⟩"
+            ));
+            // The correspondence `rfl`-lemma + the InRangeParams premise.
+            lemmas.push(format!(
+                "example (v : Thermite.Env) : \
+                 Thermite.Exec.asInt ((stateOf v).env.vars {ls}) = some ⟨{ctor}, v.ints {ls}⟩ := \
+                 rfl"
+            ));
+            in_range.push(format!("(0 ≤ v.ints {ls} ∧ v.ints {ls} < ({ctor}).bound)"));
+        } else if matches!(param_scalar_kind(&p.ty), ScalarKind::Bool) {
+            // A bool param: cell `.bool (v.bools name)`.
+            var_arms.push(format!(
+                "if s = {ls} then Thermite.Exec.ExecVal.bool (v.bools {ls})"
+            ));
+            lemmas.push(format!(
+                "example (v : Thermite.Env) : \
+                 Thermite.Exec.asBool ((stateOf v).env.vars {ls}) = some (v.bools {ls}) := rfl"
+            ));
+        } else if let Some(elem_ctor) = slice_elem_ctor(&p.ty) {
+            // A slice param: `slices name = (v.seqs name).map (⟨elem_ctor, ·⟩)`.
+            slice_arms.push(format!(
+                "if s = {ls} then (v.seqs {ls}).map (fun n => ⟨{elem_ctor}, n⟩)"
+            ));
+            lemmas.push(format!(
+                "example (v : Thermite.Env) : \
+                 ((stateOf v).env.slices {ls}).map Thermite.Exec.BVal.value = v.seqs {ls} := rfl"
+            ));
+            // Per slice element: in range at the elem width.
+            in_range.push(format!(
+                "(∀ n ∈ v.seqs {ls}, 0 ≤ n ∧ n < ({elem_ctor}).bound)"
+            ));
+        }
+    }
+    let vars_body = if var_arms.is_empty() {
+        "fun _ => Thermite.Exec.ExecVal.int ⟨Thermite.Exec.IntTy.u64, 0⟩".to_string()
+    } else {
+        format!(
+            "fun s => {} else Thermite.Exec.ExecVal.int ⟨Thermite.Exec.IntTy.u64, 0⟩",
+            var_arms.join(" else ")
+        )
+    };
+    let slices_body = if slice_arms.is_empty() {
+        "fun _ => []".to_string()
+    } else {
+        format!("fun s => {} else []", slice_arms.join(" else "))
+    };
+    let state_of = format!(
+        "def stateOf (v : Thermite.Env) : Thermite.Exec.State :=\n  \
+         {{ env := {{ vars := {vars_body}\n             \
+         slices := {slices_body} }}\n    \
+         scope := fun _ => false }}"
+    );
+    let lemma_block = lemmas.join("\n");
+    let in_range_pred = if in_range.is_empty() {
+        "True".to_string()
+    } else {
+        in_range.join(" ∧ ")
+    };
+    (state_of, lemma_block, in_range_pred)
+}
+
+/// The scalar kind of a param type (for the `stateOf` cell routing).
+enum ScalarKind {
+    Int,
+    Bool,
+    Other,
+}
+
+/// Classify a param type into its scalar kind (peeling references).
+fn param_scalar_kind(ty: &Type) -> ScalarKind {
+    match ty {
+        Type::Ref { inner, .. } => param_scalar_kind(inner),
+        Type::Prim(PrimType::Bool) => ScalarKind::Bool,
+        _ if exec_int_ty(ty).is_some() => ScalarKind::Int,
+        _ => ScalarKind::Other,
+    }
+}
+
+/// The element width ctor of a slice param `&[uW]`, or `None` for a non-slice / a
+/// non-int element slice.
+fn slice_elem_ctor(ty: &Type) -> Option<&'static str> {
+    match ty {
+        Type::Ref { inner, .. } => slice_elem_ctor(inner),
+        Type::Slice(elem) => exec_int_ty(elem),
+        _ => None,
+    }
+}
+
+/// Emit the HYPOTHESIZE CONTRACT theorem + the conjoined OVERFLOW theorem for a
+/// straight-line-body item (§4.1.5 — the #212(b) resolution + the conjunction rule).
+/// Both are over `R_item` (held fixed) and the fuel-free `denote 0` clause forms (the
+/// pure-contract tier-(a)/(b) machinery, VERBATIM); the auto battery discharges both.
+#[allow(clippy::too_many_arguments)]
+fn emit_body_theorems(
+    thm_name: &str,
+    req_term: &str,
+    ens_term: &str,
+    body_term: &str,
+    state_of_def: &str,
+    state_of_lemmas: &str,
+    in_range_pred: &str,
+    result: &ExecResult,
+) -> String {
+    // The result binder + the `bindResult` value bridge (§4.1.1/§4.1.2).
+    let (binder, bind_result): (String, String) = match result {
+        ExecResult::Int => (
+            "(r : Thermite.Exec.BVal)".to_string(),
+            "(Thermite.Exec.bindResult ({ v with specs := R_item } : Thermite.Env) \
+             (Thermite.Exec.ExecVal.int r))"
+                .to_string(),
+        ),
+        ExecResult::Bool => (
+            "(b : Bool)".to_string(),
+            "(Thermite.Exec.bindResult ({ v with specs := R_item } : Thermite.Env) \
+             (Thermite.Exec.ExecVal.bool b))"
+                .to_string(),
+        ),
+    };
+    let result_val = match result {
+        ExecResult::Int => "(Thermite.Exec.ExecVal.int r)",
+        ExecResult::Bool => "(Thermite.Exec.ExecVal.bool b)",
+    };
+    let body_battery = exec_body_tactic_battery();
+    let overflow_battery = exec_overflow_tactic_battery();
+    format!(
+        "/-- The exec-body straight-line `Block` (§4.1 — the `S_B` subset). -/\n\
+         def body_block : Thermite.Exec.Block := {body_term}\n\n\
+         /-- The env→State map (§4.1.4): params → State cells (scope := false, the\n    \
+         spine's `inputState` exemplar — a body `assign` to a param is `none`). -/\n\
+         {state_of_def}\n\n\
+         {lemmas}\n\n\
+         /-- {thm_name}: the HYPOTHESIZE CONTRACT obligation (§4.1.5). The result is\n    \
+         bound THROUGH `bodyConverges` (uniqueness FREE — `bodyDenote` is a function);\n    \
+         the OVERFLOW class is conjoined as `{thm_name}_overflow` (the soundness\n    \
+         condition making the vacuous-on-overflow case harmless). -/\n\
+         theorem {thm_name} (v : Thermite.Env) :\n    \
+         ({in_range_pred}) →\n    \
+         ∀ {binder},\n    \
+         Thermite.Exec.bodyConverges body_block (stateOf v) {result_val} →\n    \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
+         Thermite.denote 0 {ens_term} {bind_result} := by\n\
+         {body_battery}\n\n\
+         /-- {thm_name}_overflow: the conjoined OVERFLOW obligation (§4.1.5) — under\n    \
+         the precondition every 2a obligation threaded through the body discharges\n    \
+         (`bodyDenote … |>.isSome`). A Lean-only straight-line item certifies ONLY when\n    \
+         BOTH this AND the CONTRACT theorem kernel-accept (the conjunction rule). -/\n\
+         theorem {thm_name}_overflow (v : Thermite.Env) :\n    \
+         ({in_range_pred}) →\n    \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
+         (Thermite.Exec.bodyDenote body_block (stateOf v)).isSome := by\n\
+         {overflow_battery}",
+        lemmas = state_of_lemmas,
+    )
+}
+
+/// The AUTO tactic battery for the HYPOTHESIZE CONTRACT body theorem (§4.1.5 / REQ-7).
+/// Introduces the premises, unfolds the `bodyConverges` antecedent + the value bridge,
+/// then the same `decide`/`simp`/`omega` battery the pure-contract path uses.
+fn exec_body_tactic_battery() -> &'static str {
+    "  intro hrange r hconv hreq\n  \
+     simp only [Thermite.Exec.bodyConverges, body_block, stateOf,\n    \
+     Thermite.Exec.bodyDenote, Thermite.Exec.blockThread, Thermite.Exec.stmtDenote,\n    \
+     Thermite.Exec.Block.blkTail, Thermite.Exec.execDenote, Thermite.Exec.State.setVar,\n    \
+     Thermite.Exec.State.bind, Thermite.Exec.State.restoreScope] at hconv\n  \
+     simp at hconv\n  \
+     simp only [Thermite.Exec.bindResult, Thermite.Env.bindInt, Thermite.Env.bindBool,\n    \
+     Thermite.denote, Thermite.intVal, Thermite.arithDenote, Thermite.castDenote]\n  \
+     first\n    \
+     | (subst hconv; simp_all)\n    \
+     | (subst hconv; simp_all <;> omega)\n    \
+     | simp_all\n    \
+     | (simp_all; omega)\n    \
+     | omega"
+}
+
+/// The AUTO tactic battery for the conjoined OVERFLOW theorem (§4.1.5): under the
+/// precondition the body's `bodyDenote` is `some` (every threaded obligation
+/// discharges). Unfolds the body denotation and discharges by `decide`/`omega`.
+fn exec_overflow_tactic_battery() -> &'static str {
+    "  intro hrange hreq\n  \
+     simp only [stateOf, body_block, Thermite.Exec.bodyDenote, Thermite.Exec.blockThread,\n    \
+     Thermite.Exec.stmtDenote, Thermite.Exec.Block.blkTail, Thermite.Exec.execDenote,\n    \
+     Thermite.Exec.State.setVar, Thermite.Exec.State.bind, Thermite.Exec.State.restoreScope]\n  \
+     first\n    \
+     | rfl\n    \
+     | decide\n    \
+     | simp\n    \
+     | (simp_all)\n    \
+     | (simp_all; omega)"
+}
+
 /// Export a checked PURE-CONTRACT item to a self-contained Lean file
 /// (`.design/verified/proof-backends.md` REQ-6/REQ-7 — the top-level exporter).
 ///
@@ -1461,6 +2090,18 @@ pub fn export_item(
                     f.name
                 ))
             })?;
+            // THE EXEC-BODY DISPATCH (§4.1 / REQ-10, increment (iv-b)): a body that is
+            // NOT a single pure tail `Expr` (it has statements — let/assign/expr/if/
+            // sequencing) OR whose result is a non-int (bool) sort is a STRAIGHT-LINE
+            // `S_B` item — route to the exec-body exporter (the HYPOTHESIZE + conjoined
+            // OVERFLOW theorems over `bodyDenote`/`stateOf`). A pure-int-tail body keeps
+            // the §4 pure-contract path below (unchanged — the SHIPPED path is NOT
+            // churned, the design's "a pure-`intVal` tail body keeps the §4 form").
+            let is_pure_int_tail =
+                pure_tail_of_block(body_block).is_some() && result_is_int_sorted(&f.ret);
+            if !is_pure_int_tail {
+                return export_straight_line_body(obligation, f, &decls);
+            }
             let body = pure_tail_of_block(body_block)
                 .ok_or_else(|| {
                     ExportRefusal::NotPureContract(format!(
@@ -1677,6 +2318,298 @@ pub fn export_item(
     })
 }
 
+/// Export a checked STRAIGHT-LINE-BODY item to a self-contained Lean file (§4.1 /
+/// REQ-10, increment (iv-b)). The body is the `S_B` block (let/assign/expr/if-stmt/
+/// sequencing + a tail exec expr) the spine mechanizes as `Thermite.Exec.bodyDenote`;
+/// the result is an exec int (the `BVal.value` bridge) or `bool` (the `bindBool`
+/// bridge). Loops / break / continue / mid-body return / non-scalar mutation → the
+/// `ExportRefusal::LoopBody` structured refusal (§4.1.7); an Option/Result result →
+/// `ExportRefusal::OptResResult` (#254). Emits BOTH the HYPOTHESIZE CONTRACT theorem
+/// AND the conjoined OVERFLOW theorem (the §4.1.5 conjunction rule) over `R_item`.
+///
+/// The contract clause side (`req`/`ens`) keeps the §4 fuel-free tier-(a) machinery
+/// VERBATIM (a straight-line body's exec exprs CANNOT contain spec-calls, so the body
+/// contributes ∅ to the #226 `calledSpecFns` seed); a recursive-registry contract is
+/// the future interactive residual (refused here as out-of-fragment for the auto path).
+fn export_straight_line_body(
+    obligation: &Obligation,
+    f: &thermite_syntax::FnItem,
+    decls: &BTreeMap<String, SpecFnItem>,
+) -> Result<ExportedObligation, ExportRefusal> {
+    let body_block = f.body.as_ref().ok_or_else(|| {
+        ExportRefusal::NotPureContract(format!(
+            "fn `{}` is a boundary fn (no in-language body)",
+            f.name
+        ))
+    })?;
+
+    // The result-sort routing (§4.1.1/§4.1.2/§4.1.3): int → BVal.value bridge, bool →
+    // bindBool bridge, optres → #254 refusal, else out-of-fragment.
+    let result = exec_result_of(&f.ret)?;
+
+    // The contract clauses (the §4 form). `result` reads as `Expr.var "result"` (int)
+    // or `Expr.boolVar "result"` (bool) — the spine's bool-result read.
+    let req = f.contract.req.expr.clone();
+    let ens: Vec<Expr> = f.contract.ens.iter().map(|c| c.expr.clone()).collect();
+    let dec = f.dec.as_ref().map(|c| c.expr.clone());
+    let params = f.params.clone();
+
+    // The contract-side env coercion frame (sorts free names: slice→seqVar, etc.).
+    let ctx = ctx_for_params(&params);
+
+    // THE HARD GATE (§4 mechanism 1) over req/ens/dec — the body contributes NO
+    // spec-calls (exec exprs have none), so the seed is the contract closure. We reuse
+    // the obligation's `called` closure + the same coverage re-check the pure path runs.
+    let called = &obligation.env.spec_defs;
+    let mut direct: Vec<String> = Vec::new();
+    collect_all_call_names(&req, &mut direct);
+    for e in &ens {
+        collect_all_call_names(e, &mut direct);
+    }
+    if let Some(d) = &dec {
+        collect_all_call_names(d, &mut direct);
+    }
+    let mut present: std::collections::BTreeSet<String> = direct.into_iter().collect();
+    let mut worklist: Vec<String> = present.iter().cloned().collect();
+    while let Some(n) = worklist.pop() {
+        if let Some(d) = decls.get(&n) {
+            let mut sub = Vec::new();
+            collect_all_block_call_names(&d.body, &mut sub);
+            collect_all_call_names(&d.dec.expr, &mut sub);
+            for c in sub {
+                if present.insert(c.clone()) {
+                    worklist.push(c);
+                }
+            }
+        }
+    }
+    let undefined: Vec<String> = present
+        .iter()
+        .filter(|n| !decls.contains_key(*n))
+        .cloned()
+        .collect();
+    if !undefined.is_empty() {
+        return Err(ExportRefusal::IncompleteRegistry(undefined));
+    }
+    let omitted: Vec<String> = present
+        .iter()
+        .filter(|n| !called.iter().any(|c| c == *n))
+        .cloned()
+        .collect();
+    if !omitted.is_empty() {
+        return Err(ExportRefusal::IncompleteRegistry(omitted));
+    }
+
+    // For v1 the exec-body AUTO path is the FUEL-FREE tier-(a) contract form: a
+    // recursive registry on the CONTRACT side is the future interactive residual (the
+    // exec body itself never has spec-calls). A NON-recursive registry statically
+    // unfolds the contract clauses (tier (b)); a recursive one refuses the auto path.
+    let body_tier = tier_of(Some(&req), &ens, &req, dec.as_ref(), called, decls);
+    if body_tier == ExportTier::RecursiveInteractive {
+        return Err(ExportRefusal::OutOfFragment(format!(
+            "fn `{}` has a RECURSIVE-registry contract clause over a straight-line body \
+             (the §4 stabilized form is the interactive residual; the exec-body AUTO path \
+             is the fuel-free / static-unfold contract tier only)",
+            f.name
+        )));
+    }
+    let (req_c, ens_c): (Expr, Vec<Expr>) = if body_tier == ExportTier::StaticUnfoldAuto {
+        (
+            unfold_spec_calls(&req, decls)?,
+            ens.iter()
+                .map(|e| unfold_spec_calls(e, decls))
+                .collect::<Result<_, _>>()?,
+        )
+    } else {
+        (req.clone(), ens.clone())
+    };
+
+    let (registry_block, registry_names) = build_registry(called, decls)?;
+
+    // Encode the contract clauses (req/ens) — an OUT-of-fragment construct refuses
+    // before any file is emitted. The `result` read in `ens` is `var "result"` (int)
+    // or `boolVar "result"` (bool) — for a bool result, the encoder produces a
+    // `var "result"` from the `Path`, but the bool-sorted read needs `boolVar`; we
+    // rewrite a `result` path read to the bool leaf for a bool-result item.
+    let bool_result = matches!(result, ExecResult::Bool);
+    let req_term = encode_contract_clause(&req_c, &ctx, bool_result)?;
+    let ens_terms = ens_c
+        .iter()
+        .map(|e| encode_contract_clause(e, &ctx, bool_result))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ens_term = conjoin(&ens_terms);
+
+    // Encode the exec BODY block (the `S_B` Block). A loop / non-scalar mutation / etc.
+    // is a structured `LoopBody` refusal (§4.1.7).
+    let exec_ctx = exec_ctx_for_params(&params);
+    let body_term = encode_exec_block(body_block, &exec_ctx)?;
+
+    // The env→State map + the per-param correspondence lemmas + the InRangeParams pred.
+    let (state_of_def, state_of_lemmas, in_range_pred) = emit_state_of(&params);
+
+    let thm_name = format!("thermite_obligation_{}", sanitize(&obligation.item));
+    let theorems = emit_body_theorems(
+        &thm_name,
+        &req_term,
+        &ens_term,
+        &body_term,
+        &state_of_def,
+        &state_of_lemmas,
+        &in_range_pred,
+        &result,
+    );
+
+    let source = format!(
+        "/- AUTO-GENERATED by `forge` (lean_export.rs) — the Thermite→Lean EXEC-BODY\n   \
+         obligation exporter (proof-backends.md REQ-10 / §4.1, increment (iv-b)). Item:\n   \
+         `{item}`, straight-line-body class. Instantiates the kernel-proven spine\n   \
+         (`lean/Thermite/Exec/Stmt.lean` `bodyDenote`/`bodyConverges`/`bindResult`); do\n   \
+         NOT edit by hand. -/\n\
+         import Thermite.Stabilize\n\
+         import Thermite.Exec.Stmt\n\n\
+         {registry_block}\n\n\
+         {theorems}\n",
+        item = obligation.item,
+    );
+
+    // The independent re-check (Pin G blind-spot fix): a residual contract-side
+    // `specCall` must be registered. The exec body never carries a `specCall`.
+    for name in emitted_spec_call_names(&theorems) {
+        if !registry_names.iter().any(|r| r == &name) {
+            return Err(ExportRefusal::IncompleteRegistry(vec![name]));
+        }
+    }
+
+    Ok(ExportedObligation {
+        source,
+        // The exec-body AUTO path: the contract clause's tier (a)/(b) drives the auto
+        // battery; the body antecedent is always fuel-free.
+        tier: body_tier,
+        registry_names,
+    })
+}
+
+/// Encode a contract clause `Expr`, rewriting a `result` free-name read to the
+/// bool-sorted `Expr.boolVar "result"` leaf when the item's result is `bool` (the
+/// §4.1.2 spine prerequisite — a bool `result` is read via `boolVar`, NOT `var`).
+fn encode_contract_clause(
+    e: &Expr,
+    ctx: &EncodeCtx,
+    bool_result: bool,
+) -> Result<String, ExportRefusal> {
+    if bool_result {
+        if let Expr::Path(segs) = e {
+            if segs.len() == 1 && segs[0] == "result" {
+                return Ok(format!("(Thermite.Expr.boolVar {})", lean_str("result")));
+            }
+        }
+        // Recurse, rewriting nested `result` reads.
+        return encode_expr_bool_result(e, ctx);
+    }
+    encode_expr(e, ctx)
+}
+
+/// Encode an `Expr` with a bool-sorted `result` read rewritten to `Expr.boolVar
+/// "result"` at every position (the §4.1.2 read for a bool-result item). Mirrors
+/// `encode_expr`'s recursion on the structural cases that can carry `result`; defers
+/// to `encode_expr` for leaves. Deterministic (R-CODE-5).
+fn encode_expr_bool_result(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
+    // A bool `result` read is `Expr.boolVar "result"` (Prop = `env.bools result = true`).
+    let is_result =
+        |x: &Expr| matches!(x, Expr::Path(segs) if segs.len() == 1 && segs[0] == "result");
+    match e {
+        Expr::Path(segs) if segs.len() == 1 && segs[0] == "result" => {
+            Ok(format!("(Thermite.Expr.boolVar {})", lean_str("result")))
+        }
+        // `result == true` / `result == false` (and the symmetric forms): a bool
+        // equality on `result` is the bool-sorted Prop `boolVar result` (vs `true`) or
+        // its negation (vs `false`) — NOT a `cmp` (the spine compares Ints; a `cmp` on a
+        // bool-sorted node bottoms BOTH operands to `0` and is vacuously equal, the Pin H
+        // degeneracy). The genuine bool sort keeps the polarities distinguishable.
+        Expr::Binary {
+            op: BinOp::Eq,
+            lhs,
+            rhs,
+        } => {
+            let bool_lit = |x: &Expr| {
+                matches!(x, Expr::BoolLit(_)).then(|| match x {
+                    Expr::BoolLit(b) => *b,
+                    _ => false,
+                })
+            };
+            if is_result(lhs) {
+                if let Some(b) = bool_lit(rhs) {
+                    let body = format!("(Thermite.Expr.boolVar {})", lean_str("result"));
+                    return Ok(if b {
+                        body
+                    } else {
+                        format!("(Thermite.Expr.neg {body})")
+                    });
+                }
+            }
+            if is_result(rhs) {
+                if let Some(b) = bool_lit(lhs) {
+                    let body = format!("(Thermite.Expr.boolVar {})", lean_str("result"));
+                    return Ok(if b {
+                        body
+                    } else {
+                        format!("(Thermite.Expr.neg {body})")
+                    });
+                }
+            }
+            // `result == p` (two bool names) → `(boolVar result) ↔ (boolVar p)` modelled
+            // as `(result ∧ p) ∨ (¬result ∧ ¬p)`; for v1 we leave the general bool-eq to
+            // the int encoder (it is outside the discharged battery — never a false
+            // Proven, an honest non-proof).
+            encode_expr(e, ctx)
+        }
+        Expr::Binary {
+            op: BinOp::Ne,
+            lhs,
+            rhs,
+        } if is_result(lhs) || is_result(rhs) => {
+            // `result != b` is the negation of `result == b`.
+            let eq = Expr::Binary {
+                op: BinOp::Eq,
+                lhs: lhs.clone(),
+                rhs: rhs.clone(),
+            };
+            Ok(format!(
+                "(Thermite.Expr.neg {})",
+                encode_expr_bool_result(&eq, ctx)?
+            ))
+        }
+        Expr::Binary {
+            op: BinOp::And,
+            lhs,
+            rhs,
+        } => Ok(format!(
+            "(Thermite.Expr.logic Thermite.LogOp.and {} {})",
+            encode_expr_bool_result(lhs, ctx)?,
+            encode_expr_bool_result(rhs, ctx)?
+        )),
+        Expr::Binary {
+            op: BinOp::Or,
+            lhs,
+            rhs,
+        } => Ok(format!(
+            "(Thermite.Expr.logic Thermite.LogOp.or {} {})",
+            encode_expr_bool_result(lhs, ctx)?,
+            encode_expr_bool_result(rhs, ctx)?
+        )),
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => Ok(format!(
+            "(Thermite.Expr.neg {})",
+            encode_expr_bool_result(expr, ctx)?
+        )),
+        // Any other position cannot carry a bool `result` in the v1 fragment — use the
+        // int encoder (a comparison between Int operands, a logical connective).
+        _ => encode_expr(e, ctx),
+    }
+}
+
 /// Scan an emitted Lean term string for `Thermite.Expr.specCall "NAME"` occurrences
 /// and return the `NAME`s (the GENUINELY-INDEPENDENT re-check support, Pin G). This
 /// inspects the RENDERED bytes the kernel sees — NOT the Thermite AST — so it has no
@@ -1876,37 +2809,37 @@ mod tests {
         }
     }
 
-    // #244 / Pin H — THE RESULT-SORT GATE: a `-> bool` item must REFUSE with
-    // `NonIntResult` (its body bottoms to 0 in intVal, so a contract AND its negation
-    // both certify). Expected from §4 SCOPE / §4.1 (R-CHAR-3) — the pin's
-    // `thermite_obligation_always_ens_{true,false}` both-prove degeneracy.
+    // #253 §4.1.2 — THE BOOL-RESULT BRIDGE (supersedes the #244 `NonIntResult`
+    // refusal): a `-> bool` straight-line-body item is now EXPORTED through the
+    // `bindBool` bridge — the result reads as `Expr.boolVar "result"` and binds via
+    // `Env.bindBool`, NOT the Int-0/1 route Pin H rejected. The genuine bool sort makes
+    // `result == true` and `result == false` DISTINGUISHABLE (the §4.1.2 spine
+    // prerequisite), so a bool contract is no longer vacuously self-certifying.
+    // Expected from §4.1.2 (R-CHAR-3) — the bridge resolves the Pin H concern.
     #[test]
-    fn bool_result_item_refuses_export() {
-        let p =
-            parse_one("fn always(a: u32) -> bool req true ens result == true fx pure { false }");
-        let o = fn_obl(&p, "always", vec![]);
-        if let Some(item) = find_item(&p, "always") {
-            assert!(
-                matches!(
-                    export_item(&o, &p, item),
-                    Err(ExportRefusal::NonIntResult(_))
+    fn bool_result_item_exports_via_bindbool() {
+        let p = parse_one("fn t(a: u32) -> bool req true ens result == true fx pure { true }");
+        let o = fn_obl(&p, "t", vec![]);
+        if let Some(item) = find_item(&p, "t") {
+            match export_item(&o, &p, item) {
+                Ok(e) => {
+                    assert!(
+                        e.source.contains("Thermite.Expr.boolVar \"result\""),
+                        "the bool result reads via boolVar (NOT the Int-0/1 route): {}",
+                        e.source
+                    );
+                    assert!(
+                        e.source.contains("Thermite.Exec.ExecVal.bool b")
+                            && e.source.contains("Thermite.Exec.bindResult"),
+                        "the bool antecedent binds via .bool b + bindResult: {}",
+                        e.source
+                    );
+                }
+                other => assert!(
+                    other.is_ok(),
+                    "a bool-result body item must EXPORT: {other:?}"
                 ),
-                "a bool-returning item must REFUSE (NonIntResult)"
-            );
-        }
-        // The negated contract on the SAME bool item ALSO refuses (the pin's both-prove
-        // degeneracy is walled off at export for both polarities).
-        let p2 =
-            parse_one("fn always(a: u32) -> bool req true ens result == false fx pure { false }");
-        let o2 = fn_obl(&p2, "always", vec![]);
-        if let Some(item2) = find_item(&p2, "always") {
-            assert!(
-                matches!(
-                    export_item(&o2, &p2, item2),
-                    Err(ExportRefusal::NonIntResult(_))
-                ),
-                "the negated bool contract also refuses"
-            );
+            }
         }
     }
 

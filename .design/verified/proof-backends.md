@@ -114,7 +114,10 @@ build-blockers:
     `body_overflow_rhs_has_no_result`); and the FOUR bridge pins (`PinExecValueBridge`/
     `PinExecBoolBind`/`PinExecOverflowVacuity`/`PinExecStateMisMap`). The EXPORTER (`forge`:
     `stateOf`/`InRangeParams`/the HYPOTHESIZE-theorem emission + the `ExportRefusal` narrowing) is
-    part (iv-b), still open under #253. See REQ-10's SPINE-PREREQUISITE sub-rows.
+    part (iv-b), SHIPPED (#253) — `forge/src/lean_export.rs::export_straight_line_body` +
+    `emit_state_of` + `emit_body_theorems` + the exec-body encoder `encode_exec_block`/
+    `encode_exec_stmt`/`encode_exec_expr`, with the `LoopBody`/`OptResResult` refusals; LIVE
+    lake tests in `forge/src/engine.rs`. See REQ-10's SPINE-PREREQUISITE sub-rows.
 -->
 
 ## Summary
@@ -291,12 +294,35 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
       `seqs → slices` map makes a RIGHT `xs[0]` body fail to converge; the per-param correspondence
       `rfl`-lemma agrees for the faithful map, fails `[] ≠ [7]` for the dropped — the §4.1.4
       compile-time tripwire).
-    - **REQ-10.3/REQ-10.6 NOT-STARTED** — the generator-emitted `stateOf`/`InRangeParams` EMISSION,
-      the HYPOTHESIZE-form THEOREM emission, and the `ExportRefusal::NotPureContract` narrowing are
-      the EXPORTER-side (`forge`) work of part (iv-b), open under blocker #253. (The `stateOf`
-      mis-map is exporter-side but its divergence IS pinned spine-side by `PinExecStateMisMap.lean`,
-      authored here per §4.1.6.) **REQ-10.3 (the env→State correspondence) emission + REQ-10.6
-      (the structured loop refusal): NOT-STARTED, blocker #253 part (iv-b).**
+    - **REQ-10.1/REQ-10.3/REQ-10.4/REQ-10.6 SHIPPED (exporter side, #253 part iv-b)** — the
+      EXPORTER-side (`forge/src/lean_export.rs`) emission landed: `export_item` routes a
+      STRAIGHT-LINE-BODY `Item::Fn` (a body WITH statements, or a `bool` result) to
+      `export_straight_line_body`, which (a) serializes the body into the spine's
+      `Exec/Stmt.lean` `Block`/`Stmt` encodings (`encode_exec_block`/`encode_exec_stmt`/
+      `encode_exec_expr` — the same arm-by-arm encoder discipline as the contract `Expr`
+      encoder); (b) emits the generator's `stateOf : Thermite.Env → Thermite.Exec.State`
+      (`emit_state_of`: int param → `.int ⟨uW, v.ints x⟩`, bool param → `.bool (v.bools p)`,
+      slice param → `(v.seqs xs).map (⟨uW, ·⟩)`; `scope := fun _ => false`) + the
+      `InRangeParams` typed-input premise + the per-param correspondence `rfl`-lemmas (the
+      §4.1.4 compile-time tripwire); (c) emits BOTH the HYPOTHESIZE CONTRACT theorem (the
+      result bound THROUGH `bodyConverges`) AND the conjoined OVERFLOW theorem
+      (`(bodyDenote …).isSome`) in ONE file (`emit_body_theorems`, the §4.1.5 conjunction
+      rule); the result binds via `bindResult` (int → `bindInt … r.value`, bool →
+      `bindBool … b`). The loop class is the `ExportRefusal::LoopBody` structured refusal
+      (REQ-10.6, §4.1.7); an Option/Result result is `ExportRefusal::OptResResult` (#254).
+      Verified LIVE (`lake env lean`, `forge/src/engine.rs` tests): a straight-line int body
+      → Proven incl. the OVERFLOW conjunct (`live_straight_line_body_is_proven`); a bool body
+      → Proven via `bindBool` (`live_bool_result_body_is_proven_via_bindbool`); an
+      always-overflow body's vacuous ens → NOT Proven, the OVERFLOW conjunct fails
+      (`live_always_overflow_body_is_not_proven`, the `PinExecOverflowVacuity` Rust mirror);
+      a while body → refused (`while_body_item_refuses_export`); an optres result → refused
+      (`optres_result_item_refuses_export`). **THE `scope := false` EXP ROW (VERIFIED):**
+      faithful against `thermite-tv::exec_stmt_encode::body_ref_state` — its initial `Env`
+      is `Env::new()` (EMPTY), so a param is a free INPUT (left verbatim by `encode_value`),
+      NOT an assignable cell; a body `assign` to a param `Err`s (`!env.contains_key`) on the
+      Rust side and is `none` (the `Stmt.assign` unbound-target guard) on the spine side —
+      exactly the spine's `inputState` `scope := fun _ => false`. No mis-map; the
+      `PinExecStateMisMap.lean` divergence oracle stands.
 
 ## Acceptance criteria
 

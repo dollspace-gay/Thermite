@@ -478,14 +478,40 @@ datum) and the "Verus-meaning" column is replaced by the targeted spine arm.
 | **R_item** (registry) | the `req ∪ ens ∪ body ∪ dec` closure (`Obligation.env.spec_defs`) | `def R_item : Registry := fun name => match name with \| "f" => some ⟨[params], body⟩ \| … \| _ => none` + per-name `example : R_item "f" ≠ none := by decide` | `abbrev Registry := String → Option SpecFn`; `Env.specs` | direct + the HARD GATE (refuse-to-emit when `calledSpecFns ⊄ dom(R_item)` AND a re-check that every spec-call in the exprs is covered) + the per-name `decide` lemma (§4 mechanisms 1+2) + EXP body-faithfulness (each entry binds the REAL `Denote`-encoded body) |
 | **the theorem** | the per-item CONTRACT obligation | tier (a)/(b): `denote 0 req env → denote 0 ens (env.bindInt "result" (intVal 0 body env))`; tier (c): `∀ r, stabilizes body env r → stabilizesProp req env → stabilizesProp ens (env.bindInt "result" r)` | `denote`/`intVal`/`stabilizes`/`stabilizesProp` + `stabilizes_iff_intVal_zero` / `stabilizesProp_iff_denote_zero` (tier a/b) / `stabilization_exists` (tier c) — `Stabilize.lean` | the §4/§6.1 form: tier (a)/(b) fuel-free (sound by fuel-irrelevance / static unfolding), tier (c) the `∃N∀fuel` stabilized form (INTERACTIVE) |
 
-**OUT-of-fragment residuals (the honest skips — `ExportRefusal::OutOfFragment`/`NotPureContract`/`OpenHole`).**
+### Table 4B — the EXEC-BODY bridge arms (`export_straight_line_body`, §4.1 / REQ-10, increment (iv-b))
+
+The straight-line-body exporter serializes the body into the spine's `Exec/Stmt.lean`
+`Block`/`Stmt`/`ExecExpr` encodings (the SAME arm-by-arm discipline; the targeted spine is
+`lean/Thermite/Exec/Stmt.lean` + `Exec.lean`, kernel-checked, NOT Verus text). Each arm below is a
+DIRECT inspection row.
+
+| # | Thermite node (`thermite-syntax`) | `lean_export.rs` arm (`encode_exec_*`/`emit_state_of`) | Targeted spine constructor (`Exec.lean`/`Exec/Stmt.lean`/`Denote.lean`) | Inspection tier |
+|---|---|---|---|---|
+| exec intLit | `Expr::IntLit { value }` (at the contextual width) | `Exec.ExecExpr.intLit {width} {value}` | `ExecExpr.intLit (ty : IntTy) (value : Int)`; `execDenote` in-range obligation | direct |
+| exec boolLit | `Expr::BoolLit(b)` | `Exec.ExecExpr.boolLit {b}` | `ExecExpr.boolLit` | direct |
+| exec var | `Expr::Path([name])` | `Exec.ExecExpr.var {name}` | `ExecExpr.var`; `execDenote (var x) = env.vars x` | direct |
+| exec arith/cmp/logic/not | `Expr::Binary`/`Expr::Unary{Not}` | `Exec.ExecExpr.arith/cmp/logic AOp/COp/LOp …` / `Exec.ExecExpr.not` | `ExecExpr.arith`+`evalArith` (overflow `none`), `.cmp`+`cmpVal`, `.logic`+`logVal`, `.not` | direct (the SAME op maps Table 2A pins) |
+| exec cast | `Expr::Cast { ty ∈ u32/u64/usize }` | `Exec.ExecExpr.cast inner IntTy.{u32,u64,usize}` | `ExecExpr.cast`+`castVal` (bounded WRAP, never nat/int) | direct (OUT: a `nat`/`int` cast target — those are S_C, not S_E) |
+| exec index | `Expr::Index { slice-base, Single(i) }` | `Exec.ExecExpr.index {slice} {i}` | `ExecExpr.index`+the in-range bounds obligation | direct (OUT: a non-slice base / a range index → `OutOfFragment`) |
+| Stmt.letS | `Stmt::Let { name, init }` | `Exec.Stmt.letS {name} {init}` (records the cell width) | `Stmt.letS`+the re-shadow guard (`scope name` → `none`) | direct |
+| Stmt.assign | `Stmt::Assign { Path[x], value }` | `Exec.Stmt.assign {name} {value}` | `Stmt.assign`+the unbound-target guard (`¬ scope name` → `none`) | direct (OUT: a non-scalar `xs[i]=e`/`m.f=e` → `LoopBody`) |
+| Stmt.exprS | `Stmt::Expr(e)` | `Exec.Stmt.exprS {e}` | `Stmt.exprS` (encode-and-discard) | direct |
+| Stmt.ifElse | `Stmt::If { cond, then, else_ }` | `Exec.Stmt.ifElse {cond} {then} {else}` (a missing else → `Block.mk [] none`) | `Stmt.ifElse`+`State.restoreScope` (branch-local `let` discarded) | direct |
+| Block | `Block { stmts, tail }` | `Exec.Block.mk [stmts] (some tail)` | `Block.mk (stmts : List Stmt) (tail : Option ExecExpr)`; `bodyDenote` | direct (a tail-less block → the encoder's `none`) |
+| **stateOf** | the item's params | `def stateOf (v : Env) : Exec.State := { env := { vars := …, slices := … }, scope := fun _ => false }` (int → `.int ⟨uW, v.ints x⟩`; bool → `.bool (v.bools p)`; slice → `(v.seqs xs).map (⟨uW,·⟩)`) | `Exec.State`/`ExecEnv`; the `inputState` exemplar (`scope := fun _ => false`) | direct + the per-param correspondence `rfl`-lemma (`asInt … = some ⟨uW, v.ints x⟩` / `asBool …` / `slices.map BVal.value = v.seqs xs`, the §4.1.4 compile-time tripwire) + EXP `scope := false` faithfulness (VERIFIED against `body_ref_state`'s EMPTY initial env — params are free inputs, a param `assign` is `none`/`Err` both sides) |
+| **the body theorems** | the per-item CONTRACT + OVERFLOW obligations | the HYPOTHESIZE `bodyConverges body_block (stateOf v) r → denote 0 req … → denote 0 ens (bindResult … r)` AND the conjoined `(bodyDenote body_block (stateOf v)).isSome` under `req` (one file) | `bodyConverges`/`bodyDenote`/`bindResult` (`Exec/Stmt.lean`) + `denote`/`intVal` + `Env.bindInt`/`bindBool` | the §4.1.5 form: the result bound THROUGH `bodyConverges` (uniqueness FREE — `bodyDenote` a function); the OVERFLOW conjunct the conjunction-rule soundness condition (PinExecOverflowVacuity) |
+
+**OUT-of-fragment residuals (the honest skips — `ExportRefusal::OutOfFragment`/`NotPureContract`/`LoopBody`/`OptResResult`/`OpenHole`).**
 `Expr::Field` (struct-field, Discrepancy D6), `Expr::TupleProj` (D6), `Expr::StructLit`, `Expr::Deref`,
 `Expr::StrLit`, `Expr::Tuple`, `Expr::If` (no S_C if-Expr), a bare `Expr::Closure` (closures appear ONLY
 as a combinator predicate), a qualified `Path`, a non-`u64/u32/usize/nat/int` cast target, a non-`len`/
-`byte_at` method, a user-ADT / guarded match arm, an integer (bitwise) `!`, a non-pure-tail body (the
-§4.1 exec-body bridge is increment (iv)), a boundary fn, and an open hole (`?N`, L0). Each is a
-structured refusal the `LeanEngine` maps to `Unknown` (a skip), NEVER `Proven`/`Refuted` — the same
-out-of-`S_C` honesty as Tables 1–3's catch-all `Err` arm.
+`byte_at` method, a user-ADT / guarded match arm, an integer (bitwise) `!`, a `loop`/`while`/`break`/
+`continue`/mid-body-`return`/non-scalar-mutation body (`LoopBody`, §4.1.7 — the loop residual is the
+future increment), an Option/Result-typed straight-line-body result (`OptResResult`, #254 — no `ExecVal`
+optres variant), a boundary fn, and an open hole (`?N`, L0). Each is a structured refusal the
+`LeanEngine` maps to `Unknown` (a skip), NEVER `Proven`/`Refuted` — the same out-of-`S_C`/`S_B` honesty
+as Tables 1–3's catch-all `Err` arm. (A non-pure-tail body is NO LONGER a residual — it routes to the
+Table 4B exec-body exporter; only loops/optres/the genuinely-OUT exec constructs refuse.)
 
 **The exporter's OWN regression oracles (the Rust mirror of the kernel-checked pins).** The four
 critic pins (`PinIntBottom`/`PinStabilization`/`PinBodyRegistry`/`PinDecMeasure`/`PinRegistryTerminating`)
@@ -497,6 +523,16 @@ discharge is UNREACHABLE because the export refuses BEFORE emission), and a recu
 tier-(c) interactive (`recursive_registry_is_interactive_unknown`). The live `lake env lean` kernel
 check of the emitted shape is `forge/tests/lean_engine.rs::live_spine_elaborates_emitted_shape_correct_
 proves_wrong_fails`.
+
+**The exec-body bridge regression oracles (Table 4B; increment (iv-b), #253).** The four spine pins
+(`PinExecValueBridge`/`PinExecBoolBind`/`PinExecOverflowVacuity`/`PinExecStateMisMap`) gate the SPINE;
+the exporter's mirror is the LIVE `forge/src/engine.rs` suite — a straight-line int body kernel-accepts
+incl. the OVERFLOW conjunct (`live_straight_line_body_is_proven`), a bool body kernel-accepts via the
+`bindBool` bridge (`live_bool_result_body_is_proven_via_bindbool`), an ALWAYS-OVERFLOW body's vacuous ens
+is NOT Proven because the conjoined OVERFLOW theorem fails (`live_always_overflow_body_is_not_proven`, the
+PinExecOverflowVacuity Rust mirror — the conjunction rule working end-to-end), a while body REFUSES
+(`while_body_item_refuses_export`, `LoopBody`), and an optres result REFUSES
+(`optres_result_item_refuses_export`, `OptResResult`/#254).
 
 ---
 

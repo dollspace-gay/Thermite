@@ -2422,6 +2422,185 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // THE EXEC-BODY BRIDGE live + refusal tests (§4.1 / REQ-10, increment (iv-b),
+    // blocker #253). A straight-line-body item exports the HYPOTHESIZE CONTRACT
+    // theorem + the conjoined OVERFLOW theorem over `bodyDenote`/`stateOf`; a
+    // bool-result item routes through `bindBool`; an always-overflow body's vacuous
+    // CONTRACT is blocked by the failing OVERFLOW conjunct; while/optres refuse.
+    // Verdicts hand-derived (R-CHAR-3) from §4.1.5 + PinExecOverflowVacuity.
+    // ========================================================================
+
+    // (7) REQ-10.3/10.4 — a STRAIGHT-LINE-BODY int item is Proven LIVE (incl. the
+    // OVERFLOW conjunct). `id2`'s body `{ let y = x; y }` threads `y ↦ x`, tail `y`,
+    // so the result `r = x` and `ens result == x` holds at `bindResult`; the body has
+    // no overflow site so the OVERFLOW conjunct discharges. Both theorems kernel-accept
+    // in the SAME emitted file. Expected from §4.1.5 (R-CHAR-3).
+    #[test]
+    fn live_straight_line_body_is_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live straight-line-body test not run.");
+            return;
+        }
+        let src = "fn id2(x: u64) -> u64 req true ens result == x fx pure { let y = x; y }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "id2", vec![]);
+        // Sanity: the export emits BOTH the CONTRACT theorem and the conjoined OVERFLOW
+        // theorem in one file (the §4.1.5 conjunction rule).
+        if let Some(item) = crate::lean_export::find_item(&p, "id2") {
+            let exported = export_item(&o, &p, item);
+            assert!(
+                exported.is_ok(),
+                "id2 must export as a body item: {exported:?}"
+            );
+            if let Ok(e) = &exported {
+                assert!(
+                    e.source.contains("def stateOf"),
+                    "emits stateOf: {}",
+                    e.source
+                );
+                assert!(
+                    e.source.contains("def body_block"),
+                    "emits body_block: {}",
+                    e.source
+                );
+                assert!(
+                    e.source.contains("thermite_obligation_id2_overflow"),
+                    "emits the conjoined OVERFLOW theorem: {}",
+                    e.source
+                );
+                assert!(
+                    e.source.contains("bodyConverges") && e.source.contains("bindResult"),
+                    "emits the HYPOTHESIZE form via bodyConverges + bindResult"
+                );
+            }
+        }
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Proven(_)),
+            "a correct straight-line-body item must be Proven LIVE (incl. the OVERFLOW \
+             conjunct): {v:?}"
+        );
+    }
+
+    // (8) REQ-10.2 — a BOOL-RESULT straight-line item is Proven LIVE via the `bindBool`
+    // bridge (the iv-a spine layer end-to-end). `t`'s body `{ true }` and `ens result
+    // == true`: the result `b = true` binds via `Env.bindBool`, read as `Expr.boolVar
+    // "result"`, so `ens` holds. Expected from §4.1.2 (R-CHAR-3).
+    #[test]
+    fn live_bool_result_body_is_proven_via_bindbool() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live bool-result test not run.");
+            return;
+        }
+        let src = "fn t(x: u32) -> bool req true ens result == true fx pure { true }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "t", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p, "t") {
+            let exported = export_item(&o, &p, item);
+            assert!(
+                exported.is_ok(),
+                "bool-result item must export: {exported:?}"
+            );
+            if let Ok(e) = &exported {
+                assert!(
+                    e.source.contains("Thermite.Expr.boolVar \"result\""),
+                    "the bool result reads via boolVar: {}",
+                    e.source
+                );
+                assert!(
+                    e.source.contains("Thermite.Exec.ExecVal.bool b"),
+                    "the bool antecedent binds via .bool b"
+                );
+            }
+        }
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Proven(_)),
+            "a correct bool-result item must be Proven LIVE via bindBool: {v:?}"
+        );
+    }
+
+    // (9) REQ-10.4 / the conjunction rule — an ALWAYS-OVERFLOW body with a vacuous-looking
+    // ens does NOT certify: the OVERFLOW conjunct FAILS so the LIVE verdict is NOT Proven
+    // (the conjunction working end-to-end — the PinExecOverflowVacuity Rust mirror). `ovf`'s
+    // body `{ let a = m + m; a }` overflows `u64` when `m` is at the rim; the CONTRACT
+    // theorem may be vacuously provable but the conjoined OVERFLOW theorem `bodyDenote
+    // |>.isSome` is FALSE under no precondition bounding `m` away from the rim, so the
+    // single emitted file does NOT kernel-accept (the OVERFLOW theorem fails). Expected
+    // from §4.1.5 + PinExecOverflowVacuity (R-CHAR-3).
+    #[test]
+    fn live_always_overflow_body_is_not_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live overflow-vacuity test not run.");
+            return;
+        }
+        // No req bounds `m`, so `m + m` can overflow `u64` — the OVERFLOW conjunct fails.
+        let src = "fn ovf(m: u64) -> u64 req true ens result < result fx pure { let a = m + m; a }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "ovf", vec![]);
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            !matches!(v, Verdict::Proven(_)),
+            "an always-overflow body must NOT be Proven — the OVERFLOW conjunct fails \
+             (the conjunction rule, PinExecOverflowVacuity): {v:?}"
+        );
+        assert!(
+            !matches!(v, Verdict::Refuted(_)),
+            "a failed tactic is Unknown, NEVER Refuted (REQ-3 anti-cheat): {v:?}"
+        );
+    }
+
+    // (10) REQ-10.6 — a WHILE-body item is REFUSED structurally (§4.1.7: S_B has no loop
+    // form). The export returns `ExportRefusal::LoopBody`; the engine maps it to Unknown
+    // (an honest skip), NEVER a verdict. Expected from §4.1.7 (R-CHAR-3). NO lake needed.
+    #[test]
+    fn while_body_item_refuses_export() {
+        let src = "fn count(n: u64) -> u64 req true ens result == n fx pure \
+                   { let mut i = 0; while i < n inv i <= n dec n - i { i = i + 1; } i }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "count", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p, "count") {
+            let r = export_item(&o, &p, item);
+            assert!(
+                matches!(&r, Err(ExportRefusal::LoopBody(_))),
+                "a while-body item must REFUSE structurally (LoopBody): {r:?}"
+            );
+        }
+        let engine = LeanEngine::new(p, lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "a refused loop body is an Unknown skip, never a verdict: {v:?}"
+        );
+    }
+
+    // (11) REQ-10 / §4.1.3 — an OPTION/RESULT-RESULT item is REFUSED (#254: `ExecVal`
+    // has no optres variant). The export returns `ExportRefusal::OptResResult`; the
+    // engine maps it to Unknown. Expected from §4.1.3 (R-CHAR-3). NO lake needed.
+    #[test]
+    fn optres_result_item_refuses_export() {
+        let src = "fn maybe(x: u32) -> Option<u32> req true ens true fx pure { let y = x; y }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "maybe", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p, "maybe") {
+            let r = export_item(&o, &p, item);
+            assert!(
+                matches!(&r, Err(ExportRefusal::OptResResult(_))),
+                "an Option-result item must REFUSE (OptResResult, #254): {r:?}"
+            );
+        }
+        let engine = LeanEngine::new(p, lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "a refused optres body is an Unknown skip, never a verdict: {v:?}"
+        );
+    }
+
     // (5) REQ-6 §4 SCOPE: an OUT-of-fragment item (an out-of-spine struct-field
     // access in the ens, on an int-RESULT fn so the #244 result-sort gate does NOT
     // pre-empt it) is SKIPPED (the fragment rejects it) → the export REFUSES and the

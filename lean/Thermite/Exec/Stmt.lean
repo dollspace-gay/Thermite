@@ -95,6 +95,7 @@
   contract side's core-only discipline.
 -/
 import Thermite.Exec
+import Thermite.Denote
 
 namespace Thermite.Exec
 
@@ -590,5 +591,50 @@ theorem faithful_body_is_sound :
            (some (.var "s")))
       inputState :=
   body_ref_sound _ _
+
+/-! ## THE EXEC-BODY BRIDGE — `bodyConverges` + the `S_E→S_C` value bridge (#253, §4.1)
+
+  The increment-(iv) artifacts that TIE `S_B` (the exec body) to `S_C` (the contract). The
+  design decision (§4.1.5) is that the exec side needs NO bottom-distinguishing NB layer:
+  `bodyDenote : Block → State → Option ExecVal` is FUEL-FREE — `ExecExpr` has no `specCall`
+  constructor, so there is no registry, no fuel index, and no default-value bottom anywhere on
+  the exec side. Its `none` arises ONLY at genuine failure sites (the `evalArith` overflow /
+  div-or-shift-by-zero, the out-of-range `index`, the `asInt`/`asBool` sort mismatch, the `letS`
+  re-shadow, the unbound `assign`, a tail-less block), and `some v` means a genuine value — the
+  spine's own teeth `body_overflow_rhs_has_no_result` (`= none`) vs `body_in_range_rhs_has_result`
+  (`= some (.int ⟨.u64, 10⟩)`). The `Option` IS the bottom-distinguishing layer; the #213/#241
+  trap (a TOTAL denotation that FORGES a value at the bottom) does NOT exist in `S_B`. So
+  `bodyConverges` is a definitional ABBREVIATION over `bodyDenote`, not a new denotation. -/
+
+/-- THE EXEC-BODY CONVERGENCE relation (§4.1.5): the body `b` run from state `st` produces the
+    result `r`. A one-line abbrev over the FUEL-FREE, Option-bottom-distinguishing `bodyDenote`
+    ("converges", not "stabilizes" — there is no fuel to stabilize over). Uniqueness is FREE:
+    `bodyDenote` is a function, so `some`-results are unique by `Option.some.injEq` (no analogue
+    of `stabilizes_unique` is needed — the contrast with the §4 pure-contract `stabilizes`
+    result-binding, which DOES need uniqueness). The HYPOTHESIZE obligation antecedent is
+    `bodyConverges body_block (stateOf v) r`; the OVERFLOW class is exported ALONGSIDE as
+    `(bodyDenote body_block (stateOf v)).isSome` per the §4.1 conjunction rule. -/
+abbrev bodyConverges (b : Block) (st : State) (r : ExecVal) : Prop :=
+  bodyDenote b st = some r
+
+/-- THE `S_E→S_C` VALUE BRIDGE (§4.1.1/§4.1.2): bind an exec body RESULT `r : ExecVal` into the
+    contract environment `env` at the name `"result"`. The bridge is the IDENTITY on the
+    mathematical value:
+      - an int-sorted `r = .int b` binds `Thermite.Env.bindInt env "result" b.value` — `BVal.value`
+        is the mathematical unsigned value (`evalArith` yields "the mathematical result GIVEN NO
+        OVERFLOW — never a wrap, never a nat-coercion", `Exec.lean`). NOTHING ELSE: no `Int.toNat`
+        clamp, no `% bound` re-wrap, no signed reinterpretation (the exec domain is the UNSIGNED
+        `[0, ty.bound)`; the four `PinExec*` pins kernel-check that a mis-bridge breaks soundness).
+        The width `b.ty` is deliberately NOT carried into `Env` (`S_C` compares mathematical
+        values).
+      - a bool-sorted `r = .bool b` binds `Thermite.Env.bindBool env "result" b` (the §4.1.2
+        SPINE PREREQUISITE — a GENUINE bool sort, NOT an Int-0/1 encoding, which
+        `PinExportBoolResult.lean`'s `true_false_indistinguishable_in_intVal` proves unsound).
+    The contract `ens` reads `result` as `Expr.var "result"` (int) / `Expr.boolVar "result"`
+    (bool); the soundness pins witness both bind positions. -/
+def bindResult (env : Thermite.Env) (r : ExecVal) : Thermite.Env :=
+  match r with
+  | .int b  => Thermite.Env.bindInt env "result" b.value
+  | .bool b => Thermite.Env.bindBool env "result" b
 
 end Thermite.Exec

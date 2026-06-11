@@ -367,6 +367,10 @@ noncomputable def refDenote : Nat → Expr → Env → Prop
   | fuel, Expr.logic op a b, env =>
       tokConn (encLog op) (refDenote fuel a env) (refDenote fuel b env)
   | fuel, Expr.neg e, env => ¬ refDenote fuel e env
+  -- THE BOOL-VAR (#253, the §4.1.2 spine prerequisite). The encoder emits the bare Verus bool
+  -- path read; its meaning is the env `bools` value — the IDENTICAL arm to `denote`, so T1
+  -- re-establishes by `Iff.rfl` at this node.
+  | _,    Expr.boolVar x, env => (env.bools x = true)
   -- The MATCH-IN-ENS form (#180; `encode_match`). The encoder emits a Verus `match` EXPRESSION
   -- `match {scrut} { {pat} => {body}, … }` whose ARM-SELECTION-BY-VARIANT is the Verus `match`
   -- meaning (the shared `scrutVal`/arm-walk, NOT re-implemented — `encode_match` reuses Verus's

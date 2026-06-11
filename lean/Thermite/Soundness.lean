@@ -102,6 +102,9 @@ theorem refVal_eq : ∀ (fuel : Nat) (e : Expr) (env : Env),
   | fuel, Expr.intLit n, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.boolLit b, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.var x, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
+  -- THE #253 BOOL-VAR: int-sorted bottoms to `0` (the `| _, _, _ => 0` catch-all) on both
+  -- sides, seq projection `[]` — both bottom IDENTICALLY (it has no integer/sequence meaning).
+  | fuel, Expr.boolVar x, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.cmp op a b, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.logic op a b, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
   | fuel, Expr.neg e0, env => ⟨by simp [refIntVal, intVal], by simp [refSeqVal, seqVal]⟩
@@ -238,6 +241,9 @@ theorem ref_sound : ∀ (fuel : Nat) (e : Expr) (env : Env), refDenote fuel e en
   | fuel, Expr.intLit n, env => by simp [refDenote, denote]
   | fuel, Expr.boolLit b, env => by simp [refDenote, denote]
   | fuel, Expr.var x, env => by simp [refDenote, denote]
+  -- THE #253 BOOL-VAR: both `refDenote`/`denote` are the IDENTICAL `env.bools x = true` arm, so
+  -- the soundness equation re-establishes definitionally (`Iff.rfl` after unfolding).
+  | fuel, Expr.boolVar x, env => by simp [refDenote, denote]
   | fuel, Expr.cmp op a b, env => by
       -- Both sides reduce to a relation over the SAME operands (refIntVal = intVal at this fuel);
       -- the operator round-trip `tokRel (encOp op)` = the source relation is settled per-operator.

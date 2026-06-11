@@ -124,6 +124,13 @@ structure Env where
   seqs : String → List Int
   /-- The `Option`/`Result`-valued free names (a `match`/`is` scrutinee — #180). -/
   optres : String → OptResVal
+  /-- The BOOLEAN-valued free names (#253, the §4.1.2 `bindBool` spine prerequisite): a
+      bool param / a bool `result`, read by an `Expr.boolVar`. DEFAULTED to `fun _ =>
+      false` so EVERY existing `Env` literal and `{ v with … }` update across the spine,
+      the exporter's emitted files, and the critic pins elaborate UNCHANGED (no
+      spine-wide literal churn — the minimality lever §4.1.2(1)). A bool-result body
+      binds `result` here via `Env.bindBool`. -/
+  bools : String → Bool := fun _ => false
   /-- The SHARED spec-fn `Registry` (#181): the name→`SpecFn` map a `specCall` resolves
       against. SHARED between `denote` and `refDenote` (the body is lowered ONCE + sound by the
       fragment; the registry is the external ground truth), which is what makes the call-site
@@ -138,6 +145,13 @@ structure Env where
     own integer/sequence subterms (settled by `refVal_eq`). -/
 def Env.bindInt (env : Env) (name : String) (v : Int) : Env :=
   { env with ints := fun s => if s = name then v else env.ints s }
+
+/-- Bind a BOOLEAN name to a value in an environment (#253, the §4.1.2 `Env.bindInt`
+    mirror): the exec-body bridge binds a bool-typed `result` here so the contract `ens`
+    can read it as an `Expr.boolVar "result"`. The `bindBool` shape is the SAME
+    record-update-with-override as `bindInt`, on the `bools` field. -/
+def Env.bindBool (env : Env) (name : String) (b : Bool) : Env :=
+  { env with bools := fun s => if s = name then b else env.bools s }
 
 /-- Bind a spec fn's PARAMS to its (already-denoted) ARG VALUES (#181): the call
     `foo(args)` binds each `params[k]` to `vals[k]` as an integer name, then denotes the
@@ -400,6 +414,9 @@ noncomputable def denote : Nat → Expr → Env → Prop
       | LogOp.and => denote fuel a env ∧ denote fuel b env
       | LogOp.or  => denote fuel a env ∨ denote fuel b env
   | fuel, Expr.neg e, env => ¬ denote fuel e env
+  -- THE BOOL-VAR (#253, the §4.1.2 spine prerequisite): a bool-sorted free name denotes its
+  -- env `bools` value (the `boolLit` arm's shape). Bool-sorted, never a comparison operand.
+  | _,    Expr.boolVar x, env => (env.bools x = true)
   -- The MATCH-IN-ENS form (#180): the arm SELECTED by the scrutinee's variant denotes its body
   -- with the payload BOUND (the C7 `match result { Some(v) => P(v), None => Q }`).
   | fuel, Expr.match_ scrut arms, env =>

@@ -110,6 +110,8 @@ def specCallFree : Expr → Bool
   | Expr.intLit _ => true
   | Expr.boolLit _ => true
   | Expr.var _ => true
+  -- THE #253 BOOL-VAR: a free name, no subterms — spec-call-free (`true`).
+  | Expr.boolVar _ => true
   | Expr.seqVar _ => true
   | Expr.strVar _ => true
   | Expr.optResVar _ => true
@@ -193,6 +195,8 @@ theorem intVal_fuel_irrelevant : ∀ (e : Expr) (env : Env) (f g : Nat),
   | Expr.intLit n, env, f, g, _ => by simp only [intVal]
   | Expr.boolLit b, env, f, g, _ => by simp only [intVal]
   | Expr.var x, env, f, g, _ => by simp only [intVal]
+  -- THE #253 BOOL-VAR: bottoms to `intVal`'s `0` catch-all at every fuel (no integer meaning).
+  | Expr.boolVar x, env, f, g, _ => by simp only [intVal]
   | Expr.seqVar x, env, f, g, _ => by simp only [intVal]
   | Expr.strVar x, env, f, g, _ => by simp only [intVal]
   | Expr.optResVar x, env, f, g, _ => by simp only [intVal]
@@ -291,6 +295,8 @@ theorem seqVal_fuel_irrelevant : ∀ (e : Expr) (env : Env) (f g : Nat),
   | Expr.intLit n, _, f, g, _ => by simp only [seqVal]
   | Expr.boolLit b, _, f, g, _ => by simp only [seqVal]
   | Expr.var x, _, f, g, _ => by simp only [seqVal]
+  -- THE #253 BOOL-VAR: denotes `[]` on the seq side at every fuel.
+  | Expr.boolVar x, _, f, g, _ => by simp only [seqVal]
   | Expr.optResVar x, _, f, g, _ => by simp only [seqVal]
   | Expr.cmp op a b, _, f, g, _ => by simp only [seqVal]
   | Expr.logic op a b, _, f, g, _ => by simp only [seqVal]
@@ -411,6 +417,8 @@ theorem denote_fuel_irrelevant : ∀ (e : Expr) (env : Env) (f g : Nat),
   -- Integer-sorted leaves denote `True` on the Prop side at every fuel.
   | Expr.intLit n, env, f, g, _ => by simp only [denote]
   | Expr.var x, env, f, g, _ => by simp only [denote]
+  -- THE #253 BOOL-VAR: denotes `env.bools x = true` (fuel-free) — the iff is reflexive.
+  | Expr.boolVar x, env, f, g, _ => by simp only [denote]
   | Expr.seqVar x, env, f, g, _ => by simp only [denote]
   | Expr.strVar x, env, f, g, _ => by simp only [denote]
   | Expr.optResVar x, env, f, g, _ => by simp only [denote]
@@ -683,6 +691,10 @@ noncomputable def denoteNB : Nat → Expr → Env → Option Prop
             | LogOp.or  => pa ∨ pb)))
   | fuel, Expr.neg e, env =>
       (denoteNB fuel e env).bind (fun pe => some (¬ pe))
+  -- THE #253 BOOL-VAR: an EXPLICIT arm carrying `denote`'s `env.bools x = true` proposition
+  -- (it must NOT fall to the `some True` catch-all, which would break `denoteNB_agrees`'s
+  -- carried-proposition agreement at `env.bools x = false`). A free name never bottoms → `some`.
+  | _,    Expr.boolVar x, env => some (env.bools x = true)
   | fuel, Expr.match_ scrut arms, env =>
       denoteArmsNB fuel (scrutVal scrut env) arms env
   | _,    Expr.is_ scrut variant, env =>
@@ -829,6 +841,7 @@ theorem seqValNB_agrees : ∀ (f : Nat) (e : Expr) (env : Env) (s : List Int),
   | f, Expr.intLit n, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
   | f, Expr.boolLit b, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
   | f, Expr.var x, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
+  | f, Expr.boolVar x, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
   | f, Expr.optResVar x, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
   | f, Expr.cmp op a b, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
   | f, Expr.logic op a b, env, s, h => by simp only [seqValNB, Option.some.injEq] at h; simp only [seqVal]; exact h
@@ -943,6 +956,8 @@ theorem intValNB_agrees : ∀ (f : Nat) (e : Expr) (env : Env) (v : Int),
   | f, Expr.intLit n, env, v, h => by
       simp only [intValNB, Option.some.injEq] at h; simp only [intVal]; exact h
   | f, Expr.var x, env, v, h => by
+      simp only [intValNB, Option.some.injEq] at h; simp only [intVal]; exact h
+  | f, Expr.boolVar x, env, v, h => by
       simp only [intValNB, Option.some.injEq] at h; simp only [intVal]; exact h
   | f, Expr.boolLit b, env, v, h => by
       simp only [intValNB, Option.some.injEq] at h; simp only [intVal]; exact h
@@ -1077,6 +1092,10 @@ theorem denoteNB_agrees : ∀ (f : Nat) (e : Expr) (env : Env) (P : Prop),
       simp only [denoteNB, Option.some.injEq] at h; simp only [denote]; rw [h]
   | f, Expr.var x, env, P, h => by
       simp only [denoteNB, Option.some.injEq] at h; simp only [denote]; rw [h]
+  -- THE #253 BOOL-VAR: NB carries the SAME `env.bools x = true` proposition `denote` does
+  -- (the explicit arm), so the agreement is `denote ↔ P` after rewriting `P` from `h`.
+  | f, Expr.boolVar x, env, P, h => by
+      simp only [denoteNB, Option.some.injEq] at h; simp only [denote]; rw [h]
   | f, Expr.seqVar x, env, P, h => by
       simp only [denoteNB, Option.some.injEq] at h; simp only [denote]; rw [h]
   | f, Expr.strVar x, env, P, h => by
@@ -1189,6 +1208,7 @@ theorem seqValNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
   | Expr.intLit n, env, f, _ => by simp only [seqValNB, seqVal]
   | Expr.boolLit b, env, f, _ => by simp only [seqValNB, seqVal]
   | Expr.var x, env, f, _ => by simp only [seqValNB, seqVal]
+  | Expr.boolVar x, env, f, _ => by simp only [seqValNB, seqVal]
   | Expr.optResVar x, env, f, _ => by simp only [seqValNB, seqVal]
   | Expr.cmp op a b, env, f, _ => by simp only [seqValNB, seqVal]
   | Expr.logic op a b, env, f, _ => by simp only [seqValNB, seqVal]
@@ -1252,6 +1272,7 @@ theorem intValNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
       | permutationOf => simp only [intValNB, intVal]
   | Expr.intLit n, env, f, _ => by simp only [intValNB, intVal]
   | Expr.var x, env, f, _ => by simp only [intValNB, intVal]
+  | Expr.boolVar x, env, f, _ => by simp only [intValNB, intVal]
   | Expr.boolLit b, env, f, _ => by simp only [intValNB, intVal]
   | Expr.seqVar x, env, f, _ => by simp only [intValNB, intVal]
   | Expr.strVar x, env, f, _ => by simp only [intValNB, intVal]
@@ -1340,6 +1361,8 @@ theorem denoteNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
       simp only [specCallFree] at hf; exact absurd hf Bool.false_ne_true
   | Expr.intLit n, env, f, _ => by simp only [denoteNB, denote]
   | Expr.var x, env, f, _ => by simp only [denoteNB, denote]
+  -- THE #253 BOOL-VAR: NB and `denote` are the IDENTICAL explicit `env.bools x = true` arm.
+  | Expr.boolVar x, env, f, _ => by simp only [denoteNB, denote]
   | Expr.seqVar x, env, f, _ => by simp only [denoteNB, denote]
   | Expr.strVar x, env, f, _ => by simp only [denoteNB, denote]
   | Expr.optResVar x, env, f, _ => by simp only [denoteNB, denote]

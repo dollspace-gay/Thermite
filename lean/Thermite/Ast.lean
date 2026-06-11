@@ -285,6 +285,17 @@ inductive Expr where
       obligation params of type `Int`). Mirrors `Expr::Path([name])` and the
       `old(_)` form, which `ref_encode.rs` likewise treats as free names. -/
   | var (name : String)
+  /-- A free BOOLEAN variable (#253, increment (iv) — the §4.1.2 `bindBool` spine
+      prerequisite): a bool-sorted free name (a bool param / a bool `result`) read via
+      `Env.bools`. The exec-body bridge needs the contract `ens` to mention a bool
+      `result`, but the existing AST has no bool-sorted NAME node (only `boolLit`, the
+      literal). `boolVar x` is BOOL-sorted: it `denote`s via `env.bools x` (the `boolLit`
+      arm's shape), but has NO integer meaning — in `intVal` position it falls to the
+      bool-sorted catch-all `0` (a `boolVar` in Int position is a sort error the
+      exporter's EXP discipline never emits). It carries NO subterms and is fuel-free
+      (it never reaches a `specCall`), so its blast radius across the mutual denotation
+      family is mechanical: one trivial arm each. Mirrors a Verus bool path read. -/
+  | boolVar (name : String)
   /-- A comparison `a <op> b` over two integer subterms (`Expr::Binary` with a
       comparison `BinOp`). -/
   | cmp (op : CmpOp) (lhs rhs : Expr)

@@ -103,6 +103,18 @@ build-blockers:
     loop-class STRUCTURED refusal (§4.1.7). Option/Result-typed RESULTS stay OUT of (iv) v1
     (blocker #254: `ExecVal` is `int (BVal) | bool (Bool)` — no Option/Result variant to bridge).
     v1 while + spec-fns-in-exec remain the future (iv) residuals after #253.
+    SPINE PREREQUISITE — SHIPPED (#253 part iv-a, ref #203), kernel-green with the standard axiom
+    set `{propext, Classical.choice, Quot.sound}` (NO `sorryAx`), every existing theorem + all
+    SHIPPED pins still green (exactly the (ii)-`Stabilize.lean` precedent): the `bindBool` layer
+    (the DEFAULTED `Env.bools` field + `Env.bindBool` (`Denote.lean`) + the `Expr.boolVar` leaf
+    (`Ast.lean`) and its arms across `denote`/`refDenote`/`intVal`/`seqVal`/`ref_sound`/`refVal_eq`
+    (`Soundness.lean`)/`specCallFree`/`*_fuel_irrelevant`/`denoteNB`/the agreement lemmas
+    (`Stabilize.lean`)); `bodyConverges` + the `bindResult` value bridge (`Exec/Stmt.lean`, an
+    abbrev over the FUEL-FREE `bodyDenote` — NO NB layer, verified against
+    `body_overflow_rhs_has_no_result`); and the FOUR bridge pins (`PinExecValueBridge`/
+    `PinExecBoolBind`/`PinExecOverflowVacuity`/`PinExecStateMisMap`). The EXPORTER (`forge`:
+    `stateOf`/`InRangeParams`/the HYPOTHESIZE-theorem emission + the `ExportRefusal` narrowing) is
+    part (iv-b), still open under #253. See REQ-10's SPINE-PREREQUISITE sub-rows.
 -->
 
 ## Summary
@@ -246,6 +258,45 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
   are OUT of (iv) v1 (blocker #254 — `ExecVal` has no Option/Result variant). Derived from §6 (the
   ladder's Lean rung over the full fragment) + `thermite-semantics.md` REQ-4 (`S_B`) + §4.1.
   **Increment (iv), blocker #253.**
+  - **SPINE PREREQUISITE — SHIPPED (#253 part iv-a, ref #203).** The Lean spine additions
+    REQ-10 names — landed FIRST, kernel-green with the standard axiom set
+    `{propext, Classical.choice, Quot.sound}` (NO `sorryAx`/new axiom), every existing theorem
+    (`ref_sound`/`ref_sound_eq`, `Exec.exec_ref_sound`, `Exec.body_ref_sound`, `lowering_faithful`,
+    the `Stabilize.lean` family) and all SHIPPED kernel pins still green:
+    - **REQ-10.2 SHIPPED** — the `bindBool` SPINE PREREQUISITE: the DEFAULTED `Env.bools : String →
+      Bool := fun _ => false` field + `Env.bindBool` (`lean/Thermite/Denote.lean`) and the NEW
+      `Expr.boolVar (name : String)` leaf (`lean/Thermite/Ast.lean`) with its arms across the WHOLE
+      mutual denotation family: `denote`/`refDenote` (`env.bools x = true`, T1 re-proves by
+      `Iff.rfl`), `intVal`/`seqVal` (the bool-sorted `0`/`[]` catch-alls — no new arm), the
+      `ref_sound`/`refVal_eq` cases (`lean/Thermite/Soundness.lean`), and `specCallFree` /
+      `intVal_fuel_irrelevant` / `seqVal_fuel_irrelevant` / `denote_fuel_irrelevant` / the
+      bottom-distinguishing `denoteNB` (EXPLICIT `some (env.bools x = true)`, NOT the `some True`
+      catch-all) + the `*_agrees` / `*_specCallFree` arms (`lean/Thermite/Stabilize.lean`). The
+      DEFAULTED field is the minimality lever — every existing `Env` literal (Soundness teeth, the
+      pins) elaborated UNCHANGED.
+    - **REQ-10.1/REQ-10.4 SHIPPED (spine side)** — `bodyConverges (b : Block) (st : State) (r :
+      ExecVal) : Prop := bodyDenote b st = some r` (the abbrev over the FUEL-FREE,
+      Option-bottom-distinguishing `bodyDenote`; NO NB layer — verified against
+      `body_overflow_rhs_has_no_result` (= `none`) vs `body_in_range_rhs_has_result` (= `some …`),
+      `Exec/Stmt.lean`) + the value bridge `bindResult (env : Env) (r : ExecVal) : Env` (int →
+      `Env.bindInt env "result" r.value`, the identity on `BVal.value`; bool → `Env.bindBool env
+      "result" b`) — `lean/Thermite/Exec/Stmt.lean`.
+    - **REQ-10.5 SHIPPED** — the FOUR bridge-divergence pins, each kernel-checked with the standard
+      axiom set: `PinExecValueBridge.lean` (the signed/truncating value mis-bridge certifies a wrong
+      `result < 0` at the `u64` rim; the faithful `bindResult` refutes), `PinExecBoolBind.lean` (a
+      dropped bool bind certifies a negated `!result` against a `.bool true` body; faithful
+      `bindBool` refutes — extends Pin H), `PinExecOverflowVacuity.lean` (an always-overflow body's
+      vacuous CONTRACT obligation BOTH holds AND has its conjoined OVERFLOW class refuted — the
+      certificate-level conjunction oracle), `PinExecStateMisMap.lean` (a `stateOf` dropping the
+      `seqs → slices` map makes a RIGHT `xs[0]` body fail to converge; the per-param correspondence
+      `rfl`-lemma agrees for the faithful map, fails `[] ≠ [7]` for the dropped — the §4.1.4
+      compile-time tripwire).
+    - **REQ-10.3/REQ-10.6 NOT-STARTED** — the generator-emitted `stateOf`/`InRangeParams` EMISSION,
+      the HYPOTHESIZE-form THEOREM emission, and the `ExportRefusal::NotPureContract` narrowing are
+      the EXPORTER-side (`forge`) work of part (iv-b), open under blocker #253. (The `stateOf`
+      mis-map is exporter-side but its divergence IS pinned spine-side by `PinExecStateMisMap.lean`,
+      authored here per §4.1.6.) **REQ-10.3 (the env→State correspondence) emission + REQ-10.6
+      (the structured loop refusal): NOT-STARTED, blocker #253 part (iv-b).**
 
 ## Acceptance criteria
 

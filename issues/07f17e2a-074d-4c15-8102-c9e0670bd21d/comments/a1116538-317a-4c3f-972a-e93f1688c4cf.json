@@ -1,0 +1,10 @@
+{
+  "uuid": "a1116538-317a-4c3f-972a-e93f1688c4cf",
+  "issue_uuid": "07f17e2a-074d-4c15-8102-c9e0670bd21d",
+  "author": "Yffe",
+  "content": "Failing tests at forge/tests/divergence_noliteral_spec_arith.rs::literal_free_arith_spec_fn_certifies_l3 and ::literal_free_two_param_arith_spec_fn_certifies_l3 demonstrate the divergence (run with --ignored; both assert design-§6 L3, both observe L0 with E0308 'expected u64, found int' on the bare 'n + n' / 'a + b' result). Root cause: block_result_is_int_literal_arith requires expr_mentions_int_literal, but Verus types ALL spec arithmetic as int — the literal mention is incidental to the #237 repro, not the typing trigger. Fail-closed (no false certification). Also adjudicated this re-audit: the #237 narrowing is NOT a soundness change — live probe shows an out-of-range narrowed value is OPAQUE to verus (postcondition 'result == big(0)' with big = (u64::MAX + 1) as u64 and body 0 FAILS, i.e. no silent-wrap certification; truncating semantics would have certified it).",
+  "created_at": "2026-06-11T06:43:45.364015995Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAgLqirooiYS0bK5vQa1xSdw2HSNp7b6vGfwItABRo0b/fmPbmHunYb/8NL8N7dweN7XVJWa6U7o+SwYp+kvxFCg=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "0d8e1143-a1a8-4600-b55d-c2fadfb1cbd2",
+  "issue_uuid": "7c3cf567-80dd-463c-a0f7-97cd8478374b",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_combinator_private_vs_pub_open_spec_fn.rs::pub_open_user_spec_fn_calling_combinator_verifies (verus-backed; skips loudly without verus). spec fn all_small body calling forall_in (validator-legal, spectherm-combinators.md REQ-3 walks SpecFnItem.body) lowers to 'pub open spec fn all_small' naming the PRIVATE woven 'spec fn forall_in' — verus: 'in pub open spec function, cannot refer to private function', live-confirmed. Regression introduced by 2f327b63 (#230): before the pub-open promotion both were private and the unit verified. The REQ-8 visibility-tier class-completion missed the combinator registry defs (thermite-spec combinators.rs verus_l3 / emit_combinator_defs).",
+  "created_at": "2026-06-11T03:24:49.645237158Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA0MKedEQwnxKLuJRm4kgquf4wLtJw2q2AOieGbflA9m30CEiUTj40OJS3v84uwakbmz8moNPj/D1OXwJL8JPXAw=="
+}

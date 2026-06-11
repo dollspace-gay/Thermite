@@ -1,0 +1,10 @@
+{
+  "uuid": "862e1d84-e630-4480-bfbf-f7906a31ba92",
+  "display_id": 255,
+  "title": "audit: deep-audit check [4] drift — rust-lean-correspondence.md lean/Thermite/** SHA stale (pinned 65504c18, current 1438dc5f) after the Stabilize layer + iv-a boolVar additions; verify additive + re-pin",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T23:28:33.503689784Z",
+  "updated_at": "2026-06-11T23:28:33.503689784Z"
+}

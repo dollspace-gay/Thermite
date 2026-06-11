@@ -1147,6 +1147,29 @@ impl LeanEngine {
         // the canonical-preamble lines (header / imports / R_item / resolution lemmas /
         // doc — regenerated above), MINUS any `#`-command lines (their own probes).
         let helpers = author_helpers(author_file, decl_start, decl_end, canonical_source);
+        // STRICT COMMAND ALLOWLIST (proof-backends REQ-6 / §1 / R-DEFER-9, the #251 fix):
+        // the helpers run BEFORE the canonical obligation theorem elaborates, so a single
+        // elaboration-altering command — `notation`/`macro`/`syntax`/`elab`,
+        // `set_option`/`attribute`, `instance`/`open`/`export`/`import`, a `#`-command,
+        // … — can RE-ELABORATE the byte-identical canonical statement to a trivially-true
+        // proposition and FORGE an L3 cert from a proof of `True` (the #251 macro-poison:
+        // `notation:max "Thermite.stabilizesProp" => (fun _ _ => True)`). Permit ONLY
+        // proof-supporting declarations (`theorem`/`lemma`/`def`/`example` + modifiers) and
+        // `namespace`/`end` wrappers; REJECT anything else (when in doubt REJECT — a legit
+        // proof needs only lemmas/defs). This runs BEFORE the splice, so the poison never
+        // reaches lake.
+        if let Some(kw) = disallowed_helper_command(&helpers) {
+            return Err(format!(
+                "disallowed helper command: {kw}: the author's helper section may contain ONLY \
+                 proof-supporting declarations ({{theorem, lemma, def, example}} + \
+                 private/noncomputable/protected, with namespace/end wrappers) — a `{kw}` command \
+                 can ALTER the elaboration of the canonical obligation theorem spliced after it \
+                 (e.g. a `notation`/`macro`/`set_option`/`attribute`/`instance`/`open` that \
+                 re-elaborates `Thermite.stabilizesProp …` to a trivially-true proposition), \
+                 forging an L3 cert from a proof of `True` (proof-backends REQ-6/§1, R-DEFER-9); \
+                 REJECTED"
+            ));
+        }
         // DEFENSE: no `thermite_obligation` short-name may survive in the helpers (a
         // helper masquerading as the obligation), beyond the (single) one we extracted.
         if helpers.contains("thermite_obligation") {
@@ -1762,6 +1785,93 @@ fn author_helpers(
         kept.push(trimmed);
     }
     kept.join("\n")
+}
+
+/// The author-helper COMMANDS the splice PERMITS (`.design/verified/proof-backends.md`
+/// REQ-6 / §1 / R-DEFER-9, the #251 fix). The helpers section may contain ONLY
+/// proof-supporting DECLARATIONS that cannot alter the ELABORATION of subsequent code —
+/// a lemma/def/example proves or names a fact; it does NOT install syntax, change
+/// elaboration options, register instances, or open namespaces. The canonical obligation
+/// theorem elaborates AFTER the helpers, so ANY command that can change how a later
+/// `Thermite.stabilizesProp …` parses or elaborates (a `notation`/`macro`/`syntax`/`elab`,
+/// a `set_option`/`attribute`, an `instance`/`open`/`export`/`import`, a `#`-command,
+/// `initialize`, `scoped`/`local`, …) can RE-ELABORATE the obligation to a trivially-true
+/// proposition (the #251 macro-poison divergence: `notation:max "Thermite.stabilizesProp"
+/// => (fun _ _ => True)` makes the byte-identical canonical statement re-elaborate to
+/// `True`). So this is a strict ALLOWLIST, not a blocklist: only these declaration
+/// keywords (+ their `private`/`noncomputable`/`protected` modifiers) are permitted.
+const PERMITTED_HELPER_COMMANDS: [&str; 4] = ["theorem", "lemma", "def", "example"];
+
+/// The leading MODIFIER keywords a permitted helper declaration may carry
+/// (`.design/verified/proof-backends.md` REQ-6, the #251 fix): they prefix a `theorem`/
+/// `def`/… without altering subsequent elaboration. `scoped`/`local` are NOT here — they
+/// modify `notation`/`attribute`/`instance` (which are rejected outright) and never a
+/// plain proof declaration, so a `scoped`/`local` lead is a rejected command.
+const PERMITTED_HELPER_MODIFIERS: [&str; 3] = ["private", "noncomputable", "protected"];
+
+/// Validate the author's spliced HELPERS against the strict command ALLOWLIST
+/// (`.design/verified/proof-backends.md` REQ-6 / §1 / R-DEFER-9, the #251 fix). The
+/// helpers run BEFORE the canonical obligation theorem elaborates, so a single
+/// elaboration-altering command (`notation`/`macro`/`set_option`/`attribute`/`instance`/
+/// `open`/…) can re-elaborate the byte-identical canonical statement to a trivially-true
+/// proposition and FORGE an L3 cert from a proof of `True` (the #251 macro-poison). We
+/// tokenize the helpers at COMMAND boundaries (column-0 top-level lines — a `def` body's
+/// use of `notation`/`open` as an identifier is on an INDENTED continuation line and is
+/// NOT a command start; block comments are tracked so column-0 prose inside `/- … -/`
+/// is not mistaken for a command), and PERMIT only [`PERMITTED_HELPER_COMMANDS`] (with
+/// [`PERMITTED_HELPER_MODIFIERS`] leads) + `namespace`/`end` wrappers + comments. ANY
+/// other command-start keyword → `Err("disallowed helper command: <kw>")`. When in doubt
+/// REJECT (the conservative direction is sound — a legit proof needs only lemmas/defs).
+/// Deterministic (R-CODE-5); never a panic (R-CODE-2).
+fn disallowed_helper_command(helpers: &str) -> Option<String> {
+    let mut block_comment_depth: usize = 0usize;
+    for raw in helpers.lines() {
+        // Track multi-line block comments `/- … -/` so column-0 prose inside a comment is
+        // not read as a command. We count opens/closes on the line (conservative: a `/-`
+        // anywhere opens, a `-/` anywhere closes); a line WHOLLY inside an open comment is
+        // skipped.
+        if block_comment_depth > 0 {
+            let opens = raw.matches("/-").count();
+            let closes = raw.matches("-/").count();
+            block_comment_depth += opens;
+            block_comment_depth = block_comment_depth.saturating_sub(closes);
+            continue;
+        }
+        // INDENTED lines are a declaration's body / continuation (a `def` body may mention
+        // `notation`/`open`/… as identifiers there) — never a command START. Blank lines
+        // and line-comments (`--`) are inert. Permit them.
+        if raw.starts_with(char::is_whitespace) {
+            continue;
+        }
+        let line = raw.trim_start();
+        if line.is_empty() || line.starts_with("--") {
+            continue;
+        }
+        // A block comment that OPENS on this column-0 line: account for it (it may not
+        // close on the same line) and treat the line as comment prose, not a command.
+        if line.starts_with("/-") {
+            let opens = raw.matches("/-").count();
+            let closes = raw.matches("-/").count();
+            block_comment_depth = opens.saturating_sub(closes);
+            continue;
+        }
+        // This is a COMMAND-START token. Strip permitted leading modifiers, then the first
+        // remaining token must be a permitted declaration keyword (or a `namespace`/`end`
+        // wrapper). A `#`-command, `notation`/`macro`/`set_option`/`attribute`/`instance`/
+        // `open`/… — anything not in the permit set — is REJECTED.
+        let mut tokens = line.split(|c: char| c.is_whitespace() || c == '(' || c == ':');
+        let mut head = tokens.next().unwrap_or("");
+        while PERMITTED_HELPER_MODIFIERS.contains(&head) {
+            head = tokens.next().unwrap_or("");
+        }
+        if PERMITTED_HELPER_COMMANDS.contains(&head) || matches!(head, "namespace" | "end") {
+            continue;
+        }
+        // REJECT — name the offending keyword (the `#`-command surfaces as the whole token,
+        // e.g. `#print`, since a `#`-command has no whitespace-separated keyword).
+        return Some(head.to_string());
+    }
+    None
 }
 
 /// The TRUST PROFILE of an INTERACTIVE Lean proof (`.design/verified/proof-backends.md`
@@ -2762,6 +2872,169 @@ mod tests {
                 .trim_end()
                 .ends_with("#print axioms thermite_obligation_f"),
             "the ANCHORED probe targets the canonical declaration by construction: {spliced}"
+        );
+    }
+
+    // REQ-6 / §1 / R-DEFER-9 (the #251 fix) — the strict author-helper COMMAND ALLOWLIST.
+    // The helpers run BEFORE the canonical obligation theorem elaborates, so an
+    // elaboration-altering command (`notation`/`macro`/`set_option`/`attribute`/`instance`/
+    // `open`/…) can re-elaborate the byte-identical canonical statement to a trivially-true
+    // proposition and forge an L3 cert from a proof of `True`. Only proof-supporting
+    // declarations are permitted; everything else → Err("disallowed helper command: <kw>").
+    // No lake needed (R-CHAR-3: the allowlist is a structural pre-splice gate).
+    #[test]
+    fn helper_command_allowlist_rejects_elaboration_altering_commands() {
+        // PERMITTED: plain proof declarations + modifiers + namespace/end wrappers +
+        // comments + indented bodies (a `def` body's use of `notation`/`open` as an
+        // IDENTIFIER on an indented line is NOT a command start).
+        let ok = "theorem h1 : True := True.intro\n\
+                  private lemma h2 : True := True.intro\n\
+                  noncomputable def h3 : Nat := 0\n\
+                  example : True := True.intro\n\
+                  namespace Aux\n\
+                  protected theorem h4 : True := True.intro\n\
+                  end Aux\n\
+                  -- a line comment mentioning notation and set_option is inert\n\
+                  /- a block\n\
+                     comment with open and macro words -/\n\
+                  def usesWords : Nat :=\n  \
+                    let notationVal := 1\n  \
+                    let openVal := 2\n  \
+                    notationVal + openVal\n";
+        assert_eq!(
+            disallowed_helper_command(ok),
+            None,
+            "plain lemmas/defs/examples + modifiers + namespace/end + comments + indented \
+             bodies (with keyword-shaped identifiers) are PERMITTED"
+        );
+
+        // REJECTED, one fixture per command class the #251 pin + regressions name.
+        for (helper, kw) in [
+            (
+                "notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)",
+                "notation",
+            ),
+            ("macro_rules | `(foo) => `(True)", "macro_rules"),
+            ("macro \"foo\" : term => `(True)", "macro"),
+            ("syntax \"foo\" : term", "syntax"),
+            ("infix:50 \" foo \" => Nat.add", "infix"),
+            ("prefix:90 \"foo\" => Nat.succ", "prefix"),
+            ("postfix:90 \"foo\" => Nat.succ", "postfix"),
+            ("elab \"foo\" : term => return default", "elab"),
+            ("set_option maxHeartbeats 0", "set_option"),
+            ("attribute [simp] Nat.add_zero", "attribute"),
+            ("instance : Inhabited Nat := ⟨0⟩", "instance"),
+            ("open Thermite", "open"),
+            ("export Thermite (stabilizesProp)", "export"),
+            ("import Thermite.Stabilize", "import"),
+            ("#print axioms foo", "#print"),
+            ("#check True", "#check"),
+            ("initialize foo : Nat ← pure 0", "initialize"),
+            ("axiom thermite_cheat : ∀ p : Prop, p", "axiom"),
+            ("abbrev foo := True", "abbrev"),
+            ("opaque foo : Nat", "opaque"),
+            ("variable (n : Nat)", "variable"),
+            ("section Foo", "section"),
+            ("scoped notation \"foo\" => True", "scoped"),
+            ("local notation \"foo\" => True", "local"),
+            ("deriving instance Repr for Nat", "deriving"),
+        ] {
+            assert_eq!(
+                disallowed_helper_command(helper).as_deref(),
+                Some(kw),
+                "the `{kw}` command must be REJECTED by the allowlist: {helper}"
+            );
+        }
+    }
+
+    // REQ-6 / §1 / R-DEFER-9 (the #251 fix) — the macro-poison is REJECTED at
+    // reconstruction, BEFORE lake. A canonical single-theorem skeleton + an author file
+    // whose helper section carries a `notation`/`set_option`/`instance` redefinition →
+    // Err("disallowed helper command: …"); a CLEAN-helper author file still SPLICES.
+    #[test]
+    fn reconstruct_rejects_macro_poison_helper_before_lake() {
+        let canonical = "import Thermite.Stabilize\n\n\
+                         def R_item : Thermite.Registry := fun _ => none\n\n\
+                         /-- doc -/\n\
+                         theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let p = parse_program("fn f(x: u32) -> u32 req true ens result == x fx pure { x }");
+        let engine = LeanEngine::new(p, lean_root());
+
+        // The #251 macro-poison: a `notation` redefining a spine symbol, spliced before the
+        // canonical theorem → REJECTED at reconstruction (never reaches lake).
+        let poison = "-- evidence_key: abc\n\
+                      import Thermite.Stabilize\n\
+                      def R_item : Thermite.Registry := fun _ => none\n\
+                      notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)\n\
+                      theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let err = engine
+            .reconstruct_replay(canonical, poison, "f")
+            .err()
+            .unwrap_or_default();
+        assert!(
+            err.contains("disallowed helper command: notation"),
+            "the notation poison → Err(\"disallowed helper command: notation\"), got {err:?}"
+        );
+
+        // A `set_option` helper (an elaboration-option override) → REJECTED.
+        let so = "-- evidence_key: abc\n\
+                  import Thermite.Stabilize\n\
+                  def R_item : Thermite.Registry := fun _ => none\n\
+                  set_option maxHeartbeats 0\n\
+                  theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let so_err = engine
+            .reconstruct_replay(canonical, so, "f")
+            .err()
+            .unwrap_or_default();
+        assert!(
+            so_err.contains("disallowed helper command: set_option"),
+            "the set_option poison → Err(\"disallowed helper command: set_option\"), got {so_err:?}"
+        );
+
+        // An `instance` helper (an instance override) → REJECTED.
+        let inst = "-- evidence_key: abc\n\
+                    import Thermite.Stabilize\n\
+                    def R_item : Thermite.Registry := fun _ => none\n\
+                    instance : Inhabited Nat := ⟨0⟩\n\
+                    theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let inst_err = engine
+            .reconstruct_replay(canonical, inst, "f")
+            .err()
+            .unwrap_or_default();
+        assert!(
+            inst_err.contains("disallowed helper command: instance"),
+            "the instance poison → Err(\"disallowed helper command: instance\"), got {inst_err:?}"
+        );
+
+        // An `open` helper → REJECTED.
+        let opn = "-- evidence_key: abc\n\
+                   import Thermite.Stabilize\n\
+                   def R_item : Thermite.Registry := fun _ => none\n\
+                   open Thermite\n\
+                   theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let opn_err = engine
+            .reconstruct_replay(canonical, opn, "f")
+            .err()
+            .unwrap_or_default();
+        assert!(
+            opn_err.contains("disallowed helper command: open"),
+            "the open poison → Err(\"disallowed helper command: open\"), got {opn_err:?}"
+        );
+
+        // The LEGIT clean helper-lemma author file STILL SPLICES (the allowlist permits
+        // proof-supporting declarations) — no regression of the #250 splice path.
+        let legit = "-- evidence_key: abc\n\
+                     import Thermite.Stabilize\n\
+                     def R_item : Thermite.Registry := fun _ => none\n\
+                     theorem my_helper : True := True.intro\n\
+                     theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let spliced = engine
+            .reconstruct_replay(canonical, legit, "f")
+            .unwrap_or_default();
+        assert!(
+            spliced.contains("theorem my_helper : True := True.intro"),
+            "the clean helper-lemma author file still SPLICES (the allowlist permits \
+             proof-supporting declarations): {spliced}"
         );
     }
 

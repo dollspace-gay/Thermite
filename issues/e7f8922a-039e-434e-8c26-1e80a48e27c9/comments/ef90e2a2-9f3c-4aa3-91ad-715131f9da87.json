@@ -1,0 +1,10 @@
+{
+  "uuid": "ef90e2a2-9f3c-4aa3-91ad-715131f9da87",
+  "issue_uuid": "e7f8922a-039e-434e-8c26-1e80a48e27c9",
+  "author": "Yffe",
+  "content": "(ii-a) SPINE PREREQUISITES COMPLETE + critic-clean through 3 cycles: Stabilize.lean (4afd8661 + f4ae4ee9 + c3b9055e) — stabilizes/stabilizesProp, fuel-irrelevance (full mutual induction) + the fuel-free tier-(a) corollaries, and the BOTTOM-DISTINGUISHING intValNB/denoteNB none-propagating denotation with Converges + the agreement lemma converges_imp_stabilizes giving stabilization_exists genuine content; the divergent registry provably FAILS RegistryTerminating (incl. through comb predicate bodies — Pins E+F, both directions, 6 pin files all green, standard axioms throughout). REMAINING for #240: (ii-b) the Rust exporter (R_item emission + the transitive closure hard gate + decide lemmas + the tier-(a) fuel-free / tier-(b) static-unfold forms) + LeanEngine (lake-env discharge, the tactic battery) + wiring + tests. Then (iii) interactive+attribution, (iv) the exec bridge.",
+  "created_at": "2026-06-11T14:34:34.657866051Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAcfFzZDtKgwvxt6YS9/AO1G4m9wBQT5MMdxVYWYDfOsO5kscqF8r5NlhvsRxO+BZqsHbv2scHCwCW9++ffQd5DQ=="
+}

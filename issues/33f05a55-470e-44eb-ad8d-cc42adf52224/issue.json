@@ -1,0 +1,10 @@
+{
+  "uuid": "33f05a55-470e-44eb-ad8d-cc42adf52224",
+  "display_id": 242,
+  "title": "Divergence: Stabilize.lean denoteNB Prop-combinator arm omits per-element predicate none-gating — divergent registry forges RegistryTerminating through a comb predicate body (kernel-checked Pin F)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T08:41:44.502444087Z",
+  "updated_at": "2026-06-11T08:41:44.502444087Z"
+}

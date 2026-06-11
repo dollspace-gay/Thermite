@@ -1,0 +1,10 @@
+{
+  "uuid": "36525273-9783-4234-ab63-8c3c5be0c7cf",
+  "issue_uuid": "3913136c-041e-4798-934f-a72b53142d25",
+  "author": "Yffe",
+  "content": "Fix the two interlocking causes. #232 weave: forge::check item_subprogram Struct/Enum arm now weaves adt_deps + spec_items + item (mirroring the Fn arm) so the named spec fn def reaches lowering and the per-item spec_fn_param_type_map is non-empty (restores #229 REQ-5 as-u32 cast off the as-u64 fallback). #230 visibility: thermite-lower emits pub open spec fn for user spec fns; class-completed by pub enum (lower_enum) and pub open on generated scheme fns (<e>_len, fold_<e>/for_all_<e>) — all reachable from a pub open well_formed body. Goldens regenerated prefix-only (R-CHAR-3). Un-ignore the pin.",
+  "created_at": "2026-06-11T03:10:55.537320809Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA6xKAVg95FEBSISMdg1zzNUu7/8x2qHYvVbmB0ZiiTfCwRUHp7F35lIFRk9221mAYWUCJ0F7XcFs8z7s+9lk+Cg=="
+}

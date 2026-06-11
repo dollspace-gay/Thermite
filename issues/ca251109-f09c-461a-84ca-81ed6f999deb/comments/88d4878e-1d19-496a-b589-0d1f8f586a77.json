@@ -1,0 +1,10 @@
+{
+  "uuid": "88d4878e-1d19-496a-b589-0d1f8f586a77",
+  "issue_uuid": "ca251109-f09c-461a-84ca-81ed6f999deb",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_251_macro_poison.rs::divergence_interactive_notation_poison_reelaborates_obligation_to_true demonstrates the divergence (LIVE, lake-gated). The poison: an author proof file whose helper line is 'notation:max \"Thermite.stabilizesProp\" => (fun (_ : Thermite.Expr) (_ : Thermite.Env) => True)'. engine::author_helpers keeps it (not a #-command, not a canonical-preamble line, not the evidence header); reconstruct_replay splices it BEFORE the canonical theorem; the obligation's 'Thermite.stabilizesProp <ens> (...)' conclusion re-elaborates to True; the author proves True via 'by intro _ _; trivial'; #print axioms reports a clean base; statements_match passes (the textual statement bytes are the canonical ones). forge emits L3. Confirmed at the Lean level: the tier-(c) statement shape with the notation in scope yields \"'canonical' does not depend on any axioms\", exit 0. Authority: proof-backends.md REQ-6/REQ-4/section 1; thermite-design.md section 1; goal.md R-DEFER-9. Likely fix: a command allowlist in the splice (helpers may declare only theorem/lemma/def/example with non-obligation names; reject notation/macro/macro_rules/syntax/infix/open/set_option/attribute).",
+  "created_at": "2026-06-11T20:12:04.762114412Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAtSetzjPdB9lOMbFiUgEaMLeR/BDWeIbnuBcinAVdBAOYk7LodT+PVAyRJ9CiqrZcAnSOuD8XjCPcySYd4gyrDQ=="
+}

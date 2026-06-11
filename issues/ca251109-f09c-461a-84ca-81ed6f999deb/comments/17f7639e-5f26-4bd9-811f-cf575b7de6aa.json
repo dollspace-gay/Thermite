@@ -1,0 +1,10 @@
+{
+  "uuid": "17f7639e-5f26-4bd9-811f-cf575b7de6aa",
+  "issue_uuid": "ca251109-f09c-461a-84ca-81ed6f999deb",
+  "author": "Yffe",
+  "content": "Plan: commit the failing critic pin forge/tests/divergence_251_macro_poison.rs (un-ignored — this is a release-blocking proof cheat, R-DEFER-9; the failing test IS the block). No production code touched (discriminator role). Generator must fix reconstruct_replay/author_helpers with a command allowlist.",
+  "created_at": "2026-06-11T20:12:21.582392755Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAqfVNpjGG4J4KVhApFeZcWELHUVyx/ew6XzPDfaBrHoV5Td/UfnjacXvJG1s9lsqp9rzwR3+5M334j3o4+/b3BQ=="
+}

@@ -2,11 +2,12 @@
   "uuid": "91cadcca-8a9e-41ed-a351-25cf85a2f845",
   "display_id": 204,
   "title": "proof-backends increment (i): reify the backend-neutral Obligation artifact + the Engine trait in forge, refactor the existing Verus discharge path behind the interface (behavior byte-identical, the conformance corpus cert oracle unperturbed) — no new engine. The Obligation = {item, class, AST slice, env/typing ctx} serialized independent of any prover input language; Engine = {fragment, discharge: Obligation -> Proven|Refuted|Unknown, trust_profile, evidence}. Grounds on the SHIPPED thermite-tv/src/obligation.rs materialization + forge/src/check.rs pipeline. Ref .design/verified/proof-backends.md REQ-1/REQ-2/REQ-8.",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T18:40:34.417886671Z",
-  "updated_at": "2026-06-10T18:40:35.884883356Z",
+  "updated_at": "2026-06-11T07:02:45.681282056Z",
+  "closed_at": "2026-06-11T07:02:45.681282056Z",
   "labels": [
     "blocker"
   ]

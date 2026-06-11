@@ -32,6 +32,14 @@
 //! rewrite). Expected substrings are HAND-DERIVED from the fixtures' declared
 //! param types (`s_dec(n: u32)` → `as u32`), never copied from the lowerer's
 //! output.
+//!
+//! POST-FIX NOTE (c116360c re-audit): the fixture carries the `xs.len() <=
+//! 1_000_000` length bound so the EXACT pinned program is live-L3 end-to-end —
+//! `forge check`: `s_dec` L3 (1 obligation), `sum_b` L3 (4 obligations
+//! discharged). Without the bound the `ens` overflow obligation `result <=
+//! xs.len() * u32::MAX` genuinely fails for an unbounded `xs` (a fixture
+//! authoring gap, not a toolchain divergence — the c116360c fixer's
+//! escalation (1), critic-confirmed).
 
 fn lower(src: &str) -> String {
     let parsed = thermite_syntax::parse(src);
@@ -42,7 +50,8 @@ fn lower(src: &str) -> String {
 /// A `u32`-param recursive spec fn + a sum-shaped exec fn (accumulator growth
 /// `acc = acc + xs[i] as u64` + product-bound invariant — the EXACT shape that
 /// fires `nonlinear_overflow_assert`) whose `req` names the spec fn with an
-/// arithmetic argument.
+/// arithmetic argument. The `xs.len()` bound makes the whole program live-L3
+/// (see POST-FIX NOTE above).
 const NONLINEAR_REQ_PROGRAM: &str = "\
 spec fn s_dec(n: u32) -> u32
   dec n
@@ -55,7 +64,7 @@ spec fn s_dec(n: u32) -> u32
 }
 
 fn sum_b(xs: &[u32], k: u32) -> u64
-  req s_dec(k + 0) == 0
+  req s_dec(k + 0) == 0 && xs.len() <= 1_000_000
   ens result <= xs.len() as u64 * u32::MAX as u64
   fx  pure
 {

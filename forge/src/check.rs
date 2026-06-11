@@ -1232,6 +1232,17 @@ fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<S
 /// self-recursive spec fn terminates), then return the matching `Item::SpecFn`
 /// clones in SOURCE order (DETERMINISTIC, R-CODE-5). A `spec fn` body can call only
 /// other spec fns / combinators (§4.2), so no `Item::Fn` is ever pulled in.
+///
+/// **ONE closure, all callers (the #192 lesson; crosslink #237 closure
+/// unification).** The closure-WALK is the SAME `body ∪ dec` step the #226/#204
+/// obligation closure uses ([`reachable_spec_fn_names_from_seed`]) — this fn
+/// delegates to it, seeded at `{start}`, then maps the reached NAMES back to their
+/// `Item::SpecFn` clones. The prior body-ONLY walk here was a DRIFT hazard: a spec
+/// fn whose `dec` calls another spec fn (`dec t_size(n)`) had that dec-position dep
+/// DROPPED from the woven §5.3 sub-program, so the lowered Verus referenced an
+/// undefined fn and the item died E0425 — fail-CLOSED, but a completeness gap on
+/// legitimate frozen-subset source. Walking `dec` too (via the shared closure)
+/// weaves the dec-position dep, so the sub-program is self-contained.
 fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
     // The set of in-file spec-fn names → their declaring item, for resolution.
     let spec_decls: std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem> = program
@@ -1243,25 +1254,18 @@ fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         })
         .collect();
 
-    // Cycle-safe transitive closure over spec-fn → spec-fn calls, seeded at
-    // `start` (which is itself a spec fn). A name with no in-file spec-fn decl is
-    // dropped (a combinator / scheme / cross-file callee — §4.2 PURE).
-    let mut reached: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut worklist: Vec<String> = vec![start.to_string()];
-    while let Some(name) = worklist.pop() {
-        if !reached.insert(name.clone()) {
-            continue;
-        }
-        if let Some(decl) = spec_decls.get(name.as_str()) {
-            let mut callees: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-            collect_block_spec_fn_calls(&decl.body, &spec_decls, &mut callees);
-            for callee in callees {
-                if !reached.contains(&callee) {
-                    worklist.push(callee);
-                }
-            }
-        }
-    }
+    // Seed the SHARED `body ∪ dec` closure at `{start}` (which is itself a spec
+    // fn): `reachable_spec_fn_names_from_seed` inserts `start` into `reached` on the
+    // first pop and then walks its `body ∪ dec` — so the result INCLUDES `start`
+    // plus the transitive `body ∪ dec` deps, exactly the set this weaver needs. A
+    // name with no in-file spec-fn decl is dropped (a combinator / scheme /
+    // cross-file callee — §4.2 PURE).
+    let mut seed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    seed.insert(start.to_string());
+    let reached: std::collections::BTreeSet<String> =
+        reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
+            .into_iter()
+            .collect();
 
     // Return the reached spec fns in SOURCE order (deterministic) so the lowered
     // sub-program is byte-stable for a given program.

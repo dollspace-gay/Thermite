@@ -3338,11 +3338,134 @@ fn lower_spec_fn_body(
         .with_strings(&strings)
         .with_user_string_spec_fns(user_string_spec_fns)
         .with_spec_fn_param_types(spec_fn_param_types);
+    // #237 RESULT-NARROWING: a sized-int-return spec fn (`-> u64`/`u32`/`usize`)
+    // whose body's RESULT position is integer-literal arithmetic (`1 + count(n-1)`)
+    // is `int`-typed in Verus spec — Verus spec arithmetic is the UNBOUNDED `int`,
+    // so `<int-literal> + <sized-int>` evaluates to `int`, not the declared `u64`,
+    // and the body fails E0308 (`expected u64, found int`) on legitimate
+    // frozen-subset source. (The match-form head/ADT folds take the `nat`-return
+    // path above, where casts coerce `as nat` uniformly; the if-form/int-literal
+    // shape has no such coercion — the gap.) FIX: narrow the WHOLE lowered body
+    // RESULT back to the declared return type — `(<body>) as <ret>` — exactly as
+    // the #225 spec-call casts narrow an arithmetic arg back to its param type. The
+    // cast is identity on the spec domain for in-range values (same fidelity class
+    // as the #225/#229 casts). Gated on the int-literal-arithmetic SHAPE at a
+    // result position (`block_result_is_int_literal_arith`), so a body whose result
+    // is already the declared type (`spec_line_start`'s `acc`/recursive-call arms —
+    // no result-position arithmetic) is UNTOUCHED (byte-stable). A `nat`/`bool`
+    // return never reaches here (the `nat`-ret path / the `bool` predicate body is
+    // not `is_int_type`).
+    let narrow = is_int_ret_name(ret) && block_result_is_int_literal_arith(body);
     let mut out = String::from("{\n");
     let b = lower_block_inner(body, ctx, 1, zero_span())?;
-    out.push_str(&b);
+    if narrow {
+        // `b` is `    <expr>\n` (the indented tail from `lower_block_inner`); wrap
+        // the trimmed result expression in the narrowing cast, preserving the
+        // indent + trailing newline so the emission stays byte-stable in shape.
+        out.push_str("    (");
+        out.push_str(b.trim());
+        out.push_str(") as ");
+        out.push_str(ret);
+        out.push('\n');
+    } else {
+        out.push_str(&b);
+    }
     out.push_str("}\n");
     Ok(out)
+}
+
+/// True iff a lowered spec-fn return type is a sized surface integer
+/// (`u64`/`u32`/`usize`) — the #237 result-narrowing TARGET set. `nat`/`bool`/an
+/// ADT name take no narrowing (a `nat` body is already coerced, a `bool` predicate
+/// is never `int`-typed). The string analog of [`is_int_type`] over the already-
+/// lowered return spelling.
+fn is_int_ret_name(ret: &str) -> bool {
+    matches!(ret, "u64" | "u32" | "usize")
+}
+
+/// True iff a spec-fn body's RESULT position is integer-literal arithmetic — the
+/// #237 narrowing trigger. Walks every result leaf (the block tail, each `if`-arm
+/// tail, each `match`-arm body) and returns `true` if ANY result leaf is an
+/// arithmetic `Binary`/`Unary` expression that mentions an integer LITERAL operand.
+/// In Verus spec position such an expression evaluates to the unbounded `int` (not
+/// the declared sized-int return), so the body needs the `(<body>) as <ret>`
+/// narrowing. A result leaf that is a bare path (`acc`), a recursive call
+/// (`spec_line_start(...)`), or a non-arithmetic expression yields its declared
+/// type directly and needs NO narrowing (`spec_line_start` stays byte-stable). A
+/// comparison/logical `Binary` (`==`/`&&`) is `bool`, not `int`, and is excluded.
+fn block_result_is_int_literal_arith(block: &Block) -> bool {
+    block
+        .tail
+        .as_deref()
+        .map(expr_result_is_int_literal_arith)
+        .unwrap_or(false)
+}
+
+/// The per-result-leaf walk for [`block_result_is_int_literal_arith`]. Descends
+/// through `if`/`match` to each RESULT leaf (NOT into operands of a non-result
+/// position), testing each leaf for arithmetic-over-a-literal.
+fn expr_result_is_int_literal_arith(expr: &Expr) -> bool {
+    match expr {
+        // `if` / `match` distribute over their result arms — test each arm's result.
+        Expr::If { then, else_, .. } => {
+            then.tail
+                .as_deref()
+                .map(expr_result_is_int_literal_arith)
+                .unwrap_or(false)
+                || else_
+                    .tail
+                    .as_deref()
+                    .map(expr_result_is_int_literal_arith)
+                    .unwrap_or(false)
+        }
+        Expr::Match { arms, .. } => arms
+            .iter()
+            .any(|a| expr_result_is_int_literal_arith(&a.body)),
+        // An arithmetic `Binary`/`Unary` AT a result position that mentions an
+        // integer literal is `int`-typed in spec (the divergence trigger).
+        Expr::Binary { op, .. } if is_arith_binop(*op) => expr_mentions_int_literal(expr),
+        Expr::Unary { .. } => expr_mentions_int_literal(expr),
+        _ => false,
+    }
+}
+
+/// True iff `op` is an ARITHMETIC binary operator (the integer-yielding set:
+/// `+`/`-`/`*`/`/`/`%` and the bit ops) — as opposed to a comparison/logical
+/// operator (which yields `bool`, never `int`). The #237 narrowing only fires on
+/// an arithmetic result; a `bool`-returning comparison body is never `int`-typed.
+fn is_arith_binop(op: BinOp) -> bool {
+    matches!(
+        op,
+        BinOp::Add
+            | BinOp::Sub
+            | BinOp::Mul
+            | BinOp::Div
+            | BinOp::Rem
+            | BinOp::Shl
+            | BinOp::Shr
+            | BinOp::BitAnd
+            | BinOp::BitOr
+            | BinOp::BitXor
+    )
+}
+
+/// True iff `expr` mentions an integer LITERAL operand ANYWHERE in its tree — the
+/// signal that a result-position arithmetic expression is `int`-typed-by-literal in
+/// Verus spec (`1 + f(n-1)`). A full-tree walk so the literal is found nested under
+/// the arithmetic (`1 + ...`, `... * 2`).
+fn expr_mentions_int_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::IntLit { .. } => true,
+        Expr::Binary { lhs, rhs, .. } => {
+            expr_mentions_int_literal(lhs) || expr_mentions_int_literal(rhs)
+        }
+        Expr::Unary { expr, .. } | Expr::Cast { expr, .. } => expr_mentions_int_literal(expr),
+        Expr::Call { args, .. } => args.iter().any(expr_mentions_int_literal),
+        Expr::MethodCall { receiver, args, .. } => {
+            expr_mentions_int_literal(receiver) || args.iter().any(expr_mentions_int_literal)
+        }
+        _ => false,
+    }
 }
 
 /// The name of the first slice (`&[T]`) parameter, used as the `Seq` recursion

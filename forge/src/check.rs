@@ -789,8 +789,14 @@ pub fn check_file_with_engine(
             }
         };
         let obligations = mint_item_obligations(&parsed.program, item);
-        let new_cert =
-            lean_engine_cert(&lean, &source_file, cert, &obligations.contract, selection)?;
+        let new_cert = lean_engine_cert(
+            &lean,
+            &source_file,
+            cert,
+            &obligations.contract,
+            selection,
+            options.mutation_floor,
+        )?;
         out.push(new_cert);
     }
     Ok(out)
@@ -817,6 +823,7 @@ fn lean_engine_cert(
     verus_cert: Certificate,
     obligation: &crate::obligation::Obligation,
     selection: EngineSelection,
+    mutation_floor: f64,
 ) -> Result<Certificate, ForgeError> {
     use crate::engine::{Engine as _, EngineName, Verdict};
 
@@ -845,7 +852,7 @@ fn lean_engine_cert(
                 return Err(ForgeError::SoundnessAlarm(disagreement));
             }
             match lean_verdict {
-                Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert)),
+                Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert, mutation_floor)),
                 // Lean could not discharge either — keep the Verus base cert (the
                 // honest degrade/timeout verdict stands).
                 _ => Ok(verus_cert),
@@ -867,7 +874,7 @@ fn lean_engine_cert(
                 Verdict::Proven(_) if interactive => {
                     Ok(lean_interactive_proven_cert(lean, &verus_cert))
                 }
-                Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert)),
+                Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert, mutation_floor)),
                 Verdict::Refuted(_) => {
                     // A Lean WITNESSED refutation (not produced by the current export
                     // path, but total): an honest L0 reject, never a silent pass.
@@ -925,7 +932,11 @@ fn verus_verdict_of(cert: &Certificate) -> crate::engine::Verdict {
 /// path, the kill ratio + the "untested against lean" count). The `Level` is
 /// unchanged-meaning L3 ("proven for all inputs"); the attribution records WHICH
 /// engine + its base; the mutation qualifier is attached additively.
-fn lean_proven_cert(lean: &crate::engine::LeanEngine, base: &Certificate) -> Certificate {
+fn lean_proven_cert(
+    lean: &crate::engine::LeanEngine,
+    base: &Certificate,
+    mutation_floor: f64,
+) -> Certificate {
     let attribution = crate::engine::attribution_for(lean);
     let cert = Certificate::new(
         &base.item,
@@ -940,14 +951,37 @@ fn lean_proven_cert(lean: &crate::engine::LeanEngine, base: &Certificate) -> Cer
     .graduate_triage_clean()
     .with_engine_attribution(attribution);
     // REQ-9 engine-generic battery (the Lean path): re-discharge the frozen mutant set
-    // via the SAME Lean engine; report the kill ratio + the untested-against-lean
-    // count. The Verus-path battery (`mutation_score`) is untouched. Only an
-    // `Item::Fn` (the cert's item) is mutation-scored — a `spec fn` carries no `ens`.
-    if let Some(Item::Fn(f)) = crate::lean_export::find_item(lean_program(lean), &base.item) {
-        let tally = lean_mutation_score(lean, f);
+    // via the SAME Lean engine. The Verus-path battery (`mutation_score`) is untouched.
+    // Only an `Item::Fn` (the cert's item) is mutation-scored — a `spec fn` carries no
+    // `ens`. A `spec fn` (no `ens`) has no mutation obligation, so it certifies on the
+    // Lean kernel proof alone (no floor gate — there is nothing to mutate).
+    let Some(Item::Fn(f)) = crate::lean_export::find_item(lean_program(lean), &base.item) else {
+        return cert;
+    };
+    let tally = lean_mutation_score(lean, f);
+    // REQ-9/AC-7 (the floor GATES the Lean path — proof-backends.md §7, the #248 fix):
+    // the kill-ratio over the `attempted` denominator must MEET the mutation floor for
+    // the item to certify L3-via-Lean, mirroring the Verus path's `meets_floor` gate
+    // (`mutation_score` → `WeakContract`). On the Lean-only path the #101 equivalence
+    // probe is OUTSIDE the Engine interface (a §0.1 verus meta-query, F3/OQ-5) and is
+    // NOT threaded, so the denominator = `attempted` with NO equivalence exclusion — an
+    // honesty the qualifier records. The SHIPPED 0/0 backstop (`kill_ratio() == 0.0` on
+    // an empty denominator) means an item that GENERATED mutants but attempted none
+    // against Lean (all untested) is below ANY positive floor → does NOT certify (it is
+    // an honest `WeakContract` reject, never a silent L3). A genuinely below-floor item
+    // (survivors the contract does not catch) likewise rejects.
+    if tally.meets_floor(mutation_floor) {
         cert.with_mutation_score(tally.qualifier(), None)
     } else {
-        cert
+        // Below the floor (or 0/0 with mutants generated): a `WeakContract`-style reject
+        // — the contract under-constrains the body, so the Lean kernel proof does NOT
+        // license an L3 cert (proof-backends REQ-9/AC-7; the WeakContract mirror).
+        Certificate::rejected_weak_contract(
+            &base.item,
+            base.effects.clone(),
+            tally.mutants_killed_string(),
+            tally.survivor_detail(),
+        )
     }
 }
 

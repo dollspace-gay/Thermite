@@ -848,9 +848,24 @@ impl LeanEngine {
         let header = format!("{INTERACTIVE_EVIDENCE_KEY_MARKER}{}\n", key.content_address);
         let path = interactive_proof_path(source_file, &o.item);
 
+        // The CANONICAL theorem STATEMENT — regenerated from the CURRENT obligation
+        // (the exporter already builds the `theorem thermite_obligation_<item> :
+        // <statement> := …` line; the author fills ONLY the proof term after `:=`/`by`).
+        // The replay BINDS the present file's statement to this (proof-backends REQ-6 /
+        // R-DEFER-9): a file proving a DIFFERENT statement (e.g. `True`) is NOT a proof
+        // of the obligation. `None` means the emitted source had no extractable theorem
+        // statement (a malformed exporter output — never trusted as a binding).
+        let canonical_statement = canonical_theorem_statement(&exported.source, &o.item);
+
         // PRESENT → the staleness gate + replay; ABSENT → emit the skeleton.
         match std::fs::read_to_string(&path) {
-            Ok(existing) => self.replay_present_proof(&path, &existing, &key, &o.item),
+            Ok(existing) => self.replay_present_proof(
+                &path,
+                &existing,
+                &key,
+                &o.item,
+                canonical_statement.as_deref(),
+            ),
             Err(_) => {
                 // ABSENT: emit the skeleton (header + the tier-(c) exported source).
                 if let Some(parent) = path.parent() {
@@ -885,6 +900,7 @@ impl LeanEngine {
         existing: &str,
         key: &CacheKey,
         item: &str,
+        canonical_statement: Option<&str>,
     ) -> Verdict {
         // The STALENESS gate (REQ-7(ii)): the header's evidence key must match the
         // CURRENT key. A mismatch = the obligation / toolchain / spine changed → the
@@ -905,10 +921,42 @@ impl LeanEngine {
             )));
         }
 
+        // STATEMENT BINDING (proof-backends REQ-6 / R-DEFER-9): the proof file must
+        // prove THE OBLIGATION, not just SOME theorem named `thermite_obligation_<item>`.
+        // The author fills ONLY the proof term after `:=`/`by`; the theorem STATEMENT
+        // (the binders + the proposition up to `:= …`) must match the canonical one the
+        // exporter regenerates from the CURRENT obligation EXACTLY (modulo whitespace).
+        // A file proving a DIFFERENT statement (e.g. `: True`) is NOT a discharge of the
+        // obligation — Unknown("statement mismatch"), NEVER Proven.
+        if let Some(canonical) = canonical_statement {
+            match canonical_theorem_statement(existing, item) {
+                Some(present) if statements_match(&present, canonical) => {}
+                Some(present) => {
+                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                        "statement mismatch: the interactive proof `{}` proves the theorem \
+                         statement `{present}` but the current obligation's canonical statement is \
+                         `{canonical}` (the author fills ONLY the proof term after `:=`; the \
+                         STATEMENT must match the obligation — proof-backends REQ-6 / R-DEFER-9; a \
+                         file proving a DIFFERENT statement is NOT a discharge)",
+                        path.display()
+                    )));
+                }
+                None => {
+                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                        "statement mismatch: the interactive proof `{}` carries no extractable \
+                         `theorem thermite_obligation_{item} : … :=` statement to bind against the \
+                         obligation (proof-backends REQ-6 / R-DEFER-9; a proof must PROVE the \
+                         obligation, not an arbitrary file)",
+                        path.display()
+                    )));
+                }
+            }
+        }
+
         // The proof is FRESH: REPLAY it via lake + capture `#print axioms` for the
-        // explicit sorry check. We append a `#print axioms <thm>` so lake reports the
-        // axiom set (lake exits 0 on a `sorry`, so the source/axioms scan is what
-        // distinguishes a genuine proof — REQ-7(ii)).
+        // explicit sorry check + the trust-base axiom ALLOWLIST. We append a `#print
+        // axioms <thm>` so lake reports the axiom set (lake exits 0 on a `sorry`, so the
+        // source/axioms scan is what distinguishes a genuine proof — REQ-7(ii)).
         let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
         let probe = format!("{existing}\n#print axioms {thm_name}\n");
         let pid = std::process::id();
@@ -949,8 +997,26 @@ impl LeanEngine {
                         path.display()
                     )));
                 }
-                // A kernel-accepted, sorry-FREE replay → Proven with the INTERACTIVE
-                // trust profile (the author is a reviewed step, OQ-4).
+                // TRUST-BASE AXIOM ALLOWLIST (proof-backends REQ-4 / REQ-7(ii) / §1 /
+                // R-DEFER-9): the enumerable trusted base a Lean cert lists is EXACTLY
+                // {Lean kernel + the 3 standard axioms, EXP[, author]}. `#print axioms`
+                // reports the WHOLE axiom set the kernel-accepted theorem rests on; any
+                // axiom OUTSIDE `{propext, Classical.choice, Quot.sound}` (a smuggled
+                // `axiom thermite_cheat : ∀ p, p`, an oracle, …) means the cert's base
+                // would be a LIE — the proof rests on more than it enumerates. Such a
+                // proof is NEVER Proven (a proof cheat), even though it kernel-accepts.
+                if let Some(extra) = nonstandard_axiom(&axioms) {
+                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                        "non-standard axiom: {extra}: the interactive proof `{}` kernel-accepts \
+                         but `#print axioms` rests on `{extra}`, OUTSIDE the trust-base allowlist \
+                         {{propext, Classical.choice, Quot.sound}} (proof-backends REQ-4/§1, \
+                         R-DEFER-9); the enumerable trusted base would be a LIE — NEVER Proven",
+                        path.display()
+                    )));
+                }
+                // A kernel-accepted, sorry-FREE, allowlist-clean, statement-bound replay
+                // → Proven with the INTERACTIVE trust profile (the author is a reviewed
+                // step, OQ-4).
                 Verdict::Proven(Evidence {
                     verified: 1,
                     key: key.clone(),
@@ -1283,6 +1349,89 @@ fn axioms_contain_sorry(print_axioms_output: &str) -> bool {
     lower.contains("sorryax") || lower.contains("sorry")
 }
 
+/// The trust-base axiom ALLOWLIST: the standard Lean axiom set the kernel-proven spine
+/// itself rests on (`{propext, Classical.choice, Quot.sound}` — `.design/verified/
+/// thermite-semantics.md`, the (T1)/(T2) axiom enumeration). A Lean cert's enumerable
+/// trusted base is EXACTLY this set + EXP[, author]; an axiom outside it is a smuggled
+/// dependency the cert would NOT enumerate.
+const STANDARD_AXIOM_ALLOWLIST: [&str; 3] = ["propext", "Classical.choice", "Quot.sound"];
+
+/// Strictly parse a `#print axioms <thm>` output and return the FIRST axiom OUTSIDE the
+/// trust-base allowlist (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9), or
+/// `None` if every reported axiom is standard. Lean prints either `'thm' does not depend
+/// on any axioms` (→ `None`) or `'thm' depends on axioms: [a, b, c]` (we parse the
+/// bracket list STRICTLY: split on `,`, trim, and reject any name not in the allowlist).
+/// `sorryAx` is OUT of the allowlist too, so this ALSO catches a surviving `sorry` — but
+/// the explicit [`proof_has_sorry`] check runs first for the dedicated `sorry` message.
+/// Deterministic, a pure function of the inspected string (R-CODE-5).
+#[must_use]
+fn nonstandard_axiom(print_axioms_output: &str) -> Option<String> {
+    // STRICT parse: the authoritative axiom set is the bracket list on the `#print
+    // axioms` REPORT line — `'<thm>' depends on axioms: [a, b, c]`. We anchor on the
+    // `depends on axioms:` marker so lake's WARNING/linter text (which can itself
+    // contain `[…]` lists — e.g. a `simp only [Thermite.Env.bindInt, …]` unused-arg
+    // hint) is NEVER mistaken for the axiom list. The other report form, `'<thm>' does
+    // not depend on any axioms`, carries no bracket after the marker → clean (`None`).
+    const MARKER: &str = "depends on axioms:";
+    let marker_pos = print_axioms_output.find(MARKER)?;
+    let after_marker = &print_axioms_output[marker_pos + MARKER.len()..];
+    // The bracket list immediately follows the marker (whitespace then `[ … ]`), all on
+    // the report line. Bound the search to that line so a later warning's bracket cannot
+    // bleed in.
+    let line = after_marker.lines().next().unwrap_or(after_marker);
+    let open = line.find('[')?;
+    let after = &line[open + 1..];
+    let close = after.find(']')?;
+    let list = &after[..close];
+    list.split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .find(|name| !STANDARD_AXIOM_ALLOWLIST.contains(name))
+        .map(str::to_string)
+}
+
+/// Extract the CANONICAL theorem STATEMENT of `thermite_obligation_<item>` from a Lean
+/// source (`.design/verified/proof-backends.md` REQ-6 — the STATEMENT BINDING surface):
+/// the text from the `theorem thermite_obligation_<item>` keyword through (and
+/// including) the `:=` that begins the proof term — i.e. the binders + the proposition
+/// the author may NOT change (they fill only the proof after `:=`/`by`). The proof
+/// delimiter is anchored on the FIRST `:= by` / bare `:=` AFTER the theorem header that
+/// is NOT a record-update `:=` (the spine's `{ v with specs := R_item }` uses `:=`
+/// INSIDE the proposition); we anchor on `:= by`, falling back to a `:=` not preceded by
+/// ` with ` … — but the emitted forms ALWAYS close with `:= by`, so `:= by` is the
+/// reliable anchor. Returns `None` when no such theorem/`:= by` is found. Deterministic
+/// (R-CODE-5).
+#[must_use]
+fn canonical_theorem_statement(source: &str, item: &str) -> Option<String> {
+    let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
+    let needle = format!("theorem {thm_name}");
+    let start = source.find(&needle)?;
+    let from_thm = &source[start..];
+    // The proof term starts at `:= by` (both the auto and interactive emitted forms
+    // close the conclusion with `… := by`). A record-update `specs := R_item` never has
+    // ` by` after `:=`, so `:= by` is unambiguous. Include up to and INCLUDING `:=`.
+    let by_pos = from_thm.find(":= by").or_else(|| {
+        // Defensive: a hand-authored proof might use `:= <term>` (no `by`). Anchor on
+        // the LAST `:=` whose left context is not a record-update ` with … specs`.
+        from_thm.rfind(":=")
+    })?;
+    Some(from_thm[..by_pos + 2].to_string())
+}
+
+/// Whitespace-insensitive equality of two theorem statements (`.design/verified/
+/// proof-backends.md` REQ-6 — "modulo whitespace; be strict"). Collapses every run of
+/// ASCII/Unicode whitespace to a single space and trims, so the author's reformatting
+/// of the EMITTED skeleton's statement (line wrapping) does not spuriously mismatch, but
+/// a DIFFERENT statement (a different proposition / binders) does. Deterministic
+/// (R-CODE-5).
+#[must_use]
+fn statements_match(a: &str, b: &str) -> bool {
+    fn norm(s: &str) -> String {
+        s.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+    norm(a) == norm(b)
+}
+
 /// The TRUST PROFILE of an INTERACTIVE Lean proof (`.design/verified/proof-backends.md`
 /// REQ-7(ii) / OQ-4): {Lean kernel + 3 standard axioms, EXP} PLUS the human/agent
 /// author as a reviewed-but-not-mechanized step (the interactive path adds the author,
@@ -1435,6 +1584,45 @@ impl LeanMutationTally {
             ratio = self.kill_ratio(),
             untested = self.untested,
             equivalent = self.equivalent,
+        )
+    }
+
+    /// Does the Lean-path kill ratio MEET the mutation floor (`.design/verified/
+    /// proof-backends.md` REQ-9/AC-7 — the floor GATES the Lean path, the #248 fix)?
+    /// Mirrors the SHIPPED `mutation::MutationScore::meets_floor`: `kill_ratio() >=
+    /// floor`. The `0/0` backstop (`kill_ratio() == 0.0`) is BELOW any positive floor,
+    /// so an item that generated mutants but attempted NONE against Lean (all untested)
+    /// does NOT meet the floor — never a vacuous pass (§7 / R-DEFER-9). Deterministic
+    /// (R-CODE-5).
+    #[must_use]
+    pub fn meets_floor(&self, floor: f64) -> bool {
+        self.kill_ratio() >= floor
+    }
+
+    /// The `"killed/attempted"` ratio string for the `WeakContract` reject cert's
+    /// `contract_quality.mutants_killed` (the `qualifier`'s leading fraction, the
+    /// Lean-path analogue of `MutationScore::mutants_killed_string`). Deterministic
+    /// (R-CODE-5).
+    #[must_use]
+    pub fn mutants_killed_string(&self) -> String {
+        format!("{}/{}", self.killed, self.attempted)
+    }
+
+    /// The survivor detail for the `WeakContract` reject cert on the Lean path
+    /// (`.design/verified/proof-backends.md` REQ-9/AC-7). The Lean-only tally does NOT
+    /// track an individual survivor body (the #101 equivalence probe is a §0.1 verus
+    /// meta-query OUTSIDE this path, so survivors are reported as a COUNT, not a named
+    /// mutant), so the detail HONESTLY states the survivor/untested counts that put the
+    /// item below the floor. Deterministic (R-CODE-5).
+    #[must_use]
+    pub fn survivor_detail(&self) -> String {
+        let survivors = self.attempted.saturating_sub(self.killed);
+        format!(
+            "{survivors} survivor(s) over {attempted} attempted against lean; {untested} untested \
+             against lean (no engine fragment admitted them — NOT counted killed); denominator = \
+             attempted (the #101 equivalence exclusion is OUTSIDE the Lean-only path)",
+            attempted = self.attempted,
+            untested = self.untested,
         )
     }
 }
@@ -2092,6 +2280,158 @@ mod tests {
             "a PRESENT, fresh-key, sorry-free, kernel-accepted proof REPLAYS Proven \
              (REQ-7(ii)): {second:?}"
         );
+    }
+
+    // REQ-6 STATEMENT BINDING (the #248 fix): a proof file with the CORRECT (fresh)
+    // evidence key but proving a DIFFERENT theorem statement (the trivial proposition,
+    // not the obligation) is Unknown("statement mismatch"), NEVER Proven — the file must
+    // PROVE THE OBLIGATION. The staleness gate passes (fresh key); the statement-binding
+    // gate catches it BEFORE the (skipped) lake replay, so NO lake is needed. R-DEFER-9.
+    #[test]
+    fn interactive_statement_mismatch_is_unknown_never_proven() {
+        let dir = std::env::temp_dir().join(format!("forge_it_stmtmm_{}", std::process::id()));
+        assert!(ensure_dir(&dir), "scratch dir creatable");
+        let file = dir.join("add.th");
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+
+        // Author an artifact with the CORRECT (fresh) key but the trivial proposition —
+        // a proof of the WRONG statement, named like the obligation theorem.
+        let key = engine.evidence_key(&o);
+        let artifact = interactive_proof_path(&file, "add");
+        assert!(
+            write_file(
+                &artifact,
+                &format!(
+                    "{INTERACTIVE_EVIDENCE_KEY_MARKER}{}\nimport Thermite.Stabilize\n\
+                     theorem thermite_obligation_add : True := by trivial\n",
+                    key.content_address
+                ),
+            ),
+            "statement-mismatch artifact writable"
+        );
+
+        let v = engine.replay_interactive(&file, &o);
+        let _ = std::fs::remove_dir_all(&dir);
+        let detail = match &v {
+            Verdict::Unknown(Reason::IncompleteUnknown(d)) => Some(d.clone()),
+            _ => None,
+        };
+        assert!(
+            detail
+                .as_deref()
+                .is_some_and(|d| d.contains("statement mismatch")),
+            "a proof of a DIFFERENT statement (the obligation must be proven, not the \
+             trivial proposition) → Unknown(\"statement mismatch\"), NEVER Proven (REQ-6 / \
+             R-DEFER-9): got {v:?}"
+        );
+    }
+
+    // REQ-4/§1/R-DEFER-9 (the #248 fix): the trust-base axiom ALLOWLIST parser is STRICT
+    // — it anchors on the `#print axioms` REPORT line ("depends on axioms: [...]"), so a
+    // lake WARNING that itself carries a `[Thermite.Env.bindInt, …]` simp-arg list does
+    // NOT false-positive, and a NON-standard axiom (a smuggled cheat, the sorry axiom) IS
+    // caught. Pure-function regression for `nonstandard_axiom`.
+    #[test]
+    fn nonstandard_axiom_parses_the_report_line_strictly() {
+        // The clean standard set → None (no smuggled axiom).
+        assert_eq!(
+            nonstandard_axiom(
+                "'thermite_obligation_add' depends on axioms: [propext, Classical.choice, \
+                 Quot.sound]"
+            ),
+            None
+        );
+        // "does not depend on any axioms" (no bracket) → None.
+        assert_eq!(nonstandard_axiom("'t' does not depend on any axioms"), None);
+        // A WARNING whose simp-arg bracket list precedes the report line must NOT
+        // false-positive — the parser anchors on the report marker, never the first
+        // `[`. This is exactly the legit-auto-replay output shape.
+        assert_eq!(
+            nonstandard_axiom(
+                "warning: simp only [Thermite.Env.bindInt, Thermite.intVal] at hreq\n\
+                 'thermite_obligation_add' depends on axioms: [propext, Classical.choice, \
+                 Quot.sound]"
+            ),
+            None,
+            "a simp-arg warning bracket must NOT be mistaken for the axiom list"
+        );
+        // A SMUGGLED non-standard axiom IS caught (the divergence the #248 pin exhibits).
+        assert_eq!(
+            nonstandard_axiom(
+                "'thermite_obligation_f' depends on axioms: [propext, thermite_cheat]"
+            )
+            .as_deref(),
+            Some("thermite_cheat")
+        );
+        // The sorry axiom is also outside the allowlist (caught here too, belt-and-braces).
+        assert_eq!(
+            nonstandard_axiom("'t' depends on axioms: [sorryAx]").as_deref(),
+            Some("sorryAx")
+        );
+    }
+
+    // REQ-6 STATEMENT BINDING (the #248 fix): the canonical-statement extractor lifts
+    // the `theorem thermite_obligation_<item> … :=` span (binders + proposition, up to
+    // the proof term), and `statements_match` is whitespace-insensitive but
+    // proposition-strict. A record-update `specs := R_item` inside the proposition does
+    // NOT prematurely end the statement (the `:= by` anchor). Pure-function regression.
+    #[test]
+    fn canonical_statement_extraction_and_whitespace_match() {
+        let canonical =
+            "/- doc -/\ntheorem thermite_obligation_f (v : Thermite.Env) (r : Int) :\n  \
+             Thermite.stabilizes body { v with specs := R_item } r ->\n  True := by\n  trivial";
+        let opt = canonical_theorem_statement(canonical, "f");
+        assert!(
+            opt.is_some(),
+            "a statement should extract from the canonical source"
+        );
+        let extracted = opt.unwrap_or_default();
+        // The record-update `:=` did NOT truncate the statement (the `:= by` anchor).
+        assert!(
+            extracted.contains("specs := R_item") && extracted.trim_end().ends_with(":="),
+            "the statement spans through the proof `:=`, past the record-update `:=`: \
+             {extracted}"
+        );
+        // A reformatted (re-wrapped) SAME statement matches (whitespace-insensitive).
+        let reformatted = "theorem thermite_obligation_f (v : Thermite.Env) (r : Int) : \
+             Thermite.stabilizes body { v with specs := R_item } r -> True :=";
+        assert!(statements_match(&extracted, reformatted));
+        // A DIFFERENT proposition does NOT match.
+        let different = "theorem thermite_obligation_f : True :=";
+        assert!(!statements_match(&extracted, different));
+    }
+
+    // REQ-9/AC-7 (the #248 fix): the Lean-path tally floor gate. A `1/1` ratio MEETS the
+    // default floor; a `0/0` (all-untested with mutants generated) or a below-floor
+    // ratio does NOT — the SHIPPED 0/0 backstop + the WeakContract mirror.
+    #[test]
+    fn lean_tally_floor_gate() {
+        let mut clean = LeanMutationTally::default();
+        clean.record(LeanMutantOutcome::Killed, false); // 1/1
+        assert!(clean.meets_floor(0.60), "1/1 meets the floor");
+
+        let mut all_untested = LeanMutationTally::default();
+        all_untested.record(LeanMutantOutcome::UntestedAgainstLean, false);
+        all_untested.record(LeanMutantOutcome::UntestedAgainstLean, false);
+        assert!(
+            !all_untested.meets_floor(0.60),
+            "0/0 (all untested, mutants generated) is BELOW the floor (the 0/0 backstop) — \
+             never a vacuous L3 pass"
+        );
+
+        let mut weak = LeanMutationTally::default();
+        weak.record(LeanMutantOutcome::Killed, false); // 1 killed
+        weak.record(LeanMutantOutcome::Survived, false); // 1 survivor -> 1/2
+        weak.record(LeanMutantOutcome::Survived, false); // -> 1/3
+        assert!(
+            !weak.meets_floor(0.60),
+            "a below-floor ratio (1/3) does NOT certify L3-via-Lean (WeakContract mirror)"
+        );
+        assert_eq!(weak.mutants_killed_string(), "1/3");
     }
 
     // REQ-2(c)/(d): the Lean engine fills its four slots — the SMALLER trust profile

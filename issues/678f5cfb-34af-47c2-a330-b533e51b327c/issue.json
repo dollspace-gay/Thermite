@@ -6,5 +6,8 @@
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T16:06:38.359295012Z",
-  "updated_at": "2026-06-11T16:06:38.359295012Z"
+  "updated_at": "2026-06-11T16:06:39.801020689Z",
+  "labels": [
+    "blocker"
+  ]
 }

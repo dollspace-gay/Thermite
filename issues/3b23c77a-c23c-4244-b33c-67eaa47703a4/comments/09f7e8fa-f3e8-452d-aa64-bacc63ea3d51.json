@@ -1,0 +1,10 @@
+{
+  "uuid": "09f7e8fa-f3e8-452d-aa64-bacc63ea3d51",
+  "issue_uuid": "3b23c77a-c23c-4244-b33c-67eaa47703a4",
+  "author": "Yffe",
+  "content": "Build #253 part (iv-a): the SPINE PREREQUISITE for the exec-body bridge. Additive boolVar/bindBool layer across the contract denotation family + bodyConverges/bindResult over the fuel-free bodyDenote + the four bridge pins. All existing theorems + 7 kernel pins stay green with the standard axiom set; no exporter (forge) changes (that is iv-b). Manifest: Ast/Denote/Stabilize/Exec.Stmt/RefEncode/Soundness + 4 new Pin files + proof-backends.md.",
+  "created_at": "2026-06-11T22:01:32.918352226Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKD2V53+tHrAtaYAfmejbM3LxLJi+W41nlhjiqVHP1QyRL2/IPF6wYVLsDA3DmlYwMUt513mSZk/is10yV8IRDg=="
+}

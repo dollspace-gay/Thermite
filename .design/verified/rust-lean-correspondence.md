@@ -70,7 +70,7 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `21b84c5f` (#163; was `b9dc22fd` #165 — re-pinned, see Amendment 2026-06-10) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `c0b1d8a3` (#4) |
 | Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `3373215e` (#253 — Table 4 + Table 4B, the exec-body bridge added; was `d4871ded` #240. `scripts/audit.sh` check [4] drift-checks this exporter file's last-touch against this SHA, alongside the `lean/Thermite/**` spine SHA the exporter targets) |
-| Lean spine | `lean/Thermite/**` | `65504c18` (was `7c85da25` — re-pinned, see Amendment 2026-06-10) |
+| Lean spine | `lean/Thermite/**` | `1438dc5f` (was `65504c18` — re-pinned, see Amendment 2026-06-11; earlier `7c85da25` — see Amendment 2026-06-10) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).
 Verified `sorry`-free by inspection: every `sorry` token in the tree is inside a comment, never in
@@ -104,6 +104,42 @@ corresponding table section and requires re-audit (see "Drift" below).**
 > + the new `Exec/Loop.lean` (and the #184 `SmtDemo.lean`); no audited arm changed.** The arm tables of
 > THIS doc are unchanged; the new loop arms are NOT absorbed here — see the loop cross-reference under
 > "What this inspection does NOT cover."
+
+> **Amendment 2026-06-11 (re-pin, crosslink #255) — VERIFIED additive-only, NO re-audit of the arm
+> tables needed.** The deep-audit drift tripwire (check [4]) fired again: the `lean/Thermite/**` pin
+> was stale after the #240–#253 stabilization / exec-body-bridge arc. The range was VERIFIED against
+> the actual diff before re-pinning, NOT rubber-stamped:
+> - **`lean/Thermite/**` `65504c18` → `1438dc5f`** — `git diff --stat 65504c18 1438dc5f -- lean/Thermite/`
+>   is **3028 insertions, 0 deletions**: no pre-pin spine line changed anywhere.
+>   - **14 files PURE ADDITIONS**: `Stabilize.lean` (the #240 stabilization layer `4afd8661`, the
+>     #241 bottom-distinguishing NB denotation `f4ae4ee9`, the #242 comb-predicate gating `c3b9055e`)
+>     and 13 new kernel-checked `Pin*.lean` critic pins (`PinIntBottom` `9ae8f974` / `PinStabilization`
+>     `1d3ce56c` / `PinBodyRegistry` `d1140c40` / `PinDecMeasure` `4929c0e5` / `PinRegistryTerminating`
+>     `f7d288ef` / `PinCombPredGap` `c4e1f9ef` / the three `PinExport*` `e50c110f`+`007f8ceb` / the four
+>     `PinExec*` `1438dc5f`). The per-commit deletions inside the range (`f4ae4ee9`, `c3b9055e`,
+>     `007f8ceb`) all fall WITHIN these range-new files (intra-range churn of files added after the
+>     pin), never in a pre-pin file.
+>   - **5 modified files, ALL insertion-only (the #253 increment-(iv-a) `boolVar`/`bindBool` thread,
+>     `1438dc5f`)**: `Ast.lean` adds the NEW `Expr.boolVar` constructor (a new LEAF — in NO existing
+>     Table-1/2/3 row's scope); `Denote.lean` adds the DEFAULTED `Env.bools := fun _ => false` field
+>     (every existing `Env` literal elaborates unchanged) + `Env.bindBool` + one new `denote` arm;
+>     `RefEncode.lean` adds the identical `refDenote` boolVar arm; `Soundness.lean` adds two new
+>     CASES inside `refVal_eq`/`ref_sound` with the theorem STATEMENTS untouched; `Exec/Stmt.lean`
+>     adds `import Thermite.Denote` + the new `bodyConverges`/`bindResult` section after the
+>     (unchanged) `body_ref_sound` spine. The iv-a Opus critic audit (crosslink #253, result comment
+>     2026-06-11 22:47) independently confirmed `ref_sound`/`refVal_eq`/the NB-agreement statements
+>     byte-identical, the boolVar arms non-vacuous, and all 13 pins + `ref_sound`/`lowering_faithful`/
+>     `body_ref_sound` green unchanged on the standard axiom set.
+> - **NO audited Table-1/2/3 arm changed its meaning.** Tables 1–3 pin the Rust encoders ↔ the
+>   `denote`/`refDenote`/`execDenote`/`refStmt` arms over the PRE-EXISTING `Expr`/`Stmt` fragment;
+>   every one of those arms is byte-identical across the range. `boolVar`/`bindBool`/`bodyConverges`
+>   /`bindResult` are increment-(iv) EXPORTER surface, covered by **Table 4B** (see the re-pin
+>   coverage note there), not silently re-pinned. The `Stabilize.lean`/`Pin*` layer is the §4/§6.1
+>   exporter-obligation surface, covered by Table 4's "the theorem" row + the named regression-oracle
+>   paragraphs.
+>
+> Verification verdict: **additive-only — the Stabilize/Pin layer is new files; the boolVar thread is
+> new-constructor arms only; zero deletions against the pin. Re-pinned `65504c18` → `1438dc5f`.**
 
 
 ## Requirements
@@ -501,6 +537,16 @@ DIRECT inspection row.
 | **stateOf** | the item's params | `def stateOf (v : Env) : Exec.State := { env := { vars := …, slices := … }, scope := fun _ => false }` (int → `.int ⟨uW, v.ints x⟩`; bool → `.bool (v.bools p)`; slice → `(v.seqs xs).map (⟨uW,·⟩)`) | `Exec.State`/`ExecEnv`; the `inputState` exemplar (`scope := fun _ => false`) | direct + the per-param correspondence `rfl`-lemma (`asInt … = some ⟨uW, v.ints x⟩` / `asBool …` / `slices.map BVal.value = v.seqs xs`, the §4.1.4 compile-time tripwire) + EXP `scope := false` faithfulness (VERIFIED against `body_ref_state`'s EMPTY initial env — params are free inputs, a param `assign` is `none`/`Err` both sides) |
 | **the body theorems** | the per-item CONTRACT + OVERFLOW obligations | the HYPOTHESIZE `bodyConverges body_block (stateOf v) r → denote 0 req … → denote 0 ens (bindResult … r)` AND the conjoined `(bodyDenote body_block (stateOf v)).isSome` under `req` (one file) | `bodyConverges`/`bodyDenote`/`bindResult` (`Exec/Stmt.lean`) + `denote`/`intVal` + `Env.bindInt`/`bindBool` | the §4.1.5 form: the result bound THROUGH `bodyConverges` (uniqueness FREE — `bodyDenote` a function); the OVERFLOW conjunct the conjunction-rule soundness condition (PinExecOverflowVacuity) |
 
+**Re-pin coverage note (Amendment 2026-06-11, #255).** The `1438dc5f` spine additions that touch
+the CONTRACT family — `Expr.boolVar` (`Ast.lean`), `Env.bools`/`Env.bindBool` (`Denote.lean`), and
+`bodyConverges`/`bindResult` (`Exec/Stmt.lean`) — are audited HERE, in Table 4B's rows: the bool
+param/`result` positions of the `stateOf` row, the `bindBool` bind + `bodyConverges` HYPOTHESIZE
+antecedent of "the body theorems" row. They are pinned by the four `PinExec*` bridge pins and
+`PinExportBoolResult` (`true_false_indistinguishable_in_intVal` — the genuine-bool-sort-not-Int-0/1
+witness). They are NOT Tables-1/2/3 surface: no Rust reference encoder (`ref_encode`/`exec_encode`/
+`exec_stmt_encode`) emits a `boolVar` — the only producer is the `lean_export.rs` exporter audited in
+Tables 4/4B. The 2026-06-11 re-pin therefore adds NO correspondence surface outside the audited tables.
+
 **OUT-of-fragment residuals (the honest skips — `ExportRefusal::OutOfFragment`/`NotPureContract`/`LoopBody`/`OptResResult`/`OpenHole`).**
 `Expr::Field` (struct-field, Discrepancy D6), `Expr::TupleProj` (D6), `Expr::StructLit`, `Expr::Deref`,
 `Expr::StrLit`, `Expr::Tuple`, `Expr::If` (no S_C if-Expr), a bare `Expr::Closure` (closures appear ONLY
@@ -584,7 +630,7 @@ on any tier that targets Verus text).
   stays under its own authority. As of the #163 loop-TV arc, the Rust loop arm `loop_ref_obligations`
   (`thermite-tv/src/exec_stmt_encode.rs` @ `21b84c5f`) produces the three per-run reference pieces, and
   the Lean side proves the partial-correctness `while_rule` + its TV meta-theorem `tv_meta_loop`
-  (`lean/Thermite/Exec/Loop.lean` @ `65504c18`). The correspondence between the three Rust obligations
+  (`lean/Thermite/Exec/Loop.lean` @ `1438dc5f`; the file is byte-identical across the 2026-06-11 re-pin). The correspondence between the three Rust obligations
   and the Lean `while_rule`/`tv_meta_loop` premises was fidelity-audited in the #163 ACToR arc (the
   loop-TV critic verified the Lean premises match the Rust obligations) and lives under the authority of
   **`.design/verified/loop-tv.md`** — named here as a cross-reference, deliberately NOT silently
@@ -700,7 +746,7 @@ two sides are not arm-for-arm identical.
 ## Verification
 
 This doc is the audit artifact; its "verification" is the groundedness of every row (AC-2) and the
-existence of the cited Lean theorems. The Lean spine builds clean and `sorry`-free at `65504c18`:
+existence of the cited Lean theorems. The Lean spine builds clean and `sorry`-free at `1438dc5f`:
 
 - `lake build` (Lean `v4.29.0` since the #184 probe; the audited spine builds core-only-equivalent) — the spine compiles; `#print axioms lowering_faithful`
   shows `{propext, Classical.choice, Quot.sound}` (standard).
@@ -721,5 +767,5 @@ existence of the cited Lean theorems. The Lean spine builds clean and `sorry`-fr
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the arm-by-arm correspondence map) | SHIPPED | This doc IS the deliverable. Every arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state` and the 8 combinator `verus_l3` forms is EITHER a row in Tables 1–3 OR an explicitly-listed out-of-Lean-scope residual (the `ref_encode.rs::encode` dispatch is enumerated exhaustively in Table 1H — its `Expr::Field`/`Expr::TupleProj` arms are residual D6, no Lean counterpart). Each row quotes the actual Rust arm (`thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs` @ `579d3d48`/`43c9a6c8`/`21b84c5f`; `thermite-spec/src/combinators.rs` @ `c0b1d8a3`) beside the actual Lean arm (`lean/Thermite/{RefEncode,Denote,Exec}.lean` + `Exec/Stmt.lean` @ `65504c18`), the Verus-meaning bridge, and the pinning Lean theorem + negative lemma. Bridge assumptions A1–A3 enumerated; residuals + discrepancies D1–D6 recorded honestly. Closes the `thermite-semantics.md` REQ-6 correspondence residual at the audit-by-inspection tier. |
+| REQ-1 (the arm-by-arm correspondence map) | SHIPPED | This doc IS the deliverable. Every arm of `ref_contract_pred`/`exec_ref_value`/`body_ref_state` and the 8 combinator `verus_l3` forms is EITHER a row in Tables 1–3 OR an explicitly-listed out-of-Lean-scope residual (the `ref_encode.rs::encode` dispatch is enumerated exhaustively in Table 1H — its `Expr::Field`/`Expr::TupleProj` arms are residual D6, no Lean counterpart). Each row quotes the actual Rust arm (`thermite-tv/src/{ref_encode,exec_encode,exec_stmt_encode}.rs` @ `579d3d48`/`43c9a6c8`/`21b84c5f`; `thermite-spec/src/combinators.rs` @ `c0b1d8a3`) beside the actual Lean arm (`lean/Thermite/{RefEncode,Denote,Exec}.lean` + `Exec/Stmt.lean` @ `1438dc5f`; re-pinned 2026-06-11, the quoted arms byte-identical across the additive range — see Amendment 2026-06-11), the Verus-meaning bridge, and the pinning Lean theorem + negative lemma. Bridge assumptions A1–A3 enumerated; residuals + discrepancies D1–D6 recorded honestly. Closes the `thermite-semantics.md` REQ-6 correspondence residual at the audit-by-inspection tier. |
 | REQ-2 (the extraction bridge — Lean→Rust extraction or a Rust-side proof) | NOT-STARTED | open prereq blocker #185 (this doc's blocker tracks both tiers; the inspection tier is REQ-1 SHIPPED, the extraction tier stays open). Gap: there is no Lean→Rust extraction tooling for this encoder shape — the encoders are hand-written Rust producing Verus STRINGS, not Lean-extracted code, so the inspection (this doc) is the accepted interim per `thermite-semantics.md` REQ-6 / the reduced-trusted-base table item #3. The named stronger closure (extraction or a Rust-side proof making the Rust encoder equal the Lean model by construction) is future work; until then A2/A3 stay inspection-trusted and a CI drift-guard (recommended above) is the cheap interim hardening. |

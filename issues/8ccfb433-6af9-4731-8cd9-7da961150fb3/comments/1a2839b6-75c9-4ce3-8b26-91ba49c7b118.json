@@ -1,0 +1,10 @@
+{
+  "uuid": "1a2839b6-75c9-4ce3-8b26-91ba49c7b118",
+  "issue_uuid": "8ccfb433-6af9-4731-8cd9-7da961150fb3",
+  "author": "Yffe",
+  "content": "Failing tests at thermite-lower/tests/divergence_spec_call_cast_dedupe_suffix.rs (2 pins, #[ignore]d, tracking this issue) demonstrate the divergence. Authority: verus-lowering.md REQ-5 — an ARITHMETIC spec-call arg is the unbounded int in spec position and must narrow to the callee's DECLARED param type; the textual ends_with('as u32') check matches 'k + j as u32' = 'k + (j as u32)' (u32+u32 -> int as a whole) and skips the cast. Live: forge check on the fn-req fixture -> s_dec L3, f L0, E0308 'expected u32, found int'. Hand verus on the struct-inv twin emission s_a(self.x + self.y as u32): same E0308. Pre-existing in the #225 mechanism (lower_expr Call arm, both cast branches), copied verbatim into c116360c's lower_inv_expr Call arm — NOT introduced by c116360c, but reachable from correct surface syntax on every threaded site.",
+  "created_at": "2026-06-11T02:19:19.799692608Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAm8cWqIIWnkt3+ungkfWZPdCXPIh903p63dpiN+nvpY3ocP29WUWCD8FTZ+vO6/DBh1PvnahVNenXyBocf1ExCw=="
+}

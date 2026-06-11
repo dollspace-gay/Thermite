@@ -1,0 +1,10 @@
+{
+  "uuid": "c2598efa-d724-4cef-82fa-84f717c7ee87",
+  "issue_uuid": "e7f8922a-039e-434e-8c26-1e80a48e27c9",
+  "author": "Yffe",
+  "content": "Part (ii-a): land the LEAN SPINE PREREQUISITES per proof-backends.md §4/§6.1 in a NEW lean/Thermite/Stabilize.lean (importing the spine). Define stabilizes/stabilizesProp matching Denote.lean's intVal/denote; prove stabilizes_unique (overlap-at-max, the #214 lever); a Bool specCallFree over the full mutual AST (Expr/Pred/MatchArm/RangeArg); the FUEL-IRRELEVANCE lemma intVal_fuel_irrelevant/denote_fuel_irrelevant by mutual well-founded recursion (env generalized) with the fuel-free tier-(a) corollaries; and stabilization_exists honestly in the RegistryTerminating HYPOTHESIS form (the general core-Lean form is unprovable for an arbitrary registry; the hypothesis is the REQ-1.2 REGISTRY-TERMINATION obligation). No sorry. Import into Thermite.lean; mark the spine-prerequisite rows SHIPPED in the design doc. Do not touch the spine modules or the 4 pins; confirm pins still build. Gauntlet: lake build (full+pins), #print axioms standard-set-only, cargo build --workspace.",
+  "created_at": "2026-06-11T07:44:29.331267107Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAbS29kzDn9oaMdUmDzJINJw0TTprIiljgr/axMKIn+GtLuEeK5qoQDrib6l48IPZyRDNgZjZW+vG32ooL/ixXCA=="
+}

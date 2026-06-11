@@ -74,7 +74,6 @@ fn sum_b(xs: &[u32], k: u32) -> u64
 ";
 
 #[test]
-#[ignore = "divergence: nonlinear_overflow_assert re-lowers req via un-threaded Ctx::spec_seq() — u32-param spec-call arith arg gets the as-u64 fallback, E0308, item dies at L0; tracking #229"]
 fn nonlinear_overflow_assert_req_hypothesis_casts_to_declared_param_type() {
     let out = lower(NONLINEAR_REQ_PROGRAM);
     // Precondition of the pin: the overflow proof-aid actually fired (the
@@ -113,7 +112,6 @@ struct Counter {
 ";
 
 #[test]
-#[ignore = "divergence: lower_inv_expr catch-all lowers a struct-inv spec-call via un-threaded Ctx::spec_seq() — as-u64 fallback AND the REQ-8 self.<field> rewrite is dropped; tracking #229"]
 fn struct_invariant_spec_call_arith_arg_casts_to_declared_param_type() {
     let out = lower(STRUCT_INV_PROGRAM);
     assert!(

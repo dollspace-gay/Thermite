@@ -859,7 +859,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
             // `struct` lowers to a Verus `pub struct` + the `well_formed`
             // type-invariant predicate (REQ-8); a (recursive) `enum` lowers to a
             // Verus `enum` with `Box<T>` at the recursive occurrence (REQ-10).
-            Item::Struct(s) => lower_struct(s)?,
+            Item::Struct(s) => lower_struct(s, &spec_fn_param_types)?,
             Item::Enum(e) => lower_enum(e)?,
         };
         out.push('\n');
@@ -892,7 +892,10 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
 /// non-visible datatype`. The `inv` expression is lowered with bare field-name
 /// paths rewritten to `self.<field>` (the predicate's receiver), the
 /// data-invariant the corpus `inv balance <= 1_000_000` denotes.
-fn lower_struct(s: &thermite_syntax::ast::StructItem) -> Result<String, LowerError> {
+fn lower_struct(
+    s: &thermite_syntax::ast::StructItem,
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Result<String, LowerError> {
     let mut out = String::new();
     writeln!(out, "pub struct {} {{", s.name).ok();
     for field in &s.fields {
@@ -919,7 +922,14 @@ fn lower_struct(s: &thermite_syntax::ast::StructItem) -> Result<String, LowerErr
             .filter(|f| ty_reaches_string(&f.ty))
             .map(|f| f.name.as_str())
             .collect();
-        let body = lower_inv_expr(&inv.expr, &field_names, &string_fields, 0, s.span)?;
+        let body = lower_inv_expr(
+            &inv.expr,
+            &field_names,
+            &string_fields,
+            spec_fn_param_types,
+            0,
+            s.span,
+        )?;
         writeln!(out, "\nimpl {} {{", s.name).ok();
         out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
         writeln!(out, "        {body}").ok();
@@ -937,6 +947,7 @@ fn lower_inv_expr(
     expr: &Expr,
     field_names: &[&str],
     string_fields: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
     depth: usize,
     span: Span,
 ) -> Result<String, LowerError> {
@@ -959,12 +970,37 @@ fn lower_inv_expr(
             }
         }
         Expr::Binary { op, lhs, rhs } => {
-            let l = lower_inv_operand(lhs, *op, true, field_names, string_fields, d, span)?;
-            let r = lower_inv_operand(rhs, *op, false, field_names, string_fields, d, span)?;
+            let l = lower_inv_operand(
+                lhs,
+                *op,
+                true,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
+            let r = lower_inv_operand(
+                rhs,
+                *op,
+                false,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
             Ok(format!("{l} {} {r}", binop(*op)))
         }
         Expr::Field { receiver, name } => {
-            let r = lower_inv_expr(receiver, field_names, string_fields, d, span)?;
+            let r = lower_inv_expr(
+                receiver,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
             Ok(format!("{r}.{name}"))
         }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): a method call inside
@@ -984,7 +1020,14 @@ fn lower_inv_expr(
             name,
             args,
         } => {
-            let r = lower_inv_expr(receiver, field_names, string_fields, d, span)?;
+            let r = lower_inv_expr(
+                receiver,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
             let recv_is_string_field = matches!(
                 receiver.as_ref(),
                 Expr::Path(segs) if segs.len() == 1 && string_fields.contains(&segs[0].as_str())
@@ -999,18 +1042,86 @@ fn lower_inv_expr(
                     // index gets the explicit `as int` Verus requires in spec
                     // position (the same split as the fn-signature byte_at rewrite).
                     let idx = if matches!(&args[0], Expr::IntLit { .. }) {
-                        lower_inv_expr(&args[0], field_names, string_fields, d, span)?
+                        lower_inv_expr(
+                            &args[0],
+                            field_names,
+                            string_fields,
+                            spec_fn_param_types,
+                            d,
+                            span,
+                        )?
                     } else {
-                        lower_index_arg(&args[0], Ctx::spec_seq(), d, span)?
+                        lower_index_arg(
+                            &args[0],
+                            Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
+                            d,
+                            span,
+                        )?
                     };
                     return Ok(format!("{r}.spec_byte_at({idx})"));
                 }
             }
             let mut parts = Vec::with_capacity(args.len());
             for a in args {
-                parts.push(lower_inv_expr(a, field_names, string_fields, d, span)?);
+                parts.push(lower_inv_expr(
+                    a,
+                    field_names,
+                    string_fields,
+                    spec_fn_param_types,
+                    d,
+                    span,
+                )?);
             }
             Ok(format!("{r}.{name}({})", parts.join(", ")))
+        }
+        // A spec-fn / combinator CALL inside the `well_formed` predicate (#229,
+        // verus-lowering.md REQ-5 + REQ-8): e.g. a struct invariant `inv s_dec(x +
+        // 0) == 0` naming a user `spec fn` with an arithmetic arg over a FIELD.
+        // Two obligations the bare catch-all `lower_expr` dropped: (1) the REQ-8
+        // `self.<field>` field rewrite on the call's args (`x` is a FIELD, so the
+        // body must reference `self.x`, not a bare unresolvable `x`), and (2) the
+        // #225 declared-param-type narrowing — in spec position Verus integer
+        // arithmetic is the UNBOUNDED `int`, so an arithmetic arg `x + 0`
+        // evaluates to `int` and must narrow to the callee's DECLARED param type
+        // (`(self.x + 0) as u32` for a `u32`-param `s_dec`), NOT the hardcoded `as
+        // u64` fallback (E0308). The arg's field rewrite recurses through
+        // `lower_inv_expr` (so nested field paths become `self.<field>`), then the
+        // declared-param-type cast is appended with `as` binding tighter than
+        // `+`/`-` so the inner is parenthesized (#122). A param the map cannot
+        // resolve (callee absent / out of range / `bool`) falls back to `u64`, the
+        // historic default; a non-arithmetic arg flows in field-rewritten only.
+        Expr::Call { callee, args } => {
+            let c = lower_inv_expr(
+                callee,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
+            let callee_name = match callee.as_ref() {
+                Expr::Path(segs) => segs.last().map(|s| s.as_str()),
+                _ => None,
+            };
+            let cast_ctx = Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types);
+            let mut parts = Vec::with_capacity(args.len());
+            for (i, a) in args.iter().enumerate() {
+                let lowered =
+                    lower_inv_expr(a, field_names, string_fields, spec_fn_param_types, d, span)?;
+                if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
+                    let cast = callee_name
+                        .and_then(|n| cast_ctx.spec_call_param_cast(n, i))
+                        .unwrap_or("u64");
+                    if lowered.ends_with(&format!("as {cast}")) {
+                        parts.push(lowered);
+                    } else {
+                        parts.push(format!("({lowered}) as {cast}"));
+                    }
+                } else {
+                    parts.push(lowered);
+                }
+            }
+            Ok(format!("{c}({})", parts.join(", ")))
         }
         // A cast inside the `well_formed` predicate (`inv (x as u32) < cap`,
         // blocker #148): the cast INNER must recurse through `lower_inv_expr` so a
@@ -1020,7 +1131,14 @@ fn lower_inv_expr(
         // parenthesized: `(a - b) as T`). The target type lowers via `lower_type`
         // (a struct invariant is `bool`-returning, never `nat_ret`).
         Expr::Cast { expr: inner, ty } => {
-            let e = lower_inv_expr(inner, field_names, string_fields, d, span)?;
+            let e = lower_inv_expr(
+                inner,
+                field_names,
+                string_fields,
+                spec_fn_param_types,
+                d,
+                span,
+            )?;
             let t = lower_type(ty)?;
             let e = if matches!(inner.as_ref(), Expr::Binary { .. } | Expr::Unary { .. }) {
                 format!("({e})")
@@ -1030,24 +1148,46 @@ fn lower_inv_expr(
             Ok(format!("{e} as {t}"))
         }
         // A literal / other leaf lowers exactly as the shared spec lowering would
-        // (the field rewrite only matters for bare paths and their parents).
-        _ => lower_expr(expr, Ctx::spec_seq(), depth, span),
+        // (the field rewrite only matters for bare paths and their parents). Thread
+        // the param-type map so any spec-call reaching this catch-all narrows to
+        // the callee's DECLARED param type (#229) rather than the `as u64` fallback.
+        _ => lower_expr(
+            expr,
+            Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
+            depth,
+            span,
+        ),
     }
 }
 
 /// Parenthesize an `inv` binary operand the same way `lower_binary_operand` does,
 /// but recursing through `lower_inv_expr` so nested field-name paths are rewritten
 /// (REQ-8). Mirrors the precedence discipline of the exec/spec operand lowering.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the field-rewrite inputs mirror lower_inv_expr's threaded ctx \
+        (field_names/string_fields/spec_fn_param_types) plus the precedence \
+        operands (parent/is_left) — a struct would obscure the 1-to-1 \
+        correspondence with the lower_inv_expr path this re-enters (#229)"
+)]
 fn lower_inv_operand(
     operand: &Expr,
     parent: BinOp,
     is_left: bool,
     field_names: &[&str],
     string_fields: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
     depth: usize,
     span: Span,
 ) -> Result<String, LowerError> {
-    let s = lower_inv_expr(operand, field_names, string_fields, depth, span)?;
+    let s = lower_inv_expr(
+        operand,
+        field_names,
+        string_fields,
+        spec_fn_param_types,
+        depth,
+        span,
+    )?;
     if let Expr::Binary { op: child, .. } = operand {
         let pp = precedence(parent);
         let cp = precedence(*child);
@@ -3116,7 +3256,7 @@ fn lower_spec_fn_body(
         if let Some(slice) = first_slice_param(params) {
             if let Some(tail) = &body.tail {
                 if let Expr::Match { arms, .. } = tail.as_ref() {
-                    return seq_fold_body(slice, arms, ret);
+                    return seq_fold_body(slice, arms, ret, spec_fn_param_types);
                 }
             }
         }
@@ -3166,7 +3306,12 @@ fn first_slice_param(params: &[Param]) -> Option<&str> {
 /// Build the `Seq` head-fold body from the match arms (REQ-5). `[] => B` becomes
 /// `if xs.len() == 0 { B }`; `[head, ..t] => head as T + rec(t)` becomes
 /// `else { xs[0] as nat + rec(xs.drop_first()) }`.
-fn seq_fold_body(slice: &str, arms: &[MatchArm], ret: &str) -> Result<String, LowerError> {
+fn seq_fold_body(
+    slice: &str,
+    arms: &[MatchArm],
+    ret: &str,
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Result<String, LowerError> {
     let mut base = String::from("0");
     let mut rec_name = String::new();
     let head_cast: String = if ret == "nat" {
@@ -3177,7 +3322,15 @@ fn seq_fold_body(slice: &str, arms: &[MatchArm], ret: &str) -> Result<String, Lo
     for arm in arms {
         match &arm.pattern {
             Pattern::Slice(pats) if pats.is_empty() => {
-                base = lower_expr(&arm.body, Ctx::spec_seq(), 0, zero_span())?;
+                // The base arm lowers in spec position and may NAME a user spec
+                // fn with an arithmetic arg (#229) — thread the param-type map so
+                // its cast narrows to the callee's DECLARED param type.
+                base = lower_expr(
+                    &arm.body,
+                    Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
+                    0,
+                    zero_span(),
+                )?;
             }
             Pattern::Slice(pats) if is_head_rest(pats) => {
                 // The cons arm is `head as T + rec(t)`: pull the recursive callee.
@@ -7673,7 +7826,8 @@ fn lower_loop(
     }
     // template (overflow): the nonlinear_arith discharge, if the body grows an
     // accumulator bounded by a product invariant.
-    if let Some(assert_line) = nonlinear_overflow_assert(f, &l.invs, &l.body)? {
+    if let Some(assert_line) = nonlinear_overflow_assert(f, &l.invs, &l.body, spec_fn_param_types)?
+    {
         writeln!(out, "{ipad}{assert_line}").map_err(|_| fmt_err())?;
     }
     // template (req-bounded-mul, #196): a `var * var` product DIRECTLY in THIS
@@ -7688,7 +7842,14 @@ fn lower_loop(
 
     // The body statements, with the loop-exit coverage split injected into the
     // matching `if` branch (template e).
-    let body_src = lower_loop_body(&l.body, f, &l.invs, variants, indent + 1)?;
+    let body_src = lower_loop_body(
+        &l.body,
+        f,
+        &l.invs,
+        variants,
+        spec_fn_param_types,
+        indent + 1,
+    )?;
     out.push_str(&body_src);
 
     writeln!(out, "{pad}}}").map_err(|_| fmt_err())?;
@@ -7942,19 +8103,36 @@ fn nonlinear_overflow_assert(
     f: &FnItem,
     invs: &[Clause],
     body: &Block,
+    spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<Option<String>, LowerError> {
     // Find `acc = acc + slice[idx] as T;` in the body.
     let Some((accvar, idxvar)) = find_accumulator_growth(body) else {
         return Ok(None);
     };
     // Find the product-bound invariant `acc <= idx as T * BOUND`.
-    let Some((bound_factor, bound_ty)) = find_product_bound(invs, &accvar, &idxvar) else {
+    let Some((bound_factor, bound_ty)) =
+        find_product_bound(invs, &accvar, &idxvar, spec_fn_param_types)
+    else {
         return Ok(None);
     };
     // Gather the hypotheses: the product bound, `idx < slice.len()`, and the
-    // lifted immutable precondition (all from the loop's own state + req).
+    // lifted immutable precondition (all from the loop's own state + req). The
+    // `req` is re-lowered HERE as a `by(nonlinear_arith) requires` hypothesis;
+    // it may NAME a user `spec fn` with an arithmetic arg (`req s_dec(k + 0) ==
+    // 0`), which owes the SAME declared-param-type narrowing the signature
+    // `requires` applies (#225/#229, verus-lowering.md REQ-5). Without the
+    // program-wide param-type map the spec-call's arithmetic arg falls back to
+    // the hardcoded `as u64`, ill-typing a `u32`/`usize`-param callee (E0308 →
+    // the whole item dies at L0 though the same `req` lowers correctly in the
+    // signature/invariant). Thread the map so the hypothesis narrows to the
+    // callee's DECLARED param type (`Ctx::spec_call_param_cast`).
     let slice = first_slice_param(&f.params).unwrap_or("xs");
-    let req = lower_expr(&f.contract.req.expr, Ctx::spec_seq(), 0, f.span)?;
+    let req = lower_expr(
+        &f.contract.req.expr,
+        Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
+        0,
+        f.span,
+    )?;
     let mut hyps = vec![
         format!("{accvar} <= {idxvar} as {bound_ty} * {bound_factor}",),
         format!("{idxvar} < {slice}.len()"),
@@ -8021,7 +8199,12 @@ fn index_var_of_cast(expr: &Expr) -> Option<String> {
 
 /// Find a product-bound invariant `accvar <= idxvar as T * FACTOR`. Returns
 /// `(factor_string, T)`. SHAPE match.
-fn find_product_bound(invs: &[Clause], accvar: &str, idxvar: &str) -> Option<(String, String)> {
+fn find_product_bound(
+    invs: &[Clause],
+    accvar: &str,
+    idxvar: &str,
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Option<(String, String)> {
     for inv in invs {
         if let Expr::Binary {
             op: BinOp::Le,
@@ -8042,8 +8225,18 @@ fn find_product_bound(invs: &[Clause], accvar: &str, idxvar: &str) -> Option<(St
                             if let Expr::Path(isegs) = expr.as_ref() {
                                 if isegs.last().map(|s| s == idxvar).unwrap_or(false) {
                                     let t = lower_type(ty).ok()?;
-                                    let factor =
-                                        lower_expr(mr, Ctx::spec_seq(), 0, zero_span()).ok()?;
+                                    // The bound factor lowers in spec position and
+                                    // may NAME a user spec fn with an arithmetic arg
+                                    // (#229) — thread the param-type map so its cast
+                                    // narrows to the callee's DECLARED param type.
+                                    let factor = lower_expr(
+                                        mr,
+                                        Ctx::spec_seq()
+                                            .with_spec_fn_param_types(spec_fn_param_types),
+                                        0,
+                                        zero_span(),
+                                    )
+                                    .ok()?;
                                     return Some((factor, t));
                                 }
                             }
@@ -8103,11 +8296,12 @@ fn lower_loop_body(
     f: &FnItem,
     invs: &[Clause],
     variants: &[(&str, &str)],
+    spec_fn_param_types: &[(&str, &[PrimType])],
     indent: usize,
 ) -> Result<String, LowerError> {
     // Pre-compute the coverage split, if this loop's invariants + the fn's
     // None-postcondition match template (e).
-    let coverage = complementary_coverage_split(f, invs)?;
+    let coverage = complementary_coverage_split(f, invs, spec_fn_param_types)?;
     let owned = owned_string_value_names(f);
     let exec = Ctx::exec()
         .with_variants(variants)
@@ -8213,9 +8407,10 @@ struct CoverageSplit {
 fn complementary_coverage_split(
     f: &FnItem,
     invs: &[Clause],
+    spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<Option<CoverageSplit>, LowerError> {
     // 1. Find a `None => forall_in(s, ptarget)` arm in some `ens`.
-    let Some((slice, ptarget)) = find_none_forall_in(&f.contract.ens) else {
+    let Some((slice, ptarget)) = find_none_forall_in(&f.contract.ens, spec_fn_param_types) else {
         return Ok(None);
     };
 
@@ -8224,12 +8419,16 @@ fn complementary_coverage_split(
     let mut below: Option<(String, String)> = None; // (var, pred)
     let mut from: Option<(String, String)> = None;
     for inv in invs {
-        if let Some((s, var, pred)) = match_bounded_combinator(&inv.expr, "forall_below") {
+        if let Some((s, var, pred)) =
+            match_bounded_combinator(&inv.expr, "forall_below", spec_fn_param_types)
+        {
             if s == slice {
                 below = Some((var, pred));
             }
         }
-        if let Some((s, var, pred)) = match_bounded_combinator(&inv.expr, "forall_from") {
+        if let Some((s, var, pred)) =
+            match_bounded_combinator(&inv.expr, "forall_from", spec_fn_param_types)
+        {
             if s == slice {
                 from = Some((var, pred));
             }
@@ -8253,7 +8452,10 @@ fn complementary_coverage_split(
 
 /// Find a `match result { ... None => forall_in(slice, pred) ... }` ensures arm,
 /// returning `(slice, lowered_pred)`. SHAPE match on the ensures.
-fn find_none_forall_in(ens: &[Clause]) -> Option<(String, String)> {
+fn find_none_forall_in(
+    ens: &[Clause],
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Option<(String, String)> {
     for clause in ens {
         if let Expr::Match { arms, .. } = &clause.expr {
             for arm in arms {
@@ -8264,7 +8466,17 @@ fn find_none_forall_in(ens: &[Clause]) -> Option<(String, String)> {
                         if let (Expr::Path(segs), [s, p]) = (callee.as_ref(), args.as_slice()) {
                             if segs.last().map(|x| x == "forall_in").unwrap_or(false) {
                                 let slice = slice_name(s)?;
-                                let pred = lower_expr(p, Ctx::spec_seq(), 0, zero_span()).ok()?;
+                                // The forall_in predicate lowers in spec position and
+                                // may NAME a user spec fn with an arithmetic arg
+                                // (#229) — thread the param-type map so its cast
+                                // narrows to the callee's DECLARED param type.
+                                let pred = lower_expr(
+                                    p,
+                                    Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
+                                    0,
+                                    zero_span(),
+                                )
+                                .ok()?;
                                 return Some((slice, pred));
                             }
                         }
@@ -8278,7 +8490,11 @@ fn find_none_forall_in(ens: &[Clause]) -> Option<(String, String)> {
 
 /// Match `comb(slice, var, pred)` (a `forall_below`/`forall_from` call),
 /// returning `(slice, var, lowered_pred)`. SHAPE match.
-fn match_bounded_combinator(expr: &Expr, comb: &str) -> Option<(String, String, String)> {
+fn match_bounded_combinator(
+    expr: &Expr,
+    comb: &str,
+    spec_fn_param_types: &[(&str, &[PrimType])],
+) -> Option<(String, String, String)> {
     if let Expr::Call { callee, args } = expr {
         if let (Expr::Path(segs), [s, v, p]) = (callee.as_ref(), args.as_slice()) {
             if segs.last().map(|x| x == comb).unwrap_or(false) {
@@ -8287,7 +8503,16 @@ fn match_bounded_combinator(expr: &Expr, comb: &str) -> Option<(String, String, 
                     Expr::Path(vs) => vs.last()?.clone(),
                     _ => return None,
                 };
-                let pred = lower_expr(p, Ctx::spec_seq(), 0, zero_span()).ok()?;
+                // The combinator predicate lowers in spec position and may NAME a
+                // user spec fn with an arithmetic arg (#229) — thread the
+                // param-type map so its cast narrows to the DECLARED param type.
+                let pred = lower_expr(
+                    p,
+                    Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
+                    0,
+                    zero_span(),
+                )
+                .ok()?;
                 return Some((slice, var, pred));
             }
         }

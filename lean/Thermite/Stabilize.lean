@@ -532,6 +532,53 @@ theorem countWhereValNB_cons (p : Int → Option Prop) (x : Int) (xs : List Int)
           (countWhereValNB p xs).bind (fun rest =>
             some ((@ite _ px (Classical.propDecidable _) (1 : Int) 0) + rest))) := rfl
 
+/-- The PER-ELEMENT PREDICATE GATE for the six Prop-combinators (the #242 root fix): given a
+    per-element predicate `p : Int → Option Prop` that may BOTTOM and the slice, yields
+    `some ()` iff EVERY element's predicate evaluates to `some` (any `none` poisons). The
+    bottom-distinguishing companion to `denote`'s `p`-position for forall_in/exists_in/
+    forall_below/forall_from: a divergent spec-call inside the predicate body is `none` at
+    that element, so the gate is `none` and the comb arm does NOT forge a genuine value.
+    Carried alongside the (reflexively-correct) spine `denote` proposition — the gate decides
+    `some`/`none`, never WHICH proposition is carried (keeping `denoteNB_agrees` reflexive).
+    `sorted`/`disjoint`/`permutationOf` carry no predicate, so the gate is `some ()` for them
+    (`pred = none`) and only the slice/`seq2`/`idx` subterms gate, as before. Structural
+    recursion on the slice (core, no fuel — exactly like `countWhereValNB`). -/
+noncomputable def predGateNB (p : Int → Option Prop) : List Int → Option Unit
+  | []      => some ()
+  | x :: xs => (p x).bind (fun _ => predGateNB p xs)
+
+/-- `predGateNB`'s head-then-tail step (the defining equation, by `rfl`). -/
+theorem predGateNB_cons (p : Int → Option Prop) (x : Int) (xs : List Int) :
+    predGateNB p (x :: xs) = (p x).bind (fun _ => predGateNB p xs) := rfl
+
+/-- When `predGateNB p s = some ()`, EVERY element's predicate is `some` (the witness the
+    agreement lemma needs to discharge the per-element predicate at each slice member). -/
+theorem predGateNB_all_some {p : Int → Option Prop} :
+    ∀ {s : List Int}, predGateNB p s = some () → ∀ x ∈ s, ∃ px, p x = some px
+  | [], _, x, hx => by simp at hx
+  | y :: ys, h, x, hx => by
+      rw [predGateNB_cons] at h
+      cases hpy : p y with
+      | none => rw [hpy] at h; simp at h
+      | some py =>
+          rw [hpy] at h; simp only [Option.bind] at h
+          rcases List.mem_cons.mp hx with hxy | hxys
+          · subst hxy; exact ⟨py, hpy⟩
+          · exact predGateNB_all_some h x hxys
+
+/-- When every element's predicate is `some`, the gate is `some ()` (the converse direction:
+    the auto fragment's gate never poisons). PARAMETRIZED by the per-element `some`-ness `hp`
+    (NOT a forward reference into the spec-call-free mutual block — `denoteNB_specCallFree`'s
+    comb arm supplies `hp`, exactly as `countWhereValNB_eq_of` is supplied). -/
+theorem predGateNB_some_of (p : Int → Option Prop) :
+    ∀ (s : List Int), (∀ x, ∃ px, p x = some px) → predGateNB p s = some ()
+  | [], _ => rfl
+  | x :: xs, hp => by
+      rw [predGateNB_cons]
+      obtain ⟨px, hpx⟩ := hp x
+      rw [hpx]; simp only [Option.bind]
+      exact predGateNB_some_of p xs hp
+
 mutual
 /-- The none-propagating SEQUENCE denotation (the `seqVal` mirror): `some s` iff `e`
     reaches a genuine sequence at fuel `f` with no bottom arm. Threads fuel UNCHANGED to
@@ -641,15 +688,26 @@ noncomputable def denoteNB : Nat → Expr → Env → Option Prop
   | _,    Expr.is_ scrut variant, env =>
       some ((scrutVal scrut env).isVariant variant = true)
   -- The comb arm propagates `none` from the slice/`seq2`/`idx` subterms (where a `specCall`
-  -- could bottom), then carries EXACTLY the spine `denote` proposition (the per-element
-  -- body divergence is carried INSIDE the spine `denote`'s own `True`-bottom — the Prop
-  -- combinators do not separately none-gate per element; the value-side `countWhere` DOES,
-  -- via `countWhereValNB`). Carrying `denote …` verbatim makes the agreement reflexive.
+  -- could bottom) AND from the PER-ELEMENT PREDICATE BODY over the slice (the #242 root fix:
+  -- a divergent spec-call reachable only through a Prop-combinator predicate body now poisons
+  -- this arm, via `predGateNB`). The gate evaluates the predicate body through `denoteNB` at
+  -- each slice element (`env.bindInt bound x`) — exactly the positions the spine `denote`'s
+  -- `p i = denote fuel body (env.bindInt bound (seqIdx s i))` reads where the index guard
+  -- holds; any element bottoming makes the gate `none`. `sorted`/`disjoint`/`permutationOf`
+  -- carry `pred = none`, so the gate is vacuously `some ()` (they gate only slice/`seq2`/
+  -- `idx`, as before). The carried proposition is still EXACTLY the spine `denote` form —
+  -- the gate decides `some`/`none`, never WHICH proposition is carried — so `denoteNB_agrees`
+  -- stays reflexive (`P = denote (comb …)`), while a divergent predicate no longer forges a
+  -- `some` (`PinCombPredGap.lean`'s F.2 inverts).
   | fuel, Expr.comb c seq seq2 idx pred, env =>
-      (seqValNB fuel seq env).bind (fun _ =>
+      (seqValNB fuel seq env).bind (fun s =>
         ((match seq2 with | some e => seqValNB fuel e env | none => some []).bind (fun _ =>
           ((match idx with | some e => intValNB fuel e env | none => some 0).bind (fun _ =>
-            some (denote fuel (Expr.comb c seq seq2 idx pred) env))))))
+            (predGateNB
+              (fun x => match pred with
+                | some (Pred.mk bound body) => denoteNB fuel body (env.bindInt bound x)
+                | none => some True) s).bind (fun _ =>
+              some (denote fuel (Expr.comb c seq seq2 idx pred) env)))))))
   | fuel+1, Expr.specCall name args, env =>
       match env.specs name with
       | some fn =>
@@ -698,6 +756,15 @@ theorem countWhereVal_agrees_of (pNB : Int → Option Prop) (pSp : Int → Prop)
                   = (@ite _ px (Classical.propDecidable _) (1 : Int) 0) from by
                 rw [propext (hp x px hpx)]]
               omega
+
+/-- A bind whose continuation is the CONSTANT `fun _ => some k`: if the whole bind equals
+    `some P`, then `k = P` (the gate/scrutinee `Option` value is irrelevant to the carried
+    proposition). The #242 comb-arm agreement key — the predicate gate decides `some`/`none`
+    but never WHICH proposition is carried. -/
+theorem Option.bind_const_eq_some_inj {α : Type} {k P : α} :
+    ∀ {o : Option Unit}, o.bind (fun _ => some k) = some P → k = P
+  | none, h => by simp only [Option.bind] at h; exact absurd h (by simp)
+  | some _, h => by simp only [Option.bind, Option.some.injEq] at h; exact h
 
 /-! ## The AGREEMENT LEMMAS (the real content #241 demands)
 
@@ -970,7 +1037,9 @@ theorem denoteNB_agrees : ∀ (f : Nat) (e : Expr) (env : Env) (P : Prop),
       simp only [denoteNB, Option.some.injEq] at h; simp only [denote]; rw [h]
   | f, Expr.comb c seq seq2 idx pred, env, P, h => by
       -- The comb NB arm carries EXACTLY the spine `denote` proposition once the slice/`seq2`/
-      -- `idx` binds succeed, so the agreement is reflexive after extracting `P = denote …`.
+      -- `idx` binds AND the per-element predicate gate succeed, so the agreement is reflexive
+      -- after extracting `P = denote …` (the gate decides `some`/`none`, never the carried
+      -- proposition).
       unfold denoteNB at h
       cases hs : seqValNB f seq env with
       | none => rw [hs] at h; simp at h
@@ -983,8 +1052,14 @@ theorem denoteNB_agrees : ∀ (f : Nat) (e : Expr) (env : Env) (P : Prop),
               cases hn : (match idx with | some e => intValNB f e env | none => some 0) with
               | none => rw [hn] at h; simp at h
               | some nv =>
-                  rw [hn] at h; simp only [Option.some.injEq] at h
-                  exact iff_of_eq h
+                  rw [hn] at h
+                  -- The gate's VALUE is irrelevant to the carried proposition (the gate only
+                  -- decides `some`/`none`): the bind's continuation is the CONSTANT
+                  -- `fun _ => some (denote …)`, so `h` forces `P = denote …` regardless of the
+                  -- gate, and the agreement is reflexive. (A divergent predicate makes the gate
+                  -- `none`, so the `some P` equation cannot hold there at all —
+                  -- `PinCombPredGap.lean` F.2 inverts.)
+                  exact iff_of_eq (Option.bind_const_eq_some_inj h)
   | f+1, Expr.specCall name args, env, P, h => by
       simp only [denoteNB] at h
       cases hr : env.specs name with
@@ -1191,6 +1266,28 @@ theorem intValNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
       simp only [specCallFree] at hf; exact absurd hf Bool.false_ne_true
   termination_by e => sizeOf e
 
+/-- The predicate GATE is `some ()` on the spec-call-free fragment (the #242 auto-fragment
+    companion): when the predicate option is spec-call-free, every element's predicate body is
+    spec-call-free, so `denoteNB body` is total-`some` and the gate never poisons. A STANDALONE
+    member of the spec-call-free mutual block (supplies the comb arm's `hgate` with NO
+    `pred`-mentioning context hyp polluting the lambda motive — the same discipline as
+    `comb_pred_fuel_iff`). -/
+theorem predGateNB_specCallFree : ∀ (pred : Option Pred) (env : Env) (f : Nat),
+    optPredFree pred = true → ∀ s : List Int,
+      predGateNB
+        (fun x => match pred with
+          | some (Pred.mk bound body) => denoteNB f body (env.bindInt bound x)
+          | none => some True) s = some ()
+  | none, _, _, _, s => by
+      refine predGateNB_some_of _ s (fun x => ?_); exact ⟨True, rfl⟩
+  | some (Pred.mk bound body), env, f, hpred, s => by
+      have hbody : specCallFree body = true := by
+        simp only [optPredFree, predFree] at hpred; exact hpred
+      refine predGateNB_some_of _ s (fun x => ?_)
+      exact ⟨denote f body (env.bindInt bound x),
+        denoteNB_specCallFree body (env.bindInt bound x) f hbody⟩
+  termination_by pred _ _ _ => sizeOf pred
+
 /-- On the spec-call-free fragment, `denoteNB` is total-`some` and carries exactly `denote`. -/
 theorem denoteNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
     specCallFree e = true → denoteNB f e env = some (denote f e env)
@@ -1218,6 +1315,7 @@ theorem denoteNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
       have hseq : specCallFree seq = true := hf.1.1.1
       have hseq2 : optExprFree seq2 = true := hf.1.1.2
       have hidx : optExprFree idx = true := hf.1.2
+      have hpred : optPredFree pred = true := hf.2
       have hs2 : (match seq2 with | some e => seqValNB f e env | none => some [])
           = some (match seq2 with | some e => seqVal f e env | none => []) := by
         cases seq2 with
@@ -1232,8 +1330,12 @@ theorem denoteNB_specCallFree : ∀ (e : Expr) (env : Env) (f : Nat),
         | some e =>
             have : specCallFree e = true := by simp only [optExprFree] at hidx; exact hidx
             simp only [intValNB_specCallFree e env f this]
+      -- The predicate gate is `some ()` on the spec-call-free fragment (the #242 auto-fragment
+      -- companion) — supplied by the standalone `predGateNB_specCallFree`, so no
+      -- `pred`-mentioning context hyp pollutes the lambda motive.
       unfold denoteNB
       simp only [seqValNB_specCallFree seq env f hseq, hs2, hn, Option.bind]
+      rw [predGateNB_specCallFree pred env f hpred (seqVal f seq env)]
   | Expr.specCall name args, env, f, hf => by
       simp only [specCallFree] at hf; exact absurd hf Bool.false_ne_true
   | Expr.intLit n, env, f, _ => by simp only [denoteNB, denote]

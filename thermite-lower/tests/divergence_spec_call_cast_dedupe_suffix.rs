@@ -54,7 +54,6 @@ fn f(k: u32, j: u32) -> u32
 ";
 
 #[test]
-#[ignore = "divergence: ends_with(`as <cast>`) dedupe skips the REQ-5 narrowing on an int-typed sum whose lowering merely ENDS in a cast (E0308 -> L0); tracking #231"]
 fn spec_call_arith_arg_ending_in_cast_text_still_narrows_to_declared_param_type() {
     let out = lower(DEDUPE_REQ_PROGRAM);
     // REQ-5: the Binary arg `k + j as u32` is `int` in spec position, so it
@@ -87,7 +86,6 @@ struct Nest {
 ";
 
 #[test]
-#[ignore = "divergence: same ends_with dedupe skip on the lower_inv_expr Call arm (struct inv); tracking #231"]
 fn struct_inv_spec_call_arith_arg_ending_in_cast_text_still_narrows() {
     let out = lower(DEDUPE_INV_PROGRAM);
     assert!(

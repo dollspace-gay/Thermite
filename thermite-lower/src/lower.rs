@@ -1945,7 +1945,7 @@ fn lower_spec_fn(
         write!(
             out,
             ") -> {ret}\n    decreases {}\n",
-            spec_dec(&s.dec, &s.params)
+            spec_dec(&s.dec, &s.params, spec_fn_param_types)
         )
         .ok();
     }
@@ -2316,7 +2316,7 @@ fn lower_fn(
     // diverge fn recurse WITHOUT a `dec` (L1-capped, partial correctness only);
     // such a fn carries `dec = None`, so this block correctly emits nothing.
     if let Some(dec) = &f.dec {
-        let measure = spec_dec(dec, &f.params);
+        let measure = spec_dec(dec, &f.params, spec_fn_param_types);
         writeln!(out, "    decreases {measure}").ok();
     }
 
@@ -2329,7 +2329,7 @@ fn lower_fn(
     // passes the reference verbatim regardless (no `.data@` view in exec). Only the
     // exec SIGNATURE's `requires`/`ensures` (lowered in spec context above) and a
     // `spec fn` body (`lower_spec_fn`) reach the byte-view dispatch (#127).
-    let body = lower_fn_body(f, nat_fns, string_fields, variants)?;
+    let body = lower_fn_body(f, nat_fns, string_fields, variants, spec_fn_param_types)?;
     out.push_str(&body);
     Ok(out)
 }
@@ -7076,6 +7076,7 @@ fn lower_fn_body(
     nat_fns: &[&str],
     string_fields: &[&str],
     variants: &[(&str, &str)],
+    spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<String, LowerError> {
     let mut out = String::from("{\n");
     // A boundary fn (ffi-boundary.md REQ-2/OQ-3) has `body: None` and is NEVER
@@ -7094,7 +7095,15 @@ fn lower_fn_body(
     // proof block at the loop body's start, emitted by `lower_loop`). REQ-7.
     let mul_aids = req_bounded_mul_asserts(f, body)?;
     out.push_str(&render_mul_proof_block(&mul_aids, 1));
-    let inner = lower_block_with_fn_aids(body, f, nat_fns, string_fields, variants, 1)?;
+    let inner = lower_block_with_fn_aids(
+        body,
+        f,
+        nat_fns,
+        string_fields,
+        variants,
+        spec_fn_param_types,
+        1,
+    )?;
     out.push_str(&inner);
     out.push_str("}\n");
     Ok(out)
@@ -7404,6 +7413,7 @@ fn lower_block_with_fn_aids(
     nat_fns: &[&str],
     string_fields: &[&str],
     variants: &[(&str, &str)],
+    spec_fn_param_types: &[(&str, &[PrimType])],
     indent: usize,
 ) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
@@ -7415,7 +7425,15 @@ fn lower_block_with_fn_aids(
     for stmt in &block.stmts {
         match stmt {
             Stmt::Loop(l) => {
-                out.push_str(&lower_loop(l, f, nat_fns, string_fields, variants, indent)?);
+                out.push_str(&lower_loop(
+                    l,
+                    f,
+                    nat_fns,
+                    string_fields,
+                    variants,
+                    spec_fn_param_types,
+                    indent,
+                )?);
             }
             other => {
                 out.push_str(&lower_stmt(other, exec, indent)?);
@@ -7557,6 +7575,7 @@ fn lower_loop(
     nat_fns: &[&str],
     string_fields: &[&str],
     variants: &[(&str, &str)],
+    spec_fn_param_types: &[(&str, &[PrimType])],
     indent: usize,
 ) -> Result<String, LowerError> {
     use thermite_syntax::ast::LoopKind;
@@ -7579,9 +7598,22 @@ fn lower_loop(
 
     let slices = slice_param_names(&f.params);
     let strings = string_value_names(f);
+    // The loop's `inv` clauses AND its `dec` measure lower in SPEC context, and a
+    // loop invariant / decreases measure may NAME a user `spec fn` with an
+    // arithmetic argument (`inv s_dec(i + 0) == 0`, `dec s_dec(n - i)`). That
+    // spec-call's arithmetic arg owes the SAME declared-param-type narrowing the
+    // signature/body/spec-fn paths apply (#225, verus-lowering.md REQ-5): without
+    // the program-wide param-type map it falls back to the hardcoded `as u64`,
+    // ill-typing a `u32`/`usize`-param callee (E0308 → the whole item dies at L0
+    // though the Thermite source is correct). Thread the map so a loop-context
+    // spec-call narrows to the callee's DECLARED param type
+    // (`Ctx::spec_call_param_cast`, #227). This `spec` ctx ALSO feeds
+    // `lift_immutable_preconds` below, so a precondition lifted into the invariants
+    // that names a spec fn narrows identically.
     let spec = Ctx::spec(&slices, nat_fns)
         .with_strings(&strings)
-        .with_string_fields(string_fields);
+        .with_string_fields(string_fields)
+        .with_spec_fn_param_types(spec_fn_param_types);
 
     // Invariants: the loop's own `inv`s, then lifted immutable preconditions
     // (template b) not already present.
@@ -8253,7 +8285,7 @@ fn slice_name(expr: &Expr) -> Option<String> {
 /// `dec`/`decreases` lowering for a spec fn: the measure expression in spec
 /// context, with slice `.len()` viewed appropriately. The corpus `dec xs.len()`
 /// lowers to `xs.len()` (Verus coerces a `Seq` `.len()` here).
-fn spec_dec(dec: &Clause, params: &[Param]) -> String {
+fn spec_dec(dec: &Clause, params: &[Param], spec_fn_param_types: &[(&str, &[PrimType])]) -> String {
     // A `decreases <measure>` is a SPEC term (Verus admits no exec call in it). So a
     // `String`-param measure that names `.len()` (`dec s.len() - i`) must rewrite to
     // the SPEC accessor `s.spec_len()` — the exec `len` returns `u64` and is not
@@ -8263,8 +8295,18 @@ fn spec_dec(dec: &Clause, params: &[Param]) -> String {
     // the SAME way the signature/body do (Basis Stage 7 REQ-4, #126). EMPTY for a
     // non-`String` fn (byte-stable: the corpus `dec`s name plain scalars/`xs.len()`
     // over a Seq, never a String accessor).
+    //
+    // A `dec` measure may NAME another user `spec fn` with an arithmetic argument
+    // (`dec s_dec(n + 0)`). That spec-call's arithmetic arg owes the SAME declared-
+    // param-type narrowing the signature/body paths apply (#225, verus-lowering.md
+    // REQ-5): without the param-type map it falls back to the hardcoded `as u64`,
+    // ill-typing a `u32`/`usize`-param callee (E0308 → L0 though the source is
+    // correct). Thread the program-wide map so a `dec`-measure spec-call narrows to
+    // the callee's DECLARED param type (`Ctx::spec_call_param_cast`, #227).
     let strings = string_param_names(params);
-    let ctx = Ctx::spec_seq().with_strings(&strings);
+    let ctx = Ctx::spec_seq()
+        .with_strings(&strings)
+        .with_spec_fn_param_types(spec_fn_param_types);
     lower_expr(&dec.expr, ctx, 0, zero_span()).unwrap_or_else(|_| "0".to_string())
 }
 

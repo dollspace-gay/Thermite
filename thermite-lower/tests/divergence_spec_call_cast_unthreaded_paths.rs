@@ -70,8 +70,6 @@ fn count_up(n: u32) -> u32
 ";
 
 #[test]
-#[ignore = "divergence: lower_loop's spec Ctx lacks spec_fn_param_types — loop-inv \
-            spec-call arith args fall back to the ill-typed `as u64`; tracking #227"]
 fn loop_invariant_spec_call_arith_arg_casts_to_declared_param_type() {
     let out = lower(LOOP_INV_PROGRAM);
     // The callee `s_dec` declares a `u32` param, so the invariant's arithmetic
@@ -110,8 +108,6 @@ spec fn s_two(n: u32) -> u32
 ";
 
 #[test]
-#[ignore = "divergence: spec_dec's Ctx lacks spec_fn_param_types — a dec-measure \
-            spec-call arith arg falls back to the ill-typed `as u64`; tracking #227"]
 fn fn_level_dec_measure_spec_call_arith_arg_casts_to_declared_param_type() {
     let out = lower(SPEC_DEC_PROGRAM);
     assert!(

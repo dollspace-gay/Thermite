@@ -1005,14 +1005,32 @@ impl LeanEngine {
                 // `axiom thermite_cheat : ∀ p, p`, an oracle, …) means the cert's base
                 // would be a LIE — the proof rests on more than it enumerates. Such a
                 // proof is NEVER Proven (a proof cheat), even though it kernel-accepts.
-                if let Some(extra) = nonstandard_axiom(&axioms) {
-                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
-                        "non-standard axiom: {extra}: the interactive proof `{}` kernel-accepts \
-                         but `#print axioms` rests on `{extra}`, OUTSIDE the trust-base allowlist \
-                         {{propext, Classical.choice, Quot.sound}} (proof-backends REQ-4/§1, \
-                         R-DEFER-9); the enumerable trusted base would be a LIE — NEVER Proven",
-                        path.display()
-                    )));
+                match nonstandard_axiom(&axioms, item) {
+                    AxiomReport::Nonstandard(extra) => {
+                        return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                            "non-standard axiom: {extra}: the interactive proof `{}` \
+                             kernel-accepts but the obligation theorem's `#print axioms` rests on \
+                             `{extra}`, OUTSIDE the trust-base allowlist {{propext, \
+                             Classical.choice, Quot.sound}} (proof-backends REQ-4/§1, R-DEFER-9); \
+                             the enumerable trusted base would be a LIE — NEVER Proven",
+                            path.display()
+                        )));
+                    }
+                    AxiomReport::Missing => {
+                        // No `#print axioms` report for the OBLIGATION theorem in the output:
+                        // an author's own earlier `#print axioms <helper>` must NEVER be read in
+                        // its place (the #249 marker-mask). Without the obligation's own axiom
+                        // list the enumerable base cannot be vouched for — NEVER Proven.
+                        return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                            "axiom report missing: the interactive proof `{}` kernel-accepts but \
+                             lake emitted no `#print axioms` report for the obligation theorem \
+                             `thermite_obligation_{}` (proof-backends REQ-4/§1, R-DEFER-9); its \
+                             trusted base cannot be enumerated — NEVER Proven",
+                            path.display(),
+                            proof_thm_sanitize(item)
+                        )));
+                    }
+                    AxiomReport::Clean => {}
                 }
                 // A kernel-accepted, sorry-FREE, allowlist-clean, statement-bound replay
                 // → Proven with the INTERACTIVE trust profile (the author is a reviewed
@@ -1356,38 +1374,86 @@ fn axioms_contain_sorry(print_axioms_output: &str) -> bool {
 /// dependency the cert would NOT enumerate.
 const STANDARD_AXIOM_ALLOWLIST: [&str; 3] = ["propext", "Classical.choice", "Quot.sound"];
 
-/// Strictly parse a `#print axioms <thm>` output and return the FIRST axiom OUTSIDE the
-/// trust-base allowlist (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9), or
-/// `None` if every reported axiom is standard. Lean prints either `'thm' does not depend
-/// on any axioms` (→ `None`) or `'thm' depends on axioms: [a, b, c]` (we parse the
-/// bracket list STRICTLY: split on `,`, trim, and reject any name not in the allowlist).
-/// `sorryAx` is OUT of the allowlist too, so this ALSO catches a surviving `sorry` — but
-/// the explicit [`proof_has_sorry`] check runs first for the dedicated `sorry` message.
-/// Deterministic, a pure function of the inspected string (R-CODE-5).
+/// The outcome of inspecting a `#print axioms` output for the obligation theorem's own
+/// report line (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9).
+#[derive(Debug, PartialEq, Eq)]
+enum AxiomReport {
+    /// The obligation theorem's report line lists only allowlisted axioms (or it does
+    /// NOT depend on any axioms): the enumerable base is honest.
+    Clean,
+    /// The obligation theorem's report line lists a NON-standard axiom (a smuggled
+    /// dependency the cert would not enumerate): the named axiom is outside the allowlist.
+    Nonstandard(String),
+    /// NO report line for the obligation theorem was found in the output. The parser must
+    /// NEVER fall through to a foreign theorem's report (an author's own `#print axioms`
+    /// emitted earlier) — a missing anchor is a hard reject, never `Clean`.
+    Missing,
+}
+
+/// Strictly parse a `#print axioms` output ANCHORED on the OBLIGATION theorem's OWN report
+/// line and classify it (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9). Lake
+/// prints the inspected theorem's quoted name verbatim: `'thermite_obligation_<item>'
+/// depends on axioms: [a, b, c]` or `'thermite_obligation_<item>' does not depend on any
+/// axioms`. The author's checked-in proof file is ARBITRARY Lean and may emit its OWN
+/// `#print axioms <clean_helper>` BEFORE the appended obligation probe — so we must bind to
+/// the OBLIGATION theorem's report, NOT the first `depends on axioms:` line, or a clean
+/// helper's report masks the obligation's smuggled axiom (the #249 divergence). We scan
+/// ALL lines for the anchor `'<thm>' …`; if MULTIPLE match we inspect every one (the first
+/// non-standard axiom across them wins); if NONE match → [`AxiomReport::Missing`] (never
+/// fall through to a foreign line). The bracket list is parsed STRICTLY: split on `,`,
+/// trim, reject any name not in the allowlist. `sorryAx` is OUT of the allowlist too, so
+/// this ALSO catches a surviving `sorry` — but [`proof_has_sorry`] runs first for the
+/// dedicated `sorry` message. Deterministic, a pure function of its inputs (R-CODE-5).
 #[must_use]
-fn nonstandard_axiom(print_axioms_output: &str) -> Option<String> {
-    // STRICT parse: the authoritative axiom set is the bracket list on the `#print
-    // axioms` REPORT line — `'<thm>' depends on axioms: [a, b, c]`. We anchor on the
-    // `depends on axioms:` marker so lake's WARNING/linter text (which can itself
-    // contain `[…]` lists — e.g. a `simp only [Thermite.Env.bindInt, …]` unused-arg
-    // hint) is NEVER mistaken for the axiom list. The other report form, `'<thm>' does
-    // not depend on any axioms`, carries no bracket after the marker → clean (`None`).
+fn nonstandard_axiom(print_axioms_output: &str, item: &str) -> AxiomReport {
+    // The anchor is the OBLIGATION theorem's quoted name as lake prints it: `'<thm>'`.
+    let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
+    let anchor = format!("'{thm_name}'");
     const MARKER: &str = "depends on axioms:";
-    let marker_pos = print_axioms_output.find(MARKER)?;
-    let after_marker = &print_axioms_output[marker_pos + MARKER.len()..];
-    // The bracket list immediately follows the marker (whitespace then `[ … ]`), all on
-    // the report line. Bound the search to that line so a later warning's bracket cannot
-    // bleed in.
-    let line = after_marker.lines().next().unwrap_or(after_marker);
-    let open = line.find('[')?;
-    let after = &line[open + 1..];
-    let close = after.find(']')?;
-    let list = &after[..close];
-    list.split(',')
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .find(|name| !STANDARD_AXIOM_ALLOWLIST.contains(name))
-        .map(str::to_string)
+
+    // Inspect EVERY line that names the obligation theorem (defense in depth: if the
+    // output carries more than one report for it, all are checked). A line of the form
+    // `'<thm>' depends on axioms: [a, b, c]` carries the bracket list; the other form,
+    // `'<thm>' does not depend on any axioms`, has no bracket after the marker → clean.
+    let mut saw_anchor = false;
+    for line in print_axioms_output.lines() {
+        if !line.contains(&anchor) {
+            continue;
+        }
+        saw_anchor = true;
+        // Anchor on `depends on axioms:` so lake's WARNING/linter text (which can itself
+        // carry `[…]` lists — a `simp only [Thermite.Env.bindInt, …]` unused-arg hint) is
+        // never mistaken for the axiom list. No marker on this anchored line → no bracket
+        // list (the `does not depend on any axioms` form) → clean for this line.
+        let Some(marker_pos) = line.find(MARKER) else {
+            continue;
+        };
+        let after_marker = &line[marker_pos + MARKER.len()..];
+        let Some(open) = after_marker.find('[') else {
+            continue;
+        };
+        let after = &after_marker[open + 1..];
+        let Some(close) = after.find(']') else {
+            continue;
+        };
+        let list = &after[..close];
+        if let Some(extra) = list
+            .split(',')
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .find(|name| !STANDARD_AXIOM_ALLOWLIST.contains(name))
+        {
+            return AxiomReport::Nonstandard(extra.to_string());
+        }
+    }
+    if saw_anchor {
+        AxiomReport::Clean
+    } else {
+        // No report line named the obligation theorem. Never fall through to a foreign
+        // theorem's report — a missing anchor is a hard reject (the obligation's real
+        // axiom list is unknown, so the enumerable base cannot be vouched for).
+        AxiomReport::Missing
+    }
 }
 
 /// Extract the CANONICAL theorem STATEMENT of `thermite_obligation_<item>` from a Lean
@@ -2337,16 +2403,20 @@ mod tests {
     // caught. Pure-function regression for `nonstandard_axiom`.
     #[test]
     fn nonstandard_axiom_parses_the_report_line_strictly() {
-        // The clean standard set → None (no smuggled axiom).
+        // The clean standard set on the OBLIGATION theorem's anchored line → Clean.
         assert_eq!(
             nonstandard_axiom(
                 "'thermite_obligation_add' depends on axioms: [propext, Classical.choice, \
-                 Quot.sound]"
+                 Quot.sound]",
+                "add"
             ),
-            None
+            AxiomReport::Clean
         );
-        // "does not depend on any axioms" (no bracket) → None.
-        assert_eq!(nonstandard_axiom("'t' does not depend on any axioms"), None);
+        // "does not depend on any axioms" (no bracket) on the anchored line → Clean.
+        assert_eq!(
+            nonstandard_axiom("'thermite_obligation_t' does not depend on any axioms", "t"),
+            AxiomReport::Clean
+        );
         // A WARNING whose simp-arg bracket list precedes the report line must NOT
         // false-positive — the parser anchors on the report marker, never the first
         // `[`. This is exactly the legit-auto-replay output shape.
@@ -2354,23 +2424,44 @@ mod tests {
             nonstandard_axiom(
                 "warning: simp only [Thermite.Env.bindInt, Thermite.intVal] at hreq\n\
                  'thermite_obligation_add' depends on axioms: [propext, Classical.choice, \
-                 Quot.sound]"
+                 Quot.sound]",
+                "add"
             ),
-            None,
+            AxiomReport::Clean,
             "a simp-arg warning bracket must NOT be mistaken for the axiom list"
         );
         // A SMUGGLED non-standard axiom IS caught (the divergence the #248 pin exhibits).
         assert_eq!(
             nonstandard_axiom(
-                "'thermite_obligation_f' depends on axioms: [propext, thermite_cheat]"
-            )
-            .as_deref(),
-            Some("thermite_cheat")
+                "'thermite_obligation_f' depends on axioms: [propext, thermite_cheat]",
+                "f"
+            ),
+            AxiomReport::Nonstandard("thermite_cheat".to_string())
         );
         // The sorry axiom is also outside the allowlist (caught here too, belt-and-braces).
         assert_eq!(
-            nonstandard_axiom("'t' depends on axioms: [sorryAx]").as_deref(),
-            Some("sorryAx")
+            nonstandard_axiom("'thermite_obligation_t' depends on axioms: [sorryAx]", "t"),
+            AxiomReport::Nonstandard("sorryAx".to_string())
+        );
+        // #249 MARKER MASK: an author's OWN earlier `#print axioms clean_helper` (clean)
+        // must NOT mask the obligation theorem's smuggled axiom. The parser anchors on the
+        // OBLIGATION theorem's report, so the clean helper line is ignored and the
+        // obligation's `thermite_cheat` is caught.
+        assert_eq!(
+            nonstandard_axiom(
+                "'clean_helper' depends on axioms: [propext]\n\
+                 'thermite_obligation_f' depends on axioms: [propext, thermite_cheat]",
+                "f"
+            ),
+            AxiomReport::Nonstandard("thermite_cheat".to_string()),
+            "an earlier clean `#print axioms` must NOT mask the obligation theorem's axiom"
+        );
+        // No report line names the obligation theorem → Missing (NEVER fall through to a
+        // foreign theorem's clean report).
+        assert_eq!(
+            nonstandard_axiom("'clean_helper' depends on axioms: [propext]", "f"),
+            AxiomReport::Missing,
+            "a missing obligation-theorem anchor is a hard reject, never Clean"
         );
     }
 

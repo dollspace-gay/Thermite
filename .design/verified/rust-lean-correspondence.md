@@ -69,7 +69,7 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 | Rust exec-expr encoder | `thermite-tv/src/exec_encode.rs` | `43c9a6c8` (#152) |
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `21b84c5f` (#163; was `b9dc22fd` #165 — re-pinned, see Amendment 2026-06-10) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `c0b1d8a3` (#4) |
-| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `d4871ded` (#240 — see Table 4; `scripts/audit.sh` check [4] drift-checks this exporter file's last-touch against this SHA, alongside the `lean/Thermite/**` spine SHA the exporter targets) |
+| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `3373215e` (#253 — Table 4 + Table 4B, the exec-body bridge added; was `d4871ded` #240. `scripts/audit.sh` check [4] drift-checks this exporter file's last-touch against this SHA, alongside the `lean/Thermite/**` spine SHA the exporter targets) |
 | Lean spine | `lean/Thermite/**` | `65504c18` (was `7c85da25` — re-pinned, see Amendment 2026-06-10) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).

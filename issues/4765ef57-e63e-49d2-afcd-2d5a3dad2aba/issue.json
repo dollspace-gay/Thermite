@@ -2,11 +2,12 @@
   "uuid": "4765ef57-e63e-49d2-afcd-2d5a3dad2aba",
   "display_id": 225,
   "title": "lower: plain_user_spec_call arm hardcodes 'as u64' on arithmetic args — ill-typed Verus for u32/usize spec-fn params (expected u32 found u64); fix type-directed to the callee's declared param type",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-10T21:05:48.626008456Z",
-  "updated_at": "2026-06-10T21:05:50.204432296Z",
+  "updated_at": "2026-06-11T04:04:31.450264197Z",
+  "closed_at": "2026-06-11T04:04:31.450264197Z",
   "labels": [
     "bug"
   ]

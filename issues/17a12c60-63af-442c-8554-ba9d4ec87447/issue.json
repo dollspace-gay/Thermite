@@ -2,11 +2,12 @@
   "uuid": "17a12c60-63af-442c-8554-ba9d4ec87447",
   "display_id": 247,
   "title": "proof-backends increment (iii): per-obligation engine+trust-profile certificate attribution (additive serde), Proven-xor-Refuted disagreement HALT + teeth, interactive proof files beside source CI-replayed with obligation-hash staleness, the forge --engine surface (decide + record in doc), REQ-9 mutation rules; also add a binder-present fixture to the tier-b over-refusal guard (critic note)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T17:07:47.691166817Z",
-  "updated_at": "2026-06-11T17:07:49.175131769Z",
+  "updated_at": "2026-06-11T21:32:45.561485046Z",
+  "closed_at": "2026-06-11T21:32:45.561485046Z",
   "labels": [
     "feature"
   ]

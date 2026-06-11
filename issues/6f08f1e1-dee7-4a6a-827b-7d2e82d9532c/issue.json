@@ -2,11 +2,12 @@
   "uuid": "6f08f1e1-dee7-4a6a-827b-7d2e82d9532c",
   "display_id": 239,
   "title": "ci: fmt drift in divergence_audit_check2_exit_swallow.rs (CI rustfmt wants the multiline expect form) — cargo fmt + commit",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T07:13:22.944618435Z",
-  "updated_at": "2026-06-11T07:13:41.304470641Z",
+  "updated_at": "2026-06-11T07:16:00.279527623Z",
+  "closed_at": "2026-06-11T07:16:00.279527623Z",
   "labels": [
     "bug"
   ]

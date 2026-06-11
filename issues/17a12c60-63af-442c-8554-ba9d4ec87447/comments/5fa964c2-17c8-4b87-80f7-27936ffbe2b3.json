@@ -1,0 +1,10 @@
+{
+  "uuid": "5fa964c2-17c8-4b87-80f7-27936ffbe2b3",
+  "issue_uuid": "17a12c60-63af-442c-8554-ba9d4ec87447",
+  "author": "Yffe",
+  "content": "(iii) COMPLETE + critic-clean (incl. Opus re-audits on the soundness path). Shipped: per-obligation engine+trust-profile cert attribution (additive serde, corpus byte-identical), the Proven⊕Refuted disagreement HALT (teeth), forge check --engine verus|lean|auto, interactive proof replay, REQ-9 Lean-path mutation gating. The interactive-replay attacker surface was hardened through FIVE bypass generations (#248 axiom-allowlist anchor → #249 anchor-line → #250 reconstruct-and-splice → #251 helper-command allowlist → #252 ELIMINATE the helper splice): the final architecture makes the author surface the PROOF TERM ONLY — generator-emitted statement elaborated left of :=, kernel type-checks the term against the fixed goal, axiom allowlist {propext,Classical.choice,Quot.sound} catches sorryAx/ofReduceBool/foreign. Opus critic battery (show-True/set_option-in/native_decide/notation-in/decoy/glue-evasion) all → L0/Unknown; chain CLOSED by construction. Legit inline-have proofs Proven live.",
+  "created_at": "2026-06-11T21:32:37.366628178Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAOWaPjqWYCKqSprMU4GArC2b2xHPYDTYvVRJBkUdN2A86fymSVryj8/zdusvu+vOyyj6XckY1SjWSmwtL1fhmDw=="
+}

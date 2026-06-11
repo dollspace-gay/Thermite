@@ -45,7 +45,7 @@
 //! | REQ-8 (engine ordering hook) | SHIPPED (Verus rung) | `pub fn default_engines` returns the ordered engine list (Verus first); increment (i) wires the hook with the single Verus rung, increment (ii) adds the Lean rungs. Consumer: `check::ladder_for_timeout` reads the first engine (Verus). |
 //! | REQ-4 (certificate attribution — per-obligation {engine, trust_profile}) | SHIPPED (increment (iii), #247) | `pub struct EngineAttribution { engine, trust_profile }` (the `{engine, trust_profile}` pair) is built by `pub fn attribution_for`; `manifest::Certificate::engine_attribution` is the ADDITIVE serde field (`#[serde(default, skip_serializing_if = "Option::is_none")]`), populated by `Certificate::with_engine_attribution` ONLY when a NON-default engine (Lean) discharges (the default Verus path leaves it `None` so corpus certs are byte-identical — the `serde(default)` keeps the goldens green). Honest-min aggregation UNCHANGED (`AssuranceManifest::aggregate`). Oracle-EXCLUDED (OQ-2 decided diagnostic-only for byte-identity). Consumer: `cli::run_check` (the `--engine lean` path attaches it). |
 //! | REQ-5 (engine disagreement = soundness alarm) | SHIPPED (increment (iii), #247) | `pub fn check_disagreement` is the multi-engine dispatch guard: on the SAME obligation, one engine `Proven` + another `Refuted` (a WITNESSED countermodel) returns `Err(Disagreement { proven_engine, refuted_engine, item, counterexample })` — a structured HARD halt naming both engines + the obligation, NEVER resolved by preference. `Proven ⊕ Unknown` is benign (`Ok`). Surfaced as `ForgeError::SoundnessAlarm` (`cli.rs`). Tested: `StubProven ⊕ StubRefuted` fires; `Proven ⊕ Unknown` does not (`engine.rs` tests + `forge/tests/engine_attribution.rs`). |
-//! | REQ-7 (interactive proofs — skeleton emit + replay with staleness gate + sorry detection) | SHIPPED (increment (iii), #247) | `pub fn interactive_proof_path` is the deterministic `<file>.lean-proofs/<item>.lean` artifact path; `pub fn replay_interactive` REPLAYS a PRESENT proof (`lake env lean`) with the obligation-hash staleness gate (the emitted `-- evidence_key: <hex>` header must match the current `evidence_key`; a mismatch → `Unknown("stale proof — re-derive")`), EMITS the skeleton (the exporter's tier-(c) source + the evidence-key header) when ABSENT, and DETECTS `sorry` explicitly (`proof_has_sorry` greps the source AND `#print axioms` for `sorryAx`/`sorry`) → `Unknown` (NEVER `Proven`); a kernel-accepted sorry-free replay → `Proven` with the interactive trust profile (`trust_profile_interactive`). Tested: skeleton emitted; a hand-authored valid proof replays Proven; a stale hash → Unknown; a sorry file → Unknown (`forge/tests/lean_engine.rs`). |
+//! | REQ-7 (interactive proofs — skeleton emit + replay with staleness gate + sorry detection) | SHIPPED (increment (iii), #247; the #252 helper-surface elimination) | `pub fn interactive_proof_path` is the deterministic `<file>.lean-proofs/<item>.lean` artifact path; `pub fn replay_interactive` REPLAYS a PRESENT proof (`lake env lean`) with the obligation-hash staleness gate (the emitted `-- evidence_key: <hex>` header must match the current `evidence_key`; a mismatch → `Unknown("stale proof — re-derive")`), EMITS the skeleton (the exporter's tier-(c) source + the evidence-key header) when ABSENT, and DETECTS `sorry` explicitly (`proof_has_sorry` greps the source AND `#print axioms` for `sorryAx`/`sorry`) → `Unknown` (NEVER `Proven`); a kernel-accepted sorry-free replay → `Proven` with the interactive trust profile (`trust_profile_interactive`). **#252 ARCHITECTURAL FIX (ending the command-injection whack-a-mole — 5 bypass generations #248..#252):** `reconstruct_replay` no longer splices any author HELPERS section — the reconstructed file is EXACTLY the canonical generator preamble + `R_item` + the canonical `theorem thermite_obligation_<item> : <statement> := <author PROOF TERM>` + the anchored `#print axioms`. The ONLY author-controlled text is the PROOF TERM (after the obligation theorem's first `:=`); author content OUTSIDE it is DROPPED (it has nowhere to live, so it can never share the obligation's elaboration scope — the indented-`notation` #252 poison and the column-0 #251 poison both vanish). Auxiliary lemmas inline as `have`/`let`/`suffices` inside the proof term (no expressivity loss for a single-obligation proof). The `disallowed_helper_command`/`author_helpers` allowlist (a blocklist on a Turing-complete elaborator — UNSOUNDABLE) is DELETED. BELT (`proof_term_command_token`): the extracted proof term is REJECTED (→ Unknown) if it carries a top-level command keyword (`notation`/`macro`/`macro_rules`/`syntax`/`set_option`/`attribute`/`instance`/`open`/`export`/`import`/`namespace`/`initialize`/`#…`) in ANY position (exact-token, whitespace-independent — catches an `… in`-style command form). The #250 duplicate-declaration check + the #249/#250 axiom anchor + `statements_match` + the type-check STAY. Tested: skeleton emitted; a clean inline-have proof replays Proven; a stale hash → Unknown; a sorry-bearing inline proof → Unknown (`interactive_inline_have_clean_proven_sorry_unknown`); the helper section is dropped + the belt rejects an `open … in` term (`reconstruct_drops_author_helper_section`); the belt scan (`proof_term_command_token_scans_position_independently`) (`forge/tests/lean_engine.rs` + `engine.rs` tests). |
 //! | REQ-9 (engine-generic mutation battery — the Lean path) | SHIPPED (increment (iii), #247) | `pub fn lean_mutant_outcome` classifies a Lean-engine mutant discharge under the engine-generic kill semantics (`Refuted ∪ Unknown-after-attempt` = killed; a mutant OUTSIDE the Lean fragment = `UntestedAgainstLean`, never counted killed); `pub struct LeanMutationTally` accumulates `killed / attempted-minus-equivalent` with the untested-against-lean count reported, NEVER inflating the ratio. Consumer: `check::lean_mutation_score` (the `--engine lean` mutation path). The Verus-path battery (`check::mutation_score`) is UNTOUCHED. |
 
 use crate::lean_export::{export_item, find_item, ExportRefusal, ExportedObligation};
@@ -853,9 +853,10 @@ impl LeanEngine {
         // `theorem thermite_obligation_<item> : <statement> := …` line). The replay does
         // NOT validate the author's file by pattern-matching; it RECONSTRUCTS a fresh
         // replay file from THIS canonical source, splicing in ONLY the author's extracted
-        // proof term + helper lemmas (proof-backends REQ-6 / R-DEFER-9, the #250 fix). The
-        // statement, name, and `#print axioms` target are then the SAME generator-emitted
-        // declaration BY CONSTRUCTION — a same-short-name decoy is structurally impossible.
+        // PROOF TERM (proof-backends REQ-6 / R-DEFER-9, the #252 helper-surface elimination
+        // — the author file content OUTSIDE the proof term is DROPPED). The statement, name,
+        // and `#print axioms` target are then the SAME generator-emitted declaration BY
+        // CONSTRUCTION — a same-short-name decoy is structurally impossible.
 
         // PRESENT → the staleness gate + reconstruct-and-splice replay; ABSENT → emit
         // the skeleton.
@@ -899,11 +900,13 @@ impl LeanEngine {
     /// declaration). Instead it RECONSTRUCTS a fresh, fully generator-controlled replay
     /// file from `canonical_source` (the exporter's preamble/imports + `R_item` + the
     /// canonical `theorem thermite_obligation_<item> : <statement> := …` line),
-    /// SPLICING in ONLY the author's extracted PROOF term + their helper lemmas. The
-    /// statement, the theorem name, and the `#print axioms` probe target are then the
-    /// SAME generator-emitted declaration BY CONSTRUCTION — a decoy is structurally
-    /// impossible. A smuggled axiom USED by the proof appears in the anchored dependency
-    /// report (the allowlist catches it); an unused decoy axiom is inert.
+    /// SPLICING in ONLY the author's extracted PROOF TERM (the #252 helper-surface
+    /// elimination — the author file content OUTSIDE the proof term is DROPPED, never
+    /// spliced; auxiliary lemmas inline as `have`/`let`/`suffices`). The statement, the
+    /// theorem name, and the `#print axioms` probe target are then the SAME
+    /// generator-emitted declaration BY CONSTRUCTION — a decoy is structurally impossible.
+    /// A smuggled axiom USED by the proof appears in the anchored dependency report (the
+    /// allowlist catches it); an unused decoy axiom is inert.
     fn replay_present_proof(
         &self,
         path: &std::path::Path,
@@ -932,12 +935,13 @@ impl LeanEngine {
             )));
         }
 
-        // RECONSTRUCT-AND-SPLICE (proof-backends REQ-6 / R-DEFER-9, the #250 fix): split
-        // the CANONICAL exporter source into (preamble, canonical theorem statement);
-        // extract from the AUTHOR'S file the UNIQUE `thermite_obligation_<item>`
-        // declaration's proof term + their helper lemmas; emit a fresh replay file. A
-        // DUPLICATE obligation declaration (the #250 decoy) → REJECT; a missing canonical
-        // statement (malformed exporter output) → never trusted as a binding.
+        // RECONSTRUCT (proof-backends REQ-6 / R-DEFER-9, the #250 + #252 fixes): split the
+        // CANONICAL exporter source into (preamble, canonical theorem statement); extract
+        // from the AUTHOR'S file ONLY the UNIQUE `thermite_obligation_<item>` declaration's
+        // PROOF TERM (the #252 helper-surface elimination — no author HELPERS are spliced);
+        // emit a fresh replay file. A DUPLICATE obligation declaration (the #250 decoy) →
+        // REJECT; a missing canonical statement (malformed exporter output) → never trusted
+        // as a binding.
         let reconstructed = match self.reconstruct_replay(canonical_source, existing, item) {
             Ok(r) => r,
             Err(detail) => {
@@ -1054,28 +1058,46 @@ impl LeanEngine {
         }
     }
 
-    /// RECONSTRUCT a fresh, generator-controlled replay file from the CANONICAL exporter
-    /// source + the AUTHOR'S spliced proof (`.design/verified/proof-backends.md` REQ-6 /
-    /// R-DEFER-9, the #250 fix). The emitted file is, IN ORDER:
+    /// RECONSTRUCT a fresh, ENTIRELY generator-controlled replay file from the CANONICAL
+    /// exporter source + ONLY the author's extracted PROOF TERM (`.design/verified/
+    /// proof-backends.md` REQ-6 / R-DEFER-9, the #252 ARCHITECTURAL fix — the elimination
+    /// of the author HELPER surface). The emitted file is EXACTLY, IN ORDER:
     ///
     /// 1. the canonical PREAMBLE (the exporter's header + `import` + `R_item` + the
-    ///    obligation theorem's doc comment) — everything BEFORE the canonical
-    ///    `theorem thermite_obligation_<item>` line, regenerated from the CURRENT
+    ///    resolution lemmas + the obligation theorem's doc comment) — everything BEFORE the
+    ///    canonical `theorem thermite_obligation_<item>` line, regenerated from the CURRENT
     ///    obligation (never trusted from the author);
-    /// 2. the author's HELPER lemmas — their file's content MINUS the lines the canonical
-    ///    preamble already supplies (header / imports / `R_item` / resolution lemmas /
-    ///    doc), MINUS the obligation theorem declaration, MINUS any `#`-command lines
-    ///    (their own probes are dropped — we emit our OWN anchored one);
-    /// 3. the CANONICAL theorem line `theorem thermite_obligation_<item> : <statement> :=`
-    ///    with the author's EXTRACTED proof term spliced after `:=`;
-    /// 4. the ANCHORED `#print axioms thermite_obligation_<item>` probe.
+    /// 2. the CANONICAL theorem line `theorem thermite_obligation_<item> : <statement> :=`
+    ///    with the author's EXTRACTED PROOF TERM (everything after the author declaration's
+    ///    first `:=`) spliced after `:=`;
+    /// 3. the ANCHORED `#print axioms thermite_obligation_<item>` probe.
+    ///
+    /// **The #252 architectural decision (ending the command-injection whack-a-mole — 5
+    /// bypass generations #248..#252).** The replay file carries NO author-controlled text
+    /// other than the PROOF TERM. The earlier design spliced an author HELPERS section into
+    /// the obligation's elaboration scope and tried to SANITIZE it with a command blocklist
+    /// (`disallowed_helper_command`). A blocklist on a Turing-complete elaborator cannot be
+    /// made sound: #251 closed column-0 commands; #252 escaped via INDENTATION (Lean is
+    /// whitespace-insensitive at the top level, so an indented `notation:max
+    /// "Thermite.stabilizesProp" => (fun _ _ => True)` re-elaborates the byte-identical
+    /// canonical statement to `True`); unicode-whitespace / comment-nesting / `open … in`
+    /// variants would follow. ELIMINATING the helper surface ENTIRELY is the sound fix: the
+    /// author can only supply the PROOF TERM, which the kernel type-checks against the
+    /// FIXED, generator-emitted, already-elaborated goal type (the statement is left of
+    /// `:=` and is generator-controlled). A proof term cannot vacate that goal; `sorry`/
+    /// `admit` → `sorryAx` and `native_decide` → `ofReduceBool` are caught by the axiom
+    /// allowlist. Legit auxiliary lemmas inline as `have`/`let`/`suffices` INSIDE the proof
+    /// term (Lean supports this fully in tactic + term mode — no expressivity loss for a
+    /// single-obligation proof).
     ///
     /// REJECTS (returns `Err(detail)`) when: the short name `thermite_obligation_<item>`
     /// occurs as a declaration MORE than once anywhere in the author's file (the #250
-    /// decoy — "duplicate obligation declaration"), or the canonical source has no
-    /// extractable statement, or the author's file has no obligation declaration to
-    /// splice a proof from, or a surviving `thermite_obligation` short-name occurs in the
-    /// helpers. Deterministic (R-CODE-5); never a panic (R-CODE-2).
+    /// decoy — "duplicate obligation declaration"); the canonical source has no extractable
+    /// statement; the author's file has no obligation declaration to splice a proof from;
+    /// the author's declared statement does not match the canonical one (modulo whitespace);
+    /// or (the #252 BELT) the extracted proof term carries a top-level COMMAND keyword in
+    /// any position (an `… in`-style command form smuggled into the term). Deterministic
+    /// (R-CODE-5); never a panic (R-CODE-2).
     fn reconstruct_replay(
         &self,
         canonical_source: &str,
@@ -1100,9 +1122,9 @@ impl LeanEngine {
         })?;
         let preamble = canonical_source[..preamble_end].trim_end();
 
-        // (2) UNIQUENESS + the author's PROOF + helpers. Count the obligation theorem's
+        // (2) UNIQUENESS + the author's PROOF TERM. Count the obligation theorem's
         // SHORT-NAME declaration sites in the author's file: MORE than one anywhere (any
-        // namespace) → the #250 decoy → REJECT. EXACTLY one → splice its proof.
+        // namespace) → the #250 decoy → REJECT. EXACTLY one → splice its proof term.
         let decl_sites = declaration_sites(author_file, &thm_name);
         if decl_sites.len() > 1 {
             return Err(format!(
@@ -1120,7 +1142,7 @@ impl LeanEngine {
                 ));
             }
         };
-        // The author's PROOF term: everything after the declaration's FIRST `:=` up to
+        // The author's PROOF TERM: everything after the declaration's FIRST `:=` up to
         // the declaration's END (the next top-level command/declaration, or EOF).
         let decl_end = decl_block_end(author_file, decl_start);
         let decl_text = &author_file[decl_start..decl_end];
@@ -1143,52 +1165,32 @@ impl LeanEngine {
             ));
         }
 
-        // The author's HELPER lemmas: their file MINUS the obligation declaration, MINUS
-        // the canonical-preamble lines (header / imports / R_item / resolution lemmas /
-        // doc — regenerated above), MINUS any `#`-command lines (their own probes).
-        let helpers = author_helpers(author_file, decl_start, decl_end, canonical_source);
-        // STRICT COMMAND ALLOWLIST (proof-backends REQ-6 / §1 / R-DEFER-9, the #251 fix):
-        // the helpers run BEFORE the canonical obligation theorem elaborates, so a single
-        // elaboration-altering command — `notation`/`macro`/`syntax`/`elab`,
-        // `set_option`/`attribute`, `instance`/`open`/`export`/`import`, a `#`-command,
-        // … — can RE-ELABORATE the byte-identical canonical statement to a trivially-true
-        // proposition and FORGE an L3 cert from a proof of `True` (the #251 macro-poison:
-        // `notation:max "Thermite.stabilizesProp" => (fun _ _ => True)`). Permit ONLY
-        // proof-supporting declarations (`theorem`/`lemma`/`def`/`example` + modifiers) and
-        // `namespace`/`end` wrappers; REJECT anything else (when in doubt REJECT — a legit
-        // proof needs only lemmas/defs). This runs BEFORE the splice, so the poison never
-        // reaches lake.
-        if let Some(kw) = disallowed_helper_command(&helpers) {
+        // THE #252 BELT (proof-backends REQ-6 / §1 / R-DEFER-9): the proof term is the ONLY
+        // author-controlled text, and it is type-checked against the FIXED generator-emitted
+        // goal — a proof term cannot vacate that goal. As a cheap DEFENSE LAYER against an
+        // `… in`-style top-level command form smuggled into the term, REJECT if the proof
+        // term carries a top-level command keyword in ANY position (exact-token,
+        // whitespace-independent). The author content OUTSIDE the proof term is DROPPED
+        // (never spliced) — there is no helper surface to sanitize.
+        if let Some(kw) = proof_term_command_token(proof_term) {
             return Err(format!(
-                "disallowed helper command: {kw}: the author's helper section may contain ONLY \
-                 proof-supporting declarations ({{theorem, lemma, def, example}} + \
-                 private/noncomputable/protected, with namespace/end wrappers) — a `{kw}` command \
-                 can ALTER the elaboration of the canonical obligation theorem spliced after it \
-                 (e.g. a `notation`/`macro`/`set_option`/`attribute`/`instance`/`open` that \
-                 re-elaborates `Thermite.stabilizesProp …` to a trivially-true proposition), \
-                 forging an L3 cert from a proof of `True` (proof-backends REQ-6/§1, R-DEFER-9); \
-                 REJECTED"
+                "disallowed proof-term command: {kw}: the author's proof term carries a \
+                 top-level command keyword `{kw}` (a `notation`/`macro`/`macro_rules`/`syntax`/ \
+                 `set_option`/`attribute`/`instance`/`open`/`import`/`#…`-style command form, \
+                 e.g. smuggled via `… in`) — a command can ALTER the elaboration of the \
+                 obligation theorem and forge an L3 cert from a proof of `True` (proof-backends \
+                 REQ-6/§1, R-DEFER-9); the proof term may contain ONLY term/tactic syntax \
+                 (auxiliary lemmas inline as `have`/`let`/`suffices`); REJECTED"
             ));
         }
-        // DEFENSE: no `thermite_obligation` short-name may survive in the helpers (a
-        // helper masquerading as the obligation), beyond the (single) one we extracted.
-        if helpers.contains("thermite_obligation") {
-            return Err(
-                "the author's helper lemmas still carry a `thermite_obligation` short-name \
-                 occurrence (only the single canonical obligation declaration may use it)"
-                    .to_string(),
-            );
-        }
 
-        // (3)+(4) Emit: canonical preamble + helpers + canonical theorem (spliced proof)
-        // + the ANCHORED probe.
-        let helpers_block = if helpers.trim().is_empty() {
-            String::new()
-        } else {
-            format!("\n\n{}", helpers.trim())
-        };
+        // (3)+(4) Emit: canonical preamble + canonical theorem (spliced proof term) + the
+        // ANCHORED probe. NO author HELPER section exists — the ONLY author-controlled text
+        // is the proof term (the #252 elimination). Any author file content outside the
+        // proof term (an indented `notation`, a file-level helper, …) is DROPPED — it has
+        // nowhere to live, so it can never share the obligation's elaboration scope.
         Ok(format!(
-            "{preamble}{helpers_block}\n\n{canonical_statement} {proof_term}\n\
+            "{preamble}\n\n{canonical_statement} {proof_term}\n\
              #print axioms {thm_name}\n"
         ))
     }
@@ -1747,129 +1749,70 @@ fn declaration_sites(source: &str, thm_name: &str) -> Vec<usize> {
     sites
 }
 
-/// The author's HELPER lemmas (`.design/verified/proof-backends.md` REQ-6, the #250 fix):
-/// the author's file with the EVIDENCE-KEY header, the obligation theorem declaration
-/// (`source[decl_start..decl_end]`), every `#`-command line (their own probes — we emit
-/// our OWN anchored one), and every line that is byte-identical to a CANONICAL-preamble
-/// line (the header / imports / `R_item` / resolution lemmas / doc the preamble
-/// regenerates) REMOVED — leaving exactly the author's genuinely-added lemmas. So no
-/// `import` / `def R_item` is duplicated and no author `#print` shadows the anchored
-/// probe. Deterministic (R-CODE-5).
-fn author_helpers(
-    author_file: &str,
-    decl_start: usize,
-    decl_end: usize,
-    canonical_source: &str,
-) -> String {
-    let canonical_lines: std::collections::HashSet<&str> = canonical_source
-        .lines()
-        .map(str::trim_end)
-        .filter(|l| !l.trim().is_empty())
-        .collect();
-    let before = &author_file[..decl_start];
-    let after = &author_file[decl_end..];
-    let mut kept: Vec<&str> = Vec::new();
-    for line in before.lines().chain(after.lines()) {
-        let trimmed = line.trim_end();
-        if trimmed.trim().is_empty() {
-            continue;
-        }
-        // Drop the evidence-key header, any `#`-command (the author's own probes), and any
-        // line the canonical preamble already supplies (regenerated above).
-        if trimmed.starts_with(INTERACTIVE_EVIDENCE_KEY_MARKER.trim_end())
-            || trimmed.trim_start().starts_with('#')
-            || canonical_lines.contains(trimmed)
-        {
-            continue;
-        }
-        kept.push(trimmed);
-    }
-    kept.join("\n")
-}
+/// The top-level COMMAND keywords a PROOF TERM may NEVER carry (`.design/verified/
+/// proof-backends.md` REQ-6 / §1 / R-DEFER-9, the #252 BELT). After the #252 architectural
+/// fix the proof term is the ONLY author-controlled text and is type-checked against the
+/// FIXED generator-emitted goal, so a proof term cannot vacate that goal. This belt is a
+/// cheap DEFENSE LAYER against an `… in`-style top-level command form smuggled into the
+/// term (`open … in`, `set_option … in`, a `#…`-command): any of these as an exact token
+/// (whitespace-independent, position-independent) → REJECT. A genuine term/tactic proof
+/// never needs these — auxiliary lemmas inline as `have`/`let`/`suffices`. The `#` family
+/// is handled separately (any `#`-prefixed token).
+const PROOF_TERM_FORBIDDEN_COMMANDS: [&str; 16] = [
+    "notation",
+    "infix",
+    "prefix",
+    "postfix",
+    "macro",
+    "macro_rules",
+    "syntax",
+    "elab",
+    "set_option",
+    "attribute",
+    "instance",
+    "open",
+    "export",
+    "import",
+    "namespace",
+    "initialize",
+];
 
-/// The author-helper COMMANDS the splice PERMITS (`.design/verified/proof-backends.md`
-/// REQ-6 / §1 / R-DEFER-9, the #251 fix). The helpers section may contain ONLY
-/// proof-supporting DECLARATIONS that cannot alter the ELABORATION of subsequent code —
-/// a lemma/def/example proves or names a fact; it does NOT install syntax, change
-/// elaboration options, register instances, or open namespaces. The canonical obligation
-/// theorem elaborates AFTER the helpers, so ANY command that can change how a later
-/// `Thermite.stabilizesProp …` parses or elaborates (a `notation`/`macro`/`syntax`/`elab`,
-/// a `set_option`/`attribute`, an `instance`/`open`/`export`/`import`, a `#`-command,
-/// `initialize`, `scoped`/`local`, …) can RE-ELABORATE the obligation to a trivially-true
-/// proposition (the #251 macro-poison divergence: `notation:max "Thermite.stabilizesProp"
-/// => (fun _ _ => True)` makes the byte-identical canonical statement re-elaborate to
-/// `True`). So this is a strict ALLOWLIST, not a blocklist: only these declaration
-/// keywords (+ their `private`/`noncomputable`/`protected` modifiers) are permitted.
-const PERMITTED_HELPER_COMMANDS: [&str; 4] = ["theorem", "lemma", "def", "example"];
-
-/// The leading MODIFIER keywords a permitted helper declaration may carry
-/// (`.design/verified/proof-backends.md` REQ-6, the #251 fix): they prefix a `theorem`/
-/// `def`/… without altering subsequent elaboration. `scoped`/`local` are NOT here — they
-/// modify `notation`/`attribute`/`instance` (which are rejected outright) and never a
-/// plain proof declaration, so a `scoped`/`local` lead is a rejected command.
-const PERMITTED_HELPER_MODIFIERS: [&str; 3] = ["private", "noncomputable", "protected"];
-
-/// Validate the author's spliced HELPERS against the strict command ALLOWLIST
-/// (`.design/verified/proof-backends.md` REQ-6 / §1 / R-DEFER-9, the #251 fix). The
-/// helpers run BEFORE the canonical obligation theorem elaborates, so a single
-/// elaboration-altering command (`notation`/`macro`/`set_option`/`attribute`/`instance`/
-/// `open`/…) can re-elaborate the byte-identical canonical statement to a trivially-true
-/// proposition and FORGE an L3 cert from a proof of `True` (the #251 macro-poison). We
-/// tokenize the helpers at COMMAND boundaries (column-0 top-level lines — a `def` body's
-/// use of `notation`/`open` as an identifier is on an INDENTED continuation line and is
-/// NOT a command start; block comments are tracked so column-0 prose inside `/- … -/`
-/// is not mistaken for a command), and PERMIT only [`PERMITTED_HELPER_COMMANDS`] (with
-/// [`PERMITTED_HELPER_MODIFIERS`] leads) + `namespace`/`end` wrappers + comments. ANY
-/// other command-start keyword → `Err("disallowed helper command: <kw>")`. When in doubt
-/// REJECT (the conservative direction is sound — a legit proof needs only lemmas/defs).
-/// Deterministic (R-CODE-5); never a panic (R-CODE-2).
-fn disallowed_helper_command(helpers: &str) -> Option<String> {
-    let mut block_comment_depth: usize = 0usize;
-    for raw in helpers.lines() {
-        // Track multi-line block comments `/- … -/` so column-0 prose inside a comment is
-        // not read as a command. We count opens/closes on the line (conservative: a `/-`
-        // anywhere opens, a `-/` anywhere closes); a line WHOLLY inside an open comment is
-        // skipped.
-        if block_comment_depth > 0 {
-            let opens = raw.matches("/-").count();
-            let closes = raw.matches("-/").count();
-            block_comment_depth += opens;
-            block_comment_depth = block_comment_depth.saturating_sub(closes);
+/// THE #252 BELT (`.design/verified/proof-backends.md` REQ-6 / §1 / R-DEFER-9): scan the
+/// extracted PROOF TERM and report a top-level command keyword if one appears as an exact
+/// token in ANY position (whitespace-independent), or a `#…`-command token. The proof term
+/// is type-checked against the fixed generator goal, so this is a defense layer — not the
+/// primary soundness mechanism (that is the elimination of the helper surface, so author
+/// content can no longer share the obligation's elaboration scope). It catches an `open …
+/// in`-style command form a proof term might smuggle. Tokenizes on whitespace AND the Lean
+/// term-separator punctuation (`(`, `)`, `;`, `,`) so `open Foo in` is caught even with no
+/// surrounding spaces; an IDENTIFIER that merely CONTAINS a keyword (`openMyDef`,
+/// `Nat.open`) is NOT a match (the token must equal the keyword exactly, and a `.`-qualified
+/// tail is excluded). Deterministic (R-CODE-5); never a panic (R-CODE-2).
+fn proof_term_command_token(proof_term: &str) -> Option<String> {
+    for raw in proof_term.split(|c: char| {
+        // Split on whitespace AND Lean term/tactic punctuation. `:` is included so a
+        // priority-tagged command form (`notation:max`, `infix:50`, `set_option … :`) yields
+        // the bare command keyword as a token; a type ascription `(x : T)` is unaffected
+        // (its `have`/binder tokens are not command keywords).
+        c.is_whitespace() || matches!(c, '(' | ')' | ';' | ',' | '{' | '}' | '[' | ']' | ':')
+    }) {
+        let tok = raw.trim();
+        if tok.is_empty() {
             continue;
         }
-        // INDENTED lines are a declaration's body / continuation (a `def` body may mention
-        // `notation`/`open`/… as identifiers there) — never a command START. Blank lines
-        // and line-comments (`--`) are inert. Permit them.
-        if raw.starts_with(char::is_whitespace) {
+        // A `#…`-command token (`#print`, `#check`, `#eval`, …) in the term.
+        if tok.starts_with('#') {
+            return Some(tok.to_string());
+        }
+        // An exact command keyword. A `.`-qualified token (`Nat.open`, `Foo.notation`) is a
+        // member access, NOT a command — exclude it (the command keyword is never the tail
+        // of a dotted projection).
+        if tok.contains('.') {
             continue;
         }
-        let line = raw.trim_start();
-        if line.is_empty() || line.starts_with("--") {
-            continue;
+        if PROOF_TERM_FORBIDDEN_COMMANDS.contains(&tok) {
+            return Some(tok.to_string());
         }
-        // A block comment that OPENS on this column-0 line: account for it (it may not
-        // close on the same line) and treat the line as comment prose, not a command.
-        if line.starts_with("/-") {
-            let opens = raw.matches("/-").count();
-            let closes = raw.matches("-/").count();
-            block_comment_depth = opens.saturating_sub(closes);
-            continue;
-        }
-        // This is a COMMAND-START token. Strip permitted leading modifiers, then the first
-        // remaining token must be a permitted declaration keyword (or a `namespace`/`end`
-        // wrapper). A `#`-command, `notation`/`macro`/`set_option`/`attribute`/`instance`/
-        // `open`/… — anything not in the permit set — is REJECTED.
-        let mut tokens = line.split(|c: char| c.is_whitespace() || c == '(' || c == ':');
-        let mut head = tokens.next().unwrap_or("");
-        while PERMITTED_HELPER_MODIFIERS.contains(&head) {
-            head = tokens.next().unwrap_or("");
-        }
-        if PERMITTED_HELPER_COMMANDS.contains(&head) || matches!(head, "namespace" | "end") {
-            continue;
-        }
-        // REJECT — name the offending keyword (the `#`-command surfaces as the whole token,
-        // e.g. `#print`, since a `#`-command has no whitespace-separated keyword).
-        return Some(head.to_string());
     }
     None
 }
@@ -2834,33 +2777,43 @@ mod tests {
             "the #250 decoy → Err(\"duplicate obligation declaration\"), got {dup_err:?}"
         );
 
-        // (e) A SINGLE author declaration with a clean helper SPLICES: the canonical
-        // statement is emitted verbatim, the author proof is spliced, the helper is kept,
-        // imports/R_item are NOT duplicated, and our OWN anchored probe is appended.
+        // (e) A SINGLE author declaration with an INLINE-`have` proof term SPLICES: the
+        // canonical statement is emitted verbatim, ONLY the proof term is spliced (the #252
+        // helper-surface elimination — any file-level helper is DROPPED), imports/R_item
+        // come from the canonical preamble (exactly once), and our OWN anchored probe is
+        // appended. A file-level `theorem my_helper` the author leaves OUTSIDE the proof
+        // term is DROPPED (it has nowhere to live).
         let author = "-- evidence_key: abc\n\
                       import Thermite.Stabilize\n\
                       def R_item : Thermite.Registry := fun _ => none\n\
                       theorem my_helper : True := True.intro\n\
-                      theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+                      theorem thermite_obligation_f (v : Thermite.Env) : True := by\n  \
+                        have _aux : True := True.intro\n  trivial\n";
         let splice_result = engine.reconstruct_replay(canonical, author, "f");
         assert!(
             splice_result.is_ok(),
-            "a single-declaration author file must splice: {splice_result:?}"
+            "a single-declaration author file with an inline-have proof term must splice: \
+             {splice_result:?}"
         );
         let spliced = splice_result.unwrap_or_default();
         assert_eq!(
             spliced.matches("import Thermite.Stabilize").count(),
             1,
-            "the import is NOT duplicated (the helpers drop canonical-preamble lines): {spliced}"
+            "the import comes from the canonical preamble exactly once: {spliced}"
         );
         assert_eq!(
             spliced.matches("def R_item").count(),
             1,
-            "R_item is NOT duplicated: {spliced}"
+            "R_item comes from the canonical preamble exactly once: {spliced}"
         );
         assert!(
-            spliced.contains("theorem my_helper : True := True.intro"),
-            "the author's helper lemma is kept verbatim: {spliced}"
+            !spliced.contains("theorem my_helper"),
+            "the author's FILE-LEVEL helper is DROPPED — the helper surface is eliminated \
+             (#252); only the proof term is spliced: {spliced}"
+        );
+        assert!(
+            spliced.contains("have _aux : True := True.intro"),
+            "the author's INLINE-have auxiliary (inside the proof term) is preserved: {spliced}"
         );
         assert_eq!(
             spliced.matches("theorem thermite_obligation_f").count(),
@@ -2875,84 +2828,68 @@ mod tests {
         );
     }
 
-    // REQ-6 / §1 / R-DEFER-9 (the #251 fix) — the strict author-helper COMMAND ALLOWLIST.
-    // The helpers run BEFORE the canonical obligation theorem elaborates, so an
-    // elaboration-altering command (`notation`/`macro`/`set_option`/`attribute`/`instance`/
-    // `open`/…) can re-elaborate the byte-identical canonical statement to a trivially-true
-    // proposition and forge an L3 cert from a proof of `True`. Only proof-supporting
-    // declarations are permitted; everything else → Err("disallowed helper command: <kw>").
-    // No lake needed (R-CHAR-3: the allowlist is a structural pre-splice gate).
+    // REQ-6 / §1 / R-DEFER-9 (the #252 BELT) — the proof-term command scan. The proof term
+    // is the ONLY author-controlled text and is type-checked against the FIXED generator
+    // goal, so this is a defense layer against an `… in`-style command form smuggled into
+    // the term. A genuine term/tactic proof (with inline `have`/`let`/`suffices`) carries
+    // no command keyword; an `open … in` / `set_option … in` / `#…` form is caught
+    // position-independently (exact-token). No lake needed (R-CHAR-3: a structural scan).
     #[test]
-    fn helper_command_allowlist_rejects_elaboration_altering_commands() {
-        // PERMITTED: plain proof declarations + modifiers + namespace/end wrappers +
-        // comments + indented bodies (a `def` body's use of `notation`/`open` as an
-        // IDENTIFIER on an indented line is NOT a command start).
-        let ok = "theorem h1 : True := True.intro\n\
-                  private lemma h2 : True := True.intro\n\
-                  noncomputable def h3 : Nat := 0\n\
-                  example : True := True.intro\n\
-                  namespace Aux\n\
-                  protected theorem h4 : True := True.intro\n\
-                  end Aux\n\
-                  -- a line comment mentioning notation and set_option is inert\n\
-                  /- a block\n\
-                     comment with open and macro words -/\n\
-                  def usesWords : Nat :=\n  \
-                    let notationVal := 1\n  \
-                    let openVal := 2\n  \
-                    notationVal + openVal\n";
-        assert_eq!(
-            disallowed_helper_command(ok),
-            None,
-            "plain lemmas/defs/examples + modifiers + namespace/end + comments + indented \
-             bodies (with keyword-shaped identifiers) are PERMITTED"
-        );
-
-        // REJECTED, one fixture per command class the #251 pin + regressions name.
-        for (helper, kw) in [
-            (
-                "notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)",
-                "notation",
-            ),
-            ("macro_rules | `(foo) => `(True)", "macro_rules"),
-            ("macro \"foo\" : term => `(True)", "macro"),
-            ("syntax \"foo\" : term", "syntax"),
-            ("infix:50 \" foo \" => Nat.add", "infix"),
-            ("prefix:90 \"foo\" => Nat.succ", "prefix"),
-            ("postfix:90 \"foo\" => Nat.succ", "postfix"),
-            ("elab \"foo\" : term => return default", "elab"),
-            ("set_option maxHeartbeats 0", "set_option"),
-            ("attribute [simp] Nat.add_zero", "attribute"),
-            ("instance : Inhabited Nat := ⟨0⟩", "instance"),
-            ("open Thermite", "open"),
-            ("export Thermite (stabilizesProp)", "export"),
-            ("import Thermite.Stabilize", "import"),
-            ("#print axioms foo", "#print"),
-            ("#check True", "#check"),
-            ("initialize foo : Nat ← pure 0", "initialize"),
-            ("axiom thermite_cheat : ∀ p : Prop, p", "axiom"),
-            ("abbrev foo := True", "abbrev"),
-            ("opaque foo : Nat", "opaque"),
-            ("variable (n : Nat)", "variable"),
-            ("section Foo", "section"),
-            ("scoped notation \"foo\" => True", "scoped"),
-            ("local notation \"foo\" => True", "local"),
-            ("deriving instance Repr for Nat", "deriving"),
+    fn proof_term_command_token_scans_position_independently() {
+        // PERMITTED: a genuine tactic/term proof, INCLUDING inline `have`/`let`/`suffices`
+        // auxiliaries and identifiers that merely CONTAIN a keyword (`openVal`,
+        // `Nat.openInterval`) or are `.`-qualified projections.
+        for ok in [
+            "by\n  intro h\n  exact h",
+            "by\n  have _aux : True := True.intro\n  trivial",
+            "by\n  let openVal := 1\n  suffices h : True by exact h\n  trivial",
+            "fun v => v.openField",
+            "by exact Nat.openInterval_proof",
         ] {
             assert_eq!(
-                disallowed_helper_command(helper).as_deref(),
+                proof_term_command_token(ok),
+                None,
+                "a genuine proof term (with inline have/let/suffices, keyword-containing \
+                 identifiers, dotted projections) carries NO command keyword: {ok}"
+            );
+        }
+
+        // REJECTED: a top-level command keyword smuggled into the term (e.g. via `… in`),
+        // exact-token, in ANY position and with NO surrounding spaces (the `(open Foo in …)`
+        // form). One fixture per forbidden class.
+        for (term, kw) in [
+            ("by open Foo in trivial", "open"),
+            ("(open Thermite in trivial)", "open"),
+            ("by set_option maxHeartbeats 0 in trivial", "set_option"),
+            ("by\n  notation:max \"X\" => True\n  trivial", "notation"),
+            ("by macro_rules | `(x) => `(True)", "macro_rules"),
+            ("by macro \"x\" : term => `(True)", "macro"),
+            ("by syntax \"x\" : term", "syntax"),
+            ("by elab \"x\" : term => return default", "elab"),
+            ("by attribute [simp] foo", "attribute"),
+            ("by instance : Inhabited Nat := default", "instance"),
+            ("by export Thermite in trivial", "export"),
+            ("by import Thermite in trivial", "import"),
+            ("by namespace Foo in trivial", "namespace"),
+            ("by initialize x in trivial", "initialize"),
+            ("by #check True", "#check"),
+            ("by #print axioms foo", "#print"),
+        ] {
+            assert_eq!(
+                proof_term_command_token(term).as_deref(),
                 Some(kw),
-                "the `{kw}` command must be REJECTED by the allowlist: {helper}"
+                "the `{kw}` command form must be caught in the proof term: {term}"
             );
         }
     }
 
-    // REQ-6 / §1 / R-DEFER-9 (the #251 fix) — the macro-poison is REJECTED at
-    // reconstruction, BEFORE lake. A canonical single-theorem skeleton + an author file
-    // whose helper section carries a `notation`/`set_option`/`instance` redefinition →
-    // Err("disallowed helper command: …"); a CLEAN-helper author file still SPLICES.
+    // REQ-6 / §1 / R-DEFER-9 (the #252 helper-surface elimination) — author content
+    // OUTSIDE the proof term is DROPPED, never spliced; the indented-command poison (the
+    // #252 divergence) and the #251 macro-poison both have nowhere to live, so the
+    // reconstructed file carries ONLY the canonical preamble + the proof term + the anchored
+    // probe. A genuine inline-`have` proof term still splices. No lake (a structural test).
     #[test]
-    fn reconstruct_rejects_macro_poison_helper_before_lake() {
+    fn reconstruct_drops_author_helper_section() {
         let canonical = "import Thermite.Stabilize\n\n\
                          def R_item : Thermite.Registry := fun _ => none\n\n\
                          /-- doc -/\n\
@@ -2960,95 +2897,102 @@ mod tests {
         let p = parse_program("fn f(x: u32) -> u32 req true ens result == x fx pure { x }");
         let engine = LeanEngine::new(p, lean_root());
 
-        // The #251 macro-poison: a `notation` redefining a spine symbol, spliced before the
-        // canonical theorem → REJECTED at reconstruction (never reaches lake).
-        let poison = "-- evidence_key: abc\n\
-                      import Thermite.Stabilize\n\
-                      def R_item : Thermite.Registry := fun _ => none\n\
-                      notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)\n\
-                      theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
-        let err = engine
-            .reconstruct_replay(canonical, poison, "f")
-            .err()
-            .unwrap_or_default();
-        assert!(
-            err.contains("disallowed helper command: notation"),
-            "the notation poison → Err(\"disallowed helper command: notation\"), got {err:?}"
-        );
+        // The #251 macro-poison + the #252 INDENTED-command poison: both live in the author
+        // file OUTSIDE the obligation declaration's proof term. The reconstruction DROPS all
+        // of it (the helper surface is eliminated) — the poison never reaches the emitted
+        // file, so it can never re-elaborate the obligation. The proof term (`by trivial`)
+        // splices onto the canonical statement.
+        for poison in [
+            // column-0 notation (the #251 form)
+            "-- evidence_key: abc\n\
+             import Thermite.Stabilize\n\
+             def R_item : Thermite.Registry := fun _ => none\n\
+             notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)\n\
+             theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n",
+            // INDENTED notation (the #252 form) — attached to a dummy helper's body line
+            "-- evidence_key: abc\n\
+             import Thermite.Stabilize\n\
+             def R_item : Thermite.Registry := fun _ => none\n\
+             theorem dummy_helper : True := True.intro\n  \
+               notation:max \"Thermite.stabilizesProp\" => (fun _ _ => True)\n\
+             theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n",
+            // a set_option / open / instance helper soup
+            "-- evidence_key: abc\n\
+             import Thermite.Stabilize\n\
+             def R_item : Thermite.Registry := fun _ => none\n\
+             set_option maxHeartbeats 0\n\
+             open Thermite\n\
+             instance : Inhabited Nat := ⟨0⟩\n\
+             theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n",
+        ] {
+            let out = engine
+                .reconstruct_replay(canonical, poison, "f")
+                .unwrap_or_default();
+            assert!(
+                !out.contains("notation")
+                    && !out.contains("set_option")
+                    && !out.contains("open Thermite")
+                    && !out.contains("instance")
+                    && !out.contains("dummy_helper"),
+                "the author HELPER section (the #251/#252 poison) is DROPPED — the reconstructed \
+                 file carries ONLY the canonical preamble + the proof term + the probe: {out}"
+            );
+            assert_eq!(
+                out.matches("theorem thermite_obligation_f").count(),
+                1,
+                "exactly ONE obligation theorem (the canonical one): {out}"
+            );
+            assert!(
+                out.trim_end()
+                    .ends_with("#print axioms thermite_obligation_f"),
+                "the anchored probe targets the canonical declaration: {out}"
+            );
+        }
 
-        // A `set_option` helper (an elaboration-option override) → REJECTED.
-        let so = "-- evidence_key: abc\n\
-                  import Thermite.Stabilize\n\
-                  def R_item : Thermite.Registry := fun _ => none\n\
-                  set_option maxHeartbeats 0\n\
-                  theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
-        let so_err = engine
-            .reconstruct_replay(canonical, so, "f")
-            .err()
-            .unwrap_or_default();
-        assert!(
-            so_err.contains("disallowed helper command: set_option"),
-            "the set_option poison → Err(\"disallowed helper command: set_option\"), got {so_err:?}"
-        );
-
-        // An `instance` helper (an instance override) → REJECTED.
-        let inst = "-- evidence_key: abc\n\
-                    import Thermite.Stabilize\n\
-                    def R_item : Thermite.Registry := fun _ => none\n\
-                    instance : Inhabited Nat := ⟨0⟩\n\
-                    theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
-        let inst_err = engine
-            .reconstruct_replay(canonical, inst, "f")
-            .err()
-            .unwrap_or_default();
-        assert!(
-            inst_err.contains("disallowed helper command: instance"),
-            "the instance poison → Err(\"disallowed helper command: instance\"), got {inst_err:?}"
-        );
-
-        // An `open` helper → REJECTED.
-        let opn = "-- evidence_key: abc\n\
-                   import Thermite.Stabilize\n\
-                   def R_item : Thermite.Registry := fun _ => none\n\
-                   open Thermite\n\
-                   theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
-        let opn_err = engine
-            .reconstruct_replay(canonical, opn, "f")
-            .err()
-            .unwrap_or_default();
-        assert!(
-            opn_err.contains("disallowed helper command: open"),
-            "the open poison → Err(\"disallowed helper command: open\"), got {opn_err:?}"
-        );
-
-        // The LEGIT clean helper-lemma author file STILL SPLICES (the allowlist permits
-        // proof-supporting declarations) — no regression of the #250 splice path.
+        // A genuine INLINE-have proof term still splices (no expressivity loss — a
+        // single-obligation proof inlines auxiliaries as `have`).
         let legit = "-- evidence_key: abc\n\
                      import Thermite.Stabilize\n\
                      def R_item : Thermite.Registry := fun _ => none\n\
-                     theorem my_helper : True := True.intro\n\
-                     theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+                     theorem thermite_obligation_f (v : Thermite.Env) : True := by\n  \
+                       have _aux : True := True.intro\n  trivial\n";
         let spliced = engine
             .reconstruct_replay(canonical, legit, "f")
             .unwrap_or_default();
         assert!(
-            spliced.contains("theorem my_helper : True := True.intro"),
-            "the clean helper-lemma author file still SPLICES (the allowlist permits \
-             proof-supporting declarations): {spliced}"
+            spliced.contains("have _aux : True := True.intro"),
+            "a genuine inline-have proof term still splices (the #252 inline form): {spliced}"
+        );
+
+        // The #252 BELT: a proof term smuggling an `open … in` command form → REJECTED
+        // (defense layer, before lake).
+        let belt = "-- evidence_key: abc\n\
+                    import Thermite.Stabilize\n\
+                    def R_item : Thermite.Registry := fun _ => none\n\
+                    theorem thermite_obligation_f (v : Thermite.Env) : True := by\n  \
+                      open Thermite in trivial\n";
+        let belt_err = engine
+            .reconstruct_replay(canonical, belt, "f")
+            .err()
+            .unwrap_or_default();
+        assert!(
+            belt_err.contains("disallowed proof-term command: open"),
+            "an `open … in` command form in the proof term → Err (the #252 belt): {belt_err:?}"
         );
     }
 
-    // REQ-6 / REQ-7(ii) / R-DEFER-9 (the #250 fix) — LIVE helper-lemma replay. An
-    // interactive proof that adds a CLEAN helper lemma and USES it to discharge the
-    // obligation theorem REPLAYS Proven: the reconstruction splices the author's proof
-    // onto the canonical statement, keeps the helper, and the anchored `#print axioms`
-    // transitively checks the helper's (clean) axioms. A helper using a CHEAT axiom
-    // flows that axiom into the obligation's report → Unknown. Expected from REQ-4/§1
-    // (R-CHAR-3). LIVE (gated on lake).
+    // REQ-6 / REQ-7(ii) / R-DEFER-9 (the #252 inline-have migration) — LIVE auxiliary-lemma
+    // replay. After the #252 helper-surface elimination, a single-obligation proof inlines
+    // its auxiliaries as `have` INSIDE the proof term (no expressivity loss). A CLEAN inline
+    // `have` auxiliary, genuinely used, REPLAYS Proven (clean axiom base). A proof term that
+    // leans on a `sorry` (the only way an inline auxiliary can introduce a non-standard
+    // axiom — file-level axioms are DROPPED) flows `sorryAx` into the obligation theorem's
+    // anchored `#print axioms` → Unknown, NEVER Proven. Expected from REQ-4/§1 (R-CHAR-3).
+    // LIVE (gated on lake).
     #[test]
-    fn interactive_helper_lemma_clean_proven_cheat_unknown() {
+    fn interactive_inline_have_clean_proven_sorry_unknown() {
         if !lake_present() {
-            eprintln!("SKIP: lake not present — the helper-lemma replay test is not run.");
+            eprintln!("SKIP: lake not present — the inline-have replay test is not run.");
             return;
         }
         let dir = std::env::temp_dir().join(format!("forge_it_helper_{}", std::process::id()));
@@ -3070,46 +3014,48 @@ mod tests {
         let by_pos = skeleton.find(":= by").unwrap_or(0);
         let body = skeleton[by_pos + ":= by".len()..].trim_end().to_string();
 
-        // (1) CLEAN helper, genuinely referenced (`have _h := my_helper`): Proven.
+        // (1) CLEAN INLINE-have auxiliary, genuinely referenced (`have aux : True :=
+        // True.intro`): Proven. The auxiliary lives INSIDE the proof term (the #252 inline
+        // form), so it is preserved by the reconstruction and the anchored `#print axioms`
+        // sees only the clean standard axiom base.
         let clean = format!(
             "{INTERACTIVE_EVIDENCE_KEY_MARKER}{key}\n\
              import Thermite.Stabilize\n\
-             theorem add_clean_helper : True := True.intro\n\
-             {stmt} by\n  have _h := add_clean_helper\n{body}\n",
+             {stmt} by\n  have aux : True := True.intro\n  let _ := aux\n{body}\n",
             key = key.content_address
         );
         assert!(
             write_file(&artifact, &clean),
-            "clean-helper artifact writable"
+            "clean inline-have artifact writable"
         );
         let v_clean = engine.replay_interactive(&file, &o);
         assert!(
             matches!(v_clean, Verdict::Proven(_)),
-            "a clean helper-lemma proof REPLAYS Proven (the helper's clean axioms are \
-             transitively allowlisted): {v_clean:?}"
+            "a clean inline-have proof term REPLAYS Proven (the auxiliary's clean axioms are \
+             transitively checked): {v_clean:?}"
         );
 
-        // (2) CHEAT helper: the helper rests on a non-standard axiom, USED by the proof
-        // (`have _h := add_cheat_helper`), so `add_cheat_ax` flows into the obligation
-        // theorem's `#print axioms` → Unknown (NEVER Proven).
-        let cheat = format!(
+        // (2) SORRY in the proof term: an inline auxiliary discharged by `sorry` flows
+        // `sorryAx` into the obligation theorem's anchored `#print axioms` → Unknown (NEVER
+        // Proven). This is the only way an inline auxiliary can introduce a non-standard
+        // axiom (file-level axioms are DROPPED, #252), so it exercises the axiom/sorry gate
+        // on the surviving (proof-term-only) surface.
+        let sorrytm = format!(
             "{INTERACTIVE_EVIDENCE_KEY_MARKER}{key}\n\
              import Thermite.Stabilize\n\
-             axiom add_cheat_ax : False\n\
-             theorem add_cheat_helper : True := (add_cheat_ax).elim\n\
-             {stmt} by\n  have _h := add_cheat_helper\n{body}\n",
+             {stmt} by\n  have aux : True := by sorry\n  let _ := aux\n{body}\n",
             key = key.content_address
         );
         assert!(
-            write_file(&artifact, &cheat),
-            "cheat-helper artifact writable"
+            write_file(&artifact, &sorrytm),
+            "sorry-bearing inline artifact writable"
         );
-        let v_cheat = engine.replay_interactive(&file, &o);
+        let v_sorry = engine.replay_interactive(&file, &o);
         let _ = std::fs::remove_dir_all(&dir);
         assert!(
-            matches!(v_cheat, Verdict::Unknown(_)),
-            "a helper resting on a CHEAT axiom flows that axiom into the obligation's \
-             anchored `#print axioms` → Unknown, NEVER Proven (REQ-4/§1, R-DEFER-9): {v_cheat:?}"
+            matches!(v_sorry, Verdict::Unknown(_)),
+            "an inline auxiliary discharged by `sorry` flows `sorryAx` into the obligation's \
+             anchored `#print axioms` → Unknown, NEVER Proven (REQ-4/§1, R-DEFER-9): {v_sorry:?}"
         );
     }
 

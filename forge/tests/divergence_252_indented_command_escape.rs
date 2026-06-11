@@ -115,7 +115,9 @@ fn level_of(json: &str, item: &str) -> Option<String> {
 #[test]
 fn divergence_interactive_indented_command_escapes_allowlist() {
     if !lake_present() {
-        eprintln!("SKIP: lake not present — the indented-command-escape divergence pin is not run.");
+        eprintln!(
+            "SKIP: lake not present — the indented-command-escape divergence pin is not run."
+        );
         return;
     }
 

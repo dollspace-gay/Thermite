@@ -2154,7 +2154,15 @@ fn user_string_spec_fn_names(program: &Program) -> Vec<&str> {
 /// slice arg is a path, a String arg goes to `.data@`); `spec_call_param_cast`
 /// maps `Bool` to no cast. Owned `Vec`s here back the `&[PrimType]` views threaded
 /// through `Ctx` (mirroring the two-step `user_string_spec_fns` pattern).
-fn spec_fn_param_type_map(program: &Program) -> Vec<(&str, Vec<PrimType>)> {
+///
+/// PUBLIC for the contract-TV production column (crosslink #228, ref #225/#227):
+/// `forge::contract_tv` derives this SAME map from the checked program and threads
+/// it into [`lower_contract_expr`], so the TV "production" lowering of a spec-call
+/// arithmetic arg narrows to the callee's DECLARED param type EXACTLY as the
+/// signature path does (contract-tv.md REQ-2 "verbatim reuse"). It is the single
+/// source of truth (R-CHAR-3): both `lower` and the TV column read it, never two
+/// independent derivations.
+pub fn spec_fn_param_type_map(program: &Program) -> Vec<(&str, Vec<PrimType>)> {
     program
         .items
         .iter()
@@ -2493,6 +2501,17 @@ fn lower_fn_signature(
 /// — the per-clause obligation's coercion-matching contract, contract-tv.md
 /// Architecture.)
 ///
+/// `spec_fn_param_types` is the program-wide user-`spec fn` param-type map
+/// (`spec_fn_param_type_map`); it MUST be threaded for the production column to
+/// match the signature path VERBATIM (contract-tv.md REQ-2). Post-#225 the
+/// signature path narrows an arithmetic spec-call argument to the callee's
+/// DECLARED param type (`Ctx::spec_call_param_cast`), so a `u32`-param callee's
+/// `s_dec(n - 1)` emits `s_dec((n - 1) as u32)`. WITHOUT this map the contract
+/// column fell back to the hardcoded `as u64` and TV checked a NON-production
+/// predicate (crosslink #228, ref #225/#227); with it the column emits exactly
+/// what `lower_fn_signature` emits. An EMPTY map (a program with no user spec fn)
+/// is byte-stable — the cast only fires for an in-map callee.
+///
 /// This is a thin per-clause re-entry into the lowerer (NOT a new lowering rule);
 /// `forge::contract_tv` is the non-test consumer (R-DEFER-1). Returns a
 /// [`LowerError`] (never a panic — R-CODE-2) for a construct the spec-context
@@ -2500,9 +2519,9 @@ fn lower_fn_signature(
 #[allow(
     clippy::too_many_arguments,
     reason = "the spec-context inputs mirror lower_fn_signature's threaded ctx \
-        (slices/nat_fns/strings/string_fields/user_string_spec_fns) — a struct \
-        would obscure the 1-to-1 correspondence with the signature path this \
-        re-enters"
+        (slices/nat_fns/strings/string_fields/user_string_spec_fns/spec_fn_param_types) \
+        — a struct would obscure the 1-to-1 correspondence with the signature path \
+        this re-enters"
 )]
 pub fn lower_contract_expr(
     expr: &Expr,
@@ -2511,11 +2530,13 @@ pub fn lower_contract_expr(
     strings: &[&str],
     string_fields: &[&str],
     user_string_spec_fns: &[&str],
+    spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<String, LowerError> {
     let ctx = Ctx::spec(slices, nat_fns)
         .with_strings(strings)
         .with_string_fields(string_fields)
-        .with_user_string_spec_fns(user_string_spec_fns);
+        .with_user_string_spec_fns(user_string_spec_fns)
+        .with_spec_fn_param_types(spec_fn_param_types);
     lower_expr(expr, ctx, 0, zero_span())
 }
 

@@ -122,11 +122,8 @@ fn fn_level_dec_measure_spec_call_arith_arg_casts_to_declared_param_type() {
 }
 
 #[test]
-#[ignore = "divergence: lower_contract_expr omits spec_fn_param_types — the \
-            contract-TV production column is NOT the real production lowering \
-            (contract-tv.md REQ-2 verbatim); tracking #228"]
 fn contract_tv_production_column_matches_real_signature_lowering() {
-    use thermite_syntax::ast::{BinOp, Expr};
+    use thermite_syntax::ast::{BinOp, Expr, PrimType};
     // The clause `result == s_dec(n - 1)` — the contract-TV per-clause re-entry.
     // contract-tv.md REQ-2: the production side "reuses lower_fn_signature's
     // clause output verbatim (the artifact under test)". Post-#225 the real
@@ -156,8 +153,14 @@ fn contract_tv_production_column_matches_real_signature_lowering() {
             }],
         }),
     };
-    let out = thermite_lower::lower_contract_expr(&clause, &[], &[], &[], &[], &[])
-        .expect("contract lowering must succeed");
+    // The program-wide spec-fn param-type map (#228): the callee `s_dec` declares a
+    // single `u32` param. Threading this is exactly what `lower_fn_signature` does
+    // (the artifact under test, contract-tv.md REQ-2 "verbatim").
+    let s_dec_params: &[PrimType] = &[PrimType::U32];
+    let spec_fn_param_types: &[(&str, &[PrimType])] = &[("s_dec", s_dec_params)];
+    let out =
+        thermite_lower::lower_contract_expr(&clause, &[], &[], &[], &[], &[], spec_fn_param_types)
+            .expect("contract lowering must succeed");
     // HAND-DERIVED expectation (verus-lowering.md REQ-5 + the #225 declared-
     // param-type rule for a `spec fn s_dec(n: u32)` callee):
     assert_eq!(

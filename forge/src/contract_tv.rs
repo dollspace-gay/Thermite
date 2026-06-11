@@ -37,7 +37,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. **#150 whole-corpus totality:** `signature_frame` now binds the three previously-Skipped construct classes — `String`→`&TString` (`SpecType::Strng`, threaded as production's `strings`), `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires` weave), `Option`/`Result` params + result natively (`SpecType::Opt`/`Res`) — so the C7 `match`-in-ens, the String byte-view, and the Map/Option signature clauses all reach verus + discharge. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped/unverifiable; the 200-clause off-corpus run is TOTAL (0 skipped, the byte-view now over a `&TString` receiver `t`). **#192 (ref #166, #189):** the rlimit gate's discriminator is now the SHARED `crate::tv_signal::is_rlimit_signal` (the prior private copy had DROPPED z3's `resource limit exceeded` phrase — a Z3-phrased resourceout on an errors>=1 run was fabricated into `Divergent`); `discharge`'s `errors >= 1 && rlimit_hit -> Unverifiable` arm now consumes the shared full-phrase-set discriminator. |
+//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. **#228 (ref #225/#227) — production-column = real signature artifact + true-width frame:** `tv_file`/`run_generated` now derive the program-wide `thermite_lower::spec_fn_param_type_map` and THREAD it into `lower_contract_expr`, so a spec-call arithmetic arg narrows to the callee's DECLARED param type (`s_dec((n - 1) as u32)`) verbatim as the signature path (contract-tv.md REQ-2), not the `as u64` fallback. `SpecType::BoundedInt(width)` types each bounded-int param at its declared width so Z3 reasons over the true domain. Corpus byte-stable (no corpus spec fn takes a bare scalar param, so the cast never fires there; compose_demo/sum/binary_search stay all-Faithful). Honest split (binary constraint, `ref_encode.rs` UNCHANGED): a bare-path spec-call arg → Faithful; an arithmetic arg to a `u32`/`usize`-param callee → honest Unverifiable (the reference's bare `int` arg does not typecheck against the `u32` param — a genuinely unprovable equivalence, NEVER a forced Faithful). **#150 whole-corpus totality:** `signature_frame` now binds the three previously-Skipped construct classes — `String`→`&TString` (`SpecType::Strng`, threaded as production's `strings`), `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires` weave), `Option`/`Result` params + result natively (`SpecType::Opt`/`Res`) — so the C7 `match`-in-ens, the String byte-view, and the Map/Option signature clauses all reach verus + discharge. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped/unverifiable; the 200-clause off-corpus run is TOTAL (0 skipped, the byte-view now over a `&TString` receiver `t`). **#192 (ref #166, #189):** the rlimit gate's discriminator is now the SHARED `crate::tv_signal::is_rlimit_signal` (the prior private copy had DROPPED z3's `resource limit exceeded` phrase — a Z3-phrased resourceout on an errors>=1 run was fabricated into `Divergent`); `discharge`'s `errors >= 1 && rlimit_hit -> Unverifiable` arm now consumes the shared full-phrase-set discriminator. |
 
 use std::path::Path;
 use std::process::Command;
@@ -139,10 +139,29 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
     // surfaces as a clause counterexample since BOTH sides reference the SAME def.
     let preamble = program_spec_preamble(&parsed.program)?;
 
+    // The program-wide user-`spec fn` param-type map (#228, ref #225/#227): the
+    // SAME map `thermite_lower::lower` threads into the signature path, derived
+    // here from the SAME `spec_fn_param_type_map` source of truth (R-CHAR-3, never
+    // a forge-local re-derivation). Threaded into `lower_contract_expr` so the TV
+    // production column narrows a spec-call arithmetic arg to the callee's DECLARED
+    // param type (`as u32`/`as usize`) EXACTLY as `lower_fn_signature` does
+    // (contract-tv.md REQ-2 "verbatim"). Without it the column fell back to the
+    // hardcoded `as u64` and TV checked a NON-production predicate.
+    let pt_owned = thermite_lower::spec_fn_param_type_map(&parsed.program);
+    let spec_fn_param_types: Vec<(&str, &[PrimType])> =
+        pt_owned.iter().map(|(n, ps)| (*n, ps.as_slice())).collect();
+
     let mut report = TvReport::default();
     for item in &parsed.program.items {
         match item {
-            Item::Fn(f) => tv_fn(f, &preamble, seed, rlimit, &mut report),
+            Item::Fn(f) => tv_fn(
+                f,
+                &preamble,
+                &spec_fn_param_types,
+                seed,
+                rlimit,
+                &mut report,
+            ),
             // A `spec fn` carries only a `dec` measure (no req/ens) — its BODY's
             // fidelity is body-TV (epic #139 step 2, out of scope here).
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
@@ -154,7 +173,20 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
 /// TV one `fn`'s contract clauses (REQ-5): the single `req`, each `ens`, and each
 /// loop's `inv`s + `dec`. Each clause is framed from the fn signature (params +
 /// `result` + `old(_)`), lowered, encoded, and discharged.
-fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut TvReport) {
+#[allow(
+    clippy::too_many_arguments,
+    reason = "threads the fn + preamble + the program-wide spec-fn param-type map \
+        (#228, for the production-column narrowing cast) + the verus config + the \
+        report; the param-type map mirrors the signature path's threaded ctx"
+)]
+fn tv_fn(
+    f: &FnItem,
+    preamble: &[String],
+    spec_fn_param_types: &[(&str, &[PrimType])],
+    seed: u64,
+    rlimit: f64,
+    report: &mut TvReport,
+) {
     // The fn's `nat`-returning spec fns (drive the `as nat` coercion the signature
     // path emits). Slice params are bound VIEW-CONSISTENTLY as `&[elem]` (#149) and
     // threaded as production's `slices` (per clause, in `tv_clause`), so production
@@ -189,6 +221,7 @@ fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut T
         f,
         &nat_fns,
         &base_frame,
+        spec_fn_param_types,
         seed,
         rlimit,
         report,
@@ -201,6 +234,7 @@ fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut T
             f,
             &nat_fns,
             &base_frame,
+            spec_fn_param_types,
             seed,
             rlimit,
             report,
@@ -222,7 +256,7 @@ fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut T
             match spec_ty {
                 SpecType::Seq(_) => loop_frame.seq_params.push(name.clone()),
                 SpecType::Strng => loop_frame.string_params.push(name.clone()),
-                SpecType::BoundedInt => loop_frame.nat_coerce_params.push(name.clone()),
+                SpecType::BoundedInt(_) => loop_frame.nat_coerce_params.push(name.clone()),
                 SpecType::Map(_, _) => {
                     let r = format!("{name}.well_formed()");
                     loop_frame.req = Some(match loop_frame.req.take() {
@@ -242,6 +276,7 @@ fn tv_fn(f: &FnItem, preamble: &[String], seed: u64, rlimit: f64, report: &mut T
             f,
             &nat_fns,
             &loop_frame,
+            spec_fn_param_types,
             seed,
             rlimit,
             &mut loop_no,
@@ -298,6 +333,7 @@ fn tv_block_loops(
     f: &FnItem,
     nat_fns: &[&str],
     base_frame: &ObligationFrame,
+    spec_fn_param_types: &[(&str, &[PrimType])],
     seed: u64,
     rlimit: f64,
     loop_no: &mut usize,
@@ -315,6 +351,7 @@ fn tv_block_loops(
                         f,
                         nat_fns,
                         base_frame,
+                        spec_fn_param_types,
                         seed,
                         rlimit,
                         report,
@@ -326,18 +363,47 @@ fn tv_block_loops(
                     f,
                     nat_fns,
                     base_frame,
+                    spec_fn_param_types,
                     seed,
                     rlimit,
                     report,
                 );
                 tv_block_loops(
-                    &node.body, f, nat_fns, base_frame, seed, rlimit, loop_no, report,
+                    &node.body,
+                    f,
+                    nat_fns,
+                    base_frame,
+                    spec_fn_param_types,
+                    seed,
+                    rlimit,
+                    loop_no,
+                    report,
                 );
             }
             Stmt::If { then, else_, .. } => {
-                tv_block_loops(then, f, nat_fns, base_frame, seed, rlimit, loop_no, report);
+                tv_block_loops(
+                    then,
+                    f,
+                    nat_fns,
+                    base_frame,
+                    spec_fn_param_types,
+                    seed,
+                    rlimit,
+                    loop_no,
+                    report,
+                );
                 if let Some(e) = else_ {
-                    tv_block_loops(e, f, nat_fns, base_frame, seed, rlimit, loop_no, report);
+                    tv_block_loops(
+                        e,
+                        f,
+                        nat_fns,
+                        base_frame,
+                        spec_fn_param_types,
+                        seed,
+                        rlimit,
+                        loop_no,
+                        report,
+                    );
                 }
             }
             _ => {}
@@ -361,6 +427,7 @@ fn tv_clause(
     f: &FnItem,
     nat_fns: &[&str],
     base_frame: &ObligationFrame,
+    spec_fn_param_types: &[(&str, &[PrimType])],
     seed: u64,
     rlimit: f64,
     report: &mut TvReport,
@@ -390,6 +457,7 @@ fn tv_clause(
         &strings,
         &[],
         &[],
+        spec_fn_param_types,
     ) {
         Ok(p) => p,
         Err(e) => {
@@ -438,7 +506,17 @@ fn tv_clause(
 /// The lowerer is faithful, so ALL should verify; ANY `Divergent` is a real
 /// off-corpus infidelity finding (surfaced loudly).
 pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, ForgeError> {
-    let preamble = generated_preamble()?;
+    // Parse the synthetic vocabulary program ONCE; derive BOTH the preamble and the
+    // production-column param-type map (#228) from it (R-CHAR-3 — one source). The
+    // generator's only user spec fn is `spec_sum` (a slice param → no-cast
+    // placeholder), so the map is byte-stable for the generated vocabulary; threading
+    // it keeps the off-corpus column on the SAME `lower_contract_expr` contract as the
+    // corpus column rather than two divergent call shapes.
+    let program = generated_program()?;
+    let preamble = generated_preamble(&program)?;
+    let pt_owned = thermite_lower::spec_fn_param_type_map(&program);
+    let spec_fn_param_types: Vec<(&str, &[PrimType])> =
+        pt_owned.iter().map(|(n, ps)| (*n, ps.as_slice())).collect();
     let frame = generated_frame(&preamble);
     // The off-corpus run's nat_fns: `spec_sum` (the `nat`-returning spec fn in the
     // generator vocabulary) + `count_where` (the `nat`-returning combinator).
@@ -456,19 +534,26 @@ pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, Forge
     let mut report = TvReport::default();
     for (i, clause) in clauses.iter().enumerate() {
         let label = format!("gen#{i}");
-        let p_production =
-            match thermite_lower::lower_contract_expr(clause, &[], &nat_fns, &strings, &[], &[]) {
-                Ok(p) => p,
-                Err(e) => {
-                    report.clauses.push(ClauseResult {
-                        label,
-                        verdict: ClauseVerdict::Skipped {
-                            reason: format!("production lowering does not cover: {e}"),
-                        },
-                    });
-                    continue;
-                }
-            };
+        let p_production = match thermite_lower::lower_contract_expr(
+            clause,
+            &[],
+            &nat_fns,
+            &strings,
+            &[],
+            &[],
+            &spec_fn_param_types,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                report.clauses.push(ClauseResult {
+                    label,
+                    verdict: ClauseVerdict::Skipped {
+                        reason: format!("production lowering does not cover: {e}"),
+                    },
+                });
+                continue;
+            }
+        };
         let program = match equivalence_obligation(clause, &p_production, &frame) {
             Ok(prog) => prog,
             Err(e) => {
@@ -524,12 +609,13 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
     }
 }
 
-/// The off-corpus preamble: the `spec_sum` def + the 8 frozen combinator `verus_l3`
-/// defs, materialized by lowering a synthetic program that references each. The
-/// spec_sum shape mirrors `conformance/sum.th` (the golden — R-CHAR-3, not the
-/// lowerer's invention).
-fn generated_preamble() -> Result<Vec<String>, ForgeError> {
-    let src = "\
+/// The synthetic source whose lowering materializes the off-corpus preamble +
+/// whose `spec fn` set IS the generator's user-spec-fn vocabulary (`spec_sum`).
+/// Lifted to a constant so [`run_generated`] can parse it ONCE and derive BOTH the
+/// preamble (via [`program_spec_preamble`]) and the `spec_fn_param_type_map` (the
+/// #228 production-column narrowing input) from the SAME program (R-CHAR-3 — one
+/// source of truth). The spec_sum shape mirrors `conformance/sum.th` (the golden).
+const GENERATED_PREAMBLE_SRC: &str = "\
 spec fn spec_sum(xs: &[u32]) -> u64
   dec xs.len()
 {
@@ -566,14 +652,25 @@ fn touch_string(t: String) -> u64
   t.byte_at(0)
 }
 ";
-    let parsed = thermite_syntax::parse(src);
+
+/// Parse the off-corpus synthetic program ([`GENERATED_PREAMBLE_SRC`]) — the shared
+/// source for both the preamble and the param-type map. Errors if it does not parse
+/// clean (an internal invariant, never user input).
+fn generated_program() -> Result<thermite_syntax::ast::Program, ForgeError> {
+    let parsed = thermite_syntax::parse(GENERATED_PREAMBLE_SRC);
     if !parsed.is_clean() {
         return Err(ForgeError::VerusOutput {
             detail: "internal: the contract-TV off-corpus preamble program did not parse"
                 .to_string(),
         });
     }
-    program_spec_preamble(&parsed.program)
+    Ok(parsed.program)
+}
+
+/// The off-corpus preamble: the `spec_sum` def + the 8 frozen combinator `verus_l3`
+/// defs, materialized by lowering the synthetic program that references each.
+fn generated_preamble(program: &thermite_syntax::ast::Program) -> Result<Vec<String>, ForgeError> {
+    program_spec_preamble(program)
 }
 
 /// Lower a program's spec-fn + combinator definitions and return them as the
@@ -676,7 +773,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             // `string_params` so the reference dispatches its byte-view to the
             // wrapper spec fns (matching production's `recv_is_string` rewrite).
             SpecType::Strng => string_params.push(p.name.clone()),
-            SpecType::BoundedInt => nat_coerce_params.push(p.name.clone()),
+            SpecType::BoundedInt(_) => nat_coerce_params.push(p.name.clone()),
             SpecType::Bool => {}
             // A `Map` param (#150 gap #3) is bound as the `TMap` wrapper; production
             // weaves `well_formed()` for it (`is_map_param_ty`), so the obligation
@@ -707,7 +804,7 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     if !matches!(f.ret, Type::Unit) {
         if let Some(ret_ty) = spec_type_of(&f.ret) {
             match &ret_ty {
-                SpecType::BoundedInt => nat_coerce_params.push("result".to_string()),
+                SpecType::BoundedInt(_) => nat_coerce_params.push("result".to_string()),
                 // A slice `result` is bound VIEW-CONSISTENTLY as `&[elem]` (#149,
                 // the same rule as a slice param) — NOT seq-bound; both columns
                 // emit `result@`.
@@ -775,8 +872,18 @@ enum SpecType {
     /// `recv_is_string` rewrite. NOT a `Seq<u8>` index (the wrapper spec fns take
     /// `&self`); the obligation frame names it in `string_params`.
     Strng,
-    /// A bounded integer (`u32`/`u64`/`usize`) — `as nat`-coercible against a `nat`.
-    BoundedInt,
+    /// A bounded integer typed at its DECLARED width (`u32`/`u64`/`usize`) — the
+    /// String is the Verus prim spelling of the declared param type (#228, ref
+    /// #225/#227). Binding the obligation param at its TRUE width (not a blanket
+    /// `u64`) is the soundness fix: Z3 then reasons over the actual domain, so a
+    /// production `s_dec((n - 1) as u32)` truncation is IDENTITY on a `u32`-typed `n`
+    /// (its value is already < 2^32) — the equivalence to the reference's bare arg is
+    /// provable WHERE the clause's guards/req bound the subtraction, and HONESTLY
+    /// unprovable (an unguarded underflow witness) where they do not. Under the prior
+    /// blanket-`u64` framing the `as u32` truncation could LOSE bits Z3 saw as
+    /// significant, so a faithful clause read as a false divergence / a wrong cast
+    /// read as faithful. `as nat`-coercible against a `nat`-valued comparison.
+    BoundedInt(String),
     /// A `bool`.
     Bool,
     /// A `Map<K, V>` bound as the `TMap` wrapper (#150 gap #3). The string is the
@@ -801,7 +908,9 @@ impl SpecType {
         match self {
             SpecType::Seq(elem) => format!("Seq<{elem}>"),
             SpecType::Strng => "TString".to_string(),
-            SpecType::BoundedInt => "u64".to_string(),
+            // The DECLARED width (#228) — `u32`/`u64`/`usize` — so the obligation
+            // param is typed at its true domain, NOT a blanket `u64`.
+            SpecType::BoundedInt(width) => width.clone(),
             SpecType::Bool => "bool".to_string(),
             // The `Map` wrapper spelling (`TMapU64U64`); the inner `(K, V)` pair is
             // carried for completeness. The wrapper struct is in the preamble.
@@ -852,7 +961,12 @@ impl SpecType {
 /// outside contract-TV's framed sublanguage.
 fn spec_type_of(ty: &Type) -> Option<SpecType> {
     match ty {
-        Type::Prim(PrimType::U32 | PrimType::U64 | PrimType::Usize) => Some(SpecType::BoundedInt),
+        // Type the bounded int at its DECLARED width (#228) — the obligation param
+        // then carries the true domain, so the production `as u32`/`as usize`
+        // truncation is identity within that domain (the soundness fix).
+        Type::Prim(PrimType::U32) => Some(SpecType::BoundedInt("u32".to_string())),
+        Type::Prim(PrimType::U64) => Some(SpecType::BoundedInt("u64".to_string())),
+        Type::Prim(PrimType::Usize) => Some(SpecType::BoundedInt("usize".to_string())),
         Type::Prim(PrimType::Bool) => Some(SpecType::Bool),
         Type::Ref { inner, .. } => spec_type_of(inner),
         Type::Slice(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),

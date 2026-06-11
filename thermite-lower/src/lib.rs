@@ -33,5 +33,5 @@ pub use l1::lower_l1;
 pub use l2::{bound_string, lower_l2};
 pub use lower::{
     lower, lower_contract_expr, lower_equivalence_obligation, lower_exec_body, lower_exec_expr,
-    LowerError,
+    spec_fn_param_type_map, LowerError,
 };

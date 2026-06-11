@@ -2,11 +2,12 @@
   "uuid": "ca251109-f09c-461a-84ca-81ed6f999deb",
   "display_id": 251,
   "title": "Divergence: LeanEngine::reconstruct_replay splices author notation/macro helpers before the canonical theorem — a notation poisoning Thermite.stabilizesProp re-elaborates the obligation statement to True (clean axioms) and certifies L3",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T20:10:49.348422967Z",
-  "updated_at": "2026-06-11T20:10:50.938790923Z",
+  "updated_at": "2026-06-11T21:32:29.556546133Z",
+  "closed_at": "2026-06-11T21:32:29.556546133Z",
   "labels": [
     "blocker"
   ]

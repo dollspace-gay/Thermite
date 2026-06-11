@@ -451,6 +451,26 @@ pub struct Certificate {
     /// (REQ-5): recorded alongside, never merged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assurance_scope: Option<AssuranceScope>,
+    /// The PER-OBLIGATION ENGINE ATTRIBUTION (`.design/verified/proof-backends.md`
+    /// REQ-4, increment (iii), #247): the `{engine, trust_profile}` pair recorded when
+    /// a NON-DEFAULT engine (Lean) discharged this item's certification obligation —
+    /// so an auditor SEES that L3-via-Lean enumerates a SMALLER trusted base ({Lean
+    /// kernel + 3 axioms, EXP}) than L3-via-Verus ({Z3, Verus VC-gen, lowering
+    /// theorem}). `Some` ONLY when a non-default engine discharged (the default Verus
+    /// path leaves it `None`); set by `Certificate::with_engine_attribution`, consumed
+    /// by `cli::run_check`'s `--engine lean` path. `#[serde(default,
+    /// skip_serializing_if = "Option::is_none")]` so the frozen golden
+    /// `conformance/sum.cert.json` (which OMITS it — the default Verus path never
+    /// populates it) still deserializes, defaulting `None`, mirroring the
+    /// `slag_meta`/`solver_profile`/`assurance_scope` additive precedents (R-SPEC-2 —
+    /// the cert oracle stays byte-identical because `serde(default)` keeps the golden
+    /// green: a Verus cert never gains the field). DIAGNOSTIC + verdict-orthogonal (the
+    /// `Level` is unchanged — L3 still means "proven for all inputs"; the trust base is
+    /// the auditor-visible refinement): EXCLUDED from `oracle_subset` (OQ-2 decided
+    /// diagnostic-only so the golden stays stable; the project-min aggregate is
+    /// UNCHANGED — REQ-4 "honest-min aggregation UNCHANGED").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_attribution: Option<crate::engine::EngineAttribution>,
 }
 
 impl Certificate {
@@ -484,6 +504,7 @@ impl Certificate {
             boundary: false,
             boundary_target: None,
             assurance_scope: None,
+            engine_attribution: None,
         }
     }
 
@@ -529,6 +550,7 @@ impl Certificate {
             boundary: false,
             boundary_target: None,
             assurance_scope: None,
+            engine_attribution: None,
         }
     }
 
@@ -586,6 +608,7 @@ impl Certificate {
             boundary: false,
             boundary_target: None,
             assurance_scope: None,
+            engine_attribution: None,
         }
         .graduate_triage_clean()
     }
@@ -624,6 +647,7 @@ impl Certificate {
             boundary: true,
             boundary_target: Some(target),
             assurance_scope: None,
+            engine_attribution: None,
         }
         .graduate_triage_clean()
     }
@@ -661,6 +685,7 @@ impl Certificate {
             boundary: false,
             boundary_target: None,
             assurance_scope: None,
+            engine_attribution: None,
         }
     }
 
@@ -796,6 +821,24 @@ impl Certificate {
     /// Set by `check::check_file_with_options` after `closure::classify`.
     pub fn with_assurance_scope(mut self, scope: AssuranceScope) -> Self {
         self.assurance_scope = Some(scope);
+        self
+    }
+
+    /// Attach the per-obligation ENGINE ATTRIBUTION (`.design/verified/
+    /// proof-backends.md` REQ-4, increment (iii), #247). Returns the cert with
+    /// `engine_attribution` set to the discharging engine's `{engine, trust_profile}`
+    /// pair — recorded ONLY when a NON-DEFAULT engine (Lean) proved the item, so an
+    /// auditor sees the SMALLER trusted base. ORTHOGONAL to the verdict (REQ-4 — the
+    /// `Level` is unchanged; the trust base is the auditor-visible refinement): ONLY
+    /// this field changes. The default Verus path NEVER calls this (the field stays
+    /// `None`), so the cert oracle is byte-identical (the `serde(default)` keeps the
+    /// golden green). Set by `cli::run_check`'s `--engine lean` path.
+    #[must_use]
+    pub fn with_engine_attribution(
+        mut self,
+        attribution: crate::engine::EngineAttribution,
+    ) -> Self {
+        self.engine_attribution = Some(attribution);
         self
     }
 

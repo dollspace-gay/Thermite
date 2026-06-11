@@ -137,7 +137,7 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
 /// (R-SPEC-3 — no new positional contract per knob). `Default` is the pinned
 /// canonical configuration ([`DEFAULT_RLIMIT`] + [`mutation::MUTATION_FLOOR`]),
 /// the values `check_file` uses.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct CheckOptions {
     /// The verus `--rlimit` SMT resource budget (#11).
     pub rlimit: f64,
@@ -145,6 +145,38 @@ pub struct CheckOptions {
     /// REQ-5). An item that proves L3 but scores BELOW this floor does NOT certify
     /// (`WeakContract` reject). Default [`mutation::MUTATION_FLOOR`] (0.60).
     pub mutation_floor: f64,
+    /// The proof-backend ENGINE SELECTION (`.design/verified/proof-backends.md`
+    /// OQ-1 / REQ-8, increment (iii), #247). [`EngineSelection::Verus`] (the default)
+    /// is byte-identical to the SHIPPED Verus path; [`EngineSelection::Lean`] /
+    /// [`EngineSelection::Auto`] add the Lean engine #2 (the `--engine` surface).
+    pub engine: EngineSelection,
+    /// The source-file path the interactive proof artifacts (`<file>.lean-proofs/
+    /// <item>.lean`) are checked in beside (REQ-7(ii)). `None` on the in-process
+    /// `check_file*` entries (no `--engine lean` interactive replay); `cli::run_check`
+    /// sets it to the checked file when `--engine lean`/`auto` is requested.
+    pub source_file: Option<PathBuf>,
+}
+
+/// The `forge check --engine verus|lean|auto` surface (`.design/verified/
+/// proof-backends.md` OQ-1 DECISION / REQ-8, increment (iii), #247). The DECISION
+/// (recorded in the design's OQ-1 + the REQ-4/REQ-8 rows): `verus` is the DEFAULT
+/// (byte-identical to the shipped pipeline); `lean` runs the LeanEngine ONLY
+/// (exportable items discharged by Lean; non-exportable → honest skip reporting);
+/// `auto` runs Verus FIRST and, on a Verus Unknown/timeout, tries Lean (the §6
+/// ordering). Cert attribution (REQ-4) is populated whenever a NON-DEFAULT engine
+/// discharges.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum EngineSelection {
+    /// `--engine verus` (DEFAULT): the SHIPPED Verus path, byte-identical.
+    #[default]
+    Verus,
+    /// `--engine lean`: the LeanEngine ONLY — exportable items are discharged by Lean
+    /// (with the smaller trust base, attributed); a non-exportable item is reported as
+    /// an honest skip (the Lean engine `Unknown`, NOT a false verdict).
+    Lean,
+    /// `--engine auto`: Verus first; on a Verus Unknown/timeout, try Lean (the §6
+    /// ordering — Verus push-button common case, Lean as the smaller-base fallback).
+    Auto,
 }
 
 impl Default for CheckOptions {
@@ -152,6 +184,8 @@ impl Default for CheckOptions {
         CheckOptions {
             rlimit: DEFAULT_RLIMIT,
             mutation_floor: crate::mutation::MUTATION_FLOOR,
+            engine: EngineSelection::Verus,
+            source_file: None,
         }
     }
 }
@@ -688,6 +722,368 @@ pub fn check_file_with_options(
         })
         .collect();
     Ok(certs)
+}
+
+/// Run `forge check --engine lean|auto` (`.design/verified/proof-backends.md` OQ-1 /
+/// REQ-4/REQ-5/REQ-8, increment (iii), #247). The Verus default path is
+/// [`check_file_with_options`]; this adds the Lean engine #2 surface:
+///
+/// - **`auto`** (`.design/verified/proof-backends.md` §6 ordering): run Verus FIRST
+///   (the byte-identical base certs). For each item where Verus is INCONCLUSIVE (a
+///   degrade / timeout `lowered_assurance` / a non-L3 non-counterexample), TRY Lean —
+///   on a Lean `Proven` the cert is UPGRADED to L3 with the Lean attribution (the
+///   smaller base, REQ-4). A Verus `Proven` (L3, no reject) is KEPT as-is (Lean is not
+///   run — no Lean cost on the common case, no false disagreement). The DISAGREEMENT
+///   HALT (REQ-5) fires when BOTH engines produced a verdict on the same obligation
+///   and they CONTRADICT (Proven ⊕ Refuted) — a `ForgeError::SoundnessAlarm`.
+/// - **`lean`** (LeanEngine ONLY): each item is discharged by Lean. An EXPORTABLE,
+///   auto-tier item that Lean PROVES → an L3 cert with the Lean attribution; a
+///   tier-(c) item → the interactive replay (REQ-7); a NON-exportable item → an honest
+///   `Unverifiable` skip (Level::L0, no false verdict — the LeanEngine `Unknown`).
+///
+/// Verus stays the SOLE engine for the §0.1 meta/battery queries (vacuity / mutation /
+/// strengthen) in v1 (OQ-5); the Lean mutation battery (REQ-9) runs only on the items
+/// the Lean engine discharges.
+pub fn check_file_with_engine(
+    path: impl AsRef<Path>,
+    options: CheckOptions,
+) -> Result<Vec<Certificate>, ForgeError> {
+    let path = path.as_ref();
+    let selection = options.engine;
+    let source_file = options
+        .source_file
+        .clone()
+        .unwrap_or_else(|| path.to_path_buf());
+
+    // The Verus base certs (byte-identical to the default path). `auto` keeps a Verus
+    // `Proven`; `lean` ignores the Verus VERDICT (LeanEngine only) but reuses the same
+    // parse/validate/effect-check gate via this call (a parse/validate failure is the
+    // SAME `ForgeError` either way).
+    let base = check_file_with_options(
+        path,
+        CheckOptions {
+            engine: EngineSelection::Verus,
+            ..options
+        },
+    )?;
+
+    // Re-parse for the Lean engine (the exporter needs the spec-fn defs + the item).
+    let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
+        path: path.display().to_string(),
+        source: e,
+    })?;
+    let parsed = thermite_syntax::parse(&src);
+    if !parsed.is_clean() {
+        return Err(ForgeError::Parse(parsed.errors));
+    }
+    let lean = crate::engine::LeanEngine::new(parsed.program.clone(), lean_package_root());
+
+    let mut out = Vec::with_capacity(base.len());
+    for cert in base {
+        let item = match crate::lean_export::find_item(&parsed.program, &cert.item) {
+            Some(i) => i,
+            // No matching node (defensive) — keep the base cert untouched.
+            None => {
+                out.push(cert);
+                continue;
+            }
+        };
+        let obligations = mint_item_obligations(&parsed.program, item);
+        let new_cert =
+            lean_engine_cert(&lean, &source_file, cert, &obligations.contract, selection)?;
+        out.push(new_cert);
+    }
+    Ok(out)
+}
+
+/// The `lean/` package root for the Lean engine (`.design/verified/proof-backends.md`
+/// REQ-6 — the cwd `lake env lean` runs in). Resolved relative to the `forge` crate
+/// dir (the workspace's `lean/` sibling). Deterministic (R-CODE-5).
+fn lean_package_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("lean")
+}
+
+/// Apply the Lean engine to ONE item's base Verus cert (`.design/verified/
+/// proof-backends.md` OQ-1 / REQ-4/REQ-5/REQ-7). Returns the cert the `--engine`
+/// surface emits for the item, or a `ForgeError::SoundnessAlarm` on a Proven ⊕ Refuted
+/// disagreement (REQ-5). The Verus base cert's VERDICT (Proven / Refuted / Unknown) is
+/// reconstructed from its `level`/`reject` for the disagreement check + the `auto`
+/// inconclusive test.
+fn lean_engine_cert(
+    lean: &crate::engine::LeanEngine,
+    source_file: &Path,
+    verus_cert: Certificate,
+    obligation: &crate::obligation::Obligation,
+    selection: EngineSelection,
+) -> Result<Certificate, ForgeError> {
+    use crate::engine::{Engine as _, EngineName, Verdict};
+
+    match selection {
+        EngineSelection::Verus => Ok(verus_cert),
+        EngineSelection::Auto => {
+            // Verus FIRST: a Verus `Proven` (L3, no reject) is KEPT — Lean is not run
+            // (no cost on the common case, no spurious disagreement). Only an
+            // INCONCLUSIVE Verus result (degrade / timeout / non-L3) tries Lean.
+            let verus_verdict = verus_verdict_of(&verus_cert);
+            if matches!(verus_verdict, Verdict::Proven(_)) && verus_cert.reject.is_none() {
+                return Ok(verus_cert);
+            }
+            // Verus inconclusive → TRY Lean (the §6 ordering). The DISAGREEMENT guard
+            // (REQ-5) fires only if Verus WITNESSED a refutation (Refuted) AND Lean
+            // proves — the real-unsoundness case. A Verus Unknown/timeout + a Lean
+            // Proven is BENIGN (Verus simply could not decide).
+            let lean_verdict = lean.discharge(obligation);
+            if let Err(disagreement) = crate::engine::check_disagreement(
+                &obligation.item,
+                EngineName::Verus,
+                &verus_verdict,
+                lean.name(),
+                &lean_verdict,
+            ) {
+                return Err(ForgeError::SoundnessAlarm(disagreement));
+            }
+            match lean_verdict {
+                Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert)),
+                // Lean could not discharge either — keep the Verus base cert (the
+                // honest degrade/timeout verdict stands).
+                _ => Ok(verus_cert),
+            }
+        }
+        EngineSelection::Lean => {
+            // LeanEngine ONLY: discharge the item by Lean. Tier-(c) → interactive
+            // replay; auto tiers → live lake; non-exportable → an honest skip.
+            let (verdict, interactive) = if lean.admits_auto(obligation) {
+                (lean.discharge(obligation), false)
+            } else {
+                // Not auto-exportable: try the interactive (tier-c) replay path; a
+                // non-tier-c non-exportable item is an honest Unverifiable skip. An
+                // interactive (replayed) proof carries the INTERACTIVE trust profile
+                // (the author is a reviewed step, REQ-7(ii)/OQ-4).
+                (lean.replay_interactive(source_file, obligation), true)
+            };
+            match verdict {
+                Verdict::Proven(_) if interactive => {
+                    Ok(lean_interactive_proven_cert(lean, &verus_cert))
+                }
+                Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert)),
+                Verdict::Refuted(_) => {
+                    // A Lean WITNESSED refutation (not produced by the current export
+                    // path, but total): an honest L0 reject, never a silent pass.
+                    Ok(Certificate::rejected(
+                        &verus_cert.item,
+                        verus_cert.effects.clone(),
+                        false,
+                        crate::manifest::RejectReason {
+                            cause: "LeanRefuted".to_string(),
+                            detail: "the Lean engine refuted the obligation".to_string(),
+                        },
+                    ))
+                }
+                Verdict::Unknown(reason) => Ok(lean_unverifiable_cert(&verus_cert, &reason)),
+            }
+        }
+    }
+}
+
+/// Reconstruct an `engine::Verdict` from a Verus base cert (`.design/verified/
+/// proof-backends.md` REQ-5 — for the disagreement check + the `auto` inconclusive
+/// test). L3 + no reject = `Proven`; a counterexample reject (a WITNESSED
+/// `postcondition not satisfied`) = `Refuted`; everything else (timeout / degrade /
+/// L0-no-witness) = `Unknown`. The `Refuted` reconstruction keys on a witnessing
+/// obligation location (REQ-3.1: a witness-LESS failure is `Unknown`, never `Refuted`).
+fn verus_verdict_of(cert: &Certificate) -> crate::engine::Verdict {
+    use crate::engine::{CacheKey, Counterexample, Evidence, Reason, Verdict};
+    let key = CacheKey {
+        engine: crate::engine::EngineName::Verus,
+        content_address: format!("verus::{}", cert.item),
+    };
+    if cert.level == Level::L3 && cert.reject.is_none() {
+        return Verdict::Proven(Evidence { verified: 1, key });
+    }
+    // A WITNESSED counterexample (a failing obligation carrying a `--> span`) is a
+    // genuine refutation; a witness-LESS failure (timeout / fast-unknown) is Unknown
+    // (REQ-3.1 — refutation requires a witnessing input).
+    let witnessed = cert.obligations.iter().any(|o| o.location.is_some());
+    if witnessed {
+        Verdict::Refuted(Counterexample {
+            obligations: cert.obligations.clone(),
+        })
+    } else {
+        Verdict::Unknown(Reason::IncompleteUnknown(format!(
+            "verus did not prove `{}` (no witnessing counterexample)",
+            cert.item
+        )))
+    }
+}
+
+/// Build the L3 cert a Lean `Proven` produces (`.design/verified/proof-backends.md`
+/// REQ-4/REQ-9): the item certifies at L3 (Lean kernel-checked) WITH the Lean engine
+/// ATTRIBUTION (the smaller trusted base — the auditor-visible refinement) AND the
+/// engine-generic mutation tally (REQ-9 — mutants re-discharged via the SAME Lean
+/// path, the kill ratio + the "untested against lean" count). The `Level` is
+/// unchanged-meaning L3 ("proven for all inputs"); the attribution records WHICH
+/// engine + its base; the mutation qualifier is attached additively.
+fn lean_proven_cert(lean: &crate::engine::LeanEngine, base: &Certificate) -> Certificate {
+    let attribution = crate::engine::attribution_for(lean);
+    let cert = Certificate::new(
+        &base.item,
+        Level::L3,
+        base.effects.clone(),
+        0,
+        vec![crate::manifest::ObligationResult::discharged(
+            "discharged by the Lean engine (kernel-accepted; the smaller trusted base \
+             {Lean kernel + 3 axioms, EXP} — proof-backends REQ-4)",
+        )],
+    )
+    .graduate_triage_clean()
+    .with_engine_attribution(attribution);
+    // REQ-9 engine-generic battery (the Lean path): re-discharge the frozen mutant set
+    // via the SAME Lean engine; report the kill ratio + the untested-against-lean
+    // count. The Verus-path battery (`mutation_score`) is untouched. Only an
+    // `Item::Fn` (the cert's item) is mutation-scored — a `spec fn` carries no `ens`.
+    if let Some(Item::Fn(f)) = crate::lean_export::find_item(lean_program(lean), &base.item) {
+        let tally = lean_mutation_score(lean, f);
+        cert.with_mutation_score(tally.qualifier(), None)
+    } else {
+        cert
+    }
+}
+
+/// Build the L3 cert a tier-(c) INTERACTIVE Lean proof produces (`.design/verified/
+/// proof-backends.md` REQ-7(ii) / OQ-4): like [`lean_proven_cert`] but the attribution
+/// carries the INTERACTIVE trust profile (the human/agent proof author is a reviewed —
+/// not mechanized — step, ADDED to {Lean kernel + 3 axioms, EXP}). The auditor sees
+/// the extra reviewed-author item. No mutation tally on the interactive path (a
+/// recursive-registry obligation's mutants are tier-(c) too — "untested against
+/// lean-auto"; the §6 tier-(c) interactive battery is out of v1's auto scope).
+fn lean_interactive_proven_cert(
+    lean: &crate::engine::LeanEngine,
+    base: &Certificate,
+) -> Certificate {
+    use crate::engine::Engine as _;
+    let attribution = crate::engine::EngineAttribution {
+        engine: lean.name().tag().to_string(),
+        trust_profile: crate::engine::trust_profile_interactive().items,
+    };
+    Certificate::new(
+        &base.item,
+        Level::L3,
+        base.effects.clone(),
+        0,
+        vec![crate::manifest::ObligationResult::discharged(
+            "discharged by an INTERACTIVE Lean proof (kernel-accepted, sorry-free replay; \
+             the trusted base adds the reviewed proof author — proof-backends REQ-7(ii))",
+        )],
+    )
+    .graduate_triage_clean()
+    .with_engine_attribution(attribution)
+}
+
+/// Borrow the Lean engine's parsed program (for the per-item + per-mutant obligation
+/// minting on the REQ-9 Lean mutation path). The engine carries the program; this is
+/// the read accessor the mutation battery needs.
+fn lean_program(lean: &crate::engine::LeanEngine) -> &Program {
+    lean.program()
+}
+
+/// Score the frozen mutant set of `f` against its own contract VIA THE LEAN ENGINE
+/// (`.design/verified/proof-backends.md` REQ-9, increment (iii), #247). The
+/// engine-generic battery: each mutant is attempted via the SAME Lean engine path; a
+/// mutant the Lean fragment ADMITS and that Lean does NOT prove (Refuted ∪
+/// Unknown-after-attempt) is KILLED; a mutant the fragment does NOT admit is "untested
+/// against lean" (reported, NEVER counted killed); a Lean-Proven mutant SURVIVED.
+///
+/// The #101 proven-equivalent exclusion is a §0.1 META-query OUTSIDE the Engine
+/// interface in v1 (it stays a direct verus query, F3/OQ-5); on the Lean-only path no
+/// verus run is threaded, so the tally reports the RAW survivor set honestly (a
+/// survivor is reported, never silently excluded as equivalent without the verus
+/// probe). The Verus-path battery (`mutation_score`) keeps the SHIPPED #101 exclusion
+/// unchanged. Deterministic (R-CODE-5): the mutant set is a pure function of the AST.
+fn lean_mutation_score(
+    lean: &crate::engine::LeanEngine,
+    f: &thermite_syntax::FnItem,
+) -> crate::engine::LeanMutationTally {
+    use crate::engine::Engine as _;
+    let mut tally = crate::engine::LeanMutationTally::default();
+    let base_program = lean_program(lean);
+    for mutant in crate::mutation::generate(f, 0) {
+        // The LeanEngine exports the item by NAME from its stored program (the
+        // exporter re-fetches `o.item` from `self.program`), so to score a MUTANT we
+        // must build a per-mutant engine whose program carries the MUTANT body in
+        // place of the original `f` (else the engine would re-export the unchanged
+        // original — every mutant would discharge identically, a false survivor).
+        let mutant_program = program_with_mutant(base_program, &mutant.item);
+        let mutant_engine =
+            crate::engine::LeanEngine::new(mutant_program.clone(), lean_package_root());
+        // The mutant's CONTRACT obligation (the same closure the real item carries —
+        // a mutant body references the same spec-fns), over the MUTANT program.
+        let called = reachable_spec_fn_names_full(&mutant_program, &mutant.item);
+        let obligation = crate::obligation::Obligation::contract_for_fn(&mutant.item, called);
+        // The Lean fragment's admission is the export-success + auto-tier test
+        // (REQ-9: a non-admitted mutant is "untested against lean", never a kill).
+        let admitted = mutant_engine.admits_auto(&obligation);
+        let verdict = if admitted {
+            mutant_engine.discharge(&obligation)
+        } else {
+            // Not attempted (the fragment does not admit it) — a placeholder Unknown;
+            // `lean_mutant_outcome` maps `admitted = false` to UntestedAgainstLean
+            // regardless of the verdict.
+            crate::engine::Verdict::Unknown(crate::engine::Reason::IncompleteUnknown(
+                "not admitted by the Lean fragment (untested against lean)".to_string(),
+            ))
+        };
+        let outcome = crate::engine::lean_mutant_outcome(admitted, &verdict);
+        // The #101 equivalence probe is a §0.1 verus meta-query OUTSIDE the engine
+        // interface in v1 (not threaded on the Lean-only path) — report the raw
+        // survivor (proven_equivalent = false), never a silent exclusion.
+        tally.record(outcome, false);
+    }
+    tally
+}
+
+/// Build a copy of `base` with the fn named `mutant.name` REPLACED by `mutant`
+/// (`.design/verified/proof-backends.md` REQ-9 — the per-mutant program the LeanEngine
+/// exports from). The LeanEngine resolves an obligation's item by NAME from its stored
+/// program, so a mutant must be swapped IN for the engine to discharge the MUTATED
+/// body (not the original). The spec-fn deps are unchanged (a mutant keeps the
+/// original's signature + contract).
+fn program_with_mutant(base: &Program, mutant: &thermite_syntax::FnItem) -> Program {
+    let items = base
+        .items
+        .iter()
+        .map(|i| match i {
+            Item::Fn(f) if f.name == mutant.name => Item::Fn(mutant.clone()),
+            other => other.clone(),
+        })
+        .collect();
+    Program { items }
+}
+
+/// Build the honest Unverifiable-skip cert a Lean `Unknown` produces under `--engine
+/// lean` (`.design/verified/proof-backends.md` OQ-1 — "non-exportable → honest
+/// Unverifiable/skip reporting"). Level::L0 with a structured reject naming the skip
+/// reason — NEVER a false `Proven`, NEVER a silent pass.
+fn lean_unverifiable_cert(base: &Certificate, reason: &crate::engine::Reason) -> Certificate {
+    let detail = match reason {
+        crate::engine::Reason::VerusTimeout(d) | crate::engine::Reason::IncompleteUnknown(d) => {
+            d.clone()
+        }
+    };
+    Certificate::rejected(
+        &base.item,
+        base.effects.clone(),
+        false,
+        crate::manifest::RejectReason {
+            cause: "LeanUnverifiable".to_string(),
+            detail: format!(
+                "the Lean engine could not discharge this item (not exportable / not \
+                 auto-dischargeable / interactive-only — an honest skip under --engine lean): \
+                 {detail}"
+            ),
+        },
+    )
 }
 
 /// Run the L2 (Kani bounded model check) pipeline for every `fn` item in `path`,

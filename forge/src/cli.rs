@@ -132,6 +132,16 @@ pub enum ForgeError {
     /// A usage error: missing/unknown verb, missing positional, bad flag, or a
     /// `forge new` target that already exists.
     Usage(String),
+    /// A SOUNDNESS ALARM (`.design/verified/proof-backends.md` REQ-5, #247): two
+    /// engines DISAGREED on the SAME certification obligation — one returned `Proven`
+    /// and another a WITNESSED `Refuted` (a counterexample). This is NOT a verification
+    /// failure (a reported certificate) — it is a HARD HALT: one engine (or the
+    /// exporter/lowering, or `S` itself) is unsound, and silently proceeding would
+    /// launder unsoundness into a certificate. The toolchain NEVER picks the favorable
+    /// `Proven`. Carries the structured `engine::Disagreement` (both engines, the item,
+    /// and the refuting counterexample). Surfaced under `--engine auto` (a Verus and a
+    /// Lean verdict on the same obligation).
+    SoundnessAlarm(crate::engine::Disagreement),
 }
 
 impl fmt::Display for ForgeError {
@@ -210,6 +220,7 @@ impl fmt::Display for ForgeError {
                 write!(f, "could not read a reviewer verdict: {detail}")
             }
             ForgeError::Usage(msg) => write!(f, "usage error: {msg}"),
+            ForgeError::SoundnessAlarm(d) => write!(f, "SOUNDNESS ALARM: {d}"),
         }
     }
 }
@@ -248,6 +259,11 @@ enum Command {
         /// but scores below this floor does NOT certify (`WeakContract` reject). A
         /// LOW value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
         mutation_floor: f64,
+        /// The proof-backend ENGINE (`--engine verus|lean|auto`; `.design/verified/
+        /// proof-backends.md` OQ-1, #247). `verus` (DEFAULT) is byte-identical; `lean`
+        /// runs the LeanEngine ONLY (exportable items discharged by Lean, attributed);
+        /// `auto` runs Verus first and tries Lean on a Verus Unknown/timeout.
+        engine: check::EngineSelection,
     },
     /// `forge audit <file> [--json]` — emit the project AUDIT MANIFEST v1 (issue
     /// #15; `.design/forge/audit-manifest.md` REQ-2). Runs the SAME check pipeline
@@ -454,6 +470,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             let mut level = CheckLevel::L3;
             let mut rlimit = DEFAULT_RLIMIT;
             let mut mutation_floor = MUTATION_FLOOR;
+            let mut engine = check::EngineSelection::Verus;
             let mut iter = iter.peekable();
             while let Some(arg) = iter.next() {
                 match arg.as_str() {
@@ -505,6 +522,29 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             )));
                         }
                     }
+                    "--engine" => {
+                        // `--engine verus|lean|auto` — the proof-backend engine
+                        // selection (`.design/verified/proof-backends.md` OQ-1, #247).
+                        // The value is a separate token; a missing / unknown value is a
+                        // Usage error, never a silent default.
+                        let value = iter.next().ok_or_else(|| {
+                            ForgeError::Usage(
+                                "`--engine` requires a value (`verus`, `lean`, or `auto`)"
+                                    .to_string(),
+                            )
+                        })?;
+                        engine = match value.as_str() {
+                            "verus" => check::EngineSelection::Verus,
+                            "lean" => check::EngineSelection::Lean,
+                            "auto" => check::EngineSelection::Auto,
+                            other => {
+                                return Err(ForgeError::Usage(format!(
+                                    "unknown `--engine` value `{other}` (expected `verus`, \
+                                     `lean`, or `auto`)"
+                                )));
+                            }
+                        };
+                    }
                     "--level" => {
                         // `--level l2|l3` — an EXPLICIT rung choice (REQ-7). The
                         // value is a separate token (`--level l2`); a missing or
@@ -549,6 +589,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 level,
                 rlimit,
                 mutation_floor,
+                engine,
             })
         }
         "audit" => {
@@ -1099,7 +1140,8 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             level,
             rlimit,
             mutation_floor,
-        } => run_check(&file, json, level, rlimit, mutation_floor),
+            engine,
+        } => run_check(&file, json, level, rlimit, mutation_floor, engine),
         Command::Audit { file, json } => run_audit(&file, json),
         Command::Repair { file, item, json } => run_repair(&file, item.as_deref(), json),
         Command::Review {
@@ -1212,29 +1254,51 @@ fn run_check(
     level: CheckLevel,
     rlimit: f64,
     mutation_floor: f64,
+    engine: check::EngineSelection,
 ) -> Result<ExitCode, ForgeError> {
     // The DEFAULT (no flag) stays the L3 verus path; `--level l2` is an EXPLICIT
     // choice that runs the Kani bounded model check instead — never an automatic
     // degrade (`.design/lower/l2-kani.md` REQ-7; #10 owns the auto-degrade). The
     // `--rlimit` (#11) tunes the L3 verus resource budget; the L2 Kani path does
     // not consume it.
-    let certs = match level {
+    //
+    // proof-backends OQ-1 (#247): `--engine verus|lean|auto`. `verus` (the default)
+    // keeps the byte-identical path below; `lean`/`auto` route through
+    // `check::check_file_with_engine` (the LeanEngine surface — exportable items
+    // discharged by Lean with attribution; the disagreement HALT on `auto`).
+    let certs = match (level, engine) {
         // The canonical config (default rlimit + default mutation floor #12) routes
         // through `check_file` (the public default entry, the only one that serves /
         // populates the shared proof cache). An explicit `--rlimit` (#11, the
         // timeout-forcing lever) or `--mutation-floor` (#12, the AC-3 floor-flip
         // lever) routes through `check_file_with_options` (cache-bypassed).
-        CheckLevel::L3 if rlimit == DEFAULT_RLIMIT && mutation_floor == MUTATION_FLOOR => {
+        (CheckLevel::L3, check::EngineSelection::Verus)
+            if rlimit == DEFAULT_RLIMIT && mutation_floor == MUTATION_FLOOR =>
+        {
             check::check_file(file)?
         }
-        CheckLevel::L3 => check::check_file_with_options(
+        (CheckLevel::L3, check::EngineSelection::Verus) => check::check_file_with_options(
             file,
             CheckOptions {
                 rlimit,
                 mutation_floor,
+                ..CheckOptions::default()
             },
         )?,
-        CheckLevel::L2 => check::check_l2_file(file)?,
+        // `--engine lean` / `--engine auto`: the proof-backends increment-(iii) Lean
+        // surface (OQ-1). A genuine ENGINE DISAGREEMENT (Verus Proven ⊕ Lean Refuted,
+        // or vice versa, on the SAME obligation) HALTS as a `ForgeError::SoundnessAlarm`
+        // — never resolved by preference (REQ-5).
+        (CheckLevel::L3, sel) => check::check_file_with_engine(
+            file,
+            CheckOptions {
+                rlimit,
+                mutation_floor,
+                engine: sel,
+                source_file: Some(file.to_path_buf()),
+            },
+        )?,
+        (CheckLevel::L2, _) => check::check_l2_file(file)?,
     };
 
     // #10 the project-level ASSURANCE MANIFEST (`.design/forge/degrade-ladder.md`
@@ -2306,6 +2370,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
+                engine: check::EngineSelection::Verus,
             })
         );
         assert_eq!(
@@ -2316,6 +2381,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
+                engine: check::EngineSelection::Verus,
             })
         );
     }
@@ -2334,6 +2400,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: 1.0,
                 mutation_floor: MUTATION_FLOOR,
+                engine: check::EngineSelection::Verus,
             })
         );
         // Default when the flag is absent.
@@ -2345,6 +2412,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
+                engine: check::EngineSelection::Verus,
             })
         );
         // Missing value, non-numeric, and non-positive are Usage errors.
@@ -2376,6 +2444,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: 0.2,
+                engine: check::EngineSelection::Verus,
             })
         );
         // Default when the flag is absent.
@@ -2415,6 +2484,7 @@ mod tests {
                 level: CheckLevel::L2,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
+                engine: check::EngineSelection::Verus,
             })
         );
         assert_eq!(
@@ -2425,6 +2495,7 @@ mod tests {
                 level: CheckLevel::L3,
                 rlimit: DEFAULT_RLIMIT,
                 mutation_floor: MUTATION_FLOOR,
+                engine: check::EngineSelection::Verus,
             })
         );
         assert!(matches!(

@@ -43,6 +43,10 @@
 //! | REQ-3 (discharge discipline — Unknown degrades, Refuted hard-fails) | SHIPPED | `pub fn verdict_ladder_action` maps a `Verdict` to the SHIPPED `degrade::L3Verdict` for a `role = Certification` obligation: `Proven` → the proved L3 cert (CertifyL3); `Unknown` → `Timeout`-shaped degrade trigger (`run_ladder` → L2/L1); `Refuted` → `Counterexample` (HARD FAIL, never degrades). Consumer: `check::ladder_for_timeout`. Generalized off `degrade::ladder_action_l3`. |
 //! | REQ-3.1 (the fast-unknown remap) | SHIPPED | `VerusEngine::verdict_of` splits `VerusOutcome::Counterexample` by `counterexample_is_incompleteness_unknown` (the NARROW SMT-`unknown` signature): ONLY a span-less failure carrying the SMT-`unknown` signal (no frontend `error[E` / no parsed `--> span`) → `Unknown(Reason::IncompleteUnknown)` (degrade); a witnessed countermodel AND a frontend type error (E0308) stay `Refuted` (hard-fail). The remap is INERT on the corpus (witnessed + E0308 cases stay hard-fail). Tested: a synthetic SMT-`unknown` degrades, a witnessed countermodel + an E0308 type error both hard-fail (`engine.rs` tests + `forge/tests/engine_interface.rs`). |
 //! | REQ-8 (engine ordering hook) | SHIPPED (Verus rung) | `pub fn default_engines` returns the ordered engine list (Verus first); increment (i) wires the hook with the single Verus rung, increment (ii) adds the Lean rungs. Consumer: `check::ladder_for_timeout` reads the first engine (Verus). |
+//! | REQ-4 (certificate attribution — per-obligation {engine, trust_profile}) | SHIPPED (increment (iii), #247) | `pub struct EngineAttribution { engine, trust_profile }` (the `{engine, trust_profile}` pair) is built by `pub fn attribution_for`; `manifest::Certificate::engine_attribution` is the ADDITIVE serde field (`#[serde(default, skip_serializing_if = "Option::is_none")]`), populated by `Certificate::with_engine_attribution` ONLY when a NON-default engine (Lean) discharges (the default Verus path leaves it `None` so corpus certs are byte-identical — the `serde(default)` keeps the goldens green). Honest-min aggregation UNCHANGED (`AssuranceManifest::aggregate`). Oracle-EXCLUDED (OQ-2 decided diagnostic-only for byte-identity). Consumer: `cli::run_check` (the `--engine lean` path attaches it). |
+//! | REQ-5 (engine disagreement = soundness alarm) | SHIPPED (increment (iii), #247) | `pub fn check_disagreement` is the multi-engine dispatch guard: on the SAME obligation, one engine `Proven` + another `Refuted` (a WITNESSED countermodel) returns `Err(Disagreement { proven_engine, refuted_engine, item, counterexample })` — a structured HARD halt naming both engines + the obligation, NEVER resolved by preference. `Proven ⊕ Unknown` is benign (`Ok`). Surfaced as `ForgeError::SoundnessAlarm` (`cli.rs`). Tested: `StubProven ⊕ StubRefuted` fires; `Proven ⊕ Unknown` does not (`engine.rs` tests + `forge/tests/engine_attribution.rs`). |
+//! | REQ-7 (interactive proofs — skeleton emit + replay with staleness gate + sorry detection) | SHIPPED (increment (iii), #247) | `pub fn interactive_proof_path` is the deterministic `<file>.lean-proofs/<item>.lean` artifact path; `pub fn replay_interactive` REPLAYS a PRESENT proof (`lake env lean`) with the obligation-hash staleness gate (the emitted `-- evidence_key: <hex>` header must match the current `evidence_key`; a mismatch → `Unknown("stale proof — re-derive")`), EMITS the skeleton (the exporter's tier-(c) source + the evidence-key header) when ABSENT, and DETECTS `sorry` explicitly (`proof_has_sorry` greps the source AND `#print axioms` for `sorryAx`/`sorry`) → `Unknown` (NEVER `Proven`); a kernel-accepted sorry-free replay → `Proven` with the interactive trust profile (`trust_profile_interactive`). Tested: skeleton emitted; a hand-authored valid proof replays Proven; a stale hash → Unknown; a sorry file → Unknown (`forge/tests/lean_engine.rs`). |
+//! | REQ-9 (engine-generic mutation battery — the Lean path) | SHIPPED (increment (iii), #247) | `pub fn lean_mutant_outcome` classifies a Lean-engine mutant discharge under the engine-generic kill semantics (`Refuted ∪ Unknown-after-attempt` = killed; a mutant OUTSIDE the Lean fragment = `UntestedAgainstLean`, never counted killed); `pub struct LeanMutationTally` accumulates `killed / attempted-minus-equivalent` with the untested-against-lean count reported, NEVER inflating the ratio. Consumer: `check::lean_mutation_score` (the `--engine lean` mutation path). The Verus-path battery (`check::mutation_score`) is UNTOUCHED. |
 
 use crate::lean_export::{export_item, find_item, ExportRefusal, ExportedObligation};
 use crate::obligation::{Obligation, ObligationRole};
@@ -407,6 +411,14 @@ pub fn engine_cache_key(engine: EngineName, content_address: String) -> CacheKey
 /// fresh verify against the CURRENT exporter + spine.
 pub const LEAN_SCHEMA_VERSION: u32 = 2;
 
+/// A process-local monotonic nonce for unique replay scratch-file names
+/// (`.design/verified/proof-backends.md` REQ-7(ii) — the interactive replay writes a
+/// `#print axioms` probe to a temp file). Keyed alongside the pid + item name so
+/// concurrent replays in the SAME process never collide on the scratch path (the
+/// collision that flaked `interactive_filled_valid_proof_replays_proven` under
+/// parallel test runs). Deterministic per call (R-CODE-5).
+static NEXT_REPLAY_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// The Thermite→Lean obligation ENGINE (`.design/verified/proof-backends.md` REQ-6/
 /// REQ-7/REQ-8 — engine #2; increment (ii-b), the #240 chain). Implements the
 /// [`Engine`] trait: `fragment()` = pure-contract items whose constructs are
@@ -467,6 +479,14 @@ impl LeanEngine {
             lean_root,
             name: EngineName::LeanAuto,
         }
+    }
+
+    /// The parsed program this engine carries (`.design/verified/proof-backends.md`
+    /// REQ-9 — the per-mutant obligation minting on the Lean mutation path needs the
+    /// program's spec-fn defs). The read accessor `check::lean_mutation_score` uses.
+    #[must_use]
+    pub fn program(&self) -> &Program {
+        &self.program
     }
 
     /// Export the obligation's source item to a self-contained Lean file
@@ -779,6 +799,191 @@ impl LeanEngine {
         std::fs::write(&path, &exported.source)?;
         Ok(path)
     }
+
+    /// Does the Lean fragment ADMIT this obligation for an AUTO discharge?
+    /// (`.design/verified/proof-backends.md` REQ-9 — the "untested against lean"
+    /// boundary.) The Lean fragment's admission is NOT the static `admits_all_classes`
+    /// flag (it is `false`); it is whether the obligation EXPORTS and lands in an AUTO
+    /// tier (a)/(b). A refusal (out-of-spine / not-pure-contract / incomplete registry
+    /// / non-int result) OR a tier-(c) interactive obligation is NOT admitted by the
+    /// AUTO path — "untested against lean" (REQ-9), never a kill. This runs the export
+    /// (the same one `discharge` runs), so it is the genuine per-mutant admission gate.
+    #[must_use]
+    pub fn admits_auto(&self, o: &Obligation) -> bool {
+        matches!(self.export(o), Ok(e) if e.tier.is_auto())
+    }
+
+    /// REPLAY (or EMIT) a tier-(c) item's INTERACTIVE proof artifact
+    /// (`.design/verified/proof-backends.md` REQ-7(ii) / §6 tier (c)). The artifact
+    /// lives at [`interactive_proof_path`] (`<source_file>.lean-proofs/<item>.lean`):
+    ///
+    /// - **ABSENT** → EMIT the skeleton (the exporter's tier-(c) source + the
+    ///   evidence-key header) and return `Unknown` ("skeleton emitted — an agent
+    ///   authors the induction"). A skeleton is NEVER `Proven` (it carries `sorry`).
+    /// - **PRESENT** → the STALENESS gate: the emitted `-- evidence_key: <hex>` header
+    ///   must match the CURRENT [`evidence_key`](Engine::evidence_key). A MISMATCH =
+    ///   STALE → `Unknown("stale proof — re-derive")` (NEVER silently reused). A match
+    ///   → REPLAY via `lake env lean`; then DETECT `sorry` explicitly ([`proof_has_sorry`]
+    ///   over the source AND `#print axioms`) — a `sorry` → `Unknown` (NEVER `Proven`,
+    ///   even though lake exits 0 on a `sorry`); a kernel-accepted, sorry-FREE replay →
+    ///   `Proven` with the INTERACTIVE trust profile (the `verified` count is 1 — the
+    ///   one item obligation).
+    ///
+    /// `source_file` is the `.th` source the artifact is checked in beside; `o` is the
+    /// tier-(c) obligation. NEVER a panic (R-CODE-2); subprocess failures surfaced
+    /// (R-CODE-4); deterministic given the filesystem + toolchain (R-CODE-5).
+    pub fn replay_interactive(&self, source_file: &std::path::Path, o: &Obligation) -> Verdict {
+        // The exporter's tier-(c) source (the skeleton body). A refusal means the item
+        // is not even exportable → an honest skip (Unknown), never a verdict.
+        let exported = match self.export(o) {
+            Ok(e) => e,
+            Err(refusal) => {
+                return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "the Lean engine cannot export this obligation for an interactive proof \
+                     (an honest skip): {refusal}"
+                )));
+            }
+        };
+        let key = self.evidence_key(o);
+        let header = format!("{INTERACTIVE_EVIDENCE_KEY_MARKER}{}\n", key.content_address);
+        let path = interactive_proof_path(source_file, &o.item);
+
+        // PRESENT → the staleness gate + replay; ABSENT → emit the skeleton.
+        match std::fs::read_to_string(&path) {
+            Ok(existing) => self.replay_present_proof(&path, &existing, &key, &o.item),
+            Err(_) => {
+                // ABSENT: emit the skeleton (header + the tier-(c) exported source).
+                if let Some(parent) = path.parent() {
+                    if let Err(e) = std::fs::create_dir_all(parent) {
+                        return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                            "could not create the interactive proof directory `{}`: {e}",
+                            parent.display()
+                        )));
+                    }
+                }
+                let skeleton = format!("{header}{}", exported.source);
+                if let Err(e) = std::fs::write(&path, skeleton) {
+                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                        "could not write the interactive proof skeleton `{}`: {e}",
+                        path.display()
+                    )));
+                }
+                Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "interactive proof skeleton EMITTED to `{}` (carries a `sorry` — an \
+                     agent/human authors the induction, REQ-7(ii)); NOT proven",
+                    path.display()
+                )))
+            }
+        }
+    }
+
+    /// The PRESENT-proof arm of [`replay_interactive`]: the staleness gate → replay →
+    /// sorry detection. Split out so the read/write I/O stays in the caller.
+    fn replay_present_proof(
+        &self,
+        path: &std::path::Path,
+        existing: &str,
+        key: &CacheKey,
+        item: &str,
+    ) -> Verdict {
+        // The STALENESS gate (REQ-7(ii)): the header's evidence key must match the
+        // CURRENT key. A mismatch = the obligation / toolchain / spine changed → the
+        // proof is STALE and must be re-derived, NEVER silently reused.
+        let recorded_key = existing
+            .lines()
+            .find_map(|l| l.strip_prefix(INTERACTIVE_EVIDENCE_KEY_MARKER))
+            .map(str::trim);
+        if recorded_key != Some(key.content_address.as_str()) {
+            return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                "stale proof — re-derive: the interactive proof `{}` carries evidence key \
+                 {recorded:?} but the current obligation's key is `{current}` (the obligation, \
+                 Lean toolchain, or targeted spine changed — REQ-7(ii); a stale proof is NEVER \
+                 silently reused)",
+                path.display(),
+                recorded = recorded_key,
+                current = key.content_address,
+            )));
+        }
+
+        // The proof is FRESH: REPLAY it via lake + capture `#print axioms` for the
+        // explicit sorry check. We append a `#print axioms <thm>` so lake reports the
+        // axiom set (lake exits 0 on a `sorry`, so the source/axioms scan is what
+        // distinguishes a genuine proof — REQ-7(ii)).
+        let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
+        let probe = format!("{existing}\n#print axioms {thm_name}\n");
+        let pid = std::process::id();
+        // A per-call nonce + the item name keeps the scratch path UNIQUE across
+        // concurrent replays in the SAME process (the same pid) — a shared
+        // `forge_lean_replay_{pid}.lean` collided under parallel test runs (R-CODE-5:
+        // deterministic given the call, no cross-call interference).
+        let nonce = NEXT_REPLAY_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let safe_item = proof_thm_sanitize(item);
+        let scratch =
+            std::env::temp_dir().join(format!("forge_lean_replay_{pid}_{safe_item}_{nonce}.lean"));
+        if let Err(e) = std::fs::write(&scratch, &probe) {
+            return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                "could not write the interactive replay scratch file: {e}"
+            )));
+        }
+        use std::process::Command;
+        let lake = Self::lake_binary();
+        let output = Command::new(&lake)
+            .arg("env")
+            .arg("lean")
+            .arg(&scratch)
+            .current_dir(&self.lean_root)
+            .output();
+        let _ = std::fs::remove_file(&scratch);
+        match output {
+            Ok(out) if out.status.success() => {
+                // EXPLICIT sorry detection (REQ-7(ii)): lake exits 0 on a `sorry`, so
+                // a clean exit is NOT sufficient. Scan the SOURCE token AND the
+                // `#print axioms` output (which prints `sorryAx` for a surviving
+                // `sorry`). A `sorry` is NEVER `Proven`.
+                let axioms = String::from_utf8_lossy(&out.stdout);
+                if proof_has_sorry(existing, &axioms) {
+                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                        "the interactive proof `{}` carries an OPEN `sorry` (detected in the \
+                         source and/or `#print axioms` — `sorryAx`); a `sorry` is NEVER Proven \
+                         (REQ-7(ii)), even though lake exits 0",
+                        path.display()
+                    )));
+                }
+                // A kernel-accepted, sorry-FREE replay → Proven with the INTERACTIVE
+                // trust profile (the author is a reviewed step, OQ-4).
+                Verdict::Proven(Evidence {
+                    verified: 1,
+                    key: key.clone(),
+                })
+            }
+            Ok(out) => {
+                let detail = String::from_utf8_lossy(&out.stderr);
+                let head: String = detail.chars().take(400).collect();
+                Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "the interactive proof `{}` did NOT kernel-accept on replay (an \
+                     elaboration/tactic error — NOT a countermodel, REQ-3): {head}",
+                    path.display()
+                )))
+            }
+            Err(e) => Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                "could not invoke `lake env lean` for the interactive replay: {e}"
+            ))),
+        }
+    }
+}
+
+/// A Lean-identifier-safe form of an item name for the `#print axioms` probe theorem
+/// name (mirrors `lean_export::sanitize`; deterministic, R-CODE-5).
+fn proof_thm_sanitize(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 /// The REQ-3 discharge discipline, generalized off the SHIPPED ladder
@@ -881,6 +1086,357 @@ pub fn counterexample_is_incompleteness_unknown(
             .as_deref()
             .is_some_and(|d| d.to_ascii_lowercase().contains("unknown"))
     })
+}
+
+// ============================================================================
+// REQ-4 — CERTIFICATE ATTRIBUTION (`.design/verified/proof-backends.md` REQ-4 / §5,
+// increment (iii), #247): the per-obligation `{engine, trust_profile}` pair. ADDITIVE
+// (the cert field is `Option`, populated ONLY when a NON-DEFAULT engine discharges),
+// so the default Verus path leaves it `None` and the corpus certs stay byte-identical.
+// Honest-min project aggregation is UNCHANGED — this is per-obligation metadata
+// ORTHOGONAL to `Level` (§5 "project aggregation stays honest-min").
+// ============================================================================
+
+/// The per-obligation engine attribution (`.design/verified/proof-backends.md`
+/// REQ-4): the ENGINE that proved an obligation + that engine's TRUST PROFILE, so an
+/// auditor reading an L3 cert SEES whether L3-via-Lean enumerates a SMALLER base
+/// ({Lean kernel + 3 axioms, EXP}) than L3-via-Verus ({Z3, Verus VC-gen, lowering
+/// theorem}). A serde VALUE (the `Certificate` field is `Option<EngineAttribution>`,
+/// additive). Determinism: a pure function of the engine identity (R-CODE-5).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct EngineAttribution {
+    /// The engine that discharged the obligation (its stable tag).
+    pub engine: String,
+    /// The enumerated named trust items that engine ADDS on a `Proven` (the §1
+    /// enumerable trusted base — the auditor-visible base).
+    pub trust_profile: Vec<String>,
+}
+
+/// Build the [`EngineAttribution`] for an engine (`.design/verified/proof-backends.md`
+/// REQ-4): the `{engine tag, trust profile items}` pair. Called on the discharge path
+/// whenever a NON-DEFAULT engine (Lean) proves an obligation, so the cert records the
+/// smaller trust base; the default Verus path does NOT attach it (the cert stays
+/// byte-identical — the `serde(default)` keeps the goldens green).
+#[must_use]
+pub fn attribution_for(engine: &dyn Engine) -> EngineAttribution {
+    EngineAttribution {
+        engine: engine.name().tag().to_string(),
+        trust_profile: engine.trust_profile().items,
+    }
+}
+
+// ============================================================================
+// REQ-5 — THE DISAGREEMENT HALT (`.design/verified/proof-backends.md` REQ-5 / §5 /
+// AC-5, increment (iii), #247): one engine `Proven` + another `Refuted` (a WITNESSED
+// countermodel) on the SAME certification obligation = a SOUNDNESS ALARM. The
+// toolchain HALTS with a structured hard error naming BOTH engines + the obligation;
+// it NEVER silently picks the favorable `Proven`. `Proven ⊕ Unknown` is BENIGN (the
+// Unknown engine simply could not decide — and per REQ-3.1 a witness-less Verus
+// failure is `Unknown`, so it cannot spuriously fire this alarm against a Lean kernel
+// `Proven`).
+// ============================================================================
+
+/// A SOUNDNESS ALARM (`.design/verified/proof-backends.md` REQ-5): one engine
+/// `Proven` and another `Refuted` (a WITNESSED countermodel) on the SAME obligation.
+/// A genuine countermodel from one engine contradicting a "proof" from another means
+/// one engine (or the exporter/lowering, or `S` itself) is unsound; proceeding would
+/// launder unsoundness into a certificate — the exact failure §1's enumerable-base
+/// promise forbids. Carries both engine names + the obligation + the refuting
+/// counterexample (the deliverable, §5.1 "counterexamples, not adjectives").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Disagreement {
+    /// The engine that returned `Proven`.
+    pub proven_engine: String,
+    /// The engine that returned `Refuted` (the witnessed countermodel).
+    pub refuted_engine: String,
+    /// The obligation's item (the §5.3 per-item identity).
+    pub item: String,
+    /// The refuting counterexample (the witnessing input — the deliverable).
+    pub counterexample: Counterexample,
+}
+
+impl std::fmt::Display for Disagreement {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ENGINE DISAGREEMENT on `{item}`: engine `{proven}` returned Proven while \
+             engine `{refuted}` returned a WITNESSED counterexample. This is a SOUNDNESS \
+             ALARM (proof-backends REQ-5) — one engine (or the exporter/lowering, or S \
+             itself) is unsound. The toolchain HALTS; it NEVER picks the favorable verdict. \
+             Counterexample obligations: {cx:?}",
+            item = self.item,
+            proven = self.proven_engine,
+            refuted = self.refuted_engine,
+            cx = self.counterexample.obligations,
+        )
+    }
+}
+
+/// Check the verdicts of TWO engines on the SAME obligation for the disagreement
+/// alarm (`.design/verified/proof-backends.md` REQ-5 / AC-5). This is the
+/// multi-engine dispatch guard: if one verdict is `Proven` and the other is `Refuted`
+/// (a WITNESSED countermodel), HALT with a structured [`Disagreement`]. EVERY other
+/// pairing is benign (`Ok`): `Proven ⊕ Unknown`, `Proven ⊕ Proven`, `Unknown ⊕
+/// anything`, `Refuted ⊕ Refuted` (both witnessed a failure — agreement, not a
+/// soundness contradiction; the hard fail stands), etc. Per REQ-3.1 a Verus
+/// witness-less fast-`unknown` is `Unknown`, so it can NEVER fire this alarm against a
+/// Lean `Proven` — only a WITNESSED countermodel can, which is exactly the real
+/// unsoundness case. Determinism: a pure function of the two verdicts (R-CODE-5).
+pub fn check_disagreement(
+    item: &str,
+    engine_a: EngineName,
+    verdict_a: &Verdict,
+    engine_b: EngineName,
+    verdict_b: &Verdict,
+) -> Result<(), Disagreement> {
+    match (verdict_a, verdict_b) {
+        (Verdict::Proven(_), Verdict::Refuted(cx)) => Err(Disagreement {
+            proven_engine: engine_a.tag().to_string(),
+            refuted_engine: engine_b.tag().to_string(),
+            item: item.to_string(),
+            counterexample: cx.clone(),
+        }),
+        (Verdict::Refuted(cx), Verdict::Proven(_)) => Err(Disagreement {
+            proven_engine: engine_b.tag().to_string(),
+            refuted_engine: engine_a.tag().to_string(),
+            item: item.to_string(),
+            counterexample: cx.clone(),
+        }),
+        // Every other pairing is BENIGN — including Proven ⊕ Unknown (the Unknown
+        // engine simply could not decide), Refuted ⊕ Refuted (both witnessed a
+        // failure — agreement on the bug), and any Unknown pairing.
+        _ => Ok(()),
+    }
+}
+
+// ============================================================================
+// REQ-7 — INTERACTIVE PROOFS (`.design/verified/proof-backends.md` REQ-7(ii) / §4
+// "INTERACTIVE" / §6 tier (c), increment (iii), #247): for a tier-(c) item the engine
+// EMITS the skeleton to `<file>.lean-proofs/<item>.lean` when ABSENT; when PRESENT the
+// file is REPLAYED (lake) with the obligation-hash STALENESS gate (the emitted header
+// carries the evidence_key; a mismatch = stale → Unknown("stale proof — re-derive"),
+// NEVER silently reused). A `sorry` is detected explicitly (lake exits 0 on a `sorry`
+// — CHECK and handle) and is NEVER `Proven`. A kernel-accepted, sorry-FREE replay =
+// `Proven` with the INTERACTIVE trust profile.
+// ============================================================================
+
+/// The evidence-key header line a skeleton / interactive proof carries
+/// (`.design/verified/proof-backends.md` REQ-7(ii)). The emitted header pins the
+/// obligation's evidence key so a REPLAY can detect STALENESS (a changed obligation /
+/// toolchain / spine bumps the key → the header no longer matches → the proof is
+/// stale and must be re-derived, NEVER silently reused).
+pub const INTERACTIVE_EVIDENCE_KEY_MARKER: &str = "-- evidence_key: ";
+
+/// The deterministic path of a tier-(c) item's INTERACTIVE proof artifact
+/// (`.design/verified/proof-backends.md` REQ-7(ii) — "a proof file checked in next to
+/// the source"): `<file>.lean-proofs/<item>.lean`. The artifact lives beside the
+/// SOURCE so it is reviewed + version-controlled with it (OQ-4). Deterministic
+/// (R-CODE-5).
+#[must_use]
+pub fn interactive_proof_path(source_file: &std::path::Path, item: &str) -> PathBuf {
+    let dir = {
+        let mut d = source_file.as_os_str().to_os_string();
+        d.push(".lean-proofs");
+        PathBuf::from(d)
+    };
+    let safe: String = item
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    dir.join(format!("{safe}.lean"))
+}
+
+/// Does an interactive proof source carry an OPEN `sorry` (`.design/verified/
+/// proof-backends.md` REQ-7(ii) — "lake warns but exits 0 on sorry — CHECK and handle:
+/// sorry detection must be explicit; sorry NEVER Proven")? The check is TWO-fold: (1)
+/// a textual `sorry` token in the SOURCE (the skeleton's placeholder an agent must
+/// fill), and (2) a `sorryAx` / `sorry` in the `#print axioms` OUTPUT (a `sorry` that
+/// survived elaboration — the authoritative kernel signal). Either is an open hole →
+/// the proof is NOT a genuine kernel proof and is NEVER `Proven`. Determinism: a pure
+/// function of the inspected strings (R-CODE-5).
+#[must_use]
+pub fn proof_has_sorry(source: &str, print_axioms_output: &str) -> bool {
+    source_contains_sorry_token(source) || axioms_contain_sorry(print_axioms_output)
+}
+
+/// A textual `sorry` token in the proof source (a whole-word match so a substring
+/// like `sorryless` does not false-positive). The skeleton emits exactly `  sorry  --
+/// INTERACTIVE …`, so an UNFILLED skeleton trips this.
+fn source_contains_sorry_token(source: &str) -> bool {
+    source
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .any(|tok| tok == "sorry")
+}
+
+/// A `sorryAx` / `sorry` axiom in a `#print axioms` output (the authoritative kernel
+/// signal that a `sorry` survived elaboration — lake exits 0 on a `sorry`, so the
+/// axioms output is what distinguishes a genuine kernel proof from a `sorry`-carrying
+/// one).
+fn axioms_contain_sorry(print_axioms_output: &str) -> bool {
+    let lower = print_axioms_output.to_ascii_lowercase();
+    lower.contains("sorryax") || lower.contains("sorry")
+}
+
+/// The TRUST PROFILE of an INTERACTIVE Lean proof (`.design/verified/proof-backends.md`
+/// REQ-7(ii) / OQ-4): {Lean kernel + 3 standard axioms, EXP} PLUS the human/agent
+/// author as a reviewed-but-not-mechanized step (the interactive path adds the author,
+/// OQ-4). Distinct from the AUTO profile so the auditor sees an interactive proof
+/// carries the extra reviewed-author item.
+#[must_use]
+pub fn trust_profile_interactive() -> TrustProfile {
+    TrustProfile {
+        items: vec![
+            "Lean kernel".to_string(),
+            "propext".to_string(),
+            "Classical.choice".to_string(),
+            "Quot.sound".to_string(),
+            "EXP (the exporter correspondence — arm-by-arm + the drift tripwire)".to_string(),
+            "interactive proof author (reviewed, not mechanized — OQ-4)".to_string(),
+        ],
+    }
+}
+
+// ============================================================================
+// REQ-9 — THE ENGINE-GENERIC MUTATION BATTERY, the LEAN PATH (`.design/verified/
+// proof-backends.md` REQ-9 / §7, increment (iii), #247). When the discharging engine
+// is Lean: mutants are attempted via the SAME engine path; KILL = `Refuted ∪
+// Unknown-after-attempt`; the DENOMINATOR = attempted − proven-equivalent; a mutant
+// OUTSIDE the engine's fragment = "untested against lean" — reported in the cert,
+// NEVER counted killed. The Verus-path battery (`check::mutation_score`) is UNTOUCHED.
+// ============================================================================
+
+/// The outcome of attempting ONE mutant against the Lean engine (`.design/verified/
+/// proof-backends.md` REQ-9). The engine-generic kill semantics: a mutant is KILLED if
+/// the Lean engine `Refuted`s it OR returns `Unknown` AFTER attempting it (the mutant
+/// was attempted and NOT proven — matching the shipped Verus `Counterexample ∪
+/// Timeout` = killed); a mutant whose obligation the Lean fragment does NOT ADMIT is
+/// `UntestedAgainstLean` (never counted killed, never a survivor); a `Proven` mutant
+/// SURVIVED (the mutation did not break the contract).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeanMutantOutcome {
+    /// The Lean engine PROVED the mutant — it SURVIVED (the contract is too weak,
+    /// unless then proven equivalent to the real body — the #101 exclusion the caller
+    /// applies).
+    Survived,
+    /// The mutant was attempted by the Lean engine and KILLED (`Refuted` — a witnessed
+    /// countermodel — OR `Unknown` after an attempt). Maps onto the shipped
+    /// `Counterexample ∪ Timeout` = killed.
+    Killed,
+    /// The mutant's obligation is OUTSIDE the Lean engine's fragment (it was NEVER
+    /// attempted — e.g. a recursive-registry obligation only the tier-(c) interactive
+    /// path admits, or an out-of-spine construct). "Untested against lean" — NEVER
+    /// counted killed (that would inflate the ratio, §7 / R-DEFER-9) and NEVER a
+    /// survivor.
+    UntestedAgainstLean,
+}
+
+/// Classify a Lean-engine mutant [`Verdict`] under REQ-9's engine-generic kill
+/// semantics (`.design/verified/proof-backends.md` REQ-9). `admitted` is whether the
+/// Lean fragment ADMITTED the mutant's obligation (a per-mutant `fragment().admits`
+/// check the caller runs BEFORE the discharge): a NON-admitted mutant is
+/// `UntestedAgainstLean` REGARDLESS of the verdict (it was never genuinely attempted —
+/// the Lean engine maps a refusal to `Unknown`, but that is a SKIP, not an
+/// attempt-and-fail). An ADMITTED mutant maps `Proven → Survived`, `Refuted/Unknown →
+/// Killed`. Determinism: a pure function of `admitted` + the verdict (R-CODE-5).
+#[must_use]
+pub fn lean_mutant_outcome(admitted: bool, verdict: &Verdict) -> LeanMutantOutcome {
+    if !admitted {
+        // The fragment did not admit the mutant — it was never attempted. "Untested
+        // against lean" (REQ-9), distinct from `Unknown-after-attempt`.
+        return LeanMutantOutcome::UntestedAgainstLean;
+    }
+    match verdict {
+        Verdict::Proven(_) => LeanMutantOutcome::Survived,
+        // Refuted (a witnessed countermodel) OR Unknown-after-attempt → KILLED (the
+        // shipped `Counterexample ∪ Timeout` = killed, generalized).
+        Verdict::Refuted(_) | Verdict::Unknown(_) => LeanMutantOutcome::Killed,
+    }
+}
+
+/// The running tally of a LEAN-path mutation battery (`.design/verified/
+/// proof-backends.md` REQ-9). Accumulates `killed` / `attempted` (= attempted MINUS
+/// proven-equivalent, the SHIPPED `scored` denominator) / `equivalent` / `untested`
+/// (the "untested against lean" count REPORTED in the cert, NEVER counted killed). The
+/// kill ratio is `killed / attempted` — the untested count is OUTSIDE the denominator
+/// so an untested mutant can NEVER inflate the ratio.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LeanMutationTally {
+    /// Mutants the Lean engine KILLED (`Refuted ∪ Unknown-after-attempt`).
+    pub killed: usize,
+    /// The DENOMINATOR: mutants ATTEMPTED (admitted by the fragment) MINUS the
+    /// proven-equivalent (the #101 exclusion the caller applies).
+    pub attempted: usize,
+    /// Proven-equivalent mutants (excluded from BOTH `killed`-eligible survivors AND
+    /// the `attempted` denominator — the SHIPPED #101 exclusion).
+    pub equivalent: usize,
+    /// "Untested against lean": mutants no Lean fragment admitted (NEVER counted
+    /// killed; REPORTED so the auditor sees the coverage gap — §7 honesty).
+    pub untested: usize,
+}
+
+impl LeanMutationTally {
+    /// Record one classified mutant (`.design/verified/proof-backends.md` REQ-9).
+    /// `proven_equivalent` is the SHIPPED #101 equivalence-probe result for a SURVIVED
+    /// mutant (a §0.1 meta-query, OUTSIDE the Engine interface in v1 — a direct verus
+    /// query the caller threads): an equivalent survivor is dropped from BOTH the
+    /// survivor set AND the denominator (it is NOT a genuine survivor).
+    pub fn record(&mut self, outcome: LeanMutantOutcome, proven_equivalent: bool) {
+        match outcome {
+            LeanMutantOutcome::UntestedAgainstLean => self.untested += 1,
+            LeanMutantOutcome::Killed => {
+                self.killed += 1;
+                self.attempted += 1;
+            }
+            LeanMutantOutcome::Survived => {
+                if proven_equivalent {
+                    // The #101 exclusion: a proven-equivalent survivor is dropped from
+                    // BOTH the survivor set AND the denominator (never a spurious
+                    // survivor, never in the ratio).
+                    self.equivalent += 1;
+                } else {
+                    // A genuinely-distinguishing survivor: in the denominator, NOT
+                    // killed.
+                    self.attempted += 1;
+                }
+            }
+        }
+    }
+
+    /// The kill ratio `killed / attempted` (`.design/verified/proof-backends.md`
+    /// REQ-9). The `untested` count is OUTSIDE the denominator, so an untested mutant
+    /// can NEVER inflate the ratio. A `0` denominator (no attempted-and-non-equivalent
+    /// mutant) is the SHIPPED `0/0` backstop → `0.0` (below any positive floor).
+    #[must_use]
+    pub fn kill_ratio(&self) -> f64 {
+        if self.attempted == 0 {
+            0.0
+        } else {
+            self.killed as f64 / self.attempted as f64
+        }
+    }
+
+    /// A human qualifier line (`.design/verified/proof-backends.md` REQ-9 floor guard
+    /// 1): the kill ratio WITH the untested-against-lean count beside it, so a `1/1`
+    /// ratio with N untested mutants can NEVER read as a clean `1.00` without the
+    /// untested count. Deterministic (R-CODE-5).
+    #[must_use]
+    pub fn qualifier(&self) -> String {
+        format!(
+            "{killed}/{attempted} killed against lean ({ratio:.2}); {untested} untested against \
+             lean; {equivalent} proven-equivalent (excluded)",
+            killed = self.killed,
+            attempted = self.attempted,
+            ratio = self.kill_ratio(),
+            untested = self.untested,
+            equivalent = self.equivalent,
+        )
+    }
 }
 
 #[cfg(test)]
@@ -1352,6 +1908,192 @@ mod tests {
         );
     }
 
+    // ========================================================================
+    // REQ-7(ii) — THE INTERACTIVE PROOF ARTIFACT (skeleton emit + staleness gate +
+    // sorry detection + replay), increment (iii), #247. The replay machinery is
+    // exercised on a controlled proof file in a scratch `<file>.lean-proofs/` dir.
+    // The helpers below avoid unwrap/expect/panic (the anti-pattern gate is clean on
+    // an Edit, R-APG-2): IO failures surface via `assert!` on the `Result`.
+    // ========================================================================
+
+    // Create a dir (assert success, never unwrap). Returns whether it exists after.
+    fn ensure_dir(p: &std::path::Path) -> bool {
+        let _ = std::fs::remove_dir_all(p);
+        std::fs::create_dir_all(p).is_ok()
+    }
+
+    // Write a file's bytes (assert success, never unwrap).
+    fn write_file(p: &std::path::Path, content: &str) -> bool {
+        if let Some(parent) = p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(p, content).is_ok()
+    }
+
+    // REQ-7(ii) — SKELETON EMITTED WHEN ABSENT: the first `replay_interactive` call on
+    // an item with NO artifact EMITS the skeleton (the evidence-key header + the
+    // exported source) and returns `Unknown` ("skeleton emitted"), NEVER `Proven`.
+    // Expected from REQ-7(ii) (R-CHAR-3). NO lake needed.
+    #[test]
+    fn interactive_skeleton_emitted_when_absent() {
+        let dir = std::env::temp_dir().join(format!("forge_it_emit_{}", std::process::id()));
+        assert!(ensure_dir(&dir), "scratch dir creatable");
+        let file = dir.join("add.th");
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+
+        let v = engine.replay_interactive(&file, &o);
+        let artifact = interactive_proof_path(&file, "add");
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "an ABSENT artifact emits the skeleton + returns Unknown (never Proven): {v:?}"
+        );
+        assert!(
+            artifact.exists(),
+            "the skeleton file is written beside the source"
+        );
+        let emitted = std::fs::read_to_string(&artifact).unwrap_or_default();
+        assert!(
+            emitted.starts_with(INTERACTIVE_EVIDENCE_KEY_MARKER),
+            "the skeleton carries the evidence-key header (the staleness gate): {emitted}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // REQ-7(ii) — A STALE HASH → Unknown("stale proof — re-derive"): an artifact whose
+    // header carries a DIFFERENT evidence key than the current obligation is STALE and
+    // is NEVER silently reused. Expected from REQ-7(ii) (R-CHAR-3). NO lake needed (the
+    // staleness gate short-circuits BEFORE the replay).
+    #[test]
+    fn interactive_stale_hash_is_unknown_never_reused() {
+        let dir = std::env::temp_dir().join(format!("forge_it_stale_{}", std::process::id()));
+        assert!(ensure_dir(&dir), "scratch dir creatable");
+        let file = dir.join("add.th");
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+
+        // Author an artifact with a WRONG (stale) evidence-key header.
+        let artifact = interactive_proof_path(&file, "add");
+        assert!(
+            write_file(
+                &artifact,
+                &format!(
+                    "{INTERACTIVE_EVIDENCE_KEY_MARKER}deadbeefstalekey\n\
+                     theorem t : True := by trivial\n"
+                ),
+            ),
+            "stale artifact writable"
+        );
+
+        let v = engine.replay_interactive(&file, &o);
+        let _ = std::fs::remove_dir_all(&dir);
+        let stale_detail = match &v {
+            Verdict::Unknown(Reason::IncompleteUnknown(d)) => Some(d.clone()),
+            _ => None,
+        };
+        assert!(
+            stale_detail
+                .as_deref()
+                .is_some_and(|d| d.contains("stale proof")),
+            "a stale-key artifact → Unknown(\"stale proof — re-derive\"), got {v:?}"
+        );
+    }
+
+    // REQ-7(ii) — A SORRY-CARRYING FILE → Unknown (NEVER Proven), even though lake
+    // exits 0 on a `sorry`. The artifact has the CORRECT (fresh) key + a `sorry` body;
+    // the explicit sorry detection (`proof_has_sorry`) blocks the `Proven`. Expected
+    // from REQ-7(ii) (R-CHAR-3). LIVE (gated on lake).
+    #[test]
+    fn interactive_sorry_file_is_unknown_never_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — the interactive sorry-replay test is not run.");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("forge_it_sorry_{}", std::process::id()));
+        assert!(ensure_dir(&dir), "scratch dir creatable");
+        let file = dir.join("add.th");
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+
+        // Author an artifact with the CORRECT (fresh) key but a `sorry`-carrying proof
+        // of the theorem name the replay's `#print axioms` probes.
+        let key = engine.evidence_key(&o);
+        let artifact = interactive_proof_path(&file, "add");
+        assert!(
+            write_file(
+                &artifact,
+                &format!(
+                    "{INTERACTIVE_EVIDENCE_KEY_MARKER}{}\nimport Thermite.Stabilize\n\
+                     theorem thermite_obligation_add : True := by sorry\n",
+                    key.content_address
+                ),
+            ),
+            "sorry artifact writable"
+        );
+
+        let v = engine.replay_interactive(&file, &o);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "a sorry-carrying proof is NEVER Proven (REQ-7(ii)), even though lake exits 0: {v:?}"
+        );
+    }
+
+    // REQ-7(ii) — A FILLED, VALID, SORRY-FREE PROOF REPLAYS Proven. Driving
+    // `replay_interactive` with an AUTO-tier obligation emits a COMPLETE proof (the
+    // `by first | decide | omega | …` battery — NOT a `sorry`), so the SECOND call
+    // (artifact PRESENT, key fresh) REPLAYS it: lake kernel-accepts the sorry-free
+    // proof → `Proven`. This faithfully exercises the replay machinery on a genuine
+    // kernel-accepted proof (an auto-tier body IS a complete authored proof). Expected
+    // from REQ-7(ii) (R-CHAR-3). LIVE (gated on lake).
+    #[test]
+    fn interactive_filled_valid_proof_replays_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — the interactive valid-replay test is not run.");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("forge_it_valid_{}", std::process::id()));
+        assert!(ensure_dir(&dir), "scratch dir creatable");
+        let file = dir.join("add.th");
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+
+        // First call: ABSENT → EMIT the complete (auto-tier) proof + header → Unknown.
+        let first = engine.replay_interactive(&file, &o);
+        assert!(
+            matches!(first, Verdict::Unknown(_)),
+            "the first call emits the artifact (Unknown): {first:?}"
+        );
+        let artifact = interactive_proof_path(&file, "add");
+        assert!(artifact.exists(), "the artifact was emitted");
+        let emitted = std::fs::read_to_string(&artifact).unwrap_or_default();
+        assert!(
+            !proof_has_sorry(&emitted, ""),
+            "an auto-tier emitted proof is a COMPLETE sorry-free proof: {emitted}"
+        );
+
+        // Second call: PRESENT + fresh key + sorry-free + lake-accepted → Proven.
+        let second = engine.replay_interactive(&file, &o);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            matches!(second, Verdict::Proven(_)),
+            "a PRESENT, fresh-key, sorry-free, kernel-accepted proof REPLAYS Proven \
+             (REQ-7(ii)): {second:?}"
+        );
+    }
+
     // REQ-2(c)/(d): the Lean engine fills its four slots — the SMALLER trust profile
     // ({Lean kernel + 3 axioms, EXP}) and the engine-discriminated evidence key
     // (composing the toolchain rev + spine hash + LEAN_SCHEMA_VERSION). Expected from
@@ -1435,6 +2177,275 @@ mod tests {
         assert_ne!(
             k_before.content_address, k_after.content_address,
             "a nested lean/Thermite/Exec/** edit must change the key (#246 recursive spine hash)"
+        );
+    }
+
+    // ========================================================================
+    // increment (iii), #247 — REQ-4/REQ-5/REQ-7/REQ-9 unit tests.
+    // ========================================================================
+
+    // A synthetic always-`Proven` verdict (the disagreement teeth, REQ-5). Built
+    // directly (no engine needed for the pure `check_disagreement` guard).
+    fn stub_proven() -> Verdict {
+        Verdict::Proven(Evidence {
+            verified: 1,
+            key: a_key(),
+        })
+    }
+
+    // A synthetic WITNESSED-`Refuted` verdict (the other half of the teeth, REQ-5).
+    fn stub_refuted() -> Verdict {
+        Verdict::Refuted(Counterexample {
+            obligations: vec![ObligationResult::failed(
+                "postcondition not satisfied",
+                Some("f.th:3:5".to_string()),
+                Some("error: postcondition not satisfied".to_string()),
+            )],
+        })
+    }
+
+    // A synthetic always-`Proven` ENGINE (for `attribution_for`, REQ-4). A TEST double.
+    #[derive(Debug, Clone, Copy)]
+    struct StubProvenEngine;
+    impl Engine for StubProvenEngine {
+        fn name(&self) -> EngineName {
+            EngineName::LeanAuto
+        }
+        fn fragment(&self) -> Fragment {
+            Fragment {
+                admits_all_classes: true,
+            }
+        }
+        fn discharge(&self, _o: &Obligation) -> Verdict {
+            stub_proven()
+        }
+        fn trust_profile(&self) -> TrustProfile {
+            TrustProfile {
+                items: vec!["Lean kernel".to_string(), "EXP".to_string()],
+            }
+        }
+        fn evidence_key(&self, _o: &Obligation) -> CacheKey {
+            a_key()
+        }
+    }
+
+    // REQ-5 — THE DISAGREEMENT HALT TEETH: Proven ⊕ witnessed-Refuted on the SAME
+    // obligation FIRES the alarm, naming BOTH engines + the item. Expected from REQ-5
+    // (R-CHAR-3): a Proven ⊕ witnessed-Refuted disagreement is a soundness alarm.
+    #[test]
+    fn proven_refuted_disagreement_halts() {
+        let proven = stub_proven();
+        let refuted = stub_refuted();
+        let r = check_disagreement(
+            "f",
+            EngineName::LeanAuto,
+            &proven,
+            EngineName::Verus,
+            &refuted,
+        );
+        assert!(
+            r.is_err(),
+            "a Proven ⊕ Refuted disagreement MUST halt (REQ-5)"
+        );
+        if let Err(d) = r {
+            assert_eq!(d.item, "f");
+            assert_eq!(d.proven_engine, EngineName::LeanAuto.tag());
+            assert_eq!(d.refuted_engine, EngineName::Verus.tag());
+            assert!(
+                !d.counterexample.obligations.is_empty(),
+                "the alarm carries the witnessing counterexample"
+            );
+        }
+        // The order does not matter — Refuted ⊕ Proven also halts, naming the right
+        // engine for each role.
+        let r2 = check_disagreement(
+            "f",
+            EngineName::Verus,
+            &refuted,
+            EngineName::LeanAuto,
+            &proven,
+        );
+        assert!(r2.is_err(), "Refuted ⊕ Proven also halts");
+        if let Err(d) = r2 {
+            assert_eq!(d.proven_engine, EngineName::LeanAuto.tag());
+            assert_eq!(d.refuted_engine, EngineName::Verus.tag());
+        }
+    }
+
+    // REQ-5 — Proven ⊕ Unknown is BENIGN (the Unknown engine simply could not decide;
+    // per REQ-3.1 a witness-less Verus failure is Unknown, so it can NEVER spuriously
+    // fire the alarm against a Lean Proven). Expected from REQ-5 (R-CHAR-3).
+    #[test]
+    fn proven_unknown_is_benign() {
+        let proven = stub_proven();
+        let unknown = Verdict::Unknown(Reason::IncompleteUnknown("could not decide".to_string()));
+        assert!(
+            check_disagreement(
+                "f",
+                EngineName::LeanAuto,
+                &proven,
+                EngineName::Verus,
+                &unknown
+            )
+            .is_ok(),
+            "Proven ⊕ Unknown is benign — NOT a soundness alarm (REQ-5)"
+        );
+        assert!(
+            check_disagreement(
+                "f",
+                EngineName::Verus,
+                &unknown,
+                EngineName::LeanAuto,
+                &proven
+            )
+            .is_ok(),
+            "Unknown ⊕ Proven is benign too"
+        );
+        // Refuted ⊕ Refuted is agreement on a bug (both witnessed) — benign for the
+        // alarm (the hard fail stands on its own; no soundness CONTRADICTION).
+        let refuted = stub_refuted();
+        assert!(
+            check_disagreement(
+                "f",
+                EngineName::Verus,
+                &refuted,
+                EngineName::LeanAuto,
+                &refuted
+            )
+            .is_ok(),
+            "Refuted ⊕ Refuted is agreement, not a contradiction"
+        );
+    }
+
+    // REQ-4 — ATTRIBUTION: the `{engine, trust_profile}` pair is the engine's name tag
+    // + its enumerated trust items. Expected from REQ-4 (R-CHAR-3): the Lean profile is
+    // SMALLER along the named axes (no Z3, no Verus VC-gen).
+    #[test]
+    fn attribution_records_engine_and_trust_base() {
+        let lean_attr = attribution_for(&StubProvenEngine);
+        assert_eq!(lean_attr.engine, EngineName::LeanAuto.tag());
+        assert!(lean_attr
+            .trust_profile
+            .iter()
+            .any(|i| i.contains("Lean kernel")));
+        assert!(
+            !lean_attr.trust_profile.iter().any(|i| i.contains("Z3")),
+            "the Lean base does NOT enumerate Z3 (smaller along the named axes, REQ-4)"
+        );
+        let verus_attr = attribution_for(&VerusEngine);
+        assert!(verus_attr.trust_profile.iter().any(|i| i.contains("Z3")));
+    }
+
+    // REQ-7 — SORRY DETECTION: a `sorry` token in the SOURCE OR a `sorryAx` in the
+    // `#print axioms` output is detected; a clean proof with only the standard axioms
+    // is NOT. Expected from REQ-7(ii) (R-CHAR-3): sorry NEVER Proven.
+    #[test]
+    fn sorry_detected_in_source_or_axioms() {
+        // A skeleton's `sorry` token in the source.
+        assert!(proof_has_sorry(
+            "theorem t : True := by\n  sorry\n",
+            "'t' depends on axioms: [propext]"
+        ));
+        // A `sorryAx` in the axioms output (a sorry that survived elaboration).
+        assert!(proof_has_sorry(
+            "theorem t : True := by trivial",
+            "'t' depends on axioms: [sorryAx]"
+        ));
+        // A genuinely clean proof (no sorry token, only standard axioms) is NOT a sorry.
+        assert!(
+            !proof_has_sorry(
+                "theorem t : True := by trivial",
+                "'t' depends on axioms: [propext, Classical.choice, Quot.sound]"
+            ),
+            "a clean standard-axiom proof is NOT a sorry"
+        );
+        // A substring like `sorryless` does NOT false-positive (whole-word match).
+        assert!(!proof_has_sorry("def sorryless := 1", "axioms: [propext]"));
+    }
+
+    // REQ-7 — the interactive proof artifact PATH is `<file>.lean-proofs/<item>.lean`.
+    // Expected from REQ-7(ii) (R-CHAR-3).
+    #[test]
+    fn interactive_proof_path_is_beside_source() {
+        let p = interactive_proof_path(std::path::Path::new("/x/y/prog.th"), "spec_sum");
+        assert!(p.ends_with("spec_sum.lean"), "{p:?}");
+        assert!(
+            p.to_string_lossy().contains("prog.th.lean-proofs"),
+            "the artifact lives beside the source: {p:?}"
+        );
+    }
+
+    // REQ-9 — the Lean-path kill semantics: an ADMITTED mutant Lean does not prove
+    // (Refuted ∪ Unknown-after-attempt) is KILLED; an admitted Proven mutant SURVIVED;
+    // a NON-admitted mutant is UntestedAgainstLean (never killed). Expected from REQ-9
+    // (R-CHAR-3): the engine-generic kill = the shipped Counterexample ∪ Timeout.
+    #[test]
+    fn lean_mutant_outcome_follows_req9() {
+        let proven = stub_proven();
+        let unknown = Verdict::Unknown(Reason::IncompleteUnknown("tactic failed".to_string()));
+        let refuted = Verdict::Refuted(Counterexample {
+            obligations: vec![],
+        });
+        // Admitted + Proven → Survived.
+        assert_eq!(
+            lean_mutant_outcome(true, &proven),
+            LeanMutantOutcome::Survived
+        );
+        // Admitted + Unknown-after-attempt → Killed (the shipped Timeout=killed).
+        assert_eq!(
+            lean_mutant_outcome(true, &unknown),
+            LeanMutantOutcome::Killed
+        );
+        // Admitted + Refuted → Killed (a witnessed countermodel).
+        assert_eq!(
+            lean_mutant_outcome(true, &refuted),
+            LeanMutantOutcome::Killed
+        );
+        // NOT admitted → UntestedAgainstLean REGARDLESS of the verdict (never a kill).
+        assert_eq!(
+            lean_mutant_outcome(false, &unknown),
+            LeanMutantOutcome::UntestedAgainstLean
+        );
+        assert_eq!(
+            lean_mutant_outcome(false, &proven),
+            LeanMutantOutcome::UntestedAgainstLean
+        );
+    }
+
+    // REQ-9 — the tally: untested mutants are OUTSIDE the denominator (never inflate
+    // the ratio); the #101-equivalent survivors are dropped from BOTH the survivor set
+    // AND the denominator. Expected from REQ-9 + §7 (R-CHAR-3).
+    #[test]
+    fn lean_mutation_tally_does_not_inflate_on_untested() {
+        let mut t = LeanMutationTally::default();
+        t.record(LeanMutantOutcome::Killed, false); // 1 killed, +1 denom
+        t.record(LeanMutantOutcome::Killed, false); // 2 killed, +1 denom
+        t.record(LeanMutantOutcome::UntestedAgainstLean, false); // OUTSIDE the ratio
+        t.record(LeanMutantOutcome::Survived, true); // proven-equivalent → excluded BOTH
+        t.record(LeanMutantOutcome::Survived, false); // a genuine survivor → +1 denom
+        assert_eq!(t.killed, 2);
+        assert_eq!(
+            t.attempted, 3,
+            "2 killed + 1 genuine survivor; equivalent excluded"
+        );
+        assert_eq!(
+            t.untested, 1,
+            "the untested mutant is reported, not in the ratio"
+        );
+        assert_eq!(
+            t.equivalent, 1,
+            "the proven-equivalent is dropped from the denominator"
+        );
+        // 2/3 ≈ 0.667 — the untested mutant did NOT inflate it to 2/2 = 1.0.
+        assert!(
+            (t.kill_ratio() - 2.0 / 3.0).abs() < 1e-9,
+            "ratio = {}",
+            t.kill_ratio()
+        );
+        assert!(
+            t.qualifier().contains("untested against lean"),
+            "the qualifier names the untested count: {}",
+            t.qualifier()
         );
     }
 }

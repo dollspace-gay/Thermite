@@ -1967,6 +1967,48 @@ mod tests {
         }
     }
 
+    // #247 — the critic's COVERAGE note: a BINDER-PRESENT non-capturing unfolding.
+    // The #245 over-refusal guard's positive case (`dbl`, above) has NO body binder;
+    // the capture guard's whole point is a closure-binder body, so the test must
+    // exercise a tier-(b) spec-fn whose body HAS a binder (`count_where(xs, |k| …)`)
+    // where the substituted arg's free vars are DISJOINT from the binder `k` — so the
+    // unfolding is sound and STILL EXPORTS (the guard must not blanket-refuse a binder
+    // body). `cntpos(s) = count_where(s, |k| k as int > 0)` has the binder `k`;
+    // substituting `s ↦ xs` (free var `xs`, disjoint from `k`) cannot capture, so the
+    // tier-(b) unfolding succeeds. Expected from §6.1(b) (R-CHAR-3): the capture guard
+    // is sound, not a blanket binder-body refusal.
+    #[test]
+    fn non_capturing_binder_body_unfolding_still_exports() {
+        let p = parse_one(
+            "spec fn cntpos(s: &[u32]) -> int dec s.len() { count_where(s, |k| k as int > 0) } \
+             fn h(xs: &[u32]) -> u64 req true ens result as int == cntpos(xs) fx pure { 0 }",
+        );
+        let o = fn_obl(&p, "h", vec!["cntpos".to_string()]);
+        if let Some(item) = find_item(&p, "h") {
+            match export_item(&o, &p, item) {
+                Ok(exported) => {
+                    // It unfolds (tier b), and the binder body survives the unfolding
+                    // — the substituted arg (`xs`) cannot capture the disjoint binder
+                    // `k`, so the guard does NOT refuse.
+                    assert_eq!(exported.tier, ExportTier::StaticUnfoldAuto);
+                    // The unfolded goal is specCall-free (cntpos unfolded away) but the
+                    // combinator (`count_where`) + its predicate binder remain.
+                    assert!(!exported.source.contains("Expr.specCall"));
+                    assert!(
+                        exported.source.contains("Thermite.Expr.comb")
+                            && exported.source.contains("Thermite.Pred.mk"),
+                        "the binder predicate survives the unfolding (not captured): {}",
+                        exported.source
+                    );
+                }
+                other => assert!(
+                    other.is_ok(),
+                    "a non-capturing BINDER-BODY tier-(b) item still exports: {other:?}"
+                ),
+            }
+        }
+    }
+
     // REQ-6: a full pure-contract export of a scalar item produces a self-contained
     // file importing the spine, with the fuel-free theorem. Expected shape from §4/§6.1.
     #[test]

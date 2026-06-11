@@ -1,0 +1,10 @@
+{
+  "uuid": "b36ace12-7de1-429c-a660-ca09e191d163",
+  "issue_uuid": "e098ca94-991d-4d0c-b1ec-100cbe20694b",
+  "author": "Yffe",
+  "content": "Pinned: lean/Thermite/PinExportCapture.lean (kernel-checked). substitute() handles binder SHADOWING (removes the shadowed subst key at a Closure/match binder) but never alpha-renames when a substituted ARG carries a free name equal to the binder. Live repro: spec fn cntk(xs,v)=count_where(xs,|k| k as int == v) called as cntk(xs, k as int) unfolds to count_where(xs,|k| k as int == k as int) — the caller's k is CAPTURED (count-of-equal-to-k becomes count-all). The kernel facts: captured form denotes 2 on xs=[0,1],k=0; the faithful substitution denotes 1 (capture_changes_meaning). The emitted theorem for the semantically FALSE contract 'ens cntk(xs, k as int) == cntall(xs)' is kernel-PROVABLE (thermite_obligation_f3); today discharge returns Unknown only because auto_tactic_battery errors 'No goals to be solved' when its leading simp closes the goal — an accident, not a gate. §6.1(b): the unfolded Expr MUST equal the real body substituted.",
+  "created_at": "2026-06-11T16:07:46.430556822Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAFKwB3wGGx4yk1z/PYwKGx04g062DD3cO8DO0LmCqNi2sNhPu+K0qSgzVqSROTOKPzwXGgNyhtYcIotQgb62eCg=="
+}

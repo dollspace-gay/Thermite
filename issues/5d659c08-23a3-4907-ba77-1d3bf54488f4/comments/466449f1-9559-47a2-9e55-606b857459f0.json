@@ -1,0 +1,10 @@
+{
+  "uuid": "466449f1-9559-47a2-9e55-606b857459f0",
+  "issue_uuid": "5d659c08-23a3-4907-ba77-1d3bf54488f4",
+  "author": "Yffe",
+  "content": "Plan: commit the three kernel pins for the #240 re-audit (PinExportUndefinedCallee/#243, PinExportBoolResult/#244, PinExportCapture/#245 — all lake-env-lean green, lake build untouched-green 368 jobs); #246 itself carries no pin (Rust-only, binary crate) — its regression test must land in engine.rs's test mod with the generator's fix. No production code is touched; the pins are the audit artifacts.",
+  "created_at": "2026-06-11T16:09:08.549563389Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAOHn63BWSrwyWd2UnaT9mlDKYnFlfIZi+JYpkINUQm9HPYq4D/a7yPtR/L+pi7FyZfXKMwfPcyt8ZuiTCckbgAg=="
+}

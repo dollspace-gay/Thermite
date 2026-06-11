@@ -1,0 +1,10 @@
+{
+  "uuid": "9369bf4f-c21e-43b1-936f-f03ce0a41ecd",
+  "display_id": 236,
+  "title": "proof-backends REQ-3.1 wording vs behavior: the broad witness-less remap in §2/§3.1 is corpus-falsified, and the shipped narrow remap is INERT on grounded verus output (a genuine fast-unknown prints spanned and hard-fails)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T05:15:13.694452997Z",
+  "updated_at": "2026-06-11T05:15:13.694452997Z"
+}

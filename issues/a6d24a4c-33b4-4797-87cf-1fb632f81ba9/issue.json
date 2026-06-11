@@ -2,11 +2,12 @@
   "uuid": "a6d24a4c-33b4-4797-87cf-1fb632f81ba9",
   "display_id": 248,
   "title": "Divergence: engine::replay_present_proof certifies L3 from a non-standard-axiom interactive proof (proof-backends REQ-4/§1, R-DEFER-9)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T18:01:55.155875525Z",
-  "updated_at": "2026-06-11T18:01:56.583547907Z",
+  "updated_at": "2026-06-11T21:32:17.870121743Z",
+  "closed_at": "2026-06-11T21:32:17.870121743Z",
   "labels": [
     "blocker"
   ]

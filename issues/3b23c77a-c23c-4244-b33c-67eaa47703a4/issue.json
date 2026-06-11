@@ -2,11 +2,12 @@
   "uuid": "3b23c77a-c23c-4244-b33c-67eaa47703a4",
   "display_id": 253,
   "title": "proof-backends increment (iv): the exec-body bridge — extend the exporter past pure-contract to straight-line bodies. Design first (§4.1): S_E->S_C value bridge (BVal.value), bindBool spine addition (Env has no bool sort), optres binding, env->State correspondence (params/slices); then the hypothesize-form obligation (bodyStabilizes=some r -> ensStable(r), OVERFLOW class conjoined); new kernel pins per bridge position; loop-class export stays OUT (post-v1), recorded honestly",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T21:33:03.762798222Z",
-  "updated_at": "2026-06-11T21:33:05.309221545Z",
+  "updated_at": "2026-06-11T22:48:00.901216458Z",
+  "closed_at": "2026-06-11T22:48:00.901216458Z",
   "labels": [
     "feature"
   ]

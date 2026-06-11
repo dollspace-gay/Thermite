@@ -1,0 +1,10 @@
+{
+  "uuid": "6bbd1974-3dcd-469e-bc40-bd3402f3bb16",
+  "issue_uuid": "ac47df99-718d-41a9-8c18-766815cbed21",
+  "author": "Yffe",
+  "content": "Plan: commit the failing divergence test forge/tests/divergence_249_axiom_mask.rs (un-ignored — soundness release-blocker). The test IS the audit artifact; no production fix from critic (generator must fix). No other files touched.",
+  "created_at": "2026-06-11T19:26:25.745258587Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAADanOBlZO4JlOp2NTIu866M0KsTe8jyVg94oOhKsD5qtKsKAvs9/eVaNEvHFolrUrFtTR1R4zvqil4V2TUTSDQ=="
+}

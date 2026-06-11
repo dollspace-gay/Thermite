@@ -848,24 +848,21 @@ impl LeanEngine {
         let header = format!("{INTERACTIVE_EVIDENCE_KEY_MARKER}{}\n", key.content_address);
         let path = interactive_proof_path(source_file, &o.item);
 
-        // The CANONICAL theorem STATEMENT — regenerated from the CURRENT obligation
-        // (the exporter already builds the `theorem thermite_obligation_<item> :
-        // <statement> := …` line; the author fills ONLY the proof term after `:=`/`by`).
-        // The replay BINDS the present file's statement to this (proof-backends REQ-6 /
-        // R-DEFER-9): a file proving a DIFFERENT statement (e.g. `True`) is NOT a proof
-        // of the obligation. `None` means the emitted source had no extractable theorem
-        // statement (a malformed exporter output — never trusted as a binding).
-        let canonical_statement = canonical_theorem_statement(&exported.source, &o.item);
+        // The CANONICAL exporter SOURCE — regenerated from the CURRENT obligation (the
+        // generator-controlled preamble/imports + `R_item` + the canonical
+        // `theorem thermite_obligation_<item> : <statement> := …` line). The replay does
+        // NOT validate the author's file by pattern-matching; it RECONSTRUCTS a fresh
+        // replay file from THIS canonical source, splicing in ONLY the author's extracted
+        // proof term + helper lemmas (proof-backends REQ-6 / R-DEFER-9, the #250 fix). The
+        // statement, name, and `#print axioms` target are then the SAME generator-emitted
+        // declaration BY CONSTRUCTION — a same-short-name decoy is structurally impossible.
 
-        // PRESENT → the staleness gate + replay; ABSENT → emit the skeleton.
+        // PRESENT → the staleness gate + reconstruct-and-splice replay; ABSENT → emit
+        // the skeleton.
         match std::fs::read_to_string(&path) {
-            Ok(existing) => self.replay_present_proof(
-                &path,
-                &existing,
-                &key,
-                &o.item,
-                canonical_statement.as_deref(),
-            ),
+            Ok(existing) => {
+                self.replay_present_proof(&path, &existing, &key, &o.item, &exported.source)
+            }
             Err(_) => {
                 // ABSENT: emit the skeleton (header + the tier-(c) exported source).
                 if let Some(parent) = path.parent() {
@@ -892,19 +889,33 @@ impl LeanEngine {
         }
     }
 
-    /// The PRESENT-proof arm of [`replay_interactive`]: the staleness gate → replay →
-    /// sorry detection. Split out so the read/write I/O stays in the caller.
+    /// The PRESENT-proof arm of [`replay_interactive`]: the staleness gate →
+    /// RECONSTRUCT-AND-SPLICE → replay → sorry detection. Split out so the read/write
+    /// I/O stays in the caller.
+    ///
+    /// The replay does NOT validate the AUTHOR'S file by pattern-matching (the #250
+    /// decoy game — a same-short-name decoy theorem that the appended `#print axioms`
+    /// probe resolves to while the statement-binding gate reads a DIFFERENT, namespaced
+    /// declaration). Instead it RECONSTRUCTS a fresh, fully generator-controlled replay
+    /// file from `canonical_source` (the exporter's preamble/imports + `R_item` + the
+    /// canonical `theorem thermite_obligation_<item> : <statement> := …` line),
+    /// SPLICING in ONLY the author's extracted PROOF term + their helper lemmas. The
+    /// statement, the theorem name, and the `#print axioms` probe target are then the
+    /// SAME generator-emitted declaration BY CONSTRUCTION — a decoy is structurally
+    /// impossible. A smuggled axiom USED by the proof appears in the anchored dependency
+    /// report (the allowlist catches it); an unused decoy axiom is inert.
     fn replay_present_proof(
         &self,
         path: &std::path::Path,
         existing: &str,
         key: &CacheKey,
         item: &str,
-        canonical_statement: Option<&str>,
+        canonical_source: &str,
     ) -> Verdict {
         // The STALENESS gate (REQ-7(ii)): the header's evidence key must match the
         // CURRENT key. A mismatch = the obligation / toolchain / spine changed → the
-        // proof is STALE and must be re-derived, NEVER silently reused.
+        // proof is STALE and must be re-derived, NEVER silently reused. This stays on
+        // the AUTHOR'S file (the header the author kept from the emitted skeleton).
         let recorded_key = existing
             .lines()
             .find_map(|l| l.strip_prefix(INTERACTIVE_EVIDENCE_KEY_MARKER))
@@ -921,44 +932,32 @@ impl LeanEngine {
             )));
         }
 
-        // STATEMENT BINDING (proof-backends REQ-6 / R-DEFER-9): the proof file must
-        // prove THE OBLIGATION, not just SOME theorem named `thermite_obligation_<item>`.
-        // The author fills ONLY the proof term after `:=`/`by`; the theorem STATEMENT
-        // (the binders + the proposition up to `:= …`) must match the canonical one the
-        // exporter regenerates from the CURRENT obligation EXACTLY (modulo whitespace).
-        // A file proving a DIFFERENT statement (e.g. `: True`) is NOT a discharge of the
-        // obligation — Unknown("statement mismatch"), NEVER Proven.
-        if let Some(canonical) = canonical_statement {
-            match canonical_theorem_statement(existing, item) {
-                Some(present) if statements_match(&present, canonical) => {}
-                Some(present) => {
-                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
-                        "statement mismatch: the interactive proof `{}` proves the theorem \
-                         statement `{present}` but the current obligation's canonical statement is \
-                         `{canonical}` (the author fills ONLY the proof term after `:=`; the \
-                         STATEMENT must match the obligation — proof-backends REQ-6 / R-DEFER-9; a \
-                         file proving a DIFFERENT statement is NOT a discharge)",
-                        path.display()
-                    )));
-                }
-                None => {
-                    return Verdict::Unknown(Reason::IncompleteUnknown(format!(
-                        "statement mismatch: the interactive proof `{}` carries no extractable \
-                         `theorem thermite_obligation_{item} : … :=` statement to bind against the \
-                         obligation (proof-backends REQ-6 / R-DEFER-9; a proof must PROVE the \
-                         obligation, not an arbitrary file)",
-                        path.display()
-                    )));
-                }
+        // RECONSTRUCT-AND-SPLICE (proof-backends REQ-6 / R-DEFER-9, the #250 fix): split
+        // the CANONICAL exporter source into (preamble, canonical theorem statement);
+        // extract from the AUTHOR'S file the UNIQUE `thermite_obligation_<item>`
+        // declaration's proof term + their helper lemmas; emit a fresh replay file. A
+        // DUPLICATE obligation declaration (the #250 decoy) → REJECT; a missing canonical
+        // statement (malformed exporter output) → never trusted as a binding.
+        let reconstructed = match self.reconstruct_replay(canonical_source, existing, item) {
+            Ok(r) => r,
+            Err(detail) => {
+                return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "{detail} (interactive proof `{}`; proof-backends REQ-6 / R-DEFER-9 — the \
+                     replay file is RECONSTRUCTED from the canonical exporter source with the \
+                     author's proof spliced in; the obligation statement, name, and `#print \
+                     axioms` probe target are the same generator-emitted declaration by \
+                     construction)",
+                    path.display()
+                )));
             }
-        }
+        };
 
-        // The proof is FRESH: REPLAY it via lake + capture `#print axioms` for the
-        // explicit sorry check + the trust-base axiom ALLOWLIST. We append a `#print
-        // axioms <thm>` so lake reports the axiom set (lake exits 0 on a `sorry`, so the
-        // source/axioms scan is what distinguishes a genuine proof — REQ-7(ii)).
-        let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
-        let probe = format!("{existing}\n#print axioms {thm_name}\n");
+        // The proof is FRESH: REPLAY the RECONSTRUCTED file via lake + capture the
+        // ANCHORED `#print axioms <thm>` (already appended by `reconstruct_replay`) for
+        // the explicit sorry check + the trust-base axiom ALLOWLIST (lake exits 0 on a
+        // `sorry`, so the source/axioms scan is what distinguishes a genuine proof —
+        // REQ-7(ii)). The probe target is the canonical declaration by construction.
+        let probe = reconstructed;
         let pid = std::process::id();
         // A per-call nonce + the item name keeps the scratch path UNIQUE across
         // concurrent replays in the SAME process (the same pid) — a shared
@@ -989,7 +988,7 @@ impl LeanEngine {
                 // `#print axioms` output (which prints `sorryAx` for a surviving
                 // `sorry`). A `sorry` is NEVER `Proven`.
                 let axioms = String::from_utf8_lossy(&out.stdout);
-                if proof_has_sorry(existing, &axioms) {
+                if proof_has_sorry(&probe, &axioms) {
                     return Verdict::Unknown(Reason::IncompleteUnknown(format!(
                         "the interactive proof `{}` carries an OPEN `sorry` (detected in the \
                          source and/or `#print axioms` — `sorryAx`); a `sorry` is NEVER Proven \
@@ -1053,6 +1052,122 @@ impl LeanEngine {
                 "could not invoke `lake env lean` for the interactive replay: {e}"
             ))),
         }
+    }
+
+    /// RECONSTRUCT a fresh, generator-controlled replay file from the CANONICAL exporter
+    /// source + the AUTHOR'S spliced proof (`.design/verified/proof-backends.md` REQ-6 /
+    /// R-DEFER-9, the #250 fix). The emitted file is, IN ORDER:
+    ///
+    /// 1. the canonical PREAMBLE (the exporter's header + `import` + `R_item` + the
+    ///    obligation theorem's doc comment) — everything BEFORE the canonical
+    ///    `theorem thermite_obligation_<item>` line, regenerated from the CURRENT
+    ///    obligation (never trusted from the author);
+    /// 2. the author's HELPER lemmas — their file's content MINUS the lines the canonical
+    ///    preamble already supplies (header / imports / `R_item` / resolution lemmas /
+    ///    doc), MINUS the obligation theorem declaration, MINUS any `#`-command lines
+    ///    (their own probes are dropped — we emit our OWN anchored one);
+    /// 3. the CANONICAL theorem line `theorem thermite_obligation_<item> : <statement> :=`
+    ///    with the author's EXTRACTED proof term spliced after `:=`;
+    /// 4. the ANCHORED `#print axioms thermite_obligation_<item>` probe.
+    ///
+    /// REJECTS (returns `Err(detail)`) when: the short name `thermite_obligation_<item>`
+    /// occurs as a declaration MORE than once anywhere in the author's file (the #250
+    /// decoy — "duplicate obligation declaration"), or the canonical source has no
+    /// extractable statement, or the author's file has no obligation declaration to
+    /// splice a proof from, or a surviving `thermite_obligation` short-name occurs in the
+    /// helpers. Deterministic (R-CODE-5); never a panic (R-CODE-2).
+    fn reconstruct_replay(
+        &self,
+        canonical_source: &str,
+        author_file: &str,
+        item: &str,
+    ) -> Result<String, String> {
+        let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
+        let needle = format!("theorem {thm_name}");
+
+        // (1) The canonical PREAMBLE + the canonical STATEMENT, regenerated from the
+        // exporter source (generator-controlled).
+        let canonical_statement =
+            canonical_theorem_statement(canonical_source, item).ok_or_else(|| {
+                "the canonical exporter source has no extractable obligation theorem statement \
+                 (a malformed exporter output — never trusted as a binding)"
+                    .to_string()
+            })?;
+        let preamble_end = canonical_source.find(&needle).ok_or_else(|| {
+            "the canonical exporter source declares no obligation theorem to anchor the \
+             reconstruction on"
+                .to_string()
+        })?;
+        let preamble = canonical_source[..preamble_end].trim_end();
+
+        // (2) UNIQUENESS + the author's PROOF + helpers. Count the obligation theorem's
+        // SHORT-NAME declaration sites in the author's file: MORE than one anywhere (any
+        // namespace) → the #250 decoy → REJECT. EXACTLY one → splice its proof.
+        let decl_sites = declaration_sites(author_file, &thm_name);
+        if decl_sites.len() > 1 {
+            return Err(format!(
+                "duplicate obligation declaration: the short name `{thm_name}` is declared \
+                 {} times in the author's proof file (a same-short-name decoy is structurally \
+                 a cheat — the #250 mask); REJECTED",
+                decl_sites.len()
+            ));
+        }
+        let decl_start = match decl_sites.first() {
+            Some(&s) => s,
+            None => {
+                return Err(format!(
+                    "the author's proof file declares no `{thm_name}` to splice a proof from"
+                ));
+            }
+        };
+        // The author's PROOF term: everything after the declaration's FIRST `:=` up to
+        // the declaration's END (the next top-level command/declaration, or EOF).
+        let decl_end = decl_block_end(author_file, decl_start);
+        let decl_text = &author_file[decl_start..decl_end];
+        let assign = proof_assign_pos(decl_text).ok_or_else(|| {
+            format!("the author's `{thm_name}` declaration has no `:=` proof term to splice")
+        })?;
+        let proof_term = decl_text[assign + ":=".len()..].trim_end();
+
+        // DEFENSE LAYER (proof-backends REQ-6, retained): the reconstruction FORCES the
+        // canonical statement by construction, but we ALSO cross-check that the author's
+        // OWN declaration statement matches the canonical one (modulo whitespace). A
+        // mismatch is a stale/wrong-statement author file — REJECT with a precise
+        // diagnostic rather than silently overwriting their (different) statement.
+        let author_statement = &decl_text[..assign + ":=".len()];
+        if !statements_match(author_statement, &canonical_statement) {
+            return Err(format!(
+                "statement mismatch: the author's `{thm_name}` declaration proves \
+                 `{author_statement}` but the current obligation's canonical statement is \
+                 `{canonical_statement}` (the author fills ONLY the proof term after `:=`)"
+            ));
+        }
+
+        // The author's HELPER lemmas: their file MINUS the obligation declaration, MINUS
+        // the canonical-preamble lines (header / imports / R_item / resolution lemmas /
+        // doc — regenerated above), MINUS any `#`-command lines (their own probes).
+        let helpers = author_helpers(author_file, decl_start, decl_end, canonical_source);
+        // DEFENSE: no `thermite_obligation` short-name may survive in the helpers (a
+        // helper masquerading as the obligation), beyond the (single) one we extracted.
+        if helpers.contains("thermite_obligation") {
+            return Err(
+                "the author's helper lemmas still carry a `thermite_obligation` short-name \
+                 occurrence (only the single canonical obligation declaration may use it)"
+                    .to_string(),
+            );
+        }
+
+        // (3)+(4) Emit: canonical preamble + helpers + canonical theorem (spliced proof)
+        // + the ANCHORED probe.
+        let helpers_block = if helpers.trim().is_empty() {
+            String::new()
+        } else {
+            format!("\n\n{}", helpers.trim())
+        };
+        Ok(format!(
+            "{preamble}{helpers_block}\n\n{canonical_statement} {proof_term}\n\
+             #print axioms {thm_name}\n"
+        ))
     }
 }
 
@@ -1496,6 +1611,157 @@ fn statements_match(a: &str, b: &str) -> bool {
         s.split_whitespace().collect::<Vec<_>>().join(" ")
     }
     norm(a) == norm(b)
+}
+
+/// The Lean DECLARATION keywords a top-level declaration can begin with (the RECONSTRUCT
+/// -AND-SPLICE boundary detection, `.design/verified/proof-backends.md` REQ-6 / the #250
+/// fix). A line whose first whitespace-trimmed token is one of these BEGINS a new
+/// top-level declaration; `#`-prefixed lines (`#print`/`#check`/`#eval`) and the section
+/// commands (`namespace`/`section`/`end`/`open`/`variable`) likewise END the preceding
+/// declaration's text. Used to bound a declaration's body and to detect declaration sites.
+const DECL_KEYWORDS: [&str; 8] = [
+    "theorem", "lemma", "def", "abbrev", "example", "instance", "axiom", "opaque",
+];
+
+/// Does a source LINE begin a top-level Lean declaration or command (the boundary that
+/// ENDS the preceding declaration's text)? A `#`-command (`#print`/`#check`) or a section
+/// command also ends it. The line must be a TOP-LEVEL line (column 0 — a declaration's
+/// continuation/proof lines are indented). Deterministic (R-CODE-5).
+fn line_is_top_level_boundary(line: &str) -> bool {
+    if line.starts_with(char::is_whitespace) {
+        return false;
+    }
+    if line.starts_with('#') {
+        return true;
+    }
+    let first = line
+        .split(|c: char| c.is_whitespace() || c == '(' || c == ':')
+        .next();
+    matches!(
+        first,
+        Some(t) if DECL_KEYWORDS.contains(&t)
+            || matches!(t, "namespace" | "section" | "end" | "open" | "variable" | "set_option")
+    )
+}
+
+/// The byte offset of the END of the top-level declaration that STARTS at `start`
+/// (`.design/verified/proof-backends.md` REQ-6, the #250 fix): the start of the NEXT
+/// top-level boundary line strictly after `start`'s own line, or the source length. So
+/// the declaration's text (its statement + proof body, including indented continuation
+/// lines) is `source[start..decl_block_end(source, start)]`. Deterministic (R-CODE-5).
+fn decl_block_end(source: &str, start: usize) -> usize {
+    let mut offset = start;
+    let mut first = true;
+    for line in source[start..].split_inclusive('\n') {
+        if !first && line_is_top_level_boundary(line) {
+            return offset;
+        }
+        first = false;
+        offset += line.len();
+    }
+    source.len()
+}
+
+/// The byte offset of a declaration's PROOF-delimiter `:=` (`.design/verified/
+/// proof-backends.md` REQ-6, the #250 fix) — distinguished from a record-update `:=`
+/// INSIDE the proposition (the spine's `{ v with specs := R_item }`). The emitted /
+/// authored forms close the conclusion with `… := by` (auto + interactive induction), so
+/// `:= by` is the primary, unambiguous anchor. A term-mode hand proof (`… := <term>`, no
+/// `by`) falls back to the FIRST `:=` whose immediately-preceding non-space token is NOT
+/// `specs` (the only record-update key the exporter emits). Returns the offset of that
+/// `:=`, or `None`. Deterministic (R-CODE-5).
+fn proof_assign_pos(decl_text: &str) -> Option<usize> {
+    if let Some(p) = decl_text.find(":= by") {
+        return Some(p);
+    }
+    // Term-mode fallback: the first `:=` not immediately preceded by `specs ` (the
+    // record-update key). Scan all `:=` occurrences in order.
+    let mut from = 0usize;
+    while let Some(rel) = decl_text[from..].find(":=") {
+        let pos = from + rel;
+        let lhs = decl_text[..pos].trim_end();
+        if !lhs.ends_with("specs") {
+            return Some(pos);
+        }
+        from = pos + 2;
+    }
+    None
+}
+
+/// Every byte offset in `source` at which the SHORT NAME `thm_name` is DECLARED — i.e.
+/// appears as a standalone token immediately after a [`DECL_KEYWORDS`] keyword, in ANY
+/// namespace (`.design/verified/proof-backends.md` REQ-6 / R-DEFER-9, the #250 fix). The
+/// offset points at the DECLARATION keyword (so the proof extraction starts there). MORE
+/// than one site is the #250 same-short-name decoy → the caller REJECTS. Deterministic
+/// (R-CODE-5).
+fn declaration_sites(source: &str, thm_name: &str) -> Vec<usize> {
+    let mut sites = Vec::new();
+    for keyword in DECL_KEYWORDS {
+        // The declaration prefix `<keyword> <thm_name>` with the NAME a standalone token
+        // (the char after the name is a non-identifier char — a space, `:`, `(`, `\n`, …).
+        let prefix = format!("{keyword} {thm_name}");
+        let mut from = 0usize;
+        while let Some(rel) = source[from..].find(&prefix) {
+            let kw_start = from + rel;
+            let name_end = kw_start + prefix.len();
+            let boundary_ok = source[name_end..]
+                .chars()
+                .next()
+                .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '.'));
+            // The keyword itself must start a TOKEN (preceded by start-of-input or a
+            // non-identifier char), so `mytheorem` / `defx` do not false-match.
+            let kw_token_ok = source[..kw_start]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+            if boundary_ok && kw_token_ok {
+                sites.push(kw_start);
+            }
+            from = name_end;
+        }
+    }
+    sites.sort_unstable();
+    sites
+}
+
+/// The author's HELPER lemmas (`.design/verified/proof-backends.md` REQ-6, the #250 fix):
+/// the author's file with the EVIDENCE-KEY header, the obligation theorem declaration
+/// (`source[decl_start..decl_end]`), every `#`-command line (their own probes — we emit
+/// our OWN anchored one), and every line that is byte-identical to a CANONICAL-preamble
+/// line (the header / imports / `R_item` / resolution lemmas / doc the preamble
+/// regenerates) REMOVED — leaving exactly the author's genuinely-added lemmas. So no
+/// `import` / `def R_item` is duplicated and no author `#print` shadows the anchored
+/// probe. Deterministic (R-CODE-5).
+fn author_helpers(
+    author_file: &str,
+    decl_start: usize,
+    decl_end: usize,
+    canonical_source: &str,
+) -> String {
+    let canonical_lines: std::collections::HashSet<&str> = canonical_source
+        .lines()
+        .map(str::trim_end)
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    let before = &author_file[..decl_start];
+    let after = &author_file[decl_end..];
+    let mut kept: Vec<&str> = Vec::new();
+    for line in before.lines().chain(after.lines()) {
+        let trimmed = line.trim_end();
+        if trimmed.trim().is_empty() {
+            continue;
+        }
+        // Drop the evidence-key header, any `#`-command (the author's own probes), and any
+        // line the canonical preamble already supplies (regenerated above).
+        if trimmed.starts_with(INTERACTIVE_EVIDENCE_KEY_MARKER.trim_end())
+            || trimmed.trim_start().starts_with('#')
+            || canonical_lines.contains(trimmed)
+        {
+            continue;
+        }
+        kept.push(trimmed);
+    }
+    kept.join("\n")
 }
 
 /// The TRUST PROFILE of an INTERACTIVE Lean proof (`.design/verified/proof-backends.md`
@@ -2393,6 +2659,184 @@ mod tests {
             "a proof of a DIFFERENT statement (the obligation must be proven, not the \
              trivial proposition) → Unknown(\"statement mismatch\"), NEVER Proven (REQ-6 / \
              R-DEFER-9): got {v:?}"
+        );
+    }
+
+    // REQ-6 / R-DEFER-9 (the #250 fix) — RECONSTRUCT-AND-SPLICE, pure-function layer.
+    // The splice helpers are the load-bearing anti-decoy machinery: `declaration_sites`
+    // counts the obligation short-name DECLARATION sites (a same-short-name decoy in ANY
+    // namespace → > 1 → REJECT), `proof_assign_pos` finds the proof `:=` past the
+    // record-update `specs := R_item`, and `decl_block_end` bounds the declaration. NO
+    // lake needed (R-CHAR-3: the decoy game is structurally impossible by construction).
+    #[test]
+    fn reconstruct_splice_helpers_detect_decoy_and_splice_proof() {
+        // (a) A SINGLE top-level declaration of the obligation → exactly one site.
+        let single = "import Thermite.Stabilize\n\
+                      theorem thermite_obligation_f : True := trivial\n";
+        assert_eq!(declaration_sites(single, "thermite_obligation_f").len(), 1);
+
+        // (b) THE #250 DECOY: a namespaced obligation declaration + a top-level
+        // same-short-name decoy → TWO sites → the caller REJECTS as a duplicate.
+        let decoy = "axiom thermite_cheat : ∀ p : Prop, p\n\
+                     namespace Cheat\n\
+                     theorem thermite_obligation_f (v : Thermite.Env) : True := thermite_cheat _\n\
+                     end Cheat\n\
+                     theorem thermite_obligation_f : True := trivial\n";
+        assert_eq!(
+            declaration_sites(decoy, "thermite_obligation_f").len(),
+            2,
+            "the namespaced cheat AND the top-level decoy are BOTH declaration sites — the \
+             #250 mask is caught as a duplicate"
+        );
+
+        // (c) `proof_assign_pos` anchors on the PROOF `:=`, NOT the record-update `specs
+        // := R_item` inside the proposition (the `:= by` form AND the term-mode form).
+        let by_form = "theorem t (v : Thermite.Env) :\n  \
+                       Thermite.stabilizes b { v with specs := R_item } r := by\n  exact h";
+        let pos = proof_assign_pos(by_form).unwrap_or(0);
+        assert!(
+            by_form[pos..].starts_with(":= by"),
+            "the proof anchor is the `:= by`, past the record-update `specs :=`"
+        );
+        let term_form = "theorem t (v : Thermite.Env) :\n  \
+                         P { v with specs := R_item } := some_term _";
+        let tpos = proof_assign_pos(term_form).unwrap_or(0);
+        assert!(
+            term_form[tpos..].starts_with(":= some_term"),
+            "the term-mode anchor skips the record-update `specs :=`: {}",
+            &term_form[tpos..]
+        );
+
+        // (d) END-TO-END reconstruct: a duplicate-decoy author file is REJECTED (the
+        // canonical source is a well-formed single-theorem skeleton).
+        let canonical = "import Thermite.Stabilize\n\n\
+                         def R_item : Thermite.Registry := fun _ => none\n\n\
+                         /-- doc -/\n\
+                         theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let p = parse_program("fn f(x: u32) -> u32 req true ens result == x fx pure { x }");
+        let engine = LeanEngine::new(p, lean_root());
+        let dup_err = match engine.reconstruct_replay(canonical, decoy, "f") {
+            Err(err) => err,
+            Ok(_) => String::new(),
+        };
+        assert!(
+            dup_err.contains("duplicate obligation declaration"),
+            "the #250 decoy → Err(\"duplicate obligation declaration\"), got {dup_err:?}"
+        );
+
+        // (e) A SINGLE author declaration with a clean helper SPLICES: the canonical
+        // statement is emitted verbatim, the author proof is spliced, the helper is kept,
+        // imports/R_item are NOT duplicated, and our OWN anchored probe is appended.
+        let author = "-- evidence_key: abc\n\
+                      import Thermite.Stabilize\n\
+                      def R_item : Thermite.Registry := fun _ => none\n\
+                      theorem my_helper : True := True.intro\n\
+                      theorem thermite_obligation_f (v : Thermite.Env) : True := by trivial\n";
+        let splice_result = engine.reconstruct_replay(canonical, author, "f");
+        assert!(
+            splice_result.is_ok(),
+            "a single-declaration author file must splice: {splice_result:?}"
+        );
+        let spliced = splice_result.unwrap_or_default();
+        assert_eq!(
+            spliced.matches("import Thermite.Stabilize").count(),
+            1,
+            "the import is NOT duplicated (the helpers drop canonical-preamble lines): {spliced}"
+        );
+        assert_eq!(
+            spliced.matches("def R_item").count(),
+            1,
+            "R_item is NOT duplicated: {spliced}"
+        );
+        assert!(
+            spliced.contains("theorem my_helper : True := True.intro"),
+            "the author's helper lemma is kept verbatim: {spliced}"
+        );
+        assert_eq!(
+            spliced.matches("theorem thermite_obligation_f").count(),
+            1,
+            "exactly ONE obligation theorem (the canonical one): {spliced}"
+        );
+        assert!(
+            spliced
+                .trim_end()
+                .ends_with("#print axioms thermite_obligation_f"),
+            "the ANCHORED probe targets the canonical declaration by construction: {spliced}"
+        );
+    }
+
+    // REQ-6 / REQ-7(ii) / R-DEFER-9 (the #250 fix) — LIVE helper-lemma replay. An
+    // interactive proof that adds a CLEAN helper lemma and USES it to discharge the
+    // obligation theorem REPLAYS Proven: the reconstruction splices the author's proof
+    // onto the canonical statement, keeps the helper, and the anchored `#print axioms`
+    // transitively checks the helper's (clean) axioms. A helper using a CHEAT axiom
+    // flows that axiom into the obligation's report → Unknown. Expected from REQ-4/§1
+    // (R-CHAR-3). LIVE (gated on lake).
+    #[test]
+    fn interactive_helper_lemma_clean_proven_cheat_unknown() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — the helper-lemma replay test is not run.");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("forge_it_helper_{}", std::process::id()));
+        assert!(ensure_dir(&dir), "scratch dir creatable");
+        let file = dir.join("add.th");
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+        let key = engine.evidence_key(&o);
+        let artifact = interactive_proof_path(&file, "add");
+
+        // Emit the skeleton, then lift its WORKING `:= by …` proof body (the auto
+        // battery) so the authored proof genuinely closes the canonical goal.
+        let _ = engine.replay_interactive(&file, &o);
+        let skeleton = std::fs::read_to_string(&artifact).unwrap_or_default();
+        let stmt = canonical_theorem_statement(&skeleton, "add").unwrap_or_default();
+        let by_pos = skeleton.find(":= by").unwrap_or(0);
+        let body = skeleton[by_pos + ":= by".len()..].trim_end().to_string();
+
+        // (1) CLEAN helper, genuinely referenced (`have _h := my_helper`): Proven.
+        let clean = format!(
+            "{INTERACTIVE_EVIDENCE_KEY_MARKER}{key}\n\
+             import Thermite.Stabilize\n\
+             theorem add_clean_helper : True := True.intro\n\
+             {stmt} by\n  have _h := add_clean_helper\n{body}\n",
+            key = key.content_address
+        );
+        assert!(
+            write_file(&artifact, &clean),
+            "clean-helper artifact writable"
+        );
+        let v_clean = engine.replay_interactive(&file, &o);
+        assert!(
+            matches!(v_clean, Verdict::Proven(_)),
+            "a clean helper-lemma proof REPLAYS Proven (the helper's clean axioms are \
+             transitively allowlisted): {v_clean:?}"
+        );
+
+        // (2) CHEAT helper: the helper rests on a non-standard axiom, USED by the proof
+        // (`have _h := add_cheat_helper`), so `add_cheat_ax` flows into the obligation
+        // theorem's `#print axioms` → Unknown (NEVER Proven).
+        let cheat = format!(
+            "{INTERACTIVE_EVIDENCE_KEY_MARKER}{key}\n\
+             import Thermite.Stabilize\n\
+             axiom add_cheat_ax : False\n\
+             theorem add_cheat_helper : True := (add_cheat_ax).elim\n\
+             {stmt} by\n  have _h := add_cheat_helper\n{body}\n",
+            key = key.content_address
+        );
+        assert!(
+            write_file(&artifact, &cheat),
+            "cheat-helper artifact writable"
+        );
+        let v_cheat = engine.replay_interactive(&file, &o);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(
+            matches!(v_cheat, Verdict::Unknown(_)),
+            "a helper resting on a CHEAT axiom flows that axiom into the obligation's \
+             anchored `#print axioms` → Unknown, NEVER Proven (REQ-4/§1, R-DEFER-9): {v_cheat:?}"
         );
     }
 

@@ -1,0 +1,10 @@
+{
+  "uuid": "8fac6233-beea-4c7c-ba57-2a46af3ecc33",
+  "issue_uuid": "3913136c-041e-4798-934f-a72b53142d25",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_struct_inv_spec_fn_subprogram.rs::struct_inv_naming_user_spec_fn_certifies_l3 (#[ignore]d, tracking this issue) demonstrates the divergence: the #229 Counter fixture's struct cert is L0 (E0425 cannot find function s_dec — the def is absent from the emitted per-item unit — AND the emitted cast is the as u64 fallback because the item-alone sub-program has no spec fn to feed spec_fn_param_type_map), though the WHOLE-PROGRAM lowering is correct since c116360c (the thermite-lower #229 pin emits as u32). Authority: thermite-design.md §6 (correct source certifies L3) + verus-lowering.md REQ-8 (bank_account verified-struct precedent); the hand-woven pub-open form of the exact fixture is '1 verified, 0 errors' under verus. Fix shape: weave reachable_spec_fn_deps (the #68/#71 SpecFn/Fn-arm precedent) into the Struct/Enum arm; ALSO requires #230 (bare 'spec fn' is private to the pub open well_formed — verus 'in pub open spec function, cannot refer to private function', hand-confirmed). NOTE for #230: its E0425 citation is actually THIS slicing bug; the privacy layer surfaces only after weaving.",
+  "created_at": "2026-06-11T02:19:55.937211144Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1ZD9ZilWXf+jijNooUJsjVROzJrR22jFeMPMZwYIKK0wBAWRodlAsbdMJK7q5bw3c6nLRpsUQHjI2uHcOct4CA=="
+}

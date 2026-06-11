@@ -1,0 +1,10 @@
+{
+  "uuid": "7c3cf567-80dd-463c-a0f7-97cd8478374b",
+  "display_id": 235,
+  "title": "Divergence (regression of 2f327b63/#230): user spec fns are now 'pub open' but woven combinator defs (thermite-spec verus_l3 via emit_combinator_defs) stay private — a validator-legal combinator call in a spec fn body gets verus 'in pub open spec function, cannot refer to private function', L0 death",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T03:24:20.718102181Z",
+  "updated_at": "2026-06-11T03:24:20.718102181Z"
+}

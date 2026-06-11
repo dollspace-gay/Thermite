@@ -1,0 +1,10 @@
+{
+  "uuid": "e3b28d40-5822-41cf-885b-f51c4a721a91",
+  "issue_uuid": "e5728955-6810-407e-98bc-48071251709d",
+  "author": "Yffe",
+  "content": "Plan (critic): commit the two failing pins (ignored, tracking this issue) at thermite-lower/tests/divergence_spec_call_cast_proof_aid_paths.rs; no production code touched.",
+  "created_at": "2026-06-11T01:15:02.083022392Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAqDk78BGmUKvyuGafUeEXJzaot1wq+e3bU1lNr9pczEUrTFtLwlKHzghc4hyCyPaj1AS4OWMStSHiw5up33jeDw=="
+}

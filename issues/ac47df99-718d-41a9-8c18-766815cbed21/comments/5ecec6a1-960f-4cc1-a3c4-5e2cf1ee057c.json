@@ -1,0 +1,10 @@
+{
+  "uuid": "5ecec6a1-960f-4cc1-a3c4-5e2cf1ee057c",
+  "issue_uuid": "ac47df99-718d-41a9-8c18-766815cbed21",
+  "author": "Yffe",
+  "content": "Failing test at forge/tests/divergence_249_axiom_mask.rs::divergence_interactive_axiom_allowlist_masked_by_shortname_decoy demonstrates the divergence (live, lake-gated; FAILS on 5f601a2d with f=L3). Root: the #249 axiom anchor binds 'thermite_obligation_<item>' but the appended probe '#print axioms thermite_obligation_f' resolves (unqualified) to a clean top-level same-short-name decoy, while canonical_theorem_statement (first textual occurrence) binds a NAMESPACED theorem carrying the canonical statement proven via 'axiom thermite_cheat : ∀ p, p'. Axiom-report and statement-binding inspect two DIFFERENT declarations → the cheat is masked. Authority: .design/verified/proof-backends.md REQ-4/§1; R-DEFER-9.",
+  "created_at": "2026-06-11T19:26:09.243054433Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA7BZG+DyOLe62q2drTKFqm6tvcqf+X4Ml6PKukSDEkLshfZBepot5ddnt6spnY39D/ynwpfLeLNcr/t1bzKlEDw=="
+}

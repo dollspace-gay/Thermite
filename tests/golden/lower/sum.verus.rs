@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 verus! {
 
-spec fn spec_sum(xs: Seq<u32>) -> nat
+pub open spec fn spec_sum(xs: Seq<u32>) -> nat
     decreases xs.len()
 {
     if xs.len() == 0 { 0 } else { xs[0] as nat + spec_sum(xs.drop_first()) }

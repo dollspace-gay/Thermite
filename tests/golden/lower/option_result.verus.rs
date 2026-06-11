@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 verus! {
 
-enum ParseErr {
+pub enum ParseErr {
     NotDigit,
     Overflow,
     Empty,

@@ -1,7 +1,7 @@
 use vstd::prelude::*;
 verus! {
 
-enum Shape {
+pub enum Shape {
     Circle(u64),
     Rect { w: u64, h: u64 },
 }

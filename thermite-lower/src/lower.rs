@@ -1219,13 +1219,19 @@ fn lower_inv_operand(
 /// A unit variant is the bare name; a tuple variant `Name(T, …)`; a struct
 /// variant `Name { field: T, … }`. The recursive occurrence is a `Box<List>`
 /// (`lower_type` emits `Box<…>` for `Type::Box`), the heap indirection Verus
-/// dereferences with `*` (REQ-10). An enum is emitted WITHOUT `pub`: the corpus
-/// `Shape`/`List` are used only from `fn`/`spec fn` in the same module, and a bare
-/// `enum` matches the GROUNDED verified form (no `pub open spec fn` refers to it,
-/// so no visibility-tier obligation as the struct invariant has).
+/// dereferences with `*` (REQ-10).
+///
+/// VISIBILITY TIER (#230, the struct-invariant REQ-8 grounding finding extended
+/// to its whole class): the enum is emitted `pub`. With #230 promoting EVERY
+/// user `spec fn` to `pub open spec fn`, a recursive fold like `sum_list` (a
+/// `pub open` body) pattern-matches `enum List`'s constructors — and a `pub
+/// open` body may construct/match only `pub` datatypes (verus rejects a private
+/// one with `pattern constructor for a non-visible datatype`). Mirroring
+/// `lower_struct`'s `pub` tier closes the class. `pub` only WIDENS visibility —
+/// the GROUNDED verified meaning is unchanged.
 fn lower_enum(e: &EnumItem) -> Result<String, LowerError> {
     let mut out = String::new();
-    writeln!(out, "enum {} {{", e.name).ok();
+    writeln!(out, "pub enum {} {{", e.name).ok();
     for variant in &e.variants {
         match &variant.shape {
             VariantShape::Unit => {
@@ -1809,7 +1815,11 @@ fn emit_len_measure(u: &SchemeUse) -> Result<String, LowerError> {
         span: zero_span(),
     })?;
     let mut out = String::new();
-    writeln!(out, "spec fn {lname}(l: {}) -> nat", e.name).map_err(|_| fmt_err())?;
+    // VISIBILITY TIER (#230 class-completion): `pub open spec fn` — this
+    // generated measure is CALLED by a user scheme-call `spec fn` (now `pub
+    // open`), and a `pub open` body may refer only to `pub` functions (verus:
+    // `in pub open spec function, cannot refer to private function`).
+    writeln!(out, "pub open spec fn {lname}(l: {}) -> nat", e.name).map_err(|_| fmt_err())?;
     out.push_str("    decreases l,\n{\n    match l {\n");
     for b in &base {
         writeln!(out, "        {}::{} => 0,", e.name, base_variant_pattern(b))
@@ -1892,7 +1902,11 @@ fn emit_scheme_spec_fn(u: &SchemeUse) -> Result<String, LowerError> {
     };
 
     let mut out = String::new();
-    write!(out, "spec fn {fname}(l: {}", e.name).map_err(|_| fmt_err())?;
+    // VISIBILITY TIER (#230 class-completion): `pub open spec fn` — the
+    // generated per-(ADT,scheme) recursive fold is CALLED by a user scheme-call
+    // `spec fn` (now `pub open`), so it must itself be `pub open` (verus: `in
+    // pub open spec function, cannot refer to private function`).
+    write!(out, "pub open spec fn {fname}(l: {}", e.name).map_err(|_| fmt_err())?;
     if let Some((sn, st)) = seed_param {
         write!(out, ", {sn}: {st}").map_err(|_| fmt_err())?;
     }
@@ -2069,7 +2083,17 @@ fn lower_spec_fn(
     // (`nat` for `fold`, `bool` for `for_all`/`exists`/`traverse`, the ADT for
     // `map`); else the existing head/ADT-fold-sum or declared-type lowering.
     let ret = lower_spec_fn_ret_with_schemes(&s.ret, &s.body, &scheme_bindings);
-    write!(out, "spec fn {}(", s.name).ok();
+    // VISIBILITY TIER (#230, the #232 layer's twin): emit `pub open spec fn`,
+    // not a bare `spec fn`. A struct's `well_formed` predicate is a `pub open
+    // spec fn` (REQ-8 grounding finding), and a `pub open` body may refer ONLY
+    // to `pub` items — so a `well_formed` naming a user `spec fn` over a
+    // PRIVATE `spec fn` is rejected by verus (`cannot refer to private
+    // function`). Promoting every user spec fn to `pub open` resolves it
+    // (hand-verus-confirmed: the `pub open` Counter form is `1 verified, 0
+    // errors`). `pub open` only WIDENS visibility + exposes the (already-pure,
+    // contract-free) body for definitional unfolding, which every existing
+    // caller already relied on — no golden MEANING change, a pure prefix add.
+    write!(out, "pub open spec fn {}(", s.name).ok();
     emit_params(&mut out, &s.params, Pos::Spec)?;
 
     // The DEC NUANCE (`.design/basis/02-recursion-schemes.md` step-lowering

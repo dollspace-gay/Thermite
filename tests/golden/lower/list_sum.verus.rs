@@ -1,12 +1,12 @@
 use vstd::prelude::*;
 verus! {
 
-enum List {
+pub enum List {
     Nil,
     Cons(u64, Box<List>),
 }
 
-spec fn sum_list(l: List) -> nat
+pub open spec fn sum_list(l: List) -> nat
     decreases l,
 {
     match l {

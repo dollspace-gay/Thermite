@@ -1010,14 +1010,28 @@ fn item_subprogram(
             items.extend(spec_items.iter().cloned());
             Program { items }
         }
-        // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum` item
-        // has no `fn`/`spec fn` dependency closure — the neutral sub-program is
-        // the item alone. Dead-in-1a: the resulting sub-program dies at the
-        // validator gate (`SpecError::UnsupportedAdt`) before any proof
-        // obligation is built, so this arm never produces a cert.
-        Item::Struct(_) | Item::Enum(_) => Program {
-            items: vec![item.clone()],
-        },
+        // A `struct`/`enum` whose `inv`/`well_formed` predicate NAMES a user
+        // `spec fn` must weave that spec fn's DEFINITION into its sub-program —
+        // exactly as the `Item::Fn` arm weaves the file's `spec_items` (#232).
+        // The stale "dead-in-1a: dies at the validator" premise was FALSE: a
+        // struct with an `inv` lowers to a `pub open spec fn well_formed` whose
+        // body calls the named spec fn, and live `forge check` DOES produce a
+        // cert for it (at L0 without the def — E0425 `cannot find function`).
+        // Weave the referenced ADT decls first (#68 — type decls in scope), then
+        // the spec-fn deps (so the `well_formed` body resolves AND the per-item
+        // `spec_fn_param_type_map` is non-empty, restoring the #229 REQ-5 cast
+        // off the `as u64` fallback), then the item itself last (forward refs
+        // resolve; the lowerer dedups regardless of order). An ADT carries no
+        // `fn` dependency closure (a `well_formed` body calls only spec fns /
+        // combinators, §4.2), so `fn_deps` is intentionally unwoven here. EMPTY
+        // `adt_deps`/`spec_items` for an `inv`-free struct keeps the sub-program
+        // the item alone (byte-stable for the no-invariant corpus).
+        Item::Struct(_) | Item::Enum(_) => {
+            let mut items = adt_deps.to_vec();
+            items.extend(spec_items.iter().cloned());
+            items.push(item.clone());
+            Program { items }
+        }
     }
 }
 

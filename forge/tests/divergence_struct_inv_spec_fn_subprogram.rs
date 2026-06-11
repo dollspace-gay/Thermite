@@ -116,7 +116,6 @@ struct Counter {
 ";
 
 #[test]
-#[ignore = "divergence: item_subprogram's Struct arm omits reachable spec-fn deps (E0425 + empty param-type map -> as u64) so a struct inv naming a user spec fn dies at L0; needs #230's pub-open tier too; tracking #232 (+#230)"]
 fn struct_inv_naming_user_spec_fn_certifies_l3() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — struct-inv spec-fn sub-program cert not run.");

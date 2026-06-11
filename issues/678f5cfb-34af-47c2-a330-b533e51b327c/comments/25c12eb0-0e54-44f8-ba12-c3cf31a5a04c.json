@@ -1,0 +1,10 @@
+{
+  "uuid": "25c12eb0-0e54-44f8-ba12-c3cf31a5a04c",
+  "issue_uuid": "678f5cfb-34af-47c2-a330-b533e51b327c",
+  "author": "Yffe",
+  "content": "Generator fix (#243 ref #244 #245 #246 #240): one exporter seam — lean_export.rs gates + engine.rs evidence_key. #243 unfiltered called-name collection (collect_all_call_names) + emitted-term independent re-check (Expr.specCall scan vs dom R_item); undefined callee refuses IncompleteRegistry. #244 result_is_int_sorted gate; bool/unit/ADT return refuses NonIntResult. #245 capture-safe substitute (check_no_capture vs subst_free_names) refuses tier-(b) capture, routes tier-c. #246 obligation_content_hash (rendered exporter source) + recursive lean/Thermite/** spine hash + LEAN_SCHEMA_VERSION 1->2. Re-pinning the three kernel oracles to the resolved REFUSED truth. Gauntlet: cargo test --workspace, clippy -D warnings, fmt --check, lake build 368.",
+  "created_at": "2026-06-11T16:41:20.121485436Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABATvCEz7058pUwQLZDDr9QXAe2Gy0TwJL7H2fOgDOoWJX4LC0FR78wTfjLwnRNhVDfeTC+GQEJ6gf+CWDakAxqBQ=="
+}

@@ -113,7 +113,6 @@ spec fn add(a: u64, b: u64) -> u64
 ";
 
 #[test]
-#[ignore = "divergence: #237 narrowing gate misses literal-free spec arithmetic (n + n -> E0308 -> L0); tracking #238"]
 fn literal_free_arith_spec_fn_certifies_l3() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — #238 literal-free spec-arith cert not run.");
@@ -129,7 +128,6 @@ fn literal_free_arith_spec_fn_certifies_l3() {
 }
 
 #[test]
-#[ignore = "divergence: #237 narrowing gate misses literal-free spec arithmetic (a + b -> E0308 -> L0); tracking #238"]
 fn literal_free_two_param_arith_spec_fn_certifies_l3() {
     if !verus_present() {
         eprintln!("SKIP: verus not available — #238 literal-free spec-arith cert not run.");

@@ -1,0 +1,10 @@
+{
+  "uuid": "e7f8922a-039e-434e-8c26-1e80a48e27c9",
+  "display_id": 240,
+  "title": "proof-backends increment (ii): the Lean spine prerequisites (stabilizes/stabilizesProp relations, stabilization_exists_for_dec_bounded, the fuel-irrelevance lemma) + the Thermite-to-Lean obligation exporter + LeanEngine auto-discharge (tier a fuel-free, tier b static unfolding) per proof-backends.md REQ-6/REQ-7",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T07:16:14.427611259Z",
+  "updated_at": "2026-06-11T07:16:14.427611259Z"
+}

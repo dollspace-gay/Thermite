@@ -69,6 +69,7 @@ composes that with the Lean (T1) theorems. CORR is the bridge that lets the theo
 | Rust exec-expr encoder | `thermite-tv/src/exec_encode.rs` | `43c9a6c8` (#152) |
 | Rust exec-body encoder | `thermite-tv/src/exec_stmt_encode.rs` | `21b84c5f` (#163; was `b9dc22fd` #165 — re-pinned, see Amendment 2026-06-10) |
 | Frozen combinator registry | `thermite-spec/src/combinators.rs` | `c0b1d8a3` (#4) |
+| Rust→Lean obligation exporter | `forge/src/lean_export.rs` | `PENDING-240` (the #240 closing commit — see Table 4; a follow-up supplemental commit fills the SHA after the closing commit lands, then `scripts/audit.sh` check [4] drift-checks this exporter file against Table 4's arms) |
 | Lean spine | `lean/Thermite/**` | `65504c18` (was `7c85da25` — re-pinned, see Amendment 2026-06-10) |
 
 Lean toolchain: `leanprover/lean4:v4.29.0` (downgraded from v4.30.0 by the #184 Z3-demotion probe — `lean/lakefile.toml` now `[[require]]`s Lean-SMT + Mathlib; this is OUTSIDE the `lean/Thermite/**` audited-spine scope and the entire audited spine still builds green and `sorry`-free on v4.29.0 — see `.design/verified/z3-demotion.md` and Amendment 2026-06-10).
@@ -437,6 +438,65 @@ found it (`0256fd1c`), fixed it to match the `env.clone()` discipline (`6050b4cb
 The B1–B4 in-Rust tests (`b1_let_chain_state`, `b2_mutation_order_state`, `b3_if_branch_state`,
 `b4_multi_cell_tuple_state`) and the Lean B1–B3 theorems (`b1_let_chain_threads`,
 `b2_mutation_order_matters`, `b3_if_branch_taken`) cross-check the same threading on both sides.
+
+---
+
+## Table 4 — `forge/src/lean_export.rs` ↔ `lean/Thermite/Ast.lean` + `Denote.lean` (the EXPORTER, REQ-6 EXP)
+
+The Thermite→Lean obligation EXPORTER (`forge/src/lean_export.rs`, the #240 chain, increment (ii-b))
+emits Lean SOURCE that INSTANTIATES the spine `Expr`/`Registry`/`Env`/`stabilizes` encodings — it does
+NOT define a new semantics. Its faithfulness (EXP, `.design/verified/proof-backends.md` REQ-6) is the
+SAME inspection-tier discipline as Tables 1–3: each `encode_expr` arm maps a frozen-subset Thermite
+`Expr` (the `thermite-syntax::ast::Expr` variant) to the `Ast.lean` constructor TERM whose denotation
+`Denote.lean` assigns it. An OUT-of-spine construct is a structured `ExportRefusal` (an honest skip),
+NOT a silent omission. Unlike Tables 1–3 (which target Verus TEXT), the exporter targets the SAME
+inductive the spine is proven over, so the bridge is DIRECT (the emitted constructor IS the spine
+datum) and the "Verus-meaning" column is replaced by the targeted spine arm.
+
+> **PIN: this table is current as of `forge/src/lean_export.rs` @ the #240 closing commit (see the
+> Audited-commits table) + the `lean/Thermite/**` spine SHA pinned there.** A change to either the
+> exporter arms below OR the targeted spine constructors INVALIDATES this table and forces re-audit
+> (the `scripts/audit.sh` check [4] drift tripwire already covers the `lean/Thermite/**` spine SHA;
+> the exporter file's SHA is added to the Audited-commits table below).
+
+| # | Thermite `Expr` (`thermite-syntax`) | `lean_export.rs` arm (`encode_expr`/helper) | Targeted spine constructor (`Ast.lean`/`Denote.lean`) | Inspection tier |
+|---|---|---|---|---|
+| intLit | `Expr::IntLit { value, .. }` | `Expr.intLit {value}` | `Expr.intLit (value : Int)`; `intVal _ (intLit n) _ = n` | direct |
+| boolLit | `Expr::BoolLit(b)` | `Expr.boolLit {b}` | `Expr.boolLit`; `denote _ (boolLit b) _ = (b = true)` | direct |
+| var/seqVar/strVar/optResVar | `Expr::Path([name])` (sorted by the env coercion frame) | `Expr.var`/`seqVar`/`strVar`/`optResVar {name}` | `Env.ints`/`seqs`/`seqs`/`optres` lookup | direct (the §1 coercion-frame sort: slice→`seqVar`, `String`→`strVar`, Option/Result→`optResVar`, else `var`) |
+| cmp | `Expr::Binary { op ∈ Eq/Ne/Lt/Le/Gt/Ge }` | `Expr.cmp CmpOp.{eq…ge} l r` | `Expr.cmp`; `denote (cmp op a b)` | direct (the SAME `CmpOp` Table 1A pins) |
+| logic | `Expr::Binary { op ∈ And/Or }` | `Expr.logic LogOp.{and,or} l r` | `Expr.logic`; `denote (logic op a b)` | direct |
+| neg | `Expr::Unary { Not, e }` | `Expr.neg e` | `Expr.neg`; `denote (neg e) = ¬ denote e` (Prop operand; integer `!` is the OUT residual below) | direct |
+| arith | `Expr::Binary { op ∈ Add…BitXor }` | `Expr.arith ArithOp.{add…bitXor} l r` | `Expr.arith`; `intVal (arith op a b) = arithDenote op …` | direct (the SAME `ArithOp` Table 1A/2A pins) |
+| cast | `Expr::Cast { expr, ty ∈ u64/u32/usize/nat/int }` | `Expr.cast inner CastTy.{u64…int}` | `Expr.cast`; `intVal (cast inner ty) = castDenote ty …` | direct (the SAME `CastTy` Table 1B pins; OUT: any other cast target → `OutOfFragment`) |
+| idx/subrange | `Expr::Index { base, Single/RangeTo/Range/RangeFrom }` (+ `Ref(Index)`) | `Expr.idx`/`Expr.subrange … RangeArg.{rangeTo,range,rangeFrom}` | `Expr.idx`/`Expr.subrange`+`RangeArg`; `seqIdx`/`seqSub` (Table 1C) | direct |
+| seqLen/byteAt | `Expr::MethodCall { .len()/.byte_at(i) }` | `Expr.seqLen`/`Expr.byteAt` | `Expr.seqLen`/`Expr.byteAt` (Table 1D, #127) | direct (OUT: any other method → `OutOfFragment`) |
+| comb | `Expr::Call(forall_in/exists_in/sorted/forall_below/forall_from/disjoint/count_where/permutation_of, args)` | `Expr.comb CombName.{…} seq seq2 idx pred` (per-`arg_kinds` field population; `encode_pred` for the closure) | `Expr.comb`+`CombName`+`Pred` (Table 1E, #179/#182) | direct (OUT: an arity mismatch / a non-single-param predicate closure → `OutOfFragment`) |
+| match_/is_ | `Expr::Match { Some/None/Ok/Err arms }` / `Expr::Is { Variant }` | `Expr.match_ scrut [MatchArm.mk Variant binder body]` / `Expr.is_ scrut Variant` | `Expr.match_`/`MatchArm`/`Expr.is_`+`Variant` (Table 1F, #180) | direct (OUT: a guarded arm / a user-ADT variant / a wildcard → `OutOfFragment`) |
+| specCall | `Expr::Call(spec_fn, args)` (a NON-combinator/NON-`old` callee) | `Expr.specCall {name} [args]` (tier (c)); STATICALLY UNFOLDED to its body for tier (b) | `Expr.specCall`+the fuel-indexed `Registry` (Table 1G, #181); `R_item` populated by the closure | direct + the static-unfolding sub-inspection (the unfolded `Expr` MUST equal the spec-fn's real body substituted — §6.1(b)) |
+| `old(x)` | `Expr::Call(old, [Path x])` | `Expr.var "old(x)"` | `Expr.var` (a free pre-state name, the `old(_)` arm of Table 1G) | direct |
+| **R_item** (registry) | the `req ∪ ens ∪ body ∪ dec` closure (`Obligation.env.spec_defs`) | `def R_item : Registry := fun name => match name with \| "f" => some ⟨[params], body⟩ \| … \| _ => none` + per-name `example : R_item "f" ≠ none := by decide` | `abbrev Registry := String → Option SpecFn`; `Env.specs` | direct + the HARD GATE (refuse-to-emit when `calledSpecFns ⊄ dom(R_item)` AND a re-check that every spec-call in the exprs is covered) + the per-name `decide` lemma (§4 mechanisms 1+2) + EXP body-faithfulness (each entry binds the REAL `Denote`-encoded body) |
+| **the theorem** | the per-item CONTRACT obligation | tier (a)/(b): `denote 0 req env → denote 0 ens (env.bindInt "result" (intVal 0 body env))`; tier (c): `∀ r, stabilizes body env r → stabilizesProp req env → stabilizesProp ens (env.bindInt "result" r)` | `denote`/`intVal`/`stabilizes`/`stabilizesProp` + `stabilizes_iff_intVal_zero` / `stabilizesProp_iff_denote_zero` (tier a/b) / `stabilization_exists` (tier c) — `Stabilize.lean` | the §4/§6.1 form: tier (a)/(b) fuel-free (sound by fuel-irrelevance / static unfolding), tier (c) the `∃N∀fuel` stabilized form (INTERACTIVE) |
+
+**OUT-of-fragment residuals (the honest skips — `ExportRefusal::OutOfFragment`/`NotPureContract`/`OpenHole`).**
+`Expr::Field` (struct-field, Discrepancy D6), `Expr::TupleProj` (D6), `Expr::StructLit`, `Expr::Deref`,
+`Expr::StrLit`, `Expr::Tuple`, `Expr::If` (no S_C if-Expr), a bare `Expr::Closure` (closures appear ONLY
+as a combinator predicate), a qualified `Path`, a non-`u64/u32/usize/nat/int` cast target, a non-`len`/
+`byte_at` method, a user-ADT / guarded match arm, an integer (bitwise) `!`, a non-pure-tail body (the
+§4.1 exec-body bridge is increment (iv)), a boundary fn, and an open hole (`?N`, L0). Each is a
+structured refusal the `LeanEngine` maps to `Unknown` (a skip), NEVER `Proven`/`Refuted` — the same
+out-of-`S_C` honesty as Tables 1–3's catch-all `Err` arm.
+
+**The exporter's OWN regression oracles (the Rust mirror of the kernel-checked pins).** The four
+critic pins (`PinIntBottom`/`PinStabilization`/`PinBodyRegistry`/`PinDecMeasure`/`PinRegistryTerminating`)
+gate the SPINE; the exporter's mirror is the LIVE `forge/src/engine.rs` test suite — a CORRECT contract
+kernel-accepts (`live_scalar_correct_contract_is_proven`), a WRONG one fails the tactic (`live_wrong_
+contract_is_unknown_never_refuted`, Unknown NEVER Refuted), an OMITTED-registry obligation REFUSES the
+export (`omitted_registry_obligation_refuses_export`, the Pin B/C/E/F mirror — the bottom-poisoned
+discharge is UNREACHABLE because the export refuses BEFORE emission), and a recursive registry is
+tier-(c) interactive (`recursive_registry_is_interactive_unknown`). The live `lake env lean` kernel
+check of the emitted shape is `forge/tests/lean_engine.rs::live_spine_elaborates_emitted_shape_correct_
+proves_wrong_fails`.
 
 ---
 

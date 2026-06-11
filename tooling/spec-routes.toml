@@ -252,6 +252,20 @@ design = ".design/verified/proof-backends.md"
 reference = ["conformance"]
 conformance_ops = ["sum"]
 
+# proof-backends increment (ii-b), crosslink #240 (ref #203): the Thermite→Lean
+# OBLIGATION EXPORTER (`lean_export.rs`) + the LeanEngine (`engine.rs`). The exporter
+# serializes a checked PURE-CONTRACT item into a self-contained Lean file
+# instantiating the SHIPPED spine (`lean/Thermite/Stabilize.lean` + Ast/Denote); the
+# LeanEngine implements the `Engine` trait (export → lake → kernel verdict). NOT wired
+# into the default check path (Verus stays the sole default engine; byte-identical).
+# Governed by proof-backends.md §4/§6/§6.1 + REQ-6/REQ-7/REQ-8; verified against the
+# live lake suite + the conformance cert oracle (byte-identical).
+[[route]]
+crate_pattern = "forge/src/lean_export.rs"
+design = ".design/verified/proof-backends.md"
+reference = ["conformance"]
+conformance_ops = ["sum"]
+
 [[route]]
 crate_pattern = "forge/src/check.rs"
 design = ".design/verified/proof-backends.md"

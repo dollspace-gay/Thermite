@@ -44,7 +44,10 @@
 //! | REQ-3.1 (the fast-unknown remap) | SHIPPED | `VerusEngine::verdict_of` splits `VerusOutcome::Counterexample` by `counterexample_is_incompleteness_unknown` (the NARROW SMT-`unknown` signature): ONLY a span-less failure carrying the SMT-`unknown` signal (no frontend `error[E` / no parsed `--> span`) → `Unknown(Reason::IncompleteUnknown)` (degrade); a witnessed countermodel AND a frontend type error (E0308) stay `Refuted` (hard-fail). The remap is INERT on the corpus (witnessed + E0308 cases stay hard-fail). Tested: a synthetic SMT-`unknown` degrades, a witnessed countermodel + an E0308 type error both hard-fail (`engine.rs` tests + `forge/tests/engine_interface.rs`). |
 //! | REQ-8 (engine ordering hook) | SHIPPED (Verus rung) | `pub fn default_engines` returns the ordered engine list (Verus first); increment (i) wires the hook with the single Verus rung, increment (ii) adds the Lean rungs. Consumer: `check::ladder_for_timeout` reads the first engine (Verus). |
 
+use crate::lean_export::{export_item, find_item, ExportRefusal, ExportedObligation};
 use crate::obligation::{Obligation, ObligationRole};
+use std::path::PathBuf;
+use thermite_syntax::Program;
 
 /// The named engine (`.design/verified/proof-backends.md` REQ-2 `name`). Verus is
 /// the only instance increment (i) ships; `LeanAuto`/`LeanInteractive` are named
@@ -397,6 +400,326 @@ pub fn engine_cache_key(engine: EngineName, content_address: String) -> CacheKey
     }
 }
 
+/// The Lean SCHEMA version (`.design/verified/proof-backends.md` REQ-8 / §2(d)).
+/// Bumped when the exporter's emitted-source SHAPE or the obligation→Lean encoding
+/// changes (the analogue of `cache::CHECK_SCHEMA_VERSION` for the Lean engine), so a
+/// cached Lean `Proven` is invalidated when the exporter logic changes — a HIT is a
+/// fresh verify against the CURRENT exporter + spine.
+pub const LEAN_SCHEMA_VERSION: u32 = 1;
+
+/// The Thermite→Lean obligation ENGINE (`.design/verified/proof-backends.md` REQ-6/
+/// REQ-7/REQ-8 — engine #2; increment (ii-b), the #240 chain). Implements the
+/// [`Engine`] trait: `fragment()` = pure-contract items whose constructs are
+/// spine-exportable; `discharge()` = export → write to a scratch dir → `lake env
+/// lean <file>` (cwd `lean/`) → kernel accept = [`Verdict::Proven`], tactic
+/// failure / timeout / lake absent / tier-(c) interactive = [`Verdict::Unknown`]
+/// (NEVER [`Verdict::Refuted`] — a Lean tactic failure is NOT a witnessed
+/// countermodel, REQ-3 anti-cheat); `trust_profile()` = {Lean kernel + 3 standard
+/// axioms, EXP}; `evidence_key()` = obligation content + lean-toolchain content +
+/// lake-manifest revs + a `lean/Thermite/` spine content hash + `LEAN_SCHEMA_VERSION`
+/// (REQ-8 / §2(d)).
+///
+/// The engine carries the parsed [`Program`] (the exporter needs the spec-fn
+/// definitions + the source item) and the path to the `lean/` package root (where
+/// `lake env lean` runs). NOT wired into the default `check` path — Verus stays the
+/// sole default engine (byte-identical); this engine is constructed directly by
+/// tests + (increment (iii)) the `--engine lean` surface.
+#[derive(Debug, Clone)]
+// proof-backends REQ-6/REQ-7/REQ-8 (the #240 chain): the Lean engine #2 is the
+// engine-#2 public API, constructed DIRECTLY BY TESTS in this increment (the
+// `--engine lean` / `#[engine(lean)]` production surface is increment (iii), OQ-1).
+// It is forward-declared here exactly like the shipped `EngineName::LeanAuto`
+// variant (which carries the SAME per-item allow + rationale), so the four-slot
+// `Engine` impl is verified live (`forge/tests/lean_engine.rs`) before the CLI
+// dispatcher wires it (R-DEFER-1's non-test consumer arrives with increment (iii)).
+#[allow(
+    dead_code,
+    reason = "proof-backends REQ-6/7/8 (#240): the Lean engine #2 is forward-declared \
+              + test-constructed in increment (ii-b); the `--engine lean` production \
+              dispatcher is increment (iii) (OQ-1), mirroring the shipped \
+              `EngineName::LeanAuto` forward-declaration"
+)]
+pub struct LeanEngine {
+    /// The parsed source program (the exporter resolves the source item + the
+    /// spec-fn definitions for `R_item`).
+    program: Program,
+    /// The `lean/` package root (the cwd for `lake env lean`). The spine modules
+    /// (`Thermite.Stabilize` etc.) resolve against this package.
+    lean_root: PathBuf,
+    /// Whether `LeanAuto` (the auto tactic battery, tiers (a)/(b)) or
+    /// `LeanInteractive` (tier (c), no auto). The default is `LeanAuto`.
+    name: EngineName,
+}
+
+impl LeanEngine {
+    /// Construct a `LeanAuto` engine over a parsed program + the `lean/` package
+    /// root (`.design/verified/proof-backends.md` REQ-6).
+    #[must_use]
+    #[allow(
+        dead_code,
+        reason = "proof-backends REQ-6 (#240): the engine-#2 constructor, test-constructed \
+                  in increment (ii-b); the `--engine lean` production dispatcher is \
+                  increment (iii) (OQ-1) — see the LeanEngine struct rationale"
+    )]
+    pub fn new(program: Program, lean_root: PathBuf) -> Self {
+        LeanEngine {
+            program,
+            lean_root,
+            name: EngineName::LeanAuto,
+        }
+    }
+
+    /// Export the obligation's source item to a self-contained Lean file
+    /// (`.design/verified/proof-backends.md` REQ-6). `Ok` carries the exported
+    /// source + tier; an [`ExportRefusal`] is "the fragment does not admit this
+    /// obligation" (a skip — the engine maps it to `Unknown`, never `Refuted`).
+    fn export(&self, o: &Obligation) -> Result<ExportedObligation, ExportRefusal> {
+        let item = find_item(&self.program, &o.item).ok_or_else(|| {
+            ExportRefusal::OutOfFragment(format!("item `{}` not found in the program", o.item))
+        })?;
+        export_item(o, &self.program, item)
+    }
+
+    /// Locate the `lake` binary (`.design/verified/proof-backends.md` REQ-6 — "locate
+    /// lake via PATH / ~/.elan/bin"). Returns the binary name `lake` (resolved on
+    /// PATH) or the `~/.elan/bin/lake` absolute fallback if PATH lookup is unlikely.
+    /// Deterministic given the environment (R-CODE-5).
+    fn lake_binary() -> PathBuf {
+        // Prefer the elan-managed lake if present (the live test environment), else
+        // the bare `lake` on PATH. We probe the elan path explicitly so a
+        // non-login shell (which may not have ~/.elan/bin on PATH) still finds it.
+        if let Some(home) = std::env::var_os("HOME") {
+            let elan = PathBuf::from(home).join(".elan/bin/lake");
+            if elan.exists() {
+                return elan;
+            }
+        }
+        PathBuf::from("lake")
+    }
+
+    /// Run `lake env lean <file>` in the `lean/` package root and return the kernel
+    /// verdict (`.design/verified/proof-backends.md` REQ-7). A clean exit (status 0)
+    /// = the kernel accepted the theorem (the auto battery discharged it) →
+    /// [`Verdict::Proven`]; a non-zero exit (a tactic failure, an elaboration error)
+    /// → [`Verdict::Unknown`] (NEVER `Refuted` — a Lean tactic failure is not a
+    /// witnessed countermodel, REQ-3); lake absent (`ENOENT`) → `Unknown`. The
+    /// `key` is the engine's evidence key (attached to a `Proven`).
+    fn run_lake(&self, file: &std::path::Path, verified: u64, key: CacheKey) -> Verdict {
+        use std::process::Command;
+        let lake = Self::lake_binary();
+        let output = Command::new(&lake)
+            .arg("env")
+            .arg("lean")
+            .arg(file)
+            .current_dir(&self.lean_root)
+            .output();
+        match output {
+            Ok(out) if out.status.success() => Verdict::Proven(Evidence { verified, key }),
+            Ok(out) => {
+                // A non-zero exit is a tactic/elaboration FAILURE — the engine could
+                // not kernel-check the theorem. This is `Unknown` (DEGRADE), NEVER
+                // `Refuted`: there is no witnessing input (REQ-3 anti-cheat — a Lean
+                // tactic failure is not a countermodel).
+                let detail = String::from_utf8_lossy(&out.stderr);
+                let head: String = detail.chars().take(400).collect();
+                Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "lake/lean did not kernel-accept the exported obligation (tactic \
+                     failure / elaboration error — NOT a countermodel, REQ-3): {head}"
+                )))
+            }
+            Err(e) => {
+                // lake absent / spawn failure: `Unknown` (the engine could not run),
+                // never `Refuted`. R-CODE-4: the subprocess failure is surfaced
+                // structured, never swallowed as success.
+                Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "could not invoke `lake env lean` (lake absent or un-spawnable): {e}"
+                )))
+            }
+        }
+    }
+
+    /// A content hash of the `lean/Thermite/` spine the exported theorem
+    /// INSTANTIATES (`.design/verified/proof-backends.md` §2(d) — "the TARGETED-SPINE
+    /// content hash"). Hashes the spine source files (sorted, content-addressed) so a
+    /// change to `Denote.lean`/`Stabilize.lean`/etc. invalidates a cached `Proven`.
+    /// Returns a short hex digest; on a read error the digest degrades to a marker
+    /// (never a panic — R-CODE-2).
+    fn spine_content_hash(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let spine_dir = self.lean_root.join("Thermite");
+        let mut entries: Vec<PathBuf> = match std::fs::read_dir(&spine_dir) {
+            Ok(rd) => rd
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| p.extension().is_some_and(|x| x == "lean"))
+                .collect(),
+            Err(_) => return "spine-unreadable".to_string(),
+        };
+        entries.sort();
+        let mut hasher = Sha256::new();
+        hasher.update(b"thermite-lean-spine-v1");
+        for path in entries {
+            if let Ok(bytes) = std::fs::read(&path) {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    hasher.update((name.len() as u64).to_le_bytes());
+                    hasher.update(name.as_bytes());
+                }
+                hasher.update((bytes.len() as u64).to_le_bytes());
+                hasher.update(&bytes);
+            }
+        }
+        let digest = hasher.finalize();
+        digest.iter().take(8).map(|b| format!("{b:02x}")).collect()
+    }
+
+    /// The lean-toolchain + lake-manifest revision string (`.design/verified/
+    /// proof-backends.md` §2(d) — "the ENGINE-TOOLCHAIN version is the
+    /// `lean-toolchain` rev + the `lake-manifest` revs"). Reads the two files;
+    /// missing files degrade to a marker (never a panic — R-CODE-2).
+    fn toolchain_rev(&self) -> String {
+        let toolchain = std::fs::read_to_string(self.lean_root.join("lean-toolchain"))
+            .unwrap_or_else(|_| "no-toolchain".to_string());
+        let manifest = std::fs::read_to_string(self.lean_root.join("lake-manifest.json"))
+            .map(|s| {
+                use sha2::{Digest, Sha256};
+                let mut h = Sha256::new();
+                h.update(s.as_bytes());
+                h.finalize()
+                    .iter()
+                    .take(6)
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            })
+            .unwrap_or_else(|_| "no-manifest".to_string());
+        format!("{}+manifest:{manifest}", toolchain.trim())
+    }
+}
+
+impl Engine for LeanEngine {
+    fn name(&self) -> EngineName {
+        self.name
+    }
+
+    fn fragment(&self) -> Fragment {
+        // The Lean engine does NOT admit the whole subset — only the pure-contract
+        // class whose constructs the exporter can emit (the `admits_all_classes =
+        // false` seam REQ-2(a) named for a narrowed engine). The per-obligation
+        // admission is decided by `export` succeeding (in `discharge`); the fragment
+        // flag marks it as a NARROWED engine so the ladder hook knows to gate on
+        // `admits` (which runs the full export attempt).
+        Fragment {
+            admits_all_classes: false,
+        }
+    }
+
+    fn discharge(&self, o: &Obligation) -> Verdict {
+        // 1. EXPORT. A refusal (out-of-fragment / not-pure-contract / incomplete
+        //    registry / open hole) = the fragment does not admit this obligation →
+        //    `Unknown` (a skip), NEVER `Refuted`/`Proven` (REQ-3 anti-cheat — a skip
+        //    is not a disproof and not a proof).
+        let exported = match self.export(o) {
+            Ok(e) => e,
+            Err(refusal) => {
+                return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "the Lean engine's fragment does not admit this obligation \
+                     (an honest skip, not a verdict): {refusal}"
+                )));
+            }
+        };
+
+        // 2. TIER-(c) is INTERACTIVE-only: the engine does NOT invoke lake (the
+        //    `∃N∀fuel` form needs an authored induction). Return `Unknown` WITHOUT
+        //    running lake (the file may still be emitted for increment-(iii) use).
+        if !exported.tier.is_auto() {
+            return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                "tier ({}) recursive-registry obligation is INTERACTIVE-only \
+                 (the auto battery does not attempt it; REQ-7(ii)) — Lean-auto SKIPs",
+                exported.tier.tag()
+            )));
+        }
+
+        // 3. WRITE the exported source to a scratch file + INVOKE lake.
+        let scratch = match self.write_scratch(o, &exported) {
+            Ok(p) => p,
+            Err(e) => {
+                return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                    "could not write the exported Lean obligation to a scratch file: {e}"
+                )));
+            }
+        };
+        let key = self.evidence_key(o);
+        let verdict = self.run_lake(&scratch, 1, key);
+        // Best-effort scratch cleanup (R: clean up scratch). A cleanup failure does
+        // not change the verdict.
+        let _ = std::fs::remove_file(&scratch);
+        verdict
+    }
+
+    fn trust_profile(&self) -> TrustProfile {
+        // REQ-2(c) / TRUST PROFILE: {Lean kernel + 3 standard axioms} + EXP (the
+        // exporter correspondence). An auditor sees this enumerates a SMALLER base
+        // than Verus's {Z3, Verus VC-gen, lowering theorem} along the named axes
+        // (§1 / REQ-4 — "smaller along the named axes", OQ-3).
+        TrustProfile {
+            items: vec![
+                "Lean kernel".to_string(),
+                "propext".to_string(),
+                "Classical.choice".to_string(),
+                "Quot.sound".to_string(),
+                "EXP (the exporter correspondence — arm-by-arm + the drift tripwire)".to_string(),
+            ],
+        }
+    }
+
+    fn evidence_key(&self, o: &Obligation) -> CacheKey {
+        // REQ-2(d) / §2(d): the engine-discriminated key composing the obligation
+        // content, the lean-toolchain + lake-manifest revs, the targeted-spine
+        // content hash, and the LEAN_SCHEMA_VERSION — so a toolchain OR spine bump
+        // forces a universal MISS (a HIT is a fresh verify against the CURRENT
+        // semantics + toolchain).
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(b"thermite-lean-evidence-v1");
+        h.update(o.item.as_bytes());
+        h.update(o.class.tag().as_bytes());
+        h.update(o.role.tag().as_bytes());
+        for name in &o.env.spec_defs {
+            h.update(name.as_bytes());
+        }
+        h.update(self.toolchain_rev().as_bytes());
+        h.update(self.spine_content_hash().as_bytes());
+        h.update(LEAN_SCHEMA_VERSION.to_le_bytes());
+        let digest = h.finalize();
+        let content_address: String = digest.iter().map(|b| format!("{b:02x}")).collect();
+        CacheKey {
+            engine: self.name,
+            content_address,
+        }
+    }
+}
+
+impl LeanEngine {
+    /// Write the exported Lean source to a deterministic scratch file in the system
+    /// temp dir (`.design/verified/proof-backends.md` REQ-7 — "export → write to a
+    /// scratch dir"). The file name is keyed on the item + the process id so
+    /// concurrent runs do not collide. Returns the path; the caller invokes lake on
+    /// it and removes it after.
+    fn write_scratch(
+        &self,
+        o: &Obligation,
+        exported: &ExportedObligation,
+    ) -> std::io::Result<PathBuf> {
+        let safe: String = o
+            .item
+            .chars()
+            .map(|c| if c.is_alphanumeric() { c } else { '_' })
+            .collect();
+        let pid = std::process::id();
+        let path = std::env::temp_dir().join(format!("forge_lean_export_{safe}_{pid}.lean"));
+        std::fs::write(&path, &exported.source)?;
+        Ok(path)
+    }
+}
+
 /// The REQ-3 discharge discipline, generalized off the SHIPPED ladder
 /// (`.design/verified/proof-backends.md` REQ-3): map an engine's [`Verdict`] for a
 /// `role = Certification` obligation to the SHIPPED [`crate::degrade::L3Verdict`]
@@ -503,7 +826,9 @@ pub fn counterexample_is_incompleteness_unknown(
 mod tests {
     use super::*;
     use crate::check::VerusOutcome;
+    use crate::lean_export::ExportTier;
     use crate::manifest::ObligationResult;
+    use std::process::Command;
 
     fn a_key() -> CacheKey {
         CacheKey {
@@ -719,5 +1044,273 @@ mod tests {
             vec![EngineName::Verus],
             "REQ-8: Verus first"
         );
+    }
+
+    // ============================================================================
+    // The LIVE Lean engine #2 tests (REQ-6/REQ-7; the #240 chain). These construct a
+    // `LeanEngine` directly (the design's "constructed directly by tests") and invoke
+    // lake LIVE (lake present at ~/.elan). A LIVE test gates on lake presence so the
+    // suite is green WITHOUT lake (the verdict there is `Unknown` — never a false
+    // `Proven`/`Refuted`). Every expected verdict is hand-derived (R-CHAR-3): a
+    // CORRECT contract kernel-accepts (Proven), a WRONG one fails the tactic
+    // (Unknown, NEVER Refuted), the omitted/divergent shapes REFUSE the export (the
+    // Pin E/F Rust mirror), an out-of-fragment item is SKIPPED. The helpers use
+    // `assert!`/`matches!` (NOT unwrap/expect/panic) so the anti-pattern gate is
+    // clean on the Edit (R-APG-2).
+    // ============================================================================
+
+    fn lean_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("lean")
+    }
+
+    fn lake_present() -> bool {
+        if let Some(home) = std::env::var_os("HOME") {
+            if PathBuf::from(home).join(".elan/bin/lake").exists() {
+                return true;
+            }
+        }
+        Command::new("lake")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    fn parse_program(src: &str) -> Program {
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        parsed.program
+    }
+
+    // Build a CONTRACT obligation for a named fn (asserting it exists + is a fn, no
+    // unwrap/panic). A non-fn / absent item makes the `matches!` assert fail; the
+    // default obligation is returned only on that already-failed path.
+    fn fn_obligation(program: &Program, name: &str, called: Vec<String>) -> Obligation {
+        let item = crate::lean_export::find_item(program, name);
+        assert!(
+            matches!(item, Some(thermite_syntax::Item::Fn(_))),
+            "item `{name}` must be present and a fn, got {item:?}"
+        );
+        if let Some(thermite_syntax::Item::Fn(f)) = item {
+            Obligation::contract_for_fn(f, called)
+        } else {
+            default_obligation()
+        }
+    }
+
+    // A default obligation builder (reached only after the `matches!` assert above
+    // has already failed); keeps `fn_obligation` total without an unwrap/panic.
+    fn default_obligation() -> Obligation {
+        Obligation {
+            item: String::new(),
+            class: crate::obligation::ObligationClass::Contract,
+            role: ObligationRole::Certification,
+            ast_slice: crate::obligation::AstSlice::Block(Box::new(thermite_syntax::Block {
+                stmts: Vec::new(),
+                tail: None,
+            })),
+            env: crate::obligation::ObligationEnv::default(),
+        }
+    }
+
+    // (1) REQ-6/REQ-7: a hand-authored pure-contract SCALAR item kernel-accepts LIVE
+    // (Proven). `add` returns `a as u64 + b as u64` and `ens result == a as u64 + b
+    // as u64` — the body IS the ens RHS, so after binding `result` to the body's
+    // stabilized value the goal is true; the fuel-free tier-(a) battery kernel-checks
+    // it. Expected from §6.1(a) (R-CHAR-3): a CORRECT contract is Proven.
+    #[test]
+    fn live_scalar_correct_contract_is_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live Lean Proven test not run.");
+            return;
+        }
+        let src = "fn add(a: u32, b: u32) -> u64 req true \
+                   ens result == a as u64 + b as u64 fx pure { a as u64 + b as u64 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "add", vec![]);
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Proven(_)),
+            "a CORRECT scalar contract must be Proven LIVE: {v:?}"
+        );
+    }
+
+    // (2) REQ-7 §6.1(b): a TIER-(b) item (a non-recursive spec-fn in the ens) is
+    // STATICALLY UNFOLDED to a fuel-free goal and kernel-accepts LIVE (Proven). `g`
+    // returns `x + x` and `ens result as int == dbl(x as int)` where `spec fn dbl(x)
+    // = x + x` — the unfolded ens is `result as int == (x as int) + (x as int)`,
+    // true at `result = x + x`. Expected from §6.1(b) (R-CHAR-3).
+    #[test]
+    fn live_tier_b_nonrecursive_spec_fn_is_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live tier-(b) Proven test not run.");
+            return;
+        }
+        let src = "spec fn dbl(x: int) -> int dec x { x + x } \
+                   fn g(x: u32) -> u32 req x < 100 ens result as int == dbl(x as int) \
+                   fx pure { x + x }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "g", vec!["dbl".to_string()]);
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        // Sanity: the exporter classifies this tier (b) (static-unfold auto).
+        let item = crate::lean_export::find_item(&p, "g");
+        assert!(item.is_some(), "g present");
+        if let Some(item) = item {
+            let exported = export_item(&o, &p, item);
+            assert!(exported.is_ok(), "g must export: {exported:?}");
+            if let Ok(exported) = exported {
+                assert_eq!(exported.tier, ExportTier::StaticUnfoldAuto);
+                assert_eq!(exported.registry_names, vec!["dbl".to_string()]);
+            }
+        }
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Proven(_)),
+            "a tier-(b) item must be Proven LIVE via static unfold: {v:?}"
+        );
+    }
+
+    // (3) REQ-7 / REQ-3 anti-cheat: a WRONG contract (`ens result == 0` for a body
+    // that returns `a`) makes the auto battery FAIL → `Unknown`, NEVER `Refuted` (a
+    // Lean tactic failure is not a witnessed countermodel) and NEVER `Proven`.
+    // Expected from §6.1 + REQ-3 (R-CHAR-3).
+    #[test]
+    fn live_wrong_contract_is_unknown_never_refuted() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live wrong-contract test not run.");
+            return;
+        }
+        let src = "fn wrong(a: u32, b: u32) -> u32 req true ens result == 0 fx pure { a }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "wrong", vec![]);
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            !matches!(v, Verdict::Refuted(_)),
+            "a tactic FAILURE is Unknown, NEVER Refuted (REQ-3 anti-cheat): {v:?}"
+        );
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "a WRONG contract must be Unknown (not Proven): {v:?}"
+        );
+    }
+
+    // (4) REQ-6 §4 HARD GATE — the Pin E/F Rust mirror: an OMITTED-registry obligation
+    // (the ens calls `spec_sum` but the obligation's closure does NOT list it) REFUSES
+    // the export → `Unknown` (a skip), NEVER a bottom-poisoned `Proven`. The Rust
+    // mirror of the divergent/omitted Lean pins. Expected from §4 mechanism 1
+    // (R-CHAR-3). NO lake needed.
+    #[test]
+    fn omitted_registry_obligation_refuses_export() {
+        let src = "spec fn spec_sum(xs: &[u32]) -> u64 dec xs.len() { 0 } \
+                   fn f(xs: &[u32]) -> u64 req true ens result == spec_sum(xs) fx pure { 0 }";
+        let p = parse_program(src);
+        // The obligation's closure OMITS `spec_sum` (the bug the gate must catch).
+        let o = fn_obligation(&p, "f", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p, "f") {
+            let r = export_item(&o, &p, item);
+            assert!(
+                matches!(&r, Err(ExportRefusal::IncompleteRegistry(_))),
+                "an omitted-registry obligation must REFUSE the export: {r:?}"
+            );
+            if let Err(ExportRefusal::IncompleteRegistry(names)) = &r {
+                assert!(
+                    names.contains(&"spec_sum".to_string()),
+                    "the omitted spec-fn is named in the refusal: {names:?}"
+                );
+            }
+        }
+        // The engine maps the refusal to Unknown (a skip), NEVER Proven/Refuted.
+        let engine = LeanEngine::new(p, lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "a refused export is an Unknown skip, never a verdict: {v:?}"
+        );
+    }
+
+    // (5) REQ-6 §4 SCOPE: an OUT-of-fragment item (a tuple projection in the ens) is
+    // SKIPPED (the fragment rejects it) → the export REFUSES and the engine returns
+    // `Unknown`. Expected from the §4 OUT-of-spine refusal rule (R-CHAR-3). NO lake.
+    #[test]
+    fn out_of_fragment_item_is_skipped() {
+        let src = "fn pick(a: u32, b: u32) -> (u32, u32) req true \
+                   ens result.0 == a fx pure { (a, b) }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "pick", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p, "pick") {
+            let r = export_item(&o, &p, item);
+            assert!(
+                matches!(r, Err(ExportRefusal::OutOfFragment(_))),
+                "a tuple-projection ens is out-of-fragment: {r:?}"
+            );
+        }
+        let engine = LeanEngine::new(p, lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "an out-of-fragment item is an Unknown skip: {v:?}"
+        );
+    }
+
+    // REQ-7 §6.1(c): a RECURSIVE-registry item is tier (c) (interactive) — the engine
+    // returns `Unknown` WITHOUT invoking lake (the `∃N∀fuel` form needs an authored
+    // induction). The exported FILE is still produced (for increment-(iii)), marked
+    // interactive. Expected from §6.1(c) (R-CHAR-3).
+    #[test]
+    fn recursive_registry_is_interactive_unknown() {
+        let src = "spec fn r(x: int) -> int dec x { r(x) } \
+                   fn f(x: u32) -> u32 req true ens result as int == r(x as int) fx pure { x }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "f", vec!["r".to_string()]);
+        if let Some(item) = crate::lean_export::find_item(&p, "f") {
+            let exported = export_item(&o, &p, item);
+            assert!(
+                exported.is_ok(),
+                "a recursive item still EXPORTS a file (for increment-(iii)): {exported:?}"
+            );
+            if let Ok(exported) = exported {
+                assert_eq!(exported.tier, ExportTier::RecursiveInteractive);
+                assert!(
+                    exported.source.contains("Thermite.stabilizes"),
+                    "tier (c) emits the §4 ∃N∀fuel stabilized form"
+                );
+            }
+        }
+        let engine = LeanEngine::new(p, lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            matches!(v, Verdict::Unknown(_)),
+            "a recursive (tier-c) item is INTERACTIVE Unknown: {v:?}"
+        );
+    }
+
+    // REQ-2(c)/(d): the Lean engine fills its four slots — the SMALLER trust profile
+    // ({Lean kernel + 3 axioms, EXP}) and the engine-discriminated evidence key
+    // (composing the toolchain rev + spine hash + LEAN_SCHEMA_VERSION). Expected from
+    // REQ-2(c)/§2(d) (R-CHAR-3).
+    #[test]
+    fn lean_engine_fills_trust_and_evidence_slots() {
+        let p = parse_program("fn id(x: u64) -> u64 req true ens result == x fx pure { x }");
+        let o = fn_obligation(&p, "id", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+        assert_eq!(engine.name(), EngineName::LeanAuto);
+        assert!(
+            !engine.fragment().admits_all_classes,
+            "the Lean engine is a NARROWED fragment (not the whole subset)"
+        );
+        let tp = engine.trust_profile();
+        assert!(
+            tp.items.iter().any(|i| i.contains("Lean kernel"))
+                && tp.items.iter().any(|i| i.contains("EXP")),
+            "the trust profile enumerates Lean kernel + EXP: {:?}",
+            tp.items
+        );
+        let key = engine.evidence_key(&o);
+        assert_eq!(key.engine, EngineName::LeanAuto);
+        assert_eq!(key.content_address.len(), 64, "sha256 hex content address");
     }
 }

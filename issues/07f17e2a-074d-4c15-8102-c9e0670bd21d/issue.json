@@ -2,11 +2,12 @@
   "uuid": "07f17e2a-074d-4c15-8102-c9e0670bd21d",
   "display_id": 238,
   "title": "Divergence: lower_spec_fn_body result-narrowing gate (block_result_is_int_literal_arith) misses literal-free spec arithmetic — `spec fn double(n: u64) -> u64 dec n { n + n }` is E0308 -> L0; Verus types ALL spec arithmetic as int, not only literal-mentioning arithmetic",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-11T06:34:48.540180822Z",
-  "updated_at": "2026-06-11T06:34:50.013998708Z",
+  "updated_at": "2026-06-11T07:02:57.359660001Z",
+  "closed_at": "2026-06-11T07:02:57.359660001Z",
   "labels": [
     "blocker"
   ]

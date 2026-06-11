@@ -1,0 +1,10 @@
+{
+  "uuid": "92e8c0cf-e3aa-4240-a0cc-aa1d12b53f53",
+  "issue_uuid": "5d659c08-23a3-4907-ba77-1d3bf54488f4",
+  "author": "Yffe",
+  "content": "Code cite (forge/src/engine.rs, fn LeanEngine::evidence_key @ d4871ded): the hash composes item NAME + class.tag + role.tag + spec_def NAMES + toolchain_rev + spine_content_hash + LEAN_SCHEMA_VERSION. §2(d) (F4) requires '{obligation content, seed, ENGINE name, ENGINE-TOOLCHAIN version, TARGETED-SPINE content hash, thermite_version, schema_version}' and REQ-7(ii) keys proof staleness on 'obligation hash'. o.ast_slice / o.env.params / the req+ens exprs / spec-fn BODIES are never hashed: editing 'ens result >= a' to 'ens result >= b' (or editing a reached spec-fn's body) yields the IDENTICAL key, so a cached/replayed Proven would silently survive a contract change — exactly the never-silently-reused rule REQ-7 states. seed and thermite_version are also absent. No kernel pin is possible (Rust-only); the regression test must live in engine.rs's #[cfg(test)] mod (forge is a binary crate — the critic cannot add it without editing production files): assert evidence_key differs for two same-named items with different ens. Note (acceptable, recorded): spine_content_hash walks lean/Thermite/*.lean NON-recursively — lean/Thermite/Exec/** is unhashed, which is fine for the pure-contract targeted set {Ast,Denote,Stabilize} but must widen when increment (iv) targets Exec.",
+  "created_at": "2026-06-11T16:08:09.488617382Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/Ed6LKGQLwrGdFPHzToghV/pmTD/VRmqv6ikNpdx7kJJ9DGhjILR5aBbaFWqOc41sNXSPmYnkxdT0Hy3oLZBBA=="
+}

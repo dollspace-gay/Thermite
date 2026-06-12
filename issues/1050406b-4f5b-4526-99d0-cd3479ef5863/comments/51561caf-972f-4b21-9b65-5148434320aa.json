@@ -1,0 +1,10 @@
+{
+  "uuid": "51561caf-972f-4b21-9b65-5148434320aa",
+  "issue_uuid": "1050406b-4f5b-4526-99d0-cd3479ef5863",
+  "author": "Yffe",
+  "content": "Builder (v-b) plan: widen the Lean exporter past straight-line bodies to the v1 WHILE shape per proof-backends.md 4.2. Mirror thermite-tv::recognize_v1_loop arm-by-arm (single While, non-empty invs + dec, straight-line scalar body, last-stmt-before-tail, int/bool result). Emit Inv_item (4 conjunct families) + mu_item + the FIVE per-item obligations (_entry/_pres/_exit/_progress/_dec) + the TWO generator-proved composed theorems (CONTRACT via while_compose, _converges via loopDenote_exits_of_dec), with the loop auto battery threading hreq through unfold sets. 4.2.5 refusals stay structured. Manifest: lean_export.rs, engine.rs, check.rs (verify-only if accounting auto-flows), forge/tests/lean_while.rs (NEW), proof-backends.md REQ rows. Two-commit ceremony.",
+  "created_at": "2026-06-12T03:15:24.025446665Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA5XP79xQSeYhnfcllcnUaf9xIeYFV2j6PxV5wPX/nHG/Gjj/+jN2POlsayCPV3neNw4KoiGuyZ1467asn41BiBg=="
+}

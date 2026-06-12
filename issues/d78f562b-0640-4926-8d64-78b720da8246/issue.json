@@ -1,0 +1,10 @@
+{
+  "uuid": "d78f562b-0640-4926-8d64-78b720da8246",
+  "display_id": 278,
+  "title": "thermite-lower: spec_bytes_eq built-in + auto-emitted subrange/append bridge lemmas (prove-once law, lemma_count_push pattern) — the second #276 prerequisite; recursive user bytes_eq cannot bridge from slice/concat content ens without induction",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T09:55:42.800033570Z",
+  "updated_at": "2026-06-12T09:55:42.800033570Z"
+}

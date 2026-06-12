@@ -1,14 +1,35 @@
 {
-  "next_display_id": 1,
+  "next_display_id": 268,
   "next_comment_id": 1,
-  "display_id_map": {},
+  "display_id_map": {
+    "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267
+  },
   "locks": {
     "264": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T02:14:52.967137974Z"
+    },
+    "267": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T04:40:20.473752192Z"
     }
   },
-  "issues": {},
+  "issues": {
+    "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": {
+      "uuid": "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012",
+      "display_id": 267,
+      "title": "Review.md verification — date reviewer snapshot vs v0.1/HEAD; document claim-by-claim findings",
+      "status": "open",
+      "priority": "low",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T04:40:15.537422397Z",
+      "updated_at": "2026-06-12T04:40:17.203547721Z",
+      "labels": [
+        "analysis"
+      ]
+    }
+  },
+  "next_milestone_id": 1,
   "unsigned_event_warnings": [
     {
       "agent_id": "Yffe",
@@ -2704,11 +2725,26 @@
       "agent_id": "Yffe",
       "agent_seq": 539,
       "timestamp": "2026-06-12T03:10:49.117127992Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 540,
+      "timestamp": "2026-06-12T04:40:15.537422397Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 541,
+      "timestamp": "2026-06-12T04:40:17.203547721Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 542,
+      "timestamp": "2026-06-12T04:40:20.473752192Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T03:10:49.117127992Z",
+    "timestamp": "2026-06-12T04:40:20.473752192Z",
     "agent_id": "Yffe",
-    "agent_seq": 539
+    "agent_seq": 542
   }
 }

@@ -39,7 +39,7 @@
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
-//! | REQ-2 (the Engine interface — 4 slots) | SHIPPED (Verus instance) | `pub trait Engine { name, fragment, discharge, trust_profile, evidence_key }` + `pub enum Verdict`/`Evidence`/`Counterexample`/`Reason` + `pub struct TrustProfile`/`Fragment`/`CacheKey`; the `pub struct VerusEngine` fills all four slots from SHIPPED code (FRAGMENT = the frozen lowering subset; DISCHARGE = `classify_verus_outcome`'s three-way map lifted to `Verdict` with the REQ-3.1 remap; TRUST PROFILE = {Z3, Verus VC-gen} + the TV/lowering theorem; EVIDENCE = the content-addressed `cache::cache_key` generalized with an engine discriminator). Non-test consumer: `check::ladder_for_timeout` routes the per-item L3 certification discharge through `VerusEngine`. The Lean engine (`LeanAuto`/`LeanInteractive`) is increment (ii), NOT-STARTED. |
+//! | REQ-2 (the Engine interface — 4 slots) | SHIPPED (Verus instance) | `pub trait Engine { name, fragment, discharge, trust_profile, evidence_key }` + `pub enum Verdict`/`Evidence`/`Counterexample`/`Reason` + `pub struct TrustProfile`/`Fragment`/`CacheKey`; the `pub struct VerusEngine` fills all four slots from SHIPPED code (FRAGMENT = the frozen lowering subset; DISCHARGE = `classify_verus_outcome`'s three-way map lifted to `Verdict` with the REQ-3.1 remap; TRUST PROFILE = {Z3, Verus VC-gen} + the TV/lowering theorem; EVIDENCE = the content-addressed `cache::cache_key` generalized with an engine discriminator). Non-test consumer: `check::ladder_for_timeout` routes the per-item L3 certification discharge through `VerusEngine`. The Lean engine SHIPPED as increments (ii)/(iii) (#240/#247): `LeanEngine` (the auto tier + the REQ-7 interactive replay), production-constructed by `check::check_file_with_engine` / `check::lean_mutation_score` (the `--engine lean\|auto` surface). |
 //! | REQ-3 (discharge discipline — Unknown degrades, Refuted hard-fails) | SHIPPED | `pub fn verdict_ladder_action` maps a `Verdict` to the SHIPPED `degrade::L3Verdict` for a `role = Certification` obligation: `Proven` → the proved L3 cert (CertifyL3); `Unknown` → `Timeout`-shaped degrade trigger (`run_ladder` → L2/L1); `Refuted` → `Counterexample` (HARD FAIL, never degrades). Consumer: `check::ladder_for_timeout`. Generalized off `degrade::ladder_action_l3`. |
 //! | REQ-3.1 (the fast-unknown remap) | SHIPPED | `VerusEngine::verdict_of` splits `VerusOutcome::Counterexample` by `counterexample_is_incompleteness_unknown` (the NARROW SMT-`unknown` signature): ONLY a span-less failure carrying the SMT-`unknown` signal (no frontend `error[E` / no parsed `--> span`) → `Unknown(Reason::IncompleteUnknown)` (degrade); a witnessed countermodel AND a frontend type error (E0308) stay `Refuted` (hard-fail). The remap is INERT on the corpus (witnessed + E0308 cases stay hard-fail). Tested: a synthetic SMT-`unknown` degrades, a witnessed countermodel + an E0308 type error both hard-fail (`engine.rs` tests + `forge/tests/engine_interface.rs`). |
 //! | REQ-8 (engine ordering hook) | SHIPPED (Verus rung) | `pub fn default_engines` returns the ordered engine list (Verus first); increment (i) wires the hook with the single Verus rung, increment (ii) adds the Lean rungs. Consumer: `check::ladder_for_timeout` reads the first engine (Verus). |
@@ -53,30 +53,27 @@ use crate::obligation::{Obligation, ObligationRole};
 use std::path::PathBuf;
 use thermite_syntax::Program;
 
-/// The named engine (`.design/verified/proof-backends.md` REQ-2 `name`). Verus is
-/// the only instance increment (i) ships; `LeanAuto`/`LeanInteractive` are named
-/// for increment (ii) so the EVIDENCE cache key already carries the discriminator
-/// (so a Verus proof and a future Lean proof of the same item never collide, §2(d)).
+/// The named engine (`.design/verified/proof-backends.md` REQ-2 `name`). The
+/// EVIDENCE cache key carries this discriminator (§2(d)) so a Verus proof and a
+/// Lean proof of the same item never collide.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EngineName {
     /// The Verus/Z3 push-button engine (increment (i)).
     Verus,
-    /// The Lean auto tactic-battery engine (increment (ii), NOT-STARTED). Named in
-    /// the EVIDENCE-key discriminator from day one (§2(d)) so a future Lean proof
-    /// and the Verus proof of the same lowered source never collide; constructed
-    /// when increment (ii) lands the Lean engine.
-    #[allow(
-        dead_code,
-        reason = "proof-backends §2(d): the Lean engine names are forward-declared in the \
-                  cache-key discriminator; constructed by increment (ii) (NOT-STARTED, #204 chain)"
-    )]
+    /// The Lean auto tactic-battery engine (increments (ii)/(iii), SHIPPED —
+    /// #240/#247): the name [`LeanEngine::new`] constructs; reaches production via
+    /// `check::check_file_with_engine` (`--engine lean|auto`).
     LeanAuto,
-    /// The Lean interactive engine (increment (ii)/(iii), NOT-STARTED). Forward-
-    /// declared with [`EngineName::LeanAuto`] (same rationale).
+    /// The Lean interactive engine name. The SHIPPED interactive replay (REQ-7,
+    /// `replay_interactive`) runs on the `LeanAuto`-named engine instance and
+    /// attributes through `trust_profile_interactive`; this variant stays
+    /// forward-declared in the cache-key discriminator (§2(d)) for a dedicated
+    /// interactive-named instance.
     #[allow(
         dead_code,
-        reason = "proof-backends §2(d): the Lean engine names are forward-declared in the \
-                  cache-key discriminator; constructed by increment (ii)/(iii) (NOT-STARTED)"
+        reason = "proof-backends §2(d): forward-declared cache-key discriminant; the \
+                  shipped interactive replay (#247) attributes via trust_profile_interactive \
+                  on the LeanAuto-named instance and never constructs this name"
     )]
     LeanInteractive,
 }
@@ -437,20 +434,10 @@ static NEXT_REPLAY_NONCE: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 /// sole default engine (byte-identical); this engine is constructed directly by
 /// tests + (increment (iii)) the `--engine lean` surface.
 #[derive(Debug, Clone)]
-// proof-backends REQ-6/REQ-7/REQ-8 (the #240 chain): the Lean engine #2 is the
-// engine-#2 public API, constructed DIRECTLY BY TESTS in this increment (the
-// `--engine lean` / `#[engine(lean)]` production surface is increment (iii), OQ-1).
-// It is forward-declared here exactly like the shipped `EngineName::LeanAuto`
-// variant (which carries the SAME per-item allow + rationale), so the four-slot
-// `Engine` impl is verified live (`forge/tests/lean_engine.rs`) before the CLI
-// dispatcher wires it (R-DEFER-1's non-test consumer arrives with increment (iii)).
-#[allow(
-    dead_code,
-    reason = "proof-backends REQ-6/7/8 (#240): the Lean engine #2 is forward-declared \
-              + test-constructed in increment (ii-b); the `--engine lean` production \
-              dispatcher is increment (iii) (OQ-1), mirroring the shipped \
-              `EngineName::LeanAuto` forward-declaration"
-)]
+// proof-backends REQ-6/REQ-7/REQ-8 (the #240 chain): the Lean engine #2. The
+// increment-(iii) production surface (#247) is live: `check::check_file_with_engine`
+// (the `--engine lean|auto` dispatch) and `check::lean_mutation_score` construct it;
+// the four-slot `Engine` impl is verified live in `forge/tests/lean_engine.rs`.
 pub struct LeanEngine {
     /// The parsed source program (the exporter resolves the source item + the
     /// spec-fn definitions for `R_item`).
@@ -465,14 +452,10 @@ pub struct LeanEngine {
 
 impl LeanEngine {
     /// Construct a `LeanAuto` engine over a parsed program + the `lean/` package
-    /// root (`.design/verified/proof-backends.md` REQ-6).
+    /// root (`.design/verified/proof-backends.md` REQ-6). Production consumers:
+    /// `check::check_file_with_engine` (`--engine lean|auto`, #247) and
+    /// `check::lean_mutation_score` (the REQ-9 Lean mutation path).
     #[must_use]
-    #[allow(
-        dead_code,
-        reason = "proof-backends REQ-6 (#240): the engine-#2 constructor, test-constructed \
-                  in increment (ii-b); the `--engine lean` production dispatcher is \
-                  increment (iii) (OQ-1) — see the LeanEngine struct rationale"
-    )]
     pub fn new(program: Program, lean_root: PathBuf) -> Self {
         LeanEngine {
             program,

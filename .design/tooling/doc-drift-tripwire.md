@@ -418,9 +418,10 @@ cannot catch, since the index is unrouted. Named in OQ-7.)
   bootstrap) is the honest maximum but is itself the backlog the gate exists to
   schedule (measured: 35/48 drifted — decision 4). v1 accepts the proxy and lets
   the per-doc re-pin work restore full honesty incrementally.
-- **OQ-7 (unrouted docs):** the gate covers exactly the routed docs. Unrouted
-  `.design/` files — `00-index.md` (stale since `1e008994`, still calls every doc
-  "planned"), `.design/research/**`, `rust-lean-correspondence.md` (check [4]'s
-  domain) — are invisible to it. Whether the index gets a pin (or gets deleted as
-  dead convention) is an orchestrator decision; the gate should not silently imply
-  it covers them.
+- **OQ-7 (unrouted docs) — PARTIALLY RESOLVED (#263):** the gate covers exactly
+  the routed docs. Unrouted `.design/` files — `.design/research/**`,
+  `rust-lean-correspondence.md` (check [4]'s domain) — are invisible to it.
+  `00-index.md` (stale since `1e008994`, called every doc "planned") was DELETED
+  as dead convention at #263: the route table is the live module map, and a
+  manually-maintained index is exactly the silent-drift artifact this gate
+  exists to eliminate. The research/correspondence residue stays named.

@@ -105,7 +105,7 @@ Two answers, both machine-checked:
 
 This is the [verified-validator architecture](RATIONALE.md#translation-validation--the-lean-proof-spine) from the compiler-verification literature (the CompCert lineage; translation validation + the kernel-checked Lean proof spine), and it has a useful consequence: Thermite's *meaning* is defined by the Lean semantics, not by Verus. Verus is the first proof engine, proven faithful — not the foundation.
 
-That last sentence is now operational, not aspirational: Lean is a **second proof engine**, not just the referee. [`forge check --engine lean|auto`](.design/verified/proof-backends.md) discharges proof obligations in Lean directly — kernel-checked, with a replay that rejects `sorry` and non-standard axioms — and the certificate records *which engine proved what* under *which trust assumptions*. If the two engines ever contradict each other on the same obligation (one says proven, the other produces a counterexample), `forge` halts with a soundness alarm. It never resolves the disagreement by preference.
+That last sentence is now operational, not aspirational: Lean is a **second proof engine**, not just the referee. [`forge check --engine lean|auto`](RATIONALE.md#proof-backends-the-second-engine) discharges proof obligations in Lean directly — kernel-checked, with a replay that rejects `sorry` and non-standard axioms — and the certificate records *which engine proved what* under *which trust assumptions*. If the two engines ever contradict each other on the same obligation (one says proven, the other produces a counterexample), `forge` halts with a soundness alarm. It never resolves the disagreement by preference.
 
 ## What works today
 

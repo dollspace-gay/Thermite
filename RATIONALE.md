@@ -588,12 +588,61 @@ Verus `decreases` residual). Loops beyond v1 `while`, `break`/`continue`,
 multi-exit early `return`, nested loops, and non-scalar mutation `xs[i]=e` are
 out of the proven fragment (`thermite-semantics.md` coverage section).
 
-**Direction.** Full Z3 demotion (upstream-gated), the Lean→Rust extraction bridge
-(to upgrade residual 4, the Rust↔Lean correspondence, from inspection to
-mechanization), and Lean as proof
-engine #2
-([`.design/verified/proof-backends.md`](.design/verified/proof-backends.md), in
-critique cycles now).
+**Direction.** Full Z3 demotion (upstream-gated) and the Lean→Rust extraction
+bridge (to upgrade residual 4, the Rust↔Lean correspondence, from inspection to
+mechanization). Lean as proof engine #2 has shipped — the next section.
+
+---
+
+## Proof backends (the second engine)
+
+**Definition.** The L3 discharge is routed through a backend-neutral **engine
+interface** (`forge/src/engine.rs`,
+[`.design/verified/proof-backends.md`](.design/verified/proof-backends.md)): an
+engine declares its FRAGMENT (which obligations it can attempt), a DISCHARGE map
+onto the three-verdict lattice `Proven / Unknown / Refuted`, a TRUST PROFILE
+(the tools a `Proven` obliges you to trust), and a content-addressed EVIDENCE
+key. Verus/Z3 is engine #1 (the default); **Lean is engine #2**
+(`forge check --engine lean|auto`): obligations are serialized by the
+Thermite→Lean exporter (`forge/src/lean_export.rs`) and discharged either by a
+tactic battery (the auto tier) or by a replayed interactive proof.
+
+**The discipline is engine-generic.** `Unknown` degrades down the ladder; a
+witnessed `Refuted` hard-fails and never degrades — the anti-cheat is stated
+once, independent of Verus. A certificate carries per-obligation attribution
+`{engine, trust_profile}`, so "L3" names *which* engine proved the item under
+*which* assumptions; project aggregation stays the honest min.
+
+**Disagreement is an alarm, not a tiebreak.** Under `--engine auto` both
+engines may attempt the same obligation. `Proven ⊕ Refuted` halts the run as a
+structured soundness alarm naming both engines and the obligation; it is never
+resolved by preference — one of the two provers (or the exporter between them)
+is wrong, and surfacing exactly that event is the architecture's purpose.
+`Proven ⊕ Unknown` is benign (one engine simply could not decide).
+
+**Interactive proofs without an injection surface.** A hard obligation emits a
+Lean skeleton (`<file>.lean-proofs/<item>.lean`) carrying an evidence-key
+header; the replay reconstructs the file from the canonical generator, so the
+*only* author-controlled text is the proof term after the obligation theorem's
+`:=`. `sorry` and non-standard axioms are rejected from the obligation
+theorem's own `#print axioms` report; a stale evidence key forces
+re-derivation. This canonical-reconstruction design closed a five-generation
+adversarial bypass arc (#248–#252) in which `notation`/`macro` poisons
+re-elaborated the obligation's conclusion to `True` under a clean axiom report
+— the lesson being that a blocklist over a Turing-complete elaborator is
+unsoundable, so the author-helper surface was deleted rather than filtered.
+
+**Limits / failure modes.** The Lean engine's exportable fragment today is pure
+contracts plus straight-line executable bodies; loops and user-ADT `match` are
+the named next increments (the spine's `while_rule` already exists, so the loop
+extension is engineering rather than new theory). Non-exportable items are
+honest `Unverifiable` skips, never false verdicts. Verus remains the sole
+engine for the meta/battery queries (vacuity, mutation, strengthening) in v1;
+the Lean-path mutation battery covers only the items Lean discharges, with
+untested-against-Lean mutants reported and never counted as killed.
+
+**Direction.** Widen the exporter past straight-line bodies (`while` first);
+grow the auto-tier tactic coverage; converge with the Z3-demotion arc above.
 
 ---
 
@@ -775,11 +824,13 @@ and check [1]'s coverage grows.
 
 ## Directions (the active roadmap)
 
-- **Lean as proof engine #2**: the backend-neutral `Obligation` + `Engine`
-  interface, with Lean's kernel discharging an L3 at a *smaller* trusted base than
-  Verus, plus per-obligation engine attribution on the certificate.
-  [`.design/verified/proof-backends.md`](.design/verified/proof-backends.md) (in
-  critique cycles now; increment (i) filed as `#204`).
+- **Lean as proof engine #2 — shipped, now widening**: the backend-neutral
+  `Obligation` + `Engine` interface, the Lean exporter, `--engine verus|lean|auto`,
+  per-obligation engine attribution, and the disagreement alarm are live
+  (#204/#240/#247–#253; the section above). The open work is fragment width:
+  the exporter stops at straight-line bodies today (`while` is next — the spine's
+  rule is already proven).
+  [`.design/verified/proof-backends.md`](.design/verified/proof-backends.md).
 - **Full Z3 demotion**: close the upstream Lean-SMT QF_BV `sorry`, raise cvc5
   proof-rule coverage, and re-solve TV obligations through cvc5 so `h_tv` becomes
   kernel-checked rather than Z3-trusted.

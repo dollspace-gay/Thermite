@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — REQ-1..5 evidence cells re-grounded in the shipped tree (they carried pre-build gap text under SHIPPED status), C5/REQ-9 Summary clauses updated to shipped, REQ-4 narrowing claim updated per #225, #262)  (re-pinned 2026-06-12: #277 — REQ-4 slice/concat ens STRENGTHENED from length-only to BYTE-CONTENT (slice subrange, concat append); the #276 prerequisite, emitted bodies + both goldens re-verify, prose + table row updated)
+audited-sha: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — REQ-1..5 evidence cells re-grounded in the shipped tree (they carried pre-build gap text under SHIPPED status), C5/REQ-9 Summary clauses updated to shipped, REQ-4 narrowing claim updated per #225, #262)  (re-pinned 2026-06-12: #277 — REQ-4 slice/concat ens STRENGTHENED from length-only to BYTE-CONTENT (slice subrange, concat append); the #276 prerequisite, emitted bodies + both goldens re-verify, prose + table row updated)  (re-pinned 2026-06-12: #278 — cluster C8 DESIGNED + GROUNDED: `bytes_eq` as a REGISTERED built-in spec predicate + the prove-once bridge-lemma family the #276 Arc-2 STOP requires; REQ-17..REQ-20 NOT-STARTED under #278)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs
@@ -46,6 +46,18 @@ in-`ens`), the splitter `split -> Vec<String>` (`fx alloc`, REQ-15, reusing C6's
 non-vacuous (a true/Some case pinned, a mutant killed). Both dependencies (C6 #98,
 C7 #95) are CONFIRMED SHIPPED, so C5 depended on nothing not-yet-built; the six ops
 have since SHIPPED under #102 (the REQ-13–REQ-16 rows).
+
+**Cluster C8 (#278) DESIGNS — NOT-STARTED — the `bytes_eq` content-pin layer**, the
+SECOND #276 prerequisite (after #277's slice/concat byte-content ens, REQ-4):
+**`bytes_eq(&a, &b, ai, bi, n)`** as a REGISTERED **built-in spec predicate**
+(byte-range equality, the frozen-registry discipline — NOT a shape-guessed user
+spec fn) whose lowering emits the canonical recursive definition AND the
+**prove-once bridge lemmas** (the `lemma_count_push`/`lemma_parse_push`
+precedent), so the editor's `insert_str`/`backspace`/`render_frame` byte-content
+pins discharge at L3. GROUNDED end-to-end with real `verus 0.2026.05.24` during
+authoring: ALL the target pins prove with ONE bridge-lemma citation (`16
+verified, 0 errors`) and the head/tail-swap mutant FAILS (non-vacuous). The
+REQ-17..REQ-20 rows are NOT-STARTED, tracked under **#278**.
 
 **SHIPPED** (commits `b8c3bf7` + `2f5535a`, #79, critic-clean): `string_demo.th`
 certifies — `greeting_len`/`first_byte` L3 pure, `join`/`literal_len` L3 alloc,
@@ -604,6 +616,226 @@ build issue is #102).
   cage — `is_space` named `spec fn`, bounded subrange), §4.4, §6 (L3), and the GROUNDED
   `trim` proof.
 
+### `bytes_eq` content pins — the BUILT-IN byte-range-equality predicate + its prove-once bridge laws (crosslink #278, cluster C8 — GROUNDED; NOT-STARTED)
+
+Cluster C8 (crosslink **#278**) is the SECOND #276 prerequisite (after #277's
+slice/concat byte-content ens, REQ-4): the surface predicate that lets the
+editor's `insert_str`/`backspace`/`render_frame` pin BYTE CONTENT — "these two
+byte windows are equal" — and the prove-once induction laws that make the pin
+DISCHARGE at L3 over a slice/concat-built result.
+
+**THE #276 ARC-2 HONEST STOP (the gap this closes).** A USER-authored recursive
+`spec fn bytes_eq(a, b, ai, bi, n)` certifies L3 in isolation (11 obligations),
+but EVERY content pin over a slice/concat-built result dies L0 — including the
+minimal `slice_id(a) = a.slice(0, a.len())` with `ens bytes_eq(&result, a, 0, 0,
+a.len())`, in BOTH recursion directions — because verus holds the #277
+subrange/append FACTS (`result.text.data@ == (head@ + ins@) + tail@`, `head@ ==
+b.text@.subrange(0, cursor)`) but does NOT auto-induct on a recursive spec fn
+named in a postcondition for SYMBOLIC `n`: the bridge from the subrange/append
+facts to the index-by-index byte walk is an INDUCTION lemma. Two independent
+surface walls keep the user from writing it: the `.th` surface has NO `proof
+fn`/lemma form, and NO general `forall` (only the frozen §4.2 combinators), so
+neither the inductive bridge nor a quantified non-recursive equality predicate
+is expressible. The existing shape-keyed proof aids (`push_lemma_for`/
+`accumulator_aid` in `thermite-lower/src/lower.rs`) fire only on the
+accumulator-FOLD-in-a-LOOP shape; the three editor bodies are straight-line
+slice+concat, so no aid fires.
+
+**THE ARCHITECTURAL RULING (orchestrator, #276→#278): do NOT shape-guess user
+spec fns.** The toolchain will not pattern-match a user's recursive `spec fn`
+hoping to synthesize its induction principle. Instead byte-range equality is a
+REGISTERED BUILT-IN spec predicate: the lowerer owns the canonical definition
+AND ships the prove-once laws WITH it — exactly the `lemma_count_push` (REQ-15)
+/ `lemma_parse_push` (REQ-8) precedent (a generated spec fn is only as usable
+as the induction lemma emitted beside it). **Migration: none** — the #276
+attempt's user-authored `bytes_eq` never landed (the builder STOPPED per O-5;
+`editor.th` is untouched), so this is a clean slate; a future USER `spec fn`
+named `bytes_eq` shadows the generated one by the existing #127 rule (the
+`user_string_spec_fn_names` exclusion in the `program_uses_*` gates).
+
+**THE THREE TARGET PIN SHAPES (derived from the ACTUAL `insert_str` body —
+`head = text.slice(0, cursor)`, `tail = text.slice(cursor, text.len())`,
+`result.text = head.concat(ins).concat(tail)`, so `result.text@ == (head@ +
+ins@) + tail@`):**
+
+```thermite
+// insert_str — the three conjuncts:
+ens bytes_eq(&result.text, &b.text, 0, 0, b.cursor)                                  // (1) unchanged prefix
+ens bytes_eq(&result.text, &ins, b.cursor, 0, ins.len())                             // (2) inserted run
+ens bytes_eq(&result.text, &b.text, b.cursor + ins.len(), b.cursor,
+             b.text.len() - b.cursor)                                                // (3) shifted suffix
+// backspace — two conjuncts: prefix [0, cursor-1) + the shifted suffix
+// render_frame — the payload at the post-clear offset:
+ens bytes_eq(&result, &b.text, 8, 0, b.text.len())
+```
+
+- **REQ-17 (`bytes_eq` — a REGISTERED built-in spec predicate; surface + the
+  §4.2 cage; NO skill entry):** The surface admits the FREE spec call
+  `bytes_eq(a, b, ai, bi, n)` in contract position (`req`/`ens`/`inv`), where
+  `a`/`b` are `String`-typed expressions (`&String` params, `result.text`, …)
+  and `ai`/`bi`/`n` are surface integer expressions. It is admitted by the
+  cage's EXISTING named-`spec fn` rule: **`bytes_eq` joins `GENERATED_SPEC_FNS`**
+  (`thermite-spec/src/validator.rs` — the reserved-name set seeded into
+  `Validator::spec_fns`, the `parse_le`/`occurs_at` precedent), NOT the §2
+  frozen combinator `REGISTRY` (`thermite-spec/src/combinators.rs`): it is a
+  generated named spec predicate like `occurs_at`/`contains_sub`, not a
+  quantifier combinator (its 5-arg String/index signature fits no
+  `ArgKind` shape, and it carries no closure). No parser change — a free call
+  already parses as `Expr::Call`. **THE SKILL-BUDGET VERDICT (this gated the
+  registry decision):** `THERMITE.skill.md` is at **5988 / 6000 tokens** (the
+  §2.2 hard CI gate, `thermite-skill --check-budget`, measured during
+  authoring). The skill auto-renders ONLY `thermite_spec::all()` (combinators)
+  and `schemes::all()` (`thermite-skill/src/generate.rs` `render_combinators`/
+  `render_schemes`); `GENERATED_SPEC_FNS` does NOT render — verified: none of
+  `parse_be`/`occurs_at`/`count_sep` appear in the emitted skill. So the
+  `GENERATED_SPEC_FNS` path costs **ZERO skill tokens** (budget holds at 5988),
+  while a combinator-REGISTRY entry would auto-render ~2 lines (~130 chars ≈
+  **+38 tokens** by `token_count` = ceil(chars·2/7) → ~6026, BLOWING the gate
+  and forcing a trim). The zero-cost path is also the semantically correct one;
+  no trimming is needed. Derived from §4.2 (named-`spec fn` composition, the
+  cage), §2.2 (the skill budget), and the C4/C5 `GENERATED_SPEC_FNS` precedent.
+
+- **REQ-18 (the canonical recursive definition + the prove-once bridge-lemma
+  family — all GROUNDED verbatim):** When the program names `bytes_eq`
+  (REQ-19's gate), the lowerer emits the canonical **`Seq<u8>`-level**
+  definition — the byte-view convention of every generated spec fn
+  (`parse_be`/`occurs_at`; the contract args lower `<String>` →
+  `<String>.data@` via the existing `callee_takes_string_byteview` set, and the
+  `ai`/`bi`/`n` integer args take the existing `as int` cast, the REQ-14
+  `occurs_at` offset-arg precedent) — plus FOUR proof fns. **The recursion
+  direction is LOW-PEEL** (peel the leading byte, recurse `ai+1`/`bi+1`/`n-1`):
+  the #276 builder verified both directions L3 in isolation and both fail at
+  the use sites WITHOUT a lemma, so direction is immaterial to provability;
+  low-peel is chosen because it matches the #276 builder's verified isolated
+  form and reads in scan order, and the bridge lemma makes the definition
+  effectively opaque to users anyway. The GROUNDED forms (verbatim — `5
+  verified, 0 errors` standalone; `16 verified, 0 errors` woven with the
+  shipped wrapper; Verification below):
+
+  ```verus
+  pub open spec fn bytes_eq(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int) -> bool
+      decreases n
+  {
+      if n <= 0 { true } else { a[ai] == b[bi] && bytes_eq(a, b, ai + 1, bi + 1, n - 1) }
+  }
+
+  // THE CORE INDUCTION: pointwise window equality ==> bytes_eq. (The explicit
+  // `#[trigger] a[ai + k]` is LOAD-BEARING: auto-inference FAILS on the
+  // arithmetic index; verus 0.2026.05.24 accepts the manual annotation.)
+  pub proof fn lemma_bytes_eq_from_pointwise(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)
+      requires forall|k: int| 0 <= k < n ==> #[trigger] a[ai + k] == b[bi + k],
+      ensures bytes_eq(a, b, ai, bi, n),
+      decreases n
+  {
+      if n > 0 {
+          assert(a[ai] == b[bi]) by { assert(a[ai + 0] == b[bi + 0]); }
+          assert forall|k: int| 0 <= k < n - 1 implies #[trigger] a[(ai + 1) + k] == b[(bi + 1) + k] by {
+              assert(a[ai + (k + 1)] == b[bi + (k + 1)]);
+          }
+          lemma_bytes_eq_from_pointwise(a, b, ai + 1, bi + 1, n - 1);
+      }
+  }
+
+  // The converse (cheap — the same induction shape).
+  pub proof fn lemma_bytes_eq_to_pointwise(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)
+      requires bytes_eq(a, b, ai, bi, n),
+      ensures forall|k: int| 0 <= k < n ==> #[trigger] a[ai + k] == b[bi + k],
+      decreases n
+  {
+      if n > 0 {
+          lemma_bytes_eq_to_pointwise(a, b, ai + 1, bi + 1, n - 1);
+          assert forall|k: int| 0 <= k < n implies #[trigger] a[ai + k] == b[bi + k] by {
+              if k == 0 { assert(a[ai] == b[bi]); }
+              else { assert(a[(ai + 1) + (k - 1)] == b[(bi + 1) + (k - 1)]); }
+          }
+      }
+  }
+
+  // The subrange corollary (the #276 STOP's named minimum — now a 5-line
+  // corollary of the pointwise core; the two explicit subrange-index
+  // instances in the by-block are required, the bare congruence is not enough).
+  pub proof fn lemma_bytes_eq_from_subrange(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)
+      requires 0 <= ai, 0 <= bi, 0 <= n, ai + n <= a.len(), bi + n <= b.len(),
+               a.subrange(ai, ai + n) == b.subrange(bi, bi + n),
+      ensures bytes_eq(a, b, ai, bi, n),
+  {
+      assert forall|k: int| 0 <= k < n implies #[trigger] a[ai + k] == b[bi + k] by {
+          assert(a.subrange(ai, ai + n)[k] == a[ai + k]);
+          assert(b.subrange(bi, bi + n)[k] == b[bi + k]);
+          assert(a.subrange(ai, ai + n)[k] == b.subrange(bi, bi + n)[k]);
+      }
+      lemma_bytes_eq_from_pointwise(a, b, ai, bi, n);
+  }
+
+  // THE ONE-CALL CITATION FORM: a no-argument lemma whose ens is the quantified
+  // EQUIVALENCE, trigger on `bytes_eq` itself. The `=~=` (not bare `==`) in the
+  // instantiated body is LOAD-BEARING: it plants the extensionality term in the
+  // VC, so the prover reduces the goal to lengths + pointwise bytes, which the
+  // default-broadcast vstd seq axioms (add-index, subrange-index) close.
+  pub proof fn lemma_bytes_eq_bridge()
+      ensures forall|a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int|
+          0 <= ai && 0 <= bi && 0 <= n && ai + n <= a.len() && bi + n <= b.len()
+          ==> (#[trigger] bytes_eq(a, b, ai, bi, n)
+               <==> a.subrange(ai, ai + n) =~= b.subrange(bi, bi + n)),
+  { /* assert-forall over the tuple; each direction by
+       lemma_bytes_eq_to_pointwise + extensionality / lemma_bytes_eq_from_subrange
+       — GROUNDED verbatim in the probe */ }
+  ```
+
+  **THE RECORDED SIMPLIFICATION (a grounding surprise):** NO append-window
+  corollaries are needed. The pre-grounding expectation was a per-pin lemma set
+  (`prefix-of-append`, `run-at-offset`, `suffix-shift`); in fact ONE citation of
+  `lemma_bytes_eq_bridge` discharges ALL THREE `insert_str` conjuncts, BOTH
+  `backspace` conjuncts, the `render_frame` payload pin, AND `slice_id`, with
+  ZERO per-conjunct glue — the trigger fires on each `bytes_eq` goal, the
+  equivalence rewrites it to `subrange =~= subrange`, and vstd's
+  default-broadcast seq axioms walk the append/subrange index chain
+  (`((head + ins) + tail)[i]` → `head[i]` → `text@.subrange(0, c)[i]` →
+  `text@[i]`) automatically. The lemma inventory is therefore exactly the FOUR
+  proof fns above. Derived from §4.2 (prove-once laws, the cage), §6 (L3), the
+  `lemma_count_push`/`lemma_parse_push` precedent, and the GROUNDED probes.
+
+- **REQ-19 (emission gate + the contract-keyed citation — a NEW aid class):**
+  *(a) Emission is CONDITIONAL:* `program_uses_bytes_eq` (`thermite-lower/src/
+  lower.rs`), mirroring `program_uses_parse` ("Materialized when
+  `program_uses_parse` (a `parse_u64` call)", REQ-9) and
+  `program_uses_string_search` ("EMPTY otherwise (byte-stable for the non-C5
+  corpus, no regression)") — a contract or body naming `bytes_eq` materializes
+  the spec fn + the four lemmas; every other program is BYTE-STABLE (no golden
+  churn). The #127 user-shadow exclusion applies (a user `spec fn bytes_eq`
+  suppresses generation, exactly `user_string_spec_fn_names`). The gate must
+  hold for forge's PER-ITEM subprogram too (the REQ-15 `collect_vec_elem_types`
+  weave precedent — the per-item walk sees the item's own contract, which is
+  what names `bytes_eq`). *(b) Citation is CONTRACT-KEYED, not loop-shape-keyed
+  — a NEW proof-aid class:* a fn whose `req`/`ens` names `bytes_eq` gets
+  **`proof { lemma_bytes_eq_bridge(); }` inserted as the FIRST statement of the
+  lowered body** (and, when the fn has loops, at each loop-body start — Verus
+  loop isolation drops ambient facts), the `render_mul_proof_block` placement
+  precedent (#196: fn-body block-start + in-loop insertion) keyed the way
+  `nonlinear_overflow_assert` keys on the contract. NO argument extraction is
+  needed (the no-arg citation is the whole point — the quantified trigger does
+  the instantiation), which is why this aid is mechanically trivial next to the
+  per-conjunct alternative (re-lowering each `bytes_eq(A, B, AI, BI, N)` ens
+  conjunct into a result-bound lemma call — the documented FALLBACK if trigger
+  instantiation ever flakes on a future shape; GROUNDED not needed today).
+  Derived from §4.2, the #196/`nonlinear_overflow_assert` aid precedents, and
+  the GROUNDED one-call discharge (`16 verified, 0 errors`).
+
+- **REQ-20 (the L1 exec twin — the #104 build-side discipline):** `forge build`
+  lowers every contract to runtime `thermite_check!`s, so `bytes_eq` (like
+  `parse_be`/`occurs_at`/`count_sep` before it) needs a runnable EXEC twin:
+  `thermite-lower::l1::emit_string_runtime_l1` gains a `bytes_eq` twin — a
+  bounds-checked byte-compare loop over the runtime `TString`s computing the
+  SAME value as the spec body (out-of-window → the spec's total-fn semantics
+  must be mirrored honestly: the twin takes the already-validated in-bounds
+  window the contract supplies; an out-of-bounds runtime index is a check
+  failure, not UB) — gated on `program_uses_bytes_eq`, String args by value
+  with the call-site `.clone()` (`string_arg_count_l1`), carrying NO verus
+  proof (the L1 path is runtime-checked, not verified). Without this twin a
+  `bytes_eq`-pinned editor would certify (`forge check`) but not `forge build`.
+  Derived from the #104 build-side requirement (this doc, "Build-side
+  L1-exec-twin requirement") and `emit_string_runtime_l1`'s C5/C7 families.
+
 ### Validator / the SpecTherm cage (governs `thermite-spec/src/validator.rs`)
 
 - **REQ-3 (string contracts fit the §4.2 cage — flat, no-OOB index, length,
@@ -732,6 +964,22 @@ the Stage-1/Stage-4 layer split:
   `lemma_count_push` proof fn, and the `trim -> TString` whitespace-scan + bounded copy
   (REQ-16) + the `is_space` spec fn. The predicate/find ops are `pure`; `split`/`trim`
   are `alloc` (constructing).
+
+- **C8 — the `bytes_eq` content-pin layer (#278, layered across 7b/7c; NOT-STARTED).**
+  *7b (`thermite-spec`):* `bytes_eq` joins `GENERATED_SPEC_FNS` (`validator.rs`) so a
+  contract naming it validates inside the §4.2 cage as a named `spec fn` call
+  (REQ-17). NO combinator-`REGISTRY` entry and NO skill rendering (the skill budget
+  holds at 5988/6000 — REQ-17's verdict). *7c (`thermite-lower`):*
+  `program_uses_bytes_eq` (the `program_uses_parse` gate shape) materializes the
+  `Seq<u8>`-level `bytes_eq` spec fn + the FOUR prove-once lemmas
+  (`lemma_bytes_eq_from_pointwise` / `lemma_bytes_eq_to_pointwise` /
+  `lemma_bytes_eq_from_subrange` / `lemma_bytes_eq_bridge`, REQ-18); the
+  contract-keyed citation inserts `proof { lemma_bytes_eq_bridge(); }` at the
+  lowered body's start (REQ-19); `l1::emit_string_runtime_l1` gains the exec twin
+  (REQ-20). `bytes_eq` joins the `callee_takes_string_byteview` set (the String →
+  `.data@` contract-arg rewrite) with the `as int` index-arg casts. The existing
+  four routes (`ast.rs`/`parser.rs`/`validator.rs`/`lower.rs` → this doc) already
+  cover the C8 surface — no new route is needed; #278 owns the build.
 
 Symbol anchors: `enum Expr` (`StrLit`), `enum Type` (`String`), `enum Effect`
 (`Alloc`) in `ast.rs`; `fn parse_primary` / `fn parse_type` in `parser.rs`;
@@ -972,6 +1220,52 @@ needle present at index 0) so the always-None mutant is killable (#101 trap avoi
   the GROUNDED `8 verified, 0 errors`); `fx alloc`; `forge check` L3 `effects:
   [alloc]`. (REQ-16.)
 
+### C8 acceptance criteria (#278 — `bytes_eq` content pins, GROUNDED; NOT-STARTED)
+
+The build authors a NEW corpus program — `conformance/bytes_eq_demo.th` (the
+`slice_id` minimal case + an `insert_str`-shaped three-pin splice), its golden
+lowering at `tests/golden/lower/bytes_eq_demo.verus.rs` (hand-authored from the
+GROUNDED probe forms, confirmed against real verus) and cert golden at
+`conformance/bytes_eq_demo.cert.json`. The editor pins themselves (the
+`examples/editor/editor.th` `ens` edits) land under the #276 Arc-2 re-dispatch
+AFTER #278 ships — they are #276's ACs, not these.
+
+- **AC-13 (the `slice_id` minimal case certifies L3):** `slice_id(a) =
+  a.slice(0, a.len())` with `ens bytes_eq(&result, a, 0, 0, a.len())` — the
+  EXACT #276 counterexample — validates (REQ-17), lowers with the emitted
+  definition + lemmas + the body-start citation (REQ-18/REQ-19), and the real
+  `verus` binary exits 0 (GROUNDED within `16 verified, 0 errors`); `forge
+  check` certifies L3. (REQ-17, REQ-18, REQ-19.)
+
+- **AC-14 (the three `insert_str` conjuncts EACH certify L3):** an
+  `insert_str`-shaped fn (`head.concat(ins).concat(tail)` over `slice(0,
+  cursor)`/`slice(cursor, len)`) carrying ALL THREE pins — unchanged-prefix,
+  inserted-run, shifted-suffix — certifies L3 with ONE `lemma_bytes_eq_bridge`
+  citation and ZERO per-conjunct glue (GROUNDED, both `usize` and `u64` cursor
+  plumbing: `16 verified, 0 errors` each). (REQ-18, REQ-19.)
+
+- **AC-15 (`backspace` + `render_frame` payload pins certify L3):** the
+  backspace splice (`head.concat(tail)` around the deleted byte) proves its
+  prefix + shifted-suffix pins; the render shape (`clear.concat(body)`) proves
+  the payload pin at the post-clear offset `bytes_eq(&result, &body,
+  clear.len(), 0, body.len())` (GROUNDED within the same probes). (REQ-18,
+  REQ-19.)
+
+- **AC-16 (non-vacuity — the content mutant DIES; R-DEFER-9):** the
+  length-preserving head/tail-SWAP mutant (`tail.concat(ins).concat(head)`)
+  FAILS verus (GROUNDED `15 verified, 1 errors`, postcondition not satisfied) —
+  the pins are content teeth a length pin cannot fake; and WITHOUT the
+  REQ-19 citation the pins fail (the #276 STOP's characterization), so the
+  bridge is load-bearing, not decorative. (REQ-18, REQ-19.)
+
+- **AC-17 (the skill budget HOLDS + the non-`bytes_eq` corpus is
+  byte-stable):** `thermite-skill --check-budget` still reports ≤ 6000 (the
+  registration path adds NO skill text — 5988 before and after); every existing
+  `tests/golden/lower/*.verus.rs` and `*.cert.json` is byte-unchanged (the
+  `program_uses_bytes_eq` gate keeps every non-`bytes_eq` program's emission
+  identical). A `bytes_eq`-naming program `forge build`s and RUNS via the L1
+  exec twin. (REQ-17, REQ-19, REQ-20.)
+
 
 ## Architecture
 
@@ -1108,6 +1402,40 @@ The component spans three crates, all additively:
   `Vec<String>`/`TVecTString` (SHIPPED #98) — neither dependency is not-yet-built.
   (Scratch cleaned per #53 — no stray `*.rs`/`*.rlib`/`*.d`/build dirs left.)
 
+- **C8 Verus grounding (DONE during authoring — real `verus 0.2026.05.24`, #278).**
+  Four probes were run (lib-crate, `--no-cheating`); ALL cheat-free (grep
+  `assume`/`admit`/`external_body`/`verifier::external`: NONE):
+  - **The lemma layer standalone** (`bytes_eq` low-peel + the four proof fns of
+    REQ-18, verbatim): **`5 verified, 0 errors`.** Two trigger findings recorded
+    in REQ-18: the pointwise quantifiers REQUIRE the explicit `#[trigger]
+    a[ai + k]` (auto-inference fails on the arithmetic index, the manual
+    annotation is accepted); `lemma_bytes_eq_from_subrange` needs the two
+    explicit subrange-index instances in its by-block.
+  - **The use sites over the SHIPPED #277 wrapper** (concat/slice verbatim from
+    `tests/golden/lower/string_demo.verus.rs`): `slice_id` (the #276 minimal
+    counterexample) + `insert_str` with ALL THREE pins + `backspace` with both
+    pins + the `render_payload` post-clear pin, EACH body carrying exactly ONE
+    `proof { lemma_bytes_eq_bridge(); }` first statement and NO other glue:
+    **`16 verified, 0 errors`.** The pre-grounding expectation of per-pin
+    append-window corollaries was WRONG — the `=~=`-equivalence bridge + vstd's
+    default-broadcast seq axioms close every pin (the REQ-18 recorded
+    simplification).
+  - **The u64-plumbing variant** (the editor's `cursor: u64` with the `as usize`
+    slice-call casts and `as int` pin-arg casts, the faithful lowered shape):
+    **`16 verified, 0 errors`** — the integer plumbing does not disturb the
+    bridge.
+  - **Non-vacuity (R-DEFER-9):** the length-preserving head/tail-SWAP
+    `insert_str` mutant (`tail.concat(ins).concat(head)`) FAILS — **`15
+    verified, 1 errors`** (postcondition not satisfied): the content pins bite
+    where a length pin is blind.
+  This proves the C8 stack (the built-in predicate + the four prove-once laws +
+  the one-call citation) is Verus-feasible end-to-end over the SHIPPED wrapper;
+  the remaining work is purely the toolchain plumbing (REQ-17..REQ-20), tracked
+  under #278. NOT yet grounded: a `bytes_eq` named in a LOOP INVARIANT (the
+  editor pins are straight-line postconditions; REQ-19's in-loop citation
+  placement is designed but untested). (Scratch cleaned per #53 — no stray
+  probe files left.)
+
 - **Toolchain path grounded:** `./target/debug/forge check conformance/vec_demo.th`
   exits 0 emitting L3 certs with `effects: [pure]` (read-only `checked_get`) and
   `effects: [alloc]` (constructing `push_one`) — the exact cert shape
@@ -1188,6 +1516,10 @@ UNCHANGED (L3) — #104 touched only the L1/exec mirror.
 | REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`; reuses C7 Option) | SHIPPED | #102 cluster C5. `find` ADDED to `BUILTIN_METHODS`; `emit_string_search_methods` emits `find(&self, p: &TString) -> Option<u64>` (the occurrence scan returning `Some(at)` on the first hit) with the C7 spec-`match`-in-`ens` (`Some(at) => at + p.data.len() <= self.data.len() && occurs_at(..), None => !contains_sub(..)`), reusing C7's `Type::Option` lowering. The `occurs_at` offset arg is cast `as int` (the `lower_expr` `Call` `occurs_fn` arm). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus L3 pure; the PINNED Some case proves `result is Some`, the always-`None` mutant FAILS — #101 trap avoided). GROUNDED within `14 verified, 0 errors`. |
 | REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`; reuses C6 `Vec<String>`) | SHIPPED | #102 cluster C5. `split` ADDED to `BUILTIN_METHODS`; `count_sep`/`sep_free` ADDED to `GENERATED_SPEC_FNS`. `emit_string_search_methods` emits the `split(&self, sep: u8) -> TVecTString` push-loop (the count partial `pieces.len() == count_sep(prefix)` + `sep_free(cur@)` + every-completed-piece-sep-free invariant); `emit_string_search_defs` emits the `count_sep`/`sep_free` spec fns + the `lemma_count_push` induction proof. `collect_vec_elem_types` weaves the `Vec<String>` element (→ `TVecTString`) when a C5 op is used so `split`'s result wrapper is always in scope (even in forge's per-item subprogram). The surface `u64` `sep` is cast `as u8` at the call site (exec) + in the `count_sep`/`sep_free` contract arg (spec); `count_sep` joins `nat_fns`. Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the count-bound + sep-free floor `7 verified, 0 errors`; a `split`-drop mutant FAILS, non-vacuous). The count-bound is the STRONGEST proved contract (NOT a reconstruct-round-trip). **BUILD-SIDE (#104):** `count_sep`/`sep_free` now have an L1 EXEC twin (`thermite-lower::l1::emit_string_runtime_l1`, gated on `program_uses_string_search`) so the parser `fields`'s `ens result.len() == 1 + count_sep(s, sep)` lowers to a runnable runtime check + the `Vec<String>` (`TVecTString`) exec `len() -> u64` is emitted by `emit_vec_runtime_l1` — `parse_lines.th` now `forge build`s + RUNS (a,b,c→3 pieces). |
 | REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | SHIPPED | #102 cluster C5. `trim` ADDED to `BUILTIN_METHODS`; `is_space` ADDED to `GENERATED_SPEC_FNS`. `emit_string_search_methods` emits the `trim(&self) -> TString` forward/backward whitespace scan + bounded copy (the subrange invariant `out@ == self.data@.subrange(lo, i)`, the `subrange(lo, i+1) == subrange(lo, i).push(s@[i])` step); `emit_string_search_defs` emits the `is_space` spec fn (the whitespace test is inlined in the exec loop since `is_space` is a spec fn). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the length floor + the subrange content relation `result@ == s@.subrange(lo,hi)`, `8 verified, 0 errors`). |
+| REQ-17 (`bytes_eq` — REGISTERED built-in spec predicate; surface + cage; NO skill entry) | NOT-STARTED | build issue #278 (cluster C8). Gap: `bytes_eq` is not in `GENERATED_SPEC_FNS` (`thermite-spec/src/validator.rs`), so a contract naming it rejects `UnknownCombinator` today. Design pinned: the `GENERATED_SPEC_FNS` path (NOT a combinator-`REGISTRY` entry — the skill is at 5988/6000 tokens and a combinator entry would auto-render ~+38 tokens, blowing the §2.2 gate; the generated-spec-fn path renders nothing, budget holds). |
+| REQ-18 (canonical `Seq<u8>` recursive def + the FOUR prove-once bridge lemmas) | NOT-STARTED | build issue #278. Gap: no emission site in `thermite-lower/src/lower.rs` (`emit_bytes_eq_defs` does not exist). The exact emitted text is GROUNDED VERBATIM in this doc (REQ-18: low-peel `bytes_eq` + `lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`; `5 verified, 0 errors` standalone, `16 verified, 0 errors` woven with the shipped #277 wrapper, the swap mutant `15 verified, 1 errors`). No append-window corollaries needed (the recorded simplification). |
+| REQ-19 (`program_uses_bytes_eq` gate + the contract-keyed `lemma_bytes_eq_bridge()` citation) | NOT-STARTED | build issue #278. Gap: neither the gate nor the citation aid exists; the aid is a NEW class (contract-keyed, body-start `proof { lemma_bytes_eq_bridge(); }` — the #196 `render_mul_proof_block` placement, the `nonlinear_overflow_assert` contract keying), grounded to need NO argument extraction. Non-`bytes_eq` corpus must stay byte-stable (the `program_uses_parse` conditional-emission precedent). |
+| REQ-20 (`bytes_eq` L1 exec twin — the #104 build-side mirror) | NOT-STARTED | build issue #278. Gap: `thermite-lower::l1::emit_string_runtime_l1` has no `bytes_eq` family; a `bytes_eq`-pinned fn would `forge check` but not `forge build`. Twin: the bounds-checked byte-compare loop, gated on `program_uses_bytes_eq`, by-value String args (`string_arg_count_l1`), no verus proof. |
 
 ## Open questions (for the orchestrator before the builder runs)
 
@@ -1236,4 +1568,15 @@ UNCHANGED (L3) — #104 touched only the L1/exec mirror.
   construction and reuses the `concat` loop machinery; a zero-copy borrowed slice
   needs region/lifetime reasoning §4.4 defers. Not a blocker; flagged so the
   builder does not over-scope `slice` to a borrowed view.
+
+- **OQ-5 (generated-spec-predicate discoverability — the skill does not teach
+  `bytes_eq`):** consistent with the existing C4/C5 precedent (`parse_be`/
+  `all_digits`/`occurs_at`/`count_sep`/`sep_free` are user-writable in contracts
+  yet absent from `THERMITE.skill.md` — the skill renders only the combinator
+  and scheme registries), `bytes_eq` will be learnable only from docs/examples,
+  not the skill. A future curated "generated spec predicates" skill block would
+  cost roughly 30–40 tokens per inventory line against a budget headroom of 12
+  tokens (5988/6000), so it is gated on a skill-trim RFC, not on C8. Flagged,
+  not a blocker — the gap is pre-existing and uniform across all generated
+  predicates.
 ```

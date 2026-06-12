@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a8b2f71d59940dc26fd30622ded03708ac978078 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: 207c5858bc2e2c0b7be7ced965e5c395152a8fdc (#274 — lean_fragment membership report; REQ-7..10 SHIPPED, audit.rs verified-current)
 governs: forge/src/audit.rs
 thesis-refs:
   - thermite-design.md §6

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 64a329fac3ece936c17be3d6aadf5bc125b20682 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)
+audited-sha: 207c5858bc2e2c0b7be7ced965e5c395152a8fdc (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

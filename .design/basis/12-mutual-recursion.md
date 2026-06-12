@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: claims re-verified against current tree, #262)  (re-pinned 2026-06-12: #277 — the TString slice/concat byte-content ens strengthening touched lower.rs; claim-neutral for this doc, only 07-strings REQ-4 amends)
+audited-sha: 207c5858bc2e2c0b7be7ced965e5c395152a8fdc (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: claims re-verified against current tree, #262)  (re-pinned 2026-06-12: #277 — the TString slice/concat byte-content ens strengthening touched lower.rs; claim-neutral for this doc, only 07-strings REQ-4 amends)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — full re-author from greenfield-era text to the shipped 13-verb surface, #262)
+audited-sha: 207c5858bc2e2c0b7be7ced965e5c395152a8fdc (re-audited 2026-06-12: amended — full re-author from greenfield-era text to the shipped 13-verb surface, #262)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

@@ -1,0 +1,10 @@
+{
+  "uuid": "9497381e-215f-4b64-b251-b515fede3e70",
+  "display_id": 276,
+  "title": "Arc 2: bytes_eq content pins — insert_str/backspace exact prefix/run/suffix postconditions + render_frame payload pin (review items 2+3)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T09:20:28.881576975Z",
+  "updated_at": "2026-06-12T09:20:28.881576975Z"
+}

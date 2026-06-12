@@ -1,5 +1,5 @@
 {
-  "next_display_id": 274,
+  "next_display_id": 275,
   "next_comment_id": 542,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
@@ -8,6 +8,7 @@
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
+    "f8090112-cc4a-4b06-b026-49bb0e0e8263": 274,
     "fa3fc9ee-21e7-4960-bdee-ba6caba75318": 269
   },
   "locks": {
@@ -30,6 +31,10 @@
     "273": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T06:55:09.850391945Z"
+    },
+    "274": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:55:17.439637437Z"
     }
   },
   "issues": {
@@ -142,6 +147,19 @@
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAk0QDzZjXAykThK4KCBzA3ujwloPQXHsjY8hHuIfRsro8O4Joxc3VLeLyULxSXdyBu8SCpTYvll4soDHE1GSNAA=="
         }
       }
+    },
+    "f8090112-cc4a-4b06-b026-49bb0e0e8263": {
+      "uuid": "f8090112-cc4a-4b06-b026-49bb0e0e8263",
+      "display_id": 274,
+      "title": "forge audit: Lean-fragment membership report (review item 7, non-breaking half)",
+      "status": "open",
+      "priority": "medium",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:55:12.867050415Z",
+      "updated_at": "2026-06-12T06:55:14.308587531Z",
+      "labels": [
+        "feature"
+      ]
     },
     "fa3fc9ee-21e7-4960-bdee-ba6caba75318": {
       "uuid": "fa3fc9ee-21e7-4960-bdee-ba6caba75318",
@@ -3024,11 +3042,26 @@
       "agent_id": "Yffe",
       "agent_seq": 571,
       "timestamp": "2026-06-12T06:55:09.850391945Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 572,
+      "timestamp": "2026-06-12T06:55:12.867050415Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 573,
+      "timestamp": "2026-06-12T06:55:14.308587531Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 574,
+      "timestamp": "2026-06-12T06:55:17.439637437Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:55:09.850391945Z",
+    "timestamp": "2026-06-12T06:55:17.439637437Z",
     "agent_id": "Yffe",
-    "agent_seq": 571
+    "agent_seq": 574
   }
 }

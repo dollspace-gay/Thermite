@@ -1,0 +1,10 @@
+{
+  "uuid": "8cc090fb-c3c5-4687-9cc4-0e1622fd7f5c",
+  "issue_uuid": "f8090112-cc4a-4b06-b026-49bb0e0e8263",
+  "author": "Yffe",
+  "content": "PLAN (#274 — lean_fragment membership report).\n\nManifest (4 files): forge/src/audit.rs (additive lean_fragment section + probe), forge/src/check.rs (pub(crate) seam exposing the #226 CONTRACT obligation via mint_item_obligations, NO closure fork), forge/tests/audit_conformance.rs (AC-7..AC-11 oracle), conformance/audit/cases.json (3 NEW cases, edit none).\n\nREQ-8 closure access: expose check::contract_obligation(program,item) -> Obligation as a thin pub(crate) wrapper over EXISTING mint_item_obligations(...).contract (the #226 reachable_spec_fn_names_full* closure). No recognizer fork; export_item is the dry-run probe (pure, fs/process-free).\n\nsum.th HAND-TRACE VERDICT (the doc REQ-8 caution): sum's CONTRACT obligation export refuses class OutOfFragment — driven by the RECURSIVE-registry contract-tier gate (export_while_body ~line 2950: ens result==spec_sum(xs) over self-recursive spec_sum => RecursiveInteractive => OutOfFragment), NOT the spec-calling-inv encode_cell_* refusal the doc narrative grounded. Class OutOfFragment matches AC-7; verbatim reason is the recursive-registry-over-while-body message. Cross-confirmed by lean_while.rs existing assertion (sum.th recursive-registry ens is the interactive residual). Pin sum reason from trace (R-CHAR-3).\n\nspec_sum row: Item::SpecFn, recursive => tier interactive (exportable true).\n\nTwo-commit ceremony: (1) code+tests+REQ-7..10 SHIPPED, (2) audited-sha bump.",
+  "created_at": "2026-06-12T09:25:02.475799023Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAIpMFFL/3Isxk1Jj6kZ7YuwXJTBdaV3Lojl6QQ7mXlgD9AmysMDr+TZvHjRIE/f1s6VqKfhmMCJleyZIwRlmgCg=="
+}

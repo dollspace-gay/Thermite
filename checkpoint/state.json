@@ -1,7 +1,8 @@
 {
-  "next_display_id": 272,
+  "next_display_id": 273,
   "next_comment_id": 542,
   "display_id_map": {
+    "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "3242ddca-61ca-4c06-a453-fcdd74db0964": 271,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
@@ -20,9 +21,26 @@
     "271": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T06:54:52.181228625Z"
+    },
+    "272": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:55:01.586833600Z"
     }
   },
   "issues": {
+    "028ff5aa-7f3e-4816-8acc-39aaabc20655": {
+      "uuid": "028ff5aa-7f3e-4816-8acc-39aaabc20655",
+      "display_id": 272,
+      "title": "proof-backends §4.3: early-return widening of the Lean exportable fragment (review item 8; brings binary_search in)",
+      "status": "open",
+      "priority": "medium",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:54:55.384552683Z",
+      "updated_at": "2026-06-12T06:54:56.845285961Z",
+      "labels": [
+        "feature"
+      ]
+    },
     "3242ddca-61ca-4c06-a453-fcdd74db0964": {
       "uuid": "3242ddca-61ca-4c06-a453-fcdd74db0964",
       "display_id": 271,
@@ -2958,11 +2976,26 @@
       "agent_id": "Yffe",
       "agent_seq": 565,
       "timestamp": "2026-06-12T06:54:52.181228625Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 566,
+      "timestamp": "2026-06-12T06:54:55.384552683Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 567,
+      "timestamp": "2026-06-12T06:54:56.845285961Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 568,
+      "timestamp": "2026-06-12T06:55:01.586833600Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:54:52.181228625Z",
+    "timestamp": "2026-06-12T06:55:01.586833600Z",
     "agent_id": "Yffe",
-    "agent_seq": 565
+    "agent_seq": 568
   }
 }

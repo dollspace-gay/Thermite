@@ -1099,7 +1099,6 @@ impl LeanEngine {
         item: &str,
     ) -> Result<String, String> {
         let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
-        let needle = format!("theorem {thm_name}");
 
         // (1) The canonical PREAMBLE + the canonical STATEMENT, regenerated from the
         // exporter source (generator-controlled).
@@ -1109,7 +1108,10 @@ impl LeanEngine {
                  (a malformed exporter output — never trusted as a binding)"
                     .to_string()
             })?;
-        let preamble_end = canonical_source.find(&needle).ok_or_else(|| {
+        // The preamble ends at the EXACT-name obligation theorem header (#268: an
+        // exact-name anchor, never a prefix — a suffixed sibling `_entry`/`_converges` on
+        // a multi-theorem while-shaped file must NOT latch the split).
+        let preamble_end = theorem_anchor_pos(canonical_source, &thm_name).ok_or_else(|| {
             "the canonical exporter source declares no obligation theorem to anchor the \
              reconstruction on"
                 .to_string()
@@ -1590,6 +1592,47 @@ fn nonstandard_axiom(print_axioms_output: &str, item: &str) -> AxiomReport {
     }
 }
 
+/// The byte offset of the `theorem <thm_name>` header that anchors the OBLIGATION
+/// theorem, matching the EXACT theorem name and NEVER a prefix (`.design/verified/
+/// proof-backends.md` REQ-7 — the replay reconstruction anchors the obligation theorem;
+/// the #268 anchor-class fix). A raw `find("theorem thermite_obligation_<item>")` is a
+/// PREFIX match: on a multi-theorem while-shaped file (`thermite_obligation_<item>_entry`
+/// at the top, the bare contract `thermite_obligation_<item>` lower down,
+/// `thermite_obligation_<item>_converges` after) the FIRST match latches `_entry` and the
+/// reconstruction binds the WRONG theorem, dropping the 5+2 conjunction (the same
+/// anchor-resolution-binds-the-wrong-declaration class as #249/#250). The anchor here
+/// requires the char immediately AFTER `<thm_name>` to be a NON-identifier (not
+/// alphanumeric/`_`/`.`) — so `_entry`/`_converges` (and any other suffixed sibling) never
+/// false-match the bare name — and the keyword itself to start a token (mirrors
+/// [`declaration_sites`]' boundary logic). Returns the offset of the `theorem` keyword, or
+/// `None` when no exact-name header is present. Deterministic (R-CODE-5); never a panic
+/// (R-CODE-2).
+#[must_use]
+fn theorem_anchor_pos(source: &str, thm_name: &str) -> Option<usize> {
+    let prefix = format!("theorem {thm_name}");
+    let mut from = 0usize;
+    while let Some(rel) = source[from..].find(&prefix) {
+        let kw_start = from + rel;
+        let name_end = kw_start + prefix.len();
+        // The char after `<thm_name>` must be a non-identifier char (whitespace, `:`,
+        // `(`, EOF, …) — so a suffixed sibling (`_entry`, `_converges`) is NOT a match.
+        let boundary_ok = source[name_end..]
+            .chars()
+            .next()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '.'));
+        // The `theorem` keyword must itself start a token (`mytheorem` must not match).
+        let kw_token_ok = source[..kw_start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !(c.is_alphanumeric() || c == '_'));
+        if boundary_ok && kw_token_ok {
+            return Some(kw_start);
+        }
+        from = name_end;
+    }
+    None
+}
+
 /// Extract the CANONICAL theorem STATEMENT of `thermite_obligation_<item>` from a Lean
 /// source (`.design/verified/proof-backends.md` REQ-6 — the STATEMENT BINDING surface):
 /// the text from the `theorem thermite_obligation_<item>` keyword through (and
@@ -1604,8 +1647,7 @@ fn nonstandard_axiom(print_axioms_output: &str, item: &str) -> AxiomReport {
 #[must_use]
 fn canonical_theorem_statement(source: &str, item: &str) -> Option<String> {
     let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
-    let needle = format!("theorem {thm_name}");
-    let start = source.find(&needle)?;
+    let start = theorem_anchor_pos(source, &thm_name)?;
     let from_thm = &source[start..];
     // The proof term starts at `:= by` (both the auto and interactive emitted forms
     // close the conclusion with `… := by`). A record-update `specs := R_item` never has
@@ -3546,6 +3588,70 @@ mod tests {
         // A DIFFERENT proposition does NOT match.
         let different = "theorem thermite_obligation_f : True :=";
         assert!(!statements_match(&extracted, different));
+    }
+
+    // REQ-7 ANCHOR CLASS (the #268 pin): the obligation-theorem needle is an EXACT-name
+    // match, NEVER a prefix. On a while-shaped MULTI-theorem file — `_entry` at the top,
+    // the BARE contract theorem lower down, `_converges` after — a raw prefix
+    // `find("theorem thermite_obligation_<item>")` latches the FIRST match (`_entry`) and
+    // binds the WRONG statement (dropping the 5+2 conjunction; the #249/#250
+    // anchor-binds-the-wrong-declaration class). LATENT today (while items are auto-tier;
+    // `replay_interactive` is unreachable for them, #264) but a real soundness seam the
+    // moment a multi-theorem file routes to the interactive tier. This pin FAILS on the
+    // pre-#268 prefix needle (verified by temporary revert) and PASSES on the exact-name
+    // anchor. The fns are crate-private — the critic could not pin this from `tests/`.
+    #[test]
+    fn interactive_needle_is_exact_name_never_prefix_on_while_shaped_file() {
+        // A while-shaped multi-theorem source: `_entry` FIRST (a DISTINCT statement),
+        // the BARE contract theorem (the 5+2 conjunction) lower down, `_converges` after.
+        let entry_stmt = "Exists.intro st (And.intro hb hi)";
+        let bare_stmt = "Thermite.whileBodyConverges body { v with specs := R_item } r /\\ \
+                         (Thermite.bodyDenote body (stateOf v)).isSome";
+        let converges_stmt = "Exists.intro fuel hstf";
+        let source = format!(
+            "/- preamble -/\n\
+             theorem thermite_obligation_w_entry (v : Thermite.Env) :\n  {entry_stmt} := by\n  trivial\n\n\
+             theorem thermite_obligation_w (v : Thermite.Env) (r : Int) :\n  {bare_stmt} := by\n  trivial\n\n\
+             theorem thermite_obligation_w_converges (v : Thermite.Env) :\n  {converges_stmt} := by\n  trivial\n"
+        );
+
+        // `canonical_theorem_statement` must bind the BARE contract theorem — NOT `_entry`.
+        let extracted = canonical_theorem_statement(&source, "w").unwrap_or_default();
+        assert!(
+            statements_match(
+                &extracted,
+                &format!(
+                    "theorem thermite_obligation_w (v : Thermite.Env) (r : Int) : {bare_stmt} :="
+                )
+            ),
+            "the needle must bind the BARE `thermite_obligation_w` (the 5+2 conjunction), \
+             not the `_entry` sibling; got: {extracted}"
+        );
+        // It must NOT have latched the `_entry` sibling's (distinct) statement.
+        assert!(
+            !extracted.contains(entry_stmt),
+            "the prefix-latch bug binds `_entry`; the exact-name anchor must not: {extracted}"
+        );
+        assert!(
+            !extracted.contains(converges_stmt),
+            "the anchor must not over-run past the bare theorem into `_converges`: {extracted}"
+        );
+
+        // The low-level anchor: the offset must point at the BARE `theorem` header, past
+        // the `_entry` declaration (so the reconstruction's preamble split is correct too).
+        let anchor = theorem_anchor_pos(&source, "thermite_obligation_w").unwrap_or_default();
+        let entry_pos = source
+            .find("theorem thermite_obligation_w_entry")
+            .unwrap_or_default();
+        assert!(
+            anchor > entry_pos,
+            "the exact-name anchor ({anchor}) must skip the `_entry` header ({entry_pos})"
+        );
+        assert_eq!(
+            source.get(anchor..anchor + "theorem thermite_obligation_w ".len()),
+            Some("theorem thermite_obligation_w "),
+            "the anchor lands on the bare-name header with a token boundary after the name"
+        );
     }
 
     // REQ-9/AC-7 (the #248 fix): the Lean-path tally floor gate. A `1/1` ratio MEETS the

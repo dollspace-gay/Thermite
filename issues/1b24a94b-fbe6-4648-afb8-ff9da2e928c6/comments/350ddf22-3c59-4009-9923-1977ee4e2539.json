@@ -1,0 +1,10 @@
+{
+  "uuid": "350ddf22-3c59-4009-9923-1977ee4e2539",
+  "issue_uuid": "1b24a94b-fbe6-4648-afb8-ff9da2e928c6",
+  "author": "Yffe",
+  "content": "Result: BACKLOG CLEARED + CI ACTIVE (commit 2808c8a3). 36 docs re-audited by 7 parallel doc-author dispatches: ~29 amended (the dominant rot pattern: greenfield-era Summaries + NOT-STARTED rows contradicting the docs' own SHIPPED tables — e2e-vs-boundary flipped 6/6, provenance 6 rows, spectherm REQ-6, exec-stmt-tv REQ-4; plus dead cites, wrong signatures, stale counts), 7 clean re-pins with re-verified evidence, cli.md fully re-authored. proof-backends.md re-pinned post-#263 review; self-verification.md header corrected against epic #60's closing record. Gate: 49/49 CURRENT, exit 0; make doc-drift exit 0; fixture suite 13/13 OK. CI: doc-drift step + fixture-suite step landed in the clearing commit with fetch-depth:0 (the commit-set predicate needs full history). From this commit forward, touching a routed file without re-pinning/amending its design doc fails CI.",
+  "created_at": "2026-06-12T02:14:18.361276215Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAblJOXgIRRTBZCqEpSDkexSYhzN5DZ1lgfOaNJHAZAlaZwb3VRQ9UP7rCYtF51EfYmNPS2kjBF/YkbsWq1gB3Bw=="
+}

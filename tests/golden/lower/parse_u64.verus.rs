@@ -18,32 +18,65 @@ impl TString {
                  self.data.len() + b.data.len() <= 1000000,
         ensures result.well_formed(),
                 result.data.len() == self.data.len() + b.data.len(),
+                result.data@ == self.data@ + b.data@,
     {
         let mut out: Vec<u8> = Vec::new();
         let mut i: usize = 0;
         while i < self.data.len()
             invariant i <= self.data.len(), out.len() == i,
                       self.data.len() + b.data.len() <= 1000000,
+                      out@ == self.data@.subrange(0, i as int),
             decreases self.data.len() - i,
-        { out.push(self.data[i]); i = i + 1; }
+        {
+            let ghost old_out = out@;
+            out.push(self.data[i]);
+            assert(out@ =~= self.data@.subrange(0, (i + 1) as int)) by {
+                assert(self.data@.subrange(0, (i + 1) as int) =~= self.data@.subrange(0, i as int).push(self.data@[i as int]));
+            }
+            i = i + 1;
+        }
+        assert(out@ =~= self.data@) by {
+            assert(self.data@.subrange(0, i as int) =~= self.data@);
+        }
         let mut j: usize = 0;
         while j < b.data.len()
             invariant j <= b.data.len(), out.len() == self.data.len() + j,
                       self.data.len() + b.data.len() <= 1000000,
+                      out@ == self.data@ + b.data@.subrange(0, j as int),
             decreases b.data.len() - j,
-        { out.push(b.data[j]); j = j + 1; }
+        {
+            let ghost old_out = out@;
+            out.push(b.data[j]);
+            assert(out@ =~= self.data@ + b.data@.subrange(0, (j + 1) as int)) by {
+                assert(b.data@.subrange(0, (j + 1) as int) =~= b.data@.subrange(0, j as int).push(b.data@[j as int]));
+            }
+            j = j + 1;
+        }
+        assert(out@ =~= self.data@ + b.data@) by {
+            assert(b.data@.subrange(0, j as int) =~= b.data@);
+        }
         TString { data: out }
     }
     pub fn slice(&self, lo: usize, hi: usize) -> (result: TString)
         requires self.well_formed(), lo <= hi, hi <= self.data.len(),
         ensures result.well_formed(), result.data.len() == hi - lo,
+                result.data@ == self.data@.subrange(lo as int, hi as int),
     {
         let mut out: Vec<u8> = Vec::new();
         let mut i: usize = lo;
         while i < hi
             invariant lo <= i, i <= hi, hi <= self.data.len(), self.data.len() <= 1000000, out.len() == i - lo,
+                      out@ == self.data@.subrange(lo as int, i as int),
             decreases hi - i,
-        { out.push(self.data[i]); i = i + 1; }
+        {
+            let ghost old_out = out@;
+            out.push(self.data[i]);
+            assert(out@ =~= self.data@.subrange(lo as int, (i + 1) as int)) by {
+                assert(self.data@.subrange(lo as int, (i + 1) as int) =~= self.data@.subrange(lo as int, i as int).push(self.data@[i as int]));
+            }
+            i = i + 1;
+        }
+        assert(out@ == self.data@.subrange(lo as int, hi as int));
         TString { data: out }
     }
     pub fn from_byte(b: u64) -> (result: TString)

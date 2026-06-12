@@ -5104,8 +5104,13 @@ fn expr_has_str_lit(expr: &Expr) -> bool {
 /// (a contract names `spec_len`, the exec `len` cannot be named in a contract). The
 /// no-OOB `byte_at` (`req i < self.data.len()`) is the editor's core safety — the
 /// unguarded form FAILS verus (`0 verified, 1 errors`, the L0 demonstration,
-/// R-DEFER-9). `concat`/`slice` carry the bounded length identity; `slice` requires
-/// `self.well_formed()` so the copied run stays `<= CAP`. NO `assume`/`external_body`
+/// R-DEFER-9). `concat`/`slice` carry the bounded length identity AND the
+/// BYTE-CONTENT relation (#277, the #276 prerequisite): `concat`'s `ens result.data@
+/// == self.data@ + b.data@` (the appended view) and `slice`'s `ens result.data@ ==
+/// self.data@.subrange(lo, hi)` (the half-open subrange, the `trim` spelling) — the
+/// emitted bodies PROVE these via the subrange-push invariant (no `assume`, mirroring
+/// `trim`). `slice` requires `self.well_formed()` so the copied run stays `<= CAP`.
+/// NO `assume`/`external_body`
 /// (R-DEFER-9) — every Thermite-level contract is threaded over vstd's verified
 /// `Vec<u8>::push`/`index`/`len` (which carry the heap proof).
 fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
@@ -5150,6 +5155,12 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     .ok();
     out.push_str("        ensures result.well_formed(),\n");
     out.push_str("                result.data.len() == self.data.len() + b.data.len(),\n");
+    // #277 (the #276 prerequisite): the BYTE-CONTENT relation — the appended view
+    // `result@ == self@ + b@` (vstd `Seq::add`). Strengthens the prior length-only
+    // `ens`, which left `slice_id`/`bytes_eq`-style content proofs unprovable. The
+    // body below PROVES it (the two copy loops carry append-subrange invariants;
+    // mirrors `trim`'s subrange-push proof shape). GROUNDED `verified, 0 errors`.
+    out.push_str("                result.data@ == self.data@ + b.data@,\n");
     out.push_str("    {\n");
     out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
     out.push_str("        let mut i: usize = 0;\n");
@@ -5160,8 +5171,24 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
         "                      self.data.len() + b.data.len() <= {cap},"
     )
     .ok();
+    // The first-loop content invariant: `out@` is the prefix `self@[0..i)`.
+    out.push_str("                      out@ == self.data@.subrange(0, i as int),\n");
     out.push_str("            decreases self.data.len() - i,\n");
-    out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
+    out.push_str("        {\n");
+    out.push_str("            let ghost old_out = out@;\n");
+    out.push_str("            out.push(self.data[i]);\n");
+    out.push_str("            assert(out@ =~= self.data@.subrange(0, (i + 1) as int)) by {\n");
+    out.push_str(
+        "                assert(self.data@.subrange(0, (i + 1) as int) =~= self.data@.subrange(0, i as int).push(self.data@[i as int]));\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("            i = i + 1;\n");
+    out.push_str("        }\n");
+    // Lift the first loop's exit prefix to the whole of `self@` (so the second loop
+    // starts from `out@ == self@`).
+    out.push_str("        assert(out@ =~= self.data@) by {\n");
+    out.push_str("            assert(self.data@.subrange(0, i as int) =~= self.data@);\n");
+    out.push_str("        }\n");
     out.push_str("        let mut j: usize = 0;\n");
     out.push_str("        while j < b.data.len()\n");
     out.push_str("            invariant j <= b.data.len(), out.len() == self.data.len() + j,\n");
@@ -5170,8 +5197,25 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
         "                      self.data.len() + b.data.len() <= {cap},"
     )
     .ok();
+    // The second-loop content invariant: `out@` is `self@` followed by `b@[0..j)`.
+    out.push_str("                      out@ == self.data@ + b.data@.subrange(0, j as int),\n");
     out.push_str("            decreases b.data.len() - j,\n");
-    out.push_str("        { out.push(b.data[j]); j = j + 1; }\n");
+    out.push_str("        {\n");
+    out.push_str("            let ghost old_out = out@;\n");
+    out.push_str("            out.push(b.data[j]);\n");
+    out.push_str(
+        "            assert(out@ =~= self.data@ + b.data@.subrange(0, (j + 1) as int)) by {\n",
+    );
+    out.push_str(
+        "                assert(b.data@.subrange(0, (j + 1) as int) =~= b.data@.subrange(0, j as int).push(b.data@[j as int]));\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("            j = j + 1;\n");
+    out.push_str("        }\n");
+    // Lift the second loop's exit suffix to the whole of `b@`.
+    out.push_str("        assert(out@ =~= self.data@ + b.data@) by {\n");
+    out.push_str("            assert(b.data@.subrange(0, j as int) =~= b.data@);\n");
+    out.push_str("        }\n");
     out.push_str("        TString { data: out }\n");
     out.push_str("    }\n");
     // The bounded substring `slice` (REQ-4): a bounded copy, `req self.well_formed()
@@ -5182,6 +5226,12 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     out.push_str("    pub fn slice(&self, lo: usize, hi: usize) -> (result: TString)\n");
     out.push_str("        requires self.well_formed(), lo <= hi, hi <= self.data.len(),\n");
     out.push_str("        ensures result.well_formed(), result.data.len() == hi - lo,\n");
+    // #277 (the #276 prerequisite): the BYTE-CONTENT relation — the result IS the
+    // half-open subrange `self@[lo..hi)` (the exact spelling of the `trim` precedent).
+    // Strengthens the prior length-only `ens` so a caller's `bytes_eq`/`slice_id`
+    // content proof discharges. The body PROVES it via the subrange-push invariant
+    // (verbatim the `trim` copy-loop shape). GROUNDED `verified, 0 errors`.
+    out.push_str("                result.data@ == self.data@.subrange(lo as int, hi as int),\n");
     out.push_str("    {\n");
     out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
     out.push_str("        let mut i: usize = lo;\n");
@@ -5191,8 +5241,22 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
         "            invariant lo <= i, i <= hi, hi <= self.data.len(), self.data.len() <= {cap}, out.len() == i - lo,"
     )
     .ok();
+    // The content invariant: `out@` is the subrange `self@[lo..i)` built so far.
+    out.push_str("                      out@ == self.data@.subrange(lo as int, i as int),\n");
     out.push_str("            decreases hi - i,\n");
-    out.push_str("        { out.push(self.data[i]); i = i + 1; }\n");
+    out.push_str("        {\n");
+    out.push_str("            let ghost old_out = out@;\n");
+    out.push_str("            out.push(self.data[i]);\n");
+    out.push_str(
+        "            assert(out@ =~= self.data@.subrange(lo as int, (i + 1) as int)) by {\n",
+    );
+    out.push_str(
+        "                assert(self.data@.subrange(lo as int, (i + 1) as int) =~= self.data@.subrange(lo as int, i as int).push(self.data@[i as int]));\n",
+    );
+    out.push_str("            }\n");
+    out.push_str("            i = i + 1;\n");
+    out.push_str("        }\n");
+    out.push_str("        assert(out@ == self.data@.subrange(lo as int, hi as int));\n");
     out.push_str("        TString { data: out }\n");
     out.push_str("    }\n");
     // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): the verified

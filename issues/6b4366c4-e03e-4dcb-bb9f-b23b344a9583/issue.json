@@ -1,0 +1,10 @@
+{
+  "uuid": "6b4366c4-e03e-4dcb-bb9f-b23b344a9583",
+  "display_id": 270,
+  "title": "editor.th contract tightening: move_up/move_down/line_end ens under-constrain the result (a literal identity return proves them) — tighten to pin the computed cursor/line-end; lands in ONE Tier-1 arc with the #269 F-IDENT/F-STRUCT-ZERO battery families + orchestrator-re-certified oracles (never a red-main window)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:46:41.348869907Z",
+  "updated_at": "2026-06-12T06:46:41.348869907Z"
+}

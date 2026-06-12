@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)
+audited-sha: 64a329fac3ece936c17be3d6aadf5bc125b20682 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

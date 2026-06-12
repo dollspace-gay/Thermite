@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary; the #49 CHECK_SCHEMA_VERSION fifth key input (schema history 2–5), canonical-config-only caching, cached #13 rejects, and the engine-discriminated evidence-key wrapper, #262)
+audited-sha: 64a329fac3ece936c17be3d6aadf5bc125b20682 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — shipped-status Summary; the #49 CHECK_SCHEMA_VERSION fifth key input (schema history 2–5), canonical-config-only caching, cached #13 rejects, and the engine-discriminated evidence-key wrapper, #262)
 governs: forge/src/cache.rs
 thesis-refs:
   - thermite-design.md §5.3
@@ -41,7 +41,9 @@ against the current tree:
 
 - **#49 (`6d7b3aff`) — the stale-verdict gate bypass is closed: a FIFTH key
   input.** `cache_key` hashes, in addition to its four arguments, the
-  module-internal `const CHECK_SCHEMA_VERSION: u32` (currently `5`) — the
+  module-internal `const CHECK_SCHEMA_VERSION: u32` (currently `7` — bumped
+  `5 → 6` for the #269 F-IDENT/F-STRUCT-ZERO mutant families and `6 → 7` for the
+  #269 call-bearing equivalence-exclusion arm; both verdict-changing) — the
   version of forge's VERDICT-AFFECTING CHECK LOGIC. `thermite_version` does
   not suffice: gates ship without a crate-version bump (#12's mutation floor
   landed at 0.1.0), so a cert cached BEFORE a gate existed would be re-served
@@ -50,7 +52,9 @@ against the current tree:
   add/remove/semantics change. History: 1 = pre-mutation-gate; 2 = the #12
   floor; 3 = the #74 empty-`Vec` early-return synthesis; 4 = the #80
   empty-`String` synthesis; 5 = the #101 equivalent-mutant denominator
-  exclusion. REQ-1's "EXACTLY the four inputs" and REQ-2's four-input
+  exclusion; 6 = the #269 F-IDENT/F-STRUCT-ZERO mutant families; 7 = the #269
+  call-bearing equivalence-exclusion arm (a §9 caller's identity survivor now
+  drops modulo callee contracts). REQ-1's "EXACTLY the four inputs" and REQ-2's four-input
   enumeration argument are amended accordingly: four CALLER-passed inputs +
   the check-logic version.
 - **Canonical-config-only caching (the floor/rlimit seam, in `check.rs`).**
@@ -389,8 +393,8 @@ the dependency; the doc-author does not edit `Cargo.toml`.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (cache-key composition) | SHIPPED | `cache::cache_key(lowered_src, seed, verus_version, thermite_version) -> String` (`cache.rs`) sha256-hashes the four args PLUS the module-internal `CHECK_SCHEMA_VERSION` check-logic version (= 5; the #49 amendment), each DOMAIN-tagged + LENGTH-prefixed (`cache::field`); `sha2 = "0.10"` in `forge/Cargo.toml`. Consumer: `check::check_file` in `check.rs` (and, engine-wrapped, `engine::engine_cache_key`). |
-| REQ-2 (soundness-completeness invariant) | SHIPPED | the key captures the four verdict-determining inputs PLUS the #49 check-logic version (a gate-set change forces a universal MISS — schema bumps 2–5 recorded at the const); the two verdict-changing knobs NOT in the key (`rlimit`, `mutation_floor`) BYPASS the cache at non-default values (`check_file`'s `use_cache` guard — neither served nor written). `cache::store` persists the canonical `cached: false` and `cache::load` returns it unchanged, so `check::check_file`'s HIT (`Certificate::with_cached(true)`) is oracle-equal to the fresh verify. Verified by `cache::tests::key_changes_when_any_input_changes` + `cache_conformance::second_run_is_a_cache_hit_with_equal_deterministic_fields`. |
+| REQ-1 (cache-key composition) | SHIPPED | `cache::cache_key(lowered_src, seed, verus_version, thermite_version) -> String` (`cache.rs`) sha256-hashes the four args PLUS the module-internal `CHECK_SCHEMA_VERSION` check-logic version (= 7; the #49 amendment, bumped through `6 → 7` for the #269 arc), each DOMAIN-tagged + LENGTH-prefixed (`cache::field`); `sha2 = "0.10"` in `forge/Cargo.toml`. Consumer: `check::check_file` in `check.rs` (and, engine-wrapped, `engine::engine_cache_key`). |
+| REQ-2 (soundness-completeness invariant) | SHIPPED | the key captures the four verdict-determining inputs PLUS the #49 check-logic version (a gate-set change forces a universal MISS — schema bumps 2–7 recorded at the const); the two verdict-changing knobs NOT in the key (`rlimit`, `mutation_floor`) BYPASS the cache at non-default values (`check_file`'s `use_cache` guard — neither served nor written). `cache::store` persists the canonical `cached: false` and `cache::load` returns it unchanged, so `check::check_file`'s HIT (`Certificate::with_cached(true)`) is oracle-equal to the fresh verify. Verified by `cache::tests::key_changes_when_any_input_changes` + `cache_conformance::second_run_is_a_cache_hit_with_equal_deterministic_fields`. |
 | REQ-3 (lookup-then-store flow, per item) | SHIPPED | `check::check_file`'s L3 path calls `cache::load` BEFORE `run_verus` (HIT → return + skip verus + `continue`); on a MISS it runs verus, assembles + graduates the cert, `cache::store`s it, and returns `with_cached(false)`. Post-pin: a #13 `Certificate::rejected_vacuity` (computed inside the MISS branch) is stored too — a settled deterministic verdict, so a later HIT is verus-free end-to-end. |
 | REQ-4 (locality — per-item) | SHIPPED | the key is over the item's OWN `item_subprogram` lowered source; `check::tests::cache_key_is_local_to_the_item` asserts `g`'s key is invariant under an `f`-only edit while `f`'s key changes. |
 | REQ-5 (version-keyed invalidation) | SHIPPED | `check::resolve_verus_version` captures the verus version once per run (the `VERUS_VERSION` pin, else `verus --version`; a missing version is `ForgeError::VerusAbsent`, never an empty-string key) and `check::THERMITE_VERSION = env!("CARGO_PKG_VERSION")` feed the key. Verified by `cache::tests::key_changes_when_any_input_changes`. |

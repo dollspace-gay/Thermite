@@ -58,3 +58,4 @@ examples/editor/bin/
 # is Lake's build output (compiled .olean + the package manifest) — a build artifact,
 # never committed; the lean-toolchain pin + lakefile.toml reproduce it.
 lean/.lake/
+binary_search_golden

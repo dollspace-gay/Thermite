@@ -1,5 +1,5 @@
 {
-  "next_display_id": 276,
+  "next_display_id": 277,
   "next_comment_id": 553,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
@@ -8,6 +8,7 @@
     "5a240f21-e56b-4c09-8626-5b565805a7b4": 273,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
+    "9497381e-215f-4b64-b251-b515fede3e70": 276,
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
     "f8090112-cc4a-4b06-b026-49bb0e0e8263": 274,
     "fa3fc9ee-21e7-4960-bdee-ba6caba75318": 269
@@ -36,6 +37,10 @@
     "275": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T07:02:52.814740252Z"
+    },
+    "276": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T09:20:34.377540362Z"
     }
   },
   "issues": {
@@ -200,6 +205,19 @@
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAbQqIWOMbBkdJy9GSvAzuloXjKmlyBnMlNXsd11IvTThqKMv2dsLUQbH20Ravf/oL0nSg7dXGvgfhrd80fNbdBw=="
         }
       }
+    },
+    "9497381e-215f-4b64-b251-b515fede3e70": {
+      "uuid": "9497381e-215f-4b64-b251-b515fede3e70",
+      "display_id": 276,
+      "title": "Arc 2: bytes_eq content pins — insert_str/backspace exact prefix/run/suffix postconditions + render_frame payload pin (review items 2+3)",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T09:20:28.923978018Z",
+      "updated_at": "2026-06-12T09:20:30.564939113Z",
+      "labels": [
+        "feature"
+      ]
     },
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": {
       "uuid": "b50c81fc-4d04-4a87-bd6a-6fddae379bc4",
@@ -3278,11 +3296,26 @@
       "agent_id": "Yffe",
       "agent_seq": 593,
       "timestamp": "2026-06-12T09:20:25.536625181Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 594,
+      "timestamp": "2026-06-12T09:20:28.923978018Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 595,
+      "timestamp": "2026-06-12T09:20:30.564939113Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 596,
+      "timestamp": "2026-06-12T09:20:34.377540362Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T09:20:25.536625181Z",
+    "timestamp": "2026-06-12T09:20:34.377540362Z",
     "agent_id": "Yffe",
-    "agent_seq": 593
+    "agent_seq": 596
   }
 }

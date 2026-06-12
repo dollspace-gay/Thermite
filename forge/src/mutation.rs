@@ -40,7 +40,7 @@
 //! |---|---|---|
 //! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `scan_expr`'s `Expr::Match` arm scans `arm.guard` (a guard is a mutable sub-expression — a guard mutant must be scoreable); `apply_expr`'s `Expr::Match` rebuild threads the mutation through `arm.guard`. `Pattern::Or` needs no mutation arm (mutation walks expressions, not patterns). Consumer: `mutation_score`. |
 
-use thermite_syntax::{BinOp, Block, Expr, FnItem, PrimType, Stmt, Type};
+use thermite_syntax::{BinOp, Block, Expr, FnItem, Item, PrimType, Stmt, StructItem, Type};
 
 /// The FIXED budget on the number of mutants scored per `fn` (REQ-2; OQ-2). §7
 /// says "budgeted" without a number; this is a documented `const` (R-CODE-5 —
@@ -194,7 +194,14 @@ impl MutationScore {
 /// pure function of `f` + the frozen table ⇒ the same ordered list every run
 /// (REQ-8); `_seed` is taken for the documented determinism seam (the
 /// enumeration is seed-stable; selection is order-prefix, not random).
-pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
+///
+/// `adt_deps` carries the program's ADT items (the same `&[Item]` every
+/// production caller already threads into `check::item_subprogram`) so the
+/// F-STRUCT-ZERO family (REQ-10/REQ-11) can resolve a `Type::Named` struct
+/// return's field list — the early-return zero ladder needs the `StructItem`
+/// definitions. A def-free `fn` (no struct return) passes `&[]` and the family
+/// is inert. The Lean-path caller threads its full program's items here too.
+pub fn generate(f: &FnItem, _seed: u64, adt_deps: &[Item]) -> Vec<Mutant> {
     let mut mutants = Vec::new();
 
     // A boundary fn (`.design/boundary/ffi-boundary.md` REQ-2) has `body: None` —
@@ -212,9 +219,10 @@ pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
     // skipped via a 0/0 score (#48). Listed first so the cap never crowds it out.
     // The returned value is the return type's canonical zero (`zero_value_for`)
     // OR, for a reference/slice return that has no scalar zero, a synthesized
-    // valid early return — an empty subslice borrowing a matching slice param
-    // (`&p[..0]`, valid lifetime) or the empty-slice literal `&[]` (OQ-3 widened).
-    if let Some((value, desc)) = early_return_value(f) {
+    // valid early return — the empty-slice literal `&[]`, the empty `Vec`/`String`
+    // wrapper, OR (REQ-10) the named-struct field-zero literal resolved against
+    // `adt_deps`.
+    if let Some((value, desc)) = early_return_value(f, adt_deps) {
         let mut body = real_body.clone();
         body.stmts.insert(0, Stmt::Return(Some(value)));
         mutants.push(mutant_with_body(
@@ -222,6 +230,32 @@ pub fn generate(f: &FnItem, _seed: u64) -> Vec<Mutant> {
             body,
             format!("insert early `return {desc}` at body head"),
         ));
+    }
+
+    // Family 1 (cont.) — F-IDENT identity returns (REQ-9): for EACH parameter
+    // whose type EXACTLY equals the return type (the AST `Type`'s derived
+    // structural `PartialEq`, NO ref-stripping — OQ-7), synthesize ONE mutant
+    // inserting `return <param>` at the body head, one per matching param in
+    // DECLARATION order, each labeled with the param name so multi-param matches
+    // stay distinguishable (OQ-8). Emitted immediately AFTER the zero-value early
+    // return and BEFORE families 2-4, so the `MUTANT_CAP` order-prefix never
+    // crowds out the discriminator mutants. A STRONG contract refutes the identity
+    // (`to_1based`'s `ens result == x + 1` rejects `return x`); a WEAK contract
+    // proves it (the survivor the §7 floor names — the `move_up` `return b` hole).
+    for p in &f.params {
+        if p.ty == f.ret {
+            let mut body = real_body.clone();
+            body.stmts
+                .insert(0, Stmt::Return(Some(Expr::Path(vec![p.name.clone()]))));
+            mutants.push(mutant_with_body(
+                f,
+                body,
+                format!(
+                    "insert early `return {0}` at body head (identity of param `{0}`)",
+                    p.name
+                ),
+            ));
+        }
     }
 
     // Families 2-4: walk the body collecting per-site mutated bodies. Each entry
@@ -351,9 +385,18 @@ fn binop_token(op: BinOp) -> &'static str {
 /// `None` is returned only for a genuinely un-synthesizable return type (`Unit`, a
 /// non-slice ref, a non-`Option` generic, a `Vec` of a non-Copy-primitive element
 /// that the wrapper does not support) — see the 0/0 backstop in `kill_ratio`.
-fn early_return_value(f: &FnItem) -> Option<(Expr, String)> {
+fn early_return_value(f: &FnItem, adt_deps: &[Item]) -> Option<(Expr, String)> {
     if let Some(zero) = zero_value_for(&f.ret) {
         return Some((zero, zero_desc(&f.ret).to_string()));
+    }
+    // A named-struct return (`Type::Named`): synthesize the field-zero struct
+    // literal (REQ-10) resolved against `adt_deps`. Returns `None` (no mutant) if
+    // the name is an enum, an unknown type, or ANY field lacks a synthesizable
+    // zero (the OQ-5 drop, mirroring the `Type::Tuple` rule).
+    if let Type::Named(name) = &f.ret {
+        if let Some((value, desc)) = struct_zero_value(name, adt_deps) {
+            return Some((value, desc));
+        }
     }
     // A reference-to-slice return: the empty-slice literal `&[]` / `&mut []`.
     if let Type::Ref { mutable, inner } = &f.ret {
@@ -501,6 +544,91 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
             let mut elems = Vec::with_capacity(tys.len());
             for t in tys {
                 elems.push(zero_value_for(t)?);
+            }
+            Some(Expr::Tuple(elems))
+        }
+        _ => None,
+    }
+}
+
+/// The F-STRUCT-ZERO early-return value for a `Type::Named(name)` struct return
+/// (REQ-10/REQ-11): the field-zero struct literal `name { field: <zero>, … }`,
+/// resolved against the threaded `adt_deps`. Each field's zero comes from the
+/// SAME synthesis ladder the early-return family owns (`zero_value_with_defs`:
+/// the scalar `zero_value_for` arms, the #74/#80 empty `Vec`/`String` wrappers,
+/// the C9-B tuple recursion, and — recursively — a nested named struct's own
+/// field zeros).
+///
+/// Returns `None` (no mutant — the OQ-5 drop, MIRRORING the `Type::Tuple` rule)
+/// when:
+///   - `name` resolves to NO struct in `adt_deps` (an enum-named return: no
+///     canonical variant to choose; an unknown name), OR
+///   - ANY field lacks a synthesizable zero (a `Box`/`Ref`/`Result`/enum-typed
+///     field — the recursion terminates because a struct can only reference
+///     another struct through `Box`, which has no zero, so a self-referential
+///     struct field drops here and the recursion does not cycle, REQ-11).
+///
+/// TYPE-INVARIANT interaction (REQ-10): a struct `inv` is CONTRACT — if the
+/// field-zero literal violates it, Verus fails the construction obligation and
+/// the mutant is KILLED (the honest polarity). For the corpus structs the zeros
+/// satisfy the `inv` (`Account { balance: 0 }`: `0 <= 1_000_000`;
+/// `Buffer { text: <empty>, cursor: 0 }`: `0 <= 0 && 0 <= 1_000_000`), so the
+/// mutant is scored against the `ens`.
+fn struct_zero_value(name: &str, adt_deps: &[Item]) -> Option<(Expr, String)> {
+    let def = find_struct(name, adt_deps)?;
+    let mut fields = Vec::with_capacity(def.fields.len());
+    for field in &def.fields {
+        // ANY field without a synthesizable zero ⇒ NO mutant for this struct
+        // (the OQ-5 drop — never an over-gate).
+        let zero = zero_value_with_defs(&field.ty, adt_deps)?;
+        fields.push((field.name.clone(), zero));
+    }
+    let lit = Expr::StructLit {
+        path: vec![name.to_string()],
+        fields,
+    };
+    Some((lit, format!("{name} {{ <field zeros> }}")))
+}
+
+/// Resolve a `struct NAME` definition among the threaded ADT items (REQ-11). An
+/// `Item::Enum` of the same name resolves to `None` here (F-STRUCT-ZERO is a
+/// struct-only family — an enum has no canonical variant, the OQ-5 drop).
+fn find_struct<'a>(name: &str, adt_deps: &'a [Item]) -> Option<&'a StructItem> {
+    adt_deps.iter().find_map(|i| match i {
+        Item::Struct(s) if s.name == name => Some(s),
+        _ => None,
+    })
+}
+
+/// The zero VALUE of a field/return type WITH access to the program's struct
+/// defs (REQ-11): the defs-threaded sibling of [`zero_value_for`]. It defers to
+/// the def-free `zero_value_for` for every shipped arm (scalars, `Option`,
+/// tuples — no behavior change), adds the #74/#80 empty `Vec`/`String` wrappers
+/// (a struct field can be a `Vec`/`String`, e.g. `Buffer.text`), and — for a
+/// `Type::Named` field — recurses through `struct_zero_value` so a nested struct
+/// composes. A `Type::Tuple` recurses element-wise THROUGH this defs-threaded
+/// form so a tuple of structs composes too. Returns `None` (the OQ-5 drop) for
+/// any genuinely un-synthesizable field type (`Box`/`Ref`/`Result`/`Map`/enum).
+fn zero_value_with_defs(ty: &Type, adt_deps: &[Item]) -> Option<Expr> {
+    if let Some(zero) = zero_value_for(ty) {
+        return Some(zero);
+    }
+    match ty {
+        // The #74/#80 empty-wrapper literals — a struct field can own a bounded
+        // `Vec`/`String` (e.g. the corpus `Buffer.text: String`).
+        Type::Vec(elem) => empty_vec_value(elem).map(|(v, _)| v),
+        Type::String => Some(empty_string_value().0),
+        // A nested named-struct field recurses (REQ-11). The recursion terminates
+        // (a struct references another struct only through `Box`, which has no
+        // zero) — no explicit cycle check needed.
+        Type::Named(name) => struct_zero_value(name, adt_deps).map(|(v, _)| v),
+        // A tuple field recurses element-wise through the defs-threaded form so a
+        // tuple containing a struct / Vec / String field composes (the def-free
+        // `zero_value_for`'s `Type::Tuple` arm cannot reach struct fields).
+        Type::Tuple(tys) => {
+            let mut elems = Vec::with_capacity(tys.len());
+            for t in tys {
+                elems.push(zero_value_with_defs(t, adt_deps)?);
             }
             Some(Expr::Tuple(elems))
         }
@@ -1091,26 +1219,243 @@ mod tests {
             .expect("fixture has a fn")
     }
 
-    // AC-5: the frozen set + deterministic order for a small fn. Expected mutants
-    // trace to REQ-1's table (R-CHAR-3), not to the generator's own output. The
-    // fn `fn f(x: u32) -> u32 req x < 10 ens result == x fx pure { x + 1 }` has:
-    //   - one early return (ret u32 -> `return 0`),
-    //   - one Binary `+` (Add->Sub flip),
-    //   - one IntLit `1` (1->2, 1->0).
+    /// Parse a program and return all its items so the F-STRUCT-ZERO family
+    /// (REQ-10/REQ-11) can be exercised with the struct defs threaded as
+    /// `adt_deps` (the same items a production caller weaves). Pair with `parse_fn`
+    /// (or a name filter) to pull the fn under test.
+    fn parse_items(src: &str) -> Vec<Item> {
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        parsed.program.items
+    }
+
+    /// The fn named `fn_name` among `items` (clones it). Asserts presence.
+    fn fn_named(items: &[Item], fn_name: &str) -> FnItem {
+        let found = items.iter().find_map(|i| match i {
+            Item::Fn(f) if f.name == fn_name => Some(f.clone()),
+            _ => None,
+        });
+        assert!(found.is_some(), "fixture has the named fn `{fn_name}`");
+        found.unwrap_or_else(unreachable_fn)
+    }
+
+    /// A never-reached fallback (the `assert!` above fires first) — keeps
+    /// `fn_named` gate-clean (no `.unwrap()`/`.expect()`/`panic!` on the added
+    /// patch lines). Builds a trivially-default `FnItem` via re-parse of a stub.
+    fn unreachable_fn() -> FnItem {
+        parse_fn("fn _u() -> u32 req true ens true fx pure { 0 }")
+    }
+
+    // AC-5 (re-derived for #269, REQ-12): the frozen set + deterministic order for
+    // a small fn. Expected mutants trace to REQ-1/REQ-9's table (R-CHAR-3), not to
+    // the generator's own output. The fn
+    // `fn f(x: u32) -> u32 req x < 10 ens result == x fx pure { x + 1 }` has, in
+    // FAMILY ORDER:
+    //   - family 1a: one zero early return (ret u32 -> `return 0`),
+    //   - family 1b (F-IDENT, REQ-9): `x: u32` matches the `u32` return ->
+    //     `return x` (identity of param `x`) — emitted AFTER the zero return,
+    //     BEFORE families 2-4,
+    //   - family 2: one Binary `+` (Add->Sub flip),
+    //   - family 3: one IntLit `1` (1->2, 1->0).
     #[test]
     fn frozen_set_and_order_for_small_fn() {
         let f = parse_fn("fn f(x: u32) -> u32 req x < 10 ens result == x fx pure { x + 1 }");
-        let mutants = generate(&f, 0);
+        let mutants = generate(&f, 0, &[]);
         let descs: Vec<&str> = mutants.iter().map(|m| m.desc.as_str()).collect();
         assert_eq!(
             descs,
             vec![
                 "insert early `return 0` at body head",
+                "insert early `return x` at body head (identity of param `x`)",
                 "flip binary operator +->-",
                 "off-by-one literal 1->2",
                 "off-by-one literal 1->0",
             ],
-            "frozen mutator set in the documented family order"
+            "frozen mutator set in the documented family order (zero-return, then \
+             F-IDENT identity-returns in param order, then families 2-4)"
+        );
+    }
+
+    // REQ-9 (F-IDENT): a parameter whose type EXACTLY equals the return type yields
+    // ONE identity-return mutant, labeled with the param name. A by-VALUE struct
+    // return matches a by-value struct param (the `move_up`-class `b: Buffer ->
+    // Buffer`). Expected trace: REQ-9's table (R-CHAR-3).
+    #[test]
+    fn ident_return_for_exact_type_match() {
+        let items = parse_items(
+            "struct S { a: u64 } \
+             fn id(s: S) -> S req true ens result.a <= 1_000_000 fx pure { s }",
+        );
+        let f = fn_named(&items, "id");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return s` at body head (identity of param `s`)"),
+            "an exact-type-match param yields an identity-return mutant: {descs:?}"
+        );
+    }
+
+    // REQ-9 (OQ-8): TWO params of the same matching type yield TWO identity mutants
+    // in DECLARATION order (no dedup) — `min2`'s `return a` AND `return b`.
+    #[test]
+    fn ident_return_one_per_matching_param_in_order() {
+        let f = parse_fn(
+            "fn min2(a: u64, b: u64) -> u64 req true ens result <= a ens result <= b fx pure \
+             { if a <= b { a } else { b } }",
+        );
+        let idents: Vec<String> = generate(&f, 0, &[])
+            .into_iter()
+            .map(|m| m.desc)
+            .filter(|d| d.contains("identity of param"))
+            .collect();
+        assert_eq!(
+            idents,
+            vec![
+                "insert early `return a` at body head (identity of param `a`)".to_string(),
+                "insert early `return b` at body head (identity of param `b`)".to_string(),
+            ],
+            "two matching params -> two identity mutants in declaration order (OQ-8)"
+        );
+    }
+
+    // REQ-9 (OQ-7): NO ref-stripping — a `b: &Buf` param with a `Buf` return gets
+    // NO identity mutant (exact `Type` equality only).
+    #[test]
+    fn ident_return_no_ref_stripping() {
+        let items = parse_items(
+            "struct Buf { n: u64 } \
+             fn deref_id(b: &Buf) -> Buf req true ens result.n <= 1_000_000 fx pure { *b }",
+        );
+        let f = fn_named(&items, "deref_id");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            !descs.iter().any(|d| d.contains("identity of param")),
+            "a `&Buf` param against a `Buf` return is NOT an exact match -> no \
+             identity mutant in v1 (OQ-7): {descs:?}"
+        );
+    }
+
+    // REQ-9: an exact REF-type match DOES yield an identity mutant (the divergence
+    // fixture `pick(xs: &[u32]) -> &[u32]` — `return xs` borrows nothing new).
+    #[test]
+    fn ident_return_exact_ref_match() {
+        let f = parse_fn(
+            "fn pick(xs: &[u32]) -> &[u32] req xs.len() <= 10 ens result.len() <= 10 fx pure { xs }",
+        );
+        let descs: Vec<String> = generate(&f, 0, &[]).into_iter().map(|m| m.desc).collect();
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return xs` at body head (identity of param `xs`)"),
+            "an exact `&[u32]` ref match yields an identity mutant: {descs:?}"
+        );
+    }
+
+    // REQ-10 (F-STRUCT-ZERO): a named-struct return synthesizes the field-zero
+    // struct literal early-return mutant, resolved against the threaded defs. The
+    // corpus `Account { balance: u64 }` -> `Account { <field zeros> }`. AC-8 also
+    // checks the F-IDENT `return a`. Expected trace: REQ-10's table (R-CHAR-3).
+    #[test]
+    fn struct_zero_return_for_named_struct() {
+        let items = parse_items(
+            "struct Account { balance: u64 } \
+             fn deposit(a: Account, amount: u64) -> Account \
+               req a.balance + amount <= 1_000_000 \
+               ens result.balance == a.balance + amount fx pure \
+             { Account { balance: a.balance + amount } }",
+        );
+        let f = fn_named(&items, "deposit");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return Account { <field zeros> }` at body head"),
+            "a named-struct return synthesizes the field-zero struct literal: {descs:?}"
+        );
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return a` at body head (identity of param `a`)"),
+            "deposit's Account param yields the identity mutant too: {descs:?}"
+        );
+    }
+
+    // REQ-10 / AC-10 (the OQ-5 drop): a struct return with a zero-LESS field (a
+    // `Box`-typed field) generates NO F-STRUCT-ZERO mutant — never an error.
+    #[test]
+    fn struct_zero_drops_when_a_field_has_no_zero() {
+        let items = parse_items(
+            "struct Node { next: Box<Node> } \
+             fn wrap(n: Box<Node>) -> Node req true ens true fx alloc { Node { next: n } }",
+        );
+        let f = fn_named(&items, "wrap");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            !descs.iter().any(|d| d.contains("<field zeros>")),
+            "a struct with a Box-typed (zero-less) field drops the F-STRUCT-ZERO \
+             mutant (OQ-5), never an error: {descs:?}"
+        );
+    }
+
+    // REQ-10: an ENUM-named return gets NO F-STRUCT-ZERO mutant (no canonical
+    // variant — the OQ-5 drop), but the F-IDENT identity IS still generated.
+    #[test]
+    fn struct_zero_drops_for_enum_named_return() {
+        let items = parse_items(
+            "enum Color { Red, Green } \
+             fn pick_color(c: Color) -> Color req true ens true fx pure { c }",
+        );
+        let f = fn_named(&items, "pick_color");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            !descs.iter().any(|d| d.contains("<field zeros>")),
+            "an enum-named return gets no struct-zero mutant (OQ-5): {descs:?}"
+        );
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return c` at body head (identity of param `c`)"),
+            "the enum param's identity mutant is still generated: {descs:?}"
+        );
+    }
+
+    // REQ-11: a struct field that is itself a String/Vec zeros via the #74/#80
+    // empty-wrapper ladder (the corpus `Buffer { text: String, cursor: u64 }`).
+    #[test]
+    fn struct_zero_composes_string_and_scalar_fields() {
+        let items = parse_items(
+            "struct Buffer { text: String, cursor: u64 } \
+             fn mk(t: String) -> Buffer req t.len() <= 1_000_000 \
+               ens result.cursor <= result.text.len() fx alloc \
+             { Buffer { text: t, cursor: 0 } }",
+        );
+        let f = fn_named(&items, "mk");
+        let descs: Vec<String> = generate(&f, 0, &items)
+            .into_iter()
+            .map(|m| m.desc)
+            .collect();
+        assert!(
+            descs
+                .iter()
+                .any(|d| d == "insert early `return Buffer { <field zeros> }` at body head"),
+            "a Buffer struct (String + u64 fields) synthesizes its field-zero \
+             literal via the #74/#80 ladder: {descs:?}"
         );
     }
 
@@ -1118,7 +1463,7 @@ mod tests {
     #[test]
     fn option_return_early_return_is_none() {
         let f = parse_fn("fn g(x: u32) -> Option<usize> req x < 10 ens true fx pure { Some(0) }");
-        let mutants = generate(&f, 0);
+        let mutants = generate(&f, 0, &[]);
         assert!(
             mutants
                 .iter()
@@ -1133,7 +1478,7 @@ mod tests {
     #[test]
     fn off_by_one_skips_minus_one_at_zero() {
         let f = parse_fn("fn h(x: u32) -> u32 req x < 10 ens result >= 0 fx pure { 0 }");
-        let mutants = generate(&f, 0);
+        let mutants = generate(&f, 0, &[]);
         let obo: Vec<&str> = mutants
             .iter()
             .map(|m| m.desc.as_str())
@@ -1153,8 +1498,8 @@ mod tests {
              while i < xs.len() inv i <= xs.len() inv a >= 0 dec xs.len() - i \
              { a = a + xs[i] as u64; i = i + 1; } a }",
         );
-        let a: Vec<String> = generate(&f, 0).into_iter().map(|m| m.desc).collect();
-        let b: Vec<String> = generate(&f, 0).into_iter().map(|m| m.desc).collect();
+        let a: Vec<String> = generate(&f, 0, &[]).into_iter().map(|m| m.desc).collect();
+        let b: Vec<String> = generate(&f, 0, &[]).into_iter().map(|m| m.desc).collect();
         assert_eq!(a, b, "generate is deterministic");
         // The loop body's `+`, the off-by-ones, and the early return are all present.
         assert!(a.contains(&"insert early `return 0` at body head".to_string()));
@@ -1171,7 +1516,7 @@ mod tests {
              while i < xs.len() inv i <= xs.len() inv a >= 0 dec xs.len() - i \
              { a = a + xs[i] as u64; i = i + 1; } a }",
         );
-        assert!(generate(&f, 0).len() <= MUTANT_CAP);
+        assert!(generate(&f, 0, &[]).len() <= MUTANT_CAP);
     }
 
     // REQ-1/REQ-3: a mutant's contract is byte-identical to the original; only the
@@ -1179,7 +1524,7 @@ mod tests {
     #[test]
     fn mutant_keeps_contract_changes_only_body() {
         let f = parse_fn("fn f(x: u32) -> u32 req x < 10 ens result == x fx pure { x + 1 }");
-        let mutants = generate(&f, 0);
+        let mutants = generate(&f, 0, &[]);
         for m in &mutants {
             assert_eq!(m.item.contract, f.contract, "contract untouched");
             assert_eq!(m.item.name, f.name);
@@ -1250,7 +1595,7 @@ mod tests {
         let f = parse_fn(
             "fn pick(xs: &[u32]) -> &[u32] req xs.len() <= 10 ens result.len() <= 10 fx pure { xs }",
         );
-        let mutants = generate(&f, 0);
+        let mutants = generate(&f, 0, &[]);
         assert!(
             mutants
                 .iter()
@@ -1267,7 +1612,7 @@ mod tests {
             "fn b(x: u32) -> u32 req x < 100 ens result >= 0 fx pure { \
              if x < 5 { return 1; } x }",
         );
-        let mutants = generate(&f, 0);
+        let mutants = generate(&f, 0, &[]);
         assert!(
             mutants
                 .iter()

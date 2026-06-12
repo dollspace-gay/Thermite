@@ -97,7 +97,30 @@ const DOMAIN: &[u8] = b"thermite.forge.proof-cache.v1";
 ///       every cert stored under schema 4 MUST be re-checked under schema 5
 ///       (else `forge check` serves the stale `WeakContract` cached on an
 ///       identical lowered-source key, REQ-2: a HIT must equal a fresh verify).
-const CHECK_SCHEMA_VERSION: u32 = 5;
+///   6 — blocker #269 (`.design/forge/mutation-scoring.md` REQ-9/REQ-10/REQ-12):
+///       the §7 early-return family now also synthesizes the F-IDENT identity
+///       returns (`return <param>` for every param whose type equals the return)
+///       and the F-STRUCT-ZERO named-struct field-zero literal. Both are
+///       VERDICT-CHANGING widenings of the frozen mutant set (an item's `K/N`
+///       and even its certify/gate verdict can change — e.g. `move_up` gains a
+///       surviving `return b` identity mutant), so the check logic is no longer
+///       the same function of its inputs: every cert stored under schema 5 MUST
+///       be re-checked under schema 6 (else `forge check` serves a stale
+///       pre-#269 tally / verdict on an identical lowered-source key, REQ-2: a
+///       HIT must equal a fresh verify).
+///   7 — blocker #269 (`.design/forge/equivalent-mutants.md` REQ-7/REQ-9): the
+///       per-survivor equivalence probe now handles CALL-BEARING bodies — a §9
+///       composition caller's F-IDENT identity survivor (`return <param>`) that
+///       is PROVED equivalent THROUGH its callees' contracts (the exec-harness
+///       arm) drops from the denominator. This is VERDICT-CHANGING for
+///       call-bearing fns: `caller(x) { ext_id(x) }`'s identity mutant flips from
+///       a counted survivor (gating `WeakContract` at schema 6, the schema-6
+///       Arc-1 build cached this) to an excluded equivalent (certifying L3). The
+///       check logic is no longer the same function of its inputs, so every cert
+///       stored under schema 6 MUST be re-checked under schema 7 (else
+///       `forge check` serves a stale schema-6 `WeakContract` on an identical
+///       lowered-source key, REQ-2: a HIT must equal a fresh verify).
+const CHECK_SCHEMA_VERSION: u32 = 7;
 
 /// The project-local proof-cache directory (`.design/forge/proof-cache.md`
 /// REQ-6, OQ-1): `target/thermite-proof-cache/`. It is BUILD OUTPUT under the

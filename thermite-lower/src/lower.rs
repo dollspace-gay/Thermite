@@ -2893,13 +2893,40 @@ fn lower_external_body_fn(
 /// `LowerError::Unsupported`; the caller treats an un-renderable obligation as NO
 /// proof, so the survivor STAYS counted (the natural conservative fallback —
 /// never a laundered exclusion, R-DEFER-9).
-pub fn lower_equivalence_obligation(f: &FnItem, mutant_body: &Block) -> Result<String, LowerError> {
+///
+/// CALL-BEARING ARM (`.design/forge/equivalent-mutants.md` REQ-7, #269): when
+/// `callee_deps` is NON-EMPTY (the caller's `reachable_fn_deps` closure — a
+/// CALL-BEARING body, e.g. a §9 composition caller `fn caller(x) { ext_id(x) }`),
+/// the call-free self-contained spec-fn pair is an ILLEGAL Verus form (an
+/// undeclared callee in spec position), so this routes to
+/// [`lower_call_bearing_equivalence_obligation`] — an EXEC-position proof harness
+/// with the callee closure woven EXACTLY as `forge::check::item_subprogram` weaves
+/// it for the caller's own L3 proof (boundary/slag callees as
+/// `lower_external_body_fn` assumable signatures, regular callees as their full
+/// `lower_fn` defs — the SAME `lower` dispatch). The equivalence notion is then
+/// equivalence IN THE VERIFICATION SEMANTICS — modulo callee contracts
+/// (`.design/basis/05-composition.md` law 1). When `callee_deps` is EMPTY (a
+/// CALL-FREE body — the shipped #101 corpus), the spec-fn pair below is UNCHANGED
+/// (grounded, byte-stable, cache-warm).
+pub fn lower_equivalence_obligation(
+    f: &FnItem,
+    mutant_body: &Block,
+    callee_deps: &[Item],
+) -> Result<String, LowerError> {
     let real_body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
         what: "equivalence obligation reached a bodyless (boundary) fn; a boundary \
                fn is never mutation-scored (equivalent-mutants.md OQ-2)"
             .to_string(),
         span: f.span,
     })?;
+
+    // CALL-BEARING ARM (REQ-7): a non-empty callee closure means the compared
+    // bodies invoke in-file fns whose contracts govern the call sites — the
+    // self-contained spec-fn pair below cannot declare them, so route to the
+    // exec harness with the closure woven (modulo callee contracts, §9).
+    if !callee_deps.is_empty() {
+        return lower_call_bearing_equivalence_obligation(f, real_body, mutant_body, callee_deps);
+    }
 
     // SCOPE gate (OQ-1): every param + the return must be a scalar primitive so
     // observable equality is value equality. Any other shape → Unsupported → the
@@ -2963,6 +2990,235 @@ pub fn lower_equivalence_obligation(f: &FnItem, mutant_body: &Block) -> Result<S
     out.push_str("}\n");
     out.push_str("fn main() {}\n");
     Ok(out)
+}
+
+/// Lower the CALL-BEARING equivalence obligation (`.design/forge/equivalent-
+/// mutants.md` REQ-7, #269) as an EXEC-position proof harness with the caller's
+/// `reachable_fn_deps` closure woven exactly as `forge::check::item_subprogram`
+/// weaves it for the caller's own L3 proof. The emitted shape (hand-derived to
+/// the REQ-7 template; the callee weave is REUSE, not a hand-emitted Verus
+/// duplicate — every callee def goes through the SAME `lower` dispatch
+/// `item_subprogram` uses):
+///
+/// ```verus
+/// use vstd::prelude::*;
+/// verus! {
+/// #[verifier::external_body]
+/// fn ext_id(x: u32) -> (result: u32)
+///     requires x < 100,
+///     ensures result == x,
+/// { unimplemented!() }
+///
+/// fn equiv_check_caller(x: u32) -> (eq: bool)
+///     requires x < 100,
+///     ensures eq,
+/// {
+///     let real: u32 = { ext_id(x) };
+///     let mutant: u32 = { x };
+///     real == mutant
+/// }
+/// }
+/// fn main() {}
+/// ```
+///
+/// A VERIFIED harness (`ensures eq` proved, `0 errors`) is a PROOF that no input
+/// satisfying `req` distinguishes the mutant from the real body GIVEN the callee
+/// contracts → the survivor is a TRUE equivalent (modulo the contracts the §9
+/// edifice already trusts) → excluded (REQ-2 polarity, unchanged). A weak callee
+/// contract that cannot pin `real == mutant` leaves `eq` unprovable → NOT
+/// excluded → counted survivor (REQ-8, conservatism). TRUST BASE: a
+/// proved-modulo-contracts exclusion assumes only that callees honor their
+/// contracts — exactly the trust base of the caller's own L3 cert (§9); the
+/// exclusion adds NO new trust.
+///
+/// SCOPE (v1, REQ-7): scalar params/return are retained (the harness compares two
+/// scalar block values by `==`); each compared body must be a renderable
+/// EXEC-position block value (a bare tail, a leading early-return, or an
+/// immutable let-chain-plus-tail), so a call is legal inside it. An out-of-scope
+/// body shape returns `LowerError::Unsupported` (REQ-9: the caller records the
+/// reason; the survivor STAYS counted — never a silent exclusion).
+fn lower_call_bearing_equivalence_obligation(
+    f: &FnItem,
+    real_body: &Block,
+    mutant_body: &Block,
+    callee_deps: &[Item],
+) -> Result<String, LowerError> {
+    // SCOPE gate (REQ-7 v1): scalar params + return — the harness compares two
+    // scalar block values with `==`. A non-scalar shape → Unsupported (REQ-9).
+    let ret_spelling = scalar_obligation_type(&f.ret).ok_or_else(|| LowerError::Unsupported {
+        what: format!(
+            "call-bearing equivalence obligation supports only scalar (u32/u64/\
+             usize/bool) returns; `{}` returns a non-scalar type \
+             (equivalent-mutants.md REQ-7/OQ-4)",
+            f.name
+        ),
+        span: f.span,
+    })?;
+    for p in &f.params {
+        if scalar_obligation_type(&p.ty).is_none() {
+            return Err(LowerError::Unsupported {
+                what: format!(
+                    "call-bearing equivalence obligation supports only scalar \
+                     params; `{}`'s param `{}` is non-scalar \
+                     (equivalent-mutants.md REQ-7/OQ-4)",
+                    f.name, p.name
+                ),
+                span: f.span,
+            });
+        }
+    }
+
+    // Weave the callee closure by feeding a Program of JUST the closure deps to
+    // the EXISTING `lower` (the SAME dispatch `item_subprogram` drives): a
+    // boundary/slag dep emits its `#[verifier::external_body]` assumable signature
+    // (`lower_external_body_fn`), a regular dep emits its full proved def
+    // (`lower_fn`) — modular verification means the harness call site sees only
+    // each callee's `ensures` either way (§9). We then STRIP `lower`'s file frame
+    // (`use vstd...; verus! {` … `} fn main() {}`) and re-stitch the closure defs
+    // inside this obligation's own frame, ahead of the harness fn.
+    let closure_program = Program {
+        items: callee_deps.to_vec(),
+    };
+    let closure_lowered = lower(&closure_program)?;
+    let closure_defs =
+        strip_verus_frame(&closure_lowered).ok_or_else(|| LowerError::Unsupported {
+            what: "call-bearing equivalence obligation: the woven callee closure did \
+               not lower to the expected `verus! { .. }` frame (REQ-7)"
+                .to_string(),
+            span: f.span,
+        })?;
+
+    // Render each compared body as an EXEC-position block VALUE (a call is legal
+    // here — the closure declares every callee). The early-return mutant's
+    // observable value is its returned expression; a tail body's is its tail.
+    let exec = Ctx::exec();
+    let real_value = render_body_as_exec_value(real_body, exec, f.span)?;
+    let mut_value = render_body_as_exec_value(mutant_body, exec, f.span)?;
+    let params = obligation_param_list(&f.params)?;
+    let req = lower_expr(
+        &f.contract.req.expr,
+        Ctx::spec(NO_SLICES, NO_SLICES),
+        0,
+        f.span,
+    )?;
+    let name = &f.name;
+
+    let mut out = String::new();
+    out.push_str("use vstd::prelude::*;\n");
+    out.push_str("verus! {\n");
+    out.push_str(closure_defs.trim_start_matches('\n'));
+    if !closure_defs.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    writeln!(out, "fn equiv_check_{name}({params}) -> (eq: bool)").map_err(|_| fmt_err())?;
+    // Omit a literal-`true` precondition (the obligation holds for ALL inputs).
+    if req != "true" {
+        writeln!(out, "    requires {req},").map_err(|_| fmt_err())?;
+    }
+    out.push_str("    ensures eq,\n");
+    out.push_str("{\n");
+    // NOTE: the comparand binders are `real_v`/`mutant_v`, NOT `real`/`mutant` —
+    // `real` is a vstd-imported type name (`vstd::prelude::real`), so a `let real`
+    // shadows it and the `==` then types as `real`-vs-`u32` (E0308/E0369). The
+    // suffixed names sidestep the collision while keeping the harness shape.
+    writeln!(out, "    let real_v: {ret_spelling} = {{ {real_value} }};").map_err(|_| fmt_err())?;
+    writeln!(out, "    let mutant_v: {ret_spelling} = {{ {mut_value} }};")
+        .map_err(|_| fmt_err())?;
+    out.push_str("    real_v == mutant_v\n");
+    out.push_str("}\n");
+    out.push_str("}\n");
+    out.push_str("fn main() {}\n");
+    Ok(out)
+}
+
+/// Strip `lower`'s file frame (`use vstd::prelude::*;\nverus! {\n` … `\n}\nfn
+/// main() {}\n`) from a fully-lowered program, returning ONLY the inner item
+/// definitions (everything between the `verus! {` and its closing `}`). Returns
+/// `None` if the input does not carry the expected frame (a defensive guard — the
+/// REQ-7 caller treats a frame-less lowering as `Unsupported`). Used ONLY to
+/// re-stitch a woven callee closure into the equivalence-obligation harness frame.
+fn strip_verus_frame(lowered: &str) -> Option<String> {
+    let open = "verus! {\n";
+    let start = lowered.find(open)? + open.len();
+    // `lower` ends every program with `\n}\nfn main() {}\n` — the inner block is
+    // everything before that closing brace.
+    let close = "\n}\nfn main() {}\n";
+    let end = lowered.rfind(close)?;
+    if end < start {
+        return None;
+    }
+    Some(lowered[start..end].to_string())
+}
+
+/// Render an exec body as an EXEC-position block VALUE for the call-bearing
+/// equivalence harness (REQ-7). Unlike [`render_body_as_spec_value`] (spec
+/// context, `(expr) as <ret>` coercion), this renders in EXEC context — a call is
+/// legal and the result is exec-typed, so NO arithmetic coercion is applied:
+///
+/// - a body whose FIRST statement is `return <e>;` (the F-IDENT / early-return
+///   mutant) is `<e>` — the rest of the body is dead, and the observable value of
+///   the harness `let mutant = { <e> }` is exactly `<e>`;
+/// - a body that is a bare tail (`{ ext_id(x) }`) is the lowered tail expression;
+/// - a body of immutable `let`s ending in a tail is the let-chain plus tail,
+///   emitted as a parenthesized block so it inhabits the `let real = { .. }` slot.
+///
+/// Any other statement shape (an `Assign`, a nested `Loop`, a `Stmt::Expr`) →
+/// `Unsupported` (REQ-9: the survivor stays counted, the reason is recorded).
+fn render_body_as_exec_value(body: &Block, ctx: Ctx, span: Span) -> Result<String, LowerError> {
+    // The early-return mutant (F-IDENT `return <param>` / zero-return): a leading
+    // `return <e>;` pins the observable result to `<e>` regardless of the dead
+    // tail (`mutation::early_return_value` / the F-IDENT family).
+    if let Some(Stmt::Return(ret_expr)) = body.stmts.first() {
+        let e = ret_expr.as_ref().ok_or_else(|| LowerError::Unsupported {
+            what: "call-bearing equivalence obligation: a value-less `return;` has \
+                   no observable result to compare"
+                .to_string(),
+            span,
+        })?;
+        return lower_expr(e, ctx, 0, span);
+    }
+
+    // A bare tail body (`{ ext_id(x) }`): the observable value is the tail.
+    if body.stmts.is_empty() {
+        let tail = body.tail.as_ref().ok_or_else(|| LowerError::Unsupported {
+            what: "call-bearing equivalence obligation body has no tail value to \
+                   compare"
+                .to_string(),
+            span,
+        })?;
+        return lower_expr(tail, ctx, 0, span);
+    }
+
+    // An immutable let-chain plus tail: render the lets and tail as an inner
+    // block so the whole thing is a single block VALUE in the `let real = { .. }`
+    // slot. A call is legal in every position (exec context).
+    let mut inner = String::new();
+    for stmt in &body.stmts {
+        match stmt {
+            Stmt::Let { mutable: false, .. } => {
+                inner.push_str(&lower_stmt(stmt, ctx, 0)?);
+            }
+            other => {
+                return Err(LowerError::Unsupported {
+                    what: format!(
+                        "call-bearing equivalence obligation supports only a leading \
+                         early-return, a bare tail, or an immutable let-chain-plus-\
+                         tail body; found {}",
+                        stmt_kind(other)
+                    ),
+                    span,
+                });
+            }
+        }
+    }
+    let tail = body.tail.as_ref().ok_or_else(|| LowerError::Unsupported {
+        what: "call-bearing equivalence obligation let-chain body has no tail value \
+               to compare"
+            .to_string(),
+        span,
+    })?;
+    let tail_lowered = lower_expr(tail, ctx, 0, span)?;
+    Ok(format!("{{ {inner}{tail_lowered} }}"))
 }
 
 /// The Verus spelling of a SCALAR primitive type, or `None` for any non-scalar

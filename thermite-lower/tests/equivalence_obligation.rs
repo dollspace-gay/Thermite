@@ -120,7 +120,7 @@ fn equivalent_early_return_verifies() {
     }
     let f = parse_fn(CLAMP_ZERO);
     let mutant = early_return_body(f.body.as_ref().unwrap(), 0);
-    let obligation = thermite_lower::lower_equivalence_obligation(&f, &mutant)
+    let obligation = thermite_lower::lower_equivalence_obligation(&f, &mutant, &[])
         .expect("scalar obligation lowers");
     assert!(
         verus_verifies(&obligation, "clamp_equiv"),
@@ -140,7 +140,7 @@ fn distinguishing_offbyone_fails() {
     }
     let f = parse_fn(CLAMP_ZERO);
     let mutant = early_return_body(f.body.as_ref().unwrap(), 1);
-    let obligation = thermite_lower::lower_equivalence_obligation(&f, &mutant)
+    let obligation = thermite_lower::lower_equivalence_obligation(&f, &mutant, &[])
         .expect("scalar obligation lowers");
     assert!(
         !verus_verifies(&obligation, "clamp_distinguish"),
@@ -161,7 +161,7 @@ fn loose_early_return_stays_distinguishing() {
     }
     let f = parse_fn(LOOSE);
     let mutant = early_return_body(f.body.as_ref().unwrap(), 0);
-    let obligation = thermite_lower::lower_equivalence_obligation(&f, &mutant)
+    let obligation = thermite_lower::lower_equivalence_obligation(&f, &mutant, &[])
         .expect("scalar obligation lowers");
     assert!(
         !verus_verifies(&obligation, "loose_distinguish"),
@@ -179,9 +179,150 @@ fn non_scalar_return_is_unsupported() {
     let src = "fn head(xs: &[u32]) -> &[u32]\n    req true\n    ens true\n    fx pure\n{\n    &xs[..0]\n}\n";
     let f = parse_fn(src);
     let body = f.body.clone().unwrap();
-    let res = thermite_lower::lower_equivalence_obligation(&f, &body);
+    let res = thermite_lower::lower_equivalence_obligation(&f, &body, &[]);
     assert!(
         matches!(res, Err(thermite_lower::LowerError::Unsupported { .. })),
         "a non-scalar return must be Unsupported (OQ-1), got {res:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// #269 REQ-7: the CALL-BEARING equivalence obligation — the exec harness with
+// the callee closure woven (modulo callee contracts, §9).
+// ---------------------------------------------------------------------------
+
+/// The §9 direct-composition fixture verbatim from `conformance/composition/
+/// cases.json` (`verifies_to_boundary`): a `#[boundary]` `ext_id` whose contract
+/// PINS its result, and `caller` whose body is `{ ext_id(x) }`.
+const DIRECT_COMPOSITION: &str = "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }";
+
+/// The AC-8 WEAK-callee fixture: `ext_weak`'s `ens` does NOT pin its result
+/// (`result <= 100`), so the identity mutant of `wcaller` is UNPROVABLE.
+const WEAK_COMPOSITION: &str = "#[boundary(\"ext::ext_weak\")] fn ext_weak(x: u32) -> u32 req x < 100 ens result <= 100 fx pure ; fn wcaller(x: u32) -> u32 req x < 100 ens result <= 100 fx pure { ext_weak(x) }";
+
+/// Parse `src` and return `(the named fn, every OTHER fn as the woven closure)`.
+/// The closure mirrors `forge::check::reachable_fn_deps` (every in-file fn the
+/// named fn references); for these single-caller fixtures it is the boundary
+/// callee.
+fn parse_caller_and_deps(
+    src: &str,
+    name: &str,
+) -> (
+    thermite_syntax::ast::FnItem,
+    Vec<thermite_syntax::ast::Item>,
+) {
+    let prog = thermite_syntax::parse(src).program;
+    let mut caller = None;
+    let mut deps = Vec::new();
+    for item in prog.items {
+        match &item {
+            thermite_syntax::ast::Item::Fn(f) if f.name == name => caller = Some(f.clone()),
+            thermite_syntax::ast::Item::Fn(_) => deps.push(item),
+            _ => {}
+        }
+    }
+    (caller.expect("the caller fn"), deps)
+}
+
+/// The F-IDENT identity-return mutant body for `caller`: a leading `return x;`
+/// (the identity of param `x`) ahead of the real tail.
+fn identity_return_body(real: &Block, param: &str) -> Block {
+    let mut body = real.clone();
+    body.stmts
+        .insert(0, Stmt::Return(Some(Expr::Path(vec![param.to_string()]))));
+    body
+}
+
+#[test]
+fn call_bearing_obligation_emits_the_woven_exec_harness() {
+    // REQ-7 STRUCTURE (hand-derived to the design template, NOT pinned from the
+    // tool's own output): the call-bearing obligation must be the EXEC harness
+    // with the boundary callee woven as an external_body signature and the two
+    // compared bodies in the `let real = { .. }; let mutant = { .. }` slots.
+    let (caller, deps) = parse_caller_and_deps(DIRECT_COMPOSITION, "caller");
+    let mutant = identity_return_body(caller.body.as_ref().unwrap(), "x");
+    let obligation = thermite_lower::lower_equivalence_obligation(&caller, &mutant, &deps)
+        .expect("the call-bearing obligation lowers (REQ-7)");
+
+    // The woven callee: ext_id's external_body assumable signature (the SAME
+    // `lower_external_body_fn` arm `item_subprogram` weaves), carrying its
+    // unweakened contract.
+    assert!(
+        obligation.contains("#[verifier::external_body]"),
+        "the boundary callee is woven as an external_body signature (REQ-7).\n{obligation}"
+    );
+    assert!(
+        obligation.contains("ensures result == x")
+            || obligation.contains("ensures\n        result == x")
+            || obligation.contains("result == x"),
+        "ext_id's PINNING `ens result == x` is woven verbatim (modulo-contract \
+         equivalence rests on it).\n{obligation}"
+    );
+    // The harness form: an exec `equiv_check_caller -> (eq: bool)` with `ensures
+    // eq` over the two block-value comparands.
+    assert!(
+        obligation.contains("fn equiv_check_caller(x: u32) -> (eq: bool)"),
+        "the harness is an EXEC fn returning `eq: bool` (REQ-7).\n{obligation}"
+    );
+    assert!(
+        obligation.contains("requires x < 100,"),
+        "the harness carries the caller's `req` (REQ-7).\n{obligation}"
+    );
+    assert!(
+        obligation.contains("ensures eq,"),
+        "the harness's obligation is `ensures eq` (REQ-7).\n{obligation}"
+    );
+    assert!(
+        obligation.contains("let real_v: u32 = { ext_id(x) };"),
+        "the real body renders as the woven call `ext_id(x)` in EXEC position \
+         (REQ-7 — a call is legal here).\n{obligation}"
+    );
+    assert!(
+        obligation.contains("let mutant_v: u32 = { x };"),
+        "the identity mutant renders as `x` (the early-return value).\n{obligation}"
+    );
+    assert!(
+        obligation.contains("real_v == mutant_v"),
+        "the harness compares the two block values (REQ-7).\n{obligation}"
+    );
+}
+
+#[test]
+fn call_bearing_identity_through_strong_contract_verifies() {
+    // REQ-7 GROUNDING: ext_id's assumed `ens result == x` pins `real == x` at the
+    // call site, so `caller`'s identity mutant `return x` IS a true equivalent
+    // MODULO the contract — the harness `ensures eq` PROVES → excludable (REQ-2).
+    if !verus_present() {
+        eprintln!("SKIP call_bearing_identity_through_strong_contract_verifies: verus absent");
+        return;
+    }
+    let (caller, deps) = parse_caller_and_deps(DIRECT_COMPOSITION, "caller");
+    let mutant = identity_return_body(caller.body.as_ref().unwrap(), "x");
+    let obligation = thermite_lower::lower_equivalence_obligation(&caller, &mutant, &deps)
+        .expect("the call-bearing obligation lowers");
+    assert!(
+        verus_verifies(&obligation, "caller_modulo_contract"),
+        "the identity mutant is PROVED equivalent THROUGH ext_id's contract \
+         (REQ-7); the harness must VERIFY.\n--- obligation ---\n{obligation}"
+    );
+}
+
+#[test]
+fn call_bearing_identity_through_weak_contract_fails() {
+    // REQ-8 CONSERVATISM: ext_weak's `ens result <= 100` does NOT pin `real == x`,
+    // so the harness `eq` is UNPROVABLE → the survivor STAYS counted, the item
+    // gates. Never a false exclusion (the decision is verus's, not syntactic).
+    if !verus_present() {
+        eprintln!("SKIP call_bearing_identity_through_weak_contract_fails: verus absent");
+        return;
+    }
+    let (wcaller, deps) = parse_caller_and_deps(WEAK_COMPOSITION, "wcaller");
+    let mutant = identity_return_body(wcaller.body.as_ref().unwrap(), "x");
+    let obligation = thermite_lower::lower_equivalence_obligation(&wcaller, &mutant, &deps)
+        .expect("the weak-callee obligation lowers");
+    assert!(
+        !verus_verifies(&obligation, "wcaller_weak_contract"),
+        "ext_weak's weak `ens result <= 100` cannot pin `real == x`; the harness \
+         must FAIL → the survivor stays counted (REQ-8).\n--- obligation ---\n{obligation}"
     );
 }

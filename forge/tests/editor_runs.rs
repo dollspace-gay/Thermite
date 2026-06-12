@@ -227,11 +227,59 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
         "to_1based",
         "render_frame",
         "decode",
+        // The #270 SPEC twins added in the coordinated #269+#270 arc — each lowers +
+        // certifies L3 on its own, and each PINS its exec partner's `ens` so the new
+        // F-IDENT identity-return mutants are KILLED (the §7 battery's #269 widening).
+        // `spec_count_nl`/`spec_cursor_row` pin the row scan; `spec_line_end` pins the
+        // line-end scan (killing `line_end`'s `return i`/`return n` identities);
+        // `spec_min2` pins the clamp; `spec_move_up_from`/`spec_move_up_target` and
+        // `spec_move_down_from`/`spec_move_down_target` pin the navigation TARGET
+        // CURSOR (killing the review's `move_up`/`move_down` `return b` escape).
+        "spec_count_nl",
+        "spec_cursor_row",
+        "spec_line_end",
+        "spec_min2",
+        "spec_move_up_from",
+        "spec_move_up_target",
+        "spec_move_down_from",
+        "spec_move_down_target",
     ] {
         assert_eq!(
             level_of(&certs, op),
             "L3",
-            "the verified editor-logic item `{op}` must certify L3 (the #90/#125 thesis)"
+            "the verified editor-logic item `{op}` must certify L3 (the #90/#125/#270 thesis)"
+        );
+    }
+
+    // #270 (the coordinated #269+#270 arc) — the navigation contracts are now PINNED
+    // to their EXACT target cursors, so the §7 F-IDENT battery's identity-return
+    // mutants are KILLED, not survivors. PRE-arc (the outside review's item 5) a
+    // literal `return b` PROVABLY satisfied `move_up`/`move_down`'s loose `ens`
+    // (`result.cursor <= b.cursor` / `<= b.text.len()`) — the weak-contract escape —
+    // and `return i`/`return n` satisfied `line_end`'s bounds-only `ens`. POST-arc
+    // each carries an exact `ens result(.cursor) == spec_<fn>(...)` twin, so EVERY
+    // scored mutant is killed (no surviving identity). The expectation traces to the
+    // design authority (`.design/forge/mutation-scoring.md` AC-7/AC-8 + the #270
+    // tightening) + the provers' verdict, NEVER copied from forge's own output
+    // (R-CHAR-3): the asserted property is "no identity-return mutant SURVIVES".
+    for op in ["move_up", "move_down", "line_end"] {
+        let cert = find_cert(&certs, op);
+        let survivor = cert["contract_quality"]["survivor"].as_str().unwrap_or("");
+        assert!(
+            !survivor.contains("identity of param")
+                && !survivor.contains("return i")
+                && !survivor.contains("return n")
+                && !survivor.contains("return b"),
+            "the #270-tightened `{op}` must KILL its F-IDENT identity-return mutant \
+             (the review's weak-contract escape is closed), no surviving identity: \
+             survivor={survivor:?}\n{cert:#?}"
+        );
+        // The tightened item still certifies L3 (the pin is provable by the exec body
+        // — the families ENABLE scoring + kill the escape, they do not over-gate).
+        assert_eq!(
+            cert["level"],
+            Value::from("L3"),
+            "the #270-tightened `{op}` certifies L3 (exact-target pin proven):\n{cert:#?}"
         );
     }
 

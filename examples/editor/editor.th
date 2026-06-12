@@ -127,6 +127,7 @@ fn count_nl(text: &String, i: u64, end: u64) -> u64
   req i <= end && end <= text.len()
   ens result <= end - i
   ens i == end || text.byte_at(i) != 10 || result >= 1
+  ens result == spec_count_nl(text, i, end)
   fx  pure
   dec end - i
 {
@@ -138,6 +139,26 @@ fn count_nl(text: &String, i: u64, end: u64) -> u64
       count_nl(text, i + 1, end) + 1
     } else {
       count_nl(text, i + 1, end)
+    }
+  }
+}
+
+// The SPEC twin of the exec `count_nl` (#270, mirroring the #126 `spec_line_start`
+// precedent): the same `\n`-counting forward scan as a `spec fn` so `count_nl`'s
+// `ens` can NAME its exact value — this kills the F-IDENT identity mutants
+// (`return i`/`return end`) that the bounds-only `ens` could not. The base case is
+// `i >= end` (a spec fn carries no `req`, so `dec end - i` must be well-founded for
+// every `i`); the recursion mirrors `count_nl` byte-for-byte. PROVEN to terminate.
+spec fn spec_count_nl(text: &String, i: u64, end: u64) -> u64
+  dec end - i
+{
+  if i >= end {
+    0
+  } else {
+    if text.byte_at(i) == 10 {
+      1 + spec_count_nl(text, i + 1, end)
+    } else {
+      0 + spec_count_nl(text, i + 1, end)
     }
   }
 }
@@ -177,6 +198,7 @@ fn line_end(text: &String, i: u64, n: u64) -> u64
   req i <= n && n == text.len()
   ens result >= i
   ens result <= n
+  ens result == spec_line_end(text, i, n)
   fx  pure
   dec n - i
 {
@@ -192,6 +214,26 @@ fn line_end(text: &String, i: u64, n: u64) -> u64
   }
 }
 
+// The SPEC twin of the exec `line_end` (#270): the same next-newline forward scan
+// as a `spec fn` so `line_end`'s `ens` can NAME its exact value — pinning the
+// result KILLS the F-IDENT identity mutants (`return i`/`return n` both satisfied
+// the bounds-only `ens result >= i && result <= n`, the move-down-class hole). The
+// base case is `i >= n` (a spec fn carries no `req`, `dec n - i` well-founded for
+// every `i`); the recursion mirrors `line_end` byte-for-byte. PROVEN to terminate.
+spec fn spec_line_end(text: &String, i: u64, n: u64) -> u64
+  dec n - i
+{
+  if i >= n {
+    n
+  } else {
+    if text.byte_at(i) == 10 {
+      i
+    } else {
+      spec_line_end(text, i + 1, n)
+    }
+  }
+}
+
 // min of two u64s — PROVEN result is <= both AND equals one of them (so it is a
 // real minimum, not a constant). Used to CLAMP the target column to the
 // destination line's length in move_up/move_down.
@@ -200,7 +242,20 @@ fn min2(a: u64, b: u64) -> u64
   ens result <= a
   ens result <= b
   ens result == a || result == b
+  ens result == spec_min2(a, b)
   fx  pure
+{
+  if a <= b { a } else { b }
+}
+
+// The SPEC twin of the exec `min2` (#270): a pure `spec fn` mirroring the
+// two-way min, so `min2`'s `ens` NAMES its exact value AND the navigation spec
+// twins (`spec_move_up_target`/`spec_move_down_target`) can express the clamped
+// target column compositionally. (`min2`'s identity mutants are already killed by
+// `result <= a && result <= b`; the twin hardens it to an exact pin and supplies
+// the combinator the nav pins compose with.)
+spec fn spec_min2(a: u64, b: u64) -> u64
+  dec a
 {
   if a <= b { a } else { b }
 }
@@ -214,9 +269,23 @@ fn cursor_row(b: &Buffer) -> u64
   req true
   ens result <= b.cursor
   ens b.cursor == 0 || b.text.byte_at(0) != 10 || result >= 1
+  ens result == spec_cursor_row(&b.text, b.cursor)
   fx  pure
 {
   count_nl(&b.text, 0, b.cursor)
+}
+
+// The SPEC twin of the exec `cursor_row` (#270): the cursor's row is EXACTLY the
+// `spec_count_nl` of the buffer prefix — the same value the exec scan computes
+// (tied by `count_nl`'s own `ens result == spec_count_nl(...)`). Pinning the row
+// exactly KILLS cursor_row's F-IDENT/return-0 mutants (the prior bounds-only `ens`
+// could not). Takes `(&String, u64)` (NOT `&Buffer`) so the spec-fn pool stays
+// free of the `Buffer` ADT dep — mirroring `spec_line_start`/`spec_count_nl` over
+// `&String` (the #126 `cursor_col` precedent). `dec cursor` is the trivial measure.
+spec fn spec_cursor_row(text: &String, cursor: u64) -> u64
+  dec cursor
+{
+  spec_count_nl(text, 0, cursor)
 }
 
 // The SPEC twin of the exec `line_start` (#126): the same `\n`-scan over the
@@ -260,17 +329,91 @@ fn cursor_col(b: &Buffer) -> u64
   b.cursor - ls
 }
 
+// The SPEC twin of the exec `move_up`'s TARGET CURSOR (#270): the exact cursor the
+// up-navigation computes for a `(text, cursor)`, as a pure `spec fn` composed over
+// the verified `spec_line_start` + `spec_min2`. It mirrors `move_up`'s body
+// branch-for-branch: the `ls == 0` first-line arm leaves the cursor put (the `b`
+// no-op), else it clamps the column to the previous line's length. PINNING
+// `move_up`'s `ens result.cursor == spec_move_up_target(&b.text, b.cursor)` KILLS
+// the F-IDENT `return b` mutant — the review's `move_up` weak-contract escape — and
+// every other body mutant that would shift the cursor (the §7 gate now scores it
+// against the EXACT target, not the loose `<= b.cursor` bound). Mirrors the
+// `cursor_col`/#126 spec-twin precedent.
+// The previous-line-relative branch of the up target, given the CURRENT line
+// start `ls` already computed (a helper keeps `spec_move_up_target` a single
+// expression — the lowerer cannot cast-wrap a body whose head is a `let`, so the
+// nav twins are written `let`-free; the `0 +` keeps both `if` arms the same `int`
+// type before the trailing `as u64`). The `ls == 0` first-line arm leaves the
+// cursor put (`move_up`'s `b` no-op); otherwise the column clamps to the previous
+// line's length. `dec cursor` is the trivial well-founded measure (non-recursive).
+spec fn spec_move_up_from(text: &String, cursor: u64, ls: u64) -> u64
+  dec cursor
+{
+  if ls == 0 {
+    0 + cursor
+  } else {
+    spec_line_start(text, 0, ls - 1, 0)
+      + spec_min2(cursor - ls, (ls - 1) - spec_line_start(text, 0, ls - 1, 0))
+  }
+}
+
+// The SPEC twin of the exec `move_up`'s TARGET CURSOR (#270): the exact cursor the
+// up-navigation computes for a `(text, cursor)`, composed over the verified
+// `spec_line_start` + `spec_min2` (through `spec_move_up_from` with the current
+// line start). It mirrors `move_up`'s body branch-for-branch. PINNING `move_up`'s
+// `ens result.cursor == spec_move_up_target(&b.text, b.cursor)` KILLS the F-IDENT
+// `return b` mutant — the review's `move_up` weak-contract escape — and every
+// other body mutant that would shift the cursor (the §7 gate now scores it against
+// the EXACT target, not the loose `<= b.cursor` bound). Mirrors `cursor_col`/#126.
+spec fn spec_move_up_target(text: &String, cursor: u64) -> u64
+  dec cursor
+{
+  spec_move_up_from(text, cursor, spec_line_start(text, 0, cursor, 0))
+}
+
+// The next-line-relative branch of the down target, given the CURRENT line end
+// `cur_end` (= `spec_line_end(text, cursor, text.len())`) already computed. The
+// `cur_end == n` last-line arm leaves the cursor put (`move_down`'s `b` no-op);
+// otherwise the column clamps to the next line's length. `let`-free + symmetric
+// `int` arms for the same lowerer reasons as `spec_move_up_from`.
+spec fn spec_move_down_from(text: &String, cursor: u64, n: u64, cur_end: u64) -> u64
+  dec cursor
+{
+  if cur_end == n {
+    0 + cursor
+  } else {
+    (cur_end + 1)
+      + spec_min2(cursor - spec_line_start(text, 0, cursor, 0),
+                  spec_line_end(text, cur_end + 1, n) - (cur_end + 1))
+  }
+}
+
+// The SPEC twin of the exec `move_down`'s TARGET CURSOR (#270): the exact cursor
+// the down-navigation computes, composed over `spec_line_start` + `spec_line_end` +
+// `spec_min2` (through `spec_move_down_from`). PINNING `move_down`'s `ens
+// result.cursor == spec_move_down_target(&b.text, b.cursor)` KILLS the F-IDENT
+// `return b` mutant.
+spec fn spec_move_down_target(text: &String, cursor: u64) -> u64
+  dec cursor
+{
+  spec_move_down_from(text, cursor, text.len(),
+                      spec_line_end(text, cursor, text.len()))
+}
+
 // Move the cursor to (approximately) the same column on the PREVIOUS line. Find
 // the current line start; if it is 0 the cursor is already on the first line
 // (no-op). Otherwise the newline before the start ends the previous line; find
 // that line's start, clamp the target column to its length, and set the new
 // cursor. PROVEN: the text is unchanged (length identity — a dropped-text mutant
-// fails) AND the new cursor never advances past the old one (it moves up). The new
-// cursor stays in bounds (the Buffer type invariant — `cursor <= text.len()`).
+// fails), the new cursor never advances past the old one (it moves up), AND (#270)
+// the new cursor is EXACTLY `spec_move_up_target` — the exact-target pin that kills
+// the F-IDENT `return b` mutant (the review's weak-contract escape). The new cursor
+// stays in bounds (the Buffer type invariant — `cursor <= text.len()`).
 fn move_up(b: Buffer) -> Buffer
   req true
   ens result.text.len() == b.text.len()
   ens result.cursor <= b.cursor
+  ens result.cursor == spec_move_up_target(&b.text, b.cursor)
   fx  alloc
 {
   let ls: u64 = line_start(&b.text, 0, b.cursor, 0);
@@ -290,12 +433,14 @@ fn move_up(b: Buffer) -> Buffer
 // current line end; if it is the text end there is no next line (no-op).
 // Otherwise the byte after the end starts the next line; find that line's end,
 // clamp the target column to its length, and set the new cursor. PROVEN: the text
-// is unchanged AND the new cursor stays in bounds (`cursor <= text.len()` — the
-// Buffer invariant).
+// is unchanged, the new cursor stays in bounds (`cursor <= text.len()` — the
+// Buffer invariant), AND (#270) the new cursor is EXACTLY `spec_move_down_target`
+// — the exact-target pin that kills the F-IDENT `return b` mutant.
 fn move_down(b: Buffer) -> Buffer
   req true
   ens result.text.len() == b.text.len()
   ens result.cursor <= b.text.len()
+  ens result.cursor == spec_move_down_target(&b.text, b.cursor)
   fx  alloc
 {
   let n: u64 = b.text.len();

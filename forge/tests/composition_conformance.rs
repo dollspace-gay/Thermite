@@ -298,6 +298,63 @@ fn corpus_unaffected_stays_l3_end_to_end() {
     }
 }
 
+// AC-8 (#269 — the WEAK-callee conservatism fixture, equivalent-mutants.md REQ-8):
+// a `#[boundary]` `ext_weak` whose `ens result <= 100` does NOT pin its result,
+// and `wcaller(x) { ext_weak(x) }` carrying the SAME un-pinning `ens result <=
+// 100`. The caller's F-IDENT identity survivor `return x` PROVES against the
+// caller's own contract (`x < 100 ⟹ x <= 100`) → SURVIVOR; but the call-bearing
+// equivalence harness CANNOT prove `real == mutant` (ext_weak's `ens` does not pin
+// `real == x`) → NOT excluded → the survivor STAYS counted → `wcaller` gates
+// `WeakContract`. The genuine #101 anti-launder line, one level up: a mutant the
+// callee contracts cannot prove equivalent is conservatively COUNTED (R-DEFER-9).
+// Expected from §9 + equivalent-mutants.md REQ-8 (hand-derived), NOT forge output.
+#[test]
+fn weak_callee_identity_survivor_stays_counted_and_gates() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — weak-callee conservatism oracle not run.");
+        return;
+    }
+    // ext_weak's `ens result <= 100` is too weak to pin `real == x`, so wcaller's
+    // identity mutant `return x` is a counted survivor → wcaller gates WeakContract.
+    let program = "#[boundary(\"ext::ext_weak\")] fn ext_weak(x: u32) -> u32 req x < 100 ens result <= 100 fx pure ; \
+         fn wcaller(x: u32) -> u32 req x < 100 ens result <= 100 fx pure { ext_weak(x) }";
+    let path = write_temp_program("weak_callee_caller", program);
+    let (_code, certs, stderr) = run_check_json(&path);
+    let _ = std::fs::remove_file(&path);
+
+    let cert = find_cert(&certs, "wcaller");
+    // The decisive conservatism assertion: NOT laundered to a certifying L3 — the
+    // identity survivor the weak callee cannot pin EQUIVALENT keeps the gate.
+    assert_ne!(
+        cert["level"],
+        Value::from("L3"),
+        "`wcaller` does NOT certify L3 — its identity survivor is NOT excluded \
+         (ext_weak's `ens` cannot pin `real == x`), so the gate fires (REQ-8); \
+         stderr:\n{stderr}"
+    );
+    // The §7 verdict-in-cert reject shape: WeakContract with a named survivor.
+    assert_eq!(
+        cert["reject"]["cause"],
+        Value::from("WeakContract"),
+        "`wcaller` gates `WeakContract` (the contract under-constrains the body \
+         through the weak callee contract); stderr:\n{stderr}"
+    );
+    // The decisive REQ-8 evidence that the identity survivor was NOT excluded: the
+    // kill ratio's DENOMINATOR still counts it. ext_weak cannot pin `real == x`
+    // (identity) NOR `real == 0` (zero-return), so BOTH survivors stay counted —
+    // a `0/2` ratio. Had the call-bearing probe falsely excluded the identity (the
+    // #269 bug it must NOT reintroduce), the denominator would be `0/1`. The detail
+    // carries the `K/N` ratio verbatim.
+    let detail = cert["reject"]["detail"].as_str().unwrap_or("");
+    assert!(
+        detail.contains("0/2"),
+        "BOTH the identity and zero-return survivors stay counted (`0/2`) — the \
+         weak callee cannot pin either equivalent, so neither is excluded (REQ-8 \
+         conservatism — the call-bearing probe never falsely excludes); reject \
+         detail was:\n{detail}"
+    );
+}
+
 // THE HONESTY GATE (R-DEFER-9, OQ-1): external_body is emitted ONLY for a
 // `#[boundary]`/`#[slag]` fn. A REGULAR fn with a LYING body (`ens result == x + 1`
 // over a body returning `x`) is NEVER laundered to L3 by the composition path — it

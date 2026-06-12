@@ -1042,7 +1042,10 @@ fn lean_mutation_score(
     use crate::engine::Engine as _;
     let mut tally = crate::engine::LeanMutationTally::default();
     let base_program = lean_program(lean);
-    for mutant in crate::mutation::generate(f, 0) {
+    // The Lean-path caller threads the WHOLE program's items as `adt_deps`
+    // (REQ-11) so the F-STRUCT-ZERO family resolves any struct return — the same
+    // items the per-mutant Lean engine exports from (`program_with_mutant`).
+    for mutant in crate::mutation::generate(f, 0, &base_program.items) {
         // The LeanEngine exports the item by NAME from its stored program (the
         // exporter re-fetches `o.item` from `self.program`), so to score a MUTANT we
         // must build a per-mutant engine whose program carries the MUTANT body in
@@ -3198,7 +3201,7 @@ fn mutation_score(
     cache_dir: &Path,
     use_cache: bool,
 ) -> Result<crate::mutation::MutationScore, ForgeError> {
-    let mutants = crate::mutation::generate(f, seed);
+    let mutants = crate::mutation::generate(f, seed, adt_deps);
     let mut killed = 0usize;
     let mut scored = 0usize;
     let mut equivalent = 0usize;
@@ -3250,33 +3253,55 @@ fn mutation_score(
         }
 
         // The mutant SURVIVED (verus proved it against the unchanged contract).
-        // Issue the per-survivor EQUIVALENCE QUERY (#101 REQ-1): is the mutant
-        // body observably equal to the REAL body under `f`'s `req`, for ALL
-        // inputs? A VERIFIED query is a PROOF of equivalence → the survivor is a
-        // TRUE equivalent mutant (not contract weakness) and DROPS from the
-        // denominator (REQ-2). A counterexample / timeout / un-renderable
-        // obligation leaves it a COUNTED survivor (REQ-3, sound-but-incomplete —
-        // exclude ONLY on a proof; never launder a distinguishing mutant).
-        let proved_equivalent = equivalence_proves_equal(
+        // Issue the per-survivor EQUIVALENCE QUERY (#101 REQ-1; #269 REQ-7): is the
+        // mutant body observably equal to the REAL body under `f`'s `req`, for ALL
+        // inputs (modulo callee contracts when the body is call-bearing — the SAME
+        // `fn_deps` closure woven above)? A VERIFIED query is a PROOF of
+        // equivalence → the survivor is a TRUE equivalent mutant (not contract
+        // weakness) and DROPS from the denominator (REQ-2). A counterexample /
+        // timeout / weak-callee-unprovable harness leaves it a COUNTED survivor
+        // (REQ-3/REQ-8); an un-renderable obligation ALSO leaves it counted but
+        // records the structured reason (REQ-9 — never a silent exclusion, never a
+        // silent collapse). EXCLUSION fires on `Proved` ALONE.
+        let equiv = equivalence_proves_equal(
             f,
             mutant_item.body.as_ref(),
+            fn_deps,
             seed,
             rlimit,
             verus_version,
             cache_dir,
             use_cache,
         )?;
-        if proved_equivalent {
-            // REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`.
-            equivalent += 1;
-            continue;
-        }
-
-        // A genuinely-DISTINGUISHING survivor (REQ-3): stays counted, and is the
-        // representative strengthening prompt if first in enumeration order.
-        scored += 1;
-        if survivor.is_none() {
-            survivor = Some(mutant.desc);
+        match equiv {
+            EquivOutcome::Proved => {
+                // REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`.
+                equivalent += 1;
+                continue;
+            }
+            EquivOutcome::NotProved => {
+                // A genuinely-DISTINGUISHING / unprovable survivor (REQ-3/REQ-8):
+                // stays counted; the representative strengthening prompt if first.
+                scored += 1;
+                if survivor.is_none() {
+                    survivor = Some(mutant.desc);
+                }
+            }
+            EquivOutcome::Unsupported(reason) => {
+                // REQ-9 (R-HONEST-3): the probe could NOT ask the question. The
+                // survivor STAYS counted (no proof) AND the structured reason is
+                // carried to the survivor transparency surface, so an operator
+                // distinguishes "proved distinguishing" from "the probe could not
+                // ask" — never a silent collapse into the distinguishing bucket.
+                scored += 1;
+                if survivor.is_none() {
+                    survivor = Some(format!(
+                        "{} (equivalence probe Unsupported — survivor COUNTED, not \
+                         excluded: {reason})",
+                        mutant.desc
+                    ));
+                }
+            }
         }
     }
 
@@ -3304,28 +3329,50 @@ fn mutation_score(
 /// it reuses `lower_equivalence_obligation` (which reuses the L3 exec
 /// coercions — no hand-emitted Verus, R-CHAR-3), `cache::cache_key`/`load`/
 /// `store` (REQ-6, deterministic content-addressed verdict), and `run_verus`.
-/// The obligation is SELF-CONTAINED (the seam emits a whole
-/// `use vstd::prelude::*; verus! { .. } fn main() {}` unit over only scalar spec
-/// fns + a proof fn), so no §9/ADT composition deps are woven.
+///
+/// CALL-FREE bodies (the shipped #101 corpus): the obligation is SELF-CONTAINED
+/// (the seam emits a whole `use vstd::prelude::*; verus! { .. } fn main() {}` unit
+/// over only scalar spec fns + a proof fn), so `fn_deps` is EMPTY and no §9
+/// composition deps are woven.
+///
+/// CALL-BEARING bodies (`.design/forge/equivalent-mutants.md` REQ-7, #269): the
+/// SAME `fn_deps` closure `mutation_score` weaves into each mutant's
+/// `item_subprogram` (the caller's `reachable_fn_deps`) is threaded into the seam,
+/// which emits an EXEC-position proof harness with the closure woven (boundary
+/// callees as external_body signatures, regular callees as full defs) — the
+/// equivalence query then runs with the SAME call-site semantics the caller's own
+/// L3 proof used (modulo callee contracts, §9). A weak callee contract that
+/// cannot pin `real == mutant` → `eq` unprovable → `Ok(false)` → counted survivor
+/// (REQ-8); an out-of-scope shape → `Unsupported` → `Ok(false)` + the reason is
+/// surfaced to the score's transparency note (REQ-9 — never a silent exclusion).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the L3-path seams (the fn_deps closure, seed, rlimit, verus version, \
+    cache dir + enable) are the SAME verdict-determining inputs `mutation_score` \
+    threads and compose the obligation cache key; bundling them would obscure the \
+    content-addressing this query reuses"
+)]
 fn equivalence_proves_equal(
     f: &thermite_syntax::FnItem,
     mutant_body: Option<&thermite_syntax::ast::Block>,
+    fn_deps: &[Item],
     seed: u64,
     rlimit: f64,
     verus_version: &str,
     cache_dir: &Path,
     use_cache: bool,
-) -> Result<bool, ForgeError> {
+) -> Result<EquivOutcome, ForgeError> {
     let Some(body) = mutant_body else {
         // A bodyless (boundary) mutant cannot arise (mutation never scores a
         // boundary fn), but treat a missing body as no-proof (stays counted).
-        return Ok(false);
+        return Ok(EquivOutcome::NotProved);
     };
-    let obligation = match thermite_lower::lower_equivalence_obligation(f, body) {
+    let obligation = match thermite_lower::lower_equivalence_obligation(f, body, fn_deps) {
         Ok(s) => s,
-        // OQ-1: an un-renderable obligation (non-scalar / non-forced-output shape)
-        // yields NO proof — the survivor STAYS counted (sound-but-incomplete).
-        Err(_) => return Ok(false),
+        // REQ-9: an un-renderable obligation (non-scalar / out-of-scope shape) is
+        // NO proof — the survivor STAYS counted — and the structured reason is
+        // carried (never a silent collapse into the proved-distinguishing bucket).
+        Err(e) => return Ok(EquivOutcome::Unsupported(e.to_string())),
     };
     // The obligation is a complete Verus program (the seam emits the frame); run
     // it as a single-item program for the `run_verus` scratch-dir/label machinery.
@@ -3333,25 +3380,57 @@ fn equivalence_proves_equal(
         items: vec![Item::Fn(f.clone())],
     };
     let key = cache::cache_key(&obligation, seed, verus_version, THERMITE_VERSION);
-    if use_cache {
+    let proved = if use_cache {
         if let Some(stored) = cache::load(cache_dir, &key) {
             // A cached cert: the equivalence query PROVED iff the stored cert is
             // L3 with no reject (the same `mutant_cert_is_survivor` polarity the
             // mutant kill-check caches — a `Proved` obligation is "survivor"-true).
-            return Ok(mutant_cert_is_survivor(&stored));
+            mutant_cert_is_survivor(&stored)
+        } else {
+            let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
+            let proved = mutant_outcome_is_survivor(&verus.outcome);
+            // Cache the equivalence verdict (REQ-6 determinism): assemble + store
+            // the same cert shape the mutant kill-check stores, keyed on the
+            // obligation source so a re-`forge check` serves it without re-spawning
+            // verus.
+            let cert = assemble_certificate(&Item::Fn(f.clone()), &verus);
+            let _ = cache::store(cache_dir, &key, &cert);
+            proved
         }
-        let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
-        let proved = mutant_outcome_is_survivor(&verus.outcome);
-        // Cache the equivalence verdict (REQ-6 determinism): assemble + store the
-        // same cert shape the mutant kill-check stores, keyed on the obligation
-        // source so a re-`forge check` serves it without re-spawning verus.
-        let cert = assemble_certificate(&Item::Fn(f.clone()), &verus);
-        let _ = cache::store(cache_dir, &key, &cert);
-        Ok(proved)
     } else {
         let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
-        Ok(mutant_outcome_is_survivor(&verus.outcome))
-    }
+        mutant_outcome_is_survivor(&verus.outcome)
+    };
+    // The exclusion fires ONLY on a verus-PROVED `ensures` (REQ-2/REQ-3/REQ-8):
+    // a `Proved` obligation/harness is a TRUE equivalent → `Proved`; a
+    // counterexample/timeout (including a weak-callee-unprovable harness) is
+    // NotProved → the survivor STAYS counted.
+    Ok(if proved {
+        EquivOutcome::Proved
+    } else {
+        EquivOutcome::NotProved
+    })
+}
+
+/// The outcome of a per-survivor equivalence query (`.design/forge/equivalent-
+/// mutants.md` REQ-2/REQ-3/REQ-8/REQ-9). EXCLUSION fires on `Proved` ALONE — a
+/// verus PROOF of the `ensures` (the call-free obligation's `mut == real` or the
+/// call-bearing harness's `eq`). Every other outcome keeps the survivor COUNTED;
+/// the variants distinguish "the prover found a distinguishing input / timed out"
+/// (`NotProved`) from "the probe could not even ASK the question" (`Unsupported`,
+/// carrying the structured reason — REQ-9, so an operator can tell a genuine
+/// contract weakness from an out-of-scope obligation shape, R-HONEST-3).
+#[derive(Debug, Clone)]
+enum EquivOutcome {
+    /// Verus PROVED equivalence (modulo callee contracts for a call-bearing body)
+    /// → the survivor is a TRUE equivalent mutant → dropped from the denominator.
+    Proved,
+    /// Verus did NOT prove it (a distinguishing counterexample, a timeout, or a
+    /// weak-callee-unprovable harness) → the survivor STAYS counted (REQ-3/REQ-8).
+    NotProved,
+    /// The obligation could not be rendered (an out-of-scope body shape) → the
+    /// survivor STAYS counted AND the structured reason is recorded (REQ-9).
+    Unsupported(String),
 }
 
 /// Run the #14 §7 step-5 STRENGTHENING PROBE for `f`
@@ -3403,7 +3482,7 @@ fn strengthen_certificate(
     // description matches the recorded survivor (the SAME frozen mutator). Resolved
     // once; reused for every survivor-linked candidate.
     let survivor_body: Option<thermite_syntax::FnItem> = score.survivor.as_ref().and_then(|desc| {
-        crate::mutation::generate(f, seed)
+        crate::mutation::generate(f, seed, adt_deps)
             .into_iter()
             .find(|m| &m.desc == desc)
             .map(|m| m.item)

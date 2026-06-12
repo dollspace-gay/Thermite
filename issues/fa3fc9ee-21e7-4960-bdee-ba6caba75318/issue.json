@@ -2,11 +2,12 @@
   "uuid": "fa3fc9ee-21e7-4960-bdee-ba6caba75318",
   "display_id": 269,
   "title": "Mutation battery: identity-return + struct-zero early-return families (outside-review item 5; closes the move_up class)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-12T06:38:51.924231567Z",
-  "updated_at": "2026-06-12T06:53:22.655164292Z",
+  "updated_at": "2026-06-12T09:19:57.880517988Z",
+  "closed_at": "2026-06-12T09:19:57.880517988Z",
   "labels": [
     "feature"
   ]

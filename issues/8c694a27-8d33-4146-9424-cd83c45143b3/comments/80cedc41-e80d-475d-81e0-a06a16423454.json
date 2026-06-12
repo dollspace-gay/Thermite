@@ -1,0 +1,10 @@
+{
+  "uuid": "80cedc41-e80d-475d-81e0-a06a16423454",
+  "issue_uuid": "8c694a27-8d33-4146-9424-cd83c45143b3",
+  "author": "Yffe",
+  "content": "Failing test at thermite-lower/tests/divergence_bytes_eq_l1_empty_window.rs::bytes_eq_l1_twin_empty_window_matches_certified_spec_value demonstrates the divergence (#[ignore]d, run with --ignored). AUTHORITY: .design/basis/07-strings.md REQ-20 — the twin computes 'the SAME value as the spec body'; the OOB-index exception cannot apply at n=0 (no index is accessed). SPEC (REQ-18 n<=0 arm): bytes_eq(_,_,5,5,0) = true; verus certifies the ens L3 (live: forge check exits 0, item L3). SHIPPED TWIN (l1.rs emit_string_runtime_l1): the window-first guard 'if ai_u + n_u > a.data.len() { return false }' returns false at (n=0, ai=5 > len=2). LIVE REPRO: forge check empty_window.th -> L3; forge build --entry run -> binary panics 'thermite L1 contract violation [ens]: bytes_eq(result, result, 5, 5, 0)'. A verus-PROVEN postcondition fails its own always-active runtime check — check/build VALUE divergence (distinct from #280's honest compile failure). Fix direction (generator's call): mirror the spec's n<=0 -> true arm before the window guard.",
+  "created_at": "2026-06-12T12:26:08.769050239Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAcMN7JVwq1Vl6CxnTUUDhm099OcWjnDNRkxl24GwDqU2AiqkcyJ8UhIo3wO7fblqPR4YK8VG8q2gl0zaA0pcGDw=="
+}

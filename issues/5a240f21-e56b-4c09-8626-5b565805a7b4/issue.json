@@ -1,0 +1,10 @@
+{
+  "uuid": "5a240f21-e56b-4c09-8626-5b565805a7b4",
+  "display_id": 273,
+  "title": "composition-experiment harness design doc (review item 9): agents integrate components from existing examples, contract-carrying vs agent-plus-tests baseline",
+  "status": "open",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:55:04.483698766Z",
+  "updated_at": "2026-06-12T06:55:04.483698766Z"
+}

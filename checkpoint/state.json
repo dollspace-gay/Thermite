@@ -47,10 +47,6 @@
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T09:20:34.377540362Z"
     },
-    "277": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-12T09:25:33.496900726Z"
-    },
     "278": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T09:55:49.168256143Z"
@@ -418,11 +414,12 @@
       "uuid": "c9c66167-645b-4cb7-bd85-4e28d502b19a",
       "display_id": 277,
       "title": "thermite-lower: TString slice/concat wrapper ensures are length-only — add the byte-content relations (slice subrange, concat append); prerequisite for the #276 bytes_eq content pins",
-      "status": "open",
+      "status": "closed",
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T09:25:26.821705928Z",
-      "updated_at": "2026-06-12T09:49:13.539143737Z",
+      "updated_at": "2026-06-12T12:53:59.308055745Z",
+      "closed_at": "2026-06-12T12:53:59.279820801Z",
       "labels": [
         "blocker"
       ],
@@ -3736,11 +3733,21 @@
       "agent_id": "Yffe",
       "agent_seq": 632,
       "timestamp": "2026-06-12T12:53:12.911310624Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 633,
+      "timestamp": "2026-06-12T12:53:59.308055745Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 634,
+      "timestamp": "2026-06-12T12:54:00.890136002Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T12:53:12.911310624Z",
+    "timestamp": "2026-06-12T12:54:00.890136002Z",
     "agent_id": "Yffe",
-    "agent_seq": 632
+    "agent_seq": 634
   }
 }

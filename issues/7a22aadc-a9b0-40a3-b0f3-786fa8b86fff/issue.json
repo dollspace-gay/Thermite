@@ -6,9 +6,12 @@
   "status": "open",
   "priority": "medium",
   "created_by": "Yffe",
-  "created_at": "2026-06-12T11:58:50.275813450Z",
-  "updated_at": "2026-06-12T11:58:53.302205231Z",
+  "created_at": "2026-06-12T11:58:50.578430773Z",
+  "updated_at": "2026-06-12T12:10:58.220266065Z",
   "labels": [
     "blocker"
+  ],
+  "related": [
+    "9497381e-215f-4b64-b251-b515fede3e70"
   ]
 }

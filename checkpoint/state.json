@@ -1,6 +1,6 @@
 {
-  "next_display_id": 280,
-  "next_comment_id": 563,
+  "next_display_id": 282,
+  "next_comment_id": 565,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
@@ -8,7 +8,9 @@
     "3242ddca-61ca-4c06-a453-fcdd74db0964": 271,
     "5a240f21-e56b-4c09-8626-5b565805a7b4": 273,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
+    "7a22aadc-a9b0-40a3-b0f3-786fa8b86fff": 280,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
+    "8c694a27-8d33-4146-9424-cd83c45143b3": 281,
     "9497381e-215f-4b64-b251-b515fede3e70": 276,
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
     "c9c66167-645b-4cb7-bd85-4e28d502b19a": 277,
@@ -52,6 +54,10 @@
     "278": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T09:55:49.168256143Z"
+    },
+    "281": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T12:25:52.198787033Z"
     }
   },
   "issues": {
@@ -219,6 +225,23 @@
         }
       }
     },
+    "7a22aadc-a9b0-40a3-b0f3-786fa8b86fff": {
+      "uuid": "7a22aadc-a9b0-40a3-b0f3-786fa8b86fff",
+      "display_id": 280,
+      "title": "thermite-lower: L1 exec-twin bytes_eq operand &-strip gap (build-side #279 mirror)",
+      "description": "SPILLOVER from #276 (Arc 2 editor content pins). #279 fixed the L3 SPEC byteview lowering of field-access bytes_eq operands. The L1 EXEC-TWIN call-site lowering has the analogous gap, UNFIXED.\n\nROOT CAUSE: thermite-lower/src/l1.rs::lower_expr_exec, Expr::Call string-arg arm. For a leading string arg it emits '{lowered}.clone()' where lowered=lower_expr_exec(arg). When the operand carries a leading & (&result.text / &ins / &b.text), lowered='&result.text' so '&result.text.clone()' parses as &(result.text.clone())=&TString, against the twin's owned param 'fn bytes_eq(a: TString, b: TString, ...)'. rustc E0308 at every &-prefixed conjunct. The C5/C7 comment's claim '(&TString).clone() yields owned TString' holds only when lowered is a bare ident.\n\nREPRO: forge build a fn whose ens names bytes_eq(&result.text, &b.text, ...) over a Buf-wrapped String, --entry a no-param caller -> E0308 xN. The bare-field form 'result.text' builds clean (why #276 ships bare-field).\n\nFIX: strip a single leading & from lowered before .clone() in the string-arg branch (exec-twin counterpart of #279's spec &-strip); cover &path/&field as #279 did spec-side.\n\nIMPACT: low — both spec+exec accept the BARE forms, so #276 ships with the sanctioned bare-field spelling; the demo/REQ-18 &-prefixed spelling is currently check-only. Closing this makes the operand class build-symmetric.",
+      "status": "open",
+      "priority": "medium",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T11:58:50.578430773Z",
+      "updated_at": "2026-06-12T12:10:58.220266065Z",
+      "labels": [
+        "blocker"
+      ],
+      "related": [
+        "9497381e-215f-4b64-b251-b515fede3e70"
+      ]
+    },
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": {
       "uuid": "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012",
       "display_id": 267,
@@ -243,6 +266,19 @@
         }
       }
     },
+    "8c694a27-8d33-4146-9424-cd83c45143b3": {
+      "uuid": "8c694a27-8d33-4146-9424-cd83c45143b3",
+      "display_id": 281,
+      "title": "Divergence: l1::emit_string_runtime_l1 bytes_eq twin diverges from 07-strings REQ-20 on the empty window at an OOB offset (certified ens panics at runtime)",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T12:25:47.363390297Z",
+      "updated_at": "2026-06-12T12:25:48.964753141Z",
+      "labels": [
+        "blocker"
+      ]
+    },
     "9497381e-215f-4b64-b251-b515fede3e70": {
       "uuid": "9497381e-215f-4b64-b251-b515fede3e70",
       "display_id": 276,
@@ -251,12 +287,15 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T09:20:28.923978018Z",
-      "updated_at": "2026-06-12T11:05:58.582775651Z",
+      "updated_at": "2026-06-12T12:11:01.408750208Z",
       "labels": [
         "feature"
       ],
       "blockers": [
         "31f10be8-568a-44f4-a5fd-64763717e190"
+      ],
+      "related": [
+        "7a22aadc-a9b0-40a3-b0f3-786fa8b86fff"
       ],
       "comments": {
         "40ec0275-697e-428b-ab7b-f6804e0dbb26": {
@@ -276,6 +315,24 @@
           "kind": "plan",
           "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/digGLLrpxCF83aE1Y5x390hiLhqRscVgpD7U5vE688gJcqWD+jHzsUYswfcR7YgAmU1pQaIJJ9YE0ZLi+9eDg=="
+        },
+        "b6f71433-5235-4beb-bc3d-2ad558669a77": {
+          "display_id": 563,
+          "author": "Yffe",
+          "content": "ARC-2 (#276) — SHIPPING. All three prior STOP-blockers (#277 slice/concat content ens, #278 bytes_eq built-in + bridge, #279 field-access spec byte-view) landed; the editor bytes_eq content pins now discharge L3 AND the editor builds + runs.\n\nPLAN (manifest a-c), pin shapes per 07-strings REQ-18 / AC-14/15:\n- insert_str: unchanged-prefix bytes_eq(result.text,b.text,0,0,b.cursor) | inserted-run bytes_eq(result.text,ins,b.cursor,0,ins.len()) | shifted-suffix bytes_eq(result.text,b.text,b.cursor+ins.len(),b.cursor,b.text.len()-b.cursor). LIVE: L3 4/4.\n- backspace: prefix bytes_eq(result.text,b.text,0,0,b.cursor-1) | shifted-suffix bytes_eq(result.text,b.text,b.cursor-1,b.cursor,b.text.len()-b.cursor). LIVE: L3 6/6.\n- render_frame: payload bytes_eq(result,b.text,7,0,b.text.len()) at the post-clear offset (clear=7 bytes). LIVE: L3 2/2. Residual: trailing format-dependent cursor-coordinate tail NOT byte-pinned (variable-length to_string; bytes_eq pins a fixed window) — honest source comment.\n\nOPERAND SPELLING — bare-field not &-prefixed (DECISIVE): the editor must BOTH check AND build. The &-prefixed form (demo/REQ-18 spelling, check-only) trips an L1 exec-twin bug at build: l1.rs::lower_expr_exec Call string-arg arm emits {lowered}.clone() where lowered already carries the & -> &result.text.clone() = &TString vs owned-TString param -> E0308 at every conjunct. The BARE-FIELD form (one of #279s four sanctioned operand shapes) lowers cleanly through BOTH L3 spec byteview AND L1 exec twin. Design-sanctioned equivalent spelling, NOT weakening (both -> result.text.data@). Spillover exec-twin &-strip gap filed as a follow-up thermite-lower fix (outside manifest).",
+          "created_at": "2026-06-12T11:58:04.546461288Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAfq2H/RksJnJpHeCXqDXimoFRCdmWHe5ulSMIFOs4kIxrbBBCMtsSPzLACMOcxzCWWxpYLxEqxLNKHVrHHVmQCg=="
+        },
+        "ddd1f377-e890-419c-a54f-6ba221b1a994": {
+          "display_id": 564,
+          "author": "Yffe",
+          "content": "ARC-2 SHIPPED — commit d2f51125 (examples/editor/editor.th +52, forge/tests/editor_runs.rs +148; 200 insertions, 0 deletions).\n\nPER-CONJUNCT PROOF NOTES (all L3, live verus, discharged via the prove-once lemma_bytes_eq_bridge — ONE citation, ZERO per-conjunct glue):\n- insert_str: unchanged-prefix bytes_eq(result.text,b.text,0,0,b.cursor) | inserted-run bytes_eq(result.text,ins,b.cursor,0,ins.len()) | shifted-suffix bytes_eq(result.text,b.text,b.cursor+ins.len(),b.cursor,b.text.len()-b.cursor). Obligations 14->19 discharged.\n- backspace: prefix bytes_eq(result.text,b.text,0,0,b.cursor-1) | shifted-suffix bytes_eq(result.text,b.text,b.cursor-1,b.cursor,b.text.len()-b.cursor). 14->19.\n- render_frame: payload bytes_eq(result,b.text,7,0,b.text.len()) at the post-clear offset (clear=7 bytes). 40->45. RESIDUAL (O-3): the trailing 'pos' cursor-coordinate escape is NOT byte-pinned (variable-length to_string of the verified row/col; bytes_eq pins a fixed window) — honest source comment.\n\nO-VERDICTS:\n- O-1 PASS: forge check exit 0; whole editor Certified — 25 logic items L3, 7 L1 (6 boundaries + run).\n- O-2 PASS: insert_str 4/4, backspace 6/6 (before==after — §7 length-pin scoring already saturated). The content pins ADD windows killing content-substitution mutants the §7 enumerator does not generate; NO new survivors, NO regression. Newly killed CLASS (O-5 probe): the length-preserving head/tail-SWAP (tail++ins++head) now DIES (does not certify L3) — a length-only pin could not catch it.\n- O-3 PASS: render_frame 2/2; payload delta +5 obligations; residual = the format-dependent coordinate tail (documented).\n- O-4 PASS: cargo test --workspace --no-fail-fast = 970 passed, 0 failed (verus-LIVE, 0 SKIPs); sum.cert.json + bytes_eq_demo.cert.json byte-identical (the check/e2e/bytes_eq conformance golden tests green).\n- O-5 PASS: NO weakening to vacuity — the swap-mutant test proves the windows are content teeth; the pins are PROVEN (discharged), not asserted.\n\nGAUNTLET: forge check (exit 0), forge build --entry run (exit 0), editor_runs 9/0, workspace 970/0, doc-drift exit 0, clippy -D warnings PASS, fmt PASS.\n\nOPERAND SPELLING (manifest-internal resolution, NOT a toolchain edit): bare-field 'result.text' (one of #279's four sanctioned shapes) — lowers through BOTH L3 spec byteview AND L1 exec twin. The &-prefixed demo/REQ-18 spelling trips an L1 exec-twin &-strip gap at BUILD (l1.rs::lower_expr_exec emits &result.text.clone()=&TString vs owned-TString param, E0308). Filed as #280 (spillover, low-impact follow-up — the bare form ships unblocked; closing #280 makes the operand class build-symmetric).",
+          "created_at": "2026-06-12T12:11:01.204863376Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA2wOmeg0uhXnmgZW1p+j7ENLWKyDTRC3uy4tz8QJ5aWxVVNzNR2e5XY8GdQVoqSlKELrtW/yNUuPhN7rsmMYMBA=="
         },
         "f0210c1e-947e-448e-8cb5-43b52b21ca76": {
           "display_id": 553,
@@ -3574,11 +3631,51 @@
       "agent_id": "Yffe",
       "agent_seq": 618,
       "timestamp": "2026-06-12T11:26:50.208473910Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 619,
+      "timestamp": "2026-06-12T11:58:04.982873378Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 620,
+      "timestamp": "2026-06-12T11:58:50.578430773Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 621,
+      "timestamp": "2026-06-12T11:58:54.092452258Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 622,
+      "timestamp": "2026-06-12T12:10:58.220266065Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 623,
+      "timestamp": "2026-06-12T12:11:01.408750208Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 624,
+      "timestamp": "2026-06-12T12:25:47.363390297Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 625,
+      "timestamp": "2026-06-12T12:25:48.964753141Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 626,
+      "timestamp": "2026-06-12T12:25:52.198787033Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T11:26:50.208473910Z",
+    "timestamp": "2026-06-12T12:25:52.198787033Z",
     "agent_id": "Yffe",
-    "agent_seq": 618
+    "agent_seq": 626
   }
 }

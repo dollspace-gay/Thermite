@@ -1,0 +1,10 @@
+{
+  "uuid": "1dcb90eb-6246-4bc1-a527-90219e00e4d7",
+  "issue_uuid": "1050406b-4f5b-4526-99d0-cd3479ef5863",
+  "author": "Yffe",
+  "content": "PLAN (v-a) — the while-body composition layer. Per proof-backends.md §4.2.2 (read §4.2 in full + §4.1 iv-a precedent). Manifest (Lean-only, no Rust): (1) NEW lean/Thermite/Exec/WhileBody.lean — the six §4.2.2 pieces composed AROUND Exec/Stmt.lean + Exec/Loop.lean (UNCHANGED): whileBodyDenote (prefix blockThread -> SHIPPED loopDenote -> tail execDenote), whileBodyConverges (exists-fuel, result bound THROUGH it), loopDenote_fuel_mono (induction on fuel), whileBodyConverges_unique (overlap-at-max + functional determinism), while_compose (while_rule lifted through prefix/tail), loopDenote_exits_of_dec (TERMINATION bridge, strong induction on (mu st).toNat). (2) NEW PinWhileVacuity.lean (REQ-11.6 termination-vacuity conjunction oracle), (3) NEW PinWhileComposition.lean (REQ-11.6 skipped/mis-ordered composition). (4) EDIT lean/Thermite.lean import. KERNEL BAR: lake build green; #print axioms within {propext, Classical.choice, Quot.sound}, no sorryAx/new axiom; every existing theorem + all shipped pins green; cargo build sanity. Report per-theorem axiom output + the loopDenote_exits_of_dec proof-difficulty note (h_dec bounds 0<=mu st not mu st', so mu st=0 needs a case split — statement NOT weakened).",
+  "created_at": "2026-06-12T02:46:26.836960932Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAc12GY8w3hbGeOhtcU07B/KAORmkb7+jQs3sWveB+24NM3aThxP/P6dFwwPsYV4WnQvyDNqGo6CEw6a7ZEXmRAQ=="
+}

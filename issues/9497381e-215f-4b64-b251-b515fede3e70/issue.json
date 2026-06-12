@@ -6,11 +6,14 @@
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-12T09:20:28.923978018Z",
-  "updated_at": "2026-06-12T11:05:58.582775651Z",
+  "updated_at": "2026-06-12T12:10:58.050736812Z",
   "labels": [
     "feature"
   ],
   "blockers": [
     "31f10be8-568a-44f4-a5fd-64763717e190"
+  ],
+  "related": [
+    "7a22aadc-a9b0-40a3-b0f3-786fa8b86fff"
   ]
 }

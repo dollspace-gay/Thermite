@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 05c65b73b8ed8629ff65080f836aec0a32eef7e5 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — post-scaffold growth (7 members, skill bin, CI Verus+budget steps), REQ-7 SHIPPED via #7, #262)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml
@@ -28,10 +28,19 @@ acceptance gate. Nothing in this scaffold contains language logic — it is the
 skeleton whose only job is to compile clean and pass the full gauntlet green
 on an empty workspace.
 
-This doc is GREENFIELD and FORWARD-LOOKING: there is no toolchain code yet
-(no `*.rs`, no `Cargo.toml` in the tree). Every REQ below is therefore
-**NOT-STARTED**, blocked on issue #1 (the scaffold itself). The acto-builder
-satisfies these REQs next; this doc is the contract it builds to.
+The scaffold SHIPPED at issue #1 and every REQ below is discharged (REQ-status
+table). AMENDED at the #262 re-audit — the workspace has since GROWN past the
+scaffold-time shape this doc pinned: (a) SEVEN members, not five —
+`thermite-verified` (the epic-#60 Verus-verified core; a leaf, no internal
+deps) and `thermite-tv` (translation validation, #144/#152; deps
+syntax+spec) joined; (b) `forge` is no longer the SOLE bin target —
+`thermite-skill` gained `src/main.rs` (the #7 `--check-budget` gate binary);
+(c) `.github/workflows/ci.yml` runs the four gauntlet steps PLUS a pinned
+Verus-install step and the #7 skill-budget gate; (d) `thermite-lower` now also
+depends on `thermite-verified`, and `forge` on `thermite-tv` +
+`thermite-verified` (still acyclic, still leaf-first, R-DEFER-7). The
+five-crate REQ texts below are the SCAFFOLD-TIME contract; the growth is
+recorded here and in the evidence rows.
 
 ## Requirements
 
@@ -169,7 +178,7 @@ satisfies these REQs next; this doc is the contract it builds to.
   `mod x;` with no `x.rs`) succeeds. No file listed in `spec-routes.toml` other
   than `lib.rs`/`main.rs` is created by the scaffold commit. (REQ-6)
 
-- **AC-7 (skill gate absent by design):** `.github/workflows/ci.yml` contains
+- **AC-7 (skill gate absent by design — SCAFFOLD-TIME; superseded by #7, see REQ-7 row):** `.github/workflows/ci.yml` contains
   NO `--check-budget` step, and `thermite-skill/src/generate.rs` is NOT created
   by the scaffold. The doc explicitly attributes the budget gate to issue #7.
   (REQ-7)
@@ -191,12 +200,18 @@ names:
 Cargo.toml                     # [workspace] members = the five crates below
 rust-toolchain.toml            # channel + edition/MSRV pin (REQ-4)
 .github/workflows/ci.yml       # the gauntlet (REQ-5)
-thermite-syntax/   (lib)   leaf; owns ThermiteError; routes: lexer/parser/ast/address.rs
+thermite-syntax/   (lib)   leaf; owns SyntaxError;  routes: lexer/parser/ast/address.rs
 thermite-spec/     (lib)   dep: thermite-syntax;       routes: combinators/grammar.rs
 thermite-lower/    (lib)   dep: thermite-syntax, thermite-spec; routes: lower/l1/effects.rs
 forge/             (bin)   dep: all libs;              routes: cli/check/manifest/vacuity/slag/cache.rs
 thermite-skill/    (lib)   dep: thermite-spec, thermite-syntax; route: generate.rs
 ```
+
+(Current-tree growth, #262 re-audit: `thermite-verified` (leaf, #60) and
+`thermite-tv` (deps syntax+spec, #144) are members six and seven;
+`thermite-skill` also ships a `src/main.rs` bin (#7); `forge/src/main.rs` now
+registers ~27 modules — `tooling/spec-routes.toml` remains the authoritative
+module map.)
 
 The dependency DAG (REQ-2) reflects the data flow of the toolchain in
 `thermite-design.md §3`: source text → tokens/AST (`thermite-syntax`) → spec
@@ -265,13 +280,13 @@ scaffold contains no language behavior. The corpus (`conformance/sum.th`,
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (workspace topology) | SHIPPED | root `Cargo.toml` is a virtual workspace (`[workspace]`, no `[package]`) with exactly the five members; `forge` is the sole `bin` (its `[[bin]]`), the other four are `lib`. |
-| REQ-2 (dependency DAG, leaf-first) | SHIPPED | per-crate `[dependencies]`: `thermite-syntax` (none), `thermite-spec`→syntax, `thermite-lower`→syntax+spec, `forge`→all three libs+skill, `thermite-skill`→spec+syntax; `cargo build --workspace` green (acyclic). |
+| REQ-1 (workspace topology) | SHIPPED | root `Cargo.toml` is a virtual workspace (`[workspace]`, no `[package]`); the scaffold's five members shipped at #1, and the member list has since grown to SEVEN (`thermite-verified` #60, `thermite-tv` #144 — re-verified against the current root `Cargo.toml`). `forge` carries the explicit `[[bin]]`; `thermite-skill` later gained a `src/main.rs` bin (#7). |
+| REQ-2 (dependency DAG, leaf-first) | SHIPPED | per-crate `[dependencies]` (current tree): `thermite-syntax` (none), `thermite-spec`→syntax, `thermite-lower`→syntax+spec+`thermite-verified` (#60), `forge`→all three libs+skill+`thermite-tv`+`thermite-verified`, `thermite-skill`→spec+syntax, `thermite-tv`→syntax+spec, `thermite-verified` (leaf); `cargo build --workspace` green (acyclic, leaf-first preserved). |
 | REQ-3 (Result discipline; error types deferred) | SHIPPED | no error type created (`rg 'enum ThermiteError'` empty); no `unwrap`/`expect`/`panic!` in any `src` (empty crate roots + `fn main` returning `()`). |
 | REQ-4 (edition + MSRV pin) | SHIPPED | `rust-toolchain.toml` pins `channel = "1.95.0"` + `components = ["rustfmt","clippy"]`; `[workspace.package]` sets `edition = "2021"`, `rust-version = "1.85"`; each crate inherits via `.workspace = true`. |
-| REQ-5 (CI gauntlet gate) | SHIPPED | `.github/workflows/ci.yml` runs the four gauntlet commands as four separate must-pass steps; no `--check-budget`. |
+| REQ-5 (CI gauntlet gate) | SHIPPED | `.github/workflows/ci.yml` runs the four gauntlet commands as four separate must-pass steps, now preceded by a pinned Verus-install step and followed by the #7 `skill budget gate` step (`cargo run -p thermite-skill -- --check-budget`) — the scaffold-time "no `--check-budget`" clause was the REQ-7 boundary, since discharged by #7. |
 | REQ-6 (empty scaffold compiles clean) | SHIPPED | only `lib.rs`/`main.rs` materialized per crate; no stubs, no module-root `#![allow]`, no dangling `mod`; `forge/src/main.rs` exits 0; full gauntlet green. |
-| REQ-7 (skill-budget gate deferred to #7) | NOT-STARTED | open prereq issue #7; scaffold CI has no `--check-budget` step and `thermite-skill/src/generate.rs` is not created — boundary recorded, gate tracked by #7. |
+| REQ-7 (skill-budget gate deferred to #7) | SHIPPED | delivered by #7 exactly as this REQ deferred: `thermite-skill/src/generate.rs` + the `src/main.rs` `--check-budget` entry exist; ci.yml step `skill budget gate (issue #7, design §2.2 / §10)` runs `cargo run -p thermite-skill -- --check-budget` as a must-pass gate. The scaffold-time boundary (no gate claimed at #1) held. |
 
 ## Open questions (for the orchestrator before the builder runs)
 

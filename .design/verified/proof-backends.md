@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: af340c648830c4f5cf46cfd178975ace05a8f7d5 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: 8653ecadc32a6f08bea357dc9a82b5bf19e1d8d3 (re-audited 2026-06-12: the single intervening commit 8653ecad is the #263 engine.rs comment-currency fix that aligned the stale REQ-2 row TO this doc; claims unaffected, #262)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

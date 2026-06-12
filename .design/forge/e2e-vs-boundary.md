@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 7a8be6691b3b0e78e5b0095e7fe5ed3353920d11 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — #17 SHIPPED post-pin; the all-NOT-STARTED REQ table flipped to SHIPPED with current-tree evidence, greenfield Summary corrected, #262)
 governs: forge/src/closure.rs
 thesis-refs:
   - thermite-design.md §9
@@ -26,12 +26,25 @@ field and aggregates it into the project-level `AssuranceManifest` (#10): the
 project is END-TO-END iff every function is, otherwise TO-THE-BOUNDARY (listing
 the crossings).
 
-This is the §9 manifest distinction. It is **greenfield**: no call-graph walk,
-no transitive-closure analysis, and no assurance-scope field exist anywhere in
-`forge` today (verified below — the only existing `boundary`/`slag` machinery is
-the per-fn `Certificate.boundary` / `slag` flags from #16/#6, which are this
-component's *inputs*). All REQs are **NOT-STARTED**, tracked by **crosslink issue
-#17** (v0.4, milestone #4).
+This is the §9 manifest distinction. It is SHIPPED: `forge/src/closure.rs`
+landed at #17 (`f78dd664`, post-pin) and every REQ below is SHIPPED — see the
+REQ status table and the Amendment.
+
+> **Amendment 2026-06-12 (doc-freshness re-audit, #262).** This doc was authored
+> as the forward-looking #17 contract and its bootstrap pin (`7a8be669`) PREDATES
+> the implementation: all 9 post-pin commits to `closure.rs` — headed by
+> `f78dd664` ("forge: end-to-end vs to-the-boundary classification (#17)") —
+> landed after the pin, so the original all-NOT-STARTED REQ table was stale of
+> the current tree. Re-verified live and flipped to SHIPPED (evidence in the
+> table). Two post-#17 notes:
+> 1. *#52 reuse* (`5931ec37`, governed by `.design/lower/boundary-composition.md`):
+>    `pub fn reachable_in_file_fns in closure.rs` reuses the same `CallGraph` +
+>    cycle-safe DFS to feed `check::item_subprogram`'s §9 sub-program weaving — no
+>    walker duplicated; the classification surface here is unchanged.
+> 2. *Language-growth ripple* (#92/#93/#109/#112/#79/#63/#37): the body walkers
+>    (`walk_expr`/`walk_stmt`) grew arms for the new expression/statement forms
+>    (operators, break/continue, tuples, match guards, strings, ADTs) — extending
+>    REQ-1's edge collection without changing the classification rule.
 
 ## Decided scope
 
@@ -267,9 +280,9 @@ this doc; R-CHAR-3, expected values hand-derived, never copied from forge output
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (transitive call closure, cycle-safe + bounded) | NOT-STARTED | crosslink issue #17 (open, v0.4 milestone #4). No call-graph walk exists in `forge`: `forge/src/closure.rs` is absent; no module walks `Expr::Call`/`Expr::MethodCall` to build an in-file call graph. The AST source nodes exist (`enum Expr { Call, MethodCall, .. } in ast.rs`, `enum Item { Fn, SpecFn } in ast.rs`) but nothing consumes them for closure analysis. |
-| REQ-2 (END-TO-END vs TO-THE-BOUNDARY rule) | NOT-STARTED | crosslink issue #17. No assurance-scope classification exists. The crossing *inputs* ship (`Certificate.boundary` set by `Certificate::boundary_l1`; `Certificate.slag` set by `Certificate::slag_l1`, both in `manifest.rs`), but no code reads them to classify a closure as verified-to-the-boundary vs verified-period. |
-| REQ-3 (per-fn additive cert field) | NOT-STARTED | crosslink issue #17. No `assurance_scope` (or equivalent) field on `struct Certificate in manifest.rs`. The additive-field pattern is established (the #16 `boundary` / #10 `lowered_assurance` fields use `#[serde(default)]`), but the scope field does not exist. |
-| REQ-4 (project-level claim — END-TO-END iff all fns are) | NOT-STARTED | crosslink issue #17. `AssuranceManifest::aggregate in manifest.rs` computes the `ProjectAssurance` min-over-levels headline (#10) but has NO project assurance-scope: it never inspects `boundary`/`slag` across the cert collection to decide END-TO-END vs TO-THE-BOUNDARY, and `struct AssuranceManifest` carries no scope field. |
-| REQ-5 (scope ⊥ level) | NOT-STARTED | crosslink issue #17. Without REQ-2/REQ-3 there is no scope to record alongside `Level`; the orthogonality (an L3 fn that is TO-THE-BOUNDARY) is unrepresented. |
-| REQ-6 (determinism) | NOT-STARTED | crosslink issue #17. The analysis does not exist, so its determinism is unverified. (The aggregate it extends, `AssuranceManifest::aggregate`, is already a deterministic pure function of the cert collection per #10 REQ-7 — the new scope logic must preserve that.) |
+| REQ-1 (transitive call closure, cycle-safe + bounded) | SHIPPED | `pub fn classify in closure.rs` builds the private `CallGraph::from_program` (walks `Expr::Call`/`Expr::MethodCall` via `collect_in_file_calls`/`walk_block`/`walk_stmt`/`walk_expr`, resolving in-file callees by name; a `spec fn`/combinator/unresolved callee is PURE) and `reach_crossing` runs a cycle-safe DFS (a `visited` `BTreeSet`; each node touched once). Non-test consumer: `check::check_file_with_options` (`closure::classify(&parsed.program)`). Verified by `closure::tests::self_recursive_pure_fn_is_end_to_end_and_terminates` (AC-6) + `e2e_conformance::corpus_programs_are_end_to_end` (AC-1, against `conformance/e2e/cases.json`). |
+| REQ-2 (END-TO-END vs TO-THE-BOUNDARY rule) | SHIPPED | `classify` maps each `Item::Fn` to `AssuranceScope::EndToEnd` iff `reach_crossing` finds no `#[boundary]`/`#[slag]` fn (`Node.is_crossing` = `f.boundary.is_some() \|\| f.slag.is_some()`), else `AssuranceScope::ToBoundary { via }` (the crossing is its own `via`). Verified by `closure::tests::direct_boundary_caller_is_to_boundary` (AC-2), `transitive_boundary_chain_is_to_boundary` (AC-3), `slag_in_closure_is_to_boundary` (AC-4) + `e2e_conformance::to_boundary_cases_classify_via_the_crossing`. |
+| REQ-3 (per-fn additive cert field) | SHIPPED | `enum AssuranceScope in manifest.rs` is the additive `Certificate.assurance_scope` field (`#[serde(default, skip_serializing_if = "Option::is_none")]` — the frozen golden `sum.cert.json`, which omits it, still deserializes; R-SPEC-2); the scope JOINS `Certificate::oracle_subset` NORMALIZED via `scope_is_end_to_end` (`None` == `Some(EndToEnd)`). Producer: `closure::classify`; attached by `check::check_file_with_options` via `Certificate::with_assurance_scope`. |
+| REQ-4 (project-level claim — END-TO-END iff all fns are) | SHIPPED | `enum ProjectScope in manifest.rs` + the `AssuranceManifest.scope` field; `AssuranceManifest::aggregate` computes it via `fn project_scope in manifest.rs` (END-TO-END iff every cert's scope is end-to-end, else TO-THE-BOUNDARY with the reached crossings sorted + deduplicated). Non-test consumer: `cli::run_check`. Verified by `e2e_conformance::corpus_programs_are_end_to_end` (project end-to-end) + `to_boundary_cases_classify_via_the_crossing` (AC-5). |
+| REQ-5 (scope ⊥ level) | SHIPPED | `classify` reads ONLY the call graph (the syntactic `#[boundary]`/`#[slag]` flags), never a cert `Level`; `check.rs` attaches the scope ALONGSIDE the achieved level (`cert.with_assurance_scope(scope)` after the verdict is settled), so an L3 fn whose closure crosses a boundary is `ToBoundary` at `Level::L3`. Verified by `e2e_conformance::sum_keeps_l3_and_is_end_to_end` (level + scope reported together, golden-stable). |
+| REQ-6 (determinism) | SHIPPED | `classify` returns a `BTreeMap<String, AssuranceScope>` (sorted, stable); the `via` is the FIRST crossing reached in source-order DFS (`Node.callees` collected in source order); `project_scope`'s crossings are sorted + deduplicated. A pure function of the parsed `Program` — no wall-clock / unordered iteration in the verdict (R-CODE-5). |

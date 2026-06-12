@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 32533e4bfe375a008ee049f5401249c99b7747fe (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — greenfield Summary fixed, #26 resolution recorded, the #193 `<fn>.?N` hole segment + the ADT-items-not-addressable fact recorded against REQ-1, #262)
 governs: thermite-syntax/src/address.rs
 thesis-refs:
   - thermite-design.md §4.3
@@ -25,9 +25,22 @@ unrelated edits**: editing one function must not renumber another's blocks
 the EXACT numbering scheme and gives the full address list for both corpus
 programs as the oracle.
 
-This doc is GREENFIELD / FORWARD-LOOKING: no `address.rs` exists. Every REQ is
-**NOT-STARTED**, blocked on issue #3. One numbering reading (the corpus oracle
-string vs verbatim source) is additionally pending blocker **#26** (OQ-1).
+This doc's REQs are SHIPPED (`thermite-syntax/src/address.rs`, issue #3) — see
+the REQ status table. Blocker #26 (OQ-1) is RESOLVED on the scheme reading:
+1-based source order, all invariants counted — `inv#2` = `forall_below`,
+`inv#3` = `forall_from` (asserted by `tests/conformance.rs`).
+
+> **AMENDMENT (#193, recorded at the #262 re-audit, 2026-06-12 — supersedes
+> REQ-1's `KIND ∈ {loop, inv, dec}` segment set).** The address grammar gained
+> ONE post-pin segment kind: the open-body-hole address `<fn>.?N`
+> (`AddrKind::Hole` in `address.rs` — `addresses_of` emits one entry per
+> `FnItem.holes` member in document order; `validate_segments` accepts a `?N`
+> segment, a bare `?`/non-digit is `Malformed`; resolving an absent hole is
+> `NotFound`, never a panic). It is the operand of `forge fill <fn>.?N <code>`,
+> owned by `.design/forge/goal-repl.md` REQ-4 — not re-owned here. Also
+> recorded against the current tree: `Item::Struct`/`Item::Enum` items are NOT
+> addressable today (`addresses_of` skips them — only `Fn`/`SpecFn` roots and
+> their loop/inv/dec/hole children are emitted).
 
 ## Requirements
 

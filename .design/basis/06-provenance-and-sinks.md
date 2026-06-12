@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5f8b55df2d20193f933acfeab490c26d32fc2730 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — the whole v1 slice (REQ-1/2/3/5/6/7) SHIPPED via the provenance_demo.th corpus + conformance suite; REQ-8 grounded (#77 closed); only REQ-4 (v1.1 dataflow) remains, #262)
 governs: thermite-spec/src/validator.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs
@@ -56,16 +56,22 @@ below):**
   explicitly **v1.1**, NOT v1; the v1 type-level slice (with the sealed barrier)
   rejects the direct laundering forms without it.
 
-This doc is **FORWARD-LOOKING for the IFC vocabulary** (the IFC TYPES + doors —
-`Tainted`/`Secret`/`Authorized`/`parameterize`/`declassify` — are not yet declared
-in the toolchain or corpus). **REQ-8 (the `#[sealed]` abstraction barrier) is
-SHIPPED** (the `StructItem.sealed` flag + parser + the `SpecError::
-SealedConstruction` validator rule, the fix for blocker #77 — `grep -r sealed`
-over the `.rs` tree now returns the attribute, parser dispatch, and validator
-rule). **REQ-1–REQ-7 remain NOT-STARTED** (the IFC corpus declarations + skill
-vocabulary), tracked under epic **#62** / issue **#76** (no separate blocker —
-**#76** owns the stage); **REQ-8 is owned by blocker #77** (the abstraction-barrier
-fix; no redundant blocker is filed). Stage 6 BUILDS ON four
+**The v1 slice is SHIPPED.** The IFC vocabulary is declared in the corpus
+(`conformance/provenance_demo.th` — all three axes in one program: `Tainted`/
+`Secret`/`User`, the `#[sealed]` clean types `Sql`/`Public`/`Authorized`, the
+doors `parameterize`/`declassify`/`authorize`, the sinks `query`/`emit`/`delete`);
+the oracle is `conformance/provenance/cases.json` (hand-derived, R-CHAR-3); the
+conformance suite (`forge/tests/provenance_conformance.rs`) asserts careless =
+`L0` / doored = `L3` on all three axes against the real toolchain. **REQ-8 (the
+`#[sealed]` abstraction barrier) is SHIPPED** (the `StructItem.sealed` flag +
+parser + the `SpecError::SealedConstruction` validator rule, the fix for blocker
+#77 — CLOSED; the 3 `StructLit`-bypass tests in
+`forge/tests/divergence_provenance.rs` are un-ignored and pass).
+**REQ-1/REQ-2/REQ-3/REQ-5/REQ-6/REQ-7 are SHIPPED** (the v1 corpus + type-level
+enforcement + audit-TCB enumeration); **REQ-4 (the v1.1 dataflow-propagation
+engine) remains NOT-STARTED**, tracked under epic **#62** / issue **#76** (no
+separate blocker — **#76** owns the stage). Residue: the §10 skill grammar does
+not yet teach the IFC vocabulary (#76 owns it). Stage 6 BUILDS ON four
 SHIPPED substrates: the Stage-1 marked wrapper TYPES (`01-adts.md` REQ-1/REQ-8 — a
 newtype struct carrying its value), the SHIPPED `#[boundary]` SINK/door form
 (`ffi-boundary.md` REQ-2; the Stage-3 effect-primitive sinks, `03-effect-stdlib.md`),
@@ -422,10 +428,10 @@ values).
   launder point" (REQ-2) TRUE; it is REQUIRED for the v1 centerpiece (NOT v1.1) —
   the standard capability/IFC abstract-type pattern (only the trusted door mints
   the capability). Derived from REQ-2 + §9 (the door is the only trust-change) +
-  R-DEFER-9 (no silent launder) + critic finding **#77**. **NOT GROUNDED at v1**
-  (the `#[sealed]` rule is unbuilt). The #77 `#[ignore]`d failing tests (the 3
-  `StructLit` bypasses, `forge/tests/divergence_provenance.rs`) MUST be un-ignored
-  and PASS (each → `SealedConstruction`/`L0`, R-DEFER-3). Owned by blocker **#77**.
+  R-DEFER-9 (no silent launder) + critic finding **#77**. **SHIPPED + GROUNDED**
+  (the #77 fix landed; blocker #77 CLOSED): the 3 `StructLit`-bypass tests
+  (`forge/tests/divergence_provenance.rs`) are UN-IGNORED and PASS (each →
+  `SealedConstruction`/`L0`, R-DEFER-3).
 
 ### The sink catalog + the flow rules (governs `thermite-syntax/src/ast.rs`,
 `thermite-spec/src/validator.rs`)
@@ -545,8 +551,8 @@ The EXACT corpus + expected full-path output:
   `query` are `L1` boundaries, project assurance `L1` (min over functions), exit 0.
   **GROUNDED end-to-end (direct + doored forms)**: careless = `L0`/`FAILED`/`E0308`;
   safe = `L3`/`L1`/exit 0 (output pasted in Architecture). The launder-form
-  rejection is **NOT GROUNDED at v1** (REQ-8 unbuilt; pinned by the #77 failing
-  test). (REQ-1, REQ-3, REQ-5, REQ-7, REQ-8.)
+  rejection is NOW ALSO GROUNDED (REQ-8 SHIPPED; the un-ignored #77 tests assert
+  it). (REQ-1, REQ-3, REQ-5, REQ-7, REQ-8.)
 
 - **AC-2 (v1 — a `Secret` reaching `emit` does NOT compile, direct OR laundered;
   declassified does + shows in the manifest):** `conformance/provenance/secret_leak.th`
@@ -559,7 +565,7 @@ The EXACT corpus + expected full-path output:
   `declassify` (and `emit`) in the `tcb` `boundary_contracts` (REQ-6 — every
   secret-release is in the manifest). **GROUNDED (direct + doored)**: leak =
   `L0`/`E0308`; safe = `L3`; audit lists `[declassify, emit]`. Launder-rejection
-  NOT GROUNDED (REQ-8 unbuilt). (REQ-1, REQ-3, REQ-6, REQ-8.)
+  GROUNDED (REQ-8 SHIPPED — `divergence_provenance.rs`). (REQ-1, REQ-3, REQ-6, REQ-8.)
 
 - **AC-3 (v1 — a protected op called without `Authorized` does NOT compile, direct
   OR forged):** `conformance/provenance/cap_missing.th` (`fn unauth_delete(u: User)
@@ -570,8 +576,8 @@ The EXACT corpus + expected full-path output:
   `#[sealed]`, REQ-8/#77 fix); `cap_safe.th` (`fn safe_delete(u: User) {
   delete(authorize(u)) }`) certifies — the op's `req c.ok` discharges from
   `authorize`'s `ens result.ok`. **GROUNDED (direct + doored)**: missing =
-  `L0`/`E0308`; safe = `L3`. Forge-rejection NOT GROUNDED (REQ-8 unbuilt). (REQ-1,
-  REQ-3, REQ-8.)
+  `L0`/`E0308`; safe = `L3`. Forge-rejection GROUNDED (REQ-8 SHIPPED —
+  `divergence_provenance.rs`). (REQ-1, REQ-3, REQ-8.)
 
 - **AC-7 (v1 — the `#[sealed]` barrier rejects every in-language clean-type
   `StructLit`; the door path is unaffected — the #77 fix, un-ignored):** the three
@@ -585,8 +591,8 @@ The EXACT corpus + expected full-path output:
   certify `L3`/to-boundary — the door (a `#[boundary]` with a foreign
   `external_body`, no in-language `StructLit`) is the one mint that the seal does
   NOT block. A plain (non-`#[sealed]`) struct's `StructLit` is unaffected (AC-6).
-  Hand-derived expectations (R-CHAR-3). **NOT GROUNDED at v1** (REQ-8 unbuilt).
-  (REQ-8.)
+  Hand-derived expectations (R-CHAR-3). **GROUNDED — the three tests are
+  un-ignored and pass** (REQ-8 SHIPPED). (REQ-8.)
 
 - **AC-4 (v1.1 — mark propagation through a derived value rejects):** a tainted
   value flowed into a DERIVED value (`let y = passthru(x); query(y)` where `x:
@@ -675,9 +681,9 @@ through the real toolchain during authoring (`forge check` / `forge audit`, the
 real `verus 0.2026.05.24.ecee80a` binary on PATH; scratch removed — `forge`'s
 `ScratchDir` Drop guard cleans each run, `/tmp` scratch deleted). This is the seed
 for the golden lowering; it proves the direct-form type-level slice GROUNDS at the
-toolchain level. The `#[sealed]` `StructLit`-launder rejection (REQ-8) is NOT
-grounded here — it is the unbuilt fix for #77, pinned by the `#[ignore]`d failing
-tests.
+toolchain level. The `#[sealed]` `StructLit`-launder rejection (REQ-8) has since
+SHIPPED (#77 CLOSED) — asserted by the un-ignored
+`forge/tests/divergence_provenance.rs` tests.
 
 **TAINT axis — the safe doored path (`sqli_safe.th`) — `forge check`:**
 
@@ -739,15 +745,15 @@ sink) remains the v1.1 dataflow pass (REQ-4).
 emit(declassify(s)) }` certifies `L3`; `leak(s) { emit(s) }` is `L0`/`FAILED` with
 `error[E0308]: expected Public, found Secret`. `forge audit secret_safe.th --json`
 lists the doors `[declassify, emit]` in the `tcb` `boundary_contracts`. (The
-`emit(Public { val: s.val })` launder certifies `L3` today — the #77 hole — and
-becomes `L0`/`SealedConstruction` once `Public` is `#[sealed]`, REQ-8.)
+`emit(Public { val: s.val })` launder WAS the #77 hole; with `Public` `#[sealed]`
+it is now `L0`/`SealedConstruction` — REQ-8 SHIPPED.)
 
 **CAPABILITY axis (`cap_safe.th` / `cap_missing.th`):** `safe_delete(u) {
 delete(authorize(u)) }` certifies `L3` (the op's `req c.ok` discharges from
 `authorize`'s `ens result.ok`); `unauth_delete(u) { delete(u) }` is `L0`/`FAILED`
 with `error[E0308]: expected Authorized, found User`. (The `delete(Authorized { id:
-u.id })` forge certifies `L3` today — #77 — and becomes `L0`/`SealedConstruction`
-once `Authorized` is `#[sealed]`, REQ-8.)
+u.id })` forge WAS the #77 hole; with `Authorized` `#[sealed]` it is now
+`L0`/`SealedConstruction` — REQ-8 SHIPPED.)
 
 **The audit TCB enumeration (`forge audit sqli_safe.th --json`) — the doors are
 the grep-complete security TCB:**
@@ -764,8 +770,8 @@ the grep-complete security TCB:**
 The three axes are ONE mechanism — a marked type, a `#[sealed]` clean type, a door
 (a `#[boundary]` that is the only mint of the clean type), a sink whose parameter
 type encodes the flow rule. The direct form is confirmed end to end through the
-real `forge`/`verus` binaries; the `StructLit`-launder closure (REQ-8) is the
-unbuilt #77 fix.
+real `forge`/`verus` binaries; the `StructLit`-launder closure (REQ-8) has since
+shipped (#77 CLOSED).
 
 ## Dependency hooks (the Stage 1 / 3 / 5 wiring)
 
@@ -794,8 +800,8 @@ unbuilt #77 fix.
   all three axes — was run END-TO-END through `forge check` / `forge audit` against
   the real binaries: the doored paths certify (`L3`/`L1`/to-boundary, exit 0), the
   careless DIRECT paths are `L0`/`FAILED`/`E0308` (exit 1), and `forge audit`
-  enumerates the doors in the TCB. The `StructLit`-launder rejection (REQ-8) is the
-  unbuilt #77 fix — pinned by the `#[ignore]`d failing tests, NOT grounded.
+  enumerates the doors in the TCB. The `StructLit`-launder rejection (REQ-8) has
+  since shipped — asserted by the un-ignored `divergence_provenance.rs` tests.
 - **AC-1/AC-2/AC-3/AC-5 (v1, direct + doored):** `cargo test -p forge` over a new
   `conformance/provenance/` corpus, shelling the real `verus` binary on the emitted
   lowering of the doored programs (assert exit 0 + `L3`/to-boundary, R-CODE-4) and
@@ -843,14 +849,14 @@ NOT author the oracle, the goldens, or the routes (R-DOC-1).
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (v1 — the three marked types — `Tainted`/`Secret`/`Authorized`) | NOT-STARTED | epic **#62** / issue **#76** Stage 6. No `Tainted`/`Secret`/`Authorized` type in the tree or corpus (`grep -r "Tainted\|Secret\|Authorized"` over `.rs`/`conformance` returns NONE). The SUBSTRATE is SHIPPED (`struct StructItem` newtype with `name`+`fields`+`inv`+`span`, `01-adts.md` REQ-1/REQ-8 SHIPPED, no user generics — PINNED) and GROUNDED through the full path (`struct Tainted { raw: u64 }` certifies `L3` in `sqli_safe`); the v1 deliverable (the corpus declarations + skill vocabulary) is not authored. |
-| REQ-2 (v1 — the doors — only mark-changing ops, contracted `#[boundary]`/`#[slag]`) | NOT-STARTED | epic **#62** / issue **#76** Stage 6. No `parameterize`/`declassify`/`authorize` door exists in the corpus (`grep -r "declassify\|sanitize"` returns NONE). The SHIPPED door substrate (`struct BoundaryAttr`/`struct SlagAttr` in `ast.rs`, `FnItem.boundary`/`.slag`, `ffi-boundary.md` REQ-2 SHIPPED) is the form, GROUNDED (the `#[boundary] parameterize(Tainted) -> Sql` door type-changes the mark and is audit-enumerated). **CORRECTED (#77):** "only the door changes a mark" is TRUE only with the `#[sealed]` barrier (REQ-8) — without it a `StructLit` launders `Tainted -> Sql` outside the door (certified `L3` today, must be `L0`). Depends on REQ-8. |
-| REQ-3 (v1 — the sink catalog — every sink's param type / `req` demands the CLEAN type) | NOT-STARTED | epic **#62** / issue **#76** Stage 6. No security sink exists in the corpus. The sink-demands-clean-type mechanism's DIRECT form is GROUNDED end-to-end: `query(s: Sql)` rejects raw `Tainted` (`L0`/`FAILED`/`E0308`) and accepts a `parameterize`-produced `Sql` (`L3`) through the real `forge`/`verus`. The `StructLit`-launder rejection at the sink's clean type needs REQ-8 (the `#[sealed]` rule). The corpus is not authored. |
+| REQ-1 (v1 — the three marked types — `Tainted`/`Secret`/`Authorized`) | SHIPPED | issue **#76** (the v1 corpus). `Tainted`/`Secret`/`User` + the `#[sealed]` clean types `Sql`/`Public`/`Authorized` are declared as concrete Stage-1 newtype structs in `conformance/provenance_demo.th` (all three axes in ONE combined corpus program, rather than the per-axis `conformance/provenance/*.th` files the ACs sketched); the oracle `conformance/provenance/cases.json` hand-derives the expected levels (R-CHAR-3). Consumer: `forge::check::check_file` via the conformance suite. Verified: `forge/tests/provenance_conformance.rs` (`centerpiece_sqli_careless_is_l0_safe_is_l3` + the `secret_leak_`/`missing_capability_` twins + `no_careless_path_ever_certifies`, real toolchain). Residue: the §10 skill grammar does not yet teach the IFC vocabulary (no marked-type/door-verb fragment in `thermite-skill/src/generate.rs`) — #76 owns it. |
+| REQ-2 (v1 — the doors — only mark-changing ops, contracted `#[boundary]`/`#[slag]`) | SHIPPED | issue **#76** + blocker **#77** (closed). The doors `parameterize`/`declassify`/`authorize` are declared as contracted `#[boundary]` fns in `conformance/provenance_demo.th` (e.g. `#[boundary("ifc::parameterize")] fn parameterize(t: Tainted) -> Sql ens result.stmt == t.raw fx pure`), each returning a `#[sealed]` clean type — so "only the door changes a mark" HOLDS, because REQ-8 (SHIPPED) closes the #77 `StructLit` launder. Verified: `provenance_conformance.rs::doors_and_sinks_are_l1_boundary_and_the_audit_tcb` (doors are L1 boundaries, TCB-enumerated) + `divergence_provenance.rs` (the 3 un-ignored launder rejects → `SealedConstruction`, never `L3`). |
+| REQ-3 (v1 — the sink catalog — every sink's param type / `req` demands the CLEAN type) | SHIPPED | issue **#76**. The three-axis sink exemplars are live in `conformance/provenance_demo.th`: `query(q: Sql)` (SQL), `emit(p: Public)` (public output), `delete(c: Authorized)` (the capability inversion) — each a `#[boundary]` whose PARAMETER TYPE demands the `#[sealed]` clean type. Careless direct calls are `L0` (verus type mismatch), doored calls `L3`/to-boundary, and the `StructLit` launder is `SealedConstruction` (REQ-8 SHIPPED). Verified: `provenance_conformance.rs` per-axis tests + `no_careless_path_ever_certifies` against `conformance/provenance/cases.json`. The WIDER catalog rows (shell `Argv`, path `SafePath`, HTML `Html`, net `Host`) are corpus vocabulary not yet declared — the mechanism requires no new toolchain code for them (#76 owns the residue). |
 | REQ-8 (v1 — the `#[sealed]` abstraction barrier — clean type is door-only-mintable) | SHIPPED | **blocker #77** (the abstraction-barrier fix). AST: `StructItem.sealed: bool` (`struct StructItem` in `thermite-syntax/src/ast.rs`). Parser: `parse_attribute` dispatches `#[sealed]` → `ParsedAttr::Sealed`, routed by `parse_item` onto a `struct` (`parse_struct(start, sealed)`); `#[sealed]` on `enum`/`fn`/`spec fn` is a parse error (struct-only barrier). Validator: the `Validator::new` pre-pass collects `sealed_structs` (alongside `struct_fields`); `check_sealed_construction` (called from BOTH `Expr::StructLit` walk arms — exec `scan_expr_for_loops` + caged `walk_expr_inner`) emits the NEW span-bearing `SpecError::SealedConstruction { name, span }` for any literal of a sealed struct. Inert with no `#[sealed]` declared (the non-IFC corpus UNCHANGED). A sealed type is thus obtainable ONLY as a `#[boundary]` door's return (foreign `external_body`, no in-language `StructLit`), so the safe doored path is unaffected. Consumer: `pub fn validate` → `forge::check::check_file` (a `ForgeError::Spec`: exit non-zero, the `SealedConstruction` diagnostic, NO L3 cert). Corpus: `Sql`/`Public`/`Authorized` marked `#[sealed]` in `conformance/provenance_demo.th`. Verification: the three #77 `#[ignore]`d tests (`forge/tests/divergence_provenance.rs`: `taint_/secret_/capability_structlit_bypass_must_not_certify_l3`) UN-IGNORED + REJECT on all 3 axes; `thermite-syntax/tests/sealed_parse.rs` (5) + `thermite-spec/tests/sealed_validate.rs` (4); `forge/tests/provenance_conformance.rs` unchanged (safe paths L3, naive careless L0, plain structs unaffected). |
 | REQ-4 (v1.1 — validator mark-PROPAGATION + REJECTION engine — the core new work) | NOT-STARTED | epic **#62** / issue **#76** Stage 6, **v1.1** (NOT v1). `thermite-spec/src/validator.rs` has no taint/secret/capability propagation pass and no `TaintReachesSink`/`SecretReachesPublic`/`MissingCapability` `SpecError` variant. This is the NEW dataflow engine (NOT SMT) — DISTINCT from REQ-8 (REQ-8 rejects a clean-type `StructLit` at the construction site, no propagation; REQ-4 tracks a mark through arbitrary derived values and rejects at the sink). Compile-time tooth of handled-or-loud for derived flows. |
-| REQ-5 (v1 — marks lower to Stage-1 wrappers; doors lower to `external_body`) | NOT-STARTED | epic **#62** / issue **#76** Stage 6. No marked/clean type or door in the corpus. The mechanism is SHIPPED + GROUNDED (`lower_struct` for the wrapper, `01-adts.md` REQ-8 SHIPPED — a `#[sealed]` struct lowers identically, the seal is a validator concern; `lower_external_body_fn` for the door, `boundary-composition.md` REQ-1; the careless DIRECT path's `Tainted`-arg-at-`Sql`-param is rejected by verus `E0308` on the emitted source). The corpus/golden is not authored. |
-| REQ-6 (v1 — the doors are the security TCB — enumerated in the manifest) | NOT-STARTED | epic **#62** / issue **#76** Stage 6. The SHIPPED `Tcb::from_certificates in forge/src/audit.rs` (`audit-manifest.md` REQ-3) enumerates boundary contracts as the TCB — GROUNDED for IFC: `forge audit sqli_safe.th --json` lists `[parameterize, query]`, `secret_safe.th` lists `[declassify, emit]` (name + target + req + ens + fx). No IFC corpus exists to audit yet; `grep declassify` = the door list once the corpus lands. |
-| REQ-7 (v1 — marks compose through the call graph — the Stage-5 hook) | NOT-STARTED | epic **#62** / issue **#76** Stage 6. The SHIPPED #52 compose-through (`reachable_fn_deps in check.rs`, `05-composition.md` REQ-1) + the #15 deep-graph TCB aggregation (`05-composition.md` REQ-7) are the mechanism — GROUNDED: `safe_path` composes `parameterize` + `query` across the graph and certifies `L3`/to-boundary. No IFC corpus program composes a mark yet. |
+| REQ-5 (v1 — marks lower to Stage-1 wrappers; doors lower to `external_body`) | SHIPPED | issue **#76**. The marked/clean types lower via the SHIPPED `lower_struct in thermite-lower/src/lower.rs` (a `#[sealed]` struct lowers identically to a plain struct — the seal fires at validation, before lowering); the doors lower via `lower_external_body_fn in lower.rs` to `#[verifier::external_body]` signatures woven into the caller's sub-program (`boundary-composition.md` REQ-1). Consumer: `forge::check::check_file`. Verified: `provenance_conformance.rs` (the doored fns certify `L3` against the real toolchain; the careless `Tainted`-arg-at-`Sql`-param paths are `L0` — verus rejects the emitted source). |
+| REQ-6 (v1 — the doors are the security TCB — enumerated in the manifest) | SHIPPED | issue **#76**. `Tcb::from_certificates in forge/src/audit.rs` (`audit-manifest.md` REQ-3, SHIPPED) enumerates every reached door of the IFC corpus in `boundary_contracts` (name + target + req + ens + fx) — `parameterize`/`query`/`declassify`/`emit`/`authorize`/`delete` for `conformance/provenance_demo.th`; `grep declassify` over the corpus = the manifest's declassify list. Verified: `provenance_conformance.rs::doors_and_sinks_are_l1_boundary_and_the_audit_tcb` (the `--json` audit lists the door contracts; doors are L1 boundaries). |
+| REQ-7 (v1 — marks compose through the call graph — the Stage-5 hook) | SHIPPED | issue **#76**. `safe_query`/`safe_emit`/`safe_delete` in `conformance/provenance_demo.th` each compose door + sink across the call graph via the SHIPPED #52 weave (`reachable_fn_deps in forge/src/check.rs`, `05-composition.md` REQ-1) and certify `L3`/to-boundary — the mark flows only through the door's return type. Verified: `provenance_conformance.rs::assert_safe_certifies` (the `expect_via` map pins each safe fn's reached sink crossing — `query`/`emit`/`delete`). |
 
 ## Open questions (for the orchestrator before the builder runs)
 

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b60a64e8f9bf3818d2d5418eae7a1e163726214d (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — greenfield Summary fixed + the #193 `?N` hole-token admission recorded against REQ-1, #262)
 governs: thermite-syntax/src/lexer.rs
 thesis-refs:
   - thermite-design.md §4.3
@@ -20,8 +20,18 @@ The token set is exactly what the surface grammar (`surface-grammar.md`) needs
 — no more (pillar 3, §2). The lexer is the first stage; it does not enforce
 clause presence or any grammar structure (that is the parser's job).
 
-This doc is GREENFIELD / FORWARD-LOOKING: no lexer code exists. Every REQ is
-**NOT-STARTED**, blocked on issue #3.
+This doc's REQs are SHIPPED (`thermite-syntax/src/lexer.rs`, issue #3 + the
+#37/#91/#92/#93 amendments) — see the REQ status table.
+
+> **AMENDMENT (#193, recorded at the #262 re-audit, 2026-06-12 — supersedes
+> REQ-1's "and no others" reading).** The token set gained ONE post-#93 kind:
+> the body-position structural hole `?N` lexes to `TokKind::Hole(u32)` (the
+> verbatim hole number; `lex_hole` — the `'?'` branch in `tokenize`; a bare `?`
+> with no following digit is a stray-char `SyntaxError`, REQ-8 — Thermite has no
+> `?`-operator). The lexer lexes `?N` anywhere; the PARSER restricts it to
+> fn-body statement position. Owned by `.design/forge/goal-repl.md` REQ-4 (and
+> `parser.md`'s hole arm), NOT re-owned here — recorded so REQ-1's closed token
+> set reads with the hole token included.
 
 ## Requirements
 

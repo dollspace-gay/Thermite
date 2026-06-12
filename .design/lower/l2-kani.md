@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 13db73059399c2b5ea8ba25aed41b221a879bb4d (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — #10 degrade ladder shipped since (scope-boundary now historical), run_kani 3-arg signature, #51 classify_l2_outcome note, #262)
 governs: thermite-lower/src/l2.rs, forge/src/kani.rs
 thesis-refs:
   - thermite-design.md §6
@@ -27,7 +27,8 @@ shipped L3 (`lower.rs` + `forge::check::run_verus`) and L1 (`l1.rs`) rungs:
    executable lowering — Kani checks executable Rust like L1, but symbolically and
    bounded.
 
-2. **`forge::kani::run_kani(harness) -> Result<L2Result, ForgeError>`** — runs
+2. **`forge::kani::run_kani(harness, label, bound) -> Result<L2Result,
+   ForgeError>`** — runs
    the real `cargo kani` / `kani` binary on the harness (temp crate/file), checks
    exit status (`goal.md` R-CODE-4), and parses Kani's output into
    **verified-up-to-bound** vs a **concrete counterexample** (§5.1 "counterexamples,
@@ -51,9 +52,14 @@ certificate, invokable + tested directly (e.g. a `forge check --level l2` flag /
 distinct entry). #9 does **NOT** build:
 
 - the **automatic L3→L2→L1 degrade ladder** (`thermite-design.md §5.2`; that is
-  issue **#10**) — `forge::check::level_from_summary` stays binary in v0.1, and
-  `run_kani` is invoked explicitly, never as an automatic fallback on a verus
-  timeout;
+  issue **#10**). AMENDED at the #262 re-audit: #10 has SINCE SHIPPED the
+  ladder (`degrade::run_ladder`, wired from `check_file_with_options` via
+  `ladder_for_timeout in check.rs` — governed by
+  `.design/forge/degrade-ladder.md`), and #51 added `classify_l2_outcome` /
+  `enum L2Verdict in kani.rs` (the CONSERVATIVE under-bound vs counterexample
+  split — only `unwinding assertion` boilerplate is UnderBound). The EXPLICIT
+  `--level l2` path (`check_l2_file`) is unchanged; this #9 scope boundary
+  stands as history, not as a current-tree claim;
 - **solver profiles / portfolio seeds** (§5.2; issue **#11**).
 
 ## Requirements
@@ -100,7 +106,8 @@ distinct entry). #9 does **NOT** build:
   guaranteed" = CBMC bounds the search) + the grounded Kani output.
 
 - **REQ-4 (`run_kani` invocation — real binary, temp crate, exit status):**
-  `forge::kani::run_kani(harness, seed) -> Result<L2Result, ForgeError>` writes the
+  `forge::kani::run_kani(harness, label, bound) -> Result<L2Result, ForgeError>`
+  (the `bound` string is recorded on the cert, REQ-6) writes the
   harness to a temp crate/file (the `crate_stem` no-`.` discipline already in
   `check.rs::crate_stem` applies), spawns the real `cargo kani` / `kani` binary,
   and **checks the exit status** (`goal.md` R-CODE-4 — never swallow a
@@ -134,9 +141,9 @@ distinct entry). #9 does **NOT** build:
   `forge check-l2` path (the exact surface is OQ-1) — that runs
   `thermite_lower::lower_l2` → `forge::kani::run_kani` → an L2 `Certificate`, in the
   per-item shape `check.rs` already uses (`item_subprogram`, the spec-fn
-  dependencies, the temp-file pattern). #9 does **NOT** wire L2 as the automatic
-  fallback on a verus timeout (that is #10's `level_from_summary` change) and does
-  **NOT** add solver profiles (#11). Derived from §13 v0.2 scope boundary +
+  dependencies, the temp-file pattern). #9 did **NOT** wire L2 as the automatic
+  fallback on a verus timeout (that was #10's job — SINCE SHIPPED, see the
+  amended scope boundary) and did **NOT** add solver profiles (#11). Derived from §13 v0.2 scope boundary +
   `goal.md` R-DEFER-4/R-DEFER-7.
 
 - **REQ-8 (Kani-absent = environment error / skip-loud, mirroring verus):** a
@@ -447,13 +454,11 @@ The pure output-parsing tests (the analogue of `check.rs`'s
 assertion` blobs) and assert the `L2Result` — these run unconditionally with NO
 kani spawn (R-CHAR-3: the expected strings are Kani's real format).
 
-**Both files do NOT exist yet** (GREENFIELD). The harness shapes above are
-grounded against real `cargo kani 0.67.0` runs and are the external truth the
-builder + critic anchor to.
+**Both files SHIPPED in #9.** The harness shapes above were grounded against
+real `cargo kani 0.67.0` runs and remain the external truth the tests anchor
+to.
 
-### Routes to add (orchestrator, NOT this doc)
-
-The orchestrator adds to `tooling/spec-routes.toml`:
+### Routes (added at #9; verified present in `tooling/spec-routes.toml` at the #262 re-audit)
 
 ```toml
 [[route]]

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 9d2d80bb95161fb84dc2fbeca9dae648f33d4df0 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary + the #53 scratch-dir cleanup note, #262)
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7
@@ -39,12 +39,13 @@ SOLVER-detected value (`true` when detected). A detected tautology / unsat-req
 means the item does NOT certify — a reject, like #6's structural vacuity
 (verdict-in-cert, `manifest::RejectReason`).
 
-GREENFIELD — no `vacuity_solver.rs` exists. **All REQs NOT-STARTED**, blocked on
-crosslink issue **#13** ("SOLVER-backed tautology + precondition-satisfiability
-checks", v0.3 battery, milestone #3). The structural triage (#6,
-`forge/src/vacuity.rs`), `forge check` (#5), and verus-running (#5 `run_verus`,
-real verus at `~/.local/bin/verus`) all ship and are the load-bearing
-prerequisites this component composes.
+SHIPPED (#13) — `forge/src/vacuity_solver.rs` implements both harness
+builders, the interpretation table, and the gate entry
+`vacuity_solver::solver_vacuity_check`; the REQ-status table below is the
+per-REQ evidence (re-audited against the tree at the pinned SHA, #262). The
+structural triage (#6, `forge/src/vacuity.rs`), `forge check` (#5), and the
+verus driver (#5 `run_verus`, real verus at `~/.local/bin/verus`) are the
+load-bearing prerequisites this component composes.
 
 ## Scope boundaries (documented, attributed)
 
@@ -515,6 +516,26 @@ conformance_ops = ["tautology", "vacuous", "corpus_sum", "corpus_binary_search"]
   cache HIT serves the stored cert WITHOUT re-spawning verus — preserving the
   proof-cache cache-hit verus-free invariant (`proof-cache.md` AC-1). A #13 reject
   cert is cached like a counterexample cert (a settled, deterministic verdict).
+
+## Post-pin amendments (re-audited 2026-06-12, #262)
+
+Four commits touched `vacuity_solver.rs` after the bootstrap pin `9d2d80bb`; the
+cumulative diff (`git diff 9d2d80bb..HEAD -- forge/src/vacuity_solver.rs`) is
+the #53 hygiene fix only:
+
+- **#53 (`5746a9b6`) — the harness temp-binary leak is closed.** `run_harness`
+  now writes the harness `.rs` into a per-run scratch DIRECTORY and spawns verus
+  with `current_dir` set there; a `check::ScratchDir` Drop guard removes the
+  directory WHOLESALE on every exit path (success, a clean FAILED, or a `?`
+  early-return on an environment/IO error). The leak: verus compiles a
+  SUCCEEDING harness — exactly the rejected tautology/unsat cases this gate
+  exists to catch — into a ~4.3M sibling binary the old per-file
+  `remove_file` cleanup orphaned. Removal is best-effort (`Drop` does a
+  `let _ = remove_dir_all`), never a panic (R-CODE-2).
+- #16 / #108 / #193 appear in the file's commit log but contribute no surviving
+  behavioral change to this module; the gate placement (inside the cache-miss
+  branch), the check order (vacuity BEFORE tautology), the harness shapes, and
+  the interpretation table were all re-verified current.
 
 ## REQ status
 

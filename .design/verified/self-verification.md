@@ -1,9 +1,9 @@
 # Self-Verifying the Toolchain with Verus (Tier 1: the soundness-critical pure core)
 <!--
 tier: 3-component
-status: active (REQ-5 `subsumes` + REQ-7 `ladder_action` + REQ-8 `syscall_allowlist` all SHIPPED via mechanism (c), verus `19 verified, 0 errors`; epic #60 open for the remaining REQ-2 Tier-1 targets — cache_key/triage/kill_ratio/is_strictly_stronger/boundary-gate)
-audited-sha: c3694256f9f88d34be30007b812920df95afd332 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
-governs: thermite-verified/src/lib.rs (the verified core — `subsumes` + `ladder_action` + `io_allow` all proved + anchored; the REQ-2 set to be ported, epic #60)
+status: complete (epic #60 CLOSED 2026-06-05 — Tier-1 MAXED at six verified cores, verus --no-cheating `26 verified, 0 errors`: `subsumes` REQ-5, `ladder_action` REQ-7, `io_allow`/`syscall_allowlist` REQ-8, `should_emit_external_body` boundary-honesty, `aggregate_level` honest-min, `meets_floor_60` the 0/0 gate. The rest of the original REQ-2 list was adjudicated OUT by the Tier-1 boundary rule "soundness reduces to a finite enumerable domain": `cache_key` is cryptographic (SHA-256), `triage`/`mutation::generate` walk unbounded ASTs (Tier-2-adjacent), `is_strictly_stronger` is structural — an honest coverage boundary, not a deferral; see the #60 closing comment.)
+audited-sha: c3694256f9f88d34be30007b812920df95afd332 (bootstrap pin: decision 4; status header amended at #262 — the stale "epic #60 open" claim corrected against the epic's closing record)
+governs: thermite-verified/src/lib.rs (the verified core — six soundness-critical pure functions proved + production-anchored)
 thesis-refs:
   - thermite-design.md §6   (Verus is the L3 prover)
   - thermite-design.md §9   (the TCB is slag ∪ boundary ∪ the toolchain itself)

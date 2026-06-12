@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: deed87036c1570762b267255df9a83bd18c96f6d (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -14,16 +14,56 @@ thesis-refs:
 
 ## Summary
 
-`forge/src/check.rs` is the v0.1 `forge check` pipeline: it runs a single
-`.th` item end-to-end through every shipped kernel component, invokes the REAL
-`verus` binary on the lowered source, parses verus's output into per-obligation
-results (with counterexamples on failure), and assembles the structured
-certificate (`manifest.rs`, `.design/forge/certificate-manifest.md`). It is the
+`forge/src/check.rs` is the `forge check` pipeline: it runs a `.th` file
+end-to-end through every shipped kernel component — PER ITEM (§5.3): each `fn`
+is lowered and verified in an isolated sub-program — invokes the REAL `verus`
+binary on the lowered source, parses verus's output into per-obligation
+results (with counterexamples on failure), and assembles one structured
+certificate per item (`manifest.rs`, `.design/forge/certificate-manifest.md`),
+returning `Vec<Certificate>`. It is the
 FIRST LIVE cert-oracle: `forge check conformance/sum.th`'s deterministic
 certificate fields must match the golden `conformance/sum.cert.json`.
 
-GREENFIELD — no `check.rs` exists; the only artifact is the empty
-`forge/src/main.rs` scaffold. All REQs NOT-STARTED, blocked on issue #5.
+This component is SHIPPED (`forge/src/check.rs`; all REQs SHIPPED — see the
+REQ status table).
+
+> **Amendment 2026-06-12 (doc-freshness re-audit, #262).** Re-verified against the
+> current tree (`dff9ae86`, 16 post-pin commits to `check.rs`). Corrections:
+> 1. *Entry shape.* `pub fn check_file in check.rs` is ONE-argument
+>    (`path`) and returns `Vec<Certificate>` (one cert PER ITEM, §5.3) — not the
+>    `(path, seed) -> Certificate` shape this doc originally sketched. The seed is
+>    resolved internally (`fn resolve_seed` → `DEFAULT_SOLVER_SEED`); the variants
+>    `check_file_with_rlimit` / `check_file_with_options` (the `CheckOptions`
+>    surface) / `check_file_with_engine` (the #247 `--engine` surface) layer on it.
+> 2. *Dead symbol cites.* `parse_verus_output` and `level_from_summary` no longer
+>    exist: the verus output path is `fn classify_verus_outcome` (the #11
+>    three-way Proved/Timeout/Counterexample classifier; `Proved` ⇒ `Level::L3`)
+>    feeding `fn assemble_certificate`. REQ-1/REQ-3/REQ-5 rows updated.
+> 3. *Engine routing (#204/#247/#248, governed by
+>    `.design/verified/proof-backends.md`).* The L3 CONTRACT discharge is now
+>    routed behind the backend-neutral Engine seam: `fn mint_item_obligations`
+>    mints the per-item Obligation set (CONTRACT + REGISTRY-TERMINATION),
+>    `engine::engine_cache_key` discriminates the cache address, and
+>    `fn ladder_for_timeout` threads the obligation through `engine::VerusEngine`
+>    (the default); `check_file_with_engine` is the Lean path
+>    (`lean_proven_cert` / `lean_interactive_proven_cert`, attaching
+>    `engine_attribution`). The verus INVOCATION itself (`run_verus` /
+>    `invoke_verus`) is unchanged in shape.
+> 4. *Open-hole gate (#193/#195, governed by `.design/forge/goal-repl.md`).* A fn
+>    carrying an open `?N` hole is REFUSED before lowering: the per-item loop emits
+>    a non-certified L0 cert with cause `"OpenHole"` via the shared
+>    `goal_repl::open_hole_reason`.
+> 5. *Test-name fixes.* The verus-absent integration coverage is
+>    `cache_conformance::cold_cache_with_verus_unavailable_is_environment_error`
+>    (not the never-existing `verus_absent_is_environment_error_not_l3`); the AC-7
+>    editor witness is `editor_runs::editor_logic_certifies_l3_boundary_and_run_l1`.
+> 6. *Scratch naming.* `run_verus` writes `<stem>.rs` (no-`.` stem — the AC-4
+>    property, unchanged) inside the per-run scratch DIR
+>    `forge_<stem>_<pid>_<n>/` (`unique_scratch_dir`), removed wholesale by the
+>    `ScratchDir` Drop guard (#53).
+> The post-pin language-growth arcs (#92/#93/#95/#109/#112/#121/#123 corpus
+> widening, #101 equivalent-mutant exclusion, #232 struct-inv weave, #237
+> narrowing) extend the pipeline without contradicting the REQs above.
 
 The stages, in order, are:
 
@@ -209,9 +249,10 @@ parse  →  validate  →  effect-check  →  lower  →  run verus  →  parse 
 
 ## Architecture
 
-`pub fn check_file(path, seed) -> Result<Certificate, ForgeError>` is the
-boundary entry (called by `cli.rs`, `.design/forge/cli.md`). It threads the
-shipped crates in dependency order:
+`pub fn check_file(path) -> Result<Vec<Certificate>, ForgeError>` is the
+boundary entry (called by `cli.rs`, `.design/forge/cli.md`; the seed is resolved
+internally — Amendment item 1). It threads the shipped crates in dependency
+order (stages 4-7 run PER ITEM over `item_subprogram` sub-programs):
 
 1. **parse** — `thermite_syntax::parse(&src)` returns a `ParseResult`; if
    `!result.is_clean()` (per `pub fn is_clean in parser.rs`), the parse
@@ -348,11 +389,11 @@ commit touches `forge`.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` in `check.rs` runs `parse`→`validate`→`check_effects`→`lower`→`run_verus`→`parse_verus_output`→`assemble_certificate`, each short-circuiting into a `ForgeError`; consumer `cli::run_check`. Live oracle test `sum_cert_matches_golden_deterministic_subset`. |
-| REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `fn crate_stem` strips `.`/leading-digit; `fn run_verus` writes `forge_<stem>_<pid>_<n>.rs` and spawns `verus --output-json --smt-option smt.random_seed=<seed>`; cleaned up. Test `crate_stem_has_no_dot_and_is_valid`. |
-| REQ-3 (exit-status checked, never swallow) | SHIPPED | `fn invoke_verus` captures status+stdout+stderr; `fn parse_verus_output` makes parseable failure a reported cert, unparseable/VIR-error a `ForgeError::VerusOutput`, ENOENT a `VerusAbsent`. Tests `unparseable_output_is_verus_output_error`, `vir_error_is_verus_output_error`. |
+| REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` (→ `check_file_with_options`) runs `parse`→`validate`→`check_effects`, then PER ITEM `item_subprogram`→`thermite_lower::lower`→`run_verus`→`classify_verus_outcome`→`assemble_certificate`, each short-circuiting into a `ForgeError`; returns `Vec<Certificate>`; consumer `cli::run_check`. Live oracle test `check_conformance::sum_cert_matches_golden_deterministic_subset`. |
+| REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `fn crate_stem` strips `.`/leading-digit; `fn run_verus` writes `<stem>.rs` into the per-run scratch dir `forge_<stem>_<pid>_<n>/` (`unique_scratch_dir`) and spawns verus (`invoke_verus`: `--output-json --smt-option smt.random_seed=<seed>` + the #11 `--profile`/`--rlimit`); the `ScratchDir` Drop guard cleans up wholesale (#53). Test `crate_stem_has_no_dot_and_is_valid`. |
+| REQ-3 (exit-status checked, never swallow) | SHIPPED | `fn invoke_verus` captures status+stdout+stderr; `fn classify_verus_outcome` makes a parseable failure a reported cert, unparseable/VIR-error a `ForgeError::VerusOutput`, spawn ENOENT a `VerusAbsent`. Tests `unparseable_output_is_verus_output_error`, `vir_error_is_verus_output_error`. |
 | REQ-4 (verus output → per-obligation + counterexamples) | SHIPPED | `fn parse_summary` reads JSON `verification-results`; `fn parse_stderr_failures`/`fn parse_span` turn `error:` + `--> file:line:col` into `ObligationResult::failed` witnesses. Test `parseable_failure_is_reported_cert_with_counterexample`. |
-| REQ-5 (level determination, v0.1) | SHIPPED | `fn level_from_summary`: `Level::L3` iff `success && errors==0`, else `Level::L0` reported failure. Tests `parseable_success_is_l3_cert` (L3) + the broken-contract integration test (L0). |
-| REQ-6 (verus-absent = environment error) | SHIPPED | `fn invoke_verus` maps spawn `ErrorKind::NotFound` → `ForgeError::VerusAbsent`; integration test `verus_absent_is_environment_error_not_l3`. |
+| REQ-5 (level determination) | SHIPPED | `fn classify_verus_outcome`: `VerusOutcome::Proved` (`success && errors==0`) ⇒ `Level::L3` in `assemble_certificate`; a counterexample/timeout is a reported non-L3 cert (the former `level_from_summary` cite is dead — Amendment item 2; the #10 ladder may then degrade a TIMEOUT, never a counterexample). Tests `parseable_success_is_l3_cert` (L3) + `parseable_failure_is_reported_cert_with_counterexample` (L0). |
+| REQ-6 (verus-absent = environment error) | SHIPPED | `fn invoke_verus` maps spawn `ErrorKind::NotFound` → `ForgeError::VerusAbsent`; integration test `cache_conformance::cold_cache_with_verus_unavailable_is_environment_error` (verus off `PATH`, cold cache → environment exit, never L3 — Amendment item 5). |
 | REQ-7 (determinism) | SHIPPED | `DEFAULT_SOLVER_SEED` (via `fn resolve_seed`) passed to verus; `solver_time_ms` is the only wall-clock field, excluded from `Certificate::oracle_subset`; test `serialization_is_deterministic`. |
-| REQ-8 (`fx diverge` caps at L1, mutation/strengthen exempt — the #16 mirror) | SHIPPED | `fn_is_diverge in check.rs` (the row-shape predicate mirroring `lower.rs`'s) routes a non-boundary, non-slag `fx diverge` fn in `gate_fn` to `GateOutcome::DivergeL1(diverge_l1_cert(..))` — `Level::L1`, `slag/boundary: false`, the partial-correctness discharged obligation, the §7.1 (a)/(b)/(c) triage STILL applied. The per-item loop's `GateOutcome::DivergeL1` arm `continue`s exactly like `BoundaryL1`/`SlagL1` (no verus, no #12 mutation, no #14 strengthen), so `run` never reaches the §7 gate that mis-rejected it `WeakContract` at L0. Reading (b) (boundary-style L1-no-verus) is the chosen ratification: the per-item sub-program's diverge body fails verus (the loop callees' `req`s are not re-established by the loop invariant — spurious for partial correctness), so the cap SKIPS verus; the real assurance is the L1 runtime checks + the L3-proven edit core (`insert_str`/`backspace`). DIVERGE-ONLY (R-DEFER-9): a non-diverge weak contract still rejects L0 `WeakContract`; a non-diverge non-decreasing `dec` still fails verus termination. Verified: `forge/tests/editor_runs.rs` (`editor_edit_core_certifies_l3_and_run_caps_at_l1`, `non_diverge_weak_contract_still_rejects_l0_weakcontract`, `normal_loop_without_dec_still_fails_termination`, `corpus_still_certifies_l3_unperturbed`). |
+| REQ-8 (`fx diverge` caps at L1, mutation/strengthen exempt — the #16 mirror) | SHIPPED | `fn_is_diverge in check.rs` (the row-shape predicate mirroring `lower.rs`'s) routes a non-boundary, non-slag `fx diverge` fn in `gate_fn` to `GateOutcome::DivergeL1(diverge_l1_cert(..))` — `Level::L1`, `slag/boundary: false`, the partial-correctness discharged obligation, the §7.1 (a)/(b)/(c) triage STILL applied. The per-item loop's `GateOutcome::DivergeL1` arm `continue`s exactly like `BoundaryL1`/`SlagL1` (no verus, no #12 mutation, no #14 strengthen), so `run` never reaches the §7 gate that mis-rejected it `WeakContract` at L0. Reading (b) (boundary-style L1-no-verus) is the chosen ratification: the per-item sub-program's diverge body fails verus (the loop callees' `req`s are not re-established by the loop invariant — spurious for partial correctness), so the cap SKIPS verus; the real assurance is the L1 runtime checks + the L3-proven edit core (`insert_str`/`backspace`). DIVERGE-ONLY (R-DEFER-9): a non-diverge weak contract still rejects L0 `WeakContract`; a non-diverge non-decreasing `dec` still fails verus termination. Verified: `forge/tests/editor_runs.rs` (`editor_logic_certifies_l3_boundary_and_run_l1`, `non_diverge_weak_contract_still_rejects_l0_weakcontract`, `normal_loop_without_dec_still_fails_termination`, `corpus_still_certifies_l3_unperturbed`). |

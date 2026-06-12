@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b60a64e8f9bf3818d2d5418eae7a1e163726214d (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — greenfield Summary fixed + the post-v0.1 node-growth amendment superseding the REQ-1/REQ-6/REQ-7 "exactly" lists, #262)
 governs: thermite-syntax/src/ast.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -23,8 +23,46 @@ surface grammar (`surface-grammar.md`) one-for-one. Certain nodes are
 e.g. `binary_search.loop#1.inv#2`) so `forge edit`/`forge insert-after` and the
 per-item proof cache key off structure, not string matches (§4.3).
 
-This doc is GREENFIELD / FORWARD-LOOKING: no `ast.rs` exists. Every REQ is
-**NOT-STARTED**, blocked on issue #3.
+This doc's REQs are SHIPPED (`thermite-syntax/src/ast.rs`, issue #3 + the
+#37/#92/#93 amendments) — see the REQ status table.
+
+> **AMENDMENT (#262 re-audit, 2026-06-12 — the post-v0.1 node growth; supersedes
+> the "covers exactly" readings of REQ-1/REQ-6/REQ-7 below).** The REQ bodies
+> below pin the v0.1 CORE node set and remain correct FOR IT, but the AST has
+> since grown ADDITIVE node families owned by OTHER design docs (each contracted
+> in `ast.rs`'s module-doc REQ tables and its owning doc — this doc does NOT
+> re-own them):
+>
+> - **Items (REQ-1):** `Item::Struct(StructItem)` / `Item::Enum(EnumItem)`
+>   (+ `FieldDef`/`VariantDef`/`VariantShape`, the `#[sealed]` flag) —
+>   `.design/basis/01-adts.md` / `.design/basis/06-provenance-and-sinks.md`.
+>   `FnItem` gained `boundary: Option<BoundaryAttr>` + `body: Option<Block>`
+>   (a boundary fn is `boundary: Some`, `body: None` —
+>   `.design/boundary/ffi-boundary.md` REQ-2), `dec: Option<Clause>` (the
+>   optional recursive-exec-fn termination measure —
+>   `.design/basis/10-recursion-tuples.md` REQ-1, C9-A), and `holes: Vec<Hole>`
+>   (the `?N` open-body holes, `struct Hole { number, span }` —
+>   `.design/forge/goal-repl.md` REQ-4, #193).
+> - **Expressions (REQ-6):** `enum Expr` additionally has `StructLit`/`Is`/
+>   `Deref` (01-adts), `StrLit` (`.design/basis/07-strings.md`), and `Tuple`/
+>   `TupleProj` (10-recursion-tuples, C9-B); `MatchArm` gained
+>   `guard: Option<Expr>` (`.design/basis/11-ergonomics.md` REQ-3, C10).
+> - **Patterns / Types / Effects (REQ-7):** `enum Pattern` additionally has
+>   `Struct` (01-adts) and `Or(Vec<Pattern>)` (11-ergonomics REQ-4). `enum Type`
+>   additionally has `Unit`, `Named`, `Box`, `Vec`, `String`, `Option`,
+>   `Result(_, _)`, `Map(_, _)` (the two-arg nodes), and `Tuple(Vec<Type>)`
+>   (01-adts / 04-collections / 07-strings / 09-option-result / 13-map /
+>   10-recursion-tuples). `enum Effect` gained the ninth atom `Term` (`fx term`,
+>   #106/#132 — `.design/sandbox/runtime-sandbox.md`).
+> - **Shape corrections against the tree:** `Contract` carries `req: Clause` and
+>   `ens: Vec<Clause>` (a `Clause` wraps the parsed `expr` + the verbatim `text`
+>   + `span` — the addressing oracle), not bare `Expr`s; `Stmt::Let.ty` is
+>   `Option<Type>`; `Stmt` also carries the `Loop(LoopNode)` variant (REQ-5's
+>   node in statement position); the expression-form `Expr::If.else_` is a
+>   mandatory `Block`.
+>
+> The REQ-status table below is the v0.1-core contract; the additions above are
+> verified SHIPPED under their owning docs.
 
 ## Requirements
 

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: fa557601727c22fcdfc1fe60b779f9cd9da38a1e (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary; #48/#74/#80 early-return synthesis + 0/0 backstop, the #101 equivalence-excluded denominator, golden-anchored ratios, and the #247 Lean-battery consumer, #262)
 governs: forge/src/mutation.rs
 thesis-refs:
   - thermite-design.md §7
@@ -29,9 +29,11 @@ and the cert reports the surviving mutants as a precise strengthening prompt
 known-good body to measure CONTRACT strength, and reuse the proof cache (#8) so
 each mutant's re-verify is content-addressed and cheap on re-runs.
 
-GREENFIELD — no `mutation.rs` exists. **All REQs NOT-STARTED**, blocked on
-crosslink issue **#46** (this iteration's blocker for "§7 step 4 mutation
-scoring", v0.3 battery, milestone #3). The load-bearing prerequisites all ship
+SHIPPED (#12/#46) — `forge/src/mutation.rs` implements the frozen mutator
+set, the kill-ratio floor gate, and the score type; the REQ-status table below
+is the per-REQ evidence, and the **Post-pin amendments** section records what
+the fourteen commits since the bootstrap pin changed (re-audited, #262).
+The load-bearing prerequisites all ship
 and are what this component composes: `forge check` (#5, `check::check_file`),
 the per-item verus driver (#5, `check::run_verus` + `classify_verus_outcome`),
 the structural triage gate (#6, `vacuity::triage`), the SOLVER vacuity gate (#13,
@@ -40,6 +42,53 @@ the structural triage gate (#6, `vacuity::triage`), the SOLVER vacuity gate (#13
 `contract_quality.mutants_killed` / `survivor` fields (`manifest::ContractQuality`
 — made live by this component). Real verus is at `~/.local/bin/verus`
 (`0.2026.05.24.ecee80a`); the GROUNDING below ran against it.
+
+## Post-pin amendments (re-audited 2026-06-12, #262)
+
+Fourteen commits touched `mutation.rs` after the bootstrap pin `fa557601`. The
+behavior-bearing arcs, verified against the current tree:
+
+- **#48 (`64ec916c`) — the 0/0 escape is gated + slice early-returns.**
+  `MutationScore::kill_ratio` returns `0.0` when `scored == 0`: a contract the
+  battery cannot exercise is BELOW any positive floor → gated `WeakContract`,
+  never a silent vacuous `1.0` pass (anti-Goodhart, R-DEFER-9). And
+  `early_return_value` synthesizes the empty-slice literal `&[]` / `&mut []`
+  for a reference-to-slice return, so a slice-returning body is SCORED instead
+  of 0/0-gated.
+- **#74 / #80 — empty-`Vec` / empty-`String` early-return mutants.**
+  `empty_vec_value` synthesizes `TVec<Suffix> { data: Vec::new() }` for a
+  bounded-`Vec` return and `empty_string_value` synthesizes
+  `TString { data: Vec::new() }` for a `String` return (mirroring the #48 `&[]`
+  precedent), so those return classes score too. Each verdict-changing widening
+  bumped the proof cache's `CHECK_SCHEMA_VERSION` (proof-cache.md, #49) so no
+  stale gate verdict is served on an unchanged lowered-source key.
+- **#101 (`cb1462d5`) — equivalent-mutant exclusion (governing doc:
+  `.design/forge/equivalent-mutants.md`).** A survivor Verus PROVES observably
+  equivalent to the real body under `req` (`check::equivalence_proves_equal`)
+  drops from the kill-ratio DENOMINATOR: `MutationScore` gained
+  `pub equivalent: usize` (a transparency count; `scored` is already net of
+  the excluded mutants), and `survivor` NEVER records a proved-equivalent
+  mutant. The #48 backstop is preserved: a fn whose mutants are all
+  killed-or-equivalent with NONE killed reduces to `0/0` → still gated.
+- **#60 (`4dcfabf1`) — the floor compare is verus-anchored.** `meets_floor`'s
+  f64 compare is anchored to the proved integer cross-multiply
+  `thermite_verified::meets_floor_60` via the in-module f64↔integer agreement
+  grid (`mutation::tests::verus_anchor`); the verus-proved fact includes the
+  #48 `scored == 0 ⟹ !pass` polarity.
+- **Surface ripples** (#92 operators, #93 break/continue, #95 Option/Result,
+  #109 tuples, #112 C10, #37 the verbatim `IntLit { value, .. }` node): the
+  mutator walk covers the grown `Expr`/`Stmt` surface; the frozen family ORDER
+  and the `MUTANT_CAP = 64` order-prefix selection are unchanged.
+- **#247 — a SECOND production consumer (engine-generic Lean battery;
+  `mutation.rs` itself unchanged by it).** `check::lean_mutation_score` drives
+  the SAME `mutation::generate` frozen set through the Lean engine with
+  engine-generic kill semantics (`engine::lean_mutant_outcome`): a mutant the
+  Lean fragment does not ADMIT is "untested against lean" (NEVER counted
+  killed), a Lean-`Proven` mutant SURVIVED, and the floor gates the Lean path
+  via `engine::LeanMutationTally::meets_floor` — mirroring this component's
+  gate. The #101 equivalence probe is a verus meta-query OUTSIDE the engine
+  interface, so the Lean-only path reports the RAW survivor set (an honest
+  non-exclusion). The Verus-path battery documented here is untouched by #247.
 
 ## Scope boundaries (documented, attributed)
 
@@ -73,7 +122,10 @@ the structural triage gate (#6, `vacuity::triage`), the SOLVER vacuity gate (#13
   - **early returns**: insert a `Stmt::Return(Some(<default-of-ret-type>))` at the
     FRONT of the body block (`return 0` for an integer return, `return None` for
     an `Option`, `return false` for `bool`; the default is the return type's
-    canonical zero value — OQ-3);
+    canonical zero value — OQ-3). *(Amended #48/#74/#80: for a slice /
+    bounded-`Vec` / `String` return, `early_return_value` synthesizes the empty
+    value — `&[]`/`&mut []`, `TVec<Suffix> { data: Vec::new() }`,
+    `TString { data: Vec::new() }` — instead of skipping the mutator.)*
   - **branch swaps** on a `Stmt::If` / `Expr::If`: negate the condition (wrap in a
     logical-not — encoded as the `==`↔`!=`/`<`↔`>=` flip already in the operator
     set when the condition is a comparison, else swap the `then`/`else_` arms).
@@ -129,6 +181,10 @@ the structural triage gate (#6, `vacuity::triage`), the SOLVER vacuity gate (#13
 
 - **REQ-5 (kill ratio + floor gate — §7, default 60%):** `kill_ratio = killed /
   total` where `total` is the count of SCORED mutants (those that lowered + ran).
+  *(Amended #101: `scored` is additionally NET of survivors Verus proved
+  observably equivalent to the real body — equivalent-mutants.md. Amended #48:
+  `scored == 0` yields `kill_ratio = 0.0`, below any positive floor, so an
+  unscoreable contract is gated `WeakContract`, never vacuously passed.)*
   A configurable floor `MUTATION_FLOOR` (default **0.60**, §7 "a configurable
   floor (default 60%)") gates certification:
   - `kill_ratio >= floor` → the item still certifies; the cert records
@@ -433,6 +489,9 @@ precise value-add the floor catches.
   `return <default>`; the default is the return type's canonical zero (`0` /
   `false` / `None`). For a type with no obvious zero this mutator is skipped for
   that `fn` (dropped from the set, not an error). Documented at the mutator site.
+  *(Resolved post-pin: #48/#74/#80 synthesize empty-slice/-`Vec`/-`String`
+  values, narrowing the skip set to genuinely un-synthesizable types — where the
+  #48 0/0 backstop gates rather than vacuously passing.)*
 - **OQ-4 (timeout polarity):** a mutant whose verus run TIMES OUT is counted
   KILLED (an un-proved mutant is not a survivor). The sound invariant is "only a
   verus SUCCESS is a survivor"; a timeout is the non-strict reading and is
@@ -454,11 +513,11 @@ precise value-add the floor catches.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (frozen mutator set) | SHIPPED | `mutation::generate` in `forge/src/mutation.rs` walks a `FnItem.body` and applies the frozen families: operator flips (`flip_binop`: `Add`↔`Sub`/`Mul`↔`Div`/`Lt`↔`Le`/`Gt`↔`Ge`/`Eq`↔`Ne`/`And`↔`Or`), off-by-ones (`Expr::IntLit n`→`n+1`/`n-1`, `n-1` skipped at 0), early returns (`zero_value_for` → `Stmt::Return` at body head; `Option`→`None`/int→`0`/bool→`false`), branch swaps (`negate_comparison` / arm swap). Consumer: `check::mutation_score` in `check.rs`. |
+| REQ-1 (frozen mutator set) | SHIPPED | `mutation::generate` in `forge/src/mutation.rs` walks a `FnItem.body` and applies the frozen families: operator flips (`flip_binop`: `Add`↔`Sub`/`Mul`↔`Div`/`Lt`↔`Le`/`Gt`↔`Ge`/`Eq`↔`Ne`/`And`↔`Or`), off-by-ones (`Expr::IntLit n`→`n+1`/`n-1`, `n-1` skipped at 0), early returns (`early_return_value`: scalar zero via `zero_value_for` — `Option`→`None`/int→`0`/bool→`false` — OR the synthesized empty `&[]`/`&mut []` slice (#48), `TVec<Suffix> { data: Vec::new() }` (#74), `TString { data: Vec::new() }` (#80)), branch swaps (`negate_comparison` / arm swap). Consumers: `check::mutation_score` and (post-pin, #247) `check::lean_mutation_score` (the engine-generic Lean battery) in `check.rs`. |
 | REQ-2 (deterministic order + seed + cap) | SHIPPED | `mutation::generate` enumerates in a fixed pre-order family sequence (`MutantSink`/`Applier` with per-kind `Counters`), capped by `pub const MUTANT_CAP = 64`; the seam takes `check::DEFAULT_SOLVER_SEED`. Verified by `mutation::tests::frozen_set_and_order_for_small_fn` + `generate_is_deterministic` + `capped_at_mutant_cap`. |
 | REQ-3 (re-lower + re-verify vs same contract) | SHIPPED | `check::mutation_score` weaves each `Mutant.item` via `check::item_subprogram` + `thermite_lower::lower` and runs `check::run_verus`; the contract is the original's (only `body` mutated — `mutation::tests::mutant_keeps_contract_changes_only_body`). |
-| REQ-4 (KILLED vs SURVIVED) | SHIPPED | `mutation::classify_mutant` + `check::mutant_outcome_is_survivor`/`mutant_cert_is_survivor`: a `Proved` mutant SURVIVED, a counterexample/timeout is KILLED. Verified by `mutation::tests::classify_polarity_is_inverted` + `mutation_conformance.rs`. |
-| REQ-5 (kill ratio + 60% floor gate) | SHIPPED | `mutation::MutationScore::{kill_ratio,meets_floor,mutants_killed_string}` + `pub const MUTATION_FLOOR = 0.60`; the gate in `check::check_file_with_options` certifies `>= floor` and produces `Certificate::rejected_weak_contract` (`RejectReason { cause: "WeakContract" }`) below it. The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Verified by `mutation_conformance.rs` (AC-2/AC-3, GROUNDED: `weak_loose_bound` scores 1/2 < floor; gated). |
+| REQ-4 (KILLED vs SURVIVED) | SHIPPED | `mutation::classify_mutant` + `check::mutant_outcome_is_survivor`/`mutant_cert_is_survivor`: a `Proved` mutant SURVIVED, a counterexample/timeout is KILLED. Post-pin (#101): a SURVIVOR additionally runs the equivalence query (`check::equivalence_proves_equal`) — proved-equivalent → excluded from BOTH the survivor set AND the denominator (`MutationScore.equivalent` records the count), per `.design/forge/equivalent-mutants.md`. Verified by `mutation::tests::classify_polarity_is_inverted` + `mutation_conformance.rs` + `equivalent_mutants_conformance.rs`. |
+| REQ-5 (kill ratio + 60% floor gate) | SHIPPED | `mutation::MutationScore::{kill_ratio,meets_floor,mutants_killed_string}` + `pub const MUTATION_FLOOR = 0.60`; the gate in `check::check_file_with_options` certifies `>= floor` and produces `Certificate::rejected_weak_contract` (`RejectReason { cause: "WeakContract" }`) below it. `scored == 0` ⇒ `kill_ratio = 0.0` (the #48 backstop, below any positive floor); `meets_floor` is verus-anchored to `thermite_verified::meets_floor_60` (#60). The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Verified by `mutation_conformance.rs` (AC-2/AC-3: the `reject_below_floor` oracle entry `weak_loose_bound` is gated `WeakContract`; the oracle asserts the threshold relation, not a frozen count). |
 | REQ-6 (graduate `mutants_killed`/`survivor`) | SHIPPED | `Certificate::with_mutation_score` (certified path) + `Certificate::rejected_weak_contract` (reject path) set the two EXISTING Appendix A fields; no schema change (R-SPEC-2). Verified by `manifest::tests::with_mutation_score_graduates_fields_and_stays_oracle_excluded` + `rejected_weak_contract_carries_cause_ratio_and_survivor`. |
 | REQ-7 (gate AFTER L3, reuse proof cache) | SHIPPED | `check::mutation_score` runs only when `cert.level == L3 && reject.is_none()` (a proved real body); each mutant content-addresses via `cache::cache_key`/`load`/`store` (a non-default rlimit/floor bypasses the cache). Consumer: `check::check_file_with_options`'s post-L3 stage. |
-| REQ-8 (deterministic kill ratio, oracle stance) | SHIPPED | `generate` is a pure function of the AST + frozen table; the kill ratio is deterministic (verified by `mutation_conformance.rs::kill_ratio_is_deterministic_across_two_runs`, run==run). `mutants_killed`/`survivor` stay oracle-EXCLUDED in `Certificate::oracle_subset` (OQ-1, verus-version-sensitive). GROUNDED kill ratios: `sum` 7/7, `binary_search` 14/16, `weak_loose_bound` 1/2. |
+| REQ-8 (deterministic kill ratio, oracle stance) | SHIPPED | `generate` is a pure function of the AST + frozen table; the kill ratio is deterministic (verified by `mutation_conformance.rs::kill_ratio_is_deterministic_across_two_runs`, run==run). `mutants_killed`/`survivor` stay oracle-EXCLUDED in `Certificate::oracle_subset` (OQ-1, verus-version-sensitive). GROUNDED at the current tree: the frozen golden `conformance/sum.cert.json` pins `mutants_killed: "17/18"` with `survivor` "mutant#11: `i = i + 1` → `i = i + 2` survives ens but killed by inv#2" (the pin-era 7/7 sample predates the #92-operator mutant-set growth); the conformance oracle asserts threshold relations (`>= floor` / `< floor`), never frozen exact counts. |

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 3376538daf694db5cf25f907abe2110f459d9d05 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary + the #101 survivor-input and render_expr surface notes, #262)
 governs: forge/src/strengthen.rs
 thesis-refs:
   - thermite-design.md §7
@@ -39,9 +39,10 @@ have killed a #12 survivor). This is the anti-Goodhart escape hatch (`goal.md`
 R-DEFER-9): the probe helps the agent climb OUT of a weak-but-true contract toward
 one that pins behavior — it never lets it certify a weaker one.
 
-GREENFIELD — no `strengthen.rs` exists. **All REQs NOT-STARTED**, blocked on
-crosslink issue **#14** ("§7 step 5 strengthening probes", v0.3 battery, milestone
-#3). The load-bearing prerequisites all ship and are what this component composes:
+SHIPPED (#14) — `forge/src/strengthen.rs` implements the frozen candidate
+template, the verify/filter pipeline, and the advisory attachment; the
+REQ-status table below is the per-REQ evidence and the **Post-pin amendments**
+section records the five commits since the bootstrap pin (re-audited, #262). The load-bearing prerequisites all ship and are what this component composes:
 `forge check` (#5, `check::check_file_with_options`), the per-item verus driver
 (#5, `check::run_verus` + `classify_verus_outcome`, both `private` in `check.rs`),
 mutation scoring (#12, `mutation::MutationScore` / `mutation::generate` — the
@@ -427,6 +428,28 @@ no search, no synthesis beyond the frozen grammar.
   template families (every family-3 candidate kills a survivor; every family-1/2
   equality strictly narrows a non-equality `ens`). A dedicated implication query is
   a possible future precision upgrade; ratified with the builder.
+
+## Post-pin amendments (re-audited 2026-06-12, #262)
+
+Five commits touched `strengthen.rs` after the bootstrap pin `3376538d`:
+
+- **#101 (`cb1462d5`) — the survivor INPUT is now net of proved-equivalent
+  mutants.** `mutation::MutationScore` gained `equivalent: usize`, and its
+  `survivor` field NEVER records a mutant Verus proved observably equivalent to
+  the real body under `req` (`.design/forge/equivalent-mutants.md`). The
+  probe's REQ-5 input contract is therefore strictly cleaner: a family-3
+  candidate is only ever derived from a DISTINGUISHING survivor (a true
+  equivalent mutant is not contract weakness and yields no strengthening
+  prompt). `strengthen.rs`'s own #101 diff is test-fixture-only (the hand-built
+  scores gained `equivalent: 0`).
+- **Renderer surface ripples** (#37 the verbatim `Expr::IntLit { value, .. }`
+  node, #92 the `%`/`<<`/`>>`/`&`/`|`/`^` operator spellings, #109 tuple
+  construction + `.N` projection): `pub fn render_expr` renders the grown
+  strengthenable-`ens` surface faithfully; a non-template shape still falls to
+  the safe non-panicking placeholder (it never renders a `match` arm, so the
+  C10 `MatchArm.guard` / `Pattern::Or` additions need no arm here). The frozen
+  family order, `pub const CANDIDATE_CAP = 16`, and the filter logic are
+  unchanged.
 
 ## REQ status
 

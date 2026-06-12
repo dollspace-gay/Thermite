@@ -25,6 +25,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # Full history: the doc-drift tripwire's commit-set predicate
+          # (`git log <pin>..HEAD`) and pin validation (`merge-base
+          # --is-ancestor`) need the pinned commits present; a shallow
+          # clone would mis-class every pin as INVALID-PIN.
+          fetch-depth: 0
 
       - name: Install toolchain (pinned to rust-toolchain.toml channel)
         uses: dtolnay/rust-toolchain@1.95.0
@@ -62,3 +68,16 @@ jobs:
 
       - name: skill budget gate (issue #7, design §2.2 / §10)
         run: cargo run -p thermite-skill -- --check-budget
+
+      # Doc-drift tripwire (.design/tooling/doc-drift-tripwire.md REQ-10): every
+      # routed .design doc's audited-sha pin must cover its governed files. This
+      # step landed in the commit that cleared the #262 bootstrap backlog (the
+      # REQ-10 enforcement-activation sequencing) — from here on, a commit that
+      # touches a routed file without re-pinning/amending its design doc fails CI.
+      # The fixture suite for the gate itself runs first (full checkout history
+      # is required for the commit-set drift predicate, hence fetch-depth: 0 on
+      # the checkout — see the Checkout step).
+      - name: doc-drift gate tests (tooling/tests)
+        run: python3 -m unittest discover -s tooling/tests
+      - name: doc-drift tripwire (design-doc freshness)
+        run: python3 tooling/doc-drift.py

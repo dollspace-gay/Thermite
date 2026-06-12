@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 540cea0d19024faab4a24dab501148e3ea4b0700 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
-governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — tv_signal.rs added to governs + the #189/#192/#195 verdict hardenings recorded; REQ-4 corrected to SHIPPED (loop-TV built under loop-tv.md), #262)
+governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)
   - thermite-design.md §4.1 (contract-first functions — the exec BODY they guard: let/assign/while/inv/dec)
@@ -400,6 +400,31 @@ kernel's exec language — one frozen set, two consumers.
 A reader must NOT read straight-line body-TV (2.2.1) as whole-body (loop-inclusive) faithfulness, nor
 as the kernel target.
 
+## Post-2.2.1 hardenings (recorded at the #262 re-audit, 2026-06-12)
+
+Three post-pin commits hardened the REQ-5 phase WITHOUT changing the four-way
+contract:
+
+- **#189** — `body_tv` gates the spec-fn-helper `req` and NEVER maps a verus
+  frame/compile abort of the obligation SCAFFOLD to `Divergent`: a discharge
+  failure is `Unverifiable`; `Divergent` is reserved for a real counterexample /
+  a non-compiling PRODUCTION body (R-HONEST-3).
+- **#192 (ref #166/#189)** — the Verus/Z3 rlimit/timeout discriminator is now
+  the SHARED `pub(crate) fn is_rlimit_signal in forge/src/tv_signal.rs` (a NEW
+  governed file, routed to this doc — REQ-5 is binding there): an `errors >= 1`
+  run carrying an rlimit signal routes to the Unverifiable-equivalent verdict
+  AHEAD of the Divergent arm in ALL THREE TV phases
+  (`contract_tv`/`body_tv`/`exec_tv`). body_tv's #189 three-phrase set
+  (`rlimit exceeded` / `rlimit) exceeded` / `resource limit exceeded`) was the
+  authority the drifted per-phase copies were unified onto, so a solver-budget
+  exhaustion is never fabricated into a body infidelity (R-HONEST-3 / R-CODE-4).
+  Verified: `tv_signal`'s discriminator unit tests + the per-phase
+  `divergent_teeth` + `forge/tests/divergence_rlimit_phrase_drift.rs`.
+- **#195 (ref #193)** — `body_tv_fn` SKIPS a fn carrying open `?N` holes
+  (`FnItem.holes` non-empty → `BodyVerdict::Skipped` with the OpenHole reason)
+  BEFORE any lowering, so an unfinished body can never come out `Faithful`
+  (`.design/forge/goal-repl.md` REQ-4/REQ-5).
+
 ## REQ status
 
 | REQ | Status | Evidence |
@@ -407,5 +432,5 @@ as the kernel target.
 | REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT construct set is PINNED IN CODE: `thermite_tv::exec_stmt_encode::body_ref_state` (and its `thread_stmt`/`encode_value`) ADMIT exactly `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + `Block` sequencing/tail, and HONESTLY REJECT (an `Unsupported` `Err`) `Stmt::Loop`/`Break`/`Continue` (2.2.2), a mid-`if`-branch early return, `match`-stmt, non-scalar mutation, and a re-shadow — the design-amendment-gated stable set; mirrored on the production side by `thermite_lower::lower_exec_body` (a loop body → `LowerError::Unsupported`, the `exec_body_tests::loop_body_is_err_not_silent` pin). Verified by `thermite-tv/tests/body_teeth.rs` B1–B4 + `exec_stmt_encode::tests` (the loop/re-shadow honest-skip tests). |
 | REQ-2 (operational-semantics reference state-denotation) | SHIPPED | `pub fn body_ref_state` (+ `body_ref_state_ensures`, `BodyRefCtx`) in `thermite-tv/src/exec_stmt_encode.rs` — the big-step state-transformer (let/assign substitution-threading, mutation-ORDER sensitivity, `if`-branch composition, multi-cell TUPLE projection), composing step-2.1's `exec_ref_value` on each env-substituted RHS / condition / tail. Non-test consumer: `thermite_tv::obligation::body_equivalence_obligation`. Independence is STRUCTURAL: deps `thermite-syntax` + `thermite-spec` ONLY (`cargo tree -p thermite-tv` — no `thermite-lower`, AC-6). Verified by `tests/body_teeth.rs` B1–B4 against real verus (B2 mutation-ORDER, B4 multi-cell tuple) + `exec_stmt_encode::tests` (the closed-form pins, incl. the reorder ≠ ordered form). |
 | REQ-3 (step-2.2.1 straight-line body state-refinement obligation + discharge) | SHIPPED | `thermite_tv::obligation::body_equivalence_obligation` + `BodyObligationFrame`/`BodyParamDecl` (`obligation.rs`) — emits the self-contained `fn tv_body_wrap(<inputs>) requires <req>, ensures <result-state == body_ref_state>, { <p_production> }` STATE form (single-cell: `result == <ref>`; multi-cell: `result.0 == <c0> && result.1 == <c1>`). The production side is the per-body exec entry `thermite_lower::lower_exec_body` (#161 — `lower_block_inner(block, Ctx::exec(), 0, zero_span())`, the minimal standalone-body frame, pinned by `lower.rs::exec_body_tests` B1–B4 as the cross-crate faithful bridge). GROUNDED end-to-end against real verus (`Verus 0.2026.05.24`, `tests/body_teeth.rs`): all FOUR faithful bodies VERIFY (`verified: 1, errors: 0`); the dropped-statement (B1) / reordered-mutation (B2) / swapped-branch (B3) / wrong-cell (B4) infidelities each fail `postcondition not satisfied` (`errors: 1`). The forge `body_tv` phase consumer is REQ-5 (#162, next dispatch — the `lower_exec_expr`→`forge::exec_tv` precedent). |
-| REQ-4 (step-2.2.2 loops — harder horizon) | NOT-STARTED | open prereq blocker #163. Kernel-gated (REQ-1 frozen-subset prerequisite). NOW DESIGNED in `.design/verified/loop-tv.md`: a variant of (a) — three per-run loop obligations (entry/preservation/exit `inv ∧ ¬cond`) reusing the SHIPPED `body_ref_state` single-step + a Lean partial-correctness WHILE-RULE (`Exec/Loop.lean`, new) extending the `Faithfulness.lean` `h_tv` capstone; termination is the per-run Verus `decreases` residual. Bounded unrolling (b) DROPPED for v1 (the future v0.2 L2 fallback for invariant-free loops). Unbuilt. |
-| REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `forge::body_tv` module (`forge/src/body_tv.rs`): `pub fn body_tv_file` walks each fn body and runs the straight-line body state-refinement TV — lowering via `thermite_lower::lower_exec_body` (`P_production`), building `thermite_tv::body_equivalence_obligation`, discharging through `verus` (`discharge` → `run_obligation`, reusing `crate::check::ScratchDir`/#53 cleanup, exactly as `exec_tv::discharge`). The four-way `enum BodyVerdict` (`Faithful`/`Divergent`/`Unverifiable`/`Skipped`) is REPORTED DISTINCTLY (distinct human/JSON output AND exit code — R-HONEST-3): a body outside the frozen subset (a non-derivable frame, a re-shadow / mid-body return / non-scalar mutation `body_ref_state` `Unsupported`, an out-of-v1 loop) is `Skipped` with a reason, NEVER `Faithful`. Non-test consumer: `cli::run_body_tv` (the `forge body-tv <file> [--json]` verb — nonzero exit on Divergent, zero on Faithful/Skipped/Unverifiable, the `forge exec-tv` convention). Verified by `forge/tests/body_tv.rs` against real verus: a faithful straight-line `{ let a = x+1; let b = a*2; b }` → `faithful`; a faithful v1 `while` → `faithful` (all three obligations); a REORDERED-mutation production → `Divergent` (`postcondition not satisfied`); `binary_search.th`'s `loop`-kind body → `Skipped`-with-reason. Closes the `lower_exec_body` consumer loop (R-DEFER-1). |
+| REQ-4 (step-2.2.2 loops — harder horizon) | SHIPPED | #163, OWNED + evidenced in `.design/verified/loop-tv.md` (its REQ-1..REQ-5 are all SHIPPED) — corrected from NOT-STARTED at the #262 re-audit. The chosen variant of (a) is BUILT: the three per-run loop obligations `pub fn loop_entry_obligation`/`loop_preservation_obligation`/`loop_exit_obligation` + `LoopObligationFrame` in `thermite-tv/src/obligation.rs` (reusing the SHIPPED `body_ref_state` single-iteration step), the Lean partial-correctness WHILE-RULE `theorem while_rule`/`tv_meta_loop` in `lean/Thermite/Exec/Loop.lean` (no `sorry`; termination stays the per-run Verus `decreases` residual), and the forge wiring `loop_body_tv`/`discharge_loop` in `forge/src/body_tv.rs` (v1 = a single frozen-subset `while` as the body's last statement; out-of-v1 loops `Skipped`-with-reason). Verified: `thermite-tv/tests/loop_teeth.rs` L1–L4 + `forge/tests/body_tv.rs` (faithful v1 `while` → Faithful all three; `binary_search.th`'s `loop`-kind body → Skipped) under real verus. Bounded unrolling (b) DROPPED for v1 (the future v0.2 L2 fallback). |
+| REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `forge::body_tv` module (`forge/src/body_tv.rs`): `pub fn body_tv_file` walks each fn body and runs the straight-line body state-refinement TV — lowering via `thermite_lower::lower_exec_body` (`P_production`), building `thermite_tv::body_equivalence_obligation`, discharging through `verus` (`discharge` → `run_obligation`, reusing `crate::check::ScratchDir`/#53 cleanup, exactly as `exec_tv::discharge`). The four-way `enum BodyVerdict` (`Faithful`/`Divergent`/`Unverifiable`/`Skipped`) is REPORTED DISTINCTLY (distinct human/JSON output AND exit code — R-HONEST-3): a body outside the frozen subset (a non-derivable frame, a re-shadow / mid-body return / non-scalar mutation `body_ref_state` `Unsupported`, an out-of-v1 loop) is `Skipped` with a reason, NEVER `Faithful`. Non-test consumer: `cli::run_body_tv` (the `forge body-tv <file> [--json]` verb — nonzero exit on Divergent, zero on Faithful/Skipped/Unverifiable, the `forge exec-tv` convention). Verified by `forge/tests/body_tv.rs` against real verus: a faithful straight-line `{ let a = x+1; let b = a*2; b }` → `faithful`; a faithful v1 `while` → `faithful` (all three obligations); a REORDERED-mutation production → `Divergent` (`postcondition not satisfied`); `binary_search.th`'s `loop`-kind body → `Skipped`-with-reason. Closes the `lower_exec_body` consumer loop (R-DEFER-1). Post-pin hardenings #189/#192/#195 (the shared `tv_signal::is_rlimit_signal` rlimit→Unverifiable gate; the OpenHole Skipped gate) are recorded in "Post-2.2.1 hardenings" above. |

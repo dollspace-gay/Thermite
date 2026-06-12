@@ -2,8 +2,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 64d21af0748f84e72cda1275247f8d55731183c6 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
-governs: thermite-spec/src/combinators.rs
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — REQ-6 flat-closure cage SHIPPED post-pin (#40, 4d46f8a4), greenfield Summary fixed, validator-growth currency note, #262)
+governs: thermite-spec/src/combinators.rs, thermite-spec/src/validator.rs
 thesis-refs:
   - thermite-design.md §4.1
   - thermite-design.md §4.2
@@ -25,16 +25,33 @@ calls, and the built-in operators / literals / paths the grammar already allows
 registry is not vocabulary-only, R-DEFER-1) and is the boundary API `thermite-lower`
 (#4) and `forge` (#6) call before lowering or running the vacuity battery.
 
-This doc is GREENFIELD / FORWARD-LOOKING: no `combinators.rs` exists (only the
-empty crate root `thermite-spec/src/lib.rs`). Every REQ is **NOT-STARTED**,
-blocked on issue **#2**. The acto-builder satisfies these REQs next.
+This doc's REQs are SHIPPED: the registry (`combinators.rs`) + the validator
+(`validator.rs`) under issue #2, and REQ-6's flat-closure cage under issue #40
+(commit `4d46f8a4`, post-pin) — see the REQ status table.
+
+> **AMENDMENT (#262 re-audit, 2026-06-12).** (a) **REQ-6 SHIPPED** post-pin
+> (#40, `4d46f8a4`): the REQ-status row below is updated; the Architecture
+> section's "collapses these two contexts" diagnosis describes the PRE-#40 code
+> and is kept as historical rationale. OQ-4 is RESOLVED with the dedicated
+> `SpecError::NestedCombinator { name, span }` variant. (b) `validator.rs` has
+> since grown FAR beyond this doc's cage — ADT well-formedness + `match`
+> exhaustiveness (`.design/basis/01-adts.md`), the recursion-SCHEME flat-step
+> cage (`SpecError::NestedScheme`, `.design/basis/02-recursion-schemes.md`),
+> the `BUILTIN_METHODS` cage admissions for Vec/String/Option/Result/Map
+> (04-collections / 07-strings / 09-option-result / 13-map), the `#[sealed]`
+> barrier (`SpecError::SealedConstruction`, 06-provenance-and-sinks), and the
+> C10 guarded-arm exhaustiveness rule (11-ergonomics) — each owned by its
+> `.design/basis/*.md` and contracted in `validator.rs`'s module-doc REQ
+> tables, NOT re-owned here. This doc continues to govern the combinator
+> registry + the §4.2 combinator cage (REQ-1..REQ-6).
 
 > **Amendment (2026-06-04, issue #40):** REQ-6 (the flat-closure-fragment rule)
 > and AC-6..AC-8 are ADDED to close a real hole in the §4.2 cage that an external
 > reviewer caught: a combinator's predicate-closure body was UNrestricted and
 > could contain ANOTHER combinator, reintroducing the nested-quantifier
 > instantiation unpredictability §4.2 claims to cage. The existing REQ-1..REQ-5
-> (SHIPPED under #2) are UNCHANGED; REQ-6 is NOT-STARTED, blocked on #40. See the
+> (SHIPPED under #2) are UNCHANGED; REQ-6 has since SHIPPED at #40 (`4d46f8a4`
+> — see the #262 amendment above and the REQ status table). See the
 > "Thesis-clarification note" section for the §4.2-wording erratum this amendment
 > records (handled like the §4.3 inv-numbering case — recorded here, not edited
 > into `thermite-design.md`).
@@ -211,10 +228,10 @@ the #4 fields are not REQs of #2 at all.
   canonically `forall_in(xs, |x| exists_in(ys, |y| y == x))` — returns `Err`
   carrying the dedicated nested-combinator cause (`NestedCombinator`, name at the
   builder's discretion; the REJECT outcome + the combinator-nested-in-closure
-  cause is what is pinned), NOT `Ok(())`. This is a NEW reject case in
-  `tests/golden/combinators/reject.json` (the oracle anchor — the orchestrator
-  adds the case). It is the exact program the loop-3 audit OVER-PERMITTED, so the
-  test pins the fix. (REQ-6)
+  cause is what is pinned), NOT `Ok(())`. The reject case is committed as
+  `nested_combinator_in_closure` in `tests/golden/combinators/reject.json`
+  (landed with #40). It is the exact program the loop-3 audit OVER-PERMITTED, so
+  the test pins the fix. (REQ-6)
 
 - **AC-7 (named spec-fn call inside a closure body is ACCEPTED):** Validating a
   program whose combinator predicate-closure body calls a NAMED `spec fn` —
@@ -332,15 +349,15 @@ REQ-6 distinguishes TWO walk contexts for a contract expression:
    call is FORBIDDEN here — the body must be a flat predicate. A named-spec-fn
    call IS still allowed (named composition, the honest caveat).
 
-Today's validator collapses these two contexts: in `check_arg_kind`, the `Pred`
-arm recurses the closure body via the SAME `walk_expr` used for a general
-contract position (`Expr::Closure { body, .. } => self.walk_expr(body, span)`),
-so a nested `exists_in(...)` in that body reaches `walk_call`, where
-`combinators::lookup` succeeds and the nested combinator is ACCEPTED. This is the
-over-permit the loop-3 audit observed (`forall_in(xs, |x| exists_in(ys, |y| y == x))`
-validated clean) and the precise hole #40 reports.
+**(HISTORICAL — the pre-#40 diagnosis; FIXED, see the #262 amendment.)** Before
+#40, the validator collapsed these two contexts: in `check_arg_kind`, the `Pred`
+arm recursed the closure body via the SAME `walk_expr` used for a general
+contract position, so a nested `exists_in(...)` in that body reached `walk_call`,
+where `combinators::lookup` succeeded and the nested combinator was ACCEPTED —
+the over-permit the loop-3 audit observed (`forall_in(xs, |x| exists_in(ys, |y| y == x))`
+validated clean), the precise hole #40 reported.
 
-The fix the builder lands (NOT this doc's job to write) is a flat-mode walk: when
+The fix (LANDED at #40) is a flat-mode walk: when
 descending a `Pred`-slot closure body, the walk must reject a callee that
 resolves to a registered combinator with the dedicated `NestedCombinator` cause,
 WHILE still accepting a callee that resolves to a declared `spec fn` (and all the
@@ -383,12 +400,11 @@ later consumer.
   or overflow.
 - **AC-5:** confirm `validate` references the registry lookup symbol (consumer
   check; the critic greps for the non-test call site).
-- **AC-6:** the NEW `reject.json` case `nested_combinator` —
+- **AC-6:** the `reject.json` case `nested_combinator_in_closure` —
   `forall_in(xs, |x| exists_in(ys, |y| y == x))` — asserts `Err` with the
-  nested-combinator cause (the program the audit over-permitted). This case
-  FAILS against the current over-permitting validator and goes green only when
-  REQ-6 lands (the builder tightens the validator; the orchestrator adds the
-  oracle case).
+  nested-combinator cause (the program the audit over-permitted). LANDED with
+  #40: the case is in the committed oracle and green
+  (`tests/combinators_conformance.rs`).
 - **AC-7:** the NEW `accept.json` case `named_spec_fn_in_closure` —
   `spec fn is_even(x: u32) -> bool dec 0 { x % 2 == 0 } fn f(xs: &[u32]) -> u32 req true ens forall_in(xs, |x| is_even(x)) fx pure { 0 }`
   — asserts `Ok(())` (named composition allowed).
@@ -423,7 +439,7 @@ outcome):**
 | REQ-3 (validator accept rule) | SHIPPED | `pub fn validate` in `validator.rs` collects `spec fn` names, walks `Contract.req`/`ens`, `LoopNode.invs`/`dec`, `SpecFnItem.body`; accepts registered combinators (`combinators::lookup`), declared spec-fn calls, grammar built-ins. Verification: every `accept.json` case validates clean. |
 | REQ-4 (reject cases, structured `SpecError`) | SHIPPED | `enum SpecError` (`UnknownCombinator`/`WrongArity`/`WrongArgKind`/`ForbiddenCall`/`ExpressionTooDeep`) in `validator.rs`; `validate` returns `Result<(), Vec<SpecError>>`, never panics. Verification: every `reject.json` case yields the expected cause. |
 | REQ-5 (bounded recursion — no overflow) | SHIPPED | `MAX_RECURSION_DEPTH` + `descend` guard wraps every recursive descent in `validator.rs`; deep input yields `ExpressionTooDeep`. Verification: `validate_never_panics`. |
-| REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | NOT-STARTED | open prereq blocker **#40**. The validator OVER-PERMITS today: `check_arg_kind`'s `Pred` arm recurses the closure body through the general `walk_expr`, so a nested combinator call reaches `walk_call`, where `combinators::lookup` succeeds and the nested combinator is wrongly accepted (the loop-3 audit accepted `forall_in(xs, |x| exists_in(ys, |y| y == x))`). No caged-flat walk / `NestedCombinator` cause exists yet; the new `accept.json`/`reject.json` cases are not yet added. |
+| REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | SHIPPED | #40 (`4d46f8a4`, post-pin; verified at the #262 re-audit). `check_arg_kind`'s `Pred` arm sets `Validator::in_combinator_closure` for the whole closure-body descent (`validator.rs`); while set, `walk_call` rejects any callee resolving via `combinators::lookup` with the dedicated span-bearing `SpecError::NestedCombinator { name, span }`, while a declared spec-fn callee stays accepted (named composition — AC-7). Non-test consumer: `pub fn validate in validator.rs` (the walk forge runs before lowering). Verification: `tests/golden/combinators/reject.json` case `nested_combinator_in_closure` → `NestedCombinator` + `accept.json` case `named_spec_fn_in_closure` → `Ok` (`thermite-spec/tests/combinators_conformance.rs`); the flat corpus closures stay `Ok` (AC-8); edge coverage in `thermite-spec/tests/divergence_nesting.rs` (nested-in-loop-inv / under-three-arg-outer / in-spec-fn-body all reject). |
 
 ## Thesis-clarification note (erratum-style — for the orchestrator/user; do NOT edit `thermite-design.md` here)
 

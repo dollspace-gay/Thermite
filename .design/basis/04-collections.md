@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 78d6f771f9d5c9cb733c6ee5c90ad9a0c6029ba9 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — Map half (REQ-2/REQ-6) SHIPPED via #123/C12 as the Vec-of-pairs TMap (see 13-map.md), not the vstd::map sketch; OQ-2/OQ-3 resolved, #262)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs
@@ -32,9 +32,14 @@ This doc is GREENFIELD / FORWARD-LOOKING. Thermite v0.1 today admits exactly
 src/ast.rs` `enum Type` = `Prim`/`Unit`/`Ref`/`Slice`/`Generic`); there is no
 `Vec`, `Map`, or growth. **UPDATE (#73): the `Vec` half is SHIPPED** — REQ-1/REQ-3/
 REQ-5/REQ-7 landed (the bounded `Vec<u64>` over `vstd::vec::Vec`, capacity
-invariant + no-OOB `get` + capacity-preserving `push`, real verus L3); the `Map`
-half (REQ-2/REQ-6) and the `Vec` element invariant (REQ-4) are deferred to a
-Stage-4 v1.1 follow-up under epic **#62** (no separate blocker is filed — #62
+invariant + no-OOB `get` + capacity-preserving `push`, real verus L3).
+**UPDATE (#123, cluster C12): the `Map` half (REQ-2/REQ-6) is ALSO SHIPPED** — as
+the dedicated two-arg `Type::Map(Box<Type>, Box<Type>)` node + a `TMap`
+Vec-of-pairs wrapper (`insert`/`get`/`contains_key`/`len`), governed in detail by
+the dedicated `.design/basis/13-map.md`; the shipped backing DIVERGES from this
+doc's `vstd::map::Map` sketch (see the REQ-6 row). The `Vec` element invariant
+(REQ-4) remains deferred to a Stage-4 v1.1 follow-up under epic **#62** (no
+separate blocker is filed — #62
 owns this stage; a gap needing an independent blocker is noted with a fresh `#`). The Stage-1 `Box`/`Alloc` keystone
 (`.design/basis/01-adts.md` REQ-3/REQ-10) is the load-bearing prerequisite: a
 growable `Vec` is the same `Alloc`-effect heap as `Box<T>`, generalized from a
@@ -658,11 +663,11 @@ the builder runs (R-CHAR-3).
 | REQ | Status | Evidence |
 |---|---|---|
 | REQ-1 (`Vec<T>` type + push/pop/get/len surface) | SHIPPED | #73. `Type::Vec(Box<Type>)` in `thermite-syntax/src/ast.rs` (dedicated node mirroring `Type::Box`, OQ-2 RESOLVED); parsed by `parser::parse_type` on the contextual `Vec` ident; `push`/`pop`/`get`/`len` reuse `Expr::MethodCall` (no new node). Consumer: `thermite_lower::lower`. Verified: `v: Vec<u64>` parses + lowers + verus-verifies (`thermite-lower/tests/collections_conformance.rs`, the `conformance/vec_demo.th` oracle). |
-| REQ-2 (`Map<K,V>` type + insert/get/contains/len surface) | NOT-STARTED | epic **#62** Stage 4 (v1.1). No `Map` in `enum Type`; the single-arg `Generic`/`Vec`/`Box` nodes cannot carry a key+value (OQ-2). The v1 oracle (`conformance/vec_demo.th`) is `Vec`-only; deferred to a Stage-4 follow-up. |
+| REQ-2 (`Map<K,V>` type + insert/get/contains/len surface) | SHIPPED | #123 (cluster C12 — detailed in `.design/basis/13-map.md`). `Type::Map(Box<Type>, Box<Type>)` in `thermite-syntax/src/ast.rs` — a dedicated two-arg node (OQ-2 RESOLVED as recommended), parsed by `parse_type`'s `"Map"` contextual-ident arm in `parser.rs` (`Map<u64, u64>` → `Type::Map(..)`); `insert`/`get`/`contains_key`/`len` reuse `Expr::MethodCall` (no new node; the membership predicate shipped spelled `contains_key`, not this doc's `contains`; `get` returns the C7 `Option<V>`). Consumer: `thermite_lower::lower::lower_type` (→ `tmap_name`). Verified: `forge/tests/map_conformance.rs` (real verus L3 on `conformance/map_kv.th`). |
 | REQ-3 (capacity + operation contracts fit the §4.2 cage) | SHIPPED | #73. The bounded-`Vec` contracts are FLAT built-ins: `v.len()` (already admitted) + the no-OOB accessor `get` ADDED to `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`) so `ens result == v.get(i)` validates inside the cage; `v.len() < CAP` / `result.len() == v.len() + 1` are flat `len` comparisons. The caged-flat walk (`walk_expr_inner`'s `MethodCall` arm) is UNCHANGED. `push`/`pop` are EXEC-only (never in a contract). Consumer: `validate`. Verified: `collections_conformance.rs` (contracts validate clean + real verus L3). |
 | REQ-4 (element invariant via named `spec fn` `forall|i| inv(v@[i])`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The named-`spec fn` accept path it reuses is SHIPPED, but the v1 corpus (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get — no `Vec<Account>` element-invariant program is in the corpus. The GROUNDED `all_elems_inv` form (preserved across `push`, `0 errors`) is design-confirmed feasible; deferred to a Stage-4 follow-up. |
 | REQ-5 (`Vec` → vstd `Vec` wrapper; push/get/len; `fx alloc`; BACKING-AGNOSTIC surface) | SHIPPED | #73 (OQ-1 RESOLVED: v1 WRAPS `vstd::vec::Vec`). `lower.rs`: `Type::Vec(elem)` → `tvec_name` (`Vec<u64>` → `TVecU64`); `emit_vec_wrappers` materializes ONCE per element type the GROUNDED `TVec<elem>` newtype over `vstd::vec::Vec<elem>` with `well_formed` (`len() <= CAP`), spec `len`/`spec_get`, the no-OOB exec `get` (`req i < len`), and the capacity-preserving exec `push` (`req well_formed && len < CAP`, `ens final(self)...` — the `final(self)` &mut grounding finding). Spec-position `v.get(i)` → `v.spec_get(i as int)`. `fx alloc` accepted by effect-subsumption (`push` is an intrinsic, no callee row). Consumer: `lower`. Verified: real `verus --no-cheating` on emitted `vec_demo.th` — `checked_get` L3/pure, `push_one` L3/alloc (`4 verified, 0 errors`); the no-`req` `get` reject FAILS (L0, R-DEFER-9). BACKING-AGNOSTIC surface preserved (the contract names `len`/`get`/`push` over `v@`, never `vstd::vec::Vec`). |
-| REQ-6 (`Map` → vstd `Map` wrapper; insert/get/contains; key-uniqueness) | NOT-STARTED | epic **#62** Stage 4 (v1.1). `lower.rs` has no `Map` lowering; the v1 oracle is `Vec`-only (OQ-3 thin-first-cut). Modeled on `vstd::map::Map`, deferred to a Stage-4 follow-up. |
+| REQ-6 (`Map` lowering; insert/get/contains_key; key-uniqueness) | SHIPPED | #123 (cluster C12 — detailed in `.design/basis/13-map.md`). DIVERGENCE from this doc's sketch: the shipped backing is NOT `vstd::map::Map` — `emit_map_wrappers`/`tmap_name` in `thermite-lower/src/lower.rs` materialize, once per `(K, V)` pair, a `TMap` newtype over a `vstd::vec::Vec<(K, V)>` Vec-of-pairs backing, with key-uniqueness + capacity carried in `well_formed` and the spec view `spec_dom`/`spec_contains_key`; `lower_type` maps `Type::Map(k, v)` → `tmap_name(k, v)`; `contains_key` is admitted in `BUILTIN_METHODS` (`thermite-spec/src/validator.rs`) so `ens result == m.contains_key(k)` validates in the §4.2 cage; `insert` stays EXEC-only (`&mut`, `final(self)`); a `Map`-mutating `fn` carries `fx alloc` (this doc's REQ-5 rule, as designed). The first cut is exactly OQ-3's recommended thin one (`insert`/`get`/`contains_key`/`len`; no `remove`/iteration). Verified: `forge/tests/map_conformance.rs` (real `verus --no-cheating` — insert-then-get round-trip + absent→`None`; the `Some(0)`-for-absent negative FAILS, non-vacuous R-DEFER-9). |
 | REQ-7 (`LowerError`/`SpecError` extension, no panics) | SHIPPED | #73. The `Vec` lowering reuses the existing `LowerError::Unsupported` (`tvec_name` on a non-primitive element type) — no new variant needed; the validator reuses its existing reject path (a forbidden method in a contract). No `unwrap`/`expect`/`panic!` added (R-CODE-2 / R-APG-1); verified by `cargo clippy --workspace -D warnings` + the anti-pattern-gate. |
 | REQ-8 (`pop_last`/`last`/`insert`/`remove`/`contains` — tuple-free missing ops) | SHIPPED | #98. `emit_one_vec_wrapper` (`thermite-lower/src/lower.rs`, per element type) emits all five ops on `TVec<elem>`: `pop_last`/`insert`/`remove` are `&mut` with `final(self)`, `last` is `&self`-reading, `contains` is the exec linear scan (the `forall|k| 0<=k<i ==> v@[k]!=x` invariant + `decreases len-i`). `insert` carries the load-bearing `i <= len` no-OOB guard. Spec-position `v.last()` → `v.spec_get((v.len()-1) as int)` (`lower_expr`). Consumer: `lower`. Verified: `forge/tests/vec_completeness_conformance.rs::vec_u64_ops_certify_l3` — real `verus --no-cheating` `9 verified, 0 errors`; the unguarded `insert` FAILS `8 verified, 1 errors` (non-vacuity, R-DEFER-9). |
 | REQ-9 (`Vec<T>` non-Copy elements — `Vec<String>`/`Vec<struct>`/nested via borrow-`get`) | SHIPPED | #98. `tvec_name` `match` EXTENDS to a `String` element (→ `TVecTString`), a `Named` struct/enum element (→ `TVec<Name>`), and a nested `Vec(inner)` element (→ recursive `tvec_name(inner)` suffix, `Vec<Vec<u64>>` → `TVecTVecU64`). `elem_is_copy` selects the accessor: Copy → by-value `get -> T`/`last -> T` + `contains`; NON-Copy → BORROW `get -> &T`/`last -> &T` (`&self.data[i]`, `ens *result == v@[i]`) — vstd's index MOVES a non-Copy element out (`E0507`), so the borrow is the load-bearing fix; `push(x: T)` consumes the owned element. Consumer: `lower`. Verified: `vec_completeness_conformance.rs` — `Vec<String>` `17 verified, 0 errors` (make-or-break), `Vec<struct>` `7 verified`, nested `Vec<Vec<u64>>` `15 verified`, all `0 errors`; the by-value form FAILS `E0507`. |
@@ -698,6 +703,8 @@ the builder runs (R-CHAR-3).
   name, args: Vec<Type> }`. The same OQ-1 shape `.design/basis/01-adts.md` raised
   for `Box`. RECOMMEND dedicated nodes so the `fx alloc` / capacity-invariant
   emission keys on the node kind, not a string-name match. Not a blocker.
+  **RESOLVED as recommended:** dedicated nodes shipped — `Type::Vec(Box<Type>)`
+  (#73) and the two-arg `Type::Map(Box<Type>, Box<Type>)` (#123, `ast.rs`).
 
 - **OQ-3 (Map first-cut depth):** REQ-6 may ship a THINNER `Map` than `Vec`. The
   minimum first cut is `insert`/`get`/`contains`/`len` with the post-insert-get
@@ -707,6 +714,9 @@ the builder runs (R-CHAR-3).
   the practical "verified key-value store" claim without the iteration proof
   surface — and defer `remove`/iteration to a Stage-4 follow-up under #62. Not a
   blocker; flagged so the builder does not over-scope the Map.
+  **RESOLVED (#123): the thin first cut shipped** (`insert`/`get`/`contains_key`/
+  `len`, the post-insert-get round-trip + absent→`None`; `remove`/iteration still
+  deferred — see `.design/basis/13-map.md`).
 
 - **OQ-4 (`fx alloc` as a non-`pure` corpus program — shared with Stage 1):** a
   `Vec`-constructing / `push`-ing `fn` is non-`pure` (`fx alloc`), exercising

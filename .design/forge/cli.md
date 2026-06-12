@@ -2,8 +2,8 @@
 
 <!--
 tier: 3-component
-status: draft
-audited-sha: 1004b7a1fee7d9df60e18a58c77df8f23c896cfe (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+status: shipped
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — full re-author from greenfield-era text to the shipped 13-verb surface, #262)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5
@@ -13,176 +13,270 @@ thesis-refs:
 
 ## Summary
 
-`forge/src/cli.rs` is the command surface of the `forge` driver: it parses
-`argv`, dispatches to `forge new <name>` (project scaffold) and
-`forge check [<file>]` (the v0.1 ladder pipeline), renders results either as
-human-readable text or — under `--json` — as the structured certificate
-(`thermite-design.md` §5.1), and owns `ForgeError`, the boundary error type
-that AGGREGATES the per-crate errors of the driven libraries. It is the only
-entry point that touches `std::env::args` / `std::process::ExitCode`; the
-pipeline logic lives in `check.rs` (`.design/forge/check.md`) and the schema in
-`manifest.rs` (`.design/forge/certificate-manifest.md`).
+`forge/src/cli.rs` (2,778 lines) is the command surface of the `forge` driver:
+a hand-rolled argv matcher (`fn parse_args in cli.rs`) that dispatches THIRTEEN
+verbs — `new` / `check` / `audit` / `repair` / `review` / `build` / `tv` /
+`exec-tv` / `body-tv` / `goal` / `battery` / `edit` / `fill` — renders each
+verb's result as human-readable text or (under `--json`) the §5.1 structured
+document, owns `enum ForgeError in cli.rs` (the boundary error that AGGREGATES
+every driven library's error plus driver-native subprocess/environment
+variants), and maps every outcome to a typed exit code
+(`0` / `EXIT_VERIFICATION_FAILURE` = 1 / `EXIT_ENVIRONMENT` = 2). It is the
+only module that touches `std::env::args` / `std::process::ExitCode`
+(`pub fn run in cli.rs`, consumed by `fn main in main.rs`); all verb logic
+lives in the driven modules (`check.rs`, `audit.rs`, `repair.rs`, `review.rs`,
+`build.rs`, `contract_tv.rs`, `exec_tv.rs`, `body_tv.rs`, `goal_repl.rs`).
 
-This component is GREENFIELD. The only shipped artifact is the empty
-`forge/src/main.rs` scaffold (it exits 0, has no command surface, no
-`ForgeError`). Every REQ below is NOT-STARTED, blocked on issue #5.
+This amendment (#262) replaces the greenfield-era text wholesale: the previous
+revision's Summary claimed "This component is GREENFIELD … Every REQ below is
+NOT-STARTED, blocked on issue #5" while its own REQ-status table said SHIPPED —
+internally split, and externally stale by 21 commits. The doc below is
+re-grounded in the tree at the pinned SHA.
+
+## The arc since the bootstrap pin (1004b7a1 → dff9ae86, 21 commits)
+
+What the old doc never saw, grouped (each verb cites its issue in the code):
+
+- **Battery + ladder era** — vacuity triage + `#[slag]` (#6), Kani-backed
+  `--level l2` (#9), the automatic degrade ladder + assurance-manifest display
+  (#10), solver profiles + `--rlimit` (#11), mutation scoring +
+  `--mutation-floor` (#12).
+- **Audit + trust surface** — `forge audit` manifest v1 (#15), FFI boundary
+  certs (#16), end-to-end vs to-the-boundary scope (#17), `forge repair` (#18),
+  `forge review` + `--reviewer <cmd>` (#19).
+- **Build + sandbox** — `forge build` + `rustc` artifacts (#56), the seccomp
+  runtime sandbox + `--no-sandbox`/`--sandbox-self-test` (#57), `--out`/`-o`
+  (#128), `--target std|kernel` (#197).
+- **Translation validation** — `forge tv` (#144), `forge exec-tv` (#154/#156),
+  `forge body-tv` (#162).
+- **Goal REPL** — `forge goal`/`battery` views + `edit` address-splice (#193
+  (i)/(ii)), `?N` holes + `forge fill` (#193 (iii)).
+- **Proof backends** — `--engine verus|lean|auto` + the disagreement
+  `SoundnessAlarm` halt (#247); the usage-banner `--engine` currency fix
+  (#257, commit `6368550a` — the banner had drifted behind the parser).
 
 ## Requirements
 
-- REQ-1 (command surface): `forge` exposes exactly the v0.1-kernel subset of
-  the Appendix B surface that issue #5 owns — `forge new <name>` and
-  `forge check [<file>]`. The other Appendix B verbs (`goal`, `fill`, `edit`,
-  `battery`, `audit`, `skill`, `repair`) are NOT this component's concern in #5
-  (`goal`/`fill`/`edit` are the deferred incremental REPL, issue #21;
-  `battery`/`audit` are #6/#12/#13/#15; `skill` is #7; `repair` is #10/#18). An
-  unknown verb is a structured usage error, never a panic.
-  Source: `thermite-design.md` Appendix B; `goal.md` scope (v0.1 kernel =
-  whole-item `forge check`).
-- REQ-2 (argument parsing): argv is parsed by a minimal hand-rolled matcher
-  (verb in `argv[1]`, then positional `<name>`/`<file>` and the single
-  `--json` flag) — NOT a derive-macro dependency. Justification: pillar §2.2
-  ("the whole language fits in a skill") and §2.3 ("one way to do everything,
-  no config knobs") argue for the smallest possible surface; the v0.1 verb set
-  is two commands with one flag, well below the threshold where `clap` earns
-  its compile-time and dependency cost. The macro removal in §4.4 reinforces a
-  low-magic posture. (See OQ-1 — this is the least-settled decision.)
+- REQ-1 (command surface): `forge` exposes exactly the thirteen verbs above;
+  no args, an unknown verb, a missing positional, or an unknown flag is a
+  structured `ForgeError::Usage` carrying `fn usage_text in cli.rs`, never a
+  panic and never exit 0.
+  Source: `thermite-design.md` Appendix B (the verb inventory); §5.1.
+- REQ-2 (hand-rolled argv matcher): argv is parsed by `fn parse_args in cli.rs`
+  — a `match` over the verb with per-verb flag loops — NOT a derive-macro
+  dependency (`forge/Cargo.toml` declares no `clap`). The original two-verb
+  justification (§2.2/§2.3/§4.4 low-magic posture) was made when the grammar
+  was `new <name> | check <file> [--json]`; the decision SURVIVED to 13 verbs
+  and ~650 lines of matcher. Honest assessment: it still holds — every flag
+  error is a precise structured diagnostic and the dependency cost stays zero —
+  but the per-verb flag loops are hand-duplicated (see OQ-1).
   Source: `thermite-design.md` §2.2/§2.3/§4.4.
-- REQ-3 (`ForgeError` aggregation): `forge` introduces its own `ForgeError`
-  enum — the BOUNDARY aggregation point. Each driven crate keeps its own error
-  per workspace.md REQ-3 (`thermite_syntax::SyntaxError`,
-  `thermite_spec::SpecError`, `thermite_lower::LowerError`), and `ForgeError`
-  carries variants that WRAP each (`ForgeError::Parse(Vec<SyntaxError>)`,
-  `ForgeError::Spec(Vec<SpecError>)`, `ForgeError::Effects(Vec<LowerError>)`,
-  `ForgeError::Lower(LowerError)`), plus driver-native variants for the verus
-  subprocess and environment (`ForgeError::VerusAbsent`,
-  `ForgeError::VerusSpawn`, `ForgeError::VerusOutput`, `ForgeError::Io`,
-  `ForgeError::Usage`). `ForgeError` does NOT replace the per-crate errors; it
-  composes them at the driver boundary.
-  Source: `goal.md` workspace.md REQ-3 (per-crate error type); R-SPEC-3.
-- REQ-4 (human-readable + `--json` output): without `--json`, `forge check`
-  renders a readable rendering of the certificate (§5.1 "rendered to readable
-  text") to stdout; with `--json`, it serializes the certificate JSON
-  (`manifest.rs`, §5.1 "JSON with a stable schema") to stdout and nothing else.
-  Diagnostics and progress go to stderr so `--json` stdout is a clean
-  machine-parseable document. The certificate value is produced by `check.rs`;
-  this component only chooses the rendering.
+- REQ-3 (`ForgeError` aggregation): `enum ForgeError in cli.rs` is the boundary
+  aggregation point. It wraps each driven crate's error
+  (`Parse(Vec<SyntaxError>)` / `Spec(Vec<SpecError>)` /
+  `Effects(Vec<LowerError>)` / `Lower(LowerError)`) and carries driver-native
+  families for each subprocess the verbs spawn — verus
+  (`VerusAbsent`/`VerusSpawn`/`VerusOutput`), kani
+  (`KaniAbsent`/`KaniSpawn`/`KaniOutput`), rustc
+  (`RustcAbsent`/`RustcSpawn`/`RustcOutput`), the external reviewer
+  (`ReviewerAbsent`/`ReviewerSpawn`/`ReviewerFailed`/`ReviewerOutput`) — plus
+  `Io`, `Usage`, and `SoundnessAlarm(crate::engine::Disagreement)` (#247: two
+  engines returning Proven ⊕ witnessed-Refuted on the SAME obligation is a
+  HARD HALT, never resolved by preference). `Display` forwards every inner
+  diagnostic — no information lost at the boundary.
+  Source: `goal.md` workspace.md REQ-3; R-CODE-4;
+  `.design/verified/proof-backends.md` REQ-5.
+- REQ-4 (human + `--json` dual rendering): every reporting verb takes `--json`
+  and emits exactly one machine document on stdout under it (certs array for
+  `check`, `AuditManifest` for `audit`, hand-built reports for
+  `repair`/`tv`/`exec-tv`/`body-tv`, `ReviewArtifact` for `review`,
+  `BuildManifest` for `build`); without it, the `render_*` family
+  (`fn render_human` / `render_assurance` / `render_audit` / `render_repair` /
+  `render_review` / `render_build in cli.rs`) emits readable text. Diagnostics
+  go to stderr so `--json` stdout stays a clean parseable document. Exceptions
+  by design: `goal`/`battery`/`edit`/`fill` are human-only REPL views (OQ-2).
   Source: `thermite-design.md` §5.1.
-- REQ-5 (exit codes): process exit is a typed mapping from the run outcome, not
-  an ad-hoc integer — verification success (all obligations discharged, L3) →
-  0; a reported verification FAILURE (obligations failed; the cert is still a
-  valid document describing the failure) → a distinct non-zero code; an
-  environment/usage/IO error (verus absent, bad argv, unreadable file) → a
-  different non-zero code. A failed proof and a missing solver are not the same
-  outcome and must be distinguishable by exit code.
-  Source: `goal.md` R-CODE-4 (verus-absent is an environment error; obligation
-  failure is reported, not crashed); `thermite-design.md` §5.2 (degrade ≠
-  block — in #5 the v0.1 behavior is "report").
+- REQ-5 (typed exit codes): three classes. Verification gate verbs
+  (`check`/`audit`: project headline `ProjectAssurance::Certified` via
+  `AssuranceManifest::aggregate`; `repair`: `report.all_upgraded()`) → 0 on
+  certified, `EXIT_VERIFICATION_FAILURE` on a reported failure (the cert/report
+  is still a valid document). TV verbs (`tv`/`exec-tv`/`body-tv`) → 0 on a
+  clean audit, `EXIT_VERIFICATION_FAILURE` on ANY divergent clause/expr/body (a
+  real lowering-fidelity finding). Every `ForgeError` →
+  `fn exit_code in cli.rs` = `EXIT_ENVIRONMENT` (a failed proof and a missing
+  solver are never the same outcome). View/build verbs
+  (`review`/`build`/`goal`/`battery`/`edit`/`fill`) exit 0 on a successful
+  render — the verdict lives IN the rendered document.
+  Source: `goal.md` R-CODE-4; `thermite-design.md` §5.2.
 - REQ-6 (no panics; Result discipline): every fallible path returns
-  `Result<_, ForgeError>`; `main`/`cli` contain no `unwrap`/`expect`/`panic!`
-  outside `#[cfg(test)]`. The verus subprocess exit status is always inspected;
-  a non-zero status or unparseable output is a structured `ForgeError`, never
-  swallowed and never treated as success.
+  `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]`
+  in `cli.rs`; subprocess statuses are inspected in the driven modules, never
+  swallowed.
   Source: `goal.md` R-CODE-2, R-CODE-4, R-APG-1.
-- REQ-7 (`forge new` scaffold — minimal): `forge new <name>` creates a project
-  directory carrying a manifest, a lockfile (the pinned solver seed lives here,
-  §5.3), and a skill pin (Appendix B: "manifest, lockfile, skill pin"). v0.1
-  keeps this minimal — enough that `forge check` inside the project can read the
-  pinned seed deterministically. The on-disk manifest/lockfile shape is the
-  project-config schema; the per-item certificate schema is a separate concern
-  (`manifest.rs`). It must refuse to overwrite an existing non-empty target
-  (a structured error, not a clobber).
+- REQ-7 (`forge new` scaffold): `pub fn scaffold_project in cli.rs` writes
+  `forge.toml` + `forge.lock` (pinned solver seed, §5.3) +
+  `THERMITE.skill.pin`, and refuses a non-empty target with a structured
+  `ForgeError::Usage`, never a clobber.
   Source: `thermite-design.md` Appendix B, §5.3.
+- REQ-8 (`forge check` flag surface + engine routing): `--level l2|l3`
+  (explicit rung, never auto-degrade), `--rlimit <FLOAT>` (finite-positive
+  validated), `--mutation-floor <FLOAT>` ([0,1] validated), `--engine
+  verus|lean|auto` (#247). `fn run_check in cli.rs` routes: the canonical
+  default config → `check::check_file` (the only cache-serving entry); explicit
+  `--rlimit`/`--mutation-floor` → `check::check_file_with_options`
+  (cache-bypassed); `--engine lean|auto` → `check::check_file_with_engine`
+  (the proof-backends OQ-1 surface — exportable items discharged by Lean with
+  attribution; a Verus⊕Lean disagreement surfaces as
+  `ForgeError::SoundnessAlarm`, the REQ-5 halt); `--level l2` →
+  `check::check_l2_file`. Every flag's missing/garbage value is a Usage error,
+  never a silent default.
+  Source: `.design/lower/l2-kani.md` REQ-7; `.design/forge/solver-profiles.md`
+  REQ-5; `.design/forge/mutation-scoring.md` REQ-5;
+  `.design/verified/proof-backends.md` OQ-1/REQ-5.
+- REQ-9 (usage-banner currency): `fn usage_text in cli.rs` names every verb and
+  every flag the parser accepts. The #257 fix (commit `6368550a`) closed the
+  one known drift — the banner had been missing `[--engine verus|lean|auto]`
+  after #247 landed the flag.
+  Source: `thermite-design.md` §5.1 ("every message is a prompt" — the banner
+  is the agent-facing grammar).
+- REQ-10 (project assurance display, #10): without `--json`, `run_check`
+  renders `fn render_assurance in cli.rs` after the per-cert text — the per-fn
+  `lowered-assurance` flags plus the project headline (min over functions, or
+  `FAILED`), which is also exactly what drives the REQ-5 exit code (both via
+  `manifest::cert_certifies`).
+  Source: `thermite-design.md` §5.2 ("displayed on every build");
+  `.design/forge/degrade-ladder.md` REQ-5/REQ-6.
 
 ## Acceptance criteria
 
-- AC-1: `forge` with no args, an unknown verb, or `forge check` with a missing
-  positional prints a usage diagnostic to stderr and exits with the
-  usage/environment code (REQ-5), never a panic and never exit 0.
-- AC-2: `forge check conformance/sum.th --json` writes exactly one JSON
-  document to stdout (parseable by `serde_json` / `python3 -m json.tool`) and
-  nothing else to stdout; without `--json` the same run writes human-readable
-  text and no raw JSON to stdout. (The certificate's CONTENTS are asserted by
-  `check.md` AC / the cert-oracle; this AC asserts only the rendering split and
-  stream discipline.)
-- AC-3: when verus is absent from `PATH`, `forge check conformance/sum.th`
-  exits with the environment-error code and a `ForgeError::VerusAbsent`
-  diagnostic naming the missing binary — it does NOT report L3 and does NOT
-  exit 0. (Grounded: with `verus` off `PATH`, spawn fails with ENOENT.)
-- AC-4: `cargo clippy -p forge --all-targets -- -D warnings` is clean of
-  `unwrap`/`expect`/`panic!` in non-test code, and the anti-pattern gate
-  (`tooling/anti-pattern-gate.py`, R-APG-1) passes on the patch.
-- AC-5: every `ForgeError` variant either wraps a named per-crate error
-  (`SyntaxError`/`SpecError`/`LowerError`) or is a driver-native verus/io/usage
-  variant; a `cargo test -p forge` unit asserts each wrapping variant
-  round-trips its inner error's diagnostic (no information lost at the boundary,
-  R-CODE-4 "never swallow").
+- AC-1: no args, an unknown verb, a missing positional, or an unknown flag →
+  usage diagnostic + `EXIT_ENVIRONMENT`, never a panic, never 0 (unit
+  `usage_errors`; integration `missing_file_is_usage_error_nonzero` in
+  `forge/tests/check_conformance.rs`).
+- AC-2: `forge check <corpus>.th --json` writes exactly one JSON document to
+  stdout (the integration harness `run_check_json` parses stdout whole;
+  `sum_cert_matches_golden_deterministic_subset`).
+- AC-3: a broken contract is a REPORTED failure — valid cert on stdout, exit
+  `EXIT_VERIFICATION_FAILURE`, counterexample present
+  (`broken_contract_is_reported_failure_with_counterexample`).
+- AC-4: every flag value is validated (missing / non-numeric / out-of-range /
+  unknown enum → Usage error): unit tests `parses_rlimit_flag`,
+  `parses_mutation_floor_flag`, `parses_level_flag`, `parses_build_out_flag`,
+  `parses_build_target_flag`, `parses_build_sandbox_flags`.
+- AC-5: `ForgeError` wrapping round-trips inner diagnostics
+  (`aggregation_preserves_inner_diagnostics`) and every variant maps to
+  `EXIT_ENVIRONMENT` (`errors_map_to_environment_exit_code`).
+- AC-6: `--engine verus` is byte-identical to the default path
+  (`engine_verus_flag_is_byte_identical_oracle` in
+  `forge/tests/engine_attribution.rs`); a Proven ⊕ witnessed-Refuted
+  disagreement halts (`proven_refuted_disagreement_halts` in `engine.rs`
+  tests), surfaced as `ForgeError::SoundnessAlarm`.
+- AC-7: `forge new` writes the three-file skeleton and refuses a non-empty
+  target (`scaffold_writes_layout_and_refuses_clobber`).
+- AC-8: `cargo clippy -p forge --all-targets -- -D warnings` + the
+  anti-pattern gate are clean of non-test `unwrap`/`expect`/`panic!`.
 
 ## Architecture
 
-`cli.rs` is a thin dispatcher. `pub fn run` (the planned boundary entry) reads
-`std::env::args`, matches the verb, and delegates:
+The flow is `fn main in main.rs` → `pub fn run in cli.rs` (the ONLY reader of
+`std::env::args` / producer of `ExitCode`) → `fn parse_args` →
+`enum Command in cli.rs` → `fn dispatch` (split from `run` so it is
+unit-testable without real argv) → one `run_<verb>` function per verb.
 
-- `new` → `pub fn scaffold_project` (REQ-7), which writes the project skeleton.
-- `check` → `check::check_file` in `check.rs` (`.design/forge/check.md`), which
-  returns a `Certificate` (the type owned by `manifest.rs`,
-  `.design/forge/certificate-manifest.md`). `cli.rs` then renders it: under
-  `--json`, `serde_json::to_string_pretty` of the `Certificate`; otherwise a
-  text rendering. The rendering choice is the ONLY logic `cli.rs` adds on top of
-  `check.rs`.
+The verbs fall into four families, each with its own exit-code convention
+(REQ-5):
 
-The arg matcher is hand-rolled (REQ-2). The v0.1 verb grammar is small enough
-(`new <name>` | `check [<file>] [--json]`) that a `match` over `argv` is
-clearer and lighter than a derive dependency, consistent with the
-no-magic/one-way posture of `thermite-design.md` §2.3 and §4.4. `--json` is the
-sole flag; it selects the §5.1 structured certificate as the stdout document.
+1. **Certification gates** — `check` (`run_check`: the four-way
+   level/engine route of REQ-8, then `AssuranceManifest::aggregate` for the
+   headline + exit), `audit` (`run_audit`: the SAME default pipeline projected
+   into `AuditManifest`, exit mirrors the headline), `repair` (`run_repair`:
+   exit 0 iff `all_upgraded`).
+2. **TV deeper audits** — `tv`/`exec-tv`/`body-tv`
+   (`run_tv`/`run_exec_tv`/`run_body_tv`): opt-in, NOT folded into `forge
+   check`; exit fails only on a DIVERGENT finding; Unverifiable/Skipped are
+   surfaced but never fail the exit (R-HONEST-3 — and verus-absent is loud,
+   not a silent pass). Their `--json` documents are hand-built in
+   `fn tv_report_json` / `exec_tv_report_json` / `body_tv_report_json in
+   cli.rs`.
+3. **View/build verbs** — `review` (`run_review`: artifact emission +
+   optional `--reviewer` pipe, writing `<file>.review.json` via
+   `fn review_record_path`; forge never fabricates a verdict), `build`
+   (`run_build` → `build::build_file`, rendering the `BuildManifest`), and the
+   #193 REPL quartet `goal`/`battery`/`edit`/`fill`
+   (`run_goal`/`run_battery`/`run_edit`/`run_fill` → `goal_repl::*`): a render
+   is a successful query; the verdict lives in the rendered goal state.
+4. **Scaffold** — `new` → `pub fn scaffold_project` (REQ-7).
 
-`ForgeError` (REQ-3) is the workspace's first AGGREGATING error. The driven
-crates each return their own error per the leaf-first DAG (`parse` →
-`ParseResult` with `Vec<SyntaxError>`; `validate` → `Result<(), Vec<SpecError>>`
-per `pub fn validate in validator.rs`; `check_effects` →
-`Result<(), Vec<LowerError>>` per `pub fn check_effects in effects.rs`; `lower`
-→ `Result<String, LowerError>` per `pub fn lower in lower.rs`). `forge`, sitting
-at the top of the DAG, is where these many error channels converge into a single
-`ForgeError` so the CLI can map any failure to a diagnostic + exit code (REQ-5)
-without the libraries needing to know about each other. This is the boundary
-aggregation point named in `goal.md` workspace.md REQ-3.
+`ForgeError` (REQ-3) is where the leaf-first DAG's many error channels
+converge: the driven crates keep their own error types, `cli.rs` wraps them so
+any failure maps to a diagnostic + `EXIT_ENVIRONMENT` without the libraries
+knowing about each other. The variant families grew with the verbs (kani #9,
+rustc #56, reviewer #19, `SoundnessAlarm` #247) but the shape is unchanged
+from the #5 original: wrap, forward the diagnostic, never swallow. Note the
+uniform `exit_code()` — every `ForgeError`, including `SoundnessAlarm`, is the
+environment class (OQ-4).
 
-Exit-code mapping (REQ-5) distinguishes the three outcomes the design treats
-differently: a discharged proof (0), a reported verification failure (the
-certificate is a valid document; §5.2 "the gate degrades, it never blocks" —
-in #5 the v0.1 realization is "report the failure," full degrade L3→L2→L1 is
-issue #10), and an environment/usage error (R-CODE-4: verus absent is an
-environment error, NOT a verification failure).
-
-`forge new` (REQ-7) is intentionally minimal for v0.1: manifest + lockfile +
-skill pin (Appendix B). The lockfile carries the pinned solver seed (§5.3) that
-`check.rs` later feeds to verus, so determinism (R-CODE-5) is project-scoped.
+The renderers live at the bottom of the file (`render_human` and friends);
+`render_human` prints the oracle-stable subset first
+(`Certificate::oracle_subset`) and labels `solver_time_ms` non-deterministic so
+a reader cannot mistake it for an oracle field.
 
 ## Verification
 
-- `cargo test -p forge` — unit tests for the arg matcher (verb dispatch, the
-  `--json` flag, usage errors), `ForgeError` wrapping/round-trip (AC-5), exit
-  code mapping (AC-1/AC-5), and `forge new` scaffold layout + no-clobber
-  (AC: REQ-7).
-- A CLI integration test (`tests/cli.rs`) drives the built `forge` binary:
-  `forge check conformance/sum.th --json` → single JSON doc on stdout (AC-2);
-  `forge check` with no file → usage error + non-zero exit (AC-1); verus removed
-  from a scoped `PATH` → `VerusAbsent` + environment exit code (AC-3).
+- `cargo test -p forge` unit tests in `cli.rs::tests`: verb/flag parsing
+  (AC-1/AC-4), error aggregation + exit-code mapping (AC-5), scaffold
+  (AC-7), assurance rendering (`render_assurance_shows_headline_and_lowered_flags`,
+  `render_assurance_shows_failed_headline`), human rendering
+  (`human_render_shows_failure_counterexample`).
+- Integration suites driving the built binary (`forge/tests/`):
+  `check_conformance.rs` (AC-2/AC-3 + golden certs), `audit_conformance.rs`,
+  `repair_conformance.rs`, `review_conformance.rs`, `build_conformance.rs`,
+  `sandbox_conformance.rs`, `kernel_target.rs`, `contract_tv_conformance.rs`,
+  `exec_tv_conformance.rs`, `body_tv.rs`, `goal_repl.rs`, `goal_repl_fill.rs`,
+  `l2_check.rs`, `engine_attribution.rs`, `engine_interface.rs`,
+  `lean_engine.rs` (AC-6).
 - `cargo clippy -p forge --all-targets -- -D warnings` + `cargo fmt --check` +
-  the anti-pattern gate (AC-4).
-
-The end-to-end cert-oracle assertion (cert fields == `conformance/sum.cert.json`)
-is owned by `.design/forge/check.md`; `cli.rs` is verified for the rendering and
-error-mapping surface only.
+  the anti-pattern gate (AC-8).
 
 ## REQ status
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (command surface) | SHIPPED | `fn run` + `fn dispatch` in `cli.rs` match `new`/`check`; unknown verb → `ForgeError::Usage`; consumer `fn main` in `main.rs`. Other Appendix B verbs out of #5. |
-| REQ-2 (hand-rolled arg parsing) | SHIPPED | `fn parse_args` in `cli.rs` is a `match` over verb + positionals + `--json`; `forge/Cargo.toml` declares no `clap`. |
-| REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError` in `cli.rs` wraps `Vec<SyntaxError>`/`Vec<SpecError>`/`Vec<LowerError>`/`LowerError` + `VerusAbsent`/`VerusSpawn`/`VerusOutput`/`Io`/`Usage`; `Display` forwards inner diagnostics (test `aggregation_preserves_inner_diagnostics`). |
-| REQ-4 (human + `--json` output) | SHIPPED | `fn render_human` + `serde_json::to_string_pretty` in `fn run_check`; diagnostics to stderr; integration test `sum_cert_matches_golden_deterministic_subset` parses the clean `--json` stdout. |
-| REQ-5 (typed exit codes) | SHIPPED | `fn run_check` returns `ExitCode`: all-L3 → 0, reported failure → `EXIT_VERIFICATION_FAILURE`(1); `ForgeError::exit_code` → `EXIT_ENVIRONMENT`(2). Tests `broken_contract_is_reported_failure_with_counterexample` (exit 1) + `missing_file_is_usage_error_nonzero`. |
-| REQ-6 (no panics; Result discipline) | SHIPPED | every fallible `cli.rs` path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` in non-test code (anti-pattern gate + clippy `-D warnings` pass); verus exit status inspected in `check::invoke_verus`. |
-| REQ-7 (`forge new` scaffold) | SHIPPED | `pub fn scaffold_project` in `cli.rs` writes `forge.toml`+`forge.lock`(pinned seed)+`THERMITE.skill.pin`, refuses non-empty target; consumer `fn dispatch`; test `scaffold_writes_layout_and_refuses_clobber`. |
+| REQ-1 (13-verb command surface) | SHIPPED | `fn parse_args in cli.rs` matches `new`/`check`/`audit`/`repair`/`review`/`build`/`tv`/`exec-tv`/`body-tv`/`goal`/`battery`/`edit`/`fill`; the fall-through arm is `Err(ForgeError::Usage(format!("unknown command \`{other}\`. {}", usage_text())))`. Non-test consumer: `fn main in main.rs` → `cli::run`. Verification: unit `usage_errors`; integration `missing_file_is_usage_error_nonzero`. |
+| REQ-2 (hand-rolled argv matcher) | SHIPPED | `fn parse_args in cli.rs` (~650 lines, verb `match` + per-verb flag loops); `grep clap forge/Cargo.toml` → no hit. Consumer: `fn dispatch in cli.rs`. Verification: the six `parses_*` unit tests. Decision survived the 2-verb → 13-verb growth; duplication cost named in OQ-1. |
+| REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError in cli.rs`: `Parse(Vec<SyntaxError>)`/`Spec`/`Effects`/`Lower` + the verus/kani/rustc/reviewer Absent-Spawn-Output families + `Io`/`Usage` + `SoundnessAlarm(crate::engine::Disagreement)`; `impl fmt::Display` forwards inner diagnostics. Non-test consumers: every driven module returns it (`check::check_file -> Result<_, ForgeError>`, `pub fn check_disagreement in engine.rs` surfaces the alarm). Verification: `aggregation_preserves_inner_diagnostics`. |
+| REQ-4 (human + `--json` dual rendering) | SHIPPED | `fn run_check in cli.rs`: `serde_json::to_string_pretty(&certs)` under `--json`, else `render_human` per cert + `render_assurance`; parallel paths in `run_audit`/`run_repair`/`run_review`/`run_build`/`run_tv`/`run_exec_tv`/`run_body_tv`; stderr for diagnostics (e.g. `run_review`'s `eprintln!` keeps `--json` stdout clean). Verification: `run_check_json` harness parses stdout whole in `check_conformance.rs`. |
+| REQ-5 (typed exit codes) | SHIPPED | `pub const EXIT_VERIFICATION_FAILURE: u8 = 1` / `EXIT_ENVIRONMENT: u8 = 2` in `cli.rs`; `run_check`/`run_audit` gate on `matches!(.., ProjectAssurance::Certified(_))`; `run_repair` on `report.all_upgraded()`; the TV trio on `counts.divergent == 0`; `fn exit_code in cli.rs` maps every `ForgeError` to `EXIT_ENVIRONMENT`. Verification: `errors_map_to_environment_exit_code`, `broken_contract_is_reported_failure_with_counterexample` (exit 1), `divergence_audit_check2_exit_swallow.rs` (the TV exit discipline). |
+| REQ-6 (no panics; Result discipline) | SHIPPED | every `run_*`/`parse_args` path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]` in `cli.rs`. Verification: clippy `-D warnings` + the anti-pattern gate in the gauntlet (HEAD commit `93d3cbc0` chain is gauntlet-green). |
+| REQ-7 (`forge new` scaffold) | SHIPPED | `pub fn scaffold_project in cli.rs` writes `forge.toml`/`forge.lock` (`seed = {DEFAULT_SOLVER_SEED}`)/`THERMITE.skill.pin`; non-empty target → `ForgeError::Usage("… refusing to overwrite")`. Non-test consumer: `fn dispatch` (`Command::New` arm). Verification: `scaffold_writes_layout_and_refuses_clobber`. |
+| REQ-8 (`check` flags + engine routing) | SHIPPED | `Command::Check { file, json, level, rlimit, mutation_floor, engine }`; `fn run_check` four-way route: default → `check::check_file` (cache-canonical), explicit options → `check::check_file_with_options`, `(CheckLevel::L3, sel)` lean/auto → `check::check_file_with_engine` (REQ-5 disagreement → `ForgeError::SoundnessAlarm`), `(CheckLevel::L2, _)` → `check::check_l2_file`. Verification: `parses_rlimit_flag`/`parses_mutation_floor_flag`/`parses_level_flag`, `engine_flag_parsing` + `engine_verus_flag_is_byte_identical_oracle` (`engine_attribution.rs`), `proven_refuted_disagreement_halts` (`engine.rs`). |
+| REQ-9 (usage-banner currency, #257) | SHIPPED | `fn usage_text in cli.rs` names all 13 verbs and the full flag surface including `[--engine verus|lean|auto]` — added by commit `6368550a` ("forge usage banner gains [--engine verus|lean|auto] (drift fix)"). Non-test consumer: `parse_args`'s no-verb and unknown-verb arms. Verification: `usage_errors` exercises both arms; `l2_check.rs` checks the banner rejects a bogus `--level`. |
+| REQ-10 (project assurance display, #10) | SHIPPED | `fn render_assurance in cli.rs` prints per-fn `lowered-assurance:` lines + the `project assurance:` headline; `run_check` computes `AssuranceManifest::aggregate(&certs)` once for both the display and the exit gate. Verification: `render_assurance_shows_headline_and_lowered_flags`, `render_assurance_shows_failed_headline`. |
+
+## Open questions
+
+- **OQ-1 (matcher scale):** the hand-rolled matcher survived to 13 verbs, but
+  the per-verb flag loops duplicate the
+  `--json`/unknown-flag/extra-positional boilerplate ~10 times and the
+  value-taking-flag pattern (`iter.next().ok_or_else(Usage)`) ~9 times. The
+  no-`clap` decision still pays (zero deps, precise diagnostics, REQ-9's
+  banner is the single grammar source) — but a shared flag-loop helper inside
+  `cli.rs` would cut the duplication without a dependency. Revisit if a 14th
+  verb lands.
+- **OQ-2 (REPL views have no `--json`):** `goal`/`battery`/`edit`/`fill` emit
+  human text only ("pure views — no flags"). An agent-facing machine form of
+  the goal state is plausibly wanted by the #21 REPL arc; not designed here.
+- **OQ-3 (Appendix B `forge skill` verb):** Appendix B names a `skill` verb;
+  no such verb exists in `parse_args`. The skill artifact is generated by the
+  `thermite-skill` crate instead (#7 arc). Whether a CLI verb should front it
+  is unowned by this doc.
+- **OQ-4 (`SoundnessAlarm` exit class):** the uniform `fn exit_code` maps
+  `SoundnessAlarm` to `EXIT_ENVIRONMENT` (2) — the same class as a missing
+  binary. A soundness alarm is arguably a third kind of outcome (worse than
+  both); a distinct exit code would let automation hard-stop on it. Today the
+  distinction is carried only by the `SOUNDNESS ALARM:` stderr prefix.
+- **OQ-5 (TV exit-code overload):** the TV verbs reuse
+  `EXIT_VERIFICATION_FAILURE` for a lowering-fidelity finding — a different
+  claim than `forge check`'s obligation failure. The code comments call this
+  out as a deliberate convention; if consumers ever need to distinguish them
+  mechanically, the `--json` verdict is the discriminator.

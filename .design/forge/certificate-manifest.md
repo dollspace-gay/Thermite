@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1004b7a1fee7d9df60e18a58c77df8f23c896cfe (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1
@@ -25,7 +25,56 @@ slot — so that downstream issues (#6/#12/#13) FILL fields rather than reshape
 the schema. Changing a field is a design amendment (R-SPEC-2/R-SPEC-3), not a
 code-local choice.
 
-GREENFIELD — no `manifest.rs` exists. All REQs NOT-STARTED, blocked on #5.
+This component is SHIPPED (`forge/src/manifest.rs`; all REQs SHIPPED — see the
+REQ status table). The "two-speed schema" below has since EXECUTED and the
+certificate gained a family of ADDITIVE fields — see the Amendment.
+
+> **Amendment 2026-06-12 (doc-freshness re-audit, #262).** Re-verified against the
+> current tree (`dff9ae86`, 12 post-pin commits to `manifest.rs`). Corrections and
+> post-pin additive surface:
+> 1. *The two-speed schema has executed.* The forward-declared producers landed:
+>    #6 graduates the §7.1 triage bools (`Certificate::graduate_triage_clean`),
+>    #13 sets them solver-confirmed `true` on a reject
+>    (`Certificate::rejected_vacuity`), #12 graduates `mutants_killed`/`survivor`
+>    (`Certificate::with_mutation_score`, `Certificate::rejected_weak_contract`),
+>    and the REQ-4 reserved `suggested_move` is now CONSTRUCTED in production on a
+>    timeout cert (`Certificate::timeout`, #11) and a strengthening-probe cert
+>    (`Certificate::with_strengthening`, #14). `ContractQuality::forward_declared`
+>    remains the honest pre-producer default; `contract_quality` remains
+>    oracle-EXCLUDED.
+> 2. *Additive schema surface (each governed by its OWN design doc, listed for
+>    navigation — all `#[serde(default)]` and/or `skip_serializing_if`, so the
+>    frozen golden `conformance/sum.cert.json` deserializes unchanged, R-SPEC-2):*
+>    `slag_meta`/`reject` (#6 — `slag.md`/`vacuity-triage.md`), `cached` (#8 —
+>    `proof-cache.md`), `solver_profile` (#11 — `solver-profiles.md`),
+>    `lowered_assurance`/`degrade_reason` (#10 — `degrade-ladder.md`),
+>    `strengthening` (#14 — `strengthening-probes.md`), `boundary`/
+>    `boundary_target` (#16 — `.design/boundary/ffi-boundary.md`),
+>    `assurance_scope` (#17 — `e2e-vs-boundary.md`), and `engine_attribution`
+>    (#247 — `.design/verified/proof-backends.md` REQ-4): `pub engine_attribution:
+>    Option<crate::engine::EngineAttribution>` with `#[serde(default,
+>    skip_serializing_if = "Option::is_none")]`, set by
+>    `Certificate::with_engine_attribution` ONLY when a non-default engine (Lean)
+>    discharges (`check::lean_proven_cert`/`lean_interactive_proven_cert` on the
+>    `--engine lean` path); the default Verus path leaves it `None`, goldens
+>    byte-unchanged; oracle-EXCLUDED (diagnostic).
+>    `manifest.rs` also gained the project-level aggregate
+>    (`AssuranceManifest`/`ProjectAssurance`/`ProjectScope`/`FunctionAssurance`,
+>    `pub fn cert_certifies`) — governed by `degrade-ladder.md` REQ-5/REQ-6 and
+>    `e2e-vs-boundary.md` REQ-4, not re-specified here.
+> 3. *Oracle-comparison shape corrected.* The shipped comparator is
+>    `pub fn oracle_subset in manifest.rs` returning the tuple
+>    `(&str, Level, &[String], bool, bool, bool)` = (`item`, `level`, `effects`,
+>    `slag`, `boundary`, `end_to_end`) — `boundary` (#16) and the
+>    `scope_is_end_to_end`-NORMALIZED `assurance_scope` bit (#17) JOINED the
+>    subset; per-obligation outcomes are NOT part of the tuple (this doc's
+>    original "+ per-obligation outcomes" wording was wrong of the shipped
+>    comparator); `contract_quality.*` and `solver_time_ms` stay structurally
+>    excluded.
+> 4. *Dead symbol cite.* `check::parse_verus_output` no longer exists — the verus
+>    output path is `check::classify_verus_outcome` (the #11 three-way
+>    proved/timeout/counterexample classifier) feeding `check::assemble_certificate`,
+>    which populates `obligations`. REQ-5's status row updated.
 
 ## Requirements
 
@@ -159,11 +208,16 @@ deterministic given the toolchain version + pinned seed (§5.3, R-CODE-5).
 the oracle comparison — present in the emitted cert (Appendix A shows it), never
 asserted (`conformance/README.md`).
 
-**The oracle comparison.** This component defines the deterministic-subset
-comparison the cert-oracle uses (`check.rs` AC-1 / `goal.md` model (B)): match
-`item`/`level`/`effects`/`slag` + per-obligation outcomes; ignore
-`contract_quality.*` and `solver_time_ms` until their producers ship. The
-comparator lives here because it is a property OF the schema (which fields are
+**The oracle comparison** (as amended 2026-06-12). This component defines the
+deterministic-subset comparison the cert-oracle uses (`check.rs` AC-1 /
+`goal.md` model (B)): the shipped `Certificate::oracle_subset` tuple is
+(`item`, `level`, `effects`, `slag`, `boundary`, `end_to_end`) — `boundary`
+(#16) and the normalized §9 scope bit (#17, `scope_is_end_to_end`: `None` ==
+`Some(EndToEnd)`) are verdict-relevant and INCLUDED; per-obligation outcomes,
+`contract_quality.*`, `solver_time_ms`, and every diagnostic additive field
+(`slag_meta`, `boundary_target`, `solver_profile`, `degrade_reason`,
+`strengthening`, `cached`, `engine_attribution`) are EXCLUDED. The comparator
+lives here because it is a property OF the schema (which fields are
 oracle-stable), consumed by `check.rs`'s conformance tests.
 
 **Scope (OUT of #5).** Populating `contract_quality.tautology`/
@@ -209,8 +263,8 @@ Expected JSON keys/values trace to `thermite-design.md` Appendix A and
 |---|---|---|
 | REQ-1 (stable schema, Appendix A) | SHIPPED | `struct Certificate { item, level, solver_time_ms, contract_quality, effects, slag, obligations, suggested_move }` in `manifest.rs` mirrors Appendix A field order; consumed by `check::assemble_certificate`. Test `schema_matches_appendix_a`. |
 | REQ-2 (fields #5 produces now) | SHIPPED | `Certificate::new` + `fn effects_of` set real `item`/`level`/`effects`/`slag`/`obligations`; consumer `check::assemble_certificate`; live oracle `sum_cert_matches_golden_deterministic_subset` against `conformance/sum.cert.json`. |
-| REQ-3 (forward-declared fields) | SHIPPED | `ContractQuality::forward_declared` returns honest unscored values (`mutants_killed="0/0"`, not the golden `"17/18"`); excluded from `Certificate::oracle_subset`. Test `oracle_ignores_forward_declared_and_time`. |
-| REQ-4 (`suggested_move` reserved) | SHIPPED | `Certificate::new` sets `suggested_move: None` (serialized as omitted, not a placeholder); `struct SuggestedMove` reserves the slot. Test `suggested_move_is_reserved_absence`. |
-| REQ-5 (per-obligation results) | SHIPPED | `struct ObligationResult` + `enum ObligationStatus`; `obligations` field; populated by `check::parse_verus_output`, rendered by `cli::render_human`. Test `obligation_results_present`. |
+| REQ-3 (forward-declared fields) | SHIPPED | `ContractQuality::forward_declared` returns honest unscored values (`mutants_killed="0/0"`, not the golden `"17/18"`); excluded from `Certificate::oracle_subset`. Since superseded IN PART: the producers landed (#6 `graduate_triage_clean`, #13 `rejected_vacuity`, #12 `with_mutation_score` — Amendment 2026-06-12 item 1). Test `oracle_ignores_forward_declared_and_time`. |
+| REQ-4 (`suggested_move` reserved) | SHIPPED | `Certificate::new` sets `suggested_move: None` (serialized as omitted, not a placeholder); `struct SuggestedMove` reserves the slot — now CONSTRUCTED in production on timeout (#11 `Certificate::timeout`) and strengthening (#14 `with_strengthening`) certs (Amendment 2026-06-12 item 1). Test `suggested_move_is_reserved_absence`. |
+| REQ-5 (per-obligation results) | SHIPPED | `struct ObligationResult { name, status, location, diagnostic }` + `enum ObligationStatus`; `obligations` field; populated by `check::assemble_certificate` from `check::classify_verus_outcome` (the former `parse_verus_output` cite is dead — Amendment 2026-06-12 item 4), rendered by `cli::render_human`. Test `obligation_results_present`. |
 | REQ-6 (`solver_time_ms` excluded) | SHIPPED | `solver_time_ms: u64` present (`#[serde(default)]` so the golden subset deserializes); `Certificate::oracle_subset` omits it. Test `golden_deterministic_subset_round_trips`. |
 | REQ-7 (serde_json serialization) | SHIPPED | `#[derive(Serialize, Deserialize)]`; `Level` → `"L0".."L3"`; serialized via `cli::run_check`'s `serde_json::to_string_pretty`; deterministic field order. Test `serialization_is_deterministic`. |

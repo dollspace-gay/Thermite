@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: e25e039da5db71e3fac374d09e80d8e745a112d7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped status, goldens-exist status, #225-#238 spec-call narrowing arc note, #262)
 governs: thermite-lower/src/lower.rs
 thesis-refs:
   - thermite-design.md §3
@@ -27,11 +27,19 @@ file to the `verus` binary; a `0 errors` result is the L3 certificate
 `verus` with 0 errors** — that is the load-bearing external truth this component
 is pinned against (`goal.md` "Verus/Kani/Z3 golden files").
 
-This doc is GREENFIELD / FORWARD-LOOKING. Only the empty
-`thermite-lower/src/lib.rs` scaffold root exists (no `lower.rs`). Every REQ is
-**NOT-STARTED**, blocked on issue **#4**. The exact verified Verus forms below
-were produced by running the real `verus 0.2026.05.24` binary during authoring;
-they are the lowering contract the builder reproduces, not guesses.
+This component is **SHIPPED** (issue **#4**, much extended since — REQ-status
+table). The exact verified Verus forms below were produced by running the real
+`verus 0.2026.05.24` binary during authoring; they are the lowering contract
+the implementation reproduces, not guesses. Post-pin arc note (#262 re-audit):
+the #225–#238 spec-call PARAM-TYPE NARROWING threads a type-directed `as
+<callee's declared param type>` cast onto user-spec-fn call arguments across
+the loop / dec-measure / proof-aid / struct-inv spec contexts
+(`Ctx.spec_fn_param_types` / `with_spec_fn_param_types` /
+`spec_call_param_cast` in `lower.rs`, fed by the program-wide
+`spec_fn_param_type_map`; structural dedupe #231; literal-free arithmetic
+coverage #238) — an extension of REQ-5's spec-context machinery, exercised by
+`thermite-lower/tests/divergence_spec_call_param_cast.rs` and siblings. The
+REQ-table symbols below were re-verified against the current tree.
 
 ## Requirements
 
@@ -683,11 +691,12 @@ Gauntlet (R-DEFER-6): `cargo test -p thermite-lower`,
 `cargo fmt --check`. Because this route touches `thermite-lower`, the conformance
 expectation (the golden Verus passing `verus`) is part of the gate.
 
-**The `tests/golden/lower/` goldens do NOT exist yet** (GREENFIELD). The two
-verified files pinned verbatim above are hand-authored into
-`tests/golden/lower/{sum,binary_search}.verus.rs` (R-CHAR-3) before the builder
-runs; each was confirmed to pass `verus` during authoring of this doc. The #93
-break/continue golden(s) are hand-authored from the six probes above.
+**The `tests/golden/lower/` goldens EXIST** —
+`tests/golden/lower/{sum,binary_search}.verus.rs`, hand-authored from this doc
+(R-CHAR-3); each passes `verus` (`lower_conformance.rs` runs the real binary).
+The #93 break/continue behavior is pinned by
+`forge/tests/break_continue_conformance.rs` (real verus, 8/8 per the REQ-12
+row).
 
 ## REQ status
 

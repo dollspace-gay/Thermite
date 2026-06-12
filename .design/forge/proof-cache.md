@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1dc7c5492dea73d66e3d8ede3423e0339d741433 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary; the #49 CHECK_SCHEMA_VERSION fifth key input (schema history 2–5), canonical-config-only caching, cached #13 rejects, and the engine-discriminated evidence-key wrapper, #262)
 governs: forge/src/cache.rs
 thesis-refs:
   - thermite-design.md §5.3
@@ -20,15 +20,61 @@ home of the bit-reproducible-verification contract (`thermite-design.md` §5.3:
 "Proof results are content-addressed and cached per item"). For each `.th`
 item, `forge check` computes a STABLE cache key from everything that determines
 the verdict (the item's lowered Verus source + the pinned solver seed + the
-verus version + the thermite toolchain version), consults the cache BEFORE
+verus version + the thermite toolchain version + the module-internal
+check-logic schema version — REQ-1 as amended, #49), consults the cache BEFORE
 spawning verus, returns the cached certificate on a HIT (skipping the solver),
 and stores the result on a MISS. The cache is a PERFORMANCE optimization that
 NEVER changes a verdict: a hit is indistinguishable from a fresh verify.
 
-GREENFIELD — no `cache.rs` exists. `forge check` (issues #5/#6) ships and
-already verifies PER ITEM (`check::check_file`'s per-item loop, `item_subprogram`,
-`run_verus`, `resolve_seed`/`DEFAULT_SOLVER_SEED`). All REQs below are
-NOT-STARTED, blocked on issue #8 (the last v0.1-kernel leaf).
+SHIPPED (#8) — `forge/src/cache.rs` implements the key (`cache_key`), the
+store/load pair, and the additive `cached` field, consumed by
+`check::check_file`'s per-item L3 path (`item_subprogram`, `run_verus`,
+`resolve_seed`/`DEFAULT_SOLVER_SEED` are the seams it composes). The REQ-status
+table below is the per-REQ evidence, and the **Post-pin amendments** section
+records what the four commits since the bootstrap pin changed (re-audited,
+#262).
+
+## Post-pin amendments (re-audited 2026-06-12, #262)
+
+Four commits touched `cache.rs` after the bootstrap pin `1dc7c549`. Verified
+against the current tree:
+
+- **#49 (`6d7b3aff`) — the stale-verdict gate bypass is closed: a FIFTH key
+  input.** `cache_key` hashes, in addition to its four arguments, the
+  module-internal `const CHECK_SCHEMA_VERSION: u32` (currently `5`) — the
+  version of forge's VERDICT-AFFECTING CHECK LOGIC. `thermite_version` does
+  not suffice: gates ship without a crate-version bump (#12's mutation floor
+  landed at 0.1.0), so a cert cached BEFORE a gate existed would be re-served
+  under an identical four-input key and skip the now-required gate. The
+  maintenance contract (pinned at the const): bump on ANY gate
+  add/remove/semantics change. History: 1 = pre-mutation-gate; 2 = the #12
+  floor; 3 = the #74 empty-`Vec` early-return synthesis; 4 = the #80
+  empty-`String` synthesis; 5 = the #101 equivalent-mutant denominator
+  exclusion. REQ-1's "EXACTLY the four inputs" and REQ-2's four-input
+  enumeration argument are amended accordingly: four CALLER-passed inputs +
+  the check-logic version.
+- **Canonical-config-only caching (the floor/rlimit seam, in `check.rs`).**
+  `check_file`'s `use_cache` guard consults AND populates the cache only at
+  the canonical budget (`rlimit == DEFAULT_RLIMIT` and `mutation_floor ==
+  MUTATION_FLOOR`): both knobs are verdict-changing but NOT key inputs, so a
+  non-default run BYPASSES the cache entirely (neither served nor written) —
+  soundness preserved without widening the key.
+- **#13 rejects are cached (solver-vacuity.md GATE-PLACEMENT).** A
+  `Certificate::rejected_vacuity` is a settled deterministic verdict and is
+  `cache::store`d like a counterexample cert, so a later HIT is verus-free
+  end-to-end. REQ-3's "only the L3 path is cached" reading is amended: #6
+  structural-triage rejects and slag/boundary L1 short-circuits are still
+  never cached (they short-circuit in `gate_fn`, before the key is computed),
+  but the #13 SOLVER-vacuity verdict, computed inside the MISS branch, is.
+- **Engine-discriminated evidence keys (the proof-backends arc; `cache.rs`
+  itself unchanged by it).** `engine::engine_cache_key(EngineName,
+  content_address)` wraps this module's key into the
+  `CacheKey { engine, content_address }` evidence address (`check_file`
+  builds it with `EngineName::Verus`), and the Lean engine versions its own
+  exporter via `engine::LEAN_SCHEMA_VERSION` — the analogue of
+  `CHECK_SCHEMA_VERSION` for the Lean path. The on-disk
+  `target/thermite-proof-cache/` store and `cache_key`'s four-argument
+  signature are untouched by that arc.
 
 ## Requirements
 
@@ -41,6 +87,9 @@ NOT-STARTED, blocked on issue #8 (the last v0.1-kernel leaf).
   §5.3); (c) the verus version; (d) the thermite toolchain version. The hash is
   domain-separated and length-prefixed per field so no two distinct input tuples
   collide by concatenation ambiguity. The key is the cache's content address.
+  *(Amended #49: the hash carries a FIFTH, module-internal field —
+  `CHECK_SCHEMA_VERSION`, the verdict-affecting check-logic version; see
+  Post-pin amendments.)*
   Source: `thermite-design.md` §5.3 ("proof results are content-addressed and
   cached per item"); §12 ("certificates are per-item and content-addressed").
 - REQ-2 (the soundness-completeness invariant — a hit equals a fresh verify):
@@ -49,7 +98,8 @@ NOT-STARTED, blocked on issue #8 (the last v0.1-kernel leaf).
   cache HIT therefore returns the SAME verdict a fresh verus run would, by
   construction. A stale-cache false-L3 (returning L3 when a fresh run would not)
   is a SOUNDNESS HOLE; the completeness of the four-input key (REQ-1) is the
-  argument that this cannot occur. The cache is never a way to fabricate a
+  argument that this cannot occur. *(Amended #49: the enumeration includes the
+  check-logic version — the gate SET is itself a verdict-determining input.)* The cache is never a way to fabricate a
   verdict (`goal.md` R-DEFER-9 — no proof cheats).
   Source: `thermite-design.md` §5.3 ("a proof that passed yesterday passes today
   unless something semantically relevant changed"); §11 ("never by weakening the
@@ -169,11 +219,12 @@ the stable hash (see "Dependency note" below).
 **The cache key (REQ-1).** The content address for one item is
 
 ```text
-key = sha256(
+key = sha256( DOMAIN ||                        // "thermite.forge.proof-cache.v1"
         len-prefix( lowered_verus_source )  ||   // what verus checks (REQ-1a)
         len-prefix( seed_bytes )            ||   // pinned solver seed (REQ-1b, §5.3)
         len-prefix( verus_version )         ||   // REQ-1d / REQ-5
-        len-prefix( thermite_version )           // REQ-1c / REQ-5
+        len-prefix( thermite_version )      ||   // REQ-1c / REQ-5
+        len-prefix( CHECK_SCHEMA_VERSION )       // check-logic version (#49 amendment)
       )
 ```
 
@@ -221,8 +272,11 @@ match cache::load(&key) {
 }
 ```
 
-`cache.rs` exposes the boundary surface `pub fn key(...) -> String`,
-`pub fn load(key) -> Option<Certificate>`, `pub fn store(key, cert)`; its sole
+`cache.rs` exposes the boundary surface (as-built spellings):
+`pub fn cache_key(lowered_src, seed, verus_version, thermite_version) -> String`,
+`pub fn load(cache_dir, key) -> Option<Certificate>`,
+`pub fn store(cache_dir, key, cert) -> std::io::Result<()>`, and
+`pub fn default_cache_dir() -> PathBuf`; its sole
 non-test production consumer is `check::check_file`. The verus-version string is
 captured once per `check_file` invocation (`verus --version`, REQ-5) and the
 thermite version is `env!("CARGO_PKG_VERSION")` of the `forge` crate.
@@ -335,9 +389,9 @@ the dependency; the doc-author does not edit `Cargo.toml`.
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (cache-key composition) | SHIPPED | `cache::cache_key(lowered_src, seed, verus_version, thermite_version) -> String` (`cache.rs`) sha256-hashes the four inputs, each DOMAIN-tagged + LENGTH-prefixed (`cache::field`); `sha2 = "0.10"` added to `forge/Cargo.toml`. Consumer: `check::check_file` in `check.rs`. |
-| REQ-2 (soundness-completeness invariant) | SHIPPED | the key captures all four verdict-determining inputs; `cache::store` persists the canonical `cached: false` and `cache::load` returns it unchanged, so `check::check_file`'s HIT (`Certificate::with_cached(true)`) is oracle-equal to the fresh verify. Verified by `cache::tests::key_changes_when_any_input_changes` + `cache_conformance::second_run_is_a_cache_hit_with_equal_deterministic_fields`. |
-| REQ-3 (lookup-then-store flow, per item) | SHIPPED | `check::check_file`'s L3 path calls `cache::load` BEFORE `run_verus` (HIT → return + skip verus + `continue`); on a MISS it runs verus, assembles + graduates the cert, `cache::store`s it, and returns `with_cached(false)`. |
+| REQ-1 (cache-key composition) | SHIPPED | `cache::cache_key(lowered_src, seed, verus_version, thermite_version) -> String` (`cache.rs`) sha256-hashes the four args PLUS the module-internal `CHECK_SCHEMA_VERSION` check-logic version (= 5; the #49 amendment), each DOMAIN-tagged + LENGTH-prefixed (`cache::field`); `sha2 = "0.10"` in `forge/Cargo.toml`. Consumer: `check::check_file` in `check.rs` (and, engine-wrapped, `engine::engine_cache_key`). |
+| REQ-2 (soundness-completeness invariant) | SHIPPED | the key captures the four verdict-determining inputs PLUS the #49 check-logic version (a gate-set change forces a universal MISS — schema bumps 2–5 recorded at the const); the two verdict-changing knobs NOT in the key (`rlimit`, `mutation_floor`) BYPASS the cache at non-default values (`check_file`'s `use_cache` guard — neither served nor written). `cache::store` persists the canonical `cached: false` and `cache::load` returns it unchanged, so `check::check_file`'s HIT (`Certificate::with_cached(true)`) is oracle-equal to the fresh verify. Verified by `cache::tests::key_changes_when_any_input_changes` + `cache_conformance::second_run_is_a_cache_hit_with_equal_deterministic_fields`. |
+| REQ-3 (lookup-then-store flow, per item) | SHIPPED | `check::check_file`'s L3 path calls `cache::load` BEFORE `run_verus` (HIT → return + skip verus + `continue`); on a MISS it runs verus, assembles + graduates the cert, `cache::store`s it, and returns `with_cached(false)`. Post-pin: a #13 `Certificate::rejected_vacuity` (computed inside the MISS branch) is stored too — a settled deterministic verdict, so a later HIT is verus-free end-to-end. |
 | REQ-4 (locality — per-item) | SHIPPED | the key is over the item's OWN `item_subprogram` lowered source; `check::tests::cache_key_is_local_to_the_item` asserts `g`'s key is invariant under an `f`-only edit while `f`'s key changes. |
 | REQ-5 (version-keyed invalidation) | SHIPPED | `check::resolve_verus_version` captures the verus version once per run (the `VERUS_VERSION` pin, else `verus --version`; a missing version is `ForgeError::VerusAbsent`, never an empty-string key) and `check::THERMITE_VERSION = env!("CARGO_PKG_VERSION")` feed the key. Verified by `cache::tests::key_changes_when_any_input_changes`. |
 | REQ-6 (cache location + format) | SHIPPED | `cache::default_cache_dir()` = `target/thermite-proof-cache/` (under the already-ignored `target/`); one `<hex-key>.json` per key; `cache::store` writes atomically (temp + rename); a corrupt entry → `cache::load` returns `None` (`cache::tests::corrupt_entry_is_a_miss`). |

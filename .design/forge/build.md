@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5cda1db83432584045dccafc228e55744f69f189 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD Summary + pre-pin #57 sandbox-installed REQ-6 corrected, post-pin kernel-target/open-hole drift noted, #262)
 governs: forge/src/build.rs
 thesis-refs:
   - thermite-design.md §3
@@ -29,9 +29,11 @@ is the codegen backend (§3, the stack). Alongside the artifact, `forge build` e
 reproducibility info (§5.3). The `fx` rows and the runnable executable are the hooks
 the #57 seccomp sandbox consumes.
 
-This whole component is GREENFIELD: `forge/src/build.rs` does not exist. Every REQ is
-NOT-STARTED, blocked on issue #56. This doc is the forward-looking contract the
-builder implements against; it is grounded against real `rustc` (see Verification).
+This component is SHIPPED: `forge/src/build.rs` implements every REQ below (see the
+REQ status table), grounded against real `rustc` (see Verification). Since the
+bootstrap pin the pipeline also gained the #195 open-hole refusal and the
+`--target kernel` fork (#197/#198 — governed by `.design/build/kernel-target.md`,
+not this doc); see the Amendment below.
 
 > **Appendix B note.** `forge build` is **not** in the v0.1 command surface listed in
 > `thermite-design.md` Appendix B (which lists `new`/`goal`/`fill`/`edit`/`check`/
@@ -42,6 +44,25 @@ builder implements against; it is grounded against real `rustc` (see Verificatio
 > rustc by `l1_conformance.rs`), so `build` is the documented act of turning that
 > emission into a real compiled deliverable. Adding the command is an Appendix-B
 > amendment the builder records in the commit (R-SPEC-4), not a code-local choice.
+
+> **Amendment 2026-06-12 (doc-freshness re-audit, #262).** Re-verified against the
+> current tree (`dff9ae86`); three drifts corrected, the REQ-1..REQ-5/REQ-7 evidence
+> re-verified live (symbols + cited tests all present):
+> 1. *Stale Summary*: the "GREENFIELD … every REQ NOT-STARTED" paragraph predated the
+>    #56 build (the REQ-status table was already all-SHIPPED); rewritten.
+> 2. *REQ-6 falsified by #57 shipping* (`56c23565`, BEFORE this doc's bootstrap pin):
+>    `forge build` no longer merely "emits hooks" — `fn synthesize_entry_main in
+>    build.rs` installs the seccomp prelude by default and `BuildManifest` carries
+>    `pub sandbox: SandboxRecord`. REQ-6 body, the Boundaries bullet, and the REQ-6
+>    status row updated.
+> 3. *Post-pin drift* (`5cda1db8..HEAD`, 3 commits: #195/#197/#198): `pub fn
+>    build_file in build.rs` and `pub fn emit_source in build.rs` gained a trailing
+>    `target: BuildTarget` parameter, and `build_file` now REFUSES (a) ambient-`fx`
+>    fns / `--entry` under `--target kernel` (#197/#198 — governed by
+>    `.design/build/kernel-target.md`, NOT this doc) and (b) any open-holed item
+>    BEFORE lowering (#193/#195 — the shared `goal_repl::open_hole_reason`, governed
+>    by `.design/forge/goal-repl.md`). The std-target emission this doc governs is
+>    byte-unchanged (`kernel_target::default_target_source_is_byte_identical_to_no_target_flag`).
 
 ## Requirements
 
@@ -94,14 +115,21 @@ builder implements against; it is grounded against real `rustc` (see Verificatio
   identity + the deterministic-source guarantee, with the honest archive-timestamp
   caveat from Verification).
 
-- **REQ-6 (the #57 hook: runnable executable + fx rows).** Derived from §9 (the runtime
-  "enforces the row as a sandbox … killed at the syscall boundary") and the issue-#57
-  setup. `forge build` provides exactly the two inputs #57 consumes: (a) a runnable
-  executable (REQ-3 `--entry`) the seccomp filter can be installed into and observed
-  killing a violation, and (b) the per-fn `fx` rows in the build manifest (REQ-5) that
-  the syscall filter is derived from. v0.1 `forge build` does NOT itself install a
-  sandbox (that is #57; effects are compile-time-only in v0.1, R-SPEC-5) — it only
-  emits these hooks.
+- **REQ-6 (the #57 hook: runnable executable + fx rows + the installed sandbox).**
+  Derived from §9 (the runtime "enforces the row as a sandbox … killed at the syscall
+  boundary") and the issue-#57 setup. `forge build` provides the two inputs #57
+  consumes: (a) a runnable executable (REQ-3 `--entry`) and (b) the per-fn `fx` rows
+  in the build manifest (REQ-5) the syscall filter is derived from. SUPERSEDED IN
+  PART by #57 shipping (`56c23565`, pre-pin — Amendment 2026-06-12): `forge build
+  --entry` now also INSTALLS the sandbox itself. `fn synthesize_entry_main in
+  build.rs` injects `sandbox::emit_sandbox_prelude(&allowlist)` — allowlist =
+  `sandbox::syscall_allowlist(&sandbox::transitive_fx(program, &f.name))` — as the
+  FIRST statements of the generated `main`, ON BY DEFAULT (`SandboxConfig::default()`
+  → `SandboxMode::On`; `--no-sandbox` opts out), and records the result as
+  `pub sandbox: SandboxRecord` on the `BuildManifest` (`installed` +
+  `transitive_fx` + `syscall_allowlist`). The sandbox MECHANISM (`sandbox.rs`) is
+  governed by `.design/forge/runtime-sandbox.md`; this doc governs the build-side
+  wiring only.
 
 - **REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path).** Derived
   from §3 (the artifact is a real compiled deliverable) + the #128 motivation. By
@@ -231,9 +259,11 @@ backend:
 Boundaries (what `forge build` is NOT):
 - `forge check` (#5) VERIFIES (verus, the L3/SMT path); `forge build` (#56) COMPILES
   (rustc). They share the pipeline front, not the backend.
-- The runtime seccomp SANDBOX is #57 — this doc only documents the two hooks `forge
-  build` hands it (the runnable executable + the per-fn `fx` rows). v0.1 effects are
-  compile-time-only (R-SPEC-5, issue #21).
+- The runtime seccomp SANDBOX mechanism (the `fx`→syscall mapping + filter emission,
+  `sandbox.rs`) is governed by `.design/forge/runtime-sandbox.md` — and since #57
+  shipped, `forge build --entry` INSTALLS it by default via the generated `main`'s
+  prelude (REQ-6 as amended). This doc governs only the build-side wiring
+  (`SandboxConfig` threading + the `BuildManifest::sandbox` record).
 - Cross-platform packaging, optimization-flag selection, multi-file Thermite projects:
   future work, out of v0.1 scope.
 
@@ -336,8 +366,8 @@ must:
 |---|---|---|
 | REQ-1 (build pipeline: lower_l1 → emit → rustc) | SHIPPED | `pub fn build_file in build.rs` runs `parse`/`validate`/`check_effects` (the `check_file` front, via `parse_program`), `thermite_lower::lower_l1` (via `emit_source`), writes a crate, invokes `rustc` (`invoke_rustc`); short-circuits into `ForgeError`. Consumer: `cli::run_build` (`cli.rs`). Verified by `build_conformance::sum_runs` + `sum_builds_as_library`. |
 | REQ-2 (rustc invocation; exit-status; crate-name gotcha) | SHIPPED | `invoke_rustc in build.rs` passes `--crate-name` (no `.` — `crate_name_for`), `--edition 2021`, checks `status.success()` → `ForgeError::RustcOutput`; spawn ENOENT → `ForgeError::RustcAbsent`; reuses `check::ScratchDir`'s Drop guard + `unique_scratch_dir` to remove the crate dir wholesale. `RustcAbsent`/`RustcSpawn`/`RustcOutput` added to `ForgeError` in `cli.rs`. Verified by `uncompilable_lowering_is_nonzero_exit` (AC-7). |
-| REQ-3 (artifact form: library + optional `--entry` runner) | SHIPPED | `build_file(path, None)` → `CrateType::Rlib`; `build_file(path, Some(fn))` → `CrateType::Bin` with `synthesize_entry_main`'s deterministic runner (`&[u32]` → `&[1u32,2,3]`, scalars → fixed literals). Verified by `sum_runs` (exe prints `6`) + `sum_builds_as_library`. |
+| REQ-3 (artifact form: library + optional `--entry` runner) | SHIPPED | `build_file(.., entry: None, ..)` → `CrateType::Rlib`; `build_file(.., entry: Some(fn), ..)` → `CrateType::Bin` (the signature has since gained `sandbox: SandboxConfig` (#57) and a trailing `target: BuildTarget` (#197) — Amendment 2026-06-12) with `synthesize_entry_main`'s deterministic runner (`&[u32]` → `&[1u32,2,3]`, scalars → fixed literals). Verified by `sum_runs` (exe prints `6`) + `sum_builds_as_library`. |
 | REQ-4 (L1 checks baked in, all profiles) | SHIPPED | the artifact is `lower_l1`'s output verbatim (the always-active `thermite_check!`, NOT `debug_assert!`); `build_file` never strips it. Verified by `ens_violation_fires_at_runtime` (the runtime `[ens]` check fires, non-zero exit) + `checks_are_baked_in` (AC-2: macro present, no `debug_assert`). |
 | REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `struct BuildManifest in build.rs` composes the artifact path + `CrateType`, the assurance string `"L1 (built, runtime-checked)"`, the per-fn `fx` rows (`effects_of` via `build_functions`), and the `Reproducibility` block (pinned `rustc` identity via `resolve_rustc_version` + `SOURCE_DATE_EPOCH=0`). Consumer: `cli::run_build` (human `render_build` + `--json`). Verified by `rebuilt_library_is_byte_identical` (AC-6: byte-identical rlib via `SOURCE_DATE_EPOCH` + `--remap-path-prefix`). |
-| REQ-6 (#57 hook: runnable exe + fx rows) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (`sum` → `["pure"]`); v0.1 installs no sandbox (R-SPEC-5). Verified by `sum_runs` (`fx == ["pure"]` + the binary runs). |
+| REQ-6 (#57 hook: runnable exe + fx rows + installed sandbox) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (`sum` → `["pure"]`); since #57 (`56c23565`, pre-pin), `fn synthesize_entry_main in build.rs` injects `sandbox::emit_sandbox_prelude` (the fx-derived allowlist) as the FIRST statements of the generated `main`, on by default (`SandboxConfig::default()` → `SandboxMode::On`; `--no-sandbox` opts out), recorded as `pub sandbox: SandboxRecord` on `BuildManifest`. Consumer: `cli::run_build` (`cli.rs`). Verified by `build_conformance::sum_runs` (`fx == ["pure"]` + the binary runs) + the `sandbox_conformance.rs` suite. |
 | REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path) | SHIPPED | `build_file(.., out: Option<&Path>)` copies the stable /tmp artifact to `<PATH>` via `place_artifact in build.rs` (overwrite + `chmod +x`; #128), reports `<PATH>` as `BuildManifest::artifact`; `None` keeps the existing /tmp path; a bad `<PATH>` → `ForgeError::Io`. Consumer: `cli::run_build` threads the `--out`/`-o` flag (`Command::Build.out`). Verified by `build_conformance::out_places_runnable_binary` (AC-8: placed, executable, runs, prints 6) + `out_bad_path_is_structured_error` (structured error, no panic) + `cli::parses_build_out_flag`. |

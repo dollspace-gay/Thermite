@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 838374d1d8126c781789b48b2b876827a3bd3ab6 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary; rule (d) is boundary-exempt too and the #106 `term` 9th atom is excluded from the maximal set, #262)
 governs: forge/src/vacuity.rs
 thesis-refs:
   - thermite-design.md §7
@@ -27,9 +27,46 @@ issue #13; mutation scoring (step 4) is #12; strengthening probes (step 5) are
 #14 — all OUT of scope here. This is the anti-Goodhart floor (`goal.md`
 R-DEFER-9: the battery exists precisely to catch the moves that game the gate).
 
-GREENFIELD — no `vacuity.rs` exists. All REQs NOT-STARTED, blocked on
-crosslink issue **#6** ("Implement structural vacuity triage and the `#[slag]`
-escape hatch", milestone #1, currently blocked by #3 which has shipped).
+SHIPPED (#6) — `forge/src/vacuity.rs` implements all four §7.1 rules as
+`pub fn triage(item: &FnItem) -> VacuityVerdict`, consumed by `check::gate_fn`
+BEFORE any lowering/verus run. The REQ-status table below is the per-REQ
+evidence; the **Post-pin amendments** section records what the twelve commits
+since the bootstrap pin changed (re-audited, #262).
+
+## Post-pin amendments (re-audited 2026-06-12, #262)
+
+Twelve commits touched `vacuity.rs` after the bootstrap pin `838374d1`. The
+behavior-bearing arcs, verified against the current tree:
+
+- **#44 (`2164770c`) — rule (c) fires only when the WHOLE `ens` is
+  req-implied.** The implementation was aligned to REQ-3's documented
+  every-clause rule: `ens_implied_by_req` returns a cause only when EVERY `ens`
+  clause is `PartialEq`-equal to `req` whole or a conjunct — a contract with one
+  redundant req-implied clause plus a genuinely-stronger clause carries a real
+  obligation and is NOT (c)-rejected. The doc text below already states the
+  every-clause reading; #44 made the code match it.
+- **#106/#132 (`c3694256`) — `Effect::Term` is a NINTH `Effect` variant; the
+  maximal set stays the EIGHT broad atoms.** `effect_row_is_maximal`
+  deliberately ignores `Term` (a narrow single-syscall `ioctl` terminal-control
+  grant, not a broad I/O/capability atom): a row ADDING `term` to the eight is
+  still maximal, and a row MISSING one of the eight is not — `term` neither
+  adds to nor is required for maximality. REQ-4's original "every `Effect`
+  variant kind" definition is amended to "the 8 BROAD kinds" (see the REQ-4
+  amendment note).
+- **The ffi-boundary arc (#16, `74a2b91c`) — `#[boundary]` is exempt from rule
+  (d) exactly like `#[slag]`.** `fx_maximal_without_slag(fx, slag, boundary)`
+  fires only when NEITHER attribute is present (a foreign body's effects are
+  trusted-by-fiat — ffi-boundary.md §9/OQ-4); rules (a)/(b)/(c) still run on a
+  boundary fn, and `check::gate_fn` routes it to `Certificate::boundary_l1`
+  AFTER triage. The same gate now also routes a non-boundary `fx diverge` fn to
+  a capped L1 with (a)/(b)/(c) triage still applied (check.md REQ-8).
+- **Surface ripples** (#63 ADTs, #79 strings, #92 `!`, #93 break/continue,
+  #108/#109 recursion + tuples, #112 C10, #193 holes): `expr_mentions_result`
+  gained arms for the grown `Expr`/`Stmt` surface — notably the C10
+  `MatchArm.guard` arm (a contract mentioning `result` ONLY through a match
+  guard is still non-vacuous). The bounded-descent convention is unchanged:
+  `MAX_EXPR_DEPTH = 256`, and on exhaustion the walk conservatively reports
+  "result MIGHT be present" (never a false reject).
 
 ## Requirements
 
@@ -81,6 +118,11 @@ escape hatch", milestone #1, currently blocked by #3 which has shipped).
   partial `Set` is never maximal. A maximal row is admissible ONLY on a
   `#[slag]` item (`FnItem.slag.is_some()`): slag is the only thing that justifies
   it (§8; the `slag.md` interaction). Maximal-`fx` with no slag → reject.
+  *(Amended #262: the `Effect` enum has since gained a NINTH variant —
+  `Term` (#106), DELIBERATELY EXCLUDED from the maximal set, which remains the
+  8 broad kinds; and a `#[boundary]` item (`FnItem.boundary.is_some()`) is
+  exempt from (d) exactly like `#[slag]` — ffi-boundary.md §9/OQ-4. See
+  Post-pin amendments.)*
   Source: `thermite-design.md` §7.1 ("Effect row is maximal (`fx *`) without
   `#[slag]` justification → reject"), §8.
 - **REQ-5 (`VacuityVerdict` + typed reject cause):** triage returns a structured
@@ -119,7 +161,8 @@ escape hatch", milestone #1, currently blocked by #3 which has shipped).
   result-omitting, or req-implied contract is rejected exactly like any other.
   Slag exempts PROVING (the L3 obligation, `slag.md`), never STATING or checking
   the contract (§8: "slag exempts you from *proving*, never from *stating and
-  checking*"; `goal.md` R-DEFER-9).
+  checking*"; `goal.md` R-DEFER-9). *(Amended #262: `#[boundary]` shares the
+  rule-(d) exemption; (a)/(b)/(c) still run on boundary fns too.)*
   Source: `thermite-design.md` §8, §7.
 
 ## Acceptance criteria
@@ -187,8 +230,9 @@ so triage applies only to `FnItem`s; `check.rs` skips `Item::SpecFn`). Each
    the left-associative `&&` tree (`flatten_and`); reject if every `ens` clause
    equals `req` whole or a member of that set (REQ-3).
 4. **(d) `fx_maximal_without_slag`** — `item.slag.is_none()` AND
-   `effect_row_is_maximal(&fx)` where maximal = an `EffectRow::Set` covering all
-   8 `Effect` variant kinds (REQ-4).
+   `item.boundary.is_none()` (amended #262) AND `effect_row_is_maximal(&fx)`
+   where maximal = an `EffectRow::Set` covering the 8 BROAD `Effect` kinds
+   (the #106 `term` atom is excluded — see Post-pin amendments) (REQ-4).
 
 The order is the §7.1 listing order (a, b, c, d); the first firing rule is the
 reported cause (cheapest-first within the free tier — all four are O(AST size)).
@@ -362,7 +406,7 @@ Diverge])` — all 8 variant kinds, `slag = None` → maximal without slag. (The
 | REQ-1 (ens-is-true reject (a)) | SHIPPED | `ens_is_trivially_true` in `vacuity.rs` (`BoolLit(true)` over every clause, or any `identity_clause` `Eq`/`Le`/`Ge` with `PartialEq`-equal operands); consumer `triage` → `check::gate_fn`. Verified: `vacuity::tests::{ens_literal_true_rejected_a, ens_identity_rejected_a, identity_class_covers_le_ge_not_lt_ne}` + `tests/vacuity_slag_conformance.rs::triage_rejects_match_oracle_cause` (cause `EnsIsTrivial`). |
 | REQ-2 (ens-omits-result reject (b)) | SHIPPED | `ens_omits_result` + bounded `expr_mentions_result` (whole-`Expr`/`Stmt`/`Block` walk, `MAX_EXPR_DEPTH`) with the `Type::Unit` exemption; consumer `triage`. Verified: `vacuity::tests::{ens_omits_result_rejected_b, unit_return_exempt_from_b, nested_result_mention_passes_b}` + the conformance `EnsOmitsResult` reject + `unit_omits_result_ok` accept. |
 | REQ-3 (ens-implied-by-req reject (c)) | SHIPPED | `ens_implied_by_req` + `flatten_and` (left-associative `&&` flatten, bounded); consumer `triage`. Verified: `vacuity::tests::{ens_eq_req_rejected_c, ens_conjunct_req_rejected_c}` + conformance `EnsImpliedByReq` rejects. |
-| REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag` + `effect_row_is_maximal` (all 8 `Effect` kinds in a `Set`) gated on `slag.is_none()`; consumer `triage`. Verified: `vacuity::tests::{maximal_fx_no_slag_rejected_d, maximal_fx_with_slag_passes_d, partial_fx_is_not_maximal}` + conformance `MaximalFxWithoutSlag`. |
+| REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag(fx, slag, boundary)` fires only when `slag.is_none() && boundary.is_none()` (a `#[boundary]` fn is slag-adjacent and exempt, ffi-boundary.md §9/OQ-4) AND `effect_row_is_maximal` (the 8 BROAD `Effect` kinds in a `Set`; the #106 `Term` 9th atom is deliberately excluded — it neither adds to nor is required for maximality); consumer `triage`. Verified: `vacuity::tests::{maximal_fx_no_slag_rejected_d, maximal_fx_with_slag_passes_d, partial_fx_is_not_maximal}` + conformance `MaximalFxWithoutSlag`. |
 | REQ-5 (`VacuityVerdict` + typed cause) | SHIPPED | `pub enum VacuityVerdict { Passed, Rejected { cause } }` + `pub enum VacuityCause` with `tag`/`detail`; mapped to `manifest::RejectReason` (verdict-in-cert, OQ-1 resolved — NOT a `ForgeError`). Consumed by `check::gate_fn`. |
 | REQ-6 (forge-check gate + `contract_quality` field) | SHIPPED | `check::gate_fn` runs `triage` BEFORE `lower`/`run_verus`; a reject short-circuits to `Certificate::rejected`; a pass calls `Certificate::graduate_triage_clean` so `contract_quality.{tautology,vacuous_precondition}` are #6-LIVE `false`. Verified: `corpus_sum_still_l3_and_matches_golden` asserts both bools == golden `false`. |
-| REQ-7 (slag exempts proving, not stating) | SHIPPED | `triage(item)` reads `item.slag` and gates ONLY rule (d); (a)/(b)/(c) always run. Verified: `vacuity::tests::slag_does_not_excuse_vacuous_ens` + conformance `slag_vacuous` → `EnsIsTrivial`. |
+| REQ-7 (slag exempts proving, not stating) | SHIPPED | `triage(item)` reads `item.slag` (and, post-pin, `item.boundary`) and gates ONLY rule (d) on them; (a)/(b)/(c) always run, so a slag or boundary fn with a vacuous contract is still rejected. Verified: `vacuity::tests::slag_does_not_excuse_vacuous_ens` + conformance `slag_vacuous` → `EnsIsTrivial`. |

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5b0967f93f3c0b4ef0ad001f2f1d4a67c8d7e331 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped status, 9th atom Term (#106), #60 verified subsumes_masks delegation, check_effects 1-arg signature, #262)
 governs: thermite-lower/src/effects.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -23,18 +23,23 @@ kernel: runtime effect sandbox (compile-time `fx` subsumption only in v0.1)").
 This component is the static half, fully implemented (R-SPEC-5: implement the
 v0.1 form fully, do not stub the deferred form).
 
-This doc is GREENFIELD / FORWARD-LOOKING. Only the empty
-`thermite-lower/src/lib.rs` scaffold root exists (no `effects.rs`). Every REQ is
-**NOT-STARTED**, blocked on issue **#4**. The corpus programs (`sum`,
-`binary_search`) are both `fx pure` with no internal calls to effectful
-functions, so they are the ACCEPT baseline; reject cases are crafted fixtures.
+This component is **SHIPPED** (issue **#4**, extended by #38/#16/#60/#106):
+`thermite-lower/src/effects.rs` implements the check and every REQ below is
+**SHIPPED** (REQ-status table). The corpus programs (`sum`, `binary_search`)
+are both `fx pure` with no internal calls to effectful functions, so they are
+the ACCEPT baseline; reject cases are crafted fixtures. AMENDED at the #262
+re-audit: the atom set is now NINE kinds — the #106 terminal-control effect
+`Term` joined the original eight — and `subsumes` delegates its bit-level
+subset test to the Verus-verified `thermite_verified::subsumes_masks` (epic
+#60; the bitset WIDENED `u8`→`u16` for the 9th atom, #132).
 
 ## Requirements
 
 - **REQ-1 (the effect lattice):** The effects form a lattice over the powerset of
   the atomic effect set the AST models (`thermite-syntax/src/ast.rs` `enum
   Effect`): `{ Read(path), Write(path), Net(domain), Alloc, Time, Rand, Panic,
-  Diverge }`. The ordering is subset inclusion: `{}` (≡ `pure`) is the bottom;
+  Diverge, Term }` (NINE atoms — `Term` is the #106 terminal-control effect,
+  added post-#4). The ordering is subset inclusion: `{}` (≡ `pure`) is the bottom;
   any set subsumes its subsets. `EffectRow::Pure` (`ast.rs` `enum EffectRow`) is
   the empty set `{}` — the bottom element that permits nothing. The join of two
   rows is set union. Derived from §4.1 (the effect set + "Effect rows compose").
@@ -49,8 +54,9 @@ functions, so they are the ACCEPT baseline; reject cases are crafted fixtures.
   `pure` subsumes only `pure`. Derived from §4.1 ("a caller's row must subsume
   every callee's row").
 
-- **REQ-3 (the check entry point + call graph):** `check_effects(program,
-  fn_rows) -> Result<(), Vec<LowerError>>` walks every `FnItem` body, and for each
+- **REQ-3 (the check entry point + call graph):** `check_effects(program) ->
+  Result<(), Vec<LowerError>>` (the name→`fx` map is built internally over the
+  program's items) walks every `FnItem` body, and for each
   `Expr::Call`/`Expr::MethodCall` whose callee resolves to another declared
   `FnItem` (by name), checks that the *caller's* `Contract.fx` subsumes the
   *callee's* `Contract.fx` (REQ-2). It accumulates one structured error per
@@ -127,7 +133,7 @@ functions, so they are the ACCEPT baseline; reject cases are crafted fixtures.
 `thermite-lower/src/effects.rs`: a compile-time analysis over the
 `thermite-syntax` AST, sibling to `lower.rs` / `l1.rs`, sharing the `LowerError`
 enum. Symbol anchors: `enum EffectRow { Pure, Set(Vec<Effect>) }` and `enum
-Effect { Read, Write, Net, Alloc, Time, Rand, Panic, Diverge }` in
+Effect { Read, Write, Net, Alloc, Time, Rand, Panic, Diverge, Term }` in
 `thermite-syntax/src/ast.rs`; `struct FnItem` (`.contract.fx`), `struct
 SpecFnItem` (no `fx`); `fn lookup` in `thermite-spec/src/combinators.rs` (to
 classify a callee as a pure combinator).
@@ -135,7 +141,7 @@ classify a callee as a pure combinator).
 ### The effect lattice (REQ-1)
 
 ```
-            {Read, Write, Net, Alloc, Time, Rand, Panic, Diverge}   (top)
+        {Read, Write, Net, Alloc, Time, Rand, Panic, Diverge, Term}   (top)
                               … powerset …
    {Alloc}      {Read}      {Write}    …    {Panic}                 (atoms)
                               \  |  /
@@ -147,9 +153,10 @@ classify a callee as a pure combinator).
   subsumes only itself.
 - Join: set union (used when computing the effective row of a body that makes
   several effectful calls — its required caller row is the union of callee rows).
-- The atomic set is exactly `enum Effect`'s eight variants. `Diverge` is the
-  termination-escape effect (§4.1 "divergence requires `fx diverge`"); it sits in
-  the lattice like any other atom for subsumption purposes.
+- The atomic set is exactly `enum Effect`'s NINE variants (the #106 `Term`
+  included). `Diverge` is the termination-escape effect (§4.1 "divergence
+  requires `fx diverge`"); `Term` (#106) is the terminal-control effect; each
+  sits in the lattice like any other atom for subsumption purposes.
 
 ### The subsumption check (REQ-2/REQ-3)
 
@@ -159,6 +166,12 @@ effects(Set(v))   = { kind(e) | e ∈ v } // atom kinds, path-insensitive in v0.
 
 subsumes(caller, callee)  ⇔  effects(callee) ⊆ effects(caller)
 ```
+
+Since epic #60 the subset test is computed over 9-bit `u16` masks
+(`EffectKind::bit in effects.rs`) and DELEGATED to the Verus-verified
+`thermite_verified::subsumes_masks`; `pub fn subsumes in effects.rs` is anchored
+to the proof by the exhaustive 512×512 mask-equivalence test
+`thermite-lower/tests/effects_verified.rs`. The relation is unchanged.
 
 `check_effects` first builds a name→`Contract.fx` map over the program's
 `FnItem`s (and notes `SpecFnItem` names as pure). It then walks each `FnItem`
@@ -171,8 +184,8 @@ no-op (the #2 validator owns unknown-name rejection — REQ-3 / AC-5).
 
 The walk reuses the bounded-recursion discipline the parser and validator
 established (`guard_recursion` / `MAX_RECURSION_DEPTH` in
-`thermite-syntax/src/parser.rs`; mirrored in `thermite-spec` per
-`.design/spec/spectherm-combinators.md` REQ-5) so a pathological body returns a
+`thermite-syntax/src/parser.rs`; mirrored here as `MAX_WALK_DEPTH in
+effects.rs`, the `depth` threaded through `check_block`/`check_expr`) so a pathological body returns a
 structured error, never a stack overflow.
 
 ### Path granularity (v0.1 decision)
@@ -221,8 +234,8 @@ are crafted unit fixtures, hand-derived from §4.1 (R-CHAR-3).
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (effect lattice) | SHIPPED | `enum EffectKind` (the 8 atoms) + `fn effects` (powerset projection of `EffectRow`) in `effects.rs`; consumer `subsumes`/`missing_atoms`; asserted by `tests/effects.rs::lattice_law_*` (AC-1). |
-| REQ-2 (subsumption accept relation) | SHIPPED | `pub fn subsumes` in `effects.rs` (`effects(callee) ⊆ effects(caller)`; `Pure` subsumes only `Pure`); consumer `check_effects::check_call`; asserted by `lattice_law_table` + `crafted_accepts` (AC-1/AC-3). |
+| REQ-1 (effect lattice) | SHIPPED | `enum EffectKind` (the 9 atoms, incl. the #106 `Term`) + `fn effects` (powerset projection of `EffectRow`) in `effects.rs`; consumer `subsumes`/`missing_atoms`; asserted by `tests/effects.rs::lattice_law_*` (AC-1). |
+| REQ-2 (subsumption accept relation) | SHIPPED | `pub fn subsumes` in `effects.rs` (`effects(callee) ⊆ effects(caller)`; `Pure` subsumes only `Pure`; since #60 the subset test delegates to the Verus-verified `thermite_verified::subsumes_masks` over `u16` masks, anchored by `tests/effects_verified.rs`); consumer `check_effects::check_call`; asserted by `lattice_law_table` + `crafted_accepts` (AC-1/AC-3). |
 | REQ-3 (check entry point + call graph) | SHIPPED | `pub fn check_effects` in `effects.rs` builds a name→`fx` map over `FnItem`s (`SpecFnItem`/`thermite_spec::lookup` combinators noted pure) and walks each body's `Expr` tree (`check_block`/`check_expr`) per `Call`/`MethodCall`; consumer `tests/effects.rs` + the `pub use` lowering-pipeline surface; asserted by `corpus_accepts` (AC-2) + `crafted_rejects` (AC-4). |
 | REQ-4 (structured rejection, `LowerError`) | SHIPPED | `LowerError::EffectNotSubsumed { caller, callee, missing, span }` in `lower.rs` (`Display` arm + `effect_atom_name`); produced by `check_call`; `missing` = `effects(callee) \ effects(caller)`; asserted by `reject_*` (AC-4). |
 | REQ-5 (maximal-row / slag boundary) | SHIPPED | boundary recorded — `effects.rs` enforces subsumption only; no maximal-row judgement in the file (that is forge's vacuity stage #6). |

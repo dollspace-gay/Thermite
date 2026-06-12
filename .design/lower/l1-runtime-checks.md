@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1a0295e40cbe1da1393743be3a444fa1c7c16228 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — lower_l1 program-arg signature, golden-exists status, post-#4 growth note, #262)
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2
@@ -30,12 +30,16 @@ This component is SHIPPED (issue **#4** L1 stage): `thermite-lower/src/l1.rs`
 implements `lower_l1` and every REQ is **SHIPPED** (REQ-status table below).
 The golden reference lives at `tests/golden/l1/sum.l1.rs`; the emitter is
 verified by EXECUTION (compile + run via `rustc`, checks fire on violation) in
-`thermite-lower/tests/l1_conformance.rs`, not by strict byte-match.
+`thermite-lower/tests/l1_conformance.rs`, not by strict byte-match. (Post-#4
+growth — struct-invariant `well_formed` checks, string/Vec/Map exec runtimes,
+break/continue arms, ens-snapshot cloning — is governed by the basis docs that
+share this route; this doc's REQs pin the core check-emission contract, which
+the #262 re-audit re-verified.)
 
 ## Requirements
 
-- **REQ-1 (L1 check-emission entry point):** `lower_l1(item) -> Result<String,
-  LowerError>` (sharing `lower.rs`'s `LowerError`, REQ-9 there) emits, for a
+- **REQ-1 (L1 check-emission entry point):** `lower_l1(program) -> Result<String,
+  LowerError>` (sharing `lower.rs`'s `LowerError`, REQ-9 there) emits, for each
   `FnItem`, a runtime-checked Rust function: the original body wrapped so that
   every `req` clause is asserted on entry and every `ens` clause is asserted
   against `result` on exit, and every `LoopNode`'s `inv` clauses are asserted on
@@ -290,9 +294,10 @@ Gauntlet (R-DEFER-6): `cargo test -p thermite-lower`,
 `cargo clippy -p thermite-lower --all-targets -- -D warnings`,
 `cargo fmt --check`.
 
-**`tests/golden/l1/` does NOT exist yet** (GREENFIELD). The `sum.l1.rs` shape
-above is hand-authored into the golden (R-CHAR-3) before the builder runs; it
-must compile and run under `rustc`.
+**`tests/golden/l1/` EXISTS** (`sum.l1.rs`, plus the later basis-governed
+`bank_account.l1.rs`/`shape.l1.rs`). `sum.l1.rs` was hand-authored from the
+shape above (R-CHAR-3) and compiles + runs under `rustc`
+(verify-by-execution, REQ-6 / `sum_l1_compiles_and_runs`).
 
 ## REQ status
 

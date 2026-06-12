@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b60a64e8f9bf3818d2d5418eae7a1e163726214d (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — greenfield Summary fixed + post-pin currency note (basis/C7-C12/#193 parse surface, resync set, ladder threading), #262)
 governs: thermite-syntax/src/parser.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -26,8 +26,29 @@ into the next (§4.3, pillar 5 locality); and (b) **mandatory-clause enforcement
 parse error, never an implicit default (§4.1). It is **REGISTRY-FREE**: it parses
 combinator calls (`forall_in`, `sorted`) as generic call expressions.
 
-This doc is GREENFIELD / FORWARD-LOOKING: no `parser.rs` exists. Every REQ is
-**NOT-STARTED**, blocked on issue #3.
+This doc's REQs are SHIPPED (`thermite-syntax/src/parser.rs`, issue #3 + the
+#92/#93 amendments) — see the REQ status table.
+
+> **AMENDMENT (#262 re-audit, 2026-06-12 — post-pin currency).** The parser has
+> since grown ADDITIVE surface owned by OTHER design docs (each contracted in
+> `parser.rs`'s module-doc REQ tables — not re-owned here): the dedicated
+> `Option`/`Vec`/`Box`/`String` type arms + the two-arg type parses
+> `Result<T, E>` / `Map<K, V>` (09-option-result / 13-map / 04-collections /
+> 07-strings); the optional exec-fn `dec` clause after `fx` (`parse_fn`,
+> 10-recursion-tuples C9-A); tuples (`parse_type_inner`'s `(`-arm
+> disambiguation, `Expr::Tuple`/`TupleProj` in `parse_primary`/`parse_postfix` —
+> C9-B); the C10 ergonomics desugars (`parse_let` tuple destructuring,
+> `parse_for`, `parse_if_let`/`parse_while_let`, match guards, or-patterns —
+> 11-ergonomics); the `struct`/`enum`/`#[sealed]` item parses (`parse_struct`/
+> `parse_enum`, 01-adts/06-provenance); and the `?N` hole statement arm
+> (`parse_block`'s `TokKind::Hole` arm → `parse_hole`,
+> `SyntaxError::HoleOutsideFnBody` — `.design/forge/goal-repl.md` REQ-4, #193).
+> Two corrections against the current tree: the item-boundary RESYNC set
+> (REQ-3 / OQ-1) is now `fn`/`spec`/`#[`/`struct`/`enum`/EOF
+> (`resync_to_item_boundary` — the basis Stage-1a item kinds joined it), and the
+> precedence ladder threads `parse_cmp` → `parse_is` → `parse_bitor` →
+> `parse_bitxor` → `parse_bitand` → `parse_shift` → `parse_add` (OQ-3 RESOLVED:
+> `is` sits ABOVE the bitwise tiers, exactly as the REQ-8 status row records).
 
 ## Requirements
 

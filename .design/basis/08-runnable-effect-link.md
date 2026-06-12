@@ -2,11 +2,12 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: bb0fbd9ebaafcab8c0ad5d758cf8d7521baa4836 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
-governs: thermite-stdlib/src/effect/read.rs
-governs: thermite-stdlib/src/effect/write.rs
-governs: thermite-stdlib/src/effect/time.rs
+audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD/NOT-STARTED Summary corrected to shipped, governs re-pointed at the real files (no thermite-stdlib crate exists; OQ-2 inline-table resolution), REQ-1 wrapper-set/test-count refreshed (#87/#90/#125 growth), #262)
 governs: forge/src/build.rs
+governs: forge/src/effect_wrappers.rs
+(the thermite-stdlib/src/effect/* paths this doc originally listed were never
+ created — OQ-2 resolved to the INLINE forge-module wrapper table, see REQ-1;
+ the spec-routes.toml routes point at the two forge files above)
 thesis-refs:
   - thermite-design.md §1
   - thermite-design.md §3
@@ -34,9 +35,15 @@ concern only** — `forge check` (verification) is UNCHANGED and independent (GR
 the same program still certifies L1 boundary + L3 to-boundary before and after the
 link exists).
 
-This component is **GREENFIELD**. No `thermite-stdlib` crate exists; `forge build`
-emits no `os` module. Every REQ is **NOT-STARTED**, owned by issue **#81** (no
-redundant blocker filed — #81 is the owning issue).
+**SHIPPED (issue #81) — all six REQs are live.** `forge build` emits a `mod os`
+keyed off the program's reachable boundary targets (`build::emit_source` →
+`effect_wrappers::emit_mod_os`); the packaging resolved to the INLINE
+`forge/src/effect_wrappers.rs` `WRAPPERS` table, NOT a `thermite-stdlib` crate
+(OQ-2 — no such crate exists, by design). The wrapper set has since GROWN beyond
+the v1 five with the editor's boundaries: `os::read_key`/`os::key_str` (#87), the
+terminal-control/render `os::raw_mode_on`/`os::raw_mode_off`/`os::read_key_raw`/
+`os::write_frame` (#90), and the file load/save `os::read_file`/`os::write_file`
+(#125) — the same emit shape and minimal-TCB discipline.
 
 ## The wrapper-link mechanism (PINNED — emit-`mod os`-into-the-crate)
 
@@ -513,7 +520,7 @@ does NOT author the oracle, the golden, the routes, or the wrappers (R-DOC-1).
 
 | REQ | Status | Evidence |
 |---|---|---|
-| REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the `WRAPPERS` table in `forge/src/effect_wrappers.rs` holds a real `std` body for each v1 target: `os::now` (`std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(\|d\| d.as_secs())`), `os::read_byte`/`os::read_line` (`std::io::stdin().read`/`read_line`, the latter → `TString`), `os::write`/`os::print` (`std::io::stdout().write_all` over `TString`). Each handles its error arm honestly (the EOF sentinel 256 / a status code, no `unwrap`-panic). Consumer: `effect_wrappers::emit_mod_os` (emitted by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `read_byte_links_and_runs_both_arms` (`A`→130, EOF→0) + the `effect_wrappers::tests` unit battery (7 tests). The OQ-2 packaging is the INLINE `forge/src/` table (the orchestrator's settled decision), NOT a `thermite-stdlib` crate. |
+| REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the `WRAPPERS` table in `forge/src/effect_wrappers.rs` holds a real `std` body for each v1 target: `os::now` (`std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(\|d\| d.as_secs())`), `os::read_byte`/`os::read_line` (`std::io::stdin().read`/`read_line`, the latter → `TString`), `os::write`/`os::print` (`std::io::stdout().write_all` over `TString`). Each handles its error arm honestly (the EOF sentinel 256 / a status code, no `unwrap`-panic). The table has since GROWN with the editor's wrappers (same shape, same TCB discipline): `os::read_key`/`os::key_str` (#87), `os::raw_mode_on`/`os::raw_mode_off`/`os::read_key_raw`/`os::write_frame` (#90), `os::read_file`/`os::write_file` (#125 — total, empty-`TString`/status-arm on error). Consumer: `effect_wrappers::emit_mod_os` (emitted by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `read_byte_links_and_runs_both_arms` (`A`→130, EOF→0) + the `effect_wrappers::tests` unit battery (11 tests, incl. `read_key_wrapper_mirrors_read_byte_eof_sentinel`/`key_str_wrapper_is_bounded_one_byte_string`/`read_file_wrapper_is_total_empty_on_error`/`write_file_wrapper_is_total_status_arm`) + the runnable editor `forge/tests/editor_runs.rs`. The OQ-2 packaging is the INLINE `forge/src/` table (the orchestrator's settled decision), NOT a `thermite-stdlib` crate. |
 | REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets) | SHIPPED | `build::reachable_boundary_targets` collects the distinct `BoundaryAttr.target` over the program's `#[boundary]` `Item::Fn`s (every one is lowered with an `os::<name>(args)` crossing by `lower_l1`); `effect_wrappers::emit_mod_os` assembles a sorted, deterministic `mod os { … }` carrying EXACTLY those wrappers; `build::emit_source` PREPENDS it to `lower_l1`'s output, closing the GROUNDED `E0433`. Consumer: `build::emit_source` → `build::build_file` → `cli::run_build`. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (rustc exit 0, no `E0433`) + `effect_wrappers::tests::{emits_only_named_wrappers,emission_is_sorted_deterministic}` (minimal-TCB keying + R-CODE-5 determinism). |
 | REQ-3 (a verified program COMPILES + RUNS + does real I/O) | SHIPPED | `forge build effect_link_demo.th --entry elapsed_ok` compiles + the binary RUNS the linked `os::now`'s real `clock_gettime` → prints `elapsed_ok() = <live Unix timestamp>` (e.g. `1780780684`), exit 0; `os::read_byte` over stdin → `doubled() = 130` (byte `A`) / `0` (EOF, the handled arm). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (run exit 0, output a u64 in `(0, 4_000_000_000)`) + `read_byte_links_and_runs_both_arms`. THE UNLOCK: a verified Thermite program runs + does real I/O. |
 | REQ-4 (the linked wrapper is #57-seccomp-CONFINED) | SHIPPED | the linked `os::now` runs UNDER the SHIPPED #57 `sandbox::emit_sandbox_prelude` (installed FIRST in `synthesize_entry_main`'s `main`, UNCHANGED): the `time` allowlist INCLUDES `clock_gettime` (228) → the live `os::now` runs clean (exit 0), and EXCLUDES `openat` (257) → the `--sandbox-self-test` probe under the SAME `time` filter is `SIGSYS`-KILLED (exit 159). Verified by `effect_link_conformance::sandbox_confines_the_linked_wrapper` (the live-foreign-body confinement OQ-4 deferred, now real). The #57 allowlist derivation is verbatim. |

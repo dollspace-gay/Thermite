@@ -1,0 +1,10 @@
+{
+  "uuid": "453f1cce-bc84-47ac-8923-50bd2f04441e",
+  "issue_uuid": "70d3712b-1dff-4caf-b8b1-ac4a600c8542",
+  "author": "Yffe",
+  "content": "Fix #259: doc-drift.py exits 0 on an EMPTY route table (vacuous green), violating REQ-9 ('The tool never exits 0 without having checked all 48 docs' — an empty enumeration source means NOTHING was checked, hence INCONCLUSIVE exit 3) and goal.md R-HONEST-3.\n\nRoot cause: load_doc_files() returns {} for a zero-route table; evaluate() then loops over an empty dict, leaves failed=False, and returns EXIT_OK with no report. Zero docs checked is collapsed to a green pass.\n\nMinimal single-file fix (tooling/doc-drift.py): in load_doc_files(), after inverting routes, if the resulting doc->files map is empty, raise EnvironmentError3 (an empty route table yields nothing to check; fail-open is forbidden, R-HONEST-3). This routes the condition through the existing EnvironmentError3 -> exit 3 path with a loud stderr message. Scoped strictly to the empty case; the wrong-shape/traceback case is #260 and is NOT touched here.\n\nTest edit (allowed as part of closing the pin): ungate test_c1 ONLY in tooling/tests/test_doc_drift_critic.py (remove its skipUnless), leaving test_c2 skip-gated for #260.\n\nGauntlet: python3 -m unittest discover -s tooling/tests -v (test_c1 runs+passes, test_c2 skipped, builder's 10 green); python3 tooling/doc-drift.py live (still exit 1, 48 MISSING-PIN + 1 DRIFT, unchanged); git diff scripts/audit.sh empty.",
+  "created_at": "2026-06-12T01:22:24.754754165Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAdO+INDKwyuw5LmfnmOSYTXiSL2hXPeV681UaRJX00vvK1QP/Ioqcaz6d2SjytWPQzUc3tkk5I40sU8588krUAg=="
+}

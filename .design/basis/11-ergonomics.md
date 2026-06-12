@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 64a329fac3ece936c17be3d6aadf5bc125b20682 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: claims re-verified against current tree, #262)
+audited-sha: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: claims re-verified against current tree, #262)  (re-pinned 2026-06-12: #277 — the TString slice/concat byte-content ens strengthening touched lower.rs; claim-neutral for this doc, only 07-strings REQ-4 amends)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

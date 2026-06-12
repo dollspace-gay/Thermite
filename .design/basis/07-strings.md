@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 64a329fac3ece936c17be3d6aadf5bc125b20682 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — REQ-1..5 evidence cells re-grounded in the shipped tree (they carried pre-build gap text under SHIPPED status), C5/REQ-9 Summary clauses updated to shipped, REQ-4 narrowing claim updated per #225, #262)
+audited-sha: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — REQ-1..5 evidence cells re-grounded in the shipped tree (they carried pre-build gap text under SHIPPED status), C5/REQ-9 Summary clauses updated to shipped, REQ-4 narrowing claim updated per #225, #262)  (re-pinned 2026-06-12: #277 — REQ-4 slice/concat ens STRENGTHENED from length-only to BYTE-CONTENT (slice subrange, concat append); the #276 prerequisite, emitted bodies + both goldens re-verify, prose + table row updated)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

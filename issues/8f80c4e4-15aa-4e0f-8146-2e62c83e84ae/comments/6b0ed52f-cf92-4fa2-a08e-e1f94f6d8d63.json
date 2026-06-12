@@ -1,0 +1,10 @@
+{
+  "uuid": "6b0ed52f-cf92-4fa2-a08e-e1f94f6d8d63",
+  "issue_uuid": "8f80c4e4-15aa-4e0f-8146-2e62c83e84ae",
+  "author": "Yffe",
+  "content": "Plan (#266): single-file fix to .design/verified/proof-backends.md — rewrite the REQ-11 ## REQ status table row (line 2414) from the false NOT-STARTED / 'NOTHING of S4.2 is built … lean/Thermite/ has NO whileBodyDenote/…/loopDenote_exits_of_dec and NO PinWhileVacuity.lean/PinWhileComposition.lean' to the SPLIT truth that matches the same doc's Requirements-section REQ-11 entry (lines 413-476, post-#265) and the shipped artifacts.\n\nAuthority: the Requirements-section REQ-11 entry — REQ-11.1/11.2/11.3/11.6 SHIPPED (v-a, commit 99c7f304 + the #265 declared h_dec PRE-state adaptation, commit 92659eb7) / REQ-11.4/11.5/11.7 NOT-STARTED (the v-b exporter, open blocker #264).\n\nMechanical refutation of the stale row: lean/Thermite/Exec/WhileBody.lean ships all six declarations; the three pins exist (PinWhileVacuity/PinWhileComposition/PinWhileDecShape), and PinWhileDecShape imports Thermite.Exec.WhileBody and applies loopDenote_exits_of_dec — kernel existence of the artifacts the row denies.\n\nNew row: status cell split SHIPPED (v-a) + NOT-STARTED (v-b, #264); description split into SHIPPED sub-rows (11.1/11.2/11.3/11.6) with the module path, six declaration names, three pins, axiom footprint, the #265 adaptation; and NOT-STARTED sub-rows (11.4/11.5/11.7). House binary-status style preserved (mirrors the REQ-10 row).\n\nGauntlet: python3 tooling/doc-drift.py exit 0; re-read the new row vs the Requirements-section entry for consistency. Then commit, --kind result, close 266 --no-changelog, session work 264.",
+  "created_at": "2026-06-12T03:09:03.227346407Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAfFrEPYtMcSqBdYey2aNJ3+Nv+xxOEyUhkr2kiAaqHzgEXMHMULHAQxJf7+eINc7g86d82+dTj4MzqLXVnbwaCw=="
+}

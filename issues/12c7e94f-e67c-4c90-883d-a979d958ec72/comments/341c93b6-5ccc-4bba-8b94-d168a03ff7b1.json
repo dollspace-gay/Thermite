@@ -1,0 +1,10 @@
+{
+  "uuid": "341c93b6-5ccc-4bba-8b94-d168a03ff7b1",
+  "issue_uuid": "12c7e94f-e67c-4c90-883d-a979d958ec72",
+  "author": "Yffe",
+  "content": "PLAN (orchestrator ruling: amend the DOC to pin the SHIPPED, more-general h_dec shape; touch NO Lean file).\n\nAuthority read:\n- Critic pin lean/Thermite/PinWhileDecShape.lean (commit 92659eb7): shipped_hdec_is_not_the_pinned_shape proves the two h_dec shapes are non-equivalent (separating L1 instance, mu := -lo: pre-state bound 0<=mu st holds, post-state 0<=mu st' fails); design_hdec_implies_shipped_hdec + loopDenote_exits_of_dec_design_shape kernel-derive the design's verbatim POST-state theorem from the shipped one. The shipped theorem is STRICTLY MORE GENERAL and sound; the divergence is record fidelity, not soundness.\n- SHIPPED theorem (Exec/WhileBody.lean:244): h_dec : ... -> mu st' < mu st AND 0 <= mu st (PRE-state).\n- Design sketch (proof-backends.md:1780): ... AND 0 <= mu st' (POST-state). REQ-11.3 SHIPPED row (line 440) claims 'verbatim'.\n\nSingle-file fix: .design/verified/proof-backends.md\n1. Section 4.2.2 loopDenote_exits_of_dec statement block (line 1780): 0 <= mu st' -> 0 <= mu st; add declared-adaptation note.\n2. REQ-11.3 SHIPPED row (line 440): drop 'verbatim', state the one declared semantic adaptation with the pin-file cite.\n3. (v-a) kernel-bar: add one sentence noting pins are NOT elaborated by default 'lake build' (Thermite.lean imports WhileBody but not the Pin modules); checked by explicit per-module elaboration (lake env lean) — the recorded critic observation.\n\nGauntlet: cd lean && lake build still green (no Lean touched); python3 tooling/doc-drift.py exit 0; re-read amended block for internal consistency vs WhileBody.lean:244. No Lean file touched.",
+  "created_at": "2026-06-12T03:05:43.255320322Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAf4hTqbLsl7fen5gAGPoHPcdYa00AwUbmh8Ne6NfsrutETlz2ASgs1zMd+o+12iUvj1rdrBzDjnHDt0QbHk0TBA=="
+}

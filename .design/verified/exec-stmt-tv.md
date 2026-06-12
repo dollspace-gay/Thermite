@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 540cea0d19024faab4a24dab501148e3ea4b0700 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)

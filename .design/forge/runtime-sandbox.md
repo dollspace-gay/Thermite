@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: c3694256f9f88d34be30007b812920df95afd332 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/sandbox.rs
 thesis-refs:
   - thermite-design.md §4.1

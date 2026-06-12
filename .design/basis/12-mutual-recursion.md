@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 3c27d6878e9be9cebee171870faef505db4ceab6 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

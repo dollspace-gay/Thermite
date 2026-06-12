@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 13b8d734bf5814b4903a50b2cceca3b3f35f5c2b (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/build.rs
 thesis-refs:
   - thermite-design.md §3 (the stack — transpile to Rust, rustc is the codegen backend; the #21 realization note)

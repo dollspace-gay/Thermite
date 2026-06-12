@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 05c65b73b8ed8629ff65080f836aec0a32eef7e5 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 0c75cc0bf39299c38fc6242d0989ca05832188c5 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

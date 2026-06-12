@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: fa557601727c22fcdfc1fe60b779f9cd9da38a1e (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/mutation.rs
 thesis-refs:
   - thermite-design.md §7

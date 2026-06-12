@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 9d2d80bb95161fb84dc2fbeca9dae648f33d4df0 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7

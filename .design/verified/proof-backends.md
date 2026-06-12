@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
+audited-sha: af340c648830c4f5cf46cfd178975ace05a8f7d5 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

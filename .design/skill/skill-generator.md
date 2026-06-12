@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 04f56649117f15e9fe803b6a0cd8751ba4cc8123 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2

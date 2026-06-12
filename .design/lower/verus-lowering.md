@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: e25e039da5db71e3fac374d09e80d8e745a112d7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-lower/src/lower.rs
 thesis-refs:
   - thermite-design.md §3

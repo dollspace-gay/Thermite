@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: active (REQ-5 `subsumes` + REQ-7 `ladder_action` + REQ-8 `syscall_allowlist` all SHIPPED via mechanism (c), verus `19 verified, 0 errors`; epic #60 open for the remaining REQ-2 Tier-1 targets — cache_key/triage/kill_ratio/is_strictly_stronger/boundary-gate)
+audited-sha: c3694256f9f88d34be30007b812920df95afd332 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-verified/src/lib.rs (the verified core — `subsumes` + `ladder_action` + `io_allow` all proved + anchored; the REQ-2 set to be ported, epic #60)
 thesis-refs:
   - thermite-design.md §6   (Verus is the L3 prover)

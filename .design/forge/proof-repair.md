@@ -3,6 +3,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 7e34b0daa7f77704dcd83e952d2eb45c6074991c (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/repair.rs
 thesis-refs:
   - thermite-design.md §5.2

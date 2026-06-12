@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: b60a64e8f9bf3818d2d5418eae7a1e163726214d (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-syntax/src/parser.rs
 thesis-refs:
   - thermite-design.md §4.1

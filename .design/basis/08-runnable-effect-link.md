@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: bb0fbd9ebaafcab8c0ad5d758cf8d7521baa4836 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-stdlib/src/effect/read.rs
 governs: thermite-stdlib/src/effect/write.rs
 governs: thermite-stdlib/src/effect/time.rs

@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 74a2b91c5adabf57d066982c4a0d472c4f75aa22 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-syntax/src/ast.rs, thermite-syntax/src/parser.rs, thermite-lower/src/l1.rs, forge/src/check.rs, forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §9

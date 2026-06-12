@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: 64d21af0748f84e72cda1275247f8d55731183c6 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: thermite-spec/src/combinators.rs
 thesis-refs:
   - thermite-design.md §4.1

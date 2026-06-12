@@ -2,6 +2,7 @@
 <!--
 tier: 3-component
 status: draft
+audited-sha: bf29a0505eaedab5089ede916d739e09903cab4f (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/goal_repl.rs (future), forge/src/cli.rs (verb dispatch), thermite-syntax/src/parser.rs (hole token, future)
 thesis-refs:
   - thermite-design.md §5

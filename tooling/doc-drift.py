@@ -215,10 +215,36 @@ def load_doc_files(root):
             f"route table unreadable ({ROUTES_RELPATH}): {exc}"
         ) from exc
 
+    # Shape validation (REQ-9): a table that PARSES as TOML can still be the
+    # wrong SHAPE (e.g. `route = 5`, or `route = ["a"]`). Iterating such a value
+    # would raise a bare TypeError/AttributeError -> unhandled traceback, exit 1
+    # (the DRIFT class). A malformed enumeration source is an ENVIRONMENT failure
+    # (the "spec-routes.toml unreadable" case), so it is INCONCLUSIVE (exit 3),
+    # never a drift finding and never a traceback (R-HONEST-3: a gate that fails
+    # open is a silent pass). Validate before the loop; name the defect loudly.
+    routes = data.get("route", [])
+    if not isinstance(routes, list):
+        raise EnvironmentError3(
+            f"route table {ROUTES_RELPATH} is wrong-shaped: `route` must be a "
+            f"list of [[route]] tables, got {type(routes).__name__}"
+        )
+
     doc_files = {}
-    for route in data.get("route", []):
+    for i, route in enumerate(routes):
+        if not isinstance(route, dict):
+            raise EnvironmentError3(
+                f"route table {ROUTES_RELPATH} is wrong-shaped: route entry "
+                f"#{i} must be a [[route]] table, got {type(route).__name__}"
+            )
         design = route.get("design")
         pattern = route.get("crate_pattern")
+        for field, value in (("design", design), ("crate_pattern", pattern)):
+            if value is not None and not isinstance(value, str):
+                raise EnvironmentError3(
+                    f"route table {ROUTES_RELPATH} is wrong-shaped: route entry "
+                    f"#{i} `{field}` must be a string, got "
+                    f"{type(value).__name__}"
+                )
         if not design or not pattern:
             continue
         doc_files.setdefault(design, set()).add(pattern)

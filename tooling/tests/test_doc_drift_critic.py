@@ -25,12 +25,11 @@ Divergence inventory:
        is misreported as a drift finding; the traceback violates the
        "never a traceback" contract the tool's own docstring restates.
 
-Run with:  DOC_DRIFT_DIVERGENCE=1 python3 -m unittest discover -s tooling/tests -v
-(skipped by default once filed as blockers — the python analogue of
- #[ignore = "..."] + --ignored)
+Run with:  python3 -m unittest discover -s tooling/tests -v
+(both C-1 (#259) and C-2 (#260) are now FIXED and UNGATED — permanent
+ regression coverage, no env gate.)
 """
 
-import os
 import subprocess
 import sys
 import unittest
@@ -44,8 +43,6 @@ GATE = Path(__file__).resolve().parents[1] / "doc-drift.py"
 # REQ-9 contract constants, transcribed from the design doc (the authority),
 # NOT imported from the tool under test (R-CHAR-3).
 REQ9_EXIT_INCONCLUSIVE = 3
-
-_RUN_DIVERGENCE = os.environ.get("DOC_DRIFT_DIVERGENCE")
 
 
 class DocDriftCriticTest(unittest.TestCase):
@@ -86,12 +83,9 @@ class DocDriftCriticTest(unittest.TestCase):
         )
 
     # --- C-2: TOML-valid but wrong-shaped route table -> traceback, exit 1 --
-    @unittest.skipUnless(
-        _RUN_DIVERGENCE,
-        "divergence: wrong-shaped route table raises an unhandled traceback "
-        "with exit 1 (the DRIFT class) instead of exit 3; REQ-9; "
-        "tracking crosslink #260",
-    )
+    # UNGATED (crosslink #260 fixed): a TOML-valid but wrong-shaped route table
+    # (`route = 5`, `route = ["a"]`) now exits 3 (INCONCLUSIVE) with no
+    # traceback per REQ-9 / R-HONEST-3. This is permanent regression coverage.
     def test_c2_wrong_shape_route_table_is_exit_3_not_traceback(self):
         """REQ-9: '3 = ... spec-routes.toml unreadable', never a traceback.
 

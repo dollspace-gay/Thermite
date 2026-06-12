@@ -1,0 +1,10 @@
+{
+  "uuid": "f56987a3-a92f-4ae9-a07a-cef7fda9f0c1",
+  "issue_uuid": "b5674710-0a58-4405-99b1-74cc399f72d6",
+  "author": "Yffe",
+  "content": "Failing test at tooling/tests/test_doc_drift_critic.py::test_c2_wrong_shape_route_table_is_exit_3_not_traceback demonstrates divergence (DOC_DRIFT_DIVERGENCE=1). route = 5 or route = [\"a\"] parses as TOML, then load_doc_files raises TypeError/AttributeError -> unhandled traceback, Python exit 1 — REQ-9's DRIFT-FOUND class, so a broken route table is misreported as a drift finding, and the 'never a traceback' contract (REQ-9/AC-5 discipline, restated in the gate's own docstring) is broken. Expected: exit 3, no Traceback. Toolchain site: def load_doc_files in tooling/doc-drift.py (shape of data['route'] never validated).",
+  "created_at": "2026-06-12T01:19:58.314711167Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAheNIJBfoCB7a8879iLdv9GLif/7pMP3lfK4I2c6+LcbIo+JUsoYHTi1/jeBHXUHrT3rY3RYpVUeok4aEoAI7Bg=="
+}

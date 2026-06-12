@@ -1,0 +1,10 @@
+{
+  "uuid": "1259a9b8-c9b0-4d98-8574-3a1b71b79281",
+  "issue_uuid": "21a5fa6f-27c8-4151-924e-fc3b339de69f",
+  "author": "Yffe",
+  "content": "Result: committed — see commit message; gauntlet: build/clippy/fmt + engine_interface/engine_attribution tests green; full workspace suite re-run rides the #262 close.",
+  "created_at": "2026-06-12T02:03:31.279691841Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA39esBVyai7cvkwKrEm59wYrnz0eEnDo/P08k20OWKhejvLUeLNOahZFOK9+Mw/cwMf8YUK2QZoksUWmtiLrRCg=="
+}

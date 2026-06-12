@@ -1,0 +1,11 @@
+{
+  "uuid": "644929e2-4919-496c-9009-2abda71c204c",
+  "display_id": 261,
+  "title": "Divergence: doc-drift.py load_doc_files silently drops a [[route]] entry whose crate_pattern is MISSING — the design-field doc leaves the checked set and the gate can exit 0 (REQ-1/REQ-8/REQ-9)",
+  "description": "Probe: a [[route]] entry with design = \".design/orphan.md\" and NO crate_pattern key, alongside one valid route -> gate exits 0, .design/orphan.md never named. Authority: .design/tooling/doc-drift-tripwire.md REQ-5 ('every doc referenced by a [[route]].design field'), REQ-1 ('the set of checked docs is exactly the deduplicated design fields'), REQ-8 (no grandfathering: routed doc without audited-sha is MISSING-PIN, exit 1), REQ-9 ('The tool never exits 0 without having checked all 48 docs') + goal.md R-HONEST-3. The schema header in tooling/spec-routes.toml marks crate_pattern '# required', so the entry is also legally treatable as wrong-shaped (exit 3, the #260 class). Either reading forbids exit 0 with the doc invisible. Realistic trigger: a typo'd field name (crate_patern =) in one entry silently shrinks coverage while the gate stays green. The #260 validator ('if present must be a string') lets the None case fall through to the builder-era 'if not design or not pattern: continue'. Related degenerate the same fix should decide: design = \"\" (empty string) alongside valid routes is likewise silently dropped (no real doc loses coverage there, so not separately pinned). NOT divergent (audited, accepted): an entry with crate_pattern but NO design names no routed doc — REQ-1 checked set unaffected; file-side governance is spec-discipline's domain. Parent #258; follows fixer commits d5b95455 (#259) / 73776c32 (#260).",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T01:32:00.184161953Z",
+  "updated_at": "2026-06-12T01:32:00.184161953Z"
+}

@@ -1,6 +1,6 @@
 {
   "next_display_id": 282,
-  "next_comment_id": 569,
+  "next_comment_id": 570,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
@@ -46,10 +46,6 @@
     "276": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T09:20:34.377540362Z"
-    },
-    "278": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-12T09:55:49.168256143Z"
     }
   },
   "issues": {
@@ -448,11 +444,12 @@
       "uuid": "d78f562b-0640-4926-8d64-78b720da8246",
       "display_id": 278,
       "title": "thermite-lower: spec_bytes_eq built-in + auto-emitted subrange/append bridge lemmas (prove-once law, lemma_count_push pattern) — the second #276 prerequisite; recursive user bytes_eq cannot bridge from slice/concat content ens without induction",
-      "status": "open",
+      "status": "closed",
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T09:55:42.860086165Z",
-      "updated_at": "2026-06-12T10:59:25.868067198Z",
+      "updated_at": "2026-06-12T12:54:07.537254950Z",
+      "closed_at": "2026-06-12T12:54:07.496595910Z",
       "labels": [
         "blocker"
       ],
@@ -465,6 +462,15 @@
           "kind": "plan",
           "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMoF7PR3FTfGED15OYezas9rwpnplNXas+B36B4BYJEsjsYtRq4QhAPXatCw6SthsISjfp/6JzSYjwURB7MRyCw=="
+        },
+        "65d3833d-ec7e-4ce7-b8d0-4b5e5b92df65": {
+          "display_id": 569,
+          "author": "Yffe",
+          "content": "Result: SHIPPED af1e6f2c+40afcc19 (+ the #279 operand-class follow-up cf48c893+87a07885): bytes_eq in GENERATED_SPEC_FNS, 4 bridge lemmas (one declared body-fill within pinned signature), conditional emission, contract-keyed citation, L1 twin (+the #281 empty-window fix 5d0bc8cb). Combined critic pass: CLEAN on lemma statements (hand-derived windows), goldens, non-vacuity. slice_id certifies L3 through the real pipeline; skill 5988/6000; 970 workspace tests.",
+          "created_at": "2026-06-12T12:54:05.657949842Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAXsaM3777x83QWtaCk7CCI3lbFAuoGwl3okbBDeE6gafIoc2IcXNch6hstDdaU4fT0F7c4d3uOVZlehE3RVYQAA=="
         },
         "8a955aab-d0aa-47b8-9f74-f0043e8b9e1e": {
           "display_id": 560,
@@ -3743,11 +3749,26 @@
       "agent_id": "Yffe",
       "agent_seq": 634,
       "timestamp": "2026-06-12T12:54:00.890136002Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 635,
+      "timestamp": "2026-06-12T12:54:05.680374949Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 636,
+      "timestamp": "2026-06-12T12:54:07.537254950Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 637,
+      "timestamp": "2026-06-12T12:54:09.181681081Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T12:54:00.890136002Z",
+    "timestamp": "2026-06-12T12:54:09.181681081Z",
     "agent_id": "Yffe",
-    "agent_seq": 634
+    "agent_seq": 637
   }
 }

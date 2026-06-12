@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 8653ecadc32a6f08bea357dc9a82b5bf19e1d8d3 (re-audited 2026-06-12: the single intervening commit 8653ecad is the #263 engine.rs comment-currency fix that aligned the stale REQ-2 row TO this doc; claims unaffected, #262)
+audited-sha: b1c7a995f8f940cb9be92b54a1e75624dd081eff (re-pinned 2026-06-12 to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

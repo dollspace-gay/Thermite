@@ -1,0 +1,10 @@
+{
+  "uuid": "0ece28d0-329d-496c-9edc-a5e54565a084",
+  "issue_uuid": "12c7e94f-e67c-4c90-883d-a979d958ec72",
+  "author": "Yffe",
+  "content": "Kernel-checked pin at lean/Thermite/PinWhileDecShape.lean: shipped_hdec_is_not_the_pinned_shape proves a concrete instance (L1 machinery, I := (· = s0) with lo=0/n=1, μ := -lo) satisfying the SHIPPED h_dec shape (0 ≤ μ st, pre-state) while REFUTING the §4.2.2-pinned shape (0 ≤ μ st', post-state) — the shapes are semantically non-equivalent, so 'STATEMENT SHAPE is the §4.2.2 sketch verbatim' (REQ-11.3 SHIPPED row) is false. Direction-safety also kernel-checked: design_hdec_implies_shipped_hdec + loopDenote_exits_of_dec_design_shape derive the design's verbatim theorem from the shipped one — the drift weakens the hypothesis (strengthens the theorem), a record-fidelity divergence, NOT a soundness hole. Generator must reconcile: either amend the §4.2.2 sketch to the shipped shape declaring the adaptation (as prefix→prefixB was declared), or restate the theorem to the pinned shape. Axioms of the pin: [propext, Quot.sound].",
+  "created_at": "2026-06-12T03:01:00.977041984Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA3S9/UrAEp634D6VWGmIq0shuhis+64tv0JU1pmYY28hCqv1PaCsMp66kr7g1qOOC/DvseQfSp33Pepy2Rl35Bw=="
+}

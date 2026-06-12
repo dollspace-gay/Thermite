@@ -2,11 +2,12 @@
   "uuid": "12c7e94f-e67c-4c90-883d-a979d958ec72",
   "display_id": 265,
   "title": "Divergence: loopDenote_exits_of_dec h_dec shape drifts from proof-backends.md §4.2.2 pin (0 ≤ μ st vs pinned 0 ≤ μ st'); REQ-11.3 row's 'verbatim' claim false — undeclared semantic adaptation (audit of 99c7f304)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-12T03:00:26.557911613Z",
-  "updated_at": "2026-06-12T03:00:28.641792902Z",
+  "updated_at": "2026-06-12T03:07:26.068872900Z",
+  "closed_at": "2026-06-12T03:07:26.068872900Z",
   "labels": [
     "blocker"
   ]

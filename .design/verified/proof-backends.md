@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: cf4c5b94c807b73e788731d7ddfcaeee3cb00c44 (re-pinned 2026-06-12 — #268 needle exact-match hardening, REQ-7 anchor class: the interactive replay reconstruction's obligation-theorem needle (canonical_theorem_statement + reconstruct_replay, forge/src/engine.rs) is now an EXACT-name match via theorem_anchor_pos, never a prefix — a while-shaped multi-theorem file's thermite_obligation_<item>_entry/_converges siblings can no longer latch the bare contract theorem and drop the 5+2 conjunction; in-module pin added. Prior pin b1c7a995 re-pinned to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state)
+audited-sha: cf4c5b94c807b73e788731d7ddfcaeee3cb00c44 (re-pinned 2026-06-12 — #268 needle exact-match hardening, REQ-7 anchor class: the interactive replay reconstruction's obligation-theorem needle (canonical_theorem_statement + reconstruct_replay, forge/src/engine.rs) is now an EXACT-name match via theorem_anchor_pos, never a prefix — a while-shaped multi-theorem file's thermite_obligation_<item>_entry/_converges siblings can no longer latch the bare contract theorem and drop the 5+2 conjunction; in-module pin added. Prior pin b1c7a995 re-pinned to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state. §4.3 AMENDMENT (#272, 2026-06-12, review item 8): increment (vi) — the EARLY-RETURN widening of the exportable fragment, targeting conformance/binary_search.th — DESIGNED; every REQ-12 row NOT-STARTED behind #272)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and
@@ -147,6 +147,26 @@ build-blockers:
     BOTH (v-a) and (v-b) SHIPPED: the L1 linear family certifies L3-via-lean-auto end-to-end
     (`forge/tests/lean_while.rs`); the recursive-registry corpus `sum` is the honest §4
     interactive residual (NOT-L3-via-lean). See REQ-11.
+  - increment (vi): FILED — crosslink #272 (the EARLY-RETURN widening BUILD; the DESIGN is §4.3 of
+    THIS amendment, review item 8). Scope: widen the exporter past the single-exit (v) shape to v1
+    GUARD-RETURN bodies — top-level `if g { return re; }` guards inside the loop body of a
+    `While`- OR `Loop`-kind loop (the `loop`-kind becomes admissible EXACTLY because the
+    multi-exit CPS shape it was refused for is what (vi) denotes), with an int-payload
+    Option/Result RETURN value (the #254 PARTIAL close — `RetVal.optres` over the SHIPPED
+    contract `OptResVal`; `ExecVal` UNCHANGED) and the `Inv_item` COMBINATOR-INVARIANT widening
+    (the (v) §4.2.1 residual's named vehicle). The practical target is
+    `conformance/binary_search.th`, which trips ALL THREE body-side exclusions plus the
+    combinator-inv residual — (vi) makes it EXPORTABLE; auto-L3 is NOT claimed (§4.3.4 honesty
+    bar: the expected landing is the REQ-7 INTERACTIVE path). COST CLASS, declared LOUDLY
+    (§4.3.3(a)): unlike (v) — a pure composition AROUND the shipped loop bricks — (vi) MINTS A
+    NEW DENOTATION LAYER (`rblockThread : GBlock → State → Option (State ⊕ RetVal)` +
+    `loopDenoteR`/`bodyDenoteR` + SIBLING lemmas `return_compose`/`loopDenoteR_exits_of_dec`):
+    `blockThread`/`loopDenote` have NO return channel and CANNOT be reused for return-bearing
+    bodies; the shipped bricks stay UNCHANGED (leaf-level reuse + two degeneracy AGREEMENT
+    lemmas), but the loop-level theorems are NEW kernel obligations — a 2c/#163-class build, NOT
+    a (v)-class composition. SEQUENCED (vi-a) spine + THREE pins FIRST (kernel bar; any
+    statement-shape deviation under the #265-class declared-adaptation ceremony), (vi-b) exporter
+    SECOND. ALL REQ-12 rows NOT-STARTED. See REQ-12.
 -->
 
 ## Summary
@@ -515,6 +535,47 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
       an unsolved goal → `Verdict::Unknown` (fail-to-certify, SOUND — never a false `Proven`;
       the REQ-7 INTERACTIVE path is the close). RECORDED as a coverage residual, NOT a blocker.
 
+- **REQ-12 (the early-return widening — v1 GUARD-RETURN bodies; increment (vi))** — extend the
+  Lean exporter past the single-exit (v) shape to items whose body is the v1 GUARD-RETURN shape: a
+  straight-line prefix + a single `Stmt::Loop` of EITHER kind — `While(cond)` OR `Loop` (the
+  `loop`-kind becomes admissible exactly because the multi-exit CPS shape it was refused for is
+  what (vi) denotes) — whose loop body is straight-line scalar statements PLUS top-level GUARD
+  returns `if g { return re; }` (a then-block of exactly one `Stmt::Return`, no else), with `re` a
+  plain int/bool exec expr OR a built-in `None`/`Some(e)`/`Ok(e)`/`Err(e)` with INT-sorted payload
+  (the #254 PARTIAL close); While-kind: a REQUIRED tail; Loop-kind: tail-less + ≥1 guard. The
+  practical target is `conformance/binary_search.th` (review item 8 — its actual shape covered
+  statement-by-statement in §4.3.1). Designed in §4.3. Sub-requirements: **REQ-12.1** the
+  RETURN-LAYER denotation (`RetExpr`/`RetVal` (over the SHIPPED `OptResVal`)/`retDenote`,
+  `GStmt`/`GBlock`, `rblockThread : GBlock → State → Option (State ⊕ RetVal)`, `loopDenoteR`,
+  `bodyDenoteR` + the ∃-fuel `bodyConvergesR` (result bound THROUGH it, the #214 discipline) +
+  `loopDenoteR_fuel_mono`/`bodyConvergesR_unique` + the TWO DEGENERACY AGREEMENT lemmas
+  (`rblockThread_agrees`/`loopDenoteR_agrees`) tying the guard-free fragment back to the SHIPPED
+  `blockThread`/`loopDenote`) — SPINE PREREQUISITE, lands FIRST; **REQ-12.2** the disjunctive exit
+  characterization `return_compose` + the return-site decomposition `rblockThread_returns_at_guard`
+  (the `while_compose` SIBLINGS — proven FRESH on the new layer, NOT reuses; the §4.3.3(a)
+  cost-class declaration) — SPINE PREREQUISITE; **REQ-12.3** the termination bridge
+  `loopDenoteR_exits_of_dec` (a return IS an exit witness: `h_pres`/`h_dec` NARROW to fall-through
+  `.inl` steps — a returning iteration owes no descent; the #265 PRE-state `0 ≤ μ st` shape
+  inherited) — SPINE PREREQUISITE; **REQ-12.4** the OPTRES RESULT bridge (the ADDITIVE
+  `Env.bindOptRes` (`Denote.lean`, the `bindBool` precedent) + `bindResultR` (`.plain` → the
+  SHIPPED `bindResult` VERBATIM; `.optres o` → `Env.bindOptRes env "result" o`); `ExecVal`
+  UNCHANGED; int payload only — non-int payloads stay #254); **REQ-12.5** the exporter
+  (`recognize_return_body` + the guard split; the obligation set `_entry` + the
+  fall-through-NARROWED `_pres`/`_progress`/`_dec` + `_exit` (While-kind ONLY) + ONE `_ret_k` PER
+  RETURN SITE; the `Inv_item` COMBINATOR-INVARIANT widening via the generator-emitted
+  `envOfCells`; the TWO generator-fixed composed theorems; the battery); **REQ-12.6** the refusal
+  inventory re-narrowed and LOUD (§4.3.5 — incl. the prefix-guard v1.1 residual, the guard-less
+  Loop-kind, `break`/`continue` NOT subsumed); **REQ-12.7** the THREE kernel pins
+  (`PinReturnShortCircuit`/`PinReturnVacuity`/`PinOptResultBind`); **REQ-12.8** the REQ-9
+  accounting delta (in-grammar guard-return mutants become ATTEMPTED). The §4.2.3 termination
+  decision is INHERITED VERBATIM (the conjoined `_converges` gates; no partial-correctness L3).
+  HONESTY BAR (§4.3.4): (vi) makes `binary_search` EXPORTABLE (in-fragment, refusal-free); AUTO-L3
+  is NOT claimed — its quantified-invariant obligations are the expected REQ-7 INTERACTIVE
+  residual. Derived from §6 (the ladder's Lean rung over the full fragment) +
+  `thermite-semantics.md` REQ-1/REQ-2 (the post-v1 loop-shape residuals named there — extended by
+  a NEW layer, `body_ref_sound`/`while_rule` never re-proven) + §4.3.
+  **Increment (vi), blocker #272. ALL sub-requirements NOT-STARTED.**
+
 ## Acceptance criteria
 
 This is the INTERFACE/architecture layer; its ACs are DEFINITION-COMPLETENESS + GROUNDEDNESS +
@@ -610,6 +671,23 @@ section.)
   asymmetry is argued, not assumed); the REQ-9 accounting delta is stated. Mechanically: each §4.2
   claim quotes the governing symbol (`Exec/Loop.lean` / `Exec/Stmt.lean` / `lean_export.rs` /
   `exec_stmt_encode.rs`).
+- **AC-11 (the early-return widening design is DECISION-COMPLETE and spine-grounded — §4.3)** —
+  the (vi) exportable grammar is pinned WITH `binary_search`'s actual shape covered
+  statement-by-statement (source quoted: both returns top-level guards INSIDE the loop body, no
+  prefix return, no tail, `loop`-kind, `Option<usize>` result); the DENOTATION-STRATEGY decision
+  is recorded (the Sum-typed `Option (State ⊕ RetVal)` thread; CPS and the exception monad
+  REJECTED with grounds); the COST CLASS is declared LOUDLY (the loop-level bricks CANNOT be
+  composed around — `blockThread`/`loopDenote` have no return channel — so (vi) mints SIBLING
+  theorems on a NEW layer, shipped bricks UNCHANGED, with two degeneracy AGREEMENT lemmas as the
+  tie-back); the termination interaction is DECIDED (a return is an exit witness; `_dec` narrows
+  to fall-through steps; the §4.2.3 conjunction inherited verbatim); the obligations delta is
+  enumerated (ONE `_ret_k` per return site; `_exit` While-kind-only); the optres result bridge
+  names its exact mechanism over the SHIPPED `OptResVal` + `Env.bindOptRes` and its #254 residue;
+  the refusal inventory is re-narrowed with the v1.1 residuals named; the three pins are named per
+  divergence position; the REQ-9 delta is stated; and the HONESTY BAR separates in-fragment from
+  auto-L3 BEFORE the build. Mechanically: each §4.3 claim quotes the governing symbol
+  (`Exec/Stmt.lean` / `Exec/Loop.lean` / `Denote.lean` / `lean_export.rs` /
+  `conformance/binary_search.th`).
 
 ---
 
@@ -1978,7 +2056,11 @@ spec-calling or combinator `inv`/`dec` clause (the §4.2.1 v1 residual); an Opti
 (`ExportRefusal::OptResResult`, #254). Whether the build mints sibling `ExportRefusal` variants
 or richer `LoopBody` detail strings is a build detail; the REQUIREMENT is structured + named,
 reported via the `LeanUnverifiable` path — never silent, never an attempt to denote what the
-spine does not model.
+spine does not model. NEXT-INCREMENT POINTER: increment (vi) (§4.3/REQ-12, blocker #272,
+NOT-STARTED) is DESIGNED to narrow this inventory's three heaviest entries — the
+`loop`-kind-with-guard-returns, the top-level guard `Stmt::Return`, and the int-payload
+Option/Result result — plus the combinator-`inv` residual; until it ships every entry above keeps
+refusing exactly as enumerated here (`break`/`continue` and the rest stay OUT even after (vi)).
 
 **(§4.2.6) The kernel pins (named per divergence position; the build/critic authors them — the
 §4.1.6 precedent; per R-CHAR-3 this design names WHAT each must cover, never its content).**
@@ -2100,6 +2182,418 @@ axioms + EXP. This base is SMALLER than the Verus base ALONG THE NAMED AXES (no 
 only "smaller along the named axes" is OQ-3 — the bases are not literal subsets (Lean's EXP is not a
 subset of Verus's lowering theorem), so the ordering FORMALIZATION is deferred to OQ-3; this doc
 claims only the named-axis comparison.
+
+#### 4.3 The early-return widening (increment (vi) — DESIGNED here; build blocker #272) (REQ-12)
+
+**History (review item 8; what (iv)/(v) refuse, and what the motivating program ACTUALLY looks
+like).** After increment (v), early `return` is the exclusion with the greatest practical cost on
+the Lean path. Both shipped refusal arms are LOUD (`forge/src/lean_export.rs`): the (iv)
+straight-line encoder refuses `Stmt::Return(_)` with `"mid-body `return` (S_B has no early return
+— the body's result is its tail)"` (`encode_exec_stmt`, §4.1.7), and the (v) while recognizer
+refuses it with `"mid-body `return` (the corpus `binary_search` uses `return None`/`return
+Some(mid)` — a multi-exit CPS form, OUT of v1)"` (`reject_out_of_while_subset_stmt`, §4.2.5). The
+spine's absence is equally honest: `lean/Thermite/Exec/Stmt.lean`'s module doc records "a mid-body
+early `return` (a multi-exit CPS form) is OUT of v1; the `ret` form here is the TAIL result only"
+— `Stmt` has NO return constructor, `blockThread : Block → State → Option State` has NO channel
+for a value to escape mid-block. The motivating program, quoted in full
+(`conformance/binary_search.th`):
+
+```
+fn binary_search(haystack: &[u32], needle: u32) -> Option<usize>
+  req sorted(haystack)
+  ens match result {
+        Some(i) => i < haystack.len() && haystack[i] == needle,
+        None    => forall_in(haystack, |x| x != needle),
+      }
+  fx  pure
+{
+  let mut lo: usize = 0;
+  let mut hi: usize = haystack.len();
+  loop
+    inv lo <= hi && hi <= haystack.len()
+    inv forall_below(haystack, lo, |x| x < needle)
+    inv forall_from(haystack, hi, |x| x > needle)
+    dec hi - lo
+  {
+    if lo == hi { return None; }
+    let mid = lo + (hi - lo) / 2;
+    if haystack[mid] == needle { return Some(mid); }
+    if haystack[mid] < needle  { lo = mid + 1; } else { hi = mid; }
+  }
+}
+```
+
+ITS ACTUAL SHAPE, read off the source: BOTH early returns are INSIDE the loop body, BOTH in
+top-level GUARD form (`if g { return re; }` — a then-block containing exactly the return, no
+`else`); there is NO prefix return and NO tail (the body's last statement is the loop; the
+function never falls through it); the loop is the `loop`-KIND (`LoopKind::Loop`, not
+`While(cond)`) with non-empty `invs` + `dec`; the result is `Option<usize>`. So `binary_search`
+trips THREE stacked body-side exclusions, not one: (1) the `loop`-kind refusal (whose recorded
+reason IS the multi-exit CPS shape — `recognize_v1_loop`: "the corpus `binary_search` uses `loop {
+if .. { return .. } }`"), (2) the mid-body `Stmt::Return(_)` refusal, and (3) the Option-typed
+result (`ExportRefusal::OptResResult`, #254) — PLUS the (v) §4.2.1 combinator-invariant residual
+(invs 2 and 3 are `forall_below`/`forall_from`, which `encode_cell_prop` refuses). The review's
+"brings `binary_search` into the fragment" framing is therefore CORRECTED here: increment (vi) is
+DESIGNED to remove all three body-side exclusions AND the combinator-inv residual TOGETHER (they
+are one mechanism deep — see below), which makes `binary_search` EXPORTABLE; AUTO-L3 is NOT
+claimed (§4.3.4, the honesty bar). Meanwhile its CONTRACT side is ALREADY fully in the shipped
+`S_C` fragment: `sorted`/`forall_in` are frozen combinators, and the `ens match result { Some(i)
+=> …, None => … }` denotes via the #180 fragment (`Expr.optResVar`/`Expr.match_`/`OptResVal`,
+`Env.optres` — `lean/Thermite/{Ast,Denote}.lean`; the forge encoder's `encode_match` already
+emits it). EVERY missing piece is body-side — which is exactly why this one widening carries the
+practical weight. SCOPE NOTE: (vi) widens the LEAN EXPORT fragment ONLY; the per-run loop-TV path
+(`thermite-tv`'s `recognize_v1_loop`) and the Verus engine are UNTOUCHED.
+
+**(§4.3.1) SCOPE — the (vi) exportable grammar (v1, pinned; covers `binary_search`'s actual
+shape, refuses the rest loudly).**
+
+```
+body    := prefix* loopR tail?
+prefix  := straight-line Stmt (the (iv) S_B subset; NO guard returns in the prefix — a
+           prefix `if g { return re; }` is a RECORDED v1.1 residual, refused loudly)
+loopR   := Stmt::Loop(LoopNode { kind: While(cond) | Loop, invs: non-empty, dec, body: gbody })
+           — the LAST statement. While-kind: tail REQUIRED (the fall-through result).
+           Loop-kind: tail FORBIDDEN (absent) AND ≥1 guard REQUIRED (the ONLY exits are
+           returns; a guard-less Loop-kind has no exit path and refuses)
+gbody   := (straight-line Stmt | guard)*   — guards at TOP LEVEL of the loop body ONLY
+guard   := Stmt::If { cond: g, then: Block { stmts: [Stmt::Return(Some(re))], tail: None },
+                      else_: None }        — exactly one return, no else, no siblings
+re      := plain exec expr (int/bool — the (iv) result classes)
+         | None | Some(e) | Ok(e) | Err(e)  with e an INT-sorted exec expr (the payload
+           crosses on the §4.1.1 identity bridge `BVal.value`; the #254 PARTIAL close)
+result  := int | bool | Option/Result WITH int-sorted payload (non-int payloads stay #254)
+inv     := the (v) scalar shallow fragment, WIDENED: a specCall-FREE combinator/quantifier
+           clause (cmp/arith/logic/comb over cells + params + slice params) denotes via the
+           SHIPPED contract `denote 0` over the generator-emitted `envOfCells` (§4.3.4); a
+           spec-CALLING inv/dec still refuses (Inv_item stays fuel-free)
+dec     := the (v) scalar shallow fragment (unchanged)
+```
+
+`binary_search` against this grammar, statement by statement: prefix = two scalar `let`s (IN,
+(iv) subset); `loopR` = the Loop-kind with 3 invs + `dec hi - lo` (IN — inv 1 scalar-shallow,
+invs 2/3 specCall-free combinators via the widening); `gbody` = guard(`lo == hi`, `None`) ·
+plain-let(`mid`) · guard(`haystack[mid] == needle`, `Some(mid)`) · plain-ifElse(scalar assigns)
+(IN — both returns top-level guards); tail absent + ≥1 guard (IN for Loop-kind); result
+`Option<usize>` (IN — int payload). Recognizer EXP note, stated honestly: unlike (v)'s
+recognizer (pinned arm-by-arm to `recognize_v1_loop`), the (vi) recognizer has NO `thermite-tv`
+twin to mirror — `recognize_v1_loop` REJECTS every (vi)-only shape, and stays that way. The (vi)
+recognizer's anchor is THIS grammar + the hand-authored refusal matrix (R-CHAR-3); that is a
+weaker anchor class than (v)'s and is recorded as such (the inspection-tier discipline
+compensates: the grammar is small, the matrix enumerates every OUT arm).
+
+**(§4.3.2) The (vi-a) SPINE PREREQUISITE — the RETURN LAYER (names + statement shapes pinned
+HERE; lands FIRST, kernel-green; any shipped deviation takes the #265-class declared-adaptation
+ceremony: a kernel-record pin + a same-commit doc declaration).**
+
+THE DENOTATION-STRATEGY DECISION. Three candidates were weighed for "a statement thread that can
+short-circuit with a value": (a) a Sum-typed thread `State ⊕ RetVal` inside the existing `Option`
+discipline; (b) CPS (denote each suffix under a continuation); (c) an exception monad (an
+`Except RetVal` transformer over `Option`). **DECIDED: (a), the Sum-typed thread** —
+`Option (State ⊕ RetVal)` is the SMALLEST extension consistent with the shipped `Option`
+discipline: `none` keeps its single shipped meaning (a GENUINE failure/fuel-exhaustion — the
+§4.1.5/no-NB-layer argument verbatim), `some (.inl st)` is the (iv)/(v) fall-through unchanged,
+and `some (.inr rv)` is the ONE new observable (the body returned). CPS is REJECTED (it
+re-states the shipped transformers under a continuation — every reuse of
+`stmtDenote`/`blockThread` would be re-derived, and the obligation statements would quantify over
+continuations, a shape no shipped lemma matches); the exception monad is REJECTED as (a) in
+heavier clothing (`ExceptT RetVal Option State` is DEFINITIONALLY `Option (State ⊕ RetVal)` up to
+constructor names, but drags monad-transformer instances into a spine that is deliberately
+core-Lean-plain). The (v-a) precedent — compose a new layer AROUND the shipped bricks — holds at
+the LEAF level only; see the cost-class declaration in §4.3.3.
+
+The named pieces (the §4.2.2 convention — sketches pin the shapes, the build fills proofs), ALL
+in a NEW module (`lean/Thermite/Exec/Return.lean` or sibling), `Exec/Stmt.lean` + `Exec/Loop.lean`
++ `Exec/WhileBody.lean` UNCHANGED:
+
+```
+inductive RetExpr where               -- what a v1 `return` may carry
+  | plain (e : ExecExpr)              -- `return e` (int/bool — the (iv) result classes)
+  | noneE                             -- `return None`
+  | someE (e : ExecExpr)              -- `return Some(e)` (e int-sorted)
+  | okE (e : ExecExpr) | errE (e : ExecExpr)
+
+inductive RetVal where                -- what a v1 body may RETURN
+  | plain (v : ExecVal)
+  | optres (o : OptResVal)            -- the SHIPPED #180 contract value (Denote.lean) — reused,
+                                      -- NOT a new value domain; ExecVal is UNCHANGED (#254 scope)
+
+def retDenote : RetExpr → ExecEnv → Option RetVal
+  -- .plain e → (execDenote e env).map .plain;  .noneE → some (.optres .none);
+  -- .someE/.okE/.errE e → the int-sorted value b : BVal wrapped at ITS MATHEMATICAL VALUE
+  --   (.optres (.some b.value) etc. — the §4.1.1 identity bridge: no toNat clamp, no wrap);
+  --   a bool-sorted/failed payload → none (the 2a obligation propagates)
+
+inductive GStmt where
+  | plain (s : Stmt)                  -- a SHIPPED straight-line Stmt (delegates to stmtDenote)
+  | guard (g : ExecExpr) (re : RetExpr)  -- `if g { return re; }` (top-level, no else)
+abbrev GBlock := List GStmt
+
+def rblockThread : GBlock → State → Option (State ⊕ RetVal)
+  -- .plain s : stmtDenote s st (UNCHANGED, the leaf reuse) — `.inl` continues the thread;
+  -- .guard g re : condBool g st — some false → continue `.inl`; some true →
+  --   (retDenote re st.env).map .inr (the thread SHORT-CIRCUITS: the rest is NOT run);
+  --   none → none.  A failure anywhere is none (genuine, never forged).
+
+theorem rblockThread_agrees :          -- DEGENERACY AGREEMENT 1 (the no-second-semantics tripwire)
+    ∀ (ss : List Stmt) (st : State),
+      rblockThread (ss.map .plain) st = (blockThread (.mk ss none) st).map .inl
+
+def loopDenoteR (cond : ExecExpr) (gbody : GBlock) : Nat → State → Option (State ⊕ RetVal)
+  -- fuel 0 → none; condBool cond st = some false → some (.inl st) (fall-through exit);
+  -- some true → rblockThread gbody st: `.inr rv` → some (.inr rv) (the return exits the
+  -- LOOP and the BODY at once); `.inl st'` → recurse at fuel-1; none → none.
+  -- The `loop`-kind is denoted as cond := the literal-true ExecExpr — `condBool` is then
+  -- constantly `some true`, the `.inl` exit is unreachable, exits happen ONLY via `.inr`:
+  -- ONE denotation covers both kinds, the obligations keep ONE uniform shape.
+
+theorem loopDenoteR_agrees :           -- DEGENERACY AGREEMENT 2
+    ∀ ss fuel st, loopDenoteR cond (ss.map .plain) fuel st
+        = (loopDenote cond (.mk ss none) fuel st).map .inl
+theorem loopDenoteR_fuel_mono          -- surplus fuel after EITHER exit is unconsumed
+
+def bodyDenoteR (prefixB : Block) (cond : ExecExpr) (gbody : GBlock)
+    (tail : Option ExecExpr) (fuel : Nat) (st : State) : Option RetVal := do
+  let st₁ ← blockThread prefixB st     -- the SHIPPED prefix thread (v1: no prefix guards)
+  match ← loopDenoteR cond gbody fuel st₁ with
+  | .inr rv  => some rv                -- returned: the tail is SKIPPED
+  | .inl stf => match tail with        -- fell through: tail REQUIRED (While-kind)
+                | some t => (execDenote t stf.env).map .plain
+                | none   => none       -- (unreachable for a recognized Loop-kind item)
+
+abbrev bodyConvergesR … : Prop := ∃ fuel, bodyDenoteR prefixB cond gbody tail fuel st = some rv
+theorem bodyConvergesR_unique          -- overlap-at-max via fuel-mono + determinism (#214)
+
+theorem rblockThread_returns_at_guard :   -- the RETURN-SITE DECOMPOSITION
+    rblockThread gbody st = some (.inr rv) →
+    ∃ pre g re rest st', gbody = pre ++ (.guard g re) :: rest
+      ∧ rblockThread pre st = some (.inl st')        -- prior stmts threaded, prior guards FALSE
+      ∧ condBool g st' = some true ∧ retDenote re st'.env = some rv
+
+theorem return_compose (prefixB : Block) (cond : ExecExpr) (gbody : GBlock)
+    (tail : Option ExecExpr) (I : State → Prop)
+    (h_pres : ∀ st, I st → condBool cond st = some true →
+                ∀ st', rblockThread gbody st = some (.inl st') → I st') :
+    ∀ st₀ fuel rv, bodyDenoteR prefixB cond gbody tail fuel st₀ = some rv →
+      (∀ st₁, blockThread prefixB st₀ = some st₁ → I st₁) →
+        (∃ stf t v, I stf ∧ condBool cond stf = some false ∧ tail = some t
+            ∧ execDenote t stf.env = some v ∧ rv = .plain v)        -- the fall-through exit
+      ∨ (∃ st, I st ∧ condBool cond st = some true
+            ∧ rblockThread gbody st = some (.inr rv))               -- the RETURN exit
+
+theorem loopDenoteR_exits_of_dec (cond : ExecExpr) (gbody : GBlock)
+    (I : State → Prop) (μ : State → Int)
+    (h_pres / h_cond_total : as in loopDenote_exits_of_dec, over rblockThread `.inl`)
+    (h_progress : ∀ st, I st → condBool cond st = some true → (rblockThread gbody st).isSome)
+    (h_dec : ∀ st st', I st → condBool cond st = some true →
+               rblockThread gbody st = some (.inl st') → μ st' < μ st ∧ 0 ≤ μ st) :
+    ∀ st, I st → ∃ fuel ex, loopDenoteR cond gbody fuel st = some ex
+```
+
+Plus the ADDITIVE contract-side bridge (the `bindBool`/iv-a precedent — new declarations in
+shipped files, NO existing definition or theorem statement changed):
+
+```
+def Env.bindOptRes (env : Env) (x : String) (o : OptResVal) : Env :=    -- Denote.lean, ADDITIVE
+  { env with optres := fun s => if s = x then o else env.optres s }
+
+def bindResultR (env : Thermite.Env) (rv : RetVal) : Thermite.Env :=    -- the new module
+  | .plain v  => bindResult env v          -- the SHIPPED (iv) bridge, reused VERBATIM
+  | .optres o => Thermite.Env.bindOptRes env "result" o
+  -- the ens reads `result` as Expr.optResVar "result" via the SHIPPED #180 match_/is_ arms;
+  -- the payload binder (`Some(i) => …`) binds via the SHIPPED Env.bindInt in denoteArms
+```
+
+PROOF-SHAPE NOTES (recorded so the build does not re-derive): `return_compose` is proven FRESH by
+induction on fuel through `loopDenoteR` (the `while_rule` proof structure one constructor wider —
+the `.inr` branch terminates the induction immediately with the right disjunct);
+`rblockThread_returns_at_guard` by induction on the `GBlock`; `loopDenoteR_exits_of_dec` by strong
+induction on `(μ st).toNat` EXACTLY as the shipped `loopDenote_exits_of_dec`, with the `.inr` case
+exiting at fuel 1 wherever the shipped proof continued — INCLUDING the #265 `μ st = 0` two-fuel
+case split, which now has THREE sub-cases (cond false: exit; `.inl` step: `h_dec` at `st'`
+contradiction, the shipped argument verbatim; `.inr` step: exit — NEW, and trivial). The `h_dec`
+bound stays the #265-pinned PRE-state `0 ≤ μ st`.
+
+KERNEL BAR (the (vi-a) gauntlet, verbatim from §4.2.2/§4.2.8): `lake build` green; `#print
+axioms` for every new declaration within `{propext, Classical.choice, Quot.sound}` (NO `sorryAx`,
+NO new axiom); EVERY existing theorem and ALL shipped pins still green (each pin by EXPLICIT
+per-module elaboration — the #265 kernel-bar mechanics); `Thermite.lean` imports the new module.
+
+**(§4.3.3) HONESTY DECISIONS.**
+
+**(a) THE COST-CLASS DECLARATION — SAID LOUDLY, as the design's most load-bearing sentence.**
+Increment (v) was a PURE COMPOSITION: `while_compose` APPLIES the shipped `while_rule` verbatim;
+`whileBodyDenote` is the `Option`-monad pipe of three shipped transformers. **Increment (vi)
+CANNOT repeat that trick at the loop level.** `blockThread : Block → State → Option State` and
+`loopDenote : … → Option State` have NO return channel — `Stmt` has no return constructor (the
+honest absence quoted above), so a return-bearing body is not a `Block` and CANNOT be fed to the
+shipped bricks at any composition seam. The shipped loop-level theorems (`while_rule`,
+`while_compose`, `loopDenote_exits_of_dec`) are therefore NOT REUSABLE for return-bearing bodies:
+(vi) MINTS SIBLINGS (`return_compose`, `loopDenoteR_exits_of_dec`, `loopDenoteR_fuel_mono`) whose
+proofs MIRROR the shipped proofs' structure but are NEW kernel obligations proven from scratch.
+What survives of the compose-around discipline: (1) LEAF reuse — every `.plain` statement
+delegates to the UNCHANGED `stmtDenote`, every value position to `execDenote`/`condBool`, the
+prefix to `blockThread`; (2) the shipped modules are NOT MODIFIED (no inductive gains a
+constructor, no theorem statement changes; `Env.bindOptRes` is purely additive — the iv-a
+precedent); (3) `body_ref_sound`/`while_rule` are NEVER re-proven — they keep governing the
+return-free fragment, and the TWO DEGENERACY AGREEMENT lemmas (`rblockThread_agrees`/
+`loopDenoteR_agrees`) kernel-pin that the new layer COLLAPSES to the shipped one on guard-free
+input, so the return-free fragment has ONE semantics, not two drifting ones. CONSEQUENCE FOR THE
+INCREMENT'S COST: (vi) is a NEW-DENOTATION-LAYER build of the 2c/#163 class (the class that built
+`Exec/Loop.lean`), NOT a (v)-class composition — the spine work is the dominant cost, and the
+(vi-a) gauntlet must be budgeted accordingly. Any reviewer comparing #264's (v-a) velocity to
+(vi-a) should expect the difference; this paragraph is the recorded reason.
+
+**(b) Termination interaction — a return is an EXIT WITNESS; it narrows `_dec`, it does not
+weaken the bar.** A `return` inside the loop IS a loop exit, so dec-validity is owed ONLY by the
+iterations that do NOT return: `loopDenoteR_exits_of_dec`'s `h_dec`/`h_pres` premises range over
+`.inl` (fall-through) steps ONLY — a strictly WEAKER premise than (v)'s, hence a strictly MORE
+GENERAL theorem (the same direction as the #265 adaptation, by design rather than by drift). The
+emitted `_dec` obligation narrows identically (a returning iteration owes no descent — for
+`binary_search`, the `lo == hi` iteration returns without touching `hi - lo`). The CONJUNCTION
+BAR IS UNCHANGED: §4.2.3 is inherited VERBATIM — the conjoined `_converges` theorem is still
+emitted, still jointly discharges the OVERFLOW + TERMINATION classes, still gates certification
+(no partial-correctness-marked L3, no un-run Verus dec-check credited). For the `loop`-kind the
+vacuity forcing ground is SHARPER, not weaker: `condBool` of the literal-true cond never yields
+`false`, so a never-returning Loop-kind body makes `bodyConvergesR` FALSE at every `rv` — exactly
+the `PinWhileVacuity` position — and only `_dec` + `_progress` (via `loopDenoteR_exits_of_dec`'s
+`.inr`-forcing argument) can discharge `_converges`. A Loop-kind item with ZERO guards is refused
+at RECOGNITION (no exit path — never exported-to-fail, the refusal is structural).
+
+**(c) The optres RESULT decision — the #254 PARTIAL close, on the new layer, `ExecVal`
+untouched.** #254's recorded blocker is "`ExecVal` is `int (BVal) | bool (Bool)` — no
+Option/Result variant to bridge". (vi) does NOT add one: the option shape lives in the RETURN
+layer's `RetVal.optres` over the SHIPPED contract `OptResVal` (`Denote.lean`, #180) — the value
+crosses to the contract side via `Env.bindOptRes env "result" o`, and the `ens`'s `match
+result`/`is` arms denote via the SHIPPED `denoteArms` machinery with the payload bound through
+the SHIPPED `Env.bindInt`. The payload crosses on the §4.1.1 identity bridge (`BVal.value` — no
+clamp, no wrap, no signed reinterpretation; `PinOptResultBind` pins the mis-bridge). RESIDUE,
+named: a non-INT-sorted payload (bool/slice/nested optres), a user-ADT result, and optres
+PARAMS/locals stay OUT behind #254 (`ExportRefusal::OptResResult`, narrowed in detail text to
+"non-int payload / non-result position").
+
+**(d) Where the multi-exit obligation weight lands — one `_ret_k` PER RETURN SITE.** The CONTRACT
+theorem now has TWO exit path FAMILIES (fall-through-to-tail; return-at-guard-k), and EVERY
+return site must imply `ens`. The design refuses to fold the return sites into one obligation
+(a disjunctive premise would make the auto battery's failure diagnostics useless and the
+interactive proofs monolithic): the generator emits ONE `_ret_k` obligation per guard, each
+stated over the guard's OWN reach condition (§4.3.4) — so a wrong `return Some(mid)` fails
+`_ret_2` by name. The composed proof recombines them via `return_compose` +
+`rblockThread_returns_at_guard` (whose ∃-split the generator resolves against the CONCRETE body
+list — a `simp`/list-literal case analysis, a build detail).
+
+**(§4.3.4) The exporter (vi-b) — the emitted obligation set (the §4.2.4 set, narrowed +
+extended).** Per (vi) item: the (v) emissions apply VERBATIM where unchanged (`R_item` + the hard
+gate — a (vi) loop still contributes ∅ new spec-calls, the #226 closure untouched;
+`stateOf`/`InRangeParams`/the per-param `rfl` lemmas; the (iv) encoders reused for plain
+statements/conds/tails; `mu_item` unchanged), PLUS:
+
+- **`Inv_item` — the COMBINATOR-INVARIANT widening (the (v) §4.2.1 residual's named vehicle).**
+  Conjunct family (1) gains a second form: a specCall-FREE combinator/quantifier inv clause
+  denotes as `Thermite.denote 0 <enc(inv)> (envOfCells v st)` — the SHIPPED `S_C` comb arms do
+  the quantifier work; soundness of the fuel-0 form is the shipped tier-(a) fuel-irrelevance
+  argument (specCall-free). `envOfCells : Thermite.Env → State → Thermite.Env` is
+  generator-emitted (per loop-CELL `ints` reads at `BVal.value`; `seqs := (st.env.slices
+  xs).map BVal.value`, which the FRAME conjuncts tie to `v.seqs xs` since non-scalar mutation is
+  refused; `specs := v.specs` unused by a specCall-free clause). EXP row: `envOfCells` is the
+  `stateOf` section-inverse on the item's read footprint — per-cell `rfl` correspondence lemmas,
+  the §4.1.4 mechanism. Spec-CALLING invs still refuse (Inv_item stays fuel-free). Families
+  (2)–(4) (sort/range, frame, scope) are unchanged.
+- **The per-item obligations** — `_entry` UNCHANGED (§4.2.4 shape); `_pres`/`_progress`/`_dec`
+  RESTATED over the return layer: `_pres` = `∀ st st', Inv_item v st → condBool loop_cond st =
+  some true → rblockThread gbody st = some (.inl st') → Inv_item v st'` (fall-through-narrowed);
+  `_progress` = `(rblockThread gbody st).isSome` (a return IS progress); `_dec` =
+  fall-through-narrowed descent with the #265 PRE-state bound (§4.3.3(b)); `_exit` is emitted for
+  the While-kind ONLY (the §4.2.4 shape verbatim) — for the Loop-kind NO `_exit` exists (there is
+  no fall-through path to obligate; the generator discharges `return_compose`'s fall-through
+  disjunct by `condBool`-of-literal-true contradiction); PLUS, NEW, **ONE `_ret_k` PER RETURN
+  SITE** (`gprefix_k` = the `GBlock` strictly before guard `k`):
+
+```
+theorem <thm>_ret_k (v : Thermite.Env) : InRangeParams v → reqStable →
+  ∀ st st', Inv_item v st → condBool loop_cond st = some true →
+    rblockThread gprefix_k st = some (.inl st') →     -- reached guard k: prior stmts threaded,
+    condBool g_k st' = some true →                    --   prior guards FALSE; guard k FIRES
+    ∃ rv, retDenote re_k st'.env = some rv
+        ∧ Thermite.denote 0 ens (bindResultR { v with specs := R_item } rv)
+  -- the LOOP-EXIT class at the k-th exit; the return expr's own 2a obligation rides in the
+  -- ∃ rv (the `_exit` precedent). For binary_search: _ret_1 (lo == hi ⟹ ens at None — the
+  -- needle-absent case, discharged FROM invs 2+3 + inv 1 + sorted), _ret_2 (haystack[mid] ==
+  -- needle ⟹ ens at Some(mid) — the found case).
+```
+
+- **The TWO composed theorems**, generator-FIXED as in §4.2.4: the HYPOTHESIZE CONTRACT theorem
+  (`∀ rv, bodyConvergesR … (stateOf v) rv → reqStable → ensStable (bindResultR … rv)` — proof:
+  `return_compose` (`_entry`, `_pres`), then per disjunct `_exit` (While-kind) or absurdity
+  (Loop-kind), or `rblockThread_returns_at_guard` resolved to the matching `_ret_k`) and the
+  conjoined `_converges` theorem (`∃ rv, bodyConvergesR …` — proof: `_entry` +
+  `loopDenoteR_exits_of_dec` (`_pres`,`_progress`,`_dec`) + the exit's value: `_exit`'s `∃ r`
+  fall-through, or `.inr`'s `rv` directly). An item certifies L3-via-lean ONLY when BOTH
+  kernel-accept — the REQ-1.1 conjunction, §4.2.3 inherited.
+- **THE HONESTY BAR — in-FRAGMENT is NOT auto-L3 (stated BEFORE the build, so the claim cannot
+  inflate).** The battery is the §4.2.4 battery + a guard case split + the `envOfCells` unfolds.
+  EXPECTED COVERAGE: linear SCALAR guard-return shapes auto-discharge (a While-kind body with one
+  scalar guard; the Loop-kind countdown `loop { if n == 0 { return acc; } acc = acc + n; n = n -
+  1; }` family — `omega` closes after unfolding). `binary_search` does NOT auto-discharge: its
+  `_pres`/`_ret_k` obligations quantify over slice contents (`forall_below`/`forall_from`
+  preservation under `mid = lo + (hi-lo)/2` needs sortedness reasoning + division facts — beyond
+  `omega`-after-unfold). The (vi) claim for `binary_search` is EXPORTABLE + REFUSAL-FREE
+  recognition + the composed theorems kernel-accepting GIVEN REQ-7 INTERACTIVE per-obligation
+  proofs; without them it degrades to `Verdict::Unknown` (fail-to-certify, SOUND — the iv-b
+  exportable-wider-than-dischargeable precedent, third occurrence). `binary_search` is thereby
+  the flagship INTERACTIVE item, not a battery trophy.
+
+**(§4.3.5) The refusal inventory AFTER (vi) — the third narrowing (all STRUCTURED, never
+silent).** Stays REFUSED: a `return` NOT in top-level guard form — under an `else`, nested below
+the loop body's top level (inside a plain `ifElse` branch), in a then-block with sibling
+statements, or bare `return;` (no value); a guard return in the PREFIX (the v1.1 residual,
+named); a `Loop`-kind with ZERO guards (no exit path); a tail PRESENT on a `Loop`-kind
+(unreachable code — refuse, don't ignore); a tail-LESS `While`-kind; a non-built-in or
+non-int-payload return expr (#254 residue); `Stmt::Break`/`Stmt::Continue` (unchanged — `break`
+carries no value and exits only the LOOP, a different continuation than `return`'s; NOT
+subsumed by (vi)); nested loops; more than one loop; a loop in non-last position; non-scalar
+mutation; empty `invs`/`inv true`; a spec-CALLING inv/dec; optres params/locals. Each keeps the
+structured `ExportRefusal` path (`LoopBody`/`OutOfFragment`/`OptResResult` detail strings — a
+build detail; the REQUIREMENT is structured + named, never silent).
+
+**(§4.3.6) The kernel pins (THREE, named per divergence position; R-CHAR-3 — WHAT each covers,
+never its content).**
+- **`PinReturnShortCircuit.lean` (the threading mis-map — drop AND order).** A `rblockThread`
+  variant that CONTINUES past a fired guard (models a return-dropping encoder) reaches the wrong
+  exit and certifies a wrong `ens`; a variant that evaluates guards in the WRONG ORDER (the
+  second guard's value where the source fires the first) certifies a wrong value. The faithful
+  thread refutes both; both directions pinned (the `PinWhileComposition` shape at the new layer).
+- **`PinReturnVacuity.lean` (the never-returning escape — the conjunction oracle, third
+  position).** A never-firing guard (`if false { return 0 }`) under a literal-true cond makes
+  `bodyConvergesR` FALSE at every `rv`, so a FALSE-`ens` CONTRACT obligation discharges
+  VACUOUSLY — and the conjoined `_converges` is REFUTED at the same env (the
+  `PinExecOverflowVacuity`/`PinWhileVacuity` lineage, fuel-exhaustion-by-no-exit).
+- **`PinOptResultBind.lean` (the optres mis-bridge).** A `bindResultR` variant that collapses the
+  variant (binds `None` as `some 0`, or drops the bind so the `ens` `match` reads the env's
+  default `OptResVal`) certifies a wrong `match`-shaped `ens`; the faithful bridge refutes (the
+  `PinExecValueBridge`/`PinExportBoolResult` lineage at the THIRD result sort).
+The rule-level teeth that already exist are NOT re-pinned (`l2_no_preservation_premise_for_buggy_
+body`, `l3_exit_overclaim_refuted`, the §4.2.6 pair); the degeneracy AGREEMENT lemmas (§4.3.2)
+double as the no-drift regression for the return-free fragment.
+
+**(§4.3.7) The REQ-9 delta (mutation accounting).** Today every mutant of a guard-return item is
+`UntestedAgainstLean` (moot — the item itself refuses). After (vi): an in-grammar mutant (a
+guard-cond operator flip `==`→`<=`, a return-payload arithmetic mutation `mid`→`mid+1`, a variant
+swap `Some(e)`→`None` where the result type admits it, a body-statement mutation) EXPORTS and is
+ATTEMPTED — kill = `Refuted ∪ Unknown-after-attempt`, semantics UNCHANGED; an out-of-grammar
+mutant stays `UntestedAgainstLean` honestly. The floor gate begins to genuinely gate guard-return
+items on the Lean path; for an INTERACTIVE-discharged item (the `binary_search` landing) mutants
+are attempted via the AUTO battery and a not-proven mutant counts killed exactly as today — no
+new accounting semantics, the (v) §4.2.7 mechanism one fragment wider (no `check.rs` edit
+expected).
+
+**(§4.3.8) Sequencing — the per-increment gauntlet (the #253/#264 precedent, plus the #265
+lesson made a NAMED requirement).** (vi-a) the RETURN-LAYER spine + the three pins land FIRST and
+ALONE under the §4.3.2 kernel bar; ANY deviation of a shipped statement shape from the §4.3.2
+sketches MUST land with the #265-class declared-adaptation ceremony — a kernel-record pin proving
+the shapes' relation (implication or non-equivalence) + a same-commit amendment to this section —
+never a silent drift. ONLY THEN (vi-b) the exporter: `cargo test -p forge` + clippy/fmt green;
+the LIVE lake expectations enumerated in the Verification section; fixtures hand-authored against
+that enumeration (R-CHAR-3), never regenerated from the exporter. Both parts under blocker #272.
 
 ### 5. Certificate attribution + the disagreement rule (REQ-4/REQ-5)
 
@@ -2279,9 +2773,10 @@ The exportable/dischargeable fragment for the Lean engine = what the spine's `S`
 stabilization relation, NOT a raw fuel index, #213 — with the RESULT value bound THROUGH `stabilizes
 body_expr env r`, #214, with `specs := R_item` HELD FIXED, the export-time hard gate on registry
 population, AND the REGISTRY-TERMINATION class on `R_item`'s spec-fns, #215), covering the
-PURE-CONTRACT class AND — SHIPPED, #253 (the §4.1 exec-body bridge) — STRAIGHT-LINE `S_B` bodies
-(loops stay OUT via the STRUCTURED `ExportRefusal::LoopBody`; Option/Result-typed RESULTS stay
-OUT behind #254 via `ExportRefusal::OptResResult`) and EXP
+PURE-CONTRACT class AND — SHIPPED, #253 (the §4.1 exec-body bridge) — STRAIGHT-LINE `S_B` bodies, AND —
+SHIPPED, #264 (the §4.2 while-body widening, increment (v)) — the v1 single-exit WHILE shape (the
+5+2 obligation set; the post-v1 loop shapes stay OUT via the STRUCTURED `ExportRefusal::LoopBody`;
+Option/Result-typed RESULTS stay OUT behind #254 via `ExportRefusal::OptResResult`) and EXP
 registry-body faithfulness. The exec-body AUTO battery carries two COVERAGE residuals
 (`req`-bounded overflow; nested-`ifElse` `restoreScope` — both DEGRADE to Unknown, SOUND): see
 REQ-10's Known-limitations note. For
@@ -2291,15 +2786,20 @@ registries via static unfolding, #216); the recursive-registry `∃N∀fuel` obl
 need INTERACTIVE proofs (or stay on Verus).
 
 **OUT.** User ADTs in match-position (the Lean `Variant` has only the 4 built-in Option/Result
-variants — `rust-lean-correspondence.md` D6/the user-variant residual); the v1 `while`-BODY export
-(DESIGNED — §4.2/REQ-11, increment (v), NOT-STARTED behind blocker #264; until it ships a v1
-while body refuses via the SAME structured `ExportRefusal::LoopBody` as the post-v1 shapes);
+variants — `rust-lean-correspondence.md` D6/the user-variant residual); (the v1 `while`-BODY
+export, formerly listed here — SHIPPED with increment (v), §4.2/REQ-11/#264, and moved to the IN
+set above);
 post-v1 loops (`loop`/
 `break`/`continue`/multi-exit early return/nested loops/non-scalar mutation `xs[i]=e` — all honest
 `Unsupported` in the encoders + absent from the Lean inductives; on the exec-body export path the
 STRUCTURED `ExportRefusal::LoopBody`, §4.1.7/#253); Option/Result-typed RESULT bodies on the
 exec-body export path (`ExportRefusal::OptResResult` — #254, `ExecVal` has no optres variant; a
-recorded scope boundary of the loop-residual lineage, refused STRUCTURALLY, never silently);
+recorded scope boundary of the loop-residual lineage, refused STRUCTURALLY, never silently); — of
+these OUT entries, the GUARD-RETURN multi-exit subset (the `loop`-kind WITH top-level `if g {
+return re; }` guards / guard returns inside a v1 while body / int-payload Option-Result RESULTS)
+plus the combinator-`inv` residual is now DESIGNED as increment (vi) (§4.3/REQ-12, NOT-STARTED
+behind blocker #272; until it ships each keeps its structured refusal, and `break`/`continue`/
+nested-loops/non-scalar-mutation/non-int-payloads stay OUT even after it);
 open body holes (`?N` —
 short-circuited L0 before any engine); slag bodies (fiat-trusted, no engine); boundary items
 (foreign body, L1, no engine); divergent spec-fns (a non-well-founded `dec` — REJECTED by the
@@ -2355,6 +2855,18 @@ meta/battery query classes (vacuity / equivalence / strengthen) are OUT of the E
   obligations + TWO generator-proved composed theorems, the loop auto battery, the refusal
   narrowing). The §4.2.3 termination decision (the conjoined `_converges`; no partial-marked L3)
   is part of the build's acceptance. **FILED: blocker #264.**
+- **(vi) The early-return widening — the §4.3 guard-return layer (review item 8;
+  `binary_search`)** — (vi-a) the RETURN-LAYER spine FIRST (`RetExpr`/`RetVal`/`retDenote`,
+  `GStmt`/`GBlock`/`rblockThread`, `loopDenoteR`/`bodyDenoteR`/`bodyConvergesR` +
+  fuel-mono/uniqueness + the TWO degeneracy AGREEMENT lemmas, `return_compose` +
+  `rblockThread_returns_at_guard`, `loopDenoteR_exits_of_dec`, the ADDITIVE `Env.bindOptRes` +
+  `bindResultR`, the THREE §4.3.6 pins), kernel-green with the standard axiom set, every existing
+  theorem + pin still green, any statement-shape deviation under the #265-class
+  declared-adaptation ceremony; (vi-b) THEN the exporter (`recognize_return_body`, the guard
+  split, the `_ret_k` + fall-through-narrowed obligation set, the `envOfCells` combinator-inv
+  widening, the two composed theorems, the battery, the refusal re-narrowing, the REQ-9
+  accounting). COST CLASS: a NEW-layer build (§4.3.3(a)), NOT a (v)-class composition — budget
+  accordingly. **FILED: blocker #272.**
 
 ## Verification
 
@@ -2436,6 +2948,25 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
   tests are UNPERTURBED. The two (v) pins are authored kernel-checked, each pinning the poisoned
   discharge AND the faithful behavior (R-CHAR-3: fixtures hand-authored against this enumeration,
   never regenerated from the exporter).
+- **(vi), #272 (the early-return widening):** the (vi-a) spine layer lands FIRST and
+  kernel-checks with the standard axiom set (NO `sorryAx`), every existing theorem + pin still
+  compiling, AND the TWO degeneracy AGREEMENT lemmas kernel-accept (the guard-free fragment is
+  IDENTICAL to the SHIPPED `blockThread`/`loopDenote` — the no-second-semantics tripwire). Then
+  (vi-b): a LINEAR guard-return fixture of EACH kind exports and kernel-accepts BOTH composed
+  theorems with every per-item obligation auto-discharged (a While-kind body with one scalar
+  guard; a Loop-kind countdown `loop { if n == 0 { return acc; } … }` shape); the SAME items with
+  a WRONG `ens` — or a WRONG return value (`Some(e)` where the source returns `None`) — are NOT
+  Proven; a never-firing-guard literal-true-cond body with a FALSE `ens` does NOT certify (its
+  vacuous CONTRACT theorem may kernel-accept but `_converges` FAILS — the `PinReturnVacuity`
+  Rust mirror, the §4.2.3 conjunction gate); `conformance/binary_search.th` RECOGNIZES
+  (refusal-free) and EXPORTS — its composed theorems kernel-accept GIVEN REQ-7 INTERACTIVE
+  per-obligation proofs, and WITHOUT them the item degrades to `Verdict::Unknown` (the honest
+  landing: in-fragment + interactive, NEVER a false Proven and NEVER a silent skip); every §4.3.5
+  refusal shape still refuses structurally (prefix guard, non-guard-form return, guard-less
+  Loop-kind, tail-on-Loop-kind, `break`/`continue`, non-int payload, …); the (iv)/(v) live tests
+  are UNPERTURBED; the THREE pins are authored kernel-checked, each pinning the poisoned
+  discharge AND the faithful behavior (R-CHAR-3: fixtures hand-authored, never regenerated from
+  the exporter).
 
 ## REQ status
 
@@ -2452,6 +2983,7 @@ Per increment (this doc's own ACs are statement-completeness, discharged by revi
 | REQ-9 (engine-generic anti-Goodhart battery, honest v1) | SHIPPED (the Lean path; increment (iii), #247) | The Verus-path battery (`check::mutation_score`) is UNTOUCHED (the SHIPPED `Counterexample ∪ Timeout` = killed + the #101 `equivalence_proves_equal` exclusion). **The engine-generic LEAN PATH is SHIPPED:** `engine::lean_mutant_outcome(admitted, &Verdict)` classifies a Lean-engine mutant — an ADMITTED mutant Lean does not prove (`Refuted ∪ Unknown-after-attempt`) is `Killed` (= the shipped `Counterexample ∪ Timeout`), an admitted `Proven` mutant `Survived`, a mutant the Lean fragment does NOT admit (out-of-spine / tier-(c)) is `UntestedAgainstLean` (NEVER counted killed — never inflates the ratio, §7 / R-DEFER-9). `engine::LeanMutationTally` accumulates `killed / attempted` (= attempted MINUS proven-equivalent — the SHIPPED `scored` denominator) + `untested` (reported in the cert, OUTSIDE the ratio) + `equivalent` (the #101 exclusion drops a proven-equivalent survivor from BOTH the survivor set AND the denominator); `qualifier()` is the floor-guard-1 line ("K/A killed … N untested against lean"). The #101 equivalence probe is a §0.1 verus META-query OUTSIDE the Engine interface in v1 (F3/OQ-5 — not threaded on the Lean-only path, so the Lean tally reports the RAW survivor set honestly). Non-test consumer: `check::lean_mutation_score` builds a per-mutant LeanEngine over the swapped-in mutant program (`program_with_mutant`) — the LeanEngine resolves an obligation's item by NAME from its program, so a mutant must be swapped in, else every mutant would re-export the unchanged original (a false survivor); the tally is attached to the Lean-proven cert via `lean_proven_cert`. Live-verified: an `add`-shaped item's operator-flip mutant is KILLED and its non-pure-tail early-return mutant is UNTESTED-against-lean (`1/1 killed; 1 untested`). Tested: the kill semantics (`engine.rs::lean_mutant_outcome_follows_req9`) + the no-inflation tally (`lean_mutation_tally_does_not_inflate_on_untested`). The floor 0/0 backstop is `kill_ratio() = 0.0` on an empty denominator. **The floor GATES the Lean path (the #248 fix), it does NOT merely report:** `LeanMutationTally::{meets_floor, mutants_killed_string, survivor_detail}` + `check::lean_proven_cert` REJECT the item `WeakContract`-style (via `Certificate::rejected_weak_contract`) when the kill-ratio is below the threaded `mutation_floor` OR the `0/0` backstop fires (mutants generated, all untested-against-lean) — mirroring the Verus path's `mutation_score → meets_floor` gate, never a silent L3. The Lean denominator = `attempted` with NO #101 equivalence exclusion (a §0.1 verus meta-query OUTSIDE the Lean-only path, F3/OQ-5) — stated honestly in the reject detail. A `spec fn` (no `ens`) skips the gate (nothing to mutate). Tested: `engine.rs::lean_tally_floor_gate` (the 1/1 pass, the 0/0 backstop, the 1/3 below-floor reject). |
 | REQ-10 (the exec-body bridge — straight-line bodies, §4.1) | SHIPPED (increment (iv), #253 — iv-a the spine, iv-b the exporter; ref #203) | **REQ-10.2 SHIPPED (iv-a)** — the `bindBool` spine layer: the DEFAULTED `Env.bools : String → Bool := fun _ => false` field + `Env.bindBool` (`lean/Thermite/Denote.lean`) + the `Expr.boolVar` leaf (`lean/Thermite/Ast.lean`) with its arms across `denote`/`refDenote`/`intVal`/`seqVal` (`Denote.lean`/`RefEncode.lean`), `ref_sound`/`refVal_eq` (`Soundness.lean`), and `specCallFree`/`intVal_fuel_irrelevant`/`seqVal_fuel_irrelevant`/`denote_fuel_irrelevant`/`denoteNB` (the EXPLICIT `some (env.bools x = true)` arm)/the `*_agrees`/`*_specCallFree` arms (`Stabilize.lean`); non-test consumers: `bindResult` + the four bridge pins + the exporter's bool-result path. **REQ-10.1/REQ-10.4 SHIPPED** — spine: `abbrev bodyConverges (b : Block) (st : State) (r : ExecVal) : Prop := bodyDenote b st = some r` (over the FUEL-FREE, genuine-`Option` `bodyDenote` — NO new NB layer, the §4.1.5 decision) + the value bridge `def bindResult` (int → `Env.bindInt env "result" r.value`, the IDENTITY on `BVal.value`; bool → `Env.bindBool`) in `lean/Thermite/Exec/Stmt.lean`; exporter: `emit_body_theorems` (`forge/src/lean_export.rs`) emits BOTH the HYPOTHESIZE CONTRACT theorem (the result bound THROUGH `bodyConverges`) AND the conjoined OVERFLOW theorem (`(bodyDenote body_block (stateOf v)).isSome`) in ONE file — the §4.1.5 conjunction rule. **REQ-10.3 SHIPPED (iv-b)** — `emit_state_of` (int param → `.int ⟨uW, v.ints x⟩`, bool → `.bool (v.bools p)`, slice → `(v.seqs xs).map (⟨uW, ·⟩)`; `scope := fun _ => false`) + the `InRangeParams` typed-input premise + the per-param `rfl` correspondence lemmas (the §4.1.4 compile-time tripwire). The `scope := false` EXP row is VERIFIED faithful against `thermite-tv::exec_stmt_encode::body_ref_state` (its initial `Env` is EMPTY — a param is a free input, a body `assign` to a param is `Err`/`none` on BOTH sides). **REQ-10.5 SHIPPED (iv-a)** — the four bridge divergence pins `PinExecValueBridge.lean`/`PinExecBoolBind.lean`/`PinExecOverflowVacuity.lean`/`PinExecStateMisMap.lean` (`lean/Thermite/`), each kernel-checked with `{propext, Classical.choice, Quot.sound}` (NO `sorryAx`), each pinning BOTH the poisoned discharge AND the faithful refutation. **REQ-10.6 SHIPPED (iv-b)** — `encode_exec_stmt` returns the STRUCTURED `ExportRefusal::LoopBody` for a `loop`/`while`/`break`/`continue`/mid-body-`return`/non-scalar-mutation body (§4.1.7, narrowed out of `NotPureContract`); an Option/Result-typed RESULT is `ExportRefusal::OptResResult` (#254 — `inductive ExecVal where | int (b : BVal) | bool (b : Bool)`, no optres variant to bridge); `LeanEngine::discharge` maps both to `Unknown` (an honest skip, never silent). Non-test consumer (the whole bridge): `engine::LeanEngine::discharge` → `export_item` → `export_straight_line_body` (`forge/src/lean_export.rs`) on the live `--engine lean` path. Verification: `lake build` green (381 jobs, the standard axiom set, every prior theorem + pin still compiling — the iv-a commit record); LIVE lake tests in `forge/src/engine.rs`: `live_straight_line_body_is_proven` (both theorems incl. the OVERFLOW conjunct), `live_bool_result_body_is_proven_via_bindbool`, `live_always_overflow_body_is_not_proven` (the `PinExecOverflowVacuity` Rust mirror — the vacuous CONTRACT never certifies), `while_body_item_refuses_export`, `optres_result_item_refuses_export`. **KNOWN LIMITATIONS (increment (iv) auto-discharge — coverage residuals, the iv-b audit; see the REQ-10 Known-limitations note):** the EXPORTABLE surface is WIDER than the auto-DISCHARGEABLE surface — (a) a `req`-bounded `_overflow` conjunct (e.g. `req a <= 100`, body `a + a`) and (b) a nested-`ifElse` body's `restoreScope` denotation both fail the shipped battery and DEGRADE to `Verdict::Unknown` (fail-to-certify — SOUND, conservative incompleteness, NEVER a false `Proven`); the close is a stronger auto battery or the REQ-7 INTERACTIVE path — a residual, NOT an open blocker (increment (v)'s loop battery, §4.2.4/#264, threads `hreq` through its unfold sets and is the named vehicle for residual (a)). RESIDUALS after #253 (recorded scope boundaries, the loop-residual lineage — refused STRUCTURALLY, never silently): Option/Result-typed results (#254), v1 while (the `loopDenote` composition — now DESIGNED as §4.2/REQ-11, increment (v), #264), spec-fns-in-exec. For history, the pre-#253 row recorded NO bridge code (every statement body `ExportRefusal::NotPureContract`, every non-int result `NonIntResult`, no `Env` bool sort) over the SHIPPED substrates (`bodyDenote`/`stmtDenote`/`blockThread`/`State`/`State.restoreScope` in `lean/Thermite/Exec/Stmt.lean`; `ExecVal`/`BVal`/`BVal.value`/`execDenote` in `lean/Thermite/Exec.lean`; the §4.1 conjunction rule + HYPOTHESIZE resolution) — superseded by this build. |
 | REQ-11 (the while-body widening — v1 `while` bodies, §4.2) | SHIPPED (increment (v) — v-a the spine #264/commit 99c7f304 + the #265 adaptation 92659eb7; v-b the exporter #264) | The WHILE-BODY COMPOSITION LAYER (v-a) is built and kernel-green AND the EXPORTER (v-b) is SHIPPED. Mirrors the same doc's Requirements-section REQ-11 entry (post-v-b). **REQ-11.1 SHIPPED (v-a)** — ALL in `lean/Thermite/Exec/WhileBody.lean` (composed AROUND the UNCHANGED `Exec/Stmt.lean` + `Exec/Loop.lean`): `def whileBodyDenote (prefixB cond lbody tail fuel st)` (the `Option`-monad composition prefix `blockThread` → the SHIPPED `loopDenote` → tail `execDenote`; `prefixB` is a Lean-keyword SYNTAX adaptation of the design's `prefix` binder, semantics unchanged) + `abbrev whileBodyConverges … : Prop := ∃ fuel, whileBodyDenote … = some r` (the ∃-fuel relation, result bound THROUGH it, the #214 discipline; NO NB layer — `none` is GENUINE fuel-exhaustion/failure) + `theorem loopDenote_fuel_mono` (surplus fuel after exit unconsumed, induction on fuel) + `theorem whileBodyConverges_unique` (overlap-at-max via fuel-mono + determinism — the `stabilizes_unique` mirror). Axioms `[propext, Quot.sound]`. **REQ-11.2 SHIPPED (v-a)** — `theorem while_compose (prefixB lbody cond tail I) (h_pres) : ∀ st₀ fuel r, whileBodyDenote … = some r → (∀ st₁, blockThread prefixB st₀ = some st₁ → I st₁) → ∃ stf, I stf ∧ condBool cond stf = some false ∧ execDenote tail stf.env = some r` — the SHIPPED partial-correctness `while_rule` lifted through the prefix/tail segments. Axioms `[propext, Quot.sound]`. **REQ-11.3 SHIPPED (v-a, with the #265 DECLARED ADAPTATION)** — `theorem loopDenote_exits_of_dec (cond lbody I μ) (h_pres) (h_cond_total) (h_progress) (h_dec) : ∀ st, I st → ∃ fuel stf, loopDenote cond lbody fuel st = some stf` — the TERMINATION bridge (dec-validity + progress ⟹ the exit witness `while_rule` HYPOTHESIZES, the REQ-1.2 `converges_imp_stabilizes` mirror). ONE DECLARED SEMANTIC ADAPTATION (#265, kernel-record `lean/Thermite/PinWhileDecShape.lean`, commit 92659eb7): the shipped `h_dec` bounds the PRE-state `0 ≤ μ st` (`h_dec : … → μ st' < μ st ∧ 0 ≤ μ st`) — strictly WEAKER hypothesis, so the shipped theorem is strictly MORE GENERAL than a post-state-bounded (`0 ≤ μ st'`) one (the two shapes are NON-equivalent per the pin's `shipped_hdec_is_not_the_pinned_shape`; the §4.2.2 sketch is now pinned to this PRE-state shape, and the pin's `loopDenote_exits_of_dec_design_shape` kernel-derives the post-state-bounded statement as a corollary — the adaptation strengthens, never weakens). Axioms `[propext, Quot.sound]`. **REQ-11.6 SHIPPED (v-a)** — the TWO bridge-divergence pins, each kernel-checked with the standard axiom set: `lean/Thermite/PinWhileVacuity.lean` (the termination-vacuity conjunction oracle — a `while true` no-op body's `whileBodyConverges` is FALSE at every fuel, so a FALSE-`ens` CONTRACT obligation discharges VACUOUSLY while the conjoined CONVERGENCE obligation `∃ r, whileBodyConverges …` is REFUTED at the same env), `lean/Thermite/PinWhileComposition.lean` (the composition mis-map — a loop-SKIPPING variant binds the ENTRY value `lo = 0` and CERTIFIES the wrong `ens: result == 0`, while the FAITHFUL composition runs the SHIPPED L1 loop to the EXIT value `lo = 3` and REFUTES it; both directions pinned). MECHANICAL CROSS-CHECK of the (v-a) ship: `lean/Thermite/PinWhileDecShape.lean` (the #265 critic pin, commit 92659eb7) `import Thermite.Exec.WhileBody` and APPLIES `loopDenote_exits_of_dec` — its kernel-checked compilation is itself the existence proof for the six declarations + the three pin files. KERNEL-BAR MECHANICS (#265): the default `lake build` (`defaultTargets = ["Thermite"]`) elaborates `Exec/WhileBody.lean` but NOT the `PinWhile*` modules, so each pin's `#print axioms` is asserted by EXPLICIT per-module elaboration (`lake env lean Thermite/PinWhileDecShape.lean`), within the standard set `{propext, Classical.choice, Quot.sound}` (NO `sorryAx`/new axiom); every existing theorem + prior pin still green. **REQ-11.4/11.5/11.7 SHIPPED (the exporter, v-b — #264).** `export_item` (`forge/src/lean_export.rs`) routes a v1 WHILE-shaped body (the last `Stmt::Loop(While)` before a REQUIRED tail) to `export_while_body`, the (v) recognizer `recognize_while_body` mirroring `recognize_v1_loop` arm-by-arm. **REQ-11.4** — `Inv_item` (user invs shallow over cells + per loop-CELL SORT+RANGE + per read scalar PARAM SORT+RANGE (the step's no-overflow guard `lo+1 < 2^w` needs each read param's bound `n < 2^w`, established at `_entry` from `InRangeParams`, preserved trivially) + other-param frame + per-cell scope) + `mu_item` (the `dec` over cells); the FIVE per-item obligations in the §4.2.4 DESIGN shapes — `_entry` the prefix-progress-AND-entry `∃ st₁, blockThread prefix_block (stateOf v) = some st₁ ∧ Inv_item v st₁`; `_pres`; `_progress`; `_dec` (the #265 PRE-state `0 ≤ μ st` bound); `_exit` the `∃ r, execDenote tail_expr st.env = some r ∧ <ens>` — with GENERATOR-FIXED proofs (the `WhileBattery` decode chains: `Bind.bindLeft`/sort/frame decode → the overflow `if` `split` → `omega`, `hreq`-aware); and the TWO GENERATOR-FIXED composed theorems (CONTRACT via `while_compose`, `_converges` via `loopDenote_exits_of_dec` — NO `first | … | skip` heuristics; the prefix/tail totality comes from `_entry`/`_exit`'s ∃-content). **REQ-11.5** — `recognize_while_body` / `reject_out_of_while_subset_stmt` / `encode_cell_*` keep the §4.2.5 inventory LOUD (loop-kind/nested/non-last/under-`if`/multi-loop/break/continue/mid-return/non-scalar/empty-or-weak-inv/tail-less → `ExportRefusal::LoopBody`; spec-calling inv/dec → `OutOfFragment`; optres → `OptResResult`). **REQ-11.7** — `check::lean_mutation_score` (UNCHANGED) routes each mutant through `LeanEngine::admits_auto` → `export_item`; an in-grammar while-body mutant now EXPORTS and is ATTEMPTED (not `UntestedAgainstLean`), the floor gate genuinely gates while items on the Lean path (the accounting flows through the fragment widening, no `check.rs` edit). The D-6 width seam is threaded (`cell_ctx` carries the prefix-`let` cell widths into the cond/body/tail/cell-read encodings, not hardcoded `u64`); the dead `cond_holds` emission (D-7) is dropped; `LeanEngine::run_lake` captures BOTH stdout and stderr (R-6a). VERIFICATION (`forge/tests/lean_while.rs`): `count_certifies_l3_via_lean_auto` (the L1 linear `while lo < n inv lo ≤ n dec n - lo { lo = lo + 1 }` certifies L3 via lean-auto — all 5+2 kernel-accept, `{propext, Classical.choice, Quot.sound}`); `sum_does_not_certify_l3_via_lean_recursive_residual` (the corpus `sum`'s recursive-registry `ens` is the §4 interactive residual — NOT L3-via-lean, the HONEST landing); `refusal_matrix_no_lean_certification`; `while_true_no_op_is_not_proven_l3_via_lean` (the §4.2.3 vacuity gate); `in_grammar_while_mutants_are_attempted_not_untested` (REQ-11.7); plus the in-process `engine::tests` (`live_while_body_item_is_honest` Proven, `while_body_item_refuses_export`, `while_refusal_inventory_is_structured`, `live_while_true_vacuity_is_not_proven`). KNOWN LIMITATION (the iv-b precedent — the auto-DISCHARGEABLE surface is narrower than the EXPORTABLE surface): nonlinear invariants/measures, multi-`let`-with-non-literal-init prefixes, and deeper-case-split bodies leave an unsolved goal → `Verdict::Unknown` (fail-to-certify, SOUND — never a false `Proven`; REQ-7 INTERACTIVE is the close); a coverage residual, NOT a blocker. Termination-honesty DECISION recorded at §4.2.3 (the conjoined `_converges`; the two rejected alternatives named with grounds). |
+| REQ-12 (the early-return widening — v1 guard-return bodies, §4.3) | NOT-STARTED (increment (vi), open blocker #272) | DESIGNED ONLY (this amendment, review item 8) — no code exists on either side of the bridge. The SHIPPED exporter still REFUSES every (vi) shape, quoted: `encode_exec_stmt`'s arm `Stmt::Return(_) => Err(ExportRefusal::LoopBody("mid-body `return` (S_B has no early return — the body's result is its tail)"))` and `reject_out_of_while_subset_stmt`'s arm `Stmt::Return(_) => Err(ExportRefusal::LoopBody("mid-body `return` (the corpus `binary_search` uses `return None`/`return Some(mid)` — a multi-exit CPS form, OUT of v1)"))` (both `forge/src/lean_export.rs`); the `loop`-kind refuses via `recognize_while_body`'s While-only arm; an Option/Result result via `ExportRefusal::OptResResult` (#254). The Lean spine has NO return layer: `Stmt` (`lean/Thermite/Exec/Stmt.lean`) has no return constructor (the module's honest-absence note: "a mid-body early `return` (a multi-exit CPS form) is OUT of v1; the `ret` form here is the TAIL result only"), `blockThread : Block → State → Option State` has no value channel, and `Env` (`lean/Thermite/Denote.lean`) has no `bindOptRes`. The SUBSTRATES the design composes over ARE shipped and load-bearing: the #180 contract fragment (`OptResVal`/`Env.optres`/`Expr.match_`/`denoteArms`) already denotes `binary_search`'s entire CONTRACT side, and the forge `encode_match` already emits it — every missing piece is body-side (REQ-12.1–12.8, all NOT-STARTED). Diagnostic: `blockThread`/`loopDenote` have no return channel, so (vi) is a NEW-LAYER build (the §4.3.3(a) cost-class declaration), not a (v)-class composition — sequenced (vi-a) spine + THREE pins, then (vi-b) exporter, both under #272. |
 
 ## Open questions (for co-authorship)
 

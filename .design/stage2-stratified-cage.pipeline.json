@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "design_doc": ".design/stage2-stratified-cage.md",
+  "doc_hash": "sha256:cb8e475a5393c3d8edb477de1c27271d47a4433b8880dbaee5956ecae2b9d470",
+  "stage": "designed",
+  "plans": [],
+  "runs": []
+}

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "design_doc": ".design/stage1-forge-tier.md",
+  "doc_hash": "sha256:088c8ee6daa4ae2386e62dde19fb263b6104cea06547e48cc841be937cfb06b3",
+  "stage": "designed",
+  "plans": [],
+  "runs": []
+}

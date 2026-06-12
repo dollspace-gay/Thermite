@@ -1,0 +1,10 @@
+{
+  "uuid": "0e53379a-ef9c-4df4-8f40-7f6c06cc26af",
+  "issue_uuid": "d78f562b-0640-4926-8d64-78b720da8246",
+  "author": "Yffe",
+  "content": "Plan: C8 amendment designed in 07-strings.md (REQ-17..20): bytes_eq joins GENERATED_SPEC_FNS (zero skill tokens — generated spec fns don't render; combinator entry would blow the 6k budget +38), low-peel canonical recursion, the lemma set grounded live on real verus (core induction + converse + subrange corollary + the no-arg quantified lemma_bytes_eq_bridge that alone discharges slice_id + all 3 insert_str conjuncts + backspace + render payload, 16v0e; head/tail-swap mutant 15v1e non-vacuous), conditional emission via program_uses_bytes_eq (program_uses_parse precedent), contract-keyed block-start citation (#196).",
+  "created_at": "2026-06-12T10:12:38.199040767Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMoF7PR3FTfGED15OYezas9rwpnplNXas+B36B4BYJEsjsYtRq4QhAPXatCw6SthsISjfp/6JzSYjwURB7MRyCw=="
+}

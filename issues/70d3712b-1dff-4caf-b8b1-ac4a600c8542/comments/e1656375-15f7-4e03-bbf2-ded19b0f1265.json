@@ -1,0 +1,10 @@
+{
+  "uuid": "e1656375-15f7-4e03-bbf2-ded19b0f1265",
+  "issue_uuid": "70d3712b-1dff-4caf-b8b1-ac4a600c8542",
+  "author": "Yffe",
+  "content": "Failing test at tooling/tests/test_doc_drift_critic.py::test_c1_empty_route_table_must_not_exit_0 demonstrates divergence (run with DOC_DRIFT_DIVERGENCE=1; skipped by default). A spec-routes.toml that is valid TOML with zero [[route]] entries makes evaluate() iterate nothing and exit 0 with an empty report — a vacuous green. Authority: .design/tooling/doc-drift-tripwire.md REQ-9 ('The tool never exits 0 without having checked all 48 docs') + R-HONEST-3 no-fail-open. Expected: exit 3 INCONCLUSIVE. Toolchain site: def load_doc_files / def evaluate in tooling/doc-drift.py.",
+  "created_at": "2026-06-12T01:19:56.823251730Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHJN+qqlAGknB92wOi5qbKpLl9SDUkAP/zMV/uXZVDsTOjzFq/H4LCS96f0eiEUozcG6IugaIDfTp88vzirMPCQ=="
+}

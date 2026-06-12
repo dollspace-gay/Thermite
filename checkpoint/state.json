@@ -1,14 +1,19 @@
 {
-  "next_display_id": 269,
+  "next_display_id": 270,
   "next_comment_id": 541,
   "display_id_map": {
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
-    "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268
+    "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
+    "fa3fc9ee-21e7-4960-bdee-ba6caba75318": 269
   },
   "locks": {
     "267": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T04:40:20.473752192Z"
+    },
+    "269": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:39:02.132777136Z"
     }
   },
   "issues": {
@@ -69,6 +74,19 @@
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAk0QDzZjXAykThK4KCBzA3ujwloPQXHsjY8hHuIfRsro8O4Joxc3VLeLyULxSXdyBu8SCpTYvll4soDHE1GSNAA=="
         }
       }
+    },
+    "fa3fc9ee-21e7-4960-bdee-ba6caba75318": {
+      "uuid": "fa3fc9ee-21e7-4960-bdee-ba6caba75318",
+      "display_id": 269,
+      "title": "Mutation battery: identity-return + struct-zero early-return families (outside-review item 5; closes the move_up class)",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:38:51.924231567Z",
+      "updated_at": "2026-06-12T06:38:55.470218608Z",
+      "labels": [
+        "feature"
+      ]
     }
   },
   "next_milestone_id": 1,
@@ -2842,11 +2860,26 @@
       "agent_id": "Yffe",
       "agent_seq": 554,
       "timestamp": "2026-06-12T06:29:13.554711839Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 555,
+      "timestamp": "2026-06-12T06:38:51.924231567Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 556,
+      "timestamp": "2026-06-12T06:38:55.470218608Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 557,
+      "timestamp": "2026-06-12T06:39:02.132777136Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:29:13.554711839Z",
+    "timestamp": "2026-06-12T06:39:02.132777136Z",
     "agent_id": "Yffe",
-    "agent_seq": 554
+    "agent_seq": 557
   }
 }

@@ -1,6 +1,6 @@
 {
   "next_display_id": 282,
-  "next_comment_id": 570,
+  "next_comment_id": 571,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
@@ -38,10 +38,6 @@
     "275": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T07:02:52.814740252Z"
-    },
-    "276": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-12T09:20:34.377540362Z"
     }
   },
   "issues": {
@@ -306,11 +302,12 @@
       "uuid": "9497381e-215f-4b64-b251-b515fede3e70",
       "display_id": 276,
       "title": "Arc 2: bytes_eq content pins — insert_str/backspace exact prefix/run/suffix postconditions + render_frame payload pin (review items 2+3)",
-      "status": "open",
+      "status": "closed",
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T09:20:28.923978018Z",
-      "updated_at": "2026-06-12T12:11:01.408750208Z",
+      "updated_at": "2026-06-12T12:54:36.690825915Z",
+      "closed_at": "2026-06-12T12:54:36.655766108Z",
       "labels": [
         "feature"
       ],
@@ -329,6 +326,15 @@
           "kind": "plan",
           "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAK1dHPEk8MP2/CVQ4/ywXXftM3uK6En9WyrrP5l7V8v5tk7b1AoPshvTNZ6yf0ML3XbjtMK8BwN6RCr5Y51ycBg=="
+        },
+        "907d4fad-c88a-4c57-901d-77483b4c5989": {
+          "display_id": 570,
+          "author": "Yffe",
+          "content": "Result: Arc 2 SHIPPED d2f51125 after a 3-dispatch honest-STOP chain that surfaced and closed two real toolchain gaps (#277 slice/concat content ens, #278 bytes_eq built-in + bridge laws, + #279 field-access operands, #281 L1 empty-window twin): insert_str 3 conjuncts + backspace 2 + render_frame payload all L3 via one lemma_bytes_eq_bridge citation; head/tail-swap mutant class now dies; render variable-tail residual documented; combined critic CLEAN with hand-traced windows (aXYbc tiling); 970 workspace tests 0 failed; sum + bytes_eq_demo certs byte-identical. #280 (L1 &-strip build symmetry) tracked open.",
+          "created_at": "2026-06-12T12:54:34.940490780Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA/AdbQ8PMzLFlk3rltpD7X28xImmjhYRE6W8AHKLxjSa6RrJkogqrjJXn3JW/DIpYFc1JqE93ypfQf1dBS8gjAA=="
         },
         "aa0962b0-1bce-4cac-a30c-f4caf08ddf96": {
           "display_id": 557,
@@ -3771,11 +3777,26 @@
       "agent_id": "Yffe",
       "agent_seq": 639,
       "timestamp": "2026-06-12T12:54:30.081161950Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 640,
+      "timestamp": "2026-06-12T12:54:34.962636944Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 641,
+      "timestamp": "2026-06-12T12:54:36.690825915Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 642,
+      "timestamp": "2026-06-12T12:54:38.279259510Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T12:54:30.081161950Z",
+    "timestamp": "2026-06-12T12:54:38.279259510Z",
     "agent_id": "Yffe",
-    "agent_seq": 639
+    "agent_seq": 642
   }
 }

@@ -881,3 +881,18 @@ crate_pattern = "forge/src/tv_signal.rs"
 design = ".design/verified/exec-stmt-tv.md"
 reference = ["conformance/binary_search.th"]
 conformance_ops = ["binary_search"]
+
+# ---------------------------------------------------------------------
+# tooling — the doc-drift tripwire gating itself (crosslink #258, REQ-11)
+# ---------------------------------------------------------------------
+# DECLARATIVE in v1: the spec-discipline hook structurally cannot gate a .py
+# file (is_gated_path requires TARGET_EXTENSION ".rs" + a thermite-/forge crate
+# dir + a src/ component — see .design/tooling/doc-drift-tripwire.md REQ-11).
+# This route therefore makes the gate's OWN doc-drift checkable by doc-drift.py
+# itself (which IS enforced via `make doc-drift`): editing the gate without
+# bumping the doc's audited-sha fires the tripwire on this route (the dogfood).
+[[route]]
+crate_pattern = "tooling/doc-drift.py"
+design = ".design/tooling/doc-drift-tripwire.md"
+reference = []
+conformance_ops = []

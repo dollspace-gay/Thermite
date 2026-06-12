@@ -1,0 +1,10 @@
+{
+  "uuid": "b75ce239-1f66-4d20-93f6-d43dd15e5cc1",
+  "display_id": 258,
+  "title": "Doc-drift tripwire: generalize check-[4] pinned-SHA freshness to every routed .design doc",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T00:51:09.195972844Z",
+  "updated_at": "2026-06-12T00:51:09.195972844Z"
+}

@@ -1,7 +1,8 @@
 {
-  "next_display_id": 270,
+  "next_display_id": 271,
   "next_comment_id": 541,
   "display_id_map": {
+    "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
     "fa3fc9ee-21e7-4960-bdee-ba6caba75318": 269
@@ -14,9 +15,26 @@
     "269": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T06:39:02.132777136Z"
+    },
+    "270": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:46:50.416462926Z"
     }
   },
   "issues": {
+    "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": {
+      "uuid": "6b4366c4-e03e-4dcb-bb9f-b23b344a9583",
+      "display_id": 270,
+      "title": "editor.th contract tightening: move_up/move_down/line_end ens under-constrain the result (a literal identity return proves them) — tighten to pin the computed cursor/line-end; lands in ONE Tier-1 arc with the #269 F-IDENT/F-STRUCT-ZERO battery families + orchestrator-re-certified oracles (never a red-main window)",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:46:41.409788405Z",
+      "updated_at": "2026-06-12T06:46:43.444250273Z",
+      "labels": [
+        "blocker"
+      ]
+    },
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": {
       "uuid": "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012",
       "display_id": 267,
@@ -2875,11 +2893,26 @@
       "agent_id": "Yffe",
       "agent_seq": 557,
       "timestamp": "2026-06-12T06:39:02.132777136Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 558,
+      "timestamp": "2026-06-12T06:46:41.409788405Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 559,
+      "timestamp": "2026-06-12T06:46:43.444250273Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 560,
+      "timestamp": "2026-06-12T06:46:50.416462926Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:39:02.132777136Z",
+    "timestamp": "2026-06-12T06:46:50.416462926Z",
     "agent_id": "Yffe",
-    "agent_seq": 557
+    "agent_seq": 560
   }
 }

@@ -26,19 +26,19 @@ Divergence inventory:
        "never a traceback" contract the tool's own docstring restates.
   C-3  A [[route]] entry whose `crate_pattern` key is MISSING (a required
        field per the spec-routes.toml schema header), alongside valid
-       routes -> the entry is silently dropped, its `design`-field doc
-       leaves the checked set, and the gate exits 0. Authority: REQ-5
+       routes -> the entry was silently dropped, its `design`-field doc
+       leaving the checked set, and the gate exited 0. Authority: REQ-5
        ("every doc referenced by a [[route]].design field") + REQ-1 ("the
        set of checked docs is exactly the deduplicated design fields") +
        REQ-8 (no grandfathering) + REQ-9 ("never exits 0 without having
-       checked all 48 docs"). Skip-gated; tracking crosslink #261.
+       checked all 48 docs"). Fixed (crosslink #261): a missing/empty
+       required field is wrong-shaped -> exit 3 (INCONCLUSIVE).
 
 Run with:  python3 -m unittest discover -s tooling/tests -v
-(both C-1 (#259) and C-2 (#260) are now FIXED and UNGATED — permanent
- regression coverage, no env gate.)
+(C-1 (#259), C-2 (#260) and C-3 (#261) are now all FIXED and UNGATED —
+ permanent regression coverage, no env gate.)
 """
 
-import os
 import subprocess
 import sys
 import unittest
@@ -67,7 +67,7 @@ class DocDriftCriticTest(unittest.TestCase):
     # --- C-1: zero-route table is a vacuous pass (fail-open) ----------------
     # UNGATED (crosslink #259 fixed): an empty route table now exits 3
     # (INCONCLUSIVE) per REQ-9 / R-HONEST-3. This is permanent regression
-    # coverage. (test_c2 below stays skip-gated for #260.)
+    # coverage.
     def test_c1_empty_route_table_must_not_exit_0(self):
         """REQ-9: 'The tool never exits 0 without having checked all 48 docs.'
 
@@ -126,20 +126,18 @@ class DocDriftCriticTest(unittest.TestCase):
                 )
 
     # --- C-3: missing-required-field entry silently shrinks coverage --------
-    # SKIP-GATED (crosslink #261 open): a [[route]] entry with `design` present
+    # UNGATED (crosslink #261 fixed): a [[route]] entry with `design` present
     # but `crate_pattern` MISSING (both are "# required" per the
-    # spec-routes.toml schema header) falls through the #260 validator (it
-    # checks "if present, must be a string" — None is not present) into the
-    # builder-era `if not design or not pattern: continue`, so the entry is
-    # silently dropped. When it is the ONLY entry the #259 zero-routes guard
-    # fires (exit 3, correct); when valid routes exist ALONGSIDE it, the
-    # design-field doc silently leaves the checked set and the gate exits 0.
-    @unittest.skipUnless(
-        os.environ.get("DOC_DRIFT_DIVERGENCE"),
-        "divergence: a [[route]] entry with design but no crate_pattern is "
-        "silently dropped alongside valid routes — its doc leaves the checked "
-        "set and the gate exits 0; REQ-1/REQ-8/REQ-9; tracking crosslink #261",
-    )
+    # spec-routes.toml schema header) used to fall through the #260 validator
+    # (it checks "if present, must be a string" — None is not present) into the
+    # builder-era `if not design or not pattern: continue`, so the entry was
+    # silently dropped and its design-field doc left the checked set while the
+    # gate exited 0. The fix routes a missing/empty required field through the
+    # #260 EnvironmentError3 class -> exit 3 (wrong-shaped enumeration source),
+    # naming the entry index and the field. This is permanent regression
+    # coverage. The doc's REQ-8-or-REQ-9 alternative (MISSING-PIN exit 1 vs
+    # wrong-shaped exit 3) resolved to the wrong-shape exit-3 reading, so the
+    # assertion below pins exactly 3.
     def test_c3_design_only_route_entry_must_not_vanish_into_exit_0(self):
         """REQ-5/REQ-1/REQ-8/REQ-9: a design-field doc never silently leaves
         the checked set.
@@ -173,19 +171,18 @@ class DocDriftCriticTest(unittest.TestCase):
         # reading demands MISSING-PIN for it (it IS a design field).
 
         res = fx.run_gate()
-        self.assertIn(
+        # The fix resolves the doc's REQ-8-or-REQ-9 alternative to the
+        # wrong-shape reading: an entry missing a "# required" field is a
+        # malformed enumeration source -> INCONCLUSIVE (exit 3, REQ-9), never a
+        # green 0 and never the MISSING-PIN drift class. Pin exactly 3.
+        self.assertEqual(
             res.returncode,
-            (1, REQ9_EXIT_INCONCLUSIVE),
-            "a routed (design-field) doc dropped by a missing required "
-            "crate_pattern must be MISSING-PIN (exit 1, REQ-8) or a "
-            "wrong-shaped-table INCONCLUSIVE (exit 3, REQ-9) — never a green "
-            f"0; got {res.returncode}; stdout={res.stdout!r} "
+            REQ9_EXIT_INCONCLUSIVE,
+            "a routed entry missing the required crate_pattern field is a "
+            "wrong-shaped enumeration source -> INCONCLUSIVE (exit 3, REQ-9) — "
+            f"never a green 0; got {res.returncode}; stdout={res.stdout!r} "
             f"stderr={res.stderr!r}",
         )
-        if res.returncode == 1:
-            # The REQ-8 path must name the doc and the defect class.
-            self.assertIn("MISSING-PIN", res.stdout)
-            self.assertIn(".design/orphan.md", res.stdout)
         self.assertNotIn(
             "Traceback",
             res.stderr,

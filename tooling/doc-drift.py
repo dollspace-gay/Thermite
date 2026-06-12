@@ -238,6 +238,16 @@ def load_doc_files(root):
             )
         design = route.get("design")
         pattern = route.get("crate_pattern")
+        # Both fields are "# required" per the spec-routes.toml schema header,
+        # so an entry missing either (a None from an absent / typo'd key) or
+        # carrying an empty string is WRONG-SHAPED. The builder-era
+        # `if not design or not pattern: continue` silently DROPPED such an
+        # entry, shrinking the deduplicated-design checked set (REQ-1) while the
+        # gate could still exit 0 — a one-doc fail-open (a typo'd `crate_patern =`
+        # quietly removes a doc from coverage). Per REQ-9 / R-HONEST-3 a
+        # malformed enumeration source is INCONCLUSIVE (exit 3), never a drift
+        # finding and never a silent pass: route it through EnvironmentError3,
+        # naming the defective entry and the missing/empty field (#261).
         for field, value in (("design", design), ("crate_pattern", pattern)):
             if value is not None and not isinstance(value, str):
                 raise EnvironmentError3(
@@ -245,8 +255,13 @@ def load_doc_files(root):
                     f"#{i} `{field}` must be a string, got "
                     f"{type(value).__name__}"
                 )
-        if not design or not pattern:
-            continue
+            if not value:
+                what = "is missing" if value is None else "is empty"
+                raise EnvironmentError3(
+                    f"route table {ROUTES_RELPATH} is wrong-shaped: route entry "
+                    f"#{i} required field `{field}` {what} (both `crate_pattern` "
+                    f"and `design` are required per the schema header)"
+                )
         doc_files.setdefault(design, set()).add(pattern)
     if not doc_files:
         # REQ-9 / R-HONEST-3: the route table is the enumeration source, and an

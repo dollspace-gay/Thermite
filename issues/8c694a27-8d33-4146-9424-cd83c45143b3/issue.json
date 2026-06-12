@@ -1,0 +1,10 @@
+{
+  "uuid": "8c694a27-8d33-4146-9424-cd83c45143b3",
+  "display_id": 281,
+  "title": "Divergence: l1::emit_string_runtime_l1 bytes_eq twin diverges from 07-strings REQ-20 on the empty window at an OOB offset (certified ens panics at runtime)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T12:25:47.313131825Z",
+  "updated_at": "2026-06-12T12:25:47.313131825Z"
+}

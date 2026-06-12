@@ -1,0 +1,10 @@
+{
+  "uuid": "1b24a94b-fbe6-4648-afb8-ff9da2e928c6",
+  "display_id": 262,
+  "title": "Doc-freshness backlog: re-audit + re-pin the routed .design docs the doc-drift gate reports DRIFTED (bootstrap, decision 4); CI step lands with the commit clearing the last item (REQ-10 sequencing)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T01:42:58.468453265Z",
+  "updated_at": "2026-06-12T01:42:58.468453265Z"
+}

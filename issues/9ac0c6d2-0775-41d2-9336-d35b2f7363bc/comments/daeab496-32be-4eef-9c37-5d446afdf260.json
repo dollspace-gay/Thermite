@@ -1,0 +1,10 @@
+{
+  "uuid": "daeab496-32be-4eef-9c37-5d446afdf260",
+  "issue_uuid": "9ac0c6d2-0775-41d2-9336-d35b2f7363bc",
+  "author": "Yffe",
+  "content": "Plan: bring README/skill/usage-banner current with the shipped proof-backends layer (#240-#253) — README trust-section paragraph + What-works bullet + inventory row + deferred note; skill gains the --engine row within the 6k budget; cli.rs usage banner gains [--engine verus|lean|auto]. Verify via full gauntlet.",
+  "created_at": "2026-06-12T01:00:53.726686378Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAr5HhMst4ibQlkWOrUcBu8lfQ7oZDk/6IZf1hDa7Np1sN8DD7LVzYafv8Pt0C6e6ll1EYxhLG1kaJr7/Q8G35CQ=="
+}

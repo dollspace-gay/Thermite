@@ -415,7 +415,13 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
     kernel-green with the standard axiom set `{propext, Classical.choice, Quot.sound}` (NO
     `sorryAx`/new axiom), every existing theorem (`while_rule`/`tv_meta_loop`,
     `body_ref_sound`, the `Stabilize.lean`/exec-bridge families) and ALL SHIPPED kernel pins
-    still green; `Thermite.lean` imports the new module. ALL in `lean/Thermite/Exec/WhileBody.lean`,
+    still green; `Thermite.lean` imports the new module. KERNEL-BAR MECHANICS (#265 critic
+    observation): the default `lake build` (`defaultTargets = ["Thermite"]`) elaborates only the
+    modules reachable from `Thermite.lean`, which imports `Exec/WhileBody.lean` but NOT the
+    `PinWhile*`/`PinExec*`/`Pin*` modules — so a pin's kernel check is asserted by EXPLICIT
+    per-module elaboration (`lake env lean Thermite/PinWhileDecShape.lean`, with its `#print
+    axioms`), not by the default build; "all pins green" means each pin module so elaborated, not
+    that `lake build` touched them. ALL in `lean/Thermite/Exec/WhileBody.lean`,
     composed AROUND `Exec/Stmt.lean` + `Exec/Loop.lean` (UNCHANGED — no re-proof of
     `body_ref_sound`/`while_rule`):
     - **REQ-11.1 SHIPPED** — `def whileBodyDenote (prefixB cond lbody tail fuel st)` (the
@@ -437,8 +443,16 @@ project-min aggregate, the mechanized `S`) are SHIPPED and quoted below.
       (h_cond_total) (h_progress) (h_dec) : ∀ st, I st → ∃ fuel stf, loopDenote cond lbody
       fuel st = some stf` — the TERMINATION bridge (dec-validity + progress ⟹ the exit
       witness `while_rule` HYPOTHESIZES, the REQ-1.2 `converges_imp_stabilizes` mirror). The
-      STATEMENT SHAPE is the §4.2.2 sketch verbatim (`h_dec : … → μ st' < μ st ∧ 0 ≤ μ st`).
-      Proof: strong induction on `(μ st).toNat` (`Nat.strongRecOn`). PROOF-DIFFICULTY NOTE
+      STATEMENT SHAPE matches the §4.2.2 sketch with ONE DECLARED SEMANTIC ADAPTATION (#265,
+      kernel-record `lean/Thermite/PinWhileDecShape.lean`, commit 92659eb7): the shipped `h_dec`
+      bound is the PRE-state `0 ≤ μ st` (`h_dec : … → μ st' < μ st ∧ 0 ≤ μ st`), which is the
+      strictly WEAKER hypothesis — so the shipped theorem is strictly MORE GENERAL than a
+      post-state-bounded (`0 ≤ μ st'`) one (the two shapes are NON-equivalent — the pin's
+      `shipped_hdec_is_not_the_pinned_shape`; the §4.2.2 sketch is now pinned to this PRE-state
+      shape to match). The pin's `loopDenote_exits_of_dec_design_shape` kernel-derives the
+      post-state-bounded statement as a one-line corollary, so the adaptation strengthens the
+      theorem, never weakens it. Proof: strong induction on `(μ st).toNat` (`Nat.strongRecOn`).
+      PROOF-DIFFICULTY NOTE
       (for the critic — the statement is NOT weakened): because `h_dec` bounds `0 ≤ μ st` (NOT
       `0 ≤ μ st'`), the proof needs a CASE SPLIT on `0 < μ st` — at `μ st = 0` a `cond`-true
       step gives `μ st' < 0`, where `(μ st').toNat = 0` does NOT strictly decrease, but the
@@ -1777,7 +1791,7 @@ theorem loopDenote_exits_of_dec (cond : ExecExpr) (lbody : Block)
     (h_progress   : ∀ st, I st → condBool cond st = some true →
                       (blockThread lbody st).isSome)
     (h_dec        : ∀ st st', I st → condBool cond st = some true →
-                      blockThread lbody st = some st' → μ st' < μ st ∧ 0 ≤ μ st') :
+                      blockThread lbody st = some st' → μ st' < μ st ∧ 0 ≤ μ st) :
     ∀ st, I st → ∃ fuel stf, loopDenote cond lbody fuel st = some stf
 ```
 
@@ -1787,6 +1801,20 @@ theorem loopDenote_exits_of_dec (cond : ExecExpr) (lbody : Block)
    HYPOTHESIZES is shown to EXIST. Proof shape: strong induction on `(μ st).toNat`. This is the
    REQ-1.2 pattern exactly: dec-validity is the discharge METHOD, the exit witness is the
    semantic CONTENT, and the bridge lemma carries one to the other — never assumed.
+
+   DECLARED ADAPTATION (the `h_dec` bound is the PRE-state `0 ≤ μ st`, NOT the post-state `0 ≤
+   μ st'`; #265, kernel-record `lean/Thermite/PinWhileDecShape.lean`, commit 92659eb7). The
+   PRE-state conjunct is the strictly WEAKER hypothesis, so the shipped theorem is strictly MORE
+   GENERAL than a post-state-bounded one: `μ st' < μ st ∧ 0 ≤ μ st'` forces `0 < μ st ⟹ 0 ≤ μ
+   st`, so the pin's `design_hdec_implies_shipped_hdec` derives the PRE-state premise from the
+   post-state one, and `loopDenote_exits_of_dec_design_shape` kernel-derives a post-state-bounded
+   COROLLARY of this very theorem (the two shapes are NON-equivalent — the pin's
+   `shipped_hdec_is_not_the_pinned_shape` exhibits an L1 instance with `μ := -lo` satisfying the
+   PRE-state premise while refuting the post-state one). The weaker premise costs a CASE SPLIT on
+   `0 < μ st`: at `μ st = 0` a `cond`-true step gives `μ st' < 0`, where `(μ st').toNat = 0` does
+   NOT strictly decrease, but `h_dec` at `st'` would then force `0 ≤ μ st'`, contradicting `μ st'
+   < 0`, so the next condition MUST be false and the loop exits in two fuel directly (the
+   builder's recorded proof structure — the `Exec/WhileBody.lean` `μ st = 0` arm).
 
 KERNEL BAR (the (v-a) gauntlet): `lake build` green; `#print axioms` for every new
 definition/theorem/pin within the standard set `{propext, Classical.choice, Quot.sound}` (NO

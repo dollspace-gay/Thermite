@@ -1,0 +1,10 @@
+{
+  "uuid": "7b14e4c2-c488-41de-9876-a6152644fbe1",
+  "issue_uuid": "b5674710-0a58-4405-99b1-74cc399f72d6",
+  "author": "Yffe",
+  "content": "Plan (R-FIX, single file tooling/doc-drift.py):\n\nRoot cause: load_doc_files iterates 'for route in data.get(route, [])' with no shape validation. When spec-routes.toml parses as valid TOML but route is non-list (route = 5 -> int) or a list of non-tables (route = [a] -> str entries), the loop / .get() calls raise an unhandled TypeError -> Python exits 1 with a traceback. Authority REQ-9: a malformed enumeration source is an ENVIRONMENT failure (exit 3, INCONCLUSIVE), never a drift finding (exit 1), never a traceback / fail-open.\n\nFix: after tomllib.load succeeds, validate the loaded shape inside load_doc_files: data.get(route) must be a list (else EnvironmentError3 naming the defect); each entry must be a dict/TOML table (else EnvironmentError3); each entrys design and crate_pattern must be a non-empty str (else EnvironmentError3). Any violation raises EnvironmentError3 with a loud message naming the defect, which main() catches -> exit 3. Composes with the #259 zero-routes guard already present. Convention: doc-drift.py deliberately does NOT mirror spec-discipline.pys fail-open return {route:[]}; a CI tripwire that fails open is a silent pass (R-HONEST-3), so malformed input is INCONCLUSIVE here.\n\nAlso: ungate test_c2 (remove @unittest.skipUnless) so it is permanent regression coverage.\n\nGauntlet: python3 -m unittest discover -s tooling/tests -v (12 run, 0 skipped, all pass); python3 tooling/doc-drift.py live (exit 1, 48 MISSING-PIN + 1 DRIFT); git diff -- scripts/audit.sh empty.",
+  "created_at": "2026-06-12T01:25:00.779161726Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAQxycjIpwTLpN0VRGLu+ewVerTVAUk8gpkJKHw+WUmzFepLWk/csTNFxBhBHkqyximNweacZdd3TQzaHmRS02BQ=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "07334098-a513-43d5-91b4-366e150bccbb",
+  "issue_uuid": "c9c66167-645b-4cb7-bd85-4e28d502b19a",
+  "author": "Yffe",
+  "content": "DONE (#277, the #276 prerequisite). Two commits on main: (1) fe75e80a — thermite-lower: TString slice/concat byte-content ensures (subrange/append); (2) b237d33d — design pin ceremony.\n\nCHANGE: emit_string_wrapper slice now emits ens result.data@ == self.data@.subrange(lo as int, hi as int); concat emits ens result.data@ == self.data@ + b.data@. VERIFIED bodies PROVE them via subrange-push loop invariants (verbatim trim REQ-16: ghost old_out + subrange(..,i+1) =~= subrange(..,i).push(s@[i]); loop-exit lift). No assume/external_body.\n\nO-1: slice_id flips 3v1e (old length-only ens) -> 4v0e (new) at real verus.\nO-2: cargo test --workspace --no-fail-fast (verus live) = 962 passed, 0 failed.\nO-3: golden diff added-ensures(+proof-aid)-only; string_demo 11v0e, parse_u64 38v0e.\nO-4: doc-drift.py exit 0 after the pin ceremony.\n\nTouched ONLY my manifest + the 9 claim-neutral pin docs. Audit builder files untouched.",
+  "created_at": "2026-06-12T09:49:13.282145362Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAE019H1daDku9pVIOufAKvISW0JpZKAxAnnLfut9zdmq123cM+zgA2/8kwVMCT5gZOZaWulnmwyon6HKb/AkjBQ=="
+}

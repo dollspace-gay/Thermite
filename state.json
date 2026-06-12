@@ -1,5 +1,5 @@
 {
-  "next_display_id": 282,
+  "next_display_id": 283,
   "next_comment_id": 572,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
@@ -9,6 +9,7 @@
     "0743acbf-4f2f-4845-8af2-0d21d2bd29f8": 110,
     "0780cfd6-0084-4f15-9004-0cdb3a2b0831": 119,
     "07ac7b46-eb9f-469f-95c4-08d383fc35d9": 112,
+    "07d43ddb-b41d-4988-98f7-2f8249ab12eb": 282,
     "07f17e2a-074d-4c15-8102-c9e0670bd21d": 238,
     "0879c2a5-ca30-4c06-97fe-e5dc14cd6eee": 216,
     "08b863b8-bea1-4552-acae-47515b5b7056": 158,
@@ -522,6 +523,16 @@
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAEYhCRj6aQHeeHkYG55I+wfVTL7x95Y18hw4G+C6/tC/dnSRX7sNC/uCa8stjT5c+XE2kxun9lniHj+evhc9hBQ=="
         }
       }
+    },
+    "07d43ddb-b41d-4988-98f7-2f8249ab12eb": {
+      "uuid": "07d43ddb-b41d-4988-98f7-2f8249ab12eb",
+      "display_id": 282,
+      "title": "RFC-1 (GH issue 2) compatibility review: check open work (271/272/273/275/280) + recent arcs against the Thermite 2 design",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T20:09:04.568729106Z",
+      "updated_at": "2026-06-12T20:09:04.568729106Z"
     },
     "07f17e2a-074d-4c15-8102-c9e0670bd21d": {
       "uuid": "07f17e2a-074d-4c15-8102-c9e0670bd21d",
@@ -9451,9 +9462,16 @@
     }
   },
   "next_milestone_id": 6,
+  "unsigned_event_warnings": [
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 646,
+      "timestamp": "2026-06-12T20:09:04.568729106Z"
+    }
+  ],
   "watermark": {
-    "timestamp": "2026-06-12T12:55:36.594050195Z",
+    "timestamp": "2026-06-12T20:09:04.568729106Z",
     "agent_id": "Yffe",
-    "agent_seq": 645
+    "agent_seq": 646
   }
 }

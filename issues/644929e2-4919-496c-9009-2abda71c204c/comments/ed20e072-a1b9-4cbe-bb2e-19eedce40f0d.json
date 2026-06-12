@@ -1,0 +1,10 @@
+{
+  "uuid": "ed20e072-a1b9-4cbe-bb2e-19eedce40f0d",
+  "issue_uuid": "644929e2-4919-496c-9009-2abda71c204c",
+  "author": "Yffe",
+  "content": "Fixed in commit 1523b7ed (single file tooling/doc-drift.py + its ungated regression test).\n\nRoot cause: the builder-era `if not design or not pattern: continue` in load_doc_files silently dropped a [[route]] entry missing/empty in a required field, shrinking the REQ-1 deduplicated-design checked set while the gate could exit 0 (a one-doc fail-open). The #260 type guards reject only present-but-wrong-type; None (missing key) and \"\" (empty) fell through.\n\nFix: after the type guards, raise EnvironmentError3 (exit 3, the #260 INCONCLUSIVE class) when design or crate_pattern is missing or empty, naming entry #i and the field; removed the now-unreachable continue. Authority: spec-routes.toml schema header (both fields \"# required\") + REQ-1/REQ-5/REQ-8/REQ-9 + R-HONEST-3. The REQ-8-or-REQ-9 alternative resolved to the wrong-shape exit-3 reading (schema says required -> reject uniformly), subsuming the MISSING-PIN reading and the design-missing \"acceptable\" case.\n\nTest: ungated test_c3_design_only_route_entry_must_not_vanish_into_exit_0 and TIGHTENED its assertion from exit in (1,3) to exactly 3.\n\nGauntlet (integer counts):\n- python3 -m unittest discover -s tooling/tests -v -> 13 run / 0 skipped / 0 failed\n- python3 tooling/doc-drift.py -> exit 1, 48 MISSING-PIN + 1 DRIFT (live tree unchanged; the missing/empty-field path is not exercised by the real table — all 107 entries carry both required fields)\n- git diff -- scripts/audit.sh -> empty (AC-7 byte-identical)\n\nNo new pub API. Handing back for acto-critic re-audit.",
+  "created_at": "2026-06-12T01:38:52.306743506Z",
+  "kind": "result",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1y++b5SIzxc/8t7sgB7aeTE/V/5efPIyZNorh+4ahhG/7TLAJo7sR1QqO4f8kK6KU2vCElst272p768NJogTDw=="
+}

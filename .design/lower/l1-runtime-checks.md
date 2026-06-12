@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — lower_l1 program-arg signature, golden-exists status, post-#4 growth note, #262)
+audited-sha: af1e6f2c71b8da74f0bedde4681e4ed62f3836ef (re-pinned 2026-06-12: #278 C8 coordinated-arc — lower.rs/validator.rs/l1.rs touched by the bytes_eq build at af1e6f2c71b8da74f0bedde4681e4ed62f3836ef; this doc's governed-file changes are the C8 emission/registration, claim-neutral to this doc's REQs)  (prior: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — lower_l1 program-arg signature, golden-exists status, post-#4 growth note, #262))
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2

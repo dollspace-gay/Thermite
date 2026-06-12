@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — Map half (REQ-2/REQ-6) SHIPPED via #123/C12 as the Vec-of-pairs TMap (see 13-map.md), not the vstd::map sketch; OQ-2/OQ-3 resolved, #262)  (re-pinned 2026-06-12: #277 — the TString slice/concat byte-content ens strengthening touched lower.rs; claim-neutral for this doc, only 07-strings REQ-4 amends)
+audited-sha: af1e6f2c71b8da74f0bedde4681e4ed62f3836ef (re-pinned 2026-06-12: #278 C8 coordinated-arc — lower.rs/validator.rs/l1.rs touched by the bytes_eq build at af1e6f2c71b8da74f0bedde4681e4ed62f3836ef; this doc's governed-file changes are the C8 emission/registration, claim-neutral to this doc's REQs)  (prior: fe75e80aaa5cc32d924f1485bad472abc8684995 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — Map half (REQ-2/REQ-6) SHIPPED via #123/C12 as the Vec-of-pairs TMap (see 13-map.md), not the vstd::map sketch; OQ-2/OQ-3 resolved, #262)  (re-pinned 2026-06-12: #277 — the TString slice/concat byte-content ens strengthening touched lower.rs; claim-neutral for this doc, only 07-strings REQ-4 amends))
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

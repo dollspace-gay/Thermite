@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "design_doc": ".design/m0-spikes.md",
+  "doc_hash": "sha256:1abfb05418575ebcb9f43c5d0863242be08128e03185f01eeb38b7bbc3a45551",
+  "stage": "planning",
+  "plans": [
+    {
+      "agent_id": "driver--plan-m0-the-two-de-risking-spikes-spike-1-substkit-toy-9c56",
+      "worktree": "/Users/maxine/code/.personal/Thermite/.worktrees/plan-m0-the-two-de-risking-spikes-spike-1-substkit-toy-9c56",
+      "started_at": "2026-06-12T21:08:06.264052+00:00",
+      "status": "running",
+      "blocking_gaps": 0,
+      "advisory_gaps": 0
+    }
+  ],
+  "runs": []
+}

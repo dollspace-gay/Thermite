@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: b1c7a995f8f940cb9be92b54a1e75624dd081eff (re-pinned 2026-06-12 to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state)
+audited-sha: cf4c5b94c807b73e788731d7ddfcaeee3cb00c44 (re-pinned 2026-06-12 — #268 needle exact-match hardening, REQ-7 anchor class: the interactive replay reconstruction's obligation-theorem needle (canonical_theorem_statement + reconstruct_replay, forge/src/engine.rs) is now an EXACT-name match via theorem_anchor_pos, never a prefix — a while-shaped multi-theorem file's thermite_obligation_<item>_entry/_converges siblings can no longer latch the bare contract theorem and drop the 5+2 conjunction; in-module pin added. Prior pin b1c7a995 re-pinned to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

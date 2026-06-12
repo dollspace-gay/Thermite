@@ -69,11 +69,15 @@
 //! | REQ-10.3 (the env→State correspondence emission — `stateOf`/`InRangeParams`/per-param `rfl`-lemmas) | SHIPPED (increment (iv-b), #253) | `pub fn export_item` routes a straight-line-body `Item::Fn` (a body with statements OR a bool result) to `export_straight_line_body`, which calls `emit_state_of` — emitting `def stateOf : Thermite.Env → Thermite.Exec.State` (params → State cells: int → `.int ⟨uW, v.ints x⟩`, bool → `.bool (v.bools p)`, slice → `(v.seqs xs).map (⟨uW, ·⟩)`; `scope := fun _ => false`, the spine's `inputState` exemplar) + the `InRangeParams` typed-input premise + the per-param correspondence `rfl`-lemmas (`asInt … = some ⟨uW, v.ints x⟩` / `asBool …` / `slices.map BVal.value = v.seqs xs`, the §4.1.4 compile-time tripwire). Non-test consumer: `engine::LeanEngine::discharge` exports + lake-checks the emitted file. Verified LIVE: `engine::tests::live_straight_line_body_is_proven` (incl. the OVERFLOW conjunct), `live_bool_result_body_is_proven_via_bindbool`. The `scope := false` EXP row is VERIFIED faithful against `thermite-tv::exec_stmt_encode::body_ref_state` (its initial `Env::new()` is empty — params are free inputs, not assignable cells; a body `assign` to a param is `none`/`Err` on both sides — `PinExecStateMisMap.lean`). |
 //! | REQ-10.4 (the HYPOTHESIZE obligation + the conjoined OVERFLOW theorem) | SHIPPED (increment (iv-b), #253) | `emit_body_theorems` emits BOTH the HYPOTHESIZE CONTRACT theorem (`bodyConverges body_block (stateOf v) r → denote 0 req … → denote 0 ens (bindResult … r)`, the result bound THROUGH `bodyConverges` — uniqueness FREE) AND the conjoined OVERFLOW theorem (`(bodyDenote body_block (stateOf v)).isSome` under `req`) in the SAME emitted file (the §4.1.5 conjunction rule). Result binding via `bindResult` (int → `bindInt … r.value`, bool → `bindBool … b`). The auto battery is `exec_body_tactic_battery`/`exec_overflow_tactic_battery`. Verified LIVE: `live_always_overflow_body_is_not_proven` — an always-overflow body's vacuous CONTRACT does NOT certify because the OVERFLOW conjunct FAILS (the PinExecOverflowVacuity Rust mirror). |
 //! | REQ-10.6 (the loop-class STRUCTURED refusal narrowed out of `NotPureContract`) | SHIPPED (increment (iv-b), #253) | `encode_exec_stmt` returns `ExportRefusal::LoopBody` for a `loop`/`while`/`break`/`continue`/mid-body-`return`/non-scalar-mutation (§4.1.7 — `S_B` mechanizes NO loop form); an Option/Result result is `ExportRefusal::OptResResult` (#254 — no `ExecVal` optres variant). Consumer: `LeanEngine::discharge` maps both to `Unknown` (an honest skip). Verified: `while_body_item_refuses_export`, `optres_result_item_refuses_export`. |
+//! | REQ-11.4 (the while-body widening — the (v) recognizer + `Inv_item`/`mu_item` + the FIVE per-item obligations + the TWO composed theorems + the loop battery) | SHIPPED (increment (v-b), #264) | `export_item` routes a body whose LAST statement before the tail is a v1 `Stmt::Loop(While)` (non-empty `invs` + `dec` + straight-line scalar body + a REQUIRED tail) to `export_while_body` (the (v) recognizer `recognize_while_body` mirroring `thermite-tv::recognize_v1_loop` arm-by-arm). It emits the prefix/cond/loop-body/tail `Exec.Block`/`ExecExpr` encodings over the width-bearing `cell_ctx` (REUSING `encode_exec_block`/`encode_exec_expr` — the D-6 width seam threaded, NOT hardcoded `u64`), `stateOf`/`InRangeParams`/the per-param `rfl` lemmas (REUSING `emit_state_of`), the NEW `Inv_item : Env → State → Prop` (the conjunct families — user invs shallow over cells, per loop-CELL SORT+RANGE, per read scalar PARAM SORT+RANGE (the #265-class missing-`n`-range fix — the step's no-overflow needs each param's width bound), other-param frame, per-cell scope) + `mu_item : State → Int` (the `dec` over cells), the FIVE per-item obligation theorems in the §4.2.4 DESIGN shapes (`_entry` = prefix-progress AND entry `∃ st₁, blockThread prefix_block (stateOf v) = some st₁ ∧ Inv_item v st₁`; `_pres`; `_progress`; `_dec` (the #265 PRE-state `0 ≤ μ st`); `_exit` = `∃ r, execDenote tail_expr st.env = some r ∧ <ens>`) with GENERATOR-FIXED proofs (the `WhileBattery` decode chains — `Bind.bindLeft`/sort/frame decode + the overflow `split` + `omega`, `hreq`-aware), and the TWO GENERATOR-FIXED composed theorems (the HYPOTHESIZE CONTRACT via `Thermite.Exec.while_compose`, the conjoined `_converges` via `Thermite.Exec.loopDenote_exits_of_dec` — NO `first \| … \| skip` heuristics). Non-test consumer: `engine::LeanEngine::{discharge,admits_auto}` exports + lake-checks. Verified LIVE: `forge/tests/lean_while.rs::count_certifies_l3_via_lean_auto` (the L1 linear family certifies L3 via lean-auto — all 5+2 kernel-accept, standard axioms) + `engine::tests::live_while_body_item_is_honest` (the in-process `Proven`). |
+//! | REQ-11.5 (the §4.2.5 refusal inventory stays LOUD) | SHIPPED (increment (v-b), #264) | `recognize_while_body` returns a structured `ExportRefusal::LoopBody` naming each OUT class: a `loop`-kind loop, a nested `Stmt::Loop`, a `while` NOT in last-statement position / inside an `if`, more than one loop, `Stmt::Break`/`Stmt::Continue`, a mid-body `Stmt::Return(_)`, a non-scalar assign, empty `invs` / `inv true`, a tail-less body; a spec-calling/combinator `inv`/`dec` clause is `ExportRefusal::OutOfFragment` (the (v) v1 residual — `encode_cell_prop`/`encode_cell_int` refuse a `specCall`/comb); an Option/Result result is `ExportRefusal::OptResResult` (#254). Each is the honest `LeanUnverifiable` skip, never a verdict. Verified: the `forge/tests/lean_while.rs` refusal matrix. |
+//! | REQ-11.7 (the REQ-9 mutation-accounting delta) | SHIPPED (increment (v-b), #264 — no code change in `check.rs`) | `check::lean_mutation_score` already routes each mutant through `engine::LeanEngine::admits_auto` → `export_item`. With the widened (v) recognizer an in-grammar while-body mutant now EXPORTS (tier auto), so `admits_auto` is `true` → the mutant is ATTEMPTED (counted in `attempted`), not `UntestedAgainstLean`; an out-of-grammar mutant still refuses → stays `untested`. The floor gate (`lean_proven_cert`'s `meets_floor` + the `0/0` backstop) thereby genuinely gates while items on the Lean path. The accounting FLOWS through the fragment widening with NO `check.rs` edit (verified, §4.2.7). |
 
 use crate::obligation::Obligation;
 use std::collections::BTreeMap;
 use thermite_syntax::{
-    BinOp, Block, Expr, IndexArg, Item, Pattern, PrimType, Program, SpecFnItem, Stmt, Type, UnaryOp,
+    BinOp, Block, Expr, IndexArg, Item, LoopKind, Pattern, PrimType, Program, SpecFnItem, Stmt,
+    Type, UnaryOp,
 };
 
 /// Why an item is NOT Lean-exportable (`.design/verified/proof-backends.md` §4 —
@@ -2100,6 +2104,16 @@ pub fn export_item(
             let is_pure_int_tail =
                 pure_tail_of_block(body_block).is_some() && result_is_int_sorted(&f.ret);
             if !is_pure_int_tail {
+                // THE WHILE-BODY DISPATCH (§4.2 / REQ-11, increment (v-b)): a body whose
+                // LAST statement before the tail is a v1 `Stmt::Loop(While)` (the
+                // `recognize_v1_loop` shape) is the (v) WHILE-BODY class — route to the
+                // while-body exporter. A non-while statement body (or a loop NOT in the
+                // recognized v1 shape) falls through to the straight-line exporter, which
+                // refuses any loop construct via `ExportRefusal::LoopBody` (§4.1.7). The
+                // recognizer mirrors `thermite-tv::recognize_v1_loop` arm-by-arm.
+                if block_has_trailing_while(body_block) {
+                    return export_while_body(obligation, f, &decls);
+                }
                 return export_straight_line_body(obligation, f, &decls);
             }
             let body = pure_tail_of_block(body_block)
@@ -2487,6 +2501,1324 @@ fn export_straight_line_body(
         tier: body_tier,
         registry_names,
     })
+}
+
+// ============================================================================
+// THE WHILE-BODY WIDENING (§4.2 / REQ-11; increment (v-b), blocker #264) — the
+// v1 WHILE-shape exporter. Extends the straight-line-body exporter (iv-b) past a
+// loop-free `S_B` block to the v1 WHILE shape: a straight-line PREFIX + a single
+// `while <cond>` (non-empty `invs` + `dec`, straight-line scalar body) as the LAST
+// statement before a REQUIRED tail — EXACTLY the set `thermite-tv`'s
+// `recognize_v1_loop` admits. Composes onto the kernel-proven spine WHILE-BODY layer
+// (`lean/Thermite/Exec/WhileBody.lean`: `whileBodyDenote`/`whileBodyConverges` +
+// `while_compose` + `loopDenote_exits_of_dec`).
+//
+// The emitted file carries (over `R_item`, the SAME registry machinery):
+//   - `prefix_block`/`loop_cond`/`loop_block`/`tail_expr` (the `Exec.Block`/`ExecExpr`
+//     encodings, REUSING `encode_exec_block`/`encode_exec_expr` — §4.2.4);
+//   - `stateOf`/`InRangeParams`/the per-param `rfl` lemmas (REUSING `emit_state_of`);
+//   - `Inv_item : Env → State → Prop` (FOUR conjunct families — §4.2.4) + `mu_item :
+//     State → Int` (the loop `dec` over cells);
+//   - the FIVE per-item obligation theorems (`_entry`/`_pres`/`_exit`/`_progress`/
+//     `_dec`) attempted by the loop auto battery (`hreq` threaded into the unfold set);
+//   - the TWO GENERATOR-PROVED composed theorems: the HYPOTHESIZE CONTRACT theorem
+//     (via `while_compose`, _entry + _pres + _exit) AND the conjoined `_converges`
+//     theorem (via `loopDenote_exits_of_dec`, _pres + _progress + _dec, then _exit's
+//     `∃ r`). A while item certifies ONLY when BOTH composed theorems kernel-accept
+//     (the §4.2.3 conjunction at the certificate level: NO partial-correctness L3 —
+//     the `_converges` theorem JOINTLY discharges OVERFLOW + TERMINATION).
+//
+// §4.2.5 refusals stay STRUCTURED: the `loop`-kind, nested/non-last/inside-if loops,
+// break/continue, mid-body return, non-scalar assign, empty-inv/weak-`inv true`, a
+// tail-less body each refuse `ExportRefusal::LoopBody`; a spec-calling/combinator
+// inv/dec clause is `ExportRefusal::OutOfFragment` (the (v) v1 residual).
+// ============================================================================
+
+/// Does `block`'s LAST statement (before the tail) syntactically appear to be a
+/// `while`-kind `Stmt::Loop`? The DISPATCH predicate (§4.2): only a body whose final
+/// statement is a `while` loop routes to the while-body exporter; everything else (a
+/// pure tail, a straight-line statement body, a `loop`-kind / non-last loop) goes to
+/// the straight-line exporter, which refuses any loop via `LoopBody`. The FULL v1
+/// recognition (the OUT classes) is in [`recognize_while_body`]; this is the cheap
+/// router so a `loop`-kind in last position is still recognized + refused with its
+/// NAMED reason (rather than slipping to the straight-line exporter's generic refusal).
+fn block_has_trailing_while(block: &Block) -> bool {
+    matches!(block.stmts.last(), Some(Stmt::Loop(_)))
+}
+
+/// The recognized v1 WHILE-BODY shape (§4.2.1, mirroring `recognize_v1_loop`): the
+/// straight-line prefix statements, the loop condition, the loop body block, the loop
+/// `dec`, the loop `invs`, and the tail expression. Borrowed from the source item.
+struct WhileBodyShape<'a> {
+    prefix: &'a [Stmt],
+    cond: &'a Expr,
+    loop_body: &'a Block,
+    dec: &'a Expr,
+    invs: &'a [thermite_syntax::Clause],
+    tail: &'a Expr,
+}
+
+/// Recognize the v1 WHILE-BODY shape, MIRRORING `thermite-tv::recognize_v1_loop`
+/// arm-by-arm (§4.2.1, the EXP correspondence). The body's LAST statement before the
+/// tail must be a `Stmt::Loop` with `kind: While(cond)`, non-empty `invs`, a `dec`, and
+/// a STRAIGHT-LINE SCALAR body (no nested loop / break / continue / mid-body return /
+/// non-scalar assign); the tail is REQUIRED. Returns a structured [`ExportRefusal`]
+/// naming the precise OUT-of-v1 reason (§4.2.5, all STRUCTURED, never silent):
+/// `ExportRefusal::LoopBody` for the shape rejects, an honest skip.
+fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, ExportRefusal> {
+    // The tail is REQUIRED (a tail-less while body refuses — §4.2.1 `tail := a REQUIRED
+    // tail ExecExpr`).
+    let tail = body_block.tail.as_deref().ok_or_else(|| {
+        ExportRefusal::LoopBody(
+            "tail-less while body (§4.2.1 — a v1 while body needs a REQUIRED tail \
+             ExecExpr as its result)"
+                .to_string(),
+        )
+    })?;
+
+    // The loop must be the LAST statement before the tail (mirrors
+    // `recognize_v1_loop`'s `split_last`).
+    let Some((last, prefix)) = body_block.stmts.split_last() else {
+        return Err(ExportRefusal::LoopBody(
+            "no loop statement (the v1 while arm requires a `while` loop as the last \
+             statement before the tail)"
+                .to_string(),
+        ));
+    };
+    let Stmt::Loop(loop_node) = last else {
+        return Err(ExportRefusal::LoopBody(
+            "the last statement before the tail is not a loop (v1's after-loop \
+             continuation is in scope ONLY when the loop is the last statement — a loop \
+             followed by further straight-line mutation is a v1.1 extension)"
+                .to_string(),
+        ));
+    };
+
+    // The PREFIX must itself be straight-line (no earlier loop / break / continue /
+    // mid-body return / nested-loop-under-if) — reject any of those.
+    for stmt in prefix {
+        reject_out_of_while_subset_stmt(stmt)?;
+    }
+
+    // The `loop`-kind is OUT (the multi-exit CPS shape — `binary_search`).
+    let cond = match &loop_node.kind {
+        LoopKind::While(c) => c.as_ref(),
+        LoopKind::Loop => {
+            return Err(ExportRefusal::LoopBody(
+                "`loop`-kind loop (the infinite-loop form is a multi-exit CPS shape — \
+                 the corpus `binary_search` uses `loop { if .. { return .. } }`; OUT of \
+                 the v1 single-`while` subset)"
+                    .to_string(),
+            ))
+        }
+    };
+
+    // Empty `invs` / the trivially-weak `inv true` is OUT (the after-loop `true ∧ ¬cond`
+    // is vacuous — the §4.2.5 weak-inv reject, mirroring `invariant_is_vacuous`).
+    if loop_node.invs.is_empty() {
+        return Err(ExportRefusal::LoopBody(
+            "`while` loop with no `inv` (v1's after-loop characterization needs a usable \
+             invariant)"
+                .to_string(),
+        ));
+    }
+    if loop_node
+        .invs
+        .iter()
+        .all(|clause| matches!(clause.expr, Expr::BoolLit(true)))
+    {
+        return Err(ExportRefusal::LoopBody(
+            "trivially-weak loop invariant (`inv true` — the after-loop `true ∧ ¬cond` \
+             characterization is vacuous; the loop cannot enter the rule)"
+                .to_string(),
+        ));
+    }
+
+    // The loop body must be straight-line SCALAR with NO nested loop / break / continue
+    // / mid-body return / non-scalar assign (mirrors `reject_out_of_subset_body` +
+    // `collect_assigned_cells`'s non-scalar reject).
+    reject_out_of_while_subset_body(&loop_node.body)?;
+
+    Ok(WhileBodyShape {
+        prefix,
+        cond,
+        loop_body: &loop_node.body,
+        dec: &loop_node.dec.expr,
+        invs: &loop_node.invs,
+        tail,
+    })
+}
+
+/// Reject an OUT-of-v1 while-body statement (§4.2.5, mirroring
+/// `thermite-tv::reject_out_of_subset_stmt`): a `Stmt::Loop` (nested loop), a `break`/
+/// `continue`, a mid-body `return`. Recurses into `if`-branch bodies (a break/return
+/// nested in an `if` is just as OUT). A straight-line scalar statement passes.
+fn reject_out_of_while_subset_stmt(stmt: &Stmt) -> Result<(), ExportRefusal> {
+    match stmt {
+        Stmt::Loop(node) => Err(ExportRefusal::LoopBody(format!(
+            "nested `{}` loop (a loop inside the prefix / loop body is OUT of the v1 \
+             single-`while` subset — its after-state is itself a fixpoint)",
+            node.kind.surface_keyword()
+        ))),
+        Stmt::Break => Err(ExportRefusal::LoopBody(
+            "`break` (a multi-exit control form — the after-loop characterization needs \
+             per-exit invariant conjuncts, a v2 extension)"
+                .to_string(),
+        )),
+        Stmt::Continue => Err(ExportRefusal::LoopBody(
+            "`continue` (a back-edge multi-exit control form — OUT of v1)".to_string(),
+        )),
+        Stmt::Return(_) => Err(ExportRefusal::LoopBody(
+            "mid-body `return` (the corpus `binary_search` uses `return None`/`return \
+             Some(mid)` — a multi-exit CPS form, OUT of v1)"
+                .to_string(),
+        )),
+        Stmt::If { then, else_, .. } => {
+            reject_out_of_while_subset_body(then)?;
+            if let Some(else_block) = else_ {
+                reject_out_of_while_subset_body(else_block)?;
+            }
+            Ok(())
+        }
+        Stmt::Assign { target, .. } => match target {
+            Expr::Path(segs) if segs.len() == 1 => Ok(()),
+            other => Err(ExportRefusal::LoopBody(format!(
+                "non-scalar assignment target {other:?} (the v1 loop state mutates only \
+                 bare scalar cells; `xs[i]=e` / `m.field=e` is OUT — a v2 sequence/struct \
+                 theory)"
+            ))),
+        },
+        Stmt::Let { .. } | Stmt::Expr(_) => Ok(()),
+    }
+}
+
+/// Reject an OUT-of-v1 while-body block (recurses statements, mirroring
+/// `thermite-tv::reject_out_of_subset_body`).
+fn reject_out_of_while_subset_body(body: &Block) -> Result<(), ExportRefusal> {
+    for stmt in &body.stmts {
+        reject_out_of_while_subset_stmt(stmt)?;
+    }
+    Ok(())
+}
+
+/// Collect the bare scalar cell names a straight-line loop body REBINDS (a v1
+/// `Stmt::Assign` to a bare in-scope name), recursing into `if`-branches. The cells are
+/// the loop-step parameters / the frame the obligations range over (mirrors
+/// `thermite-tv::collect_assigned_cells`). Sorted for a stable order.
+fn collect_while_cells(body: &Block) -> Vec<String> {
+    let mut cells = std::collections::BTreeSet::new();
+    collect_while_cells_block(body, &mut cells);
+    cells.into_iter().collect()
+}
+
+fn collect_while_cells_block(body: &Block, cells: &mut std::collections::BTreeSet<String>) {
+    for stmt in &body.stmts {
+        match stmt {
+            Stmt::Assign {
+                target: Expr::Path(segs),
+                ..
+            } if segs.len() == 1 => {
+                cells.insert(segs[0].clone());
+            }
+            Stmt::If { then, else_, .. } => {
+                collect_while_cells_block(then, cells);
+                if let Some(else_block) = else_ {
+                    collect_while_cells_block(else_block, cells);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Encode a Thermite [`Expr`] (over loop cells + params) into its SHALLOW cell-read
+/// Lean Int TERM — `execIntValue (st.env.vars "name")` for a scalar name, the math op
+/// for arith, `(st.env.slices "xs").length` for a slice `.len()`, the typed slice
+/// element for `xs[i]` (§4.2.4 — the cell-read encoder the `Inv_item`/`mu_item`
+/// denotations use). An OUT-of-shallow-fragment construct (a `specCall` / combinator /
+/// method beyond `.len()` / a cast to an unbounded sort) is a structured
+/// [`ExportRefusal::OutOfFragment`] — the (v) v1 residual (§4.2.1), an honest skip.
+fn encode_cell_int(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
+    match e {
+        Expr::IntLit { value, .. } => Ok(format!("({value} : Int)")),
+        Expr::Path(segs) if segs.len() == 1 => Ok(format!(
+            "(Thermite.Exec.execIntValue (st.env.vars {}))",
+            lean_str(&segs[0])
+        )),
+        Expr::Binary { op, lhs, rhs } => {
+            let l = encode_cell_int(lhs, ectx)?;
+            let r = encode_cell_int(rhs, ectx)?;
+            let sym = match op {
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                // Div/Rem/shift/bit over the SHALLOW Int reads are the math `Int` ops —
+                // faithful for the in-range cells the loop invariant ranges over. The
+                // bounded-overflow check lives in the OVERFLOW class (the loop body's
+                // `evalArith`), not the shallow predicate (a completeness concern,
+                // §4.2.2 soundness asymmetry).
+                BinOp::Div => "/",
+                BinOp::Rem => "%",
+                _ => {
+                    return Err(ExportRefusal::OutOfFragment(format!(
+                        "shallow cell-read arithmetic op {op:?} (the v1 loop inv/dec \
+                         fragment is cmp/arith/logic over scalar cells; shift/bit-ops are \
+                         a residual)"
+                    )))
+                }
+            };
+            Ok(format!("({l} {sym} {r})"))
+        }
+        Expr::Cast { expr, ty } => {
+            // A cast in the SHALLOW Int domain is the identity on the mathematical value
+            // (the contract compares mathematical values — `S_C`); only the bounded /
+            // `int`/`nat` casts are admitted (a non-int cast target is OUT).
+            encode_cast_target(ty)?;
+            encode_cell_int(expr, ectx)
+        }
+        Expr::MethodCall {
+            receiver,
+            name,
+            args,
+        } if name == "len" && args.is_empty() => {
+            // `xs.len()` over a slice param → the slice's element-list length.
+            if let Expr::Path(segs) = receiver.as_ref() {
+                if segs.len() == 1 && ectx.slice_elem.contains_key(&segs[0]) {
+                    return Ok(format!(
+                        "(((st.env.slices {}).length : Int))",
+                        lean_str(&segs[0])
+                    ));
+                }
+            }
+            Err(ExportRefusal::OutOfFragment(
+                "`.len()` on a non-slice-param receiver in the shallow loop fragment".to_string(),
+            ))
+        }
+        Expr::Ref { expr, .. } => encode_cell_int(expr, ectx),
+        other => Err(ExportRefusal::OutOfFragment(format!(
+            "shallow cell-read construct {other:?} is outside the v1 loop inv/dec \
+             fragment (cmp/arith/logic over scalar cells + params; a spec-call / \
+             combinator / non-`len` method is the (v) v1 residual — §4.2.1)"
+        ))),
+    }
+}
+
+/// Encode a Thermite [`Expr`] (a loop `inv` clause) into its SHALLOW cell-read Lean
+/// PROP TERM — a comparison over cell-read Ints (`≤`/`<`/`=`/…), a logical connective
+/// (`∧`/`∨`), or a negation (§4.2.4 — the `Inv_item` user-inv conjunct denotation, the
+/// Lean mirror of loop-TV's `encode_inv_clauses`). An OUT-of-shallow-fragment construct
+/// (a spec-call / combinator) is a structured [`ExportRefusal::OutOfFragment`] (the (v)
+/// v1 residual, §4.2.1).
+fn encode_cell_prop(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
+    match e {
+        Expr::BoolLit(b) => Ok(if *b {
+            "True".to_string()
+        } else {
+            "False".to_string()
+        }),
+        Expr::Binary { op, lhs, rhs } => {
+            let sym = match op {
+                BinOp::Eq => Some("="),
+                BinOp::Ne => Some("≠"),
+                BinOp::Lt => Some("<"),
+                BinOp::Le => Some("≤"),
+                BinOp::Gt => Some(">"),
+                BinOp::Ge => Some("≥"),
+                _ => None,
+            };
+            if let Some(sym) = sym {
+                let l = encode_cell_int(lhs, ectx)?;
+                let r = encode_cell_int(rhs, ectx)?;
+                return Ok(format!("({l} {sym} {r})"));
+            }
+            match op {
+                BinOp::And => Ok(format!(
+                    "({} ∧ {})",
+                    encode_cell_prop(lhs, ectx)?,
+                    encode_cell_prop(rhs, ectx)?
+                )),
+                BinOp::Or => Ok(format!(
+                    "({} ∨ {})",
+                    encode_cell_prop(lhs, ectx)?,
+                    encode_cell_prop(rhs, ectx)?
+                )),
+                other => Err(ExportRefusal::OutOfFragment(format!(
+                    "shallow loop-inv connective {other:?} (the v1 inv fragment is \
+                     cmp / ∧ / ∨ / ¬ over scalar cell reads — §4.2.1)"
+                ))),
+            }
+        }
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => Ok(format!("(¬ {})", encode_cell_prop(expr, ectx)?)),
+        other => Err(ExportRefusal::OutOfFragment(format!(
+            "shallow loop-inv construct {other:?} is outside the v1 loop inv fragment \
+             (a spec-calling / combinator invariant is the (v) v1 residual — §4.2.1)"
+        ))),
+    }
+}
+
+/// Encode the loop CONDITION into a `condBool loop_cond st = some true`-shaped Lean
+/// PROP over the cell reads — used by `Inv_item`'s shape needs ONLY for the §4.2.4
+/// `_progress`/`_exit` connection; the condition itself is encoded as an exec `ExecExpr`
+/// (`loop_cond`) for the spine, so this is the SHALLOW predicate form the battery
+/// reasons about. (Kept as a thin wrapper over [`encode_cell_prop`] so a non-shallow
+/// condition refuses the (v) residual.)
+fn encode_cond_shallow(cond: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
+    encode_cell_prop(cond, ectx)
+}
+
+/// Export a checked v1 WHILE-BODY item to a self-contained Lean file (§4.2 / REQ-11,
+/// increment (v-b)). The body is the v1 WHILE shape `recognize_while_body` admits;
+/// everything else refuses (§4.2.5). Emits the prefix/cond/loop-body/tail encodings,
+/// `Inv_item`/`mu_item`, the FIVE per-item obligations, and the TWO composed theorems
+/// (the §4.2.4 obligation set) over `R_item` (held fixed). A while item certifies ONLY
+/// when BOTH composed theorems kernel-accept (the §4.2.3 conjunction — the `_converges`
+/// theorem JOINTLY discharges OVERFLOW + TERMINATION; NO partial-correctness L3).
+fn export_while_body(
+    obligation: &Obligation,
+    f: &thermite_syntax::FnItem,
+    decls: &BTreeMap<String, SpecFnItem>,
+) -> Result<ExportedObligation, ExportRefusal> {
+    let body_block = f.body.as_ref().ok_or_else(|| {
+        ExportRefusal::NotPureContract(format!(
+            "fn `{}` is a boundary fn (no in-language body)",
+            f.name
+        ))
+    })?;
+
+    // The result-sort routing (int → BVal.value bridge; bool → bindBool; optres → #254).
+    let result = exec_result_of(&f.ret)?;
+
+    // Recognize the v1 WHILE shape (§4.2.1) — a structured refusal otherwise (§4.2.5).
+    let shape = recognize_while_body(body_block)?;
+
+    let params = f.params.clone();
+    let ctx = ctx_for_params(&params);
+    let exec_ctx = exec_ctx_for_params(&params);
+
+    // The contract clauses (the §4 form). A bool result reads `result` via `boolVar`.
+    let req = f.contract.req.expr.clone();
+    let ens: Vec<Expr> = f.contract.ens.iter().map(|c| c.expr.clone()).collect();
+
+    // THE HARD GATE (§4 mechanism 1) over req/ens (the loop contributes ∅ new spec-calls
+    // per §4.2.1, so the seed is the contract closure — the #226 closure is untouched).
+    // The loop `dec` and `invs` are denoted SHALLOWLY (no `R_item` `specCall`); a
+    // spec-calling inv/dec refuses out-of-fragment in `encode_cell_*` (the (v) residual),
+    // so it never contributes a registry name either.
+    let called = &obligation.env.spec_defs;
+    let mut direct: Vec<String> = Vec::new();
+    collect_all_call_names(&req, &mut direct);
+    for e in &ens {
+        collect_all_call_names(e, &mut direct);
+    }
+    let mut present: std::collections::BTreeSet<String> = direct.into_iter().collect();
+    let mut worklist: Vec<String> = present.iter().cloned().collect();
+    while let Some(n) = worklist.pop() {
+        if let Some(d) = decls.get(&n) {
+            let mut sub = Vec::new();
+            collect_all_block_call_names(&d.body, &mut sub);
+            collect_all_call_names(&d.dec.expr, &mut sub);
+            for c in sub {
+                if present.insert(c.clone()) {
+                    worklist.push(c);
+                }
+            }
+        }
+    }
+    let undefined: Vec<String> = present
+        .iter()
+        .filter(|n| !decls.contains_key(*n))
+        .cloned()
+        .collect();
+    if !undefined.is_empty() {
+        return Err(ExportRefusal::IncompleteRegistry(undefined));
+    }
+    let omitted: Vec<String> = present
+        .iter()
+        .filter(|n| !called.iter().any(|c| c == *n))
+        .cloned()
+        .collect();
+    if !omitted.is_empty() {
+        return Err(ExportRefusal::IncompleteRegistry(omitted));
+    }
+
+    // The contract tier (the body never carries spec-calls; a recursive-registry contract
+    // is the future interactive residual — refuse the auto path).
+    let contract_tier = tier_of(Some(&req), &ens, &req, None, called, decls);
+    if contract_tier == ExportTier::RecursiveInteractive {
+        return Err(ExportRefusal::OutOfFragment(format!(
+            "fn `{}` has a RECURSIVE-registry contract clause over a while body (the §4 \
+             stabilized form is the interactive residual; the while-body AUTO path is the \
+             fuel-free / static-unfold contract tier only)",
+            f.name
+        )));
+    }
+    let (req_c, ens_c): (Expr, Vec<Expr>) = if contract_tier == ExportTier::StaticUnfoldAuto {
+        (
+            unfold_spec_calls(&req, decls)?,
+            ens.iter()
+                .map(|e| unfold_spec_calls(e, decls))
+                .collect::<Result<_, _>>()?,
+        )
+    } else {
+        (req.clone(), ens.clone())
+    };
+
+    let (registry_block, registry_names) = build_registry(called, decls)?;
+
+    // Encode the contract clauses (req/ens) — a `result` read uses `boolVar` for a bool
+    // result. An OUT-of-fragment construct refuses before any file is emitted.
+    let bool_result = matches!(result, ExecResult::Bool);
+    let req_term = encode_contract_clause(&req_c, &ctx, bool_result)?;
+    let ens_terms = ens_c
+        .iter()
+        .map(|e| encode_contract_clause(e, &ctx, bool_result))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ens_term = conjoin(&ens_terms);
+
+    // Encode the exec PREFIX/COND/LOOP-BODY/TAIL (the spine `Exec.Block`/`ExecExpr`).
+    // The loop cells + their exec WIDTHS (the §4.2.4 family-(2) SORT/WIDTH facts). Each
+    // cell is `let mut`-introduced in the PREFIX; thread the prefix lets into an
+    // `ExecCtx` to capture each cell's declared width (default `u64` for an un-annotated
+    // `let mut`, matching the encoder's `width_of`). D-6 FIX: this width-bearing context
+    // is threaded into the cond/body/tail/cell-read encodings (NOT hardcoded `u64`), so a
+    // `u32`/`usize` loop cell encodes at its real width on EVERY read.
+    let mut cell_ctx = exec_ctx.clone();
+    for stmt in shape.prefix {
+        if let Stmt::Let { name, ty, .. } = stmt {
+            let w = ty
+                .as_ref()
+                .and_then(exec_int_ty)
+                .unwrap_or("Thermite.Exec.IntTy.u64");
+            cell_ctx.int_width.insert(name.clone(), w);
+        }
+    }
+
+    let prefix_block_term = encode_exec_block(
+        &Block {
+            stmts: shape.prefix.to_vec(),
+            tail: None,
+        },
+        &cell_ctx,
+    )?;
+    // D-6: the cond/tail's default literal width is the cell context's (the cells the
+    // cond/tail compares are width-typed); a bare `var` reads at its cell's `width_of`.
+    let loop_cond_term = encode_exec_expr(shape.cond, "Thermite.Exec.IntTy.u64", &cell_ctx)?;
+    let loop_block_term = encode_exec_block(shape.loop_body, &cell_ctx)?;
+    let tail_term = encode_exec_expr(shape.tail, "Thermite.Exec.IntTy.u64", &cell_ctx)?;
+
+    // The SHALLOW `Inv_item`/`mu_item` cell-read denotations (§4.2.4). A spec-calling /
+    // combinator inv/dec refuses here (the (v) v1 residual). Encoded over `cell_ctx` so a
+    // cell's range fact is stated at its declared width (D-6).
+    let inv_conjuncts = shape
+        .invs
+        .iter()
+        .map(|clause| encode_cell_prop(&clause.expr, &cell_ctx))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cond_shallow = encode_cond_shallow(shape.cond, &cell_ctx)?;
+    let mu_term = encode_cell_int(shape.dec, &cell_ctx)?;
+
+    // The env→State map + the per-param correspondence lemmas + the InRangeParams pred.
+    let (state_of_def, state_of_lemmas, in_range_pred) = emit_state_of(&params);
+    let cells: Vec<(String, &'static str)> = collect_while_cells(shape.loop_body)
+        .into_iter()
+        .map(|c| {
+            let w = cell_ctx.width_of(&c);
+            (c, w)
+        })
+        .collect();
+
+    // The param FRAME facts (§4.2.4 family 3): each PARAM (not a loop cell) reads the
+    // SAME value in the symbolic `st` as in `stateOf v` (the loop never mutates a param).
+    // The §4.2.4 family-(3) FRAME — but the cond/body/inv/dec read params (e.g. `n` in
+    // `lo < n`), so the obligations need each read scalar param's SORT+RANGE fact (the
+    // `_pres`/`_progress`/`_dec`'s overflow guard `lo+1 < 2^w` needs `n < 2^w`). The
+    // INTEGER scalar params (NOT loop cells) get a SORT fact `st.env.vars p = .int ⟨w,
+    // v.ints p⟩` (subsumes the bare frame: ties the read back to `stateOf v`'s definitional
+    // `v.ints p`) AND a RANGE fact `0 ≤ v.ints p < 2^w` (established at `_entry` from
+    // `InRangeParams`, preserved trivially — params never change). Slice/bool params keep
+    // the bare frame (no int range needed). The `_entry` obligation discharges these from
+    // `InRangeParams`; preservation is by reflexivity (the loop never mutates a param).
+    let cell_names: std::collections::BTreeSet<&str> =
+        cells.iter().map(|(c, _)| c.as_str()).collect();
+    let mut scalar_params: Vec<(String, &'static str)> = Vec::new();
+    let mut other_frame_facts: Vec<String> = Vec::new();
+    for p in &params {
+        if cell_names.contains(p.name.as_str()) {
+            continue;
+        }
+        if let Some(w) = exec_int_ty(&p.ty) {
+            scalar_params.push((p.name.clone(), w));
+        } else if slice_elem_ctor(&p.ty).is_some() {
+            let ls = lean_str(&p.name);
+            other_frame_facts.push(format!(
+                "(st.env.slices {ls} = (stateOf v).env.slices {ls})"
+            ));
+        } else if matches!(param_scalar_kind(&p.ty), ScalarKind::Bool) {
+            let ls = lean_str(&p.name);
+            other_frame_facts.push(format!("(st.env.vars {ls} = (stateOf v).env.vars {ls})"));
+        }
+    }
+
+    // The CONCRETE tail-value witness the `_exit` obligation's `∃ r` is closed with: for
+    // a tail `var <cell>` it is `.int ⟨w, <cell>_cellval st⟩` (the loop cell's value); for
+    // `var <param>` it is `.int ⟨w, v.ints param⟩`. A non-bare-scalar tail yields a
+    // SENTINEL (`?_`) → the `_exit` proof leaves an unsolved goal → `Unknown` (SOUND).
+    let cell_widths: BTreeMap<&str, &'static str> =
+        cells.iter().map(|(c, w)| (c.as_str(), *w)).collect();
+    let scalar_param_widths: BTreeMap<&str, &'static str> = scalar_params
+        .iter()
+        .map(|(p, w)| (p.as_str(), *w))
+        .collect();
+    let tail_witness = tail_witness_term(shape.tail, &cell_widths, &scalar_param_widths, &result);
+
+    // The CONCRETE entry-state witness (the prefix `let`-fold over `stateOf v`) the
+    // `_entry` obligation's `∃ st₁` is closed with (§4.2.4 — a `_`-metavar witness cannot
+    // be `simp`-synthesized against `some ?st₁`).
+    let prefix_witness = prefix_witness_term(shape.prefix);
+
+    let thm_name = format!("thermite_obligation_{}", sanitize(&obligation.item));
+    let body = emit_while_theorems(WhileTheoremCtx {
+        thm_name: &thm_name,
+        req_term: &req_term,
+        ens_term: &ens_term,
+        prefix_block_term: &prefix_block_term,
+        loop_cond_term: &loop_cond_term,
+        loop_block_term: &loop_block_term,
+        tail_term: &tail_term,
+        state_of_def: &state_of_def,
+        state_of_lemmas: &state_of_lemmas,
+        in_range_pred: &in_range_pred,
+        inv_conjuncts: &inv_conjuncts,
+        cond_shallow: &cond_shallow,
+        mu_term: &mu_term,
+        cells: &cells,
+        scalar_params: &scalar_params,
+        other_frame_facts: &other_frame_facts,
+        result: &result,
+        prefix_witness: &prefix_witness,
+        tail_witness: &tail_witness,
+    });
+
+    let source = format!(
+        "/- AUTO-GENERATED by `forge` (lean_export.rs) — the Thermite→Lean WHILE-BODY\n   \
+         obligation exporter (proof-backends.md REQ-11 / §4.2, increment (v-b)). Item:\n   \
+         `{item}`, v1 while-body class. Composes onto the kernel-proven spine WHILE-BODY\n   \
+         layer (`lean/Thermite/Exec/WhileBody.lean`: `whileBodyConverges`/`while_compose`/\n   \
+         `loopDenote_exits_of_dec`); do NOT edit by hand. -/\n\
+         import Thermite.Stabilize\n\
+         import Thermite.Exec.WhileBody\n\n\
+         {registry_block}\n\n\
+         {body}\n",
+        item = obligation.item,
+    );
+
+    // The independent re-check (Pin G blind-spot fix): a residual contract-side
+    // `specCall` must be registered. The exec body / inv / dec never carry a `specCall`.
+    for name in emitted_spec_call_names(&body) {
+        if !registry_names.iter().any(|r| r == &name) {
+            return Err(ExportRefusal::IncompleteRegistry(vec![name]));
+        }
+    }
+
+    Ok(ExportedObligation {
+        source,
+        // The while-body AUTO path: the contract clause's tier (a)/(b) drives the auto
+        // battery; the loop obligations are attempted by the loop battery.
+        tier: contract_tier,
+        registry_names,
+    })
+}
+
+/// The per-cell / per-scalar-param decode bundle for the while-body battery: the
+/// generated Lean hypothesis NAMES the per-obligation proofs `obtain` the `Inv_item`
+/// conjuncts into, and the simp-lemma fragments built from them.
+struct InvBindings {
+    /// The flat `obtain ⟨…⟩` binder list (in `Inv_item` conjunct order).
+    binders: Vec<String>,
+    /// The per-cell SORT hyp names (`hsort_<i>`) — `vars cell = .int ⟨w, <cell>_cellval st⟩`.
+    cell_sorts: Vec<String>,
+    /// The per-scalar-param SORT hyp names (`hpsort_<i>`) — `vars p = .int ⟨w, v.ints p⟩`.
+    param_sorts: Vec<String>,
+    /// The per-scalar-param RANGE hyp names (`hprange_<i>`) — `0 ≤ v.ints p ∧ … < 2^w`.
+    param_ranges: Vec<String>,
+    /// The per-cell SCOPE hyp names (`hscope_<i>`) — `st.scope cell = true`.
+    cell_scopes: Vec<String>,
+}
+
+/// The arguments to [`emit_while_theorems`] (grouped to keep the signature small —
+/// `clippy::too_many_arguments`).
+struct WhileTheoremCtx<'a> {
+    thm_name: &'a str,
+    req_term: &'a str,
+    ens_term: &'a str,
+    prefix_block_term: &'a str,
+    loop_cond_term: &'a str,
+    loop_block_term: &'a str,
+    tail_term: &'a str,
+    state_of_def: &'a str,
+    state_of_lemmas: &'a str,
+    in_range_pred: &'a str,
+    inv_conjuncts: &'a [String],
+    cond_shallow: &'a str,
+    mu_term: &'a str,
+    cells: &'a [(String, &'static str)],
+    scalar_params: &'a [(String, &'static str)],
+    other_frame_facts: &'a [String],
+    result: &'a ExecResult,
+    prefix_witness: &'a str,
+    tail_witness: &'a str,
+}
+
+/// Emit the §4.2.4 while-body obligation set: the prefix/cond/loop-body/tail defs,
+/// `Inv_item`/`mu_item`, the FIVE per-item obligation theorems (with GENERATOR-FIXED
+/// proofs that decode the loop body/cond/tail down to QF linear arithmetic + `omega`),
+/// and the TWO composed theorems (CONTRACT via `while_compose`, `_converges` via
+/// `loopDenote_exits_of_dec`). The obligation SHAPES are the §4.2.4 design forms (the
+/// #265 critic pin): `_entry` is prefix-progress AND entry (`∃ st₁, blockThread
+/// prefix_block (stateOf v) = some st₁ ∧ Inv_item v st₁`); `_exit` is the `∃ r,
+/// execDenote tail_expr st.env = some r ∧ <ens>` form (the tail's own obligation rides
+/// in the `∃ r`); `_converges` is the design's `∃ r, whileBodyConverges …`.
+fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
+    let WhileTheoremCtx {
+        thm_name,
+        req_term,
+        ens_term,
+        prefix_block_term,
+        loop_cond_term,
+        loop_block_term,
+        tail_term,
+        state_of_def,
+        state_of_lemmas,
+        in_range_pred,
+        inv_conjuncts,
+        cond_shallow,
+        mu_term,
+        cells,
+        scalar_params,
+        other_frame_facts,
+        result,
+        prefix_witness,
+        tail_witness,
+    } = ctx;
+    // `Inv_item`'s conjunct families (§4.2.4): (1) the USER inv clauses (shallow over
+    // cells); (2) per loop-CELL SORT/WIDTH + RANGE facts (the type-range fact the Verus
+    // obligation gets for free, `l1Inv`'s precedent); (2b) per read scalar PARAM SORT +
+    // RANGE facts (the cond/body reads params, so the no-overflow step needs each param's
+    // width bound too — the #265 critic's missing-`n`-range fix); (3) other-param FRAME
+    // (slice/bool); (4) SCOPE facts (the `Stmt.assign` progress guard).
+    let user_inv = if inv_conjuncts.is_empty() {
+        "True".to_string()
+    } else {
+        inv_conjuncts.join(" ∧ ")
+    };
+    // Per-cell VALUE abbreviation (`@[irreducible] def <cell>_cellval st := execIntValue
+    // (st.env.vars cell)`). The `@[irreducible]` keeps the sort fact `vars cell = .int
+    // ⟨w, <cell>_cellval st⟩` a NON-LOOPING rewrite (the abbrev never re-expands to the
+    // self-referential `execIntValue (vars cell)` under `simp only [hsort]`).
+    let cellval = |cell: &str| -> String { format!("{}_cellval", sanitize(cell)) };
+    let mut cellval_defs: Vec<String> = Vec::new();
+    let mut inv_families: Vec<String> = vec![format!("({user_inv})")];
+    let mut bind = InvBindings {
+        binders: vec!["hu".to_string()],
+        cell_sorts: Vec::new(),
+        param_sorts: Vec::new(),
+        param_ranges: Vec::new(),
+        cell_scopes: Vec::new(),
+    };
+    for (i, (cell, width)) in cells.iter().enumerate() {
+        let ls = lean_str(cell);
+        let cv = cellval(cell);
+        cellval_defs.push(format!(
+            "@[irreducible] def {cv} (st : Thermite.Exec.State) : Int := \
+             Thermite.Exec.execIntValue (st.env.vars {ls})"
+        ));
+        inv_families.push(format!(
+            "(st.env.vars {ls} = Thermite.Exec.ExecVal.int ⟨{width}, {cv} st⟩)"
+        ));
+        inv_families.push(format!("(0 ≤ {cv} st ∧ {cv} st < ({width}).bound)"));
+        bind.binders.push(format!("hsort_{i}"));
+        bind.binders.push(format!("hrange_{i}"));
+        bind.cell_sorts.push(format!("hsort_{i}"));
+    }
+    // Family (2b): per read scalar PARAM — its SORT (`vars p = .int ⟨w, v.ints p⟩`, which
+    // SUBSUMES the bare frame: ties the read back to `stateOf v`'s `v.ints p`) AND its
+    // RANGE (`0 ≤ v.ints p < 2^w`, established at `_entry` from `InRangeParams`).
+    for (i, (p, width)) in scalar_params.iter().enumerate() {
+        let ls = lean_str(p);
+        inv_families.push(format!(
+            "(st.env.vars {ls} = Thermite.Exec.ExecVal.int ⟨{width}, v.ints {ls}⟩)"
+        ));
+        inv_families.push(format!("(0 ≤ v.ints {ls} ∧ v.ints {ls} < ({width}).bound)"));
+        bind.binders.push(format!("hpsort_{i}"));
+        bind.binders.push(format!("hprange_{i}"));
+        bind.param_sorts.push(format!("hpsort_{i}"));
+        bind.param_ranges.push(format!("hprange_{i}"));
+    }
+    // Family (3): other-param FRAME (slice / bool) — the bare `= (stateOf v)` equality.
+    for (i, fact) in other_frame_facts.iter().enumerate() {
+        inv_families.push(fact.clone());
+        bind.binders.push(format!("hoframe_{i}"));
+    }
+    // Family (4): SCOPE — each loop-assigned cell is in scope (the `Stmt.assign` guard).
+    for (i, (cell, _)) in cells.iter().enumerate() {
+        inv_families.push(format!("st.scope {} = true", lean_str(cell)));
+        bind.binders.push(format!("hscope_{i}"));
+        bind.cell_scopes.push(format!("hscope_{i}"));
+    }
+    let cellval_block = cellval_defs.join("\n");
+    let inv_item_body = inv_families.join(" ∧ ");
+    // The `obtain ⟨…⟩` pattern (in the conjunct order above).
+    let obtain_pat = bind.binders.join(", ");
+    // The per-cell `cellval`-unfold list (for the FINAL goal-decode `omega`).
+    let cellval_unfolds: String = cells
+        .iter()
+        .map(|(c, _)| cellval(c))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // The simp-lemma fragments the proofs share.
+    // The SORT/decode rewrites (cells + params) used to decode `vars` reads in the hyps.
+    let sort_hyps_csv = {
+        let mut v = bind.cell_sorts.clone();
+        v.extend(bind.param_sorts.iter().cloned());
+        v.join(", ")
+    };
+    let sort_hyps_frag = if sort_hyps_csv.is_empty() {
+        String::new()
+    } else {
+        format!(", {sort_hyps_csv}")
+    };
+    let scope_hyps_csv = bind.cell_scopes.join(", ");
+    let scope_hyps_frag = if scope_hyps_csv.is_empty() {
+        String::new()
+    } else {
+        format!(", {scope_hyps_csv}")
+    };
+    let range_hyps_csv = bind.param_ranges.join(" ");
+    let unfold_frag = if cellval_unfolds.is_empty() {
+        String::new()
+    } else {
+        format!(", {cellval_unfolds}")
+    };
+
+    // The result binder + the `bindResult` value bridge (§4.1.1/§4.1.2).
+    let (binder, result_val, bind_result): (String, &str, String) = match result {
+        ExecResult::Int => (
+            "(r : Thermite.Exec.BVal)".to_string(),
+            "(Thermite.Exec.ExecVal.int r)",
+            "(Thermite.Exec.bindResult ({ v with specs := R_item } : Thermite.Env) \
+             (Thermite.Exec.ExecVal.int r))"
+                .to_string(),
+        ),
+        ExecResult::Bool => (
+            "(b : Bool)".to_string(),
+            "(Thermite.Exec.ExecVal.bool b)",
+            "(Thermite.Exec.bindResult ({ v with specs := R_item } : Thermite.Env) \
+             (Thermite.Exec.ExecVal.bool b))"
+                .to_string(),
+        ),
+    };
+    // `cond_shallow` (the `cond_holds` def) is DROPPED (D-7 dead emission); silence it.
+    let _ = cond_shallow;
+
+    // The shared SUB-PROOFS (the §4.2.4 batteries, each GENERATOR-FIXED — uniform decode
+    // chains validated against the L1 linear family; a nonlinear shape DEGRADES to an
+    // unsolved goal → `Unknown`, SOUND per REQ-3).
+    let bat = WhileBattery {
+        thm_name,
+        cells,
+        scalar_params,
+        sort_hyps_frag: &sort_hyps_frag,
+        scope_hyps_frag: &scope_hyps_frag,
+        range_hyps_csv: &range_hyps_csv,
+        unfold_frag: &unfold_frag,
+        obtain_pat: &obtain_pat,
+        result,
+        result_val,
+        prefix_witness,
+        tail_witness,
+    };
+
+    let entry_proof = bat.entry();
+    let pres_proof = bat.pres();
+    let progress_proof = bat.progress();
+    let dec_proof = bat.dec();
+    let exit_proof = bat.exit();
+    let contract_proof = bat.contract();
+    let converges_proof = bat.converges();
+    let _ = mu_term;
+
+    format!(
+        "{cellval_block}\n\n\
+         /-- The straight-line PREFIX block (§4.2.1 — a tail-less `Block`). -/\n\
+         def prefix_block : Thermite.Exec.Block := {prefix_block_term}\n\n\
+         /-- The loop CONDITION (`while <cond>`). -/\n\
+         def loop_cond : Thermite.Exec.ExecExpr := {loop_cond_term}\n\n\
+         /-- The straight-line SCALAR loop BODY (`Stmt::Loop.body`). -/\n\
+         def loop_block : Thermite.Exec.Block := {loop_block_term}\n\n\
+         /-- The tail value `ExecExpr` (the result at the exit state). -/\n\
+         def tail_expr : Thermite.Exec.ExecExpr := {tail_term}\n\n\
+         /-- The env→State map (§4.1.4): params → State cells (scope := false). -/\n\
+         {state_of_def}\n\n\
+         {lemmas}\n\n\
+         /-- `Inv_item` (§4.2.4): the conjunct families — (1) the user invs shallow over\n    \
+         cells, (2) per-cell SORT+RANGE, (2b) per read scalar PARAM SORT+RANGE (the\n    \
+         cond/body read params — the step's no-overflow needs each param's bound), (3)\n    \
+         other-param frame, (4) the loop-assigned cells are in scope. -/\n\
+         def Inv_item (v : Thermite.Env) (st : Thermite.Exec.State) : Prop :=\n  \
+         {inv_item_body}\n\n\
+         /-- `mu_item` (§4.2.4): the loop `dec` clause denoted over cells (shallow). -/\n\
+         def mu_item (st : Thermite.Exec.State) : Int :=\n  {mu_term}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name}_entry (LOOP-ENTRY, §4.2.4): under InRangeParams + req, the prefix\n    \
+         PROGRESSES AND the invariant holds at the loop-entry state. -/\n\
+         theorem {thm_name}_entry (v : Thermite.Env) :\n    \
+         ({in_range_pred}) →\n    \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
+         ∃ st₁, Thermite.Exec.blockThread prefix_block (stateOf v) = some st₁ ∧\n      \
+         Inv_item v st₁ := by\n\
+         {entry_proof}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name}_pres (LOOP-PRESERVATION, §4.2.4): `while_rule`'s `h_pres`. -/\n\
+         theorem {thm_name}_pres (v : Thermite.Env) :\n    \
+         ∀ st, Inv_item v st → Thermite.Exec.condBool loop_cond st = some true →\n      \
+         ∀ st', Thermite.Exec.blockThread loop_block st = some st' → Inv_item v st' := by\n\
+         {pres_proof}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name}_progress (§4.2.4): cond-totality + per-iteration body progress. -/\n\
+         theorem {thm_name}_progress (v : Thermite.Env) :\n    \
+         ∀ st, Inv_item v st →\n      \
+         (Thermite.Exec.condBool loop_cond st).isSome ∧\n      \
+         (Thermite.Exec.condBool loop_cond st = some true →\n        \
+         (Thermite.Exec.blockThread loop_block st).isSome) := by\n\
+         {progress_proof}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name}_dec (TERMINATION, §4.2.4): strict bounded-below descent of\n    \
+         `mu_item` (`loopDenote_exits_of_dec`'s `h_dec`, the #265 PRE-state shape). -/\n\
+         theorem {thm_name}_dec (v : Thermite.Env) :\n    \
+         ∀ st st', Inv_item v st → Thermite.Exec.condBool loop_cond st = some true →\n      \
+         Thermite.Exec.blockThread loop_block st = some st' →\n        \
+         mu_item st' < mu_item st ∧ 0 ≤ mu_item st := by\n\
+         {dec_proof}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name}_exit (LOOP-EXIT→ens, §4.2.4): at an exit state (`Inv ∧ ¬cond`)\n    \
+         the tail produces a result `r` and `ens` holds at `bindResult … r` (the tail's\n    \
+         own obligation rides in the `∃ r`). -/\n\
+         theorem {thm_name}_exit (v : Thermite.Env) :\n    \
+         ∀ st, Inv_item v st → Thermite.Exec.condBool loop_cond st = some false →\n      \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n        \
+         ∃ r, Thermite.Exec.execDenote tail_expr st.env = some r ∧\n          \
+         Thermite.denote 0 {ens_term} \
+         (Thermite.Exec.bindResult ({{ v with specs := R_item }} : Thermite.Env) r) := by\n\
+         {exit_proof}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name} (the HYPOTHESIZE CONTRACT theorem, §4.2.4) — GENERATOR-PROVED via\n    \
+         `Thermite.Exec.while_compose` (_entry + _pres) + _exit. -/\n\
+         theorem {thm_name} (v : Thermite.Env) :\n    \
+         ({in_range_pred}) →\n    \
+         ∀ {binder},\n    \
+         Thermite.Exec.whileBodyConverges prefix_block loop_cond loop_block tail_expr\n      \
+         (stateOf v) {result_val} →\n    \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
+         Thermite.denote 0 {ens_term} {bind_result} := by\n\
+         {contract_proof}\n\n\
+         set_option maxHeartbeats 1000000 in\n\
+         /-- {thm_name}_converges (the conjoined CONVERGENCE theorem, §4.2.3/§4.2.4) —\n    \
+         GENERATOR-PROVED via `Thermite.Exec.loopDenote_exits_of_dec` (_pres + _progress +\n    \
+         _dec) from the loop-entry state (_entry). JOINTLY discharges OVERFLOW +\n    \
+         TERMINATION; a while item certifies ONLY when this AND the CONTRACT theorem\n    \
+         kernel-accept (the §4.2.3 conjunction — NO partial-correctness L3). -/\n\
+         theorem {thm_name}_converges (v : Thermite.Env) :\n    \
+         ({in_range_pred}) →\n    \
+         Thermite.denote 0 {req_term} {{ v with specs := R_item }} →\n    \
+         ∃ r, Thermite.Exec.whileBodyConverges prefix_block loop_cond loop_block tail_expr\n      \
+         (stateOf v) r := by\n\
+         {converges_proof}",
+        lemmas = state_of_lemmas,
+    )
+}
+
+/// The GENERATOR-FIXED while-body battery — the proof emitters for the 5 per-item
+/// obligations + the 2 composed theorems (§4.2.4). The decode chains are validated
+/// against the L1 linear family (`while lo < n inv lo ≤ n dec n - lo { lo = lo + 1 }`);
+/// the per-cell / per-param SORT facts decode every `vars` read, the full `simp` folds
+/// the `blockThread`/`condBool` `Option`-monad, the overflow `if` is `split` (the
+/// in-range branch threads; the overflow branch is `omega`-refuted from the inv+param
+/// ranges), and `omega` closes the LINEAR goal. A nonlinear shape leaves an unsolved
+/// goal → the kernel rejects → `Unknown` (SOUND, REQ-3).
+struct WhileBattery<'a> {
+    thm_name: &'a str,
+    cells: &'a [(String, &'static str)],
+    scalar_params: &'a [(String, &'static str)],
+    sort_hyps_frag: &'a str,
+    scope_hyps_frag: &'a str,
+    range_hyps_csv: &'a str,
+    unfold_frag: &'a str,
+    obtain_pat: &'a str,
+    result: &'a ExecResult,
+    result_val: &'a str,
+    /// The concrete entry-state WITNESS term (the prefix's `let`-fold over `stateOf v`),
+    /// or the `(stateOf v)` SENTINEL (an unfoldable prefix → an honest non-witness, the
+    /// `_entry` proof degrades to Unknown).
+    prefix_witness: &'a str,
+    /// The concrete tail-VALUE witness (`.int ⟨w, …⟩` / `.bool …`) the `_exit` `∃ r` is
+    /// closed with, or `?_` (a non-bare-scalar tail → the proof degrades to Unknown).
+    tail_witness: &'a str,
+}
+
+impl WhileBattery<'_> {
+    /// The shared no-overflow normalization of the param/cell RANGE hyps to the LITERAL
+    /// `2^w` form (so the split's overflow `if` (a literal `2^w`) and the range hyps
+    /// unify under `omega`).
+    fn normalize_ranges(&self) -> String {
+        if self.range_hyps_csv.trim().is_empty() {
+            String::new()
+        } else {
+            format!(
+                "  simp only [Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width, \
+                 Int.reducePow] at {ranges}\n",
+                ranges = self.range_hyps_csv
+            )
+        }
+    }
+
+    /// Decode `hcond : condBool loop_cond st = some true` (or `= some false`) to a
+    /// shallow comparison over cell/param values (`Bind.bindLeft` for the `=<<`).
+    fn decode_cond(&self, target: &str, last_lemma: &str) -> String {
+        format!(
+            "  simp only [Thermite.Exec.condBool, loop_cond, Thermite.Exec.execDenote,\n    \
+             Thermite.Exec.asInt, Thermite.Exec.cmpVal, Thermite.Exec.asBool,\n    \
+             Thermite.Exec.execIntValue, Bind.bindLeft, bind, Option.bind, Option.some.injEq{sorts},\n    \
+             {last}] at {target}\n",
+            sorts = self.sort_hyps_frag,
+            last = last_lemma,
+            target = target,
+        )
+    }
+
+    /// Decode the loop body STEP `hstep : blockThread loop_block st = some st'` via a
+    /// full `simp` (folds the `Option`-monad, leaves the overflow `if`).
+    fn decode_step(&self, target: &str) -> String {
+        format!(
+            "  simp [loop_block, Thermite.Exec.blockThread, Thermite.Exec.stmtDenote,\n    \
+             Thermite.Exec.execDenote, Thermite.Exec.evalArith, Thermite.Exec.asInt,\n    \
+             Thermite.Exec.rawArith, Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width{sorts}{scopes}]\n    \
+             at {target}\n",
+            sorts = self.sort_hyps_frag,
+            scopes = self.scope_hyps_frag,
+            target = target,
+        )
+    }
+
+    /// `_pres`: one iteration carries `Inv ∧ cond` to `Inv`. Decode hyps, full-`simp` the
+    /// step, `split` the overflow `if`; the in-range branch `subst`s `st'` and re-proves
+    /// `Inv_item v st'` (unfold `lo_cellval` in the goal — `st'` is concrete, no `hsort`
+    /// cycle — then a SECOND `hsort` pass decodes the residual `st`-reads).
+    fn pres(&self) -> String {
+        format!(
+            "  intro st hInv hcond st' hstep\n  \
+             obtain ⟨{obtain}⟩ := hInv\n  \
+             simp only [Thermite.Exec.execIntValue{sorts}] at hu\n\
+             {decode_cond}\
+             {decode_step}  \
+             split at hstep\n  \
+             · simp only [Option.bind_some, Option.some.injEq] at hstep\n    \
+             subst hstep\n    \
+             simp only [Inv_item{unfolds}, Thermite.Exec.State.setVar, Thermite.Exec.State.bind,\n      \
+             Thermite.Exec.execIntValue, String.reduceEq, reduceIte, if_true, if_false,\n      \
+             ite_true, ite_false, Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width, Int.reducePow]\n    \
+             simp only [Thermite.Exec.execIntValue{sorts}]\n    \
+             refine ⟨{refine_holes}⟩ <;> first | omega | rfl | assumption | trivial | simp_all\n  \
+             · simp only [Option.bind_none, reduceCtorEq] at hstep",
+            obtain = self.obtain_pat,
+            sorts = self.sort_hyps_frag,
+            decode_cond = self.decode_cond("hcond", "decide_eq_true_eq"),
+            decode_step = self.decode_step("hstep"),
+            unfolds = self.unfold_frag,
+            refine_holes = self.inv_refine_holes(),
+        )
+    }
+
+    /// `_dec`: strict bounded-below descent of `mu_item`. Decode the cond + step, decode
+    /// the `mu` reads (via sort hyps, no `lo_cellval`), split the overflow `if`, `omega`.
+    fn dec(&self) -> String {
+        format!(
+            "  intro st st' hInv hcond hstep\n  \
+             obtain ⟨{obtain}⟩ := hInv\n\
+             {decode_cond}\
+             {decode_step}  \
+             simp only [mu_item, Thermite.Exec.execIntValue{sorts}] at hu ⊢\n  \
+             split at hstep\n  \
+             · simp only [Option.bind_some, Option.some.injEq] at hstep\n    \
+             subst hstep\n    \
+             simp only [Thermite.Exec.State.setVar, Thermite.Exec.execIntValue{sorts},\n      \
+             String.reduceEq, reduceIte, if_true, if_false, ite_true, ite_false]\n    \
+             constructor <;> omega\n  \
+             · simp only [Option.bind_none, reduceCtorEq] at hstep",
+            obtain = self.obtain_pat,
+            sorts = self.sort_hyps_frag,
+            decode_cond = self.decode_cond("hcond", "decide_eq_true_eq"),
+            decode_step = self.decode_step("hstep"),
+        )
+    }
+
+    /// `_progress`: cond-totality ∧ (cond=true → step.isSome). The cond is total (its
+    /// reads decode to a concrete `some _`); under `cond=true` the step is `some _`
+    /// (the overflow `if` true-branch — the in-range guard holds from the inv+param
+    /// ranges, the overflow branch is `omega`-refuted).
+    fn progress(&self) -> String {
+        format!(
+            "  intro st hInv\n  \
+             obtain ⟨{obtain}⟩ := hInv\n  \
+             simp only [Thermite.Exec.execIntValue{sorts}] at hu\n\
+             {normalize}  \
+             refine ⟨?_, ?_⟩\n  \
+             · simp only [Thermite.Exec.condBool, loop_cond, Thermite.Exec.execDenote,\n      \
+             Thermite.Exec.asInt, Thermite.Exec.cmpVal, Thermite.Exec.asBool, Bind.bindLeft,\n      \
+             bind, Option.bind, Option.isSome_some{sorts}]\n  \
+             · intro hcond\n\
+             {decode_cond}\n    \
+             simp [loop_block, Thermite.Exec.blockThread, Thermite.Exec.stmtDenote,\n      \
+             Thermite.Exec.execDenote, Thermite.Exec.evalArith, Thermite.Exec.asInt,\n      \
+             Thermite.Exec.rawArith, Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width{sorts}{scopes}]\n    \
+             split\n    \
+             · rfl\n    \
+             · exfalso; omega",
+            obtain = self.obtain_pat,
+            sorts = self.sort_hyps_frag,
+            scopes = self.scope_hyps_frag,
+            normalize = self.normalize_ranges(),
+            decode_cond = indent_block(&self.decode_cond("hcond", "decide_eq_true_eq"), "  "),
+        )
+    }
+
+    /// `_exit`: at the exit state (`Inv ∧ ¬cond`) the tail produces `r` and `ens` holds.
+    /// The tail value is `some (cell-or-param read)`; the exit cond gives `¬(cmp)`, which
+    /// with the inv closes the `ens` by `omega` (after decoding `denote`/`bindResult`).
+    fn exit(&self) -> String {
+        // The §4.2.4 `_exit` shape is `∃ r, execDenote tail_expr st.env = some r ∧ <ens>`.
+        // The CONCRETE tail value is the generator-computed `tail_witness` (a `_`-metavar
+        // cannot be `simp`-synthesized against `some ?r`). A non-bare-scalar tail yields a
+        // `?_` sentinel → the proof leaves an unsolved goal → `Unknown` (SOUND, REQ-3).
+        let result_decode = match self.result {
+            ExecResult::Int => "Thermite.Env.bindInt",
+            ExecResult::Bool => "Thermite.Env.bindBool",
+        };
+        format!(
+            "  intro st hInv hcond hreq\n  \
+             obtain ⟨{obtain}⟩ := hInv\n  \
+             simp only [Thermite.Exec.execIntValue{sorts}] at hu\n\
+             {decode_cond}  \
+             refine ⟨{tail_witness}, ?_, ?_⟩\n  \
+             · simp only [tail_expr, Thermite.Exec.execDenote{sorts}]\n  \
+             · simp only [Thermite.Exec.bindResult, {result_decode}, Thermite.denote,\n      \
+             Thermite.intVal, Thermite.arithDenote, Thermite.castDenote, Thermite.Exec.execIntValue,\n      \
+             String.reduceEq, reduceIte, if_true, if_false, ite_true, ite_false, Bind.bindLeft,\n      \
+             bind, Option.bind, Option.some.injEq, decide_eq_true_eq]\n    \
+             first | omega | rfl | trivial | simp_all",
+            obtain = self.obtain_pat,
+            sorts = self.sort_hyps_frag,
+            decode_cond = self.decode_cond("hcond", "decide_eq_false_iff_not"),
+            tail_witness = self.tail_witness,
+            result_decode = result_decode,
+        )
+    }
+
+    /// `_entry`: the prefix PROGRESSES (`blockThread prefix_block (stateOf v) = some st₁`)
+    /// AND `Inv_item v st₁` holds. The prefix is a function of `stateOf v`; reduce it to
+    /// a concrete state via a `have`, then witness it + prove `Inv_item` at that concrete
+    /// state (the cells are the `let`-introduced fresh values, the params are `stateOf
+    /// v`'s `v.ints p`, the ranges come from `InRangeParams`).
+    fn entry(&self) -> String {
+        // The prefix is a function of `stateOf v`; the §4.2.4 `_entry` shape is the
+        // EXISTENTIAL `∃ st₁, blockThread prefix_block (stateOf v) = some st₁ ∧ Inv st₁`.
+        // A `_`-metavar witness cannot be synthesized by `simp` (it cannot unify a
+        // metavar against `some ?st₁`), so the generator emits the CONCRETE entry-state
+        // witness (the prefix's `let`-fold over `stateOf v`); `simp` then closes the
+        // prefix-progress conjunct by `rfl`-reduction, and `Inv_item` follows. A prefix
+        // shape the witness emitter cannot fold deterministically degrades to an unsolved
+        // goal → `Unknown` (SOUND, REQ-3).
+        format!(
+            "  intro hrange hreq\n  \
+             simp only [Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width, Int.reducePow] at hrange\n  \
+             refine ⟨{witness}, ?_, ?_⟩\n  \
+             · simp [prefix_block, Thermite.Exec.blockThread, Thermite.Exec.stmtDenote,\n      \
+             Thermite.Exec.execDenote, Thermite.Exec.State.setVar, Thermite.Exec.State.bind, stateOf,\n      \
+             Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width]\n  \
+             · simp only [Inv_item{unfolds}, Thermite.Exec.State.setVar, Thermite.Exec.State.bind,\n    \
+             stateOf, Thermite.Exec.execIntValue, String.reduceEq, reduceIte, if_true, if_false,\n    \
+             ite_true, ite_false, Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width, Int.reducePow]\n    \
+             refine ⟨{refine_holes}⟩ <;> first | omega | rfl | trivial | simp",
+            witness = self.prefix_witness,
+            unfolds = self.unfold_frag,
+            refine_holes = self.inv_refine_holes(),
+        )
+    }
+
+    /// The CONTRACT theorem (§4.2.4) — GENERATOR-FIXED: `_entry` gives the loop-entry
+    /// state + `Inv`; `while_compose` (with `_pres` + the entry-`Inv`) yields the exit
+    /// state with `Inv ∧ ¬cond`; `_exit` produces the result + `ens`; the functional
+    /// `execDenote` forces the result equal to the converged one.
+    fn contract(&self) -> String {
+        let thm = self.thm_name;
+        format!(
+            "  intro hrange {rb} hconv hreq\n  \
+             obtain ⟨fuel, hrun⟩ := hconv\n  \
+             obtain ⟨st₁, hpre, hInf⟩ := {thm}_entry v hrange hreq\n  \
+             obtain ⟨stf, hInf2, hcondf, htail⟩ :=\n    \
+             Thermite.Exec.while_compose prefix_block loop_block loop_cond tail_expr (Inv_item v)\n      \
+             ({thm}_pres v) (stateOf v) fuel {result_val} hrun\n      \
+             (fun st₁' hpre' => by\n        \
+             have hEq : st₁' = st₁ := by rw [hpre] at hpre'; exact (Option.some.injEq _ _).mp hpre'.symm\n        \
+             subst hEq; exact hInf)\n  \
+             obtain ⟨r', htail', hens⟩ := {thm}_exit v stf hInf2 hcondf hreq\n  \
+             rw [htail] at htail'\n  \
+             have hRes : {result_val} = r' := (Option.some.injEq _ _).mp htail'\n  \
+             rw [hRes]; exact hens",
+            rb = self.result_binder(),
+            thm = thm,
+            result_val = self.result_val,
+        )
+    }
+
+    /// The `_converges` theorem (§4.2.3/§4.2.4) — GENERATOR-FIXED: `_entry` gives the
+    /// loop-entry state; `loopDenote_exits_of_dec` (from `_pres`/`_progress`/`_dec`)
+    /// yields the exit fuel; `while_rule` gives `Inv ∧ ¬cond` there; `_exit`'s `∃ r`
+    /// supplies the tail value; the whole-body `whileBodyDenote` is `some r`.
+    fn converges(&self) -> String {
+        let thm = self.thm_name;
+        format!(
+            "  intro hrange hreq\n  \
+             obtain ⟨st₁, hpre, hInf⟩ := {thm}_entry v hrange hreq\n  \
+             obtain ⟨fuel, stf, hrun⟩ :=\n    \
+             Thermite.Exec.loopDenote_exits_of_dec loop_cond loop_block (Inv_item v) mu_item\n      \
+             ({thm}_pres v)\n      \
+             (fun st hI => ({thm}_progress v st hI).1)\n      \
+             (fun st hI hc => ({thm}_progress v st hI).2 hc)\n      \
+             ({thm}_dec v) st₁ hInf\n  \
+             have hexit := Thermite.Exec.while_rule loop_cond loop_block (Inv_item v)\n    \
+             ({thm}_pres v) fuel st₁ stf hInf hrun\n  \
+             obtain ⟨r, htail, _⟩ := {thm}_exit v stf hexit.1 hexit.2 hreq\n  \
+             exact ⟨r, fuel, by\n    \
+             simp only [Thermite.Exec.whileBodyDenote, hpre, hrun, htail, bind, Option.bind]⟩",
+            thm = thm,
+        )
+    }
+
+    /// The `refine ⟨?_, …⟩` hole list for an `Inv_item` goal (one hole per conjunct
+    /// family: 1 user-inv + 2·cells + 2·params + other-frame + cells scope).
+    fn inv_refine_holes(&self) -> String {
+        let n = 1 + 2 * self.cells.len() + 2 * self.scalar_params.len();
+        // (other-frame facts are folded into the trailing `simp`; the explicit holes
+        // cover the user-inv + per-cell/param sort+range + scope conjuncts.)
+        let total = n + self.cells.len();
+        std::iter::repeat_n("?_", total)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// The bare result-binder name (`r` for int, `b` for bool).
+    fn result_binder(&self) -> &'static str {
+        match self.result {
+            ExecResult::Int => "r",
+            ExecResult::Bool => "b",
+        }
+    }
+}
+
+/// Indent every line of `s` by `pad` (for nesting a proof fragment under a bullet).
+fn indent_block(s: &str, pad: &str) -> String {
+    s.lines()
+        .map(|l| format!("{pad}{l}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Compute the CONCRETE entry-state witness term for the `_entry` obligation — the
+/// prefix `let`-fold over `stateOf v`. Each `let cell = <intLit/boolLit>` threads
+/// `((acc).setVar cell <val>).bind cell`. An init that is NOT an exec literal (the
+/// value would need the full exec denotation at the symbolic `stateOf v`) yields a
+/// SENTINEL (`stateOf v`) — the `_entry` proof then leaves an unsolved goal → `Unknown`
+/// (SOUND, REQ-3 — never a false Proven). The L1/sum prefix (`let mut x = 0`) folds
+/// cleanly.
+fn prefix_witness_term(prefix: &[Stmt]) -> String {
+    let mut acc = "(stateOf v)".to_string();
+    for stmt in prefix {
+        let Stmt::Let { name, ty, init, .. } = stmt else {
+            // A non-`let` prefix stmt: the witness cannot be folded deterministically —
+            // degrade (the proof leaves an unsolved goal → `Unknown`, SOUND, REQ-3).
+            return "(stateOf v)".to_string();
+        };
+        let val = match exec_literal_value(init, ty.as_ref()) {
+            Some(v) => v,
+            None => return "(stateOf v)".to_string(),
+        };
+        let ls = lean_str(name);
+        acc = format!("(({acc}.setVar {ls} {val}).bind {ls})");
+    }
+    acc
+}
+
+/// Compute the CONCRETE tail-value witness for the `_exit` obligation's `∃ r` — the
+/// `result`-sorted `ExecVal` the tail `ExecExpr` evaluates to at the exit state. For a
+/// bare scalar tail `<cell>` it is `.int ⟨w, <cell>_cellval st⟩` (the loop cell's value);
+/// for `<param>` it is `.int ⟨w, v.ints param⟩`; a `bool`-result bare tail is `.bool b`-
+/// shaped via the cell read. A non-bare-scalar tail (arith / index / method) yields the
+/// `?_` SENTINEL → the `_exit` proof leaves an unsolved goal → `Unknown` (SOUND, REQ-3).
+fn tail_witness_term(
+    tail: &Expr,
+    cell_widths: &BTreeMap<&str, &'static str>,
+    scalar_param_widths: &BTreeMap<&str, &'static str>,
+    result: &ExecResult,
+) -> String {
+    // Only a bare scalar read (`Path [name]`) has a closed-form witness; the int result
+    // binds the cell/param value, the bool result the cell's bool value.
+    if let Expr::Path(segs) = tail {
+        if segs.len() == 1 {
+            let name = segs[0].as_str();
+            match result {
+                ExecResult::Int => {
+                    if let Some(w) = cell_widths.get(name) {
+                        return format!(
+                            "(Thermite.Exec.ExecVal.int ⟨{w}, {}_cellval st⟩)",
+                            sanitize(name)
+                        );
+                    }
+                    if let Some(w) = scalar_param_widths.get(name) {
+                        return format!(
+                            "(Thermite.Exec.ExecVal.int ⟨{w}, v.ints {}⟩)",
+                            lean_str(name)
+                        );
+                    }
+                }
+                ExecResult::Bool => {
+                    // A bool-result bare tail's closed-form witness needs the cell's bool
+                    // value; v1 admits it via the env read. (No int-cell bool tail in the
+                    // L1 corpus — degrade to the `?_` sentinel, SOUND.)
+                }
+            }
+        }
+    }
+    "?_".to_string()
+}
+
+/// The Lean `ExecVal` term for an exec LITERAL `let` init (`intLit`/`boolLit`) at the
+/// `let`'s declared width (default `u64`), or `None` for a non-literal init (the witness
+/// cannot be computed without the full exec denotation — the `_entry` proof degrades).
+fn exec_literal_value(init: &Expr, ty: Option<&Type>) -> Option<String> {
+    match init {
+        Expr::IntLit { value, .. } => {
+            let w = ty
+                .and_then(exec_int_ty)
+                .unwrap_or("Thermite.Exec.IntTy.u64");
+            Some(format!("(Thermite.Exec.ExecVal.int ⟨{w}, {value}⟩)"))
+        }
+        Expr::BoolLit(b) => Some(format!("(Thermite.Exec.ExecVal.bool {b})")),
+        _ => None,
+    }
 }
 
 /// Encode a contract clause `Expr`, rewriting a `result` free-name read to the

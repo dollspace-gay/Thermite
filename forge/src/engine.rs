@@ -522,8 +522,19 @@ impl LeanEngine {
                 // A non-zero exit is a tactic/elaboration FAILURE — the engine could
                 // not kernel-check the theorem. This is `Unknown` (DEGRADE), NEVER
                 // `Refuted`: there is no witnessing input (REQ-3 anti-cheat — a Lean
-                // tactic failure is not a countermodel).
-                let detail = String::from_utf8_lossy(&out.stderr);
+                // tactic failure is not a countermodel). R-6(a): `lean` writes its
+                // diagnostics (`unsolved goals`, elaboration errors) to STDOUT, not
+                // stderr, so the Unknown reason must carry BOTH streams or it loses the
+                // diagnostic that explains WHY the obligation did not discharge.
+                let stdout = String::from_utf8_lossy(&out.stdout);
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                let detail = if stderr.trim().is_empty() {
+                    stdout.into_owned()
+                } else if stdout.trim().is_empty() {
+                    stderr.into_owned()
+                } else {
+                    format!("{stdout}\n{stderr}")
+                };
                 let head: String = detail.chars().take(400).collect();
                 Verdict::Unknown(Reason::IncompleteUnknown(format!(
                     "lake/lean did not kernel-accept the exported obligation (tactic \
@@ -2537,27 +2548,47 @@ mod tests {
         );
     }
 
-    // (10) REQ-10.6 — a WHILE-body item is REFUSED structurally (§4.1.7: S_B has no loop
-    // form). The export returns `ExportRefusal::LoopBody`; the engine maps it to Unknown
-    // (an honest skip), NEVER a verdict. Expected from §4.1.7 (R-CHAR-3). NO lake needed.
+    // (10) REQ-11.4/11.5 — THE NARROWED REFUSAL BOUNDARY (the #264 v-b DELIBERATE
+    // narrowing of the iv-b refusal — O-5). The v1 WHILE shape NOW EXPORTS (it is in the
+    // §4.2.1 grammar — a single `while` with non-empty `invs` + `dec`, a straight-line
+    // scalar body, the last statement before a REQUIRED tail). So the OLD blanket
+    // `while_body_item_refuses_export` no longer holds for the v1 shape — this test pins
+    // the NEW boundary: the v1 `count` shape EXPORTS (REQ-11.4), while a NON-v1 loop (a
+    // `loop`-kind multi-exit, §4.2.5) STILL refuses `ExportRefusal::LoopBody`. The
+    // narrowing is DELIBERATE, cited to §4.2.1 (NOT a silent deletion — R-HONEST-4).
     #[test]
     fn while_body_item_refuses_export() {
-        let src = "fn count(n: u64) -> u64 req true ens result == n fx pure \
-                   { let mut i = 0; while i < n inv i <= n dec n - i { i = i + 1; } i }";
-        let p = parse_program(src);
-        let o = fn_obligation(&p, "count", vec![]);
-        if let Some(item) = crate::lean_export::find_item(&p, "count") {
-            let r = export_item(&o, &p, item);
+        // The v1 WHILE shape (the §4.2.1 grammar) now EXPORTS — the (v-b) widening.
+        let v1_src = "fn count(n: u64) -> u64 req true ens result == n fx pure \
+                      { let mut lo = 0; while lo < n inv lo <= n dec n - lo { lo = lo + 1; } lo }";
+        let p1 = parse_program(v1_src);
+        let o1 = fn_obligation(&p1, "count", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p1, "count") {
+            let r = export_item(&o1, &p1, item);
             assert!(
-                matches!(&r, Err(ExportRefusal::LoopBody(_))),
-                "a while-body item must REFUSE structurally (LoopBody): {r:?}"
+                r.is_ok(),
+                "the v1 WHILE shape (§4.2.1) now EXPORTS (the #264 v-b narrowing): {r:?}"
             );
         }
-        let engine = LeanEngine::new(p, lean_root());
-        let v = engine.discharge(&o);
+
+        // A `loop`-kind loop (the multi-exit CPS form, §4.2.5) STILL refuses with the
+        // NAMED structured reason (the refusal inventory stays LOUD — REQ-11.5).
+        let loop_src = "fn lp(n: u64) -> u64 req true ens result == n fx pure \
+                        { let mut lo = 0; loop inv lo <= n dec n - lo { lo = lo + 1; } lo }";
+        let p2 = parse_program(loop_src);
+        let o2 = fn_obligation(&p2, "lp", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p2, "lp") {
+            let r = export_item(&o2, &p2, item);
+            assert!(
+                matches!(&r, Err(ExportRefusal::LoopBody(d)) if d.contains("loop`-kind")),
+                "a `loop`-kind loop must STILL refuse structurally (§4.2.5): {r:?}"
+            );
+        }
+        let engine = LeanEngine::new(p2, lean_root());
+        let v = engine.discharge(&o2);
         assert!(
             matches!(v, Verdict::Unknown(_)),
-            "a refused loop body is an Unknown skip, never a verdict: {v:?}"
+            "a refused `loop`-kind body is an Unknown skip, never a verdict: {v:?}"
         );
     }
 
@@ -2582,6 +2613,202 @@ mod tests {
             matches!(v, Verdict::Unknown(_)),
             "a refused optres body is an Unknown skip, never a verdict: {v:?}"
         );
+    }
+
+    // ========================================================================
+    // THE WHILE-BODY WIDENING (§4.2 / REQ-11, increment (v-b), blocker #264) — the v1
+    // WHILE-shape exporter LIVE oracles. A v1-shaped item EXPORTS the 5+2 obligation set
+    // (recognizer mirroring `recognize_v1_loop`); under `--engine lean` the verdict is
+    // HONEST — `Proven` ONLY from a kernel-accepted sorry-free discharge, else `Unknown`
+    // (the §4.2.4 expected-coverage caveat), NEVER `Refuted` without a witnessed
+    // countermodel. Verdicts hand-derived (R-CHAR-3) from §4.2.3/§4.2.4.
+    // ========================================================================
+
+    // (O-1) REQ-11.4 — the v1 linear-family while item EXPORTS the full 5+2 obligation
+    // set, and the LIVE verdict is HONEST: NEVER `Refuted` (no witnessed countermodel),
+    // and `Proven` ONLY from a kernel-accepted sorry-free discharge — else `Unknown` (the
+    // §4.2.4 expected-coverage caveat — the auto battery degrades nonlinear/step-decode
+    // residuals to a SOUND fail-to-certify). The export emits `Inv_item`/`mu_item`, the
+    // five per-item obligations, and the two composed theorems (`while_compose` /
+    // `loopDenote_exits_of_dec`). Expected from §4.2.4 (R-CHAR-3): the EMISSION is correct;
+    // the verdict is sound either way (never a false Proven, never a false Refuted).
+    #[test]
+    fn live_while_body_item_is_honest() {
+        let src = "fn count(n: u64) -> u64 req true ens result == n fx pure \
+                   { let mut lo = 0; while lo < n inv lo <= n dec n - lo { lo = lo + 1; } lo }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "count", vec![]);
+        // The recognizer ACCEPTS the v1 shape and emits the 5+2 obligation set.
+        if let Some(item) = crate::lean_export::find_item(&p, "count") {
+            let exported = export_item(&o, &p, item);
+            assert!(
+                exported.is_ok(),
+                "the v1 while item must EXPORT: {exported:?}"
+            );
+            if let Ok(e) = &exported {
+                assert!(
+                    e.source.contains("def Inv_item") && e.source.contains("def mu_item"),
+                    "emits Inv_item + mu_item (§4.2.4): {}",
+                    e.source
+                );
+                for suffix in [
+                    "_entry",
+                    "_pres",
+                    "_progress",
+                    "_dec",
+                    "_exit",
+                    "_converges",
+                ] {
+                    assert!(
+                        e.source
+                            .contains(&format!("thermite_obligation_count{suffix}")),
+                        "emits the {suffix} obligation theorem: {}",
+                        e.source
+                    );
+                }
+                assert!(
+                    e.source.contains("Thermite.Exec.while_compose")
+                        && e.source.contains("Thermite.Exec.loopDenote_exits_of_dec"),
+                    "the composed theorems apply the (v-a) spine lemmas: {}",
+                    e.source
+                );
+                assert!(
+                    e.source.contains("Thermite.Exec.whileBodyConverges"),
+                    "the CONTRACT theorem binds the result THROUGH whileBodyConverges: {}",
+                    e.source
+                );
+            }
+        }
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live while-body verdict not run.");
+            return;
+        }
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        // THE O-1 STRONG GATE (R-1): the L1 linear family CERTIFIES — both composed
+        // theorems kernel-accept (sorry-free, the standard axioms), so the live verdict is
+        // `Proven` via lean-auto. NEVER `Refuted` (a refutation needs a witnessed
+        // countermodel; a tactic failure is `Unknown`, the REQ-3 anti-cheat).
+        assert!(
+            !matches!(v, Verdict::Refuted(_)),
+            "a while-body item is NEVER Refuted without a witnessed countermodel \
+             (REQ-3 anti-cheat — a tactic failure is Unknown): {v:?}"
+        );
+        assert!(
+            matches!(v, Verdict::Proven(_)),
+            "the L1 linear-family while item CERTIFIES (both composed theorems \
+             kernel-accept — R-1): {v:?}"
+        );
+    }
+
+    // (O-3) REQ-11.6 / §4.2.3 — THE TERMINATION-VACUITY GATE (the PinWhileVacuity Rust
+    // mirror). A `while`-true-shaped body whose loop NEVER exits must NOT certify L3 via a
+    // VACUOUS CONTRACT: the conjoined `_converges` obligation (`∃ r, whileBodyConverges …`)
+    // FAILS at the non-terminating env, so the ITEM is Unknown/degraded, NEVER Proven. The
+    // shape `while 0 < 1 inv lo <= lo dec 0 { lo = lo; }` runs forever (cond constant true,
+    // measure constant) — the `_converges`/`_dec` obligations cannot discharge. Expected
+    // from §4.2.3 (R-CHAR-3): the vacuous CONTRACT discharge is UNREACHABLE as a
+    // certificate (the conjunction gate); NEVER a silent L3 on a non-terminating body.
+    #[test]
+    fn live_while_true_vacuity_is_not_proven() {
+        // A non-exiting loop: `0 < 1` is constantly true, the measure `0` never descends.
+        let src = "fn spin(lo: u64) -> u64 req true ens result == lo fx pure \
+                   { let mut acc = lo; while 0 < 1 inv acc <= acc dec acc - acc { acc = acc; } acc }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "spin", vec![]);
+        if !lake_present() {
+            // Even without lake, the export must SUCCEED (the shape is in-grammar) — the
+            // gate is at discharge, not export. A `dec`/measure that never descends makes
+            // the `_dec`/`_converges` obligation FAIL, so the item degrades.
+            eprintln!("SKIP: lake not present — the while-true vacuity discharge not run.");
+            return;
+        }
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        let v = engine.discharge(&o);
+        assert!(
+            !matches!(v, Verdict::Proven(_)),
+            "a non-terminating `while true`-shaped body must NOT certify L3 — the conjoined \
+             `_converges` obligation fails (the §4.2.3 termination-vacuity gate, \
+             PinWhileVacuity mirror): {v:?}"
+        );
+        assert!(
+            !matches!(v, Verdict::Refuted(_)),
+            "a failed termination obligation is Unknown, NEVER Refuted (REQ-3): {v:?}"
+        );
+    }
+
+    // (O-2) REQ-11.5 — THE §4.2.5 REFUSAL INVENTORY (each its own structured refusal, the
+    // expected class from §4.2.5 — hand-derived, NOT from running the tool, R-CHAR-3).
+    // Every OUT-of-v1 shape gets a NAMED structured `ExportRefusal` (never silent, never a
+    // false verdict); under `--engine lean` each is the honest `Unknown` skip.
+    #[test]
+    fn while_refusal_inventory_is_structured() {
+        // Each case: (name, source, the refusal predicate). The shapes are the §4.2.5
+        // enumeration; the expected refusal class is DERIVED from the design, not the tool.
+        let nested = "fn f(n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv lo <= n dec n - lo \
+              { while lo < n inv lo <= n dec n - lo { lo = lo + 1; } } lo }";
+        let brk = "fn f(n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv lo <= n dec n - lo { break; } lo }";
+        let cont = "fn f(n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv lo <= n dec n - lo { continue; } lo }";
+        let mid_return = "fn f(n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv lo <= n dec n - lo { return lo; } lo }";
+        let weak_inv = "fn f(n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv true dec n - lo { lo = lo + 1; } lo }";
+
+        for (name, src) in [
+            ("nested-while", nested),
+            ("break", brk),
+            ("continue", cont),
+            ("mid-return", mid_return),
+            ("weak-inv-true", weak_inv),
+        ] {
+            let p = parse_program(src);
+            let o = fn_obligation(&p, "f", vec![]);
+            if let Some(item) = crate::lean_export::find_item(&p, "f") {
+                let r = export_item(&o, &p, item);
+                assert!(
+                    matches!(&r, Err(ExportRefusal::LoopBody(_))),
+                    "the `{name}` shape must REFUSE structurally (§4.2.5, LoopBody): {r:?}"
+                );
+                // Under `--engine lean` the refusal is the honest Unknown skip.
+                let engine = LeanEngine::new(p.clone(), lean_root());
+                let v = engine.discharge(&o);
+                assert!(
+                    matches!(v, Verdict::Unknown(_)),
+                    "the `{name}` refusal is an Unknown skip, never a verdict: {v:?}"
+                );
+            }
+        }
+
+        // A non-scalar assign in the loop body (`xs[i] = e`) — OUT of v1 (§4.2.5). The
+        // recognizer rejects it before encoding.
+        let non_scalar = "fn g(xs: &[u32], n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv lo <= n dec n - lo { xs[lo] = lo; lo = lo + 1; } lo }";
+        let p = parse_program(non_scalar);
+        let o = fn_obligation(&p, "g", vec![]);
+        if let Some(item) = crate::lean_export::find_item(&p, "g") {
+            let r = export_item(&o, &p, item);
+            assert!(
+                matches!(&r, Err(ExportRefusal::LoopBody(_))),
+                "a non-scalar assign body must REFUSE (§4.2.5): {r:?}"
+            );
+        }
+
+        // A spec-calling invariant — the (v) v1 residual (§4.2.1): OUT-of-shallow-fragment.
+        let spec_inv = "spec fn s(xs: &[u32]) -> u64 dec xs.len() { 0 } \
+            fn h(xs: &[u32], n: u64) -> u64 req true ens result == n fx pure \
+            { let mut lo = 0; while lo < n inv lo <= s(xs) dec n - lo { lo = lo + 1; } lo }";
+        let p = parse_program(spec_inv);
+        let o = fn_obligation(&p, "h", vec!["s".to_string()]);
+        if let Some(item) = crate::lean_export::find_item(&p, "h") {
+            let r = export_item(&o, &p, item);
+            assert!(
+                matches!(&r, Err(ExportRefusal::OutOfFragment(_))),
+                "a spec-calling invariant is the (v) v1 residual (§4.2.1, OutOfFragment): {r:?}"
+            );
+        }
     }
 
     // (5) REQ-6 §4 SCOPE: an OUT-of-fragment item (an out-of-spine struct-field

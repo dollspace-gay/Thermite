@@ -59,11 +59,9 @@ class DocDriftCriticTest(unittest.TestCase):
         self._tmp.cleanup()
 
     # --- C-1: zero-route table is a vacuous pass (fail-open) ----------------
-    @unittest.skipUnless(
-        _RUN_DIVERGENCE,
-        "divergence: empty route table exits 0 (vacuous pass) instead of 3; "
-        "REQ-9/R-HONEST-3; tracking crosslink #259",
-    )
+    # UNGATED (crosslink #259 fixed): an empty route table now exits 3
+    # (INCONCLUSIVE) per REQ-9 / R-HONEST-3. This is permanent regression
+    # coverage. (test_c2 below stays skip-gated for #260.)
     def test_c1_empty_route_table_must_not_exit_0(self):
         """REQ-9: 'The tool never exits 0 without having checked all 48 docs.'
 

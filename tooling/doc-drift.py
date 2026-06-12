@@ -222,6 +222,17 @@ def load_doc_files(root):
         if not design or not pattern:
             continue
         doc_files.setdefault(design, set()).add(pattern)
+    if not doc_files:
+        # REQ-9 / R-HONEST-3: the route table is the enumeration source, and an
+        # empty one means there is NOTHING to check — not "every routed doc is
+        # current". Exiting 0 here would be a vacuous green (fail-open silent
+        # pass), so an empty/usable-but-route-less table is INCONCLUSIVE (3),
+        # exactly like an unreadable one. ("The tool never exits 0 without
+        # having checked all 48 docs.")
+        raise EnvironmentError3(
+            f"route table {ROUTES_RELPATH} yielded zero routed docs — nothing "
+            f"to check; an empty enumeration source is INCONCLUSIVE, not a pass"
+        )
     return {doc: sorted(files) for doc, files in doc_files.items()}
 
 

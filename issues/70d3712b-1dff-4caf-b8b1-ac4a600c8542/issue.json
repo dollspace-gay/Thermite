@@ -2,11 +2,12 @@
   "uuid": "70d3712b-1dff-4caf-b8b1-ac4a600c8542",
   "display_id": 259,
   "title": "Divergence: doc-drift.py exits 0 on an empty route table (vacuous pass, REQ-9/R-HONEST-3)",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-12T01:19:18.917121783Z",
-  "updated_at": "2026-06-12T01:19:20.392456136Z",
+  "updated_at": "2026-06-12T01:23:45.009731635Z",
+  "closed_at": "2026-06-12T01:23:45.009731635Z",
   "labels": [
     "blocker"
   ]

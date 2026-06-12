@@ -1,7 +1,8 @@
 {
-  "next_display_id": 271,
-  "next_comment_id": 541,
+  "next_display_id": 272,
+  "next_comment_id": 542,
   "display_id_map": {
+    "3242ddca-61ca-4c06-a453-fcdd74db0964": 271,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
@@ -15,9 +16,26 @@
     "269": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T06:39:02.132777136Z"
+    },
+    "271": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:54:52.181228625Z"
     }
   },
   "issues": {
+    "3242ddca-61ca-4c06-a453-fcdd74db0964": {
+      "uuid": "3242ddca-61ca-4c06-a453-fcdd74db0964",
+      "display_id": 271,
+      "title": "solver-vacuity: spec-tightness signal — per-fn SMT query 'two distinct results satisfy the post for one req-satisfying input', report-only cert field (review item 6)",
+      "status": "open",
+      "priority": "medium",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:54:47.615845784Z",
+      "updated_at": "2026-06-12T06:54:49.116039985Z",
+      "labels": [
+        "feature"
+      ]
+    },
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": {
       "uuid": "6b4366c4-e03e-4dcb-bb9f-b23b344a9583",
       "display_id": 270,
@@ -97,10 +115,21 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:38:51.924231567Z",
-      "updated_at": "2026-06-12T06:38:55.470218608Z",
+      "updated_at": "2026-06-12T06:53:22.655164292Z",
       "labels": [
         "feature"
-      ]
+      ],
+      "comments": {
+        "73c7cd5c-1dfd-4d45-92f1-87901dfc42ee": {
+          "display_id": 541,
+          "author": "Yffe",
+          "content": "Doc-author dispatch: AMEND .design/forge/mutation-scoring.md with the two missing early-return families — REQ-9 F-IDENT (identity return, v1 by-value exact Type-equality match, one labeled mutant per matching param, family-1 placement), REQ-10 F-STRUCT-ZERO (Type::Named struct-literal of field zeros, OQ-5 drop mirroring the tuple rule, inv-violating zero = honest kill), REQ-11 generate() struct-defs seam (adt_deps threading via the three existing callers), REQ-12 CHECK_SCHEMA_VERSION bump + re-derived AC-5 order oracle, REQ-13 #101 equivalence + #247 Lean-path interaction. All NOT-STARTED behind this issue. Cert/oracle impact enumerated (sum.cert.json 17/18 UNAFFECTED under v1 scope; editor_runs.rs L3 pins expected red pre-tightening) + the mandatory one-arc landing order with #270 (filed). Doc-only commit; no code changes.",
+          "created_at": "2026-06-12T06:53:22.593551300Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAE0LQnSYf+NyV3FOExc2Q71R48q8fXrZhnEj66FYJuyKLIev+LvhPyLeFa8LHQzsvy68FtnIseNUneRxhg9Q5Cg=="
+        }
+      }
     }
   },
   "next_milestone_id": 1,
@@ -2909,11 +2938,31 @@
       "agent_id": "Yffe",
       "agent_seq": 561,
       "timestamp": "2026-06-12T06:47:15.866812481Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 562,
+      "timestamp": "2026-06-12T06:53:22.655164292Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 563,
+      "timestamp": "2026-06-12T06:54:47.615845784Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 564,
+      "timestamp": "2026-06-12T06:54:49.116039985Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 565,
+      "timestamp": "2026-06-12T06:54:52.181228625Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:47:15.866812481Z",
+    "timestamp": "2026-06-12T06:54:52.181228625Z",
     "agent_id": "Yffe",
-    "agent_seq": 561
+    "agent_seq": 565
   }
 }

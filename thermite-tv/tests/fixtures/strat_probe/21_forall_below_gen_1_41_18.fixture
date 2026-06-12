@@ -1,0 +1,9 @@
+# strat_probe fixture — gen#1.41#18
+shape: forall_below
+source: gen#1.41#18
+origin: generated
+hit: true
+--- production ---
+forall i . 0 <= i < (3 - k) & i < len(xs) => idx(xs, i) as u32 <= 54
+--- reference ---
+forall w . (w < len(xs) & w < (3 - k) & 0 <= w) => idx(xs, w) as u32 <= 54

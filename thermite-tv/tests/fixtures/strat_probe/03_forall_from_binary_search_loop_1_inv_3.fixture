@@ -1,0 +1,9 @@
+# strat_probe fixture — binary_search.loop#1.inv#3
+shape: forall_from
+source: binary_search.loop#1.inv#3
+origin: corpus
+hit: true
+--- production ---
+forall i . hi <= i < len(haystack) => idx(haystack, i) > needle
+--- reference ---
+forall w . (w < len(haystack) & hi <= w) => idx(haystack, w) > needle

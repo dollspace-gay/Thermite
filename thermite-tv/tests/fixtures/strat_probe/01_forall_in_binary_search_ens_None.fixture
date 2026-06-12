@@ -1,0 +1,9 @@
+# strat_probe fixture — binary_search.ens.None
+shape: forall_in
+source: binary_search.ens.None
+origin: corpus
+hit: true
+--- production ---
+forall i . 0 <= i < len(haystack) => idx(haystack, i) != needle
+--- reference ---
+forall w . (w < len(haystack) & 0 <= w) => idx(haystack, w) != needle

@@ -1,0 +1,9 @@
+# strat_probe fixture — binary_search.req
+shape: sorted
+source: binary_search.req
+origin: corpus
+hit: true
+--- production ---
+forall i j . 0 <= i <= j < len(haystack) => idx(haystack, i) <= idx(haystack, j)
+--- reference ---
+forall b a . (b < len(haystack) & a <= b & 0 <= a) => idx(haystack, b) >= idx(haystack, a)

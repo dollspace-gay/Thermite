@@ -1,0 +1,9 @@
+# strat_probe fixture — gen#1.52#20
+shape: exists_in
+source: gen#1.52#20
+origin: generated
+hit: true
+--- production ---
+exists i . 0 <= i & i < len(ys) & idx(ys, i) != 27
+--- reference ---
+exists w . idx(ys, w) != 27 & w < len(ys) & 0 <= w

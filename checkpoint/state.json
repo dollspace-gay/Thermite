@@ -1,8 +1,9 @@
 {
-  "next_display_id": 268,
-  "next_comment_id": 1,
+  "next_display_id": 269,
+  "next_comment_id": 538,
   "display_id_map": {
-    "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267
+    "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
+    "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268
   },
   "locks": {
     "264": {
@@ -12,6 +13,10 @@
     "267": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T04:40:20.473752192Z"
+    },
+    "268": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:21:04.327813279Z"
     }
   },
   "issues": {
@@ -23,9 +28,33 @@
       "priority": "low",
       "created_by": "Yffe",
       "created_at": "2026-06-12T04:40:15.537422397Z",
-      "updated_at": "2026-06-12T04:40:17.203547721Z",
+      "updated_at": "2026-06-12T04:43:47.678779890Z",
       "labels": [
         "analysis"
+      ],
+      "comments": {
+        "d172706a-e942-4965-89a4-66a20f36face": {
+          "display_id": 536,
+          "author": "Yffe",
+          "content": "Snapshot dating result: Review.md was written against a ~June 9-10 snapshot, NOT v0.0.1 (June 8) and not HEAD. Evidence: review describes Faithfulness.lean (#174, 06-09 15:31), SmtDemo (#184, 06-09 17:20), and the while layer (#163, 06-09 18:24) — all post-tag; but is ignorant of the Engine trait (#204, 06-11 00:02), LeanEngine (#240, 06-11 10:35), and cert engine attribution (#247, 06-11 12:49), which falsify its 'nothing in the cert flags the fragment' claim. Between her snapshot and HEAD the repo also ran the #248-#252 adversarial replay-soundness ratchet (5 critic-pinned bypass generations -> architectural root fix in ~5h), a live instance of the convergence-by-ratchet her §0 declares impossible.",
+          "created_at": "2026-06-12T04:43:47.638849310Z",
+          "kind": "observation",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAbQqIWOMbBkdJy9GSvAzuloXjKmlyBnMlNXsd11IvTThqKMv2dsLUQbH20Ravf/oL0nSg7dXGvgfhrd80fNbdBw=="
+        }
+      }
+    },
+    "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": {
+      "uuid": "b50c81fc-4d04-4a87-bd6a-6fddae379bc4",
+      "display_id": 268,
+      "title": "Interactive replay theorem-needle is a prefix match: latches thermite_obligation_<item>_entry over the bare contract theorem on multi-theorem (while-shaped) files — latent soundness seam, currently unreachable (while items are auto-tier)",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:20:55.857234545Z",
+      "updated_at": "2026-06-12T06:20:57.699174367Z",
+      "labels": [
+        "hardening"
       ]
     }
   },
@@ -2740,11 +2769,36 @@
       "agent_id": "Yffe",
       "agent_seq": 542,
       "timestamp": "2026-06-12T04:40:20.473752192Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 543,
+      "timestamp": "2026-06-12T04:43:47.678779890Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 544,
+      "timestamp": "2026-06-12T06:00:04.663585791Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 545,
+      "timestamp": "2026-06-12T06:20:55.857234545Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 546,
+      "timestamp": "2026-06-12T06:20:57.699174367Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 547,
+      "timestamp": "2026-06-12T06:21:04.327813279Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T04:40:20.473752192Z",
+    "timestamp": "2026-06-12T06:21:04.327813279Z",
     "agent_id": "Yffe",
-    "agent_seq": 542
+    "agent_seq": 547
   }
 }

@@ -2,11 +2,12 @@
   "uuid": "c9c66167-645b-4cb7-bd85-4e28d502b19a",
   "display_id": 277,
   "title": "thermite-lower: TString slice/concat wrapper ensures are length-only — add the byte-content relations (slice subrange, concat append); prerequisite for the #276 bytes_eq content pins",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-12T09:25:26.821705928Z",
-  "updated_at": "2026-06-12T09:49:13.539143737Z",
+  "updated_at": "2026-06-12T12:53:59.279820801Z",
+  "closed_at": "2026-06-12T12:53:59.279820801Z",
   "labels": [
     "blocker"
   ]

@@ -1,9 +1,10 @@
 {
-  "next_display_id": 279,
-  "next_comment_id": 558,
+  "next_display_id": 280,
+  "next_comment_id": 562,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
+    "31f10be8-568a-44f4-a5fd-64763717e190": 279,
     "3242ddca-61ca-4c06-a453-fcdd74db0964": 271,
     "5a240f21-e56b-4c09-8626-5b565805a7b4": 273,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
@@ -51,6 +52,10 @@
     "278": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T09:55:49.168256143Z"
+    },
+    "279": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T11:26:30.812653868Z"
     }
   },
   "issues": {
@@ -97,6 +102,20 @@
       "created_by": "Yffe",
       "created_at": "2026-06-12T07:02:47.469514397Z",
       "updated_at": "2026-06-12T07:02:49.393713715Z",
+      "labels": [
+        "blocker"
+      ]
+    },
+    "31f10be8-568a-44f4-a5fd-64763717e190": {
+      "uuid": "31f10be8-568a-44f4-a5fd-64763717e190",
+      "display_id": 279,
+      "title": "thermite-lower: lower_spec_arg drops the byte-view for a FIELD-ACCESS bytes_eq String operand (&result.text / &b.text -> &TString, E0308) — blocks #276 Arc-2",
+      "description": "thermite-lower::lower_spec_arg lowers a `bytes_eq` String OPERAND that is a FIELD ACCESS (`&result.text`, `&b.text`) to a `&TString` reference instead of the `Seq<u8>` byte view (`result.text.data@`), causing E0308 at real verus. This blocks #276 Arc-2 (the editor's bytes_eq content pins, whose operands MUST name `result.text` / `b.text` — the Buffer's text field).\n\nROOT CAUSE (thermite-lower/src/lower.rs, `lower_spec_arg`, ~lines 7595-7646):\n- The single-segment-path byteview rule (`if string_as_byteview && segs.len() == 1 && ctx.is_string(name)` -> `{name}.data@`) and the `&<single-segment-path>` ref-strip rule (`Expr::Ref { expr: Expr::Path(segs) } with segs.len()==1`) handle bare String idents (`&ins`, `&result`, `&a`) correctly.\n- A String operand that is `Expr::Field` (`result.text`, `b.text`) or `Expr::Ref { expr: Expr::Field {..} }` (`&result.text`, `&b.text`) is NOT matched, so it falls to `lower_expr` and emits `&result.text` (a `&TString`) — wrong type for `bytes_eq(a: Seq<u8>, b: Seq<u8>, ..)`.\n\nMINIMAL REPRO (verus-confirmed E0308 'expected Seq<u8>, found &TString'):\n  struct Buf { text: String, cursor: u64 } inv cursor <= text.len() && text.len() <= 1_000_000\n  fn ins(b: Buf, s: String) -> Buf\n    req b.text.len() + s.len() <= 1_000_000\n    ens result.text.len() == b.text.len() + s.len()\n    ens bytes_eq(&result.text, &b.text, 0, 0, b.cursor)\n    fx alloc\n  { let head: String = b.text.slice(0, b.cursor); let tail: String = b.text.slice(b.cursor, b.text.len());\n    Buf { text: head.concat(s).concat(tail), cursor: b.cursor + s.len() } }\nemits `__thermite_bytes_eq(&result.text, &b.text, 0 as int, ...)` -> E0308.\n\nThe C8 demo (conformance/bytes_eq_demo.th) never tripped this — it uses ONLY flat String params / the whole result (all single-segment paths). The gap is field-access String operands.\n\nFIX (in thermite-lower/src/lower.rs::lower_spec_arg only): when `string_as_byteview` and the operand is an `Expr::Field` (or `Expr::Ref` wrapping an `Expr::Field`) whose field type is `String`, emit `<base>.<field>.data@` (the `Seq<u8>` view), mirroring the existing single-segment `{name}.data@` rule. The field's String-ness check must use the in-scope struct/field type info (the same machinery the struct-invariant weave uses for `b.text`).\n\nACCEPTANCE: the minimal repro above certifies L3 through real verus; #276's editor.th `insert_str`/`backspace`/`render_frame` content pins certify L3; conformance/bytes_eq_demo.th + sum.th + bytes_eq_demo.cert.json byte-stable (no regression — only field-access operands change). Then #276 Arc-2 re-dispatches.\n\nSurfaced by #276 Arc-2 (3rd STOP). #277 + #278 already landed and work; this is a distinct, narrow lowering gap.",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T11:05:20.251560311Z",
+      "updated_at": "2026-06-12T11:05:21.997275186Z",
       "labels": [
         "blocker"
       ]
@@ -224,11 +243,23 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T09:20:28.923978018Z",
-      "updated_at": "2026-06-12T09:54:47.845058612Z",
+      "updated_at": "2026-06-12T11:05:58.582775651Z",
       "labels": [
         "feature"
       ],
+      "blockers": [
+        "31f10be8-568a-44f4-a5fd-64763717e190"
+      ],
       "comments": {
+        "40ec0275-697e-428b-ab7b-f6804e0dbb26": {
+          "display_id": 561,
+          "author": "Yffe",
+          "content": "ARC-2 final (#276) — HONEST STOP per O-5 + R-DEFER-9. A THIRD, DISTINCT blocker, surfacing only at the editor's REAL bodies (the C8 lemmas + #277/#278 plumbing all landed and work — the demo certifies).\n\nPLAN as designed (manifest a-d), pin shapes verbatim from the manifest / 07-strings.md REQ-18:\n- (a) insert_str: ens bytes_eq(&result.text,&b.text,0,0,b.cursor) | bytes_eq(&result.text,&ins,b.cursor,0,ins.len()) | bytes_eq(&result.text,&b.text,b.cursor+ins.len(),b.cursor,b.text.len()-b.cursor).\n- (b) backspace: prefix (0..cursor-1) + shifted suffix.\n- (c) render_frame: payload bytes_eq(&result,&b.text,8,0,b.text.len()) at the post-clear offset (clear.len()==8).\n\nVERIFIED WORKING (#278 pipeline is real): conformance/bytes_eq_demo.th certifies through the live forge -> slice_id L3 (2/2), insert_str L3 (3/3). emit_bytes_eq_defs emits the Seq<u8> def + the four prove-once lemmas + the contract-keyed proof{lemma_bytes_eq_bridge();} body-start citation. So #277 (slice/concat byte-content ens) AND #278 (bytes_eq built-in + bridge) are genuinely landed.\n\nNEW BLOCKER (toolchain limitation, NOT patchable within this manifest — distinct from both prior STOPs; NOT an induction/lemma gap this time, a LOWERING type-mismatch gap):\nthermite-lower::lower_spec_arg (thermite-lower/src/lower.rs, lines ~7633-7643) lowers a bytes_eq String OPERAND that is a single-segment path (&ins, &result, &a) correctly to <name>.data@ (the Seq<u8> byte view). But a String operand that is a FIELD ACCESS (&result.text, &b.text — Expr::Ref{ expr: Expr::Field{..} }, NOT Expr::Path) is NOT matched by the &-stripping byteview rule (it requires Expr::Path with segs.len()==1), so it falls through to lower_expr and emits &result.text / &b.text — a &TString reference — against bytes_eq's a: Seq<u8>, b: Seq<u8> signature. Real verus: E0308 'expected Seq<u8>, found &TString' at EVERY such conjunct. insert_str drops L3 -> L0.\n\nMINIMAL REPRO (verus-confirmed E0308): a Buffer-wrapped result with ONE pin\n  struct Buf { text: String, cursor: u64 } inv cursor <= text.len() && text.len() <= 1_000_000\n  fn ins(b: Buf, s: String) -> Buf req ... ens bytes_eq(&result.text, &b.text, 0, 0, b.cursor) { ... head.concat(s).concat(tail) ... }\nemits __thermite_bytes_eq(&result.text, &b.text, 0 as int, ...) -> E0308. The C8 demo never tripped this because bytes_eq_demo.th uses ONLY flat String params / the whole result (&text/&ins/&a/&result, all single-segment paths); the editor pins MUST name result.text / b.text (the Buffer's text field), which are field accesses — unavoidable, the editor wraps its String in a Buffer ADT and the manifest pin shapes (REQ-18 lines 666-672) spell &result.text / &b.text verbatim.\n\nWHY UN-FIXABLE IN THIS MANIFEST: the fix is in thermite-lower/src/lower.rs::lower_spec_arg — extend the byteview ref-strip rule to cover Expr::Field String operands (both the &result.text Ref-of-Field form and a bare result.text Field form), emitting <field-access>.data@ when the field's type is String and the callee takes the byte view. EXPLICITLY outside this manifest (editor.th / editor_runs.rs only). Flattening the editor's Buffer to avoid the field access is out of scope and would gut the editor's design; weakening the pins to length-only is the cheat O-5/R-DEFER-9 forbid.\n\nPER O-5 / R-DEFER-9: NOT weakening pins to vacuity, NOT flattening the editor, NOT patching the toolchain outside the manifest. STOP + report.\n\nBASELINE (O-2/O-3, before==after; NO edit committed): editor.th certifies L3 across the board — insert_str 4/4, backspace 6/6, render_frame 2/2 (length pins already kill F-IDENT). NO new survivors, NO regression. Manifest files UNTOUCHED. Prereq: a thermite-lower builder issue extending lower_spec_arg's byteview rule to field-access String operands must land FIRST.",
+          "created_at": "2026-06-12T11:04:48.659193639Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAK1dHPEk8MP2/CVQ4/ywXXftM3uK6En9WyrrP5l7V8v5tk7b1AoPshvTNZ6yf0ML3XbjtMK8BwN6RCr5Y51ycBg=="
+        },
         "aa0962b0-1bce-4cac-a30c-f4caf08ddf96": {
           "display_id": 557,
           "author": "Yffe",
@@ -324,10 +355,30 @@
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T09:55:42.860086165Z",
-      "updated_at": "2026-06-12T09:55:45.061738429Z",
+      "updated_at": "2026-06-12T10:59:25.868067198Z",
       "labels": [
         "blocker"
-      ]
+      ],
+      "comments": {
+        "0e53379a-ef9c-4df4-8f40-7f6c06cc26af": {
+          "display_id": 559,
+          "author": "Yffe",
+          "content": "Plan: C8 amendment designed in 07-strings.md (REQ-17..20): bytes_eq joins GENERATED_SPEC_FNS (zero skill tokens — generated spec fns don't render; combinator entry would blow the 6k budget +38), low-peel canonical recursion, the lemma set grounded live on real verus (core induction + converse + subrange corollary + the no-arg quantified lemma_bytes_eq_bridge that alone discharges slice_id + all 3 insert_str conjuncts + backspace + render payload, 16v0e; head/tail-swap mutant 15v1e non-vacuous), conditional emission via program_uses_bytes_eq (program_uses_parse precedent), contract-keyed block-start citation (#196).",
+          "created_at": "2026-06-12T10:12:38.199040767Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMoF7PR3FTfGED15OYezas9rwpnplNXas+B36B4BYJEsjsYtRq4QhAPXatCw6SthsISjfp/6JzSYjwURB7MRyCw=="
+        },
+        "8a955aab-d0aa-47b8-9f74-f0043e8b9e1e": {
+          "display_id": 560,
+          "author": "Yffe",
+          "content": "Build refinement: approach matched the plan — bytes_eq joins GENERATED_SPEC_FNS (zero skill tokens, budget held 5988/6000), emit_bytes_eq_defs materializes the low-peel def + four prove-once lemmas, program_uses_bytes_eq gate + contract-keyed body-start/in-loop lemma_bytes_eq_bridge() citation, L1 exec twin. TWO build-time refinements: (1) the &result/&a ref form (the design's pinned surface bytes_eq(&a,&b,..)) needed an Expr::Ref byte-view strip in lower_spec_arg; (2) ONE divergence from the verbatim text — the lemma_bytes_eq_bridge BODY was pinned signature-only (/*...*/), the grounded body required an explicit per-index subrange #[trigger] in the to_pointwise direction (raw =~= alone FAILED 11v1e). Fixture: conformance/bytes_eq_demo.th + golden (17v0e) + cert (slice_id L3 alloc). Commits af1e6f2c (build) + 40afcc19 (pins).",
+          "created_at": "2026-06-12T10:59:25.808571497Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAg7Im3+7O/3f2j2grRL1GxURFR7w/uZwU4MrkWGNT2eHErlyhwMZkvx3SWMaU8gagIVmMBk6tBgvu4LTQT31eDA=="
+        }
+      }
     },
     "f8090112-cc4a-4b06-b026-49bb0e0e8263": {
       "uuid": "f8090112-cc4a-4b06-b026-49bb0e0e8263",
@@ -337,11 +388,20 @@
       "priority": "medium",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:55:12.867050415Z",
-      "updated_at": "2026-06-12T09:25:02.756830812Z",
+      "updated_at": "2026-06-12T09:57:26.582802669Z",
       "labels": [
         "feature"
       ],
       "comments": {
+        "38979582-bc6c-4e8f-853d-f0d3edff5978": {
+          "display_id": 558,
+          "author": "Yffe",
+          "content": "RESULT (#274 — lean_fragment membership report SHIPPED).\n\nCommits:\n  1) 207c5858 forge: audit lean_fragment membership report (review item 7) (#274)\n  2) 10337c50 design: #274 pin — audited-sha bump (audit-manifest.md -> 207c5858)\n  3) df684130 design: #274 pin — bump the 7 docs governing check.rs/cli.rs -> 207c5858\n\nSection shape landed: additive top-level AuditManifest.lean_fragment.functions[], one row per functions row (source order), {name, exportable, tier: auto|interactive|none, tier_tag?, refusal?: {class, reason verbatim}}. manifest_version stays v1 (#[serde(default)] additive). REQ-7..10 SHIPPED in audit.rs + mirrored in the doc.\n\nREQ-8 closure: probe mints the #226 CONTRACT obligation via the new pub(crate) check::contract_obligation seam (a re-export of mint_item_obligations(...).contract — NO fork) and dry-runs the pure lean_export::export_item (no lake/fs/proc). AC-9 agreement + AC-10 no-lake tests green.\n\nsum.th HAND-TRACE VERDICT (the doc's REQ-8 caution, discharged): BOTH rows refuse class OutOfFragment, but NOT the spec-calling-inv reason the doc narrative grounded — sum is the RECURSIVE-registry contract-tier gate (ens result==spec_sum(xs) over self-recursive spec_sum => tier (c) over a while body); spec_sum is its slice-pattern match body (OUT of S_C), NOT exportable-interactive. Class OutOfFragment as specified; cases.json pins verbatim reasons from the shipped Display (R-CHAR-3). The doc's AC-7 parenthetical + report-shape example corrected (R-HONEST-4).\n\nGolden impact: ADDITIVE — all 4 pre-existing audit_conformance goldens pass UNMODIFIED; per-cert *.cert.json untouched (Certificate schema unchanged, engine_attribution stays None on the default path).\n\nGauntlet: cargo test -p forge 633 passed / 0 failed / 0 ignored (84 binaries, verus live); audit unit 10/0 (4 new), audit_conformance 12/0 (8 new); clippy -D warnings PASS; fmt PASS; doc-drift exit 0. Live probe: forge audit examples/editor/editor.th --json => ['Buffer:none','insert_str:none','backspace:none','move_left:none','move_right:none','count_nl:none'].\n\nHanding to acto-critic for adversarial re-audit of every manifest file.",
+          "created_at": "2026-06-12T09:57:26.456391824Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAA9xUNBteiZyvF2bD/GJ4HZxBAuX9u52cqU47ZT2qOxqllGIShlRxt+jaVFMpVkrzx7ttUP+4xwoNE7Nge+1KBQ=="
+        },
         "4da8b77a-8c91-42bd-896e-bf091bb65c39": {
           "display_id": 549,
           "author": "Yffe",
@@ -3451,11 +3511,51 @@
       "agent_id": "Yffe",
       "agent_seq": 607,
       "timestamp": "2026-06-12T09:55:49.168256143Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 608,
+      "timestamp": "2026-06-12T09:57:26.582802669Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 609,
+      "timestamp": "2026-06-12T10:12:38.235970175Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 610,
+      "timestamp": "2026-06-12T10:59:25.868067198Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 611,
+      "timestamp": "2026-06-12T11:04:48.735703734Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 612,
+      "timestamp": "2026-06-12T11:05:20.251560311Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 613,
+      "timestamp": "2026-06-12T11:05:21.997275186Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 614,
+      "timestamp": "2026-06-12T11:05:58.582775651Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 615,
+      "timestamp": "2026-06-12T11:26:30.812653868Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T09:55:49.168256143Z",
+    "timestamp": "2026-06-12T11:26:30.812653868Z",
     "agent_id": "Yffe",
-    "agent_seq": 607
+    "agent_seq": 615
   }
 }

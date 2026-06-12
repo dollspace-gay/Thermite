@@ -1,0 +1,10 @@
+{
+  "uuid": "b5674710-0a58-4405-99b1-74cc399f72d6",
+  "display_id": 260,
+  "title": "Divergence: doc-drift.py tracebacks with exit 1 on a TOML-valid but wrong-shaped route table (REQ-9 demands exit 3)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T01:19:26.199622690Z",
+  "updated_at": "2026-06-12T01:19:26.199622690Z"
+}

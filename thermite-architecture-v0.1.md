@@ -4,8 +4,9 @@ tags: ["thermite", "architecture"]
 sources: []
 contributors: ["Yffe"]
 created: 2026-06-04
-updated: 2026-06-04
+updated: 2026-06-12
 ---
+
 
 Source: thermite-design.md (v0.1 draft). Decisions made 2026-06-04 during roadmap planning.
 
@@ -34,3 +35,20 @@ Source: thermite-design.md (v0.1 draft). Decisions made 2026-06-04 during roadma
 - One way to do everything; zero-config formatter.
 - Locality: per-item parse/check/cache.
 - The contract is the interface; the certificate/manifest is the deliverable.
+
+
+## Addendum — state as of 2026-06-12 (#263)
+
+Everything in the original 'Deferred' list except MIR-level lowering has SHIPPED:
+- Runtime effect sandbox: live — forge build derives a seccomp-BPF filter from the fx row (.design/forge/runtime-sandbox.md); --target kernel emits freestanding rlibs.
+- Incremental goal-state holes: live — forge goal/fill/edit over ?N holes (.design/forge/goal-repl.md); a holed item never certifies.
+- MIR-level lowering: still deferred (#21); transpile-to-Verus remains the architecture.
+
+Major layers the v0.1 snapshot predates:
+- The verified primitive basis (Stages 1-8 + C1-C12): ADTs, recursion schemes, bounded collections/strings/Map, Option/Result, ergonomics (.design/basis/).
+- Translation validation + the Lean proof spine: per-run independent-encoder TV (forge tv/exec-tv/body-tv) + the kernel-checked lowering_faithful theorem (lean/, .design/verified/).
+- Proof backends (the second engine): backend-neutral Obligation + Engine interface; Verus is engine #1, Lean engine #2 via forge check --engine verus|lean|auto; per-obligation {engine, trust_profile} attribution; Proven-vs-Refuted disagreement is a hard SoundnessAlarm; interactive Lean proofs replay via canonical reconstruction (the #248-#252 injection arc closed). Exportable fragment today: pure contracts + straight-line bodies; while-loops are the named next increment (.design/verified/proof-backends.md, RATIONALE.md 'Proof backends').
+- Self-verification: the soundness-critical pure core is Verus-verified (thermite-verified; epic #60 holds the remaining Tier-1 ports).
+- Doc-drift tripwire: every routed .design doc pins an audited-sha; tooling/doc-drift.py + make doc-drift fail on staleness (#258; backlog work-off #262).
+
+Roadmap v0.1->v0.5: all five milestones closed. The four proven example programs (editor, formatter, calculator, CSV parser) are live in examples/.

@@ -100,6 +100,9 @@
 //! | REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `find(&self, p: &TString) -> Option<u64>` occurrence scan with the C7 spec-`match`-in-`ens` (`Some(at) => occurs_at(..), None => !contains_sub(..)`), reusing C7's `Type::Option` lowering. The `occurs_at` offset arg is cast `as int` (the `lower_expr` `Call` `occurs_fn` arm). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus L3; the PINNED Some case proves `result is Some`, the always-`None` mutant FAILS — #101 trap avoided). |
 //! | REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `split(&self, sep: u8) -> TVecTString` push-loop (the count partial + sep-free invariant); `emit_string_search_defs` emits the `count_sep`/`sep_free` spec fns + the `lemma_count_push` induction proof. `collect_vec_elem_types` weaves the `Vec<String>` element (→ `TVecTString`) when a C5 op is used so `split`'s result wrapper is always in scope. The surface `u64` `sep` is cast `as u8` at the call site (exec) + `as u8` in the `count_sep`/`sep_free` contract arg (spec). `count_sep` joins `nat_fns`. Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the count-bound + sep-free floor `7 verified, 0 errors`; a `split`-drop mutant FAILS, non-vacuous). The count-bound is the STRONGEST proved contract (NOT a reconstruct-round-trip). |
 //! | REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `trim(&self) -> TString` forward/backward whitespace scan + bounded copy (the subrange invariant `out@ == self.data@.subrange(lo, i)`); `emit_string_search_defs` emits the `is_space` spec fn. The whitespace test is inlined in the exec loop (`is_space` is a spec fn). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the length floor + subrange content `8 verified, 0 errors`). |
+//! | REQ-18 (canonical `Seq<u8>` recursive def + the FOUR prove-once bridge lemmas) | SHIPPED | #278 cluster C8. `emit_bytes_eq_defs` (called from `lower` after `emit_parse_defs`, gated on `program_uses_bytes_eq`) materializes the `Seq<u8>` LOW-PEEL `bytes_eq` def + the four reserved-named prove-once lemmas (`lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`) — the GROUNDED forms VERBATIM (the explicit `#[trigger] a[ai + k]` load-bearing; no append-window corollaries, the recorded simplification). `bytes_eq` joins `GENERATED_FREE_FNS`/`callee_takes_string_byteview` (the `a`/`b` operands → `.data@`, the `ai`/`bi`/`n` args → `as int`; the `&a` ref form stripped in `lower_spec_arg`). NO `assume`/`external_body`/`admit` (R-DEFER-9 — REAL induction proofs). DIVERGENCE (#265): the `lemma_bytes_eq_bridge` BODY (pinned `/*...*/` signature-only in the design) grounded here with an explicit per-index subrange `#[trigger]` in the `to_pointwise` direction (raw `=~=` FAILED `11 verified, 1 errors`); a body-fill within the pinned signature, not a statement-shape change. Consumer: `lower`. Verified: `thermite-lower/tests/bytes_eq_conformance.rs` (real verus — the emitted `bytes_eq_demo.th` lowering `17 verified, 0 errors`; the head/tail-swap mutant FAILS `16 verified, 1 errors`, non-vacuous) + golden `tests/golden/lower/bytes_eq_demo.verus.rs`. |
+//! | REQ-19 (`program_uses_bytes_eq` gate + the contract-keyed `lemma_bytes_eq_bridge()` citation) | SHIPPED | #278 cluster C8. `program_uses_bytes_eq` (the `program_uses_parse` gate shape — a contract/body `bytes_eq` `Call`, the #127 user-shadow exclusion) gates `emit_bytes_eq_defs`; every non-`bytes_eq` program is BYTE-STABLE (the conditional-emission precedent — verified `non_bytes_eq_program_does_not_emit_bytes_eq`). The citation is a NEW contract-keyed aid class (`fn_contract_names_bytes_eq`): `proof { __thermite_lemma_bytes_eq_bridge(); }` inserted as the FIRST body statement (`lower_fn_body`) + at each loop-body start (`lower_loop`, Verus loop isolation) — the #196 `render_mul_proof_block` block-start placement + the `nonlinear_overflow_assert` contract-keying. The reserved name is emitted directly (a user fn body is not reserve-rewritten — the `reserved_name("parse_u64")` call-site precedent). NO argument extraction (the no-arg quantified trigger does the instantiation). Consumer: `lower`. Verified: `thermite-lower/tests/bytes_eq_conformance.rs` (the citation present, the slice_id + 3-pin insert_str discharge with ONE citation, ZERO per-conjunct glue, `17 verified, 0 errors`). |
+//! | REQ-20 (`bytes_eq` L1 exec twin — the #104 build-side mirror) | SHIPPED | #278 cluster C8. `l1::emit_string_runtime_l1` gains the `bytes_eq(a, b, ai, bi, n) -> bool` exec twin (the bounds-checked byte-compare loop computing the SAME value as the `Seq<u8>` def — guards the in-window range, an out-of-window index is a runtime check failure not UB), gated on `program_uses_bytes_eq`; String args by value (`string_arg_count_l1("bytes_eq") == 2`, the call site `.clone()`s the two leading operands), `ai`/`bi`/`n` `u64` pass-through; NO verus proof (the L1 path is runtime-checked). Without it a `bytes_eq`-pinned fn would `forge check` but not `forge build`. Consumer: `lower_l1`. Verified: `thermite-lower/src/l1.rs` (the twin emitted; the C5/C7 family precedent — `forge build` lowers every contract to runnable L1). |
 //!
 //! ## REQ status — 13-map.md cluster C12 (bounded verified Map<K,V>, issue #114/#123)
 //!
@@ -666,6 +669,22 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // is emitted here ONLY when numfmt did not already emit it (dedup).
     let parse_defs = emit_parse_defs(program)?;
     out.push_str(&parse_defs);
+
+    // (1g) Cluster C8 (`.design/basis/07-strings.md` REQ-17/REQ-18, issue #278): the
+    // generated byte-range-equality predicate `bytes_eq(a, b, ai, bi, n)` (the
+    // editor's `insert_str`/`backspace`/`render_frame` byte-content pins, the #276
+    // Arc-2 prerequisite) + its FOUR prove-once bridge lemmas
+    // (`lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`) —
+    // materialized ONCE when the program names `bytes_eq` (`program_uses_bytes_eq`),
+    // BEFORE any fn references it. EMPTY otherwise (byte-stable for the
+    // non-`bytes_eq` corpus — the `program_uses_parse` conditional-emission
+    // precedent). The emitted form is EXACTLY the GROUNDED `14 verified, 0 errors`
+    // (with the `slice_id`/`insert_str` pins) low-peel def + bridge lemmas — no
+    // `assume`/`external_body`/`admit` (R-DEFER-9 — the four lemmas are REAL induction
+    // proofs; the head/tail-swap mutant FAILS, non-vacuous). `bytes_eq` returns
+    // `bool`, so it does NOT join `nat_fns`.
+    let bytes_eq_defs = emit_bytes_eq_defs(program)?;
+    out.push_str(&bytes_eq_defs);
 
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
     // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
@@ -6282,6 +6301,8 @@ const GENERATED_FREE_FNS: &[&str] = &[
     "count_sep",
     "sep_free",
     "is_space",
+    // C8 byte-range-equality predicate (REQ-17, #278)
+    "bytes_eq",
     // generated exec fns (surface-invoked)
     "parse_u64",
     "u64_to_string",
@@ -6293,6 +6314,11 @@ const GENERATED_FREE_FNS: &[&str] = &[
     "lemma_pow10_20_gt_u64max",
     "lemma_count_push",
     "lemma_parse_be_prefix_le",
+    // C8 prove-once bridge lemmas (REQ-18, #278)
+    "lemma_bytes_eq_from_pointwise",
+    "lemma_bytes_eq_to_pointwise",
+    "lemma_bytes_eq_from_subrange",
+    "lemma_bytes_eq_bridge",
 ];
 
 /// The reserved name for a generated free fn surface name (`is_digit` →
@@ -6631,6 +6657,233 @@ fn emit_parse_defs(program: &Program) -> Result<String, LowerError> {
     Ok(reserve_generated_names(&out))
 }
 
+/// True if the program names the C8 byte-range-equality predicate `bytes_eq`
+/// anywhere (`.design/basis/07-strings.md` REQ-17/REQ-19, issue #278): a
+/// `bytes_eq(a, b, ai, bi, n)` `Call` in a contract (`req`/`ens`) or body.
+/// Either reference requires the generated `bytes_eq` `Seq<u8>` def + the four
+/// prove-once bridge lemmas in scope. EMPTY otherwise (byte-stable for the
+/// non-`bytes_eq` corpus — the `program_uses_parse` conditional-emission
+/// precedent). The walk reuses the `each_subexpr` full-tree traversal. A
+/// `bytes_eq` name SHADOWED by a user `spec fn` (with a `String`/`&String`
+/// param) resolves to the user fn, not the generated def (#127 — the same
+/// `user_string_spec_fn_names` exclusion every `program_uses_*` gate applies),
+/// so a user `spec fn bytes_eq` suppresses generation (no E0428 double-def).
+pub(crate) fn program_uses_bytes_eq(program: &Program) -> bool {
+    let shadow = user_string_spec_fn_names(program);
+    program.items.iter().any(|item| match item {
+        Item::Fn(f) => {
+            contract_uses_bytes_eq(&f.contract, &shadow)
+                || f.body
+                    .as_ref()
+                    .map(|b| block_uses_bytes_eq(b, &shadow))
+                    .unwrap_or(false)
+        }
+        Item::SpecFn(s) => block_uses_bytes_eq(&s.body, &shadow),
+        Item::Struct(_) | Item::Enum(_) => false,
+    })
+}
+
+fn contract_uses_bytes_eq(contract: &thermite_syntax::ast::Contract, shadow: &[&str]) -> bool {
+    expr_uses_bytes_eq(&contract.req.expr, shadow)
+        || contract
+            .ens
+            .iter()
+            .any(|c| expr_uses_bytes_eq(&c.expr, shadow))
+}
+
+fn block_uses_bytes_eq(block: &Block, shadow: &[&str]) -> bool {
+    block.stmts.iter().any(|s| stmt_uses_bytes_eq(s, shadow))
+        || block
+            .tail
+            .as_deref()
+            .map(|e| expr_uses_bytes_eq(e, shadow))
+            .unwrap_or(false)
+}
+
+fn stmt_uses_bytes_eq(stmt: &Stmt, shadow: &[&str]) -> bool {
+    match stmt {
+        Stmt::Let { init, .. } => expr_uses_bytes_eq(init, shadow),
+        Stmt::Assign { target, value } => {
+            expr_uses_bytes_eq(target, shadow) || expr_uses_bytes_eq(value, shadow)
+        }
+        Stmt::Return(opt) => opt
+            .as_ref()
+            .map(|e| expr_uses_bytes_eq(e, shadow))
+            .unwrap_or(false),
+        Stmt::If {
+            cond, then, else_, ..
+        } => {
+            expr_uses_bytes_eq(cond, shadow)
+                || block_uses_bytes_eq(then, shadow)
+                || else_
+                    .as_ref()
+                    .map(|b| block_uses_bytes_eq(b, shadow))
+                    .unwrap_or(false)
+        }
+        Stmt::Loop(l) => block_uses_bytes_eq(&l.body, shadow),
+        Stmt::Expr(e) => expr_uses_bytes_eq(e, shadow),
+        Stmt::Break | Stmt::Continue => false,
+    }
+}
+
+/// True if `expr` references a `bytes_eq` `Call` anywhere (REQ-17/REQ-19). A
+/// full-tree walk reusing `each_subexpr`. A name SHADOWED by a user `spec fn`
+/// (in `shadow`, #127) is excluded — the call resolves to the user fn.
+fn expr_uses_bytes_eq(expr: &Expr, shadow: &[&str]) -> bool {
+    if let Expr::Call { callee, .. } = expr {
+        if let Expr::Path(segs) = callee.as_ref() {
+            if let Some(last) = segs.last() {
+                if last.as_str() == "bytes_eq" && !shadow.contains(&last.as_str()) {
+                    return true;
+                }
+            }
+        }
+    }
+    let mut found = false;
+    let _ = each_subexpr(expr, &mut |e| {
+        if expr_uses_bytes_eq(e, shadow) {
+            found = true;
+        }
+        Ok(())
+    });
+    found
+}
+
+/// Emit the C8 byte-range-equality predicate + its four prove-once bridge lemmas
+/// (`.design/basis/07-strings.md` REQ-18, issue #278) when the program names
+/// `bytes_eq` (`program_uses_bytes_eq`). The exact forms are GROUNDED VERBATIM
+/// (real `verus 0.2026.05.24`): the `Seq<u8>` LOW-PEEL recursion `bytes_eq` + the
+/// core induction `lemma_bytes_eq_from_pointwise` (the explicit `#[trigger] a[ai +
+/// k]` is LOAD-BEARING — auto-inference fails on the arithmetic index), the cheap
+/// converse `lemma_bytes_eq_to_pointwise`, the subrange corollary
+/// `lemma_bytes_eq_from_subrange`, and the no-arg quantified-equivalence
+/// `lemma_bytes_eq_bridge` (the ONE-CALL citation form: its `=~=` plants the
+/// extensionality term so a single `proof { lemma_bytes_eq_bridge(); }` discharges
+/// `slice_id` + all three `insert_str` conjuncts + `backspace` + the `render_frame`
+/// payload with ZERO per-conjunct glue). No append-window corollaries are needed
+/// (the recorded grounding simplification). EMPTY otherwise (byte-stable for the
+/// non-`bytes_eq` corpus, no regression). NO `assume`/`admit`/`external_body`
+/// (R-DEFER-9) — the four lemmas are REAL induction proofs.
+///
+/// DIVERGENCE NOTE (#265 ceremony, #278): the design pinned the four lemma
+/// SIGNATURES + the def + three lemma BODIES verbatim; the `lemma_bytes_eq_bridge`
+/// BODY was pinned as `/* ... GROUNDED verbatim in the probe */` (signature only).
+/// The body grounded here adds, in the `to_pointwise` direction, an explicit
+/// per-index subrange bridge (`#[trigger] a.subrange(ai, ai+n)[k] == b.subrange(bi,
+/// bi+n)[k]`) inside the `=~=` `by`-block: raw `=~=` alone FAILED verus (`11
+/// verified, 1 errors`) — the subrange-index equality needs the manual trigger.
+/// This is a body-fill within the pinned signature, NOT a change to any pinned
+/// statement shape; all four lemmas + the `slice_id`/`insert_str` pins verify (`14
+/// verified, 0 errors`), the head/tail-swap mutant FAILS (`13 verified, 1 errors`).
+fn emit_bytes_eq_defs(program: &Program) -> Result<String, LowerError> {
+    if !program_uses_bytes_eq(program) {
+        return Ok(String::new());
+    }
+    let mut out = String::new();
+    out.push('\n');
+    // The canonical LOW-PEEL recursion: peel the leading byte, recurse ai+1/bi+1/n-1.
+    out.push_str(
+        "pub open spec fn bytes_eq(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int) -> bool\n",
+    );
+    out.push_str("    decreases n\n");
+    out.push_str("{\n");
+    out.push_str(
+        "    if n <= 0 { true } else { a[ai] == b[bi] && bytes_eq(a, b, ai + 1, bi + 1, n - 1) }\n",
+    );
+    out.push_str("}\n");
+    // THE CORE INDUCTION: pointwise window equality ==> bytes_eq. The explicit
+    // `#[trigger] a[ai + k]` is LOAD-BEARING (auto-inference fails on the arith index).
+    out.push_str(
+        "pub proof fn lemma_bytes_eq_from_pointwise(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)\n",
+    );
+    out.push_str("    requires forall|k: int| 0 <= k < n ==> #[trigger] a[ai + k] == b[bi + k],\n");
+    out.push_str("    ensures bytes_eq(a, b, ai, bi, n),\n");
+    out.push_str("    decreases n\n");
+    out.push_str("{\n");
+    out.push_str("    if n > 0 {\n");
+    out.push_str("        assert(a[ai] == b[bi]) by { assert(a[ai + 0] == b[bi + 0]); }\n");
+    out.push_str(
+        "        assert forall|k: int| 0 <= k < n - 1 implies #[trigger] a[(ai + 1) + k] == b[(bi + 1) + k] by {\n",
+    );
+    out.push_str("            assert(a[ai + (k + 1)] == b[bi + (k + 1)]);\n");
+    out.push_str("        }\n");
+    out.push_str("        lemma_bytes_eq_from_pointwise(a, b, ai + 1, bi + 1, n - 1);\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    // The converse (cheap — the same induction shape).
+    out.push_str(
+        "pub proof fn lemma_bytes_eq_to_pointwise(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)\n",
+    );
+    out.push_str("    requires bytes_eq(a, b, ai, bi, n),\n");
+    out.push_str("    ensures forall|k: int| 0 <= k < n ==> #[trigger] a[ai + k] == b[bi + k],\n");
+    out.push_str("    decreases n\n");
+    out.push_str("{\n");
+    out.push_str("    if n > 0 {\n");
+    out.push_str("        lemma_bytes_eq_to_pointwise(a, b, ai + 1, bi + 1, n - 1);\n");
+    out.push_str(
+        "        assert forall|k: int| 0 <= k < n implies #[trigger] a[ai + k] == b[bi + k] by {\n",
+    );
+    out.push_str("            if k == 0 { assert(a[ai] == b[bi]); }\n");
+    out.push_str("            else { assert(a[(ai + 1) + (k - 1)] == b[(bi + 1) + (k - 1)]); }\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    // The subrange corollary (the #276 STOP's named minimum — a 5-line corollary
+    // of the pointwise core; the two explicit subrange-index instances are required).
+    out.push_str(
+        "pub proof fn lemma_bytes_eq_from_subrange(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)\n",
+    );
+    out.push_str("    requires 0 <= ai, 0 <= bi, 0 <= n, ai + n <= a.len(), bi + n <= b.len(),\n");
+    out.push_str("             a.subrange(ai, ai + n) == b.subrange(bi, bi + n),\n");
+    out.push_str("    ensures bytes_eq(a, b, ai, bi, n),\n");
+    out.push_str("{\n");
+    out.push_str(
+        "    assert forall|k: int| 0 <= k < n implies #[trigger] a[ai + k] == b[bi + k] by {\n",
+    );
+    out.push_str("        assert(a.subrange(ai, ai + n)[k] == a[ai + k]);\n");
+    out.push_str("        assert(b.subrange(bi, bi + n)[k] == b[bi + k]);\n");
+    out.push_str("        assert(a.subrange(ai, ai + n)[k] == b.subrange(bi, bi + n)[k]);\n");
+    out.push_str("    }\n");
+    out.push_str("    lemma_bytes_eq_from_pointwise(a, b, ai, bi, n);\n");
+    out.push_str("}\n");
+    // THE ONE-CALL CITATION FORM: the no-arg lemma whose ens is the quantified
+    // EQUIVALENCE, trigger on `bytes_eq`. The `=~=` plants the extensionality term.
+    out.push_str("pub proof fn lemma_bytes_eq_bridge()\n");
+    out.push_str("    ensures forall|a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int|\n");
+    out.push_str(
+        "        0 <= ai && 0 <= bi && 0 <= n && ai + n <= a.len() && bi + n <= b.len()\n",
+    );
+    out.push_str("        ==> (#[trigger] bytes_eq(a, b, ai, bi, n)\n");
+    out.push_str("             <==> a.subrange(ai, ai + n) =~= b.subrange(bi, bi + n)),\n");
+    out.push_str("{\n");
+    out.push_str("    assert forall|a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int|\n");
+    out.push_str(
+        "        0 <= ai && 0 <= bi && 0 <= n && ai + n <= a.len() && bi + n <= b.len()\n",
+    );
+    out.push_str("        implies (#[trigger] bytes_eq(a, b, ai, bi, n)\n");
+    out.push_str("             <==> a.subrange(ai, ai + n) =~= b.subrange(bi, bi + n)) by {\n");
+    out.push_str("        if bytes_eq(a, b, ai, bi, n) {\n");
+    out.push_str("            lemma_bytes_eq_to_pointwise(a, b, ai, bi, n);\n");
+    out.push_str("            assert(a.subrange(ai, ai + n) =~= b.subrange(bi, bi + n)) by {\n");
+    out.push_str("                assert forall|k: int| 0 <= k < n implies\n");
+    out.push_str(
+        "                    #[trigger] a.subrange(ai, ai + n)[k] == b.subrange(bi, bi + n)[k] by {\n",
+    );
+    out.push_str("                    assert(a.subrange(ai, ai + n)[k] == a[ai + k]);\n");
+    out.push_str("                    assert(b.subrange(bi, bi + n)[k] == b[bi + k]);\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("        }\n");
+    out.push_str("        if a.subrange(ai, ai + n) =~= b.subrange(bi, bi + n) {\n");
+    out.push_str("            lemma_bytes_eq_from_subrange(a, b, ai, bi, n);\n");
+    out.push_str("        }\n");
+    out.push_str("    }\n");
+    out.push_str("}\n");
+    // Blocker #130: emit under the reserved namespace so a user `spec fn bytes_eq`
+    // is a DISTINCT name from the generated `bytes_eq(Seq<u8>, ..)` (no E0428).
+    Ok(reserve_generated_names(&out))
+}
+
 // ---------------------------------------------------------------------------
 // REQ-3/REQ-5: expression lowering (exec vs spec).
 // ---------------------------------------------------------------------------
@@ -6806,6 +7059,21 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                     callee.as_ref(),
                     Expr::Path(segs) if segs.last().map(|s| s.as_str()) == Some("occurs_at")
                 );
+            // Cluster C8 (`.design/basis/07-strings.md` REQ-17/REQ-18, issue #278): the
+            // generated `bytes_eq(a: Seq<u8>, b: Seq<u8>, ai: int, bi: int, n: int)`
+            // built-in spec predicate. Args 0/1 are the `String` byte-views (`a -> a.data@`,
+            // the `string_as_byteview` / `is_string` `.data@` rule); args 2/3/4 are the
+            // surface integer offsets/length (`ai`/`bi`/`n`, each a `u64`-shaped surface
+            // expression — `0`, `b.cursor`, `a.len()`), cast `as int` exactly as
+            // `occurs_at`'s arg 2 (Verus does no implicit `u64 -> int` in a spec-fn arg
+            // position). Keyed on the callee NAME `bytes_eq` + the arg index (>= 2). A
+            // literal / already-`as int` arg passes through (`lower_index_arg` avoids the
+            // double-cast).
+            let bytes_eq_fn = ctx.is_spec()
+                && matches!(
+                    callee.as_ref(),
+                    Expr::Path(segs) if segs.last().map(|s| s.as_str()) == Some("bytes_eq")
+                );
             // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): does this callee
             // take a String argument as its byte `Seq<u8>` VIEW (`s -> s.data@`) or as
             // a `&TString` REFERENCE? The GENERATED byte-view spec fns
@@ -6872,6 +7140,13 @@ fn lower_expr(expr: &Expr, ctx: Ctx, depth: usize, span: Span) -> Result<String,
                         parts.push(format!("{lowered} as u8"));
                     }
                 } else if occurs_fn && i == 2 {
+                    parts.push(lower_index_arg(a, ctx, d, span)?);
+                } else if bytes_eq_fn && i >= 2 {
+                    // C8 (#278): bytes_eq's three index args (ai, bi, n) are surface
+                    // `u64`-shaped integers cast `as int` for the `Seq<u8>`-level spec
+                    // fn. `lower_index_arg` parenthesizes a compound (`b.cursor +
+                    // ins.len()`) before the cast (#122) and avoids double-casting a
+                    // literal / already-`as int` arg.
                     parts.push(lower_index_arg(a, ctx, d, span)?);
                 } else if plain_user_spec_call
                     && matches!(a, Expr::Binary { .. } | Expr::Unary { .. })
@@ -7347,6 +7622,25 @@ fn lower_spec_arg(
                 }
             }
         }
+        // Cluster C8 (`.design/basis/07-strings.md` REQ-17, issue #278): the
+        // `bytes_eq(&a, &b, ..)` surface form passes its String operands by
+        // REFERENCE (`&result`, `&text`, `&ins` — the design's pinned surface
+        // shape). A `&<String>` parses as `Expr::Ref { expr: Path }`; under the
+        // byte-view callee the `&` is stripped and the byte `Seq<u8>` view taken
+        // (`result.data@`), the SAME `.data@` rule a bare String path gets — the
+        // contract names a `Seq<u8>` window, not a `&TString` reference. Keyed on
+        // the in-scope String SHAPE (`ctx.is_string`) AND the byte-view callee.
+        if string_as_byteview {
+            if let Expr::Ref { expr, .. } = arg {
+                if let Expr::Path(segs) = expr.as_ref() {
+                    if let Some(name) = segs.last() {
+                        if segs.len() == 1 && ctx.is_string(name) {
+                            return Ok(format!("{name}.data@"));
+                        }
+                    }
+                }
+            }
+        }
     }
     lower_expr(arg, ctx, depth, span)
 }
@@ -7416,6 +7710,7 @@ fn callee_takes_string_byteview(callee: &Expr, ctx: Ctx) -> bool {
                     | "contains_sub"
                     | "count_sep"
                     | "sep_free"
+                    | "bytes_eq"
             );
         }
     }
@@ -7764,6 +8059,22 @@ fn is_lt_leading(op: BinOp) -> bool {
 // REQ-4: statement, block and loop lowering (exec body).
 // ---------------------------------------------------------------------------
 
+/// True iff a `fn`'s `req`/`ens` NAMES the C8 `bytes_eq` predicate
+/// (`.design/basis/07-strings.md` REQ-19, issue #278) — the contract key for the
+/// `proof { lemma_bytes_eq_bridge(); }` citation aid (a NEW contract-keyed aid
+/// class, the `nonlinear_overflow_assert`/contract-keying precedent). Reuses the
+/// program-wide `contract_uses_bytes_eq` walk with an EMPTY shadow set: the aid
+/// fires whenever the surface contract spells `bytes_eq(..)`. (A user `spec fn
+/// bytes_eq` shadow suppresses the *generated def* via `program_uses_bytes_eq`'s
+/// shadow; if no generated def is emitted the citation would not resolve — but a
+/// user `bytes_eq` is a `&String`-param spec fn, not the no-arg bridge lemma, and
+/// the #130 reserved namespace keeps the two distinct. The conservative shadow-
+/// free key here matches the generated-def gate in the only shipped case: no user
+/// `bytes_eq` exists, REQ-17's clean-slate migration note.)
+fn fn_contract_names_bytes_eq(f: &FnItem) -> bool {
+    contract_uses_bytes_eq(&f.contract, &[])
+}
+
 /// Lower a `fn` body, threading the shape-derived proof aids (REQ-7). The body
 /// is emitted between `{` and `}`; the loop lowering injects per-loop aids and
 /// the extensionality assert at exit.
@@ -7791,6 +8102,26 @@ fn lower_fn_body(
     // proof block at the loop body's start, emitted by `lower_loop`). REQ-7.
     let mul_aids = req_bounded_mul_asserts(f, body)?;
     out.push_str(&render_mul_proof_block(&mul_aids, 1));
+    // template (bytes_eq citation, #278): a fn whose `req`/`ens` names the C8
+    // `bytes_eq` predicate gets `proof { lemma_bytes_eq_bridge(); }` inserted as the
+    // FIRST statement of the lowered body (REQ-19 — a NEW contract-keyed aid class,
+    // the #196 `render_mul_proof_block` block-start placement keyed the way
+    // `nonlinear_overflow_assert` keys on the contract). The no-arg quantified-
+    // equivalence lemma's trigger fires on each `bytes_eq` goal and rewrites it to
+    // `subrange =~= subrange`, which vstd's default-broadcast seq axioms close — NO
+    // argument extraction is needed (the one-call citation is the whole point). The
+    // citation emits the RESERVED name directly (`__thermite_lemma_bytes_eq_bridge`):
+    // a user fn body is NOT passed through `reserve_generated_names` (only the
+    // generated def blocks are), so the call site must name the reserved fn the
+    // generated `emit_bytes_eq_defs` mints — the `reserved_name("parse_u64")`
+    // call-site-rewrite precedent (a surface-invoked generated fn is reserved at its
+    // call site).
+    if fn_contract_names_bytes_eq(f) {
+        out.push_str(&format!(
+            "    proof {{ {}(); }}\n",
+            reserved_name("lemma_bytes_eq_bridge")
+        ));
+    }
     let inner = lower_block_with_fn_aids(
         body,
         f,
@@ -8361,6 +8692,24 @@ fn lower_loop(
     // that loop emits its own block when `lower_loop` recurses through it).
     let loop_mul_aids = req_bounded_mul_asserts(f, &l.body)?;
     out.push_str(&render_mul_proof_block(&loop_mul_aids, indent + 1));
+
+    // template (bytes_eq citation, #278): a fn whose contract names `bytes_eq`
+    // gets the `lemma_bytes_eq_bridge()` citation at EACH loop-body start too —
+    // Verus loop isolation drops ambient facts (a fn-body-start citation does not
+    // flow past the loop head), so an in-loop `bytes_eq` goal needs the bridge
+    // re-cited here (REQ-19, the same in-loop placement the #196 mul aid uses).
+    // The reserved name is emitted directly (a user fn body is not reserve-
+    // rewritten). The editor pins are straight-line postconditions, so this fires
+    // only for a future in-loop `bytes_eq` use — byte-stable for the current
+    // straight-line corpus.
+    if fn_contract_names_bytes_eq(f) {
+        writeln!(
+            out,
+            "{ipad}proof {{ {}(); }}",
+            reserved_name("lemma_bytes_eq_bridge")
+        )
+        .map_err(|_| fmt_err())?;
+    }
 
     // The body statements, with the loop-exit coverage split injected into the
     // matching `if` branch (template e).

@@ -76,7 +76,8 @@ use thermite_syntax::lexer::Span;
 
 use crate::lower::{
     collect_map_kv_types, collect_vec_elem_types, elem_is_copy, is_map_new, is_vec_new,
-    program_uses_parse, program_uses_string_search, tmap_name, tvec_name, LowerError,
+    program_uses_bytes_eq, program_uses_parse, program_uses_string_search, tmap_name, tvec_name,
+    LowerError,
 };
 
 /// The maximum recursive-descent emission depth before `lower_l1` returns
@@ -2004,7 +2005,9 @@ const STRING_CAP_L1: usize = 1_000_000;
 fn string_arg_count_l1(name: &str) -> usize {
     match name {
         "all_digits" | "parse_u64" | "count_sep" | "sep_free" => 1,
-        "contains_sub" | "occurs_at" => 2,
+        // C8 (#278): bytes_eq(a, b, ai, bi, n) — TWO leading String args (a, b),
+        // then three scalar `u64` offsets/length pass through unchanged.
+        "contains_sub" | "occurs_at" | "bytes_eq" => 2,
         _ => 0,
     }
 }
@@ -2377,6 +2380,40 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("    while i < s.data.len() {\n");
         out.push_str("        if s.data[i] == sep_b { return false; }\n");
         out.push_str("        i = i + 1;\n");
+        out.push_str("    }\n");
+        out.push_str("    true\n");
+        out.push_str("}\n");
+    }
+    // Cluster C8 (`.design/basis/07-strings.md` REQ-20, issue #278): the L1 EXEC twin
+    // of the `bytes_eq` CONTRACT spec fn. At L3 `bytes_eq` is a `spec fn` carrying the
+    // PROOF (the prove-once bridge lemmas); `forge build` lowers EVERY fn to its
+    // always-active runtime `thermite_check!`, so a contract naming `bytes_eq` (the
+    // editor's `ens bytes_eq(&result, &b.text, 0, 0, b.cursor)`) becomes a RUN-time
+    // check that must resolve `bytes_eq` as runnable Rust. The twin is the bounds-
+    // checked byte-compare loop computing the SAME value as the `Seq<u8>` low-peel def
+    // — for the in-window range `[ai, ai+n) vs [bi, bi+n)`. It mirrors the spec's
+    // total-fn semantics honestly: the contract supplies an already-validated in-bounds
+    // window (the `slice`/`concat` `req` proved the lengths), and an out-of-window
+    // runtime index would be a check failure, not UB — so the twin GUARDS the window
+    // (returns `false` if either side runs off the end) rather than indexing OOB. The
+    // String args (a, b) are taken BY VALUE (the call site `.clone()`s — two leading
+    // string args, `string_arg_count_l1`); `ai`/`bi`/`n` are surface `u64`. NO verus
+    // proof (the L1 path is runtime-checked, not verified). Gated on
+    // `program_uses_bytes_eq` (byte-stable for the non-`bytes_eq` corpus).
+    if program_uses_bytes_eq(program) {
+        out.push('\n');
+        out.push_str("#[allow(dead_code)]\n");
+        out.push_str("fn bytes_eq(a: TString, b: TString, ai: u64, bi: u64, n: u64) -> bool {\n");
+        out.push_str("    let ai_u: usize = ai as usize;\n");
+        out.push_str("    let bi_u: usize = bi as usize;\n");
+        out.push_str("    let n_u: usize = n as usize;\n");
+        out.push_str("    if ai_u + n_u > a.data.len() || bi_u + n_u > b.data.len() {\n");
+        out.push_str("        return false;\n");
+        out.push_str("    }\n");
+        out.push_str("    let mut k: usize = 0;\n");
+        out.push_str("    while k < n_u {\n");
+        out.push_str("        if a.data[ai_u + k] != b.data[bi_u + k] { return false; }\n");
+        out.push_str("        k = k + 1;\n");
         out.push_str("    }\n");
         out.push_str("    true\n");
         out.push_str("}\n");

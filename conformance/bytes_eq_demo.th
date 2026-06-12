@@ -1,0 +1,28 @@
+// Cluster C8 (`.design/basis/07-strings.md` REQ-17..REQ-20, issue #278): the
+// `bytes_eq` byte-range-equality content-pin corpus. `slice_id` is the EXACT #276
+// counterexample (AC-13) — `a.slice(0, a.len())` whose byte content equals `a`'s,
+// pinned by `bytes_eq(&result, &a, 0, 0, a.len())`. `insert_str` is the editor's
+// three-conjunct splice (AC-14) — head/ins/tail concatenated, each window pinned by
+// one `bytes_eq` conjunct, all discharged by ONE auto-emitted `lemma_bytes_eq_bridge`
+// citation with ZERO per-conjunct glue. Both certify L3 (the prove-once bridge laws
+// REQ-18 + the contract-keyed body-start citation REQ-19); both carry `fx alloc` (the
+// constructing slice/concat). Hand-authored corpus oracle (R-CHAR-3).
+
+fn slice_id(a: &String) -> String
+  req  a.len() <= 1_000_000
+  ens  result.len() == a.len()
+  ens  bytes_eq(&result, &a, 0, 0, a.len())
+  fx   alloc
+{
+  a.slice(0, a.len())
+}
+
+fn insert_str(text: &String, ins: &String, cursor: u64) -> String
+  req  cursor <= text.len() && text.len() + ins.len() <= 1_000_000
+  ens  bytes_eq(&result, &text, 0, 0, cursor)
+  ens  bytes_eq(&result, &ins, cursor, 0, ins.len())
+  ens  bytes_eq(&result, &text, cursor + ins.len(), cursor, text.len() - cursor)
+  fx    alloc
+{
+  text.slice(0, cursor).concat(ins.slice(0, ins.len())).concat(text.slice(cursor, text.len()))
+}

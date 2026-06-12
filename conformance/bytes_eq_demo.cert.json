@@ -1,0 +1,11 @@
+{
+  "item": "slice_id",
+  "level": "L3",
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false
+  },
+  "effects": ["alloc"],
+  "slag": false,
+  "note": "Stable-subset oracle (goal.md R-CHAR-3): item/level/tautology/vacuous_precondition/effects/slag are HAND-DERIVED from .design/basis/07-strings.md C8 AC-13 + thermite-design.md §6 ladder, and are oracle-compared. mutants_killed + solver_time_ms are tool-computed + EXCLUDED (oracle_subset, §5.3). HAND-DERIVATION: `slice_id(a) = a.slice(0, a.len())` with `ens result.len() == a.len()` and `ens bytes_eq(&result, &a, 0, 0, a.len())` is the EXACT #276 counterexample (AC-13). LEVEL = L3: the strengthened #277 slice ens (`result.data@ == a.data@.subrange(0, len)`) supplies the subrange FACT, and the C8 prove-once bridge lemma (REQ-18, emitted by `emit_bytes_eq_defs`, cited at the body start by the REQ-19 contract-keyed aid) bridges that fact to the index-by-index `bytes_eq` byte walk — the induction the .th surface cannot express (no `proof fn`, no general `forall`). The full stack discharges under real verus (`17 verified, 0 errors` on the whole emitted module; the per-item subprogram `forge check` discharges 16 obligations). EFFECTS = [alloc]: `slice` is a CONSTRUCTING op (it copies the half-open subrange into a fresh owned `String`), so the fn carries `fx alloc` by effect-subsumption (the REQ-4 rule, the SAME as `concat`). TAUTOLOGY = false / VACUOUS_PRECONDITION = false: the byte-content pin is mutation-killable — the length-preserving head/tail-SWAP of insert_str's sibling body FAILS verus (`16 verified, 1 errors`, postcondition not satisfied; AC-16), so the content pins are real teeth a length pin cannot fake, and the `req a.len() <= 1_000_000` is a real cage bound (the §4.2 capacity precondition the slice well_formed needs), not a vacuous false. SLAG = false: no `#[slag]` annotation. The sibling item `insert_str` (the editor's three-conjunct splice — unchanged-prefix / inserted-run / shifted-suffix, AC-14) also certifies L3 alloc likewise, all three conjuncts discharged by the SAME single bridge citation with ZERO per-conjunct glue (full coverage in thermite-lower/tests/bytes_eq_conformance.rs)."
+}

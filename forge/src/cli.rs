@@ -2172,6 +2172,38 @@ fn render_audit(manifest: &AuditManifest) -> String {
         "  toolchain: verus={} thermite={}\n",
         manifest.tcb.toolchain.verus, manifest.tcb.toolchain.thermite
     ));
+
+    // The #274 LEAN-FRAGMENT MEMBERSHIP section (REQ-7) — a line-oriented, greppable
+    // capability statement (the OQ-1 precedent): per item, whether `--engine lean`
+    // would attempt it and (if not) the structured refusal class + verbatim reason.
+    // ALWAYS emitted (the probe is pure, no Lean toolchain needed); informational —
+    // it gates nothing (REQ-10). The level pairs each membership row with its `level`
+    // from the `functions` rows (same name, same source order).
+    out.push_str("lean fragment:\n");
+    for row in &manifest.lean_fragment.functions {
+        let level = manifest
+            .functions
+            .iter()
+            .find(|f| f.name == row.name)
+            .map(|f| level_str(f.level))
+            .unwrap_or("L?");
+        if row.exportable {
+            let tag = row.tier_tag.as_deref().unwrap_or("");
+            out.push_str(&format!(
+                "  {} {} exportable tier={} ({})\n",
+                row.name, level, row.tier, tag
+            ));
+        } else {
+            let (class, reason) = match &row.refusal {
+                Some(r) => (r.class.as_str(), r.reason.as_str()),
+                None => ("(unknown)", ""),
+            };
+            out.push_str(&format!(
+                "  {} {} NOT-exportable refusal={}: {}\n",
+                row.name, level, class, reason
+            ));
+        }
+    }
     out
 }
 

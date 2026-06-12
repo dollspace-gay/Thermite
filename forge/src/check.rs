@@ -1794,6 +1794,28 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
     }
 }
 
+/// The CONTRACT certification obligation for one item, minted with the SAME #226
+/// full-expression-position closure the check pipeline uses (`.design/forge/
+/// audit-manifest.md` REQ-8 / OQ-4). A thin `pub(crate)` re-export of
+/// [`mint_item_obligations`]`(program, item).contract` — the head of the per-item
+/// set, the obligation `LeanEngine::discharge` exports via `export_item` (the
+/// `check::check_file_with_engine` Lean path passes `&obligations.contract`).
+///
+/// The audit's Lean-fragment membership probe (`audit::LeanFragment`) needs the
+/// CONTRACT obligation to dry-run `lean_export::export_item`; it MUST be the
+/// byte-identical #226 closure (`reachable_spec_fn_names_full` /
+/// `reachable_spec_fn_names_full_spec` → `Obligation::contract_for_fn` /
+/// `contract_for_spec_fn`), because `export_item`'s HARD GATE cross-checks the
+/// obligation's `called` closure against the spec-calls in `req ∪ ens ∪ body ∪ dec`
+/// — a forked/weaker closure would yield spurious `IncompleteRegistry` refusals (or
+/// mask real ones — the Pin B/C/G bottom-poisoning surface). Re-implementing the
+/// closure is FORBIDDEN (REQ-8); this seam guarantees the audit and the
+/// `--engine lean` admission decision can never disagree (AC-9). The
+/// REGISTRY-TERMINATION obligation is engine-internal and not separately probed.
+pub(crate) fn contract_obligation(program: &Program, item: &Item) -> crate::obligation::Obligation {
+    mint_item_obligations(program, item).contract
+}
+
 /// The CORRECTED full-expression-position called-spec-fn closure for a checked
 /// `fn` (`.design/verified/proof-backends.md` REQ-1.2 / §4, the #226 fix
 /// completing #224). Returns the spec-fn NAMES the per-item Obligation env

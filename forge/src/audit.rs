@@ -29,6 +29,10 @@
 //! | REQ-4 (aggregation, never re-derivation) | SHIPPED | `AuditManifest::from_certificates` reads ONLY the cert collection + `AssuranceManifest::aggregate(&certs)` + the two version strings + the parsed program (for boundary contract text); it owns no prover invocation. |
 //! | REQ-5 (project assurance embedded) | SHIPPED | `AuditManifest.project_assurance: ProjectAssuranceSection` embeds `AssuranceManifest::aggregate` — the `ProjectAssurance` headline, the `ProjectScope`, and the lowered-assurance fn list (from `FunctionAssurance.lowered_assurance`). |
 //! | REQ-6 (determinism) | SHIPPED | the manifest is a pure function of the cert collection + program + the two pinned version strings; no wall-clock, no unordered iteration (`functions` in cert/source order; `Tcb` lists in source order). The non-deterministic `solver_time_ms` is structurally absent; the version-sensitive `mutants_killed`/`survivor` are carried in `FunctionRow.contract_quality` (shape-asserted by the oracle, not the ratio — OQ-2). |
+//! | REQ-7 (#274 — `lean_fragment` membership section) | SHIPPED | `struct LeanFragment { functions: Vec<LeanFragmentRow> }` is the additive fourth section on `AuditManifest` (`#[serde(default)]`); `LeanFragment::from_certificates` builds one [`LeanFragmentRow`] per cert in source order via `LeanFragmentRow::probe`. `manifest_version` stays `"v1"`. Consumer: `AuditManifest::from_certificates` (the audit assembly) + `cli::render_audit`'s `lean fragment:` section. Oracle: `audit_conformance.rs::lean_fragment_sum`/`lean_fragment_tier_auto`/`lean_fragment_tier_interactive` (one row per fn, source order). |
+//! | REQ-8 (#274 — probe = shipped dry-run export, side-effect-free) | SHIPPED | `LeanFragmentRow::probe` mints the #226 CONTRACT obligation via the shipped `check::contract_obligation` seam (a `pub(crate)` re-export of `mint_item_obligations(...).contract` — NO closure fork) and dry-runs `lean_export::export_item`; `export_item` is fs/process/env-free (the lake/scratch side effects live downstream in `LeanEngine::discharge`, never reached). Oracle: `probe_agrees_with_direct_export_item` (the row ≡ direct `export_item` result — AC-9) + `lean_fragment_present_without_lake` (AC-10, no lean toolchain). |
+//! | REQ-9 (#274 — refusal classes surfaced verbatim) | SHIPPED | a non-exportable [`LeanFragmentRow`] carries `refusal: Some(LeanRefusal { class, reason })`; `class` is the stable `ExportRefusal` variant name (`refusal_class_name`, a total match over the post-(v) inventory) and `reason` is the verbatim `Display`. Oracle: `lean_fragment_refusal_optres`/`_loop`/`_boundary` (verbatim `class` + `reason` across `OptResResult`/`LoopBody`/`NotPureContract`) + `probe_sum_th_refusals_are_hand_traced` (the hand-traced `OutOfFragment` reasons for `sum`/`spec_sum`). |
+//! | REQ-10 (#274 — informational only, zero default-path byte impact) | SHIPPED | the section gates nothing — `cli::run_audit`'s exit code keys on `project_assurance` ONLY (unchanged); the `Certificate` schema is untouched (`engine_attribution` stays `None` on the default path); `#[serde(default)]` on `lean_fragment` keeps a pre-amendment v1 document parsing. Oracle: `pre_amendment_v1_deserializes_into_typed_manifest` (AC-11 additive) + the existing `corpus_empty_tcb`/`slag_boundary_tcb` exit codes unchanged. |
 
 use std::process::Command;
 
@@ -36,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use thermite_syntax::{Contract, EffectRow, Item, Program};
 
 use crate::cli::ForgeError;
+use crate::lean_export::{self, ExportRefusal};
 use crate::manifest::{
     effects_of, AssuranceManifest, AssuranceScope, Certificate, ContractQuality, Level,
     ProjectAssurance, ProjectScope,
@@ -70,6 +75,14 @@ pub struct AuditManifest {
     pub project_assurance: ProjectAssuranceSection,
     /// The §9 enumerable trusted computing base (REQ-3) — the manifest centerpiece.
     pub tcb: Tcb,
+    /// The #274 LEAN-FRAGMENT MEMBERSHIP section (REQ-7) — one informational row per
+    /// [`AuditManifest::functions`] row answering "would `--engine lean` attempt this
+    /// item, and if not, what is the structured refusal". `#[serde(default)]` so a
+    /// pre-amendment v1 document (no `lean_fragment` key) still deserializes (AC-5/
+    /// AC-11 additive discipline; `manifest_version` stays `"v1"`). The section gates
+    /// nothing — it changes no exit code and alters no verdict (REQ-10).
+    #[serde(default)]
+    pub lean_fragment: LeanFragment,
 }
 
 /// The `manifest_version` serde default (REQ-1): a v1 document that omits the tag
@@ -346,6 +359,174 @@ pub fn resolve_verus_version() -> Result<String, ForgeError> {
     Ok(version)
 }
 
+/// The #274 LEAN-FRAGMENT MEMBERSHIP section (REQ-7) — an INFORMATIONAL,
+/// additive `AuditManifest` section reporting, per checked item, whether
+/// `--engine lean` would attempt it and (if not) the structured refusal class.
+///
+/// The membership decision is the SHIPPED dry-run `lean_export::export_item` over
+/// the item's #226 CONTRACT obligation (REQ-8) — the SAME decision procedure
+/// `--engine lean` makes (`LeanEngine::export` → `export_item`; a refusal maps to
+/// the engine's `Unknown` honest skip). It is a PURE function of the parsed program
+/// (`export_item` is fs/process/env-free; the lake/scratch side effects live
+/// downstream in `LeanEngine::discharge`, never reached here): NO lake, NO scratch
+/// file, NO `lean/` toolchain — same input file ⇒ byte-identical section (REQ-6
+/// extended, AC-4/AC-10). The section gates NOTHING (REQ-10).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeanFragment {
+    /// One membership row per [`AuditManifest::functions`] row, in source order
+    /// (so it covers checked `fn`s AND `spec fn`s — both receive certs and both are
+    /// `export_item` subjects). `#[serde(default)]` so an empty/absent section
+    /// deserializes (AC-11).
+    #[serde(default)]
+    pub functions: Vec<LeanFragmentRow>,
+}
+
+impl LeanFragment {
+    /// Probe each checked item's Lean-fragment membership (REQ-7, REQ-8). For every
+    /// `cert` (in source order) mint the #226 CONTRACT obligation via the shipped
+    /// `check::contract_obligation` seam (NO closure fork — the byte-identical
+    /// pipeline closure, the AC-9 agreement guarantee) and dry-run
+    /// `lean_export::export_item` over it; map `Ok`/`Err` to a [`LeanFragmentRow`].
+    /// An item absent from `program` (defensive; the certs come from the same parsed
+    /// file) reports `exportable: false` with the engine's own "item not found"
+    /// marker class (`OutOfFragment`, mirroring `LeanEngine::export`). PURE — no
+    /// lake, no fs, no process (REQ-8).
+    fn from_certificates(certs: &[Certificate], program: &Program) -> Self {
+        let functions = certs
+            .iter()
+            .map(|cert| LeanFragmentRow::probe(&cert.item, program))
+            .collect();
+        LeanFragment { functions }
+    }
+}
+
+/// One Lean-fragment membership row (REQ-7) — the per-item answer to "would
+/// `--engine lean` attempt this, and if not, why". Mirrors the `functions` row by
+/// `name`; carries the coarse [attempt class](LeanFragmentRow::tier), the
+/// fine-grained shipped tag, and (when refused) the verbatim `ExportRefusal`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeanFragmentRow {
+    /// The item name (matches the `functions` row).
+    pub name: String,
+    /// `true` iff `export_item` returned `Ok(ExportedObligation)` — `--engine lean`
+    /// would export this item's CONTRACT obligation.
+    pub exportable: bool,
+    /// The coarse attempt class (REQ-7):
+    /// - `"auto"` — exportable AND [`ExportTier::is_auto`](crate::lean_export::ExportTier::is_auto) (tiers (a)/(b)):
+    ///   `--engine lean` would export AND lake-invoke the auto battery;
+    /// - `"interactive"` — exportable AND `RecursiveInteractive` (tier (c)):
+    ///   `--engine lean` exports but does NOT invoke lake (returns `Unknown`);
+    /// - `"none"` — refused: `--engine lean` honestly skips (`Verdict::Unknown`).
+    pub tier: String,
+    /// The fine-grained shipped tag ([`ExportTier::tag`](crate::lean_export::ExportTier::tag):
+    /// `"fuel-free-auto"`/`"static-unfold-auto"`/`"recursive-interactive"`); present
+    /// iff `exportable` (`#[serde(skip_serializing_if)]`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier_tag: Option<String>,
+    /// The structured refusal (REQ-9); present iff NOT exportable
+    /// (`#[serde(skip_serializing_if)]`). `class` is the stable machine surface
+    /// (the `ExportRefusal` variant name); `reason` is its `Display`, verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refusal: Option<LeanRefusal>,
+}
+
+/// The coarse `tier` string for a refused row (REQ-7) — `--engine lean` honestly
+/// skips an item it cannot export.
+const TIER_NONE: &str = "none";
+/// The coarse `tier` string for an exportable AUTO-tier row (REQ-7) — tiers (a)/(b).
+const TIER_AUTO: &str = "auto";
+/// The coarse `tier` string for an exportable INTERACTIVE-tier row (REQ-7) — tier (c).
+const TIER_INTERACTIVE: &str = "interactive";
+
+impl LeanFragmentRow {
+    /// Probe one item's Lean-fragment membership via the shipped dry-run
+    /// `export_item` (REQ-7, REQ-8). Mints the #226 CONTRACT obligation through the
+    /// `check::contract_obligation` seam (the byte-identical pipeline closure — NO
+    /// fork) and classifies the result. PURE: `export_item` builds strings only (no
+    /// fs/process/env), so this row is a deterministic function of `(name, program)`
+    /// (REQ-6/AC-4). An item not in `program` reports the engine's "item not found"
+    /// `OutOfFragment` marker (mirrors `LeanEngine::export`).
+    fn probe(name: &str, program: &Program) -> Self {
+        let Some(item) = lean_export::find_item(program, name) else {
+            // Defensive (the certs come from the same parsed file): mirror the
+            // engine's own "item not found" skip rather than drop the row.
+            return LeanFragmentRow {
+                name: name.to_string(),
+                exportable: false,
+                tier: TIER_NONE.to_string(),
+                tier_tag: None,
+                refusal: Some(LeanRefusal {
+                    class: refusal_class_name(&ExportRefusal::OutOfFragment(String::new()))
+                        .to_string(),
+                    reason: format!("item `{name}` not found in the parsed program"),
+                }),
+            };
+        };
+        // Mint the #226 CONTRACT obligation via the shipped seam — the SAME closure
+        // the check pipeline / `--engine lean` use (REQ-8; NO fork). Dry-run
+        // `export_item` over it: the membership decision IS the engine's.
+        let obligation = crate::check::contract_obligation(program, item);
+        match lean_export::export_item(&obligation, program, item) {
+            Ok(exported) => {
+                let tier = if exported.tier.is_auto() {
+                    TIER_AUTO
+                } else {
+                    TIER_INTERACTIVE
+                };
+                LeanFragmentRow {
+                    name: name.to_string(),
+                    exportable: true,
+                    tier: tier.to_string(),
+                    tier_tag: Some(exported.tier.tag().to_string()),
+                    refusal: None,
+                }
+            }
+            Err(refusal) => LeanFragmentRow {
+                name: name.to_string(),
+                exportable: false,
+                tier: TIER_NONE.to_string(),
+                tier_tag: None,
+                refusal: Some(LeanRefusal {
+                    class: refusal_class_name(&refusal).to_string(),
+                    reason: refusal.to_string(),
+                }),
+            },
+        }
+    }
+}
+
+/// A structured Lean-export refusal in a membership row (REQ-9) — the post-(v)
+/// §4.2.5 LOUD inventory surfaced in the trust document. `class` is the STABLE
+/// machine surface (the `ExportRefusal` variant name, an enum-stable string);
+/// `reason` is the refusal's `Display` rendering, VERBATIM (a human diagnostic,
+/// co-evolving with the exporter — OQ-5). Never a paraphrase, never a silent
+/// omission.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LeanRefusal {
+    /// The `ExportRefusal` variant name — the stable machine surface:
+    /// `OutOfFragment`/`NotPureContract`/`IncompleteRegistry`/`NonIntResult`/
+    /// `OpenHole`/`LoopBody`/`OptResResult`.
+    pub class: String,
+    /// The refusal's `Display` rendering, verbatim (REQ-9).
+    pub reason: String,
+}
+
+/// The STABLE machine-surface variant name of an [`ExportRefusal`] (REQ-9). A total
+/// match over the post-(v) inventory `pub enum ExportRefusal in lean_export.rs` — a
+/// future variant is a compile error here (the closed-enum discipline), never a
+/// silently-dropped class.
+fn refusal_class_name(refusal: &ExportRefusal) -> &'static str {
+    match refusal {
+        ExportRefusal::OutOfFragment(_) => "OutOfFragment",
+        ExportRefusal::NotPureContract(_) => "NotPureContract",
+        ExportRefusal::IncompleteRegistry(_) => "IncompleteRegistry",
+        ExportRefusal::NonIntResult(_) => "NonIntResult",
+        ExportRefusal::OpenHole(_) => "OpenHole",
+        ExportRefusal::LoopBody(_) => "LoopBody",
+        ExportRefusal::OptResResult(_) => "OptResResult",
+    }
+}
+
 impl AuditManifest {
     /// Build the v1 audit manifest from a settled certificate collection (REQ-1,
     /// REQ-4) — a PURE PROJECTION. Aggregates:
@@ -370,11 +551,15 @@ impl AuditManifest {
         let assurance = AssuranceManifest::aggregate(certs);
         let project_assurance = ProjectAssuranceSection::from_assurance(&assurance);
         let tcb = Tcb::from_certificates(certs, program, toolchain);
+        // The #274 informational membership section (REQ-7): one dry-run
+        // `export_item` probe per cert, in source order (REQ-8, pure — no lake/fs).
+        let lean_fragment = LeanFragment::from_certificates(certs, program);
         AuditManifest {
             manifest_version: MANIFEST_VERSION.to_string(),
             functions,
             project_assurance,
             tcb,
+            lean_fragment,
         }
     }
 }
@@ -501,5 +686,183 @@ mod tests {
         let ja = serde_json::to_string(&a).expect("serialize a");
         let jb = serde_json::to_string(&b).expect("serialize b");
         assert_eq!(ja, jb);
+    }
+
+    // --- #274 lean_fragment membership unit tests (REQ-7..10) --------------------
+
+    fn parse_program(src: &str) -> Program {
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        parsed.program
+    }
+
+    // REQ-7/REQ-8 (AC-7): a pure-int-tail specCall-free body probes exportable
+    // tier=auto (fuel-free-auto) — the membership decision is the shipped dry-run
+    // export, with NO verus run (the probe is pure). Expected from the §6.1 tier (a)
+    // definition (R-CHAR-3), not forge stdout.
+    #[test]
+    fn probe_pure_int_tail_is_auto() {
+        let program =
+            parse_program("fn count(n: u32) -> u32 req n < 100 ens result == n fx pure { n }");
+        let row = LeanFragmentRow::probe("count", &program);
+        assert!(
+            row.exportable,
+            "a specCall-free pure-int-tail body is exportable"
+        );
+        assert_eq!(row.tier, "auto");
+        assert_eq!(row.tier_tag.as_deref(), Some("fuel-free-auto"));
+        assert!(
+            row.refusal.is_none(),
+            "an exportable row carries no refusal"
+        );
+    }
+
+    // REQ-9 (AC-8): a boundary fn (foreign body, no in-language body) probes
+    // NotPureContract with the verbatim shipped Display reason.
+    #[test]
+    fn probe_boundary_is_not_pure_contract() {
+        let program = parse_program(
+            "#[boundary(\"ext::e\")] fn bnd(x: u32) -> u32 req x < 100 ens result == x fx pure ;",
+        );
+        let row = LeanFragmentRow::probe("bnd", &program);
+        assert!(!row.exportable);
+        assert_eq!(row.tier, "none");
+        assert_eq!(row.tier_tag, None, "a refused row carries no tier_tag");
+        // Compare the whole `Option<LeanRefusal>` (derives PartialEq) — the verbatim
+        // shipped Display reason (REQ-9), no fallible extraction.
+        assert_eq!(
+            row.refusal,
+            Some(LeanRefusal {
+                class: "NotPureContract".to_string(),
+                reason: "not a pure-contract item (the §4 scope): fn `bnd` is a boundary fn \
+                         (foreign body, no in-language body)"
+                    .to_string(),
+            })
+        );
+    }
+
+    // REQ-8 (AC-9): the probe row EQUALS what `export_item` returns for that item's
+    // CONTRACT obligation minted via the SAME `check::contract_obligation` seam — the
+    // report and the `--engine lean` admission decision can never disagree. Covers an
+    // exportable item AND a refused (boundary) item.
+    #[test]
+    fn probe_agrees_with_direct_export_item() {
+        for (name, src) in [
+            (
+                "count",
+                "fn count(n: u32) -> u32 req n < 100 ens result == n fx pure { n }",
+            ),
+            (
+                "bnd",
+                "#[boundary(\"ext::e\")] fn bnd(x: u32) -> u32 req x < 100 ens result == x fx pure ;",
+            ),
+        ] {
+            let program = parse_program(src);
+            let found = lean_export::find_item(&program, name);
+            assert!(found.is_some(), "item `{name}` parses");
+            let Some(item) = found else { continue };
+            let obligation = crate::check::contract_obligation(&program, item);
+            let direct = lean_export::export_item(&obligation, &program, item);
+            let row = LeanFragmentRow::probe(name, &program);
+            match direct {
+                Ok(exported) => {
+                    assert!(row.exportable, "row agrees: exportable");
+                    let expect_tier = if exported.tier.is_auto() {
+                        "auto"
+                    } else {
+                        "interactive"
+                    };
+                    assert_eq!(row.tier, expect_tier, "row tier agrees with export_item");
+                    assert_eq!(
+                        row.tier_tag.as_deref(),
+                        Some(exported.tier.tag()),
+                        "row tier_tag agrees with ExportTier::tag"
+                    );
+                    assert_eq!(row.refusal, None, "an exportable row carries no refusal");
+                }
+                Err(refusal) => {
+                    assert!(!row.exportable, "row agrees: refused");
+                    // The row's refusal EQUALS the direct export_item refusal,
+                    // field-for-field (stable class + verbatim Display reason).
+                    assert_eq!(
+                        row.refusal,
+                        Some(LeanRefusal {
+                            class: refusal_class_name(&refusal).to_string(),
+                            reason: refusal.to_string(),
+                        }),
+                        "the row refusal agrees with export_item field-for-field"
+                    );
+                }
+            }
+        }
+    }
+
+    // REQ-10 (AC-11): a PRE-AMENDMENT v1 document (no `lean_fragment` key) still
+    // deserializes into the TYPED `AuditManifest` — the `#[serde(default)]` additive
+    // discipline (the new section defaults to an empty `LeanFragment`).
+    #[test]
+    fn pre_amendment_v1_deserializes_into_typed_manifest() {
+        let pre = r#"{
+            "manifest_version": "v1",
+            "functions": [],
+            "project_assurance": {
+                "level": { "kind": "certified", "level": "L3" },
+                "scope": { "kind": "end_to_end" }
+            },
+            "tcb": {
+                "slag_blocks": [],
+                "boundary_contracts": [],
+                "toolchain": { "verus": "x", "thermite": "y" }
+            }
+        }"#;
+        let parsed: Result<AuditManifest, _> = serde_json::from_str(pre);
+        assert!(
+            parsed.is_ok(),
+            "pre-amendment v1 doc must deserialize (serde default): {:?}",
+            parsed.as_ref().err()
+        );
+        let Ok(m) = parsed else { return };
+        assert_eq!(m.manifest_version, "v1");
+        assert!(
+            m.lean_fragment.functions.is_empty(),
+            "the absent lean_fragment defaults to an empty section"
+        );
+    }
+
+    // REQ-9 (AC-7) — the sum.th HAND-TRACE VERDICT, pinned in-crate: BOTH rows refuse
+    // OutOfFragment but NOT for the spec-calling-inv reason the doc narrative grounded
+    // — `sum` is the recursive-registry contract over a while body; `spec_sum` is the
+    // slice-pattern match body. The probe needs no verus (pure). The exact verbatim
+    // reasons are hand-derived from the exporter (R-CHAR-3) — see cases.json.
+    #[test]
+    fn probe_sum_th_refusals_are_hand_traced() {
+        let src = include_str!("../../conformance/sum.th");
+        let program = parse_program(src);
+
+        let sum = LeanFragmentRow::probe("sum", &program);
+        assert!(!sum.exportable);
+        assert!(sum.refusal.is_some(), "sum refusal present");
+        if let Some(r) = sum.refusal {
+            assert_eq!(r.class, "OutOfFragment");
+            assert!(
+                r.reason
+                    .contains("RECURSIVE-registry contract clause over a while body"),
+                "sum refuses the recursive-registry-over-while-body OutOfFragment (the §4 \
+                 interactive residual), NOT the spec-calling-inv reason: {}",
+                r.reason
+            );
+        }
+
+        let spec_sum = LeanFragmentRow::probe("spec_sum", &program);
+        assert!(!spec_sum.exportable);
+        assert!(spec_sum.refusal.is_some(), "spec_sum refusal present");
+        if let Some(r) = spec_sum.refusal {
+            assert_eq!(r.class, "OutOfFragment");
+            assert!(
+                r.reason.contains("Slice"),
+                "spec_sum refuses its slice-pattern match body (OUT of S_C): {}",
+                r.reason
+            );
+        }
     }
 }

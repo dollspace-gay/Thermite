@@ -1,6 +1,6 @@
 {
   "next_display_id": 276,
-  "next_comment_id": 542,
+  "next_comment_id": 552,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
@@ -16,10 +16,6 @@
     "267": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T04:40:20.473752192Z"
-    },
-    "269": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-12T06:39:02.132777136Z"
     },
     "271": {
       "agent_id": "Yffe",
@@ -51,10 +47,30 @@
       "priority": "medium",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:54:55.384552683Z",
-      "updated_at": "2026-06-12T06:54:56.845285961Z",
+      "updated_at": "2026-06-12T07:14:49.989381970Z",
       "labels": [
         "feature"
-      ]
+      ],
+      "comments": {
+        "26fbe120-1f5a-4166-8553-9526867b1563": {
+          "display_id": 544,
+          "author": "Yffe",
+          "content": "Plan: proof-backends §4.3 — increment (vi) early-return widening (review item 8): Sum-typed rblockThread denotation layer (cost class stated loudly: NOT compose-around — sibling theorems return_compose/loopDenoteR_exits_of_dec on a new layer, shipped bricks unchanged), v1 grammar covering binary_search's actual shape (top-level guard returns in a loop-kind body, Option result via RetVal.optres), per-return-site _ret_k obligations, _converges conjunction inherited.",
+          "created_at": "2026-06-12T07:14:33.593730600Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJxj8XhUztENGO8pNvgl5GWqc/9LGBsoGSsLXy0YOCmPwQytuIUFNgTRyZvxgpu1g1/aCpuoFMl+DWmg8FIjkDQ=="
+        },
+        "345c91a6-c40a-4366-b10e-24fb29d62cf1": {
+          "display_id": 545,
+          "author": "Yffe",
+          "content": "Result: §4.3 design committed (+541 lines, REQ-12 with 8 sub-reqs NOT-STARTED). Build (vi-a spine / vi-b exporter) remains open behind this design.",
+          "created_at": "2026-06-12T07:14:49.912778020Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAiOue3O5rBcD9GZpXJHX+wbflS8/4aXs+g366ksqWlhObdjvg7rwJIOCLcGTjtUhB7CQdDDUk478jra+ZAWrEAg=="
+        }
+      }
     },
     "104f1f37-e914-4961-a07a-787b1cfdaa84": {
       "uuid": "104f1f37-e914-4961-a07a-787b1cfdaa84",
@@ -78,10 +94,30 @@
       "priority": "medium",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:54:47.615845784Z",
-      "updated_at": "2026-06-12T06:54:49.116039985Z",
+      "updated_at": "2026-06-12T07:14:18.860505319Z",
       "labels": [
         "feature"
-      ]
+      ],
+      "comments": {
+        "988579d6-d02b-46cb-9324-8c5fe922836f": {
+          "display_id": 543,
+          "author": "Yffe",
+          "content": "Result: design committed — query shape grounded on live verus probes (proof-fn prove-the-negation, =~= struct distinctness), SpecTightness additive cert field, cache story (existing 5-input key + schema bump). Build remains open behind this design.",
+          "created_at": "2026-06-12T07:14:18.805675681Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA1Mpz+vDDe1wZqzkany4t5TmcfGTam0za4fmUuitsSE9aSrJJgODeKtMCCI/mKypuDi1Rz3wEFj1e4ivjtq8SBQ=="
+        },
+        "c1a85956-bd15-4217-9537-3fe9065f72ed": {
+          "display_id": 542,
+          "author": "Yffe",
+          "content": "Plan: amend solver-vacuity.md with the spec-tightness signal (review item 6) — the third solver-gate family member: prove-the-negation two-results query, tight/loose/undetermined report-only cert field (engine_attribution additive-serde precedent, goldens byte-identical), cache-MISS-only cost + CHECK_SCHEMA_VERSION bump. Bonus discovery filed as #275: the shipped #13 harness is SpecFn-only — ADT-signature fns (the whole editor) silently no-op BOTH solver checks via E0425→Failed→Clean.",
+          "created_at": "2026-06-12T07:14:06.417222419Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAFy7FrXubYW1F6QYac0hzTRUiR1Gq9V0GmgOfPJbJPC7ObV6AS4DKHq4etnW42FHFZJU/3lZV+eR3PtKo/LvuCw=="
+        }
+      }
     },
     "5a240f21-e56b-4c09-8626-5b565805a7b4": {
       "uuid": "5a240f21-e56b-4c09-8626-5b565805a7b4",
@@ -91,10 +127,30 @@
       "priority": "low",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:55:04.564311785Z",
-      "updated_at": "2026-06-12T06:55:06.251063338Z",
+      "updated_at": "2026-06-12T07:15:19.437040125Z",
       "labels": [
         "feature"
-      ]
+      ],
+      "comments": {
+        "35a8398b-2ce4-427a-a46a-1bff92efb050": {
+          "display_id": 547,
+          "author": "Yffe",
+          "content": "Result: protocol committed (350 lines). Experiment execution remains open behind the REQ-E1..E6 harness builds; the falsification statement is in the doc verbatim.",
+          "created_at": "2026-06-12T07:15:19.365877087Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA4UJTrhkDLP2l707uMa9hCbCc3orKBbyruGaNAIfyykZhoDYVf9ynm1S7NdzGbaypDBxucWOnI9fHIcUwMTC/Dw=="
+        },
+        "c8cb5905-71b7-46b1-af3b-24698a3b05f8": {
+          "display_id": 546,
+          "author": "Yffe",
+          "content": "Plan: author .design/research/composition-experiment.md (review item 9) — falsifiable H1/H2, three integration tasks grounded in real shipped contracts (csv_sum, calc_insert, status_line — T3's strict-bound seam emerged from the actual to_1based req), symmetric defect metric D(A→B)/D(B→A), hand-authored held-out suites (R-CHAR-3), explicit falsification statement; REQ-E1..E6 buildables NOT-STARTED.",
+          "created_at": "2026-06-12T07:15:03.758763067Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAPQhB5d8Mv7WIEASl1hP8uHkcYT6QFkMao4lhAYJgW63VVb8iaiP3mQ75/GGfKq81J+MEMQL7CB/US/usVjXfDg=="
+        }
+      }
     },
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": {
       "uuid": "6b4366c4-e03e-4dcb-bb9f-b23b344a9583",
@@ -175,24 +231,54 @@
       "priority": "medium",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:55:12.867050415Z",
-      "updated_at": "2026-06-12T06:55:14.308587531Z",
+      "updated_at": "2026-06-12T07:15:35.092080193Z",
       "labels": [
         "feature"
-      ]
+      ],
+      "comments": {
+        "4da8b77a-8c91-42bd-896e-bf091bb65c39": {
+          "display_id": 549,
+          "author": "Yffe",
+          "content": "Result: design committed — additive section, dry-run probe, goldens unaffected (field-asserting suites). Build remains open behind this design.",
+          "created_at": "2026-06-12T07:15:35.011522908Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAJs0BVqvKo3ZE8FpS3FR3aewaqDGk/Nqg3ggvf7OPeqKitWflNwpJ1CYrGKzuCr6dhS3CSbjTrsL+CnznViJ1Bg=="
+        },
+        "a095e901-e065-4c65-94dd-a9cc16beca2e": {
+          "display_id": 548,
+          "author": "Yffe",
+          "content": "Plan: amend audit-manifest.md (review item 7, non-breaking half) — additive lean_fragment.functions[] audit section ({name, exportable, tier, refusal class+reason verbatim}), dry-run export_item probe (zero fs/process side effects in lean_export.rs, cost precedented by obligation_content_hash), manifest_version stays v1, OQ-2 byte-identity fenced; the #226 closure-minting privacy gap recorded (REQ-8/OQ-4, no closure fork allowed).",
+          "created_at": "2026-06-12T07:15:22.924379388Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAPuiVVRIL9Vzrh1nMf9/Jidb2fAwBpdqzCbAt9HpcT1sfe8e6Di9/s1a92u+LGMoqoKOihg30p/mSFqy8HNT+Bg=="
+        }
+      }
     },
     "fa3fc9ee-21e7-4960-bdee-ba6caba75318": {
       "uuid": "fa3fc9ee-21e7-4960-bdee-ba6caba75318",
       "display_id": 269,
       "title": "Mutation battery: identity-return + struct-zero early-return families (outside-review item 5; closes the move_up class)",
-      "status": "open",
+      "status": "closed",
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:38:51.924231567Z",
-      "updated_at": "2026-06-12T06:53:22.655164292Z",
+      "updated_at": "2026-06-12T09:19:57.915043668Z",
+      "closed_at": "2026-06-12T09:19:57.880517988Z",
       "labels": [
         "feature"
       ],
       "comments": {
+        "1b5d68d2-dddf-49a2-8840-46031efb16fb": {
+          "display_id": 551,
+          "author": "Yffe",
+          "content": "Result: SHIPPED + critic-clean (64a329fa + d98976ca). F-IDENT/F-STRUCT-ZERO live (O-G reproduced the review's escape: move_up 11/15 return-b survivor pre-tightening), call-bearing equivalence through callee contracts (AC-6 green, AC-8 conservatism live, contract-opacity verified by live probe), cache 5→7, 949 workspace tests 0 failed. Critic NO DIVERGENCE across 6 surfaces incl. vacuous-req laundering defense-in-depth + the editor-pin hand-trace. Minor doc-hygiene observation (stale NOT-STARTED markers in amendment prose) folded into the next doc pass.",
+          "created_at": "2026-06-12T09:19:46.010687379Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANbI8a/hzuZoAxOQzxyggAWqGeQ+Z/7kJyrFoonGdIDNn2Onq2MsJnTjQaNP61qhdy2++9BO+b2s6dZuUmx79BQ=="
+        },
         "73c7cd5c-1dfd-4d45-92f1-87901dfc42ee": {
           "display_id": 541,
           "author": "Yffe",
@@ -201,6 +287,15 @@
           "kind": "plan",
           "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
           "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAE0LQnSYf+NyV3FOExc2Q71R48q8fXrZhnEj66FYJuyKLIev+LvhPyLeFa8LHQzsvy68FtnIseNUneRxhg9Q5Cg=="
+        },
+        "c4ea1049-8572-4891-9b7e-57ba8e92e51b": {
+          "display_id": 550,
+          "author": "Yffe",
+          "content": "LANDING PLAN (#269/#270 coordinated Tier-1 arc — the call-bearing equivalence seam + the landing).\n\nSEAM (this dispatch, manifest): the call-bearing equivalence probe — equivalent-mutants.md REQ-7/8/9.\n- thermite-lower/src/lower.rs: lower_equivalence_obligation gains callee_deps:&[Item]; a NON-EMPTY closure (a §9 call-bearing body) routes to lower_call_bearing_equivalence_obligation — an EXEC-position harness 'fn equiv_check_<n>(..) -> (eq:bool) requires <req>, ensures eq { let real_v={<real>}; let mutant_v={<mutant>}; real_v==mutant_v }' with the closure woven via the EXISTING lower dispatch (boundary -> external_body sig, regular -> full def; modulo callee contracts §9). Call-free bodies take the UNCHANGED spec-fn-pair path.\n- forge/src/check.rs: equivalence_proves_equal threads fn_deps and returns EquivOutcome::{Proved,NotProved,Unsupported(reason)} — exclusion on Proved ALONE; Unsupported carries the structured reason to the survivor surface (REQ-9, no silent swallow).\n- forge/src/cache.rs: CHECK_SCHEMA_VERSION 6 -> 7 (the call-bearing exclusion is verdict-changing for §9 callers).\n\nARC-1 (staged, landing together): mutation.rs F-IDENT/F-STRUCT-ZERO (REQ-9..11), check.rs adt_deps threading, editor.th tightening (#270), editor_runs.rs pins.\n\nORACLE: AC-6 direct+transitive composition GREEN (caller return x excluded -> L3). AC-8 weak-callee wcaller gates WeakContract 0/2. O-C editor 6/6, O-E equivalent_mutants 5/5.\n\nGAUNTLET: build/clippy(-D warnings)/fmt clean; cargo test --workspace --no-fail-fast = 949 passed, 0 failed, 0 ignored (verus live).\n\nCOMMIT 1: the coordinated arc. COMMIT 2: re-pin governed docs to commit 1.",
+          "created_at": "2026-06-12T08:41:55.190702024Z",
+          "kind": "plan",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAAg9zrrQ57vm7RBu57JFrjq1rEBlTPIPRBkPJK8GSC83L2kVkm+6Vs9uEElN129KtDQKb2NW9+Zozn0BSBHv9CA=="
         }
       }
     }
@@ -3091,11 +3186,71 @@
       "agent_id": "Yffe",
       "agent_seq": 577,
       "timestamp": "2026-06-12T07:02:52.814740252Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 578,
+      "timestamp": "2026-06-12T07:14:06.470883184Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 579,
+      "timestamp": "2026-06-12T07:14:18.860505319Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 580,
+      "timestamp": "2026-06-12T07:14:33.635243093Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 581,
+      "timestamp": "2026-06-12T07:14:49.989381970Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 582,
+      "timestamp": "2026-06-12T07:15:03.998059297Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 583,
+      "timestamp": "2026-06-12T07:15:19.437040125Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 584,
+      "timestamp": "2026-06-12T07:15:22.974904095Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 585,
+      "timestamp": "2026-06-12T07:15:35.092080193Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 586,
+      "timestamp": "2026-06-12T08:41:55.226363396Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 587,
+      "timestamp": "2026-06-12T09:19:46.056406163Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 588,
+      "timestamp": "2026-06-12T09:19:57.915043668Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 589,
+      "timestamp": "2026-06-12T09:19:59.484760482Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T07:02:52.814740252Z",
+    "timestamp": "2026-06-12T09:19:59.484760482Z",
     "agent_id": "Yffe",
-    "agent_seq": 577
+    "agent_seq": 589
   }
 }

@@ -1,0 +1,10 @@
+{
+  "uuid": "baf1dfb7-42f2-40a6-89c6-90a748d8d2c5",
+  "issue_uuid": "8f80c4e4-15aa-4e0f-8146-2e62c83e84ae",
+  "author": "Yffe",
+  "content": "Plan: commit the kernel-checked critic pin lean/Thermite/PinWhileDecShape.lean (the #265 h_dec shape-drift refutation; its compilation also mechanically refutes this issue's stale REQ-11 table row) to main as the audit artifact of 99c7f304. No production code touched; fixes are the generator's.",
+  "created_at": "2026-06-12T03:01:57.921857704Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANfOhuDdmyzqTz9BpmtL9PVpv2EwsBFneCop83tz1n3E/j9b6yNo5I5QQZrlXFASJDcx74Y0ibIWXqxBtyyRnCA=="
+}

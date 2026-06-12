@@ -1,0 +1,11 @@
+{
+  "uuid": "104f1f37-e914-4961-a07a-787b1cfdaa84",
+  "display_id": 275,
+  "title": "vacuity_solver: struct/enum-returning fn harnesses omit ADT decls (E0425) and the compile error reads as CLEAN — interpret_summary maps success:false/errors:0 to Failed",
+  "description": "Grounded on real verus (v0.2026.05.24.ecee80a): extract_lowered_fn builds the harness sub-program from spec_items (SpecFn-only) + the fn, with NO reachable_adt_deps weave, so a struct-returning fn (e.g. examples/editor/editor.th::move_up returning Buffer; minimal repro: struct P + fn keep(p: P) -> P) produces a harness with an undeclared type. verus emits error[E0425] with verification-results { success: false, verified: 0, errors: 0, encountered-vir-error: false }, which interpret_summary maps to HarnessOutcome::Failed -> CLEAN. Net: BOTH #13 checks are silent no-ops on every ADT-returning fn (a struct-returning semantic tautology / unsat-req would not be caught), and contract_quality bools are reported solver-confirmed-false without a real query — an R-CODE-4 violation (a non-verdict outcome read as clean). Found while authoring the spec-tightness amendment to .design/forge/solver-vacuity.md (#271); the new tightness REQ mandates the ADT weave + a compile-error-vs-counterexample distinction and must not inherit this gap.",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T07:02:47.284793815Z",
+  "updated_at": "2026-06-12T07:02:47.284793815Z"
+}

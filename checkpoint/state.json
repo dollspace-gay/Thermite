@@ -1,8 +1,9 @@
 {
-  "next_display_id": 275,
+  "next_display_id": 276,
   "next_comment_id": 542,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
+    "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
     "3242ddca-61ca-4c06-a453-fcdd74db0964": 271,
     "5a240f21-e56b-4c09-8626-5b565805a7b4": 273,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
@@ -35,6 +36,10 @@
     "274": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T06:55:17.439637437Z"
+    },
+    "275": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T07:02:52.814740252Z"
     }
   },
   "issues": {
@@ -49,6 +54,20 @@
       "updated_at": "2026-06-12T06:54:56.845285961Z",
       "labels": [
         "feature"
+      ]
+    },
+    "104f1f37-e914-4961-a07a-787b1cfdaa84": {
+      "uuid": "104f1f37-e914-4961-a07a-787b1cfdaa84",
+      "display_id": 275,
+      "title": "vacuity_solver: struct/enum-returning fn harnesses omit ADT decls (E0425) and the compile error reads as CLEAN — interpret_summary maps success:false/errors:0 to Failed",
+      "description": "Grounded on real verus (v0.2026.05.24.ecee80a): extract_lowered_fn builds the harness sub-program from spec_items (SpecFn-only) + the fn, with NO reachable_adt_deps weave, so a struct-returning fn (e.g. examples/editor/editor.th::move_up returning Buffer; minimal repro: struct P + fn keep(p: P) -> P) produces a harness with an undeclared type. verus emits error[E0425] with verification-results { success: false, verified: 0, errors: 0, encountered-vir-error: false }, which interpret_summary maps to HarnessOutcome::Failed -> CLEAN. Net: BOTH #13 checks are silent no-ops on every ADT-returning fn (a struct-returning semantic tautology / unsat-req would not be caught), and contract_quality bools are reported solver-confirmed-false without a real query — an R-CODE-4 violation (a non-verdict outcome read as clean). Found while authoring the spec-tightness amendment to .design/forge/solver-vacuity.md (#271); the new tightness REQ mandates the ADT weave + a compile-error-vs-counterexample distinction and must not inherit this gap.",
+      "status": "open",
+      "priority": "high",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T07:02:47.469514397Z",
+      "updated_at": "2026-06-12T07:02:49.393713715Z",
+      "labels": [
+        "blocker"
       ]
     },
     "3242ddca-61ca-4c06-a453-fcdd74db0964": {
@@ -3057,11 +3076,26 @@
       "agent_id": "Yffe",
       "agent_seq": 574,
       "timestamp": "2026-06-12T06:55:17.439637437Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 575,
+      "timestamp": "2026-06-12T07:02:47.469514397Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 576,
+      "timestamp": "2026-06-12T07:02:49.393713715Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 577,
+      "timestamp": "2026-06-12T07:02:52.814740252Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:55:17.439637437Z",
+    "timestamp": "2026-06-12T07:02:52.814740252Z",
     "agent_id": "Yffe",
-    "agent_seq": 574
+    "agent_seq": 577
   }
 }

@@ -532,11 +532,12 @@
       "uuid": "07d43ddb-b41d-4988-98f7-2f8249ab12eb",
       "display_id": 282,
       "title": "RFC-1 (GH issue 2) compatibility review: check open work (271/272/273/275/280) + recent arcs against the Thermite 2 design",
-      "status": "open",
+      "status": "closed",
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T20:09:04.568729106Z",
-      "updated_at": "2026-06-12T20:11:51.102217546Z",
+      "updated_at": "2026-06-12T20:12:08.089047828Z",
+      "closed_at": "2026-06-12T20:12:08.089046459Z",
       "labels": [
         "docs"
       ],
@@ -9500,11 +9501,16 @@
       "agent_id": "Yffe",
       "agent_seq": 649,
       "timestamp": "2026-06-12T20:11:51.102217546Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 650,
+      "timestamp": "2026-06-12T20:12:08.089047828Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T20:11:51.102217546Z",
+    "timestamp": "2026-06-12T20:12:08.089047828Z",
     "agent_id": "Yffe",
-    "agent_seq": 649
+    "agent_seq": 650
   }
 }

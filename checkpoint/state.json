@@ -1,6 +1,6 @@
 {
   "next_display_id": 280,
-  "next_comment_id": 562,
+  "next_comment_id": 563,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "104f1f37-e914-4961-a07a-787b1cfdaa84": 275,
@@ -52,10 +52,6 @@
     "278": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T09:55:49.168256143Z"
-    },
-    "279": {
-      "agent_id": "Yffe",
-      "claimed_at": "2026-06-12T11:26:30.812653868Z"
     }
   },
   "issues": {
@@ -111,14 +107,26 @@
       "display_id": 279,
       "title": "thermite-lower: lower_spec_arg drops the byte-view for a FIELD-ACCESS bytes_eq String operand (&result.text / &b.text -> &TString, E0308) — blocks #276 Arc-2",
       "description": "thermite-lower::lower_spec_arg lowers a `bytes_eq` String OPERAND that is a FIELD ACCESS (`&result.text`, `&b.text`) to a `&TString` reference instead of the `Seq<u8>` byte view (`result.text.data@`), causing E0308 at real verus. This blocks #276 Arc-2 (the editor's bytes_eq content pins, whose operands MUST name `result.text` / `b.text` — the Buffer's text field).\n\nROOT CAUSE (thermite-lower/src/lower.rs, `lower_spec_arg`, ~lines 7595-7646):\n- The single-segment-path byteview rule (`if string_as_byteview && segs.len() == 1 && ctx.is_string(name)` -> `{name}.data@`) and the `&<single-segment-path>` ref-strip rule (`Expr::Ref { expr: Expr::Path(segs) } with segs.len()==1`) handle bare String idents (`&ins`, `&result`, `&a`) correctly.\n- A String operand that is `Expr::Field` (`result.text`, `b.text`) or `Expr::Ref { expr: Expr::Field {..} }` (`&result.text`, `&b.text`) is NOT matched, so it falls to `lower_expr` and emits `&result.text` (a `&TString`) — wrong type for `bytes_eq(a: Seq<u8>, b: Seq<u8>, ..)`.\n\nMINIMAL REPRO (verus-confirmed E0308 'expected Seq<u8>, found &TString'):\n  struct Buf { text: String, cursor: u64 } inv cursor <= text.len() && text.len() <= 1_000_000\n  fn ins(b: Buf, s: String) -> Buf\n    req b.text.len() + s.len() <= 1_000_000\n    ens result.text.len() == b.text.len() + s.len()\n    ens bytes_eq(&result.text, &b.text, 0, 0, b.cursor)\n    fx alloc\n  { let head: String = b.text.slice(0, b.cursor); let tail: String = b.text.slice(b.cursor, b.text.len());\n    Buf { text: head.concat(s).concat(tail), cursor: b.cursor + s.len() } }\nemits `__thermite_bytes_eq(&result.text, &b.text, 0 as int, ...)` -> E0308.\n\nThe C8 demo (conformance/bytes_eq_demo.th) never tripped this — it uses ONLY flat String params / the whole result (all single-segment paths). The gap is field-access String operands.\n\nFIX (in thermite-lower/src/lower.rs::lower_spec_arg only): when `string_as_byteview` and the operand is an `Expr::Field` (or `Expr::Ref` wrapping an `Expr::Field`) whose field type is `String`, emit `<base>.<field>.data@` (the `Seq<u8>` view), mirroring the existing single-segment `{name}.data@` rule. The field's String-ness check must use the in-scope struct/field type info (the same machinery the struct-invariant weave uses for `b.text`).\n\nACCEPTANCE: the minimal repro above certifies L3 through real verus; #276's editor.th `insert_str`/`backspace`/`render_frame` content pins certify L3; conformance/bytes_eq_demo.th + sum.th + bytes_eq_demo.cert.json byte-stable (no regression — only field-access operands change). Then #276 Arc-2 re-dispatches.\n\nSurfaced by #276 Arc-2 (3rd STOP). #277 + #278 already landed and work; this is a distinct, narrow lowering gap.",
-      "status": "open",
+      "status": "closed",
       "priority": "high",
       "created_by": "Yffe",
       "created_at": "2026-06-12T11:05:20.251560311Z",
-      "updated_at": "2026-06-12T11:05:21.997275186Z",
+      "updated_at": "2026-06-12T11:26:48.603009212Z",
+      "closed_at": "2026-06-12T11:26:48.557571407Z",
       "labels": [
         "blocker"
-      ]
+      ],
+      "comments": {
+        "cf1d718c-9e1f-4fd8-bccf-92c4043f43f3": {
+          "display_id": 562,
+          "author": "Yffe",
+          "content": "FIXED (cf48c893 + 87a07885 pin ceremony). byteview_string_operand (lower.rs::lower_spec_arg) now covers the WHOLE bytes_eq String-operand class: bare path (ins), and-path (and ins), String-FIELD access (result.text), and and-field (and result.text / and b.text) all lower to <expr>.data@ (the field arm keyed on ctx.is_string_field). Without it a field operand emitted and-result.text (a and-TString) against bytes_eq's Seq<u8> params (E0308). Grounded: conformance/bytes_eq_demo.th gains buf_prefix_pin(b: Buf) over a Buf { text: String } ADT certifying L3 (forge check buf_prefix_pin L3; whole module 18 verified 0 errors). Full workspace 967 passed 0 failed, no regression. #276 Arc-2 can re-dispatch.",
+          "created_at": "2026-06-12T11:26:43.319823417Z",
+          "kind": "result",
+          "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+          "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABANm6vCCSyRF49mJOx9sFo03BTpTmzF0hqb49BBrR8rxS9MgEB0TKivbAUK8GuLzjaCsGEpt1lhC0MjyIHKjbCCg=="
+        }
+      }
     },
     "3242ddca-61ca-4c06-a453-fcdd74db0964": {
       "uuid": "3242ddca-61ca-4c06-a453-fcdd74db0964",
@@ -3551,11 +3559,26 @@
       "agent_id": "Yffe",
       "agent_seq": 615,
       "timestamp": "2026-06-12T11:26:30.812653868Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 616,
+      "timestamp": "2026-06-12T11:26:43.368617760Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 617,
+      "timestamp": "2026-06-12T11:26:48.603009212Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 618,
+      "timestamp": "2026-06-12T11:26:50.208473910Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T11:26:30.812653868Z",
+    "timestamp": "2026-06-12T11:26:50.208473910Z",
     "agent_id": "Yffe",
-    "agent_seq": 615
+    "agent_seq": 618
   }
 }

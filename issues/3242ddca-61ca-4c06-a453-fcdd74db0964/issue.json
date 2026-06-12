@@ -1,0 +1,10 @@
+{
+  "uuid": "3242ddca-61ca-4c06-a453-fcdd74db0964",
+  "display_id": 271,
+  "title": "solver-vacuity: spec-tightness signal — per-fn SMT query 'two distinct results satisfy the post for one req-satisfying input', report-only cert field (review item 6)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:54:47.571449565Z",
+  "updated_at": "2026-06-12T06:54:47.571449565Z"
+}

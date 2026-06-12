@@ -6,7 +6,12 @@
 // one `bytes_eq` conjunct, all discharged by ONE auto-emitted `lemma_bytes_eq_bridge`
 // citation with ZERO per-conjunct glue. Both certify L3 (the prove-once bridge laws
 // REQ-18 + the contract-keyed body-start citation REQ-19); both carry `fx alloc` (the
-// constructing slice/concat). Hand-authored corpus oracle (R-CHAR-3).
+// constructing slice/concat). `buf_prefix_pin` exercises the FIELD-ACCESS operand
+// shape (#279) — the editor wraps its `String` in a `Buf { text: String }` ADT, so its
+// pins name `result.text`/`b.text` (field accesses, NOT bare paths); the byte-view
+// rewrite lowers `&result.text` → `result.text.data@`, closing the whole bytes_eq
+// operand class (bare path / &path / field / &field). Hand-authored corpus oracle
+// (R-CHAR-3).
 
 fn slice_id(a: &String) -> String
   req  a.len() <= 1_000_000
@@ -25,4 +30,15 @@ fn insert_str(text: &String, ins: &String, cursor: u64) -> String
   fx    alloc
 {
   text.slice(0, cursor).concat(ins.slice(0, ins.len())).concat(text.slice(cursor, text.len()))
+}
+
+struct Buf { text: String, cursor: u64 }
+  inv cursor <= text.len() && text.len() <= 1_000_000
+
+fn buf_prefix_pin(b: Buf) -> Buf
+  req  true
+  ens  bytes_eq(&result.text, &b.text, 0, 0, b.cursor)
+  fx   alloc
+{
+  Buf { text: b.text.slice(0, b.text.len()), cursor: b.cursor }
 }

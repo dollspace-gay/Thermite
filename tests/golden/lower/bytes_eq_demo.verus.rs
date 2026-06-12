@@ -4,7 +4,7 @@
 // ens). Reference oracle for `thermite-lower::lower`'s `bytes_eq` emission:
 // hand-authored from the design's GROUNDED forms (R-CHAR-3 — never regenerated from
 // the lowerer), and CONFIRMED to pass the real `verus` binary (verus 0.2026.05.24):
-// `verus --no-cheating <this> => 17 verified, 0 errors`.
+// `verus --no-cheating <this> => 18 verified, 0 errors`.
 //
 // `bytes_eq(a, b, ai, bi, n)` is a REGISTERED built-in spec predicate (REQ-17): the
 // lowerer owns the canonical `Seq<u8>` LOW-PEEL recursion `__thermite_bytes_eq`
@@ -33,8 +33,18 @@
 // conjunct, all discharged by the single citation. Both carry `fx alloc` (constructing).
 // NO assume/external_body/admit (R-DEFER-9); the four lemmas are REAL induction proofs.
 // The non-vacuity reject (the length-preserving head/tail-SWAP of insert_str's body)
-// FAILS verus (16 verified, 1 errors, postcondition not satisfied) — the content pins
+// FAILS verus (17 verified, 1 errors, postcondition not satisfied) — the content pins
 // are real teeth a length pin cannot fake (AC-16).
+//
+// `buf_prefix_pin(b: Buf)` exercises the FIELD-ACCESS operand shape (#279): the editor
+// wraps its `String` in a `Buf { text: String }` ADT, so its bytes_eq pins name
+// `result.text`/`b.text` (field accesses, NOT bare paths). The byte-view rewrite
+// (`lower_spec_arg`'s `byteview_string_operand`) lowers `&result.text` →
+// `result.text.data@` and `&b.text` → `b.text.data@` — without the field arm a
+// field-access operand emitted `&result.text` (a `&TString`) against bytes_eq's
+// `Seq<u8>` params (E0308, the #279 STOP). The `Buf` invariant (`cursor <= text.len()
+// && text.len() <= CAP`) is woven into the fn's requires/ensures, so the slice's
+// well_formed precondition discharges; certifies L3.
 use vstd::prelude::*;
 verus! {
 
@@ -234,6 +244,30 @@ fn insert_str(text: &TString, ins: &TString, cursor: u64) -> (result: TString)
 {
     proof { __thermite_lemma_bytes_eq_bridge(); }
     text.slice(0, cursor as usize).concat(ins.slice(0, ins.len() as usize)).concat(text.slice(cursor as usize, text.len() as usize))
+}
+
+
+pub struct Buf {
+    pub text: TString,
+    pub cursor: u64,
+}
+
+impl Buf {
+    pub open spec fn well_formed(&self) -> bool {
+        self.cursor <= self.text.spec_len() && self.text.spec_len() <= 1000000
+    }
+}
+
+
+fn buf_prefix_pin(b: Buf) -> (result: Buf)
+    requires
+        b.well_formed(),
+    ensures
+        result.well_formed(),
+        __thermite_bytes_eq(result.text.data@, b.text.data@, 0 as int, 0 as int, b.cursor as int),
+{
+    proof { __thermite_lemma_bytes_eq_bridge(); }
+    Buf { text: b.text.slice(0, b.text.len() as usize), cursor: b.cursor }
 }
 
 

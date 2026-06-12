@@ -158,6 +158,20 @@ fn bytes_eq_demo_emits_def_and_lemmas_and_citation() {
         ),
         "the slice_id pin lowers a/b to byte-views + the index args (REQ-17/REQ-19):\n{emitted}"
     );
+    // #279: a FIELD-ACCESS String operand (`&result.text`/`&b.text` — the editor's
+    // `Buf { text: String }`) lowers to the field byte-view (`result.text.data@`/
+    // `b.text.data@`), NOT a `&TString` reference (E0308). The whole operand class
+    // (bare path / &path / field / &field) is covered.
+    assert!(
+        emitted.contains(
+            "__thermite_bytes_eq(result.text.data@, b.text.data@, 0 as int, 0 as int, b.cursor as int)"
+        ),
+        "the buf_prefix_pin field-access pin lowers result.text/b.text to byte-views (#279):\n{emitted}"
+    );
+    assert!(
+        !emitted.contains("__thermite_bytes_eq(&result.text"),
+        "no field-access operand may lower to a &TString reference (E0308, #279):\n{emitted}"
+    );
     // R-DEFER-9: no proof cheats in the generated stack.
     for cheat in [
         "assume(",

@@ -100,7 +100,7 @@
 //! | REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `find(&self, p: &TString) -> Option<u64>` occurrence scan with the C7 spec-`match`-in-`ens` (`Some(at) => occurs_at(..), None => !contains_sub(..)`), reusing C7's `Type::Option` lowering. The `occurs_at` offset arg is cast `as int` (the `lower_expr` `Call` `occurs_fn` arm). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus L3; the PINNED Some case proves `result is Some`, the always-`None` mutant FAILS — #101 trap avoided). |
 //! | REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `split(&self, sep: u8) -> TVecTString` push-loop (the count partial + sep-free invariant); `emit_string_search_defs` emits the `count_sep`/`sep_free` spec fns + the `lemma_count_push` induction proof. `collect_vec_elem_types` weaves the `Vec<String>` element (→ `TVecTString`) when a C5 op is used so `split`'s result wrapper is always in scope. The surface `u64` `sep` is cast `as u8` at the call site (exec) + `as u8` in the `count_sep`/`sep_free` contract arg (spec). `count_sep` joins `nat_fns`. Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the count-bound + sep-free floor `7 verified, 0 errors`; a `split`-drop mutant FAILS, non-vacuous). The count-bound is the STRONGEST proved contract (NOT a reconstruct-round-trip). |
 //! | REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`) | SHIPPED | #102 cluster C5. `emit_string_search_methods` emits the `trim(&self) -> TString` forward/backward whitespace scan + bounded copy (the subrange invariant `out@ == self.data@.subrange(lo, i)`); `emit_string_search_defs` emits the `is_space` spec fn. The whitespace test is inlined in the exec loop (`is_space` is a spec fn). Consumer: `lower`. Verified: `forge/tests/string_search_conformance.rs` (real verus — the length floor + subrange content `8 verified, 0 errors`). |
-//! | REQ-18 (canonical `Seq<u8>` recursive def + the FOUR prove-once bridge lemmas) | SHIPPED | #278 cluster C8. `emit_bytes_eq_defs` (called from `lower` after `emit_parse_defs`, gated on `program_uses_bytes_eq`) materializes the `Seq<u8>` LOW-PEEL `bytes_eq` def + the four reserved-named prove-once lemmas (`lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`) — the GROUNDED forms VERBATIM (the explicit `#[trigger] a[ai + k]` load-bearing; no append-window corollaries, the recorded simplification). `bytes_eq` joins `GENERATED_FREE_FNS`/`callee_takes_string_byteview` (the `a`/`b` operands → `.data@`, the `ai`/`bi`/`n` args → `as int`; the `&a` ref form stripped in `lower_spec_arg`). NO `assume`/`external_body`/`admit` (R-DEFER-9 — REAL induction proofs). DIVERGENCE (#265): the `lemma_bytes_eq_bridge` BODY (pinned `/*...*/` signature-only in the design) grounded here with an explicit per-index subrange `#[trigger]` in the `to_pointwise` direction (raw `=~=` FAILED `11 verified, 1 errors`); a body-fill within the pinned signature, not a statement-shape change. Consumer: `lower`. Verified: `thermite-lower/tests/bytes_eq_conformance.rs` (real verus — the emitted `bytes_eq_demo.th` lowering `17 verified, 0 errors`; the head/tail-swap mutant FAILS `16 verified, 1 errors`, non-vacuous) + golden `tests/golden/lower/bytes_eq_demo.verus.rs`. |
+//! | REQ-18 (canonical `Seq<u8>` recursive def + the FOUR prove-once bridge lemmas) | SHIPPED | #278 cluster C8. `emit_bytes_eq_defs` (called from `lower` after `emit_parse_defs`, gated on `program_uses_bytes_eq`) materializes the `Seq<u8>` LOW-PEEL `bytes_eq` def + the four reserved-named prove-once lemmas (`lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`) — the GROUNDED forms VERBATIM (the explicit `#[trigger] a[ai + k]` load-bearing; no append-window corollaries, the recorded simplification). `bytes_eq` joins `GENERATED_FREE_FNS`/`callee_takes_string_byteview` (the `a`/`b` operands → `.data@`, the `ai`/`bi`/`n` args → `as int`). `byteview_string_operand` (`lower_spec_arg`) covers the WHOLE operand class (#279): a bare String path (`ins`), a `&`-path (`&ins`), a String-FIELD access (`result.text` — the editor's `Buf { text: String }`), and a `&`-field (`&result.text`/`&b.text`) — each → `<expr>.data@`; without the field arm a field operand emitted `&result.text` (a `&TString`) against the `Seq<u8>` param (E0308, the #279 STOP). NO `assume`/`external_body`/`admit` (R-DEFER-9 — REAL induction proofs). DIVERGENCE (#265): the `lemma_bytes_eq_bridge` BODY (pinned `/*...*/` signature-only in the design) grounded here with an explicit per-index subrange `#[trigger]` in the `to_pointwise` direction (raw `=~=` FAILED `11 verified, 1 errors`); a body-fill within the pinned signature, not a statement-shape change. Consumer: `lower`. Verified: `thermite-lower/tests/bytes_eq_conformance.rs` (real verus — the emitted `bytes_eq_demo.th` lowering `18 verified, 0 errors` incl. the `buf_prefix_pin` field-access case; the head/tail-swap mutant FAILS, non-vacuous) + golden `tests/golden/lower/bytes_eq_demo.verus.rs`. |
 //! | REQ-19 (`program_uses_bytes_eq` gate + the contract-keyed `lemma_bytes_eq_bridge()` citation) | SHIPPED | #278 cluster C8. `program_uses_bytes_eq` (the `program_uses_parse` gate shape — a contract/body `bytes_eq` `Call`, the #127 user-shadow exclusion) gates `emit_bytes_eq_defs`; every non-`bytes_eq` program is BYTE-STABLE (the conditional-emission precedent — verified `non_bytes_eq_program_does_not_emit_bytes_eq`). The citation is a NEW contract-keyed aid class (`fn_contract_names_bytes_eq`): `proof { __thermite_lemma_bytes_eq_bridge(); }` inserted as the FIRST body statement (`lower_fn_body`) + at each loop-body start (`lower_loop`, Verus loop isolation) — the #196 `render_mul_proof_block` block-start placement + the `nonlinear_overflow_assert` contract-keying. The reserved name is emitted directly (a user fn body is not reserve-rewritten — the `reserved_name("parse_u64")` call-site precedent). NO argument extraction (the no-arg quantified trigger does the instantiation). Consumer: `lower`. Verified: `thermite-lower/tests/bytes_eq_conformance.rs` (the citation present, the slice_id + 3-pin insert_str discharge with ONE citation, ZERO per-conjunct glue, `17 verified, 0 errors`). |
 //! | REQ-20 (`bytes_eq` L1 exec twin — the #104 build-side mirror) | SHIPPED | #278 cluster C8. `l1::emit_string_runtime_l1` gains the `bytes_eq(a, b, ai, bi, n) -> bool` exec twin (the bounds-checked byte-compare loop computing the SAME value as the `Seq<u8>` def — guards the in-window range, an out-of-window index is a runtime check failure not UB), gated on `program_uses_bytes_eq`; String args by value (`string_arg_count_l1("bytes_eq") == 2`, the call site `.clone()`s the two leading operands), `ai`/`bi`/`n` `u64` pass-through; NO verus proof (the L1 path is runtime-checked). Without it a `bytes_eq`-pinned fn would `forge check` but not `forge build`. Consumer: `lower_l1`. Verified: `thermite-lower/src/l1.rs` (the twin emitted; the C5/C7 family precedent — `forge build` lowers every contract to runnable L1). |
 //!
@@ -7630,19 +7630,69 @@ fn lower_spec_arg(
         // (`result.data@`), the SAME `.data@` rule a bare String path gets — the
         // contract names a `Seq<u8>` window, not a `&TString` reference. Keyed on
         // the in-scope String SHAPE (`ctx.is_string`) AND the byte-view callee.
+        //
+        // The byte-view operand may be ANY of four shapes (the whole #278/#279
+        // class): a bare String path (`ins`), a `&`-prefixed path (`&ins`), a
+        // String-FIELD access (`result.text` — the editor's `Buf { text: String }`,
+        // #279), or a `&`-prefixed field access (`&result.text`/`&b.text` — the
+        // pinned editor surface). `byteview_string_operand` strips an optional
+        // leading `&` and rewrites a single-segment String path OR a String-field
+        // access (`ctx.is_string_field` — the same field-name set the struct-inv
+        // weave uses) to its `Seq<u8>` byte view. Without the FIELD arm a
+        // field-access operand fell through to `lower_expr` and emitted
+        // `&result.text` (a `&TString`) against `bytes_eq`'s `Seq<u8>` params (E0308
+        // — the #279 STOP); with it the editor's `result.text`/`b.text` pins lower
+        // to `result.text.data@`/`b.text.data@`.
         if string_as_byteview {
-            if let Expr::Ref { expr, .. } = arg {
-                if let Expr::Path(segs) = expr.as_ref() {
-                    if let Some(name) = segs.last() {
-                        if segs.len() == 1 && ctx.is_string(name) {
-                            return Ok(format!("{name}.data@"));
-                        }
-                    }
-                }
+            if let Some(view) = byteview_string_operand(arg, ctx, depth, span)? {
+                return Ok(view);
             }
         }
     }
     lower_expr(arg, ctx, depth, span)
+}
+
+/// Rewrite a `bytes_eq`-style String OPERAND to its `Seq<u8>` byte view
+/// (`<expr>.data@`) when the callee takes the byte view (`.design/basis/07-strings.md`
+/// REQ-17, issues #278/#279). Handles the whole operand class: a bare single-segment
+/// String path (`ins` → `ins.data@`), a `&`-prefixed path (`&ins` → `ins.data@`), a
+/// String-FIELD access (`result.text` → `result.text.data@`), and a `&`-prefixed
+/// field access (`&result.text` → `result.text.data@`). Returns `Ok(None)` when the
+/// operand is none of these (the caller falls back to `lower_expr`). A field's
+/// String-ness is keyed on `ctx.is_string_field` (the program-wide `string_field_names`
+/// set — every field whose declared type reaches `String`, the SAME machinery the
+/// struct-invariant weave and the `.len()`→`.spec_len()` field rewrite use); the
+/// field's RECEIVER lowers normally so a nested base (`outer.inner.text`) is carried.
+fn byteview_string_operand(
+    arg: &Expr,
+    ctx: Ctx,
+    depth: usize,
+    span: Span,
+) -> Result<Option<String>, LowerError> {
+    // Strip an optional leading `&` (the pinned `bytes_eq(&a, &b, ..)` surface).
+    let inner = match arg {
+        Expr::Ref { expr, .. } => expr.as_ref(),
+        other => other,
+    };
+    match inner {
+        // A bare single-segment String path: `ins` → `ins.data@`.
+        Expr::Path(segs) if segs.len() == 1 => {
+            if let Some(name) = segs.last() {
+                if ctx.is_string(name) {
+                    return Ok(Some(format!("{name}.data@")));
+                }
+            }
+            Ok(None)
+        }
+        // A String-FIELD access: `result.text` → `result.text.data@` (#279). The
+        // field name is in the program-wide String-field set; the receiver lowers
+        // normally (a bare `result`/`b`, or a deeper base for a nested struct).
+        Expr::Field { receiver, name } if ctx.is_string_field(name) => {
+            let base = lower_expr(receiver, ctx, depth, span)?;
+            Ok(Some(format!("{base}.{name}.data@")))
+        }
+        _ => Ok(None),
+    }
 }
 
 /// True iff a spec-fn-call argument is a `.len()` method call (Basis Stage 7

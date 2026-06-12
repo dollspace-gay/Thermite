@@ -1,0 +1,10 @@
+{
+  "uuid": "cceee1cf-4735-4b43-ab9d-32be9cd3c48b",
+  "issue_uuid": "1050406b-4f5b-4526-99d0-cd3479ef5863",
+  "author": "Yffe",
+  "content": "increment (v-b) — the while-body Lean exporter. RESUMING the prior builder's SOUND-PARTIAL work. R-1: fixed the auto battery (richer Inv_item with per-read-param SORT+RANGE facts; WhileBattery decode chains via Bind.bindLeft/sort/frame + overflow split + omega) — count.th's 5 obligations + both composed theorems now certify L3-via-lean-auto end-to-end (sorry-free, {propext,Classical.choice,Quot.sound}); sum.th honest NOT-L3 (recursive-registry §4 interactive residual). R-2: reshaped _entry/_exit/_converges to the §4.2.4 design ∃-forms, generator-FIXED composed proofs (no first|skip). R-3: collapsible_match + fmt. R-4: forge/tests/lean_while.rs (O-1 strong + sum honest, O-2 refusal matrix, O-3 vacuity gate, O-4 mutation-attempted). R-5: doc rows truthed. R-6: run_lake captures stdout+stderr; D-6 width seam threaded; D-7 dead cond_holds dropped.",
+  "created_at": "2026-06-12T06:00:04.604403833Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABArkasPEXswOFY3LQJRcaVR/42LtXVlvs3ifqjDlO0swAVWFcC60W3TdwqOD6IUrlmMSonHEe7aIw6RsKqGqlYAA=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "9cb9b660-f03d-4988-a29d-780e124870e4",
+  "issue_uuid": "1b24a94b-fbe6-4648-afb8-ff9da2e928c6",
+  "author": "Yffe",
+  "content": "Bootstrap backlog (gate run at dff9ae86): 36/49 routed docs DRIFT, 81 doc-file pairs. Heaviest: basis/09-option-result (13 files), lower/boundary-composition (lower.rs +46), scaffold/workspace (5 files incl. forge/main.rs +23), forge/cli.md (cli.rs +21, internally split Summary-vs-REQ-table), basis/11-ergonomics (12 files), skill/skill-generator (drifted by #257 itself). Full list: run 'make doc-drift' or 'python3 tooling/doc-drift.py'. Work-off per the doc's re-pin workflow: review intervening commits, re-pin if accurate / dispatch acto-doc-author amendment if not. CI step (REQ-10 sequencing) lands in the commit that clears the last item.",
+  "created_at": "2026-06-12T01:46:22.713576528Z",
+  "kind": "note",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAMnTu5kNbD5m3GHijDPMay3VAa9wC2PUJKrxsmODG4pYaOm20T5DaCb4pjqw/1vVTjWaCu7QfHNNy22IJgl2NDw=="
+}

@@ -1,0 +1,10 @@
+{
+  "uuid": "bed96eb1-34d0-4b81-a26f-4cc49ed7e299",
+  "issue_uuid": "644929e2-4919-496c-9009-2abda71c204c",
+  "author": "Yffe",
+  "content": "Failing test at tooling/tests/test_doc_drift_critic.py::DocDriftCriticTest::test_c3_design_only_route_entry_must_not_vanish_into_exit_0 demonstrates divergence (run with DOC_DRIFT_DIVERGENCE=1; observed exit 0, CURRENT for the valid doc only, .design/orphan.md invisible). Skip-gated per the C-1/C-2 convention so the default suite stays green while this tracks.",
+  "created_at": "2026-06-12T01:33:46.244031668Z",
+  "kind": "observation",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAoRutJOgtUkpG7LdXMQt9nKO9v0LT1QPnpj6TQCTO2DfvoKluUGu87bue1Jmw9J2kKHQLubcKwa6ZSiOEHP87AQ=="
+}

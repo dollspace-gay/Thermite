@@ -1,0 +1,10 @@
+{
+  "uuid": "5bdccad1-37de-4be6-b18b-129b61e2ed77",
+  "issue_uuid": "b75ce239-1f66-4d20-93f6-d43dd15e5cc1",
+  "author": "Yffe",
+  "content": "PLAN (acto-builder, #258 doc-drift tripwire): Ship the gate + oracle fixture tests + make targets + self-route, manifest = {tooling/doc-drift.py (NEW), tooling/tests/test_doc_drift.py (NEW), Makefile (EDIT), tooling/spec-routes.toml (EDIT)}. tooling/doc-drift.py: stdlib-only python3, tomllib route load, doc->files inversion, ^audited-sha:\\s*([0-9a-f]{40})\\b pin extraction, pin validation (rev-parse --verify ^{commit} + merge-base --is-ancestor), commit-set drift predicate (git log --format=%H <P>..HEAD -- pathspec; :(glob) for patterns), DRIFT/MISSING-PIN/INVALID-PIN/CURRENT classes, deterministic doc-then-file sort, exit 0/1/3 (3=env: git/repo/tomllib/routes absent, never traceback/fail-open), --root flag defaulting to git toplevel. Tests: unittest fixtures building throwaway git repos per oracle O-1..O-8. Makefile: doc-drift + doc-drift-test .PHONY targets. Route: REQ-11 declarative block. Gauntlet: oracle tests, live-tree run (expect exit 1, 48 MISSING-PIN), make doc-drift, git diff scripts/audit.sh empty, cargo build sanity, sibling-intact. NOT in scope: 48-doc bootstrap pin sweep, scripts/audit.sh (byte-identical), CI workflow, the design doc itself (untracked, not on manifest).",
+  "created_at": "2026-06-12T01:12:05.992769353Z",
+  "kind": "plan",
+  "signed_by": "SHA256:sZkaK/Xxrs28/XDZmfWOD2XDs/IFkZZhI8KQMFtnsa0",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAg3dY1wH3Np9fALgCnu7ZpP4FBNWo0i6qx1dxf8cIwZKwAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAYaKRJT6zrASg+4eQ0EW3NZ3ECgnXinoVvS60IofwtYcVBqkJRug6qCqDcffdfFOMDCB/PN5DMLQfqFLRrnLSDg=="
+}

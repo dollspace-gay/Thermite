@@ -1,0 +1,10 @@
+{
+  "uuid": "1050406b-4f5b-4526-99d0-cd3479ef5863",
+  "display_id": 264,
+  "title": "Lean exporter increment (v): widen the exportable fragment to while-loop bodies (the spine while_rule is proven; #253 stopped at straight-line)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T02:14:32.897285118Z",
+  "updated_at": "2026-06-12T02:14:32.897285118Z"
+}

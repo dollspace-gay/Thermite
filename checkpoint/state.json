@@ -1,9 +1,10 @@
 {
-  "next_display_id": 273,
+  "next_display_id": 274,
   "next_comment_id": 542,
   "display_id_map": {
     "028ff5aa-7f3e-4816-8acc-39aaabc20655": 272,
     "3242ddca-61ca-4c06-a453-fcdd74db0964": 271,
+    "5a240f21-e56b-4c09-8626-5b565805a7b4": 273,
     "6b4366c4-e03e-4dcb-bb9f-b23b344a9583": 270,
     "85649ab4-e0b7-4c5c-bb49-8ce7a7c19012": 267,
     "b50c81fc-4d04-4a87-bd6a-6fddae379bc4": 268,
@@ -25,6 +26,10 @@
     "272": {
       "agent_id": "Yffe",
       "claimed_at": "2026-06-12T06:55:01.586833600Z"
+    },
+    "273": {
+      "agent_id": "Yffe",
+      "claimed_at": "2026-06-12T06:55:09.850391945Z"
     }
   },
   "issues": {
@@ -50,6 +55,19 @@
       "created_by": "Yffe",
       "created_at": "2026-06-12T06:54:47.615845784Z",
       "updated_at": "2026-06-12T06:54:49.116039985Z",
+      "labels": [
+        "feature"
+      ]
+    },
+    "5a240f21-e56b-4c09-8626-5b565805a7b4": {
+      "uuid": "5a240f21-e56b-4c09-8626-5b565805a7b4",
+      "display_id": 273,
+      "title": "composition-experiment harness design doc (review item 9): agents integrate components from existing examples, contract-carrying vs agent-plus-tests baseline",
+      "status": "open",
+      "priority": "low",
+      "created_by": "Yffe",
+      "created_at": "2026-06-12T06:55:04.564311785Z",
+      "updated_at": "2026-06-12T06:55:06.251063338Z",
       "labels": [
         "feature"
       ]
@@ -2991,11 +3009,26 @@
       "agent_id": "Yffe",
       "agent_seq": 568,
       "timestamp": "2026-06-12T06:55:01.586833600Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 569,
+      "timestamp": "2026-06-12T06:55:04.564311785Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 570,
+      "timestamp": "2026-06-12T06:55:06.251063338Z"
+    },
+    {
+      "agent_id": "Yffe",
+      "agent_seq": 571,
+      "timestamp": "2026-06-12T06:55:09.850391945Z"
     }
   ],
   "watermark": {
-    "timestamp": "2026-06-12T06:55:01.586833600Z",
+    "timestamp": "2026-06-12T06:55:09.850391945Z",
     "agent_id": "Yffe",
-    "agent_seq": 568
+    "agent_seq": 571
   }
 }

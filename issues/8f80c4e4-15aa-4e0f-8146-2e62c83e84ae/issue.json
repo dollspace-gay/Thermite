@@ -2,11 +2,12 @@
   "uuid": "8f80c4e4-15aa-4e0f-8146-2e62c83e84ae",
   "display_id": 266,
   "title": "Divergence: proof-backends.md REQ-status table REQ-11 row (added IN 99c7f304) asserts NOT-STARTED / 'lean/Thermite/ has NO whileBodyDenote...NO PinWhileVacuity.lean' at the very SHA that ships them — contradicts the Requirements-section 'SPINE PREREQUISITE — SHIPPED (v-a)' rows in the same commit",
-  "status": "open",
+  "status": "closed",
   "priority": "high",
   "created_by": "Yffe",
   "created_at": "2026-06-12T03:01:03.747676990Z",
-  "updated_at": "2026-06-12T03:01:05.524759022Z",
+  "updated_at": "2026-06-12T03:10:47.420961281Z",
+  "closed_at": "2026-06-12T03:10:47.420961281Z",
   "labels": [
     "blocker"
   ]

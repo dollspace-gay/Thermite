@@ -88,7 +88,6 @@ fn lower_l1_str(src: &str) -> String {
 // returns `false` -> the certified `ens` aborts at runtime -> this test FAILS.
 // ---------------------------------------------------------------------------
 #[test]
-#[ignore = "divergence: bytes_eq L1 twin returns false on the empty window at an OOB offset where the certified spec is true (REQ-20 'SAME value as the spec body'); tracking #281"]
 fn bytes_eq_l1_twin_empty_window_matches_certified_spec_value() {
     let src = r#"
 fn empty_window() -> String

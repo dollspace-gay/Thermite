@@ -669,7 +669,7 @@ ens bytes_eq(&result.text, &b.text, b.cursor + ins.len(), b.cursor,
              b.text.len() - b.cursor)                                                // (3) shifted suffix
 // backspace — two conjuncts: prefix [0, cursor-1) + the shifted suffix
 // render_frame — the payload at the post-clear offset:
-ens bytes_eq(&result, &b.text, 8, 0, b.text.len())
+ens bytes_eq(&result, &b.text, 7, 0, b.text.len())
 ```
 
 - **REQ-17 (`bytes_eq` — a REGISTERED built-in spec predicate; surface + the

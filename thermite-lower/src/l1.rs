@@ -2392,10 +2392,15 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     // check that must resolve `bytes_eq` as runnable Rust. The twin is the bounds-
     // checked byte-compare loop computing the SAME value as the `Seq<u8>` low-peel def
     // — for the in-window range `[ai, ai+n) vs [bi, bi+n)`. It mirrors the spec's
-    // total-fn semantics honestly: the contract supplies an already-validated in-bounds
-    // window (the `slice`/`concat` `req` proved the lengths), and an out-of-window
-    // runtime index would be a check failure, not UB — so the twin GUARDS the window
-    // (returns `false` if either side runs off the end) rather than indexing OOB. The
+    // total-fn semantics honestly: the spec body's `n <= 0` arm is `true`
+    // UNCONDITIONALLY (no index is accessed), so the twin SHORT-CIRCUITS the empty
+    // window FIRST (`n == 0` — `n` is `u64`, so `== 0` is exactly the spec's `n <= 0`
+    // arm) BEFORE the window guard; REQ-20's OOB-index exception applies only when an
+    // index is genuinely accessed (`n > 0`). Only then does the contract supply an
+    // already-validated in-bounds window (the `slice`/`concat` `req` proved the
+    // lengths), and an out-of-window runtime index would be a check failure, not UB —
+    // so the twin GUARDS the window (returns `false` if either side runs off the end)
+    // rather than indexing OOB. The
     // String args (a, b) are taken BY VALUE (the call site `.clone()`s — two leading
     // string args, `string_arg_count_l1`); `ai`/`bi`/`n` are surface `u64`. NO verus
     // proof (the L1 path is runtime-checked, not verified). Gated on
@@ -2404,6 +2409,12 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push('\n');
         out.push_str("#[allow(dead_code)]\n");
         out.push_str("fn bytes_eq(a: TString, b: TString, ai: u64, bi: u64, n: u64) -> bool {\n");
+        // The spec body's `n <= 0` arm is `true` UNCONDITIONALLY (no index is
+        // accessed); `n` is `u64`, so `n == 0` is exactly that arm. Short-circuit it
+        // BEFORE the window guard so the empty window matches the spec value even at an
+        // out-of-bounds offset (07-strings.md REQ-20: the twin computes the SAME value
+        // as the spec body; the OOB-index exception fires only when `n > 0`).
+        out.push_str("    if n == 0 { return true; }\n");
         out.push_str("    let ai_u: usize = ai as usize;\n");
         out.push_str("    let bi_u: usize = bi as usize;\n");
         out.push_str("    let n_u: usize = n as usize;\n");

@@ -2,11 +2,12 @@
   "uuid": "21a5fa6f-27c8-4151-924e-fc3b339de69f",
   "display_id": 263,
   "title": "Post-#258 currency: 00-index.md disposition, engine.rs REQ-2 stale row, RATIONALE proof-backends anchor, knowledge-page refresh",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "Yffe",
   "created_at": "2026-06-12T01:56:59.143413109Z",
-  "updated_at": "2026-06-12T01:57:01.176439539Z",
+  "updated_at": "2026-06-12T02:03:40.652319631Z",
+  "closed_at": "2026-06-12T02:03:40.652319631Z",
   "labels": [
     "docs"
   ]

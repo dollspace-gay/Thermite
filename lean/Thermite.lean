@@ -45,6 +45,17 @@ import Thermite.Exec.Stmt
 -- (faithful to the Rust `loop_ref_obligations` separate-form treatment; `Exec/Stmt.lean`
 -- UNCHANGED). PARTIAL correctness — termination is the per-run Verus `decreases` residual.
 import Thermite.Exec.Loop
+-- LAYER 2 (the exec side, increment (v-a), #264; `.design/verified/proof-backends.md`
+-- §4.2.2): the WHILE-BODY COMPOSITION LAYER — the first `S_B`×`S_Loop` composition
+-- artifact. `whileBodyDenote` (prefix `blockThread` → the SHIPPED `loopDenote` → tail
+-- `execDenote`, `Option`-monad composed) + the ∃-fuel `whileBodyConverges` (result bound
+-- THROUGH it, the #214 discipline) + `loopDenote_fuel_mono`/`whileBodyConverges_unique`
+-- (the `stabilizes_unique` mirror), the loop-exit-to-ens composition `while_compose`
+-- (the SHIPPED partial-correctness `while_rule` lifted through the prefix/tail segments),
+-- and the TERMINATION bridge `loopDenote_exits_of_dec` (dec-validity + progress ⟹ the
+-- exit witness — the REQ-1.2 mirror, by strong induction on `(μ st).toNat`). Composes
+-- AROUND `Exec/Stmt.lean` + `Exec/Loop.lean` (UNCHANGED). The (v-b) exporter targets it.
+import Thermite.Exec.WhileBody
 -- LAYER 3 (compose), increments (d) #174 + 3b #183: the TRANSLATION-VALIDATION
 -- META-THEOREM capstone. Composes the three proven (T1) theorems (`ref_sound_eq`,
 -- `Exec.exec_ref_sound`, `Exec.body_ref_sound`) with the per-run TV result (the

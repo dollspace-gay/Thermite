@@ -366,6 +366,154 @@ fn editor_logic_certifies_l3_boundary_and_run_l1() {
 }
 
 // ----------------------------------------------------------------------------
+// Deliverable 1b — the `bytes_eq` CONTENT PINS (#276, review items 2+3): the edit
+// ops now certify their result's BYTES, not merely its LENGTH. `.design/basis/
+// 07-strings.md` AC-14 (insert_str three conjuncts EACH L3), AC-15 (backspace +
+// render_frame payload pins L3), REQ-18 (the built-in `bytes_eq` + the prove-once
+// `lemma_bytes_eq_bridge`), REQ-19 (the contract-keyed body-start citation), #279
+// (the field-access `&result.text`/`&b.text` operand byte-view). The whole editor
+// STILL certifies L3 (O-1) and the content windows kill content-substitution
+// mutants a length pin cannot (O-5 non-vacuity).
+//
+// The expected SHAPES trace to the design authority (the manifest pin list +
+// 07-strings REQ-18 pin shapes + the `conformance/bytes_eq_demo.th::buf_prefix_pin`
+// field-access oracle that certifies the EXACT editor pattern), NEVER copied from
+// forge's own output (R-CHAR-3): the asserted property is "the content-pinned op
+// certifies L3 with NO surviving mutant", and the source carries the design's
+// verbatim pin shapes.
+// ----------------------------------------------------------------------------
+
+#[test]
+fn editor_content_pins_present_in_source() {
+    // The editor's three content-bearing edit ops carry the EXACT `bytes_eq` pin
+    // shapes the manifest / 07-strings REQ-18 spell — over the FIELD-ACCESS operand
+    // (`&result.text`/`&b.text`, the editor's Buffer-wrapped String, #279). These
+    // are CONTENT teeth, not the length pins (which remain): the bytes are certified
+    // byte-for-byte. A reviewer reading the source must see the windows verbatim, so
+    // a silent regression to a length-only pin (the O-5 cheat) is caught here.
+    let src = std::fs::read_to_string(editor_th()).expect("read editor.th");
+
+    // The operand spelling is the BARE-FIELD form (`result.text`/`b.text`/`ins`, NOT
+    // `&result.text`) — one of #279's four sanctioned operand shapes. The editor is
+    // the keystone that must BOTH `forge check` AND `forge build --entry run`; the
+    // bare-field form lowers cleanly through BOTH the L3 spec byte-view and the L1
+    // exec runtime-check twin, whereas the `&`-prefixed form trips an exec-twin
+    // `&`-strip gap at build time (spillover finding, a thermite-lower follow-up).
+
+    // insert_str — unchanged-prefix / inserted-run / shifted-suffix (AC-14).
+    assert!(
+        src.contains("ens bytes_eq(result.text, b.text, 0, 0, b.cursor)"),
+        "insert_str must pin the UNCHANGED PREFIX text[0..cursor) byte-for-byte"
+    );
+    assert!(
+        src.contains("ens bytes_eq(result.text, ins, b.cursor, 0, ins.len())"),
+        "insert_str must pin the INSERTED RUN ins[0..ins.len()) at the cursor"
+    );
+    assert!(
+        src.contains(
+            "ens bytes_eq(result.text, b.text, b.cursor + ins.len(), b.cursor, b.text.len() - b.cursor)"
+        ),
+        "insert_str must pin the SHIFTED SUFFIX text[cursor..end) at cursor+ins.len()"
+    );
+
+    // backspace — unchanged-prefix (0..cursor-1) / shifted-suffix (AC-15).
+    assert!(
+        src.contains("ens bytes_eq(result.text, b.text, 0, 0, b.cursor - 1)"),
+        "backspace must pin the UNCHANGED PREFIX text[0..cursor-1) byte-for-byte"
+    );
+    assert!(
+        src.contains(
+            "ens bytes_eq(result.text, b.text, b.cursor - 1, b.cursor, b.text.len() - b.cursor)"
+        ),
+        "backspace must pin the SHIFTED SUFFIX text[cursor..end) pulled back one byte"
+    );
+
+    // render_frame — the payload pin at the post-clear offset 7 (AC-15). The leading
+    // `clear` is the fixed 7-byte escape, so the buffer body lands at offset 7.
+    assert!(
+        src.contains("ens bytes_eq(result, b.text, 7, 0, b.text.len())"),
+        "render_frame must pin the WHOLE buffer text VERBATIM at the post-clear offset 7"
+    );
+}
+
+#[test]
+fn editor_content_pinned_ops_still_certify_l3() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — editor content-pin cert-oracle not run.");
+        return;
+    }
+    // The content pins DISCHARGE at real verus (the #277 slice/concat byte-content
+    // ens + the #278 `lemma_bytes_eq_bridge` + the #279 field-access operand view all
+    // landed): each content-pinned op STILL certifies L3 — the windows are PROVEN,
+    // not asserted (R-DEFER-9). The whole editor exits 0 (O-1). Expected = L3 from
+    // the design (AC-14/AC-15), the verdict from live verus, never copied from forge.
+    let (code, certs) = run_check_json(&editor_th());
+    assert_eq!(
+        code,
+        Some(0),
+        "the content-pinned editor STILL certifies clean (exit 0):\n{certs:#?}"
+    );
+    for op in ["insert_str", "backspace", "render_frame"] {
+        let cert = find_cert(&certs, op);
+        assert_eq!(
+            cert["level"],
+            Value::from("L3"),
+            "the `bytes_eq`-content-pinned `{op}` must certify L3 — the byte windows \
+             discharge via the prove-once bridge (AC-14/AC-15):\n{cert:#?}"
+        );
+        // O-2/O-3: NO new survivor. The content pins add CONTENT teeth on top of the
+        // length pins; the §7 scored ratio is unperturbed and carries no survivor.
+        let survivor = cert["contract_quality"]["survivor"].as_str().unwrap_or("");
+        assert!(
+            survivor.is_empty(),
+            "the content-pinned `{op}` must have NO surviving mutant (O-2/O-3): \
+             survivor={survivor:?}\n{cert:#?}"
+        );
+    }
+}
+
+#[test]
+fn editor_content_pins_are_nonvacuous_content_teeth() {
+    if !verus_present() {
+        eprintln!("SKIP: verus not available — content-teeth non-vacuity not run.");
+        return;
+    }
+    // O-5 / AC-16: the content pins are NON-VACUOUS — a length-preserving CONTENT
+    // mutant DIES. We mutate insert_str's body to the head/tail-SWAP
+    // (`tail ++ ins ++ head`): the SAME length (so the length pins `result.text.len()
+    // == b.text.len() + ins.len()` STILL hold), but the bytes are scrambled — every
+    // `bytes_eq` window must FAIL. If this mutant survived, the pins would be
+    // length-only in disguise (the exact O-5 cheat). The expected verdict (NOT L3 —
+    // the swap fails the content windows) traces to AC-16 (the content mutant FAILS
+    // verus), never copied from forge.
+    let swapped = "\
+struct Buffer { text: String, cursor: u64 }\n  \
+  inv cursor <= text.len() && text.len() <= 1_000_000\n\n\
+fn insert_str(b: Buffer, ins: String) -> Buffer\n  \
+  req b.text.len() + ins.len() <= 1_000_000\n  \
+  ens result.text.len() == b.text.len() + ins.len()\n  \
+  ens bytes_eq(result.text, b.text, 0, 0, b.cursor)\n  \
+  ens bytes_eq(result.text, ins, b.cursor, 0, ins.len())\n  \
+  ens bytes_eq(result.text, b.text, b.cursor + ins.len(), b.cursor, b.text.len() - b.cursor)\n  \
+  fx  alloc\n{\n  \
+  let n: u64 = ins.len();\n  \
+  let head: String = b.text.slice(0, b.cursor);\n  \
+  let tail: String = b.text.slice(b.cursor, b.text.len());\n  \
+  Buffer { text: tail.concat(ins).concat(head), cursor: b.cursor + n }\n}\n";
+    let fixture = write_fixture("insert_swap_mutant", swapped);
+    let (_code, certs) = run_check_json(&fixture);
+    let cert = find_cert(&certs, "insert_str");
+    assert_ne!(
+        cert["level"],
+        Value::from("L3"),
+        "the head/tail-SWAP mutant (same length, scrambled bytes) must NOT certify \
+         L3 — the content windows are non-vacuous teeth a length pin cannot fake \
+         (O-5 / AC-16):\n{cert:#?}"
+    );
+    let _ = std::fs::remove_file(&fixture);
+}
+
+// ----------------------------------------------------------------------------
 // Deliverable 2 — `forge build editor.th --entry run`: COMPILES (no E0382, the
 // `render_frame(&Buffer)` borrow) + RUNS with piped keystrokes (arrow-move +
 // mid-text splice). (#90; #105 divergence 2; 08-runnable-effect-link.md.)

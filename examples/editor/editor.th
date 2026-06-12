@@ -57,10 +57,31 @@ struct Buffer {
 // the halves, advance the cursor past the inserted run. PROVEN: the text grows by
 // exactly `ins.len()` and the cursor advances by exactly `ins.len()`. (Enter
 // inserts "\n" through this SAME op — a newline is just a byte.)
+//
+// CONTENT PINS (#276, the built-in `bytes_eq` — `.design/basis/07-strings.md`
+// REQ-18, the field-access operand view #279): the new text is EXACTLY the splice
+// `head ++ ins ++ tail`, certified byte-for-byte by three `bytes_eq` windows over
+// the result's `text` field (the byte-view `result.text` → `result.text.data@` —
+// the BARE-FIELD operand form, one of #279's four sanctioned operand shapes; the
+// editor is the keystone that must BOTH `forge check` AND `forge build --entry run`,
+// and the bare-field spelling lowers cleanly through BOTH the L3 spec path and the
+// L1 exec runtime-check twin):
+//   * the UNCHANGED PREFIX text[0..cursor) survives verbatim;
+//   * the INSERTED RUN ins[0..ins.len()) lands at the cursor;
+//   * the SHIFTED SUFFIX text[cursor..end) reappears at cursor+ins.len().
+// These are CONTENT teeth a length pin cannot fake — a head/tail-swap mutant
+// (`tail ++ ins ++ head`) has the SAME length but fails every window (R-DEFER-9).
+// The byte windows discharge via the prove-once `lemma_bytes_eq_bridge` (one
+// auto-emitted citation, zero per-conjunct glue). The cage `req` is the SAME
+// `<= 1_000_000` the §4.2 bounded concat needs; the windows add no new precondition
+// (the Buffer inv `cursor <= text.len()` supplies the bounds the bridge consumes).
 fn insert_str(b: Buffer, ins: String) -> Buffer
   req b.text.len() + ins.len() <= 1_000_000
   ens result.text.len() == b.text.len() + ins.len()
   ens result.cursor == b.cursor + ins.len()
+  ens bytes_eq(result.text, b.text, 0, 0, b.cursor)
+  ens bytes_eq(result.text, ins, b.cursor, 0, ins.len())
+  ens bytes_eq(result.text, b.text, b.cursor + ins.len(), b.cursor, b.text.len() - b.cursor)
   fx  alloc
 {
   let n: u64 = ins.len();
@@ -72,10 +93,23 @@ fn insert_str(b: Buffer, ins: String) -> Buffer
 // Delete the byte before the cursor: splice the text around the deleted byte and
 // step the cursor back one. PROVEN: the text shrinks by exactly one and the cursor
 // steps back exactly one (`req cursor > 0` guarantees a byte to delete).
+//
+// CONTENT PINS (#276, `bytes_eq` — REQ-18): the result text is EXACTLY
+// `head ++ tail` with the byte at `cursor-1` excised, certified by two `bytes_eq`
+// windows over `&result.text`:
+//   * the UNCHANGED PREFIX text[0..cursor-1) survives verbatim;
+//   * the SHIFTED SUFFIX text[cursor..end) reappears at cursor-1 (the deletion
+//     pulls the tail back exactly one byte).
+// (bare-field `result.text` operand — #279's sanctioned shape, builds + checks.)
+// CONTENT teeth: a mutant deleting the WRONG byte (or duplicating the prefix) keeps
+// the same length but fails a window. Discharged via `lemma_bytes_eq_bridge`. No new
+// `req` (the existing `cursor > 0` + the Buffer inv feed the bridge bounds).
 fn backspace(b: Buffer) -> Buffer
   req b.cursor > 0
   ens result.text.len() == b.text.len() - 1
   ens result.cursor == b.cursor - 1
+  ens bytes_eq(result.text, b.text, 0, 0, b.cursor - 1)
+  ens bytes_eq(result.text, b.text, b.cursor - 1, b.cursor, b.text.len() - b.cursor)
   fx  alloc
 {
   let lo: u64 = b.cursor - 1;
@@ -492,9 +526,27 @@ fn to_1based(x: u64) -> u64
 // formatted length <= 20 (blocker #105). VERIFIED Thermite (L3) — the multi-line
 // display logic is proven, NOT a trusted wrapper. The actual `write` syscall
 // (write_frame) is the trusted boundary.
+//
+// CONTENT PAYLOAD PIN (#276, `bytes_eq` — REQ-18, AC-15): the frame carries the
+// WHOLE buffer text VERBATIM, byte-for-byte, at the post-clear offset. `clear` is
+// the fixed 7-byte escape `"\x1b[2J\x1b[H"` (ESC `[` `2` `J` ESC `[` `H`), so the
+// body `b.text` lands at offset 7 — pinned by
+// `bytes_eq(result, b.text, 7, 0, b.text.len())` (the bare whole-result + bare-field
+// operand forms, #279's sanctioned shapes lowering through both L3 + L1). This is the STRONGEST
+// contiguous content claim: the prior `result.len() >= b.text.len()` proved only
+// that the frame is long enough; this proves the buffer text is reproduced
+// EXACTLY (a mutant that scrambles, truncates, or substitutes the body fails the
+// window — a length-only `ens` cannot catch that). Discharged via
+// `lemma_bytes_eq_bridge`. RESIDUAL (honest): the trailing `pos` cursor-coordinate
+// escape `"\x1b["++(row)++";"++(col)++"H"` is NOT byte-pinned — its bytes depend on
+// the runtime decimal `to_string()` of the verified row/col (variable length), and
+// `bytes_eq` pins a FIXED-offset/FIXED-length window, not a content-dependent
+// suffix. The leading `clear` is a compile-time constant and the body is fully
+// pinned; the unpinned residual is exactly the format-dependent coordinate tail.
 fn render_frame(b: &Buffer) -> String
   req b.text.len() <= 900_000
   ens result.len() >= b.text.len()
+  ens bytes_eq(result, b.text, 7, 0, b.text.len())
   fx  alloc
 {
   let clear: String = "\x1b[2J\x1b[H";

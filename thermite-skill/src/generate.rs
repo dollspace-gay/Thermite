@@ -1269,6 +1269,7 @@ holes), `build` (lower to a runnable binary).
 forge new <name>                   create project (manifest, lockfile, skill pin)
 forge check [item]                 run the ladder; per-obligation results +
                                    counterexamples (your primary verb)
+forge check --engine lean|auto     L3 via the Lean engine; disagreement = HALT
 forge goal <item>                  print the goal state: given / want / open
                                    holes ?N / per-obligation status
 forge fill <fn>.?N <code>          splice code at a hole ?N + re-check; returns
@@ -1277,9 +1278,8 @@ forge edit <addr> --replace <code> splice at any semantic address + re-check
 forge build [item] --entry <fn>    lower to Rust + rustc -> a native binary whose
                                    contract checks fire at runtime, fx-sandboxed
 forge build --target kernel <file> emit a freestanding no_std+alloc rlib (no
-                                   main, no seccomp, panic=abort) for a verified
-                                   microkernel; ambient-syscall fx
-                                   (read/write/net/term/time/rand) is REFUSED
+                                   main, no seccomp, panic=abort); ambient-
+                                   syscall fx is REFUSED
 forge battery [item]               run vacuity battery + mutation scoring
 forge audit                        full slag + boundary + assurance inventory
 forge review <file> [item]         pluggable spec-intent review slot
@@ -1313,8 +1313,8 @@ Every function targets L3; downgrades are automatic, logged, and surfaced in the
 build manifest; upgrades are a standing background task. The certificate lists
 every function's level — this manifest IS the deliverable's trust statement.
 
-- L3 — SMT proof (Verus/Z3): the contract holds for ALL inputs. Not guaranteed
-  to terminate -> solver budget + automatic downgrade.
+- L3 — machine proof (Verus/Z3; or Lean via `--engine`): holds for ALL inputs.
+  Not guaranteed to terminate -> solver budget + automatic downgrade.
 - L2 — bounded model check (Kani/CBMC): holds for all inputs UP TO a bound. The
   manifest states the bound explicitly; L2 and L3 are always distinct.
 - L1 — runtime contract checks: violations are detected at the call site, in

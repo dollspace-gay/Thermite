@@ -1102,7 +1102,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 /// The usage banner (REQ-1: the v0.1 verb subset only).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>] | forge audit <file> [--json] | forge repair <file> [item] [--json] \
+     [--mutation-floor <FLOAT>] [--engine verus|lean|auto] | forge audit <file> [--json] | \
+     forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
      [--out <PATH>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv \
      <file> \

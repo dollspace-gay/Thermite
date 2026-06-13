@@ -1,0 +1,23 @@
+{
+  "uuid": "d2517c6c-f5c9-4cbc-93a1-7e1ed4c19599",
+  "display_id": 98,
+  "title": "Primitive completeness C6: Vec completeness — pop/insert/remove/contains, Vec<String>/Vec<struct> (non-Copy elements), Vec::new()-no-param wrapper bug",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T05:57:21.842067286Z",
+  "updated_at": "2026-06-07T06:53:24.691109955Z",
+  "closed_at": "2026-06-07T06:53:24.691109955Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "42f8aed3-355e-471e-8f6a-57b76af7bcfb",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (78d6f77 + #99 fix e51593f). Vec completeness: pop_last/last/insert/remove/contains (tuple-free, OOB->L0, contains a real two-directional scan); non-Copy Vec<T> via a borrow-returning get(&self,i)->&T (vstd index moves a non-Copy elem -> the borrow fixes E0507) -> Vec<String> 17 verified, Vec<struct> 7, nested Vec<Vec<u64>> 15; the Vec::new()-no-param reachability fix (the #86 analog). Critic caught #99 (push dropped the element-preservation frame -> a >=2-elem accumulator lost its elements at the contract level) -> fixed (the forall|j| frame restored, load-bearing). 595 tests. Spillover: nested needs  (space) —  lexes as shift (minor lexer follow-up). Unblocks split->Vec<String> for the parser.",
+      "created_at": "2026-06-07T06:53:15.100950235Z",
+      "kind": "result"
+    }
+  ]
+}

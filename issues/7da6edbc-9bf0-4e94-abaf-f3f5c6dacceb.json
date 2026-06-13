@@ -1,0 +1,44 @@
+{
+  "uuid": "7da6edbc-9bf0-4e94-abaf-f3f5c6dacceb",
+  "display_id": 203,
+  "title": "design: proof-backend interface + Lean as engine 2 — backend-neutral obligations over the mechanized semantics, engine trust profiles, the Thermite-to-Lean obligation exporter, certificate attribution; iterate doc via fable-critic until clean",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:38:29.555964581Z",
+  "updated_at": "2026-06-10T22:52:51.804268849Z",
+  "closed_at": "2026-06-10T22:52:51.804268849Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "ca0f3807-8f28-4d91-9904-dad49e0d2073",
+      "author": "Yffe",
+      "content": "Authored .design/verified/proof-backends.md: the backend-neutral Obligation artifact + Engine interface (fragment/discharge/trust-profile/evidence), certificate per-obligation attribution with honest-min preserved + the Proven-vs-Refuted disagreement halt, and Lean as engine #2 (the exporter over the kernel-proven lean/Thermite/ S spine, the z3-demotion auto fragment, interactive proofs, partial-correctness termination). 9 REQs all NOT-STARTED (v-next interface layer); SHIPPED substrates quoted-grounded. Filed increment-(i) build blocker #204; (ii)/(iii)/(iv) named future. 4 OQs left open for a co-author.",
+      "created_at": "2026-06-10T18:45:11.681931890Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "4022c635-363c-4b9c-9158-cad43da8c577",
+      "author": "Yffe",
+      "content": "Revised .design/verified/proof-backends.md to resolve critic findings F1-F5 (#205-#209). F1: REQ-3.1 fast-unknown seam — Verus engine remaps witness-less Counterexample to Unknown (degrade), only witnessed countermodel becomes Refuted; byte-identical except this named remap; closes spurious Proven-Refuted halt + REQ-9 kill laundering, justified by design section 6 degrade-on-timeout. F2: section 7/REQ-9 — state shipped Counterexample+Timeout=killed accurately; engine-generic kill = Refuted union Unknown-after-attempt; untested=never-attempted; floor denominator=attempted + minimum-attempted qualifier + 0/0 backstop. F3: section 0.1 enumerates solver_vacuity_check (inverted polarity), equivalence_proves_equal, strengthen probe, scoped OUT of Engine interface v1 + OQ-5. F4: section 2(d) evidence_key = obligation+engine+engine-toolchain version+spine content hash+schema; corrects cache_key (5 real inputs); CI replays evidence. F5: section 4 fuel form = forall fuel >= fuel0 + every called spec-fn resolved; EXP gains registry faithfulness; sound vs Denote.lean fuel-0-bottom=True. Softened section 4 to smaller-along-named-axes; ordering formalization is OQ-3. Doc-only manifest; commit refs the five issues, no push, no close.",
+      "created_at": "2026-06-10T19:03:01.795903459Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "5cb02ee2-fe25-4a12-a870-431f738530d5",
+      "author": "Yffe",
+      "content": "Cycle-2 revision of proof-backends.md resolving critic findings #210 and #211. #210: replaced the hypothesis fuel-form with a concrete-registry form (exported file defines R_item:Registry with real-bodied spec-fns; theorem holds specs:=R_item fixed, quantifies env only over {ints,seqs,optres} via {v with specs:=R_item}), killing all-registries incoherence; registry population becomes an exporter-side HARD GATE (refuse-to-emit + per-name decide/rfl lemmas), no resolution premise; rewrote soundness paragraph per the critic's fuel0 analysis. #211: §7/REQ-9/AC-7 floor rules now incorporate the SHIPPED #101 equivalence exclusion (survivor and denominator both MINUS proven-equivalent), equivalence probe scoped as a §0.1 meta-query (F3). Also fixed 'spine spine' typo and restated cache_key precisely (4 args + CHECK_SCHEMA_VERSION). Nothing the critic re-verified sound was touched.",
+      "created_at": "2026-06-10T19:16:14.573059794Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "6266a464-e65c-4dbc-9b3f-524fcb025de5",
+      "author": "Yffe",
+      "content": "DESIGN COMPLETE — the critique loop TERMINATED at cycle 7 with NO DIVERGENCE FOUND. Trajectory: 5/2/2/1/1/1/0 findings across 7 cycles (14 findings total, every one resolved + most kernel-pinned). The doc (.design/verified/proof-backends.md @ 78dcfe7f, ~1100 LOC): backend-neutral Obligations over the mechanized semantics via the STABILIZES relation (the per-env stabilized denotation — survived two false earlier forms, each disproved by a kernel-checked counterexample); the Engine trait with Verdict discipline (failure=Unknown never Refuted; the shipped fast-unknown seam remapped); trust profiles + per-obligation certificate attribution + the disagreement halt; the item-wide conjunction rule; the registry hard gate under the full-expression-position transitive closure (req∪ens∪body∪dec, step body∪dec — closed twice after #224/#226); REQ-1.2 registry termination; the three-tier export story (fuel-free auto / static unfolding / interactive stabilization); engine-generic mutation rules preserving the shipped #101 semantics; 4 pin files = 5 kernel-checked counterexamples wired as regression oracles. Build: increment (i) = #204 (open, the reified Obligation + Engine trait + the corrected closure mirror); increments (ii)-(iv) named. OQs deliberately open for co-authorship.",
+      "created_at": "2026-06-10T22:52:16.471015511Z",
+      "kind": "result"
+    }
+  ]
+}

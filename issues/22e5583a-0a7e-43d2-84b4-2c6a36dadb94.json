@@ -1,0 +1,51 @@
+{
+  "uuid": "22e5583a-0a7e-43d2-84b4-2c6a36dadb94",
+  "display_id": 53,
+  "title": "check::run_verus leaks verus's compiled-binary temp sibling (unbounded disk under sustained verification)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T11:06:28.634761813Z",
+  "updated_at": "2026-06-05T18:02:52.564786486Z",
+  "closed_at": "2026-06-05T18:02:52.564786486Z",
+  "labels": [
+    "bug"
+  ],
+  "comments": [
+    {
+      "uuid": "8777f58c-5201-4eb0-a4ad-c966fb3f8e0d",
+      "author": "Yffe",
+      "content": "Found during #20's multi-agent concurrency testing (it caused the ENOSPC the #18 critic hit). check::run_verus/invoke_verus runs verus with .current_dir(std::env::temp_dir()); verus leaves a ~4.3M compiled-binary sibling (forge_<stem>_check_<pid>_<n>, no extension) in the shared temp dir. run_verus removes only the .rs SOURCE temp, not verus's compiled-binary OUTPUT. On a clean exit ~no leak, but a verus run that ERRORS mid-compile orphans the binary -> unbounded disk growth under sustained multi-agent fresh-verification. Fix: run verus in a per-run scratch SUBDIR that is removed wholesale (or clean the compiled-binary sibling alongside the .rs). check.rs concern; surfaced by #20, out of #20's cache-guarantee remit.",
+      "created_at": "2026-06-05T11:07:14.728824029Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "538357fe-7347-4eef-ba13-53c79872ce26",
+      "author": "Yffe",
+      "content": "Fixed in check.rs: the verus L3 path now runs in a PER-RUN SCRATCH DIRECTORY removed WHOLESALE on every exit path.\n\nROOT CAUSE (confirmed by probe): on a CLEAN verus exit, verus compiles the lowered .rs into a ~4.3M binary SIBLING (<stem>, no extension) in its working dir. The v0.1 run_verus/invoke_verus ran verus with .current_dir(std::env::temp_dir()) and removed ONLY the .rs source, orphaning that 4.3M binary directly in the shared temp dir on every successful verify -> unbounded /tmp growth (the #18/#20 ENOSPC).\n\nFIX (symbol anchors, forge/src/check.rs):\n- new struct ScratchDir { path } + impl Drop -> best-effort remove_dir_all (R-CODE-2, never panics), fires on EVERY exit path incl. a ? early-return.\n- unique_temp_path -> unique_scratch_dir (a DIRECTORY forge_<stem>_<pid>_<n>, pid+counter, no wall-clock R-CODE-5).\n- run_verus writes <stem>.rs (no-. crate_stem, crate-name gotcha intact) INSIDE the scratch dir; invoke_verus(cwd, tmp, ..) runs verus with current_dir = cwd (scratch dir) so the compiled binary lands inside; the ScratchDir Drop removes source + binary + all artifacts wholesale.\n\nKANI (class check): kani.rs already runs in a per-run scratch CRATE removed wholesale via run_kani's remove_dir_all(&crate_dir) on all paths -> NO leak, unchanged.\n\nSIBLING LEAK FOUND (needs manifest): forge/src/vacuity_solver.rs (run_harness/invoke_verus_on_harness/unique_temp_path) has the IDENTICAL leak -- runs verus with .current_dir(std::env::temp_dir()), removes only the .rs. The #13 gate runs it on every fn before L3, and a Proved harness query leaves the same 4.3M binary. Same class, file NOT on this blocker's manifest -> reporting per the 'STOP+report if you need it on the manifest' protocol rather than silently editing a third file.\n\nREGRESSION TEST: forge/tests/scratch_cleanup.rs -- success path (sum.th, L3 clean exit, the 4.3M-binary case) + error path (counterexample, exit 1), each in an isolated TMPDIR asserting no surviving forge_* entry. Skip-loud if verus absent.\n\nGAUNTLET (verus present): build clean; cargo test -p forge 166 unit + all integration pass incl. 2 new; cargo test --workspace 0 failures; clippy -D warnings clean; fmt --check clean. Corpus still certifies sum->L3, binary_search->L3 (check_conformance 4/4).",
+      "created_at": "2026-06-05T17:49:05.972829531Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "0b29592d-12ce-4c86-91e9-eff315df5959",
+      "author": "Yffe",
+      "content": "Run verus in a per-run scratch DIRECTORY removed WHOLESALE (RAII Drop guard), so the .rs source + verus's ~4.3M compiled-binary sibling + any artifact all go away on EVERY exit path incl. a ? early-return. Single file forge/src/check.rs: add struct ScratchDir + Drop (best-effort remove_dir_all, R-CODE-2); unique_temp_path -> unique_scratch_dir (dir, pid+counter, R-CODE-5); run_verus writes <stem>.rs (no-. crate_stem, gotcha intact) inside it; invoke_verus runs verus with current_dir = scratch dir. Class check: kani.rs already removes its crate dir wholesale (no leak); vacuity_solver.rs shares the leak but is off-manifest -> report for follow-up. Regression test forge/tests/scratch_cleanup.rs: success + error paths, isolated TMPDIR, no surviving forge_* entry; skip-loud if verus absent.",
+      "created_at": "2026-06-05T17:49:55.127007840Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "2c80478c-0a58-4173-95f6-734f8fdf2ebd",
+      "author": "Yffe",
+      "content": "Sibling leak in forge/src/vacuity_solver.rs is now fixed too (the #13 vacuity-solver verus path had the IDENTICAL #53 leak).\n\nROOT CAUSE (same class as check.rs): vacuity_solver's run_harness/invoke_verus_on_harness ran each tautology/vacuity harness query with .current_dir(std::env::temp_dir()) and removed ONLY the .rs source (std::fs::remove_file). A SUCCEEDING harness (a tautology fn / an unsat-req fn — the #13 REJECTED cases the gate runs on every fn before L3) makes verus compile + leave the ~4.3M binary sibling orphaned in the shared temp dir -> unbounded /tmp growth.\n\nFIX (DRY — reused check.rs's #53 guard): made check.rs's struct ScratchDir { path } + fn unique_scratch_dir pub(crate) (minimal 2-line visibility change, no behavior change) and reused them in vacuity_solver::run_harness — each harness query now runs in its OWN per-run scratch DIRECTORY removed WHOLESALE via the ScratchDir Drop guard on EVERY exit path (success, clean FAILED, and the ? early-return). invoke_verus_on_harness now takes cwd = the scratch dir; the .rs keeps its no-'.' crate-name stem (gotcha intact) inside the dir. Removed the now-dead unique_temp_path.\n\nREGRESSION TEST: forge/tests/scratch_cleanup.rs::vacuity_harness_success_leaves_no_scratch_orphan — a TAUTOLOGY fixture (ens result >= 0 holds for any u32; the conformance oracle's semantic_tautology — the harness SUCCEEDS, the leak case) checked in an isolated TMPDIR leaves NO forge_* scratch entry afterward; exits 1 (SemanticTautology reject). Skips loud if verus absent.\n\n#13 behavior UNCHANGED: solver_vacuity_conformance green (tautology still rejects SemanticTautology, vacuous still rejects, corpus_sum/binary_search still L3); the crate-name gotcha intact (harness verifies/rejects from the scratch dir).\n\nGAUNTLET (verus present): cargo build -p forge clean; cargo test -p forge 254 passed/0 failed; cargo test --workspace 378 passed/0 failed; cargo clippy --workspace --all-targets -D warnings clean; cargo fmt --all --check clean.",
+      "created_at": "2026-06-05T18:01:16.017909139Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "aa141ca2-2319-438e-a593-af7146ae19be",
+      "author": "Yffe",
+      "content": "Fix the reopened sibling leak in forge/src/vacuity_solver.rs (the #13 vacuity-solver verus path has the IDENTICAL #53 temp-binary leak). Reuse check.rs's #53 ScratchDir Drop guard (DRY): make struct ScratchDir + fn unique_scratch_dir pub(crate) in check.rs (minimal visibility change), then in vacuity_solver::run_harness write <stem>.rs inside a per-run scratch DIRECTORY and run verus with current_dir = that dir so the compiled binary lands inside and the Drop guard removes it wholesale on every exit path. Crate-name gotcha intact. Add forge/tests/scratch_cleanup.rs::vacuity_harness_success_leaves_no_scratch_orphan (a tautology fixture — the harness SUCCEEDS, the leak case — leaves no forge_* entry in an isolated TMPDIR; skip-loud if verus absent). Verify #13 behavior unchanged + full gauntlet.",
+      "created_at": "2026-06-05T18:01:54.949695896Z",
+      "kind": "plan"
+    }
+  ]
+}

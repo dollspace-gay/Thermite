@@ -1,0 +1,37 @@
+{
+  "uuid": "e8b4e987-097b-413a-9f4a-9861cd2c0f87",
+  "display_id": 87,
+  "title": "Editor-shell lowering gaps: L1 inv method-call rewrite + L1 String-index u64->usize coercion + fx-diverge termination exemption",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T23:47:42.046564105Z",
+  "updated_at": "2026-06-07T00:49:16.337989381Z",
+  "closed_at": "2026-06-07T00:49:16.337989381Z",
+  "labels": [
+    "bug"
+  ],
+  "comments": [
+    {
+      "uuid": "92dff3a1-9a10-4a9a-aba3-677abe70878d",
+      "author": "Yffe",
+      "content": "Fix the 3 thermite-lower gaps blocking the editor shell (#87): (1) l1.rs lower_inv_expr_l1 — recurse the struct-inv field-rewrite through Expr::MethodCall (receiver+args) and Expr::Call (callee+args), so inv cursor<=text.len() emits self.text.len() (was E0425). (2) l1.rs lower_expr_exec MethodCall arm — mirror lower.rs #86 coerce_usize: byte_at/slice index args get an explicit 'as usize' (skip literals + already-as-usize), fixing E0308. (3) lower.rs lower_fn+lower_loop — fx-diverge termination exemption: emit #[verifier::exec_allows_no_decreases_clause] AND suppress the loop decreases (new fn_is_diverge helper); diverge-ONLY so sum/binary_search still prove termination. Re-add os::read_key/os::key_str wrappers + unit tests. Editor #83 build+run ESCALATED: 3 NEW blockers beyond the 3 gaps (mutation battery rejects fx-diverge run at L0; L1 borrow-after-move in ens; L1 string-literal->TString).",
+      "created_at": "2026-06-07T00:05:39.294991505Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "0610497d-2374-45b4-90a1-32479cd5e579",
+      "author": "Yffe",
+      "content": "Editor #83 build+run BLOCKED on 3 NEW issues beyond the 3 gaps (the 3 gaps themselves are fixed + committed 5fd42f0). (B1) forge/src/check.rs gate_fn does not route fx-diverge fns to L1 — run's invariants verify in Verus but the §7 mutation battery rejects it L0 (WeakContract, kill 10/42): an event loop's ens result<=256 is inherently weak. A diverge fn should route to L1 like a boundary fn and SKIP the L3 mutation/strengthen gate. OFF-MANIFEST (check.rs) + a level-semantics DESIGN question (needs a .design/ note: 'a fx diverge fn caps at L1 — partial correctness, no termination, no mutation gate'). (B2) L1 borrow-after-move in ens checks: a fn that moves a non-Copy field into its result then names it in ens -> E0382 (move_left/move_right/insert_str). New L1 ens-emission class. (B3) L1 '' string literal -> &str not TString -> E0308. New L1 string-literal-construction gap. Request manifest re-authorization for check.rs + a .design/ note for B1, and l1.rs for B2/B3.",
+      "created_at": "2026-06-07T00:06:41.746088007Z",
+      "kind": "blocker"
+    },
+    {
+      "uuid": "ec657d09-7898-45a4-a015-07bac6db0584",
+      "author": "Yffe",
+      "content": "SHIPPED (5fd42f0). The 3 editor-shell lowering gaps: L1 inv field-rewrite recurses through MethodCall/Call; L1 byte_at/slice u64->usize coercion (mirrors #86 on the build side); fx-diverge termination exemption (#[verifier::exec_allows_no_decreases_clause] + suppress loop decreases, diverge-ONLY). Verified via the editor building + the critic's audit of deed870. sum/binary_search still prove termination -> L3.",
+      "created_at": "2026-06-07T00:48:52.830808199Z",
+      "kind": "result"
+    }
+  ]
+}

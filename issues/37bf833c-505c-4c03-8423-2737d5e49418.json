@@ -1,0 +1,56 @@
+{
+  "uuid": "37bf833c-505c-4c03-8423-2737d5e49418",
+  "display_id": 4,
+  "title": "Lower Thermite to Verus-annotated Rust and verify at L3 and L1",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:06.418749644Z",
+  "updated_at": "2026-06-04T23:07:54.166082129Z",
+  "closed_at": "2026-06-04T23:07:54.166082129Z",
+  "labels": [
+    "feature"
+  ],
+  "blockers": [
+    "6199e0d6-6933-4707-9cac-c7f62115ace1",
+    "63e8e655-9574-4648-9521-2a12b1973b96"
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+  "comments": [
+    {
+      "uuid": "d72c7f71-b1e8-462e-bab0-d9a905053c97",
+      "author": "Yffe",
+      "content": "Transpile AST -> Verus-annotated Rust source, then invoke Verus. Mapping: req->requires, ens->ensures (must mention result for non-unit), inv->invariant, dec->decreases, fx pure -> no side effects, spec fn -> Verus spec fn. Each SpecTherm combinator lowers to its registry Verus definition. L1 rung: compile the same SpecTherm contract to runtime checks (executable spec fns) active in ALL build profiles, not just debug (design 6). Overflow is a proof obligation (design 4.4). Defer: runtime effect sandbox (compile-time fx subsumption only).",
+      "created_at": "2026-06-04T17:49:27.540661702Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "b1e1c635-0790-4869-834e-c86032a13243",
+      "author": "Yffe",
+      "content": "Critic loop-4 audit (commit 3e5daba): GENERALITY CLAIM VERIFIED — proof-aid templates are shape-keyed, not per-program hardcoded. Grep: zero program-identity coupling in lower.rs (only vocabulary literals 'len'/'None'/'forall_in'/'forall_below'/'forall_from'). New-program probes (thermite-lower/tests/divergence_lower.rs) lower renamed-but-structurally-identical programs: 'tally'/'accumulate'/'vals'/'total'/'j' emits lemma_tally_push + vals@ aids and VERIFIES under real verus; 'locate'/'data'/'key'/'left'/'right' emits a data@/left/key coverage split and VERIFIES; a no-shape fn emits NO spurious aids; a combinator in req position lowers with the @ view. No emitted cheats (no assume/admit/external/external_body/slag/ensures-true). Gauntlet green: thermite-lower 5+6 passed, thermite-spec 19, clippy/fmt clean. NO DIVERGENCE FOUND. One low-pri observation #37 (cosmetic underscore drop, thermite-syntax).",
+      "created_at": "2026-06-04T22:16:34.421036875Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "6d764541-06e8-4486-a4e3-9af0aa748017",
+      "author": "Yffe",
+      "content": "L3 LOWERING SHIPPED (the hard centerpiece of #4). thermite-lower/src/lower.rs emits Verus from the AST; the EMITTED output for both corpus programs VERIFIES in the real verus binary (sum: 5 verified 0 errors; binary_search: 2 verified 0 errors). thermite-spec/src/combinators.rs extended with the 8 Verus(L3) forms (closes the #2 deferral; R-DEFER-1 consumer = the lowerer). Commits: 80cca29 (oracle+docs) -> 8f4b4cb (verify-not-byte-match amendment) -> 3e5daba (lowerer) -> cc8214c (critic generality probes).\n\nThe OQ-2 challenge (general proof-aid templates, NOT per-program hardcoding) was MET HONESTLY: acto-critic grep-confirmed zero program-identity coupling and proved generality by lowering RENAMED variants (a tally-fold emitting lemma_tally_push; a renamed coverage-search) that verify in real verus. 5 shape-keyed templates: overflow->nonlinear_arith, immutable-precond lift, recursive-spec-fn unfold lemma, accumulator-extensionality, complementary-quantifier coverage case-split.\n\nREMAINING in #4 (not yet done): l1.rs (L1 runtime-check lowering) and effects.rs (compile-time fx subsumption). #4 stays open. Observation #37 filed (underscore literals dropped by thermite-syntax AST; numerically faithful, low-pri). Gauntlet: thermite-lower 5+6 tests, thermite-spec 19, clippy/fmt/workspace green. Not pushed.",
+      "created_at": "2026-06-04T22:18:04.819723089Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "ac23a6af-29f1-4def-bf0e-bd84b54f5fe2",
+      "author": "Yffe",
+      "content": "L1 RUNTIME-CHECK LOWERING SHIPPED (the L1 rung of #4; sibling to the already-shipped L3 lower.rs). thermite-lower/src/l1.rs: lower_l1 emits a self-contained runnable Rust file — always-active thermite_check! macro (plain if !(cond), NOT debug_assert; design 6) + thermite_contract_violation handler, executable spec fns (spec_sum slice-length recursion over &[u32]), the combinator L1 forms USED, and each fn with req on entry / loop inv per iteration / ens vs bound result on exit. thermite-spec/src/combinators.rs extended with the CombinatorSig.l1 field (8 frozen runnable Rust bodies, mirroring verus_l3; R-DEFER-1 consumer = l1.rs). VERIFIED BY EXECUTION via rustc (not byte-match): positive sum(&[1,2,3])==6 with checks passing; negative corrupted-body fires the always-active violation handler (observable, non-zero exit). 8 combinator L1 fns unit-tested over concrete slices (AC-3). Gauntlet: thermite-lower 18 passed (7 new l1_conformance) + thermite-spec 19 (l1 field did not break #2), clippy/fmt/workspace-build clean. Commit c0b1d8a. #4 STAYS OPEN: acto-critic re-audit + effects.rs (effect-subsumption) remain.",
+      "created_at": "2026-06-04T22:43:29.887536074Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "5f3e82e3-c5ef-46d9-b930-f9a79f1bcec4",
+      "author": "Yffe",
+      "content": "SHIPPED — all three components of #4 done and critic-verified. (1) L3 lowering [lower.rs + combinator Verus forms]: emitted Verus for both corpus programs VERIFIES in real verus via GENERAL shape-keyed proof-aid templates (critic proved generality on renamed programs; no per-program hardcoding). (2) L1 runtime checks [l1.rs + combinator L1 forms]: emitted L1 compiles+runs, always-active checks fire on violation incl under release; critic NO DIVERGENCE. (3) Effect subsumption [effects.rs]: compile-time fx-row subsumption; critic found #38 (while-condition callee escaped the walk) -> fixed by walking every reachable Expr position; pinned test green.\n\nAlso fixed the verus-test portability bug the user hit: verus tests now skip-loudly when verus is absent instead of panicking, AND CI installs the pinned verus release (URL corrected + verified end-to-end) so the L3 gate actually runs in CI.\n\nCommits: 3e5daba/cc8214c (L3) -> e3c398e/57008d0 (verus skip) -> 6b02abb/c0b1d8a/cb3caa4/a8d45f5 (L1) -> 83afe1b (CI verus) -> 5b0967f/a595a5f/95d12b9 (effects + #38). Final: cargo test --workspace all green (57 thermite-lower+thermite-spec tests, both corpus programs verify at L3 in real verus), clippy -D warnings + fmt clean. Not pushed. Deferred per design: SMT triggers refinement, the ladder degrade L3->L2->L1 + cert manifest (issue #5 forge check), runtime effect sandbox (issue #21).",
+      "created_at": "2026-06-04T23:07:31.466702228Z",
+      "kind": "result"
+    }
+  ]
+}

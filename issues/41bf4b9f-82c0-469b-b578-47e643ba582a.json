@@ -1,0 +1,23 @@
+{
+  "uuid": "41bf4b9f-82c0-469b-b578-47e643ba582a",
+  "display_id": 58,
+  "title": "Update README: reflect v0.1-v0.5 complete + forge build/sandbox (status was 'under construction')",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T20:45:07.544906847Z",
+  "updated_at": "2026-06-05T20:47:38.936429674Z",
+  "closed_at": "2026-06-05T20:47:38.936429674Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "5644be19-f5e1-4d19-8150-90a08b52a1cc",
+      "author": "Yffe",
+      "content": "Updated README to reflect v0.1-v0.5 complete + forge build (runnable binaries) + the seccomp sandbox. Rewrote Status, How-it-works (transpile-to-Rust; check->verus/kani, build->rustc->binary+sandbox; counterexample never degrades), the roadmap (milestones #1-#5 closed), the layout, and the taste closing. Commit on main. No stale 'under construction/in progress' terms remain (only the legitimate #21-deferred line).",
+      "created_at": "2026-06-05T20:47:28.482760134Z",
+      "kind": "result"
+    }
+  ]
+}

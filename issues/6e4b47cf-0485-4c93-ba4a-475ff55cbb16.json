@@ -1,0 +1,30 @@
+{
+  "uuid": "6e4b47cf-0485-4c93-ba4a-475ff55cbb16",
+  "display_id": 24,
+  "title": "Divergence: sum.cert.json survivor string uses ASCII '->' but design Appendix A specifies Unicode arrow '->'(U+2192)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T18:15:49.325417513Z",
+  "updated_at": "2026-06-04T18:17:49.011063936Z",
+  "closed_at": "2026-06-04T18:17:49.011063936Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "34e84cc6-266d-4983-84eb-8822a48ac5dc",
+      "author": "Yffe",
+      "content": "Authority (thermite-design.md Appendix A, json cert excerpt, survivor field):\n  \"survivor\": \"mutant#11: `i = i + 1` → `i = i + 2` survives ens but killed by inv#2\"\n  The arrow is U+2192 (bytes 0xE2 0x86 0x92), confirmed via od -c.\n\nActual (conformance/sum.cert.json line 8):\n  \"survivor\": \"mutant#11: `i = i + 1` -> `i = i + 2` survives ens but killed by inv#2\"\n  The arrow is ASCII hyphen+greater-than (0x2D 0x3E).\n\nWhy divergence: survivor is a deterministic string field. The design states it VERBATIM (it is neither solver_time_ms-style non-deterministic, so not excludable, nor a value the toolchain author may choose). Per goal.md R-CHAR-3 the golden cert's expected values must trace to thermite-design.md byte-for-byte; substituting the glyph creates a false anchor. A faithful mutation scorer reproducing the design's prose would emit U+2192 and FAIL the golden match; conversely accepting '->' silently certifies a string the design never wrote. grep -c confirms: design has 0 occurrences of survivor's '->' (uses U+2192), cert has 0 occurrences of '→'.\n\nAll other sum.cert.json fields verified faithful: item=sum, level=L3, tautology=false, vacuous_precondition=false, mutants_killed=17/18, effects=[pure], slag=false. solver_time_ms omission justified (non-deterministic, design §5.3). Both sum.th and binary_search.th are character-identical to design Appendix A / §4.1 (diff clean). binary_search.cert.json deferral is design-correct (no cert given in design).",
+      "created_at": "2026-06-04T18:16:05.956264685Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "1f06f26f-fefe-4397-b676-8c42b4f4a619",
+      "author": "Yffe",
+      "content": "Fixed: restored U+2192 arrow in conformance/sum.cert.json survivor field to match thermite-design.md Appendix A verbatim. Verification (the cert-oracle check itself): cert survivor value now byte-identical to the design's survivor value (python re-extraction: MATCH). JSON parses. Applied directly by orchestrator (one-byte, orchestrator-owned corpus artifact; full acto-fixer dispatch would be ceremony per S4/S8). Re-audit done inline via byte-exact comparison to authority.",
+      "created_at": "2026-06-04T18:17:44.172727408Z",
+      "kind": "result"
+    }
+  ]
+}

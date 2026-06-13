@@ -1,0 +1,37 @@
+{
+  "uuid": "81a5e2ad-f853-40da-a7c7-eefd34eb873e",
+  "display_id": 64,
+  "title": "Divergence: parser no-struct-literal context leaks into match arm bodies — a value-position struct literal in a clause-position match fails to parse (01-adts.md REQ-2/REQ-4)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T11:45:32.004566471Z",
+  "updated_at": "2026-06-06T11:53:44.500809644Z",
+  "closed_at": "2026-06-06T11:53:44.500809644Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "3bd2950d-e762-4789-a08f-dda1e21410af",
+      "author": "Yffe",
+      "content": "Failing test at thermite-syntax/tests/divergence_adt_parse.rs::divergence_clause_match_arm_body_struct_lit_parses demonstrates the divergence.\n\nROOT CAUSE: in parser.rs, parse_clause runs the clause expression under with_no_struct_literal (so a trailing 'Name { … }' is a block, not a struct lit — correct for the HEAD). When that clause expr is a bare 'match e { … }', parse_match parses the scrutinee under with_no_struct_literal then parses each arm body via parse_expr WITHOUT re-enabling struct literals. The clause's no_struct_literal flag is still active, so an arm body 'Point { x: 1 }' (VALUE position) is mis-parsed: 'expected }, found {'.\n\nThe other bracketed contexts (parse_call_args, parse_index_arg, the LParen primary) correctly re-enable via with_struct_literal; match arm bodies (and, by inspection, the if/else block tails reached through this path) do not. This is exactly the binary_search-shaped 'ens match result { … }' clause — the corpus passes only because its arm bodies happen not to construct structs.\n\nAUTHORITY: .design/basis/01-adts.md REQ-2 (Expr::StructLit construction) + REQ-4 (match in expression position; arm bodies are value position). The fix (generator): wrap the match arm-body parse in with_struct_literal in parse_match.",
+      "created_at": "2026-06-06T11:45:47.577206749Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "f0a85a2d-a61f-4828-92b5-a145cd2dba0f",
+      "author": "Yffe",
+      "content": "Minimal single-file fix in thermite-syntax/src/parser.rs parse_match: wrap the arm-body expr parse in with_struct_literal (mirroring parse_call_args / parse_index_arg / the LParen primary). Arm bodies are VALUE position (.design/basis/01-adts.md REQ-2/REQ-4); the scrutinee parse keeps with_no_struct_literal and the { block delimiter is unchanged, and with_struct_literal restores the prior context on exit (no leak the other way). Verify divergence_clause_match_arm_body_struct_lit_parses goes green + no corpus/workspace regression.",
+      "created_at": "2026-06-06T11:53:23.511562835Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "8a82230b-29a8-47dd-994e-5fc7a8335686",
+      "author": "Yffe",
+      "content": "FIXED in 5ec3a70. parse_match arm-body parse changed from self.parse_expr() to self.with_struct_literal(Self::parse_expr) — the with_struct_literal wrap re-enables struct literals in the arm-body VALUE position, mirroring parse_call_args. Scrutinee parse (with_no_struct_literal) and the { block delimiter are unchanged; context restored on exit (no reverse leak). Pinned test divergence_clause_match_arm_body_struct_lit_parses PASSES. Gauntlet: cargo test -p thermite-syntax green (adt_parse 4/4); cargo test --workspace 437 passed, 0 failed; clippy --workspace --all-targets -D warnings PASS; fmt --all --check PASS. Corpus (sum.th, binary_search.th) unchanged.",
+      "created_at": "2026-06-06T11:53:40.338148522Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "6c00d148-9373-402b-bcee-f9defb60c136",
+  "display_id": 211,
+  "title": "Divergence: proof-backends.md §7/AC-7/REQ-9 'denominator = attempted' + 'survivor = Proved only' contradict shipped mutation_score's #101 equivalence exclusion it claims to preserve",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:09:39.989127843Z",
+  "updated_at": "2026-06-10T22:51:30.204498564Z",
+  "closed_at": "2026-06-10T22:51:30.204498564Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "aaa6f39d-0401-4bfe-99ce-7c2c3b8477de",
+      "author": "Yffe",
+      "content": "Pin: forge/src/check.rs::mutation_score excludes a proven-EQUIVALENT survivor from BOTH the survivor set AND 'scored' ('REQ-2/REQ-4: excluded from BOTH the survivor set AND scored' — the equivalent += 1; continue branch after equivalence_proves_equal). So shipped denominator = attempted MINUS proven-equivalent, and shipped survivor set = Proved MINUS proven-equivalent. proof-backends.md §7 states 'The survivor set = Proved mutants ONLY' and 'The denominator = ATTEMPTED mutants (preserving the shipped behavior: today every generated-and-lowerable mutant is run, and the OQ-5 rule already DROPS un-lowerable mutants…)' — omitting the #101 equivalence drop entirely from the normative kill/denominator/floor rules (AC-7 and REQ-9 repeat 'denominator = attempted'). The 'preserving the shipped behavior' claim is therefore false as stated, and a literal increment-(iii) implementation regresses equivalent-mutant handling: equivalent mutants re-enter the denominator as survivors → spurious WeakContract floor failures. The doc's own §0 substrate bullet says mutation_score 'counts killed/scored/equivalent', so §7's restatement is internally inconsistent with §0 as well.",
+      "created_at": "2026-06-10T19:10:09.947162523Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "7c5890a1-ccc5-4c1b-ab01-12f414051572",
+      "author": "Yffe",
+      "content": "Cycle-3 verification: RESOLVED (commit e20e4034). §7, REQ-9, AC-7 and the REQ-status row now all carry the #101 exclusion consistently: survivor = Proved-after-attempt MINUS proven-equivalent; denominator = attempted MINUS proven-equivalent (the shipped 'scored'); the 'preserving the shipped behavior' claim is now true as stated; the floor rule names the exclusion NORMATIVE so a literal increment-(iii) implementation cannot regress equivalent-mutant handling; the 0/0 backstop covers the all-equivalent case. Re-grounded against forge/src/check.rs (the 'proved_equivalent { equivalent += 1; continue; }' site) and mutation.rs REQ-4/REQ-5 — quotes accurate.",
+      "created_at": "2026-06-10T19:26:16.677705770Z",
+      "kind": "observation"
+    }
+  ]
+}

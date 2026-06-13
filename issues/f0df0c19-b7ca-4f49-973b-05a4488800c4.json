@@ -1,0 +1,37 @@
+{
+  "uuid": "f0df0c19-b7ca-4f49-973b-05a4488800c4",
+  "display_id": 97,
+  "title": "Divergence: thermite-lower::emit_numfmt_defs u64_to_string emits empty seq for input 0 (L3 != L1; REQ-8 human-readable decimal of 0 is \"0\")",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T05:44:06.306845285Z",
+  "updated_at": "2026-06-07T05:56:11.517953620Z",
+  "closed_at": "2026-06-07T05:56:11.517953620Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "23b92e2e-9d5e-479c-8b5f-adfd2cc60a26",
+      "author": "Yffe",
+      "content": "Failing test at thermite-lower/tests/divergence_numfmt_zero.rs::divergence_numfmt_l3_zero_handling_matches_l1 demonstrates the divergence (run: cargo test -p thermite-lower --test divergence_numfmt_zero -- --ignored).\n\nROOT: emit_numfmt_defs (thermite-lower/src/lower.rs) emits the L3 u64_to_string with only a 'while m > 0' digit loop and NO zero-guard. For n==0 the loop never runs, the reverse of [] is [], so result.data@ == empty seq. parse_be([]) == 0 == n verifies (the round-trip ens is satisfied for BOTH [] and [48]), so verus does NOT catch it. By contrast emit_string_runtime_l1 (l1.rs) DOES emit 'if m == 0 { data.push(48u8); }', so the BUILT binary prints \"0\" ([48]).\n\nDIVERGENCE 1 (L3 != L1): commit 1b57d60 claims 'L3 == L1 ... agree byte-for-byte'. False at n==0: L3 -> [] (\"\"), L1 -> [48] (\"0\").\nDIVERGENCE 2 (REQ-8): .design/basis/07-strings.md REQ-8 'the surface emits the human-readable MSB-first decimal' — the decimal of 0 is \"0\", not the empty string. The verified L3 lowering emits \"\" for 0.\n\nFIX (generator): add the same zero-guard to emit_numfmt_defs' L3 u64_to_string (push 48u8 when n==0, before/around the build loop) with the invariant/proof extended so parse_be(result.data@)==0 still discharges with result.data@ == [48]. R-DEFER-9: prove it, do not assume.",
+      "created_at": "2026-06-07T05:44:23.859641911Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "d7da7ae3-0d4b-4fee-a4ad-4fe992dc698b",
+      "author": "Yffe",
+      "content": "FIXED (acto-fixer, single concern: the zero-guard + the len>=1 floor at L3).\n\nROOT-CAUSE FIX: emit_numfmt_defs (thermite-lower/src/lower.rs) now emits the L3 u64_to_string with the zero-guard 'if m == 0 { data.push(48u8); }' (mirroring emit_string_runtime_l1 in l1.rs) BEFORE the 'while m > 0' build loop, so n==0 -> data=[48] -> (reverse of [48] is [48]) -> result.data@==[48]=='0', byte-for-byte equal to L1. REQ-8 (the human-readable MSB-first decimal of 0 is '0') now holds at L3.\n\nCONTRACT STRENGTHENED (R-DEFER-9 teeth, not a cheat): added 'ens result.data.len() >= 1' alongside the round-trip 'ens parse_be(result.data@) == n as nat'. The round-trip alone admits empty for 0 (parse_be([])==0); the len floor contractually FORBIDS the empty string. CONFIRMED real teeth: with the zero-guard removed, the build-loop invariant 'data.len() >= 1 || m > 0' FAILS verus (26 verified, 1 error). No assume/admit/external_body.\n\nVERIFICATION:\n- divergence_numfmt_zero (un-ignored): 1 passed.\n- emitted L3 under real verus 0.2026.05.24: 28 verified, 0 errors.\n- forge string_format_conformance: 5 passed; divergence_numfmt_display_order: 1 passed (0->'0', 42->'42', 100->'100', 7->'7'; L3==L1 byte-for-byte at 0 and everywhere).\n- cargo test --workspace: 0 failed; clippy -D warnings: clean; fmt --check: clean.\n\nHand back for acto-critic re-audit.",
+      "created_at": "2026-06-07T05:54:56.329041948Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "74cdb4db-23b3-4c50-ac70-c868935f7cd9",
+      "author": "Yffe",
+      "content": "Add the zero-guard 'if m == 0 { data.push(48u8); }' to the L3 u64_to_string in emit_numfmt_defs (lower.rs), mirroring the L1 form in emit_string_runtime_l1 (l1.rs), so n==0 emits [48]='0' matching L1. Strengthen the contract with 'ens result.data.len() >= 1' so the empty string is contractually forbidden (the round-trip alone allows '' for 0). Prove via: a proof block re-establishing parse_le([48])==0 for the guarded entry; a build-loop disjunct invariant 'data.len() >= 1 || m > 0'; and an 'out.len() == i' reverse-loop invariant so result.data.len()>=1 discharges. Verify with real verus, the un-ignored pinned test, and the workspace gauntlet. Single file (lower.rs) + the test fixture. No proof cheat (R-DEFER-9).",
+      "created_at": "2026-06-07T05:55:38.192323118Z",
+      "kind": "plan"
+    }
+  ]
+}

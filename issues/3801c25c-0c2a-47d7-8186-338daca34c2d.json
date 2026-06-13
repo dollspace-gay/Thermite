@@ -1,0 +1,37 @@
+{
+  "uuid": "3801c25c-0c2a-47d7-8186-338daca34c2d",
+  "display_id": 38,
+  "title": "Divergence: effects::check_block skips `while` loop CONDITION — callee in while-cond escapes fx subsumption (§4.1)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T23:01:06.643453157Z",
+  "updated_at": "2026-06-04T23:05:48.690709228Z",
+  "closed_at": "2026-06-04T23:05:48.690709228Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "17ad9261-524a-46f6-ab85-c8d6eb760869",
+      "author": "Yffe",
+      "content": "Failing test at thermite-lower/tests/divergence_effects.rs::divergence_while_condition_callee_is_checked demonstrates the divergence.\n\nRoot: effects.rs check_block's `Stmt::Loop(l)` arm walks ONLY `&l.body` and never inspects `l.kind`. `LoopKind::While(Box<Expr>)` carries the loop condition expression, which can contain an `Expr::Call` to an effectful fn. lower.rs DOES lower the while condition (LoopKind::While(c) arm), so the call site is reachable codegen.\n\nAuthority: thermite-design.md §4.1 'a caller's row must subsume EVERY callee's row, checked at compile time'. A `fx pure` caller running `while effectful() {}` (effectful fx {alloc}) is currently ACCEPTED (false accept) instead of rejected with missing:[Alloc].\n\nFix is the generator's: extend the Stmt::Loop arm to also check_expr the While condition. Critic does not fix.",
+      "created_at": "2026-06-04T23:01:24.314915406Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "d151aae1-1509-4445-853e-dbdcac69de04",
+      "author": "Yffe",
+      "content": "Plan: pin the while-condition fx-subsumption escape as a failing test in thermite-lower/tests/divergence_effects.rs and commit it to main. Critic does not fix; generator extends effects.rs Stmt::Loop arm to check_expr the While condition.",
+      "created_at": "2026-06-04T23:02:27.221407276Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "dc0a49c2-e000-4658-b428-21f900c59749",
+      "author": "Yffe",
+      "content": "Fixed in 95d12b9. ROOT CAUSE (whole class): check_block's Stmt::Loop arm walked only l.body, never l.kind; for LoopKind::While(cond) the runtime-evaluated condition (lowered by lower.rs's While(c) arm) escaped subsumption. CLASS AUDIT of every Expr-bearing position in ast.rs: all Stmt arms (Let.init, Assign.target/value, Return, Expr, If.cond/then/else_, block tail) and all Expr variants (Call callee+args, MethodCall receiver+args, Field, Closure, Match scrutinee+arms, If cond+branches, Binary, Index base+args, Cast, Ref) were already walked; LoopKind::While(cond) was the ONLY unwalked reachable Expr. The loop inv/dec are SPEC positions (pure by construction, §4.2) and stay intentionally unwalked per check_expr's documented discipline. FIX: Stmt::Loop now walks the While condition via check_expr (depth-guarded by MAX_WALK_DEPTH) before walking l.body. BEFORE: pure { while effectful() {} } (effectful fx {alloc}) -> Ok(()) [false ACCEPT]. AFTER: -> Err([EffectNotSubsumed { callee: effectful, missing: [Alloc] }]). GAUNTLET: cargo build -p thermite-lower OK; cargo test -p thermite-lower 38 passed 0 failed (divergence_while_condition_callee_is_checked PASSES; 14 effects); cargo test -p thermite-spec 19 passed 0 failed; clippy -D warnings PASS; cargo fmt --all --check PASS; cargo build --workspace OK. No fixtures/assertions touched (R-CHAR-3); test had no #[ignore]. Single file effects.rs, on main.",
+      "created_at": "2026-06-04T23:05:42.802670908Z",
+      "kind": "result"
+    }
+  ]
+}

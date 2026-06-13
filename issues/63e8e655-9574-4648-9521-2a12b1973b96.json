@@ -1,0 +1,31 @@
+{
+  "uuid": "63e8e655-9574-4648-9521-2a12b1973b96",
+  "display_id": 3,
+  "title": "Build the Thermite parser with stable semantic addressing and per-item recovery",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:02.156659445Z",
+  "updated_at": "2026-06-04T20:26:54.054447298Z",
+  "closed_at": "2026-06-04T20:26:54.054447298Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+  "comments": [
+    {
+      "uuid": "678295f6-2227-42cf-954b-0f84da38fc08",
+      "author": "Yffe",
+      "content": "Lexer + recursive-descent parser to AST. Two hard requirements from the design: (a) PER-ITEM error recovery — a syntax error in one item must not cascade into the next (design 4.3); parse items independently. (b) STABLE SEMANTIC ADDRESSING — deterministic numbering loop#1, inv#2, etc. (design 4.3) that survives unrelated edits, so forge edit-by-address and per-item proof cache keys work. Mandatory-contract enforcement: absent req/ens/fx is a parse error, not a default (design 4.1).",
+      "created_at": "2026-06-04T17:49:26.145420452Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "3614d154-75e7-4215-93dc-c270a959b47d",
+      "author": "Yffe",
+      "content": "SHIPPED via the full ACToR loop. thermite-syntax implemented: lexer + AST + recovering parser + semantic addressing, verified against the hand-authored, critic-verified conformance/parse + conformance/address oracle. Commits: 32533e4 (build) -> 5bb910e (#28/#30) -> 2a8e3e3 (#29) -> f0ceb12 (#31) -> 90cef82 (#32) -> 358ec3c (#33). Plus oracle fixtures 53aa402, pinned tests a419e00.\n\nThe loop ran builder -> critic x5. The critic pinned and the fixers cleared SIX real divergences (all backed by failing tests, oracle never tampered per R-CHAR-3): #28 unit-return type rejected; #29 deep-expr stack overflow; #30 if/else-in-tail dropped to statement; #31 unbounded recursion in type/pattern/if; #32 unbounded recursion in loop bodies; #33 (regression from #30) value-less trailing if/else wrongly promoted to tail expr. The no-panic contract (parser.md AC-4) now holds across all probed recursion vectors via a single shared guard_recursion/MAX_RECURSION_DEPTH=64.\n\nFinal state: cargo test -p thermite-syntax = 20 passed, 0 ignored (9 conformance + 11 divergence/regression); workspace build + clippy -D warnings + fmt all green. Design docs .design/syntax/{surface-grammar,lexer,ast,parser,semantic-addressing}.md (REQ-status SHIPPED). Not pushed (human pushes).",
+      "created_at": "2026-06-04T20:26:30.491402916Z",
+      "kind": "result"
+    }
+  ]
+}

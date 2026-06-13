@@ -1,0 +1,30 @@
+{
+  "uuid": "79d96442-b64d-4f36-9dc7-da94eb222dec",
+  "display_id": 164,
+  "title": "freestanding/no_std kernel target — forge build --target kernel emits no_std freestanding Verus-Rust (the verified-microkernel enablement). SIBLING groundwork to the exec-statement TV (NOT a step-2.2 prereq); the frozen exec subset + operational semantics are the kernel exec-language foundation. .design/verified/exec-stmt-tv.md (kernel-convergence note).",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:53:44.722163305Z",
+  "updated_at": "2026-06-10T08:16:43.392277654Z",
+  "closed_at": "2026-06-10T08:16:43.392277654Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "4a0eb149-b22f-4794-88d3-3c9c96560ad4",
+      "author": "Yffe",
+      "content": "NEXT-DISPATCH PLAN (staged for the next session — the sole remaining issue). ACToR arc: (1) acto-doc-author authors .design/build/kernel-target.md grounded in: forge/src/build.rs (emit_source/lower_l1/rustc shell-out — the path --target kernel forks), the fx/seccomp machinery (a kernel target has NO syscall sandbox — effects become link-time/static only), thermite-lower's emitted-Rust std surface (what std items the L1 runtime checks + Vec/String/Map lowerings pull in; the no_std story needs alloc-only or a freestanding allocator hook), and exec-stmt-tv.md's kernel-convergence note. v1 scope decision for the doc: emit no_std+alloc lib crate (no main, no seccomp, panic=abort), reject fx rows containing read/write/net/term (kernel code has no ambient syscalls), keep the L3 path identical (Verus is target-independent). (2) acto-builder per the design (build.rs --target kernel + a no_std emission profile in lower_l1 + tests incl. a freestanding compile check via rustc --target or no_std cfg). (3) acto-critic. All substrates shipped; epic #169's proven lowering is target-independent so no Lean work is implied.",
+      "created_at": "2026-06-10T07:16:38.635776853Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "5521bdcf-375e-4588-b094-3557331c50d4",
+      "author": "Yffe",
+      "content": "COMPLETE through the full ACToR arc: design a5a57cc5 (.design/build/kernel-target.md — no_std+alloc lib, no seccomp, panic=abort, L3 target-independent) -> build 14070625 (#197: --target kernel, the fx gate, the freestanding compile, 7 AC tests + N-version source reconstruction) -> critic (found #198: the admitted-fx-time std-wrapper leak) -> fix 13b8d734 (time/rand rejected, OQ-2 amended, re-pinned, emitted-source assertion) -> verified. The verified-microkernel enablement is shipped: a pure/alloc Thermite item builds to a freestanding no_std rlib with its L1 contract checks intact.",
+      "created_at": "2026-06-10T08:16:31.172541461Z",
+      "kind": "result"
+    }
+  ]
+}

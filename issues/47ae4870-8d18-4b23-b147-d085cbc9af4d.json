@@ -1,0 +1,37 @@
+{
+  "uuid": "47ae4870-8d18-4b23-b147-d085cbc9af4d",
+  "display_id": 82,
+  "title": "Divergence: forge build os::write/os::print/os::read_line wrappers reference undefined `super::TString` — Write/read_line families do not link+run (Stage 8 #81)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T21:40:10.841299633Z",
+  "updated_at": "2026-06-06T21:57:07.400935432Z",
+  "closed_at": "2026-06-06T21:57:07.400935432Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "d0446556-e332-4960-b7b0-5d43acabd3dc",
+      "author": "Yffe",
+      "content": "Failing tests pinned at forge/tests/divergence_effect_link_string_wrappers.rs::{print_wrapper_builds_and_runs, read_line_wrapper_builds} (both #[ignore]d, blocker #82).\n\nAUTHORITY: .design/basis/08-runnable-effect-link.md REQ-1 (\"os::write/os::print (std::io::stdout().write_all, Stage 7 String arg) … os::read_line (… over Stage 7 String). Each wrapper's signature MATCHES the #[boundary] primitive it backs\") + REQ-3 (\"COMPILES + RUNS + does real I/O\"). The wrapper-set table enumerates os::write/os::print/os::read_line as v1 wrappers.\n\nTOOLCHAIN: forge/src/effect_wrappers.rs WRAPPERS emits the print/write/read_line bodies referencing `super::TString` (e.g. `pub fn print(s: super::TString) -> u64`, `super::TString { data: s.into_bytes() }`). thermite-lower/src/l1.rs lower_type arm `Type::String => Ok(\"TString\")` lowers a String-typed boundary signature to the bare name TString. But neither emit_mod_os nor lower_l1 emits a `struct TString` definition into the BUILD-emitted crate (the struct lives only in the L3/Verus lowering, thermite-lower/src/lower.rs).\n\nREPRO (live, real rustc): forge build print_demo.th --entry greet → error[E0425]: cannot find type `TString` in module `super` + error[E0425]: cannot find type `TString` in this scope. read_line identical (+ E0422 on the struct literal).\n\nIMPACT: 3 of the 5 wrappers REQ-1 enumerates (Write family + read_line) do NOT compile/run via forge build. REQ-1/REQ-3 are NOT-STARTED for those families, contradicting the REQ-status \"SHIPPED\". Only os::now + os::read_byte (u64-only) actually link+run. Root cause in the owning crates: forge/src/effect_wrappers.rs (the wrapper type) and/or thermite-lower/src/l1.rs (the build crate must define/emit a resolvable String type).",
+      "created_at": "2026-06-06T21:40:29.694943669Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "d2e86f3b-4171-4c66-9597-d2b90f58903c",
+      "author": "Yffe",
+      "content": "PLAN: commit the two #[ignore]d pinned failing tests at forge/tests/divergence_effect_link_string_wrappers.rs (print_wrapper_builds_and_runs, read_line_wrapper_builds) as the audit artifact for this divergence. Critic does not fix; tests un-ignore when the generator makes os::write/os::print/os::read_line link (emit a build-resolvable String/TString type). Committing to main per dispatch (no branches).",
+      "created_at": "2026-06-06T21:41:48.196613978Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "5db1c931-c528-45ed-a0d8-0802828bc5a2",
+      "author": "Yffe",
+      "content": "RESULT (acto-fixer, commit 82e0257): the build-crate TString def is now emitted by thermite-lower/src/l1.rs::emit_string_runtime_l1, wired into lower_l1 after the combinator defs. Resolution = option (b) (the L1 BUILD-lowering emits it, mirroring the L3 lower.rs::emit_string_wrapper but as plain Rust — no vstd/Seq/spec). It emits 'struct TString { data: Vec<u8> }' (matching the wrappers' super::TString { data } construction) + 'use TString as String;' (so a body's String::new() resolves to TString, 07-strings.md REQ-4) + the new/len/byte_at/concat/slice surface (no-OOB/bounded checks via the always-active thermite_check!), gated on program_uses_string_l1 (non-String corpus byte-unaffected). BEFORE: forge build print_demo --entry greet -> E0425 cannot find type TString (super + this scope). AFTER: rustc exit 0; greet()=0 (write wrapper); read_line reads stdin -> getit()=TString{data:[104,101,...]}, exit 0. GAUNTLET: build --workspace OK; test --workspace 523 passed/0 failed/0 ignored; the two un-ignored pins PASS; clippy --workspace --all-targets -D warnings PASS; fmt --all --check PASS. NO regression: u64 path (os::now->elapsed_ok) still builds+runs; pure corpus (sum) builds; forge check unchanged (link is build-only). One file fix (thermite-lower/src/l1.rs) + un-ignore. Hand back for acto-critic re-audit.",
+      "created_at": "2026-06-06T21:57:01.974584365Z",
+      "kind": "result"
+    }
+  ]
+}

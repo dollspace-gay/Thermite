@@ -1,0 +1,23 @@
+{
+  "uuid": "94f0ccf3-dd02-408a-ab0c-9cab8511698e",
+  "display_id": 207,
+  "title": "Divergence: proof-backends.md AC-1 'covers exactly the classes the pipeline discharges TODAY' omits three SHIPPED verus-discharged query classes (solver-vacuity harnesses w/ INVERTED polarity, #101 equivalence queries, strengthen probes)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:53:39.943250690Z",
+  "updated_at": "2026-06-10T22:51:14.227095968Z",
+  "closed_at": "2026-06-10T22:51:14.227095968Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "6493e060-3f7a-470a-b4fe-e1fe4d3adc94",
+      "author": "Yffe",
+      "content": "Code: (a) vacuity_solver::solver_vacuity_check runs TWO verus harnesses per fn BEFORE L3 (check.rs check_file_with_rlimit) with INVERTED polarity — verus PROVED = reject (vacuous/tautology), FAILED = clean; (b) check.rs equivalence_proves_equal (#101) discharges the survivor-equivalence obligation via run_verus + the #8 cache; (c) strengthen::probe verifies candidate ens via the threaded run_verus closure. None appear in REQ-1/AC-1's class enum (CONTRACT|EXEC|BODY|LOOP_*|OVERFLOW|TERMINATION) nor in the promised 'recorded OUT here' list, and §0's pipeline description ('parse -> validate -> check_effects then per item lower -> run_verus -> assemble_certificate') omits them. Buildability impact on increment (i) #204 ('Verus refactored behind the interface'): these are direct verus consumers that must be scoped in or out, and the vacuity harness polarity shows REQ-3's Proven->certify / Unknown->degrade discipline is WRONG for at least one shipped query class (there, Proven->REJECT, Unknown->proceed). Correction: enumerate the three classes IN (with a polarity/role discriminator on the Obligation) or explicitly OUT of the Engine trait, and bound REQ-3's discipline to certification obligations.",
+      "created_at": "2026-06-10T18:54:03.609445817Z",
+      "kind": "observation"
+    }
+  ]
+}

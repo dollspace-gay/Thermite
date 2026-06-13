@@ -1,0 +1,30 @@
+{
+  "uuid": "7b6da170-4d07-4426-b6de-f2991cd2fde6",
+  "display_id": 114,
+  "title": "C12: Map<K,V> bounded verified collection (vstd::map / a kv type) — insert/get/contains_key/len with no-OOB + capacity contracts",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T19:41:28.541186928Z",
+  "updated_at": "2026-06-07T22:28:26.790423070Z",
+  "closed_at": "2026-06-07T22:28:26.790423070Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "dc40028f-fe5d-4bf7-94f5-7901e06032e9",
+      "author": "Yffe",
+      "content": "Plan: author 13-map.md — Map<K,V> as Vec<(K,V)>-of-pairs + a spec abstraction view (reuses C6 Vec + C9 tuples + C7 Option). Ground insert-then-get round-trip + absent->None. Filed #123 for impl.",
+      "created_at": "2026-06-07T21:40:04.838869500Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "2915b13c-38a5-4d45-924a-506e933b67e0",
+      "author": "Yffe",
+      "content": "EPIC COMPLETE + critic-clean (0c75cc0 Map + #124 oracle 6d46f55). Map<K,V>: Type::Map two-arg + emit_map_wrappers (TMap over Vec<(K,V)>-of-pairs + spec view) + insert/get/contains_key/len (reuses C6 Vec + C9 tuples + C7 Option). Critic crux HELD: round-trip genuine, spec view sound, absent->None handled-or-loud, §7-anchoring honest (has_key L3), no cheat. #124 fixed (cert/lowering goldens: orchestrator map_kv.cert.json + builder map_kv.verus.rs 9 verified + routes + cert-compare). 658 tests. Map was the last deferred basis primitive.",
+      "created_at": "2026-06-07T22:28:19.476636672Z",
+      "kind": "result"
+    }
+  ]
+}

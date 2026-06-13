@@ -1,0 +1,37 @@
+{
+  "uuid": "36a65b1e-891f-4464-9708-db6703680167",
+  "display_id": 201,
+  "title": "Divergence: scripts/audit.sh check [2] swallows DIVERGENT via forge's nonzero exit — the zero-Divergent corpus gate can never fire (false assurance)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T17:02:13.895260488Z",
+  "updated_at": "2026-06-10T18:07:38.787089868Z",
+  "closed_at": "2026-06-10T18:07:38.787089868Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "58fc6798-1523-4908-a742-362fefb9e433",
+      "author": "Yffe",
+      "content": "Critic pin (audits #200/a0d8ea64): commit the failing test forge/tests/divergence_audit_check2_exit_swallow.rs. It extracts audit.sh check [2] verbatim and runs it against a fake forge reproducing cli.rs::run_tv's real contract (render_report header '1 DIVERGENT' + EXIT_VERIFICATION_FAILURE=1). Current script treats the nonzero exit as 'not admitted' (prog_admit=0; continue), never parses the report, prints green 'ok <name> 0 divergent' and 'PASS ZERO divergent across the whole corpus' with RC=0. Control probe (same output, exit 0) trips the gate — the swallow is isolated to the exit-code branch. Authority: the script's own 'PASS iff ZERO Divergent' contract, R-HONEST-3/R-DEFER-9. Generator must consume the verification-failure exit as a finding (parse the report on exit 1, or fail the program) — not reclassify it.",
+      "created_at": "2026-06-10T17:04:14.835638461Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "56cfb94e-0455-4650-8428-e5929fe3d56d",
+      "author": "Yffe",
+      "content": "Failing test committed at forge/tests/divergence_audit_check2_exit_swallow.rs::divergence_audit_check2_swallows_divergent_exit — fails against a0d8ea64 (FINAL_RC=0 + green zero-divergent PASS over a 1-DIVERGENT corpus). Un-ignored (release blocker: false assurance in the audit script).",
+      "created_at": "2026-06-10T17:04:29.421617493Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "1c9fef0b-a807-4208-8e5e-dcaad31f581c",
+      "author": "Yffe",
+      "content": "FIXED (a0cf5ad8), orchestrator-verified: the pin passes unchanged (parse-first — the report header is located regardless of exit code, so a Divergent exit-1 run is parsed and trips the gate; only report-less output is not-admitted); INCONCLUSIVE now exits 3 (automation cannot read a skipped-guarantee run as green); live make audit DEEP AUDIT PASSED (15/15 admitted, 3057 obligations, 0 divergent); audit-fast green; bash -n clean.",
+      "created_at": "2026-06-10T18:07:22.291925555Z",
+      "kind": "result"
+    }
+  ]
+}

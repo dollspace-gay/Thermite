@@ -1,0 +1,29 @@
+{
+  "uuid": "3242ddca-61ca-4c06-a453-fcdd74db0964",
+  "display_id": 271,
+  "title": "solver-vacuity: spec-tightness signal — per-fn SMT query 'two distinct results satisfy the post for one req-satisfying input', report-only cert field (review item 6)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:54:47.615845784Z",
+  "updated_at": "2026-06-12T07:14:18.860505319Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "c1a85956-bd15-4217-9537-3fe9065f72ed",
+      "author": "Yffe",
+      "content": "Plan: amend solver-vacuity.md with the spec-tightness signal (review item 6) — the third solver-gate family member: prove-the-negation two-results query, tight/loose/undetermined report-only cert field (engine_attribution additive-serde precedent, goldens byte-identical), cache-MISS-only cost + CHECK_SCHEMA_VERSION bump. Bonus discovery filed as #275: the shipped #13 harness is SpecFn-only — ADT-signature fns (the whole editor) silently no-op BOTH solver checks via E0425→Failed→Clean.",
+      "created_at": "2026-06-12T07:14:06.417222419Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "988579d6-d02b-46cb-9324-8c5fe922836f",
+      "author": "Yffe",
+      "content": "Result: design committed — query shape grounded on live verus probes (proof-fn prove-the-negation, =~= struct distinctness), SpecTightness additive cert field, cache story (existing 5-input key + schema bump). Build remains open behind this design.",
+      "created_at": "2026-06-12T07:14:18.805675681Z",
+      "kind": "result"
+    }
+  ]
+}

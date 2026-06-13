@@ -1,0 +1,37 @@
+{
+  "uuid": "12c7e94f-e67c-4c90-883d-a979d958ec72",
+  "display_id": 265,
+  "title": "Divergence: loopDenote_exits_of_dec h_dec shape drifts from proof-backends.md §4.2.2 pin (0 ≤ μ st vs pinned 0 ≤ μ st'); REQ-11.3 row's 'verbatim' claim false — undeclared semantic adaptation (audit of 99c7f304)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T03:00:26.557911613Z",
+  "updated_at": "2026-06-12T03:07:26.068872900Z",
+  "closed_at": "2026-06-12T03:07:26.068872900Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "0ece28d0-329d-496c-9edc-a5e54565a084",
+      "author": "Yffe",
+      "content": "Kernel-checked pin at lean/Thermite/PinWhileDecShape.lean: shipped_hdec_is_not_the_pinned_shape proves a concrete instance (L1 machinery, I := (· = s0) with lo=0/n=1, μ := -lo) satisfying the SHIPPED h_dec shape (0 ≤ μ st, pre-state) while REFUTING the §4.2.2-pinned shape (0 ≤ μ st', post-state) — the shapes are semantically non-equivalent, so 'STATEMENT SHAPE is the §4.2.2 sketch verbatim' (REQ-11.3 SHIPPED row) is false. Direction-safety also kernel-checked: design_hdec_implies_shipped_hdec + loopDenote_exits_of_dec_design_shape derive the design's verbatim theorem from the shipped one — the drift weakens the hypothesis (strengthens the theorem), a record-fidelity divergence, NOT a soundness hole. Generator must reconcile: either amend the §4.2.2 sketch to the shipped shape declaring the adaptation (as prefix→prefixB was declared), or restate the theorem to the pinned shape. Axioms of the pin: [propext, Quot.sound].",
+      "created_at": "2026-06-12T03:01:00.977041984Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "341c93b6-5ccc-4bba-8b94-d168a03ff7b1",
+      "author": "Yffe",
+      "content": "PLAN (orchestrator ruling: amend the DOC to pin the SHIPPED, more-general h_dec shape; touch NO Lean file).\n\nAuthority read:\n- Critic pin lean/Thermite/PinWhileDecShape.lean (commit 92659eb7): shipped_hdec_is_not_the_pinned_shape proves the two h_dec shapes are non-equivalent (separating L1 instance, mu := -lo: pre-state bound 0<=mu st holds, post-state 0<=mu st' fails); design_hdec_implies_shipped_hdec + loopDenote_exits_of_dec_design_shape kernel-derive the design's verbatim POST-state theorem from the shipped one. The shipped theorem is STRICTLY MORE GENERAL and sound; the divergence is record fidelity, not soundness.\n- SHIPPED theorem (Exec/WhileBody.lean:244): h_dec : ... -> mu st' < mu st AND 0 <= mu st (PRE-state).\n- Design sketch (proof-backends.md:1780): ... AND 0 <= mu st' (POST-state). REQ-11.3 SHIPPED row (line 440) claims 'verbatim'.\n\nSingle-file fix: .design/verified/proof-backends.md\n1. Section 4.2.2 loopDenote_exits_of_dec statement block (line 1780): 0 <= mu st' -> 0 <= mu st; add declared-adaptation note.\n2. REQ-11.3 SHIPPED row (line 440): drop 'verbatim', state the one declared semantic adaptation with the pin-file cite.\n3. (v-a) kernel-bar: add one sentence noting pins are NOT elaborated by default 'lake build' (Thermite.lean imports WhileBody but not the Pin modules); checked by explicit per-module elaboration (lake env lean) — the recorded critic observation.\n\nGauntlet: cd lean && lake build still green (no Lean touched); python3 tooling/doc-drift.py exit 0; re-read amended block for internal consistency vs WhileBody.lean:244. No Lean file touched.",
+      "created_at": "2026-06-12T03:05:43.255320322Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "07cbe03e-65f9-46ae-ae28-585a139d23f8",
+      "author": "Yffe",
+      "content": "RESULT — #265 resolved as DOC amendment (record fidelity, not soundness). Commit d158a73a.\n\nAuthority adjudication (critic pin lean/Thermite/PinWhileDecShape.lean, commit 92659eb7): the shipped loopDenote_exits_of_dec takes the PRE-state bound 0<=mu st, which is STRICTLY WEAKER than the §4.2.2-pinned POST-state 0<=mu st' — the shipped theorem is strictly MORE GENERAL and sound. shipped_hdec_is_not_the_pinned_shape proves the two shapes non-equivalent; loopDenote_exits_of_dec_design_shape kernel-derives the POST-state statement as a corollary. So the fix is to re-pin the DOC, NOT to touch any Lean file.\n\nFile: .design/verified/proof-backends.md (single file, +29/-3 LOC net across 3 hunks). No Lean file touched (the pin stays as the kernel record; the shipped theorem is correct as-is).\n\nBEFORE (§4.2.2 sketch, line 1780 / REQ-11.3 row line 440):\n  h_dec : ... -> mu st' < mu st AND 0 <= mu st'     (POST-state)\n  'STATEMENT SHAPE is the §4.2.2 sketch verbatim'\nAFTER (§4.2.2 sketch line 1794):\n  h_dec : ... -> mu st' < mu st AND 0 <= mu st       (PRE-state)\n  now verbatim-identical to the SHIPPED Exec/WhileBody.lean:244:\n  '... blockThread lbody st = some st' -> mu st' < mu st AND 0 <= mu st'\n\nThree hunks:\n1. §4.2.2 statement block: 0<=mu st' -> 0<=mu st + declared-adaptation note (PRE-state is the strictly weaker hypothesis -> more general theorem; POST-state shape is the pin's kernel-derived corollary loopDenote_exits_of_dec_design_shape; the mu st=0 / cond-true corner closed by deriving next-condition-false — the builder's recorded proof structure).\n2. REQ-11.3 SHIPPED row: dropped 'verbatim'; states the one declared semantic adaptation with the PinWhileDecShape.lean cite; notes the adaptation strengthens (never weakens) the theorem.\n3. (v-a) kernel-bar: added one sentence recording the #265 critic observation — default 'lake build' (defaultTargets [Thermite]) elaborates only modules reachable from Thermite.lean (which imports Exec/WhileBody.lean but NOT the Pin* modules), so a pin's kernel check is asserted by explicit per-module 'lake env lean Thermite/PinWhileDecShape.lean', not the default build.\n\nGauntlet (integer counts):\n- cd lean && lake build: green, 369 jobs, EXIT 0 (no Lean touched — sanity; the lone sorry warning is the vendored lean-smt Bitblast.lean dep, not Thermite).\n- lake env lean Thermite/PinWhileDecShape.lean: EXIT 0 (confirms the kernel-bar claim is true).\n- python3 tooling/doc-drift.py: EXIT 0, proof-backends.md reported CURRENT.\n- Internal-consistency re-read: §4.2.2 line 1794 '0 <= mu st' now matches WhileBody.lean:244 '0 <= mu st' character-for-character.\n\nNo new pub API (R-DEFER-1 n/a). Hand back for acto-critic re-audit.",
+      "created_at": "2026-06-12T03:07:20.762996802Z",
+      "kind": "result"
+    }
+  ]
+}

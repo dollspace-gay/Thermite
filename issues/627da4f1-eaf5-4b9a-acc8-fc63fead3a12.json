@@ -1,0 +1,35 @@
+{
+  "uuid": "627da4f1-eaf5-4b9a-acc8-fc63fead3a12",
+  "display_id": 5,
+  "title": "Implement the forge CLI with structured check output and counterexamples",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:10.401112547Z",
+  "updated_at": "2026-06-05T00:42:23.577281074Z",
+  "closed_at": "2026-06-05T00:42:23.577281074Z",
+  "labels": [
+    "feature"
+  ],
+  "blockers": [
+    "37bf833c-505c-4c03-8423-2737d5e49418",
+    "d54793df-dddb-4907-a7da-771611f19c12"
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+  "comments": [
+    {
+      "uuid": "49ee9f7b-396e-4e19-ba83-e1d4d93a9a4d",
+      "author": "Yffe",
+      "content": "forge CLI v0.1 subset (design Appendix B): forge new (manifest+lockfile+skill pin), forge check [item] (run ladder, structured per-obligation JSON results). Parse Verus/Z3 output into the stable JSON schema (design 5.1): each obligation -> {address, status, level, solver_time_ms, counterexample?}. Counterexamples come from the solver, never just 'failed'. Reserve a suggested_move slot. forge goal/fill (incremental holes) are OUT of v0.1 scope.",
+      "created_at": "2026-06-04T17:49:28.966571793Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "1f10241a-411b-4a67-8372-5af0f7891d0e",
+      "author": "Yffe",
+      "content": "SHIPPED — forge check is the first live end-to-end command. forge/src/{cli,check,manifest}.rs: forge check <file.th> runs parse -> validate (thermite-spec) -> check_effects (thermite-lower) -> lower to Verus -> run the REAL verus binary PER ITEM -> structured JSON certificate (item/level/effects/slag/obligations + forward-declared contract_quality + counterexamples on failure). forge new scaffolds a project. ForgeError aggregates SyntaxError/SpecError/LowerError + verus/io variants; verus-absent is a reported environment error, never a silent pass.\n\nLIVE CERT-ORACLE: forge check conformance/sum.th emits per-item certs (spec_sum L3, sum L3 [pure] slag=false) whose deterministic fields match conformance/sum.cert.json; binary_search L3. A broken contract -> non-L3 (L0) + a real verus counterexample with source span (counterexamples not adjectives, §5.1).\n\nLoop: doc-author -> builder -> critic (found #41) -> fixer. #41 was the multi-item certificate SMEAR (one crate-level verus result copied onto every item, so a correct item was falsely non-L3 with a sibling counterexample) -> fixed by PER-ITEM certification (each item lowered+verus-checked in isolation; §5.3 locality, §6 per-fn level). Cert-is-real confirmed by the critic (genuine verus-derived level on fresh non-corpus programs; no hardcoded L3/identity coupling). Commits: 1004b7a (build) -> 9afba6a (critic #41) -> d0f92ca (per-item fix). Gauntlet: forge 25 tests, workspace 102 green, clippy -D warnings + fmt clean. Hand-rolled CLI (no clap). Out per design: degrade ladder #10, L2/Kani #9, mutation/vacuity battery #6/#12/#13, slag #6, proof cache #8. Separately: external reviewer flagged the quantifier-cage gap -> filed #40 (restrict SpecTherm closure bodies to a flat fragment). Not pushed.",
+      "created_at": "2026-06-05T00:42:13.249720952Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "uuid": "d78f562b-0640-4926-8d64-78b720da8246",
+  "display_id": 278,
+  "title": "thermite-lower: spec_bytes_eq built-in + auto-emitted subrange/append bridge lemmas (prove-once law, lemma_count_push pattern) — the second #276 prerequisite; recursive user bytes_eq cannot bridge from slice/concat content ens without induction",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T09:55:42.860086165Z",
+  "updated_at": "2026-06-12T12:54:07.537254950Z",
+  "closed_at": "2026-06-12T12:54:07.496595910Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "0e53379a-ef9c-4df4-8f40-7f6c06cc26af",
+      "author": "Yffe",
+      "content": "Plan: C8 amendment designed in 07-strings.md (REQ-17..20): bytes_eq joins GENERATED_SPEC_FNS (zero skill tokens — generated spec fns don't render; combinator entry would blow the 6k budget +38), low-peel canonical recursion, the lemma set grounded live on real verus (core induction + converse + subrange corollary + the no-arg quantified lemma_bytes_eq_bridge that alone discharges slice_id + all 3 insert_str conjuncts + backspace + render payload, 16v0e; head/tail-swap mutant 15v1e non-vacuous), conditional emission via program_uses_bytes_eq (program_uses_parse precedent), contract-keyed block-start citation (#196).",
+      "created_at": "2026-06-12T10:12:38.199040767Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "8a955aab-d0aa-47b8-9f74-f0043e8b9e1e",
+      "author": "Yffe",
+      "content": "Build refinement: approach matched the plan — bytes_eq joins GENERATED_SPEC_FNS (zero skill tokens, budget held 5988/6000), emit_bytes_eq_defs materializes the low-peel def + four prove-once lemmas, program_uses_bytes_eq gate + contract-keyed body-start/in-loop lemma_bytes_eq_bridge() citation, L1 exec twin. TWO build-time refinements: (1) the &result/&a ref form (the design's pinned surface bytes_eq(&a,&b,..)) needed an Expr::Ref byte-view strip in lower_spec_arg; (2) ONE divergence from the verbatim text — the lemma_bytes_eq_bridge BODY was pinned signature-only (/*...*/), the grounded body required an explicit per-index subrange #[trigger] in the to_pointwise direction (raw =~= alone FAILED 11v1e). Fixture: conformance/bytes_eq_demo.th + golden (17v0e) + cert (slice_id L3 alloc). Commits af1e6f2c (build) + 40afcc19 (pins).",
+      "created_at": "2026-06-12T10:59:25.808571497Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "65d3833d-ec7e-4ce7-b8d0-4b5e5b92df65",
+      "author": "Yffe",
+      "content": "Result: SHIPPED af1e6f2c+40afcc19 (+ the #279 operand-class follow-up cf48c893+87a07885): bytes_eq in GENERATED_SPEC_FNS, 4 bridge lemmas (one declared body-fill within pinned signature), conditional emission, contract-keyed citation, L1 twin (+the #281 empty-window fix 5d0bc8cb). Combined critic pass: CLEAN on lemma statements (hand-derived windows), goldens, non-vacuity. slice_id certifies L3 through the real pipeline; skill 5988/6000; 970 workspace tests.",
+      "created_at": "2026-06-12T12:54:05.657949842Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "uuid": "660c07de-65e1-4e26-a9e2-81cb2810854e",
+  "display_id": 221,
+  "title": "Divergence: RATIONALE spine entry's 'enumerated trust base' lists 4 residuals, omitting the Lean kernel+axioms (audit.sh/README/make-audit entry list 5)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T20:14:43.564706687Z",
+  "updated_at": "2026-06-10T20:21:32.867838099Z",
+  "closed_at": "2026-06-10T20:21:32.867838099Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f009938f-8e50-4d61-91b2-ac9db42d8ce1",
+      "author": "Yffe",
+      "content": "RATIONALE spine entry 'The enumerated trust base (the residuals — stated, never hidden)' lists exactly 4 items: S-intent, Z3/Verus, Rust-Lean correspondence, rustc/LLVM. It omits the Lean kernel + its 3 standard axioms — the very checker the entry leans on. scripts/audit.sh check [6] (RESIDUAL TRUST block), README check [6], and RATIONALE's own make-audit entry all enumerate 5, with the Lean kernel as item 1. The one entry whose job is enumerating trust under-enumerates it: both an internal contradiction and a limits-section-that-flatters.",
+      "created_at": "2026-06-10T20:15:26.501408998Z",
+      "kind": "observation"
+    }
+  ]
+}

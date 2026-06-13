@@ -1,0 +1,35 @@
+{
+  "uuid": "d54793df-dddb-4907-a7da-771611f19c12",
+  "display_id": 23,
+  "title": "Add the Thermite conformance corpus and golden-certificate harness",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T18:11:23.080348125Z",
+  "updated_at": "2026-06-04T18:22:03.121846360Z",
+  "closed_at": "2026-06-04T18:22:03.121846360Z",
+  "labels": [
+    "feature"
+  ],
+  "related": [
+    "37bf833c-505c-4c03-8423-2737d5e49418",
+    "63e8e655-9574-4648-9521-2a12b1973b96"
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+  "comments": [
+    {
+      "uuid": "ffb6fa63-dfa2-43a5-8c6e-5717b978e9f2",
+      "author": "Yffe",
+      "content": "Seeds the external anchor the acto-critic needs (goal.md verification model). Scope NOW: (1) conformance/sum.th and conformance/binary_search.th verbatim from thermite-design.md Appendix A and section 4.1. (2) conformance/sum.cert.json = the DETERMINISTIC SUBSET of Appendix A's certificate (level L3, contract_quality.{tautology=false,vacuous_precondition=false,mutants_killed='17/18',survivor=...}, effects=[pure], slag=false). solver_time_ms is EXCLUDED from cert-oracle comparison (non-deterministic). (3) conformance/README.md documenting the corpus contract + provenance + forward-declaration convention.\n\nDEFERRED (do NOT fabricate now): tests/golden/lower/*.verus.rs (exact Verus syntax not pinned until .design/lower/verus-lowering.md exists -> author alongside issue #4); binary_search mutation fields (mutator set not defined until issue #12/v0.3); full cert JSON schema (pinned by .design/forge/certificate-manifest.md). Convention: each golden-cert field becomes a LIVE cert-oracle assertion when the component that produces it ships. Until then the oracle compares the fields present.",
+      "created_at": "2026-06-04T18:11:34.901568321Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a591db98-c85c-4e8c-b0f6-d34f1929e3dd",
+      "author": "Yffe",
+      "content": "Corpus seeded and validated. Files: conformance/sum.th + binary_search.th (verbatim from thermite-design.md Appendix A / section 4.1), conformance/sum.cert.json (deterministic subset of Appendix A cert: L3, tautology=false, vacuous_precondition=false, mutants_killed=17/18, survivor, effects=[pure], slag=false; solver_time_ms excluded), conformance/README.md (cert-oracle contract + forward-declaration convention). sum.cert.json parses. binary_search golden cert intentionally deferred (design gives no cert; fabricating would violate R-CHAR-3). Verus golden lowering files deferred to issue #4. Not committed (awaiting user).",
+      "created_at": "2026-06-04T18:12:37.263117603Z",
+      "kind": "result"
+    }
+  ]
+}

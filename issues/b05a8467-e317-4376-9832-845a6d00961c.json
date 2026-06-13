@@ -1,0 +1,23 @@
+{
+  "uuid": "b05a8467-e317-4376-9832-845a6d00961c",
+  "display_id": 147,
+  "title": "thermite-tv ref_encode: two contract-TV coverage gaps — (1) Expr::Ref of an Index (&xs[..i]) is Unsupported (sum.loop#1.inv#2 Skipped); (2) a non-Eq comparison of a nat-coerce name to a nat term emits ambiguous \"as nat <\" / mismatches production Eq-only coercion. Off-corpus #142 findings; ref_encode.rs not on the #144 builder manifest",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T19:47:54.624345213Z",
+  "updated_at": "2026-06-08T21:49:23.296421734Z",
+  "closed_at": "2026-06-08T21:49:23.296421734Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "b6ba8d9b-d97f-46ca-bafb-efd2e3a234d9",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (f77800d + #149 frame fix 8e271fa). Closed both ref_encode coverage gaps: (1) Expr::Ref-of-Index &xs[..i] -> xs@.subrange(0, i as int) [encode_ref]; (2) non-Eq nat-coercion is now Eq-only matching production's lower_nat_equality, with the #146/#148 cast-< paren in ref via the independent is_lt_leading. Extended the generator (gen_cast_lt + NAT_CMP_OPS) to emit cast-< (64/200) + non-Eq-nat (60/200) -> regression-guards #146/#148 off-corpus. Critic NO DIVERGENCE: newly-Checked clauses non-vacuous (distinct text, real Z3); SUBRANGE-BOUND EXACTNESS enforced (unilateral (0,i+1)/(1,i) wrong bounds CAUGHT); the generator genuinely emits the class (robust across seeds), all faithful. sum 7/7 faithful 0 skipped (total corpus coverage incl. inv#2 via #149); generated 168/168 faithful. Independence intact.",
+      "created_at": "2026-06-08T21:49:13.507108472Z",
+      "kind": "result"
+    }
+  ]
+}

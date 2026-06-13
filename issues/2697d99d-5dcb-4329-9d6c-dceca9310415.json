@@ -1,0 +1,30 @@
+{
+  "uuid": "2697d99d-5dcb-4329-9d6c-dceca9310415",
+  "display_id": 93,
+  "title": "Primitive completeness C3: break + continue in loops (verified — invariant holds at continue, interacts with decreases/diverge)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T02:42:22.830007362Z",
+  "updated_at": "2026-06-07T04:17:04.392031626Z",
+  "closed_at": "2026-06-07T04:17:04.392031626Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "661081b3-a62d-4e87-9cae-c04df104d400",
+      "author": "Yffe",
+      "content": "Cluster 3 of the primitive-completeness buildout: break/continue in loops. Plan: (1) lexer TokKind::Break/Continue + keyword_kind arms; (2) ast Stmt::Break/Continue payload-less variants; (3) parser parse_break_continue + loop_depth counter with SyntaxError::BreakContinueOutsideLoop (in-loop structural rule); (4) lowering lower_stmt/lower_stmt_l1 emit Verus-native break;/continue; (l2 routes through l1, no obligation suppression); (5) close the Stmt match-arm ripple across address/effects/validator/mutation/vacuity/closure/review/check + skill prose with the layer-neutral leaf value (no _/panic); (6) grounded conformance probes in forge/tests/break_continue_conformance.rs against real verus: continue+inv/dec L3, bad continue L0 (inv + dec back-edge), break L3, fx-diverge break+continue L1 (#88 cap), break-outside-loop structured error, sum/binary_search no regression. REQ statuses to SHIPPED across the 4 syntax/lower docs.",
+      "created_at": "2026-06-07T03:29:11.205442593Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a36d9549-1735-4ca2-92c9-17fa810b2b1d",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (b60a64e). break/continue in while loops: Stmt::Break/Continue + keywords + loop_depth check; Verus-native emit, NO obligation suppression. Critic NO DIVERGENCE (R-DEFER-9): continue can't launder invariant (broken-inv continue -> L0) or termination (non-decreasing continue -> L0); break doesn't over-claim (weak-ens break -> L0 WeakContract, v0.1 limit honest); diverge-loop break+continue -> L1 (structural cap, diverge-only, the editor event-loop payoff, no quit-flag hack); break/continue outside a loop -> structured error; ~131 Stmt arms layer-neutral; determinism byte-exact; sum/binary_search still L3. 581 tests.",
+      "created_at": "2026-06-07T04:16:56.095697303Z",
+      "kind": "result"
+    }
+  ]
+}

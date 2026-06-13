@@ -1,0 +1,23 @@
+{
+  "uuid": "1116d0b4-64af-4908-a6d2-5a5b6be561fc",
+  "display_id": 25,
+  "title": "Add project README and correct route/dependency ordering docs",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T18:47:30.518696021Z",
+  "updated_at": "2026-06-04T18:50:12.677728138Z",
+  "closed_at": "2026-06-04T18:50:12.677728138Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "52d4c6c5-8692-4376-b43d-71992bb07add",
+      "author": "Yffe",
+      "content": "README.md written (thesis, stack/ladder, status, repo layout, surface-language example). Corrected the #2/#3/#4 dependency miswiring: parser (#3) is registry-free (parses combinator calls generically; fixed-set rule is semantic per design 4.2), so #2 and #3 are independent leaves and #4 depends on both — deps rewired, spec-routes.toml + .design/00-index.md updated, spurious thermite-spec/src/grammar.rs route removed. Commit 1e00899.",
+      "created_at": "2026-06-04T18:50:07.055430169Z",
+      "kind": "result"
+    }
+  ]
+}

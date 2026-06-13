@@ -1,0 +1,23 @@
+{
+  "uuid": "0714d737-b6cd-4370-bc34-bf0d0bd17da2",
+  "display_id": 107,
+  "title": "Primitive completeness C9: plain-fn recursion (fn with dec clause, self-call, termination-proven) + tuples (Type::Tuple + Expr::Tuple + .0/.1 projection + destructuring)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T17:18:38.307145806Z",
+  "updated_at": "2026-06-07T19:00:06.585083763Z",
+  "closed_at": "2026-06-07T19:00:06.585083763Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "60da24c4-29d1-431f-bede-219520b60420",
+      "author": "Yffe",
+      "content": "EPIC COMPLETE + critic-clean. C9 (the last compose-any-program primitives): (A) plain-fn recursion #108 (167a4eb + #110 fix 43a5798) — fn dec clause, termination-proven, mutual recursion cleanly L0-rejected; (B) tuples #109 (a664765) — Type/Expr::Tuple + .N projection, n-tuples. Both critic-clean (recursion: non-decreasing->L0, no-dec->error, diverge->L1; tuples: projection genuine, disambiguation sound, mutation-synthesis sound). Mutual recursion + destructuring deferred (v1.1). 634 tests.",
+      "created_at": "2026-06-07T19:00:04.571008583Z",
+      "kind": "result"
+    }
+  ]
+}

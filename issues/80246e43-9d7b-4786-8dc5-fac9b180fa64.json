@@ -1,0 +1,30 @@
+{
+  "uuid": "80246e43-9d7b-4786-8dc5-fac9b180fa64",
+  "display_id": 182,
+  "title": "step-3 increment 1d-ii: contract S_C the 2 recursive/aggregate combinators (count_where well-founded recursion, permutation_of multiset) — likely needs Mathlib — denotation + ref_sound (epic #169)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:54:44.594699512Z",
+  "updated_at": "2026-06-09T19:42:41.028909737Z",
+  "closed_at": "2026-06-09T19:42:41.028909737Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "98879883-180b-4b1e-962d-9f97ece2e731",
+      "author": "Yffe",
+      "content": "Built increment 1d-ii in lean/Thermite/{Ast,Denote,RefEncode,Soundness}.lean: extended CombName with countWhere (VALUE-combinator, recursive nat count via the shared structural countWhereVal — core Lean, NO Mathlib, NO fuel; faithful to the verus_l3 if/drop_first/decreases form EXACTLY) + permutationOf (Prop-combinator, MULTISET equality via the count-characterization permEq := forall x, a.count x = b.count x — core List.count, NOT Mathlib Multiset). Merged the refVal_eq/ref_sound mutual blocks so refIntVal's count_where arm can reference refDenote for the predicate; ref_sound now covers both (contract sublanguage 8/8 COMPLETE). Negative lemmas bite: count_where wrong-predicate + off-by-one; permutation_of multiset-vs-SET (witness [1,1,2]/[1,2,2]). lake build green, axioms [propext, Classical.choice, Quot.sound] (no sorryAx), cargo build --workspace green. Core Lean sufficed — no Mathlib wall.",
+      "created_at": "2026-06-09T19:37:06.648565587Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "7aa2983b-10eb-46c9-b2b0-939056a9e6d4",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (19051837). count_where + permutation_of proven — CORE LEAN sufficed (no Mathlib). Critic NO DIVERGENCE: count_where matches the recursive verus_l3 EXACTLY (head-test + tail-recursion, threaded on the Int/value side); permutation_of provably MULTISET not set (the [1,1,2]/[1,2,2] witness: set-model TRUE vs faithful permEq FALSE, kernel-proved); Classical.choice faithful (shared predicate, source+encoder identical, not a dodge); non-vacuous (count_where fires to real 1; negatives bite); NO regression from the mutual-block merge (all 13 negatives bite, well-founded, all 8 combinators covered). CONTRACT SUBLANGUAGE S_C COMPLETE: 8/8 construct classes proven.",
+      "created_at": "2026-06-09T19:42:28.757920553Z",
+      "kind": "result"
+    }
+  ]
+}

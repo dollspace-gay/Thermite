@@ -1,0 +1,31 @@
+{
+  "uuid": "561def49-b1cd-440c-a185-7fa9958867f0",
+  "display_id": 13,
+  "title": "Add tautology and precondition-satisfiability checks to the certification gate",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:43.529869967Z",
+  "updated_at": "2026-06-05T05:18:39.120431862Z",
+  "closed_at": "2026-06-05T05:18:39.120431862Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "2a6a2885-bfc0-4054-a204-264b313b22d0",
+  "comments": [
+    {
+      "uuid": "e0638856-7279-43e3-a03e-e2a1ba3bc1d5",
+      "author": "Yffe",
+      "content": "Ship forge §7 SOLVER-backed vacuity checks (steps 2-3) in forge/src/vacuity_solver.rs (new), wired into check::check_file after #6 triage / before L3 (inside the cache-miss branch so the verdict is cached). Two harnesses reuse thermite_lower::lower's verbatim requires/ensures: tautology = proof fn taut_check(<params>, result: <RET>) requires <req>; ensures <ens>; { } (verus PROVES iff ens holds for an arbitrary result); vacuity = proof fn vac_check(<params>) requires <req>; { assert(false); } (PROVES iff req unsat). interpret_summary: PROVED->detected, FAILED->clean, VIR/absent/unparseable->ForgeError (R-CODE-4). manifest::Certificate::rejected_vacuity sets the matching contract_quality bool true (no schema change). Vacuity checked before tautology (unsat req would spuriously prove tautology too). Oracle: conformance/solver-vacuity/cases.json. Gauntlet green: workspace 35 test-bins 0 failed, clippy -D warnings, fmt --check. Commit footer (#13); do NOT close (critic re-audits).",
+      "created_at": "2026-06-05T05:11:46.152908146Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "07f7c684-95b0-4e72-aaba-e292df4cc5c1",
+      "author": "Yffe",
+      "content": "SHIPPED — solver-backed tautology + unsat-precondition checks (§7 steps 2-3). vacuity_solver.rs: tautology harness (assume req + universally-quantified arbitrary result param + assert ens; verus proves -> ens holds for any result -> tautology) + vacuity harness (assume req + assert false; proves -> req unsat), both REUSING thermite_lower::lower's verbatim requires/ensures (byte-identical to the L3 proof). Wired in check_file after #6 triage, before L3 (in the cache-miss branch). Detection -> Certificate::rejected_vacuity (L0 + RejectReason + the contract_quality bool true). VACUITY-FIRST ordering (an unsat req makes the tautology harness also prove via false premise; checking vacuity first reports the true root cause). OQ-3: only verus SUCCESS flags; fail/timeout/error -> not-flagged (never false reject, never silent-clean; R-CODE-4). Critic NO DIVERGENCE: false-positive guard cleared (4 fresh constraining contracts -> L3, arbitrary-result genuinely unconstrained incl Option<usize>), true-positives caught, vacuity-first ratified, generality clean, corpus L3. contract_quality.{tautology,vacuous_precondition} now FULLY live. Commits 9d2d80b + 6c58877 (critic chars). workspace green, clippy/fmt clean. Mutation=#12, strengthening=#14. Not pushed.",
+      "created_at": "2026-06-05T05:18:31.909666718Z",
+      "kind": "result"
+    }
+  ]
+}

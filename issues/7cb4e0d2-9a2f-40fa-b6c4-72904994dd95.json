@@ -1,0 +1,23 @@
+{
+  "uuid": "7cb4e0d2-9a2f-40fa-b6c4-72904994dd95",
+  "display_id": 152,
+  "title": "exec-tv REQ-1: exec-expr reference encoder (thermite-tv/src/exec_encode.rs) — independent EXEC-semantics denotation of a pure exec expr (u64/usize/casts/wrapping, NOT spec @/nat); covers arithmetic, casts (#122 paren), comparisons incl cast-< (#146), calls, indexing. No thermite-lower dep.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:14.519184824Z",
+  "updated_at": "2026-06-08T23:38:15.277288228Z",
+  "closed_at": "2026-06-08T23:38:15.277288228Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "9cf5b4f1-244c-49a3-a645-eeecc3ab16f4",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (43c9a6c). exec_ref_value (thermite-tv/src/exec_encode.rs) — the independent BOUNDED-value (u64/usize/bool, never nat-coerced) exec-position reference encoder + lower_exec_expr (thermite-lower, the production per-expr exec lowering; the exec Ctx IS reachable for a standalone expr). Critic NO DIVERGENCE: generalizes (14 new exec exprs faithful — cast targets/nested arith/shifts/bitops/chained casts/RHS-cast-<), bounded-value sound both directions (overflow/wrap/truncation infidelity caught; no false positive — faithful arith's overflow obligation is the honest L1 one), unilateral misdispatch caught, honest Unsupported for signed/u128/method (out of scope). Independence intact.",
+      "created_at": "2026-06-08T23:38:02.376222551Z",
+      "kind": "result"
+    }
+  ]
+}

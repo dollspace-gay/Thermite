@@ -1,0 +1,45 @@
+{
+  "uuid": "644929e2-4919-496c-9009-2abda71c204c",
+  "display_id": 261,
+  "title": "Divergence: doc-drift.py load_doc_files silently drops a [[route]] entry whose crate_pattern is MISSING — the design-field doc leaves the checked set and the gate can exit 0 (REQ-1/REQ-8/REQ-9)",
+  "description": "Probe: a [[route]] entry with design = \".design/orphan.md\" and NO crate_pattern key, alongside one valid route -> gate exits 0, .design/orphan.md never named. Authority: .design/tooling/doc-drift-tripwire.md REQ-5 ('every doc referenced by a [[route]].design field'), REQ-1 ('the set of checked docs is exactly the deduplicated design fields'), REQ-8 (no grandfathering: routed doc without audited-sha is MISSING-PIN, exit 1), REQ-9 ('The tool never exits 0 without having checked all 48 docs') + goal.md R-HONEST-3. The schema header in tooling/spec-routes.toml marks crate_pattern '# required', so the entry is also legally treatable as wrong-shaped (exit 3, the #260 class). Either reading forbids exit 0 with the doc invisible. Realistic trigger: a typo'd field name (crate_patern =) in one entry silently shrinks coverage while the gate stays green. The #260 validator ('if present must be a string') lets the None case fall through to the builder-era 'if not design or not pattern: continue'. Related degenerate the same fix should decide: design = \"\" (empty string) alongside valid routes is likewise silently dropped (no real doc loses coverage there, so not separately pinned). NOT divergent (audited, accepted): an entry with crate_pattern but NO design names no routed doc — REQ-1 checked set unaffected; file-side governance is spec-discipline's domain. Parent #258; follows fixer commits d5b95455 (#259) / 73776c32 (#260).",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T01:32:00.184161953Z",
+  "updated_at": "2026-06-12T01:38:59.883138859Z",
+  "closed_at": "2026-06-12T01:38:59.883138859Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "bed96eb1-34d0-4b81-a26f-4cc49ed7e299",
+      "author": "Yffe",
+      "content": "Failing test at tooling/tests/test_doc_drift_critic.py::DocDriftCriticTest::test_c3_design_only_route_entry_must_not_vanish_into_exit_0 demonstrates divergence (run with DOC_DRIFT_DIVERGENCE=1; observed exit 0, CURRENT for the valid doc only, .design/orphan.md invisible). Skip-gated per the C-1/C-2 convention so the default suite stays green while this tracks.",
+      "created_at": "2026-06-12T01:33:46.244031668Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "dcce745b-27f7-4faa-b557-d1e41dcefa4a",
+      "author": "Yffe",
+      "content": "Critic plan: pin the divergence with skip-gated test C-3 in tooling/tests/test_doc_drift_critic.py (appended; C-1/C-2 untouched), asserting the REQ-9-legal outcomes (exit 1 MISSING-PIN naming .design/orphan.md per REQ-8, or exit 3 wrong-shaped per the #260 class) and forbidding exit 0. Verified failing ungated (observed exit 0), suite green gated (13 run / 1 skipped). Commit the test as the audit artifact; fix is the generator's, not mine.",
+      "created_at": "2026-06-12T01:34:41.163021256Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "202f42b5-4f07-4055-8540-0434373001fc",
+      "author": "Yffe",
+      "content": "Fixer plan (#261): root cause is the builder-era `if not design or not pattern: continue` in load_doc_files (tooling/doc-drift.py L248-249) — a per-entry fail-open that silently drops a [[route]] entry missing a required field, shrinking the checked-doc set while the gate stays green. The #260 isinstance guards reject only present-but-wrong-type; None (missing key) and \"\" (empty string) fall through to the continue.\n\nAuthority: spec-routes.toml schema header marks BOTH crate_pattern and design \"# required\"; .design/tooling/doc-drift-tripwire.md REQ-1 (checked set = exactly the deduplicated design fields), REQ-5, REQ-8 (no grandfathering), REQ-9 (never exit 0 without checking all docs). An entry missing/empty in either required field is WRONG-SHAPED -> route it through the #260 EnvironmentError3 class -> exit 3, naming the entry index and the missing/empty field. This subsumes the critic's MISSING-PIN reading and the design-missing \"acceptable\" case: the schema says required, so reject uniformly. The continue dies.\n\nFix (single file tooling/doc-drift.py): in the per-entry loop, after the type guards, raise EnvironmentError3 when design or crate_pattern is missing or empty, naming entry #i and the field. Remove the now-unreachable continue. Composes after the #259 zero-routes guard and #260 isinstance guards.\n\nUngate test_c3; tighten its assertion to exactly exit 3 (the implemented-and-spec'd class) since the fix produces 3. Gauntlet: python3 -m unittest discover -s tooling/tests -v (expect 13 run / 0 skipped / 0 failed); live tree exit 1; git diff scripts/audit.sh empty.",
+      "created_at": "2026-06-12T01:36:35.074474068Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ed20e072-a1b9-4cbe-bb2e-19eedce40f0d",
+      "author": "Yffe",
+      "content": "Fixed in commit 1523b7ed (single file tooling/doc-drift.py + its ungated regression test).\n\nRoot cause: the builder-era `if not design or not pattern: continue` in load_doc_files silently dropped a [[route]] entry missing/empty in a required field, shrinking the REQ-1 deduplicated-design checked set while the gate could exit 0 (a one-doc fail-open). The #260 type guards reject only present-but-wrong-type; None (missing key) and \"\" (empty) fell through.\n\nFix: after the type guards, raise EnvironmentError3 (exit 3, the #260 INCONCLUSIVE class) when design or crate_pattern is missing or empty, naming entry #i and the field; removed the now-unreachable continue. Authority: spec-routes.toml schema header (both fields \"# required\") + REQ-1/REQ-5/REQ-8/REQ-9 + R-HONEST-3. The REQ-8-or-REQ-9 alternative resolved to the wrong-shape exit-3 reading (schema says required -> reject uniformly), subsuming the MISSING-PIN reading and the design-missing \"acceptable\" case.\n\nTest: ungated test_c3_design_only_route_entry_must_not_vanish_into_exit_0 and TIGHTENED its assertion from exit in (1,3) to exactly 3.\n\nGauntlet (integer counts):\n- python3 -m unittest discover -s tooling/tests -v -> 13 run / 0 skipped / 0 failed\n- python3 tooling/doc-drift.py -> exit 1, 48 MISSING-PIN + 1 DRIFT (live tree unchanged; the missing/empty-field path is not exercised by the real table — all 107 entries carry both required fields)\n- git diff -- scripts/audit.sh -> empty (AC-7 byte-identical)\n\nNo new pub API. Handing back for acto-critic re-audit.",
+      "created_at": "2026-06-12T01:38:52.306743506Z",
+      "kind": "result"
+    }
+  ]
+}

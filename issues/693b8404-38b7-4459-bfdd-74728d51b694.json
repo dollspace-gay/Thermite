@@ -1,0 +1,30 @@
+{
+  "uuid": "693b8404-38b7-4459-bfdd-74728d51b694",
+  "display_id": 155,
+  "title": "exec-tv REQ-4: the teeth (thermite-tv/tests/exec_teeth.rs) — faithful exec expr VERIFIES; injected #122 cast-paren (E0308/wrong value), #146 cast-< (expected  mis-parse), and a wrapping/overflow-distinguishing infidelity each produce a verus error/counterexample. R-CHAR-3.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:36.659211434Z",
+  "updated_at": "2026-06-08T23:38:21.853909770Z",
+  "closed_at": "2026-06-08T23:38:21.853909770Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "aa6e7fcc-1e57-4f91-8b43-826b7324f436",
+      "author": "Yffe",
+      "content": "Manifestations grounded in exec-tv.md: the 146 cast-less-than mis-parse shows as verus error expected-comma (cast parses as generic-arg list); the 122 paren-drop shows as E0308 type mismatch OR postcondition-not-satisfied for the value-distinguishing wrapping case; the overflow infidelity (wrapping_add vs checked add) shows as postcondition-not-satisfied.",
+      "created_at": "2026-06-08T23:00:12.765155772Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "e74243ac-7113-4178-b893-aca2543cab4e",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (43c9a6c). The exec teeth-test (thermite-tv/tests/exec_teeth.rs) against the orchestrator E1-E4 fixtures: E1 cast-paren #122 (faithful (n-1) as u8 verified, infidel n-1 as u8 -> E0308), E2 cast-< #146 (faithful (x as u32)<33 verified, infidel -> mis-parse), E3 wrong-op/overflow (faithful a+b verified, wrapping_sub -> postcondition fail), E4 off-by-one index (xs[i] verified, xs[i+1] -> fail). The cross-crate bridge (exec_expr_tests in lower.rs) pins the faithful column to the REAL lower_exec_expr output so production drift turns it red. Critic confirmed the teeth bite generally.",
+      "created_at": "2026-06-08T23:38:05.423865613Z",
+      "kind": "result"
+    }
+  ]
+}

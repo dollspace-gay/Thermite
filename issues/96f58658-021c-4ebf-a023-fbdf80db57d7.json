@@ -1,0 +1,37 @@
+{
+  "uuid": "96f58658-021c-4ebf-a023-fbdf80db57d7",
+  "display_id": 172,
+  "title": "thermite-semantics increment (c): exec-statement/body denotation S_B (big-step state-transformer, unified from exec-stmt-tv.md REQ-2) + PROVE (T1) for body_ref_state — ∀ straight-line Block P, ⟦body_ref_state(P)⟧ = ⟦P⟧_{S_B}. Loops (2.2.2) remain kernel-gated (#163). Epic #169.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:15:46.565111078Z",
+  "updated_at": "2026-06-09T20:24:16.876479136Z",
+  "closed_at": "2026-06-09T20:24:16.876479136Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "4a0a9480-7fc6-4f07-97a7-8ce98b24ffe7",
+      "author": "Yffe",
+      "content": "FORK RESOLVED (#173): prover = Lean 4. Increment (c): S_B (big-step state-transformer) + prove body_ref_state sound in Lean. Loops kernel-gated (#163). Vocabulary: forward simulation. See .design/verified/thermite-semantics.md REQ-4/REQ-6.",
+      "created_at": "2026-06-09T15:44:07.882218079Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "fcda46df-e569-4252-8a63-30702861297b",
+      "author": "Yffe",
+      "content": "Increment 2b: mechanize S_B as a big-step STATE TRANSFORMER (bodyDenote/blockThread/stmtDenote) over the frozen straight-line Stmt/Block forms (letS/assign/exprS/ifElse/seq/tail) in lean/Thermite/Exec/Stmt.lean (namespace Thermite.Exec). Reuse 2a's ExecExpr/execDenote/ExecVal/ExecEnv for every per-RHS / condition / tail value; add ONLY the state threading + scalar-cell mutation rebind + branch composition + tail projection. Model body_ref_state's operational threading as bodyRefState (independent, via execRefValue) and prove theorem body_ref_sound by lifting exec_ref_sound through the threading. Faithful to exec_stmt_encode.rs::body_ref_state (scalar mutation only; xs[i]=e + loops + mid-body return are Unsupported = honestly OUT, 2c #163). 3 negative lemmas: wrong-var assign, sequencing-order, mutation-not-applied. lake build green, axioms propext/Quot.sound only, no sorry.",
+      "created_at": "2026-06-09T20:06:57.117679994Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "b934c15a-4f14-49e8-9d80-e5b3f54a7a70",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (3b53d5aa, fix 6050b4cb). Exec-body big-step state-transformer S_B (let/assign/expr-stmt/ifElse/seq/tail) + theorem body_ref_sound for straight-line blocks. The critic found a real divergence #186 (ifElse branch-local-let scope leak) -> fixer closed it (State.restoreScope, the encoder's env.clone()+env.keys() discipline) -> re-critic NO DIVERGENCE. Faithful to exec_stmt_encode.rs::body_ref_state (3 narrowings confirmed genuine encoder gates: re-shadow Err, unbound-target Err, xs[i]=e Unsupported); negatives bite (wrong-var assign, sequencing-order, mutation-not-applied); obligation-none propagates. Loops remain OUT (2c #163, kernel-gated).",
+      "created_at": "2026-06-09T20:24:09.887552545Z",
+      "kind": "result"
+    }
+  ]
+}

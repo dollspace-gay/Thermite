@@ -1,0 +1,30 @@
+{
+  "uuid": "81bd22a0-6cb7-4e85-a533-6800e588cf4d",
+  "display_id": 105,
+  "title": "Divergence: render_frame caps at L0 + forge build run fails E0382 (#90 interrupted editor)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T16:09:22.777451586Z",
+  "updated_at": "2026-06-07T17:12:08.269642073Z",
+  "closed_at": "2026-06-07T17:12:08.269642073Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f17d4495-b451-4c60-ac2a-1dd6bef550f8",
+      "author": "Yffe",
+      "content": "Failing tests at forge/tests/divergence_editor_render_frame.rs::divergence_render_frame_certifies_l3 (render_frame L0, not L3 — u64_to_string ens has no upper length bound so the bounded concat §4.2 CAP precondition is undischargeable) and ::divergence_editor_build_run_compiles (rustc E0382: render_frame(b) moves Buffer b, reused next loop iteration). decode IS L3 with teeth (the done half). Authority: thermite-design.md §4.2 + .design/basis/07-strings.md REQ-4/REQ-8 + the #90 thesis. Tests #[ignore]'d (blocker #90); they PASS-as-fail under --include-ignored against the uncommitted state.",
+      "created_at": "2026-06-07T16:09:39.201097062Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "66a8f48b-e267-41e8-8966-1bef76f942ae",
+      "author": "Yffe",
+      "content": "RESOLVED by 4277bf1 (#90): render_frame caps at L3 (the u64_to_string len<=20 upper-bound ens discharges the §4.2 concat CAP) and the build E0382 (render_frame -> &Buffer) is fixed. The 2 pinned divergence tests were folded into editor_runs.rs (which now asserts render_frame/decode L3 + the build+run). forge check: render_frame L3, decode L3; forge build --entry run compiles + runs (mid-text splice). Critic-confirmed NO DIVERGENCE.",
+      "created_at": "2026-06-07T17:11:59.824840162Z",
+      "kind": "result"
+    }
+  ]
+}

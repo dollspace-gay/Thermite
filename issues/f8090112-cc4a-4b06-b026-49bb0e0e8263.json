@@ -1,0 +1,44 @@
+{
+  "uuid": "f8090112-cc4a-4b06-b026-49bb0e0e8263",
+  "display_id": 274,
+  "title": "forge audit: Lean-fragment membership report (review item 7, non-breaking half)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:55:12.867050415Z",
+  "updated_at": "2026-06-12T12:54:28.472288620Z",
+  "closed_at": "2026-06-12T12:54:28.453075965Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "a095e901-e065-4c65-94dd-a9cc16beca2e",
+      "author": "Yffe",
+      "content": "Plan: amend audit-manifest.md (review item 7, non-breaking half) — additive lean_fragment.functions[] audit section ({name, exportable, tier, refusal class+reason verbatim}), dry-run export_item probe (zero fs/process side effects in lean_export.rs, cost precedented by obligation_content_hash), manifest_version stays v1, OQ-2 byte-identity fenced; the #226 closure-minting privacy gap recorded (REQ-8/OQ-4, no closure fork allowed).",
+      "created_at": "2026-06-12T07:15:22.924379388Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "4da8b77a-8c91-42bd-896e-bf091bb65c39",
+      "author": "Yffe",
+      "content": "Result: design committed — additive section, dry-run probe, goldens unaffected (field-asserting suites). Build remains open behind this design.",
+      "created_at": "2026-06-12T07:15:35.011522908Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "8cc090fb-c3c5-4687-9cc4-0e1622fd7f5c",
+      "author": "Yffe",
+      "content": "PLAN (#274 — lean_fragment membership report).\n\nManifest (4 files): forge/src/audit.rs (additive lean_fragment section + probe), forge/src/check.rs (pub(crate) seam exposing the #226 CONTRACT obligation via mint_item_obligations, NO closure fork), forge/tests/audit_conformance.rs (AC-7..AC-11 oracle), conformance/audit/cases.json (3 NEW cases, edit none).\n\nREQ-8 closure access: expose check::contract_obligation(program,item) -> Obligation as a thin pub(crate) wrapper over EXISTING mint_item_obligations(...).contract (the #226 reachable_spec_fn_names_full* closure). No recognizer fork; export_item is the dry-run probe (pure, fs/process-free).\n\nsum.th HAND-TRACE VERDICT (the doc REQ-8 caution): sum's CONTRACT obligation export refuses class OutOfFragment — driven by the RECURSIVE-registry contract-tier gate (export_while_body ~line 2950: ens result==spec_sum(xs) over self-recursive spec_sum => RecursiveInteractive => OutOfFragment), NOT the spec-calling-inv encode_cell_* refusal the doc narrative grounded. Class OutOfFragment matches AC-7; verbatim reason is the recursive-registry-over-while-body message. Cross-confirmed by lean_while.rs existing assertion (sum.th recursive-registry ens is the interactive residual). Pin sum reason from trace (R-CHAR-3).\n\nspec_sum row: Item::SpecFn, recursive => tier interactive (exportable true).\n\nTwo-commit ceremony: (1) code+tests+REQ-7..10 SHIPPED, (2) audited-sha bump.",
+      "created_at": "2026-06-12T09:25:02.475799023Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "38979582-bc6c-4e8f-853d-f0d3edff5978",
+      "author": "Yffe",
+      "content": "RESULT (#274 — lean_fragment membership report SHIPPED).\n\nCommits:\n  1) 207c5858 forge: audit lean_fragment membership report (review item 7) (#274)\n  2) 10337c50 design: #274 pin — audited-sha bump (audit-manifest.md -> 207c5858)\n  3) df684130 design: #274 pin — bump the 7 docs governing check.rs/cli.rs -> 207c5858\n\nSection shape landed: additive top-level AuditManifest.lean_fragment.functions[], one row per functions row (source order), {name, exportable, tier: auto|interactive|none, tier_tag?, refusal?: {class, reason verbatim}}. manifest_version stays v1 (#[serde(default)] additive). REQ-7..10 SHIPPED in audit.rs + mirrored in the doc.\n\nREQ-8 closure: probe mints the #226 CONTRACT obligation via the new pub(crate) check::contract_obligation seam (a re-export of mint_item_obligations(...).contract — NO fork) and dry-runs the pure lean_export::export_item (no lake/fs/proc). AC-9 agreement + AC-10 no-lake tests green.\n\nsum.th HAND-TRACE VERDICT (the doc's REQ-8 caution, discharged): BOTH rows refuse class OutOfFragment, but NOT the spec-calling-inv reason the doc narrative grounded — sum is the RECURSIVE-registry contract-tier gate (ens result==spec_sum(xs) over self-recursive spec_sum => tier (c) over a while body); spec_sum is its slice-pattern match body (OUT of S_C), NOT exportable-interactive. Class OutOfFragment as specified; cases.json pins verbatim reasons from the shipped Display (R-CHAR-3). The doc's AC-7 parenthetical + report-shape example corrected (R-HONEST-4).\n\nGolden impact: ADDITIVE — all 4 pre-existing audit_conformance goldens pass UNMODIFIED; per-cert *.cert.json untouched (Certificate schema unchanged, engine_attribution stays None on the default path).\n\nGauntlet: cargo test -p forge 633 passed / 0 failed / 0 ignored (84 binaries, verus live); audit unit 10/0 (4 new), audit_conformance 12/0 (8 new); clippy -D warnings PASS; fmt PASS; doc-drift exit 0. Live probe: forge audit examples/editor/editor.th --json => ['Buffer:none','insert_str:none','backspace:none','move_left:none','move_right:none','count_nl:none'].\n\nHanding to acto-critic for adversarial re-audit of every manifest file.",
+      "created_at": "2026-06-12T09:57:26.456391824Z",
+      "kind": "result"
+    }
+  ]
+}

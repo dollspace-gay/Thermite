@@ -1,0 +1,30 @@
+{
+  "uuid": "d412dce8-f000-4399-870a-8ced6bce915f",
+  "display_id": 196,
+  "title": "lower: var*var overflow discharge — Verus's linear solver fails n*n even under req n <= 30; emit a req-bounded-mul by(nonlinear_arith) proof aid (REQ-7 shape-keyed)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T06:39:11.145224091Z",
+  "updated_at": "2026-06-10T07:15:39.171488150Z",
+  "closed_at": "2026-06-10T07:15:39.171488150Z",
+  "labels": [
+    "bug"
+  ],
+  "comments": [
+    {
+      "uuid": "d110ce68-0d19-4842-8078-5c1fe0b8ce4d",
+      "author": "Yffe",
+      "content": "Land the recovered req-bounded var*var overflow discharge in thermite-lower. HOSTILE REVIEW of the unaudited code found three defects: (1) a THERMITE_NO_MUL_AID env backdoor in the codegen path (R-CODE-5 determinism violation) — removed; (2) in-loop products got an INERT body-start aid (a body-start fact does not flow past a Verus loop head) — fixed by placing each aid at its enclosing block's start (fn body via render_mul_proof_block in lower_fn_body, loop body via the same in lower_loop, walker no longer descends into nested loops); (3) no shadowing guard — added block_rebinds so a product over a mutated/shadowed local is skipped. Soundness: assert ... by(nonlinear_arith) requires <exactly the req conjuncts>; can only fail, never prove false; non-param/unbounded operands are skipped so the honest obligation stands (R-DEFER-9). Validated live against verus: sq->L3, a*b*c->L3, in-loop n*n->L3, unbounded n*m->honest fail, mutated acc*n->honest fail, lo+(hi-lo)/2 non-mul->no aid. New tests: thermite-lower/tests/req_bounded_mul_aid.rs (6), forge/tests/req_bounded_mul_conformance.rs (2 live). No golden touched.",
+      "created_at": "2026-06-10T07:06:12.554791047Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "93031ced-faf7-475e-bcf6-c3e09943c843",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (e25e039d). The hostile review of the recovered code found+fixed 3 defects (env backdoor removed R-CODE-5; dead fn-body-only placement -> per-enclosing-block incl. loop bodies, live-verified; shadowing guard added). Critic: no fabricated requires (bounds only from genuine req conjuncts, checked u128 arithmetic, strict-bound off-by-one correct); shadowed/unbounded/mutated honestly skipped (live-probed, nothing masked); mul-free output byte-identical; goldens untouched; 820 workspace tests green. The user case n*n under req n<=30 certifies L3.",
+      "created_at": "2026-06-10T07:15:24.850466633Z",
+      "kind": "result"
+    }
+  ]
+}

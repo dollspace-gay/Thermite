@@ -1,0 +1,30 @@
+{
+  "uuid": "9a94a6cd-429d-45f6-b70a-3518b5a259b2",
+  "display_id": 134,
+  "title": "docs: refresh README Status headline to reflect C10-C12 (ergonomics/mutual-recursion/Map) + the confined editor (#106) + the §7 equivalent-mutant gate (#101); regenerate the skill",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T07:53:20.269826153Z",
+  "updated_at": "2026-06-08T07:54:36.880624051Z",
+  "closed_at": "2026-06-08T07:54:36.880624051Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "fa9505d7-9c79-4e19-9936-c6fae4e01a74",
+      "author": "Yffe",
+      "content": "Plan: refresh README Status headline (C1-C9 -> C1-C12; add mutual recursion/tuple destructuring/for/guards/Map + the sandboxed multi-line editor + the equivalent-mutant gate); regenerate skill. Skill regenerated == committed (already fresh via the dynamic generator, 5325/6000) — only README changed.",
+      "created_at": "2026-06-08T07:54:13.911541613Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "f3dbf022-b1be-4d1f-acbd-eebd5fa74665",
+      "author": "Yffe",
+      "content": "Done. README Status headline refreshed: C1-C12 (+ mutual recursion/tuple destructuring/for/guards/Map), the sandboxed multi-line editor, the equivalent-mutant gate; 'composes into real programs that run, effect-confined.' Skill regenerated == committed (already fresh, 5325/6000); freshness gate green.",
+      "created_at": "2026-06-08T07:54:24.838157968Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "uuid": "ae5a88fb-eaa0-4035-b202-df9fbea43f37",
+  "display_id": 74,
+  "title": "Divergence: forge check push_one (conformance/vec_demo.th) -> L0, oracle (collections/cases.json) -> L3 — #12 mutation scorer cannot synthesize a Vec-return mutant (0/0 -> #48 WeakContract gate)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T17:04:53.582439713Z",
+  "updated_at": "2026-06-06T17:24:19.381219704Z",
+  "closed_at": "2026-06-06T17:24:19.381219704Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "95275aa0-500e-4526-a87b-2e0af3ff6c37",
+      "author": "Yffe",
+      "content": "Failing test pinned at forge/tests/divergence_collections.rs::divergence_push_one_l3_not_mutation_gated_l0 (#[ignore = blocker #74]). ROOT CAUSE: push_one PROVES at verus L3 on the per-item forge::check path (golden tests/golden/lower/vec_demo.verus.rs = 4 verified, 0 errors), but #12 mutation scoring cannot synthesize an early-return mutant for a Vec<u64> (Type::Vec) return — forge::mutation::early_return_value/zero_value_for return None for Type::Vec — so kill ratio is 0/0 and the #48 backstop (check.rs lines ~487-501) gates the L3-proved cert to a WeakContract reject -> Level::L0. Oracle conformance/collections/cases.json says push_one -> L3 (fx alloc). NOT a Vec-wrapper-weave or push-composition bug: emit_vec_wrappers IS woven into the per-item subprogram, and a wrong ens (len+2) is correctly caught by verus (postcondition not satisfied), as is an unguarded push (req true -> L0). FIX is in forge::mutation: synthesize a Vec early-return mutant (e.g. a default/empty TVec, or skip mutation gating for Vec returns until a synthesis exists). The builder's collections_conformance.rs test never exercised forge check (whole-program lower + direct verus only) — same gap class as #68.",
+      "created_at": "2026-06-06T17:05:21.145850135Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "7c55c656-c3a0-430b-a5f7-aea5bd75a4bd",
+      "author": "Yffe",
+      "content": "Plan: pin the push_one L0-vs-oracle-L3 divergence as an #[ignore = blocker #74] failing test in forge/tests/divergence_collections.rs (the per-item forge check path, vec_demo.th), plus a non-ignored confirmation test that checked_get is L3/pure and its bound is genuinely load-bearing (off-by-one -> L0). Critic writes the test only; the fixer fixes forge::mutation Vec-mutant synthesis.",
+      "created_at": "2026-06-06T17:05:57.184755254Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ea7bf6c8-ecf8-44cb-8bd8-147e85e56598",
+      "author": "Yffe",
+      "content": "Fixed blocker #74: push_one now certifies L3 (not mutation-gated to L0).\n\nROOT CAUSE: forge::mutation::early_return_value/zero_value_for returned None for a Type::Vec return -> no early-return mutant synthesizable -> 0/0 kill ratio -> the #48 anti-Goodhart backstop gated the genuinely-L3-proved push_one to WeakContract/L0. Exact #48 class (which synthesized &[] for &[T]), now for Vec<T>.\n\nFIX (root cause, forge/src/mutation.rs): early_return_value gains a Type::Vec(elem) arm (new helper empty_vec_value) synthesizing the empty-Vec wrapper literal TVec<Suffix> { data: Vec::new() } -- the exact thermite_lower wrapper newtype a Vec<T> lowers to (mirroring tvec_name), constructed empty. push_one's mutant 'return TVecU64 { data: Vec::new() }' has ens result.len() == v.len()+1 FALSE (empty len 0) -> verus counterexample -> KILLED -> 1/1 >= floor -> L3. The gate SCORES the contract; it does not bypass it.\n\nMANDATED COMPANION (forge/src/cache.rs): CHECK_SCHEMA_VERSION 2->3 per its documented maintenance contract (#49) -- the gate VERDICT changed for Vec-return fns, so a cert cached under schema 2 (stale L0, keyed on the unchanged lowered real body) MUST invalidate, else REQ-2 (a HIT == a fresh verify) is violated. Verified: the divergence test passes against the pre-existing stale cache (no manual clear).\n\nANTI-GOODHART CONFIRMED (verus-grounded): a weak Vec contract (ens result.len() <= N) PROVES the empty-Vec mutant -> SURVIVES -> still WeakContract. Synthesis enables scoring; it does not auto-pass.\n\nVERIFY: forge check conformance/vec_demo.th -> push_one L3/alloc (1/1), checked_get L3/pure (1/1, unchanged). divergence_push_one_l3_not_mutation_gated_l0 un-ignored + PASSES; confirm_checked_get_bound_is_load_bearing PASSES.\n\nGAUNTLET: cargo test --workspace 480 passed, 0 failed, 0 ignored. mutation_conformance 2/2, divergence_mutation 4/4. clippy --workspace --all-targets -D warnings PASS. fmt --all --check PASS.",
+      "created_at": "2026-06-06T17:23:56.492383619Z",
+      "kind": "result"
+    }
+  ]
+}

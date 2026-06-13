@@ -1,0 +1,37 @@
+{
+  "uuid": "3b23c77a-c23c-4244-b33c-67eaa47703a4",
+  "display_id": 253,
+  "title": "proof-backends increment (iv): the exec-body bridge — extend the exporter past pure-contract to straight-line bodies. Design first (§4.1): S_E->S_C value bridge (BVal.value), bindBool spine addition (Env has no bool sort), optres binding, env->State correspondence (params/slices); then the hypothesize-form obligation (bodyStabilizes=some r -> ensStable(r), OVERFLOW class conjoined); new kernel pins per bridge position; loop-class export stays OUT (post-v1), recorded honestly",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T21:33:03.762798222Z",
+  "updated_at": "2026-06-11T22:48:00.901216458Z",
+  "closed_at": "2026-06-11T22:48:00.901216458Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "c080cd8f-919b-442c-9c0c-e3d54374cc27",
+      "author": "Yffe",
+      "content": "Doc-author dispatch: amend .design/verified/proof-backends.md §4.1 — DESIGN the exec-body bridge (increment iv). Replace the stub with the grounded design: BVal.value S_E->S_C value bridge; bindBool spine prerequisite (defaulted Env.bools + Env.bindBool + Expr.boolVar arms); optres position OUT behind #254 (ExecVal is int|bool); env->State correspondence (stateOf + InRangeParams + per-param rfl lemmas); bodyConverges HYPOTHESIZE form + conjoined OVERFLOW export, NO NB layer (bodyDenote fuel-free Option, ExecExpr has no specCall); four named bridge pins; structured loop refusal. Add REQ-10 + AC-9 + REQ status row (NOT-STARTED, #253). Manifest: proof-backends.md only; commit on main, no push, no close.",
+      "created_at": "2026-06-11T21:48:18.867768497Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "09f7e8fa-f3e8-452d-aa64-bacc63ea3d51",
+      "author": "Yffe",
+      "content": "Build #253 part (iv-a): the SPINE PREREQUISITE for the exec-body bridge. Additive boolVar/bindBool layer across the contract denotation family + bodyConverges/bindResult over the fuel-free bodyDenote + the four bridge pins. All existing theorems + 7 kernel pins stay green with the standard axiom set; no exporter (forge) changes (that is iv-b). Manifest: Ast/Denote/Stabilize/Exec.Stmt/RefEncode/Soundness + 4 new Pin files + proof-backends.md.",
+      "created_at": "2026-06-11T22:01:32.918352226Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "2a035aa3-9483-4618-a7d1-803c068761d8",
+      "author": "Yffe",
+      "content": "INCREMENT (iv) COMPLETE — both halves Opus-critic-clean. (iv-a, 1438dc5f) the spine bridge prerequisite: additive Env.bools/bindBool + Expr.boolVar threaded across the whole mutual family (boolVar arms carry real content, NOT vacuous; the NB-agreement explicit-arm closes the #241/#242 trap a third time), bodyConverges (no NB-layer — bodyDenote already bottom-distinguishing), 4 bridge pins; ALL 13 pins + ref_sound/lowering_faithful/body_ref_sound green UNCHANGED, standard axioms. (iv-b, 3373215e) the exec-body exporter: straight-line Block→Exec.Stmt encoding, stateOf env→State (scope:=false EXP-verified faithful to body_ref_state's empty-env param seeding), the hypothesize obligation + the conjoined OVERFLOW theorem (Opus-verified BOTH theorems are in one file + any failure→Unknown, so the conjunct is load-bearing not decorative; the #244 both-prove bug does NOT recur on the body path); loops/optres refused. Known auto-discharge limits recorded honestly (af340c64). The exec-body bridge is shipped.",
+      "created_at": "2026-06-11T22:47:38.639152938Z",
+      "kind": "result"
+    }
+  ]
+}

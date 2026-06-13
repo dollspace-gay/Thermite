@@ -1,0 +1,37 @@
+{
+  "uuid": "9ac0c6d2-0775-41d2-9336-d35b2f7363bc",
+  "display_id": 257,
+  "title": "Examine project: refresh README + THERMITE skill, advise on improvements",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T00:35:00.454076307Z",
+  "updated_at": "2026-06-12T01:01:22.362751193Z",
+  "closed_at": "2026-06-12T01:01:22.362751193Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "37d496d0-65d0-4864-89a0-b672e60471d3",
+      "author": "Yffe",
+      "content": "Examined repo: 50 commits since README's last content update (#217). Shipped but undocumented: the proof-backends layer (Engine trait, LeanEngine #2, --engine verus|lean|auto, attribution, disagreement alarm, hardened interactive replay #248-#252, exec-body bridge #253). Changes: README (trust section + What-works bullet + inventory bullet + deferred line), forge usage banner gains --engine (cli.rs), skill §3/§4 gain the engine surface (generate.rs, budget held 5988/6000), THERMITE.skill.md regenerated, ~/.claude/skills/thermite reinstalled. Gauntlet: build/clippy/fmt green; workspace tests running.",
+      "created_at": "2026-06-12T00:44:38.839958758Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "daeab496-32be-4eef-9c37-5d446afdf260",
+      "author": "Yffe",
+      "content": "Plan: bring README/skill/usage-banner current with the shipped proof-backends layer (#240-#253) — README trust-section paragraph + What-works bullet + inventory row + deferred note; skill gains the --engine row within the 6k budget; cli.rs usage banner gains [--engine verus|lean|auto]. Verify via full gauntlet.",
+      "created_at": "2026-06-12T01:00:53.726686378Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "dffbe96a-0856-44f6-bc7c-f37e0683a5e7",
+      "author": "Yffe",
+      "content": "Result: committed — README (trust section + What-works + inventory + deferred), THERMITE.skill.md regenerated (5988/6000), cli.rs usage banner --engine, user skill reinstalled at ~/.claude/skills/thermite. Full gauntlet green (build/clippy/fmt/workspace tests with verus on PATH).",
+      "created_at": "2026-06-12T01:01:08.690020320Z",
+      "kind": "result"
+    }
+  ]
+}

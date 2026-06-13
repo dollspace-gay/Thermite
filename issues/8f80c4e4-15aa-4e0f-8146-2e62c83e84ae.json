@@ -1,0 +1,44 @@
+{
+  "uuid": "8f80c4e4-15aa-4e0f-8146-2e62c83e84ae",
+  "display_id": 266,
+  "title": "Divergence: proof-backends.md REQ-status table REQ-11 row (added IN 99c7f304) asserts NOT-STARTED / 'lean/Thermite/ has NO whileBodyDenote...NO PinWhileVacuity.lean' at the very SHA that ships them — contradicts the Requirements-section 'SPINE PREREQUISITE — SHIPPED (v-a)' rows in the same commit",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T03:01:03.747676990Z",
+  "updated_at": "2026-06-12T03:10:47.420961281Z",
+  "closed_at": "2026-06-12T03:10:47.420961281Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "aa8e20bc-c5cb-4799-a32f-2f040b9a1112",
+      "author": "Yffe",
+      "content": "The honest-status discipline (the af340c64 REQ-10 precedent): a ## REQ status row must be true at its own SHA. .design/verified/proof-backends.md line ~2386 says 'NOTHING of §4.2 is built — the gap is pure ABSENCE' and 'lean/Thermite/ has NO whileBodyDenote/whileBodyConverges/loopDenote_fuel_mono/whileBodyConverges_unique/while_compose/loopDenote_exits_of_dec and NO PinWhileVacuity.lean/PinWhileComposition.lean', with SUB-ROWS (all NOT-STARTED) — yet commit 99c7f304 itself adds all six pieces (lean/Thermite/Exec/WhileBody.lean) and both pins, and the same commit's Requirements-section REQ-11 entry says 'SPINE PREREQUISITE — SHIPPED (#264 part v-a)' for REQ-11.1/.2/.3/.6. Mechanical refutation: lean/Thermite/PinWhileDecShape.lean (committed with this audit) imports Thermite.Exec.WhileBody and applies loopDenote_exits_of_dec — kernel-checked existence of the artifacts the row denies. Generator must move the REQ-11 table row to the SHIPPED-sub-rows form (mirroring the REQ-10 row) or split the v-a status honestly.",
+      "created_at": "2026-06-12T03:01:24.487578183Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "baf1dfb7-42f2-40a6-89c6-90a748d8d2c5",
+      "author": "Yffe",
+      "content": "Plan: commit the kernel-checked critic pin lean/Thermite/PinWhileDecShape.lean (the #265 h_dec shape-drift refutation; its compilation also mechanically refutes this issue's stale REQ-11 table row) to main as the audit artifact of 99c7f304. No production code touched; fixes are the generator's.",
+      "created_at": "2026-06-12T03:01:57.921857704Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "6b0ed52f-cf92-4fa2-a08e-e1f94f6d8d63",
+      "author": "Yffe",
+      "content": "Plan (#266): single-file fix to .design/verified/proof-backends.md — rewrite the REQ-11 ## REQ status table row (line 2414) from the false NOT-STARTED / 'NOTHING of S4.2 is built … lean/Thermite/ has NO whileBodyDenote/…/loopDenote_exits_of_dec and NO PinWhileVacuity.lean/PinWhileComposition.lean' to the SPLIT truth that matches the same doc's Requirements-section REQ-11 entry (lines 413-476, post-#265) and the shipped artifacts.\n\nAuthority: the Requirements-section REQ-11 entry — REQ-11.1/11.2/11.3/11.6 SHIPPED (v-a, commit 99c7f304 + the #265 declared h_dec PRE-state adaptation, commit 92659eb7) / REQ-11.4/11.5/11.7 NOT-STARTED (the v-b exporter, open blocker #264).\n\nMechanical refutation of the stale row: lean/Thermite/Exec/WhileBody.lean ships all six declarations; the three pins exist (PinWhileVacuity/PinWhileComposition/PinWhileDecShape), and PinWhileDecShape imports Thermite.Exec.WhileBody and applies loopDenote_exits_of_dec — kernel existence of the artifacts the row denies.\n\nNew row: status cell split SHIPPED (v-a) + NOT-STARTED (v-b, #264); description split into SHIPPED sub-rows (11.1/11.2/11.3/11.6) with the module path, six declaration names, three pins, axiom footprint, the #265 adaptation; and NOT-STARTED sub-rows (11.4/11.5/11.7). House binary-status style preserved (mirrors the REQ-10 row).\n\nGauntlet: python3 tooling/doc-drift.py exit 0; re-read the new row vs the Requirements-section entry for consistency. Then commit, --kind result, close 266 --no-changelog, session work 264.",
+      "created_at": "2026-06-12T03:09:03.227346407Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "d13aecc2-46f4-46d9-9acd-ca262e6ce07a",
+      "author": "Yffe",
+      "content": "Fixed in commit 46f864e6 — single file .design/verified/proof-backends.md, the REQ-11 ## REQ status table row (1 row changed, 1 insertion/1 deletion).\n\nBEFORE (status cell): 'NOT-STARTED (increment (v), open blocker #264)' + 'NOTHING of S4.2 is built — the gap is pure ABSENCE' + 'lean/Thermite/ has NO whileBodyDenote/whileBodyConverges/loopDenote_fuel_mono/whileBodyConverges_unique/while_compose/loopDenote_exits_of_dec and NO PinWhileVacuity.lean/PinWhileComposition.lean'; SUB-ROWS all NOT-STARTED.\n\nAFTER (status cell): 'SPINE SHIPPED (increment (v) part v-a, #264 — commit 99c7f304 + the #265 declared adaptation 92659eb7); EXPORTER NOT-STARTED (part v-b, open blocker #264)' — split sub-rows: REQ-11.1/11.2/11.3/11.6 SHIPPED (module path lean/Thermite/Exec/WhileBody.lean, the six declaration names, the three pins incl. PinWhileDecShape.lean, axiom footprint [propext, Quot.sound] within the standard set {propext, Classical.choice, Quot.sound}, the #265 PRE-state h_dec adaptation) / REQ-11.4/11.5/11.7 NOT-STARTED (the v-b exporter, open blocker #264).\n\nAuthority: the same doc's Requirements-section REQ-11 entry (lines 413-476, post-#265) + the shipped artifacts. The row now matches it (no internal contradiction). Mechanical refutation of the old row: lean/Thermite/PinWhileDecShape.lean imports Thermite.Exec.WhileBody and applies loopDenote_exits_of_dec — kernel existence of the artifacts the row denied; commits confirmed via git log (99c7f304 ships the layer + pins, 92659eb7 the #265 h_dec record).\n\nGauntlet: python3 tooling/doc-drift.py exit 0 (proof-backends.md CURRENT, 0 drift across 49 docs); new row re-read consistent with the Requirements-section entry. No production code touched, no CHANGELOG, clean tree, stayed on main. Hand back for acto-critic re-audit.",
+      "created_at": "2026-06-12T03:10:42.229588528Z",
+      "kind": "result"
+    }
+  ]
+}

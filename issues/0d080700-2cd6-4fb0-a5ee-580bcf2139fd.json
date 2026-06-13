@@ -1,0 +1,30 @@
+{
+  "uuid": "0d080700-2cd6-4fb0-a5ee-580bcf2139fd",
+  "display_id": 104,
+  "title": "C5/C7 build-side: emit L1 runtime-exec twins of contract spec fns (count_sep/sep_free/occurs_at/contains_sub/all_digits/is_digit/parse_u64) + Vec<String> exec len, so forge build of contract-using programs runs",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T10:04:37.371460524Z",
+  "updated_at": "2026-06-07T10:20:36.075158573Z",
+  "closed_at": "2026-06-07T10:20:36.075158573Z",
+  "labels": [
+    "bug"
+  ],
+  "comments": [
+    {
+      "uuid": "b0a194f5-9a0e-4771-ae1d-7ed88165e9e3",
+      "author": "Yffe",
+      "content": "Emitted the C5/C7 L1 runtime-exec twins in thermite-lower::l1::emit_string_runtime_l1: C5 family occurs_at/contains_sub/count_sep/sep_free (gated on program_uses_string_search) + C7 family is_digit/all_digits/free parse_u64/parse_be (gated on program_uses_parse, parse_be deduped vs the C4 numfmt round-trip). lower_expr_exec's Call arm .clone()s the leading string args (string_arg_count_l1) to handle the by-value/&-snapshot ambiguity uniformly. TVecTString exec len() -> u64 already emitted by emit_vec_runtime_l1 (every TVec wrapper). forge build of the full calc.th now compiles+runs (add_2_3 -> Some(5), add_100_200 -> Some(300)); full parse_lines.th compiles+runs (split_abc -> 3 pieces [97],[98],[99]); formatter unaffected; forge check unchanged (L3). The 2 pinned tests flipped to assert build success. Gauntlet: cargo build workspace OK; cargo test --workspace 192 passed/0 failed; clippy -D warnings clean; fmt --check clean.",
+      "created_at": "2026-06-07T10:19:37.660741879Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "0babc418-eb43-4c62-b99b-0e87711c5057",
+      "author": "Yffe",
+      "content": "Mirror the C4 precedent: in thermite-lower::l1::emit_string_runtime_l1 emit EXEC twins of the C5 contract spec fns (occurs_at/contains_sub/count_sep/sep_free) under program_uses_string_search and the C7 spec fns (is_digit/all_digits/free parse_u64/parse_be) under program_uses_parse, each computing the same value as its spec body over the runtime Vec<u8>. Handle the by-value/&-snapshot call-site ambiguity by .clone()-ing leading string args (string_arg_count_l1) in lower_expr_exec's Call arm. parse_be deduped against the numfmt round-trip. TVecTString exec len already exists. Flip the 2 pinned acceptance tests to assert build success + correct run. Mirror the L1-exec-twin note to 07-strings.md / 09-option-result.md REQ status. Gauntlet: build/test workspace, clippy -D warnings, fmt --check.",
+      "created_at": "2026-06-07T10:20:18.808244641Z",
+      "kind": "plan"
+    }
+  ]
+}

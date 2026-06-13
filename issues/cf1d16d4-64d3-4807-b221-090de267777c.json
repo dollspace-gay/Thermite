@@ -1,0 +1,30 @@
+{
+  "uuid": "cf1d16d4-64d3-4807-b221-090de267777c",
+  "display_id": 22,
+  "title": "Install adapted ACToR agent harness for spec-driven verification",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T18:00:29.086653907Z",
+  "updated_at": "2026-06-04T18:22:00.270966947Z",
+  "closed_at": "2026-06-04T18:22:00.270966947Z",
+  "labels": [
+    "chore"
+  ],
+  "comments": [
+    {
+      "uuid": "adf1588f-7b35-4cc6-898a-58e635895398",
+      "author": "Yffe",
+      "content": "Adapting the vibe-fork/ACToR harness (proven in ferrotorch/ferrolearn/ferray) to Thermite's GREENFIELD spec-driven context. No upstream to translate, so the critic's external anchor becomes: (a) conformance corpus of hand-certified .th programs (cert oracle), (b) Verus/Kani/Z3 golden files for lowering components. Authority chain: design-doc -> component-design -> impl -> conformance/golden verification.\n\nFile manifest (pre-declared):\n- goal.md (binding contract; R-SPEC replaces R-DEV upstream-mirror family)\n- tooling/spec-discipline.py (rewrite of translate-discipline.py: reads = goal.md + design doc + optional route reference)\n- tooling/anti-pattern-gate.py (ferray gate re-pointed to thermite-*/forge)\n- tooling/spec-routes.toml (routes -> design docs -> conformance/golden refs; doubles as module map)\n- .claude/agents/acto-{doc-author,builder,critic,fixer}.md\n- .design/00-index.md\n- .claude/settings.json (merge: + spec-discipline on PostToolUse:Read and PreToolUse:Write|Edit, + anti-pattern-gate on PreToolUse:Write|Edit)\n- .gitignore (+ .crosslink/.spec-reads.json)\n\nReuses Thermite's existing crosslink hooks (work-check/prompt-guard/session-start/heartbeat/pre-web/post-edit) unchanged. State file: .crosslink/.spec-reads.json. Gated crates: thermite-*, forge.",
+      "created_at": "2026-06-04T18:02:34.435161115Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ea4b8581-d2d0-450c-84b0-6eeeab84ae2c",
+      "author": "Yffe",
+      "content": "ACToR harness installed and smoke-tested. Files: goal.md; tooling/spec-discipline.py; tooling/anti-pattern-gate.py; tooling/spec-routes.toml (16 routes = v0.1 module map); .claude/agents/acto-{doc-author,builder,critic,fixer}.md; .design/00-index.md; settings.json merged (+spec-discipline on PostToolUse:Read and PreToolUse:Write|Edit, +anti-pattern-gate on PreToolUse:Write|Edit); .gitignore updated.\n\nVerification (6/6 passed):\n1. spec-discipline BLOCKS gated edit when design doc missing -> instructs acto-doc-author (exit 2)\n2. spec-discipline ignores non-gated files (exit 0)\n3. spec-discipline BLOCKS unrouted gated file -> instructs add route (exit 2)\n4. anti-pattern-gate BLOCKS .unwrap() in gated file (exit 2)\n5. anti-pattern-gate ALLOWS clean content (exit 0)\n6. PostToolUse Read records goal.md in .crosslink/.spec-reads.json (exit 0)\nsettings.json parses; spec-routes.toml parses (16 routes); both hooks py_compile clean.\n\nGreenfield adaptation vs canonical vibe-fork: upstream-read requirement replaced by design-doc(mandatory)+optional golden/conformance reference; R-DEV upstream-mirror family replaced by R-SPEC design-contract family; critic anchors on conformance corpus + Verus golden files. Reuses Thermite's existing crosslink hooks unchanged. Gates are LIVE this session. Not yet committed (awaiting user).",
+      "created_at": "2026-06-04T18:09:49.123925516Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "8ccfb433-6af9-4731-8cd9-7da961150fb3",
+  "display_id": 231,
+  "title": "Divergence: spec_call_param_cast dedupe suffix heuristic (ends_with 'as <cast>') skips the REQ-5 narrowing on an int-typed arg whose lowering merely ENDS in a cast — req s_dec(k + j as u32) emits un-narrowed int arg, E0308 -> correct source dies at L0 (live-confirmed); shared by lower_expr Call arm (both branches) + the c116360c lower_inv_expr Call arm",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T02:18:53.839676043Z",
+  "updated_at": "2026-06-11T04:04:50.235848692Z",
+  "closed_at": "2026-06-11T04:04:50.235848692Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "1a2839b6-75c9-4ce3-8b26-91ba49c7b118",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-lower/tests/divergence_spec_call_cast_dedupe_suffix.rs (2 pins, #[ignore]d, tracking this issue) demonstrate the divergence. Authority: verus-lowering.md REQ-5 — an ARITHMETIC spec-call arg is the unbounded int in spec position and must narrow to the callee's DECLARED param type; the textual ends_with('as u32') check matches 'k + j as u32' = 'k + (j as u32)' (u32+u32 -> int as a whole) and skips the cast. Live: forge check on the fn-req fixture -> s_dec L3, f L0, E0308 'expected u32, found int'. Hand verus on the struct-inv twin emission s_a(self.x + self.y as u32): same E0308. Pre-existing in the #225 mechanism (lower_expr Call arm, both cast branches), copied verbatim into c116360c's lower_inv_expr Call arm — NOT introduced by c116360c, but reachable from correct surface syntax on every threaded site.",
+      "created_at": "2026-06-11T02:19:19.799692608Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "17816993-935e-4223-a2b7-4cd9da6a97a4",
+      "author": "Yffe",
+      "content": "Replace the textual dedupe (lowered.ends_with('as <cast>')) with a structural condition at all 3 spec_call_param_cast consumers (lower_inv_expr Call arm; lower_expr Call arm arith + nat-len branches). New helper arg_is_toplevel_cast_to(arg, cast): skip the REQ-5 narrowing iff the arg AST is top-level Expr::Cast{ty} with lower_type(ty)==cast (a genuine re-narrow ((x) as u32)). A Binary/Unary or .len() arg is never a top-level cast -> always narrowed, fixing the k + j as u32 = k + (j as u32) int-typed false-skip (E0308 -> L0). Goldens stable: top-level-cast arg s(x as u32) still emits ONE cast.",
+      "created_at": "2026-06-11T02:49:42.422208752Z",
+      "kind": "plan"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "uuid": "7235d448-530d-43aa-b53a-ab7986f4905e",
+  "display_id": 127,
+  "title": "Divergence: callee_takes_string_byteview name-collision misroutes a user String-scanning spec fn — lower.rs callee_takes_string_byteview diverges from .design/basis/07-strings.md REQ-4",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T01:20:30.205263186Z",
+  "updated_at": "2026-06-08T01:40:33.577394729Z",
+  "closed_at": "2026-06-08T01:40:33.577394729Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "4a2b077c-10fe-4cc0-8535-444c15b31e31",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_byteview_name_collision.rs::user_spec_fn_named_like_a_generated_byteview_fn_still_certifies_l3 demonstrates the divergence: two byte-identical String-scanning spec fns (the proven #126 spec_scan/spec_line_start shape) certify DIFFERENTLY by NAME. Control 'scan_x' -> L3; rename to 'is_digit' (a name in the fixed callee_takes_string_byteview set parse_le/parse_be/all_digits/is_digit/occurs_at/contains_sub/count_sep/sep_free) -> L0. The &String self-call arg is misrouted to .data@ (Seq<u8>) against the &TString param the lowered signature declares (E0308). Root cause: callee_takes_string_byteview keys the byte-view rewrite on callee NAME, not the &String param SHAPE. Authority: .design/basis/07-strings.md REQ-4 (String-scanning spec fn MUST lower + certify; the set is SHAPE-derived). Reproduced directly: forge check on /tmp fixtures, is_digit L0 vs scan_x L3, isolated by rename-only. Fix is generator's (owning crate thermite-lower).",
+      "created_at": "2026-06-08T01:21:39.435326843Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "20ee3a86-5831-49b4-859c-e4d2f2febeb5",
+      "author": "Yffe",
+      "content": "FIXED (#127): byte-view dispatch + generated-def emission are now SHAPE-keyed, not callee-NAME-keyed.\n\nRoot cause had TWO faces of the same name-keying bug:\n1. callee_takes_string_byteview (lower.rs) keyed the String->.data@ rewrite on a fixed name set; a user spec fn named like a generated one got its &String self-call arg misrouted to .data@ (E0308).\n2. program_uses_parse/_numfmt/_string_search keyed the GENERATED-def emission on a name match; a user 'spec fn is_digit(s: &String, ..)' spuriously materialized the generated is_digit(b: u8) ALONGSIDE the user's -> E0428 (name defined twice).\n\nFix (single file, thermite-lower/src/lower.rs):\n- user_string_spec_fn_names(program): program-wide SHAPE-derived set of USER spec fns declaring a String/&String param (the user namespace; shadows any generated name).\n- callee_takes_string_byteview now excludes a callee in that set BEFORE the generated-name match (Ctx.is_user_string_spec_fn) -> a user String spec fn passes the &TString reference, never .data@.\n- the three emission gates exclude shadowed names so a user-named collision does not emit the generated def.\n\nParam-type signal: a user spec fn declares &String/String (is_string_ty sees through one borrow); the generated fns take Seq<u8> and are synthesized (not in program.items), so they still byteview.\n\nVerification (real verus 0.2026.05.24):\n- divergence_byteview_name_collision (un-ignored): 1 passed. user is_digit -> L3; control scan_x -> L3.\n- spec_fn_string_param: 2 passed. string_search/string_format/option_result/editor_runs: all green.\n- cargo test --workspace: 670 passed, 0 failed, 0 ignored.\n- cargo clippy --workspace --all-targets -D warnings: clean. cargo fmt --all --check: clean.",
+      "created_at": "2026-06-08T01:39:23.443388062Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "c1b62fe7-3473-4d11-97c5-15e623da41ad",
+      "author": "Yffe",
+      "content": "Fix the byteview dispatch (and the generated-def emission gates) to key on the callee's PARAM SHAPE, not its NAME. A user spec fn declaring &String/String shadows any generated def of that name: exclude such names from callee_takes_string_byteview AND from program_uses_parse/_numfmt/_string_search so a user is_digit(&String) passes the &TString ref and does not materialize the generated is_digit(u8). Single file: thermite-lower/src/lower.rs. Un-ignore the pin and run the full gauntlet with real verus.",
+      "created_at": "2026-06-08T01:40:18.583407002Z",
+      "kind": "plan"
+    }
+  ]
+}

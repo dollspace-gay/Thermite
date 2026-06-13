@@ -1,0 +1,30 @@
+{
+  "uuid": "999a6dd2-6b8c-4c68-9927-1c03c15e0828",
+  "display_id": 249,
+  "title": "Divergence: forge engine::nonstandard_axiom binds to the FIRST #print axioms line, not the obligation theorem's — earlier clean #print masks a smuggled axiom (#248 allowlist bypass)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T18:41:11.341874890Z",
+  "updated_at": "2026-06-11T21:32:21.813296247Z",
+  "closed_at": "2026-06-11T21:32:21.813296247Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "2ee817c2-dd03-4736-b062-deaa6f9e9e98",
+      "author": "Yffe",
+      "content": "Failing test at /home/doll/Thermite/forge/tests/divergence_axiom_marker_mask.rs::divergence_replay_masks_nonstandard_axiom_via_earlier_print demonstrates the divergence. engine::nonstandard_axiom uses print_axioms_output.find(\"depends on axioms:\") (FIRST occurrence) + .lines().next(); replay appends '#print axioms thermite_obligation_<item>' LAST. A proof file emitting its own earlier '#print axioms clean_helper' (propext-only) makes the first marker clean → smuggled 'thermite_cheat : ∀ (p:Prop), p' masked → f certifies L3 with trust_profile omitting the axiom. Live (lake+verus present): cert observed level=L3. Fix must bind the parse to the obligation theorem's report line (e.g. anchor on \"'thermite_obligation_<item>' depends on axioms:\" or parse the LAST/all markers).",
+      "created_at": "2026-06-11T18:41:26.712889986Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "3b6cf627-bf2a-4644-ae3f-305cbca5c0dd",
+      "author": "Yffe",
+      "content": "Plan: commit the failing live pin forge/tests/divergence_axiom_marker_mask.rs that demonstrates the #248 allowlist bypass (earlier clean #print axioms masks the obligation theorem's smuggled axiom). Not #[ignore]d — release-blocker proof cheat. No production code changed (critic role).",
+      "created_at": "2026-06-11T18:41:57.581300061Z",
+      "kind": "plan"
+    }
+  ]
+}

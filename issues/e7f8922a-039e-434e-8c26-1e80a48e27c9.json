@@ -1,0 +1,30 @@
+{
+  "uuid": "e7f8922a-039e-434e-8c26-1e80a48e27c9",
+  "display_id": 240,
+  "title": "proof-backends increment (ii): the Lean spine prerequisites (stabilizes/stabilizesProp relations, stabilization_exists_for_dec_bounded, the fuel-irrelevance lemma) + the Thermite-to-Lean obligation exporter + LeanEngine auto-discharge (tier a fuel-free, tier b static unfolding) per proof-backends.md REQ-6/REQ-7",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T07:16:14.427611259Z",
+  "updated_at": "2026-06-11T17:07:43.733648139Z",
+  "closed_at": "2026-06-11T17:07:43.733648139Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "c2598efa-d724-4cef-82fa-84f717c7ee87",
+      "author": "Yffe",
+      "content": "Part (ii-a): land the LEAN SPINE PREREQUISITES per proof-backends.md §4/§6.1 in a NEW lean/Thermite/Stabilize.lean (importing the spine). Define stabilizes/stabilizesProp matching Denote.lean's intVal/denote; prove stabilizes_unique (overlap-at-max, the #214 lever); a Bool specCallFree over the full mutual AST (Expr/Pred/MatchArm/RangeArg); the FUEL-IRRELEVANCE lemma intVal_fuel_irrelevant/denote_fuel_irrelevant by mutual well-founded recursion (env generalized) with the fuel-free tier-(a) corollaries; and stabilization_exists honestly in the RegistryTerminating HYPOTHESIS form (the general core-Lean form is unprovable for an arbitrary registry; the hypothesis is the REQ-1.2 REGISTRY-TERMINATION obligation). No sorry. Import into Thermite.lean; mark the spine-prerequisite rows SHIPPED in the design doc. Do not touch the spine modules or the 4 pins; confirm pins still build. Gauntlet: lake build (full+pins), #print axioms standard-set-only, cargo build --workspace.",
+      "created_at": "2026-06-11T07:44:29.331267107Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ef90e2a2-9f3c-4aa3-91ad-715131f9da87",
+      "author": "Yffe",
+      "content": "(ii-a) SPINE PREREQUISITES COMPLETE + critic-clean through 3 cycles: Stabilize.lean (4afd8661 + f4ae4ee9 + c3b9055e) — stabilizes/stabilizesProp, fuel-irrelevance (full mutual induction) + the fuel-free tier-(a) corollaries, and the BOTTOM-DISTINGUISHING intValNB/denoteNB none-propagating denotation with Converges + the agreement lemma converges_imp_stabilizes giving stabilization_exists genuine content; the divergent registry provably FAILS RegistryTerminating (incl. through comb predicate bodies — Pins E+F, both directions, 6 pin files all green, standard axioms throughout). REMAINING for #240: (ii-b) the Rust exporter (R_item emission + the transitive closure hard gate + decide lemmas + the tier-(a) fuel-free / tier-(b) static-unfold forms) + LeanEngine (lake-env discharge, the tactic battery) + wiring + tests. Then (iii) interactive+attribution, (iv) the exec bridge.",
+      "created_at": "2026-06-11T14:34:34.657866051Z",
+      "kind": "plan"
+    }
+  ]
+}

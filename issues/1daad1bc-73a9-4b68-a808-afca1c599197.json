@@ -1,0 +1,23 @@
+{
+  "uuid": "1daad1bc-73a9-4b68-a808-afca1c599197",
+  "display_id": 230,
+  "title": "lower: top-level user spec fns emit as bare 'spec fn' — a pub open spec fn (struct well_formed) naming one fails Verus privacy (E0425) -> correct source dies at L0; emit pub open spec fn for user spec fns (the REQ-8 visibility tier extended)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T01:53:57.360997799Z",
+  "updated_at": "2026-06-11T04:04:46.433104882Z",
+  "closed_at": "2026-06-11T04:04:46.433104882Z",
+  "labels": [
+    "bug"
+  ],
+  "comments": [
+    {
+      "uuid": "8fbf9e02-6378-458d-9b8c-1ef7e01dc3ac",
+      "author": "Yffe",
+      "content": "Critic re-audit (c116360c): diagnosis PARTIALLY confirmed. The privacy layer is REAL — hand verus on { bare spec fn s_dec + pub open spec fn well_formed calling it } rejects with 'in pub open spec function, cannot refer to private function' (NOT E0425), and the pub-open form verifies '1 verified, 0 errors'. But the LIVE E0425 on the Counter fixture has a different proximate cause: forge check's item_subprogram Struct arm builds the sub-program as the item ALONE, so s_dec is never in the emitted unit at all (and the param-type map is empty -> the cast regresses to as u64 per-item). Fixing this issue alone will NOT revive the fixture — see #232 (blocker) for the slicing layer + the pinned failing test.",
+      "created_at": "2026-06-11T02:20:11.932692995Z",
+      "kind": "observation"
+    }
+  ]
+}

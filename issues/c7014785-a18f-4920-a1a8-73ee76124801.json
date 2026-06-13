@@ -1,0 +1,31 @@
+{
+  "uuid": "c7014785-a18f-4920-a1a8-73ee76124801",
+  "display_id": 19,
+  "title": "Integrate a critic-model spec-intent review slot",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:48:08.782896489Z",
+  "updated_at": "2026-06-05T10:36:48.690392812Z",
+  "closed_at": "2026-06-05T10:36:48.690392812Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "0b4426ed-51ad-4304-ac60-77596b2af62c",
+  "comments": [
+    {
+      "uuid": "8e4edb29-c4ca-46a3-bdc1-4e1cb4acb28b",
+      "author": "Yffe",
+      "content": "Ship the pluggable spec-intent review slot forge review (#19, design §7 line 227). New forge/src/review.rs: pub fn review_file projects the PRE-SCREENED declarative spec layer (per battery-passing fn: verbatim req/ens/fx + directly-referenced spec-fn declarations name/params/ret/dec, NO bodies — structural exclusion, never reads FnItem.body/SpecFnItem.body) + an is-this-what-you-meant prompt. Pre-screening (R-DEFER-9): intent_reviewable iff cert reject-free + certified rung (manifest::cert_certifies, incl. slag/boundary L1 per OQ-4); a reject cert is flagged battery_failing with its cause, NOT surfaced. Pluggable verdict slot ReviewVerdict{item,aligned,note} attaches as a SEPARATE *.review.json record (OQ-2 reading a), never a Certificate field — oracle_subset untouched. --reviewer cmd shell-out (OQ-1) pipes the artifact to stdin, reads the verdict from stdout; absent/failing/garbage reviewer -> ForgeError, never a panic, never a fabricated aligned. forge review [item] verb in cli.rs + tests/review_conformance.rs against conformance/review/cases.json. Extraction deterministic (R-CODE-5). Do NOT close #19 (critic re-audits).",
+      "created_at": "2026-06-05T10:28:42.776329871Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ee6ee7fb-0129-4972-b769-32f2ea52bd8e",
+      "author": "Yffe",
+      "content": "SHIPPED — pluggable spec-intent review slot forge review (§7 line 227). review.rs: project the pre-screened DECLARATIVE spec layer (per fn: verbatim req/ens/fx + directly-referenced spec-fn declarations, NO bodies) as the 'is this what you meant?' intent-review artifact. Pre-screening (R-DEFER-9): only battery-passing (reject-free, certified incl. slag/boundary L1) contracts are intent_reviewable; a vacuous/weak/counterexample contract is flagged battery_failing, NEVER surfaced. The pluggable verdict slot: ReviewVerdict{item,aligned,note} attaches as a SEPARATE <file>.review.json record (NOT a Certificate field — mechanical vs intent never conflated). Optional --reviewer <cmd> shell-out pipes the artifact to a command + attaches the returned verdict (the pluggable integration; forge NEVER fabricates aligned). Loop: doc-author -> builder -> critic NO DIVERGENCE: no body leak (structural, fresh probe), pre-screening holds, forge never fabricates aligned, reviewer failures -> ForgeError (no panic), verdict never mutates the cert, deterministic. Commit 63d3953. workspace 358 tests, clippy/fmt clean. Not pushed.",
+      "created_at": "2026-06-05T10:36:39.599146665Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "819f901a-05be-4d70-8042-47f93a78ee43",
+  "display_id": 27,
+  "title": "Completeness gap: conformance/parse/sum.facts.json and recover_per_item.* not yet authored (parser oracle incomplete)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:06:28.102102450Z",
+  "updated_at": "2026-06-04T19:10:36.151792563Z",
+  "closed_at": "2026-06-04T19:10:36.151792563Z",
+  "labels": [
+    "observation"
+  ],
+  "comments": [
+    {
+      "uuid": "7a56a1de-aec8-4d2b-b0dc-eb4307158b51",
+      "author": "Yffe",
+      "content": "Audit of the four authored oracle fixtures (binary_search.addresses.json, sum.addresses.json, address/README.md, parse/binary_search.facts.json) found NO DIVERGENCE — all faithfully transcribe the verbatim corpus + thermite-design.md §4.1/§4.3/Appendix A + semantic-addressing.md AC-1/AC-2. Gap: the route conformance_ops=[binary_search, sum, recover_per_item] for thermite-syntax/src/parse implies sum.facts.json and recover_per_item.{facts,addresses}.json are expected, but only binary_search.facts.json exists. recover_per_item.th corpus also absent. Per-item recovery (design §4.3 'recovery is per-item by construction') has no oracle fixture yet. Non-blocking; the four present fixtures are clean.",
+      "created_at": "2026-06-04T19:06:40.083899018Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "1066c07d-e068-4500-8d2d-3ac047b88637",
+      "author": "Yffe",
+      "content": "Completeness gap filled: authored conformance/parse/sum.facts.json, conformance/parse/recover_per_item.th + .facts.json, conformance/parse/README.md (all hand-derived from the design/corpus per R-CHAR-3). acto-critic re-audited the new set: NO DIVERGENCE FOUND (spec_sum no-contract-clauses + sum ens_count=2 verified; missing-ens=parse-error confirmed against §4.1 + surface-grammar.md/parser.md, so the per-item recovery fixture is a valid oracle). The full parser+address oracle is now in place and critic-verified.",
+      "created_at": "2026-06-04T19:10:29.432940284Z",
+      "kind": "result"
+    }
+  ]
+}

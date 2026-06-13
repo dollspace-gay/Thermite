@@ -1,0 +1,23 @@
+{
+  "uuid": "f42a4292-1051-4505-8eb3-fa5db9d89520",
+  "display_id": 143,
+  "title": "contract-TV REQ-4: teeth-test (R-CHAR-3) — an injected infidelity (==->\\<=, wrong combinator predicate, #127-class wrong byte-view rewrite) the TV MUST catch with a counterexample + a faithful clause it MUST pass",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T18:15:51.518152596Z",
+  "updated_at": "2026-06-08T19:01:01.509089153Z",
+  "closed_at": "2026-06-08T19:01:01.509089153Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "24186392-a2b4-4aad-a7df-931dd411440d",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean. The teeth-test (tests/teeth.rs) against the orchestrator R-CHAR-3 fixtures F1-F4 (comparison ==/<=, combinator predicate, #127 byteview index, conjunction-drop): each faithful -> verified, each infidel -> counterexample. Critic added operand-swap + wrong-combinator infidelity (both caught). Proves TV discriminates faithful from infidel — the teeth the five guard layers structurally lack.",
+      "created_at": "2026-06-08T19:00:42.823489111Z",
+      "kind": "result"
+    }
+  ]
+}

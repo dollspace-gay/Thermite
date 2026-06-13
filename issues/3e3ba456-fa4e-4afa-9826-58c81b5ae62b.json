@@ -1,0 +1,37 @@
+{
+  "uuid": "3e3ba456-fa4e-4afa-9826-58c81b5ae62b",
+  "display_id": 29,
+  "title": "Divergence: thermite-syntax parser stack-overflows (SIGABRT) on deeply nested expressions — violates parser.md AC-4 no-panic",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:27:12.177425492Z",
+  "updated_at": "2026-06-04T19:43:27.564128860Z",
+  "closed_at": "2026-06-04T19:43:27.564128860Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "25ee9c71-e399-4a85-bca7-31eec916f1cd",
+      "author": "Yffe",
+      "content": "Failing test at thermite-syntax/tests/divergence_grammar.rs::divergence_deep_nesting_no_panic. Input = fn body with 1500 nested parens -> SIGABRT (stack overflow). Authority: parser.md AC-4 / REQ-4 (no panic; all failures are SyntaxError). Root: precedence ladder parse_or..parse_primary recurses with no depth guard.",
+      "created_at": "2026-06-04T19:29:00.190385538Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "ae22b512-753a-441c-bf5c-4c32a31df37f",
+      "author": "Yffe",
+      "content": "Root cause confirmed: depth guard in parse_expr is correctly placed (all nested-expr re-entries route through it), but MAX_EXPR_DEPTH=256 exceeds the 2 MiB test-thread native stack. Empirically a debug build overflows the C stack at ~135-140 ladder levels (~10 frames/level), so the depth-256 guard never fires before SIGABRT. Plan: lower MAX_EXPR_DEPTH 256->64 in parser.rs (single file), ~2x margin below the overflow point; deep nesting now returns the structured ExpressionTooDeep diagnostic. Un-ignore divergence_deep_nesting_no_panic after green gauntlet. No assertions/fixtures touched.",
+      "created_at": "2026-06-04T19:42:46.685486108Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "9e8f5fe0-8f80-4bc6-8841-57228dc44d42",
+      "author": "Yffe",
+      "content": "Delivered in commit 2a8e3e3. Root cause: MAX_EXPR_DEPTH=256 exceeded the 2 MiB test-thread native stack (debug build overflows at ~135-140 ladder levels, ~10 frames/level), so the guard never fired before SIGABRT. Fix: lowered MAX_EXPR_DEPTH 256->64 in thermite-syntax/src/parser.rs (single file) — 1500 nested parens now return the structured ExpressionTooDeep diagnostic instead of aborting (parser.md AC-4 / REQ-4, goal.md R-CODE-2). All nested-expr re-entry points (parse_primary paren case, parse_call_args, parse_index_arg, parse_closure, parse_match, parse_if_expr) confirmed routed through the guarded parse_expr. Un-ignored divergence_deep_nesting_no_panic. Gauntlet: cargo test 12 passed/0 failed/0 ignored; clippy PASS; fmt PASS. No test assertions or conformance/ fixtures touched. Hand back for acto-critic re-audit.",
+      "created_at": "2026-06-04T19:43:23.685027348Z",
+      "kind": "result"
+    }
+  ]
+}

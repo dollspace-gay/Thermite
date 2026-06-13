@@ -1,0 +1,30 @@
+{
+  "uuid": "1cc60033-16b8-4913-90bc-5b6fd03121be",
+  "display_id": 175,
+  "title": "step-3 architecture: deep-research the formal-methods SOTA (verified compilation vs translation validation, mechanized semantics, SMT-vs-foundational + the Z3-trust/proof-reconstruction problem, refinement/semantic-preservation vocabulary, effect verification, proof-assistant landscape, LLM-assisted verification) + a terminology map to correct lexical drift, before committing the mechanized-semantics architecture",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:34:34.210806914Z",
+  "updated_at": "2026-06-09T15:15:43.974995812Z",
+  "closed_at": "2026-06-09T15:15:43.974995812Z",
+  "labels": [
+    "research"
+  ],
+  "comments": [
+    {
+      "uuid": "fee14b5a-3e35-4e29-8835-cf2459d9d122",
+      "author": "Yffe",
+      "content": "Plan: deep-research the formal-methods SOTA (5 angles, 26 primary sources, 25 claims 3-0 adversarially verified, 0 killed) + write the cited report to .design/research/formal-methods-sota.md with the terminology map. Done — report committed.",
+      "created_at": "2026-06-09T15:14:13.524274383Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "5f21401c-c59d-42ae-ba1d-e8cd65ff40aa",
+      "author": "Yffe",
+      "content": "DONE. Report at .design/research/formal-methods-sota.md (committed). 8 adversarially-verified findings + terminology map + architecture implications + proof-assistant landscape + honest gaps (economic thesis unverified; verified-bounded-validator-vs-universal-proof is the first open architectural question). Feeds #169 + the #173 proof-assistant fork.",
+      "created_at": "2026-06-09T15:15:17.784779289Z",
+      "kind": "result"
+    }
+  ]
+}

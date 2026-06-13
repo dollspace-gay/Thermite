@@ -1,0 +1,37 @@
+{
+  "uuid": "13600ea5-9ad7-4e8a-be40-c79a7cfa54ab",
+  "display_id": 71,
+  "title": "Divergence: forge check on multi-spec-fn scheme corpus (list_fold.th) emits 3 certs all named len_list — spec-fn sub-program collision masks sum_list/all_positive identity",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T15:43:20.405919123Z",
+  "updated_at": "2026-06-06T15:54:49.063527997Z",
+  "closed_at": "2026-06-06T15:54:49.063527997Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "31320ce3-15e1-4242-860a-cf916059cb83",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_scheme_certs.rs::divergence_list_fold_three_distinct_item_certs (#[ignore]d, run with --ignored).\n\nROOT CAUSE: check::item_subprogram for Item::SpecFn returns Program{ adt_deps + ALL spec_items } — identical for every spec fn in the file (the checked item is not distinguished; it merely rides along in spec_items). Confirmed: the three spec-fn sub-programs of conformance/list_fold.th lower to BYTE-IDENTICAL Verus (same DefaultHasher 38213b645c7b112, len 1420). The proof-cache content-address (cache::cache_key over the lowered source) therefore collides, and the stored len_list certificate (carrying f.name=len_list) is served for sum_list and all_positive. forge check --json emits items [List, len_list, len_list, len_list].\n\nAUTHORITY: conformance/adt-schemes/cases.json certify block requires three DISTINCT L3 items: len_list, sum_list, all_positive. thermite-design.md §6 (the certificate lists EVERY function's level) + §5.3 (per-item isolated sub-program). A cert whose item field is a neighbor's name violates the §6 per-function manifest contract.\n\nNOTE: not a proof-soundness bug — all three are genuinely L3 (the served cert is a real L3); it is a certificate-IDENTITY divergence. A fix should make the per-spec-fn sub-program (or cache key) item-distinguishing so each spec fn certifies under its own name. The crux (fold_bound multiplier, faithful catamorphism, flat-step cage, dec-nuance) is GENUINE — see report.",
+      "created_at": "2026-06-06T15:43:37.500076643Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "267b6b00-6f1c-4de7-8295-12180052c226",
+      "author": "Yffe",
+      "content": "PLAN (critic pin): commit the #[ignore]d failing test forge/tests/divergence_scheme_certs.rs pinning the cert-identity divergence. No production code touched (critic role). Fixer un-ignores when item_subprogram/cache key is made item-distinguishing for spec fns.",
+      "created_at": "2026-06-06T15:43:54.569224005Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "f39a6945-2645-4be2-9307-7118ad309a67",
+      "author": "Yffe",
+      "content": "RESOLVED in de458b2. Root cause: item_subprogram's Item::SpecFn arm wove ALL spec_items, so every spec fn in list_fold.th lowered byte-identically -> proof-cache content-address collision -> cached len_list cert served for sum_list/all_positive. Fix (single file forge/src/check.rs): new reachable_spec_fn_deps (the #52/#68 reachability pattern) weaves X + only the spec fns X transitively references + X's ADT decls, NOT all spec_items; per-item item_spec_items narrows the set for Item::SpecFn only (Item::Fn path unchanged, still resolves spec_sum etc). forge check conformance/list_fold.th --json now: [List L3, len_list L3, sum_list L3, all_positive L3] -- three DISTINCT correctly-named certs, all cached:false (no false hit across siblings; a broken sibling can no longer be masked). Gauntlet: build ok; cargo test --workspace 465 passed 0 failed 0 ignored (divergence_list_fold_three_distinct_item_certs un-ignored + green); clippy -D warnings PASS; fmt --check PASS. No regression: sum/binary_search/list_sum/bank_account/shape unchanged.",
+      "created_at": "2026-06-06T15:54:44.767551539Z",
+      "kind": "result"
+    }
+  ]
+}

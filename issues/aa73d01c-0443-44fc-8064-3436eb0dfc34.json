@@ -1,0 +1,41 @@
+{
+  "uuid": "aa73d01c-0443-44fc-8064-3436eb0dfc34",
+  "display_id": 7,
+  "title": "Generate THERMITE.skill.md with a CI 6,000-token budget gate",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:18.653494900Z",
+  "updated_at": "2026-06-05T02:56:58.161455392Z",
+  "closed_at": "2026-06-05T02:56:58.161455392Z",
+  "labels": [
+    "feature"
+  ],
+  "blockers": [
+    "6199e0d6-6933-4707-9cac-c7f62115ace1"
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+  "comments": [
+    {
+      "uuid": "6b25fc82-cd9e-49a2-a6d8-cebb256c3fa1",
+      "author": "Yffe",
+      "content": "OQ resolutions: token count = deterministic ceil(chars/3.5) heuristic (no offline tokenizer; conservative over-count; 3.5x headroom; real tokenizer is a future one-fn swap); per-combinator examples generator-side; forge skill DEFERRED out of #7 (thermite-skill --emit is the v0.1 serving path); freshness test resolves repo root via CARGO_MANIFEST_DIR. Combinator section machine-rendered from thermite_spec::all() (anti-drift); grammar/forge/ladder/slag curated from the design (incl. the §6 L0/slag + §4.2 flat-closure clarifications). Next: builder (generate.rs + bin + committed skill + CI step).",
+      "created_at": "2026-06-05T02:46:09.987166192Z",
+      "kind": "decision"
+    },
+    {
+      "uuid": "07615e40-6c9d-4f16-83bc-75eb75abb0b9",
+      "author": "Yffe",
+      "content": "Build thermite-skill #7: generate.rs (generate() = 5 §10 sections; combinator section machine-rendered from thermite_spec::all() with generator-side example table; curated grammar/forge/ladder/slag from §4/§4.2/§4.4/§6/§8/AppdxB; token_count = (chars*2).div_ceil(7), SKILL_TOKEN_BUDGET=6000), main.rs bin (--emit/--check-budget, ExitCode, no panic), tests/skill.rs (budget+coverage+freshness+determinism, 6 ACs), committed THERMITE.skill.md, ci.yml --check-budget step, spec-routes entry for main.rs. Gauntlet green; 2560 tokens.",
+      "created_at": "2026-06-05T02:52:19.139830773Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "3334a9f7-b6de-4c33-90e0-e2361fae9928",
+      "author": "Yffe",
+      "content": "SHIPPED — the 'fits in a skill' pillar. thermite-skill::generate() assembles THERMITE.skill.md (committed at repo root, 2560 tokens / 6000 budget, ~2.3x headroom). The SpecTherm combinator-library section is MACHINE-RENDERED from thermite_spec::all() (§10 anti-drift; critic-confirmed no hardcoded list, all 8 + only those, one example each); grammar/forge-commands/ladder/slag sections curated from the design (incl. the §6 L0/slag + §4.2 flat-closure clarifications). token_count = deterministic ceil(chars/3.5). Bin: thermite-skill --emit (regen) / --check-budget (hard fail >6000, critic-proven failable at 6001). Up-to-date test (committed == generate()), determinism test. CI step wired (cargo run -p thermite-skill -- --check-budget). forge skill deferred (--emit serves v0.1). Loop: doc-author -> builder -> critic NO DIVERGENCE. Commit 365734e (+ main.rs route R-XLATE-2 unblock). thermite-skill 18 tests, workspace 164, clippy/fmt clean. Not pushed.",
+      "created_at": "2026-06-05T02:56:39.600052684Z",
+      "kind": "result"
+    }
+  ]
+}

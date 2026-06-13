@@ -1,0 +1,37 @@
+{
+  "uuid": "0e0d3325-8af2-4f4b-8b40-68e7fe89e82f",
+  "display_id": 31,
+  "title": "Divergence: thermite-syntax parser #29 depth guard incomplete — parse_type/parse_pattern/if-tail recursion still SIGABRTs on deep nesting",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:48:58.959930881Z",
+  "updated_at": "2026-06-04T19:56:55.663367330Z",
+  "closed_at": "2026-06-04T19:56:55.663367330Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "2f7bccfa-3446-4013-b357-16bbc1f6c7af",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-syntax/tests/divergence_reaudit.rs demonstrate the divergence. The #29 fix (commit 2a8e3e3) bounds recursion via a single `expr_depth` counter incremented only in `parse_expr` (the precedence-ladder entry). Four grammar productions recurse WITHOUT routing through `parse_expr`, so the guard never sees them and deeply nested (depth 1500) input overflows the native C stack and SIGABRTs — the exact failure mode #29 claimed to close. Authority: .design/syntax/parser.md AC-4 (\"No input ... causes a panic; all failures surface as SyntaxError diagnostics\") + REQ-4; goal.md R-CODE-2.\n\nUncapped paths (each a separate failing test, each SIGABRTs independently on a 2 MiB stack):\n- divergence_deep_generic_type_no_panic: parse_type self-recursion on `Option<Option<...>>` (Generic arm). surface-grammar.md REQ-8.\n- divergence_deep_slice_pattern_no_panic: parse_slice_pattern -> parse_pattern cycle on `[[[...]]]`. surface-grammar.md REQ-7.\n- divergence_deep_enum_pattern_no_panic: parse_path_pattern -> parse_pattern cycle on `Some(Some(...))`. surface-grammar.md REQ-7.\n- divergence_deep_if_tail_no_panic: parse_block/parse_if_parts cycle on tail-position `if x==0 { <nest> } else {0}` (the construct the #30 fix added). surface-grammar.md decision 2 / ast.md REQ-6.\n\nRoot cause: the depth bound must be applied at every recursive descent re-entry (parse_type, parse_pattern, and the parse_block if-tail cycle), not only parse_expr. Tests are #[ignore]d (tracked here) because an overflow aborts the whole test binary.",
+      "created_at": "2026-06-04T19:49:18.668943772Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "4a508368-a3fa-4355-8257-ef85288b2871",
+      "author": "Yffe",
+      "content": "Generalise the #29 expr-only recursion bound into a single shared guard so every recursive-descent family is capped, not just parse_expr. Add a guard_recursion(inner) helper backed by a unified recursion_depth counter + MAX_RECURSION_DEPTH (kept at 64). Route the four uncapped re-entries through it: parse_expr (parse_or), parse_type (Option<...> self-recursion), parse_pattern (covers both [[...]] slice and Some(Some(..)) enum cycles), and parse_if_parts (the parse_block<->parse_if_parts tail-if cycle from #30). On limit, return the existing structured SyntaxError::ExpressionTooDeep, never abort. Single file: thermite-syntax/src/parser.rs. Verify all four reaudit tests + the existing deep-paren test return on a 2 MiB stack, and depth-40 reasonable nesting still parses; then un-ignore the four reaudit tests.",
+      "created_at": "2026-06-04T19:56:12.436072569Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "1f0e8138-9d6b-4055-a430-7aecb495c59d",
+      "author": "Yffe",
+      "content": "Fixed in f0ceb12 (single file: thermite-syntax/src/parser.rs). Root cause: the #29 depth bound lived only in parse_expr; four families recursed without routing through it. Generalised to one shared guard_recursion helper + unified recursion_depth/MAX_RECURSION_DEPTH (kept 64). Guarded re-entries: parse_expr, parse_type (Option<...>), parse_pattern (covers both [[...]] slice and Some(Some(..)) enum cycles), parse_if_parts (parse_block<->parse_if_parts tail-if). On limit returns the existing structured SyntaxError::ExpressionTooDeep — never aborts. All four divergence_reaudit tests now return on a 2 MiB stack and are un-ignored; the existing divergence_grammar deep-paren test and depth-40 reasonable nesting still parse. Gauntlet: cargo test -p thermite-syntax 16 passed / 0 failed / 0 ignored (9 conformance + 3 divergence_grammar + 4 divergence_reaudit); clippy --all-targets -D warnings PASS; fmt --all --check PASS. Touched neither test assertions nor any conformance/ fixture (only the four #[ignore] attrs removed).",
+      "created_at": "2026-06-04T19:56:49.943467172Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "uuid": "1dad0563-e7e8-428c-ab05-2c1b10495913",
+  "display_id": 99,
+  "title": "Divergence: thermite-lower emit_one_vec_wrapper push ens drops the element-preservation frame (REQ-5 GROUNDED seed)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T06:42:16.695021181Z",
+  "updated_at": "2026-06-07T06:52:19.856039233Z",
+  "closed_at": "2026-06-07T06:52:19.856039233Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "39a22980-e9cc-45cd-8e28-995414e71500",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_vec_push_frame.rs::divergence_push_frames_prior_elements demonstrates the divergence. The emitted bounded-Vec push ens (emit_one_vec_wrapper, thermite-lower/src/lower.rs) is { well_formed; len'==len+1; data@[old_len]==x } and OMITS the element-preservation frame forall|j| 0<=j<old_len ==> final(self).data@[j]==old(self).data@[j]. The design's GROUNDED BVec seed (.design/basis/04-collections.md 'The verified Verus form (GROUNDED)') AND REQ-5 prose ('plus the element-preservation frame') both mandate it; the emitted pop_last DOES carry a kept-prefix frame, so push is the inconsistent one. Consequence: after a second push, a caller cannot prove get(0) is the first pushed element (borrow/by-value get ens *result==v@[i] is unframed across a later push). Real verus on the emitted wrapper + a 2-push value-pinning client: 9 verified, 1 errors (assertion failed on the first-element pin); WITH the design frame it is 4 verified, 0 errors (critic probe confirmed). Fix: re-add the forall|j| element frame to push's ensures in emit_one_vec_wrapper (+ the L1 mirror if applicable). R-DEFER-9: a design-stated obligation silently dropped.",
+      "created_at": "2026-06-07T06:43:12.317529359Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "4c478ef7-2921-4d39-b7d9-028661efa9f5",
+      "author": "Yffe",
+      "content": "Plan: pin the push element-frame divergence as a #[ignore = \"blocker #99\"] failing test (forge/tests/divergence_vec_push_frame.rs) that lowers a 2-push Vec<u64> program via the real toolchain and runs real verus on the emitted wrapper + a value-pinning client; the test fails today (9 verified, 1 errors) and goes green once the fixer restores the element-preservation frame on push in emit_one_vec_wrapper. Critic does not fix.",
+      "created_at": "2026-06-07T06:43:36.752051214Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "fc6939ea-b627-4787-bbe7-6f1a7e2c88d5",
+      "author": "Yffe",
+      "content": "FIXED. Re-added the element-preservation frame to push's ensures in emit_one_vec_wrapper (thermite-lower/src/lower.rs), matching the REQ-5 GROUNDED BVec::push seed: forall|j: int| 0 <= j < old(self).data.len() ==> final(self).data@[j] == old(self).data@[j] (same forall/old/final spelling as the already-correct pop_last kept-prefix frame). Element-generic (uses old(self).data.len() regardless of Copy/non-Copy), so it applies to Vec<u64> AND Vec<String>/struct/nested. L1 (l1.rs emit_vec_runtime_l1) carries NO Verus ensures contract on push (entirely exec, thermite_check! capacity guard only) -- nothing to mirror; single-file fix. Verification (real verus 0.2026.05.24): divergence_push_frames_prior_elements (un-ignored) now 10 verified, 0 errors -- the 2-push value-pin (get(0)==10, get(1)==20) PROVES; non-vacuity confirmed by reverting the frame (9 verified, 1 errors / error: assertion failed, test FAILS). vec_completeness_conformance still green. No assume/external_body, no cheat (R-DEFER-9). cargo test --workspace 0 failed; clippy -D warnings PASS; fmt --check PASS.",
+      "created_at": "2026-06-07T06:52:01.857464622Z",
+      "kind": "result"
+    }
+  ]
+}

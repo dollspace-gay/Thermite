@@ -1,0 +1,37 @@
+{
+  "uuid": "7c63ca93-10fb-4322-8e31-298b17c10e91",
+  "display_id": 32,
+  "title": "Divergence: parse_block<->parse_loop loop-body recursion unguarded — deep loop/while nesting SIGABRTs (AC-4)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T20:00:28.174309412Z",
+  "updated_at": "2026-06-04T20:05:23.526893465Z",
+  "closed_at": "2026-06-04T20:05:23.526893465Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "b6c44410-1545-49ad-b441-2aac2edf96a7",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-syntax/tests/divergence_reaudit2.rs::divergence_deep_nested_loop_no_panic and ::divergence_deep_nested_while_no_panic demonstrate the divergence. The #31 fix (f0ceb12) routed parse_expr/parse_type/parse_pattern/parse_if_parts through guard_recursion, but the loop-body cycle parse_block -> parse_loop (Loop/While arm) -> parse_block (line 770) routes through NEITHER guard. 1500-deep 'loop inv true dec 0 { ... }' and 'while true inv true dec 0 { ... }' both SIGABRT (signal 6) on a 2 MiB stack. Authority: parser.md AC-4 (no input causes a panic) + surface-grammar.md REQ-3 (loop/while body is a Block, nested loops are well-formed v0.1 grammar). Control test control_deep_nested_if_stmt_returns PASSES, confirming the statement-if path IS bounded (via guarded parse_if_parts) — the gap is loops only. Root cause: guard_recursion must wrap the parse_loop body re-entry (or parse_block) in the owning crate.",
+      "created_at": "2026-06-04T20:00:47.038231987Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "d2c67b7c-abde-4217-b1e3-aa3e09d8489d",
+      "author": "Yffe",
+      "content": "Pinning the unguarded loop-body recursion as failing #[ignore]d tests in thermite-syntax/tests/divergence_reaudit2.rs (critic role: tests only, no production fix). Two probes (nested loop, nested while) confirmed to SIGABRT under --ignored; one control (nested statement-if) confirmed to PASS, isolating the gap to the parse_block<->parse_loop cycle. Committing the tests as the audit artifact; the fixer must route the loop body re-entry through guard_recursion.",
+      "created_at": "2026-06-04T20:01:22.488198562Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "8c1e3c0c-cc40-4dcb-8c1f-bc48ee42eaa9",
+      "author": "Yffe",
+      "content": "Fixed: routed the parse_block<->parse_loop body cycle through guard_recursion. Split parse_loop into a guarded outer (self.guard_recursion(Self::parse_loop_inner)) and parse_loop_inner holding the original body, mirroring the parse_if_parts/parse_if_parts_inner pattern from #31. MAX_RECURSION_DEPTH=64 unchanged. Both probes now return SyntaxError::ExpressionTooDeep instead of SIGABRT. Converge check: grepped every parse_block caller — fn/spec-fn bodies (non-recursive, one per item), parse_if_parts_inner (guarded), parse_loop_inner (NOW guarded), parse_if_expr (reached only via guarded parse_expr ladder). All recursive families (expr/type/pattern/if-tail/loop-body) guarded; no further gap. Gauntlet: cargo test 19 passed / 0 failed / 0 ignored; clippy -D warnings PASS; fmt --check PASS. Touched neither test assertions nor conformance fixtures (only removed two #[ignore]s).",
+      "created_at": "2026-06-04T20:05:03.155044137Z",
+      "kind": "result"
+    }
+  ]
+}

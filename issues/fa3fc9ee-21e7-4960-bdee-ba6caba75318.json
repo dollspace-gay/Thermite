@@ -1,0 +1,37 @@
+{
+  "uuid": "fa3fc9ee-21e7-4960-bdee-ba6caba75318",
+  "display_id": 269,
+  "title": "Mutation battery: identity-return + struct-zero early-return families (outside-review item 5; closes the move_up class)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:38:51.924231567Z",
+  "updated_at": "2026-06-12T09:19:57.915043668Z",
+  "closed_at": "2026-06-12T09:19:57.880517988Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "73c7cd5c-1dfd-4d45-92f1-87901dfc42ee",
+      "author": "Yffe",
+      "content": "Doc-author dispatch: AMEND .design/forge/mutation-scoring.md with the two missing early-return families — REQ-9 F-IDENT (identity return, v1 by-value exact Type-equality match, one labeled mutant per matching param, family-1 placement), REQ-10 F-STRUCT-ZERO (Type::Named struct-literal of field zeros, OQ-5 drop mirroring the tuple rule, inv-violating zero = honest kill), REQ-11 generate() struct-defs seam (adt_deps threading via the three existing callers), REQ-12 CHECK_SCHEMA_VERSION bump + re-derived AC-5 order oracle, REQ-13 #101 equivalence + #247 Lean-path interaction. All NOT-STARTED behind this issue. Cert/oracle impact enumerated (sum.cert.json 17/18 UNAFFECTED under v1 scope; editor_runs.rs L3 pins expected red pre-tightening) + the mandatory one-arc landing order with #270 (filed). Doc-only commit; no code changes.",
+      "created_at": "2026-06-12T06:53:22.593551300Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "c4ea1049-8572-4891-9b7e-57ba8e92e51b",
+      "author": "Yffe",
+      "content": "LANDING PLAN (#269/#270 coordinated Tier-1 arc — the call-bearing equivalence seam + the landing).\n\nSEAM (this dispatch, manifest): the call-bearing equivalence probe — equivalent-mutants.md REQ-7/8/9.\n- thermite-lower/src/lower.rs: lower_equivalence_obligation gains callee_deps:&[Item]; a NON-EMPTY closure (a §9 call-bearing body) routes to lower_call_bearing_equivalence_obligation — an EXEC-position harness 'fn equiv_check_<n>(..) -> (eq:bool) requires <req>, ensures eq { let real_v={<real>}; let mutant_v={<mutant>}; real_v==mutant_v }' with the closure woven via the EXISTING lower dispatch (boundary -> external_body sig, regular -> full def; modulo callee contracts §9). Call-free bodies take the UNCHANGED spec-fn-pair path.\n- forge/src/check.rs: equivalence_proves_equal threads fn_deps and returns EquivOutcome::{Proved,NotProved,Unsupported(reason)} — exclusion on Proved ALONE; Unsupported carries the structured reason to the survivor surface (REQ-9, no silent swallow).\n- forge/src/cache.rs: CHECK_SCHEMA_VERSION 6 -> 7 (the call-bearing exclusion is verdict-changing for §9 callers).\n\nARC-1 (staged, landing together): mutation.rs F-IDENT/F-STRUCT-ZERO (REQ-9..11), check.rs adt_deps threading, editor.th tightening (#270), editor_runs.rs pins.\n\nORACLE: AC-6 direct+transitive composition GREEN (caller return x excluded -> L3). AC-8 weak-callee wcaller gates WeakContract 0/2. O-C editor 6/6, O-E equivalent_mutants 5/5.\n\nGAUNTLET: build/clippy(-D warnings)/fmt clean; cargo test --workspace --no-fail-fast = 949 passed, 0 failed, 0 ignored (verus live).\n\nCOMMIT 1: the coordinated arc. COMMIT 2: re-pin governed docs to commit 1.",
+      "created_at": "2026-06-12T08:41:55.190702024Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "1b5d68d2-dddf-49a2-8840-46031efb16fb",
+      "author": "Yffe",
+      "content": "Result: SHIPPED + critic-clean (64a329fa + d98976ca). F-IDENT/F-STRUCT-ZERO live (O-G reproduced the review's escape: move_up 11/15 return-b survivor pre-tightening), call-bearing equivalence through callee contracts (AC-6 green, AC-8 conservatism live, contract-opacity verified by live probe), cache 5→7, 949 workspace tests 0 failed. Critic NO DIVERGENCE across 6 surfaces incl. vacuous-req laundering defense-in-depth + the editor-pin hand-trace. Minor doc-hygiene observation (stale NOT-STARTED markers in amendment prose) folded into the next doc pass.",
+      "created_at": "2026-06-12T09:19:46.010687379Z",
+      "kind": "result"
+    }
+  ]
+}

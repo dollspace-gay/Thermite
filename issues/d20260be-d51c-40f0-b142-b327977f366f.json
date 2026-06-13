@@ -1,0 +1,30 @@
+{
+  "uuid": "d20260be-d51c-40f0-b142-b327977f366f",
+  "display_id": 30,
+  "title": "Divergence: thermite-syntax parse_block never builds tail Expr::If — if/else in value position lost as Stmt::If (surface-grammar.md REQ-5/decision 2, ast.md REQ-6)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T19:27:18.657603090Z",
+  "updated_at": "2026-06-04T19:38:41.053025856Z",
+  "closed_at": "2026-06-04T19:38:41.053025856Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f5eac781-df76-4f71-90d2-da27ff1a5ca9",
+      "author": "Yffe",
+      "content": "Failing test at thermite-syntax/tests/divergence_grammar.rs::divergence_if_else_in_tail_position_is_expr. Input `{ if x==0 {1} else {2} }` yields Block{stmts:[Stmt::If..], tail:None} instead of tail Some(Expr::If). parse_block unconditionally routes TokKind::If to parse_if_stmt; the value-position if-expr (surface-grammar.md decision 2, ast.md REQ-6) is never built. The fn body has no value.",
+      "created_at": "2026-06-04T19:29:01.993183571Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "e7f9ae16-c3b0-40e7-b010-2e217afd9b48",
+      "author": "Yffe",
+      "content": "Fixed in 5bb910e: parse_block routes if+else in tail position to Expr::If as the block tail (parse_if_parts); statement-form if preserved. divergence_if_else_in_tail_position_is_expr now passes (un-ignored). Gauntlet green.",
+      "created_at": "2026-06-04T19:38:32.509935629Z",
+      "kind": "result"
+    }
+  ]
+}

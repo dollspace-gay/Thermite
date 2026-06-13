@@ -1,0 +1,44 @@
+{
+  "uuid": "0a652406-0105-43a4-994c-ad2400ea3a34",
+  "display_id": 187,
+  "title": "Divergence: rust-lean-correspondence.md violates its own AC-1 — ref_encode.rs::encode Expr::Field + Expr::TupleProj arms have no table row and no documented residual (and no Lean Expr constructor)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T21:22:26.257563550Z",
+  "updated_at": "2026-06-09T21:28:15.891836105Z",
+  "closed_at": "2026-06-09T21:28:15.891836105Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "9a0c1443-b049-4184-a950-8d7a66b9aef1",
+      "author": "Yffe",
+      "content": "COMPLETENESS GAP (probe 2, failure mode iii — missing arm). AC-1 of .design/verified/rust-lean-correspondence.md requires: 'every match arm of ref_contract_pred ... appears as a row, OR is recorded as an explicit out-of-Lean-scope residual.'\n\nThe encode() dispatch in thermite-tv/src/ref_encode.rs @ 579d3d48 has 14 live arms. Two are absent from Tables 1A-1G AND from the 'What this inspection does NOT cover' / D1-D5 residual lists:\n\n  Expr::Field { receiver, name } => Ok(format!(\"{r}.{name}\"))        (ref_encode.rs::encode, the Field arm)\n  Expr::TupleProj { receiver, index } => Ok(format!(\"{r}.{index}\"))   (ref_encode.rs::encode, the TupleProj arm)\n\nBoth are reachable in the frozen contract subset: a struct-field ens (result.x == 0) and a tuple-projection ens (result.0 == a) — the latter is exactly the multi-cell-tuple surface the doc itself discusses in Table 3B / D5, but D5 only covers the EXEC-BODY obligation SHAPE (body_ref_state_ensures' result.{i} conjunction), NOT the ref_encode.rs::encode Expr::TupleProj/Expr::Field arms that encode such a projection in CONTRACT position.\n\nThe Lean Expr inductive (lean/Thermite/Ast.lean @ 7c85da25, constructors intLit/boolLit/var/cmp/logic/neg/arith/cast/seqVar/strVar/idx/subrange/seqLen/byteAt/comb/optResVar/match_/is_/specCall) has NO field or tupleProj constructor. So these two arms have no Lean model AND no documented residual — the precise (iii) failure mode probe 2 targets.\n\nCORRECTION THE DOC MUST MAKE: add Field/TupleProj either as rows (with their Lean counterpart, if one is added) or as an explicit residual in 'What this inspection does NOT cover' (analogous to D3 Map / D4 guard arms — a Rust-encoder arm with no Lean S_C counterpart, inspection-only). As written the doc's AC-1 self-claim ('every arm ... is a row') is false.",
+      "created_at": "2026-06-09T21:22:47.566095063Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "c52ae222-f0c2-4a56-843e-c6fa199fdd59",
+      "author": "Yffe",
+      "content": "FIX PLAN (acto-fixer, doc-only single-file): close the AC-1 completeness gap honestly. ref_encode.rs::encode Expr::Field (result.x -> {r}.{name}) and Expr::TupleProj (result.0 -> {r}.{index}) are live arms with NO Lean Expr constructor (Ast.lean has field/tupleProj nowhere). CORRECT fix is an explicit RESIDUAL, not a fabricated correspondence row. Adding Discrepancy D6 (quoted arms + no-Lean-S_C-counterpart + consequence: per-run Z3 TV only, no T1 backing + future-brick note), Table 1H (exhaustive 15-arm encode inventory: rows or D6 or honest Err catch-all), the residual line in 'does NOT cover', and corrected AC-1/REQ-1 cells. No code/Lean change. lake build + cargo build --workspace stay green.",
+      "created_at": "2026-06-09T21:26:50.434672067Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "75118cd5-bb17-40b0-a376-ed1b28582a68",
+      "author": "Yffe",
+      "content": "RESULT (commit 1bea449d, main, NOT closed — critic re-audits). Single-file doc fix to .design/verified/rust-lean-correspondence.md. Added: (1) Discrepancy D6 — quotes the two live encode arms [Expr::Field {receiver,name} => Ok(format!(\"{r}.{name}\")) and Expr::TupleProj {receiver,index} => Ok(format!(\"{r}.{index}\"))], states the Lean Expr inductive has no field/tupleProj constructor (member access OUTSIDE S_C, like Map D3 / guards D4), the consequence (a contract using result.x/result.0 relies on per-run Z3 TV alone for that arm WITHOUT the Lean T1/ref_sound backing), and the future-brick note (extend S_C with field/tupleProj — same shape as the proven rewrites). D6 distinguished from D5 (D5 = exec-body obligation SHAPE). (2) Table 1H — exhaustive 15-arm encode inventory: IntLit/BoolLit/Path/Binary/Unary/Call/MethodCall/Index/Ref/Cast/Is/Match are rows, Field/TupleProj are D6, the trailing Err is the honest catch-all. No other uncovered arm. (3) Residual line in 'What this inspection does NOT cover' next to Map D3. (4) Corrected AC-1 + REQ-1 SHIPPED cell so the completeness claim is TRUE (D1-D6). NO code/Lean changes. Gauntlet green: cd lean && lake build = Build completed successfully (10 jobs); cargo build --workspace = Finished.",
+      "created_at": "2026-06-09T21:27:05.342184992Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "df702d8c-b4ff-4510-a98b-4d850d87c9c3",
+      "author": "Yffe",
+      "content": "FIXED (1bea449d, doc-only). D6 added: Expr::Field + Expr::TupleProj quoted, classified honest inspection-only residual (no Lean field/tupleProj constructor — same class as Map D3/guards D4), consequence stated (result.x/result.0 contracts rely on per-run TV without Lean T1 backing for that arm), future-brick note (extend S_C with field/tupleProj + ref_sound case + negative lemma, promoting D6 to T1-backed). Table 1H added: exhaustive 15-arm encode dispatch inventory (IntLit/BoolLit/Path now rowed; Err catch-all = the faithful out-of-S_C boundary). AC-1 corrected and now TRUE. Verified directly against the actual encode() match (L224-259) — 1:1 with the critic's pinned enumeration. Builds green, no code touched.",
+      "created_at": "2026-06-09T21:28:02.876809592Z",
+      "kind": "result"
+    }
+  ]
+}

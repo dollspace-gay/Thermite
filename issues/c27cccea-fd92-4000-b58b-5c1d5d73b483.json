@@ -1,0 +1,30 @@
+{
+  "uuid": "c27cccea-fd92-4000-b58b-5c1d5d73b483",
+  "display_id": 163,
+  "title": "thermite-tv/verified: step 2.2.2 LOOP body state-refinement — the after-loop state needs the loop invariant / bounded unrolling / a fixpoint. KERNEL-GATED (frozen subset prereq). Candidate approaches: (a) TV the single-iteration state-step + rely on production invariant; (b) bounded unrolling for a small bound. .design/verified/exec-stmt-tv.md REQ-4 horizon.",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:53:30.186743655Z",
+  "updated_at": "2026-06-09T23:28:56.332844386Z",
+  "closed_at": "2026-06-09T23:28:56.332844386Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "66f6835b-3c05-40b9-ad5e-1b6fc2bb8a69",
+      "author": "Yffe",
+      "content": "Authored .design/verified/loop-tv.md — step 2.2.2 LOOP TV design. Architecture: a variant of (a) — three per-run Z3 obligations (entry / preservation / exit = inv AND not-cond) reusing the SHIPPED single-iteration body_ref_state step, plus a Lean PARTIAL-CORRECTNESS WHILE-RULE (new Exec/Loop.lean) extending the Faithfulness.lean h_tv capstone. (b) bounded unrolling DROPPED for v1 (future v0.2 L2 fallback for invariant-free loops). v1 frozen subset: single while + declared inv/dec + straight-line scalar body; loop-kind/break/continue/mid-body-return/nested/non-scalar OUT (Skipped honestly). Termination is the per-run Verus decreases residual (partial correctness is the honest v1). 5 REQs all NOT-STARTED (doc is the design prereq). exec-stmt-tv.md REQ-4 pointer updated FRAMED -> NOW DESIGNED. Doc-only; commit to main, no push, no close.",
+      "created_at": "2026-06-09T22:30:55.910218080Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "e33dd76c-7db3-4d70-b215-935c66b6ee64",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean across the full arc. (design 5cf61ff8) loop-tv.md: approach (a) — three per-run Z3 obligations + a Lean-proven while-rule; v1 freeze = single while+inv+dec, straight-line body, last-before-tail; partial correctness (termination = the per-run Verus decreases residual). (increment i, 21b84c5f) Rust: loop_ref_obligations + ENTRY/PRESERVATION/EXIT obligations reusing the shipped body_ref_state; loop_teeth 11 tests vs REAL Verus (faithful 1-verified-0-errors; lo+2 mutant caught postcondition-not-satisfied; exit over-claim caught assertion-failed; 5 out-of-subset forms honestly Skipped); critic clean incl. an independent 3-mutant battery + the missed-cell hunt (branch-mutated cells honestly Skipped). (increment ii, 65504c18) Lean Exec/Loop.lean: WhileLoop around the UNTOUCHED proven blockThread (faithful to the Rust separate-form architecture), fuel-indexed loopDenote, theorem while_rule by genuine fuel induction + tv_meta_loop (the h_tv capstone pattern), L2/L3 negative mirrors + the L1 witness; [propext,Quot.sound]; critic clean on the two subtle cruxes (premise directionality Z3=>h_pres; cond-none propagates, no exit-on-overflow hole). Increment (iii) = the forge wiring = #162 (REQ-5, stays open there).",
+      "created_at": "2026-06-09T23:28:48.022815291Z",
+      "kind": "result"
+    }
+  ]
+}

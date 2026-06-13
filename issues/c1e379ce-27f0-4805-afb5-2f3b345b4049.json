@@ -1,0 +1,23 @@
+{
+  "uuid": "c1e379ce-27f0-4805-afb5-2f3b345b4049",
+  "display_id": 208,
+  "title": "Divergence: proof-backends.md REQ-7 staleness/REQ-2(d) evidence key omit the engine-toolchain + Lean-spine versions (and misquote cache_key as hashing ast_slice+env)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:54:05.402014069Z",
+  "updated_at": "2026-06-10T22:51:18.399277831Z",
+  "closed_at": "2026-06-10T22:51:18.399277831Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "aa6501b7-d6d0-42e4-9df6-d3e9137c7007",
+      "author": "Yffe",
+      "content": "Doc §4(ii): 'STALENESS is defined as the obligation hash CHANGING (the ast_slice + env hash, the same content the cache keys)'. Code: cache::cache_key hashes FIVE inputs — lowered source, seed, verus_version, thermite_version, CHECK_SCHEMA_VERSION (cache.rs REQ-1/REQ-5, blocker #49) — not ast_slice+env, so the parenthetical is a misquote. Substantively: the shipped key's version-keyed invalidation (verus_version; CHECK_SCHEMA_VERSION for gate changes) has NO Lean analog anywhere in the doc — §2(d) adds only 'an engine discriminator'. An obligation-hash-only key lets a cached Proven evidence be re-served after (1) a Lean toolchain/mathlib/Lean-SMT bump or (2) a change to the lean/Thermite/ spine definitions the exported theorem instantiates — a stale proof silently revalidated, violating the hit==fresh-verify invariant (cache.rs REQ-2) the design claims to generalize. CI replay does not save the cacheable-EVIDENCE path (a cache hit skips replay). Correction: evidence_key = obligation hash + engine + engine toolchain version(s) + the targeted spine content hash; REQ-7 staleness likewise.",
+      "created_at": "2026-06-10T18:54:27.105068363Z",
+      "kind": "observation"
+    }
+  ]
+}

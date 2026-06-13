@@ -1,0 +1,30 @@
+{
+  "uuid": "30ff7114-7a1d-4bc7-84ef-b67ca07d5a7a",
+  "display_id": 95,
+  "title": "C7 (Result/Option built-in with payload-in-contract): parse_u64 (String->u64, #94 C4) needs a built-in Option<u64>/Result<u64,ParseErr> return + 'result is Some'/payload-projection in a contract (ens result is Some ==> parse_be(s) == <payload>). The Thermite surface has user enums + Expr::Is + match, but NO enum-payload projection in the spec sublanguage (no result->Some_0; Expr::Field is struct-only). GROUNDED in verus: parse_u64 -> Option<u64> verifies 5/0 (parse_be round-trip ens, loud None on non-digit/overflow/empty), broken Some(0) FAILS 1 err. push_byte/from_byte + u64_to_string (round-trip parse_le==n, 9/0) ship now under #94; parse_u64 DEPENDS-ON this C7 prereq.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T04:22:56.159084505Z",
+  "updated_at": "2026-06-07T08:25:33.819919344Z",
+  "closed_at": "2026-06-07T08:25:33.819919344Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "2f49e7e6-a8be-432d-a3bf-3d04eb16ec51",
+      "author": "Yffe",
+      "content": "C7 builder: seed Some/None/Ok/Err as built-in variants in Validator::new (the ONE validator gap — construction/match/is then accept; the spec-match-in-ens reuses the SHIPPED flat-Match cage, no new rule). Add dedicated Type::Option(Box) + Type::Result(Box,Box) AST nodes (OQ-1: Option STOPS being a string-named Generic — ripple fixed at the mutation.rs reader; the first two-arg type) + parse_type Option/Result arms. lower_type → Verus-native Option<T>/Result<T,E> (no wrapper; qualify_variant_path already leaves built-ins bare). Emit parse_u64 via emit_parse_defs/program_uses_parse mirroring the C4 numfmt pattern (Horner loop + is_digit/all_digits/parse_be spec fns + three handled-or-loud None arms + round-trip ens; parse_be deduped with numfmt). GENERATED_SPEC_FNS += all_digits/is_digit. Type-match ripple handled honestly across lower/l1/l2/check/review/mutation/skill (no wildcard). Grounded with real verus: Option/Result construct+payload 5 verified 0 errors, parse_u64 5/0, broken Some(0) FAILS. 07-strings.md REQ-9 → SHIPPED.",
+      "created_at": "2026-06-07T07:30:33.236993568Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ce683444-4e98-433a-a5b0-855423f0d2d4",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (bcd5ede C7 + a7f743a parse_u64 strengthening). Built-in Option/Result construct (Some/None/Ok/Err reuse the enum machinery), Result<T,E> two-arg type, payload-in-contract via spec-match-in-ens (ens match result { Some(v) => ..., None => true }), and parse_u64 STRENGTHENED to caller-usable (all_digits(s) && in-range ==> result is Some && round-trip; None ==> !all_digits || empty || overflow) + the owned-String &s exec auto-ref. Critic NO DIVERGENCE: payload projection genuine (wrong payload -> L0), parse_u64 no-cheat (34-verified golden, wrong-value fails, Some-guarantee mutation-killable -> L3), owned-String auto-ref sound, oracle-compare R-CHAR-3-honest. External oracle landed (option_result + parse_u64 .th/.cert.json/.verus.rs goldens, #100). 605 tests. Deferred: #101 (§7 equivalent-mutant exclusion, surfaced by forced-None refusal); combinators + ? (ergonomic).",
+      "created_at": "2026-06-07T08:25:25.305377495Z",
+      "kind": "result"
+    }
+  ]
+}

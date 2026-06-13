@@ -1,0 +1,30 @@
+{
+  "uuid": "28331920-83b7-4073-92ed-02cb53705c61",
+  "display_id": 52,
+  "title": "Boundary-fn composition: emit verus-assumable signatures so a caller verifies through a boundary contract (§9)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T08:34:47.196810970Z",
+  "updated_at": "2026-06-05T17:38:25.314806554Z",
+  "closed_at": "2026-06-05T17:38:25.314806554Z",
+  "labels": [
+    "enhancement"
+  ],
+  "comments": [
+    {
+      "uuid": "e8d6644b-f57a-4bd0-9e7c-371603ea3666",
+      "author": "Yffe",
+      "content": "Discovered during #17. §9 composition rule: a pure-Thermite caller of a #[boundary] (or #[slag]) fn should VERIFY through the callee's CONTRACT (g's cert valid independent of f's body). Currently a boundary-caller fails at L0: forge's L3 lowering does not emit the boundary fn as a verus-assumable signature, so verus sees an undefined callee. To make 'verified to the boundary' an achievable STATUS (not just a syntactic label on a failed cert), thermite-lower must emit each boundary/slag fn referenced by a caller as a verus assume-spec signature (req->requires, ens->ensures, no body / external_body) in the caller's sub-program. Demonstrated: caller calling ext_id -> L0 (scope correctly to_boundary via ext_id, but unverified). #17 ships the CLASSIFICATION (correct + orthogonal to level per the oracle); this composition lowering is the separate piece that lets the caller actually reach verified-to-the-boundary.",
+      "created_at": "2026-06-05T08:34:59.811998780Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "0ed8d01e-9335-4896-b00d-eff5aed45bfc",
+      "author": "Yffe",
+      "content": "SHIPPED — §9 boundary-composition lowering: verified-to-the-boundary is now an achievable STATUS, not just a #17 label. closure.rs reachable_in_file_fns (reuses the private CallGraph DFS); check.rs item_subprogram weaves a caller's transitively-reachable in-file fns (regular callees REAL body; boundary/slag callees as external_body signatures); lower.rs lower_external_body_fn emits #[verifier::external_body] + requires/ensures, GATED strictly on boundary.is_some()||slag.is_some(). A caller proves THROUGH the assumed contract -> L3 + scope to_boundary (was L0); the boundary fn itself stays L1+flag (scope orthogonal to level). HONESTY GATE (R-DEFER-9): external_body ONLY for declared boundary/slag — a lying REGULAR fn (standalone or woven as a dependency) is still CAUGHT (L0 counterexample, never laundered); critic-proven (lowered-string external_body count=1, only on the boundary fn). Soundness: a caller must discharge the callee's req + prove its own ens (req-violating/over-claiming -> counterexample). Loop: doc-author -> builder (stopped at manifest boundary -> authorized closure.rs) -> critic NO DIVERGENCE. Live: caller->L3+to_boundary; ext_id->L1; bad(req true)->L0; liar(regular)->L0. Commit 5931ec3. workspace tests 0 failed, clippy/fmt clean. corpus L3 end-to-end (no external_body), goldens stable. Note: over-claiming-caller behaves correctly (L0) but not yet pinned in the oracle (coverage gap). Not pushed.",
+      "created_at": "2026-06-05T17:38:13.989085459Z",
+      "kind": "result"
+    }
+  ]
+}

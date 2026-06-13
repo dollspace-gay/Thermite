@@ -1,0 +1,24 @@
+{
+  "uuid": "07d43ddb-b41d-4988-98f7-2f8249ab12eb",
+  "display_id": 282,
+  "title": "RFC-1 (GH issue 2) compatibility review: check open work (271/272/273/275/280) + recent arcs against the Thermite 2 design",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T20:09:04.568729106Z",
+  "updated_at": "2026-06-12T20:12:08.089047828Z",
+  "closed_at": "2026-06-12T20:12:08.089046459Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "1878f297-6198-4585-bd8b-a97bf5a1c0ed",
+      "display_id": 572,
+      "author": "Yffe",
+      "content": "Result: full compatibility review of RFC-1 + stage-2 metatheory + program plan + Appendix A (all baselined at 93d3cbc0, predating our entire #257-#281 run). VERDICTS: #275/#280 no conflict (bug fixes to machinery the RFC keeps verbatim — 'the cage battery is Thermite 1's, unchanged'; pre-M1 debt in spirit). #271 no conflict (additive report-only cert field; coordinate with stage-1 schema-v2 work). #273 no conflict (orthogonal; MORE valuable run pre-T2 as baseline). #272 BUILD = the one strategic collision: increment (vi)'s flagship payoff (binary_search into the Lean auto tier) is superseded in T2 — §7B certifies binary_search at L4 via the stratified cage; stage 3 de-trusts Z3 via kernel RECONSTRUCTION, not parallel re-proof — recommend HOLD the build, keep the design as recorded alternative. Shipped work all carries forward: exporter (iv/v + #279/#281) is stage-1's 'forge front door' substrate; EngineAttribution seeds the §9 engine/trust block; mutation families enrich the catalogue re-elaboration mutation reuses; doc-drift discipline serves the correspondence-doc needs; lean_fragment audit report is a precursor of the routing-reason vocabulary. GAP the RFC surfaces that we independently hit at #265: NO Lean CI job (pre-M1 debt, real). Stale in the RFC's debt table: #148 already closed 06-08. Open question to put to the RFC thread: the LeanAuto exec-body second-engine path ((iv)/(v), --engine lean|auto, disagreement alarm) postdates the baseline and has no named place in T2 — needs an explicit slot or a deliberate sunset decision.",
+      "created_at": "2026-06-12T20:11:51.099896111Z",
+      "kind": "result"
+    }
+  ]
+}

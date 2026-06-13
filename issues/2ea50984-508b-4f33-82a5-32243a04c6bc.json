@@ -1,0 +1,30 @@
+{
+  "uuid": "2ea50984-508b-4f33-82a5-32243a04c6bc",
+  "display_id": 73,
+  "title": "Stage 4 — bounded collections: Vec<T> (capacity + element invariants, push/pop/get/len) over vstd Vec",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T16:35:28.580760526Z",
+  "updated_at": "2026-06-06T17:27:26.931903544Z",
+  "closed_at": "2026-06-06T17:27:26.931903544Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "23c30b3e-b57c-4fac-a719-442beb0711f6",
+      "author": "Yffe",
+      "content": "Stage 4 bounded Vec<T> (epic #62). Plan: add Type::Vec(Box<Type>) mirroring Type::Box (ast.rs); parse the contextual Vec ident (parser.rs); add  to BUILTIN_METHODS so the no-OOB accessor validates flat in the §4.2 cage (validator.rs); lower Vec<u64> to the GROUNDED TVecU64 newtype over vstd::vec::Vec<u64> with well_formed/len/spec_get + no-OOB get + capacity-preserving push using final(self), emitted once per element type, with spec-position v.get(i) → v.spec_get(i as int) (lower.rs). fx alloc rides effect-subsumption (push is an intrinsic). Verify against the oracle conformance/vec_demo.th + collections/cases.json with real verus (checked_get L3/pure, push_one L3/alloc, oob_get_no_req → L0 fail) in collections_conformance.rs + golden vec_demo.verus.rs. Map<K,V> + element invariant deferred to v1.1. Minimal honest Type::Vec arms added to the downstream exhaustive Type matches (l1/l2/check/review). Do NOT close #73 — critic re-audits.",
+      "created_at": "2026-06-06T16:52:18.193125817Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "f1f762aa-5f88-47da-bc84-55826df4bb74",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (a48d2a1 Vec, b3c30c7 the #74 fix). Bounded Vec<T> (Type::Vec, a newtype TVecU64 over vstd::vec::Vec<u64> with well_formed len<=CAP). checked_get -> L3 pure (no-OOB accessor; req i<v.len() genuinely load-bearing, off-by-one -> L0); push_one -> L3 alloc (capacity-preserving, final(self) ens). Critic confirmed crux sound (bounds-checked get, real capacity invariant, no cheat, no regression) + found #74: push_one was L0 because the #12 mutation scorer couldn't synthesize a Vec-return mutant (0/0 -> #48 backstop -> WeakContract) -> fixed by synthesizing an empty-Vec early-return mutant (the #48-analog: empty Vec -> ens len==v.len()+1 false -> killed -> 1/1 -> L3); anti-Goodhart intact (weak Vec contract still WeakContract); CHECK_SCHEMA_VERSION 2->3 (the #49 cache-invalidation contract). Element invariant (Vec<Account>) + Map DEFERRED to v1.1. workspace 480 tests. Stage 4 complete.",
+      "created_at": "2026-06-06T17:27:15.270575527Z",
+      "kind": "result"
+    }
+  ]
+}

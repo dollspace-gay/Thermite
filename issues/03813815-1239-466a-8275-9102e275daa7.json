@@ -1,0 +1,38 @@
+{
+  "uuid": "03813815-1239-466a-8275-9102e275daa7",
+  "display_id": 14,
+  "title": "Add strengthening probes that suggest tighter contracts",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:47.963313596Z",
+  "updated_at": "2026-06-05T07:33:44.041665690Z",
+  "closed_at": "2026-06-05T07:33:44.041665690Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "2a6a2885-bfc0-4054-a204-264b313b22d0",
+  "comments": [
+    {
+      "uuid": "072865c2-4e08-45b0-b2bd-526abff94f6a",
+      "author": "Yffe",
+      "content": "Critic adversarial audit of strengthening probes (commit 3376538). Plan: add an INDEPENDENT adoptability re-verify (forge/tests/divergence_strengthen.rs) that, for each family-2 template shape, adopts every surfaced suggestion as the ens over the same body and re-checks through forge's own lowering+verus pipeline; each must certify L3 (R-DEFER-1 / REQ-2). Commit the regression guard.",
+      "created_at": "2026-06-05T07:32:07.942655332Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "3d159e5e-59f1-49d5-b88d-18941f586efb",
+      "author": "Yffe",
+      "content": "Audit complete (commit a2ef0ec). NO DIVERGENCE FOUND. Verified live against verus 0.2026.05.24.ecee80a: (1) every surfaced suggestion is ADOPTABLE (family-2 shapes result==a-b, result==a, result==a+b all certify L3 on adoption — no vaporware, R-DEFER-1); (2) the probe never changes the verdict (level/reject/effects/slag stable, oracle_subset excludes strengthening); (3) the tight corpus sum yields NO suggestion and stays L3; (4) deterministic across runs; (5) no panics in production strengthen.rs. Cardinal: git diff over conformance/ and tests/golden is empty. Gauntlet: forge 184/0, workspace 302/0, clippy+fmt PASS. Note (not a divergence — consistent with the documented depth-1 frozen template REQ-1 family 2): a 3-input body like {a+b+c} surfaces NO suggestion because the grammar only forms 2-parameter binaries; a natural follow-on, not a bug.",
+      "created_at": "2026-06-05T07:32:38.726853746Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "6e11392a-731d-4961-82ab-c78fb8618406",
+      "author": "Yffe",
+      "content": "SHIPPED — strengthening probes (§7 step 5). strengthen.rs: a frozen bounded (CANDIDATE_CAP=16) candidate-clause template (result==spec_fn(params); result==<depth-1 expr over params>; survivor-derived bound), each VERIFIED against the real body (run_verus, #8-cached), surfaced ONLY if it verifies AND is strictly stronger (kills a #12 survivor / narrows). ADVISORY — never changes the verdict (additive oracle-excluded strengthening field + suggested_move headline). Loop: doc-author -> builder -> critic NO DIVERGENCE: every surfaced suggestion independently re-verified adoptable (no vaporware, R-DEFER-1); verdict unchanged; no false suggestion on tight contracts (sum -> none); deterministic; no panic. Live: weak ens result<=1000000 {a+b} -> suggestion result==a+b (kills early-return-0 survivor); sum -> none. Commits 3376538 + a2ef0ec (critic guard). forge 184 tests, workspace 302, clippy/fmt clean. Noted (not a divergence): depth-1 template means 3-input bodies get no suggestion (design-sanctioned). Not pushed.",
+      "created_at": "2026-06-05T07:33:35.670919102Z",
+      "kind": "result"
+    }
+  ]
+}

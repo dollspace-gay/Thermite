@@ -1,0 +1,37 @@
+{
+  "uuid": "28755d7c-2a50-4809-bd38-65504ac2523d",
+  "display_id": 165,
+  "title": "Divergence: thermite_tv::exec_stmt_encode::thread_stmt rejects the GROUNDED AC-4 if-statement-mutation body as Unsupported",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T01:49:32.704460225Z",
+  "updated_at": "2026-06-09T02:37:51.121209889Z",
+  "closed_at": "2026-06-09T02:37:51.121209889Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "a5068c74-846c-4ebb-95b8-5ced65c6124b",
+      "author": "Yffe",
+      "content": "Failing test at thermite-tv/tests/divergence_ac4_if_stmt_mutation.rs::divergence_ac4_if_stmt_mutation_obligation_builds demonstrates the divergence: body_equivalence_obligation returns Err(Unsupported) from thread_stmt's Stmt::If arm for the GROUNDED AC-4 body { let mut r = x; if x < 10 { r = r + 1; } else { r = r + 2; } r }. Authority: .design/verified/exec-stmt-tv.md REQ-1 (if-statement IS in the frozen subset) + AC-4 (grounded verified:1, errors:0 — re-confirmed against verus 0.2026.05.24 this audit: 1 verified, 0 errors). Production lower_exec_body lowers the body fine (lower_block_inner Stmt::If arm); only the TV reference rejects it, so the GROUNDED-as-verified AC-4 body cannot be discharged through 2.2.1 TV. Test is #[ignore = blocker #165].",
+      "created_at": "2026-06-09T01:50:57.335907677Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "9d9607b6-aae6-42ec-a34c-b960a958611e",
+      "author": "Yffe",
+      "content": "FIXED. Root cause: thermite_tv::exec_stmt_encode::thread_stmt's Stmt::If arm unconditionally returned RefEncodeError::Unsupported, so the GROUNDED AC-4 if-statement-mutation body { let mut r = x; if x < 10 { r = r + 1; } else { r = r + 2; } r } could not be encoded by body_ref_state / body_equivalence_obligation, despite .design/verified/exec-stmt-tv.md REQ-1 listing Stmt::If as IN the frozen 2.2.1 subset and AC-4 grounding it verified:1.\n\nFix (single file thermite-tv/src/exec_stmt_encode.rs): extended the Stmt::If arm to thread an if-STATEMENT as the REQ-2 state-transformer. Each branch's stmts thread into a COPY of the current env (a NEW thread_branch helper, recursive so nested if-statements compose and an out-of-subset branch construct propagates its honest Err; absent else == identity). For each in-scope cell either branch mutated, the post-if value becomes the Verus if-EXPRESSION if <cond> { <then-cell> } else { <else-cell> } composing the two branch states (a cell mutated in neither branch is left untouched; a branch-local let does not leak). encode_value now substitutes the env FIRST so a tail naming an if-composed cell dispatches on the composed Expr::If; the if-condition is stripped of one redundant enclosing paren; an identity (bounded) arm is coerced as int to type-unify with an arithmetic (int) arm (no-else case).\n\nVerified vs real verus 0.2026.05.24: AC-4 faithful VERIFIES (1 verified, 0 errors); swapped-branch CAUGHT (postcondition not satisfied); no-else faithful VERIFIES; nested if VERIFIES; loop-in-branch -> honest Unsupported. divergence_ac4_if_stmt_mutation (un-ignored) PASSES; B1-B4 + teeth + pins green. cargo tree -p thermite-tv = syntax + spec only. thermite-lower untouched.\n\nGauntlet: build --workspace OK; test --workspace 752 passed, 0 failed, 0 ignored; clippy --workspace --all-targets -D warnings clean; fmt --all --check clean.",
+      "created_at": "2026-06-09T02:33:42.648266736Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "019410e3-a04d-4799-b2dc-5ef9d790cd13",
+      "author": "Yffe",
+      "content": "Plan: extend thread_stmt's Stmt::If arm to thread if-STATEMENT branch mutations into the state env (thread_branch per branch into an env copy; each mutated cell -> if cond { then-cell } else { else-cell }; absent else = identity; nested handled; out-of-subset branch -> propagate Unsupported). Landing the fixer's staged fix from the main context (the subagent commit hit a work-check stdin glitch).",
+      "created_at": "2026-06-09T02:37:06.996634675Z",
+      "kind": "plan"
+    }
+  ]
+}

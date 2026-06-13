@@ -1,0 +1,30 @@
+{
+  "uuid": "9cdf82c8-7db7-4c2e-aeec-5d0fab7b531b",
+  "display_id": 168,
+  "title": "audit harness: one-command make audit (faithful L3 + falsification + third-party Verus re-check) so a skeptic reproduces the L3 claim from source",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T13:41:15.338079869Z",
+  "updated_at": "2026-06-10T02:59:43.059517551Z",
+  "closed_at": "2026-06-10T02:59:43.059517551Z",
+  "labels": [
+    "infra"
+  ],
+  "comments": [
+    {
+      "uuid": "80f5e70e-3bdc-4b1d-b4f0-5f22ea09e758",
+      "author": "Yffe",
+      "content": "Plan: add scripts/audit.sh + a Makefile 'audit' target + a README 'Auditing the claim' section. The script builds forge from source then runs A (faithful binary_search -> L3), B (inject return Some(mid+1) -> REFUSED, postcondition not satisfied), D (third-party verus directly on the emitted golden, forge excluded -> 2 verified 0 errors), with PASS/FAIL verdicts + a non-zero exit on any failure. Verified end-to-end: make audit -> AUDIT PASSED, exit 0.",
+      "created_at": "2026-06-09T13:47:23.146524159Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "c1e384c0-cee7-4a56-abbd-773e7bd7cabf",
+      "author": "Yffe",
+      "content": "COMPLETE (shipped earlier this arc): Makefile 'make audit' + scripts/audit.sh — builds forge from source, (A) faithful binary_search certifies L3, (B) the same program with the injected wrong-index bug is REFUSED (postcondition not satisfied), (D) the emitted proof re-verifies under THIRD-PARTY verus with forge excluded (2 verified, 0 errors). Verified end-to-end: AUDIT PASSED exit 0. README 'Auditing the claim' section documents it (refreshed post-spine in 7bc94048).",
+      "created_at": "2026-06-10T02:59:31.937926591Z",
+      "kind": "result"
+    }
+  ]
+}

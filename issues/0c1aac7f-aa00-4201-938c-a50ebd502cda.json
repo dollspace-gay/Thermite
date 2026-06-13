@@ -1,0 +1,30 @@
+{
+  "uuid": "0c1aac7f-aa00-4201-938c-a50ebd502cda",
+  "display_id": 35,
+  "title": "Divergence: thermite-spec validator walks fn BODY through cage; corpus binary_search.th fails AC-2 (Some() rejected)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T21:03:10.874241415Z",
+  "updated_at": "2026-06-04T21:10:17.804478339Z",
+  "closed_at": "2026-06-04T21:10:17.804478339Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "dbcc46cd-6cce-43a9-aa40-7085deeee457",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-spec/tests/divergence_spec.rs::divergence_corpus_binary_search_validates_clean and ::divergence_enum_ctor_in_fn_body_is_not_a_contract_position demonstrate the divergence (run with --include-ignored). Root cause: Validator::walk_block -> walk_stmt -> walk_expr applies the SpecTherm cage to ordinary fn-BODY statement expressions, but REQ-3 enumerates contract positions as Contract.req/ens, LoopNode.invs/dec, SpecFnItem.body only -- a fn body is NOT a contract position (only its nested loop inv/dec are). The body stmt 'return Some(mid);' is Expr::Call{callee:Path([Some])} and is rejected as UnknownCombinator. walk_block's own doc-comment says a fn body is not a contract position but the code does not honor it. Authority: .design/spec/spectherm-combinators.md AC-2 + REQ-3; goal.md (corpus is hand-certified external truth).",
+      "created_at": "2026-06-04T21:03:46.286158047Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "7b86704b-7d47-4d8d-bf3e-f54c27d547a9",
+      "author": "Yffe",
+      "content": "Fixed in eae38c3 (thermite-spec/src/validator.rs). Root cause: validator cage-checked ordinary fn-BODY statement expressions (walk_block->walk_stmt->walk_expr), rejecting 'return Some(mid);' as UnknownCombinator. Fix: separated STRUCTURAL traversal from CAGE-CHECKING — new scan_block_for_loops/scan_stmt_for_loops/scan_expr_for_loops descend a fn body ONLY to find nested LoopNodes and cage each loop's invs/dec; the body's other expressions are NOT cage-checked. run() now calls scan_block_for_loops(&f.body) for fn items; spec fn bodies keep the caged walk_block (REQ-3). Authority: .design/spec/spectherm-combinators.md REQ-3 + AC-2. Verify: the two #35 tests now PASS (un-ignored); both corpus programs validate Ok; cargo test -p thermite-spec 8 passed 0 failed 0 ignored; clippy/fmt/workspace-build PASS; inv/dec/spec-fn-body bogus-combinator rejection still works.",
+      "created_at": "2026-06-04T21:10:00.898664611Z",
+      "kind": "result"
+    }
+  ]
+}

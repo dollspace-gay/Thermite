@@ -1,0 +1,30 @@
+{
+  "uuid": "706106a0-ac70-48eb-9081-4ec0614327af",
+  "display_id": 96,
+  "title": "Divergence: thermite-lower u64_to_string emits LSB-first (42 -> \"24\"), 07-strings.md REQ-8 mandates MSB-first display",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T05:10:48.692256800Z",
+  "updated_at": "2026-06-07T05:33:03.926725646Z",
+  "closed_at": "2026-06-07T05:33:03.926725646Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "4338d8a5-e8c8-4a89-a11d-8b6feb73d8f0",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_numfmt_display_order.rs::divergence_to_string_display_order_msb_first.\n\nAUTHORITY: .design/basis/07-strings.md REQ-8 — 'The surface emits the human-readable MSB-first decimal (the construction is LSB-first; the display form reverses — parse_be(reverse(s)) == parse_le(s) proved ...)'. The Summary names the consumers: the editor's ANSI cursor coords (ESC[<row>;<col>H) and a number formatter/calculator.\n\nTOOLCHAIN: thermite-lower/src/lower.rs emit_numfmt_defs and thermite-lower/src/l1.rs emit_string_runtime_l1 build u64_to_string by pushing (m%10)+48 then m/=10 and return the buffer UN-reversed (LSB-first). The L1 comment claims 'reversed at the end to the human-readable MSB-first decimal' but there is NO reversal in the emitted code.\n\nINPUT/EXPECTED/ACTUAL: forge build a formatter on n==42; run it. EXPECTED (REQ-8 MSB-first): bytes [52, 50] ('4','2' == \"42\"). ACTUAL: [50, 52] ('2','4' == \"24\"). Empirically confirmed by running the built binary.\n\nThe round-trip proof (parse_le(result@) == n) is GENUINE and non-vacuous (parse_le is itself LSB-first, so a reversed buffer still parses back to n — proven-but-wrong-output). No proof cheat (no assume/external_body/admit). push_byte/from_byte sound (length + non-vacuous element-frame contract). L3 and L1 agree byte-for-byte (both LSB-first) so this is NOT an L3/L1 mismatch — it is the display-order gap. Fix direction: build MSB-first via parse_be round-trip, OR reverse the buffer + carry the proved parse_be(reverse(s))==parse_le(s) bridge.",
+      "created_at": "2026-06-07T05:11:08.220359500Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "8c6979db-3ac7-425b-b45f-a82ccc020d00",
+      "author": "Yffe",
+      "content": "FIXED — u64_to_string now emits human-readable MSB-first decimal (REQ-8).\n\nROOT CAUSE: the divide/mod-by-10 loop builds LSB-first and the buffer was returned UN-reversed (42 -> [50,52] == \"24\"); the L1 doc-comment claimed 'reversed at the end' but the code never reversed.\n\nFIX (cause, not symptom): build LSB-first (the PROVEN parse_le(data@)==n loop, unchanged), then REVERSE to MSB-first. Surface contract becomes ens parse_be(result@) == n. The proof is carried by the bridge lemma_parse_be_reverse: parse_be(seq_reverse(s)) == parse_le(s), proved by induction (lemma_parse_be_push + =~= extensionality + nonlinear_arith). NO assume/external_body/admit — the reverse + bridge are PROVED. GROUNDED 17 verified, 0 errors.\n\nFiles: thermite-lower/src/lower.rs (emit_numfmt_defs: parse_be/seq_reverse spec fns + two bridge lemmas + reverse loop + parse_be contract; GENERATED_NUMFMT_SPEC_FNS += parse_be), thermite-lower/src/l1.rs (data.reverse() in runnable u64_to_string + runnable parse_be), thermite-spec/src/validator.rs (GENERATED_SPEC_FNS += parse_be), plus the two forge test fixtures (parse_le -> parse_be; expected output [50,52] -> [52,50]).\n\nVERIFY: forge check 'ens parse_be(result) == n' -> L3, mutants 1/1, non-vacuous, 27 obligations discharged. Built formatter RUNS: 42 -> [52,50]=='42', 100 -> [49,48,48]=='100', 7 -> [55]=='7', 0 -> [48]=='0'. L3==L1 (both reverse).\n\nGAUNTLET: cargo build --workspace clean; cargo test --workspace 587 passed, 0 failed (incl. un-ignored divergence_to_string_display_order_msb_first + all 5 string_format_conformance); cargo clippy --workspace --all-targets -D warnings clean; cargo fmt --all --check clean.",
+      "created_at": "2026-06-07T05:32:34.702833853Z",
+      "kind": "result"
+    }
+  ]
+}

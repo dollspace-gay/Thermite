@@ -1,0 +1,37 @@
+{
+  "uuid": "bf2552d9-0f7b-4a72-9669-82a0332e3c4c",
+  "display_id": 66,
+  "title": "Divergence: thermite-spec validator accepts non-exhaustive match over a declared enum with a lowercase variant (handled-or-loud false ACCEPT, REQ-5/REQ-12)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T12:17:21.039312768Z",
+  "updated_at": "2026-06-06T12:26:03.983513072Z",
+  "closed_at": "2026-06-06T12:26:03.983513072Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "586d653f-a3bf-4d77-8a2d-cb96383eb6a2",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-spec/tests/divergence_adt_validate.rs::divergence_lowercase_variant_bypasses_exhaustiveness and ::divergence_lowercase_arm_masks_unhandled_variant demonstrate the divergence.\n\nROOT CAUSE: parse_path_pattern (thermite-syntax/src/parser.rs) disambiguates a single-segment match-arm pattern into Pattern::Enum vs Pattern::Binding by FIRST-LETTER CASE alone ('an uppercase-initial single segment is a zero-field enum pattern', else a binding). But parse_enum places NO casing constraint on a variant DECLARATION (take_ident('a variant name')), so an enum may declare a lowercase variant. A lowercase variant named in a match arm parses as Pattern::Binding (a catch-all); variant_pattern_name returns None for it; check_match_exhaustiveness then infers no matched enum (or treats the arm as a wildcard), and a genuinely non-exhaustive match over a declared enum is ACCEPTED (Ok(())).\n\nAUTHORITY: .design/basis/01-adts.md REQ-5 (NonExhaustiveMatch{missing}) + REQ-12 (handled-or-loud compile-time tooth — 'a non-exhaustive match does not compile'). R-DEFER-9.\n\nCASE 1: enum E { foo, bar } ; match e { foo => 0 } -> expected NonExhaustiveMatch{missing:[bar]}, actual Ok(()).\nCASE 2 (worst): enum Shape { Circle(u64), Rect{w,h}, tri } ; match s { Circle(r) => r, tri => 0 } -> Rect modeled-but-unhandled, expected NonExhaustiveMatch containing Rect, actual Ok(()).\n\nThe fix root cause lies in the parser/validator boundary (variant-name casing is not load-bearing in the design); the validator must not treat a lowercase ident matching a declared variant as a catch-all. This divergence requires the generator/fixer to resolve; the failing tests are the block.",
+      "created_at": "2026-06-06T12:17:38.295881684Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "1b925fc0-914b-42fd-9f2d-aa5bba1ea030",
+      "author": "Yffe",
+      "content": "Plan: pin the divergence as two FAILING critic tests in thermite-spec/tests/divergence_adt_validate.rs (no production edits — critic role). The tests assert REQ-5/REQ-12's required reject (NonExhaustiveMatch) for a non-exhaustive match over a declared enum whose handled variant is lowercase, hand-derived per R-CHAR-3. Left un-ignored as a release blocker. Commit the failing tests as the audit artifact; the generator/fixer resolves the root cause at the parser/validator boundary.",
+      "created_at": "2026-06-06T12:18:07.608779219Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a3d169ef-6790-4f1f-bb33-2b8ef7f39efe",
+      "author": "Yffe",
+      "content": "Resolved in commit 9294377. Root cause closed at the ENUM DECLARATION per .design/basis/01-adts.md REQ-2: the declaration pre-pass Validator::new now rejects any enum variant whose first char is not is_ascii_uppercase() with SpecError::InvalidVariantCasing { name, span }, seeded into the error list BEFORE the body/contract walk. This makes the parser case-based single-segment pattern disambiguation (uppercase to Pattern::Enum, lowercase to Pattern::Binding) SOUND: no lowercase variant can exist, so a lowercase pattern ident is unambiguously a binding and can never masquerade as a catch-all masking a non-exhaustive match. check_match_exhaustiveness is unchanged. The 2 pinned bypass tests updated to expect InvalidVariantCasing{foo}/{tri} (R-CHAR-3; CORE pin holds, no silent accept); added positive companion exhaustiveness_intact_uppercase_nonexhaustive proving an UPPERCASE non-exhaustive match still yields NonExhaustiveMatch{missing:[Rect]}. Gauntlet: build --workspace green; test -p thermite-spec 0 failed; test --workspace 0 failed; clippy -D warnings PASS; fmt --check PASS.",
+      "created_at": "2026-06-06T12:25:59.996320856Z",
+      "kind": "result"
+    }
+  ]
+}

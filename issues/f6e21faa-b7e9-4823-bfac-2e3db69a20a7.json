@@ -1,0 +1,23 @@
+{
+  "uuid": "f6e21faa-b7e9-4823-bfac-2e3db69a20a7",
+  "display_id": 222,
+  "title": "Divergence: RATIONALE preamble drops the SOTA survey's novelty hedge for the caged quantifier fragment ('needs a targeted survey to confirm novelty')",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T20:14:50.825127285Z",
+  "updated_at": "2026-06-10T20:21:36.566162303Z",
+  "closed_at": "2026-06-10T20:21:36.566162303Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "563d59cc-84c6-4ac5-8b5c-cc8b0f7f917e",
+      "author": "Yffe",
+      "content": "RATIONALE preamble quotes the SOTA survey as recording all three novel pieces as 'GENUINE EXTENSION — no analogue in the surveyed verified-compilation literature'. That quote matches the anti-Goodhart battery row exactly, but the caged-quantifier-fragment row (.design/research/formal-methods-sota.md terminology map) reads 'no DIRECT analogue in the surveyed verified-compilation lit; NEEDS A TARGETED SURVEY TO CONFIRM NOVELTY'. The preamble flattens that hedge across all three claims (the combinator-cage entry's 'novel-by-absence' is closer but still drops the explicit caveat). A hostile reader who opens the cited survey sees the dropped qualifier — the marketing-overclaim charge, self-inflicted.",
+      "created_at": "2026-06-10T20:15:30.093909332Z",
+      "kind": "observation"
+    }
+  ]
+}

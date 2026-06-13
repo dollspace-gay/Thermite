@@ -1,0 +1,23 @@
+{
+  "uuid": "c4317cf2-b030-40d7-bda4-d782c70693fc",
+  "display_id": 150,
+  "title": "contract-TV residual construct coverage (tracked): ref_encode honestly Skips Option/Result ens-match clauses + String byte-view receivers + Map/Option fn signatures; extend coverage so binary_search Option-match-ens + map_kv signatures + string corpus are Checked not Skipped",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T21:49:26.845530495Z",
+  "updated_at": "2026-06-08T22:54:17.659729146Z",
+  "closed_at": "2026-06-08T22:54:17.659729146Z",
+  "labels": [
+    "enhancement"
+  ],
+  "comments": [
+    {
+      "uuid": "22417b48-c52b-4cd4-9e01-12ef9d372aa3",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (579d3d4). All three residual classes closed -> contract-TV TOTAL on the whole corpus: Option/Result match-in-ens, String byte-view receivers, Map/Option/Result frame binding. Critic NO DIVERGENCE: each class catches a unilateral misdispatch; atomic identical-text clauses safe; Map well_formed weave non-vacuous. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7, generated 200/200, all 0-skipped. No regression.",
+      "created_at": "2026-06-08T22:54:10.638459043Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "b89550fc-cc13-4fd6-92ab-783e9554082a",
+  "display_id": 157,
+  "title": "exec-TV coverage seam: the forge-level ExecVerdict::Divergent mapping is not directly asserted by a test (discharge is private + the faithful lowerer never triggers it; teeth bite at the obligation layer E1-E4). Add a forge-level end-to-end teeth (test-only fault-inject a wrong production -> assert Divergent)",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:36:56.533188933Z",
+  "updated_at": "2026-06-09T03:02:28.967591055Z",
+  "closed_at": "2026-06-09T03:02:28.967591055Z",
+  "labels": [
+    "enhancement"
+  ],
+  "comments": [
+    {
+      "uuid": "1c5c90c3-c37d-43af-8784-d6e5d23a742f",
+      "author": "Yffe",
+      "content": "Forge-level Divergent teeth landed (test-only). Added `#[cfg(test)] mod divergent_teeth` in forge/src/exec_tv.rs (+193 LOC, no production-logic change; `discharge` reached via `super::` — no visibility tweak needed since a child mod sees parent-private items).\n\nPins the forge classification mapping the obligation-layer E1-E4 teeth do not reach:\n- faithful_production_classifies_faithful: P=`a + b` (faithful) -> ExecVerdict::Faithful (positive control).\n- wrong_value_production_classifies_divergent: P=`a.wrapping_sub(b)` for `a + b` -> verus postcondition counterexample (errors>=1 arm) -> Divergent.\n- non_compiling_production_classifies_divergent: P=`n - 1 as u8` for `(n - 1) as u8` (#122 paren-drop, E0308) -> verus compile abort (!status.success no-results arm) -> Divergent.\n- degenerate_no_obligation_classifies_unverifiable: zero-obligation program (0 verified, 0 errors, success) -> Unverifiable (pins the Divergent-vs-Unverifiable boundary, the masking-path concern).\n\nVerified under real verus (all 4 ran, none hit the skip path). BOTH Divergent triggers covered (counterexample + non-compile).\n\nGauntlet: build OK; cargo test --workspace 756 passed, 0 failed; clippy -D warnings clean; fmt --check clean; cargo tree -p thermite-tv has no thermite-lower (N-version boundary intact).\n\ncontract_tv.rs has the analogous untested-Divergent seam (private `discharge` + `ClauseVerdict::Divergent`); deliberately NOT widened here (#157 is scoped to exec-tv) — left for its own blocker.",
+      "created_at": "2026-06-09T02:58:52.923758986Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "94bc9ca7-4758-4a87-8cd8-2cbca130406d",
+      "author": "Yffe",
+      "content": "Add a test-only forge-level Divergent teeth in forge/src/exec_tv.rs: a #[cfg(test)] mod that builds real exec obligations with a deliberately-wrong P_production and discharges them through the actual private `discharge` fn (reached via super::, no visibility tweak), asserting Faithful (control), Divergent via postcondition counterexample, Divergent via non-compile (#122 paren-drop), and Unverifiable for a degenerate zero-obligation program. No production-logic change. Gauntlet: build + test --workspace + clippy -D warnings + fmt --check + cargo tree -p thermite-tv (no thermite-lower).",
+      "created_at": "2026-06-09T03:00:10.737478973Z",
+      "kind": "plan"
+    }
+  ]
+}

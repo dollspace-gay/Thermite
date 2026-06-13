@@ -1,0 +1,37 @@
+{
+  "uuid": "678f5cfb-34af-47c2-a330-b533e51b327c",
+  "display_id": 243,
+  "title": "Divergence: lean_export.rs hard gate misses an UNDEFINED contract callee — wrong contract certifies Proven through the fuel-0 bottom (§4 mechanism 1)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T16:06:38.359295012Z",
+  "updated_at": "2026-06-11T17:07:26.856522015Z",
+  "closed_at": "2026-06-11T17:07:26.856522015Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "21ca141f-dbfd-4236-88cc-b399a8071985",
+      "author": "Yffe",
+      "content": "Pinned: lean/Thermite/PinExportUndefinedCallee.lean (kernel-checked). collect_expr_calls filters candidates through decls.contains_key, so a callee with NO in-program definition is invisible to BOTH gate directions in export_item AND to expr_has_spec_call/tier_of. Live repro: 'fn f(x: u64) -> u64 req true ens result == mystery(x as int) as u64 fx pure { 0 }' exports Ok{FuelFreeAuto, registry=[]} instead of Err(IncompleteRegistry([mystery])); the emitted theorem carries Expr.specCall \"mystery\" at fuel 0 (intVal bottom 0), lake kernel-ACCEPTS it, LeanEngine::discharge returns Proven for a contract about an undefined symbol. Authority: proof-backends.md §4 mechanism 1 (full expression-position principle: EVERY expression the export denotes against R_item contributes its spec-calls).",
+      "created_at": "2026-06-11T16:06:57.505315643Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "25c12eb0-0e54-44f8-ba12-c3cf31a5a04c",
+      "author": "Yffe",
+      "content": "Generator fix (#243 ref #244 #245 #246 #240): one exporter seam — lean_export.rs gates + engine.rs evidence_key. #243 unfiltered called-name collection (collect_all_call_names) + emitted-term independent re-check (Expr.specCall scan vs dom R_item); undefined callee refuses IncompleteRegistry. #244 result_is_int_sorted gate; bool/unit/ADT return refuses NonIntResult. #245 capture-safe substitute (check_no_capture vs subst_free_names) refuses tier-(b) capture, routes tier-c. #246 obligation_content_hash (rendered exporter source) + recursive lean/Thermite/** spine hash + LEAN_SCHEMA_VERSION 1->2. Re-pinning the three kernel oracles to the resolved REFUSED truth. Gauntlet: cargo test --workspace, clippy -D warnings, fmt --check, lake build 368.",
+      "created_at": "2026-06-11T16:41:20.121485436Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "700d7a7b-3dcd-4382-8fea-3b826cc9706d",
+      "author": "Yffe",
+      "content": "Resolved in 007f8ceb (not closed per dispatch). Four divergences fixed on the one exporter seam. #243 undefined callee now refuses IncompleteRegistry (unfiltered collect_all_call_names + independent emitted-term Expr.specCall re-check); #244 bool/unit/ADT result refuses NonIntResult (result_is_int_sorted); #245 tier-(b) capture refuses OutOfFragment via check_no_capture/subst_free_names, routes tier-c; #246 obligation_content_hash + recursive spine hash + LEAN_SCHEMA_VERSION 1->2. Three kernel pins re-pinned to the REFUSED truth (lake build 368 green). Over-refusal check: live_scalar_correct_contract_is_proven + live_tier_b_nonrecursive_spec_fn_is_proven still Proven. Gauntlet: cargo test --workspace 0 failed, clippy -D warnings clean, fmt clean. Handing back for acto-critic re-audit.",
+      "created_at": "2026-06-11T16:41:49.800180066Z",
+      "kind": "result"
+    }
+  ]
+}

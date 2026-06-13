@@ -1,0 +1,30 @@
+{
+  "uuid": "4a0dd905-68dd-459e-84f8-212e746fad53",
+  "display_id": 170,
+  "title": "thermite-semantics increment (a): spec/contract-sublanguage denotation S_C + PROVE (T1) for ref_contract_pred — ∀ contract Expr P, ⟦ref_contract_pred(P)⟧ = ⟦P⟧_S. The first, smallest, highest-value increment (the ==-vs-<= faithfulness lives here). Mechanize S_C over the contract Expr subset + the 8 combinators' frozen verus_l3 + prove the encoder sound by structural induction. Prover TBD (fork, see thermite-semantics.md tooling assessment). Keystone of epic #169.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:12:53.706585958Z",
+  "updated_at": "2026-06-09T16:07:26.248625253Z",
+  "closed_at": "2026-06-09T16:07:26.248625253Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "d2e17c6c-7098-4a49-8082-6c153e3c35e4",
+      "author": "Yffe",
+      "content": "FORK RESOLVED (#173): prover = Lean 4 (Mathlib + Lean-SMT). Architecture = VERIFIED VALIDATOR (prove ref_contract_pred sound against S_C in Lean; NOT a verified lowerer, NOT a full universal simulation). This increment ALSO stands up the lean/ project (see .design/verified/thermite-semantics.md REQ-6: lean/lakefile.toml deps Mathlib+Lean-SMT, lean-toolchain pin, modules Thermite/{Ast,Denote,RefEncode,Soundness}.lean). T1 = ∀ contract Expr P, ⟦ref_contract_pred(P)⟧ = ⟦P⟧_S_C, as a Lean theorem by induction. Vocabulary: semantic preservation / forward simulation (Leroy/CompCert). This is the NEXT BUILD.",
+      "created_at": "2026-06-09T15:44:04.156180576Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "0fc5e05f-7285-4dbf-a4a3-85ae45275528",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (91ee68b4). The FIRST kernel-checked piece of the universal lowering-soundness proof: lean/ project (core Lean 4, no Mathlib/Lean-SMT yet) + Ast/Denote/RefEncode/Soundness; theorem Thermite.ref_sound (refDenote e env <-> denote e env) for the contract comparison/logical fragment, proved by structural induction, lake build green, #print axioms -> [propext] only (no sorry/axiom/native_decide). Critic NO DIVERGENCE on the three load-bearing probes: FIDELITY (the Lean encoder model matches Rust ref_encode.rs binop_str on all 9 ops Eq/Ne/Lt/Le/Gt/Ge/And/Or/Not; the as-nat coercion can't fire — Call not embedded, honestly deferred); NON-VACUITY (refDenote/denote independent — Iff.rfl FAILS, logical cases need the IHs+propext; the negative eq_le_infidelity_breaks_soundness genuinely bites at a=1,b=2); NO CHEATS + deferred constructs honestly absent (not embedded-then-sorry). The ==-vs-<= faithfulness is now a Lean kernel theorem. Rust↔Lean correspondence remains the enumerated audit-by-inspection residual (REQ-6). Deferred to #171+: arithmetic+casts (#122 class), the 8 combinators, spec-fns, method/byteview (#127 class), match/is.",
+      "created_at": "2026-06-09T16:06:59.981127433Z",
+      "kind": "result"
+    }
+  ]
+}

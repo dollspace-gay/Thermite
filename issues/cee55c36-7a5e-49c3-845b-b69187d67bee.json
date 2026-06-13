@@ -1,0 +1,37 @@
+{
+  "uuid": "cee55c36-7a5e-49c3-845b-b69187d67bee",
+  "display_id": 80,
+  "title": "Divergence: forge::mutation::early_return_value diverges from conformance/string/cases.json — join (String return) gated L0, oracle L3",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T20:41:27.926164374Z",
+  "updated_at": "2026-06-06T20:58:29.775566175Z",
+  "closed_at": "2026-06-06T20:58:29.775566175Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "4e5c5a73-a8b8-4fc6-8253-493d78ed4f0e",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_strings.rs::divergence_join_l3_not_mutation_gated_l0 (#[ignore = \"blocker #80\"]) pins the divergence.\n\nLIVE: `forge check conformance/string_demo.th --json`:\n  greeting_len -> L3 pure (1/1) OK\n  first_byte   -> L3 pure (2/2) OK\n  join         -> L0 WeakContract, mutants_killed 0/0  <-- DIVERGENCE\n  literal_len  -> L3 alloc (1/1) OK\n\nORACLE conformance/string/cases.json: join -> L3, effects [alloc]. Golden tests/golden/lower/string_demo.verus.rs verifies 11 verified, 0 errors, so the verus proof SUCCEEDS — the L0 is purely the mutation-gate.\n\nROOT CAUSE (the #74 Type::Vec gap, recurring for Type::String): forge/src/mutation.rs early_return_value(f) handles Type::Vec (#74 empty-TVec synthesis) and Type::Ref-of-Slice (#48 empty &[]) but has NO Type::String arm, and zero_value_for(&Type) has no String case. join's body `a.concat(b)` has no binop/off-by-one/branch site, so generate() yields ZERO mutants -> MutationScore 0/0 -> kill_ratio 0.0 -> #48 anti-Goodhart backstop -> Certificate::rejected_weak_contract -> Level::L0.\n\nFIX DIRECTION (for the fixer, NOT done here): add a Type::String arm to early_return_value mirroring empty_vec_value — synthesize an empty TString early-return `TString { data: Vec::new() }` (len 0). join's `ens result.len() == a.len()+b.len()` REJECTS the empty TString (0 != a+b unless both empty) -> the mutant is KILLED -> join scores the floor and certifies L3.\n\nWhy the existing suite (506 green) missed it: thermite-lower/tests/string_conformance.rs exercises whole-program lower + direct verus + raw cases.json text, never the per-item forge::check::check_file ladder that runs mutation scoring. Same blind spot as #68/#74.",
+      "created_at": "2026-06-06T20:41:48.247000829Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "06b1f2bf-5805-4c12-b461-9d4c0540cd52",
+      "author": "Yffe",
+      "content": "Plan: commit the acto-critic pinned failing test forge/tests/divergence_strings.rs (headline join-L0 divergence #[ignore]d as blocker #80, plus two non-ignored non-vacuity confirmations). Critic does not fix — the Type::String arm in forge/src/mutation.rs::early_return_value is the fixer's job.",
+      "created_at": "2026-06-06T20:42:15.785583180Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "5c43135c-99fa-4f16-84b6-3df0995aa957",
+      "author": "Yffe",
+      "content": "RESOLVED in commit 2f5535a (single cause, two files).\n\nROOT CAUSE: mutation::early_return_value had Type::Vec (#74) + Type::Ref-slice (#48) arms but NO Type::String arm. join's body { a.concat(b) } has no binop/off-by-one/branch site -> 0 mutants -> 0/0 -> #48 anti-Goodhart backstop gated the genuinely-L3-proved join to WeakContract/L0. Verus proof itself SUCCEEDS (golden string_demo.verus.rs = 11 verified, 0 errors).\n\nFIX:\n- mutation.rs: Type::String arm + empty_string_value synthesizing TString { data: Vec::new() } (the exact lower.rs wrapper-newtype literal, mirroring the #74 empty-Vec arm). Every String-returning body now scored.\n- cache.rs: CHECK_SCHEMA_VERSION 3 -> 4 — the gate verdict changed for String returns, so schema-3 certs (the stale L0) MUST invalidate (proof-cache REQ-2: a HIT == a fresh verify). Without this, forge check re-served the stale L0 on an identical lowered-source key.\n\nVERIFICATION (real verus 0.2026.05.24):\n- forge check conformance/string_demo.th: join -> L3 fx alloc (mutants 1/1, empty-TString synthesized + killed by ens result.len()==a.len()+b.len()); greeting_len/first_byte/literal_len unchanged L3.\n- weak String contract (ens result.len() <= N): still L0 WeakContract 0/1 (empty TString SURVIVES — synthesis enables scoring, does NOT auto-pass; R-DEFER-9 honored, no proof cheat).\n- pinned test divergence_join_l3_not_mutation_gated_l0 un-ignored, PASSES.\n\nGAUNTLET:\n- cargo test --workspace: 509 passed, 0 failed, 0 ignored\n- cargo test -p forge --test divergence_strings: 3 passed, 0 failed\n- cargo clippy --workspace --all-targets -- -D warnings: PASS\n- cargo fmt --all --check: PASS\n\nNo regression: #74 Vec + #48 slice synthesis intact; conformance/ untouched (R-CHAR-3).",
+      "created_at": "2026-06-06T20:58:23.390913671Z",
+      "kind": "result"
+    }
+  ]
+}

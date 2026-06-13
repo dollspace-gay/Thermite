@@ -1,0 +1,23 @@
+{
+  "uuid": "7c8b2b0e-7964-40ae-96c6-8480df84630c",
+  "display_id": 202,
+  "title": "docs: rewrite README in plain human language — lead with what/why anyone should care, translate the jargon walls (Status esp.), keep all load-bearing claims + links + the agent section",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:29:17.794120218Z",
+  "updated_at": "2026-06-10T18:32:00.883545589Z",
+  "closed_at": "2026-06-10T18:32:00.883545589Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "e3916183-7fd5-45f4-9b1d-63b162f94aff",
+      "author": "Yffe",
+      "content": "DONE (f89961bd). README front half rewritten for a human reader: The problem (the AI-code trust gap + the economics bet in plain words) -> How it works in plain terms (the three promises, the ladder as a table, the no-cheating battery, the syscall cage, the conversational hole/fill workflow) -> The proof it isn't a toy (the editor leads) -> the annotated sum example -> Don't trust us, audit it (audit-fast/audit in plain terms; the six checks preserved in a details block) -> the translation-honesty section (the two-layer answer, incl. the Lean-defines-the-meaning/Verus-is-engine-1 framing) -> What works today (human bullets; the full dense inventory in a details block). All links + load-bearing claims preserved; the ACToR/agent sections untouched.",
+      "created_at": "2026-06-10T18:31:48.169978301Z",
+      "kind": "result"
+    }
+  ]
+}

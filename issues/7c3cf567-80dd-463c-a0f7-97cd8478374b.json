@@ -1,0 +1,30 @@
+{
+  "uuid": "7c3cf567-80dd-463c-a0f7-97cd8478374b",
+  "display_id": 235,
+  "title": "Divergence (regression of 2f327b63/#230): user spec fns are now 'pub open' but woven combinator defs (thermite-spec verus_l3 via emit_combinator_defs) stay private — a validator-legal combinator call in a spec fn body gets verus 'in pub open spec function, cannot refer to private function', L0 death",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T03:24:20.718102181Z",
+  "updated_at": "2026-06-11T04:05:06.553135695Z",
+  "closed_at": "2026-06-11T04:05:06.553135695Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "0d8e1143-a1a8-4600-b55d-c2fadfb1cbd2",
+      "author": "Yffe",
+      "content": "Failing test at thermite-lower/tests/divergence_combinator_private_vs_pub_open_spec_fn.rs::pub_open_user_spec_fn_calling_combinator_verifies (verus-backed; skips loudly without verus). spec fn all_small body calling forall_in (validator-legal, spectherm-combinators.md REQ-3 walks SpecFnItem.body) lowers to 'pub open spec fn all_small' naming the PRIVATE woven 'spec fn forall_in' — verus: 'in pub open spec function, cannot refer to private function', live-confirmed. Regression introduced by 2f327b63 (#230): before the pub-open promotion both were private and the unit verified. The REQ-8 visibility-tier class-completion missed the combinator registry defs (thermite-spec combinators.rs verus_l3 / emit_combinator_defs).",
+      "created_at": "2026-06-11T03:24:49.645237158Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "d25cc6fc-c272-4c16-9ba8-28aaa168a9eb",
+      "author": "Yffe",
+      "content": "Plan (critic): commit the three failing-test pins (divergence_spec_call_bool_arg_cast.rs #233, divergence_sep_fn_arith_arg_paren.rs #234, divergence_combinator_private_vs_pub_open_spec_fn.rs #235) as the audit artifact of the caa38848+2f327b63 re-audit. All #[ignore]d with blocker tracking; generator to fix. No production code touched.",
+      "created_at": "2026-06-11T03:40:49.153556757Z",
+      "kind": "plan"
+    }
+  ]
+}

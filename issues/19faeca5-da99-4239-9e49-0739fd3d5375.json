@@ -1,0 +1,30 @@
+{
+  "uuid": "19faeca5-da99-4239-9e49-0739fd3d5375",
+  "display_id": 197,
+  "title": "kernel-target build per .design/build/kernel-target.md",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T07:20:50.732753736Z",
+  "updated_at": "2026-06-10T08:16:27.556836143Z",
+  "closed_at": "2026-06-10T08:16:27.556836143Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "c323a972-0722-412b-84fb-afad50088600",
+      "author": "Yffe",
+      "content": "Authored .design/build/kernel-target.md (forge build --target kernel design) + added the build.rs spec-route. v1 scope per #164's plan: no_std+alloc rlib (no main, no seccomp, panic=abort), reject ambient-syscall fx (read/write/net/term), L3 path identical. 5 REQs, all NOT-STARTED behind this blocker. NEXT: acto-builder implements the BuildTarget Std/Kernel fork at build_file/emit_source/invoke_rustc + forge/tests/kernel_target.rs freestanding compile check.",
+      "created_at": "2026-06-10T07:21:56.304618486Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "599e0d2f-5b66-4fa9-a55f-9a02a321f08b",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-audited (14070625 + fix 13b8d734). forge build --target kernel: no_std+alloc freestanding rlib (genuine — the internal rustc invocation rejects std leaks under #![no_std], critic-probed), the fx gate over every fn's transitive row (reject read/write/net/term/time/rand, admit pure/alloc/panic/diverge — amended per #198), default target byte-unchanged (build_conformance 8/8), L1 checks fire in-kernel (panic routes to the host #[panic_handler]). The critic found #198 (admitted-time std leak) -> design amendment + fix -> verified.",
+      "created_at": "2026-06-10T08:16:13.136347969Z",
+      "kind": "result"
+    }
+  ]
+}

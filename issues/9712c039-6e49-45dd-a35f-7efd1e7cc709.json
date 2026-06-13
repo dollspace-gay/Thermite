@@ -1,0 +1,23 @@
+{
+  "uuid": "9712c039-6e49-45dd-a35f-7efd1e7cc709",
+  "display_id": 121,
+  "title": "C11 mutual recursion: refine forge::check mutual_recursion_cycle_fns to CONDITIONAL — a mutual cycle with dec on every member falls through to L3 (GROUNDED: is_even/is_odd dec n cross n-1 -> 4 verified 0 errors; 3-cycle -> 3 verified; lexicographic -> 2 verified; NO adjacency required), reject ONLY a member lacking dec (refined MutualRecursionMissingDecreases cause), fx-diverge member exempt+L1-capped. lower.rs grandfathered-correct (existing source-order single-verus!-block emission already produces a valid Verus mutual-decreases group). .design/basis/12-mutual-recursion.md REQ-1/REQ-2/REQ-4.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T20:57:17.815749264Z",
+  "updated_at": "2026-06-07T21:30:36.339513506Z",
+  "closed_at": "2026-06-07T21:30:36.339513506Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f1488831-f007-4d75-951e-9c5506376d4c",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (3c27d68). Mutual recursion supported with dec: check.rs mutual_recursion_cycle_fns refined from unconditional reject to conditional (reject a cycle member only if its cycle has a non-diverge dec.is_none() member); MutualRecursionUnsupported -> MutualRecursionMissingDecreases. The item_subprogram already weaves the partner (fn_deps) so Verus sees the SCC — no lower.rs change. Critic NO DIVERGENCE (R-DEFER-9): dec'd pair/3-cycle -> L3 (termination genuinely proven), non-decreasing/n+1/bad-edge -> L0, any-no-dec -> clean whole-cycle L0 (no VIR crash), diverge -> L1, the partner woven (wrong is_odd -> is_even also L0, not laundered), no cheat. 652 tests. Single-fn recursion unchanged.",
+      "created_at": "2026-06-07T21:30:25.938388840Z",
+      "kind": "result"
+    }
+  ]
+}

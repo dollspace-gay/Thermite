@@ -1,0 +1,23 @@
+{
+  "uuid": "65c4d47f-1963-44bc-b0f4-ef6559dffcee",
+  "display_id": 45,
+  "title": "Clarify thermite-design.md §6: slag is L1-contract-enforced; L0 is the body-proof aspect",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T02:23:40.409939527Z",
+  "updated_at": "2026-06-05T02:25:47.272750581Z",
+  "closed_at": "2026-06-05T02:25:47.272750581Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "b68d8cfc-8022-40e2-ac74-d86a98dee97a",
+      "author": "Yffe",
+      "content": "Added a §6 Rules bullet: L0 = body-proof aspect (trusted by fiat, recorded by the slag flag); a #[slag] fn's contract is L1-enforced -> cert is L1 + slag:true, not L0. slag exempts proving, never stating/checking. Matches forge's enforced behavior (#6). Thesis now consistent with §8 + the implementation.",
+      "created_at": "2026-06-05T02:25:40.018045616Z",
+      "kind": "result"
+    }
+  ]
+}

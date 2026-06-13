@@ -1,0 +1,30 @@
+{
+  "uuid": "f8ca9fc4-4b19-4bef-86a0-64aeb99f74e7",
+  "display_id": 156,
+  "title": "exec-tv REQ-5: forge plug-in (forge/src/exec_tv.rs or contract_tv exec phase) — run exec-expr TV over body exec exprs of each checked item via forge tv --exec; consumer cli::run_tv. Surfaces a per-expr DIVERGENT verdict.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:44.848280285Z",
+  "updated_at": "2026-06-09T00:36:50.658247468Z",
+  "closed_at": "2026-06-09T00:36:50.658247468Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "88d0e2e0-1262-4025-88b2-ef9de395a9d9",
+      "author": "Yffe",
+      "content": "Build exec-TV forge phase (#156) + generator (#154): gen_exec_exprs in thermite-tv/src/gen.rs (well-framed exec exprs, seeded SplitMix64), forge/src/exec_tv.rs (generated run PRIMARY + corpus body-expr best-effort, four-way classification Faithful/Divergent/Unverifiable/Skipped), forge exec-tv subcommand wiring cli.rs/main.rs. Commit to main; do not close (critic re-audits).",
+      "created_at": "2026-06-09T00:21:45.570238687Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "aead41bc-63c3-4f17-96b5-e983f460a26a",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (7ec8cef). forge exec-tv <file> [--generated N] (forge/src/exec_tv.rs): per-exec-expr P_production (lower_exec_expr) vs exec_ref_value, discharged by run_verus, 4-way classification (Faithful/Divergent/Unverifiable/Skipped). Closes the lower_exec_expr consumer loop (R-DEFER-1). Generated 200/200 faithful; corpus sum 3 faithful / 1 honest skip (the loop = step-2.2 statement). Critic NO DIVERGENCE: injected infidelity (wrong op/value, #122 E0308, #146 mis-parse, off-by-one) all -> Divergent; masking paths (empty-verus/external_body) classify Unverifiable-never-Faithful + unreachable by lower_exec_expr; classification honest (Divergent ordered first); no false positive/regression; independence intact. Coverage seam (forge-level Divergent not directly asserted — discharge private + faithful lowerer never triggers it; teeth bite at the obligation layer E1-E4) tracked separately.",
+      "created_at": "2026-06-09T00:36:27.303767419Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "uuid": "7d00c1bf-b515-42db-81ed-7d868dd30281",
+  "display_id": 169,
+  "title": "Lowering soundness step 3 (the keystone): mechanized operational semantics of Thermite + the lowering-faithfulness SOUNDNESS THEOREM (translation-validation-as-meta-theorem) — converts TV from existential evidence to a universal proof that L3-certified programs are faithfully lowered",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:02:32.533101211Z",
+  "updated_at": "2026-06-10T03:00:21.511404520Z",
+  "closed_at": "2026-06-10T03:00:21.511404520Z",
+  "labels": [
+    "epic"
+  ],
+  "comments": [
+    {
+      "uuid": "19b0ecf4-6c80-43da-9511-fd07de3f59e5",
+      "author": "Yffe",
+      "content": "Plan: commit the reframed thermite-semantics.md — Lean 4 committed, VERIFIED-VALIDATOR architecture (prove the reference encoder sound = T1; not verify-the-lowerer, not a full universal simulation proof), field vocabulary (semantic preservation / forward simulation / CompCert reduced-TCB, cited), the lean/ project setup, the increment roadmap (S_C first). Two honest residuals recorded: Lean-SMT Z3-demotion is the GOAL not a present fact (~30% cvc5 rules; Verus/Z3 don't emit reconstructable proofs by default); the Rust<->Lean encoder-correspondence is a new audit-by-inspection trusted link.",
+      "created_at": "2026-06-09T15:46:24.595345165Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "bbaa1a32-914f-416d-801f-ee38751b8939",
+      "author": "Yffe",
+      "content": "FULL BRICK SET filed + ordered. Layer 1 (contract S_C + ref_sound, by structural induction): #170 1a comparison/logical [DONE] -> #176 1b arithmetic+partiality -> #177 1c casts+nat-coercion (#122/#146 class) -> #178 1f spec-context rewrites (#127 class) -> #179 1d-i 6 bounded-quantifier combinators -> #180 1g match-in-ens/is (C7) -> #181 1e spec-fn calls (well-founded recursion) -> #182 1d-ii 2 recursive combinators count_where/permutation_of (Mathlib). Layer 2 (exec): #171 2a exec-expr, #172 2b exec-body (+ #162 forge body-tv phase), #163 2c loops [hard/kernel-gated]. Layer 3 (compose): #174 3a whole-contract T1, #183 3b the TV meta-theorem capstone (existential->universal). Layer 4 (trust): #184 4a Z3-demotion via Lean-SMT [frontier], #185 4b Rust<->Lean correspondence [residual]. Irreducible trusted base (not bricks): Lean kernel+propext, S=intended-meaning, Verus VC-gen, rustc/LLVM. Beginning in logical order: 1b+1c (arithmetic+casts) next — extends the #170 Lean modules + retires the #122/#146 class on the contract side.",
+      "created_at": "2026-06-09T16:55:51.449165647Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "c801ec59-19dc-4a40-b024-835e9094b135",
+      "author": "Yffe",
+      "content": "MILESTONE — CONTRACT SUBLANGUAGE S_C COMPLETE (8/8 construct classes kernel-checked in Lean). Layer 1 DONE: #170 1a comparison/logical, #176 1b arithmetic+partiality, #177 1c casts (#122/#146 class), #178 1f spec-context rewrites (#127 class), #179 1d-i 6 bounded combinators (#145 class), #180 1g match/is (C7, Option/Result), #181 1e spec-fn calls (fully-general recursive registry, core-Lean WF recursion), #182 1d-ii count_where+permutation_of. theorem ref_sound proves the reference encoder denotation-faithful over ALL of S_C (lake build green, axioms [propext, Classical.choice, Quot.sound] — standard only). 13 negative lemmas: the 5 infidelity classes we found EMPIRICALLY (==/<=, #122/#146 cast-paren, #127 byteview, #145 arg-kind, multiset-vs-set) are now machine-refuted theorems. NEXT: Layer 2 (exec) — #171 2a exec-expr S_E + exec_ref_value, #172 2b exec-body S_B + body_ref_state, #163 2c loops. Then Layer 3 compose (#174/#183) + Layer 4 trust (#184/#185). NOTED future brick: user-ADT match/is (01-adts REQ-6, beyond the frozen subset).",
+      "created_at": "2026-06-09T19:42:45.101060900Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "5634ec68-f711-4534-9538-53ab9b266812",
+      "author": "Yffe",
+      "content": "MILESTONE — THE PROOF SPINE IS COMPLETE. Layer 1 (contract S_C) 8/8 DONE; Layer 2 (exec) DONE for the straight-line frozen subset (#171 S_E exec-expr, #172 S_B exec-body — incl. the #186 ifElse-scope divergence found+fixed+re-verified by the ACToR loop); Layer 3 (compose) DONE — #174+#183 the T2 capstone lowering_faithful: forall P passing TV, denote(lower(P))=denote_S(P), the existential->universal conversion as a kernel-checked Lean theorem relative to {Z3, S=intended-meaning, Lean kernel}. The boss's exact demand — a proof over ALL thermite programs — is now MET (relative to the named trust base). REMAINING (qualitatively different — trust-shrink/residual/gated, NOT the construct grind): #184 4a Z3-demotion (FRONTIER — Lean-SMT cvc5 reconstruction; investigation+PoC, Verus doesn't emit certificates today), #185 4b Rust<->Lean correspondence (RESIDUAL — audit-by-inspection now vs an extraction bridge), #163 2c loops (KERNEL-GATED). Plus the noted future brick: user-ADT match/is (01-adts REQ-6, beyond the frozen subset).",
+      "created_at": "2026-06-09T20:36:13.241405261Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a57fa85a-0f41-4fe8-a030-458e743ef252",
+      "author": "Yffe",
+      "content": "EPIC COMPLETE — the universal lowering-soundness program is shipped end-to-end, every increment critic-audited. LAYER 1 contract S_C 8/8 (#170/#176/#177/#178/#179/#180/#181/#182). LAYER 2 exec: S_E (#171), S_B (#172 + #186 fix), loops v1 (#163: design + Rust obligations + the kernel-checked WHILE-RULE). LAYER 3 compose: the T2 capstone lowering_faithful (#174/#183) — for all P passing TV, denote(lower(P)) = denote_S(P), relative to the named trust base {Lean kernel+propext, Z3 (the h_tv premise), S=intended meaning, Verus VC-gen, rustc/LLVM}. LAYER 4 trust: #185 Rust<->Lean correspondence closed at the inspection tier (arm-by-arm, D1-D6, + #187 fix); #184 Z3-demotion Tier-3 PoC (Lean-SMT/cvc5 kernel replay for QF-linear; walls documented). INTEGRATION: #162 forge body-tv (+ #189 honesty fix). 13+ negative lemmas machine-refute the empirical infidelity classes. Docs current: README + skill (#188), thermite-semantics.md, the SOTA survey. REMAINING (tracked separately, out of this epic): #166 contract-TV parallel seam (low), #164/#21 the kernel target, the named residuals in their docs (full Z3 demotion upstream-gated; extraction bridge; user-ADT match/is). The boss's demand — a proof over ALL thermite programs, not an existential — is MET relative to the enumerated trust base.",
+      "created_at": "2026-06-10T03:00:07.089208140Z",
+      "kind": "result"
+    }
+  ]
+}

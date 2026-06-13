@@ -1,0 +1,37 @@
+{
+  "uuid": "4d341d6e-9923-44bb-9710-fe442d4e9b38",
+  "display_id": 85,
+  "title": "Divergence: thermite-skill render_type_arm Type::Unit arm teaches an unparseable example (no req)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T22:32:06.783227077Z",
+  "updated_at": "2026-06-06T22:41:10.622762622Z",
+  "closed_at": "2026-06-06T22:41:10.622762622Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "827b7766-15d9-4674-86ef-2e60654ac9aa",
+      "author": "Yffe",
+      "content": "Failing test at thermite-skill/tests/divergence_unit_arm_example.rs::rendered_fn_examples_parse_clean (run with --ignored) demonstrates the divergence. render_type_arm's Type::Unit arm in generate.rs renders the example `fn log() -> () ens true fx pure { }` which OMITS the mandatory req clause; thermite_syntax::parser::parse rejects it with 'clause `req` is out of order'. The same fn WITH `req true` parses clean. The skill's own render_grammar prose states 'absence of any is a parse error'. Authority: thermite-design.md §10 (skill IS the spec, no version skew); skill-generator.md REQ-10/REQ-8. R-CHAR-3: expected value = parser-accepts, not copied from generate.rs.",
+      "created_at": "2026-06-06T22:32:34.512153926Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "2ea657d8-0517-449a-b3d8-d3c33d32db03",
+      "author": "Yffe",
+      "content": "Minimal single-file fix: correct render_type_arm's Type::Unit arm example in thermite-skill/src/generate.rs from `fn log() -> () ens true fx pure { }` to `fn log() -> () req true ens true fx pure { }` (add the mandatory req clause; clauses now in req->ens->fx order per thermite-design.md §4.1). Root cause is the invalid example STRING, not the REQ-8 compile-force mechanism (untouched). Re-checked every other render_*_arm example: all other fn/spec-fn examples are intentional ..-placeholder fragments or bare signatures (not standalone programs); only the Type::Unit arm was a complete program and the only invalid one. Un-ignore the pinned test rendered_fn_examples_parse_clean and broaden it to sweep EVERY complete rendered fn/spec-fn example and assert each parses clean (permanent regression guard). Regenerate THERMITE.skill.md. Authority: thermite-design.md §10/§4.1, skill-generator.md REQ-8/REQ-10.",
+      "created_at": "2026-06-06T22:40:45.234181864Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "9502f979-acfe-4d54-ba59-ba5cb6805f3f",
+      "author": "Yffe",
+      "content": "FIXED in commit 04412aa (single file thermite-skill/src/generate.rs + regenerated THERMITE.skill.md). Type::Unit arm example corrected: `fn log() -> () ens true fx pure { }` -> `fn log() -> () req true ens true fx pure { }` (mandatory req added, req->ens->fx order). Only complete-program example among the arms; all others are ..-fragments/signatures. Pinned test rendered_fn_examples_parse_clean un-ignored + broadened to parse EVERY complete rendered fn/spec-fn example clean — now passes (1 test). Skill regenerated; committed_skill_is_fresh passes. Gauntlet: cargo test --workspace 83 result-groups 0 failed; --check-budget 4309<=6000 exit 0; clippy --workspace --all-targets -D warnings clean; fmt --all --check clean. Hand back for acto-critic re-audit.",
+      "created_at": "2026-06-06T22:41:05.148190593Z",
+      "kind": "result"
+    }
+  ]
+}

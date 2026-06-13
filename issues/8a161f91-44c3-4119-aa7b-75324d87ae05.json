@@ -1,0 +1,23 @@
+{
+  "uuid": "8a161f91-44c3-4119-aa7b-75324d87ae05",
+  "display_id": 59,
+  "title": "Skill stale: generator missing forge build (#56) + runtime sandbox (#57); regenerate THERMITE.skill.md",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T20:52:48.700976529Z",
+  "updated_at": "2026-06-05T20:58:33.316505225Z",
+  "closed_at": "2026-06-05T20:58:33.316505225Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "22bfca70-8ae3-49a2-8a75-911c16e9a107",
+      "author": "Yffe",
+      "content": "Resolved. The skill regen was deterministic (no diff) BUT the generator's curated content was stale — missing forge build (#56) + the runtime seccomp sandbox (#57). Updated render_forge (+ forge build command) + render_ladder (fx enforced two ways: compile-time subsumption + the forge build seccomp sandbox). Regenerated THERMITE.skill.md (committed == generate(), freshness test holds). Budget 2673/6000. forge build + seccomp now PRESENT. workspace 409 tests, clippy/fmt clean. §10 no-version-skew restored. Commit fd8bf3b.",
+      "created_at": "2026-06-05T20:58:24.526908029Z",
+      "kind": "result"
+    }
+  ]
+}

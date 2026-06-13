@@ -1,0 +1,23 @@
+{
+  "uuid": "bbc7813d-2a0b-48b4-825d-7732f0ab6e49",
+  "display_id": 142,
+  "title": "contract-TV REQ-3: off-corpus generator of well-typed SpecTherm contract clauses + run the TV obligation on each (the corpus-bound escape — un-bounds the one fidelity layer that works, golden files)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T18:15:44.893124860Z",
+  "updated_at": "2026-06-08T20:35:16.984800218Z",
+  "closed_at": "2026-06-08T20:35:16.984800218Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "845297ba-e87a-470d-a193-19a9e6a7540c",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (167b9f4). The off-corpus clause generator (thermite-tv/src/gen.rs, deterministic SplitMix64, no rand/clock) over the frozen sublanguage (all comparison BinOps, nested connectives, 8 combinators with registry arg-kinds, spec-fn calls, result/old, byteview, casts). Critic confirmed the generated run genuinely DISCHARGES diverse non-trivial obligations (175/200 checked + 25 honest byteview-scope skips; not inflated by trivial obligations). THIS IS THE THESIS PAYOFF: running TV over generated clauses immediately surfaced a REAL off-corpus lowering bug (#146 cast-< mis-parse) the corpus-bounded golden files structurally could not catch.",
+      "created_at": "2026-06-08T20:35:02.697846354Z",
+      "kind": "result"
+    }
+  ]
+}

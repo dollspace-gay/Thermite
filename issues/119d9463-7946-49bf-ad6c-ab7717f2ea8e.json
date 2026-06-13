@@ -1,0 +1,37 @@
+{
+  "uuid": "119d9463-7946-49bf-ad6c-ab7717f2ea8e",
+  "display_id": 198,
+  "title": "Divergence: forge build --target kernel leaks rustc E0433 on a design-ADMITTED fx time boundary (emit_mod_os emits the std::-bodied os::now wrapper into the #![no_std] crate)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T07:48:27.009966392Z",
+  "updated_at": "2026-06-10T08:16:09.474181946Z",
+  "closed_at": "2026-06-10T08:16:09.474181946Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "744f2c55-09e2-42d0-a900-947250be8cbd",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_kernel_time_boundary.rs::admitted_time_fx_boundary_builds_kernel_rlib demonstrates divergence: forge build --target kernel conformance/effect_link_demo.th (fx time — on the kernel-target.md OQ-2 ADMIT list) exits 2 with a raw rustc E0433 (std::time::SystemTime in the emitted mod os under #![no_std]) instead of building a kernel rlib. reject_ambient_fx_for_kernel covers only read/write/net/term, so a time boundary survives with a non-empty reachable_boundary_targets set, falsifying the design's empty-target-set invariant (Architecture section). Fix is the generator's call: a no_std wrapper path, or a design amendment extending the reject to boundary-carrying admitted effects + a structured NAMED-effect refusal (REQ-3 shape).",
+      "created_at": "2026-06-10T07:48:44.472736710Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "9db7c6dc-3fab-4f24-941e-46f672789f27",
+      "author": "Yffe",
+      "content": "Critic pin per the ACToR discriminator cycle: commit the failing test forge/tests/divergence_kernel_time_boundary.rs (asserts the kernel-target.md OQ-2 admit pin — a fx time boundary program builds a kernel rlib) un-ignored as the release block; no production code touched (fix is the generator's).",
+      "created_at": "2026-06-10T07:49:28.586315334Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "86763f17-6d75-42a7-8483-fcf9887fc239",
+      "author": "Yffe",
+      "content": "FIXED (13b8d734), orchestrator-verified live (the structured time refusal fires, no E0433; re-pin 1/1 + kernel_target 7/7 + 522 forge tests green). OQ-2 amended: time/rand REJECTED for the kernel target (the std-bodied effect wrappers + no ambient clock/entropy; admit = exactly pure/alloc/panic/diverge); the pin re-pinned to the amended authority (#186 precedent); the emitted-source assertion added (forge's ACTUAL kernel emit_source carries the no_std prelude, no std:: path, no main — closes the critic's audit gap).",
+      "created_at": "2026-06-10T08:15:56.551112594Z",
+      "kind": "result"
+    }
+  ]
+}

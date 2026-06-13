@@ -1,0 +1,30 @@
+{
+  "uuid": "3913136c-041e-4798-934f-a72b53142d25",
+  "display_id": 232,
+  "title": "Divergence: forge check item_subprogram Struct arm builds the sub-program as the item ALONE — a struct inv naming a user spec fn dies at L0 (E0425, def never woven; param-type map empty -> as u64 fallback); the 'Dead-in-1a: dies at the validator' premise comment is stale; #230's pub-open fix alone cannot revive the shape",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T02:19:24.788946940Z",
+  "updated_at": "2026-06-11T04:04:54.228624722Z",
+  "closed_at": "2026-06-11T04:04:54.228624722Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "8fac6233-beea-4c7c-ba57-2a46af3ecc33",
+      "author": "Yffe",
+      "content": "Failing test at forge/tests/divergence_struct_inv_spec_fn_subprogram.rs::struct_inv_naming_user_spec_fn_certifies_l3 (#[ignore]d, tracking this issue) demonstrates the divergence: the #229 Counter fixture's struct cert is L0 (E0425 cannot find function s_dec — the def is absent from the emitted per-item unit — AND the emitted cast is the as u64 fallback because the item-alone sub-program has no spec fn to feed spec_fn_param_type_map), though the WHOLE-PROGRAM lowering is correct since c116360c (the thermite-lower #229 pin emits as u32). Authority: thermite-design.md §6 (correct source certifies L3) + verus-lowering.md REQ-8 (bank_account verified-struct precedent); the hand-woven pub-open form of the exact fixture is '1 verified, 0 errors' under verus. Fix shape: weave reachable_spec_fn_deps (the #68/#71 SpecFn/Fn-arm precedent) into the Struct/Enum arm; ALSO requires #230 (bare 'spec fn' is private to the pub open well_formed — verus 'in pub open spec function, cannot refer to private function', hand-confirmed). NOTE for #230: its E0425 citation is actually THIS slicing bug; the privacy layer surfaces only after weaving.",
+      "created_at": "2026-06-11T02:19:55.937211144Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "36525273-9783-4234-ab63-8c3c5be0c7cf",
+      "author": "Yffe",
+      "content": "Fix the two interlocking causes. #232 weave: forge::check item_subprogram Struct/Enum arm now weaves adt_deps + spec_items + item (mirroring the Fn arm) so the named spec fn def reaches lowering and the per-item spec_fn_param_type_map is non-empty (restores #229 REQ-5 as-u32 cast off the as-u64 fallback). #230 visibility: thermite-lower emits pub open spec fn for user spec fns; class-completed by pub enum (lower_enum) and pub open on generated scheme fns (<e>_len, fold_<e>/for_all_<e>) — all reachable from a pub open well_formed body. Goldens regenerated prefix-only (R-CHAR-3). Un-ignore the pin.",
+      "created_at": "2026-06-11T03:10:55.537320809Z",
+      "kind": "plan"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "d55fe718-34c3-422f-b764-f65a836256ed",
+  "display_id": 227,
+  "title": "Divergence: #225 type-directed spec-call cast not threaded to lower_loop (inv/dec) or spec_dec — u32 spec-call args in loop invariants still die at L0",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T23:41:54.785263220Z",
+  "updated_at": "2026-06-11T04:04:35.207233290Z",
+  "closed_at": "2026-06-11T04:04:35.207233290Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "652eeb5f-aad4-4817-ada7-6c1083554833",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-lower/tests/divergence_spec_call_cast_unthreaded_paths.rs::loop_invariant_spec_call_arith_arg_casts_to_declared_param_type + ::fn_level_dec_measure_spec_call_arith_arg_casts_to_declared_param_type demonstrate the divergence (run with --ignored; both FAIL: the loop-inv path emits s_dec((i + 0) as u64) and the spec_dec path emits decreases s_dec((n + 0) as u64) for a u32-param callee). LIVE-CONFIRMED: forge check on the loop-inv fixture dies E0308 'expected u32, found u64' at L0 though the source is correct — the exact #225 class. Root cause: lower_loop (lower.rs, the spec Ctx for inv clauses + the loop dec measure) and spec_dec (Ctx::spec_seq()) never call .with_spec_fn_param_types(..); the c02b9a6b threading reaches only lower_spec_fn/lower_fn_signature/lower_external_body_fn. lift_immutable_preconds re-lowers req clauses under the same unthreaded loop ctx (same root cause).",
+      "created_at": "2026-06-10T23:53:48.180525864Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "a70b2f94-d7d2-4a4f-96ae-f0cd7b25ca17",
+      "author": "Yffe",
+      "content": "Thread the existing spec_fn_param_type_map through the 2 remaining #227 spec-context Ctx sites: lower_loop (inv + dec, +chained to lift_immutable_preconds) and spec_dec (fn-level decreases). Add a spec_fn_param_types param to lower_loop/spec_dec/lower_fn_body/lower_block_with_fn_aids and call .with_spec_fn_param_types(..) on each spec Ctx. Single file (lower.rs). Un-ignore the 2 #227 pins; leave #228 ignored.",
+      "created_at": "2026-06-11T00:35:59.055753288Z",
+      "kind": "plan"
+    }
+  ]
+}

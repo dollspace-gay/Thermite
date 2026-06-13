@@ -1,0 +1,30 @@
+{
+  "uuid": "3aa390a9-8404-4f26-a108-58167a01d749",
+  "display_id": 166,
+  "title": "contract-TV parallel seam (the #157 analog): forge/src/contract_tv.rs ClauseVerdict::Divergent mapping is not directly test-asserted either; add the forge-level contract Divergent teeth (wrong production -> Divergent, faithful -> Faithful, degenerate -> Unverifiable) mirroring exec_tv's divergent_teeth",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T03:03:38.519431969Z",
+  "updated_at": "2026-06-10T04:35:44.242752602Z",
+  "closed_at": "2026-06-10T04:35:44.242752602Z",
+  "labels": [
+    "enhancement"
+  ],
+  "comments": [
+    {
+      "uuid": "1583a8a9-80dd-4073-b766-23e4b9a1b7d2",
+      "author": "Yffe",
+      "content": "Approach (acto-fixer, single file forge/src/contract_tv.rs): AUDIT — contract_tv discharge mapped every errors>=1 run to Divergent, including an rlimit-exhausted run (a results line counting the exhausted obligation as an error). Same #189-class bug body_tv fixed: a solver-budget timeout fabricated into a contract infidelity. The CompileAbort case was ALREADY honest (no parseable results line -> the _ arm -> Unverifiable). MINIMAL FIX: added is_rlimit_signal + an 'errors>=1 && rlimit_hit -> Unverifiable' arm AHEAD of the Divergent arm in discharge (mirrors body_tv::is_rlimit_signal). TEETH: a #[cfg(test)] mod divergent_teeth mirroring exec_tv/body_tv — faithful (x==1 prod==ref) -> Faithful; wrong prod (x<=1 for x==1, the <=-for-== divergence) -> Divergent; frame compile abort (undefined spec-fn req) -> Unverifiable; rlimit discriminator -> kept out of Divergent. Hand-derived verdicts (R-CHAR-3). Faithful corpus path unchanged.",
+      "created_at": "2026-06-10T03:35:13.523574738Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "21e752da-9805-4a77-8b30-9edb4c8199ac",
+      "author": "Yffe",
+      "content": "DONE through the full loop (61f6f763 + 4509f1a2). contract_tv divergent_teeth added (faithful->Faithful, <=-for-== -> Divergent, frame-abort->Unverifiable, rlimit both ways — live verus, hand-derived); found + fixed the #189-class rlimit->Divergent fabrication in contract_tv; the critic then found the phrase DRIFT (#192) -> root-cause fix: the shared tv_signal helper across all 3 TV phases incl. exec_tv's previously-missing gate. Re-critic NO DIVERGENCE.",
+      "created_at": "2026-06-10T04:35:34.944005233Z",
+      "kind": "result"
+    }
+  ]
+}

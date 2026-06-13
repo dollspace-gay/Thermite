@@ -1,0 +1,30 @@
+{
+  "uuid": "c6f8412e-114f-4c56-8de7-315e01d03d6d",
+  "display_id": 113,
+  "title": "C11: mutual recursion (the C9 deferral) — a mutual-decreases group; a<->b cycle with dec on the cycle certifies L3 (today cleanly L0-rejected as MutualRecursionUnsupported)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T19:41:22.001715038Z",
+  "updated_at": "2026-06-07T21:30:40.967424358Z",
+  "closed_at": "2026-06-07T21:30:40.967424358Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "de9d301f-dbcc-47b8-8709-53eebb658fcc",
+      "author": "Yffe",
+      "content": "Plan: author 12-mutual-recursion.md — Verus discovers the mutual SCC from per-fn dec (no grouping/adjacency); the only fix is refining check.rs mutual_recursion_cycle_fns to conditional (reject only no-dec members). Filed #121 for the impl.",
+      "created_at": "2026-06-07T20:58:56.686675373Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "be7fc6ea-2ce2-4dfe-bde3-2d4d3ad6a1b0",
+      "author": "Yffe",
+      "content": "EPIC COMPLETE + critic-clean (3c27d68). C11 mutual recursion: a dec'd mutual cycle (pair or n-cycle) certifies L3 via Verus's mutual-decreases group (discovered from per-fn dec across the verus! block + the item_subprogram partner-weave); non-decreasing -> L0, missing-dec -> clean L0 MutualRecursionMissingDecreases (no crash), diverge -> L1. Critic NO DIVERGENCE. The C9 mutual-recursion deferral is now shipped. 652 tests.",
+      "created_at": "2026-06-07T21:30:39.557753983Z",
+      "kind": "result"
+    }
+  ]
+}

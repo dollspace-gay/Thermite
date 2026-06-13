@@ -1,0 +1,30 @@
+{
+  "uuid": "3bdf38fe-0f81-4eec-aa6d-0b36acee7262",
+  "display_id": 153,
+  "title": "exec-tv REQ-2: exec-fn-wrapped equivalence obligation (thermite-tv/src/obligation.rs exec_equivalence_obligation) — emit ; discharged through forge::check::run_verus. Verus reasons about the exec fn value via its ensures.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T22:59:21.994818512Z",
+  "updated_at": "2026-06-08T23:38:18.579446574Z",
+  "closed_at": "2026-06-08T23:38:18.579446574Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f2bff4d5-fd3b-499c-b2ea-337df88b6be3",
+      "author": "Yffe",
+      "content": "Obligation shape: emit an exec fn tv_exec_wrap with params, requires the enclosing req, ensures result equals the independent exec reference denotation, and the body is the production exec lowering of the source expr. Verus discharges the exec fn value via its ensures: VERIFIED iff faithful; a postcondition-not-satisfied counterexample iff the production exec value differs. GROUNDED end-to-end in exec-tv.md Verification.",
+      "created_at": "2026-06-08T23:00:11.006733416Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "f55d32af-198d-4692-b6a8-0a04e95c1593",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (43c9a6c). exec_equivalence_obligation + ExecObligationFrame (thermite-tv/src/obligation.rs): wraps the source expr's production exec-lowering as an exec fn body with ensures result == exec_ref_value(source), discharged by verus; a postcondition counterexample OR a non-compiling production (E0308/parse error) = Divergent. Grounded across E1-E4 + the critic's 14 generality cases.",
+      "created_at": "2026-06-08T23:38:03.948979749Z",
+      "kind": "result"
+    }
+  ]
+}

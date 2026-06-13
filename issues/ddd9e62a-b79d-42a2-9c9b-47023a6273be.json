@@ -1,0 +1,30 @@
+{
+  "uuid": "ddd9e62a-b79d-42a2-9c9b-47023a6273be",
+  "display_id": 135,
+  "title": "release: tag v0.0.1 — version check + human push/tag/gh-release recipe",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T13:52:42.670423151Z",
+  "updated_at": "2026-06-08T13:58:12.323879688Z",
+  "closed_at": "2026-06-08T13:58:12.323879688Z",
+  "labels": [
+    "release"
+  ],
+  "comments": [
+    {
+      "uuid": "3b7e1a12-ae11-4ad0-942b-e5a6dae77bd3",
+      "author": "Yffe",
+      "content": "Plan: align crate versions to v0.0.1 (the release tag). Centralize into [workspace.package] version=0.0.1 + each member inherits version.workspace=true (single source of truth, like edition). Path-deps carry no version pin so resolution is unaffected. cargo build --workspace green (all 6 crates compile as v0.0.1).",
+      "created_at": "2026-06-08T13:57:45.090035180Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "2fea2e9a-53a5-47fd-81d8-a85635f8a72f",
+      "author": "Yffe",
+      "content": "Done. Workspace version set to 0.0.1: [workspace.package] version=0.0.1 + all 6 crates inherit via version.workspace=true. cargo build --workspace green (all compile as v0.0.1). Committed e7d5131. The v0.0.1 git tag + GitHub release remain the human's step (R-GIT-1); the 403 on gh release create is the fine-grained PAT lacking Contents:Read-and-write — fix the token perm or use the web releases/new UI.",
+      "created_at": "2026-06-08T13:58:04.791419269Z",
+      "kind": "result"
+    }
+  ]
+}

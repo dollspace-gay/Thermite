@@ -1,0 +1,23 @@
+{
+  "uuid": "8c2d95a6-34fe-4a4f-bce0-88a55e76e259",
+  "display_id": 160,
+  "title": "thermite-tv: body_equivalence_obligation — exec-fn-wrapped STATE-refinement obligation (fn tv_body_wrap(<inputs>) ensures result-state == <ref state-denotation> { <production lowered body> }) for straight-line bodies. Sibling to exec_equivalence_obligation but over STATE not a single value. Step-2.2.1, .design/verified/exec-stmt-tv.md REQ-3.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:52:38.077567089Z",
+  "updated_at": "2026-06-09T03:05:14.982749058Z",
+  "closed_at": "2026-06-09T03:05:14.982749058Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "7296fb2c-7792-4681-9e74-ef953bc1befa",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (164039f + b9dc22f). body_equivalence_obligation + BodyObligationFrame — wraps the production body-lowering as an exec fn with ensures over the final state (single-cell == ; multi-cell per-projection); discharged by verus. Faithful body verifies; dropped-stmt/reordered-mutation/wrong-cell/swapped-branch caught.",
+      "created_at": "2026-06-09T03:04:44.203830404Z",
+      "kind": "result"
+    }
+  ]
+}

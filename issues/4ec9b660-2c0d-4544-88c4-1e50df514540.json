@@ -1,0 +1,31 @@
+{
+  "uuid": "4ec9b660-2c0d-4544-88c4-1e50df514540",
+  "display_id": 12,
+  "title": "Add mutation scoring with a frozen deterministic mutator set",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:39.369935561Z",
+  "updated_at": "2026-06-05T06:19:57.659342046Z",
+  "closed_at": "2026-06-05T06:19:57.659342046Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "2a6a2885-bfc0-4054-a204-264b313b22d0",
+  "comments": [
+    {
+      "uuid": "15404399-38fb-4e70-b61b-974e85df0225",
+      "author": "Yffe",
+      "content": "Implement §7 step-4 mutation scoring across forge/src/mutation.rs (frozen deterministic mutator set: operator flips, off-by-ones, early returns, branch swaps; MUTANT_CAP=64; seeded from DEFAULT_SOLVER_SEED), check.rs (mutation_score reuses item_subprogram+thermite_lower::lower+run_verus through the proof cache; floor gate AFTER L3 success), manifest.rs (with_mutation_score / rejected_weak_contract; RejectReason cause WeakContract), cli.rs (--mutation-floor flag), main.rs (mod mutation), and forge/tests/mutation_conformance.rs (AC-1..4 vs conformance/mutation/cases.json). Polarity: a mutant verus PROVES = SURVIVED (contract too weak); verus FAILS = KILLED. mutants_killed stays oracle-excluded (verus-version-sensitive).",
+      "created_at": "2026-06-05T05:46:47.389689626Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "02cad92c-6bca-4746-b3be-da2bbbd42c7b",
+      "author": "Yffe",
+      "content": "SHIPPED — mutation scoring with a frozen deterministic mutator set (§7 step 4). mutation.rs: operator flips/off-by-ones/early-returns/branch-swaps applied to the body, re-verified against the contract (KILLED=verus fails, SURVIVED=proves), via the proof cache. Floor (default 60%, --mutation-floor) gates after L3 success: <floor -> RejectReason WeakContract + survivor prompt. contract_quality.mutants_killed now LIVE (sum 7/7, binary_search 14/16); sum.cert.json '17/18' stays illustrative (oracle-excluded). Loop: doc-author -> builder -> critic (found #48 0/0-escape + #49 cache-bypass) -> 2 fixers. #48: zero_value_for returned None for &[T] -> early-return mutant skipped -> 0/0 -> 1.0 pass; FIXED (synthesize &[] early-return for slices + 0/0->gate backstop). #49: cache key omitted the check-logic version -> a pre-#12 cert bypassed the gate; FIXED (CHECK_SCHEMA_VERSION=2 in cache_key + load-time internal-consistency guard). Verified: weak slice contract gates (0/1), strong certifies (1/1, no over-gating), corpus L3 cold+warm, spec fns exempt. Commits fa55760 -> 3043e92 (critic) -> 64ec916 (#48) -> 6d7b3af (#49). workspace 255 tests, clippy/fmt clean. Strengthening SUGGESTIONS are #14. Not pushed.",
+      "created_at": "2026-06-05T06:19:50.323332697Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "7f4ebf98-9097-45b4-b0cb-106ecbb8a8b8",
+  "display_id": 108,
+  "title": "C9-A: plain-fn recursion — fn cannot carry a dec clause (parse error 'missing fx') so a self-calling exec fn cannot be written; needs FnItem.dec: Option<Clause> + parse_contract dec slot + lower_fn emitting 'decreases <dec>' + validator self-reference acceptance. GROUNDED: with decreases L3, non-decreasing -> 'could not prove termination' L0, no-dec -> 'recursive function must have a decreases clause'.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T17:22:26.574311230Z",
+  "updated_at": "2026-06-07T18:12:57.083142117Z",
+  "closed_at": "2026-06-07T18:12:57.083142117Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "6f96f6ea-ee03-4875-ab92-403e16bf5100",
+      "author": "Yffe",
+      "content": "C9-A plain-fn recursion: add FnItem.dec: Option<Clause> (ast) + parse_fn optional trailing dec after fx (parser); lower_fn emits decreases <spec_dec> when dec.is_some() reusing the spec-fn/loop machinery (lower); validator detects direct self-call (block_calls_name) and emits MissingDecreases when dec absent and not fx diverge (the #88 exemption honored); grounded conformance test (recursion_conformance.rs) — L3 with dec, L0 non-decreasing, MissingDecreases no-dec, L1 diverge, builds+runs. Additive dec field rippled to FnItem literals as dec: None. Mutual recursion (REQ-6) deferred.",
+      "created_at": "2026-06-07T17:45:25.336347828Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a4a324d3-bc35-4e7c-89ca-16d104fc8881",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (167a4eb recursion + 43a5798 #110 mutual fix). Plain-fn recursion: FnItem.dec clause (parsed after fx), lower_fn emits decreases, validator mandatory-dec rule (block_calls_name self-detection + the #88 fx-diverge exemption). Critic NO DIVERGENCE on the termination-laundering crux: decreasing recursion -> L3, non-decreasing -> L0 (several shapes), no-dec self-call -> structured MissingDecreases even buried deep, diverge-recursion -> L1 (not L3 laundering), dec genuine (no cheat, builds+runs). Found+fixed #110 (mutual recursion a<->b crashed Verus with a VIR error -> now a clean L0 MutualRecursionUnsupported cert via SCC-size>=2 detection, no crash, no false L3). Independently re-confirmed: cd(n-1) dec n -> L3, mutual -> L0. 628 tests. Mutual recursion DEFERRED (v1.1).",
+      "created_at": "2026-06-07T18:12:48.333975638Z",
+      "kind": "result"
+    }
+  ]
+}

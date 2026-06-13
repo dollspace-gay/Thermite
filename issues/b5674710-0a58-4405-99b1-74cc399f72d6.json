@@ -1,0 +1,37 @@
+{
+  "uuid": "b5674710-0a58-4405-99b1-74cc399f72d6",
+  "display_id": 260,
+  "title": "Divergence: doc-drift.py tracebacks with exit 1 on a TOML-valid but wrong-shaped route table (REQ-9 demands exit 3)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T01:19:26.199622690Z",
+  "updated_at": "2026-06-12T01:27:29.767830758Z",
+  "closed_at": "2026-06-12T01:27:29.767830758Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f56987a3-a92f-4ae9-a07a-cef7fda9f0c1",
+      "author": "Yffe",
+      "content": "Failing test at tooling/tests/test_doc_drift_critic.py::test_c2_wrong_shape_route_table_is_exit_3_not_traceback demonstrates divergence (DOC_DRIFT_DIVERGENCE=1). route = 5 or route = [\"a\"] parses as TOML, then load_doc_files raises TypeError/AttributeError -> unhandled traceback, Python exit 1 — REQ-9's DRIFT-FOUND class, so a broken route table is misreported as a drift finding, and the 'never a traceback' contract (REQ-9/AC-5 discipline, restated in the gate's own docstring) is broken. Expected: exit 3, no Traceback. Toolchain site: def load_doc_files in tooling/doc-drift.py (shape of data['route'] never validated).",
+      "created_at": "2026-06-12T01:19:58.314711167Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "7b14e4c2-c488-41de-9876-a6152644fbe1",
+      "author": "Yffe",
+      "content": "Plan (R-FIX, single file tooling/doc-drift.py):\n\nRoot cause: load_doc_files iterates 'for route in data.get(route, [])' with no shape validation. When spec-routes.toml parses as valid TOML but route is non-list (route = 5 -> int) or a list of non-tables (route = [a] -> str entries), the loop / .get() calls raise an unhandled TypeError -> Python exits 1 with a traceback. Authority REQ-9: a malformed enumeration source is an ENVIRONMENT failure (exit 3, INCONCLUSIVE), never a drift finding (exit 1), never a traceback / fail-open.\n\nFix: after tomllib.load succeeds, validate the loaded shape inside load_doc_files: data.get(route) must be a list (else EnvironmentError3 naming the defect); each entry must be a dict/TOML table (else EnvironmentError3); each entrys design and crate_pattern must be a non-empty str (else EnvironmentError3). Any violation raises EnvironmentError3 with a loud message naming the defect, which main() catches -> exit 3. Composes with the #259 zero-routes guard already present. Convention: doc-drift.py deliberately does NOT mirror spec-discipline.pys fail-open return {route:[]}; a CI tripwire that fails open is a silent pass (R-HONEST-3), so malformed input is INCONCLUSIVE here.\n\nAlso: ungate test_c2 (remove @unittest.skipUnless) so it is permanent regression coverage.\n\nGauntlet: python3 -m unittest discover -s tooling/tests -v (12 run, 0 skipped, all pass); python3 tooling/doc-drift.py live (exit 1, 48 MISSING-PIN + 1 DRIFT); git diff -- scripts/audit.sh empty.",
+      "created_at": "2026-06-12T01:25:00.779161726Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a2d43204-3c84-4ad6-9050-6119ac54b134",
+      "author": "Yffe",
+      "content": "FIXED in 73776c32c37b047974debc0f842325bf2192e831 (single file tooling/doc-drift.py; +27 LOC fix, plus test ungate).\n\nRoot cause: load_doc_files ran 'for route in data.get(route, [])' with no shape validation. A TOML-valid wrong-shaped table made it iterate a non-list (route = 5 -> TypeError) or call .get() on a non-dict entry (route = [a] -> AttributeError) -> unhandled traceback, exit 1 (REQ-9 DRIFT class). Authority .design/tooling/doc-drift-tripwire.md REQ-9: a malformed enumeration source is INCONCLUSIVE (exit 3, spec-routes.toml unreadable), never a drift finding, never a traceback, never fail-open (R-HONEST-3).\n\nFix: in load_doc_files, after tomllib.load, validate shape before the loop and raise EnvironmentError3 (caught by main -> exit 3) naming the defect: route must be a list; each entry a [[route]] table; each design/crate_pattern, if present, a string. Composes with the #259 zero-routes guard. doc-drift.py does NOT adopt spec-discipline.pys fail-open return {route:[]} (that gate is fail-open by design; a tripwire that fails open is a silent pass).\n\nbefore: for route in data.get(route, []):  # TypeError on route = 5\nafter:  routes = data.get(route, []); isinstance(list)/isinstance(dict)/isinstance(str) guards -> EnvironmentError3\n\nProbe (both wrong shapes now exit 3, loud, no traceback):\n  route = 5      -> 'route table tooling/spec-routes.toml is wrong-shaped: route must be a list of [[route]] tables, got int' EXIT=3\n  route = [a]  -> '... route entry #0 must be a [[route]] table, got str' EXIT=3\n\nUngated test_c2_wrong_shape_route_table_is_exit_3_not_traceback (removed DOC_DRIFT_DIVERGENCE skip) -> permanent regression coverage.\n\nGauntlet (integer counts):\n  python3 -m unittest discover -s tooling/tests -v : 12 run, 0 skipped, OK (all pass)\n  python3 tooling/doc-drift.py (live tree) : exit 1, 48 MISSING-PIN + 1 DRIFT\n  git diff -- scripts/audit.sh : empty (AC-7 byte-identical)\n\nNo new pub API (R-DEFER-1 n/a). Hand back to acto-critic for re-audit.",
+      "created_at": "2026-06-12T01:27:24.643248850Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "uuid": "0879c2a5-ca30-4c06-97fe-e5dc14cd6eee",
+  "display_id": 216,
+  "title": "Divergence: proof-backends.md §4 stabilized form vs REQ-7/§8 AUTO-discharge claims — z3-demotion evidence is shallow QF_LIA; no normalization/fuel-irrelevance story makes the ∃N∀fuel deep-embedded obligation smt-reachable",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:47:40.110885175Z",
+  "updated_at": "2026-06-10T22:51:48.845723345Z",
+  "closed_at": "2026-06-10T22:51:48.845723345Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "1bdb9415-099f-48fb-b129-6482d04f2599",
+      "author": "Yffe",
+      "content": "Groundedness gap (no kernel pin possible — the defect is an ABSENCE). §4's exported obligation is '∀ v : Env, stabilizesProp req {v with specs := R_item} → stabilizesProp ens …' — an ∃N∀fuel statement over the deep embedding (denote/intVal applied to Expr encodings). REQ-7(i)/§8/Verification-(ii) claim the AUTO battery (omega/simp/decide/Lean-SMT smt) discharges the scalar-contract corpus obligations, grounded in z3-demotion.md — but that PoC discharged SHALLOW QF_LIA theorems (z3-demotion.md: 'tv_obligation_arith_cmp (a b c : Int) : (a - b ≤ c) ↔ (a ≤ c + b)'), hand-translated, with no denote, no stabilizesProp wrapper. Lean-SMT's smt will not chew ∃N∀fuel goals over a deep embedding; decide/simp cannot synthesize the env-dependent ∃N witness (N depends on |xs| for recursive specs — needs induction). The doc's only bridge is the fuel₀-hint sentence (an unfolding budget — addresses neither ∃N elimination nor deep→shallow normalization). Missing: a named normalization story, e.g. a fuel-irrelevance lemma (specCall-free e ⇒ denote fuel-independent ⇒ stabilizesProp ↔ denote 0) letting the exporter emit FUEL-FREE shallow statements for the auto fragment — without it increment (ii)'s AC fails by design.",
+      "created_at": "2026-06-10T19:48:14.781150104Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "283c350f-ca1c-418d-ba5b-375d102c393e",
+      "author": "Yffe",
+      "content": "Plan: commit the kernel-checked critic pin lean/Thermite/PinStabilization.lean (Pins A/B for #214/#215; #216 has no kernel pin — absence-of-story defect, tracked by citation) directly on main per critic protocol; no production code touched.",
+      "created_at": "2026-06-10T19:48:54.699909552Z",
+      "kind": "plan"
+    }
+  ]
+}

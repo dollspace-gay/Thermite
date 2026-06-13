@@ -1,0 +1,30 @@
+{
+  "uuid": "0b0830df-0994-40be-8bf9-1fd81809feb5",
+  "display_id": 159,
+  "title": "thermite-tv: exec_stmt_encode — independent operational-semantics reference state-denotation for the FROZEN kernel exec-statement subset (let/assign/mutation/seq/if). Maps a straight-line Block to a Verus spec-fn state-transformer (final state as a fn of initial state). Step-2.2.1 prereq, governed by .design/verified/exec-stmt-tv.md REQ-2.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:52:23.600531679Z",
+  "updated_at": "2026-06-09T03:05:08.976257371Z",
+  "closed_at": "2026-06-09T03:05:08.976257371Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "6427365a-8f73-478c-b7d7-7e722e6d3290",
+      "author": "Yffe",
+      "content": "Built step-2.2.1 body-refinement TV core (#159 state encoder + #160 obligation + #161 lower_exec_body; epic #158). thermite-lower: lower_exec_body (lower_block_inner over the minimal Ctx::exec() standalone-body frame — the #161 feasibility; loop -> Unsupported) + exec_body_tests B1-B4 cross-crate bridge. thermite-tv: exec_stmt_encode::body_ref_state (independent big-step state-transformer: substitution-threading, mutation-ORDER, if-branch composition, multi-cell tuple projection; composes exec_ref_value; NO thermite-lower dep) + obligation::body_equivalence_obligation + tests/body_teeth.rs. Verified real verus: 4 faithful VERIFIED, 4 infidel CAUGHT (B2 reorder, B4 wrong-cell). Workspace 751 passed/0 failed, clippy+fmt clean. REQ-1/2/3 SHIPPED; REQ-4 (#163)/REQ-5 (#162) NOT-STARTED. Commit to main, no push, no close (critic re-audits).",
+      "created_at": "2026-06-09T01:39:20.794699741Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "a85a6f1e-b5b5-423f-b2d7-7d085b4be466",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (164039f + #165 fix b9dc22f). exec_stmt_encode::body_ref_state — the independent big-step state-transformer reference (substitution threading, mutation-order sensitivity, multi-cell tuple projection, if-statement branch composition [#165]). Critic: state-threading SOUND (mutation-order/data-dep/interleaved-cell/stale-read all caught; boundary honest).",
+      "created_at": "2026-06-09T03:04:42.327225374Z",
+      "kind": "result"
+    }
+  ]
+}

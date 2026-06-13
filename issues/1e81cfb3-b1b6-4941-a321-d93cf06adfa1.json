@@ -1,0 +1,27 @@
+{
+  "uuid": "1e81cfb3-b1b6-4941-a321-d93cf06adfa1",
+  "display_id": 42,
+  "title": "Audit: REQ-6 flat-closure-fragment validator (4d46f8a) — NO DIVERGENCE",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T01:15:59.370405162Z",
+  "updated_at": "2026-06-05T01:16:45.662608200Z",
+  "closed_at": "2026-06-05T01:16:45.662608200Z",
+  "comments": [
+    {
+      "uuid": "e09267bb-e54f-433f-8092-27d6d0beb60c",
+      "author": "Yffe",
+      "content": "Plan: commit tests/divergence_nesting.rs — 11 adversarial REQ-6 probes (under-enforcement: 2-level/inv/3-arg-outer/spec-fn-body nests reject; over-enforcement: sibling combinators + named-spec-fn-body composition stay Ok; REQ-5 no-panic). Audit verdict NO DIVERGENCE; tests are regression guards, all green.",
+      "created_at": "2026-06-05T01:16:09.092668981Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "c6760fb0-34e0-42b7-a5b9-034dda62fd24",
+      "author": "Yffe",
+      "content": "Result: NO DIVERGENCE. 11 probes committed at thermite-spec/tests/divergence_nesting.rs (adac0ec), all green. Under-enforcement (2-level/inv/3-arg-outer/spec-fn-body nests) all reject with NestedCombinator; over-enforcement/leak probes (sibling top-level combinators, named-spec-fn-body composition, named-spec-fn-in-closure) all stay Ok. Generality grep: rule keys on combinators::lookup, no name hardcoding. Gauntlet green. One cosmetic artifact (co-emitted misleading ForbiddenCall on an already-rejected nested-combinator program) documented in the test file, not pinned.",
+      "created_at": "2026-06-05T01:16:40.379353947Z",
+      "kind": "result"
+    }
+  ]
+}

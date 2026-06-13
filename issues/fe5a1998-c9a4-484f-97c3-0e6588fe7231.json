@@ -1,0 +1,30 @@
+{
+  "uuid": "fe5a1998-c9a4-484f-97c3-0e6588fe7231",
+  "display_id": 184,
+  "title": "step-3 increment 4a: Z3 DEMOTION — wire Lean-SMT (cvc5 proof reconstruction) so the per-run TV equivalence is kernel-checked, not Z3-trusted; shrinks the TCB (frontier, ~30% cvc5 rules today) (epic #169)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:55:02.104149293Z",
+  "updated_at": "2026-06-09T22:24:32.611109007Z",
+  "closed_at": "2026-06-09T22:24:32.611109007Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "d7d28dea-7c73-4687-92d6-646cacd71e8b",
+      "author": "Yffe",
+      "content": "Approach: investigate Lean-SMT (cvc5 proof reconstruction) against our v4.30.0 toolchain; ship the highest tier that genuinely works. Pin lean/ toolchain to lean-smt's nearest supported (v4.29.0) ONLY IF the whole spine stays green (else revert). Add Lean-SMT as a Lake dep, build the Smt lib + cvc5 FFI, and discharge real TV equivalence obligations ((P_prod) <==> (P_ref) from thermite-tv/obligation.rs) with the smt tactic, kernel-checked. Report #print axioms honestly (standard set vs trust axiom). Document the exact walls + upstream asks in .design/verified/z3-demotion.md. Tier 1 doc always ships.",
+      "created_at": "2026-06-09T22:20:19.546587117Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "f4020022-6bb1-4b9a-be15-7f57a5e6a1ff",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (65513d81) — TIER 3 reached. Z3-demotion PoC: Lean-SMT (smt 7d1d823 + lean-cvc5 4ecae27 vendoring cvc5 1.3.2 FFI + Mathlib, toolchain pinned v4.30.0->v4.29.0, spine green 366 jobs) discharges TWO real TV-shaped equivalence obligations (the obligation.rs (P_prod)<=>(P_ref) shape, hand-translated, stated as such) via the smt tactic, KERNEL-CHECKED with standard axioms only [propext,Classical.choice,Quot.sound] — the cvc5 proof is genuinely replayed in the kernel, cvc5 NOT in the trust base for these obligations. Critic NO DIVERGENCE: tactic identity live-probed (skip->unsolved; trace.smt shows cvc5 invocation+unsat core); no silent omega fallback; spine unperturbed; doc HONEST — PARTIAL-scope demotion (QF-linear-int only; QF_BV blocked by a verified upstream sorry in Smt/Reconstruct/BitVec/Bitblast.lean:36; quantified combinators weak; Verus/Z3 emit no certificates so the architecture RE-solves; hand-translation residual named; production h_tv REMAINS Z3-trusted — no overclaim). Upstream asks recorded in .design/verified/z3-demotion.md.",
+      "created_at": "2026-06-09T22:24:24.539923861Z",
+      "kind": "result"
+    }
+  ]
+}

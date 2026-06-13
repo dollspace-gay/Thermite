@@ -1,0 +1,23 @@
+{
+  "uuid": "91cadcca-8a9e-41ed-a351-25cf85a2f845",
+  "display_id": 204,
+  "title": "proof-backends increment (i): reify the backend-neutral Obligation artifact + the Engine trait in forge, refactor the existing Verus discharge path behind the interface (behavior byte-identical, the conformance corpus cert oracle unperturbed) — no new engine. The Obligation = {item, class, AST slice, env/typing ctx} serialized independent of any prover input language; Engine = {fragment, discharge: Obligation -> Proven|Refuted|Unknown, trust_profile, evidence}. Grounds on the SHIPPED thermite-tv/src/obligation.rs materialization + forge/src/check.rs pipeline. Ref .design/verified/proof-backends.md REQ-1/REQ-2/REQ-8.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T18:40:34.417886671Z",
+  "updated_at": "2026-06-11T07:02:45.681282056Z",
+  "closed_at": "2026-06-11T07:02:45.681282056Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "a7c23520-fe3d-4810-a9ce-2253fd7e1d86",
+      "author": "Yffe",
+      "content": "Increment (i): reify the backend-neutral Obligation artifact (forge/src/obligation.rs) + the Engine trait & Verus engine (forge/src/engine.rs), route the per-item L3 CERTIFICATION discharge through the engine in check.rs. Plan: (1) Obligation{item,class,role,ast_slice,env} prover-neutral (AST nodes + Thermite types + coercion flags, no Verus strings); ObligationClass = the full AC-1 union incl. RegistryTermination (REQ-1/REQ-1.2). (2) trait Engine{name,fragment,discharge,trust_profile,evidence_key} + VerusEngine filling all four slots; verdict_of lifts classify_verus_outcome's 3-way map to Verdict with the REQ-3.1 fast-unknown remap (REQ-2/REQ-3). (3) the REQ-3.1 remap is NARROW (counterexample_is_incompleteness_unknown): only the genuine SMT-unknown signature degrades; witnessed countermodels + frontend E0308 type errors stay Refuted so the corpus is byte-identical. (4) the corrected full-expression-position closure reachable_spec_fn_names_full (seed req-ens-body-dec, step body-dec — the #226 measure-position fix). (5) the 0.1 vacuity/equivalence/strengthen meta-queries stay OUT. (6) tests in-module + forge/tests/engine_interface.rs cert-oracle identity (bin-only placement, mirroring degrade.rs verus_anchor). Verify: cargo test --workspace 0 failed + conformance certs byte-identical.",
+      "created_at": "2026-06-11T05:01:58.826315415Z",
+      "kind": "plan"
+    }
+  ]
+}

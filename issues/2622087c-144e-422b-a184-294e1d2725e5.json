@@ -1,0 +1,30 @@
+{
+  "uuid": "2622087c-144e-422b-a184-294e1d2725e5",
+  "display_id": 86,
+  "title": "String L3 completeness: weave TString into per-item subprograms (struct fields) + slice u64->usize arg coercion (editor-core prereqs)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-06T22:43:34.396631464Z",
+  "updated_at": "2026-06-06T23:28:47.289719808Z",
+  "closed_at": "2026-06-06T23:28:47.289719808Z",
+  "labels": [
+    "bug"
+  ],
+  "comments": [
+    {
+      "uuid": "747b421d-e1a1-4691-97d9-776b96c4dc4f",
+      "author": "Yffe",
+      "content": "Finish + commit the prior builder's COMPLETE, COHERENT uncommitted tree (verified by acto-critic via cache-cleared verus). THIN: no revert/redo/refactor. GAP 1 = slice/byte_at exec-position u64->usize arg coercion (coerce_usize + is_usize_cast in lower_expr MethodCall exec arm, exec-only, whole index-intrinsic family). GAP 2 = TString wrapper woven into the per-item sub-program when String is reachable as a struct/enum FIELD type (ty_reaches_string/variant_reaches_string + block_has_string_local widen program_uses_string) + String-field receiver .len()/.byte_at(i) -> spec fns (Ctx::string_fields/is_string_field; lower_inv_expr MethodCall arm). check.rs UNTOUCHED. New forge/tests/string_l3_completeness.rs (5 real-verus tests, joins the green suite). spec-routes.toml NOT touched: forge/tests/*.rs is not a gated path (no src/ segment). Commit only; do not push, do not close (#86 awaits final critic; orchestrator closes).",
+      "created_at": "2026-06-06T23:26:06.001353360Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "1f98d7cd-3a98-4e6b-937d-0511b9199978",
+      "author": "Yffe",
+      "content": "SHIPPED (3ff0f42). Both String-L3 gaps closed: GAP 1 slice/byte_at exec u64->usize arg coercion (coerce_usize + is_usize_cast, lower.rs); GAP 2 struct-field TString weave (program_uses_string widened to scan struct/enum field types via ty_reaches_string/variant_reaches_string + fn-local lets; the spec side via Ctx::string_fields/is_string_field/lower_inv_expr rewrite). check.rs correctly untouched (reachable_adt_deps already weaves the struct decl). Assessment-critic verified by reading + cache-cleared verus; independently re-confirmed: Buffer(struct+String+inv)->L3, insert_at(slice+concat)->L3, move_right->L3, un-CAP-bounded slice->L0. 533 tests, real verus, string corpus + workspace unchanged. The disruption left a complete coherent tree. Editor verified buffer core unblocked.",
+      "created_at": "2026-06-06T23:28:40.145251750Z",
+      "kind": "result"
+    }
+  ]
+}

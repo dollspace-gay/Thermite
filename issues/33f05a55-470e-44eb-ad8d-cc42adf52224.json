@@ -1,0 +1,30 @@
+{
+  "uuid": "33f05a55-470e-44eb-ad8d-cc42adf52224",
+  "display_id": 242,
+  "title": "Divergence: Stabilize.lean denoteNB Prop-combinator arm omits per-element predicate none-gating — divergent registry forges RegistryTerminating through a comb predicate body (kernel-checked Pin F)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T08:41:44.502444087Z",
+  "updated_at": "2026-06-11T14:34:30.752609817Z",
+  "closed_at": "2026-06-11T14:34:30.752609817Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "0d14f13e-2d33-433d-abac-289ea178b468",
+      "author": "Yffe",
+      "content": "Kernel-checked pin at lean/Thermite/PinCombPredGap.lean demonstrates the divergence: denoteNB's Prop-combinator arm carries the spine denote proposition verbatim and none-gates only slice/seq2/idx — the per-element predicate body is never gated. For eDeep := count_where(s, |x| forall_in(s, |y| f(x) > 0)) with the divergent registry f(x)=f(x): intValNB fuel eDeep envD = some 0 at every fuel (eDeep_NB), so RegistryTerminating envD eDeep HOLDS (divergent_registry_forges_the_hypothesis) and stabilization_exists delivers the bottom-poisoned stabilized value 0 (stabilization_reachable_on_divergence) — contradicting proof-backends.md §1.2 ('every arm propagates none') and §4 ('discharges CONVERGENCE of every reachable spec-call' / 'a GENUINE precondition a divergent registry cannot forge'). Pin E's cycle-4 finding, one constructor deeper. Axioms: [propext, Classical.choice, Quot.sound], no sorryAx. Build: lake build Thermite.PinCombPredGap green.",
+      "created_at": "2026-06-11T08:42:11.946654186Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "53da091f-2dcb-495f-b2d1-dcd41e2dd78b",
+      "author": "Yffe",
+      "content": "Critic pin approach: pin the gap as kernel-checked Lean theorems in lean/Thermite/PinCombPredGap.lean (Pin F, the f7d288ef precedent) — construct eDeep = count_where over a forall_in whose predicate body calls the divergent f(x)=f(x), prove intValNB = some 0 at every fuel, hence RegistryTerminating is FORGED and stabilization_exists delivers the bottom-poisoned 0. Commit the pin as the audit artifact; generator must fix the denoteNB comb arm (or the doc/discipline) at the root.",
+      "created_at": "2026-06-11T08:43:14.448314987Z",
+      "kind": "plan"
+    }
+  ]
+}

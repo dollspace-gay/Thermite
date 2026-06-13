@@ -1,0 +1,30 @@
+{
+  "uuid": "7456c0bf-8a73-469d-bb87-0380722c1e26",
+  "display_id": 176,
+  "title": "step-3 increment 1b: contract S_C arithmetic operators (+ - * / % << >> & | ^) + partiality (div/shift-by-zero rejected) — extend the Lean fragment + prove ref_sound for arithmetic (epic #169)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:53:41.538867894Z",
+  "updated_at": "2026-06-09T17:16:47.810660508Z",
+  "closed_at": "2026-06-09T17:16:47.810660508Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "1e3d950b-c630-42fa-a2ee-567957db5bef",
+      "author": "Yffe",
+      "content": "Build increments 1b (#176 arithmetic) + 1c (#177 casts) together, extending the SHIPPED #170 Lean S_C fragment. Ast.lean += ArithOp (10 ops) + CastTy (u64/u32/usize/nat/int) + Expr.arith/Expr.cast. Denote.lean: shared arithDenote (int arithmetic, NO wrap; bitwise/shift via core Nat ops over Int.toNat) + castDenote (as nat = Int.toNat under >=0 frame). Partiality of Div/Rem/Shl/Shr (zero divisor/shift) = SOURCE precondition (L0), modelled with TOTAL Int ops held CONSISTENT across denote/refDenote so T1 is insensitive to the partial point. RefEncode.lean: encArith/encCast faithful to ref_encode.rs binop_str arithmetic arms + cast_target; refIntVal models encode_binary's whole-binary paren + encode_cast's ({inner}) as {target} paren. Soundness.lean: ref_sound extended; refIntVal_eq_intVal by induction; NEGATIVE lemma cast_paren_drop_breaks_soundness retires the #122/#146 cast-paren class (paren-dropped (n-1) as nat re-parses as n-(1 as nat), differs at n=-1: 0 vs -2). Core Lean only, no Mathlib. lake build green, #print axioms ref_sound -> [propext].",
+      "created_at": "2026-06-09T17:07:15.495409639Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "df950577-5ef5-461d-9963-d3ed8b4ff282",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (bcaba0a). Contract S_C arithmetic (Add/Sub/Mul/Div/Rem/Shl/Shr/BitAnd/BitOr/BitXor) — Lean fragment extended, ref_sound proved (lake build green, [propext]). Critic NO DIVERGENCE: encArith matches ref_encode.rs binop_str arm-for-arm (all 10); denote uses Euclidean Int.ediv/emod + unbounded-int Sub matching Verus spec semantics; partiality (div/shift-by-zero) held consistent between denote/refDenote (T1-insensitive, not a vacuity dodge); non-vacuous (rfl fails; a faulty Add->minus map breaks the round-trip).",
+      "created_at": "2026-06-09T17:16:20.958237511Z",
+      "kind": "result"
+    }
+  ]
+}

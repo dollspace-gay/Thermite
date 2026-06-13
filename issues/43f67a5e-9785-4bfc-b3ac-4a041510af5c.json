@@ -1,0 +1,23 @@
+{
+  "uuid": "43f67a5e-9785-4bfc-b3ac-4a041510af5c",
+  "display_id": 103,
+  "title": "Acceptance programs: formatter + calculator + line/CSV parser certify L3 and forge build+run (compose-any-program proof)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T09:33:38.450653490Z",
+  "updated_at": "2026-06-07T10:34:59.256474280Z",
+  "closed_at": "2026-06-07T10:34:59.256474280Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "96e3822c-3609-4573-903d-213cb0833069",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (cb9d781 programs + 20ea6cb #104 L1 exec twins). 3 acceptance programs certify L3 AND build+run: formatter (42->'42', 0->'0', 1000000->'1000000'; round-trip parse_be(result)==n), calculator (add 2+3->Some(5), 100+200->Some(300); sum pinned), parser (split 'a,b,c'->3 pieces; count-bound). The basis COMPOSES + RUNS. C5/C7 build-side L1 exec twins (#104) closed the run gap. Critic NO DIVERGENCE (certs genuine + load-bearing; twins compute correctly on edge cases; runtime checks fire; no cheat). The editor is the 4th acceptance program (#90).",
+      "created_at": "2026-06-07T10:34:50.870202235Z",
+      "kind": "result"
+    }
+  ]
+}

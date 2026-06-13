@@ -1,0 +1,30 @@
+{
+  "uuid": "77aa5998-e4e1-4f54-8c2b-f12b6d0901bd",
+  "display_id": 129,
+  "title": "docs: remove editor run.sh wrapper, document the standalone binary (forge build --out ./nano; run ./nano)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T02:00:39.701975600Z",
+  "updated_at": "2026-06-08T02:02:12.817840987Z",
+  "closed_at": "2026-06-08T02:02:12.817840987Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "c0a6700e-f62d-4ee7-8913-a65040fe6d59",
+      "author": "Yffe",
+      "content": "Plan: remove examples/editor/run.sh; update README How-to-run to the standalone binary (forge build --out ./nano; run ./nano directly — self-sets raw mode, no script).",
+      "created_at": "2026-06-08T02:01:33.522030308Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "4b289f25-eeeb-4b4b-a540-432dd0873d7c",
+      "author": "Yffe",
+      "content": "Done. Removed examples/editor/run.sh; README How-to-run now documents the standalone binary: forge build editor.th --entry run --no-sandbox --out ./nano, then ./nano directly (self-sets raw mode via extern-C termios, no script). Verified: ./nano runs standalone (piped hi+Enter+yo+Ctrl-S -> saved 'hi\\nyo').",
+      "created_at": "2026-06-08T02:01:56.227961927Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "uuid": "1d0b0dee-8b79-4a3d-a413-44e8f4e29385",
+  "display_id": 174,
+  "title": "thermite-semantics increment (d): COMPOSE S_C + S_E + S_B into the whole-frozen-subset denotation S and discharge the composed (T2) universal: for all P passing TV, denotation of lower(P) = denotation of P under S — lowering faithfulness relative to {Z3, S = intended meaning}. Depends on increments (a)(b)(c) (#170/#171/#172). The CompCert-class capstone of epic #169.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T14:17:44.706427122Z",
+  "updated_at": "2026-06-09T20:36:05.237843904Z",
+  "closed_at": "2026-06-09T20:36:05.237843904Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "80bf682a-d234-407a-b9a8-ac57ab18dd77",
+      "author": "Yffe",
+      "content": "FORK RESOLVED (#173): prover = Lean 4. Increment (d): compose S into the whole-frozen-subset SEMANTIC-PRESERVATION theorem (T2), stated as a forward simulation (relation ~ between Thermite and Verus-Rust states; observable = caged fragment + fx rows; Leroy/CompCert). Verified-validator architecture: T1 + per-run TV = T2, relative to {Z3, S=intended meaning}. See .design/verified/thermite-semantics.md REQ-3/REQ-7.",
+      "created_at": "2026-06-09T15:44:09.693212869Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "06e1a8b6-c1ca-4f5c-9771-7400c14c90d7",
+      "author": "Yffe",
+      "content": "Capstone build (T2 meta-theorem, increments (d) #174 + 3b #183). NEW lean/Thermite/Faithfulness.lean (namespace Thermite): the TV-hypothesis abstraction FnTvWitness (per-layer Z3-discharged h_tv premises), the per-layer meta-theorems tv_meta_contract/tv_meta_exec/tv_meta_body (each h_tv.trans (T1)), and the composed whole-program lowering_faithful (w : FnTvWitness). Composes the three proven T1 theorems ref_sound_eq + Exec.exec_ref_sound + Exec.body_ref_sound (untouched). h_tv = ⟦lower(P)⟧ = ⟦ref(P)⟧ is the Z3-discharged trust boundary (NOT Lean-proven; #184 demotes Z3); lowered is an arbitrary denotation value so h_tv is a genuine premise (h_tv_is_genuine_premise proves non-vacuity). The ∀ P is real = the existential→universal conversion, relative to {Z3, S=intended-meaning, Lean kernel}. lake build SUCCEEDS; #print axioms lowering_faithful = [propext, Classical.choice, Quot.sound] (standard only, no sorryAx); cargo build --workspace unaffected. Residuals named: loops #163, Z3-demotion #184, Rust↔Lean #185. Manifest: Faithfulness.lean (new) + Thermite.lean (import) + .design/verified/thermite-semantics.md (REQ-3 SHIPPED). NOT closing — acto-critic re-audits.",
+      "created_at": "2026-06-09T20:31:00.232975238Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "290f3b5c-e19d-48ec-a3af-57b86b65fd67",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (7c85da25). The T2 CAPSTONE: lowering_faithful : forall (w : FnTvWitness), w.loweredContract = denote(...) AND w.loweredBody = bodyDenote(...) — the existential->universal conversion as a Lean theorem. Per-layer tv_meta_contract/exec/body (each h_tv.trans T1) + the composed whole-program lowering_faithful. Critic NO DIVERGENCE: the statement is the genuine universal forall-P claim (loweredContract/Body ARBITRARY independent fields, NOT refDenote — non-circular, not T1-restated); h_tv is a genuine non-vacuous Z3-discharged premise (h_tv_is_genuine_premise: cannot be supplied for a disagreeing lowering); the trust boundary is HONEST (h_tv Z3-discharged NOT Lean-proven; the Verus-logic bridge attributed; trust base {Lean kernel, Z3, S=intended-meaning, Verus VC-gen, rustc/LLVM} enumerated; residuals {loops #163, Z3-demotion #184, Rust<->Lean #185} named; no overstatement); composition covers contract+body, loops honestly out; clean axioms [propext,Classical.choice,Quot.sound]; T1 untouched. The verified-validator architecture is now a Lean theorem, relative to {Z3, S=intended-meaning}.",
+      "created_at": "2026-06-09T20:35:52.035166874Z",
+      "kind": "result"
+    }
+  ]
+}

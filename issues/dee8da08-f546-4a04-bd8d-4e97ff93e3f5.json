@@ -1,0 +1,30 @@
+{
+  "uuid": "dee8da08-f546-4a04-bd8d-4e97ff93e3f5",
+  "display_id": 140,
+  "title": "contract-TV REQ-1: independent reference encoder ref_contract_pred for the SpecTherm sublanguage (comparisons/connectives/result/old/spec-fn calls/8 combinators via REGISTRY.verus_l3 + spec rewrites slice->@/method->spec_*/cast->nat) — MUST NOT call lower_expr (N-version independence)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T18:15:29.944266787Z",
+  "updated_at": "2026-06-08T19:00:53.284631736Z",
+  "closed_at": "2026-06-08T19:00:53.284631736Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "284e6fe8-d7b6-46ea-b297-825de07b36e0",
+      "author": "Yffe",
+      "content": "Builder dispatch (epic #139): ship thermite-tv crate core — REQ-1 independent reference encoder (ref_encode::ref_contract_pred, deps thermite-syntax+thermite-spec ONLY, no thermite-lower), REQ-2 obligation builder (equivalence_obligation), REQ-4 teeth-test F1-F4 against real verus (faithful verifies / infidel counterexample). Manifest: Cargo.toml, thermite-tv crate (Cargo.toml, src/lib.rs, src/ref_encode.rs, src/obligation.rs, tests/teeth.rs), contract-tv.md, spec-routes.toml lib.rs route. Not closing — critic re-audits.",
+      "created_at": "2026-06-08T18:38:27.252413417Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "2e81f6e7-9fa2-4f8f-8781-abed61a0f732",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (85e63e0 + #145 fix d7344ae). The independent reference encoder ref_contract_pred (thermite-tv crate, deps syntax+spec only, no thermite-lower — independence compile-enforced). Critic audited generality (!=/>/>=, exists_in/count_where, old, conjunction, implication, byteview shapes — all faithful) + coercion soundness (no false negatives — u64-level infidelity still caught). Found+fixed #145 (Index-arg combinators forall_below/forall_from were slice-@-viewed -> now per-kind dispatch via the registry arg_kinds: Slice->@, Index->as int, Pred->closure). 318 tests.",
+      "created_at": "2026-06-08T19:00:38.796083568Z",
+      "kind": "result"
+    }
+  ]
+}

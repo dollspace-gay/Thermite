@@ -1,0 +1,41 @@
+{
+  "uuid": "a01c1b20-9bad-469d-b0fa-1d7b2bbb788f",
+  "display_id": 37,
+  "title": "Observation: int-literal digit separators dropped (thermite-syntax lexer u128); REQ-3 'underscores preserved verbatim' unmet but numerically faithful",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T22:16:06.110502459Z",
+  "updated_at": "2026-06-05T19:06:29.897900180Z",
+  "closed_at": "2026-06-05T19:06:29.897900180Z",
+  "comments": [
+    {
+      "uuid": "24a3b5b7-33ed-4e6a-a115-6fb527be9a1e",
+      "author": "Yffe",
+      "content": "Source: thermite-syntax lex_int strips '_' and accumulates into Token::Int(u128); AST Expr::IntLit(u128) (ast.rs) carries no raw text, so thermite-lower cannot reproduce separators. Numerically 1000000 == 1_000_000 — NO contract weakening, verus verifies (R-DEFER-9 satisfied). Diverges only from REQ-3's cosmetic parenthetical 'underscores preserved verbatim'; AMENDED REQ-8/AC verify emitted output (passes) and require contract equivalence (holds). Owner: thermite-syntax (representation), not thermite-lower. Low priority per goal.md S8. No failing test filed: there is no soundness divergence to pin (R-CHAR-3 — would be a tautological/cosmetic assertion).",
+      "created_at": "2026-06-04T22:16:22.039332275Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "e1233e90-8205-44c2-afee-f2fe57bd99f7",
+      "author": "Yffe",
+      "content": "[action] Loop 4: L3 lowering SHIPPED (lower.rs + combinator Verus forms); both corpus programs verify in real verus via general shape-keyed templates (critic-proved general). #4 still open: L1 (l1.rs) + effects (effects.rs) remain. main at cc8214c, unpushed.",
+      "created_at": "2026-06-04T22:18:30.976024244Z",
+      "kind": "note"
+    },
+    {
+      "uuid": "0a2ae0cb-6405-4702-a265-8487c0825dea",
+      "author": "Yffe",
+      "content": "Reshape TokKind::Int and Expr::IntLit to struct variants { value: u128, raw: String } per amended .design/syntax/lexer.md REQ-3 + ast.md REQ-6. lex_int captures source[i..last_digit] as verbatim raw alongside the _-stripped value. Thread { value, raw } / { value, .. } through the full IntLit ripple (parser, lower, l1, effects, validator, mutation, strengthen, vacuity, closure, review). INVARIANT: every emit/lowering/mutation path reads value exactly as the old u128; lower.rs/l1.rs emit value.to_string() so tests/golden/* stay byte-identical (no golden churn). raw is AST-fidelity only; mutated literals set raw=value.to_string(). New round-trip tests assert BOTH fields. Manifest-bounded; critic re-audits.",
+      "created_at": "2026-06-05T18:33:10.164678307Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "717f53fa-bb5b-4be3-984b-498575d79867",
+      "author": "Yffe",
+      "content": "SHIPPED — int literals preserve verbatim raw at the EXPRESSION level (user-chosen enhancement). TokKind::Int + Expr::IntLit -> struct { value: u128, raw: String }: value = _-stripped numeric (UNCHANGED), raw = verbatim slice. ~16 sites threaded; lowering still emits value -> goldens byte-stable, verus output unchanged. Critic confirmed CLEAN (round-trip 1_000_000 -> {1000000, '1_000_000'}; edges 0/1_2_3/trailing; no consumer uses raw-where-value; no behavior change) + pinned PRE-EXISTING #54 (stale lowering goldens) -> fixed; #55 aligned the lowering docs to value-emission. Commits a2c0f73 (#37)+2f4b71d (#54)+#55 docs. workspace 388 tests, clippy/fmt clean, goldens verify, corpus L3. Not pushed.",
+      "created_at": "2026-06-05T19:06:21.519548955Z",
+      "kind": "result"
+    }
+  ]
+}

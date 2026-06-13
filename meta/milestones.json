@@ -1,0 +1,39 @@
+{
+  "milestones": [
+    {
+      "uuid": "0b4426ed-51ad-4304-ac60-77596b2af62c",
+      "display_id": 5,
+      "name": "v0.5 Repair",
+      "status": "open",
+      "created_at": "2026-06-04T17:46:29.379972909Z"
+    },
+    {
+      "uuid": "26fa9ed6-0d6a-4785-9447-28b1dfddf329",
+      "display_id": 2,
+      "name": "v0.2 Ladder",
+      "status": "open",
+      "created_at": "2026-06-04T17:46:25.275157938Z"
+    },
+    {
+      "uuid": "2a6a2885-bfc0-4054-a204-264b313b22d0",
+      "display_id": 3,
+      "name": "v0.3 Battery",
+      "status": "open",
+      "created_at": "2026-06-04T17:46:26.718988073Z"
+    },
+    {
+      "uuid": "30cb7ac6-651a-46f4-a7b0-63d6b484c07c",
+      "display_id": 4,
+      "name": "v0.4 Boundary",
+      "status": "open",
+      "created_at": "2026-06-04T17:46:28.071918874Z"
+    },
+    {
+      "uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+      "display_id": 1,
+      "name": "v0.1 Kernel",
+      "status": "open",
+      "created_at": "2026-06-04T17:46:23.702516120Z"
+    }
+  ]
+}

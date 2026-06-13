@@ -1,0 +1,37 @@
+{
+  "uuid": "b4852e68-d722-4277-82e0-68974a1aad27",
+  "display_id": 54,
+  "title": "Divergence: thermite-lower lowering goldens (sum.verus.rs / sum.l1.rs) STALE vs emitter on the 1_000_000 literal (emitter emits 1000000, golden has 1_000_000)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T18:45:18.205091192Z",
+  "updated_at": "2026-06-05T19:01:03.821418427Z",
+  "closed_at": "2026-06-05T19:01:03.821418427Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "f11efec0-85d5-42c4-a33f-dac166b1eb51",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-lower/tests/divergence_golden_intlit.rs::divergence_l3_golden_stale_on_underscore_literal and ::divergence_l1_golden_stale_on_underscore_literal demonstrate the divergence. Authority: goal.md §B (the tests/golden/ files are the lowering oracle; emitted source MUST match the golden) + .design/syntax/ast.md REQ-6 CRITICAL note ('lowering continues to emit the numeric value e.g. 1000000, NOT the raw -- so tests/golden/lower/*.verus.rs do NOT change'). Reality: the emitter for conformance/sum.th emits 'xs.len() <= 1000000' (the _-stripped value, correct per AC-1b) but the goldens tests/golden/lower/sum.verus.rs (line 25 'requires xs.len() <= 1_000_000') and tests/golden/l1/sum.l1.rs (line 39 executable check 'xs.len() <= 1_000_000') still carry the RAW form. Pre-existing at a2c0f73^ (the parent goldens are identical); no test byte-matches these goldens (lower_conformance.rs/l1_conformance.rs verify via verus/rustc + contract presence, not byte equality), so #37's 'git diff tests/golden/ empty' no-churn check passed over an already-stale oracle. R-DEFER-5: every divergence on main is ours. Fix is the generator's: regenerate the golden executable expressions to 1000000, OR amend ast.md if the design intends verbatim separators in the golden (R-SPEC-4). NOTE: the verbatim 1_000_000 inside the L1 diagnostic LABEL string is correct (Clause.text) and is NOT flagged.",
+      "created_at": "2026-06-05T18:45:34.138251566Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "ed192d9f-534f-4020-91bc-49e90c9fd481",
+      "author": "Yffe",
+      "content": "Pin the divergence as failing tests (acto-critic, no production edits): thermite-lower/tests/divergence_golden_intlit.rs asserts emitter==golden on the 1_000_000 literal for both L3 (sum.verus.rs) and L1 (sum.l1.rs); both FAIL (golden has raw 1_000_000, emitter emits 1000000), marked #[ignore] with tracking #54 so CI stays green while the divergence is tracked. Also commit the no-divergence companion tests (divergence_intlit.rs round-trip edge cases; divergence_intlit_lower.rs executable-form value emission). The fix is the generator's call: regenerate goldens to 1000000 OR amend ast.md (R-SPEC-4).",
+      "created_at": "2026-06-05T18:51:10.971717563Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "70cc5d59-ab96-4ce2-8b9e-8fcd30e21ea3",
+      "author": "Yffe",
+      "content": "Fixed: corrected the stale lowering golden REFERENCES to the REQ-6 value form (1000000), the hand-derived _-stripped value of 1_000_000. The emitter was already correct (emits 1000000 per ast.md REQ-6 CRITICAL note); the goldens were mis-authored with the raw 1_000_000.\n\nEdits (2 golden files, single-divergence scope):\n- tests/golden/lower/sum.verus.rs: 3 emitted spec/exec expressions 1_000_000 -> 1000000 (requires clause, loop invariant, by(nonlinear_arith) requires). Emitter confirmed to produce 1000000 in each.\n- tests/golden/l1/sum.l1.rs: line 39 executable check expr xs.len() <= 1_000_000 -> xs.len() <= 1000000. The diagnostic LABEL string xs.len() <= 1_000_000 (Clause.text verbatim source) correctly LEFT UNCHANGED.\n- thermite-lower/tests/divergence_golden_intlit.rs: removed #[ignore] from both #54 divergence tests (permanent regression coverage).\n\nR-SPEC-4 note: verus-lowering.md REQ-3 shows underscores-verbatim, but the later #37 amendment in ast.md REQ-6 (CRITICAL note + AC-1b) overrides with value-emission and states sum.verus.rs reads 1000000. Authority resolves to value-emission; no design amendment needed.\n\nVerification: lower_conformance.rs 5 passed (real verus on edited L3 golden verifies identically); l1_conformance.rs 7 passed (rustc compile+run, check fires); divergence_golden_intlit 2 passed. Corpus sum.th + cert oracle UNCHANGED.\n\nGauntlet: build OK; test 388 passed/0 failed/0 ignored; clippy -D warnings PASS; fmt --check PASS.",
+      "created_at": "2026-06-05T19:00:47.050356010Z",
+      "kind": "result"
+    }
+  ]
+}

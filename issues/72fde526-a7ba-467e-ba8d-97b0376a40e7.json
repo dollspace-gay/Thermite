@@ -1,0 +1,30 @@
+{
+  "uuid": "72fde526-a7ba-467e-ba8d-97b0376a40e7",
+  "display_id": 144,
+  "title": "contract-TV REQ-5: forge plug-in point — a new contract_tv check phase (alongside vacuity/mutation) over each req/ens/inv/dec clause; non-test consumer in forge::check",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T18:15:58.395783818Z",
+  "updated_at": "2026-06-08T20:35:20.415147221Z",
+  "closed_at": "2026-06-08T20:35:20.415147221Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "52d76ad2-c158-4f5b-91ee-a172d30a79f3",
+      "author": "Yffe",
+      "content": "Built the contract-TV forge integration (#144) + the off-corpus generator (#142). thermite-lower gains lower_contract_expr (the per-clause P_production, reusing the spec-context lower_expr path). thermite-tv gains generate_clauses (deterministic SplitMix64 over the frozen sublanguage, no thermite-lower dep). forge/src/contract_tv.rs runs the per-clause equivalence obligation (P_production <==> ref_contract_pred) through real verus over corpus clauses AND generated clauses, exposed as a separate `forge tv` subcommand. Approach: bind slice params as Seq (slices=[] to lower_contract_expr) to match the reference seq-bound identity @-view; frame loop locals; honestly Skip unframable clauses (Map/Option/Match/Ref) rather than false-faithful. The off-corpus run surfaced a real lowering bug (cast-< paren ambiguity), fixed in lower_binary_operand (#146).",
+      "created_at": "2026-06-08T20:00:17.624018053Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "91b38b7b-1dbc-4fe7-b2d6-184d77ca1eec",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (167b9f4). forge tv <file> [--generated N]: per-clause P_production (thermite_lower::lower_contract_expr) vs the independent ref_contract_pred, discharged via run_verus. Critic's 3 integrity probes PASS: (1) Skips are honest (only ever pre-obligation ref-encode/lower failures, never masking a discharged infidelity; '0 divergent' excludes skips honestly); (2) obligations are NON-VACUOUS (ref fully parenthesizes where prod doesn't -> P_prod != P_ref text -> Z3 does real X<==>Y equivalence work, real teeth); (3) corpus no-false-positive (sum 6/6, binary_search 5/5, map_kv all faithful). Independence intact (cargo tree: no thermite-lower). The could-not-slip-an-infidelity-past verdict.",
+      "created_at": "2026-06-08T20:35:05.314881708Z",
+      "kind": "result"
+    }
+  ]
+}

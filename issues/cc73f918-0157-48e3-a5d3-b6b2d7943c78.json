@@ -1,0 +1,30 @@
+{
+  "uuid": "cc73f918-0157-48e3-a5d3-b6b2d7943c78",
+  "display_id": 101,
+  "title": "Deferred §7: equivalent-mutant exclusion (a mutant provably-equivalent to the real body under the precondition must drop from the kill-ratio denominator, not count as a survivor) — sound-incomplete via verus; surfaced by parse forced-None refusal",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T08:06:46.720169080Z",
+  "updated_at": "2026-06-08T06:34:08.229984508Z",
+  "closed_at": "2026-06-08T06:34:08.229984508Z",
+  "labels": [
+    "enhancement"
+  ],
+  "comments": [
+    {
+      "uuid": "2f70699f-07a4-4130-bad4-de8b2e40d9d0",
+      "author": "Yffe",
+      "content": "Plan: author equivalent-mutants.md — a per-survivor Verus equivalence query (req |- B_mut == B_real); PROVED-equivalent drops from the kill-ratio denominator, unproven stays counted (sound-but-incomplete). Grounded: clamp_zero 1/3 WeakContract -> exclude 2 equivalent survivors -> 1/1 certifies; a distinguishing/killed mutant FAILS the equivalence check; a genuinely-weak loose contract's survivor stays counted (not laundered); an all-equivalent fn -> 0/0 still gated by #48. CHECK_SCHEMA_VERSION bump.",
+      "created_at": "2026-06-08T05:33:53.364181691Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "b35489b7-523c-4af5-96c7-74ba250bd0fe",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (cb1462d). Equivalent-mutant exclusion: a new thermite-lower seam lower_equivalence_obligation renders real+mutant bodies as spec fns + a proof fn (req |- mut==real), reusing the exec coercions; check::equivalence_proves_equal runs it per-survivor, excluding from the denominator ONLY on verus 'verified'. Critic NO DIVERGENCE on the cardinal laundering risk: the seam threads real!=mut faithfully (distinguishing mutants ALL fail the query), the (expr) as u64 coercion masks no difference (x*2/x-1/wraparound all FAIL), a weak contract STILL WeakContract (loose 0/2, pick 1/2 — none laundered), exclude only on a real proof (timeout/counterexample stays counted), 0/0 still #48-gated, killed mutants unchanged. clamp_zero 1/3 WeakContract -> 1/1 L3 (AC-1). 686 tests. CHECK_SCHEMA_VERSION 4->5.",
+      "created_at": "2026-06-08T06:33:58.537812170Z",
+      "kind": "result"
+    }
+  ]
+}

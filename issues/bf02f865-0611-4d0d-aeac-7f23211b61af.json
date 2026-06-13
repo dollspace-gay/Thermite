@@ -1,0 +1,30 @@
+{
+  "uuid": "bf02f865-0611-4d0d-aeac-7f23211b61af",
+  "display_id": 241,
+  "title": "Divergence: Stabilize.lean RegistryTerminating/stabilization_exists diverges from proof-backends.md §1.2/§4 — hypothesis is the conclusion (identity lemma) and is SATISFIED by the divergent registry the class must reject",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T07:51:29.344313010Z",
+  "updated_at": "2026-06-11T14:34:26.225684541Z",
+  "closed_at": "2026-06-11T14:34:26.225684541Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "eb328f52-06e6-4380-9cd5-7cbab0c52a1d",
+      "author": "Yffe",
+      "content": "Kernel pin at lean/Thermite/PinRegistryTerminating.lean (Pin E) demonstrates the divergence: (E.0) hypothesis_is_conclusion — RegistryTerminating env e = (∃ v, stabilizes e env v) by rfl, so stabilization_exists (shipped under the design name stabilization_exists_for_dec_bounded) is the identity, zero proof content; the §4 load-bearing implication dec-valid ⇒ stabilized-value-exists-and-equals-intended-meaning is proven nowhere while the build-blockers row says SHIPPED. (E.1) divergent_registry_clears_the_hypothesis — Pin B's divergent f(x)=f(x) registry SATISFIES RegistryTerminating (stabilizes to the Int-bottom 0), but §1.2 'The closure' mandates the REGISTRY-TERMINATION class FAIL for it on BOTH discharge paths; stabilization_exists_affirms_the_divergent_registry + the_affirmed_value_is_the_bottom show the named lemma affirming the bottom-poisoned 0 as the unique ∀r-premise value. The amended doc claim 'the hypothesis is EXACTLY what REQ-1.2 discharges' is false in both directions: §1.2's discharge artifacts are descent facts (Verus dec-check / Lean decreasing_by), not terms of type ∃v-stabilizes (the unproven bridge the doc-author flagged), and the converse is kernel-refuted by Pin E.",
+      "created_at": "2026-06-11T07:51:50.626495355Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "2c91f688-97b3-467a-94c2-4b92303f87bc",
+      "author": "Yffe",
+      "content": "Critic audit of 4afd8661 (#240 part ii-a): pin the divergence as a kernel-checked Lean pin (PinRegistryTerminating.lean, Pin E) — prove (E.0) the shipped stabilization_exists hypothesis is its conclusion by rfl, (E.1) the divergent f(x)=f(x) registry satisfies RegistryTerminating despite §1.2 mandating the class fail for it, and the affirmed value is the bottom 0. Commit the pin as the audit artifact; no production code touched.",
+      "created_at": "2026-06-11T07:52:28.192554771Z",
+      "kind": "plan"
+    }
+  ]
+}

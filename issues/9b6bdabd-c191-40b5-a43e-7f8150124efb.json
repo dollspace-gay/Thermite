@@ -1,0 +1,31 @@
+{
+  "uuid": "9b6bdabd-c191-40b5-a43e-7f8150124efb",
+  "display_id": 10,
+  "title": "Implement the automatic L3 to L2 to L1 degrade protocol with an assurance manifest",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:31.452099178Z",
+  "updated_at": "2026-06-05T07:04:16.306636793Z",
+  "closed_at": "2026-06-05T07:04:16.306636793Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "26fa9ed6-0d6a-4785-9447-28b1dfddf329",
+  "comments": [
+    {
+      "uuid": "f2beab55-932f-4bfa-8315-f07b11052b0e",
+      "author": "Yffe",
+      "content": "Build the #10 automatic L3->L2->L1 degrade ladder + assurance manifest. Manifest: forge/src/{degrade.rs (new ladder state machine; composes #11 classification, #9 L2/run_kani, L1 lower_l1), check.rs (default path -> ladder; --level forces a rung), kani.rs (OQ-2 under-bound-vs-counterexample split), manifest.rs (additive lowered_assurance + degrade_reason; Level Ord; AssuranceManifest aggregate min-over-functions), cli.rs (display project assurance), main.rs (mod degrade)} + forge/tests/degrade_conformance.rs. Anti-cheat invariant (R-DEFER-9): degrade ONLY on Timeout; a Counterexample is a HARD FAIL, never degraded. Hermetic state-machine tests + live corpus-no-degrade + live broken-contract hard-fail.",
+      "created_at": "2026-06-05T06:46:11.370807851Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "2fe73758-b6dc-4ad5-bff7-dd7d65af76f7",
+      "author": "Yffe",
+      "content": "SHIPPED — automatic L3->L2->L1 degrade ladder + assurance manifest (§6 'the gate degrades, it never blocks'). degrade.rs run_ladder: L3 Proved->L3; Timeout->attempt L2 (lower_l2+run_kani); L2 Verified->L2+lowered-assurance+bound; L2 UnderBound->L1 (records level); COUNTEREXAMPLE at any rung->HARD FAIL (never degraded). Composes #11 (timeout-vs-counterexample trigger), #9 (L2 Kani), l1 (L1). manifest.rs: Level: Ord (L0<L1<L2<L3), AssuranceManifest::aggregate = min-over-functions; a hard-failed fn -> project Failed (not a rung). Loop: doc-author -> builder -> critic (found #51) -> fixer. #51: is_under_bound_failure had an over-broad '|| d.contains(\"unwind\")' arm matching a real counterexample whose ens text contains 'unwind' (e.g. unwind_count) -> wrongly degraded to L1, hiding a bug (R-DEFER-9 anti-cheat failure); FIXED to 'unwinding assertion' boilerplate only. Anti-cheat verified: counterexample never degrades (hermetic panic-closure test + live broken-contract -> L0 hard-fail); genuine under-bound still -> L1. Commits 2323dcb -> 36cab43 (critic) -> de890e1 (#51). workspace 288 tests, clippy/fmt clean, corpus L3 no-degrade. Proof-repair loop is #18. Not pushed.",
+      "created_at": "2026-06-05T07:04:06.513326541Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "uuid": "d50d9e64-3c4c-455d-a825-0f5403b4e925",
+  "display_id": 233,
+  "title": "Divergence: thermite-lower lower_expr/lower_inv_expr Call arms cast a bool-typed Binary/Unary spec-call arg 'as u64' (spec_call_param_cast bool=>None collapses into the unwrap_or(u64) fallback) — E0308, L0 death on correct source",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T03:23:57.538248120Z",
+  "updated_at": "2026-06-11T04:04:58.042955104Z",
+  "closed_at": "2026-06-11T04:04:58.042955104Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "c61a7894-e99b-4638-b64d-48e078a10584",
+      "author": "Yffe",
+      "content": "Failing test at thermite-lower/tests/divergence_spec_call_bool_arg_cast.rs::{spec_call_bool_binary_arg_takes_no_cast,spec_call_bool_unary_arg_takes_no_cast} demonstrates divergence. req s_b(x, x < y) emits s_b(x, (x < y) as u64); req s_b(1, !flag) emits s_b(1, (!flag) as u64) — verus E0308 expected bool found u64, live-confirmed. Surface unary set is exactly Not (REQ-10 #92), so EVERY Expr::Unary arg is bool-typed; the #225 'bool arm is defensive' premise is false. All spec_call_param_cast consumer sites affected (lower_expr Call arm + lower_inv_expr Call arm).",
+      "created_at": "2026-06-11T03:24:46.579121027Z",
+      "kind": "observation"
+    }
+  ]
+}

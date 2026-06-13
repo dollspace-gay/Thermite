@@ -1,0 +1,37 @@
+{
+  "uuid": "ef1726e8-4481-4d6a-b34c-ee9cff8350c1",
+  "display_id": 226,
+  "title": "Divergence: proof-backends §4 #224 closure (req ∪ ens ∪ body, body-closed) omits dec-MEASURE-position spec-calls; a measure denoted against the closure R_item affirms descent the source measure lacks, falsely discharging REGISTRY-TERMINATION (REQ-1.2) and re-opening Pin B",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T22:33:04.115274560Z",
+  "updated_at": "2026-06-10T22:51:56.524937445Z",
+  "closed_at": "2026-06-10T22:51:56.524937445Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "50729036-afe6-4e99-850d-56d3f5e5d04f",
+      "author": "Yffe",
+      "content": "Kernel-checked pin at lean/Thermite/PinDecMeasure.lean (builds clean against the shipped spine). Measure x - t(x), true registry t(x)=x: closure_measure_strictly_descends (denoted against the #224-closure R_item, t omitted, the dec call bottoms to 0 → measure denotes x, strictly descends on x → x-1) vs true_measure_never_descends (real measure x - x = 0, constant — the non-well-founded case REGISTRY-TERMINATION exists to reject). Authority: §4 hard gate's calledSpecFns seed = req ∪ ens ∪ body, closure step = spec-fn BODIES only — dec clauses (item's and reached spec-fns') are in no covered position; §1.2 binds REQ-1.2 to 'the SAME reachability set' while its obligations are ABOUT the dec measures; §1.2/§3.1 claim a divergent spec-fn 'FAILS this class on BOTH paths' — unjustified for spec-call-bearing measures (SpecFnItem.dec is a full Clause/Expr; nothing in thermite-design.md §4.1/§4.2 restricts it; shipped forge reachable_spec_fn_deps/collect_block_spec_fn_calls walk decl.body only, never decl.dec). Fix direction: extend the closure seed+step to include dec clauses, or normatively restrict dec to specCall-free and gate it.",
+      "created_at": "2026-06-10T22:33:29.206616332Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "cef229a7-02ed-4a22-96a1-c832feb664e1",
+      "author": "Yffe",
+      "content": "Critic plan: pin the divergence kernel-checked (lean/Thermite/PinDecMeasure.lean, builds clean against the shipped spine) and commit it as the audit artifact per the ACToR discriminator protocol; the generator owns the doc fix (extend the #224 closure to dec clauses, or restrict dec measures to specCall-free and gate it).",
+      "created_at": "2026-06-10T22:34:16.362561493Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ad1ef2de-5b67-4b3a-85de-91508cd9b887",
+      "author": "Yffe",
+      "content": "Cycle-7 verification: resolution at 78dcfe7f verified. (1) Closure now seed req∪ens∪body∪dec(item), step body∪dec per reached spec-fn — exhaustive against every expression class the designed exports denote (LOOP inv/cond/dec are syntactic constituents of body and the named forge mirror collect_stmt_spec_fn_calls walks node.invs/node.dec/cond; EXEC/BODY/OVERFLOW denote in ExecExpr/S_B which has NO specCall constructor — specCall-free by construction; spine loop inv is State→Prop, registry-free; increment-(iv) loop/exec export is explicitly un-designed and governed by the universal expression-position principle). (2) fails-CLOSED claim verified: Item::Fn weaves whole-file spec_items (no omission possible); a checked Item::SpecFn with a dec-only callee lowers a decreases referencing an undefined fn → real verus errors (lower_spec_fn emits spec_dec except non-recursive scheme-call bodies, where no obligation denotes the measure). (3) PinDecMeasure.lean untouched by the doc commit, builds clean (lake build OK), wired as fourth oracle in §4 consistency list + gate oracles (both directions) + Verification (ii). (4) Residual req∪ens[∪body]-without-dec mentions (431/875/911/924/928) are all historical references to the retired cycle-2/5 scopes. No divergence remains.",
+      "created_at": "2026-06-10T22:50:13.027719199Z",
+      "kind": "observation"
+    }
+  ]
+}

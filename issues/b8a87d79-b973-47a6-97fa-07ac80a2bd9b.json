@@ -1,0 +1,30 @@
+{
+  "uuid": "b8a87d79-b973-47a6-97fa-07ac80a2bd9b",
+  "display_id": 40,
+  "title": "Restrict SpecTherm closure bodies to a flat predicate fragment (no nested combinators)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T00:31:24.995133297Z",
+  "updated_at": "2026-06-05T01:18:28.594802330Z",
+  "closed_at": "2026-06-05T01:18:28.594802330Z",
+  "labels": [
+    "enhancement"
+  ],
+  "comments": [
+    {
+      "uuid": "1426b0cc-79e7-4ef1-8091-bb37bef7f8fe",
+      "author": "Yffe",
+      "content": "External reviewer (human + agent) caught a real gap in the 'no general quantifiers / quantifier-locked SpecTherm' thesis (§4.2/§6). Verdict: partly true, worth fixing; the 'just renamed it' framing overstates it.\n\nWHAT HOLDS: a combinator lowers to a BOUNDED quantifier with a FROZEN trigger on the predicate application (forall_in(s,p) == forall|i| 0<=i<s.len() ==> #[trigger] p(s[i])). Bounded range kills unbounded-quantifier blowup; frozen trigger removes Verus's heuristic trigger-inference variance (a primary SMT-discontinuity source). For a FLAT closure body this genuinely locks instantiation.\n\nTHE HOLE (reviewer is right): the closure body is currently UNrestricted and can contain ANOTHER combinator -> nested bounded quantifier -> the composition reintroduces multi-quantifier instantiation interaction. Our loop-3 thermite-spec validator currently ACCEPTS this (its critic tested forall_in(xs, |x| exists_in(ys, |y| y==x)) as valid). So the cage has exactly the described hole.\n\nFIX (a strengthening, not a retreat): restrict SpecTherm closure bodies to a FLAT predicate fragment -- comparisons, arithmetic, boolean ops, field/index, and NAMED spec-fn calls -- but FORBID a nested combinator call inside a combinator's closure. Invariant becomes honest: 'every quantifier is a bounded combinator with a frozen trigger; composition happens only via named spec fns (dec-measured, auditable), never anonymous nested quantifiers.' Enforce as one new reject in the thermite-spec validator (which today over-permits) + clarify §4.2 + .design/spec/spectherm-combinators.md. Corpus is UNAFFECTED (sum/binary_search closures are flat: |x| x != needle etc.). Caveat: a flat closure may still call a named spec fn that internally quantifies -- depth is named+bounded, not zero; we kill anonymous arbitrary nesting, the unpredictable part.\n\nTouches #2 (validator) + the design docs, NOT #5/forge. Could empirically demonstrate the flat-vs-nested distinction in real verus before implementing.",
+      "created_at": "2026-06-05T00:32:16.045862912Z",
+      "kind": "decision"
+    },
+    {
+      "uuid": "e8c3f674-3b3b-4ab2-a2f0-39e905a63eb6",
+      "author": "Yffe",
+      "content": "SHIPPED — the quantifier cage is now honestly locked. thermite-spec validator forbids a registered combinator call inside a combinator's predicate-closure body (SpecError::NestedCombinator), via an in_combinator_closure flag set across the Pred-slot descent (covers ens/req/inv/dec + spec-fn bodies, all nesting depths). Named composition preserved: a closure may call a named spec fn, and a spec fn body may itself use a combinator (the sanctioned bounded-named alternative). Design amended: .design/spec/spectherm-combinators.md REQ-6 + the honest §4.2 clarification note (a thesis erratum flagged for the user: 'no general quantifiers' is realized as 'bounded combinators with frozen triggers; composition only via named spec fns, never anonymous nested quantifiers' — named spec fns CAN quantify boundedly).\n\nLoop: doc-author (REQ-6) -> oracle delta (parse-corrected: % not in grammar, dec mandatory) -> builder (validator rule) -> critic NO DIVERGENCE (under-enforcement: 2-deep/inv/dec/3-arg-outer/spec-fn-body all reject; over-enforcement: no flag leak, named-composition escape intact; generality grep clean; no panic). Commits: 64d21af (doc+oracle) -> 4d46f8a (validator) -> adac0ec (critic probes) -> 0a7bc2e (fmt). Verified: nested->NestedCombinator reject, named-spec-fn->Ok, corpus flat closures still L3 (binary_search verifies). thermite-spec 30 tests, workspace 113, clippy/fmt clean. Cosmetic noise documented (a spurious secondary ForbiddenCall diagnostic on already-rejected nested programs; reject outcome+cause hold; S8 won't-fix). Not pushed.",
+      "created_at": "2026-06-05T01:18:19.801698749Z",
+      "kind": "result"
+    }
+  ]
+}

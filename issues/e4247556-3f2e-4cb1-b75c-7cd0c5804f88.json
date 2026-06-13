@@ -1,0 +1,30 @@
+{
+  "uuid": "e4247556-3f2e-4cb1-b75c-7cd0c5804f88",
+  "display_id": 210,
+  "title": "Divergence: proof-backends.md §4 fuel-form resolution conjunct is a logical HYPOTHESIS — an omitted registry entry falsifies the premise and the obligation certifies vacuously (#209 reintroduced one level up)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:09:32.301414795Z",
+  "updated_at": "2026-06-10T22:51:26.068242070Z",
+  "closed_at": "2026-06-10T22:51:26.068242070Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "2ab62675-1767-4ddb-8838-5d8e8ecc2f55",
+      "author": "Yffe",
+      "content": "Pin: §4 'The chosen form' displays the resolution clause as an ANTECEDENT: '(∀ name ∈ calledSpecFns(item), env.specs name ≠ none) → reqDenote … → denote fuel ens = True'. Two readings, both defective. (A) As literally written, ∀ (env : Env) quantifies env.specs too — then the hypothesis only requires names resolve to SOME SpecFn, never pinning the REAL bodies, so the obligation quantifies over wrong-body registries (unprovable wrong statement) and is incoherent with EXP's 'the EXPORTED Env.specs registry'. (B) Intended reading (concrete exported registry, value-bindings quantified): the hypothesis is a closed decidable proposition about the emitted registry; an exporter that OMITS a called spec-fn makes it FALSE and the whole obligation is provable from the false premise — a registry-population bug self-certifies kernel-clean. The only guard the doc gives is EXP arm-by-arm INSPECTION ('paired with EXP registry faithfulness'), i.e. the trust item whose failure mode IS the omission. Sound alternatives the doc did not choose: (a) exporter-side hard gate — export FAILS mechanically when calledSpecFns(item) ⊄ dom(registry), so the theorem never carries the premise; (b) decide/rfl-discharged resolution lemmas emitted alongside (omission fails to compile). Secondary: the soundness paragraph's claim (1) 'every specCall … is fully unfolded at every fuel in range, so the => True arm is NEVER taken' is false for recursive spec-fns (static nesting depth ≠ value-dependent unfolding depth; Denote.lean: body 'MAY contain further specCalls'), though the ∀-fuel form itself stays sound. fuel₀ under-computation verified NOT soundness-bearing (the doc's parenthetical is correct).",
+      "created_at": "2026-06-10T19:10:04.561659959Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "d51ebece-f9fc-4afb-b2e7-2cb33094fd5c",
+      "author": "Yffe",
+      "content": "Cycle-3 verification: RESOLVED as filed (commit e20e4034). The hypothesis form is gone — §4 now fixes R_item : Registry CONCRETELY in the exported file, holds specs := R_item fixed ({ v with specs := R_item }), carries NO resolution premise, and adopts BOTH named alternatives: (a) the exporter-side hard gate (refuse-to-emit on calledSpecFns(item) ⊄ dom(R_item)) and (b) per-name decide/rfl resolution lemmas (omission fails to compile). Registry-body faithfulness stays under EXP. The all-registries incoherence and the false-premise self-certification are both closed. CAVEAT: the rewritten fuel₀ soundness paragraph (crediting this issue's analysis) contains a NEW defect — the analysis here and the doc's adoption of it cover only the Prop-position True bottom; the Int-position intVal bottom is 0 and falsifies under-fuelled conjuncts. Filed separately as #213 (kernel-checked counterexample); this issue's named scope is resolved.",
+      "created_at": "2026-06-10T19:26:14.808892155Z",
+      "kind": "observation"
+    }
+  ]
+}

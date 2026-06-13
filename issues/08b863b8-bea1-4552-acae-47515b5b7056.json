@@ -1,0 +1,37 @@
+{
+  "uuid": "08b863b8-bea1-4552-acae-47515b5b7056",
+  "display_id": 158,
+  "title": "Lowering soundness step 2.2 / kernel groundwork: freeze the exec-STATEMENT subset + mechanize its operational semantics + design body behavioral-refinement TV (statements/loops/mutation) — the convergence point with the verified-microkernel prerequisite",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:46:18.517565909Z",
+  "updated_at": "2026-06-10T02:59:27.810500500Z",
+  "closed_at": "2026-06-10T02:59:27.810500500Z",
+  "labels": [
+    "epic"
+  ],
+  "comments": [
+    {
+      "uuid": "4a72c82f-b6d8-4d11-a061-a800e5211a47",
+      "author": "Yffe",
+      "content": "Plan: author exec-stmt-tv.md — FREEZE the exec-statement subset v1 (let/assign/Block-sequencing+tail/if/Stmt::Expr/tail-return IN; Loop/Break/Continue in-set-deferred-to-2.2.2; non-scalar mutation/mid-body-early-return/match-stmt/recursion-stmt OUT) + a big-step state-transformer operational semantics (independent, composes exec_ref_value per-RHS + state threading) + body behavioral-refinement TV. GROUNDED 2.2.1 (straight-line): faithful body verifies; dropped statement, reordered mutation, if-branch swap all CAUGHT. 2.2.2 loops = kernel-gated horizon (fixpoint); no_std target = sibling. The frozen subset = the verified-microkernel exec language v1 (the convergence). Blockers #159-#164.",
+      "created_at": "2026-06-09T00:58:30.700589138Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "15d34c3f-08ca-4080-97d5-d5393835fa28",
+      "author": "Yffe",
+      "content": "GROUNDWORK STARTED + LANDED (design 428b4c8 + 2.2.1 core 164039f + #165 if-statement-threading fix b9dc22f). The frozen exec-statement subset v1 is pinned, the big-step state-transformer operational semantics is designed + the independent reference encoder (body_ref_state) built, and step-2.2.1 straight-line body-refinement TV is shipped + critic-clean (state-threading sound: mutation-order/data-dep/multi-cell/if-statement-branch composition all caught; boundary honest: loops/out-of-subset -> Unsupported). The frozen subset = the verified-microkernel exec language v1 (the convergence). Remaining build-out (tracked, not groundwork): #162 forge body-tv phase, #163 loops (kernel-gated), #164 no_std target (sibling). Epic stays open for the build-out.",
+      "created_at": "2026-06-09T02:38:41.153488315Z",
+      "kind": "progress"
+    },
+    {
+      "uuid": "aee2f772-c27f-41cf-b69c-4bc8aea9e0a5",
+      "author": "Yffe",
+      "content": "COMPLETE — every step-2.2 objective shipped + critic-clean. (1) The exec-STATEMENT subset FROZEN: exec-stmt-tv.md REQ-1, pinned in code (body_ref_state admits Let/Assign/If/Expr/tail + Block sequencing; honest Unsupported for the rest). (2) The operational semantics MECHANIZED: Lean S_B big-step state-transformer + body_ref_sound (#172, incl. the #186 restoreScope fix) + the v1 while-loop semantics + the kernel-checked WHILE-RULE (#163, Exec/Loop.lean). (3) Body behavioral-refinement TV DESIGNED + SHIPPED: exec-stmt-tv.md + loop-tv.md; thermite-tv body/loop obligations + teeth; the forge body-tv four-way phase (#162, incl. the #189 honesty fix). The kernel-convergence groundwork is done; the kernel target itself remains #164/#21.",
+      "created_at": "2026-06-10T02:59:14.537930549Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "uuid": "69a2ad75-c8d3-4196-b5da-a93bb5d032f9",
+  "display_id": 47,
+  "title": "Fix thermite-design.md §3: L1 is always-active checks, not debug_assert chains (contradicts §6 + l1.rs)",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-05T05:28:58.034582789Z",
+  "updated_at": "2026-06-05T05:30:25.507347339Z",
+  "closed_at": "2026-06-05T05:30:25.507347339Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "cd5387a6-2a83-4506-a09c-8ab5e7712b3b",
+      "author": "Yffe",
+      "content": "Resolved. §6 + the shipped l1.rs (always-active thermite_check!, NOT debug_assert!, guarded by no_debug_assert_in_emission) are correct; §3's 'debug_assert chains' was wrong text (would vanish in release, breaking L1). Changed §3 to '(active all profiles)' (same width). Commit 3355ea5.",
+      "created_at": "2026-06-05T05:30:20.366313936Z",
+      "kind": "result"
+    }
+  ]
+}

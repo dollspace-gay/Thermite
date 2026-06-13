@@ -1,0 +1,23 @@
+{
+  "uuid": "9fb2bc20-1b07-4f08-8851-738ace8357a4",
+  "display_id": 234,
+  "title": "Divergence: thermite-lower sep_fn (count_sep/sep_free) u8 separator coercion keeps the textual ends_with('as u8') heuristic #231 removed elsewhere AND drops the #122 inner paren on a Binary arg — 'sep + 1 as u8' = int, E0308, L0 death on correct source",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T03:24:13.357753237Z",
+  "updated_at": "2026-06-11T04:05:02.423297761Z",
+  "closed_at": "2026-06-11T04:05:02.423297761Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "9dea1efc-b63d-43c2-83b0-696eb40b0b11",
+      "author": "Yffe",
+      "content": "Failing test at thermite-lower/tests/divergence_sep_fn_arith_arg_paren.rs::count_sep_arith_separator_arg_parenthesizes_before_u8_cast. req count_sep(s, sep + 1) == 0 emits __thermite_count_sep(s.data@, sep + 1 as u8) = sep + (1 as u8) = spec int into sep: u8 — verus E0308 live-confirmed. Authority: 07-strings.md REQ-15 (sep cast as u8) + #122 paren discipline. Expected: (sep + 1) as u8. Note: the surface has no u8 type, so the ends_with('as u8') skip-arm can only match generated text; the live killer is the missing paren.",
+      "created_at": "2026-06-11T03:24:48.148266796Z",
+      "kind": "observation"
+    }
+  ]
+}

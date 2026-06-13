@@ -1,0 +1,38 @@
+{
+  "uuid": "c89c9918-87af-48f0-b195-81e66e45160a",
+  "display_id": 21,
+  "title": "Track deferred kernel scope: runtime effect sandbox, MIR lowering, incremental goal-state holes",
+  "status": "closed",
+  "priority": "low",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:48:17.770832410Z",
+  "updated_at": "2026-06-10T07:16:11.292706206Z",
+  "closed_at": "2026-06-10T07:16:11.292706206Z",
+  "labels": [
+    "chore"
+  ],
+  "milestone_uuid": "c86c795a-88f1-416a-9f19-ae0e9a9bb1d5",
+  "comments": [
+    {
+      "uuid": "1f1ea449-f7a4-4aff-a3e1-7600276e9c18",
+      "author": "Yffe",
+      "content": "Items intentionally cut from the v0.1 kernel during planning, parked here so they are not lost: (1) Runtime effect sandbox that kills fx-violating syscalls at the OS boundary (design 4.1) — v0.1 does compile-time fx subsumption only. (2) True MIR-level lowering (design 3/13) — v0.1 transpiles to Verus source instead. (3) Lean-style incremental goal-state holes forge goal/fill (design 5.1) — needs a research spike; v0.1 ships whole-item forge check. Revisit each when its enabling milestone lands.",
+      "created_at": "2026-06-04T17:49:32.030202915Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "0bb26087-043f-41f6-bf97-16c612999fa1",
+      "author": "Yffe",
+      "content": "Scope update: item 1 (runtime effect sandbox) is now SHIPPED via #57 — forge build emits an fx-derived seccomp filter; declared effects are enforced at the syscall boundary (killed on violation), boundary/slag confined to their declared fx. The runnable-binary gate it needed was shipped as #56 (forge build). #21 now tracks only: (2) DIRECT MIR-level lowering (we transpile to Rust which rustc takes to MIR; the thesis is satisfied transitively, direct-MIR emission is an unneeded rewrite, candidate to reframe/close); (3) the incremental goal-state REPL (forge goal/fill; we do whole-item forge check).",
+      "created_at": "2026-06-05T20:47:59.023237609Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "54b961cb-ad6a-416c-97cc-bda60c9421e3",
+      "author": "Yffe",
+      "content": "COMPLETE. Item 1 (runtime sandbox): shipped #57. Item 2 (direct MIR): RETIRED with the thesis amendment 01c36f7c (transpile-to-Verus-Rust satisfies the thesis transitively; rustc performs the MIR lowering). Item 3 (goal-state REPL): SHIPPED via #193 — forge goal/fill/edit/battery all live, the ?N holes + OpenHole gate + the 5.1 dialogue golden. Nothing remains tracked here.",
+      "created_at": "2026-06-10T07:16:00.108118995Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "uuid": "028ff5aa-7f3e-4816-8acc-39aaabc20655",
+  "display_id": 272,
+  "title": "proof-backends §4.3: early-return widening of the Lean exportable fragment (review item 8; brings binary_search in)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-12T06:54:55.384552683Z",
+  "updated_at": "2026-06-12T07:14:49.989381970Z",
+  "labels": [
+    "feature"
+  ],
+  "comments": [
+    {
+      "uuid": "26fbe120-1f5a-4166-8553-9526867b1563",
+      "author": "Yffe",
+      "content": "Plan: proof-backends §4.3 — increment (vi) early-return widening (review item 8): Sum-typed rblockThread denotation layer (cost class stated loudly: NOT compose-around — sibling theorems return_compose/loopDenoteR_exits_of_dec on a new layer, shipped bricks unchanged), v1 grammar covering binary_search's actual shape (top-level guard returns in a loop-kind body, Option result via RetVal.optres), per-return-site _ret_k obligations, _converges conjunction inherited.",
+      "created_at": "2026-06-12T07:14:33.593730600Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "345c91a6-c40a-4366-b10e-24fb29d62cf1",
+      "author": "Yffe",
+      "content": "Result: §4.3 design committed (+541 lines, REQ-12 with 8 sub-reqs NOT-STARTED). Build (vi-a spine / vi-b exporter) remains open behind this design.",
+      "created_at": "2026-06-12T07:14:49.912778020Z",
+      "kind": "result"
+    }
+  ]
+}

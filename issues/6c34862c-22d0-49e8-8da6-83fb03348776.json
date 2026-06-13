@@ -1,0 +1,23 @@
+{
+  "uuid": "6c34862c-22d0-49e8-8da6-83fb03348776",
+  "display_id": 183,
+  "title": "step-3 increment 3b: the translation-validation META-THEOREM capstone — [Z3 |- lower(P)<->ref(P)] AND T1 ==> denote(lower(P))=denote_S(P) for ALL P passing TV (epic #169)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T16:54:53.050538351Z",
+  "updated_at": "2026-06-09T20:36:09.354086300Z",
+  "closed_at": "2026-06-09T20:36:09.354086300Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "34aed22f-82ea-4d48-863b-9dfb7bfaf2c7",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean (7c85da25) — same capstone as #174. The TV meta-theorem [Z3 |- lower<->ref] AND T1 ==> denote(lower)=denote_S for ALL P passing TV is now Thermite.lowering_faithful + tv_meta_*. See #174 for the full critic verdict.",
+      "created_at": "2026-06-09T20:35:53.777391722Z",
+      "kind": "result"
+    }
+  ]
+}

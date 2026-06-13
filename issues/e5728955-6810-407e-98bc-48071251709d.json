@@ -1,0 +1,30 @@
+{
+  "uuid": "e5728955-6810-407e-98bc-48071251709d",
+  "display_id": 229,
+  "title": "Divergence: spec-call param-type cast (#225/#227 Ctx::spec_call_param_cast) still unthreaded on proof-aid + struct-invariant spec contexts (nonlinear_overflow_assert req re-lowering, lower_inv_expr catch-all)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-11T01:12:56.882461994Z",
+  "updated_at": "2026-06-11T04:04:42.707310832Z",
+  "closed_at": "2026-06-11T04:04:42.707310832Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "9665b49c-7899-4f82-b338-d69fa02f7e8c",
+      "author": "Yffe",
+      "content": "Failing tests at thermite-lower/tests/divergence_spec_call_cast_proof_aid_paths.rs demonstrate two divergences against verus-lowering.md REQ-5 (#225 declared-param-type rule), contradicting 1c59e4fd's 'ALL six spec-context entry points' claim: (1) nonlinear_overflow_assert re-lowers the fn req as a by(nonlinear_arith) requires hypothesis via bare Ctx::spec_seq() — a u32-param spec-call arith arg emits s_dec((k + 0) as u64) while the SAME req lowers as u32 in the signature/invariant two lines above; live forge check: item dies at L0 via E0308 though the source is correct (the exact #227 class). (2) lower_inv_expr routes a struct-inv Expr::Call through its catch-all lower_expr(.., Ctx::spec_seq(), ..) — emits s_dec((x + 0) as u64) AND drops the REQ-8 self.<field> rewrite (bare x, unresolvable). Same-class unthreaded sites flagged for the fixer (not individually pinned): find_product_bound's bound-factor lowering, find_none_forall_in/match_bounded_combinator pred lowering (complementary_coverage_split aids), seq_fold_body's base arm, lower_index_arg in lower_inv_expr, and lower_equivalence_obligation's req (conservative-only: the obligation omits spec-fn defs so a spec-call req can never verify; survivor stays counted).",
+      "created_at": "2026-06-11T01:13:22.500974353Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "e3b28d40-5822-41cf-885b-f51c4a721a91",
+      "author": "Yffe",
+      "content": "Plan (critic): commit the two failing pins (ignored, tracking this issue) at thermite-lower/tests/divergence_spec_call_cast_proof_aid_paths.rs; no production code touched.",
+      "created_at": "2026-06-11T01:15:02.083022392Z",
+      "kind": "plan"
+    }
+  ]
+}

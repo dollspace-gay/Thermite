@@ -1,0 +1,37 @@
+{
+  "uuid": "be95b727-e1c5-4a83-bd7e-085d9689d1a5",
+  "display_id": 33,
+  "title": "Divergence: parse_block tail-promotion encodes value-less trailing if/else as Expr::If (corpus binary_search.loop#1)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T20:20:56.809533451Z",
+  "updated_at": "2026-06-04T20:25:04.282974099Z",
+  "closed_at": "2026-06-04T20:25:04.282974099Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "b90faa91-84dc-4de8-9d75-0e9e5a4907ab",
+      "author": "Yffe",
+      "content": "Failing test at thermite-syntax/tests/divergence_final.rs::divergence_value_less_trailing_if_is_statement_not_tail_expr demonstrates the divergence.\n\nAuthority: .design/syntax/surface-grammar.md decision #2 ('the expression form ... must have a value; the statement form does not') + OQ-3 ('the corpus only uses the statement form'). Discriminator is value-ness, not source position.\n\nCorpus conformance/binary_search.th ends its loop body with 'if haystack[mid] < needle { lo = mid + 1; } else { hi = mid; }' — both branches are assignment statements (Block tail: None), producing no value, so by the design this is the STATEMENT form. The #30 if-tail refactor (parse_block + parse_if_parts) promotes it to a tail Expr::If purely because it has an else and nothing follows. Result: lp.body.tail = Some(Expr::If{..}) on a value-less construct.\n\nMasked because conformance/parse/binary_search.facts.json is representation-agnostic and pins no stmt-vs-tail fact. Root cause: tail-promotion in parse_block must additionally require that at least one branch produces a value (tail.is_some()) before hoisting to Expr::If; otherwise it is Stmt::If.",
+      "created_at": "2026-06-04T20:21:12.947852785Z",
+      "kind": "observation"
+    },
+    {
+      "uuid": "71848a08-5f06-4ea4-8d42-316d6f935a66",
+      "author": "Yffe",
+      "content": "PLAN: commit the failing pinned test thermite-syntax/tests/divergence_final.rs to main (un-#[ignore]d, the failing test IS the block per goal.md R-DEFER-3). Critic does not fix; the fixer must add a value-ness condition (tail.is_some() in at least one branch) to the parse_block tail-promotion before hoisting if/else to Expr::If, otherwise emit Stmt::If.",
+      "created_at": "2026-06-04T20:21:43.093184613Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "ba163fc4-30f2-4063-ba88-7720ead12f2f",
+      "author": "Yffe",
+      "content": "FIXED in parse_block (thermite-syntax/src/parser.rs). The trailing-if/else -> tail Expr::If promotion is now gated on VALUE-NESS, not position: condition changed from 'if self.check(&TokKind::RBrace)' to 'if self.check(&TokKind::RBrace) && then.tail.is_some()'. A value-less trailing if/else (both branches statement-only, e.g. corpus binary_search.loop#1 'if .. { lo = mid + 1; } else { hi = mid; }') now falls through to the existing Stmt::If arm, leaving the loop body tail: None.\n\nAuthority: .design/syntax/surface-grammar.md decision #2 + OQ-3 (discriminator is value-ness). Value-ness signal = then-branch block tail.is_some() (branch type-agreement is a downstream/forge concern).\n\nGauntlet (thermite-syntax, 0 ignored): cargo test = 20 passed (9 conformance + 3 grammar + 4 reaudit + 3 reaudit2 + 1 final), 0 failed, 0 ignored. #33 PASS, #30 PASS. clippy -D warnings PASS. fmt --check PASS. Touched neither test assertions nor conformance/ fixtures.",
+      "created_at": "2026-06-04T20:24:48.381657664Z",
+      "kind": "result"
+    }
+  ]
+}

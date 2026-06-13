@@ -1,0 +1,31 @@
+{
+  "uuid": "265febfc-255a-47a5-8a41-e91a9a47bf26",
+  "display_id": 15,
+  "title": "Define audit manifest format v1 as the trust deliverable",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-04T17:47:52.297086578Z",
+  "updated_at": "2026-06-05T09:14:30.600927024Z",
+  "closed_at": "2026-06-05T09:14:30.600927024Z",
+  "labels": [
+    "feature"
+  ],
+  "milestone_uuid": "2a6a2885-bfc0-4054-a204-264b313b22d0",
+  "comments": [
+    {
+      "uuid": "69a7177c-327b-4dad-94dd-b65d1ba49899",
+      "author": "Yffe",
+      "content": "Ship audit manifest v1 + forge audit as a PURE PROJECTION over the existing per-fn Certificate collection + AssuranceManifest::aggregate. New module forge/src/audit.rs: AuditManifest { manifest_version v1, functions[] (FunctionRow), project_assurance (ProjectAssuranceSection embedding the #10/#17 aggregate), tcb (Tcb = SlagBlock U BoundaryContract U Toolchain) }. forge audit verb in cli.rs runs check::check_file (default config, no re-verification) and emits --json or a human summary. TCB completeness (R-DEFER-9): every cert.slag + cert.boundary enumerated, toolchain always present. Verified against conformance/audit/cases.json (corpus_empty_tcb, slag_boundary_tcb).",
+      "created_at": "2026-06-05T09:05:32.243695334Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "6847aaa9-d600-462f-b6e1-2dfb048b6d54",
+      "author": "Yffe",
+      "content": "SHIPPED — audit manifest v1, the trust deliverable (§6/§8/§9 + forge audit). audit.rs AuditManifest { manifest_version v1, functions[per-fn rows], project_assurance (the #10/#17 aggregate), tcb }. Tcb::from_certificates enumerates the §9 trusted computing base = slag_blocks (reason/owner/review) U boundary_contracts (target + req/ens/fx) U toolchain (verus + thermite versions). forge audit <file> emits JSON + human summary — a PURE PROJECTION of the cert collection + AssuranceManifest::aggregate (no re-verification). Loop: doc-author -> builder -> critic NO DIVERGENCE: TCB completeness proven on a multi-slag+multi-boundary file (all enumerated, nothing omitted, R-DEFER-9); pure projection (a vacuous fn -> L0 + project FAILED, no laundering); project assurance faithful; manifest_version stable; deterministic; no panic. Commit a8b2f71. workspace 336 tests, clippy/fmt clean. grep-slag inventory complete. Not pushed.",
+      "created_at": "2026-06-05T09:14:22.684203749Z",
+      "kind": "result"
+    }
+  ]
+}

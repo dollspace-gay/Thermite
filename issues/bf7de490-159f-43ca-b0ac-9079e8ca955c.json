@@ -1,0 +1,30 @@
+{
+  "uuid": "bf7de490-159f-43ca-b0ac-9079e8ca955c",
+  "display_id": 89,
+  "title": "Package the editor binary to a stable path + document the interactive run recipe",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-07T01:05:18.170303639Z",
+  "updated_at": "2026-06-07T17:12:11.474631558Z",
+  "closed_at": "2026-06-07T17:12:11.474631558Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "fb5e9f1e-76cd-40b4-bfd0-9f5236cf9295",
+      "author": "Yffe",
+      "content": "Added examples/editor/run.sh (builds via forge build --entry run, drops into raw-mode interactive, restores terminal on exit) + gitignored the build-output binary. Verified piped: hello+backspace+backspace+p+Ctrl-Q -> buffer help, exit 0.",
+      "created_at": "2026-06-07T01:07:06.599323980Z",
+      "kind": "result"
+    },
+    {
+      "uuid": "8fb96450-5f9f-415a-8426-a36a4bb8eada",
+      "author": "Yffe",
+      "content": "RESOLVED: examples/editor/run.sh builds (forge build --entry run --no-sandbox) + launches the editor (self-sets raw mode via extern-C termios; no stty). The editor builds+runs interactively (4277bf1, #90). The stable-path concern is superseded by run.sh + the self-contained binary. README documents the keymap + verified-vs-trusted split.",
+      "created_at": "2026-06-07T17:12:01.266776985Z",
+      "kind": "result"
+    }
+  ]
+}

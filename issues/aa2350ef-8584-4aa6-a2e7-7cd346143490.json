@@ -1,0 +1,30 @@
+{
+  "uuid": "aa2350ef-8584-4aa6-a2e7-7cd346143490",
+  "display_id": 133,
+  "title": "docs: editor runs sandboxed (#106 done) + #101 done — drop --no-sandbox from examples/main README, update the deferred line, fix equivalent-mutants AC-2 ratio",
+  "status": "closed",
+  "priority": "medium",
+  "created_by": "Yffe",
+  "created_at": "2026-06-08T06:34:24.330961661Z",
+  "updated_at": "2026-06-08T06:37:03.362795958Z",
+  "closed_at": "2026-06-08T06:37:03.362795958Z",
+  "labels": [
+    "docs"
+  ],
+  "comments": [
+    {
+      "uuid": "e8a0a63a-f7ac-4b56-9b7e-4747c7f4d8e8",
+      "author": "Yffe",
+      "content": "Plan: drop --no-sandbox from examples/README + main README (editor runs sandboxed via fx term, #106 done); update the deferred line (C10-C12 + #106 + #101 all shipped); fix equivalent-mutants.md AC-2/grounded ratio 0/3->0/2 (the x-0 flip is excludable under any req, verdict unchanged).",
+      "created_at": "2026-06-08T06:36:42.756689968Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "3c795c23-0194-4e28-8ca8-239d301554fd",
+      "author": "Yffe",
+      "content": "Done. Editor command drops --no-sandbox; caveat -> effect-confined-via-fx-term. Status: C10-C12 + #106 + #101 shipped; deferred trimmed to #21 + basis v1.1. equivalent-mutants AC-2 ratio 0/3->0/2 (verdict unchanged). Skill fresh.",
+      "created_at": "2026-06-08T06:36:57.728472402Z",
+      "kind": "result"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "uuid": "1242f67c-4754-474a-b8b8-2d0a54a021fc",
+  "display_id": 214,
+  "title": "Divergence: proof-backends.md §4 exported form leaves rbody UNBOUND — result-binding lacks the stabilization quantifier; the fuel-hint rendering is unsound (PinStabilization Pin A)",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-10T19:47:25.018269419Z",
+  "updated_at": "2026-06-10T22:51:41.396597287Z",
+  "closed_at": "2026-06-10T22:51:41.396597287Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "1f4e7463-08c0-4337-b7e9-4a349eaa362f",
+      "author": "Yffe",
+      "content": "Kernel-checked pin: lean/Thermite/PinStabilization.lean (Pin A). The §4 displayed theorem binds the result via 'Env.bindInt env \"result\" rbody' with rbody bound by NOTHING — no '∀ r, stabilizes body env r →' hypothesis; only prose ('binds via Env.bindInt after stabilization') + the fuel₀ hint. For an env-dependent body no concrete value is computable at export time, so the prose cannot be implemented as a value. Pin: registry f(x)=g(x), g(x)=5 (dec-bounded, complete); body f(x) stabilizes to 5 (body_stabilizes_to_5) but is the bottom 0 at hint fuel 1 (rbody_at_hint_fuel_is_bottom); the wrong contract 'ens result == 0' DISCHARGES under the hint rendering (wrong_contract_certifies_with_underfuelled_rbody) and is REFUTED at the true value (wrong_contract_fails_at_true_value) — the #213 Int-bottom unsoundness recurs on the body side. Fix shape: quantify the result ('∀ r, stabilizes body env r → reqStable → ensStable at r').",
+      "created_at": "2026-06-10T19:48:11.355366247Z",
+      "kind": "observation"
+    }
+  ]
+}

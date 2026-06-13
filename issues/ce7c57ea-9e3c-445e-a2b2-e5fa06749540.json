@@ -1,0 +1,30 @@
+{
+  "uuid": "ce7c57ea-9e3c-445e-a2b2-e5fa06749540",
+  "display_id": 162,
+  "title": "forge: body-tv check phase (forge body-tv <file>) — runs the straight-line body state-refinement TV over each checked item's exec body, four-way Faithful/Divergent/Unverifiable/Skipped (loops Skipped HONESTLY = step 2.2.2). Sibling to forge::exec_tv. .design/verified/exec-stmt-tv.md REQ-3/REQ-5.",
+  "status": "closed",
+  "priority": "high",
+  "created_by": "Yffe",
+  "created_at": "2026-06-09T00:53:10.327861744Z",
+  "updated_at": "2026-06-10T02:58:42.594445598Z",
+  "closed_at": "2026-06-10T02:58:42.594445598Z",
+  "labels": [
+    "blocker"
+  ],
+  "comments": [
+    {
+      "uuid": "37f15795-aff1-40fc-a948-f3c4c292068a",
+      "author": "Yffe",
+      "content": "Built forge/src/body_tv.rs — the body-state TV check phase, sibling to forge::exec_tv. Straight-line bodies discharge body_equivalence_obligation; v1 while-loops discharge the three loop obligations (entry/preservation/exit) reusing body_ref_state; four-way BodyVerdict reported distinctly with nonzero exit only on Divergent. Wired the forge body-tv verb in cli.rs + main.rs, added the spec-route, set both design REQ-5 statuses SHIPPED. Tests forge/tests/body_tv.rs: faithful straight-line->Faithful, faithful while->Faithful, mutated->Divergent, binary_search loop->Skipped, all live verus.",
+      "created_at": "2026-06-10T01:25:13.936249110Z",
+      "kind": "plan"
+    },
+    {
+      "uuid": "d9e03184-5e0c-46e7-a2fd-e1e8f6ba922c",
+      "author": "Yffe",
+      "content": "SHIPPED + critic-clean through the full loop (540cea0d + fix c00600c3). forge body-tv <file>: the straight-line body state-refinement TV + the v1 while-loop obligations (entry/preservation/exit) over each checked item, four-way Faithful/Divergent/Unverifiable/Skipped reported DISTINCTLY (R-HONEST-3), exit nonzero iff Divergent (the exec_tv convention). Consumes only thermite-tv pub APIs (body_equivalence_obligation, loop_*_obligation, loop_ref_obligations + frames); production side genuinely thermite-lower's lower_exec_body (no self-comparison). Tests: faithful straight-line + faithful v1 while -> Faithful (live verus), mutated production -> Divergent, binary_search loop-kind -> Skipped with reason, exit conventions. The critic found #189 (frame compile abort fabricated as Divergent) -> fixed (req gate + mapping hardening + teeth) -> re-critic NO DIVERGENCE. exec-stmt-tv.md REQ-5 + loop-tv.md REQ-5 SHIPPED. The last integration seam of the lowering-soundness program is closed.",
+      "created_at": "2026-06-10T02:58:34.172966778Z",
+      "kind": "result"
+    }
+  ]
+}

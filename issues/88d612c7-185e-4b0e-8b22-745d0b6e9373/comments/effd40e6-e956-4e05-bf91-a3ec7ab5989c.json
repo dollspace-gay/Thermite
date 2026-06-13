@@ -1,0 +1,10 @@
+{
+  "uuid": "effd40e6-e956-4e05-bf91-a3ec7ab5989c",
+  "issue_uuid": "88d612c7-185e-4b0e-8b22-745d0b6e9373",
+  "author": "rApq",
+  "content": "Top-level docs slice merged (PR #9: README, RATIONALE, thermite-design + tone-and-voice.md). Continuing inline with the .design/ tree on feature/tone-design; sequential merge to avoid divergence.",
+  "created_at": "2026-06-13T15:39:56.592185Z",
+  "kind": "plan",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAVRvb7l9+QLwXy2Uou4Rtz143KATFLqXn/1qRziTXELOKUlxZ+ndmXNp3hnZSDOcLxjaZ0TOiDgYQtNeSQ7v8Dw=="
+}

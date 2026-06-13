@@ -194,7 +194,7 @@ is an EXEC `fn` (not `proof`/`spec`), so the always-active runtime overflow chec
   entry).
 - `forge/src/body_tv.rs` — the NEW forge check phase (REQ-5, blocker #162), sibling to `exec_tv.rs`.
   Four-way `Faithful` / `Divergent` / `Unverifiable` / `Skipped` (a loop body / non-scalar state / an
-  early-return-in-branch is SKIPPED honestly — step 2.2.2 / OUT), discharged through
+  early-return-in-branch is SKIPPED — step 2.2.2 / OUT), discharged through
   `forge::check::run_verus` + the `ScratchDir` (#53) cleanup, exactly as `exec_tv::discharge`.
 
 ## Requirements
@@ -393,7 +393,7 @@ kernel's exec language — one frozen set, two consumers.
   state-refinement certifies the body's STATE TRANSFORMATION matches the source, on top of step 2.1's
   per-RHS value faithfulness.
 - **2.2.2 (loops, KERNEL-GATED):** `while`/`loop`/`break`/`continue` — the after-loop state needs the
-  invariant / unrolling / a fixpoint. Framed, not designed; a loop body is Skipped honestly.
+  invariant / unrolling / a fixpoint. Framed, not designed; a loop body is Skipped.
 - **no_std kernel target (SIBLING groundwork):** `forge build --target kernel` — separate deliverable,
   not a step-2.2 prerequisite, framed not designed (blocker #164).
 

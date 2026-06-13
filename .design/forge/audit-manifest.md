@@ -347,7 +347,7 @@ on it would make Lean-fragment growth a breaking event. A future opt-in gate
   existing `AssuranceManifest::aggregate` output — the min-over-functions
   `ProjectAssurance`, the `ProjectScope` (§9 end-to-end vs to-the-boundary), and
   the lowered-assurance fns. A degraded-or-to-boundary project is reflected
-  honestly. Derived from §5.2 (whole-project assurance is the min over
+ . Derived from §5.2 (whole-project assurance is the min over
   functions, displayed on every build) + §9 (verified-to-the-boundary vs
   verified-period).
 - **REQ-6 (determinism):** the manifest is a deterministic function of its

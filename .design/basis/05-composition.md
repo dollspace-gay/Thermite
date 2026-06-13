@@ -99,7 +99,7 @@ enumerated TCB.
 
 **Precedent (the verified-systems lineage).** This is the seL4 / CompCert pattern
 made the default: verified components + COMPOSITIONAL reasoning (assume the
-callee's spec, discharge the caller locally, aggregate honestly) is how those
+callee's spec, discharge the caller locally, aggregate) is how those
 projects scaled machine-checked proof past the size where a monolithic proof is
 tractable. Thermite makes that the floor (§2.1) rather than a heroic one-off:
 every function carries a contract, so every call site is a composition boundary
@@ -268,7 +268,7 @@ under `conformance/composition/`.
   the composition law itself carries NO cheat). (REQ-1, REQ-4, REQ-5.)
 
 - **AC-2 (the audit manifest aggregates per-part assurance + enumerates the TCB
-  honestly):** `forge audit conformance/composition/pipeline.th` emits a manifest
+ ):** `forge audit conformance/composition/pipeline.th` emits a manifest
   whose `project_assurance` is the MIN over parts (TO-THE-BOUNDARY, listing the
   `f` crossing) and whose `tcb` enumerates `f`'s boundary/slag contract ∪ the
   toolchain — nothing omitted (R-DEFER-9). A purely-pure variant (no Stage-3

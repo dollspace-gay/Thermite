@@ -191,7 +191,7 @@ below (Verification) against real rustc.
   asserts a byte-for-byte equal rlib. (The original grounding measured one residual
   byte using ABSOLUTE source paths + no remap; the shipped impl additionally pins the
   path, closing that byte. The manifest's `reproducibility.note` states the
-  `SOURCE_DATE_EPOCH` pin honestly.)
+  `SOURCE_DATE_EPOCH` pin.)
 
 - **AC-7 (exit-status discipline).** A `rustc` failure (e.g. an intentionally
   un-compilable injected fixture) yields a non-zero `forge build` exit and a structured
@@ -307,7 +307,7 @@ for `conformance/sum.th` was emitted (the production `thermite_lower::lower_l1`)
    `SOURCE_DATE_EPOCH=0` (the mtime) and the relative-filename + `--remap-path-prefix` (the
    embedded scratch path) — so two same-input `.rlib` builds are now **byte-identical**
    (`build_conformance::rebuilt_library_is_byte_identical`). The manifest's
-   `reproducibility.note` records the `SOURCE_DATE_EPOCH` pin honestly.
+   `reproducibility.note` records the `SOURCE_DATE_EPOCH` pin.
 
 All grounding scratch was created under `/tmp` and removed; no artifacts leaked into the
 repo tree (the #53 lesson — compiled artifacts are large).

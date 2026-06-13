@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
 
+# Cancel a PR's superseded in-flight run when a new commit is pushed (the
+# kickoff-agent loop waits on this CI, so stale runs are pure latency). Main
+# pushes are NOT cancelled: those runs are the verification record of record.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # The full gauntlet (REQ-5). Each command is a separate, must-pass step:
 # a non-zero exit fails CI (R-DEFER-6 — verification is a hard gate). The
 # installer is pinned to the SAME version as rust-toolchain.toml (1.95.0) so
@@ -19,6 +26,11 @@ on:
 # verification is a hard gate). The pinned verus 0.2026.05.24.ecee80a bundles
 # the matching rust toolchain (1.95.0) + z3. The tests resolve verus via the
 # VERUS_BIN env / PATH and skip loudly only if it is genuinely absent.
+#
+# Step ordering is fail-fast: the cheap, no-compile checks (fmt, the python
+# doc-drift gate) run BEFORE the Rust build cache restore and the heavy
+# build/test/clippy, so a formatting slip or a stale design-doc pin fails in
+# seconds instead of after a multi-minute compile.
 jobs:
   gauntlet:
     runs-on: ubuntu-latest
@@ -37,16 +49,51 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # --- Fail-fast: cheap checks that need no workspace compile ---
+      - name: cargo fmt
+        run: cargo fmt --all --check
+
+      # Doc-drift tripwire (.design/tooling/doc-drift-tripwire.md REQ-10): every
+      # routed .design doc's audited-sha pin must cover its governed files. A
+      # commit that touches a routed file without re-pinning/amending its design
+      # doc fails CI. The fixture suite for the gate itself runs first (full
+      # checkout history is required for the commit-set drift predicate, hence
+      # fetch-depth: 0 on the checkout — see the Checkout step). These are pure
+      # python and run before the Rust build for fail-fast latency.
+      - name: doc-drift gate tests (tooling/tests)
+        run: python3 -m unittest discover -s tooling/tests
+      - name: doc-drift tripwire (design-doc freshness)
+        run: python3 tooling/doc-drift.py
+
+      # --- Caches (restored only once the fail-fast gates are green) ---
+      # Caches the cargo registry + git deps + the workspace target dir, keyed
+      # on Cargo.lock + the pinned toolchain. Turns the cold multi-minute
+      # workspace compile into a warm incremental one across runs.
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+
+      # Cache the pinned Verus distribution by version so it is downloaded and
+      # unzipped once, not on every run. The install step below is a no-op on a
+      # cache hit and falls back to download on a miss.
+      - name: Cache Verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus-dist
+          key: verus-0.2026.05.24.ecee80a-x86-linux
+
       - name: Install Verus (L3 verification gate — pinned to dev version)
         run: |
           set -euo pipefail
           VERUS_VER="0.2026.05.24.ecee80a"
-          # Asset name is verus-<VER>-x86-linux.zip; the tag path uses a literal
-          # slash (release/<VER>), NOT %2F (verified against the releases API).
-          curl -fsSL -o /tmp/verus.zip \
-            "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
-          mkdir -p "$HOME/verus-dist"
-          unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          # Download only on a cache miss (no verus binary present in the cached
+          # dir). Asset name is verus-<VER>-x86-linux.zip; the tag path uses a
+          # literal slash (release/<VER>), NOT %2F (verified against the API).
+          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
+            curl -fsSL -o /tmp/verus.zip \
+              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
+            mkdir -p "$HOME/verus-dist"
+            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          fi
           # Locate the verus binary regardless of the zip's internal dir name.
           VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
           test -n "$VERUS_BIN_PATH"
@@ -54,6 +101,7 @@ jobs:
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
 
+      # --- Heavy steps (cache-accelerated) ---
       - name: cargo build
         run: cargo build --workspace
 
@@ -63,21 +111,5 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: cargo fmt
-        run: cargo fmt --all --check
-
       - name: skill budget gate (issue #7, design §2.2 / §10)
         run: cargo run -p thermite-skill -- --check-budget
-
-      # Doc-drift tripwire (.design/tooling/doc-drift-tripwire.md REQ-10): every
-      # routed .design doc's audited-sha pin must cover its governed files. This
-      # step landed in the commit that cleared the #262 bootstrap backlog (the
-      # REQ-10 enforcement-activation sequencing) — from here on, a commit that
-      # touches a routed file without re-pinning/amending its design doc fails CI.
-      # The fixture suite for the gate itself runs first (full checkout history
-      # is required for the commit-set drift predicate, hence fetch-depth: 0 on
-      # the checkout — see the Checkout step).
-      - name: doc-drift gate tests (tooling/tests)
-        run: python3 -m unittest discover -s tooling/tests
-      - name: doc-drift tripwire (design-doc freshness)
-        run: python3 tooling/doc-drift.py

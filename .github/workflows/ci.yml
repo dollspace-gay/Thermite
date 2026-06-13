@@ -12,27 +12,25 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# The full gauntlet (REQ-5). Each command is a separate, must-pass step:
-# a non-zero exit fails CI (R-DEFER-6 — verification is a hard gate). The
-# installer is pinned to the SAME version as rust-toolchain.toml (1.95.0) so
-# CI runs on exactly the pinned toolchain (R-CODE-5 / design §5.3 determinism);
-# rustup also honors rust-toolchain.toml for the cargo invocations below.
-# The skill-budget gate (issue #7, REQ-7) runs the `--check-budget` step below:
-# `cargo run -p thermite-skill -- --check-budget` fails CI if the generated
-# THERMITE.skill.md exceeds the 6,000-token budget (design §2.2 / §10).
+# Two jobs, run in parallel (REQ-5 — the full gauntlet still runs; a non-zero
+# exit in any step fails CI, R-DEFER-6):
 #
-# Verus is installed below so the L3 verification gate (thermite-lower's
-# verus-on-emitted tests) ACTUALLY RUNS in CI, not just locally (R-DEFER-6 —
-# verification is a hard gate). The pinned verus 0.2026.05.24.ecee80a bundles
-# the matching rust toolchain (1.95.0) + z3. The tests resolve verus via the
-# VERUS_BIN env / PATH and skip loudly only if it is genuinely absent.
+#   checks — the compile-light gates: fmt, clippy, the python doc-drift gate,
+#            the skill-budget gate, and doctests. Run once.
+#   test   — the Verus/Z3-backed conformance suite, which dominates wall-clock
+#            (~100 of the workspace's integration-test binaries invoke the real
+#            solver). Profiling showed this is test EXECUTION time, not compile
+#            time, so it is sharded across N runners with cargo-nextest's
+#            partitioning; wall-clock drops ~linearly with the shard count.
 #
-# Step ordering is fail-fast: the cheap, no-compile checks (fmt, the python
-# doc-drift gate) run BEFORE the Rust build cache restore and the heavy
-# build/test/clippy, so a formatting slip or a stale design-doc pin fails in
-# seconds instead of after a multi-minute compile.
+# Both jobs install the pinned toolchain (rust-toolchain.toml channel, 1.95.0)
+# and restore the shared Rust build cache + the pinned Verus distribution; on a
+# warm cache the per-job compile is seconds. Verus is the L3 verification gate
+# (it bundles the matching rust toolchain + z3); tests resolve it via VERUS_BIN.
+# The skill-budget gate fails CI if the generated THERMITE.skill.md exceeds its
+# 6,000-token budget (design §2.2 / §10).
 jobs:
-  gauntlet:
+  checks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -49,32 +47,24 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      # --- Fail-fast: cheap checks that need no workspace compile ---
+      # Fail-fast: the cheap, no-compile gates first.
       - name: cargo fmt
         run: cargo fmt --all --check
 
-      # Doc-drift tripwire (.design/tooling/doc-drift-tripwire.md REQ-10): every
-      # routed .design doc's audited-sha pin must cover its governed files. A
-      # commit that touches a routed file without re-pinning/amending its design
-      # doc fails CI. The fixture suite for the gate itself runs first (full
-      # checkout history is required for the commit-set drift predicate, hence
-      # fetch-depth: 0 on the checkout — see the Checkout step). These are pure
-      # python and run before the Rust build for fail-fast latency.
       - name: doc-drift gate tests (tooling/tests)
         run: python3 -m unittest discover -s tooling/tests
       - name: doc-drift tripwire (design-doc freshness)
         run: python3 tooling/doc-drift.py
 
-      # --- Caches (restored only once the fail-fast gates are green) ---
-      # Caches the cargo registry + git deps + the workspace target dir, keyed
-      # on Cargo.lock + the pinned toolchain. Turns the cold multi-minute
-      # workspace compile into a warm incremental one across runs.
       - name: Rust build cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache slot from the test job: this job builds with
+          # `--all-targets` for clippy, a different artifact set.
+          key: checks
 
-      # Cache the pinned Verus distribution by version so it is downloaded and
-      # unzipped once, not on every run. The install step below is a no-op on a
-      # cache hit and falls back to download on a miss.
+      # Verus is restored here too so doctests that exercise the solver path
+      # still run (the old single-job `cargo test --workspace` ran doctests).
       - name: Cache Verus
         uses: actions/cache@v4
         with:
@@ -85,31 +75,79 @@ jobs:
         run: |
           set -euo pipefail
           VERUS_VER="0.2026.05.24.ecee80a"
-          # Download only on a cache miss (no verus binary present in the cached
-          # dir). Asset name is verus-<VER>-x86-linux.zip; the tag path uses a
-          # literal slash (release/<VER>), NOT %2F (verified against the API).
           if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
             curl -fsSL -o /tmp/verus.zip \
               "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
             mkdir -p "$HOME/verus-dist"
             unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
           fi
-          # Locate the verus binary regardless of the zip's internal dir name.
           VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
           test -n "$VERUS_BIN_PATH"
           echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
 
-      # --- Heavy steps (cache-accelerated) ---
-      - name: cargo build
-        run: cargo build --workspace
-
-      - name: cargo test
-        run: cargo test --workspace
-
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # nextest does not run doctests; run them here so coverage matches the
+      # previous `cargo test --workspace`.
+      - name: cargo test --doc
+        run: cargo test --doc --workspace
+
       - name: skill budget gate (issue #7, design §2.2 / §10)
         run: cargo run -p thermite-skill -- --check-budget
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Surface every shard's failures, not just the first.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Some conformance tests (audit/doc-drift) read git history.
+          fetch-depth: 0
+
+      - name: Install toolchain (pinned to rust-toolchain.toml channel)
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: test
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Cache Verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus-dist
+          key: verus-0.2026.05.24.ecee80a-x86-linux
+
+      - name: Install Verus (L3 verification gate — pinned to dev version)
+        run: |
+          set -euo pipefail
+          VERUS_VER="0.2026.05.24.ecee80a"
+          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
+            curl -fsSL -o /tmp/verus.zip \
+              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
+            mkdir -p "$HOME/verus-dist"
+            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          fi
+          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
+          test -n "$VERUS_BIN_PATH"
+          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
+          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
+          "$VERUS_BIN_PATH" --version
+
+      # Shard the suite across the matrix: nextest assigns each test to one
+      # partition deterministically, so the union of shards is the full suite.
+      - name: cargo nextest run (shard ${{ matrix.shard }}/4)
+        run: cargo nextest run --workspace --partition count:${{ matrix.shard }}/4

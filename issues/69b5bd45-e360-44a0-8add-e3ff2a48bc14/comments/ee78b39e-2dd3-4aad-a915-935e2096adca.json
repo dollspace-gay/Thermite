@@ -1,0 +1,10 @@
+{
+  "uuid": "ee78b39e-2dd3-4aad-a915-935e2096adca",
+  "issue_uuid": "69b5bd45-e360-44a0-8add-e3ff2a48bc14",
+  "author": "rApq",
+  "content": "Done: restored broad allowed_bash_prefixes in hook-config.json (root cause of the block was a stuck cwd in .crosslink/.hub-cache, now operating from repo root). Reconciled hub (reset to origin + rehydrate). Re-added merged-work history durably as #283-286 (closed). REMAINING: 5 Yffe stale locks unreleasable — corruption is in origin's Yffe events.log (mid-file parse failure), not local; needs shared-hub coordination.",
+  "created_at": "2026-06-13T02:08:05.947167Z",
+  "kind": "result",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAWODzPuMwugsoQTBY8TRkbAWOwDFN0Aakqf8thUpLkhRxZnupx95uhC898MlktgtDGZmd5jn/jwJYV6sgpTP7Dw=="
+}

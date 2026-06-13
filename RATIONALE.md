@@ -1,34 +1,28 @@
 # RATIONALE — the metaphor-to-mechanism resolution layer
 
 The [README](README.md) uses plain terms: "a cage," "the ladder," "promises," "a
-certificate," "kill the mutants." This file makes each of those terms precise. For
-each, it records what established concept it *is* (with lineage), the concrete
-mechanism that implements it (file + symbol pointers into this repo), the
-engineering tradeoff that decided it over the alternatives, the limits (where it
-does *not* protect), and the planned direction (with a tracking pointer).
+certificate," "kill the mutants." This file makes each term precise. For
+each, it records the established concept it implements (with lineage), the
+mechanism (file and symbol pointers into this repo), the engineering tradeoff
+behind it, the limits (where it does not protect), and the planned direction
+(with a tracking pointer).
 
-Lineage attributions are to the published literature; they are *context*, not
-project claims. The three pieces this project asserts as genuinely novel (the
-caged quantifier fragment, the anti-Goodhart battery, and the effect-row→seccomp
-derivation) are marked as such and cite the SOTA survey
-([`.design/research/formal-methods-sota.md`](.design/research/formal-methods-sota.md)),
-which records each as a **GENUINE EXTENSION** with the survey's *own* hedge on
-each, rather than a flat claim:
+Lineage attributions point to the published literature for context. Three
+components are new as far as a [SOTA survey](.design/research/formal-methods-sota.md)
+found, and it records the hedge on each:
 
-- the **caged quantifier fragment**: "no *direct* analogue in the surveyed
-  verified-compilation lit; **needs a targeted survey to confirm novelty**";
-- the **anti-Goodhart battery**: "no analogue in the surveyed
-  verified-compilation lit";
-- the **effect-row→seccomp hybrid**: the surveyed effect lit "does not combine
-  static effect typing with runtime syscall confinement," so the hybrid is
-  asserted *by absence* and (survey gap #3) "**needs its own survey**" of the
-  row-effect + seccomp/CHERI literature.
+- the **caged quantifier fragment** — "no direct analogue in the surveyed
+  verified-compilation literature; needs a targeted survey to confirm novelty";
+- the **anti-Goodhart battery** — "no analogue in the surveyed
+  verified-compilation literature";
+- the **effect-row→seccomp hybrid** — the surveyed effect literature "does not
+  combine static effect typing with runtime syscall confinement," so the hybrid
+  is asserted by absence, pending its own survey of the row-effect and
+  seccomp/CHERI literature.
 
-Each is "no analogue *in the surveyed literature*," a bounded, falsifiable claim
-about a specific survey rather than an absolute novelty assertion.
-
-No new claims are made here. This document only assembles, in standard
-vocabulary, what the code and the `.design/` docs already establish.
+These are claims about one survey's coverage. The rest of the document
+assembles, in standard vocabulary, what the code and the `.design/` docs
+establish.
 
 ---
 
@@ -808,10 +802,9 @@ three standard axioms; Z3/Verus soundness (with the `z3-demotion.md` PoC already
 covering the scalar core); the spec↔intent gap; the pinned inspection audit;
 rustc/LLVM. Everything else is re-derived on the auditor's machine.
 
-**Why this design.** Every claim in the README is "the kind of thing a liar could
-also type" (README). The audit addresses this: a trust statement that *hides* its
-assumptions is incomplete, so the audit *enumerates* the residual rather than
-claiming zero trust, and refuses to claim success when a tool is missing.
+**Why this design.** A trust statement is only useful if it enumerates its
+assumptions, so the audit lists the residual trust items rather than claiming
+zero trust, and refuses to claim success when a tool is missing.
 
 **Limits / failure modes.** The audit re-checks the *committed* proof and corpus;
 it cannot re-derive the residual trust items (that is what makes them residual).

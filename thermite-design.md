@@ -15,21 +15,21 @@ Every verification-heavy language in history died of human ergonomics. Annotatin
 
 AI agents invert the economics:
 
-- **The annotation cost is paid in tokens and compute**, which are cheap, parallelizable, and falling in price every year.
-- **The cost of misplaced trust in autonomously generated code** is rising every year, because agents are writing more code with less supervision.
-- **Agents have infinite patience** for proof-obligation loops, and their failure mode (locally plausible, globally wrong) is exactly the failure mode machine verification catches.
+- The annotation cost is paid in tokens and compute, which are cheap, parallelizable, and falling in price every year.
+- The cost of misplaced trust in autonomously generated code is rising, because agents write more code with less supervision.
+- Agents have effectively unlimited patience for proof-obligation loops, and their failure mode (locally plausible, globally wrong) is the failure mode machine verification catches.
 
-Thermite is the arbitrage: burn the cheap resource (tokens) to buy the expensive one (trust). It is deliberately insufferable for humans to write. Humans are not the user.
+Thermite is the arbitrage: burn the cheap resource (tokens) to buy the expensive one (trust). It is unpleasant for humans to write, by design; humans are not the intended author.
 
-### What "trustable" means, precisely
+### What "trustable" means
 
-A Thermite artifact ships with a certificate that says: *the implementation satisfies these contracts, the contracts are machine-certified non-vacuous, and they kill X% of generated mutants.* The residual trust question — "are these the contracts you wanted?" — is answered by reading a short declarative spec layer, not by mentally executing code. Trust is relocated twice (code → spec → spec-intent alignment) and each relocation shrinks the residue and makes it more legible. Trust that a skeptical third party can audit in minutes, without trusting the agent or anyone's vibes, is the product.
+A Thermite artifact ships with a certificate: the implementation satisfies these contracts, the contracts are machine-certified non-vacuous, and they kill X% of generated mutants. The residual question — "are these the contracts you wanted?" — is answered by reading a short declarative spec layer rather than the code. Trust is relocated twice (code → spec → spec-intent alignment); each relocation shrinks the residue and makes it more legible. A skeptical third party can audit the result in minutes without trusting the agent.
 
 ---
 
 ## 2. Design Pillars
 
-1. **Verification is the floor, not the ceiling.** Every function carries a contract. Every contract is checked. Unverified code requires loud, greppable ceremony; verified code requires none.
+1. **Verification is the floor, not the ceiling.** Every function carries a contract. Every contract is checked. Unverified code requires greppable ceremony; verified code requires none.
 2. **The whole language fits in a skill.** The complete surface syntax and semantics must be teachable to an LLM in ≤ 6,000 tokens. This is a hard budget, enforced in CI against the canonical `THERMITE.skill.md`. Any feature that doesn't fit doesn't ship.
 3. **One way to do everything.** No expressiveness for its own sake. No style decisions. Exactly one canonical formatting (the formatter has zero configuration options). Predictability over elegance.
 4. **Feedback is always crisp.** Every toolchain response is structured, machine-readable, and actionable. A timeout is never the final answer; the gate degrades, it does not block.
@@ -100,7 +100,7 @@ Anatomy:
 - **`fx`** — effect row. Mandatory. One of `pure`, or a set drawn from `{read(path), write(path), net(domain), alloc, time, rand, panic}`. The runtime enforces the row as a sandbox: a function declared `fx pure` that attempts I/O is killed at the syscall boundary, not trusted at the type level alone. Effect rows compose: a caller's row must subsume every callee's row, checked at compile time.
 - **`inv` / `dec`** — loop invariants and a decreases-measure. Mandatory on every `loop`/`while`. Termination is proved by default; divergence requires `fx diverge` in the row.
 
-### 4.2 The spec sublanguage is deliberately weak
+### 4.2 The spec sublanguage is small by design
 
 Contracts are written in **SpecTherm**, a restricted total language:
 
@@ -181,7 +181,7 @@ Three properties make this loop work for LLMs:
 The discontinuity of SMT solvers is the central engineering risk (§6). Forge's contract with the agent: **the gate degrades, it never blocks.**
 
 - Every obligation gets a fixed solver budget (default 10s, portfolio of Z3 + cvc5 seeds in parallel).
-- On timeout, Forge automatically attempts **L2** (Kani bounded check, default bound from type-driven heuristics) and reports honestly: `certified L2 (bound: slices ≤ 8, ints full range)`.
+- On timeout, Forge automatically attempts **L2** (Kani bounded check, default bound from type-driven heuristics) and reports: `certified L2 (bound: slices ≤ 8, ints full range)`.
 - If even L2 times out, the obligation drops to **L1**: the SpecTherm contract compiles to runtime checks, the function is certified L1, and a `lowered-assurance` flag is attached to the build manifest.
 - Forge emits a **solver profile** on every timeout — which combinator's triggers blew up, which assertion consumed the budget — so "maybe" becomes "here's where I got lost," which is actionable for proof repair.
 - The whole-project assurance level is the min over functions, displayed on every build. Driving L1s and L2s back up to L3 is a background task agents can run unattended (proof repair is a local, checkable move — the task shape LLMs are best at).
@@ -226,7 +226,7 @@ Deterministic checks, in order of cost:
 4. **Mutation scoring** (parallel, budgeted): Forge generates N mutants of the body (operator flips, off-by-ones, early returns, branch swaps — fixed deterministic mutator set, seeded from the lockfile) and re-verifies each against the contract. The **kill ratio** is recorded in the certificate. A configurable floor (default 60%) gates certification; below it, Forge reports exactly which mutants survived, which tells the agent *which behavior the contract fails to constrain* — a precise prompt for strengthening.
 5. **Strengthening probes** (budgeted): template-based tightenings of `ens` (tighter bounds, added conjuncts from the SpecTherm combinator library) are tried automatically; if a strictly stronger contract proves with no body change, Forge suggests it.
 
-What the battery cannot check — whether the contract is the property the *user* wanted — is exactly the residue surfaced for review: the certificate includes the full spec layer (typically a few percent of total line count), pre-screened to be non-vacuous, non-trivially-weak, and mutation-scored. The reviewer's job is reduced to reading declarative statements and asking "is this what I meant?" That review slot is pluggable: a human, or a critic model whose only question is spec-intent alignment.
+What the battery cannot check — whether the contract is the property the *user* wanted — is the residue surfaced for review: the certificate includes the full spec layer (typically a few percent of total line count), pre-screened to be non-vacuous, non-trivially-weak, and mutation-scored. The reviewer's job is reduced to reading declarative statements and asking "is this what I meant?" That review slot is pluggable: a human, or a critic model whose only question is spec-intent alignment.
 
 ---
 

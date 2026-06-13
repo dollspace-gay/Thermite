@@ -1,4 +1,5 @@
 # Crosslink trusted signers
 # Format: <principal> <key-type> <base64-key> [comment]
-# self-registered as workspace signing key at 2026-06-04 17:40:40 UTC
 Yffe@crosslink ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKo+flEdaJYO8NPs2cLlm7FqczNhZVbMbKNZfq5/HUnw doll@dollspace
+# approved by maxine at 2026-06-13 02:10:01 UTC
+rApq@crosslink ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMpSwlsKZ0JthNlEDttwDdXv8gepNMs5jzO6omD7o0zW crosslink-agent:rApq@futura-1241.local

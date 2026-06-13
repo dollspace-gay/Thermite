@@ -8,6 +8,12 @@
 > are available, re-run the design pass
 > (`/design --continue stage3-bv-reconstruction`) to resolve them
 > against real results, re-validate, and only then `crosslink kickoff`.
+>
+> *M0 re-pass note (2026-06-13): the M0 spikes (SPIKE-1/SPIKE-2) do
+> **not** feed this stage — none of its inputs is a spike. Its two OPEN
+> blocks (Q-BVSCOPE, Q-RECON) are keyed to Gate-G2 telemetry and a
+> G2-time lean-smt/cvc5 ecosystem assessment, both ~two gates out, so
+> stage 3 remains genuinely provisional after the stage-2 spike re-pass.*
 
 | input dependency | what it decides here | produced by |
 |---|---|---|

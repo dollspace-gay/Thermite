@@ -1,0 +1,11 @@
+{
+  "uuid": "5c087bd3-b278-4697-8d57-3b3dec48edda",
+  "display_id": 284,
+  "title": "SPIKE-1: the SubstKit toy (Lean) — M0 de-risking spike",
+  "description": "M0 SPIKE-1 (RFC-1 program, .design/m0-spikes.md). De-risked stage-2 binder metatheory: proved sdenote_push_lift + sdenote_subst on a 3-ctor de Bruijn toy. MERGED via PR #3.",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "rApq",
+  "created_at": "2026-06-13T02:06:54.752367Z",
+  "updated_at": "2026-06-13T02:06:54.752367Z"
+}

@@ -37,14 +37,14 @@ Umbrella: `.design/thermite2-program.md` (REQ-1). Baseline:
   one of the two failure signals the spike exists to probe, and the
   Mathlib-vs-core verdict is itself a stage-2 `Strat/Carrier.lean` input.
   (The lakefile pulls Mathlib transitively via the `smt` require, so a
-  `Fintype` import would *compile* — which is exactly why the discipline
+  `Fintype` import would *compile* — which is why the discipline
   must be enforced by intent here, not by the build failing.)
 - REQ-2: `sdenote_push_lift` and `sdenote_subst` (the metatheory sketch
   §4's statement shapes, specialized to the toy) are proven end to end:
   zero `sorry`, axioms of both lemmas ⊆ {propext, Classical.choice,
   Quot.sound} under `#print axioms`.
 - REQ-3: A micro-pin `lean/Thermite/Spike/PinBrokenLift.lean` refutes a
-  deliberately broken `lift` (off-by-one cutoff shift) in the repo's
+  broken `lift` (off-by-one cutoff shift) in the repo's
   established `Pin*.lean` style: the wrong lemma instance is disproven on
   a concrete small carrier via `decide`.
 - REQ-4: The conventions note — the spike's real deliverable — lands at
@@ -184,15 +184,14 @@ will eventually compare. The hand-work is bounded *per combinator
 shape* (≤8 shapes), then instantiated across the 4 corpus clauses plus
 generator-drawn instances (read out of the existing `gen_combinator` —
 no new generator productions, those are stage-2 binder work) so the
-threshold-bearing denominator is meaningful rather than n=4. This is the
-plan analysis's most material correction: a 90% bar over 4 clauses is
-4/4, which the corpus alone cannot support. This mimicry is the probe's known
-approximation, and it biases the measured hit rate *downward* if
-anything (real stage-2 emitters can be nudged toward convergence,
-fallback F-C step 1), so a high measured rate is trustworthy evidence
-and a low one triggers the design issue — the asymmetry is safe.
+threshold-bearing denominator is larger than n=4: a 90% bar over 4
+corpus clauses is effectively 4/4, which the corpus alone cannot
+support. The mimicry is an approximation that biases the measured hit
+rate downward (real stage-2 emitters can be converged toward each other,
+fallback F-C step 1), so a high measured rate is trustworthy and a low
+one triggers the design issue.
 
-**What the spikes deliberately do not do:** no soundness lemmas for the
+**What the spikes do not do:** no soundness lemmas for the
 normalizer passes, no `Strat/` modules, no classifier, no changes to
 `forge/`, no generator binder productions. Each of those belongs to a
 stage with its own design pass.

@@ -2,7 +2,7 @@
 
 > **STATUS: PROVISIONAL — do not kickoff from this document.**
 > This is an interim reasoning cache for the program's last and
-> deliberately-last-staged increment. It carries unresolved
+> last-staged increment. It carries unresolved
 > `<!-- OPEN -->` blocks keyed to inputs that cannot exist before G2,
 > so validation flags it as not-kickoff-ready. When the inputs below
 > are available, re-run the design pass
@@ -30,7 +30,7 @@ where the fragment supports it, migrating cage clauses' trust base from
 solver to kernel without touching their rung — the C4 grid honesty,
 delivered through the `trust:` field. The bv half is the program's one
 permanent semantic fork and its one new gaming vector; it is staged
-last for exactly that reason, and fallback F-F's whole ladder remains
+last for that reason, and fallback F-F's ladder remains
 open until the re-pass. Umbrella: `.design/thermite2-program.md`
 (REQ-10).
 
@@ -44,7 +44,7 @@ open until the re-pass. Umbrella: `.design/thermite2-program.md`
   R-BV-1). `lemma` items accept the tag under the same gate.
 - REQ-2 (**lowering**): tagged clauses lower through Verus
   `by(bit_vector)` (QF_BV); untagged clauses on the same item lower
-  exactly as before — one function may carry wraparound and unbounded
+  as before — one function may carry wraparound and unbounded
   clauses side by side, each labeled (the RFC's mix64 shape: two
   `@bv64` clauses + one unbounded zero-fixpoint clause). Verdicts ride
   stage-1 plumbing: bit-level `Counterexample` with the bit pattern
@@ -75,7 +75,7 @@ open until the re-pass. Umbrella: `.design/thermite2-program.md`
   from `solver(z3)` to the kernel-checked form — same rung, smaller
   trust base, visible per clause and aggregated by the audit's
   residual-trust statement. Unsupported fragments keep per-run solver
-  trust, labeled exactly as today (fallback F-J is the free status quo
+  trust, labeled as today (fallback F-J is the free status quo
   ante; reconstruction was never load-bearing for any gate).
 - REQ-8 (**gate G3**): the three locks demonstrably wired before the
   tag parses in any release build (REQ-1's build-flag test);
@@ -181,7 +181,7 @@ practical reconstruction) is an empirical question about external
 tooling at G2 time, roughly two gates away. The pre-M1 lean-smt SHA pin
 fixes the dependency but not the answer. F-J makes failure free, so
 this question never blocks the bv half — but default-on's fragment
-check (REQ-7) cannot be specified honestly until the assessment is
+check (REQ-7) cannot be specified until the assessment is
 done.
 **To resolve**: re-run the design pass with a fresh lean-smt/cvc5
 replay assessment as an exploration input.

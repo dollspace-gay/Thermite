@@ -192,7 +192,7 @@ The v1 toolchain this program extends is shipped and audited in-tree:
   this existing mechanism instead of inventing one — a delta in the
   program's favor.
 - **CI** — `.github/workflows/ci.yml` has no Lean job today; the Lean
-  build is currently un-CI'd, which is exactly why debt item (a) is a
+  build is currently un-CI'd, which is why debt item (a) is a
   pre-M1 blocker: from M1 the Lean build is load-bearing per-certificate.
 
 ### Stage → surface map

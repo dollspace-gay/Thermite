@@ -1,20 +1,20 @@
 //! FINAL re-audit (loop 3 / issue #2) of the #35/#36 fix at HEAD `eae38c3`.
 //!
-//! The #35 fix replaced fn-body caging with a STRUCTURAL traversal
+//! The #35 fix replaced fn-body caging with a structural traversal
 //! (`scan_block_for_loops` / `scan_stmt_for_loops` / `scan_expr_for_loops`)
-//! that descends a `fn` body ONLY to find nested `LoopNode`s and cage each
+//! that descends a `fn` body only to find nested `LoopNode`s and cage each
 //! loop's `invs`/`dec`, leaving the body's surface expressions un-caged. The
 //! #36 fix bounded the contract-position `MethodCall` allowlist to `{len}`.
 //!
 //! This file is the adversarial probe for the obvious failure mode of that
 //! refactor: a structural traversal that fails to descend into some fn-body
 //! position the corpus never exercises would let a bogus combinator in a
-//! nested loop's `inv`/`dec` SLIP THROUGH — a cage HOLE the old over-caging
-//! never had. Each test below nests a loop whose `inv` calls the UNKNOWN
-//! combinator `frobnicate` (NOT in the frozen §4.2 set / registry) in a
-//! distinct fn-body position and asserts the cage STILL rejects it. The
+//! nested loop's `inv`/`dec` slip through — a cage hole the old over-caging
+//! never had. Each test below nests a loop whose `inv` calls the unknown
+//! combinator `frobnicate` (not in the frozen §4.2 set / registry) in a
+//! distinct fn-body position and asserts the cage still rejects it. The
 //! complement tests assert ordinary surface code in those same positions is
-//! NOT rejected (the #35 intent).
+//! not rejected (the #35 intent).
 //!
 //! Authority (R-CHAR-3 — expected values are NOT read back from the validator):
 //!   - .design/spec/spectherm-combinators.md REQ-3 (cage = req/ens, LoopNode
@@ -28,7 +28,7 @@
 //!
 //! These are regression pins: they lock the cage's behavior across the four
 //! body positions the corpus does not exercise (if-then, if-else, loop-in-loop,
-//! if-EXPR). A future edit that reintroduces a traversal hole turns one of these
+//! if-expr). A future edit that reintroduces a traversal hole turns one of these
 //! red.
 
 use thermite_spec::{validate, SpecError};
@@ -53,7 +53,7 @@ fn rejects_frobnicate(errs: &[SpecError]) -> bool {
 }
 
 // ===========================================================================
-// The bogus combinator MUST be caught in every nested-loop fn-body position.
+// The bogus combinator must be caught in every nested-loop fn-body position.
 // ===========================================================================
 
 /// Loop nested inside an `if`'s THEN branch (`Stmt::If.then`). The traversal
@@ -138,7 +138,7 @@ fn f(xs: &[u32]) -> usize
     );
 }
 
-/// Loop nested inside an `if`-EXPRESSION (value position, `Expr::If`) via a
+/// Loop nested inside an `if`-expression (value position, `Expr::If`) via a
 /// `let` initializer. The traversal must descend `scan_expr_for_loops` ->
 /// `Expr::If` -> `scan_block_for_loops` (the expression arm, distinct from the
 /// statement arm above).
@@ -194,8 +194,8 @@ fn f(xs: &[u32]) -> usize
 }
 
 // ===========================================================================
-// Complement: well-formed nested loops + ordinary surface code in the SAME
-// fn-body positions are NOT rejected (the #35 intent — fn bodies aren't caged).
+// Complement: well-formed nested loops + ordinary surface code in the same
+// fn-body positions are not rejected (the #35 intent — fn bodies aren't caged).
 // ===========================================================================
 
 /// A well-formed nested loop (registered combinator `sorted`) validates clean.
@@ -224,7 +224,7 @@ fn f(xs: &[u32]) -> usize
 }
 
 /// Ordinary surface code in fn-body positions — a user-fn call inside an
-/// `if` branch — is NOT cage-checked (REQ-3: a `fn` body is not a contract
+/// `if` branch — is not cage-checked (REQ-3: a `fn` body is not a contract
 /// position). The cage rejecting `helper(...)` here would be the #35 over-cage
 /// regression.
 #[test]
@@ -249,8 +249,8 @@ fn f(xs: &[u32]) -> usize
     );
 }
 
-/// A NON-`len` method call (`xs.first()`) in a fn BODY is allowed (body not
-/// caged); the allowlist only governs CONTRACT positions.
+/// A non-`len` method call (`xs.first()`) in a fn body is allowed (body not
+/// caged); the allowlist only governs contract positions.
 #[test]
 fn non_len_method_in_fn_body_is_not_caged() {
     let src = r#"
@@ -271,10 +271,10 @@ fn f(xs: &[u32]) -> usize
 }
 
 // ===========================================================================
-// MethodCall allowlist `{len}` (REQ-3(c)/REQ-4(iv)) in CONTRACT positions.
+// MethodCall allowlist `{len}` (REQ-3(c)/REQ-4(iv)) in contract positions.
 // ===========================================================================
 
-/// `xs.len()` in a CONTRACT position (`req`) is the one allowlisted built-in.
+/// `xs.len()` in a contract position (`req`) is the one allowlisted built-in.
 #[test]
 fn len_method_in_contract_validates_clean() {
     let src = r#"
@@ -291,7 +291,7 @@ fn f(xs: &[u32]) -> usize
     );
 }
 
-/// A non-allowlisted method (`xs.first()`) in a CONTRACT position (`ens`) is a
+/// A non-allowlisted method (`xs.first()`) in a contract position (`ens`) is a
 /// `ForbiddenCall` (REQ-4(iv)).
 #[test]
 fn non_len_method_in_contract_is_forbidden() {

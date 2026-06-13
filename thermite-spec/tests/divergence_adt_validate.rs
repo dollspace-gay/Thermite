@@ -10,36 +10,36 @@
 //! degenerate pass), R-CHAR-3 (expected values hand-derived from the design,
 //! never read back from the validator's own output).
 //!
-//! THE CRUX (highest value): the validator infers the matched enum from the arm
-//! PATTERNS (the AST is untyped) — "a `match` is a declared-enum match iff some
+//! The crux (highest value): the validator infers the matched enum from the arm
+//! patterns (the AST is untyped) — "a `match` is a declared-enum match iff some
 //! arm names a variant of a declared `enum`" (`check_match_exhaustiveness` +
 //! `variant_pattern_name` in `validator.rs`). The disambiguation of a
 //! single-segment pattern into `Pattern::Enum` vs `Pattern::Binding` is done by
-//! the PARSER on FIRST-LETTER CASE alone (`parse_path_pattern` in
+//! the parser on first-letter case alone (`parse_path_pattern` in
 //! `thermite-syntax/src/parser.rs`: "an uppercase-initial single segment
 //! (`None`) is a zero-field enum pattern", else a binding). But `parse_enum`
-//! places NO casing constraint on a variant DECLARATION (`take_ident("a variant
-//! name")`), so an `enum` may declare a LOWERCASE variant. A lowercase variant
-//! NAMED in a `match` arm is then parsed as a `Pattern::Binding` (a catch-all),
+//! places no casing constraint on a variant declaration (`take_ident("a variant
+//! name")`), so an `enum` may declare a lowercase variant. A lowercase variant
+//! named in a `match` arm is then parsed as a `Pattern::Binding` (a catch-all),
 //! so `variant_pattern_name` returns `None` for it, the matched-enum inference
-//! treats the arm as a catch-all, and a genuinely NON-EXHAUSTIVE match over a
-//! declared enum is ACCEPTED (`Ok(())`). That is a false ACCEPT of the
-//! compile-time tooth — the exact R-DEFER-9 / handled-or-loud hole.
+//! treats the arm as a catch-all, and a non-exhaustive match over a
+//! declared enum is accepted (`Ok(())`). That is a false accept of the
+//! compile-time tooth — the R-DEFER-9 / handled-or-loud hole.
 //!
-//! THE RESOLUTION (`.design/basis/01-adts.md` REQ-2, design-ruled): variant
-//! names MUST be UpperCamelCase (uppercase-initial); the validator rejects a
-//! lowercase-initial variant DECLARATION with `SpecError::InvalidVariantCasing
+//! The resolution (`.design/basis/01-adts.md` REQ-2, design-ruled): variant
+//! names must be UpperCamelCase (uppercase-initial); the validator rejects a
+//! lowercase-initial variant declaration with `SpecError::InvalidVariantCasing
 //! { name, span }`. This makes the parser's case-based pattern disambiguation
-//! SOUND — a lowercase pattern ident is unambiguously a binding, because no
-//! lowercase variant can EXIST. So the #66 bypass closes at the ENUM
-//! DECLARATION: `enum E { foo, bar }` is rejected with `InvalidVariantCasing`
-//! BEFORE any match is considered; the offending program no longer validates
-//! clean (the false ACCEPT is gone), just with an earlier, more precise error.
-//! The CORE pin holds: the program must NOT validate clean (no silent accept of
+//! sound — a lowercase pattern ident is then a binding, because no
+//! lowercase variant can exist. So the #66 bypass closes at the enum
+//! declaration: `enum E { foo, bar }` is rejected with `InvalidVariantCasing`
+//! before any match is considered; the offending program no longer validates
+//! clean (the false accept is gone), just with an earlier, more precise error.
+//! The core pin holds: the program must not validate clean (no silent accept of
 //! an unhandled variant). The two bypass tests below assert the
 //! `InvalidVariantCasing` reject (hand-derived from REQ-2, R-CHAR-3); the
 //! positive companion (`exhaustiveness_intact_uppercase_nonexhaustive`) proves
-//! the NORMAL exhaustiveness path is unweakened — an UPPERCASE-variant
+//! the normal exhaustiveness path is unweakened — an uppercase-variant
 //! non-exhaustive match still yields `NonExhaustiveMatch`.
 
 use thermite_spec::{validate, SpecError};
@@ -56,18 +56,18 @@ fn parse_clean(src: &str) -> thermite_syntax::Program {
     r.program
 }
 
-/// DIVERGENCE 1 — closed at the DECLARATION by REQ-2's casing rule. The bypass
+/// Divergence 1 — closed at the declaration by REQ-2's casing rule. The bypass
 /// program was `enum E { foo, bar }` + `match e { foo => 0 }`: a lowercase
 /// variant `foo` parsed as a `Pattern::Binding` catch-all and the non-exhaustive
 /// match (missing `bar`) slipped through `Ok(())` (commit 5f5a4b7). REQ-2 now
-/// MANDATES variant names be UpperCamelCase: the validator rejects the lowercase
+/// requires variant names be UpperCamelCase: the validator rejects the lowercase
 /// `foo`/`bar` declaration with `SpecError::InvalidVariantCasing { name }` in
-/// the declaration pre-pass, BEFORE any match is considered. So the program no
-/// longer validates clean — the false ACCEPT is gone, with an earlier, more
+/// the declaration pre-pass, before any match is considered. So the program no
+/// longer validates clean — the false accept is gone, with an earlier, more
 /// precise error. Authority: `.design/basis/01-adts.md` REQ-2 ("variant names
 /// MUST be UpperCamelCase … the validator rejects a lowercase-initial variant
 /// declaration with `SpecError::InvalidVariantCasing { name, span }`"). The
-/// CORE pin holds: the program must NOT validate clean.
+/// core pin holds: the program must not validate clean.
 ///
 /// Expected: `Err` containing `InvalidVariantCasing { name: "foo" }` (the first
 /// offending variant; `bar` is also rejected). Hand-derived from REQ-2
@@ -97,15 +97,15 @@ fn divergence_lowercase_variant_bypasses_exhaustiveness() {
     );
 }
 
-/// DIVERGENCE 2 — the worst-shape bypass, also closed at the DECLARATION. The
+/// Divergence 2 — the worst-shape bypass, also closed at the declaration. The
 /// program was `enum Shape { Circle(u64), Rect { .. }, tri }` + `match s {
 /// Circle(r) => r, tri => 0 }`: the lowercase `tri` arm parsed as a catch-all,
 /// masking the modeled-but-unhandled `Rect`, and the match validated `Ok(())`
 /// (commit 5f5a4b7). Under REQ-2 the lowercase variant `tri` is rejected at the
 /// `enum Shape` declaration with `InvalidVariantCasing { name: "tri" }` before
 /// the match is considered — `tri` can no longer exist as a catch-all-masking
-/// variant. Authority: `.design/basis/01-adts.md` REQ-2. The CORE pin holds:
-/// the program must NOT validate clean.
+/// variant. Authority: `.design/basis/01-adts.md` REQ-2. The core pin holds:
+/// the program must not validate clean.
 ///
 /// Expected: `Err` containing `InvalidVariantCasing { name: "tri" }`.
 /// Hand-derived from REQ-2 (R-CHAR-3).
@@ -135,11 +135,11 @@ fn divergence_lowercase_arm_masks_unhandled_variant() {
     );
 }
 
-/// POSITIVE COMPANION (REQ-5 unweakened). The casing rule (REQ-2) closed the
-/// bypass WITHOUT weakening real exhaustiveness checking: an UPPERCASE-variant
-/// enum with a genuinely non-exhaustive match still yields `NonExhaustiveMatch`.
+/// Positive companion (REQ-5 unweakened). The casing rule (REQ-2) closed the
+/// bypass without weakening real exhaustiveness checking: an uppercase-variant
+/// enum with a non-exhaustive match still yields `NonExhaustiveMatch`.
 /// `enum Shape { Circle(u64), Rect { w: u64, h: u64 } }` + `match s { Circle(r)
-/// => r }` handles only `Circle` and has no `Wildcard`, so by REQ-5 it MUST be
+/// => r }` handles only `Circle` and has no `Wildcard`, so by REQ-5 it must be
 /// rejected with `NonExhaustiveMatch { missing: ["Rect"] }` (declaration order).
 /// Both variants are uppercase-initial, so REQ-2 accepts the declaration and the
 /// (now-sound) exhaustiveness walk runs. Authority: `.design/basis/01-adts.md`

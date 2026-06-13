@@ -1,7 +1,7 @@
 //! Conformance test for the Basis Stage 2b recursion-scheme validator against
 //! the hand-derived oracle at `conformance/adt-schemes/cases.json` (R-CHAR-3).
 //! The oracle is the external truth; the validator is the artifact under test.
-//! This file NEVER edits the oracle — a failure here is a bug in `thermite-spec`.
+//! This file never edits the oracle; a failure here is a bug in `thermite-spec`.
 //!
 //! Governing design: `.design/basis/02-recursion-schemes.md` REQ-1 (the scheme
 //! set as named primitives), REQ-2 (the FLAT step closure — a nested scheme is
@@ -9,7 +9,7 @@
 //! a nested scheme rejects), REQ-9 (structured `SpecError`, no panics).
 //!
 //! - `certify` (the `list_fold.th` source): the `fold`/`for_all` scheme calls of
-//!   `conformance/list_fold.th` validate clean (the cage ACCEPTS a top-level
+//!   `conformance/list_fold.th` validate clean (the cage accepts a top-level
 //!   scheme call — REQ-1/REQ-4).
 //! - `reject`: each crafted negative yields a `SpecError` whose `Display`
 //!   CONTAINS the oracle's `expect_error_contains` substring — hand-derived,
@@ -69,8 +69,8 @@ fn parse_program(src: &str) -> thermite_syntax::Program {
 }
 
 /// Parse an inline reject-case program with the recovering parser, returning the
-/// recovered `Program` REGARDLESS of any syntax noise. The oracle reject programs
-/// are inline snippets exercising the VALIDATOR (the scheme cage), not the
+/// recovered `Program` regardless of any syntax noise. The oracle reject programs
+/// are inline snippets exercising the validator (the scheme cage), not the
 /// parser; the validator is what is under test, so we run it on whatever the
 /// recovering parser produces (the scheme-call items are recovered intact even
 /// when a trailing token is stray).
@@ -81,7 +81,7 @@ fn parse_program_recovering(src: &str) -> thermite_syntax::Program {
 // ---- REQ-1/REQ-4: the certify source validates clean ----------------------
 
 /// `conformance/list_fold.th` — three `spec fn`s whose bodies are scheme calls
-/// (`fold(l, 0, |x, acc| …)`, `for_all(l, |x| …)`) — VALIDATES (REQ-1/REQ-4: a
+/// (`fold(l, 0, |x, acc| …)`, `for_all(l, |x| …)`) — validates (REQ-1/REQ-4: a
 /// top-level scheme call is a named-composition leaf, its flat step admitted).
 #[test]
 fn list_fold_validates() {
@@ -100,8 +100,8 @@ fn list_fold_validates() {
 
 // ---- REQ-2/REQ-9: the reject cases ----------------------------------------
 
-/// Each oracle `reject` case is REJECTED, and the rejecting `SpecError`'s
-/// `Display` CONTAINS the oracle's `expect_error_contains` substring (R-CHAR-3 —
+/// Each oracle `reject` case is rejected, and the rejecting `SpecError`'s
+/// `Display` contains the oracle's `expect_error_contains` substring (R-CHAR-3 —
 /// the expectation is hand-derived in the oracle, never read back from the
 /// validator). Covers `nested_scheme_in_step` (a `fold` nested in a `fold` step
 /// — REQ-2) and `unknown_scheme` (an unregistered callee — REQ-1).

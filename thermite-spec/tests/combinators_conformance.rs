@@ -74,7 +74,7 @@ fn read_oracle(file: &str) -> String {
 }
 
 /// Parse a program and assert it parsed with zero syntax errors (the oracle
-/// guarantees each program PARSES — a parse failure means thermite-syntax broke,
+/// guarantees each program parses; a parse failure means thermite-syntax broke,
 /// not thermite-spec).
 fn parse_clean(program: &str, case: &str) -> thermite_syntax::Program {
     let result = thermite_syntax::parse(program);
@@ -133,7 +133,7 @@ fn registry_matches_oracle() {
         );
     }
 
-    // And no EXTRA combinators in the code beyond the frozen oracle set.
+    // And no extra combinators in the code beyond the frozen oracle set.
     for sig in actual {
         assert!(
             oracle.combinators.iter().any(|e| e.name == sig.name),
@@ -226,9 +226,9 @@ fn matches_expected(err: &SpecError, expected: &str) -> bool {
 
 #[test]
 fn validate_never_panics_on_deep_nesting() {
-    // The parser has its OWN recursion guard (it would reject 400-deep SOURCE
-    // before the validator ever sees it), so to exercise the VALIDATOR's guard
-    // (REQ-5 / AC-4) we construct the deeply-nested AST DIRECTLY, bypassing the
+    // The parser has its own recursion guard (it would reject 400-deep source
+    // before the validator ever sees it), so to exercise the validator's guard
+    // (REQ-5 / AC-4) we construct the deeply-nested AST directly, bypassing the
     // parser. A 400-level `Binary` chain is far past the validator's
     // MAX_RECURSION_DEPTH (=64); the validator must surface a structured
     // `ExpressionTooDeep`, never overflow the native stack.

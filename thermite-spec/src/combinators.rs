@@ -8,15 +8,15 @@
 //!
 //! ## Scope (the #2 vs #4 split)
 //!
-//! This registry ships only the STRUCTURAL facet a validator needs now:
-//! name / arity / arg-kinds / result. The LOWERING facet of each combinator —
+//! This registry ships the structural facet a validator needs now:
+//! name / arity / arg-kinds / result. The lowering facet of each combinator —
 //! the frozen SMT trigger string, the Verus (L3) definition, and the executable
 //! (L1) runtime-check form (§4.2 "frozen SMT triggers"; §6 "the L1 fallback rung
-//! always exists") — is DEFERRED to issue #4, where `thermite-lower` is the
-//! consumer that reads them (OQ-2). Including those fields now would be
-//! vocabulary-only (no #2 consumer, R-DEFER-1). The `CombinatorSig` struct is a
-//! plain named-field struct (no `#[non_exhaustive]`-hostile layout) so #4 can
-//! grow it in place — that is the extensibility seam.
+//! always exists") — is deferred to issue #4, where `thermite-lower` is the
+//! consumer that reads them (OQ-2). Including those fields now would have no #2
+//! consumer (R-DEFER-1). The `CombinatorSig` struct is a plain named-field
+//! struct (no `#[non_exhaustive]`-hostile layout) so #4 can grow it in place,
+//! the extensibility seam.
 //!
 //! ## REQ status
 //!
@@ -27,27 +27,27 @@
 //! | REQ-6 (combinator Verus(L3) bodies — lowering facet) | SHIPPED — verus-lowering.md REQ-6 | `CombinatorSig.verus_l3` carries each combinator's frozen Verus `spec fn` definition (frozen `#[trigger]`); consumed by `thermite-lower::lower::emit_combinator_defs` (the #4 consumer that closes the OQ-2 seam, R-DEFER-1). The four corpus forms verify in `thermite-lower/tests/lower_conformance.rs` via real `verus`. |
 //! | REQ-3 (combinator L1 executable forms — lowering facet) | SHIPPED — l1-runtime-checks.md REQ-3 | `CombinatorSig.l1` carries each combinator's frozen runnable Rust `fn` (a real `&[u32]` loop, no `vstd`/`Seq`), mirroring the `verus_l3` seam (OQ-2). Consumed by `thermite_lower::l1::lower_l1`/`emit_combinator_l1_defs` (the #4 L1 consumer, R-DEFER-1); each form unit-tested over concrete slices in `thermite-lower/tests/l1_conformance.rs` (AC-3). |
 
-/// The KIND of a positional argument a combinator expects (REQ-2). The validator
+/// The kind of a positional argument a combinator expects (REQ-2). The validator
 /// uses these to check each call argument's shape against the registry entry.
 ///
-/// Per OQ-3, only `Pred` is syntactically decidable (it MUST be an
+/// Per OQ-3, only `Pred` is syntactically decidable (it must be an
 /// `Expr::Closure`); `Slice` / `Index` / `Value` are checked shallowly ("an
 /// expression that is not a closure" in those positions) until a later
-/// type-resolution pass exists — full typing is not a v0.1 kernel item.
+/// type-resolution pass exists. Full typing is not a v0.1 kernel item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArgKind {
     /// A `&[T]` slice-shaped expression (e.g. `xs`, `&xs[..i]`).
     Slice,
     /// A `usize`-valued index expression (e.g. `lo`, `i`).
     Index,
-    /// A predicate closure literal `|x| <bool expr>` — the one syntactically
+    /// A predicate closure literal `|x| <bool expr>`, the one syntactically
     /// strict kind (must be `Expr::Closure`).
     Pred,
     /// A plain scalar expression (e.g. `needle`, `5`).
     Value,
 }
 
-/// The result KIND a combinator yields (REQ-2). The v0.1 set is all `Bool`
+/// The result kind a combinator yields (REQ-2). The v0.1 set is all `Bool`
 /// except `count_where` (`Usize`); the field exists so a `usize`-result
 /// combinator is representable in the table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,7 +58,7 @@ pub enum ResultKind {
     Usize,
 }
 
-/// One registry entry: the STRUCTURAL signature of a frozen SpecTherm
+/// One registry entry: the structural signature of a frozen SpecTherm
 /// combinator (REQ-2). Plain named-field struct so issue #4 can extend it in
 /// place with the lowering facet (SMT trigger / Verus L3 def / executable L1
 /// form) without a breaking layout change (OQ-2).
@@ -73,7 +73,7 @@ pub struct CombinatorSig {
     /// The result kind the combinator yields.
     pub result: ResultKind,
     /// The frozen Verus(L3) `spec fn` definition for this combinator (the
-    /// OQ-2 lowering-facet seam, closed by issue #4). This is the EXACT
+    /// OQ-2 lowering-facet seam, closed by issue #4). This is the verbatim
     /// `spec fn <name>(...) -> ... { ... }` text `thermite-lower` emits into the
     /// `verus! { ... }` frame when a contract references this combinator. The
     /// body is the frozen bounded-quantifier form with a frozen `#[trigger]` on
@@ -84,12 +84,12 @@ pub struct CombinatorSig {
     pub verus_l3: &'static str,
     /// The frozen executable (L1) runtime-check form for this combinator (the
     /// L1 half of the OQ-2 lowering-facet seam, closed by issue #4). This is the
-    /// EXACT runnable Rust `fn <name>(...) -> ... { ... }` text
+    /// runnable Rust `fn <name>(...) -> ... { ... }` text
     /// `thermite-lower::l1` emits into a self-contained L1 file when a contract
     /// references this combinator. Unlike `verus_l3` (a `spec fn` over `Seq<T>`
-    /// with frozen triggers) this is an ordinary Rust loop over real `&[u32]`
-    /// slices — no `vstd`, no `Seq`, no proof — the executable mirror of the L3
-    /// quantifier (`forall_in` short-circuits on the first `!p`, exactly the
+    /// with frozen triggers) this is an ordinary Rust loop over `&[u32]`
+    /// slices (no `vstd`, no `Seq`, no proof), the executable mirror of the L3
+    /// quantifier (`forall_in` short-circuits on the first `!p`, matching the
     /// bounded `forall|i| .. ==> p(s[i])`). The arg-kinds map to the parameter
     /// list (`Slice`→`&[u32]`, `Index`→`usize`, `Pred`→`impl Fn(u32) -> bool`,
     /// `Value`→scalar). Pinned in `.design/lower/l1-runtime-checks.md`
@@ -100,12 +100,12 @@ pub struct CombinatorSig {
     pub l1: &'static str,
 }
 
-/// The FROZEN v0.1 SpecTherm combinator set (REQ-1). Closed: adding, removing,
+/// The frozen v0.1 SpecTherm combinator set (REQ-1). Closed: adding, removing,
 /// or changing an entry is an RFC / design-doc amendment (R-SPEC-4), not a
 /// code-local choice. The contents are pinned against
 /// `tests/golden/combinators/registry.json` (R-CHAR-3); the order here mirrors
-/// the oracle for readability but `lookup` is by name, not index, so order is
-/// not load-bearing. Static and `const`-derived (deterministic, R-CODE-5).
+/// the oracle for readability but `lookup` is by name, not index, so order does
+/// not matter. Static and `const`-derived (deterministic, R-CODE-5).
 static REGISTRY: [CombinatorSig; 8] = [
     CombinatorSig {
         name: "sorted",

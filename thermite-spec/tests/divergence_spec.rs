@@ -1,7 +1,7 @@
 //! Divergence tests pinned by the acto-critic adversarial audit of commit
 //! `a06bf16` (thermite-spec: SpecTherm registry + validator, #2).
 //!
-//! These are FAILING tests that pin places where the validator diverges from
+//! These are failing tests that pin places where the validator diverges from
 //! its governing contract `.design/spec/spectherm-combinators.md` + thermite
 //! -design.md §4.2. Expected behavior traces to the design doc / corpus
 //! (R-CHAR-3); none of these expected values are read back from the validator's
@@ -25,24 +25,24 @@ fn parse_clean(src: &str) -> thermite_syntax::Program {
 }
 
 // ---------------------------------------------------------------------------
-// DIVERGENCE 1 (cardinal): the conformance corpus `binary_search.th` does NOT
+// Divergence 1 (cardinal): the conformance corpus `binary_search.th` does not
 // validate clean.
 //
 // Authority: .design/spec/spectherm-combinators.md AC-2 — "Validating the
 // parsed `conformance/sum.th` and `conformance/binary_search.th` returns
 // `Ok(())`". Also goal.md: the corpus is a hand-certified external truth the
-// toolchain MUST satisfy.
+// toolchain must satisfy.
 //
 // Actual: validate(binary_search) returns
 //   Err [UnknownCombinator { name: "Some", .. }]
-// because the validator walks the `fn` BODY's statement expressions through the
+// because the validator walks the `fn` body's statement expressions through the
 // full SpecTherm cage rule (walk_block -> walk_stmt -> walk_expr), and the body
 // statement `return Some(mid);` is an `Expr::Call { callee: Path(["Some"]) }`
 // that the cage rejects as an unknown combinator.
 //
 // Root cause / design contradiction: REQ-3 enumerates the contract positions as
 // `Contract.req`/`ens`, `LoopNode.invs`/`dec`, and `SpecFnItem.body` — a `fn`
-// BODY is NOT a contract position (only the loops *within* it are, for their
+// body is not a contract position (only the loops *within* it are, for their
 // inv/dec). The validator's own `walk_block` doc-comment states "a `fn` body is
 // not itself a contract position — we only descend to surface nested loop
 // contracts", but the code applies `walk_expr` (the cage) to every fn-body
@@ -64,10 +64,10 @@ fn divergence_corpus_binary_search_validates_clean() {
 
 #[test]
 fn divergence_enum_ctor_in_fn_body_is_not_a_contract_position() {
-    // §4.1: `Some`/`None` are sanctioned built-in constructors. A `fn` BODY is
+    // §4.1: `Some`/`None` are sanctioned built-in constructors. A `fn` body is
     // not a contract position (REQ-3 enumerates the positions; a fn body is not
     // among them — only its nested loop inv/dec are). `return Some(0);` in a
-    // body must NOT be subjected to the combinator cage.
+    // body must not be subjected to the combinator cage.
     let src = "fn f(xs: &[u32]) -> u32 req true ens result == 0 fx pure { return Some(0); 0 }";
     let program = parse_clean(src);
     let result = validate(&program);
@@ -79,20 +79,20 @@ fn divergence_enum_ctor_in_fn_body_is_not_a_contract_position() {
 }
 
 // ---------------------------------------------------------------------------
-// DIVERGENCE 2 (over-fitting): an arbitrary, non-built-in method call in a
-// contract position is silently ACCEPTED.
+// Divergence 2 (over-fitting): an arbitrary, non-built-in method call in a
+// contract position is silently accepted.
 //
 // Authority: .design/spec/spectherm-combinators.md REQ-3(c) — a contract admits
 // only "the bounded built-in `MethodCall`s the grammar admits (e.g. `xs.len()`)"
 // — and REQ-4(iv): "a construct the contract sublanguage forbids that
 // nonetheless parsed" must be rejected with `ForbiddenCall`. thermite-design.md
-// §4.2 "locks the cage": a contract may use ONLY the frozen vocabulary.
+// §4.2 "locks the cage": a contract may use only the frozen vocabulary.
 //
 // Actual: `req xs.frobnicate()` validates clean (Ok(())). The validator's
-// `Expr::MethodCall` arm accepts ANY method name structurally, only recursing
+// `Expr::MethodCall` arm accepts any method name structurally, only recursing
 // into operands — it never checks the method name against the bounded built-in
 // set. The oracle only ever exercises `.len()`, so this leak is invisible to
-// the existing fixtures (the exact over-fitting risk).
+// the existing fixtures (the over-fitting risk).
 // ---------------------------------------------------------------------------
 
 #[test]

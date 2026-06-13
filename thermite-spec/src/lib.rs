@@ -2,11 +2,11 @@
 //!
 //! Two components, both governed by `.design/spec/spectherm-combinators.md`:
 //!
-//! - **`combinators`** — the FROZEN v0.1 combinator registry (name / arity /
+//! - **`combinators`** — the frozen v0.1 combinator registry (name / arity /
 //!   arg-kinds / result) and `lookup` (§4.2; REQ-1/REQ-2). The frozen SMT
-//!   trigger + Verus (L3) + executable (L1) lowering facet is DEFERRED to issue
+//!   trigger + Verus (L3) + executable (L1) lowering facet is deferred to issue
 //!   #4 (the `CombinatorSig` struct is left extensible for it; OQ-2).
-//! - **`schemes`** — the FROZEN v0.1 recursion-scheme registry (Basis Stage 2,
+//! - **`schemes`** — the frozen v0.1 recursion-scheme registry (Basis Stage 2,
 //!   `.design/basis/02-recursion-schemes.md` REQ-1/REQ-2): the 5 schemes
 //!   (`fold`/`map`/`for_all`/`exists`/`traverse`) over recursive ADTs, each with
 //!   its step shape + result kind + generated-fn-name function. The structural
@@ -19,9 +19,9 @@
 //!
 //! In the kernel DAG this crate depends on `thermite-syntax` (it consumes the
 //! AST). `validate` is the registry's first production consumer (it calls
-//! `combinators::lookup`), so the registry is not vocabulary-only (R-DEFER-1).
-//! It is the gate `thermite-lower` (#4) and `forge` (#6) call before lowering /
-//! the vacuity battery.
+//! `combinators::lookup`), so the registry has a consumer beyond its vocabulary
+//! (R-DEFER-1). It is the gate `thermite-lower` (#4) and `forge` (#6) call
+//! before lowering / the vacuity battery.
 //!
 //! Governing design: `.design/scaffold/workspace.md` (crate shape) +
 //! `.design/spec/spectherm-combinators.md` (the registry + validator contract).

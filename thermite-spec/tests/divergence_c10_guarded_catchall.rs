@@ -9,24 +9,24 @@
 //! and AC-3b: "a guard does NOT complete a match ... The validator MUST reject
 //! it (matching Verus's `error[E0004]: non-exhaustive patterns`)."
 //!
-//! DIVERGENCE: `validator::check_match_exhaustiveness` identifies the matched
-//! enum ONLY from an arm whose pattern NAMES a declared variant
-//! (`variant_pattern_name`). A match whose only arm is a GUARDED catch-all
+//! Divergence: `validator::check_match_exhaustiveness` identifies the matched
+//! enum only from an arm whose pattern names a declared variant
+//! (`variant_pattern_name`). A match whose only arm is a guarded catch-all
 //! (`_ if cond => …`) over an enum names no variant, so `matched_enum` is `None`
-//! and the function returns early WITHOUT any exhaustiveness check — accepting a
+//! and the function returns early without any exhaustiveness check — accepting a
 //! match that the design's own rule says is non-exhaustive (the guard may fail,
 //! so `_ if cond` covers nothing). The corpus test
 //! `forge/tests/ergonomics_conformance.rs::req3_guarded_only_arm_is_non_exhaustive`
-//! only exercises the case where a SIBLING `No` arm names a variant (so the enum
+//! only exercises the case where a sibling `No` arm names a variant (so the enum
 //! is detected); the all-catch-all case is unpinned.
 //!
-//! Verus DOES backstop this end-to-end (the lowered match is `error[E0004]`
-//! non-exhaustive → forge reports L0), so this is NOT an L3-laundering soundness
+//! Verus backstops this end-to-end (the lowered match is `error[E0004]`
+//! non-exhaustive → forge reports L0), so this is not an L3-laundering soundness
 //! hole; it is a validator-completeness divergence from the design's literal
 //! REQ-3 rule (the toolchain should pre-empt with a structured
 //! `NonExhaustiveMatch`, not defer to an opaque verus L0).
 //!
-//! AUTHORITY: `.design/basis/11-ergonomics.md` REQ-3 / AC-3b ("a guard does NOT
+//! Authority: `.design/basis/11-ergonomics.md` REQ-3 / AC-3b ("a guard does NOT
 //! complete a match"). The expected outcome (`NonExhaustiveMatch`) is
 //! hand-derived from the design rule (R-CHAR-3 — not copied from the toolchain;
 //! the toolchain currently returns `Ok(())`, the opposite).
@@ -35,9 +35,9 @@
 
 use thermite_spec::{validate, SpecError};
 
-/// REQ-3 / AC-3b — a match over `enum Maybe { Yes(u64), No }` whose ONLY arm is a
-/// guarded catch-all (`_ if true => 0`) is NON-exhaustive: a guard does NOT
-/// complete a match, so neither `Yes` nor `No` is covered. The validator MUST
+/// REQ-3 / AC-3b — a match over `enum Maybe { Yes(u64), No }` whose only arm is a
+/// guarded catch-all (`_ if true => 0`) is non-exhaustive: a guard does not
+/// complete a match, so neither `Yes` nor `No` is covered. The validator must
 /// emit `SpecError::NonExhaustiveMatch`. It currently returns `Ok(())` because
 /// the enum is never identified (no arm names a variant).
 #[test]

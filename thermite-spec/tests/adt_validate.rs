@@ -1,7 +1,7 @@
 //! Conformance test for the Basis Stage 1b ADT validator against the
 //! hand-derived oracle at `conformance/adt-validate/cases.json` (R-CHAR-3). The
 //! oracle is the external truth; the validator is the artifact under test. This
-//! file NEVER edits the oracle — a failure here is a bug in `thermite-spec`.
+//! file never edits the oracle; a failure here is a bug in `thermite-spec`.
 //!
 //! Governing design: `.design/basis/01-adts.md` REQ-5 (exhaustiveness —
 //! `NonExhaustiveMatch`/`UnreachableArm`), REQ-6 (well-formed field/variant
@@ -10,7 +10,7 @@
 //!
 //! - `accept`: the 3 ADT corpus programs (`bank_account`/`shape`/`list_sum`)
 //!   validate clean (the 1a `UnsupportedAdt` gate is gone).
-//! - `reject`: each crafted negative yields the EXACT `SpecError` variant the
+//! - `reject`: each crafted negative yields the `SpecError` variant the
 //!   oracle names, with the key payload (missing variant set / field / variant
 //!   name) — hand-derived, never read back from the validator (R-CHAR-3).
 //!
@@ -135,11 +135,11 @@ fn adt_reject_cases_yield_exact_error() {
             Err(errors) => errors,
         };
 
-        // Assert the expected variant is present AND its key payload matches the
+        // Assert the expected variant is present and its key payload matches the
         // oracle's hand-derived expectation (R-CHAR-3). We search for the
-        // expected variant rather than asserting it is the SOLE error — the
-        // validator accumulates diagnostics — but each oracle case is crafted to
-        // have exactly one ADT fault, so the matching error is the verdict.
+        // expected variant rather than asserting it is the sole error (the
+        // validator accumulates diagnostics), but each oracle case is crafted to
+        // have one ADT fault, so the matching error is the verdict.
         let found = errors.iter().find(|e| variant_matches(e, case));
         assert!(
             found.is_some(),
@@ -155,7 +155,7 @@ fn adt_reject_cases_yield_exact_error() {
 
 /// True iff `error` is the variant the oracle names for `case`, with the key
 /// payload matching. Hand-derived expectations from `.design/basis/01-adts.md`
-/// (R-CHAR-3) — the test asserts the validator EQUALS the oracle, never itself.
+/// (R-CHAR-3) — the test asserts the validator equals the oracle, never itself.
 fn variant_matches(error: &SpecError, case: &RejectCase) -> bool {
     match (case.expect_error.as_str(), error) {
         ("NonExhaustiveMatch", SpecError::NonExhaustiveMatch { missing, .. }) => {

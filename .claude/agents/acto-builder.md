@@ -40,6 +40,8 @@ Write production code AND tests in the same change set. Discipline:
 ### Step 4 — Update the design-doc REQ status
 In the module's `//!` doc-comment, add/update the `## REQ status` table — every REQ SHIPPED (impl symbol + non-test consumer symbol + verification) or NOT-STARTED (open blocker #). Two states only. Mirror it in the governing `.design/<doc>.md`.
 
+Comments and doc-comments follow **R-TONE-1** / `.design/tone-and-voice.md`: plain technical prose, no emphatic ALL-CAPS or virtue adverbs, `exactly`/`precisely` only where they disambiguate. Tonal residue in comments is what later agents drift on.
+
 ### Step 5 — Gauntlet (MUST pass before commit)
 ```bash
 cargo test -p <crate>

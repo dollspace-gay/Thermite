@@ -27,6 +27,15 @@ with an imagined skeptic. Remove that register.
   countermodel on failure" beats "every failure is a concrete counterexample,
   the property the whole ladder ranks by."
 
+`exactly` deserves a claim-by-claim check rather than blanket removal. It is
+technical when it disambiguates — "passes exactly when no out-of-domain bit is
+set" is an iff — and tonal otherwise: "computes exactly the relation," "exactly
+the IO-membership projection." Strip the tonal use; often the precise verb or
+noun was the real claim all along ("the IO-membership projection"). In code
+comments this matters twice over — residual emphasis is what a downstream agent
+anchors on and drifts toward, so removing it keeps later work from reading
+meaning into tone.
+
 ## Narrative stays localized
 
 - A brief metaphor or narrative is welcome in introductions and conclusions —

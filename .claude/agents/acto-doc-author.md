@@ -75,6 +75,7 @@ thesis-refs:
 - **Stay on the current git branch.** Never `git switch` / `git checkout -b` / `git branch`; write/commit your design docs on the branch you were dispatched on (normally `main`). Branching is the orchestrator's job.
 - **Clean up scratch.** Remove any throwaway files before finishing (or keep them under `/tmp`). No stray files left in the tree.
 - **No CHANGELOG pollution.** If you ever `crosslink issue close <id>`, pass `--no-changelog`. If a `CHANGELOG.md` appears, delete it.
+- **Tone (R-TONE-1).** Prose follows `.design/tone-and-voice.md`: affirmative not defensive, plain not emphatic, narrative only in intros/conclusions. No antithesis pairs ("not X — Y"), virtue adverbs ("honestly"/"loudly"), rhetorical bold/ALL-CAPS for emphasis, or `exactly`/`precisely` as emphasis (only where they disambiguate). Credibility comes from the content.
 
 ## Report (max 400 words)
 Doc path, LOC, REQ breakdown (N SHIPPED / M NOT-STARTED), route added/updated, new blockers filed, surprises, and an honest note on which SHIPPED claims you are LEAST confident about.

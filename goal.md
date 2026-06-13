@@ -144,6 +144,9 @@ Close the crosslink issue (`--kind result` comment first).
 - **R-CODE-4**: no swallowing of solver/subprocess failures. Verus/Kani/Z3 invocations check exit status and surface structured errors; a timeout degrades the ladder (L3→L2→L1) and is reported, never silently treated as success.
 - **R-CODE-5**: determinism is a contract — no `Date`/wall-clock/un-seeded randomness in build, format, codegen, or check paths. Solver seeds are pinned in the lockfile (design §5.3).
 
+### Prose & tone
+- **R-TONE-1**: prose — doc comments, design docs, and module/header comments — follows [`.design/tone-and-voice.md`](.design/tone-and-voice.md): affirmative not defensive, plain not emphatic, narrative only in intros/conclusions. No antithesis pairs ("not X — Y"), virtue adverbs ("honestly"/"loudly"), rhetorical bold/ALL-CAPS for emphasis, or cute asides. `exactly`/`precisely` only where they disambiguate (e.g. an iff), not as emphasis. This is a register rule; it never changes a claim, identifier, or guarantee.
+
 ### Spec-mirror (default = match the design contract; deviate only for these)
 - **R-SPEC-1 (MATCH — surface semantics)**: the surface grammar, mandatory `req`/`ens`/`fx` and `inv`/`dec`, the SpecTherm combinator set and their frozen triggers, and the ladder semantics match `thermite-design.md` §4/§6 exactly. "One way to do everything" (pillar §2.3) — no alternate syntaxes, no config knobs the design doesn't sanction.
 - **R-SPEC-2 (MATCH — certificate contract)**: certificate/manifest fields, assurance levels (L0–L3), vacuity-battery outputs, and `#[slag]` metadata match the design (§6, §7, §8, Appendix A). The certificate IS the deliverable; its shape is a contract.

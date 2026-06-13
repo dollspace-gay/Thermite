@@ -8,7 +8,7 @@
 
 ## The problem
 
-When an AI writes code for you, how do you know it's right? Today the answer is "read it yourself" or "trust the vibes." Neither scales. Code review by humans is exactly the bottleneck AI was supposed to remove — and "the tests pass" only tells you about the cases somebody thought to test.
+When an AI writes code for you, how do you know it's right? Today the answer is "read it yourself" or "trust the vibes." Neither scales. Code review by humans is the bottleneck AI was supposed to remove — and "the tests pass" only tells you about the cases somebody thought to test.
 
 Formal verification — *mathematically proving* code correct — has existed for decades. It never caught on, because writing the proofs is miserable for humans. But AI agents don't get bored, don't get tired, and pay for effort in cheap compute instead of expensive attention. **Thermite's bet: agents flip the economics of proof.** Burn the cheap resource (tokens) to buy the expensive one (trust).
 
@@ -39,7 +39,7 @@ It always aims for L3 and only slides down honestly. One thing never slides: if 
 
 **How an agent actually writes it.** Like a conversation. Declare the contract first with a hole where the body goes (literally `?0` — a [typed hole](RATIONALE.md#typed-holes-n--the-goal-repl), the Agda/Idris/Lean-`sorry` idea). `forge goal` shows what's given and what must be achieved. `forge fill` drops code into the hole and immediately re-checks — failures come back as concrete counterexamples, not vibes. Repeat until: `ALL GOALS DISCHARGED ✓ certified L3`. A program with an unfilled hole physically cannot be built or certified.
 
-Under the hood, Thermite translates to Rust (annotated for the [Verus](https://github.com/verus-lang/verus) prover, which uses the Z3 logic engine), so it inherits Rust's compiler, optimizer, and ecosystem. The specification language is a deliberately small [caged quantifier fragment](RATIONALE.md#the-combinator-cage) — a fixed set of bounded combinators with frozen SMT triggers, no raw `forall` — and that small, [frozen subset](RATIONALE.md#the-frozen-subset-the-central-design-why) is precisely what makes the machine-checked soundness proof below feasible. The full design rationale lives in [`thermite-design.md`](./thermite-design.md).
+Under the hood, Thermite translates to Rust (annotated for the [Verus](https://github.com/verus-lang/verus) prover, which uses the Z3 logic engine), so it inherits Rust's compiler, optimizer, and ecosystem. The specification language is a deliberately small [caged quantifier fragment](RATIONALE.md#the-combinator-cage) — a fixed set of bounded combinators with frozen SMT triggers, no raw `forall` — and that small, [frozen subset](RATIONALE.md#the-frozen-subset-the-central-design-why) is what makes the machine-checked soundness proof below feasible. The full design rationale lives in [`thermite-design.md`](./thermite-design.md).
 
 ## The proof it isn't a toy
 
@@ -96,7 +96,7 @@ A run with a skipped guarantee prints **INCONCLUSIVE** and exits nonzero — it 
 
 ## "But how do you know the *translation* is honest?"
 
-The sharpest possible objection: Thermite translates your code into the prover's language — so a buggy translator could prove the wrong statement. Promise `=`, prove `≤`, certificate says L3, everyone goes home happy and wrong.
+The hardest objection: Thermite translates your code into the prover's language — so a buggy translator could prove the wrong statement. Promise `=`, prove `≤`, certificate says L3, everyone goes home happy and wrong.
 
 Two answers, both machine-checked:
 

@@ -182,15 +182,14 @@ emission conventions, the reference-style mimics
 `lean/Thermite/RefEncode.lean`'s — the two real columns the stage-2 TV
 will eventually compare. The hand-work is bounded *per combinator
 shape* (≤8 shapes), then instantiated across the 4 corpus clauses plus
-generator-drawn instances (read out of the existing `gen_combinator` —
+generator-drawn instances (read out of the existing `gen_combinator`;
 no new generator productions, those are stage-2 binder work) so the
-threshold-bearing denominator is meaningful rather than n=4. This is the
-plan analysis's most material correction: a 90% bar over 4 clauses is
-4/4, which the corpus alone cannot support. This mimicry is the probe's known
-approximation, and it biases the measured hit rate *downward* if
-anything (real stage-2 emitters can be nudged toward convergence,
-fallback F-C step 1), so a high measured rate is trustworthy evidence
-and a low one triggers the design issue — the asymmetry is safe.
+threshold-bearing denominator is larger than n=4. A 90% bar over 4
+corpus clauses is effectively 4/4, which is why the generator-drawn
+instances are needed. The mimicry is an approximation: it biases the
+measured hit rate downward (real stage-2 emitters can be converged
+toward each other, fallback F-C step 1), so a high measured rate is
+trustworthy and a low one triggers the design issue.
 
 **What the spikes deliberately do not do:** no soundness lemmas for the
 normalizer passes, no `Strat/` modules, no classifier, no changes to

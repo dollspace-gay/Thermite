@@ -30,7 +30,7 @@ where the fragment supports it, migrating cage clauses' trust base from
 solver to kernel without touching their rung — the C4 grid honesty,
 delivered through the `trust:` field. The bv half is the program's one
 permanent semantic fork and its one new gaming vector; it is staged
-last for exactly that reason, and fallback F-F's whole ladder remains
+last for that reason, and fallback F-F's ladder remains
 open until the re-pass. Umbrella: `.design/thermite2-program.md`
 (REQ-10).
 

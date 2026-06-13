@@ -189,11 +189,10 @@ The v1 toolchain this program extends is shipped and audited in-tree:
 - **Doc-drift tooling** — the tripwire gate landed post-baseline
   (#258–#262, governed by `.design/tooling/doc-drift-tripwire.md`). Audit
   check [4′] (drift rows for the three new mirrored Rust files) extends
-  this existing mechanism instead of inventing one — a delta in the
-  program's favor.
+  this existing mechanism rather than inventing one.
 - **CI** — `.github/workflows/ci.yml` has no Lean job today; the Lean
-  build is currently un-CI'd, which is exactly why debt item (a) is a
-  pre-M1 blocker: from M1 the Lean build is load-bearing per-certificate.
+  build is currently un-CI'd, which is why debt item (a) is a
+  pre-M1 blocker: from M1 the Lean build is checked per-certificate.
 
 ### Stage → surface map
 

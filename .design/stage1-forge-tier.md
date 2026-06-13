@@ -6,9 +6,9 @@ Stage 1 of the RFC-1 program: the kernel proof tier (RFC-1 §5 — covenant,
 frozen battery, anti-Goodhart at L3, the `Stuck`/`KernelBudget`/
 `CovenantRefuted` verdicts) plus nlsat real-relaxation routing with
 `RealWitness` (RFC-1 §4). No spine change beyond the small Mathlib-island
-relax lemmas; the cage remains the v1 combinator menu. The headline that
-lands at gate G1: out-of-cage no longer degrades down the ladder — it
-escalates up to the forge. This doc covers the program plan §2's nine work
+relax lemmas; the cage remains the v1 combinator menu. The behavioral
+change at G1: out-of-cage clauses escalate up to the forge instead of
+degrading down the ladder. This doc covers the program plan §2's nine work
 items as REQ clusters, grounded against the tree at `c46da3ac`, with the
 Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
 `.design/thermite2-program.md` (REQ-3); predecessor gate: M0

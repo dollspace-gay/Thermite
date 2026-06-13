@@ -1,0 +1,10 @@
+{
+  "uuid": "8d0f3291-e567-4d69-a321-371625cf1d74",
+  "issue_uuid": "beecabbb-295d-4cf0-a95c-b13be9891b77",
+  "author": "rApq",
+  "content": "Merged via PR #7 (commit on main). 4-way nextest shard + checks job: CI wall-clock ~20min -> ~6min (slowest shard 5:48, checks 0:38).",
+  "created_at": "2026-06-13T02:07:24.808391Z",
+  "kind": "result",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAHK3cGHCwMns8JnFaMVrvW7zapy3yFuL+aDMk1HD8uIoxwhU4mQsy4uGnmPYl1F9Cbzzy1XRde8MAPEP5XoCZDQ=="
+}

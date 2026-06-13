@@ -1,0 +1,9 @@
+# strat_probe fixture — gen#1.1#0
+shape: forall_below
+source: gen#1.1#0
+origin: generated
+hit: true
+--- production ---
+forall i . 0 <= i < 8 & i < len(xs) => idx(xs, i) <= 49
+--- reference ---
+forall w . (w < len(xs) & w < 8 & 0 <= w) => idx(xs, w) <= 49

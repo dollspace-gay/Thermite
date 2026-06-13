@@ -1,0 +1,9 @@
+# strat_probe fixture — gen#2.8#25
+shape: disjoint
+source: gen#2.8#25
+origin: generated
+hit: true
+--- production ---
+forall i j . (0 <= i & i < len(xs) & 0 <= j & j < len(xs)) => idx(xs, i) != idx(xs, j)
+--- reference ---
+forall q p . (q < len(xs) & 0 <= q & p < len(xs) & 0 <= p) => idx(xs, q) != idx(xs, p)

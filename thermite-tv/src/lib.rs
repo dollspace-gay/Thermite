@@ -74,6 +74,13 @@
 pub mod exec_encode;
 pub mod exec_stmt_encode;
 pub mod gen;
+// SPIKE-2 (`.design/m0-spikes.md` REQ-6 / AC-6): the prototype normalizer probe.
+// It is `pub` so the spike's `tests/strat_probe.rs` hit-rate target can reach it,
+// but it is a LEAF — it is referenced by NO TV pipeline code path. This `pub mod`
+// is the mandated EXPORT, not a consumer (REQ-6: "exported but not referenced by
+// any TV pipeline code path"); the AC-6 grep finds only this declaration + the
+// module's own body, no call site in `thermite-tv/src/` or `forge/src/`.
+pub mod normalize;
 pub mod obligation;
 pub mod ref_encode;
 

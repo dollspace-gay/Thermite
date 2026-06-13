@@ -1,0 +1,11 @@
+{
+  "uuid": "32d286ce-e51a-4afd-9d97-a7f595d98f27",
+  "display_id": 288,
+  "title": "Deep tone pass over ALL source comments (Rust + Lean), following .design/tone-comment-pass-plan.md and .design/tone-and-voice.md as authoritative. One crate at a time in the plan's order (thermite-verified → thermite-spec → thermite-syntax → thermite-tv → lean → thermite-lower → forge). Edit COMMENTS ONLY — no code, identifiers, string literals, test expectations, status labels (SHIPPED/NOT-STARTED, enum variants), or schema text (doc-drift audited-sha blocks). Apply the claim-by-claim 'exactly' judgment. Self-verify each crate before moving on: git diff shows only comment-line changes, cargo test -p <crate> green, lean/ leaves lake build unaffected; revert any non-comment change. Commit per crate so progress survives a timeout. One PR for the pass. If low on time/budget, STOP at a crate boundary and report which crates are done. Out of scope: .design subdir docs and the already-merged public docs (README/RATIONALE/thermite-design, docs/). Never stage .crosslink/hook-config.json.",
+  "description": "Created by crosslink kickoff",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "rApq",
+  "created_at": "2026-06-13T19:20:46.443563Z",
+  "updated_at": "2026-06-13T19:20:46.443563Z"
+}

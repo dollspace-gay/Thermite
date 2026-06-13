@@ -2,7 +2,7 @@
 
 > **STATUS: PROVISIONAL — do not kickoff from this document.**
 > This is an interim reasoning cache, written before its input
-> dependencies exist. It deliberately carries unresolved `<!-- OPEN -->`
+> dependencies exist. It carries unresolved `<!-- OPEN -->`
 > blocks keyed to those dependencies, so validation flags it as
 > not-kickoff-ready. When all inputs below are available, re-run the
 > design pass (`/design --continue stage2-stratified-cage`) to resolve
@@ -14,7 +14,7 @@
 | SPIKE-1 conventions note (`.design/strat/substkit-conventions.md`) | Q-KIT: binder representation + the SubstKit lemma statements `Strat/Syntax.lean` inherits verbatim | `.design/m0-spikes.md` REQ-4 |
 | SPIKE-2 hit-rate number | Q-TV2: whether the semantic TV phase ships as a thin fallback or gets its own design issue first | `.design/m0-spikes.md` REQ-7 |
 | Gate G1 (stage 1 complete) | The seven-verdict enum, schema-v2 certificates, exporter front door, and covenant machinery this stage consumes | `.design/stage1-forge-tier.md` REQ-10 |
-| Stage-1 routing telemetry | Whether (R2)'s deliberately narrow index grammar needs S₂.1 widening pressure noted before build | program plan §6 dashboard |
+| Stage-1 routing telemetry | Whether (R2)'s narrow index grammar needs S₂.1 widening pressure noted before build | program plan §6 dashboard |
 
 ## Summary
 
@@ -202,7 +202,7 @@ the table above. Resolve at the re-pass, not before.)*
 ### Q-KIT: Binder representation — confirm plain de Bruijn, or take fallback F-A?
 
 The metatheory commits to plain de Bruijn with a hand-rolled ~25-lemma
-kit, and SPIKE-1 exists to validate exactly that before REQ-2 is
+kit, and SPIKE-1 exists to validate that before REQ-2 is
 scheduled. If the spike's conventions note reports the failure signal
 (>40 lemmas, or `Fintype`/`DecidableEq`/universe plumbing fights), the
 re-pass must choose among F-A's ladder (locally nameless; single-prefix

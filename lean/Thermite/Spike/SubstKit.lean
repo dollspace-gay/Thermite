@@ -1,36 +1,36 @@
 /-
-  Thermite/Spike/SubstKit.lean — SPIKE-1: the de Bruijn SubstKit TOY.
+  Thermite/Spike/SubstKit.lean — SPIKE-1: the de Bruijn SubstKit toy.
 
   Governing design: `.design/m0-spikes.md` (SPIKE-1, REQ-1/REQ-2), child of
   `.design/thermite2-program.md`. This file de-risks the stage-2 binder
   metatheory (risk row 1 / fallback F-A of the metatheory sketch) by proving
-  the two LOAD-BEARING de Bruijn lemmas — `sdenote_push_lift` (weakening is
+  the two load-bearing de Bruijn lemmas — `sdenote_push_lift` (weakening is
   denotation-invariant) and `sdenote_subst` (the substitution lemma) — end to
-  end on a 3-constructor toy formula language, BEFORE `Strat/SubstKit.lean` is
+  end on a 3-constructor toy formula language, before `Strat/SubstKit.lean` is
   scheduled. The surviving artifact is the conventions note
   (`.design/strat/substkit-conventions.md`); this whole `Spike/` directory is
   deletable scaffolding (it is removed in the same change that lands
   `lean/Thermite/Strat/Syntax.lean` inheriting these conventions verbatim).
 
-  CORE-LEAN-ONLY DISCIPLINE (REQ-1). No Mathlib import — not the umbrella
+  Core-Lean-only discipline (REQ-1). No Mathlib import — not the umbrella
   module, not any Mathlib-namespaced module: the same hot-path discipline as
   `lean/Thermite/Denote.lean`. The lakefile pulls Mathlib transitively via the
-  `smt` require, so a Fintype-bearing import WOULD compile — the discipline is
-  therefore enforced by INTENT here, not by
-  the build failing. The carrier's finiteness is a HAND-ROLLED witness: an
+  `smt` require, so a Fintype-bearing import would compile; the discipline is
+  therefore enforced by intent here, not by
+  the build failing. The carrier's finiteness is a hand-rolled witness: an
   enumeration `List` + a completeness proof (`∀ x, x ∈ enum`) + a `deriving`d
-  `DecidableEq`, NOT Mathlib's `Fintype`. SPIKE-1 exists in part to determine
+  `DecidableEq`, rather than Mathlib's `Fintype`. SPIKE-1 exists in part to determine
   whether finite-carrier `Bool`-denotation can stay core-Lean-only with this
-  witness — the carrier verdict (see the conventions note) is a direct input
+  witness; the carrier verdict (see the conventions note) is a direct input
   to stage-2 `Strat/Carrier.lean`.
 
-  CONVENTIONS (proven below; mirrored in the conventions note):
+  Conventions (proven below; mirrored in the conventions note):
   * de Bruijn index 0 = the most-recently-bound (innermost) variable.
-  * Environments are TOTAL functions `Env C := Nat → C` (a valuation). This is
-    the deliberate choice that keeps the index lemmas UNCONDITIONAL — there is
+  * Environments are total functions `Env C := Nat → C` (a valuation). This
+    choice keeps the index lemmas unconditional: there is
     no out-of-range default / `getD` partiality to carry as a side condition,
-    which is exactly the plumbing the spike is probing for friction.
-  * `cons v ρ` PUSHES `v` as the new index-0 (binder-introduction); higher
+    the plumbing the spike is probing for friction.
+  * `cons v ρ` pushes `v` as the new index-0 (binder-introduction); higher
     indices shift up by one. A binder `∀` denotes `enum.all (fun x => ⟦φ⟧ (cons x ρ))`.
   * `lift c` (weakening) shifts every free index `≥ c` up by one; under a
     binder the cutoff increments (`c → c+1`).
@@ -48,7 +48,7 @@ inductive Tm where
   | var (i : Nat) : Tm
   deriving DecidableEq, Repr
 
-/-- The toy formula language — EXACTLY three constructors (REQ-1):
+/-- The toy formula language — three constructors (REQ-1):
     one atom (`atom`, term equality), one connective (`conj`), one binder
     (`all`, ∀ over the carrier sort). It denotes into `Bool`. -/
 inductive Frm where
@@ -59,20 +59,20 @@ inductive Frm where
 
 /-! ## The carrier — a `CarrierAssign`-lite with a hand-rolled finiteness witness
 
-    REQ-1's deliberate correction to the metatheory sketch's `CarrierAssign`
-    (which literally wrote `Fintype`, a Mathlib type). Here the opaque sort `C`
+    REQ-1's correction to the metatheory sketch's `CarrierAssign`
+    (which wrote `Fintype`, a Mathlib type). Here the opaque sort `C`
     carries its finiteness as plain data: `enum` (the enumeration) + `complete`
     (`∀ x, x ∈ enum`) + `deq` (`DecidableEq`, core Lean, `deriving`d on the
-    concrete sort). No Fintype; no Mathlib whatsoever. -/
+    concrete sort). No Fintype, no Mathlib. -/
 structure Carrier where
   /-- The opaque carrier sort. -/
   C : Type
   /-- Core-Lean `DecidableEq` on the sort (carried as data so the `decide`-based
       `Bool` denotation never relies on instance synthesis over a value). -/
   deq : DecidableEq C
-  /-- The finiteness ENUMERATION. -/
+  /-- The finiteness enumeration. -/
   enum : List C
-  /-- The finiteness COMPLETENESS witness — the hand-rolled replacement for
+  /-- The finiteness completeness witness — the hand-rolled replacement for
       `Fintype.complete`. -/
   complete : ∀ x : C, x ∈ enum
 
@@ -99,7 +99,7 @@ def cons {C : Type} (v : C) (ρ : Env C) : Env C :=
     | i + 1 => ρ i
 
 /-- Insert `v` at de Bruijn position `c`, shifting indices `≥ c` up by one.
-    Defined by structural recursion on the cutoff so that `cons`/`insert`
+    Defined by structural recursion on the cutoff so the `cons`/`insert`
     interplay is (almost) definitional. `insert 0 = cons`. -/
 def insert {C : Type} : Nat → C → Env C → Env C
   | 0,     v, ρ => cons v ρ
@@ -139,7 +139,7 @@ def tdenote (𝓒 : Carrier) : Tm → Env 𝓒.C → 𝓒.C
   | .var i, ρ => ρ i
 
 /-- Formula denotation into `Bool`. The binder folds the hand-rolled
-    enumeration with `List.all` — this is the only place the finiteness
+    enumeration with `List.all`, the only place the finiteness
     witness is consumed by the computation. -/
 def sdenote (𝓒 : Carrier) : Frm → Env 𝓒.C → Bool
   | .atom t u, ρ => 𝓒.beq (tdenote 𝓒 t ρ) (tdenote 𝓒 u ρ)
@@ -148,8 +148,8 @@ def sdenote (𝓒 : Carrier) : Frm → Env 𝓒.C → Bool
 
 /-! ## The environment-algebra lemmas (the "instance plumbing") -/
 
-/-- `List.all` respects a pointwise-equal predicate. Proven WITHOUT `funext`
-    (induction on the list) to keep the axiom footprint minimal. -/
+/-- `List.all` respects a pointwise-equal predicate. Proven by induction on the
+    list (no `funext`) to keep the axiom footprint minimal. -/
 theorem all_congr {α : Type} (l : List α) (f g : α → Bool)
     (h : ∀ x, f x = g x) : l.all f = l.all g := by
   induction l with
@@ -226,7 +226,7 @@ theorem tdenote_substTm (𝓒 : Carrier) (j : Nat) (s : Tm) (ρ : Env 𝓒.C) (t
       · simp [h1, h2]
       · simp [h1, h2]
 
-/-- **`sdenote_push_lift`** (REQ-2): weakening is denotation-invariant.
+/-- `sdenote_push_lift` (REQ-2): weakening is denotation-invariant.
     Denoting a `c`-lifted formula under an environment with a fresh value
     inserted at cutoff `c` equals denoting the original. Specialized at `c = 0`
     this is the binder-introduction fact `⟦lift 0 φ⟧ (cons v ρ) = ⟦φ⟧ ρ`. -/
@@ -248,7 +248,7 @@ theorem sdenote_push_lift (𝓒 : Carrier) (φ : Frm) :
     rw [cons_insert]
     exact ih (c + 1) v (cons x ρ)
 
-/-- **`sdenote_subst`** (REQ-2): the substitution lemma. Denoting a formula
+/-- `sdenote_subst` (REQ-2): the substitution lemma. Denoting a formula
     after substituting term `s` for index `j` equals denoting the original
     under an environment with `⟦s⟧` inserted at `j`. -/
 theorem sdenote_subst (𝓒 : Carrier) (φ : Frm) :
@@ -273,11 +273,11 @@ theorem sdenote_subst (𝓒 : Carrier) (φ : Frm) :
       tdenote_liftTm 𝓒 0 x ρ s
     rw [hs, ← cons_insert]
 
-/-! ## Bonus: the finiteness witness IS load-bearing for the binder's meaning
+/-! ## The finiteness witness carries the binder's meaning
 
-    `sdenote (all φ)` computes `enum.all`; the `complete` witness is exactly
-    what upgrades that finite fold to the genuine `∀ x : C`. This is the lemma
-    that would fail if the carrier were NOT finite — and it is discharged with
+    `sdenote (all φ)` computes `enum.all`; the `complete` witness is what
+    upgrades that finite fold to `∀ x : C`. This lemma
+    would fail if the carrier were not finite, and it is discharged with
     the hand-rolled witness, no `Fintype`. (Recorded in the carrier verdict.) -/
 theorem sdenote_all_iff (𝓒 : Carrier) (φ : Frm) (ρ : Env 𝓒.C) :
     sdenote 𝓒 (Frm.all φ) ρ = true ↔ ∀ x : 𝓒.C, sdenote 𝓒 φ (cons x ρ) = true := by
@@ -307,7 +307,7 @@ def twoCarrier : Carrier where
 
 /-! ## Spike-local axiom probe (AC-1)
 
-    Run as part of `lake build` output — NOT via `make audit` (whose theorem
+    Run as part of `lake build` output, not via `make audit` (whose theorem
     list is fixed and must not be perturbed by Spike files). Each must show a
     subset of `{propext, Classical.choice, Quot.sound}`. -/
 #print axioms sdenote_push_lift

@@ -3,89 +3,89 @@
   (the verified-validator metatheory; `.design/verified/thermite-semantics.md`
   REQ-6, increment (a), #170; epic #169).
 
-  This increment proves (T1) SOUNDNESS of the contract-TV reference encoder on the
-  COMPARISON + LOGICAL fragment (#170) EXTENDED through arithmetic + coercions (#176/
+  This increment proves (T1) soundness of the contract-TV reference encoder on the
+  comparison + logical fragment (#170) extended through arithmetic + coercions (#176/
   #177), the spec-context rewrites (#178), the 6 bounded-quantifier combinators (#179),
-  the C7 match-in-ens / `is` forms (#180), and the NAMED SPEC-FN CALLS incl. well-founded
-  RECURSION (#181) — the kernel-checked opening move of the universal lowering
+  the C7 match-in-ens / `is` forms (#180), and the named spec-fn calls including
+  well-founded recursion (#181), the kernel-checked opening move of the universal lowering
   semantic-preservation proof. The remaining deferred constructs (the 2 recursive
   combinators `count_where`/`permutation_of` #182, general user-ADT match/is) are the
-  future sub-increments, listed in `Ast.lean` (NOT embedded-then-`sorry`).
+  future sub-increments, listed in `Ast.lean` (not embedded-then-`sorry`).
 
-  LAYER 2 (the exec side) is now OPEN: increment 2a (#171) mechanizes the
-  EXEC-EXPRESSION bounded-value denotation `S_E` (`Thermite.Exec`) and proves (T1)
+  Layer 2 (the exec side) is open: increment 2a (#171) mechanizes the
+  exec-expression bounded-value denotation `S_E` (`Thermite.Exec`) and proves (T1)
   `∀ pure exec Expr P, ⟦exec_ref_value(P)⟧ = ⟦P⟧_{S_E}` (`Thermite.Exec.exec_ref_sound`).
-  `S_E` is a DIFFERENT semantics from `S_C`: a BOUNDED `u64`/`u32`/`usize`/`bool` value
-  (NEVER nat-coerced), with arithmetic OVERFLOW carried as a PROOF OBLIGATION (the value
-  is the mathematical result GIVEN no overflow; an overflowing op has NO value). The
-  exec-BODY is now mechanized (2b #172): the big-step STATE TRANSFORMER `S_B` over
+  `S_E` is a different semantics from `S_C`: a bounded `u64`/`u32`/`usize`/`bool` value
+  (never nat-coerced), with arithmetic overflow carried as a proof obligation (the value
+  is the mathematical result given no overflow; an overflowing op has no value). The
+  exec-body is mechanized (2b #172): the big-step state transformer `S_B` over
   straight-line blocks + the (T1) soundness proof for `body_ref_state`
-  (`Thermite.Exec.body_ref_sound`). LOOPS (2c #163) remain kernel-gated.
+  (`Thermite.Exec.body_ref_sound`). Loops (2c #163) remain kernel-gated.
 -/
 import Thermite.Ast
 import Thermite.Denote
 import Thermite.RefEncode
 import Thermite.Soundness
--- LAYER 2 (the exec side, increment 2a, #171): the exec-expression bounded-value
--- denotation `S_E` + the (T1) soundness proof for `exec_ref_value`. SEPARATE namespace
--- `Thermite.Exec` (bounded, overflow-as-obligation, NEVER nat-coerced — `S_E ≠ S_C`).
+-- Layer 2 (the exec side, increment 2a, #171): the exec-expression bounded-value
+-- denotation `S_E` + the (T1) soundness proof for `exec_ref_value`. Separate namespace
+-- `Thermite.Exec` (bounded, overflow-as-obligation, never nat-coerced; `S_E ≠ S_C`).
 import Thermite.Exec
--- LAYER 2 (the exec side, increment 2b, #172): the exec-BODY big-step STATE
--- TRANSFORMER `S_B` over straight-line blocks + the (T1) soundness proof for
+-- Layer 2 (the exec side, increment 2b, #172): the exec-body big-step state
+-- transformer `S_B` over straight-line blocks + the (T1) soundness proof for
 -- `body_ref_state` (`Thermite.Exec.body_ref_sound`). Builds on 2a's `ExecExpr`/
 -- `execDenote`/`ExecVal`/`ExecEnv` for every per-RHS / condition / tail value; adds
--- ONLY the state threading / scalar-mutation rebind / branch composition / tail
--- projection. LOOPS remain OUT (2c #163, kernel-gated).
+-- the state threading / scalar-mutation rebind / branch composition / tail
+-- projection. Loops remain out (2c #163, kernel-gated).
 import Thermite.Exec.Stmt
--- LAYER 2 (the exec side, increment 2c, #163): the v1 `while`-LOOP extension of `S_B` —
--- the fuel-indexed iteration semantics `loopDenote` (iterating the SHIPPED `blockThread`),
--- the PARTIAL-CORRECTNESS WHILE-RULE `while_rule` (premises ⟹ after-loop = inv ∧ ¬cond,
+-- Layer 2 (the exec side, increment 2c, #163): the v1 `while`-loop extension of `S_B`.
+-- The fuel-indexed iteration semantics `loopDenote` (iterating the shipped `blockThread`),
+-- the partial-correctness while-rule `while_rule` (premises ⟹ after-loop = inv ∧ ¬cond,
 -- by fuel induction), its TV meta-theorem `tv_meta_loop`, the L1 non-vacuity witness +
--- the L2/L3 negative lemmas. A SEPARATE `WhileLoop` AROUND the proven `blockThread`
+-- the L2/L3 negative lemmas. A separate `WhileLoop` around the proven `blockThread`
 -- (faithful to the Rust `loop_ref_obligations` separate-form treatment; `Exec/Stmt.lean`
--- UNCHANGED). PARTIAL correctness — termination is the per-run Verus `decreases` residual.
+-- unchanged). Partial correctness: termination is the per-run Verus `decreases` residual.
 import Thermite.Exec.Loop
--- LAYER 2 (the exec side, increment (v-a), #264; `.design/verified/proof-backends.md`
--- §4.2.2): the WHILE-BODY COMPOSITION LAYER — the first `S_B`×`S_Loop` composition
--- artifact. `whileBodyDenote` (prefix `blockThread` → the SHIPPED `loopDenote` → tail
+-- Layer 2 (the exec side, increment (v-a), #264; `.design/verified/proof-backends.md`
+-- §4.2.2): the while-body composition layer, the first `S_B`×`S_Loop` composition
+-- artifact. `whileBodyDenote` (prefix `blockThread` → the shipped `loopDenote` → tail
 -- `execDenote`, `Option`-monad composed) + the ∃-fuel `whileBodyConverges` (result bound
--- THROUGH it, the #214 discipline) + `loopDenote_fuel_mono`/`whileBodyConverges_unique`
+-- through it, the #214 discipline) + `loopDenote_fuel_mono`/`whileBodyConverges_unique`
 -- (the `stabilizes_unique` mirror), the loop-exit-to-ens composition `while_compose`
--- (the SHIPPED partial-correctness `while_rule` lifted through the prefix/tail segments),
--- and the TERMINATION bridge `loopDenote_exits_of_dec` (dec-validity + progress ⟹ the
--- exit witness — the REQ-1.2 mirror, by strong induction on `(μ st).toNat`). Composes
--- AROUND `Exec/Stmt.lean` + `Exec/Loop.lean` (UNCHANGED). The (v-b) exporter targets it.
+-- (the shipped partial-correctness `while_rule` lifted through the prefix/tail segments),
+-- and the termination bridge `loopDenote_exits_of_dec` (dec-validity + progress ⟹ the
+-- exit witness, the REQ-1.2 mirror, by strong induction on `(μ st).toNat`). Composes
+-- around `Exec/Stmt.lean` + `Exec/Loop.lean` (unchanged). The (v-b) exporter targets it.
 import Thermite.Exec.WhileBody
--- LAYER 3 (compose), increments (d) #174 + 3b #183: the TRANSLATION-VALIDATION
--- META-THEOREM capstone. Composes the three proven (T1) theorems (`ref_sound_eq`,
+-- Layer 3 (compose), increments (d) #174 + 3b #183: the translation-validation
+-- meta-theorem capstone. Composes the three proven (T1) theorems (`ref_sound_eq`,
 -- `Exec.exec_ref_sound`, `Exec.body_ref_sound`) with the per-run TV result (the
--- Z3-discharged `h_tv` premise) into the (T2) UNIVERSAL semantic-preservation guarantee
--- `∀ P passing TV, ⟦lower(P)⟧ = ⟦P⟧_S` — the existential → universal conversion, the
+-- Z3-discharged `h_tv` premise) into the (T2) universal semantic-preservation guarantee
+-- `∀ P passing TV, ⟦lower(P)⟧ = ⟦P⟧_S`, the existential → universal conversion, the
 -- verified-validator architecture's conclusion. Per-layer `tv_meta_{contract,exec,body}`
--- + the composed whole-program `lowering_faithful`, RELATIVE to {Z3, S = intended
--- meaning, the Lean kernel}. `h_tv` is the Z3-TRUSTED premise (NOT Lean-proven; #184
+-- + the composed whole-program `lowering_faithful`, relative to {Z3, S = intended
+-- meaning, the Lean kernel}. `h_tv` is the Z3-trusted premise (not Lean-proven; #184
 -- demotes Z3). Loops (#163) + the Rust↔Lean correspondence (#185) are named residuals.
 import Thermite.Faithfulness
--- LAYER 4 (trust-shrink), increment 4a (#184): the Z3-DEMOTION proof-of-concept. Wires
+-- Layer 4 (trust-shrink), increment 4a (#184): the Z3-demotion proof-of-concept. Wires
 -- Lean-SMT (cvc5 proof reconstruction) so a per-run TV equivalence obligation
--- (`P_production ⟺ P_reference`, `thermite-tv/src/obligation.rs`) is KERNEL-CHECKED by the
--- `smt` tactic rather than Z3-TRUSTED — the route to demote the `h_tv` premise of
--- `Thermite.lowering_faithful`. Tier 3 reached: two REAL TV equivalence obligations
+-- (`P_production ⟺ P_reference`, `thermite-tv/src/obligation.rs`) is kernel-checked by the
+-- `smt` tactic rather than Z3-trusted, the route to demote the `h_tv` premise of
+-- `Thermite.lowering_faithful`. Tier 3 reached: two real TV equivalence obligations
 -- (hand-translated, the gap an exporter closes) discharged by `smt` and kernel-checked,
--- `#print axioms` = [propext, Classical.choice, Quot.sound] (STANDARD only — the cvc5 proof
--- is genuinely replayed, not oracle-trusted). The WALLS (toolchain v4.29.0 + full Mathlib +
+-- `#print axioms` = [propext, Classical.choice, Quot.sound] (standard only; the cvc5 proof
+-- is replayed, not oracle-trusted). The walls (toolchain v4.29.0 + full Mathlib +
 -- vendored cvc5 1.3.2; the hand-translation residual; the BitVec-reconstruction `sorry`
 -- excluding bitwise obligations; Verus/Z3 not emitting reconstructable certificates) are in
 -- `.design/verified/z3-demotion.md`.
 import Thermite.SmtDemo
--- THE STABILIZATION SPINE PREREQUISITE (increment (ii), #240, ref #203;
+-- The stabilization spine prerequisite (increment (ii), #240, ref #203;
 -- `.design/verified/proof-backends.md` §4/§6.1): the `stabilizes`/`stabilizesProp`
--- relations (the §4 stabilized-form keys, NOT a raw fuel index), `stabilizes_unique`
--- (the #214 result-binding lever), the `specCallFree` predicate + the FUEL-IRRELEVANCE
--- lemma `intVal_fuel_irrelevant`/`denote_fuel_irrelevant` (the #216 normalization bridge —
+-- relations (the §4 stabilized-form keys, not a raw fuel index), `stabilizes_unique`
+-- (the #214 result-binding lever), the `specCallFree` predicate + the fuel-irrelevance
+-- lemma `intVal_fuel_irrelevant`/`denote_fuel_irrelevant` (the #216 normalization bridge,
 -- the fuel-free tier-(a) export keys `stabilizes_iff_intVal_zero` /
 -- `stabilizesProp_iff_denote_zero`), and `stabilization_exists` (the design's
--- `stabilization_exists_for_dec_bounded`, shipped in the `RegistryTerminating` HYPOTHESIS
--- form — the per-item REGISTRY-TERMINATION obligation discharges it). The exporter
+-- `stabilization_exists_for_dec_bounded`, shipped in the `RegistryTerminating` hypothesis
+-- form; the per-item registry-termination obligation discharges it). The exporter
 -- targets the §4 form against these; the four critic pins keep their own local copies.
 import Thermite.Stabilize

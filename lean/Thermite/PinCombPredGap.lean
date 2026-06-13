@@ -1,49 +1,49 @@
 /-
-  PinCombPredGap.lean — CRITIC PIN (Pin F), RE-PINNED as the RESOLVED TRUTH after the
+  PinCombPredGap.lean — critic pin (Pin F), re-pinned as the resolved truth after the
   #242 root fix (commit for #242; ref #241 #240 #203 #215). The #186 precedent: the
-  defect oracle is INVERTED — the divergent-through-predicate registry now FAILS
+  defect oracle is inverted. The divergent-through-predicate registry now fails
   `RegistryTerminating`, and a genuine-registry positive guards over-rejection.
 
-  THE ORIGINAL FINDING (cycle, pre-#242). `Stabilize.lean`'s `denoteNB` Prop-combinator
-  arm none-gated ONLY the slice/`seq2`/`idx` subterms and then carried the spine
-  `denote` proposition VERBATIM — the per-element PREDICATE BODY was never gated. For
+  The original finding (cycle, pre-#242). `Stabilize.lean`'s `denoteNB` Prop-combinator
+  arm none-gated only the slice/`seq2`/`idx` subterms and then carried the spine
+  `denote` proposition verbatim; the per-element predicate body was never gated. For
 
       eDeep := count_where(s, |x| forall_in(s, |y| f(x) > 0)),   f(x) = f(x)
 
   the inner `f(x)` bottoms the spine `intVal` to the Int-bottom `0` at every fuel, the
-  carried predicate `0 > 0` is FALSE, the count is the bottom-poisoned `0`, and
-  `intValNB fuel eDeep envD = some 0` at EVERY fuel — so the DIVERGENT registry FORGED
+  carried predicate `0 > 0` is false, the count is the bottom-poisoned `0`, and
+  `intValNB fuel eDeep envD = some 0` at every fuel, so the divergent registry forged
   `RegistryTerminating envD eDeep`, the very hypothesis Pin E.2 pins as unforgeable on
   the direct call. `stabilization_exists` then delivered the bottom-poisoned `0`.
 
-  THE FIX (#242, now landed). `denoteNB`'s Prop-combinator arm routes the per-element
-  predicate body through `denoteNB` at each slice element and gates emission on EVERY
+  The fix (#242, now landed). `denoteNB`'s Prop-combinator arm routes the per-element
+  predicate body through `denoteNB` at each slice element and gates emission on every
   element being `some` (`Stabilize.predGateNB`). The divergent `f(x)` inside the
   predicate body is now `intValNB = none`, so the gate is `none`, so `denoteNB
   forallExpr = none`, so `countWhereValNB` is `none`, so `intValNB eDeep = none` at every
-  fuel — the forgery is GONE.
+  fuel; the forgery is gone.
 
-  THE RE-PIN (the resolved truth):
-  - F.0 `eDeep` is NOT spec-call-free (the divergent `f` is genuinely reachable) — UNCHANGED.
-  - F.1 `intValNB fuel eDeep envD = none` at every fuel (the NB denotation now REFUSES to
-    assign the divergent expression a value — the predicate-body gate poisons it). INVERTED
+  The re-pin (the resolved truth):
+  - F.0 `eDeep` is not spec-call-free (the divergent `f` is reachable), unchanged.
+  - F.1 `intValNB fuel eDeep envD = none` at every fuel (the NB denotation now declines to
+    assign the divergent expression a value; the predicate-body gate poisons it). Inverted
     from the old `some 0`.
-  - F.2 `¬ RegistryTerminating envD eDeep` — the divergent registry can no longer FORGE the
+  - F.2 `¬ RegistryTerminating envD eDeep`: the divergent registry can no longer forge the
     hypothesis through a Prop-combinator predicate body (the F.2 inversion: contrast the old
     `divergent_registry_forges_the_hypothesis`).
-  - F.+ (the over-rejection guard, the #241 precedent): the SAME eDeep shape under a
-    GENUINE registry `g(x) = 1` CONVERGES — `RegistryTerminating envG eGen` HOLDS and
-    `stabilization_exists` delivers a genuine stabilized value — so the gate rejects ONLY
+  - F.+ (the over-rejection guard, the #241 precedent): the same eDeep shape under a
+    genuine registry `g(x) = 1` converges. `RegistryTerminating envG eGen` holds and
+    `stabilization_exists` delivers a genuine stabilized value, so the gate rejects only
     divergence, not every predicate-body spec-call.
 
-  Builds GREEN with NO `sorry`; the green build IS the demonstration the divergence is
+  Builds green with no `sorry`; the green build is the demonstration the divergence is
   resolved. Tracking: crosslink #242.
 -/
 import Thermite.Stabilize
 
 namespace Thermite.PinCombPredGap
 
-/-! ## F.0 — the divergent registry (Pin E's, verbatim) + the deep expression -/
+/-! ## F.0 — the divergent registry (Pin E's, verbatim) and the deep expression -/
 
 def Rdiv : Registry := fun n =>
   if n = "f" then some ⟨["x"], Expr.specCall "f" [Expr.var "x"]⟩ else none
@@ -57,27 +57,27 @@ def envD : Env :=
 
 def fCall : Expr := Expr.specCall "f" [Expr.var "x"]
 
-/-- `f(x) > 0` — the per-element predicate body containing the DIVERGENT call. -/
+/-- `f(x) > 0` — the per-element predicate body containing the divergent call. -/
 def pBody : Expr := Expr.cmp CmpOp.gt fCall (Expr.intLit 0)
 
 /-- `forall_in(s, |y| f(x) > 0)` — the Prop-combinator wrapping the divergent call. -/
 def forallExpr : Expr :=
   Expr.comb CombName.forallIn (Expr.seqVar "s") none none (some (Pred.mk "y" pBody))
 
-/-- `count_where(s, |x| forall_in(s, |y| f(x) > 0))` — a WELL-FORMED INT-sorted
-    (`ResultKind::Usize`) expression whose ONLY spec-call is the divergent `f`,
+/-- `count_where(s, |x| forall_in(s, |y| f(x) > 0))` — a well-formed Int-sorted
+    (`ResultKind::Usize`) expression whose only spec-call is the divergent `f`,
     reachable only through the Prop-combinator predicate body. -/
 def eDeep : Expr :=
   Expr.comb CombName.countWhere (Expr.seqVar "s") none none (some (Pred.mk "x" forallExpr))
 
-/-- THE PIN (F.0, UNCHANGED): `eDeep` is NOT spec-call-free — the divergent `f` is in its
-    full-expression-position closure, so the REGISTRY-TERMINATION class governs it
-    (this is NOT the trivial `converges_specCallFree` convergence). -/
+/-- The pin (F.0, unchanged): `eDeep` is not spec-call-free; the divergent `f` is in its
+    full-expression-position closure, so the registry-termination class governs it
+    (this is not the trivial `converges_specCallFree` convergence). -/
 theorem eDeep_not_specCallFree : specCallFree eDeep = false := by
   simp [eDeep, forallExpr, pBody, fCall, specCallFree, optPredFree, predFree,
     optExprFree]
 
-/-! ## F.1 — the NB denotation now REFUSES to value the divergent expression (INVERTED) -/
+/-! ## F.1 — the NB denotation now declines to value the divergent expression (inverted) -/
 
 /-- `bindParams` never touches the registry. -/
 theorem bindParams_specs : ∀ (ps : List String) (vs : List Int) (env : Env),
@@ -86,8 +86,8 @@ theorem bindParams_specs : ∀ (ps : List String) (vs : List Int) (env : Env),
   | _ :: _, [], _ => rfl
   | p :: ps, v :: vs, env => bindParams_specs ps vs (env.bindInt p v)
 
-/-- The divergent call is `none` under `intValNB` at EVERY fuel (Pin E's fact, local
-    copy — the none-propagating denotation REFUSES a value to a divergent specCall). -/
+/-- The divergent call is `none` under `intValNB` at every fuel (Pin E's fact, local
+    copy: the none-propagating denotation declines a value to a divergent specCall). -/
 theorem divergent_call_NB_none :
     ∀ fuel (env : Env), env.specs = Rdiv → intValNB fuel fCall env = none := by
   intro fuel
@@ -107,8 +107,8 @@ theorem pBody_NB_none (fuel : Nat) (env : Env) (h : env.specs = Rdiv) :
     denoteNB fuel pBody env = none := by
   simp only [pBody, denoteNB, divergent_call_NB_none fuel env h, Option.bind]
 
-/-- THE GAP, now CLOSED: `denoteNB` on the Prop-combinator is `none` — the predicate
-    body's divergent call POISONS it (the #242 gate routes the body through `denoteNB`
+/-- The gap, now closed: `denoteNB` on the Prop-combinator is `none`; the predicate
+    body's divergent call poisons it (the #242 gate routes the body through `denoteNB`
     per element and propagates `none`). Contrast the old `forall_NB_some`. -/
 theorem forall_NB_none (fuel : Nat) (env : Env) (h : env.specs = Rdiv)
     (hs : env.seqs "s" = [0]) :
@@ -118,9 +118,9 @@ theorem forall_NB_none (fuel : Nat) (env : Env) (h : env.specs = Rdiv)
   simp only [seqValNB, hs, Option.bind, predGateNB_cons]
   rw [pBody_NB_none fuel (env.bindInt "y" 0) (by rw [Env.bindInt]; exact h)]
 
-/-- THE PIN (F.1, INVERTED): `intValNB fuel eDeep envD = none` at EVERY fuel — the
-    none-propagating denotation REFUSES a value to an expression whose reachable
-    spec-call DIVERGES (the predicate-body gate poisons the count). Contrast the old
+/-- The pin (F.1, inverted): `intValNB fuel eDeep envD = none` at every fuel; the
+    none-propagating denotation declines a value to an expression whose reachable
+    spec-call diverges (the predicate-body gate poisons the count). Contrast the old
     `eDeep_NB : intValNB fuel eDeep envD = some 0`. -/
 theorem eDeep_NB_none (fuel : Nat) : intValNB fuel eDeep envD = none := by
   unfold eDeep
@@ -133,12 +133,12 @@ theorem eDeep_NB_none (fuel : Nat) : intValNB fuel eDeep envD = none := by
   rw [forall_NB_none fuel (envD.bindInt "x" 0) (by rw [Env.bindInt]; rfl) (by rw [Env.bindInt]; rfl)]
   simp only [Option.bind]
 
-/-! ## F.2 — the FORGERY is GONE: the divergent registry FAILS `RegistryTerminating` -/
+/-! ## F.2 — the forgery is gone: the divergent registry fails `RegistryTerminating` -/
 
-/-- THE PIN (F.2, the load-bearing inversion): the divergent registry can NO LONGER forge
-    the REGISTRY-TERMINATION hypothesis through the Prop-combinator predicate body —
-    `¬ RegistryTerminating envD eDeep`, restoring §1.2/§4's "a GENUINE precondition a
-    divergent registry cannot forge" / "discharges CONVERGENCE of every reachable
+/-- The pin (F.2, the central inversion): the divergent registry can no longer forge
+    the registry-termination hypothesis through the Prop-combinator predicate body:
+    `¬ RegistryTerminating envD eDeep`, restoring §1.2/§4's "a genuine precondition a
+    divergent registry cannot forge" / "discharges convergence of every reachable
     spec-call". Contrast the old `divergent_registry_forges_the_hypothesis`. -/
 theorem divergent_registry_fails_the_hypothesis : ¬ RegistryTerminating envD eDeep := by
   rintro ⟨v, N, hN⟩
@@ -146,9 +146,9 @@ theorem divergent_registry_fails_the_hypothesis : ¬ RegistryTerminating envD eD
   rw [eDeep_NB_none N] at this
   exact absurd this (by simp)
 
-/-! ## F.+ — the OVER-REJECTION GUARD: a GENUINE registry of the same shape CONVERGES -/
+/-! ## F.+ — the over-rejection guard: a genuine registry of the same shape converges -/
 
-/-- A GENUINE (terminating) registry: `g(x) = 1` — the SAME eDeep shape, but the spec-fn
+/-- A genuine (terminating) registry: `g(x) = 1` — the same eDeep shape, but the spec-fn
     returns a constant instead of diverging. -/
 def Rgen : Registry := fun n =>
   if n = "f" then some ⟨["x"], Expr.intLit 1⟩ else none
@@ -159,7 +159,7 @@ def envG : Env :=
     optres := fun _ => OptResVal.none_
     specs := Rgen }
 
-/-- The genuine call resolves to `some 1` at every POSITIVE fuel (`intValNB`). -/
+/-- The genuine call resolves to `some 1` at every positive fuel (`intValNB`). -/
 theorem genuine_call_NB_one :
     ∀ fuel (env : Env), env.specs = Rgen → intValNB (fuel + 1) fCall env = some 1 := by
   intro fuel env h
@@ -173,8 +173,8 @@ theorem pBody_NB_genuine (fuel : Nat) (env : Env) (h : env.specs = Rgen) :
     denoteNB (fuel + 1) pBody env = some ((1 : Int) > 0) := by
   simp only [pBody, denoteNB, genuine_call_NB_one fuel env h, Option.bind, intValNB]
 
-/-- The inner `forall_in` NB-denotes to `some` of an EXPLICIT genuine proposition at
-    positive fuel — the predicate gate now SUCCEEDS (`some`) because the genuine call
+/-- The inner `forall_in` NB-denotes to `some` of an explicit genuine proposition at
+    positive fuel; the predicate gate now succeeds (`some`) because the genuine call
     resolves. The carried proposition is the spine `denote` form (agreement is reflexive). -/
 theorem forall_NB_genuine_eq (fuel : Nat) (env : Env) (h : env.specs = Rgen)
     (hs : env.seqs "s" = [0]) :
@@ -186,7 +186,7 @@ theorem forall_NB_genuine_eq (fuel : Nat) (env : Env) (h : env.specs = Rgen)
   rw [pBody_NB_genuine fuel (env.bindInt "y" 0) (by rw [Env.bindInt]; exact h)]
   simp only [predGateNB]
 
-/-- The spine `forall_in(s, |y| f(x) > 0)` denotes TRUE under the genuine registry: the
+/-- The spine `forall_in(s, |y| f(x) > 0)` denotes true under the genuine registry: the
     body is `1 > 0` at the (single) bound element, which holds. -/
 theorem forall_denote_genuine (fuel : Nat) (env : Env) (h : env.specs = Rgen)
     (hs : env.seqs "s" = [0]) :
@@ -200,10 +200,10 @@ theorem forall_denote_genuine (fuel : Nat) (env : Env) (h : env.specs = Rgen)
     simp only [fCall, intVal, h, Rgen, if_pos, Env.bindInt, intValArgs]]
   simp only [intVal]; omega
 
-/-- THE PIN (F.+, the over-rejection guard): the SAME eDeep shape under the GENUINE
-    registry `g(x) = 1` reaches a value under `intValNB` at positive fuel — so
-    `RegistryTerminating envG eDeep` HOLDS and `stabilization_exists` delivers a genuine
-    stabilized value. The #242 gate rejects DIVERGENCE, not every predicate-body
+/-- The pin (F.+, the over-rejection guard): the same eDeep shape under the genuine
+    registry `g(x) = 1` reaches a value under `intValNB` at positive fuel, so
+    `RegistryTerminating envG eDeep` holds and `stabilization_exists` delivers a genuine
+    stabilized value. The #242 gate rejects divergence, not every predicate-body
     spec-call (the #241 precedent: a fix that rejected everything would be unsound the
     other way). The convergent value is the genuine count `1` (the single element's
     `forall_in` holds). -/
@@ -222,7 +222,7 @@ theorem genuine_registry_satisfies_the_hypothesis : RegistryTerminating envG eDe
     (by rw [Env.bindInt]; rfl))]
   simp only [Option.some.injEq]; omega
 
-/-- `stabilization_exists` is DISCHARGEABLE on the genuine registry, delivering a genuine
+/-- `stabilization_exists` is dischargeable on the genuine registry, delivering a genuine
     stabilized value — the resolved-side counterpart to F.2's rejection of divergence. -/
 theorem genuine_stabilization_exists : ∃ v, stabilizes eDeep envG v :=
   stabilization_exists genuine_registry_satisfies_the_hypothesis

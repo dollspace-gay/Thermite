@@ -1,0 +1,10 @@
+{
+  "uuid": "74a505b1-c5ec-46ab-90c8-37318d099f74",
+  "issue_uuid": "88d612c7-185e-4b0e-8b22-745d0b6e9373",
+  "author": "rApq",
+  "content": "De-hype slice 1 approach: keep narrative flair only in localized intro/conclusion sections (README opening metaphor stays); technicalize body/mechanism prose. Targeted the RFC-1 program docs (mine) + safe README trims: dropped emphatic adverbs (exactly/precisely), editorializing tails (a delta in the program's favor, most material correction, the headline that lands, the asymmetry is safe). Substance/claims/IDs unchanged. Public docs (RATIONALE/thermite-design bodies) + source comments are later slices.",
+  "created_at": "2026-06-13T05:44:56.925319Z",
+  "kind": "plan",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABAKjHLoFlBX2GOXS4r4J8rVZjF8mq4MoTzyhgDAk5woUdMhhasdVvCjiaOw+Aue75RCQFll3hlHTJDURAUCYncBg=="
+}

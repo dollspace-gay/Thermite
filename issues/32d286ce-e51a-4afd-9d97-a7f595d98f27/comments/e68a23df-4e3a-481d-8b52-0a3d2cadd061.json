@@ -1,0 +1,8 @@
+{
+  "uuid": "e68a23df-4e3a-481d-8b52-0a3d2cadd061",
+  "issue_uuid": "32d286ce-e51a-4afd-9d97-a7f595d98f27",
+  "author": "bI5O",
+  "content": "Plan: deep tone pass over all source comments (Rust+Lean) per .design/tone-and-voice.md + tone-comment-pass-plan.md. Order: thermite-verified -> thermite-spec -> thermite-syntax -> thermite-tv -> lean/ -> thermite-lower -> forge. Comments-only register change: emphatic ALL-CAPS->normal (keep acronyms + status labels SHIPPED/NOT-STARTED + enum variants), cut virtue adverbs/antithesis pairs/rhetorical bold/cute asides, claim-by-claim exactly/precisely judgment. Self-verify per crate (git diff comments-only, cargo test -p, lake build for lean), commit per crate. One PR.",
+  "created_at": "2026-06-13T19:22:26.130551Z",
+  "kind": "plan"
+}

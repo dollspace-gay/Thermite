@@ -1,14 +1,14 @@
-//! Lexer string-escape tests — crosslink #91 cluster 1 (the LITERAL LAYER), gap 1
+//! Lexer string-escape tests — crosslink #91 cluster 1 (the literal layer), gap 1
 //! (string escapes). The v0.1 `lex_string` escape table was only `\n`/`\t`/`\"`/
-//! `\\`; its catch-all `other => other as char` SILENTLY swallowed `\x`/`\r`/`\0`
+//! `\\`; its catch-all `other => other as char` silently swallowed `\x`/`\r`/`\0`
 //! (e.g. `\x1b` decoded to the char `x` then literal `1b`), so `"\x1b".byte_at(0)`
 //! could never equal 27. This stage extends the escape table to `\r`/`\0`/`\xNN`
-//! and makes an UNKNOWN/malformed escape a STRUCTURED diagnostic, never a swallow
+//! and makes an unknown/malformed escape a structured diagnostic, never a swallow
 //! and never a panic (`.design/syntax/lexer.md` REQ-4 / REQ-8,
 //! `.design/basis/07-strings.md` REQ-6).
 //!
-//! R-CHAR-3: the expected BYTES are the ANSI/ASCII control-code constants (ESC ==
-//! 27, CR == 13, NUL == 0, the literal `'A'` == 65), NOT values copied from the
+//! R-CHAR-3: the expected bytes are the ANSI/ASCII control-code constants (ESC ==
+//! 27, CR == 13, NUL == 0, the literal `'A'` == 65), not values copied from the
 //! lexer's own output. `tests/` is not gated, so `unwrap`/`expect` are fine here.
 
 use thermite_syntax::{tokenize, TokKind};
@@ -30,7 +30,7 @@ fn decode(src: &str) -> Vec<u8> {
 
 #[test]
 fn escape_x1b_decodes_to_esc_byte_27() {
-    // ANSI escape introducer ESC == 0x1b == 27 — the editor's headline unblock.
+    // ANSI escape introducer ESC == 0x1b == 27.
     assert_eq!(decode(r#""\x1b""#), vec![27]);
 }
 
@@ -88,7 +88,7 @@ fn malformed_hex_escape_is_structured_diagnostic_not_panic() {
 
 #[test]
 fn high_byte_hex_escape_is_rejected_in_v1_byte_model() {
-    // `\x80`..=`\xFF` is NOT a single UTF-8 byte in a Rust `String`, so v1 (the
+    // `\x80`..=`\xFF` is not a single UTF-8 byte in a Rust `String`, so v1 (the
     // byte char model, 07-strings.md REQ-2) rejects it structurally rather than
     // mis-materialize it to two bytes (it awaits the Vec<u8> string-content
     // reshape). A structured diagnostic, never a panic.
@@ -101,7 +101,7 @@ fn high_byte_hex_escape_is_rejected_in_v1_byte_model() {
 
 #[test]
 fn unknown_escape_is_structured_diagnostic_not_silent_swallow() {
-    // `\z` is an unknown escape: a structured diagnostic, NOT the v0.1
+    // `\z` is an unknown escape: a structured diagnostic, not the v0.1
     // `other as char` swallow (which would have decoded `\z` to `z`).
     let (_tokens, errors) = tokenize(r#""\z""#);
     assert!(

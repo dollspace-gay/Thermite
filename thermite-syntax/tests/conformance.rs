@@ -1,7 +1,6 @@
 //! Conformance tests for `thermite-syntax` against the hand-authored, read-only
-//! oracle fixtures under `conformance/` (R-CHAR-3 — the fixtures are the truth;
-//! this crate is the artifact under test and must MATCH them, never the
-//! reverse).
+//! oracle fixtures under `conformance/` (R-CHAR-3: the fixtures are the truth;
+//! this crate is the artifact under test and matches them).
 //!
 //! Covers the parser oracle (`conformance/parse/*.facts.json`,
 //! `.design/syntax/parser.md` AC-1..AC-4) and the address oracle
@@ -494,7 +493,7 @@ fn address_stability_under_unrelated_edit() {
 
 #[test]
 fn int_literal_underscores_strip_to_value() {
-    // lexer.md AC-2: `1_000_000` lexes to the numeric value 1000000 (UNCHANGED).
+    // lexer.md AC-2: `1_000_000` lexes to the numeric value 1000000 (unchanged).
     let (tokens, errors) = thermite_syntax::tokenize("1_000_000");
     assert!(errors.is_empty());
     let has_value = tokens.iter().any(|t| {
@@ -511,8 +510,8 @@ fn int_literal_underscores_strip_to_value() {
 
 #[test]
 fn int_literal_preserves_raw() {
-    // lexer.md AC-2b (#37): the integer token carries BOTH the numeric `value`
-    // (separators stripped) AND the verbatim `raw` (separators included). The
+    // lexer.md AC-2b (#37): the integer token carries both the numeric `value`
+    // (separators stripped) and the verbatim `raw` (separators included). The
     // expected raw is the source substring, hand-derived from the input, never
     // copied from the lexer (R-CHAR-3).
     use thermite_syntax::TokKind;
@@ -536,7 +535,7 @@ fn int_literal_preserves_raw() {
     });
     assert_eq!(int, Some((42u128, "42".to_string())));
 
-    // A trailing `_` (e.g. `1_`) is in NEITHER value nor raw: value 1, raw "1".
+    // A trailing `_` (e.g. `1_`) is in neither value nor raw: value 1, raw "1".
     let (tokens, _) = thermite_syntax::tokenize("1_");
     let int = tokens.iter().find_map(|t| match &t.kind {
         TokKind::Int { value, raw } => Some((*value, raw.clone())),
@@ -547,9 +546,9 @@ fn int_literal_preserves_raw() {
 
 #[test]
 fn int_literal_preserves_value_and_raw() {
-    // ast.md AC-1b (#37): the `1_000_000` literal parses to an EXPR-level
-    // `Expr::IntLit { value: 1000000, raw: "1_000_000" }` — BOTH the numeric
-    // value (separators stripped, UNCHANGED) AND the verbatim raw. Expected is
+    // ast.md AC-1b (#37): the `1_000_000` literal parses to an expr-level
+    // `Expr::IntLit { value: 1000000, raw: "1_000_000" }`: both the numeric
+    // value (separators stripped, unchanged) and the verbatim raw. Expected is
     // hand-derived from the source, never copied from the parser (R-CHAR-3).
     use thermite_syntax::ast::{BinOp, Expr};
 

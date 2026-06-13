@@ -1,14 +1,14 @@
-//! Basis Stage 1a — ADT SURFACE parse oracle (`.design/basis/01-adts.md`
-//! REQ-1/REQ-2/REQ-3/REQ-4 + REQ-6 SURFACE part). These tests assert the EXACT
+//! Basis Stage 1a — ADT surface parse oracle (`.design/basis/01-adts.md`
+//! REQ-1/REQ-2/REQ-3/REQ-4 + REQ-6 surface part). These tests assert the
 //! AST shape the hand-derived parse oracle pins
-//! (`conformance/parse/{bank_account,shape,list_sum}.facts.json`) — `struct`
+//! (`conformance/parse/{bank_account,shape,list_sum}.facts.json`): `struct`
 //! items + the `inv` clause, `enum` items with tuple/struct/unit variants, the
 //! recursive `Box<List>` self-reference (`Type::Box`), `match` over enum/struct
 //! patterns with payload binding, the `Expr::StructLit` construction, the
 //! `Expr::Is` variant-discriminator, and the boxed-tail deref `*t`
 //! (`Expr::Deref`). Expected shapes are hand-derived from the design + facts
-//! (R-CHAR-3), NEVER copied from the parser's output. SURFACE only — the
-//! VALIDATOR (1b) and Verus LOWERING (1c) are not exercised here.
+//! (R-CHAR-3), never copied from the parser's output. Surface only: the
+//! validator (1b) and Verus lowering (1c) are not exercised here.
 
 use std::path::PathBuf;
 use thermite_syntax::{

@@ -2,12 +2,12 @@
 //! stream, producing the AST. The executable form of `surface-grammar.md`.
 //!
 //! Governing design: `.design/syntax/parser.md`. Two design-mandated properties
-//! dominate: (a) PER-ITEM error recovery — a syntax error inside one item must
-//! not cascade into the next (§4.3, REQ-3): the top-level loop resyncs to the
+//! dominate: (a) per-item error recovery, where a syntax error inside one item
+//! does not cascade into the next (§4.3, REQ-3): the top-level loop resyncs to the
 //! next item-boundary token (`fn`/`spec`/`#[`/EOF) and keeps parsing; and
-//! (b) MANDATORY-CLAUSE enforcement — a `fn` missing `req`/`ens`/`fx`, or a
+//! (b) mandatory-clause enforcement, where a `fn` missing `req`/`ens`/`fx`, or a
 //! `loop`/`while` missing `inv`/`dec`, is a `SyntaxError`, never a default
-//! (§4.1, REQ-2). It is REGISTRY-FREE: combinator calls parse as generic
+//! (§4.1, REQ-2). It is registry-free: combinator calls parse as generic
 //! `Expr::Call`s; it never consults thermite-spec. Returns a
 //! diagnostics-bearing `ParseResult` and never panics (REQ-4).
 //!
@@ -106,14 +106,14 @@ pub enum SyntaxError {
     /// as a structured diagnostic so external input can never overflow the
     /// C stack and abort the process (parser.md AC-4 / REQ-4; goal.md R-CODE-2).
     ExpressionTooDeep { limit: usize, span: Span },
-    /// A `break;`/`continue;` statement parsed OUTSIDE any `loop`/`while` body
+    /// A `break;`/`continue;` statement parsed outside any `loop`/`while` body
     /// (parser.md REQ-10, #93). A structural rule (like the mandatory-clause
-    /// rule) — break/continue are loop-control statements and have no meaning at
+    /// rule): break/continue are loop-control statements and have no meaning at
     /// a function-body top level; `keyword` is `"break"` or `"continue"`.
     BreakContinueOutsideLoop { keyword: String, span: Span },
     /// A body-position hole `?N` parsed OUTSIDE an exec-fn body
     /// (`.design/forge/goal-repl.md` REQ-4, #193). The v1 scope pin: holes are
-    /// EXEC-fn-body statement position ONLY — a `?N` in a `spec fn` body, a clause,
+    /// exec-fn-body statement position only; a `?N` in a `spec fn` body, a clause,
     /// an expression, or a signature is a structural parse error (`number` is the
     /// verbatim hole number written).
     HoleOutsideFnBody { number: u32, span: Span },
@@ -126,7 +126,7 @@ pub enum SyntaxError {
 /// R-CODE-5), comfortably above any human-authored nesting yet well below the
 /// stack budget for a debug build.
 ///
-/// This single bound guards EVERY recursive-descent family, not just the
+/// This single bound guards every recursive-descent family, including the
 /// expression ladder: nested expressions (`parse_expr`), nested types
 /// (`parse_type` on `Option<Option<...>>`), nested patterns (`parse_pattern`
 /// covering both the slice `[[...]]` and enum `Some(Some(...))` cycles), and the
@@ -134,7 +134,7 @@ pub enum SyntaxError {
 /// re-enters its recursion through a guarded entry point, so a single shared
 /// counter caps them all (a divergence the #29 expr-only guard missed).
 ///
-/// The value MUST sit below the native-stack overflow point: each nesting level
+/// The value must sit below the native-stack overflow point: each nesting level
 /// descends a chain of frames (the full ladder `parse_expr`->...->`parse_primary`
 /// plus paren re-entry for expressions, ~10 frames/level; fewer for types and
 /// patterns), so deep nesting overflows the C stack long before a large count
@@ -265,7 +265,7 @@ type PResult<T> = Result<T, SyntaxError>;
 /// `#[sealed]` abstraction-barrier marker on a `struct`
 /// (`.design/basis/06-provenance-and-sinks.md` REQ-8). `parse_attribute`
 /// produces this; `parse_item` routes `Slag`/`Boundary` onto a `FnItem` and
-/// `Sealed` onto a `StructItem`. A module-private dispatch type — the AST carries
+/// `Sealed` onto a `StructItem`. A module-private dispatch type: the AST carries
 /// the fn attributes as separate `Option`s and the struct seal as a `bool`, not
 /// this union.
 enum ParsedAttr {
@@ -297,7 +297,7 @@ struct Parser<'a> {
     /// Current loop-nesting depth (parser.md REQ-10, #93). Incremented in
     /// `parse_loop_inner` around the loop body parse, decremented after. A
     /// `break;`/`continue;` parsed at depth 0 (outside any `loop`/`while` body)
-    /// is a structural `SyntaxError` — analogous to the mandatory-clause rule
+    /// is a structural `SyntaxError`, analogous to the mandatory-clause rule
     /// (REQ-2): the parser owns presence/position; Verus owns the invariant/
     /// decreases semantics (`verus-lowering.md` REQ-12).
     loop_depth: usize,
@@ -305,10 +305,10 @@ struct Parser<'a> {
     /// #193). Incremented around the body parse of an `Item::Fn` (`parse_fn`),
     /// decremented after; a nested `loop`/`if`/`while` block keeps it > 0 (a hole
     /// in a nested block within a fn body is still in "fn-body statement position").
-    /// A `?N` parsed at depth 0 (a `spec fn` body — which parses at depth 0 — or
+    /// A `?N` parsed at depth 0 (a `spec fn` body, which parses at depth 0, or
     /// any non-fn-body context) is a structural `SyntaxError::HoleOutsideFnBody`
-    /// (the v1 scope pin: holes are EXEC-fn-body statement position ONLY). A `spec
-    /// fn` body is parsed WITHOUT incrementing this, so its holes are rejected.
+    /// (the v1 scope pin: holes are exec-fn-body statement position only). A `spec
+    /// fn` body is parsed without incrementing this, so its holes are rejected.
     fn_body_depth: usize,
     /// The OPEN HOLES (`?N`) accumulated while parsing the CURRENT exec-fn body, in
     /// document order (`.design/forge/goal-repl.md` REQ-4, #193). `parse_fn` saves
@@ -371,7 +371,7 @@ impl<'a> Parser<'a> {
     /// overflow / process abort) once the shared counter hits
     /// `MAX_RECURSION_DEPTH` (parser.md AC-4 / REQ-4; goal.md R-CODE-2).
     ///
-    /// A SINGLE shared counter caps EVERY recursive family — expressions
+    /// A single shared counter caps every recursive family: expressions
     /// (`parse_expr`), types (`parse_type`), patterns (`parse_pattern`), and the
     /// `parse_block`/`parse_if_parts` if-tail cycle. The #29 fix incremented the
     /// counter only inside `parse_expr`, so the type/pattern/if-tail recursions
@@ -650,7 +650,7 @@ impl<'a> Parser<'a> {
                     "reason" => reason = Some(value),
                     "owner" => owner = Some(value),
                     "review" => review = Some(value),
-                    // The lexer/parser do not validate field names — that is a
+                    // The lexer/parser do not validate field names; that is a
                     // downstream (§8/forge) check. Keep unknown fields out of
                     // the structured node but do not error.
                     _ => {}
@@ -686,31 +686,31 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::Arrow, "`->`")?;
         let ret = self.parse_type()?;
         let contract = self.parse_contract(&name)?;
-        // The OPTIONAL `dec <measure>` termination clause of a RECURSIVE exec `fn`
-        // (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). It parses AFTER the
-        // contract (`req`/`ens`/`fx`) and BEFORE the body — the OQ-4 byte-stable
+        // The optional `dec <measure>` termination clause of a recursive exec `fn`
+        // (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). It parses after the
+        // contract (`req`/`ens`/`fx`) and before the body, the OQ-4 byte-stable
         // slot mirroring the loop order (`inv`s then `dec`). Absent → `None` (a
-        // non-recursive `fn`); the `req`/`ens`/`fx` parse is UNCHANGED for every
-        // existing non-recursive fn. A self-calling fn LACKING this clause (and not
-        // `fx diverge`) is a validator error (REQ-2), not a parse error — the
+        // non-recursive `fn`); the `req`/`ens`/`fx` parse is unchanged for every
+        // existing non-recursive fn. A self-calling fn lacking this clause (and not
+        // `fx diverge`) is a validator error (REQ-2), not a parse error: the
         // grammar admits it; the cage rejects it.
         let dec = if self.check(&TokKind::Dec) {
             Some(self.parse_clause(&TokKind::Dec)?)
         } else {
             None
         };
-        // Body fork (ffi-boundary.md REQ-3, OQ-2): a `#[boundary]` fn is bodyless
-        // — terminated by `;` (the foreign body lives in the foreign crate); a
-        // non-`#[boundary]` fn REQUIRES a `{ }` body (the §4.1 body-second rule).
-        // The `;` body is VALID ONLY when `boundary.is_some()`: a bodyless fn
-        // WITHOUT `#[boundary]` is a clear parse error, never silently a boundary
+        // Body fork (ffi-boundary.md REQ-3, OQ-2): a `#[boundary]` fn is bodyless,
+        // terminated by `;` (the foreign body lives in the foreign crate); a
+        // non-`#[boundary]` fn requires a `{ }` body (the §4.1 body-second rule).
+        // The `;` body is valid only when `boundary.is_some()`: a bodyless fn
+        // without `#[boundary]` is a clear parse error, never silently a boundary
         // fn (a normal fn missing its body must not be mistaken for a foreign one).
         // The open holes (`?N`) the body carries (`.design/forge/goal-repl.md`
-        // REQ-4); EMPTY for a boundary fn (no Thermite body) and for a hole-free fn.
+        // REQ-4); empty for a boundary fn (no Thermite body) and for a hole-free fn.
         let mut holes: Vec<Hole> = Vec::new();
         let body = if boundary.is_some() {
-            // A foreign fn MUST be bodyless: `;`, not `{ }`. A `{ }` body on a
-            // `#[boundary]` fn is an error — there is no Thermite body to prove.
+            // A foreign fn must be bodyless: `;`, not `{ }`. A `{ }` body on a
+            // `#[boundary]` fn is an error; there is no Thermite body to prove.
             if self.check(&TokKind::LBrace) {
                 return Err(SyntaxError::Unexpected {
                     expected: "`;` (a `#[boundary]` fn is bodyless — its body is foreign)"
@@ -725,8 +725,8 @@ impl<'a> Parser<'a> {
             )?;
             None
         } else {
-            // A non-boundary fn MUST have a `{ }` body. A `;` here is the OQ-2
-            // case — a bodyless fn WITHOUT `#[boundary]`: a clear, distinct error,
+            // A non-boundary fn must have a `{ }` body. A `;` here is the OQ-2
+            // case, a bodyless fn without `#[boundary]`: a clear, distinct error,
             // not a silent boundary fn.
             if self.check(&TokKind::Semi) {
                 return Err(SyntaxError::Unexpected {
@@ -737,7 +737,7 @@ impl<'a> Parser<'a> {
                     span: self.peek_span(),
                 });
             }
-            // Parse the EXEC fn body inside a fn-body scope so a `?N` hole is
+            // Parse the exec fn body inside a fn-body scope so a `?N` hole is
             // accepted in statement position (`.design/forge/goal-repl.md` REQ-4):
             // save + clear the hole accumulator, mark the fn-body depth, parse, then
             // pull the holes back. Holes from a sibling/prior fn never leak in.
@@ -797,7 +797,7 @@ impl<'a> Parser<'a> {
     /// type-invariant clause follows the closing brace and reuses the existing
     /// `Clause` (verbatim text + parsed expr). `sealed` is the `#[sealed]`
     /// abstraction-barrier flag the caller already parsed from the leading
-    /// attribute (REQ-8). The VALIDATOR rules (field well-formedness; the
+    /// attribute (REQ-8). The validator rules (field well-formedness; the
     /// sealed-construction reject) are stage 1b / Stage 6; here we only parse the
     /// surface into the right AST.
     fn parse_struct(&mut self, start_span: Span, sealed: bool) -> PResult<Item> {
@@ -985,7 +985,7 @@ impl<'a> Parser<'a> {
         let start = self.peek_span();
         // A clause expression is a no-struct-literal head: a clause is followed
         // by another clause keyword or a block `{` (a loop body, a spec-fn body),
-        // so a trailing `Name { … }` must NOT be read as a struct literal
+        // so a trailing `Name { … }` must not be read as a struct literal
         // (`.design/basis/01-adts.md` REQ-2; e.g. `dec xs.len() - i { … }` —
         // the `{` is the body). Struct literals inside call args / parens still
         // parse (those re-enable the context).
@@ -1085,15 +1085,15 @@ impl<'a> Parser<'a> {
                 TokKind::Break => stmts.push(self.parse_break_continue(true)?),
                 TokKind::Continue => stmts.push(self.parse_break_continue(false)?),
                 // A body-position structural hole `?N` (`.design/forge/goal-repl.md`
-                // REQ-4, #193). Valid ONLY in EXEC-fn-body statement position
+                // REQ-4, #193). Valid only in exec-fn-body statement position
                 // (`self.fn_body_depth > 0`): record it on the fn's hole list (the
-                // parser's accumulator, document order) and emit NOTHING into the
-                // statement stream — a hole is not a `Stmt` (it never lowers; the
+                // parser's accumulator, document order) and emit nothing into the
+                // statement stream. A hole is not a `Stmt` (it never lowers; the
                 // holed item short-circuits at `forge check`). A `?N` in a `spec fn`
                 // body (depth 0) or any non-fn-body context is a structural
                 // `SyntaxError::HoleOutsideFnBody` (the v1 scope pin: holes are
                 // exec-fn-body statement position only). A `?N` in expression /
-                // clause / signature position is unreachable here — those are parsed
+                // clause / signature position is unreachable here; those are parsed
                 // by `parse_primary`/`parse_clause`, where `TokKind::Hole` is not a
                 // primary, so it surfaces as a normal "unexpected token" parse error.
                 TokKind::Hole(_) => self.parse_hole()?,
@@ -1113,16 +1113,16 @@ impl<'a> Parser<'a> {
                 TokKind::If => {
                     // `if` is both a statement and an expression
                     // (surface-grammar.md decision 2). The discriminator is
-                    // VALUE-NESS, not source position: "the expression form ...
+                    // value-ness, not source position: "the expression form ...
                     // must have a value; the statement form does not." (OQ-3:
                     // "the corpus only uses the statement form".) It is the
-                    // block's TAIL VALUE only when it (a) has an `else`, (b)
-                    // produces a value — its then-branch block has a tail expr,
-                    // `then.tail.is_some()` — AND (c) nothing follows it before
-                    // the closing `}` (ast.md REQ-6 `Expr::If`). A value-LESS
+                    // block's tail value only when it (a) has an `else`, (b)
+                    // produces a value (its then-branch block has a tail expr,
+                    // `then.tail.is_some()`), and (c) nothing follows it before
+                    // the closing `}` (ast.md REQ-6 `Expr::If`). A value-less
                     // trailing `if/else` (both branches statement-only, e.g.
                     // corpus `if .. { lo = mid + 1; } else { hi = mid; }`) is the
-                    // STATEMENT form and leaves the block `tail: None`.
+                    // statement form and leaves the block `tail: None`.
                     let (cond, then, else_) = self.parse_if_parts()?;
                     if let Some(else_block) = else_ {
                         if self.check(&TokKind::RBrace) && then.tail.is_some() {
@@ -1176,10 +1176,10 @@ impl<'a> Parser<'a> {
     /// `Stmt::Let`; the C10 tuple-destructure `let (x, y) = e;`
     /// (`.design/basis/11-ergonomics.md` REQ-1) DESUGARS, in the parser, to a
     /// fresh temp `let __td<n> = e;` plus one `let x = __td<n>.0;` /
-    /// `let y = __td<n>.1;` per element — reusing the SHIPPED `Expr::TupleProj`
-    /// (C9-B). PURE-DESUGAR: no new AST node, the projection lowers + verifies
+    /// `let y = __td<n>.1;` per element, reusing the shipped `Expr::TupleProj`
+    /// (C9-B). Pure desugar: no new AST node, the projection lowers + verifies
     /// today. v0.1 admits only flat binding/`_` sub-patterns in a tuple `let`
-    /// (a nested `let (Some(x), y) = …` is out of scope — §2.3 one-way).
+    /// (a nested `let (Some(x), y) = …` is out of scope, §2.3 one-way).
     fn parse_let(&mut self) -> PResult<Vec<Stmt>> {
         self.consume(&TokKind::Let, "`let`")?;
         let mutable = self.eat(&TokKind::Mut);
@@ -1275,11 +1275,11 @@ impl<'a> Parser<'a> {
     /// Parse + desugar a C10 `for i in lo..hi inv … { B }` bounded-range loop
     /// (`.design/basis/11-ergonomics.md` REQ-2). `for`/`in` are CONTEXTUAL
     /// identifiers (not reserved keywords), so the caller dispatched on
-    /// `Ident("for")`. PURE-DESUGAR to the SHIPPED `while`+`inv`/`dec` core:
+    /// `Ident("for")`. Pure desugar to the shipped `while`+`inv`/`dec` core:
     ///   `let mut i = lo;`
     ///   `while i < hi inv <user invs> dec hi - i { B; i = i + 1; }`
-    /// The user supplies the `inv` (mandatory, §4.1 — at least one); the `dec` is
-    /// AUTOMATIC (`hi - i`, the canonical monotone measure of a bounded range —
+    /// The user supplies the `inv` (mandatory, §4.1, at least one); the `dec` is
+    /// automatic (`hi - i`, the canonical monotone measure of a bounded range:
     /// strictly decreases on each `i = i + 1`, floored at 0). Returns the `let mut
     /// i` + the `while` loop as two statements.
     fn parse_for(&mut self) -> PResult<Vec<Stmt>> {
@@ -1296,7 +1296,7 @@ impl<'a> Parser<'a> {
             return Err(self.unexpected("`in` after the `for` loop variable"));
         }
         // The range `lo..hi` is a no-struct-literal head (the `{` after `hi`/the
-        // inv clauses opens the body, never a struct literal — mirrors `while`).
+        // inv clauses opens the body, never a struct literal, mirrors `while`).
         let (lo, hi) = self.with_no_struct_literal(|p| {
             let lo = p.parse_expr()?;
             p.consume(
@@ -1306,8 +1306,8 @@ impl<'a> Parser<'a> {
             let hi = p.parse_expr()?;
             Ok((lo, hi))
         })?;
-        // `inv` — one or more (mandatory; the for-loop is a loop, §4.1). NO `dec`
-        // — it is synthesized below (REQ-2).
+        // `inv` — one or more (mandatory; the for-loop is a loop, §4.1). No `dec`;
+        // it is synthesized below (REQ-2).
         if !self.check(&TokKind::Inv) {
             return Err(SyntaxError::MissingClause {
                 item: "for".to_string(),
@@ -1319,7 +1319,7 @@ impl<'a> Parser<'a> {
         while self.check(&TokKind::Inv) {
             invs.push(self.parse_clause(&TokKind::Inv)?);
         }
-        // A `dec` on a `for` is an error — the `dec` is automatic (REQ-2).
+        // A `dec` on a `for` is an error; the `dec` is automatic (REQ-2).
         if self.check(&TokKind::Dec) {
             return Err(SyntaxError::Unexpected {
                 expected: "the loop body `{` (a `for` loop's `dec` is automatic — \
@@ -1382,12 +1382,12 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse + desugar a C10 `if let P = e { T } else { E }`
-    /// (`.design/basis/11-ergonomics.md` REQ-5). PURE-DESUGAR to the SHIPPED
-    /// `Expr::Match { e, [P => T, _ => E] }`. v0.1 admits the VALUE form (both
-    /// branches reduce to a tail expression) with a mandatory `else` — the
+    /// (`.design/basis/11-ergonomics.md` REQ-5). Pure desugar to the shipped
+    /// `Expr::Match { e, [P => T, _ => E] }`. v0.1 admits the value form (both
+    /// branches reduce to a tail expression) with a mandatory `else`; the
     /// statement-`if`-without-`else` `_ => ()` form needs a unit expr the grammar
     /// does not surface (OQ-4). Returns the `Expr::Match` and whether it is in
-    /// value (tail) position (always true here — the value form). The caller
+    /// value (tail) position (always true here, the value form). The caller
     /// places it as the block tail or a `Stmt::Expr`.
     fn parse_if_let(&mut self) -> PResult<(Expr, bool)> {
         self.consume(&TokKind::If, "`if`")?;
@@ -1424,7 +1424,7 @@ impl<'a> Parser<'a> {
 
     /// Reduce a single-tail-expression `Block` to its arm-body `Expr`
     /// (`.design/basis/11-ergonomics.md` REQ-5). A v0.1 `if let` branch is a
-    /// value-producing block whose body IS its tail expression (`{ v }`); a
+    /// value-producing block whose body is its tail expression (`{ v }`); a
     /// statement-bearing branch is out of scope (the desugar target is a `match`
     /// arm body, an `Expr`, not a block). A branch with no tail (or with leading
     /// statements) is a structured `SyntaxError`, never silently dropped.
@@ -1450,19 +1450,19 @@ impl<'a> Parser<'a> {
     }
 
     /// Parse + desugar a C10 `while let Variant(_) = e inv … dec … { B }`
-    /// (`.design/basis/11-ergonomics.md` REQ-5). PINNED (GROUNDED): desugar to the
-    /// canonical `while (e is Variant)` form (NOT `loop { match … None => break }`
-    /// — the loop+break shape fails to carry the post-exit fact, L0). v0.1 admits
-    /// a PAYLOAD-FREE pattern (`Variant`, `Variant(_)`, `Variant { .. }`) — the
-    /// condition is `e is Variant` (the SHIPPED `Expr::Is`), no payload rebind.
-    /// The user supplies the loop `inv`/`dec` exactly as for a `while` (mandatory,
+    /// (`.design/basis/11-ergonomics.md` REQ-5). Pinned (GROUNDED): desugar to the
+    /// canonical `while (e is Variant)` form, not `loop { match … None => break }`
+    /// (the loop+break shape fails to carry the post-exit fact, L0). v0.1 admits
+    /// a payload-free pattern (`Variant`, `Variant(_)`, `Variant { .. }`); the
+    /// condition is `e is Variant` (the shipped `Expr::Is`), no payload rebind.
+    /// The user supplies the loop `inv`/`dec` as for a `while` (mandatory,
     /// §4.1). Returns the `LoopNode`.
     fn parse_while_let(&mut self) -> PResult<LoopNode> {
         let start = self.peek_span();
         self.consume(&TokKind::While, "`while`")?;
         self.consume(&TokKind::Let, "`let`")?;
         let pattern = self.parse_pattern()?;
-        // Extract the variant head of the payload-free pattern (the SHIPPED
+        // Extract the variant head of the payload-free pattern (the shipped
         // `Expr::Is` discriminant). A binding/wildcard pattern is rejected: a
         // `while let` must discriminate a variant (`e is Variant`).
         let variant = match &pattern {
@@ -1502,7 +1502,7 @@ impl<'a> Parser<'a> {
         let body_result = self.parse_block();
         self.loop_depth -= 1;
         let body = body_result?;
-        // The condition `e is Variant` (the SHIPPED `Expr::Is`).
+        // The condition `e is Variant` (the shipped `Expr::Is`).
         let cond = Expr::Is {
             scrutinee: Box::new(scrutinee),
             variant,
@@ -1546,9 +1546,9 @@ impl<'a> Parser<'a> {
     /// Parse a body-position structural hole `?N` (`.design/forge/goal-repl.md`
     /// REQ-4, #193). Records the hole (number + span) on the parser's accumulator
     /// (`pending_holes`, document order — pulled into `FnItem.holes` by `parse_fn`)
-    /// and consumes the token, emitting NO statement (a hole is not a `Stmt`). A
-    /// hole is value-less + payload-less and takes NO trailing `;` (the §5.1
-    /// `body = ?0` shape). It is valid ONLY in EXEC-fn-body statement position
+    /// and consumes the token, emitting no statement (a hole is not a `Stmt`). A
+    /// hole is value-less + payload-less and takes no trailing `;` (the §5.1
+    /// `body = ?0` shape). It is valid only in exec-fn-body statement position
     /// (`self.fn_body_depth > 0`); a `?N` in a `spec fn` body (depth 0) is a
     /// structural `SyntaxError::HoleOutsideFnBody` (the v1 scope pin). Returns
     /// `Ok(())` — `parse_block` pushes nothing into `stmts`.
@@ -1557,7 +1557,7 @@ impl<'a> Parser<'a> {
         let number = match self.peek() {
             TokKind::Hole(n) => *n,
             // Unreachable: the caller dispatches here only on a `TokKind::Hole`.
-            // A structured error (NO panic — R-CODE-2) keeps the parser total.
+            // A structured error (no panic, R-CODE-2) keeps the parser total.
             other => {
                 return Err(SyntaxError::Unexpected {
                     expected: "a hole `?N`".to_string(),
@@ -1594,7 +1594,7 @@ impl<'a> Parser<'a> {
         // expr-only guard never saw (only the condition routes through
         // `parse_expr`). Guarding the cycle's re-entry point caps it so deep
         // tail-`if` nesting returns a diagnostic, never aborts (parser.md AC-4;
-        // #31 — the construct the #30 fix introduced).
+        // #31, the construct the #30 fix introduced).
         self.guard_recursion(Self::parse_if_parts_inner)
     }
 
@@ -1618,10 +1618,10 @@ impl<'a> Parser<'a> {
         // Bound recursion: a `loop`/`while` body is a `Block`
         // (surface-grammar.md REQ-3), and a `Block` may contain a nested
         // `loop`/`while` statement, so `parse_block` -> this fn -> `parse_block`
-        // is a cycle that — like the if-tail cycle (#31) — never saw the #29
+        // is a cycle that, like the if-tail cycle (#31), never saw the #29
         // expr-only guard. Guarding this re-entry caps deep loop nesting to a
         // structured diagnostic instead of a native stack overflow (parser.md
-        // AC-4; #32 — the last unguarded block-nesting vector).
+        // AC-4; #32, the last unguarded block-nesting vector).
         self.guard_recursion(Self::parse_loop_inner)
     }
 
@@ -1668,8 +1668,8 @@ impl<'a> Parser<'a> {
         }
 
         // Enter the loop body at depth+1 so a `break;`/`continue;` anywhere
-        // inside it (including nested `if` blocks — depth stays > 0) is accepted
-        // (parser.md REQ-10, #93). A NESTED loop bumps the depth again; the
+        // inside it (including nested `if` blocks, depth stays > 0) is accepted
+        // (parser.md REQ-10, #93). A nested loop bumps the depth again; the
         // decrement is symmetric on every exit path (the `?` on `parse_block`
         // would skip a manual decrement, so guard around it).
         self.loop_depth += 1;
@@ -1724,7 +1724,7 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    /// Comparison is NON-associative (surface-grammar.md): at most one CmpOp.
+    /// Comparison is non-associative (surface-grammar.md): at most one CmpOp.
     /// Its operands are `is`-level (so `s is Circle` is a valid comparison
     /// operand, e.g. `result == (s is Circle)`).
     fn parse_cmp(&mut self) -> PResult<Expr> {
@@ -1755,10 +1755,10 @@ impl<'a> Parser<'a> {
     /// (`.design/basis/01-adts.md` REQ-6): a `bool`-valued postfix operator
     /// producing `Expr::Is`. The variant is a (possibly `::`-segmented) path.
     /// Non-associative (a discrimination is not chained), sitting just below
-    /// comparison so `s is Circle` reads as one operand. The VALIDATOR rule
+    /// comparison so `s is Circle` reads as one operand. The validator rule
     /// (accept only a declared variant of the scrutinee's enum) is stage 1b.
     fn parse_is(&mut self) -> PResult<Expr> {
-        // OQ-3 (parser.md): `is` sits just below comparison and ABOVE the #92
+        // OQ-3 (parser.md): `is` sits just below comparison and above the #92
         // bitwise/shift tiers, so `a & b is Variant` reads as `(a & b) is Variant`
         // (its scrutinee is a full bitwise-or expression). The ladder below `is`
         // is `parse_bitor`→`parse_bitxor`→`parse_bitand`→`parse_shift`→`parse_add`.
@@ -1778,7 +1778,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Tier 6 `|` — bitwise or (#92, `surface-grammar.md` REQ-10). A binary `|`
-    /// joins two operands here; a `|` that OPENS a closure is recognized only in
+    /// joins two operands here; a `|` that opens a closure is recognized only in
     /// `parse_primary` (`Closure`), so the two `|` roles are disambiguated by
     /// position (parser.md REQ-8 / AC-6): an operator `|` is seen at the start of
     /// an iteration of this loop (after a left operand), never at expression head.
@@ -1812,7 +1812,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Tier 4 `&` — bitwise and (#92). The binary `&` joins two operands here; the
-    /// PREFIX reference `&`/`&mut` is parsed in `parse_ref` (one operand) —
+    /// prefix reference `&`/`&mut` is parsed in `parse_ref` (one operand),
     /// disambiguated by position (parser.md REQ-8 / AC-6): a prefix `&` is seen at
     /// expression head, a binary `&` after a left operand at this loop's start.
     fn parse_bitand(&mut self) -> PResult<Expr> {
@@ -1829,9 +1829,9 @@ impl<'a> Parser<'a> {
         Ok(lhs)
     }
 
-    /// Tier 3 `<<` `>>` — shifts (#92), below `+ -`. PARTIAL: an unbounded shift
+    /// Tier 3 `<<` `>>` — shifts (#92), below `+ -`. Partial: an unbounded shift
     /// amount fails the §7 shift-bound obligation at L3 (ast.md REQ-11), but the
-    /// PARSER builds the `Binary` node unconditionally (parser.md REQ-9).
+    /// parser builds the `Binary` node unconditionally (parser.md REQ-9).
     fn parse_shift(&mut self) -> PResult<Expr> {
         let mut lhs = self.parse_add()?;
         loop {
@@ -1877,7 +1877,7 @@ impl<'a> Parser<'a> {
                 TokKind::Star => BinOp::Mul,
                 TokKind::Slash => BinOp::Div,
                 // `%` folds into the `MulExpr` tier alongside `*`/`/` (#92,
-                // tier 1). PARTIAL: a zero divisor fails the §7 obligation at L3
+                // tier 1). Partial: a zero divisor fails the §7 obligation at L3
                 // (ast.md REQ-11); the parser builds the node unconditionally.
                 TokKind::Percent => BinOp::Rem,
                 _ => break,
@@ -1908,8 +1908,8 @@ impl<'a> Parser<'a> {
     /// The prefix `!` tier (#92, `surface-grammar.md` REQ-10 `UnaryExpr`): prefix
     /// `!` binds tighter than every binary operator (so `!a & b` is `(!a) & b`)
     /// and sits between `parse_cast` and `parse_ref`. A standalone `!` is
-    /// unambiguously the unary operator — `!=` is the distinct maximal-munch
-    /// `TokKind::Ne` token (parser.md REQ-8). The ONE `UnaryOp::Not` is built
+    /// unambiguously the unary operator; `!=` is the distinct maximal-munch
+    /// `TokKind::Ne` token (parser.md REQ-8). The one `UnaryOp::Not` is built
     /// regardless of operand type; its bitwise-vs-logical meaning is resolved
     /// downstream by Verus's type-directed `!` (§2.3, ast.md OQ-4). `!` is
     /// right-recursive (`!!a` is `!(!a)`).
@@ -1936,8 +1936,8 @@ impl<'a> Parser<'a> {
         } else if self.eat(&TokKind::Star) {
             // Prefix dereference `*EXPR` (`.design/basis/01-adts.md` REQ-3): the
             // recursive call `sum_list(*t)` derefs the boxed tail. A new
-            // `Expr::Deref` unary — no existing node fits (`Ref` is its inverse).
-            // SEMANTICS are stage 1c; surface-only here.
+            // `Expr::Deref` unary (no existing node fits; `Ref` is its inverse).
+            // Semantics are stage 1c; surface-only here.
             let expr = self.parse_ref()?;
             Ok(Expr::Deref(Box::new(expr)))
         } else {
@@ -1953,8 +1953,8 @@ impl<'a> Parser<'a> {
                     self.bump();
                     // A numeric projection `e.0`/`e.1`/…
                     // (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8, OQ-1
-                    // RESOLVED → a dedicated `Expr::TupleProj { receiver, index }`,
-                    // NOT an overloaded `Expr::Field` with a string `"0"` name: a
+                    // resolved to a dedicated `Expr::TupleProj { receiver, index }`,
+                    // not an overloaded `Expr::Field` with a string `"0"` name: a
                     // tuple index is a `usize`, and a dedicated node keeps the
                     // projection lowering (`<recv>.<index>`) distinct from a
                     // struct/method `.field`). A tuple index lexes as a
@@ -2065,12 +2065,12 @@ impl<'a> Parser<'a> {
                 Ok(Expr::BoolLit(b))
             }
             // A string literal `"hello"` as a primary expression
-            // (`.design/basis/07-strings.md` REQ-1). The literal LEXES today
+            // (`.design/basis/07-strings.md` REQ-1). The literal lexes today
             // (`TokKind::Str(String)`); this arm accepts it as an `Expr::StrLit`,
             // mirroring the `IntLit`/`BoolLit` value-carrying literal precedent.
-            // The token's EXISTING `parse_slag`/`parse_attribute` consumers (the
+            // The token's existing `parse_slag`/`parse_attribute` consumers (the
             // `#[slag(reason = "…")]` / `#[boundary("…")]` field values) are
-            // UNCHANGED — those read the token directly via `take_string`, never
+            // unchanged: those read the token directly via `take_string`, never
             // through `parse_primary`, so a field value is still a token-level
             // string, not an `Expr` (REQ-1; no regression to sealed/boundary parse).
             TokKind::Str(s) => {
@@ -2084,17 +2084,17 @@ impl<'a> Parser<'a> {
             TokKind::LParen => {
                 self.bump();
                 // A parenthesised group re-enables struct literals (REQ-2):
-                // `(s is Circle)` / `(A { x: 1 })`. The SAME `(` opens an n-tuple
+                // `(s is Circle)` / `(A { x: 1 })`. The same `(` opens an n-tuple
                 // construction `(a, b, …)`
                 // (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the parser
-                // distinguishes by the comma — `()` → unit (the empty group; no
+                // distinguishes by the comma: `()` → unit (the empty group; no
                 // tuple expr, mirroring `Type::Unit`), `(e)` → grouping (the inner
                 // expr, arity 1), `(a, b, …)` → `Expr::Tuple` (arity ≥ 2).
                 self.with_struct_literal(|p| {
                     if p.check(&TokKind::RParen) {
-                        // Arity 0: the empty group `()` — the unit value. There is
+                        // Arity 0: the empty group `()`, the unit value. There is
                         // no `Expr::Unit` node; v1 surfaces unit only as a return
-                        // TYPE (`Type::Unit`), so a literal `()` value is not a
+                        // type (`Type::Unit`), so a literal `()` value is not a
                         // grammar form. Reject it explicitly rather than silently.
                         return Err(
                             p.unexpected("an expression (an empty `()` is not a value form)")
@@ -2127,14 +2127,14 @@ impl<'a> Parser<'a> {
     /// Parse a path expression `Ident (:: Ident)*` (`lo`, `u32::MAX`, `Some`),
     /// or a struct-literal `Path { field: val, … }` when a `{` follows and the
     /// struct-literal context is enabled (`.design/basis/01-adts.md` REQ-2).
-    /// `::` is a PATH separator, never method dispatch (REQ-6).
+    /// `::` is a path separator, never method dispatch (REQ-6).
     fn parse_path_expr(&mut self) -> PResult<Expr> {
         let mut segments = vec![self.take_ident("a path")?];
         while self.eat(&TokKind::ColonCol) {
             segments.push(self.take_ident("a path segment")?);
         }
         // A `Path { … }` is a struct / struct-variant construction (REQ-2),
-        // EXCEPT in a no-struct-literal head (`match s { … }`), where the `{`
+        // except in a no-struct-literal head (`match s { … }`), where the `{`
         // opens the arm/then/loop block, not a struct literal.
         if !self.no_struct_literal && self.check(&TokKind::LBrace) {
             return self.parse_struct_lit(segments);
@@ -2206,7 +2206,7 @@ impl<'a> Parser<'a> {
             // (`.design/basis/11-ergonomics.md` REQ-3): a `bool`-valued condition
             // evaluated in the arm's binding scope. The guard is a no-struct-literal
             // head (the `=>` follows; a trailing `Name { … }` would be ambiguous),
-            // mirroring the `if`/`while`/`match`-head rule. A guarded arm does NOT
+            // mirroring the `if`/`while`/`match`-head rule. A guarded arm does not
             // complete a match (the validator's exhaustiveness check, REQ-3).
             let guard = if self.eat(&TokKind::If) {
                 Some(self.with_no_struct_literal(Self::parse_expr)?)
@@ -2214,8 +2214,8 @@ impl<'a> Parser<'a> {
                 None
             };
             self.consume(&TokKind::FatArrow, "`=>`")?;
-            // An arm body is in VALUE position, so a struct-literal construction
-            // (`Point { x: 1 }`) MUST parse here even when the `match` sits under
+            // An arm body is in value position, so a struct-literal construction
+            // (`Point { x: 1 }`) must parse here even when the `match` sits under
             // an enclosing no-struct-literal head (a contract clause / `match`
             // scrutinee). Re-enable struct literals exactly as `parse_call_args`
             // does inside `( … )` (REQ-2/REQ-4); the scrutinee above stays under
@@ -2263,7 +2263,7 @@ impl<'a> Parser<'a> {
         //
         // An or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4):
         // parse one alternative, then while a `|` follows collect more, building a
-        // flat `Pattern::Or` (a single alternative stays the bare pattern — no
+        // flat `Pattern::Or` (a single alternative stays the bare pattern; no
         // spurious `Or` wrapper, byte-stable for the pre-C10 corpus). The `|`
         // here is unambiguously the pattern alternator: a pattern position never
         // starts a bitwise/closure `|` (those are expression-tier).
@@ -2414,11 +2414,11 @@ impl<'a> Parser<'a> {
 
     fn parse_type_inner(&mut self) -> PResult<Type> {
         match self.peek().clone() {
-            // `()` is the ONE sanctioned unit-type spelling (surface-grammar.md
+            // `()` is the one sanctioned unit-type spelling (surface-grammar.md
             // decision 4 / REQ-8): written explicitly in a return position. The
-            // SAME `(` opens an n-tuple type `(T, U, …)`
+            // same `(` opens an n-tuple type `(T, U, …)`
             // (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the parser
-            // distinguishes by the comma — `()` → `Type::Unit` (arity 0), `(T)`
+            // distinguishes by the comma: `()` → `Type::Unit` (arity 0), `(T)`
             // → grouping (the inner type, arity 1), `(T, U, …)` → `Type::Tuple`
             // (arity ≥ 2).
             TokKind::LParen => {
@@ -2478,7 +2478,7 @@ impl<'a> Parser<'a> {
                     // The heap-indirection primitive `Box<T>`
                     // (`.design/basis/01-adts.md` REQ-3, OQ-1 RESOLVED: a
                     // dedicated `Type::Box` node). `Box` is a contextual
-                    // identifier (NOT a reserved keyword), matched here by name.
+                    // identifier (not a reserved keyword), matched here by name.
                     "Box" => {
                         self.consume(&TokKind::Lt, "`<` after `Box`")?;
                         let inner = self.parse_type()?;
@@ -2488,12 +2488,12 @@ impl<'a> Parser<'a> {
                     // The bounded growable-collection primitive `Vec<T>`
                     // (`.design/basis/04-collections.md` REQ-1, OQ-2 RESOLVED: a
                     // dedicated `Type::Vec` node, mirroring `Box<T>`). `Vec` is a
-                    // contextual identifier (NOT a reserved keyword), matched here
-                    // by name exactly as `Box` is. The element type `T` parses
+                    // contextual identifier (not a reserved keyword), matched here
+                    // by name as `Box` is. The element type `T` parses
                     // recursively; `Vec<u64>` (`conformance/vec_demo.th`) yields
                     // `Type::Vec(Box::new(Type::Prim(U64)))`. Its `push`/`pop`/
                     // `get`/`len` operations are ordinary `MethodCall`s parsed by
-                    // the existing postfix `.` form (REQ-6) — no new surface here.
+                    // the existing postfix `.` form (REQ-6); no new surface here.
                     "Vec" => {
                         self.consume(&TokKind::Lt, "`<` after `Vec`")?;
                         let inner = self.parse_type()?;
@@ -2502,23 +2502,23 @@ impl<'a> Parser<'a> {
                     }
                     // The bounded owned-text primitive `String`
                     // (`.design/basis/07-strings.md` REQ-2, OQ-3 RESOLVED: a
-                    // dedicated NULLARY `Type::String` node — no `<T>` argument,
-                    // unlike `Vec<T>`, because the element type is FIXED to `u8`
+                    // dedicated nullary `Type::String` node with no `<T>` argument,
+                    // unlike `Vec<T>`, because the element type is fixed to `u8`
                     // (the char model is bytes for v1). `String` is a contextual
-                    // identifier (NOT a reserved keyword), matched here by name
-                    // exactly as `Box`/`Vec` are. The borrowed `str`-view is
+                    // identifier (not a reserved keyword), matched here by name
+                    // as `Box`/`Vec` are. The borrowed `str`-view is
                     // `&String` (`Ref { inner: String }`), parsed by the `&` arm
                     // above. `String`'s `len`/`byte_at`/`slice`/`concat` ops are
-                    // ordinary `MethodCall`s (the existing postfix `.` form) — no
+                    // ordinary `MethodCall`s (the existing postfix `.` form); no
                     // new surface; `==`/`+` are the existing `Binary` ops.
                     "String" => Ok(Type::String),
                     // The built-in optional primitive `Option<T>`
                     // (`.design/basis/09-option-result.md` REQ-1, OQ-1 RESOLVED: a
                     // dedicated `Type::Option` node, mirroring `Box<T>`/`Vec<T>`).
-                    // `Option` STOPS being a string-named `Generic` so the
+                    // `Option` stops being a string-named `Generic` so the
                     // lowerer/validator key on the node kind. `Option` is a
-                    // contextual ident (NOT a reserved keyword), matched here by
-                    // name exactly as `Box`/`Vec` are. `Some(v)`/`None`/`match`/`is`
+                    // contextual ident (not a reserved keyword), matched here by
+                    // name as `Box`/`Vec` are. `Some(v)`/`None`/`match`/`is`
                     // reuse the existing `Call`/`Path`/`Match`/`Is` nodes.
                     "Option" => {
                         self.consume(&TokKind::Lt, "`<` after `Option`")?;
@@ -2528,11 +2528,11 @@ impl<'a> Parser<'a> {
                     }
                     // The built-in fallible primitive `Result<T, E>`
                     // (`.design/basis/09-option-result.md` REQ-2, OQ-1 RESOLVED: a
-                    // dedicated TWO-type-argument node — the FIRST two-arg type in
-                    // the grammar, the load-bearing parser change of C7). The
+                    // dedicated two-type-argument node, the first two-arg type in
+                    // the grammar, the parser change of C7). The
                     // single-arg `Generic { name, arg }` dies at the comma; this arm
                     // parses `<T, E>` (a comma + a second type + `>`). `Result` is a
-                    // contextual ident matched by name exactly as `Box`/`Vec`/
+                    // contextual ident matched by name as `Box`/`Vec`/
                     // `Option`. `Ok(v)`/`Err(e)`/`match`/`is` reuse the existing
                     // `Call`/`Match`/`Is` nodes.
                     "Result" => {
@@ -2545,14 +2545,14 @@ impl<'a> Parser<'a> {
                     }
                     // The bounded verified key-value primitive `Map<K, V>`
                     // (`.design/basis/13-map.md` REQ-1, C12: the SECOND
-                    // two-type-argument node, mirroring `Result<T, E>` VERBATIM —
-                    // the single-arg `Generic { name, arg }` cannot carry a key AND
-                    // a value (it dies at the comma, the exact C7 finding). `Map` is
-                    // a contextual ident matched by name exactly as `Box`/`Vec`/
+                    // two-type-argument node, mirroring `Result<T, E>`:
+                    // the single-arg `Generic { name, arg }` cannot carry a key and
+                    // a value (it dies at the comma, the C7 finding). `Map` is
+                    // a contextual ident matched by name as `Box`/`Vec`/
                     // `Option`/`Result`. The key `K` and value `V` parse recursively;
                     // `Map<u64, u64>` yields `Type::Map(Box::new(u64), Box::new(u64))`.
                     // Its `insert`/`get`/`contains_key`/`len` ops are ordinary
-                    // `MethodCall`s (the existing postfix `.` form) — no new surface.
+                    // `MethodCall`s (the existing postfix `.` form); no new surface.
                     "Map" => {
                         self.consume(&TokKind::Lt, "`<` after `Map`")?;
                         let key_ty = self.parse_type()?;

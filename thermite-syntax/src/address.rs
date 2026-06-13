@@ -3,10 +3,10 @@
 //!
 //! Governing design: `.design/syntax/semantic-addressing.md`. Addresses are the
 //! operands of `forge edit <addr>` and the keys of the per-item proof cache
-//! (§5.3), so they must be STABLE under unrelated edits: the address of a block
-//! is a function of its position WITHIN ITS ENCLOSING ITEM only (REQ-5).
+//! (§5.3), so they must be stable under unrelated edits: the address of a block
+//! is a function of its position within its enclosing item only (REQ-5).
 //! `while` and `loop` share the `loop#N` namespace (REQ-2). Resolution is
-//! bidirectional and never panics — a bad address yields a structured
+//! bidirectional and never panics: a bad address yields a structured
 //! `AddressError` (REQ-6). Blocker #26 is resolved by the oracle: 1-based source
 //! order, all invariants counted (`inv#2` = `forall_below`, `inv#3` =
 //! `forall_from`).
@@ -55,7 +55,7 @@ pub enum AddrKind {
     Loop,
     Inv,
     Dec,
-    /// An open body HOLE `?N` (`.design/forge/goal-repl.md` REQ-4, #193). Addressed
+    /// An open body hole `?N` (`.design/forge/goal-repl.md` REQ-4, #193). Addressed
     /// `<fn>.?N` where `N` is the hole's verbatim surface number. The operand of
     /// `forge fill <fn>.?N <code>`.
     Hole,
@@ -87,7 +87,7 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
                     surface_keyword: None,
                     text: None,
                 });
-                // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — no
+                // A boundary fn (ffi-boundary.md REQ-2) has `body: None`: no
                 // Thermite body, so no addressable inner loops. An in-language fn
                 // carries a body whose loops are numbered as before.
                 if let Some(body) = &f.body {
@@ -95,9 +95,9 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
                 }
                 // Open body holes (`?N`) are addressed `<fn>.?N` by their verbatim
                 // surface number (`.design/forge/goal-repl.md` REQ-4, #193), in
-                // document order — the operand of `forge fill <fn>.?N <code>`. EMPTY
-                // for every hole-free fn (the entire pre-#193 corpus), so this is a
-                // purely additive set of addresses; a holed fn never certifies
+                // document order: the operand of `forge fill <fn>.?N <code>`. Empty
+                // for every hole-free fn (the entire pre-#193 corpus), so this is an
+                // additive set of addresses; a holed fn never certifies
                 // (`forge check` short-circuits it), so these addresses exist only to
                 // let `forge fill` name the hole to splice.
                 for hole in &f.holes {
@@ -120,9 +120,9 @@ pub fn addresses_of(program: &Program) -> Vec<AddressEntry> {
                 });
             }
             // A `struct`/`enum` type item (`.design/basis/01-adts.md` Stage 1a)
-            // is NOT an addressable node: the addressing scheme
+            // is not an addressable node: the addressing scheme
             // (`.design/syntax/semantic-addressing.md` REQ-1/REQ-2) roots only at
-            // FUNCTION names and numbers their inner loops/`inv`/`dec` — a type
+            // function names and numbers their inner loops/`inv`/`dec`; a type
             // declaration has no loops, no contract clauses, hence no address.
             // This additive no-op arm keeps the same-crate exhaustive `match`
             // compiling; types gain no `forge edit` address.

@@ -4,20 +4,20 @@
 //! thermite-syntax is a leaf crate and cannot depend on thermite-lower).
 //!
 //! The invariant under audit (commit a2c0f73): reshaping `TokKind::Int` /
-//! `Expr::IntLit` to struct variants `{ value: u128, raw: String }` is PURELY
-//! ADDITIVE — `value` is the `_`-stripped number (the original, UNCHANGED
+//! `Expr::IntLit` to struct variants `{ value: u128, raw: String }` is
+//! additive. `value` is the `_`-stripped number (the original, unchanged
 //! semantics) and `raw` is the verbatim source slice.
 //!
 //! These tests pin the authority's expected round-trip
 //! (`.design/syntax/lexer.md` REQ-3 / AC-2b, `.design/syntax/ast.md` REQ-6 /
 //! AC-1b). Expected values are hand-derived from the cited REQ/AC text and the
-//! design constant `1_000_000` (Appendix A), NEVER copied from the toolchain's
+//! design constant `1_000_000` (Appendix A), never copied from the toolchain's
 //! own output (goal.md R-CHAR-3).
 //!
-//! NOTE FROM THE CRITIC: every assertion below is expected to PASS under
-//! a2c0f73 — they document that NO divergence exists across the edge cases the
+//! Note from the critic: every assertion below is expected to pass under
+//! a2c0f73; they document that no divergence exists across the edge cases the
 //! spec names but the pre-existing `tests/conformance.rs` battery did not cover
-//! (`0`, multi-underscore `1_2_3`, multi-`_`-with-trailing). If any FAILS, the
+//! (`0`, multi-underscore `1_2_3`, multi-`_`-with-trailing). If any fails, the
 //! additive invariant is broken.
 
 use thermite_syntax::{tokenize, TokKind};
@@ -35,8 +35,8 @@ fn first_int(src: &str) -> Option<(u128, String)> {
     })
 }
 
-/// lexer.md AC-2b: `0` lexes to value `0` AND raw `"0"` (a separator-free
-/// literal; the spec names `0` explicitly). This edge case is NOT covered by
+/// lexer.md AC-2b: `0` lexes to value `0` and raw `"0"` (a separator-free
+/// literal; the spec names `0` explicitly). This edge case is not covered by
 /// `tests/conformance.rs::int_literal_preserves_raw` (which probes `1_000_000`,
 /// `42`, `1_`). Expected hand-derived from AC-2b ("A literal with no separators
 /// (`0`) has `raw == "0"`").
@@ -46,7 +46,7 @@ fn divergence_intlit_zero_value_and_raw() {
 }
 
 /// lexer.md REQ-3: a multi-underscore literal `1_2_3` has value `123` (all
-/// interior `_` stripped) AND raw `"1_2_3"` (every interior `_` preserved
+/// interior `_` stripped) and raw `"1_2_3"` (every interior `_` preserved
 /// verbatim). Expected hand-derived from REQ-3 ("the `_` separators are
 /// removed" for value; "the exact source substring … separators included" for
 /// raw).
@@ -56,7 +56,7 @@ fn divergence_intlit_multi_underscore_value_and_raw() {
 }
 
 /// lexer.md REQ-3 / AC-2b: a trailing `_` adjacent to a multi-`_` run is in
-/// NEITHER value nor raw — both end at the last digit. `1_000_` lexes to value
+/// neither value nor raw; both end at the last digit. `1_000_` lexes to value
 /// `1000` and raw `"1_000"` (the trailing `_` is dropped from raw; interior
 /// `_` kept). Expected hand-derived from REQ-3 ("A trailing/leading `_` …
 /// excluded from BOTH the value and the raw (the raw ends at the last digit)").
@@ -67,7 +67,7 @@ fn divergence_intlit_trailing_underscore_excluded_from_raw() {
 
 /// lexer.md REQ-3: `raw` equals the span's source slice by construction
 /// (`source[span.start .. span.start + span.len]`). Pin that `raw` and the
-/// recorded span stay consistent for a separator-bearing literal — a divergence
+/// recorded span stay consistent for a separator-bearing literal; a divergence
 /// here would mean `raw` and `span` describe different substrings. Expected
 /// derived from REQ-3 ("The raw is exactly the span's source slice").
 #[test]

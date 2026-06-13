@@ -1,12 +1,12 @@
 //! Thermite lexer — a single-pass, hand-written scanner over the source `&str`
 //! producing a flat `Vec<Token>` for the recursive-descent parser.
 //!
-//! Governing design: `.design/syntax/lexer.md`. Thermite has NO significant
+//! Governing design: `.design/syntax/lexer.md`. Thermite has no significant
 //! whitespace (§4.3); whitespace and `//` comments are insignificant separators
 //! (REQ-5). The keyword set is exactly the surface-grammar terminals (REQ-2);
 //! effect-row names (`read`, `write`, ...) and `slag`/`reason`/`owner`/`review`
-//! are lexed as IDENTIFIERS (contextual keywords, OQ-1). The scanner is
-//! REGISTRY-FREE: `forall_in`, `sorted`, `len` are plain identifiers. Maximal
+//! are lexed as identifiers (contextual keywords, OQ-1). The scanner is
+//! registry-free: `forall_in`, `sorted`, `len` are plain identifiers. Maximal
 //! munch (REQ-6) picks the longest operator at each position. Errors are
 //! `SyntaxError` values; the lexer never panics (REQ-8).
 //!
@@ -30,11 +30,11 @@
 //!
 //! The body-position structural hole `?N` lexes to a single `TokKind::Hole(N)`
 //! token: the `'?'` branch in `tokenize` → `lex_hole` reads `?` + a run of ASCII
-//! digits into the verbatim hole NUMBER (`?0` → `Hole(0)`). A bare `?` with no
+//! digits into the verbatim hole number (`?0` → `Hole(0)`). A bare `?` with no
 //! following digit is a stray-char `SyntaxError` (REQ-8; Thermite has no
-//! `?`-operator — §2.3), never a partial token, never a panic. The lexer lexes
-//! `?N` ANYWHERE the scanner sees it; the PARSER (`parser.md` REQ-11) restricts a
-//! hole to fn-body STATEMENT position (a `?N` in expression / clause / signature
+//! `?`-operator, §2.3), never a partial token, never a panic. The lexer lexes
+//! `?N` anywhere the scanner sees it; the parser (`parser.md` REQ-11) restricts a
+//! hole to fn-body statement position (a `?N` in expression / clause / signature
 //! position is a parse error). Consumer: `parse_block`'s statement dispatch in
 //! `parser.rs`.
 
@@ -103,9 +103,9 @@ pub enum TokKind {
 
     // Literals / names.
     Ident(String),
-    /// An integer literal carrying BOTH the numeric `value` (with `_`
-    /// separators stripped — lexer.md REQ-3 VALUE, UNCHANGED) and the verbatim
-    /// source `raw` (separators included — lexer.md REQ-3 RAW, #37). E.g.
+    /// An integer literal carrying both the numeric `value` (with `_`
+    /// separators stripped, lexer.md REQ-3 VALUE, unchanged) and the verbatim
+    /// source `raw` (separators included, lexer.md REQ-3 RAW, #37). E.g.
     /// `1_000_000` lexes to `{ value: 1000000, raw: "1_000_000" }`.
     Int {
         value: u128,
@@ -156,20 +156,20 @@ pub enum TokKind {
     Bang,
 
     /// A body-position structural HOLE `?N` (`.design/forge/goal-repl.md` REQ-4,
-    /// #193). The `u32` is the verbatim hole NUMBER as written (`?0` → `0`); it is
-    /// the surface ordinal the agent typed, NOT a document-order index (the parser
-    /// records holes in document order for `<fn>.?N` addressing — `parser.md` /
-    /// `semantic-addressing.md`). A hole is a research-spike token: it lexes
-    /// EVERYWHERE the scanner sees `?<digits>`, and the PARSER restricts it to
-    /// fn-body statement position (a `?N` elsewhere is a parse error — `parser.md`).
+    /// #193). The `u32` is the verbatim hole number as written (`?0` → `0`); it is
+    /// the surface ordinal the agent typed, not a document-order index (the parser
+    /// records holes in document order for `<fn>.?N` addressing, `parser.md` /
+    /// `semantic-addressing.md`). The token lexes
+    /// everywhere the scanner sees `?<digits>`, and the parser restricts it to
+    /// fn-body statement position (a `?N` elsewhere is a parse error, `parser.md`).
     Hole(u32),
 
     Eof,
 }
 
 /// Map a word to its reserved-keyword kind, or `None` if it is an identifier.
-/// Effect-row names and slag field names are deliberately NOT reserved (REQ-2,
-/// OQ-1) — they fall through to `Ident`.
+/// Effect-row names and slag field names are not reserved (REQ-2,
+/// OQ-1); they fall through to `Ident`.
 fn keyword_kind(word: &str) -> Option<TokKind> {
     Some(match word {
         "fn" => TokKind::Fn,
@@ -249,10 +249,10 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
                 }
             }
         } else if c == b'\'' {
-            // A char literal `'A'` (lexer.md REQ-9, #91/#92) lexes into the SAME
-            // integer-literal token (NO new token kind / Expr variant). A
+            // A char literal `'A'` (lexer.md REQ-9, #91/#92) lexes into the same
+            // integer-literal token (no new token kind / Expr variant). A
             // malformed char (`''`, `'AB'`, non-ASCII, bad escape) is a structured
-            // diagnostic that resyncs past the literal — never a panic.
+            // diagnostic that resyncs past the literal, never a panic.
             match lex_char(bytes, i) {
                 Ok((tok, next)) => {
                     tokens.push(tok);
@@ -269,8 +269,8 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
             // #193). `?` followed by one-or-more ASCII digits lexes to a single
             // `Hole(N)` token carrying the verbatim hole number. A `?` with no
             // following digit is an unrecognized character (a structured
-            // diagnostic, never a panic — REQ-8): Thermite has no `?`-operator
-            // (no try/Result-propagation surface — §2.3), so a bare `?` is a stray
+            // diagnostic, never a panic, REQ-8): Thermite has no `?`-operator
+            // (no try/Result-propagation surface, §2.3), so a bare `?` is a stray
             // char, not a partial token.
             match lex_hole(bytes, i) {
                 Some((kind, len)) => {
@@ -375,11 +375,11 @@ fn lex_word(bytes: &[u8], i: usize) -> (Token, usize) {
 ///
 /// The radix is chosen by the prefix at the start of a digit run (lexer.md REQ-3,
 /// #92): `0x`/`0X` → hexadecimal, `0b`/`0B` → binary, otherwise decimal. A hex /
-/// binary literal carries the SAME integer `value` as the equivalent decimal
-/// (`0x1b` → 27, `0b101` → 5) — the radix is a surface spelling only, never a
-/// distinct token kind. A `0x`/`0b` prefix REQUIRES at least one radix digit; a
+/// binary literal carries the same integer `value` as the equivalent decimal
+/// (`0x1b` → 27, `0b101` → 5); the radix is a surface spelling only, never a
+/// distinct token kind. A `0x`/`0b` prefix requires at least one radix digit; a
 /// bare prefix with no following digit is an `Err(SyntaxError)` (lexer.md REQ-8),
-/// NOT a `0` followed by an `x`/`b` identifier. A trailing/leading `_` adjacent to
+/// not a `0` followed by an `x`/`b` identifier. A trailing/leading `_` adjacent to
 /// the digit run is in neither value nor raw (both end at the last radix digit).
 fn lex_int(bytes: &[u8], i: usize) -> Result<(Token, usize), SyntaxError> {
     let n = bytes.len();
@@ -439,9 +439,9 @@ fn lex_int(bytes: &[u8], i: usize) -> Result<(Token, usize), SyntaxError> {
 /// Lex a body-position structural hole `?N` (lexer.md / `.design/forge/goal-repl.md`
 /// REQ-4, #193). `bytes[i]` is the `?`; the hole NUMBER is the run of ASCII digits
 /// immediately following. Returns the `Hole(N)` token kind + its byte length, or
-/// `None` if no digit follows the `?` (a bare `?` is a stray char — REQ-8). The
+/// `None` if no digit follows the `?` (a bare `?` is a stray char, REQ-8). The
 /// number is parsed deterministically (R-CODE-5); an over-long digit run that
-/// overflows `u32` saturates (a hole number is a small surface ordinal — there is
+/// overflows `u32` saturates (a hole number is a small surface ordinal: there is
 /// no semantic difference between `?4000000000` and `?u32::MAX`, both name a hole
 /// the agent must address, and saturation keeps the lexer total + panic-free, REQ-8).
 fn lex_hole(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
@@ -485,18 +485,18 @@ struct CharLexError {
     recover_to: usize,
 }
 
-/// Lex a char literal `'A'` (lexer.md REQ-9, #91/#92) into the SAME
-/// `TokKind::Int { value, raw }` token as a numeric literal — NO new token kind,
-/// NO new Expr variant. `value` is the BYTE value of the character (`'A'` → 65,
+/// Lex a char literal `'A'` (lexer.md REQ-9, #91/#92) into the same
+/// `TokKind::Int { value, raw }` token as a numeric literal: no new token kind,
+/// no new Expr variant. `value` is the byte value of the character (`'A'` → 65,
 /// `'\n'` → 10, `'\x1b'` → 27); `raw` is the verbatim source including the quotes
 /// (`"'A'"`). The char model is byte-level `u8` (consistent with the 07-strings
-/// byte model). A `\`-escape is decoded by the SAME escape table the string lexer
+/// byte model). A `\`-escape is decoded by the same escape table the string lexer
 /// uses (`\n`/`\t`/`\r`/`\0`/`\\`/`\'` + `\xNN` with `NN <= 0x7F`).
 ///
 /// A char literal that is multi-byte / non-ASCII (a codepoint `>= 0x80`), empty
-/// (`''`), unterminated, or whose `\xNN >= 0x80` is a STRUCTURED `SyntaxError`
-/// (lexer.md REQ-8/REQ-9) — never a silent mis-lex, never a panic. (§4.4 removes
-/// lifetimes, so `'` ALWAYS begins a char literal — there is no `'a` lifetime to
+/// (`''`), unterminated, or whose `\xNN >= 0x80` is a structured `SyntaxError`
+/// (lexer.md REQ-8/REQ-9): never a silent mis-lex, never a panic. (§4.4 removes
+/// lifetimes, so `'` always begins a char literal; there is no `'a` lifetime to
 /// disambiguate against.)
 fn lex_char(bytes: &[u8], i: usize) -> Result<(Token, usize), CharLexError> {
     let n = bytes.len();
@@ -511,7 +511,7 @@ fn lex_char(bytes: &[u8], i: usize) -> Result<(Token, usize), CharLexError> {
         });
     }
     let (byte, content_end): (u8, usize) = if bytes[i + 1] == b'\\' {
-        // An escape `'\n'`, `'\xNN'`, etc. — decode via the shared table.
+        // An escape `'\n'`, `'\xNN'`, etc.: decode via the shared table.
         if i + 2 >= n {
             return Err(CharLexError {
                 error: SyntaxError::stray_char(raw_of(n), Span::new(i, n - i)),
@@ -554,8 +554,8 @@ fn lex_char(bytes: &[u8], i: usize) -> Result<(Token, usize), CharLexError> {
         }
     } else {
         let c = bytes[i + 1];
-        // A non-ASCII / multi-byte char (`'é'`, codepoint >= 0x80) is NOT a single
-        // `u8` in v1 — a structured error (it awaits the `Vec<u8>` reshape that
+        // A non-ASCII / multi-byte char (`'é'`, codepoint >= 0x80) is not a single
+        // `u8` in v1: a structured error (it awaits the `Vec<u8>` reshape that
         // defers high-byte string escapes). An ASCII char is its own byte value.
         if c >= 0x80 {
             let bad_end = resume_past_char(bytes, i + 1);
@@ -574,7 +574,7 @@ fn lex_char(bytes: &[u8], i: usize) -> Result<(Token, usize), CharLexError> {
         (c, i + 2)
     };
 
-    // The closing quote MUST follow the single char/escape; anything else (a
+    // The closing quote must follow the single char/escape; anything else (a
     // multi-char literal `'AB'`, a missing close) is a structured error.
     if content_end < n && bytes[content_end] == b'\'' {
         let end = content_end + 1;
@@ -641,7 +641,7 @@ fn lex_string(bytes: &[u8], i: usize) -> Result<(Token, usize), StringLexError> 
         }
         if c == b'\\' && j + 1 < n {
             let esc = bytes[j + 1];
-            // Single-char escapes materialize to a control/literal BYTE
+            // Single-char escapes materialize to a control/literal byte
             // (`.design/basis/07-strings.md` REQ-6, the escape table). The byte
             // model (REQ-2: a string is a run of `u8`) means each escape decodes
             // to one byte; `\n`/`\t`/`\r`/`\0` are control bytes, `\"`/`\\` are
@@ -666,10 +666,10 @@ fn lex_string(bytes: &[u8], i: usize) -> Result<(Token, usize), StringLexError> 
                 // `\xNN` — exactly two hex digits, materializing to the byte
                 // value (`\x1b` -> 27). The byte model (REQ-2/REQ-6) admits the
                 // ASCII range `\x00`..=`\x7F` (a single UTF-8 byte); a value
-                // >= 0x80 is NOT a single byte in a UTF-8 `String` (it would
-                // UTF-8-encode to two bytes), so it is a STRUCTURED lex error in
-                // v1, not silently mis-materialized — faithful byte indexing is
-                // the load-bearing string claim (REQ-2). A high-byte `\xNN`
+                // >= 0x80 is not a single byte in a UTF-8 `String` (it would
+                // UTF-8-encode to two bytes), so it is a structured lex error in
+                // v1, not silently mis-materialized; faithful byte indexing is
+                // the string claim (REQ-2). A high-byte `\xNN`
                 // awaits the `Vec<u8>` string-content reshape (a future stage).
                 match parse_hex_escape(bytes, j + 2) {
                     Some(byte) if byte < 0x80 => {
@@ -777,7 +777,7 @@ fn lex_punct(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
             (b'.', b'.') => Some(TokKind::DotDot),
             // Shift operators (#92): `<<`/`>>` win over single `<`/`>` by maximal
             // munch (REQ-6). `<=`/`>=` are distinct pairs (the second byte differs),
-            // so the order among these two-char arms is irrelevant — `>>` is `>` `>`,
+            // so the order among these two-char arms is irrelevant: `>>` is `>` `>`,
             // `>=` is `>` `=`; both are matched here before any single-char fallback.
             (b'<', b'<') => Some(TokKind::Shl),
             (b'>', b'>') => Some(TokKind::Shr),

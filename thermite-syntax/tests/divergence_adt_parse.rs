@@ -1,4 +1,4 @@
-//! Critic divergence pins — Basis Stage 1a ADT SURFACE (`.design/basis/01-adts.md`).
+//! Critic divergence pins — Basis Stage 1a ADT surface (`.design/basis/01-adts.md`).
 //!
 //! Each test below pins a divergence between the parser as committed at
 //! `32fab6b` and the authority (`.design/basis/01-adts.md` REQs + the parse
@@ -7,25 +7,25 @@
 
 use thermite_syntax::{parse, Expr, Item};
 
-/// DIVERGENCE — the no-struct-literal disambiguation leaks from a contract
-/// clause into a `match` arm BODY.
+/// Divergence: the no-struct-literal disambiguation leaks from a contract
+/// clause into a `match` arm body.
 ///
-/// Authority: `.design/basis/01-adts.md` REQ-2 — "a struct-variant construction
-/// is a NEW `Expr::StructLit`" — and REQ-4 — "`match` in expression position".
-/// A `match` ARM BODY is in VALUE position, so a struct-literal construction
-/// (`Point { x: 1 }`) there MUST parse, exactly as it does in any other value
+/// Authority: `.design/basis/01-adts.md` REQ-2 ("a struct-variant construction
+/// is a NEW `Expr::StructLit`") and REQ-4 ("`match` in expression position").
+/// A `match` arm body is in value position, so a struct-literal construction
+/// (`Point { x: 1 }`) there must parse, as it does in any other value
 /// position (e.g. a `let` initializer, which `tests/adt_parse.rs`
 /// `bank_account_parses_struct_with_inv_and_struct_lit` confirms parses).
 ///
 /// The parser threads a `no_struct_literal` context (`parser::Parser`) through
-/// the `match`/`if`/`while` HEAD so `match s { … }` reads `{` as the arm block
+/// the `match`/`if`/`while` head so `match s { … }` reads `{` as the arm block
 /// rather than `s { … }` as a struct literal. A contract clause is also a
 /// no-struct-literal head (`parse_clause` -> `with_no_struct_literal`). But
-/// `parse_match` does NOT re-enable struct literals for its arm bodies
+/// `parse_match` does not re-enable struct literals for its arm bodies
 /// (only `parse_call_args`/`parse_index_arg`/the paren primary do, via
-/// `with_struct_literal`). So when a `match` is the BARE expression of a
-/// contract clause — exactly the shape of `binary_search.th`'s
-/// `ens match result { … }` — the suppression set by `parse_clause` LEAKS into
+/// `with_struct_literal`). So when a `match` is the bare expression of a
+/// contract clause, the shape of `binary_search.th`'s
+/// `ens match result { … }`, the suppression set by `parse_clause` leaks into
 /// the arm bodies, and a struct-literal arm body fails to parse.
 ///
 /// This is the no-struct-literal-context mis-parse the Stage 1a audit flags as
@@ -47,7 +47,7 @@ fn f(e: E) -> bool
 { true }
 ";
     let r = parse(src);
-    // REQ-2 + REQ-4: the arm-body struct literals are in value position and MUST
+    // REQ-2 + REQ-4: the arm-body struct literals are in value position and must
     // parse. Authority says clean; the committed parser emits a SyntaxError
     // ("expected `}`, found `{`") because the clause's no-struct-literal context
     // leaks into the arm bodies.

@@ -1,40 +1,40 @@
-//! The INDEPENDENT exec-position reference encoder
+//! The independent exec-position reference encoder
 //! (`.design/verified/exec-tv.md` REQ-1; epic crosslink #151, blocker #152;
 //! `thermite-design.md` §4.1/§6).
 //!
-//! [`exec_ref_value`] maps a PURE exec-position (body) [`Expr`] to a Verus EXEC
-//! VALUE expression STRING — at the production VALUE TYPE (the BOUNDED `u64`/
-//! `u32`/`usize`/`bool`, NEVER `nat`/`int`-coerced), the dual of the CONTRACT
+//! [`exec_ref_value`] maps a pure exec-position (body) [`Expr`] to a Verus exec
+//! value expression string — at the production value type (the bounded `u64`/
+//! `u32`/`usize`/`bool`, not `nat`/`int`-coerced), the dual of the contract
 //! reference encoder ([`crate::ref_encode::ref_contract_pred`], which encodes the
 //! spec/`nat` semantics for a predicate). It is the small, declarative, human-
-//! auditable re-implementation of the EXEC sublanguage's VALUE semantics —
-//! authored AGAINST `thermite-design.md` §4.1/§6 + standard Rust/Verus exec
-//! semantics, NOT against the production `lower_expr`.
+//! auditable re-implementation of the exec sublanguage's value semantics —
+//! authored against `thermite-design.md` §4.1/§6 + standard Rust/Verus exec
+//! semantics, not against the production `lower_expr`.
 //!
-//! ## THE EXEC-VALUE SEMANTICS (the load-bearing concern)
+//! ## The exec-value semantics
 //!
-//! An exec value is BOUNDED — `u64`/`u32`/`usize`/`bool` with the always-active
-//! runtime overflow checks (`thermite-design.md` §6, L1) — NOT unbounded `nat`/
+//! An exec value is bounded — `u64`/`u32`/`usize`/`bool` with the always-active
+//! runtime overflow checks (`thermite-design.md` §6, L1) — not unbounded `nat`/
 //! `int`. The reference for `a + b` (source `u64`) is the bounded `u64` `a + b`,
-//! which CARRIES the verus overflow obligation. A production that lowered to
+//! which carries the verus overflow obligation. A production that lowered to
 //! `a.wrapping_sub(b)`/`a.wrapping_add(b)` (an overflow/wrong-op infidelity)
-//! FAILS the obligation `ensures result == a + b` with a counterexample. A
-//! reference that silently coerced to `nat` (`a as nat + b as nat`) would MASK
-//! the wrap point — exactly the soundness hole to avoid (the dual of the
-//! contract-side coercion-soundness concern). So this encoder is NEVER
-//! nat-coerced; the comparison is at the production type.
+//! fails the obligation `ensures result == a + b` with a counterexample. A
+//! reference that silently coerced to `nat` (`a as nat + b as nat`) would mask
+//! the wrap point, the soundness hole to avoid (the dual of the contract-side
+//! coercion-soundness concern). So this encoder is never nat-coerced; the
+//! comparison is at the production type.
 //!
-//! ## THE INDEPENDENCE BOUNDARY (the whole point — REQ-1 HARD CONSTRAINT)
+//! ## The independence boundary (REQ-1 constraint)
 //!
-//! This module MUST NOT call `thermite_lower::lower::lower_expr` or any production
-//! lowering symbol — `thermite-tv` does not even depend on `thermite-lower` (the
+//! This module must not call `thermite_lower::lower::lower_expr` or any production
+//! lowering symbol; `thermite-tv` does not even depend on `thermite-lower` (the
 //! dep graph makes reuse a compile error, AC-6). The check `ensures result ==
 //! <exec_ref_value(source)>` is N-version differential validation: agreement is
-//! EVIDENCE, not proof. The cast-paren disciplines (#122 inner-paren on a
+//! evidence, not proof. The cast-paren disciplines (#122 inner-paren on a
 //! `Binary`/`Unary` cast inner; #146 outer-paren on a `Cast` left of a `<`-leading
 //! op via [`is_lt_leading`]) and the 1-to-1 binop map ([`binop_str`]) are
-//! RE-STATED here INDEPENDENTLY of `Expr::Cast`/`lower_binary_operand`/
-//! `is_lt_leading`/`binop in lower.rs` — re-stating them is the point (an imported
+//! re-stated here independently of `Expr::Cast`/`lower_binary_operand`/
+//! `is_lt_leading`/`binop in lower.rs`; re-stating them is the point (an imported
 //! map would hide a production paren/binop bug).
 //!
 //! ## REQ status
@@ -49,18 +49,18 @@ use std::fmt;
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
 /// An honest failure to encode a construct outside the pure-exec subset (REQ-1).
-/// The exec reference encoder NEVER panics and NEVER silently emits a wrong
+/// The exec reference encoder never panics and never silently emits a wrong
 /// encoding: an unsupported construct is a real `Err` carrying the offending shape
-/// (R-CODE-2 / R-APG-1). A silent wrong encoding would defeat the entire point —
-/// TV would compare a wrong reference and either spuriously pass or spuriously
-/// fail. Method calls / Vec-String accessors are OUT OF SCOPE for step 2.1 (the
-/// #154/#156 territory) → an honest [`RefEncodeError::Unsupported`].
+/// (R-CODE-2 / R-APG-1). A silent wrong encoding would compare a wrong reference
+/// and either spuriously pass or spuriously fail. Method calls / Vec-String
+/// accessors are out of scope for step 2.1 (the #154/#156 territory) → an honest
+/// [`RefEncodeError::Unsupported`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RefEncodeError {
     /// A construct the pure-exec subset does not admit (a statement, a `let`, a
     /// loop, a control-flow expression, a method call, a struct literal, …).
     /// Carries a short description of the offending node so a human can see
-    /// exactly what bit.
+    /// what bit.
     Unsupported(String),
 }
 
@@ -77,16 +77,16 @@ impl fmt::Display for RefEncodeError {
 impl std::error::Error for RefEncodeError {}
 
 /// The exec-reference-encoding context (REQ-1). Carries which free names denote a
-/// SLICE (`&[T]`) param, so an index `xs[i]` over a slice param encodes to the
-/// spec-view element `xs[i as int]` (the bounded element VALUE: in an EXEC fn the
-/// production indexes `xs[i]` with `i: usize`, and its value EQUALS the spec view
+/// slice (`&[T]`) param, so an index `xs[i]` over a slice param encodes to the
+/// spec-view element `xs[i as int]` (the bounded element value: in an exec fn the
+/// production indexes `xs[i]` with `i: usize`, and its value equals the spec view
 /// `xs[i as int]` — the obligation's `ensures result == xs[i as int]` is the
-/// element-value equality, GROUNDED in `exec-tv.md` AC-5). A name NOT declared a
+/// element-value equality, grounded in `exec-tv.md` AC-5). A name not declared a
 /// slice is indexed verbatim.
 ///
-/// This is the EXEC dual of [`crate::ref_encode::RefCtx`] (which carries the
-/// `@`-view / `nat`-coerce sets for SPEC position). It deliberately carries NO
-/// `nat`-coerce set — the exec reference is bounded-typed, never nat-coerced.
+/// This is the exec dual of [`crate::ref_encode::RefCtx`] (which carries the
+/// `@`-view / `nat`-coerce sets for spec position). It carries no `nat`-coerce
+/// set: the exec reference is bounded-typed, never nat-coerced.
 #[derive(Debug, Clone, Default)]
 pub struct ExecRefCtx {
     /// Names bound as a slice (`&[T]`) param in the obligation. An `Index` over
@@ -115,27 +115,27 @@ impl ExecRefCtx {
     }
 }
 
-/// Encode a pure exec-position [`Expr`] to a Verus EXEC-VALUE expression STRING at
-/// the production VALUE TYPE, independently of the production lowerer (REQ-1).
-/// Covers exactly the pure-exec subset of `thermite-design.md` §4.1 (NO
-/// statements, `let`, loops, mutation, or control flow — those are step 2.2):
+/// Encode a pure exec-position [`Expr`] to a Verus exec-value expression string at
+/// the production value type, independently of the production lowerer (REQ-1).
+/// Covers the pure-exec subset of `thermite-design.md` §4.1 (no statements, `let`,
+/// loops, mutation, or control flow — those are step 2.2):
 ///
 /// - arithmetic ([`Expr::Binary`] over `Add`/`Sub`/`Mul`/`Div`/`Rem`/shifts/bitops
-///   at the BOUNDED operand type — the bounded `u64`/`u32`/`usize` value carrying
-///   the verus overflow obligation, NOT `nat`/`int`) — a faithful 1-to-1 binop map
-///   ([`binop_str`]), RE-stated independently so a production wrong-op/overflow bug
+///   at the bounded operand type — the bounded `u64`/`u32`/`usize` value carrying
+///   the verus overflow obligation, not `nat`/`int`) — a faithful 1-to-1 binop map
+///   ([`binop_str`]), re-stated independently so a production wrong-op/overflow bug
 ///   (`+` → `wrapping_sub`, E3) is caught;
 /// - comparisons ([`Expr::Binary`] over `Eq`/`Ne`/`Lt`/`Le`/`Gt`/`Ge` → `bool`);
 /// - casts ([`Expr::Cast`] at the cast target, with the #122 inner-paren for a
-///   `Binary`/`Unary` inner and the #146 outer-paren when a `Cast` is the LEFT
+///   `Binary`/`Unary` inner and the #146 outer-paren when a `Cast` is the left
 ///   operand of a `<`-leading op — [`is_lt_leading`], re-implemented independently);
 /// - calls ([`Expr::Call`] with a path callee — the exec callee verbatim);
 /// - indexing ([`Expr::Index`] single-element over a slice param → `xs[i as int]`,
-///   the bounded element VALUE).
+///   the bounded element value).
 ///
 /// Anything else (a method call, a Vec/String accessor, a struct literal, an `if`/
-/// `match`, a closure, …) is an honest [`RefEncodeError::Unsupported`] (NEVER a
-/// panic, NEVER a silent wrong encoding — #154/#156 territory).
+/// `match`, a closure, …) is an honest [`RefEncodeError::Unsupported`] (never a
+/// panic, never a silent wrong encoding — #154/#156 territory).
 pub fn exec_ref_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
 }
@@ -163,12 +163,12 @@ fn encode_path(segments: &[String]) -> Result<String, RefEncodeError> {
     Ok(segments.join("::"))
 }
 
-/// The faithful 1-to-1 binary-operator map (`thermite-design.md` §4.1). RE-stated
-/// here INDEPENDENTLY of the production `binop in lower.rs`: a production wrong-op
+/// The faithful 1-to-1 binary-operator map (`thermite-design.md` §4.1). Re-stated
+/// here independently of the production `binop in lower.rs`: a production wrong-op
 /// bug (`+` → `wrapping_sub`, E3) is caught only because this map is the
-/// independent ground truth. The exec arithmetic ops emit the BOUNDED operator
-/// (`+`/`-`/`*`/…), which in an exec fn carries the verus overflow obligation —
-/// NOT a `wrapping_*`/`nat` form.
+/// independent ground truth. The exec arithmetic ops emit the bounded operator
+/// (`+`/`-`/`*`/…), which in an exec fn carries the verus overflow obligation,
+/// not a `wrapping_*`/`nat` form.
 fn binop_str(op: BinOp) -> &'static str {
     match op {
         BinOp::Add => "+",
@@ -192,14 +192,14 @@ fn binop_str(op: BinOp) -> &'static str {
     }
 }
 
-/// Is `op` a `<`-LEADING operator (`<`, `<=`, `<<`)? A `Cast` LEFT operand of such
-/// an op MUST be wholly parenthesized — `x as u32 < 33` mis-parses the `u32 <` as
-/// the start of a generic-argument list (the #146/#148 cast-paren ambiguity, a HARD
-/// parse error in both Verus and Rust, E2). This is the EXACT dual of production's
-/// `is_lt_leading in lower.rs` (`Lt | Le | Shl`), RE-stated INDEPENDENTLY here so
-/// the reference parenthesizes the same class — without it the reference would emit
+/// Is `op` a `<`-leading operator (`<`, `<=`, `<<`)? A `Cast` left operand of such
+/// an op must be wholly parenthesized: `x as u32 < 33` mis-parses the `u32 <` as
+/// the start of a generic-argument list (the #146/#148 cast-paren ambiguity, a
+/// parse error in both Verus and Rust, E2). This is the dual of production's
+/// `is_lt_leading in lower.rs` (`Lt | Le | Shl`), re-stated independently here so
+/// the reference parenthesizes the same class. Without it the reference would emit
 /// an un-parseable `as u32 <` and the obligation would be Unverifiable (not a
-/// faithfulness verdict). `>`/`>=`/`>>`/`==`/`!=` do NOT trigger the generic
+/// faithfulness verdict). `>`/`>=`/`>>`/`==`/`!=` do not trigger the generic
 /// ambiguity (excluded — keeps the non-`<` casts paren-minimal).
 fn is_lt_leading(op: BinOp) -> bool {
     matches!(op, BinOp::Lt | BinOp::Le | BinOp::Shl)
@@ -215,17 +215,17 @@ fn encode_binary(
     let r = encode_binary_operand(rhs, op, false, ctx)?;
     // Parenthesize the whole binary so precedence is explicit at every level (the
     // #122 paren discipline generalized: a sub-expression never silently
-    // re-associates). The bounded operand type is preserved — Verus/Z3 see the
-    // SAME bounded term regardless of nesting, so the overflow obligation (E3) is
+    // re-associates). The bounded operand type is preserved: Verus/Z3 see the
+    // same bounded term regardless of nesting, so the overflow obligation (E3) is
     // carried, not coerced away.
     Ok(format!("({l} {} {r})", binop_str(op)))
 }
 
 /// Encode a binary operand, applying the cast-`<`-leading paren (#146/#148): a
-/// `Cast` that is the LEFT operand of a `<`-leading op (`<`/`<=`/`<<`) is wholly
+/// `Cast` that is the left operand of a `<`-leading op (`<`/`<=`/`<<`) is wholly
 /// parenthesized — `(x as u32) < 33`, never the ambiguous `x as u32 < 33` (E2).
 /// This is the dual of production's `lower_binary_operand`'s `is_lt_leading` guard,
-/// RE-stated INDEPENDENTLY. Every other operand is the plain [`encode`] (its own
+/// re-stated independently. Every other operand is the plain [`encode`] (its own
 /// parenthesization is already explicit per the #122 discipline).
 fn encode_binary_operand(
     operand: &Expr,
@@ -247,10 +247,10 @@ fn encode_unary(op: UnaryOp, inner: &Expr, ctx: &ExecRefCtx) -> Result<String, R
     }
 }
 
-/// A free-form call `f(args)` (REQ-1). In EXEC position the callee is emitted
-/// VERBATIM (the exec call lowers to the exec fn by name; the value semantics are
+/// A free-form call `f(args)` (REQ-1). In exec position the callee is emitted
+/// verbatim (the exec call lowers to the exec fn by name; the value semantics are
 /// the callee's own contract). A non-path callee is outside the pure-exec subset
-/// (an honest `Err`). Arguments are encoded by the SAME independent recursion.
+/// (an honest `Err`). Arguments are encoded by the same independent recursion.
 fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let Expr::Path(segments) = callee else {
         return Err(RefEncodeError::Unsupported(format!(
@@ -266,12 +266,12 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &ExecRefCtx) -> Result<String,
     Ok(format!("{name}({})", encoded_args.join(", ")))
 }
 
-/// `xs[i]` in exec position (REQ-1). A SINGLE index over a SLICE-bound base is the
-/// bounded element VALUE — the spec view `xs[i as int]` (in an EXEC fn the
-/// production indexes `xs[i]` with `i: usize`, whose value EQUALS the spec view
+/// `xs[i]` in exec position (REQ-1). A single index over a slice-bound base is the
+/// bounded element value — the spec view `xs[i as int]` (in an exec fn the
+/// production indexes `xs[i]` with `i: usize`, whose value equals the spec view
 /// `xs[i as int]`; the obligation `ensures result == xs[i as int]` is the
-/// element-value equality, GROUNDED `exec-tv.md` AC-5/E4). A `RangeTo`/`RangeFrom`/
-/// `Range` slice index produces a sub-SLICE (not a scalar value) — outside the
+/// element-value equality, grounded `exec-tv.md` AC-5/E4). A `RangeTo`/`RangeFrom`/
+/// `Range` slice index produces a sub-slice (not a scalar value), outside the
 /// pure-exec scalar-value subset of step 2.1 → an honest `Err`. A non-slice base
 /// index is also unsupported (no scalar-value denotation in the frozen subset).
 fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
@@ -297,10 +297,10 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &ExecRefCtx) -> Result<Strin
     )))
 }
 
-/// Encode a slice index VALUE `i` as `<i> as int` (a Verus `Seq` index is `int`).
+/// Encode a slice index value `i` as `<i> as int` (a Verus `Seq` index is `int`).
 /// A bare integer literal stays bare (Verus coerces it); a bare path (`i: usize`)
 /// is cast `<i> as int`; a compound index is parenthesized then cast (the #122
-/// paren discipline). This is the index of the spec ELEMENT-VALUE view `xs[i as
+/// paren discipline). This is the index of the spec element-value view `xs[i as
 /// int]` — the bounded element the production exec `xs[i]` computes.
 fn encode_index_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     match expr {
@@ -317,29 +317,29 @@ fn encode_index_value(expr: &Expr, ctx: &ExecRefCtx) -> Result<String, RefEncode
 }
 
 /// An integer cast `e as T` → `(e) as T` with the #122 inner-paren discipline (the
-/// inner is parenthesized when it is a `Binary`/`Unary` so the cast binds the WHOLE
-/// inner — `(n - 1) as u8`, NEVER `n - 1 as u8` which parses as `n - (1 as u8)`,
-/// the E1 infidelity). The cast TARGET is the BOUNDED prim (`u8`/`u32`/`u64`/`usize`)
-/// — NEVER `nat`/`int` (the exec value semantics: a narrowing cast wraps at the
+/// inner is parenthesized when it is a `Binary`/`Unary` so the cast binds the whole
+/// inner — `(n - 1) as u8`, not `n - 1 as u8` which parses as `n - (1 as u8)`,
+/// the E1 infidelity). The cast target is the bounded prim (`u8`/`u32`/`u64`/`usize`),
+/// not `nat`/`int` (the exec value semantics: a narrowing cast wraps at the
 /// bounded type, and the obligation catches a wrong-paren/wrong-target wrap). This
 /// is the dual of the contract encoder's `as nat`/`as int` cast.
 fn encode_cast(inner: &Expr, ty: &Type, ctx: &ExecRefCtx) -> Result<String, RefEncodeError> {
     let e = encode(inner, ctx)?;
     let target = cast_target(ty)?;
-    // The #122 inner-paren discipline. A `Binary`/`Unary` inner is ALREADY wholly
+    // The #122 inner-paren discipline. A `Binary`/`Unary` inner is already wholly
     // parenthesized by [`encode_binary`]/[`encode_unary`] (which wrap every binary/
-    // unary), so the cast binds the WHOLE inner — `(n - 1) as u8`, never the E1
-    // mis-bind `n - 1 as u8` (= `n - (1 as u8)`). We therefore do NOT re-wrap a
+    // unary), so the cast binds the whole inner — `(n - 1) as u8`, never the E1
+    // mis-bind `n - 1 as u8` (= `n - (1 as u8)`). We therefore do not re-wrap a
     // `Binary`/`Unary` inner (that would emit the cosmetically-redundant
     // `((n - 1)) as u8`); a bare path/literal/index inner never mis-binds, so it is
-    // cast bare. This matches production's minimal-paren cast output exactly
+    // cast bare. This matches production's minimal-paren cast output
     // (`thermite-lower/src/lower.rs::exec_expr_tests` pins `(n - 1) as u8`).
     Ok(format!("{e} as {target}"))
 }
 
-/// The Verus cast-target spelling for an EXEC cast (`thermite-design.md` §4.1). The
-/// exec sublanguage casts to the BOUNDED prims (`u8`/`u16`/`u32`/`u64`/`usize`) —
-/// NEVER the spec `nat`/`int` (that is the CONTRACT encoder's target). A `bool`
+/// The Verus cast-target spelling for an exec cast (`thermite-design.md` §4.1). The
+/// exec sublanguage casts to the bounded prims (`u8`/`u16`/`u32`/`u64`/`usize`),
+/// not the spec `nat`/`int` (that is the contract encoder's target). A `bool`
 /// cast is not an arithmetic cast (an honest `Err`). The narrower bounded targets
 /// (`u8`/`u16`) the fixture E1 needs are accepted alongside the prim-type set so a
 /// narrowing/wrapping cast (the #122 surface) is encodable.
@@ -352,9 +352,9 @@ fn cast_target(ty: &Type) -> Result<String, RefEncodeError> {
             "cast to bool (not an arithmetic exec cast)".to_string(),
         )),
         // The narrower bounded byte/half targets a narrowing cast (#122) uses
-        // (`(n - 1) as u8`). They are not surface `PrimType`s but ARE valid Verus
+        // (`(n - 1) as u8`). They are not surface `PrimType`s but are valid Verus
         // exec cast targets; spelled as the bounded Rust int names. Keyed on the
-        // exact named-type spelling so a non-bounded named type is rejected.
+        // named-type spelling so a non-bounded named type is rejected.
         Type::Named(n) if matches!(n.as_str(), "u8" | "u16") => Ok(n.clone()),
         other => Err(RefEncodeError::Unsupported(format!(
             "exec cast to unsupported type {other:?} (the exec cast targets are \
@@ -419,7 +419,7 @@ mod tests {
     }
 
     /// E1: `(n - 1) as u8` → the #122 inner-paren on the `Binary` inner, bounded
-    /// `u8` target (never `nat`). The reference MEANS the faithful production form.
+    /// `u8` target (never `nat`). The reference means the faithful production form.
     #[test]
     fn e1_cast_inner_paren() {
         let e = cast(
@@ -468,8 +468,8 @@ mod tests {
         assert_eq!(exec_ref_value(&e, &ctx).unwrap(), "xs[i as int]");
     }
 
-    /// A method call (exec / Vec-String accessor) is OUT OF SCOPE for step 2.1 →
-    /// an honest `Err`, NEVER a silent wrong encoding (REQ-1 / R-CODE-2).
+    /// A method call (exec / Vec-String accessor) is out of scope for step 2.1 →
+    /// an honest `Err`, never a silent wrong encoding (REQ-1 / R-CODE-2).
     #[test]
     fn method_call_is_unsupported_not_panic() {
         let e = Expr::MethodCall {

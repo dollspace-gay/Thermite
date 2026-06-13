@@ -1,32 +1,32 @@
-//! The INDEPENDENT reference encoder for the SpecTherm contract sublanguage
+//! The independent reference encoder for the SpecTherm contract sublanguage
 //! (`.design/verified/contract-tv.md` REQ-1; `thermite-design.md` §4.2).
 //!
 //! [`ref_contract_pred`] maps a contract-position [`Expr`] to a Verus predicate
-//! STRING. It is the small, declarative, human-auditable re-implementation of
-//! the contract sublanguage's meaning — authored AGAINST `thermite-design.md`
-//! §4.2 + the frozen `thermite_spec::REGISTRY.verus_l3`, NOT against the
+//! string. It is the small, declarative, human-auditable re-implementation of
+//! the contract sublanguage's meaning — authored against `thermite-design.md`
+//! §4.2 + the frozen `thermite_spec::REGISTRY.verus_l3`, not against the
 //! production lowerer.
 //!
-//! ## THE INDEPENDENCE BOUNDARY (the whole point — REQ-1 HARD CONSTRAINT)
+//! ## The independence boundary (REQ-1 constraint)
 //!
-//! This module MUST NOT call `thermite_lower::lower::lower_expr` or any
-//! production lowering symbol — `thermite-tv` does not even depend on
+//! This module must not call `thermite_lower::lower::lower_expr` or any
+//! production lowering symbol; `thermite-tv` does not even depend on
 //! `thermite-lower` (the dep graph makes reuse a compile error, AC-6). The check
 //! `assert(P_production <==> P_reference)` is N-version differential validation:
-//! agreement is EVIDENCE, not proof. If this encoder reused `lower_expr` the
+//! agreement is evidence, not proof. If this encoder reused `lower_expr` the
 //! check would be vacuous (`assert(X <==> X)` always verifies).
 //!
-//! - **RE-IMPLEMENTED here (the infidelity surface):** the spec-context rewrites
+//! - Re-implemented here (the infidelity surface): the spec-context rewrites
 //!   where production fidelity bugs live — comparison/connective binop map
 //!   (the `==`/`<=` distinction, the canonical teeth case F1), the slice→`@`
-//!   view, the method→`spec_*` byte-view dispatch keyed on the RECEIVER's shape
+//!   view, the method→`spec_*` byte-view dispatch keyed on the receiver's shape
 //!   (`.byte_at(i)`/`.len()` — the #127 class, F3), and the integer cast→`as
 //!   nat`/`as int` with the #122 paren discipline.
-//! - **REUSED (the shared frozen ground truth — reuse is correct):**
+//! - Reused (the shared frozen ground truth — reuse is correct):
 //!   `thermite_spec::lookup(name).verus_l3` for the 8 combinators. The registry
-//!   IS the external combinator spec, not a production artifact; the combinator
-//!   ARGUMENT rewrites (the predicate closure, the slice `@`-view) are still
-//!   RE-implemented here, so divergence over them is still caught.
+//!   is the external combinator spec, not a production artifact; the combinator
+//!   argument rewrites (the predicate closure, the slice `@`-view) are still
+//!   re-implemented here, so divergence over them is still caught.
 //!
 //! ## REQ status
 //!
@@ -40,16 +40,15 @@ use std::fmt;
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, MatchArm, Pattern, UnaryOp};
 
 /// An honest failure to encode a construct outside the frozen contract
-/// sublanguage (REQ-1). The reference encoder NEVER panics and NEVER silently
+/// sublanguage (REQ-1). The reference encoder never panics and never silently
 /// emits a wrong encoding: an unsupported construct is a real `Err` carrying the
-/// offending shape (R-CODE-2 / R-APG-1). A silent wrong encoding would defeat
-/// the entire point — TV would compare a wrong reference and either spuriously
-/// pass or spuriously fail.
+/// offending shape (R-CODE-2 / R-APG-1). A silent wrong encoding would compare a
+/// wrong reference and either spuriously pass or spuriously fail.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RefEncodeError {
     /// A construct the contract sublanguage does not admit (a statement, a
     /// match in spec position the encoder does not cover, etc.). Carries a short
-    /// description of the offending node so a human can see exactly what bit.
+    /// description of the offending node so a human can see what bit.
     Unsupported(String),
     /// A combinator call whose callee name is not in the frozen
     /// `thermite_spec::REGISTRY` and is not a plain spec-fn call shape we can
@@ -73,50 +72,50 @@ impl fmt::Display for RefEncodeError {
 
 impl std::error::Error for RefEncodeError {}
 
-/// The reference-encoding context (REQ-1). Carries which free names are bound in
-/// the obligation as a `Seq<_>` ALREADY (so the slice→`@` view is the identity:
-/// a param bound as `xs: Seq<u32>` IS its own view — emitting `xs@` would be a
-/// type error / a spurious coercion mismatch). This is the load-bearing answer
-/// to THE COERCION RISK flagged by the doc author: the reference must infer the
-/// SAME `@`-view shape the faithful production column shows. In the per-clause
-/// obligation, slice params are bound directly as `Seq`, so the encoder treats
-/// them as already-viewed and emits the bare name (matching the faithful
-/// `spec_sum(xs)` rather than a spurious `spec_sum(xs@)`).
+/// The reference-encoding context (REQ-1). Carries which free names are already
+/// bound in the obligation as a `Seq<_>` (so the slice→`@` view is the identity:
+/// a param bound as `xs: Seq<u32>` is its own view — emitting `xs@` would be a
+/// type error / a spurious coercion mismatch). This is the answer to the coercion
+/// risk flagged by the doc author: the reference must infer the same `@`-view
+/// shape the faithful production column shows. In the per-clause obligation, slice
+/// params are bound directly as `Seq`, so the encoder treats them as
+/// already-viewed and emits the bare name (matching the faithful `spec_sum(xs)`
+/// rather than a spurious `spec_sum(xs@)`).
 #[derive(Debug, Clone, Default)]
 pub struct RefCtx {
     /// Names that are bound in the obligation directly as a `Seq<_>` view. For
-    /// such a name the `@`-view rewrite is the identity (the name IS the view).
-    /// A name NOT in this set that is used in a slice position gets the explicit
+    /// such a name the `@`-view rewrite is the identity (the name is the view).
+    /// A name not in this set that is used in a slice position gets the explicit
     /// `@` suffix (the `&[T]`→`Seq` view at use sites).
     seq_bound: BTreeSet<String>,
     /// Names bound in the obligation as the `String` wrapper (`&TString`/`TString`)
     /// — a `String`/`&String` param (#150 gap #2). For such a receiver the
-    /// byte-view dispatch is the wrapper's SPEC fns, NOT a `Seq<u8>` index:
+    /// byte-view dispatch is the wrapper's spec fns, not a `Seq<u8>` index:
     /// `.len()`→`.spec_len()`, `.byte_at(i)`→`.spec_byte_at(i as int)`. This
-    /// RE-implements production's `String`-receiver spec-position rewrite
+    /// re-implements production's `String`-receiver spec-position rewrite
     /// (`lower.rs`: `recv_is_string` → `r.spec_len()` / `r.spec_byte_at(i as int)`)
-    /// INDEPENDENTLY, so a misdispatch (a wrong index, the #127 class) is caught.
-    /// A `String`-bound receiver is emitted BARE (`s`, NOT `s@`) — the wrapper
+    /// independently, so a misdispatch (a wrong index, the #127 class) is caught.
+    /// A `String`-bound receiver is emitted bare (`s`, not `s@`): the wrapper
     /// spec fns take `&self`, not a `Seq` view.
     string_bound: BTreeSet<String>,
     /// Names bound in the obligation as the `Map` wrapper (`TMap…`) — a
     /// `Map<K,V>`/`&Map<K,V>` param/result (#150 gap #3). For such a receiver the
-    /// membership accessor rewrites to the wrapper SPEC fn: `.contains_key(k)`→
+    /// membership accessor rewrites to the wrapper spec fn: `.contains_key(k)`→
     /// `.spec_contains_key(k)`, `.len()`→`.len()` (the wrapper `spec fn len -> nat`).
-    /// This RE-implements production's `m.contains_key(k)`→`m.spec_contains_key(k)`
-    /// spec rewrite (`lower.rs`) INDEPENDENTLY (the wrapper spec fns are the shared
-    /// frozen ground truth, in the preamble). The receiver is emitted BARE.
+    /// This re-implements production's `m.contains_key(k)`→`m.spec_contains_key(k)`
+    /// spec rewrite (`lower.rs`) independently (the wrapper spec fns are the shared
+    /// frozen ground truth, in the preamble). The receiver is emitted bare.
     map_bound: BTreeSet<String>,
-    /// Names that are a bounded integer (`u64`/`u32`/`usize`) and MUST be coerced
+    /// Names that are a bounded integer (`u64`/`u32`/`usize`) and must be coerced
     /// `as nat` when they appear as a top-level operand of a comparison against a
-    /// `nat`-valued term (a `nat`-returning spec-fn call). This RE-implements,
+    /// `nat`-valued term (a `nat`-returning spec-fn call). This re-implements,
     /// independently and declaratively, production's `lower_nat_equality` shape
     /// coercion (the golden `ens result == spec_sum(xs)` lowers to `result as nat
-    /// == spec_sum(xs@)`). THE COERCION FIX (the doc author's #1 flagged risk):
-    /// the reference must infer the SAME `as nat` coercion the faithful column
+    /// == spec_sum(xs@)`). The coercion fix (the doc author's #1 flagged risk):
+    /// the reference must infer the same `as nat` coercion the faithful column
     /// shows, else the faithful obligation fails on a coercion mismatch (a
     /// spurious counterexample) rather than a meaning bug. Inferring it here
-    /// (rather than importing production's rule) keeps independence — a
+    /// (rather than importing production's rule) keeps independence: a
     /// production coercion bug would still be caught.
     nat_coerce: BTreeSet<String>,
 }
@@ -139,8 +138,8 @@ impl RefCtx {
     }
 
     /// Declare names bound as the `Map` wrapper (`TMap…`) — a `Map<K,V>` param/
-    /// result whose spec-position membership accessor dispatches to the wrapper SPEC
-    /// fn (`.contains_key(k)`→`.spec_contains_key(k)`), MATCHING production (#150 gap
+    /// result whose spec-position membership accessor dispatches to the wrapper spec
+    /// fn (`.contains_key(k)`→`.spec_contains_key(k)`), matching production (#150 gap
     /// #3; see [`RefCtx::map_bound`]).
     pub fn with_map_bound<I, S>(mut self, names: I) -> Self
     where
@@ -153,7 +152,7 @@ impl RefCtx {
 
     /// Declare names bound as the `String` wrapper (`&TString`/`TString`) — a
     /// `String`/`&String` param whose spec-position byte-view dispatches to the
-    /// wrapper SPEC fns (`.spec_len()`/`.spec_byte_at(i as int)`), NOT a `Seq<u8>`
+    /// wrapper spec fns (`.spec_len()`/`.spec_byte_at(i as int)`), not a `Seq<u8>`
     /// index (#150 gap #2; see [`RefCtx::string_bound`]).
     pub fn with_string_bound<I, S>(mut self, names: I) -> Self
     where
@@ -165,7 +164,7 @@ impl RefCtx {
     }
 
     /// Declare bounded-int names that must be coerced `as nat` when compared
-    /// against a `nat`-valued term (THE COERCION FIX — see [`RefCtx::nat_coerce`]).
+    /// against a `nat`-valued term (the coercion fix — see [`RefCtx::nat_coerce`]).
     pub fn with_nat_coerce<I, S>(mut self, names: I) -> Self
     where
         I: IntoIterator<Item = S>,
@@ -192,28 +191,28 @@ impl RefCtx {
     }
 }
 
-/// Encode a contract-position [`Expr`] to a Verus predicate STRING, independently
-/// of the production lowerer (REQ-1). Covers exactly the frozen contract
-/// sublanguage of `thermite-design.md` §4.2:
+/// Encode a contract-position [`Expr`] to a Verus predicate string, independently
+/// of the production lowerer (REQ-1). Covers the frozen contract sublanguage of
+/// `thermite-design.md` §4.2:
 ///
 /// - comparisons + logical connectives ([`Expr::Binary`] over the `Eq`/`Ne`/`Lt`/
 ///   `Le`/`Gt`/`Ge`/`And`/`Or` ops, plus arithmetic in subterms) — a faithful
-///   1-to-1 binop map (`binop_str`), RE-stated independently so a production
+///   1-to-1 binop map (`binop_str`), re-stated independently so a production
 ///   binop bug (`==`→`<=`, F1) is caught;
 /// - [`Expr::Unary`] `!` (logical/bitwise-not);
 /// - [`Expr::Path`] vars (incl. `result`) + `old(x)`;
 /// - named `spec fn` calls ([`Expr::Call`] with a path callee → `name(args)`);
 /// - the 8 frozen combinators ([`Expr::Call`] whose callee name is in
 ///   `thermite_spec::lookup` → emitted as a call to the registry `verus_l3`
-///   `spec fn`, with the arguments RE-encoded here — the predicate closure +
+///   `spec fn`, with the arguments re-encoded here — the predicate closure +
 ///   slice `@`-view independently, F2);
 /// - [`Expr::MethodCall`] with the spec-context rewrite dispatched on the
-///   RECEIVER's shape NOT the name (`.len()`→`.len()`, the byte-view
+///   receiver's shape, not the name (`.len()`→`.len()`, the byte-view
 ///   `.byte_at(i)`→`recv[i]` over a `Seq<u8>` view — the #127 class, F3);
 /// - [`Expr::Index`] (`a[i]` / `a[..i]`→`a.subrange(0, i as int)`);
 /// - [`Expr::Cast`]→`(inner) as nat`/`as int` with the #122 paren discipline.
 ///
-/// Anything else is an honest [`RefEncodeError`] (NEVER a panic, NEVER a silent
+/// Anything else is an honest [`RefEncodeError`] (never a panic, never a silent
 /// wrong encoding).
 pub fn ref_contract_pred(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     encode(expr, ctx)
@@ -234,14 +233,14 @@ fn encode(expr: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
         } => encode_method_call(receiver, name, args, ctx),
         Expr::Index { base, index } => encode_index(base, index, ctx),
         // A reference `&e` in spec position (REQ-1; the `&xs[..i]` slice-range
-        // borrow). Production lowers a spec-context `&xs[..i]` to the SUBRANGE of
-        // the base's `@`-view (`xs@.subrange(0, i as int)`) — the `&`/`[..]` is the
-        // slice→`Seq`-subrange rewrite, NOT a Verus reference (Verus `Seq`s are
-        // value types, `&` over a spec slice is meaningless). We RE-implement that
-        // shape INDEPENDENTLY: a `&`-of-`Index` is encoded EXACTLY as the inner
-        // `Index` (the subrange), and a bare `&e` (`&xs` → `xs@`) drops the `&`
-        // to the base's view. This MATCHES production's `Expr::Ref` spec arm
-        // (which delegates `&xs[..i]` to its `lower_index`) without calling it.
+        // borrow). Production lowers a spec-context `&xs[..i]` to the subrange of
+        // the base's `@`-view (`xs@.subrange(0, i as int)`): the `&`/`[..]` is the
+        // slice→`Seq`-subrange rewrite, not a Verus reference (Verus `Seq`s are
+        // value types, `&` over a spec slice is meaningless). We re-implement that
+        // shape independently: a `&`-of-`Index` is encoded as the inner `Index`
+        // (the subrange), and a bare `&e` (`&xs` → `xs@`) drops the `&` to the
+        // base's view. This matches production's `Expr::Ref` spec arm (which
+        // delegates `&xs[..i]` to its `lower_index`) without calling it.
         Expr::Ref { expr: inner, .. } => encode_ref(inner, ctx),
         Expr::Cast { expr, ty } => encode_cast(expr, ty, ctx),
         Expr::Field { receiver, name } => {
@@ -272,9 +271,9 @@ fn encode_path(segments: &[String]) -> Result<String, RefEncodeError> {
     Ok(segments.join("::"))
 }
 
-/// The faithful 1-to-1 binary-operator map (`thermite-design.md` §4.2). RE-stated
+/// The faithful 1-to-1 binary-operator map (`thermite-design.md` §4.2). Re-stated
 /// here independently of the production `binop in lower.rs`: the `==`-vs-`<=`
-/// distinction is the canonical teeth case (F1) — if this imported production's
+/// distinction is the canonical teeth case (F1). If this imported production's
 /// map, a production binop bug would be invisible.
 fn binop_str(op: BinOp) -> &'static str {
     match op {
@@ -305,21 +304,21 @@ fn encode_binary(
     rhs: &Expr,
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
-    // THE COERCION FIX (declarative `lower_nat_equality` re-implementation): in an
-    // `==` COMPARISON where one operand is a `nat`-valued term (a nat-returning
+    // The coercion fix (declarative `lower_nat_equality` re-implementation): in an
+    // `==` comparison where one operand is a `nat`-valued term (a nat-returning
     // spec-fn call) and the other is a bounded-int name declared in `nat_coerce`,
     // coerce the int operand `as nat` (matching the golden `result as nat ==
     // spec_sum(xs@)`).
     //
-    // CRITICAL — production's coercion is `Eq`-ONLY (`lower.rs`: `lower_nat_equality`
-    // fires only `if *op == BinOp::Eq`). A NON-`Eq` comparison of a bounded int to a
-    // `nat` term (`acc <= spec_sum(xs)`, `i < count_where(..)`, `acc != spec_sum`) is
-    // lowered BARE — production emits `acc <= spec_sum(xs)`, NEVER `acc as nat <=
-    // spec_sum(xs)` (verus accepts the mixed `u64`/`nat` comparison directly). So the
-    // reference MUST coerce ONLY on `Eq` too; coercing on `<=`/`<`/`>`/`>=`/`!=` would
-    // emit `acc as nat <= spec_sum` and DIVERGE from production's bare form (a spurious
-    // counterexample, NOT a meaning bug). This RE-implements production's Eq-only rule
-    // INDEPENDENTLY (a production coercion bug — coercing the wrong op — is still
+    // Production's coercion is `Eq`-only (`lower.rs`: `lower_nat_equality` fires only
+    // `if *op == BinOp::Eq`). A non-`Eq` comparison of a bounded int to a `nat` term
+    // (`acc <= spec_sum(xs)`, `i < count_where(..)`, `acc != spec_sum`) is lowered
+    // bare: production emits `acc <= spec_sum(xs)`, never `acc as nat <= spec_sum(xs)`
+    // (verus accepts the mixed `u64`/`nat` comparison directly). So the reference must
+    // coerce only on `Eq` too; coercing on `<=`/`<`/`>`/`>=`/`!=` would emit `acc as
+    // nat <= spec_sum` and diverge from production's bare form (a spurious
+    // counterexample, not a meaning bug). This re-implements production's Eq-only rule
+    // independently (a production coercion bug — coercing the wrong op — is still
     // caught: the reference and production would then differ).
     if is_comparison(op) {
         let coerce = op == BinOp::Eq;
@@ -333,7 +332,7 @@ fn encode_binary(
     let r = encode_binary_operand(rhs, op, false, ctx)?;
     // Parenthesize the whole binary so precedence is explicit at every level
     // (the #122 paren discipline generalized: a sub-predicate never silently
-    // re-associates). Z3 sees the SAME term regardless of nesting.
+    // re-associates). Z3 sees the same term regardless of nesting.
     Ok(format!("({l} {} {r})", binop_str(op)))
 }
 
@@ -346,20 +345,20 @@ fn is_comparison(op: BinOp) -> bool {
     )
 }
 
-/// Is `op` a `<`-LEADING operator (`<`, `<=`, `<<`)? A `Cast` LEFT operand of such
-/// an op MUST be wholly parenthesized — `x as u32 < 33` mis-parses the `u32 <` as
-/// the start of a generic-argument list (the #146/#148 cast-paren ambiguity, a HARD
-/// parse error in both Verus and Rust). This is the EXACT dual of production's
-/// `is_lt_leading in lower.rs` (`Lt | Le | Shl`), RE-stated INDEPENDENTLY here so
-/// the reference parenthesizes the same class — without it the reference would emit
+/// Is `op` a `<`-leading operator (`<`, `<=`, `<<`)? A `Cast` left operand of such
+/// an op must be wholly parenthesized: `x as u32 < 33` mis-parses the `u32 <` as
+/// the start of a generic-argument list (the #146/#148 cast-paren ambiguity, a
+/// parse error in both Verus and Rust). This is the dual of production's
+/// `is_lt_leading in lower.rs` (`Lt | Le | Shl`), re-stated independently here so
+/// the reference parenthesizes the same class. Without it the reference would emit
 /// an un-parseable `as nat <`/`as u32 <` and the obligation would be Unverifiable
-/// (not a faithfulness verdict). `>`/`>=`/`>>`/`==`/`!=` do NOT trigger the generic
+/// (not a faithfulness verdict). `>`/`>=`/`>>`/`==`/`!=` do not trigger the generic
 /// ambiguity (excluded — keeps the non-`<` casts paren-minimal).
 fn is_lt_leading(op: BinOp) -> bool {
     matches!(op, BinOp::Lt | BinOp::Le | BinOp::Shl)
 }
 
-/// Is `expr` a `nat`-valued term — i.e. a call to a `nat`-returning spec fn? The
+/// Is `expr` a `nat`-valued term, i.e. a call to a `nat`-returning spec fn? The
 /// frozen `nat`-returning forms are the recursive `spec fn … -> nat` (e.g.
 /// `spec_sum`, `count_where`). We detect it structurally: a call whose callee is
 /// a path. (A combinator-`count_where`/spec-fn call is the nat term in a
@@ -369,8 +368,8 @@ fn is_nat_valued(expr: &Expr) -> bool {
 }
 
 /// Encode a comparison operand: apply the `as nat` coercion when `coerce_nat` (the
-/// `Eq`-only nat-coerce decided by [`encode_binary`]) AND the operand is a
-/// bounded-int name in `nat_coerce`; OTHERWISE encode the sub-expression and apply
+/// `Eq`-only nat-coerce decided by [`encode_binary`]) and the operand is a
+/// bounded-int name in `nat_coerce`; otherwise encode the sub-expression and apply
 /// the cast-`<`-leading paren ([`encode_binary_operand`]) so a `Cast` left operand
 /// of a `<`-leading op is wholly parenthesized (the #146/#148 discipline).
 fn encode_comparison_operand(
@@ -383,9 +382,9 @@ fn encode_comparison_operand(
     if coerce_nat {
         if let Expr::Path(segments) = operand {
             if segments.len() == 1 && ctx.needs_nat_coerce(&segments[0]) {
-                // The coerced operand is itself an `as nat` cast — when it is the
-                // LEFT operand of a `<`-leading op it must be wholly parenthesized
-                // (`(acc as nat) <= …`), exactly as production parenthesizes a
+                // The coerced operand is itself an `as nat` cast: when it is the
+                // left operand of a `<`-leading op it must be wholly parenthesized
+                // (`(acc as nat) <= …`), as production parenthesizes a
                 // source-level `(result as nat) <= …` cast (#146/#148).
                 let cast = format!("{} as nat", segments[0]);
                 if is_left && is_lt_leading(op) {
@@ -399,10 +398,10 @@ fn encode_comparison_operand(
 }
 
 /// Encode a binary operand, applying the cast-`<`-leading paren (#146/#148): a
-/// `Cast` that is the LEFT operand of a `<`-leading op (`<`/`<=`/`<<`) is wholly
+/// `Cast` that is the left operand of a `<`-leading op (`<`/`<=`/`<<`) is wholly
 /// parenthesized — `(x as u32) < 33`, never the ambiguous `x as u32 < 33`. This is
-/// the dual of production's `lower_binary_operand`'s `is_lt_leading` guard, RE-stated
-/// INDEPENDENTLY. Every other operand is the plain [`encode`] (its own
+/// the dual of production's `lower_binary_operand`'s `is_lt_leading` guard, re-stated
+/// independently. Every other operand is the plain [`encode`] (its own
 /// parenthesization is already explicit per the #122 discipline).
 fn encode_binary_operand(
     operand: &Expr,
@@ -427,10 +426,10 @@ fn encode_unary(op: UnaryOp, inner: &Expr, ctx: &RefCtx) -> Result<String, RefEn
 /// A free-form call `f(args)`. Three cases, dispatched on the callee:
 ///
 /// 1. `old(x)` — the prev-state reference. Bound as a distinct obligation param
-///    `old_x` (REQ-2), so we emit `old_x` (NOT a Verus `old(_)`, which is only
+///    `old_x` (REQ-2), so we emit `old_x` (not a Verus `old(_)`, which is only
 ///    valid on a `&mut` param — the obligation binds the value directly).
-/// 2. a FROZEN combinator (callee name in `thermite_spec::lookup`) — emit a call
-///    to the registry `verus_l3` `spec fn` by name, with the args RE-encoded
+/// 2. a frozen combinator (callee name in `thermite_spec::lookup`) — emit a call
+///    to the registry `verus_l3` `spec fn` by name, with the args re-encoded
 ///    here (the slice `@`-view + the predicate closure independently, F2).
 /// 3. a named spec-fn call — `name(encoded args)`.
 fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, RefEncodeError> {
@@ -454,8 +453,8 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
         return Ok(format!("old_{mangled}"));
     }
 
-    // (2) a frozen combinator — REUSE the registry name (its verus_l3 def is the
-    // shared ground truth), RE-encode the args here.
+    // (2) a frozen combinator — reuse the registry name (its verus_l3 def is the
+    // shared ground truth), re-encode the args here.
     if thermite_spec::lookup(&name).is_some() {
         return encode_combinator_call(&name, args, ctx);
     }
@@ -469,23 +468,23 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &RefCtx) -> Result<String, Ref
 }
 
 /// Encode a frozen-combinator call (F2). The combinator's `verus_l3` body is the
-/// SHARED frozen ground truth (`thermite_spec::lookup(name).verus_l3`), reused by
-/// BOTH production and this reference — sharing it is NOT a loss of independence
-/// (the registry is the external spec). What this RE-implements independently is
-/// the combinator's ARGUMENTS, dispatched PER REGISTRY ARG-KIND
-/// (`CombinatorSig.arg_kinds`, `thermite_spec::combinators`) — exactly where a
+/// shared frozen ground truth (`thermite_spec::lookup(name).verus_l3`), reused by
+/// both production and this reference; sharing it is not a loss of independence
+/// (the registry is the external spec). What this re-implements independently is
+/// the combinator's arguments, dispatched per registry arg-kind
+/// (`CombinatorSig.arg_kinds`, `thermite_spec::combinators`), where a
 /// combinator-argument fidelity bug lives.
 ///
 /// Each i-th argument is encoded by its frozen kind (`thermite-design.md` §4.2):
 ///
 /// - [`ArgKind::Slice`] → the slice→`@` view ([`encode_slice_arg`]): a `Seq<u32>`
 ///   view of a slice param (F2's `xs` → `xs@`/`xs`).
-/// - [`ArgKind::Index`] → a SCALAR `int` ([`encode_index_value`]: `<path> as int`,
-///   a bare literal stays bare) — NEVER the `@`-view. This is the #145 fix:
+/// - [`ArgKind::Index`] → a scalar `int` ([`encode_index_value`]: `<path> as int`,
+///   a bare literal stays bare), never the `@`-view. This is the #145 fix:
 ///   `forall_below`/`forall_from`'s `n: int` index bound is a scalar, and `n@`
 ///   is a Verus type error (`no method view for int`).
 /// - [`ArgKind::Pred`] → the predicate closure `|x: u32| <body>`, body re-encoded
-///   by the SAME independent recursion (so F2's `x <= 10` vs `x < 10` is caught).
+///   by the same independent recursion (so F2's `x <= 10` vs `x < 10` is caught).
 /// - [`ArgKind::Value`] → the value as-is ([`encode`]).
 ///
 /// The arity + arg-kinds are already validated by the registry/validator, so we
@@ -495,7 +494,7 @@ fn encode_combinator_call(
     args: &[Expr],
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
-    // The registry entry is the frozen ground truth for the arg KINDS. The caller
+    // The registry entry is the frozen ground truth for the arg kinds. The caller
     // (`encode_call`) only reaches here when `lookup(name).is_some()`.
     let sig = thermite_spec::lookup(name)
         .ok_or_else(|| RefEncodeError::UnknownCallee(name.to_string()))?;
@@ -515,7 +514,7 @@ fn encode_combinator_call(
     Ok(format!("{name}({})", encoded_args.join(", ")))
 }
 
-/// Encode a single combinator argument BY ITS REGISTRY KIND (`#145`). This is the
+/// Encode a single combinator argument by its registry kind (`#145`). This is the
 /// per-kind dispatch the frozen `CombinatorSig.arg_kinds` mandates; it replaces
 /// the old slice-`@`-view-everything path that mis-encoded the `int` Index arg.
 fn encode_combinator_arg(
@@ -527,8 +526,8 @@ fn encode_combinator_arg(
     match kind {
         // A slice param → its `Seq` `@`-view (identity when bound as `Seq`).
         ArgKind::Slice => encode_slice_arg(arg, ctx),
-        // An `int` index BOUND (`forall_below`/`forall_from`'s `n: int`) → a
-        // SCALAR `int`, NEVER the `@`-view. THE #145 FIX.
+        // An `int` index bound (`forall_below`/`forall_from`'s `n: int`) → a
+        // scalar `int`, never the `@`-view. The #145 fix.
         ArgKind::Index => encode_index_value(arg, ctx),
         // The predicate closure slot.
         ArgKind::Pred => encode_pred_arg(arg, ctx),
@@ -538,10 +537,10 @@ fn encode_combinator_arg(
 }
 
 /// Encode a combinator `Pred`-kind argument: a predicate closure `|x| <body>` is
-/// RE-encoded to a Verus closure `|x: u32| <body>` — the body is encoded by the
-/// SAME independent recursion (so a closure-predicate infidelity, F2's `x <= 10`
+/// re-encoded to a Verus closure `|x: u32| <body>`; the body is encoded by the
+/// same independent recursion (so a closure-predicate infidelity, F2's `x <= 10`
 /// vs `x < 10`, is caught). A non-closure in a `Pred` slot is an honest `Err`
-/// (the registry says this slot MUST be a closure).
+/// (the registry says this slot must be a closure).
 fn encode_pred_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match arg {
         Expr::Closure { params, body } => {
@@ -565,9 +564,9 @@ fn encode_pred_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     }
 }
 
-/// Encode a call argument for a NAMED spec-fn call (not a combinator — combinator
+/// Encode a call argument for a named spec-fn call (not a combinator — combinator
 /// args dispatch per registry kind via [`encode_combinator_arg`]). A predicate
-/// closure is RE-encoded to a Verus closure `|x: u32| <body>`; everything else is
+/// closure is re-encoded to a Verus closure `|x: u32| <body>`; everything else is
 /// an ordinary sub-expression (a slice gets its `@`-view via [`encode_slice_arg`]).
 fn encode_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     match arg {
@@ -577,13 +576,13 @@ fn encode_call_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
 }
 
 /// Encode a slice-position argument with the slice→`@` view rewrite (§4.2). A
-/// bare `Expr::Path` that is NOT already bound as a `Seq` in the obligation gets
+/// bare `Expr::Path` that is not already bound as a `Seq` in the obligation gets
 /// the explicit `@` suffix (the `&[T]`→`Seq` view); a `Seq`-bound name is the
-/// identity (THE COERCION FIX — emitting `xs` not `xs@` when `xs: Seq` is bound).
+/// identity (the coercion fix — emitting `xs` not `xs@` when `xs: Seq` is bound).
 fn encode_slice_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     if let Expr::Path(segments) = arg {
         if segments.len() == 1 && !ctx.is_seq_bound(&segments[0]) {
-            // A slice param NOT bound as a Seq → take its `@`-view at the use
+            // A slice param not bound as a Seq → take its `@`-view at the use
             // site. (Bound-as-Seq → identity, the obligation case.)
             return Ok(format!("{}@", segments[0]));
         }
@@ -592,9 +591,9 @@ fn encode_slice_arg(arg: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> 
 }
 
 /// A method call in spec position (`thermite-design.md` §4.2; REQ-1). The
-/// dispatch is keyed on the RECEIVER's SHAPE not the method name (the #127
+/// dispatch is keyed on the receiver's shape, not the method name (the #127
 /// class): for a `String`/byte receiver, `.byte_at(i)` is the byte-view index
-/// `recv[i]` and `.len()` is `recv.len()` over the `@`-view. This RE-implements
+/// `recv[i]` and `.len()` is `recv.len()` over the `@`-view. This re-implements
 /// the spec-context method→`spec_*` byte-view dispatch independently of
 /// production, so a misdispatch (a wrong index, F3) is caught.
 fn encode_method_call(
@@ -604,10 +603,10 @@ fn encode_method_call(
     ctx: &RefCtx,
 ) -> Result<String, RefEncodeError> {
     // A `String`/`&String` receiver (#150 gap #2): the byte-view dispatch is the
-    // wrapper SPEC fns (`.spec_len()` / `.spec_byte_at(i as int)`), keyed on the
-    // RECEIVER being a `string_bound` bare path — MIRRORING production's
+    // wrapper spec fns (`.spec_len()` / `.spec_byte_at(i as int)`), keyed on the
+    // receiver being a `string_bound` bare path, mirroring production's
     // `recv_is_string` arm (`lower.rs`), which a `String`-param `s.byte_at(0)` /
-    // `s.len()` in an `ens` reaches. The receiver is emitted BARE (`s`), not `s@`:
+    // `s.len()` in an `ens` reaches. The receiver is emitted bare (`s`), not `s@`:
     // the wrapper spec fns take `&self`.
     if let Expr::Path(segs) = receiver {
         if segs.len() == 1 && ctx.is_string_bound(&segs[0]) {
@@ -620,9 +619,9 @@ fn encode_method_call(
 
     match name {
         // The byte-view accessor (#127): `s.byte_at(i)` is the i-th byte of the
-        // sequence view — `recv[i]`. F3's teeth bite here: a production
-        // misdispatch to index `1` for source index `0` differs from this. This is
-        // the `Seq<u8>`-bound byte-view (a #127/#147 `Seq`-receiver), distinct from
+        // sequence view, `recv[i]`. F3's teeth bite here: a production misdispatch
+        // to index `1` for source index `0` differs from this. This is the
+        // `Seq<u8>`-bound byte-view (a #127/#147 `Seq`-receiver), distinct from
         // the `String`/TString wrapper byte-view above (#150 gap #2).
         "byte_at" => {
             if args.len() != 1 {
@@ -636,12 +635,12 @@ fn encode_method_call(
             Ok(format!("{recv}[{idx}]"))
         }
         // The length accessor `s.len()`. A `Seq`-bound receiver views as `recv.len()`
-        // (the `Seq::len()`); a plain SLICE-param receiver (`&[T]`, NOT seq-bound)
-        // emits the BARE `recv.len()` — matching production, which keeps a slice
+        // (the `Seq::len()`); a plain slice-param receiver (`&[T]`, not seq-bound)
+        // emits the bare `recv.len()`, matching production, which keeps a slice
         // `.len()` un-viewed in spec position (`lower.rs`: "a slice `.len()` in spec
         // position is accepted by Verus on the slice (`haystack.len()`); the `@` view
         // is only needed where a `Seq` operation is required"). So the receiver here
-        // is the BARE path (no `@` suffix), NOT `encode_receiver`'s viewed form.
+        // is the bare path (no `@` suffix), not `encode_receiver`'s viewed form.
         "len" => {
             if !args.is_empty() {
                 return Err(RefEncodeError::Unsupported(
@@ -672,19 +671,19 @@ fn encode_method_call(
 
 /// Encode a `String`/`&String`-receiver byte-view method (#150 gap #2). The
 /// receiver `s` is a `string_bound` name (bound `&TString`/`TString` in the
-/// obligation), so its spec-position byte-view rewrites to the wrapper SPEC fns —
-/// EXACTLY production's `recv_is_string` arm (`lower.rs`):
+/// obligation), so its spec-position byte-view rewrites to the wrapper spec fns,
+/// matching production's `recv_is_string` arm (`lower.rs`):
 ///
 /// - `.len()` → `s.spec_len()` (the `nat`-valued spec length; the exec `len`
 ///   returns `u64` and cannot be named in a contract).
-/// - `.byte_at(i)` → `s.spec_byte_at(<i>)` where an integer LITERAL stays bare
+/// - `.byte_at(i)` → `s.spec_byte_at(<i>)` where an integer literal stays bare
 ///   (Verus coerces it into the `int` param, matching the golden
 ///   `string_demo.verus.rs` `s.spec_byte_at(0)`) and a non-literal index is cast
-///   `as int` (no implicit `usize`→`int` in spec position) — the SAME literal/cast
+///   `as int` (no implicit `usize`→`int` in spec position) — the same literal/cast
 ///   split production applies.
 ///
-/// `.slice(..)` over a `String` is NOT in the frozen contract byte-view set (the
-/// `TString` wrapper has no `spec_slice` — `slice` is an EXEC constructor, never
+/// `.slice(..)` over a `String` is not in the frozen contract byte-view set (the
+/// `TString` wrapper has no `spec_slice`: `slice` is an exec constructor, never
 /// named in a contract; no corpus clause uses it) → an honest [`RefEncodeError`],
 /// never a silent wrong encoding.
 fn encode_string_byteview(
@@ -728,15 +727,15 @@ fn encode_string_byteview(
 
 /// Encode a `Map`-receiver spec-position accessor (#150 gap #3). The receiver `m`
 /// is a `map_bound` name (bound `TMap…` in the obligation), so its membership/length
-/// accessor rewrites to the wrapper SPEC fns — EXACTLY production's `lower.rs` Map
+/// accessor rewrites to the wrapper spec fns, matching production's `lower.rs` Map
 /// arm:
 ///
 /// - `.contains_key(k)` → `m.spec_contains_key(k)` — the `exists|j| data@[j].0 == k`
-///   membership. The key arg lowers PLAINLY (a Copy key value, NO `as int` cast —
+///   membership. The key arg lowers plainly (a Copy key value, no `as int` cast:
 ///   `spec_contains_key` takes the surface key type), matching production.
 /// - `.len()` → `m.len()` — the wrapper `spec fn len(&self) -> nat`, unchanged.
 ///
-/// `.get(_)`/`.insert(_)` are NOT spec-rewritten (production names `get` only via a
+/// `.get(_)`/`.insert(_)` are not spec-rewritten (production names `get` only via a
 /// `match`-in-`ens` over the result, and `insert` is exec) → an honest
 /// [`RefEncodeError`], never a silent wrong encoding.
 fn encode_map_accessor(
@@ -773,9 +772,9 @@ fn encode_map_accessor(
 }
 
 /// Encode a `.len()` receiver: a `Seq`-bound name is its own view (`recv.len()`),
-/// and a plain SLICE-param bare path (`&[T]`, not seq-bound, not string-bound)
-/// emits the BARE name — production keeps a slice `.len()` UN-viewed in spec
-/// position (`haystack.len()`, NOT `haystack@.len()`), applying `@` only at a `Seq`
+/// and a plain slice-param bare path (`&[T]`, not seq-bound, not string-bound)
+/// emits the bare name. Production keeps a slice `.len()` un-viewed in spec
+/// position (`haystack.len()`, not `haystack@.len()`), applying `@` only at a `Seq`
 /// op (index/subrange/combinator-arg). This is the dual of production's slice
 /// `.len()` rule. A non-path / non-slice receiver falls back to [`encode`].
 fn encode_len_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
@@ -800,15 +799,15 @@ fn encode_len_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncod
 /// }
 /// ```
 ///
-/// We RE-implement that shape INDEPENDENTLY: the scrutinee is encoded by the same
-/// recursion, each arm's PATTERN is encoded ([`encode_pattern`]) and each arm's
-/// BODY is encoded by the SAME independent recursion (so a payload-predicate
+/// We re-implement that shape independently: the scrutinee is encoded by the same
+/// recursion, each arm's pattern is encoded ([`encode_pattern`]) and each arm's
+/// body is encoded by the same independent recursion (so a payload-predicate
 /// infidelity — a wrong arm body, a swapped `Some`/`None` — is caught). The
-/// pattern-bound payload var (`i`/`v`/`e`) is in scope in the body exactly as
-/// production binds it, so `haystack[i]` encodes to `haystack@[i as int]` (the
-/// pattern var as an `int` index) MATCHING production. The brace/arm layout
-/// mirrors production's `lower_match`. A guard arm emits `pat if <guard> => body`
-/// (the C10 form). NEVER a panic / silent wrong encoding.
+/// pattern-bound payload var (`i`/`v`/`e`) is in scope in the body as production
+/// binds it, so `haystack[i]` encodes to `haystack@[i as int]` (the pattern var
+/// as an `int` index) matching production. The brace/arm layout mirrors
+/// production's `lower_match`. A guard arm emits `pat if <guard> => body` (the C10
+/// form). Never a panic / silent wrong encoding.
 fn encode_match(
     scrutinee: &Expr,
     arms: &[MatchArm],
@@ -833,13 +832,13 @@ fn encode_match(
     Ok(out)
 }
 
-/// Encode a contract-position match PATTERN independently of production's
+/// Encode a contract-position match pattern independently of production's
 /// `lower_pattern` (#150 gap #1). The frozen contract-`match` covers the C7
 /// payload-in-contract patterns: the built-in `Option`/`Result` variants
 /// (`Some(x)`/`None`/`Ok(x)`/`Err(e)`, unqualified — Verus knows `Option`/`Result`,
-/// exactly as production's `qualify_variant_path` leaves a built-in unqualified),
+/// as production's `qualify_variant_path` leaves a built-in unqualified),
 /// a binding (`x`), and a wildcard (`_`). A nested/struct/slice/or pattern, or a
-/// USER enum variant (which production would enum-qualify via its `variants` map —
+/// user enum variant (which production would enum-qualify via its `variants` map —
 /// the reference has no such map, so qualifying it would risk a silent wrong
 /// encoding) is an honest [`RefEncodeError`].
 fn encode_pattern(pat: &Pattern) -> Result<String, RefEncodeError> {
@@ -850,7 +849,7 @@ fn encode_pattern(pat: &Pattern) -> Result<String, RefEncodeError> {
             let head = path.join("::");
             // Only the built-in Option/Result variants are encodable unqualified
             // (production leaves a built-in unqualified; a user variant would need
-            // the enum-qualification map we deliberately do not import).
+            // the enum-qualification map this encoder does not import).
             if !is_builtin_variant(&head) {
                 return Err(RefEncodeError::Unsupported(format!(
                     "match pattern over the user/non-built-in variant `{head}` \
@@ -884,7 +883,7 @@ fn is_builtin_variant(head: &str) -> bool {
 
 /// Encode a method-call receiver. A bare slice/string param name takes its
 /// `@`-view unless it is bound directly as a `Seq` in the obligation (the same
-/// COERCION-matching rule as [`encode_slice_arg`]): F3 binds `s: Seq<u8>`, so the
+/// coercion-matching rule as [`encode_slice_arg`]): F3 binds `s: Seq<u8>`, so the
 /// receiver is the bare `s`.
 fn encode_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
     if let Expr::Path(segments) = receiver {
@@ -941,14 +940,14 @@ fn encode_index(base: &Expr, index: &IndexArg, ctx: &RefCtx) -> Result<String, R
 
 /// Encode a reference `&inner` in spec position (REQ-1; the `&xs[..i]` /
 /// `&xs[a..b]` slice-range borrow + the bare `&xs`). A spec `Seq` is a value
-/// type — there is no Verus `&Seq` borrow in the contract sublanguage — so a `&`
-/// in spec position is ALWAYS the slice→`Seq` view/subrange rewrite, never a
-/// literal `&`. This RE-implements production's `Expr::Ref` spec arm
+/// type (there is no Verus `&Seq` borrow in the contract sublanguage), so a `&`
+/// in spec position is the slice→`Seq` view/subrange rewrite, never a
+/// literal `&`. This re-implements production's `Expr::Ref` spec arm
 /// (`lower.rs`: in spec position a `&`-of-`Index` delegates to `lower_index`, a
-/// bare `&e` over a slice param views it) INDEPENDENTLY:
+/// bare `&e` over a slice param views it) independently:
 ///
 /// - `&xs[..i]` / `&xs[a..b]` / `&xs[a..]` — the inner is an [`Expr::Index`]
-///   range; encode EXACTLY the inner `Index` (the `.subrange(..)` over the base
+///   range; encode the inner `Index` (the `.subrange(..)` over the base
 ///   view), so `&xs[..i]` and `xs[..i]` encode identically (matching production,
 ///   which routes both through `lower_index`).
 /// - `&xs[i]` — a single-element borrow is the indexed element (the inner
@@ -978,7 +977,7 @@ fn encode_ref(inner: &Expr, ctx: &RefCtx) -> Result<String, RefEncodeError> {
 
 /// An integer cast `e as T` → `(e) as nat`/`as int`/`as u64`/… with the #122
 /// paren discipline (the inner is parenthesized so a binary/unary inner casts as
-/// a whole — `a + b as nat` must NOT parse as `a + (b as nat)`).
+/// a whole — `a + b as nat` must not parse as `a + (b as nat)`).
 fn encode_cast(
     inner: &Expr,
     ty: &thermite_syntax::ast::Type,

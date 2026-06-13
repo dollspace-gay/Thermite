@@ -1,7 +1,7 @@
 //! SPIKE-2 — the normalizer-probe fixture generator + hit-rate target
 //! (`.design/m0-spikes.md` REQ-5 / REQ-7).
 //!
-//! This is the spike's **bin target** (REQ-7: "computed by a test/bin target").
+//! This is the spike's bin target (REQ-7: "computed by a test/bin target").
 //! Running it
 //!
 //! ```text
@@ -12,7 +12,7 @@
 //! `thermite-tv/tests/fixtures/strat_probe/` — one file per production/reference
 //! instance pair — writes the fixtures `README.md`, and prints the hit-rate
 //! report (corpus-only n=4 + corpus+generated + per-shape breakdown + the
-//! decision-rule branch). It lives in `examples/` (NOT `src/`) so the AC-6 grep
+//! decision-rule branch). It lives in `examples/` (not `src/`) so the AC-6 grep
 //! over `thermite-tv/src/` finds no `normalize` consumer; an example is spike
 //! scaffolding, not a TV pipeline code path.
 //!
@@ -22,16 +22,16 @@
 //! columns are hand-written approximations of the conventions each emitter uses
 //! today (`.design/m0-spikes.md` Architecture):
 //!
-//! - **production-style** mimics `thermite-lower/src/lower.rs` inlining the
+//! - production-style mimics `thermite-lower/src/lower.rs` inlining the
 //!   `thermite_spec::CombinatorSig.verus_l3` body — chained comparisons
 //!   (`0 <= i <= j < len(s)`), `i`/`j` binders, the spec-context `idx(s,i)` /
 //!   `len(s)` accessors;
-//! - **reference-style** mimics `lean/Thermite/RefEncode.lean`'s independent
+//! - reference-style mimics `lean/Thermite/RefEncode.lean`'s independent
 //!   encoding — alpha-renamed binders, explicit split-and-reordered antecedent
 //!   conjuncts, flipped atom orientation, nested quantifiers.
 //!
-//! The differences are exactly the surface noise the four layer-1 passes are
-//! designed to canonicalize, and the mimicry biases the measured rate DOWNWARD
+//! The differences are the surface noise the four layer-1 passes are
+//! designed to canonicalize, and the mimicry biases the measured rate downward
 //! (real stage-2 emitters can be nudged toward convergence), so a high measured
 //! rate is trustworthy evidence (fallback F-C, the safe asymmetry).
 
@@ -44,11 +44,11 @@ use thermite_syntax::ast::{BinOp, Expr, PrimType, Type};
 use thermite_tv::gen::generate_clauses;
 use thermite_tv::normalize;
 
-/// The bounded-quantifier combinator shapes the probe covers. These are the SIX
+/// The bounded-quantifier combinator shapes the probe covers. These are the six
 /// of the eight frozen registry combinators that have a layer-1 raw-quantifier
 /// expansion (RefEncode.lean's "6 bounded-quantifier combinators"). The other two
 /// — `count_where` (a recursive `nat` fold) and `permutation_of` (a multiset
-/// equality) — have NO raw-quantifier form, so they are out of layer-1 scope and
+/// equality) — have no raw-quantifier form, so they are out of layer-1 scope and
 /// excluded (documented in the README), not counted as misses.
 const SHAPES: &[&str] = &[
     "sorted",
@@ -73,7 +73,7 @@ impl Pred {
     fn apply(&self, elem: &str) -> String {
         // No parens around the cast: `idx(s,i) as u32 < 9` — `parse_term` binds the
         // `as` tighter than the comparison, so an outer paren would be misread as a
-        // FORMULA group (the leading `(` is formula grouping in `parse_unary`).
+        // formula group (the leading `(` is formula grouping in `parse_unary`).
         let lhs = match &self.cast {
             Some(ty) => format!("{elem} as {ty}"),
             None => elem.to_string(),
@@ -103,11 +103,11 @@ struct Instance {
 /// equivalent; their differences exercise the four layer-1 passes.
 ///
 /// Binder discipline: the reference-style binders (`a`/`b`, `w`, `p`/`q`) are
-/// chosen DISJOINT from the generator's free-variable vocabulary (`gen.rs` draws
+/// chosen disjoint from the generator's free-variable vocabulary (`gen.rs` draws
 /// slices `xs`/`ys` and indices from `n`/`m`/`k`), and the production-style
 /// binders (`i`/`j`) likewise. A binder that coincided with a free index variable
-/// (`forall k . … k < k …` when the index IS `k`) would be a genuine capture —
-/// the two spellings would then NOT be equivalent — so the probe avoids it.
+/// (`forall k . … k < k …` when the index is `k`) would be a genuine capture (the
+/// two spellings would then not be equivalent), so the probe avoids it.
 fn templates(inst: &Instance) -> (String, String) {
     let s = &inst.slice_a;
     match inst.shape.as_str() {
@@ -409,10 +409,10 @@ fn children(e: &Expr) -> Vec<&Expr> {
 /// `gen::generate_clauses`, walking increasing seeds deterministically (no new
 /// generator productions — REQ-5 / Out of Scope). Each draw is a real distinct
 /// generator occurrence (unique `gen#<seed>.<k>#<occ>` provenance). The sample
-/// MAXIMIZES distinct rendered instances first (ordered by first appearance),
+/// takes distinct rendered instances first (ordered by first appearance),
 /// then — for the low-vocabulary shapes whose distinct-instance count the
 /// generator caps below `PER_SHAPE` (`sorted` takes only a slice ∈ {xs, ys} → 2;
-/// `disjoint` a slice pair → 4) — pads to `PER_SHAPE` with further REAL draws, so
+/// `disjoint` a slice pair → 4) — pads to `PER_SHAPE` with further real draws, so
 /// "≥ 5 generator-drawn instances per shape" holds literally even where the
 /// rendered pair necessarily repeats (noted in the README).
 fn generated_instances() -> Vec<Instance> {

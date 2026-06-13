@@ -1,30 +1,30 @@
-//! DIVERGENCE PIN (blocker #165) — the GROUNDED AC-4 `if`-statement-mutation body
+//! Divergence pin (blocker #165) — the grounded AC-4 `if`-statement-mutation body
 //! is rejected as `Unsupported` by the reference state-denotation.
 //!
 //! Authority: `.design/verified/exec-stmt-tv.md`
 //!   - REQ-1 frozen subset IN table: row "`if` / `if-else` statement" |
 //!     `Stmt::If { cond, then, else_ }` | "branch on a `bool` exec expr" — an
-//!     `if`-as-STATEMENT is IN the frozen 2.2.1 straight-line subset.
-//!   - AC-4 (GROUNDED): for `{ let mut r = x; if x < 10 { r = r + 1; } else
+//!     `if`-as-statement is in the frozen 2.2.1 straight-line subset.
+//!   - AC-4 (grounded): for `{ let mut r = x; if x < 10 { r = r + 1; } else
 //!     { r = r + 2; } r }` (reference `if x < 10 { x+1 } else { x+2 }`), "the
-//!     faithful production VERIFIES" — the doc's Verification section shows
+//!     faithful production verifies" — the doc's Verification section shows
 //!     `"verification-results": { "success": true, "verified": 1, "errors": 0 }`.
 //!     Independently re-confirmed against verus 0.2026.05.24 during this audit
 //!     (`1 verified, 0 errors`).
 //!
 //! Toolchain: `thermite_tv::exec_stmt_encode::thread_stmt` (the `Stmt::If { .. }`
 //! arm) returns `RefEncodeError::Unsupported("`if` as a non-tail STATEMENT ...")`,
-//! so `body_ref_state` / `body_equivalence_obligation` CANNOT encode the AC-4 body
-//! — the obligation builder returns `Err`. The production side
+//! so `body_ref_state` / `body_equivalence_obligation` cannot encode the AC-4 body
+//! and the obligation builder returns `Err`. The production side
 //! (`thermite_lower::lower_exec_body` → `lower_block_inner`'s `Stmt::If` arm) lowers
-//! this body fine, so the GROUNDED-as-VERIFIED AC-4 body can never be discharged
-//! through 2.2.1 TV. This is a Design-AC miss: REQ-1 lists the `if`-statement as IN
+//! this body fine, so the grounded-as-verified AC-4 body can never be discharged
+//! through 2.2.1 TV. This is a Design-AC miss: REQ-1 lists the `if`-statement as in
 //! the frozen subset and AC-4 grounds it as `verified: 1`, but the reference rejects
 //! it.
 //!
 //! Expected (authority): `body_equivalence_obligation` for the AC-4 body builds an
 //! obligation `Ok(..)` whose `ensures` compares `result` to the branch-composed
-//! reference `if x < 10 { (x + 1) } else { (x + 2) }`. CURRENT: it is `Err`.
+//! reference `if x < 10 { (x + 1) } else { (x + 2) }`. Current: it is `Err`.
 
 use thermite_syntax::ast::{BinOp, Block, Expr, Stmt};
 use thermite_tv::obligation::{body_equivalence_obligation, BodyObligationFrame, BodyParamDecl};
@@ -46,8 +46,8 @@ fn bin(op: BinOp, l: Expr, r: Expr) -> Expr {
     }
 }
 
-/// The GROUNDED AC-4 source body: `{ let mut r = x; if x < 10 { r = r + 1; }
-/// else { r = r + 2; } r }` — the `if` is a STATEMENT mutating the outer cell `r`,
+/// The grounded AC-4 source body: `{ let mut r = x; if x < 10 { r = r + 1; }
+/// else { r = r + 2; } r }` — the `if` is a statement mutating the outer cell `r`,
 /// with `r` as the body tail. (`.design/verified/exec-stmt-tv.md` AC-4.)
 fn ac4_body() -> Block {
     let then = Block {
@@ -92,16 +92,16 @@ fn ac4_frame() -> BodyObligationFrame {
     }
 }
 
-/// The body-refinement obligation for the GROUNDED AC-4 body MUST build (the design
-/// lists the `if`-statement as IN the frozen subset, REQ-1, and grounds it as
+/// The body-refinement obligation for the grounded AC-4 body must build (the design
+/// lists the `if`-statement as in the frozen subset, REQ-1, and grounds it as
 /// `verified: 1`, AC-4). It currently returns `Err(Unsupported)` from `thread_stmt`.
 #[test]
 fn divergence_ac4_if_stmt_mutation_obligation_builds() {
     let faithful = "    let mut r = x;\n    if x < 10 { r = r + 1; } else { r = r + 2; }\n    r\n";
     let result = body_equivalence_obligation(&ac4_body(), faithful, &ac4_frame());
     // Authority: REQ-1 admits the `if`-statement; AC-4 grounds it verified. The
-    // obligation MUST build (Ok), and its `ensures` MUST compare `result` to the
-    // branch-composed reference (NOT be an `Err`). This FAILS today: the builder
+    // obligation must build (Ok), and its `ensures` must compare `result` to the
+    // branch-composed reference (not be an `Err`). This fails today: the builder
     // returns `Err(Unsupported(..))` because `thread_stmt` rejects every `Stmt::If`.
     let prog = result.unwrap_or_else(|e| {
         panic!(

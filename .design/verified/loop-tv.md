@@ -27,7 +27,7 @@ not designed" (`exec-stmt-tv.md` REQ-4) to a buildable increment. The straight-l
 + PROVEN (`body_ref_state in exec_stmt_encode.rs`, `body_ref_sound in Exec/Stmt.lean`); a `Stmt::Loop`
 is HONESTLY rejected as `RefEncodeError::Unsupported`. This doc designs the per-run loop obligations
 (Rust `thermite-tv`) and the mechanized iteration semantics + WHILE-RULE soundness theorem (Lean) that
-together upgrade a faithful `while inv .. dec ..` loop from "Skipped" to VERIFIED — without
+together upgrade a faithful `while inv .. dec ..` loop from "Skipped honestly" to VERIFIED — without
 ever re-deriving the loop's closed form. The architecture EXTENDS the existing `h_tv` capstone pattern
 (`Faithfulness.lean`): per-run Z3-discharged premises + a universally-proven Lean rule = the universal
 guarantee. Everything here is NOT-STARTED with this doc as the design prerequisite, except the
@@ -315,7 +315,7 @@ proof, then the forge seam). Three increments, each a future blocker under #163:
   conformance pins against real verus).
 - AC: a faithful `while` loop's three obligations VERIFY (`verified: 1, errors: 0`); a broken-invariant
   mutant (preservation fails) → `postcondition not satisfied`; a wrong-after-loop-state mutant → CAUGHT;
-  a `loop`-kind / break / mid-body-return loop → `RefEncodeError::Unsupported` (Skipped).
+  a `loop`-kind / break / mid-body-return loop → `RefEncodeError::Unsupported` (Skipped honestly).
 
 **Increment 2.2.2-ii — the Lean iteration semantics + the WHILE-RULE (the universal soundness piece).**
 - Manifest: `lean/Thermite/Exec/Loop.lean` (`loopDenote` + `while_rule` + the three negative lemmas +
@@ -331,7 +331,7 @@ proof, then the forge seam). Three increments, each a future blocker under #163:
   Unverifiable/Skipped — reusing the #162 phase scaffold), `forge/tests/body_tv.rs` (the SHIPPED
   test file — commit `540cea0d`).
 - AC: `binary_search.th`'s loop reaches the phase as `Skipped` (it is a `loop`-kind with mid-body
-  returns — OUT of v1); a v1-subset faithful `while` corpus fixture → `Faithful`; a
+  returns — OUT of v1, honestly); a v1-subset faithful `while` corpus fixture → `Faithful`; a
   broken-invariant fixture → `Divergent` with a counterexample. (#162 is the prerequisite seam.)
 - **SHIPPED (#162 + the #189 honesty fix):** `forge::body_tv` (`forge/src/body_tv.rs`) ships the
   loop branch; verified by `forge/tests/body_tv.rs` (see REQ-5 below). The earlier name
@@ -347,7 +347,7 @@ proof, then the forge seam). Three increments, each a future blocker under #163:
   `postcondition not satisfied`.
 - **AC-3 (wrong-after-loop-state mutant → CAUGHT)** — a loop whose after-loop characterization over-claims
   (stronger than `inv ∧ ¬c`) fails the exit obligation with a counterexample.
-- **AC-4 (loop-without-usable-inv → Skipped)** — a `loop`-kind, a `break`/`continue` body, a
+- **AC-4 (loop-without-usable-inv → Skipped honestly)** — a `loop`-kind, a `break`/`continue` body, a
   mid-body `return`, a nested loop, a non-scalar-state loop, or a trivially-weak `inv` reaches
   `forge::body_tv` as `Skipped` (with a reason), NEVER `Faithful` (R-HONEST-3).
 - **AC-5 (the single-iteration step REUSES the SHIPPED transformer)** — the preservation obligation's

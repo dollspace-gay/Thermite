@@ -22,7 +22,7 @@ counterexamples, and the vacuity+mutation battery that runs inside the gate) plu
 ONE genuinely new research-spike capability: a body-position hole token (`?N`) and
 a `fill` that splices code at a hole address and re-checks. The doc adapts to what
 exists; it proposes no change to the shipped substrates, only documents the
-contract the new verbs satisfy and pins their v1 scope.
+contract the new verbs satisfy and pins their v1 scope honestly.
 
 > **Amendment 2026-06-12 (doc-freshness re-audit, #262).** Re-verified against the
 > current tree (`dff9ae86`; one post-pin commit, #195 `d2d1d445`). Two

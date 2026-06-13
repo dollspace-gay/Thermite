@@ -187,7 +187,7 @@ effects).
   TERMINATION is the per-run Verus `decreases` residual (the `h_run` loop-EXITS hypothesis, NOT a
   Lean premise — partial correctness is the honest v1, `loop-tv.md` REQ-4). The `loop`-kind /
   `break`/`continue` / a mid-body early `return` (multi-exit CPS) / nested loops / non-scalar
-  mutation `xs[i]=e` remain OUT (Skipped; `Unsupported` in `body_ref_state` /
+  mutation `xs[i]=e` remain OUT (Skipped honestly; `Unsupported` in `body_ref_state` /
   `loop_ref_obligations`).
 - **The whole-translation universal forward-simulation proof is EXPLICITLY NOT the target.** We do
   not verify the production lowerer, and we do not commit to a once-for-all simulation proof of the
@@ -617,7 +617,7 @@ side of the toolchain".) It is NOT a Cargo crate and is NOT routed in `tooling/s
 | (c) `Thermite/RefEncode.lean` | a Lean model of the reference encoder `ref_contract_pred`'s OUTPUT (the algorithm it implements, as a Lean function) | models `thermite-tv/src/ref_encode.rs` (`ref_contract_pred`) |
 | (d) `Thermite/Soundness.lean` | the soundness theorem **T1** as a Lean `theorem`: `∀ P, ⟦R(P)⟧ = ⟦P⟧_S` (proved by `induction` on the AST, one case per rule) | (T1) above |
 
-**The Rust↔Lean correspondence gap (state it — a residual trusted item, finding #3 item
+**The Rust↔Lean correspondence gap (state it honestly — a residual trusted item, finding #3 item
 (3)).** The Lean side proves the ALGORITHM the Rust encoder implements is sound. That the Rust code
 in `thermite-tv` ACTUALLY MATCHES the Lean-proved algorithm is NOT itself proved by Lean — it is a
 gap (analogous to CompCert's extraction/runtime trust, Leroy's item (3)). Two honest mitigations,

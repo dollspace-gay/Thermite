@@ -1,0 +1,10 @@
+{
+  "uuid": "ea743e46-a487-46da-8d16-ca16df6bfc30",
+  "issue_uuid": "5c087bd3-b278-4697-8d57-3b3dec48edda",
+  "author": "rApq",
+  "content": "Merged via PR #3. SubstKit.lean: sdenote_push_lift + sdenote_subst proven zero-sorry, axioms = {propext,Quot.sound}. Carrier verdict: hand-rolled finiteness witness kept denotation core-Lean-only (Fintype NOT needed) — resolves metatheory §2/§4 tension. 11 lemmas, no F-A trigger. Stage-2 input Q-KIT resolved: plain de Bruijn confirmed.",
+  "created_at": "2026-06-13T02:07:26.932288Z",
+  "kind": "result",
+  "signed_by": "SHA256:tVRGNaCPy5N1tRtokzkbgsOCzGZujGDWQlGHFruaL9c",
+  "signature": "U1NIU0lHAAAAAQAAADMAAAALc3NoLWVkMjU1MTkAAAAgylLCWwpnQm2E2UQO23AN1e/yB6k0yzmPM7qiYPujTNYAAAARY3Jvc3NsaW5rLWNvbW1lbnQAAAAAAAAABnNoYTUxMgAAAFMAAAALc3NoLWVkMjU1MTkAAABA9CJMjipRbrRN5SCJp0MDqWxks/VAQtv638NORP5TIlyUVJBIDMmZ396QE0ykcuomY6TEbOh2cxXb00R/5jeCBA=="
+}

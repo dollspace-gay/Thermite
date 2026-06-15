@@ -896,3 +896,40 @@ crate_pattern = "tooling/doc-drift.py"
 design = ".design/tooling/doc-drift-tripwire.md"
 reference = []
 conformance_ops = []
+
+# ---------------------------------------------------------------------
+# tooling — canonical REQ registry and generated status views (GitHub #17)
+# ---------------------------------------------------------------------
+# DECLARATIVE like the doc-drift route above: the edit hook does not gate
+# tooling/.design data paths, but doc-drift can still enforce that the governing
+# design doc is re-pinned when the registry, generator, generated view, or legacy
+# bridge changes.
+[[route]]
+crate_pattern = "tooling/req-registry.py"
+design = ".design/tooling/req-registry.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "tooling/tests/test_req_registry.py"
+design = ".design/tooling/req-registry.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = ".design/reqs/registry.toml"
+design = ".design/tooling/req-registry.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = ".design/reqs/status.md"
+design = ".design/tooling/req-registry.md"
+reference = []
+conformance_ops = []
+
+[[route]]
+crate_pattern = "tooling/req-status.py"
+design = ".design/tooling/req-registry.md"
+reference = []
+conformance_ops = []

@@ -1,7 +1,7 @@
 # Thermite — convenience targets. The build/test system is Cargo; these are
 # thin entry points. `make audit` is the headline: a FULL TRUST-CHAIN
 # re-derivation a skeptic runs on their own machine (see scripts/audit.sh).
-.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-test req-status req-status-test
+.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-test req-status req-status-test req-registry req-registry-test
 
 # Re-derive the WHOLE trust chain on the skeptic's machine (SLOW — minutes):
 #   1  the universal faithfulness theorem re-verified by the local Lean kernel
@@ -31,6 +31,7 @@ gauntlet:
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo fmt --all --check
 	python3 tooling/req-status.py
+	python3 tooling/req-registry.py --check
 
 check:
 	cargo build --workspace
@@ -68,4 +69,12 @@ req-status:
 	@python3 tooling/req-status.py
 
 req-status-test:
+	@python3 -m unittest discover -s tooling/tests -v
+
+# Canonical REQ registry + generated status views. `--check` validates the
+# machine-readable registry and fails if checked-in generated views are stale.
+req-registry:
+	@python3 tooling/req-registry.py --check
+
+req-registry-test:
 	@python3 -m unittest discover -s tooling/tests -v

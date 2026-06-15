@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1e9a3dfeb41394364f73b6580b9f30025937eac6 (re-pinned 2026-06-15: legacy mapping records, source-comment reference_list generation, and the first REQ-5 replacement region landed after stage-1 registry entries; RFC #17)
+audited-sha: 43a0ac4a1afb259b34ade9528f6b169ff1e6ec42 (re-pinned 2026-06-15: contract-TV crate summary rows now map to stable owner IDs and render through the canonical source-comment region; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

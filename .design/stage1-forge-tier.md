@@ -47,8 +47,12 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   (`forge/src/degrade.rs`: closure-instrumented non-invocation tests like
   `counterexample_never_degrades`).
 - REQ-2 (**exporter hardening**, plan item 2): `forge/src/lean_export.rs`
-  becomes the forge's front door. The exporter's structural soundness
-  gates are **already shipped** and pinned as the EXP drift tripwire
+  becomes the forge's front door. This is the re-inspection the
+  trust-audit's **finding F10** called for — the exporter was its
+  freshest, largest, least-soaked trust-bearing surface, "where the next
+  bug most likely lives." Since that audit (baseline `93d3cbc0`) the gate
+  holes it flagged have been closed: the exporter's structural soundness
+  gates are now **shipped** and pinned as the EXP drift tripwire
   (`.design/verified/rust-lean-correspondence.md` Table 4): the
   `IncompleteRegistry` hard gate on undefined callees, the bool-result
   class (Pin H), tier-(b) capture-safety, and the full structured
@@ -69,7 +73,9 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   *existing* doc-drift route at it — the doc-drift gate is built and
   already routes `forge/src/lean_export.rs` (#258,
   `tooling/spec-routes.toml`), so AC-6 is authoring a table + pinning its
-  `audited-sha`, not building the gate.
+  `audited-sha`, not building the gate — the durable form of F10's
+  "re-inspect the freshest code": a standing drift-tripwired contract,
+  not a one-time read.
 - REQ-3 (**surface syntax**, plan item 3): `thermite-syntax` parses
   `prop fn`, `lemma name(args) req … ens … proof { … }`,
   `proof for f { ens#k by { … } }`, `?pN` proof holes,
@@ -401,10 +407,13 @@ sources: RFC-1 §4/§5/§8/§9/§10/§12, program plan §2/§5, metatheory §7 �
 gate: G1 · baseline `dollspace-gay/Thermite @ c46da3ac`.*
 
 *Amendment (2026-06-15, grounding pass against HEAD ~`7f27424c`, driven by a
-`crosslink kickoff plan` gap analysis + a git-history sweep): dropped the phantom
-"audit-F10" reference and reframed REQ-2 (exporter soundness gates already
-shipped #243–#246/#253/#264; new work = axiom-gate hoist to all tiers +
-correspondence table on the already-built doc-drift route); reconciled REQ-6c
+`crosslink kickoff plan` gap analysis + a git-history sweep): reframed REQ-2
+against current state — the trust-audit's finding F10 (the exporter as the
+freshest/least-soaked trust surface) motivates the re-inspection; the gate holes
+it flagged have since been closed (#243–#246/#253/#264), so the new work is the
+axiom-gate hoist to all tiers + the correspondence table that makes F10's
+re-inspection a standing drift-tripwired contract on the already-built doc-drift
+route. (The cited audit doc, baseline `93d3cbc0`, is not in the repo.) Reconciled REQ-6c
 with the shipped "audit gates nothing" invariant (#274 — gating at certify time,
 `forge audit --meaning` read-only); clarified REQ-1/AC-1/AC-2 (separate cert-level
 verdict enum; four verdicts produced upstream, not mapped from the 3-arm

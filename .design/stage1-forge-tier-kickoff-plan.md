@@ -121,7 +121,11 @@ authoritative spec was amended to match (see its dated amendment note):
 - **REQ-2 is lighter than it reads** — the exporter soundness gates are already
   shipped (#243–#246/#253/#264); the doc-drift gate is built and already routes
   `lean_export.rs` (#258). New work = axiom-gate hoist to all tiers + author the
-  correspondence table + repoint the route. No "F10" check exists (phantom).
+  correspondence table + repoint the route. This re-inspection answers the
+  trust-audit's finding **F10** (exporter = freshest/least-soaked trust surface);
+  the holes F10 implied are now closed, so the table is its durable mitigation.
+  (That audit, baseline `93d3cbc0`, predates much of the current tree and is not
+  committed — treat its findings as history, the present look as authoritative.)
 - **`forge audit` gates nothing** (#274) — certify-time gating lives on the
   discharge path; `forge audit --meaning` stays a read-only projection.
 - **Decisions recorded**: `dec wf <rel>` ASCII (Q-DECWF); a new

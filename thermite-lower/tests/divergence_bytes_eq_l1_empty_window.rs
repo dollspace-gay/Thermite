@@ -1,5 +1,5 @@
 //! Critic divergence pin (#276-arc audit of `af1e6f2c`): the `bytes_eq` L1 exec
-//! twin DIVERGES from the spec body on the EMPTY window at an out-of-bounds
+//! twin diverges from the spec body on the empty window at an out-of-bounds
 //! offset (`n == 0`, `ai > a.len()`).
 //!
 //! Authority — `.design/basis/07-strings.md` REQ-20 (the L1 exec twin): the twin
@@ -12,26 +12,26 @@
 //! if n <= 0 { true } else { a[ai] == b[bi] && bytes_eq(a, b, ai+1, bi+1, n-1) }
 //! ```
 //!
-//! — for `n == 0` it is `true` UNCONDITIONALLY, and NO index is accessed, so the
+//! For `n == 0` it is `true` unconditionally, and no index is accessed, so the
 //! out-of-bounds-index exception cannot apply: there is no index. The shipped
-//! twin (`l1::emit_string_runtime_l1`) instead guards the whole window FIRST
+//! twin (`l1::emit_string_runtime_l1`) instead guards the whole window first
 //! (`if ai_u + n_u > a.data.len() ... return false`), so for `(n = 0, ai > len)`
 //! the twin returns `false` where the spec is `true`.
 //!
 //! Consequence (demonstrated live during the audit): a program whose `ens`
-//! carries `bytes_eq(result, result, 5, 5, 0)` CERTIFIES L3 under `forge check`
-//! (verus proves the `n <= 0` arm — the spec value IS `true`), then the
-//! `forge build` binary PANICS at runtime on that very same certified `ens`
-//! ("thermite L1 contract violation [ens]"). A verus-PROVEN postcondition
-//! failing its own always-active runtime check is the exact check/build
+//! carries `bytes_eq(result, result, 5, 5, 0)` certifies L3 under `forge check`
+//! (verus proves the `n <= 0` arm — the spec value is `true`), then the
+//! `forge build` binary panics at runtime on that very same certified `ens`
+//! ("thermite L1 contract violation [ens]"). A verus-proven postcondition
+//! failing its own always-active runtime check is the check/build
 //! value-divergence REQ-20's "SAME value" clause exists to forbid (distinct
-//! from #280, which is an honest COMPILE failure on the `&`-field spelling).
+//! from #280, which is a compile failure on the `&`-field spelling).
 //!
 //! Expected value derivation (R-CHAR-3): `bytes_eq(_, _, 5, 5, 0)` = `true` is
-//! hand-derived from the REQ-18 definition's `n <= 0` arm — never copied from
+//! hand-derived from the REQ-18 definition's `n <= 0` arm, never copied from
 //! toolchain output.
 //!
-//! This test FAILS against the current toolchain (the run aborts); it passes
+//! This test fails against the current toolchain (the run aborts); it passes
 //! once the twin mirrors the spec's `n <= 0 -> true` arm before (or instead of
 //! failing on) the window guard for the no-index case.
 
@@ -82,10 +82,10 @@ fn lower_l1_str(src: &str) -> String {
 
 // ---------------------------------------------------------------------------
 // Divergence: the empty window (`n = 0`) at an offset past the end. Spec value
-// (REQ-18 `n <= 0` arm): TRUE — verus certifies the `ens` L3 (verified live:
-// `forge check` exits 0, item L3). The REQ-20 twin must compute the SAME value,
-// so the L1 binary must run CLEAN. The shipped twin's window-first guard
-// returns `false` -> the certified `ens` aborts at runtime -> this test FAILS.
+// (REQ-18 `n <= 0` arm): true — verus certifies the `ens` L3 (verified live:
+// `forge check` exits 0, item L3). The REQ-20 twin must compute the same value,
+// so the L1 binary must run clean. The shipped twin's window-first guard
+// returns `false`, so the certified `ens` aborts at runtime and this test fails.
 // ---------------------------------------------------------------------------
 #[test]
 fn bytes_eq_l1_twin_empty_window_matches_certified_spec_value() {
@@ -110,9 +110,9 @@ fn empty_window() -> String
     );
     let (compiled, ran, out) = compile_and_run(&program, "bytes_eq_empty_window_l1");
     assert!(compiled, "the L1 program must COMPILE:\n{out}");
-    // THE PINNED EXPECTATION (REQ-20): bytes_eq(_, _, 5, 5, 0) is spec-TRUE (the
+    // The pinned expectation (REQ-20): bytes_eq(_, _, 5, 5, 0) is spec-true (the
     // n <= 0 arm; no index is accessed), forge check certifies it L3, so the
-    // SAME-value twin must let the certified program run CLEAN.
+    // same-value twin must let the certified program run clean.
     assert!(
         ran && out.contains("l1-clean"),
         "REQ-20 divergence: the L3-certified `ens bytes_eq(result, result, 5, 5, 0)` \

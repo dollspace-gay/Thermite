@@ -6,19 +6,19 @@
 //! into the cargo build) is not viable for v1: the installed `vstd`/`builtin`
 //! crates inherit `workspace.lints` and a `verus!{}` exec body with an `ensures`
 //! clause is verus-driver-only syntax. So we land (c): the verified relation is
-//! a proved oracle, and THIS test enumerates the ENTIRE finite input domain
+//! a proved oracle, and this test enumerates the entire finite input domain
 //! (2^9 × 2^9 = 262144 (caller_mask, callee_mask) pairs over the 9-atom `u16`
-//! bitset, WIDENED for the #106 `Term` atom) and asserts `effects::subsumes`
+//! bitset, widened for the #106 `Term` atom) and asserts `effects::subsumes`
 //! (over `EffectRow`s decoded from the masks) equals the verus-proved subset
-//! relation `thermite_verified::spec_subsumes_mask` for EVERY pair. Since the
-//! domain is finite and fully enumerated with 0 mismatches, this PROVES
-//! `effects::subsumes` computes exactly the relation `verus` proved
-//! `thermite_verified::subsumes` implements → `effects::subsumes` is transitively
+//! relation `thermite_verified::spec_subsumes_mask` for every pair. Since the
+//! domain is finite and fully enumerated with 0 mismatches, this shows
+//! `effects::subsumes` computes the relation `verus` proved
+//! `thermite_verified::subsumes` implements, so `effects::subsumes` is transitively
 //! verus-anchored.
 //!
 //! R-CHAR-3: the expected value is the verus-verified spec relation
-//! (`spec_subsumes_mask`, an EXTERNAL truth proved by `verus --no-cheating`),
-//! NEVER the checker's own output. `unwrap`/`expect` are fine here — `tests/` is
+//! (`spec_subsumes_mask`, an external truth proved by `verus --no-cheating`),
+//! never the checker's own output. `unwrap`/`expect` are fine here — `tests/` is
 //! not anti-pattern-gated.
 
 use thermite_lower::subsumes;
@@ -29,7 +29,7 @@ use thermite_syntax::ast::{Effect, EffectRow};
 const ATOM_DOMAIN: u16 = 512;
 
 /// Decode a 9-atom `u16` mask to the `EffectRow` `effects::subsumes` consumes.
-/// Bit positions MUST match `EffectKind::bit` in `effects.rs` and the verus
+/// Bit positions must match `EffectKind::bit` in `effects.rs` and the verus
 /// core's atom ordering: Read=0, Write=1, Net=2, Alloc=3, Time=4, Rand=5,
 /// Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom). Path-carrying
 /// atoms use a representative path (v0.1 subsumption is path-insensitive, OQ-1).
@@ -68,7 +68,7 @@ fn row_from_mask(mask: u16) -> EffectRow {
     EffectRow::Set(effects)
 }
 
-/// AC-4: over ALL 262144 (caller, callee) mask pairs (the 9-atom u16 domain),
+/// AC-4: over all 262144 (caller, callee) mask pairs (the 9-atom u16 domain),
 /// `effects::subsumes` equals the verus-proved subset relation
 /// `thermite_verified::spec_subsumes_mask`.
 #[test]
@@ -77,7 +77,7 @@ fn subsumes_matches_verified_spec_exhaustively() {
     let mut mismatches: u32 = 0;
     for caller in 0u16..ATOM_DOMAIN {
         for callee in 0u16..ATOM_DOMAIN {
-            // The EXTERNAL truth: the verus-verified subset relation (proved by
+            // The external truth: the verus-verified subset relation (proved by
             // `verus --no-cheating`, see tests/verus_verify.rs).
             let expected = thermite_verified::spec_subsumes_mask(caller, callee);
             // The toolchain's decision over the decoded rows.
@@ -124,10 +124,10 @@ fn verified_mirror_equals_spec_exhaustively() {
     }
 }
 
-/// Non-triviality (AC-2 mirror in Rust): the subset relation is NOT the constant
-/// `true` — Pure (mask 0) does not subsume {Read} (mask 1). Also the new #106
-/// `Term` atom is genuinely constraining: a `write`-only row (mask 1<<1) does NOT
-/// subsume a `term` row (mask 1<<8) — the dedicated atom is not folded into
+/// Non-triviality (AC-2 mirror in Rust): the subset relation is not the constant
+/// `true` — Pure (mask 0) does not subsume {Read} (mask 1). The new #106
+/// `Term` atom is constraining: a `write`-only row (mask 1<<1) does not
+/// subsume a `term` row (mask 1<<8); the dedicated atom is not folded into
 /// `write`. Guards against a vacuous contract (R-DEFER-9).
 #[test]
 fn verified_spec_is_not_vacuous() {

@@ -1,6 +1,6 @@
 //! L3 emission: lower a validated `thermite-syntax` `Program` to a single
 //! Verus-annotated Rust source `String` whose `requires`/`ensures`/`invariant`/
-//! `decreases` annotations ARE the Thermite contract and whose body is the
+//! `decreases` annotations are the Thermite contract and whose body is the
 //! lowered Thermite body. Forge (#5/#6) hands the emitted file to the `verus`
 //! binary; a `0 errors` result is the L3 certificate
 //! (`.design/lower/verus-lowering.md`; `thermite-design.md` §3/§4.1/§4.2/§6).
@@ -9,26 +9,26 @@
 //! Reference (verus-verified, hand-authored): `tests/golden/lower/sum.verus.rs`,
 //! `tests/golden/lower/binary_search.verus.rs`.
 //!
-//! ## Two lowering contexts (the central finding, REQ-5)
+//! ## Two lowering contexts (REQ-5)
 //!
-//! Verus distinguishes EXEC code (`fn` bodies) from SPEC code
+//! Verus distinguishes exec code (`fn` bodies) from spec code
 //! (`requires`/`ensures`/`invariant`/`decreases` and `spec fn` bodies). The same
 //! Thermite expression lowers differently per context: a `&[T]` slice `xs` is
 //! plain `xs` in exec position but `xs@` (a `vstd` `Seq<T>`) in spec position;
 //! `xs[i]` is `xs[i]` in exec but `xs@[i as int]` in spec; `&xs[..i]` is
 //! `&xs[..i]` in exec but `xs@.subrange(0, i as int)` in spec. A `spec fn` over a
-//! slice takes `Seq<T>` (NOT `&[T]`) and recurses on `xs.drop_first()`
+//! slice takes `Seq<T>` (not `&[T]`) and recurses on `xs.drop_first()`
 //! (verus-lowering.md REQ-5; the naive `&[u32]` spec-fn form fails `verus`).
 //!
-//! ## Proof aids are SHAPE-keyed, never program-keyed (REQ-7)
+//! ## Proof aids are shape-keyed, not program-keyed (REQ-7)
 //!
 //! Where a corpus program does not verify from its bare annotations, the lowerer
-//! derives the needed proof aids from the program's AST/contract SHAPE — never
-//! from its identity (no `if name == "binary_search"`). The shape keys are
+//! derives the needed proof aids from the program's AST/contract shape rather
+//! than from its identity (no `if name == "binary_search"`). The shape keys are
 //! documented at each template's emission site (`push_lemma_for`,
 //! `nonlinear_overflow_assert`, `lift_immutable_preconds`, `extensionality_at_exit`,
-//! `complementary_coverage_split`). This is the load-bearing honesty boundary
-//! (`goal.md` "THE HONEST MANDATE", R-DEFER-9).
+//! `complementary_coverage_split`). This is the honesty boundary
+//! (`goal.md` "The Honest Mandate", R-DEFER-9).
 //!
 //! ## REQ status
 //!
@@ -146,7 +146,7 @@ use thermite_syntax::lexer::Span;
 /// `LowerError::TooDeep`. The lowerer recurses over the AST (expressions,
 /// blocks, statements, types, patterns); like `thermite-syntax`'s parser guard
 /// (its `MAX_RECURSION_DEPTH`, the #29/#31/#32 lesson) a single shared counter
-/// bounds EVERY recursive family here so a pathological (or adversarial,
+/// bounds every recursive family here so a pathological (or adversarial,
 /// post-recovery) AST cannot overflow the native stack and abort the process.
 /// Fixed constant (determinism, `goal.md` R-CODE-5). Set well above any
 /// human-authored nesting; `thermite-syntax` itself caps parse nesting at 64, so
@@ -162,7 +162,7 @@ const MAX_EMIT_DEPTH: usize = 256;
 pub enum LowerError {
     /// A combinator call whose callee path is not in the `thermite-spec`
     /// registry. Validation (#2) should have caught this; the lowerer re-checks
-    /// defensively (verus-lowering.md REQ-9).
+    /// as a backstop (verus-lowering.md REQ-9).
     UnknownCombinator { name: String, span: Span },
     /// An expression/type/statement nested past `MAX_EMIT_DEPTH` — surfaced
     /// structurally so input can never overflow the C stack (REQ-9, R-CODE-2).
@@ -170,13 +170,13 @@ pub enum LowerError {
     /// A construct the v0.1 lowering does not cover (e.g. a `Type` or `Expr`
     /// shape outside the corpus mapping tables). Carries a human description.
     Unsupported { what: String, span: Span },
-    /// A call site where the caller's `fx` row does NOT subsume the callee's
+    /// A call site where the caller's `fx` row does not subsume the callee's
     /// (`.design/lower/effect-subsumption.md` REQ-4; `thermite-design.md` §4.1
     /// "a caller's row must subsume every callee's row"). `missing` names the
     /// atomic effects the callee has that the caller's row lacks
     /// (`effects(callee) \ effects(caller)`), so the diagnostic tells the agent
-    /// exactly which effect to add to the caller's row (or remove from the
-    /// callee). Produced by `effects::check_effects`; NEVER a panic (R-CODE-2).
+    /// which effect to add to the caller's row (or remove from the
+    /// callee). Produced by `effects::check_effects`; never a panic (R-CODE-2).
     EffectNotSubsumed {
         caller: String,
         callee: String,
@@ -228,7 +228,7 @@ impl std::fmt::Display for LowerError {
 
 /// The surface atom name of an `Effect` for an `EffectNotSubsumed` diagnostic
 /// (REQ-4). v0.1 subsumption is path-insensitive (`.design/lower/effect-subsumption.md`
-/// OQ-1), so the carrier atoms (`read`/`write`/`net`) are reported by KIND
+/// OQ-1), so the carrier atoms (`read`/`write`/`net`) are reported by kind
 /// without their (empty) path argument — the agent's fix is to add the effect
 /// kind to the caller's row.
 fn effect_atom_name(effect: &thermite_syntax::ast::Effect) -> String {
@@ -258,9 +258,9 @@ enum Pos {
 }
 
 /// Lowering context: the position plus the set of in-scope slice-typed
-/// parameter names. In SPEC position a bare slice-param path `xs` becomes the
+/// parameter names. In spec position a bare slice-param path `xs` becomes the
 /// `vstd` view `xs@` (a `Seq<T>`) — REQ-5. The set is computed per item from the
-/// parameter types (a SHAPE-derived fact, not a name list), so the `@` rewrite
+/// parameter types (a shape-derived fact, not a name list), so the `@` rewrite
 /// generalizes to any slice-typed parameter.
 #[derive(Debug, Clone, Copy)]
 struct Ctx<'a> {
@@ -269,81 +269,81 @@ struct Ctx<'a> {
     /// Names of `spec fn`s lowered with a `nat` return type (the head-fold-sum
     /// shape — OQ-1). An `Eq` between a `u64`-valued scalar and a call to one of
     /// these coerces the scalar with `as nat`, since `nat` and `u64` are not the
-    /// same Verus type. Computed program-wide, SHAPE-derived.
+    /// same Verus type. Computed program-wide, shape-derived.
     nat_fns: &'a [&'a str],
     /// The program's `(variant_name, enum_name)` map (REQ-9): a `match` arm /
-    /// pattern over a user enum variant lowers to the Verus-required ENUM-QUALIFIED
+    /// pattern over a user enum variant lowers to the Verus-required enum-qualified
     /// path `Enum::Variant` (verus rejects a bare `Nil`/`Circle`). `Some`/`None`
-    /// and slice patterns are NOT in this map, so they lower unqualified (Verus
+    /// and slice patterns are not in this map, so they lower unqualified (Verus
     /// knows the `Option` built-in) — the qualification is keyed on membership.
     variants: &'a [(&'a str, &'a str)],
     /// True inside the body of a `nat`-returning spec fn (REQ-10): an integer
     /// cast (`h as u64`) coerces to `as nat` so the fold's arithmetic stays `nat`
-    /// (no overflow obligation in spec context), the GROUNDED `sum_list` form.
+    /// (no overflow obligation in spec context), the grounded `sum_list` form.
     nat_ret: bool,
     /// Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): the
     /// recursion-scheme bindings IN SCOPE for the spec fn currently being lowered
     /// — one per (scheme name → resolved generated fn + element/result types) the
-    /// fn's scrutinee resolves to. A scheme CALL `fold(l, 0, |x, acc| …)` lowers
-    /// (in `lower_expr`'s `Call` arm) to a CALL of the generated `fold_<e>` with
-    /// the step closure lowered to a typed `spec_fn`. EMPTY for a non-scheme fn
+    /// fn's scrutinee resolves to. A scheme call `fold(l, 0, |x, acc| …)` lowers
+    /// (in `lower_expr`'s `Call` arm) to a call of the generated `fold_<e>` with
+    /// the step closure lowered to a typed `spec_fn`. Empty for a non-scheme fn
     /// (byte-stable for the existing corpus).
     schemes: &'a [SchemeBinding],
     /// Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the names that denote
     /// a `String` value IN SCOPE for the spec context currently being lowered —
     /// every `String`/`&String` parameter plus `result` when the return type is
-    /// `String`. A `String` receiver's `.len()` / `.byte_at(i)` in SPEC position
+    /// `String`. A `String` receiver's `.len()` / `.byte_at(i)` in spec position
     /// rewrites to the wrapper's spec fns `.spec_len()` / `.spec_byte_at(i as int)`
     /// (the exec `len`/`byte_at` return `u64` and cannot be named in a contract; a
     /// Verus spec index is `int`). Keyed on the receiver being a `String`-named
-    /// path so a `Vec` receiver's `.len()` (whose wrapper spec fn IS named `len`)
-    /// is UNCHANGED — the rewrite is `String`-specific. EMPTY for a non-`String`
+    /// path so a `Vec` receiver's `.len()` (whose wrapper spec fn is named `len`)
+    /// is unchanged — the rewrite is `String`-specific. Empty for a non-`String`
     /// fn (byte-stable for the existing corpus).
     strings: &'a [&'a str],
     /// Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the program-wide set of
-    /// FIELD names whose declared type reaches `String` (the editor core `Buf {
-    /// text: String }`). A spec-position method call whose receiver is a FIELD
+    /// field names whose declared type reaches `String` (the editor core `Buf {
+    /// text: String }`). A spec-position method call whose receiver is a field
     /// access `<x>.<field>` where `<field>` is in this set rewrites `.len()`/
-    /// `.byte_at(i)` to the wrapper SPEC fns `.spec_len()`/`.spec_byte_at(i as int)`
-    /// — the field analog of `strings` (which keys a bare `String` VALUE path). A
+    /// `.byte_at(i)` to the wrapper spec fns `.spec_len()`/`.spec_byte_at(i as int)`
+    /// — the field analog of `strings` (which keys a bare `String` value path). A
     /// contract `b.text.len()` / `result.text.len()` over a `String` field needs the
-    /// spec accessor (the exec `len`/`byte_at` cannot be named in a contract). EMPTY
+    /// spec accessor (the exec `len`/`byte_at` cannot be named in a contract). Empty
     /// for a program with no `String` field (byte-stable for the existing corpus).
     string_fields: &'a [&'a str],
     /// Cluster C7 (`.design/basis/09-option-result.md` REQ-5, issue #95/#100): the
-    /// names of OWNED `String` (`Type::String`, NOT `&String`) parameters in scope
-    /// for the EXEC body currently being lowered. The generated `parse_u64` takes
+    /// names of owned `String` (`Type::String`, not `&String`) parameters in scope
+    /// for the exec body currently being lowered. The generated `parse_u64` takes
     /// `&TString` (a read-only borrow), so an exec call `parse_u64(s)` whose arg `s`
-    /// is an OWNED `String` param must lower to `parse_u64(&s)` (a `&String` param is
-    /// already a borrow and passes through unchanged). Keyed on the param SHAPE
-    /// (owned vs reference), not on the name. EMPTY for a fn with no owned `String`
+    /// is an owned `String` param must lower to `parse_u64(&s)` (a `&String` param is
+    /// already a borrow and passes through unchanged). Keyed on the param shape
+    /// (owned vs reference), not on the name. Empty for a fn with no owned `String`
     /// param (byte-stable for the existing corpus).
     owned_strings: &'a [&'a str],
     /// Basis Stage 7 (`.design/basis/07-strings.md` REQ-4, issue #127): the
-    /// program-wide names of USER `spec fn`s that declare a `String`/`&String`
+    /// program-wide names of user `spec fn`s that declare a `String`/`&String`
     /// parameter (the #126 String-scanning shape). The byte-view dispatch
-    /// (`callee_takes_string_byteview`) is SHAPE-keyed off this: the GENERATED
+    /// (`callee_takes_string_byteview`) is shape-keyed off this: the generated
     /// byte-view spec fns (`parse_le`/`is_digit`/`occurs_at`/… — declared over
-    /// `Seq<u8>`) take a `String` arg as its `.data@` view; a USER spec fn declares
-    /// a `&TString` param, so a `String` arg to it passes the REFERENCE through
-    /// (`s`, NOT `s.data@` — else `Seq<u8>` vs `&TString`, E0308). A user spec fn
-    /// NAMED like a generated one (`spec fn is_digit(s: &String, ..)`) lives in the
-    /// user namespace and SHADOWS the generated name, so it must be excluded from
-    /// the byte-view set — keyed on the callee's PARAM SHAPE (it takes `&String`),
-    /// not on the name. EMPTY for a program with no String-param user spec fn
+    /// `Seq<u8>`) take a `String` arg as its `.data@` view; a user spec fn declares
+    /// a `&TString` param, so a `String` arg to it passes the reference through
+    /// (`s`, not `s.data@` — else `Seq<u8>` vs `&TString`, E0308). A user spec fn
+    /// named like a generated one (`spec fn is_digit(s: &String, ..)`) lives in the
+    /// user namespace and shadows the generated name, so it must be excluded from
+    /// the byte-view set — keyed on the callee's param shape (it takes `&String`),
+    /// not on the name. Empty for a program with no String-param user spec fn
     /// (byte-stable — the generated fns are not in this set, so they still byteview).
     user_string_spec_fns: &'a [&'a str],
-    /// Crosslink #225: the program-wide map from a USER `spec fn` NAME to its
-    /// DECLARED parameter primitive types, in source order. In SPEC position Verus
-    /// integer arithmetic is the UNBOUNDED `int` (a `u32`-typed `n - 1` evaluates
-    /// to `int`), so an arithmetic/unary argument to a user spec fn must NARROW
+    /// Crosslink #225: the program-wide map from a user `spec fn` name to its
+    /// declared parameter primitive types, in source order. In spec position Verus
+    /// integer arithmetic is the unbounded `int` (a `u32`-typed `n - 1` evaluates
+    /// to `int`), so an arithmetic/unary argument to a user spec fn must narrow
     /// back to the param's exec type at that position. The narrowing target is the
-    /// callee's DECLARED param type (`as u32`/`as u64`/`as usize`), NOT a hardcoded
+    /// callee's declared param type (`as u32`/`as u64`/`as usize`), not a hardcoded
     /// `as u64` — the surface integer set is `u32`/`u64`/`usize` (the false premise
     /// this fixes). A `bool`/non-integer param takes no cast (an arithmetic arg is
-    /// integer-typed, so the bool case is defensively a no-cast). Consumed in
+    /// integer-typed, so the bool case is a no-cast). Consumed in
     /// `lower_expr`'s `Call` arm (the `plain_user_spec_call` path) via
-    /// `Ctx::spec_call_param_cast`. EMPTY for a program with no user spec fn
+    /// `Ctx::spec_call_param_cast`. Empty for a program with no user spec fn
     /// (byte-stable — the cast path only fires for an in-map callee).
     spec_fn_param_types: &'a [(&'a str, &'a [PrimType])],
 }
@@ -445,25 +445,25 @@ impl<'a> Ctx<'a> {
         self.strings = strings;
         self
     }
-    /// This context with the program-wide `String`-typed FIELD names in scope
-    /// (REQ-4 — a `String` FIELD receiver's spec-position `.len()`/`.byte_at(i)`
+    /// This context with the program-wide `String`-typed field names in scope
+    /// (REQ-4 — a `String` field receiver's spec-position `.len()`/`.byte_at(i)`
     /// rewrite). The field analog of [`Ctx::with_strings`].
     fn with_string_fields(mut self, string_fields: &'a [&'a str]) -> Ctx<'a> {
         self.string_fields = string_fields;
         self
     }
-    /// This context with the OWNED `String` parameter names in scope (REQ-5 — the
-    /// exec `parse_u64(s)` borrow-rewrite). Carried into the EXEC body so an owned
+    /// This context with the owned `String` parameter names in scope (REQ-5 — the
+    /// exec `parse_u64(s)` borrow-rewrite). Carried into the exec body so an owned
     /// `String` arg to the generated `parse_u64` (which takes `&TString`) lowers to
-    /// `parse_u64(&s)`. The field analog of [`Ctx::with_strings`], EXEC-side.
+    /// `parse_u64(&s)`. The field analog of [`Ctx::with_strings`], exec-side.
     fn with_owned_strings(mut self, owned_strings: &'a [&'a str]) -> Ctx<'a> {
         self.owned_strings = owned_strings;
         self
     }
-    /// This context with the program-wide USER String-param `spec fn` names in
-    /// scope (REQ-4, #127 — the byte-view dispatch's SHAPE key). Carried into every
+    /// This context with the program-wide user String-param `spec fn` names in
+    /// scope (REQ-4, #127 — the byte-view dispatch's shape key). Carried into every
     /// spec/exec body so `callee_takes_string_byteview` can exclude a user spec fn
-    /// that NAMES a generated byte-view fn but declares a `&String` param.
+    /// that names a generated byte-view fn but declares a `&String` param.
     fn with_user_string_spec_fns(mut self, names: &'a [&'a str]) -> Ctx<'a> {
         self.user_string_spec_fns = names;
         self
@@ -471,7 +471,7 @@ impl<'a> Ctx<'a> {
     /// This context with the program-wide user-`spec fn` param-type map in scope
     /// (#225 — the param-type-directed narrowing cast). Carried into every spec
     /// body + contract-lowering context so an arithmetic argument to a user spec
-    /// fn narrows to the callee's DECLARED param type, not a hardcoded `u64`.
+    /// fn narrows to the callee's declared param type, not a hardcoded `u64`.
     fn with_spec_fn_param_types(mut self, types: &'a [(&'a str, &'a [PrimType])]) -> Ctx<'a> {
         self.spec_fn_param_types = types;
         self
@@ -479,11 +479,11 @@ impl<'a> Ctx<'a> {
     /// The narrowing-cast spelling for the `arg_pos`-th argument of the user spec
     /// fn `callee` (#225). In spec position Verus integer arithmetic is unbounded
     /// `int`, so an arithmetic/unary argument must narrow back to the param's exec
-    /// type. Returns `Some("u32"|"u64"|"usize")` per the callee's DECLARED param
+    /// type. Returns `Some("u32"|"u64"|"usize")` per the callee's declared param
     /// type at that position, or `None` when the callee is not in the map, the
-    /// position is out of range (variadic-shaped surface — defensive), or the param
+    /// position is out of range (variadic-shaped surface — backstop), or the param
     /// is `bool` (an arithmetic arg is integer-typed, so a bool param never needs a
-    /// cast). The TARGET is the declared type, never a hardcoded `u64` — the false
+    /// cast). The target is the declared type, never a hardcoded `u64` — the false
     /// premise #225 fixes.
     fn spec_call_param_cast(&self, callee: &str, arg_pos: usize) -> Option<Option<&'static str>> {
         let params = self
@@ -495,27 +495,27 @@ impl<'a> Ctx<'a> {
             PrimType::U32 => Some(Some("u32")),
             PrimType::U64 => Some(Some("u64")),
             PrimType::Usize => Some(Some("usize")),
-            // A `bool` param takes NO narrowing cast: the surface unary set is
-            // exactly `!` (`UnaryOp::Not`, REQ-10 #92) so every `Expr::Unary` arg is
-            // bool-typed, and a comparison `x < y` is a bool-typed `Expr::Binary` —
-            // both already carry the callee's declared `bool` param type and per
-            // thermite-design.md §4.4 must flow UNCAST (`(x < y) as u64` is E0308,
-            // expected bool found u64 → L0; #233). The DISTINCTION matters: this
-            // `Some(None)` (callee resolved, bool param → no cast) is NOT the outer
-            // `None` (callee absent / position out of range → the consumer's `u64`
-            // integer fallback). Collapsing both with `.unwrap_or("u64")` was the
-            // #233 divergence.
+            // A `bool` param takes no narrowing cast: the surface unary set is
+            // `!` (`UnaryOp::Not`, REQ-10 #92) so every `Expr::Unary` arg is
+            // bool-typed, and a comparison `x < y` is a bool-typed `Expr::Binary`.
+            // Both already carry the callee's declared `bool` param type and per
+            // thermite-design.md §4.4 flow uncast (`(x < y) as u64` is E0308,
+            // expected bool found u64 → L0; #233). This `Some(None)` (callee
+            // resolved, bool param → no cast) differs from the outer `None` (callee
+            // absent / position out of range → the consumer's `u64` integer
+            // fallback). Collapsing both with `.unwrap_or("u64")` was the #233
+            // divergence.
             PrimType::Bool => Some(None),
         }
     }
-    /// True if `name` is a USER `spec fn` declaring a `String`/`&String` param (the
+    /// True if `name` is a user `spec fn` declaring a `String`/`&String` param (the
     /// #126 String-scanning shape). Such a callee takes its `String` arg as a
-    /// `&TString` REFERENCE, not the `.data@` byte view — so it SHADOWS any
-    /// generated byte-view fn of the same name (#127). Keyed on the PARAM SHAPE.
+    /// `&TString` reference, not the `.data@` byte view, so it shadows any
+    /// generated byte-view fn of the same name (#127). Keyed on the param shape.
     fn is_user_string_spec_fn(&self, name: &str) -> bool {
         self.user_string_spec_fns.contains(&name)
     }
-    /// True if `name` denotes an OWNED `String` (`Type::String`, not `&String`)
+    /// True if `name` denotes an owned `String` (`Type::String`, not `&String`)
     /// parameter in scope (drives the exec `parse_u64(s)` → `parse_u64(&s)` borrow,
     /// REQ-5). An owned value must be borrowed to satisfy the `&TString` param.
     fn is_owned_string(&self, name: &str) -> bool {
@@ -584,20 +584,20 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     out.push_str(&combinator_defs);
 
     // (1b) Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7):
-    // the GENERATED per-(ADT, scheme) Verus recursive `spec fn`s
+    // the generated per-(ADT, scheme) Verus recursive `spec fn`s
     // (`fold_<e>`/`for_all_<e>`/…) + the structural measure `<e>_len` + the
-    // induction-discharged-once law `fold_bound_<e>`, materialized ONCE BEFORE
-    // their first use (a scheme call lowers to a CALL of `fold_<e>`). EMPTY when
+    // induction-discharged-once law `fold_bound_<e>`, materialized once before
+    // their first use (a scheme call lowers to a call of `fold_<e>`). Empty when
     // the program uses no scheme (byte-stable for the non-scheme corpus).
     let scheme_defs = emit_scheme_defs(program)?;
     out.push_str(&scheme_defs);
 
     // (1c) Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the
     // bounded-`Vec` wrapper struct + its verified `len`/`spec_get`/`get`/`push`
-    // impl, materialized ONCE per element type the program uses (a `Vec<u64>`
-    // param/return → `TVecU64`), BEFORE any fn references it. EMPTY when the
+    // impl, materialized once per element type the program uses (a `Vec<u64>`
+    // param/return → `TVecU64`), before any fn references it. Empty when the
     // program uses no `Vec` (byte-stable for the existing corpus — no regression).
-    // The GROUNDED `BVec`-over-`vstd::vec::Vec<u64>` form (verus `verified, 0
+    // The grounded `BVec`-over-`vstd::vec::Vec<u64>` form (verus `verified, 0
     // errors`): the `well_formed` capacity invariant, the no-OOB `get`, the
     // capacity-preserving `push` with the `final(self)` &mut postcondition.
     let vec_wrappers = emit_vec_wrappers(program)?;
@@ -606,9 +606,9 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // (1c.5) Cluster C12 (`.design/basis/13-map.md` REQ-4): the bounded verified
     // `Map<K, V>` wrapper struct `TMap<K,V>` over a `vstd::vec::Vec<(K, V)>`-of-pairs
     // backing + the spec abstraction view (`spec_dom`/`spec_contains_key`/`len`) +
-    // its verified `contains_key`/`get`/`insert` ops, materialized ONCE per `(K, V)`
-    // pair the program uses, BEFORE any fn references it. EMPTY when the program uses
-    // no `Map` (byte-stable for the existing corpus — no regression). The GROUNDED
+    // its verified `contains_key`/`get`/`insert` ops, materialized once per `(K, V)`
+    // pair the program uses, before any fn references it. Empty when the program uses
+    // no `Map` (byte-stable for the existing corpus — no regression). The grounded
     // `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` form (verus `9 verified, 0
     // errors`): the `well_formed` capacity + key-uniqueness invariant, the no-OOB /
     // handled-or-loud `get -> Option<V>` (absent → None), the append-under-
@@ -619,9 +619,9 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // (1d) Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded
     // `String` wrapper struct `TString` over `vstd::vec::Vec<u8>` + its verified
     // `well_formed`/`spec_len`/`len`/`spec_byte_at`/`byte_at`/`concat`/`slice`
-    // impl, materialized ONCE when the program uses `String`, BEFORE any fn
-    // references it. EMPTY when the program uses no `String` (byte-stable for the
-    // existing corpus — no regression). The GROUNDED `TString`-over-
+    // impl, materialized once when the program uses `String`, before any fn
+    // references it. Empty when the program uses no `String` (byte-stable for the
+    // existing corpus — no regression). The grounded `TString`-over-
     // `vstd::vec::Vec<u8>` form (verus `verified, 0 errors`): the `well_formed`
     // capacity invariant, the no-OOB `byte_at` (`req i < len`), the bounded
     // `concat`/`slice` with the `final`-free owned-value construction.
@@ -631,12 +631,12 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // (1d.5) Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): the
     // string search/transform module-scope definitions — the `occurs_at`/
     // `contains_sub`/`count_sep`/`sep_free`/`is_space` spec fns + the
-    // `lemma_count_push` proof fn — materialized ONCE when the program uses a C5 op
-    // (`program_uses_string_search`). The `TString` search METHODS (emitted by
-    // `emit_string_wrapper`'s `emit_string_search_methods`) NAME these in their
+    // `lemma_count_push` proof fn — materialized once when the program uses a C5 op
+    // (`program_uses_string_search`). The `TString` search methods (emitted by
+    // `emit_string_wrapper`'s `emit_string_search_methods`) name these in their
     // contracts; verus resolves them order-independently within the single `verus!`
-    // block. EMPTY otherwise (byte-stable — no regression). The GROUNDED forms (no
-    // `assume`/`admit`/`external_body`, R-DEFER-9; `lemma_count_push` is a REAL
+    // block. Empty otherwise (byte-stable — no regression). The grounded forms (no
+    // `assume`/`admit`/`external_body`, R-DEFER-9; `lemma_count_push` is an
     // induction proof).
     let string_search_defs = emit_string_search_defs(program)?;
     out.push_str(&string_search_defs);
@@ -646,55 +646,55 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // `parse_le` spec fns, the `lemma_parse_push` append lemma, and the
     // `u64_to_string` exec fn (the divide/mod-by-10 digit-extraction loop with the
     // round-trip invariant `parse_le(data@) + m*pow10(len) == n` + `decreases m`) —
-    // materialized ONCE when the program uses `n.to_string()`, BEFORE any fn
-    // references them. EMPTY otherwise (byte-stable for the existing corpus — no
-    // regression). The emitted form is EXACTLY the GROUNDED `16 verified, 0 errors`
-    // round-trip (no `assume`/`external_body`, R-DEFER-9). Emitted AFTER the
+    // materialized once when the program uses `n.to_string()`, before any fn
+    // references them. Empty otherwise (byte-stable for the existing corpus — no
+    // regression). The emitted form is the grounded `16 verified, 0 errors`
+    // round-trip (no `assume`/`external_body`, R-DEFER-9). Emitted after the
     // `TString` wrapper because `u64_to_string` returns a `TString`.
     let numfmt_defs = emit_numfmt_defs(program)?;
     out.push_str(&numfmt_defs);
 
     // (1f) Cluster C7 (`.design/basis/09-option-result.md` REQ-5, issue #95): the
-    // generated `String`→`u64` PARTIAL parser `parse_u64` (the C4 07-strings.md
+    // generated `String`→`u64` partial parser `parse_u64` (the C4 07-strings.md
     // REQ-9 payoff) — the `is_digit`/`all_digits` spec fns + the `parse_u64` exec fn
     // (the Horner-accumulate loop `acc = acc*10 + digit`, the three handled-or-loud
     // `None` arms — empty / non-digit / overflow — and the round-trip success
     // contract `ens match result { Some(v) => all_digits(s.data@) && s.data.len() >=
-    // 1 && parse_be(s.data@) == v, None => true }`). Materialized ONCE when the
+    // 1 && parse_be(s.data@) == v, None => true }`). Materialized once when the
     // program calls `parse_u64` / names `all_digits`/`is_digit` (`program_uses_-
-    // parse`), BEFORE any fn references it. EMPTY otherwise (byte-stable). The
-    // emitted form is EXACTLY the GROUNDED `5 verified, 0 errors` parse (no
-    // `assume`/`external_body`/`admit`, R-DEFER-9 — the round-trip is a REAL proof;
-    // a broken `Some(0)` FAILS). `parse_be` is shared with the numfmt round-trip; it
-    // is emitted here ONLY when numfmt did not already emit it (dedup).
+    // parse`), before any fn references it. Empty otherwise (byte-stable). The
+    // emitted form is the grounded `5 verified, 0 errors` parse (no
+    // `assume`/`external_body`/`admit`, R-DEFER-9 — the round-trip is a real proof;
+    // a broken `Some(0)` fails). `parse_be` is shared with the numfmt round-trip; it
+    // is emitted here only when numfmt did not already emit it (dedup).
     let parse_defs = emit_parse_defs(program)?;
     out.push_str(&parse_defs);
 
     // (1g) Cluster C8 (`.design/basis/07-strings.md` REQ-17/REQ-18, issue #278): the
     // generated byte-range-equality predicate `bytes_eq(a, b, ai, bi, n)` (the
     // editor's `insert_str`/`backspace`/`render_frame` byte-content pins, the #276
-    // Arc-2 prerequisite) + its FOUR prove-once bridge lemmas
+    // Arc-2 prerequisite) + its four prove-once bridge lemmas
     // (`lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`) —
-    // materialized ONCE when the program names `bytes_eq` (`program_uses_bytes_eq`),
-    // BEFORE any fn references it. EMPTY otherwise (byte-stable for the
+    // materialized once when the program names `bytes_eq` (`program_uses_bytes_eq`),
+    // before any fn references it. Empty otherwise (byte-stable for the
     // non-`bytes_eq` corpus — the `program_uses_parse` conditional-emission
-    // precedent). The emitted form is EXACTLY the GROUNDED `14 verified, 0 errors`
+    // precedent). The emitted form is the grounded `14 verified, 0 errors`
     // (with the `slice_id`/`insert_str` pins) low-peel def + bridge lemmas — no
-    // `assume`/`external_body`/`admit` (R-DEFER-9 — the four lemmas are REAL induction
-    // proofs; the head/tail-swap mutant FAILS, non-vacuous). `bytes_eq` returns
-    // `bool`, so it does NOT join `nat_fns`.
+    // `assume`/`external_body`/`admit` (R-DEFER-9 — the four lemmas are induction
+    // proofs; the head/tail-swap mutant fails, non-vacuous). `bytes_eq` returns
+    // `bool`, so it does not join `nat_fns`.
     let bytes_eq_defs = emit_bytes_eq_defs(program)?;
     out.push_str(&bytes_eq_defs);
 
     // The program-wide set of `nat`-returning spec fns (the head-fold-sum shape,
-    // OQ-1) — SHAPE-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
+    // OQ-1) — shape-derived, used to coerce `u64`/`nat` equalities (`as nat`). An
     // ADT match-fold-sum spec fn (`sum_list`, REQ-10) joins this set: it too
     // returns `nat` so its integer arithmetic stays `nat` (no overflow obligation
-    // in spec context), exactly as the slice head-fold does.
+    // in spec context), as the slice head-fold does.
     // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): a `fold`
-    // scheme-CALL instance (the only `nat`-result scheme — `Accumulator`) also
-    // returns `nat`, so it joins the `nat_fns` set exactly as a hand-written
-    // ADT-fold-sum does (an `Eq` against it coerces `as nat`). Detected by SHAPE:
+    // scheme-call instance (the only `nat`-result scheme — `Accumulator`) also
+    // returns `nat`, so it joins the `nat_fns` set as a hand-written
+    // ADT-fold-sum does (an `Eq` against it coerces `as nat`). Detected by shape:
     // the body tail is a `Call` whose callee path resolves to the `fold` scheme.
     let mut nat_fns: Vec<&str> = program
         .items
@@ -726,7 +726,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // `nat_fns` — `split`'s `ens result.len() == 1 + count_sep(s@, sep)` coerces the
     // scalar `result.len()` side `as nat` exactly as a hand-written ADT-fold-sum does.
     // (The other C5 spec fns — `occurs_at`/`contains_sub`/`sep_free`/`is_space` —
-    // return `bool`, so they do NOT join `nat_fns`.) Added only when a C5 op is in use
+    // return `bool`, so they do not join `nat_fns`.) Added only when a C5 op is in use
     // (byte-stable for the non-C5 corpus).
     if program_uses_string_search(program) {
         nat_fns.push("count_sep");
@@ -746,10 +746,10 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
         .collect();
 
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the program-wide set of
-    // FIELD names whose declared type reaches `String` — the editor core's `Buf {
+    // field names whose declared type reaches `String` — the editor core's `Buf {
     // text: String, .. }`. A contract reading `b.text.len()` / `result.text.len()`
-    // (a String FIELD access receiver) must rewrite `.len()`/`.byte_at(i)` to the
-    // wrapper SPEC fns `.spec_len()`/`.spec_byte_at(i as int)` (the exec `len`/
+    // (a String field access receiver) must rewrite `.len()`/`.byte_at(i)` to the
+    // wrapper spec fns `.spec_len()`/`.spec_byte_at(i as int)` (the exec `len`/
     // `byte_at` return `u64` and cannot be named in a contract — the same rule the
     // bare-`String`-value rewrite applies). Threaded into every fn's spec `Ctx`
     // (sorted+deduped for determinism, R-CODE-5). A field name is keyed alone (no
@@ -785,7 +785,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     string_field_names.dedup();
 
     // The program-wide `(variant_name, enum_name)` map (REQ-9): drives the
-    // ENUM-QUALIFIED `Enum::Variant` lowering of a `match` arm / pattern over a
+    // enum-qualified `Enum::Variant` lowering of a `match` arm / pattern over a
     // user enum value (verus rejects a bare `Nil`/`Circle`). Built once, threaded
     // through every `fn`/`spec fn` body's match lowering.
     let variants: Vec<(&str, &str)> = program
@@ -803,17 +803,17 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
         .collect();
 
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4, issue #127): the
-    // program-wide names of USER `spec fn`s that declare a `String`/`&String` param
-    // — the byte-view dispatch's SHAPE key. A USER spec fn (the #126 String-scanning
+    // program-wide names of user `spec fn`s that declare a `String`/`&String` param
+    // — the byte-view dispatch's shape key. A user spec fn (the #126 String-scanning
     // shape) lowers its param to `&TString`, so a `String` arg to it (e.g. a
-    // recursive self-call `is_digit(s, i+1, ..)`) must pass the REFERENCE through,
-    // NOT the `.data@` byte view the GENERATED `Seq<u8>` byte-view fns want. A user
-    // spec fn NAMED like a generated one (`spec fn is_digit(s: &String, ..)`) lives
-    // in the user namespace and SHADOWS the generated name — so `is_user_string_spec_fn`
+    // recursive self-call `is_digit(s, i+1, ..)`) must pass the reference through,
+    // not the `.data@` byte view the generated `Seq<u8>` byte-view fns want. A user
+    // spec fn named like a generated one (`spec fn is_digit(s: &String, ..)`) lives
+    // in the user namespace and shadows the generated name — so `is_user_string_spec_fn`
     // excludes it from the byte-view set (`callee_takes_string_byteview`), keyed on
-    // its PARAM SHAPE, not its name (#127). The generated fns are synthesized and so
-    // are NOT in `program.items`, hence not in this set — they still byte-view.
-    // Sorted+deduped for determinism (R-CODE-5). EMPTY for a program with no
+    // its param shape, not its name (#127). The generated fns are synthesized and so
+    // are not in `program.items`, hence not in this set — they still byte-view.
+    // Sorted+deduped for determinism (R-CODE-5). Empty for a program with no
     // String-param user spec fn (byte-stable for the existing corpus).
     let user_string_spec_fns: Vec<&str> = user_string_spec_fn_names(program);
 
@@ -821,8 +821,8 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // param-type-directed narrowing cast reads (`Ctx::spec_call_param_cast`). The
     // owned `Vec<(&str, Vec<PrimType>)>` backs the `&[PrimType]` views threaded
     // through `Ctx` (the two-step pattern `user_string_spec_fns` uses). An
-    // arithmetic arg to a user spec fn narrows to the callee's DECLARED param type
-    // (`as u32`/`as u64`/`as usize`), not a hardcoded `u64`. EMPTY for a program
+    // arithmetic arg to a user spec fn narrows to the callee's declared param type
+    // (`as u32`/`as u64`/`as usize`), not a hardcoded `u64`. Empty for a program
     // with no user spec fn (byte-stable — the cast path only fires for an in-map
     // callee, so existing u64-param call sites are untouched).
     let spec_fn_param_types_owned = spec_fn_param_type_map(program);
@@ -834,7 +834,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
     // (2) the lowered items, in source order (determinism, §5.3). A `fn` whose
     // loop carries an accumulator-fold invariant pulls in the auto-generated
     // push lemma for the folded spec fn (REQ-7 template a); the lemma def is
-    // emitted at file scope right before the `fn` that uses it, deduped.
+    // emitted at file scope before the `fn` that uses it, deduped.
     let mut emitted_lemmas: Vec<String> = Vec::new();
     for item in &program.items {
         let item_src = match item {
@@ -902,7 +902,7 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
 // ---------------------------------------------------------------------------
 
 /// Lower a `StructItem` to a Verus `pub struct` plus, when it carries an `inv`
-/// clause, the `well_formed` type-invariant predicate (REQ-8). The GROUNDED form
+/// clause, the `well_formed` type-invariant predicate (REQ-8). The grounded form
 /// (`.design/basis/01-adts.md` "Struct + type invariant", verus `0 errors`):
 ///
 /// ```verus
@@ -912,8 +912,8 @@ pub fn lower(program: &Program) -> Result<String, LowerError> {
 /// }
 /// ```
 ///
-/// VISIBILITY TIER (the recorded finding, REQ-8): a `pub open spec fn` body may
-/// refer only to `pub` items, so the struct, ITS FIELDS, and the predicate are
+/// Visibility tier (the recorded finding, REQ-8): a `pub open spec fn` body may
+/// refer only to `pub` items, so the struct, its fields, and the predicate are
 /// all emitted `pub` — otherwise verus rejects with `field expression for a
 /// non-visible datatype`. The `inv` expression is lowered with bare field-name
 /// paths rewritten to `self.<field>` (the predicate's receiver), the
@@ -931,14 +931,14 @@ fn lower_struct(
     out.push_str("}\n");
 
     // The type-invariant predicate (REQ-8), when an `inv` clause is present. A
-    // struct WITHOUT an invariant is a plain `pub struct` (no predicate, nothing
+    // struct without an invariant is a plain `pub struct` (no predicate, nothing
     // to thread — the OQ-3 threading in `lower_fn_signature` keys on `inv_structs`
     // which is exactly the invariant-bearing set).
     if let Some(inv) = &s.inv {
         let field_names: Vec<&str> = s.fields.iter().map(|f| f.name.as_str()).collect();
         // The subset of fields whose type reaches `String` (REQ-4): a `String`
         // field's `<field>.len()` / `<field>.byte_at(i)` inside the spec-position
-        // `well_formed` predicate must name the wrapper SPEC fns
+        // `well_formed` predicate must name the wrapper spec fns
         // `.spec_len()`/`.spec_byte_at(i as int)` (the exec `len`/`byte_at` return
         // `u64` and cannot be named in a contract — the same rule the fn-signature
         // String rewrite applies). The editor core `inv cursor <= text.len()`.
@@ -1033,13 +1033,13 @@ fn lower_inv_expr(
         // the spec-position `well_formed` predicate — the editor core `inv cursor <=
         // text.len()`. The receiver's bare field name is rewritten to `self.<field>`
         // (recursively, so a nested field receiver works too). When the receiver is a
-        // `String`-typed field, `.len()`/`.byte_at(i)` rewrite to the wrapper SPEC fns
+        // `String`-typed field, `.len()`/`.byte_at(i)` rewrite to the wrapper spec fns
         // `.spec_len()`/`.spec_byte_at(i as int)` — the exec `len`/`byte_at` return
-        // `u64` and CANNOT be named in a contract (the same rule the fn-signature
+        // `u64` and cannot be named in a contract (the same rule the fn-signature
         // String rewrite applies; `lower_expr` MethodCall spec arm). A non-`String`
-        // field's method call (e.g. a `Vec` field's `.len()`, whose wrapper spec fn IS
+        // field's method call (e.g. a `Vec` field's `.len()`, whose wrapper spec fn is
         // `len`) keeps the method name unchanged. Without this arm `text.len()` fell to
-        // the catch-all `lower_expr`, which lowered the bare receiver `text` with NO
+        // the catch-all `lower_expr`, which lowered the bare receiver `text` with no
         // `self.` rewrite (`error[E0425]: cannot find value text`).
         Expr::MethodCall {
             receiver,
@@ -1102,14 +1102,14 @@ fn lower_inv_expr(
         }
         // A spec-fn / combinator CALL inside the `well_formed` predicate (#229,
         // verus-lowering.md REQ-5 + REQ-8): e.g. a struct invariant `inv s_dec(x +
-        // 0) == 0` naming a user `spec fn` with an arithmetic arg over a FIELD.
+        // 0) == 0` naming a user `spec fn` with an arithmetic arg over a field.
         // Two obligations the bare catch-all `lower_expr` dropped: (1) the REQ-8
-        // `self.<field>` field rewrite on the call's args (`x` is a FIELD, so the
+        // `self.<field>` field rewrite on the call's args (`x` is a field, so the
         // body must reference `self.x`, not a bare unresolvable `x`), and (2) the
         // #225 declared-param-type narrowing — in spec position Verus integer
-        // arithmetic is the UNBOUNDED `int`, so an arithmetic arg `x + 0`
-        // evaluates to `int` and must narrow to the callee's DECLARED param type
-        // (`(self.x + 0) as u32` for a `u32`-param `s_dec`), NOT the hardcoded `as
+        // arithmetic is the unbounded `int`, so an arithmetic arg `x + 0`
+        // evaluates to `int` and must narrow to the callee's declared param type
+        // (`(self.x + 0) as u32` for a `u32`-param `s_dec`), not the hardcoded `as
         // u64` fallback (E0308). The arg's field rewrite recurses through
         // `lower_inv_expr` (so nested field paths become `self.<field>`), then the
         // declared-param-type cast is appended with `as` binding tighter than
@@ -1135,9 +1135,9 @@ fn lower_inv_expr(
                 let lowered =
                     lower_inv_expr(a, field_names, string_fields, spec_fn_param_types, d, span)?;
                 if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
-                    // #233: a bool-param position (`Some(None)`) takes NO cast — a
+                    // #233: a bool-param position (`Some(None)`) takes no cast — a
                     // comparison `x < y` / a `!flag` arg is already bool-typed and
-                    // `(…) as u64` is E0308. Only an UNKNOWN callee (outer `None`)
+                    // `(…) as u64` is E0308. Only an unknown callee (outer `None`)
                     // falls back to the historic `u64` integer default.
                     match callee_name.and_then(|n| cast_ctx.spec_call_param_cast(n, i)) {
                         Some(None) => parts.push(lowered),
@@ -1157,7 +1157,7 @@ fn lower_inv_expr(
             Ok(format!("{c}({})", parts.join(", ")))
         }
         // A cast inside the `well_formed` predicate (`inv (x as u32) < cap`,
-        // blocker #148): the cast INNER must recurse through `lower_inv_expr` so a
+        // blocker #148): the cast inner must recurse through `lower_inv_expr` so a
         // bare field name is rewritten to `self.<field>` (the catch-all
         // `lower_expr` would emit the bare `x as u32` — `cannot find value x`).
         // The #122 inner-paren discipline is preserved (a `Binary`/`Unary` inner is
@@ -1180,10 +1180,10 @@ fn lower_inv_expr(
             };
             Ok(format!("{e} as {t}"))
         }
-        // A literal / other leaf lowers exactly as the shared spec lowering would
+        // A literal / other leaf lowers as the shared spec lowering would
         // (the field rewrite only matters for bare paths and their parents). Thread
         // the param-type map so any spec-call reaching this catch-all narrows to
-        // the callee's DECLARED param type (#229) rather than the `as u64` fallback.
+        // the callee's declared param type (#229) rather than the `as u64` fallback.
         _ => lower_expr(
             expr,
             Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
@@ -1230,8 +1230,8 @@ fn lower_inv_operand(
         }
     }
     // Blocker #148 (the #146/#139/#142 cast-`<` class, on the struct
-    // type-invariant path this parenthesizer missed): a `Cast` LEFT operand of a
-    // `<`-leading op (`<`/`<=`/`<<`) is AMBIGUOUS — `self.x as u32 < self.cap`
+    // type-invariant path this parenthesizer missed): a `Cast` left operand of a
+    // `<`-leading op (`<`/`<=`/`<<`) is ambiguous. `self.x as u32 < self.cap`
     // mis-parses the `u32 <` as a generic-argument list (`u32<…>`, "expected
     // `,`"). Same guard, same `is_lt_leading` predicate as `lower_binary_operand`
     // (R-DEFER-8: the cast-`<` convention is uniform across every emission site).
@@ -1241,8 +1241,8 @@ fn lower_inv_operand(
     Ok(s)
 }
 
-/// Lower an `EnumItem` to a Verus `enum` (REQ-9), recursive `Box<T>` and all
-/// (REQ-10). The GROUNDED forms (`.design/basis/01-adts.md`, verus `0 errors`):
+/// Lower an `EnumItem` to a Verus `enum` (REQ-9), including the recursive `Box<T>`
+/// case (REQ-10). The grounded forms (`.design/basis/01-adts.md`, verus `0 errors`):
 ///
 /// ```verus
 /// enum Shape { Circle(u64), Rect { w: u64, h: u64 } }
@@ -1254,14 +1254,14 @@ fn lower_inv_operand(
 /// (`lower_type` emits `Box<…>` for `Type::Box`), the heap indirection Verus
 /// dereferences with `*` (REQ-10).
 ///
-/// VISIBILITY TIER (#230, the struct-invariant REQ-8 grounding finding extended
-/// to its whole class): the enum is emitted `pub`. With #230 promoting EVERY
+/// Visibility tier (#230, the struct-invariant REQ-8 grounding finding extended
+/// to its whole class): the enum is emitted `pub`. With #230 promoting every
 /// user `spec fn` to `pub open spec fn`, a recursive fold like `sum_list` (a
-/// `pub open` body) pattern-matches `enum List`'s constructors — and a `pub
+/// `pub open` body) pattern-matches `enum List`'s constructors, and a `pub
 /// open` body may construct/match only `pub` datatypes (verus rejects a private
 /// one with `pattern constructor for a non-visible datatype`). Mirroring
-/// `lower_struct`'s `pub` tier closes the class. `pub` only WIDENS visibility —
-/// the GROUNDED verified meaning is unchanged.
+/// `lower_struct`'s `pub` tier closes the class. `pub` only widens visibility;
+/// the grounded verified meaning is unchanged.
 fn lower_enum(e: &EnumItem) -> Result<String, LowerError> {
     let mut out = String::new();
     writeln!(out, "pub enum {} {{", e.name).ok();
@@ -1297,8 +1297,8 @@ fn lower_enum(e: &EnumItem) -> Result<String, LowerError> {
 /// Collect (in deterministic source order, deduped) the combinator names the
 /// program references anywhere in a contract/spec position, and emit each one's
 /// frozen `verus_l3` `spec fn` definition from the `thermite-spec` registry
-/// (REQ-6; closes the OQ-2 seam — this is the registry's #4 consumer per
-/// R-DEFER-1). A referenced name with no registry entry is `UnknownCombinator`.
+/// (REQ-6; closes the OQ-2 seam, the registry's #4 consumer per R-DEFER-1). A
+/// referenced name with no registry entry is `UnknownCombinator`.
 fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
     let mut names: Vec<(String, Span)> = Vec::new();
     for item in &program.items {
@@ -1337,14 +1337,14 @@ fn emit_combinator_defs(program: &Program) -> Result<String, LowerError> {
             span: *span,
         })?;
         out.push('\n');
-        // #235 (regression of #230): #230 promoted every USER `spec fn` to
-        // `pub open spec fn`, but the woven combinator defs stayed private — and
-        // a `pub open` body may name ONLY `pub` items (verus-lowering.md REQ-8's
+        // #235 (regression of #230): #230 promoted every user `spec fn` to
+        // `pub open spec fn`, but the woven combinator defs stayed private, and
+        // a `pub open` body may name only `pub` items (verus-lowering.md REQ-8's
         // own grounding finding). A validator-legal combinator call in a user
         // spec-fn body (spectherm-combinators.md REQ-3) then emitted a `pub open`
-        // body naming a PRIVATE woven `spec fn`, which verus rejects ("in pub open
+        // body naming a private woven `spec fn`, which verus rejects ("in pub open
         // spec function, cannot refer to private function" → L0). The frozen
-        // `verus_l3` registry text begins `spec fn …`; promote it to the SAME
+        // `verus_l3` registry text begins `spec fn …`; promote it to the same
         // visibility tier (`pub open spec fn …`). Prefix-only golden delta.
         match sig.verus_l3.strip_prefix("spec fn ") {
             Some(rest) => {
@@ -1421,10 +1421,10 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
             collect_combinators_in_expr(expr, span, acc)
         }
         // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions are
-        // dead-in-1a (gated at the validator), but the honest collector value
-        // is to descend into their sub-expressions — a combinator could in
-        // principle appear in a struct-literal field value, an `is` scrutinee,
-        // or a deref operand — so no referenced combinator is silently dropped.
+        // dead-in-1a (gated at the validator), but the collector descends into
+        // their sub-expressions. A combinator could in principle appear in a
+        // struct-literal field value, an `is` scrutinee, or a deref operand, so
+        // no referenced combinator is silently dropped.
         Expr::StructLit { fields, .. } => {
             for (_, value) in fields {
                 collect_combinators_in_expr(value, span, acc);
@@ -1450,7 +1450,7 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
     }
 }
 
-/// Walk a block collecting combinators referenced in its SPEC positions: loop
+/// Walk a block collecting combinators referenced in its spec positions: loop
 /// `inv`/`dec` clauses. Body exec expressions never reference combinators in the
 /// corpus, but loop invariants do (`binary_search`'s `forall_below`/`forall_from`).
 fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(String, Span)>) {
@@ -1476,38 +1476,38 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 
 // ---------------------------------------------------------------------------
 // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7): the
-// GENERATED per-(ADT, scheme) Verus recursive `spec fn`s + the discharged-once
-// law. A scheme call `fold(l, init, step)` lowers to a CALL of the generated
-// `fold_<e>`, materialized here ONCE before its first use (the OQ-1 (b)
-// MATERIALIZED-items resolution — shared across instances, in the audit surface).
+// generated per-(ADT, scheme) Verus recursive `spec fn`s plus the discharged-once
+// law. A scheme call `fold(l, init, step)` lowers to a call of the generated
+// `fold_<e>`, materialized here once before its first use (the OQ-1 (b)
+// materialized-items resolution: shared across instances, in the audit surface).
 // ---------------------------------------------------------------------------
 
 /// A single (recursion scheme, recursive ADT) pair the program uses, resolved by
-/// SHAPE: a scheme call whose scrutinee path resolves to a `spec fn` parameter of
+/// shape: a scheme call whose scrutinee path resolves to a `spec fn` parameter of
 /// a declared `enum` type. The lowerer materializes the scheme's generated
-/// `spec fn` over this ADT (`fold_<e>`/`for_all_<e>`/…) + the structural measure +
-/// the `fold_bound_<e>` law (REQ-6/REQ-7).
+/// `spec fn` over this ADT (`fold_<e>`/`for_all_<e>`/…), the structural measure,
+/// and the `fold_bound_<e>` law (REQ-6/REQ-7).
 struct SchemeUse {
     scheme: &'static thermite_spec::SchemeSig,
     /// The declared `enum` the scheme folds over (the scrutinee's type).
     enum_name: String,
     /// The element type of the ADT's recursive variant (the first non-`Box`
-    /// field — `u64` for `Cons(u64, Box<List>)`), the step's element parameter
-    /// type. The GROUNDED forms are all `u64`-element.
+    /// field, `u64` for `Cons(u64, Box<List>)`), the step's element parameter
+    /// type. The grounded forms are all `u64`-element.
     elem_ty: String,
     /// The recursive variant's name (`Cons`) and the base (unit/value) variant(s),
-    /// resolved from the enum decl, so the generated `match` is ENUM-QUALIFIED and
+    /// resolved from the enum decl, so the generated `match` is enum-qualified and
     /// recurses through the `Box`-deref'd recursive field.
     enum_item: EnumItem,
 }
 
-/// Emit the GENERATED scheme definitions for every (scheme, ADT) pair the program
-/// uses (REQ-6/REQ-7), in a DETERMINISTIC order (R-CODE-5), deduped. For each ADT
-/// that ANY scheme folds over, the structural measure `<e>_len` is emitted once;
+/// Emit the generated scheme definitions for every (scheme, ADT) pair the program
+/// uses (REQ-6/REQ-7), in a deterministic order (R-CODE-5), deduped. For each ADT
+/// that any scheme folds over, the structural measure `<e>_len` is emitted once;
 /// for each used scheme over that ADT the recursive `spec fn` (`fold_<e>`/
 /// `for_all_<e>`/…); and for each `fold` over that ADT the induction law
-/// `fold_bound_<e>`. EMPTY when the program uses no scheme (the non-scheme corpus
-/// is byte-stable — no regression). The forms reproduce the GROUNDED Verus
+/// `fold_bound_<e>`. Empty when the program uses no scheme (the non-scheme corpus
+/// is byte-stable, no regression). The forms reproduce the grounded Verus
 /// (`9 verified, 0 errors`) of `.design/basis/02-recursion-schemes.md`.
 fn emit_scheme_defs(program: &Program) -> Result<String, LowerError> {
     let uses = collect_scheme_uses(program)?;
@@ -1567,10 +1567,10 @@ fn emit_scheme_defs(program: &Program) -> Result<String, LowerError> {
 /// Collect every (scheme, ADT) pair the program uses (REQ-6). A scheme call is an
 /// `Expr::Call` whose callee `Path` resolves via `thermite_spec::schemes::lookup`;
 /// the ADT is the type of its scrutinee (first) argument, resolved against the
-/// enclosing `spec fn`/`fn`'s parameter types (the AST is untyped — OQ-3 — so the
-/// scrutinee path → param-type resolution is the SHAPE-decidable mapping). A
+/// enclosing `spec fn`/`fn`'s parameter types (the AST is untyped, OQ-3, so the
+/// scrutinee path → param-type resolution is the shape-decidable mapping). A
 /// scheme over a value whose type is not a declared `enum` is `Unsupported`
-/// (REQ-9 — never a panic).
+/// (REQ-9, never a panic).
 fn collect_scheme_uses(program: &Program) -> Result<Vec<SchemeUse>, LowerError> {
     // The declared enums, by name.
     let enums: std::collections::BTreeMap<&str, &EnumItem> = program
@@ -1586,9 +1586,9 @@ fn collect_scheme_uses(program: &Program) -> Result<Vec<SchemeUse>, LowerError> 
     for item in &program.items {
         let (params, body, span) = match item {
             Item::SpecFn(s) => (&s.params, &s.body, s.span),
-            // A scheme in an exec `fn` body is the MONOMORPHIZED exec form (OQ-2);
+            // A scheme in an exec `fn` body is the monomorphized exec form (OQ-2);
             // the v0.1 corpus is spec-only, so an exec scheme is out of the
-            // grounded path — collect spec-fn scheme uses only here.
+            // grounded path. Collect spec-fn scheme uses only here.
             _ => continue,
         };
         collect_scheme_uses_in_block(body, params, &enums, span, &mut uses)?;
@@ -1806,7 +1806,7 @@ fn resolve_scheme_adt(
         })
 }
 
-/// The element type of an ADT's recursive variant — the first NON-`Box` field of
+/// The element type of an ADT's recursive variant: the first non-`Box` field of
 /// the variant that carries a `Box<Self>` recursive occurrence (`u64` for
 /// `Cons(u64, Box<List>)`). The step's element parameter type (REQ-6). An enum
 /// with no recursive `Box` variant is not a recursion-scheme target → `Unsupported`.
@@ -1831,7 +1831,7 @@ fn recursive_elem_type(e: &EnumItem, span: Span) -> Result<String, LowerError> {
 }
 
 /// The recursive variant (the one carrying a `Box<Self>`) and the variant set, so
-/// the generated `match` is ENUM-QUALIFIED and recurses through the deref'd field.
+/// the generated `match` is enum-qualified and recurses through the deref'd field.
 /// Returns `(base_variants, recursive_variant_name)`. The base variants are every
 /// non-recursive variant (unit `Nil` / value `Leaf(v)`).
 fn enum_variant_split(e: &EnumItem) -> (Vec<&VariantDef>, Option<&VariantDef>) {
@@ -1850,9 +1850,9 @@ fn enum_variant_split(e: &EnumItem) -> (Vec<&VariantDef>, Option<&VariantDef>) {
 
 /// Emit the structural measure `<e>_len(l: E) -> nat decreases l` (REQ-6/REQ-7):
 /// the `len_list`-shaped count the `fold_bound_<e>` law multiplies. The recursive
-/// arm counts `1 + <e>_len(*tail)`; each base arm contributes `0`. GROUNDED
+/// arm counts `1 + <e>_len(*tail)`; each base arm contributes `0`. Grounded
 /// (`list_len`, part of the `9 verified` run). The generated name is `<e>_len`
-/// (e.g. `list_len`), DISTINCT from any surface `len_<e>` fold instance so the
+/// (e.g. `list_len`), distinct from any surface `len_<e>` fold instance so the
 /// two never collide (the corpus `len_list` is a `fold` instance).
 fn emit_len_measure(u: &SchemeUse) -> Result<String, LowerError> {
     let e = &u.enum_item;
@@ -1863,8 +1863,8 @@ fn emit_len_measure(u: &SchemeUse) -> Result<String, LowerError> {
         span: zero_span(),
     })?;
     let mut out = String::new();
-    // VISIBILITY TIER (#230 class-completion): `pub open spec fn` — this
-    // generated measure is CALLED by a user scheme-call `spec fn` (now `pub
+    // Visibility tier (#230 class-completion): `pub open spec fn`. This
+    // generated measure is called by a user scheme-call `spec fn` (now `pub
     // open`), and a `pub open` body may refer only to `pub` functions (verus:
     // `in pub open spec function, cannot refer to private function`).
     writeln!(out, "pub open spec fn {lname}(l: {}) -> nat", e.name).map_err(|_| fmt_err())?;
@@ -1883,7 +1883,7 @@ fn emit_len_measure(u: &SchemeUse) -> Result<String, LowerError> {
     Ok(out)
 }
 
-/// The arm pattern for a BASE variant in a generated `match` (REQ-6): a unit
+/// The arm pattern for a base variant in a generated `match` (REQ-6): a unit
 /// variant is its bare name (`Nil`); a value-carrying tuple base binds its field
 /// (`Leaf(v)`). v0.1 grounded corpus is unit-base (`Nil`); the value-base shape
 /// is supported for the `Tree` generalization.
@@ -1901,7 +1901,7 @@ fn base_variant_pattern(v: &VariantDef) -> String {
 /// Emit the generated recursive scheme `spec fn` over the ADT (REQ-6): `fold_<e>`
 /// (`-> nat`, `decreases l`, applies the passed `spec_fn` step at each recursive
 /// node), `for_all_<e>`/`exists_<e>`/`traverse_<e>` (`-> bool`), or `map_<e>`
-/// (`-> E`, `Box::new`-reconstructing). GROUNDED forms (`fold_list`/`for_all_list`/
+/// (`-> E`, `Box::new`-reconstructing). Grounded forms (`fold_list`/`for_all_list`/
 /// `map_list`, `decreases l`, `*tail`).
 fn emit_scheme_spec_fn(u: &SchemeUse) -> Result<String, LowerError> {
     use thermite_spec::{SchemeResult, StepShape};
@@ -1950,8 +1950,8 @@ fn emit_scheme_spec_fn(u: &SchemeUse) -> Result<String, LowerError> {
     };
 
     let mut out = String::new();
-    // VISIBILITY TIER (#230 class-completion): `pub open spec fn` — the
-    // generated per-(ADT,scheme) recursive fold is CALLED by a user scheme-call
+    // Visibility tier (#230 class-completion): `pub open spec fn`. The
+    // generated per-(ADT,scheme) recursive fold is called by a user scheme-call
     // `spec fn` (now `pub open`), so it must itself be `pub open` (verus: `in
     // pub open spec function, cannot refer to private function`).
     write!(out, "pub open spec fn {fname}(l: {}", e.name).map_err(|_| fmt_err())?;
@@ -1993,7 +1993,7 @@ fn emit_scheme_spec_fn(u: &SchemeUse) -> Result<String, LowerError> {
 
 /// The step parameter name in the generated scheme `spec fn` (REQ-6): `f` for the
 /// accumulator schemes (`fold`/`traverse`), `g` for `map`, `p` for the predicates
-/// (`for_all`/`exists`) — matching the GROUNDED forms.
+/// (`for_all`/`exists`), matching the grounded forms.
 fn step_param_name(scheme: &thermite_spec::SchemeSig) -> &'static str {
     match scheme.name {
         "fold" | "traverse" => "f",
@@ -2020,7 +2020,7 @@ fn scheme_base_value(
 }
 
 /// The recursive-arm body for a generated scheme `spec fn` (REQ-6), applying the
-/// step at each `Cons`/`Node`. GROUNDED forms:
+/// step at each `Cons`/`Node`. Grounded forms:
 /// - `fold`: `f(x, fold_<e>(*tail, init, f))`
 /// - `for_all`: `p(x) && for_all_<e>(*tail, p)`
 /// - `exists`: `p(x) || exists_<e>(*tail, p)`
@@ -2050,12 +2050,12 @@ fn scheme_recursive_arm(
     }
 }
 
-/// Emit the `fold_bound_<e>` induction-discharged-once law (REQ-7) — the
-/// multiplier. A `proof fn` parametric in the step `f` + a per-node premise,
-/// carrying the SINGLE `decreases l` structural induction, proving
+/// Emit the `fold_bound_<e>` induction-discharged-once law (REQ-7): the
+/// multiplier. A `proof fn` parametric in the step `f` plus a per-node premise,
+/// carrying the single `decreases l` structural induction, proving
 /// `fold_<e>(l, init, f) <= <e>_len(l) * b` for `init == 0` and a per-node bound.
-/// GROUNDED (`fold_bound_list`, single induction, `9 verified, 0 errors`; the
-/// per-node-premise-removed negative control FAILS). Emitted ONLY for an ADT a
+/// Grounded (`fold_bound_list`, single induction, `9 verified, 0 errors`; the
+/// per-node-premise-removed negative control fails). Emitted only for an ADT a
 /// `fold` folds over.
 fn emit_fold_bound_law(u: &SchemeUse) -> Result<String, LowerError> {
     let e = &u.enum_item;
@@ -2121,36 +2121,36 @@ fn lower_spec_fn(
     program: &Program,
 ) -> Result<String, LowerError> {
     // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): the
-    // recursion-scheme bindings in scope for THIS spec fn — its scrutinee params
-    // resolved to the generated `fold_<e>`/`for_all_<e>`. EMPTY for a non-scheme
+    // recursion-scheme bindings in scope for this spec fn, its scrutinee params
+    // resolved to the generated `fold_<e>`/`for_all_<e>`. Empty for a non-scheme
     // fn (byte-stable for the existing corpus).
     let scheme_bindings = spec_fn_scheme_bindings(s, program)?;
 
     let mut out = String::new();
-    // The return type: a scheme-CALL fold body returns the scheme's result kind
+    // The return type: a scheme-call fold body returns the scheme's result kind
     // (`nat` for `fold`, `bool` for `for_all`/`exists`/`traverse`, the ADT for
     // `map`); else the existing head/ADT-fold-sum or declared-type lowering.
     let ret = lower_spec_fn_ret_with_schemes(&s.ret, &s.body, &scheme_bindings);
-    // VISIBILITY TIER (#230, the #232 layer's twin): emit `pub open spec fn`,
+    // Visibility tier (#230, the #232 layer's twin): emit `pub open spec fn`,
     // not a bare `spec fn`. A struct's `well_formed` predicate is a `pub open
-    // spec fn` (REQ-8 grounding finding), and a `pub open` body may refer ONLY
-    // to `pub` items — so a `well_formed` naming a user `spec fn` over a
-    // PRIVATE `spec fn` is rejected by verus (`cannot refer to private
+    // spec fn` (REQ-8 grounding finding), and a `pub open` body may refer only
+    // to `pub` items, so a `well_formed` naming a user `spec fn` over a
+    // private `spec fn` is rejected by verus (`cannot refer to private
     // function`). Promoting every user spec fn to `pub open` resolves it
     // (hand-verus-confirmed: the `pub open` Counter form is `1 verified, 0
-    // errors`). `pub open` only WIDENS visibility + exposes the (already-pure,
+    // errors`). `pub open` only widens visibility and exposes the (already-pure,
     // contract-free) body for definitional unfolding, which every existing
-    // caller already relied on — no golden MEANING change, a pure prefix add.
+    // caller already relied on. No golden meaning change, a pure prefix add.
     write!(out, "pub open spec fn {}(", s.name).ok();
     emit_params(&mut out, &s.params, Pos::Spec)?;
 
-    // The DEC NUANCE (`.design/basis/02-recursion-schemes.md` step-lowering
-    // resolution): a scheme-CALL instance body (`fold_list(l, 0, f)`) is
-    // NON-recursive — the recursion lives in the GENERATED `fold_<e>`, which
+    // The dec nuance (`.design/basis/02-recursion-schemes.md` step-lowering
+    // resolution): a scheme-call instance body (`fold_list(l, 0, f)`) is
+    // non-recursive. The recursion lives in the generated `fold_<e>`, which
     // carries its own `decreases l`. The surface instance still parses with a
     // mandatory `dec l`, but emitting `decreases l` on this non-recursive body is
-    // spurious. We SUPPRESS it for a scheme-call body. (A hand-written recursive
-    // `spec fn` — the `is_adt_fold_sum`/head-fold path — keeps its `decreases`.)
+    // spurious, so we suppress it for a scheme-call body. (A hand-written recursive
+    // `spec fn`, the `is_adt_fold_sum`/head-fold path, keeps its `decreases`.)
     if is_scheme_call_body(&s.body, &scheme_bindings) {
         writeln!(out, ") -> {ret}").ok();
     } else {
@@ -2174,8 +2174,8 @@ fn lower_spec_fn(
 }
 
 /// The recursion-scheme bindings in scope for a `spec fn` (REQ-6): for each
-/// distinct scheme its body CALLS, the resolved generated fn name + element/result
-/// types (from the scrutinee param's `enum` type). EMPTY for a non-scheme fn.
+/// distinct scheme its body calls, the resolved generated fn name plus element/result
+/// types (from the scrutinee param's `enum` type). Empty for a non-scheme fn.
 fn spec_fn_scheme_bindings(
     s: &SpecFnItem,
     program: &Program,
@@ -2201,14 +2201,14 @@ fn spec_fn_scheme_bindings(
         .collect())
 }
 
-/// True if the spec fn's body tail is a scheme CALL resolved by an in-scope
-/// binding (REQ-6) — the instance whose `decreases` is suppressed (the recursion
+/// True if the spec fn's body tail is a scheme call resolved by an in-scope
+/// binding (REQ-6): the instance whose `decreases` is suppressed (the recursion
 /// lives in the generated `fold_<e>`).
 fn is_scheme_call_body(body: &Block, bindings: &[SchemeBinding]) -> bool {
     scheme_call_result(body, bindings).is_some()
 }
 
-/// The result kind of a scheme-CALL body tail (REQ-6), or `None` if the body is
+/// The result kind of a scheme-call body tail (REQ-6), or `None` if the body is
 /// not a scheme call. Used to pick the instance's return type + suppress the
 /// spurious `decreases`.
 fn scheme_call_result(
@@ -2229,7 +2229,7 @@ fn scheme_call_result(
     None
 }
 
-/// The return type of a scheme-CALL instance spec fn (REQ-6): `nat` for `fold`,
+/// The return type of a scheme-call instance spec fn (REQ-6): `nat` for `fold`,
 /// `bool` for the predicate schemes, the ADT element-or-name for `map`. Falls
 /// back to the existing `lower_spec_fn_ret` (head/ADT-fold-sum or declared type)
 /// when the body is not a scheme call.
@@ -2275,10 +2275,10 @@ fn lower_spec_fn_body_with_schemes(
     // existing special-case lowering is bypassed — the scheme call is handled in
     // `lower_expr`'s `Call` arm via `lower_scheme_call`.
     // Thread the spec fn's `String`/`&String` params (Basis Stage 7 REQ-4) so a
-    // String-scanning scheme-call body's `byte_at`/`slice` rewrites to the SPEC
-    // accessors — the SAME `.with_strings` threading the non-scheme path below
+    // String-scanning scheme-call body's `byte_at`/`slice` rewrites to the spec
+    // accessors, the same `.with_strings` threading the non-scheme path below
     // uses, covering the whole spec-fn-body class (no scheme sibling left to
-    // re-pin). EMPTY for a non-`String` spec fn (byte-stable).
+    // re-pin). Empty for a non-`String` spec fn (byte-stable).
     let strings = string_param_names(params);
     let ctx = Ctx::spec_seq()
         .with_variants(variants)
@@ -2294,8 +2294,8 @@ fn lower_spec_fn_body_with_schemes(
     Ok(out)
 }
 
-/// The slice-typed parameter names of an item (the SHAPE-derived set whose bare
-/// paths get `@` in spec position — REQ-5).
+/// The slice-typed parameter names of an item (the shape-derived set whose bare
+/// paths get `@` in spec position, REQ-5).
 fn slice_param_names(params: &[Param]) -> Vec<&str> {
     params
         .iter()
@@ -2309,16 +2309,16 @@ fn slice_param_names(params: &[Param]) -> Vec<&str> {
 }
 
 /// The `String`/`&String` parameter names of a `spec fn` (Basis Stage 7,
-/// `.design/basis/07-strings.md` REQ-4): the SHAPE-derived set whose
+/// `.design/basis/07-strings.md` REQ-4): the shape-derived set whose
 /// spec-position `.len()`/`.byte_at(i)`/`.slice(..)` rewrite to the wrapper's
-/// SPEC accessors (`.spec_len()`/`.spec_byte_at(i as int)`). A `spec fn` carries
-/// only `Param`s (no synthetic `result` — a spec fn body is an expression, not a
+/// spec accessors (`.spec_len()`/`.spec_byte_at(i as int)`). A `spec fn` carries
+/// only `Param`s (no synthetic `result`; a spec fn body is an expression, not a
 /// `req`/`ens` contract), so this is the param-level analog of
 /// [`string_value_names`] used to thread `.with_strings(..)` into the spec-fn
 /// body context (`lower_spec_fn_body`/`lower_spec_fn_body_with_schemes`). Without
-/// it a `&String`-param body's `byte_at(i)` does NOT rewrite to
-/// `spec_byte_at(i as int)` and hits the `usize`-typed exec accessor (E0308 —
-/// `usize` vs `int`). EMPTY for a non-`String` spec fn (byte-stable for the
+/// it a `&String`-param body's `byte_at(i)` does not rewrite to
+/// `spec_byte_at(i as int)` and hits the `usize`-typed exec accessor (E0308,
+/// `usize` vs `int`). Empty for a non-`String` spec fn (byte-stable for the
 /// existing corpus). Sees through a single `&` borrow via [`is_string_ty`].
 fn string_param_names(params: &[Param]) -> Vec<&str> {
     params
@@ -2328,17 +2328,17 @@ fn string_param_names(params: &[Param]) -> Vec<&str> {
         .collect()
 }
 
-/// The program-wide names of USER `spec fn`s that declare a `String`/`&String`
+/// The program-wide names of user `spec fn`s that declare a `String`/`&String`
 /// parameter (Basis Stage 7, `.design/basis/07-strings.md` REQ-4, issue #127). The
-/// byte-view dispatch's SHAPE key: such a user spec fn (the #126 String-scanning
+/// byte-view dispatch's shape key: such a user spec fn (the #126 String-scanning
 /// shape) lowers its param to `&TString`, so a `String` arg to it passes the
-/// REFERENCE, NOT the `.data@` byte view — AND, because it lives in the user
-/// namespace, it SHADOWS any GENERATED byte-view/parse def of the same name. The
+/// reference, not the `.data@` byte view, and, because it lives in the user
+/// namespace, it shadows any generated byte-view/parse def of the same name. The
 /// generated emission gates (`program_uses_parse`/`program_uses_numfmt`/
 /// `program_uses_string_search`) exclude these names so a user `spec fn is_digit(s:
 /// &String, ..)` does not spuriously materialize the generated `is_digit(b: u8)`
-/// (which would be a duplicate definition — E0428). Sorted+deduped for determinism
-/// (R-CODE-5). EMPTY for a program with no String-param user spec fn (byte-stable).
+/// (which would be a duplicate definition, E0428). Sorted+deduped for determinism
+/// (R-CODE-5). Empty for a program with no String-param user spec fn (byte-stable).
 fn user_string_spec_fn_names(program: &Program) -> Vec<&str> {
     let mut names: Vec<&str> = program
         .items
@@ -2358,19 +2358,19 @@ fn user_string_spec_fn_names(program: &Program) -> Vec<&str> {
 /// The program-wide user-`spec fn` param-type map (#225): each `spec fn` name
 /// paired with its declared parameter primitive types, in source order (one entry
 /// per param position, so a position index maps directly). Built once in
-/// [`lower`]; the SHAPE-derived authority the param-type-directed narrowing cast
+/// [`lower`]; the shape-derived authority the param-type-directed narrowing cast
 /// (`Ctx::spec_call_param_cast`) reads to narrow an arithmetic argument back to
 /// the callee's declared exec type. A non-primitive param (slice/`Seq`/struct/
-/// String/…) is recorded as `PrimType::Bool` — the no-cast placeholder, since an
+/// String/…) is recorded as `PrimType::Bool`, the no-cast placeholder, since an
 /// integer-narrowing arithmetic arg is never bound to a non-integer param (a
 /// slice arg is a path, a String arg goes to `.data@`); `spec_call_param_cast`
 /// maps `Bool` to no cast. Owned `Vec`s here back the `&[PrimType]` views threaded
 /// through `Ctx` (mirroring the two-step `user_string_spec_fns` pattern).
 ///
-/// PUBLIC for the contract-TV production column (crosslink #228, ref #225/#227):
-/// `forge::contract_tv` derives this SAME map from the checked program and threads
+/// Public for the contract-TV production column (crosslink #228, ref #225/#227):
+/// `forge::contract_tv` derives this same map from the checked program and threads
 /// it into [`lower_contract_expr`], so the TV "production" lowering of a spec-call
-/// arithmetic arg narrows to the callee's DECLARED param type EXACTLY as the
+/// arithmetic arg narrows to the callee's declared param type as the
 /// signature path does (contract-tv.md REQ-2 "verbatim reuse"). It is the single
 /// source of truth (R-CHAR-3): both `lower` and the TV column read it, never two
 /// independent derivations.
@@ -2398,8 +2398,8 @@ pub fn spec_fn_param_type_map(program: &Program) -> Vec<(&str, Vec<PrimType>)> {
         .collect()
 }
 
-/// True iff `ty` is `String` or `&String` (sees through a single borrow) — the
-/// SHAPE test shared by [`string_param_names`] and [`string_value_names`].
+/// True iff `ty` is `String` or `&String` (sees through a single borrow): the
+/// shape test shared by [`string_param_names`] and [`string_value_names`].
 fn is_string_ty(ty: &Type) -> bool {
     match ty {
         Type::String => true,
@@ -2411,10 +2411,10 @@ fn is_string_ty(ty: &Type) -> bool {
 /// The `String`-named values in scope for a fn's contract (REQ-4): every
 /// `String`/`&String` parameter, plus the synthetic `result` when the return type
 /// is `String`. A contract over a `String` names the wrapper's spec fns
-/// (`.spec_len()`/`.spec_byte_at(i as int)`); this is the SHAPE-derived set the
+/// (`.spec_len()`/`.spec_byte_at(i as int)`); this is the shape-derived set the
 /// `Ctx::is_string` rewrite keys on. A `&String` (the `str`-view role) is a
-/// `String` value too — a read-only param's `.len()`/`.byte_at` are the same spec
-/// fns. EMPTY for a non-`String` fn (byte-stable for the existing corpus).
+/// `String` value too: a read-only param's `.len()`/`.byte_at` are the same spec
+/// fns. Empty for a non-`String` fn (byte-stable for the existing corpus).
 fn string_value_names(f: &FnItem) -> Vec<&str> {
     let mut names: Vec<&str> = f
         .params
@@ -2428,11 +2428,11 @@ fn string_value_names(f: &FnItem) -> Vec<&str> {
     names
 }
 
-/// The OWNED `String` (`Type::String`, NOT `&String`) parameter names of a fn
+/// The owned `String` (`Type::String`, not `&String`) parameter names of a fn
 /// (Cluster C7, `.design/basis/09-option-result.md` REQ-5, #100): the exec body
 /// borrows an owned `String` arg when it calls the generated `parse_u64` (which
-/// takes `&TString`). A `&String` param is already a borrow and is EXCLUDED — it
-/// passes through unchanged. EMPTY for a fn with no owned `String` param
+/// takes `&TString`). A `&String` param is already a borrow and is excluded: it
+/// passes through unchanged. Empty for a fn with no owned `String` param
 /// (byte-stable for the existing corpus).
 fn owned_string_value_names(f: &FnItem) -> Vec<&str> {
     f.params
@@ -2445,25 +2445,25 @@ fn owned_string_value_names(f: &FnItem) -> Vec<&str> {
 /// Lower a `fn` (REQ-1). `-> (result: RET)` binder so `ens` can mention
 /// `result`; `req`→`requires`, each `ens`→`ensures`, `fx pure`→nothing.
 ///
-/// THE BOUNDARY/SLAG COMPOSITION ARM (`.design/lower/boundary-composition.md`
+/// The boundary/slag composition arm (`.design/lower/boundary-composition.md`
 /// REQ-1, §9/§8): when `f.boundary.is_some() || f.slag.is_some()` the fn is a
-/// DECLARED trust boundary — a `#[boundary]` fn has a FOREIGN body (`body: None`)
-/// and a `#[slag]` fn a fiat-trusted body, both body-UNPROVEN by §8/§9. As a
+/// declared trust boundary. A `#[boundary]` fn has a foreign body (`body: None`)
+/// and a `#[slag]` fn a fiat-trusted body, both body-unproven by §8/§9. As a
 /// woven dependency of a caller's sub-program it is emitted as a
-/// `#[verifier::external_body]` SIGNATURE — its `requires`/`ensures` lowered
-/// exactly as a regular fn's (no weakening), with the body SUPPRESSED to a
-/// synthetic `{ unimplemented!() }` verus never checks — so the caller's proof
-/// resolves the callee and discharges against its ASSUMED `ensures`. The
-/// exemption is gated STRICTLY on the syntactic `#[boundary]`/`#[slag]` flag
-/// (the honesty gate, `goal.md` R-DEFER-9): a REGULAR fn (neither flag) ALWAYS
-/// takes the fully-proved-body path below — a lying regular body is CAUGHT.
+/// `#[verifier::external_body]` signature, its `requires`/`ensures` lowered
+/// as a regular fn's (no weakening), with the body suppressed to a
+/// synthetic `{ unimplemented!() }` verus never checks, so the caller's proof
+/// resolves the callee and discharges against its assumed `ensures`. The
+/// exemption is gated on the syntactic `#[boundary]`/`#[slag]` flag
+/// (the honesty gate, `goal.md` R-DEFER-9): a regular fn (neither flag) always
+/// takes the fully-proved-body path below, so its body is verified.
 /// True iff the fn's effect row contains `diverge` (§4.1: "divergence requires
-/// `fx diverge` in the row"). Keyed on the SHAPE of the effect row — a `pure`
+/// `fx diverge` in the row"). Keyed on the shape of the effect row: a `pure`
 /// row never diverges; a `Set` row diverges iff it lists [`Effect::Diverge`].
-/// This is the SINGLE source of truth for the §4.1 termination exemption (the
+/// This is the single source of truth for the §4.1 termination exemption (the
 /// fn attribute in [`lower_fn`] and the loop-`decreases` suppression in
 /// [`lower_loop`] both gate on it), so the exemption is applied uniformly and
-/// ONLY to a diverge fn (a non-diverge loop still proves termination).
+/// only to a diverge fn (a non-diverge loop still proves termination).
 fn fn_is_diverge(f: &FnItem) -> bool {
     use thermite_syntax::ast::{Effect, EffectRow};
     matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
@@ -2478,14 +2478,14 @@ fn lower_fn(
     user_string_spec_fns: &[&str],
     spec_fn_param_types: &[(&str, &[PrimType])],
 ) -> Result<String, LowerError> {
-    // THE HONESTY GATE: external_body iff a declared trust boundary
-    // (`#[boundary]`/`#[slag]`), NEVER a regular fn. Emitted only into a CALLER's
+    // The honesty gate: external_body iff a declared trust boundary
+    // (`#[boundary]`/`#[slag]`), never a regular fn. Emitted only into a caller's
     // sub-program as a woven dependency (forge's `item_subprogram`). The 2-bool
-    // decision is DELEGATED to the Verus-verified `should_emit_external_body`
+    // decision is delegated to the Verus-verified `should_emit_external_body`
     // (epic #60, REQ-9 / Target C, mechanism (c)): its `ensures` proves the
-    // disjunction AND the §9 soundness corollary `(!boundary && !slag) ==> !r` —
-    // a regular fn is NEVER laundered into an assumed-L3 external_body signature
-    // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this OBSERVABLE
+    // disjunction and the §9 soundness corollary `(!boundary && !slag) ==> !r`,
+    // so a regular fn is never emitted as an assumed-L3 external_body signature
+    // (`goal.md` R-DEFER-9). `boundary_gate_verified.rs` anchors this observable
     // dispatch (the emitted `#[verifier::external_body]` substring) to the proof.
     if thermite_verified::should_emit_external_body(f.boundary.is_some(), f.slag.is_some()) {
         return lower_external_body_fn(
@@ -2501,14 +2501,14 @@ fn lower_fn(
     let mut out = String::new();
     // §4.1: "Termination is proved by default; divergence requires `fx diverge`."
     // A `fx diverge` fn (an event loop, `examples/editor/editor.th`'s `run`) is
-    // honestly NON-terminating: its loop's `decreases` is suppressed below
-    // (`lower_loop`), and Verus would then DEMAND a termination proof for the
+    // non-terminating: its loop's `decreases` is suppressed below
+    // (`lower_loop`), and Verus would then demand a termination proof for the
     // bare loop unless the fn carries this exemption. The attribute scopes the
-    // exemption to THIS fn (it does not weaken termination for any other fn): a
-    // diverge fn proves PARTIAL correctness (the loop INVARIANTS) only, which is
-    // the honest L1 verdict — termination is not claimed. A non-diverge fn never
+    // exemption to this fn (it does not weaken termination for any other fn): a
+    // diverge fn proves partial correctness (the loop invariants) only, which is
+    // the L1 verdict (termination is not claimed). A non-diverge fn never
     // emits this, so the termination default stands unweakened (gap-3 is
-    // diverge-ONLY; a normal loop without `dec` still fails to verify).
+    // diverge-only; a normal loop without `dec` still fails to verify).
     if fn_is_diverge(f) {
         out.push_str("#[verifier::exec_allows_no_decreases_clause]\n");
     }
@@ -2522,19 +2522,19 @@ fn lower_fn(
     )?);
     // `fx pure` emits no annotation (Verus `fn` is pure by default; §4.1).
 
-    // C9-A (`.design/basis/10-recursion-tuples.md` REQ-3): a RECURSIVE exec `fn`
+    // C9-A (`.design/basis/10-recursion-tuples.md` REQ-3): a recursive exec `fn`
     // carries an optional `dec <measure>` clause; emit the Verus `decreases
-    // <measure>` AFTER the signature's `requires`/`ensures` block and BEFORE the
-    // body `{` — the SAME position + the SAME `spec_dec` measure-lowering helper
+    // <measure>` after the signature's `requires`/`ensures` block and before the
+    // body `{`, the same position and the same `spec_dec` measure-lowering helper
     // the recursive `spec fn` uses (`lower_spec_fn`). Verus discharges termination
     // of the self-recursion from this measure: a non-decreasing measure → L0
     // ("could not prove termination", REQ-4); the self-call itself lowers as an
-    // ordinary `Expr::Call` in the body (no special node). A NON-recursive fn has
-    // `dec = None` and emits NO `decreases` — byte-stable for the entire existing
+    // ordinary `Expr::Call` in the body (no special node). A non-recursive fn has
+    // `dec = None` and emits no `decreases`, byte-stable for the entire existing
     // corpus (AC-7; `sum`/`binary_search` lower unchanged). The `fx diverge`
     // exemption above (`#[verifier::exec_allows_no_decreases_clause]`, #88) lets a
-    // diverge fn recurse WITHOUT a `dec` (L1-capped, partial correctness only);
-    // such a fn carries `dec = None`, so this block correctly emits nothing.
+    // diverge fn recurse without a `dec` (L1-capped, partial correctness only);
+    // such a fn carries `dec = None`, so this block emits nothing.
     if let Some(dec) = &f.dec {
         let measure = spec_dec(dec, &f.params, spec_fn_param_types);
         writeln!(out, "    decreases {measure}").ok();
@@ -2542,12 +2542,12 @@ fn lower_fn(
 
     // Body, with shape-derived proof aids threaded through the loop lowering. The
     // variant map flows into the exec body so an enum `match` (e.g. `is_circle`'s)
-    // lowers to ENUM-QUALIFIED arms (REQ-9).
-    // NOTE: the exec fn BODY is not threaded the user-String-spec-fn set: the
-    // byte-view dispatch (`lower_spec_arg`) only fires in SPEC position (`ctx.is_spec()`),
-    // and an exec body lowers in `Ctx::exec()` — a recursive self-call's `String` arg
+    // lowers to enum-qualified arms (REQ-9).
+    // Note: the exec fn body is not threaded the user-String-spec-fn set: the
+    // byte-view dispatch (`lower_spec_arg`) only fires in spec position (`ctx.is_spec()`),
+    // and an exec body lowers in `Ctx::exec()`; a recursive self-call's `String` arg
     // passes the reference verbatim regardless (no `.data@` view in exec). Only the
-    // exec SIGNATURE's `requires`/`ensures` (lowered in spec context above) and a
+    // exec signature's `requires`/`ensures` (lowered in spec context above) and a
     // `spec fn` body (`lower_spec_fn`) reach the byte-view dispatch (#127).
     let body = lower_fn_body(f, nat_fns, string_fields, variants, spec_fn_param_types)?;
     out.push_str(&body);
@@ -2559,7 +2559,7 @@ fn lower_fn(
 /// `requires <req>,` (omitted when literal-`true`) and each `ens` in source
 /// order. Shared by the regular fully-proved arm ([`lower_fn`]) and the
 /// boundary/slag external_body arm ([`lower_external_body_fn`]) so the contract
-/// lowering is IDENTICAL across both (REQ-1 — the assumed signature carries the
+/// lowering is identical across both (REQ-1: the assumed signature carries the
 /// exact unweakened contract).
 fn lower_fn_signature(
     f: &FnItem,
@@ -2586,15 +2586,15 @@ fn lower_fn_signature(
         .with_string_fields(string_fields)
         .with_user_string_spec_fns(user_string_spec_fns)
         // #225: the contract's `ens result == s_dec(n)` call narrows its arith arg
-        // to `s_dec`'s DECLARED param type (via `Ctx::spec_call_param_cast`).
+        // to `s_dec`'s declared param type (via `Ctx::spec_call_param_cast`).
         .with_spec_fn_param_types(spec_fn_param_types);
 
     // requires: the single `req` clause (REQ-1), plus the woven `well_formed()`
     // conjunct for every parameter whose type is an invariant-bearing `struct`
     // (REQ-8, OQ-3 automatic threading) so Verus has the type-invariant of each
     // incoming value in scope. The author writes neither conjunct: the invariant
-    // is a property of the TYPE, implicit at every use.
-    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, #102): does THIS fn use a
+    // is a property of the type, implicit at every use.
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, #102): does this fn use a
     // string search/transform op (a C5 method call or a C5 spec-fn in its contract)?
     // If so its `String` params need the woven `well_formed()` precondition (below).
     let fn_uses_string_search = contract_uses_string_search(&f.contract, user_string_spec_fns)
@@ -2615,18 +2615,18 @@ fn lower_fn_signature(
             }
         }
         // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): a
-        // `String`/`&String` param is BOUNDED by its type invariant `well_formed()`
-        // (`data.len() <= CAP`, the §4.2 cage), exactly like an invariant-bearing
-        // struct. The C5 search/transform methods REQUIRE `self.well_formed()` /
+        // `String`/`&String` param is bounded by its type invariant `well_formed()`
+        // (`data.len() <= CAP`, the §4.2 cage), like an invariant-bearing
+        // struct. The C5 search/transform methods require `self.well_formed()` /
         // `p.well_formed()`, so weave the `well_formed()` conjunct for every
         // `String`-typed param (a bare `String` or a `&String` borrow — `is_string_ty`
         // sees through the `Ref`) so a caller of `s.starts_with(p)` / `s.split(sep)`
-        // discharges the method's precondition. The author writes neither conjunct —
-        // the invariant is implicit at every use, the SAME automatic threading the
-        // inv-bearing struct gets. Woven ONLY when the program uses a C5 op (no golden
+        // discharges the method's precondition. The author writes neither conjunct;
+        // the invariant is implicit at every use, the same automatic threading the
+        // inv-bearing struct gets. Woven only when the program uses a C5 op (no golden
         // churn for the pre-C5 string corpus — `string_demo`'s `join`/`first_byte`
         // discharge `well_formed` from their own `req`, so they need no weave). Keyed
-        // on the param TYPE reaching `String` directly (not a `Vec<String>`/struct
+        // on the param type reaching `String` directly (not a `Vec<String>`/struct
         // field — those carry their own invariant), deduped against the struct weave.
         if fn_uses_string_search && is_string_param_ty(&p.ty) {
             let conj = format!("{}.well_formed()", p.name);
@@ -2635,13 +2635,13 @@ fn lower_fn_signature(
             }
         }
         // Cluster C12 (`.design/basis/13-map.md` REQ-4): a `Map<K, V>`-typed param
-        // (bare or `&Map`) is BOUNDED by its type invariant `well_formed()` (the
-        // capacity + key-uniqueness invariant, the §4.2 cage) — the SAME automatic
+        // (bare or `&Map`) is bounded by its type invariant `well_formed()` (the
+        // capacity + key-uniqueness invariant, the §4.2 cage), the same automatic
         // threading an invariant-bearing struct / a `String` param gets. The `TMap`
         // wrapper's `contains_key`/`get`/`insert` all `require self.well_formed()`,
         // so weave the `well_formed()` conjunct for every `Map`-typed param so a
         // caller of `m.contains_key(k)` / `m.get(k)` / `m.insert(k, v)` discharges
-        // the method's precondition. The author writes no conjunct — the invariant
+        // the method's precondition. The author writes no conjunct; the invariant
         // is implicit at every use. Deduped against the struct/String weaves.
         if is_map_param_ty(&p.ty) {
             let conj = format!("{}.well_formed()", p.name);
@@ -2654,7 +2654,7 @@ fn lower_fn_signature(
     if woven_reqs.is_empty() {
         // No woven invariant conjunct: keep the existing single-line
         // `requires <req>,` form byte-for-byte (no golden churn for the non-ADT
-        // corpus — `sum`/`binary_search` lower UNCHANGED). Omit a literal-`true`.
+        // corpus — `sum`/`binary_search` lower unchanged). Omit a literal-`true`.
         if req != "true" {
             writeln!(out, "    requires {req},").ok();
         }
@@ -2671,7 +2671,7 @@ fn lower_fn_signature(
         }
     }
 
-    // ensures: the woven `result.well_formed()` conjunct FIRST when the return
+    // ensures: the woven `result.well_formed()` conjunct first when the return
     // type is an invariant-bearing struct (REQ-8 — Verus proves the constructed
     // return value satisfies the invariant), then every `ens` clause in source
     // order (no weakening — R-DEFER-9).
@@ -2688,45 +2688,45 @@ fn lower_fn_signature(
     Ok(out)
 }
 
-/// Lower ONE contract-position [`Expr`] to its PRODUCTION Verus predicate
+/// Lower one contract-position [`Expr`] to its production Verus predicate
 /// (`.design/verified/contract-tv.md` REQ-5 prerequisite; epic crosslink #139 /
-/// blocker #144). This is `P_production` for a single contract clause — the
+/// blocker #144). This is `P_production` for a single contract clause: the
 /// artifact-under-test the contract-faithfulness translation-validation (TV)
-/// engine compares against the INDEPENDENT reference encoding
+/// engine compares against the independent reference encoding
 /// `thermite_tv::ref_encode::ref_contract_pred`.
 ///
-/// It REUSES the EXACT spec-context [`lower_expr`] path `lower_fn_signature` uses
+/// It reuses the same spec-context [`lower_expr`] path `lower_fn_signature` uses
 /// for a fn's `requires`/`ensures` clauses (and the loop `inv`/`dec` lowering
-/// uses), threaded with the SAME spec context inputs: `slices` (the `&[T]` param
+/// uses), threaded with the same spec context inputs: `slices` (the `&[T]` param
 /// names whose use sites take the `@`-view), `nat_fns` (the `nat`-returning spec
 /// fn names that drive the `as nat` coercion of a compared scalar), `strings`
 /// (the `String`/`&String` value names whose `.len()`/`.byte_at(i)` rewrite to
-/// the wrapper spec fns), `string_fields` (the `String`-typed FIELD names), and
+/// the wrapper spec fns), `string_fields` (the `String`-typed field names), and
 /// `user_string_spec_fns` (the #127 byte-view-dispatch shape key). Passing the
-/// SAME context the signature path computes (`slice_param_names`/
+/// same context the signature path computes (`slice_param_names`/
 /// `string_value_names`/the program-wide field + user-spec-fn sets) makes
 /// `lower_contract_expr(clause.expr, …)` produce a clause's predicate
-/// BYTE-IDENTICAL to the line `lower_fn_signature` emits for it — so the forge TV
-/// phase checks the REAL production lowering, not a re-derivation. (The forge
+/// byte-identical to the line `lower_fn_signature` emits for it, so the forge TV
+/// phase checks the production lowering rather than a re-derivation. (The forge
 /// phase binds slice params directly as `Seq<T>` in the obligation and so passes
-/// an EMPTY `slices`, matching the reference encoder's seq-bound identity `@`-view
-/// — the per-clause obligation's coercion-matching contract, contract-tv.md
+/// an empty `slices`, matching the reference encoder's seq-bound identity `@`-view:
+/// the per-clause obligation's coercion-matching contract, contract-tv.md
 /// Architecture.)
 ///
 /// `spec_fn_param_types` is the program-wide user-`spec fn` param-type map
-/// (`spec_fn_param_type_map`); it MUST be threaded for the production column to
-/// match the signature path VERBATIM (contract-tv.md REQ-2). Post-#225 the
+/// (`spec_fn_param_type_map`); it must be threaded for the production column to
+/// match the signature path verbatim (contract-tv.md REQ-2). Post-#225 the
 /// signature path narrows an arithmetic spec-call argument to the callee's
-/// DECLARED param type (`Ctx::spec_call_param_cast`), so a `u32`-param callee's
-/// `s_dec(n - 1)` emits `s_dec((n - 1) as u32)`. WITHOUT this map the contract
-/// column fell back to the hardcoded `as u64` and TV checked a NON-production
-/// predicate (crosslink #228, ref #225/#227); with it the column emits exactly
-/// what `lower_fn_signature` emits. An EMPTY map (a program with no user spec fn)
-/// is byte-stable — the cast only fires for an in-map callee.
+/// declared param type (`Ctx::spec_call_param_cast`), so a `u32`-param callee's
+/// `s_dec(n - 1)` emits `s_dec((n - 1) as u32)`. Without this map the contract
+/// column fell back to the hardcoded `as u64` and TV checked a non-production
+/// predicate (crosslink #228, ref #225/#227); with it the column emits what
+/// `lower_fn_signature` emits. An empty map (a program with no user spec fn)
+/// is byte-stable: the cast only fires for an in-map callee.
 ///
-/// This is a thin per-clause re-entry into the lowerer (NOT a new lowering rule);
+/// This is a thin per-clause re-entry into the lowerer, not a new lowering rule;
 /// `forge::contract_tv` is the non-test consumer (R-DEFER-1). Returns a
-/// [`LowerError`] (never a panic — R-CODE-2) for a construct the spec-context
+/// [`LowerError`] (never a panic, R-CODE-2) for a construct the spec-context
 /// lowering does not cover.
 #[allow(
     clippy::too_many_arguments,
@@ -2752,12 +2752,12 @@ pub fn lower_contract_expr(
     lower_expr(expr, ctx, 0, zero_span())
 }
 
-/// Lower ONE body-position (EXEC) expression to its PRODUCTION Verus EXEC
+/// Lower one body-position (exec) expression to its production Verus exec
 /// expression text (`.design/verified/exec-tv.md` REQ-2 prerequisite, epic
-/// crosslink #151, blocker #152). This is the EXEC dual of [`lower_contract_expr`]:
-/// where the contract entry re-enters `lower_expr` in SPEC context (`Ctx::spec`,
-/// where slices/casts/indexing rewrite to `@`/`nat`/`int`), this re-enters in EXEC
-/// context (`Ctx::exec()`, `Pos::Exec`), where arithmetic stays BOUNDED `u64`/
+/// crosslink #151, blocker #152). This is the exec dual of [`lower_contract_expr`]:
+/// where the contract entry re-enters `lower_expr` in spec context (`Ctx::spec`,
+/// where slices/casts/indexing rewrite to `@`/`nat`/`int`), this re-enters in exec
+/// context (`Ctx::exec()`, `Pos::Exec`), where arithmetic stays bounded `u64`/
 /// `usize` with the always-active runtime overflow checks, an index `xs[i]` lowers
 /// to the bounded Rust access `xs[i]` (not the spec `xs@[i as int]`), and a cast
 /// `(n - 1) as u8` carries the #122 inner-paren + the #146 cast-`<` outer-paren
@@ -2765,81 +2765,81 @@ pub fn lower_contract_expr(
 /// the exec-TV obligation wraps as `fn tv_exec_wrap(..) ensures result == <ref> {
 /// <this> }`.
 ///
-/// THE EXEC `Ctx` IS REACHABLE FOR A STANDALONE EXPR (the #1 feasibility unknown
-/// the design flagged): `Ctx::exec()` is a `Ctx<'static>` constructed with NO
-/// surrounding-fn context (empty `slices`/`nat_fns`/`variants`/`schemes`/…) — a
-/// pure exec EXPRESSION (`thermite-design.md` §4.1 arithmetic/cast/comparison/call/
-/// index subset) lowers with NO surrounding-fn frame (no `let`/loop/mutation, those
-/// are step 2.2). The body params the expr reads are bound by the OBLIGATION's
+/// The exec `Ctx` is reachable for a standalone expr (the #1 feasibility unknown
+/// the design flagged): `Ctx::exec()` is a `Ctx<'static>` constructed with no
+/// surrounding-fn context (empty `slices`/`nat_fns`/`variants`/`schemes`/…). A
+/// pure exec expression (`thermite-design.md` §4.1 arithmetic/cast/comparison/call/
+/// index subset) lowers with no surrounding-fn frame (no `let`/loop/mutation, those
+/// are step 2.2). The body params the expr reads are bound by the obligation's
 /// signature (`thermite_tv::ExecObligationFrame`), not by this lowering. So a
-/// standalone exec expr lowers verbatim through the SAME `lower_expr` exec path the
-/// body uses (REUSE, not a re-derivation — `goal.md` R-CHAR-3).
+/// standalone exec expr lowers verbatim through the same `lower_expr` exec path the
+/// body uses (reuse, not a re-derivation; `goal.md` R-CHAR-3).
 ///
-/// This is a thin per-expr re-entry into the lowerer (NOT a new lowering rule);
+/// This is a thin per-expr re-entry into the lowerer, not a new lowering rule;
 /// `forge::exec_tv` (the #156 next dispatch) is the eventual non-test consumer.
-/// Returns a [`LowerError`] (never a panic — R-CODE-2) for a construct the EXEC
+/// Returns a [`LowerError`] (never a panic, R-CODE-2) for a construct the exec
 /// lowering does not cover.
 pub fn lower_exec_expr(expr: &Expr) -> Result<String, LowerError> {
     lower_expr(expr, Ctx::exec(), 0, zero_span())
 }
 
-/// Lower a STRAIGHT-LINE exec BODY (a [`Block`]) to its PRODUCTION Verus EXEC body
+/// Lower a straight-line exec body (a [`Block`]) to its production Verus exec body
 /// text (`.design/verified/exec-stmt-tv.md` REQ-3, blocker #161; epic crosslink
-/// #158). This is the per-BODY analogue of [`lower_exec_expr`]: where the per-expr
-/// entry re-enters `lower_expr` in EXEC context for a single value, this re-enters
-/// the EXISTING [`lower_block_inner`] / [`lower_stmt`] EXEC path for a whole
+/// #158). This is the per-body analogue of [`lower_exec_expr`]: where the per-expr
+/// entry re-enters `lower_expr` in exec context for a single value, this re-enters
+/// the existing [`lower_block_inner`] / [`lower_stmt`] exec path for a whole
 /// straight-line block (its `let`/`mut`-let / assignment / `if`-statement /
-/// `Stmt::Expr` / tail), threading the SAME `Ctx::exec()` frame. It is the
+/// `Stmt::Expr` / tail), threading the same `Ctx::exec()` frame. It is the
 /// `P_production` the body-TV obligation (`thermite_tv::body_equivalence_obligation`)
 /// wraps as `fn tv_body_wrap(..) ensures result == <body_ref_state(source)> {
 /// <this> }`.
 ///
-/// THE BODY EXEC `Ctx` IS REACHABLE FOR A STANDALONE BLOCK (the #161 feasibility
-/// the design flagged — `lower_block_inner` is private + fn-context-bound).
-/// RESOLVED exactly as step 2.1 resolved `lower_exec_expr`: the body's FREE VARS
-/// (the fn params) are bound by the OBLIGATION's signature
-/// (`thermite_tv::BodyObligationFrame`), NOT by this lowering, so a straight-line
-/// body needs NO surrounding-fn aids (no `slices`/`nat_fns`/`variants`/`schemes`/…
-/// — those drive contract/spec rewrites and loop proof-aids, none of which a
-/// straight-line EXEC body uses). The minimal `Ctx::exec()` frame (a `Ctx<'static>`
+/// The body exec `Ctx` is reachable for a standalone block (the #161 feasibility
+/// the design flagged; `lower_block_inner` is private + fn-context-bound).
+/// Resolved as step 2.1 resolved `lower_exec_expr`: the body's free vars
+/// (the fn params) are bound by the obligation's signature
+/// (`thermite_tv::BodyObligationFrame`), not by this lowering, so a straight-line
+/// body needs no surrounding-fn aids (no `slices`/`nat_fns`/`variants`/`schemes`/…,
+/// which drive contract/spec rewrites and loop proof-aids, none of which a
+/// straight-line exec body uses). The minimal `Ctx::exec()` frame (a `Ctx<'static>`
 /// with every aid empty) is therefore the correct per-body entry; the block lowers
-/// VERBATIM through the SAME `lower_block_inner` exec path the fn body uses (REUSE,
-/// not a re-derivation — `goal.md` R-CHAR-3). The result is the lowered statement
+/// verbatim through the same `lower_block_inner` exec path the fn body uses (reuse,
+/// not a re-derivation; `goal.md` R-CHAR-3). The result is the lowered statement
 /// sequence followed by the tail expression (the body's final-state projection),
 /// one statement per line, matching production's fn-body emission.
 ///
-/// FROZEN-SUBSET HONESTY (`.design/verified/exec-stmt-tv.md` REQ-1): a body
-/// containing a `Stmt::Loop` (step 2.2.2, OUT of 2.2.1) is NOT silently lowered —
+/// Frozen-subset scope (`.design/verified/exec-stmt-tv.md` REQ-1): a body
+/// containing a `Stmt::Loop` (step 2.2.2, out of 2.2.1) is not silently lowered.
 /// `lower_stmt`'s `Stmt::Loop` arm returns [`LowerError::Unsupported`] (a standalone
-/// loop needs the fn-aid loop proof-aid context — `lower_loop`), so an
-/// out-of-frozen-subset body is an honest `Err` here, never a wrong lowering. The
+/// loop needs the fn-aid loop proof-aid context, `lower_loop`), so an
+/// out-of-frozen-subset body is an `Err` here rather than a wrong lowering. The
 /// in-frozen-subset constructs (`Let`/`Assign`/`If`/`Expr`/tail-`Return`) lower
-/// through `lower_stmt`/`lower_block_inner` exactly as in a fn body.
+/// through `lower_stmt`/`lower_block_inner` as in a fn body.
 ///
-/// Returns a [`LowerError`] (never a panic — R-CODE-2) for a construct the EXEC body
+/// Returns a [`LowerError`] (never a panic, R-CODE-2) for a construct the exec body
 /// lowering does not cover.
 pub fn lower_exec_body(block: &Block) -> Result<String, LowerError> {
     lower_block_inner(block, Ctx::exec(), 0, zero_span())
 }
 
 /// Lower a `#[boundary]`/`#[slag]` fn as a `#[verifier::external_body]` assumable
-/// SIGNATURE (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
-/// `#[verifier::external_body]` attribute makes the body OPAQUE: verus assumes
-/// the `requires`/`ensures` at every call site and NEVER checks the body
+/// signature (`.design/lower/boundary-composition.md` REQ-1, §9/§8). The verus
+/// `#[verifier::external_body]` attribute makes the body opaque: verus assumes
+/// the `requires`/`ensures` at every call site and does not check the body
 /// (grounded harness (1): a caller proves L3 through the assumed `ensures`). The
-/// signature + contract are lowered by the SAME [`lower_fn_signature`] a regular
-/// fn uses (no weakening — REQ-1), and the body is a synthetic
+/// signature + contract are lowered by the same [`lower_fn_signature`] a regular
+/// fn uses (no weakening, REQ-1), and the body is a synthetic
 /// `{ unimplemented!() }` verus never examines (the foreign/fiat body the caller
 /// trusts by declaration; §8/§9).
 ///
-/// This is THE HONEST modeling of a foreign function, not a proof cheat
-/// (`goal.md` R-DEFER-9): it is emitted ONLY for a fn ALREADY classified
+/// This models a foreign function rather than dodging the proof
+/// (`goal.md` R-DEFER-9): it is emitted only for a fn already classified
 /// `#[boundary]`/`#[slag]` (the §16/§8 `gate_fn` L1 path) and woven into a
-/// CALLER's sub-program — the caller still proves its OWN body and discharges
+/// caller's sub-program. The caller still proves its own body and discharges
 /// the callee's `req` at the call site (harnesses (2)/(3)). The
-/// `#[verifier::external_body]` lives in the lowered verus STRING (a generated
-/// artifact describing a foreign function), NEVER in the toolchain's own `.rs`
-/// source — categorically distinct from the gate-forbidden `#[verifier::external]`
+/// `#[verifier::external_body]` lives in the lowered verus string (a generated
+/// artifact describing a foreign function), never in the toolchain's own `.rs`
+/// source, categorically distinct from the gate-forbidden `#[verifier::external]`
 /// proof-dodge of code we wrote (the doc's emitted-verus vs our-Rust distinction).
 fn lower_external_body_fn(
     f: &FnItem,
@@ -2859,10 +2859,10 @@ fn lower_external_body_fn(
         user_string_spec_fns,
         spec_fn_param_types,
     )?);
-    // The body is SUPPRESSED: verus does not check an external_body body, so the
+    // The body is suppressed: verus does not check an external_body body, so the
     // synthetic `{ unimplemented!() }` stands in for the foreign/fiat body the
     // caller trusts by declaration (§8/§9). The real `f.body` (None for a
-    // boundary fn, a fiat body for slag) is NEVER lowered here — re-lowering a
+    // boundary fn, a fiat body for slag) is not lowered here; re-lowering a
     // slag body would re-introduce the obligation §8 exempts (OQ-2).
     out.push_str("{\n    unimplemented!()\n}\n");
     Ok(out)
@@ -2873,18 +2873,18 @@ fn lower_external_body_fn(
 // (`.design/forge/equivalent-mutants.md` REQ-1, crosslink #101).
 // ---------------------------------------------------------------------------
 
-/// Lower the §7 equivalent-mutant EQUIVALENCE OBLIGATION for one survivor
+/// Lower the §7 equivalent-mutant equivalence obligation for one survivor
 /// (`.design/forge/equivalent-mutants.md` REQ-1): given a fn `f` (its `req`,
-/// params, return type, and REAL body `f.body`) and a surviving mutant's body
-/// `mutant_body`, emit a complete Verus source file that asks Verus to PROVE
+/// params, return type, and real body `f.body`) and a surviving mutant's body
+/// `mutant_body`, emit a complete Verus source file that asks Verus to prove
 /// that, under `f`'s `req`, the mutant body's observable result equals the real
-/// body's result FOR ALL inputs. A `verus` run that VERIFIES (`0 errors`) is a
-/// PROOF of observable equivalence (the survivor is a true equivalent mutant →
+/// body's result for all inputs. A `verus` run that verifies (`0 errors`) is a
+/// proof of observable equivalence (the survivor is a true equivalent mutant,
 /// dropped from the kill-ratio denominator, REQ-2); a counterexample
 /// (`postcondition not satisfied`) means a distinguishing input exists (the
-/// survivor STAYS counted, REQ-3).
+/// survivor stays counted, REQ-3).
 ///
-/// The emitted shape is the GROUNDED form pinned in the design (verus
+/// The emitted shape is the grounded form pinned in the design (verus
 /// `2 verified, 0 errors` for the equivalent case, `0 verified, 1 errors` for the
 /// distinguishing case):
 ///
@@ -2897,35 +2897,34 @@ fn lower_external_body_fn(
 /// {}
 /// ```
 ///
-/// REUSE, NOT a hand-emitted Verus duplicate (`goal.md` R-CHAR-3): each body is
-/// rendered through the SAME `lower_expr` the L3 path uses, in a scalar spec
-/// context, with the EXEC arithmetic coercion (`(expr) as <ret>`) the design
-/// grounded — a naive spec rendering of `x + 0` over a `u64` return fails
-/// `verus` with `expected u64, found int`, exactly the seam-need the prior
+/// Reuse rather than a hand-emitted Verus duplicate (`goal.md` R-CHAR-3): each
+/// body is rendered through the same `lower_expr` the L3 path uses, in a scalar
+/// spec context, with the exec arithmetic coercion (`(expr) as <ret>`) the design
+/// grounded. A naive spec rendering of `x + 0` over a `u64` return fails
+/// `verus` with `expected u64, found int`, the seam-need the prior
 /// builder grounded. The `req` is lowered by `lower_expr` in the same spec
 /// context (the obligation's `requires`).
 ///
-/// SCOPE (OQ-1, sound-but-incomplete): only SCALAR (`u32`/`u64`/`usize`/`bool`)
-/// params and return are rendered — observable equality is value equality. A
+/// Scope (OQ-1, sound-but-incomplete): only scalar (`u32`/`u64`/`usize`/`bool`)
+/// params and return are rendered, so observable equality is value equality. A
 /// non-scalar param/return, a non-pure body, or a body whose statements are not
 /// the simple let-chain-plus-tail / leading-early-return shape returns
-/// `LowerError::Unsupported`; the caller treats an un-renderable obligation as NO
-/// proof, so the survivor STAYS counted (the natural conservative fallback —
-/// never a laundered exclusion, R-DEFER-9).
+/// `LowerError::Unsupported`; the caller treats an un-renderable obligation as no
+/// proof, so the survivor stays counted (the conservative fallback, R-DEFER-9).
 ///
-/// CALL-BEARING ARM (`.design/forge/equivalent-mutants.md` REQ-7, #269): when
-/// `callee_deps` is NON-EMPTY (the caller's `reachable_fn_deps` closure — a
-/// CALL-BEARING body, e.g. a §9 composition caller `fn caller(x) { ext_id(x) }`),
-/// the call-free self-contained spec-fn pair is an ILLEGAL Verus form (an
+/// Call-bearing arm (`.design/forge/equivalent-mutants.md` REQ-7, #269): when
+/// `callee_deps` is non-empty (the caller's `reachable_fn_deps` closure, a
+/// call-bearing body, e.g. a §9 composition caller `fn caller(x) { ext_id(x) }`),
+/// the call-free self-contained spec-fn pair is an illegal Verus form (an
 /// undeclared callee in spec position), so this routes to
-/// [`lower_call_bearing_equivalence_obligation`] — an EXEC-position proof harness
-/// with the callee closure woven EXACTLY as `forge::check::item_subprogram` weaves
+/// [`lower_call_bearing_equivalence_obligation`], an exec-position proof harness
+/// with the callee closure woven as `forge::check::item_subprogram` weaves
 /// it for the caller's own L3 proof (boundary/slag callees as
 /// `lower_external_body_fn` assumable signatures, regular callees as their full
-/// `lower_fn` defs — the SAME `lower` dispatch). The equivalence notion is then
-/// equivalence IN THE VERIFICATION SEMANTICS — modulo callee contracts
-/// (`.design/basis/05-composition.md` law 1). When `callee_deps` is EMPTY (a
-/// CALL-FREE body — the shipped #101 corpus), the spec-fn pair below is UNCHANGED
+/// `lower_fn` defs, the same `lower` dispatch). The equivalence notion is then
+/// equivalence in the verification semantics, modulo callee contracts
+/// (`.design/basis/05-composition.md` law 1). When `callee_deps` is empty (a
+/// call-free body, the shipped #101 corpus), the spec-fn pair below is unchanged
 /// (grounded, byte-stable, cache-warm).
 pub fn lower_equivalence_obligation(
     f: &FnItem,
@@ -2939,16 +2938,16 @@ pub fn lower_equivalence_obligation(
         span: f.span,
     })?;
 
-    // CALL-BEARING ARM (REQ-7): a non-empty callee closure means the compared
-    // bodies invoke in-file fns whose contracts govern the call sites — the
+    // Call-bearing arm (REQ-7): a non-empty callee closure means the compared
+    // bodies invoke in-file fns whose contracts govern the call sites; the
     // self-contained spec-fn pair below cannot declare them, so route to the
     // exec harness with the closure woven (modulo callee contracts, §9).
     if !callee_deps.is_empty() {
         return lower_call_bearing_equivalence_obligation(f, real_body, mutant_body, callee_deps);
     }
 
-    // SCOPE gate (OQ-1): every param + the return must be a scalar primitive so
-    // observable equality is value equality. Any other shape → Unsupported → the
+    // Scope gate (OQ-1): every param + the return must be a scalar primitive so
+    // observable equality is value equality. Any other shape is Unsupported, so the
     // survivor stays counted (sound-but-incomplete).
     let ret_spelling = scalar_obligation_type(&f.ret).ok_or_else(|| LowerError::Unsupported {
         what: format!(
@@ -2972,7 +2971,7 @@ pub fn lower_equivalence_obligation(
     }
 
     // The scalar spec context: no slice-view names (every param is a scalar), no
-    // nat-fns. The SAME context the L3 spec path uses for a scalar predicate.
+    // nat-fns. The same context the L3 spec path uses for a scalar predicate.
     let ctx = Ctx::spec(NO_SLICES, NO_SLICES);
 
     let params = obligation_param_list(&f.params)?;
@@ -2995,7 +2994,7 @@ pub fn lower_equivalence_obligation(
     )
     .map_err(|_| fmt_err())?;
     writeln!(out, "proof fn equiv_check_{name}({params})").map_err(|_| fmt_err())?;
-    // Omit a literal-`true` precondition (the obligation holds for ALL inputs).
+    // Omit a literal-`true` precondition (the obligation holds for all inputs).
     if req != "true" {
         writeln!(out, "    requires {req},").map_err(|_| fmt_err())?;
     }
@@ -3011,12 +3010,12 @@ pub fn lower_equivalence_obligation(
     Ok(out)
 }
 
-/// Lower the CALL-BEARING equivalence obligation (`.design/forge/equivalent-
-/// mutants.md` REQ-7, #269) as an EXEC-position proof harness with the caller's
-/// `reachable_fn_deps` closure woven exactly as `forge::check::item_subprogram`
+/// Lower the call-bearing equivalence obligation (`.design/forge/equivalent-
+/// mutants.md` REQ-7, #269) as an exec-position proof harness with the caller's
+/// `reachable_fn_deps` closure woven as `forge::check::item_subprogram`
 /// weaves it for the caller's own L3 proof. The emitted shape (hand-derived to
-/// the REQ-7 template; the callee weave is REUSE, not a hand-emitted Verus
-/// duplicate — every callee def goes through the SAME `lower` dispatch
+/// the REQ-7 template; the callee weave is reuse, not a hand-emitted Verus
+/// duplicate — every callee def goes through the same `lower` dispatch
 /// `item_subprogram` uses):
 ///
 /// ```verus
@@ -3040,30 +3039,30 @@ pub fn lower_equivalence_obligation(
 /// fn main() {}
 /// ```
 ///
-/// A VERIFIED harness (`ensures eq` proved, `0 errors`) is a PROOF that no input
-/// satisfying `req` distinguishes the mutant from the real body GIVEN the callee
-/// contracts → the survivor is a TRUE equivalent (modulo the contracts the §9
-/// edifice already trusts) → excluded (REQ-2 polarity, unchanged). A weak callee
-/// contract that cannot pin `real == mutant` leaves `eq` unprovable → NOT
-/// excluded → counted survivor (REQ-8, conservatism). TRUST BASE: a
+/// A verified harness (`ensures eq` proved, `0 errors`) proves that no input
+/// satisfying `req` distinguishes the mutant from the real body given the callee
+/// contracts, so the survivor is a true equivalent (modulo the contracts the §9
+/// edifice already trusts) and is excluded (REQ-2 polarity, unchanged). A weak callee
+/// contract that cannot pin `real == mutant` leaves `eq` unprovable, so the survivor
+/// is not excluded and stays counted (REQ-8, conservatism). Trust base: a
 /// proved-modulo-contracts exclusion assumes only that callees honor their
-/// contracts — exactly the trust base of the caller's own L3 cert (§9); the
-/// exclusion adds NO new trust.
+/// contracts, the trust base of the caller's own L3 cert (§9); the
+/// exclusion adds no new trust.
 ///
-/// SCOPE (v1, REQ-7): scalar params/return are retained (the harness compares two
+/// Scope (v1, REQ-7): scalar params/return are retained (the harness compares two
 /// scalar block values by `==`); each compared body must be a renderable
-/// EXEC-position block value (a bare tail, a leading early-return, or an
+/// exec-position block value (a bare tail, a leading early-return, or an
 /// immutable let-chain-plus-tail), so a call is legal inside it. An out-of-scope
 /// body shape returns `LowerError::Unsupported` (REQ-9: the caller records the
-/// reason; the survivor STAYS counted — never a silent exclusion).
+/// reason; the survivor stays counted, never a silent exclusion).
 fn lower_call_bearing_equivalence_obligation(
     f: &FnItem,
     real_body: &Block,
     mutant_body: &Block,
     callee_deps: &[Item],
 ) -> Result<String, LowerError> {
-    // SCOPE gate (REQ-7 v1): scalar params + return — the harness compares two
-    // scalar block values with `==`. A non-scalar shape → Unsupported (REQ-9).
+    // Scope gate (REQ-7 v1): scalar params + return. The harness compares two
+    // scalar block values with `==`. A non-scalar shape is Unsupported (REQ-9).
     let ret_spelling = scalar_obligation_type(&f.ret).ok_or_else(|| LowerError::Unsupported {
         what: format!(
             "call-bearing equivalence obligation supports only scalar (u32/u64/\
@@ -3087,12 +3086,12 @@ fn lower_call_bearing_equivalence_obligation(
         }
     }
 
-    // Weave the callee closure by feeding a Program of JUST the closure deps to
-    // the EXISTING `lower` (the SAME dispatch `item_subprogram` drives): a
+    // Weave the callee closure by feeding a Program of just the closure deps to
+    // the existing `lower` (the same dispatch `item_subprogram` drives): a
     // boundary/slag dep emits its `#[verifier::external_body]` assumable signature
     // (`lower_external_body_fn`), a regular dep emits its full proved def
-    // (`lower_fn`) — modular verification means the harness call site sees only
-    // each callee's `ensures` either way (§9). We then STRIP `lower`'s file frame
+    // (`lower_fn`). Modular verification means the harness call site sees only
+    // each callee's `ensures` either way (§9). We then strip `lower`'s file frame
     // (`use vstd...; verus! {` … `} fn main() {}`) and re-stitch the closure defs
     // inside this obligation's own frame, ahead of the harness fn.
     let closure_program = Program {
@@ -3107,8 +3106,8 @@ fn lower_call_bearing_equivalence_obligation(
             span: f.span,
         })?;
 
-    // Render each compared body as an EXEC-position block VALUE (a call is legal
-    // here — the closure declares every callee). The early-return mutant's
+    // Render each compared body as an exec-position block value (a call is legal
+    // here: the closure declares every callee). The early-return mutant's
     // observable value is its returned expression; a tail body's is its tail.
     let exec = Ctx::exec();
     let real_value = render_body_as_exec_value(real_body, exec, f.span)?;
@@ -3130,13 +3129,13 @@ fn lower_call_bearing_equivalence_obligation(
         out.push('\n');
     }
     writeln!(out, "fn equiv_check_{name}({params}) -> (eq: bool)").map_err(|_| fmt_err())?;
-    // Omit a literal-`true` precondition (the obligation holds for ALL inputs).
+    // Omit a literal-`true` precondition (the obligation holds for all inputs).
     if req != "true" {
         writeln!(out, "    requires {req},").map_err(|_| fmt_err())?;
     }
     out.push_str("    ensures eq,\n");
     out.push_str("{\n");
-    // NOTE: the comparand binders are `real_v`/`mutant_v`, NOT `real`/`mutant` —
+    // Note: the comparand binders are `real_v`/`mutant_v`, not `real`/`mutant`.
     // `real` is a vstd-imported type name (`vstd::prelude::real`), so a `let real`
     // shadows it and the `==` then types as `real`-vs-`u32` (E0308/E0369). The
     // suffixed names sidestep the collision while keeping the harness shape.
@@ -3151,15 +3150,15 @@ fn lower_call_bearing_equivalence_obligation(
 }
 
 /// Strip `lower`'s file frame (`use vstd::prelude::*;\nverus! {\n` … `\n}\nfn
-/// main() {}\n`) from a fully-lowered program, returning ONLY the inner item
+/// main() {}\n`) from a fully-lowered program, returning the inner item
 /// definitions (everything between the `verus! {` and its closing `}`). Returns
-/// `None` if the input does not carry the expected frame (a defensive guard — the
-/// REQ-7 caller treats a frame-less lowering as `Unsupported`). Used ONLY to
+/// `None` if the input does not carry the expected frame (a defensive guard; the
+/// REQ-7 caller treats a frame-less lowering as `Unsupported`). Used to
 /// re-stitch a woven callee closure into the equivalence-obligation harness frame.
 fn strip_verus_frame(lowered: &str) -> Option<String> {
     let open = "verus! {\n";
     let start = lowered.find(open)? + open.len();
-    // `lower` ends every program with `\n}\nfn main() {}\n` — the inner block is
+    // `lower` ends every program with `\n}\nfn main() {}\n`; the inner block is
     // everything before that closing brace.
     let close = "\n}\nfn main() {}\n";
     let end = lowered.rfind(close)?;
@@ -3169,24 +3168,24 @@ fn strip_verus_frame(lowered: &str) -> Option<String> {
     Some(lowered[start..end].to_string())
 }
 
-/// Render an exec body as an EXEC-position block VALUE for the call-bearing
+/// Render an exec body as an exec-position block value for the call-bearing
 /// equivalence harness (REQ-7). Unlike [`render_body_as_spec_value`] (spec
-/// context, `(expr) as <ret>` coercion), this renders in EXEC context — a call is
-/// legal and the result is exec-typed, so NO arithmetic coercion is applied:
+/// context, `(expr) as <ret>` coercion), this renders in exec context: a call is
+/// legal and the result is exec-typed, so no arithmetic coercion is applied:
 ///
-/// - a body whose FIRST statement is `return <e>;` (the F-IDENT / early-return
-///   mutant) is `<e>` — the rest of the body is dead, and the observable value of
-///   the harness `let mutant = { <e> }` is exactly `<e>`;
+/// - a body whose first statement is `return <e>;` (the F-IDENT / early-return
+///   mutant) is `<e>`; the rest of the body is dead, and the observable value of
+///   the harness `let mutant = { <e> }` is `<e>`;
 /// - a body that is a bare tail (`{ ext_id(x) }`) is the lowered tail expression;
 /// - a body of immutable `let`s ending in a tail is the let-chain plus tail,
 ///   emitted as a parenthesized block so it inhabits the `let real = { .. }` slot.
 ///
-/// Any other statement shape (an `Assign`, a nested `Loop`, a `Stmt::Expr`) →
+/// Any other statement shape (an `Assign`, a nested `Loop`, a `Stmt::Expr`) is
 /// `Unsupported` (REQ-9: the survivor stays counted, the reason is recorded).
 fn render_body_as_exec_value(body: &Block, ctx: Ctx, span: Span) -> Result<String, LowerError> {
     // The early-return mutant (F-IDENT `return <param>` / zero-return): a leading
     // `return <e>;` pins the observable result to `<e>` regardless of the dead
-    // tail (`mutation::early_return_value` / the F-IDENT family).
+    // tail (`mutation::early_return_value`, the F-IDENT family).
     if let Some(Stmt::Return(ret_expr)) = body.stmts.first() {
         let e = ret_expr.as_ref().ok_or_else(|| LowerError::Unsupported {
             what: "call-bearing equivalence obligation: a value-less `return;` has \
@@ -3209,7 +3208,7 @@ fn render_body_as_exec_value(body: &Block, ctx: Ctx, span: Span) -> Result<Strin
     }
 
     // An immutable let-chain plus tail: render the lets and tail as an inner
-    // block so the whole thing is a single block VALUE in the `let real = { .. }`
+    // block so the whole thing is a single block value in the `let real = { .. }`
     // slot. A call is legal in every position (exec context).
     let mut inner = String::new();
     for stmt in &body.stmts {
@@ -3240,7 +3239,7 @@ fn render_body_as_exec_value(body: &Block, ctx: Ctx, span: Span) -> Result<Strin
     Ok(format!("{{ {inner}{tail_lowered} }}"))
 }
 
-/// The Verus spelling of a SCALAR primitive type, or `None` for any non-scalar
+/// The Verus spelling of a scalar primitive type, or `None` for any non-scalar
 /// type (the equivalence-obligation scope gate, OQ-1). `bool` is included: a
 /// `bool`-returning forced-output fn's observable result is its boolean value.
 fn scalar_obligation_type(ty: &Type) -> Option<String> {
@@ -3260,8 +3259,8 @@ fn obligation_coerces(ty: &str) -> bool {
     matches!(ty, "u32" | "u64" | "usize")
 }
 
-/// The `name: <ty>` parameter list for an equivalence-obligation spec/proof fn —
-/// the SCALAR param types verbatim (the gate already rejected non-scalars).
+/// The `name: <ty>` parameter list for an equivalence-obligation spec/proof fn:
+/// the scalar param types verbatim (the gate already rejected non-scalars).
 fn obligation_param_list(params: &[Param]) -> Result<String, LowerError> {
     let mut parts = Vec::with_capacity(params.len());
     for p in params {
@@ -3287,14 +3286,14 @@ fn obligation_arg_names(params: &[Param]) -> String {
 /// Render an exec body as the spec-fn body of an equivalence-obligation
 /// (REQ-1). The observable result of:
 ///
-/// - a body whose FIRST statement is `return <e>;` (the early-return mutant) is
-///   `<e>` (coerced) — the rest of the body is dead;
+/// - a body whose first statement is `return <e>;` (the early-return mutant) is
+///   `<e>` (coerced); the rest of the body is dead;
 /// - a body of `let`s ending in a tail is the let-chain (each init coerced to
 ///   its declared/return type) plus the coerced tail (the `{ let y = x+0; y }`
 ///   forced-output shape).
 ///
 /// Any other statement shape (an `Assign`, a nested `Loop`/`If`, a `Stmt::Expr`)
-/// → `Unsupported` (out of the scalar forced-output scope, OQ-1) so the survivor
+/// is `Unsupported` (out of the scalar forced-output scope, OQ-1) so the survivor
 /// stays counted.
 fn render_body_as_spec_value(
     body: &Block,
@@ -3360,9 +3359,9 @@ fn render_body_as_spec_value(
     Ok(out)
 }
 
-/// Apply the EXEC arithmetic coercion the design grounded: an integer-result
+/// Apply the exec arithmetic coercion the design grounded: an integer-result
 /// expression is wrapped `(expr) as <ty>` so the spec-position arithmetic (which
-/// Verus types as unbounded `int`) matches the bounded scalar return — without it
+/// Verus types as unbounded `int`) matches the bounded scalar return; without it
 /// `verus` rejects `x + 0` as `expected u64, found int`. A `bool` result is left
 /// bare (no `as bool`). Already-`as`-suffixed and bare-literal forms still take
 /// the wrap (it is idempotent for verification).
@@ -3422,7 +3421,7 @@ fn spec_param_type(ty: &Type) -> Result<String, LowerError> {
 
 /// The return type of a `spec fn`. A slice-folding spec fn (one whose body sums
 /// `elem as TY` over the slice — the `spec_sum` shape) returns `nat` so the
-/// fold cannot overflow the spec relation (OQ-1). Detected by SHAPE: a `Match`
+/// fold cannot overflow the spec relation (OQ-1). Detected by shape: a `Match`
 /// or `if/else` whose recursive arm adds a cast slice head to a recursive call.
 fn lower_spec_fn_ret(ret: &Type, body: &Block) -> String {
     if is_head_fold_sum(body) || is_adt_fold_sum(body) {
@@ -3431,31 +3430,31 @@ fn lower_spec_fn_ret(ret: &Type, body: &Block) -> String {
     lower_type(ret).unwrap_or_else(|_| "bool".to_string())
 }
 
-/// Detect the GENERAL ADT structural-fold shape (`.design/basis/01-adts.md`
+/// Detect the general ADT structural-fold shape (`.design/basis/01-adts.md`
 /// REQ-10 + the recorded structural-recursion finding): a `spec fn` over a
-/// recursive ADT value whose body `match`es that value and whose arm(s) RECURSE
-/// on the dereferenced recursive field — `f(*t)`, the `Box`-deref of REQ-3.
+/// recursive ADT value whose body `match`es that value and whose arm(s) recurse
+/// on the dereferenced recursive field, `f(*t)`, the `Box`-deref of REQ-3.
 ///
-/// This is a STRUCTURAL predicate, NOT fitted to a base-arm shape (the #69
-/// divergence): it does NOT require a literal-`0` unit base. Both folds detect:
+/// This is a structural predicate, not fitted to a base-arm shape (the #69
+/// divergence): it does not require a literal-`0` unit base. Both folds detect:
 ///
-/// - `sum_list`/`len` — literal-`0` unit base (`Nil => 0`) + a cons arm
+/// - `sum_list`/`len`: literal-`0` unit base (`Nil => 0`) + a cons arm
 ///   `Cons(h, t) => <cast h> + f(*t)`;
-/// - `tree_sum` — a VALUE-carrying base (`Leaf(v) => v as u64`) + a
+/// - `tree_sum`: a value-carrying base (`Leaf(v) => v as u64`) + a
 ///   binary-recursive arm `Node(l, r) => f(*l) + f(*r)`.
 ///
-/// The single distinguishing signal is the presence of a recursive `f(*x)`
-/// call ANYWHERE in some arm body (`expr_has_deref_call_arg`, a full-tree walk),
+/// The distinguishing signal is the presence of a recursive `f(*x)`
+/// call anywhere in some arm body (`expr_has_deref_call_arg`, a full-tree walk),
 /// over a `match` of the function's `dec` value. Such a fold is lowered with a
-/// `nat` return so EVERY arm's integer arithmetic stays `nat` and the arms
-/// type-check uniformly (the GROUNDED form; without the `nat` return a base arm
+/// `nat` return so every arm's integer arithmetic stays `nat` and the arms
+/// type-check uniformly (the grounded form; without the `nat` return a base arm
 /// like `v as u64` is `u64` while the recursive arm is `int`, and verus rejects
 /// the `match` with `match arms have incompatible types`).
-/// True if a spec-fn body is a `fold` SCHEME CALL (`.design/basis/02-recursion-
+/// True if a spec-fn body is a `fold` scheme call (`.design/basis/02-recursion-
 /// schemes.md` REQ-6): the body tail is an `Expr::Call` whose callee path is the
 /// `fold` scheme. Such an instance returns `nat` (the `Accumulator` result), so
-/// it joins `nat_fns` exactly as a hand-written ADT-fold-sum does. SHAPE check
-/// (the callee path is `fold` and `fold` is a registered scheme), never a name
+/// it joins `nat_fns` as a hand-written ADT-fold-sum does. Shape check
+/// (the callee path is `fold` and `fold` is a registered scheme), not a name
 /// check; only `fold` is the `nat`-result scheme.
 fn is_fold_scheme_call_body(body: &Block) -> bool {
     let Some(tail) = &body.tail else { return false };
@@ -3474,19 +3473,19 @@ fn is_adt_fold_sum(body: &Block) -> bool {
     let Expr::Match { arms, .. } = tail.as_ref() else {
         return false;
     };
-    // GENERAL: a recursive structural fold has at least one arm that recurses
+    // A recursive structural fold has at least one arm that recurses
     // through a `Box`-deref'd field (`f(*x)`). The base arm(s) are whatever
-    // remains — a literal `0`, a value-carrying `Leaf(v) => v`, etc. — and are
+    // remains (a literal `0`, a value-carrying `Leaf(v) => v`, etc.) and are
     // coerced to `nat` uniformly with the recursive arm by the `nat` return.
     arms.iter().any(|arm| expr_has_deref_call_arg(&arm.body))
 }
 
 /// True if a recursive structural-fold call `f(*x)` (a `Call` with a `Deref`
-/// argument, the `*t` of REQ-3's `Box`-deref recursion) appears ANYWHERE in the
-/// expression tree of an arm body — not just at its top level. A full-tree walk
+/// argument, the `*t` of REQ-3's `Box`-deref recursion) appears anywhere in the
+/// expression tree of an arm body, not just at its top level. A full-tree walk
 /// so `Node(l, r) => f(*l) + f(*r)` (the recursive call nested under an `Add`)
 /// and `Cons(h, t) => h as T + f(*t)` (nested under an `Add` rhs) are both
-/// detected. SHAPE check, never a name check.
+/// detected. Shape check, not a name check.
 fn expr_has_deref_call_arg(expr: &Expr) -> bool {
     match expr {
         Expr::Call { callee, args } => {
@@ -3512,11 +3511,11 @@ fn expr_has_deref_call_arg(expr: &Expr) -> bool {
         }
         Expr::StructLit { fields, .. } => fields.iter().any(|(_, v)| expr_has_deref_call_arg(v)),
         // The prefix `!` (#92): a deref'd recursive call could sit under `!`,
-        // so descend into the operand (the honest full-tree walk).
+        // so descend into the operand (the full-tree walk).
         Expr::Unary { expr, .. } => expr_has_deref_call_arg(expr),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
         // deref'd recursive call could sit in any tuple element or under a
-        // projection's receiver — the honest full-tree walk descends into both.
+        // projection's receiver; the full-tree walk descends into both.
         Expr::Tuple(elems) => elems.iter().any(expr_has_deref_call_arg),
         Expr::TupleProj { receiver, .. } => expr_has_deref_call_arg(receiver),
         Expr::IntLit { .. }
@@ -3534,7 +3533,7 @@ fn expr_has_deref_call_arg(expr: &Expr) -> bool {
 /// Detect the head-fold-sum shape (`spec_sum`): a `match xs { [] => 0,
 /// [head, ..t] => head as T + f(t) }` — an empty-slice base case of `0` and a
 /// cons arm adding the (cast) head to a recursive call on the tail. This is a
-/// SHAPE predicate over the AST, not a name check.
+/// shape predicate over the AST, not a name check.
 fn is_head_fold_sum(body: &Block) -> bool {
     let Some(tail) = &body.tail else { return false };
     let Expr::Match { arms, .. } = tail.as_ref() else {
@@ -3570,7 +3569,7 @@ fn is_head_rest(pats: &[SlicePat]) -> bool {
 
 /// Lower a `spec fn` body. For the head-fold-sum shape, emit the verified `Seq`
 /// recursion `if xs.len() == 0 { 0 } else { xs[0] as nat + f(xs.drop_first()) }`
-/// (REQ-5). The recursion is reconstructed from the match arms' SHAPE: the base
+/// (REQ-5). The recursion is reconstructed from the match arms' shape: the base
 /// arm's value, the head-element cast, and the recursive callee name.
 fn lower_spec_fn_body(
     body: &Block,
@@ -3590,21 +3589,21 @@ fn lower_spec_fn_body(
         }
     }
     // Fallback: lower the block in spec context directly. An ADT fold (`sum_list`,
-    // REQ-10) flows through HERE — its `match l { … }` lowers via `lower_match`
-    // with the enum-variant map attached (ENUM-QUALIFIED arms) and, when the
+    // REQ-10) flows through here: its `match l { … }` lowers via `lower_match`
+    // with the enum-variant map attached (enum-qualified arms) and, when the
     // return is `nat`, with `nat_ret` set so integer casts coerce to `as nat`
-    // (the GROUNDED form's `h as nat + sum_list(*t)`).
+    // (the grounded form's `h as nat + sum_list(*t)`).
     //
     // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): thread the spec fn's
-    // `String`/`&String` param names so a String-SCANNING spec-fn body (a `&String`
-    // param's `byte_at(i)`/`slice(lo,hi)` — e.g. `spec_line_start`, the spec twin
-    // of an exec `\n`-scan) rewrites to the wrapper's SPEC accessors
-    // (`spec_byte_at(i as int)`/`spec_slice(..)`) the SAME way the signature
+    // `String`/`&String` param names so a string-scanning spec-fn body (a `&String`
+    // param's `byte_at(i)`/`slice(lo,hi)`, e.g. `spec_line_start`, the spec twin
+    // of an exec `\n`-scan) rewrites to the wrapper's spec accessors
+    // (`spec_byte_at(i as int)`/`spec_slice(..)`) the same way the signature
     // `requires`/`ensures` context does (`lower_fn_signature`'s `.with_strings`).
-    // WITHOUT this the body's `byte_at(i)` stays bare and hits the `usize`-typed
-    // EXEC accessor in spec position (E0308 — `usize` vs `int`); the rewrite at
-    // `lower_expr`'s String-receiver arm is gated on `ctx.is_string`. EMPTY for a
-    // non-`String` spec fn (byte-stable for the existing corpus — `spec_sum`/ADT
+    // Without this the body's `byte_at(i)` stays bare and hits the `usize`-typed
+    // exec accessor in spec position (E0308, `usize` vs `int`); the rewrite at
+    // `lower_expr`'s String-receiver arm is gated on `ctx.is_string`. Empty for a
+    // non-`String` spec fn (byte-stable for the existing corpus; `spec_sum`/ADT
     // folds carry no `String` param, so the set is empty and nothing changes).
     let strings = string_param_names(params);
     let ctx = Ctx::spec_seq()
@@ -3613,23 +3612,23 @@ fn lower_spec_fn_body(
         .with_strings(&strings)
         .with_user_string_spec_fns(user_string_spec_fns)
         .with_spec_fn_param_types(spec_fn_param_types);
-    // #237/#238 RESULT-NARROWING: a sized-int-return spec fn (`-> u64`/`u32`/`usize`)
-    // whose body's RESULT position is ARITHMETIC (`1 + count(n-1)`, `n + n`, `a + b`)
-    // is `int`-typed in Verus spec — Verus spec arithmetic is the UNBOUNDED `int`,
+    // #237/#238 result-narrowing: a sized-int-return spec fn (`-> u64`/`u32`/`usize`)
+    // whose body's result position is arithmetic (`1 + count(n-1)`, `n + n`, `a + b`)
+    // is `int`-typed in Verus spec. Verus spec arithmetic is the unbounded `int`,
     // so `<sized-int> + <sized-int>` evaluates to `int`, not the declared `u64`,
     // and the body fails E0308 (`expected u64, found int`) on legitimate
-    // frozen-subset source. (#238: this holds with OR WITHOUT a literal operand —
-    // `n + n` over `u64` params is `int`-typed exactly as `1 + count(n - 1)` is, so
-    // the trigger is ARITHMETIC AT A RESULT LEAF, not literal-mention.) (The
+    // frozen-subset source. (#238: this holds with or without a literal operand;
+    // `n + n` over `u64` params is `int`-typed as `1 + count(n - 1)` is, so
+    // the trigger is arithmetic at a result leaf, not literal-mention.) (The
     // match-form head/ADT folds take the `nat`-return path above, where casts
-    // coerce `as nat` uniformly; the if-form/arith shape has no such coercion — the
-    // gap.) FIX: narrow the WHOLE lowered body RESULT back to the declared return
-    // type — `(<body>) as <ret>` — exactly as the #225 spec-call casts narrow an
+    // coerce `as nat` uniformly; the if-form/arith shape has no such coercion, the
+    // gap.) Fix: narrow the whole lowered body result back to the declared return
+    // type, `(<body>) as <ret>`, as the #225 spec-call casts narrow an
     // arithmetic arg back to its param type. The cast is identity on the spec domain
     // for in-range values (same fidelity class as the #225/#229 casts). Gated on the
-    // arithmetic SHAPE at a result position (`block_result_has_arith`), so a body
+    // arithmetic shape at a result position (`block_result_has_arith`), so a body
     // whose result is already the declared type (`spec_line_start`'s
-    // `acc`/recursive-call arms — no result-position arithmetic) is UNTOUCHED
+    // `acc`/recursive-call arms, no result-position arithmetic) is untouched
     // (byte-stable). A `nat`/`bool` return never reaches here (the `nat`-ret path /
     // the `bool` predicate body is not `is_int_type`).
     let narrow = is_int_ret_name(ret) && block_result_has_arith(body);
@@ -3652,7 +3651,7 @@ fn lower_spec_fn_body(
 }
 
 /// True iff a lowered spec-fn return type is a sized surface integer
-/// (`u64`/`u32`/`usize`) — the #237 result-narrowing TARGET set. `nat`/`bool`/an
+/// (`u64`/`u32`/`usize`), the #237 result-narrowing target set. `nat`/`bool`/an
 /// ADT name take no narrowing (a `nat` body is already coerced, a `bool` predicate
 /// is never `int`-typed). The string analog of [`is_int_type`] over the already-
 /// lowered return spelling.
@@ -3660,16 +3659,16 @@ fn is_int_ret_name(ret: &str) -> bool {
     matches!(ret, "u64" | "u32" | "usize")
 }
 
-/// True iff a spec-fn body's RESULT position is ARITHMETIC — the #237/#238
+/// True iff a spec-fn body's result position is arithmetic, the #237/#238
 /// narrowing trigger. Walks every result leaf (the block tail, each `if`-arm tail,
-/// each `match`-arm body) and returns `true` if ANY result leaf is an arithmetic
+/// each `match`-arm body) and returns `true` if any result leaf is an arithmetic
 /// `Binary`/`Unary` expression. In Verus spec position such an expression evaluates
-/// to the unbounded `int` (not the declared sized-int return) — REGARDLESS of
-/// whether an integer literal is mentioned, since Verus types ALL spec arithmetic
-/// as `int` (`n + n` over `u64` params is `int` exactly as `1 + count(n - 1)` is;
-/// #238) — so the body needs the `(<body>) as <ret>` narrowing. A result leaf that
+/// to the unbounded `int` (not the declared sized-int return) regardless of
+/// whether an integer literal is mentioned, since Verus types all spec arithmetic
+/// as `int` (`n + n` over `u64` params is `int` as `1 + count(n - 1)` is;
+/// #238), so the body needs the `(<body>) as <ret>` narrowing. A result leaf that
 /// is a bare path (`acc`), a recursive call (`spec_line_start(...)`), or any other
-/// non-arithmetic expression yields its declared type directly and needs NO
+/// non-arithmetic expression yields its declared type directly and needs no
 /// narrowing (`spec_line_start`/`pick` stay byte-stable). A comparison/logical
 /// `Binary` (`==`/`&&`) is `bool`, not `int`, and is excluded by `is_arith_binop`.
 fn block_result_has_arith(block: &Block) -> bool {
@@ -3681,7 +3680,7 @@ fn block_result_has_arith(block: &Block) -> bool {
 }
 
 /// The per-result-leaf walk for [`block_result_has_arith`]. Descends through
-/// `if`/`match` to each RESULT leaf (NOT into operands of a non-result position),
+/// `if`/`match` to each result leaf (not into operands of a non-result position),
 /// testing each leaf for arithmetic.
 fn expr_result_has_arith(expr: &Expr) -> bool {
     match expr {
@@ -3698,16 +3697,16 @@ fn expr_result_has_arith(expr: &Expr) -> bool {
                     .unwrap_or(false)
         }
         Expr::Match { arms, .. } => arms.iter().any(|a| expr_result_has_arith(&a.body)),
-        // An arithmetic `Binary`/`Unary` AT a result position is `int`-typed in
-        // spec (the divergence trigger) — with or without a literal operand (#238).
+        // An arithmetic `Binary`/`Unary` at a result position is `int`-typed in
+        // spec (the divergence trigger), with or without a literal operand (#238).
         Expr::Binary { op, .. } if is_arith_binop(*op) => true,
         Expr::Unary { .. } => true,
         _ => false,
     }
 }
 
-/// True iff `op` is an ARITHMETIC binary operator (the integer-yielding set:
-/// `+`/`-`/`*`/`/`/`%` and the bit ops) — as opposed to a comparison/logical
+/// True iff `op` is an arithmetic binary operator (the integer-yielding set:
+/// `+`/`-`/`*`/`/`/`%` and the bit ops), as opposed to a comparison/logical
 /// operator (which yields `bool`, never `int`). The #237 narrowing only fires on
 /// an arithmetic result; a `bool`-returning comparison body is never `int`-typed.
 fn is_arith_binop(op: BinOp) -> bool {
@@ -3756,9 +3755,9 @@ fn seq_fold_body(
     for arm in arms {
         match &arm.pattern {
             Pattern::Slice(pats) if pats.is_empty() => {
-                // The base arm lowers in spec position and may NAME a user spec
-                // fn with an arithmetic arg (#229) — thread the param-type map so
-                // its cast narrows to the callee's DECLARED param type.
+                // The base arm lowers in spec position and may name a user spec
+                // fn with an arithmetic arg (#229), so thread the param-type map so
+                // its cast narrows to the callee's declared param type.
                 base = lower_expr(
                     &arm.body,
                     Ctx::spec_seq().with_spec_fn_param_types(spec_fn_param_types),
@@ -3793,18 +3792,18 @@ fn seq_fold_body(
 }
 
 // ---------------------------------------------------------------------------
-// Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): scheme-CALL
-// lowering — a scheme call → a call of the generated `fold_<e>`.
+// Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-6): scheme-call
+// lowering: a scheme call → a call of the generated `fold_<e>`.
 // ---------------------------------------------------------------------------
 
-/// Lower a recursion-scheme CALL to a CALL of the generated scheme `spec fn`
+/// Lower a recursion-scheme call to a call of the generated scheme `spec fn`
 /// (REQ-6): `fold(l, 0, |x, acc| x + acc)` → `fold_list(l, 0, |x: u64, acc: nat|
 /// (x + acc) as nat)`; `for_all(l, |x| x > 0)` → `for_all_list(l, |x: u64| x >
-/// 0)`. The scrutinee/seed args lower plainly; the trailing STEP closure is
-/// lowered to a TYPED Verus `spec_fn` — element parameter `x: <elem>`, the
+/// 0)`. The scrutinee/seed args lower plainly; the trailing step closure is
+/// lowered to a typed Verus `spec_fn`: element parameter `x: <elem>`, the
 /// accumulator parameter `acc: <acc-ty>` for `fold`/`traverse`, and for an
 /// accumulator (`fold`) the step body is coerced `as nat` (a `u64`/`nat` mixed
-/// body is `int` in spec; the GROUNDED step is `(x + acc) as nat`). The validator
+/// body is `int` in spec; the grounded step is `(x + acc) as nat`). The validator
 /// (Stage 2b) has already checked the call arity + the flat step.
 fn lower_scheme_call(
     binding: &SchemeBinding,
@@ -3843,7 +3842,7 @@ fn lower_scheme_call(
     };
 
     // Lower the step body in spec context. For an accumulator scheme the body is
-    // coerced `as nat` (the GROUNDED `(x + acc) as nat`); for a predicate / map
+    // coerced `as nat` (the grounded `(x + acc) as nat`); for a predicate / map
     // scheme the body stays as written (the closure result type already matches).
     let lowered_body = lower_expr(body, ctx.keep(), depth, span)?;
     let step_src = lower_step_closure(binding, params, &lowered_body, span)?;
@@ -3852,10 +3851,10 @@ fn lower_scheme_call(
     Ok(format!("{}({})", binding.gen_name, parts.join(", ")))
 }
 
-/// Lower a scheme STEP closure to a typed Verus `spec_fn` literal (REQ-6). The
+/// Lower a scheme step closure to a typed Verus `spec_fn` literal (REQ-6). The
 /// element parameter is typed `<elem>`; an accumulator scheme adds the `acc: nat`
 /// (or `acc: bool` for `traverse`) parameter and coerces the body `as nat`. The
-/// parameter NAMES are the surface closure's (`x`/`acc`), so the body's path
+/// parameter names are the surface closure's (`x`/`acc`), so the body's path
 /// references resolve.
 fn lower_step_closure(
     binding: &SchemeBinding,
@@ -3967,34 +3966,34 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
         }
         // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): a bounded
         // `Vec<T>` lowers to the Thermite-runtime newtype `TVec<elem>` over
-        // `vstd::vec::Vec<T>` (the GROUNDED `BVec`-over-`Vec<u64>` form). The
+        // `vstd::vec::Vec<T>` (the grounded `BVec`-over-`Vec<u64>` form). The
         // wrapper struct + its verified `len`/`spec_get`/`get`/`push` impl are
-        // materialized ONCE per element type by `emit_vec_wrappers`; this arm
+        // materialized once per element type by `emit_vec_wrappers`; this arm
         // names the type (`Vec<u64>` → `TVecU64`). The wrapper carries the
         // `well_formed` capacity invariant + the no-OOB `get` + capacity-preserving
-        // `push`, the §4.2-decidable bounded structure. BACKING-AGNOSTIC SURFACE
+        // `push`, the §4.2-decidable bounded structure. Backing-agnostic surface
         // (#62): the surface contract names `len`/`get`/`push` over `v@`, never
-        // `vstd::vec::Vec`; v1 IMPLEMENTS it by wrapping vstd's verified `Vec`.
+        // `vstd::vec::Vec`; v1 implements it by wrapping vstd's verified `Vec`.
         Type::Vec(inner) => Ok(tvec_name(inner)?),
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2/REQ-4): a bounded
         // `String` lowers to the Thermite-runtime newtype `TString` over
-        // `vstd::vec::Vec<u8>` (the GROUNDED `TString`-over-`Vec<u8>` form,
+        // `vstd::vec::Vec<u8>` (the grounded `TString`-over-`Vec<u8>` form,
         // `verified, 0 errors`). The wrapper struct + its verified
         // `well_formed`/`len`/`byte_at`/`concat`/`slice` impl are materialized
-        // ONCE by `emit_string_wrapper`; this arm names the type. The element
-        // type is FIXED to `u8` (the char model is bytes for v1), so — unlike
-        // `Type::Vec(elem)` — there is no per-element monomorphization. BACKING-
-        // AGNOSTIC SURFACE (#62): the surface contract names `len`/`byte_at` over
-        // the byte view `s@`, never `vstd::vec::Vec<u8>`; v1 IMPLEMENTS it by
+        // once by `emit_string_wrapper`; this arm names the type. The element
+        // type is fixed to `u8` (the char model is bytes for v1), so, unlike
+        // `Type::Vec(elem)`, there is no per-element monomorphization. Backing-
+        // agnostic surface (#62): the surface contract names `len`/`byte_at` over
+        // the byte view `s@`, never `vstd::vec::Vec<u8>`; v1 implements it by
         // wrapping vstd's verified `Vec<u8>`.
         Type::String => Ok("TString".to_string()),
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-4, issue #95): the
-        // built-in `Option<T>` / `Result<T, E>` lower to the Verus-NATIVE generic
-        // types — Verus's prelude carries `Option`/`Result` and their constructors
-        // `Some`/`None`/`Ok`/`Err` (GROUNDED `5 verified, 0 errors`), so there is NO
+        // built-in `Option<T>` / `Result<T, E>` lower to the Verus-native generic
+        // types. Verus's prelude carries `Option`/`Result` and their constructors
+        // `Some`/`None`/`Ok`/`Err` (grounded `5 verified, 0 errors`), so there is no
         // wrapper to emit (unlike `TString`/`TVec`) and the constructors fall
-        // through `qualify_variant_path` to the BARE name (they are not user-enum
-        // variants, so they are never enum-qualified — exactly what Verus wants).
+        // through `qualify_variant_path` to the bare name (they are not user-enum
+        // variants, so they are never enum-qualified, what Verus wants).
         // The element/error types lower recursively.
         Type::Option(inner) => {
             let i = lower_type(inner)?;
@@ -4009,18 +4008,18 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // to the Thermite-runtime newtype `TMap<K,V>` over a `vstd::vec::Vec<(K, V)>`-
         // of-pairs backing (C6 `Vec<tuple>` + C9 `(K,V)` pair). The wrapper struct +
         // its verified `spec_dom`/`spec_contains_key`/`len`/`contains_key`/`get`/
-        // `insert` impl are materialized ONCE per `(K, V)` pair by `emit_map_wrappers`;
+        // `insert` impl are materialized once per `(K, V)` pair by `emit_map_wrappers`;
         // this arm names the type (`Map<u64, u64>` → `TMapU64U64`). The wrapper carries
-        // the `well_formed` capacity + key-uniqueness invariant + the no-OOB /
-        // handled-or-loud `get -> Option<V>` (absent → None). BACKING-AGNOSTIC SURFACE
+        // the `well_formed` capacity + key-uniqueness invariant + the no-OOB
+        // `get -> Option<V>` (absent → None). Backing-agnostic surface
         // (#62/#114): the surface contract names `len`/`get`/`contains_key`/`insert`
-        // over a spec map abstraction, never `vstd::vec::Vec<(K,V)>`; v1 IMPLEMENTS it
+        // over a spec map abstraction, never `vstd::vec::Vec<(K,V)>`; v1 implements it
         // by wrapping the Vec-of-pairs (a later vstd-hash-map decouple swaps the
-        // backing WITHOUT changing user `.th` code).
+        // backing without changing user `.th` code).
         Type::Map(k, v) => Ok(tmap_name(k, v)?),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7/REQ-8,
-        // #109): an n-tuple type `(T, U, …)` lowers to the Verus-NATIVE tuple type
-        // `(<t0>, <t1>, …)` (Verus tuples are native, GROUNDED at arity 2 and 3 —
+        // #109): an n-tuple type `(T, U, …)` lowers to the Verus-native tuple type
+        // `(<t0>, <t1>, …)` (Verus tuples are native, grounded at arity 2 and 3,
         // `verified, 0 errors`); each element type lowers recursively. There is no
         // wrapper to emit (like `Option`/`Result`, unlike `TString`/`TVec`).
         Type::Tuple(elems) => {
@@ -4037,18 +4036,18 @@ fn lower_type(ty: &Type) -> Result<String, LowerError> {
 /// UpperCamelCase suffix derived from the element type's Verus spelling
 /// (`Vec<u64>` → `TVecU64`, `Vec<u32>` → `TVecU32`, `Vec<usize>` → `TVecUsize`)
 /// (`.design/basis/04-collections.md` REQ-5 / REQ-9 / REQ-12). A per-element-type
-/// concrete wrapper (not a generic `TVec<T>`) is the GROUNDED form: vstd's
+/// concrete wrapper (not a generic `TVec<T>`) is the grounded form: vstd's
 /// `Vec<T>` index `self.data[i]` moves the element out (`E0507` for non-`Copy`
 /// `T`), so the verified accessor is monomorphized per element type.
 ///
-/// CLUSTER C6 (#98, REQ-9/REQ-12): the suffix `match` EXTENDS from Copy primitives
-/// to the NON-`Copy` element types — a `String` element (→ `TVecTString`, the
+/// Cluster C6 (#98, REQ-9/REQ-12): the suffix `match` extends from Copy primitives
+/// to the non-`Copy` element types: a `String` element (→ `TVecTString`, the
 /// Stage-7 string-wrapper element name), a user `struct`/`enum` element (→
-/// `TVec<StructName>`, the bare decl name), and a NESTED `Vec<Vec<_>>` element (→
-/// the RECURSIVE `T` + inner `tvec_name`, so `Vec<Vec<u64>>` → `TVecTVecU64`). A
-/// non-Copy element's wrapper emits the BORROW-returning `get -> &T` (REQ-9); a
-/// Copy element keeps the by-value `get -> T` (the byte-stable `vec_demo.th` form)
-/// — classified by [`elem_is_copy`]. A still-unlowerable element (`Unit`/`Ref`/
+/// `TVec<StructName>`, the bare decl name), and a nested `Vec<Vec<_>>` element (→
+/// the recursive `T` + inner `tvec_name`, so `Vec<Vec<u64>>` → `TVecTVecU64`). A
+/// non-Copy element's wrapper emits the borrow-returning `get -> &T` (REQ-9); a
+/// Copy element keeps the by-value `get -> T` (the byte-stable `vec_demo.th` form),
+/// classified by [`elem_is_copy`]. A still-unlowerable element (`Unit`/`Ref`/
 /// `Slice`/`Generic`) is the existing `LowerError::Unsupported` (no panic, REQ-12).
 pub(crate) fn tvec_name(elem: &Type) -> Result<String, LowerError> {
     let suffix = match elem {
@@ -4057,13 +4056,13 @@ pub(crate) fn tvec_name(elem: &Type) -> Result<String, LowerError> {
         Type::Prim(PrimType::Usize) => "Usize".to_string(),
         Type::Prim(PrimType::Bool) => "Bool".to_string(),
         // Cluster C6 (REQ-9): a `String` element → the Stage-7 wrapper name
-        // `TString`, so `Vec<String>` → `TVecTString` (the GROUNDED non-Copy form).
+        // `TString`, so `Vec<String>` → `TVecTString` (the grounded non-Copy form).
         Type::String => "TString".to_string(),
         // Cluster C6 (REQ-9): a user `struct`/`enum` element → its bare decl name,
         // so `Vec<Point>` → `TVecPoint`. The decl is woven before the wrapper
         // (REQ-10, the #68 `collect_type_adt_refs` recursion through `Type::Vec`).
         Type::Named(name) => name.clone(),
-        // Cluster C6 (REQ-9, nested): a `Vec<Vec<_>>` element → the RECURSIVE inner
+        // Cluster C6 (REQ-9, nested): a `Vec<Vec<_>>` element → the recursive inner
         // wrapper name as the suffix, so `Vec<Vec<u64>>` → `TVec` + `TVecU64` =
         // `TVecTVecU64` (the inner `tvec_name` already yields `TVecU64`; the outer
         // prepends `TVec`). The inner `TVec*` wrapper is emitted before the outer
@@ -4083,14 +4082,14 @@ pub(crate) fn tvec_name(elem: &Type) -> Result<String, LowerError> {
     Ok(format!("TVec{suffix}"))
 }
 
-/// The generated wrapper struct name for `Map<K, V>` — `TMap` plus the
-/// UpperCamelCase suffix of the KEY type's wrapper-suffix and the VALUE type's
+/// The generated wrapper struct name for `Map<K, V>`: `TMap` plus the
+/// UpperCamelCase suffix of the key type's wrapper-suffix and the value type's
 /// (`Map<u64, u64>` → `TMapU64U64`) (`.design/basis/13-map.md` REQ-4). A
-/// per-`(K,V)`-pair concrete wrapper (not a generic `TMap<K,V>`) MIRRORS
-/// [`tvec_name`]'s monomorphization: the GROUNDED `TMapU64U64`-over-
+/// per-`(K,V)`-pair concrete wrapper (not a generic `TMap<K,V>`) mirrors
+/// [`tvec_name`]'s monomorphization: the grounded `TMapU64U64`-over-
 /// `vstd::vec::Vec<(u64,u64)>` form. v1 grounds `Map<u64, u64>` (Copy keys, OQ-4);
 /// the suffix reuses `tmap_type_suffix` so a future `Map<String, u64>` /
-/// `Map<u64, Account>` composes by the SAME rule the SHIPPED `Vec<String>`/
+/// `Map<u64, Account>` composes by the same rule the shipped `Vec<String>`/
 /// `Vec<struct>` proved. A still-unlowerable key/value type is the existing
 /// `LowerError::Unsupported` (no panic, REQ-6).
 pub(crate) fn tmap_name(key: &Type, val: &Type) -> Result<String, LowerError> {
@@ -4100,10 +4099,10 @@ pub(crate) fn tmap_name(key: &Type, val: &Type) -> Result<String, LowerError> {
 }
 
 /// The UpperCamelCase wrapper-name suffix for a single `Map` key/value type
-/// (`.design/basis/13-map.md` REQ-4 / OQ-4). MIRRORS the suffix arm of
+/// (`.design/basis/13-map.md` REQ-4 / OQ-4). Mirrors the suffix arm of
 /// [`tvec_name`] (a Copy primitive, a `String` → `TString`, a user `struct`/`enum`
 /// → its bare decl name, a nested `Vec` → its `tvec_name`), so a `(K, V)` pair
-/// monomorphizes by the SAME rule the SHIPPED `Vec` element does. A still-
+/// monomorphizes by the same rule the shipped `Vec` element does. A still-
 /// unlowerable type is the existing `LowerError::Unsupported` (no panic, REQ-6).
 fn tmap_type_suffix(ty: &Type) -> Result<String, LowerError> {
     Ok(match ty {
@@ -4154,11 +4153,11 @@ fn map_key_is_copy(key: &Type) -> bool {
 /// True iff a `Vec` element type is `Copy` (`.design/basis/04-collections.md`
 /// REQ-9): a Copy element (`u32`/`u64`/`usize`/`bool`) keeps the by-value
 /// accessor `get -> T` / `last -> T` (the byte-stable `vec_demo.th` form, vstd's
-/// index `self.data[i]` copies); a NON-Copy element (`String`/struct/enum/nested
-/// `Vec`) MUST use the BORROW accessor `get -> &T` / `last -> &T` (`&self.data[i]`),
-/// because vstd's index MOVES a non-Copy element out of the backing `Vec` (`E0507`,
+/// index `self.data[i]` copies); a non-Copy element (`String`/struct/enum/nested
+/// `Vec`) uses the borrow accessor `get -> &T` / `last -> &T` (`&self.data[i]`),
+/// because vstd's index moves a non-Copy element out of the backing `Vec` (`E0507`,
 /// the Stage-4 finding the borrow resolves). A `contains` (element `==`) is emitted
-/// only for a Copy element — `==` on a `String`/struct in exec position is not a
+/// only for a Copy element. `==` on a `String`/struct in exec position is not a
 /// v1 built-in (it joins when a corpus program needs it, REQ-1 frozen-set).
 /// True iff `expr` is the bounded-`Vec` no-param constructor `Vec::new()`
 /// (`.design/basis/04-collections.md` REQ-11): an `Expr::Call` whose callee path
@@ -4187,35 +4186,35 @@ pub(crate) fn elem_is_copy(elem: &Type) -> bool {
 // ---------------------------------------------------------------------------
 // Basis Stage 4 (`.design/basis/04-collections.md` REQ-5): the bounded-`Vec`
 // wrapper emission. A Thermite `Vec<T>` lowers to a newtype `TVec<elem>` over
-// `vstd::vec::Vec<T>` with the verified `len`/`spec_get`/`get`/`push` impl — the
-// GROUNDED `BVec`-over-`Vec<u64>` form. Materialized ONCE per element type, so a
+// `vstd::vec::Vec<T>` with the verified `len`/`spec_get`/`get`/`push` impl, the
+// grounded `BVec`-over-`Vec<u64>` form. Materialized once per element type, so a
 // program using `Vec<u64>` in many fns emits a single `TVecU64`.
 // ---------------------------------------------------------------------------
 
 /// The bounded-`Vec` capacity constant `CAP` (`.design/basis/04-collections.md`
-/// REQ-5 / the GROUNDED `BVec` `spec const CAP`): the SAME `1_000_000` bound the
+/// REQ-5 / the grounded `BVec` `spec const CAP`): the same `1_000_000` bound the
 /// corpus idiom uses (`conformance/sum.th` `req xs.len() <= 1_000_000`;
 /// `conformance/vec_demo.th` `push_one` `req v.len() < 1_000_000`). A `Vec` is
 /// bounded by design so the §4.2 cage never sees an unbounded sequence.
 const VEC_CAP: u64 = 1_000_000;
 
 /// Collect, in deterministic order and deduped, the element type of every
-/// `Vec<T>` the program references ANYWHERE it is REACHABLE
+/// `Vec<T>` the program references anywhere it is reachable
 /// (`.design/basis/04-collections.md` REQ-5/REQ-10/REQ-11). The wrapper struct is
 /// materialized once per element type.
 ///
-/// CLUSTER C6 (#98, REQ-11 — the `Vec::new()`-no-param reachability fix, the #86
-/// String-reachability analog): a `Vec<T>` is REACHABLE not only in a `fn`/`spec
-/// fn` PARAMETER or RETURN position (the original closure) but also in a
-/// `struct`/`enum`-variant FIELD type and a `fn`-body local `let` type annotation —
-/// a body-local `let mut v: Vec<u64> = Vec::new();` with no `Vec` param/return must
+/// Cluster C6 (#98, REQ-11 — the `Vec::new()`-no-param reachability fix, the #86
+/// String-reachability analog): a `Vec<T>` is reachable not only in a `fn`/`spec
+/// fn` parameter or return position (the original closure) but also in a
+/// `struct`/`enum`-variant field type and a `fn`-body local `let` type annotation.
+/// A body-local `let mut v: Vec<u64> = Vec::new();` with no `Vec` param/return must
 /// still emit `TVecU64` (else `E0425 cannot find type TVecU64`). The closure walks
-/// the SAME reachability set as `program_uses_string` (`ty_reaches_string` over
+/// the same reachability set as `program_uses_string` (`ty_reaches_string` over
 /// param/return + field + local `let`), keyed on `Type::Vec(inner)`.
 ///
-/// CLUSTER C6 (#98, REQ-10 — emission ORDER for nested): for a NESTED `Vec<Vec<_>>`
+/// Cluster C6 (#98, REQ-10 — emission order for nested): for a nested `Vec<Vec<_>>`
 /// the outer wrapper (`TVecTVecU64`) references the inner wrapper (`TVecU64`), so
-/// the inner element is noted BEFORE the outer — [`note`] recurses into a `Vec`
+/// the inner element is noted before the outer. [`note`] recurses into a `Vec`
 /// element first, then pushes the element itself, so the inner `TVec*` is emitted
 /// before the outer (verus needs each in scope before the wrapper that names it).
 pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
@@ -4238,8 +4237,8 @@ pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
                 note_vec_elems(&s.ret, &mut elems);
                 note_block_vec_elems(&s.body, &mut elems);
             }
-            // REQ-10/REQ-11: a `struct`/`enum`-variant FIELD typed `Vec<T>` reaches
-            // the element wrapper exactly as a param does (a `Buf { items: Vec<u64> }`
+            // REQ-10/REQ-11: a `struct`/`enum`-variant field typed `Vec<T>` reaches
+            // the element wrapper as a param does (a `Buf { items: Vec<u64> }`
             // or an enum payload). The #86 String-reachability analog over fields.
             Item::Struct(s) => {
                 for fd in &s.fields {
@@ -4266,30 +4265,30 @@ pub(crate) fn collect_vec_elem_types(program: &Program) -> Vec<Type> {
         }
     }
     // Cluster C5 (`.design/basis/07-strings.md` REQ-15, issue #102): the emitted
-    // `TString::split` method RETURNS a `TVecTString` (the `Vec<String>` wrapper), and
-    // the `split` method is emitted whenever ANY C5 op is used
-    // (`program_uses_string_search`) — including in a per-item subprogram (forge's
-    // `item_subprogram`) whose own return type is NOT `Vec<String>`. So weave the
+    // `TString::split` method returns a `TVecTString` (the `Vec<String>` wrapper), and
+    // the `split` method is emitted whenever any C5 op is used
+    // (`program_uses_string_search`), including in a per-item subprogram (forge's
+    // `item_subprogram`) whose own return type is not `Vec<String>`. So weave the
     // `Vec<String>` element (→ `TVecTString`) whenever the program uses a C5 op, so the
-    // wrapper `split` references is ALWAYS in scope (the REQ-10 element-wrapper weave,
+    // wrapper `split` references is in scope (the REQ-10 element-wrapper weave,
     // applied to `split`'s implicit result type). `note_vec_elems` dedups, so a
-    // program that ALSO has an explicit `Vec<String>` does not double-emit.
+    // program that also has an explicit `Vec<String>` does not double-emit.
     if program_uses_string_search(program) {
         note_vec_elems(&Type::Vec(Box::new(Type::String)), &mut elems);
     }
     elems
 }
 
-/// Note the `Vec` element type(s) REACHABLE in a single `Type` (REQ-10/REQ-11),
-/// deduped, INNER-FIRST. A nested `Vec<Vec<u64>>` element is itself a `Type::Vec`,
-/// so the inner element is noted BEFORE pushing the outer element — the inner
+/// Note the `Vec` element type(s) reachable in a single `Type` (REQ-10/REQ-11),
+/// deduped, inner-first. A nested `Vec<Vec<u64>>` element is itself a `Type::Vec`,
+/// so the inner element is noted before pushing the outer element: the inner
 /// `TVec*` wrapper is emitted before the outer that references it (REQ-10 emission
 /// order). Recurses through every type constructor (`Ref`/`Slice`/`Box`/`Generic`/
 /// `Vec`) so a `Vec` nested under a reference/box is reached.
 fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
     match ty {
         Type::Vec(inner) => {
-            // INNER-FIRST: a `Vec<u64>` element of `Vec<Vec<u64>>` must be noted
+            // Inner-first: a `Vec<u64>` element of `Vec<Vec<u64>>` must be noted
             // (and emitted) before the outer (REQ-10). Recurse into the element so
             // its own nested `Vec`s are noted first, then push the element itself.
             note_vec_elems(inner, elems);
@@ -4304,19 +4303,19 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
         | Type::Generic { arg: inner, .. }
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): a `Vec` nested
         // under an `Option<Vec<_>>` is reached through the option's element type,
-        // exactly as a `Box`/`Generic` inner is.
+        // as a `Box`/`Generic` inner is.
         | Type::Option(inner) => note_vec_elems(inner, elems),
-        // A `Result<T, E>` reaches a `Vec` in EITHER type argument (the `T` ok type
+        // A `Result<T, E>` reaches a `Vec` in either type argument (the `T` ok type
         // or the `E` error type), so both are recursed (inner-first preserved).
         Type::Result(ok, err) => {
             note_vec_elems(ok, elems);
             note_vec_elems(err, elems);
         }
         // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches a
-        // `Vec` in EITHER type argument (the key or the value), so both are recursed
-        // (inner-first preserved, exactly as `Result`'s two arguments are). A `Map`
-        // itself does NOT carry a `TVec` element type — its Vec-of-pairs backing is
-        // emitted by `emit_map_wrappers`, not the `TVec` path — so the `Map` node is
+        // `Vec` in either type argument (the key or the value), so both are recursed
+        // (inner-first preserved, as `Result`'s two arguments are). A `Map`
+        // itself does not carry a `TVec` element type (its Vec-of-pairs backing is
+        // emitted by `emit_map_wrappers`, not the `TVec` path), so the `Map` node is
         // not pushed as a `Vec` element; only its arguments are walked for nested
         // `Vec`s.
         Type::Map(k, v) => {
@@ -4324,8 +4323,8 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
             note_vec_elems(v, elems);
         }
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
-        // tuple type `(T, U, …)` reaches a `Vec` in ANY of its element types, so
-        // every element is recursed (inner-first preserved, exactly as `Result`'s
+        // tuple type `(T, U, …)` reaches a `Vec` in any of its element types, so
+        // every element is recursed (inner-first preserved, as `Result`'s
         // two arguments are).
         Type::Tuple(tys) => {
             for t in tys {
@@ -4338,7 +4337,7 @@ fn note_vec_elems(ty: &Type, elems: &mut Vec<Type>) {
 
 /// Note every `Vec` element type reachable in a body-local `let` type annotation
 /// (REQ-11 — the `Vec::new()`-no-param fix). Walks nested `if`/`loop` blocks, the
-/// SAME body-walk shape as `block_has_string_local` (the #86 analog), keyed on the
+/// same body-walk shape as `block_has_string_local` (the #86 analog), keyed on the
 /// `let`'s declared type via `note_vec_elems`.
 fn note_block_vec_elems(block: &Block, elems: &mut Vec<Type>) {
     for stmt in &block.stmts {
@@ -4366,8 +4365,8 @@ fn note_stmt_vec_elems(stmt: &Stmt, elems: &mut Vec<Type>) {
 
 /// Emit the `TVec<elem>` wrapper struct + its verified `len`/`spec_get`/`get`/
 /// `push` impl for every element type the program uses (REQ-5), in deterministic
-/// order. EMPTY when the program uses no `Vec` (byte-stable for the non-Vec
-/// corpus). The emitted form is EXACTLY the GROUNDED `BVec` over `vstd::vec::Vec`
+/// order. Empty when the program uses no `Vec` (byte-stable for the non-Vec
+/// corpus). The emitted form is the grounded `BVec` over `vstd::vec::Vec`
 /// (`verified, 0 errors`):
 ///
 /// ```verus
@@ -4390,13 +4389,13 @@ fn note_stmt_vec_elems(stmt: &Stmt, elems: &mut Vec<Type>) {
 /// }
 /// ```
 ///
-/// THE `final(self)` FINDING (REQ-5 / the design's recorded migration note): verus
-/// 0.2026.05.24 requires `final(self)` (NOT bare `self`) to disambiguate a `&mut`
+/// The `final(self)` finding (REQ-5 / the design's recorded migration note): verus
+/// 0.2026.05.24 requires `final(self)` (not bare `self`) to disambiguate a `&mut`
 /// receiver in a `push` postcondition. The `well_formed` capacity invariant + the
 /// no-OOB `get` (`req i < len`) + the capacity-preserving `push` (`req len < CAP`)
 /// are the Thermite-level additions threaded over vstd's verified `Vec::push`/
-/// `Vec::index`/`Vec::len` (which carry the heap proof) — NO `assume`/`external_body`
-/// (R-DEFER-9; the broken unguarded forms FAIL verus, the non-vacuity proof).
+/// `Vec::index`/`Vec::len` (which carry the heap proof). No `assume`/`external_body`
+/// (R-DEFER-9; the broken unguarded forms fail verus, the non-vacuity proof).
 fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
     let elems = collect_vec_elem_types(program);
     if elems.is_empty() {
@@ -4409,24 +4408,24 @@ fn emit_vec_wrappers(program: &Program) -> Result<String, LowerError> {
     Ok(out)
 }
 
-/// Emit ONE `TVec<elem>` wrapper struct + its verified op `impl` for a single
+/// Emit one `TVec<elem>` wrapper struct + its verified op `impl` for a single
 /// element type (`.design/basis/04-collections.md` REQ-5/REQ-8/REQ-9). The
 /// `well_formed`/`len`/`spec_get`/`push`/`pop_last`/`insert`/`remove` ops are
-/// element-type-AGNOSTIC (they shift/drop indices, never moving an element OUT),
-/// so they are identical for Copy and non-Copy elements. The element-RETURNING
+/// element-type-agnostic (they shift/drop indices, never moving an element out),
+/// so they are identical for Copy and non-Copy elements. The element-returning
 /// accessors `get`/`last` and `contains` diverge by Copy-ness (REQ-9):
 ///
-/// - **Copy element** (`u64` etc.): `get -> T` / `last -> T` by VALUE (vstd's
+/// - **Copy element** (`u64` etc.): `get -> T` / `last -> T` by value (vstd's
 ///   index copies, the byte-stable `vec_demo.th` form) + `contains` (element `==`).
-/// - **NON-Copy element** (`String`/struct/nested `Vec`): `get -> &T` / `last ->
-///   &T` by BORROW (`&self.data[i]`, `ens *result == v@[i]`), because vstd's index
-///   MOVES a non-Copy element out (`E0507`, the Stage-4 finding); `contains` is
+/// - **Non-Copy element** (`String`/struct/nested `Vec`): `get -> &T` / `last ->
+///   &T` by borrow (`&self.data[i]`, `ens *result == v@[i]`), because vstd's index
+///   moves a non-Copy element out (`E0507`, the Stage-4 finding); `contains` is
 ///   omitted (element `==` on a non-Copy type is not a v1 exec built-in).
 ///
-/// GROUNDED (real `verus 0.2026.05.24`): `Vec<u64>` all ops `9 verified, 0 errors`;
+/// Grounded (real `verus 0.2026.05.24`): `Vec<u64>` all ops `9 verified, 0 errors`;
 /// `Vec<String>`/`Vec<struct>`/nested `Vec<Vec<u64>>` the borrow form
-/// `4 verified, 0 errors`; the by-value `get` on a non-Copy element `E0507`. NO
-/// `assume`/`external_body` (R-DEFER-9) — every contract is threaded over vstd's
+/// `4 verified, 0 errors`; the by-value `get` on a non-Copy element `E0507`. No
+/// `assume`/`external_body` (R-DEFER-9): every contract is threaded over vstd's
 /// verified `Vec::push`/`pop`/`insert`/`remove`/`index`/`len`. The `&mut`-mutating
 /// ops (`push`/`pop_last`/`insert`/`remove`) use `final(self)` (the REQ-5
 /// grounding: verus 0.2026.05.24 disambiguates a `&mut` postcondition with
@@ -4451,9 +4450,9 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     )
     .ok();
     // The no-OOB exec accessor `get` (REQ-5/REQ-9): `req i < len`. A Copy element
-    // returns by VALUE (`result == v@[i]`, vstd's index copies); a non-Copy element
-    // returns a BORROW `&T` (`*result == v@[i]`, `&self.data[i]` — vstd's index
-    // would MOVE the element out, `E0507`, so the borrow is the load-bearing fix).
+    // returns by value (`result == v@[i]`, vstd's index copies); a non-Copy element
+    // returns a borrow `&T` (`*result == v@[i]`, `&self.data[i]`); vstd's index
+    // would move the element out (`E0507`), so the borrow is the fix.
     if copy {
         writeln!(out, "    pub fn get(&self, i: usize) -> (result: {ety})").ok();
         out.push_str("        requires i < self.data.len(),\n");
@@ -4467,8 +4466,8 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     }
     // The capacity-preserving exec mutator `push` (REQ-5): `req well_formed && len <
     // CAP`, `ens final(self).well_formed() && len' == len+1 && v@[old_len] == x`. The
-    // `final(self)` &mut postcondition. `push(x: T)` CONSUMES the owned element (no
-    // `Copy` needed — moves the value into the backing run), so it is identical for
+    // `final(self)` &mut postcondition. `push(x: T)` consumes the owned element (no
+    // `Copy` needed; moves the value into the backing run), so it is identical for
     // Copy and non-Copy elements (REQ-9).
     writeln!(out, "    pub fn push(&mut self, x: {ety})").ok();
     out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
@@ -4477,15 +4476,15 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     out.push_str("            final(self).well_formed(),\n");
     out.push_str("            final(self).data.len() == old(self).data.len() + 1,\n");
     out.push_str("            final(self).data@[old(self).data.len() as int] == x,\n");
-    // The element-preservation frame (REQ-5 GROUNDED `BVec::push` seed): `push`
-    // APPENDS without disturbing the prior elements, so a caller can prove an
+    // The element-preservation frame (REQ-5 grounded `BVec::push` seed): `push`
+    // appends without disturbing the prior elements, so a caller can prove an
     // earlier `get(j)` still reads the originally-pushed element after a later
-    // `push` (the accumulator soundness — a token list / editor buffer keeps its
+    // `push` (the accumulator soundness: a token list / editor buffer keeps its
     // earlier elements). Mirrors the `pop_last` kept-prefix frame below.
     out.push_str("            forall|j: int| 0 <= j < old(self).data.len()\n");
     out.push_str("                ==> final(self).data@[j] == old(self).data@[j],\n");
     out.push_str("    { self.data.push(x) }\n");
-    // The tuple-free `pop_last` (REQ-8): drop the LAST element. `req len > 0`, `ens
+    // The tuple-free `pop_last` (REQ-8): drop the last element. `req len > 0`, `ens
     // len' == len-1` + the kept-prefix frame. `&mut`, `final(self)`. The companion
     // `last` reads the value (no tuple). Element-agnostic (vstd's `pop` drops an
     // index, never moving an element out as a result here).
@@ -4497,7 +4496,7 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     out.push_str("                ==> final(self).data@[j] == old(self).data@[j],\n");
     out.push_str("    { self.data.pop(); }\n");
     // The final-element accessor `last` (REQ-8): `req len > 0`, `ens result ==
-    // v@[len-1]`. `&self`-reading (no `final`). Copy → by VALUE; non-Copy → BORROW
+    // v@[len-1]`. `&self`-reading (no `final`). Copy → by value; non-Copy → borrow
     // `&T` (the same no-move rule as `get`, REQ-9).
     if copy {
         writeln!(out, "    pub fn last(&self) -> (result: {ety})").ok();
@@ -4512,7 +4511,8 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     }
     // The `insert` op (REQ-8): splice `x` at index `i`, shifting the suffix right.
     // `req well_formed && len < CAP && i <= len` (the `i <= len` is the no-OOB
-    // safety — an insert AT `len` is an append, NOT `i < len`). `ens len' == len+1
+    // safety: an insert at `len` is an append, so `i <= len` rather than `i < len`).
+    // `ens len' == len+1
     // && v'@ == v@.insert(i, x)`. `&mut`, `final(self)`. Element-agnostic.
     writeln!(out, "    pub fn insert(&mut self, i: usize, x: {ety})").ok();
     out.push_str("        requires old(self).well_formed(), old(self).data.len() < ");
@@ -4531,10 +4531,10 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
     out.push_str("            final(self).data.len() == old(self).data.len() - 1,\n");
     out.push_str("            final(self).data@ == old(self).data@.remove(i as int),\n");
     out.push_str("    { self.data.remove(i); }\n");
-    // The `contains` op (REQ-8): an EXEC linear scan with the standard
+    // The `contains` op (REQ-8): an exec linear scan with the standard
     // `forall|k| 0 <= k < i ==> v@[k] != x` invariant + `decreases len - i`. `req
     // well_formed`, `ens result == exists|k| 0<=k<len && v@[k]==x`. Emitted only for
-    // a Copy element — `==` on a non-Copy element (`String`/struct) in exec position
+    // a Copy element; `==` on a non-Copy element (`String`/struct) in exec position
     // is not a v1 built-in (REQ-9; it joins when a corpus program needs it).
     if copy {
         writeln!(
@@ -4571,18 +4571,18 @@ fn emit_one_vec_wrapper(elem: &Type) -> Result<String, LowerError> {
 // wrapper emission. A Thermite `Map<K, V>` lowers to a newtype `TMap<K,V>` over a
 // `vstd::vec::Vec<(K, V)>`-of-pairs backing (C6 `Vec<tuple>` + C9 `(K,V)` pair)
 // with the verified `spec_dom`/`spec_contains_key`/`len`/`contains_key`/`get`/
-// `insert` impl — the GROUNDED `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` form
-// (`9 verified, 0 errors`). Materialized ONCE per `(K, V)` pair the program uses.
+// `insert` impl: the grounded `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` form
+// (`9 verified, 0 errors`). Materialized once per `(K, V)` pair the program uses.
 // ---------------------------------------------------------------------------
 
-/// The bounded-`Map` capacity bound (`.design/basis/13-map.md` REQ-4 / the GROUNDED
-/// `MAP_CAP`): the SAME `1_000_000` idiom as [`VEC_CAP`]. A `Map`'s `well_formed`
+/// The bounded-`Map` capacity bound (`.design/basis/13-map.md` REQ-4 / the grounded
+/// `MAP_CAP`): the same `1_000_000` idiom as [`VEC_CAP`]. A `Map`'s `well_formed`
 /// carries `data.len() <= MAP_CAP` so the §4.2 cage never sees an unbounded backing.
 const MAP_CAP: u64 = 1_000_000;
 
 /// Collect, in deterministic order and deduped, every `(K, V)` pair the program
-/// uses in a `Map<K, V>` REACHABLE anywhere (a `fn`/`spec fn` param/return, a
-/// `struct`/`enum`-variant FIELD, a `fn`-body local `let` annotation) — the SAME
+/// uses in a `Map<K, V>` reachable anywhere (a `fn`/`spec fn` param/return, a
+/// `struct`/`enum`-variant field, a `fn`-body local `let` annotation): the same
 /// reachability closure as [`collect_vec_elem_types`], keyed on `Type::Map(k, v)`.
 /// The wrapper struct is materialized once per `(K, V)` pair.
 pub(crate) fn collect_map_kv_types(program: &Program) -> Vec<(Type, Type)> {
@@ -4638,8 +4638,8 @@ pub(crate) fn collect_map_kv_types(program: &Program) -> Vec<(Type, Type)> {
 fn note_map_kv(ty: &Type, pairs: &mut Vec<(Type, Type)>) {
     match ty {
         Type::Map(k, v) => {
-            // Recurse into the key/value first (a `Map<_, Map<_,_>>` inner pair must
-            // be noted/emitted before the outer that names it), then push this pair.
+            // Recurse into the key/value first (a `Map<_, Map<_,_>>` inner pair is
+            // noted/emitted before the outer that names it), then push this pair.
             note_map_kv(k, pairs);
             note_map_kv(v, pairs);
             let pair = ((**k).clone(), (**v).clone());
@@ -4694,8 +4694,8 @@ fn note_stmt_map_kv(stmt: &Stmt, pairs: &mut Vec<(Type, Type)>) {
 }
 
 /// Emit the `TMap<K,V>` wrapper struct + its verified op `impl` for every `(K, V)`
-/// pair the program uses (REQ-4), in deterministic order. EMPTY when the program
-/// uses no `Map` (byte-stable for the non-`Map` corpus — no regression).
+/// pair the program uses (REQ-4), in deterministic order. Empty when the program
+/// uses no `Map` (byte-stable for the non-`Map` corpus, no regression).
 fn emit_map_wrappers(program: &Program) -> Result<String, LowerError> {
     let pairs = collect_map_kv_types(program);
     if pairs.is_empty() {
@@ -4708,15 +4708,15 @@ fn emit_map_wrappers(program: &Program) -> Result<String, LowerError> {
     Ok(out)
 }
 
-/// Emit ONE `TMap<K,V>` wrapper struct + its verified op `impl` for a single
-/// `(K, V)` pair (`.design/basis/13-map.md` REQ-4). The emitted form is EXACTLY the
-/// GROUNDED `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` (`9 verified, 0 errors`):
+/// Emit one `TMap<K,V>` wrapper struct + its verified op `impl` for a single
+/// `(K, V)` pair (`.design/basis/13-map.md` REQ-4). The emitted form is the
+/// grounded `TMapU64U64`-over-`vstd::vec::Vec<(u64,u64)>` (`9 verified, 0 errors`):
 /// the `well_formed` capacity + key-uniqueness invariant, the `spec_dom`/
 /// `spec_contains_key`/`len` spec abstraction view, the exec linear-scan
-/// `contains_key` (`ens result == spec_contains_key(k)`), the no-OOB /
-/// handled-or-loud `get -> Option<V>` (absent → `None`, NOT a wrong value), and the
+/// `contains_key` (`ens result == spec_contains_key(k)`), the no-OOB
+/// `get -> Option<V>` (absent → `None`, not a wrong value), and the
 /// append-under-`!contains_key` `insert` with the `final(self)` &mut postcondition.
-/// NO `assume`/`external_body` (R-DEFER-9) — every contract is real verus map
+/// No `assume`/`external_body` (R-DEFER-9): every contract is real verus map
 /// reasoning threaded over vstd's verified `Vec::push`/`Vec::index`/`Vec::len`. v1
 /// grounds Copy keys (`Map<u64,u64>`, OQ-4); a non-Copy key is the existing
 /// `LowerError::Unsupported` via `tmap_name`.
@@ -4727,7 +4727,7 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     if !map_key_is_copy(key) {
         // v1 grounds Copy keys only (OQ-4): a non-Copy key (`Map<String, _>`) needs
         // the borrow-comparison rule (the REQ-9 finding) not yet grounded. Refuse
-        // loudly via the existing error enum — no panic, no silent wrong code.
+        // via the existing error enum: no panic, no silent wrong code.
         return Err(LowerError::Unsupported {
             what: format!(
                 "Map key type {kty} (v1 grounds Copy keys — Map<u64, u64>; a non-Copy \
@@ -4741,7 +4741,7 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     writeln!(out, "pub struct {name} {{ pub data: Vec<({kty}, {vty})> }}").ok();
     writeln!(out, "impl {name} {{").ok();
     // The key-set abstraction `spec_dom` (the spec membership view; REQ-4). A named
-    // spec fn over a `Set` comprehension with an explicit trigger (the §4.2 cage —
+    // spec fn over a `Set` comprehension with an explicit trigger (the §4.2 cage:
     // never an anonymous nested quantifier admitted raw).
     out.push_str("    pub open spec fn spec_dom(&self) -> Set<int> {\n");
     out.push_str("        Set::new(|kk: int| exists|j: int|\n");
@@ -4750,7 +4750,7 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     );
     out.push_str("    }\n");
     // The `well_formed` capacity + key-uniqueness invariant (REQ-4): `data.len() <=
-    // MAP_CAP` AND every distinct pair has a distinct key. The forall carries an
+    // MAP_CAP` and every distinct pair has a distinct key. The forall carries an
     // explicit dual-key trigger (both quantified vars covered).
     out.push_str("    pub open spec fn well_formed(&self) -> bool {\n");
     writeln!(out, "        &&& self.data.len() <= {MAP_CAP}").ok();
@@ -4775,7 +4775,7 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     out.push_str("    }\n");
     out.push_str("    pub open spec fn len(&self) -> nat { self.data.len() as nat }\n");
     // The exec linear-scan `contains_key` (REQ-4): `req well_formed`, `ens result ==
-    // spec_contains_key(k)`, the scan invariant + `decreases`. PURE.
+    // spec_contains_key(k)`, the scan invariant + `decreases`. Pure.
     writeln!(
         out,
         "    pub fn contains_key(&self, k: {kty}) -> (result: bool)"
@@ -4799,10 +4799,10 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     out.push_str("        }\n");
     out.push_str("        false\n");
     out.push_str("    }\n");
-    // The no-OOB / handled-or-loud `get -> Option<V>` (REQ-4): `req well_formed`,
+    // The no-OOB `get -> Option<V>` (REQ-4): `req well_formed`,
     // `ens match result { Some(v) => contains_key(k) && (the pair exists), None =>
-    // !contains_key(k) }` — an ABSENT key returns None, NOT a wrong value (the C7
-    // Option, the absent → None refusal). PURE. v1 grounds a Copy value (by value).
+    // !contains_key(k) }`. An absent key returns None, not a wrong value (the C7
+    // Option, the absent → None case). Pure. v1 grounds a Copy value (by value).
     writeln!(
         out,
         "    pub fn get(&self, k: {kty}) -> (result: Option<{vty}>)"
@@ -4836,8 +4836,8 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
     out.push_str("    }\n");
     // The append-under-`!contains_key` `insert` (REQ-4, OQ-2 the v1 form): `req
     // well_formed && len < MAP_CAP && !contains_key(k)`, `ens final(self)...` (the
-    // `final(self)` &mut postcondition — the SHIPPED Vec::push grounding finding) —
-    // the new pair maps `k -> v`, capacity + uniqueness preserved, `len' == len + 1`.
+    // `final(self)` &mut postcondition, the shipped Vec::push grounding finding).
+    // The new pair maps `k -> v`, capacity + uniqueness preserved, `len' == len + 1`.
     // Carries `fx alloc` at the surface (the Vec-push / Effect::Alloc rule). The
     // proof: the new pair witnesses the membership; uniqueness holds because the new
     // key was absent by precondition.
@@ -4887,18 +4887,18 @@ fn emit_one_map_wrapper(key: &Type, val: &Type) -> Result<String, LowerError> {
 // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded-`String`
 // wrapper emission. A Thermite `String` lowers to a newtype `TString` over
 // `vstd::vec::Vec<u8>` with the verified `well_formed`/`len`/`byte_at`/`concat`/
-// `slice` impl — the GROUNDED `TString`-over-`Vec<u8>` form. Materialized ONCE
-// when the program references `String` (the element type is FIXED to `u8`, so —
-// unlike the per-element `Vec` wrapper — there is exactly one `TString`).
+// `slice` impl: the grounded `TString`-over-`Vec<u8>` form. Materialized once
+// when the program references `String` (the element type is fixed to `u8`, so,
+// unlike the per-element `Vec` wrapper, there is one `TString`).
 // ---------------------------------------------------------------------------
 
-/// True if the `String` type (`Type::String`) is REACHABLE anywhere in `ty` —
+/// True if the `String` type (`Type::String`) is reachable anywhere in `ty`:
 /// directly, or nested under a `Ref`/`Slice`/`Vec`/`Box`/`Generic` constructor
 /// (a `&String` view, a `Vec<String>`, a `Box<String>`). The whole type-constructor
 /// closure is walked so no String-bearing type position is missed (REQ-4).
-/// True if `ty` is a `String` VALUE param — a bare `String` or a `&String` borrow
-/// (the `str`-view role), but NOT a `Vec<String>`/`Box<String>`/struct field (those
-/// carry their OWN wrapper invariant, named differently). Used to weave the `TString`
+/// True if `ty` is a `String` value param: a bare `String` or a `&String` borrow
+/// (the `str`-view role), but not a `Vec<String>`/`Box<String>`/struct field (those
+/// carry their own wrapper invariant, named differently). Used to weave the `TString`
 /// `well_formed()` precondition for a `String`-receiver/needle param of a C5
 /// search/transform fn (`.design/basis/07-strings.md` REQ-13..16, issue #102): the
 /// emitted method requires `self.well_formed()`/`p.well_formed()`, and a `String`
@@ -4911,11 +4911,11 @@ fn is_string_param_ty(ty: &Type) -> bool {
     }
 }
 
-/// True iff `ty` is a `Map<K, V>` VALUE param — a bare `Map` or a `&Map`/`&mut Map`
+/// True iff `ty` is a `Map<K, V>` value param: a bare `Map` or a `&Map`/`&mut Map`
 /// borrow (`.design/basis/13-map.md` REQ-4). Used to weave the `TMap`
 /// `well_formed()` precondition for a `Map`-receiver param of a fn calling
 /// `contains_key`/`get`/`insert` (those methods `require self.well_formed()`), the
-/// SAME automatic threading [`is_string_param_ty`] gives a `String` param. Sees
+/// same automatic threading [`is_string_param_ty`] gives a `String` param. Sees
 /// through one borrow only (a `&&Map` is not an invariant-bearing receiver).
 fn is_map_param_ty(ty: &Type) -> bool {
     match ty {
@@ -4925,13 +4925,13 @@ fn is_map_param_ty(ty: &Type) -> bool {
     }
 }
 
-/// The named-type of a param, SEEING THROUGH a single `&` borrow (REQ-8 automatic
+/// The named-type of a param, seeing through a single `&` borrow (REQ-8 automatic
 /// threading, blocker #105): `Buffer` and `&Buffer` both yield `Some("Buffer")` so
 /// the invariant-bearing-struct `well_formed()` weave fires for a borrowed receiver
-/// exactly as for an owned one. Mirrors how `is_string_param_ty` sees through `Ref`
-/// for the C5 String weave — the type invariant is a property of the TYPE, implicit
-/// at every use whether the value is owned or borrowed. NOT a deref chain (a `&&T`
-/// or `&Box<T>` is not an invariant-bearing struct receiver) — one borrow only.
+/// as for an owned one. Mirrors how `is_string_param_ty` sees through `Ref`
+/// for the C5 String weave: the type invariant is a property of the type, implicit
+/// at every use whether the value is owned or borrowed. Not a deref chain (a `&&T`
+/// or `&Box<T>` is not an invariant-bearing struct receiver); one borrow only.
 fn named_struct_param(ty: &Type) -> Option<&str> {
     match ty {
         Type::Named(name) => Some(name.as_str()),
@@ -4954,32 +4954,32 @@ fn ty_reaches_string(ty: &Type) -> bool {
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): a `String` nested
         // under an `Option<String>` is reached through the option's element type.
         | Type::Option(inner) => ty_reaches_string(inner),
-        // A `Result<T, E>` reaches a `String` in EITHER type argument.
+        // A `Result<T, E>` reaches a `String` in either type argument.
         Type::Result(ok, err) => ty_reaches_string(ok) || ty_reaches_string(err),
         // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches a
-        // `String` in EITHER type argument (a `Map<String, _>` key or a
-        // `Map<_, String>` value), so both are recursed (exactly as `Result`'s two
-        // arguments are) — the `TString` wrapper must be in scope for the
+        // `String` in either type argument (a `Map<String, _>` key or a
+        // `Map<_, String>` value), so both are recursed (as `Result`'s two
+        // arguments are); the `TString` wrapper must be in scope for the
         // Vec-of-pairs backing.
         Type::Map(k, v) => ty_reaches_string(k) || ty_reaches_string(v),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
-        // tuple type reaches a `String` if ANY element does.
+        // tuple type reaches a `String` if any element does.
         Type::Tuple(tys) => tys.iter().any(ty_reaches_string),
         Type::Prim(_) | Type::Unit | Type::Named(_) => false,
     }
 }
 
-/// True if the program references the `String` type in ANY reachable type
-/// position — a `fn`/`spec fn` parameter or return, a `struct`/`enum`-variant
-/// FIELD, or a `fn`-body local `let` annotation — OR uses a string literal
+/// True if the program references the `String` type in any reachable type
+/// position (a `fn`/`spec fn` parameter or return, a `struct`/`enum`-variant
+/// field, or a `fn`-body local `let` annotation), or uses a string literal
 /// anywhere (REQ-4). Every such position needs the `TString` wrapper in scope (a
 /// struct field `text: String` lowers to `pub text: TString`; a literal
-/// materializes a `TString`). The wrapper is emitted once iff this holds (EMPTY
-/// otherwise — byte-stable for the non-`String` corpus).
+/// materializes a `TString`). The wrapper is emitted once iff this holds (empty
+/// otherwise, byte-stable for the non-`String` corpus).
 ///
-/// CRITICAL for the per-item sub-program weave (forge `#86`): a `forge check`
-/// per-item sub-program may be a STRUCT decl alone (`struct Buf { text: String,
-/// cursor: u64 }`) whose only `String` reference is a FIELD type — so the struct
+/// For the per-item sub-program weave (forge `#86`): a `forge check`
+/// per-item sub-program may be a struct decl alone (`struct Buf { text: String,
+/// cursor: u64 }`) whose only `String` reference is a field type, so the struct
 /// and enum field arms below are load-bearing, not a `continue`. Mirrors the way
 /// `reachable_adt_deps` weaves the struct decls a String-bearing item reaches.
 fn program_uses_string(program: &Program) -> bool {
@@ -5031,7 +5031,7 @@ fn variant_reaches_string(v: &thermite_syntax::ast::VariantDef) -> bool {
 }
 
 /// True if a block contains a `let` whose type annotation reaches `String`
-/// (REQ-4) — a `let s: String = …` local needs the `TString` wrapper even when no
+/// (REQ-4). A `let s: String = …` local needs the `TString` wrapper even when no
 /// param/return/field is typed `String`. Walks nested `if`/`loop` blocks.
 fn block_has_string_local(block: &Block) -> bool {
     block.stmts.iter().any(stmt_has_string_local)
@@ -5052,7 +5052,7 @@ fn stmt_has_string_local(stmt: &Stmt) -> bool {
     }
 }
 
-/// True if a block contains a string-literal expression anywhere (REQ-1) — a
+/// True if a block contains a string-literal expression anywhere (REQ-1). A
 /// literal materializes a `TString`, so the wrapper must be emitted even when no
 /// parameter/return is typed `String` (e.g. `literal_len()`'s `"hello".len()`).
 fn block_has_str_lit(block: &Block) -> bool {
@@ -5097,8 +5097,8 @@ fn expr_has_str_lit(expr: &Expr) -> bool {
 
 /// Emit the `TString` wrapper struct + its verified `well_formed`/`spec_len`/
 /// `len`/`spec_byte_at`/`byte_at`/`concat`/`slice` impl when the program uses
-/// `String` (REQ-4), in deterministic order. EMPTY otherwise. The emitted form is
-/// EXACTLY the GROUNDED `TString` over `vstd::vec::Vec<u8>` (`verified, 0
+/// `String` (REQ-4), in deterministic order. Empty otherwise. The emitted form is
+/// the grounded `TString` over `vstd::vec::Vec<u8>` (`verified, 0
 /// errors`):
 ///
 /// ```verus
@@ -5117,20 +5117,20 @@ fn expr_has_str_lit(expr: &Expr) -> bool {
 /// }
 /// ```
 ///
-/// THE BYTE CHAR MODEL (REQ-2): `byte_at` returns `u64` (the corpus oracle's
+/// The byte char model (REQ-2): `byte_at` returns `u64` (the corpus oracle's
 /// `first_byte -> u64` shape; a byte zero-extends into `u64`); the exec `len`
-/// returns `u64` (the corpus `greeting_len -> u64`) while the SPEC fn is `spec_len`
+/// returns `u64` (the corpus `greeting_len -> u64`) while the spec fn is `spec_len`
 /// (a contract names `spec_len`, the exec `len` cannot be named in a contract). The
-/// no-OOB `byte_at` (`req i < self.data.len()`) is the editor's core safety — the
-/// unguarded form FAILS verus (`0 verified, 1 errors`, the L0 demonstration,
-/// R-DEFER-9). `concat`/`slice` carry the bounded length identity AND the
-/// BYTE-CONTENT relation (#277, the #276 prerequisite): `concat`'s `ens result.data@
+/// no-OOB `byte_at` (`req i < self.data.len()`) is the editor's core safety; the
+/// unguarded form fails verus (`0 verified, 1 errors`, the L0 demonstration,
+/// R-DEFER-9). `concat`/`slice` carry the bounded length identity and the
+/// byte-content relation (#277, the #276 prerequisite): `concat`'s `ens result.data@
 /// == self.data@ + b.data@` (the appended view) and `slice`'s `ens result.data@ ==
-/// self.data@.subrange(lo, hi)` (the half-open subrange, the `trim` spelling) — the
-/// emitted bodies PROVE these via the subrange-push invariant (no `assume`, mirroring
+/// self.data@.subrange(lo, hi)` (the half-open subrange, the `trim` spelling). The
+/// emitted bodies prove these via the subrange-push invariant (no `assume`, mirroring
 /// `trim`). `slice` requires `self.well_formed()` so the copied run stays `<= CAP`.
-/// NO `assume`/`external_body`
-/// (R-DEFER-9) — every Thermite-level contract is threaded over vstd's verified
+/// No `assume`/`external_body`
+/// (R-DEFER-9): every Thermite-level contract is threaded over vstd's verified
 /// `Vec<u8>::push`/`index`/`len` (which carry the heap proof).
 fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     if !program_uses_string(program) {
@@ -5164,7 +5164,7 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     // self.well_formed() && b.well_formed() && len_a + len_b <= CAP`, `ens
     // result.well_formed() && result.len() == len_a + len_b`. `b` is by value to
     // match the corpus `a.concat(b)` (no `&` insertion needed). An owned-value
-    // construction — no `&mut`/`final(self)` (the result is a fresh value).
+    // construction, no `&mut`/`final(self)` (the result is a fresh value).
     out.push_str("    pub fn concat(&self, b: TString) -> (result: TString)\n");
     out.push_str("        requires self.well_formed(), b.well_formed(),\n");
     writeln!(
@@ -5174,11 +5174,11 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     .ok();
     out.push_str("        ensures result.well_formed(),\n");
     out.push_str("                result.data.len() == self.data.len() + b.data.len(),\n");
-    // #277 (the #276 prerequisite): the BYTE-CONTENT relation — the appended view
+    // #277 (the #276 prerequisite): the byte-content relation, the appended view
     // `result@ == self@ + b@` (vstd `Seq::add`). Strengthens the prior length-only
     // `ens`, which left `slice_id`/`bytes_eq`-style content proofs unprovable. The
-    // body below PROVES it (the two copy loops carry append-subrange invariants;
-    // mirrors `trim`'s subrange-push proof shape). GROUNDED `verified, 0 errors`.
+    // body below proves it (the two copy loops carry append-subrange invariants;
+    // mirrors `trim`'s subrange-push proof shape). Grounded `verified, 0 errors`.
     out.push_str("                result.data@ == self.data@ + b.data@,\n");
     out.push_str("    {\n");
     out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
@@ -5239,17 +5239,17 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     out.push_str("    }\n");
     // The bounded substring `slice` (REQ-4): a bounded copy, `req self.well_formed()
     // && lo <= hi && hi <= len`, `ens result.well_formed() && result.len() == hi -
-    // lo`. The owned-copy form (OQ-4 RESOLVED — owned, not a borrowed view, so no
-    // region/lifetime reasoning §4.4 defers). `self.well_formed()` keeps the copied
+    // lo`. The owned-copy form (OQ-4 resolved): owned rather than a borrowed view, so no
+    // region/lifetime reasoning §4.4 defers. `self.well_formed()` keeps the copied
     // run <= CAP (the invariant carries the CAP bound).
     out.push_str("    pub fn slice(&self, lo: usize, hi: usize) -> (result: TString)\n");
     out.push_str("        requires self.well_formed(), lo <= hi, hi <= self.data.len(),\n");
     out.push_str("        ensures result.well_formed(), result.data.len() == hi - lo,\n");
-    // #277 (the #276 prerequisite): the BYTE-CONTENT relation — the result IS the
-    // half-open subrange `self@[lo..hi)` (the exact spelling of the `trim` precedent).
+    // #277 (the #276 prerequisite): the byte-content relation, the result is the
+    // half-open subrange `self@[lo..hi)` (the spelling of the `trim` precedent).
     // Strengthens the prior length-only `ens` so a caller's `bytes_eq`/`slice_id`
-    // content proof discharges. The body PROVES it via the subrange-push invariant
-    // (verbatim the `trim` copy-loop shape). GROUNDED `verified, 0 errors`.
+    // content proof discharges. The body proves it via the subrange-push invariant
+    // (verbatim the `trim` copy-loop shape). Grounded `verified, 0 errors`.
     out.push_str("                result.data@ == self.data@.subrange(lo as int, hi as int),\n");
     out.push_str("    {\n");
     out.push_str("        let mut out: Vec<u8> = Vec::new();\n");
@@ -5280,10 +5280,10 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     out.push_str("    }\n");
     // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): the verified
     // byte-builder. `from_byte(b)` builds a 1-byte `String`; `push_byte(b)` appends
-    // one byte returning a FRESH owned `String` (the `&self`/owned-result form — no
+    // one byte returning a fresh owned `String` (the `&self`/owned-result form: no
     // `&mut`/`final(self)`, consistent with `concat`'s owned result). The surface
-    // byte is a `u64` (the SAME zero-extended convention as `byte_at -> u64`), cast
-    // to the `u8` backing element. GROUNDED `verified, 0 errors` (the copy loop with
+    // byte is a `u64` (the same zero-extended convention as `byte_at -> u64`), cast
+    // to the `u8` backing element. Grounded `verified, 0 errors` (the copy loop with
     // the element-frame invariant `forall|j| 0 <= j < i ==> out@[j] == self.data@[j]`
     // + the new-byte placement `result@[old_len] == b`). All constructing (`fx alloc`).
     out.push_str("    pub fn from_byte(b: u64) -> (result: TString)\n");
@@ -5322,15 +5322,15 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): the string
     // search/transform ops. Emitted only when the program uses a C5 op
     // (`program_uses_string_search`) so the non-C5 corpus is byte-unaffected (no
-    // regression). The GROUNDED forms (`verus 0.2026.05.24`, no `assume`/`admit`/
-    // `external_body` — R-DEFER-9): the predicate scans `14 verified, 0 errors`,
+    // regression). The grounded forms (`verus 0.2026.05.24`, no `assume`/`admit`/
+    // `external_body`, R-DEFER-9): the predicate scans `14 verified, 0 errors`,
     // `split` `7 verified, 0 errors`, `trim` `8 verified, 0 errors`.
     if program_uses_string_search(program) {
-        // Blocker #130: the search methods INTER-CALL the generated free fns
+        // Blocker #130: the search methods inter-call the generated free fns
         // (`occurs_at`/`contains_sub`/`count_sep`/`sep_free`/`lemma_count_push`), so
         // build them into a local buffer, rewrite those references to the reserved
-        // names, then append — matching the reserved-named defs (`emit_string_search_
-        // defs`). The METHOD names themselves (`matches_at`/`split`/…) are inherent
+        // names, then append, matching the reserved-named defs (`emit_string_search_
+        // defs`). The method names themselves (`matches_at`/`split`/…) are inherent
         // (namespaced under the impl), so they are not reserved.
         let mut methods = String::new();
         emit_string_search_methods(&mut methods, cap);
@@ -5340,22 +5340,22 @@ fn emit_string_wrapper(program: &Program) -> Result<String, LowerError> {
     Ok(out)
 }
 
-/// Emit the C5 string search/transform METHODS onto the open `TString` impl
+/// Emit the C5 string search/transform methods onto the open `TString` impl
 /// (`.design/basis/07-strings.md` REQ-13..16, issue #102). Appended inside
 /// `emit_string_wrapper`'s impl block (the open brace is still pending). The
-/// contracts NAME the seeded spec fns `occurs_at`/`contains_sub`/`count_sep`/
+/// contracts name the seeded spec fns `occurs_at`/`contains_sub`/`count_sep`/
 /// `sep_free` (emitted at module scope by `emit_string_search_defs`); verus resolves
-/// them order-independently within the single `verus!` block. The exact GROUNDED
-/// forms — the inner `matches_at` helper + the byte-scan predicates (REQ-13), the
+/// them order-independently within the single `verus!` block. The grounded
+/// forms: the inner `matches_at` helper + the byte-scan predicates (REQ-13), the
 /// `find -> Option<u64>` occurrence scan (REQ-14, the C7 spec-`match`-in-`ens`), the
 /// `split -> TVecTString` push-loop (REQ-15, reusing C6's `TVecTString`), and the
 /// `trim -> TString` whitespace scan + bounded copy (REQ-16). `cap` is the §4.2
 /// capacity bound (`VEC_CAP`). No `unwrap`/`expect`/`panic!` (R-CODE-2), no proof
-/// cheat (the scans + split + the lemma are PROVED).
+/// cheat (the scans + split + the lemma are proved).
 fn emit_string_search_methods(out: &mut String, cap: u64) {
     // The inner occurrence helper: does `p` occur at byte offset `at`? A scan over
     // `p`'s bytes with the prefix-match invariant; the `at <= len - plen` form keeps
-    // the `at + plen` precondition from overflowing `usize` (the GROUNDED form).
+    // the `at + plen` precondition from overflowing `usize` (the grounded form).
     // Consumed by `starts_with`/`ends_with`/`contains`/`find`.
     out.push_str("    pub fn matches_at(&self, p: &TString, at: usize) -> (result: bool)\n");
     out.push_str("        requires self.well_formed(), p.well_formed(),\n");
@@ -5383,7 +5383,7 @@ fn emit_string_search_methods(out: &mut String, cap: u64) {
     out.push_str("        true\n");
     out.push_str("    }\n");
     // starts_with: `occurs_at(s@, needle@, 0)` (REQ-13). The empty-needle / oversized-
-    // needle guard returns false BEFORE calling `matches_at` (its `req` would not hold).
+    // needle guard returns false before calling `matches_at` (its `req` would not hold).
     out.push_str("    pub fn starts_with(&self, p: &TString) -> (result: bool)\n");
     out.push_str("        requires self.well_formed(), p.well_formed(),\n");
     out.push_str("        ensures result == occurs_at(self.data@, p.data@, 0),\n");
@@ -5402,13 +5402,13 @@ fn emit_string_search_methods(out: &mut String, cap: u64) {
     out.push_str("        let off: usize = self.data.len() - p.data.len();\n");
     out.push_str("        self.matches_at(p, off)\n");
     out.push_str("    }\n");
-    // contains: `contains_sub(s@, needle@)` — the outer occurrence-position scan
+    // contains: `contains_sub(s@, needle@)`, the outer occurrence-position scan
     // calling `matches_at`, with the no-match-so-far invariant + the
     // `assert forall .. !occurs_at .. by` blocks that prove `!contains_sub` on the
-    // no-match exits (REQ-13). RECEIVER-TYPE-dispatched: this is `TString::contains`;
-    // the C6 `TVec::contains` (membership) is a DISTINCT inherent method — Rust keys
+    // no-match exits (REQ-13). Receiver-type-dispatched: this is `TString::contains`;
+    // the C6 `TVec::contains` (membership) is a distinct inherent method. Rust keys
     // method resolution on the receiver type, so the shared surface name `contains`
-    // does not clobber (the design-flagged name-clash, RESOLVED at this layer).
+    // does not clobber (the design-flagged name-clash, resolved at this layer).
     out.push_str("    pub fn contains(&self, p: &TString) -> (result: bool)\n");
     out.push_str("        requires self.well_formed(), p.well_formed(),\n");
     out.push_str("        ensures result == contains_sub(self.data@, p.data@),\n");
@@ -5448,10 +5448,10 @@ fn emit_string_search_methods(out: &mut String, cap: u64) {
     out.push_str("        }\n");
     out.push_str("        false\n");
     out.push_str("    }\n");
-    // find -> Option<u64>: the SAME outer scan as `contains`, returning `Some(at)` on
-    // the first hit (REQ-14, reuses C7's `Option`). The `Some` arm carries the honest
-    // bound `at + plen <= slen` (NOT `at < slen`, false for an empty needle at
-    // `at == len`); the `None` arm proves `!contains_sub` (the handled-or-loud tooth).
+    // find -> Option<u64>: the same outer scan as `contains`, returning `Some(at)` on
+    // the first hit (REQ-14, reuses C7's `Option`). The `Some` arm carries the
+    // bound `at + plen <= slen` (not `at < slen`, which is false for an empty needle at
+    // `at == len`); the `None` arm proves `!contains_sub`.
     out.push_str("    pub fn find(&self, p: &TString) -> (result: Option<u64>)\n");
     out.push_str("        requires self.well_formed(), p.well_formed(),\n");
     out.push_str("        ensures match result {\n");
@@ -5618,21 +5618,21 @@ fn emit_string_search_methods(out: &mut String, cap: u64) {
 }
 
 /// The C5 string search/transform method names (`.design/basis/07-strings.md`
-/// REQ-13..16, issue #102). `contains` is INTENTIONALLY OMITTED from this trigger
+/// REQ-13..16, issue #102). `contains` is omitted from this trigger
 /// set: it is shared with the C6 `Vec` membership op, so a bare `.contains(..)` does
 /// not by itself imply a `String` receiver. The string-search defs (+ the substring
-/// `TString::contains` method) are emitted when ANY of these UNAMBIGUOUS string ops
-/// appears OR when a contract names a C5 spec fn (`occurs_at`/`contains_sub`/
+/// `TString::contains` method) are emitted when any of these unambiguous string ops
+/// appears or when a contract names a C5 spec fn (`occurs_at`/`contains_sub`/
 /// `count_sep`/`sep_free`/`is_space`); a String `s.contains(needle)` in such a
 /// program then resolves to `TString::contains` (receiver-type dispatch). A program
-/// whose ONLY string op were a bare `contains` would still emit the method because it
+/// whose only string op were a bare `contains` would still emit the method because it
 /// names `contains_sub` in the contract (REQ-13's `ens result == contains_sub(..)`).
 const STRING_SEARCH_METHODS: &[&str] = &["starts_with", "ends_with", "find", "split", "trim"];
 
-/// The C5 GENERATED spec-fn names (mirrors `thermite-spec::validator::
+/// The C5 generated spec-fn names (mirrors `thermite-spec::validator::
 /// GENERATED_SPEC_FNS`'s C5 additions): a contract naming any of these requires the
 /// string-search defs emitted + drives the `<String> -> <String>.data@` byte-view
-/// rewrite (the SAME mechanism `parse_le`/`parse_be` use).
+/// rewrite (the same mechanism `parse_le`/`parse_be` use).
 const GENERATED_SEARCH_SPEC_FNS: &[&str] = &[
     "occurs_at",
     "contains_sub",
@@ -5641,19 +5641,19 @@ const GENERATED_SEARCH_SPEC_FNS: &[&str] = &[
     "is_space",
 ];
 
-/// True if the program uses a C5 string search/transform op (REQ-13..16, #102) — an
-/// unambiguous string method (`STRING_SEARCH_METHODS`) in exec/spec position OR a
+/// True if the program uses a C5 string search/transform op (REQ-13..16, #102): an
+/// unambiguous string method (`STRING_SEARCH_METHODS`) in exec/spec position or a
 /// contract naming a C5 spec fn (`GENERATED_SEARCH_SPEC_FNS`). Either reference
 /// requires the search methods + the generated spec fns + `lemma_count_push` in
-/// scope. EMPTY otherwise (byte-stable for the non-C5 corpus, no regression). The
+/// scope. Empty otherwise (byte-stable for the non-C5 corpus, no regression). The
 /// walk reuses the `each_subexpr` full-tree traversal (the same shape as
 /// `program_uses_numfmt`), over every fn/spec-fn body + every contract clause.
 pub(crate) fn program_uses_string_search(program: &Program) -> bool {
-    // #127 — SHAPE key: a C5 spec-fn name (`occurs_at`/`contains_sub`/`count_sep`/
-    // `sep_free`) SHADOWED by a user `spec fn` (with a `String`/`&String` param)
-    // resolves to the user fn, not the generated search def — excluded so a
+    // #127, shape key: a C5 spec-fn name (`occurs_at`/`contains_sub`/`count_sep`/
+    // `sep_free`) shadowed by a user `spec fn` (with a `String`/`&String` param)
+    // resolves to the user fn, not the generated search def, so it is excluded so a
     // user-named collision does not materialize the generated def (E0428). The
-    // METHOD-call surface (`.contains`/`.split`/…) is not name-collidable with a
+    // method-call surface (`.contains`/`.split`/…) is not name-collidable with a
     // spec fn, so it still triggers generation unconditionally.
     let shadow = user_string_spec_fn_names(program);
     program.items.iter().any(|item| match item {
@@ -5720,7 +5720,7 @@ fn stmt_uses_string_search(stmt: &Stmt, shadow: &[&str]) -> bool {
 /// True if `expr` references a C5 construct anywhere (REQ-13..16): an unambiguous
 /// string-search `MethodCall` (`STRING_SEARCH_METHODS`) or a C5 spec-fn `Call`
 /// (`GENERATED_SEARCH_SPEC_FNS`). A full-tree walk reusing `each_subexpr`. A C5
-/// spec-fn name SHADOWED by a user `spec fn` (in `shadow`, #127) is excluded.
+/// spec-fn name shadowed by a user `spec fn` (in `shadow`, #127) is excluded.
 fn expr_uses_string_search(expr: &Expr, shadow: &[&str]) -> bool {
     match expr {
         Expr::MethodCall { name, .. } if STRING_SEARCH_METHODS.contains(&name.as_str()) => {
@@ -5749,13 +5749,13 @@ fn expr_uses_string_search(expr: &Expr, shadow: &[&str]) -> bool {
     found
 }
 
-/// Emit the C5 string search/transform module-scope DEFINITIONS (REQ-13..16, #102):
+/// Emit the C5 string search/transform module-scope definitions (REQ-13..16, #102):
 /// the spec fns `occurs_at`/`contains_sub`/`count_sep`/`sep_free`/`is_space` + the
 /// `lemma_count_push` proof fn (`split`'s count-invariant engine, proved by
-/// induction). Emitted ONCE when the program uses a C5 op (`program_uses_string_
-/// search`), in deterministic order. EMPTY otherwise (byte-stable). The emitted forms
-/// are EXACTLY the GROUNDED `verus 0.2026.05.24` definitions (no `assume`/`admit`/
-/// `external_body` — R-DEFER-9; `lemma_count_push` is a REAL induction proof). These
+/// induction). Emitted once when the program uses a C5 op (`program_uses_string_
+/// search`), in deterministic order. Empty otherwise (byte-stable). The emitted forms
+/// are the grounded `verus 0.2026.05.24` definitions (no `assume`/`admit`/
+/// `external_body`, R-DEFER-9; `lemma_count_push` is an induction proof). These
 /// must be in scope for the `TString` search methods' contracts (which name them);
 /// verus resolves references order-independently within the single `verus!` block.
 fn emit_string_search_defs(program: &Program) -> Result<String, LowerError> {
@@ -5765,7 +5765,7 @@ fn emit_string_search_defs(program: &Program) -> Result<String, LowerError> {
     let mut out = String::new();
     out.push('\n');
     // occurs_at: needle occurs at byte offset `at` (a flat bounded `forall|k|` in the
-    // NAMED spec-fn body — §4.2 composition through named spec fns).
+    // named spec-fn body, §4.2 composition through named spec fns).
     out.push_str("pub open spec fn occurs_at(s: Seq<u8>, needle: Seq<u8>, at: int) -> bool {\n");
     out.push_str("    0 <= at && at + needle.len() <= s.len()\n");
     out.push_str(
@@ -5793,7 +5793,7 @@ fn emit_string_search_defs(program: &Program) -> Result<String, LowerError> {
         "pub open spec fn is_space(b: u8) -> bool { b == 32 || b == 9 || b == 10 || b == 13 }\n",
     );
     // lemma_count_push: appending a byte at the end adds (if b == sep {1} else {0}) to
-    // the count — proved by induction on `s` (the count-invariant engine for split).
+    // the count, proved by induction on `s` (the count-invariant engine for split).
     out.push_str("pub proof fn lemma_count_push(s: Seq<u8>, b: u8, sep: u8)\n");
     out.push_str(
         "    ensures count_sep(s.push(b), sep) == count_sep(s, sep) + (if b == sep { 1nat } else { 0nat }),\n",

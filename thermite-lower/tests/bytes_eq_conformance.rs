@@ -1,37 +1,37 @@
 //! Conformance for Cluster **C8** (crosslink **#278**): the `bytes_eq`
 //! byte-range-equality content-pin layer — `bytes_eq(a, b, ai, bi, n)` as a
-//! REGISTERED built-in spec predicate (07-strings.md REQ-17), the canonical
-//! `Seq<u8>` low-peel def + the FOUR prove-once bridge lemmas (REQ-18), the
+//! registered built-in spec predicate (07-strings.md REQ-17), the canonical
+//! `Seq<u8>` low-peel def + the four prove-once bridge lemmas (REQ-18), the
 //! `program_uses_bytes_eq` conditional emission + the contract-keyed body-start
 //! `proof { lemma_bytes_eq_bridge(); }` citation (REQ-19), and the L1 exec twin
-//! (REQ-20). The SECOND #276 prerequisite (after #277's slice/concat byte-content
+//! (REQ-20). The second #276 prerequisite (after #277's slice/concat byte-content
 //! ens).
 //!
-//! These run against the EXTERNAL truth the toolchain does not author for itself:
-//! the real `verus` binary on the EMITTED lowering of `conformance/bytes_eq_demo.th`
+//! These run against the external truth the toolchain does not author for itself:
+//! the real `verus` binary on the emitted lowering of `conformance/bytes_eq_demo.th`
 //! (R-CODE-4 — the subprocess status is checked, never swallowed). The constructing
-//! slice/concat bodies are thin (`{ a.slice(0, a.len()) }`), so — like the C5
-//! `split`/`trim` and the C7 `parse_u64` AC-4 precedent — the §7 mutation floor is
+//! slice/concat bodies are thin (`{ a.slice(0, a.len()) }`), so, like the C5
+//! `split`/`trim` and the C7 `parse_u64` AC-4 precedent, the §7 mutation floor is
 //! grounded by verus-on-the-emitted-lowering (a body mutant that breaks the pin
-//! FAILS), not by `forge`'s caller-mutation scorer.
+//! fails) rather than by `forge`'s caller-mutation scorer.
 //!
 //! AC-13: `slice_id(a) = a.slice(0, a.len())` with `ens bytes_eq(&result, &a, 0, 0,
-//! a.len())` (the EXACT #276 counterexample) certifies L3.
+//! a.len())` (the #276 counterexample) certifies L3.
 //! AC-14: the three `insert_str` conjuncts (unchanged-prefix / inserted-run /
-//! shifted-suffix) EACH certify L3 with ONE `lemma_bytes_eq_bridge` citation, ZERO
+//! shifted-suffix) each certify L3 with one `lemma_bytes_eq_bridge` citation, zero
 //! per-conjunct glue.
-//! AC-16: the length-preserving head/tail-SWAP mutant FAILS verus (non-vacuity,
-//! R-DEFER-9) — the pins are content teeth a length pin cannot fake; and WITHOUT the
+//! AC-16: the length-preserving head/tail-swap mutant fails verus (non-vacuity,
+//! R-DEFER-9) — the pins are content teeth a length pin cannot fake; and without the
 //! REQ-19 citation the pins fail (the bridge is load-bearing, not decorative).
 //!
-//! The verus checks SKIP LOUDLY when verus is absent (the `string_conformance.rs`
-//! precedent) — never panic on a missing solver. `tests/` is not anti-pattern-gated,
+//! The verus checks skip when verus is absent (the `string_conformance.rs`
+//! precedent) rather than panic on a missing solver. `tests/` is not anti-pattern-gated,
 //! so `unwrap`/`expect`/`panic!` are fine (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/07-strings.md` REQ-17..20 (the
-//! GROUNDED forms: the four lemmas + the `slice_id`/`insert_str` pins `14 verified,
+//! grounded forms: the four lemmas + the `slice_id`/`insert_str` pins `14 verified,
 //! 0 errors`; the head/tail-swap mutant `13 verified, 1 errors`) + `thermite-design.md`
-//! §6 ladder semantics (L3 == a fully-discharged real-verus proof), NEVER copied from
+//! §6 ladder semantics (L3 == a fully-discharged real-verus proof), never copied from
 //! the toolchain's own output.
 
 use std::path::{Path, PathBuf};
@@ -85,9 +85,9 @@ fn verus_bin() -> Option<PathBuf> {
     None
 }
 
-/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller SKIPs
-/// LOUDLY). `--no-cheating` so a sneaked `assume`/`external_body` would be a hard
-/// error (R-DEFER-9 — the bridge lemmas are REAL induction proofs).
+/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller
+/// skips). `--no-cheating` so a sneaked `assume`/`external_body` would be a hard
+/// error (R-DEFER-9 — the bridge lemmas are real induction proofs).
 fn run_verus(file: &Path) -> Option<(bool, String)> {
     let bin = verus_bin()?;
     let out = Command::new(bin)
@@ -139,7 +139,7 @@ fn bytes_eq_demo_emits_def_and_lemmas_and_citation() {
             "the prove-once lemma {lemma} is emitted (REQ-18):\n{emitted}"
         );
     }
-    // The LOAD-BEARING explicit trigger on the arithmetic index (REQ-18 recorded finding).
+    // The load-bearing explicit trigger on the arithmetic index (REQ-18 recorded finding).
     assert!(
         emitted.contains("#[trigger] a[ai + k] == b[bi + k]"),
         "the load-bearing explicit #[trigger] a[ai + k] (REQ-18):\n{emitted}"
@@ -158,10 +158,10 @@ fn bytes_eq_demo_emits_def_and_lemmas_and_citation() {
         ),
         "the slice_id pin lowers a/b to byte-views + the index args (REQ-17/REQ-19):\n{emitted}"
     );
-    // #279: a FIELD-ACCESS String operand (`&result.text`/`&b.text` — the editor's
+    // #279: a field-access String operand (`&result.text`/`&b.text` — the editor's
     // `Buf { text: String }`) lowers to the field byte-view (`result.text.data@`/
-    // `b.text.data@`), NOT a `&TString` reference (E0308). The whole operand class
-    // (bare path / &path / field / &field) is covered.
+    // `b.text.data@`) rather than a `&TString` reference (E0308). The whole operand
+    // class (bare path / &path / field / &field) is covered.
     assert!(
         emitted.contains(
             "__thermite_bytes_eq(result.text.data@, b.text.data@, 0 as int, 0 as int, b.cursor as int)"
@@ -208,9 +208,9 @@ fn non_bytes_eq_program_does_not_emit_bytes_eq() {
 // The golden `conformance/bytes_eq_demo.cert.json` is the hand-derived oracle
 // (R-CHAR-3 — never read from forge's output): `slice_id` → L3, fx alloc,
 // non-vacuous, not-slag. We assert the oracle's deterministic subset directly from
-// the raw JSON AND that the parsed `fx` row of `slice_id` matches the oracle's
+// the raw JSON and that the parsed `fx` row of `slice_id` matches the oracle's
 // `effects: ["alloc"]` (the constructing-slice effect, REQ-4 rule). `forge check`'s
-// LIVE comparison against this oracle is exercised end-to-end at the forge layer;
+// live comparison against this oracle is exercised end-to-end at the forge layer;
 // here the cert artifact's internal consistency with the corpus is pinned.
 
 #[test]
@@ -284,20 +284,20 @@ fn bytes_eq_demo_verifies_l3_under_real_verus() {
 // ---- AC-16: the head/tail-SWAP mutant FAILS verus (non-vacuity) --------------
 //
 // The length-preserving swap (`tail.concat(ins).concat(head)`) keeps every length
-// identity but BREAKS the byte-content pins — the design's `15 verified, 1 errors`
-// mutant, here through the real pipeline (the body is mutated in the lowered SOURCE,
-// the contract + the prove-once lemmas unchanged). If verus still PASSED the mutant,
-// the pins would be vacuous (a length pin a content pin cannot distinguish) — R-DEFER-9.
+// identity but breaks the byte-content pins — the design's `15 verified, 1 errors`
+// mutant, here through the real pipeline (the body is mutated in the lowered source,
+// the contract + the prove-once lemmas unchanged). If verus still passed the mutant,
+// the pins would be vacuous (a length pin a content pin cannot distinguish), R-DEFER-9.
 
 #[test]
 fn bytes_eq_demo_content_mutant_fails_real_verus() {
     let program = parse_corpus("bytes_eq_demo");
     let emitted = lower_l3(&program);
-    // Swap the insert_str body's head/tail order in the EMITTED source. The lowered
+    // Swap the insert_str body's head/tail order in the emitted source. The lowered
     // body builds `head.concat(ins-copy).concat(tail)`; the slice for the prefix is
     // `self.slice(0, cursor)` (head) and the suffix `self.slice(cursor, len)` (tail).
     // Mutate by swapping the two slice ranges' upper/lower so head and tail trade
-    // places — a content swap that preserves total length.
+    // places: a content swap that preserves total length.
     let mutated = swap_head_tail_in_insert_str(&emitted);
     assert_ne!(
         mutated, emitted,
@@ -320,13 +320,13 @@ fn bytes_eq_demo_content_mutant_fails_real_verus() {
 }
 
 /// Swap the head/tail slices in the lowered `insert_str` body — a length-preserving
-/// CONTENT swap (the design's AC-16 mutant, here on the emitted source). The body
+/// content swap (the design's AC-16 mutant, here on the emitted source). The body
 /// lowers to a chained `concat`: `text.slice(0, cursor ...).concat(ins...).concat(
 /// text.slice(cursor ..., text.len() ...))`. Swapping the head slice
 /// `text.slice(0, cursor as usize)` with the tail slice
-/// `text.slice(cursor as usize, text.len() as usize)` keeps the TOTAL length
-/// identical (head_len + ins_len + tail_len) but puts the WRONG bytes in the
-/// prefix/suffix windows — so the unchanged-prefix and shifted-suffix `bytes_eq`
+/// `text.slice(cursor as usize, text.len() as usize)` keeps the total length
+/// identical (head_len + ins_len + tail_len) but puts the wrong bytes in the
+/// prefix/suffix windows, so the unchanged-prefix and shifted-suffix `bytes_eq`
 /// pins can no longer discharge. If verus still passed this, the pins would be
 /// vacuous (R-DEFER-9).
 fn swap_head_tail_in_insert_str(src: &str) -> String {

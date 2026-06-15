@@ -1,43 +1,43 @@
 //! Divergence pins (crosslink #229) — the #225/#227 type-directed spec-call
 //! narrowing cast (`Ctx::spec_call_param_cast` fed by `spec_fn_param_type_map`)
-//! is STILL not threaded to every spec-context lowering site. #227 (commit
+//! is still not threaded to every spec-context lowering site. #227 (commit
 //! `1c59e4fd`) claims "narrowing target = callee's declared param type at ALL
-//! six spec-context entry points", but the PROOF-AID emission paths re-lower
+//! six spec-context entry points", but the proof-aid emission paths re-lower
 //! contract clauses with a bare un-threaded `Ctx::spec_seq()`:
 //!
 //!   1. `nonlinear_overflow_assert` (the §sum overflow discharge,
 //!      verus-lowering.md REQ-7) re-lowers the fn's `req` clause as a
-//!      `by(nonlinear_arith) requires` hypothesis via `Ctx::spec_seq()` with NO
+//!      `by(nonlinear_arith) requires` hypothesis via `Ctx::spec_seq()` with no
 //!      `.with_spec_fn_param_types(..)` — a `u32`-param spec fn named in the
 //!      `req` with an arithmetic arg emits the hardcoded `as u64` fallback in
 //!      the emitted assert (`s_dec((k + 0) as u64)`), ill-typed Verus
 //!      (`expected u32, found u64`, E0308) → the whole item dies at L0 though
-//!      the Thermite source is correct AND the same `req` lowers correctly
-//!      (`as u32`) in the signature `requires` AND the lifted loop invariant
-//!      two lines above (LIVE-CONFIRMED via `forge check`: `s_dec` L3,
+//!      the Thermite source is correct and the same `req` lowers correctly
+//!      (`as u32`) in the signature `requires` and the lifted loop invariant
+//!      two lines above (live-confirmed via `forge check`: `s_dec` L3,
 //!      `sum_b` L0, E0308 on the requires hypothesis). Tracking #229.
 //!
 //!   2. `lower_inv_expr` (the struct-invariant / `well_formed()` predicate
 //!      lowering, verus-lowering.md REQ-8) routes a non-method `Expr::Call`
 //!      through its catch-all `lower_expr(expr, Ctx::spec_seq(), ..)` — same
 //!      un-threaded `as u64` fallback for a spec-call arithmetic arg in a
-//!      struct `inv`, AND the catch-all drops the REQ-8 `self.<field>` rewrite
+//!      struct `inv`, and the catch-all drops the REQ-8 `self.<field>` rewrite
 //!      for the call's args (the emitted `well_formed` body references a bare
-//!      `x` — unresolvable). Tracking #229.
+//!      `x`, unresolvable). Tracking #229.
 //!
-//! THE AUTHORITY (R-CHAR-3): `.design/lower/verus-lowering.md` REQ-5 — spec
-//! position is unbounded `int`; the narrowing target is the callee's DECLARED
+//! The authority (R-CHAR-3): `.design/lower/verus-lowering.md` REQ-5 — spec
+//! position is unbounded `int`; the narrowing target is the callee's declared
 //! param type over the surface integer set `u32`/`u64`/`usize` (the #225 rule,
 //! re-affirmed by #227's own commit message) — and REQ-8 (struct-inv field
-//! rewrite). Expected substrings are HAND-DERIVED from the fixtures' declared
+//! rewrite). Expected substrings are hand-derived from the fixtures' declared
 //! param types (`s_dec(n: u32)` → `as u32`), never copied from the lowerer's
 //! output.
 //!
-//! POST-FIX NOTE (c116360c re-audit): the fixture carries the `xs.len() <=
-//! 1_000_000` length bound so the EXACT pinned program is live-L3 end-to-end —
+//! Post-fix note (c116360c re-audit): the fixture carries the `xs.len() <=
+//! 1_000_000` length bound so the pinned program is live-L3 end-to-end —
 //! `forge check`: `s_dec` L3 (1 obligation), `sum_b` L3 (4 obligations
 //! discharged). Without the bound the `ens` overflow obligation `result <=
-//! xs.len() * u32::MAX` genuinely fails for an unbounded `xs` (a fixture
+//! xs.len() * u32::MAX` fails for an unbounded `xs` (a fixture
 //! authoring gap, not a toolchain divergence — the c116360c fixer's
 //! escalation (1), critic-confirmed).
 
@@ -48,10 +48,10 @@ fn lower(src: &str) -> String {
 }
 
 /// A `u32`-param recursive spec fn + a sum-shaped exec fn (accumulator growth
-/// `acc = acc + xs[i] as u64` + product-bound invariant — the EXACT shape that
+/// `acc = acc + xs[i] as u64` + product-bound invariant — the shape that
 /// fires `nonlinear_overflow_assert`) whose `req` names the spec fn with an
 /// arithmetic argument. The `xs.len()` bound makes the whole program live-L3
-/// (see POST-FIX NOTE above).
+/// (see the post-fix note above).
 const NONLINEAR_REQ_PROGRAM: &str = "\
 spec fn s_dec(n: u32) -> u32
   dec n
@@ -91,7 +91,7 @@ fn nonlinear_overflow_assert_req_hypothesis_casts_to_declared_param_type() {
         out.contains("by(nonlinear_arith)"),
         "fixture must fire the nonlinear overflow assert:\n{out}"
     );
-    // The callee `s_dec` declares a `u32` param, so EVERY lowering of the req's
+    // The callee `s_dec` declares a `u32` param, so every lowering of the req's
     // `s_dec(k + 0)` must narrow `as u32` (verus-lowering.md REQ-5 / #225 rule).
     // The signature `requires` already does; the re-lowered hypothesis inside
     // the `by(nonlinear_arith) requires` must match or the item is ill-typed.
@@ -103,7 +103,7 @@ fn nonlinear_overflow_assert_req_hypothesis_casts_to_declared_param_type() {
 }
 
 /// A `u32`-param spec fn named (with an arithmetic arg over a field) in a
-/// STRUCT invariant — the `lower_inv_expr` / `well_formed()` path.
+/// struct invariant — the `lower_inv_expr` / `well_formed()` path.
 const STRUCT_INV_PROGRAM: &str = "\
 spec fn s_dec(n: u32) -> u32
   dec n
@@ -128,7 +128,7 @@ fn struct_invariant_spec_call_arith_arg_casts_to_declared_param_type() {
         "the struct-invariant (lower_inv_expr) path still hardcodes the #225 \
          `as u64` fallback:\n{out}"
     );
-    // The struct-inv field rewrite must also survive the call: `x` is a FIELD,
+    // The struct-inv field rewrite must also survive the call: `x` is a field,
     // so the well_formed body must reference `self.x` (REQ-8), narrowed to the
     // declared `u32`.
     assert!(

@@ -1,25 +1,25 @@
 //! Divergence pin (re-audit of 2f327b63/#230 — the visibility class-completion
-//! is INCOMPLETE) — #230 promotes every user `spec fn` to `pub open spec fn`,
+//! is incomplete) — #230 promotes every user `spec fn` to `pub open spec fn`,
 //! but the combinator definitions woven from the frozen registry
 //! (`thermite-spec::combinators` `verus_l3`, emitted by
-//! `emit_combinator_defs`) stay PRIVATE `spec fn`. A user spec fn whose body
-//! calls a registered combinator — validator-LEGAL per
+//! `emit_combinator_defs`) stay private `spec fn`. A user spec fn whose body
+//! calls a registered combinator — validator-legal per
 //! `.design/spec/spectherm-combinators.md` REQ-3 ("accepts registered
 //! combinators, declared spec-fn calls" when walking `SpecFnItem.body`) — now
 //! emits a `pub open spec fn` body naming a private `spec fn`, which verus
 //! rejects: `error: in pub open spec function, cannot refer to private
 //! function` → the item dies at L0 though the Thermite source is correct
-//! (verus-confirmed live on the emitted unit). This is a REGRESSION introduced
+//! (verus-confirmed live on the emitted unit). This is a regression introduced
 //! by 2f327b63: before #230 the user spec fn was itself private, and a private
 //! caller may name a private callee.
 //!
-//! THE AUTHORITY (R-CHAR-3): thermite-design.md §6 — L3 is a fully-discharged
+//! The authority (R-CHAR-3): thermite-design.md §6 — L3 is a fully-discharged
 //! real-verus proof, so the emitted sub-program for a validator-legal item
-//! must VERIFY; plus `.design/lower/verus-lowering.md` REQ-8's own grounding
+//! must verify; plus `.design/lower/verus-lowering.md` REQ-8's own grounding
 //! finding (cited by 2f327b63 itself): "a `pub open` body may refer only to
-//! `pub` items". The assertion is OUTCOME-anchored (real verus on the emitted
+//! `pub` items". The assertion is outcome-anchored (real verus on the emitted
 //! unit, the conformance-harness pattern), not anchored to any particular fix
-//! direction — never copied from lowerer output.
+//! direction; never copied from lowerer output.
 //!
 //! Tracking: crosslink #235.
 
@@ -33,7 +33,7 @@ fn lower(src: &str) -> String {
 }
 
 /// Locate `verus`: `VERUS_BIN`, then PATH, then `~/.local/bin/verus` (the
-/// `lower_conformance.rs` resolution order). `None` → SKIP LOUDLY.
+/// `lower_conformance.rs` resolution order). `None` → skip.
 fn verus_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         let pb = PathBuf::from(p);
@@ -70,10 +70,10 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// A user `spec fn` whose BODY calls the registered combinator `forall_in`
-/// (validator-legal, REQ-3), plus a fn contract that ALSO names `forall_in`
-/// (so `emit_combinator_defs` weaves the registry definition into the unit —
-/// isolating the VISIBILITY divergence from the separate def-emission scan).
+/// A user `spec fn` whose body calls the registered combinator `forall_in`
+/// (validator-legal, REQ-3), plus a fn contract that also names `forall_in`
+/// (so `emit_combinator_defs` weaves the registry definition into the unit,
+/// isolating the visibility divergence from the separate def-emission scan).
 const COMBINATOR_IN_SPEC_FN_BODY: &str = "\
 spec fn all_small(s: &[u32]) -> bool
   dec s.len()
@@ -93,7 +93,7 @@ fn k(xs: &[u32]) -> u32
 #[test]
 fn pub_open_user_spec_fn_calling_combinator_verifies() {
     let emitted = lower(COMBINATOR_IN_SPEC_FN_BODY);
-    // Non-vacuity: the divergent shape is genuinely present in the unit.
+    // Non-vacuity: the divergent shape is present in the unit.
     assert!(
         emitted.contains("pub open spec fn all_small"),
         "fixture must exercise the #230 pub-open user spec fn:\n{emitted}"

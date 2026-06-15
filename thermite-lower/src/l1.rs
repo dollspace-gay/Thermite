@@ -1,12 +1,12 @@
 //! L1 emission: compile a validated `thermite-syntax` `Program` into a single,
-//! self-contained, runnable Rust source `String` whose body EXECUTES the
+//! self-contained, runnable Rust source `String` whose body executes the
 //! Thermite contract — the L1 rung of the ladder (`.design/lower/l1-runtime-checks.md`;
 //! `thermite-design.md` §4.2/§6/§8). Where `lower.rs` emits Verus annotations for
 //! an SMT *proof* (L3), `l1.rs` emits Rust that *runs* the contract: every
 //! `req`/`ens` clause and every loop `inv` becomes a runnable `bool` check, every
 //! combinator a real loop over `&[u32]`, every `spec fn` a real recursive Rust
-//! fn. A violation is detected at the call site in EVERY build profile (not just
-//! debug) via an always-active `thermite_check!` macro (NOT `debug_assert!`; §6).
+//! fn. A violation is detected at the call site in every build profile (including
+//! release) via an always-active `thermite_check!` macro, not `debug_assert!` (§6).
 //!
 //! Governing design: `.design/lower/l1-runtime-checks.md`.
 //! Reference (compiles + runs under `rustc`, hand-authored): `tests/golden/l1/sum.l1.rs`.
@@ -14,19 +14,19 @@
 //! ## Exec semantics, not spec semantics (REQ-1..REQ-4)
 //!
 //! Unlike `lower.rs` (which has a spec context with `Seq`/`@`/`subrange`), L1 is
-//! ENTIRELY exec: there is no `vstd`, no `Seq`, no proof. A clause's verbatim
+//! entirely exec: there is no `vstd`, no `Seq`, no proof. A clause's verbatim
 //! `Clause.text` (`ast.rs` `struct Clause { text }`) is carried into the
 //! violation message for legibility (§2.4). The combinator L1 bodies and the
-//! executable `spec_sum` are emitted INLINE (OQ-2) so the output is a
+//! executable `spec_sum` are emitted inline (OQ-2) so the output is a
 //! single self-contained file; the combinator bodies are pulled from the
 //! `thermite-spec` registry's `l1` field (single source of truth, mirroring how
 //! `lower.rs` reads `verus_l3`).
 //!
-//! ## Honest scope (REQ-5/REQ-7)
+//! ## Scope (REQ-5/REQ-7)
 //!
-//! `dec`/termination is a PROOF (L3) / BOUNDED (L2) obligation — a runtime check
+//! `dec`/termination is a proof (L3) / bounded (L2) obligation: a runtime check
 //! cannot prove a still-running loop terminates, so L1 asserts `inv` per
-//! iteration and emits NO `dec` runtime check (OQ-3). `fx` produces NO runtime
+//! iteration and emits no `dec` runtime check (OQ-3). `fx` produces no runtime
 //! sandbox in v0.1 (effects are enforced at compile time by `effects.rs`,
 //! deferred to #21, R-SPEC-5).
 //!
@@ -82,12 +82,12 @@ use crate::lower::{
 
 /// The maximum recursive-descent emission depth before `lower_l1` returns
 /// `LowerError::TooDeep`. Mirrors `lower.rs`'s `MAX_EMIT_DEPTH` (the
-/// #29/#31/#32 stack-overflow lesson): a single shared counter bounds EVERY
+/// #29/#31/#32 stack-overflow lesson): a single shared counter bounds every
 /// recursive family here (expressions, blocks, statements, patterns) so a
 /// pathological (or adversarial, post-recovery) AST cannot overflow the native
 /// stack and abort the process. Fixed constant (determinism, `goal.md`
 /// R-CODE-5). `thermite-syntax` caps parse nesting at 64, so a well-formed AST
-/// cannot exceed that — this is a defensive backstop.
+/// cannot exceed that; this is a backstop.
 const MAX_EMIT_DEPTH: usize = 256;
 
 /// A span pointing at the very start of source, used when an AST node we are
@@ -112,34 +112,34 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     out.push_str(&emit_combinator_l1_defs(program)?);
 
     // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3): the
-    // BUILD-emitted crate must DEFINE `TString` whenever a `String`-typed value is
+    // build-emitted crate must define `TString` whenever a `String`-typed value is
     // present, because the runnable effect-link wrappers
     // (`forge/src/effect_wrappers.rs`: `os::print`/`os::write`/`os::read_line`)
     // reference `super::TString`, and `lower_type` lowers a `String`-typed boundary
     // signature to the bare name `TString` (`Type::String => "TString"`). Unlike the
     // L3/Verus lowering (`lower.rs::emit_string_wrapper`, a `verus!` form over
-    // `vstd::vec::Vec<u8>`), L1 is ENTIRELY exec — so this emits a PLAIN-Rust
+    // `vstd::vec::Vec<u8>`), L1 is entirely exec, so this emits a plain-Rust
     // `TString` over `std::vec::Vec<u8>` (no `Seq`/`@`/`spec`/`requires`), plus
     // `use TString as String;` so the surface name `String` (e.g. `String::new()` in
     // a body) resolves to the same emitted type as a `String`-typed signature
-    // (`07-strings.md` REQ-4: the surface `String` IS `TString`). Without this the
+    // (`07-strings.md` REQ-4: the surface `String` is `TString`). Without this the
     // build crate `rustc`-fails `error[E0425]: cannot find type \`TString\``. Emitted
-    // ONCE, only when the program uses `String` (the non-`String` corpus is
+    // once, only when the program uses `String` (the non-`String` corpus is
     // byte-unaffected, matching `lower.rs::program_uses_string`'s gate).
     out.push_str(&emit_string_runtime_l1(program));
 
     // Cluster C6 (`.design/basis/04-collections.md` REQ-5/REQ-8/REQ-9, issue #98):
-    // the BUILD-emitted crate must DEFINE the per-element `TVec<elem>` runtime
-    // wrapper whenever a `Vec<T>` is REACHABLE — `lower_type` lowers `Type::Vec` to
+    // the build-emitted crate must define the per-element `TVec<elem>` runtime
+    // wrapper whenever a `Vec<T>` is reachable. `lower_type` lowers `Type::Vec` to
     // the wrapper name (`Vec<u64>` → `TVecU64`), and the surface ops (`push`/`get`/
     // `last`/`pop_last`/`insert`/`remove`/`contains`/`len`) resolve to its methods.
     // Unlike the L3/Verus lowering (`lower.rs::emit_vec_wrappers`, a `verus!` form
-    // over `vstd::vec::Vec<T>` with `requires`/`ensures`/`Seq`), L1 is ENTIRELY exec
-    // — so this emits PLAIN-Rust methods with the capacity/no-OOB guards as
+    // over `vstd::vec::Vec<T>` with `requires`/`ensures`/`Seq`), L1 is entirely exec,
+    // so this emits plain-Rust methods with the capacity/no-OOB guards as
     // always-active `thermite_check!`s (§6 L1 handled-or-loud: an over-cap push or an
-    // OOB get ABORTS loudly rather than UB). A non-Copy element's `get`/`last` return
-    // a BORROW `&T` (the L1 mirror of the REQ-9 borrow-`get`), so a non-Copy element
-    // is never moved out of the backing run. Emitted ONCE per element type, only when
+    // OOB get aborts rather than UB). A non-Copy element's `get`/`last` return
+    // a borrow `&T` (the L1 mirror of the REQ-9 borrow-`get`), so a non-Copy element
+    // is never moved out of the backing run. Emitted once per element type, only when
     // the program uses `Vec` (the non-`Vec` corpus is byte-unaffected, matching
     // `lower.rs::collect_vec_elem_types`'s reachability gate).
     out.push_str(&emit_vec_runtime_l1(program)?);
@@ -147,13 +147,13 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
     // Cluster C12 (`.design/basis/13-map.md` REQ-4/REQ-5): the L1 runnable `TMap<K,V>`
     // wrapper(s) — the plain-Rust Vec-of-pairs newtype with `new`/`len`/`contains_key`/
     // `get`/`insert` carrying the capacity/uniqueness guards as always-active
-    // `thermite_check!`s (§6 L1 handled-or-loud — an over-cap or duplicate-key insert
-    // ABORTS loudly), `get -> Option<V>` (absent → None). Emitted ONCE per `(K, V)`
+    // `thermite_check!`s (§6 L1 handled-or-loud: an over-cap or duplicate-key insert
+    // aborts), `get -> Option<V>` (absent → None). Emitted once per `(K, V)`
     // pair, only when the program uses `Map` (byte-unaffected for the non-`Map` corpus).
     out.push_str(&emit_map_runtime_l1(program)?);
 
-    // The program-wide `(variant, enum)` map (REQ-9) — drives the ENUM-QUALIFIED
-    // `Enum::Variant` of an L1 `match` arm / pattern / `is` `matches!` — and the
+    // The program-wide `(variant, enum)` map (REQ-9) drives the enum-qualified
+    // `Enum::Variant` of an L1 `match` arm / pattern / `is` `matches!`, and the
     // invariant-bearing `struct` set (REQ-8) whose `well_formed()` check is woven
     // into a producing fn (handled-or-loud at run time, §6 L1 rung). Built once.
     let variants = variant_map(program);
@@ -164,8 +164,8 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
         let item_src = match item {
             Item::SpecFn(s) => lower_spec_fn_l1(s, &variants)?,
             // A boundary fn (ffi-boundary.md REQ-4) lowers to the L1 wrapper: a
-            // `req`-check, a call to the FOREIGN target binding `result`, then the
-            // `ens`-checks — the foreign body is NOT lowered/verified. An
+            // `req`-check, a call to the foreign target binding `result`, then the
+            // `ens`-checks; the foreign body is not lowered or verified. An
             // in-language fn lowers with its real body.
             Item::Fn(f) if f.boundary.is_some() => lower_boundary_fn_l1(f, &variants)?,
             Item::Fn(f) => lower_fn_l1(f, &variants, &inv_structs)?,
@@ -189,7 +189,7 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
 pub(crate) const NO_VARIANTS: &[(&str, &str)] = &[];
 
 /// The program's `(variant_name, enum_name)` map (REQ-9). A user enum-variant
-/// pattern / `is` test lowers ENUM-QUALIFIED via this map; `Some`/`None`/bindings
+/// pattern / `is` test lowers enum-qualified via this map; `Some`/`None`/bindings
 /// are absent and lower unqualified. Built once in `lower_l1`, threaded down.
 fn variant_map(program: &Program) -> Vec<(&str, &str)> {
     program
@@ -226,7 +226,7 @@ fn enum_of_variant<'a>(variants: &[(&'a str, &'a str)], name: &str) -> Option<&'
     variants.iter().find(|(v, _)| *v == name).map(|(_, e)| *e)
 }
 
-/// ENUM-QUALIFY a variant path (REQ-9, the L1 mirror of `lower.rs`): a single
+/// Enum-qualify a variant path (REQ-9, the L1 mirror of `lower.rs`): a single
 /// user-variant segment becomes `Enum::Variant`; an already-qualified path or a
 /// built-in/unknown name is joined as-written.
 fn qualify_variant_path_l1(path: &[String], variants: &[(&str, &str)]) -> String {
@@ -243,18 +243,18 @@ fn qualify_variant_path_l1(path: &[String], variants: &[(&str, &str)]) -> String
 // ---------------------------------------------------------------------------
 
 /// Lower a `StructItem` to a plain Rust `struct` plus, when it carries an `inv`
-/// clause, a `well_formed(&self) -> bool` method (REQ-8) — the always-active
+/// clause, a `well_formed(&self) -> bool` method (REQ-8): the always-active
 /// invariant predicate a producing fn checks at run time (handled-or-loud, §6 L1
 /// rung). The `inv` body rewrites bare field-name paths to `self.<field>`.
 fn lower_struct_l1(s: &StructItem) -> Result<String, LowerError> {
     let mut out = String::new();
     // `#[derive(Clone)]`: the L1 ens-check snapshots a non-Copy struct parameter
-    // BEFORE the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot) so a field
+    // before the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot) so a field
     // moved into the result and then named in an `ens` (e.g. `move_left`'s `ens
     // result.text.len() == b.text.len()`, `b.text` moved into `Buffer { text:
     // b.text, .. }`) no longer triggers rustc `error[E0382]` (#88 blocker 2). The
-    // derive is the whole CLASS — every invariant/plain struct can be a moved-then-
-    // named ens param.
+    // derive covers the whole class: every invariant/plain struct can be a
+    // moved-then-named ens param.
     out.push_str("#[derive(Clone)]\n");
     out.push_str("#[allow(dead_code)]\n");
     writeln!(out, "struct {} {{", s.name).ok();
@@ -309,10 +309,10 @@ fn lower_inv_expr_l1(
         }
         // A method-call receiver/args (`cursor <= text.len()`'s `text.len()`,
         // `b.text.slice(0, b.cursor)`) must have the field-path rewrite recurse
-        // THROUGH the receiver AND every argument — a bare field name `text` is a
+        // through the receiver and every argument: a bare field name `text` is a
         // `self.text` in the emitted `well_formed`, so an unqualified `text.len()`
         // would emit `text.len()` (rustc E0425: cannot find value `text`). Recurse
-        // the rewrite so the WHOLE call tree is qualified (the editor's struct
+        // the rewrite so the whole call tree is qualified (the editor's struct
         // inv `cursor <= text.len()`).
         Expr::MethodCall {
             receiver,
@@ -327,7 +327,7 @@ fn lower_inv_expr_l1(
             Ok(format!("{r}.{name}({})", parts.join(", ")))
         }
         // A call's args also carry the field-path rewrite (a `spec fn`/combinator
-        // call over struct fields inside an `inv` — the same CLASS as the method
+        // call over struct fields inside an `inv` — the same class as the method
         // receiver above, so the whole call family is covered, not just the one
         // triggering site).
         Expr::Call { callee, args } => {
@@ -346,7 +346,7 @@ fn lower_inv_expr_l1(
 /// in their plain Rust spelling (the L1 mirror of `lower.rs::lower_enum`).
 fn lower_enum_l1(e: &EnumItem) -> Result<String, LowerError> {
     let mut out = String::new();
-    // `#[derive(Clone)]` mirrors `lower_struct_l1` (the whole non-Copy-param
+    // `#[derive(Clone)]` mirrors `lower_struct_l1` (the non-Copy-param
     // class): an enum-typed param named in an `ens` after the body moves it is
     // snapshot-cloned by `lower_fn_l1` (#88 blocker 2).
     out.push_str("#[derive(Clone)]\n");
@@ -384,10 +384,10 @@ fn lower_enum_l1(e: &EnumItem) -> Result<String, LowerError> {
 /// Emit the `thermite_contract_violation` handler and the always-active
 /// `thermite_check!` macro (REQ-2). The handler is the defined contract-failure
 /// behavior of the *generated* program (a structured abort with a legible
-/// diagnostic; §2.4 / §6) — this is the intended L1 runtime behavior, distinct
+/// diagnostic; §2.4 / §6): the intended L1 runtime behavior, distinct
 /// from a toolchain panic (R-CODE-2 forbids the latter in `thermite-lower`'s own
-/// code). The macro is NOT `debug_assert!` (which is stripped in release; §6
-/// demands every build profile) — it is a plain `if !(cond)` so the check is
+/// code). The macro is not `debug_assert!` (which is stripped in release; §6
+/// covers every build profile); it is a plain `if !(cond)` so the check is
 /// present in every profile (AC-2).
 fn emit_check_macro() -> String {
     let mut out = String::new();
@@ -426,7 +426,7 @@ fn emit_check_macro() -> String {
 /// Collect (deterministic source order, deduped) the combinator names the
 /// program references anywhere in a contract/spec position, and emit each one's
 /// frozen `l1` runnable Rust `fn` from the `thermite-spec` registry (REQ-3; the
-/// L1 half of the OQ-2 seam — this is the registry `l1` field's #4 consumer per
+/// L1 half of the OQ-2 seam, the registry `l1` field's #4 consumer per
 /// R-DEFER-1). A referenced name with no registry entry is `UnknownCombinator`.
 pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, LowerError> {
     let mut names: Vec<(String, Span)> = Vec::new();
@@ -476,7 +476,7 @@ pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, Lower
 
 /// Walk an expression collecting any callee path whose head segment is a
 /// registered combinator name. Combinator calls are plain `Expr::Call` with a
-/// `Path` callee (the frontend is registry-free — `ast.rs` module doc). Mirrors
+/// `Path` callee (the frontend is registry-free; `ast.rs` module doc). Mirrors
 /// `lower.rs::collect_combinators_in_expr`.
 fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, Span)>) {
     match expr {
@@ -537,8 +537,8 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
             collect_combinators_in_expr(expr, span, acc)
         }
         // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
-        // expressions, but the honest collector descends into their
-        // sub-expressions so no referenced combinator is silently dropped.
+        // expressions, but the collector descends into their
+        // sub-expressions so no referenced combinator is dropped.
         Expr::StructLit { fields, .. } => {
             for (_, value) in fields {
                 collect_combinators_in_expr(value, span, acc);
@@ -557,14 +557,14 @@ fn collect_combinators_in_expr(expr: &Expr, span: Span, acc: &mut Vec<(String, S
             }
         }
         Expr::TupleProj { receiver, .. } => collect_combinators_in_expr(receiver, span, acc),
-        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, so it references no combinator — the no-op leaf arm
         // alongside `IntLit`/`BoolLit`.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 
-/// Walk a block collecting combinators referenced in its SPEC positions: loop
+/// Walk a block collecting combinators referenced in its spec positions: loop
 /// `inv`/`dec` clauses. Mirrors `lower.rs::collect_combinators_in_block_specs`.
 fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(String, Span)>) {
     for stmt in &block.stmts {
@@ -595,7 +595,7 @@ fn collect_combinators_in_block_specs(block: &Block, span: Span, acc: &mut Vec<(
 /// functions are executable"). The head-fold-sum shape (`spec_sum`: `match xs {
 /// [] => 0, [head, ..t] => head as T + f(t) }`) lowers to a slice-length branch
 /// over `&[u32]` — `if xs.is_empty() { 0 } else { xs[0] as T + f(&xs[1..]) }` —
-/// preserving real recursion. The `dec` measure is NOT emitted as a runtime
+/// preserving real recursion. The `dec` measure is not emitted as a runtime
 /// check (REQ-5: a spec fn just runs at L1). The slice-match shape is detected
 /// structurally, never by name (mirrors `lower.rs::is_head_fold_sum`).
 pub(crate) fn lower_spec_fn_l1(
@@ -615,8 +615,8 @@ pub(crate) fn lower_spec_fn_l1(
 /// Lower a spec-fn body. For the head-fold-sum shape, emit the slice-length
 /// branch recursion (REQ-4). Otherwise lower the block directly in exec
 /// position (an ADT fold `sum_list` flows here — its `match l { … }` lowers with
-/// the enum-variant map for ENUM-QUALIFIED arms + `*t` Box-deref, REQ-9/REQ-10).
-/// The recursion is reconstructed from the match arms' SHAPE.
+/// the enum-variant map for enum-qualified arms + `*t` Box-deref, REQ-9/REQ-10).
+/// The recursion is reconstructed from the match arms' shape.
 fn lower_spec_fn_body_l1(
     s: &SpecFnItem,
     ret: &str,
@@ -682,7 +682,7 @@ fn slice_fold_body_l1(slice: &str, arms: &[MatchArm], ret: &str) -> Result<Strin
 }
 
 /// Detect the head-fold-sum shape (mirrors `lower.rs::is_head_fold_sum`): a
-/// `match xs { [] => 0, [head, ..t] => head as T + f(t) }`. SHAPE predicate, not
+/// `match xs { [] => 0, [head, ..t] => head as T + f(t) }`. A shape predicate, not
 /// a name check.
 fn is_head_fold_sum(body: &Block) -> bool {
     let Some(tail) = &body.tail else {
@@ -743,7 +743,7 @@ fn lower_fn_l1(
     if req_cond != "true" {
         out.push_str(&emit_check("req", &f.contract.req.text, &req_cond, 1));
     }
-    // REQ-8 (handled-or-loud, run-time tooth): a parameter whose type is an
+    // REQ-8 (handled-or-loud): a parameter whose type is an
     // invariant-bearing `struct` gets its `well_formed()` check woven as an
     // always-active `req`-class check — the type-invariant is verified on entry.
     for p in &f.params {
@@ -755,20 +755,20 @@ fn lower_fn_l1(
         }
     }
 
-    // #88 blocker 2 (the ens-after-move CLASS): an `ens` may name a non-Copy
+    // #88 blocker 2 (the ens-after-move class): an `ens` may name a non-Copy
     // parameter (`String`/`TString`, an invariant/plain `struct`, `Vec`/`Box`)
-    // that the BODY then MOVES into the `result` — e.g. `move_left`'s
+    // that the body then moves into the `result` — e.g. `move_left`'s
     // `ens result.text.len() == b.text.len()` where the body is
     // `Buffer { text: b.text, .. }` (`b.text` moved), or `insert_str`'s
     // `ens ... + ins.len()` where `ins` is moved into `head.concat(ins)`. Reading
-    // the param in the ens AFTER the body consumed it is rustc
-    // `error[E0382]: borrow of moved value`. So we SNAPSHOT each non-Copy param
-    // into a `<p>__pre` CLONE on entry (before the body runs) and lower every ens
-    // against the snapshot (`rename_params_in_expr`). The snapshot is taken AFTER
-    // the `req`/well_formed checks (which read the live param) and BEFORE the body
+    // the param in the ens after the body consumed it is rustc
+    // `error[E0382]: borrow of moved value`. So each non-Copy param is snapshot
+    // into a `<p>__pre` clone on entry (before the body runs) and every ens lowers
+    // against the snapshot (`rename_params_in_expr`). The snapshot is taken after
+    // the `req`/well_formed checks (which read the live param) and before the body
     // (which may move it). A Copy param (`u64`/`bool`) is left live (no snapshot,
     // no rename) so the common arithmetic ens is byte-unchanged for the corpus.
-    // Snapshot ONLY a non-Copy param that some `ens` actually references (else the
+    // Snapshot only a non-Copy param that some `ens` references (else the
     // emitted `let <p>__pre = ..` would be an unused binding → clippy `-D warnings`
     // and a needless clone). A Copy param is never snapshot.
     let snap_params: Vec<&Param> = f
@@ -815,15 +815,15 @@ fn lower_fn_l1(
 
     // ens on exit, in source order, against the bound `result` (REQ-1/REQ-2). A
     // reference to a snapshot non-Copy param is rewritten to its `<p>__pre` clone
-    // (#88 blocker 2) so the check never borrows a value the body moved.
+    // (#88 blocker 2) so the check does not borrow a value the body moved.
     for ens in &f.contract.ens {
         let expr = rename_params_in_expr(&ens.expr, &rename);
         let cond = lower_expr_exec(&expr, 0, f.span, variants)?;
         out.push_str(&emit_check("ens", &ens.text, &cond, 1));
     }
     // REQ-8 (handled-or-loud): a fn returning an invariant-bearing `struct` checks
-    // `result.well_formed()` on exit — the constructed value satisfies the
-    // type-invariant or the always-active check SCREAMS (the L1 mirror of the L3
+    // `result.well_formed()` on exit: the constructed value satisfies the
+    // type-invariant or the always-active check fires (the L1 mirror of the L3
     // `ensures result.well_formed()`).
     if let Type::Named(name) = &f.ret {
         if inv_structs.contains(&name.as_str()) {
@@ -850,12 +850,12 @@ fn snapshot_name_l1(param: &str) -> String {
     format!("{param}__pre")
 }
 
-/// True iff a parameter of type `ty` is NON-Copy in the emitted L1 source — so the
+/// True iff a parameter of type `ty` is non-Copy in the emitted L1 source, so the
 /// ens-check must snapshot it before the body may move it (#88 blocker 2). The
 /// owning types are the ADT/collection/text types: a `String` (`TString`
 /// newtype), a `Vec`/`Box` (owning heap), and a user `Named` `struct`/`enum`. A
 /// `Prim` (`u32`/`u64`/`usize`/`bool`), `Unit`, a `&[T]`/`&T` `Ref` (a Copy
-/// shared borrow), a `Slice`, or a `Generic` are left LIVE (no snapshot) so the
+/// shared borrow), a `Slice`, or a `Generic` are left live (no snapshot) so the
 /// common arithmetic ens (`sum`/`binary_search`) lowers byte-unchanged.
 fn type_is_non_copy_l1(ty: &Type) -> bool {
     matches!(
@@ -867,12 +867,12 @@ fn type_is_non_copy_l1(ty: &Type) -> bool {
 /// Rewrite every reference to a snapshot parameter in `expr` to its `<p>__pre`
 /// clone (#88 blocker 2). `renames` maps a param name to its snapshot name. The
 /// rewrite is a structural deep copy of the `ens` `Expr` that, at every `Path`
-/// whose SINGLE segment is a renamed param, swaps in the snapshot segment — so a
+/// whose single segment is a renamed param, swaps in the snapshot segment — so a
 /// `b.text.len()` (`MethodCall` over `Field` over `Path(["b"])`) becomes
 /// `b__pre.text.len()` and a bare `ins` (`Path(["ins"])`) becomes `ins__pre`. The
 /// bound `result` is never a param, so it is untouched. A multi-segment / non-param
-/// path is left as-is. This recurses through EVERY `Expr` variant (the whole class,
-/// no node left un-renamed) so an arbitrary ens shape is handled.
+/// path is left as-is. This recurses through every `Expr` variant (no node left
+/// un-renamed) so an arbitrary ens shape is handled.
 fn rename_params_in_expr(expr: &Expr, renames: &[(String, String)]) -> Expr {
     let rec = |e: &Expr| Box::new(rename_params_in_expr(e, renames));
     match expr {
@@ -1004,7 +1004,7 @@ fn expr_references_ident(expr: &Expr, ident: &str) -> bool {
         }
         Expr::Field { receiver, .. } => expr_references_ident(receiver, ident),
         Expr::Closure { params, body } => {
-            // A closure param that SHADOWS `ident` rebinds it inside the body, so
+            // A closure param that shadows `ident` rebinds it inside the body, so
             // the body's use is not the param. Conservative: if shadowed, the outer
             // param is not referenced through this closure.
             if params.iter().any(|p| p == ident) {
@@ -1095,15 +1095,15 @@ fn rename_params_in_index(index: &IndexArg, renames: &[(String, String)]) -> Ind
     }
 }
 
-/// Lower a BOUNDARY fn to its L1 wrapper (ffi-boundary.md REQ-4, §9 "L1, runtime
-/// checks on every crossing"). The wrapper REUSES `l1.rs`'s executable machinery
-/// exactly — `emit_params`/`lower_type`/`emit_check`/`lower_expr_exec` — and
-/// emits, around the FOREIGN call:
+/// Lower a boundary fn to its L1 wrapper (ffi-boundary.md REQ-4, §9 "L1, runtime
+/// checks on every crossing"). The wrapper reuses `l1.rs`'s executable machinery
+/// (`emit_params`/`lower_type`/`emit_check`/`lower_expr_exec`) and
+/// emits, around the foreign call:
 ///
 /// 1. the `fn <name>(<params>) -> <ret>` head;
 /// 2. a `req`-check on entry (the always-active `thermite_check!`);
-/// 3. `let result = <target>(<args>);` — the foreign call (the unproven crossing,
-///    §9): the foreign body is NOT lowered, NOT verified, NOT proved;
+/// 3. `let result = <target>(<args>);`, the foreign call (the unproven crossing,
+///    §9): the foreign body is not lowered, verified, or proved;
 /// 4. an `ens`-check on exit against the bound `result`.
 ///
 /// `fx` emits no runtime sandbox in v0.1 (REQ-7, deferred to #21). The target is
@@ -1129,8 +1129,8 @@ fn lower_boundary_fn_l1(f: &FnItem, variants: &[(&str, &str)]) -> Result<String,
         out.push_str(&emit_check("req", &f.contract.req.text, &req_cond, 1));
     }
 
-    // (3) the foreign call binding `result` — the unproven crossing (§9). The
-    // body is NOT lowered: this `<target>(<params>)` REPLACES the `let result =
+    // (3) the foreign call binding `result`, the unproven crossing (§9). The
+    // body is not lowered: this `<target>(<params>)` replaces the `let result =
     // { <lowered body> }` of a normal L1 fn. Arguments are the parameter names in
     // declaration order (the wrapper forwards its own params to the foreign fn).
     let args = f
@@ -1156,7 +1156,7 @@ fn lower_boundary_fn_l1(f: &FnItem, variants: &[(&str, &str)]) -> Result<String,
 /// statements are emitted, then its tail expression (the block's value) — both
 /// inside the `let result = { .. }` binder the caller opened. The variant map
 /// flows into the exec lowering so an enum `match` (`is_circle`'s body) is
-/// ENUM-QUALIFIED (REQ-9).
+/// enum-qualified (REQ-9).
 fn lower_fn_body_l1(
     block: &Block,
     f: &FnItem,
@@ -1179,10 +1179,10 @@ fn lower_fn_body_l1(
 }
 
 /// Lower a loop with its `inv` checks woven in per iteration (REQ-1/REQ-5). The
-/// loop header is preserved (`while`/`loop`); at the TOP of each iteration every
-/// `inv` clause is asserted via `thermite_check!`. NO `dec` runtime check is
+/// loop header is preserved (`while`/`loop`); at the top of each iteration every
+/// `inv` clause is asserted via `thermite_check!`. No `dec` runtime check is
 /// emitted: termination is a proof-time (L3) / bounded (L2) obligation, out of
-/// L1's runtime scope (REQ-5, OQ-3) — a runtime check cannot prove a
+/// L1's runtime scope (REQ-5, OQ-3). A runtime check cannot prove a
 /// still-running loop terminates.
 fn lower_loop_l1(
     l: &LoopNode,
@@ -1199,7 +1199,7 @@ fn lower_loop_l1(
             writeln!(out, "{pad}while {cs} {{").ok()
         }
     };
-    // inv checks at the top of each iteration (REQ-1). NO dec check (REQ-5).
+    // inv checks at the top of each iteration (REQ-1). No dec check (REQ-5).
     for inv in &l.invs {
         let cond = lower_expr_exec(&inv.expr, 0, zero_span(), variants)?;
         out.push_str(&emit_check("inv", &inv.text, &cond, indent + 1));
@@ -1292,7 +1292,7 @@ fn lower_block_inner(
 }
 
 /// Lower a single statement in exec position. `variants` flows to the expression
-/// lowering for ENUM-QUALIFIED match/struct/`is` forms (REQ-9); it is the last
+/// lowering for enum-qualified match/struct/`is` forms (REQ-9); it is the last
 /// parameter so `l2.rs`'s reuse passes `NO_VARIANTS` explicitly.
 pub(crate) fn lower_stmt_l1(
     stmt: &Stmt,
@@ -1315,7 +1315,7 @@ pub(crate) fn lower_stmt_l1(
             // `fn new()`), because the bounded-`Vec` wrapper is a newtype — a bare
             // `Vec::new()` cannot inhabit the `TVec` type (rustc `E0308`). The element
             // type comes from the `let`'s `Type::Vec(elem)` annotation. Keyed on a
-            // `Type::Vec` annotation AND a `Vec::new()` init; any other init passes
+            // `Type::Vec` annotation and a `Vec::new()` init; any other init passes
             // through.
             let init_s = if let (Some(Type::Vec(elem)), true) = (ty, is_vec_new(init)) {
                 let wname = tvec_name(elem.as_ref())?;
@@ -1326,7 +1326,7 @@ pub(crate) fn lower_stmt_l1(
                 // no-param `Map::new()` lowers to the wrapper constructor
                 // `<TMap>::new()` (`emit_map_runtime_l1` emits a `fn new()`), because
                 // the `TMap` newtype wraps a `Vec<(K,V)>` — a bare `Map::new()` cannot
-                // inhabit it (rustc `E0308`). MIRRORS the `Vec::new()` rewrite.
+                // inhabit it (rustc `E0308`). Mirrors the `Vec::new()` rewrite.
                 let wname = tmap_name(k.as_ref(), v.as_ref())?;
                 format!("{wname}::new()")
             } else {
@@ -1402,11 +1402,11 @@ pub(crate) fn lower_expr_exec(
     }
     let d = depth + 1;
     match expr {
-        // Emit the numeric `value`, NOT `raw` (#37) — byte-identical L1 output.
+        // Emit the numeric `value`, not `raw` (#37): byte-identical L1 output.
         Expr::IntLit { value, .. } => Ok(value.to_string()),
         Expr::BoolLit(b) => Ok(b.to_string()),
-        // A string literal materializes an OWNED `TString` (NOT a Rust `&str`)
-        // (`.design/basis/07-strings.md` REQ-1) — the L1 exec mirror of `lower.rs`'s
+        // A string literal materializes an owned `TString` (not a Rust `&str`)
+        // (`.design/basis/07-strings.md` REQ-1), the L1 exec mirror of `lower.rs`'s
         // L3 `Expr::StrLit` form (#82). Without this an `Expr::StrLit("")` in a
         // struct-literal field position (`Buffer { text: "", cursor: 0 }`) emits a
         // bare `""` where a `TString` field is expected → rustc `error[E0308]:
@@ -1414,7 +1414,7 @@ pub(crate) fn lower_expr_exec(
         // L1 `TString` is the `Vec<u8>` newtype (`emit_string_runtime_l1`), so the
         // literal's UTF-8 bytes are pushed one-by-one into a fresh `data` vec (the
         // empty literal yields the empty `TString`). Emitted as an inline block so
-        // it composes as a receiver (`"hi".len()`), exactly like the L3 form.
+        // it composes as a receiver (`"hi".len()`), like the L3 form.
         Expr::StrLit(s) => {
             let mut block = String::from("({ let mut data: Vec<u8> = Vec::new();");
             for b in s.as_bytes() {
@@ -1429,7 +1429,7 @@ pub(crate) fn lower_expr_exec(
             // `String::from_byte(b)` associated call names the surface `String`,
             // which the L1 runtime emits as `TString` (`emit_string_runtime_l1`).
             // Without the rewrite the build crate resolves `String` to the
-            // `use TString as String;` alias for a TYPE, but an associated-fn PATH
+            // `use TString as String;` alias for a type, but an associated-fn path
             // `String::from_byte` needs the wrapper name; rewriting the leading
             // segment keeps it on the emitted `TString` impl.
             if segs.len() >= 2 && segs[0] == "String" {
@@ -1446,26 +1446,26 @@ pub(crate) fn lower_expr_exec(
             let c = lower_expr_exec(callee, d, span, variants)?;
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1
             // runnable `parse_be`/`parse_le` (emitted by `emit_string_runtime_l1`) take
-            // their byte sequence by REFERENCE (`&TString`) so the ens check does not
-            // MOVE the bound `result` it also returns. Borrow the sole arg of a
+            // their byte sequence by reference (`&TString`) so the ens check does not
+            // move the bound `result` it also returns. Borrow the sole arg of a
             // `parse_be`/`parse_le` call (the round-trip ens `parse_be(result) == n`).
             // Keyed on the generated callee name; an arg already written `&x` is
             // left as-is.
             let borrow_arg = matches!(callee.as_ref(), Expr::Path(segs)
                 if segs.len() == 1 && (segs[0] == "parse_be" || segs[0] == "parse_le"));
             // Cluster C5/C7 (`.design/basis/07-strings.md` REQ-13..16 / REQ-9, issue
-            // #104): the L1 exec twins of the C5/C7 CONTRACT spec fns (`all_digits` /
+            // #104): the L1 exec twins of the C5/C7 contract spec fns (`all_digits` /
             // `is_digit` / `parse_u64` / `count_sep` / `sep_free` / `contains_sub` /
             // `occurs_at`, emitted by `emit_string_runtime_l1`) take their `TString`
-            // byte-sequence argument(s) BY VALUE. A contract names them over a
+            // byte-sequence argument(s) by value. A contract names them over a
             // `String`-typed param that may be a by-value snapshot (`s__pre`, a
-            // `TString` value) OR a `&String` reference param (`s`, a `&TString`),
+            // `TString` value) or a `&String` reference param (`s`, a `&TString`),
             // and the two surface shapes lower to textually-indistinguishable
-            // identifiers — so the call uniformly `.clone()`s the leading string
+            // identifiers, so the call uniformly `.clone()`s the leading string
             // argument(s) (a deep `Vec<u8>` copy; `(&TString).clone()` and
             // `TString.clone()` both yield an owned `TString`), which is always valid
             // and never moves the source. The trailing scalar args (the `sep` /
-            // offset byte, a surface `u64`) pass through unchanged. The COUNT of
+            // offset byte, a surface `u64`) pass through unchanged. The count of
             // leading string args per twin is fixed by its spec signature
             // (`lower.rs::emit_string_search_defs`/`emit_parse_defs`).
             let string_args = match callee.as_ref() {
@@ -1492,11 +1492,11 @@ pub(crate) fn lower_expr_exec(
         } => {
             let r = lower_expr_exec(receiver, d, span, variants)?;
             // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the
-            // `u64`→decimal-`String` method `n.to_string()` lowers to a CALL of the
+            // `u64`→decimal-`String` method `n.to_string()` lowers to a call of the
             // generated free fn `u64_to_string(n)` (emitted by
             // `emit_string_runtime_l1` when the program uses `to_string`). The L1
-            // mirror of the L3 `lower.rs` rewrite — the surface method spelling, the
-            // free-fn call the runnable form. The generated fn RUNS the digit loop +
+            // mirror of the L3 `lower.rs` rewrite: the surface method spelling, the
+            // free-fn call the runnable form. The generated fn runs the digit loop +
             // reverses to the MSB-first decimal.
             if name == "to_string" && args.is_empty() {
                 return Ok(format!("u64_to_string({r})"));
@@ -1506,31 +1506,31 @@ pub(crate) fn lower_expr_exec(
             // `slice(lo: usize, hi: usize)` (see `emit_string_runtime_l1`) take
             // `usize`, but a Thermite surface index is commonly a `u64` (the
             // editor's `b.text.slice(0, b.cursor)` with `cursor: u64`). Rust does
-            // NO implicit `u64 -> usize` narrowing, so each index arg is coerced
-            // with an explicit `as usize` (rustc E0308 otherwise). This MIRRORS the
-            // CHECK-path coercion in `lower.rs::lower_expr` (#86): keyed on the
-            // reserved built-in method NAME (`byte_at`/`slice` — no user methods in
-            // v0.1) across BOTH string index intrinsics (the whole op family, no
-            // sibling left to re-pin). An integer LITERAL flows in directly (Rust
-            // coerces a literal to `usize`) and an arg already `as usize` is left
-            // as-is (no double-cast). L1 is entirely exec, so no spec guard needed.
+            // no implicit `u64 -> usize` narrowing, so each index arg is coerced
+            // with an explicit `as usize` (rustc E0308 otherwise). This mirrors the
+            // check-path coercion in `lower.rs::lower_expr` (#86): keyed on the
+            // reserved built-in method name (`byte_at`/`slice`; no user methods in
+            // v0.1) across both string index intrinsics (the whole op family). An
+            // integer literal flows in directly (Rust coerces a literal to `usize`)
+            // and an arg already `as usize` is left as-is (no double-cast). L1 is
+            // entirely exec, so no spec guard needed.
             let coerce_usize = matches!(name.as_str(), "byte_at" | "slice");
             // Cluster C5 (`.design/basis/07-strings.md` REQ-15, #102): the L1
             // `split(sep: u8)` mirror takes a `u8` separator; the surface `sep` is a
             // `u64` (the `byte_at -> u64` convention). Rust does no implicit `u64 ->
             // u8` narrowing, so coerce the `split` arg `as u8` (the L1 mirror of the
             // L3 call-site coercion in `lower.rs`). A literal / already-`as u8` arg
-            // passes through.
+            // passes through unchanged.
             let coerce_u8 = name == "split";
             let mut parts = Vec::with_capacity(args.len());
             for a in args {
                 let lowered = lower_expr_exec(a, d, span, variants)?;
                 if coerce_usize && !matches!(a, Expr::IntLit { .. }) && !is_usize_cast_l1(a) {
                     // Issue #122: `as` binds tighter than `+`/`-`/…, so a compound
-                    // index `i - 1` MUST be parenthesized before the coercion —
+                    // index `i - 1` must be parenthesized before the coercion:
                     // `i - 1 as usize` is `i - (1 as usize)` (`u64 - usize`, E0277).
                     // A simple arg (`i`, `b.cursor`) never mis-binds, so the paren
-                    // is added ONLY for a `Binary`/`Unary` index (the editor's
+                    // is added only for a `Binary`/`Unary` index (the editor's
                     // `slice(i - 1, j)` / `byte_at(i - 1)`); no double-cast since an
                     // `as usize` arg already short-circuited above.
                     if matches!(a, Expr::Binary { .. } | Expr::Unary { .. }) {
@@ -1583,7 +1583,7 @@ pub(crate) fn lower_expr_exec(
         Expr::Unary { op, expr: inner } => {
             // The prefix `!` (#92, L1 exec mirror of `lower.rs`): Rust's `!` is
             // type-directed (logical-not on `bool`, bitwise-not on an integer),
-            // exactly like Verus's, so the bare `!` lowers per the operand type. A
+            // like Verus's, so the bare `!` lowers per the operand type. A
             // binary operand is parenthesized so the prefix binds only the operand.
             let UnaryOp::Not = op;
             let inner_src = lower_expr_exec(inner, d, span, variants)?;
@@ -1598,11 +1598,11 @@ pub(crate) fn lower_expr_exec(
             let e = lower_expr_exec(expr, d, span, variants)?;
             let t = lower_type(ty)?;
             // Issue #122: `as` binds tighter than the binary/unary operators, so a
-            // cast over a binary/unary inner (`(i - 1) as usize`) MUST parenthesize
-            // the inner — `i - 1 as usize` parses as `i - (1 as usize)` (a
+            // cast over a binary/unary inner (`(i - 1) as usize`) must parenthesize
+            // the inner: `i - 1 as usize` parses as `i - (1 as usize)` (a
             // `u64`/`usize` mismatch, E0277). Mirror of the check-path fix in
             // `lower.rs`'s `Expr::Cast` arm. A simple inner (`i as usize`,
-            // `0 as usize`) never mis-binds, so the paren is added ONLY for a
+            // `0 as usize`) never mis-binds, so the paren is added only for a
             // `Binary`/`Unary` inner (no regression on the existing simple casts).
             let e = if matches!(expr.as_ref(), Expr::Binary { .. } | Expr::Unary { .. }) {
                 format!("({e})")
@@ -1622,7 +1622,7 @@ pub(crate) fn lower_expr_exec(
         // Basis Stage 1c (`.design/basis/01-adts.md` REQ-8/REQ-9/REQ-10).
         Expr::StructLit { path, fields } => {
             // A struct / struct-variant construction (REQ-2/REQ-8): the struct
-            // name (or ENUM-QUALIFIED variant) + `field: value` initializers (the
+            // name (or enum-qualified variant) + `field: value` initializers (the
             // `Account { balance: a.balance + amount }` of `deposit`).
             let head = qualify_variant_path_l1(path, variants);
             let mut parts = Vec::with_capacity(fields.len());
@@ -1633,11 +1633,11 @@ pub(crate) fn lower_expr_exec(
             Ok(format!("{head} {{ {} }}", parts.join(", ")))
         }
         Expr::Is { scrutinee, variant } => {
-            // A variant-discrimination test `SCRUTINEE is Variant` (REQ-6/REQ-9):
-            // at L1 there is no Verus `is`, so it is the always-true-or-false Rust
+            // A variant-discrimination test `scrutinee is Variant` (REQ-6/REQ-9):
+            // at L1 there is no Verus `is`, so it is the Rust
             // `matches!(<scrutinee>, Enum::Variant { .. })` (the `{ .. }` form
             // works for unit/tuple/struct variants). The enum is resolved from the
-            // variant map so the discriminant test is ENUM-QUALIFIED.
+            // variant map so the discriminant test is enum-qualified.
             let s = lower_expr_exec(scrutinee, d, span, variants)?;
             let v = variant.last().cloned().unwrap_or_default();
             let qualified = qualify_variant_path_l1(variant, variants);
@@ -1651,7 +1651,7 @@ pub(crate) fn lower_expr_exec(
             Ok(format!("matches!({s}, {pat_path} {{ .. }})"))
         }
         Expr::Deref(inner) => {
-            // A `Box` dereference `*EXPR` (REQ-3/REQ-10): the recursive read
+            // A `Box` dereference `*expr` (REQ-3/REQ-10): the recursive read
             // `*tail`. At L1 `Box<T>` is a real heap box; `*t` derefs it (moving
             // the owned `T` out — the recursive `sum_list(*t)` consumes the box).
             let e = lower_expr_exec(inner, d, span, variants)?;
@@ -1676,9 +1676,9 @@ pub(crate) fn lower_expr_exec(
     }
 }
 
-/// True if `expr` is already an `as usize` cast — so the L1 `byte_at`/`slice`
+/// True if `expr` is already an `as usize` cast, so the L1 `byte_at`/`slice`
 /// `u64 -> usize` index coercion (mirroring `lower.rs::is_usize_cast`, #86) does
-/// NOT double-cast an argument the source already wrote `... as usize`.
+/// not double-cast an argument the source already wrote `... as usize`.
 fn is_usize_cast_l1(expr: &Expr) -> bool {
     matches!(
         expr,
@@ -1722,7 +1722,7 @@ fn lower_index_exec(
 
 /// Lower a `match` in exec position (e.g. `binary_search`'s `Option` ens match,
 /// `is_circle`'s enum match, `sum_list`'s ADT fold). Arm patterns are
-/// ENUM-QUALIFIED via the variant map (REQ-9).
+/// enum-qualified via the variant map (REQ-9).
 fn lower_match_exec(
     scrutinee: &Expr,
     arms: &[MatchArm],
@@ -1753,7 +1753,7 @@ fn lower_match_exec(
 }
 
 /// Lower a pattern in exec position (REQ-7/REQ-9). A user enum-variant pattern is
-/// ENUM-QUALIFIED via the variant map (`Circle(r)`→`Shape::Circle(r)`); `Some`/
+/// enum-qualified via the variant map (`Circle(r)`→`Shape::Circle(r)`); `Some`/
 /// `None`/bindings lower unqualified. `Pattern::Struct` (`Rect { w, h }`) is the
 /// struct-variant destructuring (REQ-4/REQ-9). A slice pattern outside a head-fold
 /// spec fn is unsupported at L1 (mirrors `lower.rs`).
@@ -1923,8 +1923,8 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // REQ-5/REQ-8/REQ-9, issue #98): the L1 exec mirror of a bounded `Vec<T>`
         // is the per-element runtime wrapper `TVec<elem>` (`Vec<u64>` → `TVecU64`,
         // `Vec<String>` → `TVecTString`, `Vec<Point>` → `TVecPoint`, nested
-        // `Vec<Vec<u64>>` → `TVecTVecU64`), the SAME name as the L3 lowering
-        // (`lower.rs::tvec_name`). The wrapper is DEFINED by `emit_vec_runtime_l1`
+        // `Vec<Vec<u64>>` → `TVecTVecU64`), the same name as the L3 lowering
+        // (`lower.rs::tvec_name`). The wrapper is defined by `emit_vec_runtime_l1`
         // with the surface ops (`push`/`get`/`last`/`pop_last`/`insert`/`remove`/
         // `contains`/`len`) as plain-Rust methods carrying the capacity/no-OOB
         // guards as always-active `thermite_check!`s (§6 L1 handled-or-loud). The
@@ -1933,10 +1933,10 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         // makes the whole op family runnable.
         Type::Vec(inner) => tvec_name(inner),
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): the L1 exec mirror
-        // of the built-in `Option<T>` / `Result<T, E>` is the Verus-/Rust-NATIVE
-        // generic — Rust's prelude carries them and their constructors
+        // of the built-in `Option<T>` / `Result<T, E>` is the Verus-/Rust-native
+        // generic. Rust's prelude carries them and their constructors
         // `Some`/`None`/`Ok`/`Err`, so the L1 runnable form is the bare native type
-        // (no wrapper), exactly as the L3 lowering (`lower.rs::lower_type`). The
+        // (no wrapper), as the L3 lowering (`lower.rs::lower_type`). The
         // element/error types lower recursively. This keeps L1 total over `Type`
         // (no panic, REQ-6 / REQ-5).
         Type::Option(inner) => {
@@ -1950,8 +1950,8 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         }
         // Cluster C12 (`.design/basis/13-map.md` REQ-4/REQ-5): the L1 exec mirror of
         // a bounded `Map<K, V>` is the per-`(K,V)`-pair runtime wrapper `TMap<K,V>`
-        // (`Map<u64, u64>` → `TMapU64U64`), the SAME name as the L3 lowering
-        // (`lower.rs::tmap_name`). The wrapper is DEFINED by `emit_map_runtime_l1`
+        // (`Map<u64, u64>` → `TMapU64U64`), the same name as the L3 lowering
+        // (`lower.rs::tmap_name`). The wrapper is defined by `emit_map_runtime_l1`
         // with the surface ops (`insert`/`get`/`contains_key`/`len`) as plain-Rust
         // methods carrying the capacity/uniqueness guards as always-active
         // `thermite_check!`s (§6 L1 handled-or-loud); `get` returns the native
@@ -1959,7 +1959,7 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
         Type::Map(k, v) => tmap_name(k, v),
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4): the bounded owned
         // text primitive lowers to the newtype `TString` over `vstd::vec::Vec<u8>`
-        // (the byte char model). The L1 exec mirror is the SAME wrapper name as the
+        // (the byte char model). The L1 exec mirror is the same wrapper name as the
         // L3 lowering (`lower.rs::lower_type` -> `"TString"`), so its
         // `len`/`byte_at`/`concat` method calls resolve to the emitted `TString`
         // ops. The v1 corpus exercises L3 only; this arm keeps L1 total over `Type`
@@ -1981,31 +1981,31 @@ pub(crate) fn lower_type(ty: &Type) -> Result<String, LowerError> {
 
 // ---------------------------------------------------------------------------
 // Basis Stage 8 (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3): the
-// plain-Rust `TString` definition the BUILD-emitted crate needs when a
+// plain-Rust `TString` definition the build-emitted crate needs when a
 // `String`-typed value is present (so the `os::<name>` Write/Read-line wrappers'
 // `super::TString` and `lower_type`'s bare `TString` boundary signatures resolve).
 // ---------------------------------------------------------------------------
 
 /// The bounded-string capacity (`.design/basis/07-strings.md` §4.2 cage; the
 /// `lower.rs` L3 `VEC_CAP` idiom `1_000_000`). At L1 (runtime checks, not an SMT
-/// proof) the bound is enforced by an always-active `thermite_check!` rather than a
-/// `requires`/`invariant`.
+/// proof) the bound is enforced by an always-active `thermite_check!` rather than
+/// a `requires`/`invariant`.
 const STRING_CAP_L1: usize = 1_000_000;
 
-/// The number of LEADING `TString`-typed arguments a C5/C7 contract spec-fn twin
+/// The number of leading `TString`-typed arguments a C5/C7 contract spec-fn twin
 /// takes (issue #104), used by `lower_expr_exec`'s `Expr::Call` arm to `.clone()`
-/// exactly those arguments at a call site (the by-value/`&` snapshot-shape
+/// those arguments at a call site (the by-value/`&` snapshot-shape
 /// ambiguity, see that arm). The counts mirror the spec signatures in
 /// `lower.rs::emit_string_search_defs`/`emit_parse_defs`: `all_digits(s)` /
 /// `parse_u64(s)` / `count_sep(s, sep)` / `sep_free(s, sep)` take one leading
 /// string; `contains_sub(s, needle)` / `occurs_at(s, needle, at)` take two;
 /// `is_digit(b)` takes none (a `u8`/`u64` byte). A name not in this set is not a
-/// string-arg twin (0). `parse_be`/`parse_le` are EXCLUDED — they keep the C4
+/// string-arg twin (0). `parse_be`/`parse_le` are excluded: they keep the C4
 /// `&TString` borrow form (the `borrow_arg` gate), not the clone form.
 fn string_arg_count_l1(name: &str) -> usize {
     match name {
         "all_digits" | "parse_u64" | "count_sep" | "sep_free" => 1,
-        // C8 (#278): bytes_eq(a, b, ai, bi, n) — TWO leading String args (a, b),
+        // C8 (#278): bytes_eq(a, b, ai, bi, n) has two leading String args (a, b),
         // then three scalar `u64` offsets/length pass through unchanged.
         "contains_sub" | "occurs_at" | "bytes_eq" => 2,
         _ => 0,
@@ -2013,7 +2013,7 @@ fn string_arg_count_l1(name: &str) -> usize {
 }
 
 /// True iff the program references the `String` type in any `fn`/`spec fn`
-/// parameter or return position, OR materializes a string literal anywhere — both
+/// parameter or return position, or materializes a string literal anywhere. Both
 /// require the build-crate `TString` definition (a literal lowers to a constructed
 /// `TString`, a `String`-typed boundary signature lowers to `TString`). Mirrors
 /// `lower.rs::program_uses_string`'s gate so the emission is byte-stable for the
@@ -2027,12 +2027,12 @@ fn program_uses_string_l1(program: &Program) -> bool {
             Type::Generic { arg, .. } => ty_is_string(arg),
             // Cluster C7 (`.design/basis/09-option-result.md` REQ-4): a `String`
             // nested under an `Option<String>` / `Result<String, E>` is reached
-            // through the type argument(s), exactly as a `Box`/`Vec` inner is.
+            // through the type argument(s), as a `Box`/`Vec` inner is.
             Type::Option(inner) => ty_is_string(inner),
             Type::Result(ok, err) => ty_is_string(ok) || ty_is_string(err),
             // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `String` nested in a
             // `Map<String, _>` key or a `Map<_, String>` value is reached through the
-            // type argument(s), exactly as `Result`'s two arguments.
+            // type argument(s), as `Result`'s two arguments.
             Type::Map(k, v) => ty_is_string(k) || ty_is_string(v),
             // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
             // `String` nested in any tuple element is reached through the element.
@@ -2126,35 +2126,35 @@ fn expr_has_str_lit_l1(expr: &Expr) -> bool {
         Expr::Unary { expr, .. } => expr_has_str_lit_l1(expr),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
         // string literal could sit in any tuple element or under a projection's
-        // receiver — descend into both (the honest full-tree walk).
+        // receiver — descend into both (the full-tree walk).
         Expr::Tuple(elems) => elems.iter().any(expr_has_str_lit_l1),
         Expr::TupleProj { receiver, .. } => expr_has_str_lit_l1(receiver),
     }
 }
 
-/// Emit the PLAIN-Rust `TString` definition + the `use TString as String;` surface
-/// alias the BUILD-emitted crate needs whenever the program uses `String`
-/// (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3), EMPTY otherwise (the
+/// Emit the plain-Rust `TString` definition + the `use TString as String;` surface
+/// alias the build-emitted crate needs whenever the program uses `String`
+/// (`.design/basis/08-runnable-effect-link.md` REQ-1/REQ-3), empty otherwise (the
 /// non-`String` corpus is byte-unaffected).
 ///
 /// This is the L1 exec mirror of `lower.rs::emit_string_wrapper`'s L3/Verus form:
-/// the SAME `TString { data: Vec<u8> }` shape (matching the wrappers' `super::TString
+/// the same `TString { data: Vec<u8> }` shape (matching the wrappers' `super::TString
 /// { data: s.into_bytes() }` construction and `&s.data` field access in
-/// `forge/src/effect_wrappers.rs`) and the SAME method surface (`new`/`len`/`byte_at`/
-/// `concat`/`slice`), but as ordinary runnable Rust — no `vstd`, no `Seq`/`@`, no
+/// `forge/src/effect_wrappers.rs`) and the same method surface (`new`/`len`/`byte_at`/
+/// `concat`/`slice`), but as ordinary runnable Rust: no `vstd`, no `Seq`/`@`, no
 /// `spec`/`requires`/`ensures`/`invariant`/`decreases` (L1 is entirely exec; §6 L1
 /// rung). The bounds the L3 form proves (`i < len`, `lo <= hi <= len`, `len <= CAP`)
 /// are enforced at run time by the always-active `thermite_check!` (so a no-OOB /
-/// over-cap violation ABORTS loudly rather than being a silent panic; the §6 L1
+/// over-cap violation aborts rather than being a silent panic; the §6 L1
 /// "handled-or-loud" discipline). `#[derive(Debug)]` so a `String`-returning
 /// `--entry` runner's `println!("… = {r:?}")` compiles (`build.rs`
 /// `synthesize_entry_main`). `#[allow(dead_code)]` because a program may name only
 /// a subset of the methods (the wrapper/lowering keeps the full surface available).
 ///
 /// The `use TString as String;` alias makes the surface name `String` (in
-/// expression position, e.g. a body's `String::new()`) resolve to the SAME emitted
+/// expression position, e.g. a body's `String::new()`) resolve to the same emitted
 /// type as a `String`-typed signature lowered by `lower_type` (`07-strings.md`
-/// REQ-4: the surface `String` IS the bounded `TString`, not `std::string::String`).
+/// REQ-4: the surface `String` is the bounded `TString`, not `std::string::String`).
 fn emit_string_runtime_l1(program: &Program) -> String {
     if !program_uses_string_l1(program) {
         return String::new();
@@ -2163,7 +2163,7 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     let mut out = String::new();
     out.push('\n');
     // `Clone` (alongside `Debug`): the L1 ens-check snapshots a non-Copy
-    // parameter BEFORE the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot),
+    // parameter before the body consumes it (`lower_fn_l1`'s `<p>__pre` snapshot),
     // so a `String`/`TString` param named in an `ens` after being moved into the
     // result no longer triggers rustc `error[E0382]: borrow of moved value` (#88
     // blocker 2). A `TString` is a `Vec<u8>` newtype, so the derive is a deep byte
@@ -2177,8 +2177,8 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     out.push_str("impl TString {\n");
     out.push_str("    fn new() -> TString { TString { data: Vec::new() } }\n");
     out.push_str("    fn len(&self) -> u64 { self.data.len() as u64 }\n");
-    // The no-OOB `byte_at` accessor (the editor's core safety): the L3 form PROVES
-    // `req i < len`; L1 enforces it loudly at run time (the always-active check),
+    // The no-OOB `byte_at` accessor (the editor's core safety): the L3 form proves
+    // `req i < len`; L1 enforces it at run time (the always-active check),
     // then returns the byte zero-extended to `u64` (the corpus `first_byte -> u64`).
     out.push_str("    fn byte_at(&self, i: usize) -> u64 {\n");
     writeln!(
@@ -2188,8 +2188,8 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     .ok();
     out.push_str("        self.data[i] as u64\n");
     out.push_str("    }\n");
-    // The bounded constructing `concat` (a two-loop append). The L3 form PROVES the
-    // `len_a + len_b <= CAP` cage; L1 enforces it loudly, then appends.
+    // The bounded constructing `concat` (a two-loop append). The L3 form proves the
+    // `len_a + len_b <= CAP` cage; L1 enforces it, then appends.
     out.push_str("    fn concat(&self, b: TString) -> TString {\n");
     writeln!(
         out,
@@ -2201,8 +2201,8 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     out.push_str("        out.extend_from_slice(&b.data);\n");
     out.push_str("        TString { data: out }\n");
     out.push_str("    }\n");
-    // The bounded substring `slice` (an owned byte copy). The L3 form PROVES `lo <=
-    // hi <= len`; L1 enforces it loudly, then copies the run.
+    // The bounded substring `slice` (an owned byte copy). The L3 form proves `lo <=
+    // hi <= len`; L1 enforces it, then copies the run.
     out.push_str("    fn slice(&self, lo: usize, hi: usize) -> TString {\n");
     writeln!(
         out,
@@ -2214,11 +2214,11 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     // Cluster C4 (`.design/basis/07-strings.md` REQ-7, issue #94): the L1 exec
     // mirror of the verified byte-builder (`lower.rs::emit_string_wrapper`'s
     // `from_byte`/`push_byte`). `from_byte(b)` builds a 1-byte `String`; `push_byte(b)`
-    // appends one byte returning a FRESH owned `String` (the owned-result form). The
-    // surface byte is a `u64` (the SAME zero-extension as `byte_at -> u64`), narrowed
-    // to the `u8` backing element. The L3 form PROVES `len < CAP`; L1 enforces it
-    // loudly at run time (the always-active check) so an over-cap push ABORTS rather
-    // than silently — §6 L1 handled-or-loud.
+    // appends one byte returning a fresh owned `String` (the owned-result form). The
+    // surface byte is a `u64` (the same zero-extension as `byte_at -> u64`), narrowed
+    // to the `u8` backing element. The L3 form proves `len < CAP`; L1 enforces it
+    // at run time (the always-active check) so an over-cap push aborts (§6 L1
+    // handled-or-loud).
     out.push_str("    fn from_byte(b: u64) -> TString {\n");
     out.push_str("        let mut data: Vec<u8> = Vec::new();\n");
     out.push_str("        data.push(b as u8);\n");
@@ -2237,13 +2237,13 @@ fn emit_string_runtime_l1(program: &Program) -> String {
     out.push_str("    }\n");
     // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102): the L1 exec
     // mirror of the verified string search/transform ops (`lower.rs::emit_string_-
-    // search_methods`). Entirely runnable Rust — no `verus!`/`Seq`/`requires`; the L3
-    // proof carries the contracts, L1 RUNS the same byte scans. `find` returns a
+    // search_methods`). Runnable Rust, no `verus!`/`Seq`/`requires`; the L3
+    // proof carries the contracts, L1 runs the same byte scans. `find` returns a
     // native `Option<u64>`; `split` returns the C6 `TVecTString` runtime wrapper
     // (woven by `emit_vec_runtime_l1` because `collect_vec_elem_types` notes the
     // `Vec<String>` element when a C5 op is used). Emitted only when the program uses
-    // a C5 op (byte-stable for the non-C5 corpus). `contains` here is the SUBSTRING op
-    // (the `TString` receiver); the C6 `TVec::contains` membership op is a DISTINCT
+    // a C5 op (byte-stable for the non-C5 corpus). `contains` here is the substring op
+    // (the `TString` receiver); the C6 `TVec::contains` membership op is a distinct
     // inherent method on the `TVec*` impl (receiver-type dispatch, no clobber).
     if program_uses_string_search(program) {
         out.push_str("    fn matches_at(&self, p: &TString, at: usize) -> bool {\n");
@@ -2313,19 +2313,19 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("    }\n");
     }
     out.push_str("}\n");
-    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #104): the L1 EXEC
-    // twins of the C5 CONTRACT spec fns (`occurs_at`/`contains_sub`/`count_sep`/
-    // `sep_free`). At L3 these are `spec fn`s carrying the PROOF; `forge build` lowers
-    // EVERY fn to its always-active runtime `thermite_check!`, so a contract naming a
+    // Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #104): the L1 exec
+    // twins of the C5 contract spec fns (`occurs_at`/`contains_sub`/`count_sep`/
+    // `sep_free`). At L3 these are `spec fn`s carrying the proof; `forge build` lowers
+    // every fn to its always-active runtime `thermite_check!`, so a contract naming a
     // C5 spec fn (the parser's `ens result.len() == 1 + count_sep(s, sep)` /
-    // `ens result == contains_sub(s, sep)`) becomes a RUN-time check that must resolve
-    // the named fn as runnable Rust. Each twin computes the SAME value as its spec body
-    // over the runtime `TString` (`Vec<u8>`) — the byte scans are the exec mirror of
-    // the `Seq<u8>` definitions in `lower.rs::emit_string_search_defs`. They carry NO
-    // verus proof (the L1 path is runtime-checked, not verified — the SPEC twins + the
-    // §7 proofs already discharge the check path). String args are taken BY VALUE
-    // (the call site `.clone()`s — `string_arg_count_l1`). Emitted only when the
-    // program uses a C5 op (`program_uses_string_search` — byte-stable for the non-C5
+    // `ens result == contains_sub(s, sep)`) becomes a run-time check that must resolve
+    // the named fn as runnable Rust. Each twin computes the same value as its spec body
+    // over the runtime `TString` (`Vec<u8>`): the byte scans are the exec mirror of
+    // the `Seq<u8>` definitions in `lower.rs::emit_string_search_defs`. They carry no
+    // verus proof (the L1 path is runtime-checked, not verified; the spec twins + the
+    // §7 proofs already discharge the check path). String args are taken by value
+    // (the call site `.clone()`s, `string_arg_count_l1`). Emitted only when the
+    // program uses a C5 op (`program_uses_string_search`; byte-stable for the non-C5
     // corpus), `#[allow(dead_code)]` because a program may name only a subset.
     if program_uses_string_search(program) {
         out.push('\n');
@@ -2358,7 +2358,7 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("    }\n");
         out.push_str("    false\n");
         out.push_str("}\n");
-        // count_sep: the number of bytes equal to `sep` — split's piece count is
+        // count_sep: the number of bytes equal to `sep`; split's piece count is
         // `1 + count_sep`. The exec mirror of the recursive `Seq<u8>` count. The surface
         // `sep` is a `u64` (the `byte_at -> u64` convention), narrowed `as u8`.
         out.push_str("#[allow(dead_code)]\n");
@@ -2384,35 +2384,35 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("    true\n");
         out.push_str("}\n");
     }
-    // Cluster C8 (`.design/basis/07-strings.md` REQ-20, issue #278): the L1 EXEC twin
-    // of the `bytes_eq` CONTRACT spec fn. At L3 `bytes_eq` is a `spec fn` carrying the
-    // PROOF (the prove-once bridge lemmas); `forge build` lowers EVERY fn to its
+    // Cluster C8 (`.design/basis/07-strings.md` REQ-20, issue #278): the L1 exec twin
+    // of the `bytes_eq` contract spec fn. At L3 `bytes_eq` is a `spec fn` carrying the
+    // proof (the prove-once bridge lemmas); `forge build` lowers every fn to its
     // always-active runtime `thermite_check!`, so a contract naming `bytes_eq` (the
-    // editor's `ens bytes_eq(&result, &b.text, 0, 0, b.cursor)`) becomes a RUN-time
+    // editor's `ens bytes_eq(&result, &b.text, 0, 0, b.cursor)`) becomes a run-time
     // check that must resolve `bytes_eq` as runnable Rust. The twin is the bounds-
-    // checked byte-compare loop computing the SAME value as the `Seq<u8>` low-peel def
-    // — for the in-window range `[ai, ai+n) vs [bi, bi+n)`. It mirrors the spec's
-    // total-fn semantics honestly: the spec body's `n <= 0` arm is `true`
-    // UNCONDITIONALLY (no index is accessed), so the twin SHORT-CIRCUITS the empty
-    // window FIRST (`n == 0` — `n` is `u64`, so `== 0` is exactly the spec's `n <= 0`
-    // arm) BEFORE the window guard; REQ-20's OOB-index exception applies only when an
-    // index is genuinely accessed (`n > 0`). Only then does the contract supply an
+    // checked byte-compare loop computing the same value as the `Seq<u8>` low-peel def,
+    // for the in-window range `[ai, ai+n) vs [bi, bi+n)`. It mirrors the spec's
+    // total-fn semantics: the spec body's `n <= 0` arm is `true`
+    // unconditionally (no index is accessed), so the twin short-circuits the empty
+    // window first (`n == 0`; `n` is `u64`, so `== 0` is the spec's `n <= 0`
+    // arm) before the window guard; REQ-20's OOB-index exception applies only when an
+    // index is accessed (`n > 0`). Only then does the contract supply an
     // already-validated in-bounds window (the `slice`/`concat` `req` proved the
-    // lengths), and an out-of-window runtime index would be a check failure, not UB —
-    // so the twin GUARDS the window (returns `false` if either side runs off the end)
+    // lengths), and an out-of-window runtime index would be a check failure, not UB,
+    // so the twin guards the window (returns `false` if either side runs off the end)
     // rather than indexing OOB. The
-    // String args (a, b) are taken BY VALUE (the call site `.clone()`s — two leading
-    // string args, `string_arg_count_l1`); `ai`/`bi`/`n` are surface `u64`. NO verus
+    // String args (a, b) are taken by value (the call site `.clone()`s, two leading
+    // string args, `string_arg_count_l1`); `ai`/`bi`/`n` are surface `u64`. No verus
     // proof (the L1 path is runtime-checked, not verified). Gated on
     // `program_uses_bytes_eq` (byte-stable for the non-`bytes_eq` corpus).
     if program_uses_bytes_eq(program) {
         out.push('\n');
         out.push_str("#[allow(dead_code)]\n");
         out.push_str("fn bytes_eq(a: TString, b: TString, ai: u64, bi: u64, n: u64) -> bool {\n");
-        // The spec body's `n <= 0` arm is `true` UNCONDITIONALLY (no index is
-        // accessed); `n` is `u64`, so `n == 0` is exactly that arm. Short-circuit it
-        // BEFORE the window guard so the empty window matches the spec value even at an
-        // out-of-bounds offset (07-strings.md REQ-20: the twin computes the SAME value
+        // The spec body's `n <= 0` arm is `true` unconditionally (no index is
+        // accessed); `n` is `u64`, so `n == 0` is that arm. Short-circuit it
+        // before the window guard so the empty window matches the spec value even at an
+        // out-of-bounds offset (07-strings.md REQ-20: the twin computes the same value
         // as the spec body; the OOB-index exception fires only when `n > 0`).
         out.push_str("    if n == 0 { return true; }\n");
         out.push_str("    let ai_u: usize = ai as usize;\n");
@@ -2430,18 +2430,18 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("}\n");
     }
     // Cluster C7 (`.design/basis/09-option-result.md` REQ-4 / `07-strings.md` REQ-9,
-    // issue #104): the L1 EXEC twins of the C7 parse CONTRACT spec fns (`is_digit`/
+    // issue #104): the L1 exec twins of the C7 parse contract spec fns (`is_digit`/
     // `all_digits`/the free `parse_u64`/`parse_be`). The calculator's `add` names
     // `all_digits(a)` / `parse_be(a)` in its `req`/`ens` and calls the free
-    // `parse_u64(a)` in its body — all become RUN-time `thermite_check!`/exec calls
-    // under `forge build`, so each needs a runnable form computing the SAME value as
-    // its spec body over the runtime `TString`. `parse_be` is SHARED with the numfmt
-    // round-trip (`program_uses_numfmt_l1`); emit it HERE only when numfmt did not
-    // (dedup — a program using BOTH `to_string` and `parse_u64`/`parse_be` must not
+    // `parse_u64(a)` in its body; all become run-time `thermite_check!`/exec calls
+    // under `forge build`, so each needs a runnable form computing the same value as
+    // its spec body over the runtime `TString`. `parse_be` is shared with the numfmt
+    // round-trip (`program_uses_numfmt_l1`); emit it here only when numfmt did not
+    // (dedup: a program using both `to_string` and `parse_u64`/`parse_be` must not
     // define `parse_be` twice). `parse_be` keeps the C4 `&TString` borrow form (the
     // round-trip ens borrows `result`); the C7 string-arg twins take `TString` by
     // value (the call site `.clone()`s). Emitted only when the program uses a parse op
-    // (`program_uses_parse` — byte-stable otherwise), `#[allow(dead_code)]`.
+    // (`program_uses_parse`; byte-stable otherwise), `#[allow(dead_code)]`.
     if program_uses_parse(program) {
         out.push('\n');
         // is_digit: the ASCII decimal-digit predicate (the surface byte is a `u64`).
@@ -2459,7 +2459,7 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("    true\n");
         out.push_str("}\n");
         // parse_be — the MSB-first decimal value (a left-to-right Horner accumulate),
-        // SHARED with the numfmt round-trip. Emit only when numfmt did not (dedup),
+        // shared with the numfmt round-trip. Emit only when numfmt did not (dedup),
         // identical bytes to the numfmt form so L1 stays byte-stable either way.
         if !program_uses_numfmt_l1(program) {
             out.push_str("#[allow(dead_code)]\n");
@@ -2475,8 +2475,8 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         }
         // parse_u64 — the free `String -> Option<u64>` partial parse. The exec mirror
         // of `lower.rs::emit_parse_defs`'s Horner loop with the three handled-or-loud
-        // `None` arms (empty / non-digit / would-overflow), computing the SAME value
-        // as the L3 form. The L3 PROOF lives in `emit_parse_defs`; this just RUNS the
+        // `None` arms (empty / non-digit / would-overflow), computing the same value
+        // as the L3 form. The L3 proof lives in `emit_parse_defs`; this runs the
         // loop. Takes `TString` by value (the call site `.clone()`s).
         out.push_str("#[allow(dead_code)]\n");
         out.push_str("fn parse_u64(s: TString) -> Option<u64> {\n");
@@ -2495,16 +2495,16 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("}\n");
     }
     // Cluster C4 (`.design/basis/07-strings.md` REQ-8, issue #94): the L1 exec
-    // form of the generated `u64`→decimal-`String` round-trip. The L3 form PROVES
+    // form of the generated `u64`→decimal-`String` round-trip. The L3 form proves
     // the round-trip `parse_le(result.data@) == n` via the divide/mod-by-10 digit
-    // loop + the `lemma_parse_push` append lemma; L1 is ENTIRELY exec, so this is
-    // ordinary runnable Rust — the SAME digit-extraction loop (LSB-first push of
+    // loop + the `lemma_parse_push` append lemma; L1 is entirely exec, so this is
+    // ordinary runnable Rust: the same digit-extraction loop (LSB-first push of
     // `(m % 10) + 48`, then `m /= 10`), reversed at the end to the human-readable
-    // MSB-first decimal (the construction is LSB-first; the display reverses — the
+    // MSB-first decimal (the construction is LSB-first, the display reverses; the
     // L3 `parse_be(reverse(s)) == parse_le(s)` bridge). Emitted only when the program
     // uses `n.to_string()` (the non-numfmt corpus is byte-unaffected). `n == 0` yields
     // the single byte "0" (the loop body runs once before the reverse). The method
-    // `n.to_string()` lowers to a CALL of this free fn (`lower_expr_exec`).
+    // `n.to_string()` lowers to a call of this free fn (`lower_expr_exec`).
     if program_uses_numfmt_l1(program) {
         out.push('\n');
         out.push_str("#[allow(dead_code)]\n");
@@ -2517,24 +2517,24 @@ fn emit_string_runtime_l1(program: &Program) -> String {
         out.push_str("        m = m / 10;\n");
         out.push_str("    }\n");
         // Reverse the LSB-first construction buffer to the human-readable MSB-first
-        // display order (REQ-8, blocker #96) — the BUILT binary prints "42", not "24".
+        // display order (REQ-8, blocker #96): the built binary prints "42", not "24".
         // Mirrors the L3 reverse loop in `lower.rs::emit_numfmt_defs`, so L1 and L3
-        // agree byte-for-byte (both now reverse to MSB-first).
+        // agree byte-for-byte (both reverse to MSB-first).
         out.push_str("    data.reverse();\n");
         out.push_str("    TString { data }\n");
         out.push_str("}\n");
         // The L1 runnable form of the round-trip spec fns (`parse_be`/`parse_le`/
-        // `pow10`). At L3 these are `spec fn`s carrying the PROOF; at L1 a contract
-        // `ens parse_be(result) == n` becomes an always-active runtime CHECK, so the
+        // `pow10`). At L3 these are `spec fn`s carrying the proof; at L1 a contract
+        // `ens parse_be(result) == n` becomes an always-active runtime check, so the
         // named parse fn must be a real runnable fn. `u64_to_string` now reverses to
         // MSB-first display order (REQ-8, blocker #96), so the surface round-trip is
-        // `parse_be` — the MSB-first parse: a left-to-right Horner accumulate
+        // `parse_be`, the MSB-first parse: a left-to-right Horner accumulate
         // (`acc = acc*10 + (s[i]-48)`, `data[0]` most significant), matching the L3
         // spec `parse_be`. `parse_le` (the LSB-first parse, `data[0]` least
-        // significant) is ALSO emitted: it is the construction-order value the bridge
+        // significant) is also emitted: it is the construction-order value the bridge
         // carries the proof through, and a contract may still name it. Both take
         // `&TString` so the ens check borrows (never moves) the bound `result`. L1 and
-        // L3 agree byte-for-byte (both reverse to MSB-first — no display divergence).
+        // L3 agree byte-for-byte (both reverse to MSB-first, no display divergence).
         // `pow10` is the decimal weight (emitted for completeness; a contract may name it).
         out.push_str("#[allow(dead_code)]\n");
         out.push_str("fn pow10(k: u64) -> u64 {\n");
@@ -2574,10 +2574,10 @@ const VEC_CAP_L1: usize = 1_000_000;
 
 /// Emit the per-element `TVec<elem>` runtime wrapper(s) for every `Vec<T>` the
 /// program reaches (Cluster C6 #98, `.design/basis/04-collections.md`
-/// REQ-5/REQ-8/REQ-9). The L1 EXEC mirror of `lower.rs::emit_vec_wrappers`: PLAIN
+/// REQ-5/REQ-8/REQ-9). The L1 exec mirror of `lower.rs::emit_vec_wrappers`: plain
 /// Rust (no `verus!`/`Seq`/`requires`), with the capacity / no-OOB guards as
-/// always-active `thermite_check!`s so a violated contract ABORTS loudly (§6 L1
-/// handled-or-loud) rather than UB. EMPTY when the program uses no `Vec`
+/// always-active `thermite_check!`s so a violated contract aborts (§6 L1
+/// handled-or-loud) rather than UB. Empty when the program uses no `Vec`
 /// (byte-stable for the non-`Vec` corpus). The element wrapper(s) are emitted
 /// inner-first (a nested `Vec<Vec<u64>>` emits `TVecU64` before `TVecTVecU64`) via
 /// `collect_vec_elem_types`'s ordering, so the outer wrapper's field type resolves.
@@ -2609,7 +2609,7 @@ fn emit_vec_runtime_l1(program: &Program) -> Result<String, LowerError> {
         .ok();
         out.push_str("    fn len(&self) -> u64 { self.data.len() as u64 }\n");
         // `get`: no-OOB guard, then index. Copy → by value; non-Copy → borrow `&T`
-        // (the L1 mirror of the REQ-9 borrow-`get` — never move a non-Copy element
+        // (the L1 mirror of the REQ-9 borrow-`get`; never move a non-Copy element
         // out of the backing run).
         if copy {
             writeln!(out, "    fn get(&self, i: usize) -> {ety} {{").ok();
@@ -2693,14 +2693,14 @@ fn emit_vec_runtime_l1(program: &Program) -> Result<String, LowerError> {
 
 /// Emit the L1 runnable `TMap<K,V>` wrapper(s) — the plain-Rust Vec-of-pairs
 /// newtype with `new`/`len`/`contains_key`/`get`/`insert` — for every `(K, V)`
-/// pair the program uses (`.design/basis/13-map.md` REQ-4/REQ-5). EMPTY when the
-/// program uses no `Map` (byte-stable for the non-`Map` corpus). MIRRORS
+/// pair the program uses (`.design/basis/13-map.md` REQ-4/REQ-5). Empty when the
+/// program uses no `Map` (byte-stable for the non-`Map` corpus). Mirrors
 /// [`emit_vec_runtime_l1`]: the capacity/uniqueness guards are always-active
-/// `thermite_check!`s (§6 L1 handled-or-loud — an over-cap or duplicate-key insert
-/// ABORTS loudly rather than corrupting the map); `get -> Option<V>` returns the
-/// native `Option` (absent → `None`, the C7 handled-or-loud refusal), NOT a wrong
+/// `thermite_check!`s (§6 L1 handled-or-loud: an over-cap or duplicate-key insert
+/// aborts rather than corrupting the map); `get -> Option<V>` returns the
+/// native `Option` (absent → `None`, the C7 handled-or-loud refusal), not a wrong
 /// value. v1 grounds Copy keys (`Map<u64, u64>`); a non-Copy key is refused via
-/// `tmap_name`'s `LowerError::Unsupported` exactly as the L3 path.
+/// `tmap_name`'s `LowerError::Unsupported` as the L3 path.
 fn emit_map_runtime_l1(program: &Program) -> Result<String, LowerError> {
     let pairs = collect_map_kv_types(program);
     if pairs.is_empty() {
@@ -2736,8 +2736,8 @@ fn emit_map_runtime_l1(program: &Program) -> Result<String, LowerError> {
         out.push_str("        }\n");
         out.push_str("        false\n");
         out.push_str("    }\n");
-        // `get`: a linear scan returning the native `Option<V>` — an absent key is
-        // `None` (the C7 handled-or-loud refusal), NOT a wrong value (§6 L1 rung).
+        // `get`: a linear scan returning the native `Option<V>`; an absent key is
+        // `None` (the C7 handled-or-loud refusal), not a wrong value (§6 L1 rung).
         writeln!(out, "    fn get(&self, k: {kty}) -> Option<{vty}> {{").ok();
         out.push_str("        let mut i: usize = 0;\n");
         out.push_str("        while i < self.data.len() {\n");
@@ -2748,8 +2748,8 @@ fn emit_map_runtime_l1(program: &Program) -> Result<String, LowerError> {
         out.push_str("    }\n");
         // `insert`: capacity + key-absent guards (the L1 mirror of the L3 `req
         // len < CAP && !contains_key(k)`), then append the pair. Both guards are
-        // always-active `thermite_check!`s — an over-cap or duplicate-key insert
-        // ABORTS loudly (§6 L1 handled-or-loud, never a silent overwrite/corruption).
+        // always-active `thermite_check!`s: an over-cap or duplicate-key insert
+        // aborts (§6 L1 handled-or-loud, never a silent overwrite/corruption).
         writeln!(out, "    fn insert(&mut self, k: {kty}, v: {vty}) {{").ok();
         writeln!(
             out,
@@ -2768,10 +2768,10 @@ fn emit_map_runtime_l1(program: &Program) -> Result<String, LowerError> {
 
 /// True if the L1 program uses `n.to_string()` anywhere (the L1 mirror of
 /// `lower.rs::program_uses_numfmt`): a `to_string` `MethodCall` requires the
-/// generated `u64_to_string` runnable form emitted. EMPTY otherwise (byte-stable
+/// generated `u64_to_string` runnable form emitted. Empty otherwise (byte-stable
 /// for the non-numfmt corpus). A contract `parse_le`/`pow10` reference is L3-only
 /// (a spec fn never runs as exec code at L1), so only the `to_string` method drives
-/// the L1 emission — the round-trip PROOF lives at L3, the L1 fn just RUNS the loop.
+/// the L1 emission: the round-trip proof lives at L3, the L1 fn runs the loop.
 fn program_uses_numfmt_l1(program: &Program) -> bool {
     program.items.iter().any(|item| match item {
         Item::Fn(f) => f.body.as_ref().map(block_has_to_string).unwrap_or(false),

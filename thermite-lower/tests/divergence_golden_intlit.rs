@@ -1,29 +1,29 @@
-//! Divergence: the lowering golden oracle for `sum.th` is STALE with respect to
+//! Divergence: the lowering golden oracle for `sum.th` is stale with respect to
 //! the current emitter on the `1_000_000` literal.
 //!
 //! Authority (goal.md §B / "Why the critic still has teeth"): the Verus/L1
-//! golden files under `tests/golden/` are the EXTERNAL lowering oracle — the
-//! emitted source MUST match the golden. ast.md REQ-6 CRITICAL note pins the
+//! golden files under `tests/golden/` are the external lowering oracle — the
+//! emitted source must match the golden. ast.md REQ-6 CRITICAL note pins the
 //! intended form: lowering "continues to emit the numeric `value` (e.g.
 //! `1000000`), NOT the raw — so the `tests/golden/lower/*.verus.rs` files do
-//! NOT change". So the AUTHORITY says both (a) the emitter emits `1000000` and
+//! NOT change". So the authority says both (a) the emitter emits `1000000` and
 //! (b) the golden contains `1000000`.
 //!
-//! REALITY (a2c0f73): the emitter emits `1000000` (correct, AC-1b), but the
+//! Reality (a2c0f73): the emitter emits `1000000` (correct, AC-1b), but the
 //! golden files `tests/golden/lower/sum.verus.rs` and `tests/golden/l1/sum.l1.rs`
-//! still contain the RAW form `1_000_000` in their executable expressions. The
-//! emitter and the golden oracle therefore DISAGREE. No existing test
+//! still contain the raw form `1_000_000` in their executable expressions. The
+//! emitter and the golden oracle therefore disagree. No existing test
 //! byte-matches these goldens (`lower_conformance.rs` / `l1_conformance.rs`
 //! verify via verus/rustc + contract presence, not byte equality), so the
 //! staleness was never caught and #37's "no golden churn" check
-//! (`git diff tests/golden/` empty) passed over a golden that was ALREADY out
+//! (`git diff tests/golden/` empty) passed over a golden that was already out
 //! of sync (the parent commit a2c0f73^ goldens are identical, also `1_000_000`).
 //!
 //! This is a real golden-vs-emitter divergence (goal.md R-DEFER-5: every
 //! divergence on `main` is ours, no "pre-existing safe to defer"). The fix is
 //! the generator's: either regenerate the golden's executable expression to
-//! the emitted `1000000`, or — if the design intends the golden to keep the
-//! verbatim separators — amend ast.md's CRITICAL note (R-SPEC-4). The critic
+//! the emitted `1000000`, or, if the design intends the golden to keep the
+//! verbatim separators, amend ast.md's CRITICAL note (R-SPEC-4). The critic
 //! does not choose; it pins the disagreement.
 //!
 //! Expected values are hand-derived from ast.md REQ-6 CRITICAL note (`1000000`,
@@ -70,8 +70,8 @@ fn divergence_l3_golden_stale_on_underscore_literal() {
         "emitter must lower the req literal to the value 1000000:\n{emitted}"
     );
 
-    // The golden oracle MUST carry the same lowered form (goal.md §B). It does
-    // not — it still has the raw `xs.len() <= 1_000_000`. This assertion FAILS,
+    // The golden oracle must carry the same lowered form (goal.md §B). It does
+    // not: it still has the raw `xs.len() <= 1_000_000`. This assertion fails,
     // pinning the emitter-vs-golden divergence.
     assert!(
         golden.contains("xs.len() <= 1000000"),
@@ -84,8 +84,8 @@ fn divergence_l3_golden_stale_on_underscore_literal() {
 /// The L1 emitter and the L1 golden oracle must agree on the executable check
 /// expression for the `1_000_000` literal. The emitter emits `xs.len() <=
 /// 1000000`; the golden's executable form is `xs.len() <= 1_000_000`.
-/// (The verbatim `1_000_000` inside the diagnostic LABEL string is correct and
-/// is not what this asserts — we pin the executable comparison only.)
+/// (The verbatim `1_000_000` inside the diagnostic label string is correct and
+/// is not what this asserts; the pin is on the executable comparison only.)
 #[test]
 fn divergence_l1_golden_stale_on_underscore_literal() {
     let emitted = lower_sum_l1();
@@ -97,8 +97,8 @@ fn divergence_l1_golden_stale_on_underscore_literal() {
         "emitter must lower the L1 check expr to the value 1000000:\n{emitted}"
     );
 
-    // Golden oracle MUST carry the same executable form. It carries
-    // `xs.len() <= 1_000_000)` (raw). This assertion FAILS, pinning the
+    // Golden oracle must carry the same executable form. It carries
+    // `xs.len() <= 1_000_000)` (raw). This assertion fails, pinning the
     // emitter-vs-golden divergence.
     assert!(
         golden.contains("xs.len() <= 1000000)"),

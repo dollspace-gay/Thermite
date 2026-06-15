@@ -5,7 +5,7 @@
 //! must subsume EVERY callee's row, checked at compile time"; and §9 (trust
 //! invariant under composition). Governing contract:
 //! `.design/lower/effect-subsumption.md` REQ-2/REQ-3 + OQ-2 (direct per-call-site
-//! checking composes to transitive correctness ONLY IF every reachable call site
+//! checking composes to transitive correctness only if every reachable call site
 //! is walked).
 //!
 //! Each test is HAND-DERIVED from §4.1 (R-CHAR-3) — expected values never copied
@@ -62,19 +62,19 @@ fn fn_with_body(name: &str, fx: EffectRow, body: Block) -> Item {
 }
 
 // ---------------------------------------------------------------------------
-// DIVERGENCE 1 (crosslink #38): a callee invoked in a `while` LOOP CONDITION
+// Divergence 1 (crosslink #38): a callee invoked in a `while` loop condition
 // escapes the subsumption check.
 //
 // §4.1: "a caller's row must subsume EVERY callee's row". A `while <cond> { }`
 // evaluates `<cond>` at runtime before each iteration; a `Call` inside it is a
 // reachable callee. `ast.rs` models this as `LoopKind::While(Box<Expr>)`, and
 // `lower.rs` itself lowers the condition (`LoopKind::While(c)` arm). But
-// `effects.rs`'s `Stmt::Loop(l)` arm walks ONLY `&l.body` and NEVER inspects
+// `effects.rs`'s `Stmt::Loop(l)` arm walks only `&l.body` and never inspects
 // `l.kind`, so the condition's call site is silently skipped.
 //
 // A `fx pure` caller running `while effectful() { }` (where `effectful` has
-// `fx {alloc}`) MUST be rejected with `missing: [Alloc]` (hand-derived from
-// §4.1). The current checker returns Ok(()) — a false ACCEPT.
+// `fx {alloc}`) must be rejected with `missing: [Alloc]` (hand-derived from
+// §4.1). The current checker returns Ok(()) — a false accept.
 // ---------------------------------------------------------------------------
 #[test]
 fn divergence_while_condition_callee_is_checked() {

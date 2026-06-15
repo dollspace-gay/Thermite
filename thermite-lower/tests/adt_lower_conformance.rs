@@ -1,13 +1,13 @@
 //! Conformance test for `thermite-lower`'s ADT lowering (basis Stage 1c,
-//! `.design/basis/01-adts.md` REQ-8/REQ-9/REQ-10) against the EXTERNAL truths:
-//! the real `verus` binary (the emitted L3 output must VERIFY — `0 errors`), the
-//! real `rustc` compiler (the emitted L1 output must COMPILE + RUN + fire its
+//! `.design/basis/01-adts.md` REQ-8/REQ-9/REQ-10) against the external truths:
+//! the real `verus` binary (the emitted L3 output must verify, `0 errors`), the
+//! real `rustc` compiler (the emitted L1 output must compile, run, and fire its
 //! contract check on violation), and the hand-derived cert oracle
-//! (`conformance/{bank_account,shape}.cert.json` — R-CHAR-3, NEVER edited).
+//! (`conformance/{bank_account,shape}.cert.json` — R-CHAR-3, not edited).
 //!
-//! Verification is by EXECUTION, not a strict byte-match against the goldens
-//! (`tests/golden/lower/{bank_account,shape,list_sum}.verus.rs` +
-//! `tests/golden/l1/{bank_account,shape}.l1.rs` are REFERENCES, the verify-not-
+//! Verification is by execution rather than a strict byte-match against the
+//! goldens (`tests/golden/lower/{bank_account,shape,list_sum}.verus.rs` +
+//! `tests/golden/l1/{bank_account,shape}.l1.rs` are references, the verify-not-
 //! byte-match practice the existing `lower_conformance`/`l1_conformance` use).
 //! `unwrap`/`expect`/`panic!` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -63,7 +63,7 @@ fn verus_bin() -> Option<PathBuf> {
     None
 }
 
-/// Run `verus <file>`; `None` if verus is unavailable (caller SKIPs LOUDLY).
+/// Run `verus <file>`; `None` if verus is unavailable (caller skips).
 fn run_verus(file: &Path) -> Option<(bool, String)> {
     let bin = verus_bin()?;
     let out = Command::new(bin)
@@ -76,7 +76,7 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// Lower `name` to L3, write to a temp file with a VALID crate name (the verus
+/// Lower `name` to L3, write to a temp file with a valid crate name (the verus
 /// `.`-in-crate-name gotcha), run verus, assert exit 0 + `verified, 0 errors`
 /// (R-CODE-4: status checked, never swallowed). Returns the emitted source.
 fn lower_and_verify(name: &str) -> String {
@@ -104,11 +104,11 @@ fn lower_and_verify(name: &str) -> String {
     emitted
 }
 
-// ---- AC-1: struct + invariant → Verus struct + well_formed, VERIFIES (L3) --
+// ---- AC-1: struct + invariant → Verus struct + well_formed, verifies (L3) --
 //
 // REQ-8: `deposit` lowers to a `pub struct Account` + the `well_formed` invariant
 // predicate, with the invariant threaded (OQ-3 automatic threading) into
-// `requires`/`ensures`; real verus VERIFIES it (L3). The cert oracle says L3,
+// `requires`/`ensures`; real verus verifies it (L3). The cert oracle says L3,
 // pure, non-vacuous.
 
 #[test]
@@ -153,17 +153,17 @@ fn bank_account_lowers_struct_invariant_and_verifies_l3() {
 
 // ---- AC-1 cert oracle: deposit → L3, the stable subset matches the golden ----
 //
-// The cert oracle (`conformance/bank_account.cert.json`, R-CHAR-3 — never edited)
+// The cert oracle (`conformance/bank_account.cert.json`, R-CHAR-3 — not edited)
 // pins the stable subset: level L3, tautology false, vacuous_precondition false,
-// effects [pure], slag false. We assert the LOWERING enables that judgement: the
-// emitted Verus verifies (L3 above) AND its effect is pure (no `fx alloc` — a
-// struct construction does not allocate) AND the contract is non-vacuous (a real
-// field relation, a satisfiable req).
+// effects [pure], slag false. We assert the lowering enables that judgement: the
+// emitted Verus verifies (L3 above), its effect is pure (no `fx alloc`; a struct
+// construction does not allocate), and the contract is non-vacuous (a real field
+// relation, a satisfiable req).
 
 #[test]
 fn deposit_matches_cert_oracle_stable_subset() {
     // The cert oracle is the external truth (R-CHAR-3 — hand-derived, never read
-    // from toolchain output, never edited). We assert its stable subset directly
+    // from toolchain output, not edited). We assert its stable subset directly
     // from the raw JSON (a small frozen file; a string match avoids adding a JSON
     // dependency and still pins each oracle field).
     let cert = std::fs::read_to_string(corpus_dir().join("bank_account.cert.json"))
@@ -181,7 +181,7 @@ fn deposit_matches_cert_oracle_stable_subset() {
             "bank_account cert oracle missing `{needle}`:\n{cert}"
         );
     }
-    // The effect-row of `deposit` is `pure`: a `struct` construction is NOT an
+    // The effect-row of `deposit` is `pure`: a `struct` construction is not an
     // alloc (only `Box::new` carries `fx alloc`). The effect checker accepts it.
     let program = parse_corpus("bank_account");
     assert!(
@@ -193,10 +193,10 @@ fn deposit_matches_cert_oracle_stable_subset() {
     // the two tests do not race on the same verus temp file).
 }
 
-// ---- AC-2: enum + match + is → Verus enum/match/is, VERIFIES (L3) ----------
+// ---- AC-2: enum + match + is → Verus enum/match/is, verifies (L3) ----------
 //
-// REQ-9: `is_circle` lowers to a Verus `enum Shape`, an ENUM-QUALIFIED `match`,
-// and the `s is Circle` discriminant test; real verus VERIFIES it (L3). The cert
+// REQ-9: `is_circle` lowers to a Verus `enum Shape`, an enum-qualified `match`,
+// and the `s is Circle` discriminant test; real verus verifies it (L3). The cert
 // oracle (`conformance/shape.cert.json`) says L3, pure, non-vacuous.
 
 #[test]
@@ -209,7 +209,7 @@ fn shape_lowers_enum_match_is_and_verifies_l3() {
             && emitted.contains("Rect { w: u64, h: u64 },"),
         "enum Shape with tuple + struct variants (REQ-9):\n{emitted}"
     );
-    // REQ-9 match → ENUM-QUALIFIED Verus match arms.
+    // REQ-9 match → enum-qualified Verus match arms.
     assert!(
         emitted.contains("Shape::Circle(r) => true,")
             && emitted.contains("Shape::Rect { w, h } => false,"),
@@ -249,13 +249,13 @@ fn is_circle_matches_cert_oracle_stable_subset() {
     // test (separate to avoid a verus temp-file race).
 }
 
-// ---- AC-3: recursive List + Box + structural decreases, VERIFIES (L3) ------
+// ---- AC-3: recursive List + Box + structural decreases, verifies (L3) ------
 //
 // REQ-10: `list_sum` lowers to a Verus recursive `enum List` with `Box<List>` at
 // the recursive occurrence, and `spec fn sum_list` carries `decreases l` (the
-// datatype VALUE — Verus's built-in structural order) recursing through `*t`;
-// real verus VERIFIES it (terminates + totals). No fn cert (a spec-fn-only
-// program) — the oracle is verus itself.
+// datatype value, Verus's built-in structural order) recursing through `*t`;
+// real verus verifies it (terminates + totals). No fn cert (a spec-fn-only
+// program), so the oracle is verus itself.
 
 #[test]
 fn list_sum_lowers_recursive_box_and_verifies_l3() {
@@ -283,7 +283,7 @@ fn list_sum_lowers_recursive_box_and_verifies_l3() {
     assert_no_cheats(&emitted, "list_sum");
 }
 
-// ---- L1: deposit/is_circle compile + run + the contract check fires --------
+// ---- L1: deposit/is_circle compile, run, and the contract check fires ------
 
 fn compile_and_run(src: &str, crate_name: &str) -> (bool, bool, String) {
     let dir = std::env::temp_dir();
@@ -339,8 +339,8 @@ fn bank_account_l1_compiles_and_runs() {
     );
 }
 
-// AC: deposit L1's `req` check FIRES on a violating call (the always-active
-// handler aborts, observable — handled-or-loud at run time, §6 L1 rung).
+// AC: deposit L1's `req` check fires on a violating call (the always-active
+// handler aborts, observable at run time, §6 L1 rung).
 #[test]
 fn bank_account_l1_req_check_fires() {
     let emitted = lower_l1("bank_account");
@@ -386,8 +386,8 @@ fn shape_l1_compiles_and_runs() {
     );
 }
 
-// AC: is_circle L1's `ens` check FIRES when the body lies (corrupt the match so a
-// Circle returns false — the always-active ens check aborts).
+// AC: is_circle L1's `ens` check fires when the body lies (corrupt the match so a
+// Circle returns false; the always-active ens check aborts).
 #[test]
 fn shape_l1_ens_check_fires_on_a_lying_body() {
     let emitted = lower_l1("shape");
@@ -434,17 +434,17 @@ fn assert_no_cheats(emitted: &str, name: &str) {
     }
 }
 
-// ---- AC-6: no regression — sum/binary_search still lower + VERIFY (L3) ------
+// ---- AC-6: no regression — sum/binary_search still lower + verify (L3) ------
 //
 // The ADT additions are purely additive (new `Item`/`Expr`/`Pattern`/`Type` and
 // new error arms; no existing node reshapes). The non-ADT corpus must still lower
-// to Verus that real verus VERIFIES, and the key contract substrings must be
-// present (no weakening). Verification is by verus, NOT a byte-match of the
+// to Verus that real verus verifies, and the key contract substrings must be
+// present (no weakening). Verification is by verus rather than a byte-match of the
 // emitted source against the golden — the verify-not-byte-match practice the
 // existing `lower_conformance.rs` uses (the goldens are design-authored
-// REFERENCES, not a regeneration of the lowerer's exact bytes). The byte-stability
-// the `git diff tests/golden/` gauntlet checks is that the existing GOLDEN FILES
-// are not EDITED by this stage, which they are not.
+// references, not a regeneration of the lowerer's exact bytes). The byte-stability
+// the `git diff tests/golden/` gauntlet checks is that the existing golden files
+// are not edited by this stage, which they are not.
 
 #[test]
 fn sum_and_binary_search_still_lower_and_verify_l3() {

@@ -1,11 +1,11 @@
 //! Seam test for `thermite_lower::lower_equivalence_obligation`
 //! (`.design/forge/equivalent-mutants.md` REQ-1, crosslink #101).
 //!
-//! Grounds the SEAM the equivalent-mutant exclusion lowers through: an exec body
-//! rendered into a Verus EQUIVALENCE OBLIGATION that VERIFIES for the equivalent
-//! case and FAILS (counterexample) for the distinguishing case. The decision is
-//! the real `verus` verdict (R-DEFER-9 — exclude ONLY on a proof), so this test
-//! shells the real binary. It SKIPS LOUDLY when verus is absent (mirroring
+//! Grounds the seam the equivalent-mutant exclusion lowers through: an exec body
+//! rendered into a Verus equivalence obligation that verifies for the equivalent
+//! case and fails (counterexample) for the distinguishing case. The decision is
+//! the real `verus` verdict (R-DEFER-9 — exclude only on a proof), so this test
+//! shells the real binary. It skips when verus is absent (mirroring
 //! `lower_conformance.rs`), never panics.
 //!
 //! Expected verdicts are hand-derived from the design's *Ground the path*
@@ -52,7 +52,7 @@ fn unique() -> u64 {
     N.fetch_add(1, Ordering::Relaxed)
 }
 
-/// Run verus on `source`; return `true` iff it VERIFIES (`0 errors`).
+/// Run verus on `source`; return `true` iff it verifies (`0 errors`).
 fn verus_verifies(source: &str, label: &str) -> bool {
     let dir = std::env::temp_dir().join(format!(
         "thermite_equiv_{}_{}_{label}",
@@ -70,7 +70,7 @@ fn verus_verifies(source: &str, label: &str) -> bool {
         .expect("spawn verus");
     let _ = std::fs::remove_dir_all(&dir);
     // The grounded summary line is `verification results:: N verified, 0 errors`
-    // (emitted to stderr without `--output-json`). A VERIFIED run exits 0 AND
+    // (emitted to stderr without `--output-json`). A verified run exits 0 and
     // reports `, 0 errors`; a counterexample exits non-zero with `, 1 errors`.
     let combined = format!(
         "{}{}",
@@ -112,8 +112,8 @@ const LOOSE: &str = "fn loose(x: u64) -> u64\n    req x <= 100\n    ens result <
 
 #[test]
 fn equivalent_early_return_verifies() {
-    // `clamp_zero`'s early-`return 0` IS observably equal to `x + 0` under
-    // `req x == 0` (design: `2 verified, 0 errors`). The obligation VERIFIES.
+    // `clamp_zero`'s early-`return 0` is observably equal to `x + 0` under
+    // `req x == 0` (design: `2 verified, 0 errors`). The obligation verifies.
     if !verus_present() {
         eprintln!("SKIP equivalent_early_return_verifies: verus absent");
         return;
@@ -131,9 +131,9 @@ fn equivalent_early_return_verifies() {
 
 #[test]
 fn distinguishing_offbyone_fails() {
-    // The off-by-one `return 1` (the killed-class witness) is NOT equivalent to
+    // The off-by-one `return 1` (the killed-class witness) is not equivalent to
     // `x + 0` under `req x == 0` (design: `0 verified, 1 errors`). The obligation
-    // FAILS — so the survivor would STAY counted (the soundness line, REQ-3).
+    // fails, so the survivor would stay counted (the soundness line, REQ-3).
     if !verus_present() {
         eprintln!("SKIP distinguishing_offbyone_fails: verus absent");
         return;
@@ -152,9 +152,9 @@ fn distinguishing_offbyone_fails() {
 
 #[test]
 fn loose_early_return_stays_distinguishing() {
-    // Under the LOOSER `req x <= 100` the SAME early-`return 0` mutant is NOT
-    // equivalent (x = 5 distinguishes), so the obligation FAILS — the decision is
-    // the verus verdict, NOT a syntactic shape match (AC-3 / AC-2 soundness).
+    // Under the looser `req x <= 100` the same early-`return 0` mutant is not
+    // equivalent (x = 5 distinguishes), so the obligation fails; the decision is
+    // the verus verdict, not a syntactic shape match (AC-3 / AC-2 soundness).
     if !verus_present() {
         eprintln!("SKIP loose_early_return_stays_distinguishing: verus absent");
         return;
@@ -174,8 +174,8 @@ fn loose_early_return_stays_distinguishing() {
 #[test]
 fn non_scalar_return_is_unsupported() {
     // A non-scalar (slice) return is out of the OQ-1 scalar scope: the seam
-    // returns `Unsupported` so the caller leaves the survivor COUNTED (the
-    // sound-but-incomplete fallback) — never a panic, never a spurious exclusion.
+    // returns `Unsupported` so the caller leaves the survivor counted (the
+    // sound-but-incomplete fallback), never a panic, never a spurious exclusion.
     let src = "fn head(xs: &[u32]) -> &[u32]\n    req true\n    ens true\n    fx pure\n{\n    &xs[..0]\n}\n";
     let f = parse_fn(src);
     let body = f.body.clone().unwrap();
@@ -187,17 +187,17 @@ fn non_scalar_return_is_unsupported() {
 }
 
 // ---------------------------------------------------------------------------
-// #269 REQ-7: the CALL-BEARING equivalence obligation — the exec harness with
+// #269 REQ-7: the call-bearing equivalence obligation — the exec harness with
 // the callee closure woven (modulo callee contracts, §9).
 // ---------------------------------------------------------------------------
 
 /// The §9 direct-composition fixture verbatim from `conformance/composition/
 /// cases.json` (`verifies_to_boundary`): a `#[boundary]` `ext_id` whose contract
-/// PINS its result, and `caller` whose body is `{ ext_id(x) }`.
+/// pins its result, and `caller` whose body is `{ ext_id(x) }`.
 const DIRECT_COMPOSITION: &str = "#[boundary(\"ext::ext_id\")] fn ext_id(x: u32) -> u32 req x < 100 ens result == x fx pure ; fn caller(x: u32) -> u32 req x < 100 ens result == x fx pure { ext_id(x) }";
 
-/// The AC-8 WEAK-callee fixture: `ext_weak`'s `ens` does NOT pin its result
-/// (`result <= 100`), so the identity mutant of `wcaller` is UNPROVABLE.
+/// The AC-8 weak-callee fixture: `ext_weak`'s `ens` does not pin its result
+/// (`result <= 100`), so the identity mutant of `wcaller` is unprovable.
 const WEAK_COMPOSITION: &str = "#[boundary(\"ext::ext_weak\")] fn ext_weak(x: u32) -> u32 req x < 100 ens result <= 100 fx pure ; fn wcaller(x: u32) -> u32 req x < 100 ens result <= 100 fx pure { ext_weak(x) }";
 
 /// Parse `src` and return `(the named fn, every OTHER fn as the woven closure)`.
@@ -235,8 +235,8 @@ fn identity_return_body(real: &Block, param: &str) -> Block {
 
 #[test]
 fn call_bearing_obligation_emits_the_woven_exec_harness() {
-    // REQ-7 STRUCTURE (hand-derived to the design template, NOT pinned from the
-    // tool's own output): the call-bearing obligation must be the EXEC harness
+    // REQ-7 structure (hand-derived to the design template, not pinned from the
+    // tool's own output): the call-bearing obligation is the exec harness
     // with the boundary callee woven as an external_body signature and the two
     // compared bodies in the `let real = { .. }; let mutant = { .. }` slots.
     let (caller, deps) = parse_caller_and_deps(DIRECT_COMPOSITION, "caller");
@@ -244,7 +244,7 @@ fn call_bearing_obligation_emits_the_woven_exec_harness() {
     let obligation = thermite_lower::lower_equivalence_obligation(&caller, &mutant, &deps)
         .expect("the call-bearing obligation lowers (REQ-7)");
 
-    // The woven callee: ext_id's external_body assumable signature (the SAME
+    // The woven callee: ext_id's external_body assumable signature (the same
     // `lower_external_body_fn` arm `item_subprogram` weaves), carrying its
     // unweakened contract.
     assert!(
@@ -289,9 +289,9 @@ fn call_bearing_obligation_emits_the_woven_exec_harness() {
 
 #[test]
 fn call_bearing_identity_through_strong_contract_verifies() {
-    // REQ-7 GROUNDING: ext_id's assumed `ens result == x` pins `real == x` at the
-    // call site, so `caller`'s identity mutant `return x` IS a true equivalent
-    // MODULO the contract — the harness `ensures eq` PROVES → excludable (REQ-2).
+    // REQ-7 grounding: ext_id's assumed `ens result == x` pins `real == x` at the
+    // call site, so `caller`'s identity mutant `return x` is a true equivalent
+    // modulo the contract; the harness `ensures eq` proves → excludable (REQ-2).
     if !verus_present() {
         eprintln!("SKIP call_bearing_identity_through_strong_contract_verifies: verus absent");
         return;
@@ -309,8 +309,8 @@ fn call_bearing_identity_through_strong_contract_verifies() {
 
 #[test]
 fn call_bearing_identity_through_weak_contract_fails() {
-    // REQ-8 CONSERVATISM: ext_weak's `ens result <= 100` does NOT pin `real == x`,
-    // so the harness `eq` is UNPROVABLE → the survivor STAYS counted, the item
+    // REQ-8 conservatism: ext_weak's `ens result <= 100` does not pin `real == x`,
+    // so the harness `eq` is unprovable → the survivor stays counted, the item
     // gates. Never a false exclusion (the decision is verus's, not syntactic).
     if !verus_present() {
         eprintln!("SKIP call_bearing_identity_through_weak_contract_fails: verus absent");

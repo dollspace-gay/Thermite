@@ -1,0 +1,8 @@
+{
+  "uuid": "8724539f-5311-4270-ba52-016b3f8605e8",
+  "issue_uuid": "93420de1-1893-465d-b23d-8c1291b775ec",
+  "author": "dX10",
+  "content": "Stage-1 forge-tier foundation (increments 0+1) complete + green. Inc0: relax spine lemmas (Relax.lean, axiom-clean) + shared lean-axiom-probe.sh + Lean CI job + lean-smt SHA pin (F4). Inc1: seven-verdict CertVerdict + Q-KBSIGNAL discriminator + schema-v2 additive per-clause block (goldens byte-identical) + axiom-gate hoist to all Lean tiers + exporter correspondence table + Engine::discharge covenant-record signature ripple + CovenantRefuted ladder arm. Rebased onto PR #19 (canonical REQ registry); registered REQ-S1-8A/1/2 shipped + REQ-S1-4 partial (covenant logic is 2b). PR #20, CI green on first run. Follow-ups: mark PR ready + merge after #19 lands; covenant logic + remaining stage-1 REQs are increments 2a-2f/3/G1.",
+  "created_at": "2026-06-15T17:12:27.144799Z",
+  "kind": "handoff"
+}

@@ -96,6 +96,27 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
+/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
+/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// The build+run tests SKIP with an explicit warning on any non-Linux platform —
+/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// `verus_present()` skip precedent (a missing capability is a logged skip, not a
+/// panic, R-CODE-4).
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+    );
+    false
+}
+
 /// AC-6 — `from_byte`/`push_byte` build a `String` byte-by-byte and certify L3 with
 /// the length + element-frame contract, `fx alloc`.
 ///
@@ -222,6 +243,9 @@ fn ac7_overclaimed_round_trip_is_rejected() {
 /// constant (R-CHAR-3), not forge output.
 #[test]
 fn ac7_formatter_builds_and_prints_decimal() {
+    if !linux_build_run_supported("ac7_formatter_builds_and_prints_decimal") {
+        return;
+    }
     // rustc is always present (no skip; the editor_runs.rs precedent).
     let program = "fn show42() -> String\n  req true\n  ens parse_be(result) == 42\n  fx alloc\n{ let n: u64 = 42; n.to_string() }\n";
     let fixture = std::env::temp_dir().join(format!("forge_strfmt_run_{}.th", std::process::id()));

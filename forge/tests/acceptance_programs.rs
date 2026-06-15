@@ -49,8 +49,15 @@
 //!
 //! The verus checks skip with a logged reason when verus is absent (the
 //! `string_format_conformance` / `editor_runs` precedent), rather than panic on a
-//! missing solver (R-CODE-4). The build + run uses `rustc` (always present, no
-//! skip). `tests/` is not anti-pattern-gated, so `unwrap`/`expect`/`panic!` are
+//! missing solver (R-CODE-4). The build + run uses `rustc`, but the `--entry`
+//! runner carries the #57 x86_64-Linux seccomp prelude (raw `prctl`), so the
+//! build+run tests SKIP with an explicit warning on any non-Linux platform
+//! (`linux_build_run_supported`): FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES
+//! LINUX CI — `cargo test` on macOS/Windows exercises `forge check` / verus /
+//! lowering but not the runnable seccomp twin. To run the build+run path locally on
+//! Apple Silicon, use an **x86_64 Linux container** (the seccomp arch-guard expects
+//! x86_64): e.g. `docker run --platform linux/amd64` / OrbStack with an amd64
+//! machine. `tests/` is not anti-pattern-gated, so `unwrap`/`expect`/`panic!` are
 //! fine here (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/07-strings.md` REQ-8 (the
@@ -103,6 +110,29 @@ fn verus_present() -> bool {
             return true;
         }
     }
+    false
+}
+
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN on this
+/// platform. The #57 runtime effect sandbox (`forge/src/sandbox.rs`) is x86_64-Linux
+/// ONLY: `synthesize_entry_main` injects a raw `extern "C" { fn prctl }` seccomp-bpf
+/// prelude with an x86_64 BPF arch-guard, so the emitted runner does not link off
+/// Linux (`Undefined symbols: _prctl` on macOS/arm64). The build+run acceptance
+/// tests therefore SKIP with an explicit warning on any non-Linux platform — they
+/// require LINUX CI for full acceptance. This mirrors the `verus_present()` skip
+/// precedent: a missing capability is a logged skip, not a panic (R-CODE-4). The
+/// `forge check` / verus / lower tests are platform-independent and still run.
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI — `cargo test` on this platform cannot exercise the runnable end-to-end \
+         twin and skips it (the `forge check` / verus / lowering tests still run)."
+    );
     false
 }
 
@@ -288,6 +318,9 @@ fn formatter_round_trip_certifies_l3() {
 /// (R-CHAR-3): '4'=52,'2'=50; '0'=48; '1'=49.
 #[test]
 fn formatter_builds_and_runs_each_value() {
+    if !linux_build_run_supported("formatter_builds_and_runs_each_value") {
+        return;
+    }
     // rustc is present (no skip; the string_format_conformance precedent).
     let f = formatter_th();
 
@@ -366,6 +399,9 @@ fn calculator_sum_contract_certifies_l3() {
 /// sum contract; `thermite-design.md` §6 (L1 runtime-checked build).
 #[test]
 fn calculator_arithmetic_core_builds_and_runs() {
+    if !linux_build_run_supported("calculator_arithmetic_core_builds_and_runs") {
+        return;
+    }
     // The arithmetic core in isolation (Option + `+`, no parse_u64) — the half of
     // the calculator with an L1 runnable form. 2+3 → Some(5), 100+200 → Some(300).
     let core = "fn add_vals(x: u64, y: u64) -> Option<u64>\n  \
@@ -405,6 +441,9 @@ fn calculator_arithmetic_core_builds_and_runs() {
 /// the arithmetic design constant (R-CHAR-3): 2+3==5, 100+200==300.
 #[test]
 fn calculator_string_parse_builds_and_runs_end_to_end() {
+    if !linux_build_run_supported("calculator_string_parse_builds_and_runs_end_to_end") {
+        return;
+    }
     // `forge build` lowers every fn in calc.th to its runtime `thermite_check!`;
     // `add`'s `req`/`ens` name `all_digits`/`parse_be` and its body calls the free
     // `parse_u64`, all of which now have an L1 exec twin (#104), so the full file
@@ -498,6 +537,9 @@ fn parser_split_count_bound_verifies_under_real_verus() {
 /// ASCII design constant (R-CHAR-3): 'a'=97,'b'=98,'c'=99.
 #[test]
 fn parser_split_core_builds_and_runs_three_pieces() {
+    if !linux_build_run_supported("parser_split_core_builds_and_runs_three_pieces") {
+        return;
+    }
     let split_only = "fn split_abc() -> Vec<String>\n  req true\n  ens result.len() >= 1\n  \
                       fx alloc\n{ let s: String = \"a,b,c\"; s.split(44) }\n";
     let out = build_run_fixture("split_abc", split_only, "split_abc");
@@ -536,6 +578,9 @@ fn parser_split_core_builds_and_runs_three_pieces() {
 /// ASCII design constant (R-CHAR-3): 'a'=97,'b'=98,'c'=99.
 #[test]
 fn parser_builds_and_runs_end_to_end() {
+    if !linux_build_run_supported("parser_builds_and_runs_end_to_end") {
+        return;
+    }
     // The full parse_lines.th — `fields`'s `ens result.len() == 1 + count_sep(s, sep)`
     // and `has_sep`'s `ens result == contains_sub(s, sep)` now lower to runnable L1
     // checks (the C5 exec twins, #104), so the file compiles and `split_abc` runs.

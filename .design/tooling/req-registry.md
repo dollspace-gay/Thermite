@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 4b05c3a33d47665145fb2739d7d7cf00cd39d96d (re-pinned 2026-06-15: schema v1 registry, generated status view, validator/generator, routes, Makefile, and CI gate landed; RFC #17)
+audited-sha: ed7044384b3045d67be85cfbd199578f4a73eccd (re-pinned 2026-06-15: registry-declared status policy, tracker-neutral references, contributors, and generated-region checking landed; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

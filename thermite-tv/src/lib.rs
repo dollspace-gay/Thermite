@@ -68,12 +68,16 @@
 //! exec reference is authored from `thermite-design.md` §4.1/§6 exec semantics, not
 //! from `lower_exec_expr`).
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | exec-REQ-1 (exec-expr reference encoder) | SHIPPED | `exec_encode::exec_ref_value` (`exec_encode.rs`) — bounded `u64`/`u32`/`usize`/`bool` value, the #122 inner-paren + #146 cast-`<` outer-paren (independent `is_lt_leading`), the `xs[i as int]` element value; non-test consumer `obligation::exec_equivalence_obligation`; verified by `tests/exec_teeth.rs` E1–E4 under real verus. No `thermite-lower` dep (`Cargo.toml`, AC-6). |
-//! | exec-REQ-2 (exec-fn-wrapped obligation + discharge) | SHIPPED | `obligation::exec_equivalence_obligation` + `ExecObligationFrame`/`ExecParamDecl` (`obligation.rs`); emits the self-contained `fn tv_exec_wrap(..) requires <req>, ensures result == <ref> { <p_prod> }` EXEC-FN form; discharged by `tests/exec_teeth.rs` through real verus (the teeth-test is the non-test consumer of the obligation TEXT). |
-//! | exec-REQ-3 (off-corpus exec generator) | SHIPPED | `gen::gen_exec_exprs` + `gen::ExecClause` (`gen.rs`) — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of WELL-FRAMED exec-position `Expr`s over the bounded exec sublanguage: `u64`/`usize` arithmetic (`+`/`-`/`*`), shifts, bitwise, narrowing/widening casts (`as u8`/`u16`/`u32`/`u64`/`usize`), the cast-`<` surface (`x as u32 < k` — the #146 guard), and slice indexing (`xs[i]`). Each `ExecClause` carries the ADEQUATE overflow/index FRAME (every base scalar `<= 1000` + an index `< xs.len()`) so the FAITHFUL lowering VERIFIES (the overflow obligation does not spuriously fire — the critic's frame concern). Non-test consumer: `forge::exec_tv::run_generated` (lowers each `expr` via `thermite_lower::lower_exec_expr` → discharges `exec_equivalence_obligation`). Pure generation in this INDEPENDENT crate — no `thermite-lower` dep (AC-6 intact). Determinism + construct coverage + self-framing asserted in `gen::tests` + `forge/tests/exec_tv_conformance.rs` (AC-7). |
-//! | exec-REQ-4 (the exec teeth — R-CHAR-3) | SHIPPED | `tests/exec_teeth.rs` — E1 (#122 cast-paren), E2 (#146 cast-`<`), E3 (wrong-op/overflow), E4 (off-by-one index): each FAITHFUL `p_production` (the real `lower_exec_expr`) VERIFIES + each INFIDEL is CAUGHT (E0308/parse error/postcondition counterexample). Skip-loudly if verus absent. |
+//! <!-- generated:reqs view=thermite-tv-exec-tv-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-EXEC-GENERATOR | shipped | `thermite-tv/src/gen.rs` | Exec-TV off-corpus generator |  |
+//! | REQ-TV-EXEC-OBLIGATION | shipped | `thermite-tv/src/obligation.rs` | Exec-TV fn-wrapped equivalence obligation |  |
+//! | REQ-TV-EXEC-REF-ENCODER | shipped | `thermite-tv/src/exec_encode.rs` | Exec-TV independent reference encoder |  |
+//! | REQ-TV-EXEC-TEETH | shipped | `thermite-tv/tests/exec_teeth.rs` | Exec-TV teeth |  |
+//! <!-- /generated:reqs -->
 
 pub mod exec_encode;
 pub mod exec_stmt_encode;

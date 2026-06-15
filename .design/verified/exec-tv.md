@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — the #157/#192/#195 forge-phase hardenings recorded against REQ-5, #262)
+audited-sha: 3ba219b78e988e8a47dc1028670ad39fe1698f5b (re-pinned 2026-06-15: `forge/src/exec_tv.rs` REQ-5 status now renders from the canonical registry as the exec-TV forge owner; no TV behavior change; RFC #17)
 governs: thermite-tv/src/exec_encode.rs, thermite-tv/src/obligation.rs, thermite-tv/src/gen.rs, forge/src/exec_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)

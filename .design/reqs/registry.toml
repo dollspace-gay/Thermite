@@ -60,6 +60,15 @@ region = "thermite-tv-exec-tv-status"
 comment_prefix = "//! "
 title = "Exec-TV Canonical Status References"
 
+[[view]]
+name = "forge-exec-tv-status"
+path = "forge/src/exec_tv.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-exec-tv-status"
+comment_prefix = "//! "
+title = "Forge Exec-TV Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -122,6 +131,13 @@ label = "exec-REQ-4 (the exec teeth — R-CHAR-3)"
 id = "REQ-TV-EXEC-TEETH"
 replacement_view = "thermite-tv-exec-tv-status"
 note = "Crate-level exec-TV summary row replaced by a generated reference to the exec teeth-test owner."
+
+[[legacy_mapping]]
+path = "forge/src/exec_tv.rs"
+label = "REQ-5 (forge plug-in point)"
+id = "REQ-TV-EXEC-FORGE-PLUGIN"
+replacement_view = "forge-exec-tv-status"
+note = "Exec-TV forge integration row split from the contract-TV REQ-5 label and replaced by a generated canonical owner reference."
 
 [[requirement]]
 id = "REQ-REG-1"
@@ -610,3 +626,39 @@ note = "E1-E4 exec-TV teeth"
 kind = "symbol"
 target = "e4_index_infidel_caught"
 note = "representative E4 teeth case"
+
+[[requirement]]
+id = "REQ-TV-EXEC-FORGE-PLUGIN"
+title = "Exec-TV forge plug-in point"
+owner = "forge/src/exec_tv.rs"
+status = "shipped"
+scope = "verified"
+summary = "The forge exec-TV phase is the owned integration point between production exec-expression lowering and the independent thermite-tv bounded reference encoder."
+aliases = ["exec-TV REQ-5 (forge plug-in point)"]
+contributors = ["thermite-tv/src/exec_encode.rs", "thermite-tv/src/obligation.rs", "thermite-tv/src/gen.rs"]
+generated_to = ["status", "forge-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/exec_tv.rs"
+note = "owner implementation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_generated"
+note = "off-corpus exec-TV phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_tv_file"
+note = "corpus body-expr exec-TV phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExecVerdict"
+note = "four-way faithful/divergent/unverifiable/skipped classification"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/exec_tv_conformance.rs"
+note = "generated and corpus exec-TV conformance"

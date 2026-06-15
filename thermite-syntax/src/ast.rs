@@ -137,19 +137,185 @@ pub enum Item {
     /// An `enum NAME { Variant, Variant(TYPE, …), Variant { field: TYPE, … } }`
     /// sum type (`.design/basis/01-adts.md` REQ-2).
     Enum(EnumItem),
+    /// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3): one of the
+    /// proof-tier surface forms parsed beside `fn` — `prop fn`, `lemma`,
+    /// `proof for`, `witness`. Grouped under ONE `Item` variant (with the kind
+    /// distinguished by the inner [`ForgeItem`]) so the v1 downstream consumers
+    /// (`thermite-spec` validation, `thermite-lower` lowering, `forge check`)
+    /// dispatch every forge-tier item through a SINGLE match arm: they have no v1
+    /// semantic consumer yet — the covenant engine is increment 2b (REQ-4), the
+    /// tactic battery 2c (REQ-5), the proof view 2e (REQ-7), the lemma library 3
+    /// (REQ-9). Increment 2a ships the PARSE + AST + ADDRESS + hole-gating surface
+    /// (each kind has parse/address/round-trip tests); the consumers arrive next.
+    Forge(ForgeItem),
 }
 
 impl Item {
     /// The item name — the root segment of every semantic address. For a
-    /// `struct`/`enum` this is the type name.
+    /// `struct`/`enum` this is the type name; for a forge-tier item it is the
+    /// [`ForgeItem::name`] (the prop/lemma name, the `proof for` target, or
+    /// `"witness"`).
     pub fn name(&self) -> &str {
         match self {
             Item::Fn(f) => &f.name,
             Item::SpecFn(s) => &s.name,
             Item::Struct(s) => &s.name,
             Item::Enum(e) => &e.name,
+            Item::Forge(forge) => forge.name(),
         }
     }
+}
+
+/// A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3, increment 2a).
+/// The four proof-tier surface forms parsed beside `fn`. This is surface syntax
+/// only: the AST faithfully represents each form (with `?pN` proof holes captured
+/// in proof blocks), but the SEMANTIC consumers are later increments and are not
+/// built here (REQ-4 covenant / REQ-5 battery / REQ-7 proof view / REQ-9 library).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ForgeItem {
+    /// `prop fn NAME(params) -> TYPE { body }` — a proposition (logical predicate)
+    /// definition, like a `spec fn` but a forge-tier proposition.
+    PropFn(PropFnItem),
+    /// `lemma NAME(params) req … ens … proof { … }` — a named lemma carrying a
+    /// req/ens statement and a proof block.
+    Lemma(LemmaItem),
+    /// `proof for f { ens#k by { … } }` — a proof item discharging specific
+    /// contract clauses (`ens#k`) of an existing function `f`.
+    Proof(ProofItem),
+    /// `witness { inhabit (…); falsify N; }` — a covenant witness block (the
+    /// covenant LOGIC is increment 2b; here parsed + represented only).
+    Witness(WitnessBlock),
+}
+
+impl ForgeItem {
+    /// The forge-tier item's address root: the prop/lemma name, the `proof for`
+    /// target function name, or the literal `"witness"` (witness blocks are
+    /// numbered `witness#N` by `address.rs`, mirroring `loop#N`).
+    pub fn name(&self) -> &str {
+        match self {
+            ForgeItem::PropFn(p) => &p.name,
+            ForgeItem::Lemma(l) => &l.name,
+            ForgeItem::Proof(p) => &p.target,
+            ForgeItem::Witness(_) => "witness",
+        }
+    }
+}
+
+/// A `prop fn NAME(params) -> TYPE { body }` proposition definition
+/// (`.design/stage1-forge-tier.md` REQ-3). A proposition is a logical predicate —
+/// it mirrors [`SpecFnItem`] (params, return type, an expression body) but is a
+/// forge-tier definition. `dec` is the optional termination measure for a
+/// recursive proposition (a [`Clause`], the same `dec <measure>` /
+/// `dec lex(…)` / `dec wf <rel>` surface the other `dec` positions accept).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PropFnItem {
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub ret: Type,
+    pub dec: Option<Clause>,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// A `lemma NAME(params) req … ens … proof { … }` item
+/// (`.design/stage1-forge-tier.md` REQ-3). A lemma states a req/ens proposition
+/// over its parameters and discharges it with a proof block. Unlike a `fn` it
+/// carries no effect row (`fx`): a lemma is pure proof. `req` is the (single)
+/// hypothesis clause; `ens` is the non-empty conclusion list; `proof` is the
+/// proof block (which may carry open `?pN` proof holes). The proof MECHANICS
+/// (citation resolution, dedup-on-burn) are increment 3 (REQ-9).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LemmaItem {
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub req: Clause,
+    pub ens: Vec<Clause>,
+    pub proof: ProofBlock,
+    pub span: Span,
+}
+
+/// A `proof for f { ens#k by { … } }` item (`.design/stage1-forge-tier.md`
+/// REQ-3). A proof item discharges one or more specific contract clauses of an
+/// existing function `target` (`f`), each named by a [`ClauseSelector`] (`ens#k`)
+/// and proved by a `by { … }` proof block. The clauses are resolved against `f`'s
+/// contract by the proof view (increment 2e, REQ-7); here the surface is parsed
+/// and addressed (`f.proof.ens#k`) only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofItem {
+    /// The target function name `f` (the `proof for f` head). The address root.
+    pub target: Ident,
+    pub obligations: Vec<ProofObligation>,
+    pub span: Span,
+}
+
+/// One `CLAUSE by { … }` obligation inside a [`ProofItem`]
+/// (`.design/stage1-forge-tier.md` REQ-3): a [`ClauseSelector`] (`ens#k`) plus the
+/// proof block discharging it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofObligation {
+    pub clause: ClauseSelector,
+    pub proof: ProofBlock,
+    pub span: Span,
+}
+
+/// A reference to a specific contract clause of a function, e.g. `ens#k`
+/// (`.design/stage1-forge-tier.md` REQ-3). `keyword` is the clause family
+/// (`"ens"`/`"req"`/`"inv"`); `index` is the `#k` ordinal, or `None` for an
+/// unindexed family (`req`). The surface spelling of the `f.proof.ens#k` address.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClauseSelector {
+    pub keyword: Ident,
+    pub index: Option<u32>,
+}
+
+/// A forge-tier proof block — the `{ … }` body of a `lemma`/`proof` form
+/// (`.design/stage1-forge-tier.md` REQ-3). The block's TACTIC content is NOT
+/// structurally parsed here (the frozen tactic battery is increment 2c, REQ-5):
+/// the block is captured as the verbatim source `text` plus the open proof holes
+/// (`?pN`) it carries, in document order, so the proof view (2e) and the battery
+/// (2c) can consume it next. `holes` carry [`HoleContext::Proof`]; a body hole
+/// `?N` inside a proof block is a structured parse error
+/// (`SyntaxError::BodyHoleInProofBlock`). An OPEN proof hole blocks build and
+/// certification (AC-7) once the forge consumers land.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProofBlock {
+    /// The verbatim source text between (and excluding) the proof block's braces.
+    pub text: String,
+    /// The open proof holes (`?pN`) in the block, in document order (each with
+    /// [`HoleContext::Proof`]).
+    pub holes: Vec<Hole>,
+    pub span: Span,
+}
+
+/// A `witness { inhabit (…); falsify N; }` covenant witness block
+/// (`.design/stage1-forge-tier.md` REQ-3/REQ-4). The covenant LOGIC — type-checking
+/// and executing `inhabit` witnesses against `req`, running the `falsify`
+/// generator — is increment 2b (REQ-4); here the surface is parsed + represented +
+/// round-tripped only (NO execution, NO covenant record produced).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WitnessBlock {
+    pub inhabits: Vec<Inhabit>,
+    pub falsifies: Vec<Falsify>,
+    pub span: Span,
+}
+
+/// An `inhabit (e, …);` directive inside a [`WitnessBlock`]
+/// (`.design/stage1-forge-tier.md` REQ-4): an author-stated witness tuple of
+/// expressions the covenant engine (2b) will type-check + execute against `req`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inhabit {
+    pub args: Vec<Expr>,
+    pub span: Span,
+}
+
+/// A `falsify N;` directive inside a [`WitnessBlock`]
+/// (`.design/stage1-forge-tier.md` REQ-4): the `falsify` generator budget (the
+/// number of random inputs to try; Q3 default 50_000 when unstated — applied by the
+/// covenant engine, 2b). `budget` is the verbatim integer as written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Falsify {
+    pub budget: u64,
+    pub span: Span,
 }
 
 /// A `struct NAME { field: TYPE, … }` product-type item, optionally carrying a

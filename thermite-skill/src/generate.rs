@@ -303,6 +303,14 @@ fn render_item_arm(item: &Item) -> SkillFragment {
             description: "a sum type; match over it must be exhaustive",
             example: "enum List { Nil, Cons(u64, Box<List>) }",
         },
+        // Forge-tier item (stage1-forge-tier.md REQ-3): parse-only surface in this
+        // increment; emit a descriptive fragment mirroring the ADT-decl arms (no
+        // inert/None option exists in this render match).
+        Item::Forge(_) => SkillFragment {
+            fragment: "prop fn NAME(..) -> bool { .. } | lemma NAME(..) req .. ens .. { .. } | proof for NAME { .. } | witness NAME { .. }",
+            description: "a forge-tier surface item (prop fn / lemma / proof for / witness)",
+            example: "prop fn nonneg(x: i64) -> bool { x >= 0 }",
+        },
     }
 }
 

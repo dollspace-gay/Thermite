@@ -155,6 +155,10 @@ impl CallGraph {
                 // crossing nor a fn with out-edges. The neutral value is to
                 // insert no node. Dead-in-1a (gated at the validator).
                 Item::Struct(_) | Item::Enum(_) => {}
+                // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 call-graph
+                // consumer yet (increments 2b-3); not a callable node — insert
+                // nothing, mirroring the inert ADT-decl arm.
+                Item::Forge(_) => {}
             }
         }
         CallGraph { nodes }

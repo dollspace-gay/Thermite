@@ -321,6 +321,11 @@ pub fn build_file(
     if let Some(detail) = program.items.iter().find_map(|i| match i {
         Item::Fn(f) => crate::goal_repl::open_hole_reason(f),
         Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+        // A Stage-1 forge-tier item (`.design/stage1-forge-tier.md` REQ-3 / AC-7):
+        // an open `?pN` proof hole blocks the build, the proof-tier mirror of the
+        // `?N` body-hole refusal — a holed proof must not ship a trust-stamped
+        // artifact. Hole-free forge items contribute no reason (`None`).
+        Item::Forge(forge) => crate::goal_repl::open_proof_hole_reason(forge),
     }) {
         return Err(ForgeError::Usage(format!(
             "`forge build` refuses a holed item: {detail} `forge build` lowers to a \
@@ -521,6 +526,10 @@ fn reachable_boundary_targets(program: &Program) -> BTreeSet<String> {
         .filter_map(|item| match item {
             Item::Fn(f) => f.boundary.as_ref().map(|b| b.target.clone()),
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => None,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 boundary-target
+            // consumer yet (increments 2b-3); declares no boundary crossing (neutral
+            // `None`), mirroring the inert ADT-decl arm.
+            Item::Forge(_) => None,
         })
         .collect()
 }
@@ -538,6 +547,10 @@ fn build_functions(program: &Program) -> Vec<BuildFunction> {
                 fx: effects_of(&f.contract.fx),
             }),
             Item::SpecFn(_) => None,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 manifest consumer
+            // yet (increments 2b-3); carries no `fx` row → contributes no manifest
+            // function (neutral `None`), mirroring the inert ADT-decl arm.
+            Item::Forge(_) => None,
             // Basis Stage 1a (`.design/basis/01-adts.md`): a `struct`/`enum`
             // item carries no `fx` contract row → contributes no manifest
             // function (neutral value `None`). Dead-in-1a: an ADT program dies
@@ -568,6 +581,13 @@ fn find_entry_fn<'a>(program: &'a Program, name: &str) -> Result<&'a FnItem, For
         // validator before `forge build --entry` resolves an entry).
         Some(Item::Struct(_)) | Some(Item::Enum(_)) => Err(ForgeError::Usage(format!(
             "`--entry {name}` names a `struct`/`enum` type, not a runnable `fn`; name a `fn`"
+        ))),
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 entry-resolution consumer
+        // yet (increments 2b-3); a forge item is not a runnable entry — the same
+        // structured `Usage` refusal as a `struct`/`enum` name, mirroring the ADT arm.
+        Some(Item::Forge(_)) => Err(ForgeError::Usage(format!(
+            "`--entry {name}` names a forge-tier item (prop/lemma/proof/witness), not a \
+             runnable `fn`; name a `fn`"
         ))),
         None => Err(ForgeError::Usage(format!(
             "`--entry {name}` names no `fn` in the program"

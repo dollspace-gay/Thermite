@@ -317,6 +317,10 @@ fn project_artifact(
             // referenced-spec-fn projection (neutral value `None`). Dead-in-1a
             // (an ADT program dies at the validator before a cert is reviewed).
             Item::Struct(_) | Item::Enum(_) => None,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 review/projection
+            // consumer yet (increments 2b-3); not a `spec fn` → contributes nothing
+            // (neutral `None`), mirroring the inert ADT-decl arm.
+            Item::Forge(_) => None,
         })
         .collect();
 

@@ -124,6 +124,13 @@ pub enum TokKind {
 
     // Attribute introducer `#[`.
     HashBracket,
+    /// A bare `#` (`.design/stage1-forge-tier.md` REQ-3): the clause-ordinal
+    /// separator in a forge-tier proof obligation `ens#k` (the surface spelling of
+    /// the `ens#k` semantic address). Distinct from `HashBracket` (`#[`) by maximal
+    /// munch — `#[` wins when a `[` follows, else a `#` lexes to this. Outside a
+    /// proof item the parser never expects it, so a stray `#` surfaces as a normal
+    /// unexpected-token error.
+    Hash,
 
     // Multi-char operators (maximal munch — REQ-6).
     Arrow,    // ->
@@ -237,6 +244,15 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
                 span: Span::new(i, 2),
             });
             i += 2;
+        } else if c == b'#' {
+            // A bare `#` — the clause-ordinal separator in a proof obligation
+            // `ens#k` (forge-tier REQ-3). `#[` is handled above (maximal munch),
+            // so this arm fires only when no `[` follows.
+            tokens.push(Token {
+                kind: TokKind::Hash,
+                span: Span::new(i, 1),
+            });
+            i += 1;
         } else if c == b'"' {
             match lex_string(bytes, i) {
                 Ok((tok, next)) => {

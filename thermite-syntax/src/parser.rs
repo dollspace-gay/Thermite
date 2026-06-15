@@ -582,6 +582,36 @@ impl<'a> Parser<'a> {
             return self.parse_enum(start_span);
         }
 
+        // Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3), led by
+        // CONTEXTUAL identifiers (not reserved keywords — like `for`/`Box`/`Vec`,
+        // so they never collide with an existing program identifier): `prop fn`,
+        // `lemma`, `proof for`, `witness`. The match peeks (and looks one ahead for
+        // `prop fn`) without consuming, so a plain identifier named e.g. `proof`
+        // used elsewhere is unaffected. None takes a leading attribute.
+        let forge_kind: Option<&'static str> = match self.peek() {
+            TokKind::Ident(w) if w == "prop" && matches!(self.peek_nth(1), TokKind::Fn) => {
+                Some("prop")
+            }
+            TokKind::Ident(w) if w == "lemma" => Some("lemma"),
+            TokKind::Ident(w) if w == "proof" => Some("proof"),
+            TokKind::Ident(w) if w == "witness" => Some("witness"),
+            _ => None,
+        };
+        if let Some(kind) = forge_kind {
+            if attr.is_some() {
+                return Err(self.unexpected(
+                    "a forge-tier item (`prop fn`/`lemma`/`proof`/`witness`) takes no attribute",
+                ));
+            }
+            let forge = match kind {
+                "prop" => ForgeItem::PropFn(self.parse_prop_fn(start_span)?),
+                "lemma" => ForgeItem::Lemma(self.parse_lemma(start_span)?),
+                "proof" => ForgeItem::Proof(self.parse_proof_item(start_span)?),
+                _ => ForgeItem::Witness(self.parse_witness(start_span)?),
+            };
+            return Ok(Item::Forge(forge));
+        }
+
         if self.check(&TokKind::Spec) {
             // Neither `#[slag]` nor `#[boundary]` attaches to a `spec fn`
             // (surface-grammar Item; ffi-boundary.md "#[boundary] is NOT valid on
@@ -924,6 +954,273 @@ impl<'a> Parser<'a> {
             variants,
             span,
         }))
+    }
+
+    // ---- Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3) -------
+
+    /// Parse a `prop fn NAME(params) -> TYPE [dec <measure>] { body }` proposition
+    /// definition (REQ-3). Mirrors `parse_spec_fn` (it is a forge-tier definition,
+    /// not an exec fn): the body is parsed WITHOUT entering an exec-fn-body scope,
+    /// so a `?N` body hole in a prop fn body is rejected (`HoleOutsideFnBody`), the
+    /// same as a `spec fn` body. The optional `dec` accepts the same measure surface
+    /// the other `dec` positions do (`dec <expr>` / `dec lex(…)` / `dec wf <rel>`).
+    fn parse_prop_fn(&mut self, start_span: Span) -> PResult<PropFnItem> {
+        self.expect_contextual("prop")?;
+        self.consume(&TokKind::Fn, "`fn`")?;
+        let name = self.take_ident("a prop fn name")?;
+        let params = self.parse_params()?;
+        self.consume(&TokKind::Arrow, "`->`")?;
+        let ret = self.parse_type()?;
+        let dec = if self.check(&TokKind::Dec) {
+            Some(self.parse_clause(&TokKind::Dec)?)
+        } else {
+            None
+        };
+        let body = self.parse_block()?;
+        let span = start_span.to(self.prev_span());
+        Ok(PropFnItem {
+            name,
+            params,
+            ret,
+            dec,
+            body,
+            span,
+        })
+    }
+
+    /// Parse a `lemma NAME(params) req CLAUSE ens CLAUSE+ proof { … }` item
+    /// (REQ-3). The `req`/`ens` cardinality mirrors a `fn` contract (exactly one
+    /// `req`, one-or-more `ens`) but a lemma carries no `fx` row — it is pure proof.
+    /// The `proof { … }` block is captured verbatim (its tactic content is the
+    /// frozen battery, increment 2c) with its `?pN` proof holes extracted.
+    fn parse_lemma(&mut self, start_span: Span) -> PResult<LemmaItem> {
+        self.expect_contextual("lemma")?;
+        let name = self.take_ident("a lemma name")?;
+        let params = self.parse_params()?;
+        // `req` — exactly one, first (the lemma's hypothesis).
+        if !self.check(&TokKind::Req) {
+            return Err(SyntaxError::MissingClause {
+                item: name.clone(),
+                clause: "req".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let req = self.parse_clause(&TokKind::Req)?;
+        // `ens` — one or more (the lemma's conclusions).
+        if !self.check(&TokKind::Ens) {
+            return Err(SyntaxError::MissingClause {
+                item: name.clone(),
+                clause: "ens".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let mut ens = Vec::new();
+        while self.check(&TokKind::Ens) {
+            ens.push(self.parse_clause(&TokKind::Ens)?);
+        }
+        // `proof { … }` — mandatory.
+        if !self.eat_contextual("proof") {
+            return Err(self.unexpected("`proof { … }` to discharge the lemma"));
+        }
+        let proof = self.scan_proof_block()?;
+        let span = start_span.to(self.prev_span());
+        Ok(LemmaItem {
+            name,
+            params,
+            req,
+            ens,
+            proof,
+            span,
+        })
+    }
+
+    /// Parse a `proof for f { CLAUSE by { … } … }` item (REQ-3): a proof discharging
+    /// specific contract clauses (`ens#k`) of an existing function `f`. Each
+    /// obligation is a [`ClauseSelector`] + a `by { … }` proof block (with `?pN`
+    /// proof holes). The clauses are resolved against `f` by the proof view
+    /// (increment 2e); here they are parsed + addressed (`f.proof.ens#k`).
+    fn parse_proof_item(&mut self, start_span: Span) -> PResult<ProofItem> {
+        self.expect_contextual("proof")?;
+        self.expect_contextual("for")?;
+        let target = self.take_ident("the target function name of `proof for`")?;
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut obligations = Vec::new();
+        while !self.check(&TokKind::RBrace) && !self.at_eof() {
+            let ob_start = self.peek_span();
+            let clause = self.parse_clause_selector()?;
+            if !self.eat_contextual("by") {
+                return Err(self.unexpected("`by { … }` to discharge the clause"));
+            }
+            let proof = self.scan_proof_block()?;
+            let ob_span = ob_start.to(self.prev_span());
+            obligations.push(ProofObligation {
+                clause,
+                proof,
+                span: ob_span,
+            });
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        let span = start_span.to(self.prev_span());
+        Ok(ProofItem {
+            target,
+            obligations,
+            span,
+        })
+    }
+
+    /// Parse a clause selector `ens#k` / `req` / `inv#k` (REQ-3): the clause family
+    /// keyword (a reserved keyword, accepted by kind) plus an optional `#k` ordinal.
+    fn parse_clause_selector(&mut self) -> PResult<ClauseSelector> {
+        let keyword = if self.eat(&TokKind::Ens) {
+            "ens".to_string()
+        } else if self.eat(&TokKind::Req) {
+            "req".to_string()
+        } else if self.eat(&TokKind::Inv) {
+            "inv".to_string()
+        } else {
+            return Err(self.unexpected("a clause family (`ens`/`req`/`inv`)"));
+        };
+        let index = if self.eat(&TokKind::Hash) {
+            match self.peek().clone() {
+                TokKind::Int { value, .. } => {
+                    self.bump();
+                    Some(value as u32)
+                }
+                _ => return Err(self.unexpected("a clause ordinal `#k` after `#`")),
+            }
+        } else {
+            None
+        };
+        Ok(ClauseSelector { keyword, index })
+    }
+
+    /// Parse a `witness { inhabit (…); falsify N; }` covenant witness block
+    /// (REQ-3/REQ-4). Surface only: `inhabit` records an author-stated witness tuple
+    /// of expressions, `falsify` records the generator budget. The covenant LOGIC
+    /// (type-check + execute against `req`, run the generator) is increment 2b.
+    fn parse_witness(&mut self, start_span: Span) -> PResult<WitnessBlock> {
+        self.expect_contextual("witness")?;
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut inhabits = Vec::new();
+        let mut falsifies = Vec::new();
+        while !self.check(&TokKind::RBrace) && !self.at_eof() {
+            let dir_start = self.peek_span();
+            if self.eat_contextual("inhabit") {
+                self.consume(&TokKind::LParen, "`(`")?;
+                let mut args = Vec::new();
+                if !self.check(&TokKind::RParen) {
+                    loop {
+                        args.push(self.parse_expr()?);
+                        if !self.eat(&TokKind::Comma) {
+                            break;
+                        }
+                        if self.check(&TokKind::RParen) {
+                            break;
+                        }
+                    }
+                }
+                self.consume(&TokKind::RParen, "`)`")?;
+                self.consume(&TokKind::Semi, "`;` to end the `inhabit` directive")?;
+                let span = dir_start.to(self.prev_span());
+                inhabits.push(Inhabit { args, span });
+            } else if self.eat_contextual("falsify") {
+                let budget = match self.peek().clone() {
+                    TokKind::Int { value, .. } => {
+                        self.bump();
+                        value as u64
+                    }
+                    _ => return Err(self.unexpected("a `falsify` budget integer")),
+                };
+                self.consume(&TokKind::Semi, "`;` to end the `falsify` directive")?;
+                let span = dir_start.to(self.prev_span());
+                falsifies.push(Falsify { budget, span });
+            } else {
+                return Err(self.unexpected("`inhabit (…);` or `falsify N;` in a `witness` block"));
+            }
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        let span = start_span.to(self.prev_span());
+        Ok(WitnessBlock {
+            inhabits,
+            falsifies,
+            span,
+        })
+    }
+
+    /// Scan a forge-tier proof block `{ … }` (REQ-3) WITHOUT structurally parsing
+    /// its tactic content (the frozen tactic battery is increment 2c, REQ-5).
+    /// Captures the verbatim inner source `text` plus the open proof holes (`?pN`,
+    /// [`HoleContext::Proof`]) in document order, tracking brace depth so nested
+    /// `{ … }` (e.g. a `by { … }` or `calc` sub-block) are spanned correctly. A body
+    /// hole `?N` inside a proof block is a structured `SyntaxError::BodyHoleInProofBlock`
+    /// (a proof block admits only proof holes). An unterminated block is a structured
+    /// error, never a panic (REQ-4 Result discipline).
+    fn scan_proof_block(&mut self) -> PResult<ProofBlock> {
+        let open = self.consume(&TokKind::LBrace, "`{` to open the proof block")?;
+        let inner_start = open.span.end();
+        let mut depth = 1usize;
+        let mut holes = Vec::new();
+        loop {
+            if self.at_eof() {
+                return Err(self.unexpected("`}` to close the proof block"));
+            }
+            // Clone the token kind so the borrow is released before `bump` (proof
+            // blocks are small; the clone is not on a hot path).
+            match self.peek().clone() {
+                TokKind::LBrace => {
+                    self.bump();
+                    depth += 1;
+                }
+                TokKind::RBrace => {
+                    let close = self.bump();
+                    depth -= 1;
+                    if depth == 0 {
+                        let inner = Span::new(inner_start, close.span.start - inner_start);
+                        let text = self.span_text(inner);
+                        let span = Span::new(open.span.start, close.span.end() - open.span.start);
+                        return Ok(ProofBlock { text, holes, span });
+                    }
+                }
+                TokKind::Hole { number, proof } => {
+                    let tok = self.bump();
+                    if proof {
+                        holes.push(Hole {
+                            number,
+                            span: tok.span,
+                            context: HoleContext::Proof,
+                        });
+                    } else {
+                        return Err(SyntaxError::BodyHoleInProofBlock {
+                            number,
+                            span: tok.span,
+                        });
+                    }
+                }
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+    }
+
+    /// Consume a contextual-keyword identifier (a non-reserved word matched by
+    /// name, like `for`/`Box`/`Vec`), returning whether it was present.
+    fn eat_contextual(&mut self, word: &str) -> bool {
+        if matches!(self.peek(), TokKind::Ident(w) if w == word) {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Consume a required contextual-keyword identifier or produce a `SyntaxError`.
+    fn expect_contextual(&mut self, word: &str) -> PResult<()> {
+        if self.eat_contextual(word) {
+            Ok(())
+        } else {
+            Err(self.unexpected(&format!("`{word}`")))
+        }
     }
 
     fn parse_params(&mut self) -> PResult<Vec<Param>> {
@@ -2702,6 +2999,7 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Enum => "enum",
         TokKind::Is => "is",
         TokKind::HashBracket => "#[",
+        TokKind::Hash => "#",
         TokKind::Arrow => "->",
         TokKind::FatArrow => "=>",
         TokKind::EqEq => "==",

@@ -371,6 +371,55 @@ pub(crate) fn open_hole_reason(f: &thermite_syntax::FnItem) -> Option<String> {
     ))
 }
 
+/// The shared open-PROOF-hole refusal text for a forge-tier item carrying any open
+/// `?pN` proof hole (`.design/stage1-forge-tier.md` REQ-3 / AC-7). Returns
+/// `Some(detail)` iff the item's proof block(s) carry any open proof hole — a
+/// `lemma`'s proof block, or any `proof for f` obligation's `by { … }` block (a
+/// `prop fn`/`witness` carries no proof block). Mirrors [`open_hole_reason`]: an
+/// item with an open proof hole is incomplete and does NOT certify and does NOT
+/// build (the same never-ship-incomplete invariant), so `check.rs` and `build.rs`
+/// gate on this with one message. The covenant/proof-view consumers (2b/2e) own
+/// the fill loop; this gate only refuses an OPEN one. Pure function of the item's
+/// proof holes (R-CODE-5).
+pub(crate) fn open_proof_hole_reason(forge: &thermite_syntax::ForgeItem) -> Option<String> {
+    use thermite_syntax::ForgeItem;
+    // Collect (address, hole) for every open proof hole the item carries.
+    let mut entries: Vec<(String, &thermite_syntax::Hole)> = Vec::new();
+    match forge {
+        ForgeItem::Lemma(l) => {
+            for h in &l.proof.holes {
+                entries.push((format!("{}.proof.?p{}", l.name, h.number), h));
+            }
+        }
+        ForgeItem::Proof(p) => {
+            for ob in &p.obligations {
+                let clause = match ob.clause.index {
+                    Some(k) => format!("{}.proof.{}#{}", p.target, ob.clause.keyword, k),
+                    None => format!("{}.proof.{}", p.target, ob.clause.keyword),
+                };
+                for h in &ob.proof.holes {
+                    entries.push((format!("{}.?p{}", clause, h.number), h));
+                }
+            }
+        }
+        // A `prop fn` body and a `witness` block carry no proof block (REQ-3).
+        ForgeItem::PropFn(_) | ForgeItem::Witness(_) => {}
+    }
+    let (_, first) = entries.first()?;
+    let addrs: Vec<&str> = entries.iter().map(|(a, _)| a.as_str()).collect();
+    Some(format!(
+        "`{}` has {} open proof hole(s) [{}] — a forge-tier item with any `?pN` \
+         proof hole is incomplete and does NOT certify or build until every proof \
+         hole is filled. First open proof goal: hole `?p{}` at byte {} \
+         (`.design/stage1-forge-tier.md` REQ-3 / AC-7).",
+        forge.name(),
+        entries.len(),
+        addrs.join(", "),
+        first.number,
+        first.span.start,
+    ))
+}
+
 /// The open body holes (`?N`) of the named `fn` item, in document order (#193,
 /// goal-repl.md REQ-4). Empty for a hole-free fn / a `spec fn`/`struct`/`enum`.
 /// The source of the §5.1 `holes:` render section.
@@ -430,6 +479,11 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
                 .map(|h| h.span)
         }
         AddrKind::SpecFn => None,
+        // Forge-tier address kinds (stage1-forge-tier.md REQ-3): a `prop fn`/`lemma`/
+        // `witness`/proof-obligation root and an open proof hole `?pN` have no v1
+        // editable-span splice target yet (their consumers are increments 2b-3/2e);
+        // resolve-but-no-span, mirroring the inert `SpecFn => None` arm.
+        AddrKind::Forge | AddrKind::ProofHole => None,
     }
 }
 

@@ -174,6 +174,9 @@ pub fn lower_l1(program: &Program) -> Result<String, LowerError> {
             // always-active invariant predicate); an `enum` to a plain Rust `enum`.
             Item::Struct(s) => lower_struct_l1(s)?,
             Item::Enum(e) => lower_enum_l1(e)?,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer
+            // yet (increments 2b-3); emit nothing, mirroring the inert ADT-decl arms.
+            Item::Forge(_) => continue,
         };
         out.push('\n');
         out.push_str(&item_src);
@@ -453,6 +456,9 @@ pub(crate) fn emit_combinator_l1_defs(program: &Program) -> Result<String, Lower
             // collector's neutral value is a no-op. (Dead-in-1a: gated at the
             // validator.)
             Item::Struct(_) | Item::Enum(_) => {}
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 combinator-collection
+            // consumer yet (increments 2b-3); inert here, mirroring the ADT-decl arm.
+            Item::Forge(_) => {}
         }
     }
 
@@ -2045,6 +2051,9 @@ fn program_uses_string_l1(program: &Program) -> bool {
             Item::Fn(f) => (&f.params, &f.ret, f.body.as_ref()),
             Item::SpecFn(s) => (&s.params, &s.ret, Some(&s.body)),
             Item::Struct(_) | Item::Enum(_) => continue,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer
+            // yet (increments 2b-3); skip, mirroring the inert ADT-decl arm.
+            Item::Forge(_) => continue,
         };
         if params.iter().any(|p| ty_is_string(&p.ty)) || ty_is_string(ret) {
             return true;
@@ -2777,6 +2786,9 @@ fn program_uses_numfmt_l1(program: &Program) -> bool {
         Item::Fn(f) => f.body.as_ref().map(block_has_to_string).unwrap_or(false),
         Item::SpecFn(s) => block_has_to_string(&s.body),
         Item::Struct(_) | Item::Enum(_) => false,
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 lowering consumer yet
+        // (increments 2b-3); contributes nothing, mirroring the inert ADT-decl arm.
+        Item::Forge(_) => false,
     })
 }
 

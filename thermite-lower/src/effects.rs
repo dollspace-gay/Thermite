@@ -233,6 +233,9 @@ pub fn check_effects(program: &Program) -> Result<(), Vec<LowerError>> {
             // (The item is gated at the validator before effect-check runs;
             // dead-in-1a.)
             Item::Struct(_) | Item::Enum(_) => {}
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 effect consumer yet
+            // (increments 2b-3); inert here, mirroring the ADT-decl arm.
+            Item::Forge(_) => {}
         }
     }
 

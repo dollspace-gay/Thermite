@@ -266,6 +266,16 @@ design = ".design/verified/proof-backends.md"
 reference = ["conformance"]
 conformance_ops = ["sum"]
 
+# stage-1-forge-tier REQ-2/AC-6 (crosslink #5i5F-VUZC): the exporter-surface
+# correspondence table — the F10 re-inspection artifact. Drift-tripwired against
+# lean_export.rs @ b60b75a4 (the tone-pass commit); any subsequent edit to the
+# exporter fires the gate and demands re-audit of the arm-by-arm tables.
+[[route]]
+crate_pattern = "forge/src/lean_export.rs"
+design = ".design/verified/exporter-surface-correspondence.md"
+reference = []
+conformance_ops = []
+
 [[route]]
 crate_pattern = "forge/src/check.rs"
 design = ".design/verified/proof-backends.md"

@@ -47,6 +47,7 @@
 //! | REQ-7 (interactive proofs — skeleton emit + replay with staleness gate + sorry detection) | SHIPPED (increment (iii), #247; the #252 helper-surface elimination) | `pub fn interactive_proof_path` is the deterministic `<file>.lean-proofs/<item>.lean` artifact path; `pub fn replay_interactive` REPLAYS a PRESENT proof (`lake env lean`) with the obligation-hash staleness gate (the emitted `-- evidence_key: <hex>` header must match the current `evidence_key`; a mismatch → `Unknown("stale proof — re-derive")`), EMITS the skeleton (the exporter's tier-(c) source + the evidence-key header) when ABSENT, and DETECTS `sorry` explicitly (`proof_has_sorry` greps the source AND `#print axioms` for `sorryAx`/`sorry`) → `Unknown` (NEVER `Proven`); a kernel-accepted sorry-free replay → `Proven` with the interactive trust profile (`trust_profile_interactive`). **#252 ARCHITECTURAL FIX (ending the command-injection whack-a-mole — 5 bypass generations #248..#252):** `reconstruct_replay` no longer splices any author HELPERS section — the reconstructed file is EXACTLY the canonical generator preamble + `R_item` + the canonical `theorem thermite_obligation_<item> : <statement> := <author PROOF TERM>` + the anchored `#print axioms`. The ONLY author-controlled text is the PROOF TERM (after the obligation theorem's first `:=`); author content OUTSIDE it is DROPPED (it has nowhere to live, so it can never share the obligation's elaboration scope — the indented-`notation` #252 poison and the column-0 #251 poison both vanish). Auxiliary lemmas inline as `have`/`let`/`suffices` inside the proof term (no expressivity loss for a single-obligation proof). The `disallowed_helper_command`/`author_helpers` allowlist (a blocklist on a Turing-complete elaborator — UNSOUNDABLE) is DELETED. BELT (`proof_term_command_token`): the extracted proof term is REJECTED (→ Unknown) if it carries a top-level command keyword (`notation`/`macro`/`macro_rules`/`syntax`/`set_option`/`attribute`/`instance`/`open`/`export`/`import`/`namespace`/`initialize`/`#…`) in ANY position (exact-token, whitespace-independent — catches an `… in`-style command form). The #250 duplicate-declaration check + the #249/#250 axiom anchor + `statements_match` + the type-check STAY. Tested: skeleton emitted; a clean inline-have proof replays Proven; a stale hash → Unknown; a sorry-bearing inline proof → Unknown (`interactive_inline_have_clean_proven_sorry_unknown`); the helper section is dropped + the belt rejects an `open … in` term (`reconstruct_drops_author_helper_section`); the belt scan (`proof_term_command_token_scans_position_independently`) (`forge/tests/lean_engine.rs` + `engine.rs` tests). |
 //! | REQ-9 (engine-generic mutation battery — the Lean path) | SHIPPED (increment (iii), #247) | `pub fn lean_mutant_outcome` classifies a Lean-engine mutant discharge under the engine-generic kill semantics (`Refuted ∪ Unknown-after-attempt` = killed; a mutant OUTSIDE the Lean fragment = `UntestedAgainstLean`, never counted killed); `pub struct LeanMutationTally` accumulates `killed / attempted-minus-equivalent` with the untested-against-lean count reported, NEVER inflating the ratio. Consumer: `check::lean_mutation_score` (the `--engine lean` mutation path). The Verus-path battery (`check::mutation_score`) is UNTOUCHED. |
 
+use crate::covenant::CovenantRecord;
 use crate::lean_export::{export_item, find_item, ExportRefusal, ExportedObligation};
 use crate::obligation::{Obligation, ObligationRole};
 use std::path::PathBuf;
@@ -219,7 +220,15 @@ pub trait Engine {
     /// (b) Discharge: the verdict for an obligation, under REQ-3's discipline (a
     /// solver/tactic failure without a witnessing input is `Unknown`, never
     /// `Refuted`).
-    fn discharge(&self, o: &Obligation) -> Verdict;
+    ///
+    /// `covenant` is the item's covenant record (REQ-4, `.design/stage1-forge-tier.md`):
+    /// a NON-OPTIONAL parameter so the proof-search path cannot be entered without one
+    /// (covenant-before-burn is a type-level seam, not a runtime convention). Today every
+    /// program carries [`CovenantRecord::none`] (the `witness` surface syntax is REQ-3,
+    /// not yet present), so the record is inert here; the covenant LOGIC (inhabit/falsify,
+    /// the before-burn enforcement, the `CovenantRefuted` hard fail) is increment 2b,
+    /// which fills it in at this seam without re-touching any call site.
+    fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict;
 
     /// (c) Trust profile: the named base added when this engine says `Proven`.
     fn trust_profile(&self) -> TrustProfile;
@@ -318,7 +327,7 @@ impl Engine for VerusEngine {
         }
     }
 
-    fn discharge(&self, o: &Obligation) -> Verdict {
+    fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict {
         // The trait `discharge` is the obligation-level entry. `check.rs` owns the
         // `run_verus` I/O for the per-item L3 path (it already has the lowered
         // source + cache wired), so the live discharge goes through
@@ -329,6 +338,9 @@ impl Engine for VerusEngine {
         // Verus today; it is the REQ-3-compliant default for a future narrowed
         // fragment (no `Proven`, no `Refuted`).
         let _ = o;
+        // REQ-4 seam: the covenant record is threaded but inert in the foundation
+        // (covenant-before-burn enforcement + the falsify producer are 2b).
+        let _ = covenant;
         Verdict::Unknown(Reason::IncompleteUnknown(
             "the Verus engine discharges per-item obligations through \
              check::ladder_for_timeout (the run_verus path); a bare trait discharge \
@@ -506,7 +518,14 @@ impl LeanEngine {
     /// → [`Verdict::Unknown`] (never `Refuted`: a Lean tactic failure is not a
     /// witnessed countermodel, REQ-3); lake absent (`ENOENT`) → `Unknown`. The
     /// `key` is the engine's evidence key (attached to a `Proven`).
-    fn run_lake(&self, file: &std::path::Path, verified: u64, key: CacheKey) -> Verdict {
+    fn run_lake(
+        &self,
+        file: &std::path::Path,
+        item: &str,
+        source: &str,
+        verified: u64,
+        key: CacheKey,
+    ) -> Verdict {
         use std::process::Command;
         let lake = Self::lake_binary();
         let output = Command::new(&lake)
@@ -516,7 +535,24 @@ impl LeanEngine {
             .current_dir(&self.lean_root)
             .output();
         match output {
-            Ok(out) if out.status.success() => Verdict::Proven(Evidence { verified, key }),
+            Ok(out) if out.status.success() => {
+                // REQ-2 / AC-5 certify-time axiom gate, HOISTED onto the auto path: a
+                // clean lake exit is necessary but NOT sufficient for `Proven`. The
+                // emitted source carries a `#print axioms <obligation theorem>` probe
+                // (appended in `discharge`); the SAME gate the interactive replay runs
+                // ([`certify_lean_axioms`]) checks the obligation theorem is sorry-free
+                // and rests only on the allowlisted axioms. A surviving `sorry` or a
+                // smuggled axiom downgrades to `Unknown` (an honest skip — the cert's
+                // enumerable trusted base cannot be vouched for), NEVER `Proven`.
+                let probe_out = String::from_utf8_lossy(&out.stdout);
+                match certify_lean_axioms(source, &probe_out, item) {
+                    Ok(()) => Verdict::Proven(Evidence { verified, key }),
+                    Err(reason) => Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                        "lake kernel-accepted the obligation but the certify-time axiom \
+                         gate REFUSED it (REQ-2/AC-5): {reason}"
+                    ))),
+                }
+            }
             Ok(out) => {
                 // A non-zero exit is a tactic/elaboration failure: the engine could
                 // not kernel-check the theorem. This is `Unknown` (degrade), not
@@ -680,7 +716,11 @@ impl Engine for LeanEngine {
         }
     }
 
-    fn discharge(&self, o: &Obligation) -> Verdict {
+    fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict {
+        // REQ-4 seam: the covenant record is threaded but inert in the foundation
+        // (covenant-before-burn enforcement + the falsify producer are 2b).
+        let _ = covenant;
+
         // 1. Export. A refusal (out-of-fragment / not-pure-contract / incomplete
         //    registry / open hole) = the fragment does not admit this obligation →
         //    `Unknown` (a skip), never `Refuted`/`Proven` (REQ-3 anti-cheat: a skip
@@ -706,8 +746,18 @@ impl Engine for LeanEngine {
             )));
         }
 
-        // 3. Write the exported source to a scratch file and invoke lake.
-        let scratch = match self.write_scratch(o, &exported) {
+        // 3. Append the obligation theorem's `#print axioms` probe so the auto path runs
+        //    the SAME certify-time axiom gate the interactive replay runs (REQ-2 / AC-5:
+        //    the gate is hoisted onto EVERY Lean discharge path, not just interactive
+        //    replay). Without this, a clean lake exit was certified `Proven` with NO
+        //    axiom check on the auto tiers — a smuggled axiom / surviving `sorry` would
+        //    not be caught. The probe anchors on the obligation theorem's exact name.
+        let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(&o.item));
+        let probed_source = format!("{}\n\n#print axioms {thm_name}\n", exported.source);
+
+        // 4. Write the (probed) source to a scratch file and invoke lake, gating the
+        //    `Proven` on the axiom report.
+        let scratch = match self.write_scratch_source(o, &probed_source) {
             Ok(p) => p,
             Err(e) => {
                 return Verdict::Unknown(Reason::IncompleteUnknown(format!(
@@ -716,7 +766,7 @@ impl Engine for LeanEngine {
             }
         };
         let key = self.evidence_key(o);
-        let verdict = self.run_lake(&scratch, 1, key);
+        let verdict = self.run_lake(&scratch, &o.item, &probed_source, 1, key);
         // Best-effort scratch cleanup (R: clean up scratch). A cleanup failure does
         // not change the verdict.
         let _ = std::fs::remove_file(&scratch);
@@ -777,11 +827,7 @@ impl LeanEngine {
     /// scratch dir"). The file name is keyed on the item + the process id so
     /// concurrent runs do not collide. Returns the path; the caller invokes lake on
     /// it and removes it after.
-    fn write_scratch(
-        &self,
-        o: &Obligation,
-        exported: &ExportedObligation,
-    ) -> std::io::Result<PathBuf> {
+    fn write_scratch_source(&self, o: &Obligation, source: &str) -> std::io::Result<PathBuf> {
         let safe: String = o
             .item
             .chars()
@@ -789,7 +835,7 @@ impl LeanEngine {
             .collect();
         let pid = std::process::id();
         let path = std::env::temp_dir().join(format!("forge_lean_export_{safe}_{pid}.lean"));
-        std::fs::write(&path, &exported.source)?;
+        std::fs::write(&path, source)?;
         Ok(path)
     }
 
@@ -1589,6 +1635,44 @@ fn nonstandard_axiom(print_axioms_output: &str, item: &str) -> AxiomReport {
     }
 }
 
+/// The shared certify-time axiom gate (REQ-2 / AC-5, `.design/stage1-forge-tier.md`): run
+/// on EVERY Lean discharge path — the auto tiers (a)/(b) (via [`LeanEngine::run_lake`]) AND
+/// the interactive replay (via `replay_interactive`). Given the emitted Lean `source` and
+/// the lake/lean output (which must contain the obligation theorem's `#print axioms`
+/// report), returns `Ok(())` iff the obligation is sorry-free AND its axioms ⊆ the
+/// allowlist; otherwise `Err(reason)` naming the surviving `sorry`, the smuggled axiom, or
+/// the missing report. Hoisting this onto the auto path closes the AC-5 hole: a clean lake
+/// exit was previously certified `Proven` with no axiom check on the auto tiers. The two
+/// callers share THIS function so the gate's behavior cannot drift between paths.
+fn certify_lean_axioms(source: &str, lake_output: &str, item: &str) -> Result<(), String> {
+    // (1) `sorry` first (the dedicated message): a `sorry` survives a clean lake exit
+    // (lake exits 0 on a `sorry`), so the source/`sorryAx`-axioms scan is what
+    // distinguishes a genuine kernel proof. NEVER `Proven` (REQ-7(ii)).
+    if proof_has_sorry(source, lake_output) {
+        return Err(format!(
+            "the exported obligation `{item}` carries a `sorry` (detected in the source \
+             and/or `#print axioms` — `sorryAx`); a `sorry` is NEVER certified"
+        ));
+    }
+    // (2) The trust-base axiom allowlist anchored on the obligation theorem's own
+    // `#print axioms` report (proof-backends REQ-4 / §1): {propext, Classical.choice,
+    // Quot.sound}. An axiom outside it is a smuggled dependency the cert would not
+    // enumerate; a missing report means the enumerable base cannot be vouched for.
+    match nonstandard_axiom(lake_output, item) {
+        AxiomReport::Clean => Ok(()),
+        AxiomReport::Nonstandard(extra) => Err(format!(
+            "non-standard axiom: {extra}: the obligation theorem for `{item}` \
+             kernel-accepts but its `#print axioms` rests on an axiom outside \
+             {{propext, Classical.choice, Quot.sound}} (a smuggled dependency)"
+        )),
+        AxiomReport::Missing => Err(format!(
+            "axiom report missing: lake emitted no `#print axioms` report for the \
+             obligation theorem of `{item}`, so its enumerable trusted base cannot be \
+             vouched for (REQ-2/AC-5: never certify an un-anchored axiom set)"
+        )),
+    }
+}
+
 /// The byte offset of the `theorem <thm_name>` header that anchors the obligation
 /// theorem, matching the exact theorem name and never a prefix (`.design/verified/
 /// proof-backends.md` REQ-7: the replay reconstruction anchors the obligation theorem;
@@ -2059,6 +2143,106 @@ mod tests {
         }
     }
 
+    // REQ-2 / AC-5 (the shared certify-time axiom gate, hoisted onto EVERY Lean discharge
+    // path including the auto tiers): `certify_lean_axioms` accepts a clean report, and
+    // REFUSES a fourth (Classical-adjacent) axiom by name, a surviving `sorry`, and a
+    // missing report — hermetically, over synthetic `#print axioms` output anchored on the
+    // obligation theorem. This is the gate `run_lake` now runs on a clean lake exit, so a
+    // smuggled axiom / `sorry` can no longer be certified `Proven` on the auto path.
+    #[test]
+    fn certify_lean_axioms_gate_accepts_clean_refuses_smuggled() {
+        let item = "isqrt";
+        let thm = "thermite_obligation_isqrt";
+        // Clean: the obligation theorem rests only on the allowlist.
+        let clean = format!("'{thm}' depends on axioms: [propext, Classical.choice, Quot.sound]");
+        assert!(
+            certify_lean_axioms(
+                "theorem thermite_obligation_isqrt := by decide",
+                &clean,
+                item
+            )
+            .is_ok(),
+            "an allowlisted axiom set must certify"
+        );
+        // A fourth, Classical-adjacent axiom is REFUSED by name.
+        let smuggled =
+            format!("'{thm}' depends on axioms: [propext, Classical.choice, Classical.em]");
+        let err = certify_lean_axioms(
+            "theorem thermite_obligation_isqrt := proof",
+            &smuggled,
+            item,
+        )
+        .expect_err("a fourth axiom must be refused");
+        assert!(
+            err.contains("Classical.em") && err.contains("non-standard axiom"),
+            "the refusal names the smuggled axiom: {err}"
+        );
+        // A surviving `sorry` is REFUSED (lake exits 0 on a sorry; the gate catches it).
+        let sorry_out = format!("'{thm}' depends on axioms: [propext, sorryAx]");
+        let err = certify_lean_axioms(
+            "theorem thermite_obligation_isqrt := by sorry",
+            &sorry_out,
+            item,
+        )
+        .expect_err("a sorry must be refused");
+        assert!(err.contains("sorry"), "the refusal names the sorry: {err}");
+        // A MISSING report (no line anchored on the obligation theorem) is REFUSED — the
+        // enumerable base cannot be vouched for (never silently certified).
+        let missing = "'some_other_lemma' depends on axioms: [propext]";
+        let err = certify_lean_axioms(
+            "theorem thermite_obligation_isqrt := by decide",
+            missing,
+            item,
+        )
+        .expect_err("a missing report must be refused");
+        assert!(
+            err.contains("axiom report missing"),
+            "the refusal flags the missing anchor: {err}"
+        );
+    }
+
+    // REQ-2 / AC-5 ("Every ExportRefusal variant has at least one test"; the refusal
+    // inventory stays LOUD and COMPLETE): construct EACH of the seven structured refusal
+    // variants and assert its `Display` renders the variant's class marker. The behavioral
+    // construction paths are covered elsewhere (undefined-callee → IncompleteRegistry,
+    // while-body → LoopBody, optres-result → OptResResult, capture-unsafe / out-of-spine →
+    // OutOfFragment, open-hole → OpenHole); this pins the COMPLETE inventory so a variant
+    // cannot be silently dropped (the foundation must PRESERVE every variant, REQ-2).
+    #[test]
+    fn export_refusal_inventory_is_complete() {
+        use crate::lean_export::ExportRefusal;
+        let cases = [
+            (
+                ExportRefusal::OutOfFragment("Expr::Tuple".to_string()),
+                "out-of-fragment",
+            ),
+            (
+                ExportRefusal::NotPureContract("fx alloc".to_string()),
+                "not a pure-contract",
+            ),
+            (
+                ExportRefusal::IncompleteRegistry(vec!["spec_helper".to_string()]),
+                "incomplete registry",
+            ),
+            (ExportRefusal::NonIntResult("String".to_string()), "result"),
+            (ExportRefusal::OpenHole("?0".to_string()), "open body hole"),
+            (ExportRefusal::LoopBody("while".to_string()), "loop"),
+            (ExportRefusal::OptResResult("Option".to_string()), "result"),
+        ];
+        assert_eq!(
+            cases.len(),
+            7,
+            "the ExportRefusal inventory is exactly seven variants"
+        );
+        for (refusal, marker) in cases {
+            let rendered = format!("{refusal}").to_ascii_lowercase();
+            assert!(
+                rendered.contains(marker),
+                "ExportRefusal::{refusal:?} must render its class marker `{marker}`: {rendered}"
+            );
+        }
+    }
+
     // REQ-2(b): a `Proved` outcome maps to `Proven` with the discharged count.
     // Expected from the design's discharge map (`Proved` → `Proven`), R-CHAR-3.
     #[test]
@@ -2353,7 +2537,7 @@ mod tests {
         let p = parse_program(src);
         let o = fn_obligation(&p, "add", vec![]);
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Proven(_)),
             "a CORRECT scalar contract must be Proven LIVE: {v:?}"
@@ -2388,7 +2572,7 @@ mod tests {
                 assert_eq!(exported.registry_names, vec!["dbl".to_string()]);
             }
         }
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Proven(_)),
             "a tier-(b) item must be Proven LIVE via static unfold: {v:?}"
@@ -2409,7 +2593,7 @@ mod tests {
         let p = parse_program(src);
         let o = fn_obligation(&p, "wrong", vec![]);
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             !matches!(v, Verdict::Refuted(_)),
             "a tactic FAILURE is Unknown, NEVER Refuted (REQ-3 anti-cheat): {v:?}"
@@ -2447,7 +2631,7 @@ mod tests {
         }
         // The engine maps the refusal to Unknown (a skip), never Proven/Refuted.
         let engine = LeanEngine::new(p, lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Unknown(_)),
             "a refused export is an Unknown skip, never a verdict: {v:?}"
@@ -2508,7 +2692,7 @@ mod tests {
             }
         }
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Proven(_)),
             "a correct straight-line-body item must be Proven LIVE (incl. the OVERFLOW \
@@ -2548,7 +2732,7 @@ mod tests {
             }
         }
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Proven(_)),
             "a correct bool-result item must be Proven LIVE via bindBool: {v:?}"
@@ -2574,7 +2758,7 @@ mod tests {
         let p = parse_program(src);
         let o = fn_obligation(&p, "ovf", vec![]);
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             !matches!(v, Verdict::Proven(_)),
             "an always-overflow body must NOT be Proven — the OVERFLOW conjunct fails \
@@ -2623,7 +2807,7 @@ mod tests {
             );
         }
         let engine = LeanEngine::new(p2, lean_root());
-        let v = engine.discharge(&o2);
+        let v = engine.discharge(&o2, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Unknown(_)),
             "a refused `loop`-kind body is an Unknown skip, never a verdict: {v:?}"
@@ -2646,7 +2830,7 @@ mod tests {
             );
         }
         let engine = LeanEngine::new(p, lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Unknown(_)),
             "a refused optres body is an Unknown skip, never a verdict: {v:?}"
@@ -2722,7 +2906,7 @@ mod tests {
             return;
         }
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         // The O-1 gate (R-1): the L1 linear family certifies; both composed
         // theorems kernel-accept (sorry-free, the standard axioms), so the live verdict is
         // `Proven` via lean-auto. Never `Refuted` (a refutation needs a witnessed
@@ -2762,7 +2946,7 @@ mod tests {
             return;
         }
         let engine = LeanEngine::new(p.clone(), lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             !matches!(v, Verdict::Proven(_)),
             "a non-terminating `while true`-shaped body must NOT certify L3 — the conjoined \
@@ -2812,7 +2996,7 @@ mod tests {
                 );
                 // Under `--engine lean` the refusal is the Unknown skip.
                 let engine = LeanEngine::new(p.clone(), lean_root());
-                let v = engine.discharge(&o);
+                let v = engine.discharge(&o, &CovenantRecord::none());
                 assert!(
                     matches!(v, Verdict::Unknown(_)),
                     "the `{name}` refusal is an Unknown skip, never a verdict: {v:?}"
@@ -2869,7 +3053,7 @@ mod tests {
             );
         }
         let engine = LeanEngine::new(p, lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Unknown(_)),
             "an out-of-fragment item is an Unknown skip: {v:?}"
@@ -2901,7 +3085,7 @@ mod tests {
             }
         }
         let engine = LeanEngine::new(p, lean_root());
-        let v = engine.discharge(&o);
+        let v = engine.discharge(&o, &CovenantRecord::none());
         assert!(
             matches!(v, Verdict::Unknown(_)),
             "a recursive (tier-c) item is INTERACTIVE Unknown: {v:?}"
@@ -3801,7 +3985,7 @@ mod tests {
                 admits_all_classes: true,
             }
         }
-        fn discharge(&self, _o: &Obligation) -> Verdict {
+        fn discharge(&self, _o: &Obligation, _covenant: &CovenantRecord) -> Verdict {
             stub_proven()
         }
         fn trust_profile(&self) -> TrustProfile {

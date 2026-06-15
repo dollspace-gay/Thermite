@@ -28,6 +28,7 @@ mod check;
 mod cli;
 mod closure;
 mod contract_tv;
+mod covenant;
 mod degrade;
 mod effect_wrappers;
 mod engine;
@@ -47,6 +48,7 @@ mod strengthen;
 mod tv_signal;
 mod vacuity;
 mod vacuity_solver;
+mod verdict;
 
 use std::process::ExitCode;
 

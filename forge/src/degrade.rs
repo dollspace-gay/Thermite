@@ -83,6 +83,20 @@ pub enum L3Verdict {
     /// verus disproved the item (a bug) → hard fail, never a degrade (REQ-2
     /// anti-cheat). Carries the existing non-certifying counterexample cert.
     Counterexample(Certificate),
+    /// the covenant `falsify` run hit a counterexample (REQ-4, the cert verdict
+    /// [`crate::verdict::CertVerdict::CovenantRefuted`]) → hard fail, never a degrade —
+    /// the SAME never-degrades treatment as `Counterexample` (a refuted covenant is a
+    /// disproof of the item against its own declared meaning, not an inconclusive run).
+    /// Carries the non-certifying covenant-refuted cert. The `falsify` PRODUCER is 2b;
+    /// the foundation wires the ladder arm so the verdict routes hard the moment 2b
+    /// produces it (and the `covenant_refuted_never_degrades` test pins the routing now).
+    #[allow(
+        dead_code,
+        reason = "REQ-4 seam: constructed by the 2b covenant engine on a `falsify` hit; \
+                  the foundation wires the hard-fail ladder arm (ladder_action_l3 / \
+                  run_ladder) + the covenant_refuted_never_degrades test ahead of the producer"
+    )]
+    CovenantRefuted(Certificate),
 }
 
 /// The result of one L2 (kani) rung attempt the ladder reads (REQ-1). The caller
@@ -147,8 +161,9 @@ pub fn ladder_action_l3(v: &L3Verdict) -> LadderAction {
         L3Verdict::Proved(_) => LadderAction::CertifyL3,
         L3Verdict::Timeout { .. } => LadderAction::AttemptL2,
         // Anti-cheat (REQ-2/REQ-7, R-DEFER-9): a counterexample is a hard fail,
-        // never a degrade. Falsity never degrades.
-        L3Verdict::Counterexample(_) => LadderAction::HardFail,
+        // never a degrade. Falsity never degrades. A covenant refutation (REQ-4) is a
+        // counterexample-class disproof and takes the identical hard-fail edge.
+        L3Verdict::Counterexample(_) | L3Verdict::CovenantRefuted(_) => LadderAction::HardFail,
     }
 }
 
@@ -210,10 +225,14 @@ where
     match (action, l3) {
         // Certify-L3 → terminal. No degrade, no closure runs (the carried L3 cert).
         (LadderAction::CertifyL3, L3Verdict::Proved(cert)) => Ok(cert),
-        // Hard fail → return the carried counterexample cert unchanged. The closures
-        // are not invoked: no L2, no L1, no lowered-assurance stamp (REQ-2/REQ-7
-        // anti-cheat: falsity never degrades).
-        (LadderAction::HardFail, L3Verdict::Counterexample(cert)) => Ok(cert),
+        // Hard fail → return the carried counterexample / covenant-refuted cert
+        // unchanged. The closures are not invoked: no L2, no L1, no lowered-assurance
+        // stamp (REQ-2/REQ-7 anti-cheat: falsity — including a refuted covenant —
+        // never degrades).
+        (
+            LadderAction::HardFail,
+            L3Verdict::Counterexample(cert) | L3Verdict::CovenantRefuted(cert),
+        ) => Ok(cert),
         // Attempt-L2 → the sole degrade trigger. Run the L2/L1 sub-ladder.
         (LadderAction::AttemptL2, L3Verdict::Timeout { reason }) => {
             ladder_after_timeout(reason, attempt_l2, attempt_l1)
@@ -222,7 +241,12 @@ where
         // (action, verdict) pairs above are the only reachable ones; this arm is
         // pair-impossible. We still avoid `unreachable!()` (R-APG-1) and return the
         // verdict's own cert / sub-ladder rather than panic.
-        (_, L3Verdict::Proved(cert) | L3Verdict::Counterexample(cert)) => Ok(cert),
+        (
+            _,
+            L3Verdict::Proved(cert)
+            | L3Verdict::Counterexample(cert)
+            | L3Verdict::CovenantRefuted(cert),
+        ) => Ok(cert),
         (_, L3Verdict::Timeout { reason }) => ladder_after_timeout(reason, attempt_l2, attempt_l1),
     }
 }
@@ -469,6 +493,93 @@ mod tests {
         );
         assert_ne!(cert.level, Level::L1, "NEVER certified L1");
         assert_ne!(cert.level, Level::L2, "NEVER certified L2");
+    }
+
+    // REQ-4 / AC-3, the covenant anti-cheat (the `counterexample_never_degrades`
+    // pattern, instrumented closures): a covenant refutation (`L3Verdict::
+    // CovenantRefuted`) is a counterexample-class hard fail — the L2/L1 closures PANIC
+    // if invoked (they must not be), and the returned cert is the non-certifying L0
+    // cert, never lowered-assurance, never L1/L2. A covenant `falsify` hit is a disproof
+    // of the item against its own declared meaning; it must never hide behind a lowered
+    // stamp or a retry rung (R-VERDICT-1 / R-DEFER-9).
+    #[test]
+    fn covenant_refuted_never_degrades() {
+        let cert = run_ladder(
+            L3Verdict::CovenantRefuted(counterexample_cert("f")),
+            || panic!("attempt_l2 must NEVER run on a COVENANT REFUTATION (anti-cheat REQ-4)"),
+            || panic!("attempt_l1 must NEVER run on a COVENANT REFUTATION (anti-cheat REQ-4)"),
+        )
+        .expect("ladder");
+        assert_eq!(
+            cert.level,
+            Level::L0,
+            "a covenant refutation is non-certifying L0"
+        );
+        assert!(
+            !cert.lowered_assurance,
+            "a covenant refutation is NOT a lowered-assurance degrade — it is a FAILURE"
+        );
+        assert!(
+            cert.degrade_reason.is_none(),
+            "a covenant hard fail carries no degrade reason"
+        );
+        assert_ne!(cert.level, Level::L1, "NEVER certified L1");
+        assert_ne!(cert.level, Level::L2, "NEVER certified L2");
+        // The ladder ACTION for a covenant refutation is the same hard-fail action as a
+        // counterexample, and it is never a degrade (the anti-cheat predicate).
+        let action = ladder_action_l3(&L3Verdict::CovenantRefuted(counterexample_cert("f")));
+        assert_eq!(action, LadderAction::HardFail);
+        assert!(
+            !action.is_degrade(),
+            "a covenant HardFail is NEVER a degrade"
+        );
+    }
+
+    // REQ-1 / AC-3, the never-converts-silently invariant at the ladder boundary: a
+    // non-`Proved` cert-level verdict never produces the certifying `CertifyL3` action.
+    // Only `L3Verdict::Proved` certifies; `Counterexample`/`CovenantRefuted` hard-fail
+    // and `Timeout` attempts the lower rung — so no failing/inconclusive verdict can be
+    // laundered into an L3 certification through the ladder.
+    #[test]
+    fn no_nonproved_verdict_certifies_l3() {
+        use crate::verdict::CertVerdict;
+        for (verdict, expected) in [
+            (
+                L3Verdict::Counterexample(counterexample_cert("f")),
+                LadderAction::HardFail,
+            ),
+            (
+                L3Verdict::CovenantRefuted(counterexample_cert("f")),
+                LadderAction::HardFail,
+            ),
+            (
+                L3Verdict::Timeout {
+                    reason: timeout_reason(),
+                },
+                LadderAction::AttemptL2,
+            ),
+        ] {
+            let action = ladder_action_l3(&verdict);
+            assert_eq!(action, expected);
+            assert_ne!(
+                action,
+                LadderAction::CertifyL3,
+                "a non-Proved verdict must NEVER take the certify-L3 edge"
+            );
+        }
+        // And the cert-level vocabulary agrees: only `Proved` is the certifying verdict.
+        assert!(CertVerdict::Proved.is_proved());
+        assert!(!CertVerdict::Timeout {
+            detail: "t".to_string()
+        }
+        .is_proved());
+        assert!(!CertVerdict::CovenantRefuted {
+            counterexample: crate::verdict::CovenantCounterexample {
+                input: "n = 7".to_string(),
+                seed: 1,
+            }
+        }
+        .is_proved());
     }
 
     // REQ-2 (2nd rung): an L2 counterexample (kani disproved the contract) is a

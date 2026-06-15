@@ -1,0 +1,136 @@
+# Canonical Thermite REQ registry.
+#
+# Schema v1 is intentionally small: stable IDs, one owner, accepted status enum,
+# typed evidence, and named generated views. Free-form source-comment status rows
+# remain legacy input until they are migrated into this registry.
+
+schema_version = 1
+
+[[view]]
+name = "status"
+path = ".design/reqs/status.md"
+kind = "full_inventory"
+title = "Canonical REQ Status Inventory"
+
+[[requirement]]
+id = "REQ-REG-1"
+title = "Stable requirement identity and ownership"
+owner = ".design/tooling/req-registry.md"
+status = "shipped"
+scope = "tooling"
+summary = "Each canonical requirement has a stable ID, title, owner, status, scope, generated view membership, and typed evidence."
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = ".design/reqs/registry.toml"
+note = "schema v1 registry source"
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/tooling/req-registry.md"
+note = "governing design contract"
+
+[[requirement]]
+id = "REQ-REG-2"
+title = "Accepted status enum"
+owner = "tooling/req-registry.py"
+status = "shipped"
+scope = "tooling"
+summary = "Registry statuses are closed over shipped, not_started, partial, blocked, and deferred."
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VALID_STATUSES"
+note = "validator enum"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_rejects_unknown_status"
+note = "oracle for closed enum behavior"
+
+[[requirement]]
+id = "REQ-REG-3"
+title = "Typed evidence validation"
+owner = "tooling/req-registry.py"
+status = "shipped"
+scope = "tooling"
+summary = "Evidence entries carry an explicit kind and target; path, symbol, issue, and blocker references are validated mechanically."
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VALID_EVIDENCE_KINDS"
+note = "accepted evidence kind set"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_rejects_unresolved_file_evidence"
+note = "path evidence must resolve"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_blocked_requires_issue_blocker"
+note = "future status blockers are typed"
+
+[[requirement]]
+id = "REQ-REG-4"
+title = "Generated status views"
+owner = "tooling/req-registry.py"
+status = "shipped"
+scope = "tooling"
+summary = "Generated markdown views are rendered deterministically from the registry and checked in CI for staleness."
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_full_inventory"
+note = "status view renderer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_check_detects_stale_generated_view"
+note = "stale generated output is a failing condition"
+
+[[requirement.evidence]]
+kind = "command"
+target = "python3 tooling/req-registry.py --check"
+note = "CI-facing generated-view check"
+
+[[requirement]]
+id = "REQ-REG-5"
+title = "Legacy source-comment bridge"
+owner = "tooling/req-status.py"
+status = "partial"
+scope = "tooling"
+summary = "The existing source-comment lint remains as a bridge while repeated `//!` REQ rows are mapped to stable registry IDs."
+remaining_scope = "Migrate the 429 legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
+blockers = ["#17"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/req-status.py"
+note = "short-term contradiction tripwire"
+
+[[requirement.evidence]]
+kind = "command"
+target = "python3 tooling/req-status.py"
+note = "legacy row lint stays green during migration"
+
+[[requirement]]
+id = "REQ-REG-6"
+title = "Generated-region migration"
+owner = ".design/tooling/req-registry.md"
+status = "deferred"
+scope = "tooling"
+summary = "Source comments should eventually carry stable invariants only; volatile status tables should be generated or linked from canonical status views."
+remaining_scope = "Define generated-region markers and migrate source comments doc-by-doc after stable ID mapping is reviewed."
+blockers = ["#17"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "issue"
+target = "#17"
+note = "RFC tracking the full migration plan"

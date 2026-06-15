@@ -6,7 +6,7 @@
 //!   - `thermite-design.md` §7 step 4: "Forge generates N mutants of the body ...
 //!     and re-verifies each against the contract. The kill ratio ... A
 //!     configurable floor (default 60%) gates certification; below it, Forge
-//!     reports exactly which mutants survived." The floor's PURPOSE is to catch a
+//!     reports exactly which mutants survived." The floor's purpose is to catch a
 //!     contract that under-constrains the body.
 //!   - `goal.md` R-DEFER-9 (anti-Goodhart): "the design's §7 battery exists
 //!     precisely to catch this" — a contract that does not constrain its result
@@ -72,7 +72,7 @@ fn unique_cache_dir() -> PathBuf {
     ))
 }
 
-/// Run `forge check <file> --json` against a SPECIFIC cache dir (so the
+/// Run `forge check <file> --json` against a specific cache dir (so the
 /// cache-bypass test can plant a stale entry between runs), returning the certs.
 fn run_check_in(file: &Path, cache_dir: &Path) -> Vec<Value> {
     let out = Command::new(forge_bin())
@@ -105,7 +105,7 @@ fn is_clean_l3(cert: &Value) -> bool {
 }
 
 // ----------------------------------------------------------------------------
-// DIVERGENCE 1 — the 0/0 escape: a weak contract certifies L3 unscored.
+// Divergence 1 — the 0/0 escape: a weak contract certifies L3 unscored.
 //
 // Authority: `thermite-design.md` §7 step 4 (the floor gates a contract that
 // under-constrains its body) + `goal.md` R-DEFER-9 (a path that lets a weak
@@ -175,7 +175,7 @@ fn divergence_weak_contract_escapes_floor_via_zero_scored_mutants() {
 }
 
 // ----------------------------------------------------------------------------
-// DIVERGENCE 2 — the cache-bypass: a stale same-version pre-gate cert is re-served
+// Divergence 2 — the cache-bypass: a stale same-version pre-gate cert is re-served
 // without mutation gating.
 //
 // Authority: `.design/forge/mutation-scoring.md` REQ-7 (the gate runs on every

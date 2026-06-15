@@ -287,7 +287,7 @@ struct Parser<'a> {
     /// expressions, types, patterns, and the if-tail cycle — against stack
     /// overflow on deeply nested input — parser.md AC-4).
     recursion_depth: usize,
-    /// When true, a path primary does NOT consume a following `{ … }` as a
+    /// When true, a path primary does not consume a following `{ … }` as a
     /// struct-literal (`.design/basis/01-adts.md` REQ-2): set for the
     /// `match`/`if`/`while` head positions so `match s { … }` reads `{` as the
     /// arm block, not `s { … }` as a struct lit (the Rust no-struct-literal
@@ -310,7 +310,7 @@ struct Parser<'a> {
     /// (the v1 scope pin: holes are exec-fn-body statement position only). A `spec
     /// fn` body is parsed without incrementing this, so its holes are rejected.
     fn_body_depth: usize,
-    /// The OPEN HOLES (`?N`) accumulated while parsing the CURRENT exec-fn body, in
+    /// The open holes (`?N`) accumulated while parsing the current exec-fn body, in
     /// document order (`.design/forge/goal-repl.md` REQ-4, #193). `parse_fn` saves
     /// then clears this around the body parse and pulls the collected holes into the
     /// `FnItem.holes` field, so holes from a nested fn (none in v0.1) / sibling fn
@@ -523,7 +523,7 @@ impl<'a> Parser<'a> {
         };
 
         // A `struct` item (`.design/basis/01-adts.md` REQ-1) accepts the
-        // `#[sealed]` abstraction-barrier attribute (REQ-8) and NO other; an
+        // `#[sealed]` abstraction-barrier attribute (REQ-8) and no other; an
         // `enum` (REQ-2) carries no attribute (only `fn`/sealed-`struct` do).
         if self.check(&TokKind::Struct) {
             let sealed = match &attr {
@@ -1070,7 +1070,7 @@ impl<'a> Parser<'a> {
                     }
                 }
                 // `for i in lo..hi inv … { B }` — the C10 bounded-range loop
-                // ergonomic (REQ-2). `for`/`in` are contextual identifiers (NOT
+                // ergonomic (REQ-2). `for`/`in` are contextual identifiers (not
                 // reserved keywords, matched by name like `Box`/`Vec`), so the
                 // token here is `Ident("for")`. The desugar produces a `let mut i`
                 // statement + a `while` loop, so it extends the block.

@@ -101,7 +101,7 @@ fn obligation_statement_span(skeleton: &str) -> Option<String> {
 // skipped, not L3. This test asserts the authority's expected behavior and fails
 // against the current toolchain.
 //
-// Live: gated on lake (the replay) + verus (the base cert). Skips loudly otherwise.
+// Live: gated on lake (the replay) + verus (the base cert). Skips with a logged note otherwise.
 #[test]
 fn divergence_replay_masks_nonstandard_axiom_via_earlier_print() {
     if !lake_present() {

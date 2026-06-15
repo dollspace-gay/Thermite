@@ -94,7 +94,7 @@ fn lake_present() -> bool {
 // L0), not L3. This test asserts the authority's expected behavior and fails against
 // the current toolchain (which emits L3).
 //
-// Live: gated on lake (the replay) + verus (the base cert). Skips loudly otherwise.
+// Live: gated on lake (the replay) + verus (the base cert). Skips with a logged note otherwise.
 #[test]
 fn divergence_interactive_replay_accepts_nonstandard_axiom() {
     if !lake_present() {

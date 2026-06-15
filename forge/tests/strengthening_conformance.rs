@@ -12,7 +12,7 @@
 //! The oracle is qualitative (R-CHAR-3 / `.design/forge/strengthening-probes.md`
 //! AC anchors): the suggestion set is verus-version-sensitive (oracle-excluded),
 //! so the checkable properties are presence/absence + adoptability:
-//!   - `weak_loose_bound` (AC-1): a weak contract (checked under a LOW
+//!   - `weak_loose_bound` (AC-1): a weak contract (checked under a low
 //!     `--mutation-floor` so it reaches the probe as an L3-certified item) emits
 //!     ≥1 suggestion whose clause is `result == a + b` (the oracle
 //!     `expect_suggestion`) and that records the killed survivor;

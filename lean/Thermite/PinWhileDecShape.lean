@@ -134,7 +134,7 @@ theorem shipped_hdec_is_not_the_pinned_shape :
     ∧ ¬ designHdec l1Cond l1Body (· = s0) negLo :=
   ⟨shipped_hdec_holds, design_hdec_fails⟩
 
-/-! ## Direction safety — the drift weakens the HYPOTHESIS, never the conclusion -/
+/-! ## Direction safety — the drift weakens the hypothesis, never the conclusion -/
 
 /-- The design-pinned shape implies the shipped shape pointwise: `μ st' < μ st`
     together with `0 ≤ μ st'` forces `0 < μ st`, hence `0 ≤ μ st`. -/

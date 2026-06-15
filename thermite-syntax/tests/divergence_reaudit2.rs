@@ -66,7 +66,7 @@ fn in_fn(inner: &str) -> String {
 ///
 /// `parse_block` dispatches a `loop`/`while` statement to `parse_loop`, whose
 /// body is parsed by `parse_block` again — a `parse_block`<->`parse_loop` cycle
-/// that routes through NEITHER `guard_recursion` entry point (the #31 fix
+/// that routes through neither `guard_recursion` entry point (the #31 fix
 /// guarded expr/type/pattern/if-tail, not this loop-body cycle). DEPTH nested
 /// `loop`s (each `loop inv true dec 0 { ... }`) therefore recurse unbounded.
 ///
@@ -121,7 +121,7 @@ fn divergence_deep_nested_while_no_panic() {
 /// (GUARDED by the #31 fix) -> `parse_block`, so this path SHOULD return a
 /// `SyntaxError::ExpressionTooDeep` rather than abort. This test is expected to
 /// PASS on f0ceb12 (it confirms the statement-if path the task asked to verify
-/// is covered, distinct from the unguarded loop path above). It is NOT
+/// is covered, distinct from the unguarded loop path above). It is not
 /// `#[ignore]`d: if it ever fails, the if-statement path regressed.
 ///
 /// Authority: `surface-grammar.md` EBNF `IfStmt ::= 'if' Expr Block

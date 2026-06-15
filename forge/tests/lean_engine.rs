@@ -2,9 +2,9 @@
 //! Lean obligation exporter + the LeanEngine (`.design/verified/proof-backends.md`
 //! REQ-6/REQ-7/REQ-8; increment (ii-b), the #240 chain, ref #203).
 //!
-//! `forge` is a BINARY crate (no lib target), so the in-process LeanEngine API
-//! (`LeanEngine`/`export_item`/the four-slot `Engine` impl) is NOT reachable from an
-//! integration test — those LIVE verdict tests (1)-(5) live as `#[cfg(test)]` unit
+//! `forge` is a binary crate (no lib target), so the in-process LeanEngine API
+//! (`LeanEngine`/`export_item`/the four-slot `Engine` impl) is not reachable from an
+//! integration test — those live verdict tests (1)-(5) live as `#[cfg(test)]` unit
 //! tests in `forge/src/engine.rs` (the only place that can construct a `LeanEngine`
 //! and invoke lake live). They are: `live_scalar_correct_contract_is_proven` (1),
 //! `live_tier_b_nonrecursive_spec_fn_is_proven` (2),
@@ -12,20 +12,20 @@
 //! `omitted_registry_obligation_refuses_export` (4), `out_of_fragment_item_is_skipped`
 //! (5), plus `recursive_registry_is_interactive_unknown` (the tier-(c) marker).
 //!
-//! This integration file carries the two guards that DO live at the binary /
+//! This integration file carries the two guards that do live at the binary /
 //! external-artifact boundary:
 //!
-//! - **(6) the corpus cert ORACLE, byte-identical via the VERUS path.** Adding the
-//!   Lean exporter + engine does NOT touch the default check path (Verus stays the
-//!   sole default engine), so `forge check conformance/sum.th --json` must STILL emit
+//! - **(6) the corpus cert oracle, byte-identical via the Verus path.** Adding the
+//!   Lean exporter + engine does not touch the default check path (Verus stays the
+//!   sole default engine), so `forge check conformance/sum.th --json` must still emit
 //!   `sum`'s golden L3 certificate. This re-runs the cert-oracle test against
 //!   `conformance/sum.cert.json` (R-CHAR-3, never forge's own output) — the proof
 //!   that increment (ii-b) is byte-identical on the shipped pipeline.
-//! - **a LIVE spine-targeting kernel check.** A HAND-AUTHORED Lean obligation in the
-//!   EXACT shape the exporter emits (the fuel-free tier-(a) form against
+//! - **a live spine-targeting kernel check.** A hand-authored Lean obligation in the
+//!   exact shape the exporter emits (the fuel-free tier-(a) form against
 //!   `Thermite.denote 0` / `Thermite.intVal 0` over `R_item`) is kernel-checked by
-//!   `lake env lean` — proving the spine ELABORATES the emitted shape and that a
-//!   CORRECT contract kernel-accepts while a WRONG one does NOT (the §6.1(a)
+//!   `lake env lean` — proving the spine elaborates the emitted shape and that a
+//!   correct contract kernel-accepts while a wrong one does not (the §6.1(a)
 //!   soundness witness, independent of the bin-internal exporter). The hand-authored
 //!   source is derived from the design §4/§6.1 form (R-CHAR-3), not regenerated from
 //!   the exporter.
@@ -87,8 +87,8 @@ fn lake_binary() -> Option<PathBuf> {
     None
 }
 
-// (6) THE CORPUS CERT ORACLE — byte-identical via the VERUS path. The exporter +
-// LeanEngine are NOT wired into the default check path, so `sum` must still certify
+// (6) The corpus cert oracle — byte-identical via the Verus path. The exporter +
+// LeanEngine are not wired into the default check path, so `sum` must still certify
 // at its golden L3 level with the golden deterministic fields. Expected from the
 // golden `conformance/sum.cert.json` (R-CHAR-3), never forge's own output.
 #[test]
@@ -122,8 +122,8 @@ fn sum_cert_oracle_byte_identical_after_lean_exporter() {
         .iter()
         .find(|c| c.get("item").and_then(|v| v.as_str()) == Some("sum"))
         .expect("a certificate for `sum`");
-    // The deterministic golden subset (NOT solver_time_ms / contract_quality) — the
-    // same subset the SHIPPED engine_interface cert-oracle asserts.
+    // The deterministic golden subset (not solver_time_ms / contract_quality) — the
+    // same subset the shipped engine_interface cert-oracle asserts.
     assert_eq!(
         got["item"], golden["item"],
         "item identity (#240 byte-identity)"
@@ -135,10 +135,10 @@ fn sum_cert_oracle_byte_identical_after_lean_exporter() {
     assert_eq!(got["effects"], golden["effects"], "effects == golden");
 }
 
-// A LIVE spine-targeting kernel check: a HAND-AUTHORED Lean obligation in the EXACT
-// fuel-free tier-(a) shape the exporter emits (derived from the design §4/§6.1, NOT
-// regenerated — R-CHAR-3) is kernel-checked by `lake env lean`. The CORRECT contract
-// kernel-accepts (exit 0); the WRONG one does NOT (non-zero) — the §6.1(a) soundness
+// A live spine-targeting kernel check: a hand-authored Lean obligation in the exact
+// fuel-free tier-(a) shape the exporter emits (derived from the design §4/§6.1, not
+// regenerated — R-CHAR-3) is kernel-checked by `lake env lean`. The correct contract
+// kernel-accepts (exit 0); the wrong one does not (non-zero) — the §6.1(a) soundness
 // witness at the spine boundary, independent of the bin-internal exporter API.
 #[test]
 fn live_spine_elaborates_emitted_shape_correct_proves_wrong_fails() {
@@ -147,7 +147,7 @@ fn live_spine_elaborates_emitted_shape_correct_proves_wrong_fails() {
         return;
     };
 
-    // The CORRECT obligation (an `add`-shaped item: body == ens RHS): the fuel-free
+    // The correct obligation (an `add`-shaped item: body == ens RHS): the fuel-free
     // tier-(a) form. After binding `result` to the body's value, `result == a + b`
     // holds; the `decide`/`omega` battery kernel-checks it.
     let correct = r#"import Thermite.Stabilize
@@ -162,9 +162,9 @@ theorem ok (v : Thermite.Env) :
   first | decide | omega | simp_all | exact hreq
 "#;
 
-    // The WRONG obligation (`ens result == 0` for a body returning `a`): after
-    // binding `result` to `a`, the goal is `a == 0` — NOT provable; the battery
-    // FAILS (a non-zero exit → Unknown, NEVER a kernel-accepted Proven).
+    // The wrong obligation (`ens result == 0` for a body returning `a`): after
+    // binding `result` to `a`, the goal is `a == 0` — not provable; the battery
+    // fails (a non-zero exit → Unknown, never a kernel-accepted Proven).
     let wrong = r#"import Thermite.Stabilize
 def R_item : Thermite.Registry := fun _ => none
 theorem bad (v : Thermite.Env) :

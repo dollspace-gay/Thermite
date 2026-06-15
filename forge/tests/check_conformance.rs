@@ -1,18 +1,18 @@
-//! The LIVE cert-oracle for `forge check` (`goal.md` verification model (B);
-//! `.design/forge/check.md` AC-1/AC-2/AC-3). It drives the BUILT `forge` binary
+//! The live cert-oracle for `forge check` (`goal.md` verification model (B);
+//! `.design/forge/check.md` AC-1/AC-2/AC-3). It drives the built `forge` binary
 //! (`.design/forge/cli.md` Verification: "a CLI integration test drives the built
 //! `forge` binary") with `check --json`, parses the emitted certificate JSON, and
-//! asserts its DETERMINISTIC fields match the golden `conformance/<name>.cert.json`
+//! asserts its deterministic fields match the golden `conformance/<name>.cert.json`
 //! — `item`, `level`, `effects`, `slag` — under the forward-declaration contract
-//! (`conformance/README.md`): `contract_quality.*` and `solver_time_ms` are NOT
+//! (`conformance/README.md`): `contract_quality.*` and `solver_time_ms` are not
 //! asserted (R-CHAR-3 — expected values trace to the golden cert, never to forge's
 //! own output).
 //!
 //! Driving the binary (rather than calling a library API) keeps `forge` a pure
-//! `bin` crate (no `lib.rs`) AND exercises the real REQ-4/REQ-5 stream + exit-code
+//! `bin` crate (no `lib.rs`) and exercises the real REQ-4/REQ-5 stream + exit-code
 //! surface end to end.
 //!
-//! These checks RUN VERUS. If verus is absent they SKIP LOUDLY (mirroring
+//! These checks run verus. If verus is absent they skip with a logged note (mirroring
 //! `thermite-lower/tests/lower_conformance.rs`'s Option-resolve + eprintln-skip)
 //! — never panic on a missing solver. `tests/` is not anti-pattern-gated, so
 //! `unwrap`/`expect` are fine here.
@@ -35,7 +35,7 @@ fn forge_bin() -> PathBuf {
 }
 
 /// `true` iff verus can be located (`VERUS_BIN`, then PATH, then
-/// `~/.local/bin/verus`) — mirrors `lower_conformance.rs`. SKIP LOUDLY otherwise.
+/// `~/.local/bin/verus`) — mirrors `lower_conformance.rs`. Skips with a logged note otherwise.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -78,7 +78,7 @@ fn run_check_json(file: &Path) -> (Option<i32>, Vec<Value>) {
     (out.status.code(), arr)
 }
 
-/// The golden certificate JSON for `<name>` (the EXTERNAL oracle, R-CHAR-3).
+/// The golden certificate JSON for `<name>` (the external oracle, R-CHAR-3).
 fn golden_cert(name: &str) -> Value {
     let path = corpus_dir().join(format!("{name}.cert.json"));
     let src = std::fs::read_to_string(&path)
@@ -110,7 +110,7 @@ fn sum_cert_matches_golden_deterministic_subset() {
     let sum = find_cert(&certs, "sum");
     let golden = golden_cert("sum");
 
-    // The DETERMINISTIC subset must match the golden oracle; NOT
+    // The deterministic subset must match the golden oracle; not
     // contract_quality.* / solver_time_ms (forward-declared / non-det).
     assert_eq!(sum["item"], golden["item"]);
     assert_eq!(sum["item"], Value::from("sum"));
@@ -161,7 +161,7 @@ fn broken_contract_is_reported_failure_with_counterexample() {
         return;
     }
     // `ens result == x + 2` but the body returns `x + 1`: parses, validates,
-    // effect-checks, and lowers cleanly — only the SMT proof fails. Written to a
+    // effect-checks, and lowers — only the SMT proof fails. Written to a
     // temp `.th` fixture (no committed broken corpus entry needed).
     let fixture = std::env::temp_dir().join(format!("forge_broken_{}.th", std::process::id()));
     std::fs::write(
@@ -173,8 +173,8 @@ fn broken_contract_is_reported_failure_with_counterexample() {
     let (code, certs) = run_check_json(&fixture);
     let _ = std::fs::remove_file(&fixture);
 
-    // A reported verification failure: NON-zero exit (the verification-failure
-    // code, NOT the environment code), but a valid cert document on stdout.
+    // A reported verification failure: nonzero exit (the verification-failure
+    // code, not the environment code), but a valid cert document on stdout.
     assert_eq!(
         code,
         Some(1),
@@ -211,12 +211,12 @@ fn broken_contract_is_reported_failure_with_counterexample() {
 
 // ---- C7 (#100): the external cert oracle for option_result + parse_u64 -----
 
-/// Assert the DETERMINISTIC stable-subset of `<corpus>`'s `<item>` certificate
+/// Assert the deterministic stable-subset of `<corpus>`'s `<item>` certificate
 /// matches its golden `conformance/<cert_stem>.cert.json` (R-CHAR-3): `item`,
 /// `level`, `contract_quality.tautology`, `contract_quality.vacuous_precondition`,
-/// `effects`, `slag`. NOT `contract_quality.mutants_killed` / `solver_time_ms`
+/// `effects`, `slag`. Not `contract_quality.mutants_killed` / `solver_time_ms`
 /// (tool-computed / non-det — `oracle_subset`, §5.3). `level` must be `L3`. The
-/// golden cert is keyed on the CORPUS stem (one `.cert.json` per `.th`), so a
+/// golden cert is keyed on the corpus stem (one `.cert.json` per `.th`), so a
 /// multi-item corpus has a single golden cert naming one representative `item`.
 fn assert_stable_subset_matches_golden(corpus: &str, cert_stem: &str, item: &str) {
     let (code, certs) = run_check_json(&corpus_dir().join(corpus));
@@ -292,7 +292,7 @@ fn make_some_cert_matches_golden_deterministic_subset() {
 /// thin runnable-core fns (`build_one`/`demo`/`lookup_absent`) carry the §7-partial
 /// caveat the oracle's `note` documents (a `Map`-return has no scoreable scalar-zero
 /// mutant; a `None`-only contract is the #101 partial class) — they certify below
-/// L3, so the whole-file exit is NOT 0. We assert the `has_key` cert's stable subset
+/// L3, so the whole-file exit is not 0. We assert the `has_key` cert's stable subset
 /// directly (the mutation-strong L3 anchor), mirroring `map_conformance.rs::ac3`,
 /// rather than the whole-file-exit-0 helper.
 #[test]

@@ -446,7 +446,7 @@ mod tests {
         );
     }
 
-    /// E3: `a + b` → bounded `u64` add (NOT nat-coerced, NOT `wrapping_add`), so
+    /// E3: `a + b` → bounded `u64` add (not nat-coerced, not `wrapping_add`), so
     /// the obligation carries the overflow obligation.
     #[test]
     fn e3_bounded_add() {
@@ -491,7 +491,7 @@ mod tests {
             base: Box::new(path("xs")),
             index: IndexArg::Single(Box::new(path("i"))),
         };
-        // `xs` NOT declared a slice → unsupported.
+        // `xs` not declared a slice → unsupported.
         assert!(matches!(
             exec_ref_value(&e, &ExecRefCtx::default()),
             Err(RefEncodeError::Unsupported(_))

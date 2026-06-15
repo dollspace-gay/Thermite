@@ -12,7 +12,7 @@
 //! back to `n`; the proof holds, but the output is unusable for the design's
 //! stated purpose.
 //!
-//! AUTHORITY — `.design/basis/07-strings.md` REQ-8 (`u64_to_string` … REQ-8 prose):
+//! Authority — `.design/basis/07-strings.md` REQ-8 (`u64_to_string` … REQ-8 prose):
 //!   "The surface emits the human-readable MSB-first decimal (the construction is
 //!    LSB-first; the display form reverses — `parse_be(reverse(s)) == parse_le(s)`
 //!    proved … so the displayed bytes round-trip against a big-endian parse)."
@@ -40,16 +40,16 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// DIVERGENCE (highest value) — `n.to_string()` emits the decimal digits of `n` in
-/// REVERSED order: `42` builds to `[50, 52]` (`'2','4'` == "24"), not the
+/// Divergence (highest value) — `n.to_string()` emits the decimal digits of `n` in
+/// reversed order: `42` builds to `[50, 52]` (`'2','4'` == "24"), not the
 /// human-readable MSB-first `[52, 50]` (`'4','2'` == "42") REQ-8 mandates.
 ///
-/// Builds + RUNS a formatter on `n == 42` and asserts the produced byte sequence is
-/// the MSB-first decimal of 42 (`[52, 50]`). FAILS against `a6b598c` (the L1
+/// Builds + runs a formatter on `n == 42` and asserts the produced byte sequence is
+/// the MSB-first decimal of 42 (`[52, 50]`). Fails against `a6b598c` (the L1
 /// `u64_to_string` pushes `(m%10)+48` then `m/=10` and returns `data` un-reversed,
 /// `thermite-lower/src/l1.rs` `emit_string_runtime_l1`).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 — "The surface emits the
+/// Authority: `.design/basis/07-strings.md` REQ-8 — "The surface emits the
 /// human-readable MSB-first decimal". MSB-first 42 == `[52, 50]`; ASCII `'4'`==52,
 /// `'2'`==50 are the design digit constants (`+ 48u8`), not forge output (R-CHAR-3).
 /// Tracking: #96.
@@ -97,7 +97,7 @@ fn divergence_to_string_display_order_msb_first() {
         String::from_utf8_lossy(&run.stderr)
     );
 
-    // REQ-8: the SURFACE emits the human-readable MSB-first decimal. For 42 the
+    // REQ-8: the surface emits the human-readable MSB-first decimal. For 42 the
     // MSB-first byte order is the most-significant digit first: '4' (ASCII 52) then
     // '2' (ASCII 50) => the byte sequence [52, 50]. The reversed (LSB-first) order
     // [50, 52] reads "24" and is the divergence. (ASCII '4'==52, '2'==50 are the

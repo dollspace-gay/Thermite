@@ -1,7 +1,7 @@
 //! acto-critic divergence tests for `forge check` on the bounded-`String` corpus
 //! (commit `b8c3bf7`, Basis Stage 7 / issue #79).
 //!
-//! Each test pins a divergence (or confirms a genuine guarantee) between the live
+//! Each test pins a divergence (or confirms a guarantee) between the live
 //! per-item `forge check` certificate and the authority chain
 //! (`.design/basis/07-strings.md`, the hand-derived oracle
 //! `conformance/string/cases.json`, `thermite-design.md` §6/§7). Expected values
@@ -182,7 +182,7 @@ fn confirm_string_non_join_items_certify_per_oracle() {
 ///       `byte_at`'s `i < len` precondition undischarged -> verus fails -> L0;
 ///   (3) an off-by-one bound — `req i <= s.len()` then `s.byte_at(i)` — still
 ///       leaves `i < len` undischarged (`i == len` is OOB) -> verus fails -> L0.
-/// The (2)/(3) L0s are verus `precondition not satisfied` failures (a genuine
+/// The (2)/(3) L0s are verus `precondition not satisfied` failures (a real
 /// bounds-check), not a mutation-gate / no-op. This is not `#[ignore]`d; it passes
 /// against `b8c3bf7`. If a future change launders the bound it goes red.
 ///

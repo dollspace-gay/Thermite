@@ -25,7 +25,7 @@
 //!
 //! `.design/verified/self-verification.md` chose mechanism (b) (link the verified
 //! crate into the cargo build so the proved code is the running code) if the
-//! `--export`/`--import` linking landed cleanly, else fall back to (c) (a verified
+//! `--export`/`--import` linking worked, else fall back to (c) (a verified
 //! reference + an enumerated impl==spec conformance test). The OQ-1/OQ-2 build
 //! probe (epic #60) settled this empirically: the installed Verus support crates
 //! (`builtin`/`builtin_macros`/`vstd`) cannot be consumed as cargo path-deps —
@@ -124,7 +124,7 @@ pub fn subsumes_masks(caller: u16, callee: u16) -> bool {
 /// the exhaustive equivalence test re-checks the mirror over the full u16 domain.
 ///
 /// Non-vacuity: this returns `false` for `caller=0, callee=1` (Pure does not
-/// subsume {Read}), so the relation is genuinely constraining (not `true`).
+/// subsume {Read}), so the relation is constraining (not `true`).
 #[must_use]
 pub fn spec_subsumes_mask(caller: u16, callee: u16) -> bool {
     let mut i: u16 = 0;
@@ -278,7 +278,7 @@ pub fn widen(i: u16) -> u32 {
 /// (the production consumer, R-DEFER-1).
 ///
 /// Non-vacuity: `io_allow(0) == 0` (pure permits no sensitive syscall) and
-/// `io_allow(1) == SYS_OPENAT != 0` (Read widens), so the map is genuinely
+/// `io_allow(1) == SYS_OPENAT != 0` (Read widens), so the map is
 /// constraining (not constant).
 #[must_use]
 pub fn io_allow(fx: u16) -> u32 {
@@ -312,7 +312,7 @@ pub fn io_allow(fx: u16) -> u32 {
 /// the 4 `(has_boundary, has_slag)` combinations.
 ///
 /// Non-vacuity: this returns `false` for `(false, false)` (a regular fn is fully
-/// proved, never external_body), so the gate is genuinely constraining (not `true`).
+/// proved, never external_body), so the gate is constraining (not `true`).
 #[must_use]
 pub fn should_emit_external_body(has_boundary: bool, has_slag: bool) -> bool {
     has_boundary || has_slag
@@ -402,7 +402,7 @@ pub fn aggregate_level(levels: &[Level]) -> Level {
 /// `usize` count (matching the exec form's overflow obligation).
 ///
 /// Non-vacuity: this returns `false` for `(0, 0)` (the #48 gate) and for `(1, 2)`
-/// (`100 >= 120` is false — 50% is below 60%), so it is genuinely constraining.
+/// (`100 >= 120` is false — 50% is below 60%), so it is constraining.
 #[must_use]
 pub fn meets_floor_60(killed: usize, scored: usize) -> bool {
     let k = killed as u128;

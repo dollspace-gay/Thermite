@@ -1,5 +1,5 @@
-//! LIVE L3 conformance for the var*var overflow discharge (#196,
-//! `.design/lower/verus-lowering.md` REQ-7). Drives the BUILT `forge` binary
+//! Live L3 conformance for the var*var overflow discharge (#196,
+//! `.design/lower/verus-lowering.md` REQ-7). Drives the built `forge` binary
 //! with `check --json` over a temp `.th` fixture and asserts the certificate
 //! `level`. This is the cert-oracle end of the #196 fix: the lowerer emits the
 //! req-bounded-mul `by(nonlinear_arith)` aid (pinned in
@@ -7,14 +7,14 @@
 //! discharges the overflow obligation → L3.
 //!
 //! Mirrors `forge/tests/check_conformance.rs`: drive the binary, parse JSON,
-//! SKIP LOUDLY if verus is absent (never panic on a missing solver). `tests/`
-//! is not anti-pattern-gated, so `unwrap`/`expect` are fine here.
+//! skip with a logged note if verus is absent (never panic on a missing solver).
+//! `tests/` is not anti-pattern-gated, so `unwrap`/`expect` are fine here.
 //!
-//! Expected values are HAND-DERIVED from the design contract + the user's
-//! `/goal` spec (R-CHAR-3): `sq` under `req n <= 30` MUST certify L3 (it
+//! Expected values are hand-derived from the design contract + the user's
+//! `/goal` spec (R-CHAR-3): `sq` under `req n <= 30` must certify L3 (it
 //! currently fails "possible arithmetic underflow/overflow" without the aid);
-//! the UNBOUNDED `n * m` case MUST NOT certify L3 (the obligation honestly
-//! fails — no fabricated aid, R-DEFER-9).
+//! the unbounded `n * m` case must not certify L3 (the obligation fails — no
+//! fabricated aid, R-DEFER-9).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -100,9 +100,9 @@ fn sq_certifies_l3_via_req_bounded_mul_aid() {
     );
 }
 
-/// HONEST NON-L3 — an UNBOUNDED factor `n * m` (no req bound on `m`): the
-/// overflow obligation honestly FAILS (no fabricated aid), so `mul_nm` does
-/// NOT certify L3 (#196, R-DEFER-9). The negative control proving the aid is
+/// Honest non-L3 — an unbounded factor `n * m` (no req bound on `m`): the
+/// overflow obligation fails (no fabricated aid), so `mul_nm` does not
+/// certify L3 (#196, R-DEFER-9). The negative control proving the aid is
 /// not a blanket cheat.
 #[test]
 fn unbounded_product_does_not_certify_l3() {

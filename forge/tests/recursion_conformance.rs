@@ -1,41 +1,41 @@
 //! L3-grounding conformance for Cluster **C9-A** (crosslink **#108**): plain-`fn`
-//! RECURSION — a regular exec `fn` carrying an optional `dec <measure>` clause may
+//! recursion — a regular exec `fn` carrying an optional `dec <measure>` clause may
 //! call itself, with Verus proving termination via the decreases
 //! (`.design/basis/10-recursion-tuples.md` REQ-1..4).
 //!
-//! These run against the EXTERNAL truths the toolchain does not author for itself:
+//! These run against the external truths the toolchain does not author for itself:
 //! the built `forge` binary's certificate ladder (`forge check`, real verus) and
 //! the L1 build+run path (`forge build`, real rustc) — R-CODE-4: the subprocess
 //! status is checked, never swallowed.
 //!
-//! Pins the C9-A deliverables (the GROUNDED forms from the design's Verification
+//! Pins the C9-A deliverables (the grounded forms from the design's Verification
 //! section, certified with real `verus 0.2026.05.24`):
 //!
 //!   * A recursive `fn count_down(n)` with `dec n` and `ens result == 0`
 //!     (self-call `count_down(n - 1)`) → **L3** (Verus proves termination from the
 //!     `decreases n`) — REQ-1/REQ-3, AC-1.
-//!   * The SAME fn recursing on `n` (NOT `n - 1`) with `dec n` → **L0** (Verus
-//!     "could not prove termination" — the decreases BITES) — REQ-4, AC-2.
-//!   * A self-calling `fn` with NO `dec` and NOT `fx diverge` → a structured
+//!   * The same fn recursing on `n` (not `n - 1`) with `dec n` → **L0** (Verus
+//!     "could not prove termination" — the decreases bites) — REQ-4, AC-2.
+//!   * A self-calling `fn` with no `dec` and not `fx diverge` → a structured
 //!     `MissingDecreases` validator error ("recursive function … must have a
 //!     decreases clause"), never reaching an L3 cert — REQ-2, AC-3.
-//!   * A `fx diverge` recursive `fn` with NO `dec` → **L1** (the #88 exemption —
+//!   * A `fx diverge` recursive `fn` with no `dec` → **L1** (the #88 exemption —
 //!     partial correctness only; termination not claimed) — REQ-2/REQ-4, AC-3.
-//!   * A recursive `fn` BUILDS + RUNS (the self-call executes through the L1
+//!   * A recursive `fn` builds + runs (the self-call executes through the L1
 //!     runtime-check path) — REQ-3.
 //!
-//! NON-VACUITY (R-DEFER-9 / `thermite-design.md` §7): the `ens result == 0` is a
+//! Non-vacuity (R-DEFER-9 / `thermite-design.md` §7): the `ens result == 0` is a
 //! function of the recursion's fixpoint (a non-terminating or wrong body cannot
-//! satisfy it), and the decreases is the ONLY thing standing between the fn and L0
+//! satisfy it), and the decreases is the only thing standing between the fn and L0
 //! — remove it → structured error; weaken it (recurse on `n`) → termination
 //! failure. A non-terminating fn cannot be laundered to L3.
 //!
-//! R-CHAR-3: the expected LEVELS trace to the design (L3 == a discharged verus
+//! R-CHAR-3: the expected levels trace to the design (L3 == a discharged verus
 //! termination proof; L0 == "could not prove termination"; the no-`dec` reject ==
 //! the Verus "recursive function must have a decreases clause" rule mirrored as
 //! `MissingDecreases`) — `.design/basis/10-recursion-tuples.md` REQ-1..4 +
-//! Verification — NEITHER copied from forge's own output. Runs the BUILT `forge`
-//! binary; if verus is absent the L3/L0 cases SKIP LOUDLY (never panic on a
+//! Verification — neither copied from forge's own output. Runs the built `forge`
+//! binary; if verus is absent the L3/L0 cases skip with a logged note (never panic on a
 //! missing solver), mirroring `operators_conformance.rs`.
 
 use std::path::{Path, PathBuf};
@@ -115,17 +115,17 @@ const COUNT_DOWN_L3: &str = "fn count_down(n: u64) -> u64\n  \
     req n <= 1000\n  ens result == 0\n  fx pure\n  dec n\n\
     {\n  if n == 0 {\n    0\n  } else {\n    count_down(n - 1)\n  }\n}\n";
 
-// The SAME fn recursing on `n` (non-decreasing) — the decreases does not bite.
+// The same fn recursing on `n` (non-decreasing) — the decreases does not bite.
 const COUNT_DOWN_NONDECREASING: &str = "fn count_down(n: u64) -> u64\n  \
     req n <= 1000\n  ens result == 0\n  fx pure\n  dec n\n\
     {\n  if n == 0 {\n    0\n  } else {\n    count_down(n)\n  }\n}\n";
 
-// A self-calling fn with NO `dec` and NOT `fx diverge` — the mandatory-dec reject.
+// A self-calling fn with no `dec` and not `fx diverge` — the mandatory-dec reject.
 const COUNT_DOWN_NO_DEC: &str = "fn count_down(n: u64) -> u64\n  \
     req n <= 1000\n  ens result == 0\n  fx pure\n\
     {\n  if n == 0 {\n    0\n  } else {\n    count_down(n - 1)\n  }\n}\n";
 
-// A `fx diverge` recursive fn with NO `dec` — the #88 exemption (L1-capped).
+// A `fx diverge` recursive fn with no `dec` — the #88 exemption (L1-capped).
 const SPIN_DIVERGE: &str = "fn spin(n: u64) -> u64\n  \
     req true\n  ens result == 0\n  fx diverge\n\
     {\n  if n == 0 {\n    0\n  } else {\n    spin(n - 1)\n  }\n}\n";
@@ -151,7 +151,7 @@ fn recursive_fn_with_dec_certifies_l3() {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-4, AC-2: a NON-decreasing recursive call → L0 (the decreases BITES).
+// REQ-4, AC-2: a non-decreasing recursive call → L0 (the decreases bites).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -172,7 +172,7 @@ fn nondecreasing_recursion_is_l0() {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-2, AC-3: a self-call with NO `dec` (and not diverge) → structured error.
+// REQ-2, AC-3: a self-call with no `dec` (and not diverge) → structured error.
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -201,7 +201,7 @@ fn self_call_without_dec_is_structured_error() {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-2/REQ-4, AC-3: a `fx diverge` recursive fn with NO `dec` → L1 (#88).
+// REQ-2/REQ-4, AC-3: a `fx diverge` recursive fn with no `dec` → L1 (#88).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -222,7 +222,7 @@ fn diverge_recursion_without_dec_is_l1() {
 }
 
 // ---------------------------------------------------------------------------
-// REQ-3: a recursive fn BUILDS + RUNS (the self-call executes at L1).
+// REQ-3: a recursive fn builds + runs (the self-call executes at L1).
 // ---------------------------------------------------------------------------
 
 #[test]

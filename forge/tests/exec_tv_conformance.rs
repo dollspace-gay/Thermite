@@ -40,7 +40,7 @@ fn corpus_dir() -> PathBuf {
 }
 
 /// `true` iff verus can be located (`VERUS_BIN`, then PATH, then
-/// `~/.local/bin/verus`). SKIP LOUDLY otherwise (mirrors `contract_tv_conformance`).
+/// `~/.local/bin/verus`). Skips with a logged note otherwise (mirrors `contract_tv_conformance`).
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {

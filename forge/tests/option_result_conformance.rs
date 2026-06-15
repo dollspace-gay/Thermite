@@ -159,7 +159,7 @@ fn verus_on_lowered(tag: &str, program: &str) -> (bool, String) {
 /// Authority: `.design/basis/09-option-result.md` AC-1 — `Some(5)` is `Expr::Call`,
 /// `Option<u64>` is `Type::Option`; the validator's seeded built-in variant registry
 /// accepts `Some`; the spec-`match` is admitted as a flat built-in; lowers to a Verus
-/// `Option<u64>` + the spec-`match`-in-`ens`. GROUNDED `4 verified, 0 errors`.
+/// `Option<u64>` + the spec-`match`-in-`ens`. Grounded `4 verified, 0 errors`.
 /// `thermite-design.md` §6: a fully-discharged verus proof is L3.
 #[test]
 fn ac1_option_construct_payload_in_contract_certifies_l3() {
@@ -260,7 +260,7 @@ fn ac4_parse_u64_lowering_verifies_under_real_verus() {
         eprintln!("SKIP: verus absent — parse_u64 lowering not exercised.");
         return;
     }
-    // A surface fn that CALLS the generated parse_u64 (the `&String` view; the
+    // A surface fn that calls the generated parse_u64 (the `&String` view; the
     // round-trip ens projects the Some payload via parse_be over the consumed bytes).
     let (ok, output) = verus_on_lowered(
         "parseu64",

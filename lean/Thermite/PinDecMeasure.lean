@@ -86,7 +86,7 @@ def envC (x : Int) : Env :=
     optres := fun _ => OptResVal.none_
     specs := Rclosure }
 
-/-- The same valuation under the TRUE registry. -/
+/-- The same valuation under the true registry. -/
 def envT (x : Int) : Env :=
   { ints := fun n => if n = "x" then x else 0
     seqs := fun _ => []

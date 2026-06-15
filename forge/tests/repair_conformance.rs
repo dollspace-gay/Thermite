@@ -1,27 +1,27 @@
 //! Conformance for the background proof-repair loop `forge repair` (issue #18,
 //! `.design/forge/proof-repair.md`; `thermite-design.md` §6, Appendix B). The
-//! DETERMINISTIC loop logic — the bounded escalation ladder, the upgrade path, the
+//! deterministic loop logic — the bounded escalation ladder, the upgrade path, the
 //! anti-cheat gate, bounded termination, and the environment-error propagation —
-//! is pinned HERMETICALLY by the unit tests in `forge/src/repair.rs` (the loop
-//! driven on SYNTHESIZED per-rung `RepairVerdict`s, the #10/#11 precedent; a live
+//! is pinned hermetically by the unit tests in `forge/src/repair.rs` (the loop
+//! driven on synthesized per-rung `RepairVerdict`s, the #10/#11 precedent; a live
 //! timeout-that-proves is timing-fragile + Z3-version-sensitive, OQ-1). This file
-//! is the LIVE layer through the built `forge` binary:
+//! is the live layer through the built `forge` binary:
 //!
-//! - **THE ANTI-CHEAT (AC-3, from the oracle `never_upgraded`):** the grounded
+//! - **The anti-cheat (AC-3, from the oracle `never_upgraded`):** the grounded
 //!   `never_provable_counterexample` (`ens result == x + 2`, body `x + 1`) is a
-//!   COUNTEREXAMPLE at EVERY budget. `forge repair` MUST NOT upgrade it — it stays
-//!   L0 / not-repairable, NEVER a false L3. A counterexample is reliably
-//!   reproducible, so this is a LIVE test (the highest-value test, R-DEFER-9 / §12).
+//!   counterexample at every budget. `forge repair` must not upgrade it — it stays
+//!   L0 / not-repairable, never a false L3. A counterexample is reliably
+//!   reproducible, so this is a live test (the highest-value test, R-DEFER-9 / §12).
 //! - **The no-op (AC-1, from the oracle `no_op`):** the corpus `conformance/sum.th`
-//!   (both fns certify L3) → repair finds NO sub-L3 item, attempts nothing, the
+//!   (both fns certify L3) → repair finds no sub-L3 item, attempts nothing, the
 //!   repair set is empty, the corpus certs are unchanged.
 //!
-//! Verus-dependent checks SKIP LOUDLY when verus is absent (mirroring
+//! Verus-dependent checks skip with a logged note when verus is absent (mirroring
 //! `degrade_conformance.rs` / `profile_conformance.rs`). `tests/` is not
-//! anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine here. Do NOT edit
+//! anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine here. Do not edit
 //! `conformance/` (R-CHAR-3): the never-provable program text is taken from the
 //! oracle `conformance/repair/cases.json` (`never_upgraded[0].program`), written to
-//! a TEMP `.th` (the conformance dir is read-only); expected outcomes trace to the
+//! a temp `.th` (the conformance dir is read-only); expected outcomes trace to the
 //! oracle + the doc's grounding (a false `ens` is a counterexample at every
 //! budget), never to forge's own output.
 
@@ -40,8 +40,8 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// `true` iff verus can be located (mirrors `degrade_conformance.rs`). SKIP
-/// LOUDLY otherwise.
+/// `true` iff verus can be located (mirrors `degrade_conformance.rs`). Skips with
+/// a logged note otherwise.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -101,11 +101,11 @@ fn write_never_provable_fixture() -> PathBuf {
     path
 }
 
-// ── AC-1: corpus `sum.th` is already L3 → repair is a NO-OP ───────────────────
+// ── AC-1: corpus `sum.th` is already L3 → repair is a no-op ───────────────────
 //
-// `forge repair conformance/sum.th` finds NO sub-L3 item (both `spec_sum` and
+// `forge repair conformance/sum.th` finds no sub-L3 item (both `spec_sum` and
 // `sum` certify L3 at the default budget — grounded, `conformance/sum.cert.json`
-// is `"level": "L3"`), so the repair set is EMPTY and repair attempts no
+// is `"level": "L3"`), so the repair set is empty and repair attempts no
 // escalation. Exit 0 (a no-op is a fully-repaired pass).
 #[test]
 fn corpus_sum_is_a_repair_noop() {
@@ -127,14 +127,14 @@ fn corpus_sum_is_a_repair_noop() {
     assert_eq!(code, Some(0), "a no-op repair pass exits 0: {doc}");
 }
 
-// ── AC-3: THE ANTI-CHEAT — a counterexample is NEVER upgraded to L3 ───────────
+// ── AC-3: the anti-cheat — a counterexample is never upgraded to L3 ───────────
 //
 // The grounded `never_provable_counterexample` (`ens result == x + 2`, body
-// `x + 1`) is a COUNTEREXAMPLE (`postcondition not satisfied`, NO profile report)
-// at EVERY budget. `forge repair` MUST NOT retry it and MUST NOT upgrade it: it
-// stays a sub-L3 not-repairable item, NEVER a false L3. A regression laundering a
+// `x + 1`) is a counterexample (`postcondition not satisfied`, no profile report)
+// at every budget. `forge repair` must not retry it and must not upgrade it: it
+// stays a sub-L3 not-repairable item, never a false L3. A regression laundering a
 // false contract into L3 is the worst possible failure (§12, R-DEFER-9) — the
-// highest-value test, and reliably LIVE (a counterexample is reproducible).
+// highest-value test, and reliably live (a counterexample is reproducible).
 #[test]
 fn counterexample_is_never_upgraded() {
     if !verus_present() {
@@ -145,7 +145,7 @@ fn counterexample_is_never_upgraded() {
     let (code, doc) = run_repair_json(&fixture, None);
 
     let repaired = doc["repaired"].as_array().expect("`repaired` is an array");
-    // The single fn `inc` is sub-L3 and must be in the repair set as a HARD FAIL.
+    // The single fn `inc` is sub-L3 and must be in the repair set as a hard fail.
     let inc = repaired
         .iter()
         .find(|i| i["item"].as_str() == Some("inc"))

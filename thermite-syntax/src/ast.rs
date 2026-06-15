@@ -39,7 +39,7 @@
 //! |---|---|---|
 //! | goal-repl REQ-4 (AST hole node) | SHIPPED | `struct Hole { number: u32, span: Span }` + `FnItem.holes: Vec<Hole>` (document order). PURELY ADDITIVE (`holes: Vec::new()` on every hole-free literal, the `dec: None` precedent) — a hole is recorded on the fn, NOT as a `Stmt` variant, so the `enum Stmt` and every exhaustive `match Stmt` in the workspace are UNTOUCHED (a holed item never lowers — it short-circuits at `forge check`, REQ-5). Built by `parse_block`'s `TokKind::Hole` arm in `parser.rs` (`parser.md` REQ-11); addressed `<fn>.?N` by `address.rs` (`AddrKind::Hole`); short-circuited to L0 `OpenHole` by `forge::check`; filled by `forge::goal_repl::fill_hole`. |
 //!
-//! ## Basis Stage 1a — ADT SURFACE AST nodes (`.design/basis/01-adts.md`)
+//! ## Basis Stage 1a — ADT surface AST nodes (`.design/basis/01-adts.md`)
 //!
 //! Surface-only (parse-into-the-right-AST); the validator rules (1b) and Verus
 //! lowering (1c) are not in this crate.
@@ -53,14 +53,14 @@
 //! | REQ-6 SURFACE (`Expr::Is` + `is` operator) | SHIPPED | `Expr::Is { scrutinee: Box<Expr>, variant: Vec<Ident> }`; built by the postfix `is` parse in `parser::parse_postfix`; `result == (s is Circle)` parses (`tests/adt_parse.rs` shape). The VALIDATOR rule (accept only declared variants) is stage 1b. |
 //! | deref `*t` (REQ-3/REQ-4 surface) | SHIPPED | `Expr::Deref(Box<Expr>)` (new prefix-`*` unary; no existing node fit); built by `parser::parse_ref`; `sum_list(*t)` parses (`tests/adt_parse.rs` list_sum). Its SEMANTICS are stage 1c. |
 //!
-//! ## Basis Stage 4 — bounded-collection SURFACE AST (`.design/basis/04-collections.md`)
+//! ## Basis Stage 4 — bounded-collection surface AST (`.design/basis/04-collections.md`)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 SURFACE (`Vec<T>` type node) | SHIPPED | `Type::Vec(Box<Type>)` (OQ-2 RESOLVED — dedicated node, mirroring `Type::Box`, NOT `Generic`); built by `parser::parse_type` on the contextual `Vec` ident; `v: Vec<u64>` parses (`conformance/vec_demo.th`, asserted by `thermite-lower/tests/collections_conformance.rs`). The `push`/`pop`/`get`/`len` operations reuse `Expr::MethodCall` (no new node). The vstd-`Vec` wrapper + capacity invariant + `fx alloc` are Stage 4 lowering (`lower.rs`). |
 //! | REQ-2 (`Map<K,V>` type) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut); `Map` deferred to a Stage-4 follow-up — `enum Type` has no `Map` node; the single-arg `Generic`/`Vec`/`Box` shapes do not carry a key+value. |
 //!
-//! ## Cluster C7 — built-in Option/Result SURFACE AST (`.design/basis/09-option-result.md`, #95)
+//! ## Cluster C7 — built-in Option/Result surface AST (`.design/basis/09-option-result.md`, #95)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
@@ -80,7 +80,7 @@
 //! | REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection — AST) | SHIPPED | `enum Type` += `Tuple(Vec<Type>)` (n-tuple type, arity ≥ 2); `enum Expr` += `Tuple(Vec<Expr>)` (construction) + the DEDICATED `TupleProj { receiver: Box<Expr>, index: usize }` projection node (OQ-1 RESOLVED → dedicated, NOT an overloaded `Field` with a string `"0"`: a tuple index is a `usize`). Built by `parser::parse_type_inner` (the `(` arm disambiguates by the comma: `()` → `Unit`, `(T)` → grouping, `(T, U, …)` → `Tuple`), `parser::parse_primary` (the `(` arm builds `Expr::Tuple` on a comma; `(e)` → grouping), `parser::parse_postfix` (the `.` arm builds `Expr::TupleProj` when the token after `.` is an `Int`). Consumer: `thermite-lower::lower::lower_type`/`lower_expr` (→ Verus tuples). Verified: `forge/tests/tuples_conformance.rs::tuple_type_disambiguation_unit_grouping_tuple` + `tuple_expr_and_projection_nodes`. |
 //! | REQ-7 (tuple arity — n-tuples, ≥ 2) | SHIPPED | `Type::Tuple(Vec<Type>)`/`Expr::Tuple(Vec<Expr>)` carry any arity ≥ 2; `()` stays `Type::Unit` (arity 0), `(T)` is grouping (arity 1, the inner). Verified: `forge/tests/tuples_conformance.rs::ac6_three_tuple_certifies_l3` (a 3-tuple → L3 under real verus) + `tuple_type_disambiguation_unit_grouping_tuple` (`()`/`(T)` unbroken). |
 //!
-//! ## Cluster C12 — bounded verified `Map<K,V>` SURFACE AST (`.design/basis/13-map.md`, #123)
+//! ## Cluster C12 — bounded verified `Map<K,V>` surface AST (`.design/basis/13-map.md`, #123)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|

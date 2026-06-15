@@ -603,9 +603,9 @@ fn lean_fragment_present_without_lake() {
     );
 }
 
-// AC-11: a PRE-AMENDMENT v1 audit document (no `lean_fragment` key) still
+// AC-11: a pre-amendment v1 audit document (no `lean_fragment` key) still
 // deserializes — the additive `#[serde(default)]` discipline. The literal is a
-// minimal v1 manifest WITHOUT the new section.
+// minimal v1 manifest without the new section.
 #[test]
 fn pre_amendment_v1_document_still_deserializes() {
     // A hand-written v1 document with the three original sections and no

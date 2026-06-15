@@ -4,7 +4,7 @@
 //! 1. Hermetic (no verus): the parse + render against the captured real-verus
 //!    profiler blob (AC-1, AC-2, AC-6) and the deterministic three-way
 //!    classification driven through the built `forge` binary's behavior — the
-//!    PROVED / COUNTEREXAMPLE / TIMEOUT discrimination crux (AC-3, AC-4). The
+//!    proved / counterexample / timeout discrimination crux (AC-3, AC-4). The
 //!    blob is the captured `~/.local/bin/verus --profile-all --verify-root`
 //!    output of a transitivity / connectivity quantifier set; hand-derived
 //!    expected fields are read off the blob (R-CHAR-3: verus's report shape,
@@ -123,7 +123,7 @@ fn find_cert(certs: &[Value], item: &str) -> Value {
         .clone()
 }
 
-// ===== Layer 1: HERMETIC parse + render (no verus) =========================
+// ===== Layer 1: Hermetic parse + render (no verus) =========================
 
 // AC-1: parse the captured blob; assert hand-derived top fields (14 total; top
 // quantifier 10 inst / 71%). The forge binary cannot expose the parser directly
@@ -156,9 +156,9 @@ fn captured_blob_top_fields_are_hand_derived() {
     );
 }
 
-// ===== Layer 2: LIVE classification (requires verus) =======================
+// ===== Layer 2: Live classification (requires verus) =======================
 
-// AC-3 / AC-4 (PROVED): the corpus `sum.th` at the default rlimit proves → L3,
+// AC-3 / AC-4 (proved): the corpus `sum.th` at the default rlimit proves → L3,
 // carries no `solver_profile`, no `suggested_move`, no `VerusTimeout` reject.
 // This is the cert-oracle-unperturbed guarantee (DEFAULT_RLIMIT is generous).
 #[test]
@@ -191,10 +191,10 @@ fn corpus_at_default_rlimit_is_l3_no_profile() {
     assert!(bs.get("solver_profile").is_none());
 }
 
-// AC-3 / AC-4 (COUNTEREXAMPLE): a broken contract (`ens result == x + 2` for a
+// AC-3 / AC-4 (counterexample): a broken contract (`ens result == x + 2` for a
 // body `x + 1`) is a counterexample: non-zero exit, not a timeout, no
 // `solver_profile`, and the reject cause (if any) is not `VerusTimeout`. Run
-// under a low `--rlimit` to show that even at a tiny budget a genuine
+// under a low `--rlimit` to show that even at a tiny budget a
 // counterexample stays a counterexample (it is `unsat`-of-the-negation-free /
 // `sat`, not a budget-out), distinct from the timeout bucket.
 #[test]
@@ -246,7 +246,7 @@ fn broken_contract_is_counterexample_not_timeout() {
     );
 }
 
-// AC-3 (TIMEOUT, the lever): a forced low `--rlimit` on a quantifier-bearing
+// AC-3 (timeout, the lever): a forced low `--rlimit` on a quantifier-bearing
 // corpus item is the timeout lever. Best-effort (OQ-1, empirically confirmed):
 // Z3 often returns `unknown` fast without exhausting the rlimit, so `--profile`
 // does not always emit a report. When a `VerusTimeout` cert is produced it
@@ -272,7 +272,7 @@ fn forced_low_rlimit_timeout_carries_profile_when_emitted() {
         .and_then(|c| c.as_str());
 
     if reject_cause == Some("VerusTimeout") {
-        // A live timeout WAS provoked — assert the full timeout contract.
+        // A live timeout was provoked — assert the full timeout contract.
         assert_eq!(
             bs["level"],
             Value::from("L0"),

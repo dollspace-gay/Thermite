@@ -243,7 +243,7 @@ fn req2_user_dec_on_for_is_rejected() {
 // ---------------------------------------------------------------------------
 
 /// REQ-3 / AC-3 — a guarded match `match x { n if n < 10 => true, _ => false }`
-/// with a non-vacuous `ens result == (x < 10)` certifies L3. AUTHORITY:
+/// with a non-vacuous `ens result == (x < 10)` certifies L3. Authority:
 /// `.design/basis/11-ergonomics.md` AC-3 (the guard lowers to the Verus-native
 /// guarded arm); §6.
 #[test]
@@ -301,7 +301,7 @@ fn req3_guarded_only_arm_is_non_exhaustive() {
 // ---------------------------------------------------------------------------
 
 /// REQ-4 / AC-4 — `match x { 1 | 2 => true, _ => false }` with `ens result ==
-/// (x == 1 || x == 2)` certifies L3. AUTHORITY:
+/// (x == 1 || x == 2)` certifies L3. Authority:
 /// `.design/basis/11-ergonomics.md` AC-4 (the or-pattern lowers to the
 /// Verus-native `p0 | p1 | …`); §6.
 #[test]

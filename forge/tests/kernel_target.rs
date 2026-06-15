@@ -1,35 +1,35 @@
 //! Conformance test for `forge build --target kernel` (issue #197) against the
-//! EXTERNAL truth: the real `rustc` compiler (a freestanding `#![no_std]`
+//! external truth: the real `rustc` compiler (a freestanding `#![no_std]`
 //! invocation) + the hand-derived design `.design/build/kernel-target.md`. The
-//! kernel target emits a freestanding `no_std + alloc` LIBRARY rlib (no `main`, no
+//! kernel target emits a freestanding `no_std + alloc` library rlib (no `main`, no
 //! seccomp prelude, `panic=abort`) suitable for linking into a verified
-//! microkernel, and REFUSES a fn whose transitive `fx` carries an ambient-syscall
+//! microkernel, and refuses a fn whose transitive `fx` carries an ambient-syscall
 //! effect (`read`/`write`/`net`/`term`).
 //!
 //! Verification is by the design's ACs:
 //!   - AC-1 — `forge build --target kernel sum.th` (the pure corpus `sum`) emits a
 //!     `#![no_std]` + `extern crate alloc;` rlib and rustc exits 0; the emitted
-//!     source contains `#![no_std]`/`extern crate alloc;` and NO `fn main` / NO
+//!     source contains `#![no_std]`/`extern crate alloc;` and no `fn main` / no
 //!     seccomp prelude (`PR_SET_SECCOMP`).
 //!   - AC-2 — a `fx read(...)` fn → a structured refusal naming the rejected effect,
-//!     nonzero exit, NO artifact; a `fx write`/`net`/`term` fn refuses identically; a
+//!     nonzero exit, no artifact; a `fx write`/`net`/`term` fn refuses identically; a
 //!     `fx pure`/`alloc` fn builds.
 //!   - AC-3 — the emitted kernel source carries the always-active `thermite_check!` /
-//!     `thermite_contract_violation` (`panic!`) VERBATIM (NOT stripped, NOT
-//!     `debug_assert!`); the no_std rlib genuinely COMPILES when a test
+//!     `thermite_contract_violation` (`panic!`) verbatim (not stripped, not
+//!     `debug_assert!`); the no_std rlib compiles when a test
 //!     `#[panic_handler]`/`#[global_allocator]` (the kernel-host stand-in) is linked.
 //!   - AC-4 — `forge build sum.th` (no `--target`) is byte-unchanged (the std default).
 //!   - AC-5 — `forge check` / the L3 path is untouched (no `check.rs` edit; the
 //!     existing check suites are unaffected — asserted by their continued passing,
 //!     not re-run here).
 //!
-//! The freestanding-compile MECHANISM (AC-1/AC-3): the test reconstructs the EXACT
+//! The freestanding-compile mechanism (AC-1/AC-3): the test reconstructs the exact
 //! kernel source forge emits for a pure (boundary-free) program — the design-pinned
-//! prelude `#![no_std]` / `extern crate alloc;` / `use alloc::vec::Vec;` PLUS
-//! `thermite_lower::lower_l1`'s output — INDEPENDENTLY (the prelude is taken from the
-//! design doc, NOT copied from forge output — R-CHAR-3), then shells the real `rustc`
+//! prelude `#![no_std]` / `extern crate alloc;` / `use alloc::vec::Vec;` plus
+//! `thermite_lower::lower_l1`'s output — independently (the prelude is taken from the
+//! design doc, not copied from forge output — R-CHAR-3), then shells the real `rustc`
 //! with `-C panic=abort` + a test panic_handler/allocator stub. This is the
-//! N-version check: forge's own `--target kernel` ALSO compiles the source internally
+//! N-version check: forge's own `--target kernel` also compiles the source internally
 //! (AC-1, exit 0), and the reconstructed-source compile cross-checks the no_std-ness.
 //!
 //! `rustc` is always installed (no skip). `unwrap`/`expect`/`panic!` are fine here —
@@ -64,16 +64,16 @@ fn run_forge_build(args: &[&str]) -> (bool, String, String) {
 }
 
 /// The design-pinned freestanding prelude (`.design/build/kernel-target.md` REQ-2),
-/// transcribed from the DESIGN — not copied from forge output (R-CHAR-3). The kernel
+/// transcribed from the design — not copied from forge output (R-CHAR-3). The kernel
 /// crate is `#![no_std]` with `extern crate alloc;` and the bare `Vec` resolved from
 /// the alloc prelude; `String` is the L1 emission's `use TString as String;` alias
-/// (so the prelude must NOT re-import it), `panic!` is core.
+/// (so the prelude must not re-import it), `panic!` is core.
 const PINNED_KERNEL_PRELUDE: &str = "#![no_std]\nextern crate alloc;\nuse alloc::vec::Vec;\n";
 
-/// Reconstruct the EXACT kernel-target source forge emits for the pure (boundary-
+/// Reconstruct the exact kernel-target source forge emits for the pure (boundary-
 /// free) corpus program at `th_path`: the pinned prelude + `thermite_lower::lower_l1`
 /// (a boundary-free program emits no `mod os`, so this is the whole body). This is
-/// the INDEPENDENT N-version source the AC-3 freestanding compile uses.
+/// the independent N-version source the AC-3 freestanding compile uses.
 fn reconstruct_kernel_source(th_path: &Path) -> String {
     let src = std::fs::read_to_string(th_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", th_path.display()));
@@ -84,13 +84,13 @@ fn reconstruct_kernel_source(th_path: &Path) -> String {
     format!("{PINNED_KERNEL_PRELUDE}{lowered}")
 }
 
-/// Shell the real `rustc` to compile `source` as a FREESTANDING crate (AC-3): append
+/// Shell the real `rustc` to compile `source` as a freestanding crate (AC-3): append
 /// the kernel-host stand-in (`#[panic_handler]` + a trivial `#[global_allocator]`)
 /// and compile it `--crate-type=rlib -C panic=abort`. An rlib of a `#![no_std]` body
-/// is the genuine freestanding-link check: rustc fully type-checks the no_std body,
+/// is the freestanding-link check: rustc fully type-checks the no_std body,
 /// resolves `panic!` to core (routed to the test `#[panic_handler]`), and links
 /// `alloc`'s `Vec`/`String` against the test `#[global_allocator]` — exactly the
-/// kernel-host pieces the design's OQ-1 says forge does NOT emit. `unique` keys a
+/// kernel-host pieces the design's OQ-1 says forge does not emit. `unique` keys a
 /// per-test temp dir so concurrently-running tests do not clobber each other's dir.
 /// Returns `(rustc_exit_success, stderr)`.
 fn freestanding_compile(unique: &str, source: &str) -> (bool, String) {
@@ -103,7 +103,7 @@ fn freestanding_compile(unique: &str, source: &str) -> (bool, String) {
     // `thermite_contract_violation`'s `panic!` routes here under `panic=abort`) and a
     // trivial `#[global_allocator]` so `alloc`'s `Vec`/`String` link freestanding.
     // None of this is emitted by forge — it is the test harness standing in for the
-    // kernel host. The allocator never actually allocates in a type-check/link build.
+    // kernel host. The allocator never allocates in a type-check/link build.
     let host_stub = "\n\
 use core::alloc::{GlobalAlloc, Layout};\n\
 struct NullAlloc;\n\
@@ -195,7 +195,7 @@ fn pure_fn_builds_no_std_kernel_rlib() {
         artifact.display()
     );
 
-    // The emitted source carries the no_std prelude and NOT a `fn main` / seccomp.
+    // The emitted source carries the no_std prelude and not a `fn main` / seccomp.
     let source = reconstruct_kernel_source(&sum);
     assert!(
         source.contains("#![no_std]"),
@@ -230,7 +230,7 @@ fn l1_checks_emitted_verbatim_in_kernel_source() {
     let sum = corpus_dir().join("sum.th");
     let source = reconstruct_kernel_source(&sum);
 
-    // The always-active L1 check machinery is emitted UNCHANGED (NOT stripped, NOT
+    // The always-active L1 check machinery is emitted unchanged (not stripped, not
     // `debug_assert!`): the macro + the `panic!`-based violation handler.
     assert!(
         source.contains("macro_rules! thermite_check"),
@@ -256,7 +256,7 @@ fn l1_checks_emitted_verbatim_in_kernel_source() {
         "the lowered body must contain at least one `thermite_check!(...)` call:\n{source}"
     );
 
-    // AC-3 mechanism: with the host panic_handler the no_std rlib genuinely compiles
+    // AC-3 mechanism: with the host panic_handler the no_std rlib compiles
     // (the `panic!` resolves to core's panic machinery, routed to `#[panic_handler]`).
     let (compiles, rustc_stderr) = freestanding_compile("ac3", &source);
     assert!(
@@ -332,7 +332,7 @@ fn ambient_write_net_term_fx_refuse_identically() {
 fn pure_and_alloc_fx_fns_build_for_kernel() {
     // `sum` is `fx pure` → admitted (built above). `string_demo` carries `fx alloc`
     // fns → admitted (alloc is on the kernel admit list, OQ-2) and the `use TString
-    // as String;` alias compiles under no_std (it does NOT collide with the prelude,
+    // as String;` alias compiles under no_std (it does not collide with the prelude,
     // which imports only `Vec`).
     let string_demo = corpus_dir().join("string_demo.th");
     let (ok, stdout, stderr) = run_forge_build(&[
@@ -377,11 +377,11 @@ fn kernel_target_with_entry_is_usage_error() {
 
 #[test]
 fn default_target_source_is_byte_identical_to_no_target_flag() {
-    // The default `forge build` and `forge build --target std` must emit the SAME
-    // bytes (the std default is unchanged): the std emission carries NO `#![no_std]`
+    // The default `forge build` and `forge build --target std` must emit the same
+    // bytes (the std default is unchanged): the std emission carries no `#![no_std]`
     // prelude. The reconstructed std source (lower_l1 alone, no prelude) is what the
     // existing build_conformance suite already pins; here we only assert the kernel
-    // prelude is ABSENT from the std default by checking the artifact still builds and
+    // prelude is absent from the std default by checking the artifact still builds and
     // is byte-stable across the explicit-`std` form.
     let sum = corpus_dir().join("sum.th");
 
@@ -399,13 +399,13 @@ fn default_target_source_is_byte_identical_to_no_target_flag() {
     );
 
     // The crate_type is rlib in both (a default library build), and the std emission
-    // is NOT a no_std crate — the reconstructed std source carries no `#![no_std]`.
+    // is not a no_std crate — the reconstructed std source carries no `#![no_std]`.
     let v_default: serde_json::Value = serde_json::from_str(&out_default).expect("default JSON");
     let v_std: serde_json::Value = serde_json::from_str(&out_std).expect("std JSON");
     assert_eq!(v_default["crate_type"], "rlib");
     assert_eq!(v_std["crate_type"], "rlib");
 
-    // The std (non-kernel) lowering emits NO no_std prelude (byte-unchanged default).
+    // The std (non-kernel) lowering emits no no_std prelude (byte-unchanged default).
     let src = std::fs::read_to_string(&sum).unwrap();
     let parsed = thermite_syntax::parse(&src);
     let std_lowered = thermite_lower::lower_l1(&parsed.program).expect("lower_l1");

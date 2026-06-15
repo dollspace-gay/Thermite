@@ -190,7 +190,7 @@ fn bytes_eq_demo_emits_def_and_lemmas_and_citation() {
 
 #[test]
 fn non_bytes_eq_program_does_not_emit_bytes_eq() {
-    // `string_demo.th` (greeting_len/first_byte/join/literal_len) names NO bytes_eq.
+    // `string_demo.th` (greeting_len/first_byte/join/literal_len) names no bytes_eq.
     let program = parse_corpus("string_demo");
     let emitted = lower_l3(&program);
     assert!(
@@ -256,7 +256,7 @@ fn bytes_eq_demo_matches_cert_oracle() {
     );
 }
 
-// ---- AC-13/AC-14: the emitted lowering VERIFIES under real verus (L3) --------
+// ---- AC-13/AC-14: the emitted lowering verifies under real verus (L3) --------
 
 #[test]
 fn bytes_eq_demo_verifies_l3_under_real_verus() {
@@ -281,7 +281,7 @@ fn bytes_eq_demo_verifies_l3_under_real_verus() {
     }
 }
 
-// ---- AC-16: the head/tail-SWAP mutant FAILS verus (non-vacuity) --------------
+// ---- AC-16: the head/tail-swap mutant fails verus (non-vacuity) --------------
 //
 // The length-preserving swap (`tail.concat(ins).concat(head)`) keeps every length
 // identity but breaks the byte-content pins — the design's `15 verified, 1 errors`

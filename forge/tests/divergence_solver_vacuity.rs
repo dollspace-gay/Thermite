@@ -3,7 +3,7 @@
 //! `.design/forge/solver-vacuity.md`).
 //!
 //! The crux these tests guard is the dangerous direction: a false positive,
-//! flagging a genuinely good contract as a tautology / vacuous precondition and
+//! flagging a good contract as a tautology / vacuous precondition and
 //! rejecting valid code. Every "good" case below uses a fresh contract (not the
 //! `conformance/solver-vacuity/cases.json` oracle fixtures, not `sum`/
 //! `binary_search`) whose `ens` constrains the result or whose `req` is

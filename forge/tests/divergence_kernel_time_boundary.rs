@@ -11,7 +11,7 @@
 //! falsified the design's OQ-2 premise ("`time`/`rand` are benign for the kernel —
 //! no syscall mapping"): an admitted-effect boundary carries a std-bodied wrapper.
 //!
-//! AMENDED AUTHORITY (R-CHAR-3 trace — `.design/build/kernel-target.md`):
+//! Amended authority (R-CHAR-3 trace — `.design/build/kernel-target.md`):
 //!   - OQ-2 (RESOLVED — REJECT; amended by #198): "`time`/`rand` MOVE INTO the reject
 //!     set: the v1 kernel admit set is now EXACTLY `pure`/`alloc`/`panic`/`diverge`,
 //!     and `KERNEL_REJECTED_FX = [\"read\",\"write\",\"net\",\"term\",\"time\",\"rand\"]`."

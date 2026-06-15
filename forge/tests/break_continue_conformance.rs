@@ -158,7 +158,7 @@ fn continue_preserving_invariant_and_decreases_certifies_l3() {
 }
 
 // ---------------------------------------------------------------------------
-// (2) `continue` that BREAKS the invariant → L0
+// (2) `continue` that breaks the invariant → L0
 //     (verus-lowering.md REQ-12(a), AC-7 probe 2).
 // ---------------------------------------------------------------------------
 
@@ -200,7 +200,7 @@ fn continue_breaking_invariant_is_l0() {
 }
 
 // ---------------------------------------------------------------------------
-// (3) `continue` that does NOT decrease the measure → L0
+// (3) `continue` that does not decrease the measure → L0
 //     (verus-lowering.md REQ-12(b), AC-7 probe 3).
 // ---------------------------------------------------------------------------
 
@@ -281,7 +281,7 @@ fn break_early_exit_certifies_l3() {
 }
 
 // ---------------------------------------------------------------------------
-// (5) `fx diverge` loop with BOTH break and continue → L1 (the #88 cap)
+// (5) `fx diverge` loop with both break and continue → L1 (the #88 cap)
 //     (verus-lowering.md REQ-12(d), AC-7 probe 5 — the editor pattern payoff).
 // ---------------------------------------------------------------------------
 

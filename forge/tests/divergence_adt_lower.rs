@@ -8,7 +8,7 @@
 //! (`goal.md` R-CHAR-3).
 //!
 //! These run the built `forge` binary end-to-end (verus-backed). If verus is
-//! absent they skip loudly (no panic on a missing solver), matching
+//! absent they skip with a logged note (no panic on a missing solver), matching
 //! `check_conformance.rs`.
 
 use std::path::{Path, PathBuf};

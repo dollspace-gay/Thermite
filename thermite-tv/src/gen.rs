@@ -132,7 +132,7 @@ pub fn generate_clauses(seed: u64, n: usize) -> Vec<Expr> {
         // comparison/connective/combinator/nat space. Keeping byte-view a top-level
         // standalone form (not mixed into the recursive connective descent) means a
         // non-byte-view clause is fully checkable off-corpus: the forge run skips a
-        // byte-view clause honestly (String/body-TV scope) without that skip
+        // byte-view clause (String/body-TV scope) without that skip
         // contaminating the connective/combinator clauses (which do verify).
         if rng.below(6) == 0 {
             out.push(gen_byteview_cmp(&mut rng, MAX_DEPTH));
@@ -175,10 +175,10 @@ fn gen_bool(rng: &mut Rng, depth: usize) -> Expr {
         0 => gen_comparison(rng, depth),
         // (1) A combinator call (one of the 8 frozen, correct arg kinds).
         1 => gen_combinator(rng, depth),
-        // (2) A `result`/`old_acc` compared to `spec_sum(seq)` over ANY op (the
-        //     `Eq` coercion shape + the NON-`Eq` bare shapes — #147 gap #2).
+        // (2) A `result`/`old_acc` compared to `spec_sum(seq)` over any op (the
+        //     `Eq` coercion shape + the non-`Eq` bare shapes — #147 gap #2).
         2 => gen_nat_cmp(rng),
-        // (3) A CAST-`<`-class comparison (`n as u32 < k`) — the #146/#148 off-corpus
+        // (3) A cast-`<`-class comparison (`n as u32 < k`) — the #146/#148 off-corpus
         //     regression guard (#147). A leaf form, so it appears at every depth.
         3 => gen_cast_lt(rng, depth),
         // (4) A logical AND of two sub-predicates (nesting).
@@ -513,7 +513,7 @@ pub struct ExecClause {
     /// The free vars the expr reads, as `(name, exec-type spelling)` — the bounded
     /// `u64`/`usize`/`&[u32]` vocabulary subset (the obligation signature).
     pub params: Vec<(String, String)>,
-    /// The expr's exec VALUE type (`u8`/`u16`/`u32`/`u64`/`usize`/`bool`) — the
+    /// The expr's exec value type (`u8`/`u16`/`u32`/`u64`/`usize`/`bool`) — the
     /// obligation's return type.
     pub ret_type: String,
     /// The adequate enclosing `requires` — the overflow/index frame that makes the
@@ -947,7 +947,7 @@ fn gen_exec_cast(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope)
 
 /// Generate `xs[i] as <ty>` (REQ-3 / AC-5 — the slice-index element-value surface).
 /// The element is a `u32`; it is cast to the requested `ty` (a widening to `u64`/
-/// `usize`, identity to `u32`). The index is a BARE bounded usize scalar (`i`/`j`),
+/// `usize`, identity to `u32`). The index is a bare bounded usize scalar (`i`/`j`),
 /// so the frame's `i < xs.len()` keeps the faithful `xs[i]` in bounds.
 fn gen_exec_index_as(rng: &mut Rng, ty: ExecTy, _depth: usize, scope: &mut ExecScope) -> Expr {
     scope.uses_slice = true;
@@ -1020,7 +1020,7 @@ mod tests {
     }
 
     /// A construct-coverage tally over a clause stream (the breakdown reported in
-    /// the off-corpus run). A clause contributes to MULTIPLE buckets (a combinator
+    /// the off-corpus run). A clause contributes to multiple buckets (a combinator
     /// clause may also nest a comparison).
     #[derive(Default, Debug)]
     struct Coverage {
@@ -1192,7 +1192,7 @@ mod tests {
     struct ExecCoverage {
         arith: usize,
         casts: usize,
-        /// A `Cast` LEFT operand of a `<`-leading op (`<`/`<=`/`<<`) — the #146 class.
+        /// A `Cast` left operand of a `<`-leading op (`<`/`<=`/`<<`) — the #146 class.
         cast_lt: usize,
         index: usize,
         shifts: usize,

@@ -779,7 +779,7 @@ mod tests {
     }
 
     // REQ-1/REQ-2: a battery-passing `sum` projects an intent-reviewable entry whose
-    // spec layer carries req/ens/fx + spec_sum's DECLARATION and NO bodies. The
+    // spec layer carries req/ens/fx + spec_sum's declaration and no bodies. The
     // expected clause texts trace to `conformance/sum.th` (R-CHAR-3).
     #[test]
     fn sum_intent_reviewable_no_bodies() {

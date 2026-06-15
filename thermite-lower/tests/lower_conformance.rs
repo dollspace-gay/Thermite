@@ -105,7 +105,7 @@ fn lower_and_verify(name: &str) -> String {
     emitted
 }
 
-// ---- AC-1: sum lowers + VERIFIES ------------------------------------------
+// ---- AC-1: sum lowers + verifies ------------------------------------------
 
 #[test]
 fn sum_emitted_verifies() {
@@ -137,7 +137,7 @@ fn sum_emitted_verifies() {
     assert_no_cheats(&emitted, "sum");
 }
 
-// ---- AC-2: binary_search lowers + VERIFIES --------------------------------
+// ---- AC-2: binary_search lowers + verifies --------------------------------
 
 #[test]
 fn binary_search_emitted_verifies() {

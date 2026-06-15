@@ -137,7 +137,7 @@ fn divergence_mutual_recursion_is_rejected_not_crashed() {
         .expect("certificate array")
         .clone();
 
-    // DESIGN REQ-6 "no false L3": neither `a` nor `b` may certify L3 (termination
+    // design REQ-6 "no false L3": neither `a` nor `b` may certify L3 (termination
     // is not proved for a mutual pair without a `dec` chain). The expected
     // non-L3 verdict is the design's, not copied from forge.
     for item in ["a", "b"] {

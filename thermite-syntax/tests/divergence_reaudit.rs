@@ -55,9 +55,9 @@ fn parse_returns_on_bounded_stack(src: String) -> bool {
     handle.join().is_ok()
 }
 
-/// D-R1 — Deeply nested GENERIC TYPE (`Option<Option<...<u32>...>>`) overflows.
+/// D-R1 — Deeply nested generic type (`Option<Option<...<u32>...>>`) overflows.
 ///
-/// `parse_type` recurses on itself for `Name<T>` (the `Generic` arm) with NO
+/// `parse_type` recurses on itself for `Name<T>` (the `Generic` arm) with no
 /// `expr_depth` guard — the #29 counter lives only in `parse_expr`. A 1500-deep
 /// `Option<...>` type therefore drives unbounded native recursion and SIGABRTs.
 ///
@@ -82,10 +82,10 @@ fn divergence_deep_generic_type_no_panic() {
     );
 }
 
-/// D-R2 — Deeply nested SLICE PATTERN (`[[[ ... ]]]`) overflows.
+/// D-R2 — Deeply nested slice pattern (`[[[ ... ]]]`) overflows.
 ///
 /// `parse_slice_pattern` → `parse_pattern` → `parse_slice_pattern` recurses with
-/// NO depth guard (the #29 counter is in `parse_expr`, never reached on the
+/// no depth guard (the #29 counter is in `parse_expr`, never reached on the
 /// pattern path). A 1500-deep slice pattern SIGABRTs.
 ///
 /// Authority: `surface-grammar.md` REQ-7 / EBNF `Pattern ::= '[' (SlicePat ...)?
@@ -109,10 +109,10 @@ fn divergence_deep_slice_pattern_no_panic() {
     );
 }
 
-/// D-R3 — Deeply nested ENUM/TUPLE-STRUCT PATTERN (`Some(Some(...))`) overflows.
+/// D-R3 — Deeply nested enum/tuple-struct pattern (`Some(Some(...))`) overflows.
 ///
 /// `parse_path_pattern` → `parse_pattern` → `parse_path_pattern` recurses with
-/// NO depth guard. A 1500-deep `Some(...)` pattern SIGABRTs.
+/// no depth guard. A 1500-deep `Some(...)` pattern SIGABRTs.
 ///
 /// Authority: `surface-grammar.md` REQ-7 / EBNF `Pattern ::= Path '(' Pattern
 /// (',' Pattern)* ')'` (the `Some(i)` form, a legal v0.1 pattern) + parser.md

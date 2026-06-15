@@ -3411,7 +3411,7 @@ mod tests {
     // REQ-6 / REQ-7(ii) / R-DEFER-9 (the #252 inline-have migration): live auxiliary-lemma
     // replay. After the #252 helper-surface elimination, a single-obligation proof inlines
     // its auxiliaries as `have` inside the proof term (no expressivity loss). A clean inline
-    // `have` auxiliary, genuinely used, replays Proven (clean axiom base). A proof term that
+    // `have` auxiliary, used, replays Proven (clean axiom base). A proof term that
     // leans on a `sorry` (the only way an inline auxiliary can introduce a non-standard
     // axiom, since file-level axioms are dropped) flows `sorryAx` into the obligation
     // theorem's anchored `#print axioms` → Unknown, never Proven. Expected from REQ-4/§1
@@ -3441,7 +3441,7 @@ mod tests {
         let by_pos = skeleton.find(":= by").unwrap_or(0);
         let body = skeleton[by_pos + ":= by".len()..].trim_end().to_string();
 
-        // (1) Clean inline-have auxiliary, genuinely referenced (`have aux : True :=
+        // (1) Clean inline-have auxiliary, referenced (`have aux : True :=
         // True.intro`): Proven. The auxiliary lives inside the proof term (the #252 inline
         // form), so it is preserved by the reconstruction and the anchored `#print axioms`
         // sees only the clean standard axiom base.

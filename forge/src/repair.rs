@@ -731,7 +731,7 @@ mod tests {
             Some(SubL3Status::NotRepairable { cause, .. }) if cause == "VacuousPrecondition"
         ));
 
-        // An L3 proved cert → NO-OP (None).
+        // An L3 proved cert → no-op (None).
         let proved = Certificate::new("ok", Level::L3, vec!["pure".to_string()], 0, vec![]);
         assert!(classify_sub_l3(&proved).is_none());
     }

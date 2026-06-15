@@ -1,28 +1,28 @@
 //! `forge/tests/lean_while.rs` — the integration-level oracle suite for the WHILE-BODY
 //! Lean exporter (`.design/verified/proof-backends.md` REQ-11 / §4.2, increment (v-b),
-//! blocker #264). The v1 `while` shape exports the FIVE per-item obligations + the TWO
-//! GENERATOR-PROVED composed theorems (`while_compose` / `loopDenote_exits_of_dec`); a
-//! LINEAR-family item certifies L3-via-lean-auto end-to-end.
+//! blocker #264). The v1 `while` shape exports the five per-item obligations + the two
+//! generator-proved composed theorems (`while_compose` / `loopDenote_exits_of_dec`); a
+//! linear-family item certifies L3-via-lean-auto end-to-end.
 //!
-//! `forge` is a BINARY crate (no lib target), so the in-process `LeanEngine` API is NOT
+//! `forge` is a binary crate (no lib target), so the in-process `LeanEngine` API is not
 //! reachable from an integration test — the live in-process verdicts (O-1 strong, O-5
 //! the narrowed boundary) live as `#[cfg(test)]` unit tests in `forge/src/engine.rs`
 //! (`live_while_body_item_is_honest`, `while_body_item_refuses_export`,
 //! `while_refusal_inventory_is_structured`, `live_while_true_vacuity_is_not_proven`) and
-//! are CROSS-REFERENCED here, not duplicated. This integration file carries the oracles
-//! that DO live at the binary / external-artifact boundary — the `forge check … --engine
+//! are cross-referenced here, not duplicated. This integration file carries the oracles
+//! that do live at the binary / external-artifact boundary — the `forge check … --engine
 //! lean --json` certificate shape:
 //!
-//! - **O-1** the LINEAR-family `count` item certifies L3 via lean-auto through the CLI
-//!   (lake-gated, LOUD skip); an HONEST assertion on `conformance/sum.th` (its
+//! - **O-1** the linear-family `count` item certifies L3 via lean-auto through the CLI
+//!   (lake-gated, logged skip); an assertion on `conformance/sum.th` (its
 //!   recursive-registry `ens result == spec_sum(xs)` is the §4 interactive residual — it
-//!   does NOT certify L3-via-lean, the honest landing per R-1).
-//! - **O-2** the FULL refusal matrix — every OUT-of-v1 shape does NOT certify L3-via-lean
-//!   (it is the honest `Unknown`/degrade skip, never a false verdict).
-//! - **O-3** the while-true vacuity fixture is NEVER `Proven` L3-via-lean (the §4.2.3
+//!   does not certify L3-via-lean, the landing per R-1).
+//! - **O-2** the full refusal matrix — every out-of-v1 shape does not certify L3-via-lean
+//!   (it is the `Unknown`/degrade skip, never a false verdict).
+//! - **O-3** the while-true vacuity fixture is never `Proven` L3-via-lean (the §4.2.3
 //!   termination-vacuity gate — the conjoined `_converges` obligation has teeth).
-//! - **O-4** an in-grammar while-body mutant is ATTEMPTED (REQ-11.7) — the certificate's
-//!   mutation report says "against lean" with a non-zero attempted denominator, NOT the
+//! - **O-4** an in-grammar while-body mutant is attempted (REQ-11.7) — the certificate's
+//!   mutation report says "against lean" with a non-zero attempted denominator, not the
 //!   `UntestedAgainstLean`/`0/0` backstop that every while mutant hit pre-(v-b).
 //!
 //! Expected values are hand-derived from §4.2 (R-CHAR-3), never copied from forge's
@@ -42,7 +42,7 @@ fn corpus_dir() -> PathBuf {
         .join("conformance")
 }
 
-/// `true` when `lake` is available (the live Lean engine needs it). A LOUD skip
+/// `true` when `lake` is available (the live Lean engine needs it). A logged skip
 /// otherwise (the suite never silently passes on a missing lake — R-DEFER-3).
 fn lake_present() -> bool {
     if let Ok(home) = std::env::var("HOME") {
@@ -72,16 +72,16 @@ fn write_fixture(name: &str, src: &str) -> PathBuf {
 }
 
 /// Run `forge check <path> --engine lean --json` and parse the certificate array. An
-/// OUT-of-grammar shape may fail BEFORE the engine path (e.g. the L3 Verus lowering
+/// out-of-grammar shape may fail before the engine path (e.g. the L3 Verus lowering
 /// rejects a nested loop) and emit a non-JSON error to stdout — that is itself a
-/// NON-certification (no L3-via-lean), so a non-array stdout yields an EMPTY cert.
+/// non-certification (no L3-via-lean), so a non-array stdout yields an empty cert.
 fn check_lean_required(path: &PathBuf) -> Vec<Value> {
     let cert = check_lean_opt(path);
     cert.unwrap_or_else(|| panic!("forge --json must emit a cert array for {path:?}"))
 }
 
 /// As [`check_lean_required`], but `None` when forge emitted no JSON array (the
-/// not-certified-via-lean case for an OUT-of-grammar shape).
+/// not-certified-via-lean case for an out-of-grammar shape).
 fn check_lean_opt(path: &PathBuf) -> Option<Vec<Value>> {
     let out = Command::new(forge_bin())
         .arg("check")
@@ -106,7 +106,7 @@ fn level_of(cert: &[Value]) -> String {
 
 /// Whether the first item's discharge engine is the Lean engine (the
 /// `engine_attribution.engine == "lean-auto"`/`"lean-interactive"` field). A `None`
-/// attribution (the default Verus path) is NOT a Lean certification.
+/// attribution (the default Verus path) is not a Lean certification.
 fn certified_via_lean(cert: &[Value]) -> bool {
     cert.first()
         .and_then(|c| c.get("engine_attribution"))
@@ -134,7 +134,7 @@ fn count(n: u64) -> u64
 ";
 
 // ════════════════════════════════════════════════════════════════════════════════
-// O-1 (STRONG) — the LINEAR-family item certifies L3 via lean-auto through the CLI.
+// O-1 (strong) — the linear-family item certifies L3 via lean-auto through the CLI.
 // ════════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -151,8 +151,8 @@ fn count_certifies_l3_via_lean_auto() {
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 
     // Expected from §4.2.4 (R-CHAR-3): the L1 linear family closes all 5 per-item
-    // obligations + both composed theorems → L3 via lean-auto. NEVER a lower level on a
-    // genuinely-terminating, contract-correct body.
+    // obligations + both composed theorems → L3 via lean-auto. Never a lower level on a
+    // terminating, contract-correct body.
     assert_eq!(
         level_of(&cert),
         "L3",
@@ -167,7 +167,7 @@ fn count_certifies_l3_via_lean_auto() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// O-1 (HONEST) — `conformance/sum.th` does NOT certify L3-via-lean (the §4 residual).
+// O-1 (honest) — `conformance/sum.th` does not certify L3-via-lean (the §4 residual).
 // ════════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -178,11 +178,11 @@ fn sum_does_not_certify_l3_via_lean_recursive_residual() {
     }
     let sum = corpus_dir().join("sum.th");
     let cert = check_lean_required(&sum);
-    // sum.th's `ens result == spec_sum(xs)` is a RECURSIVE-registry contract clause (the
-    // recursive `spec_sum` spec-fn) — the §4 stabilized form is the INTERACTIVE residual,
-    // so the AUTO Lean path REFUSES it (the contract-tier gate), and it does NOT certify
+    // sum.th's `ens result == spec_sum(xs)` is a recursive-registry contract clause (the
+    // recursive `spec_sum` spec-fn) — the §4 stabilized form is the interactive residual,
+    // so the auto Lean path refuses it (the contract-tier gate), and it does not certify
     // L3 via the Lean engine. Expected from §4.2.1 / REQ-7 (R-CHAR-3): the honest landing
-    // is NOT-L3-via-lean (it degrades / falls to Verus). NEVER a false L3-via-lean.
+    // is not-L3-via-lean (it degrades / falls to Verus). Never a false L3-via-lean.
     assert!(
         !(level_of(&cert) == "L3" && certified_via_lean(&cert)),
         "sum.th must NOT certify L3 via the Lean AUTO engine — its recursive-registry \
@@ -191,7 +191,7 @@ fn sum_does_not_certify_l3_via_lean_recursive_residual() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// O-2 — the FULL refusal matrix: every OUT-of-v1 shape does NOT certify L3-via-lean.
+// O-2 — the full refusal matrix: every out-of-v1 shape does not certify L3-via-lean.
 // ════════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -200,9 +200,9 @@ fn refusal_matrix_no_lean_certification() {
         eprintln!("SKIP: lake not present — the refusal matrix lean landing is not run.");
         return;
     }
-    // Each shape is OUT of the §4.2.1 v1 grammar (the §4.2.5 inventory). Under `--engine
-    // lean` each is the honest `Unknown`/degrade skip — NEVER an L3-via-lean verdict. The
-    // OUT class is hand-derived from §4.2.5 (R-CHAR-3). Boundary cases pinned in
+    // Each shape is out of the §4.2.1 v1 grammar (the §4.2.5 inventory). Under `--engine
+    // lean` each is the honest `Unknown`/degrade skip — never an L3-via-lean verdict. The
+    // out class is hand-derived from §4.2.5 (R-CHAR-3). Boundary cases pinned in
     // `engine.rs::while_refusal_inventory_is_structured` (the structured `ExportRefusal`
     // variant); here we assert the CERTIFICATE-level consequence (no Lean L3).
     let matrix: &[(&str, &str)] = &[
@@ -274,7 +274,7 @@ fn refusal_matrix_no_lean_certification() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// O-3 — the while-true vacuity fixture is NEVER Proven L3-via-lean (§4.2.3 gate).
+// O-3 — the while-true vacuity fixture is never Proven L3-via-lean (§4.2.3 gate).
 // ════════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -284,10 +284,10 @@ fn while_true_no_op_is_not_proven_l3_via_lean() {
         return;
     }
     // A non-exiting loop: `0 < 1` is constantly true, the measure `acc - acc` never
-    // descends — `whileBodyConverges` is FALSE at every fuel, so the HYPOTHESIZE CONTRACT
-    // obligation is VACUOUSLY discharge-able, BUT the conjoined `_converges` obligation
-    // FAILS (the §4.2.3 termination-vacuity gate; the `PinWhileVacuity` mirror). The item
-    // must NOT certify L3 via Lean. Expected from §4.2.3 (R-CHAR-3).
+    // descends — `whileBodyConverges` is false at every fuel, so the hypothesize-contract
+    // obligation is vacuously discharge-able, but the conjoined `_converges` obligation
+    // fails (the §4.2.3 termination-vacuity gate; the `PinWhileVacuity` mirror). The item
+    // must not certify L3 via Lean. Expected from §4.2.3 (R-CHAR-3).
     let src = "fn spin(lo: u64) -> u64 req lo <= 100 ens result == lo fx pure \
                { let mut acc: u64 = lo; while 0 < 1 inv acc <= acc dec acc - acc \
                  { acc = acc; } acc }";
@@ -303,7 +303,7 @@ fn while_true_no_op_is_not_proven_l3_via_lean() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
-// O-4 — an in-grammar while-body mutant is ATTEMPTED against Lean (REQ-11.7).
+// O-4 — an in-grammar while-body mutant is attempted against Lean (REQ-11.7).
 // ════════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -316,11 +316,11 @@ fn in_grammar_while_mutants_are_attempted_not_untested() {
     let cert = check_lean_required(&path);
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 
-    // REQ-11.7 (§4.2.7): an in-grammar while-body mutant is now ADMITTED + ATTEMPTED
+    // REQ-11.7 (§4.2.7): an in-grammar while-body mutant is now admitted + attempted
     // against the Lean fragment (it no longer hits the `0/0` `UntestedAgainstLean`
-    // backstop that EVERY while mutant hit pre-(v-b), when the item itself refused
-    // export). The certificate's mutation report must therefore show a NON-ZERO attempted
-    // denominator "against lean", NOT a pure-`untested` tally. Expected from §4.2.7
+    // backstop that every while mutant hit pre-(v-b), when the item itself refused
+    // export). The certificate's mutation report must therefore show a non-zero attempted
+    // denominator "against lean", not a pure-`untested` tally. Expected from §4.2.7
     // (R-CHAR-3): the qualifier names "lean" and the attempted count is positive.
     let report = cert
         .first()
@@ -334,7 +334,7 @@ fn in_grammar_while_mutants_are_attempted_not_untested() {
          engine-generic): {report:?}"
     );
     // A positive attempted denominator: the report's `k/n killed` has `n >= 1` (the
-    // in-grammar mutants are ATTEMPTED, not all `UntestedAgainstLean`). The `0/0` backstop
+    // in-grammar mutants are attempted, not all `UntestedAgainstLean`). The `0/0` backstop
     // would read `0/0`; a real attempt reads `k/n` with `n >= 1`.
     let attempted_positive = report
         .split_whitespace()

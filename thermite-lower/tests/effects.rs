@@ -158,7 +158,7 @@ fn lattice_law_table() {
             set(vec![Effect::Read("x".to_string())]),
             true,
         ),
-        // subset does NOT subsume superset
+        // subset does not subsume superset
         (
             set(vec![Effect::Read("x".to_string())]),
             set(vec![
@@ -475,7 +475,7 @@ fn deeply_nested_body_returns_result_not_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// Observation: the parser DOES parse effectful `fx` rows (not a blocker).
+// Observation: the parser does parse effectful `fx` rows (not a blocker).
 // ---------------------------------------------------------------------------
 
 #[test]

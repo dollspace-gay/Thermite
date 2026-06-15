@@ -32,7 +32,7 @@ fn lower_corpus_l1(name: &str) -> String {
 }
 
 /// Compile `src` (a self-contained Rust program incl. a `main`) with `rustc`
-/// into `crate_name` under the temp dir, then RUN it. Returns
+/// into `crate_name` under the temp dir, then run it. Returns
 /// `(compiled_ok, ran_ok, combined_output)`. Always passes `--crate-name`
 /// (the `.l1.rs` dotted filename gotcha) and `--edition 2021`.
 fn compile_and_run(src: &str, crate_name: &str) -> (bool, bool, String) {

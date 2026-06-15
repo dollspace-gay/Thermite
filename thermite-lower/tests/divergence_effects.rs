@@ -8,10 +8,10 @@
 //! checking composes to transitive correctness only if every reachable call site
 //! is walked).
 //!
-//! Each test is HAND-DERIVED from §4.1 (R-CHAR-3) — expected values never copied
+//! Each test is hand-derived from §4.1 (R-CHAR-3) — expected values never copied
 //! from the checker's own output. `unwrap`/`panic` are fine: `tests/` is not gated.
 //!
-//! Tracking: crosslink #38 (release-blocker; the failing test IS the block,
+//! Tracking: crosslink #38 (release-blocker; the failing test is the block,
 //! left un-`#[ignore]`d per goal.md R-DEFER-3).
 
 use thermite_lower::{check_effects, LowerError};

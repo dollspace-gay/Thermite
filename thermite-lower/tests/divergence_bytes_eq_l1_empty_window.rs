@@ -37,7 +37,7 @@
 
 use std::process::Command;
 
-/// Compile `src` with `rustc` (debug), then RUN. Returns
+/// Compile `src` with `rustc` (debug), then run. Returns
 /// `(compiled_ok, ran_ok, combined_output)` — the `divergence_l1.rs` harness
 /// shape (`--crate-name` because the `.` in `*.l1.rs` breaks derivation).
 fn compile_and_run(src: &str, crate_name: &str) -> (bool, bool, String) {

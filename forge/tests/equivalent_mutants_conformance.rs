@@ -19,7 +19,7 @@
 //!   - AC-3 / AC-5: `refuse` (`req x == 0 ens result == 0 { x }`) has a sole
 //!     early-`return 0` survivor that is proved equivalent → excluded → `0/0` →
 //!     the #48 backstop still gates `WeakContract` (no vacuous `1.0` pass).
-//!   - AC-4: a genuinely-killed-mutant fixture (`add`, a strong contract) is
+//!   - AC-4: a killed-mutant fixture (`add`, a strong contract) is
 //!     unchanged — the equivalence query runs only on survivors.
 
 use std::path::{Path, PathBuf};
@@ -188,7 +188,7 @@ fn ac1_forced_output_excludes_equivalents_and_certifies() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// AC-2 (the soundness line, R-DEFER-9): a genuinely-weak contract's
+/// AC-2 (the soundness line, R-DEFER-9): a weak contract's
 /// distinguishing survivor fails the equivalence query → stays counted → still
 /// `WeakContract`. The exclusion does not launder it.
 #[test]
@@ -257,7 +257,7 @@ fn ac3_all_equivalent_reduces_to_zero_over_zero_still_gated() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// AC-4: a strong contract whose mutants are genuinely killed is unchanged — the
+/// AC-4: a strong contract whose mutants are killed is unchanged — the
 /// equivalence query runs only on survivors, so a killed mutant is never excluded
 /// and the verdict is the same as before #101.
 #[test]

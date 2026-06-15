@@ -151,7 +151,7 @@ fn list_fold_lowers_to_generated_schemes_and_verifies_l3() {
     }
 }
 
-// ---- AC-2: the multiplier — instance bound proven by CITING the law --------
+// ---- AC-2: the multiplier — instance bound proven by citing the law --------
 
 /// The induction-discharged-once multiplier (REQ-7). The lowerer generates
 /// `fold_bound_list` (the single-induction generic law). An instance bound

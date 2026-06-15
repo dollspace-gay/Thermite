@@ -140,7 +140,7 @@ fn error_path_leaves_no_scratch_orphan() {
         return;
     }
     // A contract that disproves (`ens result == x + 2` but the body returns
-    // `x + 1`): parses/validates/effect-checks/lowers cleanly, then verus reports
+    // `x + 1`): parses/validates/effect-checks/lowers, then verus reports
     // a counterexample and exits non-zero, the orphan-prone error path. The
     // scratch dir (including any partial compiled artifact) must still be removed.
     // The fixture is the input `.th` (not a `forge_*` scratch entry, and written
@@ -182,7 +182,7 @@ fn vacuity_harness_success_leaves_no_scratch_orphan() {
     // holds for any u32) makes the tautology harness prove, the leak-prone success
     // path. The scratch dir + that compiled binary must still be removed wholesale.
     //
-    // The fixture parses/validates/effect-checks/lowers cleanly and passes #6's free
+    // The fixture parses/validates/effect-checks/lowers and passes #6's free
     // structural triage, so the #13 solver gate runs its harness queries (the leak
     // surface). It is written outside the per-run isolated TMPDIR the leak check
     // inspects (its own `.th` is not a `forge_*` scratch entry).

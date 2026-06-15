@@ -277,8 +277,8 @@ pub struct LoopObligations {
 /// R-HONEST-3) for an out-of-v1 loop: a `loop`-kind (multi-exit), a `break`/
 /// `continue` / mid-body `return` in the body (multi-exit CPS), a nested loop, a
 /// non-scalar-state body, or a trivially-weak `inv` (`inv true` — the after-loop
-/// `true ∧ ¬cond` is vacuous, cannot enter the (a) rule). Each is Skipped honestly,
-/// never silently Faithful (the honest 2.2.2 boundary in the certificate).
+/// `true ∧ ¬cond` is vacuous, cannot enter the (a) rule). Each is Skipped,
+/// never silently Faithful (the 2.2.2 boundary in the certificate).
 pub fn loop_ref_obligations(
     block: &Block,
     ctx: &BodyRefCtx,
@@ -362,7 +362,7 @@ pub fn loop_ref_obligations(
     // The per-cell stepped closed form (in the entry cells) + the cell→stepped-form
     // substitution env — both read from `step_env`, where every `cell` is present (it
     // was seeded with its identity binding above, never removed by threading); an
-    // absent key is handled honestly (the identity), no panic.
+    // absent key is handled as the identity, no panic.
     let mut step_subst: Env = Env::new();
     let mut step_cells: Vec<String> = Vec::with_capacity(cells.len());
     for cell in &cells {
@@ -570,7 +570,7 @@ fn encode_inv_clauses(
 
 /// Whether the loop's invariant conjunction is trivially weak (every clause is the
 /// literal `true`) — the after-loop `true ∧ ¬cond` is vacuous, so the loop cannot
-/// enter the (a) rule (`loop-tv.md` REQ-1 out — Skipped honestly, not Faithful). A
+/// enter the (a) rule (`loop-tv.md` REQ-1 out — Skipped, not Faithful). A
 /// single `inv true` or several all-`true` clauses are vacuous; any non-`true`
 /// conjunct makes the invariant usable.
 fn invariant_is_vacuous(invs: &[Clause]) -> bool {
@@ -800,7 +800,7 @@ fn strip_one_enclosing_paren(s: &str) -> String {
         return s.to_string();
     }
     // Walk the depth; the opening `(` encloses the whole string only if depth returns
-    // to 0 EXACTLY at the final char (never reaching 0 before the end).
+    // to 0 exactly at the final char (never reaching 0 before the end).
     let mut depth = 0i32;
     for (i, &b) in bytes.iter().enumerate() {
         match b {
@@ -933,7 +933,7 @@ fn branch_is_int_typed(block: &Block, env: &Env) -> Result<bool, RefEncodeError>
 /// A var not in env is a free input (a param) — left verbatim. This recursion covers
 /// the frozen exec-value `Expr` shapes (`exec-stmt-tv.md` REQ-1 RHS sublanguage =
 /// the step-2.1 pure-exec subset); an out-of-subset value node is passed through
-/// unchanged to [`exec_ref_value`], which honestly rejects it (so the `Err` carries
+/// unchanged to [`exec_ref_value`], which rejects it (so the `Err` carries
 /// the precise node, never a silent wrong substitution).
 fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
     match expr {
@@ -988,7 +988,7 @@ fn substitute(expr: &Expr, env: &Env) -> Result<Expr, RefEncodeError> {
         )),
         // An out-of-subset value node (a method call, a struct literal, a closure, a
         // match-expr, a field/projection, a deref, a ref) is passed through
-        // unchanged — [`exec_ref_value`] will honestly reject it (the frozen RHS
+        // unchanged — [`exec_ref_value`] will reject it (the frozen RHS
         // sublanguage is the step-2.1 pure-exec subset). Passing it through keeps the
         // rejection in one place (the value encoder) with the precise node tag.
         other => Ok(other.clone()),

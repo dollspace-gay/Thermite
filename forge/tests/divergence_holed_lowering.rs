@@ -7,7 +7,7 @@
 //! valid program with no trace.
 //!
 //! Observed (live, this tree):
-//! - `forge build` on `fn main() { ?0  42 }` emits an rlib ARTIFACT and a build
+//! - `forge build` on `fn main() { ?0  42 }` emits an rlib artifact and a build
 //!   manifest claiming `assurance: L1 (built, runtime-checked)` — exit 0, no
 //!   mention of the open hole anywhere (`build::build_file` runs only the
 //!   parse/validate/check_effects front, then `thermite_lower::lower_l1`; it
@@ -18,7 +18,7 @@
 //! - (`forge exec-tv` corpus mode likewise reports the holed body's tail expr
 //!   `faithful` — same root cause, pinned transitively by the same fix.)
 //!
-//! AUTHORITY:
+//! Authority:
 //! - `.design/forge/goal-repl.md` REQ-4: "an item with any open hole is
 //!   L0-equivalent until every hole is filled"; REQ-5: a holed item gets "no
 //!   lowering, no verus"; Architecture: "A holed item NEVER reaches verus; it

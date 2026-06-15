@@ -104,7 +104,7 @@ pub enum BuildTarget {
     /// (`.design/build/kernel-target.md` AC-4).
     Std,
     /// The freestanding profile (REQ-1/REQ-2): a `#![no_std]` + `extern crate
-    /// alloc;` LIBRARY crate compiled `--crate-type=rlib -C panic=abort`, with NO
+    /// alloc;` library crate compiled `--crate-type=rlib -C panic=abort`, with no
     /// `main`/seccomp prelude, suitable for linking into a verified microkernel. An
     /// ambient-syscall `fx` row (`read`/`write`/`net`/`term`) is refused (REQ-3).
     Kernel,
@@ -592,7 +592,7 @@ fn find_entry_fn<'a>(program: &'a Program, name: &str) -> Result<&'a FnItem, For
 /// ```text
 /// fn main() {
 ///     <seccomp prelude>          // SandboxMode::On (default for --entry); REQ-1/REQ-4
-///     <openat self-test probe>   // --sandbox-self-test ONLY; REQ-6
+///     <openat self-test probe>   // --sandbox-self-test only; REQ-6
 ///     let r = entry(<args>);     // runs under the filter; the L1 thermite_check! still panics
 ///     println!("entry(args) = {r:?}");
 /// }

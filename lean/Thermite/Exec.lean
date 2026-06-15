@@ -548,7 +548,7 @@ theorem encoder_agrees_on_overflow :
 def subNatCoerced (a b : BVal) : ExecVal :=
   .int ⟨a.ty, ((a.value - b.value).toNat : Int)⟩
 
-/-- An env where `a := 0`, `b := 1` (both `u64`): `a - b = -1` UNDERFLOWS `u64`. -/
+/-- An env where `a := 0`, `b := 1` (both `u64`): `a - b = -1` underflows `u64`. -/
 def envUnderflow : ExecEnv :=
   { vars := fun s =>
       if s = "a" then .int ⟨.u64, 0⟩

@@ -1,18 +1,18 @@
 //! Cluster C6 conformance (`.design/basis/04-collections.md` REQ-8..12, issue
-//! #98) against the EXTERNAL truth: the real `verus` binary. The emitted L3
-//! lowering of each C6 form MUST verify (`0 errors`); the no-OOB negative MUST
-//! FAIL (non-vacuity, R-DEFER-9). Expected verus counts are the DESIGN's GROUNDED
-//! record (the "C6 grounding record" section), NEVER copied from toolchain output
+//! #98) against the external truth: the real `verus` binary. The emitted L3
+//! lowering of each C6 form must verify (`0 errors`); the no-OOB negative must
+//! fail (non-vacuity, R-DEFER-9). Expected verus counts are the design's grounded
+//! record (the "C6 grounding record" section), never copied from toolchain output
 //! (R-CHAR-3).
 //!
 //! The forms (all GROUNDED in `.design/basis/04-collections.md` with real
 //! `verus 0.2026.05.24`):
 //! - `Vec<u64>` `pop_last`/`last`/`insert`/`remove`/`contains` (REQ-8) → L3.
-//! - the `insert` WITHOUT the `i <= len` guard at the call site → L0.
+//! - the `insert` without the `i <= len` guard at the call site → L0.
 //! - `Vec<String>` build + borrow-`get` + len (REQ-9, the make-or-break) → L3.
 //! - `Vec<struct>` push + borrow-`get` + field read (REQ-9) → L3.
 //! - nested `Vec<Vec<u64>>` push + borrow-`get` (REQ-9) → L3.
-//! - a body-local `Vec::new()` with NO `Vec` param/return (REQ-11) → L3.
+//! - a body-local `Vec::new()` with no `Vec` param/return (REQ-11) → L3.
 //!
 //! `unwrap`/`expect`/`panic!` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -45,8 +45,9 @@ fn verus_bin() -> Option<PathBuf> {
     None
 }
 
-/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller SKIPs
-/// LOUDLY). `--no-cheating` so a sneaked `assume`/`external_body` is a hard error.
+/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller skips
+/// with a logged note). `--no-cheating` so a sneaked `assume`/`external_body` is a
+/// hard error.
 fn run_verus(file: &Path) -> Option<(bool, String)> {
     let bin = verus_bin()?;
     let out = Command::new(bin)
@@ -114,7 +115,7 @@ fn assert_verifies(label: &str, emitted: &str) {
 
 // ---- AC-5: the missing ops over Vec<u64> certify L3 (REQ-8/REQ-12) ----------
 //
-// GROUNDED (the C6 grounding record): pop_last/last/insert/remove/contains over
+// Grounded (the C6 grounding record): pop_last/last/insert/remove/contains over
 // Vec<u64> verify together `9 verified, 0 errors`. The ops emit on TVecU64; the
 // &mut ops use final(self); contains is the exec linear scan.
 
@@ -169,8 +170,8 @@ fn vec_u64_ops_certify_l3() {
 
 // ---- AC-5 negative: insert without the i<=len guard at the call site → L0 ---
 //
-// GROUNDED: the insert whose index `i` is unconstrained leaves the wrapper's
-// `req i <= len` undischarged → verus FAILS (`8 verified, 1 errors`, the L0
+// Grounded: the insert whose index `i` is unconstrained leaves the wrapper's
+// `req i <= len` undischarged → verus fails (`8 verified, 1 errors`, the L0
 // demonstration; R-DEFER-9 non-vacuity).
 
 const VEC_INSERT_OOB: &str = r#"
@@ -188,7 +189,7 @@ fn bad_insert(i: usize, x: u64) -> u64
 #[test]
 fn vec_insert_without_oob_guard_fails_verus_l0() {
     let emitted = lower_l3(VEC_INSERT_OOB, "vec_insert_oob");
-    // It LOWERS (well-formed); the FAILURE is at verus (the wrapper's `req i <=
+    // It lowers (well-formed); the failure is at verus (the wrapper's `req i <=
     // len` cannot be discharged for an unconstrained `i`), not a lowerer error.
     assert!(
         emitted.contains("v.insert(i, x)"),
@@ -213,9 +214,9 @@ fn vec_insert_without_oob_guard_fails_verus_l0() {
 
 // ---- AC-6: Vec<String> builds/indexes via borrow-get, certifies L3 ----------
 //
-// THE MAKE-OR-BREAK. GROUNDED `4 verified, 0 errors`: TVecTString over
-// vstd::vec::Vec<TString>, the BORROW-returning get -> &TString, push consuming
-// the owned element, a build_and_read fn. The by-value-move form FAILS E0507.
+// The make-or-break. Grounded `4 verified, 0 errors`: TVecTString over
+// vstd::vec::Vec<TString>, the borrow-returning get -> &TString, push consuming
+// the owned element, a build_and_read fn. The by-value-move form fails E0507.
 
 const VEC_STRING: &str = r#"
 fn build_str() -> u64
@@ -239,29 +240,29 @@ fn vec_string_borrow_get_certifies_l3() {
         emitted.contains("pub struct TVecTString { pub data: Vec<TString> }"),
         "REQ-9 Vec<String> → TVecTString over Vec<TString>:\n{emitted}"
     );
-    // REQ-9 the BORROW-returning get -> &TString (NOT by value — the E0507 fix).
+    // REQ-9 the borrow-returning get -> &TString (not by value — the E0507 fix).
     assert!(
         emitted.contains("pub fn get(&self, i: usize) -> (result: &TString)")
             && emitted.contains("ensures *result == self.data@[i as int],")
             && emitted.contains("{ &self.data[i] }"),
         "REQ-9 the borrow-returning get -> &TString (the non-Copy fix):\n{emitted}"
     );
-    // REQ-10: the TString element wrapper is WOVEN (present in the same verus!
+    // REQ-10: the TString element wrapper is woven (present in the same verus!
     // block) so the TVecTString that names it resolves. Verus resolves references
     // within a `verus!` block order-independently (the 17/0 verify confirms), so
-    // the requirement is PRESENCE, not literal source order.
+    // the requirement is presence, not literal source order.
     assert!(
         emitted.contains("pub struct TString { pub data: Vec<u8> }"),
         "REQ-10 the TString element wrapper must be woven for TVecTString:\n{emitted}"
     );
     assert_no_cheats(&emitted, "vec_string");
-    // GROUNDED L3 (the make-or-break — NO E0507).
+    // Grounded L3 (the make-or-break — no E0507).
     assert_verifies("vec_string_c6", &emitted);
 }
 
 // ---- AC-7: Vec<struct> push/borrow-get certifies L3 (REQ-9/REQ-10) ----------
 //
-// GROUNDED `4 verified, 0 errors`: TVecPoint over a 2-field non-Copy struct, the
+// Grounded `4 verified, 0 errors`: TVecPoint over a 2-field non-Copy struct, the
 // borrow-get -> &Point, push by move, a fn pushing/borrow-getting/reading a field.
 
 const VEC_STRUCT: &str = r#"
@@ -290,10 +291,10 @@ fn vec_struct_borrow_get_certifies_l3() {
         emitted.contains("pub fn get(&self, i: usize) -> (result: &Point)"),
         "REQ-9 the borrow-returning get -> &Point:\n{emitted}"
     );
-    // REQ-10: the Point struct decl is WOVEN (present) so TVecPoint resolves (the
+    // REQ-10: the Point struct decl is woven (present) so TVecPoint resolves (the
     // #68 weave). Verus resolves references within a `verus!` block
     // order-independently (the 7/0 verify confirms), so the requirement is
-    // PRESENCE, not literal source order.
+    // presence, not literal source order.
     assert!(
         emitted.contains("pub struct Point {"),
         "REQ-10 the Point struct decl must be woven for TVecPoint:\n{emitted}"
@@ -304,10 +305,10 @@ fn vec_struct_borrow_get_certifies_l3() {
 
 // ---- AC-7 (nested): Vec<Vec<u64>> push/borrow-get certifies L3 (REQ-9/REQ-10)
 //
-// GROUNDED `4 verified, 0 errors`: TVecTVecU64 over Vec<TVecU64> (the element
-// TVecU64 itself non-Copy), the SAME borrow-get. The inner TVecU64 wrapper is
-// declared before the outer (REQ-10). NOTE: the `Vec<Vec<u64> >` close needs a
-// SPACE — the lexer tokenizes `>>` as a shift op (a parser-side limitation tracked
+// Grounded `4 verified, 0 errors`: TVecTVecU64 over Vec<TVecU64> (the element
+// TVecU64 itself non-Copy), the same borrow-get. The inner TVecU64 wrapper is
+// declared before the outer (REQ-10). Note: the `Vec<Vec<u64> >` close needs a
+// space — the lexer tokenizes `>>` as a shift op (a parser-side limitation tracked
 // separately; the lowering+verus stack handles nested Vecs end-to-end).
 
 const VEC_NESTED: &str = r#"
@@ -331,7 +332,7 @@ fn vec_nested_borrow_get_certifies_l3() {
         emitted.contains("pub struct TVecTVecU64 { pub data: Vec<TVecU64> }"),
         "REQ-9 nested Vec<Vec<u64>> → TVecTVecU64 over Vec<TVecU64>:\n{emitted}"
     );
-    // REQ-10 emission ORDER: the inner TVecU64 wrapper precedes the outer.
+    // REQ-10 emission order: the inner TVecU64 wrapper precedes the outer.
     let inner_pos = emitted
         .find("pub struct TVecU64")
         .expect("inner TVecU64 wrapper emitted");
@@ -351,10 +352,10 @@ fn vec_nested_borrow_get_certifies_l3() {
     assert_verifies("vec_nested_c6", &emitted);
 }
 
-// ---- AC-8: a local Vec::new() with NO Vec param certifies L3 (REQ-11) -------
+// ---- AC-8: a local Vec::new() with no Vec param certifies L3 (REQ-11) -------
 //
-// The reachability fix. A fn whose ONLY Vec is a body-local `let mut v: Vec<u64>
-// = Vec::new();` (no Vec param/return) must emit TVecU64 — NOT E0425. GROUNDED
+// The reachability fix. A fn whose only Vec is a body-local `let mut v: Vec<u64>
+// = Vec::new();` (no Vec param/return) must emit TVecU64 — not E0425. Grounded
 // feasible (the verus form verifies; the gap was wrapper-emission reachability).
 
 const VEC_LOCAL_NEW: &str = r#"
@@ -373,7 +374,7 @@ fn local_only(x: u64) -> u64
 #[test]
 fn local_vec_new_no_param_certifies_l3() {
     let emitted = lower_l3(VEC_LOCAL_NEW, "vec_local_new");
-    // REQ-11: the TVecU64 wrapper IS emitted even though no fn param/return is a
+    // REQ-11: the TVecU64 wrapper is emitted even though no fn param/return is a
     // Vec — the body-local `let` annotation drove the reachability.
     assert!(
         emitted.contains("pub struct TVecU64 { pub data: Vec<u64> }"),
@@ -385,7 +386,7 @@ fn local_vec_new_no_param_certifies_l3() {
         "REQ-11 the local `Vec::new()` lowers to the wrapper construction:\n{emitted}"
     );
     assert_no_cheats(&emitted, "vec_local_new");
-    // GROUNDED L3 — NOT E0425 cannot find type TVecU64.
+    // Grounded L3 — not E0425 cannot find type TVecU64.
     assert_verifies("vec_local_new_c6", &emitted);
 }
 

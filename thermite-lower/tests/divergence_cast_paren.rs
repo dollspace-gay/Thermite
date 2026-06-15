@@ -53,7 +53,7 @@ fn cast_over_binary_inner_is_parenthesized_in_spec_position_l3() {
 }
 
 /// L3 (`lower.rs` byte_at/slice index coercion): a compound string index
-/// `byte_at(i - 1)` in a CONTRACT coerces the index `as usize` with the inner
+/// `byte_at(i - 1)` in a contract coerces the index `as usize` with the inner
 /// parenthesized — `(i - 1) as usize`, never `i - 1 as usize` (= `i - (1 as
 /// usize)`, a `u64 - usize` mismatch, E0277). This is the editor's case.
 #[test]

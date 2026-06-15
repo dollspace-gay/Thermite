@@ -1,41 +1,41 @@
 //! Stage 5 — compositional reasoning cert oracle (Basis epic #62, crosslink #75;
-//! `.design/basis/05-composition.md`). This is a CONFORMANCE DEMONSTRATION: it
-//! confirms the SHIPPED machinery (#52 contract composition, #15/#60 assurance
-//! aggregation) COMPOSES the basis stages, against the hand-derived oracle
+//! `.design/basis/05-composition.md`). This is a conformance demonstration: it
+//! confirms the shipped machinery (#52 contract composition, #15/#60 assurance
+//! aggregation) composes the basis stages, against the hand-derived oracle
 //! `conformance/composition-basis/cases.json` (R-CHAR-3 — expected values trace to
-//! the oracle + `.design/basis/05-composition.md` §9, NEVER copied from forge's
-//! own output). NO new toolchain code: the SHIPPED laws already carry the
-//! capability; this test is the evidence row per the doc's TEST-FIRST resolution.
+//! the oracle + `.design/basis/05-composition.md` §9, never copied from forge's
+//! own output). No new toolchain code: the shipped laws already carry the
+//! capability; this test is the evidence row per the doc's test-first resolution.
 //!
 //! The four laws exercised over `conformance/compose_demo.th`:
 //!
-//! - LAW 1 — CONTRACT composition (#52, REQ-1): `pipeline = step_double(step_inc(x))`
-//!   discharges LOCALLY — `step_inc`'s `ens result == x + 1` (with `x < 99`)
+//! - Law 1 — contract composition (#52, REQ-1): `pipeline = step_double(step_inc(x))`
+//!   discharges locally — `step_inc`'s `ens result == x + 1` (with `x < 99`)
 //!   establishes `step_double`'s `req y < 100`, and `pipeline` proves its own `ens
-//!   result == 2 * (x + 1)` using ONLY the two callees' contracts, never their
+//!   result == 2 * (x + 1)` using only the two callees' contracts, never their
 //!   bodies. `pipeline`/`step_inc`/`step_double` certify L3, end_to_end, pure.
 //!
-//! - LAW 1 through a BOUNDARY (#52, REQ-1): `read_then_inc` composes THROUGH the
+//! - Law 1 through a boundary (#52, REQ-1): `read_then_inc` composes through the
 //!   `#[boundary] read_small` (`external_body` assumable signature): it discharges
 //!   `read_small`'s contract and proves its own `ens` from the assumed
 //!   `Some(v) => v < 256`. Certifies L3, to_boundary, via `read_small` (the boundary
 //!   itself stays L1). The shape-only effect contract has an unconstrained `None`
-//!   arm, so the oracle pins `--mutation-floor 0` (Stage 3 caveat); the COMPOSITION
+//!   arm, so the oracle pins `--mutation-floor 0` (Stage 3 caveat); the composition
 //!   is sound regardless (the woven contract resolves the call).
 //!
-//! - LAWS 2 & 3 — ASSURANCE + TCB aggregation (#15/#60, REQ-2/REQ-3): `forge audit`
+//! - Laws 2 & 3 — assurance + TCB aggregation (#15/#60, REQ-2/REQ-3): `forge audit`
 //!   over the file (which mixes an end_to_end part `pipeline` + a to_boundary part
-//!   `read_then_inc`) reports the PROJECT scope as the genuine MIN — `to_boundary`
-//!   listing the `read_small` crossing, NEVER over-claimed as end_to_end — and the
+//!   `read_then_inc`) reports the project scope as the genuine min — `to_boundary`
+//!   listing the `read_small` crossing, never over-claimed as end_to_end — and the
 //!   TCB enumerates `read_small`'s boundary contract ∪ the toolchain (R-DEFER-9).
 //!
-//! Scheme-fusion (REQ-5) + invariant-conjunction (REQ-6) are NOT exercised here:
+//! Scheme-fusion (REQ-5) + invariant-conjunction (REQ-6) are not exercised here:
 //! the basis oracle carries no fold/`Vec<Account>` case, and a probe against the
 //! existing machinery shows they await their prerequisite stages (Stage 2 scheme
 //! lowering, Stage 1/4 ADT/collection lowering) — they stay NOT-STARTED.
 //!
-//! These SKIP LOUDLY if verus is absent (a real verus proof underlies each cert),
-//! mirroring `composition_conformance.rs` / `audit_conformance.rs`.
+//! These skip with a logged note if verus is absent (a real verus proof underlies
+//! each cert), mirroring `composition_conformance.rs` / `audit_conformance.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -62,7 +62,7 @@ fn oracle() -> Value {
 }
 
 /// The Stage-5 demo program — `conformance/compose_demo.th` (the orchestrator's
-/// read-only fixture; NEVER edited, R-CHAR-3).
+/// read-only fixture; never edited, R-CHAR-3).
 fn compose_demo() -> PathBuf {
     repo_root().join("conformance").join("compose_demo.th")
 }
@@ -113,7 +113,7 @@ fn run_check_floor0(file: &Path) -> (Option<i32>, Vec<Value>, String) {
 }
 
 /// Run `forge audit <file> --json`, returning (exit_code, manifest, stderr). The
-/// audit runs at the pinned default budget (the `--mutation-floor` lever is NOT
+/// audit runs at the pinned default budget (the `--mutation-floor` lever is not
 /// exposed on `audit` by design — `forge/src/cli.rs` `run_audit`); the oracle's
 /// `project_aggregation` row pins only the project SCOPE + the TCB crossing, which
 /// hold at the default floor.
@@ -150,8 +150,8 @@ fn effects(cert: &Value) -> Vec<String> {
         .collect()
 }
 
-// LAW 1 (CONTRACT composition, #52 REQ-1): the pure pipeline composes LOCALLY.
-// `pipeline = step_double(step_inc(x))` proves L3 + end_to_end + pure using ONLY
+// Law 1 (contract composition, #52 REQ-1): the pure pipeline composes locally.
+// `pipeline = step_double(step_inc(x))` proves L3 + end_to_end + pure using only
 // each callee's contract (step_inc's `ens` discharges step_double's `req`); the
 // two leaves are L3. Anchored to the oracle's `contract_composition` array.
 #[test]
@@ -194,7 +194,7 @@ fn contract_composition_pipeline_discharges_locally() {
             "`{name}` records the oracle effect row {expect_effects:?}"
         );
 
-        // The pure closure reaches NO boundary/slag → END-TO-END (the §9
+        // The pure closure reaches no boundary/slag → end-to-end (the §9
         // "verified, period" scope). The oracle pins `scope: end_to_end` for the
         // top-level `pipeline`; the leaves omit `scope` (an end-to-end default).
         if let Some(expect_scope) = case.get("scope").and_then(|v| v.as_str()) {
@@ -216,8 +216,8 @@ fn contract_composition_pipeline_discharges_locally() {
     }
 }
 
-// LAW 1 through a BOUNDARY (#52 REQ-1) + the per-fn scope: `read_then_inc`
-// composes THROUGH `read_small`. It certifies L3 (proving its own `ens` from the
+// Law 1 through a boundary (#52 REQ-1) + the per-fn scope: `read_then_inc`
+// composes through `read_small`. It certifies L3 (proving its own `ens` from the
 // assumed boundary `ens`, never re-proving the foreign body) with scope
 // to_boundary via `read_small`; the boundary fn itself stays L1 + boundary.
 // Anchored to the oracle's `boundary_composition_and_aggregation` array.
@@ -261,7 +261,7 @@ fn boundary_composition_read_then_inc_composes_through_the_boundary() {
                 Value::from(expect_via),
                 "`{name}` records the oracle crossing `{expect_via}`"
             );
-            // L3 THROUGH the contract: the caller is fully proved, NOT laundered —
+            // L3 through the contract: the caller is fully proved, not laundered —
             // it has a discharged obligation, no failed obligation.
             assert_eq!(
                 cert["boundary"],
@@ -293,10 +293,10 @@ fn boundary_composition_read_then_inc_composes_through_the_boundary() {
     }
 }
 
-// LAWS 2 & 3 (ASSURANCE + TCB aggregation, #15/#60 REQ-2/REQ-3): the audit
-// manifest aggregates the project HONESTLY. compose_demo.th mixes an end_to_end
-// part (`pipeline`) and a to_boundary part (`read_then_inc`), so the PROJECT scope
-// is the genuine MIN — `to_boundary` listing the `read_small` crossing, NEVER
+// Laws 2 & 3 (assurance + TCB aggregation, #15/#60 REQ-2/REQ-3): the audit
+// manifest aggregates the project as the min over parts. compose_demo.th mixes an end_to_end
+// part (`pipeline`) and a to_boundary part (`read_then_inc`), so the project scope
+// is the genuine min — `to_boundary` listing the `read_small` crossing, never
 // over-claimed as end_to_end — and the TCB enumerates `read_small`'s boundary
 // contract ∪ the toolchain (nothing fiat-trusted omitted, R-DEFER-9). Anchored to
 // the oracle's `project_aggregation` array.
@@ -333,7 +333,7 @@ fn project_aggregation_is_the_honest_min_over_parts() {
         "the stable v1 audit-manifest format tag"
     );
 
-    // The genuine MIN-OVER-PARTS scope: a mixed project is to_boundary (NOT
+    // The genuine min-over-parts scope: a mixed project is to_boundary (not
     // over-claimed end_to_end — the no-over-claim guarantee, R-DEFER-9 / #60).
     assert_eq!(
         manifest["project_assurance"]["scope"]["kind"],
@@ -385,7 +385,7 @@ fn project_aggregation_is_the_honest_min_over_parts() {
         Value::from("os::read_small"),
         "the TCB records `read_small`'s foreign target os::read_small"
     );
-    // The toolchain is ALWAYS present (the irreducible residue, §9).
+    // The toolchain is always present (the irreducible residue, §9).
     assert!(
         manifest["tcb"]["toolchain"]["verus"]
             .as_str()

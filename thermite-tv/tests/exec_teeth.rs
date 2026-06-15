@@ -155,7 +155,7 @@ fn assert_faithful_verifies(fixture: &str, program: &str) {
     }
 }
 
-/// How an infidel is expected to be CAUGHT by verus.
+/// How an infidel is expected to be caught by verus.
 enum CatchShape {
     /// A `postcondition not satisfied` counterexample (the production typechecks
     /// but computes the wrong value — E3 wrong-op/overflow, E4 off-by-one). There
@@ -305,7 +305,7 @@ fn e2_cast_lt_faithful_verifies() {
 fn e2_cast_lt_infidel_caught() {
     // The #146 cast-`<` paren-drop: production drops the outer paren →
     // `x as u32 < 33`, where `u32 <` mis-parses as the start of a generic-argument
-    // list → a HARD parse error (`error: expected ','`).
+    // list → a hard parse error (`error: expected ','`).
     let prog = exec_equivalence_obligation(&e2_source(), "x as u32 < 33", &e2_frame())
         .expect("E2 infidel exec obligation builds");
     assert_infidel_caught("e2", &prog, CatchShape::Compile("expected `,`"));
@@ -439,7 +439,7 @@ fn exec_ref_value_matches_faithful_meaning() {
 
 /// An out-of-scope construct (a method call / Vec-String accessor) is an honest
 /// `Err`, never a panic / silent wrong encoding (REQ-1 / R-CODE-2). This is the
-/// #154/#156 territory the step-2.1 encoder honestly refuses.
+/// #154/#156 territory the step-2.1 encoder refuses.
 #[test]
 fn out_of_scope_construct_is_err_not_panic() {
     use thermite_tv::exec_encode::{exec_ref_value, RefEncodeError};

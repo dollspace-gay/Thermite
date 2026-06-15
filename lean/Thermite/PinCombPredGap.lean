@@ -48,7 +48,7 @@ namespace Thermite.PinCombPredGap
 def Rdiv : Registry := fun n =>
   if n = "f" then some ⟨["x"], Expr.specCall "f" [Expr.var "x"]⟩ else none
 
-/-- One-element slice so the count genuinely consults the per-element predicate. -/
+/-- One-element slice so the count consults the per-element predicate. -/
 def envD : Env :=
   { ints := fun _ => 0
     seqs := fun _ => [0]

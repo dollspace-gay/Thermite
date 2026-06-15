@@ -169,14 +169,14 @@ fn gap1_mid_string_insert_via_slice_concat_certifies_l3() {
     );
 }
 
-/// GAP 2 — a `struct Buf { text: String, cursor: u64 }` with a String-FIELD
+/// GAP 2 — a `struct Buf { text: String, cursor: u64 }` with a String-field
 /// type-invariant (`inv cursor <= text.len()`) and a constructing `fn mk(t: String)
 /// -> Buf` both certify L3: the `TString` wrapper def is woven into the per-item
-/// sub-program because `String` is REACHABLE as a struct field type (was
+/// sub-program because `String` is reachable as a struct field type (was
 /// `error[E0425]: cannot find type TString` -> L0), and the inv's `text.len()`
 /// rewrites to the wrapper spec fn `self.text.spec_len()`.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-2 (a `String` struct field; the
+/// Authority: `.design/basis/07-strings.md` REQ-2 (a `String` struct field; the
 /// `TString` wrapper keyed on the node kind) + REQ-4 (the `well_formed` capacity
 /// invariant, the `spec_len` spec accessor a contract names) + `.design/basis/01-
 /// adts.md` REQ-8 (the struct type-invariant `well_formed` predicate). The `mk` ens
@@ -216,13 +216,13 @@ fn gap2_buf_struct_with_string_field_certifies_l3() {
     );
 }
 
-/// GAP 2 (the second reachable form) — a `fn` READING `b.text.len()` from a `&Buf`
-/// parameter certifies L3: the String-FIELD receiver `b.text`'s `.len()` rewrites
+/// GAP 2 (the second reachable form) — a `fn` reading `b.text.len()` from a `&Buf`
+/// parameter certifies L3: the String-field receiver `b.text`'s `.len()` rewrites
 /// to `b.text.spec_len()` in the `ens` contract (the field analog of the bare
 /// `String`-value rewrite), and the wrapper is woven because `Buf`'s field reaches
 /// `String`.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-4 — a contract over a `String`
+/// Authority: `.design/basis/07-strings.md` REQ-4 — a contract over a `String`
 /// names the wrapper SPEC fn (`spec_len`), the exec `len` cannot be named in a
 /// contract; `.design/basis/01-adts.md` REQ-8 — `b.well_formed()` is woven for the
 /// invariant-bearing `Buf` param.
@@ -251,14 +251,14 @@ fn gap2_fn_reading_string_field_len_certifies_l3() {
     );
 }
 
-/// NON-VACUITY (R-DEFER-9) — the GAP-1 coercion does NOT launder an unsound slice:
+/// Non-vacuity (R-DEFER-9) — the GAP-1 coercion does not launder an unsound slice:
 /// `slice`'s `req self.well_formed() && lo <= hi && hi <= len` is load-bearing. A
-/// contract that does NOT establish `s.well_formed()` (no CAP bound on `s.len()`)
-/// leaves `slice`'s `self.well_formed()` precondition undischarged -> verus FAILS
-/// -> L0. The `as usize` coercion fixes the TYPE mismatch only; it never weakens
+/// contract that does not establish `s.well_formed()` (no CAP bound on `s.len()`)
+/// leaves `slice`'s `self.well_formed()` precondition undischarged -> verus fails
+/// -> L0. The `as usize` coercion fixes the type mismatch only; it never weakens
 /// the bound (the same way `byte_at`'s `i < len` stays load-bearing).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-4 (slice requires
+/// Authority: `.design/basis/07-strings.md` REQ-4 (slice requires
 /// `self.well_formed()`) + AC-4 / R-DEFER-9 (a missing bound is caught, not
 /// laundered). `thermite-design.md` §7 (the battery catches vacuity).
 #[test]
@@ -268,7 +268,7 @@ fn gap1_slice_precondition_is_load_bearing() {
         return;
     }
     // No `req s.len() <= 1_000_000` — so `s.well_formed()` (data.len() <= CAP) is
-    // NOT establishable -> slice's `self.well_formed()` precondition undischarged.
+    // not establishable -> slice's `self.well_formed()` precondition undischarged.
     let certs = check_program(
         "slice_unbounded",
         "fn bad(s: String, k: u64) -> String\n  req k <= s.len()\n  ens result.len() == k\n  fx alloc\n{ s.slice(0, k) }\n",

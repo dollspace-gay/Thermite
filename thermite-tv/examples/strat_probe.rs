@@ -605,7 +605,7 @@ impl Report {
         pct(self.all_hits, self.all_total)
     }
 
-    /// The program-plan decision rule applied to the THRESHOLD-bearing
+    /// The program-plan decision rule applied to the threshold-bearing
     /// corpus+generated rate.
     fn decision(&self) -> &'static str {
         if self.all_pct() >= 90.0 {

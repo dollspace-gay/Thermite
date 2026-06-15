@@ -1,5 +1,5 @@
 //! Divergence (critic, #98 C6 re-audit): the emitted bounded-`Vec` `push` ensures
-//! clause omits the element-preservation frame that the design's GROUNDED `BVec`
+//! clause omits the element-preservation frame that the design's grounded `BVec`
 //! seed mandates. As a result, after a second `push`, the wrapper's contract no
 //! longer lets a caller prove that `get(0)` is the first pushed element; the
 //! prior elements are unframed.
@@ -12,7 +12,7 @@
 //!     `BVec::push` seed carries the element frame
 //!     `forall|j: int| 0 <= j < old_len ==> final(self).data@[j] == old(self).data@[j]`.
 //!   - `.design/basis/04-collections.md` REQ-9 borrow-`get` `ens *result ==
-//!     self.data@[i as int]` — only meaningful if `data@[i]` is FRAMED across a
+//!     self.data@[i as int]` — only meaningful if `data@[i]` is framed across a
 //!     later `push`.
 //!
 //! Toolchain divergence: `emit_one_vec_wrapper` (`thermite-lower/src/lower.rs`)
@@ -25,7 +25,7 @@
 //! under the real `verus` binary (`assertion failed` on the first-element pin),
 //! because the second `push` is not framed over index 0. With the design's frame
 //! it verifies (confirmed by the critic probe). This is a contract weaker than the
-//! design GROUNDED form (R-DEFER-9: an obligation the design states is silently
+//! design grounded form (R-DEFER-9: an obligation the design states is silently
 //! dropped). Tracking: crosslink blocker.
 //!
 //! Un-ignore when the fixer restores the element-preservation frame on `push`.
@@ -96,7 +96,7 @@ fn divergence_push_frames_prior_elements() {
     // value-pinning client inside the same verus! block that exercises the wrapper
     // contract only (no body internals). The client pushes two distinct values and
     // pins that get(0) is the first. This is provable iff `push`'s ens frames the
-    // prior elements (the design GROUNDED seed). The expected fact (get(0)==first)
+    // prior elements (the design grounded seed). The expected fact (get(0)==first)
     // is the design REQ-5/REQ-9 contract, not toolchain output (R-CHAR-3).
     let client = r#"
 verus!{

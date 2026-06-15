@@ -53,7 +53,7 @@ pub enum RefEncodeError {
     /// A combinator call whose callee name is not in the frozen
     /// `thermite_spec::REGISTRY` and is not a plain spec-fn call shape we can
     /// encode. (A non-registry path callee IS encodable as a plain spec-fn call;
-    /// this fires only for a shape the encoder genuinely cannot represent.)
+    /// this fires only for a shape the encoder cannot represent.)
     UnknownCallee(String),
 }
 
@@ -789,7 +789,7 @@ fn encode_len_receiver(receiver: &Expr, ctx: &RefCtx) -> Result<String, RefEncod
 /// Encode an `Expr::Match` in contract position (#150 gap #1; the C7 payload-in-
 /// contract `ens match result { Some(v) => <pred(v)>, None => <pred> }`, and the
 /// `Ok`/`Err` Result form). Production lowers a spec-context `match` to a Verus
-/// `match` EXPRESSION in the `ensures` (`tests/golden/lower/binary_search.verus.rs`,
+/// `match` expression in the `ensures` (`tests/golden/lower/binary_search.verus.rs`,
 /// `option_result.verus.rs`):
 ///
 /// ```text

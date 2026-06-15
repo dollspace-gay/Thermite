@@ -213,7 +213,7 @@ fn assert_obligation_caught(fixture: &str, program: &str, expect_msg: &str) {
 }
 
 // ============================================================================
-// The L1 FAITHFUL v1-frozen-subset loop fixture (shared by L1/L2/L3).
+// The L1 Faithful v1-frozen-subset loop fixture (shared by L1/L2/L3).
 //
 // source loop (the v1 subset — single `while`, declared inv/dec, straight-line
 // scalar body, the loop the last statement before the tail):
@@ -268,7 +268,7 @@ fn l1_frame() -> LoopObligationFrame {
     }
 }
 
-// ---- L0: the reference pieces match the HAND-DERIVED encoding (auditability) ---
+// ---- L0: the reference pieces match the hand-derived encoding (auditability) ---
 
 #[test]
 fn l0_loop_ref_obligations_match_hand_derived() {
@@ -282,7 +282,7 @@ fn l0_loop_ref_obligations_match_hand_derived() {
     assert_eq!(obs.inv_at_step, "((lo + 1) <= n)");
 }
 
-// ---- L1: the FAITHFUL loop → all THREE obligations VERIFY (AC-1) ------------
+// ---- L1: the Faithful loop → all three obligations verify (AC-1) ------------
 
 #[test]
 fn l1_entry_obligation_verifies() {
@@ -314,7 +314,7 @@ fn l1_exit_obligation_verifies() {
     assert_obligation_verifies("l1_exit", &prog);
 }
 
-// ---- L2: broken-preservation mutant → CAUGHT (AC-2 / AC-5) -----------------
+// ---- L2: broken-preservation mutant → caught (AC-2 / AC-5) -----------------
 
 #[test]
 fn l2_broken_preservation_caught() {
@@ -338,7 +338,7 @@ fn l2_broken_preservation_caught() {
     );
 }
 
-// ---- L3: wrong-after-loop-state mutant → CAUGHT (AC-3) ---------------------
+// ---- L3: wrong-after-loop-state mutant → caught (AC-3) ---------------------
 
 #[test]
 fn l3_wrong_exit_characterization_caught() {
@@ -447,7 +447,7 @@ fn l4_mid_body_return_is_skipped() {
 #[test]
 fn l4_trivially_weak_inv_is_skipped() {
     // A trivially-weak `inv true` makes the after-loop `true ∧ ¬cond` vacuous — the
-    // loop cannot enter the (a) rule. Skipped honestly (not Faithful — the after-loop
+    // loop cannot enter the (a) rule. Skipped (not Faithful — the after-loop
     // characterization would be meaningless).
     let loop_node = LoopNode {
         kind: LoopKind::While(Box::new(bin(BinOp::Lt, path("lo"), path("hi")))),

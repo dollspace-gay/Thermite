@@ -1,31 +1,31 @@
 //! Divergence pin (#127): `callee_takes_string_byteview` (`thermite-lower/src/lower.rs`)
-//! gates the `String -> s.data@` byte-view rewrite on a FIXED callee NAME set
+//! gates the `String -> s.data@` byte-view rewrite on a fixed callee name set
 //! (`parse_le`/`parse_be`/`all_digits`/`is_digit`/`occurs_at`/`contains_sub`/
-//! `count_sep`/`sep_free` — the generated C4/C5/C7 defs). A USER-DEFINED `spec fn`
-//! whose name COLLIDES with that set but whose param is a `&String` (the #126
-//! String-scanning shape) is MISROUTED: its `&String` self-call argument is rewritten
+//! `count_sep`/`sep_free` — the generated C4/C5/C7 defs). A user-defined `spec fn`
+//! whose name collides with that set but whose param is a `&String` (the #126
+//! String-scanning shape) is misrouted: its `&String` self-call argument is rewritten
 //! to `.data@` (`Seq<u8>`) instead of being passed through as the `&TString`
 //! reference its own lowered signature declares — so the body emits
 //! `is_digit(s.data@, ..)` against an `is_digit(&TString, ..)` param (E0308) and the
-//! spec fn FAILS to certify.
+//! spec fn fails to certify.
 //!
-//! AUTHORITY: `.design/basis/07-strings.md` REQ-4 — "a String-SCANNING `spec fn`
-//! (`byte_at`/`len` over a `&String` param) MUST lower correctly and certify L3".
-//! The contract is SHAPE-derived ("the SHAPE-derived set whose spec-position
-//! `.len()`/`.byte_at(i)`/`.slice(..)` rewrite to the wrapper's SPEC accessors"),
-//! NOT name-derived. `thermite-design.md` §6 — L3 == fully-discharged real-verus
-//! proof. The #126 commit's own claim ("Keyed on the callee NAME (these names are
+//! Authority: `.design/basis/07-strings.md` REQ-4 — "a String-scanning `spec fn`
+//! (`byte_at`/`len` over a `&String` param) must lower correctly and certify L3".
+//! The contract is shape-derived ("the shape-derived set whose spec-position
+//! `.len()`/`.byte_at(i)`/`.slice(..)` rewrite to the wrapper's spec accessors"),
+//! not name-derived. `thermite-design.md` §6 — L3 == fully-discharged real-verus
+//! proof. The #126 commit's own claim ("Keyed on the callee name (these names are
 //! reserved by the generated defs — no user collision in v0.1)") is the unproven
 //! assumption this test refutes: a user spec-fn name lives in the user namespace and
 //! the surface does not reserve `is_digit`/`count_sep`/etc.
 //!
-//! THE DIVERGENCE (R-CHAR-3, not copied from forge's output): two programs that are
-//! BYTE-IDENTICAL up to the spec fn's NAME certify DIFFERENTLY — the non-colliding
+//! The divergence (R-CHAR-3, not copied from forge's output): two programs that are
+//! byte-identical up to the spec fn's name certify differently — the non-colliding
 //! `scan_x` certifies L3 (the #126(A) payoff, the `spec_scan` shape), the colliding
-//! `is_digit` certifies L0 (the byte-view misroute). A correct SHAPE-keyed dispatch
+//! `is_digit` certifies L0 (the byte-view misroute). A correct shape-keyed dispatch
 //! certifies both at L3.
 //!
-//! The verus check SKIPS LOUDLY when verus is absent (R-CODE-4); `tests/` is not
+//! The verus check skips with a logged note when verus is absent (R-CODE-4); `tests/` is not
 //! anti-pattern-gated so `unwrap`/`panic!` are fine (R-APG-2).
 
 use std::path::{Path, PathBuf};
@@ -89,10 +89,10 @@ fn level_of(certs: &[Value], item: &str) -> String {
         .to_string()
 }
 
-/// A String-scanning `spec fn` whose NAME is a placeholder `__NAME__` substituted
+/// A String-scanning `spec fn` whose name is a placeholder `__NAME__` substituted
 /// per-program. The body is the proven `spec_scan`/`spec_line_start` shape (a
 /// recursive `byte_at` `\n`-style scan over a `&String` param with a `dec` measure)
-/// — the EXACT shape #126 made certify. The only thing that varies between the two
+/// — the exact shape #126 made certify. The only thing that varies between the two
 /// programs below is the name.
 const TEMPLATE: &str = "\
 spec fn __NAME__(s: &String, i: u64, target: u64, acc: u64) -> u64
@@ -117,7 +117,7 @@ fn user_spec_fn_named_like_a_generated_byteview_fn_still_certifies_l3() {
         return;
     }
 
-    // CONTROL: a non-colliding name certifies L3 (the #126(A) payoff — a String-
+    // Control: a non-colliding name certifies L3 (the #126(A) payoff — a String-
     // scanning spec fn over a `&String` param lowers + proves).
     let control = TEMPLATE.replace("__NAME__", "scan_x");
     let control_certs = check_program("control", &control);
@@ -128,10 +128,10 @@ fn user_spec_fn_named_like_a_generated_byteview_fn_still_certifies_l3() {
          shape); if this fails the divergence fixture is wrong, not the toolchain:\n{control_certs:#?}"
     );
 
-    // DIVERGENCE: the SAME spec fn, renamed to `is_digit` — a name in the fixed
-    // `callee_takes_string_byteview` set — MUST still certify L3 by AUTHORITY
-    // (`.design/basis/07-strings.md` REQ-4: the dispatch is SHAPE-derived). It does
-    // NOT today (the `&String` self-call arg is misrouted to `.data@`, E0308 -> L0).
+    // Divergence: the same spec fn, renamed to `is_digit` — a name in the fixed
+    // `callee_takes_string_byteview` set — must still certify L3 by authority
+    // (`.design/basis/07-strings.md` REQ-4: the dispatch is shape-derived). It does
+    // not today (the `&String` self-call arg is misrouted to `.data@`, E0308 -> L0).
     let collide = TEMPLATE.replace("__NAME__", "is_digit");
     let collide_certs = check_program("collide", &collide);
     assert_eq!(

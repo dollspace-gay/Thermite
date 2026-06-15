@@ -2,7 +2,7 @@
 //! (`.design/verified/contract-tv.md` REQ-2; `thermite-design.md` §6, L3 = the
 //! verus-derived SMT proof).
 //!
-//! [`equivalence_obligation`] emits a SELF-CONTAINED Verus program text whose
+//! [`equivalence_obligation`] emits a self-contained Verus program text whose
 //! single proof obligation is `assert((P_production) <==> (P_reference))`:
 //!
 //! ```text
@@ -112,7 +112,7 @@ impl ParamDecl {
 #[derive(Debug, Clone, Default)]
 pub struct ObligationFrame {
     /// The Verus `spec fn` / combinator `verus_l3` definitions the clause depends
-    /// on, emitted verbatim into the `verus! { … }` frame BEFORE `tv_check`. For
+    /// on, emitted verbatim into the `verus! { … }` frame before `tv_check`. For
     /// a combinator clause these come from `thermite_spec::lookup(name).verus_l3`
     /// (the shared frozen ground truth); for a spec-fn clause, the spec fn's def.
     pub spec_defs: Vec<String>,
@@ -178,7 +178,7 @@ impl ObligationFrame {
 /// Build the self-contained Verus equivalence obligation for one contract clause
 /// (REQ-2). `source` is the clause's parsed [`Expr`] (encoded independently to
 /// the reference predicate via [`ref_contract_pred`]); `p_production` is the
-/// VERBATIM production-lowered predicate text (the artifact under test); `frame`
+/// verbatim production-lowered predicate text (the artifact under test); `frame`
 /// carries the spec-fn / combinator defs, the param decls, and the optional
 /// `requires`.
 ///

@@ -430,7 +430,7 @@ theorem denote_fuel_irrelevant : ∀ (e : Expr) (env : Env) (f g : Nat),
   | Expr.byteAt base i, env, f, g, _ => by simp only [denote]
   termination_by e => sizeOf e
 
-/-- FUEL-IRRELEVANCE on the match-arm side (the `denote`-mutual helper). -/
+/-- Fuel-irrelevance on the match-arm side (the `denote`-mutual helper). -/
 theorem denoteArms_fuel_irrelevant : ∀ (scrut : OptResVal) (arms : List MatchArm)
     (env : Env) (f g : Nat),
     armsFree arms = true → (denoteArms f scrut arms env ↔ denoteArms g scrut arms env)

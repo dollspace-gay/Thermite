@@ -26,7 +26,7 @@ fn corpus_dir() -> PathBuf {
         .join("conformance")
 }
 
-/// Compile `src` with `rustc` at the given opt level, then RUN. Returns
+/// Compile `src` with `rustc` at the given opt level, then run. Returns
 /// `(compiled_ok, ran_ok, combined_output)`. `opt` is e.g. `&[]` (debug) or
 /// `&["-O"]` (release-equivalent optimization).
 fn compile_and_run_opt(src: &str, crate_name: &str, opt: &[&str]) -> (bool, bool, String) {

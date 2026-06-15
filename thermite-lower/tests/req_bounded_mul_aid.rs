@@ -85,7 +85,7 @@ fn sq_emits_req_bounded_mul_aid_with_hand_derived_bound() {
         l3.contains("proof {"),
         "the aid must be wrapped in a `proof {{ .. }}` block (#196):\n{l3}"
     );
-    // R-DEFER-9: NO proof cheats.
+    // R-DEFER-9: no proof cheats.
     for forbidden in ["assume(false)", "external", "#[slag]"] {
         assert!(
             !l3.contains(forbidden),

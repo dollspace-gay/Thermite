@@ -16,13 +16,13 @@
 //! complement tests assert ordinary surface code in those same positions is
 //! not rejected (the #35 intent).
 //!
-//! Authority (R-CHAR-3 — expected values are NOT read back from the validator):
+//! Authority (R-CHAR-3 — expected values are not read back from the validator):
 //!   - .design/spec/spectherm-combinators.md REQ-3 (cage = req/ens, LoopNode
 //!     invs/dec, SpecFnItem.body) + REQ-4 (i) (UnknownCombinator) + REQ-3(c)/
 //!     REQ-4(iv) (bounded built-in MethodCall -> ForbiddenCall).
 //!   - thermite-design.md §4.2 — "a fixed library of bounded combinators";
 //!     "locks the cage". `frobnicate` is not in that frozen set, so a contract
-//!     position holding it MUST reject; `sorted`/`forall_*` ARE in it.
+//!     position holding it must reject; `sorted`/`forall_*` are in it.
 //!   - conformance/binary_search.th — the corpus combinator names
 //!     (`sorted`, `forall_below`, `forall_from`) used in the well-formed cases.
 //!

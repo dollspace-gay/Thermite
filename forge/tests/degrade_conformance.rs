@@ -14,11 +14,11 @@
 //!   `degrade::tests::counterexample_never_degrades`; this asserts it end-to-end
 //!   against real verus.
 //! - AC-2 (forced degrade → L2): a forced low `--rlimit` is the L3-timeout
-//!   lever; best-effort skip-loud (OQ-1: provoking a live resourceout is
+//!   lever; best-effort skip with a logged reason (OQ-1: provoking a live resourceout is
 //!   timing-fragile). When a live degrade is provoked, the cert is a certified
 //!   lower rung with `lowered_assurance: true` + a degrade reason.
 //!
-//! Verus/kani-dependent checks skip loudly when the binary is absent (mirroring
+//! Verus/kani-dependent checks skip with a logged note when the binary is absent (mirroring
 //! `profile_conformance.rs` / `l2_check.rs`). `tests/` is not anti-pattern-gated,
 //! so `unwrap`/`expect`/`panic!` are fine here. Leave `conformance/` unedited
 //! (R-CHAR-3): expected levels trace to the design doc's grounding (the corpus
@@ -39,8 +39,8 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// `true` iff verus can be located (mirrors `profile_conformance.rs`). Skip
-/// loudly otherwise.
+/// `true` iff verus can be located (mirrors `profile_conformance.rs`). Skips
+/// with a logged note otherwise.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {

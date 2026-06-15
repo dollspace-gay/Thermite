@@ -3,7 +3,7 @@
 //!
 //! Authority: `.design/basis/01-adts.md` REQ-5 (exhaustiveness —
 //! `NonExhaustiveMatch`/`UnreachableArm`), REQ-12 (handled-or-loud: a
-//! non-exhaustive `match` over a declared `enum` MUST be rejected BEFORE the
+//! non-exhaustive `match` over a declared `enum` must be rejected before the
 //! program ships — "every modeled outcome (variant) is handled, or an explicit
 //! `Wildcard` catch screams … silently dropping an unhandled variant is
 //! structurally impossible"). `goal.md` R-DEFER-9 (no proof cheats / no

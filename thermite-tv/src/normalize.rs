@@ -71,7 +71,7 @@ impl CmpOp {
         }
     }
 
-    /// The operator of the NEGATED comparison (`~(a < b) ≡ a >= b`). Used by NNF
+    /// The operator of the negated comparison (`~(a < b) ≡ a >= b`). Used by NNF
     /// to fold an atom-negation into the operator so the result is `Not`-free.
     fn negate(self) -> CmpOp {
         match self {
@@ -84,7 +84,7 @@ impl CmpOp {
         }
     }
 
-    /// The operator with the operands SWAPPED (`a > b ≡ b < a`). Used to orient
+    /// The operator with the operands swapped (`a > b ≡ b < a`). Used to orient
     /// `>`/`>=` to `<`/`<=` canonically.
     fn flip(self) -> CmpOp {
         match self {
@@ -431,7 +431,7 @@ impl Parser {
         if self.peek() == Some(&Tok::LParen) {
             // A leading `(` is ambiguous: a FORMULA group `(0 <= i & …)` or a
             // parenthesized TERM that starts an atom `(5 - n) <= i`. Try the
-            // formula group first; if it does not parse + close cleanly, backtrack
+            // formula group first; if it does not parse and close, backtrack
             // and read the `(` as the first term of an atom.
             let save = self.pos;
             self.pos += 1; // consume the '('
@@ -568,7 +568,7 @@ pub fn parse(src: &str) -> Result<Formula, ParseError> {
 impl Formula {
     /// Negation normal form (metatheory §8.2 layer-1 pass 1): eliminate `=>`, push
     /// `~` inward via De Morgan + quantifier duality, fold atom-negations into the
-    /// comparison operator. The result has NO `Not` and NO `Implies` node.
+    /// comparison operator. The result has no `Not` and no `Implies` node.
     pub fn to_nnf(self) -> Formula {
         self.nnf_inner(false)
     }
@@ -845,7 +845,7 @@ fn flatten_or(f: &Formula, rename: &dyn Fn(&str) -> String, out: &mut Vec<CMatri
 /// `v0,v1,…` names, serialize, and keep the lexicographically smallest result —
 /// a true alpha- and binder-order-invariant canonical form.
 fn canonical(prefix: &[(Quant, String)], matrix: &Formula) -> String {
-    // Partition the prefix into maximal same-quantifier blocks (block ORDER is
+    // Partition the prefix into maximal same-quantifier blocks (block order is
     // fixed — different quantifiers do not commute past each other in general).
     let mut blocks: Vec<(Quant, Vec<String>)> = Vec::new();
     for (q, name) in prefix {
@@ -1169,7 +1169,7 @@ mod tests {
     #[test]
     fn commutative_arithmetic_operands_are_sorted() {
         assert_eq!(norm("i < a + b"), norm("i < b + a"));
-        // Subtraction is NOT commutative.
+        // Subtraction is not commutative.
         assert_ne!(norm("i < a - b"), norm("i < b - a"));
     }
 

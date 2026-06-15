@@ -1,23 +1,23 @@
-//! Conformance test for the RUNNABLE EFFECT LINK (Basis Stage 8, issue **#81**)
-//! against the EXTERNAL truths: the real `rustc` compiler, the real Linux seccomp
+//! Conformance test for the runnable effect link (Basis Stage 8, issue **#81**)
+//! against the external truths: the real `rustc` compiler, the real Linux seccomp
 //! kernel, the real `verus` prover, and the hand-derived oracle
 //! `conformance/effect-link/cases.json` (`.design/basis/08-runnable-effect-link.md`).
 //!
 //! `forge build` emits a `mod os { … }` (the syscall-wrapper impls) into the
 //! generated crate, keyed by the reachable `#[boundary("os::<name>")]` targets, so a
-//! VERIFIED program that uses an effect primitive COMPILES + RUNS + does real I/O.
-//! `forge check` (verification) is UNCHANGED — the link is a build-only concern.
+//! verified program that uses an effect primitive compiles + runs + does real I/O.
+//! `forge check` (verification) is unchanged — the link is a build-only concern.
 //!
-//! Verification is by EXECUTION (the design's AC-1..AC-7): the centerpiece
+//! Verification is by execution (the design's AC-1..AC-7): the centerpiece
 //! `effect_link_demo.th` (`now` boundary + `elapsed_ok` L3-to-boundary caller)
-//! BUILDS (rustc exit 0, no `E0433`), RUNS (a live `clock_gettime`, prints a
-//! `u64` timestamp), is #57-seccomp-CONFINED (`clock_gettime` allowed, an
-//! out-of-`fx` `openat` SIGSYS-killed), and `forge check` certifies IDENTICALLY
+//! builds (rustc exit 0, no `E0433`), runs (a live `clock_gettime`, prints a
+//! `u64` timestamp), is #57-seccomp-confined (`clock_gettime` allowed, an
+//! out-of-`fx` `openat` SIGSYS-killed), and `forge check` certifies identically
 //! before and after the link. Expected values trace to the oracle / the §4.1
 //! mechanism, never copied from toolchain output (R-CHAR-3).
 //!
 //! The build/run cases need a Linux seccomp kernel with `kill_process`; the
-//! `verify_unchanged` case needs `verus`. Both SKIP LOUD (an eprintln) when their
+//! `verify_unchanged` case needs `verus`. Both skip with a logged note (an eprintln) when their
 //! external truth is absent (the precedent of `sandbox_conformance.rs` /
 //! `effect_stdlib_conformance.rs`). `unwrap`/`expect`/`panic!` are fine here —
 //! `tests/` is not anti-pattern-gated. The `forge` binary is invoked as a
@@ -39,7 +39,7 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// The frozen centerpiece program the oracle pins (NEVER edited — R-CHAR-3): a
+/// The frozen centerpiece program the oracle pins (never edited — R-CHAR-3): a
 /// `#[boundary("os::now")]` Time primitive + a pure `elapsed_ok` caller that
 /// composes to L3 to-the-boundary. The `now` build-link demo.
 fn effect_link_demo() -> PathBuf {
@@ -47,7 +47,7 @@ fn effect_link_demo() -> PathBuf {
 }
 
 /// `true` iff this host's kernel offers the `kill_process` seccomp action (the #57
-/// mechanism). When absent the seccomp tests SKIP LOUD (`runtime-sandbox.md` OQ-3).
+/// mechanism). When absent the seccomp tests skip with a logged note (`runtime-sandbox.md` OQ-3).
 fn seccomp_kill_available() -> bool {
     std::fs::read_to_string("/proc/sys/kernel/seccomp/actions_avail")
         .map(|s| s.contains("kill_process"))
@@ -151,7 +151,7 @@ fn find_cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 const SIGSYS: i32 = 31;
 
 // ---------------------------------------------------------------------------
-// verify_unchanged (AC-4): forge check certifies IDENTICALLY before/after the link.
+// verify_unchanged (AC-4): forge check certifies identically before/after the link.
 //   now      -> L1 boundary (os::now, fx time)
 //   elapsed_ok -> L3, to_boundary via now (--mutation-floor 0)
 // The link lives in build.rs codegen + rustc; forge check never emits `mod os`.
@@ -175,7 +175,7 @@ fn verify_unchanged() {
     );
 
     // `now` — the Time effect primitive → L1 boundary (os::now, fx time). The link
-    // does NOT change this cert (the boundary L1-short-circuits in `forge check`).
+    // does not change this cert (the boundary L1-short-circuits in `forge check`).
     let now = find_cert(&certs, "now");
     assert_eq!(now["level"], Value::from("L1"), "now is the L1 boundary");
     assert_eq!(
@@ -199,8 +199,8 @@ fn verify_unchanged() {
         "now declares the typed `time` effect: {now_fx:?}"
     );
 
-    // `elapsed_ok` — the pure caller composes THROUGH now's assumed ens → L3 +
-    // to_boundary via now (#52 + #17). UNCHANGED by the build-only link.
+    // `elapsed_ok` — the pure caller composes through now's assumed ens → L3 +
+    // to_boundary via now (#52 + #17). Unchanged by the build-only link.
     let elapsed = find_cert(&certs, "elapsed_ok");
     assert_eq!(
         elapsed["level"],
@@ -221,11 +221,11 @@ fn verify_unchanged() {
 
 // ---------------------------------------------------------------------------
 // build_and_run (AC-1): `forge build effect_link_demo.th --entry elapsed_ok` emits
-// `mod os { pub fn now() -> u64 { SystemTime::now()... } }`, rustc-LINKS it (exit 0,
-// no E0433), and the binary RUNS -> the linked os::now does a real clock_gettime ->
+// `mod os { pub fn now() -> u64 { SystemTime::now()... } }`, rustc-links it (exit 0,
+// no E0433), and the binary runs -> the linked os::now does a real clock_gettime ->
 // prints `elapsed_ok() = <live Unix timestamp>` (a u64, > 0, < 4_000_000_000), exit
-// 0. THE UNLOCK. The value is the world's wall clock (nondeterministic), so the
-// oracle asserts the RANGE + a u64, not a fixed value (R-CHAR-3, R-CODE-5).
+// 0. The unlock. The value is the world's wall clock (nondeterministic), so the
+// oracle asserts the range + a u64, not a fixed value (R-CHAR-3, R-CODE-5).
 // Anchored to conformance/effect-link/cases.json `build_and_run`.
 // ---------------------------------------------------------------------------
 
@@ -276,9 +276,9 @@ fn elapsed_ok_builds_and_runs() {
 // sandbox_confines (AC-3): the linked os::now's clock_gettime is in the fx-time
 // allowlist (#57: baseline ∪ {clock_gettime 228, clock_nanosleep 230}), so the
 // binary runs clean under the default sandbox (exit 0); a `--sandbox-self-test`
-// openat probe under the SAME `time` filter (openat NOT in the time allowlist) is
-// SIGSYS-KILLED (exit 159 = 128+31, the #57 pure_probe_killed precedent). The
-// linked foreign body is confined to EXACTLY its declared fx.
+// openat probe under the same `time` filter (openat not in the time allowlist) is
+// SIGSYS-killed (exit 159 = 128+31, the #57 pure_probe_killed precedent). The
+// linked foreign body is confined to exactly its declared fx.
 // Anchored to conformance/effect-link/cases.json `sandbox_confines`.
 // ---------------------------------------------------------------------------
 
@@ -290,7 +290,7 @@ fn sandbox_confines_the_linked_wrapper() {
     }
     let demo = effect_link_demo();
 
-    // (A) the default-sandboxed run: the fx-time allowlist INCLUDES clock_gettime
+    // (A) the default-sandboxed run: the fx-time allowlist includes clock_gettime
     // (228), so the linked os::now runs clean and exits 0.
     let (ok, stdout, stderr) =
         run_forge_build(&[demo.to_str().unwrap(), "--entry", "elapsed_ok", "--json"]);
@@ -325,7 +325,7 @@ fn sandbox_confines_the_linked_wrapper() {
     );
     cleanup(&artifact);
 
-    // (B) the out-of-fx openat probe under the SAME `time` filter → SIGSYS kill.
+    // (B) the out-of-fx openat probe under the same `time` filter → SIGSYS kill.
     let (ok2, stdout2, stderr2) = run_forge_build(&[
         demo.to_str().unwrap(),
         "--entry",
@@ -345,7 +345,7 @@ fn sandbox_confines_the_linked_wrapper() {
 }
 
 // ---------------------------------------------------------------------------
-// NO regression (AC-7): the pure corpus (`sum`) builds + runs IDENTICALLY — NO
+// No regression (AC-7): the pure corpus (`sum`) builds + runs identically — no
 // `mod os` is emitted (no boundary target reachable), `sum(&[1,2,3]) = 6` per
 // build.md AC-3. The link is a no-op for a boundary-free program.
 // ---------------------------------------------------------------------------
@@ -382,7 +382,7 @@ fn pure_corpus_unaffected_by_the_link() {
 // `#[boundary("os::read_byte")] -> u64` (EOF sentinel 256) + a `doubled` caller
 // builds, and run with stdin `A` (byte 65) prints `doubled() = 130` (65+65, the
 // hand-derived value); run with EOF prints `doubled() = 0` (the handled EOF arm).
-// Both arms of the closed outcome set RUN. The inputs are the explicit determinism
+// Both arms of the closed outcome set run. The inputs are the explicit determinism
 // source (R-CODE-5). The fixture mirrors the design's read_demo (R-CHAR-3); it is a
 // throwaway temp file (the frozen corpus is the `now` demo).
 // ---------------------------------------------------------------------------

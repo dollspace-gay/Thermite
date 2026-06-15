@@ -190,7 +190,7 @@ fn corpus_and_generated_coverage_meets_ac5() {
 }
 
 /// AC-7: the corpus-only (n=4, small-n) and corpus+generated (threshold-bearing)
-/// hit rates + per-shape breakdown + decision branch RECOMPUTED from the fixtures
+/// hit rates + per-shape breakdown + decision branch recomputed from the fixtures
 /// match the numbers recorded in the fixtures `README.md`.
 #[test]
 fn hit_rates_match_the_readme_record() {

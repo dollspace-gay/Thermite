@@ -55,7 +55,7 @@ fn load_oracle() -> Oracle {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse oracle {}: {e}", path.display()))
 }
 
-/// Parse the corpus source, asserting it parses CLEANLY (used for the certify
+/// Parse the corpus source, asserting it parses without error (used for the certify
 /// `list_fold.th`, a real corpus program with no syntax noise).
 fn parse_program(src: &str) -> thermite_syntax::Program {
     let result = thermite_syntax::parse(src);

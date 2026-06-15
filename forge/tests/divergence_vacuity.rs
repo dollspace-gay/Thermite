@@ -89,7 +89,7 @@ fn verus_present() -> bool {
 /// (`PartialEq`) to ... the whole `req` ... or one of the conjuncts of `req`".
 /// `thermite-design.md` §7.1: "`ens` is syntactically implied by `req` alone →
 /// reject" — the whole postcondition conjunction must be implied; a single
-/// implied conjunct alongside a genuinely-stronger clause is not a vacuous `ens`.
+/// implied conjunct alongside a stronger clause is not a vacuous `ens`.
 ///
 /// The implementation (`ens_implied_by_req`, `vacuity.rs`) returns `Some(idx)` on
 /// the first matching clause, so it rejects when any clause is a req conjunct.
@@ -103,7 +103,7 @@ fn verus_present() -> bool {
 /// Tracking: filed as a `-l blocker`.
 #[test]
 fn divergence_ens_implied_by_req_over_rejects_partial_implication() {
-    // `result == x` is a genuinely-stronger conjunct of `ens`; the whole `ens`
+    // `result == x` is a stronger conjunct of `ens`; the whole `ens`
     // is therefore not implied by `req` alone (REQ-3 requires every clause).
     let cert = first_cert(
         "fn f(x: u32) -> u32 req x > 0 && x < 10 ens x > 0 ens result == x fx pure { x }",

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-pinned 2026-06-12 — #268 needle exact-match hardening, REQ-7 anchor class: the interactive replay reconstruction's obligation-theorem needle (canonical_theorem_statement + reconstruct_replay, forge/src/engine.rs) is now an EXACT-name match via theorem_anchor_pos, never a prefix — a while-shaped multi-theorem file's thermite_obligation_<item>_entry/_converges siblings can no longer latch the bare contract theorem and drop the 5+2 conjunction; in-module pin added. Prior pin b1c7a995 re-pinned to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state. §4.3 AMENDMENT (#272, 2026-06-12, review item 8): increment (vi) — the EARLY-RETURN widening of the exportable fragment, targeting conformance/binary_search.th — DESIGNED; every REQ-12 row NOT-STARTED behind #272)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes)
+audited-sha: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-pinned 2026-06-12 — #268 needle exact-match hardening, REQ-7 anchor class: the interactive replay reconstruction's obligation-theorem needle (canonical_theorem_statement + reconstruct_replay, forge/src/engine.rs) is now an EXACT-name match via theorem_anchor_pos, never a prefix — a while-shaped multi-theorem file's thermite_obligation_<item>_entry/_converges siblings can no longer latch the bare contract theorem and drop the 5+2 conjunction; in-module pin added. Prior pin b1c7a995 re-pinned to the increment (v-b) build #264 — the while-body Lean exporter: REQ-11.4/11.5/11.7 moved SHIPPED, the §4.2.4 obligation set + the WhileBattery generator-fixed proofs land, count.th certifies L3-via-lean-auto and sum.th is the honest recursive-registry residual; the REQ-status table + the §4.2.4 sub-rows reflect the post-build state. §4.3 AMENDMENT (#272, 2026-06-12, review item 8): increment (vi) — the EARLY-RETURN widening of the exportable fragment, targeting conformance/binary_search.th — DESIGNED; every REQ-12 row NOT-STARTED behind #272)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and
@@ -965,9 +965,11 @@ trait Engine {
   // (a) FRAGMENT — which obligation classes / construct sets this engine can ATTEMPT.
   fn fragment(&self) -> Fragment;                     // a predicate on (ObligationClass, ast_slice)
 
-  // (b) DISCHARGE — the verdict. The mapping discipline is REQ-3.
-  fn discharge(&self, o: &Obligation) -> Verdict;     // Proven(Evidence) | Refuted(Counterexample)
-                                                      //   | Unknown(Reason)
+  // (b) DISCHARGE — the verdict. The mapping discipline is REQ-3. The covenant record
+  //     is a NON-OPTIONAL parameter (stage-1 REQ-4: covenant-before-burn is a type-level
+  //     seam, not a runtime convention; today every program carries CovenantRecord::none).
+  fn discharge(&self, o: &Obligation, covenant: &CovenantRecord) -> Verdict; // Proven(Evidence)
+                                                      //   | Refuted(Counterexample) | Unknown(Reason)
 
   // (c) TRUST PROFILE — the named base ADDED when this engine says Proven.
   fn trust_profile(&self) -> TrustProfile;            // an ENUMERATED set of named trust items

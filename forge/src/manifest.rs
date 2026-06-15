@@ -190,16 +190,40 @@ pub struct ObligationResult {
     /// present only on a failure, rather than a bare "verification failed".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostic: Option<String>,
+    /// (Schema v2, REQ-1/AC-4 — `.design/stage1-forge-tier.md`) The proof engine that
+    /// discharged this clause (e.g. `"lean-auto"`, `"verus"`). Additive: `#[serde(default,
+    /// skip_serializing_if = "Option::is_none")]` (the `engine_attribution` precedent), so
+    /// the v1 golden certs — which omit it — deserialize unchanged and re-serialize
+    /// byte-identically. Populated only on the forge-tier (Lean) cert paths; absent on the
+    /// v1 Verus corpus, whose clauses keep the v1 `status`/`level` representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
+    /// (Schema v2) The named trust base the clause's engine added (the `TrustProfile`
+    /// items — e.g. `{Lean kernel, propext, …, EXP}`). Additive, `skip_serializing_if`
+    /// `Vec::is_empty`, so the v1 goldens (which omit it) stay byte-identical.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub trust: Vec<String>,
+    /// (Schema v2) The cert-level seven-verdict for this clause (the closed forge-tier
+    /// vocabulary [`crate::verdict::CertVerdict`]). Additive, skip-if-none; absent on the
+    /// v1 corpus (whose clauses are recorded by `status`/`level`, the v1 representation),
+    /// so the golden oracle is unperturbed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<crate::verdict::CertVerdict>,
 }
 
 impl ObligationResult {
-    /// A discharged obligation (a verified verus function), summary-only.
+    /// A discharged obligation (a verified verus function), summary-only. The schema-v2
+    /// per-clause block is absent (the v1 representation) — attach it with
+    /// [`ObligationResult::with_clause_attribution`] on the forge-tier paths.
     pub fn discharged(name: impl Into<String>) -> Self {
         ObligationResult {
             name: name.into(),
             status: ObligationStatus::Discharged,
             location: None,
             diagnostic: None,
+            engine: None,
+            trust: Vec::new(),
+            verdict: None,
         }
     }
 
@@ -215,7 +239,27 @@ impl ObligationResult {
             status: ObligationStatus::Failed,
             location,
             diagnostic,
+            engine: None,
+            trust: Vec::new(),
+            verdict: None,
         }
+    }
+
+    /// Attach the schema-v2 per-clause attribution block (REQ-1/AC-4): the engine that
+    /// discharged this clause, its named trust base, and the cert-level verdict. Used by
+    /// the forge-tier (Lean) cert paths ([`crate::check`]); the v1 Verus corpus leaves the
+    /// block absent, so its golden certs stay byte-identical.
+    #[must_use]
+    pub fn with_clause_attribution(
+        mut self,
+        engine: impl Into<String>,
+        trust: Vec<String>,
+        verdict: crate::verdict::CertVerdict,
+    ) -> Self {
+        self.engine = Some(engine.into());
+        self.trust = trust;
+        self.verdict = Some(verdict);
+        self
     }
 }
 
@@ -1129,6 +1173,95 @@ mod tests {
         assert!(
             oracle_eq(&golden, &ours),
             "the golden subset must oracle-match a #5 cert"
+        );
+    }
+
+    // REQ-1 / AC-4 (schema v2 additive — `.design/stage1-forge-tier.md`): the per-clause
+    // `engine`/`trust`/`verdict` fields are additive (`#[serde(default,
+    // skip_serializing_if)]`), so the v1 oracle subset is unperturbed for ALL SEVEN
+    // conformance goldens. The goldens are HAND-AUTHORED stable-subset oracles (R-CHAR-3
+    // — item/level/contract_quality/effects/slag, not full forge-emitted certs), so the
+    // byte-identity claim is verified two ways: (1) NONE of the seven golden FILES carries
+    // any schema-v2 key (`engine`/`trust`/`verdict`) anywhere — they are pristine v1
+    // oracles, untouched by this increment; (2) a v1-shape cert (a Verus-corpus discharged
+    // clause, no per-clause block) SERIALIZES with NO schema-v2 keys (the `skip_serializing_if`
+    // omits the absent fields), so forge's v1 output still matches those goldens byte-for-byte.
+    // A populated block (the forge-tier Lean path) DOES serialize the keys — the field works.
+    #[test]
+    fn schema_v2_additive_leaves_all_seven_goldens_byte_identical() {
+        // Recursively assert no JSON key named `engine`/`trust`/`verdict` appears.
+        fn has_no_schema_v2_key(v: &serde_json::Value) -> bool {
+            match v {
+                serde_json::Value::Object(map) => {
+                    map.keys()
+                        .all(|k| !matches!(k.as_str(), "engine" | "trust" | "verdict"))
+                        && map.values().all(has_no_schema_v2_key)
+                }
+                serde_json::Value::Array(items) => items.iter().all(has_no_schema_v2_key),
+                _ => true,
+            }
+        }
+        let conformance = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join("conformance");
+        let goldens = [
+            "bank_account",
+            "bytes_eq_demo",
+            "map_kv",
+            "option_result",
+            "parse_u64",
+            "shape",
+            "sum",
+        ];
+        for name in goldens {
+            let src = std::fs::read_to_string(conformance.join(format!("{name}.cert.json")))
+                .unwrap_or_else(|e| panic!("read golden {name}: {e}"));
+            let v: serde_json::Value =
+                serde_json::from_str(&src).unwrap_or_else(|e| panic!("parse golden {name}: {e}"));
+            assert!(
+                has_no_schema_v2_key(&v),
+                "golden `{name}` must carry NO schema-v2 per-clause key — it is a pristine \
+                 v1 oracle, unperturbed by the additive fields (AC-4)"
+            );
+        }
+
+        // (2) A v1-shape clause (no per-clause block) serializes with NO schema-v2 keys.
+        let v1 = Certificate::new(
+            "sum",
+            Level::L3,
+            vec!["pure".to_string()],
+            42,
+            vec![ObligationResult::discharged("sum_check::sum")],
+        );
+        let v1_json = serialize(&v1);
+        assert!(
+            !v1_json.contains("\"engine\"")
+                && !v1_json.contains("\"trust\"")
+                && !v1_json.contains("\"verdict\""),
+            "a v1-shape cert must serialize WITHOUT the additive per-clause keys \
+             (skip_serializing_if), so it stays byte-identical to the v1 goldens: {v1_json}"
+        );
+
+        // (3) A populated forge-tier clause DOES serialize the keys (the field is live).
+        let forge_tier = Certificate::new(
+            "isqrt",
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![
+                ObligationResult::discharged("isqrt::ens#0").with_clause_attribution(
+                    "lean-auto",
+                    vec!["Lean kernel".to_string()],
+                    crate::verdict::CertVerdict::Proved,
+                ),
+            ],
+        );
+        let ft_json = serialize(&forge_tier);
+        assert!(
+            ft_json.contains("\"engine\"")
+                && ft_json.contains("\"verdict\"")
+                && ft_json.contains("Proved"),
+            "a populated forge-tier clause must serialize the per-clause block: {ft_json}"
         );
     }
 

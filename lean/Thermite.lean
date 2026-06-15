@@ -89,3 +89,11 @@ import Thermite.SmtDemo
 -- form; the per-item registry-termination obligation discharges it). The exporter
 -- targets the §4 form against these; the four critic pins keep their own local copies.
 import Thermite.Stabilize
+-- The real-relaxation spine (increment 0, REQ-8a; metatheory §7;
+-- `.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT). A single Mathlib-importing ISLAND
+-- (`Thermite.Relax`) carrying the two relax-route soundness lemmas — `rencode_sound`
+-- (the ℤ→ℝ polynomial encoding is a ring hom) and `r_relax_sound` (the real relaxation
+-- discharges the integer clause). Mathlib already enters the build graph via `SmtDemo`,
+-- so this adds no dependency and keeps the core denotation path Mathlib-free; the audit
+-- axiom probe (`scripts/audit.sh` check [1]) is extended to cover both lemmas.
+import Thermite.Relax

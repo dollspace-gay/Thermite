@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: ed7044384b3045d67be85cfbd199578f4a73eccd (re-pinned 2026-06-15: registry-declared status policy, tracker-neutral references, contributors, and generated-region checking landed; RFC #17)
+audited-sha: 3f6783069ff87306d06e9a2f7cac595ac0a57a54 (re-pinned 2026-06-15: registry-declared status policy, tracker-neutral references, contributors, and generated-region checking landed; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

@@ -155,3 +155,45 @@ jobs:
       # partition deterministically, so the union of shards is the full suite.
       - name: cargo nextest run (shard ${{ matrix.shard }}/4)
         run: cargo nextest run --workspace --partition count:${{ matrix.shard }}/4
+
+  # The Lean spine + axiom probe (trust-audit finding F4: until now `lake build` and the
+  # `#print axioms` gate ran only in a local `make audit`, so a commit breaking the Lean
+  # build or a relax-spine lemma acquiring a disallowed axiom would go unseen in CI). This
+  # job runs the SAME shared probe (scripts/lean-axiom-probe.sh) check [1] runs, so local
+  # and CI cannot drift. lean-smt is pinned to a SHA in lean/lakefile.toml, so the build
+  # is reproducible. Mathlib oleans are fetched from the cloud cache (`lake exe cache
+  # get`); the probe builds only the spine modules it imports, not the cvc5-FFI SmtDemo.
+  lean:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -o /tmp/elan-init.sh
+          bash /tmp/elan-init.sh -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean build (.lake)
+        uses: actions/cache@v4
+        with:
+          path: |
+            lean/.lake/packages
+            lean/.lake/build
+          # Keyed on the dep lockfile + toolchain pin: a lean-smt/Mathlib bump or a
+          # toolchain change busts the cache; spine edits reuse it (lake rebuilds only the
+          # changed modules).
+          key: lean-${{ hashFiles('lean/lake-manifest.json', 'lean/lean-toolchain') }}
+          restore-keys: |
+            lean-
+
+      - name: Fetch prebuilt Mathlib cache (oleans)
+        working-directory: lean
+        # Without this the relax island's `import Mathlib.Data.Real.Basic` would compile a
+        # large slice of Mathlib from source (hours). The cache makes it olean loads.
+        run: lake exe cache get
+
+      - name: Lean spine build + axiom probe (lake build + #print axioms gate)
+        run: bash scripts/lean-axiom-probe.sh

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: c5839a92c3fc572ce9b1877f229e73399f3a58ff (re-pinned 2026-06-15: doc-drift/REQ-status lint added to CI + Makefile; `forge/src/main.rs` REQ evidence comment changed only; scaffold behavior unchanged; PR #18)
+audited-sha: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned 2026-06-15: doc-drift/REQ-status lint added to CI + Makefile; `forge/src/main.rs` REQ evidence comment changed only; scaffold behavior unchanged; PR #18)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

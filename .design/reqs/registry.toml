@@ -166,3 +166,126 @@ generated_to = ["status"]
 kind = "issue"
 target = "github:dollspace-gay/Thermite#17"
 note = "RFC tracking the full migration plan"
+
+# ---------------------------------------------------------------------
+# Stage 1 — the forge tier (REQ cluster, .design/stage1-forge-tier.md).
+# The increments landed in this stage: REQ-8a (relax spine lemmas), REQ-1
+# (verdict plumbing), REQ-2 (exporter hardening), all SHIPPED; REQ-4 (covenant)
+# PARTIAL — the foundation signature/record landed, the covenant logic is 2b.
+# The remaining stage-1 clusters (REQ-3 surface syntax, REQ-5 battery, REQ-6
+# anti-Goodhart, REQ-7 goal/fill, REQ-8b relax route, REQ-9 lemma library,
+# REQ-10 gate G1) are not started here and are intentionally not yet registered.
+# ---------------------------------------------------------------------
+
+[[requirement]]
+id = "REQ-S1-8A"
+title = "Real-relaxation spine lemmas"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "verified"
+summary = "The two nlsat real-relaxation soundness lemmas — rencode_sound (the ℤ→ℝ polynomial encoding is a ring hom) and r_relax_sound (the real relaxation discharges the integer clause) — land in a single Mathlib-island module, kernel-clean (axioms ⊆ {propext, Classical.choice, Quot.sound}), with the shared axiom probe extended to both and run in CI (trust-audit finding F4)."
+aliases = ["relax spine lemmas", "r_relax_sound", "rencode_sound", "REQ-8a"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "lean/Thermite/Relax.lean"
+note = "the Mathlib-island module"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "r_relax_sound"
+note = "relaxation soundness lemma"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "rencode_sound"
+note = "real-encoding ring-hom lemma"
+
+[[requirement.evidence]]
+kind = "file"
+target = "scripts/lean-axiom-probe.sh"
+note = "the shared lake-build + #print-axioms gate, run by the Lean CI job and make audit check [1]"
+
+[[requirement]]
+id = "REQ-S1-1"
+title = "Seven-verdict certificate vocabulary"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The closed seven-verdict cert-level enum (CertVerdict: Proved, Counterexample, RealWitness, CovenantRefuted, Stuck, KernelBudget, Timeout) as a SEPARATE type; a total, exhaustive, wildcard-free map from the three-arm engine::Verdict (no Unknown survives into a certificate); the KernelBudget kernel/elaboration-budget discriminator (Q-KBSIGNAL — a distinct Lean signal, never confusable with the solver rlimit text); and the additive schema-v2 per-clause engine/trust/verdict block that keeps the v1 golden oracle byte-identical."
+aliases = ["verdict plumbing", "seven verdicts", "CertVerdict", "REQ-1"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/verdict.rs"
+note = "the cert-level verdict enum + construction sites"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CertVerdict"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "from_engine_verdict"
+note = "the total, exhaustive, wildcard-free map from engine::Verdict"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "is_kernel_budget_signal"
+note = "the Q-KBSIGNAL kernel/elaboration-budget discriminator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "all_seven_variants_round_trip"
+note = "serde round-trip test over all seven variants"
+
+[[requirement]]
+id = "REQ-S1-2"
+title = "Exporter hardening — certify-time axiom gate + correspondence table"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The STANDARD_AXIOM_ALLOWLIST check is hoisted into a shared certify-time step (certify_lean_axioms) run on EVERY Lean discharge path including the auto tiers (previously only the interactive replay checked axioms); and the exporter-surface correspondence table is authored under .design/verified and routed by the doc-drift gate. Inspection-tier — does not close audit finding F3."
+aliases = ["exporter hardening", "axiom-gate hoist", "correspondence table", "REQ-2"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "certify_lean_axioms"
+note = "the shared certify-time axiom gate, run on every Lean discharge path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "STANDARD_AXIOM_ALLOWLIST"
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/verified/exporter-surface-correspondence.md"
+note = "the inspection-tier exporter-surface correspondence table"
+
+[[requirement]]
+id = "REQ-S1-4"
+title = "Covenant engine — discharge signature + record"
+owner = ".design/stage1-forge-tier.md"
+status = "partial"
+scope = "forge"
+summary = "The foundation lands the CovenantRecord type and the non-optional &CovenantRecord parameter on Engine::discharge, threaded through VerusEngine, LeanEngine, and every call site (covenant-before-burn as a type-level seam, not a runtime convention), plus the CovenantRefuted Counterexample-class hard-fail arm in the degrade ladder."
+remaining_scope = "The covenant LOGIC is increment 2b: inhabit witnesses type-checked + executed against req, the falsify generator run (Q3 fixed-seed 50_000) against the executable semantics, the covenant-before-burn enforcement, and the CovenantRefuted producer. Today every program carries CovenantRecord::none() — the witness surface syntax is REQ-3, not yet present."
+aliases = ["covenant engine", "covenant-before-burn", "REQ-4"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/covenant.rs"
+note = "the CovenantRecord type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CovenantRecord"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CovenantRefuted"
+note = "the Counterexample-class hard-fail ladder arm (degrade.rs)"

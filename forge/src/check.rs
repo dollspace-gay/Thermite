@@ -97,6 +97,7 @@ use thermite_syntax::{Item, Program};
 
 use crate::cache;
 use crate::cli::ForgeError;
+use crate::covenant::CovenantRecord;
 use crate::manifest::{effects_of, Certificate, Level, ObligationResult, RejectReason};
 use crate::profile::{self, SolverProfile};
 
@@ -840,7 +841,7 @@ fn lean_engine_cert(
             // (REQ-5) fires only if Verus witnessed a refutation (Refuted) and Lean
             // proves — the real-unsoundness case. A Verus Unknown/timeout + a Lean
             // Proven is benign (Verus could not decide).
-            let lean_verdict = lean.discharge(obligation);
+            let lean_verdict = lean.discharge(obligation, &CovenantRecord::none());
             if let Err(disagreement) = crate::engine::check_disagreement(
                 &obligation.item,
                 EngineName::Verus,
@@ -861,7 +862,7 @@ fn lean_engine_cert(
             // LeanEngine only: discharge the item by Lean. Tier-(c) → interactive
             // replay; auto tiers → live lake; non-exportable → a skip.
             let (verdict, interactive) = if lean.admits_auto(obligation) {
-                (lean.discharge(obligation), false)
+                (lean.discharge(obligation, &CovenantRecord::none()), false)
             } else {
                 // Not auto-exportable: try the interactive (tier-c) replay path; a
                 // non-tier-c non-exportable item is an Unverifiable skip. An
@@ -937,6 +938,11 @@ fn lean_proven_cert(
     mutation_floor: f64,
 ) -> Certificate {
     let attribution = crate::engine::attribution_for(lean);
+    // Schema-v2 per-clause block (REQ-1/AC-4): a Lean-discharged clause records its
+    // engine, named trust base, and the cert-level verdict (`Proved` — this function is
+    // reached ONLY on a Lean `Verdict::Proven`). This is a forge-tier path, never the v1
+    // Verus corpus, so the v1 golden certs stay byte-identical (their clauses carry no
+    // per-clause block).
     let cert = Certificate::new(
         &base.item,
         Level::L3,
@@ -945,6 +951,11 @@ fn lean_proven_cert(
         vec![crate::manifest::ObligationResult::discharged(
             "discharged by the Lean engine (kernel-accepted; the smaller trusted base \
              {Lean kernel + 3 axioms, EXP} — proof-backends REQ-4)",
+        )
+        .with_clause_attribution(
+            attribution.engine.clone(),
+            attribution.trust_profile.clone(),
+            crate::verdict::CertVerdict::Proved,
         )],
     )
     .graduate_triage_clean()
@@ -1008,6 +1019,11 @@ fn lean_interactive_proven_cert(
         vec![crate::manifest::ObligationResult::discharged(
             "discharged by an INTERACTIVE Lean proof (kernel-accepted, sorry-free replay; \
              the trusted base adds the reviewed proof author — proof-backends REQ-7(ii))",
+        )
+        .with_clause_attribution(
+            attribution.engine.clone(),
+            attribution.trust_profile.clone(),
+            crate::verdict::CertVerdict::Proved,
         )],
     )
     .graduate_triage_clean()
@@ -1061,7 +1077,7 @@ fn lean_mutation_score(
         // (REQ-9: a non-admitted mutant is "untested against lean", never a kill).
         let admitted = mutant_engine.admits_auto(&obligation);
         let verdict = if admitted {
-            mutant_engine.discharge(&obligation)
+            mutant_engine.discharge(&obligation, &CovenantRecord::none())
         } else {
             // Not attempted (the fragment does not admit it) — a placeholder Unknown;
             // `lean_mutant_outcome` maps `admitted = false` to UntestedAgainstLean
@@ -1107,6 +1123,15 @@ fn lean_unverifiable_cert(base: &Certificate, reason: &crate::engine::Reason) ->
             d.clone()
         }
     };
+    // Classify the non-discharge through the cert-level vocabulary (REQ-1/AC-1): a Lean
+    // elaboration/kernel-budget exhaustion is `KernelBudget` (produced UPSTREAM via the
+    // textually-distinct signal in the reason detail, Q-KBSIGNAL), never mis-labelled a
+    // solver `Timeout`. The classification is recorded in the reject reason so the skip
+    // is honestly attributed (a budget exhaustion vs a plain unverifiable skip).
+    let cert_verdict = crate::verdict::cert_verdict_for_lean(
+        &detail,
+        &crate::engine::Verdict::Unknown(reason.clone()),
+    );
     Certificate::rejected(
         &base.item,
         base.effects.clone(),
@@ -1114,9 +1139,10 @@ fn lean_unverifiable_cert(base: &Certificate, reason: &crate::engine::Reason) ->
         crate::manifest::RejectReason {
             cause: "LeanUnverifiable".to_string(),
             detail: format!(
-                "the Lean engine could not discharge this item (not exportable / not \
-                 auto-dischargeable / interactive-only — an honest skip under --engine lean): \
-                 {detail}"
+                "the Lean engine could not discharge this item [{}] (not exportable / not \
+                 auto-dischargeable / interactive-only / budget-exhausted — an honest skip \
+                 under --engine lean): {detail}",
+                cert_verdict.kind()
             ),
         },
     )
@@ -3089,7 +3115,7 @@ fn ladder_for_timeout(
     let verdict = if engine.fragment().admits(obligation) {
         engine.verdict_of(outcome, evidence_key)
     } else {
-        engine.discharge(obligation)
+        engine.discharge(obligation, &CovenantRecord::none())
     };
     // REQ-2(c) trust profile: the named base this engine would add on a `Proven`
     // (the §1 enumerable trusted base). Folded into the degrade-reason detail on an

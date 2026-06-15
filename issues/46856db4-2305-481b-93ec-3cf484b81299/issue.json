@@ -6,5 +6,8 @@
   "priority": "high",
   "created_by": "dX10",
   "created_at": "2026-06-15T15:37:35.046193Z",
-  "updated_at": "2026-06-15T15:37:35.046193Z"
+  "updated_at": "2026-06-15T15:37:37.270586Z",
+  "labels": [
+    "rust"
+  ]
 }

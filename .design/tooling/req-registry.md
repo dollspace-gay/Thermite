@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5cd3e79f2de0f4d7d854e6b7055750f101b5dd9c (initial RFC #17 design branch pin; re-pin after first implementation commit)
+audited-sha: 4b05c3a33d47665145fb2739d7d7cf00cd39d96d (re-pinned 2026-06-15: schema v1 registry, generated status view, validator/generator, routes, Makefile, and CI gate landed; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

@@ -38,7 +38,7 @@ independent (may land first) → 9 trails → 10 gate.** Mapped to committable u
 
 | # | increment | REQs | primary files (all exist today) | self-verify |
 |---|---|---|---|---|
-| **0** | relax spine lemmas (independent, can land first) | REQ-8a | new Mathlib-island module under `lean/Thermite/` (`r_relax_sound`, `rencode_sound`); axiom probe `[1′]` extended | `lake build` green; `make audit` axiom probe covers both lemmas |
+| **0** | relax spine lemmas (independent, can land first) | REQ-8a | new Mathlib-island module under `lean/Thermite/` (`r_relax_sound`, `rencode_sound`); axiom probe `[1′]` extended; **+ a Lean-CI job (`lake build` + axiom probe) and lean-smt pinned to a SHA** (audit F4 prereq) | `lake build` green; `make audit` axiom probe covers both lemmas; the new probe runs in CI, not just locally |
 | **1** | **foundation** (gates the rest) | REQ-1, REQ-2, + the REQ-4 `Engine`-signature change | **Q-KBSIGNAL signal probe first**; new *separate cert-level* seven-verdict enum (4 verdicts produced upstream, not mapped from `engine::Verdict`); `Engine::discharge` gains the non-optional covenant param (touch all call sites once); axiom-gate hoist to all Lean tiers; correspondence table + repoint the *existing* doc-drift route | full gauntlet + **`oracle_subset` byte-identical on all 7 `conformance/*.cert.json`** (AC-4) |
 | **2a** | surface syntax | REQ-3 | `thermite-syntax/src/{parser,address}.rs` (new items beside `fn`; `?pN` holes; proof addresses) | `cargo test -p thermite-syntax`; AST + address round-trips |
 | **2b** | covenant engine | REQ-4 | covenant *logic* on the foundation-threaded discharge param: `inhabit` type-check+execute against `req`, `falsify` via `thermite-tv/src/gen.rs` (Q3 50k fixed seed), `CovenantRefuted` hard-fail in `forge/src/degrade.rs` | `cargo test -p forge`; structural no-witness→no-proof-search test |
@@ -138,6 +138,16 @@ signature ripple, REQ-6a/b re-elaboration (perf: ≤64 re-typechecks/item within
 the 30s budget — verify early), REQ-6c definition-tower instrumentation, REQ-8b/8c
 nlsat + integrality, REQ-9 lemma-library schema expansion.
 
+**Audit reconciliation (2026-06-15).** The historical trust-audit (baseline
+`93d3cbc0`; preserved as the `trust-audit-93d3cbc0` knowledge page) was
+reconciled against HEAD. Stage-1-relevant live items folded in above: **F4**
+(Lean spine not in CI; lean-smt on a branch) → increment-0 prerequisite;
+**F5b/F9** (README overstates `forge check` / coverage) → G1 headline must split
+by regime; **F3** (correspondence still inspection-tier, no mechanized extraction
+bridge) → REQ-2's new table stays inspection-tier, does not close F3. **F2**
+(negative-div / out-of-range-cast pins) is orthogonal — the `relaxable` check
+already excludes div/mod/casts. Addressed since the audit: F1, F5a, F6, F8, F10.
+
 ## Recommended execution
 
 Stage 1 is one coherent feature gated by G1, but it is large and high-risk, so
@@ -170,7 +180,11 @@ between increments, PR when (at least the foundation, ideally) G1 is green.
   regressions.
 - [ ] Exporter re-inspection correspondence table merged + routed by the
   doc-drift gate.
-- [ ] README/docs headline updated (gate-time).
+- [ ] README/docs headline updated (gate-time) — and, per audit F5b/F9, the
+  flip **splits claims by regime** (fragment-covered = kernel + per-run TV vs
+  fragment-external = Verus-only, lowering by inspection) and separates
+  `forge check` from the faithfulness (TV) leg. The new "out-of-cage escalates
+  to the forge" claim lands honestly, not on top of the existing overstatement.
 
 ## Context already landed (do not redo)
 

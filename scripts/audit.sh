@@ -168,21 +168,16 @@ echo
 # -----------------------------------------------------------------------------
 bold "[1/5] THE UNIVERSAL THEOREM — re-verified by YOUR Lean kernel"
 note "Re-builds the Lean proof spine from source, then \`#print axioms\` the five"
-note "load-bearing theorems and PARSES each axiom list. PASS iff every list is a"
-note "subset of {propext, Classical.choice, Quot.sound} — no sorryAx, no custom axiom."
+note "load-bearing theorems PLUS the two relax-route spine lemmas (r_relax_sound,"
+note "rencode_sound) and PARSES each axiom list. PASS iff every list is a subset of"
+note "{propext, Classical.choice, Quot.sound} — no sorryAx, no custom axiom."
+note "The build + parse is the SHARED scripts/lean-axiom-probe.sh — the same probe the"
+note "Lean CI job runs (trust-audit F4), so local and CI cannot drift in what they check."
 
 # detect elan/lake
 LAKE=""
 if [ -x "$HOME/.elan/bin/lake" ]; then LAKE="$HOME/.elan/bin/lake"
 elif command -v lake >/dev/null 2>&1; then LAKE="$(command -v lake)"; fi
-
-THEOREMS=(
-  "Thermite.lowering_faithful"
-  "Thermite.ref_sound"
-  "Thermite.Exec.exec_ref_sound"
-  "Thermite.Exec.body_ref_sound"
-  "Thermite.Exec.while_rule"
-)
 
 if [ -z "$LAKE" ]; then
   skip "elan/lake not found (looked in ~/.elan/bin and PATH)."
@@ -193,61 +188,22 @@ if [ -z "$LAKE" ]; then
 else
   export PATH="$(dirname "$LAKE"):$PATH"
   echo "      lake : $LAKE   (building lean/ from source — this is the slow part)"
-  if ( cd "$ROOT/lean" && "$LAKE" build ) >"$TMP/lake_build.log" 2>&1; then
-    pass "lake build succeeded (the Lean spine compiled from source on your toolchain)"
-    # generate the #print axioms probe
-    PROBE="$TMP/axprobe.lean"
-    {
-      echo "import Thermite.Faithfulness"
-      echo "import Thermite.Soundness"
-      echo "import Thermite.Exec"
-      echo "import Thermite.Exec.Stmt"
-      echo "import Thermite.Exec.Loop"
-      for t in "${THEOREMS[@]}"; do echo "#print axioms $t"; done
-    } > "$PROBE"
-    AX_OUT="$( ( cd "$ROOT/lean" && "$LAKE" env lean "$PROBE" ) 2>&1 )"; AX_RC=$?
-    if [ "$AX_RC" -ne 0 ]; then
-      fail "the axiom probe failed to elaborate (lake env lean exited $AX_RC)"
-      echo "$AX_OUT" | tail -10 | sed 's/^/      /'
-      RC=1
-    else
-      ALLOWED="propext Classical.choice Quot.sound"
-      THM_FAIL=0
-      for t in "${THEOREMS[@]}"; do
-        line="$(echo "$AX_OUT" | grep -F "'$t'")"
-        if [ -z "$line" ]; then
-          fail "$t — no axiom line emitted (theorem missing or renamed?)"; THM_FAIL=1; continue
-        fi
-        # extract the bracketed axiom list, split on commas, check each name ⊆ ALLOWED
-        axlist="$(printf '%s' "$line" | sed -n 's/.*\[\(.*\)\].*/\1/p' | tr ',' '\n' | sed 's/[[:space:]]//g')"
-        bad=""
-        while IFS= read -r ax; do
-          [ -z "$ax" ] && continue
-          case " $ALLOWED " in
-            *" $ax "*) : ;;
-            *) bad="$bad $ax" ;;
-          esac
-        done <<< "$axlist"
-        if [ -n "$bad" ]; then
-          fail "$t — DISALLOWED axiom(s):$bad  (sorryAx or a custom axiom = the proof is NOT kernel-clean)"
-          THM_FAIL=1
-        else
-          pass "$t — axioms ⊆ {propext, Classical.choice, Quot.sound}"
-        fi
-      done
-      if [ "$THM_FAIL" -eq 0 ]; then
-        note "MEANING: the ∀-programs faithfulness theorem (lowering_faithful), its three"
-        note "T1 soundness pillars (ref_sound / exec_ref_sound / body_ref_sound) and the"
-        note "loop WHILE-RULE (while_rule) were re-verified by YOUR Lean kernel just now."
-        note "Trust does NOT include our claim of having proven them — you re-checked it."
-      else
-        RC=1
-      fi
-    fi
+  # Delegate the build + #print-axioms parse to the shared probe (single source of truth
+  # with the Lean CI job). It prints PASS/FAIL per theorem; map its exit into RC.
+  if bash "$ROOT/scripts/lean-axiom-probe.sh"; then
+    note "MEANING: the ∀-programs faithfulness theorem (lowering_faithful), its three"
+    note "T1 soundness pillars (ref_sound / exec_ref_sound / body_ref_sound), the loop"
+    note "WHILE-RULE (while_rule), and the two relax-route spine lemmas (r_relax_sound /"
+    note "rencode_sound) were re-verified by YOUR Lean kernel just now."
+    note "Trust does NOT include our claim of having proven them — you re-checked it."
   else
-    fail "lake build FAILED — the Lean spine did not compile on your toolchain"
-    tail -12 "$TMP/lake_build.log" | sed 's/^/      /'
-    note "CONSEQUENCE: the universal theorem was NOT re-derived locally."
+    probe_rc=$?
+    if [ "$probe_rc" -eq 2 ]; then
+      fail "the Lean spine did not build / the probe could not elaborate (see above)."
+      note "CONSEQUENCE: the universal theorem was NOT re-derived locally."
+    else
+      fail "a probed theorem carries a DISALLOWED axiom (see the FAIL line above)."
+    fi
     RC=1
   fi
 fi

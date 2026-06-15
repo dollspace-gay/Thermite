@@ -1,15 +1,45 @@
 # Canonical Thermite REQ registry.
 #
-# Schema v1 is intentionally small: stable IDs, one owner, accepted status enum,
-# typed evidence, and named generated views. Free-form source-comment status rows
-# remain legacy input until they are migrated into this registry.
+# Schema v1 is intentionally small: stable IDs, one owner, registry-declared
+# status policy, typed evidence, tracker-neutral references, and named generated
+# views. Free-form source-comment status rows remain legacy input until they are
+# migrated into this registry.
 
 schema_version = 1
+
+[[status]]
+name = "shipped"
+final = true
+required_evidence_any = ["file", "symbol", "test"]
+
+[[status]]
+name = "partial"
+final = false
+required_evidence_any = ["file", "symbol", "test"]
+requires_remaining_scope = true
+
+[[status]]
+name = "blocked"
+final = false
+requires_blocker = true
+requires_remaining_scope = true
+
+[[status]]
+name = "deferred"
+final = false
+requires_remaining_scope = true
+
+[[status]]
+name = "not_started"
+final = false
+requires_remaining_scope = true
 
 [[view]]
 name = "status"
 path = ".design/reqs/status.md"
 kind = "full_inventory"
+mode = "region"
+region = "status"
 title = "Canonical REQ Status Inventory"
 
 [[requirement]]
@@ -19,6 +49,7 @@ owner = ".design/tooling/req-registry.md"
 status = "shipped"
 scope = "tooling"
 summary = "Each canonical requirement has a stable ID, title, owner, status, scope, generated view membership, and typed evidence."
+aliases = ["registry identity", "REQ status registry identity"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -33,22 +64,22 @@ note = "governing design contract"
 
 [[requirement]]
 id = "REQ-REG-2"
-title = "Accepted status enum"
+title = "Registry-declared status policy"
 owner = "tooling/req-registry.py"
 status = "shipped"
 scope = "tooling"
-summary = "Registry statuses are closed over shipped, not_started, partial, blocked, and deferred."
+summary = "Registry statuses are declared by the registry, not hard-coded by the checker."
 generated_to = ["status"]
 
 [[requirement.evidence]]
 kind = "symbol"
-target = "VALID_STATUSES"
-note = "validator enum"
+target = "StatusRule"
+note = "status policy model"
 
 [[requirement.evidence]]
 kind = "test"
 target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_rejects_unknown_status"
-note = "oracle for closed enum behavior"
+note = "requirements may only use declared statuses"
 
 [[requirement]]
 id = "REQ-REG-3"
@@ -106,7 +137,8 @@ status = "partial"
 scope = "tooling"
 summary = "The existing source-comment lint remains as a bridge while repeated `//!` REQ rows are mapped to stable registry IDs."
 remaining_scope = "Migrate the 429 legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
-blockers = ["#17"]
+contributors = ["tooling/req-registry.py"]
+blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -127,10 +159,10 @@ status = "deferred"
 scope = "tooling"
 summary = "Source comments should eventually carry stable invariants only; volatile status tables should be generated or linked from canonical status views."
 remaining_scope = "Define generated-region markers and migrate source comments doc-by-doc after stable ID mapping is reviewed."
-blockers = ["#17"]
+blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
 kind = "issue"
-target = "#17"
+target = "github:dollspace-gay/Thermite#17"
 note = "RFC tracking the full migration plan"

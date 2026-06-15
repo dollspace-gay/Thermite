@@ -29,9 +29,12 @@ keywords do not prove that a blocker exists or owns the work.
 This component introduces the next layer: a canonical machine-readable registry
 under `.design/reqs/registry.toml`, a validator/generator at
 `tooling/req-registry.py`, and generated status views such as
-`.design/reqs/status.md`. Source comments should keep stable invariants and
-non-obvious mechanisms; volatile status, evidence, blockers, and migration state
-belong in registry data and generated views.
+`.design/reqs/status.md`. The registry is deliberately harness-neutral: git plus
+a TOML parser is enough to read and check the offline contract, and live tracker
+or CI integrations can be thin adapters over the same file. Source comments
+should keep stable invariants and non-obvious mechanisms; volatile status,
+evidence, blockers, and migration state belong in registry data and generated
+views.
 
 ## Design Decisions
 
@@ -41,15 +44,25 @@ belong in registry data and generated views.
 2. **Stable IDs are the identity.** Requirement titles can change; IDs must not.
    Aliases are metadata only. Conflict detection should key on `id`, not prose.
 3. **One owner, many contributors.** Every requirement has one owner field: the
-   doc/module accountable for status. Evidence can point to any number of files,
-   tests, symbols, commands, or issues.
+   doc/module accountable for status. Optional contributors can be listed, and
+   evidence can point to any number of files, tests, symbols, commands, docs, or
+   tracker references. Other modules reference the owner's entry by ID; they do
+   not restate status.
 4. **Typed evidence, not proof by prose.** Evidence has a `kind` and `target`.
    `file`, `doc`, and `test` targets must resolve as paths; `symbol` targets
-   must resolve in repo text; `issue` targets must use a parseable issue ref;
-   `command` targets are recorded but not executed by this gate.
-5. **Generated output is checked, not trusted by convention.** CI runs the
-   registry with `--check`; generated views must match renderer output exactly.
-6. **Legacy comment rows are bridged, not bulk-converted blindly.** The existing
+   must resolve in repo text; `issue` targets use tracker-neutral references
+   (`github:owner/repo#N`, `crosslink:144`, `req:REQ-ID`, or a URI); `command`
+   targets are recorded but not executed by this gate.
+5. **Status policy is registry-declared.** The checker does not hard-code
+   Thermite's status vocabulary. Top-level `[[status]]` records declare accepted
+   status names and their generic validation rules: required evidence kind sets,
+   blocker requirements, and remaining-scope requirements.
+6. **Generated output is checked, not trusted by convention.** CI runs the
+   registry with `--check`; generated regions must match renderer output
+   exactly. Generated tables live inside marked
+   `<!-- generated:reqs view=... -->` blocks so surrounding prose can remain
+   hand-authored.
+7. **Legacy comment rows are bridged, not bulk-converted blindly.** The existing
    429 source-comment rows need a reviewed stable-ID mapping. Until that lands,
    `req-status.py` remains as the contradiction tripwire.
 
@@ -58,14 +71,28 @@ belong in registry data and generated views.
 Top-level fields:
 
 - `schema_version = 1`
+- `[[status]]`: project-declared status policy
 - `[[view]]`: generated output target
 - `[[requirement]]`: canonical requirement record
+
+Status fields:
+
+- `name`: accepted status token
+- `final`: whether the status represents completed work
+- `required_evidence_any`: optional evidence-kind set; at least one listed kind
+  must appear on requirements with this status
+- `requires_blocker`: whether requirements with this status need at least one
+  blocker reference
+- `requires_remaining_scope`: whether requirements with this status need
+  `remaining_scope`
 
 View fields:
 
 - `name`: stable view name referenced by requirements
 - `path`: generated markdown path, under `.design/`
 - `kind`: currently `full_inventory`
+- `mode`: `file` or `region`
+- `region`: generated-region name when `mode = "region"`
 - `title`: optional generated document title
 
 Requirement fields:
@@ -73,13 +100,14 @@ Requirement fields:
 - `id`: stable `REQ-*` token
 - `title`: human-readable name
 - `owner`: accountable doc/module/path
-- `status`: one of `shipped`, `not_started`, `partial`, `blocked`, `deferred`
+- `status`: one of the names declared in top-level `[[status]]` records
 - `scope`: area such as `tooling`, `forge`, `syntax`, `verified`, or `basis`
 - `summary`: short prose summary
-- `remaining_scope`: required for `partial`; required for future statuses unless
-  blockers alone explain the remaining work
+- `remaining_scope`: required when the status policy says so
 - `aliases`: optional old names or source-comment labels
-- `blockers`: issue refs such as `#17`; required for `blocked`
+- `contributors`: optional related files/docs/modules that contribute evidence
+- `blockers`: tracker-neutral refs such as `github:dollspace-gay/Thermite#17`,
+  `crosslink:144`, `req:REQ-REG-6`, or a URI
 - `generated_to`: named views that should include the requirement
 - `[[requirement.evidence]]`: typed evidence entries
 
@@ -89,19 +117,24 @@ Evidence fields:
 - `target`: path, symbol, issue ref, or command string depending on kind
 - `note`: optional human context
 
+Tracker references are structurally checked offline. A live adapter may later
+resolve open/closed state for a specific tracker, but no tracker credentials are
+required for the default gate to pass.
+
 ## Requirements
 
 - **REQ-REG-1 (stable requirement identity and ownership):** every canonical row
   has a stable ID, title, owner, status, scope, generated-view membership, and
   typed evidence.
-- **REQ-REG-2 (accepted status enum):** the status vocabulary is closed over
-  `shipped`, `not_started`, `partial`, `blocked`, and `deferred`.
+- **REQ-REG-2 (registry-declared status policy):** the status vocabulary and
+  per-status validation requirements are declared in registry data, not hard-coded
+  by the checker.
 - **REQ-REG-3 (typed evidence validation):** evidence references are mechanically
   checked at the level this gate can honestly validate: path existence, symbol
-  occurrence, issue-ref shape, and blocker shape.
-- **REQ-REG-4 (generated status views):** generated markdown views are rendered
-  deterministically from the registry and CI fails when checked-in output is
-  stale.
+  occurrence, tracker-neutral ref shape, and `req:` blocker resolution.
+- **REQ-REG-4 (generated status regions):** generated markdown views are rendered
+  deterministically from the registry into marked regions, and CI fails when
+  checked-in output is stale.
 - **REQ-REG-5 (legacy source-comment bridge):** `tooling/req-status.py` remains
   active until the repeated source-comment status rows are mapped to stable IDs.
 - **REQ-REG-6 (generated-region migration):** replacing hand-maintained source
@@ -111,11 +144,13 @@ Evidence fields:
 ## Acceptance Criteria
 
 - AC-1: a duplicate requirement ID fails validation.
-- AC-2: an unknown status fails validation.
-- AC-3: a shipped requirement without file/symbol/test evidence fails validation.
+- AC-2: an undeclared status fails validation.
+- AC-3: a requirement whose status declares `required_evidence_any` fails without
+  at least one matching evidence kind.
 - AC-4: unresolved `file`, `doc`, or `test` evidence fails validation.
-- AC-5: `blocked` requirements without issue-shaped blockers fail validation.
-- AC-6: `--check` fails when a generated view differs from renderer output.
+- AC-5: statuses declaring `requires_blocker` fail without a structurally valid
+  blocker; `req:REQ-ID` blockers must resolve to a known registry ID.
+- AC-6: `--check` fails when a generated region differs from renderer output.
 - AC-7: `--write` rewrites the generated view deterministically.
 - AC-8: `python3 tooling/req-registry.py --check` is wired into Makefile and CI.
 
@@ -133,7 +168,7 @@ Evidence fields:
 
 This registry does not prove semantic adequacy. A symbol can exist without being
 the right symbol; a command can be recorded without being executed by this gate;
-an issue ref can be parseable without being open. Those checks require later
-integration with Rust item indexing, CI job metadata, or the GitHub API. Schema
-v1 deliberately keeps those as explicit future hardening points rather than
-pretending string validation is proof.
+a tracker ref can be parseable without being open. Those checks require later
+integration with Rust item indexing, CI job metadata, or tracker adapters.
+Schema v1 deliberately keeps those as explicit future hardening points rather
+than pretending string validation is proof.

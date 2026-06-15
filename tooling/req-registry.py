@@ -4,9 +4,9 @@ Canonical REQ registry validator and generated-view writer.
 
 The short-term `req-status.py` gate scans repeated source-comment tables for
 obvious contradictions. This tool is the next layer: a single machine-readable
-registry with stable IDs, explicit owners, accepted statuses, and typed
-evidence. Generated status views come from the registry; hand-written comment
-tables are legacy input until they are migrated.
+registry with stable IDs, explicit owners, registry-declared status policy, and
+typed evidence. Generated status views come from the registry; hand-written
+comment tables are legacy input until they are migrated.
 
 Usage:
 
@@ -33,14 +33,6 @@ except ImportError:  # pragma: no cover
 REGISTRY_RELPATH = ".design/reqs/registry.toml"
 SCHEMA_VERSION = 1
 
-VALID_STATUSES = {
-    "shipped",
-    "not_started",
-    "partial",
-    "blocked",
-    "deferred",
-}
-
 VALID_EVIDENCE_KINDS = {
     "file",
     "symbol",
@@ -51,8 +43,6 @@ VALID_EVIDENCE_KINDS = {
 }
 
 PATH_EVIDENCE_KINDS = {"file", "test", "doc"}
-SHIPPED_PROOF_KINDS = {"file", "symbol", "test"}
-FUTURE_STATUSES = {"not_started", "blocked", "deferred"}
 SOURCE_SUFFIXES = {
     ".rs",
     ".lean",
@@ -67,7 +57,10 @@ SOURCE_SUFFIXES = {
 }
 SKIP_DIRS = {".git", ".pytest_cache", "target", ".lake", "__pycache__"}
 ID_RE = re.compile(r"^REQ-[A-Z0-9][A-Z0-9_.-]*$")
-ISSUE_RE = re.compile(r"^(#\d+|https://github\.com/[^/]+/[^/]+/issues/\d+)$")
+STATUS_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+URI_RE = re.compile(r"^[a-z][a-z0-9+.-]*://\S+$", re.IGNORECASE)
+TRACKER_REF_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*:\S+$")
+GITHUB_REF_RE = re.compile(r"^github:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#\d+$")
 
 
 class EnvironmentError3(Exception):
@@ -82,6 +75,15 @@ class Evidence:
 
 
 @dataclass(frozen=True)
+class StatusRule:
+    name: str
+    final: bool
+    required_evidence_any: list[str]
+    requires_blocker: bool
+    requires_remaining_scope: bool
+
+
+@dataclass(frozen=True)
 class Requirement:
     id: str
     title: str
@@ -91,6 +93,7 @@ class Requirement:
     summary: str
     remaining_scope: str
     aliases: list[str]
+    contributors: list[str]
     blockers: list[str]
     generated_to: list[str]
     evidence: list[Evidence]
@@ -102,6 +105,8 @@ class View:
     path: str
     kind: str
     title: str
+    mode: str
+    region: str
 
 
 @dataclass(frozen=True)
@@ -112,9 +117,19 @@ class Issue:
 
 
 @dataclass(frozen=True)
+class RenderedView:
+    path: str
+    name: str
+    mode: str
+    title: str
+    text: str
+
+
+@dataclass(frozen=True)
 class Registry:
     path: str
     schema_version: int | None
+    statuses: list[StatusRule]
     views: list[View]
     requirements: list[Requirement]
     parse_issues: list[Issue]
@@ -164,6 +179,27 @@ def symbol_exists(haystack: str, target: str) -> bool:
     return False
 
 
+def reference_detail(ref: str, req_ids: set[str]) -> str | None:
+    """Return None when a tracker/URI/REQ reference resolves structurally."""
+    if not ref:
+        return "reference is empty"
+    if ref.startswith("req:"):
+        req_id = ref.removeprefix("req:")
+        if req_id in req_ids:
+            return None
+        return f"requirement reference does not resolve: {ref}"
+    if GITHUB_REF_RE.match(ref):
+        return None
+    if URI_RE.match(ref):
+        return None
+    if TRACKER_REF_RE.match(ref):
+        return None
+    return (
+        f"reference `{ref}` must be a URI, tracker:id, "
+        "github:owner/repo#N, or req:REQ-ID"
+    )
+
+
 def _as_str(raw: dict, field: str, item: str, issues: list[Issue]) -> str:
     value = raw.get(field)
     if not isinstance(value, str) or not value.strip():
@@ -198,6 +234,21 @@ def _list_of_str(raw: dict, field: str, item: str, issues: list[Issue]) -> list[
     return [v.strip() for v in value if v.strip()]
 
 
+def _bool_field(
+    raw: dict,
+    field: str,
+    item: str,
+    issues: list[Issue],
+    *,
+    default: bool,
+) -> bool:
+    value = raw.get(field, default)
+    if not isinstance(value, bool):
+        issues.append(Issue("BAD-FIELD", item, f"`{field}` must be a boolean"))
+        return default
+    return value
+
+
 def parse_evidence(raw_req: dict, item: str, issues: list[Issue]) -> list[Evidence]:
     raw_items = raw_req.get("evidence", [])
     if raw_items is None:
@@ -221,6 +272,40 @@ def parse_evidence(raw_req: dict, item: str, issues: list[Issue]) -> list[Eviden
     return evidence
 
 
+def parse_statuses(raw: dict, item: str, issues: list[Issue]) -> list[StatusRule]:
+    raw_statuses = raw.get("status", [])
+    if not isinstance(raw_statuses, list):
+        issues.append(Issue("BAD-FIELD", item, "`status` must be a list of tables"))
+        return []
+
+    statuses: list[StatusRule] = []
+    for i, raw_status in enumerate(raw_statuses):
+        status_item = f"status[{i}]"
+        if not isinstance(raw_status, dict):
+            issues.append(Issue("BAD-FIELD", status_item, "status entry must be a table"))
+            continue
+        statuses.append(
+            StatusRule(
+                name=_as_str(raw_status, "name", status_item, issues),
+                final=_bool_field(raw_status, "final", status_item, issues, default=False),
+                required_evidence_any=_list_of_str(
+                    raw_status, "required_evidence_any", status_item, issues
+                ),
+                requires_blocker=_bool_field(
+                    raw_status, "requires_blocker", status_item, issues, default=False
+                ),
+                requires_remaining_scope=_bool_field(
+                    raw_status,
+                    "requires_remaining_scope",
+                    status_item,
+                    issues,
+                    default=False,
+                ),
+            )
+        )
+    return statuses
+
+
 def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
     if tomllib is None:
         raise EnvironmentError3("tomllib is unavailable (Python < 3.11)")
@@ -230,6 +315,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
         return Registry(
             relpath,
             None,
+            [],
             [],
             [],
             [Issue("MISSING-REGISTRY", relpath, "registry file does not exist")],
@@ -243,6 +329,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
             None,
             [],
             [],
+            [],
             [Issue("INVALID-TOML", relpath, str(exc))],
         )
     except OSError as exc:
@@ -254,6 +341,8 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
         issues.append(
             Issue("BAD-SCHEMA", relpath, "`schema_version` must be integer 1")
         )
+
+    statuses = parse_statuses(raw, relpath, issues)
 
     views: list[View] = []
     raw_views = raw.get("view", [])
@@ -271,6 +360,8 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
                 path=_as_str(raw_view, "path", item, issues),
                 kind=_as_str(raw_view, "kind", item, issues),
                 title=_optional_str(raw_view, "title", item, issues),
+                mode=_optional_str(raw_view, "mode", item, issues) or "file",
+                region=_optional_str(raw_view, "region", item, issues),
             )
         )
 
@@ -298,13 +389,14 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
                 summary=_optional_str(raw_req, "summary", req_item, issues),
                 remaining_scope=_optional_str(raw_req, "remaining_scope", req_item, issues),
                 aliases=_list_of_str(raw_req, "aliases", req_item, issues),
+                contributors=_list_of_str(raw_req, "contributors", req_item, issues),
                 blockers=_list_of_str(raw_req, "blockers", req_item, issues),
                 generated_to=_list_of_str(raw_req, "generated_to", req_item, issues),
                 evidence=parse_evidence(raw_req, req_item, issues),
             )
         )
 
-    return Registry(relpath, schema_version, views, requirements, issues)
+    return Registry(relpath, schema_version, statuses, views, requirements, issues)
 
 
 def validate_registry(root: Path, registry: Registry) -> list[Issue]:
@@ -320,6 +412,37 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
             )
         )
 
+    status_rules: dict[str, StatusRule] = {}
+    for status in registry.statuses:
+        if not status.name:
+            continue
+        if not STATUS_RE.match(status.name):
+            issues.append(
+                Issue(
+                    "BAD-STATUS-NAME",
+                    status.name,
+                    "status names must be lowercase tokens",
+                )
+            )
+        if status.name in status_rules:
+            issues.append(
+                Issue("DUPLICATE-STATUS", status.name, "status names must be unique")
+            )
+        status_rules[status.name] = status
+        for kind in status.required_evidence_any:
+            if kind not in VALID_EVIDENCE_KINDS:
+                issues.append(
+                    Issue(
+                        "BAD-STATUS-EVIDENCE-KIND",
+                        status.name,
+                        f"required evidence kind `{kind}` is not accepted",
+                    )
+                )
+    if not status_rules:
+        issues.append(
+            Issue("MISSING-STATUS-DEFS", registry.path, "registry must declare statuses")
+        )
+
     view_names: dict[str, View] = {}
     for view in registry.views:
         if not view.name:
@@ -333,6 +456,22 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                     "UNKNOWN-VIEW-KIND",
                     view.name,
                     "`kind` must be `full_inventory` in schema v1",
+                )
+            )
+        if view.mode not in {"file", "region"}:
+            issues.append(
+                Issue(
+                    "BAD-VIEW-MODE",
+                    view.name,
+                    "`mode` must be `file` or `region`",
+                )
+            )
+        if view.mode == "region" and not view.region:
+            issues.append(
+                Issue(
+                    "MISSING-VIEW-REGION",
+                    view.name,
+                    "region-mode views must name a `region`",
                 )
             )
         if view.path and not view.path.startswith(".design/"):
@@ -359,12 +498,29 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                 issues.append(Issue("DUPLICATE-REQ-ID", req.id, "IDs must be unique"))
             req_ids[req.id] = req
 
-        if req.status not in VALID_STATUSES:
+    aliases: dict[str, str] = {}
+    for req in registry.requirements:
+        for alias in req.aliases:
+            if alias in aliases:
+                issues.append(
+                    Issue(
+                        "DUPLICATE-ALIAS",
+                        req.id,
+                        f"alias `{alias}` is already mapped to {aliases[alias]}",
+                    )
+                )
+            aliases[alias] = req.id
+
+    req_id_set = set(req_ids)
+
+    for req in registry.requirements:
+        status_rule = status_rules.get(req.status)
+        if status_rule is None:
             issues.append(
                 Issue(
                     "BAD-STATUS",
                     req.id or "<missing>",
-                    f"`status` must be one of {', '.join(sorted(VALID_STATUSES))}",
+                    f"`status` must be declared in a top-level [[status]] table: {req.status}",
                 )
             )
 
@@ -384,51 +540,43 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                     Issue("UNKNOWN-GENERATED-VIEW", req.id, f"unknown view `{view_name}`")
                 )
 
-        if req.status == "shipped":
-            if not any(ev.kind in SHIPPED_PROOF_KINDS for ev in req.evidence):
+        if status_rule is not None:
+            if status_rule.required_evidence_any and not any(
+                ev.kind in status_rule.required_evidence_any for ev in req.evidence
+            ):
                 issues.append(
                     Issue(
-                        "WEAK-SHIPPED-EVIDENCE",
+                        "WEAK-STATUS-EVIDENCE",
                         req.id,
-                        "shipped requirements need file, symbol, or test evidence",
+                        f"`{req.status}` requires at least one evidence kind from: "
+                        + ", ".join(status_rule.required_evidence_any),
                     )
                 )
-
-        if req.status in FUTURE_STATUSES and not (req.blockers or req.remaining_scope):
-            issues.append(
-                Issue(
-                    "MISSING-FUTURE-SCOPE",
-                    req.id,
-                    f"`{req.status}` requirements need blockers or remaining_scope",
+            if status_rule.requires_blocker and not req.blockers:
+                issues.append(
+                    Issue(
+                        "MISSING-BLOCKER",
+                        req.id,
+                        f"`{req.status}` requires at least one blocker reference",
+                    )
                 )
-            )
-
-        if req.status == "blocked" and not req.blockers:
-            issues.append(
-                Issue("MISSING-BLOCKER", req.id, "blocked requirements need blockers")
-            )
-
-        if req.status == "partial":
-            if not req.remaining_scope:
+            if status_rule.requires_remaining_scope and not req.remaining_scope:
                 issues.append(
                     Issue(
                         "MISSING-REMAINING-SCOPE",
                         req.id,
-                        "partial requirements need remaining_scope",
+                        f"`{req.status}` requires remaining_scope",
                     )
-                )
-            if not req.evidence:
-                issues.append(
-                    Issue("MISSING-PARTIAL-EVIDENCE", req.id, "partial requirements need evidence")
                 )
 
         for blocker in req.blockers:
-            if not ISSUE_RE.match(blocker):
+            detail = reference_detail(blocker, req_id_set)
+            if detail is not None:
                 issues.append(
                     Issue(
                         "BAD-BLOCKER",
                         req.id,
-                        f"blocker `{blocker}` must be #N or a GitHub issue URL",
+                        detail,
                     )
                 )
 
@@ -458,12 +606,22 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                         f"symbol evidence does not resolve: {ev.target}",
                     )
                 )
-            if ev.kind == "issue" and not ISSUE_RE.match(ev.target):
+            if ev.kind == "issue":
+                detail = reference_detail(ev.target, req_id_set)
+                if detail is not None:
+                    issues.append(
+                        Issue(
+                            "BAD-EVIDENCE-TARGET",
+                            req.id,
+                            detail,
+                        )
+                    )
+            if ev.kind == "command" and not ev.target.strip():
                 issues.append(
                     Issue(
                         "BAD-EVIDENCE-TARGET",
                         req.id,
-                        f"issue evidence `{ev.target}` must be #N or a GitHub issue URL",
+                        "command evidence target must be non-empty",
                     )
                 )
 
@@ -492,22 +650,27 @@ def render_followup(req: Requirement) -> str:
     return "<br>".join(parts)
 
 
-def render_full_inventory(registry: Registry, view: View) -> str:
+def generated_start(view: View | RenderedView) -> str:
+    name = view.region if isinstance(view, View) and view.region else view.name
+    return f"<!-- generated:reqs view={name} -->"
+
+
+def generated_end() -> str:
+    return "<!-- /generated:reqs -->"
+
+
+def render_full_inventory_body(registry: Registry, view: View) -> str:
     rows = [
         req
         for req in registry.requirements
         if view.name in req.generated_to
     ]
     rows.sort(key=lambda req: req.id)
-    title = view.title or "Requirement Status Inventory"
     out = [
-        "<!-- generated by tooling/req-registry.py; do not edit by hand -->",
-        f"# {title}",
-        "",
         f"Source: `{registry.path}`",
         "",
-        "| ID | Status | Owner | Scope | Title | Evidence | Follow-up |",
-        "|---|---|---|---|---|---|---|",
+        "| ID | Status | Owner | Contributors | Scope | Title | Evidence | Follow-up |",
+        "|---|---|---|---|---|---|---|---|",
     ]
     for req in rows:
         out.append(
@@ -517,6 +680,7 @@ def render_full_inventory(registry: Registry, view: View) -> str:
                     markdown_cell(req.id),
                     markdown_cell(req.status),
                     markdown_cell(f"`{req.owner}`"),
+                    markdown_cell(", ".join(f"`{c}`" for c in req.contributors)),
                     markdown_cell(req.scope),
                     markdown_cell(req.title),
                     markdown_cell(render_evidence(req)),
@@ -529,41 +693,129 @@ def render_full_inventory(registry: Registry, view: View) -> str:
     return "\n".join(out)
 
 
-def render_views(registry: Registry) -> dict[str, str]:
-    rendered: dict[str, str] = {}
+def render_full_file(registry: Registry, view: View, body: str) -> str:
+    title = view.title or "Requirement Status Inventory"
+    return "\n".join(
+        [
+            "<!-- generated by tooling/req-registry.py; do not edit by hand -->",
+            f"# {title}",
+            "",
+            body,
+        ]
+    )
+
+
+def region_block(view: View | RenderedView, body: str) -> str:
+    return f"{generated_start(view)}\n{body}{generated_end()}\n"
+
+
+def render_views(registry: Registry) -> list[RenderedView]:
+    rendered: list[RenderedView] = []
     for view in registry.views:
         if view.kind == "full_inventory":
-            rendered[view.path] = render_full_inventory(registry, view)
+            body = render_full_inventory_body(registry, view)
+            text = body if view.mode == "region" else render_full_file(registry, view, body)
+            rendered.append(
+                RenderedView(
+                    path=view.path,
+                    name=view.region or view.name,
+                    mode=view.mode,
+                    title=view.title or "Requirement Status Inventory",
+                    text=text,
+                )
+            )
     return rendered
 
 
-def validate_generated(root: Path, rendered: dict[str, str]) -> list[Issue]:
+def existing_region_block(text: str, view: RenderedView) -> str | None:
+    start = generated_start(view)
+    end = generated_end()
+    start_idx = text.find(start)
+    if start_idx < 0:
+        return None
+    end_idx = text.find(end, start_idx)
+    if end_idx < 0:
+        return None
+    end_idx += len(end)
+    if end_idx < len(text) and text[end_idx] == "\n":
+        end_idx += 1
+    return text[start_idx:end_idx]
+
+
+def default_region_document(view: RenderedView) -> str:
+    return f"# {view.title}\n\n{region_block(view, view.text)}"
+
+
+def validate_generated(root: Path, rendered: list[RenderedView]) -> list[Issue]:
     issues: list[Issue] = []
-    for relpath, expected in sorted(rendered.items()):
-        path = root / relpath
+    for view in sorted(rendered, key=lambda v: (v.path, v.name)):
+        path = root / view.path
         try:
             actual = path.read_text(encoding="utf-8")
         except FileNotFoundError:
-            issues.append(Issue("MISSING-GENERATED", relpath, "generated view is absent"))
+            issues.append(Issue("MISSING-GENERATED", view.path, "generated view is absent"))
             continue
         except OSError as exc:
-            raise EnvironmentError3(f"generated view unreadable ({relpath}): {exc}") from exc
-        if actual != expected:
+            raise EnvironmentError3(f"generated view unreadable ({view.path}): {exc}") from exc
+
+        if view.mode == "region":
+            expected = region_block(view, view.text)
+            existing = existing_region_block(actual, view)
+            if existing is None:
+                issues.append(
+                    Issue(
+                        "MISSING-GENERATED-REGION",
+                        view.path,
+                        f"generated region `{view.name}` is absent",
+                    )
+                )
+            elif existing != expected:
+                issues.append(
+                    Issue(
+                        "STALE-GENERATED",
+                        view.path,
+                        "generated region differs; run `python3 tooling/req-registry.py --write`",
+                    )
+                )
+            continue
+
+        if actual != view.text:
             issues.append(
                 Issue(
                     "STALE-GENERATED",
-                    relpath,
+                    view.path,
                     "generated view differs; run `python3 tooling/req-registry.py --write`",
                 )
             )
     return issues
 
 
-def write_generated(root: Path, rendered: dict[str, str]) -> None:
-    for relpath, text in sorted(rendered.items()):
-        path = root / relpath
+def write_generated(root: Path, rendered: list[RenderedView]) -> None:
+    for view in sorted(rendered, key=lambda v: (v.path, v.name)):
+        path = root / view.path
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        if view.mode != "region":
+            path.write_text(view.text, encoding="utf-8")
+            continue
+
+        block = region_block(view, view.text)
+        try:
+            existing = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            path.write_text(default_region_document(view), encoding="utf-8")
+            continue
+        start = generated_start(view)
+        end = generated_end()
+        start_idx = existing.find(start)
+        end_idx = existing.find(end, start_idx if start_idx >= 0 else 0)
+        if start_idx < 0 or end_idx < 0:
+            suffix = "" if existing.endswith("\n") else "\n"
+            path.write_text(existing + suffix + "\n" + block, encoding="utf-8")
+            continue
+        end_idx += len(end)
+        if end_idx < len(existing) and existing[end_idx] == "\n":
+            end_idx += 1
+        path.write_text(existing[:start_idx] + block + existing[end_idx:], encoding="utf-8")
 
 
 def render_inventory(registry: Registry) -> str:
@@ -585,6 +837,7 @@ def registry_json(registry: Registry, issues: list[Issue]) -> str:
         {
             "path": registry.path,
             "schema_version": registry.schema_version,
+            "statuses": [asdict(status) for status in registry.statuses],
             "views": [asdict(view) for view in registry.views],
             "requirements": [asdict(req) for req in registry.requirements],
             "issues": [asdict(issue) for issue in issues],

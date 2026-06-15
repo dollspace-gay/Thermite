@@ -32,10 +32,29 @@ class Fixture:
             f"""
             schema_version = 1
 
+            [[status]]
+            name = "shipped"
+            final = true
+            required_evidence_any = ["file", "symbol", "test"]
+
+            [[status]]
+            name = "partial"
+            final = false
+            required_evidence_any = ["file", "symbol", "test"]
+            requires_remaining_scope = true
+
+            [[status]]
+            name = "blocked"
+            final = false
+            requires_blocker = true
+            requires_remaining_scope = true
+
             [[view]]
             name = "status"
             path = ".design/reqs/status.md"
             kind = "full_inventory"
+            mode = "region"
+            region = "status"
             title = "Test Status"
 
             [[requirement]]
@@ -120,10 +139,17 @@ class ReqRegistryOracleTest(unittest.TestCase):
             """
             schema_version = 1
 
+            [[status]]
+            name = "shipped"
+            final = true
+            required_evidence_any = ["file", "symbol", "test"]
+
             [[view]]
             name = "status"
             path = ".design/reqs/status.md"
             kind = "full_inventory"
+            mode = "region"
+            region = "status"
 
             [[requirement]]
             id = "REQ-TEST-1"
@@ -135,14 +161,14 @@ class ReqRegistryOracleTest(unittest.TestCase):
 
             [[requirement.evidence]]
             kind = "issue"
-            target = "#17"
+            target = "github:dollspace-gay/Thermite#17"
             """
         )
 
         res = self.fx.run()
 
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
-        self.assertIn("WEAK-SHIPPED-EVIDENCE", res.stdout)
+        self.assertIn("WEAK-STATUS-EVIDENCE", res.stdout)
 
     def test_rejects_unresolved_file_evidence(self):
         self.fx.valid_registry(
@@ -177,6 +203,7 @@ class ReqRegistryOracleTest(unittest.TestCase):
             status = "blocked"
             scope = "tooling"
             blockers = ["not-an-issue"]
+            remaining_scope = "Waiting on tracker work."
             generated_to = ["status"]
             """
         )
@@ -186,9 +213,64 @@ class ReqRegistryOracleTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("BAD-BLOCKER", res.stdout)
 
+    def test_issue_evidence_rejects_bare_tracker_number(self):
+        self.fx.valid_registry(
+            """
+            [[requirement]]
+            id = "REQ-TEST-2"
+            title = "Bare issue ref"
+            owner = "src/lib.rs"
+            status = "partial"
+            scope = "tooling"
+            remaining_scope = "Waiting on tracker work."
+            generated_to = ["status"]
+
+            [[requirement.evidence]]
+            kind = "file"
+            target = "src/lib.rs"
+
+            [[requirement.evidence]]
+            kind = "issue"
+            target = "#17"
+            """
+        )
+
+        res = self.fx.run()
+
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("BAD-EVIDENCE-TARGET", res.stdout)
+
+    def test_req_blocker_resolves_to_registry_id(self):
+        self.fx.valid_registry(
+            """
+            [[requirement]]
+            id = "REQ-TEST-2"
+            title = "Blocked by requirement"
+            owner = "src/lib.rs"
+            status = "blocked"
+            scope = "tooling"
+            blockers = ["req:REQ-TEST-1"]
+            remaining_scope = "Waiting on the prerequisite requirement."
+            generated_to = ["status"]
+            """
+        )
+
+        res = self.fx.run()
+
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
     def test_check_detects_stale_generated_view(self):
         self.fx.valid_registry()
-        self.fx.write(".design/reqs/status.md", "stale\n")
+        self.fx.write(
+            ".design/reqs/status.md",
+            """
+            # Test Status
+
+            <!-- generated:reqs view=status -->
+            stale
+            <!-- /generated:reqs -->
+            """,
+        )
 
         res = self.fx.run("--check")
 

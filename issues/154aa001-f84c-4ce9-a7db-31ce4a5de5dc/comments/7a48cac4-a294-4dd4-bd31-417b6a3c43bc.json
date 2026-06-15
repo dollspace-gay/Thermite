@@ -1,0 +1,8 @@
+{
+  "uuid": "7a48cac4-a294-4dd4-bd31-417b6a3c43bc",
+  "issue_uuid": "154aa001-f84c-4ce9-a7db-31ce4a5de5dc",
+  "author": "lSoG",
+  "content": "Resolved: gated 18 x86_64-Linux-only seccomp build+run tests across 9 forge test files with linux_build_run_supported (non-Linux skip-with-warning -> 'FULL ACCEPTANCE REQUIRES LINUX CI'). Committed 6e6c079f. After building the Lean core (cd lean && lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody, ~14s, no Mathlib/cvc5), cargo test on macOS/arm64 is green except ONE unrelated failure: rebuilt_library_is_byte_identical (an rlib reproducibility assertion in build_conformance.rs -- two same-input rlib builds differ; NOT seccomp, deliberately left for separate investigation). Durable arm64-sandbox fix tracked in GH #27.",
+  "created_at": "2026-06-15T23:02:48.303013Z",
+  "kind": "resolution"
+}

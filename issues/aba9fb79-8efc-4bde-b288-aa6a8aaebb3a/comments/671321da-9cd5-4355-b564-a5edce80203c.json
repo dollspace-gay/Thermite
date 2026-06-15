@@ -1,0 +1,8 @@
+{
+  "uuid": "671321da-9cd5-4355-b564-a5edce80203c",
+  "issue_uuid": "aba9fb79-8efc-4bde-b288-aa6a8aaebb3a",
+  "author": "lSoG",
+  "content": "[action] PAUSED mid-CI-shepherd. Branch bab0aace pushed (PR #29, MERGEABLE; main+#28 both merged in, registry --check clean, local clippy/fmt/build green). CI run 27583438221: checks job FAILED at step 6 'doc-drift tripwire (design-doc freshness)' (steps 7+ skipped as a result); test shards 1-4 + lean still in_progress. NEXT: read step-6 log (gh run view 27583438221 --log-failed), diagnose the doc-drift tripwire (likely a design-doc re-pin needed after touching forge src + design docs), fix, commit, push, re-watch CI.",
+  "created_at": "2026-06-15T23:35:56.924645Z",
+  "kind": "note"
+}

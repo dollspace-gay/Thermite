@@ -51,6 +51,15 @@ region = "thermite-tv-contract-tv-status"
 comment_prefix = "//! "
 title = "Contract-TV Canonical Status References"
 
+[[view]]
+name = "thermite-tv-exec-tv-status"
+path = "thermite-tv/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-exec-tv-status"
+comment_prefix = "//! "
+title = "Exec-TV Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -85,6 +94,34 @@ label = "REQ-4 (the teeth — R-CHAR-3)"
 id = "REQ-TV-CONTRACT-TEETH"
 replacement_view = "thermite-tv-contract-tv-status"
 note = "Crate-level contract-TV summary row replaced by a generated reference to the teeth-test owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-1 (exec-expr reference encoder)"
+id = "REQ-TV-EXEC-REF-ENCODER"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec reference owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-2 (exec-fn-wrapped obligation + discharge)"
+id = "REQ-TV-EXEC-OBLIGATION"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec obligation owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-3 (off-corpus exec generator)"
+id = "REQ-TV-EXEC-GENERATOR"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec generator owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-4 (the exec teeth — R-CHAR-3)"
+id = "REQ-TV-EXEC-TEETH"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec teeth-test owner."
 
 [[requirement]]
 id = "REQ-REG-1"
@@ -468,3 +505,108 @@ note = "off-corpus contract-TV phase"
 kind = "test"
 target = "forge/tests/contract_tv_conformance.rs"
 note = "corpus and generated contract-TV conformance"
+
+[[requirement]]
+id = "REQ-TV-EXEC-REF-ENCODER"
+title = "Exec-TV independent reference encoder"
+owner = "thermite-tv/src/exec_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The exec-position reference encoder independently encodes bounded pure body-position expressions without depending on production lowering."
+aliases = [
+  "exec-REQ-1 (exec-expr reference encoder)",
+  "REQ-1 (exec-expr reference encoder — independent, EXEC semantics)",
+]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/obligation.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_ref_value"
+note = "bounded exec-position reference encoder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/exec_teeth.rs"
+note = "E1-E4 exec teeth discharge the reference side under real verus"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/exec_encode.rs"
+note = "owner implementation"
+
+[[requirement]]
+id = "REQ-TV-EXEC-OBLIGATION"
+title = "Exec-TV fn-wrapped equivalence obligation"
+owner = "thermite-tv/src/obligation.rs"
+status = "shipped"
+scope = "verified"
+summary = "Each pure exec-position expression is checked by an exec-fn-wrapped equivalence obligation comparing production lowering with the bounded reference value."
+aliases = [
+  "exec-REQ-2 (exec-fn-wrapped obligation + discharge)",
+  "REQ-2 (exec-fn-wrapped equivalence obligation + discharge)",
+]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/exec_encode.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_equivalence_obligation"
+note = "exec-fn equivalence obligation emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExecObligationFrame"
+note = "exec obligation frame model"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/exec_teeth.rs"
+note = "teeth test discharges faithful and infidel exec obligations"
+
+[[requirement]]
+id = "REQ-TV-EXEC-GENERATOR"
+title = "Exec-TV off-corpus generator"
+owner = "thermite-tv/src/gen.rs"
+status = "shipped"
+scope = "verified"
+summary = "The off-corpus exec generator deterministically emits well-framed pure exec-position expressions over the bounded exec sublanguage."
+aliases = ["exec-REQ-3 (off-corpus exec generator)"]
+contributors = ["thermite-tv/src/lib.rs", "forge/src/exec_tv.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "gen_exec_exprs"
+note = "deterministic exec-position generator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExecClause"
+note = "generated expression plus adequate frame"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/exec_tv_conformance.rs"
+note = "forge off-corpus exec-TV conformance run"
+
+[[requirement]]
+id = "REQ-TV-EXEC-TEETH"
+title = "Exec-TV teeth"
+owner = "thermite-tv/tests/exec_teeth.rs"
+status = "shipped"
+scope = "verified"
+summary = "The exec-TV teeth suite proves faithful exec-position lowerings verify and representative infidel lowerings are caught."
+aliases = ["exec-REQ-4 (the exec teeth — R-CHAR-3)"]
+contributors = ["thermite-tv/src/lib.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/exec_teeth.rs"
+note = "E1-E4 exec-TV teeth"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "e4_index_infidel_caught"
+note = "representative E4 teeth case"

@@ -100,6 +100,15 @@ class Requirement:
 
 
 @dataclass(frozen=True)
+class LegacyMapping:
+    path: str
+    label: str
+    id: str
+    replacement_view: str
+    note: str = ""
+
+
+@dataclass(frozen=True)
 class View:
     name: str
     path: str
@@ -107,6 +116,7 @@ class View:
     title: str
     mode: str
     region: str
+    comment_prefix: str
 
 
 @dataclass(frozen=True)
@@ -123,6 +133,7 @@ class RenderedView:
     mode: str
     title: str
     text: str
+    comment_prefix: str
 
 
 @dataclass(frozen=True)
@@ -132,6 +143,7 @@ class Registry:
     statuses: list[StatusRule]
     views: list[View]
     requirements: list[Requirement]
+    legacy_mappings: list[LegacyMapping]
     parse_issues: list[Issue]
 
 
@@ -224,6 +236,16 @@ def _optional_str(raw: dict, field: str, item: str, issues: list[Issue]) -> str:
     return value.strip()
 
 
+def _optional_raw_str(raw: dict, field: str, item: str, issues: list[Issue]) -> str:
+    value = raw.get(field, "")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        issues.append(Issue("BAD-FIELD", item, f"`{field}` must be a string"))
+        return ""
+    return value
+
+
 def _list_of_str(raw: dict, field: str, item: str, issues: list[Issue]) -> list[str]:
     value = raw.get(field, [])
     if value is None:
@@ -306,6 +328,32 @@ def parse_statuses(raw: dict, item: str, issues: list[Issue]) -> list[StatusRule
     return statuses
 
 
+def parse_legacy_mappings(raw: dict, item: str, issues: list[Issue]) -> list[LegacyMapping]:
+    raw_mappings = raw.get("legacy_mapping", [])
+    if not isinstance(raw_mappings, list):
+        issues.append(Issue("BAD-FIELD", item, "`legacy_mapping` must be a list of tables"))
+        return []
+
+    mappings: list[LegacyMapping] = []
+    for i, raw_mapping in enumerate(raw_mappings):
+        mapping_item = f"legacy_mapping[{i}]"
+        if not isinstance(raw_mapping, dict):
+            issues.append(
+                Issue("BAD-FIELD", mapping_item, "legacy_mapping entry must be a table")
+            )
+            continue
+        mappings.append(
+            LegacyMapping(
+                path=_as_str(raw_mapping, "path", mapping_item, issues),
+                label=_as_str(raw_mapping, "label", mapping_item, issues),
+                id=_as_str(raw_mapping, "id", mapping_item, issues),
+                replacement_view=_as_str(raw_mapping, "replacement_view", mapping_item, issues),
+                note=_optional_str(raw_mapping, "note", mapping_item, issues),
+            )
+        )
+    return mappings
+
+
 def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
     if tomllib is None:
         raise EnvironmentError3("tomllib is unavailable (Python < 3.11)")
@@ -318,6 +366,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
             [],
             [],
             [],
+            [],
             [Issue("MISSING-REGISTRY", relpath, "registry file does not exist")],
         )
 
@@ -327,6 +376,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
         return Registry(
             relpath,
             None,
+            [],
             [],
             [],
             [],
@@ -343,6 +393,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
         )
 
     statuses = parse_statuses(raw, relpath, issues)
+    legacy_mappings = parse_legacy_mappings(raw, relpath, issues)
 
     views: list[View] = []
     raw_views = raw.get("view", [])
@@ -362,6 +413,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
                 title=_optional_str(raw_view, "title", item, issues),
                 mode=_optional_str(raw_view, "mode", item, issues) or "file",
                 region=_optional_str(raw_view, "region", item, issues),
+                comment_prefix=_optional_raw_str(raw_view, "comment_prefix", item, issues),
             )
         )
 
@@ -396,7 +448,15 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
             )
         )
 
-    return Registry(relpath, schema_version, statuses, views, requirements, issues)
+    return Registry(
+        relpath,
+        schema_version,
+        statuses,
+        views,
+        requirements,
+        legacy_mappings,
+        issues,
+    )
 
 
 def validate_registry(root: Path, registry: Registry) -> list[Issue]:
@@ -450,12 +510,12 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
         if view.name in view_names:
             issues.append(Issue("DUPLICATE-VIEW", view.name, "view names must be unique"))
         view_names[view.name] = view
-        if view.kind != "full_inventory":
+        if view.kind not in {"full_inventory", "reference_list"}:
             issues.append(
                 Issue(
                     "UNKNOWN-VIEW-KIND",
                     view.name,
-                    "`kind` must be `full_inventory` in schema v1",
+                    "`kind` must be `full_inventory` or `reference_list` in schema v1",
                 )
             )
         if view.mode not in {"file", "region"}:
@@ -474,12 +534,42 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                     "region-mode views must name a `region`",
                 )
             )
-        if view.path and not view.path.startswith(".design/"):
+        if view.mode == "file" and view.path and not view.path.startswith(".design/"):
             issues.append(
                 Issue(
                     "BAD-VIEW-PATH",
                     view.name,
-                    "generated views must live under `.design/`",
+                    "whole-file generated views must live under `.design/`",
+                )
+            )
+        if view.comment_prefix and view.mode != "region":
+            issues.append(
+                Issue(
+                    "BAD-COMMENT-PREFIX",
+                    view.name,
+                    "`comment_prefix` is only valid for region-mode views",
+                )
+            )
+        if "\n" in view.comment_prefix or "\r" in view.comment_prefix:
+            issues.append(
+                Issue(
+                    "BAD-COMMENT-PREFIX",
+                    view.name,
+                    "`comment_prefix` must be a single-line prefix",
+                )
+            )
+        if (
+            view.mode == "region"
+            and view.kind == "reference_list"
+            and view.path
+            and not view.path.endswith(".md")
+            and not view.comment_prefix
+        ):
+            issues.append(
+                Issue(
+                    "MISSING-COMMENT-PREFIX",
+                    view.name,
+                    "source-file reference-list regions must declare `comment_prefix`",
                 )
             )
 
@@ -512,6 +602,70 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
             aliases[alias] = req.id
 
     req_id_set = set(req_ids)
+
+    seen_mappings: set[tuple[str, str]] = set()
+    for mapping in registry.legacy_mappings:
+        key = (mapping.path, mapping.label)
+        if key in seen_mappings:
+            issues.append(
+                Issue(
+                    "DUPLICATE-LEGACY-MAPPING",
+                    mapping.id,
+                    f"legacy mapping repeated for {mapping.path}: {mapping.label}",
+                )
+            )
+        seen_mappings.add(key)
+        if mapping.id not in req_ids:
+            issues.append(
+                Issue(
+                    "UNKNOWN-LEGACY-ID",
+                    mapping.id,
+                    f"legacy mapping target does not exist for {mapping.path}: {mapping.label}",
+                )
+            )
+        replacement = view_names.get(mapping.replacement_view)
+        if replacement is None:
+            issues.append(
+                Issue(
+                    "UNKNOWN-LEGACY-REPLACEMENT",
+                    mapping.id,
+                    f"legacy mapping replacement view `{mapping.replacement_view}` is unknown",
+                )
+            )
+        elif replacement.path != mapping.path:
+            issues.append(
+                Issue(
+                    "BAD-LEGACY-REPLACEMENT",
+                    mapping.id,
+                    "legacy mapping replacement view must target the same path",
+                )
+            )
+        path = root / mapping.path
+        try:
+            source_text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            issues.append(
+                Issue(
+                    "UNRESOLVED-LEGACY-PATH",
+                    mapping.id,
+                    f"legacy mapping path does not exist: {mapping.path}",
+                )
+            )
+            continue
+        except UnicodeDecodeError:
+            source_text = path.read_text(encoding="utf-8", errors="ignore")
+
+        replacement_present = (
+            replacement is not None and generated_start(replacement) in source_text
+        )
+        if mapping.label not in source_text and not replacement_present:
+            issues.append(
+                Issue(
+                    "STALE-LEGACY-MAPPING",
+                    mapping.id,
+                    "legacy mapping is neither present as an old label nor replaced by its generated view",
+                )
+            )
 
     for req in registry.requirements:
         status_rule = status_rules.get(req.status)
@@ -650,13 +804,24 @@ def render_followup(req: Requirement) -> str:
     return "<br>".join(parts)
 
 
+def _line_with_comment_prefix(prefix: str, line: str) -> str:
+    if not prefix:
+        return line
+    if not line:
+        return prefix.rstrip()
+    return prefix + line
+
+
 def generated_start(view: View | RenderedView) -> str:
     name = view.region if isinstance(view, View) and view.region else view.name
-    return f"<!-- generated:reqs view={name} -->"
+    return _line_with_comment_prefix(
+        view.comment_prefix,
+        f"<!-- generated:reqs view={name} -->",
+    )
 
 
-def generated_end() -> str:
-    return "<!-- /generated:reqs -->"
+def generated_end(view: View | RenderedView) -> str:
+    return _line_with_comment_prefix(view.comment_prefix, "<!-- /generated:reqs -->")
 
 
 def render_full_inventory_body(registry: Registry, view: View) -> str:
@@ -693,6 +858,37 @@ def render_full_inventory_body(registry: Registry, view: View) -> str:
     return "\n".join(out)
 
 
+def render_reference_list_body(registry: Registry, view: View) -> str:
+    rows = [
+        req
+        for req in registry.requirements
+        if view.name in req.generated_to
+    ]
+    rows.sort(key=lambda req: req.id)
+    out = [
+        f"Source: `{registry.path}`",
+        "",
+        "| ID | Status | Owner | Title | Follow-up |",
+        "|---|---|---|---|---|",
+    ]
+    for req in rows:
+        out.append(
+            "| "
+            + " | ".join(
+                [
+                    markdown_cell(req.id),
+                    markdown_cell(req.status),
+                    markdown_cell(f"`{req.owner}`"),
+                    markdown_cell(req.title),
+                    markdown_cell(render_followup(req)),
+                ]
+            )
+            + " |"
+        )
+    out.append("")
+    return "\n".join(out)
+
+
 def render_full_file(registry: Registry, view: View, body: str) -> str:
     title = view.title or "Requirement Status Inventory"
     return "\n".join(
@@ -706,7 +902,14 @@ def render_full_file(registry: Registry, view: View, body: str) -> str:
 
 
 def region_block(view: View | RenderedView, body: str) -> str:
-    return f"{generated_start(view)}\n{body}{generated_end()}\n"
+    if not view.comment_prefix:
+        return f"{generated_start(view)}\n{body}{generated_end(view)}\n"
+
+    prefixed_body = "\n".join(
+        _line_with_comment_prefix(view.comment_prefix, line)
+        for line in body.splitlines()
+    )
+    return f"{generated_start(view)}\n{prefixed_body}\n{generated_end(view)}\n"
 
 
 def render_views(registry: Registry) -> list[RenderedView]:
@@ -714,22 +917,27 @@ def render_views(registry: Registry) -> list[RenderedView]:
     for view in registry.views:
         if view.kind == "full_inventory":
             body = render_full_inventory_body(registry, view)
-            text = body if view.mode == "region" else render_full_file(registry, view, body)
-            rendered.append(
-                RenderedView(
-                    path=view.path,
-                    name=view.region or view.name,
-                    mode=view.mode,
-                    title=view.title or "Requirement Status Inventory",
-                    text=text,
-                )
+        elif view.kind == "reference_list":
+            body = render_reference_list_body(registry, view)
+        else:
+            continue
+        text = body if view.mode == "region" else render_full_file(registry, view, body)
+        rendered.append(
+            RenderedView(
+                path=view.path,
+                name=view.region or view.name,
+                mode=view.mode,
+                title=view.title or "Requirement Status Inventory",
+                text=text,
+                comment_prefix=view.comment_prefix,
             )
+        )
     return rendered
 
 
 def existing_region_block(text: str, view: RenderedView) -> str | None:
     start = generated_start(view)
-    end = generated_end()
+    end = generated_end(view)
     start_idx = text.find(start)
     if start_idx < 0:
         return None
@@ -743,6 +951,8 @@ def existing_region_block(text: str, view: RenderedView) -> str | None:
 
 
 def default_region_document(view: RenderedView) -> str:
+    if view.comment_prefix:
+        return region_block(view, view.text)
     return f"# {view.title}\n\n{region_block(view, view.text)}"
 
 
@@ -805,7 +1015,7 @@ def write_generated(root: Path, rendered: list[RenderedView]) -> None:
             path.write_text(default_region_document(view), encoding="utf-8")
             continue
         start = generated_start(view)
-        end = generated_end()
+        end = generated_end(view)
         start_idx = existing.find(start)
         end_idx = existing.find(end, start_idx if start_idx >= 0 else 0)
         if start_idx < 0 or end_idx < 0:
@@ -840,6 +1050,7 @@ def registry_json(registry: Registry, issues: list[Issue]) -> str:
             "statuses": [asdict(status) for status in registry.statuses],
             "views": [asdict(view) for view in registry.views],
             "requirements": [asdict(req) for req in registry.requirements],
+            "legacy_mappings": [asdict(mapping) for mapping in registry.legacy_mappings],
             "issues": [asdict(issue) for issue in issues],
         },
         indent=2,

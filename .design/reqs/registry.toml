@@ -42,6 +42,22 @@ mode = "region"
 region = "status"
 title = "Canonical REQ Status Inventory"
 
+[[view]]
+name = "thermite-tv-contract-tv-status"
+path = "thermite-tv/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-contract-tv-status"
+comment_prefix = "//! "
+title = "Contract-TV Canonical Status References"
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-5 (forge plug-in point)"
+id = "REQ-TV-CONTRACT-FORGE-PLUGIN"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Secondary source-comment status copy replaced by a generated reference to the forge-owned canonical entry."
+
 [[requirement]]
 id = "REQ-REG-1"
 title = "Stable requirement identity and ownership"
@@ -136,7 +152,7 @@ owner = "tooling/req-status.py"
 status = "partial"
 scope = "tooling"
 summary = "The existing source-comment lint remains as a bridge while repeated `//!` REQ rows are mapped to stable registry IDs."
-remaining_scope = "Migrate the 429 legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
+remaining_scope = "Migrate the remaining legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
 contributors = ["tooling/req-registry.py"]
 blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
@@ -154,13 +170,18 @@ note = "legacy row lint stays green during migration"
 [[requirement]]
 id = "REQ-REG-6"
 title = "Generated-region migration"
-owner = ".design/tooling/req-registry.md"
-status = "deferred"
+owner = "tooling/req-registry.py"
+status = "partial"
 scope = "tooling"
 summary = "Source comments should eventually carry stable invariants only; volatile status tables should be generated or linked from canonical status views."
-remaining_scope = "Define generated-region markers and migrate source comments doc-by-doc after stable ID mapping is reviewed."
+remaining_scope = "Migrate source comments doc-by-doc after each stable-ID mapping is reviewed."
 blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_reference_list_body"
+note = "generated source-comment reference-list view"
 
 [[requirement.evidence]]
 kind = "issue"
@@ -289,3 +310,34 @@ target = "CovenantRecord"
 kind = "symbol"
 target = "CovenantRefuted"
 note = "the Counterexample-class hard-fail ladder arm (degrade.rs)"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-FORGE-PLUGIN"
+title = "Contract-TV forge plug-in point"
+owner = "forge/src/contract_tv.rs"
+status = "shipped"
+scope = "verified"
+summary = "The forge contract-TV phase is the owned integration point between production contract lowering and the independent thermite-tv reference encoder."
+aliases = ["REQ-5 (forge plug-in point)"]
+contributors = ["thermite-tv/src/lib.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/contract_tv.rs"
+note = "owner implementation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tv_file"
+note = "corpus contract-TV phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_generated"
+note = "off-corpus contract-TV phase"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/contract_tv_conformance.rs"
+note = "corpus and generated contract-TV conformance"

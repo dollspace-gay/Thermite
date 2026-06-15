@@ -1,0 +1,8 @@
+{
+  "uuid": "e6bd3b12-fad5-4566-8337-2d65678f70c2",
+  "issue_uuid": "45057a55-4f11-4a35-a740-40a69ab7f29a",
+  "author": "dX10",
+  "content": "Rebased onto PR #19 (canonical REQ registry) — clean (the only conflict, a stale doc-pin in commit B, was dropped and redone fresh). New HEAD: 033d9fb2 (inc0) + a2db0d8a (inc1) + 3f678306 (registry+doc-drift) + 3972111a (registry re-pin) on top of #19. Registered this stage in .design/reqs/registry.toml conforming to the schema-v1 spec: REQ-S1-8A/1/2 shipped, REQ-S1-4 partial (covenant logic is 2b); status.md regenerated; req-registry.py --check clean (10 reqs). All gates green post-rebase: build/fmt/clippy clean, doc-drift=0, req-status=0, req-registry=0, tooling unit tests pass, foundation unit tests 15/15, conformance golden oracle 7/7 under Verus. Push + PR remain (git push blocked by policy — user-actioned).",
+  "created_at": "2026-06-15T16:49:56.787315Z",
+  "kind": "result"
+}

@@ -1,20 +1,20 @@
 //! `forge/src/slag.rs` — the §8 `#[slag]` escape hatch semantics: the only
-//! sanctioned way to ship a function whose body is NOT machine-proved. The parser
+//! sanctioned way to ship a function whose body is not machine-proved. The parser
 //! already builds the attribute node (`thermite_syntax::FnItem.slag:
 //! Option<SlagAttr { reason, owner, review, span }>`); this component supplies the
-//! FORGE-side semantics the parser deferred "downstream/forge":
-//! (1) **validate** the three mandatory fields are present (`Some`) AND non-empty
+//! forge-side semantics the parser deferred "downstream/forge":
+//! (1) validate the three mandatory fields are present (`Some`) and non-empty
 //!     after `trim`;
-//! (2) **L3-exempt / L1-enforced** — a valid `#[slag]` item is NOT sent to verus;
-//!     it certifies at **L1** with `slag: true` + its metadata
+//! (2) L3-exempt / L1-enforced: a valid `#[slag]` item is not sent to verus;
+//!     it certifies at L1 with `slag: true` + its metadata
 //!     (`manifest::Certificate::slag_l1`);
-//! (3) it is the ONLY justification for a maximal `fx` row (the §7.1 (d)
+//! (3) it is the only justification for a maximal `fx` row (the §7.1 (d)
 //!     interaction — `vacuity.rs` reads `FnItem.slag.is_some()`);
-//! (4) it is VISIBLE in the audit surface (the cert carries `slag: true` +
+//! (4) it is visible in the audit surface (the cert carries `slag: true` +
 //!     reason/owner/review).
 //!
-//! Slag exempts you from *proving*, NEVER from *stating and checking*: a valid
-//! `#[slag]` item is STILL subject to triage (a)/(b)/(c) (`vacuity.rs`); only the
+//! Slag exempts an item from proving, not from stating and checking: a valid
+//! `#[slag]` item is still subject to triage (a)/(b)/(c) (`vacuity.rs`); only the
 //! maximal-`fx` (d) check is justified by slag.
 //!
 //! Governing design: `.design/forge/slag.md`.
@@ -88,7 +88,7 @@ impl fmt::Display for SlagError {
 impl std::error::Error for SlagError {}
 
 /// Validate a `#[slag]` attribute's three mandatory fields (REQ-1): each of
-/// `reason`/`owner`/`review` must be present (`Some`) AND non-empty after `trim`.
+/// `reason`/`owner`/`review` must be present (`Some`) and non-empty after `trim`.
 /// Returns the validated [`SlagMeta`] of trimmed owned strings on success, or the
 /// first offending field as a [`SlagError`]. Order is `reason`, `owner`, `review`
 /// (deterministic, R-CODE-5) — the first failure is reported.
@@ -108,7 +108,7 @@ pub fn validate(slag: &SlagAttr) -> Result<SlagMeta, SlagError> {
 
 /// Validate one mandatory field: `None` → `MissingField`; `Some` but empty after
 /// `trim` → `EmptyField`; otherwise the trimmed owned string. The value stored is
-/// the TRIMMED form (a `"  required  "` field is recorded as `"required"`).
+/// the trimmed form (a `"  required  "` field is recorded as `"required"`).
 fn validate_field(field: &'static str, value: Option<&str>) -> Result<String, SlagError> {
     match value {
         None => Err(SlagError::MissingField { field }),
@@ -174,8 +174,8 @@ mod tests {
         }
     }
 
-    // REQ-1 / AC-5: whitespace-only field is EMPTY after trim → EmptyField (whole
-    // class — present-but-blank for every field).
+    // REQ-1 / AC-5: a whitespace-only field is empty after trim → EmptyField (the
+    // whole class: present-but-blank for every field).
     #[test]
     fn whitespace_only_is_empty() {
         for (r, o, v, want_field) in [
@@ -196,7 +196,7 @@ mod tests {
         }
     }
 
-    // REQ-1: the stored value is TRIMMED.
+    // REQ-1: the stored value is trimmed.
     #[test]
     fn validated_fields_are_trimmed() {
         let a = attr(Some("  reason  "), Some(" owner "), Some(" required "));
@@ -209,7 +209,7 @@ mod tests {
         }
     }
 
-    // REQ-1: `reason` is checked FIRST (deterministic order) — a missing reason
+    // REQ-1: `reason` is checked first (deterministic order); a missing reason
     // is reported even when owner is also bad.
     #[test]
     fn reason_checked_first() {

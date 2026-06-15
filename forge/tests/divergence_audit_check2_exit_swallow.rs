@@ -1,39 +1,39 @@
 //! Divergence pin (#201, audits #200 / commit a0d8ea64): `scripts/audit.sh`
-//! check [2] (full-corpus translation-validation) SWALLOWS a Divergent finding.
+//! check [2] (full-corpus translation-validation) swallows a Divergent finding.
 //!
-//! THE DIVERGENCE (false assurance in the audit script — the worst-case
+//! The divergence (false assurance in the audit script, the worst-case
 //! R-HONEST-3 / R-DEFER-9 failure mode):
 //!
-//!   `forge tv` / `forge exec-tv` / `forge body-tv` exit NONZERO on any
-//!   Divergent obligation — `forge/src/cli.rs::run_tv` (and `run_body_tv` /
-//!   `run_exec_tv`, the SAME convention) documents and implements:
+//!   `forge tv` / `forge exec-tv` / `forge body-tv` exit nonzero on any
+//!   Divergent obligation. `forge/src/cli.rs::run_tv` (and `run_body_tv` /
+//!   `run_exec_tv`, the same convention) documents and implements:
 //!     "Any DIVERGENT clause (corpus OR generated) is a real lowering-fidelity
 //!      finding → verification-failure exit" → `ExitCode::from(EXIT_VERIFICATION_FAILURE)`.
 //!
 //!   But `scripts/audit.sh` check [2]'s per-subcommand loop does:
 //!     out="$("$FORGE" "$sub" "$f" 2>&1)"; src=$?
 //!     if [ "$src" -ne 0 ]; then prog_admit=0; continue; fi
-//!   — i.e. it treats EVERY nonzero exit as "forge refused to admit" and skips
+//!   i.e. it treats every nonzero exit as "forge refused to admit" and skips
 //!   parsing the report. A Divergent run (exit 1, report header "… 1 DIVERGENT …")
 //!   is therefore never counted: the program prints a green
 //!   "ok <name> 0 divergent", TOT_DIV stays 0, and check [2] prints
 //!   "PASS ZERO divergent across the whole corpus". The gate that exists to
-//!   catch exactly one condition CANNOT fire on that condition.
+//!   catch one condition cannot fire on that condition.
 //!
-//! AUTHORITY (R-CHAR-3 — the expected value is NOT taken from the script):
+//! Authority (R-CHAR-3 — the expected value is not taken from the script):
 //!   - `scripts/audit.sh` own stated contract (header + check [2] note):
 //!     "PASS iff ZERO Divergent across the corpus" — so one Divergent ⇒ FAIL ⇒ RC=1.
 //!   - `forge/src/cli.rs::run_tv` — the Divergent ⇒ nonzero-exit convention the
-//!     script must consume (the fake forge below reproduces it exactly, including
+//!     script consumes (the fake forge below reproduces it, including
 //!     `forge/src/contract_tv.rs::render_report`'s header line shape).
 //!   - goal.md R-HONEST-3 (no silent masking of an infidelity); thermite-design.md
 //!     §1 (trust relocation: the audit is what the skeptic relies on).
 //!
-//! METHOD: extract check [2] VERBATIM from the live `scripts/audit.sh` (between
+//! Method: extract check [2] verbatim from the live `scripts/audit.sh` (between
 //! its `# CHECK 2` / `# CHECK 3` banners), run it against a fake `forge` that
-//! reports one corpus program as `1 DIVERGENT` with the REAL exit convention
-//! (exit 1), and assert the authority's expectation: the check must FAIL (RC=1)
-//! and must NOT print the green zero-divergent PASS. This test FAILS against
+//! reports one corpus program as `1 DIVERGENT` with the real exit convention
+//! (exit 1), and assert the authority's expectation: the check fails (RC=1)
+//! and does not print the green zero-divergent PASS. This test fails against
 //! a0d8ea64 (the swallow) and passes once the generator consumes the
 //! verification-failure exit as a finding instead of `continue`-ing past it.
 //!
@@ -50,7 +50,7 @@ fn repo_root() -> PathBuf {
         .expect("repo root")
 }
 
-/// The fake forge: reproduces `forge/src/cli.rs::run_tv`'s EXACT observable
+/// The fake forge: reproduces `forge/src/cli.rs::run_tv`'s observable
 /// contract for a divergent corpus file — `render_report`'s header line
 /// (`contract_tv.rs`) plus the verification-failure exit (EXIT_VERIFICATION_FAILURE
 /// = 1) — for `tv conformance/binary_search.th`; clean (exit 0) everywhere else.
@@ -95,7 +95,7 @@ fn divergence_audit_check2_swallows_divergent_exit() {
     }
 
     // The harness: the script's own stubs (color/printers), a present VERUS (the
-    // gate under test is NOT the skip path), the fake forge, then check [2] verbatim.
+    // gate under test is not the skip path), the fake forge, then check [2] verbatim.
     let harness = format!(
         "#!/usr/bin/env bash\n\
          set -uo pipefail\n\
@@ -127,8 +127,8 @@ fn divergence_audit_check2_swallows_divergent_exit() {
 
     fs::remove_dir_all(&scratch).ok();
 
-    // AUTHORITY EXPECTATION 1 — "PASS iff ZERO Divergent": one Divergent obligation
-    // (delivered with forge's real verification-failure exit) must trip the gate.
+    // Authority expectation 1 — "PASS iff ZERO Divergent": one Divergent obligation
+    // (delivered with forge's real verification-failure exit) trips the gate.
     assert!(
         stdout.contains("FINAL_RC=1"),
         "scripts/audit.sh check [2] swallowed a DIVERGENT finding: forge tv reported \
@@ -138,8 +138,8 @@ fn divergence_audit_check2_swallows_divergent_exit() {
          --- harness output ---\n{stdout}"
     );
 
-    // AUTHORITY EXPECTATION 2 — no green zero-divergent PASS may be printed for a
-    // corpus containing a Divergent program (R-HONEST-3: never mask an infidelity).
+    // Authority expectation 2 — no green zero-divergent PASS may be printed for a
+    // corpus containing a Divergent program (R-HONEST-3: do not mask an infidelity).
     assert!(
         !stdout.contains("ZERO divergent across the whole corpus"),
         "scripts/audit.sh check [2] printed the green zero-divergent PASS over a \

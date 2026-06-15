@@ -2,69 +2,69 @@
 //!
 //! Governing design: `.design/verified/self-verification.md` (REQ-1..REQ-6).
 //! Thesis: `thermite-design.md` §6 (Verus is the L3 prover), §9 (the TCB is
-//! slag ∪ boundary ∪ the toolchain itself — this crate SHRINKS that TCB by
-//! moving a soundness-critical decision function OUT of unverified Rust).
+//! slag ∪ boundary ∪ the toolchain itself — this crate shrinks that TCB by
+//! moving a soundness-critical decision function out of unverified Rust).
 //!
 //! ## What this crate is
 //!
-//! The FIRST proven increment is effect subsumption (`subsumes`): a wrong answer
+//! The first proven increment is effect subsumption (`subsumes`): a wrong answer
 //! mints a false `pure` certificate for an effectful function (§4.1 / §9). The
 //! decision is ported to a bounded **9-atom `u16` bitset** (Read=0 .. Term=8,
 //! the path-insensitive atom-kind projection `EffectKind::of` already computes in
 //! `thermite-lower`), where subsumption is the mask test `(callee & !caller) == 0`
 //! and the genuine subset relation `effects(callee) ⊆ effects(caller)` is the
 //! explicit 9-way conjunction over the bit positions. The two are proved
-//! equivalent by Verus `bit_vector`-mode SMT. (The proved bitset WIDENED from
+//! equivalent by Verus `bit_vector`-mode SMT. (The proved bitset widened from
 //! `u8` to `u16` for the 9th atom `Term` — the §4.1 terminal-control effect,
-//! issue #106 — and every `bit_vector`/`compute` proof was RE-DERIVED over the
+//! issue #106 — and every `bit_vector`/`compute` proof was re-derived over the
 //! widened u16 domain; the widened lattice is still sound. `Term` is a
-//! terminal-control grant that is NOT one of the 5 io-sensitive syscalls, so its
+//! terminal-control grant that is not one of the 5 io-sensitive syscalls, so its
 //! `io_allow` contribution is 0 — runtime-sandbox.md REQ-7 / OQ-5.)
 //!
-//! ## The landed mechanism: (c) exhaustive equivalence (NOT (b) delegation)
+//! ## The landed mechanism: (c) exhaustive equivalence, not (b) delegation
 //!
 //! `.design/verified/self-verification.md` chose mechanism (b) (link the verified
-//! crate into the cargo build so the proved code IS the running code) IF the
-//! `--export`/`--import` linking landed cleanly, ELSE fall back to (c) (a verified
+//! crate into the cargo build so the proved code is the running code) if the
+//! `--export`/`--import` linking worked, else fall back to (c) (a verified
 //! reference + an enumerated impl==spec conformance test). The OQ-1/OQ-2 build
-//! probe (epic #60) settled this EMPIRICALLY: the installed Verus support crates
+//! probe (epic #60) settled this empirically: the installed Verus support crates
 //! (`builtin`/`builtin_macros`/`vstd`) cannot be consumed as cargo path-deps —
 //! they inherit `workspace.lints` from the Verus workspace root (so `cargo
 //! metadata` fails outside it), carry `cfg(verus_keep_ghost)` lint configs cargo
 //! rejects, and the macro expansion resolves a renamed `verus_builtin` crate. The
-//! `verus!{}` exec body ALSO cannot plain-`rustc`-compile: a function carrying an
+//! `verus!{}` exec body also cannot plain-`rustc`-compile: a function carrying an
 //! `ensures` clause is verus-driver-only syntax. So (b) is not viable for v1 and
-//! we land (c), exactly as the doc's decision rule prescribes.
+//! we land (c), as the doc's decision rule prescribes.
 //!
 //! Under (c):
 //! - The full `verus!{}` proof (the `subsumes` exec fn + `spec_subsumes` subset
 //!   relation + three lattice-law `proof fn`s) lives in [`verus_core`], gated
-//!   behind `#[cfg(verus_keep_ghost)]` — a cfg ONLY the real `verus` driver sets,
+//!   behind `#[cfg(verus_keep_ghost)]` — a cfg only the real `verus` driver sets,
 //!   so a normal `cargo build` never sees it. `tests/verus_verify.rs` runs
 //!   `verus --no-cheating src/lib.rs` and gates on `0 errors` (REQ-6 / AC-6).
 //! - The always-cargo-compiled plain Rust ([`subsumes_masks`] / its spec
-//!   [`spec_subsumes_mask`]) is BYTE-IDENTICAL to the verus exec body / spec. The
+//!   [`spec_subsumes_mask`]) is byte-identical to the verus exec body / spec. The
 //!   toolchain delegates the mask comparison to [`subsumes_masks`]; the
 //!   exhaustive 2^9 × 2^9 = 262144-pair equivalence test
 //!   (`tests/equivalence` over in `thermite-lower`) asserts the running code
-//!   equals the proved subset relation for EVERY input — finite + fully
-//!   enumerated, so this PROVES `effects::subsumes` computes exactly the relation
+//!   equals the proved subset relation for every input — finite + fully
+//!   enumerated, so this shows `effects::subsumes` computes the relation
 //!   Verus proved (transitively verus-anchored).
 //!
-//! ## What this increment ADDS (REQ-7 + REQ-8, epic #60)
+//! ## What this increment adds (REQ-7 + REQ-8, epic #60)
 //!
-//! This increment ports the next two Tier-1 targets via the SAME mechanism (c):
-//! - **REQ-7 — the degrade-ladder ANTI-CHEAT.** [`ladder_action_l3_tag`] /
+//! This increment ports the next two Tier-1 targets via the same mechanism (c):
+//! - **REQ-7 — the degrade-ladder anti-cheat.** [`ladder_action_l3_tag`] /
 //!   [`ladder_action_l2_tag`] are the plain-Rust mirrors of the verus-proved
-//!   `ladder_action_l3`/`ladder_action_l2` decision: a verdict DISCRIMINANT →ladder
+//!   `ladder_action_l3`/`ladder_action_l2` decision: a verdict discriminant →ladder
 //!   action ([`LadderAction`]). The verus core carries the anti-cheat `ensures`
 //!   `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` (+ the L2
 //!   analog) plus a global `proof fn` quantifying it over the whole verdict domain —
-//!   a `Counterexample` NEVER degrades (the R-DEFER-9 property). `forge::degrade`'s
-//!   `ladder_action_l3`/`ladder_action_l2` mirror this, and `run_ladder` BRANCHES on
+//!   a `Counterexample` never degrades (the R-DEFER-9 property). `forge::degrade`'s
+//!   `ladder_action_l3`/`ladder_action_l2` mirror this, and `run_ladder` branches on
 //!   the returned action; the in-module `verus_anchor` equivalence test binds the
 //!   production decision to these tags.
-//! - **REQ-8 — the seccomp allowlist SOUNDNESS.** [`io_allow`] is the plain-Rust
+//! - **REQ-8 — the seccomp allowlist soundness.** [`io_allow`] is the plain-Rust
 //!   mirror of the verus-proved `io_allow(fx_mask) -> u32` over the 5 sensitive
 //!   user-I/O syscalls (openat/socket/connect/getrandom/clock_gettime, bits 0..5).
 //!   The verus core carries `pure_has_no_io` (`io_allow(0) == 0`), `monotone`
@@ -93,16 +93,16 @@
 /// `thermite_lower::effects::EffectKind`): Read=0, Write=1, Net=2, Alloc=3,
 /// Time=4, Rand=5, Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom).
 /// The bitset is a `u16` (one bit per atom), so bits 0..9 are meaningful and the
-/// relation is total over all 512 masks (the 9-atom domain). WIDENED `u8`→`u16`
+/// relation is total over all 512 masks (the 9-atom domain). Widened `u8`→`u16`
 /// for the 9th atom; the `bit_vector` proofs were re-derived over u16.
 pub const ATOM_COUNT: u16 = 9;
 
 /// The executable effect-subsumption decision over the 9-atom `u16` bitset
 /// (REQ-5): `caller` subsumes `callee` iff `callee` has no atom the `caller`
-/// lacks, i.e. `(callee & !caller) == 0`. This plain-Rust body is BYTE-IDENTICAL
+/// lacks, i.e. `(callee & !caller) == 0`. This plain-Rust body is byte-identical
 /// to the `verus_core::subsumes` exec body the Verus prover discharges against the
 /// subset-relation `ensures` (mechanism (c) — the running code mirrors the proved
-/// code). [`spec_subsumes_mask`] is the spec it is proved to compute. WIDENED
+/// code). [`spec_subsumes_mask`] is the spec it is proved to compute. Widened
 /// `u8`→`u16` for the 9th atom `Term` (#106); the `(callee & !caller) == 0`
 /// equivalence to the 9-way subset conjunction is re-proved over u16.
 ///
@@ -117,14 +117,14 @@ pub fn subsumes_masks(caller: u16, callee: u16) -> bool {
 
 /// The genuine subset relation `effects(callee) ⊆ effects(caller)` over the
 /// 9-atom `u16` bitset, as the explicit per-atom conjunction (REQ-4 — the
-/// NON-trivial contract `subsumes_masks` is proved to compute). For each atom
+/// non-trivial contract `subsumes_masks` is proved to compute). For each atom
 /// position `i`, if `callee` has atom `i` then `caller` must have it. This is the
 /// plain-Rust mirror of `verus_core::spec_subsumes`; the Verus `bit_vector` proof
 /// shows `subsumes_masks(c, k) == spec_subsumes_mask(c, k)` for all `(c, k)`, and
 /// the exhaustive equivalence test re-checks the mirror over the full u16 domain.
 ///
-/// NON-VACUITY: this returns `false` for `caller=0, callee=1` (Pure does not
-/// subsume {Read}), so the relation is genuinely constraining (not `true`).
+/// Non-vacuity: this returns `false` for `caller=0, callee=1` (Pure does not
+/// subsume {Read}), so the relation is constraining (not `true`).
 #[must_use]
 pub fn spec_subsumes_mask(caller: u16, callee: u16) -> bool {
     let mut i: u16 = 0;
@@ -139,42 +139,42 @@ pub fn spec_subsumes_mask(caller: u16, callee: u16) -> bool {
 }
 
 // ===========================================================================
-// REQ-7 — the degrade-ladder ANTI-CHEAT decision (the core R-DEFER-9 property).
+// REQ-7 — the degrade-ladder anti-cheat decision (the core R-DEFER-9 property).
 // ===========================================================================
 
-/// The verdict DISCRIMINANT of an L3 (verus) run, the finite domain that drives
+/// The verdict discriminant of an L3 (verus) run, the finite domain that drives
 /// the degrade decision (REQ-7). The carried `Certificate`/`RejectReason` payloads
-/// `forge::degrade::L3Verdict` holds are IRRELEVANT to the decision, so the proved
+/// `forge::degrade::L3Verdict` holds are irrelevant to the decision, so the proved
 /// model tracks only this tag. Mirrors `forge::degrade::L3Verdict`'s discriminant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L3Tag {
-    /// verus PROVED the item → certify L3.
+    /// verus proved the item → certify L3.
     Proved,
-    /// verus TIMED OUT (inconclusive) → the SOLE degrade trigger → attempt L2.
+    /// verus timed out (inconclusive) → the sole degrade trigger → attempt L2.
     Timeout,
-    /// verus DISPROVED the item (a real bug) → HARD FAIL, NEVER a degrade.
+    /// verus disproved the item (a real bug) → hard fail, never a degrade.
     Counterexample,
 }
 
-/// The verdict DISCRIMINANT of an L2 (kani) run (REQ-7). Mirrors `forge::kani::L2Verdict`.
+/// The verdict discriminant of an L2 (kani) run (REQ-7). Mirrors `forge::kani::L2Verdict`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum L2Tag {
-    /// kani VERIFIED to the bound → certify L2 (degraded).
+    /// kani verified to the bound → certify L2 (degraded).
     Verified,
     /// kani exhausted its bound (inconclusive) → degrade to L1.
     UnderBound,
-    /// kani DISPROVED the contract (a real bug) → HARD FAIL, NEVER a drop to L1.
+    /// kani disproved the contract (a real bug) → hard fail, never a drop to L1.
     Counterexample,
 }
 
 /// The action the degrade ladder takes for a classified verdict (REQ-7). This is
-/// the PROVED decision: `forge::degrade::run_ladder` BRANCHES on it, so the
+/// the proved decision: `forge::degrade::run_ladder` branches on it, so the
 /// proved classification drives the real control flow. `CertifyL2`/`DegradeToL1`
-/// are the DEGRADE actions ([`is_degrade`]); `HardFail` is the non-certifying
-/// failure a `Counterexample` maps to and MUST never be a degrade.
+/// are the degrade actions ([`is_degrade`]); `HardFail` is the non-certifying
+/// failure a `Counterexample` maps to and never is a degrade.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LadderAction {
-    /// PROVED at L3 → certify L3 (terminal, no degrade).
+    /// Proved at L3 → certify L3 (terminal, no degrade).
     CertifyL3,
     /// L3 timed out → attempt the L2 rung.
     AttemptL2,
@@ -182,19 +182,19 @@ pub enum LadderAction {
     CertifyL2,
     /// L2 under-bound → drop to the L1 runtime-check rung (a degrade).
     DegradeToL1,
-    /// A counterexample (L3 or L2) → non-certifying HARD FAIL (NEVER a degrade).
+    /// A counterexample (L3 or L2) → non-certifying hard fail (never a degrade).
     HardFail,
 }
 
-/// `true` iff `action` is a DEGRADE — a lower rung taken as a PASS
+/// `true` iff `action` is a degrade — a lower rung taken as a pass
 /// (`CertifyL2`/`DegradeToL1`). The anti-cheat invariant (REQ-7) is that a
-/// `Counterexample` NEVER maps to a degrade. Mirrors `verus_core::is_degrade`.
+/// `Counterexample` never maps to a degrade. Mirrors `verus_core::is_degrade`.
 #[must_use]
 pub fn is_degrade(action: LadderAction) -> bool {
     matches!(action, LadderAction::CertifyL2 | LadderAction::DegradeToL1)
 }
 
-/// The L3 ladder decision (REQ-7): a verdict tag → the ladder action. BYTE-IDENTICAL
+/// The L3 ladder decision (REQ-7): a verdict tag → the ladder action. Byte-identical
 /// to the `verus_core::ladder_action_l3` exec body the Verus prover discharges
 /// against the anti-cheat `ensures` `l3_is_counterexample(v) ==> (r is HardFail) &&
 /// !is_degrade(r)`. `forge::degrade::ladder_action_l3` mirrors this and `run_ladder`
@@ -205,40 +205,40 @@ pub fn ladder_action_l3_tag(v: L3Tag) -> LadderAction {
     match v {
         L3Tag::Proved => LadderAction::CertifyL3,
         L3Tag::Timeout => LadderAction::AttemptL2,
-        // ANTI-CHEAT (R-DEFER-9): a counterexample is a HARD FAIL, never a degrade.
+        // anti-cheat (R-DEFER-9): a counterexample is a hard fail, never a degrade.
         L3Tag::Counterexample => LadderAction::HardFail,
     }
 }
 
 /// The L2 ladder decision (REQ-7): an L2 verdict tag → the ladder action.
-/// BYTE-IDENTICAL to `verus_core::ladder_action_l2`. A `Counterexample` is a HARD
-/// FAIL (never a drop to L1, the 2nd-rung anti-cheat).
+/// Byte-identical to `verus_core::ladder_action_l2`. A `Counterexample` is a hard
+/// fail (never a drop to L1, the 2nd-rung anti-cheat).
 #[must_use]
 pub fn ladder_action_l2_tag(v: L2Tag) -> LadderAction {
     match v {
         L2Tag::Verified => LadderAction::CertifyL2,
         L2Tag::UnderBound => LadderAction::DegradeToL1,
-        // ANTI-CHEAT (R-DEFER-9): an L2 counterexample is a HARD FAIL, never L1.
+        // anti-cheat (R-DEFER-9): an L2 counterexample is a hard fail, never L1.
         L2Tag::Counterexample => LadderAction::HardFail,
     }
 }
 
 // ===========================================================================
-// REQ-8 — the seccomp allowlist SOUNDNESS decision (the fx → sensitive-I/O map).
+// REQ-8 — the seccomp allowlist soundness decision (the fx → sensitive-I/O map).
 // ===========================================================================
 
 /// The number of fx-atom kinds in the `u16` fx-mask (Read=0, Write=1, Net=2,
 /// Time=3, Rand=4, Alloc=5, Panic=6, Diverge=7, Term=8 — the #106
-/// terminal-control atom). The bitset is total over all 512 masks. WIDENED
-/// `u8`→`u16` for the 9th atom; `Term` is NON-widening (`widen(8) == 0`) — a
-/// terminal-control `ioctl` grant, NOT one of the 5 io-sensitive syscalls
+/// terminal-control atom). The bitset is total over all 512 masks. Widened
+/// `u8`→`u16` for the 9th atom; `Term` is non-widening (`widen(8) == 0`) — a
+/// terminal-control `ioctl` grant, not one of the 5 io-sensitive syscalls
 /// (runtime-sandbox.md REQ-7 / OQ-5), so the io_allow soundness lemmas still hold.
 pub const FX_ATOM_COUNT: u16 = 9;
 
 /// The bit positions, in the `u32` sensitive-syscall mask, of the 5 user-I/O
 /// syscalls the §4.1 `pure`-exclusion table calls out (REQ-8). The dense
 /// `BASELINE_SYSCALLS` is orthogonal to these IO bits (OQ-6), so the soundness
-/// model is exactly this IO-membership projection.
+/// model is the IO-membership projection.
 pub const SYS_OPENAT: u32 = 1 << 0;
 /// The `socket` sensitive-syscall bit.
 pub const SYS_SOCKET: u32 = 1 << 1;
@@ -252,8 +252,8 @@ pub const SYS_CLOCK_GETTIME: u32 = 1 << 4;
 /// The per-atom contribution to the sensitive-syscall mask (REQ-8): which of the 5
 /// sensitive user-I/O syscalls fx-atom `i` widens the allowlist to permit.
 /// Read/Write→openat, Net→socket|connect, Time→clock_gettime, Rand→getrandom,
-/// Alloc/Panic/Diverge/Term→0 (non-widening). BYTE-IDENTICAL to `verus_core::widen`.
-/// `Term` (8, #106) is the `ioctl` grant — NOT one of the 5 io-sensitive syscalls
+/// Alloc/Panic/Diverge/Term→0 (non-widening). Byte-identical to `verus_core::widen`.
+/// `Term` (8, #106) is the `ioctl` grant — not one of the 5 io-sensitive syscalls
 /// (runtime-sandbox.md REQ-7 / OQ-5), so it contributes 0 to the io_allow mask.
 #[must_use]
 pub fn widen(i: u16) -> u32 {
@@ -263,22 +263,22 @@ pub fn widen(i: u16) -> u32 {
         2 => SYS_SOCKET | SYS_CONNECT, // Net
         3 => SYS_CLOCK_GETTIME,        // Time
         4 => SYS_GETRANDOM,            // Rand
-        // Alloc (5) / Panic (6) / Diverge (7) / Term (8) widen NO sensitive syscall.
+        // Alloc (5) / Panic (6) / Diverge (7) / Term (8) widen no sensitive syscall.
         _ => 0,
     }
 }
 
 /// The sensitive-syscall membership a transitive fx-mask permits (REQ-8): the OR of
-/// every PRESENT atom's [`widen`] contribution, over the 9-atom `u16` fx-mask.
-/// BYTE-IDENTICAL to the `verus_core::io_allow` exec body the Verus prover
+/// every present atom's [`widen`] contribution, over the 9-atom `u16` fx-mask.
+/// Byte-identical to the `verus_core::io_allow` exec body the Verus prover
 /// discharges against the three soundness lemmas — `pure_has_no_io`
 /// (`io_allow(0) == 0`), `monotone` (subset on the syscall-mask), and
 /// `io_allow_within_io_bits` (deny-by-default). The `forge::sandbox::syscall_allowlist`
 /// production fn is anchored to this over all 512 fx-masks by `sandbox::verus_anchor`
 /// (the production consumer, R-DEFER-1).
 ///
-/// NON-VACUITY: `io_allow(0) == 0` (pure permits NO sensitive syscall) and
-/// `io_allow(1) == SYS_OPENAT != 0` (Read widens), so the map is genuinely
+/// Non-vacuity: `io_allow(0) == 0` (pure permits no sensitive syscall) and
+/// `io_allow(1) == SYS_OPENAT != 0` (Read widens), so the map is
 /// constraining (not constant).
 #[must_use]
 pub fn io_allow(fx: u16) -> u32 {
@@ -294,38 +294,38 @@ pub fn io_allow(fx: u16) -> u32 {
 }
 
 // ===========================================================================
-// REQ-9 (Target C) — the boundary HONESTY gate (the §9 composition anti-cheat).
+// REQ-9 (Target C) — the boundary honesty gate (the §9 composition anti-cheat).
 // ===========================================================================
 
 /// The boundary/slag external_body honesty gate (REQ-9): a fn is emitted as a
-/// `#[verifier::external_body]` assumable signature IFF it carries a declared
-/// trust boundary — `#[boundary]` (`has_boundary`) OR `#[slag]` (`has_slag`).
-/// BYTE-IDENTICAL to the `verus_core::should_emit_external_body` exec body the
-/// Verus prover discharges against the disjunction `ensures` PLUS the soundness
-/// COROLLARY `(!has_boundary && !has_slag) ==> !r` — a REGULAR fn (neither flag)
-/// is NEVER laundered into an assumed-L3 signature (§9, R-DEFER-9).
+/// `#[verifier::external_body]` assumable signature iff it carries a declared
+/// trust boundary — `#[boundary]` (`has_boundary`) or `#[slag]` (`has_slag`).
+/// Byte-identical to the `verus_core::should_emit_external_body` exec body the
+/// Verus prover discharges against the disjunction `ensures` plus the soundness
+/// corollary `(!has_boundary && !has_slag) ==> !r` — a regular fn (neither flag)
+/// is never laundered into an assumed-L3 signature (§9, R-DEFER-9).
 ///
-/// `thermite_lower::lower::lower_fn` takes the external_body arm IFF this predicate
-/// is `true` (the production consumer, R-DEFER-1); the OBSERVABLE-dispatch
+/// `thermite_lower::lower::lower_fn` takes the external_body arm iff this predicate
+/// is `true` (the production consumer, R-DEFER-1); the observable-dispatch
 /// equivalence test (`thermite-lower/tests/boundary_gate_verified.rs`) anchors the
 /// emitted source's `#[verifier::external_body]` substring to this predicate over
 /// the 4 `(has_boundary, has_slag)` combinations.
 ///
-/// NON-VACUITY: this returns `false` for `(false, false)` (a regular fn is fully
-/// proved, never external_body), so the gate is genuinely constraining (not `true`).
+/// Non-vacuity: this returns `false` for `(false, false)` (a regular fn is fully
+/// proved, never external_body), so the gate is constraining (not `true`).
 #[must_use]
 pub fn should_emit_external_body(has_boundary: bool, has_slag: bool) -> bool {
     has_boundary || has_slag
 }
 
 // ===========================================================================
-// REQ-10 (Target D) — the project LEVEL AGGREGATION min (the §5.2 no-over-claim).
+// REQ-10 (Target D) — the project level aggregation min (the §5.2 no-over-claim).
 // ===========================================================================
 
 /// The assurance level lattice (REQ-10), mirroring `forge::manifest::Level`. The
 /// rank order `L0 < L1 < L2 < L3` (`rank` 0..3) is the `Ord` the project-level
 /// fold-min ranges over: the project is never claimed stronger than its weakest
-/// certifying fn (§5.2). BYTE-IDENTICAL discriminant order to `forge`'s `Level`.
+/// certifying fn (§5.2). Byte-identical discriminant order to `forge`'s `Level`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Level {
     /// L0 — unverified / `#[slag]` escape hatch.
@@ -352,8 +352,8 @@ pub fn rank(l: Level) -> u8 {
 }
 
 /// The weaker of two levels by [`rank`] (REQ-10): ties to `a`. Mirrors
-/// `verus_core::min2`. NON-VACUITY: `min2(L3, L1) == L1` (picks the WEAKER, never
-/// an over-claim), so a MAX-picking mutant fails `aggregate_le_all` (Grounding D).
+/// `verus_core::min2`. Non-vacuity: `min2(L3, L1) == L1` (picks the weaker, never
+/// an over-claim), so a max-picking mutant fails `aggregate_le_all` (Grounding D).
 #[must_use]
 pub fn min2(a: Level, b: Level) -> Level {
     if rank(a) <= rank(b) {
@@ -364,8 +364,8 @@ pub fn min2(a: Level, b: Level) -> Level {
 }
 
 /// The project-level fold-min over a per-fn level list (REQ-10): the weakest
-/// level, seeded at `L3` so the EMPTY list folds to `L3` (mirroring
-/// `min().unwrap_or(Level::L3)` in `manifest::aggregate`). BYTE-IDENTICAL fold to
+/// level, seeded at `L3` so the empty list folds to `L3` (mirroring
+/// `min().unwrap_or(Level::L3)` in `manifest::aggregate`). Byte-identical fold to
 /// the verus-proved `aggregate_level(Seq<Level>)` the Verus prover discharges
 /// against `aggregate_le_all` (≤ every fn — the §5.2 over-claim bound) and
 /// `aggregate_is_attained` (== the min). `forge::manifest::AssuranceManifest::aggregate`
@@ -382,15 +382,15 @@ pub fn aggregate_level(levels: &[Level]) -> Level {
 }
 
 // ===========================================================================
-// REQ-11 (Target E) — the mutation FLOOR gate (#48 anti-Goodhart, §7).
+// REQ-11 (Target E) — the mutation floor gate (#48 anti-Goodhart, §7).
 // ===========================================================================
 
 /// The mutation kill-ratio floor gate at the default 60% floor (REQ-11), in
-/// INTEGER cross-multiply form (NO f64 — verus reasons poorly about floats):
-/// `scored > 0 && killed * 100 >= scored * 60`. BYTE-IDENTICAL to the
+/// integer cross-multiply form (no f64 — verus reasons poorly about floats):
+/// `scored > 0 && killed * 100 >= scored * 60`. Byte-identical to the
 /// `verus_core::meets_floor_60` exec body the Verus prover discharges against the
-/// load-bearing #48 anti-Goodhart `ensures` `scored == 0 ==> !r` — a `0/0` score
-/// (no scoreable mutant) NEVER passes the floor (a contract that cannot be
+/// #48 anti-Goodhart `ensures` `scored == 0 ==> !r` — a `0/0` score
+/// (no scoreable mutant) never passes the floor (a contract that cannot be
 /// mutation-validated is gated `WeakContract`, not a vacuous pass).
 ///
 /// `forge::mutation::MutationScore::meets_floor` (the f64 production gate at the
@@ -401,8 +401,8 @@ pub fn aggregate_level(levels: &[Level]) -> Level {
 /// `u128` widening: `killed * 100` / `scored * 60` cannot overflow for any
 /// `usize` count (matching the exec form's overflow obligation).
 ///
-/// NON-VACUITY: this returns `false` for `(0, 0)` (the #48 gate) AND for `(1, 2)`
-/// (`100 >= 120` is false — 50% is below 60%), so it is genuinely constraining.
+/// Non-vacuity: this returns `false` for `(0, 0)` (the #48 gate) and for `(1, 2)`
+/// (`100 >= 120` is false — 50% is below 60%), so it is constraining.
 #[must_use]
 pub fn meets_floor_60(killed: usize, scored: usize) -> bool {
     let k = killed as u128;
@@ -412,12 +412,12 @@ pub fn meets_floor_60(killed: usize, scored: usize) -> bool {
 
 // ---------------------------------------------------------------------------
 // The Verus-verified core (REQ-1/REQ-4/REQ-5/REQ-7/REQ-8/REQ-9/REQ-10/REQ-11).
-// Compiled ONLY by the real `verus` driver, which sets `cfg(verus_keep_ghost)`; a
+// Compiled only by the real `verus` driver, which sets `cfg(verus_keep_ghost)`; a
 // normal `cargo build` skips it entirely (the `verus!{}` macro + `ensures` syntax
 // is verus-driver-only). The proof is run by `tests/verus_verify.rs`
 // (`verus --no-cheating src/lib.rs`).
 //
-// AC-5: NO `#[verifier::external_body]` / `external` appears here — every core fn
+// AC-5: no `#[verifier::external_body]` / `external` appears here — every core fn
 // (`subsumes`/`ladder_action_*`/`io_allow`/`should_emit_external_body`/
 // `aggregate_level`/`meets_floor_60`) carries a real `ensures`, not a Tier-3 shim.
 // ---------------------------------------------------------------------------
@@ -434,7 +434,7 @@ mod verus_core {
 
     /// The genuine subset relation `effects(callee) ⊆ effects(caller)`, as the
     /// explicit 9-way conjunction over the atom positions (mirrors the plain-Rust
-    /// `spec_subsumes_mask`). NON-vacuous (REQ-4): false when callee has an atom
+    /// `spec_subsumes_mask`). Non-vacuous (REQ-4): false when callee has an atom
     /// caller lacks. Bit 8 is the #106 terminal-control atom `Term`.
     pub open spec fn spec_subsumes(caller: u16, callee: u16) -> bool {
         &&& (has(callee, 0) ==> has(caller, 0))
@@ -448,9 +448,9 @@ mod verus_core {
         &&& (has(callee, 8) ==> has(caller, 8))
     }
 
-    /// The executable mask test, PROVED equal to the subset relation for ALL
+    /// The executable mask test, proved equal to the subset relation for all
     /// inputs (the L3 guarantee, §6). Byte-identical to the plain-Rust
-    /// `subsumes_masks` the toolchain runs. WIDENED to u16 for the 9th atom (#106).
+    /// `subsumes_masks` the toolchain runs. Widened to u16 for the 9th atom (#106).
     /// The 9-atom masks only ever set bits 0..9 (the `EffectKind::bit` domain), so
     /// the contract is over `caller < 512 && callee < 512` — the upper bits 9..16
     /// are unused, so the all-16-bit `(callee & !caller) == 0` test agrees with the
@@ -475,7 +475,7 @@ mod verus_core {
         assert(spec_subsumes(row, row)) by (bit_vector);
     }
 
-    /// Lattice law 2: Pure (the empty set, mask 0) subsumes ONLY Pure (over the
+    /// Lattice law 2: Pure (the empty set, mask 0) subsumes only Pure (over the
     /// 9-atom domain `callee < 512`; an out-of-domain upper bit is not a modeled
     /// atom).
     proof fn lattice_pure_subsumes_only_pure(callee: u16)
@@ -493,7 +493,7 @@ mod verus_core {
     }
 
     // =======================================================================
-    // REQ-7 — the degrade-ladder ANTI-CHEAT (a Counterexample NEVER degrades).
+    // REQ-7 — the degrade-ladder anti-cheat (a Counterexample never degrades).
     // =======================================================================
 
     /// The L3 verdict discriminant (mirrors the plain `L3Tag` + `forge`'s
@@ -504,12 +504,12 @@ mod verus_core {
     pub enum L2Tag { Verified, UnderBound, Counterexample }
 
     /// The action the ladder takes (mirrors the plain `LadderAction`). `CertifyL2`
-    /// / `DegradeToL1` are the DEGRADE actions; `HardFail` is the non-certifying
+    /// / `DegradeToL1` are the degrade actions; `HardFail` is the non-certifying
     /// failure a counterexample maps to.
     pub enum LadderAction { CertifyL3, AttemptL2, CertifyL2, DegradeToL1, HardFail }
 
-    /// `true` iff `a` is a DEGRADE — a lower rung taken as a PASS. The anti-cheat
-    /// `ensures` is `!is_degrade(result)` on a counterexample. NON-vacuous: false
+    /// `true` iff `a` is a degrade — a lower rung taken as a pass. The anti-cheat
+    /// `ensures` is `!is_degrade(result)` on a counterexample. Non-vacuous: false
     /// for `HardFail`, true for `CertifyL2`/`DegradeToL1`.
     pub open spec fn is_degrade(a: LadderAction) -> bool {
         match a {
@@ -519,18 +519,18 @@ mod verus_core {
         }
     }
 
-    /// `true` iff the L3 verdict is a counterexample (verus DISPROVED — a real bug).
+    /// `true` iff the L3 verdict is a counterexample (verus disproved — a real bug).
     pub open spec fn l3_is_counterexample(v: L3Tag) -> bool {
         match v { L3Tag::Counterexample => true, _ => false }
     }
 
-    /// `true` iff the L2 verdict is a counterexample (kani DISPROVED — a real bug).
+    /// `true` iff the L2 verdict is a counterexample (kani disproved — a real bug).
     pub open spec fn l2_is_counterexample(v: L2Tag) -> bool {
         match v { L2Tag::Counterexample => true, _ => false }
     }
 
-    /// The L3 ladder DECISION, PROVED to honor the anti-cheat for ALL verdicts
-    /// (REQ-7, R-DEFER-9): a `Counterexample` maps to `HardFail` and NEVER to a
+    /// The L3 ladder decision, proved to honor the anti-cheat for all verdicts
+    /// (REQ-7, R-DEFER-9): a `Counterexample` maps to `HardFail` and never to a
     /// degrade. Byte-identical to the plain-Rust `ladder_action_l3_tag` the
     /// toolchain runs.
     pub fn ladder_action_l3(v: L3Tag) -> (r: LadderAction)
@@ -543,8 +543,8 @@ mod verus_core {
         }
     }
 
-    /// The L2 ladder DECISION, PROVED to honor the anti-cheat for ALL verdicts
-    /// (REQ-7, the 2nd rung): an L2 `Counterexample` maps to `HardFail` and NEVER
+    /// The L2 ladder decision, proved to honor the anti-cheat for all verdicts
+    /// (REQ-7, the 2nd rung): an L2 `Counterexample` maps to `HardFail` and never
     /// to a degrade (never a drop to L1). Byte-identical to `ladder_action_l2_tag`.
     pub fn ladder_action_l2(v: L2Tag) -> (r: LadderAction)
         ensures l2_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r),
@@ -556,8 +556,8 @@ mod verus_core {
         }
     }
 
-    /// The GLOBAL anti-cheat: the decision honors "a counterexample never degrades"
-    /// over the WHOLE finite verdict domain (REQ-7). Quantifying the exec fns'
+    /// The global anti-cheat: the decision honors "a counterexample never degrades"
+    /// over the whole finite verdict domain (REQ-7). Quantifying the exec fns'
     /// post-conditions over every verdict closes the property as a theorem, not just
     /// a per-call obligation.
     proof fn anti_cheat_holds_for_all_verdicts()
@@ -593,7 +593,7 @@ mod verus_core {
     }
 
     // =======================================================================
-    // REQ-8 — the seccomp allowlist SOUNDNESS (pure-no-I/O + monotonicity +
+    // REQ-8 — the seccomp allowlist soundness (pure-no-I/O + monotonicity +
     // deny-by-default over the 5 sensitive user-I/O syscalls).
     // =======================================================================
 
@@ -604,9 +604,9 @@ mod verus_core {
 
     /// The per-atom sensitive-syscall contribution (REQ-8): which of the 5 sensitive
     /// I/O syscalls atom `i` widens to permit. openat=bit0, socket=bit1, connect=bit2,
-    /// getrandom=bit3, clock_gettime=bit4. Mirrors the plain-Rust `widen`. NON-widening
+    /// getrandom=bit3, clock_gettime=bit4. Mirrors the plain-Rust `widen`. Non-widening
     /// atoms (Alloc=5/Panic=6/Diverge=7/Term=8, and any i>=9) contribute 0. `Term`
-    /// (8, #106) is the `ioctl` grant — NOT an io-sensitive syscall (REQ-7/OQ-5).
+    /// (8, #106) is the `ioctl` grant — not an io-sensitive syscall (REQ-7/OQ-5).
     pub open spec fn widen(i: u16) -> u32 {
         if i == 0 { 1u32 }            // Read  → openat
         else if i == 1 { 1u32 }       // Write → openat
@@ -617,7 +617,7 @@ mod verus_core {
     }
 
     /// The sensitive-syscall membership an fx-mask permits (REQ-8): the OR of every
-    /// PRESENT atom's `widen` contribution, the explicit 9-way unrolled fold over the
+    /// present atom's `widen` contribution, the explicit 9-way unrolled fold over the
     /// bit positions (bit 8 is `Term`, #106 — `widen(8) == 0`). Mirrors the plain-Rust
     /// `io_allow`. The proved exec form.
     pub open spec fn io_allow(fx: u16) -> u32 {
@@ -632,7 +632,7 @@ mod verus_core {
         | (if fx_has(fx, 8) { widen(8) } else { 0u32 })
     }
 
-    /// The exec form of `io_allow`, PROVED equal to the spec fold for ALL masks (the
+    /// The exec form of `io_allow`, proved equal to the spec fold for all masks (the
     /// L3 guarantee, §6). A single OR expression structurally matching the spec
     /// (each `fx_has(fx, i)` is the `(fx & (1<<i)) != 0` test, each `widen(i)` its
     /// literal). Byte-identical in shape to the plain-Rust `io_allow` accumulation.
@@ -650,7 +650,7 @@ mod verus_core {
         | (if (fx & (1u16 << 8)) != 0 { widen_exec(8) } else { 0u32 })
     }
 
-    /// The exec form of `widen`, PROVED equal to the spec for all atom indices
+    /// The exec form of `widen`, proved equal to the spec for all atom indices
     /// (used by `io_allow_exec` so the running form delegates to the proved per-atom
     /// contribution rather than re-spelling the literals).
     pub fn widen_exec(i: u16) -> (r: u32)
@@ -664,8 +664,8 @@ mod verus_core {
         else { 0u32 }
     }
 
-    /// SOUNDNESS lemma 1 — PURE-NO-I/O (REQ-8): an empty fx-mask (`pure`) permits NO
-    /// sensitive user-I/O syscall. NON-vacuous: a non-widening atom leaking `openat`
+    /// Soundness lemma 1 — pure-no-I/O (REQ-8): an empty fx-mask (`pure`) permits no
+    /// sensitive user-I/O syscall. Non-vacuous: a non-widening atom leaking `openat`
     /// (mutating `widen`'s `else` arm) makes this fail (Grounding B).
     proof fn pure_has_no_io()
         ensures io_allow(0u16) == 0u32,
@@ -673,17 +673,17 @@ mod verus_core {
         assert(io_allow(0u16) == 0u32) by (compute);
     }
 
-    /// SOUNDNESS lemma 2 — non-widening atoms (Alloc/Panic/Diverge/Term) add no I/O: a
-    /// mask of ONLY bits 5,6,7,8 (incl. the #106 `Term` bit) permits nothing sensitive.
+    /// Soundness lemma 2 — non-widening atoms (Alloc/Panic/Diverge/Term) add no I/O: a
+    /// mask of only bits 5,6,7,8 (incl. the #106 `Term` bit) permits nothing sensitive.
     proof fn non_widening_atoms_have_no_io()
         ensures io_allow(0b1_1110_0000u16) == 0u32,
     {
         assert(io_allow(0b1_1110_0000u16) == 0u32) by (compute);
     }
 
-    /// SOUNDNESS lemma 3 — MONOTONICITY (REQ-8, deny-by-default's positive form):
+    /// Soundness lemma 3 — monotonicity (REQ-8, deny-by-default's positive form):
     /// `fx ⊆ fx'` (bitset subset) ⟹ `io_allow(fx) ⊆ io_allow(fx')` on the
-    /// syscall-mask (adding an effect NEVER removes a permitted syscall). NON-vacuous:
+    /// syscall-mask (adding an effect never removes a permitted syscall). Non-vacuous:
     /// an XOR `io_allow` (so Write cancels Read's openat) makes this fail (Grounding B).
     proof fn monotone(fx: u16, fxp: u16)
         requires (fx & fxp) == fx,
@@ -692,7 +692,7 @@ mod verus_core {
         assert((fx & fxp) == fx ==> (io_allow(fx) & io_allow(fxp)) == io_allow(fx)) by (bit_vector);
     }
 
-    /// SOUNDNESS lemma 4 — DENY-BY-DEFAULT (REQ-8): `io_allow` NEVER sets a bit
+    /// Soundness lemma 4 — deny-by-default (REQ-8): `io_allow` never sets a bit
     /// outside the 5 sensitive syscalls (bits 0..5, mask 0x1F). A widening can only
     /// grant inside the modeled sensitive set, never silently elsewhere (OQ-6). The
     /// #106 `Term` bit (8) widens to 0, so the deny-by-default bound is unchanged.
@@ -703,21 +703,21 @@ mod verus_core {
     }
 
     // =======================================================================
-    // REQ-9 (Target C) — the boundary HONESTY gate (a REGULAR fn never gets
+    // REQ-9 (Target C) — the boundary honesty gate (a regular fn never gets
     // external_body, so a lying regular body can never be laundered to L3, §9).
     // =======================================================================
 
     /// The spec disjunction `has_boundary || has_slag` (the gate's intended
-    /// answer). Mirrors the plain-Rust `should_emit_external_body`. NON-vacuous:
+    /// answer). Mirrors the plain-Rust `should_emit_external_body`. Non-vacuous:
     /// false at `(false, false)`.
     pub open spec fn spec_should_emit_external_body(has_boundary: bool, has_slag: bool) -> bool {
         has_boundary || has_slag
     }
 
-    /// The boundary/slag external_body honesty gate, PROVED to compute the
-    /// disjunction AND the soundness corollary for ALL inputs (REQ-9, R-DEFER-9):
+    /// The boundary/slag external_body honesty gate, proved to compute the
+    /// disjunction and the soundness corollary for all inputs (REQ-9, R-DEFER-9):
     /// **(1)** `r == spec_should_emit_external_body(..)`, and **(2)** the corollary
-    /// `(!has_boundary && !has_slag) ==> !r` — a REGULAR fn is NEVER emitted
+    /// `(!has_boundary && !has_slag) ==> !r` — a regular fn is never emitted
     /// external_body. Byte-identical to the plain-Rust `should_emit_external_body`.
     pub fn should_emit_external_body(has_boundary: bool, has_slag: bool) -> (r: bool)
         ensures
@@ -727,10 +727,10 @@ mod verus_core {
         has_boundary || has_slag
     }
 
-    /// The GLOBAL §9 honesty corollary: NO regular fn (neither flag) is ever
-    /// emitted as `#[verifier::external_body]`, over the WHOLE 2×2 bool square
+    /// The global §9 honesty corollary: no regular fn (neither flag) is ever
+    /// emitted as `#[verifier::external_body]`, over the whole 2×2 bool square
     /// (REQ-9). A lying regular body can never be laundered into an assumed-L3
-    /// signature — the load-bearing composition anti-cheat.
+    /// signature — the composition anti-cheat.
     proof fn regular_fn_never_external_body()
         ensures
             forall|b: bool, s: bool| #[trigger] spec_should_emit_external_body(b, s) ==>
@@ -745,14 +745,14 @@ mod verus_core {
     }
 
     // =======================================================================
-    // REQ-10 (Target D) — the project LEVEL AGGREGATION min (no over-claim, §5.2).
+    // REQ-10 (Target D) — the project level aggregation min (no over-claim, §5.2).
     // =======================================================================
 
     /// The assurance level lattice (mirrors the plain `Level` + `forge`'s `Level`).
     pub enum Level { L0, L1, L2, L3 }
 
     /// The rank discriminant `L0=0 .. L3=3` (mirrors the plain `rank`). The order
-    /// the fold-min ranges over: a smaller rank is a WEAKER level.
+    /// the fold-min ranges over: a smaller rank is a weaker level.
     pub open spec fn rank(l: Level) -> int {
         match l {
             Level::L0 => 0,
@@ -763,15 +763,15 @@ mod verus_core {
     }
 
     /// The weaker of two levels by `rank` (mirrors the plain `min2`); ties to `a`.
-    /// NON-vacuous: a MAX-picking mutant (`rank(a) >= rank(b)`) breaks
+    /// Non-vacuous: a max-picking mutant (`rank(a) >= rank(b)`) breaks
     /// `aggregate_le_all` (Grounding D).
     pub open spec fn min2(a: Level, b: Level) -> Level {
         if rank(a) <= rank(b) { a } else { b }
     }
 
     /// The project-level fold-min over a `Seq<Level>` (REQ-10), seeded at `L3` so
-    /// the EMPTY seq folds to `L3` (mirroring `min().unwrap_or(Level::L3)`). The
-    /// recursion folds the LAST element into the prefix's fold; mirrors the plain
+    /// the empty seq folds to `L3` (mirroring `min().unwrap_or(Level::L3)`). The
+    /// recursion folds the last element into the prefix's fold; mirrors the plain
     /// `aggregate_level` (which iterates left-to-right — `min2` is commutative-
     /// enough that the fold value is the same: the unique minimum).
     pub open spec fn aggregate_level(levels: Seq<Level>) -> Level
@@ -784,10 +784,10 @@ mod verus_core {
         }
     }
 
-    /// SOUNDNESS lemma D1 — `aggregate_level(levels)` is ≤ EVERY element by `rank`
+    /// Soundness lemma D1 — `aggregate_level(levels)` is ≤ every element by `rank`
     /// (REQ-10): the project level is never claimed stronger than its weakest fn
     /// (§5.2 / R-DEFER-9 over-claim bound). Proved by induction on `drop_last`.
-    /// NON-vacuous: a MAX-picking `min2` makes this fail (Grounding D).
+    /// Non-vacuous: a max-picking `min2` makes this fail (Grounding D).
     proof fn aggregate_le_all(levels: Seq<Level>, i: int)
         requires 0 <= i < levels.len(),
         ensures rank(aggregate_level(levels)) <= rank(levels[i]),
@@ -808,8 +808,8 @@ mod verus_core {
         }
     }
 
-    /// SOUNDNESS lemma D2 — `aggregate_level(levels)` is ATTAINED at some index
-    /// (REQ-10): D1 + D2 ⟹ it is EXACTLY the min, not merely a lower bound.
+    /// Soundness lemma D2 — `aggregate_level(levels)` is attained at some index
+    /// (REQ-10): D1 + D2 ⟹ it is exactly the min, not merely a lower bound.
     /// Proved by induction: either the tail's attaining index, or the last element.
     proof fn aggregate_is_attained(levels: Seq<Level>)
         requires levels.len() > 0,
@@ -843,20 +843,20 @@ mod verus_core {
     }
 
     // =======================================================================
-    // REQ-11 (Target E) — the mutation FLOOR gate (#48 anti-Goodhart, INTEGER).
+    // REQ-11 (Target E) — the mutation floor gate (#48 anti-Goodhart, integer).
     // =======================================================================
 
     /// The integer cross-multiply floor spec at the default 60% floor (REQ-11):
     /// `scored > 0 && killed * 100 >= scored * 60`. Mirrors the plain
-    /// `meets_floor_60`. NON-vacuous: false at `scored == 0` (#48) AND at 50%.
+    /// `meets_floor_60`. Non-vacuous: false at `scored == 0` (#48) and at 50%.
     pub open spec fn spec_meets_floor_60(killed: nat, scored: nat) -> bool {
         scored > 0 && killed * 100 >= scored * 60
     }
 
-    /// The mutation floor gate, PROVED to compute the integer cross-multiply AND
-    /// the #48 anti-Goodhart corollary for ALL inputs (REQ-11, R-DEFER-9):
+    /// The mutation floor gate, proved to compute the integer cross-multiply and
+    /// the #48 anti-Goodhart corollary for all inputs (REQ-11, R-DEFER-9):
     /// `r == spec_meets_floor_60(..)` and `scored == 0 ==> !r` (a `0/0` score
-    /// NEVER passes). The `u128` widening discharges the multiply-overflow
+    /// never passes). The `u128` widening discharges the multiply-overflow
     /// obligation (`killed`/`scored` are `usize`-bounded; `* 100` / `* 60` fit
     /// `u128`). Byte-identical in shape to the plain-Rust `meets_floor_60`.
     pub fn meets_floor_60(killed: u128, scored: u128) -> (r: bool)
@@ -868,8 +868,8 @@ mod verus_core {
         scored > 0 && killed * 100 >= scored * 60
     }
 
-    /// The GLOBAL #48 anti-Goodhart corollary: a `0/0` score (no scoreable mutant)
-    /// NEVER passes the floor, over ALL `killed` (REQ-11). A contract that cannot
+    /// The global #48 anti-Goodhart corollary: a `0/0` score (no scoreable mutant)
+    /// never passes the floor, over all `killed` (REQ-11). A contract that cannot
     /// be mutation-validated is gated, never a vacuous pass.
     proof fn zero_scored_never_passes()
         ensures forall|k: nat| !(#[trigger] spec_meets_floor_60(k, 0nat)),

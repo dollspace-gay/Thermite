@@ -1,32 +1,32 @@
-//! Conformance for Cluster **C9-B** (crosslink **#109**): TUPLES — the
+//! Conformance for Cluster **C9-B** (crosslink **#109**): tuples — the
 //! `Type::Tuple(Vec<Type>)` n-tuple type, the `Expr::Tuple(Vec<Expr>)`
 //! construction, and the `Expr::TupleProj { receiver, index }` projection (`.0`/
-//! `.1`/…), the v1 §2.3 "one way" tuple access (NOT destructuring — REQ-9
-//! deferred). These run against the two EXTERNAL truths the toolchain does not
+//! `.1`/…), the v1 §2.3 "one way" tuple access (not destructuring — REQ-9
+//! deferred). These run against the two external truths the toolchain does not
 //! author for itself: the built `forge` binary's certificate ladder (`forge
-//! check`, real verus) and the real `verus` binary on the EMITTED lowering.
+//! check`, real verus) and the real `verus` binary on the emitted lowering.
 //!
 //! Pins the C9-B deliverables (`.design/basis/10-recursion-tuples.md`):
 //!
 //!   * `fn swap(a, b: u64) -> (u64, u64) ens result.0 == b && result.1 == a {
-//!     (b, a) }` → L3 (AC-4 — the GROUNDED `2 verified, 0 errors`).
-//!   * the SAME `swap` with body `(a, b)` → NOT L3 (AC-5 — the projection `ens`
-//!     BITES; `postcondition not satisfied`; R-DEFER-9 non-vacuity).
+//!     (b, a) }` → L3 (AC-4 — the grounded `2 verified, 0 errors`).
+//!   * the same `swap` with body `(a, b)` → not L3 (AC-5 — the projection `ens`
+//!     bites; `postcondition not satisfied`; R-DEFER-9 non-vacuity).
 //!   * a 3-tuple `(u64, u64, u64)` with `ens result.0 == 1 && result.1 == 2 &&
-//!     result.2 == 3` → L3 (AC-6 — n-tuple arity ≥ 2; GROUNDED `3 verified`).
-//!   * a tuple in a `let` + projection in exec position BUILDS+RUNS.
+//!     result.2 == 3` → L3 (AC-6 — n-tuple arity ≥ 2; grounded `3 verified`).
+//!   * a tuple in a `let` + projection in exec position builds+runs.
 //!   * the disambiguation does not break `()` (unit type) or `(e)` (grouping):
 //!     these are parse-level checks (no verus needed).
 //!
-//! The verus checks SKIP LOUDLY when verus is absent (the `option_result_
+//! The verus checks skip with a logged note when verus is absent (the `option_result_
 //! conformance.rs` precedent) — never panic on a missing solver. `tests/` is not
 //! anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/10-recursion-tuples.md`
-//! AC-4/AC-5/AC-6 (the GROUNDED forms: `swap` `2 verified, 0 errors`; wrong body
+//! AC-4/AC-5/AC-6 (the grounded forms: `swap` `2 verified, 0 errors`; wrong body
 //! `postcondition not satisfied`; 3-tuple `3 verified, 0 errors`) +
 //! `thermite-design.md` §6 ladder semantics (L3 == a fully-discharged real-verus
-//! proof), NEVER copied from the toolchain's own output.
+//! proof), never copied from the toolchain's own output.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -126,7 +126,7 @@ fn tuple_type_disambiguation_unit_grouping_tuple() {
         other => panic!("DESIGN REQ-5: a `(u64, u64)` return must be `Type::Tuple`, got {other:?}"),
     }
 
-    // The unit `()` return stays `Type::Unit` (the disambiguation did NOT break it).
+    // The unit `()` return stays `Type::Unit` (the disambiguation did not break it).
     let unit = thermite_syntax::parse("fn log() -> ()\n  req true\n  ens true\n  fx pure\n{ }\n");
     assert!(
         unit.is_clean(),
@@ -143,7 +143,7 @@ fn tuple_type_disambiguation_unit_grouping_tuple() {
         panic!("expected fn");
     }
 
-    // The parenthesised `(u64)` is grouping → the inner type (arity 1, NOT a tuple).
+    // The parenthesised `(u64)` is grouping → the inner type (arity 1, not a tuple).
     let grouped = thermite_syntax::parse(
         "fn id(a: u64) -> (u64)\n  req true\n  ens result == a\n  fx pure\n{ a }\n",
     );
@@ -222,7 +222,7 @@ const SWAP_L3: &str = "fn swap(a: u64, b: u64) -> (u64, u64)\n  req true\n  ens 
 /// AC-4 — `swap(a, b) -> (u64, u64) ens result.0 == b && result.1 == a { (b, a) }`
 /// certifies L3.
 ///
-/// AUTHORITY: `.design/basis/10-recursion-tuples.md` AC-4 — the GROUNDED form
+/// Authority: `.design/basis/10-recursion-tuples.md` AC-4 — the grounded form
 /// (`2 verified, 0 errors`): `(u64, u64)` lowers to a Verus tuple type, `(b, a)`
 /// to a Verus tuple, `result.0`/`result.1` to native Verus projections.
 /// `thermite-design.md` §6: a fully-discharged verus proof is L3.
@@ -244,11 +244,11 @@ fn ac4_swap_tuple_projection_certifies_l3() {
     );
 }
 
-/// AC-5 (the projection `ens` BITES — non-vacuity, R-DEFER-9) — the SAME `swap`
-/// with body `(a, b)` is NOT L3.
+/// AC-5 (the projection `ens` bites — non-vacuity, R-DEFER-9) — the same `swap`
+/// with body `(a, b)` is not L3.
 ///
-/// AUTHORITY: `.design/basis/10-recursion-tuples.md` AC-5 — `(a, b)` under the
-/// projection `ens` (`result.0 == b`) FAILS verus (`postcondition not satisfied`)
+/// Authority: `.design/basis/10-recursion-tuples.md` AC-5 — `(a, b)` under the
+/// projection `ens` (`result.0 == b`) fails verus (`postcondition not satisfied`)
 /// — the projection contract is real, not vacuous. `thermite-design.md` §7: the
 /// battery catches the false claim. The §7 vacuity gate is respected.
 #[test]
@@ -274,7 +274,7 @@ fn ac5_wrong_body_under_projection_ens_is_rejected() {
 /// AC-6 — an n-tuple (a 3-tuple `(u64, u64, u64)`) with a projection `ens`
 /// certifies L3 (arity ≥ 2, not pairs-only).
 ///
-/// AUTHORITY: `.design/basis/10-recursion-tuples.md` AC-6 — the GROUNDED 3-tuple
+/// Authority: `.design/basis/10-recursion-tuples.md` AC-6 — the grounded 3-tuple
 /// (`3 verified, 0 errors`): `Type::Tuple`/`Expr::Tuple` carry any arity ≥ 2.
 #[test]
 fn ac6_three_tuple_certifies_l3() {
@@ -296,11 +296,11 @@ fn ac6_three_tuple_certifies_l3() {
     );
 }
 
-/// REQ-8 (build+run) — a tuple in a `let` + a projection in EXEC position lowers
+/// REQ-8 (build+run) — a tuple in a `let` + a projection in exec position lowers
 /// and verifies: a fn that constructs `(a, b)`, binds it, and reads `.0`.
 ///
-/// AUTHORITY: `.design/basis/10-recursion-tuples.md` REQ-8 — the tuple
-/// construction + projection lower to native Verus tuple ops in BOTH exec and
+/// Authority: `.design/basis/10-recursion-tuples.md` REQ-8 — the tuple
+/// construction + projection lower to native Verus tuple ops in both exec and
 /// contract position. L3 == a fully-discharged verus proof (§6).
 #[test]
 fn req8_tuple_let_and_exec_projection_certifies_l3() {

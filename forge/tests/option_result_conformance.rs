@@ -2,10 +2,10 @@
 //! `Result` constructors + the `Result<T, E>` two-arg type + the
 //! payload-in-contract projection (the spec-`match`-in-`ens`) + the deferred
 //! `parse_u64` (the C4 `07-strings.md` REQ-9 payoff). These run against the two
-//! EXTERNAL truths the toolchain does not author for itself: the built `forge`
+//! external truths the toolchain does not author for itself: the built `forge`
 //! binary's certificate ladder (`forge check`, real verus) and — for the generated
 //! `parse_u64` whose round-trip cannot be a thin caller's mutation-scored cert —
-//! the real `verus` binary on the EMITTED lowering of a `parse_u64`-calling
+//! the `verus` binary on the emitted lowering of a `parse_u64`-calling
 //! program (R-CODE-4: the subprocess status is checked, never swallowed).
 //!
 //! Pins the C7 deliverables:
@@ -14,22 +14,22 @@
 //!     Some(v) => v == 5, None => true }` → L3 (AC-1).
 //!   * `Ok(7)`/`Err(e)` construct + `Result<u64, ParseErr>` parses (the two-arg
 //!     `Type::Result`) + match + the payload `ens` → L3 (AC-2).
-//!   * The error arms BITE: a broken `Some(0)` / `Ok(0)` under the payload `ens`
-//!     is REJECTED, never laundered to L3 (AC-3, R-DEFER-9 non-vacuity).
+//!   * The error arms bite: a broken `Some(0)` / `Ok(0)` under the payload `ens`
+//!     is rejected, never laundered to L3 (AC-3, R-DEFER-9 non-vacuity).
 //!   * `parse_u64(s)` lowers to the Horner loop + the three handled-or-loud `None`
-//!     arms + the round-trip success `ens`, and the real `verus` binary verifies it
+//!     arms + the round-trip success `ens`, and the `verus` binary verifies it
 //!     `verified, 0 errors`; a hand-broken `parse_u64` returning `Some(0)`
-//!     unconditionally FAILS verus (AC-4 + non-vacuity).
+//!     unconditionally fails verus (AC-4 + non-vacuity).
 //!
-//! The verus checks SKIP LOUDLY when verus is absent (the `string_l3_completeness.rs`
-//! precedent) — never panic on a missing solver. `tests/` is not anti-pattern-gated,
+//! The verus checks skip with a logged note when verus is absent (the `string_l3_completeness.rs`
+//! precedent); they never panic on a missing solver. `tests/` is not anti-pattern-gated,
 //! so `unwrap`/`expect`/`panic!` are fine (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/09-option-result.md` AC-1..AC-4
-//! (the GROUNDED forms: Option construct `4 verified, 0 errors`; Result `3 verified,
-//! 0 errors`; the broken bodies FAIL; `parse_u64` `5 verified, 0 errors`, broken
+//! (the grounded forms: Option construct `4 verified, 0 errors`; Result `3 verified,
+//! 0 errors`; the broken bodies fail; `parse_u64` `5 verified, 0 errors`, broken
 //! `Some(0)` `3 verified, 1 errors`) + `thermite-design.md` §6 ladder semantics (L3 ==
-//! a fully-discharged real-verus proof), NEVER copied from the toolchain's own output.
+//! a fully-discharged real-verus proof), never copied from the toolchain's own output.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -134,7 +134,7 @@ fn verus_on_lowered(tag: &str, program: &str) -> (bool, String) {
     ));
     std::fs::write(&rs, &verus_src).expect("write lowered .rs");
     // Run verus with cwd = temp_dir so any compiled output artifact verus emits
-    // (named after the .rs stem) lands in /tmp, never in the crate tree (#53 scratch
+    // (named after the .rs stem) lands in /tmp rather than in the crate tree (#53 scratch
     // hygiene). Both the source and the stem-named artifact are removed after.
     let out = Command::new(verus_bin())
         .arg(&rs)
@@ -153,13 +153,13 @@ fn verus_on_lowered(tag: &str, program: &str) -> (bool, String) {
     (out.status.success(), combined)
 }
 
-/// AC-1 — `Some(5)`/`None` construct + the payload-in-contract `ens match result {
+/// AC-1: `Some(5)`/`None` construct + the payload-in-contract `ens match result {
 /// Some(v) => v == 5, None => true }` certifies L3.
 ///
-/// AUTHORITY: `.design/basis/09-option-result.md` AC-1 — `Some(5)` is `Expr::Call`,
+/// Authority: `.design/basis/09-option-result.md` AC-1 — `Some(5)` is `Expr::Call`,
 /// `Option<u64>` is `Type::Option`; the validator's seeded built-in variant registry
 /// accepts `Some`; the spec-`match` is admitted as a flat built-in; lowers to a Verus
-/// `Option<u64>` + the spec-`match`-in-`ens`. GROUNDED `4 verified, 0 errors`.
+/// `Option<u64>` + the spec-`match`-in-`ens`. Grounded `4 verified, 0 errors`.
 /// `thermite-design.md` §6: a fully-discharged verus proof is L3.
 #[test]
 fn ac1_option_construct_payload_in_contract_certifies_l3() {
@@ -182,13 +182,13 @@ fn ac1_option_construct_payload_in_contract_certifies_l3() {
     );
 }
 
-/// AC-2 — `Result<u64, ParseErr>` PARSES (the two-arg `Type::Result`), `Ok(7)`/`Err`
+/// AC-2: `Result<u64, ParseErr>` parses (the two-arg `Type::Result`), `Ok(7)`/`Err`
 /// construct, `match`/payload `ens` certify L3.
 ///
-/// AUTHORITY: `.design/basis/09-option-result.md` AC-2 — `Result<u64, ParseErr>` is
+/// Authority: `.design/basis/09-option-result.md` AC-2 — `Result<u64, ParseErr>` is
 /// the dedicated two-type-arg node (the change this AC pins); `Ok(7)` constructs via
 /// the seeded `Ok`/`Err` registry; the payload `ens match result { Ok(v) => v == 7,
-/// Err(_) => true }` certifies L3. GROUNDED `3 verified, 0 errors`. The `E` parameter
+/// Err(_) => true }` certifies L3. Grounded `3 verified, 0 errors`. The `E` parameter
 /// `ParseErr` is an ordinary user error enum.
 #[test]
 fn ac2_result_two_arg_type_construct_payload_certifies_l3() {
@@ -212,12 +212,12 @@ fn ac2_result_two_arg_type_construct_payload_certifies_l3() {
     );
 }
 
-/// AC-3 (the error arms BITE — non-vacuity, R-DEFER-9) — a broken `Some(0)` under the
-/// payload `ens match result { Some(v) => v == 5, None => true }` is REJECTED, never
+/// AC-3 (the error arms bite — non-vacuity, R-DEFER-9): a broken `Some(0)` under the
+/// payload `ens match result { Some(v) => v == 5, None => true }` is rejected, never
 /// laundered to L3.
 ///
-/// AUTHORITY: `.design/basis/09-option-result.md` AC-3 — `Some(0)` under the Some-arm
-/// `v == 5` FAILS verus (`1 verified, 1 errors`, postcondition not satisfied) — the
+/// Authority: `.design/basis/09-option-result.md` AC-3 — `Some(0)` under the Some-arm
+/// `v == 5` fails verus (`1 verified, 1 errors`, postcondition not satisfied); the
 /// payload contract is real, not vacuous. `thermite-design.md` §7: the battery catches
 /// a false claim.
 #[test]
@@ -240,19 +240,19 @@ fn ac3_broken_some_under_payload_ens_is_rejected() {
     );
 }
 
-/// AC-4 — `parse_u64(s)` lowers to the Horner loop + the three handled-or-loud `None`
-/// arms + the round-trip success `ens`, and the real `verus` binary verifies the
-/// EMITTED lowering `verified, 0 errors`.
+/// AC-4: `parse_u64(s)` lowers to the Horner loop + the three handled-or-loud `None`
+/// arms + the round-trip success `ens`, and the `verus` binary verifies the
+/// emitted lowering `verified, 0 errors`.
 ///
-/// AUTHORITY: `.design/basis/09-option-result.md` REQ-5 / AC-4 — the lowerer emits
+/// Authority: `.design/basis/09-option-result.md` REQ-5 / AC-4 — the lowerer emits
 /// `parse_u64(s: &TString) -> Option<u64>` with `ens match result { Some(v) =>
 /// all_digits(s.data@) && s.data.len() >= 1 && parse_be(s.data@) == v as nat, None =>
 /// true }`, the Horner-accumulate loop with the BE partial-value invariant +
-/// `decreases`, and the empty/non-digit/overflow `None` arms. GROUNDED `5 verified, 0
+/// `decreases`, and the empty/non-digit/overflow `None` arms. Grounded `5 verified, 0
 /// errors`. `thermite-design.md` §6: a fully-discharged verus proof. The generated
 /// `parse_u64`'s round-trip is the deliverable (it cannot be a thin caller's
-/// mutation-scored cert — the partial contract's `None => true` arm legitimately
-/// admits an always-`None` body), so non-vacuity is pinned at the codegen-grounding
+/// mutation-scored cert — the partial contract's `None => true` arm admits
+/// an always-`None` body), so non-vacuity is pinned at the codegen-grounding
 /// level (AC-4 non-vacuity below).
 #[test]
 fn ac4_parse_u64_lowering_verifies_under_real_verus() {
@@ -260,7 +260,7 @@ fn ac4_parse_u64_lowering_verifies_under_real_verus() {
         eprintln!("SKIP: verus absent — parse_u64 lowering not exercised.");
         return;
     }
-    // A surface fn that CALLS the generated parse_u64 (the `&String` view; the
+    // A surface fn that calls the generated parse_u64 (the `&String` view; the
     // round-trip ens projects the Some payload via parse_be over the consumed bytes).
     let (ok, output) = verus_on_lowered(
         "parseu64",
@@ -275,14 +275,14 @@ fn ac4_parse_u64_lowering_verifies_under_real_verus() {
     );
 }
 
-/// AC-4 NON-VACUITY (R-DEFER-9) — a hand-broken `parse_u64` whose body returns
-/// `Some(0)` unconditionally FAILS verus. The round-trip success `ens` has real teeth:
-/// a body that returns `Some(0)` for a non-"0" input does NOT satisfy `parse_be(s) ==
+/// AC-4 non-vacuity (R-DEFER-9): a hand-broken `parse_u64` whose body returns
+/// `Some(0)` unconditionally fails verus. The round-trip success `ens` has real teeth:
+/// a body that returns `Some(0)` for a non-"0" input does not satisfy `parse_be(s) ==
 /// 0`, so the postcondition is undischarged.
 ///
-/// AUTHORITY: `.design/basis/09-option-result.md` AC-3/AC-4 — the broken `Some(0)`
-/// FAILS (`3 verified, 1 errors`). `thermite-design.md` §7: the battery catches a
-/// false claim. The break is injected into a STANDALONE verus probe of the generated
+/// Authority: `.design/basis/09-option-result.md` AC-3/AC-4 — the broken `Some(0)`
+/// fails (`3 verified, 1 errors`). `thermite-design.md` §7: the battery catches a
+/// false claim. The break is injected into a standalone verus probe of the generated
 /// contract (the surface cannot mutate the generated fn body), confirming the round-
 /// trip `ens` is a real proof, not vacuous.
 #[test]
@@ -291,10 +291,10 @@ fn ac4_broken_parse_u64_body_fails_real_verus() {
         eprintln!("SKIP: verus absent — parse_u64 non-vacuity not exercised.");
         return;
     }
-    // The generated parse_u64's EXACT contract (the round-trip success ens), but the
+    // The generated parse_u64's contract (the round-trip success ens), but the
     // body is the broken `Some(0)` unconditional return. This is the AC-3 negative
     // companion: the round-trip ens is undischarged for any non-"0" input. (The
-    // wrapper + spec fns are the GROUNDED forms; only the body is deliberately wrong.)
+    // wrapper + spec fns are the grounded forms; only the body is wrong.)
     let probe = r#"use vstd::prelude::*;
 verus! {
 pub spec const CAP: usize = 1_000_000;
@@ -344,13 +344,13 @@ fn main() {}
     );
 }
 
-/// AC-5 (no regression) — the existing `Option`-matching corpus `binary_search.th`
+/// AC-5 (no regression): the existing `Option`-matching corpus `binary_search.th`
 /// still certifies L3. The C7 built-in-variant seeding makes its `ens match result {
 /// Some(i) => …, None => … }` exhaustiveness-checked (both arms present), and the
 /// construction `return Some(mid)` / `return None` stays accepted.
 ///
-/// AUTHORITY: `conformance/binary_search.th` (the SHIPPED kernel corpus) +
-/// `thermite-design.md` §6. The C7 seeding is purely additive — it must not perturb
+/// Authority: `conformance/binary_search.th` (the SHIPPED kernel corpus) +
+/// `thermite-design.md` §6. The C7 seeding is purely additive; it does not perturb
 /// an existing `Option` match/construct.
 #[test]
 fn ac5_binary_search_option_corpus_unchanged() {

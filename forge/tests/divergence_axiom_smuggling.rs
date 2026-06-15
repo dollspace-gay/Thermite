@@ -1,42 +1,42 @@
-//! `forge/tests/divergence_axiom_smuggling.rs` — DIVERGENCE PIN (critic, audit of
+//! `forge/tests/divergence_axiom_smuggling.rs` — divergence pin (critic, audit of
 //! #247 / commit `f27da736`, increment (iii)).
 //!
-//! Divergence class: PROOF CHEAT (R-DEFER-9) + REQ-4 / §1 enumerable-trusted-base
-//! violation on the INTERACTIVE Lean replay path.
+//! Divergence class: proof cheat (R-DEFER-9) + REQ-4 / §1 enumerable-trusted-base
+//! violation on the interactive Lean replay path.
 //!
-//! AUTHORITY:
+//! Authority:
 //!   - `.design/verified/proof-backends.md` REQ-4: "L3-via-Lean enumerates a smaller
 //!     base ({Lean kernel + 3 standard axioms} + the exporter correspondence)". The
-//!     cert's `engine_attribution.trust_profile` is the auditor-visible ENUMERABLE
+//!     cert's `engine_attribution.trust_profile` is the auditor-visible enumerable
 //!     trusted base.
-//!   - `thermite-design.md` §1: trust is relocated to an ENUMERABLE base "a skeptical
-//!     third party can audit in minutes" — the base the cert lists must be the WHOLE
+//!   - `thermite-design.md` §1: trust is relocated to an enumerable base "a skeptical
+//!     third party can audit in minutes" — the base the cert lists must be the whole
 //!     base the proof actually rests on.
 //!   - `.design/verified/proof-backends.md` REQ-7(ii): an interactive proof is
-//!     "replayed in CI"; the SHIPPED z3-demotion bar (REQ-7 / `z3-demotion.md`) is
-//!     `#print axioms` = the STANDARD set only (`{propext, Classical.choice,
-//!     Quot.sound}`; NO `sorryAx`, NO oracle).
-//!   - `goal.md` R-DEFER-9: an obligation may NOT be discharged by weakening it to
+//!     "replayed in CI"; the shipped z3-demotion bar (REQ-7 / `z3-demotion.md`) is
+//!     `#print axioms` = the standard set only (`{propext, Classical.choice,
+//!     Quot.sound}`; no `sorryAx`, no oracle).
+//!   - `goal.md` R-DEFER-9: an obligation may not be discharged by weakening it to
 //!     vacuity or an unjustified axiom.
 //!
-//! THE DIVERGENCE: `engine::replay_present_proof` gates a replayed interactive proof
-//! on EXACTLY two things beyond a clean lake exit: (1) the evidence-key header matches
-//! (staleness), and (2) `engine::proof_has_sorry` is false. `proof_has_sorry` ONLY
+//! The divergence: `engine::replay_present_proof` gates a replayed interactive proof
+//! on two things beyond a clean lake exit: (1) the evidence-key header matches
+//! (staleness), and (2) `engine::proof_has_sorry` is false. `proof_has_sorry` only
 //! scans for the `sorry` / `sorryAx` token (`engine::axioms_contain_sorry` checks
-//! `lower.contains("sorryax") || lower.contains("sorry")`). It does NOT enforce the
-//! trust-base axiom ALLOWLIST. So a checked-in proof that introduces a NON-STANDARD
+//! `lower.contains("sorryax") || lower.contains("sorry")`). It does not enforce the
+//! trust-base axiom allowlist. So a checked-in proof that introduces a non-standard
 //! axiom — e.g. `axiom thermite_cheat : ∀ (p : Prop), p` discharged by `exact
 //! thermite_cheat _` — kernel-accepts (lake exit 0), carries no `sorry`, and the
 //! current obligation key matches → the engine returns `Verdict::Proven` and the
 //! item certifies at **L3** with `trust_profile_interactive = {Lean kernel, propext,
-//! Classical.choice, Quot.sound, EXP, author}` — a trusted base that OMITS the
+//! Classical.choice, Quot.sound, EXP, author}` — a trusted base that omits the
 //! `thermite_cheat` axiom the proof actually rests on. A degenerate contract (whose
-//! postcondition was never proven) certifies — exactly the §7 / R-DEFER-9 failure.
+//! postcondition was never proven) certifies: the §7 / R-DEFER-9 failure.
 //!
 //! `forge` is a pure `bin` crate (no `lib.rs`), so the in-process `replay_interactive`
 //! API is not reachable from an integration test; this pins the divergence at the CLI
 //! / external-artifact boundary (the `--engine lean` tier-(c) interactive path the
-//! divergence is wired into), exactly like `engine_attribution.rs::
+//! divergence is wired into), like `engine_attribution.rs::
 //! engine_lean_attaches_smaller_trust_base_live`.
 //!
 //! Tracking: crosslink #248.
@@ -81,20 +81,20 @@ fn lake_present() -> bool {
         .unwrap_or(false)
 }
 
-// DIVERGENCE: a checked-in INTERACTIVE Lean proof that introduces a NON-STANDARD
+// Divergence: a checked-in interactive Lean proof that introduces a non-standard
 // axiom (`axiom thermite_cheat : ∀ (p : Prop), p`) and discharges the obligation
-// theorem with `exact thermite_cheat _` is REPLAYED to `Verdict::Proven` and the item
-// certifies at L3 — because the replay gate (`proof_has_sorry`) only rejects `sorry`,
-// NOT a non-standard axiom outside the declared trust base.
+// theorem with `exact thermite_cheat _` is replayed to `Verdict::Proven` and the item
+// certifies at L3, because the replay gate (`proof_has_sorry`) only rejects `sorry`,
+// not a non-standard axiom outside the declared trust base.
 //
-// AUTHORITY EXPECTATION (proof-backends.md REQ-4 / REQ-7(ii) / thermite-design.md §1 /
-// R-DEFER-9): the cert's enumerable trusted base must be {Lean kernel + 3 standard
+// Authority expectation (proof-backends.md REQ-4 / REQ-7(ii) / thermite-design.md §1 /
+// R-DEFER-9): the cert's enumerable trusted base is {Lean kernel + 3 standard
 // axioms, EXP[, author]}. A proof resting on `thermite_cheat` (which proves any
-// proposition — vacuity) must NOT certify; the item must be REJECTED (an honest skip /
-// L0), never L3. This test asserts the authority's expected behavior and FAILS against
+// proposition — vacuity) does not certify; the item is rejected (a skip /
+// L0), not L3. This test asserts the authority's expected behavior and fails against
 // the current toolchain (which emits L3).
 //
-// LIVE: gated on lake (the replay) + verus (the base cert). Skips loudly otherwise.
+// Live: gated on lake (the replay) + verus (the base cert). Skips with a logged note otherwise.
 #[test]
 fn divergence_interactive_replay_accepts_nonstandard_axiom() {
     if !lake_present() {
@@ -110,8 +110,8 @@ fn divergence_interactive_replay_accepts_nonstandard_axiom() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let file = dir.join("rec.th");
-    // A RECURSIVE-registry (tier-(c)) item — `f`'s `ens` calls the recursive spec fn
-    // `r`, so `f` routes to the INTERACTIVE replay path (not the auto battery). Source
+    // A recursive-registry (tier-(c)) item: `f`'s `ens` calls the recursive spec fn
+    // `r`, so `f` routes to the interactive replay path (not the auto battery). Source
     // shape from `engine.rs::recursive_registry_is_interactive_unknown`.
     std::fs::write(
         &file,
@@ -120,8 +120,8 @@ fn divergence_interactive_replay_accepts_nonstandard_axiom() {
     )
     .expect("write fixture");
 
-    // PASS 1: emit the skeleton (so we capture the CORRECT current evidence-key header
-    // — we never hand-forge the key; the staleness gate is honored).
+    // PASS 1: emit the skeleton (so we capture the current evidence-key header;
+    // we do not hand-forge the key, and the staleness gate is honored).
     let pass1 = Command::new(forge_bin())
         .arg("check")
         .arg(&file)
@@ -160,9 +160,9 @@ fn divergence_interactive_replay_accepts_nonstandard_axiom() {
         .filter(|l| l.starts_with("-- evidence_key: "))
         .expect("the emitted skeleton carries the evidence-key header");
 
-    // PLANT a CHEAT proof: KEEP the (fresh, matching) evidence-key header — so the
-    // staleness gate passes honestly — but replace the body with a proof that rests on
-    // a NON-STANDARD axiom and proves the obligation theorem `thermite_obligation_f`
+    // Plant a cheat proof: keep the (fresh, matching) evidence-key header so the
+    // staleness gate passes, but replace the body with a proof that rests on
+    // a non-standard axiom and proves the obligation theorem `thermite_obligation_f`
     // (the name the replay's `#print axioms` probes). The proof kernel-accepts (lake
     // exit 0) and carries no `sorry`.
     let cheat = format!(
@@ -196,12 +196,12 @@ fn divergence_interactive_replay_accepts_nonstandard_axiom() {
         .find(|c| c.get("item").and_then(Value::as_str) == Some("f"))
         .expect("a certificate for `f`");
 
-    // AUTHORITY ASSERTION (proof-backends.md REQ-4 / §1 / R-DEFER-9): a proof resting
-    // on a non-standard axiom must NOT certify at L3 — the enumerable trusted base
-    // {Lean kernel + 3 standard axioms, EXP} would be a LIE (it omits `thermite_cheat`,
-    // which proves any proposition). The item must be rejected / skipped, never L3.
+    // Authority assertion (proof-backends.md REQ-4 / §1 / R-DEFER-9): a proof resting
+    // on a non-standard axiom does not certify at L3 — the enumerable trusted base
+    // {Lean kernel + 3 standard axioms, EXP} would be false (it omits `thermite_cheat`,
+    // which proves any proposition). The item is rejected / skipped, not L3.
     //
-    // FAILS against the current toolchain: the replay gate (`proof_has_sorry`) only
+    // Fails against the current toolchain: the replay gate (`proof_has_sorry`) only
     // rejects `sorry`, so the cheat-axiom proof replays Proven and `f` certifies L3.
     assert_ne!(
         f_cert["level"], "L3",

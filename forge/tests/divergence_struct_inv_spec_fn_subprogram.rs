@@ -1,34 +1,34 @@
-//! Divergence pin (crosslink #232, the layer UNDER #230) — a `struct` whose
+//! Divergence pin (crosslink #232, the layer under #230) — a `struct` whose
 //! `inv` names a user `spec fn` dies at L0 because `forge::check`'s
 //! `item_subprogram` builds the struct's per-item sub-program as the item
-//! ALONE: `Item::Struct(_) | Item::Enum(_) => Program { items: vec![item] }`,
-//! with a STALE premise comment ("Dead-in-1a: dies at the validator gate ...
-//! this arm never produces a cert" — live `forge check` DOES produce a cert,
+//! alone: `Item::Struct(_) | Item::Enum(_) => Program { items: vec![item] }`,
+//! with a stale premise comment ("Dead-in-1a: dies at the validator gate ...
+//! this arm never produces a cert"; live `forge check` does produce a cert,
 //! at L0). Two consequences, both live-confirmed:
 //!
 //!   1. the spec-fn definition is absent from the emitted Verus unit, so the
 //!      `well_formed` body's call is unresolvable — E0425 `cannot find
 //!      function s_dec in this scope`;
 //!   2. the per-item program has no spec fn, so `spec_fn_param_type_map` is
-//!      EMPTY and the c116360c REQ-5 cast falls back to `as u64` (the emitted
+//!      empty and the c116360c REQ-5 cast falls back to `as u64` (the emitted
 //!      `s_dec((self.x + 0) as u64)`), though the whole-program lowering — the
-//!      thermite-lower #229 pin — correctly emits `as u32`.
+//!      thermite-lower #229 pin — emits `as u32`.
 //!
-//! Fixing #230 alone (emit `pub open spec fn` for user spec fns) does NOT
-//! revive this shape: the def is still not WOVEN into the struct's
+//! Fixing #230 alone (emit `pub open spec fn` for user spec fns) does not
+//! revive this shape: the def is still not woven into the struct's
 //! sub-program. The `Item::SpecFn`/`Item::Fn` arms already weave reachable
 //! spec-fn deps (the #68/#71 precedent); the Struct arm must too.
 //!
-//! THE AUTHORITY (R-CHAR-3): expected level L3 is the design contract —
+//! The authority (R-CHAR-3): expected level L3 is the design contract,
 //! `thermite-design.md` §6 (L3 == fully-discharged real-verus proof) +
 //! `.design/lower/verus-lowering.md` REQ-8 (struct type-invariant → enforced
 //! `well_formed` predicate, the verified `bank_account` precedent). The
-//! fully-woven, `pub open` form of this exact fixture verifies by hand:
+//! fully-woven, `pub open` form of this fixture verifies by hand:
 //! `verus` on { pub open spec fn s_dec + pub struct Counter + well_formed
 //! calling `s_dec((self.x + 0) as u32)` } reports `1 verified, 0 errors`.
 //! Expected value never copied from the toolchain's output.
 //!
-//! Verus check SKIPS LOUDLY when verus is absent (`editor_runs.rs` precedent).
+//! Verus check skips with an eprintln when verus is absent (`editor_runs.rs` precedent).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -97,7 +97,7 @@ fn level_of(certs: &[Value], item: &str) -> String {
 
 /// The #229 struct-inv fixture: a `u32`-param user spec fn named (with an
 /// arithmetic arg over a field) in a struct invariant. The whole-program
-/// lowering is correct since c116360c; only the per-item slicing (and the
+/// lowering is correct since c116360c; the per-item slicing (and the
 /// #230 visibility tier) keeps it from certifying.
 const COUNTER_PROGRAM: &str = "\
 spec fn s_dec(n: u32) -> u32

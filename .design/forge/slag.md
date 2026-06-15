@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 838374d1d8126c781789b48b2b876827a3bd3ab6 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
 governs: forge/src/slag.rs
 thesis-refs:
   - thermite-design.md §8

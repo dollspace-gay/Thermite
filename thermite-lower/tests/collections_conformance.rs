@@ -1,11 +1,11 @@
 //! Conformance test for `thermite-lower`'s bounded-collection lowering (Basis
 //! Stage 4, `.design/basis/04-collections.md` REQ-3/REQ-5/REQ-7; issue #73)
-//! against the EXTERNAL truths: the real `verus` binary (the emitted L3 output
-//! must VERIFY — `0 errors`; the reject case must FAIL — non-vacuity, R-DEFER-9)
+//! against the external truths: the real `verus` binary (the emitted L3 output
+//! must verify, `0 errors`; the reject case must fail — non-vacuity, R-DEFER-9)
 //! and the hand-derived cert oracle (`conformance/collections/cases.json` +
-//! `conformance/vec_demo.th` — R-CHAR-3, NEVER edited / NEVER read from toolchain
+//! `conformance/vec_demo.th` — R-CHAR-3, never edited / never read from toolchain
 //! output). The golden `tests/golden/lower/vec_demo.verus.rs` is the verified
-//! REFERENCE (the verify-not-byte-match practice the existing
+//! reference (the verify-not-byte-match practice the existing
 //! `adt_lower_conformance.rs` uses).
 //!
 //! The oracle (`cases.json`): `checked_get` → L3, fx pure (the no-OOB accessor:
@@ -66,8 +66,8 @@ fn verus_bin() -> Option<PathBuf> {
     None
 }
 
-/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller SKIPs
-/// LOUDLY). `--no-cheating` so a sneaked `assume`/`external_body` would be a hard
+/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller
+/// skips). `--no-cheating` so a sneaked `assume`/`external_body` would be a hard
 /// error (R-DEFER-9 — we ground the no-OOB/capacity guarantees, never launder).
 fn run_verus(file: &Path) -> Option<(bool, String)> {
     let bin = verus_bin()?;
@@ -82,7 +82,7 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// Write `emitted` to a temp file with a VALID crate name (the verus
+/// Write `emitted` to a temp file with a valid crate name (the verus
 /// `.`-in-crate-name gotcha), run `verus`, return `(exit_success, output)` or
 /// `None` if verus is unavailable.
 fn verify(crate_name: &str, emitted: &str) -> Option<(bool, String)> {
@@ -95,12 +95,12 @@ fn lower_l3(program: &thermite_syntax::ast::Program) -> String {
     thermite_lower::lower(program).unwrap_or_else(|e| panic!("L3 lowering failed: {e}"))
 }
 
-// ---- AC-1: bounded Vec accessor + push lower to the wrapper, VERIFY (L3) ----
+// ---- AC-1: bounded Vec accessor + push lower to the wrapper, verify (L3) ----
 //
 // REQ-5: `vec_demo.th` lowers to the `TVecU64` newtype over `vstd::vec::Vec<u64>`
 // with `well_formed`/`len`/`spec_get`/`get`/`push`; the spec `v.get(i)` lowers to
 // `v.spec_get(i as int)`; the `&mut push` postcondition uses `final(self)`. Real
-// verus VERIFIES (`4 verified, 0 errors` — 2 fns + the wrapper's get/push).
+// verus verifies (`4 verified, 0 errors` — 2 fns + the wrapper's get/push).
 
 #[test]
 fn vec_demo_lowers_wrapper_and_verifies_l3() {
@@ -125,7 +125,7 @@ fn vec_demo_lowers_wrapper_and_verifies_l3() {
         "the no-OOB get accessor (req i < len, REQ-5):\n{emitted}"
     );
     // REQ-5 the capacity-preserving exec `push` with the `final(self)` &mut
-    // postcondition (the grounding finding — verus 0.2026.05.24 needs final(self)).
+    // postcondition (the grounding finding: verus 0.2026.05.24 needs final(self)).
     assert!(
         emitted.contains("    pub fn push(&mut self, x: u64)")
             && emitted.contains(
@@ -152,7 +152,7 @@ fn vec_demo_lowers_wrapper_and_verifies_l3() {
     );
     assert_no_cheats(&emitted, "vec_demo");
 
-    // The EXTERNAL truth: real verus verifies the emitted output (R-CODE-4 — exit
+    // The external truth: real verus verifies the emitted output (R-CODE-4 — exit
     // status checked, never swallowed).
     match verify("vec_demo_collections", &emitted) {
         Some((ok, output)) => {
@@ -177,7 +177,7 @@ fn vec_demo_lowers_wrapper_and_verifies_l3() {
 //
 // The oracle (`conformance/collections/cases.json`, R-CHAR-3 — never edited)
 // pins: checked_get L3 fx pure; push_one L3 fx alloc. We assert the oracle fields
-// directly from the raw JSON AND that the lowering enables that judgement: the
+// directly from the raw JSON and that the lowering enables that judgement: the
 // emitted verus verifies (L3 above) and the parsed `fx` rows match the oracle.
 
 #[test]
@@ -220,8 +220,8 @@ fn vec_demo_matches_cert_oracle() {
     }
 
     // The `fx alloc` of push_one passes effect-subsumption: `push` is an intrinsic
-    // (an unresolved method-call callee), so there is no callee row to subsume —
-    // the caller's declared `alloc` row is accepted (the Stage-1 Alloc heap rule).
+    // (an unresolved method-call callee), so there is no callee row to subsume.
+    // The caller's declared `alloc` row is accepted (the Stage-1 Alloc heap rule).
     assert!(
         thermite_lower::check_effects(&program).is_ok(),
         "vec_demo (checked_get fx pure, push_one fx alloc) must pass effect-subsumption"
@@ -230,8 +230,8 @@ fn vec_demo_matches_cert_oracle() {
 
 // ---- AC-1 reject: oob_get_no_req → L0 (the no-OOB guarantee is real) --------
 //
-// REQ-5 non-vacuity (R-DEFER-9): a `get` WITHOUT `req i < v.len()` leaves get's
-// index precondition undischarged → verus FAILS → NOT laundered to L3. The
+// REQ-5 non-vacuity (R-DEFER-9): a `get` without `req i < v.len()` leaves get's
+// index precondition undischarged → verus fails → not laundered to L3. The
 // reject program is the oracle's `program` field (R-CHAR-3 — hand-derived).
 
 #[test]
@@ -241,8 +241,8 @@ fn oob_get_without_req_fails_verus_l0() {
         "fn bad(v: Vec<u64>, i: usize) -> u64 req true ens result == v.get(i) fx pure { v.get(i) }";
     let program = parse_src(src, "oob_get_no_req");
     let emitted = lower_l3(&program);
-    // It still LOWERS (a well-formed program); the FAILURE is at verus (L0), not a
-    // lowerer error — the no-OOB guarantee is enforced by the proof, not the
+    // It still lowers (a well-formed program); the failure is at verus (L0), not a
+    // lowerer error: the no-OOB guarantee is enforced by the proof, not the
     // emitter.
     assert!(
         emitted.contains("fn bad(v: TVecU64, i: usize)"),
@@ -275,7 +275,7 @@ fn oob_get_without_req_fails_verus_l0() {
 #[test]
 fn vec_demo_golden_reference_verifies() {
     // The hand-authored golden (`tests/golden/lower/vec_demo.verus.rs`, R-CHAR-3)
-    // is the verified reference. Confirm it itself passes verus (the byte-stable
+    // is the verified reference. Confirm it passes verus (the byte-stable
     // external truth the lowering is pinned against), reading it through a
     // valid-crate-name temp copy (the `.verus.rs` filename gotcha).
     let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -295,12 +295,12 @@ fn vec_demo_golden_reference_verifies() {
 fn slice_corpus_unchanged_no_regression() {
     // The Vec additions are purely additive (a new `Type::Vec` node + the wrapper
     // lowering path); the read-only `&[T]` algorithms must still lower to verus
-    // that verifies. Verification by verus, not a byte-match (the verify-not-byte-
-    // match practice).
+    // that verifies. Verification by verus rather than a byte-match (the verify-not-
+    // byte-match practice).
     for name in ["sum", "binary_search"] {
         let program = parse_corpus(name);
         let emitted = lower_l3(&program);
-        // The Vec wrapper must NOT leak into a non-Vec program (byte-stable).
+        // The Vec wrapper must not leak into a non-Vec program (byte-stable).
         assert!(
             !emitted.contains("TVecU64") && !emitted.contains("pub data: Vec<"),
             "{name} (no Vec) must not emit the Vec wrapper (byte-stable, no regression):\n{emitted}"

@@ -1,16 +1,16 @@
 //! Conformance test for `thermite-lower`'s L2 Kani-harness emission against the
-//! EXTERNAL truth: the real `cargo kani 0.67.0` binary
+//! external truth: the real `cargo kani 0.67.0` binary
 //! (`.design/lower/l2-kani.md` AC-1/AC-2/AC-3/AC-5). For each corpus program:
 //! parse it, `lower_l2` it, write the emitted harness into a throwaway cargo
 //! crate, run `cargo kani --output-format terse`, and assert
-//! `VERIFICATION:- SUCCESSFUL` (the contract holds for ALL inputs up to the
-//! bound) — at the design-pinned bound `N = 4` (`unwind(5)` for `sum`'s
+//! `VERIFICATION:- SUCCESSFUL` (the contract holds for all inputs up to the
+//! bound) at the design-pinned bound `N = 4` (`unwind(5)` for `sum`'s
 //! `while`, `unwind(6)` for `binary_search`'s `loop`).
 //!
-//! `cargo kani` is a HEAVY external toolchain (its own nightly + CBMC), so the
-//! kani-spawning tests SKIP LOUDLY (a diagnostic + early return, NOT `#[ignore]`)
+//! `cargo kani` is a heavy external toolchain (its own nightly + CBMC), so the
+//! kani-spawning tests skip (a diagnostic + early return, not `#[ignore]`)
 //! when kani is absent, mirroring the verus-absent skip in `lower_conformance.rs`
-//! (`.design/lower/l2-kani.md` REQ-8). The PURE emitter shape assertions (no kani
+//! (`.design/lower/l2-kani.md` REQ-8). The pure emitter shape assertions (no kani
 //! spawn) run unconditionally. Expected `VERIFICATION:- SUCCESSFUL` / the
 //! counterexample markers trace to the grounded real-kani runs (R-CHAR-3 — Kani's
 //! own format, not forge's output). `unwrap`/`expect` are fine here (`tests/` is
@@ -40,8 +40,8 @@ fn lower_corpus_l2(name: &str) -> String {
 
 /// Locate the kani plugin binary: `KANI_BIN` override, then PATH (`which
 /// cargo-kani`), then `~/.cargo/bin/cargo-kani`. Returns `None` if kani is
-/// genuinely absent so the kani-dependent assertions SKIP LOUDLY rather than
-/// panic (the suite must run without kani; REQ-8). kani IS present in the build
+/// absent so the kani-dependent assertions skip rather than
+/// panic (the suite must run without kani; REQ-8). kani is present in the build
 /// environment here, so the live paths run.
 fn kani_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("KANI_BIN") {
@@ -69,7 +69,7 @@ fn kani_bin() -> Option<PathBuf> {
 
 /// Write `harness` into a throwaway cargo crate under the temp dir and run
 /// `cargo kani --output-format terse` in it. Returns the combined stdout+stderr,
-/// or `None` if kani is unavailable (caller SKIPs). The crate is removed after.
+/// or `None` if kani is unavailable (caller skips). The crate is removed after.
 fn run_kani_on(harness: &str, stem: &str) -> Option<String> {
     let bin = kani_bin()?;
     let crate_dir = std::env::temp_dir().join(format!("l2_conf_{stem}_{}", std::process::id()));
@@ -100,12 +100,12 @@ fn run_kani_on(harness: &str, stem: &str) -> Option<String> {
     combined
 }
 
-// ---- AC-1: sum harness verifies UP TO BOUND ------------------------------
+// ---- AC-1: sum harness verifies up to bound ------------------------------
 
 #[test]
 fn sum_harness_verifies_to_bound() {
     let harness = lower_corpus_l2("sum");
-    // Pure emitter shape (always runs): the design-pinned harness.
+    // Pure emitter shape (runs unconditionally): the design-pinned harness.
     assert!(harness.contains("#[kani::proof]"));
     assert!(
         harness.contains("#[kani::unwind(5)]"),
@@ -125,7 +125,7 @@ fn sum_harness_verifies_to_bound() {
     }
 }
 
-// ---- AC-2: binary_search harness verifies UP TO BOUND --------------------
+// ---- AC-2: binary_search harness verifies up to bound --------------------
 
 #[test]
 fn binary_search_harness_verifies_to_bound() {
@@ -150,13 +150,13 @@ fn binary_search_harness_verifies_to_bound() {
     }
 }
 
-// ---- AC-3: a broken contract → counterexample → NOT L2 -------------------
+// ---- AC-3: a broken contract → counterexample → not L2 -------------------
 
 #[test]
 fn broken_contract_yields_counterexample_not_l2() {
     // Mutate the emitted `sum` body's `i = i + 1;` to `i = i + 2;` (the grounded
     // off-by mutation, AC-3). The `ens` `result == spec_sum(xs)` then fails for a
-    // concrete symbolic input — a Kani counterexample, never a false L2 pass.
+    // concrete symbolic input: a Kani counterexample, never a false L2 pass.
     let harness = lower_corpus_l2("sum");
     let mutated = harness.replacen("i = i + 1;", "i = i + 2;", 1);
     assert_ne!(mutated, harness, "the mutation must have applied");
@@ -180,7 +180,7 @@ fn broken_contract_yields_counterexample_not_l2() {
     }
 }
 
-// ---- AC-5: an under-bound unwind is a REPORTED failure, never a false pass ---
+// ---- AC-5: an under-bound unwind is a reported failure, never a false pass ---
 
 #[test]
 fn under_bound_is_reported_failure_not_false_pass() {
@@ -206,12 +206,12 @@ fn under_bound_is_reported_failure_not_false_pass() {
     }
 }
 
-// ---- AC-4: the bound is TYPE-derived, not name-derived (pure, no kani) ----
+// ---- AC-4: the bound is type-derived, not name-derived (pure, no kani) ----
 
 #[test]
 fn bound_is_type_derived_not_name_derived() {
-    // A synthetic `fn f(xs: &[u32], k: u32)`: the SAME slice scaffolding the
-    // corpus uses + an unbounded `kani::any()` for the scalar `k` — no name check.
+    // A synthetic `fn f(xs: &[u32], k: u32)`: the same slice scaffolding the
+    // corpus uses + an unbounded `kani::any()` for the scalar `k`; no name check.
     let src = "fn f(xs: &[u32], k: u32) -> u64\n  req k < 10\n  ens result == k as u64\n  fx pure\n{\n  k as u64\n}\n";
     let parsed = thermite_syntax::parse(src);
     assert!(

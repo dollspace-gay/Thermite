@@ -2,13 +2,13 @@
 //!
 //! The prior audit pinned #28 (unit return), #29 (deep-nesting overflow), and
 //! #30 (if-expr tail) in `divergence_grammar.rs`. Those fixes landed (5bb910e,
-//! 2a8e3e3). This file pins divergences the #29 fix did NOT cover (tracking #31).
+//! 2a8e3e3). This file pins divergences the #29 fix did not cover (tracking #31).
 //!
 //! `#29` bounded recursion with a single `expr_depth` counter incremented in
 //! `parse_expr` (the precedence-ladder entry). But several grammar productions
-//! recurse WITHOUT routing through `parse_expr`, so the guard never sees them
+//! recurse without routing through `parse_expr`, so the guard never sees them
 //! and deeply nested input still overflows the native C stack and aborts the
-//! process (SIGABRT) — exactly the failure mode #29 claimed to close.
+//! process (SIGABRT), the failure mode #29 claimed to close.
 //!
 //! Authority: `.design/syntax/parser.md` REQ-4 ("No `unwrap`/`expect`/`panic!`
 //! in production ... the parser ... never panics") and AC-4 ("No input ...
@@ -16,15 +16,15 @@
 //! returned structure"); `goal.md` R-CODE-2. The grammar productions probed
 //! here (`Type ::= Ident '<' Type '>'`, `Pattern ::= '[' SlicePat* ']'` and
 //! `Path '(' Pattern* ')'`, and `IfExpr` as a block tail per
-//! `surface-grammar.md` decision 2) are all WELL-FORMED v0.1 grammar: the
+//! `surface-grammar.md` decision 2) are all well-formed v0.1 grammar: the
 //! parser must either accept or return a `SyntaxError`, never abort.
 //!
 //! Method (R-CHAR-3): expected behaviour is "control returns; no process
-//! abort", traced to parser.md AC-4 — never copied from parser output. Each
+//! abort", traced to parser.md AC-4, never copied from parser output. Each
 //! probe runs on a 2 MiB stack (the Rust test-thread default the #29 fix was
 //! tuned against; commit 2a8e3e3 message) in a child thread; under the current
 //! parser the overflow aborts the process (Rust routes stack overflow to
-//! `abort()`, so `join` cannot recover it) — that abort IS the AC-4 violation.
+//! `abort()`, so `join` cannot recover it), and that abort is the AC-4 violation.
 //! Each test is `#[ignore]`d (tracked #31) so the abort does not break CI; the
 //! fixer un-`#[ignore]`s and greens them (goal.md R-DEFER-3).
 //!
@@ -55,9 +55,9 @@ fn parse_returns_on_bounded_stack(src: String) -> bool {
     handle.join().is_ok()
 }
 
-/// D-R1 — Deeply nested GENERIC TYPE (`Option<Option<...<u32>...>>`) overflows.
+/// D-R1 — Deeply nested generic type (`Option<Option<...<u32>...>>`) overflows.
 ///
-/// `parse_type` recurses on itself for `Name<T>` (the `Generic` arm) with NO
+/// `parse_type` recurses on itself for `Name<T>` (the `Generic` arm) with no
 /// `expr_depth` guard — the #29 counter lives only in `parse_expr`. A 1500-deep
 /// `Option<...>` type therefore drives unbounded native recursion and SIGABRTs.
 ///
@@ -82,10 +82,10 @@ fn divergence_deep_generic_type_no_panic() {
     );
 }
 
-/// D-R2 — Deeply nested SLICE PATTERN (`[[[ ... ]]]`) overflows.
+/// D-R2 — Deeply nested slice pattern (`[[[ ... ]]]`) overflows.
 ///
 /// `parse_slice_pattern` → `parse_pattern` → `parse_slice_pattern` recurses with
-/// NO depth guard (the #29 counter is in `parse_expr`, never reached on the
+/// no depth guard (the #29 counter is in `parse_expr`, never reached on the
 /// pattern path). A 1500-deep slice pattern SIGABRTs.
 ///
 /// Authority: `surface-grammar.md` REQ-7 / EBNF `Pattern ::= '[' (SlicePat ...)?
@@ -109,10 +109,10 @@ fn divergence_deep_slice_pattern_no_panic() {
     );
 }
 
-/// D-R3 — Deeply nested ENUM/TUPLE-STRUCT PATTERN (`Some(Some(...))`) overflows.
+/// D-R3 — Deeply nested enum/tuple-struct pattern (`Some(Some(...))`) overflows.
 ///
 /// `parse_path_pattern` → `parse_pattern` → `parse_path_pattern` recurses with
-/// NO depth guard. A 1500-deep `Some(...)` pattern SIGABRTs.
+/// no depth guard. A 1500-deep `Some(...)` pattern SIGABRTs.
 ///
 /// Authority: `surface-grammar.md` REQ-7 / EBNF `Pattern ::= Path '(' Pattern
 /// (',' Pattern)* ')'` (the `Some(i)` form, a legal v0.1 pattern) + parser.md

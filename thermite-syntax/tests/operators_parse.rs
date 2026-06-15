@@ -1,15 +1,15 @@
-//! Lexer + parser tests for the OPERATOR + LITERAL layer — crosslink #92
-//! (clusters 1-remainder + 2 of the primitive-completeness buildout).
+//! Lexer + parser tests for the operator + literal layer (crosslink #92,
+//! clusters 1-remainder + 2 of the primitive-completeness buildout).
 //!
-//! Covers the lexer additions (char/hex/binary literals → the SAME `Int` token,
+//! Covers the lexer additions (char/hex/binary literals → the same `Int` token,
 //! `lexer.md` REQ-3/REQ-9 / AC-3/AC-6/AC-7/AC-8) and the parser additions (the
 //! integer operators `% << >> & | ^` and the prefix `!`, with the pinned
 //! standard-Rust precedence — `parser.md` REQ-8/REQ-9 / AC-5/AC-6/AC-7,
 //! `surface-grammar.md` REQ-10).
 //!
-//! R-CHAR-3: the expected token VALUES are the design's symbolic constants (`'A'`
-//! == the ASCII code 65, `0x1b` == 27, `0b101` == 5 — `lexer.md` AC-7/AC-8) and
-//! the expected AST SHAPES are hand-derived from the grammar EBNF, NEVER copied
+//! R-CHAR-3: the expected token values are the design's symbolic constants (`'A'`
+//! == the ASCII code 65, `0x1b` == 27, `0b101` == 5, `lexer.md` AC-7/AC-8) and
+//! the expected AST shapes are hand-derived from the grammar EBNF, never copied
 //! from the lexer/parser's own output. `tests/` is not gated, so `unwrap`/`expect`
 //! are fine here.
 
@@ -55,7 +55,7 @@ fn hex_and_binary_literals_lex_to_decimal_value() {
 
 #[test]
 fn shift_operators_are_one_token_each_maximal_munch() {
-    // AC-3: `<<`/`>>` lex as ONE token each, NOT split into `<` `<` / `>` `>`.
+    // AC-3: `<<`/`>>` lex as one token each, not split into `<` `<` / `>` `>`.
     let (lt, _) = tokenize("<<");
     assert_eq!(lt[0].kind, TokKind::Shl, "`<<` must be one Shl token");
     assert_eq!(lt.len(), 2, "`<<` is one token + Eof, got {lt:?}");

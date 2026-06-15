@@ -3,8 +3,8 @@
 //! Each test pins a divergence between the parser and its authority
 //! (`.design/syntax/surface-grammar.md`, `parser.md`, `ast.md`,
 //! `thermite-design.md` §4). Expected behaviour traces to the design docs /
-//! the grammar EBNF, NEVER copied from the parser's own output (goal.md
-//! R-CHAR-3). These probe constructs the conformance corpus does NOT exercise.
+//! the grammar EBNF, never copied from the parser's own output (goal.md
+//! R-CHAR-3). These probe constructs the conformance corpus does not exercise.
 //!
 //! Each test is `#[ignore]`d with its tracking blocker: the divergence is
 //! tracked, and the fixer un-`#[ignore]`s + greens the test (goal.md R-DEFER-3).
@@ -22,8 +22,8 @@ use thermite_syntax::parse;
 /// signature." The EBNF `RetType ::= '->' Type ; '()' written explicitly if
 /// unit` makes `-> ()` a legal signature. REQ-8 (type grammar) governs `Type`.
 ///
-/// Per §4.4 ("one way to do everything") the ONLY way to spell a unit-returning
-/// function is `-> ()`, so the parser MUST accept it. The corpus functions all
+/// Per §4.4 ("one way to do everything") the only way to spell a unit-returning
+/// function is `-> ()`, so the parser must accept it. The corpus functions all
 /// return non-unit, so this construct is unexercised by the oracle.
 ///
 /// Tracking: #28
@@ -53,10 +53,10 @@ fn divergence_unit_return_type_accepted() {
 /// `goal.md` R-CODE-2.
 ///
 /// A hand-written recursive-descent parser with no recursion-depth guard
-/// overflows its stack on deeply nested input. `parse` MUST return — either
+/// overflows its stack on deeply nested input. `parse` must return, either
 /// accepting the (well-formed) deeply nested expression or surfacing a
-/// `SyntaxError` — but it MUST NOT abort the process (SIGABRT). This test simply
-/// requires `parse` to RETURN. If the parser overflows, the test process aborts
+/// `SyntaxError`, but it must not abort the process (SIGABRT). This test
+/// requires `parse` to return. If the parser overflows, the test process aborts
 /// and the test is recorded as failed.
 ///
 /// NOTE: while failing, this test aborts the whole `divergence_grammar` binary
@@ -85,16 +85,16 @@ fn divergence_deep_nesting_no_panic() {
 }
 
 /// D3 — An `if/else` in block-tail (value) position is dropped to a `Stmt::If`,
-/// leaving the block with NO tail value.
+/// leaving the block with no tail value.
 ///
 /// Authority: `.design/syntax/surface-grammar.md` `Block ::= '{' Stmt* TailExpr?
 /// '}'` with `TailExpr ::= Expr` and `IfExpr` as a `Primary`/`Expr` (decision 2:
 /// "`if` is both a statement and an expression ... The expression form requires
 /// an `else` (it must have a value)"). `.design/syntax/ast.md` REQ-6 lists
-/// `If { cond, then, else_ }` as an EXPRESSION node distinct from the REQ-4
+/// `If { cond, then, else_ }` as an expression node distinct from the REQ-4
 /// statement-form `If`. Therefore, when an `if EXPR { } else { }` is the sole
-/// value of a `-> T` function body (no trailing `;`), it is the block's TAIL
-/// EXPRESSION: `Block.tail == Some(Expr::If { .. })`, and `Block.stmts` is empty.
+/// value of a `-> T` function body (no trailing `;`), it is the block's tail
+/// expression: `Block.tail == Some(Expr::If { .. })`, and `Block.stmts` is empty.
 ///
 /// The corpus only uses `if` in statement position (`if lo == hi { return None;
 /// }`), so this value-position case is unexercised by the oracle.

@@ -1,30 +1,30 @@
-//! `forge/tests/divergence_249_axiom_mask.rs` — DIVERGENCE pin (ref #249, #248).
+//! `forge/tests/divergence_249_axiom_mask.rs` — divergence pin (ref #249, #248).
 //!
-//! Divergence class: PROOF CHEAT (R-DEFER-9) — the trust-base axiom allowlist is
-//! BYPASSED on the interactive Lean path. Authority: `.design/verified/proof-
-//! backends.md` REQ-4/§1 (the enumerable trusted base a Lean cert lists is EXACTLY
+//! Divergence class: proof cheat (R-DEFER-9). The trust-base axiom allowlist is
+//! bypassed on the interactive Lean path. Authority: `.design/verified/proof-
+//! backends.md` REQ-4/§1 (the enumerable trusted base a Lean cert lists is exactly
 //! `{Lean kernel + propext, Classical.choice, Quot.sound[, author]}`); R-DEFER-9 (an
 //! obligation discharged by weakening it to vacuity — here `axiom thermite_cheat :
-//! ∀ p : Prop, p`, maximal vacuity — is a cheat, NEVER Proven).
+//! ∀ p : Prop, p`, maximal vacuity — is a cheat, never Proven).
 //!
 //! The #249 fix (`engine::nonstandard_axiom`, commit 5f601a2d) anchors the axiom
-//! report to the OBLIGATION theorem's OWN quoted report line
+//! report to the obligation theorem's own quoted report line
 //! (`'thermite_obligation_<item>' depends on axioms: [...]`) and states the invariant
-//! "NEVER fall through to a foreign theorem's report". This pin shows that invariant
-//! is INCOMPLETE: the engine's appended probe `#print axioms thermite_obligation_f`
-//! resolves (Lean unqualified-name resolution) to a TOP-LEVEL decoy theorem the author
+//! "never fall through to a foreign theorem's report". This pin shows that invariant
+//! is incomplete: the engine's appended probe `#print axioms thermite_obligation_f`
+//! resolves (Lean unqualified-name resolution) to a top-level decoy theorem the author
 //! adds (`theorem thermite_obligation_f : True := trivial`, clean), while the
-//! STATEMENT-BINDING gate (`canonical_theorem_statement`, first textual occurrence)
-//! reads a NAMESPACED theorem carrying the canonical obligation statement proven via
+//! statement-binding gate (`canonical_theorem_statement`, first textual occurrence)
+//! reads a namespaced theorem carrying the canonical obligation statement proven via
 //! `thermite_cheat`. The axiom report inspected and the statement bound belong to two
-//! DIFFERENT declarations — the cheat-backed proof of the real obligation is masked by
+//! different declarations: the cheat-backed proof of the real obligation is masked by
 //! the clean same-short-name decoy. forge certifies the item at L3.
 //!
-//! Expected (authority, NOT forge's own output, R-CHAR-3): item `f` must NOT certify
-//! at L3 — a proof resting on `thermite_cheat` (outside the REQ-4 allowlist) is a cheat
-//! and is NEVER Proven. This test FAILS against commit 5f601a2d (forge emits L3).
+//! Expected (authority, not forge's own output, R-CHAR-3): item `f` does not certify
+//! at L3. A proof resting on `thermite_cheat` (outside the REQ-4 allowlist) is a cheat
+//! and is never Proven. This test fails against commit 5f601a2d (forge emits L3).
 //!
-//! LIVE: gated on `lake` (the interactive replay invokes `lake env lean`).
+//! Live: gated on `lake` (the interactive replay invokes `lake env lean`).
 
 use serde_json::Value;
 use std::path::PathBuf;
@@ -48,7 +48,7 @@ fn lake_present() -> bool {
 }
 
 // The recursive-int spec-fn item: `r : int -> int` (recursive) is called in `f`'s
-// ens, so `f`'s obligation is tier-(c) RecursiveInteractive — it routes through
+// ens, so `f`'s obligation is tier-(c) RecursiveInteractive; it routes through
 // `LeanEngine::replay_interactive` under `--engine lean` (the auto battery does not
 // attempt the `∃N∀fuel` induction). Shape mirrors the shipped fixture
 // `engine::tests::recursive_registry_is_interactive_unknown`.
@@ -56,10 +56,10 @@ const TH_SRC: &str = "spec fn r(x: int) -> int\n  dec x\n{\n  r(x)\n}\n\n\
                       fn f(x: u32) -> u32\n  req true\n  ens result as int == r(x as int)\n  \
                       fx pure\n{\n  x\n}\n";
 
-// Transform the EMITTED tier-(c) skeleton into the composite-probe cheat file: the
-// canonical obligation statement (the FIRST textual `theorem thermite_obligation_f`,
+// Transform the emitted tier-(c) skeleton into the composite-probe cheat file: the
+// canonical obligation statement (the first textual `theorem thermite_obligation_f`,
 // which `canonical_theorem_statement` binds) goes inside a namespace and is proven via
-// `thermite_cheat`; a CLEAN top-level decoy of the same short name is appended (what
+// `thermite_cheat`; a clean top-level decoy of the same short name is appended (what
 // `#print axioms thermite_obligation_f` resolves to). The evidence-key header +
 // imports + `def R_item` from the skeleton are preserved verbatim (fresh key → the
 // staleness gate passes).
@@ -114,7 +114,7 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
     let th = dir.join("div.th");
     assert!(std::fs::write(&th, TH_SRC).is_ok(), "source writable");
 
-    // Call 1: ABSENT artifact → forge EMITS the tier-(c) skeleton beside the source.
+    // Call 1: absent artifact → forge emits the tier-(c) skeleton beside the source.
     let emit = Command::new(forge_bin())
         .arg("check")
         .arg(&th)
@@ -133,7 +133,7 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
     );
     let skeleton = skeleton.unwrap_or_default();
 
-    // Author the composite-probe cheat proof over the FRESH key + canonical statement.
+    // Author the composite-probe cheat proof over the fresh key + canonical statement.
     let cheat = build_cheat_proof(&skeleton);
     assert!(
         cheat.is_some(),
@@ -145,7 +145,7 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
         "cheat proof artifact writable"
     );
 
-    // Call 2: PRESENT artifact → forge replays it (lake) and emits the item's cert.
+    // Call 2: present artifact → forge replays it (lake) and emits the item's cert.
     let replay = Command::new(forge_bin())
         .arg("check")
         .arg(&th)
@@ -166,11 +166,11 @@ fn divergence_interactive_axiom_allowlist_masked_by_shortname_decoy() {
         "the replay run emitted a cert for item `f`; got JSON: {stdout}"
     );
 
-    // AUTHORITY (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9): the
-    // obligation's canonical statement is proven ONLY via `axiom thermite_cheat :
-    // ∀ p : Prop, p` (maximal vacuity, OUTSIDE the {propext, Classical.choice,
-    // Quot.sound} allowlist). Such a proof is a cheat and is NEVER Proven → item `f`
-    // must NOT certify at L3. forge (commit 5f601a2d) emits "L3" — the divergence.
+    // Authority (`.design/verified/proof-backends.md` REQ-4/§1, R-DEFER-9): the
+    // obligation's canonical statement is proven only via `axiom thermite_cheat :
+    // ∀ p : Prop, p` (maximal vacuity, outside the {propext, Classical.choice,
+    // Quot.sound} allowlist). Such a proof is a cheat and is never Proven → item `f`
+    // does not certify at L3. forge (commit 5f601a2d) emits "L3" — the divergence.
     assert_ne!(
         level.as_deref(),
         Some("L3"),

@@ -1,31 +1,31 @@
-//! Conformance for the EXEC-BODY (state-refinement) TRANSLATION-VALIDATION phase
+//! Conformance for the exec-body (state-refinement) translation-validation phase
 //! (`.design/verified/exec-stmt-tv.md` REQ-5 + `.design/verified/loop-tv.md` REQ-5;
 //! epic crosslink #169, blocker #162). The state analogue of
-//! `exec_tv_conformance.rs`. Four load-bearing properties, all through the REAL
-//! `verus` binary (SKIP LOUDLY if absent, mirroring `exec_tv_conformance.rs` /
-//! `body_teeth.rs`):
+//! `exec_tv_conformance.rs`. Four load-bearing properties, all through the real
+//! `verus` binary (skip with a logged reason if absent, mirroring
+//! `exec_tv_conformance.rs` / `body_teeth.rs`):
 //!
-//!   - **a FAITHFUL straight-line body → Faithful** (`forge body-tv` on a `{ let a =
+//!   - a faithful straight-line body → Faithful (`forge body-tv` on a `{ let a =
 //!     x + 1; let b = a * 2; b }` fixture): the production `lower_exec_body` produces
-//!     the reference FINAL STATE → the body obligation VERIFIES → `faithful`.
-//!   - **a FAITHFUL v1 `while`-loop body → Faithful** (all THREE per-run obligations
+//!     the reference final state → the body obligation verifies → `faithful`.
+//!   - a faithful v1 `while`-loop body → Faithful (all three per-run obligations
 //!     verify): a `while lo < n inv lo <= n dec n - lo { lo = lo + 1 }` loop's entry /
-//!     preservation / exit obligations all VERIFY → `faithful`.
-//!   - **a MUTATED production → Divergent**: a deliberately-wrong production body
-//!     (the `body_teeth.rs` B2 REORDERED-mutation shape — `s = s * 2; s = s + 1` for
-//!     source `s = s + 1; s = s * 2`) discharged through the SAME body obligation
+//!     preservation / exit obligations all verify → `faithful`.
+//!   - a mutated production → Divergent: a wrong production body (the
+//!     `body_teeth.rs` B2 reordered-mutation shape — `s = s * 2; s = s + 1` for
+//!     source `s = s + 1; s = s * 2`) discharged through the same body obligation
 //!     fails the `ensures result == <body_ref_state>` postcondition → `Divergent`.
-//!     (The corpus path uses the FAITHFUL lowerer so it never diverges; the Divergent
-//!     ARM is exercised by injecting a known-wrong production at the obligation layer,
-//!     exactly as `exec_tv::divergent_teeth` does for the exec-expr phase.)
-//!   - **an OUT-of-subset body → Skipped+reason**: `binary_search.th`'s `loop`-kind
-//!     body (multi-exit, mid-body `return`s — OUT of the v1 single-`while` subset) is
-//!     `skipped` WITH a reason (the honest 2.2.1-vs-2.2.2 boundary — never `faithful`,
+//!     (The corpus path uses the faithful lowerer so it never diverges; the Divergent
+//!     arm is exercised by injecting a known-wrong production at the obligation layer,
+//!     as `exec_tv::divergent_teeth` does for the exec-expr phase.)
+//!   - an out-of-subset body → Skipped+reason: `binary_search.th`'s `loop`-kind
+//!     body (multi-exit, mid-body `return`s — out of the v1 single-`while` subset) is
+//!     `skipped` with a reason (the 2.2.1-vs-2.2.2 boundary — never `faithful`,
 //!     R-HONEST-3).
 //!
 //! Expected values trace to the design's faithful-lowering invariant + the frozen
-//! subset, never to the lowerer's output (R-CHAR-3). `unwrap`/`expect` are fine here
-//! (`tests/` is not anti-pattern-gated).
+//! subset, rather than to the lowerer's output (R-CHAR-3). `unwrap`/`expect` are
+//! fine here (`tests/` is not anti-pattern-gated).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,7 +46,7 @@ fn corpus_dir() -> PathBuf {
 }
 
 /// Verus locator (mirrors `body_teeth.rs` / `exec_tv_conformance.rs`): `VERUS_BIN`,
-/// then PATH, then `~/.local/bin/verus`. SKIP LOUDLY otherwise.
+/// then PATH, then `~/.local/bin/verus`. Skip with a logged reason otherwise.
 fn verus_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         let pb = PathBuf::from(p);
@@ -184,7 +184,7 @@ fn parse_results(output: &str) -> Option<(u32, u32)> {
 
 /// REQ-5 (the straight-line arm): a faithful `{ let a = x + 1; let b = a * 2; b }`
 /// body — the production `lower_exec_body` produces the reference final state — is
-/// reported `faithful` (the body state-refinement obligation VERIFIES), 0 divergent.
+/// reported `faithful` (the body state-refinement obligation verifies), 0 divergent.
 #[test]
 fn faithful_straight_line_body_is_faithful() {
     if !verus_present() {
@@ -223,8 +223,8 @@ fn faithful_straight_line_body_is_faithful() {
 // ---- 2. a faithful v1 while-loop body → Faithful (all three obligations) ----
 
 /// loop-tv REQ-5 (the loop arm): a faithful v1-subset `while lo < n inv lo <= n dec
-/// n - lo { lo = lo + 1 }` body — all THREE per-run obligations (entry / preservation
-/// / exit) VERIFY — is reported `faithful`, 0 divergent.
+/// n - lo { lo = lo + 1 }` body — all three per-run obligations (entry / preservation
+/// / exit) verify — is reported `faithful`, 0 divergent.
 #[test]
 fn faithful_while_loop_body_is_faithful() {
     if !verus_present() {
@@ -273,15 +273,15 @@ fn faithful_while_loop_body_is_faithful() {
 
 // ---- 3. a mutated production → Divergent ------------------------------------
 
-/// REQ-5 (the Divergent arm): a DELIBERATELY-WRONG production body — the
-/// `body_teeth.rs` B2 REORDERED-mutation shape (`s = s * 2; s = s + 1` for source
+/// REQ-5 (the Divergent arm): a wrong production body — the
+/// `body_teeth.rs` B2 reordered-mutation shape (`s = s * 2; s = s + 1` for source
 /// `s = s + 1; s = s * 2`, final state `(x*2)+1 != (x+1)*2`) — discharged through the
-/// SAME body state-refinement obligation `forge body-tv` builds (the obligation TEXT
+/// same body state-refinement obligation `forge body-tv` builds (the obligation text
 /// is the contract surface) fails the `ensures result == <body_ref_state>`
-/// postcondition. This is the FORGE Divergent classification's trigger: a results line
+/// postcondition. This is the forge Divergent classification's trigger: a results line
 /// with `errors >= 1` → `BodyVerdict::Divergent`. The corpus path never diverges (the
 /// faithful lowerer), so the Divergent arm is exercised by injecting a known-wrong
-/// production at the obligation layer (exactly as `exec_tv::divergent_teeth` does).
+/// production at the obligation layer (as `exec_tv::divergent_teeth` does).
 #[test]
 fn mutated_production_diverges() {
     if !verus_present() {
@@ -290,7 +290,7 @@ fn mutated_production_diverges() {
         );
         return;
     }
-    // The B2 source body `{ let mut s = x; s = s + 1; s = s * 2; s }`, reference
+    // The B2 source body `{ let mut s = x; s = s + 1; s = s * 2; s }`, with reference
     // `((x + 1) * 2)`.
     let body = Block {
         stmts: vec![
@@ -306,8 +306,8 @@ fn mutated_production_diverges() {
         req: Some("x <= 1000".to_string()),
         ..Default::default()
     };
-    // The MUTATED (reordered) production — each RHS is value-faithful in isolation, the
-    // ORDER is the bug → final state `(x * 2) + 1`, != the reference `((x + 1) * 2)`.
+    // The mutated (reordered) production — each RHS is value-faithful in isolation, the
+    // order is the bug → final state `(x * 2) + 1`, != the reference `((x + 1) * 2)`.
     let program = body_equivalence_obligation(
         &body,
         "    let mut s = x;\n    s = s * 2;\n    s = s + 1;\n    s\n",
@@ -325,7 +325,7 @@ fn mutated_production_diverges() {
                         results line:\n{output}\n--- program ---\n{program}"
                 )
             });
-            // errors >= 1 is EXACTLY the signal `body_tv::discharge` maps to
+            // errors >= 1 is the signal `body_tv::discharge` maps to
             // `BodyVerdict::Divergent` (the `DischargeOutcome::Errors` arm). The catch
             // shape is the body-state `ensures` postcondition (a final-state difference).
             assert!(
@@ -352,14 +352,14 @@ fn mutated_production_diverges() {
 
 // ---- 4. an out-of-subset body → Skipped+reason -----------------------------
 
-/// loop-tv REQ-5 / AC-4 (the Skipped arm, the LIVE corpus demo): `binary_search.th`'s
+/// loop-tv REQ-5 / AC-4 (the Skipped arm, the live corpus demo): `binary_search.th`'s
 /// `loop`-kind body (a multi-exit form with mid-body `return None`/`return Some(mid)`
-/// — OUT of the v1 single-`while` subset) is reported `skipped` WITH a reason, NEVER
-/// `faithful` (R-HONEST-3 — a skip never masks an infidelity). This is the honest
-/// expected corpus result.
+/// — out of the v1 single-`while` subset) is reported `skipped` with a reason, never
+/// `faithful` (R-HONEST-3 — a skip never masks an infidelity). This is the expected
+/// corpus result.
 #[test]
 fn binary_search_loop_is_skipped_with_reason() {
-    // No verus needed — the loop is recognized OUT-of-v1 BEFORE any discharge (the
+    // No verus needed — the loop is recognized out-of-v1 before any discharge (the
     // `loop_ref_obligations` recognizer refuses). Robust even without verus.
     let report = run_body_tv_json(&corpus_dir().join("binary_search.th"));
     let counts = &report["counts"];
@@ -393,8 +393,8 @@ fn binary_search_loop_is_skipped_with_reason() {
     );
 }
 
-/// REQ-5 (the exit-code convention): a clean body-TV run (no Divergent — only Faithful
-/// / Skipped) exits 0 (the SAME convention `forge exec-tv` uses). `binary_search.th`
+/// REQ-5 (the exit-code convention): a clean body-TV run (no Divergent, only Faithful
+/// / Skipped) exits 0 (the convention `forge exec-tv` uses). `binary_search.th`
 /// is all-Skipped, so the run exits 0.
 #[test]
 fn skipped_only_run_exits_zero() {

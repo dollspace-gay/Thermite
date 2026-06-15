@@ -1,24 +1,24 @@
 //! `forge/src/mutation.rs` — §7 step 4 of the vacuity battery: mutation scoring
 //! (`thermite-design.md` §7 line 224, "operator flips, off-by-ones, early
 //! returns, branch swaps — fixed deterministic mutator set"). Given a `fn` whose
-//! REAL body already verifies L3, this module generates a FROZEN, DETERMINISTIC
-//! set of mutants of that body (the contract UNTOUCHED), re-lowers + re-verifies
+//! real body already verifies L3, this module generates a frozen, deterministic
+//! set of mutants of that body (the contract untouched), re-lowers + re-verifies
 //! each against the same contract through the existing verus driver + proof
-//! cache, and scores the **kill ratio** (`killed / scored`). A mutant verus
-//! REJECTS is **killed** (the contract caught the wrong body — good); a mutant
-//! verus PROVES is a **survivor** (the contract cannot tell the mutant from the
+//! cache, and scores the kill ratio (`killed / scored`). A mutant verus
+//! rejects is killed (the contract caught the wrong body — good); a mutant
+//! verus proves is a survivor (the contract cannot tell the mutant from the
 //! real body — too weak). A configurable floor (default 60%, §7) gates
-//! certification: below the floor the item does NOT certify and the surviving
+//! certification: below the floor the item does not certify and the surviving
 //! mutants are the precise strengthening prompt.
 //!
 //! Governing design: `.design/forge/mutation-scoring.md`.
 //!
-//! ## Polarity (the value-add)
+//! ## Polarity
 //!
-//! A mutant is a DELIBERATELY-WRONG body. If verus still PROVES it against the
-//! contract, the contract is satisfied by both the right body and the wrong one
-//! — it under-specifies. So `Proved` = SURVIVED = a hole in the contract; a
-//! verus FAILURE = KILLED = the contract did its job (REQ-4). This is the same
+//! A mutant is a wrong body. If verus still proves it against the
+//! contract, the contract is satisfied by both the right body and the wrong one:
+//! it under-specifies. So `Proved` = survived = a hole in the contract; a
+//! verus failure = killed = the contract did its job (REQ-4). This is the same
 //! polarity inversion #13's harnesses use, applied to the body.
 //!
 //! ## REQ status
@@ -42,25 +42,25 @@
 
 use thermite_syntax::{BinOp, Block, Expr, FnItem, Item, PrimType, Stmt, StructItem, Type};
 
-/// The FIXED budget on the number of mutants scored per `fn` (REQ-2; OQ-2). §7
+/// The fixed budget on the number of mutants scored per `fn` (REQ-2; OQ-2). §7
 /// says "budgeted" without a number; this is a documented `const` (R-CODE-5 —
 /// the budget is a fixed input, not wall-clock). Each mutant is a full verus run
 /// (cheap on a cache hit, #8), so the cap bounds the gate's cost. The corpus
-/// `fn`s naturally produce on the order of tens of mutants; `64` comfortably
-/// covers them while bounding a pathologically large body. Selection when the
-/// candidate count exceeds the cap is the FIRST `MUTANT_CAP` mutants in the
-/// deterministic enumeration order (REQ-2).
+/// `fn`s produce on the order of tens of mutants; `64` covers them while bounding
+/// a pathologically large body. Selection when the candidate count exceeds the
+/// cap is the first `MUTANT_CAP` mutants in the deterministic enumeration order
+/// (REQ-2).
 pub const MUTANT_CAP: usize = 64;
 
 /// The default mutation kill-ratio floor (`thermite-design.md` §7 "a
 /// configurable floor (default 60%)"). `kill_ratio >= MUTATION_FLOOR` certifies;
-/// below it the item does NOT certify (verdict-in-cert reject). The `cli`
-/// `--mutation-floor <FLOAT>` lever overrides it; a non-default floor is a
-/// deliberate, documented choice (mirroring the existing `--rlimit` lever).
+/// below it the item does not certify (verdict-in-cert reject). The `cli`
+/// `--mutation-floor <FLOAT>` lever overrides it; a non-default floor is an
+/// explicit, documented choice (mirroring the existing `--rlimit` lever).
 pub const MUTATION_FLOOR: f64 = 0.60;
 
-/// One generated mutant: a `FnItem` with the SAME contract as the original and a
-/// MUTATED body, plus a human description naming the change (REQ-1). The
+/// One generated mutant: a `FnItem` with the same contract as the original and a
+/// mutated body, plus a human description naming the change (REQ-1). The
 /// description is the §7 "precise strengthening prompt" payload surfaced as a
 /// cert's `survivor` when this mutant survives.
 #[derive(Debug, Clone)]
@@ -75,24 +75,24 @@ pub struct Mutant {
 }
 
 /// The classification of one mutant's verus run (REQ-4). The polarity is
-/// INVERTED from the L3 proof: a verus SUCCESS on a deliberately-wrong body is
-/// the BAD news (the contract did not catch the change → SURVIVED); a verus
-/// FAILURE is the GOOD news (the contract caught it → KILLED).
+/// inverted from the L3 proof: a verus success on a wrong body means the
+/// contract did not catch the change → survived; a verus failure means the
+/// contract caught it → killed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MutantOutcome {
-    /// verus PROVED the mutant — the contract holds for the wrong body too, so it
-    /// cannot distinguish the mutant: a SURVIVOR (the contract is too weak here).
+    /// verus proved the mutant — the contract holds for the wrong body too, so it
+    /// cannot distinguish the mutant: a survivor (the contract is too weak here).
     Survived,
-    /// verus did NOT prove the mutant (a counterexample OR a timeout — OQ-4): the
-    /// contract caught the change. KILLED (good).
+    /// verus did not prove the mutant (a counterexample or a timeout — OQ-4): the
+    /// contract caught the change. Killed.
     Killed,
 }
 
 /// Map a verus verdict polarity to a [`MutantOutcome`] (REQ-4). `proved == true`
-/// (verus succeeded on the wrong body) is a SURVIVOR; `proved == false` (a
-/// counterexample, or a timeout counted KILLED per OQ-4) is KILLED. This is the
+/// (verus succeeded on the wrong body) is a survivor; `proved == false` (a
+/// counterexample, or a timeout counted killed per OQ-4) is killed. This is the
 /// single classification seam `check::mutation_score` calls; a mutant that fails
-/// to LOWER is dropped BEFORE this (not scored, OQ-5), never passed here.
+/// to lower is dropped before this (not scored, OQ-5).
 pub fn classify_mutant(proved: bool) -> MutantOutcome {
     if proved {
         MutantOutcome::Survived
@@ -102,55 +102,55 @@ pub fn classify_mutant(proved: bool) -> MutantOutcome {
 }
 
 /// The result of scoring a `fn`'s frozen mutant set (REQ-5). `killed`/`scored`
-/// are over the mutants that LOWERED + ran (un-lowerable mutants are dropped from
+/// are over the mutants that lowered + ran (un-lowerable mutants are dropped from
 /// the denominator, OQ-5). `survivor` is a representative surviving mutant's
 /// description (the first survivor in deterministic enumeration order, REQ-2), or
 /// `None` when every scored mutant was killed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MutationScore {
-    /// Mutants verus FAILED to prove (the contract caught them) — good.
+    /// Mutants verus failed to prove (the contract caught them).
     pub killed: usize,
-    /// Mutants that lowered + ran AND were NOT proved equivalent (the kill-ratio
-    /// DENOMINATOR). Excludes un-lowerable mutants (OQ-5) AND mutants Verus PROVED
+    /// Mutants that lowered + ran and were not proved equivalent (the kill-ratio
+    /// denominator). Excludes un-lowerable mutants (OQ-5) and mutants Verus proved
     /// observably equivalent to the real body under the precondition
     /// (`.design/forge/equivalent-mutants.md` REQ-2/REQ-4, #101 — a true
     /// equivalent mutant is not contract weakness, so it drops from the
     /// denominator rather than depressing the ratio).
     pub scored: usize,
-    /// The count of survivors Verus PROVED observably equivalent to the real body
+    /// The count of survivors Verus proved observably equivalent to the real body
     /// under `req` (`.design/forge/equivalent-mutants.md` REQ-2/REQ-4, #101). A
-    /// proved-equivalent mutant is excluded from BOTH the survivor set AND
-    /// `scored`; this field records HOW MANY were so excluded (a transparency
-    /// datum, NOT a denominator input — `scored` is already net of them). `0`
+    /// proved-equivalent mutant is excluded from both the survivor set and
+    /// `scored`; this field records how many were so excluded (a transparency
+    /// datum, not a denominator input — `scored` is already net of them). `0`
     /// when no survivor was proved equivalent (the entire pre-#101 corpus).
     pub equivalent: usize,
     /// A representative surviving mutant's description (the §7 strengthening
     /// prompt), or `None` if every scored mutant was killed or proved equivalent.
-    /// A PROVED-EQUIVALENT mutant is NEVER recorded here (it is not a survivor —
-    /// the soundness line is that only a DISTINGUISHING survivor remains, REQ-3).
+    /// A proved-equivalent mutant is not recorded here (it is not a survivor —
+    /// only a distinguishing survivor remains, REQ-3).
     pub survivor: Option<String>,
 }
 
 impl MutationScore {
-    /// The kill ratio `killed / scored` (REQ-5). When NO mutant was scored
+    /// The kill ratio `killed / scored` (REQ-5). When no mutant was scored
     /// (`scored == 0` — every mutant failed to lower, or the body had no mutation
-    /// site AND no early-return mutant could be synthesized), the ratio is `0.0`:
-    /// a contract that CANNOT be mutation-validated has NOT met the §7 bar, so the
-    /// floor is NOT met (#48). This is the 0/0 backstop — a `0/0` score is treated
-    /// as below-floor (gated `WeakContract`), never a silent vacuous `1.0` pass
-    /// that lets an under-constraining contract certify L3 UNSCORED (§7 step 4 /
+    /// site and no early-return mutant could be synthesized), the ratio is `0.0`:
+    /// a contract that cannot be mutation-validated has not met the §7 bar, so the
+    /// floor is not met (#48). This is the 0/0 backstop — a `0/0` score is treated
+    /// as below-floor (gated `WeakContract`) rather than a vacuous `1.0` pass
+    /// that would let an under-constraining contract certify L3 unscored (§7 step 4 /
     /// `goal.md` R-DEFER-9 anti-Goodhart). With the widened early-return mutant
     /// (`early_return_value` synthesizes one for ref/slice returns too), a 0/0
     /// score is unreachable for a real `fn` body; the backstop is the floor-of-
-    /// last-resort for any genuinely un-synthesizable return type.
+    /// last-resort for any un-synthesizable return type.
     ///
     /// The §7 equivalent-mutant exclusion (`.design/forge/equivalent-mutants.md`
-    /// REQ-4, #101) preserves this backstop: `scored` is already NET of
-    /// proved-equivalent mutants, so a fn ALL of whose mutants are killed or
-    /// proved-equivalent — and NONE killed — reduces to `0/0`, which this
-    /// backstop STILL gates `WeakContract` (the degenerate `refuse(x) req x == 0
-    /// ens result == 0 { x }`, AC-5). Exclusion narrows the denominator but never
-    /// opens a vacuous `1.0` pass for a fn the battery could not exercise.
+    /// REQ-4, #101) preserves this backstop: `scored` is already net of
+    /// proved-equivalent mutants, so a fn all of whose mutants are killed or
+    /// proved-equivalent — and none killed — reduces to `0/0`, which this
+    /// backstop still gates `WeakContract` (the degenerate `refuse(x) req x == 0
+    /// ens result == 0 { x }`, AC-5). Exclusion narrows the denominator without
+    /// opening a vacuous `1.0` pass for a fn the battery could not exercise.
     pub fn kill_ratio(&self) -> f64 {
         if self.scored == 0 {
             0.0
@@ -172,12 +172,12 @@ impl MutationScore {
     }
 }
 
-/// Generate the FROZEN, DETERMINISTIC mutant set of `f`'s body (REQ-1/REQ-2).
+/// Generate the frozen, deterministic mutant set of `f`'s body (REQ-1/REQ-2).
 ///
-/// The walk is pre-order over the body in SOURCE order; at each site the fixed
+/// The walk is pre-order over the body in source order; at each site the fixed
 /// mutator families are applied in this fixed family order:
-///   1. **early return** — ONE mutant inserting `return <zero-of-ret-type>` at
-///      the FRONT of the body block (skipped when the return type has no
+///   1. **early return** — one mutant inserting `return <zero-of-ret-type>` at
+///      the front of the body block (skipped when the return type has no
 ///      canonical zero, OQ-3);
 ///   2. **operator flips** — for each `Expr::Binary` whose `op` has a frozen
 ///      flip (`flip_binop`), one mutant with the flipped operator;
@@ -189,7 +189,7 @@ impl MutationScore {
 ///
 /// The resulting list is bounded by [`MUTANT_CAP`]: when the candidate count
 /// exceeds the cap, the first `MUTANT_CAP` mutants in this order are returned
-/// (REQ-2). Each mutant is the original `f` with ONLY `body` changed — the
+/// (REQ-2). Each mutant is the original `f` with only `body` changed — the
 /// contract (`req`/`ens`/`fx`, loop `inv`/`dec`) is untouched (REQ-1/REQ-3). A
 /// pure function of `f` + the frozen table ⇒ the same ordered list every run
 /// (REQ-8); `_seed` is taken for the documented determinism seam (the
@@ -205,22 +205,22 @@ pub fn generate(f: &FnItem, _seed: u64, adt_deps: &[Item]) -> Vec<Mutant> {
     let mut mutants = Vec::new();
 
     // A boundary fn (`.design/boundary/ffi-boundary.md` REQ-2) has `body: None` —
-    // its body is FOREIGN, so there is nothing to mutate (mutation scores a
-    // KNOWN-GOOD Thermite body, §7's premise). It never reaches here in
+    // its body is foreign, so there is nothing to mutate (mutation scores a
+    // known-good Thermite body, §7's premise). It does not reach here in
     // production (`check.rs` routes a boundary fn to L1 before any L3 proof +
-    // mutation stage), but handle `None` as an empty mutant set rather than panic
+    // mutation stage); handle `None` as an empty mutant set rather than panic
     // (R-CODE-2). The `real_body` below is the in-language body the families walk.
     let Some(real_body) = &f.body else {
         return mutants;
     };
 
-    // Family 1: early return at body head. EVERY real `fn` body gets this mutant
-    // (the §7 discriminator / value-add mutant) so the floor is never silently
-    // skipped via a 0/0 score (#48). Listed first so the cap never crowds it out.
+    // Family 1: early return at body head. Every real `fn` body gets this mutant
+    // (the §7 discriminator mutant) so the floor is not skipped via a 0/0 score
+    // (#48). Listed first so the cap does not crowd it out.
     // The returned value is the return type's canonical zero (`zero_value_for`)
-    // OR, for a reference/slice return that has no scalar zero, a synthesized
+    // or, for a reference/slice return that has no scalar zero, a synthesized
     // valid early return — the empty-slice literal `&[]`, the empty `Vec`/`String`
-    // wrapper, OR (REQ-10) the named-struct field-zero literal resolved against
+    // wrapper, or (REQ-10) the named-struct field-zero literal resolved against
     // `adt_deps`.
     if let Some((value, desc)) = early_return_value(f, adt_deps) {
         let mut body = real_body.clone();
@@ -232,15 +232,15 @@ pub fn generate(f: &FnItem, _seed: u64, adt_deps: &[Item]) -> Vec<Mutant> {
         ));
     }
 
-    // Family 1 (cont.) — F-IDENT identity returns (REQ-9): for EACH parameter
-    // whose type EXACTLY equals the return type (the AST `Type`'s derived
-    // structural `PartialEq`, NO ref-stripping — OQ-7), synthesize ONE mutant
+    // Family 1 (cont.) — F-IDENT identity returns (REQ-9): for each parameter
+    // whose type exactly equals the return type (the AST `Type`'s derived
+    // structural `PartialEq`, no ref-stripping — OQ-7), synthesize one mutant
     // inserting `return <param>` at the body head, one per matching param in
-    // DECLARATION order, each labeled with the param name so multi-param matches
-    // stay distinguishable (OQ-8). Emitted immediately AFTER the zero-value early
-    // return and BEFORE families 2-4, so the `MUTANT_CAP` order-prefix never
-    // crowds out the discriminator mutants. A STRONG contract refutes the identity
-    // (`to_1based`'s `ens result == x + 1` rejects `return x`); a WEAK contract
+    // declaration order, each labeled with the param name so multi-param matches
+    // stay distinguishable (OQ-8). Emitted after the zero-value early
+    // return and before families 2-4, so the `MUTANT_CAP` order-prefix does not
+    // crowd out the discriminator mutants. A strong contract refutes the identity
+    // (`to_1based`'s `ens result == x + 1` rejects `return x`); a weak contract
     // proves it (the survivor the §7 floor names — the `move_up` `return b` hole).
     for p in &f.params {
         if p.ty == f.ret {
@@ -291,12 +291,12 @@ fn flip_binop(op: BinOp) -> Option<BinOp> {
         BinOp::Sub => BinOp::Add,
         BinOp::Mul => BinOp::Div,
         BinOp::Div => BinOp::Mul,
-        // #92 integer operators: sound, value-distinguishable op-swaps so EVERY
+        // #92 integer operators: sound, value-distinguishable op-swaps so every
         // new operator yields a kill-able mutant (the §7 battery exercises the new
-        // ops, not a neutral no-op). `%`↔`/` (a remainder vs a quotient differ
+        // ops). `%`↔`/` (a remainder vs a quotient differ
         // wherever the divisor doesn't divide evenly), `<<`↔`>>` (shift direction),
         // `&`↔`|` and `^`↔`&` (distinct bit results) — each flips to an operator
-        // of the SAME arity/operand types so the mutant always type-checks.
+        // of the same arity/operand types so the mutant always type-checks.
         BinOp::Rem => BinOp::Div,
         BinOp::Shl => BinOp::Shr,
         BinOp::Shr => BinOp::Shl,
@@ -340,49 +340,49 @@ fn binop_token(op: BinOp) -> &'static str {
 }
 
 /// The early-return mutant's `(value, description)` for `f`'s return type (REQ-1,
-/// OQ-3 widened by #48). EVERY real `fn` body must get an early-return mutant so
-/// the §7 floor is never silently skipped via a 0/0 score:
+/// OQ-3 widened by #48). Every real `fn` body gets an early-return mutant so
+/// the §7 floor is not skipped via a 0/0 score:
 ///
 /// - a scalar return uses its canonical zero (`zero_value_for`): `0` for an
 ///   integer prim, `false` for `bool`, `None` for an `Option`;
 /// - a reference-to-slice return (`&[T]` / `&mut [T]`) has no scalar zero, so it
 ///   synthesizes the empty-slice literal early return `&[]` (`&mut []`). An empty
 ///   slice is the canonical "trivial" slice (it borrows nothing, so its lifetime
-///   is always valid and it LOWERS to exec code Verus accepts — `RangeTo`
-///   subslices like `&xs[..0]` are NOT supported in Verus exec position, so the
+///   is always valid and it lowers to exec code Verus accepts — `RangeTo`
+///   subslices like `&xs[..0]` are not supported in Verus exec position, so the
 ///   empty literal is the right synthesis). A weak `ens` that does not pin the
-///   result (`ens result.len() <= N`) PROVES `&[]` → the mutant SURVIVES → the
-///   floor gates the weak contract; a strong `ens result == xs` REJECTS `&[]`
-///   (unless `xs` is empty) → the mutant is KILLED → no over-gating (#48).
+///   result (`ens result.len() <= N`) proves `&[]` → the mutant survives → the
+///   floor gates the weak contract; a strong `ens result == xs` rejects `&[]`
+///   (unless `xs` is empty) → the mutant is killed → no over-gating (#48).
 /// - a bounded-`Vec` return (`Vec<T>`, `.design/basis/04-collections.md` REQ-5)
-///   has no scalar zero either, so it synthesizes the EMPTY-Vec construction
-///   `TVec<Suffix> { data: Vec::new() }` — the exact `thermite_lower`
+///   has no scalar zero either, so it synthesizes the empty-Vec construction
+///   `TVec<Suffix> { data: Vec::new() }` — the `thermite_lower`
 ///   wrapper-newtype literal a `Vec<T>` lowers to (`tvec_name` in `lower.rs`),
-///   constructed empty. This MIRRORS the #48 slice precedent (`&[]` for `&[T]`)
+///   constructed empty. This mirrors the #48 slice precedent (`&[]` for `&[T]`)
 ///   for the `Vec`-return class: an empty `Vec` is the canonical "trivial" Vec
-///   (`len() == 0`, always `well_formed`), so EVERY `Vec`-returning body is
+///   (`len() == 0`, always `well_formed`), so every `Vec`-returning body is
 ///   scored rather than escaping via a 0/0 gate (#74). A strong `ens
-///   result.len() == v.len() + 1` REJECTS the empty Vec (`0 != v.len()+1`) → the
-///   mutant is KILLED → a genuinely-proved `push_one` SCORES the floor and
-///   certifies L3 (it does NOT bypass the gate). A weak `ens result.len() <= N`
-///   PROVES the empty Vec → the mutant SURVIVES → the floor still gates the weak
-///   `Vec` contract (the synthesis ENABLES scoring; it does not auto-pass).
+///   result.len() == v.len() + 1` rejects the empty Vec (`0 != v.len()+1`) → the
+///   mutant is killed → a proved `push_one` scores the floor and
+///   certifies L3 (it does not bypass the gate). A weak `ens result.len() <= N`
+///   proves the empty Vec → the mutant survives → the floor still gates the weak
+///   `Vec` contract (the synthesis enables scoring; it does not auto-pass).
 /// - a bounded-`String` return (`Type::String`, `.design/basis/07-strings.md`
-///   REQ-4) has no scalar zero either, so it synthesizes the EMPTY-`TString`
+///   REQ-4) has no scalar zero either, so it synthesizes the empty-`TString`
 ///   construction `TString { data: Vec::new() }` (`empty_string_value`) — the
-///   exact `thermite_lower` wrapper-newtype literal a `String` lowers to
-///   (`Type::String => "TString"` in `lower.rs`), constructed empty. This MIRRORS
+///   `thermite_lower` wrapper-newtype literal a `String` lowers to
+///   (`Type::String => "TString"` in `lower.rs`), constructed empty. This mirrors
 ///   the #74 `Vec` precedent for the `String`-return class (#80): an empty
 ///   `TString` is the canonical "trivial" String (`len() == 0`, always
-///   `well_formed`), so EVERY `String`-returning body is scored rather than
+///   `well_formed`), so every `String`-returning body is scored rather than
 ///   escaping via a 0/0 gate. A strong `ens result.len() == a.len() + b.len()`
-///   (the corpus `join`) REJECTS the empty String (`0 != a.len()+b.len()` for
-///   non-empty inputs) so the mutant is KILLED — a genuinely-proved `concat`
-///   SCORES the floor and certifies L3 (it does NOT bypass the gate). A weak `ens
-///   result.len() <= N` PROVES the empty String so the mutant SURVIVES — the floor
-///   STILL gates the weak `String` contract.
+///   (the corpus `join`) rejects the empty String (`0 != a.len()+b.len()` for
+///   non-empty inputs) so the mutant is killed — a proved `concat`
+///   scores the floor and certifies L3 (it does not bypass the gate). A weak `ens
+///   result.len() <= N` proves the empty String so the mutant survives — the floor
+///   still gates the weak `String` contract.
 ///
-/// `None` is returned only for a genuinely un-synthesizable return type (`Unit`, a
+/// `None` is returned only for an un-synthesizable return type (`Unit`, a
 /// non-slice ref, a non-`Option` generic, a `Vec` of a non-Copy-primitive element
 /// that the wrapper does not support) — see the 0/0 backstop in `kill_ratio`.
 fn early_return_value(f: &FnItem, adt_deps: &[Item]) -> Option<(Expr, String)> {
@@ -391,7 +391,7 @@ fn early_return_value(f: &FnItem, adt_deps: &[Item]) -> Option<(Expr, String)> {
     }
     // A named-struct return (`Type::Named`): synthesize the field-zero struct
     // literal (REQ-10) resolved against `adt_deps`. Returns `None` (no mutant) if
-    // the name is an enum, an unknown type, or ANY field lacks a synthesizable
+    // the name is an enum, an unknown type, or any field lacks a synthesizable
     // zero (the OQ-5 drop, mirroring the `Type::Tuple` rule).
     if let Type::Named(name) = &f.ret {
         if let Some((value, desc)) = struct_zero_value(name, adt_deps) {
@@ -418,20 +418,20 @@ fn early_return_value(f: &FnItem, adt_deps: &[Item]) -> Option<(Expr, String)> {
     }
     // A bounded-`String` return: the empty-`TString` wrapper literal
     // `TString { data: Vec::new() }` (#80, mirroring the #74 empty-`Vec` arm
-    // EXACTLY for the `Type::String` class). A `String` has no scalar zero, so
+    // for the `Type::String` class). A `String` has no scalar zero, so
     // without this arm a `String`-returning body whose surface body has no
-    // binop/off-by-one/branch site (`{ a.concat(b) }`) yields ZERO mutants → a
-    // `0/0` score → the #48 anti-Goodhart backstop spuriously gates a
-    // genuinely-L3-proved fn to `WeakContract`/L0. An empty `TString` is the
-    // canonical "trivial" String (`len() == 0`, always `well_formed`), the exact
+    // binop/off-by-one/branch site (`{ a.concat(b) }`) yields zero mutants → a
+    // `0/0` score → the #48 anti-Goodhart backstop gates an
+    // L3-proved fn to `WeakContract`/L0. An empty `TString` is the
+    // canonical "trivial" String (`len() == 0`, always `well_formed`), the
     // `thermite_lower::lower` wrapper-newtype literal a `String` lowers to
     // (`TString { data }` over `vstd::vec::Vec<u8>` — the single nullary `TString`
     // wrapper, no per-element suffix unlike `Vec`). A strong `ens result.len() ==
-    // a.len() + b.len()` REJECTS the empty String (`0 != a.len()+b.len()` for
-    // non-empty inputs) → the mutant is KILLED → `join` SCORES the floor and
-    // certifies L3 (the synthesis ENABLES scoring; it does NOT bypass the gate). A
-    // WEAK `ens result.len() <= N` PROVES the empty String → the mutant SURVIVES →
-    // the floor STILL gates the weak String contract.
+    // a.len() + b.len()` rejects the empty String (`0 != a.len()+b.len()` for
+    // non-empty inputs) → the mutant is killed → `join` scores the floor and
+    // certifies L3 (the synthesis enables scoring; it does not bypass the gate). A
+    // weak `ens result.len() <= N` proves the empty String → the mutant survives →
+    // the floor still gates the weak String contract.
     if let Type::String = &f.ret {
         return Some(empty_string_value());
     }
@@ -439,7 +439,7 @@ fn early_return_value(f: &FnItem, adt_deps: &[Item]) -> Option<(Expr, String)> {
 }
 
 /// The empty-`String` early-return value: the wrapper-newtype struct literal
-/// `TString { data: Vec::new() }` (#80). The wrapper NAME mirrors
+/// `TString { data: Vec::new() }` (#80). The wrapper name mirrors
 /// `thermite_lower::lower`'s `Type::String => "TString"` — a Thermite `String`
 /// lowers to the single `TString` newtype over `vstd::vec::Vec<u8>` (a nullary
 /// node, fixed `u8` element — unlike `Vec<T>`'s per-element `TVec<Suffix>`, there
@@ -463,15 +463,15 @@ fn empty_string_value() -> (Expr, String) {
 }
 
 /// The empty-`Vec` early-return value for a `Vec<elem>` return: the wrapper-newtype
-/// struct literal `TVec<Suffix> { data: Vec::new() }` (#74). The wrapper NAME
+/// struct literal `TVec<Suffix> { data: Vec::new() }` (#74). The wrapper name
 /// mirrors `thermite_lower::lower`'s `tvec_name` — a `Vec<u64>` lowers to the
-/// `TVecU64` newtype over `vstd::vec::Vec<u64>`, so the early-return mutant must
-/// construct THAT newtype empty (an empty `vstd::vec::Vec` has `len() == 0`, so the
+/// `TVecU64` newtype over `vstd::vec::Vec<u64>`, so the early-return mutant
+/// constructs that newtype empty (an empty `vstd::vec::Vec` has `len() == 0`, so the
 /// constructed wrapper is `well_formed` and lowers to exec code Verus accepts). The
 /// `data` field is the verified vstd `Vec::new()`. Returns `None` for a `Vec`
 /// element type the wrapper does not materialize (a non-Copy-primitive element —
 /// `lower.rs::tvec_name` itself rejects these via `LowerError::Unsupported`), so
-/// the mutant is simply not synthesized (dropped from the denominator, OQ-5), never
+/// the mutant is not synthesized (dropped from the denominator, OQ-5), not
 /// an over-gate.
 fn empty_vec_value(elem: &Type) -> Option<(Expr, String)> {
     let suffix = match elem {
@@ -504,12 +504,12 @@ fn empty_slice_literal() -> Expr {
     Expr::Path(vec!["[]".to_string()])
 }
 
-/// The canonical zero VALUE of a SCALAR return type for the early-return mutant
+/// The canonical zero value of a scalar return type for the early-return mutant
 /// (REQ-1, OQ-3): `0` for an integer prim, `false` for `bool`, `None` for an
 /// `Option`. A type with no scalar zero (`Unit`, a `Ref`, a bare `Slice`, a
 /// non-`Option` generic) yields `None` here; reference-to-slice returns are
 /// handled by `early_return_value`. Returning a value of the function's return
-/// type keeps the mutant well-typed so it LOWERS (only the contract should reject
+/// type keeps the mutant well-typed so it lowers (the contract should reject
 /// it, not the type checker).
 fn zero_value_for(ret: &Type) -> Option<Expr> {
     match ret {
@@ -519,26 +519,26 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
         }),
         Type::Prim(PrimType::Bool) => Some(Expr::BoolLit(false)),
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-1): `Option<T>` is now
-        // the dedicated `Type::Option` node (NOT a string-named `Generic`), so the
-        // early-return zero VALUE of an `Option`-returning fn is `None` keyed on the
+        // the dedicated `Type::Option` node (not a string-named `Generic`), so the
+        // early-return zero value of an `Option`-returning fn is `None` keyed on the
         // node kind — the OQ-1 ripple at this `Generic { name: "Option" }` reader.
         // (A `Result`-returning fn has no canonical scalar zero — its `Err(e)` needs
         // a typed reason — so it falls through to `None` here, like a bare `Slice`.)
         Type::Option(_) => Some(Expr::Path(vec!["None".to_string()])),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): the
-        // early-return zero VALUE of a tuple-returning fn is the tuple of its
+        // early-return zero value of a tuple-returning fn is the tuple of its
         // elements' zero values (`(u64, u64)` → `(0, 0)`) — the #48/#74/#80
-        // early-return-synthesis pattern extended to the tuple-return class. WITHOUT
+        // early-return-synthesis pattern extended to the tuple-return class. Without
         // this, a tuple-returning fn whose body has no binop/off-by-one/branch site
-        // (the GROUNDED `swap` body `(b, a)`) yields ZERO mutants → a `0/0` score →
-        // the anti-Goodhart backstop spuriously gates a genuinely-L3-proved fn to
+        // (the grounded `swap` body `(b, a)`) yields zero mutants → a `0/0` score →
+        // the anti-Goodhart backstop gates an L3-proved fn to
         // `WeakContract`/L0 (AC-4 requires swap → L3). A strong `ens result.0 == b
-        // && result.1 == a` REJECTS `(0, 0)` (for nonzero b/a) → the mutant is
-        // KILLED → swap SCORES the floor and certifies L3 (the synthesis ENABLES
-        // scoring; it does NOT bypass the gate — a WEAK tuple `ens` PROVES `(0, 0)`
-        // → the mutant SURVIVES → the floor STILL gates it). Returns `None` if ANY
+        // && result.1 == a` rejects `(0, 0)` (for nonzero b/a) → the mutant is
+        // killed → swap scores the floor and certifies L3 (the synthesis enables
+        // scoring; it does not bypass the gate — a weak tuple `ens` proves `(0, 0)`
+        // → the mutant survives → the floor still gates it). Returns `None` if any
         // element lacks a scalar zero (a `Ref`/`Result` element), so the mutant is
-        // simply not synthesized (dropped from the denominator, OQ-5), never an
+        // not synthesized (dropped from the denominator, OQ-5), not an
         // over-gate. The element zeros recurse, so a nested tuple composes.
         Type::Tuple(tys) => {
             let mut elems = Vec::with_capacity(tys.len());
@@ -554,23 +554,23 @@ fn zero_value_for(ret: &Type) -> Option<Expr> {
 /// The F-STRUCT-ZERO early-return value for a `Type::Named(name)` struct return
 /// (REQ-10/REQ-11): the field-zero struct literal `name { field: <zero>, … }`,
 /// resolved against the threaded `adt_deps`. Each field's zero comes from the
-/// SAME synthesis ladder the early-return family owns (`zero_value_with_defs`:
+/// same synthesis ladder the early-return family owns (`zero_value_with_defs`:
 /// the scalar `zero_value_for` arms, the #74/#80 empty `Vec`/`String` wrappers,
 /// the C9-B tuple recursion, and — recursively — a nested named struct's own
 /// field zeros).
 ///
-/// Returns `None` (no mutant — the OQ-5 drop, MIRRORING the `Type::Tuple` rule)
+/// Returns `None` (no mutant — the OQ-5 drop, mirroring the `Type::Tuple` rule)
 /// when:
-///   - `name` resolves to NO struct in `adt_deps` (an enum-named return: no
-///     canonical variant to choose; an unknown name), OR
-///   - ANY field lacks a synthesizable zero (a `Box`/`Ref`/`Result`/enum-typed
+///   - `name` resolves to no struct in `adt_deps` (an enum-named return: no
+///     canonical variant to choose; an unknown name), or
+///   - any field lacks a synthesizable zero (a `Box`/`Ref`/`Result`/enum-typed
 ///     field — the recursion terminates because a struct can only reference
 ///     another struct through `Box`, which has no zero, so a self-referential
 ///     struct field drops here and the recursion does not cycle, REQ-11).
 ///
-/// TYPE-INVARIANT interaction (REQ-10): a struct `inv` is CONTRACT — if the
+/// Type-invariant interaction (REQ-10): a struct `inv` is contract — if the
 /// field-zero literal violates it, Verus fails the construction obligation and
-/// the mutant is KILLED (the honest polarity). For the corpus structs the zeros
+/// the mutant is killed (the honest polarity). For the corpus structs the zeros
 /// satisfy the `inv` (`Account { balance: 0 }`: `0 <= 1_000_000`;
 /// `Buffer { text: <empty>, cursor: 0 }`: `0 <= 0 && 0 <= 1_000_000`), so the
 /// mutant is scored against the `ens`.
@@ -578,8 +578,8 @@ fn struct_zero_value(name: &str, adt_deps: &[Item]) -> Option<(Expr, String)> {
     let def = find_struct(name, adt_deps)?;
     let mut fields = Vec::with_capacity(def.fields.len());
     for field in &def.fields {
-        // ANY field without a synthesizable zero ⇒ NO mutant for this struct
-        // (the OQ-5 drop — never an over-gate).
+        // Any field without a synthesizable zero ⇒ no mutant for this struct
+        // (the OQ-5 drop — not an over-gate).
         let zero = zero_value_with_defs(&field.ty, adt_deps)?;
         fields.push((field.name.clone(), zero));
     }
@@ -590,7 +590,7 @@ fn struct_zero_value(name: &str, adt_deps: &[Item]) -> Option<(Expr, String)> {
     Some((lit, format!("{name} {{ <field zeros> }}")))
 }
 
-/// Resolve a `struct NAME` definition among the threaded ADT items (REQ-11). An
+/// Resolve a `struct name` definition among the threaded ADT items (REQ-11). An
 /// `Item::Enum` of the same name resolves to `None` here (F-STRUCT-ZERO is a
 /// struct-only family — an enum has no canonical variant, the OQ-5 drop).
 fn find_struct<'a>(name: &str, adt_deps: &'a [Item]) -> Option<&'a StructItem> {
@@ -600,15 +600,15 @@ fn find_struct<'a>(name: &str, adt_deps: &'a [Item]) -> Option<&'a StructItem> {
     })
 }
 
-/// The zero VALUE of a field/return type WITH access to the program's struct
+/// The zero value of a field/return type with access to the program's struct
 /// defs (REQ-11): the defs-threaded sibling of [`zero_value_for`]. It defers to
 /// the def-free `zero_value_for` for every shipped arm (scalars, `Option`,
 /// tuples — no behavior change), adds the #74/#80 empty `Vec`/`String` wrappers
 /// (a struct field can be a `Vec`/`String`, e.g. `Buffer.text`), and — for a
 /// `Type::Named` field — recurses through `struct_zero_value` so a nested struct
-/// composes. A `Type::Tuple` recurses element-wise THROUGH this defs-threaded
+/// composes. A `Type::Tuple` recurses element-wise through this defs-threaded
 /// form so a tuple of structs composes too. Returns `None` (the OQ-5 drop) for
-/// any genuinely un-synthesizable field type (`Box`/`Ref`/`Result`/`Map`/enum).
+/// any un-synthesizable field type (`Box`/`Ref`/`Result`/`Map`/enum).
 fn zero_value_with_defs(ty: &Type, adt_deps: &[Item]) -> Option<Expr> {
     if let Some(zero) = zero_value_for(ty) {
         return Some(zero);
@@ -655,7 +655,7 @@ fn zero_desc(ret: &Type) -> &'static str {
 
 /// Negate an `if` condition for a branch-swap mutant (REQ-1). When the condition
 /// is a flippable comparison (`<`↔`>=`, `<=`↔`>`, `==`↔`!=`), negation is the
-/// COMPLEMENTARY flip (`!(a < b)` ≡ `a >= b`), encoded in the operator set so the
+/// complementary flip (`!(a < b)` ≡ `a >= b`), encoded in the operator set so the
 /// mutant is a clean comparison rather than a parenthesised `!`. For any other
 /// condition shape the negation falls back to swapping the arms (handled by the
 /// caller), so this returns `None`.
@@ -683,7 +683,7 @@ fn negate_comparison(cond: &Expr) -> Option<(Expr, &'static str)> {
 }
 
 /// A collector for families 2-4. It walks the body and, for each mutation site,
-/// records the action needed to rebuild a mutated copy of the WHOLE body with
+/// records the action needed to rebuild a mutated copy of the whole body with
 /// exactly that one site changed. Recording an action (rather than eagerly
 /// cloning the whole body per site) keeps the walk a single pass; the mutated
 /// bodies are materialised in `into_mutants` by re-walking with one site armed.
@@ -759,15 +759,14 @@ impl MutantSink {
                 }
             }
             Stmt::Loop(l) => {
-                // The loop's `inv`/`dec` are CONTRACT (the mutator never touches
-                // them — OUT scope in the design); only the loop body is mutated.
+                // The loop's `inv`/`dec` are contract (the mutator never touches
+                // them — out of scope in the design); only the loop body is mutated.
                 self.scan_block(&l.body, ctr);
             }
             Stmt::Expr(e) => self.scan_expr(e, ctr),
-            // break/continue carry no sub-expression and are NOT a mutation
+            // break/continue carry no sub-expression and are not a mutation
             // target in v0.1 (#93, verus-lowering.md OQ-4): the scan produces no
-            // mutant for them (no silently-dropped mutant — a leaf, like
-            // `Return(None)`).
+            // mutant for them (a leaf, like `Return(None)`).
             Stmt::Break | Stmt::Continue => {}
         }
     }
@@ -852,8 +851,8 @@ impl MutantSink {
             Expr::Cast { expr, .. } => self.scan_expr(expr, ctr),
             Expr::Ref { expr, .. } => self.scan_expr(expr, ctr),
             // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions
-            // define no NEW mutation site themselves (no off-by-one literal,
-            // binop, or branch), but the honest scan descends into their
+            // define no new mutation site themselves (no off-by-one literal,
+            // binop, or branch), but the scan descends into their
             // sub-expressions so a mutable site nested inside is still found.
             // Dead-in-1a (the ADT program dies at the validator before
             // mutation, which runs only after a successful L3 proof).
@@ -864,24 +863,24 @@ impl MutantSink {
             }
             Expr::Is { scrutinee, .. } => self.scan_expr(scrutinee, ctr),
             Expr::Deref(inner) => self.scan_expr(inner, ctr),
-            // The prefix `!` (#92): it defines no NEW mutation site of its own (no
-            // off-by-one, binop, or branch), but the honest scan descends into the
+            // The prefix `!` (#92): it defines no new mutation site of its own (no
+            // off-by-one, binop, or branch), but the scan descends into the
             // operand so a mutable site nested under `!` is still found.
             Expr::Unary { expr, .. } => self.scan_expr(expr, ctr),
             // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
-            // tuple construction / projection defines no NEW mutation site of its
-            // own (the projection INDEX is not a v1 mutant — REQ-8 leaf walk), but
+            // tuple construction / projection defines no new mutation site of its
+            // own (the projection index is not a v1 mutant — REQ-8 leaf walk), but
             // a mutable site (a binop, an off-by-one literal) can sit in a tuple
-            // element / under a projection's receiver, so the honest scan descends.
+            // element / under a projection's receiver, so the scan descends.
             Expr::Tuple(elems) => {
                 for e in elems {
                     self.scan_expr(e, ctr);
                 }
             }
             Expr::TupleProj { receiver, .. } => self.scan_expr(receiver, ctr),
-            // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF and
-            // is NOT an off-by-one target (it is text, not a numeric literal) — it
-            // defines no NEW mutation site and has no sub-expression to descend
+            // A string literal (`.design/basis/07-strings.md` REQ-1) is a leaf and
+            // is not an off-by-one target (it is text, not a numeric literal) — it
+            // defines no new mutation site and has no sub-expression to descend
             // into, so it joins the no-op `BoolLit`/`Path` arm.
             Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
         }
@@ -1146,10 +1145,10 @@ impl Applier<'_> {
                 expr: Box::new(self.apply_expr(expr)),
             },
             // Basis Stage 1a (`.design/basis/01-adts.md`): the mutation
-            // rewriter rebuilds the ADT node FAITHFULLY, recursing into its
+            // rewriter rebuilds the ADT node faithfully, recursing into its
             // sub-expressions so a mutation site nested inside is applied. This
-            // is the honest neutral value (an identity-preserving rebuild, not a
-            // panic). Dead-in-1a (mutation runs only post-L3-proof; an ADT
+            // is an identity-preserving rebuild rather than a
+            // panic. Dead-in-1a (mutation runs only post-L3-proof; an ADT
             // program never reaches it — it dies at the validator).
             Expr::StructLit { path, fields } => Expr::StructLit {
                 path: path.clone(),
@@ -1173,7 +1172,7 @@ impl Applier<'_> {
             // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109):
             // rebuild the tuple / projection faithfully, recursing so a mutation
             // site nested in an element / under the receiver is applied; the
-            // projection INDEX is identity-preserved (not a v1 mutant).
+            // projection index is identity-preserved (not a v1 mutant).
             Expr::Tuple(elems) => Expr::Tuple(elems.iter().map(|e| self.apply_expr(e)).collect()),
             Expr::TupleProj { receiver, index } => Expr::TupleProj {
                 receiver: Box::new(self.apply_expr(receiver)),
@@ -1181,9 +1180,9 @@ impl Applier<'_> {
             },
             Expr::BoolLit(b) => Expr::BoolLit(*b),
             Expr::Path(p) => Expr::Path(p.clone()),
-            // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF with
+            // A string literal (`.design/basis/07-strings.md` REQ-1) is a leaf with
             // no mutation site (text, not an off-by-one target) — the rewriter
-            // rebuilds it by IDENTITY, exactly as for `BoolLit`/`Path`.
+            // rebuilds it by identity, exactly as for `BoolLit`/`Path`.
             Expr::StrLit(s) => Expr::StrLit(s.clone()),
         }
     }
@@ -1250,11 +1249,11 @@ mod tests {
     // a small fn. Expected mutants trace to REQ-1/REQ-9's table (R-CHAR-3), not to
     // the generator's own output. The fn
     // `fn f(x: u32) -> u32 req x < 10 ens result == x fx pure { x + 1 }` has, in
-    // FAMILY ORDER:
+    // family order:
     //   - family 1a: one zero early return (ret u32 -> `return 0`),
     //   - family 1b (F-IDENT, REQ-9): `x: u32` matches the `u32` return ->
-    //     `return x` (identity of param `x`) — emitted AFTER the zero return,
-    //     BEFORE families 2-4,
+    //     `return x` (identity of param `x`) — emitted after the zero return,
+    //     before families 2-4,
     //   - family 2: one Binary `+` (Add->Sub flip),
     //   - family 3: one IntLit `1` (1->2, 1->0).
     #[test]
@@ -1276,8 +1275,8 @@ mod tests {
         );
     }
 
-    // REQ-9 (F-IDENT): a parameter whose type EXACTLY equals the return type yields
-    // ONE identity-return mutant, labeled with the param name. A by-VALUE struct
+    // REQ-9 (F-IDENT): a parameter whose type exactly equals the return type yields
+    // one identity-return mutant, labeled with the param name. A by-value struct
     // return matches a by-value struct param (the `move_up`-class `b: Buffer ->
     // Buffer`). Expected trace: REQ-9's table (R-CHAR-3).
     #[test]
@@ -1299,8 +1298,8 @@ mod tests {
         );
     }
 
-    // REQ-9 (OQ-8): TWO params of the same matching type yield TWO identity mutants
-    // in DECLARATION order (no dedup) — `min2`'s `return a` AND `return b`.
+    // REQ-9 (OQ-8): two params of the same matching type yield two identity mutants
+    // in declaration order (no dedup) — `min2`'s `return a` and `return b`.
     #[test]
     fn ident_return_one_per_matching_param_in_order() {
         let f = parse_fn(
@@ -1322,8 +1321,8 @@ mod tests {
         );
     }
 
-    // REQ-9 (OQ-7): NO ref-stripping — a `b: &Buf` param with a `Buf` return gets
-    // NO identity mutant (exact `Type` equality only).
+    // REQ-9 (OQ-7): no ref-stripping — a `b: &Buf` param with a `Buf` return gets
+    // no identity mutant (exact `Type` equality only).
     #[test]
     fn ident_return_no_ref_stripping() {
         let items = parse_items(
@@ -1342,7 +1341,7 @@ mod tests {
         );
     }
 
-    // REQ-9: an exact REF-type match DOES yield an identity mutant (the divergence
+    // REQ-9: an exact ref-type match does yield an identity mutant (the divergence
     // fixture `pick(xs: &[u32]) -> &[u32]` — `return xs` borrows nothing new).
     #[test]
     fn ident_return_exact_ref_match() {
@@ -1390,8 +1389,8 @@ mod tests {
         );
     }
 
-    // REQ-10 / AC-10 (the OQ-5 drop): a struct return with a zero-LESS field (a
-    // `Box`-typed field) generates NO F-STRUCT-ZERO mutant — never an error.
+    // REQ-10 / AC-10 (the OQ-5 drop): a struct return with a zero-less field (a
+    // `Box`-typed field) generates no F-STRUCT-ZERO mutant — never an error.
     #[test]
     fn struct_zero_drops_when_a_field_has_no_zero() {
         let items = parse_items(
@@ -1410,8 +1409,8 @@ mod tests {
         );
     }
 
-    // REQ-10: an ENUM-named return gets NO F-STRUCT-ZERO mutant (no canonical
-    // variant — the OQ-5 drop), but the F-IDENT identity IS still generated.
+    // REQ-10: an enum-named return gets no F-STRUCT-ZERO mutant (no canonical
+    // variant — the OQ-5 drop), but the F-IDENT identity is still generated.
     #[test]
     fn struct_zero_drops_for_enum_named_return() {
         let items = parse_items(
@@ -1473,7 +1472,7 @@ mod tests {
         );
     }
 
-    // REQ-1: the off-by-one `n-1` mutant is SKIPPED at n == 0 (u128 cannot
+    // REQ-1: the off-by-one `n-1` mutant is skipped at n == 0 (u128 cannot
     // represent -1) — documented, not a silent wrap.
     #[test]
     fn off_by_one_skips_minus_one_at_zero() {
@@ -1534,8 +1533,8 @@ mod tests {
         }
     }
 
-    // REQ-4: the classification polarity — verus SUCCESS (proved the wrong body) is
-    // a SURVIVOR; a verus FAILURE is KILLED. Traces to the design's §7 polarity
+    // REQ-4: the classification polarity — a verus success (proved the wrong body) is
+    // a survivor; a verus failure is killed. Traces to the design's §7 polarity
     // table (R-CHAR-3), not forge's output.
     #[test]
     fn classify_polarity_is_inverted() {
@@ -1568,9 +1567,9 @@ mod tests {
         assert_eq!(weak.mutants_killed_string(), "1/3");
     }
 
-    // REQ-5 / #48 backstop: a 0/0 score (no scoreable mutant) does NOT meet the
+    // REQ-5 / #48 backstop: a 0/0 score (no scoreable mutant) does not meet the
     // floor — a contract that cannot be mutation-validated has not met the §7 bar
-    // (anti-Goodhart, goal.md R-DEFER-9), so it is gated, NOT a silent vacuous
+    // (anti-Goodhart, goal.md R-DEFER-9), so it is gated, not a vacuous
     // pass. Expected value traces to §7 step 4 (the floor catches an
     // under-constraining contract), not to forge's output (R-CHAR-3).
     #[test]
@@ -1586,7 +1585,7 @@ mod tests {
     }
 
     // #48: a reference-to-slice return synthesizes an early-return mutant (the
-    // empty-slice literal `&[]`) so EVERY real `fn` body is scored — the 0/0 escape
+    // empty-slice literal `&[]`) so every real `fn` body is scored — the 0/0 escape
     // is unreachable. The weak `pick` fixture from the divergence issue:
     // `fn pick(xs: &[u32]) -> &[u32] ... { xs }`. Expected mutant traces to REQ-1's
     // widened early-return family (R-CHAR-3), not to the generator's output.
@@ -1623,27 +1622,27 @@ mod tests {
     }
 
     // =======================================================================
-    // REQ-11 (Target E) — the Verus-anchor for the mutation FLOOR gate (#48 anti-
+    // REQ-11 (Target E) — the Verus-anchor for the mutation floor gate (#48 anti-
     // Goodhart, `.design/verified/self-verification.md` REQ-11 / AC-11c, mechanism
     // (c)).
     //
-    // PLACEMENT DEVIATION (Option B, orchestrator-authorized): the design doc names
+    // Placement deviation (Option B, orchestrator-authorized): the design doc names
     // a `mutation::verus_anchor` block (forge is binary-only). Nested in the
     // existing `tests` module so the anti-pattern gate's `#[cfg(test)]` exemption
-    // covers it. `thermite-verified` is a forge DEV-dependency.
+    // covers it. `thermite-verified` is a forge dev-dependency.
     //
-    // AC-11c — the f64↔INTEGER grid: over `killed ∈ 0..=20`, `scored ∈ 0..=20`,
-    // assert the PRODUCTION f64 `MutationScore { killed, scored, survivor: None }
-    // .meets_floor(0.60)` equals the VERUS-PROVED integer
+    // AC-11c — the f64↔integer grid: over `killed ∈ 0..=20`, `scored ∈ 0..=20`,
+    // assert the production f64 `MutationScore { killed, scored, survivor: None }
+    // .meets_floor(0.60)` equals the verus-proved integer
     // `thermite_verified::meets_floor_60(killed, scored)` for every grid point.
     // Expected = the proved integer spec (R-CHAR-3, never forge's own f64 output).
-    // The verus proof is over the INTEGER property `scored == 0 ⟹ !pass` + the
-    // cross-multiply; the f64↔integer agreement is THIS test's job (OQ-E).
+    // The verus proof is over the integer property `scored == 0 ⟹ !pass` + the
+    // cross-multiply; the f64↔integer agreement is this test's job (OQ-E).
     //
-    // OQ-E (the f64 boundary subtlety): f64 `0.60` is NOT exactly 3/5, so a ratio
-    // EXACTLY on the boundary (e.g. 12/20 == 0.60) could in principle diverge by a
+    // OQ-E (the f64 boundary subtlety): f64 `0.60` is not exactly 3/5, so a ratio
+    // exactly on the boundary (e.g. 12/20 == 0.60) could in principle diverge by a
     // rounding ULP between the f64 `>=` and the integer cross-multiply. The grid is
-    // RUN here (not assumed); if ANY cell diverges it is reported, NOT masked
+    // run here (not assumed); if any cell diverges it is reported, not masked
     // (R-DEFER-9). The empirical expectation (from the cross-multiply being the
     // exact rational test) is 0 divergences on 0..=20.
     // =======================================================================
@@ -1652,11 +1651,11 @@ mod tests {
         use thermite_verified::meets_floor_60;
 
         /// AC-11c — the f64↔integer grid over `0..=20 × 0..=20` at the default 0.60
-        /// floor: the PRODUCTION f64 `meets_floor(0.60)` agrees with the VERUS-
-        /// PROVED integer `meets_floor_60` at EVERY grid point. In particular the
-        /// `(0, 0)` point reads `false` on BOTH sides (the #48 anti-Goodhart gate —
-        /// a `0/0` score never passes). Any divergence is asserted-OUT (and would be
-        /// reported honestly, OQ-E), never silently masked.
+        /// floor: the production f64 `meets_floor(0.60)` agrees with the
+        /// verus-proved integer `meets_floor_60` at every grid point. In particular the
+        /// `(0, 0)` point reads `false` on both sides (the #48 anti-Goodhart gate —
+        /// a `0/0` score never passes). Any divergence is asserted-out (and would be
+        /// reported, OQ-E), not masked.
         #[test]
         fn meets_floor_f64_matches_proved_integer_spec_over_grid() {
             let mut checked = 0usize;
@@ -1669,7 +1668,7 @@ mod tests {
                         equivalent: 0,
                         survivor: None,
                     };
-                    // R-CHAR-3: the EXPECTED verdict is the verus-proved INTEGER spec.
+                    // R-CHAR-3: the expected verdict is the verus-proved integer spec.
                     let expected = meets_floor_60(killed, scored);
                     let produced = score.meets_floor(MUTATION_FLOOR);
                     if produced != expected {
@@ -1678,7 +1677,7 @@ mod tests {
                     checked += 1;
                 }
             }
-            // OQ-E: report ANY divergence explicitly (do not delete the cell).
+            // OQ-E: report any divergence explicitly (do not delete the cell).
             assert!(
                 divergences.is_empty(),
                 "f64↔integer floor-gate divergences (killed, scored, f64_pass, \
@@ -1687,10 +1686,10 @@ mod tests {
             assert_eq!(checked, 21 * 21, "the full 0..=20 × 0..=20 grid enumerated");
         }
 
-        /// AC-11b/d (the #48 property made OBSERVABLE on BOTH representations): a
+        /// AC-11b/d (the #48 property made observable on both representations): a
         /// `0/0` score (no scoreable mutant) reads `false` on the production f64 gate
-        /// AND on the verus-proved integer spec — the anti-Goodhart gate holds in the
-        /// production impl regardless of the f64 representation (the load-bearing #48
+        /// and on the verus-proved integer spec — the anti-Goodhart gate holds in the
+        /// production impl regardless of the f64 representation (the #48
         /// invariant). Expected = the proved `scored == 0 ⟹ !pass` (R-CHAR-3).
         #[test]
         fn zero_scored_never_passes_on_both_representations() {

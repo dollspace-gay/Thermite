@@ -1,30 +1,30 @@
-//! The LIVE oracle test for forge's SOLVER-backed tautology + vacuous-precondition
-//! checks (issue #13, `thermite-design.md` §7 steps 2-3). It drives the BUILT
-//! `forge` binary (`.design/forge/cli.md` Verification — same as
+//! The live oracle test for forge's solver-backed tautology + vacuous-precondition
+//! checks (issue #13, `thermite-design.md` §7 steps 2-3). It drives the built
+//! `forge` binary (`.design/forge/cli.md` Verification, same as
 //! `vacuity_slag_conformance.rs`) and asserts the emitted certificate against the
-//! hand-derived oracle `conformance/solver-vacuity/cases.json` (R-CHAR-3 — expected
+//! hand-derived oracle `conformance/solver-vacuity/cases.json` (R-CHAR-3: expected
 //! verdicts trace to the oracle, never to forge's own output).
 //!
-//! These checks issue REAL verus queries (the harness must PROVE for a detection),
-//! so EVERY case here needs verus. The verus-needing cases SKIP LOUDLY when verus
-//! is absent (mirroring `lower_conformance.rs` / `vacuity_slag_conformance.rs`),
-//! never panic.
+//! These checks issue real verus queries (the harness must prove for a detection),
+//! so every case here needs verus. The verus-needing cases skip with an eprintln
+//! when verus is absent (mirroring `lower_conformance.rs` /
+//! `vacuity_slag_conformance.rs`) rather than panic.
 //!
 //! `forge` is a pure `bin` crate (no `lib.rs`), so the `SolverVacuityCause` enum is
 //! not importable here; instead the cert's `reject.cause` field carries the cause
 //! tag (`vacuity_solver::SolverVacuityCause::tag`) and the oracle's `"cause"`
-//! string is compared against it directly — a faithful "map cause string -> cause"
+//! string is compared against it directly, a faithful "map cause string -> cause"
 //! without weakening the assertion (the same shape `vacuity_slag_conformance.rs`
 //! and `combinators_conformance.rs` use).
 //!
-//! AC-4 (the #6-passes-but-#13-catches value-add): each reject fixture PASSES #6's
+//! AC-4 (the #6-passes-but-#13-catches value-add): each reject fixture passes #6's
 //! structural triage (it would not carry a #6 syntactic cause) yet #13 rejects it
-//! with the SOLVER cause — the two stages disagree exactly on these fixtures, which
-//! is the proof #13 adds detection power over #6. The reject oracle's distinct
+//! with the solver cause. The two stages disagree on these fixtures, which is the
+//! proof #13 adds detection power over #6. The reject oracle's distinct
 //! `"SemanticTautology"` / `"VacuousPrecondition"` tag namespace (not #6's
 //! `"EnsIsTrivial"` etc.) is the discriminator the assertion keys on.
 //!
-//! `unwrap`/`expect` are fine here — `tests/` is not anti-pattern-gated.
+//! `unwrap`/`expect` are fine here, since `tests/` is not anti-pattern-gated.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -73,7 +73,7 @@ struct Oracle {
 #[derive(Debug, Deserialize)]
 struct RejectCase {
     name: String,
-    /// The SOLVER cause tag (`"SemanticTautology"` / `"VacuousPrecondition"`).
+    /// The solver cause tag (`"SemanticTautology"` / `"VacuousPrecondition"`).
     cause: String,
     /// The `contract_quality` bool the detection sets `true` (`"tautology"` /
     /// `"vacuous_precondition"`).
@@ -112,7 +112,7 @@ fn unique() -> u64 {
     N.fetch_add(1, Ordering::Relaxed)
 }
 
-/// A unique, per-call temp proof-cache dir so this test is HERMETIC and
+/// A unique, per-call temp proof-cache dir so this test is hermetic and
 /// order-independent (mirrors `cache_conformance.rs`): the #13 verdict is cached
 /// with the item, so a shared `target/` cache would let one case's stored cert
 /// (or a stale entry from a prior toolchain) leak into another. Each
@@ -160,15 +160,15 @@ fn first_cert(certs: &[Value]) -> &Value {
 
 // ---- the #6-passes-but-#13-catches value-add (AC-4) ------------------------
 
-/// Each reject fixture PASSES #6's structural triage — i.e. it would NOT carry a
-/// #6 syntactic cause; only the #13 SOLVER stage rejects it. The reject test below
-/// asserts the SOLVER cause (`SemanticTautology`/`VacuousPrecondition`), which is a
-/// DISTINCT tag namespace from #6's syntactic causes (`EnsIsTrivial` etc.). So a
-/// reject carrying a SOLVER cause IS the proof #6 passed and #13 caught it (AC-4):
+/// Each reject fixture passes #6's structural triage: it would not carry a
+/// #6 syntactic cause; only the #13 solver stage rejects it. The reject test below
+/// asserts the solver cause (`SemanticTautology`/`VacuousPrecondition`), which is a
+/// distinct tag namespace from #6's syntactic causes (`EnsIsTrivial` etc.). So a
+/// reject carrying a solver cause is the proof #6 passed and #13 caught it (AC-4):
 /// if #6 had rejected, the cause would be a syntactic tag, not a solver tag.
 const SOLVER_CAUSES: [&str; 2] = ["SemanticTautology", "VacuousPrecondition"];
 
-// ---- reject: TAUTOLOGY / VACUOUS-PRECONDITION detected (AC-2 / AC-3 / AC-5) -
+// ---- reject: tautology / vacuous-precondition detected (AC-2 / AC-3 / AC-5) -
 
 #[test]
 fn solver_rejects_match_oracle_cause_and_field() {
@@ -178,7 +178,7 @@ fn solver_rejects_match_oracle_cause_and_field() {
     }
     let oracle = read_oracle();
     for case in &oracle.reject {
-        // The cause must be in the SOLVER namespace (AC-4: distinct from #6).
+        // The cause must be in the solver namespace (AC-4: distinct from #6).
         assert!(
             SOLVER_CAUSES.contains(&case.cause.as_str()),
             "reject `{}` oracle cause `{}` must be a SOLVER cause (the AC-4 value-add)",
@@ -190,8 +190,8 @@ fn solver_rejects_match_oracle_cause_and_field() {
         let (code, certs) = run_check_json(&path);
         let _ = std::fs::remove_file(&path);
 
-        // A SOLVER-vacuity reject is a reported contract-certification FAILURE:
-        // non-zero exit, a valid cert document, NOT certified (no L3/L1).
+        // A solver-vacuity reject is a reported contract-certification failure:
+        // non-zero exit, a valid cert document, not certified (no L3/L1).
         assert_eq!(
             code,
             Some(1),
@@ -200,7 +200,7 @@ fn solver_rejects_match_oracle_cause_and_field() {
         );
         let cert = first_cert(&certs);
 
-        // AC-5: the cert names the SOLVER cause (R-CHAR-3 — the oracle tag).
+        // AC-5: the cert names the solver cause (R-CHAR-3: the oracle tag).
         let got_cause = cert
             .get("reject")
             .and_then(|r| r.get("cause"))
@@ -213,8 +213,8 @@ fn solver_rejects_match_oracle_cause_and_field() {
             case.cause
         );
 
-        // AC-2/AC-3 + AC-5: the matching contract_quality bool is SOLVER-confirmed
-        // `true` (the field the oracle names), and the OTHER stays false.
+        // AC-2/AC-3 + AC-5: the matching contract_quality bool is solver-confirmed
+        // `true` (the field the oracle names), and the other stays false.
         let cq = cert
             .get("contract_quality")
             .expect("contract_quality block");
@@ -237,7 +237,7 @@ fn solver_rejects_match_oracle_cause_and_field() {
             case.name
         );
 
-        // The rejected item never certifies L3 (nor L1) — the §7 "does not
+        // The rejected item never certifies L3 (nor L1): the §7 "does not
         // certify until its contract certifies", verdict-in-cert.
         let level = cert.get("level").and_then(|l| l.as_str());
         assert_ne!(level, Some("L3"), "`{}` must not certify L3", case.name);
@@ -245,7 +245,7 @@ fn solver_rejects_match_oracle_cause_and_field() {
     }
 }
 
-// ---- accept: the corpus passes BOTH checks, still L3 (AC-1) -----------------
+// ---- accept: the corpus passes both checks, still L3 (AC-1) -----------------
 
 #[test]
 fn corpus_accepts_pass_both_checks_and_still_certify_l3() {
@@ -259,8 +259,8 @@ fn corpus_accepts_pass_both_checks_and_still_certify_l3() {
         let path = corpus_dir().join(src);
         let (code, certs) = run_check_json(&path);
 
-        // The corpus item passes BOTH SOLVER checks (verus FAILS to prove either
-        // harness) AND its real L3 proof — it certifies (exit 0).
+        // The corpus item passes both solver checks (verus fails to prove either
+        // harness) and its real L3 proof, so it certifies (exit 0).
         assert_eq!(
             code,
             Some(0),
@@ -289,8 +289,8 @@ fn corpus_accepts_pass_both_checks_and_still_certify_l3() {
             case.name
         );
 
-        // AC-1: both contract_quality bools are SOLVER-confirmed `false` (verus
-        // could prove NEITHER harness). Expected `false` traces to the design's §7
+        // AC-1: both contract_quality bools are solver-confirmed `false` (verus
+        // could prove neither harness). Expected `false` traces to the design's §7
         // (a non-tautological ens / a satisfiable req), not to forge's output.
         let cq = cert
             .get("contract_quality")
@@ -326,8 +326,8 @@ fn corpus_sum_still_matches_golden() {
         .unwrap_or_else(|| panic!("no sum cert: {certs:?}"));
 
     // The golden deterministic subset (item/level/effects/slag) still matches, and
-    // the two §7.1 contract_quality bools (now SOLVER-confirmed) match the golden's
-    // hand-derived false (R-CHAR-3 — anchored to `conformance/sum.cert.json`).
+    // the two §7.1 contract_quality bools (now solver-confirmed) match the golden's
+    // hand-derived false (R-CHAR-3, anchored to `conformance/sum.cert.json`).
     let golden_src =
         std::fs::read_to_string(corpus_dir().join("sum.cert.json")).expect("read golden sum cert");
     let golden: Value = serde_json::from_str(&golden_src).expect("parse golden");

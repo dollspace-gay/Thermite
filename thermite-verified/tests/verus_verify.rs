@@ -1,15 +1,15 @@
 //! The permanent, CI-runnable Verus proof of Thermite's soundness-critical core
 //! (epic #60, `.design/verified/self-verification.md` REQ-6 / AC-1 / AC-2 / AC-6).
 //!
-//! Runs the REAL `verus --no-cheating` on the verified crate's `verus!{}` core
+//! Runs the real `verus --no-cheating` on the verified crate's `verus!{}` core
 //! (the `subsumes` exec fn + the `spec_subsumes` subset relation + the three
 //! lattice-law `proof fn`s) and asserts `verified, 0 errors` (REQ-4: no
 //! `assume`/`admit`/`external_body` — `--no-cheating` enforces it; AC-1: N ≥ 4).
-//! A core fn that fails to verify is a HARD test failure, not a skip (R-DEFER-6).
+//! A core fn that fails to verify is a hard test failure, not a skip (R-DEFER-6).
 //!
 //! The verus-invocation pattern (env override → PATH → `~/.local/bin/verus`,
-//! skip-LOUD if absent, check exit status + stdout, run in a temp dir so no
-//! scratch lands in the tree) MIRRORS `thermite-lower/tests/lower_conformance.rs`
+//! skip if absent, check exit status + stdout, run in a temp dir so no
+//! scratch lands in the tree) mirrors `thermite-lower/tests/lower_conformance.rs`
 //! (R-CODE-4: exit status checked, never swallowed; #53: no temp pollution).
 //! `unwrap`/`expect` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -27,9 +27,9 @@ fn lib_rs() -> PathBuf {
 }
 
 /// Locate the `verus` binary: `VERUS_BIN` env override, then PATH (`which`), then
-/// `~/.local/bin/verus`. `None` ⇒ verus genuinely absent ⇒ the caller SKIPs
-/// LOUDLY (the suite must run where verus is not installed, e.g. CI without the
-/// toolchain). MIRRORS `lower_conformance::verus_bin`.
+/// `~/.local/bin/verus`. `None` ⇒ verus absent ⇒ the caller skips
+/// (the suite must run where verus is not installed, e.g. CI without the
+/// toolchain). Mirrors `lower_conformance::verus_bin`.
 fn verus_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         let pb = PathBuf::from(p);
@@ -55,8 +55,8 @@ fn verus_bin() -> Option<PathBuf> {
 }
 
 /// Run `verus --no-cheating --crate-type=lib <file>`; `None` ⇒ verus unavailable
-/// (caller SKIPs). `--crate-type=lib` (forwarded to rustc) tells verus the file
-/// is a LIBRARY crate root, so it does not demand a `main` (the file is the
+/// (caller skips). `--crate-type=lib` (forwarded to rustc) tells verus the file
+/// is a library crate root, so it does not demand a `main` (the file is the
 /// crate's real `src/lib.rs`). Working dir is the temp dir so the compiled-crate
 /// artifact lands there, not in the repo tree (#53 — no scratch pollution).
 fn run_verus(file: &Path) -> Option<(bool, String)> {
@@ -98,10 +98,10 @@ fn verified_core_passes_verus_no_cheating() {
 }
 
 /// AC-2 (non-triviality): mutating the proved `subsumes` body (`missing == 0` →
-/// `missing != 0`) makes the SAME `verus --no-cheating` run report `errors: 1`
+/// `missing != 0`) makes the same `verus --no-cheating` run report `errors: 1`
 /// (postcondition not satisfied). This proves the `ensures result ==
-/// spec_subsumes(..)` is genuinely constraining, NOT vacuous (REQ-4 / R-DEFER-9).
-/// The mutant is written to a TEMP copy of `lib.rs` (never edits the tree).
+/// spec_subsumes(..)` is constraining, not vacuous (REQ-4 / R-DEFER-9).
+/// The mutant is written to a temp copy of `lib.rs` (never edits the tree).
 #[test]
 fn broken_subsumes_fails_verification() {
     if verus_bin().is_none() {
@@ -138,9 +138,9 @@ fn broken_subsumes_fails_verification() {
     let _ = std::fs::remove_file(&tmp);
 }
 
-/// Mutate `lib.rs` (a TEMP copy), write it, and assert `verus --no-cheating`
-/// reports an error (non-vacuity). `from` must appear EXACTLY once in the source —
-/// a shape change fails LOUDLY (the mutation point must be the REAL proved body).
+/// Mutate `lib.rs` (a temp copy), write it, and assert `verus --no-cheating`
+/// reports an error (non-vacuity). `from` must appear exactly once in the source —
+/// a shape change fails (the mutation point must be the real proved body).
 fn assert_mutation_fails(label: &str, from: &str, to: &str) {
     if verus_bin().is_none() {
         eprintln!("SKIP: verus not available — {label} non-triviality not run.");
@@ -174,22 +174,22 @@ fn assert_mutation_fails(label: &str, from: &str, to: &str) {
 }
 
 /// AC-7b (non-vacuity, REQ-7): mutating `ladder_action_l3`'s `Counterexample` arm
-/// from `HardFail` to `DegradeToL1` (a counterexample DEGRADES — the exact cheat
+/// from `HardFail` to `DegradeToL1` (a counterexample degrades — the cheat
 /// R-DEFER-9 forbids) makes the anti-cheat `ensures`
 /// `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` fail. This
-/// proves the anti-cheat invariant is genuinely constraining, not vacuous.
+/// proves the anti-cheat invariant is constraining, not vacuous.
 #[test]
 fn broken_ladder_action_counterexample_degrades_fails() {
     assert_mutation_fails(
         "ladder_action",
-        "        L3Tag::Counterexample => LadderAction::HardFail,\n        }\n    }\n\n    /// The L2 ladder DECISION",
-        "        L3Tag::Counterexample => LadderAction::DegradeToL1,\n        }\n    }\n\n    /// The L2 ladder DECISION",
+        "        L3Tag::Counterexample => LadderAction::HardFail,\n        }\n    }\n\n    /// The L2 ladder decision",
+        "        L3Tag::Counterexample => LadderAction::DegradeToL1,\n        }\n    }\n\n    /// The L2 ladder decision",
     );
 }
 
 /// AC-8b (non-vacuity #1, REQ-8): mutating `widen`'s non-widening `else` arm so a
 /// non-widening atom (Alloc/Panic/Diverge) leaks `openat` makes `pure_has_no_io`
-/// (and `non_widening_atoms_have_no_io`) fail. PURE-NO-I/O is genuinely constraining.
+/// (and `non_widening_atoms_have_no_io`) fail. Pure-no-I/O is constraining.
 #[test]
 fn broken_widen_leaks_openat_fails_pure_no_io() {
     assert_mutation_fails(
@@ -201,7 +201,7 @@ fn broken_widen_leaks_openat_fails_pure_no_io() {
 
 /// AC-8b (non-vacuity #2, REQ-8): mutating the `io_allow` spec fold to use XOR
 /// (`^`) instead of OR (`|`) so a `Write` atom cancels a `Read` atom's `openat`
-/// (non-monotone) makes the `monotone` lemma fail. MONOTONICITY is genuinely
+/// (non-monotone) makes the `monotone` lemma fail. Monotonicity is
 /// constraining (adding an effect must never remove a permitted syscall).
 #[test]
 fn broken_io_allow_xor_fails_monotone() {
@@ -213,10 +213,10 @@ fn broken_io_allow_xor_fails_monotone() {
 }
 
 /// AC-9b (non-vacuity, REQ-9 / Target C): mutating the `should_emit_external_body`
-/// exec body to `true` (a REGULAR fn WOULD get external_body — the exact §9
+/// exec body to `true` (a regular fn would get external_body — the §9
 /// laundering R-DEFER-9 forbids) makes the soundness corollary
-/// `(!has_boundary && !has_slag) ==> !r` fail. The boundary HONESTY gate is
-/// genuinely constraining (a regular fn is NEVER laundered to an assumed-L3 sig).
+/// `(!has_boundary && !has_slag) ==> !r` fail. The boundary honesty gate is
+/// constraining (a regular fn is never laundered to an assumed-L3 sig).
 #[test]
 fn broken_should_emit_external_body_true_fails() {
     assert_mutation_fails(
@@ -226,10 +226,10 @@ fn broken_should_emit_external_body_true_fails() {
     );
 }
 
-/// AC-10b (non-vacuity, REQ-10 / Target D): mutating `min2` to pick the MAX
-/// (`rank(a) >= rank(b)` instead of `<=` — an OVER-CLAIM: the project would be as
-/// strong as its STRONGEST fn) makes `aggregate_le_all` (D1, "≤ every fn") fail.
-/// The no-over-claim min is genuinely constraining (§5.2).
+/// AC-10b (non-vacuity, REQ-10 / Target D): mutating `min2` to pick the max
+/// (`rank(a) >= rank(b)` instead of `<=` — an over-claim: the project would be as
+/// strong as its strongest fn) makes `aggregate_le_all` (D1, "≤ every fn") fail.
+/// The no-over-claim min is constraining (§5.2).
 #[test]
 fn broken_aggregate_max_fails_le_all() {
     assert_mutation_fails(
@@ -242,7 +242,7 @@ fn broken_aggregate_max_fails_le_all() {
 /// AC-11b (non-vacuity — the #48 property, REQ-11 / Target E): dropping the
 /// `scored > 0` guard from the exec body (so a `0/0` score passes:
 /// `0 * 100 >= 0 * 60`) makes the `scored == 0 ==> !r` anti-Goodhart `ensures`
-/// fail. The #48 floor gate is genuinely constraining (a `0/0` never passes).
+/// fail. The #48 floor gate is constraining (a `0/0` never passes).
 #[test]
 fn broken_meets_floor_drops_scored_guard_fails() {
     assert_mutation_fails(

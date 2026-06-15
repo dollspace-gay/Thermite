@@ -1,26 +1,26 @@
 //! #19 spec-intent review-slot cert oracle (`.design/forge/spec-review.md` REQ-1/
-//! REQ-2/REQ-7; `conformance/review/cases.json`). Drives the BUILT `forge` binary
+//! REQ-2/REQ-7; `conformance/review/cases.json`). Drives the built `forge` binary
 //! with `review <file> [--json] [--reviewer <cmd>]` and asserts the emitted
-//! `ReviewArtifact` / `*.review.json` record against the HAND-DERIVED oracle
+//! `ReviewArtifact` / `*.review.json` record against the hand-derived oracle
 //! (R-CHAR-3 — expected values trace to `conformance/review/cases.json` +
-//! `conformance/sum.th` + `thermite-design.md` §7, NEVER copied from forge's own
+//! `conformance/sum.th` + `thermite-design.md` §7, never copied from forge's own
 //! output):
 //!
 //! - `corpus_sum` (`forge review conformance/sum.th --json`): `sum` is
-//!   INTENT-REVIEWABLE; its spec layer includes `req`, `ens`, `fx`, and
-//!   `spec_sum`'s DECLARATION; NO body text (sum's accumulator loop / spec_sum's
-//!   match arms are EXCLUDED). The artifact is DETERMINISTIC (byte-identical across
+//!   intent-reviewable; its spec layer includes `req`, `ens`, `fx`, and
+//!   `spec_sum`'s declaration; no body text (sum's accumulator loop / spec_sum's
+//!   match arms are excluded). The artifact is deterministic (byte-identical across
 //!   two runs) — AC-1/AC-2/AC-4.
 //! - `vacuous` (`forge review conformance/review/vacuous.th --json`): `f` is flagged
-//!   `battery_failing` (cause `EnsIsTrivial`), NOT intent_reviewable — AC-3,
+//!   `battery_failing` (cause `EnsIsTrivial`), not intent_reviewable — AC-3,
 //!   R-DEFER-9.
-//! - the `--reviewer` shell-out: a STUB reviewer command (a tiny `cat`-replacing
+//! - the `--reviewer` shell-out: a stub reviewer command (a tiny `cat`-replacing
 //!   shell stub emitting a fixed `ReviewVerdict`) → `forge review --reviewer <stub>`
-//!   writes the verdict to a `<file>.review.json` record; a FAILING / ABSENT
+//!   writes the verdict to a `<file>.review.json` record; a failing / absent
 //!   reviewer cmd → a `ForgeError` (non-zero exit, no panic).
 //!
 //! The review runs the check pipeline (which resolves the verus version up front),
-//! so these SKIP LOUDLY if verus is absent (never panic on a missing solver),
+//! so these skip with a logged note if verus is absent (never panic on a missing solver),
 //! mirroring `audit_conformance.rs` / `check_conformance.rs`.
 
 use std::path::{Path, PathBuf};
@@ -104,7 +104,7 @@ fn find_failing<'a>(artifact: &'a Value, name: &str) -> Option<&'a Value> {
 }
 
 // AC-1/AC-2/AC-4: `sum` is intent-reviewable with its declarative spec layer
-// (req/ens/fx + spec_sum's DECLARATION), NO bodies, and the artifact is
+// (req/ens/fx + spec_sum's declaration), no bodies, and the artifact is
 // byte-deterministic. Expected fields trace to conformance/review/cases.json +
 // conformance/sum.th (R-CHAR-3).
 #[test]
@@ -167,7 +167,7 @@ fn corpus_sum_intent_reviewable_no_bodies() {
         .collect();
     assert_eq!(fx, vec!["pure"]);
 
-    // spec_sum's DECLARATION included (name + signature + dec); body EXCLUDED.
+    // spec_sum's declaration included (name + signature + dec); body excluded.
     let refs = sum["spec_layer"]["referenced_spec_fns"]
         .as_array()
         .expect("referenced_spec_fns array");
@@ -193,7 +193,7 @@ fn corpus_sum_intent_reviewable_no_bodies() {
         sum["prompt"]
     );
 
-    // NO body tokens anywhere in the artifact (the "no bodies" rule, R-DEFER-9):
+    // No body tokens anywhere in the artifact (the "no bodies" rule, R-DEFER-9):
     // sum's accumulator loop + spec_sum's match arms must be absent.
     for body_token in ["acc", "while", "[head, ..t]", "match", "head as u64"] {
         assert!(
@@ -211,7 +211,7 @@ fn corpus_sum_intent_reviewable_no_bodies() {
 }
 
 // AC-3 (R-DEFER-9): the vacuous fixture's `f` (`ens true`) is flagged
-// battery_failing with cause `EnsIsTrivial`, NOT intent-reviewable.
+// battery_failing with cause `EnsIsTrivial`, not intent-reviewable.
 #[test]
 fn vacuous_flagged_not_surfaced() {
     if !verus_present() {
@@ -246,7 +246,7 @@ fn vacuous_flagged_not_surfaced() {
     );
 }
 
-// REQ-7 / OQ-1: a STUB --reviewer command emitting a fixed ReviewVerdict → the
+// REQ-7 / OQ-1: a stub --reviewer command emitting a fixed ReviewVerdict → the
 // verdict is written to a separate `<file>.review.json` record (forge never
 // fabricates `aligned`; the verdict is the reviewer's). Uses a temp copy of
 // conformance/sum.th so the read-only corpus stays untouched (R-CHAR-3).
@@ -264,7 +264,7 @@ fn reviewer_shellout_attaches_verdict() {
     let record = std::env::temp_dir().join(format!("review_stub_{pid}.th.review.json"));
     let _ = std::fs::remove_file(&record);
 
-    // A STUB reviewer: ignore stdin, emit a fixed ReviewVerdict on stdout. `head`
+    // A stub reviewer: ignore stdin, emit a fixed ReviewVerdict on stdout. `head`
     // would block; a `cat >/dev/null` then `echo` drains stdin first so the writer's
     // EOF is honored.
     let stub = r#"cat >/dev/null; echo '{"item":"sum","aligned":true,"note":"matches Appendix A intent"}'"#;
@@ -293,7 +293,7 @@ fn reviewer_shellout_attaches_verdict() {
     let _ = std::fs::remove_file(&record);
 }
 
-// REQ-7: an ABSENT / FAILING reviewer cmd → a ForgeError (non-zero exit, no panic,
+// REQ-7: an absent / failing reviewer cmd → a ForgeError (non-zero exit, no panic,
 // no fabricated verdict). A reviewer that exits non-zero is the graceful-failure
 // case the design mandates.
 #[test]
@@ -315,7 +315,7 @@ fn reviewer_failure_is_error_not_panic() {
         "the failure names the reviewer (no panic):\n{stderr}"
     );
 
-    // An ABSENT reviewer command → a non-zero exit, never a panic.
+    // An absent reviewer command → a non-zero exit, never a panic.
     let absent = "/no/such/reviewer/binary/at/all";
     let (code2, _stdout2, stderr2) = run_review(&[&file_str, "--reviewer", absent]);
     assert_ne!(code2, Some(0), "an absent reviewer is a non-zero exit");

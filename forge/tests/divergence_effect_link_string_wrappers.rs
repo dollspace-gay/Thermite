@@ -1,5 +1,5 @@
-//! DIVERGENCE PIN (acto-critic, Basis Stage 8 / issue #81): the Write/Read-line
-//! `os::<name>` wrappers the design ENUMERATES do not LINK + RUN.
+//! Divergence pin (acto-critic, Basis Stage 8 / issue #81): the Write/Read-line
+//! `os::<name>` wrappers the design enumerates do not link and run.
 //!
 //! Authority: `.design/basis/08-runnable-effect-link.md`
 //!   - REQ-1: "`thermite-stdlib/src/effect/{read,write,time}.rs` provide a real
@@ -14,18 +14,18 @@
 //!   - REQ status table marks REQ-1 SHIPPED with `os::write`/`os::print` "over
 //!     `TString`" and `os::read_line` "→ `TString`".
 //!
-//! THE DIVERGENCE: `forge/src/effect_wrappers.rs` `WRAPPERS` emits the
+//! The divergence: `forge/src/effect_wrappers.rs` `WRAPPERS` emits the
 //! `os::write`/`os::print`/`os::read_line` bodies referencing `super::TString`,
 //! and `thermite_lower::lower_l1` lowers a `String`-typed boundary fn's signature
 //! to the bare type name `TString` (`thermite-lower/src/l1.rs` `lower_type` arm
 //! `Type::String => Ok("TString")`). But neither `emit_mod_os` nor `lower_l1`
-//! EMITS a `struct TString` definition into the BUILD-emitted crate (the `TString`
+//! emits a `struct TString` definition into the build-emitted crate (the `TString`
 //! struct lives only in the L3/Verus lowering, `thermite-lower/src/lower.rs`). So
-//! `forge build` of ANY program using `os::write`/`os::print`/`os::read_line`
-//! `rustc`-FAILS `error[E0425]: cannot find type \`TString\``.
+//! `forge build` of any program using `os::write`/`os::print`/`os::read_line`
+//! `rustc`-fails `error[E0425]: cannot find type \`TString\``.
 //!
 //! Three of the five wrappers REQ-1 enumerates (Write family + read_line) therefore
-//! do NOT "COMPILE + RUN + do real I/O" — REQ-1 / REQ-3 are NOT-STARTED for the
+//! do not "COMPILE + RUN + do real I/O" — REQ-1 / REQ-3 are NOT-STARTED for the
 //! Write/read_line families, contradicting the REQ-status "SHIPPED" claim.
 //!
 //! Reproduced live: `forge build print_demo.th --entry greet` →
@@ -33,7 +33,7 @@
 //!   `error[E0425]: cannot find type \`TString\` in this scope`
 //!
 //! Tracking: blocker #N (filed by the critic; un-ignore when the build emits a
-//! `struct TString` / lowers `String` to a build-resolvable type).
+//! `struct TString` or lowers `String` to a build-resolvable type).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -72,7 +72,7 @@ fn cleanup(artifact: &std::path::Path) {
 
 /// The design's Write-family wrapper: a `#[boundary("os::print")]` primitive over a
 /// Stage-7 `String` arg (`08-runnable-effect-link.md` REQ-1 / the wrapper-set
-/// table). Hand-derived from the doc, NOT copied from toolchain output (R-CHAR-3).
+/// table). Hand-derived from the doc, not copied from toolchain output (R-CHAR-3).
 const PRINT_DEMO: &str = "#[boundary(\"os::print\")] fn print(s: String) -> u64\n  \
                           req true\n  ens result <= 1\n  fx  write(output)\n  ;\n\n\
                           fn greet() -> u64\n  req true\n  ens result <= 1\n  \

@@ -1,22 +1,22 @@
 //! L2 emission: compile a validated `thermite-syntax` `Program` into a single,
-//! self-contained Rust source `String` carrying a **Kani proof harness** for
+//! self-contained Rust source `String` carrying a Kani proof harness for
 //! every `fn` — the L2 rung of the ladder (`.design/lower/l2-kani.md`;
 //! `thermite-design.md` §6/§5.1/§13 v0.2). Where `lower.rs` emits Verus
 //! annotations for an SMT *proof* (L3, "holds for all inputs") and `l1.rs` emits
 //! Rust that *runs* the contract at runtime (L1), `l2.rs` emits a
-//! `#[kani::proof] #[kani::unwind(K)]` fn that creates BOUNDED SYMBOLIC inputs
+//! `#[kani::proof] #[kani::unwind(K)]` fn that creates bounded symbolic inputs
 //! (`kani::any()` + `kani::assume` bounds), `assume`s the `req`, calls the
-//! *executable* body, binds `result`, and `assert!`s each `ens` — Kani then
-//! bounded-model-checks the contract for ALL inputs UP TO the bound (`< L3`).
+//! *executable* body, binds `result`, and `assert!`s each `ens`. Kani then
+//! bounded-model-checks the contract for all inputs up to the bound (`< L3`).
 //!
-//! Kani verifies executable Rust (CBMC over the compiled body), NOT SMT spec
-//! annotations, so the harness reuses the **L1 executable lowering** (`l1.rs`):
+//! Kani verifies executable Rust (CBMC over the compiled body), not SMT spec
+//! annotations, so the harness reuses the L1 executable lowering (`l1.rs`):
 //! the real recursive `spec_sum` (`lower_spec_fn_l1`), the real combinator loops
 //! (`emit_combinator_l1_defs`), the real expression/statement forms
-//! (`lower_expr_exec`/`lower_stmt_l1`). The only NEW surface `l2.rs` adds is the
+//! (`lower_expr_exec`/`lower_stmt_l1`). The only new surface `l2.rs` adds is the
 //! harness wrapper (symbolic inputs + `assume`/`assert`) and the type-driven
 //! bound inference. The contract checks `l1.rs` weaves into the body
-//! (`thermite_check!` per `req`/`ens`/`inv`) are NOT emitted here: Kani derives
+//! (`thermite_check!` per `req`/`ens`/`inv`) are not emitted here: Kani derives
 //! the loop bound from the `#[kani::unwind]`, and `req`/`ens` become the harness's
 //! `kani::assume`/`assert!` (the §6 "bounded check", not a runtime check).
 //!
@@ -25,15 +25,15 @@
 //! → `VERIFICATION:- SUCCESSFUL` at `N = 4`/`unwind(5)`; `conformance/binary_search.th`
 //! → `VERIFICATION:- SUCCESSFUL` at `N = 4`/`unwind(6)`.
 //!
-//! ## The bound is type-driven, not name-driven (REQ-2 — the #9 headline)
+//! ## The bound is type-driven, not name-driven (REQ-2)
 //!
-//! The symbolic bound for each parameter is inferred from its TYPE (SHAPE-keyed),
+//! The symbolic bound for each parameter is inferred from its type (shape-keyed),
 //! never from the program name. A `&[T]`/`&mut [T]` parameter becomes a symbolic
 //! `[T; N]` array of fixed capacity [`SLICE_BOUND`] plus a symbolic `len` with
 //! `kani::assume(len <= N)`, sliced `&data[..len]`; an integer/`bool` scalar
 //! becomes a full-range `kani::any()` (the `req` then prunes it). The slice
-//! scaffolding is emitted purely from seeing a `&[T]` parameter, identical for
-//! `sum` and `binary_search` (AC-4 — no `if name == ...`).
+//! scaffolding is emitted from seeing a `&[T]` parameter, identical for
+//! `sum` and `binary_search` (AC-4, no `if name == ...`).
 //!
 //! ## REQ status
 //!
@@ -69,22 +69,22 @@ use crate::lower::LowerError;
 /// slice bound `N`"). A `&[T]` parameter is modelled by a symbolic `[T; N]` array
 /// plus a symbolic `len <= N`. `N = 4` verifies both corpus programs in under a
 /// second (the grounded value; the design's §5.2 illustration is `8`, and the
-/// `4`–`8` range is documented). A FIXED constant — the L2 result is
+/// `4`–`8` range is documented). A fixed constant: the L2 result is
 /// reproducible given the same bound (determinism, R-CODE-5 / §5.3); the bound is
-/// stated on the certificate so L2 is never oversold as a proof (REQ-6).
+/// stated on the certificate so L2 is not presented as a proof (REQ-6).
 pub(crate) const SLICE_BOUND: usize = 4;
 
 /// Lower a whole `Program` to a single self-contained Kani-harness Rust source
 /// file (REQ-1). Emits, in deterministic source order: (1) the L1 runnable forms
 /// of every combinator the program references (REQ-1, reusing `l1.rs`), (2) every
 /// `spec fn` as an executable Rust fn (reusing `l1.rs`), (3) every `fn` as a
-/// CHECK-FREE executable body plus a `#[kani::proof] #[kani::unwind(K)]` harness
+/// check-free executable body plus a `#[kani::proof] #[kani::unwind(K)]` harness
 /// that builds bounded symbolic inputs, `assume`s the `req`, calls the body, and
 /// `assert!`s each `ens`.
 ///
 /// The harness is gated behind `#[cfg(kani)]` so the file still compiles under a
 /// plain `rustc` (kani injects the `kani` cfg + the `kani` crate). The body and
-/// spec fns are NOT cfg-gated (kani compiles and reasons over them).
+/// spec fns are not cfg-gated (kani compiles and reasons over them).
 pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
     let mut out = String::new();
     out.push_str("// L2 Kani-harness lowering (.design/lower/l2-kani.md). Self-contained; the\n");
@@ -106,7 +106,7 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
                 out.push_str(&lower_spec_fn_l1(s, NO_VARIANTS)?);
                 out.push('\n');
             }
-            // A `fn` is a check-free executable body PLUS its Kani harness.
+            // A `fn` is a check-free executable body plus its Kani harness.
             Item::Fn(f) => {
                 out.push('\n');
                 out.push_str(&lower_fn_body_exec(f)?);
@@ -115,13 +115,13 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
                 out.push('\n');
             }
             // Basis Stage 1c (`.design/basis/01-adts.md`): the ADT corpus
-            // certifies at L3 (the verus path, `lower.rs`) — the L2 Kani BOUNDED
-            // harness for ADTs (symbolic `enum`/recursive-`Box` inputs) is NOT
+            // certifies at L3 (the verus path, `lower.rs`). The L2 Kani bounded
+            // harness for ADTs (symbolic `enum`/recursive-`Box` inputs) is not
             // targeted in this stage (the manifest's "a clean label if L2 isn't
-            // targeted for ADTs yet"). An ADT program never DEGRADES to L2 in the
-            // corpus (it proves at L3); reaching here is the honest, structured
-            // "L2 ADT harness not built" error (NOT a panic — R-CODE-2). The L3
-            // (`lower.rs`) and L1 (`l1.rs`) ADT paths ARE shipped this stage.
+            // targeted for ADTs yet"). An ADT program never degrades to L2 in the
+            // corpus (it proves at L3); reaching here is the structured
+            // "L2 ADT harness not built" error (not a panic, R-CODE-2). The L3
+            // (`lower.rs`) and L1 (`l1.rs`) ADT paths ship this stage.
             Item::Struct(s) => {
                 return Err(LowerError::Unsupported {
                     what: "ADT `struct` L2 Kani harness (the ADT corpus certifies at L3; \
@@ -148,10 +148,10 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
 // REQ-1: the check-free executable `fn` body (Kani checks executable Rust).
 // ---------------------------------------------------------------------------
 
-/// Lower a `fn` to a plain executable Rust fn WITHOUT the L1 contract checks
+/// Lower a `fn` to a plain executable Rust fn without the L1 contract checks
 /// (REQ-1). Kani derives the loop bound from `#[kani::unwind]` (not from the
-/// `inv`), and the `req`/`ens` are checked by the HARNESS's `kani::assume`/
-/// `assert!`, so the body here is the bare computation — identical to the L1
+/// `inv`), and the `req`/`ens` are checked by the harness's `kani::assume`/
+/// `assert!`, so the body here is the bare computation, identical to the L1
 /// lowering sans the per-iteration `inv` / entry-`req` / exit-`ens` checks
 /// (`.design/lower/l2-kani.md` §"Why reuse L1, not L3"). Reuses `l1.rs`'s
 /// expression/statement/type lowering.
@@ -161,8 +161,8 @@ fn lower_fn_body_exec(f: &FnItem) -> Result<String, LowerError> {
     write!(out, "fn {}(", f.name).ok();
     emit_params(&mut out, &f.params)?;
     writeln!(out, ") -> {ret} {{").ok();
-    // A boundary fn (ffi-boundary.md REQ-2) has `body: None` and is NEVER lowered
-    // to an L2 kani harness — `forge`'s `check.rs` routes it to L1 BEFORE any L2
+    // A boundary fn (ffi-boundary.md REQ-2) has `body: None` and is never lowered
+    // to an L2 kani harness; `forge`'s `check.rs` routes it to L1 before any L2
     // attempt (the foreign body cannot be bounded-checked). A `None` here is a
     // structured error (R-CODE-2), never an unwrap.
     let body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
@@ -176,7 +176,7 @@ fn lower_fn_body_exec(f: &FnItem) -> Result<String, LowerError> {
     Ok(out)
 }
 
-/// Lower a block in exec position WITHOUT contract checks (REQ-1). A loop routes
+/// Lower a block in exec position without contract checks (REQ-1). A loop routes
 /// through the check-free `lower_loop_exec`; every other statement reuses
 /// `l1.rs`'s `lower_stmt_l1` (which carries no checks for non-loop statements).
 fn lower_block_exec(block: &Block, indent: usize, span: Span) -> Result<String, LowerError> {
@@ -195,9 +195,9 @@ fn lower_block_exec(block: &Block, indent: usize, span: Span) -> Result<String, 
     Ok(out)
 }
 
-/// Lower a loop WITHOUT the `inv` checks (REQ-1/REQ-3). The header (`while`/
-/// `loop`) is preserved; NO `thermite_check!("inv", ..)` is emitted (Kani bounds
-/// the loop via `#[kani::unwind]`, not via the invariant), NO `dec` check. A
+/// Lower a loop without the `inv` checks (REQ-1/REQ-3). The header (`while`/
+/// `loop`) is preserved; no `thermite_check!("inv", ..)` is emitted (Kani bounds
+/// the loop via `#[kani::unwind]`, not via the invariant), no `dec` check. A
 /// nested loop recurses. Mirrors `l1.rs::lower_loop_l1` minus the check weaving.
 fn lower_loop_exec(l: &LoopNode, indent: usize) -> Result<String, LowerError> {
     let pad = "    ".repeat(indent);
@@ -230,14 +230,14 @@ fn lower_loop_exec(l: &LoopNode, indent: usize) -> Result<String, LowerError> {
 
 /// Emit the `#[cfg(kani)] #[kani::proof] #[kani::unwind(K)]` harness for `f`
 /// (REQ-1). Body order (`.design/lower/l2-kani.md` §"Harness shape"):
-/// 1. build symbolic inputs from the parameter TYPES (REQ-2, type-driven);
+/// 1. build symbolic inputs from the parameter types (REQ-2, type-driven);
 /// 2. `kani::assume` the `req` (after the symbolic construction, so a `req` that
-///    further bounds a value prunes the search — REQ-2);
+///    further bounds a value prunes the search, REQ-2);
 /// 3. call the executable body, binding `result`;
 /// 4. `assert!` each `ens` against the bound `result`.
 fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
     // A boundary fn (ffi-boundary.md REQ-2) has `body: None` and never reaches an
-    // L2 harness — its body is foreign, so there is nothing to bounded-check. A
+    // L2 harness; its body is foreign, so there is nothing to bounded-check. A
     // `None` here is a structured error (R-CODE-2), never an unwrap.
     let body = f.body.as_ref().ok_or_else(|| LowerError::Unsupported {
         what: "lower_l2 (kani) reached a bodyless (boundary) fn (ffi-boundary.md OQ-3)".to_string(),
@@ -277,7 +277,7 @@ fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
     .ok();
 
     // (4) assert each `ens` against `result`, in source order (REQ-1, no
-    // weakening — R-DEFER-9).
+    // weakening, R-DEFER-9).
     for ens in &f.contract.ens {
         let cond = lower_expr_exec(&ens.expr, 0, f.span, NO_VARIANTS)?;
         writeln!(out, "    assert!({cond});").ok();
@@ -288,7 +288,7 @@ fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
 }
 
 /// Infer the symbolic-input declaration + the call argument for one parameter
-/// from its TYPE (REQ-2 — the type-driven bound inference, SHAPE-keyed, never
+/// from its type (REQ-2, the type-driven bound inference, shape-keyed, never
 /// name-keyed). Returns `(declaration_lines, call_argument_expression)`:
 ///
 /// | Param type | Construction | Bound |
@@ -296,7 +296,7 @@ fn emit_harness(f: &FnItem) -> Result<String, LowerError> {
 /// | `&[T]` / `&mut [T]` | `let len = kani::any(); kani::assume(len <= N); let mut data: [T; N] = kani::any(); let xs = &data[..len];` | `len ≤ N` |
 /// | `u32` / `u64` / `usize` / `bool` | `let x: T = kani::any();` | full symbolic range (the `req` narrows it) |
 ///
-/// The slice scaffolding is emitted purely from seeing a `&[T]` parameter (AC-4).
+/// The slice scaffolding is emitted from seeing a `&[T]` parameter (AC-4).
 fn infer_symbolic_input(p: &Param) -> Result<(String, String), LowerError> {
     let name = &p.name;
     if let Some(elem) = slice_elem(&p.ty) {
@@ -317,7 +317,7 @@ fn infer_symbolic_input(p: &Param) -> Result<(String, String), LowerError> {
     } else {
         // A scalar (integer or bool): a full-range symbolic value (REQ-2). The
         // `req` (assumed after) narrows it. Every scalar shape lowers via the
-        // shared `lower_type` so the whole closed `PrimType` set is covered.
+        // shared `lower_type` so the closed `PrimType` set is covered.
         match &p.ty {
             Type::Prim(_) => {
                 let ty = lower_type(&p.ty)?;
@@ -335,19 +335,19 @@ fn infer_symbolic_input(p: &Param) -> Result<(String, String), LowerError> {
     }
 }
 
-/// Derive the CBMC unwind bound `K` from the loop SHAPE (REQ-3). Every corpus
+/// Derive the CBMC unwind bound `K` from the loop shape (REQ-3). Every corpus
 /// loop is slice-length-bounded by [`SLICE_BOUND`] `N`, so a `while`-over-slice
 /// loop runs at most `N` iterations and needs `K = N + 1` (the extra iteration
-/// lets CBMC prove the loop exits — the "unwinding assertion"). An unconditional
+/// lets CBMC prove the loop exits, the "unwinding assertion"). An unconditional
 /// `loop` (e.g. `binary_search`'s) is set one higher, `K = N + 2`, conservatively
 /// above the slice length (the grounded `unwind(6)` for `binary_search`'s `N = 4`
-/// slice). A too-small `K` is NOT a false pass: Kani reports an explicit
+/// slice). A too-small `K` is not a false pass: Kani reports an explicit
 /// `unwinding assertion loop 0` failure which `run_kani` parses as non-L2 (AC-5).
-/// SHAPE-keyed on the deepest loop kind, never name-keyed; a fixed function of
+/// Shape-keyed on the deepest loop kind, never name-keyed; a fixed function of
 /// the AST (determinism, R-CODE-5).
 fn unwind_bound(body: &Block) -> usize {
     // The unwind annotation applies to the whole harness, so pick the bound the
-    // LOOSEST (most permissive) loop in the body needs: an unconditional `loop`
+    // loosest (most permissive) loop in the body needs: an unconditional `loop`
     // (`N + 2`) dominates a `while` (`N + 1`); recursion over the slice is itself
     // `N + 1`. The base, if the body has no loop, is `N + 1` (the spec-fn
     // recursion the `ens` may call, e.g. `spec_sum`, recurses `N` times).
@@ -381,7 +381,7 @@ fn stmt_has_unconditional_loop(stmt: &Stmt) -> bool {
 }
 
 /// The bound caveat string recorded on the L2 certificate (REQ-6 / AC-6): the L2
-/// result holds for all inputs UP TO this bound, not for all inputs (that is L3).
+/// result holds for all inputs up to this bound, not for all inputs (that is L3).
 /// A reader sees `slice ≤ N, unwind K` and knows the L2 caveat. A pure function
 /// of the program (determinism, R-CODE-5).
 pub fn bound_string(program: &Program) -> String {
@@ -404,11 +404,11 @@ pub fn bound_string(program: &Program) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Type SHAPE helpers (REQ-2 — type-driven, never name-driven).
+// Type shape helpers (REQ-2 — type-driven, never name-driven).
 // ---------------------------------------------------------------------------
 
 /// The element type of a `&[T]` / `&mut [T]` parameter, or `None` if `ty` is not
-/// a slice reference. The SHAPE that drives the symbolic-array scaffolding.
+/// a slice reference. The shape that drives the symbolic-array scaffolding.
 fn slice_elem(ty: &Type) -> Option<&Type> {
     match ty {
         Type::Ref { inner, .. } => match inner.as_ref() {
@@ -424,7 +424,7 @@ fn is_slice_param(ty: &Type) -> bool {
     slice_elem(ty).is_some()
 }
 
-/// True if `ty` is a MUTABLE slice reference `&mut [T]`.
+/// True if `ty` is a mutable slice reference `&mut [T]`.
 fn is_mut_slice(ty: &Type) -> bool {
     matches!(ty, Type::Ref { mutable: true, inner } if matches!(inner.as_ref(), Type::Slice(_)))
 }
@@ -448,36 +448,36 @@ fn type_label(ty: &Type) -> String {
         Type::Generic { name, .. } => format!("{name}<_>"),
         // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): a
         // descriptive label for a user `Named` type or a `Box<T>`. This fn is
-        // purely a human label INSIDE an `Unsupported` diagnostic — a
-        // descriptive name (NOT a panic) is the honest neutral value here; the
+        // a human label inside an `Unsupported` diagnostic; a
+        // descriptive name (not a panic) is the neutral value here; the
         // type is dead-in-1a (gated at the validator).
         Type::Named(name) => name.clone(),
         Type::Box(_) => "Box<_>".to_string(),
         // Basis Stage 4 (`.design/basis/04-collections.md`): a descriptive label
         // for a bounded `Vec<T>` inside an `Unsupported` L2 diagnostic. L2 (Kani
         // bounded model check) does not yet harness the `Vec` wrapper; this is the
-        // honest human label, NOT a stub.
+        // human label.
         Type::Vec(_) => "Vec<_>".to_string(),
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): a descriptive label
         // for the bounded owned text primitive `String` inside an `Unsupported` L2
         // diagnostic. L2 (Kani bounded model check) does not yet harness the
-        // `TString` wrapper; this is the honest human label, NOT a stub.
+        // `TString` wrapper; this is the human label.
         Type::String => "String".to_string(),
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-2): a descriptive
         // human label for the built-in `Option<T>` / `Result<T, E>` inside an
         // `Unsupported` L2 diagnostic. L2 (Kani bounded model check) does not yet
-        // harness these built-ins; this is the honest human label, NOT a stub.
+        // harness these built-ins; this is the human label.
         Type::Option(_) => "Option<_>".to_string(),
         Type::Result(_, _) => "Result<_, _>".to_string(),
         // Cluster C12 (`.design/basis/13-map.md` REQ-5): a descriptive human label
         // for the bounded verified `Map<K, V>` inside an `Unsupported` L2 diagnostic.
         // L2 (Kani bounded model check) does not yet harness the `TMap` wrapper; this
-        // is the honest human label, NOT a stub.
+        // is the human label.
         Type::Map(_, _) => "Map<_, _>".to_string(),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-7): a
         // descriptive human label for an n-tuple type inside an `Unsupported` L2
         // diagnostic. L2 (Kani bounded model check) does not yet harness tuple
-        // returns; this is the honest human label, NOT a stub.
+        // returns; this is the human label.
         Type::Tuple(_) => "(_, _)".to_string(),
     }
 }
@@ -492,10 +492,10 @@ mod tests {
         parsed.program
     }
 
-    // REQ-2 / AC-4: the slice scaffolding + the unbounded scalar are TYPE-derived
+    // REQ-2 / AC-4: the slice scaffolding + the unbounded scalar are type-derived
     // (a synthetic `fn f(xs: &[u32], k: u32)`), not name-derived. The same
     // `kani::any()`/`assume(len <= N)` slice scaffolding the corpus uses appears,
-    // plus a bare `kani::any()` for `k` — no `if name == ...`.
+    // plus a bare `kani::any()` for `k` (no `if name == ...`).
     #[test]
     fn bound_is_type_derived_not_name_derived() {
         let p = parse(
@@ -514,12 +514,12 @@ mod tests {
             out.contains("let k: u32 = kani::any();"),
             "type-driven unbounded scalar:\n{out}"
         );
-        // The `req` is assumed AFTER the symbolic construction (REQ-2).
+        // The `req` is assumed after the symbolic construction (REQ-2).
         assert!(out.contains("kani::assume(k < 10);"), "req assumed:\n{out}");
     }
 
     // REQ-3: a `while`-over-slice fn gets unwind N+1; an unconditional `loop` fn
-    // gets N+2. SHAPE-keyed on the loop kind. Grounded: sum→5, binary_search→6.
+    // gets N+2. Shape-keyed on the loop kind. Grounded: sum→5, binary_search→6.
     #[test]
     fn unwind_bound_is_shape_keyed() {
         let while_fn = parse(
@@ -563,7 +563,7 @@ mod tests {
         assert!(out.contains("#[kani::proof]"), "proof attr:\n{out}");
         assert!(out.contains("#[kani::unwind(5)]"), "unwind 5:\n{out}");
         assert!(out.contains("fn check_sum() {"), "harness name:\n{out}");
-        // ens become assert!s; the body has NO thermite_check! (check-free).
+        // ens become assert!s; the body has no thermite_check! (check-free).
         assert!(
             out.contains("assert!(result == spec_sum(xs));"),
             "ens#1 assert:\n{out}"

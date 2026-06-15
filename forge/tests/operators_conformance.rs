@@ -1,33 +1,33 @@
-//! L3-grounding conformance for the OPERATOR + LITERAL layer — crosslink
+//! L3-grounding conformance for the operator + literal layer — crosslink
 //! #92 (clusters 1-remainder + 2 of the primitive-completeness buildout).
 //!
-//! Cluster 2 of the buildout adds the integer OPERATORS `% << >> & | ^ !` and folds
-//! in the char/hex/binary LITERAL forms (`'A'` / `0x1b` / `0b101`) from cluster 1.
-//! This test certifies, against the REAL `verus` binary, that:
+//! Cluster 2 of the buildout adds the integer operators `% << >> & | ^ !` and folds
+//! in the char/hex/binary literal forms (`'A'` / `0x1b` / `0b101`) from cluster 1.
+//! This test certifies, against the `verus` binary, that:
 //!
 //!   - each operator (`%`/`<<`/`>>`/`&`/`|`/`^`/`!`) lowers and certifies L3 with a
-//!     NON-VACUOUS `ens` (`.design/syntax/ast.md` REQ-10, §6 ladder: a fully-
+//!     non-vacuous `ens` (`.design/syntax/ast.md` REQ-10, §6 ladder: a fully-
 //!     discharged real-verus proof is L3);
-//!   - the PARTIAL operators (`%`, and the existing `/`; the shifts `<<`/`>>`) carry
-//!     their §7 PROOF obligation (ast.md REQ-11): `a % b` WITH `req b != 0` certifies
-//!     L3, but WITHOUT it is L0 ("possible division by zero"); `a << k` WITH `req
+//!   - the partial operators (`%`, and the existing `/`; the shifts `<<`/`>>`) carry
+//!     their §7 proof obligation (ast.md REQ-11): `a % b` with `req b != 0` certifies
+//!     L3, but without it is L0 ("possible division by zero"); `a << k` with `req
 //!     k < 64` certifies L3, but unbounded is L0 ("possible bit shift");
-//!   - the literal VALUES are exact: `'A'` == 65, `0x1b` == 27, `0b101` == 5 each
-//!     certify their non-vacuous `ens result == <decimal>` at L3, and a WRONG code
-//!     (`'A'` claimed 66) does NOT certify L3;
-//!   - the pinned PRECEDENCE is realized end-to-end: `a % b + 1` groups `(a % b) + 1`
-//!     (`surface-grammar.md` REQ-10) — the proof certifies the expected value.
+//!   - the literal values are exact: `'A'` == 65, `0x1b` == 27, `0b101` == 5 each
+//!     certify their non-vacuous `ens result == <decimal>` at L3, and a wrong code
+//!     (`'A'` claimed 66) does not certify L3;
+//!   - the pinned precedence is realized end-to-end: `a % b + 1` groups `(a % b) + 1`
+//!     (`surface-grammar.md` REQ-10); the proof certifies the expected value.
 //!
-//! NON-VACUITY (R-DEFER-9 / `thermite-design.md` §7): every `ens` observes the
+//! Non-vacuity (R-DEFER-9 / `thermite-design.md` §7): every `ens` observes the
 //! operator/literal through `result == <expr>` (a function of the inputs), so a
-//! deliberately-wrong body or a wrong-code claim is KILLED by the §7 battery — the
+//! wrong body or a wrong-code claim is killed by the §7 battery, and the
 //! §7 vacuity gate (which rejects `ens true`) is respected.
 //!
-//! R-CHAR-3: the expected VALUES are the design's symbolic constants (the ASCII
+//! R-CHAR-3: the expected values are the design's symbolic constants (the ASCII
 //! code for `'A'` is 65, `0x1b` == 27, `0b101` == 5 — `lexer.md` AC-7/AC-8 /
-//! `ast.md` Verification) and the expected LEVELS trace to §6 (L3 == a discharged
-//! verus proof; L0 == an undischarged obligation); NEITHER is copied from forge's
-//! own output. Runs the BUILT `forge` binary; if verus is absent it SKIPS LOUDLY
+//! `ast.md` Verification) and the expected levels trace to §6 (L3 == a discharged
+//! verus proof; L0 == an undischarged obligation); neither is copied from forge's
+//! own output. Runs the built `forge` binary; if verus is absent it skips with a logged note
 //! (never panics on a missing solver), mirroring `literal_layer.rs`.
 
 use std::path::{Path, PathBuf};
@@ -106,7 +106,7 @@ fn level(certs: &[Value], item: &str) -> String {
 // Operators that certify L3 with a non-vacuous ens.
 // ---------------------------------------------------------------------------
 
-/// `%` WITH `req b != 0` certifies L3 (ast.md REQ-10/REQ-11; AC-6).
+/// `%` with `req b != 0` certifies L3 (ast.md REQ-10/REQ-11; AC-6).
 #[test]
 fn rem_with_nonzero_req_certifies_l3() {
     if !verus_present() {
@@ -126,7 +126,7 @@ fn rem_with_nonzero_req_certifies_l3() {
     );
 }
 
-/// `<<` WITH `req k < 64` certifies L3; `&`/`|`/`^` certify L3 (AC-6).
+/// `<<` with `req k < 64` certifies L3; `&`/`|`/`^` certify L3 (AC-6).
 #[test]
 fn shifts_and_bitwise_certify_l3() {
     if !verus_present() {
@@ -185,8 +185,8 @@ fn shifts_and_bitwise_certify_l3() {
     );
 }
 
-/// The prefix `!` certifies L3 on BOTH a `bool` (logical-not) and a `u64`
-/// (bitwise-not) operand — the ONE `UnaryOp::Not` resolved per type by Verus's
+/// The prefix `!` certifies L3 on both a `bool` (logical-not) and a `u64`
+/// (bitwise-not) operand — the single `UnaryOp::Not` resolved per type by Verus's
 /// type-directed `!` (ast.md OQ-4; AC-6).
 #[test]
 fn unary_not_certifies_l3_per_type() {
@@ -217,10 +217,10 @@ fn unary_not_certifies_l3_per_type() {
 }
 
 // ---------------------------------------------------------------------------
-// Partiality bites: the obligation is NOT optional (R-DEFER-9).
+// Partiality bites: the obligation is not optional (R-DEFER-9).
 // ---------------------------------------------------------------------------
 
-/// `%` WITHOUT `req b != 0` is L0 — the divide-by-zero obligation BITES (ast.md
+/// `%` without `req b != 0` is L0; the divide-by-zero obligation bites (ast.md
 /// REQ-11; AC-6). The same teeth as the existing `/`.
 #[test]
 fn rem_without_nonzero_req_is_l0() {
@@ -240,7 +240,7 @@ fn rem_without_nonzero_req_is_l0() {
     );
 }
 
-/// `<<` WITHOUT a bounded shift amount is L0 — the shift-bound obligation BITES.
+/// `<<` without a bounded shift amount is L0; the shift-bound obligation bites.
 #[test]
 fn shift_without_bound_is_l0() {
     if !verus_present() {
@@ -263,7 +263,7 @@ fn shift_without_bound_is_l0() {
 // Char / hex / binary literals: exact value + non-vacuity.
 // ---------------------------------------------------------------------------
 
-/// `'A'` == 65, `0x1b` == 27, `0b101` == 5 — each certifies its exact-value `ens`
+/// `'A'` == 65, `0x1b` == 27, `0b101` == 5 each certify their exact-value `ens`
 /// at L3 (lexer.md AC-7/AC-8; the values are the design's symbolic constants).
 #[test]
 fn char_hex_binary_literals_certify_exact_value_l3() {
@@ -303,8 +303,8 @@ fn char_hex_binary_literals_certify_exact_value_l3() {
     );
 }
 
-/// NON-VACUITY (R-DEFER-9) — the char byte is LOAD-BEARING: a contract claiming the
-/// WRONG code (`'A'` == 66 instead of 65) does NOT certify L3 (lexer.md AC-8).
+/// Non-vacuity (R-DEFER-9): the char byte is load-bearing. A contract claiming the
+/// wrong code (`'A'` == 66 instead of 65) does not certify L3 (lexer.md AC-8).
 #[test]
 fn char_literal_value_is_load_bearing_wrong_code_not_l3() {
     if !verus_present() {
@@ -328,7 +328,7 @@ fn char_literal_value_is_load_bearing_wrong_code_not_l3() {
 // ---------------------------------------------------------------------------
 
 /// `a % b + 1` groups as `(a % b) + 1` (the pinned precedence: `%` tighter than
-/// `+`). The proof certifies the EXPECTED value — a mis-grouping `a % (b + 1)`
+/// `+`). The proof certifies the expected value. A mis-grouping `a % (b + 1)`
 /// would change the function and fail the exact-value `ens`.
 #[test]
 fn precedence_rem_binds_tighter_than_add() {

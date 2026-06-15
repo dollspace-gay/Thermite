@@ -1,5 +1,5 @@
-//! The LIVE oracle test for forge's §7.1 structural vacuity triage + the
-//! `#[slag]` escape hatch (issue #6). It drives the BUILT `forge` binary
+//! The live oracle test for forge's §7.1 structural vacuity triage + the
+//! `#[slag]` escape hatch (issue #6). It drives the built `forge` binary
 //! (`.design/forge/cli.md` Verification — same as `check_conformance.rs`) and
 //! asserts the emitted certificate against the hand-derived oracles
 //! `conformance/vacuity/triage.json` + `conformance/slag/slag.json` (R-CHAR-3 —
@@ -11,10 +11,10 @@
 //! and the oracle's `"cause"` string is compared against it directly — a faithful
 //! "map cause string -> verdict variant" without weakening the assertion.
 //!
-//! verus is needed ONLY for the non-slag triage `accept` cases (the L3 path) and
+//! verus is needed only for the non-slag triage `accept` cases (the L3 path) and
 //! the corpus. Every `reject` (triage short-circuits before verus) and every slag
-//! case (L1 by fiat / rejected before verus) runs WITHOUT verus. The verus-needing
-//! cases SKIP LOUDLY when verus is absent (mirroring `lower_conformance.rs`'s
+//! case (L1 by fiat / rejected before verus) runs without verus. The verus-needing
+//! cases skip with a logged note when verus is absent (mirroring `lower_conformance.rs`'s
 //! Option-resolve), never panic.
 //!
 //! `unwrap`/`expect` are fine here — `tests/` is not anti-pattern-gated.
@@ -156,8 +156,8 @@ fn triage_rejects_match_oracle_cause() {
         let (code, certs) = run_check_json(&path);
         let _ = std::fs::remove_file(&path);
 
-        // A triage reject is a reported contract-certification FAILURE: non-zero
-        // exit, a valid cert document, NOT certified (no L3/L1).
+        // A triage reject is a reported contract-certification failure: non-zero
+        // exit, a valid cert document, not certified (no L3/L1).
         assert_eq!(
             code,
             Some(1),
@@ -203,13 +203,13 @@ fn triage_accepts_pass_triage() {
         };
 
         // An accept that passes triage proceeds to the L3 verus path, so it needs
-        // verus. SKIP LOUDLY if absent. NOTE: the oracle property for a triage
-        // `accept` is "PASSES triage (is NON-vacuous)", NOT "certifies L3" — e.g.
-        // `unit_omits_result_ok`'s `ens x > 0` passes triage but is NOT provable
+        // verus. Skip with a logged note if absent. Note: the oracle property for a triage
+        // `accept` is "passes triage (is non-vacuous)", not "certifies L3" — e.g.
+        // `unit_omits_result_ok`'s `ens x > 0` passes triage but is not provable
         // for all x (the body returns `()`), so its verus level is L0. The
-        // assertion is therefore: NO `reject` cause (triage passed) + the two
+        // assertion is therefore: no `reject` cause (triage passed) + the two
         // §7.1 `contract_quality` bools graduated to live-`false` (which a triage
-        // PASS sets regardless of the proof outcome, vacuity-triage.md AC-7). The
+        // pass sets regardless of the proof outcome, vacuity-triage.md AC-7). The
         // corpus L3 cases (`source`) keep their L3 path, asserted in the dedicated
         // corpus tests.
         if need_verus {
@@ -235,7 +235,7 @@ fn triage_accepts_pass_triage() {
                 "accept `{}` must PASS triage (no reject cause): {cert}",
                 case.name
             );
-            // The two §7.1 contract_quality bools are now LIVE-`false` on a triage
+            // The two §7.1 contract_quality bools are now live-`false` on a triage
             // pass (vacuity-triage.md AC-7); present in the full --json cert.
             let cq = cert.get("contract_quality");
             assert_eq!(
@@ -323,7 +323,7 @@ fn slag_rejects_match_oracle_cause() {
             case.name,
             case.cause
         );
-        // A rejected slag item does NOT certify L1.
+        // A rejected slag item does not certify L1.
         assert_ne!(
             cert.get("level").and_then(|l| l.as_str()),
             Some("L1"),
@@ -360,7 +360,7 @@ fn corpus_sum_still_l3_and_matches_golden() {
     assert_eq!(sum["slag"], Value::from(false));
     // sum is not slag and not rejected.
     assert!(sum.get("reject").map(|r| r.is_null()).unwrap_or(true));
-    // #6-live: the two §7.1 contract_quality bools are now asserted-false AND
+    // #6-live: the two §7.1 contract_quality bools are now asserted-false and
     // match the golden's hand-derived false (the golden carries them; the existing
     // check_conformance oracle compares only the deterministic subset, so this is
     // the new live assertion for these two fields — AC-7).

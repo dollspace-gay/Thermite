@@ -1,25 +1,25 @@
-//! ADVERSARIAL critic probes for forge's SOLVER-backed tautology +
+//! Adversarial critic probes for forge's solver-backed tautology +
 //! vacuous-precondition checks (issue #13, `thermite-design.md` §7 steps 2-3,
 //! `.design/forge/solver-vacuity.md`).
 //!
-//! The CRUX these tests guard is the dangerous direction: a FALSE POSITIVE —
-//! flagging a GENUINELY GOOD contract as a tautology / vacuous precondition and
-//! REJECTING valid code. Every "good" case below uses a FRESH contract (NOT the
-//! `conformance/solver-vacuity/cases.json` oracle fixtures, NOT `sum`/
-//! `binary_search`) whose `ens` genuinely CONSTRAINS the result or whose `req` is
-//! genuinely SATISFIABLE; the AUTHORITY (§7 / AC-1 of `solver-vacuity.md`) says
-//! such a contract must reach L3 with BOTH `contract_quality` bools `false`. The
-//! "true positive" cases use FRESH degeneracies (a different tautology / a
+//! The crux these tests guard is the dangerous direction: a false positive,
+//! flagging a good contract as a tautology / vacuous precondition and
+//! rejecting valid code. Every "good" case below uses a fresh contract (not the
+//! `conformance/solver-vacuity/cases.json` oracle fixtures, not `sum`/
+//! `binary_search`) whose `ens` constrains the result or whose `req` is
+//! satisfiable; the authority (§7 / AC-1 of `solver-vacuity.md`) says
+//! such a contract must reach L3 with both `contract_quality` bools `false`. The
+//! "true positive" cases use fresh degeneracies (a different tautology / a
 //! different unsat `req` than the fixtures) and the authority (AC-2 / AC-3) says
-//! they must be detected — so the gate is not neutered.
+//! they must be detected, so the gate is not neutered.
 //!
 //! R-CHAR-3: every expected value traces to `thermite-design.md` §7 ("is `ens`
-//! provable from `req` + types WITHOUT the body" → reject; "is `req`
+//! provable from `req` + types without the body" → reject; "is `req`
 //! satisfiable" → reject when not) and `.design/forge/solver-vacuity.md`
-//! AC-1/AC-2/AC-3 + the "Resolved" vacuity-first ordering — NEVER literal-copied
+//! AC-1/AC-2/AC-3 + the "Resolved" vacuity-first ordering, not literal-copied
 //! from forge's own output.
 //!
-//! These checks issue REAL verus queries, so they SKIP LOUDLY when verus is
+//! These checks issue real verus queries, so they skip with an eprintln when verus is
 //! absent (mirroring `solver_vacuity_conformance.rs`), never panic. `unwrap`/
 //! `expect` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -68,7 +68,7 @@ fn write_temp(name: &str, program: &str) -> PathBuf {
     path
 }
 
-/// A fresh hermetic proof-cache dir per run (the #13 verdict is cached with the
+/// A hermetic proof-cache dir per run (the #13 verdict is cached with the
 /// item; a shared cache would leak verdicts across cases).
 fn unique_cache_dir() -> PathBuf {
     std::env::temp_dir().join(format!(
@@ -78,7 +78,7 @@ fn unique_cache_dir() -> PathBuf {
     ))
 }
 
-/// Run `forge check <program> --json` on a FRESH temp file, return the first cert.
+/// Run `forge check <program> --json` on a temp file, return the first cert.
 fn check(name: &str, program: &str) -> Value {
     let path = write_temp(name, program);
     let cache_dir = unique_cache_dir();
@@ -124,17 +124,17 @@ fn cause(c: &Value) -> Option<&str> {
 }
 
 // ===========================================================================
-// THE CRUX — false-positive guard: a GOOD contract must NOT be flagged.
-// Authority: `.design/forge/solver-vacuity.md` AC-1 ("verus FAILS to prove `ens`
-// for an arbitrary result" → tautology=false; "verus FAILS to prove
+// The crux — false-positive guard: a good contract must not be flagged.
+// Authority: `.design/forge/solver-vacuity.md` AC-1 ("verus fails to prove `ens`
+// for an arbitrary result" → tautology=false; "verus fails to prove
 // `assert(false)` under a satisfiable `req`" → vacuous_precondition=false → L3);
 // `thermite-design.md` §7 ("a function does not certify until its contract
-// certifies" — but a NON-degenerate contract MUST be allowed to certify).
+// certifies"; a non-degenerate contract must be allowed to certify).
 // ===========================================================================
 
-/// FRESH good contract `ens result >= x` (constrains the result — does NOT hold
-/// for an arbitrary `u32`). Must reach L3, NOT flagged. (§7 step 2: the ens is
-/// NOT provable for an arbitrary result, so it is no tautology.)
+/// A good contract `ens result >= x` constrains the result (it does not hold
+/// for an arbitrary `u32`). Must reach L3, not flagged. (§7 step 2: the ens is
+/// not provable for an arbitrary result, so it is no tautology.)
 #[test]
 fn good_ens_ge_x_is_clean_l3() {
     if !verus_present() {
@@ -160,7 +160,7 @@ fn good_ens_ge_x_is_clean_l3() {
     );
 }
 
-/// FRESH good contract `ens result == x` with a SATISFIABLE conjunction `req`.
+/// A good contract `ens result == x` with a satisfiable conjunction `req`.
 /// Authority AC-1: a satisfiable `req` is not vacuous; a result-constraining
 /// `ens` is not a tautology → L3, both bools false.
 #[test]
@@ -185,7 +185,7 @@ fn good_ens_eq_x_satisfiable_conjunction_is_clean_l3() {
     );
 }
 
-/// FRESH good MULTI-CLAUSE constraining `ens` (`result >= x && result <= x`).
+/// A good multi-clause constraining `ens` (`result >= x && result <= x`).
 /// Both clauses constrain the result; the conjunction is no tautology → L3.
 #[test]
 fn good_multiclause_constraining_ens_is_clean_l3() {
@@ -206,12 +206,12 @@ fn good_multiclause_constraining_ens_is_clean_l3() {
     assert!(!vac(&c), "MUST NOT be flagged vacuous: {c}");
 }
 
-/// THE OQ-4 PROBE — a non-trivial param/return shape: a SLICE param with a
-/// genuinely-constraining `ens` over `xs.len()`. The arbitrary-`result` binder
-/// (`result: usize`) plus the `&[u32]` proof-fn param must NOT accidentally
-/// constrain `result` or prove the ens for an arbitrary result → L3, NOT flagged.
-/// Authority: AC-1 + OQ-4 ("the `result` param must NOT be bound to the body's
-/// output"); a false positive here means the arbitrary-result encoding is WRONG.
+/// The OQ-4 probe — a non-trivial param/return shape: a slice param with a
+/// constraining `ens` over `xs.len()`. The arbitrary-`result` binder
+/// (`result: usize`) plus the `&[u32]` proof-fn param must not accidentally
+/// constrain `result` or prove the ens for an arbitrary result → L3, not flagged.
+/// Authority: AC-1 + OQ-4 ("the `result` param must not be bound to the body's
+/// output"); a false positive here means the arbitrary-result encoding is broken.
 #[test]
 fn good_slice_param_lenconstraining_ens_is_clean_l3() {
     if !verus_present() {
@@ -234,15 +234,15 @@ fn good_slice_param_lenconstraining_ens_is_clean_l3() {
 }
 
 // ===========================================================================
-// TRUE-POSITIVE — the gate must still CATCH real vacuity (not neutered).
+// True-positive — the gate must still catch real vacuity (not neutered).
 // Authority: §7 step 2/3; AC-2 (tautology → SemanticTautology, tautology=true);
 // AC-3 (unsat req → VacuousPrecondition, vacuous_precondition=true).
-// FRESH degeneracies, different from the `cases.json` fixtures.
+// Fresh degeneracies, different from the `cases.json` fixtures.
 // ===========================================================================
 
-/// FRESH tautology distinct from the fixture (`nonneg`'s `result >= 0`): an upper
-/// bound that holds for EVERY `u32` (`result <= 4294967295`). Authority §7 step 2
-/// + AC-2 → DETECTED as `SemanticTautology`, `tautology == true`, L0.
+/// A tautology distinct from the fixture (`nonneg`'s `result >= 0`): an upper
+/// bound that holds for every `u32` (`result <= 4294967295`). Authority §7 step 2
+/// + AC-2 → detected as `SemanticTautology`, `tautology == true`, L0.
 #[test]
 fn fresh_tautology_upper_bound_is_detected() {
     if !verus_present() {
@@ -265,8 +265,8 @@ fn fresh_tautology_upper_bound_is_detected() {
     );
 }
 
-/// FRESH unsat `req` distinct from the fixture (`x > 0 && x < 0`): `x > 100 &&
-/// x < 10`. Authority §7 step 3 + AC-3 → DETECTED as `VacuousPrecondition`,
+/// An unsat `req` distinct from the fixture (`x > 0 && x < 0`): `x > 100 &&
+/// x < 10`. Authority §7 step 3 + AC-3 → detected as `VacuousPrecondition`,
 /// `vacuous_precondition == true`, L0.
 #[test]
 fn fresh_unsat_req_is_detected() {
@@ -295,17 +295,17 @@ fn fresh_unsat_req_is_detected() {
 }
 
 // ===========================================================================
-// VACUITY-FIRST ORDERING — `.design/forge/solver-vacuity.md` "Resolved"
-// (CHECK-ORDER): an unsat `req` makes EVERY `ensures` vacuously provable, so the
-// root cause must be reported as `VacuousPrecondition`, NEVER mislabeled
-// `SemanticTautology`. Conversely a genuine tautology with a SATISFIABLE `req`
+// Vacuity-first ordering — `.design/forge/solver-vacuity.md` "Resolved"
+// (CHECK-ORDER): an unsat `req` makes every `ensures` vacuously provable, so the
+// root cause must be reported as `VacuousPrecondition`, not mislabeled
+// `SemanticTautology`. Conversely a genuine tautology with a satisfiable `req`
 // must still report `SemanticTautology`.
 // ===========================================================================
 
-/// An unsat `req` PLUS an `ens` that is ALSO independently a tautology. The
-/// tautology harness would ALSO prove (false premise proves anything), but the
+/// An unsat `req` plus an `ens` that is also independently a tautology. The
+/// tautology harness would also prove (a false premise proves anything), but the
 /// authority's vacuity-first ordering mandates `VacuousPrecondition` (the true
-/// root cause), NOT `SemanticTautology`.
+/// root cause), not `SemanticTautology`.
 #[test]
 fn unsat_req_with_tautological_ens_is_reported_as_vacuous_not_tautology() {
     if !verus_present() {
@@ -328,7 +328,7 @@ fn unsat_req_with_tautological_ens_is_reported_as_vacuous_not_tautology() {
     );
 }
 
-/// A genuine tautology with a SATISFIABLE `req` (`x < 100`) — the vacuity check
+/// A genuine tautology with a satisfiable `req` (`x < 100`): the vacuity check
 /// passes (req is satisfiable), so the tautology check runs and fires. Authority:
 /// the tautology check runs only on a satisfiable precondition → `SemanticTautology`.
 #[test]

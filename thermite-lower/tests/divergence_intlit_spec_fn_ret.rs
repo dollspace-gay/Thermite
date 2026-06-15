@@ -1,12 +1,12 @@
 //! Pinning regression for crosslink #237 (gap 1 — the int-literal return-typing
 //! gap, `thermite-lower/src/lower.rs`). A recursive `spec fn` over a sized integer
-//! return whose body's RESULT position is integer-literal arithmetic
+//! return whose body's result position is integer-literal arithmetic
 //! (`if n == 0 { 0 } else { 1 + count(n - 1) }`) lowered the else-arm as
-//! `1 + count((n - 1) as u64)`, which Verus types as the UNBOUNDED `int` against
+//! `1 + count((n - 1) as u64)`, which Verus types as the unbounded `int` against
 //! the declared `u64` return → E0308 (`expected u64, found int`) → L0 on legitimate
 //! frozen-subset source.
 //!
-//! THE AUTHORITY (R-CHAR-3): Verus spec arithmetic is the unbounded `int`, so
+//! The authority (R-CHAR-3): Verus spec arithmetic is the unbounded `int`, so
 //! `<int-literal> + <u64>` evaluates to `int` and the body must narrow back to the
 //! declared sized-int return (`.design/lower/verus-lowering.md` REQ-5, "the cast
 //! `i as int` is mandatory — Verus spec indices are `int`"; same fidelity class as
@@ -14,11 +14,11 @@
 //! values). The match-form `spec_sum`/ADT folds take the `nat`-return path (casts
 //! coerce `as nat` uniformly) and certify; the if-form/int-literal shape is the
 //! gap. The expected `(... ) as u64`/`as u32`/`as usize` substrings below are
-//! HAND-DERIVED from each fixture's DECLARED return type, NOT copied from the
+//! hand-derived from each fixture's declared return type, not copied from the
 //! lowerer.
 //!
-//! REGRESSION GUARD: `spec_line_start` (a `-> u64` if-form spec fn whose result
-//! arms are `acc` / recursive calls — NO result-position arithmetic) must NOT gain
+//! Regression guard: `spec_line_start` (a `-> u64` if-form spec fn whose result
+//! arms are `acc` / recursive calls — no result-position arithmetic) must not gain
 //! a narrowing cast (it is already `u64`-typed); byte-stability is pinned below.
 
 use thermite_syntax::ast::{Expr, Item};
@@ -29,8 +29,8 @@ fn lower(src: &str) -> String {
     thermite_lower::lower(&parsed.program).expect("L3 lowering")
 }
 
-/// Non-vacuity helper: the parsed program genuinely contains a `spec fn` whose
-/// RESULT position is integer-literal arithmetic (the `1 + f(n - 1)` shape the
+/// Non-vacuity helper: the parsed program contains a `spec fn` whose
+/// result position is integer-literal arithmetic (the `1 + f(n - 1)` shape the
 /// narrowing fires on — else the test is vacuous).
 fn has_int_literal_arith_result(src: &str) -> bool {
     fn result_arith(e: &Expr) -> bool {
@@ -97,8 +97,8 @@ spec fn count(n: usize) -> usize
 ";
 
 // A `-> u64` if-form spec fn whose result arms are a bare path (`acc`) and
-// recursive calls — NO result-position arithmetic. It is ALREADY `u64`-typed and
-// must NOT gain a narrowing cast (byte-stability — the `spec_line_start` shape).
+// recursive calls — no result-position arithmetic. It is already `u64`-typed and
+// must not gain a narrowing cast (byte-stability — the `spec_line_start` shape).
 const NO_ARITH_RESULT: &str = "\
 spec fn pick(n: u64, acc: u64) -> u64
   dec n
@@ -156,17 +156,17 @@ fn usize_int_literal_arith_result_narrows_as_usize() {
 
 #[test]
 fn no_arith_result_spec_fn_is_not_narrowed() {
-    // Non-vacuity: this fixture must NOT have a result-position arithmetic leaf.
+    // Non-vacuity: this fixture must not have a result-position arithmetic leaf.
     assert!(
         !has_int_literal_arith_result(NO_ARITH_RESULT),
         "the guard fixture must have NO int-literal arith result (else vacuous)"
     );
     let out = lower(NO_ARITH_RESULT);
-    // No result-position arithmetic → already `u64`-typed → NO result-narrowing
+    // No result-position arithmetic → already `u64`-typed → no result-narrowing
     // wrap added (the `spec_line_start` byte-stability guard). The result-narrow is
-    // a `(<body-if>) as u64` WRAP of the whole `if` — distinct from the inner #225
-    // param-type arg cast `pick((n - 1) as u64, acc)` (which IS present + correct).
-    // Pin on the WRAP shape, not the substring `) as u64` (which the inner arg cast
+    // a `(<body-if>) as u64` wrap of the whole `if` — distinct from the inner #225
+    // param-type arg cast `pick((n - 1) as u64, acc)` (which is present + correct).
+    // Pin on the wrap shape, not the substring `) as u64` (which the inner arg cast
     // also contains).
     assert!(
         !out.contains("(if "),

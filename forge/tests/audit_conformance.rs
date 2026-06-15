@@ -1,25 +1,25 @@
 //! #15 audit-manifest v1 cert oracle (`.design/forge/audit-manifest.md` AC-1/AC-2;
-//! `conformance/audit/cases.json`). Drives the BUILT `forge` binary with
+//! `conformance/audit/cases.json`). Drives the built `forge` binary with
 //! `audit <file> --json` and asserts the emitted [`AuditManifest`] against the
-//! HAND-DERIVED oracle (R-CHAR-3 — expected values trace to
-//! `conformance/audit/cases.json` + `thermite-design.md` §6/§8/§9, NEVER copied
-//! from forge's own output):
+//! hand-derived oracle (R-CHAR-3 — expected values trace to
+//! `conformance/audit/cases.json` + `thermite-design.md` §6/§8/§9, rather than
+//! copied from forge's own output):
 //!
 //! - `corpus_empty_tcb` (`forge audit conformance/sum.th`): `manifest_version ==
 //!   "v1"`, all fns L3, `project_assurance` level L3 + scope end-to-end, the TCB
-//!   `slag_blocks` and `boundary_contracts` EMPTY, the `toolchain` present (verus
+//!   `slag_blocks` and `boundary_contracts` empty, the `toolchain` present (verus
 //!   + thermite versions) — the §9 "verified, period" TCB (AC-1).
 //! - `slag_boundary_tcb`: `forge audit` over the slag+boundary program → the TCB
-//!   `slag_blocks` contains `vendored` (reason/owner/review) AND
-//!   `boundary_contracts` contains `ext_f` (target `ext::ext_f`). BOTH enumerated
-//!   — nothing fiat-trusted omitted (R-DEFER-9) (AC-2).
-//! - `contract_quality` SHAPE asserted (the §7 bools present); the version-
-//!   sensitive `mutants_killed` ratio + `solver_time_ms` NOT asserted (OQ-2).
+//!   `slag_blocks` contains `vendored` (reason/owner/review) and
+//!   `boundary_contracts` contains `ext_f` (target `ext::ext_f`). Both enumerated,
+//!   nothing fiat-trusted omitted (R-DEFER-9) (AC-2).
+//! - `contract_quality` shape asserted (the §7 bools present); the version-
+//!   sensitive `mutants_killed` ratio + `solver_time_ms` are not asserted (OQ-2).
 //! - determinism: same input → same manifest modulo the excluded fields (AC-4).
 //!
-//! The audit runs the check pipeline (which requires verus), so these SKIP LOUDLY
-//! if verus is absent (never panic on a missing solver), mirroring
-//! `check_conformance.rs` / `boundary_conformance.rs`.
+//! The audit runs the check pipeline (which requires verus), so these skip with a
+//! logged reason if verus is absent, rather than panic on a missing solver,
+//! mirroring `check_conformance.rs` / `boundary_conformance.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -118,9 +118,9 @@ fn find_function<'a>(manifest: &'a Value, name: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no function row `{name}` in manifest"))
 }
 
-/// Assert the §7 `contract_quality` block SHAPE (OQ-2): the two §7.1 bools are
-/// present and the `mutants_killed` field is present — the version-sensitive
-/// ratio string itself is NOT asserted.
+/// Assert the §7 `contract_quality` block shape (OQ-2): the two §7.1 bools are
+/// present and the `mutants_killed` field is present; the version-sensitive
+/// ratio string itself is not asserted.
 fn assert_contract_quality_shape(row: &Value) {
     let cq = &row["contract_quality"];
     assert!(
@@ -198,7 +198,7 @@ fn corpus_empty_tcb() {
     // `sum` is present (the Appendix A program).
     let _sum = find_function(&manifest, "sum");
 
-    // The §9 enumerable TCB: EMPTY slag + boundary, only the toolchain (verified,
+    // The §9 enumerable TCB: empty slag + boundary, only the toolchain (verified,
     // period). Hand-derived: expect_tcb_slag == [], expect_tcb_boundary == [].
     let tcb = &manifest["tcb"];
     assert_eq!(
@@ -214,7 +214,7 @@ fn corpus_empty_tcb() {
         0,
         "a pure project has NO boundary contracts"
     );
-    // The toolchain is ALWAYS present (the irreducible residue): both versions.
+    // The toolchain is present (the irreducible residue): both versions.
     assert!(
         tcb["toolchain"]["verus"]
             .as_str()
@@ -265,8 +265,8 @@ fn corpus_empty_tcb_binary_search() {
     assert_eq!(tcb["boundary_contracts"].as_array().expect("bnd").len(), 0);
 }
 
-// AC-2: a program with a #[slag] fn AND a #[boundary] fn → the TCB enumerates
-// BOTH (slag with reason/owner/review; boundary with target). R-DEFER-9.
+// AC-2: a program with a #[slag] fn and a #[boundary] fn → the TCB enumerates
+// both (slag with reason/owner/review; boundary with target). R-DEFER-9.
 #[test]
 fn slag_boundary_tcb() {
     if !verus_present() {
@@ -304,7 +304,7 @@ fn slag_boundary_tcb() {
     let manifest = parse_manifest(&stdout);
     assert_eq!(manifest["manifest_version"], Value::from("v1"));
 
-    // The slag block `vendored` is enumerated WITH its §8 justification.
+    // The slag block `vendored` is enumerated with its §8 justification.
     let slag_names: Vec<String> = manifest["tcb"]["slag_blocks"]
         .as_array()
         .expect("slag_blocks")
@@ -337,7 +337,7 @@ fn slag_boundary_tcb() {
         "slag review from slag_meta"
     );
 
-    // The boundary contract `ext_f` is enumerated WITH its foreign target.
+    // The boundary contract `ext_f` is enumerated with its foreign target.
     let bnd_names: Vec<String> = manifest["tcb"]["boundary_contracts"]
         .as_array()
         .expect("boundary_contracts")
@@ -372,12 +372,12 @@ fn slag_boundary_tcb() {
 
 // --- #274 lean_fragment membership oracle (AC-7..AC-11) -------------------------
 //
-// The membership section is a PURE projection of the parsed program via the shipped
-// dry-run `lean_export::export_item` (REQ-8): it emits even when the project does NOT
-// certify (the probe is verdict-independent) and needs NO lake / lean toolchain
-// (AC-10). Expected class/reason values are HAND-DERIVED (R-CHAR-3) from the
+// The membership section is a projection of the parsed program via the shipped
+// dry-run `lean_export::export_item` (REQ-8): it emits even when the project does not
+// certify (the probe is verdict-independent) and needs no lake / lean toolchain
+// (AC-10). Expected class/reason values are hand-derived (R-CHAR-3) from the
 // `cases.json` oracle (which traces to `pub enum ExportRefusal` + proof-backends §4),
-// NEVER copied from forge's own stdout.
+// rather than copied from forge's own stdout.
 
 /// Find a `lean_fragment.functions` row by name.
 fn find_lean_row<'a>(manifest: &'a Value, name: &str) -> &'a Value {
@@ -407,7 +407,7 @@ fn assert_lean_row(manifest: &Value, expect: &Value) {
         "lean_fragment row `{name}` tier mismatch: {row:?}"
     );
     if exportable {
-        // tier_tag present iff exportable (the shipped ExportTier::tag).
+        // tier_tag is present iff exportable (the shipped ExportTier::tag).
         assert_eq!(
             row["tier_tag"].as_str(),
             expect["tier_tag"].as_str(),
@@ -492,9 +492,9 @@ fn parse_manifest_lenient(stdout: &str, stderr: &str) -> Value {
 }
 
 // AC-7: `forge audit conformance/sum.th` → one lean_fragment row per functions row
-// (spec_sum, sum), source order; both refuse OutOfFragment with the HAND-DERIVED
+// (spec_sum, sum), source order; both refuse OutOfFragment with the hand-derived
 // (hand-traced) classes + verbatim reasons (sum: recursive-registry contract over a
-// while body; spec_sum: slice-pattern match body). NOT copied from forge output.
+// while body; spec_sum: slice-pattern match body), rather than copied from forge output.
 #[test]
 fn lean_fragment_sum() {
     if !verus_present() {
@@ -570,7 +570,7 @@ fn lean_fragment_refusal_boundary() {
 }
 
 // AC-10: the lean_fragment section is present even with `lake` absent from PATH (the
-// probe is the PURE dry-run export — no lake, no scratch file, no lean toolchain).
+// probe is the dry-run export — no lake, no scratch file, no lean toolchain).
 // Mirrors the lean_engine lake-absence seam: scrub PATH so `lake` cannot be found.
 #[test]
 fn lean_fragment_present_without_lake() {
@@ -603,13 +603,13 @@ fn lean_fragment_present_without_lake() {
     );
 }
 
-// AC-11: a PRE-AMENDMENT v1 audit document (no `lean_fragment` key) still
+// AC-11: a pre-amendment v1 audit document (no `lean_fragment` key) still
 // deserializes — the additive `#[serde(default)]` discipline. The literal is a
-// minimal v1 manifest WITHOUT the new section.
+// minimal v1 manifest without the new section.
 #[test]
 fn pre_amendment_v1_document_still_deserializes() {
-    // A hand-written v1 document with the three original sections and NO
-    // lean_fragment key (the shape a pre-#274 forge emitted). It MUST deserialize
+    // A hand-written v1 document with the three original sections and no
+    // lean_fragment key (the shape a pre-#274 forge emitted). It deserializes
     // (the AC-5/AC-11 additive contract; the new field defaults).
     let pre = r#"{
         "manifest_version": "v1",
@@ -638,7 +638,7 @@ fn pre_amendment_v1_document_still_deserializes() {
 
 // AC-4 (determinism): `forge audit` over a fixture twice → byte-identical --json,
 // modulo the excluded solver_time_ms (absent from the manifest). With the verus
-// version pinned via the proof cache + same input, the manifest is reproducible.
+// version pinned via the proof cache + the same input, the manifest is reproducible.
 #[test]
 fn audit_is_deterministic() {
     if !verus_present() {

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

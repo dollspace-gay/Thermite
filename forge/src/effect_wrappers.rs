@@ -1,40 +1,40 @@
-//! `forge/src/effect_wrappers.rs` — the runnable effect LINK (Basis Stage 8, issue
-//! **#81**): the canonical `os::<name>` → real-`std`-syscall-wrapper SOURCE table,
+//! `forge/src/effect_wrappers.rs` — the runnable effect link (Basis Stage 8, issue
+//! #81): the canonical `os::<name>` → real-`std`-syscall-wrapper source table,
 //! and [`emit_mod_os`], which assembles a self-contained `mod os { … }` block
-//! carrying EXACTLY the wrappers a built program's `#[boundary("os::<name>")]`
+//! carrying the wrappers a built program's `#[boundary("os::<name>")]`
 //! targets name.
 //!
 //! Governing design: `.design/basis/08-runnable-effect-link.md`. Oracle:
 //! `conformance/effect-link/cases.json`.
 //!
-//! ## Why this module exists (the GROUNDED gap)
+//! ## Why this module exists (the grounded gap)
 //!
 //! `thermite_lower::lower_l1` lowers a `#[boundary("os::now")]` fn to an L1 wrapper
 //! whose crossing is `let result = os::now();` (`thermite-lower/src/l1.rs`
 //! `lower_boundary_fn_l1`). With no `os` module in the generated crate, raw `rustc`
 //! fails `error[E0433]: cannot find module or crate \`os\``. Stage 8 supplies the
 //! missing module: [`emit_mod_os`] prepends a `mod os { pub fn now() -> u64 { … } }`
-//! (the real `std` syscall body) so `os::now()` RESOLVES + rustc LINKS it + the
-//! binary RUNS + does real I/O (`08-runnable-effect-link.md` REQ-1/REQ-2).
+//! (the real `std` syscall body) so `os::now()` resolves, rustc links it, and the
+//! binary runs and does real I/O (`08-runnable-effect-link.md` REQ-1/REQ-2).
 //!
 //! ## The decision (OQ-1/OQ-2, resolved emit-`mod os`, inline table)
 //!
-//! Per `08-runnable-effect-link.md` OQ-1, the link EMITS a self-contained `mod os`
+//! Per `08-runnable-effect-link.md` OQ-1, the link emits a self-contained `mod os`
 //! into the crate (option (a)) rather than linking a `thermite-stdlib` crate
-//! dependency (option (b)) — keeping the single-source raw-`rustc` build hermetic
+//! dependency (option (b)), keeping the single-source raw-`rustc` build hermetic
 //! (no `cargo`/dependency resolution, `build.md` OQ-2). Per OQ-2, the target→source
-//! table lives INLINE here in `forge/src/` (the orchestrator's settled packaging) —
-//! the canonical, reviewed wrapper SOURCE. The module emits ONLY the wrappers the
+//! table lives inline here in `forge/src/` (the orchestrator's settled packaging),
+//! the canonical, reviewed wrapper source. The module emits only the wrappers the
 //! program names (minimal TCB, REQ-2/REQ-6) and is byte-deterministic (the table is
 //! a fixed `const`, the emission is sorted; R-CODE-5).
 //!
-//! ## The wrappers' syscalls are #57-seccomp-CONFINED (REQ-4)
+//! ## The wrappers' syscalls are #57-seccomp-confined (REQ-4)
 //!
-//! The emitted wrappers run UNDER the SHIPPED #57 seccomp filter
-//! `synthesize_entry_main` installs FIRST in the generated `main`: `os::now`'s
+//! The emitted wrappers run under the shipped #57 seccomp filter
+//! `synthesize_entry_main` installs first in the generated `main`: `os::now`'s
 //! `clock_gettime` is in the `time`-widened allowlist, but an out-of-`fx` syscall is
-//! `SIGSYS`-killed. The link does NOT widen the trust boundary — it makes the
-//! manifest-enumerated boundary RUNNABLE under the same confinement.
+//! `SIGSYS`-killed. The link does not widen the trust boundary; it makes the
+//! manifest-enumerated boundary runnable under the same confinement.
 //!
 //! ## REQ status (`.design/basis/08-runnable-effect-link.md`)
 //!
@@ -49,32 +49,32 @@ use std::collections::BTreeSet;
 use crate::cli::ForgeError;
 
 /// One entry in the canonical `os::<name>` → wrapper-source table: the bare wrapper
-/// name (the segment after `os::`) and the EXACT `pub fn` Rust source the link emits
+/// name (the segment after `os::`) and the `pub fn` Rust source the link emits
 /// into the generated crate's `mod os` (REQ-1). The body is the real `std` syscall
-/// wrapper — trusted-by-fiat, #57-confined.
+/// wrapper, trusted-by-fiat, #57-confined.
 struct Wrapper {
     /// The bare name after `os::` (e.g. `"now"` for the target `"os::now"`).
     name: &'static str,
     /// The full `pub fn <name>(…) -> … { <real std body> }` source, emitted verbatim
-    /// inside `mod os { … }`. Signed to MATCH the boundary's lowered signature
+    /// inside `mod os { … }`. Signed to match the boundary's lowered signature
     /// (`thermite-lower/src/l1.rs` `lower_boundary_fn_l1`: the wrapper forwards its
     /// params to `os::<name>(args)`).
     source: &'static str,
 }
 
-/// The canonical v1 `os::<name>` wrapper SOURCE table (REQ-1) — the real `std`
+/// The canonical v1 `os::<name>` wrapper source table (REQ-1): the real `std`
 /// syscall bodies for the v1 Read / Write / Time families
-/// (`08-runnable-effect-link.md`, the wrapper-set table). Trusted-by-fiat (you
-/// cannot prove the kernel), #57-seccomp-CONFINED, #15-manifest-ENUMERATED. A
-/// honest I/O wrapper handles its error arm (returns the EOF sentinel / a status
-/// code) rather than `unwrap`-panicking (the design's "honest error handling").
+/// (`08-runnable-effect-link.md`, the wrapper-set table). Trusted-by-fiat,
+/// #57-seccomp-confined, #15-manifest-enumerated. Each I/O wrapper handles its
+/// error arm (returns the EOF sentinel / a status code) rather than
+/// `unwrap`-panicking.
 ///
-/// `Net`/`Rand` follow the IDENTICAL shape and are v1.1 (one row each). `Alloc`
+/// `Net`/`Rand` follow the identical shape and are v1.1 (one row each). `Alloc`
 /// needs no `os::` wrapper (the Rust allocator under the baseline allowlist).
 const WRAPPERS: &[Wrapper] = &[
     // os::now (Time) — the minimal primitive: no input, no failure arm. The real
     // `clock_gettime` (#57 syscall 228). `unwrap_or(0)` keeps the wrapper total
-    // (a pre-1970 clock cannot occur on a live host; 0 is the honest floor).
+    // (a pre-1970 clock cannot occur on a live host; 0 is the floor).
     Wrapper {
         name: "now",
         source: "    pub fn now() -> u64 {\n        \
@@ -85,7 +85,7 @@ const WRAPPERS: &[Wrapper] = &[
     },
     // os::read_byte (Read) — the closed-outcome-set primitive: one byte from stdin,
     // or the EOF sentinel 256 (the design's `read_demo` shape, `ens result <= 256`).
-    // A read error is the honest EOF arm (256), never a panic.
+    // A read error is the EOF arm (256), never a panic.
     Wrapper {
         name: "read_byte",
         source: "    pub fn read_byte() -> u64 {\n        \
@@ -97,9 +97,9 @@ const WRAPPERS: &[Wrapper] = &[
     },
     // os::read_key (Read) — the editor's keystroke primitive: one raw byte from
     // stdin, or the EOF sentinel 256 (the editor's `read_key`, `ens result <= 256`).
-    // IDENTICAL closed-outcome shape to `read_byte` (the keystroke IS a raw byte);
+    // Identical closed-outcome shape to `read_byte` (the keystroke is a raw byte);
     // a separate name keeps the editor's terminal-input boundary legible in the
-    // manifest. A read error is the honest EOF arm (256), never a panic.
+    // manifest. A read error is the EOF arm (256), never a panic.
     Wrapper {
         name: "read_key",
         source: "    pub fn read_key() -> u64 {\n        \
@@ -112,8 +112,8 @@ const WRAPPERS: &[Wrapper] = &[
     // os::key_str (Alloc) — the editor's host glue the surface lacks: a keystroke
     // byte → a one-byte Stage-7 `String` to insert (`ens result.len() <= 1`). A
     // representable byte (`k <= 255`) yields a 1-byte `TString`; a control/EOF key
-    // (`k >= 256`, or any non-byte value) yields the EMPTY string (the bounded,
-    // honest arm — `result.len() <= 1` holds in every case). Total, no panic.
+    // (`k >= 256`, or any non-byte value) yields the empty string (the bounded
+    // arm: `result.len() <= 1` holds in every case). Total, no panic.
     Wrapper {
         name: "key_str",
         source: "    pub fn key_str(k: u64) -> super::TString {\n        \
@@ -123,8 +123,8 @@ const WRAPPERS: &[Wrapper] = &[
                  super::TString { data: Vec::new() }\n        }\n    }\n",
     },
     // os::read_line (Read) — a line from stdin as a Stage-7 `String` (the lowered
-    // `TString` newtype, `pub data: Vec<u8>`). A read error yields an empty line
-    // (the honest arm), never a panic.
+    // `TString` newtype, `pub data: Vec<u8>`). A read error yields an empty line,
+    // never a panic.
     Wrapper {
         name: "read_line",
         source: "    pub fn read_line() -> super::TString {\n        \
@@ -134,7 +134,7 @@ const WRAPPERS: &[Wrapper] = &[
     },
     // os::write (Write) — hand the bytes of a Stage-7 `String` to stdout
     // (`write_all`, #57 syscall `write`:1). Returns a status `u64` (0 = ok, 1 =
-    // I/O error) — the honest closed status arm, never a panic.
+    // I/O error), the closed status arm, never a panic.
     Wrapper {
         name: "write",
         source: "    pub fn write(s: super::TString) -> u64 {\n        \
@@ -144,7 +144,7 @@ const WRAPPERS: &[Wrapper] = &[
                  Err(_) => 1,\n        }\n    }\n",
     },
     // os::print (Write) — write a Stage-7 `String` to stdout and flush. Returns a
-    // status `u64` (0 = ok, 1 = I/O error), the honest closed status arm.
+    // status `u64` (0 = ok, 1 = I/O error), the closed status arm.
     Wrapper {
         name: "print",
         source: "    pub fn print(s: super::TString) -> u64 {\n        \
@@ -155,38 +155,38 @@ const WRAPPERS: &[Wrapper] = &[
                  Err(_) => 1,\n        }\n    }\n",
     },
     // os::raw_mode_on (the editor's terminal-control boundary, #90) — put the
-    // terminal into RAW mode (clear ICANON + ECHO so each keystroke reaches the
+    // terminal into raw mode (clear ICANON + ECHO so each keystroke reaches the
     // editor live, no line buffering, no echo; VMIN=1/VTIME=0 for a blocking
     // 1-byte read) via extern-C `tcgetattr`/`tcsetattr`. libc is resolved against
-    // the std binary's already-linked libc (NO libc crate dependency — the SAME
+    // the std binary's already-linked libc (no libc crate dependency, the same
     // `extern "C"`-against-std path the #57 seccomp prelude's `prctl` uses), so the
-    // generated single-file crate stays self-contained. The ORIGINAL termios is
+    // generated single-file crate stays self-contained. The original termios is
     // saved into a process-global `OnceLock` on first entry so `raw_mode_off` can
-    // restore it. GRACEFUL on a non-TTY stdin (piped): `tcgetattr` returns nonzero
-    // (ENOTTY), the wrapper returns 1 and leaves the terminal untouched — NO crash,
-    // NO panic (the honest status arm). Trusted-by-fiat (you cannot prove the
-    // kernel), #57-seccomp-confined to its declared `fx`.
+    // restore it. On a non-TTY stdin (piped) `tcgetattr` returns nonzero
+    // (ENOTTY), the wrapper returns 1 and leaves the terminal untouched: no crash,
+    // no panic (the status arm). Trusted-by-fiat,
+    // #57-seccomp-confined to its declared `fx`.
     Wrapper {
         name: "raw_mode_on",
         source: TERMIOS_RAW_MODE_SOURCE,
     },
-    // os::raw_mode_off (#90) — restore the terminal's ORIGINAL mode (the saved
-    // termios). MUST run on the editor's exit path so the terminal is never left in
+    // os::raw_mode_off (#90) — restore the terminal's original mode (the saved
+    // termios). Runs on the editor's exit path so the terminal is never left in
     // raw mode. A no-op (returns 0) when raw mode was never entered (no saved
-    // termios — the non-TTY/piped case) or on a `tcsetattr` error (returns 1), never
+    // termios, the non-TTY/piped case) or on a `tcsetattr` error (returns 1), never
     // a panic. Shares the `__THERMITE_ORIG_TERMIOS` OnceLock + the extern-C decls
     // with `raw_mode_on` (emitted once in `TERMIOS_RAW_MODE_SOURCE`); this entry is
-    // EMPTY so the pair is emitted exactly once even when both targets are named.
+    // empty so the pair is emitted once even when both targets are named.
     Wrapper {
         name: "raw_mode_off",
         source: "",
     },
     // os::read_key_raw (the editor's keystroke boundary, #90) — read one keystroke
-    // from stdin, returning the raw bytes PACKED into a u64 for the verified
+    // from stdin, returning the raw bytes packed into a u64 for the verified
     // `decode`: byte b0 in bits 0..9, b1 in bits 9..18, b2 in bits 18..27 (each
     // field 0..256, or the 256 EOF sentinel). A plain key reads 1 byte (b1=b2=0); an
-    // ESC (0x1b) reads the 2-byte arrow tail. The closed outcome set is honest — the
-    // world produces bytes or EOF, never more; a read error/EOF is the 256 sentinel
+    // ESC (0x1b) reads the 2-byte arrow tail. The outcome set is closed: the
+    // world produces bytes or EOF; a read error/EOF is the 256 sentinel
     // arm, never a panic. Trusted, #57-confined to the `read` syscall set.
     Wrapper {
         name: "read_key_raw",
@@ -208,7 +208,7 @@ const WRAPPERS: &[Wrapper] = &[
     },
     // os::write_frame (the editor's render boundary, #90) — write the rendered frame
     // String's bytes to stdout and flush. Returns a status u64 (0 = ok, 1 = I/O
-    // error), the honest closed status arm, never a panic. Trusted, #57-confined to
+    // error), the closed status arm, never a panic. Trusted, #57-confined to
     // the `write` syscall set. (Identical shape to `print`; a distinct name keeps the
     // editor's render boundary legible in the #15 manifest.)
     Wrapper {
@@ -223,10 +223,10 @@ const WRAPPERS: &[Wrapper] = &[
     // os::read_file (the editor's file-LOAD boundary, #125) — read the editor's fixed
     // demo file (THERMITE_EDITOR_FILE) into a Stage-7 `String` (the lowered `TString`
     // newtype, `pub data: Vec<u8>`). The v0.1 `forge build --entry run` synthesizes no
-    // path arg, so the load source is a FIXED path: the `THERMITE_EDITOR_FILE` env var
+    // path arg, so the load source is a fixed path: the `THERMITE_EDITOR_FILE` env var
     // if set, else `/tmp/thermite_editor.txt`. A missing file / read error yields the
-    // EMPTY string (the honest arm — a fresh buffer), NEVER a panic. The byte content
-    // is taken verbatim (`\n` bytes are preserved — the multi-line buffer is one
+    // empty string (the arm for a fresh buffer), never a panic. The byte content
+    // is taken verbatim (`\n` bytes are preserved; the multi-line buffer is one
     // String). Trusted-by-fiat, #57-confined to the `read`/`open` syscall set.
     Wrapper {
         name: "read_file",
@@ -240,8 +240,8 @@ const WRAPPERS: &[Wrapper] = &[
     // os::write_file (the editor's file-SAVE boundary, #125 — Ctrl-S) — write the
     // buffer `String`'s bytes to the editor's fixed demo file (THERMITE_EDITOR_FILE if
     // set, else `/tmp/thermite_editor.txt`). Returns a status u64 (0 = ok, 1 = I/O
-    // error), the honest closed status arm, NEVER a panic. The bytes (incl. the `\n`
-    // line breaks) are written verbatim — the multi-line buffer round-trips through
+    // error), the closed status arm, never a panic. The bytes (incl. the `\n`
+    // line breaks) are written verbatim; the multi-line buffer round-trips through
     // read_file. Trusted-by-fiat, #57-confined to the `open`/`write` syscall set.
     Wrapper {
         name: "write_file",
@@ -255,17 +255,17 @@ const WRAPPERS: &[Wrapper] = &[
 ];
 
 /// The extern-C termios raw-mode wrapper pair (`os::raw_mode_on` + `os::raw_mode_off`,
-/// #90), emitted VERBATIM into `mod os` when EITHER target is named (the
-/// `raw_mode_off` table row is empty — this source carries both so the shared
-/// `extern "C"` decls + the `__THERMITE_ORIG_TERMIOS` OnceLock are emitted exactly
-/// once, never duplicated). The `Termios` struct + `tcgetattr`/`tcsetattr` are
+/// #90), emitted verbatim into `mod os` when either target is named (the
+/// `raw_mode_off` table row is empty; this source carries both so the shared
+/// `extern "C"` decls + the `__THERMITE_ORIG_TERMIOS` OnceLock are emitted once,
+/// never duplicated). The `Termios` struct + `tcgetattr`/`tcsetattr` are
 /// declared `extern "C"` and resolve against the std binary's already-linked libc
-/// (NO libc crate dependency — the SAME hermetic single-file path the #57 seccomp
+/// (no libc crate dependency, the same hermetic single-file path the #57 seccomp
 /// prelude's `prctl`/`syscall` use). Trusted-by-fiat, #57-seccomp-confined.
 ///
-/// Honest error handling (R-CODE-2): a non-TTY stdin (the piped/no-TTY case) makes
+/// Error handling (R-CODE-2): a non-TTY stdin (the piped/no-TTY case) makes
 /// `tcgetattr` return nonzero (ENOTTY); the wrapper returns 1 and leaves the terminal
-/// untouched — NO crash, NO panic. The `unsafe` blocks are documented leaf FFI
+/// untouched: no crash, no panic. The `unsafe` blocks are documented leaf FFI
 /// primitives (the only way to call the libc termios syscalls), each with a
 /// `// SAFETY:` note; the structs are POD the kernel fills.
 const TERMIOS_RAW_MODE_SOURCE: &str = r#"    #[repr(C)]
@@ -343,35 +343,35 @@ const TERMIOS_RAW_MODE_SOURCE: &str = r#"    #[repr(C)]
 /// [`emit_mod_os`] rather than silently linked.
 const OS_PREFIX: &str = "os::";
 
-/// Look up the wrapper SOURCE for a bare wrapper name (the segment after `os::`).
+/// Look up the wrapper source for a bare wrapper name (the segment after `os::`).
 /// Returns `None` for an unknown name (the caller maps it to a structured error).
 fn wrapper_for(name: &str) -> Option<&'static Wrapper> {
     WRAPPERS.iter().find(|w| w.name == name)
 }
 
-/// Assemble the self-contained `mod os { … }` block carrying EXACTLY the wrappers
+/// Assemble the self-contained `mod os { … }` block carrying the wrappers
 /// the given boundary `targets` name (REQ-1/REQ-2). Each target is an `os::<name>`
 /// string (the `BoundaryAttr.target` the lowered crossing `os::<name>(args)` calls).
 ///
-/// - An EMPTY target set (a program with no reachable `os::` boundary) yields an
-///   EMPTY string — no `mod os` is emitted (the pure corpus is byte-unaffected,
+/// - An empty target set (a program with no reachable `os::` boundary) yields an
+///   empty string: no `mod os` is emitted (the pure corpus is byte-unaffected,
 ///   `08-runnable-effect-link.md` AC-7).
-/// - The wrappers are emitted in SORTED order (`targets` is a `BTreeSet`,
+/// - The wrappers are emitted in sorted order (`targets` is a `BTreeSet`,
 ///   re-sorted by name) so the emission is byte-deterministic (R-CODE-5, REQ-2).
 /// - A target that is not an `os::<known>` wrapper is a structured `ForgeError`
 ///   (R-CODE-2: a `#[boundary("net::connect")]` v1.1 target or a typo'd `os::noo`
-///   names no v1 wrapper — the build refuses rather than emit an unresolved call).
+///   names no v1 wrapper; the build refuses rather than emit an unresolved call).
 ///
 /// The block is `#[allow(dead_code)]` (a program may declare a boundary fn it does
 /// not call from the entry; its wrapper is still emitted to keep the crate
-/// self-contained, but rustc would warn it unused — the wrapper is the live TCB
-/// surface, not dead in intent).
+/// self-contained, but rustc would warn it unused; the wrapper is the live TCB
+/// surface).
 pub fn emit_mod_os(targets: &BTreeSet<String>) -> Result<String, ForgeError> {
     if targets.is_empty() {
         return Ok(String::new());
     }
 
-    // Resolve each target to its wrapper SOURCE, collecting by bare name so a
+    // Resolve each target to its wrapper source, collecting by bare name so a
     // duplicate target (the same `os::now` declared twice) emits one wrapper. A
     // `BTreeMap` keeps the emission sorted + deterministic (R-CODE-5).
     let mut bodies: std::collections::BTreeMap<&'static str, &'static str> =
@@ -431,7 +431,7 @@ mod tests {
 
     #[test]
     fn emits_only_named_wrappers() {
-        // REQ-2 (minimal TCB): a program touching only `os::now` links ONLY `now`.
+        // REQ-2 (minimal TCB): a program touching only `os::now` links only `now`.
         let out = emit_mod_os(&targets(&["os::now"])).unwrap();
         assert!(out.contains("mod os {"), "the block is emitted: {out}");
         assert!(out.contains("pub fn now()"), "now is linked: {out}");
@@ -447,7 +447,7 @@ mod tests {
 
     #[test]
     fn now_wrapper_is_the_grounded_clock_gettime_body() {
-        // REQ-1: the `os::now` body is the GROUNDED `SystemTime::now()` form
+        // REQ-1: the `os::now` body is the grounded `SystemTime::now()` form
         // (`08-runnable-effect-link.md` Grounding (2)). Anchored to the design's
         // pinned wrapper source, not toolchain output (R-CHAR-3).
         let out = emit_mod_os(&targets(&["os::now"])).unwrap();
@@ -465,7 +465,7 @@ mod tests {
 
     #[test]
     fn read_byte_wrapper_uses_eof_sentinel_256() {
-        // REQ-1: `os::read_byte`'s honest closed-outcome set is byte-or-256-EOF
+        // REQ-1: `os::read_byte`'s closed-outcome set is byte-or-256-EOF
         // (the design's `read_demo` shape `ens result <= 256`).
         let out = emit_mod_os(&targets(&["os::read_byte"])).unwrap();
         assert!(out.contains("std::io::stdin().read(&mut buf)"), "{out}");
@@ -484,8 +484,8 @@ mod tests {
     #[test]
     fn read_key_wrapper_mirrors_read_byte_eof_sentinel() {
         // REQ-1 (the editor's terminal-input boundary): `os::read_key` is the
-        // keystroke primitive — one raw byte from stdin or the 256 EOF sentinel
-        // (the editor's `read_key`, `ens result <= 256`), the honest closed
+        // keystroke primitive: one raw byte from stdin or the 256 EOF sentinel
+        // (the editor's `read_key`, `ens result <= 256`), the closed
         // outcome set, never a panic. Anchored to the design's pinned wrapper
         // shape (R-CHAR-3), not toolchain output.
         let out = emit_or_fail(&["os::read_key"]);
@@ -500,8 +500,8 @@ mod tests {
     #[test]
     fn key_str_wrapper_is_bounded_one_byte_string() {
         // REQ-1 (the editor's host glue): `os::key_str` maps a keystroke byte to a
-        // bounded one-byte `String` — a representable byte (`k <= 255`) is a 1-byte
-        // `TString`, a control/EOF key the EMPTY string (`ens result.len() <= 1`
+        // bounded one-byte `String`: a representable byte (`k <= 255`) is a 1-byte
+        // `TString`, a control/EOF key the empty string (`ens result.len() <= 1`
         // holds in every case). Total, no panic. Anchored to the design's pinned
         // wrapper shape (R-CHAR-3).
         let out = emit_or_fail(&["os::key_str"]);
@@ -526,8 +526,8 @@ mod tests {
     #[test]
     fn read_file_wrapper_is_total_empty_on_error() {
         // REQ-1 (the editor's file-LOAD boundary, #125): `os::read_file` reads the
-        // fixed demo path into a `TString`; a missing file / read error is the EMPTY
-        // string (the honest arm — a fresh buffer), NEVER a panic. Anchored to the
+        // fixed demo path into a `TString`; a missing file / read error is the empty
+        // string (the arm for a fresh buffer), never a panic. Anchored to the
         // design's pinned wrapper shape (R-CHAR-3).
         let out = emit_or_fail(&["os::read_file"]);
         assert!(
@@ -552,7 +552,7 @@ mod tests {
     fn write_file_wrapper_is_total_status_arm() {
         // REQ-1 (the editor's file-SAVE boundary, #125 — Ctrl-S): `os::write_file`
         // writes the buffer bytes (incl. `\n`) to the fixed demo path, returning a
-        // status u64 (0 = ok, 1 = I/O error) — the honest closed arm, NEVER a panic.
+        // status u64 (0 = ok, 1 = I/O error), the closed arm, never a panic.
         // Anchored to the design's pinned wrapper shape (R-CHAR-3).
         let out = emit_or_fail(&["os::write_file"]);
         assert!(
@@ -571,7 +571,7 @@ mod tests {
 
     #[test]
     fn emission_is_sorted_deterministic() {
-        // REQ-2 (R-CODE-5): the same target set emits byte-identical output, sorted
+        // REQ-2 (R-CODE-5): the same target set emits identical output, sorted
         // by name regardless of insertion order.
         let a = emit_mod_os(&targets(&["os::print", "os::now", "os::read_byte"])).unwrap();
         let b = emit_mod_os(&targets(&["os::now", "os::read_byte", "os::print"])).unwrap();

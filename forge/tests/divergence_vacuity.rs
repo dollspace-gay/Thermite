@@ -1,13 +1,13 @@
 //! Divergence tests for forge's §7.1 structural vacuity triage (issue #6,
 //! commit 838374d). Authored by acto-critic: each test pins a place where the
 //! implementation diverges from the governing authority
-//! (`.design/forge/vacuity-triage.md` + `thermite-design.md` §7.1) and FAILS
+//! (`.design/forge/vacuity-triage.md` + `thermite-design.md` §7.1) and fails
 //! against the current toolchain.
 //!
-//! forge is a pure `bin` crate (no `lib.rs`), so these drive the BUILT `forge`
+//! forge is a pure `bin` crate (no `lib.rs`), so these drive the built `forge`
 //! binary (same pattern as `vacuity_slag_conformance.rs`) and assert the emitted
 //! certificate's `reject.cause` / `level`. Expected values trace to the design
-//! REQ wording (R-CHAR-3), NEVER to forge's own output.
+//! REQ wording (R-CHAR-3), not to forge's own output.
 //!
 //! `unwrap`/`expect` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -81,30 +81,30 @@ fn verus_present() -> bool {
     false
 }
 
-/// Divergence: `vacuity::ens_implied_by_req` OVER-rejects with §7.1 (c) when only
-/// SOME — not every — `ens` clause is implied by `req`.
+/// Divergence: `vacuity::ens_implied_by_req` over-rejects with §7.1 (c) when only
+/// some, not every, `ens` clause is implied by `req`.
 ///
 /// Authority: `.design/forge/vacuity-triage.md` REQ-3 — the (c) reject is defined
 /// as "**every** `ens` clause's `Clause.expr` is structurally identical
 /// (`PartialEq`) to ... the whole `req` ... or one of the conjuncts of `req`".
 /// `thermite-design.md` §7.1: "`ens` is syntactically implied by `req` alone →
-/// reject" — the WHOLE postcondition conjunction must be implied; a single
-/// implied conjunct alongside a genuinely-stronger clause is NOT a vacuous `ens`.
+/// reject" — the whole postcondition conjunction must be implied; a single
+/// implied conjunct alongside a stronger clause is not a vacuous `ens`.
 ///
 /// The implementation (`ens_implied_by_req`, `vacuity.rs`) returns `Some(idx)` on
-/// the FIRST matching clause, so it rejects when ANY clause is a req conjunct.
+/// the first matching clause, so it rejects when any clause is a req conjunct.
 ///
-/// Input: `req x > 0 && x < 10` / `ens x > 0` (an implied conjunct) AND
-/// `ens result == x` (a REAL postcondition NOT implied by `req`). Per REQ-3 the
-/// whole `ens` is NOT implied by `req` (the `result == x` obligation constrains
-/// the body), so triage must NOT reject (c). Expected: not an `EnsImpliedByReq`
+/// Input: `req x > 0 && x < 10` / `ens x > 0` (an implied conjunct) and
+/// `ens result == x` (a real postcondition not implied by `req`). Per REQ-3 the
+/// whole `ens` is not implied by `req` (the `result == x` obligation constrains
+/// the body), so triage must not reject (c). Expected: not an `EnsImpliedByReq`
 /// reject (the contract is non-vacuous; it proceeds to L3 verification).
 ///
 /// Tracking: filed as a `-l blocker`.
 #[test]
 fn divergence_ens_implied_by_req_over_rejects_partial_implication() {
-    // `result == x` is a genuinely-stronger conjunct of `ens`; the whole `ens`
-    // is therefore NOT implied by `req` alone (REQ-3 requires EVERY clause).
+    // `result == x` is a stronger conjunct of `ens`; the whole `ens`
+    // is therefore not implied by `req` alone (REQ-3 requires every clause).
     let cert = first_cert(
         "fn f(x: u32) -> u32 req x > 0 && x < 10 ens x > 0 ens result == x fx pure { x }",
         "c_partial_implication",
@@ -119,9 +119,9 @@ fn divergence_ens_implied_by_req_over_rejects_partial_implication() {
     );
 }
 
-/// Companion (control): a contract whose ONLY `ens` clause IS a req conjunct is a
-/// genuine (c) reject — pins that the fix narrows the rule to the "every clause"
-/// reading WITHOUT regressing the true-positive. Authority:
+/// Companion (control): a contract whose only `ens` clause is a req conjunct is a
+/// genuine (c) reject. Pins that the fix narrows the rule to the "every clause"
+/// reading without regressing the true-positive. Authority:
 /// `conformance/vacuity/triage.json` `ens_conjunct_req` (cause `EnsImpliedByReq`).
 #[test]
 fn ens_fully_implied_by_req_still_rejects_c() {
@@ -138,14 +138,14 @@ fn ens_fully_implied_by_req_still_rejects_c() {
 }
 
 /// Divergence (same root cause, OQ-4 boundary): a contract carrying a redundant
-/// `ens true` clause ALONGSIDE a real `ens result == x` clause is wrongly
+/// `ens true` clause alongside a real `ens result == x` clause is wrongly
 /// rejected with §7.1 (c) (`ens true` matches the `req true` conjunct).
 ///
 /// Authority: `.design/forge/vacuity-triage.md` OQ-4 — "A contract `ens true` +
 /// `ens result == x` is NOT (a)-rejected (it carries a real conjunct)." REQ-3
 /// applies the same "every clause" logic: the whole `ens` is implied by `req`
 /// only if every clause is, and `result == x` is not implied by `req true`. So
-/// this contract is non-vacuous and must NOT be a (c) reject.
+/// this contract is non-vacuous and must not be a (c) reject.
 ///
 /// Tracking: filed as a `-l blocker` (same blocker as the partial-implication
 /// divergence — one root cause in `ens_implied_by_req`).
@@ -155,7 +155,7 @@ fn divergence_redundant_true_clause_with_real_clause_not_c_rejected() {
         "fn f(x: u32) -> u32 req true ens true ens result == x fx pure { x }",
         "multi_ens_true_plus_real",
     );
-    // The whole `ens` (true && result == x) is NOT implied by `req true`
+    // The whole `ens` (true && result == x) is not implied by `req true`
     // (`result == x` is a real obligation), so (c) must not fire.
     assert_ne!(
         reject_cause(&cert).as_deref(),
@@ -166,9 +166,9 @@ fn divergence_redundant_true_clause_with_real_clause_not_c_rejected() {
     );
 }
 
-/// Guard (NOT a divergence — pins correct behavior so a fix cannot regress it):
-/// `Lt`/`Ne` identity operands (`x < x`, `x != x`) are NOT syntactically `true`
-/// and must NOT be (a)-rejected. Authority: `.design/forge/vacuity-triage.md`
+/// Guard (not a divergence; pins correct behavior so a fix cannot regress it):
+/// `Lt`/`Ne` identity operands (`x < x`, `x != x`) are not syntactically `true`
+/// and must not be (a)-rejected. Authority: `.design/forge/vacuity-triage.md`
 /// REQ-1 — identity is `Eq`/`Le`/`Ge` only; "`<`/`>`/`!=` are NOT identities
 /// (`x < x` is false)". With a unit return (so (b) is exempt) and a non-implied
 /// `req`, these pass triage and reach verus.
@@ -193,7 +193,7 @@ fn lt_ne_identity_is_not_a_rejected() {
         );
         if verus_present() {
             // It is a real (unprovable) postcondition, so it reaches verus and is
-            // reported non-L3 — never silently certified.
+            // reported non-L3, never silently certified.
             assert_ne!(
                 cert.get("level").and_then(|l| l.as_str()),
                 Some("L3"),

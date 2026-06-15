@@ -1,33 +1,33 @@
 //! Second re-audit of `thermite-syntax` deep-recursion coverage (issue #3,
 //! post-#31). The #31 fix (commit f0ceb12) generalised the #29 expr-only guard
 //! into one shared `guard_recursion`/`MAX_RECURSION_DEPTH` counter and routed
-//! FOUR recursive families through it: `parse_expr`, `parse_type`,
+//! four recursive families through it: `parse_expr`, `parse_type`,
 //! `parse_pattern`, and the `parse_if_parts` if-tail cycle.
 //!
-//! This file probes the recursive cycles the #31 fix did NOT route through the
+//! This file probes the recursive cycles the #31 fix did not route through the
 //! guard. The suspect is the `loop`/`while` body cycle:
 //!
 //!     parse_block  --(Loop/While arm)-->  parse_loop  --(body)-->  parse_block
 //!
-//! NEITHER `parse_block` NOR `parse_loop` calls `guard_recursion`, so a deeply
+//! Neither `parse_block` nor `parse_loop` calls `guard_recursion`, so a deeply
 //! nested `loop { loop { loop { ... } } }` (each loop carries the mandatory
 //! `inv true dec 0` so the body is well-formed v0.1 grammar) drives unbounded
 //! native recursion `parse_block`<->`parse_loop` and overflows the C stack
-//! (SIGABRT) — exactly the AC-4 failure mode #29/#31 claimed to close, on a
+//! (SIGABRT), the AC-4 failure mode #29/#31 claimed to close, on a
 //! cycle neither fix instrumented.
 //!
 //! Authority: `.design/syntax/parser.md` AC-4 ("No input ... causes a panic;
 //! all failures surface as `SyntaxError` diagnostics in the returned
 //! structure") + REQ-4 (no panic); `surface-grammar.md` REQ-3 / EBNF
-//! `LoopExpr ::= 'loop' InvClause+ DecClause Block` and `Stmt ::= ... | Loop`
-//! — a `loop`/`while` body is a `Block`, and a `Block` may contain a nested
-//! `loop`/`while` statement, so arbitrarily nested loops are WELL-FORMED v0.1
+//! `LoopExpr ::= 'loop' InvClause+ DecClause Block` and `Stmt ::= ... | Loop`:
+//! a `loop`/`while` body is a `Block`, and a `Block` may contain a nested
+//! `loop`/`while` statement, so arbitrarily nested loops are well-formed v0.1
 //! grammar. `goal.md` R-CODE-2 (no panic in production).
 //!
 //! Method (R-CHAR-3): expected behaviour is "control returns; no process
-//! abort", traced to parser.md AC-4 — never copied from parser output. Each
+//! abort", traced to parser.md AC-4, never copied from parser output. Each
 //! probe runs `parse` on a 2 MiB stack (the Rust test-thread default the #29/#31
-//! fixes were calibrated against — commits 2a8e3e3, f0ceb12) in a child thread.
+//! fixes were calibrated against, commits 2a8e3e3, f0ceb12) in a child thread.
 //! A clean return (the guard fires -> `SyntaxError::ExpressionTooDeep`, or the
 //! input parses) joins `Ok`; a native stack overflow aborts the process and
 //! joins `Err`. That abort IS the AC-4 violation.
@@ -66,7 +66,7 @@ fn in_fn(inner: &str) -> String {
 ///
 /// `parse_block` dispatches a `loop`/`while` statement to `parse_loop`, whose
 /// body is parsed by `parse_block` again — a `parse_block`<->`parse_loop` cycle
-/// that routes through NEITHER `guard_recursion` entry point (the #31 fix
+/// that routes through neither `guard_recursion` entry point (the #31 fix
 /// guarded expr/type/pattern/if-tail, not this loop-body cycle). DEPTH nested
 /// `loop`s (each `loop inv true dec 0 { ... }`) therefore recurse unbounded.
 ///
@@ -121,7 +121,7 @@ fn divergence_deep_nested_while_no_panic() {
 /// (GUARDED by the #31 fix) -> `parse_block`, so this path SHOULD return a
 /// `SyntaxError::ExpressionTooDeep` rather than abort. This test is expected to
 /// PASS on f0ceb12 (it confirms the statement-if path the task asked to verify
-/// is covered, distinct from the unguarded loop path above). It is NOT
+/// is covered, distinct from the unguarded loop path above). It is not
 /// `#[ignore]`d: if it ever fails, the if-statement path regressed.
 ///
 /// Authority: `surface-grammar.md` EBNF `IfStmt ::= 'if' Expr Block

@@ -1,8 +1,8 @@
 //! The SpecTherm validator — the boundary API that walks a parsed
 //! `thermite-syntax` program's contract positions and enforces §4.2's "locked
-//! cage": a contract may use ONLY registered combinators (right name + arity +
+//! cage": a contract may use only registered combinators (right name + arity +
 //! arg-kinds), declared `spec fn` calls, and the built-in operators / literals /
-//! paths the grammar already sanctions — nothing else.
+//! paths the grammar already sanctions, and nothing else.
 //!
 //! Governing design: `.design/spec/spectherm-combinators.md` (REQ-3/4/5).
 //! Verified against the oracle at `tests/golden/combinators/` (accept.json /
@@ -17,9 +17,9 @@
 //! | REQ-5 (bounded recursion — no overflow) | SHIPPED | a single `MAX_RECURSION_DEPTH` guard wraps EVERY recursive descent (`walk_expr`, closure bodies, match arms, index args, if/block tails) via `descend`; deep input yields `ExpressionTooDeep`, never an overflow (`validate_never_panics`). |
 //! | REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | SHIPPED | `check_arg_kind`'s `Pred` arm sets `Validator::in_combinator_closure` for the whole closure-body descent (kept set through all nested sub-expressions/closures); while set, `walk_call` rejects any callee resolving via `combinators::lookup` with `SpecError::NestedCombinator`, while a declared `spec fn` call stays accepted. Consumer: `validate` → `walk_clause`/`walk_block` reach `walk_call`. Verification: `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; the flat corpus closures stay `Ok` (`tests/combinators_conformance.rs`). |
 //!
-//! ## Basis Stage 1b — the REAL ADT validator (`.design/basis/01-adts.md`)
+//! ## Basis Stage 1b — the real ADT validator (`.design/basis/01-adts.md`)
 //!
-//! Stage 1b REPLACES the 1a `UnsupportedAdt` gate with real exhaustiveness +
+//! Stage 1b replaces the 1a `UnsupportedAdt` gate with real exhaustiveness +
 //! well-formedness checking. The 3 ADT corpus programs validate clean; crafted
 //! negatives reject with the precise structured error. Verified against the
 //! oracle `conformance/adt-validate/cases.json` (R-CHAR-3) via
@@ -35,9 +35,9 @@
 //!
 //! ## Basis Stage 2b — recursion-scheme recognition + the flat-step cage (`.design/basis/02-recursion-schemes.md`)
 //!
-//! Stage 2b EXTENDS the cage to recognize a recursion-scheme call
+//! Stage 2b extends the cage to recognize a recursion-scheme call
 //! (`fold`/`map`/`for_all`/`exists`/`traverse`) as a named-composition leaf and
-//! to reject a scheme/combinator NESTED in a scheme's step closure (the flat-step
+//! to reject a scheme/combinator nested in a scheme's step closure (the flat-step
 //! cage). Verified against the oracle `conformance/adt-schemes/cases.json`
 //! (R-CHAR-3) via `thermite-spec/tests/scheme_validate.rs`.
 //!
@@ -114,7 +114,7 @@ use crate::schemes::{self, SchemeSig};
 /// returning an `ExpressionTooDeep` diagnostic. A fixed constant for determinism
 /// (R-CODE-5), mirroring `thermite-syntax`'s parser `MAX_RECURSION_DEPTH`.
 ///
-/// This single bound guards EVERY recursive descent in the walk — nested
+/// This single bound guards every recursive descent in the walk — nested
 /// combinator/spec-fn arguments, `Binary`/`Index`/`Cast`/`Ref`/`Field`
 /// operands, closure bodies, `Match` scrutinee + arm bodies, `If` branches, and
 /// block statements/tails — so a pathological deeply-nested contract surfaces a
@@ -123,10 +123,10 @@ use crate::schemes::{self, SchemeSig};
 /// recursive path unbounded).
 const MAX_RECURSION_DEPTH: usize = 64;
 
-/// The bounded set of built-in `MethodCall` names a CAGED position admits
+/// The bounded set of built-in `MethodCall` names a caged position admits
 /// (REQ-3(c): "the bounded built-in `MethodCall`s the grammar admits (e.g.
 /// `xs.len()`)"). Any method name outside this set in a contract position is a
-/// `ForbiddenCall` (REQ-4 (iv)) — the §4.2 cage is closed.
+/// `ForbiddenCall` (REQ-4 (iv)); the §4.2 cage is closed.
 ///
 /// Set = `len` + the bounded-collection no-OOB accessor `get`
 /// (`.design/basis/04-collections.md` REQ-3): `len` is the slice/Vec length used
@@ -134,45 +134,45 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// capacity contract (`v.len() < CAP`, `result.len() == v.len() + 1`); `get` is
 /// the verified `Vec` accessor whose result a contract names
 /// (`ens result == v.get(i)` in `conformance/vec_demo.th`'s `checked_get`),
-/// admitted as a FLAT built-in inside the §4.2 cage exactly as `len` is — the
+/// admitted as a flat built-in inside the §4.2 cage as `len` is. The
 /// lowerer maps the spec-position `v.get(i)` to the wrapper's `spec_get(i as int)`
-/// (REQ-5). `push`/`pop` are NOT here: they are EXEC-only mutators (a fn body),
+/// (REQ-5). `push`/`pop` are not here: they are exec-only mutators (a fn body),
 /// never named in a contract position, so the cage does not admit them. No other
-/// built-in method is added — per REQ-1's frozen-set discipline and anti-goal
+/// built-in method is added: per REQ-1's frozen-set discipline and anti-goal
 /// §11, the set grows only by design amendment from a corpus need, never
 /// speculatively.
 /// Stage 7 strings (`.design/basis/07-strings.md` REQ-3): the bounded `String`
-/// operations a contract names are FLAT built-ins admitted inside the §4.2 cage
-/// exactly as the slice/`Vec` `len`/`get` are. `byte_at` is the no-OOB byte
+/// operations a contract names are flat built-ins admitted inside the §4.2 cage
+/// as the slice/`Vec` `len`/`get` are. `byte_at` is the no-OOB byte
 /// accessor whose result a contract names (`ens result == s.byte_at(0)` in
 /// `conformance/string_demo.th`'s `first_byte`); `concat` is the bounded
 /// constructing op whose length a contract names (`ens result.len() == a.len() +
-/// b.len()` in `join` — the receiver `a.concat(b)`); `slice` is the bounded
+/// b.len()` in `join`, the receiver `a.concat(b)`); `slice` is the bounded
 /// substring (`ens result.len() == hi - lo`). The no-OOB safety is in the
-/// LOWERED accessor's `req i < len` (the lowerer maps `s.byte_at(i)` to the
-/// wrapper's `spec_byte_at(i as int)` whose exec mirror carries the precondition —
+/// lowered accessor's `req i < len` (the lowerer maps `s.byte_at(i)` to the
+/// wrapper's `spec_byte_at(i as int)` whose exec mirror carries the precondition,
 /// REQ-4); admitting the method here only opens the cage to name it, the bound is
-/// proved by verus (the unguarded form FAILS, non-vacuity, R-DEFER-9). `push`/
-/// the literal-materialization are EXEC-only (a fn body), never in a contract.
+/// proved by verus (the unguarded form fails, non-vacuity, R-DEFER-9). `push`/
+/// the literal-materialization are exec-only (a fn body), never in a contract.
 /// Cluster C4 strings (`.design/basis/07-strings.md` REQ-7/REQ-8, issue #94):
 /// `push_byte` is the verified byte-builder's append op whose result a contract
-/// names (the byte-builder length/element-frame `ens`) — admitted as a FLAT
-/// built-in exactly as `concat`/`slice`; `to_string` is the `u64`→decimal-`String`
+/// names (the byte-builder length/element-frame `ens`), admitted as a flat
+/// built-in as `concat`/`slice`; `to_string` is the `u64`→decimal-`String`
 /// method whose round-trip a contract names (`ens parse_le(result) == n`, the
-/// GROUNDED gold standard). Both are constructing ops (`fx alloc`); `from_byte` is
+/// grounded gold standard). Both are constructing ops (`fx alloc`); `from_byte` is
 /// an associated path-call (`String::from_byte(b)`, an `Expr::Call`), so it needs
-/// no `BUILTIN_METHODS` entry. The no-OOB / round-trip teeth are PROVED at L3 (a
-/// wrong digit FAILS, R-DEFER-9); admitting the method here only opens the cage to
-/// NAME it.
+/// no `BUILTIN_METHODS` entry. The no-OOB / round-trip teeth are proved at L3 (a
+/// wrong digit fails, R-DEFER-9); admitting the method here only opens the cage to
+/// name it.
 /// Cluster C6 collections (`.design/basis/04-collections.md` REQ-8/REQ-12, issue
 /// #98): `last` is the bounded-`Vec` final-element accessor whose result a contract
-/// names (`ens result == v.last()`), admitted as a FLAT built-in exactly as `get` —
+/// names (`ens result == v.last()`), admitted as a flat built-in as `get`:
 /// the lowerer maps spec-position `v.last()` to the wrapper's `spec_get((len-1) as
 /// int)`; `contains` is the element-membership predicate whose result a contract
-/// names (`ens result == v.contains(x)`), admitted so the cage can NAME it (its
-/// `exists`-meaning is PROVED by the exec `ens`'s linear-scan invariant, R-DEFER-9).
-/// `pop_last`/`insert`/`remove` stay EXEC-only (`&mut` mutators, never in a
-/// contract). No other built-in is added — REQ-1 frozen-set discipline.
+/// names (`ens result == v.contains(x)`), admitted so the cage can name it (its
+/// `exists`-meaning is proved by the exec `ens`'s linear-scan invariant, R-DEFER-9).
+/// `pop_last`/`insert`/`remove` stay exec-only (`&mut` mutators, never in a
+/// contract). No other built-in is added: REQ-1 frozen-set discipline.
 /// Cluster C5 string search/transform (`.design/basis/07-strings.md` REQ-13..16,
 /// issue #102): `starts_with`/`ends_with` are the boolean substring predicates whose
 /// result a contract names (`ens result == occurs_at(s@, needle@, ..)`), `find` is
@@ -181,10 +181,10 @@ const MAX_RECURSION_DEPTH: usize = 64;
 /// !contains_sub(..) }`), `split` is the `Vec<String>` splitter and `trim` the
 /// whitespace stripper whose results a contract names (`ens result.len() == 1 +
 /// count_sep(..)` / `ens exists|lo,hi| result == s.subrange(lo,hi)`). All admitted as
-/// FLAT built-ins so the §4.2 cage can NAME them; their meanings are PROVED by the
+/// flat built-ins so the §4.2 cage can name them; their meanings are proved by the
 /// emitted exec scans' loop invariants (R-DEFER-9). `contains` (already present from
-/// C6) is SHARED by the string substring op AND the `Vec` membership op — the surface
-/// NAME is one, but the lowerer RECEIVER-TYPE-dispatches it (a `String` receiver →
+/// C6) is shared by the string substring op and the `Vec` membership op: the surface
+/// name is one, but the lowerer receiver-type-dispatches it (a `String` receiver →
 /// `TString::contains` substring scan; a `Vec` receiver → `TVec::contains` membership
 /// scan), so no separate entry and no clobber (Rust inherent-method resolution keys on
 /// the receiver type).
@@ -195,12 +195,12 @@ const BUILTIN_METHODS: &[&str] = &[
     "contains",
     // Cluster C12 (`.design/basis/13-map.md` REQ-3): the bounded-`Map` membership
     // predicate whose result a contract names (`ens result == m.contains_key(k)`),
-    // admitted as a FLAT built-in exactly as the `Vec` `contains` / no-OOB `get` —
+    // admitted as a flat built-in as the `Vec` `contains` / no-OOB `get`:
     // the lowerer maps spec-position `m.contains_key(k)` to the wrapper's spec
     // abstraction `m.spec_contains_key(k)` (the `exists|j| data@[j].0 == k`
-    // membership). `insert` stays EXEC-only (`&mut` mutator, never in a contract,
+    // membership). `insert` stays exec-only (`&mut` mutator, never in a contract,
     // like `push`); `get`/`len` are already present. The §4.2 caged-flat walk
-    // (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED.
+    // (`walk_expr_inner`'s `MethodCall` allowlist arm) is unchanged.
     "contains_key",
     "byte_at",
     "concat",
@@ -219,51 +219,51 @@ const BUILTIN_METHODS: &[&str] = &[
 /// MSB-first / human-readable decimal value of a byte sequence — the DISPLAY-form
 /// round-trip the surface contract names, blocker #96), `parse_le` (the LSB-first
 /// construction-order value the bridge carries the proof through), and `pow10` (the
-/// decimal weight). They are NOT user-declared — the lowerer
-/// (`thermite-lower::lower`) emits them when the program uses `n.to_string()` — but a
+/// decimal weight). They are not user-declared: the lowerer
+/// (`thermite-lower::lower`) emits them when the program uses `n.to_string()`, but a
 /// contract names `parse_be` to state the round-trip (`ens parse_be(result) == n`),
 /// so the validator must accept them as named `spec fn` calls inside the §4.2 cage
 /// (seeded into `Validator::spec_fns` in `Validator::new`, alongside the
-/// user-declared spec fns). This is the EXACT mechanism a user `spec fn` call uses —
+/// user-declared spec fns). This is the mechanism a user `spec fn` call uses;
 /// these are reserved generated names, so a user cannot shadow them (a clash would be
 /// a name collision the lowerer owns).
 /// Cluster C7 (`.design/basis/09-option-result.md` REQ-3/REQ-5, issue #95) adds
 /// the `parse_u64` round-trip spec fns `parse_be` (already present, the C4
 /// big-endian value), `all_digits` (the all-bytes-are-`'0'..'9'` witness), and
-/// `is_digit` (the per-byte `48 <= b <= 57` predicate) — so the GENERATED
+/// `is_digit` (the per-byte `48 <= b <= 57` predicate) — so the generated
 /// `parse_u64`'s round-trip `ens match result { Some(v) => all_digits(s.data@) &&
 /// parse_be(s.data@) == v, None => true }` validates inside the §4.2 cage as named
 /// `spec fn` calls (the lowerer emits their bodies in `emit_parse_defs`).
 /// Cluster C5 (`.design/basis/07-strings.md` REQ-13..16, issue #102) adds the string
 /// search/transform spec fns the lowerer emits when a program uses the C5 ops, so a
-/// contract NAMING them validates inside the §4.2 cage as named `spec fn` calls (the
+/// contract naming them validates inside the §4.2 cage as named `spec fn` calls (the
 /// lowerer emits their bodies in `emit_string_search_defs`): `occurs_at(s, needle, at)`
-/// (needle occurs at byte offset `at` — a flat bounded `forall|k|`), `contains_sub(s,
-/// needle)` (a flat bounded `exists|at| occurs_at(..)` — the `contains`/`find`
-/// meaning), `count_sep(s, sep)` (the recursive separator count — `split`'s result
-/// length), `sep_free(s, sep)` (no byte equals `sep` — each `split` piece), and
+/// (needle occurs at byte offset `at`, a flat bounded `forall|k|`), `contains_sub(s,
+/// needle)` (a flat bounded `exists|at| occurs_at(..)`, the `contains`/`find`
+/// meaning), `count_sep(s, sep)` (the recursive separator count, `split`'s result
+/// length), `sep_free(s, sep)` (no byte equals `sep`, each `split` piece), and
 /// `is_space(b)` (the ASCII-whitespace predicate `trim` strips). All flat / bounded /
-/// named per §4.2 (no anonymous nested quantifiers — `occurs_at`'s inner `forall|k|`
-/// lives in the NAMED spec-fn body).
+/// named per §4.2 (no anonymous nested quantifiers; `occurs_at`'s inner `forall|k|`
+/// lives in the named spec-fn body).
 ///
 /// Cluster C8 (`.design/basis/07-strings.md` REQ-17, issue #278) adds the
-/// byte-range-equality predicate `bytes_eq(a, b, ai, bi, n)` — a REGISTERED
-/// built-in spec predicate (the `slice_id`/`insert_str` content pins), NOT a §2
+/// byte-range-equality predicate `bytes_eq(a, b, ai, bi, n)`, a registered
+/// built-in spec predicate (the `slice_id`/`insert_str` content pins), not a §2
 /// frozen-combinator `REGISTRY` entry (its 5-arg String/index signature fits no
 /// `ArgKind` shape, and it carries no closure). Joining `GENERATED_SPEC_FNS`
-/// costs ZERO skill tokens (the skill renders only the combinator/scheme
-/// registries — the §2.2 budget holds at 5988/6000), where a combinator entry
+/// costs zero skill tokens (the skill renders only the combinator/scheme
+/// registries, so the §2.2 budget holds at 5988/6000), where a combinator entry
 /// would auto-render ~+38 tokens and blow the gate (REQ-17's verdict). The
 /// lowerer (`thermite-lower::lower`) materializes the canonical `Seq<u8>`
 /// low-peel recursion + the four prove-once bridge lemmas
 /// (`lemma_bytes_eq_from_pointwise`/`_to_pointwise`/`_from_subrange`/`_bridge`)
 /// when the program names `bytes_eq` (`program_uses_bytes_eq`).
-/// The RESERVED prefix the lowerer mints its generated byte-view helper fns under
-/// (`.design/basis/07-strings.md` REQ-4, blocker #130 — mirrors
+/// The reserved prefix the lowerer mints its generated byte-view helper fns under
+/// (`.design/basis/07-strings.md` REQ-4, blocker #130; mirrors
 /// `thermite-lower::lower::THERMITE_RESERVED_PREFIX`, the single reserved scheme). A
 /// user `fn`/`spec fn` declared in this namespace is rejected (`SpecError::Reserved
 /// Name`) so the generated defs (which emit under this prefix) can never collide with
-/// a user name — the byte-view name-collision class is closed at the surface.
+/// a user name; the byte-view name-collision class is closed at the surface.
 const THERMITE_RESERVED_PREFIX: &str = "__thermite_";
 
 const GENERATED_SPEC_FNS: &[&str] = &[
@@ -282,8 +282,8 @@ const GENERATED_SPEC_FNS: &[&str] = &[
 
 /// `thermite-spec`'s own error enum (workspace.md REQ-3), born with this first
 /// fallible function. Span-bearing (reusing `thermite_syntax::Span`) so
-/// diagnostics are crisp (pillar 4); `Display`-able. The validator NEVER panics
-/// (R-CODE-2 / R-APG-1) — every rejection is a variant here.
+/// diagnostics are crisp (pillar 4); `Display`-able. The validator never panics
+/// (R-CODE-2 / R-APG-1): every rejection is a variant here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SpecError {
     /// A call in a contract position whose callee is neither a registered
@@ -312,13 +312,13 @@ pub enum SpecError {
     /// callee shape (REQ-4 (iv)). Distinct from `UnknownCombinator` (a free
     /// `Expr::Call`) so the diagnostic names the construct precisely.
     ForbiddenCall { detail: String, span: Span },
-    /// A registered combinator call appearing INSIDE another combinator's
+    /// A registered combinator call appearing inside another combinator's
     /// predicate-closure body — an anonymous nested quantifier (REQ-6). The
     /// flat-closure-fragment rule forbids it: a combinator's `Pred`-slot closure
-    /// body is a FLAT predicate (comparisons, arithmetic, boolean/logical ops,
+    /// body is a flat predicate (comparisons, arithmetic, boolean/logical ops,
     /// field/index, casts/refs, literals/paths, bounded built-in method calls,
-    /// `Match`/`If`, and NAMED `spec fn` calls) and MAY NOT compose another
-    /// bounded quantifier. The sanctioned alternative is extracting a NAMED
+    /// `Match`/`If`, and named `spec fn` calls) and may not compose another
+    /// bounded quantifier. The sanctioned alternative is extracting a named
     /// `spec fn` (each `dec`-measured and auditable). `name` is the nested
     /// combinator. Distinct from `UnknownCombinator` (a free call resolving to
     /// nothing) and `ForbiddenCall` (a generic forbidden construct) so the
@@ -331,23 +331,23 @@ pub enum SpecError {
     /// An ADT surface construct (`struct`/`enum` item, struct-literal
     /// construction, `is` discrimination, or a `Box` deref) reached the
     /// validator before the validator knows how to check it
-    /// (`.design/basis/01-adts.md`). RETAINED from Stage 1a as the honest
-    /// "handled-or-loud" SCREAM for ADT forms the validator still does not check
-    /// — but Stage 1b NO LONGER fires it for a WELL-FORMED ADT: `struct`/`enum`
+    /// (`.design/basis/01-adts.md`). Retained from Stage 1a as the
+    /// "handled-or-loud" refusal for ADT forms the validator still does not check,
+    /// but Stage 1b no longer fires it for a well-formed ADT: `struct`/`enum`
     /// items, `Expr::StructLit`, `Expr::Is`, and `Expr::Deref` are now
-    /// validated (exhaustiveness REQ-5, well-formedness REQ-6) and ACCEPTED when
+    /// validated (exhaustiveness REQ-5, well-formedness REQ-6) and accepted when
     /// well-formed. The variant stays in the enum so a future un-checkable ADT
     /// form has a structured refusal rather than a silent pass (the variant has
     /// no live emitter in 1b; `construct` names the unsupported surface form for
     /// a crisp diagnostic, §2.4).
     UnsupportedAdt { construct: &'static str, span: Span },
-    /// A `match` over a DECLARED `enum` value whose arms do not cover every
+    /// A `match` over a declared `enum` value whose arms do not cover every
     /// declared variant and is not closed by a `Wildcard` arm
     /// (`.design/basis/01-adts.md` REQ-5). `missing` is the set of uncovered
     /// variant names, in the enum's declaration order (deterministic, R-CODE-5).
-    /// This is the COMPILE-TIME tooth of the handled-or-loud law (REQ-12): a
-    /// modeled outcome (variant) is left neither handled nor explicitly screamed
-    /// over — the validator rejects it BEFORE the program ships.
+    /// This is the compile-time tooth of the handled-or-loud rule (REQ-12): a
+    /// modeled outcome (variant) is left neither handled nor explicitly refused;
+    /// the validator rejects it before the program ships.
     NonExhaustiveMatch { missing: Vec<String>, span: Span },
     /// A `match` arm that can never be reached (`.design/basis/01-adts.md`
     /// REQ-5): a variant matched twice (the second arm is dead), or any arm
@@ -365,13 +365,13 @@ pub enum SpecError {
     /// A recursion-scheme call (`fold`/`map`/`for_all`/`exists`/`traverse`)
     /// NESTED inside another scheme's step closure
     /// (`.design/basis/02-recursion-schemes.md` REQ-2/REQ-4 — the flat-step
-    /// cage). The step closure body of a scheme is a FLAT per-node expression
-    /// (comparisons, arithmetic, field/index, named `spec fn` calls) and MAY NOT
+    /// cage). The step closure body of a scheme is a flat per-node expression
+    /// (comparisons, arithmetic, field/index, named `spec fn` calls) and may not
     /// compose another recursion scheme or a bounded combinator — that would be
     /// an anonymous nested structural quantifier the §4.2 cage forbids. The
-    /// sanctioned alternative is a NAMED `spec fn` (each `dec`-measured, in the
+    /// sanctioned alternative is a named `spec fn` (each `dec`-measured, in the
     /// audit surface). `name` is the nested scheme (or combinator). This is the
-    /// scheme analogue of `NestedCombinator`, EXTENDING the cage's
+    /// scheme analogue of `NestedCombinator`, extending the cage's
     /// no-anonymous-nested rule to schemes (REQ-4).
     NestedScheme { name: String, span: Span },
     /// A recursion-scheme call with the wrong number of arguments
@@ -400,47 +400,47 @@ pub enum SpecError {
     /// An `enum` variant declared with a lowercase-initial name
     /// (`.design/basis/01-adts.md` REQ-2: "Variant names MUST be UpperCamelCase
     /// (uppercase-initial); the validator rejects a lowercase-initial variant
-    /// declaration"). This is LOAD-BEARING for soundness, not style: the parser
+    /// declaration"). This is a soundness rule: the parser
     /// disambiguates a single-segment arm pattern by first-letter case
     /// (`Pattern::Enum` if uppercase-initial, `Pattern::Binding` otherwise).
-    /// Forbidding lowercase variants makes that split SOUND — a lowercase ident
-    /// in a pattern is *unambiguously* a binding, because no lowercase variant
+    /// Forbidding lowercase variants makes that split sound — a lowercase ident
+    /// in a pattern is then a binding, because no lowercase variant
     /// can exist, so a non-exhaustive `match` can never be silently masked by a
     /// variant-looking name being read as a catch-all binding (the #66 bypass).
-    /// `name` is the offending variant. Rejected at the DECLARATION pre-pass,
+    /// `name` is the offending variant. Rejected at the declaration pre-pass,
     /// before any `match`/exhaustiveness check.
     InvalidVariantCasing { name: String, span: Span },
     /// An `Expr::StructLit` constructing a `#[sealed]` clean/capability type
     /// (`.design/basis/06-provenance-and-sinks.md` REQ-8). A `#[sealed]` struct
-    /// is the ABSTRACTION BARRIER for an IFC clean type (`Sql`/`Public`/
-    /// `Authorized`): it is obtainable ONLY as a `#[boundary]` door's return
+    /// is the abstraction barrier for an IFC clean type (`Sql`/`Public`/
+    /// `Authorized`): it is obtainable only as a `#[boundary]` door's return
     /// value (the door body is foreign/`external_body`, with no in-language
     /// `StructLit`), never minted directly. Minting one with a struct literal
-    /// would LAUNDER a marked value into a clean type outside its door —
-    /// defeating the IFC guarantee (the #77 SQLi/secret/capability bypass). This
-    /// is the LOUDEST tooth of handled-or-loud, in IFC: the un-doored mark-change
-    /// is a compile-time SCREAM, not a silent `L3`. `name` is the sealed struct.
+    /// would launder a marked value into a clean type outside its door,
+    /// defeating the IFC guarantee (the #77 SQLi/secret/capability bypass). The
+    /// un-doored mark-change is a compile-time rejection, not a silent
+    /// `L3`. `name` is the sealed struct.
     SealedConstruction { name: String, span: Span },
-    /// A RECURSIVE exec `fn` (one whose body calls itself directly) that carries
-    /// NO `dec` termination clause and is NOT `fx diverge`
+    /// A recursive exec `fn` (one whose body calls itself directly) that carries
+    /// no `dec` termination clause and is not `fx diverge`
     /// (`.design/basis/10-recursion-tuples.md` REQ-2, C9-A). Termination is proved
-    /// by default (§4.1): a self-calling `fn` MUST supply a `dec <measure>` so
-    /// Verus can prove the recursion terminates, UNLESS the fn declares `fx
-    /// diverge` (the #88 exemption — a diverge fn is honestly non-terminating,
-    /// L1-capped). This is the SURFACE-LEVEL mirror of the Verus rule "recursive
-    /// function must have a decreases clause": Thermite reports it as its OWN
+    /// by default (§4.1): a self-calling `fn` must supply a `dec <measure>` so
+    /// Verus can prove the recursion terminates, unless the fn declares `fx
+    /// diverge` (the #88 exemption — a diverge fn is non-terminating,
+    /// L1-capped). This is the surface-level mirror of the Verus rule "recursive
+    /// function must have a decreases clause": Thermite reports it as its own
     /// span-bearing diagnostic so the user never reaches a raw Verus error, and a
-    /// non-terminating fn can never be laundered to L3 (the no-proof-cheat
+    /// non-terminating fn can never reach L3 (the no-proof-cheat
     /// guarantee, `goal.md` R-DEFER-9). `name` is the self-recursive fn.
     MissingDecreases { name: String, span: Span },
     /// Basis Stage 7 strings (`.design/basis/07-strings.md` REQ-4, blocker #130): a
-    /// user-declared `fn`/`spec fn` whose name begins with the lowerer's RESERVED
-    /// prefix (`__thermite_`). The lowerer mints its GENERATED byte-view helpers (the
+    /// user-declared `fn`/`spec fn` whose name begins with the lowerer's reserved
+    /// prefix (`__thermite_`). The lowerer mints its generated byte-view helpers (the
     /// C4 numfmt round-trip, the C7 parser, the C5 search/transform spec fns + their
     /// proof lemmas) under that prefix so they never collide with a user name; the
     /// namespace is therefore the toolchain's alone. A user declaration in it is
-    /// REJECTED here (rather than risking an E0428 double-definition in the lowered
-    /// Verus source) — closing the byte-view name-collision class at the surface.
+    /// rejected here (rather than risking an E0428 double-definition in the lowered
+    /// Verus source), closing the byte-view name-collision class at the surface.
     /// `name` is the offending user fn.
     ReservedName { name: String, span: Span },
 }
@@ -593,7 +593,7 @@ impl std::error::Error for SpecError {}
 /// Validate every contract position of a parsed program against the SpecTherm
 /// cage (REQ-3). Returns `Ok(())` if every contract expression is accepted, else
 /// `Err` with one `SpecError` per violation (accumulated, not first-stop, for
-/// crisp feedback, §2.4). NEVER panics (REQ-4/REQ-5).
+/// crisp feedback, §2.4). Never panics (REQ-4/REQ-5).
 ///
 /// This is `thermite-spec`'s boundary API: the validator is the registry's first
 /// production consumer (AC-5, via `combinators::lookup`), and is the gate
@@ -626,36 +626,36 @@ struct Validator {
     /// REQ-6: every field name declared by any `struct` or struct-variant
     /// (`VariantShape::Struct`). The AST is untyped (OQ-3: no type resolution),
     /// so field well-formedness is the shallow, mechanically-decidable check the
-    /// design admits — an accessed field must be declared SOMEWHERE; a name no
+    /// design admits — an accessed field must be declared somewhere; a name no
     /// struct/struct-variant declares is `UnknownField`.
     struct_fields: HashSet<String>,
     /// REQ-8 (`.design/basis/06-provenance-and-sinks.md`): the names of every
     /// `#[sealed]` `struct` (collected from `Item::Struct` with `sealed == true`
     /// in the pre-pass, alongside `struct_fields`). The abstraction-barrier rule
-    /// REJECTS any `Expr::StructLit` whose `path` resolves to a name in this set
-    /// (`SealedConstruction`) — a sealed clean/capability type is door-only-
+    /// rejects any `Expr::StructLit` whose `path` resolves to a name in this set
+    /// (`SealedConstruction`); a sealed clean/capability type is door-only-
     /// mintable. Inert when no `#[sealed]` struct is declared (the non-IFC corpus
-    /// is UNCHANGED), exactly like `struct_fields`.
+    /// is unchanged), like `struct_fields`.
     sealed_structs: HashSet<String>,
     depth: usize,
     errors: Vec<SpecError>,
-    /// REQ-6 flat-closure-fragment mode. Set ONCE on entry to a combinator's
-    /// `Pred`-slot closure body and kept set for ALL nested sub-expressions and
+    /// REQ-6 flat-closure-fragment mode. Set once on entry to a combinator's
+    /// `Pred`-slot closure body and kept set for all nested sub-expressions and
     /// nested closures within it. While set, a call resolving to a registered
-    /// combinator (`combinators::lookup(name).is_some()`) is REJECTED with
-    /// `NestedCombinator` (an anonymous nested quantifier); a NAMED `spec fn`
+    /// combinator (`combinators::lookup(name).is_some()`) is rejected with
+    /// `NestedCombinator` (an anonymous nested quantifier); a named `spec fn`
     /// call stays accepted (named composition). In a top-level contract position
     /// (flag clear) a combinator call is accepted as before (REQ-3 (a)).
     in_combinator_closure: bool,
     /// REQ-2/REQ-4 flat-scheme-step mode (`.design/basis/02-recursion-schemes.md`).
-    /// Set ONCE on entry to a recursion scheme's step closure body and kept set
-    /// for ALL nested sub-expressions within it. While set, a call resolving to a
-    /// registered scheme (`schemes::lookup`) OR a registered combinator
-    /// (`combinators::lookup`) is REJECTED with `NestedScheme` — the step body is
-    /// a FLAT per-node expression and may not compose another structural
-    /// quantifier (a named `spec fn` call stays accepted). This EXTENDS the
+    /// Set once on entry to a recursion scheme's step closure body and kept set
+    /// for all nested sub-expressions within it. While set, a call resolving to a
+    /// registered scheme (`schemes::lookup`) or a registered combinator
+    /// (`combinators::lookup`) is rejected with `NestedScheme`: the step body is
+    /// a flat per-node expression and may not compose another structural
+    /// quantifier (a named `spec fn` call stays accepted). This extends the
     /// existing combinator-closure cage (the `in_combinator_closure` rule) to
-    /// scheme steps, exactly as the design's REQ-4 mandates.
+    /// scheme steps, as the design's REQ-4 mandates.
     in_scheme_step: bool,
 }
 
@@ -685,11 +685,11 @@ impl Validator {
             spec_fns.insert((*name).to_string());
         }
 
-        // The ADT DECLARATION PRE-PASS (`.design/basis/01-adts.md` REQ-5/REQ-6;
+        // The ADT declaration pre-pass (`.design/basis/01-adts.md` REQ-5/REQ-6;
         // mirrors the spec-fn-name collection above). A program references types
         // across items in any order (`fn f(s: Shape)` may precede `enum Shape`),
-        // so the body/contract walk must see EVERY declared type before walking
-        // any body — order-independent, like the spec-fn resolution.
+        // so the body/contract walk must see every declared type before walking
+        // any body, order-independent, like the spec-fn resolution.
         let mut enums: HashMap<String, Vec<String>> = HashMap::new();
         let mut variant_to_enum: HashMap<String, String> = HashMap::new();
         let mut struct_fields: HashSet<String> = HashSet::new();
@@ -699,16 +699,16 @@ impl Validator {
         // the SAME pre-pass as `struct_fields` so a forward reference (`fn
         // f() { Sql { … } }` before `#[sealed] struct Sql`) is seen.
         let mut sealed_structs: HashSet<String> = HashSet::new();
-        // `.design/basis/01-adts.md` REQ-2: every `enum` variant name MUST be
+        // `.design/basis/01-adts.md` REQ-2: every `enum` variant name must be
         // UpperCamelCase (uppercase-initial). A lowercase-initial variant is
-        // rejected HERE, at the declaration pre-pass, BEFORE any
-        // match/exhaustiveness check — this is the cause of the #66 bypass: the
+        // rejected here, at the declaration pre-pass, before any
+        // match/exhaustiveness check. This is the cause of the #66 bypass: the
         // parser disambiguates a single-segment arm pattern by first-letter case
         // (uppercase → `Pattern::Enum`, lowercase → `Pattern::Binding`), so a
         // lowercase variant in a `match` arm masquerades as a catch-all binding
         // and a non-exhaustive match is silently accepted. Forbidding lowercase
-        // variants at the declaration makes that case-based split SOUND. These
-        // casing diagnostics SEED the validator's error list so a lowercase-
+        // variants at the declaration makes that case-based split sound. These
+        // casing diagnostics seed the validator's error list so a lowercase-
         // variant program never reaches the (now-sound) body/contract walk.
         let mut casing_errors: Vec<SpecError> = Vec::new();
         for item in &program.items {
@@ -752,7 +752,7 @@ impl Validator {
                         struct_fields.insert(field.name.clone());
                     }
                     // REQ-8: a `#[sealed]` struct joins the abstraction-barrier
-                    // set — its name will REJECT any `StructLit` mint.
+                    // set — its name will reject any `StructLit` mint.
                     if s.sealed {
                         sealed_structs.insert(s.name.clone());
                     }
@@ -762,24 +762,24 @@ impl Validator {
         }
 
         // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2/REQ-3, issue
-        // #95): SEED the BUILT-IN variants `Some`/`None` (enum `Option`) and
-        // `Ok`/`Err` (enum `Result`) into the SAME `enums`/`variant_to_enum`
-        // registry the user-`Item::Enum` pre-pass fills. This is the ONE validator
+        // #95): seed the built-in variants `Some`/`None` (enum `Option`) and
+        // `Ok`/`Err` (enum `Result`) into the same `enums`/`variant_to_enum`
+        // registry the user-`Item::Enum` pre-pass fills. This is the one validator
         // change C7 needs: with the built-in variants registered, construction
         // (`Some(v)`/`Ok(v)` reach the exec-body walk's `Call`/`Path` recursion, no
         // longer an `UnknownVariant`), `match` arms over them (`check_match_-
-        // exhaustiveness` now infers `Option`/`Result` and requires BOTH arms or a
+        // exhaustiveness` now infers `Option`/`Result` and requires both arms or a
         // wildcard), and `is` discrimination (`r is Some` via `check_variant_ref`)
-        // are ALL ACCEPTED — exactly as a user enum (01-adts REQ-5/REQ-6). The
-        // declaration ORDER pins the exhaustiveness `missing` set: `Option` is
+        // are all accepted, as a user enum (01-adts REQ-5/REQ-6). The
+        // declaration order pins the exhaustiveness `missing` set: `Option` is
         // `[Some, None]`, `Result` is `[Ok, Err]`. The spec-`match`-in-`ens` payload
-        // projection needs NO new cage rule — `walk_expr_inner`'s `Match` arm
+        // projection needs no new cage rule: `walk_expr_inner`'s `Match` arm
         // already admits a flat `match` as a built-in (01-adts REQ-7), so a
         // `match result { Some(v) => <flat pred>, None => true }` in a contract is
         // already an accepted flat predicate once the variants are registered. A
         // user `enum` named `Option`/`Result` (or a variant `Some`/`Ok`/…) is a
         // re-declaration; last-writer-wins matches the existing duplicate-variant
-        // policy (the built-ins are seeded FIRST, so a user re-decl overrides — the
+        // policy (the built-ins are seeded first, so a user re-decl overrides; the
         // user's intent wins, no silent shadow of a user type).
         for (enum_name, variant_names) in [("Option", ["Some", "None"]), ("Result", ["Ok", "Err"])]
         {
@@ -802,7 +802,7 @@ impl Validator {
             depth: 0,
             // REQ-2: lowercase-variant casing diagnostics from the pre-pass seed
             // the error list, so a lowercase-variant `enum` is rejected at the
-            // declaration BEFORE the (now-sound) match/exhaustiveness walk runs.
+            // declaration before the (now-sound) match/exhaustiveness walk runs.
             errors: casing_errors,
             in_combinator_closure: false,
             in_scheme_step: false,
@@ -813,8 +813,8 @@ impl Validator {
     fn run(&mut self, program: &Program) {
         for item in &program.items {
             // Basis Stage 7 (`.design/basis/07-strings.md` REQ-4, blocker #130): a
-            // user `fn`/`spec fn` may not declare a name in the lowerer's RESERVED
-            // namespace (`__thermite_`), where the generated byte-view helpers live —
+            // user `fn`/`spec fn` may not declare a name in the lowerer's reserved
+            // namespace (`__thermite_`), where the generated byte-view helpers live,
             // so a user name can never collide with a generated def. Checked once per
             // item before its contract/body walk; a clash is `ReservedName`.
             let declared = match item {
@@ -836,12 +836,12 @@ impl Validator {
                     for clause in &f.contract.ens {
                         self.walk_clause(clause);
                     }
-                    // REQ-3: a `fn` BODY is executable surface code, NOT a
-                    // contract position. We traverse it STRUCTURALLY only — to
+                    // REQ-3: a `fn` body is executable surface code, not a
+                    // contract position. We traverse it structurally only, to
                     // find nested `LoopNode`s and cage each loop's `invs`/`dec`
                     // (the only contract positions inside a body). The body's
                     // other expressions (`return Some(mid)`, `haystack[mid]`,
-                    // assignments, …) are surface code and are NOT cage-checked.
+                    // assignments, …) are surface code and are not cage-checked.
                     // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — the
                     // body is foreign, so there are no in-language loops to scan
                     // for caged `inv`/`dec` clauses. Its `req`/`ens` (walked above)
@@ -850,18 +850,18 @@ impl Validator {
                     if let Some(body) = &f.body {
                         self.scan_block_for_loops(body, f.span);
                         // C9-A (`.design/basis/10-recursion-tuples.md` REQ-2): a
-                        // RECURSIVE exec `fn` — one whose body calls itself directly
-                        // — MUST carry a `dec` termination measure so Verus can prove
+                        // recursive exec `fn` — one whose body calls itself directly
+                        // — must carry a `dec` termination measure so Verus can prove
                         // the recursion terminates (§4.1 "Termination is proved by
-                        // default"), UNLESS it declares `fx diverge` (the #88
-                        // exemption — a diverge fn is honestly non-terminating,
-                        // L1-capped). A self-call WITHOUT `dec` AND not `fx diverge`
-                        // is a structured `MissingDecreases` — the surface mirror of
+                        // default"), unless it declares `fx diverge` (the #88
+                        // exemption — a diverge fn is non-terminating,
+                        // L1-capped). A self-call without `dec` and not `fx diverge`
+                        // is a structured `MissingDecreases`, the surface mirror of
                         // the Verus rule "recursive function must have a decreases
                         // clause", so a non-terminating fn never reaches an L3 cert
-                        // (R-DEFER-9). Mutual recursion (REQ-6) is OUT of v1: a pair
-                        // that calls EACH OTHER (neither calls itself directly) is not
-                        // a direct self-call, so it is not flagged here — it reaches
+                        // (R-DEFER-9). Mutual recursion (REQ-6) is out of v1: a pair
+                        // that calls each other (neither calls itself directly) is not
+                        // a direct self-call, so it is not flagged here; it reaches
                         // Verus and is rejected there (no false L3, no crash).
                         if f.dec.is_none() && !fn_is_diverge(f) && block_calls_name(body, &f.name) {
                             self.errors.push(SpecError::MissingDecreases {
@@ -880,12 +880,12 @@ impl Validator {
                 // Basis Stage 1b (`.design/basis/01-adts.md` REQ-5/REQ-6): the
                 // `struct`/`enum` declarations were collected in the pre-pass
                 // (`Validator::new`). A `struct`'s type-invariant `inv` clause is
-                // a CONTRACT POSITION (REQ-1: Verus enforces it at construction /
-                // use) — it is fully caged here exactly like a `req`/`ens`,
+                // a contract position (REQ-1: Verus enforces it at construction /
+                // use); it is fully caged here like a `req`/`ens`,
                 // including its `Field` access well-formedness (REQ-6). An `enum`
                 // item carries no contract position of its own; its variant set
                 // (collected above) drives the exhaustiveness/`is` checks at the
-                // `match`/`is` sites. The 1a `UnsupportedAdt` gate is GONE: a
+                // `match`/`is` sites. The 1a `UnsupportedAdt` gate is gone: a
                 // well-formed ADT now validates.
                 Item::Struct(s) => {
                     if let Some(inv) = &s.inv {
@@ -898,7 +898,7 @@ impl Validator {
     }
 
     /// Run `inner` one recursion level deeper, returning `false` (and recording
-    /// an `ExpressionTooDeep` at `span`) if the limit is hit. The SINGLE shared
+    /// an `ExpressionTooDeep` at `span`) if the limit is hit. The single shared
     /// guard for every recursive descent (REQ-5). `span` is the enclosing
     /// clause/item span (the AST does not carry per-`Expr` spans).
     fn descend(&mut self, span: Span, inner: impl FnOnce(&mut Self)) {
@@ -921,14 +921,14 @@ impl Validator {
         self.walk_expr(&clause.expr, span);
     }
 
-    /// STRUCTURAL traversal of a (non-caged) `fn` body block (REQ-3): descend
-    /// through statements / nested blocks / `if` / `loop` ONLY to FIND nested
+    /// Structural traversal of a (non-caged) `fn` body block (REQ-3): descend
+    /// through statements / nested blocks / `if` / `loop` only to find nested
     /// `LoopNode`s and cage each loop's `invs`/`dec` (recursively, for loops
     /// nested in loops). The block's own expressions — calls like `Some(mid)`,
     /// `return None`, assignments, `haystack[mid]` — are executable surface code
-    /// and are NOT cage-checked here. This is the counterpart to the caged
+    /// and are not cage-checked here. This is the counterpart to the caged
     /// `walk_block` (used for `spec fn` bodies and caged sub-expressions): same
-    /// shape walk, but it cage-checks NOTHING except the loop contract clauses it
+    /// shape walk, but it cage-checks only the loop contract clauses it
     /// discovers.
     fn scan_block_for_loops(&mut self, block: &Block, span: Span) {
         for stmt in &block.stmts {
@@ -939,15 +939,15 @@ impl Validator {
         }
     }
 
-    /// STRUCTURAL traversal of a `fn`-body statement: cage the `invs`/`dec` of
+    /// Structural traversal of a `fn`-body statement: cage the `invs`/`dec` of
     /// any nested loop (the only contract positions in a body) and keep
     /// descending through control flow to find deeper loops. Surface expressions
-    /// are descended into ONLY to reach nested loops (e.g. a `loop` inside an
+    /// are descended into only to reach nested loops (e.g. a `loop` inside an
     /// `if` block), never cage-checked.
     fn scan_stmt_for_loops(&mut self, stmt: &Stmt, span: Span) {
         match stmt {
             Stmt::Loop(loop_node) => {
-                // The loop's `invs`/`dec` ARE contract positions — cage them.
+                // The loop's `invs`/`dec` are contract positions — cage them.
                 for inv in &loop_node.invs {
                     self.walk_clause(inv);
                 }
@@ -976,19 +976,19 @@ impl Validator {
         }
     }
 
-    /// STRUCTURAL traversal of a `fn`-body expression. It descends to find
-    /// nested `loop`s (caging each loop's `invs`/`dec`) AND — Basis Stage 1b —
-    /// applies the ADT WELL-FORMEDNESS checks (REQ-5 exhaustiveness, REQ-6
+    /// Structural traversal of a `fn`-body expression. It descends to find
+    /// nested `loop`s (caging each loop's `invs`/`dec`) and — Basis Stage 1b —
+    /// applies the ADT well-formedness checks (REQ-5 exhaustiveness, REQ-6
     /// field/variant access) to every ADT node, because the validator rejecting
-    /// a non-exhaustive `match` is the COMPILE-TIME tooth (REQ-12) and a `match`
+    /// a non-exhaustive `match` is the compile-time tooth (REQ-12) and a `match`
     /// over an enum lives in `fn`-body (exec) position, not a contract position.
-    /// These ADT checks are NOT cage checks: the body's combinator/spec-fn
-    /// resolution is still NOT performed here (a body `Some(mid)` call stays
-    /// surface code). The two concerns are orthogonal — the cage gates contract
+    /// These ADT checks are not cage checks: the body's combinator/spec-fn
+    /// resolution is still not performed here (a body `Some(mid)` call stays
+    /// surface code). The two concerns are orthogonal: the cage gates contract
     /// positions; the ADT well-formedness gates every modeled-outcome site.
     /// `span` is the enclosing `fn`/loop span (the AST carries no per-`Expr`
     /// span). When no ADT is declared, every ADT check is inert, so the existing
-    /// non-ADT corpus body walk (`binary_search.th`) is UNCHANGED.
+    /// non-ADT corpus body walk (`binary_search.th`) is unchanged.
     fn scan_expr_for_loops(&mut self, expr: &Expr, span: Span) {
         match expr {
             Expr::If { cond, then, else_ } => {
@@ -1049,10 +1049,10 @@ impl Validator {
             }
             Expr::Closure { body, .. } => self.scan_expr_for_loops(body, span),
             // REQ-6: a struct / struct-variant construction's field names must be
-            // declared; the field VALUES are descended for nested loops/ADTs.
+            // declared; the field values are descended for nested loops/ADTs.
             // REQ-8: minting a `#[sealed]` clean type with a literal is the #77
-            // door-bypass — REJECTED here (the exec-body walk) so a laundering
-            // `query(Sql { stmt: input.raw })` screams at validation.
+            // door-bypass — rejected here (the exec-body walk) so a laundering
+            // `query(Sql { stmt: input.raw })` is rejected at validation.
             Expr::StructLit { path, fields } => {
                 self.check_sealed_construction(path, span);
                 for (field_name, value) in fields {
@@ -1085,9 +1085,9 @@ impl Validator {
         }
     }
 
-    /// Walk a CAGED block (a `spec fn` body, or a block nested inside a caged
+    /// Walk a caged block (a `spec fn` body, or a block nested inside a caged
     /// expression such as an `if`'s arm): every statement expression and the
-    /// tail expression IS a contract-position expression and is cage-checked.
+    /// tail expression is a contract-position expression and is cage-checked.
     /// Any `loop`/`while` it contains carries its own `invs`/`dec` clauses.
     fn walk_block(&mut self, block: &Block, span: Span) {
         self.descend(span, |s| {
@@ -1152,7 +1152,7 @@ impl Validator {
 
             // (c) bounded built-in method calls. REQ-3(c) admits only "the
             // bounded built-in `MethodCall`s the grammar admits (e.g.
-            // `xs.len()`)" — NOT an arbitrary method name. A non-allowlisted
+            // `xs.len()`)", not an arbitrary method name. A non-allowlisted
             // method name in a caged position is forbidden (REQ-4 (iv) ->
             // `ForbiddenCall`). The allowlist is `BUILTIN_METHODS`; a permitted
             // method's receiver and args are recursed into.
@@ -1179,13 +1179,13 @@ impl Validator {
             }
 
             // (c) field access, binary, index, cast, ref — structural built-ins.
-            // REQ-6: a `Field` whose name is declared by NO `struct`/struct-variant
+            // REQ-6: a `Field` whose name no `struct`/struct-variant declares
             // is `UnknownField`. The AST is untyped (OQ-3), so this is the
-            // shallow, mechanically-decidable check the design admits — the field
-            // must exist SOMEWHERE. When no ADT is declared (`struct_fields`
+            // shallow, mechanically-decidable check the design admits: the field
+            // must exist somewhere. When no ADT is declared (`struct_fields`
             // empty), the check is inert, so the existing non-ADT corpus
             // (`sum.th`/`binary_search.th`, which have no struct field access) is
-            // UNCHANGED.
+            // unchanged.
             Expr::Field { receiver, name } => {
                 self.check_field(name, span);
                 self.walk_expr(receiver, span);
@@ -1195,9 +1195,9 @@ impl Validator {
                 self.walk_expr(rhs, span);
             }
             // The prefix `!` (#92, ast.md REQ-10): a structural built-in operator,
-            // admitted in a contract position exactly like a `Binary`. The cage is
-            // UNTYPED (OQ-3), so the bitwise-vs-logical / valid-operand-type
-            // discrimination is NOT a validator check — it is resolved DOWNSTREAM by
+            // admitted in a contract position like a `Binary`. The cage is
+            // untyped (OQ-3), so the bitwise-vs-logical / valid-operand-type
+            // discrimination is not a validator check; it is resolved downstream by
             // Verus's type-directed `!` (ast.md OQ-4): `!` on a non-integer /
             // non-bool operand (e.g. `&[u32]`) is rejected at L3 as a Verus type
             // error, not here. The operand is recursed (depth-guarded, REQ-5) so
@@ -1210,13 +1210,13 @@ impl Validator {
             Expr::Cast { expr: inner, .. } => self.walk_expr(inner, span),
             Expr::Ref { expr: inner, .. } => self.walk_expr(inner, span),
 
-            // (c) match / if — built-in control forms. A `match` over a DECLARED
+            // (c) match / if — built-in control forms. A `match` over a declared
             // `enum` value is exhaustiveness/well-formedness-checked (REQ-5/
             // REQ-6); a slice `match` (`sum.th`) or a `match` over a built-in
-            // (`Option`'s `Some`/`None` in `binary_search.th`) is UNCHANGED —
+            // (`Option`'s `Some`/`None` in `binary_search.th`) is unchanged:
             // `check_match_exhaustiveness` only fires when an arm pattern names a
-            // variant of a declared enum. `Match`/`Field`/`If`/`Is` stay FLAT
-            // built-ins inside a combinator closure (REQ-7) — the caged-flat
+            // variant of a declared enum. `Match`/`Field`/`If`/`Is` stay flat
+            // built-ins inside a combinator closure (REQ-7); the caged-flat
             // mode is untouched by this descent.
             Expr::Match { scrutinee, arms } => {
                 self.walk_expr(scrutinee, span);
@@ -1251,20 +1251,20 @@ impl Validator {
             }
 
             // Basis Stage 1b (`.design/basis/01-adts.md` REQ-6): the ADT contract
-            // / construction expressions are now VALIDATED, not gated.
+            // / construction expressions are now validated, not gated.
             //
             // A struct / struct-variant construction `Path { field: val, … }`:
             // each initializer field must be declared by some
-            // `struct`/struct-variant (REQ-6 — same shallow, untyped check as
-            // `Field`); the field VALUES are recursed (depth-guarded, REQ-5). The
+            // `struct`/struct-variant (REQ-6, the same shallow, untyped check as
+            // `Field`); the field values are recursed (depth-guarded, REQ-5). The
             // last `path` segment naming a known struct-variant is well-formed by
             // construction; a `path` naming nothing checkable is left to lowering
-            // (1c) — the 1a `UnsupportedAdt` scream is gone for a well-formed
+            // (1c); the 1a `UnsupportedAdt` refusal is gone for a well-formed
             // literal.
             Expr::StructLit { path, fields } => {
                 // REQ-8: a `#[sealed]` clean type is door-only-mintable; a
-                // literal of one (anywhere — contract OR caged body) is the #77
-                // launder and is REJECTED with `SealedConstruction`.
+                // literal of one (anywhere, contract or caged body) is the #77
+                // launder and is rejected with `SealedConstruction`.
                 self.check_sealed_construction(path, span);
                 for (field_name, value) in fields {
                     self.check_field(field_name, span);
@@ -1272,9 +1272,9 @@ impl Validator {
                 }
             }
             // `SCRUTINEE is Variant` (REQ-6): the `variant` must name a declared
-            // enum variant, else `UnknownVariant`. `is` is a FLAT `bool` built-in
-            // and joins `Match`/`Field`/`If` in the caged-flat accept set (REQ-7)
-            // — it is admitted inside a combinator predicate-closure body
+            // enum variant, else `UnknownVariant`. `is` is a flat `bool` built-in
+            // and joins `Match`/`Field`/`If` in the caged-flat accept set (REQ-7);
+            // it is admitted inside a combinator predicate-closure body
             // unchanged. The scrutinee is recursed (depth-guarded).
             Expr::Is { scrutinee, variant } => {
                 self.check_variant_ref(variant, span);
@@ -1315,38 +1315,38 @@ impl Validator {
 
     /// REQ-5 exhaustiveness + REQ-6 variant well-formedness for a `match`'s arms.
     ///
-    /// The AST is untyped (OQ-3): the matched enum is inferred from the ARM
-    /// PATTERNS, not the scrutinee. A `match` is a DECLARED-enum match iff some
+    /// The AST is untyped (OQ-3): the matched enum is inferred from the arm
+    /// patterns, not the scrutinee. A `match` is a declared-enum match iff some
     /// arm names a variant of a declared `enum` (`variant_to_enum`); otherwise it
     /// is a slice `match` (`sum.th`'s `[]`/`[head, ..t]`) or a `match` over a
     /// built-in (`Option`'s `Some`/`None` in `binary_search.th` — `Option` is no
-    /// declared `Item::Enum`) and is left UNCHANGED (the AC-6 no-regression
+    /// declared `Item::Enum`) and is left unchanged (the AC-6 no-regression
     /// invariant). Once identified as a declared-enum match:
     /// - an arm naming a variant of a DIFFERENT/undeclared enum is `UnknownVariant`;
     /// - a variant matched twice, or an arm after a catch-all, is `UnreachableArm`;
     /// - if no catch-all closes the match, every uncovered declared variant is
     ///   collected into `NonExhaustiveMatch { missing }` (declaration order).
     fn check_match_exhaustiveness(&mut self, arms: &[MatchArm], span: Span) {
-        // Identify the matched enum: the owning enum of the FIRST arm pattern
+        // Identify the matched enum: the owning enum of the first arm pattern
         // that names a declared variant.
         let matched_enum = arms.iter().find_map(|arm| {
             variant_pattern_name(&arm.pattern).and_then(|v| self.variant_to_enum.get(v).cloned())
         });
         let Some(enum_name) = matched_enum else {
-            // No arm NAMES a declared variant, so the enum could not be inferred
+            // No arm names a declared variant, so the enum could not be inferred
             // from the patterns. Two sub-cases:
             //   (a) a slice / Option / integer / bindings match (the existing
             //       inert behavior — Verus discharges any non-exhaustiveness);
-            //   (b) a match whose EVERY arm is GUARDED (`_ if cond =>`, `x if
-            //       cond =>`, …) and so covers NOTHING unconditionally. Per
+            //   (b) a match whose every arm is guarded (`_ if cond =>`, `x if
+            //       cond =>`, …) and so covers nothing unconditionally. Per
             //       `.design/basis/11-ergonomics.md` REQ-3 / AC-3b a guard does
-            //       NOT complete a match (the guard may fail at runtime), so a
-            //       guarded-ONLY match — including a guarded catch-all
+            //       not complete a match (the guard may fail at runtime), so a
+            //       guarded-only match — including a guarded catch-all
             //       `match m { _ if cond => 0 }` over an enum, where no arm names
-            //       a variant to reveal the enum — is NON-exhaustive. An UNGUARDED
-            //       catch-all (`match m { _ => 0 }`) DOES complete the match and
+            //       a variant to reveal the enum — is non-exhaustive. An unguarded
+            //       catch-all (`match m { _ => 0 }`) completes the match and
             //       is left accepted (it would have set `wildcard_seen` in the
-            //       main loop; here we require at least one arm and EVERY arm
+            //       main loop; here we require at least one arm and every arm
             //       guarded, so a plain `_` arm keeps the match inert).
             // Detecting (b) is the only sound reject we can make without the
             // scrutinee's (untyped, OQ-3) declared enum: a bare `_ if cond`
@@ -1370,17 +1370,17 @@ impl Validator {
         let mut covered: HashSet<&str> = HashSet::new();
         let mut wildcard_seen = false;
         for arm in arms {
-            // A GUARDED arm covers NONE of its pattern's cases — the guard may
-            // fail (`.design/basis/11-ergonomics.md` REQ-3, GROUNDED: Verus
+            // A guarded arm covers none of its pattern's cases — the guard may
+            // fail (`.design/basis/11-ergonomics.md` REQ-3, grounded: Verus
             // rejects a guarded-only `Some` arm as non-exhaustive). It is never a
             // catch-all and never marks a variant covered. It is still reachable
-            // (a guarded arm after a catch-all IS dead, handled below), and its
-            // variant must still be DECLARED (a guarded `r is Bogus` is still
+            // (a guarded arm after a catch-all is dead, handled below), and its
+            // variant must still be declared (a guarded `r is Bogus` is still
             // `UnknownVariant`).
             let guarded = arm.guard.is_some();
 
             // A catch-all (`_`/binding, or an or-pattern containing one) closes
-            // the match — UNLESS it is guarded (the guard may fail). A second
+            // the match, unless it is guarded (the guard may fail). A second
             // catch-all, or any arm after one, is unreachable.
             if !guarded && pattern_is_catch_all(&arm.pattern) {
                 if wildcard_seen {
@@ -1391,7 +1391,7 @@ impl Validator {
             }
 
             // Validate + count each declared-enum variant the pattern names. An
-            // or-pattern contributes the UNION of its alternatives' variants
+            // or-pattern contributes the union of its alternatives' variants
             // (REQ-4). A non-variant pattern (a bare literal) names none — left to
             // the shallow checking (no false `UnknownVariant`).
             let mut variants = Vec::new();
@@ -1414,7 +1414,7 @@ impl Validator {
                         span,
                     });
                 } else if guarded {
-                    // A guarded arm does NOT cover its variant for exhaustiveness
+                    // A guarded arm does not cover its variant for exhaustiveness
                     // (REQ-3): it neither closes the match nor is a redundant
                     // re-cover (a later unguarded arm for the same variant is the
                     // real handler, not unreachable). Validate the variant
@@ -1441,10 +1441,10 @@ impl Validator {
 
     /// REQ-8 abstraction barrier (`.design/basis/06-provenance-and-sinks.md`): a
     /// `StructLit` whose constructed type is a `#[sealed]` clean/capability type
-    /// is REJECTED (`SealedConstruction`) — a sealed type is door-only-mintable.
-    /// `path` is the literal's path; the constructed type is its LAST segment
+    /// is rejected (`SealedConstruction`); a sealed type is door-only-mintable.
+    /// `path` is the literal's path; the constructed type is its last segment
     /// (`Sql` in `Sql { … }`). Inert when no `#[sealed]` struct is declared (the
-    /// non-IFC corpus is UNCHANGED). The `#[boundary]` door is unaffected: its
+    /// non-IFC corpus is unchanged). The `#[boundary]` door is unaffected: its
     /// body is foreign/`external_body`, with no in-language `StructLit`, so the
     /// safe path `query(parameterize(input))` carries no sealed literal.
     fn check_sealed_construction(&mut self, path: &[String], span: Span) {
@@ -1459,8 +1459,8 @@ impl Validator {
     }
 
     /// REQ-6 field well-formedness: a `Field`/struct-literal field name must be
-    /// declared by SOME `struct`/struct-variant. Shallow + untyped (OQ-3): inert
-    /// when no ADT declares any field (the non-ADT corpus is UNCHANGED), and a
+    /// declared by some `struct`/struct-variant. Shallow + untyped (OQ-3): inert
+    /// when no ADT declares any field (the non-ADT corpus is unchanged), and a
     /// name no declared struct/struct-variant carries is `UnknownField`.
     fn check_field(&mut self, name: &str, span: Span) {
         if !self.struct_fields.is_empty() && !self.struct_fields.contains(name) {
@@ -1507,11 +1507,11 @@ impl Validator {
         };
 
         // Basis Stage 2 (`.design/basis/02-recursion-schemes.md` REQ-1/REQ-2/
-        // REQ-4): a callee resolving to a registered recursion SCHEME
-        // (`fold`/`map`/`for_all`/`exists`/`traverse`) is handled FIRST. A scheme
-        // nested inside another scheme's step OR inside a combinator's
+        // REQ-4): a callee resolving to a registered recursion scheme
+        // (`fold`/`map`/`for_all`/`exists`/`traverse`) is handled first. A scheme
+        // nested inside another scheme's step or inside a combinator's
         // predicate-closure body is an anonymous nested structural quantifier the
-        // cage forbids (`NestedScheme`); a top-level scheme call is ACCEPTED as a
+        // cage forbids (`NestedScheme`); a top-level scheme call is accepted as a
         // named-composition leaf after its arity + flat step are checked. The
         // scheme registry is disjoint from the combinator registry (distinct name
         // sets), so this branch never shadows a combinator.
@@ -1535,10 +1535,10 @@ impl Validator {
         if let Some(sig) = combinators::lookup(name) {
             if self.in_combinator_closure || self.in_scheme_step {
                 // REQ-6 (combinators) / REQ-2 (schemes): a combinator call inside
-                // another combinator's predicate-closure body OR a scheme's flat
+                // another combinator's predicate-closure body or a scheme's flat
                 // step closure is an anonymous nested quantifier — forbidden. The
-                // discriminator is EXACTLY `combinators::lookup` succeeding (the
-                // same test that ACCEPTS this callee in a top-level contract
+                // discriminator is `combinators::lookup` succeeding (the
+                // same test that accepts this callee in a top-level contract
                 // position); the verdict is context-dependent. Inside a scheme
                 // step the diagnostic is `NestedScheme` (the flat-step cage,
                 // 02-recursion-schemes.md REQ-2); inside a combinator closure it
@@ -1609,10 +1609,10 @@ impl Validator {
     /// (`.design/basis/02-recursion-schemes.md` REQ-1/REQ-2/REQ-4): the total
     /// arity matches the scheme (scrutinee/seed args + the trailing step closure),
     /// the trailing argument is an `Expr::Closure` of the scheme's per-node step
-    /// shape, and the step body is FLAT (no nested scheme/combinator — enforced by
+    /// shape, and the step body is flat (no nested scheme/combinator — enforced by
     /// walking the body in `in_scheme_step` mode). The scrutinee/seed args are
-    /// ordinary contract expressions (recursed, depth-guarded). ACCEPTED at the
-    /// top level (the cage bridge, REQ-4) — the §4.2 "named composition" leaf.
+    /// ordinary contract expressions (recursed, depth-guarded). Accepted at the
+    /// top level (the cage bridge, REQ-4), the §4.2 "named composition" leaf.
     fn check_scheme(&mut self, scheme: &SchemeSig, args: &[Expr], span: Span) {
         let expected = scheme.total_arity();
         if args.len() != expected {
@@ -1635,15 +1635,15 @@ impl Validator {
 
         // The leading `scrutinee_args` are ordinary contract sub-expressions (the
         // scrutinee structure + a fold seed), recursed under the depth guard. They
-        // are NOT in scheme-step mode — a scheme/combinator there is a legitimate
-        // nested named composition at the call's argument level (only the STEP
+        // are not in scheme-step mode — a scheme/combinator there is a legitimate
+        // nested named composition at the call's argument level (only the step
         // body is the flat-cage position, REQ-2).
         let step_position = scheme.scrutinee_args;
         for arg in &args[..step_position] {
             self.walk_expr(arg, span);
         }
 
-        // The trailing argument is the per-node STEP: it must be a closure of the
+        // The trailing argument is the per-node step: it must be a closure of the
         // scheme's step shape, and its body is walked in `in_scheme_step` mode so
         // a nested scheme/combinator is rejected (the flat-step cage, REQ-2/REQ-4).
         let step_arity = scheme.step_shape.arity();
@@ -1657,10 +1657,10 @@ impl Validator {
                         span,
                     });
                 }
-                // Enter flat-scheme-step mode for the body. Set ONCE here and keep
+                // Enter flat-scheme-step mode for the body. Set once here and keep
                 // it set for the entire body descent (save/restore so a sibling
                 // scheme call's step is checked independently and re-entry from a
-                // — rejected — nested scheme is a harmless no-op).
+                // rejected nested scheme is a harmless no-op).
                 let saved = self.in_scheme_step;
                 self.in_scheme_step = true;
                 self.walk_expr(body, span);
@@ -1684,8 +1684,8 @@ impl Validator {
     /// Check one positional argument against its expected `ArgKind` (REQ-4
     /// (iii)), then recurse into the argument's sub-expressions.
     ///
-    /// Per OQ-3, only `Pred` is syntactically decidable (MUST be `Expr::Closure`);
-    /// `Slice`/`Index`/`Value` are checked shallowly: any NON-closure expression
+    /// Per OQ-3, only `Pred` is syntactically decidable (must be `Expr::Closure`);
+    /// `Slice`/`Index`/`Value` are checked shallowly: any non-closure expression
     /// is accepted in those positions (a closure there is the only decidable
     /// error), with full typing deferred to a later pass (not a v0.1 item).
     fn check_arg_kind(
@@ -1700,13 +1700,13 @@ impl Validator {
             ArgKind::Pred => match arg {
                 // A `Pred` slot is satisfied by a closure literal (the one
                 // syntactically strict kind, OQ-3). Recurse into the closure
-                // BODY — the legitimate contract sub-expression — rather than
+                // body — the legitimate contract sub-expression — rather than
                 // the closure node (which `walk_expr` would flag as a misplaced
                 // bare closure). This bounds the body's depth too (REQ-5).
                 //
-                // REQ-6: enter "caged-flat" mode for the body. Set ONCE here and
+                // REQ-6: enter "caged-flat" mode for the body. Set once here and
                 // keep it set for the entire body descent (all nested
-                // sub-expressions AND any nested closure), then restore so a
+                // sub-expressions and any nested closure), then restore so a
                 // sibling top-level `Pred` slot is checked independently. Inside
                 // this mode a registered-combinator call is rejected with
                 // `NestedCombinator` (see `walk_call`); a named `spec fn` call
@@ -1755,7 +1755,7 @@ impl Validator {
 /// The variant name a `match` arm pattern names, or `None` for a non-variant
 /// pattern (`.design/basis/01-adts.md` REQ-5). A `Pattern::Enum`
 /// (`Circle(r)`, `Nil`, `Some(i)`) and a `Pattern::Struct` (`Rect { w, h }`)
-/// both name a variant by the LAST path segment (the variant name; an enclosing
+/// both name a variant by the last path segment (the variant name; an enclosing
 /// `Shape::` prefix is the type). A `Wildcard`/`Binding`/`Literal`/`Slice`
 /// pattern names no variant — used to distinguish a declared-enum match from a
 /// slice match (`sum.th`) and to drive the covered-variant set.
@@ -1765,7 +1765,7 @@ fn variant_pattern_name(pattern: &Pattern) -> Option<&str> {
             path.last().map(|s| s.as_str())
         }
         // An or-pattern names a variant iff some alternative does (used only to
-        // IDENTIFY the matched enum — the first variant-naming arm). The full
+        // identify the matched enum — the first variant-naming arm). The full
         // covered-variant union is collected by `collect_covered_variants`
         // (`.design/basis/11-ergonomics.md` REQ-4).
         Pattern::Or(alts) => alts.iter().find_map(variant_pattern_name),
@@ -1773,10 +1773,10 @@ fn variant_pattern_name(pattern: &Pattern) -> Option<&str> {
     }
 }
 
-/// True iff `pattern` is a CATCH-ALL — a bare `_`/binding, or an or-pattern any of
+/// True iff `pattern` is a catch-all — a bare `_`/binding, or an or-pattern any of
 /// whose alternatives is a catch-all (`.design/basis/11-ergonomics.md` REQ-4). A
 /// catch-all closes a `match` (every remaining case is covered). A guarded arm is
-/// NEVER a catch-all for exhaustiveness (REQ-3 — handled at the call site).
+/// never a catch-all for exhaustiveness (REQ-3 — handled at the call site).
 fn pattern_is_catch_all(pattern: &Pattern) -> bool {
     match pattern {
         Pattern::Wildcard | Pattern::Binding(_) => true,
@@ -1785,10 +1785,10 @@ fn pattern_is_catch_all(pattern: &Pattern) -> bool {
     }
 }
 
-/// Collect every declared-enum variant name an UNGUARDED `pattern` covers into
+/// Collect every declared-enum variant name an unguarded `pattern` covers into
 /// `out` (`.design/basis/11-ergonomics.md` REQ-4). A `Pattern::Enum`/`Struct`
-/// covers its one variant; a `Pattern::Or` covers the UNION of its alternatives'
-/// variants (the load-bearing or-pattern rule — `Some(_) | None` covers both). A
+/// covers its one variant; a `Pattern::Or` covers the union of its alternatives'
+/// variants (the or-pattern rule — `Some(_) | None` covers both). A
 /// catch-all/literal/slice contributes no specific variant (a catch-all closes
 /// the match separately via `pattern_is_catch_all`).
 fn collect_covered_variants<'p>(pattern: &'p Pattern, out: &mut Vec<&'p str>) {
@@ -1808,10 +1808,10 @@ fn collect_covered_variants<'p>(pattern: &'p Pattern, out: &mut Vec<&'p str>) {
 }
 
 /// True iff the exec `fn` declares `fx diverge` (`.design/basis/10-recursion-tuples.md`
-/// REQ-2, §4.1: "divergence requires `fx diverge`"). A diverge fn is honestly
-/// non-terminating (an event loop), so it is EXEMPT from the mandatory-`dec` rule
+/// REQ-2, §4.1: "divergence requires `fx diverge`"). A diverge fn is
+/// non-terminating (an event loop), so it is exempt from the mandatory-`dec` rule
 /// — it may recurse without a termination measure (the #88 L1-cap; the lowerer
-/// emits `#[verifier::exec_allows_no_decreases_clause]`). Keyed on the SHAPE of
+/// emits `#[verifier::exec_allows_no_decreases_clause]`). Keyed on the shape of
 /// the effect row, mirroring `thermite-lower`'s `fn_is_diverge` (the single source
 /// of truth for the §4.1 termination exemption).
 fn fn_is_diverge(f: &thermite_syntax::ast::FnItem) -> bool {
@@ -1819,14 +1819,14 @@ fn fn_is_diverge(f: &thermite_syntax::ast::FnItem) -> bool {
     matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
 }
 
-/// True iff `block` contains a DIRECT call to `name` — the self-reference test
+/// True iff `block` contains a direct call to `name` — the self-reference test
 /// for the mandatory-`dec` rule (`.design/basis/10-recursion-tuples.md` REQ-2).
 /// "Direct" means a free-function call `name(..)` whose callee path's last
 /// segment is `name` (a self-recursive call); a method call `recv.name(..)` is
-/// NOT a self-call (the receiver dispatches it). Walks every statement + nested
+/// not a self-call (the receiver dispatches it). Walks every statement + nested
 /// expression of the body (let inits, assigns, returns, ifs, loops, match arms,
 /// call args, …) so a self-call anywhere in the body is found. Mutual recursion
-/// (a call to a DIFFERENT fn that calls back) is NOT detected here (REQ-6,
+/// (a call to a different fn that calls back) is not detected here (REQ-6,
 /// deferred) — only a direct self-call triggers the rule.
 fn block_calls_name(block: &Block, name: &str) -> bool {
     block.stmts.iter().any(|s| stmt_calls_name(s, name))

@@ -6,8 +6,8 @@
 //! #4) per the route table; the L1 runtime-check stage (`l1::lower_l1`) is the
 //! sibling `l1.rs` (`.design/lower/l1-runtime-checks.md`); the L2 Kani-harness
 //! stage (`l2::lower_l2`) is the sibling `l2.rs` (`.design/lower/l2-kani.md`,
-//! issue #9 / v0.2) and REUSES the L1 executable lowering; effect subsumption is
-//! a separate dispatch. This crate's OWN error type (`LowerError`) is born in
+//! issue #9 / v0.2) and reuses the L1 executable lowering; effect subsumption is
+//! a separate dispatch. This crate's own error type (`LowerError`) is born in
 //! `lower.rs` with its first fallible function `lower` (workspace.md REQ-3) and
 //! is shared by `l1::lower_l1` and `l2::lower_l2`.
 //!

@@ -1,8 +1,8 @@
-//! DIVERGENCE PIN — Cluster C12 (#123/#114) design-AC miss: the external cert/golden
+//! Divergence pin — Cluster C12 (#123/#114) design-AC miss: the external cert/golden
 //! oracle for `Map<K, V>` (the C7-#100 oracle-gap class, recurring).
 //!
-//! AUTHORITY: `.design/basis/13-map.md` "Acceptance criteria" — the doc explicitly
-//! mandates, as the EXTERNAL truth the toolchain does NOT author for itself (goal.md
+//! Authority: `.design/basis/13-map.md` "Acceptance criteria" — the doc explicitly
+//! mandates, as the external truth the toolchain does not author for itself (goal.md
 //! verification model (A)/(B); R-CHAR-3):
 //!
 //!   > The orchestrator authors a NEW corpus program — `conformance/map_kv.th` [...]
@@ -14,21 +14,21 @@
 //! syntax/spec routes) and `reference = ["tests/golden/lower/map_kv.verus.rs"]` (the
 //! `lower.rs` route).
 //!
-//! DIVERGENCE: commit `0c75cc0` ships `conformance/map_kv.th` but NEITHER
+//! Divergence: commit `0c75cc0` ships `conformance/map_kv.th` but neither
 //! design-mandated golden artifact: `conformance/map_kv.cert.json` (the cert oracle,
 //! goal.md model (B)) and `tests/golden/lower/map_kv.verus.rs` (the golden lowering,
-//! goal.md model (A)) are both ABSENT. C12's lowering/cert is verified ONLY against the
+//! goal.md model (A)) are both absent. C12's lowering/cert is verified only against the
 //! real-`verus`-on-emitted-source harness in `map_conformance.rs` — that grounds the
-//! emitted Verus VERIFIES, but it is NOT the diffable hand-authored golden the design AC
-//! enumerates: there is no R-CHAR-3 oracle pinning the EXACT cert field shape
-//! (`conformance/map_kv.cert.json`) or the EXACT emitted lowering bytes
+//! emitted Verus verifies, but it is not the diffable hand-authored golden the design AC
+//! enumerates: there is no R-CHAR-3 oracle pinning the exact cert field shape
+//! (`conformance/map_kv.cert.json`) or the exact emitted lowering bytes
 //! (`tests/golden/lower/map_kv.verus.rs`). Per goal.md verification model (A)/(B), the
-//! deliverable for `thermite-lower`/`forge` is the lowering/certificate MATCHING a
+//! deliverable for `thermite-lower`/`forge` is the lowering/certificate matching a
 //! hand-authored golden; a "verus says 0 errors" harness is a weaker oracle (it cannot
 //! catch a lowering that verifies but drifts from the design's GROUNDED `TMapU64U64`
 //! shape, e.g. a different abstraction that happens to also verify).
 //!
-//! The expected file SET below is the design AC's enumerated artifact list, NOT copied
+//! The expected file set below is the design AC's enumerated artifact list, not copied
 //! from any toolchain output (R-CHAR-3).
 //!
 //! Tracking: crosslink #124.
@@ -42,15 +42,15 @@ fn repo_root() -> PathBuf {
         .expect("repo root resolves")
 }
 
-/// DIVERGENCE — the C12 cert golden + the golden Verus lowering, both enumerated by
-/// `.design/basis/13-map.md` "Acceptance criteria" / "Routes to add", MUST exist. They
+/// Divergence — the C12 cert golden + the golden Verus lowering, both enumerated by
+/// `.design/basis/13-map.md` "Acceptance criteria" / "Routes to add", must exist. They
 /// do not in `0c75cc0` (the C12 external oracle is absent; only `conformance/map_kv.th`
 /// was authored). Un-ignore when the orchestrator authors the two goldens.
 #[test]
 fn divergence_c12_map_cert_and_lowering_goldens_exist() {
     let root = repo_root();
     // The design-AC-enumerated artifact set (authority: 13-map.md "Acceptance criteria"
-    // / "Routes to add" — NOT toolchain output, R-CHAR-3).
+    // / "Routes to add" — not toolchain output, R-CHAR-3).
     let required = [
         "conformance/map_kv.cert.json",
         "tests/golden/lower/map_kv.verus.rs",

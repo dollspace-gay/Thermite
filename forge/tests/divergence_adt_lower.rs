@@ -4,11 +4,11 @@
 //! Each test pins a divergence between `forge check`'s emitted certificate and
 //! the cert oracle (`conformance/{bank_account,shape,list_sum}.cert.json`,
 //! hand-derived from `.design/basis/01-adts.md` REQ-8/9/10). Expected values
-//! trace to the oracle / the design doc, NEVER to forge's own output
+//! trace to the oracle / the design doc, not to forge's own output
 //! (`goal.md` R-CHAR-3).
 //!
-//! These run the BUILT `forge` binary end-to-end (verus-backed). If verus is
-//! absent they SKIP LOUDLY (never panic on a missing solver), matching
+//! These run the built `forge` binary end-to-end (verus-backed). If verus is
+//! absent they skip with a logged note (no panic on a missing solver), matching
 //! `check_conformance.rs`.
 
 use std::path::{Path, PathBuf};
@@ -74,17 +74,17 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// DIVERGENCE 1 — `forge check conformance/bank_account.th` certifies the exec
+/// Divergence 1 — `forge check conformance/bank_account.th` certifies the exec
 /// `fn deposit` at **L0**, but the cert oracle says **L3**.
 ///
 /// Root cause: `forge`'s per-item path (`check::item_subprogram`) builds a
 /// sub-program for `deposit` containing only the `fn` itself, plus `spec fn`
-/// deps, plus reachable `fn` deps — it does NOT weave the `struct Account`
+/// deps, plus reachable `fn` deps; it does not weave the `struct Account`
 /// declaration (and its `well_formed` invariant) that `deposit`'s signature
 /// references. The emitted Verus per-item lowering therefore fails to compile
 /// with `error[E0425]: cannot find type Account in this scope`, so the item
 /// degrades to L0. The builder's `adt_lower_conformance` test passed because it
-/// lowers the WHOLE program once (struct + fn together); the real `forge check`
+/// lowers the whole program once (struct + fn together); the `forge check`
 /// per-item path does not. This is the ADT-type-dependency analog of #52, which
 /// weaves `fn`/`spec fn` deps into `item_subprogram` but not ADT decls.
 ///
@@ -103,7 +103,7 @@ fn divergence_deposit_certifies_l0_not_oracle_l3() {
     }
     let certs = check_corpus("bank_account");
     let deposit = cert_for(&certs, "deposit");
-    // AUTHORITY: conformance/bank_account.cert.json -> "level": "L3".
+    // Authority: conformance/bank_account.cert.json -> "level": "L3".
     assert_eq!(
         deposit["level"],
         Value::from("L3"),
@@ -114,7 +114,7 @@ fn divergence_deposit_certifies_l0_not_oracle_l3() {
     );
 }
 
-/// DIVERGENCE 2 — `forge check conformance/shape.th` certifies the exec
+/// Divergence 2 — `forge check conformance/shape.th` certifies the exec
 /// `fn is_circle` at **L0**, but the cert oracle says **L3**.
 ///
 /// Same root cause: `item_subprogram` does not weave the `enum Shape`
@@ -134,7 +134,7 @@ fn divergence_is_circle_certifies_l0_not_oracle_l3() {
     }
     let certs = check_corpus("shape");
     let is_circle = cert_for(&certs, "is_circle");
-    // AUTHORITY: conformance/shape.cert.json -> "level": "L3".
+    // Authority: conformance/shape.cert.json -> "level": "L3".
     assert_eq!(
         is_circle["level"],
         Value::from("L3"),
@@ -144,7 +144,7 @@ fn divergence_is_circle_certifies_l0_not_oracle_l3() {
     );
 }
 
-/// DIVERGENCE 3 — `forge check conformance/list_sum.th` certifies the recursive
+/// Divergence 3 — `forge check conformance/list_sum.th` certifies the recursive
 /// `spec fn sum_list` at **L0**.
 ///
 /// Same root cause as 1/2 applied to the `enum List` declaration: the per-item
@@ -153,7 +153,7 @@ fn divergence_is_circle_certifies_l0_not_oracle_l3() {
 /// tuple variant Cons`). `.design/basis/01-adts.md` REQ-10 + AC-3 require the
 /// recursive fold to certify L3 (`verus` `N verified, 0 errors`). A `spec fn`'s
 /// well-formedness (its `decreases` measure terminating) is its discharged
-/// result — it must NOT be L0.
+/// result; it is not L0.
 ///
 /// Authority: `.design/basis/01-adts.md` AC-3 ("`verus` certifies L3
 /// (`N verified, 0 errors`)") + REQ-10. Tracking: #68
@@ -165,7 +165,7 @@ fn divergence_sum_list_certifies_l0_not_l3() {
     }
     let certs = check_corpus("list_sum");
     let sum_list = cert_for(&certs, "sum_list");
-    // AUTHORITY: .design/basis/01-adts.md AC-3 — the recursive fold certifies L3.
+    // Authority: .design/basis/01-adts.md AC-3 — the recursive fold certifies L3.
     assert_eq!(
         sum_list["level"],
         Value::from("L3"),

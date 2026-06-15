@@ -4,10 +4,10 @@
 //! These pin a divergence between the `forge` driver's emitted certificates for
 //! `conformance/list_fold.th` and the hand-derived oracle
 //! `conformance/adt-schemes/cases.json` (`certify` block). Expected item names +
-//! levels trace to the oracle, NEVER to forge's own output (`goal.md` R-CHAR-3).
+//! levels trace to the oracle, not to forge's own output (`goal.md` R-CHAR-3).
 //!
-//! They run the BUILT `forge` binary end-to-end (verus-backed). If verus is
-//! absent they SKIP LOUDLY (never panic on a missing solver), matching
+//! They run the built `forge` binary end-to-end (verus-backed). If verus is
+//! absent they skip with an eprintln (never panic on a missing solver), matching
 //! `divergence_forge.rs` / `check_conformance.rs`.
 
 use std::path::{Path, PathBuf};
@@ -66,12 +66,12 @@ fn check_json(path: &Path) -> Vec<Value> {
     value.as_array().expect("array of certs").clone()
 }
 
-/// DIVERGENCE — `forge check conformance/list_fold.th` emits THREE certificates
-/// for the SAME item name (`len_list`) instead of the three DISTINCT items the
+/// Divergence: `forge check conformance/list_fold.th` emits three certificates
+/// for the same item name (`len_list`) instead of the three distinct items the
 /// oracle requires (`len_list`, `sum_list`, `all_positive`).
 ///
 /// Root cause (observed): for an `Item::SpecFn`, `check::item_subprogram` builds
-/// `{adt_decls} + {all spec_items}` — a sub-program that is IDENTICAL for every
+/// `{adt_decls} + {all spec_items}`, a sub-program that is identical for every
 /// spec fn in the file (the checked item is not distinguished; it just rides
 /// along in `spec_items`). All three spec-fn sub-programs therefore lower to
 /// byte-identical Verus, so the proof-cache content-address collides and the
@@ -85,8 +85,8 @@ fn check_json(path: &Path) -> Vec<Value> {
 /// `.design/basis/02-recursion-schemes.md` AC-1 ("a fold scheme … certifies
 /// L3", per the named instance) and `thermite-design.md` §6 ("the certificate …
 /// lists every function's level") + §5.3 (per-item isolated sub-program). A
-/// certificate whose `item` field is a NEIGHBOR's name violates the §6
-/// per-function manifest contract (`goal.md` R-SPEC-2 — the cert is a contract).
+/// certificate whose `item` field is a neighbor's name violates the §6
+/// per-function manifest contract (`goal.md` R-SPEC-2: the cert is a contract).
 /// Tracking: #71
 #[test]
 fn divergence_list_fold_three_distinct_item_certs() {
@@ -96,8 +96,8 @@ fn divergence_list_fold_three_distinct_item_certs() {
     }
     let certs = check_json(&corpus("list_fold.th"));
 
-    // AUTHORITY (cases.json `certify`): the three spec-fn instances each carry
-    // their OWN certificate, by name. The `enum List` decl also yields a cert;
+    // Authority (cases.json `certify`): the three spec-fn instances each carry
+    // their own certificate, by name. The `enum List` decl also yields a cert;
     // we assert only that each of the three named spec fns is present with L3.
     for (name, level) in [
         ("len_list", "L3"),
@@ -126,12 +126,12 @@ fn divergence_list_fold_three_distinct_item_certs() {
     }
 }
 
-/// COMPANION (un-ignored — a no-divergence guard for the crux). The corpus
+/// Companion (un-ignored, a no-divergence guard for the crux). The corpus
 /// `list_fold.th` certifies at project level L3: the generated `fold_list` /
 /// `for_all_list` schemes + the materialized `fold_bound_list` law verify under
-/// real verus. This pins that the scheme engine itself is sound end-to-end (the
-/// divergence above is purely the per-item certificate IDENTITY, not a proof
-/// failure). Authority: `conformance/adt-schemes/cases.json` `certify` (all L3).
+/// real verus. This pins that the scheme engine itself is sound end-to-end; the
+/// divergence above is the per-item certificate identity, not a proof
+/// failure. Authority: `conformance/adt-schemes/cases.json` `certify` (all L3).
 #[test]
 fn list_fold_project_assurance_is_l3() {
     if !verus_present() {
@@ -141,7 +141,7 @@ fn list_fold_project_assurance_is_l3() {
     let certs = check_json(&corpus("list_fold.th"));
     // Every emitted certificate is L3 (the oracle certifies all items L3); no
     // item degrades. This holds even under the identity collision (the served
-    // cert is itself a genuine L3), so it stays GREEN and is not the divergence.
+    // cert is itself a genuine L3), so it stays green and is not the divergence.
     assert!(
         !certs.is_empty(),
         "forge must emit at least one certificate for list_fold.th"

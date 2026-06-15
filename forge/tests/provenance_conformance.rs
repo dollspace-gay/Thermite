@@ -2,34 +2,35 @@
 //! oracle (`.design/basis/06-provenance-and-sinks.md` AC-1/AC-2/AC-3/AC-5;
 //! `conformance/provenance/cases.json` + `conformance/provenance_demo.th`).
 //!
-//! This drives the BUILT `forge` binary with `check --json` / `audit --json` over
-//! the READ-ONLY corpus program `conformance/provenance_demo.th` (NEVER copied or
-//! edited — R-CHAR-3) and asserts the v1 TYPE-LEVEL IFC guarantee, which is
-//! EMERGENT from SHIPPED machinery (Stage-1 ADT wrapper structs + the `#[boundary]`
+//! This drives the built `forge` binary with `check --json` / `audit --json` over
+//! the read-only corpus program `conformance/provenance_demo.th` (never copied or
+//! edited — R-CHAR-3) and asserts the v1 type-level IFC guarantee, which is
+//! emergent from shipped machinery (Stage-1 ADT wrapper structs + the `#[boundary]`
 //! door/sink form + the #52 compose-through + the existing lower→verus type-check)
-//! — NO new toolchain code. The expected levels/scopes/TCB are hand-derived in
-//! `cases.json` from the flow rules + verus/type semantics, NEVER copied from
+//! — no new toolchain code. The expected levels/scopes/TCB are hand-derived in
+//! `cases.json` from the flow rules + verus/type semantics, never copied from
 //! forge's own output (R-CHAR-3).
 //!
-//! THE CENTERPIECE (the security guarantee, asserted STRONGLY): the three careless
+//! The centerpiece (the security guarantee): the three careless
 //! / dipshit paths — `careless_query` (raw `Tainted` → `query(Sql)`), `leak` (raw
 //! `Secret` → `emit(Public)`), `unauth_delete` (raw `User` → `delete(Authorized)`)
-//! — do NOT certify. Each is a TYPE MISMATCH the lower→verus type-check rejects
+//! — do not certify. Each is a type mismatch the lower→verus type-check rejects
 //! (`error[E0308]: expected <clean>, found <marked>`), so the cert is `L0` and the
-//! function NEVER reaches `L3`. SQL-injection / secret-leak / missing-authz are
-//! un-typeable: the dipshit path does not compile to a verified artifact. The SAME
+//! function never reaches `L3`. SQL-injection / secret-leak / missing-authz are
+//! un-typeable: the dipshit path does not compile to a verified artifact. The same
 //! flows routed through a door (`parameterize` / `declassify` / `authorize`)
 //! type-check and certify `L3` to-the-boundary. `forge audit` enumerates the doors
 //! as the grep-complete security TCB.
 //!
-//! The mark-PROPAGATION engine (taint through DERIVED values — `let y = f(x)`) is
-//! v1.1 (REQ-4, AC-4): a NEW validator-dataflow pass, NOT built here and NOT
-//! exercised by this oracle (the v1 type-level slice rejects a DIRECT
-//! `query(input)` by the sink's parameter type alone — GROUNDED).
+//! The mark-propagation engine (taint through derived values — `let y = f(x)`) is
+//! v1.1 (REQ-4, AC-4): a new validator-dataflow pass, not built here and not
+//! exercised by this oracle (the v1 type-level slice rejects a direct
+//! `query(input)` by the sink's parameter type alone — grounded).
 //!
 //! These run a real verus proof (the doored callers L3-prove against the assumed
-//! door contracts), so they SKIP LOUDLY if verus is absent — never panic on a
-//! missing solver, mirroring `composition_conformance.rs` / `audit_conformance.rs`.
+//! door contracts), so they skip with a logged note if verus is absent — never
+//! panic on a missing solver, mirroring `composition_conformance.rs` /
+//! `audit_conformance.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -46,7 +47,7 @@ fn conformance_dir() -> PathBuf {
         .join("conformance")
 }
 
-/// The READ-ONLY corpus program all axes live in (R-CHAR-3 — never edited).
+/// The read-only corpus program all axes live in (R-CHAR-3 — never edited).
 fn demo_path() -> PathBuf {
     conformance_dir().join("provenance_demo.th")
 }
@@ -83,7 +84,7 @@ fn verus_present() -> bool {
 }
 
 /// Run `forge check <file> --json`, returning (exit_code, cert array, stderr). The
-/// careless paths make the project FAIL (exit 1), so the caller asserts the
+/// careless paths make the project fail (exit 1), so the caller asserts the
 /// per-item levels, not the project exit alone.
 fn run_check_json(file: &Path) -> (Option<i32>, Vec<Value>, String) {
     let out = Command::new(forge_bin())
@@ -133,15 +134,15 @@ fn find_cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         })
 }
 
-/// Assert a careless / dipshit path is REJECTED at the TYPE level: `L0`, NEVER
-/// `L3` (the security guarantee), with a FAILED obligation whose verus diagnostic
+/// Assert a careless / dipshit path is rejected at the type level: `L0`, never
+/// `L3` (the security guarantee), with a failed obligation whose verus diagnostic
 /// is the `E0308` type mismatch (the marked type is not the clean type, and only
 /// the door produces the clean type). `marked`/`clean` are the oracle's expected
 /// type-mismatch operands.
 fn assert_careless_rejected(certs: &[Value], item: &str) {
     let cert = find_cert(certs, item);
 
-    // The CENTERPIECE assertion — the dipshit path does NOT certify and NEVER
+    // The centerpiece assertion — the dipshit path does not certify and never
     // reaches L3 (un-typeable: SQLi / secret-leak / missing-authz cannot compile to
     // a verified artifact). Hand-derived oracle: expect_level == "L0".
     assert_eq!(
@@ -157,7 +158,7 @@ fn assert_careless_rejected(certs: &[Value], item: &str) {
          dipshit path would be a critical IFC hole"
     );
 
-    // It is rejected by the lower→verus TYPE-CHECK (a FAILED obligation), NOT a
+    // It is rejected by the lower→verus type-check (a failed obligation), not a
     // §7.1 triage reject (the careless body is well-formed; the type is the rule).
     let obligations = cert["obligations"].as_array().expect("obligations array");
     let failed = obligations
@@ -223,9 +224,9 @@ fn assert_axis(certs: &[Value], axis: &Value, expect_via: &dyn Fn(&str) -> &'sta
     }
 }
 
-// AC-1 (the CENTERPIECE — the SQLi program does NOT compile): `careless_query`
+// AC-1 (the centerpiece — the SQLi program does not compile): `careless_query`
 // (raw `Tainted` → `query(Sql)`) is `L0` (E0308: expected Sql, found Tainted),
-// NEVER L3; `safe_query` (through `parameterize`) is `L3` to_boundary via `query`.
+// never L3; `safe_query` (through `parameterize`) is `L3` to_boundary via `query`.
 // Anchored to `cases.json` `centerpiece_sqli` (R-CHAR-3).
 #[test]
 fn centerpiece_sqli_careless_is_l0_safe_is_l3() {
@@ -248,8 +249,8 @@ fn centerpiece_sqli_careless_is_l0_safe_is_l3() {
     });
 }
 
-// AC-2 (a `Secret` reaching `emit` does NOT compile): `leak` (raw `Secret` →
-// `emit(Public)`) is `L0` (E0308: expected Public, found Secret), NEVER L3;
+// AC-2 (a `Secret` reaching `emit` does not compile): `leak` (raw `Secret` →
+// `emit(Public)`) is `L0` (E0308: expected Public, found Secret), never L3;
 // `safe_emit` (through `declassify`) is `L3` to_boundary via `emit`. Anchored to
 // `cases.json` `secret_leak` (R-CHAR-3).
 #[test]
@@ -270,9 +271,9 @@ fn secret_leak_careless_is_l0_safe_is_l3() {
     });
 }
 
-// AC-3 (a protected op without `Authorized` does NOT compile): `unauth_delete`
+// AC-3 (a protected op without `Authorized` does not compile): `unauth_delete`
 // (raw `User` → `delete(Authorized)`) is `L0` (E0308: expected Authorized, found
-// User), NEVER L3; `safe_delete` (through `authorize`) is `L3` to_boundary via
+// User), never L3; `safe_delete` (through `authorize`) is `L3` to_boundary via
 // `delete`. Anchored to `cases.json` `missing_capability` (R-CHAR-3).
 #[test]
 fn missing_capability_careless_is_l0_safe_is_l3() {
@@ -292,7 +293,7 @@ fn missing_capability_careless_is_l0_safe_is_l3() {
     });
 }
 
-// AC-1/AC-2/AC-3 cross-axis: ALL THREE careless paths are L0, NONE is L3 — the
+// AC-1/AC-2/AC-3 cross-axis: all three careless paths are L0, none is L3 — the
 // strong, consolidated security guarantee (one assertion that the dipshit path is
 // un-certifiable across every axis). Hand-derived from `cases.json` (the L0 cases).
 #[test]
@@ -341,7 +342,7 @@ fn no_careless_path_ever_certifies() {
 // AC-5 (the doors/sinks are the security TCB): the six doors/sinks
 // (parameterize/query/declassify/emit/authorize/delete) each certify `L1` +
 // boundary (foreign bodies, assumed contracts); `forge audit` enumerates them in
-// the `tcb` `boundary_contracts`, and the THREE laundering doors
+// the `tcb` `boundary_contracts`, and the three laundering doors
 // (parameterize/declassify/authorize) are present — `grep declassify` = the
 // manifest's secret-release list. Anchored to `cases.json`
 // `doors_and_sinks_are_tcb` (R-CHAR-3).
@@ -394,10 +395,10 @@ fn doors_and_sinks_are_l1_boundary_and_the_audit_tcb() {
     }
 
     // `forge audit` enumerates the doors as the security TCB. The demo file holds
-    // BOTH the safe (doored) and the careless paths, so the PROJECT assurance is
-    // FAILED (the careless fns are L0) and `forge audit` exits 1 — but it still
+    // both the safe (doored) and the careless paths, so the project assurance is
+    // failed (the careless fns are L0) and `forge audit` exits 1 — but it still
     // emits the complete manifest on stdout, and the door enumeration is what the
-    // TCB oracle asserts (NOT a clean project exit; the careless paths SHOULD fail).
+    // TCB oracle asserts (not a clean project exit; the careless paths should fail).
     let (_audit_code, manifest, _audit_stderr) = run_audit_json(&demo_path());
     assert_eq!(
         manifest["manifest_version"],

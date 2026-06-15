@@ -1,28 +1,28 @@
 //! Conformance for the automatic L3→L2→L1 degrade ladder + the assurance manifest
-//! (issue #10, `.design/forge/degrade-ladder.md`). The DETERMINISTIC ladder state
-//! machine + the OQ-2 split + the min-over-functions aggregate are pinned
-//! HERMETICALLY by the unit tests (`degrade.rs` drives `run_ladder` on synthesized
+//! (issue #10, `.design/forge/degrade-ladder.md`). The deterministic ladder state
+//! machine, the OQ-2 split, and the min-over-functions aggregate are pinned
+//! hermetically by the unit tests (`degrade.rs` drives `run_ladder` on synthesized
 //! `L3Verdict`/`L2Attempt`; `kani.rs` drives `classify_l2_outcome`; `manifest.rs`'s
-//! `AssuranceManifest::aggregate`). This file is the LIVE end-to-end layer through
+//! `AssuranceManifest::aggregate`). This file is the end-to-end layer through
 //! the built `forge` binary:
 //!
-//! - **AC-1 (no-degrade):** the corpus `sum`/`binary_search` at the DEFAULT rlimit
-//!   certify every fn at L3, project assurance L3, NO `lowered_assurance` flag.
-//! - **AC-4 (THE ANTI-CHEAT AC):** a live broken-contract fixture (a provably-false
-//!   `ens`) is a HARD FAIL — non-certifying, NEVER a degraded L1/L2 cert, NO
-//!   `lowered_assurance` flag. The hermetic determinism of this is pinned by
+//! - AC-1 (no-degrade): the corpus `sum`/`binary_search` at the default rlimit
+//!   certify every fn at L3, project assurance L3, no `lowered_assurance` flag.
+//! - AC-4 (the anti-cheat AC): a live broken-contract fixture (a provably-false
+//!   `ens`) is a hard fail: non-certifying, not a degraded L1/L2 cert, no
+//!   `lowered_assurance` flag. The determinism of this is pinned by
 //!   `degrade::tests::counterexample_never_degrades`; this asserts it end-to-end
-//!   against the REAL verus.
-//! - **AC-2 (forced degrade → L2):** a forced low `--rlimit` is the L3-timeout
-//!   lever; BEST-EFFORT skip-loud (OQ-1: provoking a live resourceout is
-//!   timing-fragile). WHEN a live degrade IS provoked, the cert MUST be a certified
+//!   against real verus.
+//! - AC-2 (forced degrade → L2): a forced low `--rlimit` is the L3-timeout
+//!   lever; best-effort skip with a logged reason (OQ-1: provoking a live resourceout is
+//!   timing-fragile). When a live degrade is provoked, the cert is a certified
 //!   lower rung with `lowered_assurance: true` + a degrade reason.
 //!
-//! Verus/kani-dependent checks SKIP LOUDLY when the binary is absent (mirroring
+//! Verus/kani-dependent checks skip with a logged note when the binary is absent (mirroring
 //! `profile_conformance.rs` / `l2_check.rs`). `tests/` is not anti-pattern-gated,
-//! so `unwrap`/`expect`/`panic!` are fine here. Do NOT edit `conformance/`
+//! so `unwrap`/`expect`/`panic!` are fine here. Leave `conformance/` unedited
 //! (R-CHAR-3): expected levels trace to the design doc's grounding (the corpus
-//! proves L3; a false `ens` is a counterexample), never to forge's own output.
+//! proves L3; a false `ens` is a counterexample), not to forge's own output.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -39,8 +39,8 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// `true` iff verus can be located (mirrors `profile_conformance.rs`). SKIP
-/// LOUDLY otherwise.
+/// `true` iff verus can be located (mirrors `profile_conformance.rs`). Skips
+/// with a logged note otherwise.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -112,13 +112,13 @@ fn is_lowered(cert: &Value) -> bool {
         .unwrap_or(false)
 }
 
-// ===== AC-1: corpus at the DEFAULT rlimit → all L3, no degrade ==============
+// ===== AC-1: corpus at the default rlimit → all L3, no degrade ==============
 
-// AC-1: `forge check conformance/sum.th` at the DEFAULT rlimit certifies BOTH
-// `spec_sum` and `sum` at L3, NO `lowered_assurance` flag, NO `degrade_reason`,
+// AC-1: `forge check conformance/sum.th` at the default rlimit certifies both
+// `spec_sum` and `sum` at L3, no `lowered_assurance` flag, no `degrade_reason`,
 // exit 0 (the ladder runs no degrade rung). The project assurance is L3 (the min).
-// Expected: the corpus PROVES L3 at the generous default budget (degrade-ladder.md
-// grounding "Corpus at the DEFAULT rlimit → L3, no degrade"), never forge's output.
+// Expected: the corpus proves L3 at the generous default budget (degrade-ladder.md
+// grounding "Corpus at the DEFAULT rlimit → L3, no degrade"), not forge's output.
 #[test]
 fn corpus_sum_no_degrade_all_l3() {
     if !verus_present() {
@@ -168,7 +168,7 @@ fn corpus_binary_search_no_degrade_all_l3() {
 }
 
 // AC-1: the corpus golden `conformance/sum.cert.json` (which omits the #10 fields)
-// still deserializes — the additive `lowered_assurance` / `degrade_reason` fields
+// still deserializes; the additive `lowered_assurance` / `degrade_reason` fields
 // default `false`/absent (AC-6, R-SPEC-2). Pure (no verus): asserts the frozen
 // oracle is unperturbed by the additive schema. Expected: the golden cert is L3
 // with no degrade fields (the doc's AC-6), not forge's output.
@@ -177,7 +177,7 @@ fn golden_cert_deserializes_with_additive_degrade_fields() {
     let golden_path = corpus_dir().join("sum.cert.json");
     let golden_src = std::fs::read_to_string(&golden_path).expect("read golden cert");
     let golden: Value = serde_json::from_str(&golden_src).expect("parse golden cert");
-    // The golden frozen cert OMITS the #10 degrade fields (it predates #10).
+    // The golden frozen cert omits the #10 degrade fields (it predates #10).
     assert!(
         golden.get("lowered_assurance").is_none(),
         "the frozen golden cert omits lowered_assurance (additive default false)"
@@ -189,17 +189,17 @@ fn golden_cert_deserializes_with_additive_degrade_fields() {
     assert_eq!(golden["level"], Value::from("L3"));
 }
 
-// ===== AC-4: THE KEY ANTI-CHEAT AC — a counterexample NEVER degrades =========
+// ===== AC-4: the key anti-cheat AC — a counterexample does not degrade =======
 
-// AC-4 (the highest-value test): a broken contract (a provably-FALSE `ens` for the
-// body) is a HARD FAILURE end-to-end against the REAL verus — NON-zero exit,
-// non-certifying (NOT L3/L2/L1), NO `lowered_assurance` flag, NO `degrade_reason`.
-// The ladder must NEVER "certify L1" or degrade a disproved contract: that would
-// hide a real bug behind a lowered-assurance stamp (§12, R-DEFER-9). The hermetic
+// AC-4: a broken contract (a provably-false `ens` for the
+// body) is a hard failure end-to-end against real verus: nonzero exit,
+// non-certifying (not L3/L2/L1), no `lowered_assurance` flag, no `degrade_reason`.
+// The ladder does not "certify L1" or degrade a disproved contract: that would
+// hide a bug behind a lowered-assurance stamp (§12, R-DEFER-9). The
 // determinism of the short-circuit is pinned by
-// `degrade::tests::counterexample_never_degrades`; this is the LIVE end-to-end
+// `degrade::tests::counterexample_never_degrades`; this is the end-to-end
 // witness against real verus. Expected: a false `ens` is a counterexample, not a
-// degrade (degrade-ladder.md REQ-2 / "The anti-cheat distinction is real"), never
+// degrade (degrade-ladder.md REQ-2 / "The anti-cheat distinction is real"), not
 // forge's output.
 #[test]
 fn live_broken_contract_is_hard_fail_never_degraded() {
@@ -209,7 +209,7 @@ fn live_broken_contract_is_hard_fail_never_degraded() {
     }
     let fixture =
         std::env::temp_dir().join(format!("forge_degrade_broken_{}.th", std::process::id()));
-    // `ens result == x + 2` for a body returning `x + 1` — verus DISPROVES it.
+    // `ens result == x + 2` for a body returning `x + 1`; verus disproves it.
     std::fs::write(
         &fixture,
         "fn add_one(x: u64) -> u64\n  req x < 1000\n  ens result == x + 2\n  fx  pure\n{\n  x + 1\n}\n",
@@ -224,7 +224,7 @@ fn live_broken_contract_is_hard_fail_never_degraded() {
         "a disproved contract exits with the verification-failure code (a project FAILURE)"
     );
     let cert = find_cert(&certs, "add_one");
-    // NEVER a certified rung — a counterexample is non-certifying L0.
+    // Not a certified rung: a counterexample is non-certifying L0.
     assert_ne!(
         cert["level"],
         Value::from("L3"),
@@ -240,7 +240,7 @@ fn live_broken_contract_is_hard_fail_never_degraded() {
         Value::from("L1"),
         "a counterexample is NEVER degraded to L1 (anti-cheat REQ-2): {cert}"
     );
-    // NEVER a lowered-assurance degrade stamp.
+    // Not a lowered-assurance degrade stamp.
     assert!(
         !is_lowered(&cert),
         "a counterexample carries NO lowered_assurance flag — it is a FAILURE, not a degrade: {cert}"
@@ -258,8 +258,8 @@ fn live_broken_contract_is_hard_fail_never_degraded() {
     );
 }
 
-// AC-7 / REQ-7 (determinism): two runs of the broken fixture yield the SAME
-// achieved level + the SAME (non-)degrade verdict (the achieved level is
+// AC-7 / REQ-7 (determinism): two runs of the broken fixture yield the same
+// achieved level + the same (non-)degrade verdict (the achieved level is
 // deterministic given the pinned budget). The degrade reason content is
 // oracle-excluded; we assert only the level + the lowered_assurance flag.
 #[test]
@@ -291,16 +291,16 @@ fn broken_fixture_verdict_is_deterministic() {
     );
 }
 
-// ===== AC-2: the forced L3-timeout → L2 degrade (LIVE, best-effort) =========
+// ===== AC-2: the forced L3-timeout → L2 degrade (live, best-effort) =========
 
-// AC-2: a forced low `--rlimit` is the L3-timeout LEVER. BEST-EFFORT (OQ-1,
-// inherited from #11): provoking a live resourceout is timing-fragile — verus
-// often returns `unknown` FAST without a `--profile` report. WHEN a live degrade IS
-// provoked (the item L3-times-out AND its L2 harness verifies), the cert MUST be a
-// CERTIFIED lower rung (L2 or L1) carrying `lowered_assurance: true` + a
-// `degrade_reason`. WHEN no live timeout is provoked, the item stays L3 (no
-// degrade) — also valid. NEVER a non-certifying cert with lowered_assurance (that
-// would be degrading falsity, REQ-2). The DETERMINISTIC ladder is pinned
+// AC-2: a forced low `--rlimit` is the L3-timeout lever. Best-effort (OQ-1,
+// inherited from #11): provoking a live resourceout is timing-fragile; verus
+// often returns `unknown` without a `--profile` report. When a live degrade is
+// provoked (the item L3-times-out and its L2 harness verifies), the cert is a
+// certified lower rung (L2 or L1) carrying `lowered_assurance: true` + a
+// `degrade_reason`. When no live timeout is provoked, the item stays L3 (no
+// degrade), also valid. It is never a non-certifying cert with lowered_assurance
+// (that would be degrading falsity, REQ-2). The deterministic ladder is pinned
 // hermetically by `degrade::tests::timeout_then_l2_verified_certifies_l2_degraded`.
 #[test]
 fn forced_low_rlimit_degrade_is_certified_lower_rung_when_provoked() {
@@ -309,8 +309,8 @@ fn forced_low_rlimit_degrade_is_certified_lower_rung_when_provoked() {
         return;
     }
     // The corpus proves even at `--rlimit 1` (degrade-ladder.md OQ-1), so a degrade
-    // is NOT expected to fire; this test asserts the INVARIANT either way: any cert
-    // that IS lowered_assurance must be a CERTIFIED lower rung, never a hard fail.
+    // is not expected to fire; this test asserts the invariant either way: any cert
+    // that is lowered_assurance is a certified lower rung, not a hard fail.
     let (_code, certs) = run_check_json(&corpus_dir().join("sum.th"), &["--rlimit", "1"]);
     let mut saw_degrade = false;
     for cert in &certs {
@@ -345,7 +345,7 @@ fn forced_low_rlimit_degrade_is_certified_lower_rung_when_provoked() {
 }
 
 // AC-2 (human display): a no-degrade corpus run prints the project assurance
-// headline `project assurance: L3` and NO `lowered-assurance:` lines (§5.2
+// headline `project assurance: L3` and no `lowered-assurance:` lines (§5.2
 // "displayed on every build"). Asserts the cli render path end-to-end.
 #[test]
 fn human_output_shows_project_assurance_headline() {

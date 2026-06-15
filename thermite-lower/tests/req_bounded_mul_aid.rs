@@ -1,20 +1,20 @@
 //! Regression pin for #196 — the var*var overflow discharge
 //! (`.design/lower/verus-lowering.md` REQ-7, the req-bounded-mul template).
 //!
-//! Verus's default linear solver fails ANY product of two non-literal operands'
-//! overflow obligation — even `n * n` under `req n <= 30` (probed live against
-//! verus 0.2026.05.24). The lowerer emits, at the start of the BLOCK that
+//! Verus's default linear solver fails any product of two non-literal operands'
+//! overflow obligation, even `n * n` under `req n <= 30` (probed live against
+//! verus 0.2026.05.24). The lowerer emits, at the start of the block that
 //! contains the product, one
 //! `assert((EXPR) <= BOUND) by(nonlinear_arith) requires <req conjuncts>;`
-//! whose `requires` are EXACTLY the req conjuncts the bound depends on (no
+//! whose `requires` are exactly the req conjuncts the bound depends on (no
 //! invented bound) and whose `BOUND` is the syntactic product of those conjuncts'
-//! constants. The aid can only FAIL, never prove a false thing (R-DEFER-9).
+//! constants. The aid can only fail, never prove a false thing (R-DEFER-9).
 //!
-//! Expected values are HAND-DERIVED from the design contract + the user's
+//! Expected values are hand-derived from the design contract + the user's
 //! `/goal` spec (R-CHAR-3): for `n * n` under `req n <= 30`, the hand-derived
 //! bound is `30 * 30 == 900` and the hypothesis is the verbatim req conjunct
-//! `n <= 30` — NOT copied from the lowerer's output. The NO-AID assertions pin
-//! the honest-skip cases (an unbounded factor; a non-mul body; a mutated-local
+//! `n <= 30`, not copied from the lowerer's output. The no-aid assertions pin
+//! the skip cases (an unbounded factor; a non-mul body; a mutated-local
 //! product) where fabricating an assert would be a proof cheat.
 
 use thermite_syntax::ast::{BinOp, Expr, Item, Stmt};
@@ -25,7 +25,7 @@ fn lower(src: &str) -> String {
     thermite_lower::lower(&parsed.program).expect("L3 lowering")
 }
 
-/// Non-vacuity helper: the parsed body genuinely contains a `Binary{Mul}` of
+/// Non-vacuity helper: the parsed body contains a `Binary{Mul}` of
 /// two non-literal operands (so the test is exercising the real shape).
 fn body_has_nonliteral_mul(body: &thermite_syntax::ast::Block) -> bool {
     fn ex(e: &Expr) -> bool {
@@ -57,7 +57,7 @@ fn body_has_nonliteral_mul(body: &thermite_syntax::ast::Block) -> bool {
     body.stmts.iter().any(st) || body.tail.as_deref().map(ex).unwrap_or(false)
 }
 
-/// The user's exact `/goal` case: `n * n` under `req n <= 30`. The aid is one
+/// The user's `/goal` case: `n * n` under `req n <= 30`. The aid is one
 /// `by(nonlinear_arith)` assert whose bound is the hand-derived `30 * 30 == 900`
 /// and whose `requires` is the verbatim req conjunct `n <= 30` (#196, REQ-7).
 #[test]
@@ -74,7 +74,7 @@ fn sq_emits_req_bounded_mul_aid_with_hand_derived_bound() {
     );
 
     let l3 = thermite_lower::lower(&parsed.program).expect("L3 lowering");
-    // HAND-DERIVED: bound = 30 * 30 = 900; hypothesis = the req conjunct `n <= 30`.
+    // Hand-derived: bound = 30 * 30 = 900; hypothesis = the req conjunct `n <= 30`.
     assert!(
         l3.contains("assert((n * n) <= 900) by(nonlinear_arith) requires n <= 30;"),
         "sq must emit the hand-derived var*var aid `assert((n * n) <= 900) \
@@ -85,7 +85,7 @@ fn sq_emits_req_bounded_mul_aid_with_hand_derived_bound() {
         l3.contains("proof {"),
         "the aid must be wrapped in a `proof {{ .. }}` block (#196):\n{l3}"
     );
-    // R-DEFER-9: NO proof cheats.
+    // R-DEFER-9: no proof cheats.
     for forbidden in ["assume(false)", "external", "#[slag]"] {
         assert!(
             !l3.contains(forbidden),
@@ -95,7 +95,7 @@ fn sq_emits_req_bounded_mul_aid_with_hand_derived_bound() {
 }
 
 /// A 3-var product chain `a * b * c` (= `(a * b) * c`) under per-var bounds
-/// emits TWO asserts — the inner sub-product `a * b` AND the full product —
+/// emits two asserts: the inner sub-product `a * b` and the full product,
 /// each with its own hand-derived bound and the exact req conjuncts it depends
 /// on (#196). `a*b <= 100` (10*10), `a*b*c <= 1000` (10*10*10).
 #[test]
@@ -115,9 +115,9 @@ fn three_var_product_chain_emits_one_aid_per_subproduct() {
     );
 }
 
-/// HONEST SKIP — an UNBOUNDED factor: `n * m` where `m` carries no req bound.
-/// The aid is NOT emitted (its bound is not req-derivable), so the overflow
-/// obligation stands honestly — no fabricated assert (#196, R-DEFER-9).
+/// Skip case — an unbounded factor: `n * m` where `m` carries no req bound.
+/// The aid is not emitted (its bound is not req-derivable), so the overflow
+/// obligation stands; no fabricated assert (#196, R-DEFER-9).
 #[test]
 fn unbounded_factor_emits_no_aid() {
     let src = "fn nm(n: u64, m: u64) -> u64 req n <= 30 ens result == n * m fx pure { n * m }";
@@ -129,9 +129,9 @@ fn unbounded_factor_emits_no_aid() {
     );
 }
 
-/// HONEST SKIP — a NON-mul body: `lo + (hi - lo) / 2` (the binary-search
+/// Skip case — a non-mul body: `lo + (hi - lo) / 2` (the binary-search
 /// midpoint shape). No product, so no aid is emitted and the lowering is
-/// unchanged (#196). Pins that the template fires ONLY on a real product.
+/// unchanged (#196). Pins that the template fires only on a real product.
 #[test]
 fn non_mul_body_emits_no_aid_and_is_unchanged() {
     let src = "fn mid(lo: u64, hi: u64) -> u64 \
@@ -141,17 +141,17 @@ fn non_mul_body_emits_no_aid_and_is_unchanged() {
         !l3.contains("by(nonlinear_arith)") && !l3.contains("proof {"),
         "a non-mul body must emit NO proof aid (#196):\n{l3}"
     );
-    // The body lowers verbatim — the midpoint expression survives unchanged.
+    // The body lowers verbatim: the midpoint expression survives unchanged.
     assert!(
         l3.contains("lo + (hi - lo) / 2"),
         "the non-mul body must lower unchanged (#196):\n{l3}"
     );
 }
 
-/// HONEST SKIP — a product of a MUTATED LOCAL: `acc = acc * n` in a loop. `acc`
+/// Skip case — a product of a mutated local: `acc = acc * n` in a loop. `acc`
 /// is not a req-bounded param (it is a `let mut` rebound each iteration), so
-/// `req_expr_upper_bound` returns `None` and NO aid is emitted — the walker
-/// must skip non-param operands (#196 soundness: the obligation honestly
+/// `req_expr_upper_bound` returns `None` and no aid is emitted; the walker
+/// must skip non-param operands (#196 soundness: the obligation
 /// stands; verus reports the real overflow).
 #[test]
 fn product_of_mutated_local_is_skipped() {
@@ -166,10 +166,10 @@ fn product_of_mutated_local_is_skipped() {
     );
 }
 
-/// A product DIRECTLY in a LOOP BODY (`n * n` inside a `while`) gets its aid in
-/// a proof block at the LOOP BODY's start — a body-start fact does not flow
+/// A product directly in a loop body (`n * n` inside a `while`) gets its aid in
+/// a proof block at the loop body's start: a body-start fact does not flow
 /// past the loop head, so fn-body placement would be inert (#196). Pins that
-/// the aid is INSIDE the loop braces, after the `decreases` line.
+/// the aid is inside the loop braces, after the `decreases` line.
 #[test]
 fn product_in_loop_body_aid_is_placed_inside_the_loop() {
     let src = "fn lm(n: u64) -> u64 req n <= 30 ens result >= 0 fx pure \
@@ -180,7 +180,7 @@ fn product_in_loop_body_aid_is_placed_inside_the_loop() {
         l3.contains("assert((n * n) <= 900) by(nonlinear_arith) requires n <= 30;"),
         "in-loop product must still get the hand-derived aid (#196):\n{l3}"
     );
-    // The aid must sit AFTER the `decreases` (i.e. inside the loop body), not at
+    // The aid must sit after the `decreases` (i.e. inside the loop body), not at
     // fn-body start where it would be inert.
     let dec_pos = l3.find("decreases").expect("loop has a decreases");
     let aid_pos = l3.find("by(nonlinear_arith)").expect("aid present");

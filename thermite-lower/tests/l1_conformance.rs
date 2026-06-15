@@ -1,9 +1,9 @@
 //! Conformance test for `thermite-lower`'s L1 runtime-check emission against the
-//! EXTERNAL truth: the real `rustc` compiler (the emitted L1 file must COMPILE
-//! and RUN; the always-active contract checks must FIRE on violation) and the
+//! external truth: the real `rustc` compiler (the emitted L1 file must compile
+//! and run; the always-active contract checks must fire on violation) and the
 //! hand-authored golden oracle `tests/golden/l1/sum.l1.rs`
-//! (`.design/lower/l1-runtime-checks.md`). Verification is by EXECUTION, not a
-//! strict byte-match (the design AC-6/AC-1: "compiles + runs + checks fire").
+//! (`.design/lower/l1-runtime-checks.md`). Verification is by execution rather
+//! than a strict byte-match (the design AC-6/AC-1: "compiles + runs + checks fire").
 //!
 //! `rustc` is always installed (no skip). The `.` in a `*.l1.rs` filename breaks
 //! rustc's crate-name derivation, so we always pass `--crate-name`. `unwrap`/
@@ -32,7 +32,7 @@ fn lower_corpus_l1(name: &str) -> String {
 }
 
 /// Compile `src` (a self-contained Rust program incl. a `main`) with `rustc`
-/// into `crate_name` under the temp dir, then RUN it. Returns
+/// into `crate_name` under the temp dir, then run it. Returns
 /// `(compiled_ok, ran_ok, combined_output)`. Always passes `--crate-name`
 /// (the `.l1.rs` dotted filename gotcha) and `--edition 2021`.
 fn compile_and_run(src: &str, crate_name: &str) -> (bool, bool, String) {
@@ -69,7 +69,7 @@ fn compile_and_run(src: &str, crate_name: &str) -> (bool, bool, String) {
 
 /// Append a positive test harness (`main`) to the emitted L1 source. Expected
 /// values are hand-derived from the L3 `Seq` denotation (`sum(&[1,2,3]) == 6`,
-/// AC-1/AC-4 — R-CHAR-3), NOT copied from the toolchain.
+/// AC-1/AC-4 — R-CHAR-3), not copied from the toolchain.
 fn with_positive_main(emitted: &str) -> String {
     format!(
         "{emitted}\nfn main() {{\n    assert_eq!(sum(&[1u32, 2, 3]), 6);\n    assert_eq!(sum(&[]), 0);\n    assert_eq!(sum(&[7u32]), 7);\n    assert_eq!(spec_sum(&[1u32, 2, 3]), 6);\n    println!(\"ok\");\n}}\n"
@@ -98,8 +98,8 @@ fn sum_l1_compiles_and_runs() {
 #[test]
 fn negative_fixture_fires_violation() {
     // Corrupt the body so the accumulator over-counts: `ens result ==
-    // spec_sum(xs)` is then VIOLATED at runtime and the always-active handler
-    // must fire (a non-zero exit / panic), observable — not silent.
+    // spec_sum(xs)` is then violated at runtime and the always-active handler
+    // fires (a non-zero exit / panic), observable rather than silent.
     let emitted = lower_corpus_l1("sum");
     assert!(
         emitted.contains("acc = acc + xs[i] as u64;"),
@@ -120,8 +120,8 @@ fn negative_fixture_fires_violation() {
     );
     // The over-counting body first violates the loop invariant `acc ==
     // spec_sum(&xs[..i])` (iteration 2), then would violate `ens`; either way
-    // the always-active handler fires with its structured diagnostic — the
-    // contract failure is OBSERVABLE, not silent (AC-1 negative).
+    // the always-active handler fires with its structured diagnostic, so the
+    // contract failure is observable rather than silent (AC-1 negative).
     assert!(
         out.contains("thermite L1 contract violation [inv]")
             || out.contains("thermite L1 contract violation [ens]"),
@@ -133,7 +133,7 @@ fn negative_fixture_fires_violation() {
     );
 }
 
-// ---- AC-2: checks are always-active, NOT debug_assert -----------------------
+// ---- AC-2: checks are always-active, not debug_assert -----------------------
 
 #[test]
 fn no_debug_assert_in_emission() {
@@ -165,7 +165,7 @@ fn no_syscall_sandbox_and_no_dec_guarantee() {
             "L1 emission must emit NO syscall-sandbox scaffolding (`{forbidden}`; REQ-7):\n{emitted}"
         );
     }
-    // REQ-5/OQ-3: `inv` checks present, but NO `dec` runtime check emitted.
+    // REQ-5/OQ-3: `inv` checks present, but no `dec` runtime check emitted.
     assert!(
         emitted.contains("thermite_check!(\"inv\""),
         "L1 emission must assert loop invariants (REQ-1/REQ-5):\n{emitted}"
@@ -190,7 +190,7 @@ fn corpus_lowers_ok_no_panic() {
 
 #[test]
 fn unsupported_construct_is_err_not_panic() {
-    // A spec-fn body shaped as a slice match WITHOUT a recursive tail call hits
+    // A spec-fn body shaped as a slice match without a recursive tail call hits
     // the head-fold detector's `rec_name.is_empty()` guard and must return
     // `Err(LowerError::Unsupported)`, never panic (AC-6, R-CODE-2). We build
     // such a program: a head-fold-looking spec fn whose cons arm adds two
@@ -212,8 +212,8 @@ fn unsupported_construct_is_err_not_panic() {
 // ---- AC-3: combinator L1 forms run over concrete slices ---------------------
 //
 // The registry `l1` field is the single source of truth; we materialize all 8
-// L1 fns into ONE program, append a `main` exercising each over concrete slices
-// with HAND-DERIVED expected values (R-CHAR-3, from l1-runtime-checks.md AC-3),
+// L1 fns into one program, append a `main` exercising each over concrete slices
+// with hand-derived expected values (R-CHAR-3, from l1-runtime-checks.md AC-3),
 // compile + run it, and require exit 0.
 
 #[test]
@@ -236,7 +236,7 @@ fn combinator_l1_forms_run() {
 }
 
 /// Hand-derived combinator cases (R-CHAR-3 — from l1-runtime-checks.md AC-3 +
-/// the executable semantics, NEVER from toolchain output). `#[allow(dead_code)]`
+/// the executable semantics, never from toolchain output). `#[allow(dead_code)]`
 /// per-combinator is unnecessary: `main` references every fn.
 const COMBINATOR_MAIN: &str = r#"
 fn main() {

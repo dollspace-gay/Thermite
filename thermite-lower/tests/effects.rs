@@ -1,12 +1,12 @@
 //! Unit tests for compile-time effect-row subsumption
 //! (`.design/lower/effect-subsumption.md` AC-1..AC-6). Expected values are
-//! HAND-DERIVED from §4.1 + the design doc's lattice/subsumption rule
+//! hand-derived from §4.1 + the design doc's lattice/subsumption rule
 //! (R-CHAR-3 — never copied from the checker's own output).
 //!
-//! The corpus is entirely `fx pure` (the ACCEPT baseline, AC-2); the REJECT
-//! cases (AC-4) are crafted fixtures whose AST is built DIRECTLY in Rust so the
+//! The corpus is entirely `fx pure` (the accept baseline, AC-2); the reject
+//! cases (AC-4) are crafted fixtures whose AST is built directly in Rust so the
 //! test does not depend on the parser parsing effectful `fx` rows. (The parser
-//! DOES parse effectful rows — see `parser_parses_effectful_rows` — but the
+//! does parse effectful rows — see `parser_parses_effectful_rows` — but the
 //! checker operates on the AST regardless of how it was built, so the fixtures
 //! are authoritative.) `unwrap` is fine here — `tests/` is not gated.
 
@@ -32,8 +32,8 @@ fn true_clause() -> Clause {
     }
 }
 
-/// A `fn` named `name` with effect row `fx` whose body is exactly `{ <calls>; }`
-/// — one bare-expression `Call` per callee name in `calls`. This is the minimal
+/// A `fn` named `name` with effect row `fx` whose body is `{ <calls>; }`,
+/// one bare-expression `Call` per callee name in `calls`. This is the minimal
 /// caller→callee call-graph fixture the checker walks (REQ-3).
 fn fn_calling(name: &str, fx: EffectRow, calls: &[&str]) -> Item {
     let stmts = calls
@@ -147,7 +147,7 @@ fn lattice_law_top_subsumes_everything() {
 #[test]
 fn lattice_law_table() {
     // Table-driven: (caller, callee, expected) hand-derived from subset inclusion
-    // at the atom-KIND level (OQ-1: Write(_) subsumes any Write(_)).
+    // at the atom-kind level (OQ-1: Write(_) subsumes any Write(_)).
     let cases: Vec<(EffectRow, EffectRow, bool)> = vec![
         // superset subsumes subset
         (
@@ -158,7 +158,7 @@ fn lattice_law_table() {
             set(vec![Effect::Read("x".to_string())]),
             true,
         ),
-        // subset does NOT subsume superset
+        // subset does not subsume superset
         (
             set(vec![Effect::Read("x".to_string())]),
             set(vec![
@@ -167,7 +167,7 @@ fn lattice_law_table() {
             ]),
             false,
         ),
-        // atom-KIND level: Write("a") caller subsumes Write("b") callee (OQ-1)
+        // atom-kind level: Write("a") caller subsumes Write("b") callee (OQ-1)
         (
             set(vec![Effect::Write("a".to_string())]),
             set(vec![Effect::Write("b".to_string())]),
@@ -293,7 +293,7 @@ fn crafted_accepts() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-4: crafted reject cases — the EXACT `missing` atom set (hand-derived).
+// AC-4: crafted reject cases — the `missing` atom set (hand-derived).
 // ---------------------------------------------------------------------------
 
 fn single_error(prog: &Program) -> LowerError {
@@ -360,7 +360,7 @@ fn reject_read_calling_read_net() {
     };
     match single_error(&prog) {
         LowerError::EffectNotSubsumed { missing, .. } => {
-            // Path-insensitive (OQ-1): missing is the Net KIND, reported with an
+            // Path-insensitive (OQ-1): missing is the Net kind, reported with an
             // empty path representative.
             assert_eq!(
                 missing,
@@ -395,8 +395,8 @@ fn reject_pure_calling_panic() {
 
 #[test]
 fn reject_accumulates_all_violations() {
-    // §2.4: accumulate one error per violation, do NOT fail on the first. A pure
-    // caller calling two distinct effectful callees yields two errors.
+    // §2.4: accumulate one error per violation rather than fail on the first. A
+    // pure caller calling two distinct effectful callees yields two errors.
     let prog = Program {
         items: vec![
             fn_calling("caller", pure(), &["a", "b"]),
@@ -417,7 +417,7 @@ fn reject_accumulates_all_violations() {
 #[test]
 fn unresolved_callee_is_noop() {
     // A pure caller calling an unknown name (neither fn, spec fn, nor combinator)
-    // is a no-op — the #2 validator owns unknown-name rejection (AC-5).
+    // is a no-op; the #2 validator owns unknown-name rejection (AC-5).
     let prog = Program {
         items: vec![fn_calling("caller", pure(), &["totally_unknown_fn"])],
     };
@@ -475,13 +475,13 @@ fn deeply_nested_body_returns_result_not_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// Observation: the parser DOES parse effectful `fx` rows (not a blocker).
+// Observation: the parser does parse effectful `fx` rows (not a blocker).
 // ---------------------------------------------------------------------------
 
 #[test]
 fn parser_parses_effectful_rows() {
     // Confirms the thermite-syntax parser accepts a non-pure `fx` row (so the
-    // checker is NOT blocked on a parser gap — the fixtures above build AST
+    // checker is not blocked on a parser gap; the fixtures above build AST
     // directly only for hermeticity, not out of necessity). Hand-derived
     // expected row: {alloc}.
     let src = "fn f() -> ()\n  req true\n  ens true\n  fx alloc\n{\n}\n";

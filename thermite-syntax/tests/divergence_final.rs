@@ -1,9 +1,9 @@
 //! Final holistic re-audit of `thermite-syntax` (issue #3), after the #28/#30/
-//! #29/#31/#32 fix sequence. This file pins ONE residual divergence the
+//! #29/#31/#32 fix sequence. This file pins one residual divergence the
 //! representation-agnostic conformance oracle does not catch.
 //!
-//! DIVERGENCE — the #30 if-tail refactor promotes a VALUE-LESS trailing
-//! `if/else` to a tail `Expr::If` (the expression form) purely on a positional
+//! Divergence: the #30 if-tail refactor promotes a value-less trailing
+//! `if/else` to a tail `Expr::If` (the expression form) on a positional
 //! rule (has-`else` + nothing follows), ignoring the design's discriminator.
 //!
 //! Authority — `.design/syntax/surface-grammar.md` "Key design decisions" #2
@@ -11,12 +11,12 @@
 //! requires an `else` (it must have a value); the statement form does not.";
 //! and OQ-3: "REQ-5 makes the *expression* form of `if` require an `else` (it
 //! must produce a value) ... The corpus only uses the statement form." The
-//! discriminator the design names is VALUE-NESS, not source position.
+//! discriminator the design names is value-ness, not source position.
 //!
 //! The corpus `conformance/binary_search.th` ends its `loop` body with
 //!   `if haystack[mid] < needle { lo = mid + 1; } else { hi = mid; }`
-//! whose branches are assignment statements (`Block { tail: None }`) — it
-//! produces NO value, so by the design it is the STATEMENT form. The parser
+//! whose branches are assignment statements (`Block { tail: None }`); it
+//! produces no value, so by the design it is the statement form. The parser
 //! (`parse_block` tail-promotion via `parse_if_parts`, src #30) encodes it as
 //! the loop body's tail `Expr::If` (the value/expression form). That is an
 //! AST-shape divergence on a verbatim corpus construct, masked because
@@ -76,13 +76,13 @@ fn divergence_value_less_trailing_if_is_statement_not_tail_expr() {
     // value. By surface-grammar.md decision #2 ("the expression form ... must
     // have a value; the statement form does not") + OQ-3 ("the corpus only uses
     // the statement form"), this is the STATEMENT form: it must be the LAST
-    // `Stmt::If` in the body, and the loop body must have NO tail expr.
+    // `Stmt::If` in the body, and the loop body must have no tail expr.
     //
     // EXPECTED (design authority): loop body tail is None; last stmt is Stmt::If
     //   whose else-branch produces no value.
     // ACTUAL (current parser, #30 tail-promotion): the if/else is hoisted to a
-    //   tail `Expr::If`, so `lp.body.tail` is Some(..) and the construct is NOT
-    //   a Stmt::If. This assertion therefore FAILS, pinning the divergence.
+    //   tail `Expr::If`, so `lp.body.tail` is Some(..) and the construct is not
+    //   a Stmt::If. This assertion therefore fails, pinning the divergence.
     assert!(
         lp.body.tail.is_none(),
         "design: a value-less trailing `if/else` (assignment branches) is the \

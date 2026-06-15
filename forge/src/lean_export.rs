@@ -1,64 +1,64 @@
-//! `forge/src/lean_export.rs` — the Thermite→Lean OBLIGATION EXPORTER
+//! `forge/src/lean_export.rs` — the Thermite→Lean obligation exporter
 //! (`.design/verified/proof-backends.md` REQ-6/REQ-7; increment (ii-b), the
 //! `#240` chain, ref #203).
 //!
-//! Serializes a checked PURE-CONTRACT item (the §4 scope: a `fn`/`spec fn` whose
-//! body is a PURE EXPRESSION denoting in `intVal` — the `S_C` domain) into a
-//! self-contained Lean file that INSTANTIATES the SHIPPED spine encodings
+//! Serializes a checked pure-contract item (the §4 scope: a `fn`/`spec fn` whose
+//! body is a pure expression denoting in `intVal` — the `S_C` domain) into a
+//! self-contained Lean file that instantiates the shipped spine encodings
 //! (`lean/Thermite/Ast.lean`'s `Expr`/`CmpOp`/`LogOp`/`ArithOp`/`CastTy`/`CombName`/
 //! `Pred`/`Variant`/`MatchArm`/`RangeArg`/`SpecFn`/`Registry` + `Denote.lean`'s
 //! `Env`/`OptResVal`/`stabilizes`/`stabilizesProp` + `Stabilize.lean`'s tier-(a)
-//! fuel-free keys). The exporter does NOT define a new semantics — it targets the
+//! fuel-free keys). The exporter does not define a new semantics; it targets the
 //! already-kernel-proven `S` (REQ-6 EXP: arm-by-arm + the drift tripwire).
 //!
-//! ## The three load-bearing pieces (§4)
+//! ## The three pieces (§4)
 //!
-//! - **The AST encoder** ([`encode_expr`]): each Thermite `Expr` (the frozen-subset
-//!   constructs the spine models) → its Lean constructor term. An OUT-of-spine
+//! - The AST encoder ([`encode_expr`]): each Thermite `Expr` (the frozen-subset
+//!   constructs the spine models) → its Lean constructor term. An out-of-spine
 //!   construct (Field / TupleProj / user-ADT match / holes / a non-pure body /
-//!   etc.) → a structured export [`ExportRefusal`] (the item is NOT Lean-exportable;
-//!   an honest skip, NEVER a silent omission).
-//! - **`R_item`** ([`build_registry`]): `def R_item : Thermite.Registry := fun name
+//!   etc.) → a structured export [`ExportRefusal`] (the item is not Lean-exportable;
+//!   a skip).
+//! - `R_item` ([`build_registry`]): `def R_item : Thermite.Registry := fun name
 //!   => match name with | "f" => some ⟨[params], body⟩ | … | _ => none`, populated by
-//!   the TRANSITIVE `req ∪ ens ∪ body ∪ dec` full-expression-position closure (the
-//!   #226 set — REUSING the SAME `called_spec_fns` the [`crate::obligation::
-//!   Obligation`] env carries, the ONE-closure #192 lesson). **THE HARD GATE:** the
-//!   export REFUSES (a structured error) if any reachable name is missing a
+//!   the transitive `req ∪ ens ∪ body ∪ dec` full-expression-position closure (the
+//!   #226 set, reusing the `called_spec_fns` the [`crate::obligation::
+//!   Obligation`] env carries, the one-closure #192 lesson). The hard gate: the
+//!   export refuses (a structured error) if any reachable name is missing a
 //!   definition (`calledSpecFns(item) ⊄ dom(R_item)`). Per-name resolution lemmas
-//!   `example : R_item "f" ≠ none := by decide` are emitted ALONGSIDE (belt +
-//!   suspenders, §4 mechanism 2).
-//! - **The theorem** ([`emit_theorem`]), THREE-tier per §6.1:
-//!   - Tier (a) — `req`/`ens`/body ALL specCall-free: the FUEL-FREE form
+//!   `example : R_item "f" ≠ none := by decide` are emitted alongside (§4 mechanism
+//!   2).
+//! - The theorem ([`emit_theorem`]), three-tier per §6.1:
+//!   - Tier (a) — `req`/`ens`/body all specCall-free: the fuel-free form
 //!     `denote 0 …` / `intVal 0 … = r` via the `stabilizes_iff_intVal_zero` /
 //!     `stabilizesProp_iff_denote_zero` corollaries (cited in the emitted comment).
 //!     Auto tactic battery `first | decide | (intro …; simp_all; omega) | …`.
-//!   - Tier (b) — spec-calls present, registry NON-recursive (a finite DAG): the
-//!     exporter STATICALLY UNFOLDS the calls to finite depth into a fuel-free goal,
+//!   - Tier (b) — spec-calls present, registry non-recursive (a finite DAG): the
+//!     exporter statically unfolds the calls to finite depth into a fuel-free goal,
 //!     then tier (a)'s battery.
-//!   - Tier (c) — RECURSIVE registry: the §4 stabilized `∀ r, stabilizes body env r
-//!     → reqStable → ensStable@r` form, marked INTERACTIVE-ONLY — [`export_item`]
+//!   - Tier (c) — recursive registry: the §4 stabilized `∀ r, stabilizes body env r
+//!     → reqStable → ensStable@r` form, marked interactive-only. [`export_item`]
 //!     returns the file (for increment-(iii) use) but [`crate::engine::LeanEngine`]
-//!     does NOT invoke lake (it returns `Unknown("interactive-only")`).
+//!     does not invoke lake (it returns `Unknown("interactive-only")`).
 //!
 //! ## The exec-body bridge (§4.1 / REQ-10, increment (iv-b))
 //!
-//! Beyond the pure-contract class, [`export_item`] routes a STRAIGHT-LINE-BODY item
-//! (a body with statements — `let`/`assign`/`expr`/`if`-statement/sequencing — OR a
+//! Beyond the pure-contract class, [`export_item`] routes a straight-line-body item
+//! (a body with statements — `let`/`assign`/`expr`/`if`-statement/sequencing — or a
 //! `bool` result) to [`export_straight_line_body`], which serializes the body into the
 //! spine's `Exec/Stmt.lean` `Block`/`Stmt` encodings ([`encode_exec_block`]/
 //! [`encode_exec_stmt`]/[`encode_exec_expr`]) and emits `stateOf`/`InRangeParams`/the
-//! per-param `rfl`-lemmas ([`emit_state_of`]) + the HYPOTHESIZE CONTRACT theorem AND
-//! the conjoined OVERFLOW theorem ([`emit_body_theorems`], the §4.1.5 conjunction
+//! per-param `rfl`-lemmas ([`emit_state_of`]) + the hypothesize-contract theorem and
+//! the conjoined overflow theorem ([`emit_body_theorems`], the §4.1.5 conjunction
 //! rule). The result binds via `bindResult` (int → `bindInt … r.value`; bool →
 //! `bindBool … b`). Loops/`while`/`break`/`continue`/mid-body-`return`/non-scalar
 //! mutation → [`ExportRefusal::LoopBody`] (§4.1.7); an Option/Result result →
-//! [`ExportRefusal::OptResResult`] (#254). `bodyDenote` is FUEL-FREE (`ExecExpr` has
-//! no `specCall`), so there is NO NB/none-propagating layer — the `Option` itself
-//! distinguishes a genuine failure from a value.
+//! [`ExportRefusal::OptResResult`] (#254). `bodyDenote` is fuel-free (`ExecExpr` has
+//! no `specCall`), so there is no none-propagating layer; the `Option` itself
+//! distinguishes a failure from a value.
 //!
-//! This module is NOT wired into the default `check` path (Verus stays the sole
-//! default engine — byte-identical); the [`crate::engine::LeanEngine`] constructs
-//! it directly, and the `--engine` surface is increment (iii).
+//! This module is not wired into the default `check` path (Verus stays the sole
+//! default engine); the [`crate::engine::LeanEngine`] constructs it directly, and
+//! the `--engine` surface is increment (iii).
 //!
 //! ## REQ status
 //!
@@ -80,13 +80,11 @@ use thermite_syntax::{
     Type, UnaryOp,
 };
 
-/// Why an item is NOT Lean-exportable (`.design/verified/proof-backends.md` §4 —
-/// "OUT-of-spine constructs → a structured export REFUSAL; the item is not
-/// Lean-exportable; honest skip"). A refusal is NEVER a silent omission and NEVER a
-/// proof cheat — it is the exporter saying "this construct is outside `S`'s frozen
-/// subset / outside the pure-contract class, so I decline to emit". The
-/// [`crate::engine::LeanEngine`] maps a refusal to "the fragment does not admit this
-/// obligation" (a skip), never to `Proven`/`Refuted`.
+/// Why an item is not Lean-exportable (`.design/verified/proof-backends.md` §4 —
+/// out-of-spine constructs map to a structured export refusal). A refusal is the
+/// exporter declining to emit a construct outside `S`'s frozen subset or outside the
+/// pure-contract class. The [`crate::engine::LeanEngine`] maps a refusal to "the
+/// fragment does not admit this obligation" (a skip), never to `Proven`/`Refuted`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExportRefusal {
     /// An `Expr` construct outside the frozen spine subset (Field / TupleProj /
@@ -94,51 +92,50 @@ pub enum ExportRefusal {
     /// closure outside a combinator predicate / etc.). Carries a human description
     /// of the offending construct.
     OutOfFragment(String),
-    /// The body is NOT a pure expression denoting in `intVal` (the §4.1 exec-body
+    /// The body is not a pure expression denoting in `intVal` (the §4.1 exec-body
     /// bridge is increment (iv)): a `let`/`assign`/`return`/`loop`/`if`-statement
     /// body, or a block with no tail expression. The pure-contract class is scoped
-    /// to a body that is a single tail `Expr` over `S_C` (REQ-6 §4 SCOPE).
+    /// to a body that is a single tail `Expr` over `S_C` (REQ-6 §4 scope).
     NotPureContract(String),
-    /// THE HARD GATE (§4 mechanism 1): a spec-fn reachable from
-    /// `req ∪ ens ∪ body ∪ dec(item)` is MISSING a definition
-    /// (`calledSpecFns(item) ⊄ dom(R_item)`). The export refuses to emit rather
-    /// than emit an incomplete `R_item` whose unresolved `specCall` would bottom to
-    /// the `intVal` Int-`0` and self-certify (Pin B / Pin C / Pin G). Carries the
-    /// missing name(s) — INCLUDING an UNDEFINED callee with no in-program definition
-    /// at all (the `mystery(x)` Pin G: `calledSpecFns` is collected WITHOUT the
-    /// defined-names filter, so an undefined symbol is a missing name, not invisible).
+    /// The hard gate (§4 mechanism 1): a spec-fn reachable from
+    /// `req ∪ ens ∪ body ∪ dec(item)` is missing a definition
+    /// (`calledSpecFns(item) ⊄ dom(R_item)`). The export refuses to emit an
+    /// incomplete `R_item` whose unresolved `specCall` would bottom to the `intVal`
+    /// Int-`0` and self-certify (Pin B / Pin C / Pin G). Carries the missing
+    /// name(s), including an undefined callee with no in-program definition at all
+    /// (the `mystery(x)` Pin G: `calledSpecFns` is collected without the
+    /// defined-names filter, so an undefined symbol is a missing name).
     IncompleteRegistry(Vec<String>),
-    /// THE RESULT-SORT GATE (§4 SCOPE / §4.1 — the Pin H bool-result class): the
-    /// item's body does NOT denote in `intVal` (its declared result type is not an
+    /// The result-sort gate (§4 scope / §4.1 — the Pin H bool-result class): the
+    /// item's body does not denote in `intVal` (its declared result type is not an
     /// integer sort — `bool`/unit/ADT). The §4 pure-contract class is scoped to a
     /// body denoting in `intVal` (the result `r : Int`); `Denote.lean`'s `intVal`
-    /// bottoms EVERY non-integer-sorted node to the canonical `0`, so a `-> bool`
-    /// item would have `result` bound to `0` for ANY body and a contract AND its
-    /// negation would BOTH certify. The bool/unit/ADT-result binding is the
-    /// increment-(iv) `bindBool` bridge; until then a non-integer result REFUSES
-    /// (an honest skip). Carries the offending result type.
+    /// bottoms every non-integer-sorted node to the canonical `0`, so a `-> bool`
+    /// item would have `result` bound to `0` for any body and a contract and its
+    /// negation would both certify. The bool/unit/ADT-result binding is the
+    /// increment-(iv) `bindBool` bridge; until then a non-integer result refuses.
+    /// Carries the offending result type.
     NonIntResult(String),
     /// The item carries an open body hole (`?N`) — short-circuited L0 before any
     /// engine (§8 OUT set); not exportable.
     OpenHole(String),
-    /// THE LOOP-CLASS STRUCTURED REFUSAL (§4.1.7 / REQ-10.6): a body containing a
+    /// The loop-class structured refusal (§4.1.7 / REQ-10.6): a body containing a
     /// `loop`/`while`/`break`/`continue`/mid-body-`return`/non-scalar-mutation —
-    /// constructs `Exec/Stmt.lean`'s `S_B` does NOT mechanize ("LOOPS are EXPLICITLY
-    /// OUT (increment 2c, #163)"). Composing `Exec/Loop.lean`'s `loopDenote` +
-    /// `while_rule` into a body obligation is its OWN future design, NOT smuggled
-    /// into #253 — an honest skip (the cert reports it via the `LeanUnverifiable`
-    /// path), NEVER an attempt to denote what `S_B` does not model. Carries the
-    /// offending construct.
+    /// constructs `Exec/Stmt.lean`'s `S_B` does not mechanize (loops are out, per
+    /// increment 2c, #163). Composing `Exec/Loop.lean`'s `loopDenote` +
+    /// `while_rule` into a body obligation is its own future design, not part of
+    /// #253; a skip (the cert reports it via the `LeanUnverifiable` path). Carries
+    /// the offending construct.
     LoopBody(String),
-    /// THE OPTION/RESULT-RESULT REFUSAL (§4.1.3 / REQ-10, blocker #254): a
-    /// straight-line body whose declared RESULT type is `Option<_>`/`Result<_,_>`.
-    /// The BINDING side (`env.optres` / `Env.bindOptRes`) is free, but the
-    /// ANTECEDENT side is NOT representable: `Exec.lean`'s `ExecVal` is `int (BVal) |
-    /// bool (Bool)` ONLY — `bodyDenote` CANNOT produce an Option/Result result, and
-    /// no `ExecExpr`/`Stmt` form constructs one. So an optres-typed straight-line
-    /// body stays REFUSED (an honest structured skip); the spine extension (an
-    /// `ExecVal` optres variant + the producing arms + `Env.bindOptRes`) is the FILED
-    /// follow-on blocker #254, NOT silently waved into #253. Carries the result type.
+    /// The Option/Result-result refusal (§4.1.3 / REQ-10, blocker #254): a
+    /// straight-line body whose declared result type is `Option<_>`/`Result<_,_>`.
+    /// The binding side (`env.optres` / `Env.bindOptRes`) is free, but the
+    /// antecedent side is not representable: `Exec.lean`'s `ExecVal` is `int (BVal) |
+    /// bool (Bool)` only, so `bodyDenote` cannot produce an Option/Result result, and
+    /// no `ExecExpr`/`Stmt` form constructs one. An optres-typed straight-line
+    /// body stays refused (a structured skip); the spine extension (an
+    /// `ExecVal` optres variant + the producing arms + `Env.bindOptRes`) is the filed
+    /// follow-on blocker #254. Carries the result type.
     OptResResult(String),
 }
 
@@ -179,26 +176,26 @@ impl std::fmt::Display for ExportRefusal {
     }
 }
 
-/// The export TIER (`.design/verified/proof-backends.md` §6.1, the #216
-/// three-tier story). The AUTO tiers (a)/(b) emit a FUEL-FREE shallow goal the
+/// The export tier (`.design/verified/proof-backends.md` §6.1, the #216
+/// three-tier story). The auto tiers (a)/(b) emit a fuel-free shallow goal the
 /// `decide`/`simp`/`omega` battery discharges (matching the z3-demotion grounding);
-/// the INTERACTIVE tier (c) emits the `∃N∀fuel` stabilized form (a recursive
-/// registry's per-env `∃N` witness needs induction — NOT auto-dischargeable).
+/// the interactive tier (c) emits the `∃N∀fuel` stabilized form (a recursive
+/// registry's per-env `∃N` witness needs induction, not auto-dischargeable).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportTier {
-    /// Tier (a): `req`/`ens`/body are ALL `specCallFree` — emit `denote 0 …` /
+    /// Tier (a): `req`/`ens`/body are all `specCallFree` — emit `denote 0 …` /
     /// `intVal 0 … = r` (fuel-free, via `stabilizes_iff_intVal_zero`).
     FuelFreeAuto,
-    /// Tier (b): spec-calls present, registry NON-recursive (a finite DAG) —
+    /// Tier (b): spec-calls present, registry non-recursive (a finite DAG) —
     /// statically unfold to finite depth, then tier (a).
     StaticUnfoldAuto,
-    /// Tier (c): RECURSIVE registry — the `∃N∀fuel` stabilized form, INTERACTIVE
-    /// only (the engine does NOT invoke lake; it returns `Unknown`).
+    /// Tier (c): recursive registry — the `∃N∀fuel` stabilized form, interactive
+    /// only (the engine does not invoke lake; it returns `Unknown`).
     RecursiveInteractive,
 }
 
 impl ExportTier {
-    /// Is this an AUTO tier (the engine invokes lake)? Tiers (a)/(b) are auto; tier
+    /// Is this an auto tier (the engine invokes lake)? Tiers (a)/(b) are auto; tier
     /// (c) is interactive-only.
     #[must_use]
     pub fn is_auto(self) -> bool {
@@ -220,7 +217,7 @@ impl ExportTier {
 }
 
 /// A successfully exported Lean obligation (`.design/verified/proof-backends.md`
-/// REQ-6). Carries the self-contained Lean SOURCE (instantiating the spine), the
+/// REQ-6). Carries the self-contained Lean source (instantiating the spine), the
 /// [`ExportTier`] (so the engine knows whether to invoke lake), and the registry
 /// names it populated `R_item` with (the EXP registry-faithfulness inspection
 /// surface).
@@ -236,12 +233,12 @@ pub struct ExportedObligation {
     pub registry_names: Vec<String>,
 }
 
-/// Encode a Thermite [`Expr`] into its Lean `Thermite.Expr` constructor TERM
+/// Encode a Thermite [`Expr`] into its Lean `Thermite.Expr` constructor term
 /// (`.design/verified/proof-backends.md` REQ-6 EXP — arm-by-arm). Each frozen-subset
 /// construct maps to the `Ast.lean` constructor whose denotation `Denote.lean`
-/// assigns it; an OUT-of-spine construct is a structured [`ExportRefusal`]. The
-/// arms here MIRROR `lean/Thermite/RefEncode.lean`'s `encode` recursion (the EXP
-/// drift tripwire — pinned in `rust-lean-correspondence.md` Table 4).
+/// assigns it; an out-of-spine construct is a structured [`ExportRefusal`]. The
+/// arms here mirror `lean/Thermite/RefEncode.lean`'s `encode` recursion (the EXP
+/// drift tripwire, pinned in `rust-lean-correspondence.md` Table 4).
 ///
 /// The [`EncodeCtx`] coercion frame sorts a `Path` name into `seqVar` (a slice
 /// param), `strVar` (a `String` param), `optResVar` (an Option/Result param), or
@@ -273,10 +270,10 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
         Expr::Binary { op, lhs, rhs } => encode_binary(*op, lhs, rhs, ctx),
         Expr::Unary { op, expr } => match op {
             // `!` on a Prop subterm is logical negation (`Expr.neg`); on an integer
-            // it is bitwise-not, which `S_C` does NOT model (the spine has no
-            // bitwise-not Expr arm) — `Expr.neg`'s denotation is `¬ denote e`, so a
+            // it is bitwise-not, which `S_C` does not model (the spine has no
+            // bitwise-not Expr arm). `Expr.neg`'s denotation is `¬ denote e`, so a
             // bool operand is faithful; an integer `!` is rejected downstream by the
-            // sort (the spine has no integer `neg`), an honest residual.
+            // sort (the spine has no integer `neg`), a residual.
             UnaryOp::Not => Ok(format!("(Thermite.Expr.neg {})", encode_expr(expr, ctx)?)),
         },
         Expr::Cast { expr, ty } => {
@@ -310,7 +307,7 @@ fn encode_expr(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRefusal> {
                 other => encode_expr(other, ctx),
             }
         }
-        // OUT of S_C's frozen subset (honest refusal — §4 / §8 OUT set):
+        // Out of S_C's frozen subset (a refusal — §4 / §8 OUT set):
         Expr::Field { name, .. } => Err(ExportRefusal::OutOfFragment(format!(
             "field access `.{name}` (S_C has no struct-field projection)"
         ))),
@@ -481,7 +478,7 @@ fn encode_call(callee: &Expr, args: &[Expr], ctx: &EncodeCtx) -> Result<String, 
     if let Some(comb) = combinator_name(&name) {
         return encode_combinator(comb, &name, args, ctx);
     }
-    // A named spec-fn call: `Expr.specCall name [args]` (#181). The HARD GATE
+    // A named spec-fn call: `Expr.specCall name [args]` (#181). The hard gate
     // (`build_registry`) guarantees the name is in `R_item`; here we only encode the
     // call form. The args are S_C exprs (re-encoded).
     let arg_terms = args
@@ -645,7 +642,7 @@ struct EncodeCtx {
 }
 
 impl EncodeCtx {
-    /// Bind a name as an INTEGER name in this scope (a closure element var / a match
+    /// Bind a name as an integer name in this scope (a closure element var / a match
     /// payload binder): it shadows any outer seq/string/optres sort.
     fn bind_int(&mut self, name: &str) {
         self.seq_params.retain(|n| n != name);
@@ -654,7 +651,7 @@ impl EncodeCtx {
     }
 }
 
-/// The spec-fn DECLARATIONS in scope (a name→`SpecFnItem` map), for `R_item`
+/// The spec-fn declarations in scope (a name→`SpecFnItem` map), for `R_item`
 /// population + the recursive-registry detection. Built once from the program.
 fn spec_decls(program: &Program) -> BTreeMap<String, SpecFnItem> {
     program
@@ -668,20 +665,20 @@ fn spec_decls(program: &Program) -> BTreeMap<String, SpecFnItem> {
 }
 
 /// Build the `R_item : Thermite.Registry` definition + the per-name resolution
-/// lemmas (`.design/verified/proof-backends.md` §4 — the EXPORTER-SIDE HARD GATE).
+/// lemmas (`.design/verified/proof-backends.md` §4 — the exporter-side hard gate).
 /// `R_item` is populated by `called` (the full-expression-position closure the
-/// [`Obligation`] env carries — the ONE-closure #192 lesson). **THE HARD GATE:**
+/// [`Obligation`] env carries, the one-closure #192 lesson). The hard gate:
 /// returns [`ExportRefusal::IncompleteRegistry`] if any name in `called` has no
 /// in-program definition (`calledSpecFns ⊄ dom(R_item)`).
 ///
-/// Each entry encodes the spec-fn's REAL body (EXP registry-faithfulness, §4): a
-/// WRONG body would be an unsound certification the gate cannot catch — so the body
-/// is `encode_expr`'d from the spec-fn's actual tail expression, arm-by-arm.
+/// Each entry encodes the spec-fn's body (EXP registry-faithfulness, §4): a
+/// wrong body would be an unsound certification the gate cannot catch, so the body
+/// is `encode_expr`'d from the spec-fn's tail expression, arm-by-arm.
 fn build_registry(
     called: &[String],
     decls: &BTreeMap<String, SpecFnItem>,
 ) -> Result<(String, Vec<String>), ExportRefusal> {
-    // THE HARD GATE: every reachable name must resolve to a definition.
+    // The hard gate: every reachable name must resolve to a definition.
     let missing: Vec<String> = called
         .iter()
         .filter(|n| !decls.contains_key(*n))
@@ -709,18 +706,18 @@ fn build_registry(
             body
         ));
         // §4 mechanism 2: the per-name resolution lemma. If the exporter ever omits a
-        // called spec-fn from `R_item`, this lemma FAILS to compile.
+        // called spec-fn from `R_item`, this lemma fails to compile.
         lemmas.push(format!(
             "example : R_item {} ≠ none := by decide",
             lean_str(name)
         ));
     }
     let r_item = if arms.is_empty() {
-        // No reached spec-fns → the EMPTY registry (`fun _ => none`). The §4 hard
-        // gate passed vacuously (`∅ ⊆ dom(R_item)`), which is SOUND here precisely
-        // because a tier-(a) specCall-free item NEVER denotes a `specCall` (the
-        // Pin-B/Pin-C bottom-poisoning needs a reachable-but-omitted call — here
-        // there is none, the closure IS empty).
+        // No reached spec-fns → the empty registry (`fun _ => none`). The §4 hard
+        // gate passed vacuously (`∅ ⊆ dom(R_item)`), which is sound here because a
+        // tier-(a) specCall-free item never denotes a `specCall` (the
+        // Pin-B/Pin-C bottom-poisoning needs a reachable-but-omitted call; here
+        // there is none, the closure is empty).
         "def R_item : Thermite.Registry := fun _ => none".to_string()
     } else {
         format!(
@@ -749,7 +746,7 @@ fn spec_fn_body_expr(s: &SpecFnItem) -> Result<&Expr, ExportRefusal> {
 }
 
 /// A block's pure tail expression: `Some(&expr)` iff the block is a single tail expr
-/// with NO statements (the pure-contract class); `None` for any
+/// with no statements (the pure-contract class); `None` for any
 /// let/assign/return/loop/if statement body or a statement-only block.
 fn pure_tail_of_block(b: &Block) -> Option<&Expr> {
     if b.stmts.is_empty() {
@@ -783,9 +780,9 @@ fn sort_param(name: &str, ty: &Type, ctx: &mut EncodeCtx) {
     }
 }
 
-/// Is the registry RECURSIVE? (`.design/verified/proof-backends.md` §6.1 tier (c)
+/// Is the registry recursive? (`.design/verified/proof-backends.md` §6.1 tier (c)
 /// vs (b).) A registry is recursive iff some reached spec-fn (transitively) calls
-/// itself — i.e. the call graph over `called` has a cycle. A NON-recursive (DAG)
+/// itself — i.e. the call graph over `called` has a cycle. A non-recursive (DAG)
 /// registry is tier (b) (statically unfoldable); a recursive one is tier (c)
 /// (interactive). Deterministic DFS cycle detection (R-CODE-5).
 fn registry_is_recursive(called: &[String], decls: &BTreeMap<String, SpecFnItem>) -> bool {
@@ -894,13 +891,13 @@ fn collect_expr_calls(e: &Expr, decls: &BTreeMap<String, SpecFnItem>, out: &mut 
     }
 }
 
-/// Collect EVERY spec-call-position callee name in an `Expr` — WITHOUT the
+/// Collect every spec-call-position callee name in an `Expr`, without the
 /// defined-names filter (the §4 mechanism-1 fix for the Pin G undefined-callee:
-/// `collect_expr_calls` filters through `decls.contains_key`, so an UNDEFINED callee
+/// `collect_expr_calls` filters through `decls.contains_key`, so an undefined callee
 /// `mystery(x)` is invisible to the hard gate and the emitted goal silently carries
 /// `Expr.specCall "mystery"` at fuel 0, bottoming to `0` and self-certifying). A
 /// callee is a spec-call position iff it is a simple single-segment `Path` that is
-/// NEITHER a frozen combinator (`forall_in`/…) NOR `old` — i.e. EXACTLY the calls
+/// neither a frozen combinator (`forall_in`/…) nor `old` — the calls
 /// `encode_call` emits as `Expr.specCall`. This is the full-expression-position
 /// principle (§4 mechanism 1): every expression the export denotes against `R_item`
 /// contributes its spec-calls, defined or not.
@@ -958,7 +955,7 @@ fn collect_all_call_names(e: &Expr, out: &mut Vec<String>) {
     }
 }
 
-/// Collect EVERY spec-call-position callee name in a `Block` (unfiltered; the Pin G
+/// Collect every spec-call-position callee name in a `Block` (unfiltered; the Pin G
 /// companion of [`collect_all_call_names`] over a spec-fn body's statements + tail).
 fn collect_all_block_call_names(b: &Block, out: &mut Vec<String>) {
     for stmt in &b.stmts {
@@ -974,7 +971,7 @@ fn collect_all_block_call_names(b: &Block, out: &mut Vec<String>) {
 /// Does a declared result [`Type`] denote in `intVal` (the §4 pure-contract scope —
 /// the Pin H result-sort gate)? An integer sort (`u32`/`u64`/`usize` or the spec
 /// `int`/`nat`) binds `result : Int` faithfully; a `bool`/unit/ADT/collection result
-/// does NOT (`Denote.lean`'s `intVal` bottoms it to `0`, so a contract and its
+/// does not (`Denote.lean`'s `intVal` bottoms it to `0`, so a contract and its
 /// negation both certify). Only the integer sorts are admitted; everything else is
 /// the increment-(iv) `bindBool`/ADT bridge → [`ExportRefusal::NonIntResult`].
 fn result_is_int_sorted(ty: &Type) -> bool {
@@ -985,25 +982,25 @@ fn result_is_int_sorted(ty: &Type) -> bool {
     }
 }
 
-/// STATICALLY UNFOLD every in-program spec-fn call in an `Expr` to its body, with
+/// Statically unfold every in-program spec-fn call in an `Expr` to its body, with
 /// the params substituted by the call args (`.design/verified/proof-backends.md`
-/// §6.1(b) — "the exporter STATICALLY UNFOLDS every spec-fn call to its FINITE
-/// depth at export time, producing a specCall-free `Expr`, then apply tier (a)").
+/// §6.1(b) — the exporter unfolds every spec-fn call to its finite
+/// depth at export time, producing a specCall-free `Expr`, then applies tier (a)).
 /// Iterated until no in-registry call remains (terminates because the registry is a
-/// finite DAG — tier (b)'s precondition; a recursive registry is tier (c) and is
-/// NOT unfolded). The unfolded `Expr` must equal the spec-fn's real body substituted
-/// arm-by-arm — itself part of EXP (a wrong unfolding is an unsound export the
-/// inspection tier catches). Bounded iteration (a guard) keeps it total even if the
+/// finite DAG, tier (b)'s precondition; a recursive registry is tier (c) and is
+/// not unfolded). The unfolded `Expr` equals the spec-fn's body substituted
+/// arm-by-arm, itself part of EXP (a wrong unfolding is an unsound export the
+/// inspection tier catches). Bounded iteration keeps it total even if the
 /// DAG assumption is violated (it then leaves residual calls → the fuel-free goal
-/// would carry a `specCall`, which the encoder rejects as still-present, an honest
-/// non-proof, NEVER a silent self-cert).
+/// would carry a `specCall`, which the encoder rejects as still-present, yielding a
+/// non-proof).
 fn unfold_spec_calls(
     e: &Expr,
     decls: &BTreeMap<String, SpecFnItem>,
 ) -> Result<Expr, ExportRefusal> {
     // The DAG depth is bounded by the number of distinct spec-fns; iterate that many
-    // times + 1 as the safety bound (a recursive registry never reaches here — tier
-    // (c) — but the bound keeps the function total regardless).
+    // times + 1 as the safety bound (a recursive registry never reaches here, tier
+    // (c), but the bound keeps the function total regardless).
     let bound = decls.len() + 1;
     let mut cur = e.clone();
     for _ in 0..bound {
@@ -1016,9 +1013,9 @@ fn unfold_spec_calls(
 }
 
 /// One unfolding pass: replace each in-program spec-fn `Call(f, args)` with `f`'s
-/// body (a pure tail expr) with `f.params` substituted by the UNFOLDED args. Returns
+/// body (a pure tail expr) with `f.params` substituted by the unfolded args. Returns
 /// an [`ExportRefusal::OutOfFragment`] (capture-unsafe) if the §6.1(b) substitution
-/// would CAPTURE a caller free var under a body binder (the Pin I fix; see
+/// would capture a caller free var under a body binder (the Pin I fix; see
 /// [`substitute`]).
 fn unfold_once(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> Result<Expr, ExportRefusal> {
     Ok(match e {
@@ -1121,9 +1118,9 @@ fn unfold_index(
     })
 }
 
-/// Collect the FREE single-segment `Path` names of an `Expr` (the caller-var
+/// Collect the free single-segment `Path` names of an `Expr` (the caller-var
 /// support of a substituted argument; the Pin I capture test). A closure / match-arm
-/// binder REMOVES its bound name from the free set of its body (it is bound there),
+/// binder removes its bound name from the free set of its body (it is bound there),
 /// matching the same scoping [`substitute`] respects.
 fn free_path_names(
     e: &Expr,
@@ -1187,9 +1184,9 @@ fn free_path_names(
     }
 }
 
-/// The set of free names a substitution `subst` would INTRODUCE (the union of the
-/// free names of every substituted argument) — the names a body binder must NOT
-/// shadow, on pain of CAPTURE (the Pin I test).
+/// The set of free names a substitution `subst` would introduce (the union of the
+/// free names of every substituted argument) — the names a body binder must not
+/// shadow, on pain of capture (the Pin I test).
 fn subst_free_names(subst: &BTreeMap<String, Expr>) -> std::collections::BTreeSet<String> {
     let mut out = std::collections::BTreeSet::new();
     for arg in subst.values() {
@@ -1202,20 +1199,19 @@ fn subst_free_names(subst: &BTreeMap<String, Expr>) -> std::collections::BTreeSe
 /// Substitute free `Path` names by their bound exprs (the spec-fn param→arg
 /// substitution of static unfolding, §6.1(b)). A `Path([name])` that is a key in
 /// `subst` is replaced; everything else recurses structurally. A bound closure/
-/// match-arm binder SHADOWS a param of the same name (the spec-fn body is closed
+/// match-arm binder shadows a param of the same name (the spec-fn body is closed
 /// over its params, §4.2, so a shadowed name is the closure's element, not the
 /// param — kept correct by removing the shadowed key in that scope).
 ///
-/// CAPTURE-SAFETY (the Pin I fix, §6.1(b) "the unfolded `Expr` MUST equal the real
-/// body substituted"): a body binder (a closure element var / a match payload
-/// binder) that EQUALS a free name of a STILL-LIVE substituted argument would
-/// CAPTURE that caller var — silently changing meaning (`cntk(xs, k as int)` with
+/// Capture-safety (the Pin I fix, §6.1(b): the unfolded `Expr` equals the real
+/// body substituted): a body binder (a closure element var / a match payload
+/// binder) that equals a free name of a still-live substituted argument would
+/// capture that caller var, changing meaning (`cntk(xs, k as int)` with
 /// `|k| … == v` becomes the tautology `|k| … == k`). This is detected and the
-/// substitution REFUSES (`ExportRefusal::OutOfFragment`, capture-unsafe) → the item
-/// is NOT tier-(b)-unfoldable and the engine SKIPs it to the tier-(c) interactive
-/// path (an honest skip, NEVER a silent capture, NEVER a wrong-program proof). The
-/// shadowing direction (where NO live arg uses the binder name) is still handled by
-/// removing the shadowed key — that is sound, not a capture.
+/// substitution refuses (`ExportRefusal::OutOfFragment`, capture-unsafe) → the item
+/// is not tier-(b)-unfoldable and the engine skips it to the tier-(c) interactive
+/// path. The shadowing direction (where no live arg uses the binder name) is handled
+/// soundly by removing the shadowed key.
 fn substitute(e: &Expr, subst: &BTreeMap<String, Expr>) -> Result<Expr, ExportRefusal> {
     Ok(match e {
         Expr::Path(segs) if segs.len() == 1 => {
@@ -1273,7 +1269,7 @@ fn substitute(e: &Expr, subst: &BTreeMap<String, Expr>) -> Result<Expr, ExportRe
             let scrut = Box::new(substitute(scrutinee, subst)?);
             let mut new_arms = Vec::with_capacity(arms.len());
             for a in arms {
-                // The arm payload binder SHADOWS a param of the same name.
+                // The arm payload binder shadows a param of the same name.
                 let mut inner = subst.clone();
                 if let Pattern::Enum { fields: fs, .. } = &a.pattern {
                     if let [Pattern::Binding(b)] = fs.as_slice() {
@@ -1297,7 +1293,7 @@ fn substitute(e: &Expr, subst: &BTreeMap<String, Expr>) -> Result<Expr, ExportRe
             variant: variant.clone(),
         },
         Expr::Closure { params, body } => {
-            // The closure element var SHADOWS a param of the same name.
+            // The closure element var shadows a param of the same name.
             let mut inner = subst.clone();
             for p in params {
                 check_no_capture(p, &inner)?;
@@ -1312,10 +1308,10 @@ fn substitute(e: &Expr, subst: &BTreeMap<String, Expr>) -> Result<Expr, ExportRe
     })
 }
 
-/// CAPTURE GUARD (the Pin I fix, §6.1(b)): a body binder `binder` may safely shadow
-/// a param key in `subst` ONLY if NO still-live substituted argument carries
-/// `binder` as a free name — otherwise removing the key would let the binder CAPTURE
-/// that caller var. On a collision the tier-(b) unfolding REFUSES (capture-unsafe).
+/// Capture guard (the Pin I fix, §6.1(b)): a body binder `binder` may safely shadow
+/// a param key in `subst` only if no still-live substituted argument carries
+/// `binder` as a free name; otherwise removing the key would let the binder capture
+/// that caller var. On a collision the tier-(b) unfolding refuses (capture-unsafe).
 fn check_no_capture(binder: &str, subst: &BTreeMap<String, Expr>) -> Result<(), ExportRefusal> {
     if subst_free_names(subst).contains(binder) {
         return Err(ExportRefusal::OutOfFragment(format!(
@@ -1329,8 +1325,8 @@ fn check_no_capture(binder: &str, subst: &BTreeMap<String, Expr>) -> Result<(), 
 }
 
 /// Does an `Expr` contain a `specCall` reachable to an in-program spec-fn? (The §6.1
-/// `specCallFree` test, over the SAME positions the closure walks.) A combinator
-/// callee (`forall_in`/…) is NOT a spec-call; `old(_)` is not; only a named in-program
+/// `specCallFree` test, over the same positions the closure walks.) A combinator
+/// callee (`forall_in`/…) is not a spec-call; `old(_)` is not; only a named in-program
 /// spec-fn is.
 fn expr_has_spec_call(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> bool {
     let mut out = Vec::new();
@@ -1338,9 +1334,9 @@ fn expr_has_spec_call(e: &Expr, decls: &BTreeMap<String, SpecFnItem>) -> bool {
     !out.is_empty()
 }
 
-/// Classify the export TIER (`.design/verified/proof-backends.md` §6.1). Tier (a) if
-/// `req`/`ens`/body/dec are ALL specCall-free; else tier (b) if the registry is
-/// NON-recursive (a finite DAG); else tier (c) (recursive).
+/// Classify the export tier (`.design/verified/proof-backends.md` §6.1). Tier (a) if
+/// `req`/`ens`/body/dec are all specCall-free; else tier (b) if the registry is
+/// non-recursive (a finite DAG); else tier (c) (recursive).
 fn tier_of(
     req: Option<&Expr>,
     ens: &[Expr],
@@ -1362,7 +1358,7 @@ fn tier_of(
     }
 }
 
-/// The AUTO tactic battery (`.design/verified/proof-backends.md` §6.1(a) / REQ-7) —
+/// The auto tactic battery (`.design/verified/proof-backends.md` §6.1(a) / REQ-7) —
 /// `first | decide | (intros; simp_all; omega) | …`. Tried in order so a closed-form
 /// QF goal is `decide`d, a linear-arith goal falls to `simp_all; omega` (the
 /// z3-demotion battery), etc. Emitted as the proof of the tier-(a)/(b) theorem.
@@ -1380,13 +1376,13 @@ fn auto_tactic_battery() -> &'static str {
      | (revert hreq; omega)"
 }
 
-/// Emit the obligation THEOREM (`.design/verified/proof-backends.md` §4/§6.1). Tier
-/// (a)/(b): the FUEL-FREE `∀ v, denote 0 req env → denote 0 ens (bindInt env "result"
+/// Emit the obligation theorem (`.design/verified/proof-backends.md` §4/§6.1). Tier
+/// (a)/(b): the fuel-free `∀ v, denote 0 req env → denote 0 ens (bindInt env "result"
 /// rbody)` goal (sound via `stabilizes_iff_intVal_zero` /
 /// `stabilizesProp_iff_denote_zero`, cited), discharged by the auto battery. Tier
 /// (c): the §4 `∀ r, stabilizes body env r → stabilizesProp req env → stabilizesProp
-/// ens (bindInt env "result" r)` stabilized form, marked INTERACTIVE (a skeleton the
-/// engine does NOT lake-check).
+/// ens (bindInt env "result" r)` stabilized form, marked interactive (a skeleton the
+/// engine does not lake-check).
 fn emit_theorem(
     thm_name: &str,
     req: Option<&Expr>,
@@ -1408,11 +1404,11 @@ fn emit_theorem(
 
     match tier {
         ExportTier::FuelFreeAuto | ExportTier::StaticUnfoldAuto => {
-            // FUEL-FREE shallow goal (§6.1(a)/(b)): `denote 0` / `intVal 0`. The
+            // Fuel-free shallow goal (§6.1(a)/(b)): `denote 0` / `intVal 0`. The
             // `stabilizes_iff_intVal_zero` / `stabilizesProp_iff_denote_zero`
-            // corollaries (`Stabilize.lean`) prove this EQUIVALENT to the §4
+            // corollaries (`Stabilize.lean`) prove this equivalent to the §4
             // stabilized form for a specCall-free `e` (tier a) or a statically-
-            // unfolded one (tier b) — cited so the EXP inspector sees the bridge.
+            // unfolded one (tier b), cited so the EXP inspector sees the bridge.
             Ok(format!(
                 "/-- {thm_name}: the FUEL-FREE tier-({}) obligation (§6.1).\n    \
                  Sound via `Thermite.stabilizes_iff_intVal_zero` /\n    \
@@ -1431,11 +1427,11 @@ fn emit_theorem(
             ))
         }
         ExportTier::RecursiveInteractive => {
-            // The §4 STABILIZED form (interactive only): `∀ r, stabilizes body env r
-            // → reqStable → ensStable@r`. The result is BOUND THROUGH `stabilizes`
-            // (the #214 fix — NO concrete export-time value; uniqueness of
-            // stabilization forces `r` to the body's true stabilized value). The
-            // engine does NOT lake-check this (RecursiveInteractive); it is emitted
+            // The §4 stabilized form (interactive only): `∀ r, stabilizes body env r
+            // → reqStable → ensStable@r`. The result is bound through `stabilizes`
+            // (the #214 fix — no concrete export-time value; uniqueness of
+            // stabilization forces `r` to the body's stabilized value). The
+            // engine does not lake-check this (RecursiveInteractive); it is emitted
             // for increment-(iii) interactive use, marked as a skeleton.
             Ok(format!(
                 "/-- {thm_name}: the §4 STABILIZED form (tier (c), INTERACTIVE only).\n    \
@@ -1473,24 +1469,24 @@ fn conjoin(terms: &[String]) -> String {
 }
 
 // ============================================================================
-// THE EXEC-BODY BRIDGE (§4.1 / REQ-10; increment (iv-b), blocker #253) — the
-// STRAIGHT-LINE-BODY exporter. Extends the pure-contract exporter past a single
+// The exec-body bridge (§4.1 / REQ-10; increment (iv-b), blocker #253) — the
+// straight-line-body exporter. Extends the pure-contract exporter past a single
 // tail `Expr` to a body that is the `S_B` straight-line `Block`
 // (let/assign/expr/if-statement/sequencing + a tail exec expr) the spine
 // mechanizes as `Thermite.Exec.bodyDenote` (`lean/Thermite/Exec/Stmt.lean`).
 //
-// The emitted file carries (over `R_item`, the SAME registry machinery):
+// The emitted file carries (over `R_item`, the same registry machinery):
 //   - `stateOf : Thermite.Env → Thermite.Exec.State` (§4.1.4) — the env→State map,
-//     `scope := fun _ => false` (params are free INPUTS, the spine's `inputState`
-//     exemplar — EXP-verified faithful against `body_ref_state`'s EMPTY initial env;
+//     `scope := fun _ => false` (params are free inputs, the spine's `inputState`
+//     exemplar; EXP-verified faithful against `body_ref_state`'s empty initial env;
 //     a body `assign` to a param is `none` on both sides);
 //   - the per-param correspondence `rfl`-lemmas (the §4.1.4 compile-time tripwire);
-//   - the HYPOTHESIZE CONTRACT theorem (§4.1.5) — `bodyConverges body (stateOf v) r
-//     → … → ens@(bindResult … r)`, the result bound THROUGH `bodyConverges` (uniqueness
+//   - the hypothesize-contract theorem (§4.1.5) — `bodyConverges body (stateOf v) r
+//     → … → ens@(bindResult … r)`, the result bound through `bodyConverges` (uniqueness
 //     free: `bodyDenote` is a function); and
-//   - the conjoined OVERFLOW theorem (§4.1.5) — `(bodyDenote body (stateOf v)).isSome`
-//     under `req`, the soundness condition that makes the HYPOTHESIZE vacuity harmless
-//     (an always-overflowing body fails OVERFLOW so cannot certify — the conjunction
+//   - the conjoined overflow theorem (§4.1.5) — `(bodyDenote body (stateOf v)).isSome`
+//     under `req`, the soundness condition that makes the hypothesize vacuity harmless
+//     (an always-overflowing body fails overflow so cannot certify — the conjunction
 //     rule, PinExecOverflowVacuity's Rust mirror).
 // ============================================================================
 
@@ -1508,12 +1504,12 @@ fn exec_int_ty(ty: &Type) -> Option<&'static str> {
 }
 
 /// The exec result kind of a declared item return type (§4.1.1/§4.1.2/§4.1.3): an int
-/// sort binds via `BVal.value`, a `bool` via `bindBool`, an Option/Result is REFUSED
+/// sort binds via `BVal.value`, a `bool` via `bindBool`, an Option/Result is refused
 /// (#254 — no `ExecVal` optres variant), anything else is out-of-fragment.
 enum ExecResult {
     /// An int-sorted result (`u32`/`u64`/`usize`); the `.int r` antecedent + the
-    /// `bindResult … (.int r)` = `bindInt … r.value` bridge (the bridge is the IDENTITY
-    /// on `BVal.value` — the result's declared width is NOT carried into the unbounded
+    /// `bindResult … (.int r)` = `bindInt … r.value` bridge (the bridge is the identity
+    /// on `BVal.value`; the result's declared width is not carried into the unbounded
     /// `S_C` `Env`, which compares mathematical values).
     Int,
     /// A `bool` result; the `.bool b` antecedent + `bindResult … (.bool b)` =
@@ -1550,10 +1546,10 @@ struct ExecCtx {
     int_width: BTreeMap<String, &'static str>,
     /// Slice param names (`&[uW]`) → the element width ctor.
     slice_elem: BTreeMap<String, &'static str>,
-    /// Bool param/cell names (read as a `boolLit`-shaped exec var — but the spine
+    /// Bool param/cell names (read as a `boolLit`-shaped exec var; the spine
     /// `ExecExpr` has no bool-named var; a bool param/cell is read via `var`, whose
     /// env value is a `.bool`, which `asInt` rejects in an int position and `asBool`
-    /// accepts in a bool position — so it is tracked for completeness only).
+    /// accepts in a bool position, so it is tracked for completeness only).
     bool_names: std::collections::BTreeSet<String>,
 }
 
@@ -1600,11 +1596,11 @@ fn sort_exec_param(name: &str, ty: &Type, ctx: &mut ExecCtx) {
     }
 }
 
-/// Encode a Thermite [`Expr`] in EXEC position into its `Thermite.Exec.ExecExpr`
-/// constructor TERM (§4.1 — the exec-body value bridge; the `ExecExpr` arms of
+/// Encode a Thermite [`Expr`] in exec position into its `Thermite.Exec.ExecExpr`
+/// constructor term (§4.1 — the exec-body value bridge; the `ExecExpr` arms of
 /// `Exec.lean`: `intLit`/`boolLit`/`var`/`arith`/`cmp`/`logic`/`not`/`cast`/`index`).
-/// `width` is the contextual int width a bare literal/var sits at. An OUT-of-`S_E`
-/// construct is a structured [`ExportRefusal`] — NEVER a silent omission.
+/// `width` is the contextual int width a bare literal/var sits at. An out-of-`S_E`
+/// construct is a structured [`ExportRefusal`].
 fn encode_exec_expr(e: &Expr, width: &str, ctx: &ExecCtx) -> Result<String, ExportRefusal> {
     match e {
         Expr::IntLit { value, .. } => {
@@ -1631,7 +1627,7 @@ fn encode_exec_expr(e: &Expr, width: &str, ctx: &ExecCtx) -> Result<String, Expo
         },
         Expr::Cast { expr, ty } => {
             let target = exec_cast_target(ty)?;
-            // The cast inner is read at its OWN width; the cast retypes to `target`.
+            // The cast inner is read at its own width; the cast retypes to `target`.
             Ok(format!(
                 "(Thermite.Exec.ExecExpr.cast {} {target})",
                 encode_exec_expr(expr, width, ctx)?
@@ -1639,7 +1635,7 @@ fn encode_exec_expr(e: &Expr, width: &str, ctx: &ExecCtx) -> Result<String, Expo
         }
         Expr::Index { base, index } => encode_exec_index(base, index, ctx),
         Expr::Ref { expr, .. } => encode_exec_expr(expr, width, ctx),
-        // OUT of `S_E`'s frozen subset (an honest refusal — §4.1 / §8 OUT):
+        // Out of `S_E`'s frozen subset (a refusal — §4.1 / §8 OUT):
         Expr::MethodCall { name, .. } => Err(ExportRefusal::OutOfFragment(format!(
             "method call `.{name}(..)` in exec-body position (S_E has no method calls)"
         ))),
@@ -1705,7 +1701,7 @@ fn exec_cast_target(ty: &Type) -> Result<&'static str, ExportRefusal> {
     })
 }
 
-/// Encode an exec `xs[i]` index over a SLICE param (`Exec.lean`'s `ExecExpr.index`).
+/// Encode an exec `xs[i]` index over a slice param (`Exec.lean`'s `ExecExpr.index`).
 /// Only a single-element index over a slice-bound base is in `S_E` (a range borrow is
 /// a contract-side `S_C` form, not an exec value).
 fn encode_exec_index(
@@ -1739,7 +1735,7 @@ fn encode_exec_index(
 }
 
 /// Encode a straight-line `Block` (the `S_B` subset) into its `Thermite.Exec.Block`
-/// constructor TERM (§4.1 — the `Stmt`/`Block` arms of `Exec/Stmt.lean`:
+/// constructor term (§4.1 — the `Stmt`/`Block` arms of `Exec/Stmt.lean`:
 /// `letS`/`assign`/`exprS`/`ifElse` + the `Block.mk stmts tail`). A loop / break /
 /// continue / mid-body return / non-scalar mutation is a structured
 /// [`ExportRefusal::LoopBody`] (§4.1.7). `ctx` threads the declared widths (a fresh
@@ -1763,7 +1759,7 @@ fn encode_exec_block(b: &Block, ctx: &ExecCtx) -> Result<String, ExportRefusal> 
     ))
 }
 
-/// Encode one straight-line `Stmt` into its `Thermite.Exec.Stmt` constructor TERM
+/// Encode one straight-line `Stmt` into its `Thermite.Exec.Stmt` constructor term
 /// (§4.1 — `letS`/`assign`/`exprS`/`ifElse`). Mutates `ctx` to record a fresh `let`
 /// cell's width. A loop-class / non-scalar-mutation / mid-body-return / break /
 /// continue statement is a structured [`ExportRefusal::LoopBody`] (§4.1.7).
@@ -1811,7 +1807,7 @@ fn encode_exec_stmt(stmt: &Stmt, ctx: &mut ExecCtx) -> Result<String, ExportRefu
             encode_exec_expr(e, "Thermite.Exec.IntTy.u64", ctx)?
         )),
         Stmt::If { cond, then, else_ } => {
-            // An if-STATEMENT (`Stmt.ifElse`) over sub-blocks. An `if` with no `else`
+            // An if-statement (`Stmt.ifElse`) over sub-blocks. An `if` with no `else`
             // has an empty (tail-less) else block — the spine's `ifElse` requires both
             // branches, so a missing else is the empty block `Block.mk [] none`.
             let cond_term = encode_exec_expr(cond, "Thermite.Exec.IntTy.u64", ctx)?;
@@ -1846,9 +1842,9 @@ fn encode_exec_stmt(stmt: &Stmt, ctx: &mut ExecCtx) -> Result<String, ExportRefu
 /// `InRangeParams` typed-input premise, and the per-param correspondence `rfl`-lemmas
 /// (the §4.1.4 compile-time tripwire). Returns `(state_of_def, lemmas, in_range_pred)`.
 ///
-/// `scope := fun _ => false` — params are free INPUTS, not `let`-bound cells (the
+/// `scope := fun _ => false` — params are free inputs, not `let`-bound cells (the
 /// spine's `inputState` exemplar; EXP-verified faithful against `body_ref_state`'s
-/// EMPTY initial env — a body `assign` to a param is `none` on both sides).
+/// empty initial env; a body `assign` to a param is `none` on both sides).
 fn emit_state_of(params: &[thermite_syntax::Param]) -> (String, String, String) {
     // The `vars` arms: each int/bool scalar param → its State cell; the slice arm:
     // each slice param → its element sequence at the elem width.
@@ -1950,10 +1946,10 @@ fn slice_elem_ctor(ty: &Type) -> Option<&'static str> {
     }
 }
 
-/// Emit the HYPOTHESIZE CONTRACT theorem + the conjoined OVERFLOW theorem for a
+/// Emit the hypothesize-contract theorem + the conjoined overflow theorem for a
 /// straight-line-body item (§4.1.5 — the #212(b) resolution + the conjunction rule).
 /// Both are over `R_item` (held fixed) and the fuel-free `denote 0` clause forms (the
-/// pure-contract tier-(a)/(b) machinery, VERBATIM); the auto battery discharges both.
+/// pure-contract tier-(a)/(b) machinery, verbatim); the auto battery discharges both.
 #[allow(clippy::too_many_arguments)]
 fn emit_body_theorems(
     thm_name: &str,
@@ -2017,7 +2013,7 @@ fn emit_body_theorems(
     )
 }
 
-/// The AUTO tactic battery for the HYPOTHESIZE CONTRACT body theorem (§4.1.5 / REQ-7).
+/// The auto tactic battery for the hypothesize-contract body theorem (§4.1.5 / REQ-7).
 /// Introduces the premises, unfolds the `bodyConverges` antecedent + the value bridge,
 /// then the same `decide`/`simp`/`omega` battery the pure-contract path uses.
 fn exec_body_tactic_battery() -> &'static str {
@@ -2037,7 +2033,7 @@ fn exec_body_tactic_battery() -> &'static str {
      | omega"
 }
 
-/// The AUTO tactic battery for the conjoined OVERFLOW theorem (§4.1.5): under the
+/// The auto tactic battery for the conjoined overflow theorem (§4.1.5): under the
 /// precondition the body's `bodyDenote` is `some` (every threaded obligation
 /// discharges). Unfolds the body denotation and discharges by `decide`/`omega`.
 fn exec_overflow_tactic_battery() -> &'static str {
@@ -2053,18 +2049,18 @@ fn exec_overflow_tactic_battery() -> &'static str {
      | (simp_all; omega)"
 }
 
-/// Export a checked PURE-CONTRACT item to a self-contained Lean file
+/// Export a checked pure-contract item to a self-contained Lean file
 /// (`.design/verified/proof-backends.md` REQ-6/REQ-7 — the top-level exporter).
 ///
 /// `obligation` is the backend-neutral [`Obligation`] (its `env.spec_defs` is the
-/// full-expression-position called-spec-fn closure — the ONE closure, #192);
+/// full-expression-position called-spec-fn closure, the one closure, #192);
 /// `program` is the parsed source (for the spec-fn definitions `R_item` is populated
 /// from + the recursive-registry detection); `item` is the source item (for the body
 /// + the dec measure + the type-sorted params).
 ///
 /// Returns the [`ExportedObligation`] (Lean source + tier + registry names) or a
-/// structured [`ExportRefusal`] (an OUT-of-fragment construct, a non-pure-contract
-/// body, the HARD-GATE incomplete-registry refusal, or an open hole). NEVER a panic.
+/// structured [`ExportRefusal`] (an out-of-fragment construct, a non-pure-contract
+/// body, the hard-gate incomplete-registry refusal, or an open hole). Does not panic.
 pub fn export_item(
     obligation: &Obligation,
     program: &Program,
@@ -2094,20 +2090,20 @@ pub fn export_item(
                     f.name
                 ))
             })?;
-            // THE EXEC-BODY DISPATCH (§4.1 / REQ-10, increment (iv-b)): a body that is
-            // NOT a single pure tail `Expr` (it has statements — let/assign/expr/if/
-            // sequencing) OR whose result is a non-int (bool) sort is a STRAIGHT-LINE
-            // `S_B` item — route to the exec-body exporter (the HYPOTHESIZE + conjoined
-            // OVERFLOW theorems over `bodyDenote`/`stateOf`). A pure-int-tail body keeps
-            // the §4 pure-contract path below (unchanged — the SHIPPED path is NOT
-            // churned, the design's "a pure-`intVal` tail body keeps the §4 form").
+            // The exec-body dispatch (§4.1 / REQ-10, increment (iv-b)): a body that is
+            // not a single pure tail `Expr` (it has statements — let/assign/expr/if/
+            // sequencing) or whose result is a non-int (bool) sort is a straight-line
+            // `S_B` item — route to the exec-body exporter (the hypothesize + conjoined
+            // overflow theorems over `bodyDenote`/`stateOf`). A pure-int-tail body keeps
+            // the §4 pure-contract path below (the shipped path is unchanged, per the
+            // design's "a pure-`intVal` tail body keeps the §4 form").
             let is_pure_int_tail =
                 pure_tail_of_block(body_block).is_some() && result_is_int_sorted(&f.ret);
             if !is_pure_int_tail {
-                // THE WHILE-BODY DISPATCH (§4.2 / REQ-11, increment (v-b)): a body whose
-                // LAST statement before the tail is a v1 `Stmt::Loop(While)` (the
-                // `recognize_v1_loop` shape) is the (v) WHILE-BODY class — route to the
-                // while-body exporter. A non-while statement body (or a loop NOT in the
+                // The while-body dispatch (§4.2 / REQ-11, increment (v-b)): a body whose
+                // last statement before the tail is a v1 `Stmt::Loop(While)` (the
+                // `recognize_v1_loop` shape) is the (v) while-body class — route to the
+                // while-body exporter. A non-while statement body (or a loop not in the
                 // recognized v1 shape) falls through to the straight-line exporter, which
                 // refuses any loop construct via `ExportRefusal::LoopBody` (§4.1.7). The
                 // recognizer mirrors `thermite-tv::recognize_v1_loop` arm-by-arm.
@@ -2125,9 +2121,9 @@ pub fn export_item(
                     ))
                 })?
                 .clone();
-            // THE RESULT-SORT GATE (§4 SCOPE / Pin H): the pure-contract class is
+            // The result-sort gate (§4 scope / Pin H): the pure-contract class is
             // intVal-denoting bodies (result `r : Int`). A `-> bool`/unit/ADT result
-            // bottoms to `0` in `intVal` (a contract AND its negation both certify) —
+            // bottoms to `0` in `intVal` (a contract and its negation both certify), so
             // refuse (the increment-(iv) bindBool bridge).
             if !result_is_int_sorted(&f.ret) {
                 return Err(ExportRefusal::NonIntResult(format!(
@@ -2152,9 +2148,9 @@ pub fn export_item(
                     ))
                 })?
                 .clone();
-            // THE RESULT-SORT GATE (§4 SCOPE / Pin H): a spec fn's body must denote
+            // The result-sort gate (§4 scope / Pin H): a spec fn's body must denote
             // in `intVal` (the degenerate ens `result == body` binds `result : Int`).
-            // A `-> bool`/ADT spec fn would bottom to `0` — refuse.
+            // A `-> bool`/ADT spec fn would bottom to `0`, so refuse.
             if !result_is_int_sorted(&s.ret) {
                 return Err(ExportRefusal::NonIntResult(format!(
                     "spec fn `{}` returns {:?}",
@@ -2163,7 +2159,7 @@ pub fn export_item(
             }
             // A spec fn has no req/ens; its certification obligation is its body
             // characterization. We export a degenerate ens `result == body` so the
-            // same theorem shape applies (the body's stabilized value IS the result).
+            // same theorem shape applies (the body's stabilized value is the result).
             let ens = vec![Expr::Binary {
                 op: BinOp::Eq,
                 lhs: Box::new(Expr::Path(vec!["result".to_string()])),
@@ -2181,22 +2177,21 @@ pub fn export_item(
     // The env coercion frame (sorts free names).
     let ctx = ctx_for_params(&params);
 
-    // THE HARD GATE (§4 mechanism 1), in TWO independent directions, BEFORE any
+    // The hard gate (§4 mechanism 1), in two independent directions, before any
     // encoding:
     //
-    // (i) every spec-call ACTUALLY appearing in `req ∪ ens ∪ body ∪ dec` must be in
-    //     the obligation's `called` closure AND must RESOLVE to a definition. This
-    //     catches a BUGGY/omitting closure (the Pin B/C/E/F bottom-poisoning: an
+    // (i) every spec-call appearing in `req ∪ ens ∪ body ∪ dec` must be in
+    //     the obligation's `called` closure and must resolve to a definition. This
+    //     catches a buggy/omitting closure (the Pin B/C/E/F bottom-poisoning: an
     //     omitted body- or measure-called spec-fn would bottom to the Int-`0` and
-    //     self-certify) AND an UNDEFINED callee (the Pin G `mystery(x)`: a callee with
-    //     NO in-program definition). The collection here is UNFILTERED
-    //     (`collect_all_call_names`, NOT `collect_expr_calls`) — the defined-names
+    //     self-certify) and an undefined callee (the Pin G `mystery(x)`: a callee with
+    //     no in-program definition). The collection here is unfiltered
+    //     (`collect_all_call_names`, not `collect_expr_calls`); the defined-names
     //     filter was the shared blind spot that made `mystery` invisible to the gate
-    //     (§4 full-expression-position principle: EVERY spec-call position the export
+    //     (§4 full-expression-position principle: every spec-call position the export
     //     denotes against `R_item` contributes its name, defined or not). The exporter
-    //     does NOT trust the closure blindly — it RE-CHECKS coverage against the exprs
-    //     it is about to denote (the #192 lesson is "ONE closure builds `R_item`", not
-    //     "skip the coverage check").
+    //     re-checks coverage against the exprs it is about to denote (the #192 lesson —
+    //     one closure builds `R_item` — still keeps the coverage check).
     // (ii) every name in `called` must resolve to a definition (`build_registry`'s
     //      `calledSpecFns ⊆ dom(R_item)` check).
     let called = &obligation.env.spec_defs;
@@ -2212,9 +2207,9 @@ pub fn export_item(
         collect_all_call_names(d, &mut direct);
     }
     let mut present: std::collections::BTreeSet<String> = direct.into_iter().collect();
-    // Close over each reached DEFINED spec-fn's body+dec (the transitive set the
+    // Close over each reached defined spec-fn's body+dec (the transitive set the
     // measure/body-position calls reach — the #226 full-expression-position closure).
-    // The closure walk is UNFILTERED too, so a transitively-reached UNDEFINED callee
+    // The closure walk is unfiltered too, so a transitively-reached undefined callee
     // is also a present name the resolution check below catches.
     let mut worklist: Vec<String> = present.iter().cloned().collect();
     while let Some(n) = worklist.pop() {
@@ -2229,7 +2224,7 @@ pub fn export_item(
             }
         }
     }
-    // An UNDEFINED present name (no in-program definition — the Pin G `mystery`) → the
+    // An undefined present name (no in-program definition — the Pin G `mystery`) → the
     // hard-gate refusal (`calledSpecFns ⊄ dom(R_item)`): its emitted `specCall` would
     // bottom to `0` and self-certify.
     let undefined: Vec<String> = present
@@ -2240,7 +2235,7 @@ pub fn export_item(
     if !undefined.is_empty() {
         return Err(ExportRefusal::IncompleteRegistry(undefined));
     }
-    // A DEFINED present name OMITTED from the closure → refuse (the Pin B/C/E/F
+    // A defined present name omitted from the closure → refuse (the Pin B/C/E/F
     // mirror: the bottom-poisoning of a reachable-but-unregistered call).
     let omitted: Vec<String> = present
         .iter()
@@ -2255,14 +2250,13 @@ pub fn export_item(
     // The tier (registry shape — §6.1).
     let tier = tier_of(req.as_ref(), &ens, &body, dec.as_ref(), called, &decls);
 
-    // For tier (b) (STATIC-UNFOLD AUTO) the exporter UNFOLDS every spec-call to its
-    // finite DAG depth, producing specCall-FREE exprs the fuel-free tier-(a) form is
+    // For tier (b) (static-unfold auto) the exporter unfolds every spec-call to its
+    // finite DAG depth, producing specCall-free exprs the fuel-free tier-(a) form is
     // sound for (§6.1(b)). Tier (a) is already specCall-free; tier (c) keeps the
     // calls (the `∃N∀fuel` interactive form denotes against `R_item`).
-    // The unfolding is CAPTURE-SAFE (Pin I): a substitution that would capture a
-    // caller var under a body binder REFUSES tier (b) here (`?` propagates the
-    // `ExportRefusal::OutOfFragment` — an honest skip to the tier-(c) interactive
-    // path, never a silent capture / wrong-program proof).
+    // The unfolding is capture-safe (Pin I): a substitution that would capture a
+    // caller var under a body binder refuses tier (b) here (`?` propagates the
+    // `ExportRefusal::OutOfFragment`, a skip to the tier-(c) interactive path).
     let (req_e, ens_e, body_e): (Option<Expr>, Vec<Expr>, Expr) =
         if tier == ExportTier::StaticUnfoldAuto {
             (
@@ -2279,9 +2273,9 @@ pub fn export_item(
             (req.clone(), ens.clone(), body.clone())
         };
 
-    // Encode ALL exprs FIRST (so an OUT-of-fragment construct refuses before we emit
-    // the file — an honest skip, never a partial file). For tier (b) the unfolded
-    // exprs are encoded (specCall-free); the theorem below uses the SAME unfolded
+    // Encode all exprs first (so an out-of-fragment construct refuses before we emit
+    // the file, a skip rather than a partial file). For tier (b) the unfolded
+    // exprs are encoded (specCall-free); the theorem below uses the same unfolded
     // exprs, so the emitted goal is the fuel-free shallow shape.
     if let Some(r) = &req_e {
         encode_expr(r, &ctx)?;
@@ -2309,16 +2303,16 @@ pub fn export_item(
         tier = tier.tag(),
     );
 
-    // THE INDEPENDENT RE-CHECK (§4 mechanism 1, the Pin G blind-spot fix): walk the
-    // EMITTED Lean THEOREM TERMS for `Expr.specCall "NAME"` occurrences and demand
-    // each `NAME ∈ dom(R_item)` (= `registry_names`). This is GENUINELY independent of
-    // the source-side gate above — it inspects the bytes actually handed to the
-    // kernel, NOT the Thermite AST — so a future encoder bug that emitted a `specCall`
-    // for a name the gate never saw (the shared `decls.contains_key` blind spot the
-    // critic showed) is caught here, NEVER kernel-accepted with an unresolved bottom.
-    // Only the theorem is scanned (the `R_item` def legitimately matches names in its
-    // own body); a residual `specCall` in the goal whose name is not registered means
-    // the registry does NOT cover the denoted term → refuse.
+    // The independent re-check (§4 mechanism 1, the Pin G blind-spot fix): walk the
+    // emitted Lean theorem terms for `Expr.specCall "NAME"` occurrences and demand
+    // each `NAME ∈ dom(R_item)` (= `registry_names`). This is independent of
+    // the source-side gate above: it inspects the bytes handed to the
+    // kernel, not the Thermite AST, so a future encoder bug that emitted a `specCall`
+    // for a name the gate never saw (the shared `decls.contains_key` blind spot) is
+    // caught here rather than kernel-accepted with an unresolved
+    // bottom. Only the theorem is scanned (the `R_item` def matches names
+    // in its own body); a residual `specCall` in the goal whose name is not registered
+    // means the registry does not cover the denoted term → refuse.
     for name in emitted_spec_call_names(&theorem) {
         if !registry_names.iter().any(|r| r == &name) {
             return Err(ExportRefusal::IncompleteRegistry(vec![name]));
@@ -2332,17 +2326,17 @@ pub fn export_item(
     })
 }
 
-/// Export a checked STRAIGHT-LINE-BODY item to a self-contained Lean file (§4.1 /
+/// Export a checked straight-line-body item to a self-contained Lean file (§4.1 /
 /// REQ-10, increment (iv-b)). The body is the `S_B` block (let/assign/expr/if-stmt/
 /// sequencing + a tail exec expr) the spine mechanizes as `Thermite.Exec.bodyDenote`;
 /// the result is an exec int (the `BVal.value` bridge) or `bool` (the `bindBool`
 /// bridge). Loops / break / continue / mid-body return / non-scalar mutation → the
 /// `ExportRefusal::LoopBody` structured refusal (§4.1.7); an Option/Result result →
-/// `ExportRefusal::OptResResult` (#254). Emits BOTH the HYPOTHESIZE CONTRACT theorem
-/// AND the conjoined OVERFLOW theorem (the §4.1.5 conjunction rule) over `R_item`.
+/// `ExportRefusal::OptResResult` (#254). Emits both the hypothesize-contract theorem
+/// and the conjoined overflow theorem (the §4.1.5 conjunction rule) over `R_item`.
 ///
 /// The contract clause side (`req`/`ens`) keeps the §4 fuel-free tier-(a) machinery
-/// VERBATIM (a straight-line body's exec exprs CANNOT contain spec-calls, so the body
+/// verbatim (a straight-line body's exec exprs cannot contain spec-calls, so the body
 /// contributes ∅ to the #226 `calledSpecFns` seed); a recursive-registry contract is
 /// the future interactive residual (refused here as out-of-fragment for the auto path).
 fn export_straight_line_body(
@@ -2371,7 +2365,7 @@ fn export_straight_line_body(
     // The contract-side env coercion frame (sorts free names: slice→seqVar, etc.).
     let ctx = ctx_for_params(&params);
 
-    // THE HARD GATE (§4 mechanism 1) over req/ens/dec — the body contributes NO
+    // The hard gate (§4 mechanism 1) over req/ens/dec — the body contributes no
     // spec-calls (exec exprs have none), so the seed is the contract closure. We reuse
     // the obligation's `called` closure + the same coverage re-check the pure path runs.
     let called = &obligation.env.spec_defs;
@@ -2414,9 +2408,9 @@ fn export_straight_line_body(
         return Err(ExportRefusal::IncompleteRegistry(omitted));
     }
 
-    // For v1 the exec-body AUTO path is the FUEL-FREE tier-(a) contract form: a
-    // recursive registry on the CONTRACT side is the future interactive residual (the
-    // exec body itself never has spec-calls). A NON-recursive registry statically
+    // For v1 the exec-body auto path is the fuel-free tier-(a) contract form: a
+    // recursive registry on the contract side is the future interactive residual (the
+    // exec body itself never has spec-calls). A non-recursive registry statically
     // unfolds the contract clauses (tier (b)); a recursive one refuses the auto path.
     let body_tier = tier_of(Some(&req), &ens, &req, dec.as_ref(), called, decls);
     if body_tier == ExportTier::RecursiveInteractive {
@@ -2440,10 +2434,10 @@ fn export_straight_line_body(
 
     let (registry_block, registry_names) = build_registry(called, decls)?;
 
-    // Encode the contract clauses (req/ens) — an OUT-of-fragment construct refuses
+    // Encode the contract clauses (req/ens) — an out-of-fragment construct refuses
     // before any file is emitted. The `result` read in `ens` is `var "result"` (int)
-    // or `boolVar "result"` (bool) — for a bool result, the encoder produces a
-    // `var "result"` from the `Path`, but the bool-sorted read needs `boolVar`; we
+    // or `boolVar "result"` (bool); for a bool result, the encoder produces a
+    // `var "result"` from the `Path`, but the bool-sorted read needs `boolVar`, so we
     // rewrite a `result` path read to the bool leaf for a bool-result item.
     let bool_result = matches!(result, ExecResult::Bool);
     let req_term = encode_contract_clause(&req_c, &ctx, bool_result)?;
@@ -2453,7 +2447,7 @@ fn export_straight_line_body(
         .collect::<Result<Vec<_>, _>>()?;
     let ens_term = conjoin(&ens_terms);
 
-    // Encode the exec BODY block (the `S_B` Block). A loop / non-scalar mutation / etc.
+    // Encode the exec body block (the `S_B` Block). A loop / non-scalar mutation / etc.
     // is a structured `LoopBody` refusal (§4.1.7).
     let exec_ctx = exec_ctx_for_params(&params);
     let body_term = encode_exec_block(body_block, &exec_ctx)?;
@@ -2496,7 +2490,7 @@ fn export_straight_line_body(
 
     Ok(ExportedObligation {
         source,
-        // The exec-body AUTO path: the contract clause's tier (a)/(b) drives the auto
+        // The exec-body auto path: the contract clause's tier (a)/(b) drives the auto
         // battery; the body antecedent is always fuel-free.
         tier: body_tier,
         registry_names,
@@ -2504,49 +2498,49 @@ fn export_straight_line_body(
 }
 
 // ============================================================================
-// THE WHILE-BODY WIDENING (§4.2 / REQ-11; increment (v-b), blocker #264) — the
-// v1 WHILE-shape exporter. Extends the straight-line-body exporter (iv-b) past a
-// loop-free `S_B` block to the v1 WHILE shape: a straight-line PREFIX + a single
-// `while <cond>` (non-empty `invs` + `dec`, straight-line scalar body) as the LAST
-// statement before a REQUIRED tail — EXACTLY the set `thermite-tv`'s
-// `recognize_v1_loop` admits. Composes onto the kernel-proven spine WHILE-BODY layer
+// The while-body widening (§4.2 / REQ-11; increment (v-b), blocker #264) — the
+// v1 while-shape exporter. Extends the straight-line-body exporter (iv-b) past a
+// loop-free `S_B` block to the v1 while shape: a straight-line prefix + a single
+// `while <cond>` (non-empty `invs` + `dec`, straight-line scalar body) as the last
+// statement before a required tail — the set `thermite-tv`'s
+// `recognize_v1_loop` admits. Composes onto the kernel-proven spine while-body layer
 // (`lean/Thermite/Exec/WhileBody.lean`: `whileBodyDenote`/`whileBodyConverges` +
 // `while_compose` + `loopDenote_exits_of_dec`).
 //
-// The emitted file carries (over `R_item`, the SAME registry machinery):
+// The emitted file carries (over `R_item`, the same registry machinery):
 //   - `prefix_block`/`loop_cond`/`loop_block`/`tail_expr` (the `Exec.Block`/`ExecExpr`
-//     encodings, REUSING `encode_exec_block`/`encode_exec_expr` — §4.2.4);
-//   - `stateOf`/`InRangeParams`/the per-param `rfl` lemmas (REUSING `emit_state_of`);
-//   - `Inv_item : Env → State → Prop` (FOUR conjunct families — §4.2.4) + `mu_item :
+//     encodings, reusing `encode_exec_block`/`encode_exec_expr` — §4.2.4);
+//   - `stateOf`/`InRangeParams`/the per-param `rfl` lemmas (reusing `emit_state_of`);
+//   - `Inv_item : Env → State → Prop` (four conjunct families — §4.2.4) + `mu_item :
 //     State → Int` (the loop `dec` over cells);
-//   - the FIVE per-item obligation theorems (`_entry`/`_pres`/`_exit`/`_progress`/
+//   - the five per-item obligation theorems (`_entry`/`_pres`/`_exit`/`_progress`/
 //     `_dec`) attempted by the loop auto battery (`hreq` threaded into the unfold set);
-//   - the TWO GENERATOR-PROVED composed theorems: the HYPOTHESIZE CONTRACT theorem
-//     (via `while_compose`, _entry + _pres + _exit) AND the conjoined `_converges`
+//   - the two generator-proved composed theorems: the hypothesize-contract theorem
+//     (via `while_compose`, _entry + _pres + _exit) and the conjoined `_converges`
 //     theorem (via `loopDenote_exits_of_dec`, _pres + _progress + _dec, then _exit's
-//     `∃ r`). A while item certifies ONLY when BOTH composed theorems kernel-accept
-//     (the §4.2.3 conjunction at the certificate level: NO partial-correctness L3 —
-//     the `_converges` theorem JOINTLY discharges OVERFLOW + TERMINATION).
+//     `∃ r`). A while item certifies only when both composed theorems kernel-accept
+//     (the §4.2.3 conjunction at the certificate level: no partial-correctness L3;
+//     the `_converges` theorem jointly discharges overflow + termination).
 //
-// §4.2.5 refusals stay STRUCTURED: the `loop`-kind, nested/non-last/inside-if loops,
+// §4.2.5 refusals stay structured: the `loop`-kind, nested/non-last/inside-if loops,
 // break/continue, mid-body return, non-scalar assign, empty-inv/weak-`inv true`, a
 // tail-less body each refuse `ExportRefusal::LoopBody`; a spec-calling/combinator
 // inv/dec clause is `ExportRefusal::OutOfFragment` (the (v) v1 residual).
 // ============================================================================
 
-/// Does `block`'s LAST statement (before the tail) syntactically appear to be a
-/// `while`-kind `Stmt::Loop`? The DISPATCH predicate (§4.2): only a body whose final
+/// Does `block`'s last statement (before the tail) syntactically appear to be a
+/// `while`-kind `Stmt::Loop`? The dispatch predicate (§4.2): only a body whose final
 /// statement is a `while` loop routes to the while-body exporter; everything else (a
 /// pure tail, a straight-line statement body, a `loop`-kind / non-last loop) goes to
-/// the straight-line exporter, which refuses any loop via `LoopBody`. The FULL v1
+/// the straight-line exporter, which refuses any loop via `LoopBody`. The full v1
 /// recognition (the OUT classes) is in [`recognize_while_body`]; this is the cheap
 /// router so a `loop`-kind in last position is still recognized + refused with its
-/// NAMED reason (rather than slipping to the straight-line exporter's generic refusal).
+/// named reason (rather than slipping to the straight-line exporter's generic refusal).
 fn block_has_trailing_while(block: &Block) -> bool {
     matches!(block.stmts.last(), Some(Stmt::Loop(_)))
 }
 
-/// The recognized v1 WHILE-BODY shape (§4.2.1, mirroring `recognize_v1_loop`): the
+/// The recognized v1 while-body shape (§4.2.1, mirroring `recognize_v1_loop`): the
 /// straight-line prefix statements, the loop condition, the loop body block, the loop
 /// `dec`, the loop `invs`, and the tail expression. Borrowed from the source item.
 struct WhileBodyShape<'a> {
@@ -2558,15 +2552,15 @@ struct WhileBodyShape<'a> {
     tail: &'a Expr,
 }
 
-/// Recognize the v1 WHILE-BODY shape, MIRRORING `thermite-tv::recognize_v1_loop`
-/// arm-by-arm (§4.2.1, the EXP correspondence). The body's LAST statement before the
+/// Recognize the v1 while-body shape, mirroring `thermite-tv::recognize_v1_loop`
+/// arm-by-arm (§4.2.1, the EXP correspondence). The body's last statement before the
 /// tail must be a `Stmt::Loop` with `kind: While(cond)`, non-empty `invs`, a `dec`, and
-/// a STRAIGHT-LINE SCALAR body (no nested loop / break / continue / mid-body return /
-/// non-scalar assign); the tail is REQUIRED. Returns a structured [`ExportRefusal`]
-/// naming the precise OUT-of-v1 reason (§4.2.5, all STRUCTURED, never silent):
-/// `ExportRefusal::LoopBody` for the shape rejects, an honest skip.
+/// a straight-line scalar body (no nested loop / break / continue / mid-body return /
+/// non-scalar assign); the tail is required. Returns a structured [`ExportRefusal`]
+/// naming the precise out-of-v1 reason (§4.2.5, all structured, never silent):
+/// `ExportRefusal::LoopBody` for the shape rejects, a skip.
 fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, ExportRefusal> {
-    // The tail is REQUIRED (a tail-less while body refuses — §4.2.1 `tail := a REQUIRED
+    // The tail is required (a tail-less while body refuses — §4.2.1 `tail := a required
     // tail ExecExpr`).
     let tail = body_block.tail.as_deref().ok_or_else(|| {
         ExportRefusal::LoopBody(
@@ -2576,7 +2570,7 @@ fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, Export
         )
     })?;
 
-    // The loop must be the LAST statement before the tail (mirrors
+    // The loop must be the last statement before the tail (mirrors
     // `recognize_v1_loop`'s `split_last`).
     let Some((last, prefix)) = body_block.stmts.split_last() else {
         return Err(ExportRefusal::LoopBody(
@@ -2594,13 +2588,13 @@ fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, Export
         ));
     };
 
-    // The PREFIX must itself be straight-line (no earlier loop / break / continue /
+    // The prefix must itself be straight-line (no earlier loop / break / continue /
     // mid-body return / nested-loop-under-if) — reject any of those.
     for stmt in prefix {
         reject_out_of_while_subset_stmt(stmt)?;
     }
 
-    // The `loop`-kind is OUT (the multi-exit CPS shape — `binary_search`).
+    // The `loop`-kind is out (the multi-exit CPS shape — `binary_search`).
     let cond = match &loop_node.kind {
         LoopKind::While(c) => c.as_ref(),
         LoopKind::Loop => {
@@ -2613,7 +2607,7 @@ fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, Export
         }
     };
 
-    // Empty `invs` / the trivially-weak `inv true` is OUT (the after-loop `true ∧ ¬cond`
+    // Empty `invs` / the trivially-weak `inv true` is out (the after-loop `true ∧ ¬cond`
     // is vacuous — the §4.2.5 weak-inv reject, mirroring `invariant_is_vacuous`).
     if loop_node.invs.is_empty() {
         return Err(ExportRefusal::LoopBody(
@@ -2634,7 +2628,7 @@ fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, Export
         ));
     }
 
-    // The loop body must be straight-line SCALAR with NO nested loop / break / continue
+    // The loop body must be straight-line scalar with no nested loop / break / continue
     // / mid-body return / non-scalar assign (mirrors `reject_out_of_subset_body` +
     // `collect_assigned_cells`'s non-scalar reject).
     reject_out_of_while_subset_body(&loop_node.body)?;
@@ -2649,10 +2643,10 @@ fn recognize_while_body(body_block: &Block) -> Result<WhileBodyShape<'_>, Export
     })
 }
 
-/// Reject an OUT-of-v1 while-body statement (§4.2.5, mirroring
+/// Reject an out-of-v1 while-body statement (§4.2.5, mirroring
 /// `thermite-tv::reject_out_of_subset_stmt`): a `Stmt::Loop` (nested loop), a `break`/
 /// `continue`, a mid-body `return`. Recurses into `if`-branch bodies (a break/return
-/// nested in an `if` is just as OUT). A straight-line scalar statement passes.
+/// nested in an `if` is just as out). A straight-line scalar statement passes.
 fn reject_out_of_while_subset_stmt(stmt: &Stmt) -> Result<(), ExportRefusal> {
     match stmt {
         Stmt::Loop(node) => Err(ExportRefusal::LoopBody(format!(
@@ -2692,7 +2686,7 @@ fn reject_out_of_while_subset_stmt(stmt: &Stmt) -> Result<(), ExportRefusal> {
     }
 }
 
-/// Reject an OUT-of-v1 while-body block (recurses statements, mirroring
+/// Reject an out-of-v1 while-body block (recurses statements, mirroring
 /// `thermite-tv::reject_out_of_subset_body`).
 fn reject_out_of_while_subset_body(body: &Block) -> Result<(), ExportRefusal> {
     for stmt in &body.stmts {
@@ -2701,7 +2695,7 @@ fn reject_out_of_while_subset_body(body: &Block) -> Result<(), ExportRefusal> {
     Ok(())
 }
 
-/// Collect the bare scalar cell names a straight-line loop body REBINDS (a v1
+/// Collect the bare scalar cell names a straight-line loop body rebinds (a v1
 /// `Stmt::Assign` to a bare in-scope name), recursing into `if`-branches. The cells are
 /// the loop-step parameters / the frame the obligations range over (mirrors
 /// `thermite-tv::collect_assigned_cells`). Sorted for a stable order.
@@ -2731,13 +2725,13 @@ fn collect_while_cells_block(body: &Block, cells: &mut std::collections::BTreeSe
     }
 }
 
-/// Encode a Thermite [`Expr`] (over loop cells + params) into its SHALLOW cell-read
-/// Lean Int TERM — `execIntValue (st.env.vars "name")` for a scalar name, the math op
+/// Encode a Thermite [`Expr`] (over loop cells + params) into its shallow cell-read
+/// Lean Int term — `execIntValue (st.env.vars "name")` for a scalar name, the math op
 /// for arith, `(st.env.slices "xs").length` for a slice `.len()`, the typed slice
 /// element for `xs[i]` (§4.2.4 — the cell-read encoder the `Inv_item`/`mu_item`
-/// denotations use). An OUT-of-shallow-fragment construct (a `specCall` / combinator /
+/// denotations use). An out-of-shallow-fragment construct (a `specCall` / combinator /
 /// method beyond `.len()` / a cast to an unbounded sort) is a structured
-/// [`ExportRefusal::OutOfFragment`] — the (v) v1 residual (§4.2.1), an honest skip.
+/// [`ExportRefusal::OutOfFragment`] — the (v) v1 residual (§4.2.1), a skip.
 fn encode_cell_int(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
     match e {
         Expr::IntLit { value, .. } => Ok(format!("({value} : Int)")),
@@ -2752,9 +2746,9 @@ fn encode_cell_int(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
                 BinOp::Add => "+",
                 BinOp::Sub => "-",
                 BinOp::Mul => "*",
-                // Div/Rem/shift/bit over the SHALLOW Int reads are the math `Int` ops —
+                // Div/Rem/shift/bit over the shallow Int reads are the math `Int` ops,
                 // faithful for the in-range cells the loop invariant ranges over. The
-                // bounded-overflow check lives in the OVERFLOW class (the loop body's
+                // bounded-overflow check lives in the overflow class (the loop body's
                 // `evalArith`), not the shallow predicate (a completeness concern,
                 // §4.2.2 soundness asymmetry).
                 BinOp::Div => "/",
@@ -2770,9 +2764,9 @@ fn encode_cell_int(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
             Ok(format!("({l} {sym} {r})"))
         }
         Expr::Cast { expr, ty } => {
-            // A cast in the SHALLOW Int domain is the identity on the mathematical value
+            // A cast in the shallow Int domain is the identity on the mathematical value
             // (the contract compares mathematical values — `S_C`); only the bounded /
-            // `int`/`nat` casts are admitted (a non-int cast target is OUT).
+            // `int`/`nat` casts are admitted (a non-int cast target is out).
             encode_cast_target(ty)?;
             encode_cell_int(expr, ectx)
         }
@@ -2803,10 +2797,10 @@ fn encode_cell_int(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
     }
 }
 
-/// Encode a Thermite [`Expr`] (a loop `inv` clause) into its SHALLOW cell-read Lean
-/// PROP TERM — a comparison over cell-read Ints (`≤`/`<`/`=`/…), a logical connective
+/// Encode a Thermite [`Expr`] (a loop `inv` clause) into its shallow cell-read Lean
+/// Prop term — a comparison over cell-read Ints (`≤`/`<`/`=`/…), a logical connective
 /// (`∧`/`∨`), or a negation (§4.2.4 — the `Inv_item` user-inv conjunct denotation, the
-/// Lean mirror of loop-TV's `encode_inv_clauses`). An OUT-of-shallow-fragment construct
+/// Lean mirror of loop-TV's `encode_inv_clauses`). An out-of-shallow-fragment construct
 /// (a spec-call / combinator) is a structured [`ExportRefusal::OutOfFragment`] (the (v)
 /// v1 residual, §4.2.1).
 fn encode_cell_prop(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
@@ -2859,23 +2853,23 @@ fn encode_cell_prop(e: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
     }
 }
 
-/// Encode the loop CONDITION into a `condBool loop_cond st = some true`-shaped Lean
-/// PROP over the cell reads — used by `Inv_item`'s shape needs ONLY for the §4.2.4
+/// Encode the loop condition into a `condBool loop_cond st = some true`-shaped Lean
+/// Prop over the cell reads — used by `Inv_item`'s shape only for the §4.2.4
 /// `_progress`/`_exit` connection; the condition itself is encoded as an exec `ExecExpr`
-/// (`loop_cond`) for the spine, so this is the SHALLOW predicate form the battery
+/// (`loop_cond`) for the spine, so this is the shallow predicate form the battery
 /// reasons about. (Kept as a thin wrapper over [`encode_cell_prop`] so a non-shallow
 /// condition refuses the (v) residual.)
 fn encode_cond_shallow(cond: &Expr, ectx: &ExecCtx) -> Result<String, ExportRefusal> {
     encode_cell_prop(cond, ectx)
 }
 
-/// Export a checked v1 WHILE-BODY item to a self-contained Lean file (§4.2 / REQ-11,
-/// increment (v-b)). The body is the v1 WHILE shape `recognize_while_body` admits;
+/// Export a checked v1 while-body item to a self-contained Lean file (§4.2 / REQ-11,
+/// increment (v-b)). The body is the v1 while shape `recognize_while_body` admits;
 /// everything else refuses (§4.2.5). Emits the prefix/cond/loop-body/tail encodings,
-/// `Inv_item`/`mu_item`, the FIVE per-item obligations, and the TWO composed theorems
-/// (the §4.2.4 obligation set) over `R_item` (held fixed). A while item certifies ONLY
-/// when BOTH composed theorems kernel-accept (the §4.2.3 conjunction — the `_converges`
-/// theorem JOINTLY discharges OVERFLOW + TERMINATION; NO partial-correctness L3).
+/// `Inv_item`/`mu_item`, the five per-item obligations, and the two composed theorems
+/// (the §4.2.4 obligation set) over `R_item` (held fixed). A while item certifies only
+/// when both composed theorems kernel-accept (the §4.2.3 conjunction — the `_converges`
+/// theorem jointly discharges overflow + termination; no partial-correctness L3).
 fn export_while_body(
     obligation: &Obligation,
     f: &thermite_syntax::FnItem,
@@ -2891,7 +2885,7 @@ fn export_while_body(
     // The result-sort routing (int → BVal.value bridge; bool → bindBool; optres → #254).
     let result = exec_result_of(&f.ret)?;
 
-    // Recognize the v1 WHILE shape (§4.2.1) — a structured refusal otherwise (§4.2.5).
+    // Recognize the v1 while shape (§4.2.1) — a structured refusal otherwise (§4.2.5).
     let shape = recognize_while_body(body_block)?;
 
     let params = f.params.clone();
@@ -2902,9 +2896,9 @@ fn export_while_body(
     let req = f.contract.req.expr.clone();
     let ens: Vec<Expr> = f.contract.ens.iter().map(|c| c.expr.clone()).collect();
 
-    // THE HARD GATE (§4 mechanism 1) over req/ens (the loop contributes ∅ new spec-calls
+    // The hard gate (§4 mechanism 1) over req/ens (the loop contributes ∅ new spec-calls
     // per §4.2.1, so the seed is the contract closure — the #226 closure is untouched).
-    // The loop `dec` and `invs` are denoted SHALLOWLY (no `R_item` `specCall`); a
+    // The loop `dec` and `invs` are denoted shallowly (no `R_item` `specCall`); a
     // spec-calling inv/dec refuses out-of-fragment in `encode_cell_*` (the (v) residual),
     // so it never contributes a registry name either.
     let called = &obligation.env.spec_defs;
@@ -2969,7 +2963,7 @@ fn export_while_body(
     let (registry_block, registry_names) = build_registry(called, decls)?;
 
     // Encode the contract clauses (req/ens) — a `result` read uses `boolVar` for a bool
-    // result. An OUT-of-fragment construct refuses before any file is emitted.
+    // result. An out-of-fragment construct refuses before any file is emitted.
     let bool_result = matches!(result, ExecResult::Bool);
     let req_term = encode_contract_clause(&req_c, &ctx, bool_result)?;
     let ens_terms = ens_c
@@ -2978,13 +2972,13 @@ fn export_while_body(
         .collect::<Result<Vec<_>, _>>()?;
     let ens_term = conjoin(&ens_terms);
 
-    // Encode the exec PREFIX/COND/LOOP-BODY/TAIL (the spine `Exec.Block`/`ExecExpr`).
-    // The loop cells + their exec WIDTHS (the §4.2.4 family-(2) SORT/WIDTH facts). Each
-    // cell is `let mut`-introduced in the PREFIX; thread the prefix lets into an
+    // Encode the exec prefix/cond/loop-body/tail (the spine `Exec.Block`/`ExecExpr`).
+    // The loop cells + their exec widths (the §4.2.4 family-(2) sort/width facts). Each
+    // cell is `let mut`-introduced in the prefix; thread the prefix lets into an
     // `ExecCtx` to capture each cell's declared width (default `u64` for an un-annotated
-    // `let mut`, matching the encoder's `width_of`). D-6 FIX: this width-bearing context
-    // is threaded into the cond/body/tail/cell-read encodings (NOT hardcoded `u64`), so a
-    // `u32`/`usize` loop cell encodes at its real width on EVERY read.
+    // `let mut`, matching the encoder's `width_of`). D-6 fix: this width-bearing context
+    // is threaded into the cond/body/tail/cell-read encodings (not hardcoded `u64`), so a
+    // `u32`/`usize` loop cell encodes at its real width on every read.
     let mut cell_ctx = exec_ctx.clone();
     for stmt in shape.prefix {
         if let Stmt::Let { name, ty, .. } = stmt {
@@ -3009,7 +3003,7 @@ fn export_while_body(
     let loop_block_term = encode_exec_block(shape.loop_body, &cell_ctx)?;
     let tail_term = encode_exec_expr(shape.tail, "Thermite.Exec.IntTy.u64", &cell_ctx)?;
 
-    // The SHALLOW `Inv_item`/`mu_item` cell-read denotations (§4.2.4). A spec-calling /
+    // The shallow `Inv_item`/`mu_item` cell-read denotations (§4.2.4). A spec-calling /
     // combinator inv/dec refuses here (the (v) v1 residual). Encoded over `cell_ctx` so a
     // cell's range fact is stated at its declared width (D-6).
     let inv_conjuncts = shape
@@ -3030,15 +3024,15 @@ fn export_while_body(
         })
         .collect();
 
-    // The param FRAME facts (§4.2.4 family 3): each PARAM (not a loop cell) reads the
-    // SAME value in the symbolic `st` as in `stateOf v` (the loop never mutates a param).
-    // The §4.2.4 family-(3) FRAME — but the cond/body/inv/dec read params (e.g. `n` in
-    // `lo < n`), so the obligations need each read scalar param's SORT+RANGE fact (the
+    // The param frame facts (§4.2.4 family 3): each param (not a loop cell) reads the
+    // same value in the symbolic `st` as in `stateOf v` (the loop never mutates a param).
+    // The §4.2.4 family-(3) frame: the cond/body/inv/dec read params (e.g. `n` in
+    // `lo < n`), so the obligations need each read scalar param's sort+range fact (the
     // `_pres`/`_progress`/`_dec`'s overflow guard `lo+1 < 2^w` needs `n < 2^w`). The
-    // INTEGER scalar params (NOT loop cells) get a SORT fact `st.env.vars p = .int ⟨w,
+    // integer scalar params (not loop cells) get a sort fact `st.env.vars p = .int ⟨w,
     // v.ints p⟩` (subsumes the bare frame: ties the read back to `stateOf v`'s definitional
-    // `v.ints p`) AND a RANGE fact `0 ≤ v.ints p < 2^w` (established at `_entry` from
-    // `InRangeParams`, preserved trivially — params never change). Slice/bool params keep
+    // `v.ints p`) and a range fact `0 ≤ v.ints p < 2^w` (established at `_entry` from
+    // `InRangeParams`, preserved because params never change). Slice/bool params keep
     // the bare frame (no int range needed). The `_entry` obligation discharges these from
     // `InRangeParams`; preservation is by reflexivity (the loop never mutates a param).
     let cell_names: std::collections::BTreeSet<&str> =
@@ -3062,10 +3056,10 @@ fn export_while_body(
         }
     }
 
-    // The CONCRETE tail-value witness the `_exit` obligation's `∃ r` is closed with: for
+    // The concrete tail-value witness the `_exit` obligation's `∃ r` is closed with: for
     // a tail `var <cell>` it is `.int ⟨w, <cell>_cellval st⟩` (the loop cell's value); for
     // `var <param>` it is `.int ⟨w, v.ints param⟩`. A non-bare-scalar tail yields a
-    // SENTINEL (`?_`) → the `_exit` proof leaves an unsolved goal → `Unknown` (SOUND).
+    // sentinel (`?_`) → the `_exit` proof leaves an unsolved goal → `Unknown` (sound).
     let cell_widths: BTreeMap<&str, &'static str> =
         cells.iter().map(|(c, w)| (c.as_str(), *w)).collect();
     let scalar_param_widths: BTreeMap<&str, &'static str> = scalar_params
@@ -3074,7 +3068,7 @@ fn export_while_body(
         .collect();
     let tail_witness = tail_witness_term(shape.tail, &cell_widths, &scalar_param_widths, &result);
 
-    // The CONCRETE entry-state witness (the prefix `let`-fold over `stateOf v`) the
+    // The concrete entry-state witness (the prefix `let`-fold over `stateOf v`) the
     // `_entry` obligation's `∃ st₁` is closed with (§4.2.4 — a `_`-metavar witness cannot
     // be `simp`-synthesized against `some ?st₁`).
     let prefix_witness = prefix_witness_term(shape.prefix);
@@ -3125,7 +3119,7 @@ fn export_while_body(
 
     Ok(ExportedObligation {
         source,
-        // The while-body AUTO path: the contract clause's tier (a)/(b) drives the auto
+        // The while-body auto path: the contract clause's tier (a)/(b) drives the auto
         // battery; the loop obligations are attempted by the loop battery.
         tier: contract_tier,
         registry_names,
@@ -3133,18 +3127,18 @@ fn export_while_body(
 }
 
 /// The per-cell / per-scalar-param decode bundle for the while-body battery: the
-/// generated Lean hypothesis NAMES the per-obligation proofs `obtain` the `Inv_item`
+/// generated Lean hypothesis names the per-obligation proofs `obtain` the `Inv_item`
 /// conjuncts into, and the simp-lemma fragments built from them.
 struct InvBindings {
     /// The flat `obtain ⟨…⟩` binder list (in `Inv_item` conjunct order).
     binders: Vec<String>,
-    /// The per-cell SORT hyp names (`hsort_<i>`) — `vars cell = .int ⟨w, <cell>_cellval st⟩`.
+    /// The per-cell sort hyp names (`hsort_<i>`) — `vars cell = .int ⟨w, <cell>_cellval st⟩`.
     cell_sorts: Vec<String>,
-    /// The per-scalar-param SORT hyp names (`hpsort_<i>`) — `vars p = .int ⟨w, v.ints p⟩`.
+    /// The per-scalar-param sort hyp names (`hpsort_<i>`) — `vars p = .int ⟨w, v.ints p⟩`.
     param_sorts: Vec<String>,
-    /// The per-scalar-param RANGE hyp names (`hprange_<i>`) — `0 ≤ v.ints p ∧ … < 2^w`.
+    /// The per-scalar-param range hyp names (`hprange_<i>`) — `0 ≤ v.ints p ∧ … < 2^w`.
     param_ranges: Vec<String>,
-    /// The per-cell SCOPE hyp names (`hscope_<i>`) — `st.scope cell = true`.
+    /// The per-cell scope hyp names (`hscope_<i>`) — `st.scope cell = true`.
     cell_scopes: Vec<String>,
 }
 
@@ -3173,11 +3167,11 @@ struct WhileTheoremCtx<'a> {
 }
 
 /// Emit the §4.2.4 while-body obligation set: the prefix/cond/loop-body/tail defs,
-/// `Inv_item`/`mu_item`, the FIVE per-item obligation theorems (with GENERATOR-FIXED
+/// `Inv_item`/`mu_item`, the five per-item obligation theorems (with generator-fixed
 /// proofs that decode the loop body/cond/tail down to QF linear arithmetic + `omega`),
-/// and the TWO composed theorems (CONTRACT via `while_compose`, `_converges` via
-/// `loopDenote_exits_of_dec`). The obligation SHAPES are the §4.2.4 design forms (the
-/// #265 critic pin): `_entry` is prefix-progress AND entry (`∃ st₁, blockThread
+/// and the two composed theorems (contract via `while_compose`, `_converges` via
+/// `loopDenote_exits_of_dec`). The obligation shapes are the §4.2.4 design forms (the
+/// #265 critic pin): `_entry` is prefix-progress and entry (`∃ st₁, blockThread
 /// prefix_block (stateOf v) = some st₁ ∧ Inv_item v st₁`); `_exit` is the `∃ r,
 /// execDenote tail_expr st.env = some r ∧ <ens>` form (the tail's own obligation rides
 /// in the `∃ r`); `_converges` is the design's `∃ r, whileBodyConverges …`.
@@ -3203,20 +3197,20 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
         prefix_witness,
         tail_witness,
     } = ctx;
-    // `Inv_item`'s conjunct families (§4.2.4): (1) the USER inv clauses (shallow over
-    // cells); (2) per loop-CELL SORT/WIDTH + RANGE facts (the type-range fact the Verus
-    // obligation gets for free, `l1Inv`'s precedent); (2b) per read scalar PARAM SORT +
-    // RANGE facts (the cond/body reads params, so the no-overflow step needs each param's
-    // width bound too — the #265 critic's missing-`n`-range fix); (3) other-param FRAME
-    // (slice/bool); (4) SCOPE facts (the `Stmt.assign` progress guard).
+    // `Inv_item`'s conjunct families (§4.2.4): (1) the user inv clauses (shallow over
+    // cells); (2) per loop-cell sort/width + range facts (the type-range fact the Verus
+    // obligation gets for free, `l1Inv`'s precedent); (2b) per read scalar param sort +
+    // range facts (the cond/body reads params, so the no-overflow step needs each param's
+    // width bound too — the #265 critic's missing-`n`-range fix); (3) other-param frame
+    // (slice/bool); (4) scope facts (the `Stmt.assign` progress guard).
     let user_inv = if inv_conjuncts.is_empty() {
         "True".to_string()
     } else {
         inv_conjuncts.join(" ∧ ")
     };
-    // Per-cell VALUE abbreviation (`@[irreducible] def <cell>_cellval st := execIntValue
+    // Per-cell value abbreviation (`@[irreducible] def <cell>_cellval st := execIntValue
     // (st.env.vars cell)`). The `@[irreducible]` keeps the sort fact `vars cell = .int
-    // ⟨w, <cell>_cellval st⟩` a NON-LOOPING rewrite (the abbrev never re-expands to the
+    // ⟨w, <cell>_cellval st⟩` a non-looping rewrite (the abbrev never re-expands to the
     // self-referential `execIntValue (vars cell)` under `simp only [hsort]`).
     let cellval = |cell: &str| -> String { format!("{}_cellval", sanitize(cell)) };
     let mut cellval_defs: Vec<String> = Vec::new();
@@ -3243,9 +3237,9 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
         bind.binders.push(format!("hrange_{i}"));
         bind.cell_sorts.push(format!("hsort_{i}"));
     }
-    // Family (2b): per read scalar PARAM — its SORT (`vars p = .int ⟨w, v.ints p⟩`, which
-    // SUBSUMES the bare frame: ties the read back to `stateOf v`'s `v.ints p`) AND its
-    // RANGE (`0 ≤ v.ints p < 2^w`, established at `_entry` from `InRangeParams`).
+    // Family (2b): per read scalar param — its sort (`vars p = .int ⟨w, v.ints p⟩`, which
+    // subsumes the bare frame: ties the read back to `stateOf v`'s `v.ints p`) and its
+    // range (`0 ≤ v.ints p < 2^w`, established at `_entry` from `InRangeParams`).
     for (i, (p, width)) in scalar_params.iter().enumerate() {
         let ls = lean_str(p);
         inv_families.push(format!(
@@ -3257,12 +3251,12 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
         bind.param_sorts.push(format!("hpsort_{i}"));
         bind.param_ranges.push(format!("hprange_{i}"));
     }
-    // Family (3): other-param FRAME (slice / bool) — the bare `= (stateOf v)` equality.
+    // Family (3): other-param frame (slice / bool) — the bare `= (stateOf v)` equality.
     for (i, fact) in other_frame_facts.iter().enumerate() {
         inv_families.push(fact.clone());
         bind.binders.push(format!("hoframe_{i}"));
     }
-    // Family (4): SCOPE — each loop-assigned cell is in scope (the `Stmt.assign` guard).
+    // Family (4): scope — each loop-assigned cell is in scope (the `Stmt.assign` guard).
     for (i, (cell, _)) in cells.iter().enumerate() {
         inv_families.push(format!("st.scope {} = true", lean_str(cell)));
         bind.binders.push(format!("hscope_{i}"));
@@ -3272,7 +3266,7 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
     let inv_item_body = inv_families.join(" ∧ ");
     // The `obtain ⟨…⟩` pattern (in the conjunct order above).
     let obtain_pat = bind.binders.join(", ");
-    // The per-cell `cellval`-unfold list (for the FINAL goal-decode `omega`).
+    // The per-cell `cellval`-unfold list (for the final goal-decode `omega`).
     let cellval_unfolds: String = cells
         .iter()
         .map(|(c, _)| cellval(c))
@@ -3280,7 +3274,7 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
         .join(", ");
 
     // The simp-lemma fragments the proofs share.
-    // The SORT/decode rewrites (cells + params) used to decode `vars` reads in the hyps.
+    // The sort/decode rewrites (cells + params) used to decode `vars` reads in the hyps.
     let sort_hyps_csv = {
         let mut v = bind.cell_sorts.clone();
         v.extend(bind.param_sorts.iter().cloned());
@@ -3321,12 +3315,12 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
                 .to_string(),
         ),
     };
-    // `cond_shallow` (the `cond_holds` def) is DROPPED (D-7 dead emission); silence it.
+    // `cond_shallow` (the `cond_holds` def) is dropped (D-7 dead emission); silence it.
     let _ = cond_shallow;
 
-    // The shared SUB-PROOFS (the §4.2.4 batteries, each GENERATOR-FIXED — uniform decode
-    // chains validated against the L1 linear family; a nonlinear shape DEGRADES to an
-    // unsolved goal → `Unknown`, SOUND per REQ-3).
+    // The shared sub-proofs (the §4.2.4 batteries, each generator-fixed — uniform decode
+    // chains validated against the L1 linear family; a nonlinear shape degrades to an
+    // unsolved goal → `Unknown`, sound per REQ-3).
     let bat = WhileBattery {
         thm_name,
         cells,
@@ -3441,14 +3435,14 @@ fn emit_while_theorems(ctx: WhileTheoremCtx<'_>) -> String {
     )
 }
 
-/// The GENERATOR-FIXED while-body battery — the proof emitters for the 5 per-item
+/// The generator-fixed while-body battery — the proof emitters for the 5 per-item
 /// obligations + the 2 composed theorems (§4.2.4). The decode chains are validated
 /// against the L1 linear family (`while lo < n inv lo ≤ n dec n - lo { lo = lo + 1 }`);
-/// the per-cell / per-param SORT facts decode every `vars` read, the full `simp` folds
+/// the per-cell / per-param sort facts decode every `vars` read, the full `simp` folds
 /// the `blockThread`/`condBool` `Option`-monad, the overflow `if` is `split` (the
 /// in-range branch threads; the overflow branch is `omega`-refuted from the inv+param
-/// ranges), and `omega` closes the LINEAR goal. A nonlinear shape leaves an unsolved
-/// goal → the kernel rejects → `Unknown` (SOUND, REQ-3).
+/// ranges), and `omega` closes the linear goal. A nonlinear shape leaves an unsolved
+/// goal → the kernel rejects → `Unknown` (sound, REQ-3).
 struct WhileBattery<'a> {
     thm_name: &'a str,
     cells: &'a [(String, &'static str)],
@@ -3460,17 +3454,17 @@ struct WhileBattery<'a> {
     obtain_pat: &'a str,
     result: &'a ExecResult,
     result_val: &'a str,
-    /// The concrete entry-state WITNESS term (the prefix's `let`-fold over `stateOf v`),
-    /// or the `(stateOf v)` SENTINEL (an unfoldable prefix → an honest non-witness, the
+    /// The concrete entry-state witness term (the prefix's `let`-fold over `stateOf v`),
+    /// or the `(stateOf v)` sentinel (an unfoldable prefix → a non-witness, the
     /// `_entry` proof degrades to Unknown).
     prefix_witness: &'a str,
-    /// The concrete tail-VALUE witness (`.int ⟨w, …⟩` / `.bool …`) the `_exit` `∃ r` is
+    /// The concrete tail-value witness (`.int ⟨w, …⟩` / `.bool …`) the `_exit` `∃ r` is
     /// closed with, or `?_` (a non-bare-scalar tail → the proof degrades to Unknown).
     tail_witness: &'a str,
 }
 
 impl WhileBattery<'_> {
-    /// The shared no-overflow normalization of the param/cell RANGE hyps to the LITERAL
+    /// The shared no-overflow normalization of the param/cell range hyps to the literal
     /// `2^w` form (so the split's overflow `if` (a literal `2^w`) and the range hyps
     /// unify under `omega`).
     fn normalize_ranges(&self) -> String {
@@ -3499,7 +3493,7 @@ impl WhileBattery<'_> {
         )
     }
 
-    /// Decode the loop body STEP `hstep : blockThread loop_block st = some st'` via a
+    /// Decode the loop body step `hstep : blockThread loop_block st = some st'` via a
     /// full `simp` (folds the `Option`-monad, leaves the overflow `if`).
     fn decode_step(&self, target: &str) -> String {
         format!(
@@ -3516,7 +3510,7 @@ impl WhileBattery<'_> {
     /// `_pres`: one iteration carries `Inv ∧ cond` to `Inv`. Decode hyps, full-`simp` the
     /// step, `split` the overflow `if`; the in-range branch `subst`s `st'` and re-proves
     /// `Inv_item v st'` (unfold `lo_cellval` in the goal — `st'` is concrete, no `hsort`
-    /// cycle — then a SECOND `hsort` pass decodes the residual `st`-reads).
+    /// cycle — then a second `hsort` pass decodes the residual `st`-reads).
     fn pres(&self) -> String {
         format!(
             "  intro st hInv hcond st' hstep\n  \
@@ -3600,9 +3594,9 @@ impl WhileBattery<'_> {
     /// with the inv closes the `ens` by `omega` (after decoding `denote`/`bindResult`).
     fn exit(&self) -> String {
         // The §4.2.4 `_exit` shape is `∃ r, execDenote tail_expr st.env = some r ∧ <ens>`.
-        // The CONCRETE tail value is the generator-computed `tail_witness` (a `_`-metavar
+        // The concrete tail value is the generator-computed `tail_witness` (a `_`-metavar
         // cannot be `simp`-synthesized against `some ?r`). A non-bare-scalar tail yields a
-        // `?_` sentinel → the proof leaves an unsolved goal → `Unknown` (SOUND, REQ-3).
+        // `?_` sentinel → the proof leaves an unsolved goal → `Unknown` (sound, REQ-3).
         let result_decode = match self.result {
             ExecResult::Int => "Thermite.Env.bindInt",
             ExecResult::Bool => "Thermite.Env.bindBool",
@@ -3627,20 +3621,20 @@ impl WhileBattery<'_> {
         )
     }
 
-    /// `_entry`: the prefix PROGRESSES (`blockThread prefix_block (stateOf v) = some st₁`)
-    /// AND `Inv_item v st₁` holds. The prefix is a function of `stateOf v`; reduce it to
+    /// `_entry`: the prefix progresses (`blockThread prefix_block (stateOf v) = some st₁`)
+    /// and `Inv_item v st₁` holds. The prefix is a function of `stateOf v`; reduce it to
     /// a concrete state via a `have`, then witness it + prove `Inv_item` at that concrete
     /// state (the cells are the `let`-introduced fresh values, the params are `stateOf
     /// v`'s `v.ints p`, the ranges come from `InRangeParams`).
     fn entry(&self) -> String {
         // The prefix is a function of `stateOf v`; the §4.2.4 `_entry` shape is the
-        // EXISTENTIAL `∃ st₁, blockThread prefix_block (stateOf v) = some st₁ ∧ Inv st₁`.
+        // existential `∃ st₁, blockThread prefix_block (stateOf v) = some st₁ ∧ Inv st₁`.
         // A `_`-metavar witness cannot be synthesized by `simp` (it cannot unify a
-        // metavar against `some ?st₁`), so the generator emits the CONCRETE entry-state
+        // metavar against `some ?st₁`), so the generator emits the concrete entry-state
         // witness (the prefix's `let`-fold over `stateOf v`); `simp` then closes the
         // prefix-progress conjunct by `rfl`-reduction, and `Inv_item` follows. A prefix
         // shape the witness emitter cannot fold deterministically degrades to an unsolved
-        // goal → `Unknown` (SOUND, REQ-3).
+        // goal → `Unknown` (sound, REQ-3).
         format!(
             "  intro hrange hreq\n  \
              simp only [Thermite.Exec.IntTy.bound, Thermite.Exec.IntTy.width, Int.reducePow] at hrange\n  \
@@ -3658,7 +3652,7 @@ impl WhileBattery<'_> {
         )
     }
 
-    /// The CONTRACT theorem (§4.2.4) — GENERATOR-FIXED: `_entry` gives the loop-entry
+    /// The contract theorem (§4.2.4) — generator-fixed: `_entry` gives the loop-entry
     /// state + `Inv`; `while_compose` (with `_pres` + the entry-`Inv`) yields the exit
     /// state with `Inv ∧ ¬cond`; `_exit` produces the result + `ens`; the functional
     /// `execDenote` forces the result equal to the converged one.
@@ -3684,7 +3678,7 @@ impl WhileBattery<'_> {
         )
     }
 
-    /// The `_converges` theorem (§4.2.3/§4.2.4) — GENERATOR-FIXED: `_entry` gives the
+    /// The `_converges` theorem (§4.2.3/§4.2.4) — generator-fixed: `_entry` gives the
     /// loop-entry state; `loopDenote_exits_of_dec` (from `_pres`/`_progress`/`_dec`)
     /// yields the exit fuel; `while_rule` gives `Inv ∧ ¬cond` there; `_exit`'s `∃ r`
     /// supplies the tail value; the whole-body `whileBodyDenote` is `some r`.
@@ -3737,19 +3731,18 @@ fn indent_block(s: &str, pad: &str) -> String {
         .join("\n")
 }
 
-/// Compute the CONCRETE entry-state witness term for the `_entry` obligation — the
+/// Compute the concrete entry-state witness term for the `_entry` obligation — the
 /// prefix `let`-fold over `stateOf v`. Each `let cell = <intLit/boolLit>` threads
-/// `((acc).setVar cell <val>).bind cell`. An init that is NOT an exec literal (the
+/// `((acc).setVar cell <val>).bind cell`. An init that is not an exec literal (the
 /// value would need the full exec denotation at the symbolic `stateOf v`) yields a
-/// SENTINEL (`stateOf v`) — the `_entry` proof then leaves an unsolved goal → `Unknown`
-/// (SOUND, REQ-3 — never a false Proven). The L1/sum prefix (`let mut x = 0`) folds
-/// cleanly.
+/// sentinel (`stateOf v`); the `_entry` proof then leaves an unsolved goal → `Unknown`
+/// (sound, REQ-3). The L1/sum prefix (`let mut x = 0`) folds to a concrete state.
 fn prefix_witness_term(prefix: &[Stmt]) -> String {
     let mut acc = "(stateOf v)".to_string();
     for stmt in prefix {
         let Stmt::Let { name, ty, init, .. } = stmt else {
             // A non-`let` prefix stmt: the witness cannot be folded deterministically —
-            // degrade (the proof leaves an unsolved goal → `Unknown`, SOUND, REQ-3).
+            // degrade (the proof leaves an unsolved goal → `Unknown`, sound, REQ-3).
             return "(stateOf v)".to_string();
         };
         let val = match exec_literal_value(init, ty.as_ref()) {
@@ -3762,12 +3755,12 @@ fn prefix_witness_term(prefix: &[Stmt]) -> String {
     acc
 }
 
-/// Compute the CONCRETE tail-value witness for the `_exit` obligation's `∃ r` — the
+/// Compute the concrete tail-value witness for the `_exit` obligation's `∃ r` — the
 /// `result`-sorted `ExecVal` the tail `ExecExpr` evaluates to at the exit state. For a
 /// bare scalar tail `<cell>` it is `.int ⟨w, <cell>_cellval st⟩` (the loop cell's value);
 /// for `<param>` it is `.int ⟨w, v.ints param⟩`; a `bool`-result bare tail is `.bool b`-
 /// shaped via the cell read. A non-bare-scalar tail (arith / index / method) yields the
-/// `?_` SENTINEL → the `_exit` proof leaves an unsolved goal → `Unknown` (SOUND, REQ-3).
+/// `?_` sentinel → the `_exit` proof leaves an unsolved goal → `Unknown` (sound, REQ-3).
 fn tail_witness_term(
     tail: &Expr,
     cell_widths: &BTreeMap<&str, &'static str>,
@@ -3797,7 +3790,7 @@ fn tail_witness_term(
                 ExecResult::Bool => {
                     // A bool-result bare tail's closed-form witness needs the cell's bool
                     // value; v1 admits it via the env read. (No int-cell bool tail in the
-                    // L1 corpus — degrade to the `?_` sentinel, SOUND.)
+                    // L1 corpus — degrade to the `?_` sentinel, sound.)
                 }
             }
         }
@@ -3805,7 +3798,7 @@ fn tail_witness_term(
     "?_".to_string()
 }
 
-/// The Lean `ExecVal` term for an exec LITERAL `let` init (`intLit`/`boolLit`) at the
+/// The Lean `ExecVal` term for an exec literal `let` init (`intLit`/`boolLit`) at the
 /// `let`'s declared width (default `u64`), or `None` for a non-literal init (the witness
 /// cannot be computed without the full exec denotation — the `_entry` proof degrades).
 fn exec_literal_value(init: &Expr, ty: Option<&Type>) -> Option<String> {
@@ -3823,7 +3816,7 @@ fn exec_literal_value(init: &Expr, ty: Option<&Type>) -> Option<String> {
 
 /// Encode a contract clause `Expr`, rewriting a `result` free-name read to the
 /// bool-sorted `Expr.boolVar "result"` leaf when the item's result is `bool` (the
-/// §4.1.2 spine prerequisite — a bool `result` is read via `boolVar`, NOT `var`).
+/// §4.1.2 spine prerequisite — a bool `result` is read via `boolVar`, not `var`).
 fn encode_contract_clause(
     e: &Expr,
     ctx: &EncodeCtx,
@@ -3855,9 +3848,9 @@ fn encode_expr_bool_result(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRe
         }
         // `result == true` / `result == false` (and the symmetric forms): a bool
         // equality on `result` is the bool-sorted Prop `boolVar result` (vs `true`) or
-        // its negation (vs `false`) — NOT a `cmp` (the spine compares Ints; a `cmp` on a
-        // bool-sorted node bottoms BOTH operands to `0` and is vacuously equal, the Pin H
-        // degeneracy). The genuine bool sort keeps the polarities distinguishable.
+        // its negation (vs `false`), not a `cmp` (the spine compares Ints; a `cmp` on a
+        // bool-sorted node bottoms both operands to `0` and is vacuously equal, the Pin H
+        // degeneracy). The bool sort keeps the polarities distinguishable.
         Expr::Binary {
             op: BinOp::Eq,
             lhs,
@@ -3891,8 +3884,7 @@ fn encode_expr_bool_result(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRe
             }
             // `result == p` (two bool names) → `(boolVar result) ↔ (boolVar p)` modelled
             // as `(result ∧ p) ∨ (¬result ∧ ¬p)`; for v1 we leave the general bool-eq to
-            // the int encoder (it is outside the discharged battery — never a false
-            // Proven, an honest non-proof).
+            // the int encoder (it is outside the discharged battery — a non-proof).
             encode_expr(e, ctx)
         }
         Expr::Binary {
@@ -3943,8 +3935,8 @@ fn encode_expr_bool_result(e: &Expr, ctx: &EncodeCtx) -> Result<String, ExportRe
 }
 
 /// Scan an emitted Lean term string for `Thermite.Expr.specCall "NAME"` occurrences
-/// and return the `NAME`s (the GENUINELY-INDEPENDENT re-check support, Pin G). This
-/// inspects the RENDERED bytes the kernel sees — NOT the Thermite AST — so it has no
+/// and return the `NAME`s (the independent re-check support, Pin G). This
+/// inspects the rendered bytes the kernel sees, not the Thermite AST, so it has no
 /// shared blind spot with the AST-side gate. Deterministic (R-CODE-5).
 fn emitted_spec_call_names(term: &str) -> Vec<String> {
     const MARKER: &str = "Thermite.Expr.specCall \"";
@@ -4014,8 +4006,8 @@ mod tests {
         assert!(encoded.contains("Thermite.Expr.var \"a\""));
     }
 
-    // REQ-6 §4: an out-of-fragment construct (a tuple projection) REFUSES — never a
-    // silent omission. Expected from the §4 OUT-of-spine refusal rule (R-CHAR-3).
+    // REQ-6 §4: an out-of-fragment construct (a tuple projection) refuses, not a
+    // silent omission. Expected from the §4 out-of-spine refusal rule (R-CHAR-3).
     #[test]
     fn out_of_fragment_field_refuses() {
         let proj = Expr::TupleProj {
@@ -4026,8 +4018,8 @@ mod tests {
         assert!(matches!(r, Err(ExportRefusal::OutOfFragment(_))), "{r:?}");
     }
 
-    // REQ-6 §4 HARD GATE: an incomplete registry (a reachable name with no
-    // definition) REFUSES with `IncompleteRegistry`. Expected from the §4 gate
+    // REQ-6 §4 hard gate: an incomplete registry (a reachable name with no
+    // definition) refuses with `IncompleteRegistry`. Expected from the §4 gate
     // mechanism 1 (R-CHAR-3).
     #[test]
     fn hard_gate_refuses_incomplete_registry() {
@@ -4062,7 +4054,7 @@ mod tests {
         assert_eq!(tier, ExportTier::FuelFreeAuto);
     }
 
-    // REQ-7 §6.1: a NON-recursive registry is tier (b); a recursive one is tier (c).
+    // REQ-7 §6.1: a non-recursive registry is tier (b); a recursive one is tier (c).
     // Expected from the §6.1(b)/(c) classification (R-CHAR-3).
     #[test]
     fn recursive_registry_detection() {
@@ -4088,7 +4080,7 @@ mod tests {
         );
     }
 
-    // Build a CONTRACT obligation for a named fn, asserting it is present + a fn (no
+    // Build a contract obligation for a named fn, asserting it is present + a fn (no
     // unwrap/panic — the anti-pattern gate is clean). The default obligation is only
     // returned on the already-failed assert path.
     fn fn_obl(p: &Program, name: &str, called: Vec<String>) -> Obligation {
@@ -4115,9 +4107,9 @@ mod tests {
         }
     }
 
-    // #243 / Pin G — THE UNDEFINED-CALLEE HARD GATE: a contract spec-call whose
-    // callee has NO in-program definition (`mystery`) must REFUSE the export with
-    // `IncompleteRegistry(["mystery"])`, NOT export an empty registry that bottoms to
+    // #243 / Pin G — the undefined-callee hard gate: a contract spec-call whose
+    // callee has no in-program definition (`mystery`) must refuse the export with
+    // `IncompleteRegistry(["mystery"])`, not export an empty registry that bottoms to
     // 0 and self-certifies. Expected from §4 mechanism 1 (full-expression-position
     // principle; R-CHAR-3) — the live repro the pin's `thermite_obligation_f` pins.
     #[test]
@@ -4125,7 +4117,7 @@ mod tests {
         let p = parse_one(
             "fn f(x: u64) -> u64 req true ens result == mystery(x as int) as u64 fx pure { 0 }",
         );
-        // The closure is EMPTY (mystery is undefined, so no closure could list it).
+        // The closure is empty (mystery is undefined, so no closure could list it).
         let o = fn_obl(&p, "f", vec![]);
         if let Some(item) = find_item(&p, "f") {
             match export_item(&o, &p, item) {
@@ -4141,13 +4133,13 @@ mod tests {
         }
     }
 
-    // #253 §4.1.2 — THE BOOL-RESULT BRIDGE (supersedes the #244 `NonIntResult`
-    // refusal): a `-> bool` straight-line-body item is now EXPORTED through the
-    // `bindBool` bridge — the result reads as `Expr.boolVar "result"` and binds via
-    // `Env.bindBool`, NOT the Int-0/1 route Pin H rejected. The genuine bool sort makes
-    // `result == true` and `result == false` DISTINGUISHABLE (the §4.1.2 spine
+    // #253 §4.1.2 — the bool-result bridge (supersedes the #244 `NonIntResult`
+    // refusal): a `-> bool` straight-line-body item is exported through the
+    // `bindBool` bridge. The result reads as `Expr.boolVar "result"` and binds via
+    // `Env.bindBool`, not the Int-0/1 route Pin H rejected. The bool sort makes
+    // `result == true` and `result == false` distinguishable (the §4.1.2 spine
     // prerequisite), so a bool contract is no longer vacuously self-certifying.
-    // Expected from §4.1.2 (R-CHAR-3) — the bridge resolves the Pin H concern.
+    // Expected from §4.1.2 (R-CHAR-3): the bridge resolves the Pin H concern.
     #[test]
     fn bool_result_item_exports_via_bindbool() {
         let p = parse_one("fn t(a: u32) -> bool req true ens result == true fx pure { true }");
@@ -4175,10 +4167,10 @@ mod tests {
         }
     }
 
-    // #245 / Pin I — CAPTURE-SAFE UNFOLDING: a tier-(b) item whose unfolding would
-    // CAPTURE a caller var under a predicate binder (`cntk(xs, k as int)` with
-    // `|k| … == v`) must REFUSE tier (b) (`OutOfFragment`, capture-unsafe), NEVER
-    // silently emit the captured tautology. Expected from §6.1(b) (R-CHAR-3) — the
+    // #245 / Pin I — capture-safe unfolding: a tier-(b) item whose unfolding would
+    // capture a caller var under a predicate binder (`cntk(xs, k as int)` with
+    // `|k| … == v`) refuses tier (b) (`OutOfFragment`, capture-unsafe) rather than
+    // silently emit the captured tautology. Expected from §6.1(b) (R-CHAR-3): the
     // pin's `capture_changes_meaning`.
     #[test]
     fn capture_unsafe_unfolding_refuses() {
@@ -4205,8 +4197,8 @@ mod tests {
         }
     }
 
-    // #245 OVER-REFUSAL GUARD: a tier-(b) item whose unfolding does NOT capture
-    // (the arg's free vars are disjoint from the body binder) still UNFOLDS + exports
+    // #245 over-refusal guard: a tier-(b) item whose unfolding does not capture
+    // (the arg's free vars are disjoint from the body binder) still unfolds + exports
     // (the capture guard is sound, not a blanket refusal). `dbl(x) = x + x` has no
     // binder; substituting `x ↦ (y as int)` cannot capture.
     #[test]
@@ -4232,12 +4224,12 @@ mod tests {
         }
     }
 
-    // #247 — the critic's COVERAGE note: a BINDER-PRESENT non-capturing unfolding.
-    // The #245 over-refusal guard's positive case (`dbl`, above) has NO body binder;
-    // the capture guard's whole point is a closure-binder body, so the test must
-    // exercise a tier-(b) spec-fn whose body HAS a binder (`count_where(xs, |k| …)`)
-    // where the substituted arg's free vars are DISJOINT from the binder `k` — so the
-    // unfolding is sound and STILL EXPORTS (the guard must not blanket-refuse a binder
+    // #247 — the critic's coverage note: a binder-present non-capturing unfolding.
+    // The #245 over-refusal guard's positive case (`dbl`, above) has no body binder;
+    // the capture guard's whole point is a closure-binder body, so the test
+    // exercises a tier-(b) spec-fn whose body has a binder (`count_where(xs, |k| …)`)
+    // where the substituted arg's free vars are disjoint from the binder `k`, so the
+    // unfolding is sound and still exports (the guard must not blanket-refuse a binder
     // body). `cntpos(s) = count_where(s, |k| k as int > 0)` has the binder `k`;
     // substituting `s ↦ xs` (free var `xs`, disjoint from `k`) cannot capture, so the
     // tier-(b) unfolding succeeds. Expected from §6.1(b) (R-CHAR-3): the capture guard
@@ -4254,7 +4246,7 @@ mod tests {
                 Ok(exported) => {
                     // It unfolds (tier b), and the binder body survives the unfolding
                     // — the substituted arg (`xs`) cannot capture the disjoint binder
-                    // `k`, so the guard does NOT refuse.
+                    // `k`, so the guard does not refuse.
                     assert_eq!(exported.tier, ExportTier::StaticUnfoldAuto);
                     // The unfolded goal is specCall-free (cntpos unfolded away) but the
                     // combinator (`count_where`) + its predicate binder remain.

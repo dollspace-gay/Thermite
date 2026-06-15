@@ -1,24 +1,24 @@
 //! #52 §9 boundary-composition cert oracle (`.design/lower/boundary-composition.md`
-//! AC-1..AC-4; `conformance/composition/cases.json`). Drives the BUILT `forge`
+//! AC-1..AC-4; `conformance/composition/cases.json`). Drives the built `forge`
 //! binary with `check --json` over each case's program (written to a temp `.th`
 //! file so the read-only `conformance/` fixtures stay untouched — R-CHAR-3) and
 //! asserts the §9 composition contract: a caller of a `#[boundary]`/`#[slag]` fn
-//! that HONORS the callee's contract verifies THROUGH it at `L3` (was `L0` before
+//! that honors the callee's contract verifies through it at `L3` (was `L0` before
 //! #52, the undefined-callee verus error) with `assurance_scope = to_boundary`
-//! (#17); a caller that VIOLATES the callee's `req` is a COUNTEREXAMPLE, never a
+//! (#17); a caller that violates the callee's `req` is a counterexample, never a
 //! false `L3`.
 //!
-//! THE HONESTY GATE (`goal.md` R-DEFER-9): `#[verifier::external_body]` is emitted
-//! ONLY for the declared `#[boundary]`/`#[slag]` fn. A regular Thermite fn is
-//! ALWAYS fully proved — a lying regular body is CAUGHT (the
+//! The honesty gate (`goal.md` R-DEFER-9): `#[verifier::external_body]` is emitted
+//! only for the declared `#[boundary]`/`#[slag]` fn. A regular Thermite fn is
+//! always fully proved — a lying regular body is caught (the
 //! `lying_regular_fn_is_caught` test), never laundered to L3 by the composition
-//! path. The corpus (`sum`, `binary_search`) is UNAFFECTED: it references only
+//! path. The corpus (`sum`, `binary_search`) is unaffected: it references only
 //! `spec fn`s / combinators, so no external_body is woven and the cert stays L3
-//! END-TO-END (the `corpus_unaffected_*` tests).
+//! end-to-end (the `corpus_unaffected_*` tests).
 //!
 //! Expected values trace to the golden `conformance/composition/cases.json` and
-//! `thermite-design.md` §9 (R-CHAR-3), NEVER copied from forge's own output.
-//! These SKIP LOUDLY if verus is absent — the §9 composition proof is a real verus
+//! `thermite-design.md` §9 (R-CHAR-3), never copied from forge's own output.
+//! These skip with a logged note if verus is absent — the §9 composition proof is a real verus
 //! run (the boundary caller L3-proves against the assumed contract).
 
 use std::path::{Path, PathBuf};
@@ -99,9 +99,9 @@ fn find_cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 
 // AC-1 (direct boundary caller → L3 + to_boundary): the `direct_boundary_caller`
 // case — `caller` calls `#[boundary] ext_id` and honors its `req` + proves its own
-// `ens` THROUGH ext_id's assumed `ensures` → `caller` is L3 (was L0 before #52)
+// `ens` through ext_id's assumed `ensures` → `caller` is L3 (was L0 before #52)
 // with scope to_boundary via ext_id; `ext_id` itself stays L1 + boundary
-// (UNCHANGED, REQ-3). Anchored to `cases.json` `verifies_to_boundary`.
+// (unchanged, REQ-3). Anchored to `cases.json` `verifies_to_boundary`.
 #[test]
 fn direct_boundary_caller_verifies_through_the_contract() {
     if !verus_present() {
@@ -129,13 +129,13 @@ fn direct_boundary_caller_verifies_through_the_contract() {
             "case `{name}`: the boundary caller certifies (no env error); stderr:\n{stderr}"
         );
         let cert = find_cert(&certs, item);
-        // REQ-2: the caller reaches L3 THROUGH the assumed contract (was L0).
+        // REQ-2: the caller reaches L3 through the assumed contract (was L0).
         assert_eq!(
             cert["level"],
             Value::from(expect_level),
             "`{item}` (case {name}) proves L3 through `{expect_via}`'s contract (#52)"
         );
-        // #17 scope ⊥ level: L3 AND to_boundary via the crossing.
+        // #17 scope ⊥ level: L3 and to_boundary via the crossing.
         assert_eq!(
             cert["assurance_scope"]["kind"],
             Value::from("to_boundary"),
@@ -147,7 +147,7 @@ fn direct_boundary_caller_verifies_through_the_contract() {
             "`{item}` (case {name}) records the oracle crossing `via`"
         );
 
-        // REQ-3: the boundary fn `ext_id` itself stays L1 + boundary, UNCHANGED.
+        // REQ-3: the boundary fn `ext_id` itself stays L1 + boundary, unchanged.
         let ext = find_cert(&certs, expect_via);
         assert_eq!(
             ext["level"],
@@ -163,8 +163,8 @@ fn direct_boundary_caller_verifies_through_the_contract() {
 }
 
 // AC-2 (transitive caller → L3 + to_boundary): the `transitive_boundary_caller`
-// case — `h → g → ext_id` — `h`'s sub-program weaves BOTH `g` (real body, proved)
-// AND `ext_id` (external_body signature), so `h` proves L3 through the contracts;
+// case — `h → g → ext_id` — `h`'s sub-program weaves both `g` (real body, proved)
+// and `ext_id` (external_body signature), so `h` proves L3 through the contracts;
 // scope to_boundary via ext_id. Anchored to `cases.json` `transitive`.
 #[test]
 fn transitive_boundary_caller_weaves_real_and_external_body_deps() {
@@ -202,7 +202,7 @@ fn transitive_boundary_caller_weaves_real_and_external_body_deps() {
             Value::from(expect_via),
             "`{item}` (case {name}) records the transitive crossing `via`"
         );
-        // The intermediary `g` ALSO proves L3 + to_boundary (it directly crosses).
+        // The intermediary `g` also proves L3 + to_boundary (it directly crosses).
         let g = find_cert(&certs, "g");
         assert_eq!(
             g["level"],
@@ -212,11 +212,11 @@ fn transitive_boundary_caller_weaves_real_and_external_body_deps() {
     }
 }
 
-// AC-3 (req-violating caller → counterexample, NOT a false L3): the
-// `req_violating_caller` case — `bad`'s `req` is `true`, so it does NOT establish
+// AC-3 (req-violating caller → counterexample, not a false L3): the
+// `req_violating_caller` case — `bad`'s `req` is `true`, so it does not establish
 // `ext_id`'s `req` (x < 100) at the call site → `precondition not satisfied` →
-// NON-L3 counterexample. The external_body assumes ext_id's ENSURES but the caller
-// must still discharge its REQ. THE soundness AC (R-DEFER-9 anti-cheat). Anchored
+// non-L3 counterexample. The external_body assumes ext_id's ensures but the caller
+// must still discharge its req. The soundness AC (R-DEFER-9 anti-cheat). Anchored
 // to `cases.json` `counterexample`.
 #[test]
 fn req_violating_caller_is_a_counterexample_not_a_false_l3() {
@@ -239,7 +239,7 @@ fn req_violating_caller_is_a_counterexample_not_a_false_l3() {
         let _ = std::fs::remove_file(&path);
 
         let cert = find_cert(&certs, item);
-        // The decisive anti-cheat assertion: NOT a false L3.
+        // The decisive anti-cheat assertion: not a false L3.
         assert_ne!(
             cert["level"],
             Value::from("L3"),
@@ -261,10 +261,10 @@ fn req_violating_caller_is_a_counterexample_not_a_false_l3() {
     }
 }
 
-// AC-4 + THE HONESTY GATE: the pure corpus references only spec fns / combinators,
-// so NO external_body is woven and the cert stays L3 END-TO-END, byte-stable. The
-// lowered string for a pure sub-program contains NO `external_body` substring
-// (the load-bearing OQ-1 invariant): external_body appears IFF a woven dependency
+// AC-4 + the honesty gate: the pure corpus references only spec fns / combinators,
+// so no external_body is woven and the cert stays L3 end-to-end, byte-stable. The
+// lowered string for a pure sub-program contains no `external_body` substring
+// (the load-bearing OQ-1 invariant): external_body appears iff a woven dependency
 // is `#[boundary]`/`#[slag]`. We exercise the corpus through the real pipeline.
 #[test]
 fn corpus_unaffected_stays_l3_end_to_end() {
@@ -286,7 +286,7 @@ fn corpus_unaffected_stays_l3_end_to_end() {
             Value::from("L3"),
             "corpus `{item}` stays L3 (unaffected by #52 — no boundary/slag reference)"
         );
-        // END-TO-END: no crossing in the closure, so no external_body was woven.
+        // end-to-end: no crossing in the closure, so no external_body was woven.
         let scope_is_e2e = match cert.get("assurance_scope") {
             None | Some(Value::Null) => true,
             Some(s) => s.get("kind").and_then(|v| v.as_str()) == Some("end_to_end"),
@@ -298,16 +298,16 @@ fn corpus_unaffected_stays_l3_end_to_end() {
     }
 }
 
-// AC-8 (#269 — the WEAK-callee conservatism fixture, equivalent-mutants.md REQ-8):
-// a `#[boundary]` `ext_weak` whose `ens result <= 100` does NOT pin its result,
-// and `wcaller(x) { ext_weak(x) }` carrying the SAME un-pinning `ens result <=
-// 100`. The caller's F-IDENT identity survivor `return x` PROVES against the
-// caller's own contract (`x < 100 ⟹ x <= 100`) → SURVIVOR; but the call-bearing
-// equivalence harness CANNOT prove `real == mutant` (ext_weak's `ens` does not pin
-// `real == x`) → NOT excluded → the survivor STAYS counted → `wcaller` gates
+// AC-8 (#269 — the weak-callee conservatism fixture, equivalent-mutants.md REQ-8):
+// a `#[boundary]` `ext_weak` whose `ens result <= 100` does not pin its result,
+// and `wcaller(x) { ext_weak(x) }` carrying the same un-pinning `ens result <=
+// 100`. The caller's F-IDENT identity survivor `return x` proves against the
+// caller's own contract (`x < 100 ⟹ x <= 100`) → survivor; but the call-bearing
+// equivalence harness cannot prove `real == mutant` (ext_weak's `ens` does not pin
+// `real == x`) → not excluded → the survivor stays counted → `wcaller` gates
 // `WeakContract`. The genuine #101 anti-launder line, one level up: a mutant the
-// callee contracts cannot prove equivalent is conservatively COUNTED (R-DEFER-9).
-// Expected from §9 + equivalent-mutants.md REQ-8 (hand-derived), NOT forge output.
+// callee contracts cannot prove equivalent is conservatively counted (R-DEFER-9).
+// Expected from §9 + equivalent-mutants.md REQ-8 (hand-derived), not forge output.
 #[test]
 fn weak_callee_identity_survivor_stays_counted_and_gates() {
     if !verus_present() {
@@ -323,8 +323,8 @@ fn weak_callee_identity_survivor_stays_counted_and_gates() {
     let _ = std::fs::remove_file(&path);
 
     let cert = find_cert(&certs, "wcaller");
-    // The decisive conservatism assertion: NOT laundered to a certifying L3 — the
-    // identity survivor the weak callee cannot pin EQUIVALENT keeps the gate.
+    // The decisive conservatism assertion: not laundered to a certifying L3 — the
+    // identity survivor the weak callee cannot pin equivalent keeps the gate.
     assert_ne!(
         cert["level"],
         Value::from("L3"),
@@ -339,11 +339,11 @@ fn weak_callee_identity_survivor_stays_counted_and_gates() {
         "`wcaller` gates `WeakContract` (the contract under-constrains the body \
          through the weak callee contract); stderr:\n{stderr}"
     );
-    // The decisive REQ-8 evidence that the identity survivor was NOT excluded: the
-    // kill ratio's DENOMINATOR still counts it. ext_weak cannot pin `real == x`
-    // (identity) NOR `real == 0` (zero-return), so BOTH survivors stay counted —
+    // The decisive REQ-8 evidence that the identity survivor was not excluded: the
+    // kill ratio's denominator still counts it. ext_weak cannot pin `real == x`
+    // (identity) nor `real == 0` (zero-return), so both survivors stay counted —
     // a `0/2` ratio. Had the call-bearing probe falsely excluded the identity (the
-    // #269 bug it must NOT reintroduce), the denominator would be `0/1`. The detail
+    // #269 bug it must not reintroduce), the denominator would be `0/1`. The detail
     // carries the `K/N` ratio verbatim.
     let detail = cert["reject"]["detail"].as_str().unwrap_or("");
     assert!(
@@ -355,11 +355,11 @@ fn weak_callee_identity_survivor_stays_counted_and_gates() {
     );
 }
 
-// THE HONESTY GATE (R-DEFER-9, OQ-1): external_body is emitted ONLY for a
-// `#[boundary]`/`#[slag]` fn. A REGULAR fn with a LYING body (`ens result == x + 1`
-// over a body returning `x`) is NEVER laundered to L3 by the composition path — it
-// is fully proved and CAUGHT (`postcondition not satisfied`). This is the contrast
-// the grounded harness (3) pins: the IDENTICAL body under external_body would
+// The honesty gate (R-DEFER-9, OQ-1): external_body is emitted only for a
+// `#[boundary]`/`#[slag]` fn. A regular fn with a lying body (`ens result == x + 1`
+// over a body returning `x`) is never laundered to L3 by the composition path — it
+// is fully proved and caught (`postcondition not satisfied`). This is the contrast
+// the grounded harness (3) pins: the identical body under external_body would
 // "verify" 0/0, but a regular fn never gets external_body. Expected from §9 /
 // R-DEFER-9 (the lying body must fail), not forge output.
 #[test]
@@ -368,8 +368,8 @@ fn lying_regular_fn_is_caught_never_laundered_to_l3() {
         eprintln!("SKIP: verus not available — honesty-gate oracle not run.");
         return;
     }
-    // A REGULAR fn (no #[boundary]/#[slag]) whose body returns `x` but whose `ens`
-    // claims `result == x + 1`. It must be fully proved and FAIL.
+    // A regular fn (no #[boundary]/#[slag]) whose body returns `x` but whose `ens`
+    // claims `result == x + 1`. It must be fully proved and fail.
     let program = "fn liar(x: u32) -> u32 req x < 100 ens result == x + 1 fx pure { x }";
     let path = write_temp_program("lying_regular_fn", program);
     let (_code, certs, stderr) = run_check_json(&path);

@@ -1,26 +1,26 @@
 //! Conformance test for `thermite-lower`'s Basis Stage 2c recursion-scheme
 //! lowering (`.design/basis/02-recursion-schemes.md` REQ-6/REQ-7) against the
-//! EXTERNAL truths: the real `verus` binary run under `--no-cheating` (the
-//! emitted L3 must VERIFY with `0 errors`, and the multiplier must hold WITHOUT a
+//! external truths: the real `verus` binary run under `--no-cheating` (the
+//! emitted L3 must verify with `0 errors`, and the multiplier must hold without a
 //! cheat token), and the hand-derived oracle `conformance/adt-schemes/cases.json`
-//! (R-CHAR-3 — NEVER edited).
+//! (R-CHAR-3 — not edited).
 //!
 //! The corpus `conformance/list_fold.th` carries three scheme-call `spec fn`s
 //! (`len_list`/`sum_list` = `fold(l, 0, …)`, `all_positive` = `for_all(l, …)`),
-//! each lowering to a CALL of the GENERATED scheme `spec fn` (REQ-6) plus the
+//! each lowering to a call of the generated scheme `spec fn` (REQ-6) plus the
 //! materialized `list_len`/`fold_list`/`for_all_list`/`fold_bound_list`.
 //!
 //! Three checks:
-//!   - `certify`  — the emitted `list_fold.th` lowering VERIFIES (`verified, 0
+//!   - `certify`  — the emitted `list_fold.th` lowering verifies (`verified, 0
 //!     errors`) under `--no-cheating` (len_list/sum_list/all_positive → L3).
-//!   - `multiplier` — the GENERATED `fold_bound_list` + an instance bound proven
-//!     by CITING it (the design's GROUNDED `sum_list_bounded`, NO fresh
-//!     induction) verifies; the NEGATIVE CONTROL (per-node premise dropped) FAILS
+//!   - `multiplier` — the generated `fold_bound_list` + an instance bound proven
+//!     by citing it (the design's grounded `sum_list_bounded`, with no fresh
+//!     induction) verifies; the negative control (per-node premise dropped) fails
 //!     verus. The induction is real, not vacuous (R-DEFER-9).
 //!   - structural — the emitted lowering materializes `fold_bound_list` + the
 //!     generated `fold_list`/`for_all_list` with `decreases l`; a scheme-call
-//!     INSTANCE body carries NO `decreases` (the recursion lives in the
-//!     generated fold — the multiplier is observable).
+//!     instance body carries no `decreases` (the recursion lives in the
+//!     generated fold, so the multiplier is observable).
 //!
 //! `unwrap`/`expect`/`panic!` are fine here — `tests/` is not anti-pattern-gated.
 
@@ -77,8 +77,8 @@ fn verus_bin() -> Option<PathBuf> {
 }
 
 /// Run `verus --no-cheating <file>` (the cheat-token battery enabled — a
-/// generated fold/law that relied on `assume`/`external_body` would be REJECTED).
-/// `None` if verus is unavailable (caller SKIPs LOUDLY). R-CODE-4: status checked.
+/// generated fold/law that relied on `assume`/`external_body` would be rejected).
+/// `None` if verus is unavailable (caller skips). R-CODE-4: status checked.
 fn run_verus_no_cheating(file: &Path) -> Option<(bool, String)> {
     let bin = verus_bin()?;
     let out = Command::new(bin)
@@ -100,9 +100,9 @@ fn write_temp(name: &str, src: &str) -> PathBuf {
 
 // ---- AC-1: the certify source lowers + verifies L3 -------------------------
 
-/// `conformance/list_fold.th` lowers to the GENERATED `fold_list`/`for_all_list`/
+/// `conformance/list_fold.th` lowers to the generated `fold_list`/`for_all_list`/
 /// `list_len`/`fold_bound_list` + the 3 scheme-call instances, and the real
-/// `verus --no-cheating` binary VERIFIES it (`verified, 0 errors`) —
+/// `verus --no-cheating` binary verifies it (`verified, 0 errors`) —
 /// len_list/sum_list/all_positive each → L3 (REQ-6).
 #[test]
 fn list_fold_lowers_to_generated_schemes_and_verifies_l3() {
@@ -123,7 +123,7 @@ fn list_fold_lowers_to_generated_schemes_and_verifies_l3() {
         emitted.contains("spec fn list_len(l: List) -> nat"),
         "generated structural measure list_len (REQ-6/REQ-7):\n{emitted}"
     );
-    // The instances lower to CALLS of the generated fns (REQ-6 — step as spec_fn).
+    // The instances lower to calls of the generated fns (REQ-6 — step as spec_fn).
     assert!(
         emitted.contains("fold_list(l, 0, |x: u64, acc: nat| (x + acc) as nat)"),
         "sum_list lowers to a fold_list call with the step as a spec_fn (REQ-6):\n{emitted}"
@@ -151,16 +151,16 @@ fn list_fold_lowers_to_generated_schemes_and_verifies_l3() {
     }
 }
 
-// ---- AC-2: the multiplier — instance bound proven by CITING the law --------
+// ---- AC-2: the multiplier — instance bound proven by citing the law --------
 
-/// The induction-discharged-once MULTIPLIER (REQ-7). The lowerer GENERATES
+/// The induction-discharged-once multiplier (REQ-7). The lowerer generates
 /// `fold_bound_list` (the single-induction generic law). An instance bound
-/// (`sum_list(l) <= list_len(l) * MAX`) is proven by CITING `fold_bound_list`
-/// with NO fresh induction — only a FLAT per-node `assert`, then the cite. We
-/// reproduce the design's GROUNDED `sum_list_bounded` (hand-derived, R-CHAR-3)
-/// APPENDED to the lowerer's emitted output, and assert real `verus
+/// (`sum_list(l) <= list_len(l) * MAX`) is proven by citing `fold_bound_list`
+/// with no fresh induction — only a flat per-node `assert`, then the cite. We
+/// reproduce the design's grounded `sum_list_bounded` (hand-derived, R-CHAR-3)
+/// appended to the lowerer's emitted output, and assert real `verus
 /// --no-cheating` reports `verified, 0 errors` (the oracle `multiplier`
-/// expectation). The instance proof contains `fold_bound_` and NO `decreases`.
+/// expectation). The instance proof contains `fold_bound_` and no `decreases`.
 #[test]
 fn multiplier_instance_cites_the_generated_law_no_fresh_induction() {
     let emitted = lower_l3("list_fold");
@@ -176,17 +176,17 @@ fn multiplier_instance_cites_the_generated_law_no_fresh_induction() {
         "the generated law carries the single structural induction `decreases l` (REQ-7):\n{emitted}"
     );
 
-    // The instance proof (the design's GROUNDED `sum_list_bounded`). It is
-    // hand-derived from the design (R-CHAR-3), NOT read from toolchain output: it
-    // CITES `fold_bound_list` and discharges only the FLAT per-node premise — NO
-    // `decreases`, NO `match`, NO recursive proof call.
+    // The instance proof (the design's grounded `sum_list_bounded`). It is
+    // hand-derived from the design (R-CHAR-3), not read from toolchain output: it
+    // cites `fold_bound_list` and discharges only the flat per-node premise, with
+    // no `decreases`, no `match`, no recursive proof call.
     let instance_proof = "\nproof fn sum_list_bounded(l: List)\n    \
         ensures sum_list(l) <= list_len(l) * (u64::MAX as nat),\n{\n    \
         let f = |x: u64, acc: nat| (x + acc) as nat;\n    \
         assert(forall|x: u64, acc: nat| #[trigger] f(x, acc) <= acc + (u64::MAX as nat));\n    \
         fold_bound_list(l, 0, f, u64::MAX as nat);\n}\n";
 
-    // The multiplier is OBSERVABLE: the instance proof cites the law and has no
+    // The multiplier is observable: the instance proof cites the law and has no
     // fresh induction (AC-2 mechanical assertion).
     assert!(
         instance_proof.contains("fold_bound_list("),
@@ -219,10 +219,10 @@ fn multiplier_instance_cites_the_generated_law_no_fresh_induction() {
     }
 }
 
-/// NEGATIVE CONTROL (AC-2 / R-DEFER-9, §7): the GENERATED law minus its per-node
-/// premise FAILS verus — the per-node premise is LOAD-BEARING, the induction is
-/// not vacuous. We take the emitted lowering, STRIP the `forall|…| f(x, acc) <=
-/// acc + b` premise line from `fold_bound_list`, and assert verus REPORTS an
+/// Negative control (AC-2 / R-DEFER-9, §7): the generated law minus its per-node
+/// premise fails verus — the per-node premise is load-bearing, the induction is
+/// not vacuous. We take the emitted lowering, strip the `forall|…| f(x, acc) <=
+/// acc + b` premise line from `fold_bound_list`, and assert verus reports an
 /// error (the oracle `multiplier` expectation: dropping the premise → 1 error).
 #[test]
 fn negative_control_premise_removed_fails_verus() {
@@ -253,15 +253,15 @@ fn negative_control_premise_removed_fails_verus() {
 
 // ---- AC-5: no regression — sum/list_sum still lower + verify ---------------
 
-/// The scheme additions are PURELY ADDITIVE (new generated fns; the hand-written
+/// The scheme additions are purely additive (new generated fns; the hand-written
 /// `is_adt_fold_sum` path is unchanged). The SHIPPED Stage-1 hand-written ADT
-/// fold `list_sum.th` (lowered via `is_adt_fold_sum`, NOT the scheme path) still
-/// lowers to its recursive `spec fn` and VERIFIES — Stage 2 does NOT reshape it.
+/// fold `list_sum.th` (lowered via `is_adt_fold_sum`, not the scheme path) still
+/// lowers to its recursive `spec fn` and verifies; Stage 2 does not reshape it.
 #[test]
 fn list_sum_handwritten_fold_unchanged_and_verifies() {
     let emitted = lower_l3("list_sum");
     // The hand-written fold stays the `is_adt_fold_sum` recursive `spec fn` with
-    // `decreases l` (NOT a generated `fold_list` call).
+    // `decreases l` (not a generated `fold_list` call).
     assert!(
         emitted.contains("spec fn sum_list(l: List) -> nat")
             && emitted.contains("List::Cons(h, t) => h as nat + sum_list(*t),"),
@@ -299,7 +299,7 @@ fn splice_into_verus(emitted: &str, addition: &str) -> String {
     out
 }
 
-/// The lowering must never emit a proof cheat (R-DEFER-9): no `assume`,
+/// The lowering must not emit a proof cheat (R-DEFER-9): no `assume`,
 /// `external_body`, `external`, or `#[slag]` on the generated folds / law.
 fn assert_no_cheats(emitted: &str, name: &str) {
     for forbidden in [

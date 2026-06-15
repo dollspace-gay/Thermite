@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD Summary + pre-pin #57 sandbox-installed REQ-6 corrected, post-pin kernel-target/open-hole drift noted, #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — stale GREENFIELD Summary + pre-pin #57 sandbox-installed REQ-6 corrected, post-pin kernel-target/open-hole drift noted, #262)
 governs: forge/src/build.rs
 thesis-refs:
   - thermite-design.md §3

@@ -1,10 +1,10 @@
-//! DIVERGENCE (critic, #98 C6 re-audit): the emitted bounded-`Vec` `push` ensures
-//! clause OMITS the element-preservation frame that the design's GROUNDED `BVec`
-//! seed mandates. As a result, after a SECOND `push`, the wrapper's contract no
-//! longer lets a caller prove that `get(0)` is the FIRST pushed element — the
+//! Divergence (critic, #98 C6 re-audit): the emitted bounded-`Vec` `push` ensures
+//! clause omits the element-preservation frame that the design's grounded `BVec`
+//! seed mandates. As a result, after a second `push`, the wrapper's contract no
+//! longer lets a caller prove that `get(0)` is the first pushed element; the
 //! prior elements are unframed.
 //!
-//! AUTHORITY:
+//! Authority:
 //!   - `.design/basis/04-collections.md` REQ-5: "`push` lowers to `self.data.push(x)`
 //!     with `... ens final(self)...data@[old_len] == x` **plus the
 //!     element-preservation frame**".
@@ -12,20 +12,20 @@
 //!     `BVec::push` seed carries the element frame
 //!     `forall|j: int| 0 <= j < old_len ==> final(self).data@[j] == old(self).data@[j]`.
 //!   - `.design/basis/04-collections.md` REQ-9 borrow-`get` `ens *result ==
-//!     self.data@[i as int]` — only meaningful if `data@[i]` is FRAMED across a
+//!     self.data@[i as int]` — only meaningful if `data@[i]` is framed across a
 //!     later `push`.
 //!
-//! TOOLCHAIN DIVERGENCE: `emit_one_vec_wrapper` (`thermite-lower/src/lower.rs`)
+//! Toolchain divergence: `emit_one_vec_wrapper` (`thermite-lower/src/lower.rs`)
 //! emits `push` with ens `{ well_formed; len' == len+1; data@[old_len] == x }` and
-//! NO `forall|j| ... data@[j] == old data@[j]` frame (the `pop_last` it emits DOES
-//! carry a kept-prefix frame — `push` is the inconsistent one).
+//! no `forall|j| ... data@[j] == old data@[j]` frame (the `pop_last` it emits does
+//! carry a kept-prefix frame; `push` is the inconsistent one).
 //!
-//! THE FAILURE: the emitted `TVec*` wrapper, plus a value-pinning client that
-//! pushes two distinct elements and asserts `get(0)` is the first, FAILS to verify
+//! The failure: the emitted `TVec*` wrapper, plus a value-pinning client that
+//! pushes two distinct elements and asserts `get(0)` is the first, fails to verify
 //! under the real `verus` binary (`assertion failed` on the first-element pin),
-//! because the second `push` is not framed over index 0. WITH the design's frame
-//! it verifies (confirmed by the critic probe). This is a contract WEAKER than the
-//! design GROUNDED form (R-DEFER-9: an obligation the design states is silently
+//! because the second `push` is not framed over index 0. With the design's frame
+//! it verifies (confirmed by the critic probe). This is a contract weaker than the
+//! design grounded form (R-DEFER-9: an obligation the design states is silently
 //! dropped). Tracking: crosslink blocker.
 //!
 //! Un-ignore when the fixer restores the element-preservation frame on `push`.
@@ -93,10 +93,10 @@ fn divergence_push_frames_prior_elements() {
     let emitted = thermite_lower::lower(&parsed.program).expect("lowers");
 
     // The emitted output uses the real `vstd::prelude::*` wrapper header; append a
-    // value-pinning CLIENT inside the SAME verus! block that exercises the wrapper
-    // contract ONLY (no body internals). The client pushes two distinct values and
-    // pins that get(0) is the FIRST. This is provable iff `push`'s ens FRAMES the
-    // prior elements (the design GROUNDED seed). The expected fact (get(0)==first)
+    // value-pinning client inside the same verus! block that exercises the wrapper
+    // contract only (no body internals). The client pushes two distinct values and
+    // pins that get(0) is the first. This is provable iff `push`'s ens frames the
+    // prior elements (the design grounded seed). The expected fact (get(0)==first)
     // is the design REQ-5/REQ-9 contract, not toolchain output (R-CHAR-3).
     let client = r#"
 verus!{
@@ -112,7 +112,7 @@ pub fn critic_first_element_framed() {
 }
 "#;
     // Splice the client into the emitted file just before the trailing `fn main`,
-    // or append a fresh verus! block (the lowerer emits a standalone verus! block
+    // or append a verus! block (the lowerer emits a standalone verus! block
     // per item; a second verus! block in the same file is accepted by verus).
     let combined = format!("{emitted}\n{client}\n");
 

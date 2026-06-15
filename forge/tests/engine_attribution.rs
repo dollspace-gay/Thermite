@@ -1,35 +1,35 @@
 //! `forge/tests/engine_attribution.rs` — the binary-driven guards for the
-//! proof-backends increment (iii) `--engine` surface + the certificate ENGINE
-//! ATTRIBUTION (`.design/verified/proof-backends.md` REQ-4/REQ-5/REQ-8 + OQ-1;
+//! proof-backends increment (iii) `--engine` surface + the certificate engine
+//! attribution (`.design/verified/proof-backends.md` REQ-4/REQ-5/REQ-8 + OQ-1;
 //! crosslink #247, ref #203).
 //!
-//! `forge` is a pure `bin` crate (no `lib.rs`), so an integration test CANNOT reach
+//! `forge` is a pure `bin` crate (no `lib.rs`), so an integration test cannot reach
 //! the internal `engine`/`check` symbols. The pure-function unit tests for the
-//! disagreement HALT (REQ-5 — `StubProven ⊕ StubRefuted` fires, `Proven ⊕ Unknown`
+//! disagreement halt (REQ-5 — `StubProven ⊕ StubRefuted` fires, `Proven ⊕ Unknown`
 //! benign), the attribution pair (REQ-4), the sorry detection + interactive path
 //! (REQ-7), and the Lean-path mutation kill semantics (REQ-9) live as `#[cfg(test)]`
-//! blocks INSIDE `forge/src/engine.rs` (reaching `check_disagreement` /
+//! blocks inside `forge/src/engine.rs` (reaching `check_disagreement` /
 //! `attribution_for` / `proof_has_sorry` / `lean_mutant_outcome` / `LeanMutationTally`
 //! directly) — the same bin-only constraint `engine_interface.rs` documents.
 //!
-//! This external file carries the BINARY-DRIVEN guards at the CLI / external-artifact
+//! This external file carries the binary-driven guards at the CLI / external-artifact
 //! boundary:
 //!
-//! - **(A) the cert ORACLE is byte-identical under `--engine verus` (the DEFAULT).**
+//! - (A) the cert oracle is byte-identical under `--engine verus` (the default).
 //!   The OQ-1 decision is `verus` = byte-identical; this re-runs the `sum` cert oracle
 //!   against the golden `conformance/sum.cert.json` (R-CHAR-3) under `--engine verus`,
-//!   proving the surface flag does NOT perturb the default path.
-//! - **(B) the attribution field round-trips + is OMITTED on the default Verus path.**
+//!   showing the surface flag does not perturb the default path.
+//! - (B) the attribution field round-trips + is omitted on the default Verus path.
 //!   A golden-shaped Verus cert (no `engine_attribution` key) is the byte-identity
 //!   witness for REQ-4 — the `serde(default)` keeps the golden green because the Verus
 //!   path never populates the field.
-//! - **(C) `--engine lean` attaches the SMALLER trusted base on an exportable item
-//!   (LIVE).** Gated on lake; a `forge check --engine lean` of a scalar pure-contract
+//! - (C) `--engine lean` attaches the smaller trusted base on an exportable item
+//!   (live). Gated on lake; a `forge check --engine lean` of a scalar pure-contract
 //!   item emits a cert whose `engine_attribution.engine == "lean-auto"` with the
 //!   `{Lean kernel, …, EXP}` trust profile (the auditor-visible smaller base, REQ-4).
-//! - **(D) `--engine` arg parsing** (verus/lean/auto + the unknown-value usage error).
+//! - (D) `--engine` arg parsing (verus/lean/auto + the unknown-value usage error).
 //!
-//! Live checks SKIP LOUDLY when their tool (verus / lake) is absent — never a panic.
+//! Live checks skip with a diagnostic when their tool (verus / lake) is absent, never a panic.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -78,9 +78,9 @@ fn lake_present() -> bool {
         .unwrap_or(false)
 }
 
-// (A) THE CERT ORACLE under `--engine verus` (the DEFAULT) is byte-identical. The
-// OQ-1 decision is "verus = byte-identical"; the explicit flag must NOT change the
-// `sum` golden cert. Expected from `conformance/sum.cert.json` (R-CHAR-3), never
+// (A) the cert oracle under `--engine verus` (the default) is byte-identical. The
+// OQ-1 decision is "verus = byte-identical"; the explicit flag does not change the
+// `sum` golden cert. Expected from `conformance/sum.cert.json` (R-CHAR-3), not
 // forge's own output.
 #[test]
 fn engine_verus_flag_is_byte_identical_oracle() {
@@ -108,7 +108,7 @@ fn engine_verus_flag_is_byte_identical_oracle() {
         .find(|c| c.get("item").and_then(|v| v.as_str()) == Some("sum"))
         .expect("a certificate for `sum`");
     // The deterministic golden subset (item / level / effects) — the same subset the
-    // SHIPPED cert oracle asserts.
+    // shipped cert oracle asserts.
     assert_eq!(
         got["item"], golden["item"],
         "item identity (--engine verus)"
@@ -118,7 +118,7 @@ fn engine_verus_flag_is_byte_identical_oracle() {
         "--engine verus must NOT change `sum`'s achieved level (byte-identical)"
     );
     assert_eq!(got["effects"], golden["effects"], "effects == golden");
-    // (B) THE ATTRIBUTION FIELD IS OMITTED on the default Verus path — the
+    // (B) the attribution field is omitted on the default Verus path — the
     // `serde(default)` byte-identity witness (REQ-4): a Verus cert never gains the
     // key, so the golden (which omits it) stays oracle-stable.
     assert!(
@@ -127,16 +127,16 @@ fn engine_verus_flag_is_byte_identical_oracle() {
     );
 }
 
-// (B) THE ATTRIBUTION FIELD ROUND-TRIPS additively. A cert JSON WITHOUT the
+// (B) the attribution field round-trips additively. A cert JSON without the
 // `engine_attribution` key (the golden shape) deserializes (defaulting `None`); a
-// cert WITH a Lean attribution serializes the `{engine, trust_profile}` pair. Expected
+// cert with a Lean attribution serializes the `{engine, trust_profile}` pair. Expected
 // from the additive-serde contract (R-SPEC-2) — the `serde(default,
 // skip_serializing_if = "Option::is_none")` precedent. This is the byte-identity
-// MECHANISM the design names ("serde-default keeps the goldens green").
+// mechanism the design names ("serde-default keeps the goldens green").
 #[test]
 fn engine_attribution_is_additive_and_round_trips() {
     // The golden shape (no `engine_attribution` key) — must deserialize then
-    // re-serialize WITHOUT introducing the key (skip_serializing_if = is_none).
+    // re-serialize without introducing the key (skip_serializing_if = is_none).
     let golden_src = std::fs::read_to_string(corpus_dir().join("sum.cert.json"))
         .expect("read golden sum.cert.json");
     let golden: Value = serde_json::from_str(&golden_src).expect("parse golden");
@@ -144,7 +144,7 @@ fn engine_attribution_is_additive_and_round_trips() {
         golden.get("engine_attribution").is_none(),
         "the frozen golden OMITS engine_attribution (the additive precedent)"
     );
-    // A SYNTHETIC cert WITH a Lean attribution serializes the pair (the auditor-visible
+    // A synthetic cert with a Lean attribution serializes the pair (the auditor-visible
     // smaller base). We assemble it as JSON the cert schema accepts and re-parse.
     let with_attr = serde_json::json!({
         "item": "f",
@@ -177,11 +177,11 @@ fn engine_attribution_is_additive_and_round_trips() {
     );
 }
 
-// (C) `--engine lean` attaches the SMALLER trusted base on an EXPORTABLE scalar item
-// (LIVE — gated on lake). A `forge check --engine lean` of a CORRECT pure-contract
+// (C) `--engine lean` attaches the smaller trusted base on an exportable scalar item
+// (live — gated on lake). A `forge check --engine lean` of a correct pure-contract
 // scalar item kernel-discharges by Lean and emits a cert with `engine_attribution`
 // naming `lean-auto` + the {Lean kernel, …, EXP} base. Expected from REQ-4 / OQ-1
-// (R-CHAR-3) — the attribution is populated whenever a NON-default engine discharges.
+// (R-CHAR-3) — the attribution is populated whenever a non-default engine discharges.
 #[test]
 fn engine_lean_attaches_smaller_trust_base_live() {
     if !lake_present() {
@@ -254,7 +254,7 @@ fn engine_lean_attaches_smaller_trust_base_live() {
     );
 }
 
-// (D) `--engine` ARG PARSING: verus/lean/auto are accepted; an unknown value is a
+// (D) `--engine` arg parsing: verus/lean/auto are accepted; an unknown value is a
 // usage error (a non-zero exit), never a silent default. Expected from OQ-1 (the
 // surface decision) — the three legal values + the strict unknown-value rejection.
 #[test]
@@ -277,7 +277,7 @@ fn engine_flag_parsing() {
         stderr.contains("--engine") || stderr.contains("z3plus"),
         "the usage error names the bad --engine value: {stderr}"
     );
-    // A MISSING value after `--engine` is also a usage error.
+    // A missing value after `--engine` is also a usage error.
     let missing = Command::new(forge_bin())
         .arg("check")
         .arg(corpus_dir().join("sum.th"))

@@ -1,34 +1,34 @@
 //! Conformance for cluster C4 (crosslink **#94**): the verified `u64`↔`String`
 //! byte-builder + decimal formatter — `push_byte`/`from_byte` (07-strings.md REQ-7)
-//! and `n.to_string()` with the GOLD-STANDARD round-trip (`parse_le(result) == n`,
-//! REQ-8). These run the BUILT `forge` binary end-to-end against the EXTERNAL truths
+//! and `n.to_string()` with the gold-standard round-trip (`parse_le(result) == n`,
+//! REQ-8). These run the built `forge` binary end-to-end against the external truths
 //! the toolchain does not author for itself: the real `verus` SMT prover (the cert
 //! levels) and the real `rustc` compiler + a real process run (the formatter prints
 //! the decimal).
 //!
-//! It pins the THREE C4 deliverables (REQ-9 `parse_u64` is OUT — blocked on C7/#95):
+//! It pins the three C4 deliverables (REQ-9 `parse_u64` is out, blocked on C7/#95):
 //!
 //!   * `from_byte`/`push_byte` build a `String` byte-by-byte → L3 with the
-//!     length + element-frame contract (`fx alloc`) — the verified byte-builder.
+//!     length + element-frame contract (`fx alloc`), the verified byte-builder.
 //!   * `n.to_string()` → L3 with the round-trip `ens parse_le(result) == n` (the
-//!     GROUNDED `16 verified, 0 errors` form: the divide/mod-by-10 digit loop, the
-//!     `pow10`/`parse_le` spec fns, the `lemma_parse_push` append lemma). A WRONG
-//!     digit emission FAILS the round-trip ens (the contract is load-bearing,
+//!     grounded `16 verified, 0 errors` form: the divide/mod-by-10 digit loop, the
+//!     `pow10`/`parse_le` spec fns, the `lemma_parse_push` append lemma). A wrong
+//!     digit emission fails the round-trip ens (the contract is load-bearing,
 //!     R-DEFER-9 non-vacuity).
 //!   * `forge build` a formatter (`fn show42() -> String { ... n.to_string() }`
-//!     entry) → COMPILES + RUNS + prints the correct decimal (42 → the bytes
-//!     `[52, 50]`, the ASCII of "42") — the `u64`→`String` unlock running.
+//!     entry) → compiles, runs, and prints the correct decimal (42 → the bytes
+//!     `[52, 50]`, the ASCII of "42"), the `u64`→`String` unlock running.
 //!
-//! The cert-level checks RUN VERUS; if verus is absent they SKIP LOUDLY (the
-//! `string_l3_completeness.rs` precedent) — never panic on a missing solver
+//! The cert-level checks run verus; if verus is absent they skip with an eprintln
+//! (the `string_l3_completeness.rs` precedent) rather than panic on a missing solver
 //! (R-CODE-4). The build+run uses `rustc` (always present, no skip). `tests/` is not
 //! anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/07-strings.md` REQ-7 (the
 //! byte-builder `ens len == old+1 && data@[old] == b` + element frame) and REQ-8
-//! (the round-trip `parse_le(result) == n` is the gold standard, GROUNDED) +
+//! (the round-trip `parse_le(result) == n` is the gold standard, grounded) +
 //! `thermite-design.md` §6 ladder semantics (L3 == a fully-discharged real-verus
-//! proof; L0 == an undischarged obligation), NEVER copied from forge's own output.
+//! proof; L0 == an undischarged obligation), never copied from forge's own output.
 //! The wrong-digit negative pins non-vacuity.
 
 use std::path::{Path, PathBuf};
@@ -99,20 +99,20 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 /// AC-6 — `from_byte`/`push_byte` build a `String` byte-by-byte and certify L3 with
 /// the length + element-frame contract, `fx alloc`.
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-7 — `from_byte(b)` lowers to the
+/// Authority: `.design/basis/07-strings.md` REQ-7 — `from_byte(b)` lowers to the
 /// 1-byte constructor (`ens len == 1 && data@[0] == b`); `s.push_byte(b)` to the
 /// copy-then-append (`req len < CAP`, `ens len == old+1 && data@[old] == b` + the
 /// element frame `forall|j| 0 <= j < old ==> result@[j] == self@[j]`). The
 /// constructing fn carries `fx alloc`. `thermite-design.md` §6: a fully-discharged
-/// verus proof is L3. GROUNDED `4 verified, 0 errors`.
+/// verus proof is L3. Grounded `4 verified, 0 errors`.
 #[test]
 fn ac6_byte_builder_certifies_l3_alloc() {
     if !verus_present() {
         eprintln!("SKIP: verus absent — byte-builder L3 not exercised.");
         return;
     }
-    // `build2(a, b)`: from_byte(a).push_byte(b) — a 2-byte String whose bytes are
-    // exactly a, b. The push_byte req `len < CAP` is discharged (the 1-byte
+    // `build2(a, b)`: from_byte(a).push_byte(b) builds a 2-byte String whose bytes
+    // are a, b. The push_byte req `len < CAP` is discharged (the 1-byte
     // from_byte result is well_formed and len 1 < CAP).
     let certs = check_program(
         "bytebuilder",
@@ -133,14 +133,14 @@ fn ac6_byte_builder_certifies_l3_alloc() {
     );
 }
 
-/// AC-7 — `n.to_string()` certifies L3 with the ROUND-TRIP contract
+/// AC-7 — `n.to_string()` certifies L3 with the round-trip contract
 /// `parse_le(result) == n` (the gold standard).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 — `n.to_string()` lowers to the
+/// Authority: `.design/basis/07-strings.md` REQ-8 — `n.to_string()` lowers to the
 /// generated `u64_to_string` (the divide/mod-by-10 digit loop + the `pow10`/
 /// `parse_le` spec fns + the `lemma_parse_push` append lemma) with the round-trip
 /// ens `parse_le(result) == n`. `thermite-design.md` §6: L3 is a fully-discharged
-/// verus proof. GROUNDED `16 verified, 0 errors` (the round-trip is REAL — the
+/// verus proof. Grounded `16 verified, 0 errors` (the round-trip uses the
 /// lemma + nonlinear_arith, no `assume`/`external_body`).
 #[test]
 fn ac7_to_string_round_trip_certifies_l3() {
@@ -169,17 +169,17 @@ fn ac7_to_string_round_trip_certifies_l3() {
     );
 }
 
-/// AC-7 NON-VACUITY (R-DEFER-9) — a WRONG digit emission FAILS the round-trip ens.
+/// AC-7 non-vacuity (R-DEFER-9) — a wrong digit emission fails the round-trip ens.
 /// The round-trip `parse_le(result) == n` is load-bearing: a formatter that emits
-/// the wrong digit produces a byte sequence that does NOT parse back to `n`, so the
-/// `ens` is undischarged → NOT L3. (Here the surface program is correct; this test
-/// pins that the GENERATED `u64_to_string`'s round-trip ens is a real proof — it
-/// FAILS for a broken loop, GROUNDED `15 verified, 1 errors` for a +1 digit shift.
+/// the wrong digit produces a byte sequence that does not parse back to `n`, so the
+/// `ens` is undischarged → not L3. (Here the surface program is correct; this test
+/// pins that the generated `u64_to_string`'s round-trip ens is a real proof: it
+/// fails for a broken loop, grounded `15 verified, 1 errors` for a +1 digit shift.
 /// The surface cannot inject a wrong digit into the generated fn, so the non-vacuity
-/// is proved at the codegen-grounding level; here we pin that an OVERCLAIMED ens —
-/// `parse_le(result) == n + 1` — is REJECTED, never laundered to L3.)
+/// is proved at the codegen-grounding level; here we pin that an overclaimed ens,
+/// `parse_le(result) == n + 1`, is rejected, never laundered to L3.)
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 (the round-trip is the gold
+/// Authority: `.design/basis/07-strings.md` REQ-8 (the round-trip is the gold
 /// standard, non-vacuous) + `thermite-design.md` §7 (the battery catches a false
 /// claim). An ens that overclaims the value is a counterexample, never a false L3.
 #[test]
@@ -188,10 +188,10 @@ fn ac7_overclaimed_round_trip_is_rejected() {
         eprintln!("SKIP: verus absent — round-trip non-vacuity not exercised.");
         return;
     }
-    // The fn returns `n.to_string()` (parse_le == n) but CLAIMS `parse_le(result) ==
-    // n + 1` — an overclaim. The generated round-trip ens proves `parse_le == n`,
-    // so `parse_le == n + 1` is FALSE (for n where n != n+1, i.e. always) → verus
-    // FAILS the postcondition → NOT L3. The round-trip is real teeth.
+    // The fn returns `n.to_string()` (parse_le == n) but claims `parse_le(result) ==
+    // n + 1`, an overclaim. The generated round-trip ens proves `parse_le == n`,
+    // so `parse_le == n + 1` is false (for n where n != n+1, i.e. always) → verus
+    // fails the postcondition → not L3. The round-trip is real teeth.
     let certs = check_program(
         "tostring_overclaim",
         "fn bad(n: u64) -> String\n  req n < 1000\n  ens parse_be(result) == n + 1\n  fx alloc\n{ n.to_string() }\n",
@@ -206,16 +206,16 @@ fn ac7_overclaimed_round_trip_is_rejected() {
     );
 }
 
-/// AC-7 (the unlock RUNNING) — `forge build` a formatter and RUN it: it prints the
+/// AC-7 (the unlock running) — `forge build` a formatter and run it: it prints the
 /// correct human-readable decimal of 42. `show42()` returns `n.to_string()` for
 /// `n == 42`; the built binary's `{r:?}` of the `TString` renders its bytes. v1's
-/// `to_string` builds LSB-first then REVERSES to the human-readable MSB-first display
-/// order (REQ-8, blocker #96 — the PROVEN `parse_be(result) == n` form via the
+/// `to_string` builds LSB-first then reverses to the human-readable MSB-first display
+/// order (REQ-8, blocker #96 — the proven `parse_be(result) == n` form via the
 /// `parse_be(seq_reverse(s)) == parse_le(s)` bridge), so 42 → the bytes `[52, 50]`
 /// (digit '4' == 52 then '2' == 50, reading "42"). L3 and L1 both reverse, so they
 /// agree byte-for-byte (no display divergence).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 — "The surface emits the
+/// Authority: `.design/basis/07-strings.md` REQ-8 — "The surface emits the
 /// human-readable MSB-first decimal"; for 42 the MSB-first byte order is `52` ('4')
 /// then `50` ('2'). `rustc` builds the L1 runnable form (the divide/mod-by-10 loop +
 /// `data.reverse()`), the process run prints it. The ASCII decode is the design
@@ -269,7 +269,7 @@ fn ac7_formatter_builds_and_prints_decimal() {
     // 42 → the decimal-digit bytes 52 ('4') and 50 ('2'). v1's `to_string` reverses
     // to MSB-first (the proven `parse_be == n` form, blocker #96), so the L1
     // `TString`'s derived Debug renders `TString { data: [52, 50] }` (digit '4' then
-    // '2', reading "42"). BOTH digit bytes of 42 are present in the human-readable
+    // '2', reading "42"). Both digit bytes of 42 are present in the human-readable
     // order. The ASCII codes are the design constant (R-CHAR-3), not forge output.
     assert!(
         run_stdout.contains("52, 50"),
@@ -286,11 +286,11 @@ fn ac7_formatter_builds_and_prints_decimal() {
 
 /// AC-5 (no regression) — the existing string corpus `conformance/string_demo.th`
 /// still certifies L3 across `greeting_len`/`first_byte`/`join`/`literal_len`. The
-/// C4 additions are purely additive (`from_byte`/`push_byte` methods on the wrapper,
+/// C4 additions are additive (`from_byte`/`push_byte` methods on the wrapper,
 /// the `u64_to_string`/`pow10`/`parse_le`/`lemma_parse_push` defs emitted only when
 /// `to_string` is used) and must not perturb the existing wrapper.
 ///
-/// AUTHORITY: `conformance/string/cases.json` (the Stage-7 oracle: greeting_len /
+/// Authority: `conformance/string/cases.json` (the Stage-7 oracle: greeting_len /
 /// first_byte L3 pure, join / literal_len L3 alloc). `thermite-design.md` §6.
 #[test]
 fn ac5_string_demo_corpus_unchanged() {

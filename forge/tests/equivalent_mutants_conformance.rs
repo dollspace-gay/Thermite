@@ -1,26 +1,26 @@
-//! The LIVE conformance oracle for forge's §7 EQUIVALENT-MUTANT EXCLUSION
-//! (`.design/forge/equivalent-mutants.md`, crosslink #101). It drives the BUILT
+//! The live conformance oracle for forge's §7 equivalent-mutant exclusion
+//! (`.design/forge/equivalent-mutants.md`, crosslink #101). It drives the built
 //! `forge` binary (mirroring `mutation_conformance.rs`) over hand-authored
-//! forced-output fixtures and asserts the verdict FLIP the exclusion produces.
+//! forced-output fixtures and asserts the verdict flip the exclusion produces.
 //!
-//! Every case issues REAL per-survivor verus equivalence queries (the exclusion
-//! is gated on a Verus PROOF — R-DEFER-9), so each case needs verus and SKIPS
-//! LOUDLY when verus is absent, never panics.
+//! Every case issues per-survivor verus equivalence queries (the exclusion
+//! is gated on a Verus proof — R-DEFER-9), so each case needs verus and skips
+//! with a diagnostic when verus is absent, never panics.
 //!
-//! Expected verdicts are HAND-DERIVED from the design's *Ground the path*
-//! (R-CHAR-3 — never read back from forge's own output):
+//! Expected verdicts are hand-derived from the design's *Ground the path*
+//! (R-CHAR-3, not read back from forge's own output):
 //!   - AC-1: `clamp_zero` (`req x == 0 ens result == 0 { let y = x + 0; y }`)
-//!     was `WeakContract 1/3` BEFORE #101; the early-`return 0` AND the `x - 0`
-//!     binop-flip survivors are PROVED equivalent to `x + 0` under `x == 0`, so
-//!     they DROP from the denominator → `1/1 = 1.0 >= 0.60` → CERTIFIES L3.
-//!   - AC-2: `loose` (`req x <= 100 ens result <= 1000`) has a SURVIVING
-//!     early-`return 0` mutant that is NOT equivalent (x = 5 distinguishes), so
-//!     its query FAILS → it STAYS counted → STILL `WeakContract` (NOT laundered).
+//!     was `WeakContract 1/3` before #101; the early-`return 0` and the `x - 0`
+//!     binop-flip survivors are proved equivalent to `x + 0` under `x == 0`, so
+//!     they drop from the denominator → `1/1 = 1.0 >= 0.60` → certifies L3.
+//!   - AC-2: `loose` (`req x <= 100 ens result <= 1000`) has a surviving
+//!     early-`return 0` mutant that is not equivalent (x = 5 distinguishes), so
+//!     its query fails → it stays counted → still `WeakContract` (not laundered).
 //!   - AC-3 / AC-5: `refuse` (`req x == 0 ens result == 0 { x }`) has a sole
-//!     early-`return 0` survivor that IS proved equivalent → excluded → `0/0` →
-//!     the #48 backstop STILL gates `WeakContract` (no vacuous `1.0` pass).
-//!   - AC-4: a genuinely-KILLED-mutant fixture (`add`, a strong contract) is
-//!     UNCHANGED — the equivalence query runs only on survivors.
+//!     early-`return 0` survivor that is proved equivalent → excluded → `0/0` →
+//!     the #48 backstop still gates `WeakContract` (no vacuous `1.0` pass).
+//!   - AC-4: a killed-mutant fixture (`add`, a strong contract) is
+//!     unchanged — the equivalence query runs only on survivors.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -149,7 +149,7 @@ const REFUSE: &str =
 
 const ADD: &str = "fn add(a: u64, b: u64) -> u64\n    req a <= 10 && b <= 10\n    ens result == a + b\n    fx pure\n{\n    let s: u64 = a + b;\n    s\n}\n";
 
-/// AC-1: the equivalent-mutant exclusion FLIPS `clamp_zero` from the pre-#101
+/// AC-1: the equivalent-mutant exclusion flips `clamp_zero` from the pre-#101
 /// `WeakContract 1/3` to a certifying `L3` `1/1` — the two proved-equivalent
 /// survivors (early-`return 0`, `x - 0` flip) drop from the denominator.
 #[test]
@@ -178,8 +178,8 @@ fn ac1_forced_output_excludes_equivalents_and_certifies() {
     );
     let mk = mutants_killed(cert);
     let (killed, scored) = parse_ratio(&mk);
-    // The DROPPED equivalents reduce the denominator: at least one mutant killed,
-    // and the surviving denominator carries NO un-killed mutant (kill_ratio 1.0).
+    // The dropped equivalents reduce the denominator: at least one mutant killed,
+    // and the surviving denominator carries no un-killed mutant (kill_ratio 1.0).
     assert!(
         killed >= 1 && killed == scored,
         "AC-1: after excluding the proved-equivalent survivors the ratio is 1.0 \
@@ -188,9 +188,9 @@ fn ac1_forced_output_excludes_equivalents_and_certifies() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// AC-2 (the soundness line, R-DEFER-9): a genuinely-weak contract's
-/// DISTINGUISHING survivor FAILS the equivalence query → STAYS counted → STILL
-/// `WeakContract`. The exclusion does NOT launder it.
+/// AC-2 (the soundness line, R-DEFER-9): a weak contract's
+/// distinguishing survivor fails the equivalence query → stays counted → still
+/// `WeakContract`. The exclusion does not launder it.
 #[test]
 fn ac2_weak_contract_survivor_stays_counted() {
     if !verus_present() {
@@ -216,7 +216,7 @@ fn ac2_weak_contract_survivor_stays_counted() {
         "AC-2: loose stays WeakContract — the distinguishing early-return survivor \
          is NEVER excluded (R-DEFER-9); cert: {cert}"
     );
-    // The surviving denominator is below floor: a counted survivor remains.
+    // The surviving denominator is below floor; a counted survivor remains.
     let (killed, scored) = parse_ratio(&mutants_killed(cert));
     assert!(
         scored > 0 && (killed as f64) / (scored as f64) < 0.60,
@@ -226,7 +226,7 @@ fn ac2_weak_contract_survivor_stays_counted() {
 }
 
 /// AC-3 / AC-5 (no vacuous pass): `refuse`'s sole survivor is proved equivalent
-/// → excluded → `0/0` → the #48 backstop STILL gates `WeakContract`. Exclusion
+/// → excluded → `0/0` → the #48 backstop still gates `WeakContract`. Exclusion
 /// never opens a vacuous `1.0` pass for a fn the battery could not exercise.
 #[test]
 fn ac3_all_equivalent_reduces_to_zero_over_zero_still_gated() {
@@ -257,8 +257,8 @@ fn ac3_all_equivalent_reduces_to_zero_over_zero_still_gated() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// AC-4: a strong contract whose mutants are genuinely KILLED is UNCHANGED — the
-/// equivalence query runs ONLY on survivors, so a killed mutant is never excluded
+/// AC-4: a strong contract whose mutants are killed is unchanged — the
+/// equivalence query runs only on survivors, so a killed mutant is never excluded
 /// and the verdict is the same as before #101.
 #[test]
 fn ac4_killed_mutants_unaffected() {
@@ -283,7 +283,7 @@ fn ac4_killed_mutants_unaffected() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// Determinism (REQ-6): scoring the SAME forced-output fixture twice yields the
+/// Determinism (REQ-6): scoring the same forced-output fixture twice yields the
 /// byte-identical reduced `mutants_killed` (the exclusion verdict is a cached,
 /// deterministic verus proof).
 #[test]

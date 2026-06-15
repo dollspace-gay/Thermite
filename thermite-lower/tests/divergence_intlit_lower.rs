@@ -1,28 +1,28 @@
-//! Adversarial audit of #37 — the CRUX regression probe: lowering must emit the
-//! numeric `value` in the EXECUTABLE expression, NOT the verbatim `raw`.
+//! Adversarial audit of #37 — the regression probe: lowering emits the
+//! numeric `value` in the executable expression, not the verbatim `raw`.
 //!
 //! ast.md REQ-6 CRITICAL note: "the thermite-lower lowering … continues to
 //! emit the numeric `value` (e.g. `1000000`), NOT the raw — so the
 //! `tests/golden/lower/*.verus.rs` files do NOT change". This test pins that
-//! invariant directly on a FRESH `_`-bearing literal.
+//! invariant directly on a fresh `_`-bearing literal.
 //!
-//! IMPORTANT (critic note on assertion shape): the L1 lowering ALSO embeds the
-//! verbatim clause SOURCE text inside the human-legible diagnostic label of
+//! Critic note on assertion shape: the L1 lowering also embeds the
+//! verbatim clause source text inside the human-legible diagnostic label of
 //! `thermite_check!("req", "x <= 1_000", x <= 1000)` — that `1_000` in the
-//! string literal is the original `Clause.text` and is CORRECT (the legible
-//! diagnostic, not the executable form). The invariant is about the LOWERED
-//! EXPRESSION (`x <= 1000`), so we assert on that form, not a blanket substring.
+//! string literal is the original `Clause.text`, the legible
+//! diagnostic, not the executable form. The invariant is about the lowered
+//! expression (`x <= 1000`), so we assert on that form, not a blanket substring.
 //!
 //! Expected values hand-derived from the cited REQ text — the value `1000` is
 //! the `_`-stripped form of the source `1_000` (R-CHAR-3: not copied from the
-//! lowerer's output). Expected to PASS under a2c0f73 (documents NO divergence).
+//! lowerer's output). Expected to pass under a2c0f73 (documents no divergence).
 
 use thermite_syntax::ast::{BinOp, Expr, Item};
 
 /// ast.md REQ-6 / AC-1b: a contract with a `_`-bearing literal (`req x <=
-/// 1_000`) lowers so the EXECUTABLE comparison is `x <= 1000` (the value), and
+/// 1_000`) lowers so the executable comparison is `x <= 1000` (the value), and
 /// no executable expression `x <= 1_000` (the raw) appears. A `_` in the
-/// emitted Verus/L1 *expression* would itself be a behavior change.
+/// emitted Verus/L1 expression would itself be a behavior change.
 #[test]
 fn divergence_lowering_emits_value_not_raw() {
     let src = "fn f(x: u32) -> u32 req x <= 1_000 ens result == 0 fx pure { 0 }";
@@ -30,7 +30,7 @@ fn divergence_lowering_emits_value_not_raw() {
     assert!(parsed.is_clean(), "fixture must parse clean: {parsed:?}");
 
     // Confirm the parsed node carries the verbatim raw, so the test is not
-    // vacuous — the raw genuinely contains a `_` that lowering must drop from
+    // vacuous — the raw contains a `_` that lowering must drop from
     // the executable form.
     let Item::Fn(f) = &parsed.program.items[0] else {
         panic!("expected a fn item");
@@ -62,7 +62,7 @@ fn divergence_lowering_emits_value_not_raw() {
     );
 
     // L1 lowering: the executable check expression is `x <= 1000` (value). The
-    // raw `1_000` is permitted ONLY inside the diagnostic-label string literal
+    // raw `1_000` is permitted only inside the diagnostic-label string literal
     // ("x <= 1_000"), never as the executable comparison `x <= 1_000`.
     let l1 = thermite_lower::lower_l1(&parsed.program).expect("L1 lowering");
     assert!(

@@ -1,4 +1,4 @@
-//! Pinned divergence (#148): the #146 cast-`<` paren fix is INCOMPLETE on the
+//! Pinned divergence (#148): the #146 cast-`<` paren fix is incomplete on the
 //! struct type-invariant lowering path.
 //!
 //! Commit 167b9f4 fixed `lower_binary_operand` (the fn-contract / loop-`inv`
@@ -8,20 +8,20 @@
 //! list (`u32<33, …>` → "expected `,`"). See `divergence_cast_paren.rs` for the
 //! #122/#146 family.
 //!
-//! But the STRUCT type-invariant path (`lower_inv_expr` → `lower_inv_operand`,
+//! But the struct type-invariant path (`lower_inv_expr` → `lower_inv_operand`,
 //! the REQ-8 `well_formed()` predicate, `.design/lower/...` struct invariants)
-//! has its OWN operand-parenthesizer (`lower_inv_operand`) that was NOT given the
+//! has its own operand-parenthesizer (`lower_inv_operand`) that was not given the
 //! cast-`<` fix. So a struct invariant carrying a cast left of `<`
-//! (`} inv (x as u32) < cap`) emits the BARE `x as u32 < cap` and `forge check`
-//! reports L0 with `error: expected ,` — the exact #146 mis-parse, on a path the
+//! (`} inv (x as u32) < cap`) emits the bare `x as u32 < cap` and `forge check`
+//! reports L0 with `error: expected ,` — the same #146 mis-parse, on a path the
 //! fix missed. The whole cast-`<` class must be fixed (R-DEFER-8: a convention
 //! starts somewhere; the fix is incomplete until every cast-`<` site is covered).
 //!
 //! Authority: blocker #146 / #148 (the cast-`<` paren discipline — the dual of
 //! #122). Expected: the lowering parenthesizes the cast (`(x as u32) < cap`), the
-//! SAME form `lower_binary_operand` now emits and `thermite_tv::ref_encode`
+//! same form `lower_binary_operand` now emits and `thermite_tv::ref_encode`
 //! always emits. R-CHAR-3: the paren'd form is the design's parse-correct form,
-//! not copied from the lowerer's output (the lowerer currently emits the WRONG
+//! not copied from the lowerer's output (the lowerer currently emits the
 //! unparenthesized form).
 //!
 //! `#[ignore]`d (blocker #148 tracks the fix; un-ignore when `lower_inv_operand`
@@ -42,14 +42,14 @@ fn struct_invariant_cast_lt_is_parenthesized() {
 
     let l3 = thermite_lower::lower(&parsed.program).expect("L3 lowering");
 
-    // The mis-parsing bare form MUST NOT appear — this is the divergence the bug
+    // The mis-parsing bare form must not appear — this is the divergence the bug
     // produces (and what makes `forge check` emit `error: expected ,`).
     assert!(
         !l3.contains("self.x as u32 < self.cap"),
         "struct-invariant cast-`<` must NOT emit the unparenthesized \
          `self.x as u32 < self.cap` (= the `u32<...>` generic mis-parse, #146/#148):\n{l3}"
     );
-    // The parse-correct form is the parenthesized cast — the SAME discipline
+    // The parse-correct form is the parenthesized cast — the same discipline
     // `lower_binary_operand` applies on the fn-contract / loop-inv path.
     assert!(
         l3.contains("(self.x as u32) < self.cap"),

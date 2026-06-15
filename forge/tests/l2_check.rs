@@ -1,11 +1,11 @@
-//! Integration test for `forge check --level l2` against the EXTERNAL truth: the
+//! Integration test for `forge check --level l2` against the external truth: the
 //! real `cargo kani` binary (`.design/lower/l2-kani.md` AC-1, REQ-7). It runs the
 //! `forge` binary with `--level l2 --json` on `conformance/sum.th` and asserts the
 //! `sum` certificate is `Level::L2` (verified up to bound), distinct from the
 //! default L3 verus path.
 //!
-//! `cargo kani` is a HEAVY external toolchain, so the kani-spawning assertion
-//! SKIPS LOUDLY (a diagnostic + early return, NOT `#[ignore]`) when kani is
+//! `cargo kani` is a heavy external toolchain, so the kani-spawning assertion
+//! skips with a logged note (a diagnostic + early return, not `#[ignore]`) when kani is
 //! absent (REQ-8), mirroring the verus-absent skip pattern. The L2 level / the
 //! `slice <= 4, unwind 5` bound caveat trace to the grounded real-kani runs
 //! (R-CHAR-3), not forge's own output. `unwrap`/`expect` are fine here
@@ -22,7 +22,7 @@ fn corpus(name: &str) -> PathBuf {
 }
 
 /// `true` if the kani plugin binary is resolvable (PATH or `~/.cargo/bin`), so
-/// the kani-spawning test SKIPS LOUDLY when absent rather than failing (REQ-8).
+/// the kani-spawning test skips with a logged note when absent rather than failing (REQ-8).
 fn kani_available() -> bool {
     if let Ok(out) = Command::new("which").arg("cargo-kani").output() {
         if out.status.success() && !out.stdout.is_empty() {
@@ -98,7 +98,7 @@ fn forge_check_level_l2_sum_is_l2() {
     );
 }
 
-// REQ-7: the DEFAULT (no --level) stays the L3 verus path — distinct from L2.
+// REQ-7: the default (no --level) stays the L3 verus path — distinct from L2.
 // This is a pure CLI-surface assertion (no kani spawn): we only assert the flag
 // dispatch differs by checking the usage banner rejects a bogus --level value.
 #[test]

@@ -2,7 +2,7 @@
 //! (`.design/verified/contract-tv.md` REQ-2; `thermite-design.md` §6, L3 = the
 //! verus-derived SMT proof).
 //!
-//! [`equivalence_obligation`] emits a SELF-CONTAINED Verus program text whose
+//! [`equivalence_obligation`] emits a self-contained Verus program text whose
 //! single proof obligation is `assert((P_production) <==> (P_reference))`:
 //!
 //! ```text
@@ -16,12 +16,12 @@
 //! fn main() {}
 //! ```
 //!
-//! VERIFIED ⟺ the production predicate is logically equivalent to the reference
-//! for ALL inputs (Z3) ⟺ faithful. A COUNTEREXAMPLE (a concrete input on which
-//! they differ) ⟺ infidelity — a witness of the lowering bug
+//! Verified iff the production predicate is logically equivalent to the reference
+//! for all inputs (Z3), i.e. faithful. A counterexample (a concrete input on which
+//! they differ) is infidelity: a witness of the lowering bug
 //! (`thermite-design.md` §5.1 "counterexamples, not adjectives").
 //!
-//! `thermite-tv` does NOT run verus itself: it emits the obligation TEXT. The
+//! `thermite-tv` does not run verus itself: it emits the obligation text. The
 //! teeth-test (`tests/teeth.rs`, REQ-4) and the future forge plug-in (REQ-5,
 //! `forge/src/contract_tv.rs`) discharge it through the existing
 //! `forge::check::run_verus` path.
@@ -34,13 +34,13 @@
 //!
 //! ## EXEC-position extension (`.design/verified/exec-tv.md` REQ-2; epic #151)
 //!
-//! [`exec_equivalence_obligation`] is the EXEC dual: it emits the EXEC-FN-wrapped
+//! [`exec_equivalence_obligation`] is the exec dual: it emits the exec-fn-wrapped
 //! `fn tv_exec_wrap(..) requires <req>, ensures result == <exec_ref_value(source)>
-//! { <p_production> }` form (NOT the proof-fn `<==>` — an exec VALUE is not a
+//! { <p_production> }` form, not the proof-fn `<==>` (an exec value is not a
 //! predicate). Verus reasons about the exec fn's value through its `ensures`:
-//! VERIFIED ⟺ faithful; a `postcondition not satisfied` / `E0308` / parse error ⟺
-//! infidelity (the #122/#146/overflow/off-by-one classes, `exec-tv.md` E1–E4).
-//! The reference side is `exec_encode::exec_ref_value` (the BOUNDED exec value,
+//! verified iff faithful; a `postcondition not satisfied` / `E0308` / parse error
+//! is infidelity (the #122/#146/overflow/off-by-one classes, `exec-tv.md` E1–E4).
+//! The reference side is `exec_encode::exec_ref_value` (the bounded exec value,
 //! REQ-1); the production side is the verbatim `p_production`
 //! (`thermite_lower::lower_exec_expr`, the artifact under test).
 //!
@@ -51,19 +51,19 @@
 //! ## LOOP-position extension — step 2.2.2-i (`.design/verified/loop-tv.md`; epic #169)
 //!
 //! [`loop_entry_obligation`] / [`loop_preservation_obligation`] /
-//! [`loop_exit_obligation`] are the THREE per-run loop obligations (`loop-tv.md`
+//! [`loop_exit_obligation`] are the three per-run loop obligations (`loop-tv.md`
 //! REQ-2), siblings to [`body_equivalence_obligation`]. They consume
 //! [`crate::exec_stmt_encode::loop_ref_obligations`] (the v1-frozen-subset recognizer +
 //! the three reference pieces) and emit the self-contained Verus units the existing
-//! `forge::check::run_verus` discharges — ENTRY (`proof fn` asserting `inv` on the
-//! pre-loop entry state — a wrong pre-loop init FAILS), PRESERVATION (`fn` with
-//! `requires inv && cond`, `ensures result.i == <body_ref_state step_i> && inv_at_step`
-//! — a per-iteration body infidelity or a broken invariant FAILS `postcondition not
-//! satisfied`), and EXIT (`proof fn` with `requires inv && !cond` asserting the claimed
-//! after-loop characterization — an OVER-CLAIM stronger than `inv ∧ ¬cond` FAILS). The
-//! single-iteration step REUSES the SHIPPED `body_ref_state` (no new body machinery,
-//! AC-5); a loop OUT of v1 is an honest `Unsupported` from `loop_ref_obligations`
-//! (Skipped, NEVER silently Faithful, R-HONEST-3).
+//! `forge::check::run_verus` discharges: entry (`proof fn` asserting `inv` on the
+//! pre-loop entry state, where a wrong pre-loop init fails), preservation (`fn` with
+//! `requires inv && cond`, `ensures result.i == <body_ref_state step_i> && inv_at_step`,
+//! where a per-iteration body infidelity or a broken invariant fails `postcondition not
+//! satisfied`), and exit (`proof fn` with `requires inv && !cond` asserting the claimed
+//! after-loop characterization, where an over-claim stronger than `inv ∧ ¬cond` fails).
+//! The single-iteration step reuses the shipped `body_ref_state` (no new body machinery,
+//! AC-5); a loop out of v1 is an honest `Unsupported` from `loop_ref_obligations`
+//! (Skipped, never silently Faithful, R-HONEST-3).
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
@@ -83,7 +83,7 @@ use crate::ref_encode::{ref_contract_pred, RefCtx, RefEncodeError};
 /// distinct `old_x` param), are declared here. The `type_str` is the Verus
 /// spelling (`u64`, `Seq<u32>`, `int`, …). A param declared as `Seq<_>` should
 /// also be named in [`ObligationFrame::seq_params`] so the reference encoder
-/// treats its `@`-view as the identity (THE COERCION FIX).
+/// treats its `@`-view as the identity (the coercion fix).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParamDecl {
     /// The parameter name as it appears in the obligation signature and the
@@ -112,7 +112,7 @@ impl ParamDecl {
 #[derive(Debug, Clone, Default)]
 pub struct ObligationFrame {
     /// The Verus `spec fn` / combinator `verus_l3` definitions the clause depends
-    /// on, emitted verbatim into the `verus! { … }` frame BEFORE `tv_check`. For
+    /// on, emitted verbatim into the `verus! { … }` frame before `tv_check`. For
     /// a combinator clause these come from `thermite_spec::lookup(name).verus_l3`
     /// (the shared frozen ground truth); for a spec-fn clause, the spec fn's def.
     pub spec_defs: Vec<String>,
@@ -124,28 +124,28 @@ pub struct ObligationFrame {
     /// `None` emits no `requires`.
     pub req: Option<String>,
     /// The names of params bound directly as a `Seq<_>` view — their slice→`@`
-    /// rewrite is the identity in the reference encoder (THE COERCION FIX, so a
-    /// faithful `spec_sum(xs)` is NOT spuriously encoded as `spec_sum(xs@)`).
+    /// rewrite is the identity in the reference encoder (the coercion fix, so a
+    /// faithful `spec_sum(xs)` is not spuriously encoded as `spec_sum(xs@)`).
     pub seq_params: Vec<String>,
     /// The names of bounded-int params (`result`, an `old_acc`, …) that must be
     /// coerced `as nat` when compared against a `nat`-valued spec-fn call — the
-    /// declarative `lower_nat_equality` re-implementation (THE COERCION FIX, the
+    /// declarative `lower_nat_equality` re-implementation (the coercion fix, the
     /// doc author's #1 flagged risk). For F1 this is `["result"]` so the
     /// reference encodes `result as nat == spec_sum(xs)` (matching the faithful
-    /// column) and the faithful obligation VERIFIES rather than failing on a
+    /// column) and the faithful obligation verifies rather than failing on a
     /// spurious coercion mismatch.
     pub nat_coerce_params: Vec<String>,
     /// The names of params bound as the `String` wrapper (`&TString`/`TString`) —
     /// a `String`/`&String` param whose spec-position byte-view dispatches to the
-    /// wrapper SPEC fns (`.spec_len()`/`.spec_byte_at(i as int)`), NOT a `Seq<u8>`
+    /// wrapper spec fns (`.spec_len()`/`.spec_byte_at(i as int)`), not a `Seq<u8>`
     /// index (#150 gap #2). The reference encoder reads this set (via
     /// [`RefCtx::with_string_bound`]) so a `String`-param `s.byte_at(0)` encodes to
-    /// `s.spec_byte_at(0)`, MATCHING production's `recv_is_string` rewrite under the
+    /// `s.spec_byte_at(0)`, matching production's `recv_is_string` rewrite under the
     /// same `&TString` binding.
     pub string_params: Vec<String>,
     /// The names of params bound as the `Map` wrapper (`TMap…`) — a `Map<K,V>`
     /// param/result whose spec-position membership accessor dispatches to the
-    /// wrapper SPEC fn (`.contains_key(k)`→`.spec_contains_key(k)`), MATCHING
+    /// wrapper spec fn (`.contains_key(k)`→`.spec_contains_key(k)`), matching
     /// production (#150 gap #3). Read by the reference encoder via
     /// [`RefCtx::with_map_bound`].
     pub map_params: Vec<String>,
@@ -178,11 +178,11 @@ impl ObligationFrame {
 /// Build the self-contained Verus equivalence obligation for one contract clause
 /// (REQ-2). `source` is the clause's parsed [`Expr`] (encoded independently to
 /// the reference predicate via [`ref_contract_pred`]); `p_production` is the
-/// VERBATIM production-lowered predicate text (the artifact under test); `frame`
+/// verbatim production-lowered predicate text (the artifact under test); `frame`
 /// carries the spec-fn / combinator defs, the param decls, and the optional
 /// `requires`.
 ///
-/// Returns the obligation PROGRAM TEXT (`thermite-tv` does not run verus — the
+/// Returns the obligation program text (`thermite-tv` does not run verus — the
 /// teeth-test / forge plug-in discharge it). Returns [`RefEncodeError`] if the
 /// source clause is outside the frozen contract sublanguage (an honest error,
 /// never a panic / silent wrong encoding).
@@ -213,8 +213,8 @@ pub fn equivalence_obligation(
     }
     out.push_str("\n{\n");
     // The obligation: the production predicate is logically equivalent to the
-    // INDEPENDENT reference encoding for all inputs. VERIFIED ⟺ faithful; a
-    // counterexample ⟺ infidelity. Both sides are parenthesized so the `<==>`
+    // independent reference encoding for all inputs. Verified iff faithful; a
+    // counterexample is infidelity. Both sides are parenthesized so the `<==>`
     // binds the whole predicates (no precedence surprise).
     out.push_str(&format!(
         "    assert(({p_production}) <==> ({p_reference}));\n"
@@ -226,11 +226,11 @@ pub fn equivalence_obligation(
 }
 
 /// One exec-obligation parameter declaration: a Verus `name: type` binding for a
-/// body-position expr's free var (REQ-2). The `type_str` is the EXEC value-type
-/// spelling — the BOUNDED `u64`/`u32`/`usize`/`bool` or a slice `&[u32]` (NEVER
-/// `nat`/`int`: the exec obligation reasons at the production VALUE TYPE so an
+/// body-position expr's free var (REQ-2). The `type_str` is the exec value-type
+/// spelling — the bounded `u64`/`u32`/`usize`/`bool` or a slice `&[u32]` (never
+/// `nat`/`int`: the exec obligation reasons at the production value type so an
 /// overflow/wrapping infidelity is caught, not coerced away — `exec-tv.md` the
-/// EXEC-value-semantics concern). A param declared as a slice (`&[u32]`) should
+/// exec-value-semantics concern). A param declared as a slice (`&[u32]`) should
 /// also be named in [`ExecObligationFrame::slice_params`] so the exec reference
 /// encoder indexes it as the spec-view element value (`xs[i as int]`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -251,34 +251,34 @@ impl ExecParamDecl {
     }
 }
 
-/// The frame carrying everything the self-contained EXEC-FN obligation program
+/// The frame carrying everything the self-contained exec-fn obligation program
 /// needs besides the production body + the reference (REQ-2): the param
-/// declarations for the body expr's free vars (at their EXEC types), the return
+/// declarations for the body expr's free vars (at their exec types), the return
 /// type (the exec value's type), an optional enclosing `requires` (the expr's
 /// well-formedness frame — `n >= 1`, `i < xs.len()`, `a + b <= 0xFFFF`), and the
 /// set of params bound as a slice (`&[T]`) so the exec reference encoder indexes
 /// them as the spec-view element value.
 ///
-/// This is the EXEC dual of [`ObligationFrame`] (which frames the CONTRACT
-/// predicate obligation). It deliberately carries NO `nat_coerce`/`@`-view sets —
-/// the exec obligation is bounded-typed.
+/// This is the exec dual of [`ObligationFrame`] (which frames the contract
+/// predicate obligation). It carries no `nat_coerce`/`@`-view sets: the exec
+/// obligation is bounded-typed.
 #[derive(Debug, Clone, Default)]
 pub struct ExecObligationFrame {
     /// The Verus `spec fn` definitions the body / its `requires` depend on,
-    /// emitted verbatim into the `verus! { … }` frame BEFORE `tv_exec_wrap`.
-    /// Usually EMPTY for a pure scalar exec expr (the common case is scalar
+    /// emitted verbatim into the `verus! { … }` frame before `tv_exec_wrap`.
+    /// Usually empty for a pure scalar exec expr (the common case is scalar
     /// arithmetic with no spec-fn dependency).
     pub spec_defs: Vec<String>,
     /// The obligation parameter declarations (the body expr free vars), in
-    /// signature order, at their EXEC value types.
+    /// signature order, at their exec value types.
     pub params: Vec<ExecParamDecl>,
     /// The return type spelling (the exec value's type — `u8`/`u32`/`u64`/`usize`/
-    /// `bool`). This is the cast TARGET for a top-level cast expr, the comparison
+    /// `bool`). This is the cast target for a top-level cast expr, the comparison
     /// `bool` for a comparison, or the operand type for arithmetic.
     pub ret_type: String,
     /// The optional enclosing `requires` predicate (the body expr's well-formedness
     /// frame — `n >= 1`, `i < xs.len()`, `a + b <= 0xFFFF`). `None` emits no
-    /// `requires`. The requires is emitted VERBATIM (it is the obligation's own
+    /// `requires`. The requires is emitted verbatim (it is the obligation's own
     /// precondition, authored from the source's `req`/index-bound, not lowered
     /// here — `exec-tv.md` REQ-2).
     pub req: Option<String>,
@@ -305,17 +305,17 @@ impl ExecObligationFrame {
     }
 }
 
-/// Build the self-contained Verus EXEC-FN equivalence obligation for one
+/// Build the self-contained Verus exec-fn equivalence obligation for one
 /// body-position exec expr (REQ-2; `.design/verified/exec-tv.md`). `source` is the
-/// body expr's parsed [`Expr`] (encoded INDEPENDENTLY to the exec reference VALUE
-/// via [`exec_ref_value`]); `p_production` is the VERBATIM production exec-lowered
+/// body expr's parsed [`Expr`] (encoded independently to the exec reference value
+/// via [`exec_ref_value`]); `p_production` is the verbatim production exec-lowered
 /// expression text (the artifact under test — `thermite_lower::lower_exec_expr`);
-/// `frame` carries the param decls (at EXEC types), the return type, the optional
+/// `frame` carries the param decls (at exec types), the return type, the optional
 /// `requires`, and the slice-param set.
 ///
-/// The emitted shape is NOT the contract `proof fn { assert(_ <==> _); }` form (an
-/// exec value is not a predicate) but the EXEC-FN form (`exec-tv.md` REQ-2 /
-/// Architecture):
+/// The emitted shape is the exec-fn form (`exec-tv.md` REQ-2 / Architecture), not
+/// the contract `proof fn { assert(_ <==> _); }` form (an exec value is not a
+/// predicate):
 ///
 /// ```text
 /// use vstd::prelude::*;
@@ -331,17 +331,17 @@ impl ExecObligationFrame {
 /// fn main() {}
 /// ```
 ///
-/// Verus reasons about the exec fn's VALUE through its `ensures`. VERIFIED
-/// (`verified: 1, errors: 0`) ⟺ the production exec-lowering computes the
-/// reference VALUE for ALL inputs ⟺ faithful. A `postcondition not satisfied`
+/// Verus reasons about the exec fn's value through its `ensures`. Verified
+/// (`verified: 1, errors: 0`) iff the production exec-lowering computes the
+/// reference value for all inputs, i.e. faithful. A `postcondition not satisfied`
 /// (production typechecks but computes the wrong value — the E3 wrapping case, the
 /// E4 off-by-one), an `E0308`/type error (the #122 paren-drop makes the production
-/// ill-typed, E1), or a parse error (the #146 cast-`<` mis-parse, E2) ⟺
-/// infidelity. The always-active runtime overflow checks are LIVE (it is an EXEC
+/// ill-typed, E1), or a parse error (the #146 cast-`<` mis-parse, E2) is
+/// infidelity. The always-active runtime overflow checks are live (it is an exec
 /// `fn`, not a `proof fn`), so an overflow infidelity raises the obligation
-/// (`exec-tv.md` AC-4) — the structural reason the obligation is an exec fn.
+/// (`exec-tv.md` AC-4): the structural reason the obligation is an exec fn.
 ///
-/// Returns the obligation PROGRAM TEXT (`thermite-tv` does not run verus — the
+/// Returns the obligation program text (`thermite-tv` does not run verus — the
 /// teeth-test / forge plug-in discharge it). Returns [`ExecRefEncodeError`] if the
 /// source body expr is outside the pure-exec subset (an honest error, never a
 /// panic / silent wrong encoding).
@@ -372,9 +372,9 @@ pub fn exec_equivalence_obligation(
         out.push_str(req);
         out.push(',');
     }
-    // The obligation: the production exec value EQUALS the INDEPENDENT exec
-    // reference VALUE for all inputs (Z3), at the BOUNDED production type. VERIFIED
-    // ⟺ faithful; a postcondition counterexample / type / parse error ⟺ infidelity.
+    // The obligation: the production exec value equals the independent exec
+    // reference value for all inputs (Z3), at the bounded production type. Verified
+    // iff faithful; a postcondition counterexample / type / parse error is infidelity.
     out.push_str("\n    ensures result == ");
     out.push_str(&reference);
     out.push_str(",\n{\n    ");
@@ -385,12 +385,12 @@ pub fn exec_equivalence_obligation(
     Ok(out)
 }
 
-/// One BODY-obligation parameter declaration: a Verus `name: type` binding for a
-/// straight-line body's free var (REQ-3). The `type_str` is the EXEC value-type
-/// spelling — the BOUNDED `u64`/`u32`/`usize`/`bool` or a slice `&[u32]` (NEVER
-/// `nat`/`int`: the body obligation reasons at the production VALUE TYPE so an
+/// One body-obligation parameter declaration: a Verus `name: type` binding for a
+/// straight-line body's free var (REQ-3). The `type_str` is the exec value-type
+/// spelling — the bounded `u64`/`u32`/`usize`/`bool` or a slice `&[u32]` (never
+/// `nat`/`int`: the body obligation reasons at the production value type so an
 /// overflow / wrong-state infidelity is caught, not coerced away). Identical in
-/// SHAPE to [`ExecParamDecl`] (the per-expr param); a distinct type keeps the body
+/// shape to [`ExecParamDecl`] (the per-expr param); a distinct type keeps the body
 /// obligation's surface self-documenting (a body input vs a single-expr input).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyParamDecl {
@@ -410,35 +410,35 @@ impl BodyParamDecl {
     }
 }
 
-/// The frame carrying everything the self-contained BODY-state-refinement obligation
+/// The frame carrying everything the self-contained body-state-refinement obligation
 /// program needs besides the production body + the reference state-denotation
 /// (REQ-3; `.design/verified/exec-stmt-tv.md`): the param declarations for the
-/// body's free vars (at their EXEC types), the RESULT type (the final-state
+/// body's free vars (at their exec types), the result type (the final-state
 /// projection's type — a scalar `u64`/`bool` for a single-cell body, a tuple
 /// `(u64, u64)` for a multi-cell body), an optional enclosing `requires` (the body's
 /// well-formedness / no-overflow frame — `x <= 1000`), and the slice-param set.
 ///
-/// This is the BODY analogue of [`ExecObligationFrame`] (which frames a single exec
-/// EXPRESSION's value obligation): where the exec frame's obligation compares one
-/// VALUE, the body frame's obligation compares the body's FINAL STATE (the
-/// `body_ref_state` denotation). It deliberately carries NO `nat`-coerce set — the
-/// body obligation is bounded-typed (the same as step 2.1).
+/// This is the body analogue of [`ExecObligationFrame`] (which frames a single exec
+/// expression's value obligation): where the exec frame's obligation compares one
+/// value, the body frame's obligation compares the body's final state (the
+/// `body_ref_state` denotation). It carries no `nat`-coerce set: the body obligation
+/// is bounded-typed (the same as step 2.1).
 #[derive(Debug, Clone, Default)]
 pub struct BodyObligationFrame {
     /// The Verus `spec fn` definitions the body / its `requires` depend on, emitted
-    /// verbatim into the `verus! { ... }` frame BEFORE `tv_body_wrap`. Usually EMPTY
+    /// verbatim into the `verus! { ... }` frame before `tv_body_wrap`. Usually empty
     /// for a scalar straight-line body (B1-B4 carry none).
     pub spec_defs: Vec<String>,
     /// The obligation parameter declarations (the body's free vars), in signature
-    /// order, at their EXEC value types.
+    /// order, at their exec value types.
     pub params: Vec<BodyParamDecl>,
-    /// The RESULT type spelling — the body's final-state projection type: a scalar
+    /// The result type spelling — the body's final-state projection type: a scalar
     /// (`u64`/`bool`/`usize`) for a single-cell body (B1/B2/B3), a tuple
     /// (`(u64, u64)`) for a multi-cell body (B4).
     pub ret_type: String,
     /// The optional enclosing `requires` predicate (the body's well-formedness /
     /// no-overflow frame — `x <= 1000`). `None` emits no `requires`. Emitted
-    /// VERBATIM (the obligation's own precondition, authored from the source frame,
+    /// verbatim (the obligation's own precondition, authored from the source frame,
     /// not lowered here — `exec-stmt-tv.md` REQ-3).
     pub req: Option<String>,
     /// The names of params bound as a slice (`&[T]`) — their index in any RHS / tail
@@ -464,17 +464,17 @@ impl BodyObligationFrame {
     }
 }
 
-/// Build the self-contained Verus BODY-state-refinement obligation for one
+/// Build the self-contained Verus body-state-refinement obligation for one
 /// straight-line exec body (REQ-3; `.design/verified/exec-stmt-tv.md`). `body` is
-/// the source straight-line [`Block`] (encoded INDEPENDENTLY to the reference FINAL
-/// STATE via [`body_ref_state`]); `p_production` is the VERBATIM production
+/// the source straight-line [`Block`] (encoded independently to the reference final
+/// state via [`body_ref_state`]); `p_production` is the verbatim production
 /// body-lowered text (the artifact under test — `thermite_lower::lower_exec_body`);
-/// `frame` carries the param decls (at EXEC types), the result type, the optional
+/// `frame` carries the param decls (at exec types), the result type, the optional
 /// `requires`, and the slice-param set.
 ///
-/// This is the STATE analogue of [`exec_equivalence_obligation`] (which compares a
-/// single VALUE): the emitted shape wraps the production body as the BODY of an exec
-/// fn whose `ensures` compares the fn RESULT (the body's final-state projection — the
+/// This is the state analogue of [`exec_equivalence_obligation`] (which compares a
+/// single value): the emitted shape wraps the production body as the body of an exec
+/// fn whose `ensures` compares the fn result (the body's final-state projection — the
 /// tail value a single-exit straight-line body returns) to the reference
 /// state-denotation:
 ///
@@ -492,17 +492,17 @@ impl BodyObligationFrame {
 /// fn main() {}
 /// ```
 ///
-/// VERIFIED (`verified: 1, errors: 0`) <=> the production body's STATE
-/// TRANSFORMATION produces the reference FINAL STATE for ALL inputs (Z3) <=>
-/// faithful. A `postcondition not satisfied` counterexample <=> a
-/// state-transformation infidelity — a DROPPED statement, a REORDERED mutation, a
-/// SWAPPED `if`-branch (each changes the final state while every sub-expression stays
-/// value-faithful — the STATE-SEQUENCING teeth that per-EXPRESSION step-2.1 TV cannot
-/// see). The production body is an EXEC `fn` (not `proof`/`spec`), so the
-/// always-active runtime overflow checks are LIVE (the same structural reason the
+/// Verified (`verified: 1, errors: 0`) iff the production body's state
+/// transformation produces the reference final state for all inputs (Z3), i.e.
+/// faithful. A `postcondition not satisfied` counterexample is a
+/// state-transformation infidelity — a dropped statement, a reordered mutation, a
+/// swapped `if`-branch (each changes the final state while every sub-expression stays
+/// value-faithful — the state-sequencing teeth that per-expression step-2.1 TV cannot
+/// see). The production body is an exec `fn` (not `proof`/`spec`), so the
+/// always-active runtime overflow checks are live (the same structural reason the
 /// step-2.1 obligation is an exec fn).
 ///
-/// Returns the obligation PROGRAM TEXT (`thermite-tv` does not run verus — the
+/// Returns the obligation program text (`thermite-tv` does not run verus — the
 /// teeth-test / the future forge plug-in discharge it). Returns
 /// [`ExecRefEncodeError`] if the source body is outside the frozen straight-line
 /// subset (a loop / mid-branch early return / non-scalar mutation / re-shadow — an
@@ -534,13 +534,13 @@ pub fn body_equivalence_obligation(
         out.push_str(req);
         out.push(',');
     }
-    // The obligation: the production body's RESULT (its final-state projection) EQUALS
-    // the INDEPENDENT reference FINAL STATE for all inputs (Z3), at the BOUNDED
+    // The obligation: the production body's result (its final-state projection) equals
+    // the independent reference final state for all inputs (Z3), at the bounded
     // production type. For a single-cell body this is `result == <ref>`; for a
     // multi-cell tuple body it is the per-projection conjunction `result.0 == <c0> &&
     // result.1 == <c1>` (Verus has no SpecEq on a `(u64,u64)` vs a `(int,int)` tuple
     // literal — the per-projection compare is element-wise at the bounded type, B4).
-    // VERIFIED <=> faithful state transformation; a postcondition counterexample <=>
+    // Verified iff faithful state transformation; a postcondition counterexample is
     // a state-transformation infidelity (dropped stmt / reordered mutation / swapped
     // branch / wrong cell).
     out.push_str("\n    ensures ");
@@ -554,14 +554,14 @@ pub fn body_equivalence_obligation(
 }
 
 // =============================================================================
-// LOOP obligations — step 2.2.2-i (`.design/verified/loop-tv.md` REQ-2)
+// Loop obligations — step 2.2.2-i (`.design/verified/loop-tv.md` REQ-2)
 // =============================================================================
 
-/// One LOOP-obligation parameter declaration: a Verus `name: type` binding for a
-/// loop's free var — a fn INPUT (`n: usize`, a slice `&[u32]`) or a mutated CELL
-/// (`lo: usize`/`hi: usize`) at its BOUNDED exec type (NEVER `nat`/`int` — the loop
-/// obligation reasons at the production VALUE TYPE so an overflow / wrong-state
-/// infidelity is caught, not coerced away). Identical in SHAPE to [`BodyParamDecl`];
+/// One loop-obligation parameter declaration: a Verus `name: type` binding for a
+/// loop's free var — a fn input (`n: usize`, a slice `&[u32]`) or a mutated cell
+/// (`lo: usize`/`hi: usize`) at its bounded exec type (never `nat`/`int`: the loop
+/// obligation reasons at the production value type so an overflow / wrong-state
+/// infidelity is caught, not coerced away). Identical in shape to [`BodyParamDecl`];
 /// a distinct type keeps the loop obligation surface self-documenting.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopParamDecl {
@@ -582,34 +582,34 @@ impl LoopParamDecl {
 }
 
 /// The frame carrying everything the three per-run loop obligations need besides the
-/// reference pieces (`loop-tv.md` REQ-2): the spec-fn defs, the fn INPUT params (at
+/// reference pieces (`loop-tv.md` REQ-2): the spec-fn defs, the fn input params (at
 /// their exec types — the slices / scalars the entry state + the inv/cond reference),
-/// the mutated CELL params (at their exec types — `lo: usize`/`hi: usize`, declared in
-/// the same SORTED order [`crate::exec_stmt_encode::loop_ref_obligations`] uses), the
-/// enclosing fn `requires` (the well-formedness frame the ENTRY obligation discharges
+/// the mutated cell params (at their exec types — `lo: usize`/`hi: usize`, declared in
+/// the same sorted order [`crate::exec_stmt_encode::loop_ref_obligations`] uses), the
+/// enclosing fn `requires` (the well-formedness frame the entry obligation discharges
 /// `inv` under), and the slice-param set (so an index in the inv/cond/cell encodes to
 /// the spec-view element value).
 ///
-/// This is the LOOP analogue of [`BodyObligationFrame`]. The CELLS are distinguished
-/// from the INPUTS because they play a structurally different role: in the ENTRY
-/// obligation the cells are SUBSTITUTED away (the entry-state closed form in the
-/// inputs), while in the PRESERVATION + EXIT obligations they are FREE params (the
+/// This is the loop analogue of [`BodyObligationFrame`]. The cells are distinguished
+/// from the inputs because they play a structurally different role: in the entry
+/// obligation the cells are substituted away (the entry-state closed form in the
+/// inputs), while in the preservation + exit obligations they are free params (the
 /// loop-step's arbitrary-iteration state — havocked + invariant-constrained, the
 /// design's opaque-but-invariant-constrained after-loop cells).
 #[derive(Debug, Clone, Default)]
 pub struct LoopObligationFrame {
     /// The Verus `spec fn` defs the inv / cond / body depend on, emitted verbatim
-    /// BEFORE the obligation fn. Usually EMPTY for a scalar-comparison-invariant loop.
+    /// before the obligation fn. Usually empty for a scalar-comparison-invariant loop.
     pub spec_defs: Vec<String>,
-    /// The fn INPUT params (the slices / scalars the entry state + the inv/cond
-    /// reference), at their EXEC types, in signature order. Does NOT include the
+    /// The fn input params (the slices / scalars the entry state + the inv/cond
+    /// reference), at their exec types, in signature order. Does not include the
     /// mutated cells (those are [`Self::cells`]).
     pub inputs: Vec<LoopParamDecl>,
-    /// The mutated CELL params (`lo: usize`/`hi: usize`), at their EXEC types, in the
-    /// SORTED order `loop_ref_obligations` reports them (so a `result.i` projection in
+    /// The mutated cell params (`lo: usize`/`hi: usize`), at their exec types, in the
+    /// sorted order `loop_ref_obligations` reports them (so a `result.i` projection in
     /// the preservation `ensures` lines up with `step_cells[i]`).
     pub cells: Vec<LoopParamDecl>,
-    /// The enclosing fn `requires` (the well-formedness / no-overflow frame the ENTRY
+    /// The enclosing fn `requires` (the well-formedness / no-overflow frame the entry
     /// obligation discharges `inv` under — `n <= 1000`). `None` emits no `requires`.
     pub req: Option<String>,
     /// The names of params bound as a slice (`&[T]`) — their index in the inv / cond /
@@ -626,7 +626,7 @@ impl LoopObligationFrame {
         BodyRefCtx::with_slice_bound(self.slice_params.iter().cloned())
     }
 
-    /// The Verus parameter list for the ENTRY obligation: the fn INPUTS only (the
+    /// The Verus parameter list for the entry obligation: the fn inputs only (the
     /// cells are substituted away into the entry-state closed form).
     fn input_param_list(&self) -> String {
         self.inputs
@@ -636,8 +636,8 @@ impl LoopObligationFrame {
             .join(", ")
     }
 
-    /// The Verus parameter list for the PRESERVATION + EXIT obligations: the mutated
-    /// CELLS first (the loop-step's free state), then the fn INPUTS (the slices /
+    /// The Verus parameter list for the preservation + exit obligations: the mutated
+    /// cells first (the loop-step's free state), then the fn inputs (the slices /
     /// scalars the inv/cond reference).
     fn cell_and_input_param_list(&self) -> String {
         self.cells
@@ -649,7 +649,7 @@ impl LoopObligationFrame {
     }
 
     /// The result-tuple type for the preservation step's `(cell0', cell1', …)` return:
-    /// a SINGLE cell is the bare type, MULTIPLE cells a tuple `(T0, T1)`.
+    /// a single cell is the bare type, multiple cells a tuple `(T0, T1)`.
     fn cell_tuple_type(&self) -> String {
         if self.cells.len() == 1 {
             self.cells[0].type_str.clone()
@@ -666,10 +666,10 @@ impl LoopObligationFrame {
     }
 }
 
-/// Build the ENTRY loop obligation (`loop-tv.md` REQ-2.1): the loop is reached with
+/// Build the entry loop obligation (`loop-tv.md` REQ-2.1): the loop is reached with
 /// the pre-loop straight-line entry state; the obligation asserts the invariant holds
 /// there (`entry-state ⟹ inv`). `block` is the enclosing straight-line `Block` whose
-/// LAST statement is the v1-frozen-subset `while` loop (the prefix establishes the
+/// last statement is the v1-frozen-subset `while` loop (the prefix establishes the
 /// entry state); `frame` carries the input params + the enclosing `requires`.
 ///
 /// Emitted shape (a proof fn — the entry state is a closed form, no exec body needed):
@@ -687,10 +687,10 @@ impl LoopObligationFrame {
 /// fn main() {}
 /// ```
 ///
-/// VERIFIED ⟺ the invariant genuinely holds on entry; an `assertion failed`
-/// counterexample ⟺ the entry state violates the claimed invariant (a wrong pre-loop
-/// initialization). Returns [`ExecRefEncodeError`] if the loop is OUTSIDE the v1
-/// frozen subset (an honest Skipped, never a panic / silent wrong encoding).
+/// Verified iff the invariant holds on entry; an `assertion failed`
+/// counterexample means the entry state violates the claimed invariant (a wrong
+/// pre-loop initialization). Returns [`ExecRefEncodeError`] if the loop is outside
+/// the v1 frozen subset (an honest Skipped, never a panic / silent wrong encoding).
 pub fn loop_entry_obligation(
     block: &Block,
     frame: &LoopObligationFrame,
@@ -714,8 +714,8 @@ pub fn loop_entry_obligation(
         out.push(',');
     }
     // The entry obligation: the invariant (cells substituted by their pre-loop entry
-    // values) holds under the enclosing `requires`. VERIFIED ⟺ the invariant holds on
-    // entry; a counterexample ⟺ a wrong pre-loop initialization.
+    // values) holds under the enclosing `requires`. Verified iff the invariant holds
+    // on entry; a counterexample means a wrong pre-loop initialization.
     out.push_str("\n{\n    assert(");
     out.push_str(&obs.entry_pred);
     out.push_str(");\n}\n");
@@ -723,12 +723,12 @@ pub fn loop_entry_obligation(
     Ok(out)
 }
 
-/// Build the PRESERVATION loop obligation (`loop-tv.md` REQ-2.2): one straight-line
+/// Build the preservation loop obligation (`loop-tv.md` REQ-2.2): one straight-line
 /// iteration of the loop body carries `inv ∧ cond` to `inv`. The single-iteration body
-/// IS a straight-line `Block`, so its state step REUSES the SHIPPED
+/// is a straight-line `Block`, so its state step reuses the shipped
 /// [`crate::exec_stmt_encode::body_ref_state`] (no new body machinery, AC-5).
-/// `p_production` is the VERBATIM production loop-body lowering shaped to mutate the
-/// cell shadows and RETURN the stepped cells as a `(cell0', cell1', …)` tuple (the
+/// `p_production` is the verbatim production loop-body lowering shaped to mutate the
+/// cell shadows and return the stepped cells as a `(cell0', cell1', …)` tuple (the
 /// artifact under test); `frame` carries the cell + input params.
 ///
 /// Emitted shape:
@@ -749,11 +749,11 @@ pub fn loop_entry_obligation(
 /// fn main() {}
 /// ```
 ///
-/// VERIFIED ⟺ one faithful iteration preserves the invariant (and production computes
-/// the reference step); a `postcondition not satisfied` ⟺ a per-iteration state-lowering
-/// infidelity (a dropped / reordered / wrong-cell body mutation — the SAME teeth
-/// `body_ref_sound`'s negative lemmas bite) OR a broken-invariant body (the source step
-/// does not re-establish `inv`). Returns [`ExecRefEncodeError`] if the loop is OUTSIDE
+/// Verified iff one faithful iteration preserves the invariant (and production computes
+/// the reference step); a `postcondition not satisfied` is a per-iteration state-lowering
+/// infidelity (a dropped / reordered / wrong-cell body mutation — the same teeth
+/// `body_ref_sound`'s negative lemmas bite) or a broken-invariant body (the source step
+/// does not re-establish `inv`). Returns [`ExecRefEncodeError`] if the loop is outside
 /// the v1 frozen subset (an honest Skipped).
 pub fn loop_preservation_obligation(
     block: &Block,
@@ -775,16 +775,16 @@ pub fn loop_preservation_obligation(
     out.push_str(") -> (result: ");
     out.push_str(&frame.cell_tuple_type());
     out.push(')');
-    // The loop-step's frame is the loop-head assumption `inv ∧ cond` (NOT the
+    // The loop-step's frame is the loop-head assumption `inv ∧ cond` (not the
     // enclosing fn `requires` — Verus havocs the cells and assumes the invariant, so
-    // the body proof is over a SINGLE arbitrary iteration).
+    // the body proof is over a single arbitrary iteration).
     out.push_str("\n    requires ");
     out.push_str(&obs.inv);
     out.push_str(" && ");
     out.push_str(&obs.cond);
     out.push(',');
     // The `ensures`: (a) production's result equals the reference single-step state
-    // (the body-TV REUSE of `body_ref_state` — a per-iteration infidelity is caught
+    // (the body-TV reuse of `body_ref_state` — a per-iteration infidelity is caught
     // here, AC-5); (b) the invariant at the stepped state (the preservation conjunct —
     // a broken-invariant body is caught here, AC-2).
     out.push_str("\n    ensures\n");
@@ -806,15 +806,15 @@ pub fn loop_preservation_obligation(
     Ok(out)
 }
 
-/// Build the EXIT loop obligation (`loop-tv.md` REQ-2.3): on exit the loop guarantees
+/// Build the exit loop obligation (`loop-tv.md` REQ-2.3): on exit the loop guarantees
 /// `inv ∧ ¬cond`; the obligation pins that the production's after-loop characterization
-/// `claimed_after_loop` (the statements FOLLOWING the loop read the opaque cells as)
-/// genuinely FOLLOWS from `inv ∧ ¬cond`. `claimed_after_loop` is the VERBATIM
+/// `claimed_after_loop` (how the statements following the loop read the opaque cells)
+/// follows from `inv ∧ ¬cond`. `claimed_after_loop` is the verbatim
 /// production after-loop characterization (the artifact under test); `frame` carries
 /// the cell + input params.
 ///
-/// Emitted shape (a proof fn — the cells are the OPAQUE-but-invariant-constrained
-/// after-loop state, havocked + re-constrained to `inv ∧ ¬cond`, exactly how Verus
+/// Emitted shape (a proof fn — the cells are the opaque-but-invariant-constrained
+/// after-loop state, havocked + re-constrained to `inv ∧ ¬cond`, the way Verus
 /// itself models a loop's after-state):
 ///
 /// ```text
@@ -830,10 +830,10 @@ pub fn loop_preservation_obligation(
 /// fn main() {}
 /// ```
 ///
-/// VERIFIED ⟺ the after-loop continuation reads exactly the `inv ∧ ¬cond` state (the
-/// claim follows); an `assertion failed` counterexample ⟺ a wrong after-loop
-/// characterization (an OVER-STRONG claim about the exit state — stronger than
-/// `inv ∧ ¬cond`). Returns [`ExecRefEncodeError`] if the loop is OUTSIDE the v1 frozen
+/// Verified iff the after-loop continuation reads the `inv ∧ ¬cond` state (the
+/// claim follows); an `assertion failed` counterexample means a wrong after-loop
+/// characterization (an over-strong claim about the exit state — stronger than
+/// `inv ∧ ¬cond`). Returns [`ExecRefEncodeError`] if the loop is outside the v1 frozen
 /// subset (an honest Skipped).
 pub fn loop_exit_obligation(
     block: &Block,
@@ -854,16 +854,15 @@ pub fn loop_exit_obligation(
     out.push_str(&frame.cell_and_input_param_list());
     out.push(')');
     // The after-loop facts Verus assumes for the continuation: `inv ∧ ¬cond` over the
-    // opaque (havocked) cells — the honest analogue of how Verus models a loop's
-    // after-state.
+    // opaque (havocked) cells — the analogue of how Verus models a loop's after-state.
     out.push_str("\n    requires ");
     out.push_str(&obs.inv);
     out.push_str(" && ");
     out.push_str(&negate_condition(&obs.cond));
     out.push(',');
-    // The exit obligation: the production's after-loop characterization claim FOLLOWS
-    // from `inv ∧ ¬cond`. VERIFIED ⟺ the continuation reads the `inv ∧ ¬cond` state; a
-    // counterexample ⟺ an OVER-CLAIM (stronger than `inv ∧ ¬cond`).
+    // The exit obligation: the production's after-loop characterization claim follows
+    // from `inv ∧ ¬cond`. Verified iff the continuation reads the `inv ∧ ¬cond` state; a
+    // counterexample means an over-claim (stronger than `inv ∧ ¬cond`).
     out.push_str("\n{\n    assert(");
     out.push_str(claimed_after_loop);
     out.push_str(");\n}\n");

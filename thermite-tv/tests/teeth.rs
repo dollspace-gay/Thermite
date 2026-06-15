@@ -1,20 +1,20 @@
-//! THE R-CHAR-3 TEETH-TEST (`.design/verified/contract-tv.md` REQ-4; epic
-//! crosslink #143). The proof that contract-faithfulness TV DISCRIMINATES a
+//! The R-CHAR-3 teeth-test (`.design/verified/contract-tv.md` REQ-4; epic
+//! crosslink #143). The proof that contract-faithfulness TV discriminates a
 //! faithful lowering from an injected infidelity — the bug class the five
 //! existing layers (verus-on-emitted, the cert oracle, the vacuity/mutation
 //! battery, the critic) structurally cannot see.
 //!
-//! For each ORCHESTRATOR-authored fixture (F1–F4) the test builds the per-clause
-//! equivalence obligation TWICE — once with the FAITHFUL production predicate
-//! (TV must PASS: `verified, 0 errors`), once with the INFIDEL one (TV must
-//! CATCH it: `errors >= 1`, a verus counterexample). The reference encoder's
-//! output for the source MUST mean the same as the FAITHFUL column — so this also
+//! For each orchestrator-authored fixture (F1–F4) the test builds the per-clause
+//! equivalence obligation twice — once with the faithful production predicate
+//! (TV must pass: `verified, 0 errors`), once with the infidel one (TV must
+//! catch it: `errors >= 1`, a verus counterexample). The reference encoder's
+//! output for the source must mean the same as the faithful column, so this also
 //! tests `ref_contract_pred` is correct.
 //!
 //! Expected values trace to the fixtures + `thermite-design.md` §4.2 + the
-//! frozen `thermite_spec::REGISTRY.verus_l3` — NEVER copied from the lowerer's
+//! frozen `thermite_spec::REGISTRY.verus_l3`, never copied from the lowerer's
 //! output (R-CHAR-3). Verus is resolved via `VERUS_BIN`/PATH/`~/.local/bin` and
-//! the test SKIPS LOUDLY if it is genuinely absent (mirroring
+//! the test skips with a logged note if it is absent (mirroring
 //! `thermite-lower/tests/lower_conformance.rs`); `unwrap`/`expect` are fine here
 //! (`tests/` is not anti-pattern-gated).
 
@@ -129,8 +129,8 @@ fn parse_results(output: &str) -> Option<(u32, u32)> {
     Some((verified, errors))
 }
 
-/// Discharge a faithful obligation: it MUST verify (`verified >= 1, errors ==
-/// 0`). SKIPS LOUDLY if verus is absent.
+/// Discharge a faithful obligation: it must verify (`verified >= 1, errors ==
+/// 0`). Skips with a logged note if verus is absent.
 fn assert_faithful_verifies(fixture: &str, program: &str) {
     let tmp = std::env::temp_dir().join(format!("tv_teeth_{fixture}_faithful.rs"));
     std::fs::write(&tmp, program).unwrap_or_else(|e| panic!("write {fixture} faithful: {e}"));
@@ -154,9 +154,9 @@ fn assert_faithful_verifies(fixture: &str, program: &str) {
     }
 }
 
-/// Discharge an infidel obligation: TV MUST catch it (`errors >= 1`, a
-/// counterexample at the `assert(P_production <==> P_reference)` site). SKIPS
-/// LOUDLY if verus is absent.
+/// Discharge an infidel obligation: TV must catch it (`errors >= 1`, a
+/// counterexample at the `assert(P_production <==> P_reference)` site). Skips
+/// with a logged note if verus is absent.
 fn assert_infidel_caught(fixture: &str, program: &str) {
     let tmp = std::env::temp_dir().join(format!("tv_teeth_{fixture}_infidel.rs"));
     std::fs::write(&tmp, program).unwrap_or_else(|e| panic!("write {fixture} infidel: {e}"));
@@ -187,8 +187,8 @@ fn assert_infidel_caught(fixture: &str, program: &str) {
 // F1 — comparison: the ==-vs-<= teeth (the canonical infidelity case)
 // source clause:  result == spec_sum(xs)
 // faithful P_prod: result as nat == spec_sum(xs)   (xs bound as Seq, so the
-//                  slice→@ view is the identity — the doc AC-1 grounded form
-//                  binds `xs: Seq<u32>` and emits `spec_sum(xs)` on BOTH sides;
+//                  slice→@ view is the identity; the doc AC-1 grounded form
+//                  binds `xs: Seq<u32>` and emits `spec_sum(xs)` on both sides;
 //                  the fixture's `xs@` is the slice-param spelling, which reduces
 //                  to `xs` once the obligation binds the param directly as a Seq).
 // infidel  P_prod: result as nat <= spec_sum(xs)
@@ -196,7 +196,7 @@ fn assert_infidel_caught(fixture: &str, program: &str) {
 // ============================================================================
 
 /// `spec fn spec_sum` shape copied from `tests/golden/lower/sum.verus.rs` (the
-/// external golden — NOT regenerated). Used as the frame spec-fn dep.
+/// external golden, not regenerated). Used as the frame spec-fn dep.
 const SPEC_SUM_DEF: &str = "spec fn spec_sum(s: Seq<u32>) -> nat\n    decreases s.len()\n{\n    if s.len() == 0 { 0 } else { s[0] as nat + spec_sum(s.drop_first()) }\n}";
 
 fn f1_frame() -> ObligationFrame {
@@ -248,7 +248,7 @@ fn f1_comparison_infidel_caught() {
 // ============================================================================
 
 fn forall_in_def() -> String {
-    // REUSED: the frozen combinator ground truth (NOT re-implemented here).
+    // Reused: the frozen combinator ground truth (not re-implemented here).
     thermite_spec::lookup("forall_in")
         .expect("forall_in is a frozen combinator")
         .verus_l3
@@ -302,7 +302,7 @@ fn f3_frame() -> ObligationFrame {
         params: vec![ParamDecl::new("s", "Seq<u8>")],
         // The faithful index 0 needs the receiver non-empty; the infidel index 1
         // needs len >= 2 to be well-defined. We bind len >= 2 (covers both): a
-        // counterexample on the infidel side is a MEANING difference, not an OOB.
+        // counterexample on the infidel side is a meaning difference, not an OOB.
         req: Some("s.len() >= 2".to_string()),
         seq_params: vec!["s".to_string()],
         nat_coerce_params: vec![],
@@ -328,7 +328,7 @@ fn f3_byteview_faithful_verifies() {
 
 #[test]
 fn f3_byteview_infidel_caught() {
-    // The #127-class wrong byte-view rewrite: production mis-dispatched index 0
+    // The #127-class wrong byte-view rewrite: production mis-dispatches index 0
     // to index 1.
     let prog = equivalence_obligation(&f3_source(), "s[1] == 65", &f3_frame())
         .expect("F3 infidel obligation builds");
@@ -385,9 +385,9 @@ fn f4_structural_drop_infidel_caught() {
 
 // ---- ref_encode unit checks (the reference output MEANS the faithful column) -
 
-/// The reference encoding of each source must be a string that MEANS the
+/// The reference encoding of each source must be a string that means the
 /// faithful production column (the obligation tests prove semantic equivalence
-/// under verus; these pin the exact independent encoding for auditability).
+/// under verus; these pin the independent encoding for auditability).
 #[test]
 fn ref_encode_matches_faithful_meaning() {
     use thermite_tv::ref_encode::ref_contract_pred;
@@ -419,7 +419,7 @@ fn ref_encode_matches_faithful_meaning() {
     );
 }
 
-/// An unsupported construct is an honest `Err`, NEVER a panic / silent wrong
+/// An unsupported construct is an honest `Err`, never a panic / silent wrong
 /// encoding (REQ-1 / R-CODE-2). A `match` in spec position is outside the frozen
 /// sublanguage.
 #[test]

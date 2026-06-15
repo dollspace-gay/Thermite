@@ -2,9 +2,9 @@
 //! `c0b1d8a`). Each test pins an authority-derived expectation from
 //! `.design/lower/l1-runtime-checks.md` / `thermite-design.md` §6 / `goal.md`
 //! R-DEFER-9 (R-CHAR-3 — expected values hand-derived or from the corpus, never
-//! copied from toolchain output). These are NOT in the builder's
+//! copied from toolchain output). These are not in the builder's
 //! `l1_conformance.rs`; they probe corners that file may have missed:
-//! a REAL runtime violation on a fresh program (not the corpus corrupted body),
+//! a real runtime violation on a fresh program (not the corpus corrupted body),
 //! release-profile (`-O`) check survival, generality on a renamed program, and
 //! combinator edge cases (`exists_in` short-circuit, `n > len`, `permutation_of`
 //! duplicates).
@@ -13,7 +13,7 @@
 //! filename breaks crate-name derivation, so we always pass `--crate-name`.
 //! `unwrap`/`expect`/`panic!` are fine here — `tests/` is not anti-pattern-gated.
 //!
-//! NOTE: `thermite-syntax` enforces clause order `req` before `ens` before `fx`
+//! Note: `thermite-syntax` enforces clause order `req` before `ens` before `fx`
 //! (`ClauseOrder` error otherwise), so every fresh probe fn carries a leading
 //! `req` (a trivially-true one) before its `ens`.
 
@@ -26,7 +26,7 @@ fn corpus_dir() -> PathBuf {
         .join("conformance")
 }
 
-/// Compile `src` with `rustc` at the given opt level, then RUN. Returns
+/// Compile `src` with `rustc` at the given opt level, then run. Returns
 /// `(compiled_ok, ran_ok, combined_output)`. `opt` is e.g. `&[]` (debug) or
 /// `&["-O"]` (release-equivalent optimization).
 fn compile_and_run_opt(src: &str, crate_name: &str, opt: &[&str]) -> (bool, bool, String) {
@@ -74,13 +74,13 @@ fn lower_str(src: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Divergence probe 1 — the L1 check fires on a REAL violation of a FRESH
+// Divergence probe 1 — the L1 check fires on a real violation of a fresh
 // program (not the corpus corrupted-body). Authority: l1-runtime-checks.md
 // REQ-2 / AC-1 ("a violating body fires the violation handler … observable, not
 // silent"); §6 ("Violations detected at the call site"); R-DEFER-9 (the check
 // must be a real obligation, not a no-op).
 //
-// Program: a fn whose `ens result == 0` is VIOLATED by a body returning its
+// Program: a fn whose `ens result == 0` is violated by a body returning its
 // input. (Clause order req-before-ens satisfied with a trivially-true `req`.)
 // For input 7 the body returns 7, so the `ens` check must abort.
 // ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ fn identity_should_be_zero(n: u32) -> u32
         emitted.contains("thermite_check!(\"ens\", \"result == 0\", result == 0)"),
         "ens clause must lower to an always-active check on `result == 0`:\n{emitted}"
     );
-    // main calls with a value that VIOLATES the ens (7 != 0) -> must abort.
+    // main calls with a value that violates the ens (7 != 0) -> must abort.
     let program = format!(
         "{emitted}\nfn main() {{\n    let _ = identity_should_be_zero(7u32);\n    println!(\"should-not-reach\");\n}}\n"
     );
@@ -125,7 +125,7 @@ fn identity_should_be_zero(n: u32) -> u32
 }
 
 // ---------------------------------------------------------------------------
-// Divergence probe 2 — the always-active check survives a RELEASE / optimized
+// Divergence probe 2 — the always-active check survives a release / optimized
 // build (`-O`). Authority: l1-runtime-checks.md AC-2 / REQ-2 ("present in a
 // --release build"); §6 ("in every build profile, not just debug"). A
 // `debug_assert!` would be stripped under `-O`; the check must still fire.
@@ -154,8 +154,8 @@ fn must_be_zero(n: u32) -> u32
 }
 
 // ---------------------------------------------------------------------------
-// Divergence probe 3 — generality: a DIFFERENT program than `sum` lowers to L1
-// referencing the NEW names + its OWN clauses (no over-fit to sum/spec_sum/xs).
+// Divergence probe 3 — generality: a different program than `sum` lowers to L1
+// referencing the new names + its own clauses (no over-fit to sum/spec_sum/xs).
 // Authority: l1-runtime-checks.md REQ-1/REQ-4 (general emitter over the AST);
 // goal.md R-CHAR-3 (the emitter must not be a hardcoded `sum` blob). The
 // emitted file must compile+run and the renamed clauses must be present verbatim.
@@ -191,7 +191,7 @@ fn tally(zs: &[u32]) -> u64
 }
 "#;
     let emitted = lower_str(src);
-    // The NEW identifiers/clauses must appear; the `sum` corpus identifiers must NOT.
+    // The new identifiers/clauses must appear; the `sum` corpus identifiers must not.
     for needle in [
         "fn tally(zs: &[u32]) -> u64",
         "fn spec_tally(zs: &[u32]) -> u64",
@@ -208,7 +208,7 @@ fn tally(zs: &[u32]) -> u64
         !emitted.contains("fn sum(") && !emitted.contains("spec_sum"),
         "L1 emitter must not emit a hardcoded `sum`/`spec_sum` blob for a different program:\n{emitted}"
     );
-    // And it must actually compile + run: tally(&[1,2,3]) == 6 (hand-derived).
+    // And it must compile + run: tally(&[1,2,3]) == 6 (hand-derived).
     let program = format!(
         "{emitted}\nfn main() {{\n    assert_eq!(tally(&[1u32, 2, 3]), 6);\n    assert_eq!(tally(&[]), 0);\n    assert_eq!(spec_tally(&[4u32, 5]), 9);\n    println!(\"tally-ok\");\n}}\n"
     );
@@ -240,7 +240,7 @@ fn combinator_l1_edge_cases_match_l3() {
         src.push_str(sig.l1);
         src.push_str("\n\n");
     }
-    // Hand-derived from the L3 quantifier semantics (verus_l3), NOT toolchain output.
+    // Hand-derived from the L3 quantifier semantics (verus_l3), not toolchain output.
     src.push_str(
         r#"
 fn main() {
@@ -282,7 +282,7 @@ fn main() {
 }
 
 // ---------------------------------------------------------------------------
-// Divergence probe 5 — REQ-4: the L1 spec fn is REAL recursion that agrees with
+// Divergence probe 5 — REQ-4: the L1 spec fn is real recursion that agrees with
 // the L3 `Seq` denotation on a multi-element input, not a faked constant.
 // Authority: l1-runtime-checks.md AC-4 / REQ-4 (§4.2 "spec functions are
 // executable"). Expected 1+2+3+4 == 10 hand-derived (R-CHAR-3).

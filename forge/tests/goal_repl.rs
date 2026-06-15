@@ -2,20 +2,20 @@
 //! (i)+(ii) (#193; `.design/forge/goal-repl.md` REQ-1/REQ-2/REQ-3/REQ-7). Drives
 //! the real `forge` binary against the corpus:
 //!
-//! - `forge battery conformance/sum.th` reports the SAME §7 verdict that `forge
-//!   check` computes internally — a VIEW, NEVER a re-derivation (AC-1). The
-//!   non-vacuous BOOLEANS are oracle fields anchored to `conformance/sum.cert.json`
-//!   (`oracle_subset`); the mutation KILL-RATIO is tool-computed and EXCLUDED from
+//! - `forge battery conformance/sum.th` reports the same §7 verdict that `forge
+//!   check` computes internally — a view, never a re-derivation (AC-1). The
+//!   non-vacuous booleans are oracle fields anchored to `conformance/sum.cert.json`
+//!   (`oracle_subset`); the mutation kill-ratio is tool-computed and excluded from
 //!   the cert oracle (`conformance/README.md` — the golden `17/18` is illustrative,
-//!   not enforced), so its fidelity is asserted CROSS-VERB (battery ratio == check
-//!   ratio from the same binary), NEVER literal-copied (R-CHAR-3).
-//! - `forge goal conformance/sum.th sum` renders the §5.1 GOAL STATE: the `given`
+//!   not enforced), so its fidelity is asserted cross-verb (battery ratio == check
+//!   ratio from the same binary), never literal-copied (R-CHAR-3).
+//! - `forge goal conformance/sum.th sum` renders the §5.1 goal state: the `given`
 //!   (`req`) + `want` (`ens`) source text and `ALL GOALS DISCHARGED` (AC-2).
 //! - `forge edit` resolves a semantic address, splices the replacement clause at
 //!   its span, re-emits, and re-checks (REQ-3 / AC-4).
-//! - a bad address is an honest structured error, never a panic (REQ-7 / AC-4).
+//! - a bad address is a structured error, never a panic (REQ-7 / AC-4).
 //!
-//! The verus-backed assertions SKIP LOUDLY when verus is absent (the
+//! The verus-backed assertions skip with a logged note when verus is absent (the
 //! `acceptance_programs` convention); the address / bad-address paths do not need
 //! verus and always run.
 
@@ -75,7 +75,7 @@ fn run_forge(args: &[&str]) -> Run {
 }
 
 /// `forge check <file> --json`, returning the `sum` cert's mutation kill-ratio
-/// (the tool-computed, oracle-EXCLUDED value the battery view must mirror).
+/// (the tool-computed, oracle-excluded value the battery view must mirror).
 fn check_sum_mutants_killed() -> String {
     let out = Command::new(forge_bin())
         .args(["check", sum_th().to_str().unwrap(), "--json"])
@@ -94,11 +94,11 @@ fn check_sum_mutants_killed() -> String {
     panic!("no `sum` cert in forge check output:\n{stdout}");
 }
 
-// REQ-1 / AC-1: `forge battery` is a VIEW over the SAME verdict `forge check`
-// computes. The non-vacuous BOOLEANS are oracle fields (anchored to the golden
+// REQ-1 / AC-1: `forge battery` is a view over the same verdict `forge check`
+// computes. The non-vacuous booleans are oracle fields (anchored to the golden
 // sum.cert.json: tautology=false, vacuous_precondition=false). The mutation ratio
-// is tool-computed + oracle-EXCLUDED, so its fidelity is asserted CROSS-VERB
-// (battery ratio == check ratio from the same binary), NEVER literal-copied
+// is tool-computed + oracle-excluded, so its fidelity is asserted cross-verb
+// (battery ratio == check ratio from the same binary), never literal-copied
 // (R-CHAR-3).
 #[test]
 fn battery_view_matches_check_verdicts() {
@@ -114,8 +114,8 @@ fn battery_view_matches_check_verdicts() {
         "battery view must report non-vacuous (golden oracle field); got:\n{}",
         run.stdout
     );
-    // View fidelity: the battery ratio is EXACTLY the ratio forge check reports
-    // for the same item (a VIEW, not a re-derivation). Cross-derived from the same
+    // View fidelity: the battery ratio is exactly the ratio forge check reports
+    // for the same item (a view, not a re-derivation). Cross-derived from the same
     // binary; never a literal copy of the illustrative golden `17/18`.
     let check_ratio = check_sum_mutants_killed();
     assert!(
@@ -126,7 +126,7 @@ fn battery_view_matches_check_verdicts() {
     );
 }
 
-// REQ-2 / AC-2: `forge goal sum` renders the §5.1 GOAL STATE — given (`req`) +
+// REQ-2 / AC-2: `forge goal sum` renders the §5.1 goal state — given (`req`) +
 // want (`ens`) source text and ALL GOALS DISCHARGED for the clean corpus item.
 #[test]
 fn goal_render_discharged_for_sum() {
@@ -175,7 +175,7 @@ fn goal_render_discharged_for_sum() {
 
 // REQ-3 / AC-4: `forge edit <addr> --replace <code>` resolves the address,
 // splices the new clause at its span, re-emits, and the re-emitted file
-// re-parses + re-checks. We operate on a TEMP COPY (the verb mutates the file in
+// re-parses + re-checks. We operate on a temp copy (the verb mutates the file in
 // place) so the corpus stays pristine.
 #[test]
 fn edit_splices_clause_and_rechecks() {
@@ -216,8 +216,8 @@ fn edit_splices_clause_and_rechecks() {
     let _ = std::fs::remove_file(&tmp);
 }
 
-// REQ-7 / AC-4: a bad address is an honest structured error + a non-success exit,
-// never a panic. Does NOT need verus (the resolver rejects before any check).
+// REQ-7 / AC-4: a bad address is a structured error + a non-success exit,
+// never a panic. Does not need verus (the resolver rejects before any check).
 #[test]
 fn edit_bad_address_is_honest_error() {
     let tmp = std::env::temp_dir().join(format!("forge_goal_badaddr_{}.th", std::process::id()));
@@ -242,14 +242,14 @@ fn edit_bad_address_is_honest_error() {
         stderr.contains("no such address `binary_search.loop#9`"),
         "the error must name the unresolvable address; stderr:\n{stderr}"
     );
-    // The file must be UNTOUCHED — a failed resolve never mutates the source.
+    // The file must be untouched — a failed resolve never mutates the source.
     let after = std::fs::read_to_string(&tmp).expect("read temp file");
     let before = std::fs::read_to_string(binary_search_th()).expect("read corpus");
     assert_eq!(after, before, "a failed edit must not mutate the file");
     let _ = std::fs::remove_file(&tmp);
 }
 
-// REQ-2 / REQ-7: `forge goal` on an unknown item is an honest Usage error naming
+// REQ-2 / REQ-7: `forge goal` on an unknown item is a usage error naming
 // the known items, never a silent empty render. No verus needed (selection
 // happens after the check; but check needs verus, so guard).
 #[test]

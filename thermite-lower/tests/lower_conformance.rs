@@ -1,13 +1,13 @@
-//! Conformance test for `thermite-lower`'s L3 emission against the EXTERNAL
+//! Conformance test for `thermite-lower`'s L3 emission against the external
 //! truth: the real `verus` binary (`.design/lower/verus-lowering.md` REQ-8,
-//! AMENDED — verify the emitted output, do NOT byte-match the goldens) and the
+//! amended — verify the emitted output, not a byte-match of the goldens) and the
 //! parsed corpus contracts (no weakening — R-DEFER-9).
 //!
 //! For each corpus program: parse it, lower it, write the emitted String to a
-//! temp file with a VALID crate name (verus rejects a `.` in the crate name
+//! temp file with a valid crate name (verus rejects a `.` in the crate name
 //! derived from the filename), run `verus <tmp>` via `std::process::Command`,
-//! and assert exit 0 AND stdout contains `0 errors` (R-CODE-4: exit status is
-//! checked, never swallowed). Also assert the emitted contracts ARE the corpus
+//! and assert exit 0 and stdout contains `0 errors` (R-CODE-4: exit status is
+//! checked, never swallowed). Also assert the emitted contracts are the corpus
 //! contracts (no weakening). `unwrap`/`expect` are fine here — `tests/` is not
 //! anti-pattern-gated.
 
@@ -34,10 +34,10 @@ fn lower_corpus(name: &str) -> String {
 }
 
 /// Locate the `verus` binary: `VERUS_BIN` env override, then PATH (`which`),
-/// then `~/.local/bin/verus`. Returns `None` if verus is genuinely absent, so
-/// verus-dependent assertions SKIP LOUDLY rather than panic — the suite must run
+/// then `~/.local/bin/verus`. Returns `None` if verus is absent, so
+/// verus-dependent assertions skip rather than panic — the suite must run
 /// in environments without verus (e.g. CI without the toolchain). L3
-/// verification still runs wherever verus IS present (verus-lowering.md).
+/// verification still runs wherever verus is present (verus-lowering.md).
 fn verus_bin() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         let pb = PathBuf::from(p);
@@ -77,7 +77,7 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// Lower `name`, write to a temp file with a VALID crate name, run verus, and
+/// Lower `name`, write to a temp file with a valid crate name, run verus, and
 /// assert exit 0 + `0 errors`. Returns the emitted source for further asserts.
 fn lower_and_verify(name: &str) -> String {
     let emitted = lower_corpus(name);
@@ -105,15 +105,15 @@ fn lower_and_verify(name: &str) -> String {
     emitted
 }
 
-// ---- AC-1: sum lowers + VERIFIES ------------------------------------------
+// ---- AC-1: sum lowers + verifies ------------------------------------------
 
 #[test]
 fn sum_emitted_verifies() {
     let emitted = lower_and_verify("sum");
     // No weakening: the corpus contracts must be present (semantically
-    // equivalent, R-DEFER-9). NOTE: the corpus literal is `1_000_000`; the
+    // equivalent, R-DEFER-9). The corpus literal is `1_000_000`; the
     // `thermite-syntax` AST stores integer literals as `u128` (digit separators
-    // are not retained), so the lowerer emits the numerically-IDENTICAL
+    // are not retained), so the lowerer emits the numerically-identical
     // `1000000`. This is not a weakening (`1000000 == 1_000_000`); it is a
     // frontend representation fact, not a lowering choice.
     assert!(
@@ -137,7 +137,7 @@ fn sum_emitted_verifies() {
     assert_no_cheats(&emitted, "sum");
 }
 
-// ---- AC-2: binary_search lowers + VERIFIES --------------------------------
+// ---- AC-2: binary_search lowers + verifies --------------------------------
 
 #[test]
 fn binary_search_emitted_verifies() {
@@ -262,9 +262,9 @@ fn unknown_combinator_is_err_not_panic() {
     let parsed = thermite_syntax::parse(src);
     // The lowerer treats `notacombinator` as an ordinary call (it is only an
     // UnknownCombinator error if the validator marked it as one). A plain call
-    // lowers fine — so instead assert `lower` returns a Result and does not
+    // lowers fine, so instead assert `lower` returns a Result and does not
     // panic on the corpus and on this input.
     let r = thermite_lower::lower(&parsed.program);
-    // Either Ok (treated as a plain call) or Err(LowerError) — never a panic.
+    // Either Ok (treated as a plain call) or Err(LowerError), never a panic.
     let _ = r.is_ok() || matches!(r, Err(thermite_lower::LowerError::UnknownCombinator { .. }));
 }

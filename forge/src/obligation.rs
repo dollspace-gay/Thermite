@@ -1,35 +1,35 @@
-//! `forge/src/obligation.rs` — the backend-NEUTRAL verification obligation
+//! `forge/src/obligation.rs` — the backend-neutral verification obligation
 //! artifact (`.design/verified/proof-backends.md` REQ-1/REQ-1.2; increment (i),
 //! blocker #204).
 //!
 //! Today the obligation content the pipeline discharges exists only transiently,
-//! materialized as Verus TEXT (`thermite-tv/src/obligation.rs`'s
-//! `equivalence_obligation` family). This module REIFIES that same content as a
-//! prover-NEUTRAL value (see the "honest scope" note below on serialization): an
+//! materialized as Verus text (`thermite-tv/src/obligation.rs`'s
+//! `equivalence_obligation` family). This module reifies that same content as a
+//! prover-neutral value (see the scope note below on serialization): an
 //! [`Obligation`] carries the item, its
 //! obligation [`ObligationClass`], the [`ObligationRole`], the AST slice it is
-//! stated over (a `thermite-syntax` node, NOT a Verus string), and a prover-neutral
+//! stated over (a `thermite-syntax` node, not a Verus string), and a prover-neutral
 //! [`ObligationEnv`] (the generalization of `thermite-tv`'s `ObligationFrame` —
-//! AST nodes + Thermite types + coercion flags, NOT rendered Verus text). An
-//! engine (`engine.rs`) RENDERS it into its own input language (Verus text for the
+//! AST nodes + Thermite types + coercion flags, not rendered Verus text). An
+//! engine (`engine.rs`) renders it into its own input language (Verus text for the
 //! Verus engine; Lean source for the future Lean engine — increment (ii)).
 //!
-//! The load-bearing inversion (§1): the obligation STOPS being Verus-shaped. The
+//! The inversion (§1): the obligation stops being Verus-shaped. The
 //! Verus rendering (`obligation.rs`'s `param_list`/`spec_defs`/`as nat` rewrite)
 //! becomes the Verus engine's `render`, not the artifact itself.
 //!
-//! **A note on "serializable" (REQ-1, honest scope).** The load-bearing property
-//! increment (i) delivers is prover-NEUTRALITY: the artifact carries `thermite-
-//! syntax` AST nodes + Thermite `Type`s + coercion flags, NOT any prover's rendered
-//! text. The `thermite-syntax` AST does NOT derive `serde` in production (serde is a
+//! A note on "serializable" (REQ-1, scope). The property
+//! increment (i) delivers is prover-neutrality: the artifact carries `thermite-
+//! syntax` AST nodes + Thermite `Type`s + coercion flags, not any prover's rendered
+//! text. The `thermite-syntax` AST does not derive `serde` in production (serde is a
 //! dev-dependency there — `thermite-syntax/Cargo.toml`), and adding it is outside
-//! the #204 manifest, so the artifact is a prover-neutral in-memory VALUE
+//! the #204 manifest, so the artifact is a prover-neutral in-memory value
 //! (`Clone + PartialEq + Eq`), not a wire-serialized one. The Verus engine consumes
-//! the `&Obligation` directly and keys its evidence on the LOWERED source (the
+//! the `&Obligation` directly and keys its evidence on the lowered source (the
 //! SHIPPED `cache::cache_key` substrate — §2(d)); wire serialization of the artifact
 //! is increment (ii) work, when the Lean exporter serializes a Lean theorem (a
-//! string), not the raw AST. The env's prover-neutral SCALAR content is what the
-//! engine renders; that content is fully inspectable + comparable here.
+//! string), not the raw AST. The env's prover-neutral scalar content is what the
+//! engine renders; that content is inspectable and comparable here.
 //!
 //! ## REQ status
 //!
@@ -39,28 +39,28 @@
 //! | REQ-1.2 (the REGISTRY-TERMINATION class + the full-expression-position closure) | SHIPPED (class assignment + corrected closure) | `ObligationClass::RegistryTermination` is minted for an item whose called-spec-fn set (the corrected `req ∪ ens ∪ body ∪ dec(item)` seed, closure-step over each reached spec-fn's `body ∪ dec` — `check::reachable_spec_fn_names_full`) is non-empty; the Lean-path well-foundedness DISCHARGE is increment (ii), NOT-STARTED. The corrected closure walks the dec measures (was body-only). |
 //!
 //! The auxiliary OVERFLOW / TERMINATION classes and the multi-class minting of one
-//! item's full obligation SET are part of the per-class rendering increment (ii)
-//! still grows; increment (i) reifies the class enum (AC-1) + mints the CONTRACT +
-//! REGISTRY-TERMINATION classes the §0 pipeline observably discharges today, which
+//! item's full obligation set are part of the per-class rendering increment (ii)
+//! still grows; increment (i) reifies the class enum (AC-1) and mints the CONTRACT +
+//! REGISTRY-TERMINATION classes the §0 pipeline discharges today, which
 //! is what the Verus engine's `discharge` keys on.
 
 use thermite_syntax::{Block, Expr, FnItem, SpecFnItem, Type};
 
 /// The backend-neutral obligation class (`.design/verified/proof-backends.md`
-/// REQ-1 / AC-1). The variant set is the UNION of the `thermite-tv/src/obligation.rs`
+/// REQ-1 / AC-1). The variant set is the union of the `thermite-tv/src/obligation.rs`
 /// emitters (CONTRACT / EXEC / BODY / LOOP-{entry,preservation,exit}), the §6/§7
 /// in-item auxiliaries Verus discharges (OVERFLOW / TERMINATION), and REQ-1.2's
 /// [`ObligationClass::RegistryTermination`]. The three §0.1 meta/battery query
-/// classes (vacuity / equivalence / strengthen) are deliberately NOT here — they
-/// stay direct verus invocations OUTSIDE the Engine interface in v1 (the role
+/// classes (vacuity / equivalence / strengthen) are not here — they
+/// stay direct verus invocations outside the Engine interface in v1 (the role
 /// discriminator carries that future seam; see [`ObligationRole`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-// AC-1 requires the class enum's variants to be the FULL union of the
+// AC-1 requires the class enum's variants to be the full union of the
 // `obligation.rs` emitters + the §6/§7 in-item auxiliaries + REGISTRY-TERMINATION.
 // Increment (i) mints CONTRACT + REGISTRY-TERMINATION on the live path; the EXEC /
 // BODY / LOOP-* / OVERFLOW / TERMINATION variants are forward-declared per AC-1 and
 // minted as the per-class rendering grows (increment (ii)+). Each carries a stable
-// `tag()`. The forward-declared variants are not yet CONSTRUCTED in production.
+// `tag()`. The forward-declared variants are not yet constructed in production.
 #[allow(
     dead_code,
     reason = "proof-backends AC-1: the obligation-class enum is the FULL union of \
@@ -92,11 +92,11 @@ pub enum ObligationClass {
     /// well-founded descent (the source `dec` → the well-founded fixpoint).
     Termination,
     /// The REGISTRY-TERMINATION class (REQ-1.2, the #215 fix): for an item with a
-    /// non-empty called-spec-fn set, EVERY reached spec-fn carries a per-spec-fn
-    /// obligation that its `dec` measure is a VALID well-founded descent. The
-    /// parser guarantees dec PRESENCE; this class is dec VALIDITY, and it is NEVER
+    /// non-empty called-spec-fn set, every reached spec-fn carries a per-spec-fn
+    /// obligation that its `dec` measure is a valid well-founded descent. The
+    /// parser guarantees dec presence; this class is dec validity, and it is not
     /// assumed. Discharged today by Verus's own dec-check when Verus proves the
-    /// item (REQ-1.2(a), the common path); the Lean well-foundedness DISCHARGE is
+    /// item (REQ-1.2(a), the common path); the Lean well-foundedness discharge is
     /// increment (ii).
     RegistryTermination,
 }
@@ -121,10 +121,10 @@ impl ObligationClass {
 }
 
 /// The polarity / intent discriminator (`.design/verified/proof-backends.md`
-/// REQ-1). Increment (i) mints ONLY [`ObligationRole::Certification`] obligations:
-/// the §0.1 meta/battery queries (vacuity / equivalence / strengthen) are NOT
+/// REQ-1). Increment (i) mints only [`ObligationRole::Certification`] obligations:
+/// the §0.1 meta/battery queries (vacuity / equivalence / strengthen) are not
 /// reified as `Obligation`s in v1 (they keep their own direct verus calls, OQ-5).
-/// The role field IS the seam those inverted/advisory roles will key on, so the
+/// The role field is the seam those inverted/advisory roles will key on, so the
 /// REQ-3 discharge discipline (Unknown→degrade, Refuted→hard-fail) can be scoped
 /// to `Certification` from day one without dragging the OUT-list in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -145,10 +145,10 @@ impl ObligationRole {
 }
 
 /// The parsed AST node(s) the obligation is stated over (`.design/verified/
-/// proof-backends.md` §1 `ast_slice: ExprOrBlock`). The SAME `&Expr` / `&Block`
+/// proof-backends.md` §1 `ast_slice: ExprOrBlock`). The same `&Expr` / `&Block`
 /// the `thermite-tv` obligation functions consume — kept as owned clones so the
 /// `Obligation` is a self-contained, serializable artifact (it outlives the
-/// borrow of the parsed `Program`). An engine renders THIS into its language; the
+/// borrow of the parsed `Program`). An engine renders this into its language; the
 /// artifact never carries pre-rendered prover text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AstSlice {
@@ -166,25 +166,25 @@ pub enum AstSlice {
     Block(Box<Block>),
 }
 
-/// One free-var binding in the obligation env, at its THERMITE type — the
+/// One free-var binding in the obligation env, at its Thermite type — the
 /// prover-neutral generalization of `thermite-tv`'s `ParamDecl` (which carries a
-/// VERUS `type_str`). The engine renders the `Type` into ITS spelling (`u64` /
+/// Verus `type_str`). The engine renders the `Type` into its spelling (`u64` /
 /// `Seq<u32>` for Verus; the Lean sort for Lean), so the artifact stays neutral
-/// (§1 — "free vars at their THERMITE types, not Verus strings; the engine renders
+/// (§1 — "free vars at their Thermite types, not Verus strings; the engine renders
 /// them").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObligationParam {
     /// The free-var name as it appears in the AST slice.
     pub name: String,
-    /// The Thermite type (NOT a Verus string) — the engine renders it.
+    /// The Thermite type (not a Verus string) — the engine renders it.
     pub ty: Type,
 }
 
 /// The typing / env context — the prover-neutral generalization of
 /// `thermite-tv`'s `ObligationFrame` (`.design/verified/proof-backends.md` §1).
-/// Carries the PRE-rendering content (AST nodes + Thermite types + coercion flags)
-/// so an engine renders it into its language. NO Verus strings live here (the
-/// `spec_defs` are spec-fn NAMES resolved against the shared frozen registry, not
+/// Carries the pre-rendering content (AST nodes + Thermite types + coercion flags)
+/// so an engine renders it into its language. No Verus strings live here (the
+/// `spec_defs` are spec-fn names resolved against the shared frozen registry, not
 /// verbatim Verus `verus_l3` text; the coercion flags are named param sets the
 /// engine maps to its own view — Verus's `@`-view / `as nat`, Lean's `Seq`/`toNat`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -192,11 +192,11 @@ pub struct ObligationEnv {
     /// The free vars at their Thermite types (the clause params + `result` +
     /// `old(_)` values), in signature order.
     pub params: Vec<ObligationParam>,
-    /// The enclosing precondition as an AST node (NOT rendered text), if any.
+    /// The enclosing precondition as an AST node (not rendered text), if any.
     pub req: Option<Box<Expr>>,
-    /// The in-scope spec-fn definition NAMES the obligation depends on, resolved
+    /// The in-scope spec-fn definition names the obligation depends on, resolved
     /// against the shared frozen registry. Per REQ-1.2 / §4 EXP each of these
-    /// names is in the FULL-expression-position called-spec-fn closure
+    /// names is in the full-expression-position called-spec-fn closure
     /// (`req ∪ ens ∪ body ∪ dec`, transitively, closure-step over `body ∪ dec`),
     /// and each carries a `RegistryTermination` obligation. The engine resolves a
     /// name to its real-bodied definition (the Verus engine emits its `verus_l3`
@@ -213,7 +213,7 @@ pub struct ObligationEnv {
     pub map_params: Vec<String>,
 }
 
-/// The backend-NEUTRAL verification obligation (`.design/verified/proof-backends.md`
+/// The backend-neutral verification obligation (`.design/verified/proof-backends.md`
 /// REQ-1). A serializable artifact stated against the mechanized semantics `S`,
 /// independent of any prover's input language. An [`crate::engine::Engine`]
 /// renders + discharges it.
@@ -311,7 +311,7 @@ impl Obligation {
     /// own body (the descent measures live in `env.spec_defs`'s reached spec-fns +
     /// the item's own `dec`); the env's `spec_defs` is the full closure so the
     /// engine that discharges it (Verus's dec-check today; a Lean well-foundedness
-    /// proof in increment (ii)) sees EVERY reached spec-fn. Returns `None` when the
+    /// proof in increment (ii)) sees every reached spec-fn. Returns `None` when the
     /// set is empty (no spec-fn dependency → no registry-termination obligation).
     #[must_use]
     pub fn registry_termination(
@@ -357,7 +357,7 @@ mod tests {
     }
 
     // REQ-1: the CONTRACT obligation reifies the fn's body + params + req as
-    // NEUTRAL content (no Verus strings) — the params carry their Thermite types,
+    // neutral content (no Verus strings) — the params carry their Thermite types,
     // the req is an AST node. Expected from the design's §1 artifact shape (R-CHAR-3).
     #[test]
     fn contract_obligation_is_neutral_content() {
@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(o.item, "add");
         assert_eq!(o.class, ObligationClass::Contract);
         assert_eq!(o.role, ObligationRole::Certification);
-        // The params carry THERMITE types, not Verus strings.
+        // The params carry Thermite types, not Verus strings.
         assert_eq!(o.env.params.len(), 2);
         assert_eq!(o.env.params[0].name, "x");
         assert_eq!(
@@ -384,8 +384,8 @@ mod tests {
         assert!(o.env.spec_defs.is_empty());
     }
 
-    // REQ-1.2: an item with a NON-empty called-spec-fn set gets a
-    // REGISTRY-TERMINATION obligation; an EMPTY set yields None. Expected from the
+    // REQ-1.2: an item with a non-empty called-spec-fn set gets a
+    // REGISTRY-TERMINATION obligation; an empty set yields None. Expected from the
     // design's REQ-1.2 class-assignment condition (R-CHAR-3).
     #[test]
     fn registry_termination_minted_iff_called_spec_fns_nonempty() {
@@ -403,9 +403,9 @@ mod tests {
         assert_eq!(o.env.spec_defs, vec!["spec_sum".to_string()]);
     }
 
-    // REQ-1 / AC-1: the artifact is a prover-NEUTRAL VALUE — `Clone + PartialEq +
+    // REQ-1 / AC-1: the artifact is a prover-neutral value — `Clone + PartialEq +
     // Eq` (the AST does not derive serde in production; see the module doc's
-    // "honest scope" note). A clone is structurally equal (the comparable,
+    // scope note). A clone is structurally equal (the comparable,
     // inspectable content the engine renders).
     #[test]
     fn obligation_is_a_comparable_neutral_value() {
@@ -417,7 +417,7 @@ mod tests {
             o, clone,
             "the Obligation is a comparable neutral value (REQ-1)"
         );
-        // A DIFFERENT item is not equal (the value carries real content).
+        // A different item is not equal (the value carries real content).
         let p2 = parse_one("fn other(y: u64) -> u64 req true ens result == y fx pure { y }");
         let o2 = Obligation::contract_for_fn(fn_item(&p2, "other"), vec![]);
         assert_ne!(o, o2);

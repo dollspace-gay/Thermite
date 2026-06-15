@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 207c5858bc2e2c0b7be7ced965e5c395152a8fdc (#274 — lean_fragment membership report; REQ-7..10 SHIPPED, audit.rs verified-current)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (#274 — lean_fragment membership report; REQ-7..10 SHIPPED, audit.rs verified-current)
 governs: forge/src/audit.rs
 thesis-refs:
   - thermite-design.md §6

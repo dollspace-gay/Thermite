@@ -3,10 +3,10 @@
 //!
 //! Governing design: `.design/syntax/ast.md`. The node set mirrors
 //! `.design/syntax/surface-grammar.md` one-for-one. The mandatory-contract
-//! rule (§4.1) is encoded in the TYPES: `Contract.req`/`Contract.fx` are
+//! rule (§4.1) is encoded in the types: `Contract.req`/`Contract.fx` are
 //! non-`Option`, `Contract.ens` is a non-empty `Vec`, and `LoopNode` carries a
-//! non-empty `invs` plus a single `dec` — so an ill-formed contract is
-//! unrepresentable (ast.md REQ-2/REQ-5). The frontend is REGISTRY-FREE:
+//! non-empty `invs` plus a single `dec`, so an ill-formed contract is
+//! unrepresentable (ast.md REQ-2/REQ-5). The frontend is registry-free:
 //! combinator calls (`forall_in`, `sorted`) are ordinary `Expr::Call` nodes.
 //!
 //! ## REQ status
@@ -39,10 +39,10 @@
 //! |---|---|---|
 //! | goal-repl REQ-4 (AST hole node) | SHIPPED | `struct Hole { number: u32, span: Span }` + `FnItem.holes: Vec<Hole>` (document order). PURELY ADDITIVE (`holes: Vec::new()` on every hole-free literal, the `dec: None` precedent) — a hole is recorded on the fn, NOT as a `Stmt` variant, so the `enum Stmt` and every exhaustive `match Stmt` in the workspace are UNTOUCHED (a holed item never lowers — it short-circuits at `forge check`, REQ-5). Built by `parse_block`'s `TokKind::Hole` arm in `parser.rs` (`parser.md` REQ-11); addressed `<fn>.?N` by `address.rs` (`AddrKind::Hole`); short-circuited to L0 `OpenHole` by `forge::check`; filled by `forge::goal_repl::fill_hole`. |
 //!
-//! ## Basis Stage 1a — ADT SURFACE AST nodes (`.design/basis/01-adts.md`)
+//! ## Basis Stage 1a — ADT surface AST nodes (`.design/basis/01-adts.md`)
 //!
-//! SURFACE-only (parse-into-the-right-AST); the VALIDATOR rules (1b) and Verus
-//! LOWERING (1c) are NOT in this crate.
+//! Surface-only (parse-into-the-right-AST); the validator rules (1b) and Verus
+//! lowering (1c) are not in this crate.
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
@@ -53,14 +53,14 @@
 //! | REQ-6 SURFACE (`Expr::Is` + `is` operator) | SHIPPED | `Expr::Is { scrutinee: Box<Expr>, variant: Vec<Ident> }`; built by the postfix `is` parse in `parser::parse_postfix`; `result == (s is Circle)` parses (`tests/adt_parse.rs` shape). The VALIDATOR rule (accept only declared variants) is stage 1b. |
 //! | deref `*t` (REQ-3/REQ-4 surface) | SHIPPED | `Expr::Deref(Box<Expr>)` (new prefix-`*` unary; no existing node fit); built by `parser::parse_ref`; `sum_list(*t)` parses (`tests/adt_parse.rs` list_sum). Its SEMANTICS are stage 1c. |
 //!
-//! ## Basis Stage 4 — bounded-collection SURFACE AST (`.design/basis/04-collections.md`)
+//! ## Basis Stage 4 — bounded-collection surface AST (`.design/basis/04-collections.md`)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
 //! | REQ-1 SURFACE (`Vec<T>` type node) | SHIPPED | `Type::Vec(Box<Type>)` (OQ-2 RESOLVED — dedicated node, mirroring `Type::Box`, NOT `Generic`); built by `parser::parse_type` on the contextual `Vec` ident; `v: Vec<u64>` parses (`conformance/vec_demo.th`, asserted by `thermite-lower/tests/collections_conformance.rs`). The `push`/`pop`/`get`/`len` operations reuse `Expr::MethodCall` (no new node). The vstd-`Vec` wrapper + capacity invariant + `fx alloc` are Stage 4 lowering (`lower.rs`). |
 //! | REQ-2 (`Map<K,V>` type) | NOT-STARTED | epic **#62** Stage 4 (OQ-3 thin-first-cut); `Map` deferred to a Stage-4 follow-up — `enum Type` has no `Map` node; the single-arg `Generic`/`Vec`/`Box` shapes do not carry a key+value. |
 //!
-//! ## Cluster C7 — built-in Option/Result SURFACE AST (`.design/basis/09-option-result.md`, #95)
+//! ## Cluster C7 — built-in Option/Result surface AST (`.design/basis/09-option-result.md`, #95)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
@@ -80,7 +80,7 @@
 //! | REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection — AST) | SHIPPED | `enum Type` += `Tuple(Vec<Type>)` (n-tuple type, arity ≥ 2); `enum Expr` += `Tuple(Vec<Expr>)` (construction) + the DEDICATED `TupleProj { receiver: Box<Expr>, index: usize }` projection node (OQ-1 RESOLVED → dedicated, NOT an overloaded `Field` with a string `"0"`: a tuple index is a `usize`). Built by `parser::parse_type_inner` (the `(` arm disambiguates by the comma: `()` → `Unit`, `(T)` → grouping, `(T, U, …)` → `Tuple`), `parser::parse_primary` (the `(` arm builds `Expr::Tuple` on a comma; `(e)` → grouping), `parser::parse_postfix` (the `.` arm builds `Expr::TupleProj` when the token after `.` is an `Int`). Consumer: `thermite-lower::lower::lower_type`/`lower_expr` (→ Verus tuples). Verified: `forge/tests/tuples_conformance.rs::tuple_type_disambiguation_unit_grouping_tuple` + `tuple_expr_and_projection_nodes`. |
 //! | REQ-7 (tuple arity — n-tuples, ≥ 2) | SHIPPED | `Type::Tuple(Vec<Type>)`/`Expr::Tuple(Vec<Expr>)` carry any arity ≥ 2; `()` stays `Type::Unit` (arity 0), `(T)` is grouping (arity 1, the inner). Verified: `forge/tests/tuples_conformance.rs::ac6_three_tuple_certifies_l3` (a 3-tuple → L3 under real verus) + `tuple_type_disambiguation_unit_grouping_tuple` (`()`/`(T)` unbroken). |
 //!
-//! ## Cluster C12 — bounded verified `Map<K,V>` SURFACE AST (`.design/basis/13-map.md`, #123)
+//! ## Cluster C12 — bounded verified `Map<K,V>` surface AST (`.design/basis/13-map.md`, #123)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
@@ -110,20 +110,20 @@ pub struct Program {
 
 /// A top-level item. v0.1 admits `fn` and `spec fn`; the basis ADT stage
 /// (`.design/basis/01-adts.md` REQ-1/REQ-2) adds `struct` (product types) and
-/// `enum` (sum types) item kinds. These are PURELY ADDITIVE: existing
-/// `Item::Fn`/`Item::SpecFn` consumers are unchanged in shape — but exhaustive
+/// `enum` (sum types) item kinds. These are additive: existing
+/// `Item::Fn`/`Item::SpecFn` consumers are unchanged in shape, while exhaustive
 /// `match`es over `Item` downstream (thermite-spec/thermite-lower/forge) gain
 /// the validate/lower arms in basis stages 1b/1c.
 #[derive(Debug, Clone, PartialEq, Eq)]
 // C9-A (#108): adding `FnItem.dec: Option<Clause>` (the recursive-fn termination
 // measure) grew `Item::Fn` past clippy's `large_enum_variant` threshold (Fn ~560
 // bytes vs SpecFn ~256). Boxing `Item::Fn(Box<FnItem>)` would ripple a `Box` deref
-// to EVERY exhaustive `match Item` across thermite-spec/thermite-lower/forge
-// (dozens of value-pattern sites), a churn far beyond this clusters's scope — and
-// `Item` is a VALUE enum threaded by-value through the whole pipeline by design.
+// to every exhaustive `match Item` across thermite-spec/thermite-lower/forge
+// (dozens of value-pattern sites), a churn far beyond this clusters's scope, and
+// `Item` is a value enum threaded by-value through the whole pipeline by design.
 // The size asymmetry is benign (an `Item` vec holds few items; no hot copy path),
-// so a per-item allow (R-CODE-3 / R-APG-3 — NOT a module-root `#![allow]`) is the
-// minimal, correct response. crosslink observation: #108 builder.
+// so a per-item allow (R-CODE-3 / R-APG-3, not a module-root `#![allow]`) is the
+// response here. crosslink observation: #108 builder.
 #[allow(
     clippy::large_enum_variant,
     reason = "Item is a by-value pipeline enum; boxing Fn would churn every match Item site (#108)"
@@ -159,11 +159,11 @@ impl Item {
 /// access against `fields`; stage 1c lowers the `inv` to a Verus `well_formed`
 /// predicate.
 ///
-/// `sealed` carries the `#[sealed]` ABSTRACTION-BARRIER attribute
+/// `sealed` carries the `#[sealed]` abstraction-barrier attribute
 /// (`.design/basis/06-provenance-and-sinks.md` REQ-8): a `#[sealed]` struct is a
-/// door-only-mintable clean/capability type — the validator REJECTS any
+/// door-only-mintable clean/capability type. The validator rejects any
 /// `Expr::StructLit` of a sealed struct (`SpecError::SealedConstruction`), so the
-/// ONLY way to obtain one is through its `#[boundary]` door's return value (the
+/// only way to obtain one is through its `#[boundary]` door's return value (the
 /// door body is foreign/`external_body`, with no in-language `StructLit`). It is
 /// `false` for an ordinary struct (the parser sets it `true` only on `#[sealed]`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,63 +214,63 @@ pub enum VariantShape {
 /// A `fn` item with its mandatory contract and body (ast.md REQ-1/REQ-2/REQ-3;
 /// ffi-boundary.md REQ-2).
 ///
-/// A structural invariant the parser upholds: `boundary.is_some()` IFF
-/// `body.is_none()`. A FOREIGN (boundary) fn carries a `#[boundary("crate::path")]`
-/// attribute and NO Thermite body (`body: None`) — its body is the foreign
+/// A structural invariant the parser upholds: `boundary.is_some()` iff
+/// `body.is_none()`. A foreign (boundary) fn carries a `#[boundary("crate::path")]`
+/// attribute and no Thermite body (`body: None`); its body is the foreign
 /// crate's, enforced at L1 (`.design/boundary/ffi-boundary.md` §"surface form").
-/// An IN-LANGUAGE fn carries `boundary: None` and a real `body: Some(Block)`.
+/// An in-language fn carries `boundary: None` and a real `body: Some(Block)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FnItem {
     pub slag: Option<SlagAttr>,
-    /// The `#[boundary("crate::path")]` attribute marking a FOREIGN fn (ffi
+    /// The `#[boundary("crate::path")]` attribute marking a foreign fn (ffi
     /// REQ-2). `Some` iff this is a boundary fn (and then `body` is `None`).
     pub boundary: Option<BoundaryAttr>,
     pub name: Ident,
     pub params: Vec<Param>,
     pub ret: Type,
     pub contract: Contract,
-    /// The OPTIONAL `dec <measure>` termination clause of a RECURSIVE exec `fn`
+    /// The optional `dec <measure>` termination clause of a recursive exec `fn`
     /// (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). Mirrors
     /// [`SpecFnItem::dec`] (a spec fn's `dec` is mandatory; an exec fn's is
-    /// optional — a non-recursive `fn` has `dec = None`). When `Some`, the
-    /// lowerer emits a `decreases <measure>` on the Verus `fn` (the SAME measure
+    /// optional, with a non-recursive `fn` carrying `dec = None`). When `Some`, the
+    /// lowerer emits a `decreases <measure>` on the Verus `fn` (the same measure
     /// position the spec-fn / loop `decreases` use) so Verus proves termination of
-    /// the self-recursion; a self-calling `fn` WITHOUT this (and not `fx diverge`)
-    /// is a validator error (REQ-2). The clause parses AFTER `fx` (REQ-1, OQ-4 —
+    /// the self-recursion; a self-calling `fn` without this (and not `fx diverge`)
+    /// is a validator error (REQ-2). The clause parses after `fx` (REQ-1, OQ-4,
     /// keeping the `req`/`ens`/`fx` parse byte-stable), mirroring the loop order
     /// where `dec` follows the `inv`s.
     pub dec: Option<Clause>,
     /// The Thermite body — `Some(Block)` for an in-language fn, `None` for a
     /// boundary fn (the body is foreign; ffi REQ-2).
     pub body: Option<Block>,
-    /// The OPEN BODY HOLES (`?N`) this fn carries (`.design/forge/goal-repl.md`
-    /// REQ-4, #193), in DOCUMENT (source) order — the order their `<fn>.?N`
+    /// The open body holes (`?N`) this fn carries (`.design/forge/goal-repl.md`
+    /// REQ-4, #193), in document (source) order: the order their `<fn>.?N`
     /// addresses are numbered (`semantic-addressing.md` / `address.rs`) and the
-    /// order `forge goal` lists them. EMPTY for every hole-free fn (the entire
-    /// pre-#193 corpus), so this is a PURELY ADDITIVE field: a non-hole `FnItem`
-    /// literal sets `holes: Vec::new()`, exactly mirroring the `dec: None` additive
-    /// precedent (C9-A). A fn with ANY hole NEVER certifies — `forge check`
-    /// short-circuits it to a non-certified L0 cert with an `OpenHole` cause BEFORE
+    /// order `forge goal` lists them. Empty for every hole-free fn (the entire
+    /// pre-#193 corpus), so this is an additive field: a non-hole `FnItem`
+    /// literal sets `holes: Vec::new()`, mirroring the `dec: None` additive
+    /// precedent (C9-A). A fn with any hole never certifies; `forge check`
+    /// short-circuits it to a non-certified L0 cert with an `OpenHole` cause before
     /// lowering (`.design/forge/goal-repl.md` REQ-5; the same short-circuit shape
-    /// the vacuity gate uses), so a hole is recorded HERE (not threaded into the
-    /// statement stream — it never lowers, so the `Stmt` enum and every exhaustive
-    /// `match Stmt` stay untouched). The parser records a hole here when it sees a
+    /// the vacuity gate uses), so a hole is recorded here, not threaded into the
+    /// statement stream. It never lowers, so the `Stmt` enum and every exhaustive
+    /// `match Stmt` stay untouched. The parser records a hole here when it sees a
     /// `?N` in fn-body statement position (`parser.md` REQ-11).
     pub holes: Vec<Hole>,
     pub span: Span,
 }
 
-/// An OPEN BODY HOLE `?N` (`.design/forge/goal-repl.md` REQ-4, #193). A hole is a
+/// An open body hole `?N` (`.design/forge/goal-repl.md` REQ-4, #193). A hole is a
 /// structural placeholder the agent fills via `forge fill <fn>.?N <code>`. It
-/// carries the verbatim hole NUMBER as written (`number`, the surface ordinal —
-/// `?0` → `0`) and the source SPAN of the `?N` token so `forge fill` can splice
-/// replacement source text at exactly that position (`goal_repl::fill_hole`). A
-/// hole is NOT a `Stmt` (it never lowers — a holed item short-circuits at
-/// `forge check`, REQ-5) and is NOT separately addressable beyond its `<fn>.?N`
-/// address (`address.rs`). The address ORDINAL is the hole's DOCUMENT-ORDER index
+/// carries the verbatim hole number as written (`number`, the surface ordinal:
+/// `?0` → `0`) and the source span of the `?N` token so `forge fill` can splice
+/// replacement source text at that position (`goal_repl::fill_hole`). A
+/// hole is not a `Stmt` (it never lowers; a holed item short-circuits at
+/// `forge check`, REQ-5) and is not separately addressable beyond its `<fn>.?N`
+/// address (`address.rs`). The address ordinal is the hole's document-order index
 /// among the fn's holes (`AddrKind::Hole`), which may differ from the surface
 /// `number` if the agent reuses or skips numbers (the oracle re-presents the
-/// addresses every turn — §5.1 property 1).
+/// addresses every turn, §5.1 property 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hole {
     /// The verbatim hole number as the agent wrote it (`?0` → `0`).
@@ -303,9 +303,9 @@ pub struct SlagAttr {
 
 /// A `#[boundary("crate::path::to::foreign_fn")]` attribute (ffi-boundary.md
 /// REQ-1/REQ-2, §9). Mirrors `struct SlagAttr`: it marks a `fn` whose body is
-/// body-unproven (here, FOREIGN) while leaving the contract mandatory. The single
+/// body-unproven (here, foreign) while leaving the contract mandatory. The single
 /// positional `target` string names the foreign `crate::path` the L1 wrapper calls
-/// (OQ-1: a boundary has exactly one datum, so a positional string, not the named
+/// (OQ-1: a boundary has one datum, so a positional string, not the named
 /// `key = "value"` fields `#[slag]` uses).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundaryAttr {
@@ -409,7 +409,7 @@ pub enum Stmt {
     Expr(Expr),
 }
 
-/// A `loop`/`while` node — ADDRESSABLE (ast.md REQ-5). `invs` is non-empty and
+/// A `loop`/`while` node, addressable (ast.md REQ-5). `invs` is non-empty and
 /// `dec` is a single clause (structurally encoding §4.1). `while` and `loop`
 /// share the `loop#N` namespace (semantic-addressing.md REQ-2).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -442,9 +442,9 @@ impl LoopKind {
 /// `.design/basis/11-ergonomics.md` REQ-3). The optional `guard` is the C10
 /// match-guard `pat if cond => …`: a `bool`-valued [`Expr`] evaluated in the
 /// arm's binding scope, lowered to the Verus-native guarded arm
-/// (`pat if <guard> => body`). CRITICAL (REQ-3, GROUNDED): a guard does NOT
-/// complete a match — the validator's exhaustiveness check treats a guarded arm
-/// as covering NONE of its pattern's cases (the guard may fail), exactly as
+/// (`pat if <guard> => body`). Per REQ-3 (GROUNDED): a guard does not
+/// complete a match. The validator's exhaustiveness check treats a guarded arm
+/// as covering none of its pattern's cases (the guard may fail), as
 /// Rust/Verus does. `None` is an unguarded arm (the entire pre-C10 corpus).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MatchArm {
@@ -459,20 +459,20 @@ pub struct MatchArm {
 /// A binary operator (ast.md REQ-6/REQ-10; §4.4). The arithmetic/comparison/
 /// logical core is the v0.1 base; `Rem`/`Shl`/`Shr`/`BitAnd`/`BitOr`/`BitXor` are
 /// the #92 integer-operator additions (their precedence is pinned in
-/// `surface-grammar.md` REQ-10). `Rem` (`%`) inherits `Div`'s divide-by-zero PROOF
-/// obligation; `Shl`/`Shr` raise a shift-bound obligation — both are Verus-native
-/// (ast.md REQ-11), discharged at L3, NOT a parse/lowering check.
+/// `surface-grammar.md` REQ-10). `Rem` (`%`) inherits `Div`'s divide-by-zero proof
+/// obligation; `Shl`/`Shr` raise a shift-bound obligation. Both are Verus-native
+/// (ast.md REQ-11), discharged at L3, not a parse/lowering check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinOp {
     Add,
     Sub,
     Mul,
     Div,
-    /// `%` — remainder (#92). PARTIAL: requires a nonzero divisor (ast.md REQ-11).
+    /// `%` — remainder (#92). Partial: requires a nonzero divisor (ast.md REQ-11).
     Rem,
-    /// `<<` — left shift (#92). PARTIAL: requires a bounded shift amount.
+    /// `<<` — left shift (#92). Partial: requires a bounded shift amount.
     Shl,
-    /// `>>` — right shift (#92). PARTIAL: requires a bounded shift amount.
+    /// `>>` — right shift (#92). Partial: requires a bounded shift amount.
     Shr,
     /// `&` — bitwise and (#92).
     BitAnd,
@@ -490,10 +490,10 @@ pub enum BinOp {
     Or,
 }
 
-/// A unary (prefix) operator (ast.md REQ-10, #92). There is ONE `UnaryOp::Not`
-/// for the prefix `!`: its meaning is per the OPERAND TYPE — logical-not on
-/// `bool`, bitwise-not on an integer — resolved DOWNSTREAM (validator/lower) by
-/// Verus's type-directed `!`, NOT by a syntactic split (§2.3 "one way to do
+/// A unary (prefix) operator (ast.md REQ-10, #92). There is one `UnaryOp::Not`
+/// for the prefix `!`: its meaning is per the operand type (logical-not on
+/// `bool`, bitwise-not on an integer), resolved downstream (validator/lower) by
+/// Verus's type-directed `!`, not by a syntactic split (§2.3 "one way to do
 /// everything"; ast.md OQ-4). Prefix `!` binds tighter than every binary operator
 /// (`surface-grammar.md` REQ-10), so `!a & b` parses as `(!a) & b`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -515,11 +515,11 @@ pub enum IndexArg {
 /// call syntax (surface-grammar.md REQ-6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
-    /// An integer literal carrying BOTH the numeric `value` (with `_`
-    /// separators stripped — ast.md REQ-6 VALUE, the original semantics,
-    /// UNCHANGED) and the verbatim source `raw` (separators included — ast.md
+    /// An integer literal carrying both the numeric `value` (with `_`
+    /// separators stripped, ast.md REQ-6 VALUE, the original semantics
+    /// unchanged) and the verbatim source `raw` (separators included, ast.md
     /// REQ-6 RAW, #37). `1_000_000` parses to `{ value: 1000000, raw:
-    /// "1_000_000" }`. CRITICAL: lowering/mutation/vacuity consume `value`, NOT
+    /// "1_000_000" }`. Lowering/mutation/vacuity consume `value`, not
     /// `raw` (no golden churn); `raw` is AST-fidelity / round-trip only.
     IntLit {
         value: u128,
@@ -560,8 +560,8 @@ pub enum Expr {
     },
     /// A unary prefix application `!EXPR` (ast.md REQ-10, #92). The single
     /// `UnaryOp::Not` whose meaning is per the operand type (logical-not on
-    /// `bool`, bitwise-not on an integer) — resolved downstream by Verus's
-    /// type-directed `!`, NOT by a syntactic split (§2.3). Prefix `!` binds tighter
+    /// `bool`, bitwise-not on an integer), resolved downstream by Verus's
+    /// type-directed `!`, not by a syntactic split (§2.3). Prefix `!` binds tighter
     /// than every binary, so `!a & b` is `(!a) & b`.
     Unary {
         op: UnaryOp,
@@ -584,7 +584,7 @@ pub enum Expr {
     /// `Account { balance: … }` or a struct-shaped enum variant. The `path` is
     /// the (possibly `::`-segmented) type/variant name; `fields` are the
     /// `name: value` initializers in source order. A unit/tuple variant is
-    /// constructed via the existing `Path`/`Call` nodes (REQ-2) — only the
+    /// constructed via the existing `Path`/`Call` nodes (REQ-2); only the
     /// brace-initializer form is new.
     StructLit {
         path: Vec<Ident>,
@@ -601,38 +601,38 @@ pub enum Expr {
     },
     /// A dereference of a boxed value `*EXPR` (`.design/basis/01-adts.md` REQ-3,
     /// the recursive call `sum_list(*t)`). A new unary node (no existing node
-    /// fits — `Ref` is its inverse); its SEMANTICS (the `Box` deref Verus reads
+    /// fits; `Ref` is its inverse); its semantics (the `Box` deref Verus reads
     /// transparently with `*`) are stage 1c. Surface-only here.
     Deref(Box<Expr>),
     /// A string literal in expression position `"hello"`
     /// (`.design/basis/07-strings.md` REQ-1): the decoded literal text, mirroring
     /// the value-carrying [`Expr::IntLit`] / [`Expr::BoolLit`] literal precedent.
-    /// The literal LEXES today (`TokKind::Str(String)` in `lexer.rs`, consumed by
+    /// The literal lexes today (`TokKind::Str(String)` in `lexer.rs`, consumed by
     /// `parse_slag`/`parse_attribute` for `#[slag]`/`#[boundary]` field values);
     /// this node is the addition of accepting it as an `Expr` (`parse_primary`).
     /// A `String` literal lowers to an owned `TString` materialized by pushing
-    /// each UTF-8 byte (the char model is `u8` for v1 — stage 7c, `lower.rs`); it
-    /// is a CONSTRUCTING op carrying `fx alloc`.
+    /// each UTF-8 byte (the char model is `u8` for v1, stage 7c, `lower.rs`); it
+    /// is a constructing op carrying `fx alloc`.
     StrLit(String),
     /// An n-tuple construction `(a, b, …)` of arity ≥ 2
     /// (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7, C9-B): the value form
     /// of [`Type::Tuple`] (`swap`'s body `(b, a)`). The parser distinguishes arity
-    /// by the comma — `(e)` is a parenthesised grouping (arity 1, the inner expr),
+    /// by the comma: `(e)` is a parenthesised grouping (arity 1, the inner expr),
     /// `(a, b, …)` is `Expr::Tuple` (arity ≥ 2); the empty `()` is not a value form
-    /// (v1 surfaces unit only as a return TYPE). Lowers to the Verus-native tuple
-    /// `(<e0>, <e1>, …)`. Its effects are the UNION of its elements' effects (a
+    /// (v1 surfaces unit only as a return type). Lowers to the Verus-native tuple
+    /// `(<e0>, <e1>, …)`. Its effects are the union of its elements' effects (a
     /// tuple construction is otherwise pure).
     Tuple(Vec<Expr>),
     /// A tuple projection `e.0`/`e.1`/… (`.design/basis/10-recursion-tuples.md`
-    /// REQ-5/REQ-8, C9-B; OQ-1 RESOLVED → a DEDICATED node, NOT an overloaded
+    /// REQ-5/REQ-8, C9-B; OQ-1 resolved to a dedicated node, not an overloaded
     /// [`Expr::Field`] with a string `"0"` name: a tuple index is a `usize`, and a
     /// dedicated node keeps the projection lowering distinct from struct/method
     /// `.field`). The v1 §2.3 "one way" tuple access (destructuring is deferred).
     /// Parsed in the postfix `.` ladder (`parse_postfix`) when the token after `.`
-    /// is a numeric literal. Works in BOTH exec and spec/contract position — an
-    /// `ens result.0 == b` is exactly the GROUNDED Verus form `r.0 == b`. Lowers to
-    /// the Verus-native projection `<recv>.<index>`. A projection is PURE (its
-    /// effects are exactly its receiver's).
+    /// is a numeric literal. Works in both exec and spec/contract position: an
+    /// `ens result.0 == b` is the GROUNDED Verus form `r.0 == b`. Lowers to
+    /// the Verus-native projection `<recv>.<index>`. A projection is pure (its
+    /// effects are its receiver's).
     TupleProj {
         receiver: Box<Expr>,
         index: usize,
@@ -663,11 +663,11 @@ pub enum Pattern {
     },
     /// An or-pattern `p0 | p1 | …` (`.design/basis/11-ergonomics.md` REQ-4): a
     /// `|`-joined alternation matching any one of its alternatives, lowered to the
-    /// Verus-native or-pattern `p0 | p1 | … => body`. **Exhaustiveness (REQ-4,
-    /// GROUNDED):** an `Or` covers EXACTLY the union of its alternatives' covered
-    /// cases — `Some(_) | None` is exhaustive over `Option`, the validator counts
+    /// Verus-native or-pattern `p0 | p1 | … => body`. Exhaustiveness (REQ-4,
+    /// GROUNDED): an `Or` covers the union of its alternatives' covered
+    /// cases. `Some(_) | None` is exhaustive over `Option`, the validator counts
     /// each alternative toward the covered set. v0.1 admits literal/variant
-    /// alternatives that bind the SAME set of names (OQ-3 — payload-free
+    /// alternatives that bind the same set of names (OQ-3: payload-free
     /// alternatives sidestep Verus's same-bindings rule). Never nested in v0.1
     /// (`(a | b) | c` flattens at the parser).
     Or(Vec<Pattern>),
@@ -690,7 +690,7 @@ pub enum PrimType {
 }
 
 /// A type (ast.md REQ-7). `&[u32]` is `Ref` of `Slice`; `Option<usize>` is a
-/// single-arg `Generic`. `Unit` is the `()` type — the ONE sanctioned unit
+/// single-arg `Generic`. `Unit` is the `()` type, the one sanctioned unit
 /// spelling, written explicitly in a return position (surface-grammar.md
 /// decision 4; §4.4 "All conversions explicit").
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -712,72 +712,72 @@ pub enum Type {
     /// occurrence `Box<List>`'s inner `List` are all `Type::Named`. Without this
     /// node a user type could not appear in any type position (no ADT program
     /// would parse); it is the type-side complement of the `struct`/`enum` items.
-    /// Distinct from `Generic` (which REQUIRES `<arg>`, e.g. `Option<usize>`).
+    /// Distinct from `Generic` (which requires `<arg>`, e.g. `Option<usize>`).
     Named(Ident),
     /// The heap-indirection primitive `Box<T>` (`.design/basis/01-adts.md`
-    /// REQ-3, OQ-1 RESOLVED: a dedicated first-class `Type` node, NOT a
+    /// REQ-3, OQ-1 resolved: a dedicated first-class `Type` node, not a
     /// `Generic { name: "Box", .. }`, so the effect-subsumption check keys on the
     /// node kind rather than a string match). The recursive occurrence of a
     /// recursive `enum` (`Cons(u64, Box<List>)`); constructing a boxed value
     /// carries `fx alloc` (stage 1c).
     Box(Box<Type>),
     /// The bounded growable-collection primitive `Vec<T>`
-    /// (`.design/basis/04-collections.md` REQ-1, OQ-2 RESOLVED: a dedicated
-    /// first-class node mirroring [`Type::Box`], NOT a `Generic { name: "Vec",
+    /// (`.design/basis/04-collections.md` REQ-1, OQ-2 resolved: a dedicated
+    /// first-class node mirroring [`Type::Box`], not a `Generic { name: "Vec",
     /// .. }`, so the lowerer keys the vstd-`Vec` wrapper + capacity invariant +
-    /// `fx alloc` emission on the node KIND rather than a string-name match). A
-    /// `Vec<T>` is the GROWTH generalization of the read-only [`Type::Slice`]: a
+    /// `fx alloc` emission on the node kind rather than a string-name match). A
+    /// `Vec<T>` is the growth generalization of the read-only [`Type::Slice`]: a
     /// `&[T]` is a borrowed read-only view, a `Vec<T>` owns a growable backing run
     /// whose `Seq` view is `v@`. Its bounded operations `push`/`pop`/`get`/`len`
-    /// are ordinary [`Expr::MethodCall`]s (no new expression node — the one call
+    /// are ordinary [`Expr::MethodCall`]s (no new expression node, the one call
     /// syntax, §4.4). Constructing / `push`-ing a `Vec` allocates, so the fn
     /// carries `fx alloc` (the Stage-1 [`Effect::Alloc`] heap, generalized; REQ-5).
     Vec(Box<Type>),
     /// The bounded owned text primitive `String` (`.design/basis/07-strings.md`
-    /// REQ-2, OQ-3 RESOLVED: a dedicated NULLARY node — no element-type
+    /// REQ-2, OQ-3 resolved: a dedicated nullary node with no element-type
     /// indirection, unlike [`Type::Vec(Box<Type>)`], because the element type is
-    /// FIXED to `u8` (the char model is bytes for v1). Mirrors the [`Type::Vec`]/
+    /// fixed to `u8` (the char model is bytes for v1). Mirrors the [`Type::Vec`]/
     /// [`Type::Box`] dedicated-node decision so the lowerer keys the `TString`
-    /// wrapper + capacity invariant + `fx alloc` emission on the NODE KIND rather
+    /// wrapper + capacity invariant + `fx alloc` emission on the node kind rather
     /// than a string-name match. A `String` is a bounded run of `u8` bytes, the
-    /// EXACT shape of the verified bounded [`Type::Vec`] over `u8`. Its operations
+    /// shape of the verified bounded [`Type::Vec`] over `u8`. Its operations
     /// `len`/`byte_at`/`slice`/`concat` are ordinary [`Expr::MethodCall`]s and
-    /// `==`/`+` are [`Expr::Binary`] (no new expression node — the one call
+    /// `==`/`+` are [`Expr::Binary`] (no new expression node, the one call
     /// syntax, §4.4). The borrowed `str`-view is `Ref { inner: String }` (the same
     /// way `&[T]` is `Ref` of `Slice`). Constructing / concatenating a `String`
     /// allocates, so the fn carries `fx alloc` (the Stage-1 [`Effect::Alloc`]).
     String,
     /// The built-in optional primitive `Option<T>`
-    /// (`.design/basis/09-option-result.md` REQ-1, OQ-1 RESOLVED: a dedicated
-    /// `Type::Option(Box<Type>)` node, NOT a `Generic { name: "Option", .. }`,
-    /// so the lowerer/validator key `Option` on the NODE KIND — mirroring the
+    /// (`.design/basis/09-option-result.md` REQ-1, OQ-1 resolved: a dedicated
+    /// `Type::Option(Box<Type>)` node, not a `Generic { name: "Option", .. }`,
+    /// so the lowerer/validator key `Option` on the node kind, mirroring the
     /// [`Type::Vec`]/[`Type::Box`]/[`Type::String`] dedicated-node precedent. This
-    /// makes `Option` STOP being a string-named `Generic` (the OQ-1 ripple: every
+    /// makes `Option` stop being a string-named `Generic` (the OQ-1 ripple: every
     /// `Generic { name: "Option", .. }` reader is updated to read this node). Its
-    /// constructors `Some(v)`/`None` reuse the EXISTING [`Expr::Call`]/[`Expr::Path`]
+    /// constructors `Some(v)`/`None` reuse the existing [`Expr::Call`]/[`Expr::Path`]
     /// nodes (no reshape); `match`/`is` reuse [`Expr::Match`]/[`Expr::Is`]. Lowers
     /// to the Verus-native `Option<T>` (the `lower_type` `Option` arm).
     Option(Box<Type>),
     /// The built-in fallible primitive `Result<T, E>`
-    /// (`.design/basis/09-option-result.md` REQ-2, OQ-1 RESOLVED: a dedicated
-    /// TWO-type-argument node — the load-bearing AST/parser change of C7, the FIRST
-    /// two-arg type in the grammar). The single-arg [`Type::Generic`] cannot parse
+    /// (`.design/basis/09-option-result.md` REQ-2, OQ-1 resolved: a dedicated
+    /// two-type-argument node, the first two-arg type in the grammar). The
+    /// single-arg [`Type::Generic`] cannot parse
     /// `Result<u64, ParseErr>` (it dies at the comma). `Ok(v)`/`Err(e)` reuse the
-    /// EXISTING [`Expr::Call`] node; `match`/`is` reuse [`Expr::Match`]/[`Expr::Is`].
+    /// existing [`Expr::Call`] node; `match`/`is` reuse [`Expr::Match`]/[`Expr::Is`].
     /// Lowers to the Verus-native `Result<T, E>` (the `lower_type` `Result` arm).
     /// The `E` parameter is an ordinary user error enum (a [`Type::Named`]).
     Result(Box<Type>, Box<Type>),
     /// The built-in bounded verified key-value primitive `Map<K, V>`
-    /// (`.design/basis/13-map.md` REQ-1, C12: the SECOND two-type-argument node,
-    /// mirroring [`Type::Result`] — a dedicated node, NOT a generalized multi-arg
+    /// (`.design/basis/13-map.md` REQ-1, C12: the second two-type-argument node,
+    /// mirroring [`Type::Result`]: a dedicated node, not a generalized multi-arg
     /// `Generic`, so the lowerer/validator key the `TMap` Vec-of-pairs wrapper +
-    /// the spec abstraction view + the capacity/no-OOB contracts on the node KIND.
+    /// the spec abstraction view + the capacity/no-OOB contracts on the node kind.
     /// The single-arg [`Type::Generic`] cannot parse `Map<u64, u64>` (it dies at
-    /// the comma, the C7 finding). The first arg is the KEY type, the second the
-    /// VALUE type. Its `insert`/`get`/`contains_key`/`len` ops are ordinary
-    /// [`Expr::MethodCall`]s (no new expression node — the one call syntax, §4.4);
-    /// `get` returns the C7 [`Type::Option`] (the no-OOB / handled-or-loud
-    /// accessor, absent key → `None`). Lowers to a `TMap<K,V>` newtype over a
+    /// the comma, the C7 finding). The first arg is the key type, the second the
+    /// value type. Its `insert`/`get`/`contains_key`/`len` ops are ordinary
+    /// [`Expr::MethodCall`]s (no new expression node, the one call syntax, §4.4);
+    /// `get` returns the C7 [`Type::Option`] (the no-OOB accessor,
+    /// absent key → `None`). Lowers to a `TMap<K,V>` newtype over a
     /// `vstd::vec::Vec<(K, V)>`-of-pairs backing + a spec abstraction view
     /// (`spec_contains_key`/`spec_dom`); constructing / `insert`-ing a `Map`
     /// allocates, so the fn carries `fx alloc` (the Stage-1 [`Effect::Alloc`]).
@@ -785,12 +785,12 @@ pub enum Type {
     /// An n-tuple type `(T, U, …)` of arity ≥ 2
     /// (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7, C9-B). The
     /// multiple-return / pair primitive: `fn swap(a, b: u64) -> (u64, u64)`. The
-    /// parser distinguishes arity by the comma — `()` stays [`Type::Unit`] (arity
+    /// parser distinguishes arity by the comma: `()` stays [`Type::Unit`] (arity
     /// 0), `(T)` is a parenthesised grouping (arity 1, the inner type), and
     /// `(T, U, …)` is `Type::Tuple` (arity ≥ 2). Lowers to the Verus-native tuple
-    /// type `(<t0>, <t1>, …)` (the `lower_type` `Tuple` arm) — Verus tuples are
+    /// type `(<t0>, <t1>, …)` (the `lower_type` `Tuple` arm); Verus tuples are
     /// native and GROUNDED at arity 2 and 3. Its elements are accessed by the
     /// projection [`Expr::TupleProj`] (`.0`/`.1`/…), the v1 §2.3 "one way" tuple
-    /// access (destructuring is deferred — REQ-9/OQ-2).
+    /// access (destructuring is deferred, REQ-9/OQ-2).
     Tuple(Vec<Type>),
 }

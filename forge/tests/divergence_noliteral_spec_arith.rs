@@ -1,30 +1,30 @@
 //! Pinning regression for crosslink #238 (critic re-audit of the #237 fix,
 //! commit 39cae0bc): the #237 result-narrowing gate
 //! (`thermite-lower/src/lower.rs` `block_result_is_int_literal_arith`) requires
-//! the result-position arithmetic to MENTION AN INTEGER LITERAL
-//! (`expr_mentions_int_literal`). That premise is wrong: Verus types ALL spec
+//! the result-position arithmetic to mention an integer literal
+//! (`expr_mentions_int_literal`). That premise is wrong: Verus types all spec
 //! arithmetic as the unbounded `int` — `n + n` over `u64` params is `int`-typed
-//! exactly as `1 + count(n - 1)` is — so a literal-free arithmetic result on a
+//! as `1 + count(n - 1)` is — so a literal-free arithmetic result on a
 //! sized-int return is still E0308 (`expected u64, found int`) → L0 on
-//! legitimate frozen-subset source. Fail-CLOSED (no false certification), the
-//! SAME completeness-gap class #237 itself was filed as.
+//! legitimate frozen-subset source. Fail-closed (no false certification), the
+//! same completeness-gap class #237 itself was filed as.
 //!
 //! Live repro (verus 2026, this re-audit): `spec fn double(n: u64) -> u64 dec n
 //! { n + n }` → forge check L0, diagnostic `error[E0308]: ... 7 | n + n ^^^^^
 //! expected `u64`, found `int``.
 //!
-//! THE AUTHORITY (R-CHAR-3): the expected level L3 is the design contract —
+//! The authority (R-CHAR-3): the expected level L3 is the design contract —
 //! `thermite-design.md` §6 ladder semantics (L3 == a fully-discharged real-verus
 //! proof, reachable for legitimate frozen-subset source) and
 //! `.design/lower/verus-lowering.md` REQ-5 (spec-context lowering must emit
-//! Verus that typechecks) — NOT copied from the toolchain's own output.
+//! Verus that typechecks) — not copied from the toolchain's own output.
 //!
 //! `#[ignore]`d per the #233-chain critic convention: blocker #238 tracks the
 //! fix; un-ignore when the narrowing gate covers literal-free spec arithmetic.
 //!
-//! The verus check SKIPS LOUDLY when verus is absent (the `editor_runs.rs`
-//! precedent) — never panic on a missing solver (R-CODE-4). `tests/` is not
-//! anti-pattern-gated (R-APG-2).
+//! The verus check skips with a logged note when verus is absent (the
+//! `editor_runs.rs` precedent); no panic on a missing solver (R-CODE-4). `tests/`
+//! is not anti-pattern-gated (R-APG-2).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -36,7 +36,7 @@ fn forge_bin() -> PathBuf {
 }
 
 /// `true` iff verus is reachable (mirrors `divergence_intlit_dec_spec_fn.rs`).
-/// SKIP LOUDLY otherwise — a missing solver is never a test failure (R-CODE-4).
+/// Skip with a logged note otherwise; a missing solver is not a test failure (R-CODE-4).
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -91,7 +91,7 @@ fn level_of(certs: &[Value], item: &str) -> String {
 
 /// Literal-free result-position arithmetic over a sized-int return — Verus
 /// spec arithmetic is `int`-typed with or without a literal operand, so this
-/// needs the SAME result-narrowing as #237's `1 + count(n - 1)`. The #238 gap:
+/// needs the same result-narrowing as #237's `1 + count(n - 1)`. The #238 gap:
 /// `expr_mentions_int_literal` finds no literal, the gate stays cold, the bare
 /// `int`-typed body dies E0308 → L0.
 const DOUBLE_PROGRAM: &str = "\

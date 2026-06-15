@@ -1,46 +1,46 @@
-//! `forge/tests/concurrency.rs` — the MULTI-AGENT FORGE SESSION guarantee suite
+//! `forge/tests/concurrency.rs` — the multi-agent Forge session guarantee suite
 //! (`.design/forge/multi-agent.md` AC-1..AC-7; `thermite-design.md` §13 v0.5,
 //! §5.3 locality, §9 composition, §1.5 blast-radius). This is the #20 deliverable:
-//! the multi-agent capability is EMERGENT from the already-shipping concurrency-safe
+//! the multi-agent capability is emergent from the already-shipping concurrency-safe
 //! primitives — `cache::store`'s atomic temp-sibling + `rename` publish (#8) and
-//! `cache::load`'s torn/inconsistent → MISS degrade (#49) — so #20 chiefly ASSERTS
-//! and TESTS the guarantee rather than building new machinery.
+//! `cache::load`'s torn/inconsistent → MISS degrade (#49) — so #20 chiefly asserts
+//! and tests the guarantee rather than building new machinery.
 //!
 //! A "multi-agent Forge session" (the doc's REQ-6) is defined as N independent
-//! `forge check` invocations over ONE shared `FORGE_CACHE_DIR`, with NO central
-//! coordinator. The filesystem cache + content-addressed per-item locality IS the
-//! coordination. This suite spawns concurrent `forge check` PROCESSES
+//! `forge check` invocations over one shared `FORGE_CACHE_DIR`, with no central
+//! coordinator. The filesystem cache + content-addressed per-item locality is the
+//! coordination. This suite spawns concurrent `forge check` processes
 //! (`Command::new(env!("CARGO_BIN_EXE_forge"))` via `std::thread`) over a shared
 //! cache and proves:
 //!
 //! - AC-1/AC-7: N concurrent processes → every cert matches its golden under the
 //!   oracle subset, the cache dir is uncorrupted (every `<key>.json` parses), and
 //!   the concurrent cert set equals a serial run's (determinism, R-CODE-5).
-//! - AC-2: concurrent checks of the SAME item converge to one consistent entry
+//! - AC-2: concurrent checks of the same item converge to one consistent entry
 //!   (atomic `rename`), with zero leftover `.tmp` siblings.
-//! - AC-3/AC-6: concurrent checks of DISTINCT items never clobber each other —
+//! - AC-3/AC-6: concurrent checks of distinct items never clobber each other —
 //!   each key's entry is present and loadable, no cross-eviction.
-//! - AC-5: editing item A does NOT move item B's content-addressed key (the
-//!   `<key>.json` filename) — UNLESS B's contract references A (the §5.3 / §9
+//! - AC-5: editing item A does not move item B's content-addressed key (the
+//!   `<key>.json` filename) — unless B's contract references A (the §5.3 / §9
 //!   exception, demonstrated as a negative control via a shared `spec fn`).
-//! - AC-4: a TORN/garbage `<key>.json` degrades `cache::load` to a MISS — a later
+//! - AC-4: a torn/garbage `<key>.json` degrades `cache::load` to a MISS — a later
 //!   `forge check` re-verifies to the correct verdict, never a crash or wrong cert.
 //!
-//! Because `forge` is a BIN-ONLY crate (no `lib.rs`; `cache::store`/`load` are not
+//! Because `forge` is a bin-only crate (no `lib.rs`; `cache::store`/`load` are not
 //! reachable from an integration test), the thread-level cache invariants (AC-2,
-//! AC-3, AC-6) are driven through concurrent `forge check` PROCESSES over the same
-//! / distinct items and verified by INSPECTING the shared cache directory on disk
+//! AC-3, AC-6) are driven through concurrent `forge check` processes over the same
+//! / distinct items and verified by inspecting the shared cache directory on disk
 //! (the `<key>.json` content-address filenames + their parseability) — the doc's
 //! sanctioned fallback ("drive this via concurrent `forge check` processes ...
 //! prefer the process-level demonstration if the API isn't test-reachable").
 //!
-//! Verus-needing tests SKIP LOUDLY when verus is absent (mirroring
+//! Verus-needing tests skip with a logged reason when verus is absent (mirroring
 //! `cache_conformance.rs`): the L3 verdict the guarantee rests on needs the solver.
-//! The fault-injection and locality SHAPES that do not need a real proof still run
+//! The fault-injection and locality shapes that do not need a real proof still run
 //! their non-verus halves.
 //!
 //! Expected verdicts trace to `conformance/sum.cert.json` and the `binary_search`
-//! oracle (`thermite-design.md` §13 — L3, pure), NEVER copied from forge's own
+//! oracle (`thermite-design.md` §13 — L3, pure), never copied from forge's own
 //! output (`goal.md` R-CHAR-3). `tests/` is not anti-pattern-gated, so
 //! `unwrap`/`expect` are fine here.
 
@@ -65,8 +65,8 @@ fn forge_bin() -> PathBuf {
 }
 
 /// `true` iff verus can be located (`VERUS_BIN`, then PATH, then
-/// `~/.local/bin/verus`) — mirrors `cache_conformance.rs`. SKIP LOUDLY otherwise:
-/// the L3 verdict the multi-agent guarantee rests on needs the solver.
+/// `~/.local/bin/verus`) — mirrors `cache_conformance.rs`. Skips with a logged
+/// reason otherwise: the L3 verdict the multi-agent guarantee rests on needs the solver.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -100,7 +100,7 @@ fn unique_cache_dir(tag: &str) -> PathBuf {
     ))
 }
 
-/// A unique `.th` fixture path with the given CONTENTS so its cache key cannot
+/// A unique `.th` fixture path with the given contents so its cache key cannot
 /// collide with another test's item (test isolation).
 fn write_fixture(tag: &str, body: &str) -> PathBuf {
     static C: AtomicU64 = AtomicU64::new(0);
@@ -115,7 +115,7 @@ fn write_fixture(tag: &str, body: &str) -> PathBuf {
     path
 }
 
-/// The conformance corpus directory (the EXTERNAL oracle, `goal.md` model (B)).
+/// The conformance corpus directory (the external oracle, `goal.md` model (B)).
 fn corpus_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -159,10 +159,10 @@ fn find_cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no certificate for item `{item}` in {certs:?}"))
 }
 
-/// The DETERMINISTIC oracle subset of a cert as a comparable tuple — the §5.3 /
+/// The deterministic oracle subset of a cert as a comparable tuple — the §5.3 /
 /// `manifest::Certificate::oracle_subset` fields that a HIT and a fresh verify
-/// (and a concurrent vs a serial run) MUST share: `item`, `level`, `effects`,
-/// `slag`, `boundary`. EXCLUDES `cached` (provenance) and `solver_time_ms`
+/// (and a concurrent vs a serial run) must share: `item`, `level`, `effects`,
+/// `slag`, `boundary`. Excludes `cached` (provenance) and `solver_time_ms`
 /// (wall-clock) — the multi-agent guarantee is that these oracle fields are
 /// interleaving-independent (REQ-7, AC-7).
 fn oracle_subset(cert: &Value) -> (Value, Value, Value, Value, Value) {
@@ -184,8 +184,8 @@ fn verifiable_program(name: &str) -> String {
     )
 }
 
-/// Enumerate the `<key>.json` cache ENTRIES (the content-address files) in
-/// `cache_dir`, parsing each as a `serde_json::Value`. PANICS (failing the test)
+/// Enumerate the `<key>.json` cache entries (the content-address files) in
+/// `cache_dir`, parsing each as a `serde_json::Value`. Panics (failing the test)
 /// if any entry is unparseable — that is the "cache is not corrupted / no torn
 /// entry" assertion (AC-1). Returns (key-filename → parsed cert) and is the
 /// process-level window into the cache state the bin-only crate hides.
@@ -215,9 +215,9 @@ fn parse_all_entries(cache_dir: &Path) -> HashMap<String, Value> {
 }
 
 /// The set of `<key>.json` content-address filenames present in `cache_dir`,
-/// sorted for a stable comparison. The MULTI-AGENT determinism observable
-/// (AC-7 / REQ-7): the on-disk content-address SET produced by N concurrent
-/// agents must EQUAL the set a serial run produces — interleaving cannot add,
+/// sorted for a stable comparison. The multi-agent determinism observable
+/// (AC-7 / REQ-7): the on-disk content-address set produced by N concurrent
+/// agents must equal the set a serial run produces — interleaving cannot add,
 /// drop, or move a key (every verdict, including each mutation-scoring (#12) /
 /// strengthening-probe (#14) sub-entry, is a pure function of its lowered input).
 fn entry_key_set(cache_dir: &Path) -> Vec<String> {
@@ -226,7 +226,7 @@ fn entry_key_set(cache_dir: &Path) -> Vec<String> {
     keys
 }
 
-/// Count leftover `.tmp` siblings in the cache dir — there must be ZERO after all
+/// Count leftover `.tmp` siblings in the cache dir — there must be zero after all
 /// stores settle (a `rename` consumes its temp; an orphan would signal a failed /
 /// non-atomic publish). The atomic-publish observable (AC-2).
 fn count_tmp_siblings(cache_dir: &Path) -> usize {
@@ -244,22 +244,22 @@ fn count_tmp_siblings(cache_dir: &Path) -> usize {
         .count()
 }
 
-/// The corpus items whose golden L3 verdict is the EXTERNAL oracle for the
+/// The corpus items whose golden L3 verdict is the external oracle for the
 /// multi-agent guarantee: `sum` (`conformance/sum.cert.json`: L3, pure) and
 /// `binary_search` (the `binary_search` oracle: L3, pure — `thermite-design.md` §13).
 const CORPUS_FILES: &[&str] = &["sum.th", "binary_search.th"];
 const CORPUS_ORACLE: &[(&str, &str)] = &[("sum", "L3"), ("binary_search", "L3")];
 
 // ====================================================================
-// AC-1 + AC-7 — PROCESS-LEVEL: N concurrent agents → correct certs,
+// AC-1 + AC-7 — process-level: N concurrent agents → correct certs,
 // uncorrupted cache, concurrent == serial.
 // ====================================================================
 
-/// Spawn `N_AGENTS` CONCURRENT `forge check` PROCESSES over the corpus
-/// (`sum.th`, `binary_search.th`) sharing ONE `FORGE_CACHE_DIR`. After all join:
+/// Spawn `N_AGENTS` concurrent `forge check` processes over the corpus
+/// (`sum.th`, `binary_search.th`) sharing one `FORGE_CACHE_DIR`. After all join:
 /// every agent's cert matches the golden under the oracle subset, the cache dir
 /// is uncorrupted (every `<key>.json` parses, no leftover `.tmp`), and the
-/// concurrent cert set equals a single SERIAL run's (determinism, R-CODE-5).
+/// concurrent cert set equals a single serial run's (determinism, R-CODE-5).
 /// This is the multi-agent core (REQ-1, REQ-2, REQ-6, REQ-7; AC-1, AC-7).
 #[test]
 fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
@@ -272,7 +272,7 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
     let corpus = corpus_dir();
     let env = HashMap::new();
 
-    // --- The SERIAL oracle: one run of each corpus file, oracle subset per item. ---
+    // --- The serial oracle: one run of each corpus file, oracle subset per item. ---
     // (A separate cache dir so the serial run does not pre-warm the concurrent one.)
     let serial_cache = unique_cache_dir("n_agents_serial");
     let _ = std::fs::remove_dir_all(&serial_cache);
@@ -285,7 +285,7 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
             serial.insert(item, oracle_subset(cert));
         }
     }
-    // Cross-check the serial oracle against the EXTERNAL golden (R-CHAR-3): the
+    // Cross-check the serial oracle against the external golden (R-CHAR-3): the
     // expected level comes from `conformance/sum.cert.json` / the §13 oracle, not
     // from forge's own output.
     for (item, level) in CORPUS_ORACLE {
@@ -300,10 +300,10 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
         assert_eq!(got.2, serde_json::json!(["pure"]), "`{item}` is pure");
     }
 
-    // --- N concurrent agents over the SHARED cache. ---
+    // --- N concurrent agents over the shared cache. ---
     // Each agent checks the whole corpus; with N=8 and 2 files that is 16
-    // concurrent forge processes hammering one cache dir. Threads only SPAWN +
-    // JOIN the processes (the doc's "via `std::thread` spawning the processes").
+    // concurrent forge processes hammering one cache dir. Threads only spawn +
+    // join the processes (the doc's "via `std::thread` spawning the processes").
     let mut handles = Vec::with_capacity(N_AGENTS);
     for agent in 0..N_AGENTS {
         let cache_dir = cache_dir.clone();
@@ -363,10 +363,10 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
     );
 
     // AC-7 (cache state determinism): the concurrent agents' shared cache holds
-    // EXACTLY the content-address key set a serial run produces — interleaving
-    // adds, drops, or moves no key. (The set INCLUDES the mutation-scoring (#12)
+    // exactly the content-address key set a serial run produces — interleaving
+    // adds, drops, or moves no key. (The set includes the mutation-scoring (#12)
     // and strengthening-probe (#14) sub-entries each item legitimately stores
-    // under its own content address; the point is the SET is interleaving-stable.)
+    // under its own content address; the point is the set is interleaving-stable.)
     assert_eq!(
         entry_key_set(&cache_dir),
         entry_key_set(&serial_cache),
@@ -378,23 +378,23 @@ fn n_concurrent_agents_produce_correct_uncorrupted_certs() {
 }
 
 // ====================================================================
-// AC-2 — SAME-KEY CONVERGENCE: concurrent checks of the SAME item →
+// AC-2 — same-key convergence: concurrent checks of the same item →
 // one consistent entry, no torn file, zero leftover `.tmp`.
 // ====================================================================
 
-/// `N_AGENTS` concurrent `forge check` processes over the SAME single-fn item
+/// `N_AGENTS` concurrent `forge check` processes over the same single-fn item
 /// sharing one cache dir. Because the verdict is a pure function of the lowered
 /// item (§5.3, R-CODE-5), every writer serializes byte-equal cert bytes; the
-/// atomic `rename` is all-or-nothing, so each `<key>.json` CONVERGES to a single
+/// atomic `rename` is all-or-nothing, so each `<key>.json` converges to a single
 /// consistent entry (no torn merge — a concurrent writer of the same key overwrote
 /// with byte-equal bytes), with zero leftover `.tmp` siblings, and every agent's
 /// reported verdict is the same L3 (REQ-1, REQ-3; AC-2).
 ///
-/// NOTE on entry count: a single-fn item legitimately yields MORE than one
-/// content-address entry — the real fn PLUS one per mutation-scoring (#12) mutant
+/// Note on entry count: a single-fn item legitimately yields more than one
+/// content-address entry — the real fn plus one per mutation-scoring (#12) mutant
 /// (and per strengthening-probe (#14) candidate). The convergence guarantee is
-/// therefore "the concurrent cache key SET equals the serial run's, every entry
-/// consistent" — NOT a literal count of one. Asserting one entry would be wrong
+/// therefore "the concurrent cache key set equals the serial run's, every entry
+/// consistent" — not a literal count of one. Asserting one entry would be wrong
 /// against the shipped #12/#14 pipeline (verified empirically: `verifiable_program`
 /// produces the fn + its mutant deterministically).
 #[test]
@@ -407,11 +407,11 @@ fn concurrent_same_item_converges_to_a_consistent_cache() {
     let serial_cache = unique_cache_dir("same_key_serial");
     let _ = std::fs::remove_dir_all(&cache_dir);
     let _ = std::fs::remove_dir_all(&serial_cache);
-    // ONE shared fixture file → one lowered sub-program → one PRIMARY content
+    // One shared fixture file → one lowered sub-program → one primary content
     // address (plus its deterministic mutant sub-entries).
     let fixture = write_fixture("same_key", &verifiable_program("same_key_fn"));
 
-    // The SERIAL baseline cache state (one run into its own dir).
+    // The serial baseline cache state (one run into its own dir).
     let (sc, _scerts) = run_check(&fixture, &serial_cache, &HashMap::new());
     assert_eq!(sc, Some(0), "serial same-item run certifies L3");
 
@@ -440,7 +440,7 @@ fn concurrent_same_item_converges_to_a_consistent_cache() {
     assert_eq!(first.1, Value::from("L3"), "the converged verdict is L3");
 
     // Convergence: every entry is a consistent (parseable) cert, the concurrent
-    // key SET equals the serial run's (atomic rename — no torn merge, no spurious
+    // key set equals the serial run's (atomic rename — no torn merge, no spurious
     // key from a half-written file), and zero `.tmp` siblings survived.
     assert_eq!(
         entry_key_set(&cache_dir),
@@ -459,19 +459,19 @@ fn concurrent_same_item_converges_to_a_consistent_cache() {
 }
 
 // ====================================================================
-// AC-3 + AC-6 — DIFFERENT-KEY NON-INTERFERENCE: concurrent checks of
-// DISTINCT items → N disjoint entries, no clobber, no cross-eviction.
+// AC-3 + AC-6 — different-key non-interference: concurrent checks of
+// distinct items → N disjoint entries, no clobber, no cross-eviction.
 // ====================================================================
 
-/// `N_AGENTS` concurrent `forge check` processes each over a DISTINCT single-fn
+/// `N_AGENTS` concurrent `forge check` processes each over a distinct single-fn
 /// item (distinct lowered source → distinct content-address key) sharing one
-/// cache dir. Afterward every item's PRIMARY (real-fn) cert is present and
+/// cache dir. Afterward every item's primary (real-fn) cert is present and
 /// parseable, no entry clobbered another, and re-checking each item is a HIT — so
 /// no item's entry was evicted by its N-1 concurrent neighbors (REQ-4; AC-3, AC-6
 /// — different-key non-interference / no cross-eviction).
 ///
-/// (Each item legitimately contributes its real-fn entry PLUS its #12 mutant /
-/// #14 candidate sub-entries, so the dir holds MORE than `N_AGENTS` files; the
+/// (Each item legitimately contributes its real-fn entry plus its #12 mutant /
+/// #14 candidate sub-entries, so the dir holds more than `N_AGENTS` files; the
 /// guarantee is "every distinct item's entry is present, loadable, and survives"
 /// — non-interference — not a literal `N_AGENTS` count.)
 #[test]
@@ -509,8 +509,8 @@ fn concurrent_distinct_items_do_not_interfere() {
     }
 
     // AC-3: every entry on disk is a self-consistent cert (a torn/half-written
-    // entry would PANIC inside `parse_all_entries`), and there are at least N of
-    // them (one PRIMARY per distinct item, plus its mutant sub-entries), with no
+    // entry would panic inside `parse_all_entries`), and there are at least N of
+    // them (one primary per distinct item, plus its mutant sub-entries), with no
     // leftover `.tmp`.
     let entries = parse_all_entries(&cache_dir);
     assert!(
@@ -520,7 +520,7 @@ fn concurrent_distinct_items_do_not_interfere() {
     );
     assert_eq!(count_tmp_siblings(&cache_dir), 0, "no leftover `.tmp`");
 
-    // AC-6 (no cross-eviction): re-check EACH item SERIALLY — each is a HIT, so
+    // AC-6 (no cross-eviction): re-check each item serially — each is a HIT, so
     // its entry survived the concurrent storm of its N-1 neighbors' stores; no
     // store clobbered a different key.
     for (name, path) in &fixtures {
@@ -542,19 +542,19 @@ fn concurrent_distinct_items_do_not_interfere() {
 }
 
 // ====================================================================
-// AC-5 — MULTI-AGENT LOCALITY: editing item A does NOT move item B's
-// content-addressed key (no cross-invalidation), UNLESS B references A.
+// AC-5 — multi-agent locality: editing item A does not move item B's
+// content-addressed key (no cross-invalidation), unless B references A.
 // ====================================================================
 
-/// Editing agent A's item does NOT change agent B's content-addressed cache key
+/// Editing agent A's item does not change agent B's content-addressed cache key
 /// (the `<key>.json` filename), so B's cached cert stays a HIT — the §5.3 / §1.5
 /// no-cross-invalidation guarantee for N concurrent agents (REQ-5; AC-5).
 ///
-/// Demonstration WITHOUT reaching the bin-only `cache::cache_key`, via the cache
-/// HIT/MISS BEHAVIOR (which keys on exactly the content address, so it is the
+/// Demonstration without reaching the bin-only `cache::cache_key`, via the cache
+/// HIT/MISS behavior (which keys on exactly the content address, so it is the
 /// robust observable — unaffected by the #12 mutant / #14 strengthening sub-entries
-/// that share an item name): populate a cache dir with the BEFORE file (A + B),
-/// then EDIT A's body and re-check the edited file against the SAME cache dir.
+/// that share an item name): populate a cache dir with the before file (A + B),
+/// then edit A's body and re-check the edited file against the same cache dir.
 /// B is a HIT (its key did not move — A's body is not in B's sub-program) while A
 /// is a MISS (its edited body moved its key) → A re-verifies, B is served.
 #[test]
@@ -563,11 +563,11 @@ fn editing_a_does_not_move_bs_key() {
         eprintln!("SKIP: verus not available — multi-agent locality test needs the solver.");
         return;
     }
-    // A two-item file: B does NOT reference A (independent contracts). Both verify.
+    // A two-item file: B does not reference A (independent contracts). Both verify.
     let before = "\
 fn agent_a(x: u64) -> u64\n  req x < 1000\n  ens result == x\n  fx  pure\n{\n  x\n}\n\n\
 fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == y\n  fx  pure\n{\n  y\n}\n";
-    // A's BODY changed (a real edit by agent A); B is byte-identical.
+    // A's body changed (a real edit by agent A); B is byte-identical.
     let after = "\
 fn agent_a(x: u64) -> u64\n  req x < 2000\n  ens result == x\n  fx  pure\n{\n  x\n}\n\n\
 fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == y\n  fx  pure\n{\n  y\n}\n";
@@ -579,24 +579,24 @@ fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == y\n  fx  pure\n{\n  y
     let f_before = write_fixture("locality_before", before);
     let f_after = write_fixture("locality_after", after);
 
-    // Check the BEFORE file → populates entries for agent_a + agent_b.
+    // Check the before file → populates entries for agent_a + agent_b.
     let (c1, certs1) = run_check(&f_before, &dir_before, &HashMap::new());
     assert_eq!(c1, Some(0), "before-edit file must certify");
     assert_eq!(find_cert(&certs1, "agent_b")["level"], Value::from("L3"));
 
-    // Check the AFTER file (A edited) → agent_a re-verifies; agent_b unchanged.
+    // Check the after file (A edited) → agent_a re-verifies; agent_b unchanged.
     let (c2, certs2) = run_check(&f_after, &dir_after, &HashMap::new());
     assert_eq!(c2, Some(0), "after-edit file must still certify");
     assert_eq!(find_cert(&certs2, "agent_b")["level"], Value::from("L3"));
 
-    // The locality observable is the cache HIT/MISS BEHAVIOR (robust against the
+    // The locality observable is the cache HIT/MISS behavior (robust against the
     // #12 mutant / #14 strengthening sub-entries that share an item name): the
     // content-address key is what HIT/MISS keys on, so "B's key did not move" is
     // exactly "B is a HIT against the pre-edit cache after A's edit". See the
     // decisive check below.
 
     // Decisive multi-agent HIT: B's pre-edit entry serves the post-edit check.
-    // Re-check the AFTER file against the BEFORE cache dir (which holds B's
+    // Re-check the after file against the before cache dir (which holds B's
     // pre-edit entry). B is a HIT (its key is unchanged); A is a MISS (its key
     // moved) → A re-verifies into the same dir.
     let (c3, certs3) = run_check(&f_after, &dir_before, &HashMap::new());
@@ -618,11 +618,11 @@ fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == y\n  fx  pure\n{\n  y
     let _ = std::fs::remove_dir_all(&dir_after);
 }
 
-/// NEGATIVE CONTROL (AC-5): when B's contract REFERENCES A (here a shared
-/// `spec fn` that A's edit changes), A's edit DOES move B's key — B's lowered
+/// Negative control (AC-5): when B's contract references A (here a shared
+/// `spec fn` that A's edit changes), A's edit does move B's key — B's lowered
 /// sub-program contains the referenced contract, so cross-invalidation is correct
 /// and expected (§5.3's stated exception, §9's composition rule: B keys on A's
-/// CONTRACT, which is now part of B's sub-program).
+/// contract, which is now part of B's sub-program).
 #[test]
 fn editing_a_referenced_dependency_does_move_bs_key() {
     if !verus_present() {
@@ -631,7 +631,7 @@ fn editing_a_referenced_dependency_does_move_bs_key() {
     }
     // B references the shared `spec fn dep`. Editing `dep`'s body changes B's
     // lowered sub-program (the spec fn is woven into every item's sub-program).
-    // The edit to `dep` is a REAL byte change to the referenced contract (its
+    // The edit to `dep` is a real byte change to the referenced contract (its
     // `dec` measure) that keeps `dep`'s semantics (`dep(x) == x`) so B still proves
     // L3 — but changes B's lowered sub-program (which weaves `dep` in), so B's key
     // moves. (A body edit like `x + 0` would lower to unbounded spec `int` and fail
@@ -649,15 +649,15 @@ fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == dep(y)\n  fx  pure\n{
     let f_before = write_fixture("locality_dep_before", before);
     let f_after = write_fixture("locality_dep_after", after);
 
-    // Populate the cache with the BEFORE file (B keyed against `dep`'s original
+    // Populate the cache with the before file (B keyed against `dep`'s original
     // contract).
     let (c1, certs1) = run_check(&f_before, &dir_before, &HashMap::new());
     assert_eq!(c1, Some(0), "before file (B refs dep) must certify");
     assert_eq!(find_cert(&certs1, "agent_b")["cached"], Value::from(false));
 
-    // Re-check the AFTER file (dep's contract edited) against the SAME cache dir.
-    // Because B's contract REFERENCES `dep`, `dep`'s edited contract is now woven
-    // into B's lowered sub-program → B's content-address key MOVED → B is a MISS
+    // Re-check the after file (dep's contract edited) against the same cache dir.
+    // Because B's contract references `dep`, `dep`'s edited contract is now woven
+    // into B's lowered sub-program → B's content-address key moved → B is a MISS
     // (cached:false, re-verified). This is the §5.3 exception / §9 composition rule:
     // cross-invalidation through a contract reference is correct and expected. The
     // HIT/MISS behavior is the robust observable (it keys on exactly the content
@@ -671,7 +671,7 @@ fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == dep(y)\n  fx  pure\n{
          (§5.3 exception / §9 composition — correct cross-invalidation)"
     );
 
-    // And a SECOND check of the AFTER file is now a HIT for B (its post-edit key is
+    // And a second check of the after file is now a HIT for B (its post-edit key is
     // populated) — proving the MISS above was the key move, not an unconditional miss.
     let (c3, certs3) = run_check(&f_after, &dir_before, &HashMap::new());
     assert_eq!(c3, Some(0));
@@ -687,14 +687,14 @@ fn agent_b(y: u64) -> u64\n  req y < 1000\n  ens result == dep(y)\n  fx  pure\n{
 }
 
 // ====================================================================
-// AC-4 — FAULT INJECTION: a torn/garbage `<key>.json` → MISS, never a
+// AC-4 — fault injection: a torn/garbage `<key>.json` → MISS, never a
 // crash or wrong verdict, even under a shared (concurrent) cache.
 // ====================================================================
 
-/// Inject a TORN/garbage `<key>.json` into the shared cache dir (simulating an
+/// Inject a torn/garbage `<key>.json` into the shared cache dir (simulating an
 /// interrupted non-atomic write that the #8 atomic store prevents but a damaged
 /// filesystem could still leave), then run `forge check`: it must re-verify to
-/// the CORRECT L3 verdict (a MISS), never crash and never serve a wrong/torn
+/// the correct L3 verdict (a MISS), never crash and never serve a wrong/torn
 /// read (REQ-2; AC-4 — the #49 load-time degrade under the multi-agent failure
 /// mode). After the re-verify the entry is overwritten atomically and parses.
 #[test]
@@ -708,9 +708,9 @@ fn torn_entry_degrades_to_a_miss_and_reverifies() {
     std::fs::create_dir_all(&cache_dir).expect("mkdir cache");
     let fixture = write_fixture("torn", &verifiable_program("torn_fn"));
 
-    // Populate the cache with real entries first, then TRUNCATE EVERY `<key>.json`
+    // Populate the cache with real entries first, then truncate every `<key>.json`
     // to a torn shape (a half-written JSON: valid prefix, abrupt cut) — the exact
-    // failure a non-atomic writer would leave. Truncating EVERY entry (the primary
+    // failure a non-atomic writer would leave. Truncating every entry (the primary
     // plus its #12 mutant sub-entries) forces the primary's lookup to MISS.
     let (code1, certs1) = run_check(&fixture, &cache_dir, &HashMap::new());
     assert_eq!(code1, Some(0), "population run certifies L3");
@@ -731,7 +731,7 @@ fn torn_entry_degrades_to_a_miss_and_reverifies() {
         .expect("write torn entry");
     }
 
-    // Re-check: the torn entry is a MISS → re-verify → the CORRECT L3 verdict,
+    // Re-check: the torn entry is a MISS → re-verify → the correct L3 verdict,
     // never a crash and never a torn read served as a verdict.
     let (code2, certs2) = run_check(&fixture, &cache_dir, &HashMap::new());
     assert_eq!(
@@ -752,7 +752,7 @@ fn torn_entry_degrades_to_a_miss_and_reverifies() {
     );
 
     // The store overwrote the torn entries atomically; every entry now parses
-    // cleanly (a torn survivor would PANIC inside `parse_all_entries`).
+    // without error (a torn survivor would panic inside `parse_all_entries`).
     let after = parse_all_entries(&cache_dir);
     assert!(
         !after.is_empty(),
@@ -764,7 +764,7 @@ fn torn_entry_degrades_to_a_miss_and_reverifies() {
     let _ = std::fs::remove_dir_all(&cache_dir);
 }
 
-/// A torn entry under CONCURRENT access: inject a torn `<key>.json`, then have
+/// A torn entry under concurrent access: inject a torn `<key>.json`, then have
 /// `N_AGENTS` concurrent agents all check the same item against the shared cache.
 /// Every agent must re-verify to the correct L3 (the torn entry is a MISS for all
 /// of them), the cache converges to one consistent entry, and no agent crashes —
@@ -779,7 +779,7 @@ fn torn_entry_under_concurrent_access_is_safe() {
     let _ = std::fs::remove_dir_all(&cache_dir);
     let fixture = write_fixture("torn_concurrent", &verifiable_program("torn_conc_fn"));
 
-    // Populate, then truncate EVERY entry to a torn shape (primary + mutants).
+    // Populate, then truncate every entry to a torn shape (primary + mutants).
     let (code1, _c1) = run_check(&fixture, &cache_dir, &HashMap::new());
     assert_eq!(code1, Some(0));
     let keys: Vec<String> = parse_all_entries(&cache_dir).into_keys().collect();
@@ -812,7 +812,7 @@ fn torn_entry_under_concurrent_access_is_safe() {
         assert_eq!(level, Value::from("L3"), "the re-verified verdict is L3");
     }
 
-    // Converged to consistent, parseable entries (a torn survivor would PANIC in
+    // Converged to consistent, parseable entries (a torn survivor would panic in
     // `parse_all_entries`); no orphan temp.
     let entries = parse_all_entries(&cache_dir);
     assert!(

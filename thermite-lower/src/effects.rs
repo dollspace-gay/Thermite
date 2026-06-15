@@ -2,12 +2,12 @@
 //! effect system (`thermite-design.md` §4.1: "Effect rows compose: a caller's
 //! row must subsume every callee's row, checked at compile time").
 //!
-//! A caller's `fx` row MUST subsume every callee's row. `fx pure` permits
+//! A caller's `fx` row must subsume every callee's row. `fx pure` permits
 //! nothing, so a `pure` function that calls an effectful one is a compile-time
-//! rejection. This component is the **compile-time check ONLY**; the runtime
-//! syscall sandbox (§4.1 "killed at the syscall boundary") is DEFERRED to issue
-//! #21 (`goal.md` EXCLUDED-from-kernel). R-SPEC-5: the v0.1 form is implemented
-//! FULLY; the deferred form (sandbox) is not built — `effects.rs` has no codegen
+//! rejection. This component is the compile-time check only; the runtime
+//! syscall sandbox (§4.1 "killed at the syscall boundary") is deferred to issue
+//! #21 (`goal.md` excluded-from-kernel). R-SPEC-5: the v0.1 form is implemented;
+//! the deferred form (sandbox) is not built. `effects.rs` has no codegen
 //! path, only a checking path (REQ-6 / AC-6).
 //!
 //! Governing design: `.design/lower/effect-subsumption.md` (REQ-1..REQ-6).
@@ -17,10 +17,10 @@
 //! The effects form a lattice over the powerset of the nine atoms in
 //! `thermite_syntax::ast::Effect` (`Read`/`Write`/`Net`/`Alloc`/`Time`/`Rand`/
 //! `Panic`/`Diverge`/`Term`), ordered by subset inclusion. `EffectRow::Pure` ≡ the empty
-//! set `{}` is the bottom — it permits nothing and is subsumed by everything. The
-//! join of two rows is set union. v0.1 subsumption is **atom-KIND level**
-//! (path-insensitive): a `Write(_)` caller subsumes any `Write(_)` callee (OQ-1
-//! — path-granular subsumption is a deferred refinement that needs a path lattice
+//! set `{}` is the bottom: it permits nothing and is subsumed by everything. The
+//! join of two rows is set union. v0.1 subsumption is atom-kind level
+//! (path-insensitive): a `Write(_)` caller subsumes any `Write(_)` callee (OQ-1;
+//! path-granular subsumption is a deferred refinement that needs a path lattice
 //! the v0.1 kernel does not build).
 //!
 //! ## REQ status
@@ -51,13 +51,13 @@ use crate::lower::LowerError;
 /// Fixed constant (determinism, `goal.md` R-CODE-5).
 const MAX_WALK_DEPTH: usize = 256;
 
-/// The nine atomic effect KINDS (REQ-1), the carriers of subsumption. This is
+/// The nine atomic effect kinds (REQ-1), the carriers of subsumption. This is
 /// the path-insensitive projection of `thermite_syntax::ast::Effect`: `Read(p)`,
 /// `Write(p)`, `Net(d)` collapse to `Read`/`Write`/`Net` regardless of the path/
-/// domain argument (OQ-1 — v0.1 subsumption is atom-kind level). The remaining
+/// domain argument (OQ-1; v0.1 subsumption is atom-kind level). The remaining
 /// six atoms (`Alloc`/`Time`/`Rand`/`Panic`/`Diverge`/`Term`) are argument-free.
 /// `Term` is the #106 terminal-control atom (`fx term` → the `ioctl` seccomp
-/// grant, runtime-sandbox.md REQ-7) — the 9th atom that widened the proved bitset
+/// grant, runtime-sandbox.md REQ-7), the 9th atom that widened the proved bitset
 /// from `u8` to `u16`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum EffectKind {
@@ -77,10 +77,10 @@ impl EffectKind {
     /// the Verus-verified core (`thermite_verified`, epic #60 / #106): Read=0,
     /// Write=1, Net=2, Alloc=3, Time=4, Rand=5, Panic=6, Diverge=7, Term=8. This
     /// is the representation port of `.design/verified/self-verification.md`
-    /// (REQ-5) — `subsumes` projects each `EffectRow` to its mask via this bit and
+    /// (REQ-5): `subsumes` projects each `EffectRow` to its mask via this bit and
     /// delegates the subset test to `thermite_verified::subsumes_masks`, the
-    /// plain-Rust mirror of the `verus`-proved exec body. WIDENED `u8`→`u16` for
-    /// the 9th atom `Term` (#106) — the proved bitset is now `u16`.
+    /// plain-Rust mirror of the `verus`-proved exec body. Widened `u8`→`u16` for
+    /// the 9th atom `Term` (#106), so the proved bitset is now `u16`.
     fn bit(self) -> u16 {
         let index: u16 = match self {
             EffectKind::Read => 0,
@@ -97,7 +97,7 @@ impl EffectKind {
     }
 
     /// The atom-kind of a concrete `Effect`, dropping the path/domain argument
-    /// (REQ-2, OQ-1 — path-insensitive in v0.1).
+    /// (REQ-2, OQ-1; path-insensitive in v0.1).
     fn of(effect: &Effect) -> EffectKind {
         match effect {
             Effect::Read(_) => EffectKind::Read,
@@ -116,7 +116,7 @@ impl EffectKind {
     /// set of an `EffectNotSubsumed` error (REQ-4). The path/domain carriers
     /// (`Read`/`Write`/`Net`) are reported with an empty path, since v0.1
     /// subsumption is path-insensitive (OQ-1) and the agent's fix is to add the
-    /// effect KIND to the caller's row.
+    /// effect kind to the caller's row.
     fn to_effect(self) -> Effect {
         match self {
             EffectKind::Read => Effect::Read(String::new()),
@@ -149,7 +149,7 @@ fn effects(row: &EffectRow) -> Vec<EffectKind> {
 /// `EffectKind::bit`): the representation port shared with the Verus-verified
 /// core (`.design/verified/self-verification.md` REQ-5). `mask(Pure) = 0`;
 /// `mask(Set(v))` ORs in `EffectKind::of(e).bit()` for each `e`. Path-insensitive
-/// (OQ-1), exactly the projection `effects` already performs. WIDENED `u8`→`u16`
+/// (OQ-1), the projection `effects` already performs. Widened `u8`→`u16`
 /// for the 9th atom `Term` (#106).
 fn mask(row: &EffectRow) -> u16 {
     match row {
@@ -164,14 +164,14 @@ fn mask(row: &EffectRow) -> u16 {
 /// construction (a set is a subset of itself). This is the accept relation
 /// `check_effects` asserts at every resolved call site.
 ///
-/// SELF-VERIFICATION (epic #60, `.design/verified/self-verification.md` REQ-5):
-/// the bit-level subset decision is DELEGATED to
-/// `thermite_verified::subsumes_masks` — the plain-Rust mirror of the
+/// Self-verification (epic #60, `.design/verified/self-verification.md` REQ-5):
+/// the bit-level subset decision is delegated to
+/// `thermite_verified::subsumes_masks`, the plain-Rust mirror of the
 /// `verus`-proved exec body (`(callee & !caller) == 0`). This function projects
 /// each `EffectRow` to its 8-atom mask (`mask`) and hands the masks to the
 /// verified core; the exhaustive 262144-pair (512×512) equivalence test
 /// (`tests/effects_verified.rs`) anchors this projection to the proved subset
-/// relation `thermite_verified::spec_subsumes_mask`. Behavior is IDENTICAL to the
+/// relation `thermite_verified::spec_subsumes_mask`. Behavior matches the
 /// former set-membership form (the masks encode the same atom-kind sets).
 pub fn subsumes(caller: &EffectRow, callee: &EffectRow) -> bool {
     thermite_verified::subsumes_masks(mask(caller), mask(callee))
@@ -180,8 +180,8 @@ pub fn subsumes(caller: &EffectRow, callee: &EffectRow) -> bool {
 /// The atoms the callee has that the caller's row lacks (`effects(callee) \
 /// effects(caller)`) — the `missing` set of an `EffectNotSubsumed` error
 /// (REQ-4). Empty iff `subsumes(caller, callee)`. Returned as concrete `Effect`s
-/// (path-insensitive representatives) so the diagnostic names exactly the effect
-/// KINDS the agent must add to the caller's row.
+/// (path-insensitive representatives) so the diagnostic names the effect
+/// kinds the agent must add to the caller's row.
 fn missing_atoms(caller: &EffectRow, callee: &EffectRow) -> Vec<Effect> {
     let caller_set = effects(caller);
     effects(callee)
@@ -199,8 +199,8 @@ enum Callee<'a> {
     /// total/effect-free) or a registry combinator. Always subsumed.
     Pure,
     /// A name that is neither a declared `FnItem`, `SpecFnItem`, nor a
-    /// combinator. A no-op for subsumption — the #2 validator owns unknown-name
-    /// rejection (AC-5), so the effect checker does NOT panic or error here.
+    /// combinator. A no-op for subsumption: the #2 validator owns unknown-name
+    /// rejection (AC-5), so the effect checker does not panic or error here.
     Unresolved,
 }
 
@@ -208,10 +208,10 @@ enum Callee<'a> {
 /// map over the program's `FnItem`s (noting `SpecFnItem` names and registry
 /// combinators as pure), then walks every `FnItem` body's `Expr` tree. For each
 /// `Call`/`MethodCall` whose callee resolves to a declared `FnItem`, it asserts
-/// the *caller's* `fx` subsumes the *callee's* `fx` (REQ-2), accumulating one
+/// the caller's `fx` subsumes the callee's `fx` (REQ-2), accumulating one
 /// `EffectNotSubsumed` per violation rather than failing on the first (§2.4
-/// actionable, crisp feedback). Calls to a `spec fn` / combinator are pure ⇒
-/// always permitted; an unresolved callee is a no-op (AC-5). NEVER panics — a
+/// actionable feedback). Calls to a `spec fn` / combinator are pure ⇒
+/// always permitted; an unresolved callee is a no-op (AC-5). Never panics: a
 /// pathological body returns `LowerError::TooDeep` (REQ-4 / AC-5).
 pub fn check_effects(program: &Program) -> Result<(), Vec<LowerError>> {
     // name → declared `fx` row, over the `FnItem`s. `SpecFnItem` names are noted
@@ -251,9 +251,9 @@ pub fn check_effects(program: &Program) -> Result<(), Vec<LowerError>> {
         // Only `fn` items have an `fx` row and so can be a checked caller; a
         // `spec fn` is pure by construction and makes no effectful calls.
         if let Item::Fn(f) = item {
-            // A boundary fn (ffi-boundary.md REQ-2) has `body: None` — its body is
+            // A boundary fn (ffi-boundary.md REQ-2) has `body: None`; its body is
             // foreign and makes no in-language calls to subsume (its own `fx` row
-            // is trusted-by-fiat, OQ-4; the row is still CHECKED at the call site,
+            // is trusted by fiat, OQ-4; the row is still checked at the call site,
             // because the boundary fn's declared `fx` is in `fn_rows` above). Only
             // an in-language body is walked for callee subsumption.
             if let Some(body) = &f.body {
@@ -361,12 +361,12 @@ fn check_block<'a>(
             Stmt::Loop(l) => {
                 // A `while <cond> { .. }` evaluates `<cond>` at runtime before
                 // each iteration; `lower.rs` lowers it (`LoopKind::While(c)` arm),
-                // so a `Call` in the condition is a reachable callee and MUST be
-                // checked (§4.1: a caller subsumes EVERY callee's row). The
+                // so a `Call` in the condition is a reachable callee and is
+                // checked (§4.1: a caller subsumes every callee's row). The
                 // `loop` keyword has no condition. The `invs`/`dec` clauses are
-                // SPEC/contract positions (§4.2 spec sublanguage is pure by
-                // construction), so they are NOT walked — matching `check_expr`'s
-                // documented "Loop/spec clauses are NOT walked" discipline.
+                // spec/contract positions (§4.2 spec sublanguage is pure by
+                // construction), so they are not walked, matching `check_expr`'s
+                // documented "Loop/spec clauses are not walked" discipline.
                 if let LoopKind::While(cond) = &l.kind {
                     check_expr(
                         cond,
@@ -388,9 +388,9 @@ fn check_block<'a>(
                     errors,
                 );
             }
-            // break/continue are loop-control statements with NO sub-expression
-            // and NO callee (#93): they contribute NO effect to the row walk
-            // (the layer-neutral value — verus-lowering.md REQ-12).
+            // break/continue are loop-control statements with no sub-expression
+            // and no callee (#93): they contribute no effect to the row walk
+            // (the layer-neutral value, verus-lowering.md REQ-12).
             Stmt::Break | Stmt::Continue => {}
         }
     }
@@ -409,9 +409,9 @@ fn check_block<'a>(
 
 /// Walk an expression tree, checking every `Call`/`MethodCall` whose callee
 /// resolves to a declared `FnItem` against the caller's row (REQ-2/REQ-3).
-/// `depth` bounds the recursion (AC-5). A `while` LOOP CONDITION is runtime
-/// code and IS walked (in the `Stmt::Loop` arm of `check_block`); the loop's
-/// `inv`/`dec` SPEC clauses are NOT walked, since contract/spec positions are
+/// `depth` bounds the recursion (AC-5). A `while` loop condition is runtime
+/// code and is walked (in the `Stmt::Loop` arm of `check_block`); the loop's
+/// `inv`/`dec` spec clauses are not walked, since contract/spec positions are
 /// pure by construction (§4.2).
 fn check_expr<'a>(
     expr: &'a Expr,
@@ -434,7 +434,7 @@ fn check_expr<'a>(
         Expr::Call { callee, args } => {
             // Resolve the callee by its path's last segment (the frontend is
             // registry-free; combinator/fn calls are plain `Expr::Call` with a
-            // `Path` callee — `ast.rs` module doc / lower.rs precedent).
+            // `Path` callee; `ast.rs` module doc / lower.rs precedent).
             if let Expr::Path(segs) = callee.as_ref() {
                 if let Some(name) = segs.last() {
                     check_call(name, caller_fx, caller_name, caller_span, resolve, errors);
@@ -579,7 +579,7 @@ fn check_expr<'a>(
         ),
         // Basis Stage 1a (`.design/basis/01-adts.md`): the ADT expressions are
         // dead-in-1a (gated at the validator before effect-check), but the
-        // honest walk descends into their sub-expressions — a call carrying an
+        // walk descends into their sub-expressions: a call carrying an
         // effect could sit in a struct-literal field value, an `is` scrutinee,
         // or a deref operand, so subsumption must not silently skip it.
         Expr::StructLit { fields, .. } => {
@@ -625,8 +625,8 @@ fn check_expr<'a>(
             errors,
         ),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
-        // tuple construction's effects are the UNION of its elements' effects, so
-        // every element is effect-walked; a projection's effects are exactly its
+        // tuple construction's effects are the union of its elements' effects, so
+        // every element is effect-walked; a projection's effects are its
         // receiver's (the projection itself is pure). An effect-bearing call inside
         // a tuple element / under a projection is still subsumption-checked.
         Expr::Tuple(elems) => {
@@ -643,7 +643,7 @@ fn check_expr<'a>(
             d,
             errors,
         ),
-        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expressions, no calls — it contributes no effect-row obligation, so
         // it joins the no-op leaf arm alongside `IntLit`/`BoolLit`. (Materializing
         // a literal into an owned `String` carries `fx alloc`, but that is keyed at

@@ -1,15 +1,15 @@
 //! `forge/tests/cache_conformance.rs` — the #8 per-item content-addressed
 //! proof-cache verification (`.design/forge/proof-cache.md` §Verification /
-//! AC-1..AC-5; `thermite-design.md` §5.3). It drives the BUILT `forge` binary
-//! (`forge check --json`) with a HERMETIC, per-test cache directory
-//! (`FORGE_CACHE_DIR`) and a PINNED verus version (`VERUS_VERSION`), so tests do
+//! AC-1..AC-5; `thermite-design.md` §5.3). It drives the built `forge` binary
+//! (`forge check --json`) with a hermetic, per-test cache directory
+//! (`FORGE_CACHE_DIR`) and a pinned verus version (`VERUS_VERSION`), so tests do
 //! not pollute each other or the shared `target/` cache, and do not depend on
-//! order. Each test also uses UNIQUE program contents so keys never collide.
+//! order. Each test also uses unique program contents so keys never collide.
 //!
-//! Verus-needing tests SKIP LOUDLY when verus is absent (mirroring
-//! `check_conformance.rs` / `lower_conformance.rs`) — EXCEPT the DECISIVE
-//! solver-skip test, which deliberately removes verus from PATH AFTER populating
-//! the cache to prove the HIT path never spawns the solver.
+//! Verus-needing tests skip with a logged note when verus is absent (mirroring
+//! `check_conformance.rs` / `lower_conformance.rs`) — except the decisive
+//! solver-skip test, which removes verus from PATH after populating
+//! the cache to prove the hit path never spawns the solver.
 //!
 //! Expected verdicts trace to `thermite-design.md` / `.design/forge/proof-cache.md`,
 //! never copied from forge's own output (`goal.md` R-CHAR-3). `tests/` is not
@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
 
-/// A fixed verus version pin for the proof cache key, so a HIT's key is stable
+/// A fixed verus version pin for the proof cache key, so a hit's key is stable
 /// across runs even when the verus binary is later removed (AC-1). This is a
 /// test-controlled constant; the key composition is what is under test.
 const PINNED_VERUS_VERSION: &str = "verus-test-pin-0.0.1";
@@ -32,7 +32,8 @@ fn forge_bin() -> PathBuf {
 }
 
 /// `true` iff verus can be located (`VERUS_BIN`, then PATH, then
-/// `~/.local/bin/verus`) — mirrors `check_conformance.rs`. SKIP LOUDLY otherwise.
+/// `~/.local/bin/verus`) — mirrors `check_conformance.rs`. Skips with a logged
+/// note otherwise.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -66,7 +67,7 @@ fn unique_cache_dir(tag: &str) -> PathBuf {
     ))
 }
 
-/// A unique `.th` fixture path with unique CONTENTS so its cache key cannot
+/// A unique `.th` fixture path with unique contents so its cache key cannot
 /// collide with another test's item (test isolation).
 fn write_fixture(tag: &str, body: &str) -> PathBuf {
     static C: AtomicU64 = AtomicU64::new(0);
@@ -82,7 +83,7 @@ fn write_fixture(tag: &str, body: &str) -> PathBuf {
 }
 
 /// Run `forge check <file> --json` with explicit cache dir + pinned verus
-/// version, optionally overriding `PATH` (used to make verus UNavailable). Extra
+/// version, optionally overriding `PATH` (used to make verus unavailable). Extra
 /// env entries are applied on top. Returns (exit_code, parsed cert array).
 fn run_check(
     file: &Path,
@@ -127,7 +128,7 @@ fn verifiable_program(name: &str) -> String {
     )
 }
 
-// ---- (1) HIT: second run is cached:true with equal deterministic fields ----
+// ---- (1) Hit: second run is cached:true with equal deterministic fields ----
 
 #[test]
 fn second_run_is_a_cache_hit_with_equal_deterministic_fields() {
@@ -147,12 +148,12 @@ fn second_run_is_a_cache_hit_with_equal_deterministic_fields() {
     assert_eq!(c1["level"], Value::from("L3"), "fresh run certifies L3");
     assert_eq!(c1["cached"], Value::from(false), "first run is not cached");
 
-    // Second run is a HIT: cached:true, deterministic fields equal.
+    // Second run is a hit: cached:true, deterministic fields equal.
     let (code2, certs2) = run_check(&fixture, &cache_dir, &env);
     assert_eq!(code2, Some(0));
     let c2 = find_cert(&certs2, "hit_fn");
     assert_eq!(c2["cached"], Value::from(true), "second run is a cache HIT");
-    // Deterministic (oracle) fields are byte-equal (REQ-2 — hit == fresh verify).
+    // Deterministic (oracle) fields are byte-equal (REQ-2 — hit equals fresh verify).
     for f in ["item", "level", "effects", "slag"] {
         assert_eq!(
             c1[f], c2[f],
@@ -164,7 +165,7 @@ fn second_run_is_a_cache_hit_with_equal_deterministic_fields() {
     let _ = std::fs::remove_dir_all(&cache_dir);
 }
 
-// ---- (2) DECISIVE: solver skipped — HIT with verus UNAVAILABLE --------------
+// ---- (2) Decisive: solver skipped — hit with verus unavailable --------------
 
 #[test]
 fn cache_hit_serves_l3_with_verus_unavailable() {
@@ -176,7 +177,7 @@ fn cache_hit_serves_l3_with_verus_unavailable() {
     let _ = std::fs::remove_dir_all(&cache_dir);
     let fixture = write_fixture("decisive", &verifiable_program("decisive_fn"));
 
-    // Populate the cache WITH verus present (pinned version, real binary on PATH).
+    // Populate the cache with verus present (pinned version, real binary on PATH).
     let (code1, certs1) = run_check(&fixture, &cache_dir, &HashMap::new());
     assert_eq!(code1, Some(0), "population run must certify L3");
     assert_eq!(
@@ -184,9 +185,9 @@ fn cache_hit_serves_l3_with_verus_unavailable() {
         Value::from(false)
     );
 
-    // Re-run with verus made UNAVAILABLE: empty PATH so `verus` cannot be spawned.
-    // The pinned VERUS_VERSION keeps the key identical → the HIT is served WITHOUT
-    // a verus spawn. If the solver were NOT skipped, this would be
+    // Re-run with verus made unavailable: empty PATH so `verus` cannot be spawned.
+    // The pinned VERUS_VERSION keeps the key identical → the hit is served without
+    // a verus spawn. If the solver were not skipped, this would be
     // ForgeError::VerusAbsent (exit 2, empty stdout) per check.md REQ-6 — the
     // decisive solver-skip evidence (AC-1).
     let mut no_verus = HashMap::new();
@@ -209,9 +210,9 @@ fn cache_hit_serves_l3_with_verus_unavailable() {
     let _ = std::fs::remove_dir_all(&cache_dir);
 }
 
-// ---- (2b) Control: verus-absent on a COLD cache IS VerusAbsent --------------
-// Proves the decisive test's exit-0 is due to the cache, not a no-op: the SAME
-// verus-absent environment on an EMPTY cache fails (exit 2, empty stdout).
+// ---- (2b) Control: verus-absent on a cold cache is VerusAbsent --------------
+// Proves the decisive test's exit-0 is due to the cache, not a no-op: the same
+// verus-absent environment on an empty cache fails (exit 2, empty stdout).
 
 #[test]
 fn cold_cache_with_verus_unavailable_is_environment_error() {
@@ -243,7 +244,7 @@ fn cold_cache_with_verus_unavailable_is_environment_error() {
     let _ = std::fs::remove_dir_all(&cache_dir);
 }
 
-// ---- (3) INVALIDATION: changed body → MISS (cached:false, re-verified) ------
+// ---- (3) Invalidation: changed body → miss (cached:false, re-verified) ------
 
 #[test]
 fn changed_body_is_a_cache_miss() {
@@ -264,8 +265,8 @@ fn changed_body_is_a_cache_miss() {
     assert_eq!(code1, Some(0));
     assert_eq!(find_cert(&certs1, "inv_fn")["cached"], Value::from(false));
 
-    // Re-check with a DIFFERENT body+contract for the same name → different
-    // lowered source → MISS (cached:false, re-verified). Distinct file so the
+    // Re-check with a different body+contract for the same name → different
+    // lowered source → miss (cached:false, re-verified). Distinct file so the
     // first cache entry persists; the key differs because the lowered source does.
     let f2 = write_fixture(
         "invalidate",

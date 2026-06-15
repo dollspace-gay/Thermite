@@ -1,42 +1,42 @@
 //! SPIKE-2 — the prototype normalizer probe (`.design/m0-spikes.md` REQ-6).
 //!
-//! ## What this is (and what it deliberately is NOT)
+//! ## What this is, and is not
 //!
-//! This is an **experimental, leaf** module: it implements the four layer-1
+//! This is an experimental, leaf module: it implements the four layer-1
 //! passes of the stage-2 two-phase TV normalizer (metatheory sketch §8.2 layer 1)
 //! — NNF, prenex, canonical bound-name / de-Bruijn form, atom ordering — over a
-//! tiny raw-quantifier formula language, so SPIKE-2 can MEASURE the
+//! tiny raw-quantifier formula language, so SPIKE-2 can measure the
 //! syntactic-equality hit rate of a normalizer over the conformance corpus's
 //! combinator contracts in raw-quantifier form (risk row 3, fallback F-C). It is
-//! **exported but referenced by NO TV pipeline code path** (REQ-6 / AC-6): the
+//! exported but referenced by no TV pipeline code path (REQ-6 / AC-6): the
 //! only consumers are this module's own `#[cfg(test)]` unit tests and the
-//! `tests/strat_probe.rs` hit-rate target. The stage-2 normalizer evolves THIS
-//! module in place once it is wired in behind `nnf_sound`/`prenex_sound` lemmas —
-//! which are **out of scope for the spike** (the spike wants the *number*, not the
+//! `tests/strat_probe.rs` hit-rate target. The stage-2 normalizer evolves this
+//! module in place once it is wired in behind `nnf_sound`/`prenex_sound` lemmas,
+//! which are out of scope for the spike (the spike wants the number, not the
 //! soundness proof).
 //!
 //! ## The four passes (metatheory §8.2 layer 1)
 //!
-//! 1. **NNF** ([`Formula::to_nnf`]): eliminate `=>`, push `~` to the atoms via De
+//! 1. NNF ([`Formula::to_nnf`]): eliminate `=>`, push `~` to the atoms via De
 //!    Morgan + quantifier duality, and fold the residual atom-negations into the
 //!    comparison operator (`~(a < b)` becomes `a >= b`). The result is `Not`-free
 //!    and `Implies`-free.
-//! 2. **Prenex** ([`prenex`]): alpha-rename every binder to a globally-fresh name
+//! 2. Prenex ([`prenex`]): alpha-rename every binder to a globally-fresh name
 //!    (so hoisting can never capture), then pull all quantifiers to the front,
 //!    leaving a quantifier-free matrix.
-//! 3. **Canonical bound-name / de-Bruijn form** + **4. atom ordering**
+//! 3. Canonical bound-name / de-Bruijn form + 4. atom ordering
 //!    ([`canonical`]): commutative-associative `&`/`|` are flattened and their
 //!    children sorted; symmetric atoms (`=`/`!=`) and the flip-equivalent
 //!    comparisons (`>`/`>=` rewritten to `<`/`<=`) are oriented canonically; and
 //!    the binders within each maximal same-quantifier block — which commute
 //!    (`forall i j ≡ forall j i`) — are renamed to canonical `v0,v1,…` names by
 //!    choosing the binder permutation that minimizes the serialized matrix. The
-//!    canonical names ARE de-Bruijn-style position names: two alpha-equivalent
+//!    canonical names are de-Bruijn-style position names: two alpha-equivalent
 //!    formulas serialize identically.
 //!
 //! Two formulas are judged equal ([`equivalent`]) iff their [`Formula::normalize`]
 //! canonical serializations are byte-identical — the "syntactic equality after
-//! normalization" the spike measures. There is **no soundness lemma**: a hit is
+//! normalization" the spike measures. There is no soundness lemma: a hit is
 //! evidence the two spellings converge under layer-1 normalization, nothing more.
 
 use std::fmt::Write as _;
@@ -71,7 +71,7 @@ impl CmpOp {
         }
     }
 
-    /// The operator of the NEGATED comparison (`~(a < b) ≡ a >= b`). Used by NNF
+    /// The operator of the negated comparison (`~(a < b) ≡ a >= b`). Used by NNF
     /// to fold an atom-negation into the operator so the result is `Not`-free.
     fn negate(self) -> CmpOp {
         match self {
@@ -84,7 +84,7 @@ impl CmpOp {
         }
     }
 
-    /// The operator with the operands SWAPPED (`a > b ≡ b < a`). Used to orient
+    /// The operator with the operands swapped (`a > b ≡ b < a`). Used to orient
     /// `>`/`>=` to `<`/`<=` canonically.
     fn flip(self) -> CmpOp {
         match self {
@@ -431,7 +431,7 @@ impl Parser {
         if self.peek() == Some(&Tok::LParen) {
             // A leading `(` is ambiguous: a FORMULA group `(0 <= i & …)` or a
             // parenthesized TERM that starts an atom `(5 - n) <= i`. Try the
-            // formula group first; if it does not parse + close cleanly, backtrack
+            // formula group first; if it does not parse and close, backtrack
             // and read the `(` as the first term of an atom.
             let save = self.pos;
             self.pos += 1; // consume the '('
@@ -568,7 +568,7 @@ pub fn parse(src: &str) -> Result<Formula, ParseError> {
 impl Formula {
     /// Negation normal form (metatheory §8.2 layer-1 pass 1): eliminate `=>`, push
     /// `~` inward via De Morgan + quantifier duality, fold atom-negations into the
-    /// comparison operator. The result has NO `Not` and NO `Implies` node.
+    /// comparison operator. The result has no `Not` and no `Implies` node.
     pub fn to_nnf(self) -> Formula {
         self.nnf_inner(false)
     }
@@ -845,7 +845,7 @@ fn flatten_or(f: &Formula, rename: &dyn Fn(&str) -> String, out: &mut Vec<CMatri
 /// `v0,v1,…` names, serialize, and keep the lexicographically smallest result —
 /// a true alpha- and binder-order-invariant canonical form.
 fn canonical(prefix: &[(Quant, String)], matrix: &Formula) -> String {
-    // Partition the prefix into maximal same-quantifier blocks (block ORDER is
+    // Partition the prefix into maximal same-quantifier blocks (block order is
     // fixed — different quantifiers do not commute past each other in general).
     let mut blocks: Vec<(Quant, Vec<String>)> = Vec::new();
     for (q, name) in prefix {
@@ -1169,7 +1169,7 @@ mod tests {
     #[test]
     fn commutative_arithmetic_operands_are_sorted() {
         assert_eq!(norm("i < a + b"), norm("i < b + a"));
-        // Subtraction is NOT commutative.
+        // Subtraction is not commutative.
         assert_ne!(norm("i < a - b"), norm("i < b - a"));
     }
 

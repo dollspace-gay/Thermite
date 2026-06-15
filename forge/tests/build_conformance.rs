@@ -1,20 +1,20 @@
-//! Conformance test for `forge build` (issue #56) against the EXTERNAL truth: the
+//! Conformance test for `forge build` (issue #56) against the external truth: the
 //! real `rustc` compiler + the hand-derived oracle `conformance/build/cases.json`
 //! (`.design/forge/build.md`). `forge build` lowers a Thermite program to
 //! executable Rust (`thermite_lower::lower_l1`) and compiles it with rustc into a
 //! contract-checked artifact whose always-active `thermite_check!`s fire at
-//! RUNTIME (the #57 hook).
+//! runtime (the #57 hook).
 //!
-//! Verification is by EXECUTION (the design's AC-1..AC-7): the artifact COMPILES
-//! (rustc exit 0), the `--entry` binary RUNS and prints the hand-derived value, a
-//! contract-violating body still COMPILES but its check FIRES at runtime, the
+//! Verification is by execution (the design's AC-1..AC-7): the artifact compiles
+//! (rustc exit 0), the `--entry` binary runs and prints the hand-derived value, a
+//! contract-violating body still compiles but its check fires at runtime, the
 //! manifest records the per-fn `fx` rows, and the emitted source is byte-identical
 //! across two builds. Expected values trace to the oracle / Appendix A's
-//! `spec_sum` denotation (R-CHAR-3 — never copied from toolchain output).
+//! `spec_sum` denotation (R-CHAR-3 — rather than copied from toolchain output).
 //!
 //! `rustc` is always installed (rustc 1.95.0; no skip). `unwrap`/`expect`/`panic!`
 //! are fine here — `tests/` is not anti-pattern-gated. The `forge` binary is built
-//! by cargo and invoked as a subprocess so the WHOLE CLI surface (`forge build
+//! by cargo and invoked as a subprocess so the whole CLI surface (`forge build
 //! <file> [--entry <fn>] [--json]`) is exercised end-to-end.
 
 use std::path::{Path, PathBuf};
@@ -125,9 +125,9 @@ fn sum_runs() {
 // ---- #128 (`--out <PATH>`): the artifact is placed at a user-named path --------
 //
 // `forge build sum.th --entry sum --out <tmpdir>/sum` places the compiled binary
-// at exactly `<tmpdir>/sum` (NOT the awkward /tmp/..._build_out_<pid>/ path), the
+// at `<tmpdir>/sum` (not the /tmp/..._build_out_<pid>/ path), the
 // file is executable, and running `./<tmpdir>/sum` directly prints 6 (the
-// hand-derived sum(&[1,2,3]) value). The manifest's `artifact` field is the FINAL
+// hand-derived sum(&[1,2,3]) value). The manifest's `artifact` field is the final
 // `<PATH>`. The `-o` short form is equivalent. A bad `--out` (a path under a
 // non-existent directory) yields a structured ForgeError + non-zero exit, never a
 // panic. Without `--out` the existing /tmp path behavior is unchanged (covered by
@@ -136,7 +136,7 @@ fn sum_runs() {
 #[test]
 fn out_places_runnable_binary() {
     let sum = corpus_dir().join("sum.th");
-    // A unique user-named destination under the temp dir (the #128 scenario: a real
+    // A unique user-named destination under the temp dir (the #128 scenario: a
     // `./nano`-style path, not the /tmp/..._build_out_<pid>/ path).
     let dest = std::env::temp_dir().join(format!("forge_out_test_sum_{}", std::process::id()));
     let _ = std::fs::remove_file(&dest);
@@ -154,7 +154,7 @@ fn out_places_runnable_binary() {
         "forge build sum.th --entry sum --out <dest> must succeed:\nstdout:{stdout}\nstderr:{stderr}"
     );
 
-    // The manifest reports the FINAL path = `<dest>` (the --out path, not the /tmp
+    // The manifest reports the final path = `<dest>` (the --out path, not the /tmp
     // path).
     let artifact = artifact_path_from_json(&stdout);
     assert_eq!(
@@ -181,7 +181,7 @@ fn out_places_runnable_binary() {
         );
     }
 
-    // Running `<dest>` DIRECTLY (the #128 motivation: a standalone `./binary`) prints
+    // Running `<dest>` directly (the #128 motivation: a standalone `./binary`) prints
     // the hand-derived value 6.
     let (ran, output) = run_artifact(&dest);
     assert!(
@@ -289,9 +289,9 @@ fn sum_builds_as_library() {
 
 // ---- oracle `runtime_violation` / AC-4 (the #57 kill behavior) --------------
 //
-// `bad(x) req x < 100 ens result == x { x + 1 }`: forge build (L1) COMPILES it
+// `bad(x) req x < 100 ens result == x { x + 1 }`: forge build (L1) compiles it
 // (rustc exit 0 — L1 does not verify, it checks at runtime); the runner calls
-// bad(<sample x<100>) → the always-active ens check FIRES at runtime (non-zero
+// bad(<sample x<100>) → the always-active ens check fires at runtime (non-zero
 // exit + an [ens] contract-violation diagnostic).
 
 #[test]
@@ -307,7 +307,7 @@ fn ens_violation_fires_at_runtime() {
     );
     let artifact = artifact_path_from_json(&stdout);
 
-    // Running it: the always-active ens check FIRES — non-zero exit + an [ens]
+    // Running it: the always-active ens check fires — non-zero exit + an [ens]
     // diagnostic (the runtime-enforcement behavior #57 builds on).
     let (ran, output) = run_artifact(&artifact);
     assert!(
@@ -328,12 +328,12 @@ fn ens_violation_fires_at_runtime() {
     let _ = std::fs::remove_file(&fixture);
 }
 
-// ---- AC-2: checks are baked in (always-active, NOT debug_assert) -------------
+// ---- AC-2: checks are baked in (always-active, not debug_assert) -------------
 //
 // The compiled artifact is `thermite_lower::lower_l1`'s output verbatim (build.rs
 // never strips it). The §6 every-profile property — the always-active
-// `thermite_check!` macro (`if !($cond)`, NOT debug_assert) — is structurally
-// present in that emission. Anchored to the public `lower_l1` (the EXACT bytes
+// `thermite_check!` macro (`if !($cond)`, not debug_assert) — is structurally
+// present in that emission. Anchored to the public `lower_l1` (the bytes
 // build_file compiles), the same property `l1_conformance.rs::
 // no_debug_assert_in_emission` pins (R-CHAR-3 — the §6 design property, not
 // toolchain self-equality).
@@ -360,10 +360,10 @@ fn checks_are_baked_in() {
 //
 // Two same-input `forge build` runs (same toolchain, SOURCE_DATE_EPOCH=0 pinned,
 // the per-run scratch path remapped out of the debug metadata) produce a
-// BYTE-IDENTICAL compiled rlib (§5.3). The emitted source is forge-owned
-// deterministic; the codegen is reproducible modulo nothing once the path + the
+// byte-identical compiled rlib (§5.3). The emitted source is forge-owned
+// deterministic; the codegen is reproducible once the path + the
 // archive mtime are pinned. This builds via the real CLI twice and diffs the
-// actual artifact bytes (R-CHAR-3 — the design's reproducibility AC, not a
+// artifact bytes (R-CHAR-3 — the design's reproducibility AC, not a
 // toolchain self-comparison of derived strings).
 
 #[test]

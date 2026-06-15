@@ -1,7 +1,7 @@
-//! DIVERGENCE PIN — Cluster C7 (#95) design-AC miss: the external cert/golden oracle.
+//! Divergence pin — Cluster C7 (#95) design-AC miss: the external cert/golden oracle.
 //!
-//! AUTHORITY: `.design/basis/09-option-result.md` "Acceptance criteria" + "Routes to
-//! add" — the doc explicitly mandates, as the EXTERNAL truth the toolchain does not
+//! Authority: `.design/basis/09-option-result.md` "Acceptance criteria" + "Routes to
+//! add" — the doc mandates, as the external truth the toolchain does not
 //! author for itself (goal.md verification model (B); R-CHAR-3):
 //!
 //!   > The orchestrator authors a NEW corpus program — `conformance/option_result.th`
@@ -17,15 +17,15 @@
 //! "conformance/parse_u64.th"]` / `["tests/golden/lower/option_result.verus.rs",
 //! "tests/golden/lower/parse_u64.verus.rs"]` on the C7 routes.
 //!
-//! DIVERGENCE: commit `bcd5ede` ships NONE of these four artifacts (the routes carry
-//! `reference = []`). C7 is verified ONLY against ephemeral temp-file `.th` programs in
-//! `option_result_conformance.rs`, NOT against the design-mandated EXTERNAL cert oracle
+//! Divergence: commit `bcd5ede` ships none of these four artifacts (the routes carry
+//! `reference = []`). C7 is verified only against ephemeral temp-file `.th` programs in
+//! `option_result_conformance.rs`, not against the design-mandated external cert oracle
 //! (`conformance/<name>.cert.json`) / golden lowering (`tests/golden/lower/
 //! <name>.verus.rs`). Per goal.md verification model (B) and R-CHAR-3, the deliverable
-//! for `forge`/`thermite-lower` is the certificate/lowering MATCHING a hand-authored
-//! golden — an ephemeral temp program is not that oracle.
+//! for `forge`/`thermite-lower` is the certificate/lowering matching a hand-authored
+//! golden; an ephemeral temp program is not that oracle.
 //!
-//! The expected file SET below is the design AC's enumerated artifact list, NOT copied
+//! The expected file set below is the design AC's enumerated artifact list, not copied
 //! from any toolchain output (R-CHAR-3).
 //!
 //! Tracking: crosslink #100.
@@ -41,20 +41,20 @@ fn repo_root() -> PathBuf {
         .expect("repo root resolves")
 }
 
-/// DIVERGENCE — the C7 corpus programs + their `.cert.json` cert goldens + the golden
+/// Divergence — the C7 corpus programs, their `.cert.json` cert goldens, and the golden
 /// Verus lowerings, all enumerated by `.design/basis/09-option-result.md` "Acceptance
-/// criteria", MUST exist. They do not in `bcd5ede` (the C7 external oracle is absent).
-// RESOLVED (#100): all six C7 external-oracle artifacts now exist —
+/// criteria", must exist. They do not in `bcd5ede` (the C7 external oracle is absent).
+// Resolved (#100): all six C7 external-oracle artifacts now exist —
 // `conformance/option_result.{th,cert.json}` + `conformance/parse_u64.{th,cert.json}`
 // (the parse corpus is `parse_valid` only; the forced-None refusal demo is the tracked
 // §7 equivalent-mutant limitation #101) + `tests/golden/lower/{option_result,
 // parse_u64}.verus.rs` (verus `4`/`34 verified, 0 errors`). The pin is un-ignored and
-// now PASSES, guarding against a regression that deletes the external oracle.
+// now passes, guarding against a regression that deletes the external oracle.
 #[test]
 fn divergence_c7_corpus_and_cert_goldens_exist() {
     let root = repo_root();
     // The design-AC-enumerated artifact set (authority: 09-option-result.md
-    // "Acceptance criteria" / "Routes to add" — NOT toolchain output).
+    // "Acceptance criteria" / "Routes to add", not toolchain output).
     let required = [
         "conformance/option_result.th",
         "conformance/option_result.cert.json",

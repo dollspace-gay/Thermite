@@ -1,27 +1,27 @@
-//! ADVERSARIAL audit of forge's STRENGTHENING PROBES (issue #14, §7 step 5,
+//! Adversarial audit of forge's strengthening probes (issue #14, §7 step 5,
 //! `.design/forge/strengthening-probes.md`). The builder's
-//! `strengthening_conformance.rs` checks that the EXPECTED clause (`result == a +
-//! b`) is present and kills the survivor; it does NOT independently re-verify
-//! EVERY surfaced suggestion across the template families. This file closes the
+//! `strengthening_conformance.rs` checks that the expected clause (`result == a +
+//! b`) is present and kills the survivor; it does not independently re-verify
+//! every surfaced suggestion across the template families. This file closes the
 //! R-DEFER-1 adoptability gap:
 //!
-//! - **probe #2 (the key one) — every surfaced suggestion is ADOPTABLE.** REQ-2 /
-//!   `goal.md` R-DEFER-1: "a suggestion must be a REAL adoptable clause". The §7
-//!   step-5 promise is "if a strictly stronger contract PROVES with no body
-//!   change, Forge suggests it". So: for each fixture, take EVERY clause the probe
-//!   surfaces, ADOPT it (paste `ens <clause>` into the SAME body + SAME req/fx),
-//!   and re-check through forge's OWN lowering+verus pipeline. Each MUST certify
-//!   L3 — that is the adoptability invariant. A surfaced clause that does NOT
-//!   certify L3 when adopted is VAPORWARE (the agent would adopt an unprovable
+//! - probe #2 — every surfaced suggestion is adoptable. REQ-2 /
+//!   `goal.md` R-DEFER-1: "a suggestion must be a real adoptable clause". The §7
+//!   step-5 promise is "if a strictly stronger contract proves with no body
+//!   change, Forge suggests it". So: for each fixture, take every clause the probe
+//!   surfaces, adopt it (paste `ens <clause>` into the same body + same req/fx),
+//!   and re-check through forge's own lowering+verus pipeline. Each must certify
+//!   L3 — that is the adoptability invariant. A surfaced clause that does not
+//!   certify L3 when adopted is vaporware (the agent would adopt an unprovable
 //!   contract) → divergence.
 //!
 //! The fixtures exercise template family 2 across operators (`a - b` under a
-//! `b <= a` precondition; a bare parameter `a`) — both surface a suggestion, so
+//! `b <= a` precondition; a bare parameter `a`); both surface a suggestion, so
 //! they are real adoptability witnesses (verified live below). The expected value
-//! (L3 on adoption) traces to REQ-2 + the §7 step-5 adoptability invariant, NOT to
+//! (L3 on adoption) traces to REQ-2 + the §7 step-5 adoptability invariant, not to
 //! forge's own output (R-CHAR-3).
 //!
-//! REAL verus queries; SKIP LOUDLY when verus is absent (mirrors
+//! Real verus queries; skip with an eprintln when verus is absent (mirrors
 //! `strengthening_conformance.rs`), never panic. `unwrap`/`expect` are fine in
 //! `tests/` (not anti-pattern-gated).
 
@@ -131,13 +131,13 @@ fn surfaced_suggestions(label: &str, program: &str, item: &str) -> (Option<i32>,
     (code, clauses)
 }
 
-/// PROBE #2 (R-DEFER-1, REQ-2): EVERY surfaced suggestion must be ADOPTABLE.
+/// Probe #2 (R-DEFER-1, REQ-2): every surfaced suggestion must be adoptable.
 ///
-/// For each fixture that surfaces ≥1 suggestion, ADOPT each surfaced clause
-/// (replace the loose `ens` with `ens <clause>` over the SAME body + req/fx) and
-/// re-check through forge's OWN pipeline; the adopted contract MUST certify L3
+/// For each fixture that surfaces ≥1 suggestion, adopt each surfaced clause
+/// (replace the loose `ens` with `ens <clause>` over the same body + req/fx) and
+/// re-check through forge's own pipeline; the adopted contract must certify L3
 /// (§7 step-5 "proves with no body change" / R-DEFER-1). A surfaced clause that
-/// does NOT certify L3 on adoption is vaporware → divergence.
+/// does not certify L3 on adoption is vaporware → divergence.
 #[test]
 fn every_surfaced_suggestion_is_adoptable_l3() {
     if !verus_present() {
@@ -191,7 +191,7 @@ fn every_surfaced_suggestion_is_adoptable_l3() {
         );
         for clause in &clauses {
             surfaced_any = true;
-            // ADOPT: replace the loose `ens` with the surfaced clause, same body.
+            // Adopt: replace the loose `ens` with the surfaced clause, same body.
             // The header up to `ens` is reused; we splice the clause in.
             let adopted = fx
                 .header

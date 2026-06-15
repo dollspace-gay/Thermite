@@ -1,28 +1,28 @@
-//! The OFF-CORPUS generator of well-typed SpecTherm contract clauses
+//! The off-corpus generator of well-typed SpecTherm contract clauses
 //! (`.design/verified/contract-tv.md` REQ-3; epic crosslink #139 / blocker
-//! #142). This is **the corpus-bound escape** — the thesis payoff of contract-TV.
+//! #142). This is the corpus-bound escape, the payoff of contract-TV.
 //!
 //! ## Why a generator (the corpus bound it un-bounds)
 //!
-//! Of the five existing fidelity layers, only ONE actually catches a wrong
-//! lowering of a contract's MEANING — golden files. And golden files are
-//! per-corpus: they certify the lowering of the EXACT programs under
-//! `tests/golden/lower/`. A lowering bug that only manifests on a clause shape
-//! NOT in the corpus is invisible. TV over an UNBOUNDED, deterministically
-//! generated clause space removes that bound: [`generate_clauses`] emits a
-//! diverse stream of well-typed contract-position [`Expr`]s, each lowered to its
-//! production predicate (`thermite_lower::lower_contract_expr`) AND encoded to the
-//! independent reference (`crate::ref_encode::ref_contract_pred`), and the
-//! per-clause Z3 equivalence obligation (`crate::obligation::equivalence_obligation`)
-//! is discharged on each. The faithful lowerer makes ALL verify; ANY counterexample
-//! is a REAL off-corpus infidelity finding (`thermite-design.md` §1 — trust a
-//! skeptical third party can audit, here over an unbounded clause space).
+//! Of the five existing fidelity layers, only one catches a wrong lowering of a
+//! contract's meaning: golden files. And golden files are per-corpus: they certify
+//! the lowering of the exact programs under `tests/golden/lower/`. A lowering bug
+//! that only manifests on a clause shape not in the corpus is invisible. TV over an
+//! unbounded, deterministically generated clause space removes that bound:
+//! [`generate_clauses`] emits a diverse stream of well-typed contract-position
+//! [`Expr`]s, each lowered to its production predicate
+//! (`thermite_lower::lower_contract_expr`) and encoded to the independent reference
+//! (`crate::ref_encode::ref_contract_pred`), and the per-clause Z3 equivalence
+//! obligation (`crate::obligation::equivalence_obligation`) is discharged on each.
+//! The faithful lowerer makes all verify; any counterexample is a real off-corpus
+//! infidelity finding (`thermite-design.md` §1 — auditable by a skeptical third
+//! party, here over an unbounded clause space).
 //!
 //! ## The fixed typed vocabulary (so generated clauses lower + frame uniformly)
 //!
-//! A generated clause is a `bool`-valued predicate over a FIXED typed environment
-//! — the vocabulary below — so a SINGLE obligation frame (the forge
-//! off-corpus run's [`crate::obligation::ObligationFrame`]) frames EVERY generated
+//! A generated clause is a `bool`-valued predicate over a fixed typed environment
+//! — the vocabulary below — so a single obligation frame (the forge
+//! off-corpus run's [`crate::obligation::ObligationFrame`]) frames every generated
 //! clause without per-clause type inference. The world:
 //!
 //! - `Seq<u32>` slice values `xs`, `ys` (seq-bound — their `@`-view is the
@@ -32,21 +32,20 @@
 //! - the bounded-int `result: u64` (nat-coerced when compared to a `nat`-valued
 //!   spec-fn call) and `old_acc: u64`;
 //! - the `nat`-returning spec fn `spec_sum(Seq<u32>) -> nat`;
-//! - the 8 frozen combinators, each generated with the CORRECT argument KINDS per
+//! - the 8 frozen combinators, each generated with the correct argument kinds per
 //!   `thermite_spec::lookup(name).arg_kinds` (`Slice`/`Index`/`Pred`/`Value`), so a
-//!   generated `forall_below(xs, n, |x| …)` has an `int` index in the `Index` slot
-//!   — never a slice (the #145 arg-kind discipline).
+//!   generated `forall_below(xs, n, |x| …)` has an `int` index in the `Index` slot,
+//!   never a slice (the #145 arg-kind discipline).
 //!
 //! This vocabulary is the contract between the generator (here, in the independent
-//! crate) and the forge off-corpus run's frame — it is documented as the binding
-//! shape both sides agree on, exactly as `thermite-design.md` §4.2 freezes the
-//! sublanguage.
+//! crate) and the forge off-corpus run's frame: it is the binding shape both sides
+//! agree on, as `thermite-design.md` §4.2 freezes the sublanguage.
 //!
 //! ## Determinism (R-CODE-5)
 //!
 //! Generation is a pure function of `(seed, n)` — a self-contained SplitMix64
-//! PRNG ([`Rng`]), NO `rand` crate, NO wall-clock, NO global state. The same
-//! `(seed, n)` ALWAYS yields the same `Vec<Expr>` (asserted in `tests`). This is
+//! PRNG ([`Rng`]), no `rand` crate, no wall-clock, no global state. The same
+//! `(seed, n)` always yields the same `Vec<Expr>` (asserted in `tests`). This is
 //! the seeded-reproducibility contract (AC-7).
 //!
 //! ## REQ status
@@ -60,9 +59,9 @@ use std::collections::BTreeSet;
 use thermite_syntax::ast::{BinOp, Expr, IndexArg, PrimType, Type, UnaryOp};
 
 /// A self-contained SplitMix64 PRNG (R-CODE-5: deterministic, seeded, no `rand`
-/// crate, no wall-clock). SplitMix64 is a tiny, well-distributed integer
-/// generator — exactly enough to drive the structural choices below
-/// reproducibly. The same `seed` ALWAYS produces the same stream.
+/// crate, no wall-clock). SplitMix64 is a small, well-distributed integer
+/// generator, enough to drive the structural choices below reproducibly. The same
+/// `seed` always produces the same stream.
 struct Rng {
     state: u64,
 }
@@ -107,9 +106,9 @@ const INT_NAMES: &[&str] = &["n", "m", "k"];
 const NAT_COERCE_NAMES: &[&str] = &["result", "old_acc"];
 /// The fixed `String`/`&TString` byte-view receiver name (#150 gap #2). A generated
 /// byte-view clause (`t.byte_at(i)`/`t.len()`) uses `t` so the forge off-corpus run
-/// can dispatch BOTH columns to the wrapper SPEC fns (`t.spec_byte_at(i as int)` /
+/// can dispatch both columns to the wrapper spec fns (`t.spec_byte_at(i as int)` /
 /// `t.spec_len()`) — production's `recv_is_string` rewrite + the reference's
-/// `string_bound` dispatch — making the String byte-view off-corpus-CHECKABLE.
+/// `string_bound` dispatch — making the String byte-view off-corpus-checkable.
 const STRING_NAME: &str = "t";
 
 /// Generate `n` well-typed, `bool`-valued contract-position [`Expr`]s over the
@@ -119,7 +118,7 @@ const STRING_NAME: &str = "t";
 /// both encode, so the per-clause TV obligation runs on each (the off-corpus
 /// fidelity check — AC-7).
 ///
-/// The stream is DIVERSE (not `n` copies of `true`): each clause is built by a
+/// The stream is diverse (not `n` copies of `true`): each clause is built by a
 /// bounded recursive descent that, at the root, picks among a comparison (over any
 /// `BinOp`), a logical connective (`&&`/`||`/`!`, with nesting), a combinator call
 /// (all 8, with the correct arg kinds), a byte-view comparison, or a `spec_sum`
@@ -128,13 +127,13 @@ pub fn generate_clauses(seed: u64, n: usize) -> Vec<Expr> {
     let mut rng = Rng::new(seed);
     let mut out = Vec::with_capacity(n);
     for _ in 0..n {
-        // ~1 in 6 clauses is a STANDALONE byte-view comparison (a frozen contract
+        // ~1 in 6 clauses is a standalone byte-view comparison (a frozen contract
         // construct, F3); the rest are arbitrary nested predicates over the
         // comparison/connective/combinator/nat space. Keeping byte-view a top-level
-        // STANDALONE form (not mixed into the recursive connective descent) means a
-        // non-byte-view clause is FULLY checkable off-corpus — the forge run skips a
-        // byte-view clause HONESTLY (String/body-TV scope) without that skip
-        // contaminating the connective/combinator clauses (which DO verify).
+        // standalone form (not mixed into the recursive connective descent) means a
+        // non-byte-view clause is fully checkable off-corpus: the forge run skips a
+        // byte-view clause (String/body-TV scope) without that skip
+        // contaminating the connective/combinator clauses (which do verify).
         if rng.below(6) == 0 {
             out.push(gen_byteview_cmp(&mut rng, MAX_DEPTH));
         } else {
@@ -153,17 +152,17 @@ const MAX_DEPTH: usize = 3;
 /// `bool` forms (a comparison / combinator / byte-view test / nat comparison) are
 /// produced so the recursion always bottoms out.
 ///
-/// NOTE on byte-view (`s.byte_at(i)`/`s.len()`): a generated byte-view clause IS
-/// emitted (it is a frozen contract construct, F3 in the teeth) — but the FORGE
+/// Note on byte-view (`s.byte_at(i)`/`s.len()`): a generated byte-view clause is
+/// emitted (it is a frozen contract construct, F3 in the teeth), but the forge
 /// off-corpus run frames `s` as a `Seq<u8>` directly, so production's byte-view
-/// rewrite (which keys on a `&String` param + the TString wrapper) does NOT apply
-/// uniformly and the run reports such a clause `Skipped` (an HONEST not-checked,
-/// not a false faithful — `forge::contract_tv`). Byte-view lowering FIDELITY is
+/// rewrite (which keys on a `&String` param + the TString wrapper) does not apply
+/// uniformly and the run reports such a clause `Skipped` (an honest not-checked,
+/// not a false faithful — `forge::contract_tv`). Byte-view lowering fidelity is
 /// covered by the F3 teeth + the String corpus programs; framing it off-corpus
 /// needs the TString-wrapper bridge, which is String/body-TV scope (#139 step 2).
 fn gen_bool(rng: &mut Rng, depth: usize) -> Expr {
-    // At the depth cap, a leaf bool form only (no further nesting). Byte-view is NOT
-    // in this recursive descent (it is a top-level STANDALONE form in
+    // At the depth cap, a leaf bool form only (no further nesting). Byte-view is not
+    // in this recursive descent (it is a top-level standalone form in
     // `generate_clauses`) so a nested connective/combinator clause stays fully
     // off-corpus-checkable.
     let choice = if depth >= MAX_DEPTH {
@@ -176,10 +175,10 @@ fn gen_bool(rng: &mut Rng, depth: usize) -> Expr {
         0 => gen_comparison(rng, depth),
         // (1) A combinator call (one of the 8 frozen, correct arg kinds).
         1 => gen_combinator(rng, depth),
-        // (2) A `result`/`old_acc` compared to `spec_sum(seq)` over ANY op (the
-        //     `Eq` coercion shape + the NON-`Eq` bare shapes — #147 gap #2).
+        // (2) A `result`/`old_acc` compared to `spec_sum(seq)` over any op (the
+        //     `Eq` coercion shape + the non-`Eq` bare shapes — #147 gap #2).
         2 => gen_nat_cmp(rng),
-        // (3) A CAST-`<`-class comparison (`n as u32 < k`) — the #146/#148 off-corpus
+        // (3) A cast-`<`-class comparison (`n as u32 < k`) — the #146/#148 off-corpus
         //     regression guard (#147). A leaf form, so it appears at every depth.
         3 => gen_cast_lt(rng, depth),
         // (4) A logical AND of two sub-predicates (nesting).
@@ -248,13 +247,13 @@ fn gen_int(rng: &mut Rng, depth: usize) -> Expr {
     }
 }
 
-/// The NON-`Eq` nat-comparison ops the generator now EXERCISES (#147 / regression-
-/// guarding #146/#148 off-corpus). Production coerces `as nat` ONLY on `Eq`
+/// The non-`Eq` nat-comparison ops the generator exercises (#147 / regression-
+/// guarding #146/#148 off-corpus). Production coerces `as nat` only on `Eq`
 /// (`lower_nat_equality` is `Eq`-only); a `<=`/`<`/`>`/`>=`/`!=` comparison of a
-/// bounded `u64` to a `nat`-valued `spec_sum(seq)` is lowered BARE (`acc <=
+/// bounded `u64` to a `nat`-valued `spec_sum(seq)` is lowered bare (`acc <=
 /// spec_sum(xs)`), which verus accepts as a mixed `u64`/`nat` comparison. These are
-/// exactly the clauses #147 gap #2 added to `ref_encode` (Eq-only coercion), so
-/// generating them CONFIRMS the reference matches production's Eq-only rule
+/// the clauses #147 gap #2 added to `ref_encode` (Eq-only coercion), so
+/// generating them confirms the reference matches production's Eq-only rule
 /// off-corpus (a divergence here = the reference coerced the wrong op).
 const NAT_CMP_OPS: &[BinOp] = &[
     BinOp::Eq,
@@ -266,14 +265,14 @@ const NAT_CMP_OPS: &[BinOp] = &[
 ];
 
 /// A `result`/`old_acc` (a bounded `u64`) compared to a `nat`-valued
-/// `spec_sum(seq)` call over ANY comparison op (#147): the `Eq` coercion shape
-/// (`result == spec_sum(xs)` → `result as nat == spec_sum(xs)`) AND — newly (#147
-/// gap #2) — the NON-`Eq` BARE shapes (`acc <= spec_sum(xs)`, `i != spec_sum`),
-/// which production lowers WITHOUT the `as nat` coercion (it is `Eq`-only). The
-/// off-corpus run thus exercises BOTH coercion branches: a divergence on a non-`Eq`
+/// `spec_sum(seq)` call over any comparison op (#147): the `Eq` coercion shape
+/// (`result == spec_sum(xs)` → `result as nat == spec_sum(xs)`) and — newly (#147
+/// gap #2) — the non-`Eq` bare shapes (`acc <= spec_sum(xs)`, `i != spec_sum`),
+/// which production lowers without the `as nat` coercion (it is `Eq`-only). The
+/// off-corpus run thus exercises both coercion branches: a divergence on a non-`Eq`
 /// clause = the reference applied the coercion on the wrong op (the #147 gap #2
 /// regression guard). Verus accepts the mixed `u64`/`nat` comparison directly, so
-/// every op is well-typed on BOTH encoders.
+/// every op is well-typed on both encoders.
 fn gen_nat_cmp(rng: &mut Rng) -> Expr {
     let op = rng.pick(NAT_CMP_OPS);
     let scalar = path(rng.pick(NAT_COERCE_NAMES));
@@ -282,8 +281,8 @@ fn gen_nat_cmp(rng: &mut Rng) -> Expr {
         args: vec![path(rng.pick(SEQ_NAMES))],
     };
     // Randomize which side the nat call is on (both orders are valid clauses). For a
-    // non-`Eq` op the SIDE matters to production's text (`acc <= spec_sum` vs
-    // `spec_sum <= acc`) but BOTH lower bare — the reference matches either way.
+    // non-`Eq` op the side matters to production's text (`acc <= spec_sum` vs
+    // `spec_sum <= acc`) but both lower bare — the reference matches either way.
     if rng.below(2) == 0 {
         Expr::Binary {
             op,
@@ -299,26 +298,26 @@ fn gen_nat_cmp(rng: &mut Rng) -> Expr {
     }
 }
 
-/// A CAST-`<`-class comparison (#147 — the off-corpus regression guard for the
-/// #146/#148 cast-paren fix): a `Cast` LEFT operand of a `<`-LEADING comparison op
-/// (`<`/`<=`), e.g. `n as u32 < k`, `n as nat <= m`. This is EXACTLY the class the
-/// generator previously AVOIDED (`CAST_SAFE_CMP_OPS` / the `gen_pred_closure`
+/// A cast-`<`-class comparison (#147 — the off-corpus regression guard for the
+/// #146/#148 cast-paren fix): a `Cast` left operand of a `<`-leading comparison op
+/// (`<`/`<=`), e.g. `n as u32 < k`, `n as nat <= m`. This is the class the
+/// generator previously avoided (`CAST_SAFE_CMP_OPS` / the `gen_pred_closure`
 /// cast-LHS only used non-`<`-leading ops) because `x as u32 < 33` mis-parsed as a
-/// generic-arg list — the bug #146/#148 FIXED in production (`lower_binary_operand`)
+/// generic-arg list — the bug #146/#148 fixed in production (`lower_binary_operand`)
 /// and #147 gap #2 mirrored in `ref_encode` (`encode_binary_operand`). Generating it
-/// now CONFIRMS the fix holds off-corpus on BOTH encoders: a DIVERGENCE here is a
-/// real off-corpus hole in the #146/#148 fix (report loudly + file a blocker).
+/// now confirms the fix holds off-corpus on both encoders: a divergence here is a
+/// real off-corpus hole in the #146/#148 fix (report it and file a blocker).
 ///
 /// The cast target is an integer prim (`u32`) or `nat`; the RHS is an `int` scalar
 /// term (so the comparison is well-typed: `n as u32` is `u32`, `n as nat`/`int` is
 /// the arithmetic ladder — both compare to a small literal / int var). The op is
-/// drawn from the `<`-leading set ONLY (the class under guard).
+/// drawn from the `<`-leading set only (the class under guard).
 fn gen_cast_lt(rng: &mut Rng, depth: usize) -> Expr {
     // The `<`-leading comparison ops — the exact ambiguity surface (#146/#148).
     const LT_LEADING_CMP: &[BinOp] = &[BinOp::Lt, BinOp::Le];
     let op = rng.pick(LT_LEADING_CMP);
     // Cast an `int` scalar to a `u32` (the bounded-prim cast) or `nat`/`int` (the
-    // arithmetic-ladder cast) — both are the cast LEFT operand the paren guards.
+    // arithmetic-ladder cast) — both are the cast left operand the paren guards.
     let cast_ty = match rng.below(3) {
         0 => Type::Prim(PrimType::U32),
         1 => Type::Named("nat".to_string()),
@@ -344,7 +343,7 @@ fn gen_byteview_cmp(rng: &mut Rng, depth: usize) -> Expr {
     let op = rng.pick(CMP_OPS);
     if rng.below(2) == 0 {
         // `t.byte_at(i) <op> <u32 literal>` — the byte accessor with an int index,
-        // over the `String`/`&TString` receiver `t` (#150 gap #2) so BOTH columns
+        // over the `String`/`&TString` receiver `t` (#150 gap #2) so both columns
         // dispatch to `t.spec_byte_at(i as int)` and the clause is off-corpus-checkable.
         let idx = gen_int(rng, depth + 1);
         let recv = Expr::MethodCall {
@@ -386,9 +385,9 @@ const COMBINATORS: &[&str] = &[
     "forall_from",
 ];
 
-/// Generate a frozen-combinator call with the CORRECT argument kinds per the
-/// registry (REQ-3). The arg KINDS come from `thermite_spec::lookup(name).arg_kinds`
-/// (`Slice`/`Index`/`Pred`/`Value`) — so a `forall_below(xs, n, |x| …)` has an
+/// Generate a frozen-combinator call with the correct argument kinds per the
+/// registry (REQ-3). The arg kinds come from `thermite_spec::lookup(name).arg_kinds`
+/// (`Slice`/`Index`/`Pred`/`Value`), so a `forall_below(xs, n, |x| …)` has an
 /// `int` index in its `Index` slot, never a slice (the #145 discipline the
 /// reference encoder also honors). A non-`bool` combinator (`count_where` →
 /// `nat`) is wrapped in a comparison so the generated clause stays `bool`-valued.
@@ -398,7 +397,7 @@ fn gen_combinator(rng: &mut Rng, depth: usize) -> Expr {
     // The registry is the frozen ground truth for the arg kinds + arity + result.
     let Some(sig) = thermite_spec::lookup(name) else {
         // Unreachable in practice (COMBINATORS mirrors the registry); fall back to
-        // a leaf comparison rather than panic (R-CODE-2).
+        // a leaf comparison rather than panicking (R-CODE-2).
         return gen_comparison(rng, depth);
     };
     let args: Vec<Expr> = sig
@@ -407,7 +406,7 @@ fn gen_combinator(rng: &mut Rng, depth: usize) -> Expr {
         .map(|kind| match kind {
             // A slice param — a seq value name (xs/ys).
             ArgKind::Slice => path(rng.pick(SEQ_NAMES)),
-            // An int index bound — a scalar int term (NEVER a slice — #145).
+            // An int index bound — a scalar int term (never a slice, #145).
             ArgKind::Index => gen_int(rng, depth + 1),
             // The predicate closure slot — `|x| <bool over x>`.
             ArgKind::Pred => gen_pred_closure(rng),
@@ -423,11 +422,11 @@ fn gen_combinator(rng: &mut Rng, depth: usize) -> Expr {
         // A `bool`-valued combinator IS the predicate.
         ResultKind::Bool => call,
         // A `usize`/`nat`-valued combinator (`count_where`) → wrap in a comparison
-        // so the clause stays `bool`-valued. The RHS is a small LITERAL (not a
+        // so the clause stays `bool`-valued. The RHS is a small literal (not a
         // named `int` var): `count_where` returns `nat`, and comparing it to a
-        // possibly-NEGATIVE `int` var (`k`) is where production's `nat`-coercion
-        // (`k as nat`) and the reference's name-keyed coercion DIVERGE for k<0 (a
-        // generator artifact, NOT a lowering bug — #139/#142). A non-negative
+        // possibly-negative `int` var (`k`) is where production's `nat`-coercion
+        // (`k as nat`) and the reference's name-keyed coercion diverge for k<0 (a
+        // generator artifact, not a lowering bug — #139/#142). A non-negative
         // literal is coercion-neutral on both encoders, so the `count_where` clause
         // is faithfully checked. The op is `==` (the coercion-covered shape).
         ResultKind::Usize => Expr::Binary {
@@ -444,12 +443,12 @@ fn gen_combinator(rng: &mut Rng, depth: usize) -> Expr {
 /// canonical wrong-predicate infidelity the obligation catches).
 fn gen_pred_closure(rng: &mut Rng) -> Expr {
     // Occasionally cast the bound element `as u32` (exercises the #122 cast path).
-    // #147: the cast-LHS body now uses ANY comparison op INCLUDING the `<`-leading
-    // `<`/`<=` — the EXACT class #146/#148 fixed (production `lower_binary_operand`)
+    // #147: the cast-LHS body now uses any comparison op including the `<`-leading
+    // `<`/`<=` — the class #146/#148 fixed (production `lower_binary_operand`)
     // and #147 gap #2 mirrored (`ref_encode::encode_binary_operand`). Previously the
-    // generator AVOIDED `<`-leading ops on a cast LHS (the now-removed
+    // generator avoided `<`-leading ops on a cast LHS (the now-removed
     // `CAST_SAFE_CMP_OPS`) because `x as u32 < 33` mis-parsed as a generic-arg list;
-    // emitting it now CONFIRMS the paren fix holds off-corpus on BOTH encoders inside
+    // emitting it now confirms the paren fix holds off-corpus on both encoders inside
     // a combinator predicate (a divergence here = a hole in the #146/#148 fix).
     let (lhs, op) = if rng.below(3) == 0 {
         (
@@ -488,20 +487,20 @@ fn int_lit(value: u128) -> Expr {
 }
 
 // ===========================================================================
-// gen_exec_exprs — the OFF-CORPUS EXEC-position generator
+// gen_exec_exprs — the off-corpus exec-position generator
 // (`.design/verified/exec-tv.md` REQ-3; epic crosslink #151, blocker #154).
 // ===========================================================================
 
-/// One generated EXEC-position unit (REQ-3): a pure body-position [`Expr`] PAIRED
-/// with the ADEQUATE FRAME the exec-TV obligation discharges it under. The frame is
-/// part of the generated unit, NOT inferred downstream: a faithful production exec
-/// lowering of `expr` must VERIFY against the bounded exec reference, which means
+/// One generated exec-position unit (REQ-3): a pure body-position [`Expr`] paired
+/// with the adequate frame the exec-TV obligation discharges it under. The frame is
+/// part of the generated unit, not inferred downstream: a faithful production exec
+/// lowering of `expr` must verify against the bounded exec reference, which means
 /// the frame's `req` must bound the expr enough that the always-active overflow
-/// obligation (`thermite-design.md` §6, L1) does NOT spuriously fire — otherwise
+/// obligation (`thermite-design.md` §6, L1) does not spuriously fire; otherwise
 /// every clause is Unverifiable and the off-corpus guard is useless (the critic's
-/// finding). So the generator emits the bound ALONGSIDE the expr.
+/// finding). So the generator emits the bound alongside the expr.
 ///
-/// The fields mirror [`crate::obligation::ExecObligationFrame`] WITHOUT depending on
+/// The fields mirror [`crate::obligation::ExecObligationFrame`] without depending on
 /// the obligation type (the generator is a pure producer over `thermite-syntax`);
 /// `forge::exec_tv` reads them into an `ExecObligationFrame`. `params` is the fixed
 /// vocabulary subset the expr reads (name, exec type spelling); `ret_type` is the
@@ -514,10 +513,10 @@ pub struct ExecClause {
     /// The free vars the expr reads, as `(name, exec-type spelling)` — the bounded
     /// `u64`/`usize`/`&[u32]` vocabulary subset (the obligation signature).
     pub params: Vec<(String, String)>,
-    /// The expr's exec VALUE type (`u8`/`u16`/`u32`/`u64`/`usize`/`bool`) — the
+    /// The expr's exec value type (`u8`/`u16`/`u32`/`u64`/`usize`/`bool`) — the
     /// obligation's return type.
     pub ret_type: String,
-    /// The ADEQUATE enclosing `requires` — the overflow/index frame that makes the
+    /// The adequate enclosing `requires` — the overflow/index frame that makes the
     /// faithful lowering verify (e.g. `a <= 1000, b <= 1000` so `a + b`/`a * b` do
     /// not overflow; `i < xs.len()` so `xs[i]` is in bounds). `None` only when the
     /// expr is total over all inputs (a pure comparison / a narrowing cast).
@@ -527,7 +526,7 @@ pub struct ExecClause {
     pub slice_params: Vec<String>,
 }
 
-/// The fixed EXEC vocabulary the generator draws free vars from (the binding the
+/// The fixed exec vocabulary the generator draws free vars from (the binding the
 /// frame declares). The bounded `u64` scalars (overflow-checked arithmetic), the
 /// `usize` index scalars, and the one `&[u32]` slice param for indexing. This is the
 /// generator/forge-frame contract — the world both sides agree on (mirroring the
@@ -536,24 +535,24 @@ const EXEC_U64_NAMES: &[&str] = &["a", "b", "c"];
 const EXEC_USIZE_NAMES: &[&str] = &["i", "j"];
 const EXEC_SLICE_NAME: &str = "xs";
 
-/// The conservative per-scalar UPPER BOUND the frame's `req` pins on every base
-/// `u64`/`usize` scalar (REQ-3 — the ADEQUATE overflow frame). With every base
+/// The conservative per-scalar upper bound the frame's `req` pins on every base
+/// `u64`/`usize` scalar (REQ-3 — the adequate overflow frame). With every base
 /// scalar `<= 1000` and the arithmetic tree depth capped at [`EXEC_MAX_DEPTH`], the
 /// largest reachable value is `1000 * 1000 * 1000 = 10^9` (a depth-3 product),
-/// FAR below `u64::MAX` / `usize::MAX` — so a faithful `+`/`-`/`*` NEVER overflows
+/// far below `u64::MAX` / `usize::MAX`, so a faithful `+`/`-`/`*` never overflows
 /// and the exec overflow obligation does not spuriously fire. (Subtraction is
 /// emitted only in the wrapped `(a + bound) - b` shape that cannot underflow; see
 /// [`gen_exec_arith`].) A narrowing cast (`as u8`) still wraps — that is the exec
-/// value semantics under test, NOT an overflow — and the bounded reference matches
-/// the production wrap exactly.
+/// value semantics under test, not an overflow — and the bounded reference matches
+/// the production wrap.
 const EXEC_SCALAR_BOUND: u128 = 1000;
 
 /// The exec expression-tree depth cap (keeps the obligation small + the value bound
 /// reasoning in [`EXEC_SCALAR_BOUND`] valid: at most 3 multiplied scalars).
 const EXEC_MAX_DEPTH: usize = 2;
 
-/// The exec VALUE type a generated subterm carries — the type discipline that keeps
-/// the generated expr well-typed (so the faithful lowering compiles) AND lets the
+/// The exec value type a generated subterm carries — the type discipline that keeps
+/// the generated expr well-typed (so the faithful lowering compiles) and lets the
 /// frame declare the right `ret_type`. The integer types are the bounded exec prims
 /// (`thermite-design.md` §4.1); `Bool` is a comparison result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -595,7 +594,7 @@ impl ExecTy {
 }
 
 /// A running accumulator of which vocabulary free vars an emitted exec subterm
-/// references, so [`gen_exec_exprs`] can declare EXACTLY the params the expr uses (a
+/// references, so [`gen_exec_exprs`] can declare the params the expr uses (a
 /// minimal, well-typed obligation signature) + the adequate `req`.
 #[derive(Default)]
 struct ExecScope {
@@ -625,7 +624,7 @@ impl ExecScope {
         out
     }
 
-    /// The ADEQUATE `requires` for the referenced vars (REQ-3): every base scalar is
+    /// The adequate `requires` for the referenced vars (REQ-3): every base scalar is
     /// bounded `<= EXEC_SCALAR_BOUND` (so arithmetic never overflows) and an indexed
     /// slice carries `i < xs.len()` (so the access is in bounds). `None` if no var
     /// needs a bound (a literal-only / no-arith expr — but the generator always
@@ -644,7 +643,7 @@ impl ExecScope {
         }
         if self.uses_slice {
             // Every usize scalar that could index `xs` is bounded `< xs.len()`. The
-            // generator only ever indexes with a BARE usize scalar (see
+            // generator only ever indexes with a bare usize scalar (see
             // `gen_exec_index`), so bounding each in-use usize `< xs.len()` keeps the
             // faithful `xs[i]` access in bounds. (The `<= bound` above is redundant
             // with `< len` but both are sound; verus takes the conjunction.)
@@ -670,13 +669,13 @@ impl ExecScope {
     }
 }
 
-/// Generate `n` well-framed EXEC-position [`ExecClause`]s deterministically from
+/// Generate `n` well-framed exec-position [`ExecClause`]s deterministically from
 /// `seed` (REQ-3). Each carries a pure exec expr over the bounded exec sublanguage
 /// (`thermite-design.md` §4.1) — `u64`/`usize` arithmetic (`+`/`-`/`*`), narrowing/
 /// widening casts (`as u8`/`u16`/`u32`/`u64`/`usize`), the cast-`<` surface
 /// (`x as u32 < k`, casts under `<`/`<=`/`<<`), shifts, bitwise ops, and slice
-/// indexing (`xs[i]`) — PLUS the adequate overflow/index frame so the FAITHFUL
-/// lowering VERIFIES (the part the critic flagged: an un-bounded `a + b` would make
+/// indexing (`xs[i]`) — plus the adequate overflow/index frame so the faithful
+/// lowering verifies (the part the critic flagged: an un-bounded `a + b` would make
 /// the honest overflow obligation fire and every clause Unverifiable). The cast-`<`
 /// + arithmetic + cast classes are the off-corpus #122/#146 regression guard.
 ///
@@ -699,7 +698,7 @@ fn gen_exec_clause(rng: &mut Rng) -> ExecClause {
     let mut scope = ExecScope::default();
     // The top-level value-type mix: weight toward `bool` (the comparison / cast-`<`
     // surface, the #146 guard) and the integer types (arithmetic / cast, the #122
-    // guard + the overflow surface). `usize` covers the index-arithmetic surface.
+    // guard and the overflow surface). `usize` covers the index-arithmetic surface.
     let ty = match rng.below(6) {
         0 | 1 => ExecTy::Bool,
         2 => ExecTy::Usize,
@@ -725,8 +724,8 @@ fn gen_exec_typed(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope
         ExecTy::Bool => gen_exec_bool(rng, depth, scope),
         ExecTy::U64 => gen_exec_int(rng, ExecTy::U64, depth, scope),
         ExecTy::Usize => gen_exec_int(rng, ExecTy::Usize, depth, scope),
-        // The narrower integer types only ever arise as a CAST target (a narrowing
-        // cast of a wider integer) — never as a free var (the vocabulary has no
+        // The narrower integer types only ever arise as a cast target (a narrowing
+        // cast of a wider integer), never as a free var (the vocabulary has no
         // `u8`/`u16`/`u32` scalar). So a `u8`/`u16`/`u32`-typed expr is a cast.
         ExecTy::U32 | ExecTy::U16 | ExecTy::U8 => gen_exec_cast(rng, ty, depth, scope),
     }
@@ -748,8 +747,8 @@ fn gen_exec_bool(rng: &mut Rng, depth: usize, scope: &mut ExecScope) -> Expr {
         0 => {
             let op = rng.pick(CMP_OPS);
             // ~half the time make the LHS a narrowing cast → the cast-`<` surface
-            // when the op is `<`/`<=`. The obligation's cast-`<` outer-paren
-            // discipline (production + reference) is what this guards.
+            // when the op is `<`/`<=`. This guards the obligation's cast-`<`
+            // outer-paren discipline (production + reference).
             let lhs = if rng.below(2) == 0 {
                 let target = rng.pick(&[ExecTy::U32, ExecTy::U16, ExecTy::U8]);
                 gen_exec_cast(rng, target, depth + 1, scope)
@@ -812,8 +811,8 @@ fn gen_exec_int(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope) 
         1 => int_lit(rng.below(16) as u128),
         // (2) Bounded arithmetic (`+`/`*`, or the underflow-safe `-`).
         2 => gen_exec_arith(rng, ty, depth, scope),
-        // (3) A shift by a small literal (the shift-lowering class). `x << 1`/`x >> 2`
-        //     — the shift amount is a small literal (< 8) so a left shift of a
+        // (3) A shift by a small literal (the shift-lowering class). `x << 1`/`x >> 2`:
+        //     the shift amount is a small literal (< 8) so a left shift of a
         //     bounded `<= 1000` value cannot overflow (`1000 << 7 < 2^17`).
         3 => {
             let op = if rng.below(2) == 0 {
@@ -839,18 +838,18 @@ fn gen_exec_int(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope) 
     }
 }
 
-/// Generate bounded arithmetic of type `ty` (REQ-3 — the overflow surface, KEPT
+/// Generate bounded arithmetic of type `ty` (REQ-3 — the overflow surface, kept
 /// total by the frame's `<= EXEC_SCALAR_BOUND` bounds + the depth cap). `+`/`*` are
-/// emitted directly (the bound guarantees no overflow); `-` is emitted ONLY as the
+/// emitted directly (the bound guarantees no overflow); `-` is emitted only as the
 /// underflow-safe `(a + k) - b` shape (a sum that dominates the subtrahend), so the
 /// faithful checked subtraction never underflows.
 ///
-/// CRITICAL (the frame-adequacy concern): an arithmetic OPERAND is drawn ONLY from
-/// the PROVABLY-BOUNDED forms ([`gen_exec_arith_operand`] — a scalar / small literal
-/// / nested bounded arith) — NEVER a bitwise/shift/index result. Verus's SMT cannot
+/// The frame-adequacy concern: an arithmetic operand is drawn only from
+/// the provably-bounded forms ([`gen_exec_arith_operand`] — a scalar / small literal
+/// / nested bounded arith), never a bitwise/shift/index result. Verus's SMT cannot
 /// bound `a | c` (bitvector reasoning is off by default), so `(a | c) + a` would
-/// fail its OVERFLOW obligation (an inadequate frame, NOT an infidelity). The
-/// bitwise/shift/index forms therefore appear ONLY as a TOP-LEVEL integer expr (a
+/// fail its overflow obligation (an inadequate frame, not an infidelity). The
+/// bitwise/shift/index forms therefore appear only as a top-level integer expr (a
 /// whole clause), never under `+`/`-`/`*`.
 fn gen_exec_arith(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope) -> Expr {
     if rng.below(3) == 0 {
@@ -871,7 +870,7 @@ fn gen_exec_arith(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope
             rhs: Box::new(rhs),
         }
     } else if rng.below(2) == 0 {
-        // `+` of two PROVABLY-BOUNDED operands. Addition is LINEAR — verus proves
+        // `+` of two provably-bounded operands. Addition is linear — verus proves
         // `(x <= 1000) && (y <= 1000) ==> x + y <= 2000 < u64::MAX` directly.
         Expr::Binary {
             op: BinOp::Add,
@@ -879,10 +878,10 @@ fn gen_exec_arith(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope
             rhs: Box::new(exec_scalar(rng, ty, scope)),
         }
     } else {
-        // `*` by a SMALL LITERAL ONLY (a LINEAR scaling — `c * 5`). A product of two
-        // UNKNOWNS (`c * c`, `i * j`) is NONLINEAR: verus's SMT does NOT prove
+        // `*` by a small literal only (a linear scaling — `c * 5`). A product of two
+        // unknowns (`c * c`, `i * j`) is nonlinear: verus's SMT does not prove
         // `(c <= 1000) ==> c * c <= 1_000_000` without a nonlinear hint, so the
-        // multiplication overflow obligation would FAIL (a frame inadequacy, NOT an
+        // multiplication overflow obligation would fail (a frame inadequacy, not an
         // infidelity). A `scalar * literal` keeps it linear + provably bounded
         // (`c * 8 <= 8000`), so the faithful lowering verifies.
         Expr::Binary {
@@ -893,9 +892,9 @@ fn gen_exec_arith(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope
     }
 }
 
-/// A PROVABLY-BOUNDED arithmetic operand of type `ty`: a named bounded scalar, a
-/// small literal, or — below the cap — nested bounded arithmetic. Deliberately
-/// EXCLUDES bitwise/shift/index forms (verus cannot bound those, so they would break
+/// A provably-bounded arithmetic operand of type `ty`: a named bounded scalar, a
+/// small literal, or — below the cap — nested bounded arithmetic. Excludes
+/// bitwise/shift/index forms (verus cannot bound those, so they would break
 /// the overflow obligation of the enclosing `+`/`*` — the frame-adequacy concern).
 fn gen_exec_arith_operand(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope) -> Expr {
     let choice = if depth >= EXEC_MAX_DEPTH {
@@ -921,7 +920,7 @@ fn exec_scalar(rng: &mut Rng, ty: ExecTy, scope: &mut ExecScope) -> Expr {
             path(name)
         }
         // Every other integer scalar is drawn from the `u64` vocabulary (the wide
-        // base type; narrower types only arise via a cast of one of these).
+        // base type; narrower types arise only via a cast of one of these).
         _ => {
             let name = rng.pick(EXEC_U64_NAMES);
             scope.uses_u64.insert(name);
@@ -936,7 +935,7 @@ fn exec_scalar(rng: &mut Rng, ty: ExecTy, scope: &mut ExecScope) -> Expr {
 fn gen_exec_cast(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope) -> Expr {
     let Some(target) = ty.cast_type() else {
         // `Bool` has no cast target — fall back to a bounded scalar (unreachable in
-        // practice: `gen_exec_typed` never routes `Bool` here, R-CODE-2).
+        // practice: `gen_exec_typed` never routes `Bool` here; R-CODE-2).
         return exec_scalar(rng, ExecTy::U64, scope);
     };
     let inner = gen_exec_int(rng, ExecTy::U64, depth + 1, scope);
@@ -948,7 +947,7 @@ fn gen_exec_cast(rng: &mut Rng, ty: ExecTy, depth: usize, scope: &mut ExecScope)
 
 /// Generate `xs[i] as <ty>` (REQ-3 / AC-5 — the slice-index element-value surface).
 /// The element is a `u32`; it is cast to the requested `ty` (a widening to `u64`/
-/// `usize`, identity to `u32`). The index is a BARE bounded usize scalar (`i`/`j`),
+/// `usize`, identity to `u32`). The index is a bare bounded usize scalar (`i`/`j`),
 /// so the frame's `i < xs.len()` keeps the faithful `xs[i]` in bounds.
 fn gen_exec_index_as(rng: &mut Rng, ty: ExecTy, _depth: usize, scope: &mut ExecScope) -> Expr {
     scope.uses_slice = true;
@@ -959,7 +958,7 @@ fn gen_exec_index_as(rng: &mut Rng, ty: ExecTy, _depth: usize, scope: &mut ExecS
         index: IndexArg::Single(Box::new(path(idx_name))),
     };
     // The element is `u32`; cast to the target value type (the obligation's
-    // `ret_type`). A `u32` target is a same-type cast (still exercised — the
+    // `ret_type`). A `u32` target is a same-type cast (still exercises the
     // production/reference cast path), wider targets widen.
     let target = match ty {
         ExecTy::U64 => Type::Prim(PrimType::U64),
@@ -976,7 +975,7 @@ fn gen_exec_index_as(rng: &mut Rng, ty: ExecTy, _depth: usize, scope: &mut ExecS
 mod tests {
     use super::*;
 
-    /// REQ-3 / AC-7: the generator is DETERMINISTIC — the same `(seed, n)` yields
+    /// REQ-3 / AC-7: the generator is deterministic — the same `(seed, n)` yields
     /// the identical clause stream (R-CODE-5). Two runs at the same seed are equal;
     /// a different seed diverges (so it is not constant).
     #[test]
@@ -989,7 +988,7 @@ mod tests {
         assert_eq!(a.len(), 50);
     }
 
-    /// REQ-3: the stream is DIVERSE — not `n` copies of one shape. Over a 200-clause
+    /// REQ-3: the stream is diverse — not `n` copies of one shape. Over a 200-clause
     /// run every top-level construct family appears (comparisons, connectives,
     /// combinators, byte-view, casts), and no single clause dominates. This is the
     /// "report the construct coverage" honesty check.
@@ -1002,8 +1001,8 @@ mod tests {
         assert!(cov.combinators >= 5, "combinators: {}", cov.combinators);
         assert!(cov.byteview >= 5, "byteview: {}", cov.byteview);
         assert!(cov.casts >= 1, "casts: {}", cov.casts);
-        // #147: the off-corpus run must now EXERCISE the cast-`<` class (a `Cast`
-        // left operand of a `<`-leading op) AND non-`Eq` nat comparisons — the
+        // #147: the off-corpus run must now exercise the cast-`<` class (a `Cast`
+        // left operand of a `<`-leading op) and non-`Eq` nat comparisons — the
         // #146/#148 regression-guard surface. Both must appear (else the guard is
         // vacuous).
         assert!(cov.cast_lt >= 1, "cast-`<` clauses: {}", cov.cast_lt);
@@ -1021,7 +1020,7 @@ mod tests {
     }
 
     /// A construct-coverage tally over a clause stream (the breakdown reported in
-    /// the off-corpus run). A clause contributes to MULTIPLE buckets (a combinator
+    /// the off-corpus run). A clause contributes to multiple buckets (a combinator
     /// clause may also nest a comparison).
     #[derive(Default, Debug)]
     struct Coverage {
@@ -1030,10 +1029,10 @@ mod tests {
         combinators: usize,
         byteview: usize,
         casts: usize,
-        /// A `Cast` LEFT operand of a `<`-leading comparison op (`<`/`<=`) — the
-        /// #146/#148 ambiguity class the generator now EXERCISES (#147).
+        /// A `Cast` left operand of a `<`-leading comparison op (`<`/`<=`) — the
+        /// #146/#148 ambiguity class the generator exercises (#147).
         cast_lt: usize,
-        /// A NON-`Eq` comparison whose other operand is a `nat`-valued spec-fn /
+        /// A non-`Eq` comparison whose other operand is a `nat`-valued spec-fn /
         /// combinator call (`acc <= spec_sum(xs)`, `k < count_where(..)`) — the
         /// #147 gap #2 non-Eq-coercion surface.
         non_eq_nat_cmp: usize,
@@ -1069,14 +1068,14 @@ mod tests {
                     BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge
                 ) {
                     c.comparisons += 1;
-                    // A `Cast` LEFT operand of a `<`-leading op — the #146/#148
+                    // A `Cast` left operand of a `<`-leading op — the #146/#148
                     // ambiguity class (#147).
                     if matches!(op, BinOp::Lt | BinOp::Le)
                         && matches!(lhs.as_ref(), Expr::Cast { .. })
                     {
                         c.cast_lt += 1;
                     }
-                    // A NON-`Eq` comparison against a `nat`-valued call (#147 gap #2).
+                    // A non-`Eq` comparison against a `nat`-valued call (#147 gap #2).
                     if !matches!(op, BinOp::Eq) && (is_nat_call(lhs) || is_nat_call(rhs)) {
                         c.non_eq_nat_cmp += 1;
                     }
@@ -1117,7 +1116,7 @@ mod tests {
 
     // ---- gen_exec_exprs (REQ-3, the exec-position generator) ----------------
 
-    /// REQ-3 / AC-7: the exec generator is DETERMINISTIC (R-CODE-5) — the same
+    /// REQ-3 / AC-7: the exec generator is deterministic (R-CODE-5) — the same
     /// `(seed, n)` yields the identical `ExecClause` stream; a different seed
     /// diverges (so it is not a constant).
     #[test]
@@ -1133,7 +1132,7 @@ mod tests {
         assert_eq!(a.len(), 60);
     }
 
-    /// REQ-3 / AC-7: the exec stream EXERCISES the off-corpus #122/#146 classes —
+    /// REQ-3 / AC-7: the exec stream exercises the off-corpus #122/#146 classes —
     /// cast-`<` (a `Cast` left of a `<`-leading op), arithmetic, casts, and indexing
     /// all appear over a 200-clause run (else the off-corpus guard is vacuous). The
     /// construct breakdown is the "report the construct coverage" honesty check.
@@ -1154,7 +1153,7 @@ mod tests {
         );
     }
 
-    /// REQ-3: every generated clause is SELF-FRAMED — the params declare exactly the
+    /// REQ-3: every generated clause is self-framed — the params declare the
     /// vars the expr references (no dangling free var → the obligation would not
     /// typecheck), and a slice-using clause names `xs` in `slice_params` + carries
     /// the index bound. This is the structural adequacy the faithful-verify run
@@ -1193,7 +1192,7 @@ mod tests {
     struct ExecCoverage {
         arith: usize,
         casts: usize,
-        /// A `Cast` LEFT operand of a `<`-leading op (`<`/`<=`/`<<`) — the #146 class.
+        /// A `Cast` left operand of a `<`-leading op (`<`/`<=`/`<<`) — the #146 class.
         cast_lt: usize,
         index: usize,
         shifts: usize,

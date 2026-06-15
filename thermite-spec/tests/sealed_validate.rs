@@ -1,11 +1,11 @@
 //! Basis Stage 6 — the `#[sealed]` ABSTRACTION-BARRIER validator rule
 //! (`.design/basis/06-provenance-and-sinks.md` REQ-8; blocker #77). A `#[sealed]`
-//! clean/capability type is door-only-mintable: the validator REJECTS any
+//! clean/capability type is door-only-mintable: the validator rejects any
 //! `Expr::StructLit` of a `#[sealed]` struct with `SpecError::SealedConstruction`,
 //! anywhere in Thermite code. The `#[boundary]` door is unaffected (its body is
 //! foreign/`external_body`, with no in-language `StructLit`), so the safe doored
-//! path validates clean. A PLAIN (non-`#[sealed]`) struct's `StructLit` is
-//! accepted exactly as before (no regression). Expectations are hand-derived from
+//! path validates clean. A plain (non-`#[sealed]`) struct's `StructLit` is
+//! accepted as before (no regression). Expectations are hand-derived from
 //! REQ-8/AC-7 (R-CHAR-3), never read back from the validator's own output.
 
 use thermite_spec::{validate, SpecError};
@@ -21,7 +21,7 @@ fn validate_src(src: &str) -> Result<(), Vec<SpecError>> {
 #[test]
 fn sealed_structlit_launder_is_rejected() {
     // The #77 taint launder: a `Sql` `#[sealed]` clean type minted via `StructLit`
-    // from a `Tainted` payload, OUTSIDE the `parameterize` door.
+    // from a `Tainted` payload, outside the `parameterize` door.
     let src = r#"
 struct Tainted { raw: u64 }
 #[sealed] struct Sql { stmt: u64 }
@@ -52,8 +52,8 @@ fn bypass_query(input: Tainted) -> u64
 
 #[test]
 fn the_safe_doored_path_validates_clean() {
-    // The door (`parameterize`) is a `#[boundary]` with a foreign body — NO
-    // in-language `StructLit` — so the seal does NOT block it. The safe path mints
+    // The door (`parameterize`) is a `#[boundary]` with a foreign body — no
+    // in-language `StructLit` — so the seal does not block it. The safe path mints
     // no `Sql` literal; it validates clean (REQ-8: the door is the only mint).
     let src = r#"
 struct Tainted { raw: u64 }
@@ -87,7 +87,7 @@ fn safe_query(input: Tainted) -> u64
 
 #[test]
 fn a_plain_struct_literal_is_unaffected() {
-    // A non-`#[sealed]` struct's `StructLit` is accepted exactly as before — the
+    // A non-`#[sealed]` struct's `StructLit` is accepted as before — the
     // seal is opt-in and inert on plain structs (AC-6, no regression).
     let src = r#"
 struct Account { balance: u64 }
@@ -108,8 +108,8 @@ fn mk(b: u64) -> u64
 
 #[test]
 fn no_sealed_struct_means_the_rule_is_inert() {
-    // With NO `#[sealed]` struct declared, the barrier set is empty — every
-    // `StructLit` is accepted (the non-IFC corpus is UNCHANGED, AC-6).
+    // With no `#[sealed]` struct declared, the barrier set is empty — every
+    // `StructLit` is accepted (the non-IFC corpus is unchanged, AC-6).
     let src = r#"
 struct Sql { stmt: u64 }
 

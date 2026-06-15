@@ -1,36 +1,36 @@
 //! Divergence pins for crosslink #227 + #228 — the #225 fix (commit `c02b9a6b`,
 //! the type-directed spec-call narrowing cast `Ctx::spec_call_param_cast` fed by
 //! `spec_fn_param_type_map`) threaded the param-type map through
-//! `lower_spec_fn`/`lower_fn_signature`/`lower_external_body_fn` ONLY. Three
-//! spec-context lowering entry points still build their `Ctx` WITHOUT
+//! `lower_spec_fn`/`lower_fn_signature`/`lower_external_body_fn` only. Three
+//! spec-context lowering entry points still build their `Ctx` without
 //! `.with_spec_fn_param_types(..)`, so a user-spec-fn call with an arithmetic
-//! argument on those paths falls back to the hardcoded `as u64` — the EXACT #225
+//! argument on those paths falls back to the hardcoded `as u64` — the #225
 //! bug class the fix was supposed to close:
 //!
-//!   1. `lower_loop` (`Ctx::spec(..)` for the loop `inv` clauses AND the loop
+//!   1. `lower_loop` (`Ctx::spec(..)` for the loop `inv` clauses and the loop
 //!      `dec` measure) — a `u32`-param spec fn named with an arithmetic arg in a
 //!      loop invariant emits `s_dec((i + 0) as u64)` → ill-typed Verus
 //!      (`expected u32, found u64`) → the whole item dies at L0 though the
-//!      Thermite source is correct. LIVE-CONFIRMED via `forge check` (E0308 in
+//!      Thermite source is correct. Live-confirmed via `forge check` (E0308 in
 //!      the emitted invariant). Tracking #227.
 //!   2. `spec_dec` (the fn-level `decreases` measure, `Ctx::spec_seq()`) — a
 //!      `dec s_dec(n + 0)` measure emits `decreases s_dec((n + 0) as u64)`,
 //!      the same E0308 class. Tracking #227.
 //!   3. `lower_contract_expr` (the contract-TV production column) — its signature
 //!      takes no `spec_fn_param_types`, so the TV's "production" lowering of
-//!      `result == s_dec(n - 1)` is `s_dec((n - 1) as u64)` while the REAL
+//!      `result == s_dec(n - 1)` is `s_dec((n - 1) as u64)` while the real
 //!      production lowering (`lower_fn_signature`, post-#225) emits
 //!      `s_dec((n - 1) as u32)`. `.design/verified/contract-tv.md` REQ-2: "The
 //!      production side reuses `lower_fn_signature in lower.rs`'s clause output
 //!      verbatim (the artifact under test)" — violated; the TV phase no longer
 //!      checks the real artifact for this clause class. Tracking #228.
 //!
-//! THE AUTHORITY (R-CHAR-3): the expected cast target is the callee's DECLARED
+//! The authority (R-CHAR-3): the expected cast target is the callee's declared
 //! param type — the same authority the #225 fix commit cites
 //! (`.design/lower/verus-lowering.md` REQ-5: spec position is unbounded `int`,
 //! the narrowing target is the surface integer set `u32`/`u64`/`usize`) — and,
 //! for case 3, `.design/verified/contract-tv.md` REQ-2 (verbatim reuse of the
-//! signature path's clause output). Expected substrings are HAND-DERIVED from
+//! signature path's clause output). Expected substrings are hand-derived from
 //! the fixtures' declared param types, never copied from the lowerer's output.
 
 fn lower(src: &str) -> String {
@@ -39,7 +39,7 @@ fn lower(src: &str) -> String {
     thermite_lower::lower(&parsed.program).expect("lowering must succeed")
 }
 
-/// A `u32`-param recursive spec fn + an exec fn whose LOOP INVARIANT names it
+/// A `u32`-param recursive spec fn + an exec fn whose loop invariant names it
 /// with an arithmetic argument (`s_dec(i + 0)`) — the `lower_loop` inv path.
 const LOOP_INV_PROGRAM: &str = "\
 spec fn s_dec(n: u32) -> u32
@@ -73,8 +73,8 @@ fn count_up(n: u32) -> u32
 fn loop_invariant_spec_call_arith_arg_casts_to_declared_param_type() {
     let out = lower(LOOP_INV_PROGRAM);
     // The callee `s_dec` declares a `u32` param, so the invariant's arithmetic
-    // arg must narrow to the DECLARED `u32` (verus-lowering.md REQ-5 / the #225
-    // rule), exactly as the signature path does for `ens result == s_dec(n)`.
+    // arg must narrow to the declared `u32` (verus-lowering.md REQ-5 / the #225
+    // rule), as the signature path does for `ens result == s_dec(n)`.
     assert!(
         out.contains("s_dec((i + 0) as u32)"),
         "a u32-param spec fn's loop-INVARIANT arith arg must cast `as u32`:\n{out}"
@@ -87,7 +87,7 @@ fn loop_invariant_spec_call_arith_arg_casts_to_declared_param_type() {
     );
 }
 
-/// A `u32`-param spec fn whose fn-level `dec` MEASURE names another u32-param
+/// A `u32`-param spec fn whose fn-level `dec` measure names another u32-param
 /// spec fn with an arithmetic argument — the `spec_dec` path.
 const SPEC_DEC_PROGRAM: &str = "\
 spec fn s_dec(n: u32) -> u32
@@ -130,13 +130,13 @@ fn contract_tv_production_column_matches_real_signature_lowering() {
     // signature lowering for a u32-param callee emits `s_dec((n - 1) as u32)`
     // (the declared-param-type rule, pinned by the fix commit's own
     // `divergence_spec_call_param_cast.rs`); `lower_contract_expr` has no way to
-    // receive the param-type map and emits the `as u64` fallback instead — so
-    // `forge tv` discharges a predicate that is NOT the production artifact.
+    // receive the param-type map and emits the `as u64` fallback instead, so
+    // `forge tv` discharges a predicate that is not the production artifact.
     //
-    // NOTE for the generator: closing this requires extending the
+    // Note for the generator: closing this requires extending the
     // `lower_contract_expr` API (a `spec_fn_param_types` input mirroring the
-    // other threaded ctx inputs) AND threading the program-derived map from
-    // `forge::contract_tv::tv_clause`; this assertion pins the MEANING, the
+    // other threaded ctx inputs) and threading the program-derived map from
+    // `forge::contract_tv::tv_clause`; this assertion pins the meaning, the
     // call shape below changes with the API.
     let clause = Expr::Binary {
         op: BinOp::Eq,
@@ -154,14 +154,14 @@ fn contract_tv_production_column_matches_real_signature_lowering() {
         }),
     };
     // The program-wide spec-fn param-type map (#228): the callee `s_dec` declares a
-    // single `u32` param. Threading this is exactly what `lower_fn_signature` does
+    // single `u32` param. Threading this is what `lower_fn_signature` does
     // (the artifact under test, contract-tv.md REQ-2 "verbatim").
     let s_dec_params: &[PrimType] = &[PrimType::U32];
     let spec_fn_param_types: &[(&str, &[PrimType])] = &[("s_dec", s_dec_params)];
     let out =
         thermite_lower::lower_contract_expr(&clause, &[], &[], &[], &[], &[], spec_fn_param_types)
             .expect("contract lowering must succeed");
-    // HAND-DERIVED expectation (verus-lowering.md REQ-5 + the #225 declared-
+    // Hand-derived expectation (verus-lowering.md REQ-5 + the #225 declared-
     // param-type rule for a `spec fn s_dec(n: u32)` callee):
     assert_eq!(
         out, "result == s_dec((n - 1) as u32)",

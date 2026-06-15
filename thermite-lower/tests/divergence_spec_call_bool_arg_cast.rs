@@ -1,25 +1,25 @@
 //! Divergence pin (re-audit of caa38848/#231, the #225 cast-chain) — a
-//! BOOL-typed `Binary`/`Unary` argument to a user `spec fn` whose declared
+//! bool-typed `Binary`/`Unary` argument to a user `spec fn` whose declared
 //! param is `bool` gets a bogus `as u64` narrowing cast, killing the item at
 //! L0 (E0308 `expected bool, found u64` — verus-confirmed live on the emitted
 //! unit).
 //!
-//! MECHANISM: `Ctx::spec_call_param_cast` documents `PrimType::Bool => None`
-//! as "a no-cast pass-through", but `None` is ALSO the not-in-map/out-of-range
+//! Mechanism: `Ctx::spec_call_param_cast` documents `PrimType::Bool => None`
+//! as "a no-cast pass-through", but `None` is also the not-in-map/out-of-range
 //! fallback — and every consumer site (the `lower_expr` Call-arm arithmetic
 //! branch and the `lower_inv_expr` Call arm) collapses both meanings with
-//! `.unwrap_or("u64")` and CASTS. The #225 chain comment claims "the bug site
-//! never produces a bool-targeted arithmetic arg" — FALSE: the surface unary
-//! set is exactly `!` (`UnaryOp::Not`, REQ-10 #92), so EVERY `Expr::Unary`
+//! `.unwrap_or("u64")` and casts. The #225 chain comment claims "the bug site
+//! never produces a bool-targeted arithmetic arg", which is false: the surface unary
+//! set is exactly `!` (`UnaryOp::Not`, REQ-10 #92), so every `Expr::Unary`
 //! argument is bool-typed, and a comparison `x < y` is a bool-typed
 //! `Expr::Binary`. `req s_b(x, x < y)` emits `s_b(x, (x < y) as u64)` → E0308.
 //!
-//! THE AUTHORITY (R-CHAR-3): `.design/lower/verus-lowering.md` REQ-5 — the
-//! narrowing exists because Verus spec INTEGER arithmetic is the unbounded
+//! The authority (R-CHAR-3): `.design/lower/verus-lowering.md` REQ-5 — the
+//! narrowing exists because Verus spec integer arithmetic is the unbounded
 //! `int` ("the surface integer set is `u32`/`u64`/`usize`"); a bool-typed
-//! expression is NOT integer arithmetic, already has the callee's declared
+//! expression is not integer arithmetic, already has the callee's declared
 //! `bool` param type, and per thermite-design.md §4.4 ("All conversions
-//! explicit") must flow through UNCAST. Expected substrings are HAND-DERIVED
+//! explicit") must flow through uncast. Expected substrings are hand-derived
 //! from the fixtures' `spec fn` signatures, never copied from lowerer output.
 //!
 //! Tracking: crosslink #233.
@@ -51,7 +51,7 @@ fn f(x: u32, y: u32) -> u32
 #[test]
 fn spec_call_bool_binary_arg_takes_no_cast() {
     let out = lower(BOOL_BINARY_PROGRAM);
-    // REQ-5/§4.4: `x < y` is bool, matching `b: bool` exactly — no cast.
+    // REQ-5/§4.4: `x < y` is bool, matching `b: bool` — no cast.
     assert!(
         out.contains("s_b(x, x < y)"),
         "a bool-typed Binary arg to a bool param must flow UNCAST \

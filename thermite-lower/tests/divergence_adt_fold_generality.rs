@@ -1,27 +1,27 @@
 //! acto-critic divergence test: `is_adt_fold_sum` (`thermite-lower/src/lower.rs`)
-//! is oracle-fitted to the EXACT `sum_list` shape, not the general structural
+//! is oracle-fitted to the `sum_list` shape, not the general structural
 //! recursion `.design/basis/01-adts.md` REQ-10 grounds (commit `322d479`, #67).
 //!
 //! Authority: `.design/basis/01-adts.md` "RECORDED FINDING (the structural-
 //! recursion stack is end-to-end feasible)" — "A `Tree` (`Node(Box<Tree>,
 //! Box<Tree>)`) with a `tree_sum` fold was also confirmed to verify." + REQ-10
 //! ("a `spec fn` over it carries `decreases <value>` … recurses through the
-//! `Box` with `*`") + the GROUNDED `tree_sum` of the design's Verus seed. The
-//! design REQUIRES a `Box`-recursive `Tree` fold to lower + verify, not just the
+//! `Box` with `*`") + the grounded `tree_sum` of the design's Verus seed. The
+//! design requires a `Box`-recursive `Tree` fold to lower + verify, not just the
 //! single corpus `sum_list` shape. `goal.md` R-DEFER-9 (no corpus-specific
-//! gaming — the lowering must be GENERAL, not a "lower this exact program"
+//! gaming: the lowering must be general, not a "lower this exact program"
 //! special case).
 //!
-//! The defect: `is_adt_fold_sum` requires the base arm to be a UNIT variant
-//! whose body is the LITERAL `0` (`Nil => 0`). The grounded `Tree` fold's base
+//! The defect: `is_adt_fold_sum` requires the base arm to be a unit variant
+//! whose body is the literal `0` (`Nil => 0`). The grounded `Tree` fold's base
 //! is a value-carrying tuple variant (`Leaf(v) => v as u64`), so the shape
-//! predicate returns `false`, the spec fn is NOT coerced to `-> nat`, and the
+//! predicate returns `false`, the spec fn is not coerced to `-> nat`, and the
 //! recursive arm `tree_sum(*l) + tree_sum(*r)` lowers to an `int`-typed body
 //! that conflicts with the `u64` return — verus rejects with `match arms have
 //! incompatible types`. The lowering thus only works for the literal-`0`-base
 //! corpus shape, not the general fold.
 //!
-//! Verus-backed; SKIPs LOUDLY if verus is absent.
+//! Verus-backed; skips if verus is absent.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -62,13 +62,13 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// DIVERGENCE — the GROUNDED `Tree` fold (`.design/basis/01-adts.md` recorded
-/// finding) does NOT lower to verifiable Verus. The lowering must be GENERAL
+/// Divergence: the grounded `Tree` fold (`.design/basis/01-adts.md` recorded
+/// finding) does not lower to verifiable Verus. The lowering must be general
 /// (any `Box`-recursive structural fold with a `dec` measure), not fitted to the
 /// literal-`0`-unit-base `sum_list` corpus shape (R-DEFER-9).
 #[test]
 fn divergence_tree_fold_does_not_lower_and_verify() {
-    // The design's GROUNDED Tree fold: a value-carrying base case `Leaf(v) => v`
+    // The design's grounded Tree fold: a value-carrying base case `Leaf(v) => v`
     // and a binary-recursive `Node(l, r) => tree_sum(*l) + tree_sum(*r)`.
     // (`.design/basis/01-adts.md` REQ-10 + the recorded structural-recursion
     // finding — "a `tree_sum` fold was also confirmed to verify".)
@@ -95,8 +95,8 @@ fn divergence_tree_fold_does_not_lower_and_verify() {
     std::fs::write(&tmp, &emitted).expect("write temp");
     let (ok, output) = run_verus(&tmp).expect("verus present (checked above)");
 
-    // AUTHORITY: the design's recorded finding requires this fold to VERIFY
-    // (`N verified, 0 errors`). A GENERAL structural-recursion lowering produces
+    // Authority: the design's recorded finding requires this fold to verify
+    // (`N verified, 0 errors`). A general structural-recursion lowering produces
     // verifiable Verus for it. The current `is_adt_fold_sum` shape-fit does not.
     assert!(
         ok && output.contains("0 errors") && output.contains("verified, 0 errors"),

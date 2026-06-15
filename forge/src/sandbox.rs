@@ -1,26 +1,26 @@
 //! `forge/src/sandbox.rs` — the runtime effect sandbox (issue #57): a seccomp-bpf
-//! syscall-allowlist filter, DERIVED from a `forge build --entry`'s transitive
-//! `fx` row, installed (BEFORE the entry runs) into the generated `main`. A syscall
+//! syscall-allowlist filter, derived from a `forge build --entry`'s transitive
+//! `fx` row, installed (before the entry runs) into the generated `main`. A syscall
 //! outside the declared effects makes the kernel kill the process with `SIGSYS`.
 //! This discharges the `thermite-design.md` §4.1 promise that the `fx` row is a
-//! RUNTIME contract, not only a compile-time one.
+//! runtime contract, not only a compile-time one.
 //!
 //! Governing design: `.design/forge/runtime-sandbox.md`. Oracle:
 //! `conformance/sandbox/cases.json`.
 //!
-//! ## The three seams this module COMPOSES (it owns no new walker / effect vocab)
+//! ## The three seams this module composes (it owns no new walker / effect vocab)
 //!
-//! 1. **transitive `fx`** ([`transitive_fx`]): the union of `manifest::effects_of`
-//!    over `{entry} ∪ closure::reachable_in_file_fns(program, entry)` — the SAME
+//! 1. transitive `fx` ([`transitive_fx`]): the union of `manifest::effects_of`
+//!    over `{entry} ∪ closure::reachable_in_file_fns(program, entry)` — the same
 //!    #17 cycle-safe, source-order reachability `check::item_subprogram` consumes,
 //!    restricted to the entry's intra-file closure. A `#[boundary]`/`#[slag]` fn in
-//!    the closure contributes its DECLARED `fx` (it is confined to exactly that).
-//! 2. **`fx` → syscall allowlist** ([`syscall_allowlist`]): each `fx` token maps to
+//!    the closure contributes its declared `fx`, and is confined to that.
+//! 2. `fx` → syscall allowlist ([`syscall_allowlist`]): each `fx` token maps to
 //!    a fixed set of x86_64 syscall numbers ([the table](#the-fx--syscall-table));
 //!    `pure` is the minimal baseline (run + print + the panic/abort path), `read`/
 //!    `write`/`net`/`time`/`rand`/`term` widen (`term` → `ioctl`:16, #106).
 //!    Deterministic (sorted, deduped).
-//! 3. **the BPF prelude** ([`emit_sandbox_prelude`]): the Rust SOURCE that, as the
+//! 3. the BPF prelude ([`emit_sandbox_prelude`]): the Rust source that, as the
 //!    first statements of the generated `main`, builds a classic `sock_filter[]`
 //!    program (arch-guard for x86_64 → load `nr` → a `BPF_JEQ` per allowed syscall →
 //!    `SECCOMP_RET_ALLOW`, default `SECCOMP_RET_KILL_PROCESS`) and installs it via
@@ -29,23 +29,24 @@
 //! ## The fx → syscall table
 //!
 //! The baseline (always, incl. `pure`/`alloc`) is the set a trivial `std` Rust
-//! binary needs to start up, `println!`, run the L1 `thermite_check!` PANIC/abort
+//! binary needs to start up, `println!`, run the L1 `thermite_check!` panic/abort
 //! path, and exit — empirically grounded (`.design/forge/runtime-sandbox.md`
-//! Verification). It pointedly EXCLUDES `openat`/`socket`/`getrandom`/`clock_gettime`
+//! Verification). It excludes `openat`/`socket`/`getrandom`/`clock_gettime`
 //! so a `pure` filter denies file I/O, network, rand, and time. `read`/`write`/`net`/
-//! `time`/`rand` ADD their syscalls; `alloc`/`panic`/`diverge` add nothing beyond the
+//! `time`/`rand` add their syscalls; `alloc`/`panic`/`diverge` add nothing beyond the
 //! baseline (`panic` unwinds + writes to stderr via the baseline `write`+`exit_group`).
 //!
 //! ## No `libc` crate dependency (self-contained)
 //!
 //! The generated binary is a `std` program → it already links libc, so the prelude
-//! declares `extern "C" { fn prctl(...); fn syscall(...); }` resolved against THAT
+//! declares `extern "C" { fn prctl(...); fn syscall(...); }` resolved against that
 //! libc — no `libc` crate is added to `forge/Cargo.toml`. The `unsafe` lives in the
-//! EMITTED source (the generated binary), never in `forge/src/`.
+//! emitted source (the generated binary), not in `forge/src/`.
 //!
 //! ## Determinism (R-CODE-5)
 //!
-//! Same transitive `fx` → same sorted-deduped allowlist → byte-identical prelude.
+//! The same transitive `fx` yields the same sorted-deduped allowlist and a
+//! byte-identical prelude.
 //! [`syscall_allowlist`] sorts + dedups; [`emit_sandbox_prelude`] iterates the
 //! sorted vector. No wall-clock / unordered iteration.
 //!
@@ -69,9 +70,9 @@ use crate::closure::reachable_in_file_fns;
 use crate::manifest::effects_of;
 
 /// The x86_64 syscall numbers a trivial `std` Rust binary needs to start up,
-/// `println!`, run the always-active L1 `thermite_check!` PANIC/abort path, and
+/// `println!`, run the always-active L1 `thermite_check!` panic/abort path, and
 /// exit (the `pure`/`alloc` baseline, `.design/forge/runtime-sandbox.md` Table).
-/// EXCLUDES `openat`/`socket`/`getrandom`/`clock_gettime` so a pure filter denies
+/// Excludes `openat`/`socket`/`getrandom`/`clock_gettime` so a pure filter denies
 /// file I/O, network, rand, and time. Sorted ascending (deterministic).
 const BASELINE_SYSCALLS: &[u32] = &[
     0,   // read
@@ -84,7 +85,7 @@ const BASELINE_SYSCALLS: &[u32] = &[
     12,  // brk
     13,  // rt_sigaction
     14,  // rt_sigprocmask
-    15,  // rt_sigreturn  (the panic/abort unwind path — a violation PANICS, not killed)
+    15,  // rt_sigreturn  (the panic/abort unwind path — a violation panics, not killed)
     28,  // madvise
     60,  // exit
     131, // sigaltstack
@@ -99,7 +100,7 @@ const BASELINE_SYSCALLS: &[u32] = &[
     334, // rseq
 ];
 
-/// The x86_64 syscalls a `read(_)` effect ADDS (file-open + stat + seek; `read`/
+/// The x86_64 syscalls a `read(_)` effect adds (file-open + stat + seek; `read`/
 /// `close` are already in the baseline). `.design/forge/runtime-sandbox.md` Table.
 const READ_SYSCALLS: &[u32] = &[
     8,   // lseek
@@ -108,14 +109,14 @@ const READ_SYSCALLS: &[u32] = &[
     332, // statx
 ];
 
-/// The x86_64 syscalls a `write(_)` effect ADDS (`write` already baseline). Table.
+/// The x86_64 syscalls a `write(_)` effect adds (`write` already baseline). Table.
 const WRITE_SYSCALLS: &[u32] = &[
     74,  // fsync
     257, // openat
     262, // newfstatat
 ];
 
-/// The x86_64 syscalls a `net(_)` effect ADDS (socket lifecycle). Table.
+/// The x86_64 syscalls a `net(_)` effect adds (socket lifecycle). Table.
 const NET_SYSCALLS: &[u32] = &[
     41, // socket
     42, // connect
@@ -125,25 +126,25 @@ const NET_SYSCALLS: &[u32] = &[
     55, // getsockopt
 ];
 
-/// The x86_64 syscalls a `time` effect ADDS. Table.
+/// The x86_64 syscalls a `time` effect adds. Table.
 const TIME_SYSCALLS: &[u32] = &[
     228, // clock_gettime
     230, // clock_nanosleep
 ];
 
-/// The x86_64 syscall a `rand` effect ADDS. Table.
+/// The x86_64 syscall a `rand` effect adds. Table.
 const RAND_SYSCALLS: &[u32] = &[
     318, // getrandom
 ];
 
-/// The x86_64 syscall a `term` (terminal-control) effect ADDS (issue #106):
+/// The x86_64 syscall a `term` (terminal-control) effect adds (issue #106):
 /// `ioctl` (16), the syscall the termios `tcgetattr`/`tcsetattr` boundary issues
-/// for raw mode. The grant is `ioctl`-BROAD (any cmd) — classic seccomp-bpf
+/// for raw mode. The grant is `ioctl`-broad (any cmd): classic seccomp-bpf
 /// compares only `seccomp_data.nr`, not the `cmd` register, so v0.1 grants the
 /// whole `ioctl` under `term` (runtime-sandbox.md REQ-7 / OQ-5). Scoped to the
-/// `term` effect: a `pure`/`read`/`write`/`net` program's allowlist EXCLUDES
+/// `term` effect: a `pure`/`read`/`write`/`net` program's allowlist excludes
 /// `ioctl`, so its `ioctl` is still `SIGSYS`-killed (a dedicated atom keeps a
-/// plain `write` program — `print`/`write_file` — from silently acquiring `ioctl`).
+/// plain `write` program — `print`/`write_file` — from acquiring `ioctl`).
 const TERM_SYSCALLS: &[u32] = &[
     16, // ioctl (termios TCGETS/TCSETS — the cmd cannot be filtered, OQ-5)
 ];
@@ -153,8 +154,8 @@ const TERM_SYSCALLS: &[u32] = &[
 /// `read`. Mirrors the `READ_SYSCALLS` `openat`:257 entry.
 const SYS_OPENAT: u32 = 257;
 
-/// Whether a `forge build --entry` produces a sandboxed runner (REQ-4). ON BY
-/// DEFAULT for `--entry` (the §4.1 default is enforcement, not opt-in); `--no-sandbox`
+/// Whether a `forge build --entry` produces a sandboxed runner (REQ-4). On by
+/// default for `--entry` (the §4.1 default is enforcement, not opt-in); `--no-sandbox`
 /// opts out (a debugging / no-seccomp-platform escape hatch).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SandboxMode {
@@ -164,17 +165,17 @@ pub enum SandboxMode {
     Off,
 }
 
-/// The transitive `fx` token set for `entry` in `program` (REQ-2): the UNION of
+/// The transitive `fx` token set for `entry` in `program` (REQ-2): the union of
 /// `effects_of(&f.contract.fx)` over `{entry} ∪
-/// closure::reachable_in_file_fns(program, entry)`. Reuses the SAME #17 cycle-safe,
-/// source-order reachability walker `check::item_subprogram` consumes — never a
-/// duplicate. A `#[boundary]`/`#[slag]` fn reached in the closure contributes its
-/// DECLARED `fx` (confined to exactly that). Returns a sorted `BTreeSet` of the same
+/// closure::reachable_in_file_fns(program, entry)`. Reuses the same #17 cycle-safe,
+/// source-order reachability walker `check::item_subprogram` consumes, rather than
+/// a duplicate. A `#[boundary]`/`#[slag]` fn reached in the closure contributes its
+/// declared `fx` (confined to that). Returns a sorted `BTreeSet` of the same
 /// `["pure"]` / `read(x)` tokens the `BuildManifest.functions` rows carry
 /// (deterministic, R-CODE-5).
 pub fn transitive_fx(program: &Program, entry: &str) -> BTreeSet<String> {
     // The closure: every in-file `fn` the entry transitively reaches, plus the
-    // entry itself (reachable_in_file_fns EXCLUDES `start`).
+    // entry itself (reachable_in_file_fns excludes `start`).
     let mut names = reachable_in_file_fns(program, entry);
     names.insert(entry.to_string());
 
@@ -192,12 +193,12 @@ pub fn transitive_fx(program: &Program, entry: &str) -> BTreeSet<String> {
 }
 
 /// Map a transitive `fx` token set to the x86_64 syscall allowlist (REQ-3): the
-/// baseline UNION every widening token's added syscalls ([the table](#the-fx--syscall-table)).
+/// baseline unioned with every widening token's added syscalls ([the table](#the-fx--syscall-table)).
 /// `pure`/`alloc`/`panic`/`diverge` add nothing beyond the baseline; `read(_)`/
 /// `write(_)`/`net(_)`/`time`/`rand`/`term` widen (`term` → `ioctl`:16, #106). A
 /// token is matched by its leading verb (`read(src)` → the `read` widening) so the
 /// carried ident is irrelevant. Returns
-/// the syscall numbers SORTED + DEDUPED — the same transitive `fx` yields the
+/// the syscall numbers sorted and deduped — the same transitive `fx` yields the
 /// byte-identical allowlist (deterministic, R-CODE-5).
 pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
     let mut set: BTreeSet<u32> = BASELINE_SYSCALLS.iter().copied().collect();
@@ -225,14 +226,14 @@ pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
     set.into_iter().collect()
 }
 
-/// Emit the Rust SOURCE of the seccomp-bpf filter-install prelude for `allowlist`
+/// Emit the Rust source of the seccomp-bpf filter-install prelude for `allowlist`
 /// (REQ-1/REQ-3/REQ-5): a self-contained block that builds a classic `sock_filter[]`
 /// program (x86_64 arch-guard → load `nr` → a `BPF_JEQ` per allowed syscall →
 /// `SECCOMP_RET_ALLOW`, default `SECCOMP_RET_KILL_PROCESS`) and installs it via
 /// `prctl(PR_SET_NO_NEW_PRIVS)` + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`. The
 /// `prctl` is declared `extern "C"` (resolved against the std binary's already-linked
-/// libc — NO libc crate dependency). Injected as the FIRST statements of the
-/// generated `main` so the entry runs UNDER the filter.
+/// libc — no libc crate dependency). Injected as the first statements of the
+/// generated `main` so the entry runs under the filter.
 ///
 /// Byte-deterministic: `allowlist` is iterated in order (the caller passes the
 /// sorted [`syscall_allowlist`] output), so the same transitive `fx` yields the
@@ -331,13 +332,13 @@ pub fn emit_sandbox_prelude(allowlist: &[u32]) -> String {
     )
 }
 
-/// Emit the Rust SOURCE of the `--sandbox-self-test` probe (REQ-6): a raw
-/// `syscall(SYS_openat, ...)` injected AFTER the filter install and BEFORE the entry
+/// Emit the Rust source of the `--sandbox-self-test` probe (REQ-6): a raw
+/// `syscall(SYS_openat, ...)` injected after the filter install and before the entry
 /// call, so the kill/allow is observable. Under a `pure` filter `openat` is
 /// non-allowlisted → `SIGSYS` (the process dies, exit 159); under a `read(_)` filter
 /// `openat` is allowlisted → the probe returns and the entry runs normally (exit 0).
 /// This is the v0.1 demonstrability device (pure Thermite never attempts a denied
-/// syscall itself); a production runner has NO probe.
+/// syscall itself); a production runner has no probe.
 pub fn emit_probe() -> String {
     format!(
         r##"
@@ -375,8 +376,8 @@ mod tests {
         tokens.iter().map(|s| s.to_string()).collect()
     }
 
-    // REQ-3: the pure baseline EXCLUDES openat (257) / socket (41) / getrandom
-    // (318) / clock_gettime (228) — so a pure filter denies file I/O, net, rand,
+    // REQ-3: the pure baseline excludes openat (257) / socket (41) / getrandom
+    // (318) / clock_gettime (228), so a pure filter denies file I/O, net, rand,
     // time. Anchored to the design's Table (the grounded baseline), not toolchain
     // self-output (R-CHAR-3).
     #[test]
@@ -395,8 +396,8 @@ mod tests {
         assert!(allow.contains(&15), "rt_sigreturn (panic unwind) allowed");
     }
 
-    // REQ-3: read(_) WIDENS the allowlist to include openat (257) — the fx-derived
-    // split the PURE/READ oracle cases assert.
+    // REQ-3: read(_) widens the allowlist to include openat (257) — the fx-derived
+    // split the pure/read oracle cases assert.
     #[test]
     fn read_fx_widens_to_openat() {
         let allow = syscall_allowlist(&set(&["read(src)"]));
@@ -409,7 +410,7 @@ mod tests {
     }
 
     // REQ-3: net/time/rand each widen to their pinned syscalls (the whole token
-    // family, R-DEFER-8), and alloc/panic/diverge stay baseline-only.
+    // family, R-DEFER-8); alloc/panic/diverge stay baseline-only.
     #[test]
     fn widening_tokens_cover_the_family() {
         assert!(syscall_allowlist(&set(&["net(s)"])).contains(&41)); // socket
@@ -423,8 +424,8 @@ mod tests {
         );
     }
 
-    // REQ-7 (#106): a `term` program's allowlist INCLUDES ioctl:16; a
-    // pure/read/write/net program's allowlist EXCLUDES it — the grant is SCOPED to
+    // REQ-7 (#106): a `term` program's allowlist includes ioctl:16; a
+    // pure/read/write/net program's allowlist excludes it — the grant is scoped to
     // the `term` effect (a dedicated atom, not folded into `write`). Anchored to the
     // design's Table `TERM_SYSCALLS={ioctl:16}` (R-CHAR-3, the design constant).
     #[test]
@@ -433,7 +434,7 @@ mod tests {
             syscall_allowlist(&set(&["term"])).contains(&16),
             "fx term grants ioctl:16"
         );
-        // A program WITHOUT term never gains ioctl — pure, read, write, net all deny it.
+        // A program without term never gains ioctl — pure, read, write, net all deny it.
         for fx in [
             &set(&["pure"]),
             &set(&["read(src)"]),
@@ -459,7 +460,7 @@ mod tests {
         );
     }
 
-    // REQ-3 / R-CODE-5: the allowlist is sorted + deduped (read's openat:257 is not
+    // REQ-3 / R-CODE-5: the allowlist is sorted and deduped (read's openat:257 is not
     // duplicated by write's openat:257) — deterministic.
     #[test]
     fn allowlist_is_sorted_and_deduped() {
@@ -482,7 +483,7 @@ mod tests {
         assert_eq!(fx, set(&["pure"]), "a pure entry's transitive fx is pure");
     }
 
-    // REQ-2: a `read(src)` entry's transitive fx carries read — so the allowlist
+    // REQ-2: a `read(src)` entry's transitive fx carries read, so the allowlist
     // widens. Anchored to the oracle's `rf` fixture shape.
     #[test]
     fn transitive_fx_carries_read() {
@@ -492,7 +493,7 @@ mod tests {
         assert!(syscall_allowlist(&fx).contains(&257), "→ openat widened");
     }
 
-    // REQ-2: a caller's transitive fx UNIONS a callee's declared row (the §4.1
+    // REQ-2: a caller's transitive fx unions a callee's declared row (the §4.1
     // subsumption: the entry's effective row is the union over its closure).
     #[test]
     fn transitive_fx_unions_callee_row() {
@@ -523,7 +524,7 @@ mod tests {
             a.contains("SECCOMP_RET_KILL_PROCESS"),
             "REQ-1: the default action is kill-process"
         );
-        // the pure prelude must NOT JEQ openat (257); a read prelude must.
+        // the pure prelude must not JEQ openat (257); a read prelude must.
         assert!(
             !a.contains("BPF_JEQ | BPF_K, 257"),
             "pure prelude has no openat comparison"
@@ -547,26 +548,25 @@ mod tests {
 // ===========================================================================
 // The verus anchor (epic #60, `.design/verified/self-verification.md` REQ-8).
 //
-// PLACEMENT DEVIATION (Option B, orchestrator-authorized): the design doc names
+// Placement deviation (Option B, orchestrator-authorized): the design doc names
 // `forge/tests/sandbox_verified.rs` for this anchor, but `forge` is a binary-only
 // crate (no lib target), so an external test cannot reach the internal
 // `syscall_allowlist`/`BASELINE_SYSCALLS` symbols. This in-module `#[cfg(test)]`
-// block reaches them directly; `thermite-verified` is a forge DEV-dependency.
-// (Reported for the critic.)
+// block reaches them directly; `thermite-verified` is a forge dev-dependency.
 //
-// AC-8c — the 512-mask EXHAUSTIVE equivalence: enumerate ALL 2^9 fx-atom masks
-// (WIDENED for the #106 `Term` atom, bit 8), project each to the PRODUCTION token
-// set, run the PRODUCTION `syscall_allowlist`, and assert its membership over the
-// FIVE sensitive user-I/O syscalls
-// (openat/socket/connect/getrandom/clock_gettime) equals the VERUS-PROVED
+// AC-8c — the 512-mask exhaustive equivalence: enumerate all 2^9 fx-atom masks
+// (widened for the #106 `Term` atom, bit 8), project each to the production token
+// set, run the production `syscall_allowlist`, and assert its membership over the
+// five sensitive user-I/O syscalls
+// (openat/socket/connect/getrandom/clock_gettime) equals the verus-proved
 // `thermite_verified::io_allow(mask)` bits for every mask. Expected = the proved
-// bitset spec (R-CHAR-3, never forge's own output) — so the production string-keyed
-// mapping computes exactly the relation Verus proved (pure-no-I/O + monotonicity +
+// bitset spec (R-CHAR-3, never forge's own output), so the production string-keyed
+// mapping computes the relation Verus proved (pure-no-I/O + monotonicity +
 // deny-by-default).
 //
-// OQ-6 (scope): verus proves SOUNDNESS over the FIVE sensitive syscalls ONLY. This
-// anchor binds `syscall_allowlist`'s membership over exactly those five to the proved
-// `io_allow` bits; it does NOT claim the dense `BASELINE_SYSCALLS` list is itself
+// OQ-6 (scope): verus proves soundness over the five sensitive syscalls only. This
+// anchor binds `syscall_allowlist`'s membership over those five to the proved
+// `io_allow` bits; it does not claim the dense `BASELINE_SYSCALLS` list is itself
 // correct — that stays empirically grounded by the `sandbox_conformance` oracle. The
 // soundness story is the IO-membership projection; the baseline is orthogonal to the
 // modeled IO bits.
@@ -579,12 +579,12 @@ mod verus_anchor {
         SYS_SOCKET,
     };
 
-    /// Project a `u16` fx-atom mask to the PRODUCTION token set (the same strings the
-    /// `BuildManifest.functions` rows carry). The bit positions MATCH the verus
+    /// Project a `u16` fx-atom mask to the production token set (the same strings the
+    /// `BuildManifest.functions` rows carry). The bit positions match the verus
     /// model's `u16` fx-mask: Read=0, Write=1, Net=2, Time=3, Rand=4, Alloc=5,
     /// Panic=6, Diverge=7, Term=8 (the #106 terminal-control atom). The carried
     /// ident on `read(_)`/`write(_)`/`net(_)` is irrelevant to the mapping (matched
-    /// by the leading verb). WIDENED `u8`→`u16` for the 9th atom (#106).
+    /// by the leading verb). Widened `u8`→`u16` for the 9th atom (#106).
     fn mask_to_tokens(mask: u16) -> BTreeSet<String> {
         let mut toks: BTreeSet<String> = BTreeSet::new();
         if mask & (1 << 0) != 0 {
@@ -634,10 +634,10 @@ mod verus_anchor {
         (228, SYS_CLOCK_GETTIME), // clock_gettime
     ];
 
-    // AC-8c (REQ-8): over ALL 256 fx-atom masks, the PRODUCTION `syscall_allowlist`'s
-    // membership of the five sensitive syscalls equals the VERUS-PROVED `io_allow`
+    // AC-8c (REQ-8): over all 256 fx-atom masks, the production `syscall_allowlist`'s
+    // membership of the five sensitive syscalls equals the verus-proved `io_allow`
     // bits. This is the exhaustive impl==spec equivalence (mechanism (c)) binding the
-    // string-keyed production mapping to the proved bitset over its FULL finite domain.
+    // string-keyed production mapping to the proved bitset over its full finite domain.
     #[test]
     fn syscall_allowlist_matches_proved_io_allow_over_all_512_masks() {
         for mask in 0u16..=511 {
@@ -657,8 +657,8 @@ mod verus_anchor {
         }
     }
 
-    // AC-8c / REQ-8 PURE-NO-I/O: mask 0 (`pure`) permits NONE of the five sensitive
-    // syscalls in the production allowlist — exactly the proved `io_allow(0) == 0`.
+    // AC-8c / REQ-8 pure-no-I/O: mask 0 (`pure`) permits none of the five sensitive
+    // syscalls in the production allowlist — the proved `io_allow(0) == 0`.
     #[test]
     fn pure_mask_permits_no_sensitive_syscall() {
         let allow = syscall_allowlist(&mask_to_tokens(0));
@@ -671,7 +671,7 @@ mod verus_anchor {
         }
     }
 
-    // AC-8c / REQ-8 MONOTONICITY (observable): adding any fx atom NEVER removes a
+    // AC-8c / REQ-8 monotonicity (observable): adding any fx atom never removes a
     // permitted sensitive syscall — a superset mask's sensitive membership is a
     // superset. Binds the proved `monotone` lemma to the production fn over a sample
     // of mask/superset pairs (the full bitset monotonicity is proved in verus).
@@ -679,7 +679,7 @@ mod verus_anchor {
     fn superset_mask_never_drops_a_sensitive_syscall() {
         for mask in 0u16..=511 {
             let base = syscall_allowlist(&mask_to_tokens(mask));
-            // The full superset (all atoms) must contain every sensitive syscall the
+            // The full superset (all atoms) contains every sensitive syscall the
             // sub-mask permitted (deny-by-default monotonicity, the proved lemma).
             let full = syscall_allowlist(&mask_to_tokens(0x1FF));
             for &(nr, _) in SENSITIVE {

@@ -1,34 +1,34 @@
-//! The LIVE oracle test for forge's MUTATION SCORING (issue #12,
-//! `thermite-design.md` §7 step 4). It drives the BUILT `forge` binary (same as
+//! The live oracle test for forge's mutation scoring (issue #12,
+//! `thermite-design.md` §7 step 4). It drives the built `forge` binary (same as
 //! `solver_vacuity_conformance.rs`) and asserts the emitted certificate against
-//! the hand-derived oracle `conformance/mutation/cases.json` (R-CHAR-3 — expected
+//! the hand-derived oracle `conformance/mutation/cases.json` (R-CHAR-3: expected
 //! outcomes trace to §7, never to forge's own output).
 //!
-//! Mutation scoring issues REAL verus queries per mutant (the kill ratio is a
-//! function of which mutants verus PROVES vs REJECTS), so EVERY case here needs
-//! verus. The verus-needing cases SKIP LOUDLY when verus is absent (mirroring
+//! Mutation scoring issues verus queries per mutant (the kill ratio is a
+//! function of which mutants verus proves vs rejects), so every case here needs
+//! verus. The verus-needing cases skip with a logged note when verus is absent (mirroring
 //! `solver_vacuity_conformance.rs` / `lower_conformance.rs`), never panic.
 //!
-//! The oracle is QUALITATIVE (R-CHAR-3 / `.design/forge/mutation-scoring.md`
+//! The oracle is qualitative (R-CHAR-3 / `.design/forge/mutation-scoring.md`
 //! REQ-8 / OQ-1): the exact `mutants_killed` ratio is tool-computed and
-//! verus-version-sensitive, so it is oracle-EXCLUDED. The CHECKABLE properties
+//! verus-version-sensitive, so it is oracle-excluded. The checkable properties
 //! are:
-//!   - `accept_above_floor` (AC-1): a STRONG contract kills enough mutants that
-//!     `kill_ratio >= floor` → the item certifies L3 and RECORDS a `"K/N"` with
-//!     `K/N >= 0.60` (the FLOOR relation, not a frozen exact count);
-//!   - `reject_below_floor` (AC-2): a WEAK-but-non-vacuous contract lets enough
-//!     mutants survive that `kill_ratio < floor` → the item is GATED
+//!   - `accept_above_floor` (AC-1): a strong contract kills enough mutants that
+//!     `kill_ratio >= floor` → the item certifies L3 and records a `"K/N"` with
+//!     `K/N >= 0.60` (the floor relation, not a frozen exact count);
+//!   - `reject_below_floor` (AC-2): a weak-but-non-vacuous contract lets enough
+//!     mutants survive that `kill_ratio < floor` → the item is gated
 //!     (`RejectReason { cause: "WeakContract" }`) with a non-`None` `survivor`;
-//!   - the floor is CONFIGURABLE (AC-3): the same weak fixture certifies under a
-//!     LOW `--mutation-floor` and is gated under the default 0.60;
-//!   - the kill ratio is DETERMINISTIC (AC-4): scoring the same fixture twice
+//!   - the floor is configurable (AC-3): the same weak fixture certifies under a
+//!     low `--mutation-floor` and is gated under the default 0.60;
+//!   - the kill ratio is deterministic (AC-4): scoring the same fixture twice
 //!     yields the byte-identical `mutants_killed` + `survivor` (a run==run
-//!     property, NOT a fabricated golden — R-CHAR-3-clean).
+//!     property, not a fabricated golden — R-CHAR-3-clean).
 //!
 //! `forge` is a pure `bin` crate (no `lib.rs`), so the `mutation`/`manifest` types
 //! are not importable here; the assertions read the cert's JSON fields directly
 //! (the same shape `solver_vacuity_conformance.rs` uses). `unwrap`/`expect` are
-//! fine here — `tests/` is not anti-pattern-gated.
+//! fine here; `tests/` is not anti-pattern-gated.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -211,8 +211,8 @@ fn accept_fixtures_score_at_or_above_floor_and_certify_l3() {
             case.name
         );
 
-        // AC-1: `mutants_killed` is RECORDED (graduated from "0/0") and its ratio is
-        // >= the floor (the threshold relation, NOT a frozen exact count — REQ-8).
+        // AC-1: `mutants_killed` is recorded (graduated from "0/0") and its ratio is
+        // >= the floor (the threshold relation, not a frozen exact count — REQ-8).
         let mk = cert
             .get("contract_quality")
             .and_then(|q| q.get("mutants_killed"))
@@ -251,8 +251,8 @@ fn reject_fixture_scores_below_floor_and_is_gated_weak_contract() {
         let (code, certs) = run_check_json(&path, &[]);
         let _ = std::fs::remove_file(&path);
 
-        // A WeakContract reject is a reported contract-certification FAILURE:
-        // non-zero exit, a valid cert document, NOT certified.
+        // A WeakContract reject is a reported contract-certification failure:
+        // non-zero exit, a valid cert document, not certified.
         assert_eq!(
             code,
             Some(1),
@@ -276,7 +276,7 @@ fn reject_fixture_scores_below_floor_and_is_gated_weak_contract() {
         assert_ne!(level, Some("L3"), "`{}` must not certify L3", case.name);
         assert_ne!(level, Some("L1"), "`{}` must not certify L1", case.name);
 
-        // AC-2: the kill ratio is recorded and BELOW the floor; a survivor is named.
+        // AC-2: the kill ratio is recorded and below the floor; a survivor is named.
         let cq = cert
             .get("contract_quality")
             .expect("contract_quality block");
@@ -319,7 +319,7 @@ fn floor_is_configurable_weak_fixture_certifies_under_low_floor() {
     for case in &oracle.reject_below_floor {
         let path = write_temp(&case.name, &case.program);
 
-        // Under the DEFAULT floor (0.60) the weak fixture is GATED (exit 1).
+        // Under the default floor (0.60) the weak fixture is gated (exit 1).
         let (code_default, _) = run_check_json(&path, &[]);
         assert_eq!(
             code_default,
@@ -328,7 +328,7 @@ fn floor_is_configurable_weak_fixture_certifies_under_low_floor() {
             case.name
         );
 
-        // Under a LOW floor (0.0) the SAME fixture certifies (exit 0) — the verdict
+        // Under a low floor (0.0) the same fixture certifies (exit 0); the verdict
         // flips on the floor (REQ-5 / AC-3). 0.0 is below any non-zero kill ratio.
         let (code_low, certs_low) = run_check_json(&path, &["--mutation-floor", "0.0"]);
         let _ = std::fs::remove_file(&path);
@@ -364,7 +364,7 @@ fn kill_ratio_is_deterministic_across_two_runs() {
         return;
     }
     // Use the corpus `sum` (a stable parse/lower fixture). The asserted relation is
-    // run1 == run2 (a determinism PROPERTY), never against a fabricated constant
+    // run1 == run2 (a determinism property), never against a fabricated constant
     // (R-CHAR-3-clean).
     let path = corpus_dir().join("sum.th");
     let (_, certs1) = run_check_json(&path, &[]);

@@ -1,28 +1,28 @@
 //! End-to-end live pins for crosslink #237 — two related completeness gaps, both
-//! fail-CLOSED today (no false certification), on legitimate frozen-subset source:
+//! fail-closed today (no false certification), on legitimate frozen-subset source:
 //!
-//! (a) THE INT-LITERAL RETURN-TYPING GAP (`thermite-lower/src/lower.rs`):
+//! (a) The int-literal return-typing gap (`thermite-lower/src/lower.rs`):
 //!     `spec fn count(n: u64) -> u64 dec n { if n == 0 { 0 } else { 1 + count(n - 1) } }`
 //!     lowered the else-arm as `1 + count((n - 1) as u64)` — `int`-typed in Verus
-//!     spec against the `u64` return → E0308 → L0. FIX: narrow the body RESULT back
+//!     spec against the `u64` return → E0308 → L0. Fix: narrow the body result back
 //!     to the declared return type — `(1 + count((n - 1) as u64)) as u64` — same
 //!     fidelity class as the #225 casts (identity on the spec domain for in-range
-//!     values). This fixture must now certify L3.
+//!     values). This fixture now certifies L3.
 //!
-//! (b) THE DEC-POSITION WEAVING GAP (`forge/src/check.rs`): a `spec fn` whose `dec`
-//!     calls ANOTHER spec fn died E0425 — the §5.3 sub-program weaving used the
-//!     body-ONLY closure (`reachable_spec_fn_deps`), dropping the dec-position dep.
-//!     FIX: the weaver now delegates to the SHARED `body ∪ dec` closure (the #204
-//!     `reachable_spec_fn_names_from_seed`, the #192 "ONE closure" lesson). This
-//!     fixture must now certify L3.
+//! (b) The dec-position weaving gap (`forge/src/check.rs`): a `spec fn` whose `dec`
+//!     calls another spec fn died E0425 — the §5.3 sub-program weaving used the
+//!     body-only closure (`reachable_spec_fn_deps`), dropping the dec-position dep.
+//!     Fix: the weaver now delegates to the shared `body ∪ dec` closure (the #204
+//!     `reachable_spec_fn_names_from_seed`, the #192 "one closure" lesson). This
+//!     fixture now certifies L3.
 //!
-//! THE AUTHORITY (R-CHAR-3): the expected level L3 is the design contract —
+//! The authority (R-CHAR-3): the expected level L3 is the design contract —
 //! `thermite-design.md` §6 ladder semantics (L3 == a fully-discharged real-verus
-//! proof) — NOT copied from the toolchain's own output.
+//! proof) — not copied from the toolchain's own output.
 //!
-//! The verus check SKIPS LOUDLY when verus is absent (the `editor_runs.rs`
-//! precedent) — never panic on a missing solver (R-CODE-4). `tests/` is not
-//! anti-pattern-gated (R-APG-2).
+//! The verus check skips with a logged note when verus is absent (the
+//! `editor_runs.rs` precedent); no panic on a missing solver (R-CODE-4). `tests/`
+//! is not anti-pattern-gated (R-APG-2).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -34,7 +34,7 @@ fn forge_bin() -> PathBuf {
 }
 
 /// `true` iff verus is reachable (mirrors `divergence_spec_call_param_cast.rs`).
-/// SKIP LOUDLY otherwise — a missing solver is never a test failure (R-CODE-4).
+/// Skip with a logged note otherwise; a missing solver is not a test failure (R-CODE-4).
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -88,7 +88,7 @@ fn level_of(certs: &[Value], item: &str) -> String {
 }
 
 /// (a) The int-literal return-typing repro — a recursive `u64` spec fn whose else
-/// arm is `1 + count(n - 1)`. Must certify L3 (was E0308/L0).
+/// arm is `1 + count(n - 1)`. Certifies L3 (was E0308/L0).
 const COUNT_PROGRAM: &str = "\
 spec fn count(n: u64) -> u64
   dec n
@@ -101,11 +101,11 @@ spec fn count(n: u64) -> u64
 }
 ";
 
-/// (b) The dec-position weaving repro — a `spec fn` whose `dec` CALLS another spec
+/// (b) The dec-position weaving repro — a `spec fn` whose `dec` calls another spec
 /// fn (`dec measure(n)`). The dec-position dep `measure` must be woven into the
 /// §5.3 sub-program (was dropped → E0425/L0). `measure` is the identity (`-> nat`,
 /// non-recursive, transparent `pub open`), so the descent `measure(n - 1) <
-/// measure(n)` is provable and `walk` certifies L3 — the gap was the DROPPED dep
+/// measure(n)` is provable and `walk` certifies L3. The gap was the dropped dep
 /// (compile-time E0425), not a termination failure.
 const DEC_DEP_PROGRAM: &str = "\
 spec fn measure(n: u64) -> nat
@@ -133,7 +133,7 @@ fn int_literal_return_typed_spec_fn_certifies_l3() {
     }
     let certs = check_program("count", COUNT_PROGRAM);
     // The recursive `spec fn count(n: u64)` lowers with the result narrowed
-    // `(1 + count((n - 1) as u64)) as u64` (NOT a bare `int`-typed body) and
+    // `(1 + count((n - 1) as u64)) as u64` (not a bare `int`-typed body) and
     // certifies L3 — the proof of the result-narrowing cast.
     assert_eq!(
         level_of(&certs, "count"),

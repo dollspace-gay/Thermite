@@ -1,9 +1,9 @@
 //! #16 boundary-fn parse oracle (`.design/boundary/ffi-boundary.md` REQ-1/REQ-3,
 //! AC-1). The boundary form is `#[boundary("crate::path")] fn NAME(..) -> ret req
 //! .. ens .. fx .. ;` — a bodyless `fn` carrying a foreign-target attribute. These
-//! tests assert the EXACT AST shape the design pins (`FnItem { boundary: Some(_),
-//! body: None, .. }`) and the OQ-2 gate (a bodyless fn WITHOUT `#[boundary]` is a
-//! PARSE ERROR, never silently a boundary fn). Expected shapes are hand-derived
+//! tests assert the AST shape the design pins (`FnItem { boundary: Some(_),
+//! body: None, .. }`) and the OQ-2 gate (a bodyless fn without `#[boundary]` is a
+//! parse error, never silently a boundary fn). Expected shapes are hand-derived
 //! from the design (R-CHAR-3), never copied from the parser's output.
 
 use thermite_syntax::{parse, FnItem, Item};
@@ -50,8 +50,8 @@ fn boundary_fn_parses_with_target_and_no_body() {
     assert_eq!(f.contract.ens.len(), 1, "the `ens` clause is parsed");
 }
 
-// OQ-2 (the load-bearing recovery interaction): a bodyless fn WITHOUT `#[boundary]`
-// is a PARSE ERROR — a normal fn missing its body must NOT silently become a
+// OQ-2 (the recovery interaction): a bodyless fn without `#[boundary]`
+// is a parse error; a normal fn missing its body must not silently become a
 // boundary fn.
 #[test]
 fn bodyless_fn_without_boundary_is_a_parse_error() {
@@ -61,7 +61,7 @@ fn bodyless_fn_without_boundary_is_a_parse_error() {
         !r.is_clean(),
         "a bodyless fn WITHOUT #[boundary] must be a parse error (OQ-2), got a clean parse"
     );
-    // It must NOT have parsed as a boundary fn.
+    // It must not have parsed as a boundary fn.
     let parsed_as_boundary = matches!(
         r.program.items.first(),
         Some(Item::Fn(f)) if f.boundary.is_some()
@@ -72,8 +72,8 @@ fn bodyless_fn_without_boundary_is_a_parse_error() {
     );
 }
 
-// A `#[boundary]` fn WITH a `{ }` body is an error — there is no Thermite body to
-// prove (ffi-boundary.md REQ-3: `#[boundary]` REQUIRES the `;` form).
+// A `#[boundary]` fn with a `{ }` body is an error; there is no Thermite body to
+// prove (ffi-boundary.md REQ-3: `#[boundary]` requires the `;` form).
 #[test]
 fn boundary_fn_with_brace_body_is_a_parse_error() {
     let src = "#[boundary(\"ext::g\")] fn g(x: u32) -> u32 req true ens result == x fx pure { x }";
@@ -84,7 +84,7 @@ fn boundary_fn_with_brace_body_is_a_parse_error() {
     );
 }
 
-// `#[boundary]` is NOT valid on a `spec fn` (ffi-boundary.md surface form).
+// `#[boundary]` is not valid on a `spec fn` (ffi-boundary.md surface form).
 #[test]
 fn boundary_on_spec_fn_is_a_parse_error() {
     let src = "#[boundary(\"ext::s\")] spec fn s(x: u32) -> u32 dec 0 { x }";

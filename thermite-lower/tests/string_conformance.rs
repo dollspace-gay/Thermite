@@ -1,11 +1,11 @@
 //! Conformance test for `thermite-lower`'s bounded-`String` lowering (Basis
 //! Stage 7, `.design/basis/07-strings.md` REQ-1/REQ-2/REQ-3/REQ-4/REQ-5; issue
-//! #79) against the EXTERNAL truths: the real `verus` binary (the emitted L3
-//! output must VERIFY — `0 errors`; the reject case must FAIL — non-vacuity,
+//! #79) against the external truths: the real `verus` binary (the emitted L3
+//! output must verify, `0 errors`; the reject case must fail — non-vacuity,
 //! R-DEFER-9) and the hand-derived cert oracle (`conformance/string/cases.json` +
-//! `conformance/string_demo.th` — R-CHAR-3, NEVER edited / NEVER read from
+//! `conformance/string_demo.th` — R-CHAR-3, never edited / never read from
 //! toolchain output). The golden `tests/golden/lower/string_demo.verus.rs` is the
-//! verified REFERENCE (the verify-not-byte-match practice `collections_conformance.rs`
+//! verified reference (the verify-not-byte-match practice `collections_conformance.rs`
 //! uses).
 //!
 //! The oracle (`cases.json`): `greeting_len` → L3, fx pure (`s.len()`);
@@ -68,8 +68,8 @@ fn verus_bin() -> Option<PathBuf> {
     None
 }
 
-/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller SKIPs
-/// LOUDLY). `--no-cheating` so a sneaked `assume`/`external_body` would be a hard
+/// Run `verus --no-cheating <file>`; `None` if verus is unavailable (caller
+/// skips). `--no-cheating` so a sneaked `assume`/`external_body` would be a hard
 /// error (R-DEFER-9 — we ground the no-OOB/capacity/length guarantees).
 fn run_verus(file: &Path) -> Option<(bool, String)> {
     let bin = verus_bin()?;
@@ -84,7 +84,7 @@ fn run_verus(file: &Path) -> Option<(bool, String)> {
     Some((out.status.success(), combined))
 }
 
-/// Write `emitted` to a temp file with a VALID crate name (the verus
+/// Write `emitted` to a temp file with a valid crate name (the verus
 /// `.`-in-crate-name gotcha), run `verus`, return `(exit_success, output)` or
 /// `None` if verus is unavailable.
 fn verify(crate_name: &str, emitted: &str) -> Option<(bool, String)> {
@@ -97,13 +97,13 @@ fn lower_l3(program: &thermite_syntax::ast::Program) -> String {
     thermite_lower::lower(program).unwrap_or_else(|e| panic!("L3 lowering failed: {e}"))
 }
 
-// ---- AC-2/AC-3: String + literal lower to the TString wrapper, VERIFY (L3) --
+// ---- AC-2/AC-3: String + literal lower to the TString wrapper, verify (L3) --
 //
 // REQ-1/REQ-2/REQ-4: `string_demo.th` lowers to the `TString` newtype over
 // `vstd::vec::Vec<u8>` with `well_formed`/`spec_len`/`len`/`spec_byte_at`/`byte_at`/
 // `concat`/`slice`; the spec `s.len()`/`s.byte_at(i)` lower to `s.spec_len()`/
 // `s.spec_byte_at(i as int)`; a string literal materializes by byte-push. Real
-// verus VERIFIES the emitted output (`11 verified, 0 errors`).
+// verus verifies the emitted output (`11 verified, 0 errors`).
 
 #[test]
 fn string_demo_lowers_wrapper_and_verifies_l3() {
@@ -166,7 +166,7 @@ fn string_demo_lowers_wrapper_and_verifies_l3() {
     );
     assert_no_cheats(&emitted, "string_demo");
 
-    // The EXTERNAL truth: real verus verifies the emitted output (R-CODE-4 — exit
+    // The external truth: real verus verifies the emitted output (R-CODE-4 — exit
     // status checked, never swallowed).
     match verify("string_demo_strings", &emitted) {
         Some((ok, output)) => {
@@ -192,7 +192,7 @@ fn string_demo_lowers_wrapper_and_verifies_l3() {
 // The oracle (`conformance/string/cases.json`, R-CHAR-3 — never edited) pins:
 // greeting_len/first_byte L3 fx pure; join/literal_len L3 fx alloc;
 // oob_byte_at_no_req L0. We assert the oracle fields directly from the raw JSON
-// AND that the parsed `fx` rows match.
+// and that the parsed `fx` rows match.
 
 #[test]
 fn string_demo_matches_cert_oracle() {
@@ -238,8 +238,8 @@ fn string_demo_matches_cert_oracle() {
     }
 
     // The `fx alloc` of join/literal_len passes effect-subsumption: `concat`/the
-    // literal-materialization are intrinsics (no declared callee row to subsume) —
-    // the caller's declared `alloc` row is accepted (the Stage-1 Alloc heap rule).
+    // literal-materialization are intrinsics (no declared callee row to subsume).
+    // The caller's declared `alloc` row is accepted (the Stage-1 Alloc heap rule).
     assert!(
         thermite_lower::check_effects(&program).is_ok(),
         "string_demo (greeting_len/first_byte pure, join/literal_len alloc) must pass \
@@ -292,8 +292,8 @@ fn string_literal_parses_as_expression() {
 
 // ---- AC-4 reject: oob_byte_at_no_req → L0 (the no-OOB guarantee is real) ----
 //
-// REQ-3/REQ-4 non-vacuity (R-DEFER-9): a `byte_at` WITHOUT `req s.len() > 0`
-// leaves byte_at's index precondition undischarged → verus FAILS → NOT laundered
+// REQ-3/REQ-4 non-vacuity (R-DEFER-9): a `byte_at` without `req s.len() > 0`
+// leaves byte_at's index precondition undischarged → verus fails → not laundered
 // to L3. The reject program is the oracle's `program` field (R-CHAR-3).
 
 #[test]
@@ -303,8 +303,8 @@ fn oob_byte_at_without_req_fails_verus_l0() {
         "fn oob_byte_at_no_req(s: String) -> u64 req true ens result == s.byte_at(0) fx pure { s.byte_at(0) }";
     let program = parse_src(src, "oob_byte_at_no_req");
     let emitted = lower_l3(&program);
-    // It still LOWERS (a well-formed program); the FAILURE is at verus (L0), not a
-    // lowerer error — the no-OOB guarantee is enforced by the proof.
+    // It still lowers (a well-formed program); the failure is at verus (L0), not a
+    // lowerer error: the no-OOB guarantee is enforced by the proof.
     assert!(
         emitted.contains("fn oob_byte_at_no_req(s: TString)"),
         "the reject program lowers to the wrapper accessor:\n{emitted}"
@@ -335,7 +335,7 @@ fn oob_byte_at_without_req_fails_verus_l0() {
 #[test]
 fn string_demo_golden_reference_verifies() {
     // The hand-authored golden (`tests/golden/lower/string_demo.verus.rs`,
-    // R-CHAR-3) is the verified reference. Confirm it itself passes verus (the
+    // R-CHAR-3) is the verified reference. Confirm it passes verus (the
     // external truth the lowering is pinned against), reading it through a
     // valid-crate-name temp copy (the `.verus.rs` filename gotcha).
     let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -355,7 +355,7 @@ fn string_demo_golden_reference_verifies() {
 fn non_string_corpus_unchanged_no_regression() {
     // The String additions are purely additive (a new `Type::String` node, a new
     // `Expr::StrLit` node, the wrapper lowering path); a non-String program must
-    // still lower to verus that verifies and must NOT emit the TString wrapper.
+    // still lower to verus that verifies and must not emit the TString wrapper.
     for name in ["sum", "binary_search", "vec_demo"] {
         let program = parse_corpus(name);
         let emitted = lower_l3(&program);

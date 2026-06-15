@@ -9,12 +9,12 @@
 //! - `to_boundary` cases (`direct_boundary_caller` → `caller` via `ext_id`;
 //!   `transitive_boundary_caller` → `h` via `ext_id`; `slag_caller` → `caller` via
 //!   `vendored`) → `assurance_scope.kind == "to_boundary"` with the oracle `via`.
-//! - PROJECT claim (the design REQ-4 rule, derived from the cert array): a file
-//!   with any to-boundary fn → project TO-THE-BOUNDARY; the pure corpus → project
-//!   END-TO-END.
+//! - Project claim (the design REQ-4 rule, derived from the cert array): a file
+//!   with any to-boundary fn → project to-the-boundary; the pure corpus → project
+//!   end-to-end.
 //!
-//! The classification is SYNTACTIC, but `forge check` runs the full pipeline, so
-//! these SKIP LOUDLY if verus is absent (a pure caller of a boundary fn still
+//! The classification is syntactic, but `forge check` runs the full pipeline, so
+//! these skip with an eprintln if verus is absent (a pure caller of a boundary fn still
 //! L3-verifies against the boundary's contract; never panic on a missing solver),
 //! mirroring `boundary_conformance.rs`. Expected values trace to the golden
 //! `conformance/e2e/cases.json` (R-CHAR-3), never copied from forge's own output.
@@ -94,8 +94,8 @@ fn find_cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no certificate for item `{item}` in {certs:?}"))
 }
 
-/// The §9 PROJECT claim derived from the cert array (the design REQ-4 rule): the
-/// project is END-TO-END iff EVERY cert is end-to-end. A cert is end-to-end iff its
+/// The §9 project claim derived from the cert array (the design REQ-4 rule): the
+/// project is end-to-end iff every cert is end-to-end. A cert is end-to-end iff its
 /// `assurance_scope` is absent (the golden default) or `kind == "end_to_end"`.
 fn project_is_end_to_end(certs: &[Value]) -> bool {
     certs.iter().all(|c| match c.get("assurance_scope") {
@@ -104,8 +104,8 @@ fn project_is_end_to_end(certs: &[Value]) -> bool {
     })
 }
 
-// AC-1: the pure corpus is END-TO-END (sum → spec_sum; binary_search → combinators)
-// and the project claim is END-TO-END. Anchored to `cases.json` `end_to_end`.
+// AC-1: the pure corpus is end-to-end (sum → spec_sum; binary_search → combinators)
+// and the project claim is end-to-end. Anchored to `cases.json` `end_to_end`.
 #[test]
 fn corpus_programs_are_end_to_end() {
     if !verus_present() {
@@ -134,7 +134,7 @@ fn corpus_programs_are_end_to_end() {
             Value::from("end_to_end"),
             "`{item}` (source {src_rel}) closure reaches no boundary/slag → END-TO-END"
         );
-        // PROJECT claim (REQ-4): the pure corpus file is END-TO-END.
+        // Project claim (REQ-4): the pure corpus file is end-to-end.
         assert!(
             project_is_end_to_end(&certs),
             "the pure corpus file `{src_rel}` is a project END-TO-END"
@@ -142,7 +142,7 @@ fn corpus_programs_are_end_to_end() {
     }
 }
 
-// Scope ⊥ level (REQ-5): `sum` keeps level L3 AND assurance_scope end_to_end.
+// Scope ⊥ level (REQ-5): `sum` keeps level L3 and assurance_scope end_to_end.
 #[test]
 fn sum_keeps_l3_and_is_end_to_end() {
     if !verus_present() {
@@ -161,8 +161,8 @@ fn sum_keeps_l3_and_is_end_to_end() {
     );
 }
 
-// AC-2/AC-3/AC-4: each to_boundary case classifies TO-THE-BOUNDARY with the oracle
-// `via`, and the project claim is TO-THE-BOUNDARY. Anchored to `cases.json`
+// AC-2/AC-3/AC-4: each to_boundary case classifies to-the-boundary with the oracle
+// `via`, and the project claim is to-the-boundary. Anchored to `cases.json`
 // `to_boundary` (R-CHAR-3).
 #[test]
 fn to_boundary_cases_classify_via_the_crossing() {
@@ -181,11 +181,11 @@ fn to_boundary_cases_classify_via_the_crossing() {
         let (_code, certs, _stderr) = run_check_json(&path);
         let _ = std::fs::remove_file(&path);
 
-        // #17 asserts the CLASSIFICATION only — `assurance_scope` is SYNTACTIC and
-        // orthogonal to the fn's verification level (cases.json note). We do NOT
+        // #17 asserts the classification only — `assurance_scope` is syntactic and
+        // orthogonal to the fn's verification level (cases.json note). We do not
         // assert the caller certifies: a pure caller verifying *through* a boundary
         // fn's contract (the §9 composition rule) needs thermite-lower to emit the
-        // boundary fn as a verus-assumable signature — tracked separately as #52.
+        // boundary fn as a verus-assumable signature, tracked separately as #52.
         // Until #52, a boundary-caller is L0 but still classified to-the-boundary.
         let cert = find_cert(&certs, item);
         assert_eq!(

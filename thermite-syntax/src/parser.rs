@@ -772,7 +772,7 @@ impl<'a> Parser<'a> {
         // `fx diverge`) is a validator error (REQ-2), not a parse error: the
         // grammar admits it; the cage rejects it.
         let dec = if self.check(&TokKind::Dec) {
-            Some(self.parse_clause(&TokKind::Dec)?)
+            Some(self.parse_dec_clause()?)
         } else {
             None
         };
@@ -856,7 +856,7 @@ impl<'a> Parser<'a> {
                 span: self.peek_span(),
             });
         }
-        let dec = self.parse_clause(&TokKind::Dec)?;
+        let dec = self.parse_dec_clause()?;
         let body = self.parse_block()?;
         let span = start_span.to(self.prev_span());
         Ok(Item::SpecFn(SpecFnItem {
@@ -994,7 +994,7 @@ impl<'a> Parser<'a> {
         self.consume(&TokKind::Arrow, "`->`")?;
         let ret = self.parse_type()?;
         let dec = if self.check(&TokKind::Dec) {
-            Some(self.parse_clause(&TokKind::Dec)?)
+            Some(self.parse_dec_clause()?)
         } else {
             None
         };
@@ -1382,6 +1382,68 @@ impl<'a> Parser<'a> {
         let span = start.to(end);
         let text = self.span_text(span);
         Ok(Clause { expr, text, span })
+    }
+
+    /// Parse a `dec <measure>` clause, supporting the forge-tier measure forms
+    /// (`.design/stage1-forge-tier.md` REQ-3, Q-DECWF). Consumes the `dec` keyword,
+    /// then:
+    /// - `dec wf <rel>` — a WELL-FOUNDED relation (ASCII spelling per Q-DECWF, NOT
+    ///   the Unicode `⟨⟩` — the lexer stays ASCII-only). Since `wf <rel>` is two
+    ///   tokens (not one expression), it is normalized to the registry-free call
+    ///   `wf(<rel>)` so a downstream consumer keys on the `wf` callee. A bare `wf`
+    ///   NOT followed by an expression (a `{` body, a clause keyword, EOF) is an
+    ///   ordinary measure named `wf` (the v1 reading), handled by the plain path.
+    /// - `dec lex(<e>, …)` — a LEXICOGRAPHIC tuple. `lex` is a contextual ident, so
+    ///   `lex(...)` is ALREADY an ordinary `Expr::Call` (registry-free, like the
+    ///   `forall_in`/`sorted` combinators) — no special parse; the plain path
+    ///   captures it and a downstream consumer keys on the `lex` callee.
+    /// - `dec <expr>` — the v1 plain measure (`dec n`, `dec hi - i`), unchanged.
+    fn parse_dec_clause(&mut self) -> PResult<Clause> {
+        self.consume(&TokKind::Dec, "`dec`")?;
+        let start = self.peek_span();
+        // `dec wf <rel>`: the `wf` marker followed by a relation expression.
+        if matches!(self.peek(), TokKind::Ident(w) if w == "wf") && self.nth_starts_expr(1) {
+            self.bump(); // consume `wf`
+            let rel = self.with_no_struct_literal(Self::parse_expr)?;
+            let end = self.prev_span();
+            let span = start.to(end);
+            let text = self.span_text(span);
+            // Normalize to the registry-free `wf(<rel>)` call (REQ-3) so the v1
+            // clause shape downstream is an ordinary `Expr::Call`.
+            let expr = Expr::Call {
+                callee: Box::new(Expr::Path(vec!["wf".to_string()])),
+                args: vec![rel],
+            };
+            return Ok(Clause { expr, text, span });
+        }
+        // `dec <expr>` (incl. `dec lex(...)` as an ordinary call) — the same
+        // no-struct-literal head as `parse_clause` (a trailing `{` is the body).
+        let expr = self.with_no_struct_literal(Self::parse_expr)?;
+        let end = self.prev_span();
+        let span = start.to(end);
+        let text = self.span_text(span);
+        Ok(Clause { expr, text, span })
+    }
+
+    /// True if the token `n` ahead of the cursor can begin an expression — used to
+    /// distinguish `dec wf <rel>` (the well-founded form) from a bare measure named
+    /// `wf` (`dec wf` followed by a `{` body / clause keyword / end). A negative
+    /// check: the listed tokens never start an expression in `dec` position.
+    fn nth_starts_expr(&self, n: usize) -> bool {
+        !matches!(
+            self.peek_nth(n),
+            TokKind::LBrace
+                | TokKind::RBrace
+                | TokKind::RParen
+                | TokKind::Semi
+                | TokKind::Comma
+                | TokKind::Eof
+                | TokKind::Req
+                | TokKind::Ens
+                | TokKind::Fx
+                | TokKind::Inv
+                | TokKind::Dec
+        )
     }
 
     fn parse_effect_row(&mut self) -> PResult<EffectRow> {
@@ -1887,7 +1949,7 @@ impl<'a> Parser<'a> {
                 span: self.peek_span(),
             });
         }
-        let dec = self.parse_clause(&TokKind::Dec)?;
+        let dec = self.parse_dec_clause()?;
         self.loop_depth += 1;
         let body_result = self.parse_block();
         self.loop_depth -= 1;
@@ -2059,7 +2121,7 @@ impl<'a> Parser<'a> {
                 span: self.peek_span(),
             });
         }
-        let dec = self.parse_clause(&TokKind::Dec)?;
+        let dec = self.parse_dec_clause()?;
         if self.check(&TokKind::Dec) {
             // A second `dec` violates the exactly-one cardinality.
             return Err(SyntaxError::ClauseOrder {

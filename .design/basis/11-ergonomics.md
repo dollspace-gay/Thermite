@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5d0bc8cbfb0f04e72bfa20687f8441581b238aa0 (re-pinned: the #281 L1 empty-window twin fix — claim-neutral for this doc / the REQ-20 truth for l1-runtime-checks)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #281 L1 empty-window twin fix — claim-neutral for this doc / the REQ-20 truth for l1-runtime-checks)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

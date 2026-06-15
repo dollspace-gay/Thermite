@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale GREENFIELD/NOT-STARTED Summary corrected to shipped, governs re-pointed at the real files (no thermite-stdlib crate exists; OQ-2 inline-table resolution), REQ-1 wrapper-set/test-count refreshed (#87/#90/#125 growth), #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — stale GREENFIELD/NOT-STARTED Summary corrected to shipped, governs re-pointed at the real files (no thermite-stdlib crate exists; OQ-2 inline-table resolution), REQ-1 wrapper-set/test-count refreshed (#87/#90/#125 growth), #262)
 governs: forge/src/build.rs
 governs: forge/src/effect_wrappers.rs
 (the thermite-stdlib/src/effect/* paths this doc originally listed were never

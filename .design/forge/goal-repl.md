@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — REQ-2 holes-render + REQ-7 increment-(iii) residue corrected, stale (future) governs markers dropped, #195 shared open_hole_reason noted, #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — REQ-2 holes-render + REQ-7 increment-(iii) residue corrected, stale (future) governs markers dropped, #195 shared open_hole_reason noted, #262)
 governs: forge/src/goal_repl.rs, forge/src/cli.rs (verb dispatch), thermite-syntax/src/parser.rs (hole token)
 thesis-refs:
   - thermite-design.md §5

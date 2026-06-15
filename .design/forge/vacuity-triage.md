@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary; rule (d) is boundary-exempt too and the #106 `term` 9th atom is excluded from the maximal set, #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — shipped-status Summary; rule (d) is boundary-exempt too and the #106 `term` 9th atom is excluded from the maximal set, #262)
 governs: forge/src/vacuity.rs
 thesis-refs:
   - thermite-design.md §7

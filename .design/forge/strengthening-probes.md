@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — shipped-status Summary + the #101 survivor-input and render_expr surface notes, #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — shipped-status Summary + the #101 survivor-input and render_expr surface notes, #262)
 governs: forge/src/strengthen.rs
 thesis-refs:
   - thermite-design.md §7

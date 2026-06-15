@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — #10 degrade ladder shipped since (scope-boundary now historical), run_kani 3-arg signature, #51 classify_l2_outcome note, #262)
+audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — #10 degrade ladder shipped since (scope-boundary now historical), run_kani 3-arg signature, #51 classify_l2_outcome note, #262)
 governs: thermite-lower/src/l2.rs, forge/src/kani.rs
 thesis-refs:
   - thermite-design.md §6

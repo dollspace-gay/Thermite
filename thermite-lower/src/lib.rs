@@ -16,12 +16,16 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (workspace topology) | SHIPPED | this crate is a `lib` member of the virtual workspace in root `Cargo.toml`. |
-//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | `thermite-lower/Cargo.toml` declares path deps `thermite-syntax` + `thermite-spec`. |
-//! | REQ-3 (Result discipline; crate error type born with first fallible fn) | SHIPPED | `LowerError` is declared in `lower.rs` with `lower`; `pub use`d below. |
-//! | REQ-6 (scaffold compiles clean) | SHIPPED | no stubs, no `mod` pointing at a missing file; `cargo build --workspace` is green. |
+//! <!-- generated:reqs view=thermite-lower-scaffold-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SCAFFOLD-LOWER-COMPILE | shipped | `thermite-lower/src/lib.rs` | Lower clean compile |  |
+//! | REQ-SCAFFOLD-LOWER-DAG | shipped | `thermite-lower/src/lib.rs` | Lower dependency DAG |  |
+//! | REQ-SCAFFOLD-LOWER-RESULT | shipped | `thermite-lower/src/lib.rs` | Lower result discipline |  |
+//! | REQ-SCAFFOLD-LOWER-WORKSPACE | shipped | `thermite-lower/src/lib.rs` | Lower workspace topology |  |
+//! <!-- /generated:reqs -->
 
 pub mod effects;
 pub mod l1;

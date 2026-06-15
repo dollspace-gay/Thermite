@@ -28,23 +28,31 @@
 //!
 //! ## REQ status — workspace.md (scaffold)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (workspace topology) | SHIPPED | this crate is a `lib` member of the virtual workspace in root `Cargo.toml`. |
-//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | `thermite-spec/Cargo.toml` declares the single path dep `thermite-syntax`. |
-//! | REQ-3 (per-crate error enum) | SHIPPED | `SpecError` is born here in `validator.rs` with the first fallible fn `validate` and `pub use`d below. |
-//! | REQ-6 (compiles clean) | SHIPPED | no stubs, no `mod` pointing at a missing file; no `unwrap`/`expect`/`panic!` in `src/`. |
+//! <!-- generated:reqs view=thermite-spec-scaffold-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SCAFFOLD-SPEC-COMPILE | shipped | `thermite-spec/src/lib.rs` | Spec clean compile |  |
+//! | REQ-SCAFFOLD-SPEC-DAG | shipped | `thermite-spec/src/lib.rs` | Spec dependency DAG |  |
+//! | REQ-SCAFFOLD-SPEC-RESULT | shipped | `thermite-spec/src/lib.rs` | Spec result discipline |  |
+//! | REQ-SCAFFOLD-SPEC-WORKSPACE | shipped | `thermite-spec/src/lib.rs` | Spec workspace topology |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — spectherm-combinators.md (issue #2)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (frozen combinator set) | SHIPPED | `combinators::all`/`REGISTRY` — 8 frozen entries; asserted against `tests/golden/combinators/registry.json`. |
-//! | REQ-2 (registry data shape) | SHIPPED | `CombinatorSig`/`ArgKind`/`ResultKind` + `lookup`; consumed by `validate`. |
-//! | REQ-3 (validator accept rule) | SHIPPED | `validate` walks `Contract.req`/`ens`, `LoopNode.invs`/`dec`, `SpecFnItem.body`; every `accept.json` case validates clean. |
-//! | REQ-4 (reject cases, structured `SpecError`) | SHIPPED | `SpecError::{UnknownCombinator,WrongArity,WrongArgKind,ForbiddenCall,ExpressionTooDeep}`; every `reject.json` case yields the expected cause. |
-//! | REQ-5 (bounded recursion) | SHIPPED | single `MAX_RECURSION_DEPTH` guard via `Validator::descend` over every recursive descent; deep input → `ExpressionTooDeep`. |
-//! | REQ-6 (flat-closure-fragment rule) | SHIPPED | `Validator::in_combinator_closure` set on entry to a combinator `Pred`-slot closure body (kept set for all nesting); while set, `walk_call` rejects a registered-combinator callee with `SpecError::NestedCombinator`, named `spec fn` calls stay accepted. `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; flat corpus closures unaffected. |
+//! <!-- generated:reqs view=thermite-spec-lib-combinators-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-COMBINATORS-FROZEN | shipped | `thermite-spec/src/combinators.rs` | Frozen combinator set |  |
+//! | REQ-SPEC-COMBINATORS-SHAPE | shipped | `thermite-spec/src/combinators.rs` | Combinator registry data shape |  |
+//! | REQ-SPEC-VALIDATOR-ACCEPT | shipped | `thermite-spec/src/validator.rs` | Validator accept rule |  |
+//! | REQ-SPEC-VALIDATOR-DEPTH | shipped | `thermite-spec/src/validator.rs` | Validator bounded recursion |  |
+//! | REQ-SPEC-VALIDATOR-FLAT-CLOSURE | shipped | `thermite-spec/src/validator.rs` | Validator flat closure fragment |  |
+//! | REQ-SPEC-VALIDATOR-REJECT | shipped | `thermite-spec/src/validator.rs` | Validator reject cases |  |
+//! <!-- /generated:reqs -->
 
 pub mod combinators;
 pub mod schemes;

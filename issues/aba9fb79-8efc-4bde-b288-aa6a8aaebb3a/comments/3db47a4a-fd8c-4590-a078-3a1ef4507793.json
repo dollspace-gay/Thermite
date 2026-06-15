@@ -1,0 +1,8 @@
+{
+  "uuid": "3db47a4a-fd8c-4590-a078-3a1ef4507793",
+  "issue_uuid": "aba9fb79-8efc-4bde-b288-aa6a8aaebb3a",
+  "author": "lSoG",
+  "content": "Resolved (commit edebbb74): root cause was the macOS /var->/private/var symlink. rustc records the canonical /private/var cwd (DW_AT_comp_dir) in the rlib, but --remap-path-prefix was keyed on the non-canonical /var scratch path -> the per-run PID-bearing path leaked + the disambiguator hash derived from it differed. Fix: also remap std::fs::canonicalize(scratch) (=. ), portable (no-op on Linux). Two same-input rlibs now byte-identical, no leaked path/PID; rebuilt_library_is_byte_identical passes; build_conformance 8/8; fmt+clippy clean.",
+  "created_at": "2026-06-15T23:15:11.970217Z",
+  "kind": "resolution"
+}

@@ -1,0 +1,8 @@
+{
+  "uuid": "08b23f74-5550-47c9-8a6a-8c4dc03b7141",
+  "issue_uuid": "98cca318-2c4d-49d6-9529-ac922b8e8f28",
+  "author": "lSoG",
+  "content": "Result: increment 2a (REQ-3 surface syntax) complete in 6 commits b4d7fbeb..241ee6ea. Delivered: ?pN proof-hole sigil + Hole.context (Body/Proof); Item::Forge grouping (prop fn / lemma / proof for / witness) with verbatim proof blocks + addressing (f.proof.ens#k, witness#N, ?pN); refinement sugar x:T{P} folded to req/ens by a new post-parse desugar pass; dec lex(...) (registry-free call) + dec wf <rel> ASCII (Q-DECWF); AC-7 open-?pN blocks build+cert via goal_repl::open_proof_hole_reason wired through check.rs/build.rs. Tests: 27 new in thermite-syntax (proof_hole_lex, forge_items, refinement_sugar, dec_forms) + 3 forge AC-7 (proof_hole_gate). Gauntlet: workspace fmt + clippy -D warnings clean; thermite-syntax and verus-free crates green; forge 304 passed (7 failures are environmental Lean-spine, engine.rs untouched); all *_conformance pass so the oracle is byte-identical; goldens/corpus/config untouched. REQ-S1-3 registered PARTIAL (surface shipped, semantic consumers later); req-registry.py --check clean.",
+  "created_at": "2026-06-15T22:17:06.028019Z",
+  "kind": "result"
+}

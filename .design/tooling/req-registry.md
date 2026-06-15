@@ -44,7 +44,10 @@ second slice turns the whole contract-TV crate-level summary in
 `ref_encode.rs`, `obligation.rs`, `gen.rs`, `tests/teeth.rs`, and
 `forge/src/contract_tv.rs`. The next slice does the same for the adjacent
 exec-TV crate-level summary, rendering links to the stable owners in
-`exec_encode.rs`, `obligation.rs`, `gen.rs`, and `tests/exec_teeth.rs`.
+`exec_encode.rs`, `obligation.rs`, `gen.rs`, and `tests/exec_teeth.rs`. The
+follow-on forge exec-TV slice splits the exact `REQ-5 (forge plug-in point)`
+label collision by giving `forge/src/exec_tv.rs` its own stable owner ID and
+generated source-comment region.
 
 ## Design Decisions
 
@@ -201,7 +204,9 @@ required for the default gate to pass.
    generated region to the full contract-TV crate summary rows, so the crate root
    links to owner entries instead of carrying copied status/evidence prose. The
    following turnover adds a sibling generated region for the exec-TV crate
-   summary rows.
+   summary rows. The next forge exec-TV turnover removes the remaining exact
+   `REQ-5 (forge plug-in point)` collision by assigning the exec integration
+   point a distinct stable owner ID.
 6. Tighten the bridge: fail on unmapped legacy rows once migration coverage is
    high enough to make that signal useful.
 

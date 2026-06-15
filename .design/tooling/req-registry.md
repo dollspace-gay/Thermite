@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 6ec560db4b95f9af73f333c4f987d6efaa7b90dc (re-pinned 2026-06-15: exec-TV crate summary rows now map to stable owner IDs and render through a sibling canonical source-comment region; RFC #17)
+audited-sha: 3ba219b78e988e8a47dc1028670ad39fe1698f5b (re-pinned 2026-06-15: forge exec-TV REQ-5 now has a distinct stable owner ID and generated source-comment region; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

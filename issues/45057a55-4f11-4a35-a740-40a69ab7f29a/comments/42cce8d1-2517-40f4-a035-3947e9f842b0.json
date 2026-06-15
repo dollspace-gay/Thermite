@@ -1,0 +1,8 @@
+{
+  "uuid": "42cce8d1-2517-40f4-a035-3947e9f842b0",
+  "issue_uuid": "45057a55-4f11-4a35-a740-40a69ab7f29a",
+  "author": "dX10",
+  "content": "Plan (increments 0+1): Increment 0 first (REQ-8a, independent). New Mathlib-island module lean/Thermite/Relax.lean: polynomial-expr AST over a CommRing with rencode_sound (Int-to-Real encode is a ring hom) and r_relax_sound (proving the relaxation over all reals discharges the integer clause — soundness direction of the nlsat route). Both reduce to the 3 standard axioms. Mathlib already in the build graph via Thermite.SmtDemo, so the island follows that shipped pattern; core denotation path stays Mathlib-free. Extend audit.sh axiom probe to both lemmas. F4 prereq: pin lean-smt to its locked SHA in lakefile.toml; add a Lean CI job (lake build + axiom probe). Metatheory doc with the cited section is not committed (external ref like the trust-audit); statements derived from REQ-8/Q-NLSAT.",
+  "created_at": "2026-06-15T15:38:26.289746Z",
+  "kind": "plan"
+}

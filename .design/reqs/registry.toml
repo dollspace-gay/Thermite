@@ -42,6 +42,302 @@ mode = "region"
 region = "status"
 title = "Canonical REQ Status Inventory"
 
+[[view]]
+name = "thermite-tv-contract-tv-status"
+path = "thermite-tv/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-contract-tv-status"
+comment_prefix = "//! "
+title = "Contract-TV Canonical Status References"
+
+[[view]]
+name = "thermite-tv-exec-tv-status"
+path = "thermite-tv/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-exec-tv-status"
+comment_prefix = "//! "
+title = "Exec-TV Canonical Status References"
+
+[[view]]
+name = "forge-exec-tv-status"
+path = "forge/src/exec_tv.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-exec-tv-status"
+comment_prefix = "//! "
+title = "Forge Exec-TV Canonical Status References"
+
+[[view]]
+name = "forge-main-scaffold-status"
+path = "forge/src/main.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-main-scaffold-status"
+comment_prefix = "//! "
+title = "Forge Entrypoint Scaffold Status References"
+
+[[view]]
+name = "thermite-syntax-scaffold-status"
+path = "thermite-syntax/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-scaffold-status"
+comment_prefix = "//! "
+title = "Syntax Crate Scaffold Status References"
+
+[[view]]
+name = "thermite-spec-scaffold-status"
+path = "thermite-spec/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-scaffold-status"
+comment_prefix = "//! "
+title = "Spec Crate Scaffold Status References"
+
+[[view]]
+name = "thermite-lower-scaffold-status"
+path = "thermite-lower/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-scaffold-status"
+comment_prefix = "//! "
+title = "Lower Crate Scaffold Status References"
+
+[[view]]
+name = "thermite-spec-lib-combinators-status"
+path = "thermite-spec/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-lib-combinators-status"
+comment_prefix = "//! "
+title = "SpecTherm Combinator Canonical Status References"
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-5 (forge plug-in point)"
+id = "REQ-TV-CONTRACT-FORGE-PLUGIN"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Secondary source-comment status copy replaced by a generated reference to the forge-owned canonical entry."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-1 (independent reference encoder)"
+id = "REQ-TV-CONTRACT-REF-ENCODER"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the reference-encoder owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-2 (per-clause Z3 equivalence obligation + discharge)"
+id = "REQ-TV-CONTRACT-OBLIGATION"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the obligation owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-3 (off-corpus generator)"
+id = "REQ-TV-CONTRACT-GENERATOR"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the generator owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-4 (the teeth — R-CHAR-3)"
+id = "REQ-TV-CONTRACT-TEETH"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the teeth-test owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-1 (exec-expr reference encoder)"
+id = "REQ-TV-EXEC-REF-ENCODER"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec reference owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-2 (exec-fn-wrapped obligation + discharge)"
+id = "REQ-TV-EXEC-OBLIGATION"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec obligation owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-3 (off-corpus exec generator)"
+id = "REQ-TV-EXEC-GENERATOR"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec generator owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "exec-REQ-4 (the exec teeth — R-CHAR-3)"
+id = "REQ-TV-EXEC-TEETH"
+replacement_view = "thermite-tv-exec-tv-status"
+note = "Crate-level exec-TV summary row replaced by a generated reference to the exec teeth-test owner."
+
+[[legacy_mapping]]
+path = "forge/src/exec_tv.rs"
+label = "REQ-5 (forge plug-in point)"
+id = "REQ-TV-EXEC-FORGE-PLUGIN"
+replacement_view = "forge-exec-tv-status"
+note = "Exec-TV forge integration row split from the contract-TV REQ-5 label and replaced by a generated canonical owner reference."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-1 (workspace topology)"
+id = "REQ-SCAFFOLD-FORGE-WORKSPACE"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint scaffold row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-2 (dependency DAG, leaf-first)"
+id = "REQ-SCAFFOLD-FORGE-DAG"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint dependency-DAG row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-3 (Result discipline; error type)"
+id = "REQ-SCAFFOLD-FORGE-RESULT"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint result-discipline row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-6 (clean compile)"
+id = "REQ-SCAFFOLD-FORGE-COMPILE"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint clean-compile row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lib.rs"
+label = "REQ-1 (workspace topology)"
+id = "REQ-SCAFFOLD-SYNTAX-WORKSPACE"
+replacement_view = "thermite-syntax-scaffold-status"
+note = "Syntax crate-root scaffold row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lib.rs"
+label = "REQ-2 (dependency DAG, leaf-first)"
+id = "REQ-SCAFFOLD-SYNTAX-DAG"
+replacement_view = "thermite-syntax-scaffold-status"
+note = "Syntax crate-root dependency-DAG row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lib.rs"
+label = "REQ-3 (Result discipline; per-crate error type)"
+id = "REQ-SCAFFOLD-SYNTAX-RESULT"
+replacement_view = "thermite-syntax-scaffold-status"
+note = "Syntax crate-root result-discipline row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lib.rs"
+label = "REQ-6 (compiles clean)"
+id = "REQ-SCAFFOLD-SYNTAX-COMPILE"
+replacement_view = "thermite-syntax-scaffold-status"
+note = "Syntax crate-root clean-compile row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-1 (workspace topology)"
+id = "REQ-SCAFFOLD-SPEC-WORKSPACE"
+replacement_view = "thermite-spec-scaffold-status"
+note = "Spec crate-root scaffold row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-2 (dependency DAG, leaf-first)"
+id = "REQ-SCAFFOLD-SPEC-DAG"
+replacement_view = "thermite-spec-scaffold-status"
+note = "Spec crate-root dependency-DAG row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-3 (per-crate error enum)"
+id = "REQ-SCAFFOLD-SPEC-RESULT"
+replacement_view = "thermite-spec-scaffold-status"
+note = "Spec crate-root result-discipline row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-6 (compiles clean)"
+id = "REQ-SCAFFOLD-SPEC-COMPILE"
+replacement_view = "thermite-spec-scaffold-status"
+note = "Spec crate-root clean-compile row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lib.rs"
+label = "REQ-1 (workspace topology)"
+id = "REQ-SCAFFOLD-LOWER-WORKSPACE"
+replacement_view = "thermite-lower-scaffold-status"
+note = "Lower crate-root scaffold row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lib.rs"
+label = "REQ-2 (dependency DAG, leaf-first)"
+id = "REQ-SCAFFOLD-LOWER-DAG"
+replacement_view = "thermite-lower-scaffold-status"
+note = "Lower crate-root dependency-DAG row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lib.rs"
+label = "REQ-3 (Result discipline; crate error type born with first fallible fn)"
+id = "REQ-SCAFFOLD-LOWER-RESULT"
+replacement_view = "thermite-lower-scaffold-status"
+note = "Lower crate-root result-discipline row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lib.rs"
+label = "REQ-6 (scaffold compiles clean)"
+id = "REQ-SCAFFOLD-LOWER-COMPILE"
+replacement_view = "thermite-lower-scaffold-status"
+note = "Lower crate-root clean-compile row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-1 (frozen combinator set)"
+id = "REQ-SPEC-COMBINATORS-FROZEN"
+replacement_view = "thermite-spec-lib-combinators-status"
+note = "Spec crate-root combinator summary row replaced by a generated reference to the combinator registry owner."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-2 (registry data shape)"
+id = "REQ-SPEC-COMBINATORS-SHAPE"
+replacement_view = "thermite-spec-lib-combinators-status"
+note = "Spec crate-root combinator summary row replaced by a generated reference to the combinator registry owner."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-3 (validator accept rule)"
+id = "REQ-SPEC-VALIDATOR-ACCEPT"
+replacement_view = "thermite-spec-lib-combinators-status"
+note = "Spec crate-root validator summary row replaced by a generated reference to the validator owner."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-4 (reject cases, structured `SpecError`)"
+id = "REQ-SPEC-VALIDATOR-REJECT"
+replacement_view = "thermite-spec-lib-combinators-status"
+note = "Spec crate-root validator summary row replaced by a generated reference to the validator owner."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-5 (bounded recursion)"
+id = "REQ-SPEC-VALIDATOR-DEPTH"
+replacement_view = "thermite-spec-lib-combinators-status"
+note = "Spec crate-root validator summary row replaced by a generated reference to the validator owner."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/lib.rs"
+label = "REQ-6 (flat-closure-fragment rule)"
+id = "REQ-SPEC-VALIDATOR-FLAT-CLOSURE"
+replacement_view = "thermite-spec-lib-combinators-status"
+note = "Spec crate-root validator summary row replaced by a generated reference to the validator owner."
+
 [[requirement]]
 id = "REQ-REG-1"
 title = "Stable requirement identity and ownership"
@@ -136,7 +432,7 @@ owner = "tooling/req-status.py"
 status = "partial"
 scope = "tooling"
 summary = "The existing source-comment lint remains as a bridge while repeated `//!` REQ rows are mapped to stable registry IDs."
-remaining_scope = "Migrate the 429 legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
+remaining_scope = "Migrate the remaining legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
 contributors = ["tooling/req-registry.py"]
 blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
@@ -154,13 +450,18 @@ note = "legacy row lint stays green during migration"
 [[requirement]]
 id = "REQ-REG-6"
 title = "Generated-region migration"
-owner = ".design/tooling/req-registry.md"
-status = "deferred"
+owner = "tooling/req-registry.py"
+status = "partial"
 scope = "tooling"
 summary = "Source comments should eventually carry stable invariants only; volatile status tables should be generated or linked from canonical status views."
-remaining_scope = "Define generated-region markers and migrate source comments doc-by-doc after stable ID mapping is reviewed."
+remaining_scope = "Migrate source comments doc-by-doc after each stable-ID mapping is reviewed."
 blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_reference_list_body"
+note = "generated source-comment reference-list view"
 
 [[requirement.evidence]]
 kind = "issue"
@@ -342,3 +643,741 @@ note = "refinement-type sugar desugar pass"
 kind = "test"
 target = "thermite-syntax/tests/dec_forms.rs"
 note = "dec lex(...) / dec wf <rel> measure forms"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-REF-ENCODER"
+title = "Contract-TV independent reference encoder"
+owner = "thermite-tv/src/ref_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The contract-position reference encoder independently encodes the SpecTherm contract sublanguage without depending on production lowering."
+aliases = ["REQ-1 (independent reference encoder)"]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/obligation.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ref_contract_pred"
+note = "reference contract predicate encoder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/teeth.rs"
+note = "F1-F4 contract-TV teeth discharge the reference side under real verus"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/ref_encode.rs"
+note = "owner implementation"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-OBLIGATION"
+title = "Contract-TV per-clause Z3 equivalence obligation"
+owner = "thermite-tv/src/obligation.rs"
+status = "shipped"
+scope = "verified"
+summary = "Each contract clause lowers into a self-contained equivalence obligation comparing production lowering with the independent reference encoding."
+aliases = ["REQ-2 (per-clause Z3 equivalence obligation + discharge)"]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/ref_encode.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "equivalence_obligation"
+note = "per-clause contract-TV obligation emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationFrame"
+note = "obligation parameter and frame model"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/teeth.rs"
+note = "teeth test discharges faithful and infidel obligations"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-GENERATOR"
+title = "Contract-TV off-corpus generator"
+owner = "thermite-tv/src/gen.rs"
+status = "shipped"
+scope = "verified"
+summary = "The off-corpus contract generator deterministically emits well-typed contract-position clauses over the frozen TV sublanguage."
+aliases = ["REQ-3 (off-corpus generator)"]
+contributors = ["thermite-tv/src/lib.rs", "forge/src/contract_tv.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate_clauses"
+note = "deterministic contract-position generator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/contract_tv_conformance.rs"
+note = "forge off-corpus contract-TV conformance run"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/gen.rs"
+note = "owner implementation"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-TEETH"
+title = "Contract-TV teeth"
+owner = "thermite-tv/tests/teeth.rs"
+status = "shipped"
+scope = "verified"
+summary = "The contract-TV teeth suite proves faithful clauses verify and representative infidel clauses produce real Verus counterexamples."
+aliases = ["REQ-4 (the teeth — R-CHAR-3)"]
+contributors = ["thermite-tv/src/lib.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/teeth.rs"
+note = "F1-F4 contract-TV teeth"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "f3_byteview_infidel_caught"
+note = "representative F3 teeth case"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-FORGE-PLUGIN"
+title = "Contract-TV forge plug-in point"
+owner = "forge/src/contract_tv.rs"
+status = "shipped"
+scope = "verified"
+summary = "The forge contract-TV phase is the owned integration point between production contract lowering and the independent thermite-tv reference encoder."
+aliases = ["REQ-5 (forge plug-in point)"]
+contributors = ["thermite-tv/src/lib.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/contract_tv.rs"
+note = "owner implementation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tv_file"
+note = "corpus contract-TV phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_generated"
+note = "off-corpus contract-TV phase"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/contract_tv_conformance.rs"
+note = "corpus and generated contract-TV conformance"
+
+[[requirement]]
+id = "REQ-TV-EXEC-REF-ENCODER"
+title = "Exec-TV independent reference encoder"
+owner = "thermite-tv/src/exec_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The exec-position reference encoder independently encodes bounded pure body-position expressions without depending on production lowering."
+aliases = [
+  "exec-REQ-1 (exec-expr reference encoder)",
+  "REQ-1 (exec-expr reference encoder — independent, EXEC semantics)",
+]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/obligation.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_ref_value"
+note = "bounded exec-position reference encoder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/exec_teeth.rs"
+note = "E1-E4 exec teeth discharge the reference side under real verus"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/exec_encode.rs"
+note = "owner implementation"
+
+[[requirement]]
+id = "REQ-TV-EXEC-OBLIGATION"
+title = "Exec-TV fn-wrapped equivalence obligation"
+owner = "thermite-tv/src/obligation.rs"
+status = "shipped"
+scope = "verified"
+summary = "Each pure exec-position expression is checked by an exec-fn-wrapped equivalence obligation comparing production lowering with the bounded reference value."
+aliases = [
+  "exec-REQ-2 (exec-fn-wrapped obligation + discharge)",
+  "REQ-2 (exec-fn-wrapped equivalence obligation + discharge)",
+]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/exec_encode.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_equivalence_obligation"
+note = "exec-fn equivalence obligation emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExecObligationFrame"
+note = "exec obligation frame model"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/exec_teeth.rs"
+note = "teeth test discharges faithful and infidel exec obligations"
+
+[[requirement]]
+id = "REQ-TV-EXEC-GENERATOR"
+title = "Exec-TV off-corpus generator"
+owner = "thermite-tv/src/gen.rs"
+status = "shipped"
+scope = "verified"
+summary = "The off-corpus exec generator deterministically emits well-framed pure exec-position expressions over the bounded exec sublanguage."
+aliases = ["exec-REQ-3 (off-corpus exec generator)"]
+contributors = ["thermite-tv/src/lib.rs", "forge/src/exec_tv.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "gen_exec_exprs"
+note = "deterministic exec-position generator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExecClause"
+note = "generated expression plus adequate frame"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/exec_tv_conformance.rs"
+note = "forge off-corpus exec-TV conformance run"
+
+[[requirement]]
+id = "REQ-TV-EXEC-TEETH"
+title = "Exec-TV teeth"
+owner = "thermite-tv/tests/exec_teeth.rs"
+status = "shipped"
+scope = "verified"
+summary = "The exec-TV teeth suite proves faithful exec-position lowerings verify and representative infidel lowerings are caught."
+aliases = ["exec-REQ-4 (the exec teeth — R-CHAR-3)"]
+contributors = ["thermite-tv/src/lib.rs"]
+generated_to = ["status", "thermite-tv-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/exec_teeth.rs"
+note = "E1-E4 exec-TV teeth"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "e4_index_infidel_caught"
+note = "representative E4 teeth case"
+
+[[requirement]]
+id = "REQ-TV-EXEC-FORGE-PLUGIN"
+title = "Exec-TV forge plug-in point"
+owner = "forge/src/exec_tv.rs"
+status = "shipped"
+scope = "verified"
+summary = "The forge exec-TV phase is the owned integration point between production exec-expression lowering and the independent thermite-tv bounded reference encoder."
+aliases = ["exec-TV REQ-5 (forge plug-in point)"]
+contributors = ["thermite-tv/src/exec_encode.rs", "thermite-tv/src/obligation.rs", "thermite-tv/src/gen.rs"]
+generated_to = ["status", "forge-exec-tv-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/exec_tv.rs"
+note = "owner implementation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_generated"
+note = "off-corpus exec-TV phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_tv_file"
+note = "corpus body-expr exec-TV phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExecVerdict"
+note = "four-way faithful/divergent/unverifiable/skipped classification"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/exec_tv_conformance.rs"
+note = "generated and corpus exec-TV conformance"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-WORKSPACE"
+title = "Forge workspace topology"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge crate root materializes the CLI binary member of the virtual workspace."
+aliases = ["forge/src/main.rs REQ-1 (workspace topology)"]
+contributors = ["forge/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/Cargo.toml"
+note = "forge declares the explicit binary target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "main"
+note = "entrypoint function in forge/src/main.rs"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-DAG"
+title = "Forge dependency DAG"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge CLI sits above the library crates and drives parse, validate, effect checking, lowering, and verification phases."
+aliases = ["forge/src/main.rs REQ-2 (dependency DAG, leaf-first)"]
+contributors = ["forge/Cargo.toml", "forge/src/check.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/Cargo.toml"
+note = "path dependencies encode the forge position in the workspace DAG"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file"
+note = "pipeline entry that composes the leaf crates"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-RESULT"
+title = "Forge result discipline"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge entrypoint delegates fallible behavior to the CLI result layer and returns typed exit codes."
+aliases = ["forge/src/main.rs REQ-3 (Result discipline; error type)"]
+contributors = ["forge/src/cli.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "forge error type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run"
+note = "CLI dispatch returns ExitCode from the typed result layer"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-COMPILE"
+title = "Forge clean compile"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge crate root has no dangling modules or placeholder scaffolding and participates in the workspace build."
+aliases = ["forge/src/main.rs REQ-6 (clean compile)"]
+contributors = ["Makefile", "tooling/anti-pattern-gate.py", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "placeholder/anti-pattern gate"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo build --workspace"
+note = "workspace compile check"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SYNTAX-WORKSPACE"
+title = "Syntax workspace topology"
+owner = "thermite-syntax/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The syntax crate root materializes the leaf syntax library member of the virtual workspace."
+aliases = ["thermite-syntax/src/lib.rs REQ-1 (workspace topology)"]
+contributors = ["thermite-syntax/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-syntax-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/Cargo.toml"
+note = "syntax crate workspace member manifest"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse"
+note = "public syntax crate API re-exported from the crate root"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SYNTAX-DAG"
+title = "Syntax dependency DAG"
+owner = "thermite-syntax/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The syntax crate is the internal workspace leaf with no intra-workspace path dependencies."
+aliases = ["thermite-syntax/src/lib.rs REQ-2 (dependency DAG, leaf-first)"]
+contributors = ["thermite-syntax/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-syntax-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/Cargo.toml"
+note = "manifest carries no internal path dependencies"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SYNTAX-RESULT"
+title = "Syntax result discipline"
+owner = "thermite-syntax/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The syntax crate owns and re-exports its parser error type instead of sharing a cross-crate error enum."
+aliases = ["thermite-syntax/src/lib.rs REQ-3 (Result discipline; per-crate error type)"]
+contributors = ["thermite-syntax/src/parser.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-syntax-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SyntaxError"
+note = "syntax crate error enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ParseResult"
+note = "typed parser result returned from parse"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SYNTAX-COMPILE"
+title = "Syntax clean compile"
+owner = "thermite-syntax/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The syntax crate root has no dangling modules or placeholder scaffolding and participates in the workspace build."
+aliases = ["thermite-syntax/src/lib.rs REQ-6 (compiles clean)"]
+contributors = ["thermite-syntax/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-syntax-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/src/lib.rs"
+note = "crate root with resolved module declarations"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo build -p thermite-syntax"
+note = "crate compile check"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SPEC-WORKSPACE"
+title = "Spec workspace topology"
+owner = "thermite-spec/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The spec crate root materializes the SpecTherm registry and validator library member of the virtual workspace."
+aliases = ["thermite-spec/src/lib.rs REQ-1 (workspace topology)"]
+contributors = ["thermite-spec/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-spec-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-spec/Cargo.toml"
+note = "spec crate workspace member manifest"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate"
+note = "public spec crate API re-exported from the crate root"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SPEC-DAG"
+title = "Spec dependency DAG"
+owner = "thermite-spec/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The spec crate depends on syntax and stays below lowering/forge in the internal workspace DAG."
+aliases = ["thermite-spec/src/lib.rs REQ-2 (dependency DAG, leaf-first)"]
+contributors = ["thermite-spec/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-spec-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-spec/Cargo.toml"
+note = "manifest declares the syntax path dependency"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lookup"
+note = "registry lookup consumed by validation/lowering layers"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SPEC-RESULT"
+title = "Spec result discipline"
+owner = "thermite-spec/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The spec crate owns and re-exports its structured validator error enum."
+aliases = ["thermite-spec/src/lib.rs REQ-3 (per-crate error enum)"]
+contributors = ["thermite-spec/src/validator.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-spec-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SpecError"
+note = "spec crate error enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate"
+note = "first fallible spec crate boundary API"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-SPEC-COMPILE"
+title = "Spec clean compile"
+owner = "thermite-spec/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The spec crate root has no dangling modules or placeholder scaffolding and participates in the workspace build."
+aliases = ["thermite-spec/src/lib.rs REQ-6 (compiles clean)"]
+contributors = ["thermite-spec/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-spec-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-spec/src/lib.rs"
+note = "crate root with resolved module declarations"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo build -p thermite-spec"
+note = "crate compile check"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-LOWER-WORKSPACE"
+title = "Lower workspace topology"
+owner = "thermite-lower/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The lower crate root materializes the lowering library member of the virtual workspace."
+aliases = ["thermite-lower/src/lib.rs REQ-1 (workspace topology)"]
+contributors = ["thermite-lower/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-lower-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-lower/Cargo.toml"
+note = "lower crate workspace member manifest"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower"
+note = "public lowering entrypoint re-exported from the crate root"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-LOWER-DAG"
+title = "Lower dependency DAG"
+owner = "thermite-lower/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The lower crate depends on syntax/spec and stays below forge in the internal workspace DAG."
+aliases = ["thermite-lower/src/lib.rs REQ-2 (dependency DAG, leaf-first)"]
+contributors = ["thermite-lower/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-lower-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-lower/Cargo.toml"
+note = "manifest declares syntax/spec path dependencies"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_effects"
+note = "lowering support entrypoint consumed by forge"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-LOWER-RESULT"
+title = "Lower result discipline"
+owner = "thermite-lower/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The lower crate owns and re-exports its lowering error type from the first fallible lowering API."
+aliases = ["thermite-lower/src/lib.rs REQ-3 (Result discipline; crate error type born with first fallible fn)"]
+contributors = ["thermite-lower/src/lower.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-lower-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "lower crate error enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower"
+note = "first fallible lower crate boundary API"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-LOWER-COMPILE"
+title = "Lower clean compile"
+owner = "thermite-lower/src/lib.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The lower crate root has no dangling modules or placeholder scaffolding and participates in the workspace build."
+aliases = ["thermite-lower/src/lib.rs REQ-6 (scaffold compiles clean)"]
+contributors = ["thermite-lower/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "thermite-lower-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-lower/src/lib.rs"
+note = "crate root with resolved module declarations"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo build -p thermite-lower"
+note = "crate compile check"
+
+[[requirement]]
+id = "REQ-SPEC-COMBINATORS-FROZEN"
+title = "Frozen combinator set"
+owner = "thermite-spec/src/combinators.rs"
+status = "shipped"
+scope = "spec"
+summary = "The SpecTherm combinator registry exposes the frozen v0.1 combinator set consumed by validation and lowering."
+aliases = ["thermite-spec/src/lib.rs REQ-1 (frozen combinator set)"]
+contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
+generated_to = ["status", "thermite-spec-lib-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "REGISTRY"
+note = "static frozen combinator table"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lookup"
+note = "registry lookup consumed by the validator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/combinators_conformance.rs"
+note = "registry oracle conformance"
+
+[[requirement]]
+id = "REQ-SPEC-COMBINATORS-SHAPE"
+title = "Combinator registry data shape"
+owner = "thermite-spec/src/combinators.rs"
+status = "shipped"
+scope = "spec"
+summary = "Each combinator registry entry carries the structural signature the validator needs: name, arity, argument kinds, and result kind."
+aliases = ["thermite-spec/src/lib.rs REQ-2 (registry data shape)"]
+contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
+generated_to = ["status", "thermite-spec-lib-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CombinatorSig"
+note = "registry entry structure"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ArgKind"
+note = "argument-kind vocabulary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ResultKind"
+note = "result-kind vocabulary"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ACCEPT"
+title = "Validator accept rule"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "The validator accepts registered combinators, declared spec-function calls, and the flat grammar built-ins allowed by the SpecTherm cage."
+aliases = ["thermite-spec/src/lib.rs REQ-3 (validator accept rule)"]
+contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
+generated_to = ["status", "thermite-spec-lib-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate"
+note = "boundary validator API"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/combinators_conformance.rs"
+note = "accept oracle cases"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-REJECT"
+title = "Validator reject cases"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "The validator rejects unknown combinators, wrong arity/kind, forbidden calls, and excessive expression depth with structured errors."
+aliases = ["thermite-spec/src/lib.rs REQ-4 (reject cases, structured `SpecError`)"]
+contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
+generated_to = ["status", "thermite-spec-lib-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SpecError"
+note = "structured validator error enum"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/combinators_conformance.rs"
+note = "reject oracle cases"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-DEPTH"
+title = "Validator bounded recursion"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "The validator bounds every recursive descent through a shared recursion-depth guard."
+aliases = ["thermite-spec/src/lib.rs REQ-5 (bounded recursion)"]
+contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
+generated_to = ["status", "thermite-spec-lib-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MAX_RECURSION_DEPTH"
+note = "shared recursion-depth limit"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "descend"
+note = "guarded recursive descent helper"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-FLAT-CLOSURE"
+title = "Validator flat closure fragment"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Combinator predicate closures stay flat: nested registered combinator calls are rejected while declared spec-function calls remain allowed."
+aliases = ["thermite-spec/src/lib.rs REQ-6 (flat-closure-fragment rule)"]
+contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
+generated_to = ["status", "thermite-spec-lib-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "in_combinator_closure"
+note = "validator mode flag for combinator predicate closure bodies"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/combinators_conformance.rs"
+note = "nested combinator rejection and named spec-fn accept cases"

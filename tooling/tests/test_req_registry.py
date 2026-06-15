@@ -277,6 +277,117 @@ class ReqRegistryOracleTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("STALE-GENERATED", res.stdout)
 
+    def test_reference_list_writes_rust_doc_comment_region(self):
+        self.fx.write(
+            "src/lib.rs",
+            """
+            pub fn real_symbol() {}
+            //! <!-- generated:reqs view=source-status -->
+            //! stale
+            //! <!-- /generated:reqs -->
+            """,
+        )
+        self.fx.registry(
+            """
+            schema_version = 1
+
+            [[status]]
+            name = "shipped"
+            final = true
+            required_evidence_any = ["file", "symbol", "test"]
+
+            [[view]]
+            name = "source-status"
+            path = "src/lib.rs"
+            kind = "reference_list"
+            mode = "region"
+            region = "source-status"
+            comment_prefix = "//! "
+
+            [[requirement]]
+            id = "REQ-TEST-1"
+            title = "Valid requirement"
+            owner = "src/lib.rs"
+            status = "shipped"
+            scope = "tooling"
+            generated_to = ["source-status"]
+
+            [[requirement.evidence]]
+            kind = "symbol"
+            target = "real_symbol"
+            """
+        )
+
+        write_res = self.fx.run("--write")
+        self.assertEqual(write_res.returncode, 0, write_res.stdout + write_res.stderr)
+
+        source = (self.root / "src/lib.rs").read_text(encoding="utf-8")
+        self.assertIn("//! Source: `.design/reqs/registry.toml`", source)
+        self.assertIn(
+            "//! | REQ-TEST-1 | shipped | `src/lib.rs` | Valid requirement |  |",
+            source,
+        )
+
+        check_res = self.fx.run("--check")
+        self.assertEqual(check_res.returncode, 0, check_res.stdout + check_res.stderr)
+
+    def test_legacy_mapping_rejects_unknown_target_id(self):
+        self.fx.valid_registry(
+            """
+            [[view]]
+            name = "source-status"
+            path = "src/lib.rs"
+            kind = "reference_list"
+            mode = "region"
+            region = "source-status"
+            comment_prefix = "//! "
+
+            [[legacy_mapping]]
+            path = "src/lib.rs"
+            label = "REQ-OLD"
+            id = "REQ-MISSING"
+            replacement_view = "source-status"
+            """
+        )
+        (self.root / "src/lib.rs").write_text(
+            "pub fn real_symbol() {}\n//! | REQ-OLD | SHIPPED | `real_symbol` |\n",
+            encoding="utf-8",
+        )
+
+        res = self.fx.run()
+
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("UNKNOWN-LEGACY-ID", res.stdout)
+
+    def test_legacy_mapping_accepts_generated_replacement_region(self):
+        self.fx.valid_registry(
+            """
+            [[view]]
+            name = "source-status"
+            path = "src/lib.rs"
+            kind = "reference_list"
+            mode = "region"
+            region = "source-status"
+            comment_prefix = "//! "
+
+            [[legacy_mapping]]
+            path = "src/lib.rs"
+            label = "REQ-OLD"
+            id = "REQ-TEST-1"
+            replacement_view = "source-status"
+            """
+        )
+        (self.root / "src/lib.rs").write_text(
+            "pub fn real_symbol() {}\n"
+            "//! <!-- generated:reqs view=source-status -->\n"
+            "//! <!-- /generated:reqs -->\n",
+            encoding="utf-8",
+        )
+
+        res = self.fx.run()
+
+        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

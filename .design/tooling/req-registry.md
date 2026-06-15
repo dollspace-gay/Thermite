@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 3f6783069ff87306d06e9a2f7cac595ac0a57a54 (re-pinned 2026-06-15: registry-declared status policy, tracker-neutral references, contributors, and generated-region checking landed; RFC #17)
+audited-sha: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: bulk crate-root and spec summary rows now have stable IDs and generated source-comment regions; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -12,6 +12,7 @@ governs:
   - tooling/spec-routes.toml entries for this registry
   - Makefile req-registry targets
   - .github/workflows/ci.yml req-registry step
+  - generated regions declared by `.design/reqs/registry.toml`
 thesis-refs:
   - thermite-design.md §1 (auditability by a skeptical third party)
   - thermite-design.md §8 (unverified residue must be loud)
@@ -35,6 +36,23 @@ or CI integrations can be thin adapters over the same file. Source comments
 should keep stable invariants and non-obvious mechanisms; volatile status,
 evidence, blockers, and migration state belong in registry data and generated
 views.
+The migration is now proceeding by reviewed owner clusters. The first slice
+replaced the secondary `thermite-tv/src/lib.rs` copy of `REQ-5 (forge plug-in
+point)` with a generated reference to the forge-owned stable registry entry. The
+second slice turns the whole contract-TV crate-level summary in
+`thermite-tv/src/lib.rs` into generated references to the stable owners in
+`ref_encode.rs`, `obligation.rs`, `gen.rs`, `tests/teeth.rs`, and
+`forge/src/contract_tv.rs`. The next slice does the same for the adjacent
+exec-TV crate-level summary, rendering links to the stable owners in
+`exec_encode.rs`, `obligation.rs`, `gen.rs`, and `tests/exec_teeth.rs`. The
+follow-on forge exec-TV slice splits the exact `REQ-5 (forge plug-in point)`
+label collision by giving `forge/src/exec_tv.rs` its own stable owner ID and
+generated source-comment region. The next scaffold slice starts the crate-root
+turnover by replacing `forge/src/main.rs`'s workspace scaffold rows with
+path-qualified generated references. After that pilot, the turnover widened to
+bulk owner clusters: the remaining scaffold crate roots now migrate together,
+and `thermite-spec/src/lib.rs`'s combinator/validator summary copy links to
+stable owners instead of repeating local status prose.
 
 ## Design Decisions
 
@@ -61,10 +79,15 @@ views.
    registry with `--check`; generated regions must match renderer output
    exactly. Generated tables live inside marked
    `<!-- generated:reqs view=... -->` blocks so surrounding prose can remain
-   hand-authored.
+   hand-authored. Source-comment regions use a declared `comment_prefix`, such
+   as `//! ` for Rust module docs, so generated content stays syntactically valid
+   in its target file.
 7. **Legacy comment rows are bridged, not bulk-converted blindly.** The existing
-   429 source-comment rows need a reviewed stable-ID mapping. Until that lands,
-   `req-status.py` remains as the contradiction tripwire.
+   source-comment rows need reviewed stable-ID mappings. `[[legacy_mapping]]`
+   records bind a specific old `(path, label)` pair to a canonical ID and the
+   replacement generated view. Until migration coverage is high enough to make
+   stronger enforcement useful, `req-status.py` remains as the contradiction
+   tripwire.
 
 ## Registry Schema v1
 
@@ -73,6 +96,8 @@ Top-level fields:
 - `schema_version = 1`
 - `[[status]]`: project-declared status policy
 - `[[view]]`: generated output target
+- `[[legacy_mapping]]`: reviewed mapping from an old source-comment label to a
+  stable registry ID and replacement generated view
 - `[[requirement]]`: canonical requirement record
 
 Status fields:
@@ -89,11 +114,23 @@ Status fields:
 View fields:
 
 - `name`: stable view name referenced by requirements
-- `path`: generated markdown path, under `.design/`
-- `kind`: currently `full_inventory`
+- `path`: generated target path; whole-file generated views must stay under
+  `.design/`, while region views may target source files
+- `kind`: `full_inventory` or `reference_list`
 - `mode`: `file` or `region`
 - `region`: generated-region name when `mode = "region"`
+- `comment_prefix`: optional line prefix for generated region content, used for
+  source-comment targets such as Rust `//!` docs
 - `title`: optional generated document title
+
+Legacy mapping fields:
+
+- `path`: source path that carried the old hand-maintained row
+- `label`: exact legacy row label being reviewed
+- `id`: canonical requirement ID that owns the status/evidence
+- `replacement_view`: generated view that replaces the old copied row in the
+  same path
+- `note`: optional migration context
 
 Requirement fields:
 
@@ -137,9 +174,9 @@ required for the default gate to pass.
   checked-in output is stale.
 - **REQ-REG-5 (legacy source-comment bridge):** `tooling/req-status.py` remains
   active until the repeated source-comment status rows are mapped to stable IDs.
-- **REQ-REG-6 (generated-region migration):** replacing hand-maintained source
-  status tables with generated regions or links is deferred until the stable-ID
-  mapping is reviewed.
+- **REQ-REG-6 (generated-region migration):** hand-maintained source status
+  copies are replaced doc-by-doc with generated source-comment regions or links
+  after each stable-ID mapping is reviewed.
 
 ## Acceptance Criteria
 
@@ -153,14 +190,34 @@ required for the default gate to pass.
 - AC-6: `--check` fails when a generated region differs from renderer output.
 - AC-7: `--write` rewrites the generated view deterministically.
 - AC-8: `python3 tooling/req-registry.py --check` is wired into Makefile and CI.
+- AC-9: `reference_list` views can render into Rust doc-comment regions with a
+  declared `comment_prefix`.
+- AC-10: a legacy mapping fails if its canonical ID or replacement view does not
+  resolve; once the old label is removed, the replacement generated region must
+  be present in the same file.
 
 ## Migration Plan
 
 1. Land schema v1, validator/generator, generated inventory, routes, and CI.
 2. Export the current `req-status.py --json` rows as candidate aliases.
 3. Review and assign stable IDs by owner doc/module, not by exact label alone.
-4. Add canonical registry records for migrated requirements.
-5. Replace repeated source-comment status tables with generated regions or links.
+4. Add canonical registry records plus `[[legacy_mapping]]` records for migrated
+   requirements.
+5. Replace repeated source-comment status copies with generated regions or
+   links. The first pilot was `thermite-tv/src/lib.rs`'s secondary
+   `REQ-5 (forge plug-in point)` row. The next turnover extends that same
+   generated region to the full contract-TV crate summary rows, so the crate root
+   links to owner entries instead of carrying copied status/evidence prose. The
+   following turnover adds a sibling generated region for the exec-TV crate
+   summary rows. The next forge exec-TV turnover removes the remaining exact
+   `REQ-5 (forge plug-in point)` collision by assigning the exec integration
+   point a distinct stable owner ID. The scaffold turnover then starts at
+   `forge/src/main.rs`, where globally named workspace rows become
+   path-qualified stable IDs before the sibling library crate roots are migrated.
+   Subsequent turnover should batch by coherent duplicate families rather than
+   one row at a time: the syntax/spec/lower scaffold roots, then component
+   summary copies such as `thermite-spec/src/lib.rs`'s combinator/validator
+   table, then remaining cross-layer exact-label collisions.
 6. Tighten the bridge: fail on unmapped legacy rows once migration coverage is
    high enough to make that signal useful.
 
@@ -170,5 +227,8 @@ This registry does not prove semantic adequacy. A symbol can exist without being
 the right symbol; a command can be recorded without being executed by this gate;
 a tracker ref can be parseable without being open. Those checks require later
 integration with Rust item indexing, CI job metadata, or tracker adapters.
-Schema v1 deliberately keeps those as explicit future hardening points rather
-than pretending string validation is proof.
+Legacy mappings are likewise structural: they prove that a reviewed old label
+points at a stable ID and that a replacement region exists, not that the human
+ID assignment was semantically perfect. Schema v1 deliberately keeps those as
+explicit future hardening points rather than pretending string validation is
+proof.

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned 2026-06-15: doc-drift/REQ-status lint added to CI + Makefile; `forge/src/main.rs` REQ evidence comment changed only; scaffold behavior unchanged; PR #18)
+audited-sha: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: syntax/spec/lower crate-root scaffold status rows now render from path-qualified registry IDs; scaffold behavior unchanged; RFC #17)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

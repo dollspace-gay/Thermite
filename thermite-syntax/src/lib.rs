@@ -24,12 +24,16 @@
 //!
 //! ## REQ status (scaffold REQs this crate root materializes)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (workspace topology) | SHIPPED | this crate is a `lib` member of the virtual workspace in root `Cargo.toml`. |
-//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | `thermite-syntax/Cargo.toml` declares zero intra-workspace path deps (the leaf). |
-//! | REQ-3 (Result discipline; per-crate error type) | SHIPPED | `parser::SyntaxError` is the crate's own error enum; re-exported below. No `unwrap`/`expect`/`panic!` in `src`. |
-//! | REQ-6 (compiles clean) | SHIPPED | no stubs, every `mod` resolves; `cargo build -p thermite-syntax` green. |
+//! <!-- generated:reqs view=thermite-syntax-scaffold-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SCAFFOLD-SYNTAX-COMPILE | shipped | `thermite-syntax/src/lib.rs` | Syntax clean compile |  |
+//! | REQ-SCAFFOLD-SYNTAX-DAG | shipped | `thermite-syntax/src/lib.rs` | Syntax dependency DAG |  |
+//! | REQ-SCAFFOLD-SYNTAX-RESULT | shipped | `thermite-syntax/src/lib.rs` | Syntax result discipline |  |
+//! | REQ-SCAFFOLD-SYNTAX-WORKSPACE | shipped | `thermite-syntax/src/lib.rs` | Syntax workspace topology |  |
+//! <!-- /generated:reqs -->
 //!
 //! The lexer/parser/AST/addressing component REQs (`.design/syntax/*.md`) carry
 //! their own `## REQ status` tables in each module's `//!` doc-comment.

@@ -44,9 +44,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn run_generated` (the off-corpus exec run — PRIMARY) + `pub fn exec_tv_file` (the corpus body-expr check — best-effort) here; both compute `P_production` via `thermite_lower::lower_exec_expr`, build the obligation via `thermite_tv::exec_equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_exec_tv` (the `forge exec-tv <file>` subcommand). The four-way classification (Faithful / Divergent / Unverifiable / Skipped) is REPORTED DISTINCTLY (never masking infidelity, R-HONEST-3). **#192 (ref #189):** `discharge` now gates an `errors >= 1` rlimit-hit run to Unverifiable AHEAD of the Divergent arm — via the SHARED `crate::tv_signal::is_rlimit_signal` discriminator (the prior copy-drift root cause: exec_tv had NO rlimit gate, mapping every error run to Divergent unconditionally) — so a Verus/Z3 solver-budget timeout is never fabricated into an exec infidelity. Verified by `forge/tests/exec_tv_conformance.rs` (the 200-clause generated all-faithful + the corpus honest coverage) under real verus + the `divergent_teeth` rlimit gate. This closes the `lower_exec_expr` consumer loop (R-DEFER-1). |
+//! <!-- generated:reqs view=forge-exec-tv-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-EXEC-FORGE-PLUGIN | shipped | `forge/src/exec_tv.rs` | Exec-TV forge plug-in point |  |
+//! <!-- /generated:reqs -->
 
 use std::path::Path;
 use std::process::Command;

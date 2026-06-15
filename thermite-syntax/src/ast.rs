@@ -273,10 +273,31 @@ pub struct FnItem {
 /// addresses every turn, §5.1 property 1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Hole {
-    /// The verbatim hole number as the agent wrote it (`?0` → `0`).
+    /// The verbatim hole number as the agent wrote it (`?0`/`?p0` → `0`).
     pub number: u32,
-    /// The source span of the `?N` token (the splice target for `forge fill`).
+    /// The source span of the `?N`/`?pN` token (the splice target for `forge fill`).
     pub span: Span,
+    /// Which surface sigil this hole was written with — a body hole `?N` or a
+    /// proof hole `?pN` (`.design/stage1-forge-tier.md` REQ-3). The forge routes
+    /// the two differently (a body hole is a code goal, a proof hole a proof goal),
+    /// and they are addressed differently (`<fn>.?N` vs `<item>.proof.…`), so the
+    /// context rides the node rather than being re-derived from position.
+    pub context: HoleContext,
+}
+
+/// The surface sigil a [`Hole`] was written with (`.design/stage1-forge-tier.md`
+/// REQ-3). `Body` is the body-position hole `?N` (#193, exec-fn-body statement
+/// position only); `Proof` is the proof hole `?pN` (the forge tier, valid only
+/// inside a proof block). A hole in the wrong position for its context is a
+/// structured parse error, never a silent reclassification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HoleContext {
+    /// A body hole `?N` (#193): an open code goal in exec-fn-body statement
+    /// position, filled by `forge fill <fn>.?N <code>`.
+    Body,
+    /// A proof hole `?pN` (the forge tier, REQ-3): an open proof goal inside a
+    /// proof block, filled by `forge fill <item>.proof.…?pN <proof>`.
+    Proof,
 }
 
 /// A `spec fn` item: carries only a `dec` measure, no `req`/`ens`/`fx`

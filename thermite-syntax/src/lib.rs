@@ -42,8 +42,9 @@ pub mod parser;
 pub use address::{addresses_of, resolve, AddrKind, AddressEntry, AddressError};
 pub use ast::{
     BinOp, Block, BoundaryAttr, Clause, Contract, Effect, EffectRow, EnumItem, Expr, FieldDef,
-    FnItem, Hole, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param, Pattern, PrimType, Program,
-    SlagAttr, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp, VariantDef, VariantShape,
+    FnItem, Hole, HoleContext, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param, Pattern,
+    PrimType, Program, SlagAttr, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp, VariantDef,
+    VariantShape,
 };
 pub use lexer::{tokenize, Span, TokKind, Token};
 pub use parser::{parse, ParseResult, SyntaxError};

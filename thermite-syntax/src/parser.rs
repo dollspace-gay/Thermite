@@ -117,6 +117,17 @@ pub enum SyntaxError {
     /// an expression, or a signature is a structural parse error (`number` is the
     /// verbatim hole number written).
     HoleOutsideFnBody { number: u32, span: Span },
+    /// A proof hole `?pN` parsed OUTSIDE a proof block
+    /// (`.design/stage1-forge-tier.md` REQ-3, AC-7). The forge-tier scope pin:
+    /// proof holes are valid only inside a `lemma`/`proof`-item proof block; a
+    /// `?pN` in fn-body statement position, a clause, an expression, or a signature
+    /// is a structural parse error (`number` is the verbatim hole number written).
+    ProofHoleOutsideProofBlock { number: u32, span: Span },
+    /// A body hole `?N` parsed INSIDE a proof block
+    /// (`.design/stage1-forge-tier.md` REQ-3). A proof block admits only proof
+    /// holes `?pN`; a body hole `?N` there is the mirror error of
+    /// `ProofHoleOutsideProofBlock` (`number` is the verbatim hole number written).
+    BodyHoleInProofBlock { number: u32, span: Span },
 }
 
 /// The maximum recursive-descent nesting depth the parser will follow before
@@ -167,7 +178,9 @@ impl SyntaxError {
             | SyntaxError::UnexpectedEof { span, .. }
             | SyntaxError::ExpressionTooDeep { span, .. }
             | SyntaxError::BreakContinueOutsideLoop { span, .. }
-            | SyntaxError::HoleOutsideFnBody { span, .. } => *span,
+            | SyntaxError::HoleOutsideFnBody { span, .. }
+            | SyntaxError::ProofHoleOutsideProofBlock { span, .. }
+            | SyntaxError::BodyHoleInProofBlock { span, .. } => *span,
         }
     }
 }
@@ -220,6 +233,19 @@ impl std::fmt::Display for SyntaxError {
                 "hole `?{number}` outside an exec-fn body at byte {} (a `?N` hole is \
                  valid only in `fn`-body statement position, not in a `spec fn`, a \
                  clause, or an expression)",
+                span.start
+            ),
+            SyntaxError::ProofHoleOutsideProofBlock { number, span } => write!(
+                f,
+                "proof hole `?p{number}` outside a proof block at byte {} (a `?pN` hole \
+                 is valid only inside a `lemma`/`proof`-item proof block, not in a \
+                 fn body, a clause, or an expression)",
+                span.start
+            ),
+            SyntaxError::BodyHoleInProofBlock { number, span } => write!(
+                f,
+                "body hole `?{number}` inside a proof block at byte {} (a proof block \
+                 admits only proof holes `?pN`)",
                 span.start
             ),
         }
@@ -1096,7 +1122,9 @@ impl<'a> Parser<'a> {
                 // clause / signature position is unreachable here; those are parsed
                 // by `parse_primary`/`parse_clause`, where `TokKind::Hole` is not a
                 // primary, so it surfaces as a normal "unexpected token" parse error.
-                TokKind::Hole(_) => self.parse_hole()?,
+                // A proof hole `?pN` in fn-body position is rejected by `parse_hole`
+                // (ProofHoleOutsideProofBlock — proof holes live only in proof blocks).
+                TokKind::Hole { .. } => self.parse_hole()?,
                 // `if let P = e { T } else { E }` — the C10 ergonomic (REQ-5),
                 // distinguished by a `let` after `if`. It desugars to the SHIPPED
                 // `Expr::Match { e, [P => T, _ => E] }`. In tail position (an `else`
@@ -1554,8 +1582,8 @@ impl<'a> Parser<'a> {
     /// `Ok(())` — `parse_block` pushes nothing into `stmts`.
     fn parse_hole(&mut self) -> PResult<()> {
         let span = self.peek_span();
-        let number = match self.peek() {
-            TokKind::Hole(n) => *n,
+        let (number, proof) = match self.peek() {
+            TokKind::Hole { number, proof } => (*number, *proof),
             // Unreachable: the caller dispatches here only on a `TokKind::Hole`.
             // A structured error (no panic, R-CODE-2) keeps the parser total.
             other => {
@@ -1566,11 +1594,23 @@ impl<'a> Parser<'a> {
                 });
             }
         };
-        self.bump(); // consume the `?N` token
+        // Consume the `?N`/`?pN` token. A proof hole `?pN` is never valid in
+        // fn-body statement position: proof holes live only inside a proof block
+        // (`.design/stage1-forge-tier.md` REQ-3, AC-7). The proof-block scanner
+        // (`scan_proof_block`) collects them there; reaching one here means it sits
+        // outside any proof block.
+        self.bump();
+        if proof {
+            return Err(SyntaxError::ProofHoleOutsideProofBlock { number, span });
+        }
         if self.fn_body_depth == 0 {
             return Err(SyntaxError::HoleOutsideFnBody { number, span });
         }
-        self.pending_holes.push(Hole { number, span });
+        self.pending_holes.push(Hole {
+            number,
+            span,
+            context: HoleContext::Body,
+        });
         Ok(())
     }
 
@@ -2624,7 +2664,13 @@ fn describe(kind: &TokKind) -> String {
         TokKind::Int { value, .. } => format!("integer `{value}`"),
         TokKind::Bool(b) => format!("`{b}`"),
         TokKind::Str(s) => format!("string {s:?}"),
-        TokKind::Hole(n) => format!("hole `?{n}`"),
+        TokKind::Hole { number, proof } => {
+            if *proof {
+                format!("proof hole `?p{number}`")
+            } else {
+                format!("hole `?{number}`")
+            }
+        }
         TokKind::Eof => "end of input".to_string(),
         other => format!("`{}`", token_text(other)),
     }
@@ -2694,10 +2740,10 @@ fn token_text(kind: &TokKind) -> &'static str {
         | TokKind::Int { .. }
         | TokKind::Bool(_)
         | TokKind::Str(_)
-        // A `?N` hole has no fixed surface text (the number varies); `describe`
-        // formats it dynamically (#193). It is listed here only to keep this match
-        // exhaustive without a `_` wildcard (R-APG-1).
-        | TokKind::Hole(_)
+        // A `?N`/`?pN` hole has no fixed surface text (the number varies);
+        // `describe` formats it dynamically (#193 / forge-tier REQ-3). It is listed
+        // here only to keep this match exhaustive without a `_` wildcard (R-APG-1).
+        | TokKind::Hole { .. }
         | TokKind::Eof => "<token>",
     }
 }

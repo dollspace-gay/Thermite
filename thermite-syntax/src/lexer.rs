@@ -26,17 +26,25 @@
 //! | REQ-7 (spans) | SHIPPED | every `Token` carries a `Span { start, len }`; used by parser diagnostics + addressing. |
 //! | REQ-8 (Result discipline) | SHIPPED | `tokenize` returns `(Vec<Token>, Vec<SyntaxError>)`; stray chars become diagnostics, no panic. |
 //!
-//! ## `?N` hole token (`.design/forge/goal-repl.md` REQ-4, #193)
+//! ## `?N` body hole + `?pN` proof hole tokens
 //!
-//! The body-position structural hole `?N` lexes to a single `TokKind::Hole(N)`
-//! token: the `'?'` branch in `tokenize` → `lex_hole` reads `?` + a run of ASCII
-//! digits into the verbatim hole number (`?0` → `Hole(0)`). A bare `?` with no
-//! following digit is a stray-char `SyntaxError` (REQ-8; Thermite has no
-//! `?`-operator, §2.3), never a partial token, never a panic. The lexer lexes
-//! `?N` anywhere the scanner sees it; the parser (`parser.md` REQ-11) restricts a
-//! hole to fn-body statement position (a `?N` in expression / clause / signature
-//! position is a parse error). Consumer: `parse_block`'s statement dispatch in
-//! `parser.rs`.
+//! Two structural-hole sigils lex to a single `TokKind::Hole { number, proof }`
+//! token (the `'?'` branch in `tokenize` → `lex_hole`):
+//!
+//! - `?N` — a body-position hole (`.design/forge/goal-repl.md` REQ-4, #193):
+//!   `?` + a run of ASCII digits → `Hole { number: N, proof: false }`.
+//! - `?pN` — a PROOF hole (`.design/stage1-forge-tier.md` REQ-3, the forge tier):
+//!   `?` + `p` + a run of ASCII digits → `Hole { number: N, proof: true }`. The
+//!   `p` sigil rides the SAME machinery (no multibyte / no new token kind); only
+//!   the `proof` discriminant differs.
+//!
+//! A bare `?` with no following digit (or `?p` with no digit) is a stray-char
+//! `SyntaxError` (REQ-8; Thermite has no `?`-operator, §2.3), never a partial
+//! token, never a panic. The lexer lexes both sigils anywhere the scanner sees
+//! them; the parser restricts a body hole `?N` to fn-body statement position
+//! (`parser.md` REQ-11) and a proof hole `?pN` to a proof block (forge-tier REQ-3;
+//! a `?pN` outside a proof block is a structured `SyntaxError`). Consumer:
+//! `parse_block`'s statement dispatch + the proof-block scanner in `parser.rs`.
 
 use crate::parser::SyntaxError;
 
@@ -155,14 +163,21 @@ pub enum TokKind {
     Pipe,
     Bang,
 
-    /// A body-position structural HOLE `?N` (`.design/forge/goal-repl.md` REQ-4,
-    /// #193). The `u32` is the verbatim hole number as written (`?0` → `0`); it is
-    /// the surface ordinal the agent typed, not a document-order index (the parser
-    /// records holes in document order for `<fn>.?N` addressing, `parser.md` /
-    /// `semantic-addressing.md`). The token lexes
-    /// everywhere the scanner sees `?<digits>`, and the parser restricts it to
-    /// fn-body statement position (a `?N` elsewhere is a parse error, `parser.md`).
-    Hole(u32),
+    /// A structural HOLE — either a body hole `?N` (`.design/forge/goal-repl.md`
+    /// REQ-4, #193) or a PROOF hole `?pN` (`.design/stage1-forge-tier.md` REQ-3,
+    /// the forge tier), distinguished by `proof`. `number` is the verbatim hole
+    /// number as written (`?0`/`?p0` → `0`); it is the surface ordinal the agent
+    /// typed, not a document-order index (the parser records holes in document
+    /// order for `<fn>.?N` / `<fn>.proof.…` addressing, `parser.md` /
+    /// `semantic-addressing.md`). `proof` is `true` for the `?pN` spelling, `false`
+    /// for `?N`. The token lexes everywhere the scanner sees `?<digits>` /
+    /// `?p<digits>`; the parser restricts a body hole to fn-body statement position
+    /// and a proof hole to a proof block (a hole in the wrong place is a structured
+    /// parse error, `parser.md`).
+    Hole {
+        number: u32,
+        proof: bool,
+    },
 
     Eof,
 }
@@ -265,13 +280,14 @@ pub fn tokenize(src: &str) -> (Vec<Token>, Vec<SyntaxError>) {
                 }
             }
         } else if c == b'?' {
-            // A body-position structural hole `?N` (lexer.md / goal-repl.md REQ-4,
-            // #193). `?` followed by one-or-more ASCII digits lexes to a single
-            // `Hole(N)` token carrying the verbatim hole number. A `?` with no
-            // following digit is an unrecognized character (a structured
-            // diagnostic, never a panic, REQ-8): Thermite has no `?`-operator
-            // (no try/Result-propagation surface, §2.3), so a bare `?` is a stray
-            // char, not a partial token.
+            // A structural hole — body `?N` (goal-repl.md REQ-4, #193) or proof
+            // `?pN` (stage1-forge-tier.md REQ-3). `?` (optionally followed by `p`)
+            // followed by one-or-more ASCII digits lexes to a single `Hole` token
+            // carrying the verbatim hole number + the proof discriminant. A `?` /
+            // `?p` with no following digit is an unrecognized character (a
+            // structured diagnostic, never a panic, REQ-8): Thermite has no
+            // `?`-operator (no try/Result-propagation surface, §2.3), so a bare `?`
+            // is a stray char, not a partial token.
             match lex_hole(bytes, i) {
                 Some((kind, len)) => {
                     tokens.push(Token {
@@ -436,17 +452,26 @@ fn lex_int(bytes: &[u8], i: usize) -> Result<(Token, usize), SyntaxError> {
     ))
 }
 
-/// Lex a body-position structural hole `?N` (lexer.md / `.design/forge/goal-repl.md`
-/// REQ-4, #193). `bytes[i]` is the `?`; the hole NUMBER is the run of ASCII digits
-/// immediately following. Returns the `Hole(N)` token kind + its byte length, or
-/// `None` if no digit follows the `?` (a bare `?` is a stray char, REQ-8). The
+/// Lex a structural hole — a body hole `?N` (lexer.md / `.design/forge/goal-repl.md`
+/// REQ-4, #193) or a proof hole `?pN` (`.design/stage1-forge-tier.md` REQ-3, the
+/// forge tier). `bytes[i]` is the `?`; an optional `p` immediately after it selects
+/// the proof spelling; the hole NUMBER is the run of ASCII digits that follows.
+/// Returns the `Hole { number, proof }` token kind + its byte length, or `None` if
+/// no digit follows the `?` / `?p` (a bare `?` or `?p` is a stray char, REQ-8). The
 /// number is parsed deterministically (R-CODE-5); an over-long digit run that
 /// overflows `u32` saturates (a hole number is a small surface ordinal: there is
 /// no semantic difference between `?4000000000` and `?u32::MAX`, both name a hole
 /// the agent must address, and saturation keeps the lexer total + panic-free, REQ-8).
 fn lex_hole(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
     let n = bytes.len();
-    let mut j = i + 1; // past the `?`
+    // Step past the leading `?`. An optional `p` immediately after selects the
+    // proof-hole spelling `?pN` (ASCII-only: a single byte, no multibyte operator
+    // lexing, Q-DECWF's lexer constraint).
+    let mut j = i + 1;
+    let proof = j < n && bytes[j] == b'p';
+    if proof {
+        j += 1; // past the `p`
+    }
     let mut value: u32 = 0;
     let mut saw_digit = false;
     while j < n && bytes[j].is_ascii_digit() {
@@ -458,7 +483,13 @@ fn lex_hole(bytes: &[u8], i: usize) -> Option<(TokKind, usize)> {
     if !saw_digit {
         return None;
     }
-    Some((TokKind::Hole(value), j - i))
+    Some((
+        TokKind::Hole {
+            number: value,
+            proof,
+        },
+        j - i,
+    ))
 }
 
 /// Map an ASCII digit to its value `0..radix`, or `None` if it is not a digit of

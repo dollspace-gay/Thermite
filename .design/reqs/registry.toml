@@ -69,6 +69,15 @@ region = "forge-exec-tv-status"
 comment_prefix = "//! "
 title = "Forge Exec-TV Canonical Status References"
 
+[[view]]
+name = "forge-main-scaffold-status"
+path = "forge/src/main.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-main-scaffold-status"
+comment_prefix = "//! "
+title = "Forge Entrypoint Scaffold Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -138,6 +147,34 @@ label = "REQ-5 (forge plug-in point)"
 id = "REQ-TV-EXEC-FORGE-PLUGIN"
 replacement_view = "forge-exec-tv-status"
 note = "Exec-TV forge integration row split from the contract-TV REQ-5 label and replaced by a generated canonical owner reference."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-1 (workspace topology)"
+id = "REQ-SCAFFOLD-FORGE-WORKSPACE"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint scaffold row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-2 (dependency DAG, leaf-first)"
+id = "REQ-SCAFFOLD-FORGE-DAG"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint dependency-DAG row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-3 (Result discipline; error type)"
+id = "REQ-SCAFFOLD-FORGE-RESULT"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint result-discipline row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "forge/src/main.rs"
+label = "REQ-6 (clean compile)"
+id = "REQ-SCAFFOLD-FORGE-COMPILE"
+replacement_view = "forge-main-scaffold-status"
+note = "Forge entrypoint clean-compile row replaced by a generated reference to a path-qualified stable owner ID."
 
 [[requirement]]
 id = "REQ-REG-1"
@@ -662,3 +699,87 @@ note = "four-way faithful/divergent/unverifiable/skipped classification"
 kind = "test"
 target = "forge/tests/exec_tv_conformance.rs"
 note = "generated and corpus exec-TV conformance"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-WORKSPACE"
+title = "Forge workspace topology"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge crate root materializes the CLI binary member of the virtual workspace."
+aliases = ["forge/src/main.rs REQ-1 (workspace topology)"]
+contributors = ["forge/Cargo.toml", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/Cargo.toml"
+note = "forge declares the explicit binary target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "main"
+note = "entrypoint function in forge/src/main.rs"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-DAG"
+title = "Forge dependency DAG"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge CLI sits above the library crates and drives parse, validate, effect checking, lowering, and verification phases."
+aliases = ["forge/src/main.rs REQ-2 (dependency DAG, leaf-first)"]
+contributors = ["forge/Cargo.toml", "forge/src/check.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/Cargo.toml"
+note = "path dependencies encode the forge position in the workspace DAG"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file"
+note = "pipeline entry that composes the leaf crates"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-RESULT"
+title = "Forge result discipline"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge entrypoint delegates fallible behavior to the CLI result layer and returns typed exit codes."
+aliases = ["forge/src/main.rs REQ-3 (Result discipline; error type)"]
+contributors = ["forge/src/cli.rs", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "forge error type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run"
+note = "CLI dispatch returns ExitCode from the typed result layer"
+
+[[requirement]]
+id = "REQ-SCAFFOLD-FORGE-COMPILE"
+title = "Forge clean compile"
+owner = "forge/src/main.rs"
+status = "shipped"
+scope = "scaffold"
+summary = "The forge crate root has no dangling modules or placeholder scaffolding and participates in the workspace build."
+aliases = ["forge/src/main.rs REQ-6 (clean compile)"]
+contributors = ["Makefile", "tooling/anti-pattern-gate.py", ".design/scaffold/workspace.md"]
+generated_to = ["status", "forge-main-scaffold-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "placeholder/anti-pattern gate"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo build --workspace"
+note = "workspace compile check"

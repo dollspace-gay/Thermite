@@ -13,12 +13,16 @@
 //!
 //! ## REQ status (scaffold REQs, `.design/scaffold/workspace.md`)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (workspace topology) | SHIPPED | sole `bin` member; `[[bin]]` in `forge/Cargo.toml`. |
-//! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | path deps on all three libs + `thermite-skill`; `check.rs` drives `parse`/`validate`/`check_effects`/`lower`. |
-//! | REQ-3 (Result discipline; error type) | SHIPPED | `ForgeError` born in `cli.rs`; `main` returns `ExitCode` from `cli::run`; no `unwrap`/`expect`/`panic!`. |
-//! | REQ-6 (clean compile) | SHIPPED | `cargo build --workspace` is green; `tooling/anti-pattern-gate.py` passes (no placeholder macros). |
+//! <!-- generated:reqs view=forge-main-scaffold-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SCAFFOLD-FORGE-COMPILE | shipped | `forge/src/main.rs` | Forge clean compile |  |
+//! | REQ-SCAFFOLD-FORGE-DAG | shipped | `forge/src/main.rs` | Forge dependency DAG |  |
+//! | REQ-SCAFFOLD-FORGE-RESULT | shipped | `forge/src/main.rs` | Forge result discipline |  |
+//! | REQ-SCAFFOLD-FORGE-WORKSPACE | shipped | `forge/src/main.rs` | Forge workspace topology |  |
+//! <!-- /generated:reqs -->
 
 mod audit;
 mod body_tv;

@@ -1,0 +1,8 @@
+{
+  "uuid": "96f5c7f0-1bb5-463d-8505-02b4cc3a8de8",
+  "issue_uuid": "154aa001-f84c-4ce9-a7db-31ce4a5de5dc",
+  "author": "lSoG",
+  "content": "Lean core build fixes the 7 engine::tests; gated 18 Linux-only seccomp build+run tests (skip-with-Linux-CI-warning, commit 6e6c079f). Remaining macOS failure: rebuilt_library_is_byte_identical (rlib reproducibility, separate). Filed GH #27 for arm64-aware sandbox. Full-workspace --no-fail-fast confirmation still running in background.",
+  "created_at": "2026-06-15T23:02:50.060062Z",
+  "kind": "handoff"
+}

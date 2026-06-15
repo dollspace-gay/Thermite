@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 43a0ac4a1afb259b34ade9528f6b169ff1e6ec42 (re-pinned 2026-06-15: contract-TV crate summary rows now map to stable owner IDs and render through the canonical source-comment region; RFC #17)
+audited-sha: 6ec560db4b95f9af73f333c4f987d6efaa7b90dc (re-pinned 2026-06-15: exec-TV crate summary rows now map to stable owner IDs and render through a sibling canonical source-comment region; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

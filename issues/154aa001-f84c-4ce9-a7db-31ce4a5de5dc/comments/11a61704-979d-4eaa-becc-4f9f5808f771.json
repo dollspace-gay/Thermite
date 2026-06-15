@@ -1,0 +1,8 @@
+{
+  "uuid": "11a61704-979d-4eaa-becc-4f9f5808f771",
+  "issue_uuid": "154aa001-f84c-4ce9-a7db-31ce4a5de5dc",
+  "author": "lSoG",
+  "content": "Container investigation (Apple Silicon): empirical results. (1) seccomp WORKS in a NATIVE arm64 OrbStack/Docker container: a probe installing PR_SET_SECCOMP with an AUDIT_ARCH_AARCH64 guard prints ARCH_OK. (2) seccomp does NOT work under EMULATED amd64 (--platform linux/amd64): PR_SET_SECCOMP returns EINVAL (Rosetta/qemu-user runs x86_64 userspace on the arm64 VM kernel; nested seccomp filter install is rejected), even with --security-opt seccomp=unconfined. (3) The forge sandbox is hardcoded x86_64 (sandbox.rs BPF arch-guard == AUDIT_ARCH_X86_64 + x86_64 syscall-number tables), so a native arm64 container's kernel would see aarch64 and the guard would KILL. Conclusion: OrbStack/Docker containers on Apple Silicon CANNOT faithfully run the x86_64 seccomp build+run tests. Faithful local options: a TRUE x86_64 Linux kernel via full-system emulation (colima/lima/UTM qemu --arch x86_64; slow) OR x86_64 Linux CI (the existing path). Best long-term: teach sandbox.rs an aarch64 arch-guard + arm64 syscall table so native arm64 containers run them fast (product change). Full host inventory: ~18 build+run tests across ~8 forge test binaries are Linux/x86_64-only.",
+  "created_at": "2026-06-15T22:50:19.693002Z",
+  "kind": "observation"
+}

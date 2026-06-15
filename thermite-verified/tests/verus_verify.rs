@@ -182,8 +182,8 @@ fn assert_mutation_fails(label: &str, from: &str, to: &str) {
 fn broken_ladder_action_counterexample_degrades_fails() {
     assert_mutation_fails(
         "ladder_action",
-        "        L3Tag::Counterexample => LadderAction::HardFail,\n        }\n    }\n\n    /// The L2 ladder DECISION",
-        "        L3Tag::Counterexample => LadderAction::DegradeToL1,\n        }\n    }\n\n    /// The L2 ladder DECISION",
+        "        L3Tag::Counterexample => LadderAction::HardFail,\n        }\n    }\n\n    /// The L2 ladder decision",
+        "        L3Tag::Counterexample => LadderAction::DegradeToL1,\n        }\n    }\n\n    /// The L2 ladder decision",
     );
 }
 

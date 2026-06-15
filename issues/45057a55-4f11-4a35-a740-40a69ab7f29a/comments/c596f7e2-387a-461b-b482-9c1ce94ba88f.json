@@ -1,0 +1,8 @@
+{
+  "uuid": "c596f7e2-387a-461b-b482-9c1ce94ba88f",
+  "issue_uuid": "45057a55-4f11-4a35-a740-40a69ab7f29a",
+  "author": "dX10",
+  "content": "Result (increment 0, REQ-8a): committed e3cfb6dd. lean/Thermite/Relax.lean adds rencode_sound + r_relax_sound (Mathlib island), both kernel-clean (#print axioms = {propext, Classical.choice, Quot.sound}). F4 prereq closed: scripts/lean-axiom-probe.sh is the shared lake-build+axiom-gate (audit.sh check[1] delegates to it), new lean CI job runs it, lean-smt pinned to SHA 7d1d8239 in lakefile.toml. lake build green; probe reports all 7 theorems axiom-clean. No Rust touched. Moving to increment 1 (foundation).",
+  "created_at": "2026-06-15T15:51:00.091126Z",
+  "kind": "result"
+}

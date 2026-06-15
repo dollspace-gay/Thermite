@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned for SPIKE-2: lib.rs gained only the leaf `pub mod normalize;` export — a pipeline-external probe module, `.design/m0-spikes.md` REQ-6/AC-6 — which does not alter any contract-TV behavior this doc governs; backlog #262)
+audited-sha: c5839a92c3fc572ce9b1877f229e73399f3a58ff (re-pinned 2026-06-15: `thermite-tv/src/lib.rs` REQ-5 status row corrected to SHIPPED to match the forge plug-in implementation; no contract-TV behavior change; PR #18)
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)

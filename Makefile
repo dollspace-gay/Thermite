@@ -1,7 +1,7 @@
 # Thermite — convenience targets. The build/test system is Cargo; these are
 # thin entry points. `make audit` is the headline: a FULL TRUST-CHAIN
 # re-derivation a skeptic runs on their own machine (see scripts/audit.sh).
-.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-test
+.PHONY: audit audit-fast check test fmt clippy gauntlet doc-drift doc-drift-test req-status req-status-test
 
 # Re-derive the WHOLE trust chain on the skeptic's machine (SLOW — minutes):
 #   1  the universal faithfulness theorem re-verified by the local Lean kernel
@@ -30,6 +30,7 @@ gauntlet:
 	cargo test --workspace
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo fmt --all --check
+	python3 tooling/req-status.py
 
 check:
 	cargo build --workspace
@@ -58,4 +59,13 @@ doc-drift:
 
 # The gate's own oracle fixture suite (hand-authored expected values, R-CHAR-3).
 doc-drift-test:
+	@python3 -m unittest discover -s tooling/tests -v
+
+# Source-comment REQ-status inventory/contradiction lint. Complements
+# doc-drift's audited-sha freshness check by catching semantic contradictions in
+# `//! | REQ | SHIPPED/NOT-STARTED | evidence |` rows.
+req-status:
+	@python3 tooling/req-status.py
+
+req-status-test:
 	@python3 -m unittest discover -s tooling/tests -v

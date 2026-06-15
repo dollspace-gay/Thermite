@@ -55,6 +55,8 @@ jobs:
         run: python3 -m unittest discover -s tooling/tests
       - name: doc-drift tripwire (design-doc freshness)
         run: python3 tooling/doc-drift.py
+      - name: req-status lint (source-comment status consistency)
+        run: python3 tooling/req-status.py
 
       - name: Rust build cache
         uses: Swatinem/rust-cache@v2

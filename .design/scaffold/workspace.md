@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — post-scaffold growth (7 members, skill bin, CI Verus+budget steps), REQ-7 SHIPPED via #7, #262)
+audited-sha: c5839a92c3fc572ce9b1877f229e73399f3a58ff (re-pinned 2026-06-15: doc-drift/REQ-status lint added to CI + Makefile; `forge/src/main.rs` REQ evidence comment changed only; scaffold behavior unchanged; PR #18)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

@@ -1,20 +1,23 @@
-# Feature: Stage 2 — the stratified cage + the Strat spine extension (PROVISIONAL)
+# Feature: Stage 2 — the stratified cage + the Strat spine extension (SPIKE INPUTS RESOLVED · gated on G1)
 
-> **STATUS: PROVISIONAL — do not kickoff from this document.**
-> This is an interim reasoning cache, written before its input
-> dependencies exist. It carries unresolved `<!-- OPEN -->`
-> blocks keyed to those dependencies, so validation flags it as
-> not-kickoff-ready. When all inputs below are available, re-run the
-> design pass (`/design --continue stage2-stratified-cage`) to resolve
-> the OPEN blocks against real results, re-validate, and only then
+> **STATUS: spike inputs resolved (M0 re-pass, 2026-06-13) — still gated
+> on Gate G1; do not kickoff yet.**
+> The two M0-spike-keyed `<!-- OPEN -->` blocks (Q-KIT, Q-TV2) are now
+> resolved against the merged SPIKE-1/SPIKE-2 results and folded into the
+> REQs below; the spike rows of the input table record the outcomes. Two
+> *non-spike* input dependencies remain open — Gate G1 (stage 1 complete)
+> and stage-1 routing telemetry — so validation still flags this
+> not-kickoff-ready. When stage 1 lands, re-ground the architecture and
+> the (R2) index grammar against G1 + the routing dashboard (`/design
+> --continue stage2-stratified-cage`), re-validate, and only then
 > `crosslink kickoff`.
 
-| input dependency | what it decides here | produced by |
+| input dependency | what it decides here | status |
 |---|---|---|
-| SPIKE-1 conventions note (`.design/strat/substkit-conventions.md`) | Q-KIT: binder representation + the SubstKit lemma statements `Strat/Syntax.lean` inherits verbatim | `.design/m0-spikes.md` REQ-4 |
-| SPIKE-2 hit-rate number | Q-TV2: whether the semantic TV phase ships as a thin fallback or gets its own design issue first | `.design/m0-spikes.md` REQ-7 |
-| Gate G1 (stage 1 complete) | The seven-verdict enum, schema-v2 certificates, exporter front door, and covenant machinery this stage consumes | `.design/stage1-forge-tier.md` REQ-10 |
-| Stage-1 routing telemetry | Whether (R2)'s narrow index grammar needs S₂.1 widening pressure noted before build | program plan §6 dashboard |
+| SPIKE-1 conventions note (`.design/strat/substkit-conventions.md`, REQ-4) | Q-KIT: binder representation + the SubstKit lemma statements `Strat/Syntax.lean` inherits verbatim | **✓ RESOLVED** — plain de Bruijn confirmed; 11-lemma toy (≤ 40); no Mathlib/`Fintype` (hand-rolled finiteness witness); no fallback F-A. |
+| SPIKE-2 hit-rate number (`.design/m0-spikes.md` REQ-7) | Q-TV2: whether the semantic TV phase ships as a thin fallback or gets its own design issue first | **✓ RESOLVED** — 40/40 = 100% (corpus+generated, n = 40, ≥ 90% bar) → semantic TV ships as thin fallback (F-C step 1). |
+| Gate G1 (stage 1 complete, `.design/stage1-forge-tier.md` REQ-10) | The seven-verdict enum, schema-v2 certificates, exporter front door, and covenant machinery this stage consumes | **OPEN** — stage 1 not yet built. |
+| Stage-1 routing telemetry (program plan §6 dashboard) | Whether (R2)'s narrow index grammar needs S₂.1 widening pressure noted before build | **OPEN** — re-ground at G1. |
 
 ## Summary
 
@@ -40,17 +43,30 @@ issue discipline.
 
 - REQ-1 (**syntax + denote + the load-bearing pin**): `Strat/Syntax.lean`
   (Frm/Tm/Atom, de Bruijn, lift/subst — inheriting the SPIKE-1
-  conventions verbatim), `Strat/Carrier.lean` (`CarrierAssign` with
-  `Fintype`/`DecidableEq` fields), `Strat/Denote.lean` (`sdenote`
-  Bool-valued via `decide` over `Fintype` binders, deferring to the v1
-  denotation at `QFree` atoms), plus `PinFiniteEscape` pinning why (R1)
-  finite carriers are load-bearing — before anything consumes the
-  semantics. Core-Lean-only on this path.
+  conventions verbatim), `Strat/Carrier.lean` (a `CarrierAssign` bundling
+  each opaque sort with a **hand-rolled finiteness witness** — `enum :
+  List C` + `complete : ∀ x, x ∈ enum` + `DecidableEq` carried as data,
+  per the SPIKE-1 carrier verdict; **no Mathlib `Fintype`**),
+  `Strat/Denote.lean` (`sdenote` Bool-valued via `List.all` folds over the
+  enumeration, with `sdenote_all_iff` upgrading the fold to a genuine `∀`
+  through the completeness witness, deferring to the v1 denotation at
+  `QFree` atoms), plus `PinFiniteEscape` pinning why (R1) finite carriers
+  are load-bearing — before anything consumes the semantics. Core-Lean-only
+  on this path (SPIKE-1 confirmed the hand-rolled witness keeps it so).
 - REQ-2 (**SubstKit**): the ~25-lemma binder kit (`sdenote_push_lift`,
   `sdenote_subst`, `sencode_fresh_ok`, companions), isolated in
   `Strat/SubstKit.lean` with its own micro-pins. Scheduled second, not
   last — the program's schedule variance lives here. The lemma list is
-  fixed before coding starts, from the SPIKE-1 note.
+  fixed before coding starts from the SPIKE-1 note, which proves the two
+  load-bearing lemmas (`sdenote_push_lift`, `sdenote_subst`) end to end on
+  the toy in 11 supporting lemmas — consistent with the ~25 estimate, well
+  under the 40-lemma F-A trigger, so **plain de Bruijn is confirmed and no
+  fallback F-A review is required**. `Strat/Syntax.lean` inherits the
+  note's exact statement shapes verbatim (formula as the induction target,
+  with cutoff/index/value/env quantified after it) and its `cons`/`insert`
+  commutation lemma; decidability on the bundled carrier sort is routed as
+  data (the note's §6 carry-as-data convention), not via a
+  `[DecidableEq]` instance.
 - REQ-3 (**classifier, kernel half**): `Strat/Nnf.lean` (NNF + prenex
   with `nnf_sound`/`prenex_sound`), `Strat/Graph.lean` (`sortGraph` E1∪E2,
   `acyclic` with `acyclic_iff_no_cycle`), `Strat/Fragment.lean`
@@ -76,7 +92,13 @@ issue discipline.
 - REQ-6 (**combinator demotion**): `Strat/CombDeriv.lean` — the eight
   `comb_deriv_*` lemmas proving each v1 combinator's denotation equals
   its raw-quantifier expansion (closing the v1 embedding), plus
-  `PinCombDeriv` refuting an off-by-one expansion. The combinator
+  `PinCombDeriv` refuting an off-by-one expansion. The SPIKE-2 shape
+  census found that two of the eight have **no layer-1 raw-quantifier
+  spelling** — `count_where` (a recursive `nat` fold) and
+  `permutation_of` (a multiset equality) — so their `comb_deriv_*`
+  lemmas demote to those definitional forms, not to a quantifier
+  expansion, and their stratified TV handling routes through the
+  semantic phase (see REQ-8), not the syntactic normalizer. The combinator
   registry (`thermite-spec/src/combinators.rs`) is untouched as surface
   syntax; SPIKE-2's hand-written expansions are replaced by these
   mechanized ones wherever the probe fixtures survive as tests.
@@ -93,8 +115,14 @@ issue discipline.
   emission in `thermite-lower`; the stratified reference encoder in
   `thermite-tv`; two-phase TV per metatheory §8.2 — syntactic phase
   (the SPIKE-2 normalizer, now carrying `nnf_sound`/`prenex_sound`),
-  semantic phase per Q-TV2's resolution, honest `Timeout` fallback
-  withholding the certificate. During the rollout window stratified
+  semantic phase as a **thin fallback (Q-TV2 resolved: SPIKE-2 measured
+  40/40 = 100% syntactic coverage, clearing the ≥ 90% bar, so the
+  negation-unfriendly quantified-equivalence Z3 query ships as the
+  rarely-hit path with finite-bound assertions — not a dedicated design
+  issue)**, honest `Timeout` fallback withholding the certificate. The
+  two non-quantifier combinators (`count_where`, `permutation_of`; REQ-6)
+  have no syntactic normal form and land directly in the semantic phase.
+  During the rollout window stratified
   clauses carry `trust: solver(z3) + ref_encode(strat, UNPROVEN — stage
   2 in progress)`; the flip to the proven form is a one-line change
   gated on G2 and is itself a tested code path.
@@ -195,35 +223,50 @@ preserves the verdict/covenant/ladder architecture.
 
 ## Open Questions
 
-*(Deliberately unresolved — each is keyed to an input dependency from
-the table above. Resolve at the re-pass, not before.)*
+*(Both M0-spike-keyed questions are now resolved — see the dated
+`<!-- RESOLVED -->` records below, folded into the REQs above. No spike-keyed
+question remains; the doc's residual gating is the two non-spike inputs
+in the table — G1 and stage-1 routing telemetry.)*
 
-<!-- OPEN: Q-KIT -->
-### Q-KIT: Binder representation — confirm plain de Bruijn, or take fallback F-A?
+<!-- RESOLVED: Q-KIT (M0 re-pass 2026-06-13) -->
+### Q-KIT: Binder representation — plain de Bruijn, confirmed.
 
-The metatheory commits to plain de Bruijn with a hand-rolled ~25-lemma
-kit, and SPIKE-1 exists to validate that before REQ-2 is
-scheduled. If the spike's conventions note reports the failure signal
-(>40 lemmas, or `Fintype`/`DecidableEq`/universe plumbing fights), the
-re-pass must choose among F-A's ladder (locally nameless; single-prefix
-S₂⁻ with mandatory restratification; macro-combinators) and re-derive
-REQ-2/REQ-5's statements accordingly.
-**To resolve**: re-run the design pass with
-`.design/strat/substkit-conventions.md` in hand.
-<!-- /OPEN -->
+**Resolved by SPIKE-1** (`.design/strat/substkit-conventions.md`, proven
+against `lean/Thermite/Spike/SubstKit.lean` on toolchain `v4.29.0`).
+Plain de Bruijn is **confirmed** for REQ-2; **no fallback F-A** review is
+required. Neither failure signal fired: the toy proved both load-bearing
+lemmas (`sdenote_push_lift`, `sdenote_subst`) end to end in 11 supporting
+lemmas (≤ 40), and the instance plumbing did not fight back. The carrier
+stayed core-Lean-only via a hand-rolled finiteness witness (`enum` +
+`complete` + `DecidableEq` as data) — **`Fintype` is not needed** and is
+not imported, resolving the metatheory sketch's §2/§4
+`Fintype`-vs-core-Lean tension in favour of core Lean (folded into
+REQ-1). The two load-bearing lemmas never touch finiteness; only
+`sdenote_all_iff` consumes the witness. One ergonomic finding carried
+into REQ-2: decidability on the bundled carrier sort is routed as data,
+not as a `[DecidableEq]` instance. The §4 statement shapes are inherited
+verbatim by `Strat/Syntax.lean`.
+<!-- /RESOLVED -->
 
-<!-- OPEN: Q-TV2 -->
-### Q-TV2: The semantic TV phase — thin fallback or its own design issue?
+<!-- RESOLVED: Q-TV2 (M0 re-pass 2026-06-13) -->
+### Q-TV2: The semantic TV phase — thin fallback, confirmed.
 
-REQ-8's two-phase TV assumes the SPIKE-2 hit rate decides this: ≥90%
-syntactic coverage means the quantified-equivalence Z3 query (the
-negation-unfriendly biimplication) ships as a rarely-hit thin fallback
-with finite-bound assertions; below that, the program plan requires a
-dedicated design issue for the semantic query (or fallback F-C's
-emission-convergence move) before stage 2 commits at all.
-**To resolve**: re-run the design pass with the SPIKE-2 number and its
-recorded decision-rule branch.
-<!-- /OPEN -->
+**Resolved by SPIKE-2** (`thermite-tv/tests/fixtures/strat_probe/`,
+prototype normalizer `thermite-tv/src/normalize.rs`). The
+corpus+generated syntactic hit rate is **40/40 = 100%** (n = 40,
+threshold-bearing; corpus-only 4/4, flagged small-n), clearing the ≥ 90%
+bar across all six probed shapes (`sorted`, `forall_in`, `forall_below`,
+`forall_from`, `exists_in`, `disjoint`). Decision-rule branch recorded:
+the stage-2 semantic TV phase ships as a **thin fallback (F-C step 1)** —
+the negation-unfriendly quantified-equivalence Z3 query is the rarely-hit
+path with finite-bound assertions; **no dedicated semantic-query design
+issue is required** before stage 2 commits. Census caveat folded into
+REQ-6/REQ-8: two of the eight frozen registry combinators —
+`count_where` (a recursive `nat` fold) and `permutation_of` (a multiset
+equality) — have no layer-1 raw-quantifier spelling, so their stratified
+TV handling routes through the semantic phase, not the syntactic
+normalizer.
+<!-- /RESOLVED -->
 
 ## Out of Scope
 
@@ -237,7 +280,8 @@ recorded decision-rule branch.
 
 ---
 
-*Stage-2 spec (PROVISIONAL — reasoning cache; re-run /design before
-kickoff) · child of `.design/thermite2-program.md` (REQ-10) · spec of
-record: the stage-2 metatheory sketch, GH issue #2 · gate: G2 ·
-baseline `dollspace-gay/Thermite @ c46da3ac` (re-ground at re-pass).*
+*Stage-2 spec (spike inputs resolved, M0 re-pass 2026-06-13; still gated
+on G1 — re-ground the architecture and the (R2) grammar at stage-1
+completion before kickoff) · child of `.design/thermite2-program.md`
+(REQ-10) · spec of record: the stage-2 metatheory sketch, GH issue #2 ·
+gate: G2 · baseline `dollspace-gay/Thermite @ c46da3ac` (re-ground at G1).*

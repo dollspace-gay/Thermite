@@ -1,12 +1,12 @@
 //! Divergence pin (critic audit of #193 increment (iii), commit bf29a050): the
-//! open-hole validator guards ONLY `check::check_file_with_options`. Every OTHER
+//! open-hole validator guards only `check::check_file_with_options`. Every other
 //! path that lowers an exec-fn body bypasses it, and because a `?N` hole is
-//! recorded on `FnItem.holes` and NOT threaded into the statement stream (no
-//! `Stmt` variant — the deliberate #193 design), those paths lower the holed
-//! body with the hole SILENTLY OMITTED: the hole vanishes into a syntactically
+//! recorded on `FnItem.holes` and not threaded into the statement stream (no
+//! `Stmt` variant — the #193 design), those paths lower the holed
+//! body with the hole omitted: the hole vanishes into a syntactically
 //! valid program with no trace.
 //!
-//! OBSERVED (live, this tree):
+//! Observed (live, this tree):
 //! - `forge build` on `fn main() { ?0  42 }` emits an rlib ARTIFACT and a build
 //!   manifest claiming `assurance: L1 (built, runtime-checked)` — exit 0, no
 //!   mention of the open hole anywhere (`build::build_file` runs only the
@@ -14,7 +14,7 @@
 //!   never consults `f.holes`).
 //! - `forge body-tv` on the same file reports `main — faithful, 0 skipped`
 //!   (exit 0): it lowers the hole-stripped body, ships it to verus, and certifies
-//!   the TV verdict "faithful" for an INCOMPLETE body.
+//!   the TV verdict "faithful" for an incomplete body.
 //! - (`forge exec-tv` corpus mode likewise reports the holed body's tail expr
 //!   `faithful` — same root cause, pinned transitively by the same fix.)
 //!
@@ -24,18 +24,18 @@
 //!   lowering, no verus"; Architecture: "A holed item NEVER reaches verus; it
 //!   can never accidentally certify."
 //! - `thermite_syntax::ast` (`FnItem.holes` doc, shipped by bf29a050): "a holed
-//!   item never lowers — it short-circuits at `forge check`" — the very
-//!   invariant that justified omitting a `Stmt::Hole` variant. If ANY path
+//!   item never lowers — it short-circuits at `forge check`" — the
+//!   invariant that justified omitting a `Stmt::Hole` variant. If any path
 //!   lowers a holed body, the omission turns the hole into silent deletion.
 //! - `thermite-design.md` §6: "The certificate attached to a build artifact …
 //!   This manifest **is** the deliverable's trust statement" — a build manifest
 //!   asserting L1 for a fn whose body still carries an open goal is a false
-//!   trust statement; §5.1: an open hole is an OPEN GOAL the oracle must
+//!   trust statement; §5.1: an open hole is an open goal the oracle must
 //!   re-present, never silently drop.
 //!
-//! These tests assert the AUTHORITY's behavior (a holed item never lowers: build
-//! must refuse with a structured error, body-TV must never report a holed body
-//! `faithful`) and therefore FAIL against the current toolchain.
+//! These tests assert the authority's behavior (a holed item never lowers: build
+//! must refuse with a structured error, body-TV must not report a holed body
+//! `faithful`) and therefore fail against the current toolchain.
 //! Tracking: crosslink blocker (see issue filed with this commit).
 
 use std::path::{Path, PathBuf};
@@ -46,8 +46,8 @@ fn forge_bin() -> PathBuf {
 }
 
 /// A minimal holed exec fn: the body carries the open hole `?0` ahead of a tail
-/// expr, so the hole-stripped statement stream is a VALID body (`{ 42 }`) — the
-/// exact shape in which the hole vanishes silently. Hand-derived from
+/// expr, so the hole-stripped statement stream is a valid body (`{ 42 }`), the
+/// shape in which the hole vanishes silently. Hand-derived from
 /// `thermite-design.md` §5.1 `body = hole ?0` (R-CHAR-3).
 const HOLED_MAIN: &str =
     "fn main() -> u64\n  req true\n  ens result == 42\n  fx  pure\n{\n  ?0\n  42\n}\n";
@@ -94,7 +94,7 @@ fn verus_present() -> bool {
 }
 
 /// `true` iff rustc is reachable (`forge build`'s backend; without it the build
-/// fails for the WRONG reason and the divergence assert would pass vacuously).
+/// fails for the wrong reason and the divergence assert would pass vacuously).
 fn rustc_present() -> bool {
     Command::new("rustc")
         .arg("--version")
@@ -108,8 +108,9 @@ fn rustc_present() -> bool {
 /// silently vanishes into a valid compiled program.
 /// Authority: `.design/forge/goal-repl.md` REQ-4/REQ-5 ("no lowering, no verus";
 /// "L0-equivalent until every hole is filled") + `thermite-design.md` §6 (the
-/// build manifest is the trust statement). Expected: build REFUSES a holed item
-/// with a structured error naming the open hole — non-success exit, no artifact.
+/// build manifest is the trust statement). Expected: build refuses a holed item
+/// with a structured error naming the open hole, with a non-success exit and no
+/// artifact.
 #[test]
 fn divergence_build_emits_artifact_for_holed_item() {
     if !rustc_present() {
@@ -133,10 +134,10 @@ fn divergence_build_emits_artifact_for_holed_item() {
 
 /// Divergence: `forge body-tv` on a holed fn lowers the hole-stripped body,
 /// ships it to verus, and reports the body `faithful` — a TV verdict certifying
-/// fidelity of an INCOMPLETE body whose open goal was silently deleted.
+/// fidelity of an incomplete body whose open goal was silently deleted.
 /// Authority: `.design/forge/goal-repl.md` REQ-5 + Architecture ("a holed item
 /// NEVER reaches verus") + the `FnItem.holes` contract ("a holed item never
-/// lowers"). Expected: the holed body is never counted `faithful` (the honest
+/// lowers"). Expected: the holed body is never counted `faithful` (the
 /// classes are a refusal or an explicit skip naming the open hole).
 #[test]
 fn divergence_body_tv_reports_holed_body_faithful() {
@@ -157,10 +158,10 @@ fn divergence_body_tv_reports_holed_body_faithful() {
 
 /// Divergence (same class as body-TV, transitive per the pin header): `forge
 /// exec-tv` corpus mode lowers the holed body's tail expr and reports it
-/// `faithful` — certifying fidelity of an INCOMPLETE body whose open goal `?0` was
+/// `faithful` — certifying fidelity of an incomplete body whose open goal `?0` was
 /// silently deleted. Authority: `.design/forge/goal-repl.md` REQ-5 + the
-/// `FnItem.holes` contract ("a holed item never lowers"). Expected: NO sub-result
-/// of the holed `main` is `faithful` (the honest class is an explicit Skip naming
+/// `FnItem.holes` contract ("a holed item never lowers"). Expected: no sub-result
+/// of the holed `main` is `faithful` (the class is an explicit Skip naming
 /// the open hole — the four-way's out-of-subset class).
 #[test]
 fn divergence_exec_tv_reports_holed_tail_faithful() {

@@ -2,37 +2,37 @@
 //! bounded verified `Map<K, V>` — the two-arg `Type::Map` node + the Vec-of-pairs
 //! `TMap` backing + the spec abstraction view (`spec_dom`/`spec_contains_key`/
 //! `len`) + the `insert`/`get`/`contains_key`/`len` ops (`get` returns the C7
-//! `Option<V>`, absent key → `None`). These run against the two EXTERNAL truths the
-//! toolchain does not author for itself: the real `verus` binary on the EMITTED
+//! `Option<V>`, absent key → `None`). These run against the two external truths the
+//! toolchain does not author for itself: the `verus` binary on the emitted
 //! lowering of a `Map`-using program (the wrapper carries the round-trip /
 //! absent→None proof, the parse_u64 codegen-grounding precedent), and the built
 //! `forge` certificate ladder (`forge check`).
 //!
-//! Pins the C12 deliverables (the GROUNDED `TMapU64U64` form, `.design/basis/
+//! Pins the C12 deliverables (the grounded `TMapU64U64` form, `.design/basis/
 //! 13-map.md` Verification — `9 verified, 0 errors`):
 //!
 //!   * The emitted `TMapU64U64` wrapper (Vec-of-pairs backing + spec view + the
 //!     ops) + the insert-then-get round-trip (`insert(k,v)` then `get(k) ==
 //!     Some(v)`) + the absent→None refusal (`get(absent) == None`) + `contains_key`
-//!     true/false VERIFY under real verus `verified, 0 errors` (AC-1/AC-2/AC-3).
-//!   * NON-VACUITY (R-DEFER-9): a crafted `get` returning `Some(0)` for an absent
-//!     key FAILS verus (the `None => !spec_contains_key(k)` arm bites) (AC-2).
-//!   * The `map_kv.th` corpus program PARSES (the two-arg `Map<u64,u64>`),
-//!     VALIDATES (`contains_key` in `BUILTIN_METHODS`, the §4.2 cage), and LOWERS;
+//!     true/false verify under real verus `verified, 0 errors` (AC-1/AC-2/AC-3).
+//!   * Non-vacuity (R-DEFER-9): a crafted `get` returning `Some(0)` for an absent
+//!     key fails verus (the `None => !spec_contains_key(k)` arm bites) (AC-2).
+//!   * The `map_kv.th` corpus program parses (the two-arg `Map<u64,u64>`),
+//!     validates (`contains_key` in `BUILTIN_METHODS`, the §4.2 cage), and lowers;
 //!     `forge check` certifies its fns L3 (AC-1/AC-3).
-//!   * A `Map` program BUILDS + RUNS via `forge build` (the L1 `TMap` runtime —
+//!   * A `Map` program builds and runs via `forge build` (the L1 `TMap` runtime:
 //!     insert + get → the value) (AC-1).
 //!   * No regression: the existing `vec_demo` corpus stays L3 (AC-4).
 //!
-//! The verus/forge checks SKIP LOUDLY when verus is absent (the
-//! `option_result_conformance.rs` precedent) — never panic on a missing solver.
+//! The verus/forge checks skip with a logged note when verus is absent (the
+//! `option_result_conformance.rs` precedent); they never panic on a missing solver.
 //! `tests/` is not anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine
 //! (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/13-map.md` AC-1..AC-4 (the
-//! GROUNDED `9 verified, 0 errors`; the broken `Some(0)`-for-absent `get` FAILS
+//! grounded `9 verified, 0 errors`; the broken `Some(0)`-for-absent `get` fails
 //! `verified, 1 errors`) + `thermite-design.md` §6 ladder semantics (L3 == a
-//! fully-discharged real-verus proof), NEVER copied from the toolchain's own output.
+//! fully-discharged real-verus proof), never copied from the toolchain's own output.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -164,10 +164,10 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// The GROUNDED `TMapU64U64` wrapper + the insert-then-get round-trip + the
-/// absent→None refusal, as a STANDALONE verus program — the
+/// The grounded `TMapU64U64` wrapper + the insert-then-get round-trip + the
+/// absent→None refusal, as a standalone verus program: the
 /// `.design/basis/13-map.md` Verification seed (`9 verified, 0 errors`). This is
-/// the EXACT shape the lowerer emits for `Map<u64, u64>`; grounding it directly
+/// the shape the lowerer emits for `Map<u64, u64>`; grounding it directly
 /// pins the emitted contract independently of the surface-program lowering.
 const MAP_GROUND_PROBE: &str = r#"use vstd::prelude::*;
 verus! {
@@ -271,12 +271,12 @@ fn main() {}
 }
 "#;
 
-/// AC-1 / AC-2 / AC-3 (GROUNDED) — the `TMapU64U64` wrapper + the insert-then-get
+/// AC-1 / AC-2 / AC-3 (grounded): the `TMapU64U64` wrapper + the insert-then-get
 /// round-trip (`insert(k,v)` then `get(k) == Some(v)`) + the absent→None refusal
-/// (`get(absent) == None`) + `contains_key` both branches VERIFY under real verus
+/// (`get(absent) == None`) + `contains_key` both branches verify under real verus
 /// `verified, 0 errors`.
 ///
-/// AUTHORITY: `.design/basis/13-map.md` AC-1/AC-2/AC-3 — the GROUNDED `TMapU64U64`
+/// Authority: `.design/basis/13-map.md` AC-1/AC-2/AC-3 — the grounded `TMapU64U64`
 /// over `Vec<(u64,u64)>` (`9 verified, 0 errors`). `thermite-design.md` §6: a
 /// fully-discharged verus proof is L3.
 #[test]
@@ -296,13 +296,13 @@ fn ac1_2_3_map_wrapper_roundtrip_and_absent_none_verify_l3() {
     );
 }
 
-/// AC-2 NON-VACUITY (R-DEFER-9) — a crafted `get` returning `Some(0)` for an absent
-/// key FAILS verus. The `None => !spec_contains_key(k)` arm has real teeth: a body
-/// returning `Some(0)` for a key NOT in the map does not satisfy the Some arm's
+/// AC-2 non-vacuity (R-DEFER-9): a crafted `get` returning `Some(0)` for an absent
+/// key fails verus. The `None => !spec_contains_key(k)` arm has real teeth: a body
+/// returning `Some(0)` for a key not in the map does not satisfy the Some arm's
 /// `spec_contains_key(k)`, so the postcondition is undischarged.
 ///
-/// AUTHORITY: `.design/basis/13-map.md` AC-2 — the broken `Some(0)`-for-absent form
-/// FAILS (`verified, 1 errors`, postcondition not satisfied). `thermite-design.md`
+/// Authority: `.design/basis/13-map.md` AC-2 — the broken `Some(0)`-for-absent form
+/// fails (`verified, 1 errors`, postcondition not satisfied). `thermite-design.md`
 /// §7: the battery catches a false claim.
 #[test]
 fn ac2_broken_get_some_for_absent_fails_real_verus() {
@@ -310,7 +310,7 @@ fn ac2_broken_get_some_for_absent_fails_real_verus() {
         eprintln!("SKIP: verus absent — Map non-vacuity not exercised.");
         return;
     }
-    // The GROUNDED wrapper, but `get`'s body is the broken unconditional `Some(0)`.
+    // The grounded wrapper, but `get`'s body is the broken unconditional `Some(0)`.
     let broken = MAP_GROUND_PROBE.replace(
         "    {\n        let mut i: usize = 0;\n        while i < self.data.len()\n            invariant\n                i <= self.data.len(),\n                forall|j: int| 0 <= j < i ==> self.data@[j].0 != k,\n            decreases self.data.len() - i,\n        {\n            if self.data[i].0 == k {\n                let v: u64 = self.data[i].1;\n                assert(self.data@[i as int].0 == k && self.data@[i as int].1 == v);\n                return Some(v);\n            }\n            i = i + 1;\n        }\n        None\n    }",
         "    { Some(0) }",
@@ -328,13 +328,13 @@ fn ac2_broken_get_some_for_absent_fails_real_verus() {
     );
 }
 
-/// AC-1 — the `map_kv.th` corpus program PARSES (the two-arg `Map<u64,u64>`) and
-/// its EMITTED lowering VERIFIES under real verus `verified, 0 errors` (the `TMap`
+/// AC-1: the `map_kv.th` corpus program parses (the two-arg `Map<u64,u64>`) and
+/// its emitted lowering verifies under real verus `verified, 0 errors` (the `TMap`
 /// wrapper is woven + the spec-position `contains_key`/`len` rewrites + the
 /// `Map::new()` reachability all compose).
 ///
-/// AUTHORITY: `conformance/map_kv.th` (the C12 corpus oracle, hand-authored from
-/// the GROUNDED form) + `.design/basis/13-map.md` AC-1.
+/// Authority: `conformance/map_kv.th` (the C12 corpus oracle, hand-authored from
+/// the grounded form) + `.design/basis/13-map.md` AC-1.
 #[test]
 fn ac1_map_kv_corpus_lowering_verifies_under_real_verus() {
     if !verus_present() {
@@ -352,25 +352,25 @@ fn ac1_map_kv_corpus_lowering_verifies_under_real_verus() {
     );
 }
 
-/// AC-3 — `forge check` certifies the contains_key accessor `has_key` at L3: the
+/// AC-3: `forge check` certifies the contains_key accessor `has_key` at L3. The
 /// validator accepts `contains_key` in `BUILTIN_METHODS` inside the §4.2 cage
 /// (`ens result == m.contains_key(k)`), the lowerer maps spec-position
 /// `contains_key` to the wrapper's `spec_contains_key`, the `well_formed()`
-/// precondition is woven, and the FULL ladder (incl. the §7 mutation battery)
-/// passes — `ens result == m.contains_key(k)` is mutation-STRONG (a wrong body is
+/// precondition is woven, and the full ladder (incl. the §7 mutation battery)
+/// passes; `ens result == m.contains_key(k)` is mutation-strong (a wrong body is
 /// killed). This is the L3 cert anchor for the contains_key cage admission.
 ///
 /// `build_one` (`ens result.contains_key(k)`) and `lookup_absent`
-/// (`ens result is None`) VERIFY under real verus (the `ac1_..._lowering` test —
-/// the round-trip membership + the absent→None refusal), but their THIN partial
+/// (`ens result is None`) verify under real verus (the `ac1_..._lowering` test:
+/// the round-trip membership + the absent→None refusal), but their thin partial
 /// contracts do not meet the §7 anti-Goodhart mutation floor (a `Map`-returning
 /// fn has no scoreable scalar-zero mutant; a `None`-returning partial contract is
 /// satisfied by an always-`None` body — the #101 partial-`None` class). The
-/// round-trip / absent→None TEETH are pinned at the verus codegen-grounding level
-/// (`ac1_2_3` + `ac2_broken_..`), R-HONEST-3: we anchor the L3 forge cert on the
-/// mutation-strong accessor, never overclaim a thin contract.
+/// round-trip / absent→None teeth are pinned at the verus codegen-grounding level
+/// (`ac1_2_3` + `ac2_broken_..`), R-HONEST-3: the L3 forge cert is anchored on the
+/// mutation-strong accessor rather than a thin contract.
 ///
-/// AUTHORITY: `.design/basis/13-map.md` AC-3 (contains_key true AND false provable)
+/// Authority: `.design/basis/13-map.md` AC-3 (contains_key true and false provable)
 /// + `thermite-design.md` §6/§7.
 #[test]
 fn ac3_map_kv_contains_key_accessor_certifies_l3() {
@@ -390,14 +390,14 @@ fn ac3_map_kv_contains_key_accessor_certifies_l3() {
     );
 }
 
-/// AC-1 (builds + runs) — `forge build conformance/map_kv.th --entry demo` produces
-/// a runnable binary that RUNS the insert + get round-trip at L1: `demo` builds a
+/// AC-1 (builds and runs): `forge build conformance/map_kv.th --entry demo` produces
+/// a runnable binary that runs the insert + get round-trip at L1. `demo` builds a
 /// local `Map<u64,u64>`, `insert(7, 42)`, `get(7)`, and returns `42` (the L1 `TMap`
 /// runtime — `emit_map_runtime_l1`'s plain-Rust Vec-of-pairs newtype with the
 /// `thermite_check!` capacity/uniqueness guards + `get -> Option<V>`). The build
-/// uses real `rustc` + a real process run (no skip — `rustc` is always present).
+/// uses real `rustc` + a real process run; `rustc` is always present, so it does not skip.
 ///
-/// AUTHORITY: `.design/basis/13-map.md` AC-1 ("`forge build` a Map program →
+/// Authority: `.design/basis/13-map.md` AC-1 ("`forge build` a Map program →
 /// COMPILES + RUNS (insert + get → the value)").
 #[test]
 fn ac1_map_kv_builds_and_runs_insert_get_yields_value() {
@@ -436,12 +436,12 @@ fn ac1_map_kv_builds_and_runs_insert_get_yields_value() {
     );
 }
 
-/// AC-4 (no regression) — the existing `vec_demo.th` corpus still certifies L3. The
+/// AC-4 (no regression): the existing `vec_demo.th` corpus still certifies L3. The
 /// C12 additions (the `Type::Map` node + the `Map` lowering path + the
-/// `contains_key` `BUILTIN_METHODS` entry) are purely additive — they touch no
+/// `contains_key` `BUILTIN_METHODS` entry) are purely additive; they touch no
 /// existing node shape.
 ///
-/// AUTHORITY: `conformance/vec_demo.th` (the SHIPPED kernel corpus) +
+/// Authority: `conformance/vec_demo.th` (the SHIPPED kernel corpus) +
 /// `thermite-design.md` §6.
 #[test]
 fn ac4_vec_demo_corpus_unchanged_no_regression() {

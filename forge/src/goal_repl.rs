@@ -1,23 +1,23 @@
 //! `forge/src/goal_repl.rs` — the Lean-style goal-state REPL surface
 //! (`thermite-design.md` §5/§5.1, Appendix B). v1 ships all three increments:
-//! `forge goal <file> [item]` and `forge battery <file> [item]` (pure VIEWS over
-//! the SHIPPED `check::check_file` cert collection), `forge edit <file> <addr>
-//! --replace <code>` (a semantic-address source-text splice over the SHIPPED
-//! `thermite_syntax::address` machinery, then a re-check), and — increment (iii),
-//! #193 — `forge fill <file> <hole-addr> <code>`: the `?N` body-hole fill loop.
+//! `forge goal <file> [item]` and `forge battery <file> [item]` (pure views over
+//! the shipped `check::check_file` cert collection), `forge edit <file> <addr>
+//! --replace <code>` (a semantic-address source-text splice over the
+//! `thermite_syntax::address` machinery, then a re-check), and increment (iii),
+//! #193, `forge fill <file> <hole-addr> <code>`: the `?N` body-hole fill loop.
 //! A `?N` hole lexes/parses in `thermite_syntax` (fn-body statement position only)
-//! and is recorded on `FnItem.holes`; a holed item NEVER certifies (`check`
-//! short-circuits it to an `OpenHole` L0 cert BEFORE lowering — REQ-5); `forge
+//! and is recorded on `FnItem.holes`; a holed item does not certify (`check`
+//! short-circuits it to an `OpenHole` L0 cert before lowering, REQ-5); `forge
 //! goal` renders the open holes as the §5.1 `holes:` section; `forge fill` splices
 //! `code` at the hole's span (reusing the (ii) splice machinery) and re-checks,
-//! surfacing any NEW holes the fill introduced (the §5.1 loop).
+//! surfacing any new holes the fill introduced (the §5.1 loop).
 //!
-//! These verbs add NO verification: `goal`/`battery` are renders over the existing
+//! These verbs add no verification: `goal`/`battery` are renders over the existing
 //! per-item `Vec<Certificate>` (`goal` reads `cert.obligations` + the re-parsed AST
 //! contract for given/want; `battery` reads `cert.contract_quality`, which already
-//! carries the §7 vacuity + mutation verdicts the gate computed — a VIEW, no
+//! carries the §7 vacuity + mutation verdicts the gate computed: a view, no
 //! accessor needed, AC-1). `edit` resolves the address, splices the replacement at
-//! the addressed node's byte span IN THE FILE, re-emits, and re-runs `check_file`.
+//! the addressed node's byte span in the file, re-emits, and re-runs `check_file`.
 //!
 //! Governing design: `.design/forge/goal-repl.md`.
 //!
@@ -42,8 +42,8 @@ use crate::check;
 use crate::cli::ForgeError;
 use crate::manifest::{Certificate, Level, ObligationStatus};
 
-/// Render the §5.1 GOAL STATE (REQ-2) for `file`, optionally restricted to one
-/// `item`. A VIEW over the SHIPPED `check::check_file` cert collection + the
+/// Render the §5.1 goal state (REQ-2) for `file`, optionally restricted to one
+/// `item`. A view over the `check::check_file` cert collection + the
 /// re-parsed AST contract (the `given`/`want` source text the cert does not
 /// carry). Adds no verification.
 pub fn render_goal(file: &Path, item: Option<&str>) -> Result<String, ForgeError> {
@@ -59,8 +59,8 @@ pub fn render_goal(file: &Path, item: Option<&str>) -> Result<String, ForgeError
 }
 
 /// Render the §7 anti-Goodhart battery (REQ-1) for `file`, optionally restricted
-/// to one `item`. A pure VIEW over each cert's `contract_quality` block — the
-/// vacuity + mutation verdicts the gate ALREADY computed inside `check_file`
+/// to one `item`. A pure view over each cert's `contract_quality` block: the
+/// vacuity + mutation verdicts the gate already computed inside `check_file`
 /// (AC-1: a view, not a re-derivation; no accessor needed because the cert
 /// already carries them separably).
 pub fn render_battery(file: &Path, item: Option<&str>) -> Result<String, ForgeError> {
@@ -74,18 +74,18 @@ pub fn render_battery(file: &Path, item: Option<&str>) -> Result<String, ForgeEr
     Ok(out)
 }
 
-/// Resolve `addr` against `file`, splice the replacement SOURCE TEXT at the
+/// Resolve `addr` against `file`, splice the replacement source text at the
 /// addressed node's byte span, write the file back, re-parse, re-check the
-/// affected item, and return the new GOAL STATE render (REQ-3). The splice is a
+/// affected item, and return the new goal state render (REQ-3). The splice is a
 /// pure function of the span + replacement text (R-CODE-5); a bad/unresolvable
 /// address is a structured `ForgeError::Usage` carrying the `AddressError`
-/// (R-CODE-2 — never a panic).
+/// (R-CODE-2, not a panic).
 pub fn edit_file(file: &Path, addr: &str, replacement: &str) -> Result<String, ForgeError> {
     let src = read_file(file)?;
     let program = parse_program(file)?;
 
-    // Resolve the address through the SHIPPED resolver (a bad address →
-    // structured AddressError, surfaced as a Usage error, never a panic).
+    // Resolve the address through the resolver (a bad address →
+    // structured AddressError, surfaced as a Usage error, not a panic).
     address::resolve(&program, addr).map_err(address_usage)?;
 
     // The resolver confirms the address exists; the byte span is found by walking
@@ -114,25 +114,25 @@ pub fn edit_file(file: &Path, addr: &str, replacement: &str) -> Result<String, F
 }
 
 /// Fill the hole named by `addr` (a `<fn>.?N` address) with `code`, re-check the
-/// affected item, and return the new GOAL STATE render (REQ-6; the §5.1 fill loop).
-/// `forge fill` is a SPECIALIZATION of `edit` whose address names a HOLE: it splices
+/// affected item, and return the new goal state render (REQ-6; the §5.1 fill loop).
+/// `forge fill` is a specialization of `edit` whose address names a hole: it splices
 /// the replacement source at the `?N` token's span (reusing the increment-(ii)
-/// splice machinery), re-parses, and re-checks. The filled `code` MAY itself
+/// splice machinery), re-parses, and re-checks. The filled `code` may itself
 /// contain new holes (`?1 ?2`), which the re-parse records and the new goal state
 /// surfaces (the §5.1 dialogue's "fill ?0 … introducing ?1 ?2"). A non-hole address
-/// (a `loop`/`inv`/`dec`/`fn` — an `edit` target, not a `fill` target) is an honest
+/// (a `loop`/`inv`/`dec`/`fn`, an `edit` target rather than a `fill` target) is a
 /// `ForgeError::Usage` (use `forge edit` for those); a bad/unresolvable hole address
-/// is a structured error, never a panic (R-CODE-2).
+/// is a structured error, not a panic (R-CODE-2).
 pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeError> {
     let src = read_file(file)?;
     let program = parse_program(file)?;
 
-    // Resolve the address (bad address → structured AddressError, never a panic).
+    // Resolve the address (bad address → structured AddressError, not a panic).
     let entry = address::resolve(&program, addr).map_err(address_usage)?;
 
-    // `fill` targets a HOLE only; a non-hole address is the `edit` surface. Reject
+    // `fill` targets a hole only; a non-hole address is the `edit` surface. Reject
     // it with an actionable message rather than silently splicing (the two verbs
-    // have distinct contracts — REQ-3 vs REQ-6).
+    // have distinct contracts, REQ-3 vs REQ-6).
     if entry.kind != AddrKind::Hole {
         return Err(ForgeError::Usage(format!(
             "address `{addr}` is not a hole (it names a {:?} node); `forge fill` targets a `?N` \
@@ -150,9 +150,9 @@ pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeErr
     })?;
 
     // Splice the fill code at the hole's `?N` position (the pure splice, R-CODE-5),
-    // re-emit in place, then re-check the affected item — the new goal state may
-    // surface NEW holes the filled code introduced (§5.1). A re-parse failure after
-    // the splice (malformed fill code) is a real, reported error, never swallowed.
+    // re-emit in place, then re-check the affected item. The new goal state may
+    // surface new holes the filled code introduced (§5.1). A re-parse failure after
+    // the splice (malformed fill code) is a reported error, not swallowed.
     let spliced = splice(&src, span, code);
     write_file(file, &spliced)?;
 
@@ -160,7 +160,7 @@ pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeErr
     render_goal(file, Some(root))
 }
 
-/// Render one item's GOAL STATE (REQ-2; §5.1). The `given` is the `req` clause
+/// Render one item's goal state (REQ-2; §5.1). The `given` is the `req` clause
 /// text; the `want` is the `ens` clause texts; then each obligation as discharged
 /// or failed-with-witness; a clean cert renders `ALL GOALS DISCHARGED` + the level
 /// + the battery line.
@@ -179,9 +179,9 @@ fn render_goal_item(cert: &Certificate, program: &Program) -> String {
         }
     }
 
-    // Open holes (`?N`) render as the §5.1 `holes:` section — the OPEN GOALS the
+    // Open holes (`?N`) render as the §5.1 `holes:` section: the open goals the
     // agent must fill (`.design/forge/goal-repl.md` REQ-5; the §5.1 `holes: ?0 :
-    // body` line). A holed item NEVER certifies (its cert is the `OpenHole` reject),
+    // body` line). A holed item does not certify (its cert is the `OpenHole` reject),
     // so the holes line is the goal-state's actionable next move. Listed in document
     // order, by `<fn>.?N` address (the `forge fill` operand).
     let holes = holes_of(program, &cert.item);
@@ -196,9 +196,9 @@ fn render_goal_item(cert: &Certificate, program: &Program) -> String {
         }
     }
 
-    // A rejected cert (a §6/§13 vacuity/slag reject, OR a #193 open-hole reject —
+    // A rejected cert (a §6/§13 vacuity/slag reject, or a #193 open-hole reject:
     // Level::L0 with a `reject` cause) is reported as the obligation-blocking cause,
-    // never silently dropped. For an `OpenHole` reject the `holes:` section above is
+    // not silently dropped. For an `OpenHole` reject the `holes:` section above is
     // the actionable view; the status line names the cert verdict.
     if let Some(reject) = &cert.reject {
         out.push_str(&format!(
@@ -208,8 +208,8 @@ fn render_goal_item(cert: &Certificate, program: &Program) -> String {
         return out;
     }
 
-    // Per-obligation status (§5.1 property 2 — a failure carries its concrete
-    // witness, never a bare adjective).
+    // Per-obligation status (§5.1 property 2: a failure carries its concrete
+    // witness, not a bare adjective).
     let any_failed = cert
         .obligations
         .iter()
@@ -243,24 +243,24 @@ fn render_goal_item(cert: &Certificate, program: &Program) -> String {
         ));
     }
 
-    // §5.1 "contract score" line — the battery verdict inline (the same VIEW
+    // §5.1 "contract score" line — the battery verdict inline (the same view
     // `forge battery` renders standalone).
     out.push_str(&format!("  contract score: {}\n", battery_line(cert)));
     out
 }
 
 /// Render one item's §7 battery view (REQ-1). The vacuity verdict + the mutation
-/// kill-ratio (+ the surviving mutant, if any) — read straight off the cert's
-/// `contract_quality`, never recomputed.
+/// kill-ratio (+ the surviving mutant, if any), read straight off the cert's
+/// `contract_quality`, not recomputed.
 fn render_battery_item(cert: &Certificate) -> String {
     let mut out = String::new();
     out.push_str(&format!("battery — {}\n", cert.item));
 
-    // A gate-rejected cert (a §7.1 vacuity / §13 slag reject — Level::L0 with a
+    // A gate-rejected cert (a §7.1 vacuity / §13 slag reject: Level::L0 with a
     // `reject` cause) keeps `contract_quality` at `forward_declared()` placeholder
-    // `false`s, NOT a clean verdict. Surface the gate's reject cause — mirroring
-    // `render_goal_item` — never the placeholder non-vacuous line or `mutants
-    // killed 0/0`. (REQ-1: a VIEW re-defines no verdict; the pipeline's verdict
+    // `false`s, not a clean verdict. Surface the gate's reject cause, mirroring
+    // `render_goal_item`, rather than the placeholder non-vacuous line or `mutants
+    // killed 0/0`. (REQ-1: a view re-defines no verdict; the pipeline's verdict
     // for a triage-rejected item is the reject.)
     if let Some(reject) = &cert.reject {
         out.push_str(&format!(
@@ -341,15 +341,15 @@ fn contract_of<'p>(program: &'p Program, item: &str) -> Option<&'p Contract> {
     })
 }
 
-/// The SHARED open-hole refusal text for a holed exec fn (#193/#195,
-/// goal-repl.md REQ-4/REQ-5). Returns `Some(detail)` iff `f` carries ANY open body
-/// hole (`?N`), naming EVERY `<fn>.?N` address + the first open goal, mirroring the
-/// `check::check_file_with_options` `OpenHole` reject language VERBATIM so every
+/// The shared open-hole refusal text for a holed exec fn (#193/#195,
+/// goal-repl.md REQ-4/REQ-5). Returns `Some(detail)` iff `f` carries any open body
+/// hole (`?N`), naming every `<fn>.?N` address + the first open goal, mirroring the
+/// `check::check_file_with_options` `OpenHole` reject language verbatim so every
 /// lowering path (`build::build_file`, `body_tv`, `exec_tv`) refuses/skips a holed
-/// item with ONE honest message rather than three drifting copies (the #192 lesson).
-/// `None` for a hole-free fn. A holed item is L0-equivalent (incomplete) and NEVER
-/// lowers — `check.rs`'s per-item loop, `build_file`, and the two TV phases all gate
-/// on this. Pure function of `f.holes` (R-CODE-5).
+/// item with one message rather than three drifting copies (the #192 lesson).
+/// `None` for a hole-free fn. A holed item is L0-equivalent (incomplete) and does
+/// not lower; `check.rs`'s per-item loop, `build_file`, and the two TV phases all
+/// gate on this. Pure function of `f.holes` (R-CODE-5).
 pub(crate) fn open_hole_reason(f: &thermite_syntax::FnItem) -> Option<String> {
     let first = f.holes.first()?;
     let addrs: Vec<String> = f
@@ -372,7 +372,7 @@ pub(crate) fn open_hole_reason(f: &thermite_syntax::FnItem) -> Option<String> {
 }
 
 /// The open body holes (`?N`) of the named `fn` item, in document order (#193,
-/// goal-repl.md REQ-4). EMPTY for a hole-free fn / a `spec fn`/`struct`/`enum`.
+/// goal-repl.md REQ-4). Empty for a hole-free fn / a `spec fn`/`struct`/`enum`.
 /// The source of the §5.1 `holes:` render section.
 fn holes_of<'p>(program: &'p Program, item: &str) -> &'p [thermite_syntax::Hole] {
     program
@@ -419,7 +419,7 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
         }
         AddrKind::Hole => {
             // A hole address `<fn>.?N` (#193, goal-repl.md REQ-4): the splice target
-            // is the `?N` token's span, recorded on `FnItem.holes` by their verbatim
+            // is the `?N` token's span, recorded on `FnItem.holes` by its verbatim
             // surface number. Find the hole whose number matches the `?N` segment.
             let hole_seg = segs.next()?; // ?N
             let number: u32 = hole_seg.strip_prefix('?')?.parse().ok()?;
@@ -433,7 +433,7 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
     }
 }
 
-/// Find the `loop_index`-th (1-based) loop in `body`, in the SAME source-order /
+/// Find the `loop_index`-th (1-based) loop in `body`, in the same source-order /
 /// flat-numbering scheme `address::collect_in_block` uses (descend into `if`
 /// branches; nested loops continue the flat function-level count).
 fn nth_loop(body: &Block, loop_index: usize) -> Option<&thermite_syntax::LoopNode> {
@@ -489,8 +489,8 @@ fn address_root(addr: &str) -> &str {
     addr.split('.').next().unwrap_or(addr)
 }
 
-/// Map a structured `AddressError` (REQ-7) into a `ForgeError::Usage` (never a
-/// panic; the honest error path for a bad `edit`/`goal` address).
+/// Map a structured `AddressError` (REQ-7) into a `ForgeError::Usage` (not a
+/// panic; the error path for a bad `edit`/`goal` address).
 fn address_usage(e: AddressError) -> ForgeError {
     ForgeError::Usage(format!("address resolution failed: {e}"))
 }
@@ -512,7 +512,7 @@ fn write_file(file: &Path, contents: &str) -> Result<(), ForgeError> {
 }
 
 /// Parse `file` into a clean `Program` (a parse failure is a `ForgeError::Parse`,
-/// surfaced — never swallowed). Re-parse of a known-good corpus file is
+/// surfaced, not swallowed). Re-parse of a known-good corpus file is
 /// deterministic (R-CODE-5).
 fn parse_program(file: &Path) -> Result<Program, ForgeError> {
     let src = read_file(file)?;
@@ -546,7 +546,7 @@ mod tests {
     }
 
     /// A discharged-L3 cert with the corpus battery verdict (anchored to
-    /// `conformance/sum.cert.json`, NOT copied from the verb — R-CHAR-3).
+    /// `conformance/sum.cert.json`, not copied from the verb, R-CHAR-3).
     fn sum_cert_l3() -> Certificate {
         let mut c = Certificate::new(
             "sum",
@@ -566,8 +566,8 @@ mod tests {
         c
     }
 
-    // REQ-1 / AC-1: the battery view reads the cert's contract_quality verbatim —
-    // the §7 verdict the gate computed, NOT recomputed. Anchored to the golden
+    // REQ-1 / AC-1: the battery view reads the cert's contract_quality verbatim:
+    // the §7 verdict the gate computed, not recomputed. Anchored to the golden
     // sum.cert.json values (`17/18`, non-vacuous).
     #[test]
     fn battery_view_reads_contract_quality() {
@@ -600,7 +600,7 @@ mod tests {
     }
 
     // REQ-2 / AC-3: a failed obligation renders the concrete witness from the
-    // ObligationResult diagnostic + location — never a bare adjective (§5.1
+    // ObligationResult diagnostic + location, not a bare adjective (§5.1
     // property 2).
     #[test]
     fn goal_render_counterexample() {
@@ -630,7 +630,7 @@ mod tests {
     }
 
     // REQ-3: the span-of-address walk finds the inv#2 clause span, and the splice
-    // replaces exactly that clause's source text (round-trips to the same address
+    // replaces that clause's source text (round-trips to the same address
     // set with the new text). Drives the binary_search corpus shape.
     #[test]
     fn edit_splice_replaces_clause_span() {
@@ -645,12 +645,12 @@ mod tests {
 
         let replacement = "forall_below(haystack, lo, |x| x <= needle)";
         let spliced = splice(&src, span, replacement);
-        // The spliced file re-parses, and inv#2 now resolves to the NEW text.
+        // The spliced file re-parses, and inv#2 now resolves to the new text.
         let reparsed = parse_ok(&spliced);
         let entry = address::resolve(&reparsed, "binary_search.loop#1.inv#2")
             .expect("inv#2 still resolves");
         assert_eq!(entry.text.as_deref(), Some(replacement));
-        // The address SET is unchanged (stability under the edit — REQ-3).
+        // The address set is unchanged (stability under the edit, REQ-3).
         let before: Vec<String> = address::addresses_of(&program)
             .into_iter()
             .map(|e| e.addr)
@@ -678,7 +678,7 @@ mod tests {
             other => panic!("expected Usage, got {other:?}"),
         }
         // An address that resolves but is not v1-editable (a spec-fn root) → None
-        // from span_of_address (a clean honest miss, not a panic).
+        // from span_of_address (a clean miss, not a panic).
         let spec_program = parse_ok("spec fn m(n: u32) -> u32 dec n { n }");
         assert!(span_of_address(&spec_program, "m").is_none());
     }

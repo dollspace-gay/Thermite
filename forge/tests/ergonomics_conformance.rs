@@ -1,39 +1,39 @@
-//! Conformance for Cluster **C10** (crosslink **#112**): the binding /
-//! control-flow ERGONOMICS — tuple destructuring (`let (x, y) = e`), `for i in
+//! Conformance for Cluster C10 (crosslink #112): the binding /
+//! control-flow ergonomics — tuple destructuring (`let (x, y) = e`), `for i in
 //! 0..n` loops, match guards (`x if cond =>`), or-patterns (`1 | 2 =>`), and
-//! `if let` / `while let`. Each is SUGAR over the shipped, proven core
-//! (`while`+`inv`/`dec`, `match`, `Expr::TupleProj`, `Expr::Is`) — no ergonomic
+//! `if let` / `while let`. Each is sugar over the shipped, proven core
+//! (`while`+`inv`/`dec`, `match`, `Expr::TupleProj`, `Expr::Is`); no ergonomic
 //! adds a proof rule, weakens an obligation, or launders a verification path
-//! (R-DEFER-9). These run against the two EXTERNAL truths the toolchain does not
+//! (R-DEFER-9). These run against the two external truths the toolchain does not
 //! author for itself: the built `forge` binary's certificate ladder (`forge
 //! check`, real verus) and the `thermite_spec::validate` exhaustiveness checker.
 //!
 //! Pins the C10 deliverables (`.design/basis/11-ergonomics.md`):
 //!
 //!   * REQ-1 `let (x, y) = swap(a, b);` using `y` → L3 (AC-1 — the temp +
-//!     projection desugar verifies; `Expr::TupleProj` is the SHIPPED core).
+//!     projection desugar verifies; `Expr::TupleProj` is the shipped core).
 //!   * REQ-2 `for i in 0..n inv … { acc = acc + 1; }` → L3 (AC-2 — the
-//!     for→while desugar with AUTO-`dec n - i`); a BAD inv (`acc = acc + 2`,
+//!     for→while desugar with auto-`dec n - i`); a bad inv (`acc = acc + 2`,
 //!     inv still `acc == i`) → L0 (AC-2b — the inv bites through the desugar).
-//!   * REQ-3 a guarded match (`n if n < 10 => …`) → L3 (AC-3); a guarded-ONLY
+//!   * REQ-3 a guarded match (`n if n < 10 => …`) → L3 (AC-3); a guarded-only
 //!     arm (`Yes(v) if v < 10 => v, No => 0`, no plain `Yes`) → NonExhaustive
-//!     (AC-3b — a guard does NOT complete a match).
+//!     (AC-3b — a guard does not complete a match).
 //!   * REQ-4 an or-pattern (`1 | 2 => …`) → L3 (AC-4); `Yes(_) | No` over an
-//!     enum is EXHAUSTIVE (the union closes the match); a strict-subset `A | B`
+//!     enum is exhaustive (the union closes the match); a strict-subset `A | B`
 //!     over `{A,B,C}` is still NonExhaustive.
 //!   * REQ-5 `if let Some(v) = e { v } else { 0 }` → L3 (AC-5); `while let
 //!     Some(_) = cur … { … }` → L3 via the canonical `while (cur is Some)` form
-//!     (AC-6 — the `matches!` exec discriminant, NOT loop+break).
+//!     (AC-6 — the `matches!` exec discriminant, not loop+break).
 //!
-//! The verus checks SKIP LOUDLY when verus is absent (the `tuples_conformance.rs`
-//! precedent) — never panic on a missing solver. `tests/` is not anti-pattern-
+//! The verus checks skip with a diagnostic when verus is absent (the `tuples_conformance.rs`
+//! precedent), never panic on a missing solver. `tests/` is not anti-pattern-
 //! gated, so `unwrap`/`expect`/`panic!` are fine (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/11-ergonomics.md`
-//! AC-1..AC-6 (the GROUNDED forms: tuple `2 verified, 0 errors`; for `2
+//! AC-1..AC-6 (the grounded forms: tuple `2 verified, 0 errors`; for `2
 //! verified` / bad-inv `invariant not satisfied`; guarded-only `non-exhaustive
 //! patterns`; or-pattern exhaustive; if-let/while-let L3) + `thermite-design.md`
-//! §6 ladder semantics (L3 == a fully-discharged real-verus proof), NEVER copied
+//! §6 ladder semantics (L3 == a fully-discharged real-verus proof), not copied
 //! from the toolchain's own output. The validator-reject expectations
 //! (`NonExhaustiveMatch { missing }`) are hand-derived from REQ-3/REQ-4.
 
@@ -109,9 +109,9 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 
 /// REQ-1 / AC-1 — `let (x, y) = swap(a, b);` then returning `y` certifies L3.
 /// The destructure desugars (in the parser) to a temp + per-element projection
-/// `let`s reusing the SHIPPED `Expr::TupleProj`. `swap` carries `ens result.0 ==
+/// `let`s reusing the shipped `Expr::TupleProj`. `swap` carries `ens result.0 ==
 /// b, result.1 == a`, so `y == result.1 == a` — the consumer's `ens result == a`
-/// holds. AUTHORITY: `.design/basis/11-ergonomics.md` AC-1 (GROUNDED `2
+/// holds. Authority: `.design/basis/11-ergonomics.md` AC-1 (grounded `2
 /// verified, 0 errors`); §6 (L3 == a fully-discharged verus proof).
 #[test]
 fn req1_tuple_destructuring_certifies_l3() {
@@ -134,7 +134,7 @@ fn req1_tuple_destructuring_certifies_l3() {
 }
 
 /// REQ-1 (parse) — `let (x, y) = e;` desugars to a temp + two projection `let`s
-/// (NO new AST node; the surface tuple-pattern is gone before lowering). A
+/// (no new AST node; the surface tuple-pattern is gone before lowering). A
 /// `_`-element drops its `let`. Pure AST-shape pin (no verus).
 #[test]
 fn req1_tuple_destructure_desugars_to_temp_plus_projections() {
@@ -175,9 +175,9 @@ fn req1_tuple_destructure_desugars_to_temp_plus_projections() {
 // ---------------------------------------------------------------------------
 
 /// REQ-2 / AC-2 — `for i in 0..n inv acc == i inv i <= n { acc = acc + 1; }` with
-/// `ens result == n` certifies L3. The for→while desugar synthesizes the AUTO
-/// `dec n - i` (the user writes only the `inv`). AUTHORITY:
-/// `.design/basis/11-ergonomics.md` AC-2 (GROUNDED `2 verified, 0 errors`); §6.
+/// `ens result == n` certifies L3. The for→while desugar synthesizes the auto
+/// `dec n - i` (the user writes only the `inv`). Authority:
+/// `.design/basis/11-ergonomics.md` AC-2 (grounded `2 verified, 0 errors`); §6.
 #[test]
 fn req2_for_range_certifies_l3() {
     if !verus_present() {
@@ -198,10 +198,10 @@ fn req2_for_range_certifies_l3() {
     );
 }
 
-/// REQ-2 / AC-2b (the inv BITES through the desugar — R-DEFER-9) — the SAME loop
-/// whose body steps `acc = acc + 2` while the inv still claims `acc == i` is NOT
+/// REQ-2 / AC-2b (the inv bites through the desugar — R-DEFER-9) — the same loop
+/// whose body steps `acc = acc + 2` while the inv still claims `acc == i` is not
 /// L3 (`invariant not satisfied`). The for desugar does not launder the
-/// obligation. AUTHORITY: `.design/basis/11-ergonomics.md` AC-2b (GROUNDED `1
+/// obligation. Authority: `.design/basis/11-ergonomics.md` AC-2b (grounded `1
 /// verified, 1 errors`); §7 (the battery bites).
 #[test]
 fn req2_bad_for_inv_is_l0() {
@@ -223,7 +223,7 @@ fn req2_bad_for_inv_is_l0() {
     );
 }
 
-/// REQ-2 (the AUTO `dec` is a real measure) — a user `dec` on a `for` is a parse
+/// REQ-2 (the auto `dec` is a real measure) — a user `dec` on a `for` is a parse
 /// error (the `dec` is automatic, `hi - i`). Pins that the for-loop owns its
 /// decreases — the agent cannot get it wrong (§2.3 one-way).
 #[test]
@@ -266,11 +266,11 @@ fn req3_guarded_match_certifies_l3() {
     );
 }
 
-/// REQ-3 / AC-3b (a guard does NOT complete a match) — `match m { Yes(v) if v <
-/// 10 => v, No => 0 }` over `enum Maybe { Yes(u64), No }` is NON-exhaustive: the
-/// guarded `Yes` arm does not cover `Yes(_)`. The validator MUST reject it with
-/// `NonExhaustiveMatch { missing: ["Yes"] }`. AUTHORITY:
-/// `.design/basis/11-ergonomics.md` AC-3b (GROUNDED: Verus rejects a guarded-only
+/// REQ-3 / AC-3b (a guard does not complete a match) — `match m { Yes(v) if v <
+/// 10 => v, No => 0 }` over `enum Maybe { Yes(u64), No }` is non-exhaustive: the
+/// guarded `Yes` arm does not cover `Yes(_)`. The validator rejects it with
+/// `NonExhaustiveMatch { missing: ["Yes"] }`. Authority:
+/// `.design/basis/11-ergonomics.md` AC-3b (grounded: Verus rejects a guarded-only
 /// `Some` arm). Hand-derived expectation (R-CHAR-3).
 #[test]
 fn req3_guarded_only_arm_is_non_exhaustive() {
@@ -325,15 +325,15 @@ fn req4_or_pattern_certifies_l3() {
 }
 
 /// REQ-4 / AC-4 (exhaustive via the union) — `match m { Yes(_) | No => 0 }` over
-/// `enum Maybe { Yes(u64), No }` is EXHAUSTIVE: the or-pattern covers BOTH
-/// variants (the union closes the match), so the validator ACCEPTS it. A
-/// strict-subset `A | B` over `enum Tri { A, B, C }` is still NON-exhaustive
-/// (`missing: [C]`). AUTHORITY: `.design/basis/11-ergonomics.md` AC-4 +
-/// Architecture ("an or-pattern covers the UNION; a strict subset leaves the
+/// `enum Maybe { Yes(u64), No }` is exhaustive: the or-pattern covers both
+/// variants (the union closes the match), so the validator accepts it. A
+/// strict-subset `A | B` over `enum Tri { A, B, C }` is still non-exhaustive
+/// (`missing: [C]`). Authority: `.design/basis/11-ergonomics.md` AC-4 +
+/// Architecture ("an or-pattern covers the union; a strict subset leaves the
 /// rest uncovered"). Hand-derived (R-CHAR-3).
 #[test]
 fn req4_or_pattern_exhaustive_via_union() {
-    // The union `Yes(_) | No` closes the match → validates clean.
+    // The union `Yes(_) | No` closes the match, so it validates clean.
     let exhaustive = thermite_syntax::parse(
         "enum Maybe { Yes(u64), No } fn f(m: Maybe) -> u64 req true ens result == result fx pure { match m { Yes(_) | No => 0 } }",
     );
@@ -368,8 +368,8 @@ fn req4_or_pattern_exhaustive_via_union() {
 
 /// REQ-5 / AC-5 — `if let Some(v) = o { v } else { 0 }` (the desugar of which is
 /// `match o { Some(v) => v, _ => 0 }`) with `ens result == match o { Some(v) =>
-/// v, None => 0 }` certifies L3. AUTHORITY: `.design/basis/11-ergonomics.md`
-/// AC-5 (the SHIPPED `Expr::Match` core); §6.
+/// v, None => 0 }` certifies L3. Authority: `.design/basis/11-ergonomics.md`
+/// AC-5 (the shipped `Expr::Match` core); §6.
 #[test]
 fn req5_if_let_certifies_l3() {
     if !verus_present() {
@@ -392,11 +392,11 @@ fn req5_if_let_certifies_l3() {
 
 /// REQ-5 / AC-6 — `while let Some(_) = cur … { … }` certifies L3 via the
 /// canonical `while (cur is Some)` desugar (the `matches!` exec discriminant,
-/// NOT loop+break). The body sets `cur = None` to exit; the loop `inv`/`dec` are
+/// not loop+break). The body sets `cur = None` to exit; the loop `inv`/`dec` are
 /// written by the user as for any `while` (the implication invariant
 /// `!(cur is Some) || (c == 0)` ties the discriminant to the decreasing measure
-/// `1 - c`). AUTHORITY: `.design/basis/11-ergonomics.md` AC-6 (the `while
-/// (cond)` form is L3 — the loop+break alternative is L0); §6.
+/// `1 - c`). Authority: `.design/basis/11-ergonomics.md` AC-6 (the `while
+/// (cond)` form is L3; the loop+break alternative is L0); §6.
 #[test]
 fn req5_while_let_certifies_l3() {
     if !verus_present() {
@@ -418,7 +418,7 @@ fn req5_while_let_certifies_l3() {
 }
 
 /// REQ-5 (parse) — `while let` desugars to a `while` whose condition is the
-/// SHIPPED `Expr::Is` discriminant (NOT a `loop`+`break`). Pure AST-shape pin.
+/// shipped `Expr::Is` discriminant (not a `loop`+`break`). Pure AST-shape pin.
 #[test]
 fn req5_while_let_desugars_to_while_is_variant() {
     use thermite_syntax::{Expr, Item, LoopKind, Stmt};

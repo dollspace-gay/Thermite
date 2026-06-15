@@ -1,27 +1,27 @@
 //! acto-critic divergence tests for `forge check` on the bounded-`Vec` corpus
 //! (commit `a48d2a1`, Basis Stage 4 / issue #73).
 //!
-//! Each test pins a divergence between the LIVE per-item `forge check` certificate
+//! Each test pins a divergence between the live per-item `forge check` certificate
 //! and the authority chain (`.design/basis/04-collections.md`, the hand-derived
 //! oracle `conformance/collections/cases.json`, `thermite-design.md` §5.3/§6/§7).
-//! Expected values trace to the oracle / design, NEVER to forge's own output
+//! Expected values trace to the oracle / design, not to forge's own output
 //! (`goal.md` R-CHAR-3).
 //!
-//! These run the BUILT `forge` binary end-to-end (verus-backed). If verus is
-//! absent they SKIP LOUDLY (never panic on a missing solver), matching
+//! These run the built `forge` binary end-to-end (verus-backed). If verus is
+//! absent they skip with a logged note (no panic on a missing solver), matching
 //! `divergence_forge.rs` / `check_conformance.rs`.
 //!
-//! ROOT CAUSE (pinned below): the builder's `collections_conformance.rs` test
-//! exercises only the WHOLE-PROGRAM `thermite_lower::lower` + a direct `verus`
-//! run, NOT the per-item `forge::check::check_file` path (the §5.3
-//! `item_subprogram` pipeline). On that real path `push_one` PROVES at verus
-//! (`4 verified, 0 errors`, confirmed against the golden), but #12 MUTATION
-//! SCORING (`forge::mutation::early_return_value` / `zero_value_for`) cannot
+//! Root cause (pinned below): the builder's `collections_conformance.rs` test
+//! exercises only the whole-program `thermite_lower::lower` + a direct `verus`
+//! run, not the per-item `forge::check::check_file` path (the §5.3
+//! `item_subprogram` pipeline). On that path `push_one` proves at verus
+//! (`4 verified, 0 errors`, confirmed against the golden), but #12 mutation
+//! scoring (`forge::mutation::early_return_value` / `zero_value_for`) cannot
 //! synthesize an early-return mutant for a `Vec<u64>` (`Type::Vec`) return type,
 //! yielding a `0/0` score that the #48 backstop gates to a `WeakContract`
-//! reject → `Level::L0`. The oracle says `push_one` → L3. (Same class of gap as
-//! the Stage-1c deposit-L0 #68 bug: a test that lowered whole-program rather than
-//! running the per-item `forge check` ladder.)
+//! reject → `Level::L0`. The oracle says `push_one` → L3. This is the same class
+//! of gap as the Stage-1c deposit-L0 #68 bug: a test that lowered whole-program
+//! rather than running the per-item `forge check` ladder.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -86,19 +86,19 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// DIVERGENCE (THE HEADLINE) — the capacity-preserving `push_one` PROVES at verus
+/// Divergence — the capacity-preserving `push_one` proves at verus
 /// (L3) on the per-item path, but the #12 mutation scorer cannot synthesize a
 /// mutant for its `Vec<u64>` return type (`0/0`), so the #48 backstop gates the
 /// L3-proved cert to a `WeakContract` reject → `Level::L0`.
 ///
-/// AUTHORITY: `conformance/collections/cases.json` (the hand-derived R-CHAR-3
+/// Authority: `conformance/collections/cases.json` (the hand-derived R-CHAR-3
 /// oracle) — `{ "name": "push_one", "level": "L3", "effects": ["alloc"] }`. Also
 /// `.design/basis/04-collections.md` AC-1 ("running the real `verus` binary on
 /// the emitted output exits 0 with `N verified, 0 errors` ... the emitted
 /// certificate matches `vec_accum.cert.json` (L3, non-vacuous)") and REQ-5
-/// (the capacity-preserving push). The verus proof DOES succeed — the golden
-/// `tests/golden/lower/vec_demo.verus.rs` is `4 verified, 0 errors` — so the L0
-/// is NOT a verus/composition failure; it is the mutation-gate divergence.
+/// (the capacity-preserving push). The verus proof succeeds: the golden
+/// `tests/golden/lower/vec_demo.verus.rs` is `4 verified, 0 errors`, so the L0
+/// is not a verus/composition failure; it is the mutation-gate divergence.
 ///
 /// Tracking: #74
 #[test]
@@ -109,7 +109,7 @@ fn divergence_push_one_l3_not_mutation_gated_l0() {
     }
     let certs = check_json_file(&corpus_path("vec_demo.th"));
     let push_one = cert_for(&certs, "push_one");
-    // ORACLE (cases.json): push_one certifies L3 with fx alloc.
+    // Oracle (cases.json): push_one certifies L3 with fx alloc.
     assert_eq!(
         push_one["level"], "L3",
         "ORACLE conformance/collections/cases.json: push_one -> L3 (the \
@@ -124,25 +124,25 @@ fn divergence_push_one_l3_not_mutation_gated_l0() {
     );
 }
 
-/// CONFIRMATION (NOT a divergence — this MUST pass today) — `checked_get` is the
-/// FAITHFUL no-OOB accessor: it certifies L3 / pure, AND the `req i < v.len()` is
-/// GENUINELY load-bearing. An off-by-one bound `req i <= v.len()` leaves `get`'s
-/// index precondition undischarged → L0 (NOT laundered). This test asserts both
-/// the faithful L3 and the genuine bound; it pins that the accessor is real, not
-/// a no-op. It is NOT `#[ignore]`d because it passes against `a48d2a1` (the
-/// honest behavior) — if a future change launders the bound this goes red.
+/// Confirmation (not a divergence — this passes today): `checked_get` is the
+/// no-OOB accessor. It certifies L3 / pure, and the `req i < v.len()` is
+/// load-bearing. An off-by-one bound `req i <= v.len()` leaves `get`'s
+/// index precondition undischarged → L0 (not laundered). This test asserts both
+/// the L3 and the bound; it pins that the accessor is not a no-op. It is
+/// un-ignored because it passes against `a48d2a1`; if a future change launders
+/// the bound this goes red.
 ///
-/// AUTHORITY: `conformance/collections/cases.json` — `checked_get` -> L3/pure
+/// Authority: `conformance/collections/cases.json` — `checked_get` -> L3/pure
 /// ("req i < v.len() discharges Vec::get's bound precondition"); the `reject`
 /// entry `oob_get_no_req` -> L0 ("a missing bound is caught, not laundered to
-/// L3"). `.design/basis/04-collections.md` AC-1 (the no-OOB `get` is real).
+/// L3"). `.design/basis/04-collections.md` AC-1 (the no-OOB `get`).
 #[test]
 fn confirm_checked_get_bound_is_load_bearing() {
     if !verus_present() {
         eprintln!("SKIP: verus absent — checked_get bound-check not exercised.");
         return;
     }
-    // (1) the faithful accessor: L3 / pure.
+    // (1) the accessor: L3 / pure.
     let certs = check_json_file(&corpus_path("vec_demo.th"));
     let cg = cert_for(&certs, "checked_get");
     assert_eq!(
@@ -151,7 +151,7 @@ fn confirm_checked_get_bound_is_load_bearing() {
     );
     assert_eq!(cg["effects"], serde_json::json!(["pure"]));
 
-    // (2) the bound is GENUINELY load-bearing: an off-by-one `req i <= v.len()`
+    // (2) the bound is load-bearing: an off-by-one `req i <= v.len()`
     // (the design's `oob_get_no_req`-class negative, R-DEFER-9 non-vacuity) leaves
     // get's `i < len` precondition undischarged -> L0 (caught, not laundered).
     let fixture =

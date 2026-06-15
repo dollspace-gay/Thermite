@@ -1,23 +1,23 @@
 //! End-to-end live pin for crosslink #225 — a recursive `spec fn` over a `u32`
-//! param, named in an exec twin's contract, MUST certify L3 under real verus.
+//! param, named in an exec twin's contract, must certify L3 under real verus.
 //!
-//! THE BUG (root cause `thermite-lower/src/lower.rs`, the `plain_user_spec_call`
+//! The bug (root cause `thermite-lower/src/lower.rs`, the `plain_user_spec_call`
 //! arm): the recursive call `s_dec(n - 1)` in the `spec fn` body, plus the
 //! contract call `s_dec(n)`, hardcoded `as u64` on the arithmetic arg even though
 //! `s_dec`'s declared param is `u32`. The emitted `s_dec((n - 1) as u64)` is
-//! ill-typed Verus (`expected u32, found u64`), so the WHOLE item died at L0 with
+//! ill-typed Verus (`expected u32, found u64`), so the whole item died at L0 with
 //! an opaque obligation failure though the Thermite source is fine.
 //!
-//! THE AUTHORITY (R-CHAR-3): the expected level L3 is the design contract —
+//! The authority (R-CHAR-3): the expected level L3 is the design contract,
 //! `thermite-design.md` §6 ladder semantics (L3 == a fully-discharged real-verus
-//! proof) — NOT copied from the toolchain's own output. The narrowing cast is
+//! proof), not copied from the toolchain's own output. The narrowing cast is
 //! legitimate (Verus spec arithmetic is the unbounded `int`); the fix only
-//! redirects its TARGET to the callee's declared param type (`u32`). The negative
+//! redirects its target to the callee's declared param type (`u32`). The negative
 //! arm pins non-vacuity: a broken exec twin (returns the seed `0`) no longer
 //! equals `s_dec(n)` and rejects below L3 (R-DEFER-9).
 //!
-//! The verus check SKIPS LOUDLY when verus is absent (the `editor_runs.rs`
-//! precedent) — never panic on a missing solver (R-CODE-4). `tests/` is not
+//! The verus check skips with an eprintln when verus is absent (the `editor_runs.rs`
+//! precedent), never panic on a missing solver (R-CODE-4). `tests/` is not
 //! anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine here (R-APG-2).
 
 use std::path::{Path, PathBuf};
@@ -29,8 +29,8 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
-/// `true` iff verus is reachable (mirrors `spec_fn_string_param.rs`). SKIP LOUDLY
-/// otherwise — a missing solver is never a test failure (R-CODE-4).
+/// `true` iff verus is reachable (mirrors `spec_fn_string_param.rs`). Skip with an
+/// eprintln otherwise; a missing solver is never a test failure (R-CODE-4).
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -129,14 +129,14 @@ fn u32_recursive_spec_fn_certifies_l3() {
     }
     let certs = check_program("ok", U32_PROGRAM);
     // The recursive `spec fn s_dec(n: u32)` lowers with `s_dec((n - 1) as u32)`
-    // (NOT the ill-typed `as u64`) and certifies L3 — the proof of the
+    // (not the ill-typed `as u64`) and certifies L3 — the proof of the
     // param-type-directed cast.
     assert_eq!(
         level_of(&certs, "s_dec"),
         "L3",
         "a u32-param recursive spec fn must lower (type-directed cast) + certify L3:\n{certs:#?}"
     );
-    // The exec twin proves `ens result == s_dec(n)` — the contract NAMES the spec
+    // The exec twin proves `ens result == s_dec(n)` — the contract names the spec
     // fn and discharges through the same param-type-directed cast.
     assert_eq!(
         level_of(&certs, "dec_exec"),
@@ -160,7 +160,7 @@ fn broken_dec_twin_rejects_below_l3() {
     }
     // Non-vacuity (R-DEFER-9): a mutated exec twin that returns the seed `0`
     // unconditionally no longer equals `s_dec(n)`, so the `ens result == s_dec(n)`
-    // equality FAILS and `dec_exec` rejects BELOW L3. The contract is real.
+    // equality fails and `dec_exec` rejects below L3. The contract is real.
     let mutant = U32_PROGRAM.replace(
         "fn dec_exec(n: u32) -> u32\n  req true\n  ens result == s_dec(n)\n  fx  pure\n  dec n\n{\n  if n == 0 {\n    0\n  } else {\n    dec_exec(n - 1)\n  }\n}",
         "fn dec_exec(n: u32) -> u32\n  req true\n  ens result == s_dec(n)\n  fx  pure\n  dec n\n{\n  if n == 0 {\n    0\n  } else {\n    0\n  }\n}",

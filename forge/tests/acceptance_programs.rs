@@ -1,62 +1,63 @@
-//! THE COMPOSE-ANY-PROGRAM PROOF (crosslink **#103**): three ACCEPTANCE PROGRAMS
-//! that prove the verified-primitive basis (C1–C7) composes into real programs —
-//! a `u64` decimal FORMATTER (`examples/formatter/format.th`), a CALCULATOR core
-//! (`examples/calculator/calc.th`), and a line/CSV PARSER
-//! (`examples/parser/parse_lines.th`). Each is grounded against the two EXTERNAL
+//! The compose-any-program proof (crosslink #103): three acceptance programs
+//! that show the verified-primitive basis (C1–C7) composes into real programs.
+//! A `u64` decimal formatter (`examples/formatter/format.th`), a calculator core
+//! (`examples/calculator/calc.th`), and a line/CSV parser
+//! (`examples/parser/parse_lines.th`). Each is grounded against the two external
 //! truths the toolchain does not author for itself: the real `verus` SMT prover
 //! (the `forge check` cert levels + verus-on-the-lowering for the thin split
-//! caller) and the real `rustc` compiler + a real process run (the built binaries).
+//! caller) and the real `rustc` compiler + a process run (the built binaries).
 //!
-//! THE THREE PROGRAMS:
+//! The three programs:
 //!
-//!   * FORMATTER — `format(n) ens parse_be(result) == n` certifies **L3** (the C4
+//!   * Formatter — `format(n) ens parse_be(result) == n` certifies L3 (the C4
 //!     round-trip), and `forge build --entry format_42`/`format_0`/`format_1000000`
-//!     COMPILES + RUNS, printing the human-readable MSB-first decimal: 42 → [52,50]
+//!     compiles + runs, printing the human-readable MSB-first decimal: 42 → [52,50]
 //!     == "42", 0 → [48] == "0", 1000000 → [49,48,48,48,48,48,48] == "1000000"
-//!     (REQ-8 / blocker #96). The formatter COMPOSES CLEANLY end-to-end.
+//!     (REQ-8 / blocker #96). The formatter composes end-to-end.
 //!
-//!   * CALCULATOR — `add(a, b) ens result is Some && match { Some(v) => v ==
-//!     parse_be(a) + parse_be(b) }` certifies **L3** (the C7 nested-`match` parse +
-//!     sum; the sum is PINNED). The arithmetic core `add_vals`/`add_2_3` also
-//!     certifies L3 and BUILDS + RUNS → `Some(5)` (2+3), `Some(300)` (100+200). The
-//!     GAP NOW CLOSED (crosslink #104): the FULL `calc.th` — including the
-//!     STRING-PARSE front-end `add` whose contract names the C7 spec fns
-//!     `all_digits` / `parse_be` / the free `parse_u64` — now `forge build`s + RUNS
-//!     end-to-end, because those C7 spec fns now have an L1 (runtime / build) EXEC
-//!     twin (`emit_string_runtime_l1`'s C7 block). NOT faked.
+//!   * Calculator — `add(a, b) ens result is Some && match { Some(v) => v ==
+//!     parse_be(a) + parse_be(b) }` certifies L3 (the C7 nested-`match` parse +
+//!     sum; the sum is pinned). The arithmetic core `add_vals`/`add_2_3` also
+//!     certifies L3 and builds + runs → `Some(5)` (2+3), `Some(300)` (100+200). The
+//!     gap now closed (crosslink #104): the full `calc.th` — including the
+//!     string-parse front-end `add` whose contract names the C7 spec fns
+//!     `all_digits` / `parse_be` / the free `parse_u64` — now `forge build`s + runs
+//!     end-to-end, because those C7 spec fns now have an L1 (runtime / build) exec
+//!     twin (`emit_string_runtime_l1`'s C7 block).
 //!
-//!   * PARSER — `has_sep(s, sep) ens result == contains_sub(s, sep)` certifies **L3**
+//!   * Parser — `has_sep(s, sep) ens result == contains_sub(s, sep)` certifies L3
 //!     via the full §7-mutation-scored `forge check` ladder; `fields(s, sep) ens
 //!     result.len() == 1 + count_sep(s, sep)` (the C5 split count-bound) certifies L3
-//!     under REAL VERUS on the lowering (the thin `{ s.split(sep) }` caller is not
+//!     under real verus on the lowering (the thin `{ s.split(sep) }` caller is not
 //!     §7-mutation-scoreable, the documented split-caller precedent). The runnable
-//!     `split_abc` BUILDS + RUNS → 3 pieces ([97],[98],[99] == "a","b","c") for
+//!     `split_abc` builds + runs → 3 pieces ([97],[98],[99] == "a","b","c") for
 //!     "a,b,c" split on ',' (byte 44). The full file (incl. the `fields` count-bound
 //!     + `has_sep` substring contracts) now `forge build`s end-to-end too (#104).
 //!
-//! THE GAP NOW CLOSED (crosslink #104, the C5/#102 + C7/#95 build-side cluster): the
-//! C5/C7 CONTRACT spec fns — `count_sep`, `sep_free`, `occurs_at`, `contains_sub`,
+//! The gap now closed (crosslink #104, the C5/#102 + C7/#95 build-side cluster): the
+//! C5/C7 contract spec fns — `count_sep`, `sep_free`, `occurs_at`, `contains_sub`,
 //! `all_digits`, `is_digit`, the free `parse_u64`, and `parse_be` in a C7
-//! (non-numfmt) context — now HAVE an L1 runnable EXEC twin in `thermite-lower`'s
+//! (non-numfmt) context — now have an L1 runnable exec twin in `thermite-lower`'s
 //! `emit_string_runtime_l1` (the C5 block gated on `program_uses_string_search`, the
 //! C7 block on `program_uses_parse`; each twin computes the same value as its spec
-//! body over the runtime `Vec<u8>`). Because `forge build` lowers EVERY fn in a file
+//! body over the runtime `Vec<u8>`). Because `forge build` lowers every fn in a file
 //! to its always-active runtime `thermite_check!`, a program whose contracts name a
 //! C5/C7 spec fn now resolves the named fn and builds. The formatter (C4) is
 //! unaffected; the calculator's parse front-end and the parser's count-bound entry
-//! now BUILD + RUN. The `forge check` ladder is unchanged (L3 — the SPEC twins +
+//! now build + run. The `forge check` ladder is unchanged (L3 — the spec twins +
 //! verus proofs carry the check path; #104 touched only the L1/exec mirror).
 //!
-//! The verus checks SKIP LOUDLY when verus is absent (the `string_format_conformance`
-//! / `editor_runs` precedent) — never panic on a missing solver (R-CODE-4). The
-//! build + run uses `rustc` (always present, no skip). `tests/` is not
-//! anti-pattern-gated, so `unwrap`/`expect`/`panic!` are fine here (R-APG-2).
+//! The verus checks skip with a logged reason when verus is absent (the
+//! `string_format_conformance` / `editor_runs` precedent), rather than panic on a
+//! missing solver (R-CODE-4). The build + run uses `rustc` (always present, no
+//! skip). `tests/` is not anti-pattern-gated, so `unwrap`/`expect`/`panic!` are
+//! fine here (R-APG-2).
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/07-strings.md` REQ-8 (the
 //! round-trip), REQ-13/REQ-15 (the predicate / count-bound), `.design/basis/
 //! 09-option-result.md` (the Option sum), and `thermite-design.md` §6 (L3 == a
-//! fully-discharged real-verus proof) — NEVER copied from forge's own output. The
-//! decimal byte values (52,50 / 48 / 49,48… / 97,98,99) are the ASCII design
+//! fully-discharged real-verus proof), rather than copied from forge's own output.
+//! The decimal byte values (52,50 / 48 / 49,48… / 97,98,99) are the ASCII design
 //! constant. The build-gap error string is the rustc diagnostic for the un-lowered
 //! C7 spec fn — the gap itself, not a forge self-assertion.
 
@@ -184,7 +185,7 @@ fn artifact_of(stdout: &str) -> PathBuf {
 
 /// Write `program` to a unique temp `.th`, build the entry, run it, return the run
 /// stdout. The temp file is removed before returning (#53). Used for the runnable
-/// CORES (a minimal subset program — the full files now build too, #104).
+/// cores (a minimal subset program — the full files now build too, #104).
 fn build_run_fixture(tag: &str, program: &str, entry: &str) -> String {
     let fixture = std::env::temp_dir().join(format!(
         "forge_accept_{tag}_{}_{}.th",
@@ -218,7 +219,7 @@ fn build_run_fixture(tag: &str, program: &str, entry: &str) -> String {
     String::from_utf8_lossy(&run.stdout).to_string()
 }
 
-/// Run the real `verus` binary on a program's LOWERED Verus source, returning
+/// Run the real `verus` binary on a program's lowered Verus source, returning
 /// `(success, combined_output)`. The thin `split` caller cannot be §7-mutation-
 /// scored by `forge check`, so its L3 is established by verus on the lowering (the
 /// `string_search_conformance.rs` precedent). R-CODE-4: the status is checked.
@@ -254,12 +255,12 @@ fn verus_on_lowered(tag: &str, program: &str) -> (bool, String) {
 }
 
 // ============================================================================
-// PROGRAM 1 — the FORMATTER. Composes CLEANLY: forge check L3 + build + run.
+// Program 1 — the formatter. forge check L3 + build + run.
 // ============================================================================
 
 /// (a) `format(n) ens parse_be(result) == n` certifies L3 — the C4 round-trip.
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-8 (the round-trip is the gold
-/// standard, GROUNDED `17 verified, 0 errors`); `thermite-design.md` §6 (L3 == a
+/// Authority: `.design/basis/07-strings.md` REQ-8 (the round-trip is the gold
+/// standard, grounded `17 verified, 0 errors`); `thermite-design.md` §6 (L3 == a
 /// discharged verus proof).
 #[test]
 fn formatter_round_trip_certifies_l3() {
@@ -281,13 +282,13 @@ fn formatter_round_trip_certifies_l3() {
     );
 }
 
-/// (b) `forge build --entry format_42`/`_0`/`_1000000` COMPILES + RUNS, printing the
-/// human-readable MSB-first decimal. AUTHORITY: `.design/basis/07-strings.md` REQ-8
+/// (b) `forge build --entry format_42`/`_0`/`_1000000` compiles + runs, printing the
+/// human-readable MSB-first decimal. Authority: `.design/basis/07-strings.md` REQ-8
 /// (#96 — to_string reverses to MSB-first). The ASCII bytes are the design constant
 /// (R-CHAR-3): '4'=52,'2'=50; '0'=48; '1'=49.
 #[test]
 fn formatter_builds_and_runs_each_value() {
-    // rustc always present (no skip; the string_format_conformance precedent).
+    // rustc is present (no skip; the string_format_conformance precedent).
     let f = formatter_th();
 
     let (ok, stdout, stderr) = build_entry(&f, "format_42");
@@ -327,12 +328,12 @@ fn formatter_builds_and_runs_each_value() {
 }
 
 // ============================================================================
-// PROGRAM 2 — the CALCULATOR. forge check L3; build+run the arithmetic core;
-// the STRING-PARSE front-end now builds + runs end-to-end (#104).
+// Program 2 — the calculator. forge check L3; build+run the arithmetic core;
+// the string-parse front-end now builds + runs end-to-end (#104).
 // ============================================================================
 
-/// (a) `add(a, b)` (parse two digit strings + add) certifies L3 with the PINNED sum
-/// contract, AND the arithmetic core `add_vals`/`add_2_3` certify L3. AUTHORITY:
+/// (a) `add(a, b)` (parse two digit strings + add) certifies L3 with the pinned sum
+/// contract, and the arithmetic core `add_vals`/`add_2_3` certify L3. Authority:
 /// `.design/basis/07-strings.md` REQ-9 + `.design/basis/09-option-result.md` (the
 /// C7 parse round-trip + Option + spec-match-in-ens); `thermite-design.md` §6.
 #[test]
@@ -358,14 +359,14 @@ fn calculator_sum_contract_certifies_l3() {
     }
 }
 
-/// (b) the arithmetic core BUILDS + RUNS → Some(5) (2+3) and Some(300) (100+200).
+/// (b) the arithmetic core builds + runs → Some(5) (2+3) and Some(300) (100+200).
 /// Built from a minimal derived program (the Option + `+` core in isolation); the
 /// full `calc.th` now builds + runs end-to-end too (#104,
-/// `calculator_string_parse_builds_and_runs_end_to_end`). AUTHORITY: the `add_vals`
+/// `calculator_string_parse_builds_and_runs_end_to_end`). Authority: the `add_vals`
 /// sum contract; `thermite-design.md` §6 (L1 runtime-checked build).
 #[test]
 fn calculator_arithmetic_core_builds_and_runs() {
-    // The arithmetic core in isolation (Option + `+`, NO parse_u64) — the half of
+    // The arithmetic core in isolation (Option + `+`, no parse_u64) — the half of
     // the calculator with an L1 runnable form. 2+3 → Some(5), 100+200 → Some(300).
     let core = "fn add_vals(x: u64, y: u64) -> Option<u64>\n  \
                 req x <= 9223372036854775807 && y <= 9223372036854775807\n  \
@@ -385,28 +386,28 @@ fn calculator_arithmetic_core_builds_and_runs() {
     );
 }
 
-/// THE GAP NOW CLOSED (crosslink #104) — `forge build calc.th` (the FULL file,
-/// including the STRING-PARSE front-end `add`) now COMPILES + RUNS end-to-end. The
+/// The gap now closed (crosslink #104) — `forge build calc.th` (the full file,
+/// including the string-parse front-end `add`) now compiles + runs end-to-end. The
 /// C7 contract spec fns (`all_digits` / `parse_be` / the free `parse_u64`) now have
-/// an L1 (runtime/build) EXEC twin (`thermite-lower::emit_string_runtime_l1`'s C7
-/// block, gated on `program_uses_parse`), so the always-active `thermite_check!`s
+/// an L1 (runtime/build) exec twin (`thermite-lower::emit_string_runtime_l1`'s C7
+/// block, gated on `program_uses_parse`), so the always-active `thermite_check!`s of
 /// `add`'s `req`/`ens` lower to resolve. The calculator composes end-to-end: the
-/// arithmetic core entries build alongside `add`'s now-runnable contracts and RUN →
+/// arithmetic core entries build alongside `add`'s now-runnable contracts and run →
 /// `add_2_3` prints `Some(5)` (2+3), `add_100_200` prints `Some(300)` (100+200).
 ///
 /// (Was `calculator_string_parse_build_is_blocked_by_missing_l1_parse_u64`, which
-/// PINNED the gap as an expected build failure; #104 emitted the missing L1 exec
-/// twins, flipping it to assert the build SUCCEEDS — the forcing function fired.)
+/// pinned the gap as an expected build failure; #104 emitted the missing L1 exec
+/// twins, flipping it to assert the build succeeds.)
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-9 + `09-option-result.md` (the C7
-/// parse spec fns) + the L1-EXEC-TWIN note; `thermite-design.md` §6 (L1 build —
+/// Authority: `.design/basis/07-strings.md` REQ-9 + `09-option-result.md` (the C7
+/// parse spec fns) + the L1-exec-twin note; `thermite-design.md` §6 (L1 build —
 /// every fn lowers to its always-active runtime check). The sum bytes (5 / 300) are
 /// the arithmetic design constant (R-CHAR-3): 2+3==5, 100+200==300.
 #[test]
 fn calculator_string_parse_builds_and_runs_end_to_end() {
-    // `forge build` lowers EVERY fn in calc.th to its runtime `thermite_check!`;
+    // `forge build` lowers every fn in calc.th to its runtime `thermite_check!`;
     // `add`'s `req`/`ens` name `all_digits`/`parse_be` and its body calls the free
-    // `parse_u64`, all of which now have an L1 exec twin (#104) — so the FULL file
+    // `parse_u64`, all of which now have an L1 exec twin (#104), so the full file
     // compiles and the runnable entries build + run from the same lowering.
     let (ok, stdout, stderr) = build_entry(&calculator_th(), "add_2_3");
     assert!(
@@ -440,14 +441,14 @@ fn calculator_string_parse_builds_and_runs_end_to_end() {
 }
 
 // ============================================================================
-// PROGRAM 3 — the PARSER. forge check L3 (has_sep) + verus L3 (fields split);
+// Program 3 — the parser. forge check L3 (has_sep) + verus L3 (fields split);
 // build+run the split core; the count-bound entry build is the same gap.
 // ============================================================================
 
 /// (a.1) `has_sep(s, sep) ens result == contains_sub(s, sep)` certifies L3 via the
-/// FULL §7-mutation-scored `forge check` ladder (the C5 substring predicate is real
-/// teeth). AUTHORITY: `.design/basis/07-strings.md` REQ-13 (GROUNDED `14 verified,
-/// 0 errors`; a broken predicate FAILS); `thermite-design.md` §6.
+/// full §7-mutation-scored `forge check` ladder (the C5 substring predicate is real
+/// teeth). Authority: `.design/basis/07-strings.md` REQ-13 (grounded `14 verified,
+/// 0 errors`; a broken predicate fails); `thermite-design.md` §6.
 #[test]
 fn parser_contains_predicate_certifies_l3() {
     if !verus_present() {
@@ -464,19 +465,19 @@ fn parser_contains_predicate_certifies_l3() {
     );
 }
 
-/// (a.2) the `fields` split count-bound certifies L3 under REAL VERUS on the
+/// (a.2) the `fields` split count-bound certifies L3 under real verus on the
 /// lowering. The thin `{ s.split(sep) }` caller is not §7-mutation-scoreable by
 /// `forge check` (no scoreable body mutant — the documented split-caller precedent,
 /// `string_search_conformance.rs`), so its L3 is established by verus directly.
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-15 (the count-bound + sep-free,
-/// GROUNDED `7 verified, 0 errors`).
+/// Authority: `.design/basis/07-strings.md` REQ-15 (the count-bound + sep-free,
+/// grounded `7 verified, 0 errors`).
 #[test]
 fn parser_split_count_bound_verifies_under_real_verus() {
     if !verus_present() {
         eprintln!("SKIP: verus absent — split count-bound not exercised.");
         return;
     }
-    // The EXACT `fields` contract from `parse_lines.th`, lowered + run under verus.
+    // The `fields` contract from `parse_lines.th`, lowered + run under verus.
     let (ok, output) = verus_on_lowered(
         "fields",
         "fn fields(s: String, sep: u64) -> Vec<String>\n  req true\n  \
@@ -490,10 +491,10 @@ fn parser_split_count_bound_verifies_under_real_verus() {
     );
 }
 
-/// (b) the split core BUILDS + RUNS → 3 pieces for "a,b,c" split on ',' (byte 44).
+/// (b) the split core builds + runs → 3 pieces for "a,b,c" split on ',' (byte 44).
 /// Built from a minimal split-only program; the full `parse_lines.th` now builds +
 /// runs end-to-end too (#104, `parser_builds_and_runs_end_to_end`).
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-15; the byte values 97/98/99 are the
+/// Authority: `.design/basis/07-strings.md` REQ-15; the byte values 97/98/99 are the
 /// ASCII design constant (R-CHAR-3): 'a'=97,'b'=98,'c'=99.
 #[test]
 fn parser_split_core_builds_and_runs_three_pieces() {
@@ -510,7 +511,7 @@ fn parser_split_core_builds_and_runs_three_pieces() {
     // INSIDE the outer `TVecTString { data: [ ... ] }`. The outer wrapper name
     // `TVecTString` itself contains the substring `TString`, so we count on the
     // element pattern `data: [9` (every piece byte 97/98/99 starts with '9'),
-    // which the outer wrapper's `data: [TString...` does NOT match.
+    // which the outer wrapper's `data: [TString...` does not match.
     let pieces = out.matches("data: [9").count();
     assert_eq!(
         pieces, 3,
@@ -518,24 +519,24 @@ fn parser_split_core_builds_and_runs_three_pieces() {
     );
 }
 
-/// THE GAP NOW CLOSED (parser side, same class — crosslink #104) — `forge build
-/// parse_lines.th` (the FULL file, including the `fields` count-bound + `has_sep`
-/// substring contracts) now COMPILES + RUNS. The C5 contract spec fns (`count_sep`
+/// The gap now closed (parser side, same class — crosslink #104) — `forge build
+/// parse_lines.th` (the full file, including the `fields` count-bound + `has_sep`
+/// substring contracts) now compiles + runs. The C5 contract spec fns (`count_sep`
 /// / `contains_sub` / `sep_free` / `occurs_at`) now have an L1 exec twin
 /// (`thermite-lower::emit_string_runtime_l1`'s C5 block, gated on
 /// `program_uses_string_search`), so the always-active `thermite_check!`s of
-/// `fields`/`has_sep` resolve. The runnable `split_abc` builds alongside them + RUNS
+/// `fields`/`has_sep` resolve. The runnable `split_abc` builds alongside them + runs
 /// → 3 pieces ([97],[98],[99] == "a","b","c") for "a,b,c" split on ',' (byte 44).
 ///
-/// (Was `parser_build_is_blocked_by_missing_l1_count_sep`, which PINNED the gap as
+/// (Was `parser_build_is_blocked_by_missing_l1_count_sep`, which pinned the gap as
 /// an expected build failure; #104 emitted the missing L1 exec twins, flipping it.)
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-13/REQ-15 (the C5 spec fns) + the
-/// L1-EXEC-TWIN note; `thermite-design.md` §6. The byte values 97/98/99 are the
+/// Authority: `.design/basis/07-strings.md` REQ-13/REQ-15 (the C5 spec fns) + the
+/// L1-exec-twin note; `thermite-design.md` §6. The byte values 97/98/99 are the
 /// ASCII design constant (R-CHAR-3): 'a'=97,'b'=98,'c'=99.
 #[test]
 fn parser_builds_and_runs_end_to_end() {
-    // The FULL parse_lines.th — `fields`'s `ens result.len() == 1 + count_sep(s, sep)`
+    // The full parse_lines.th — `fields`'s `ens result.len() == 1 + count_sep(s, sep)`
     // and `has_sep`'s `ens result == contains_sub(s, sep)` now lower to runnable L1
     // checks (the C5 exec twins, #104), so the file compiles and `split_abc` runs.
     let (ok, stdout, stderr) = build_entry(&parser_th(), "split_abc");
@@ -556,7 +557,7 @@ fn parser_builds_and_runs_end_to_end() {
             && out.contains("[99]"),
         "\"a,b,c\" split on ',' (44) must RUN → 3 pieces [97],[98],[99] (the full file built):\nstdout:{out}"
     );
-    // Exactly 3 pieces from 2 commas (the per-element `data: [9` pattern, see
+    // 3 pieces from 2 commas (the per-element `data: [9` pattern, see
     // `parser_split_core_builds_and_runs_three_pieces`).
     assert_eq!(
         out.matches("data: [9").count(),

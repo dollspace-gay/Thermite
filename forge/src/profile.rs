@@ -1,18 +1,18 @@
 //! `forge/src/profile.rs` — solver profiles as proof-repair prompts (issue #11,
-//! `.design/forge/solver-profiles.md`). When verus cannot PROVE an item within
-//! its resource budget — a TIMEOUT / rlimit exhaustion, NOT a real
-//! COUNTEREXAMPLE — `forge check` surfaces WHY, not an opaque "timeout". This
+//! `.design/forge/solver-profiles.md`). When verus cannot prove an item within
+//! its resource budget — a timeout / rlimit exhaustion rather than a
+//! counterexample — `forge check` surfaces why, not an opaque "timeout". This
 //! module parses verus's `--profile` / `--profile-all` Z3
 //! quantifier-instantiation report (landing on STDERR) into a structured
 //! [`SolverProfile`] and renders it as actionable proof-repair prompts (the
 //! top-instantiated quantifier, its selected trigger, its share of the budget,
 //! and a heuristic hint).
 //!
-//! This component PRODUCES the structured prompts. It does NOT retry (the
-//! proof-repair loop is #18) and does NOT auto-degrade L3→L2→L1 (#10).
+//! This component produces the structured prompts. It does not retry (the
+//! proof-repair loop is #18) and does not auto-degrade L3→L2→L1 (#10).
 //!
-//! The profile is DIAGNOSTIC and NON-deterministic (§5.3) — like
-//! `solver_time_ms`, it is oracle-EXCLUDED. The RENDERING ([`render_prompts`] /
+//! The profile is diagnostic and non-deterministic (§5.3) — like
+//! `solver_time_ms`, it is oracle-excluded. The rendering ([`render_prompts`] /
 //! [`suggested_move`]) is deterministic given a `SolverProfile`; the input
 //! profile (the Z3 instantiation counts) is not.
 //!
@@ -51,7 +51,7 @@ use crate::manifest::SuggestedMove;
 
 /// The structured Z3 quantifier-instantiation report verus emits under
 /// `--profile` / `--profile-all` on an rlimit-hit (`.design/forge/solver-profiles.md`
-/// REQ-1). DIAGNOSTIC and NON-deterministic (§5.3) — oracle-EXCLUDED, like
+/// REQ-1). Diagnostic and non-deterministic (§5.3) — oracle-excluded, like
 /// `solver_time_ms`. Additive on the certificate (`Certificate.solver_profile`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SolverProfile {
@@ -97,7 +97,7 @@ const DOMINANCE_PCT: u64 = 50;
 /// Parse verus's `--profile` / `--profile-all` Z3 instantiation report from a
 /// stderr blob into a [`SolverProfile`] (REQ-3). Returns `None` when no profiler
 /// report is present (the `Observed N total instantiations` line is absent) —
-/// the signal that this run did NOT emit a profile (so it is NOT a timeout;
+/// the signal that this run did not emit a profile (so it is not a timeout;
 /// `check::classify_verus_outcome` uses presence as the timeout discriminator).
 ///
 /// Tolerant / best-effort: a `Cost * Instantiations:` block whose fields cannot
@@ -269,7 +269,7 @@ fn strip_gutter(line: &str) -> String {
 }
 
 /// Reconstruct the selected trigger from the source `forall` line and the caret
-/// annotation underneath it. The carets (`^`) mark the trigger TERMS; the
+/// annotation underneath it. The carets (`^`) mark the trigger terms; the
 /// dashes (`-`) mark non-trigger spans. We extract each maximal caret run's
 /// underlying source substring and join them with ` && ` (the conventional
 /// multi-trigger conjunction rendering, REQ-4). Best-effort: when there is no
@@ -342,7 +342,7 @@ fn parse_span(line: &str) -> Option<String> {
 /// per ranked quantifier (REQ-4). Each names the quantifier's trigger, its
 /// instantiation count and share of the budget, and a heuristic hint
 /// (trigger-loop suspicion when one quantifier dominates, [`DOMINANCE_PCT`]).
-/// DETERMINISTIC given the profile (R-CODE-5 / AC-6).
+/// Deterministic given the profile (R-CODE-5 / AC-6).
 pub fn render_prompts(profile: &SolverProfile) -> Vec<SuggestedMove> {
     profile
         .quantifiers
@@ -380,9 +380,9 @@ pub fn render_prompts(profile: &SolverProfile) -> Vec<SuggestedMove> {
 }
 
 /// The single human-facing proof-repair hint for the certificate's reserved
-/// `suggested_move` slot (REQ-4, §5.1): the TOP-instantiated quantifier's prompt
+/// `suggested_move` slot (REQ-4, §5.1): the top-instantiated quantifier's prompt
 /// (the dominant bottleneck), or `None` when the profile ranks no quantifiers.
-/// DETERMINISTIC given the profile.
+/// Deterministic given the profile.
 pub fn suggested_move(profile: &SolverProfile) -> Option<SuggestedMove> {
     render_prompts(profile).into_iter().next()
 }
@@ -392,7 +392,7 @@ mod tests {
     use super::*;
 
     /// The captured real-verus profiler blob (the checked-in fixture), spliced
-    /// inline so this unit test is hermetic. Hand-derived expected values are
+    /// inline so this unit test is hermetic. The hand-derived expected values are
     /// asserted in `parse_profile_*` (R-CHAR-3 — verus's report, not forge's).
     const BLOB: &str = "\
 note: verifying root module
@@ -421,7 +421,7 @@ note: Cost * Instantiations: 44 (Instantiated 4 times - 28% of the total, cost 1
    |         ----------------------------------^^^^^^^------------ Triggers selected for this quantifier
 ";
 
-    // REQ-3 / AC-1: parse the captured blob; assert HAND-DERIVED top fields read
+    // REQ-3 / AC-1: parse the captured blob; assert hand-derived top fields read
     // off the real report (14 total; top quantifier 10 inst / 71% / cost 15 /
     // cost*inst 150; second 4 / 28% / cost 11 / 44). R-CHAR-3 — these come from
     // the fixture's text, not from re-running the parser.
@@ -457,7 +457,7 @@ note: Cost * Instantiations: 44 (Instantiated 4 times - 28% of the total, cost 1
         assert_eq!(profile.quantifiers[1].trigger, "e(x, y)");
     }
 
-    // REQ-3: a stderr WITHOUT a profiler report (the fast-unknown / counterexample
+    // REQ-3: a stderr without a profiler report (the fast-unknown / counterexample
     // path) yields `None` — the discriminator `check.rs` relies on (no `Observed`
     // line → not a timeout).
     #[test]
@@ -527,7 +527,7 @@ note: Cost * Instantiations: 30 (Instantiated 3 times - 42% of the total, cost 1
         assert_eq!(prompts[1].kind, "trigger-hint");
     }
 
-    // REQ-4: `suggested_move` is the TOP prompt; `None` for an empty profile.
+    // REQ-4: `suggested_move` is the top prompt; `None` for an empty profile.
     #[test]
     fn suggested_move_is_top_prompt() {
         let profile = parse_profile(BLOB).expect("report present");
@@ -542,8 +542,8 @@ note: Cost * Instantiations: 30 (Instantiated 3 times - 42% of the total, cost 1
         assert!(suggested_move(&empty).is_none());
     }
 
-    // AC-6: rendering the SAME profile twice is byte-identical (R-CODE-5). Does
-    // NOT assert the profile is reproducible across verus runs (it is not).
+    // AC-6: rendering the same profile twice is byte-identical (R-CODE-5). Does
+    // not assert the profile is reproducible across verus runs (it is not).
     #[test]
     fn render_is_deterministic() {
         let profile = parse_profile(BLOB).expect("report present");

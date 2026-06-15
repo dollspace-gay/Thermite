@@ -14,10 +14,10 @@
 //!   a fill introducing new holes re-presents them (REQ-6);
 //! - the §5.1 `binary_search` dialogue (`conformance/goal/binary_search.dialogue.json`,
 //!   AC-6) drives the end-to-end loop, asserting the STRUCTURAL oracle (given/want/
-//!   holes/discharged-vs-open/counterexample-presence), NOT the illustrative
+//!   holes/discharged-vs-open/counterexample-presence), not the illustrative
 //!   timings/mutant-counts (the golden's README pins the split — R-CHAR-3).
 //!
-//! The verus-backed assertions SKIP LOUDLY when verus is absent (the
+//! The verus-backed assertions skip with a diagnostic when verus is absent (the
 //! `acceptance_programs` convention); the parser / address / open-hole-reject paths
 //! do not need verus and always run (a holed item never reaches verus).
 

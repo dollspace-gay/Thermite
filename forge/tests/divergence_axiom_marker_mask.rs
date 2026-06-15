@@ -1,38 +1,38 @@
-//! `forge/tests/divergence_axiom_marker_mask.rs` — DIVERGENCE PIN (critic, focused
+//! `forge/tests/divergence_axiom_marker_mask.rs` — divergence pin (critic, focused
 //! re-audit of #248 / commit `14f2f9b5`, the axiom-allowlist fix; ref #247).
 //!
-//! Divergence class: PROOF CHEAT (R-DEFER-9) + REQ-4 / §1 enumerable-trusted-base
-//! violation — an ALLOWLIST-BYPASS that survives the #248 fix.
+//! Divergence class: proof cheat (R-DEFER-9) + REQ-4 / §1 enumerable-trusted-base
+//! violation — an allowlist-bypass that survives the #248 fix.
 //!
-//! AUTHORITY:
+//! Authority:
 //!   - `.design/verified/proof-backends.md` REQ-4: an L3-via-Lean cert enumerates a
-//!     base of EXACTLY {Lean kernel + 3 standard axioms (propext, Classical.choice,
-//!     Quot.sound), EXP[, author]}; `#print axioms <obligation>` must be a SUBSET.
-//!   - `thermite-design.md` §1: trust is relocated to an ENUMERABLE base "a skeptical
-//!     third party can audit in minutes" — the base the cert lists must be the WHOLE
-//!     base the OBLIGATION THEOREM actually rests on.
-//!   - `goal.md` R-DEFER-9: an obligation may NOT be discharged via an unjustified
+//!     base of {Lean kernel + 3 standard axioms (propext, Classical.choice,
+//!     Quot.sound), EXP[, author]}; `#print axioms <obligation>` must be a subset.
+//!   - `thermite-design.md` §1: trust is relocated to an enumerable base "a skeptical
+//!     third party can audit in minutes" — the base the cert lists must be the whole
+//!     base the obligation theorem actually rests on.
+//!   - `goal.md` R-DEFER-9: an obligation may not be discharged via an unjustified
 //!     axiom.
 //!
-//! THE DIVERGENCE (the #248 fix is incomplete): `engine::replay_present_proof` appends
-//! `#print axioms thermite_obligation_<item>` to the author's file and feeds the WHOLE
+//! The divergence (the #248 fix is incomplete): `engine::replay_present_proof` appends
+//! `#print axioms thermite_obligation_<item>` to the author's file and feeds the whole
 //! lake stdout to `engine::nonstandard_axiom`. `nonstandard_axiom` parses only the
-//! FIRST `depends on axioms:` report line (`print_axioms_output.find(MARKER)` →
-//! `.lines().next()`). But the author's checked-in proof file is ARBITRARY Lean and may
-//! emit its OWN `#print axioms <clean_helper>` command — whose (standard-axiom-only)
-//! report line is printed BEFORE the appended obligation probe. So the FIRST marker the
-//! parser inspects is the CLEAN helper's `[propext]`, NOT the obligation theorem's
+//! first `depends on axioms:` report line (`print_axioms_output.find(MARKER)` →
+//! `.lines().next()`). But the author's checked-in proof file is arbitrary Lean and may
+//! emit its own `#print axioms <clean_helper>` command — whose (standard-axiom-only)
+//! report line is printed before the appended obligation probe. So the first marker the
+//! parser inspects is the clean helper's `[propext]`, not the obligation theorem's
 //! `[propext, thermite_cheat]`. `nonstandard_axiom` returns `None` → the smuggled
-//! `thermite_cheat : ∀ (p : Prop), p` is MASKED → the obligation theorem (whose
+//! `thermite_cheat : ∀ (p : Prop), p` is masked → the obligation theorem (whose
 //! statement matches canonically, and whose proof `thermite_cheat _` kernel-accepts)
-//! replays `Proven` → the item certifies **L3** on a trusted base that OMITS
-//! `thermite_cheat`. The cert's enumerable base is a LIE — exactly the §1 / R-DEFER-9
+//! replays `Proven` → the item certifies **L3** on a trusted base that omits
+//! `thermite_cheat`. The cert's enumerable base is false: the §1 / R-DEFER-9
 //! failure the #248 fix was meant to close, reachable because the parser binds to the
-//! WRONG (first, not the obligation's) report line.
+//! wrong (first, not the obligation's) report line.
 //!
 //! `forge` is a pure `bin` crate (no `lib.rs`), so `nonstandard_axiom` is not reachable
 //! from an integration test; this pins the divergence at the CLI / external-artifact
-//! boundary (the `--engine lean` tier-(c) interactive path), exactly like the #248 pin
+//! boundary (the `--engine lean` tier-(c) interactive path), like the #248 pin
 //! `divergence_axiom_smuggling.rs`.
 //!
 //! Tracking: crosslink #249.
@@ -78,9 +78,9 @@ fn lake_present() -> bool {
 }
 
 /// Lift the `theorem thermite_obligation_f … :=` statement span (binders + proposition,
-/// up to and INCLUDING the proof `:=`) from the emitted skeleton, so the planted cheat
-/// PRESERVES the canonical statement verbatim (passing the REQ-6 statement-binding gate)
-/// and replaces ONLY the proof term. Mirrors `engine::canonical_theorem_statement`.
+/// up to and including the proof `:=`) from the emitted skeleton, so the planted cheat
+/// preserves the canonical statement verbatim (passing the REQ-6 statement-binding gate)
+/// and replaces only the proof term. Mirrors `engine::canonical_theorem_statement`.
 fn obligation_statement_span(skeleton: &str) -> Option<String> {
     let start = skeleton.find("theorem thermite_obligation_f")?;
     let from_thm = &skeleton[start..];
@@ -88,20 +88,20 @@ fn obligation_statement_span(skeleton: &str) -> Option<String> {
     Some(from_thm[..by_pos + 2].to_string())
 }
 
-// DIVERGENCE: a checked-in INTERACTIVE Lean proof rests on a NON-STANDARD axiom
+// Divergence: a checked-in interactive Lean proof rests on a non-standard axiom
 // (`thermite_cheat : ∀ (p : Prop), p`) to discharge the obligation theorem, but emits
-// its OWN `#print axioms clean_helper` (a theorem resting only on `propext`) so the
-// FIRST `depends on axioms:` line in lake's stdout is CLEAN. The #248 allowlist parser
+// its own `#print axioms clean_helper` (a theorem resting only on `propext`) so the
+// first `depends on axioms:` line in lake's stdout is clean. The #248 allowlist parser
 // (`engine::nonstandard_axiom`) inspects only the first report line → the smuggled
-// axiom is MASKED → the proof replays `Proven` and the item certifies at L3.
+// axiom is masked → the proof replays `Proven` and the item certifies at L3.
 //
-// AUTHORITY EXPECTATION (proof-backends.md REQ-4 / §1 / R-DEFER-9): the parser must bind
-// to the OBLIGATION theorem's `#print axioms` line; a proof resting on `thermite_cheat`
-// must NOT certify (the enumerable base would omit it). The item must be rejected /
-// skipped, never L3. This test asserts the authority's expected behavior and FAILS
+// Authority expectation (proof-backends.md REQ-4 / §1 / R-DEFER-9): the parser binds
+// to the obligation theorem's `#print axioms` line; a proof resting on `thermite_cheat`
+// does not certify (the enumerable base would omit it). The item is rejected /
+// skipped, not L3. This test asserts the authority's expected behavior and fails
 // against the current toolchain.
 //
-// LIVE: gated on lake (the replay) + verus (the base cert). Skips loudly otherwise.
+// Live: gated on lake (the replay) + verus (the base cert). Skips loudly otherwise.
 #[test]
 fn divergence_replay_masks_nonstandard_axiom_via_earlier_print() {
     if !lake_present() {
@@ -117,7 +117,7 @@ fn divergence_replay_masks_nonstandard_axiom_via_earlier_print() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("scratch dir");
     let file = dir.join("rec.th");
-    // A RECURSIVE-registry (tier-(c)) item routes to the INTERACTIVE replay path (same
+    // A recursive-registry (tier-(c)) item routes to the interactive replay path (same
     // fixture shape as `divergence_axiom_smuggling.rs`).
     std::fs::write(
         &file,
@@ -126,7 +126,7 @@ fn divergence_replay_masks_nonstandard_axiom_via_earlier_print() {
     )
     .expect("write fixture");
 
-    // PASS 1: emit the skeleton (capturing the CORRECT current evidence-key header AND
+    // PASS 1: emit the skeleton (capturing the current evidence-key header and
     // the canonical obligation statement — we forge neither).
     let pass1 = Command::new(forge_bin())
         .arg("check")
@@ -165,22 +165,22 @@ fn divergence_replay_masks_nonstandard_axiom_via_earlier_print() {
         .expect("the emitted skeleton carries the evidence-key header")
         .to_string();
 
-    // Everything in the skeleton BEFORE the obligation theorem (header + imports +
+    // Everything in the skeleton before the obligation theorem (header + imports +
     // `def R_item …`): the context the obligation statement references.
     let thm_start = skeleton
         .find("theorem thermite_obligation_f")
         .expect("skeleton declares the obligation theorem");
     let prefix = &skeleton[..thm_start];
-    // The canonical obligation statement, kept VERBATIM so the REQ-6 statement-binding
+    // The canonical obligation statement, kept verbatim so the REQ-6 statement-binding
     // gate matches (the author may only fill the proof term).
     let statement = obligation_statement_span(&skeleton)
         .expect("extract the obligation statement span from the skeleton");
 
-    // PLANT a CHEAT proof: keep the fresh evidence-key header (staleness gate passes
-    // honestly) and the canonical statement (binding gate passes). The obligation is
-    // discharged by the NON-STANDARD axiom `thermite_cheat`. CRUCIALLY, the file emits
-    // its OWN `#print axioms clean_helper` (a propext-only theorem) BEFORE the appended
-    // obligation probe — so the FIRST `depends on axioms:` line lake prints is CLEAN.
+    // Plant a cheat proof: keep the fresh evidence-key header (staleness gate passes)
+    // and the canonical statement (binding gate passes). The obligation is
+    // discharged by the non-standard axiom `thermite_cheat`. The file emits
+    // its own `#print axioms clean_helper` (a propext-only theorem) before the appended
+    // obligation probe, so the first `depends on axioms:` line lake prints is clean.
     let _ = header; // the prefix already carries the skeleton's header line.
     let cheat = format!(
         "{prefix}\
@@ -216,12 +216,12 @@ fn divergence_replay_masks_nonstandard_axiom_via_earlier_print() {
         .find(|c| c.get("item").and_then(Value::as_str) == Some("f"))
         .expect("a certificate for `f`");
 
-    // AUTHORITY ASSERTION (proof-backends.md REQ-4 / §1 / R-DEFER-9): a proof whose
-    // OBLIGATION theorem rests on `thermite_cheat` must NOT certify at L3, regardless of
-    // any earlier clean `#print axioms` the file emits. The allowlist parser must bind
+    // Authority assertion (proof-backends.md REQ-4 / §1 / R-DEFER-9): a proof whose
+    // obligation theorem rests on `thermite_cheat` does not certify at L3, regardless of
+    // any earlier clean `#print axioms` the file emits. The allowlist parser binds
     // to the obligation theorem's report line, not the first one.
     //
-    // FAILS against the current toolchain: `nonstandard_axiom` reads only the FIRST
+    // Fails against the current toolchain: `nonstandard_axiom` reads only the first
     // `depends on axioms:` line (the planted clean `clean_helper` → `[propext]`), masks
     // the obligation's `thermite_cheat`, and `f` certifies L3.
     assert_ne!(

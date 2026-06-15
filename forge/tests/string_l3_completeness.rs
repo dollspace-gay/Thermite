@@ -7,33 +7,33 @@
 //!
 //!   GAP 1 — `slice`'s exec-position arg coercion. The `TString` wrapper's index
 //!   accessor `slice(lo: usize, hi: usize)` takes `usize`, but a Thermite surface
-//!   index is commonly a `u64` (`s.slice(0, k)` with `k: u64`). Verus does NO
+//!   index is commonly a `u64` (`s.slice(0, k)` with `k: u64`). Verus does no
 //!   implicit `u64 -> usize` narrowing, so the un-coerced arg produced
 //!   `error[E0308]: expected usize, found u64` -> L0. The fix coerces a non-literal
-//!   index arg of BOTH string index intrinsics (`byte_at`/`slice`) with `as usize`
+//!   index arg of both string index intrinsics (`byte_at`/`slice`) with `as usize`
 //!   (`thermite-lower::lower` `lower_expr` MethodCall exec arm + `is_usize_cast`).
 //!
 //!   GAP 2 — the `TString` wrapper def woven into the per-item sub-program when a
-//!   `String`/`Type::String` is REACHABLE as a struct/enum FIELD type (not just a
+//!   `String`/`Type::String` is reachable as a struct/enum field type (not just a
 //!   fn param/return). `struct Buf { text: String, .. }`'s field lowered to `pub
-//!   text: TString` but the per-item sub-program did not EMIT the wrapper def
+//!   text: TString` but the per-item sub-program did not emit the wrapper def
 //!   (`error[E0425]: cannot find type TString`) -> L0. The fix extends
 //!   `thermite-lower::lower::program_uses_string` to scan struct/enum field types
 //!   and fn-local `let` annotations (the whole String-reachability class), and
-//!   rewrites a `String` FIELD receiver's `.len()`/`.byte_at(i)` to the wrapper SPEC
+//!   rewrites a `String` field receiver's `.len()`/`.byte_at(i)` to the wrapper spec
 //!   fns in spec position (the fn-signature `Ctx::string_fields` + the struct-`inv`
 //!   `lower_inv_expr` MethodCall arm for `inv cursor <= text.len()`).
 //!
-//! These run the BUILT `forge` binary end-to-end (real verus). If verus is absent
-//! they SKIP LOUDLY (never panic on a missing solver), matching
+//! These run the built `forge` binary end-to-end (real verus). If verus is absent
+//! they skip with an eprintln (rather than panic on a missing solver), matching
 //! `divergence_strings.rs`.
 //!
 //! R-CHAR-3: expected levels trace to `.design/basis/07-strings.md` REQ-4 (the
 //! bounded `slice` `ens result.len() == hi - lo`, the `concat` length identity, the
 //! no-OOB `byte_at`, the `well_formed` capacity invariant) and `thermite-design.md`
 //! §6 ladder semantics (L3 == a fully-discharged real-verus proof; L0 == an
-//! undischarged obligation), NEVER copied from forge's own output. The negative
-//! (insufficient-bound slice -> NOT laundered to L3) pins non-vacuity (R-DEFER-9).
+//! undischarged obligation), never copied from forge's own output. The negative
+//! (insufficient-bound slice, not laundered to L3) pins non-vacuity (R-DEFER-9).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -71,7 +71,7 @@ fn check_program(tag: &str, program: &str) -> Vec<Value> {
         "forge_str_l3_{tag}_{}_{}.th",
         std::process::id(),
         // a per-call discriminator so concurrent tests never collide on the path
-        // (DETERMINISTIC within a test — the tag — but unique across tests).
+        // (deterministic within a test, via the tag, but unique across tests).
         tag.len()
     ));
     std::fs::write(&fixture, program).expect("write fixture");
@@ -106,10 +106,10 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 /// L3: the exec arg lowering coerces `k as usize` for the `usize` accessor (was
 /// `error[E0308]: expected usize, found u64` -> L0).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-4 — the bounded `slice` lowers to
+/// Authority: `.design/basis/07-strings.md` REQ-4 — the bounded `slice` lowers to
 /// `req self.well_formed() && lo <= hi && hi <= len, ens result.len() == hi - lo`.
 /// The `req s.len() <= 1_000_000` establishes `s.well_formed()` (the CAP bound, the
-/// SAME headroom `join`'s `req` establishes for `concat`'s `well_formed`); `k <=
+/// same headroom `join`'s `req` establishes for `concat`'s `well_formed`); `k <=
 /// s.len()` discharges `hi <= len`. `thermite-design.md` §6: a fully-discharged
 /// verus proof is L3. The `fx alloc` is the constructing slice copy (REQ-4).
 #[test]
@@ -138,13 +138,13 @@ fn gap1_slice_u64_arg_coerces_and_certifies_l3() {
     );
 }
 
-/// GAP 1 (the editor op the gap blocked) — a bounded MID-STRING INSERT via
+/// GAP 1 (the editor op the gap blocked) — a bounded mid-string insert via
 /// slice+concat certifies L3. `s.slice(0, p).concat(ins).concat(s.slice(p,
-/// s.len()))`: the `s.len()` arg is a non-literal `u64`, so it MUST coerce `as
+/// s.len()))`: the `s.len()` arg is a non-literal `u64`, so it coerces `as
 /// usize` for the second `slice` (the GAP-1 fix applied to the realistic editor
 /// path, not just the single triggering site).
 ///
-/// AUTHORITY: `.design/basis/07-strings.md` REQ-4 — `slice`'s `ens result.len() ==
+/// Authority: `.design/basis/07-strings.md` REQ-4 — `slice`'s `ens result.len() ==
 /// hi - lo` + `concat`'s `ens result.len() == a.len() + b.len()` compose to
 /// `result.len() == p + ins.len() + (s.len() - p) == s.len() + ins.len()`. The `req
 /// s.len() + ins.len() <= 1_000_000` keeps every intermediate `concat` under CAP.

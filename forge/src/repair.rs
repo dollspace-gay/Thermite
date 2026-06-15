@@ -1,30 +1,30 @@
 //! `forge/src/repair.rs` — the background L1/L2 → L3 proof-repair loop (issue #18,
 //! `.design/forge/proof-repair.md`; `thermite-design.md` §6, Appendix B). Once a
-//! `forge check` run has left an item BELOW L3 because verus could not PROVE it
-//! within its resource budget (a TIMEOUT — INCONCLUSIVENESS, the #10 ladder /
-//! #11 classification), repair tries to drive that item back UP to L3 by the one
-//! mechanical, checkable move §6 sanctions: BUDGET ESCALATION. It re-verifies the
-//! item along a FIXED, BOUNDED geometric `--rlimit` ladder (reusing the SAME
-//! `check.rs` verus driver); the first budget at which the item PROVES is a real
+//! `forge check` run has left an item below L3 because verus could not prove it
+//! within its resource budget (a timeout: inconclusiveness, the #10 ladder /
+//! #11 classification), repair tries to drive that item back up to L3 by the one
+//! mechanical, checkable move §6 sanctions: budget escalation. It re-verifies the
+//! item along a fixed, bounded geometric `--rlimit` ladder (reusing the same
+//! `check.rs` verus driver); the first budget at which the item proves is an
 //! upgrade to L3 (the winning budget is recorded). An item that never proves even
-//! at the cap stays sub-L3 and repair surfaces the #11 repair PROMPT (the
+//! at the cap stays sub-L3 and repair surfaces the #11 repair prompt (the
 //! `SolverProfile` + `suggested_move` + the failing obligation) for the agent's
 //! own move (a custom proof hint).
 //!
-//! **THE ANTI-CHEAT INVARIANT (R-DEFER-9, §12 — the load-bearing property).**
-//! Repair escalates a TIMEOUT and NOTHING ELSE. A COUNTEREXAMPLE (verus DISPROVED
-//! the contract — `postcondition not satisfied`, NO profile report), a vacuity
+//! The anti-cheat invariant (R-DEFER-9, §12). Repair escalates a timeout and
+//! nothing else. A counterexample (verus disproved the contract:
+//! `postcondition not satisfied`, no profile report), a vacuity
 //! reject (`rejected_vacuity`), a weak-contract reject (`rejected_weak_contract`),
-//! and any non-timeout sub-L3 status are HARD FAILS: repair REPORTS them and NEVER
-//! retries them at a higher budget, NEVER upgrades them to L3. More budget never
-//! makes a false thing true. The gate is [`classify_sub_l3`] returning
-//! [`SubL3Status::Timeout`] (the SOLE trigger for [`escalate`]); every other
+//! and any non-timeout sub-L3 status are hard fails: repair reports them and never
+//! retries them at a higher budget, never upgrades them to L3. More budget does not
+//! make a false thing true. The gate is [`classify_sub_l3`] returning
+//! [`SubL3Status::Timeout`] (the sole trigger for [`escalate`]); every other
 //! verdict short-circuits to [`SubL3Status::NotRepairable`] and the escalation
-//! closure is NEVER invoked. This is the exact dual of the #10 down-ladder's
+//! closure is never invoked. This is the dual of the #10 down-ladder's
 //! anti-cheat (`degrade.rs`): inconclusiveness moves, falsity does not.
 //!
-//! This module COMPOSES the shipped pieces; it owns NO new prover-invocation
-//! logic — it re-drives `check::check_file_with_rlimit` (the `--rlimit` seam, #11)
+//! This module composes the shipped pieces; it owns no new prover-invocation
+//! logic. It re-drives `check::check_file_with_rlimit` (the `--rlimit` seam, #11)
 //! at each escalated rung, maps the resulting `Certificate` into a
 //! [`RepairVerdict`], and reads the #11 `SolverProfile`/`suggested_move` off a
 //! still-failing cert for the prompt.
@@ -46,29 +46,29 @@ use crate::cli::ForgeError;
 use crate::manifest::{Certificate, Level, SuggestedMove};
 use crate::profile::SolverProfile;
 
-/// The FIXED, BOUNDED geometric escalation ladder (REQ-3;
-/// `.design/forge/proof-repair.md` REQ-3). Each entry is a MULTIPLIER of the
+/// The fixed, bounded geometric escalation ladder (REQ-3;
+/// `.design/forge/proof-repair.md` REQ-3). Each entry is a multiplier of the
 /// canonical [`DEFAULT_RLIMIT`] verus SMT budget, tried in ascending order: a
-/// TIMEOUT item is re-verified at `DEFAULT_RLIMIT * 2`, then `* 4`, `* 8`, `* 16`
-/// (the cap). FROZEN const (no wall-clock, no adaptive budget): the achieved
-/// level after repair is a deterministic function of the item + this ladder
-/// (REQ-5, R-CODE-5). The ladder is finite, so [`escalate`] ALWAYS terminates per
-/// item — an item that never proves even at the `* 16` cap is reported still-
+/// timeout item is re-verified at `DEFAULT_RLIMIT * 2`, then `* 4`, `* 8`, `* 16`
+/// (the cap). A frozen const (no wall-clock, no adaptive budget): the achieved
+/// level after repair is a deterministic function of the item and this ladder
+/// (REQ-5, R-CODE-5). The ladder is finite, so [`escalate`] always terminates per
+/// item; an item that never proves even at the `* 16` cap is reported still
 /// sub-L3, never retried forever (the §11 "never weaken the gate", bounded).
 pub const REPAIR_LADDER: [f64; 4] = [2.0, 4.0, 8.0, 16.0];
 
-/// The repair-relevant THREE-WAY verdict of one re-verify at an escalated budget
+/// The repair-relevant three-way verdict of one re-verify at an escalated budget
 /// (REQ-1/REQ-2). The production path maps a re-verified [`Certificate`] into this
 /// via [`verdict_from_cert`]; the hermetic tests synthesize it directly. Mirrors
 /// the #11 `check::VerusOutcome` discriminants the loop cares about, but is a
 /// public repair-local type so the bounded loop ([`escalate`]) is unit-testable on
-/// SYNTHESIZED per-rung verdicts without provoking a fragile live resourceout
+/// synthesized per-rung verdicts without provoking a fragile live resourceout
 /// (OQ-1, the #10/#11 precedent).
 #[derive(Debug, Clone)]
 pub enum RepairVerdict {
-    /// verus PROVED the item at this budget → upgrade to L3 (terminal).
+    /// verus proved the item at this budget → upgrade to L3 (terminal).
     Proved,
-    /// verus TIMED OUT at this budget (still inconclusive) → try the next rung.
+    /// verus timed out at this budget (still inconclusive) → try the next rung.
     /// Carries the #11 repair prompt material (the `SolverProfile` + the headline
     /// `suggested_move`) for the still-sub-L3 report when the ladder is exhausted.
     Timeout {
@@ -77,13 +77,13 @@ pub enum RepairVerdict {
         profile: Option<SolverProfile>,
         /// The profile-derived headline proof-repair hint (REQ-6).
         suggested_move: Option<SuggestedMove>,
-        /// The failing-obligation detail ("here's where I got lost").
+        /// The failing-obligation detail.
         detail: String,
     },
-    /// verus DISPROVED the item (a COUNTEREXAMPLE) at this budget → HARD FAIL. The
-    /// anti-cheat (REQ-2) gates [`escalate`] so it is NEVER reached for an item
+    /// verus disproved the item (a counterexample) at this budget → hard fail. The
+    /// anti-cheat (REQ-2) gates [`escalate`] so it is never reached for an item
     /// that started as a counterexample; this variant exists for completeness (a
-    /// timeout item that DISPROVES at a higher budget — sound: report, never
+    /// timeout item that disproves at a higher budget is sound to report and never
     /// upgrade) and is treated as the terminal not-repairable outcome.
     Counterexample {
         /// The counterexample diagnostic.
@@ -91,15 +91,15 @@ pub enum RepairVerdict {
     },
 }
 
-/// The classification of a SUB-L3 item's certificate for repair (REQ-2 — the
+/// The classification of a sub-L3 item's certificate for repair (REQ-2, the
 /// anti-cheat gate). A cert that already certifies (`Level::L3`, or any certified
-/// rung with no reject) is NOT a sub-L3 item and yields `None` (a NO-OP, REQ-6 —
+/// rung with no reject) is not a sub-L3 item and yields `None` (a no-op, REQ-6:
 /// not in the repair set).
 #[derive(Debug, Clone)]
 pub enum SubL3Status {
-    /// A genuine INCONCLUSIVENESS — a verus TIMEOUT (`VerusTimeout` reject, or a
+    /// A genuine inconclusiveness: a verus timeout (`VerusTimeout` reject, or a
     /// `lowered_assurance` cert carrying a `VerusTimeout` degrade). This is the
-    /// SOLE status [`escalate`] retries (REQ-2). Carries the #11 prompt material
+    /// sole status [`escalate`] retries (REQ-2). Carries the #11 prompt material
     /// off the timed-out cert for the still-sub-L3 report.
     Timeout {
         /// The level the #10 ladder left the item at (`L0` for a raw timeout cert,
@@ -113,9 +113,9 @@ pub enum SubL3Status {
         /// The timeout detail.
         detail: String,
     },
-    /// A HARD FAIL that is NEVER retried (REQ-2): a COUNTEREXAMPLE (verus disproved
+    /// A hard fail that is never retried (REQ-2): a counterexample (verus disproved
     /// the contract), a vacuity reject, a weak-contract reject, or any other
-    /// non-timeout non-certifying verdict. Repair REPORTS it and stops.
+    /// non-timeout non-certifying verdict. Repair reports it and stops.
     NotRepairable {
         /// The level (typically `L0`).
         level: Level,
@@ -128,28 +128,28 @@ pub enum SubL3Status {
     },
 }
 
-/// Classify a per-item certificate (from a DEFAULT-budget `forge check`) for
-/// repair (REQ-2 — the anti-cheat gate). Returns:
+/// Classify a per-item certificate (from a default-budget `forge check`) for
+/// repair (REQ-2, the anti-cheat gate). Returns:
 ///
-/// - `None` — the item ALREADY CERTIFIES (a NO-OP; not a repair-set member,
+/// - `None` — the item already certifies (a no-op; not a repair-set member,
 ///   REQ-6 / AC-1): `Level::L3` (proved), or a certified `L1`/`L2` with no reject
-///   (a `#[slag]`/boundary/explicit/degraded rung — repair drives the L3 verus
-///   budget, and a non-degraded certified lower rung was a deliberate choice).
-/// - `Some(Timeout)` — a genuine INCONCLUSIVENESS the ladder retries: a
-///   `VerusTimeout` reject, OR a `lowered_assurance` cert whose `degrade_reason`
+///   (a `#[slag]`/boundary/explicit/degraded rung; repair drives the L3 verus
+///   budget, and a non-degraded certified lower rung was a chosen level).
+/// - `Some(Timeout)` — a genuine inconclusiveness the ladder retries: a
+///   `VerusTimeout` reject, or a `lowered_assurance` cert whose `degrade_reason`
 ///   is a `VerusTimeout` (the #10 down-ladder's record of the very timeout repair
-///   re-attempts). This is the ONLY status [`escalate`] runs for.
-/// - `Some(NotRepairable)` — a HARD FAIL repair REPORTS but NEVER retries: a
+///   re-attempts). This is the only status [`escalate`] runs for.
+/// - `Some(NotRepairable)` — a hard fail repair reports but never retries: a
 ///   counterexample (`L0`, no reject or a non-timeout reject), a vacuity reject,
 ///   a weak-contract reject.
 ///
-/// The ANTI-CHEAT (R-DEFER-9): the ONLY path to `Timeout` is the `VerusTimeout`
-/// tag — a profile-PRESENT verdict. A counterexample (profile-ABSENT, the
+/// The anti-cheat (R-DEFER-9): the only path to `Timeout` is the `VerusTimeout`
+/// tag, a profile-present verdict. A counterexample (profile-absent, the
 /// `postcondition not satisfied` witness path) lands in `NotRepairable`, so more
 /// budget can never be thrown at it.
 pub fn classify_sub_l3(cert: &Certificate) -> Option<SubL3Status> {
     // A `lowered_assurance` cert (the #10 down-ladder degraded a timeout to L1/L2):
-    // its UNDERLYING obstruction was a verus TIMEOUT, so repair may re-attempt the
+    // its underlying obstruction was a verus timeout, so repair may re-attempt the
     // L3 proof at a higher budget (it carries `degrade_reason` = VerusTimeout). The
     // degrade reason is the gate (not merely the `lowered_assurance` flag) so a
     // future non-timeout degrade is not silently retried.
@@ -164,8 +164,8 @@ pub fn classify_sub_l3(cert: &Certificate) -> Option<SubL3Status> {
                 });
             }
         }
-        // A degraded cert whose degrade was NOT a verus timeout is not repairable
-        // by budget escalation (defensive — v0.1 only degrades on timeout).
+        // A degraded cert whose degrade was not a verus timeout is not repairable
+        // by budget escalation (v0.1 only degrades on timeout).
         return Some(SubL3Status::NotRepairable {
             level: cert.level,
             cause: cert
@@ -181,8 +181,8 @@ pub fn classify_sub_l3(cert: &Certificate) -> Option<SubL3Status> {
         });
     }
 
-    // A reject cert: a `VerusTimeout` reject is a TIMEOUT (retry); EVERYTHING ELSE
-    // (a vacuity / weak-contract / triage / slag reject) is a HARD FAIL the
+    // A reject cert: a `VerusTimeout` reject is a timeout (retry); everything else
+    // (a vacuity / weak-contract / triage / slag reject) is a hard fail the
     // anti-cheat forbids retrying (REQ-2).
     if let Some(reject) = &cert.reject {
         if reject.cause == "VerusTimeout" {
@@ -200,15 +200,15 @@ pub fn classify_sub_l3(cert: &Certificate) -> Option<SubL3Status> {
         });
     }
 
-    // No reject + a CERTIFIED rung (L1/L2/L3) → already certifies → NO-OP. Repair
+    // No reject + a certified rung (L1/L2/L3) → already certifies → no-op. Repair
     // drives the L3 budget; a non-degraded certified lower rung (slag/boundary/an
     // explicit `--level l2`) is not a timeout to escalate.
     if matches!(cert.level, Level::L1 | Level::L2 | Level::L3) {
         return None;
     }
 
-    // No reject + `Level::L0` (an un-discharged proof with no structured reject —
-    // the bare counterexample path). NEVER retried (REQ-2): more budget does not
+    // No reject + `Level::L0` (an un-discharged proof with no structured reject,
+    // the bare counterexample path). Never retried (REQ-2): more budget does not
     // discharge a disproved obligation.
     let detail = cert
         .obligations
@@ -230,15 +230,15 @@ pub fn classify_sub_l3(cert: &Certificate) -> Option<SubL3Status> {
 /// reported, never retried).
 #[derive(Debug, Clone)]
 pub enum RepairOutcome {
-    /// The item PROVED at an escalated budget → upgraded to L3. `budget` is the
+    /// The item proved at an escalated budget → upgraded to L3. `budget` is the
     /// absolute `--rlimit` (a [`REPAIR_LADDER`] rung × [`DEFAULT_RLIMIT`]) at which
     /// it first proved (REQ-1).
     UpgradedToL3 {
         /// The absolute winning `--rlimit` budget.
         budget: f64,
     },
-    /// The item TIMED OUT at every rung up to the cap → still sub-L3 (REQ-3/AC-4).
-    /// Carries the #11 repair PROMPT (the residual profile + the headline hint +
+    /// The item timed out at every rung up to the cap → still sub-L3 (REQ-3/AC-4).
+    /// Carries the #11 repair prompt (the residual profile + the headline hint +
     /// the obligation detail) for the agent's own custom-proof move (REQ-6).
     StillSubL3 {
         /// The level the item remains at.
@@ -251,8 +251,8 @@ pub enum RepairOutcome {
         /// The failing-obligation detail.
         detail: String,
     },
-    /// A HARD FAIL: a counterexample / vacuity / weak-contract reject. REPORTED,
-    /// NEVER retried, NEVER upgraded (REQ-2 — the anti-cheat). No escalation rung
+    /// A hard fail: a counterexample / vacuity / weak-contract reject. Reported,
+    /// never retried, never upgraded (REQ-2, the anti-cheat). No escalation rung
     /// was attempted.
     NotRepairable {
         /// The level (typically `L0`).
@@ -273,25 +273,25 @@ pub struct RepairItem {
     pub outcome: RepairOutcome,
 }
 
-/// The repair report over a file (REQ-6). Holds one [`RepairItem`] per SUB-L3 item
-/// (an already-L3 item is a NO-OP and is NOT included — the corpus produces an
-/// EMPTY `items`, AC-1). `total_checked` is the number of items the underlying
+/// The repair report over a file (REQ-6). Holds one [`RepairItem`] per sub-L3 item
+/// (an already-L3 item is a no-op and is not included; the corpus produces an
+/// empty `items`, AC-1). `total_checked` is the number of items the underlying
 /// `forge check` produced (so a caller can report "N items, 0 to repair").
 #[derive(Debug, Clone)]
 pub struct RepairReport {
     /// The total number of items the underlying check produced.
     pub total_checked: usize,
-    /// One record per SUB-L3 item (empty when every item already certifies).
+    /// One record per sub-L3 item (empty when every item already certifies).
     pub items: Vec<RepairItem>,
 }
 
 impl RepairReport {
-    /// `true` iff repair found NO sub-L3 item to act on (the corpus no-op, AC-1).
+    /// `true` iff repair found no sub-L3 item to act on (the corpus no-op, AC-1).
     pub fn is_noop(&self) -> bool {
         self.items.is_empty()
     }
 
-    /// `true` iff EVERY repaired item is now upgraded to L3 (no still-sub-L3 and no
+    /// `true` iff every repaired item is now upgraded to L3 (no still-sub-L3 and no
     /// not-repairable item remains). A no-op report is vacuously fully-repaired.
     pub fn all_upgraded(&self) -> bool {
         self.items
@@ -300,30 +300,30 @@ impl RepairReport {
     }
 }
 
-/// Drive the BOUNDED escalation ladder for ONE timeout item (REQ-1/REQ-3 — the
-/// repair loop core). `verify` is the per-rung re-verify: given an ABSOLUTE
+/// Drive the bounded escalation ladder for one timeout item (REQ-1/REQ-3, the
+/// repair loop core). `verify` is the per-rung re-verify: given an absolute
 /// `--rlimit` budget it returns the [`RepairVerdict`] at that budget (the
 /// production path re-drives `check::check_file_with_rlimit`; the tests synthesize
-/// it). The `timeout` argument is the ORIGINAL default-budget timeout status (its
+/// it). The `timeout` argument is the original default-budget timeout status (its
 /// level + the #11 prompt material), used to build the still-sub-L3 report when
 /// the ladder is exhausted.
 ///
 /// The loop walks [`REPAIR_LADDER`] in ascending order, re-verifying at each
 /// `multiplier * DEFAULT_RLIMIT`:
-/// - a [`RepairVerdict::Proved`] → STOP, [`RepairOutcome::UpgradedToL3`] with that
-///   budget (REQ-1 — the first budget that proves wins);
-/// - a [`RepairVerdict::Counterexample`] at a rung → STOP,
-///   [`RepairOutcome::NotRepairable`] (sound: a budget that DISPROVES the item is
-///   reported, never upgraded — R-DEFER-9);
-/// - a [`RepairVerdict::Timeout`] → try the NEXT rung (or, if this was the last
+/// - a [`RepairVerdict::Proved`] → stop, [`RepairOutcome::UpgradedToL3`] with that
+///   budget (REQ-1, the first budget that proves wins);
+/// - a [`RepairVerdict::Counterexample`] at a rung → stop,
+///   [`RepairOutcome::NotRepairable`] (sound: a budget that disproves the item is
+///   reported, never upgraded, R-DEFER-9);
+/// - a [`RepairVerdict::Timeout`] → try the next rung (or, if this was the last
 ///   rung, fall through to the still-sub-L3 report).
 ///
-/// BOUNDED (REQ-3): the loop makes AT MOST `REPAIR_LADDER.len()` re-verify calls
-/// and always terminates. An ENVIRONMENT failure from `verify` propagates as the
-/// `Err` (REQ-7), NEVER a still-sub-L3 verdict and NEVER an upgrade.
+/// Bounded (REQ-3): the loop makes at most `REPAIR_LADDER.len()` re-verify calls
+/// and always terminates. An environment failure from `verify` propagates as the
+/// `Err` (REQ-7), never a still-sub-L3 verdict and never an upgrade.
 ///
-/// This function is ONLY called on a [`SubL3Status::Timeout`] (gated in
-/// [`repair_item`]) — the anti-cheat (REQ-2): a counterexample / reject never
+/// This function is only called on a [`SubL3Status::Timeout`] (gated in
+/// [`repair_item`]), the anti-cheat (REQ-2): a counterexample / reject never
 /// reaches here, so `verify` is never invoked for a non-timeout item.
 pub fn escalate<V>(timeout: &SubL3Status, mut verify: V) -> Result<RepairOutcome, ForgeError>
 where
@@ -361,9 +361,9 @@ where
     for &multiplier in REPAIR_LADDER.iter() {
         let budget = DEFAULT_RLIMIT * multiplier;
         match verify(budget)? {
-            // The first budget that PROVES is the upgrade (REQ-1).
+            // The first budget that proves is the upgrade (REQ-1).
             RepairVerdict::Proved => return Ok(RepairOutcome::UpgradedToL3 { budget }),
-            // A budget that DISPROVES the item → report, never upgrade (sound,
+            // A budget that disproves the item → report, never upgrade (sound,
             // R-DEFER-9). Should not happen for a true-but-slow obligation, but a
             // disproof at a higher budget is a hard fail, not a still-sub-L3.
             RepairVerdict::Counterexample { detail } => {
@@ -393,8 +393,8 @@ where
         }
     }
 
-    // The ladder is exhausted (every rung up to the cap timed out) → STILL sub-L3
-    // + the #11 prompt (REQ-3/AC-4 — bounded, the loop stops). The level is the
+    // The ladder is exhausted (every rung up to the cap timed out) → still sub-L3
+    // + the #11 prompt (REQ-3/AC-4, bounded, the loop stops). The level is the
     // original timeout level (repair did not lower it; it could not raise it).
     Ok(RepairOutcome::StillSubL3 {
         level: orig_level,
@@ -404,19 +404,19 @@ where
     })
 }
 
-/// Repair ONE item given its default-budget classification (REQ-1/REQ-2). This is
-/// the anti-cheat GATE (REQ-2): [`escalate`] (and thus the verifier closure) runs
-/// ONLY for a [`SubL3Status::Timeout`]; a [`SubL3Status::NotRepairable`]
-/// short-circuits to [`RepairOutcome::NotRepairable`] WITHOUT a single re-verify
-/// — a counterexample / vacuity / weak-contract reject is reported, never retried,
+/// Repair one item given its default-budget classification (REQ-1/REQ-2). This is
+/// the anti-cheat gate (REQ-2): [`escalate`] (and thus the verifier closure) runs
+/// only for a [`SubL3Status::Timeout`]; a [`SubL3Status::NotRepairable`]
+/// short-circuits to [`RepairOutcome::NotRepairable`] without a single re-verify.
+/// A counterexample / vacuity / weak-contract reject is reported, never retried,
 /// never upgraded.
 pub fn repair_item<V>(status: &SubL3Status, verify: V) -> Result<RepairOutcome, ForgeError>
 where
     V: FnMut(f64) -> Result<RepairVerdict, ForgeError>,
 {
     match status {
-        // THE ANTI-CHEAT (REQ-2): a hard fail is REPORTED, never escalated. The
-        // `verify` closure is dropped UNUSED — not one re-verify is attempted.
+        // The anti-cheat (REQ-2): a hard fail is reported, never escalated. The
+        // `verify` closure is dropped unused; not one re-verify is attempted.
         SubL3Status::NotRepairable {
             level,
             cause,
@@ -426,7 +426,7 @@ where
             cause: cause.clone(),
             detail: detail.clone(),
         }),
-        // A genuine TIMEOUT (inconclusiveness) → the ONLY status that escalates.
+        // A genuine timeout (inconclusiveness) → the only status that escalates.
         SubL3Status::Timeout { .. } => escalate(status, verify),
     }
 }
@@ -435,7 +435,7 @@ where
 /// escalated budget) into a [`RepairVerdict`] (REQ-1). A `Level::L3` cert with no
 /// reject is `Proved`; a `VerusTimeout` reject (or a `lowered_assurance` timeout
 /// degrade) is `Timeout` (carry the prompt material); anything else is a
-/// `Counterexample` (a hard fail at this budget — sound to report, never upgrade).
+/// `Counterexample` (a hard fail at this budget, sound to report, never upgrade).
 fn verdict_from_cert(cert: &Certificate) -> RepairVerdict {
     if cert.reject.is_none() && cert.level == Level::L3 {
         return RepairVerdict::Proved;
@@ -463,20 +463,20 @@ fn verdict_from_cert(cert: &Certificate) -> RepairVerdict {
 }
 
 /// Run the proof-repair loop over `path`, optionally restricted to a single
-/// `item` (REQ-1 — `forge repair [item]`). The one-shot, deterministic,
-/// re-runnable CLI pass (OQ-4 reading (a) — no daemon; the agent's outer loop
+/// `item` (REQ-1, `forge repair [item]`). The one-shot, deterministic,
+/// re-runnable CLI pass (OQ-4 reading (a): no daemon; the agent's outer loop
 /// schedules it).
 ///
-/// 1. Re-derive the per-item certs at the DEFAULT budget
-///    (`check::check_file_with_rlimit(path, DEFAULT_RLIMIT)` — the same certs
+/// 1. Re-derive the per-item certs at the default budget
+///    (`check::check_file_with_rlimit(path, DEFAULT_RLIMIT)`, the same certs
 ///    `forge check` produced).
 /// 2. For each cert (optionally filtered to `item`), `classify_sub_l3`:
-///    - `None` → NO-OP (already certifies; not in the report set, AC-1);
+///    - `None` → no-op (already certifies; not in the report set, AC-1);
 ///    - `Some(Timeout)` → escalate the bounded ladder, re-driving
 ///      `check::check_file_with_rlimit` at each rung (REQ-1/REQ-3);
-///    - `Some(NotRepairable)` → report-only, NEVER retried (REQ-2 anti-cheat).
+///    - `Some(NotRepairable)` → report-only, never retried (REQ-2 anti-cheat).
 ///
-/// An ENVIRONMENT failure (verus absent / unparseable) at any stage propagates as
+/// An environment failure (verus absent / unparseable) at any stage propagates as
 /// the `Err` (REQ-7), never a silent upgrade or a still-sub-L3 verdict.
 pub fn repair_file(path: &std::path::Path, item: Option<&str>) -> Result<RepairReport, ForgeError> {
     let certs = check::check_file_with_rlimit(path, DEFAULT_RLIMIT)?;
@@ -490,13 +490,13 @@ pub fn repair_file(path: &std::path::Path, item: Option<&str>) -> Result<RepairR
             }
         }
         let Some(status) = classify_sub_l3(cert) else {
-            // Already certifies → NO-OP (not in the repair set, REQ-6 / AC-1).
+            // Already certifies → no-op (not in the repair set, REQ-6 / AC-1).
             continue;
         };
-        // The per-rung re-verify closure: re-drive the SAME verus path at the
-        // escalated budget over the WHOLE file, then map THIS item's re-verified
+        // The per-rung re-verify closure: re-drive the same verus path at the
+        // escalated budget over the whole file, then map this item's re-verified
         // cert into a verdict (per-item isolation is preserved by `check.rs`'s
-        // sub-program split). The closure is invoked ONLY for a `Timeout` status
+        // sub-program split). The closure is invoked only for a `Timeout` status
         // (the anti-cheat gate in `repair_item`).
         let item_name = cert.item.clone();
         let verify = |budget: f64| -> Result<RepairVerdict, ForgeError> {
@@ -531,7 +531,7 @@ mod tests {
     use crate::manifest::{ObligationResult, RejectReason};
     use std::cell::Cell;
 
-    /// A synthesized DEFAULT-budget TIMEOUT status (the hermetic loop driver — no
+    /// A synthesized default-budget timeout status (the hermetic loop driver, no
     /// live verus). Mirrors what `classify_sub_l3` returns for a `VerusTimeout`
     /// cert.
     fn timeout_status() -> SubL3Status {
@@ -558,9 +558,9 @@ mod tests {
         }
     }
 
-    // REQ-1 / AC-2 (HERMETIC upgrade): a verify closure that TIMES OUT at low
-    // budgets and PROVES at budget >= K (here the `* 8` rung = DEFAULT_RLIMIT*8) →
-    // the loop escalates the ladder and UPGRADES to L3, recording the WINNING
+    // REQ-1 / AC-2 (hermetic upgrade): a verify closure that times out at low
+    // budgets and proves at budget >= K (here the `* 8` rung = DEFAULT_RLIMIT*8) →
+    // the loop escalates the ladder and upgrades to L3, recording the winning
     // budget (the first rung that proves). Pins the upgrade path deterministically
     // without a fragile live timeout (OQ-1).
     #[test]
@@ -587,13 +587,13 @@ mod tests {
             other => panic!("expected UpgradedToL3, got {other:?}"),
         }
         // It escalated `*2`, `*4` (timeout) then `*8` (proved) = 3 attempts, and
-        // STOPPED (did not try `*16`).
+        // stopped (did not try `*16`).
         assert_eq!(calls.get(), 3, "stops at the first proving rung");
     }
 
-    // REQ-3 / AC-4 (HERMETIC bounded termination): a verify closure that TIMES OUT
-    // at EVERY rung → still-sub-L3 + the prompt, having made EXACTLY the ladder's
-    // rung-count of attempts then STOPPED (never retried forever).
+    // REQ-3 / AC-4 (hermetic bounded termination): a verify closure that times out
+    // at every rung → still-sub-L3 + the prompt, having made exactly the ladder's
+    // rung-count of attempts then stopped (never retried forever).
     #[test]
     fn escalation_is_bounded_and_terminates() {
         let calls = Cell::new(0usize);
@@ -624,9 +624,9 @@ mod tests {
         );
     }
 
-    // REQ-2 (THE ANTI-CHEAT, hermetic): a COUNTEREXAMPLE status is NEVER retried —
-    // `repair_item` short-circuits to NotRepairable and the verify closure is NEVER
-    // invoked (assert the call count stays 0). The load-bearing invariant.
+    // REQ-2 (the anti-cheat, hermetic): a counterexample status is never retried.
+    // `repair_item` short-circuits to NotRepairable and the verify closure is never
+    // invoked (assert the call count stays 0).
     #[test]
     fn counterexample_is_never_retried() {
         let calls = Cell::new(0usize);
@@ -637,7 +637,7 @@ mod tests {
         };
         let outcome = repair_item(&status, |_budget| {
             calls.set(calls.get() + 1);
-            Ok(RepairVerdict::Proved) // would falsely upgrade IF ever called
+            Ok(RepairVerdict::Proved) // would falsely upgrade if ever called
         })
         .expect("no environment error");
         assert!(
@@ -674,7 +674,7 @@ mod tests {
 
     // REQ-2 (classification gate): `classify_sub_l3` routes a `VerusTimeout` cert to
     // `Timeout` (retry) and a counterexample / vacuity / weak-contract cert to
-    // `NotRepairable` (never retry). The profile-PRESENT vs ABSENT distinction the
+    // `NotRepairable` (never retry). The profile-present vs absent distinction the
     // anti-cheat rests on.
     #[test]
     fn classify_routes_timeout_vs_falsity() {
@@ -737,7 +737,7 @@ mod tests {
     }
 
     // REQ-2: a `lowered_assurance` cert whose degrade was a verus timeout (the #10
-    // down-ladder degraded it) IS a `Timeout` (repair re-attempts the L3 budget);
+    // down-ladder degraded it) is a `Timeout` (repair re-attempts the L3 budget);
     // a `lowered_assurance` cert with a non-timeout degrade is NotRepairable.
     #[test]
     fn classify_routes_lowered_assurance_timeout() {
@@ -755,8 +755,8 @@ mod tests {
         ));
     }
 
-    // REQ-5 (determinism): re-running the SAME escalation (same ladder, same
-    // synthesized per-rung verdicts) yields the SAME achieved outcome + budget.
+    // REQ-5 (determinism): re-running the same escalation (same ladder, same
+    // synthesized per-rung verdicts) yields the same achieved outcome + budget.
     #[test]
     fn escalation_is_deterministic() {
         let k = DEFAULT_RLIMIT * 4.0;
@@ -784,8 +784,8 @@ mod tests {
         }
     }
 
-    // REQ-7 / AC-6: an ENVIRONMENT failure during an escalated re-verify propagates
-    // as the Err — NEVER a still-sub-L3 verdict and NEVER a silent upgrade.
+    // REQ-7 / AC-6: an environment failure during an escalated re-verify propagates
+    // as the Err, never a still-sub-L3 verdict and never a silent upgrade.
     #[test]
     fn environment_error_propagates() {
         let status = timeout_status();
@@ -800,8 +800,8 @@ mod tests {
         );
     }
 
-    // REQ-1: a timeout that DISPROVES at a higher budget is reported NotRepairable
-    // (sound: a budget that disproves the item is never an upgrade — R-DEFER-9).
+    // REQ-1: a timeout that disproves at a higher budget is reported NotRepairable
+    // (sound: a budget that disproves the item is never an upgrade, R-DEFER-9).
     #[test]
     fn disproof_at_higher_budget_is_not_an_upgrade() {
         let status = timeout_status();

@@ -1,27 +1,27 @@
-//! Conformance for the EXEC-POSITION (body) TRANSLATION-VALIDATION phase
+//! Conformance for the exec-position (body) translation-validation phase
 //! (`.design/verified/exec-tv.md` REQ-5 / REQ-3; epic crosslink #151, blockers
-//! #154 / #156). Two load-bearing properties, both through the REAL `verus` binary
-//! (SKIP LOUDLY if absent, mirroring `contract_tv_conformance.rs`):
+//! #154 / #156). Two load-bearing properties, both through the real `verus` binary
+//! (skip with a diagnostic if absent, mirroring `contract_tv_conformance.rs`):
 //!
-//! THE GENERATED run (PRIMARY — the off-corpus #122/#146 regression guard):
-//! `forge exec-tv sum.th --generated 200 --json` lowers each generated, WELL-FRAMED
+//! The generated run (primary — the off-corpus #122/#146 regression guard):
+//! `forge exec-tv sum.th --generated 200 --json` lowers each generated, well-framed
 //! exec expr via `thermite_lower::lower_exec_expr` and discharges the exec-fn
 //! obligation `result == <bounded exec reference>`. The faithful lowerer + the
-//! adequate carried frames make EVERY checked expr `faithful` (0 divergent, 0
-//! unverifiable, 0 skipped). ANY `divergent` is a REAL off-corpus exec-lowering
-//! infidelity (the whole point — file it `-l blocker`). The CONSTRUCT COVERAGE
+//! adequate carried frames make every checked expr `faithful` (0 divergent, 0
+//! unverifiable, 0 skipped). A `divergent` is a real off-corpus exec-lowering
+//! infidelity (the point — file it `-l blocker`). The construct coverage
 //! (cast-`<` / arith / cast / index) is asserted non-vacuous (the #122/#146 classes
-//! are actually exercised in real numbers).
+//! are exercised in real numbers).
 //!
-//! THE CORPUS body-expr check (BEST-EFFORT, honest coverage): `forge exec-tv sum.th
+//! The corpus body-expr check (best-effort coverage): `forge exec-tv sum.th
 //! --no-generated --json` TV-checks the derivable-frame body exprs (a `let`-RHS /
-//! tail) and SKIPS the loop statement HONESTLY (out of scope, step 2.2). The CHECKED
+//! tail) and skips the loop statement (out of scope, step 2.2). The checked
 //! exprs are all `faithful` (no false positive); the loop is `skipped` (reported,
-//! never a silent pass). It is ACCEPTABLE that corpus coverage is partial — the
+//! never a silent pass). Partial corpus coverage is acceptable; the
 //! generated run is the primary value.
 //!
 //! Expected values trace to the design's faithful-lowering invariant + the frozen
-//! exec sublanguage, never to the lowerer's output (R-CHAR-3). `unwrap`/`expect` are
+//! exec sublanguage, not to the lowerer's output (R-CHAR-3). `unwrap`/`expect` are
 //! fine here (`tests/` is not anti-pattern-gated).
 
 use std::path::{Path, PathBuf};
@@ -86,13 +86,13 @@ fn run_exec_tv_json(file: &Path, generated: Option<usize>) -> Value {
     })
 }
 
-// ---- the generated run (PRIMARY — the off-corpus #122/#146 regression guard) ----
+// ---- the generated run (primary — the off-corpus #122/#146 regression guard) ----
 
 /// REQ-3 / AC-7: the 200-expr off-corpus generated exec run. The faithful lowerer +
-/// the adequate carried frames make EVERY checked expr `faithful` (0 divergent, 0
-/// unverifiable, 0 skipped). A `divergent` here is a REAL off-corpus exec-lowering
-/// infidelity finding (the whole point — surfaced loudly). Also asserts the run is
-/// SUBSTANTIVE and the #122/#146 construct classes are EXERCISED (else the guard is
+/// the adequate carried frames make every checked expr `faithful` (0 divergent, 0
+/// unverifiable, 0 skipped). A `divergent` here is a real off-corpus exec-lowering
+/// infidelity finding (the point — surfaced with a diagnostic). Also asserts the run is
+/// substantive and the #122/#146 construct classes are exercised (else the guard is
 /// vacuous).
 #[test]
 fn generated_exec_run_all_faithful() {
@@ -139,12 +139,12 @@ fn generated_exec_run_all_faithful() {
         "the generated run must CHECK all 200 exprs (substantive coverage); got {checked}"
     );
 
-    // The #122/#146 off-corpus regression guard is NON-VACUOUS: the cast-`<` class
+    // The #122/#146 off-corpus regression guard is non-vacuous: the cast-`<` class
     // (a `Cast` left of a `<`-leading op — the #146 surface), arithmetic (the
     // overflow surface), casts (the #122 surface), and indexing (the AC-5 element
-    // surface) are all EXERCISED in real numbers. Every such CHECKED expr being
+    // surface) are all exercised in real numbers. Every such checked expr being
     // faithful (divergent == 0 above) confirms the cast-paren disciplines hold
-    // off-corpus on BOTH encoders.
+    // off-corpus on both encoders.
     let cov = &gen["coverage"];
     assert!(
         cov["cast_lt"].as_u64().unwrap() >= 1,
@@ -171,8 +171,8 @@ fn generated_exec_run_all_faithful() {
     );
 }
 
-/// REQ-3 / AC-7 (determinism): the generated exec run is REPRODUCIBLE — two
-/// `forge exec-tv --generated N` runs at the same (pinned) seed yield the IDENTICAL
+/// REQ-3 / AC-7 (determinism): the generated exec run is reproducible — two
+/// `forge exec-tv --generated N` runs at the same (pinned) seed yield identical
 /// counts (the seeded SplitMix64 generator + the pinned verus seed, R-CODE-5). Run
 /// at a small N so it is cheap.
 #[test]
@@ -189,13 +189,13 @@ fn generated_exec_run_is_reproducible() {
     );
 }
 
-// ---- the corpus body-expr check (BEST-EFFORT, honest coverage) --------------
+// ---- the corpus body-expr check (best-effort coverage) --------------
 
-/// REQ-5: the corpus body-expr check over `sum.th` — the CHECKED body exprs (the
+/// REQ-5: the corpus body-expr check over `sum.th` — the checked body exprs (the
 /// `let`-RHSs + the tail `acc`) are all `faithful` (no false positive), and the loop
-/// statement is `skipped` HONESTLY (out of scope — statements/loops/mutation are
-/// step 2.2). Reports the honest coverage (checked vs skipped); partial coverage is
-/// ACCEPTABLE (the generated run is the primary value).
+/// statement is `skipped` (out of scope — statements/loops/mutation are
+/// step 2.2). Reports the coverage (checked vs skipped); partial coverage is
+/// acceptable (the generated run is the primary value).
 #[test]
 fn corpus_body_exprs_honest_coverage() {
     if !verus_present() {
@@ -210,7 +210,7 @@ fn corpus_body_exprs_honest_coverage() {
     let divergent = counts["divergent"].as_u64().unwrap();
     let skipped = counts["skipped"].as_u64().unwrap();
 
-    // No false positive: every CHECKED corpus body expr is faithful, 0 divergent.
+    // No false positive: every checked corpus body expr is faithful, 0 divergent.
     assert_eq!(
         divergent, 0,
         "sum corpus body-expr check has a DIVERGENT expr — a real exec-lowering \
@@ -220,7 +220,7 @@ fn corpus_body_exprs_honest_coverage() {
         faithful, checked,
         "every checked sum body expr must be faithful; {faithful} of {checked}"
     );
-    // The CHECKED exprs are the derivable-frame body exprs (the `let mut acc: u64 =
+    // The checked exprs are the derivable-frame body exprs (the `let mut acc: u64 =
     // 0`/`let mut i: usize = 0` RHSs + the tail `acc`). At least the tail + the two
     // lets reach verus.
     assert!(
@@ -229,8 +229,8 @@ fn corpus_body_exprs_honest_coverage() {
          tail); got {checked}. report: {corpus}"
     );
 
-    // The loop is SKIPPED HONESTLY (out of scope, step 2.2) — surfaced, never a
-    // silent pass. So coverage is partial-by-design (honest).
+    // The loop is skipped (out of scope, step 2.2) — surfaced, never a
+    // silent pass. So coverage is partial by design.
     assert!(
         skipped >= 1,
         "sum's `while` loop must be SKIPPED honestly (statements/loops are step 2.2, \

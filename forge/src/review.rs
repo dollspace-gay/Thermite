@@ -1,46 +1,46 @@
-//! `forge/src/review.rs` — the PLUGGABLE SPEC-INTENT REVIEW SLOT (`forge review`,
+//! `forge/src/review.rs` — the pluggable spec-intent review slot (`forge review`,
 //! `thermite-design.md` §7 line 227, §summary line 298, issue #19). The §7
 //! "residue surfaced for review": the one irreducible judgment the deterministic
 //! battery (#6/#12/#13 vacuity + mutation pre-screening) cannot make — "is this
-//! contract what you MEANT?".
+//! contract what you meant?".
 //!
 //! Governing design: `.design/forge/spec-review.md`.
 //!
-//! `forge review [item]` extracts the PRE-SCREENED DECLARATIVE SPEC LAYER for each
-//! `fn` — the verbatim `req`/`ens`/`fx` clauses plus the DECLARATION (name, params,
-//! return type, `dec` measure) of every DIRECTLY-referenced `spec fn`, with NO
+//! `forge review [item]` extracts the pre-screened declarative spec layer for each
+//! `fn` — the verbatim `req`/`ens`/`fx` clauses plus the declaration (name, params,
+//! return type, `dec` measure) of every directly-referenced `spec fn`, with no
 //! bodies — and pairs each intent-reviewable contract with an "is this what you
 //! meant?" prompt. It emits this as a machine artifact (`--json`, for a critic
-//! model) and a human form, and defines the PLUGGABLE VERDICT SLOT
-//! ([`ReviewVerdict`]) an EXTERNAL reviewer fills.
+//! model) and a human form, and defines the pluggable verdict slot
+//! ([`ReviewVerdict`]) an external reviewer fills.
 //!
 //! Two data sources, both already shipped (mirroring `audit::AuditManifest`'s pure
 //! projection):
 //!
 //! 1. The battery verdict — the `Vec<Certificate>` from [`crate::check::check_file`]
-//!    (the SAME default-config pipeline `forge check`/`forge audit` run — no extra
-//!    verification). The PRE-SCREENING predicate ([`is_intent_reviewable`]) reads
+//!    (the same default-config pipeline `forge check`/`forge audit` run — no extra
+//!    verification). The pre-screening predicate ([`is_intent_reviewable`]) reads
 //!    `cert.reject`/`cert.level`: a cert is intent-reviewable iff it is reject-free
-//!    AND a certified rung (`manifest::cert_certifies` — L1/L2/L3, incl. a slag /
-//!    boundary L1 whose contract IS the trust statement, OQ-4). A battery-FAILING
-//!    cert (`reject.is_some()`) is FLAGGED [`battery_failing`] with its
-//!    `reject.cause` and is NOT surfaced for intent review (R-DEFER-9: the
+//!    and a certified rung (`manifest::cert_certifies` — L1/L2/L3, incl. a slag /
+//!    boundary L1 whose contract is the trust statement, OQ-4). A battery-failing
+//!    cert (`reject.is_some()`) is flagged [`battery_failing`] with its
+//!    `reject.cause` and is not surfaced for intent review (R-DEFER-9: the
 //!    mechanical failure is answered first).
 //! 2. The contract surface — the parsed `Program` (`thermite_syntax::parse`). The
 //!    spec layer is built from the verbatim `Clause.text` (`ast.rs`), and the
 //!    spec-fn references are resolved by walking the contract clause `Expr`s for a
-//!    callee name matching a top-level `Item::SpecFn`. EXCLUSION is STRUCTURAL: the
-//!    projection reads `contract`/`name`/`params`/`ret`/`dec` and NEVER touches
+//!    callee name matching a top-level `Item::SpecFn`. Exclusion is structural: the
+//!    projection reads `contract`/`name`/`params`/`ret`/`dec` and never touches
 //!    `FnItem.body`/`SpecFnItem.body`, so "no bodies" is enforced by which fields
 //!    are read (parallel to `audit::FunctionRow::from_certificate`).
 //!
-//! forge NEVER produces the `aligned` verdict (R-CODE-5): the EXTRACTION (the
+//! forge does not produce the `aligned` verdict (R-CODE-5): the extraction (the
 //! artifact) is a deterministic pure projection; the verdict is the external
 //! reviewer's. The `--reviewer <cmd>` shell-out pipes the JSON artifact to the
 //! reviewer's stdin and reads the [`ReviewVerdict`] JSON from its stdout, attaching
-//! it as a SEPARATE `*.review.json` record — never a `Certificate` field (OQ-2: the
-//! cert is the mechanical verdict; intent review is a separate judgment, never
-//! conflated). A failing/absent reviewer cmd is a [`ForgeError`], never a panic.
+//! it as a separate `*.review.json` record — not a `Certificate` field (OQ-2: the
+//! cert is the mechanical verdict; intent review is a separate judgment). A
+//! failing/absent reviewer cmd is a [`ForgeError`].
 //!
 //! ## REQ status
 //!
@@ -71,11 +71,11 @@ use crate::check;
 use crate::cli::ForgeError;
 use crate::manifest::{cert_certifies, effects_of, Certificate};
 
-/// `true` iff a certificate is INTENT-REVIEWABLE (REQ-2): it PASSED the mechanical
-/// battery — reject-free AND a certified rung (`manifest::cert_certifies`: L1/L2/L3,
-/// including a `#[slag]` / `#[boundary]` L1 whose contract IS the trust statement a
-/// reviewer should audit, OQ-4). A battery-FAILING cert (`reject.is_some()`:
-/// vacuity / weak-contract / counterexample / timeout) is NOT intent-reviewable —
+/// `true` iff a certificate is intent-reviewable (REQ-2): it passed the mechanical
+/// battery — reject-free and a certified rung (`manifest::cert_certifies`: L1/L2/L3,
+/// including a `#[slag]` / `#[boundary]` L1 whose contract is the trust statement a
+/// reviewer should audit, OQ-4). A battery-failing cert (`reject.is_some()`:
+/// vacuity / weak-contract / counterexample / timeout) is not intent-reviewable —
 /// its failure is mechanical and answered first (R-DEFER-9). A thin alias over
 /// `cert_certifies` so the review pre-screen and the project headline agree on what
 /// "passed the battery" means.
@@ -83,25 +83,25 @@ pub fn is_intent_reviewable(cert: &Certificate) -> bool {
     cert_certifies(cert)
 }
 
-/// The DECLARATION of one `spec fn` referenced by a reviewed contract (REQ-1) — a
-/// BODY-FREE projection of a `SpecFnItem`. The §7 "few percent" surface the reviewer
-/// reads to understand what the contract's `spec fn` MEANS, WITHOUT the body
+/// The declaration of one `spec fn` referenced by a reviewed contract (REQ-1) — a
+/// body-free projection of a `SpecFnItem`. The §7 "few percent" surface the reviewer
+/// reads to understand what the contract's `spec fn` means, without the body
 /// (`SpecFnItem.body` is never read — the "no bodies" rule is structural).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpecFnDecl {
     /// The spec fn name (the callee a contract clause references).
     pub name: String,
-    /// The declaration signature rendered WITHOUT the body, e.g.
+    /// The declaration signature rendered without the body, e.g.
     /// `spec fn spec_sum(xs: &[u32]) -> u64`. Built from `name`/`params`/`ret`.
     pub signature: String,
     /// The `dec` decreases-measure clause text (verbatim `Clause.text`), e.g.
-    /// `xs.len()`. The well-formedness measure — declaration, never body.
+    /// `xs.len()`. The well-formedness measure, read from the declaration.
     pub dec: String,
 }
 
 impl SpecFnDecl {
     /// Project a `SpecFnItem` to its body-free declaration (REQ-1). Reads `name`,
-    /// `params`, `ret`, and `dec` — NEVER `body` (the §7 "no bodies" rule, enforced
+    /// `params`, `ret`, and `dec` — never `body` (the §7 "no bodies" rule, enforced
     /// structurally by which fields this reads, paralleling
     /// `audit::FunctionRow::from_certificate`).
     fn from_spec_fn(s: &thermite_syntax::SpecFnItem) -> Self {
@@ -118,11 +118,11 @@ impl SpecFnDecl {
     }
 }
 
-/// The DECLARATIVE SPEC LAYER of one reviewed `fn` (REQ-1) — the verbatim contract
-/// surface a reviewer reads, with NO bodies. The §7 "the certificate includes the
+/// The declarative spec layer of one reviewed `fn` (REQ-1) — the verbatim contract
+/// surface a reviewer reads, with no bodies. The §7 "the certificate includes the
 /// full spec layer". Built by [`SpecLayer::extract`] from `FnItem.contract` (the
 /// verbatim `Clause.text`) + the directly-referenced `spec fn` declarations; the
-/// `fn`'s own body and every spec fn's body are EXCLUDED (structural — the
+/// `fn`'s own body and every spec fn's body are excluded (structural — the
 /// projection never reads `body`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpecLayer {
@@ -133,8 +133,8 @@ pub struct SpecLayer {
     /// The effect row as tokens (e.g. `["pure"]`) — the `fx` row (via
     /// `manifest::effects_of`, the same projection the cert uses).
     pub fx: Vec<String>,
-    /// The DECLARATIONS of the directly-referenced `spec fn`s (OQ-3 direct-only),
-    /// sorted + deduplicated by name (deterministic, R-CODE-5). NO bodies.
+    /// The declarations of the directly-referenced `spec fn`s (OQ-3 direct-only),
+    /// sorted + deduplicated by name (deterministic, R-CODE-5). No bodies.
     pub referenced_spec_fns: Vec<SpecFnDecl>,
 }
 
@@ -153,7 +153,7 @@ impl SpecLayer {
     }
 }
 
-/// One INTENT-REVIEWABLE function in the artifact (REQ-2/REQ-3) — a battery-passing
+/// One intent-reviewable function in the artifact (REQ-2/REQ-3) — a battery-passing
 /// contract surfaced with its spec layer + the "is this what you meant?" prompt and
 /// (after a reviewer runs) an optional [`ReviewVerdict`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,7 +180,7 @@ impl IntentReview {
     }
 
     /// The per-contract "is this what you meant?" intent-review prompt (REQ-3, §7
-    /// line 227). Names the item and frames the ONLY open question as spec-intent
+    /// line 227). Names the item and frames the only open question as spec-intent
     /// alignment — the mechanical questions (vacuity #6/#13, contract strength #12)
     /// are already discharged by the battery this item passed. Deterministic: a pure
     /// function of the item name (R-CODE-5).
@@ -193,9 +193,9 @@ impl IntentReview {
     }
 }
 
-/// One BATTERY-FAILING function in the artifact (REQ-2) — a contract the battery
-/// REJECTED (vacuity / weak-contract / counterexample / timeout). FLAGGED with its
-/// `reject.cause` and NOT surfaced for intent review (R-DEFER-9: the reviewer is
+/// One battery-failing function in the artifact (REQ-2) — a contract the battery
+/// rejected (vacuity / weak-contract / counterexample / timeout). Flagged with its
+/// `reject.cause` and not surfaced for intent review (R-DEFER-9: the reviewer is
 /// never asked "is this what you meant?" about a mechanically-failing contract — the
 /// mechanical failure is answered first).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,45 +209,44 @@ pub struct BatteryFailing {
     pub detail: String,
 }
 
-/// The SPEC-INTENT REVIEW ARTIFACT (REQ-1/REQ-2/REQ-5) — the machine + human
-/// deliverable `forge review` emits. A PURE PROJECTION (REQ-6) of the parsed
+/// The spec-intent review artifact (REQ-1/REQ-2/REQ-5) — the machine + human
+/// deliverable `forge review` emits. A pure projection (REQ-6) of the parsed
 /// program and the battery cert collection, partitioning the file's `fn`s into the
-/// INTENT-REVIEWABLE (battery-passing, with spec layers + prompts) and the
-/// BATTERY-FAILING (flagged, not surfaced). The `--json` form is the critic-model
+/// intent-reviewable (battery-passing, with spec layers + prompts) and the
+/// battery-failing (flagged, not surfaced). The `--json` form is the critic-model
 /// surface; `cli::render_review` is the human form.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewArtifact {
     /// The intent-reviewable functions (battery-passing) — surfaced with spec
     /// layers + prompts, in source order (REQ-2).
     pub intent_reviewable: Vec<IntentReview>,
-    /// The battery-failing functions (flagged, NOT surfaced for intent review), in
+    /// The battery-failing functions (flagged, not surfaced for intent review), in
     /// source order (REQ-2; R-DEFER-9).
     pub battery_failing: Vec<BatteryFailing>,
 }
 
-/// The PLUGGABLE VERDICT SLOT (REQ-4, OQ-2) — the structured per-contract judgment
-/// an EXTERNAL reviewer (a human, or a critic model whose only question is
-/// spec-intent alignment) fills. forge NEVER fabricates `aligned` (R-CODE-5): this
+/// The pluggable verdict slot (REQ-4, OQ-2) — the structured per-contract judgment
+/// an external reviewer (a human, or a critic model whose only question is
+/// spec-intent alignment) fills. forge does not fabricate `aligned` (R-CODE-5): this
 /// is the reviewer's annotation, read from the `--reviewer <cmd>`'s stdout and
-/// attached as a SEPARATE `*.review.json` record — never a `Certificate` field (the
-/// cert is the mechanical verdict; this is the spec-intent judgment, never
-/// conflated).
+/// attached as a separate `*.review.json` record — not a `Certificate` field (the
+/// cert is the mechanical verdict; this is the spec-intent judgment).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewVerdict {
     /// The function the verdict is about (must match an `intent_reviewable` item).
     pub item: String,
-    /// The reviewer's judgment: does the contract say what the author MEANT?
+    /// The reviewer's judgment: does the contract say what the author meant?
     pub aligned: bool,
     /// An optional reviewer note (the "why" / the suggested correction).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
 
-/// The SEPARATE review record written to `<file>.review.json` (REQ-4, OQ-2 reading
-/// (a)). It keeps the verdict OUTSIDE the certificate entirely — the §1 "skeptical
+/// The separate review record written to `<file>.review.json` (REQ-4, OQ-2 reading
+/// (a)). It keeps the verdict outside the certificate entirely — the §1 "skeptical
 /// third party audits the residue" framing (the verdict is the third party's
 /// annotation, not the toolchain's certificate). A pure data document: the file
-/// path it reviews + the collected per-item verdicts. Attaching a verdict NEVER
+/// path it reviews + the collected per-item verdicts. Attaching a verdict never
 /// touches any `Certificate`'s `oracle_subset` (the soundness invariant, R-SPEC-2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReviewRecord {
@@ -258,16 +257,16 @@ pub struct ReviewRecord {
     pub verdicts: Vec<ReviewVerdict>,
 }
 
-/// Run the spec-intent extraction for `path` (REQ-1/REQ-2/REQ-6). Runs the SAME
+/// Run the spec-intent extraction for `path` (REQ-1/REQ-2/REQ-6). Runs the same
 /// default-config check pipeline `forge check` / `forge audit` run
 /// ([`check::check_file`] — no extra verification), parses the file once for the
-/// contract surface, and PROJECTS the two into the [`ReviewArtifact`]:
+/// contract surface, and projects the two into the [`ReviewArtifact`]:
 ///
-/// - a cert that PASSED the battery ([`is_intent_reviewable`]) → an [`IntentReview`]
+/// - a cert that passed the battery ([`is_intent_reviewable`]) → an [`IntentReview`]
 ///   carrying its body-free [`SpecLayer`] + the §7 prompt;
-/// - a cert the battery REJECTED → a [`BatteryFailing`] flag (NOT surfaced).
+/// - a cert the battery rejected → a [`BatteryFailing`] flag (not surfaced).
 ///
-/// PURE PROJECTION (REQ-6): the artifact is a deterministic function of the parsed
+/// A pure projection (REQ-6): the artifact is a deterministic function of the parsed
 /// program + the cert collection — no wall-clock, no model call. An optional
 /// `item_filter` (the `forge review <file> [item]` positional) restricts the
 /// artifact to a single function (both partitions are filtered).
@@ -277,7 +276,7 @@ pub fn review_file(
 ) -> Result<ReviewArtifact, ForgeError> {
     let path = path.as_ref();
 
-    // The SAME default pipeline `forge check`/`forge audit` run (the battery
+    // The same default pipeline `forge check`/`forge audit` run (the battery
     // verdict; REQ-2). `review` re-runs no verus — it projects this collection.
     let certs = check::check_file(path)?;
 
@@ -297,7 +296,7 @@ pub fn review_file(
 }
 
 /// Project a settled cert collection + parsed program into the [`ReviewArtifact`]
-/// (REQ-1/REQ-2/REQ-6) — the PURE PROJECTION core, split out so it is unit-testable
+/// (REQ-1/REQ-2/REQ-6) — the pure-projection core, split out so it is unit-testable
 /// without spawning verus. Partitions each `fn`'s cert: a battery-passing cert
 /// becomes an [`IntentReview`] with its body-free spec layer; a rejected cert
 /// becomes a [`BatteryFailing`] flag. A `spec fn` carries no contract, so it is a
@@ -331,7 +330,7 @@ fn project_artifact(
             }
         }
         // A `spec fn` carries no `req`/`ens`/`fx` contract (§4.2) — it is a pure
-        // shared dependency the reviewed `fn`s' spec layers REFERENCE, never an
+        // shared dependency the reviewed `fn`s' spec layers reference, not an
         // intent-reviewed item itself. Skip it (it has no contract to review).
         let contract = match lookup_fn_contract(program, &cert.item) {
             Some(c) => c,
@@ -342,11 +341,11 @@ fn project_artifact(
             let spec_layer = SpecLayer::extract(contract, &spec_fns);
             intent_reviewable.push(IntentReview::new(cert.item.clone(), spec_layer));
         } else if let Some(reject) = &cert.reject {
-            // Battery-FAILING (R-DEFER-9): flagged with its cause, NOT surfaced for
+            // Battery-failing (R-DEFER-9): flagged with its cause, not surfaced for
             // intent review. A non-certifying cert always carries a `reject`
-            // (`Certificate::rejected*` / `timeout`); a defensive `None` (an
-            // un-discharged L0 with no reject) is recorded with an explicit cause so
-            // nothing mechanically-failing is silently dropped.
+            // (`Certificate::rejected*` / `timeout`); a `None` (an un-discharged L0
+            // with no reject) is recorded with an explicit cause so nothing
+            // mechanically-failing is silently dropped.
             battery_failing.push(BatteryFailing {
                 item: cert.item.clone(),
                 cause: reject.cause.clone(),
@@ -370,7 +369,7 @@ fn project_artifact(
 
 /// Look up a `fn`'s [`Contract`] in the parsed program by name (REQ-1). Returns the
 /// contract of the matching `Item::Fn`, or `None` (a `spec fn` carries no contract,
-/// and a name with no node has none). Pure read of the parsed AST — no re-parsing,
+/// and a name with no node has none). A read of the parsed AST — no re-parsing,
 /// no re-verification (the `audit::lookup_contract` precedent).
 fn lookup_fn_contract<'a>(program: &'a Program, name: &str) -> Option<&'a Contract> {
     program.items.iter().find_map(|item| match item {
@@ -379,11 +378,11 @@ fn lookup_fn_contract<'a>(program: &'a Program, name: &str) -> Option<&'a Contra
     })
 }
 
-/// Resolve the DIRECTLY-referenced `spec fn` declarations of a contract (REQ-1,
+/// Resolve the directly-referenced `spec fn` declarations of a contract (REQ-1,
 /// OQ-3 direct-only). Walks every `req`/`ens` clause `Expr` for a callee name
 /// matching a top-level `SpecFnItem`, and projects each match to its body-free
 /// [`SpecFnDecl`]. The result is sorted + deduplicated by name (deterministic,
-/// R-CODE-5 — a clause referencing `spec_sum` twice yields one declaration). NO
+/// R-CODE-5 — a clause referencing `spec_sum` twice yields one declaration). No
 /// bodies (each `SpecFnDecl` reads only the declaration fields).
 fn referenced_spec_fns(
     contract: &Contract,
@@ -408,7 +407,7 @@ fn referenced_spec_fns(
         .collect()
 }
 
-/// Walk an `Expr` collecting every CALLEE name that is a plain path (a free
+/// Walk an `Expr` collecting every callee name that is a plain path (a free
 /// `f(args)` call or a bare `Path`), recursing into every sub-expression so a
 /// reference nested in a binary/cast/index/method-call/etc. is found. Used to
 /// resolve a contract's directly-referenced `spec fn`s. Reads only the expression
@@ -416,7 +415,7 @@ fn referenced_spec_fns(
 fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String>) {
     match expr {
         Expr::Path(segments) => {
-            // A bare path: the LAST segment is the referenced name (`spec_sum`,
+            // A bare path: the last segment is the referenced name (`spec_sum`,
             // `u32::MAX` → `MAX`). The spec-fn match below keeps only real spec fns,
             // so a non-spec-fn path (a local, a const) is harmlessly collected.
             if let Some(last) = segments.last() {
@@ -447,7 +446,7 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
         Expr::Match { scrutinee, arms } => {
             collect_callee_names(scrutinee, out);
             for arm in arms {
-                // A C10 match guard may CALL a fn (`.design/basis/11-ergonomics.md`
+                // A C10 match guard may call a fn (`.design/basis/11-ergonomics.md`
                 // REQ-3) — its callees are part of the review surface.
                 if let Some(guard) = &arm.guard {
                     collect_callee_names(guard, out);
@@ -471,8 +470,8 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
         Expr::Cast { expr, ty: _ } => collect_callee_names(expr, out),
         Expr::Ref { mutable: _, expr } => collect_callee_names(expr, out),
         // Basis Stage 1a (`.design/basis/01-adts.md`): dead-in-1a ADT
-        // expressions, but the honest collector descends into their
-        // sub-expressions so a referenced spec-fn name nested inside is found.
+        // expressions, but the collector descends into their sub-expressions
+        // so a referenced spec-fn name nested inside is found.
         Expr::StructLit { path: _, fields } => {
             for (_, value) in fields {
                 collect_callee_names(value, out);
@@ -494,7 +493,7 @@ fn collect_callee_names(expr: &Expr, out: &mut std::collections::BTreeSet<String
             }
         }
         Expr::TupleProj { receiver, .. } => collect_callee_names(receiver, out),
-        // A string literal (`.design/basis/07-strings.md` REQ-1) is a LEAF: no
+        // A string literal (`.design/basis/07-strings.md` REQ-1) is a leaf: no
         // sub-expression, no callee path — it references no spec fn (the no-op
         // leaf arm alongside `IntLit`/`BoolLit`).
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}
@@ -605,41 +604,39 @@ fn render_type(ty: &Type) -> String {
         Type::Slice(inner) => format!("[{}]", render_type(inner)),
         Type::Generic { name, arg } => format!("{}<{}>", name, render_type(arg)),
         // Basis Stage 1a (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-3): the
-        // SURFACE rendering of a user `Named` type or a `Box<T>` is its surface
-        // text — the faithful declaration form a reviewer reads (`Account`,
-        // `Box<List>`). This is the honest neutral value for an infallible
-        // surface renderer, NOT a stub. Dead-in-1a (an ADT cert is never
-        // reviewed — it dies at the validator).
+        // surface rendering of a user `Named` type or a `Box<T>` is its surface
+        // text — the declaration form a reviewer reads (`Account`,
+        // `Box<List>`). The neutral value for an infallible surface renderer.
+        // Dead-in-1a (an ADT cert is never reviewed — it dies at the validator).
         Type::Named(name) => name.clone(),
         Type::Box(inner) => format!("Box<{}>", render_type(inner)),
-        // Basis Stage 4 (`.design/basis/04-collections.md`): the SURFACE rendering
-        // of a bounded `Vec<T>` is its surface text `Vec<T>` — the faithful
-        // declaration a reviewer reads. The honest neutral value for the
-        // infallible surface renderer, NOT a stub.
+        // Basis Stage 4 (`.design/basis/04-collections.md`): the surface rendering
+        // of a bounded `Vec<T>` is its surface text `Vec<T>` — the declaration a
+        // reviewer reads. The neutral value for the infallible surface renderer.
         Type::Vec(inner) => format!("Vec<{}>", render_type(inner)),
-        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): the SURFACE
+        // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): the surface
         // rendering of the bounded owned text primitive is its surface text
-        // `String` — the faithful declaration a reviewer reads. The honest neutral
-        // value for the infallible surface renderer, NOT a stub.
+        // `String` — the declaration a reviewer reads. The neutral value for the
+        // infallible surface renderer.
         Type::String => "String".to_string(),
-        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): the SURFACE
+        // Cluster C7 (`.design/basis/09-option-result.md` REQ-1/REQ-2): the surface
         // rendering of the built-in `Option<T>` / `Result<T, E>` is its surface text
-        // — the faithful declaration a reviewer reads (`Option<u64>`,
-        // `Result<u64, ParseErr>`). The honest neutral value for the infallible
-        // surface renderer, NOT a stub.
+        // — the declaration a reviewer reads (`Option<u64>`,
+        // `Result<u64, ParseErr>`). The neutral value for the infallible
+        // surface renderer.
         Type::Option(inner) => format!("Option<{}>", render_type(inner)),
         Type::Result(ok, err) => {
             format!("Result<{}, {}>", render_type(ok), render_type(err))
         }
-        // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): the SURFACE rendering
+        // Cluster C12 (`.design/basis/13-map.md` REQ-1/REQ-5): the surface rendering
         // of the bounded verified `Map<K, V>` is its surface text `Map<K, V>` — the
-        // faithful declaration a reviewer reads. The honest neutral value for the
-        // infallible surface renderer, NOT a stub.
+        // declaration a reviewer reads. The neutral value for the
+        // infallible surface renderer.
         Type::Map(k, v) => format!("Map<{}, {}>", render_type(k), render_type(v)),
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-7): the
-        // SURFACE rendering of an n-tuple type is its surface text `(T, U, …)` —
-        // the faithful declaration a reviewer reads. The honest neutral value for
-        // the infallible surface renderer, NOT a stub.
+        // surface rendering of an n-tuple type is its surface text `(T, U, …)` —
+        // the declaration a reviewer reads. The neutral value for
+        // the infallible surface renderer.
         Type::Tuple(tys) => {
             let parts: Vec<String> = tys.iter().map(render_type).collect();
             format!("({})", parts.join(", "))
@@ -648,8 +645,8 @@ fn render_type(ty: &Type) -> String {
 }
 
 /// Attach a reviewer's collected verdicts to a [`ReviewRecord`] for `file` (REQ-4)
-/// — the additive attach. The verdicts are the EXTERNAL reviewer's (forge never
-/// fabricates `aligned`). A pure constructor: it touches NO `Certificate` (the
+/// — the additive attach. The verdicts are the external reviewer's (forge does not
+/// fabricate `aligned`). A pure constructor: it touches no `Certificate` (the
 /// cert's `oracle_subset` is structurally untouched — the verdict lives in a
 /// separate document, OQ-2 reading (a)).
 pub fn attach_verdicts(file: &str, verdicts: Vec<ReviewVerdict>) -> ReviewRecord {
@@ -659,21 +656,21 @@ pub fn attach_verdicts(file: &str, verdicts: Vec<ReviewVerdict>) -> ReviewRecord
     }
 }
 
-/// Run the EXTERNAL `--reviewer <cmd>` shell-out (REQ-7, OQ-1 — the pluggable
-/// integration). Pipes the artifact JSON to `<cmd>`'s STDIN, reads the reviewer's
-/// [`ReviewVerdict`] JSON from its STDOUT, and returns the parsed verdicts (the
-/// reviewer's judgment — forge never fabricates `aligned`, R-CODE-5).
+/// Run the external `--reviewer <cmd>` shell-out (REQ-7, OQ-1 — the pluggable
+/// integration). Pipes the artifact JSON to `<cmd>`'s stdin, reads the reviewer's
+/// [`ReviewVerdict`] JSON from its stdout, and returns the parsed verdicts (the
+/// reviewer's judgment — forge does not fabricate `aligned`, R-CODE-5).
 ///
-/// The reviewer may emit EITHER a single `ReviewVerdict` object OR a JSON array of
-/// them (a reviewer judging multiple items in one pass). Graceful failure (the
+/// The reviewer may emit either a single `ReviewVerdict` object or a JSON array of
+/// them (a reviewer judging multiple items in one pass). Failure modes (the
 /// design's "handle the cmd failing/absent gracefully — a `ForgeError`, never a
 /// panic"):
 ///
-/// - the cmd is ABSENT (`ENOENT`) → [`ForgeError::ReviewerAbsent`];
+/// - the cmd is absent (`ENOENT`) → [`ForgeError::ReviewerAbsent`];
 /// - the cmd fails to spawn / its stdin pipe breaks → [`ForgeError::ReviewerSpawn`];
-/// - the cmd exits NON-ZERO → [`ForgeError::ReviewerFailed`] (its stderr surfaced);
-/// - the cmd's stdout is MISSING / GARBAGE (not a `ReviewVerdict`) →
-///   [`ForgeError::ReviewerOutput`] (reported, never a crash and never a fabricated
+/// - the cmd exits non-zero → [`ForgeError::ReviewerFailed`] (its stderr surfaced);
+/// - the cmd's stdout is missing / garbage (not a `ReviewVerdict`) →
+///   [`ForgeError::ReviewerOutput`] (reported, not a crash and not a fabricated
 ///   verdict).
 ///
 /// `cmd` is run via the platform shell (`sh -c <cmd>`) so a multi-word command (a
@@ -752,9 +749,9 @@ pub fn run_reviewer(
     })
 }
 
-/// Parse the reviewer's stdout into a verdict list (REQ-7): accept EITHER a single
-/// [`ReviewVerdict`] object OR a JSON array of them. Returns `None` on garbage /
-/// missing output (the caller surfaces a [`ForgeError::ReviewerOutput`] — never a
+/// Parse the reviewer's stdout into a verdict list (REQ-7): accept either a single
+/// [`ReviewVerdict`] object or a JSON array of them. Returns `None` on garbage /
+/// missing output (the caller surfaces a [`ForgeError::ReviewerOutput`], not a
 /// fabricated verdict).
 fn parse_reviewer_verdicts(stdout: &str) -> Option<Vec<ReviewVerdict>> {
     let trimmed = stdout.trim();
@@ -811,14 +808,14 @@ mod tests {
         );
         assert_eq!(sum.spec_layer.fx, vec!["pure".to_string()]);
 
-        // spec_sum's DECLARATION is included; its body (the match) is NOT.
+        // spec_sum's declaration is included; its body (the match) is not.
         assert_eq!(sum.spec_layer.referenced_spec_fns.len(), 1);
         let decl = &sum.spec_layer.referenced_spec_fns[0];
         assert_eq!(decl.name, "spec_sum");
         assert_eq!(decl.signature, "spec fn spec_sum(xs: &[u32]) -> u64");
         assert_eq!(decl.dec, "xs.len()");
 
-        // NO body tokens anywhere in the serialized artifact (R-DEFER-9 / the
+        // No body tokens anywhere in the serialized artifact (R-DEFER-9 / the
         // "no bodies" rule): sum's accumulator loop + spec_sum's match arms.
         let json = serde_json::to_string(&artifact).expect("serialize");
         for body_token in ["acc", "while", "[head, ..t]", "match", "head as u64"] {
@@ -829,8 +826,8 @@ mod tests {
         }
     }
 
-    // REQ-2 (R-DEFER-9): a battery-FAILING fn (a `reject` cert) is flagged
-    // battery_failing with its cause and is NOT surfaced for intent review.
+    // REQ-2 (R-DEFER-9): a battery-failing fn (a `reject` cert) is flagged
+    // battery_failing with its cause and is not surfaced for intent review.
     #[test]
     fn rejected_fn_flagged_not_surfaced() {
         let program = parse_ok("fn f(x: u32) -> u32 req true ens true fx pure { x }");

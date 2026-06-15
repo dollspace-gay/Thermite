@@ -1,20 +1,20 @@
 //! #16 boundary-fn cert oracle (`.design/boundary/ffi-boundary.md` AC-2;
-//! `conformance/boundary/cases.json`). Drives the BUILT `forge` binary with
+//! `conformance/boundary/cases.json`). Drives the built `forge` binary with
 //! `check --json` over each case's program (written to a temp `.th` file so the
 //! read-only `conformance/` fixtures are untouched — R-CHAR-3) and asserts:
 //!
 //! - `foreign_id` → `Level::L1`, `boundary: true`, `boundary_target ==
-//!   "ext::foreign_id"`, `slag: false` — NOT L3 (no verus run on a foreign body).
-//! - `bodyless_without_boundary` → a PARSE ERROR (exit non-zero; OQ-2).
-//! - `boundary_vacuous_contract` → REJECTED `EnsIsTrivial` (the §7.1 triage still
+//!   "ext::foreign_id"`, `slag: false` — not L3 (no verus run on a foreign body).
+//! - `bodyless_without_boundary` → a parse error (exit non-zero; OQ-2).
+//! - `boundary_vacuous_contract` → rejected `EnsIsTrivial` (the §7.1 triage still
 //!   applies to a boundary fn: it exempts proving, not stating).
 //!
 //! Expected values trace to the golden `conformance/boundary/cases.json`
-//! (R-CHAR-3), never copied from forge's own output.
+//! (R-CHAR-3), rather than copied from forge's own output.
 //!
-//! A boundary fn runs NO verus; but `forge check` resolves the verus version
-//! up-front for the proof cache, so these SKIP LOUDLY if verus is absent (never
-//! panic on a missing solver), mirroring `check_conformance.rs`.
+//! A boundary fn runs no verus; but `forge check` resolves the verus version
+//! up-front for the proof cache, so these skip with a logged reason if verus is
+//! absent, rather than panic on a missing solver, mirroring `check_conformance.rs`.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -34,7 +34,7 @@ fn cases_path() -> PathBuf {
 }
 
 /// `true` iff verus can be located — mirrors `check_conformance.rs`. A boundary
-/// fn never runs verus, but `forge check` resolves the verus version up-front for
+/// fn does not run verus, but `forge check` resolves the verus version up-front for
 /// the proof cache, so a boundary-only file still needs the prover present.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
@@ -94,7 +94,7 @@ fn find_cert(certs: &[Value], item: &str) -> Value {
         .clone()
 }
 
-// AC-2: foreign_id certifies L1 + boundary, NOT L3, with the foreign target.
+// AC-2: foreign_id certifies L1 + boundary, not L3, with the foreign target.
 #[test]
 fn foreign_id_certifies_l1_boundary_not_l3() {
     if !verus_present() {
@@ -123,7 +123,7 @@ fn foreign_id_certifies_l1_boundary_not_l3() {
     let certs = value.as_array().expect("JSON array of certs");
     let cert = find_cert(certs, "foreign_id");
 
-    // Hand-derived oracle (R-CHAR-3): L1, boundary true, the foreign target, NOT L3.
+    // Hand-derived oracle (R-CHAR-3): L1, boundary true, the foreign target, not L3.
     assert_eq!(cert["level"], Value::from("L1"), "boundary fn → L1, NOT L3");
     assert_ne!(
         cert["level"],
@@ -143,7 +143,7 @@ fn foreign_id_certifies_l1_boundary_not_l3() {
     );
 }
 
-// AC reject 1: a bodyless fn WITHOUT #[boundary] is a PARSE ERROR (OQ-2).
+// AC reject 1: a bodyless fn without #[boundary] is a parse error (OQ-2).
 #[test]
 fn bodyless_without_boundary_is_a_parse_error() {
     if !verus_present() {
@@ -171,8 +171,8 @@ fn bodyless_without_boundary_is_a_parse_error() {
     );
 }
 
-// AC reject 2: a vacuous contract on a boundary fn is still REJECTED by §7.1
-// triage (boundary exempts PROVING, not STATING).
+// AC reject 2: a vacuous contract on a boundary fn is still rejected by §7.1
+// triage (boundary exempts proving, not stating).
 #[test]
 fn boundary_vacuous_contract_is_rejected() {
     if !verus_present() {
@@ -209,7 +209,7 @@ fn boundary_vacuous_contract_is_rejected() {
         Value::from(expect_cause),
         "the §7.1 triage cause is the oracle's `EnsIsTrivial`"
     );
-    // It did NOT slip through as a certified boundary fn.
+    // It did not slip through as a certified boundary fn.
     assert_ne!(
         cert["boundary"],
         Value::from(true),

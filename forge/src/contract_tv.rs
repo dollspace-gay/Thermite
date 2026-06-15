@@ -1,37 +1,37 @@
-//! `forge/src/contract_tv.rs` — the CONTRACT-FAITHFULNESS TRANSLATION-VALIDATION
+//! `forge/src/contract_tv.rs` — the contract-faithfulness translation-validation
 //! check phase (`.design/verified/contract-tv.md` REQ-5; epic crosslink #139 /
 //! blocker #144).
 //!
-//! `forge check` certifies that the EMITTED Verus contract holds for the
-//! implementation; it does NOT certify that the emitted contract MEANS THE SAME
-//! THING as the source contract. This phase closes that gap for the contract
+//! `forge check` certifies that the emitted Verus contract holds for the
+//! implementation; it does not certify that the emitted contract means the same
+//! thing as the source contract. This phase closes that gap for the contract
 //! sublanguage: for each `req`/`ens`/loop-`inv`/`dec` clause of a checked item it
 //! computes
 //!
 //!   `P_production = thermite_lower::lower_contract_expr(clause.expr, …)`   (the artifact under test)
-//!   `P_reference  = thermite_tv::ref_contract_pred(clause.expr, …)`        (the INDEPENDENT reference)
+//!   `P_reference  = thermite_tv::ref_contract_pred(clause.expr, …)`        (the independent reference)
 //!
 //! builds the per-clause Z3 equivalence obligation
 //! `assert((P_production) <==> (P_reference))` via
 //! `thermite_tv::equivalence_obligation`, and discharges it through `verus`. A
-//! VERIFIED obligation ⟺ the lowering of that clause is FAITHFUL; a COUNTEREXAMPLE
-//! ⟺ a real lowering-fidelity infidelity (the #122 cast-paren / #127 byte-view
-//! classes the vacuity/mutation battery + verus-on-emitted structurally cannot
-//! see). It is exposed as `forge tv <file.th>` — a SEPARATE opt-in deeper audit,
-//! NOT folded into `forge check` (which stays fast).
+//! verified obligation ⟺ the lowering of that clause is faithful; a counterexample
+//! ⟺ a lowering-fidelity infidelity (the #122 cast-paren / #127 byte-view
+//! classes the vacuity/mutation battery + verus-on-emitted cannot
+//! see). It is exposed as `forge tv <file.th>`, a separate opt-in deeper audit
+//! kept out of `forge check`, which stays fast.
 //!
-//! `thermite-tv` stays INDEPENDENT of `thermite-lower` (the N-version boundary,
-//! AC-6): this forge module is the ONLY place the two encoders meet. forge depends
-//! on both — that is the correct home for the comparison.
+//! `thermite-tv` stays independent of `thermite-lower` (the N-version boundary,
+//! AC-6): this forge module is the one place the two encoders meet. forge depends
+//! on both, the correct home for the comparison.
 //!
 //! ## Two runs (both surfaced)
 //!
-//! - **Corpus run** ([`tv_file`]): over the REAL clauses of a `.th` program — the
+//! - Corpus run ([`tv_file`]): over the real clauses of a `.th` program — the
 //!   no-false-positive AC (`conformance/sum.th` etc.). The faithful production
-//!   lowering must NOT trip TV.
-//! - **Off-corpus run** ([`run_generated`]): over `thermite_tv::generate_clauses`
-//!   — the corpus-bound escape (REQ-3). The lowerer is faithful, so ALL should
-//!   verify; ANY counterexample is a REAL off-corpus infidelity finding.
+//!   lowering does not trip TV.
+//! - Off-corpus run ([`run_generated`]): over `thermite_tv::generate_clauses`,
+//!   the corpus-bound escape (REQ-3). The lowerer is faithful, so all should
+//!   verify; any counterexample is an off-corpus infidelity finding.
 //!
 //! ## REQ status
 //!
@@ -49,14 +49,14 @@ use thermite_tv::obligation::{equivalence_obligation, ObligationFrame, ParamDecl
 use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVER_SEED};
 use crate::cli::ForgeError;
 
-/// One clause's TV verdict (REQ-5). `Faithful` ⟺ the obligation VERIFIED (the
+/// One clause's TV verdict (REQ-5). `Faithful` ⟺ the obligation verified (the
 /// lowering of this clause means the same as the independent reference);
-/// `Divergent` ⟺ verus found a counterexample (a real lowering infidelity, the
-/// payoff — surfaced loudly); `Skipped` ⟺ the clause is outside the framed
-/// sublanguage this phase covers (e.g. a `Map`/`Option`/struct-typed free var the
-/// frame builder cannot type) — reported HONESTLY as not-checked, NEVER as a
-/// false faithful (R-HONEST-3); `Unverifiable` ⟺ verus was absent (the audit
-/// could not run — surfaced, never a silent pass, R-CODE-4).
+/// `Divergent` ⟺ verus found a counterexample (a lowering infidelity);
+/// `Skipped` ⟺ the clause is outside the framed sublanguage this phase covers
+/// (e.g. a `Map`/`Option`/struct-typed free var the frame builder cannot type),
+/// reported as not-checked rather than as a false faithful (R-HONEST-3);
+/// `Unverifiable` ⟺ verus was absent (the audit could not run), surfaced rather
+/// than passing silently (R-CODE-4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClauseVerdict {
     Faithful,
@@ -109,18 +109,18 @@ pub struct TvCounts {
 }
 
 impl TvCounts {
-    /// The total clauses CHECKED (faithful + divergent — the ones that reached
+    /// The total clauses checked (faithful + divergent — the ones that reached
     /// verus). Skipped/unverifiable did not produce a faithfulness verdict.
     pub fn checked(&self) -> usize {
         self.faithful + self.divergent
     }
 }
 
-/// Run the contract-TV CORPUS phase over a `.th` file (REQ-5): for each fn/spec-fn
+/// Run the contract-TV corpus phase over a `.th` file (REQ-5): for each fn/spec-fn
 /// item, for each contract clause, build + discharge the per-clause equivalence
-/// obligation and classify it. The faithful production lowering must yield ALL
-/// `Faithful` (0 `Divergent`) — the no-false-positive AC. A `Divergent` is a real
-/// finding (reported loudly, never suppressed).
+/// obligation and classify it. The faithful production lowering yields all
+/// `Faithful` (0 `Divergent`) — the no-false-positive AC. A `Divergent` is a
+/// reported finding.
 pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeError> {
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
         path: path.display().to_string(),
@@ -131,22 +131,22 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
         return Err(ForgeError::Parse(parsed.errors));
     }
 
-    // The spec-fn / combinator definitions in scope for EVERY clause's obligation:
+    // The spec-fn / combinator definitions in scope for every clause's obligation:
     // lower the whole program's spec-fn defs (+ auto-emitted combinator defs) once
     // and reuse them as the frame's spec_defs. The production lowerer is the source
-    // of the spec-fn def TEXT (the artifact whose contract semantics the obligation
-    // references); the clause-level fidelity is what TV checks — a def-text bug
-    // surfaces as a clause counterexample since BOTH sides reference the SAME def.
+    // of the spec-fn def text (the artifact whose contract semantics the obligation
+    // references); the clause-level fidelity is what TV checks. A def-text bug
+    // surfaces as a clause counterexample since both sides reference the same def.
     let preamble = program_spec_preamble(&parsed.program)?;
 
     // The program-wide user-`spec fn` param-type map (#228, ref #225/#227): the
-    // SAME map `thermite_lower::lower` threads into the signature path, derived
-    // here from the SAME `spec_fn_param_type_map` source of truth (R-CHAR-3, never
+    // same map `thermite_lower::lower` threads into the signature path, derived
+    // here from the same `spec_fn_param_type_map` source of truth (R-CHAR-3, never
     // a forge-local re-derivation). Threaded into `lower_contract_expr` so the TV
-    // production column narrows a spec-call arithmetic arg to the callee's DECLARED
-    // param type (`as u32`/`as usize`) EXACTLY as `lower_fn_signature` does
+    // production column narrows a spec-call arithmetic arg to the callee's declared
+    // param type (`as u32`/`as usize`) as `lower_fn_signature` does
     // (contract-tv.md REQ-2 "verbatim"). Without it the column fell back to the
-    // hardcoded `as u64` and TV checked a NON-production predicate.
+    // hardcoded `as u64` and TV checked a non-production predicate.
     let pt_owned = thermite_lower::spec_fn_param_type_map(&parsed.program);
     let spec_fn_param_types: Vec<(&str, &[PrimType])> =
         pt_owned.iter().map(|(n, ps)| (*n, ps.as_slice())).collect();
@@ -162,7 +162,7 @@ pub fn tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<TvReport, ForgeErr
                 rlimit,
                 &mut report,
             ),
-            // A `spec fn` carries only a `dec` measure (no req/ens) — its BODY's
+            // A `spec fn` carries only a `dec` measure (no req/ens) — its body's
             // fidelity is body-TV (epic #139 step 2, out of scope here).
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
         }
@@ -188,18 +188,18 @@ fn tv_fn(
     report: &mut TvReport,
 ) {
     // The fn's `nat`-returning spec fns (drive the `as nat` coercion the signature
-    // path emits). Slice params are bound VIEW-CONSISTENTLY as `&[elem]` (#149) and
+    // path emits). Slice params are bound view-consistently as `&[elem]` (#149) and
     // threaded as production's `slices` (per clause, in `tv_clause`), so production
-    // emits `xs@` for EVERY slice use (bare `spec_sum(xs@)` AND indexed
-    // `xs@.subrange(..)`) — MIRRORING the real fn signature path — and the reference
+    // emits `xs@` for every slice use (bare `spec_sum(xs@)` and indexed
+    // `xs@.subrange(..)`), mirroring the real fn signature path, and the reference
     // emits the matching `xs@`; both columns typecheck under the one binding.
     let nat_fns = nat_fn_names(f);
 
     // Build the base frame from the params (+ `result` when it is framable). A
-    // param of an UNFRAMED type (Map/Option/Result/struct/enum) makes the whole
-    // signature unframable → every clause is `Skipped` (honest); but an unframable
-    // RETURN type only drops the `result` param (a `req`/`inv`/`dec` clause that
-    // does NOT mention `result` still frames + checks — e.g. binary_search's
+    // param of an unframed type (Map/Option/Result/struct/enum) makes the whole
+    // signature unframable → every clause is `Skipped`; an unframable return type
+    // only drops the `result` param (a `req`/`inv`/`dec` clause that does not
+    // mention `result` still frames + checks — e.g. binary_search's
     // `sorted(haystack)` req + its `forall_below`/`forall_from` loop invariants).
     let Some(base_frame) = signature_frame(f, preamble) else {
         report.clauses.push(ClauseResult {
@@ -240,11 +240,11 @@ fn tv_fn(
             report,
         );
     }
-    // loop inv / dec (the body's loops). A loop clause references the fn's LOCAL
-    // `let` bindings (`acc`, `i`) — not just the params — so the loop frame ALSO
+    // loop inv / dec (the body's loops). A loop clause references the fn's local
+    // `let` bindings (`acc`, `i`) as well as the params, so the loop frame also
     // binds every framed local (its declared `let` type) so an `inv i <= xs.len()`
     // has `i` in scope. A local of an unframed type is dropped (the clause that
-    // needs it is then `Skipped`, honest).
+    // needs it is then `Skipped`).
     if let Some(body) = &f.body {
         let locals = collect_locals(body);
         let mut loop_frame = base_frame.clone();
@@ -322,7 +322,7 @@ fn collect_locals_into(block: &thermite_syntax::ast::Block, out: &mut Vec<(Strin
 
 /// Walk a block's statements for loop nodes, TV-ing each loop's `inv`s + `dec`
 /// (REQ-5 — the `inv`/`dec` clause families). Recurses into nested blocks (if/
-/// loop bodies) so EVERY loop is covered (the whole class — `goal.md`).
+/// loop bodies) so every loop is covered (the whole class — `goal.md`).
 #[allow(
     clippy::too_many_arguments,
     reason = "threads the fn + frame + verus config + the loop counter through the \
@@ -432,17 +432,17 @@ fn tv_clause(
     rlimit: f64,
     report: &mut TvReport,
 ) {
-    // P_production — the REAL production lowering of this clause. The frame's
+    // P_production — the production lowering of this clause. The frame's
     // slice params (bound `&[elem]`, #149) are passed as production's `slices` so a
-    // slice use takes its `@`-view (`spec_sum(xs@)` / `xs@.subrange(..)`) — MIRRORING
-    // the real fn signature path (`tests/golden/lower/sum.verus.rs`) — and typechecks
+    // slice use takes its `@`-view (`spec_sum(xs@)` / `xs@.subrange(..)`), mirroring
+    // the real fn signature path (`tests/golden/lower/sum.verus.rs`), and typechecks
     // against the `&[elem]` binding. nat_fns drive the `as nat` coercion.
     let slice_params = slice_param_names(base_frame);
     let slices: Vec<&str> = slice_params.iter().map(String::as_str).collect();
     // The frame's `String` params (bound `&TString`, #150 gap #2) are threaded as
     // production's `strings` so a `String`-receiver `.len()`/`.byte_at(i)` in the
-    // clause rewrites to the wrapper SPEC fns (`s.spec_len()`/`s.spec_byte_at(i as
-    // int)`) — production's `recv_is_string` arm — MATCHING the reference's
+    // clause rewrites to the wrapper spec fns (`s.spec_len()`/`s.spec_byte_at(i as
+    // int)`) — production's `recv_is_string` arm — matching the reference's
     // `string_bound` dispatch. Without it production emits the bare exec `s.len()`
     // (`u64`) vs the reference's `s.spec_len()` (`nat`) → a type-level Unverifiable.
     let strings: Vec<&str> = base_frame
@@ -471,14 +471,14 @@ fn tv_clause(
         }
     };
 
-    // The frame for THIS clause: the signature params + any `old(_)` params it uses.
+    // The frame for this clause: the signature params + any `old(_)` params it uses.
     let mut frame = base_frame.clone();
     for (name, ty_str) in old_params(&clause.expr, f) {
         frame.params.push(ParamDecl::new(name, ty_str));
     }
 
     // Build the obligation (the reference encoding is computed inside, independent
-    // of `p_production`). An encoding error → Skipped (honest, not a false faithful).
+    // of `p_production`). An encoding error → Skipped, not a faithful verdict.
     let program = match equivalence_obligation(&clause.expr, &p_production, &frame) {
         Ok(prog) => prog,
         Err(e) => {
@@ -499,18 +499,18 @@ fn tv_clause(
     });
 }
 
-/// Run the OFF-CORPUS generated TV run (REQ-3 / REQ-5; the corpus-bound escape).
+/// Run the off-corpus generated TV run (REQ-3 / REQ-5; the corpus-bound escape).
 /// Generates `n` clauses deterministically from `seed` (`thermite_tv::generate_clauses`),
 /// lowers each via `thermite_lower::lower_contract_expr`, builds + discharges the
-/// per-clause obligation against the FIXED generator-vocabulary frame, and reports.
-/// The lowerer is faithful, so ALL should verify; ANY `Divergent` is a real
-/// off-corpus infidelity finding (surfaced loudly).
+/// per-clause obligation against the fixed generator-vocabulary frame, and reports.
+/// The lowerer is faithful, so all should verify; any `Divergent` is an off-corpus
+/// infidelity finding.
 pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, ForgeError> {
-    // Parse the synthetic vocabulary program ONCE; derive BOTH the preamble and the
+    // Parse the synthetic vocabulary program once; derive both the preamble and the
     // production-column param-type map (#228) from it (R-CHAR-3 — one source). The
     // generator's only user spec fn is `spec_sum` (a slice param → no-cast
     // placeholder), so the map is byte-stable for the generated vocabulary; threading
-    // it keeps the off-corpus column on the SAME `lower_contract_expr` contract as the
+    // it keeps the off-corpus column on the same `lower_contract_expr` contract as the
     // corpus column rather than two divergent call shapes.
     let program = generated_program()?;
     let preamble = generated_preamble(&program)?;
@@ -523,9 +523,9 @@ pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, Forge
     let nat_fns = ["spec_sum", "count_where"];
 
     // The off-corpus String byte-view receiver name (#150 gap #2). A generated
-    // `t.byte_at(i)`/`t.len()` clause is now CHECKED (not Skipped): `t` is threaded
+    // `t.byte_at(i)`/`t.len()` clause is now checked (not Skipped): `t` is threaded
     // as production's `strings`, so production's `recv_is_string` rewrite emits
-    // `t.spec_byte_at(i as int)`/`t.spec_len()` — MATCHING the reference's
+    // `t.spec_byte_at(i as int)`/`t.spec_len()` — matching the reference's
     // `string_bound` dispatch (the frame names `t` in `string_params`). The TString
     // wrapper is in the preamble (`generated_preamble`'s `touch_string` fn).
     let strings = ["t"];
@@ -574,7 +574,7 @@ pub fn run_generated(seed: u64, n: usize, rlimit: f64) -> Result<TvReport, Forge
 
 // ---- frame construction -----------------------------------------------------
 
-/// The FIXED obligation frame for the off-corpus generator vocabulary (matches
+/// The fixed obligation frame for the off-corpus generator vocabulary (matches
 /// `thermite_tv::gen`'s documented world): `xs`/`ys: Seq<u32>` (seq-bound),
 /// `s: Seq<u8>` (seq-bound byte-view), `n`/`m`/`k: int`, `result`/`old_acc: u64`
 /// (nat-coerced), with the spec_sum + combinator defs in scope.
@@ -592,14 +592,14 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
             ParamDecl::new("old_acc", "u64"),
             // The String byte-view receiver (#150 gap #2): `t: &TString`, so the
             // generator's `t.byte_at(i)`/`t.len()` clauses dispatch to the wrapper
-            // SPEC fns on BOTH columns (production's `recv_is_string` rewrite + the
+            // spec fns on both columns (production's `recv_is_string` rewrite + the
             // reference's `string_bound` dispatch) — the off-corpus String-byteview
             // coverage the corpus alone does not give.
             ParamDecl::new("t", "&TString"),
         ],
-        // No enclosing `req`: a generated clause is equivalence-checked for ALL
+        // No enclosing `req`: a generated clause is equivalence-checked for all
         // inputs (the strongest faithfulness check). A `Seq` index in spec position
-        // is total in Verus (an OOB index is a well-defined unspecified value, NOT
+        // is total in Verus (an OOB index is a well-defined unspecified value, not
         // an error), so both sides agree on it without a bound.
         req: None,
         seq_params: vec!["xs".to_string(), "ys".to_string(), "s".to_string()],
@@ -610,10 +610,10 @@ fn generated_frame(preamble: &[String]) -> ObligationFrame {
 }
 
 /// The synthetic source whose lowering materializes the off-corpus preamble +
-/// whose `spec fn` set IS the generator's user-spec-fn vocabulary (`spec_sum`).
-/// Lifted to a constant so [`run_generated`] can parse it ONCE and derive BOTH the
+/// whose `spec fn` set is the generator's user-spec-fn vocabulary (`spec_sum`).
+/// Lifted to a constant so [`run_generated`] can parse it once and derive both the
 /// preamble (via [`program_spec_preamble`]) and the `spec_fn_param_type_map` (the
-/// #228 production-column narrowing input) from the SAME program (R-CHAR-3 — one
+/// #228 production-column narrowing input) from the same program (R-CHAR-3 — one
 /// source of truth). The spec_sum shape mirrors `conformance/sum.th` (the golden).
 const GENERATED_PREAMBLE_SRC: &str = "\
 spec fn spec_sum(xs: &[u32]) -> u64
@@ -675,7 +675,7 @@ fn generated_preamble(program: &thermite_syntax::ast::Program) -> Result<Vec<Str
 
 /// Lower a program's spec-fn + combinator definitions and return them as the
 /// frame's `spec_defs` (the `spec fn` / `proof fn` / wrapper definition blocks of
-/// the lowered `verus! { … }`, with the `use`/`verus!`/`fn main` frame AND the exec
+/// the lowered `verus! { … }`, with the `use`/`verus!`/`fn main` frame and the exec
 /// `fn`s stripped — the obligation supplies its own frame + has no exec fns).
 fn program_spec_preamble(
     program: &thermite_syntax::ast::Program,
@@ -685,7 +685,7 @@ fn program_spec_preamble(
 }
 
 /// Extract the `spec fn` / `proof fn` / `struct` / `impl` definition blocks from a
-/// lowered Verus file, dropping the `use`/`verus! {`/`}`/`fn main()` frame AND the
+/// lowered Verus file, dropping the `use`/`verus! {`/`}`/`fn main()` frame and the
 /// exec `fn` items. A definition block runs from its header to the brace-balanced
 /// close (so a nested `impl { fn … {} }` is captured whole).
 fn extract_spec_defs(lowered: &str) -> Vec<String> {
@@ -741,12 +741,12 @@ fn capture_block(lines: &[&str], start: usize) -> (String, usize) {
 /// per param (with its Verus-spec type), `result` when the return is non-unit, the
 /// `Seq`-bound + `nat`-coerced sets, and the spec-fn/combinator preamble. Returns
 /// `None` if any param/return is outside the framed sublanguage (Map/Option/Result/
-/// struct/enum) — the clause is then reported `Skipped` (honest, not a false pass).
+/// struct/enum) — the clause is then reported `Skipped`.
 fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     let mut params = Vec::new();
-    // No signature SLICE param is seq-bound (#149): slices are bound `&[elem]` and
-    // viewed `@` on BOTH columns. `seq_params` stays empty here; a loop frame adds
-    // its OWN `Seq<_>`-bound locals (the loop-local seq-bound identity).
+    // No signature slice param is seq-bound (#149): slices are bound `&[elem]` and
+    // viewed `@` on both columns. `seq_params` stays empty here; a loop frame adds
+    // its own `Seq<_>`-bound locals (the loop-local seq-bound identity).
     let seq_params = Vec::new();
     let mut nat_coerce_params = Vec::new();
     let mut string_params = Vec::new();
@@ -755,21 +755,21 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     // signature path weave typechecks: a `Map`/struct param weaves `well_formed()`
     // (`is_map_param_ty` in production), so a `m.spec_contains_key(k)` over the
     // wrapper has the capacity/key-uniqueness invariant in scope (#150 gap #3). The
-    // reference + production agree on the predicate; the `requires` keeps both
+    // reference and production agree on the predicate; the `requires` keeps both
     // columns provable rather than spuriously failing on a missing invariant.
     let mut reqs: Vec<String> = Vec::new();
 
     for p in &f.params {
         let spec_ty = spec_type_of(&p.ty)?;
         match &spec_ty {
-            // A slice param is bound VIEW-CONSISTENTLY as `&[elem]` (#149) — NOT
-            // seq-bound. Production emits `xs@` for every slice use (bare AND
-            // indexed); the reference (param NOT in `seq_params`) emits the matching
+            // A slice param is bound view-consistently as `&[elem]` (#149), not
+            // seq-bound. Production emits `xs@` for every slice use (bare and
+            // indexed); the reference (param not in `seq_params`) emits the matching
             // `xs@`, so both columns typecheck under the `&[elem]` binding and Z3
             // proves them equivalent. (Under the old `Seq` binding the indexed
             // `xs@.subrange(..)` was a type error → Unverifiable.)
             SpecType::Seq(_) => {}
-            // A `String` param is bound `&TString` (#150 gap #2) + named in
+            // A `String` param is bound `&TString` (#150 gap #2) and named in
             // `string_params` so the reference dispatches its byte-view to the
             // wrapper spec fns (matching production's `recv_is_string` rewrite).
             SpecType::Strng => string_params.push(p.name.clone()),
@@ -777,8 +777,8 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
             SpecType::Bool => {}
             // A `Map` param (#150 gap #3) is bound as the `TMap` wrapper; production
             // weaves `well_formed()` for it (`is_map_param_ty`), so the obligation
-            // threads the SAME `requires` to keep the spec_contains_key membership
-            // provable. The `spec_contains_key` rewrite is RE-implemented in the
+            // threads the same `requires` to keep the spec_contains_key membership
+            // provable. The `spec_contains_key` rewrite is re-implemented in the
             // reference encoder (the wrapper spec fn is the shared frozen ground
             // truth, in the preamble).
             SpecType::Map(_, _) => {
@@ -795,18 +795,18 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
         ));
     }
 
-    // `result` — bound when the return is non-unit AND framable. As of #150 the
-    // framable RETURN set INCLUDES `Option`/`Result`/`Map` (the construct classes
+    // `result` — bound when the return is non-unit and framable. As of #150 the
+    // framable return set includes `Option`/`Result`/`Map` (the construct classes
     // this iteration covers): an `ens match result { … }` (binary_search), an `ens
     // result is None` (map_kv `lookup_absent`), and an `ens result.contains_key(k)`
-    // (map_kv `build_one`) now BIND `result` and discharge, rather than dropping it
+    // (map_kv `build_one`) now bind `result` and discharge, rather than dropping it
     // (Skipped). A struct/enum return still drops `result` (body-TV scope).
     if !matches!(f.ret, Type::Unit) {
         if let Some(ret_ty) = spec_type_of(&f.ret) {
             match &ret_ty {
                 SpecType::BoundedInt(_) => nat_coerce_params.push("result".to_string()),
-                // A slice `result` is bound VIEW-CONSISTENTLY as `&[elem]` (#149,
-                // the same rule as a slice param) — NOT seq-bound; both columns
+                // A slice `result` is bound view-consistently as `&[elem]` (#149,
+                // the same rule as a slice param), not seq-bound; both columns
                 // emit `result@`.
                 SpecType::Seq(_) => {}
                 SpecType::Strng => string_params.push("result".to_string()),
@@ -843,11 +843,11 @@ fn signature_frame(f: &FnItem, preamble: &[String]) -> Option<ObligationFrame> {
     })
 }
 
-/// The frame params bound VIEW-CONSISTENTLY as a slice `&[elem]` (#149) — the
+/// The frame params bound view-consistently as a slice `&[elem]` (#149) — the
 /// production `slices` set for this clause, so a slice use takes its `@`-view
 /// (matching the `&[elem]` binding). Keyed on the `&[` binding spelling
-/// `signature_frame` emits (NOT a name list), so it stays in lockstep with the
-/// param binding. A `Seq<_>`-bound LOCAL (a loop-frame seq local) is NOT a slice
+/// `signature_frame` emits (not a name list), so it stays in lockstep with the
+/// param binding. A `Seq<_>`-bound local (a loop-frame seq local) is not a slice
 /// param and is excluded (it keeps the seq-bound identity `@`-view).
 fn slice_param_names(frame: &ObligationFrame) -> Vec<String> {
     frame
@@ -860,7 +860,7 @@ fn slice_param_names(frame: &ObligationFrame) -> Vec<String> {
 
 /// The spec-context type of a framed param/return. A `&[T]`/`Vec<T>`/`String`
 /// becomes a `Seq` in spec position (the slice→`@` model); a bounded prim becomes
-/// `BoundedInt`. Richer types (Map/Option/Result/struct/enum) are NOT framed (this
+/// `BoundedInt`. Richer types (Map/Option/Result/struct/enum) are not framed (this
 /// is contract-TV's scalar/slice/String scope).
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum SpecType {
@@ -868,19 +868,19 @@ enum SpecType {
     Seq(String),
     /// A `String`/`&String` — bound as the `TString` wrapper (#150 gap #2), whose
     /// spec-position byte-view (`.len()`/`.byte_at(i)`) dispatches to the wrapper
-    /// SPEC fns (`.spec_len()`/`.spec_byte_at(i as int)`), exactly as production's
-    /// `recv_is_string` rewrite. NOT a `Seq<u8>` index (the wrapper spec fns take
-    /// `&self`); the obligation frame names it in `string_params`.
+    /// spec fns (`.spec_len()`/`.spec_byte_at(i as int)`), as production's
+    /// `recv_is_string` rewrite does. Not a `Seq<u8>` index (the wrapper spec fns
+    /// take `&self`); the obligation frame names it in `string_params`.
     Strng,
-    /// A bounded integer typed at its DECLARED width (`u32`/`u64`/`usize`) — the
+    /// A bounded integer typed at its declared width (`u32`/`u64`/`usize`) — the
     /// String is the Verus prim spelling of the declared param type (#228, ref
-    /// #225/#227). Binding the obligation param at its TRUE width (not a blanket
+    /// #225/#227). Binding the obligation param at its true width (not a blanket
     /// `u64`) is the soundness fix: Z3 then reasons over the actual domain, so a
-    /// production `s_dec((n - 1) as u32)` truncation is IDENTITY on a `u32`-typed `n`
+    /// production `s_dec((n - 1) as u32)` truncation is identity on a `u32`-typed `n`
     /// (its value is already < 2^32) — the equivalence to the reference's bare arg is
-    /// provable WHERE the clause's guards/req bound the subtraction, and HONESTLY
-    /// unprovable (an unguarded underflow witness) where they do not. Under the prior
-    /// blanket-`u64` framing the `as u32` truncation could LOSE bits Z3 saw as
+    /// provable where the clause's guards/req bound the subtraction, and unprovable
+    /// (an unguarded underflow witness) where they do not. Under the prior
+    /// blanket-`u64` framing the `as u32` truncation could lose bits Z3 saw as
     /// significant, so a faithful clause read as a false divergence / a wrong cast
     /// read as faithful. `as nat`-coercible against a `nat`-valued comparison.
     BoundedInt(String),
@@ -889,7 +889,7 @@ enum SpecType {
     /// A `Map<K, V>` bound as the `TMap` wrapper (#150 gap #3). The string is the
     /// Verus wrapper spelling (`TMapU64U64`). Production weaves `well_formed()` for
     /// a `Map` param/result, so the obligation threads it as a `requires`; the
-    /// `contains_key`→`spec_contains_key` spec rewrite is RE-implemented in the
+    /// `contains_key`→`spec_contains_key` spec rewrite is re-implemented in the
     /// reference encoder (the wrapper spec fns are the shared frozen ground truth,
     /// in the preamble).
     Map(String, String),
@@ -908,8 +908,8 @@ impl SpecType {
         match self {
             SpecType::Seq(elem) => format!("Seq<{elem}>"),
             SpecType::Strng => "TString".to_string(),
-            // The DECLARED width (#228) — `u32`/`u64`/`usize` — so the obligation
-            // param is typed at its true domain, NOT a blanket `u64`.
+            // The declared width (#228) — `u32`/`u64`/`usize` — so the obligation
+            // param is typed at its true domain, not a blanket `u64`.
             SpecType::BoundedInt(width) => width.clone(),
             SpecType::Bool => "bool".to_string(),
             // The `Map` wrapper spelling (`TMapU64U64`); the inner `(K, V)` pair is
@@ -931,23 +931,23 @@ impl SpecType {
         }
     }
 
-    /// The VIEW-CONSISTENT obligation-signature spelling for a SLICE-typed
-    /// parameter (#149). A slice param is bound as the SLICE type `&[elem]` (NOT a
-    /// bare `Seq<elem>`) so production's UNCONDITIONAL `@`-view — emitted by
-    /// `lower_index` for an indexed/ranged use (`xs@.subrange(0, i as int)`) AND by
+    /// The view-consistent obligation-signature spelling for a slice-typed
+    /// parameter (#149). A slice param is bound as the slice type `&[elem]` (not a
+    /// bare `Seq<elem>`) so production's unconditional `@`-view — emitted by
+    /// `lower_index` for an indexed/ranged use (`xs@.subrange(0, i as int)`) and by
     /// the signature path for a bare combinator/spec-fn arg (`spec_sum(xs@)`) —
     /// typechecks: `xs@` is the `Seq<elem>` view of `xs: &[elem]`. Under a bare
     /// `Seq<elem>` binding, `xs@` is a type error (`Seq` has no `view`), so the
     /// indexed clause `acc == spec_sum(&xs[..i])` could not discharge (Unverifiable).
-    /// This MIRRORS the real fn lowering (`tests/golden/lower/sum.verus.rs`:
+    /// This mirrors the real fn lowering (`tests/golden/lower/sum.verus.rs`:
     /// `fn sum(xs: &[u32])` emits `xs@` everywhere); the reference encoder then
-    /// emits the matching `xs@` form (the param is NOT seq-bound), so BOTH columns
-    /// typecheck under ONE binding and Z3 proves them equivalent.
+    /// emits the matching `xs@` form (the param is not seq-bound), so both columns
+    /// typecheck under one binding and Z3 proves them equivalent.
     fn verus_param_spelling(&self) -> String {
         match self {
             SpecType::Seq(elem) => format!("&[{elem}]"),
-            // A `String` param is bound as a `&TString` borrow (#150 gap #2) —
-            // MIRRORING production's `&String`-param lowering (`&TString`), so the
+            // A `String` param is bound as a `&TString` borrow (#150 gap #2),
+            // mirroring production's `&String`-param lowering (`&TString`), so the
             // spec-position `s.spec_len()`/`s.spec_byte_at(i)` calls resolve on the
             // wrapper. The `TString` wrapper struct + its spec fns are in scope (the
             // frame preamble lowers the whole program, which emits the wrapper).
@@ -961,7 +961,7 @@ impl SpecType {
 /// outside contract-TV's framed sublanguage.
 fn spec_type_of(ty: &Type) -> Option<SpecType> {
     match ty {
-        // Type the bounded int at its DECLARED width (#228) — the obligation param
+        // Type the bounded int at its declared width (#228) — the obligation param
         // then carries the true domain, so the production `as u32`/`as usize`
         // truncation is identity within that domain (the soundness fix).
         Type::Prim(PrimType::U32) => Some(SpecType::BoundedInt("u32".to_string())),
@@ -972,13 +972,13 @@ fn spec_type_of(ty: &Type) -> Option<SpecType> {
         Type::Slice(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
         Type::Vec(inner) => Some(SpecType::Seq(elem_spelling(inner)?)),
         // A `String`/`&String` is bound as the `TString` wrapper (#150 gap #2):
-        // its spec-position byte-view dispatches to the wrapper SPEC fns
-        // (`.spec_len()`/`.spec_byte_at(i as int)`), MATCHING production's
-        // `recv_is_string` rewrite — NOT a `Seq<u8>` index (which would not
+        // its spec-position byte-view dispatches to the wrapper spec fns
+        // (`.spec_len()`/`.spec_byte_at(i as int)`), matching production's
+        // `recv_is_string` rewrite — not a `Seq<u8>` index (which would not
         // typecheck against production's `&TString` receiver).
         Type::String => Some(SpecType::Strng),
         // The #150 gap #3 construct classes: `Option`/`Result`/`Map` params +
-        // result are now FRAMED (the inner types are themselves framable). A
+        // result are now framed (the inner types are themselves framable). A
         // `match`/`is` over an `Option`/`Result` result (binary_search ens,
         // lookup_absent ens) and a `Map`-method spec rewrite (build_one/has_key)
         // discharge against the native Verus type / the `TMap` wrapper.
@@ -1011,7 +1011,7 @@ fn elem_spelling(ty: &Type) -> Option<String> {
 /// spells itself; a `String` spells the `TString` wrapper; a user-named enum
 /// (`ParseErr`) spells its name (its `enum` def is in the preamble). Returns `None`
 /// for a type contract-TV does not frame (a nested `Map`/struct/slice arg), so the
-/// whole signature falls back to honest Skip rather than mis-spelling it.
+/// whole signature falls back to Skip rather than mis-spelling it.
 fn verus_type_spelling(ty: &Type) -> Option<String> {
     match ty {
         Type::Prim(PrimType::U32) => Some("u32".to_string()),
@@ -1049,7 +1049,7 @@ fn nat_fn_names(_f: &FnItem) -> Vec<&'static str> {
 /// The `old(<name>)` references in a clause, paired with the matching fn param's
 /// Verus-spec type (REQ-2 — `old(acc)` is bound as a distinct `old_acc` param).
 /// v0.1 corpus ensures are over `result` + params (no `old(_)`), so this is
-/// typically empty; it is here so a clause that DOES use `old(_)` frames correctly.
+/// typically empty; it is here so a clause that does use `old(_)` frames correctly.
 fn old_params(expr: &Expr, f: &FnItem) -> Vec<(String, String)> {
     let mut found = Vec::new();
     collect_old(expr, f, &mut found);
@@ -1105,11 +1105,11 @@ fn collect_old(expr: &Expr, f: &FnItem, out: &mut Vec<(String, String)>) {
 
 // ---- verus discharge --------------------------------------------------------
 
-/// Discharge one obligation PROGRAM through `verus`, classifying the verdict (the
-/// REQ-2 discharge path — VERIFIED ⟺ faithful, counterexample ⟺ divergent). Runs
-/// in a per-run scratch dir removed wholesale on EVERY exit path (blocker #53,
+/// Discharge one obligation program through `verus`, classifying the verdict (the
+/// REQ-2 discharge path — verified ⟺ faithful, counterexample ⟺ divergent). Runs
+/// in a per-run scratch dir removed wholesale on every exit path (blocker #53,
 /// reusing `crate::check::ScratchDir`). An absent verus / spawn-IO failure →
-/// `Unverifiable` (surfaced, never a silent pass — R-CODE-4).
+/// `Unverifiable`, surfaced rather than passing silently (R-CODE-4).
 fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdict {
     let stem = sanitize_stem(label);
     let scratch = ScratchDir {
@@ -1123,10 +1123,10 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
         return ClauseVerdict::Unverifiable;
     }
 
-    // NB: NO `--output-json` here — verus then emits the plain-text
+    // No `--output-json` here — verus then emits the plain-text
     // `verification results:: N verified, M errors` summary line that
     // [`parse_results`] reads (the same form the `thermite-tv` teeth-test parses).
-    // The pinned `--rlimit` + `smt.random_seed` keep the discharge DETERMINISTIC
+    // The pinned `--rlimit` + `smt.random_seed` keep the discharge deterministic
     // (R-CODE-5), matching `forge check`'s verus invocation config.
     let output = Command::new("verus")
         .arg("--rlimit")
@@ -1146,14 +1146,14 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
-    // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion / timeout: verus prints `rlimit
+    // A Verus/Z3 resource-limit (rlimit) exhaustion / timeout: verus prints `rlimit
     // exceeded` / `Resource limit (rlimit) exceeded`, or z3's own `max. resource limit
-    // exceeded`, AND a results line counting the exhausted obligation as an error. That
-    // is a DISCHARGE failure, NOT a meaning mismatch — the #189-class hardening via the
-    // SHARED `crate::tv_signal::is_rlimit_signal` discriminator (#192 root-cause fix: the
-    // prior per-phase copy had DROPPED the z3-phrased `resource limit exceeded` clause):
+    // exceeded`, and a results line counting the exhausted obligation as an error. That
+    // is a discharge failure, not a meaning mismatch — the #189-class hardening via the
+    // shared `crate::tv_signal::is_rlimit_signal` discriminator (#192 root-cause fix: the
+    // prior per-phase copy had dropped the z3-phrased `resource limit exceeded` clause):
     // an rlimit-hit error run is routed to Unverifiable, never the `errors >= 1` Divergent
-    // arm, so a genuine solver-budget timeout is never fabricated into a contract
+    // arm, so a solver-budget timeout is never fabricated into a contract
     // infidelity (R-HONEST-3 / R-CODE-4 — a timeout degrades, never a false finding).
     let rlimit_hit = crate::tv_signal::is_rlimit_signal(&combined);
 
@@ -1161,13 +1161,13 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
         Some((_verified, errors)) if errors == 0 && output.status.success() => {
             ClauseVerdict::Faithful
         }
-        // An error run that is REALLY an rlimit exhaustion → Unverifiable, never
+        // An error run that is an rlimit exhaustion → Unverifiable, never
         // Divergent (the #189-class mapping fix; this arm precedes the Divergent arm).
         Some((_verified, errors)) if errors >= 1 && rlimit_hit => {
             let _ = errors;
             ClauseVerdict::Unverifiable
         }
-        // A GENUINE counterexample (errors with NO rlimit signal) — the SOLE Divergent
+        // A counterexample (errors with no rlimit signal) — the one Divergent
         // source: the production lowering means something other than the reference.
         Some((_verified, errors)) if errors >= 1 => ClauseVerdict::Divergent {
             detail: format!(
@@ -1177,8 +1177,8 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ClauseVerdic
             ),
         },
         // No parseable results line / a non-success with 0 parsed errors → could not
-        // discharge cleanly (a FRAME compile/parse abort — the obligation's frame, not
-        // the lowering, is the limit). Reported as Unverifiable, never a silent pass
+        // discharge (a frame compile/parse abort — the obligation's frame, not
+        // the lowering, is the limit). Reported as Unverifiable, never passing silently
         // (R-CODE-4) and never a fabricated Divergent (R-HONEST-3).
         _ => ClauseVerdict::Unverifiable,
     }
@@ -1263,44 +1263,44 @@ pub const TV_DEFAULT_RLIMIT: f64 = DEFAULT_RLIMIT;
 
 // ---- the forge-level contract Divergent teeth (REQ-5; blocker #166) ---------
 //
-// The obligation-layer teeth (`thermite-tv/tests/teeth.rs` F1–F4) prove a WRONG
-// `P_production` -> a real verus error. They do NOT exercise the FORGE-level step
-// that MAPS that verus signal to a `ClauseVerdict`: `discharge`'s four-way
+// The obligation-layer teeth (`thermite-tv/tests/teeth.rs` F1–F4) prove a wrong
+// `P_production` -> a real verus error. They do not exercise the forge-level step
+// that maps that verus signal to a `ClauseVerdict`: `discharge`'s four-way
 // classification. Over the corpus/off-corpus space the faithful lowerer never
-// produces a Divergent, so the Divergent ARM (and the Unverifiable boundary) had NO
+// produces a Divergent, so the Divergent arm (and the Unverifiable boundary) had no
 // direct test coverage. This is the #166 analog of the #157 (`exec_tv`) / #189
-// (`body_tv`) gap — the SAME parallel seam.
+// (`body_tv`) gap — the same parallel seam.
 //
-// This module is the end-to-end teeth for the FORGE classification, mirroring
-// `exec_tv::divergent_teeth` and `body_tv::divergent_teeth`: it builds a REAL
-// per-clause equivalence obligation, discharges it through the ACTUAL `discharge`
+// This module is the end-to-end teeth for the forge classification, mirroring
+// `exec_tv::divergent_teeth` and `body_tv::divergent_teeth`: it builds a real
+// per-clause equivalence obligation, discharges it through the actual `discharge`
 // fn, and asserts the verdict. It covers the positive control (faithful ->
-// Faithful), the GENUINE-counterexample Divergent trigger (a WRONG production clause
-// — the issue's `<=`-for-`==` semantic divergence), the degenerate zero-obligation
-// boundary (-> Unverifiable, NEVER Divergent/Faithful), and the #189-class rlimit
+// Faithful), the counterexample Divergent trigger (a wrong production clause,
+// the issue's `<=`-for-`==` semantic divergence), the degenerate zero-obligation
+// boundary (-> Unverifiable, never Divergent/Faithful), and the #189-class rlimit
 // discriminator ([`is_rlimit_signal`] routes an rlimit-hit error run to Unverifiable,
 // never Divergent — the mapping the hardening above added to `discharge`).
 //
-// THE #166 AUDIT FINDING: `discharge` ALREADY mapped a FRAME compile/parse abort (no
-// parseable results line / non-success) to Unverifiable (the `_` arm) — honest, no
-// change needed there. But the `errors >= 1` arm mapped EVERY error run to Divergent,
-// INCLUDING an rlimit-exhausted run (a results line counting the exhausted obligation
-// as an error). That is the SAME #189-class bug: a solver-budget timeout fabricated
+// The #166 audit finding: `discharge` already mapped a frame compile/parse abort (no
+// parseable results line / non-success) to Unverifiable (the `_` arm); no change
+// needed there. But the `errors >= 1` arm mapped every error run to Divergent,
+// including an rlimit-exhausted run (a results line counting the exhausted obligation
+// as an error). That is the same #189-class bug: a solver-budget timeout fabricated
 // into a contract infidelity. The minimal fix added `is_rlimit_signal` + an
 // rlimit-hit arm ahead of the Divergent arm. The `rlimit_signal_*` teeth pin it.
 //
-// TEST-ONLY: no further production-logic change. `discharge`/`is_rlimit_signal` are
-// private sibling fns, reachable here via `super::`. The teeth are GENUINE (a real
+// Test-only: no further production-logic change. `discharge`/`is_rlimit_signal` are
+// private sibling fns, reachable here via `super::`. The teeth drive a real
 // wrong production -> a real verus counterexample -> the real `discharge` mapping,
-// never a mocked verdict). SKIPS LOUDLY when `verus` is genuinely absent.
+// never a mocked verdict. Skips with a logged message when `verus` is absent.
 #[cfg(test)]
 mod divergent_teeth {
     use super::*;
     use thermite_syntax::ast::BinOp;
 
-    /// `true` iff a bare `verus` is spawnable (the SAME resolution `discharge` uses —
-    /// `Command::new("verus")`, i.e. PATH). SKIP LOUDLY otherwise so the teeth never
-    /// silently pass when the discharge cannot reach a solver.
+    /// `true` iff a bare `verus` is spawnable (the same resolution `discharge` uses —
+    /// `Command::new("verus")`, i.e. PATH). Skip with a logged message otherwise so
+    /// the teeth never silently pass when the discharge cannot reach a solver.
     fn verus_on_path() -> bool {
         Command::new("verus").arg("--version").output().is_ok()
     }
@@ -1347,15 +1347,15 @@ mod divergent_teeth {
     /// Build the equivalence obligation, returning `Ok`/`Err` (no `unwrap`/`expect` —
     /// the anti-pattern gate scans the patch text without `cfg(test)` context). The
     /// source `x_eq_1` is in-sublanguage, so the build always succeeds; the caller
-    /// asserts `is_ok()` so an `Err` (a genuine regression) fails the test LOUDLY.
+    /// asserts `is_ok()` so an `Err` (a regression) fails the test.
     fn build(source: &Expr, p_production: &str, frame: &ObligationFrame) -> Result<String, String> {
         equivalence_obligation(source, p_production, frame).map_err(|e| e.to_string())
     }
 
-    /// POSITIVE CONTROL: a FAITHFUL production (`x == 1`, the exact reference encoding
+    /// Positive control: a faithful production (`x == 1`, the reference encoding
     /// of source `x == 1`) -> the forge classification is `ClauseVerdict::Faithful`.
     ///
-    /// HAND-DERIVED VERDICT (R-CHAR-3): the obligation is `assert((x == 1) <==> (x ==
+    /// Hand-derived verdict (R-CHAR-3): the obligation is `assert((x == 1) <==> (x ==
     /// 1))`, which is `assert(true)` for every `x: u64` -> verus reports `verified >= 1,
     /// 0 errors`, exit success -> `discharge`'s first arm -> Faithful. Without this
     /// control, a `discharge` that returned Divergent unconditionally would pass the
@@ -1381,17 +1381,17 @@ mod divergent_teeth {
         );
     }
 
-    /// DIVERGENT (the SOLE Divergent source — a GENUINE counterexample): a production
-    /// that TYPECHECKS but means something WEAKER than the reference (`x <= 1` for
+    /// Divergent (the one Divergent source, a counterexample): a production
+    /// that typechecks but means something weaker than the reference (`x <= 1` for
     /// source `x == 1` — the `<=`-for-`==` semantic divergence the issue names) ->
-    /// verus finds a counterexample -> `discharge` maps the `errors >= 1` (NO rlimit)
+    /// verus finds a counterexample -> `discharge` maps the `errors >= 1` (no rlimit)
     /// arm to `ClauseVerdict::Divergent`.
     ///
-    /// HAND-DERIVED VERDICT (R-CHAR-3): the obligation is `assert((x <= 1) <==> (x ==
+    /// Hand-derived verdict (R-CHAR-3): the obligation is `assert((x <= 1) <==> (x ==
     /// 1))`. For `x = 0`: `0 <= 1` is `true` but `0 == 1` is `false`, so `true <==>
-    /// false` is `false` — a real disagreement. verus reports `errors >= 1` with NO
-    /// rlimit signal -> Divergent. This is exactly the AC-2 (==-vs-<=) infidelity, here
-    /// asserted at the FORGE verdict layer (not just the obligation layer's F1).
+    /// false` is `false` — a disagreement. verus reports `errors >= 1` with no
+    /// rlimit signal -> Divergent. This is the AC-2 (==-vs-<=) infidelity, here
+    /// asserted at the forge verdict layer (not just the obligation layer's F1).
     #[test]
     fn wrong_production_classifies_divergent() {
         if !verus_on_path() {
@@ -1416,24 +1416,24 @@ mod divergent_teeth {
         );
     }
 
-    /// THE DEGENERATE/MALFORMED BOUNDARY (Divergent-vs-Unverifiable): a FRAME
-    /// compile/parse abort — an obligation whose `requires` references an UNDEFINED spec
-    /// fn (`all_small(x)`, with `spec_defs` EMPTY) fails to COMPILE: no parseable `N
+    /// The degenerate/malformed boundary (Divergent-vs-Unverifiable): a frame
+    /// compile/parse abort — an obligation whose `requires` references an undefined spec
+    /// fn (`all_small(x)`, with `spec_defs` empty) fails to compile: no parseable `N
     /// verified, M errors` line, non-success exit -> `discharge`'s `_` arm ->
-    /// `ClauseVerdict::Unverifiable`, NEVER Divergent (a FRAMING limitation, not a
+    /// `ClauseVerdict::Unverifiable`, never Divergent (a framing limitation, not a
     /// lowering infidelity — R-HONEST-3). This is the contract analog of body_tv's #189
     /// `frame_compile_abort_classifies_unverifiable_not_divergent`.
     ///
-    /// HAND-DERIVED VERDICT (R-CHAR-3): the production text is the FAITHFUL `x == 1`, so
-    /// a Divergent verdict here could ONLY come from the frame, not the lowering. The
-    /// undefined-`all_small` `requires` aborts verus with a compile error and NO results
+    /// Hand-derived verdict (R-CHAR-3): the production text is the faithful `x == 1`, so
+    /// a Divergent verdict here could only come from the frame, not the lowering. The
+    /// undefined-`all_small` `requires` aborts verus with a compile error and no results
     /// line; `parse_results` returns `None`; `discharge` falls to the `_` arm ->
-    /// Unverifiable. (NB: a degenerate `0 verified, 0 errors` SUCCESS program would NOT
-    /// pin this — contract_tv's first arm is `errors == 0 && status.success()` WITHOUT a
+    /// Unverifiable. (A degenerate `0 verified, 0 errors` success program would not
+    /// pin this — contract_tv's first arm is `errors == 0 && status.success()` without a
     /// `verified >= 1` guard, so a vacuous success classifies Faithful; the no-results
-    /// abort is the honest malformed-outcome the `_` arm catches.) The #166 audit
-    /// confirmed `discharge` was ALREADY honest on this arm — this teeth PINS it so a
-    /// future regression to Divergent fails loudly.
+    /// abort is the malformed-outcome the `_` arm catches.) The #166 audit
+    /// confirmed `discharge` already classified this arm as Unverifiable; this teeth
+    /// pins it so a future regression to Divergent fails.
     #[test]
     fn frame_abort_classifies_unverifiable_not_divergent() {
         if !verus_on_path() {
@@ -1443,10 +1443,10 @@ mod divergent_teeth {
             );
             return;
         }
-        // `all_small` is an UNDEFINED spec fn (the frame's spec_defs is empty) — the
+        // `all_small` is an undefined spec fn (the frame's spec_defs is empty) — the
         // obligation's `requires all_small(x)` does not compile (an undefined-fn error),
-        // so verus aborts BEFORE verification: no `N verified, M errors` line, non-success
-        // exit. The production text is the faithful `x == 1` — the abort is purely a FRAME
+        // so verus aborts before verification: no `N verified, M errors` line, non-success
+        // exit. The production text is the faithful `x == 1` — the abort is a frame
         // limitation, never a lowering infidelity.
         let frame = ObligationFrame {
             params: vec![ParamDecl::new("x", "u64")],
@@ -1472,20 +1472,20 @@ mod divergent_teeth {
         );
     }
 
-    /// THE #189-class DISCRIMINATOR (the mapping the hardening above added): an error
-    /// run carrying a `Resource limit (rlimit) exceeded` signal is a TIMEOUT, not a
+    /// The #189-class discriminator (the mapping the hardening above added): an error
+    /// run carrying a `Resource limit (rlimit) exceeded` signal is a timeout, not a
     /// counterexample — [`is_rlimit_signal`] detects it so `discharge` routes it to
-    /// `Unverifiable` (the rlimit arm), NEVER the `errors >= 1` Divergent arm. A
+    /// `Unverifiable` (the rlimit arm), never the `errors >= 1` Divergent arm. A
     /// pure-unit check of the discriminator (no verus needed): an rlimit output is
-    /// detected; a genuine counterexample output is NOT.
+    /// detected; a counterexample output is not.
     ///
-    /// HAND-DERIVED (R-CHAR-3): `is_rlimit_signal` keys on the literal Verus rlimit
+    /// Hand-derived (R-CHAR-3): `is_rlimit_signal` keys on the literal Verus rlimit
     /// diagnostic substrings (`rlimit exceeded` / `rlimit) exceeded`, case-insensitive).
-    /// A `Resource limit (rlimit) exceeded` line CONTAINS `rlimit) exceeded` -> true. A
+    /// A `Resource limit (rlimit) exceeded` line contains `rlimit) exceeded` -> true. A
     /// bare `rlimit exceeded` line -> true. A `postcondition not satisfied`
-    /// counterexample contains NEITHER substring -> false (it stays in the Divergent
-    /// class). This pins that a genuine Z3 rlimit exhaustion is kept OUT of Divergent —
-    /// the SAME #189-class divergence, here in `contract_tv`.
+    /// counterexample contains neither substring -> false (it stays in the Divergent
+    /// class). This pins that a Z3 rlimit exhaustion is kept out of Divergent —
+    /// the same #189-class divergence, here in `contract_tv`.
     #[test]
     fn rlimit_signal_is_detected_counterexample_is_not() {
         use crate::tv_signal::is_rlimit_signal;
@@ -1498,7 +1498,7 @@ mod divergent_teeth {
             is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
             "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
         );
-        // The distributed z3 binary's OWN resourceout literal (#192 — the #166-dropped
+        // The distributed z3 binary's own resourceout literal (#192 — the #166-dropped
         // clause the shared discriminator restores): `resource limit exceeded` with no
         // `rlimit` token.
         assert!(
@@ -1513,24 +1513,24 @@ mod divergent_teeth {
         );
     }
 
-    /// THE #189-class END-TO-END MAPPING: feed `discharge`'s parse/classify path an
-    /// rlimit-signalled error run and assert the verdict is Unverifiable, NOT Divergent.
+    /// The #189-class end-to-end mapping: feed `discharge`'s parse/classify path an
+    /// rlimit-signalled error run and assert the verdict is Unverifiable, not Divergent.
     /// This is the integration twin of the unit discriminator above — it drives the
-    /// REAL `discharge` mapping (parse_results + the rlimit arm) on a SYNTHETIC verus
-    /// output, with no verus needed (the program is the verus OUTPUT, not an input).
+    /// real `discharge` mapping (parse_results + the rlimit arm) on a synthetic verus
+    /// output, with no verus needed (the program is the verus output, not an input).
     ///
-    /// HAND-DERIVED VERDICT (R-CHAR-3): we cannot deterministically force a real Z3
+    /// Hand-derived verdict (R-CHAR-3): we cannot deterministically force a real Z3
     /// rlimit timeout, so this pins the mapping at the classification seam. The unit
     /// `rlimit_signal_is_detected_counterexample_is_not` proves `is_rlimit_signal` fires
     /// on the rlimit text; the `discharge` source then routes `errors >= 1 && rlimit_hit`
-    /// to Unverifiable AHEAD of the `errors >= 1` Divergent arm. Together they pin the
+    /// to Unverifiable ahead of the `errors >= 1` Divergent arm. Together they pin the
     /// full #189-class mapping (rlimit -> Unverifiable) by inspection + execution of the
-    /// discriminator, exactly as `body_tv`'s `is_rlimit_signal` unit teeth do.
+    /// discriminator, as `body_tv`'s `is_rlimit_signal` unit teeth do.
     #[test]
     fn rlimit_output_text_is_not_a_divergence() {
         use crate::tv_signal::is_rlimit_signal;
-        // A counterexample output (NO rlimit) IS a Divergent signal; the rlimit output is
-        // NOT — the discriminator that keeps the two classes distinct in `discharge`.
+        // A counterexample output (no rlimit) is a Divergent signal; the rlimit output is
+        // not — the discriminator that keeps the two classes distinct in `discharge`.
         let counterexample = "error: assertion failed\n0 verified, 1 errors";
         let rlimit = "error: Resource limit (rlimit) exceeded\n0 verified, 1 errors";
         assert!(

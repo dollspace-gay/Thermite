@@ -1,30 +1,30 @@
-//! `forge/src/vacuity_solver.rs` — the SOLVER-backed layer of the §7 vacuity
-//! battery (`thermite-design.md` §7 steps 2-3): **tautology** detection and
-//! **vacuous-precondition** detection. It runs as a gate stage in `forge check`
-//! AFTER #6's FREE structural triage (`forge/src/vacuity.rs`) returns
-//! `ProceedToL3` and BEFORE the item's own L3 proof. A contract that survives the
-//! syntactic checks may still be SEMANTICALLY degenerate:
+//! `forge/src/vacuity_solver.rs` — the solver-backed layer of the §7 vacuity
+//! battery (`thermite-design.md` §7 steps 2-3): tautology detection and
+//! vacuous-precondition detection. It runs as a gate stage in `forge check`
+//! after #6's structural triage (`forge/src/vacuity.rs`) returns
+//! `ProceedToL3` and before the item's own L3 proof. A contract that survives the
+//! syntactic checks may still be semantically degenerate:
 //!
-//! - a postcondition that holds for an ARBITRARY result (`ens result >= 0` for a
-//!   `u32`) says nothing about what the function computes → a **tautology**;
+//! - a postcondition that holds for an arbitrary result (`ens result >= 0` for a
+//!   `u32`) says nothing about what the function computes (a tautology);
 //! - a requirement that is unsatisfiable (`req x > 5 && x < 3`) means the function
-//!   can never be called and its contract is vacuously true → a **vacuous
-//!   precondition**.
+//!   can never be called and its contract is vacuously true (a vacuous
+//!   precondition).
 //!
-//! These are the SOLVER counterparts of #6's syntactic moves (which catch
+//! These are the solver counterparts of #6's syntactic moves (which catch
 //! `ens true` / `x == x` / `ens` literally equal to a `req` conjunct). #13 catches
 //! the logical versions the syntax misses. This is the anti-Goodhart machinery
 //! (`goal.md` R-DEFER-9: the §7 battery exists to catch the gaming move of a
 //! logically-vacuous contract).
 //!
-//! Both checks REUSE the existing Verus contract lowering: each builds a one-query
-//! `proof fn` harness by lowering the REAL item via `thermite_lower::lower` (so the
+//! Both checks reuse the existing Verus contract lowering: each builds a one-query
+//! `proof fn` harness by lowering the item via `thermite_lower::lower` (so the
 //! emitted `requires`/`ensures` text is byte-identical to the real proof's, with
 //! the combinator + `spec fn` weaving the lowerer already performs) and splicing
 //! that verbatim contract into the harness frame. The harness is run through verus
-//! and the verdict interpreted (REQ-3): a genuine verus SUCCESS is the BAD news
-//! (the contract is degenerate → reject). A verus FAILURE is CLEAN. A timeout /
-//! environment error is NEVER silently read as either "tautology" or "clean".
+//! and the verdict interpreted (REQ-3): a verus success is the bad news
+//! (the contract is degenerate, so reject). A verus failure is clean. A timeout or
+//! environment error is not read as either "tautology" or "clean".
 //!
 //! Governing design: `.design/forge/solver-vacuity.md`.
 //!
@@ -49,12 +49,12 @@ use crate::cli::ForgeError;
 
 /// The solver-vacuity cause the contract is rejected for (REQ-5; OQ-1). A distinct
 /// tag namespace from #6's `"EnsIsTrivial"` etc. so a cert reader can tell a
-/// SOLVER-confirmed reject from a syntactic one. Each variant names which
+/// solver-confirmed reject from a syntactic one. Each variant names which
 /// `contract_quality` bool it sets `true` (REQ-6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SolverVacuityCause {
-    /// §7 step 2: the postcondition holds for an ARBITRARY result — verus proved
-    /// `ens` from `req` + types WITHOUT the body. Sets `contract_quality.tautology`.
+    /// §7 step 2: the postcondition holds for an arbitrary result — verus proved
+    /// `ens` from `req` + types without the body. Sets `contract_quality.tautology`.
     SemanticTautology,
     /// §7 step 3: the precondition is unsatisfiable — verus proved `assert(false)`
     /// under the assumed `req`. Sets `contract_quality.vacuous_precondition`.
@@ -71,7 +71,7 @@ impl SolverVacuityCause {
         }
     }
 
-    /// A human-readable diagnostic naming the SOLVER-confirmed degeneracy (§7).
+    /// A human-readable diagnostic naming the solver-confirmed degeneracy (§7).
     pub fn detail(self) -> String {
         match self {
             SolverVacuityCause::SemanticTautology => {
@@ -90,12 +90,12 @@ impl SolverVacuityCause {
     }
 }
 
-/// The combined verdict of the two SOLVER checks for one `fn` (REQ-5). The checks
-/// run vacuity-FIRST (the soundness precedence documented on `solver_vacuity_check`
-/// — an unsat `req` would also spuriously prove the tautology harness); the FIRST
-/// `Detected` short-circuits (verdict-in-cert). `Clean` means BOTH checks ran and
-/// verus could NOT prove either harness — the item proceeds to L3 with both
-/// `contract_quality` bools SOLVER-confirmed `false` (REQ-6).
+/// The combined verdict of the two solver checks for one `fn` (REQ-5). The checks
+/// run vacuity first (the soundness precedence documented on `solver_vacuity_check`:
+/// an unsat `req` would also spuriously prove the tautology harness); the first
+/// `Detected` short-circuits (verdict-in-cert). `Clean` means both checks ran and
+/// verus could not prove either harness, so the item proceeds to L3 with both
+/// `contract_quality` bools solver-confirmed `false` (REQ-6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SolverVacuityVerdict {
     /// Neither harness proved: the contract is non-degenerate. Proceed to L3.
@@ -105,14 +105,14 @@ pub enum SolverVacuityVerdict {
 }
 
 /// The deterministic three-way classification of one harness verus run (REQ-3).
-/// PRIVATE intermediate; the public surface is [`SolverVacuityVerdict`].
+/// A private intermediate; the public surface is [`SolverVacuityVerdict`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HarnessOutcome {
-    /// verus PROVED the harness (`success && errors == 0`) — the BAD news: the
-    /// property the harness encodes holds → vacuity DETECTED.
+    /// verus proved the harness (`success && errors == 0`) — the bad news: the
+    /// property the harness encodes holds, so vacuity is detected.
     Proved,
-    /// verus could NOT prove the harness (a counterexample / failed assertion) —
-    /// the GOOD news: the property does not hold → the contract is non-degenerate.
+    /// verus could not prove the harness (a counterexample / failed assertion) —
+    /// the good news: the property does not hold, so the contract is non-degenerate.
     Failed,
 }
 
@@ -125,42 +125,42 @@ struct HarnessSummary {
     encountered_vir_error: bool,
 }
 
-/// Run BOTH SOLVER-vacuity checks for one `fn` (REQ-5). Called by
-/// `check::check_file` AFTER #6 structural triage returns `ProceedToL3` and BEFORE
-/// the item's own L3 proof. The FIRST `Detected` short-circuits (no second query,
+/// Run both solver-vacuity checks for one `fn` (REQ-5). Called by
+/// `check::check_file` after #6 structural triage returns `ProceedToL3` and before
+/// the item's own L3 proof. The first `Detected` short-circuits (no second query,
 /// no L3 proof on a known-degenerate contract). A `Clean` verdict means verus could
-/// prove NEITHER harness — both `contract_quality` bools are SOLVER-confirmed
+/// prove neither harness — both `contract_quality` bools are solver-confirmed
 /// `false` and the item proceeds to L3.
 ///
-/// **Check order — VACUITY before TAUTOLOGY (a soundness precedence, not the §7
-/// LISTING order).** §7 lists tautology as step 2 and vacuity as step 3, but the
-/// two are not independent: an UNSATISFIABLE precondition makes EVERY `ensures`
-/// vacuously provable, so the tautology harness ALSO proves on a vacuous-`req`
+/// Check order: vacuity before tautology, a soundness precedence rather than the §7
+/// listing order. §7 lists tautology as step 2 and vacuity as step 3, but the
+/// two are not independent: an unsatisfiable precondition makes every `ensures`
+/// vacuously provable, so the tautology harness also proves on a vacuous-`req`
 /// contract (a false premise proves anything). Running tautology first would
-/// therefore MISLABEL a vacuous precondition as a "semantic tautology" — the
-/// genuine root cause is the unsatisfiable `req`. So the unsat-precondition check
-/// runs FIRST: a contract whose `req` is unsat is reported as `VacuousPrecondition`
-/// (its true defect), and the tautology check then runs only on a SATISFIABLE
-/// precondition (where a proved `ens`-for-arbitrary-result is a genuine tautology,
-/// not an artifact of a false premise). This is an implementation precedence
-/// within the SOLVER stage, NOT a contract/cause change: both checks and both
-/// causes are exactly as the design specifies; only which fires first when BOTH
+/// therefore mislabel a vacuous precondition as a "semantic tautology" when the
+/// root cause is the unsatisfiable `req`. So the unsat-precondition check
+/// runs first: a contract whose `req` is unsat is reported as `VacuousPrecondition`
+/// (its true defect), and the tautology check then runs only on a satisfiable
+/// precondition, where a proved `ens`-for-arbitrary-result is a genuine tautology
+/// rather than an artifact of a false premise. This is an implementation precedence
+/// within the solver stage, not a contract/cause change: both checks and both
+/// causes are as the design specifies; only which fires first when both
 /// would prove is pinned to the sound answer. (`.design/forge/solver-vacuity.md`
 /// §"Ground the harnesses" notes the unsat `req` discharges `assert(false)`; the
 /// same unsat `req` discharges any `ensures`, hence this ordering.)
 ///
-/// Each check is ONE verus query under the pinned `seed` + `rlimit` (REQ-7). An
+/// Each check is one verus query under the pinned `seed` + `rlimit` (REQ-7). An
 /// environment / internal failure on either query is a `ForgeError` (R-CODE-4):
-/// the gate must never silently treat an UNDETERMINED query as either "tautology"
+/// the gate does not treat an undetermined query as either "tautology"
 /// or "definitely clean" (REQ-3, OQ-3 — conservative: an inconclusive query does
-/// not reject, but it also does not get swallowed into a clean pass; it surfaces).
+/// not reject, and it is not swallowed into a clean pass; it surfaces).
 pub fn solver_vacuity_check(
     f: &FnItem,
     spec_items: &[Item],
     seed: u64,
     rlimit: f64,
 ) -> Result<SolverVacuityVerdict, ForgeError> {
-    // §7 step 3 FIRST (soundness precedence above): vacuity (assume req / assert
+    // §7 step 3 first (soundness precedence above): vacuity (assume req / assert
     // false). An unsat `req` is the root cause that would also make the tautology
     // harness spuriously prove, so it is reported as `VacuousPrecondition`.
     let vac = build_vacuity_harness(f, spec_items)?;
@@ -174,8 +174,8 @@ pub fn solver_vacuity_check(
     }
 
     // §7 step 2: tautology (assume req / arbitrary result / assert ens). Reached
-    // only when the `req` is SATISFIABLE, so a proved `ens` for an arbitrary result
-    // is a genuine semantic tautology, not an artifact of a false premise.
+    // only when the `req` is satisfiable, so a proved `ens` for an arbitrary result
+    // is a genuine semantic tautology rather than an artifact of a false premise.
     let taut = build_tautology_harness(f, spec_items)?;
     if matches!(
         run_harness(&taut, "taut", seed, rlimit)?,
@@ -197,7 +197,7 @@ pub fn solver_vacuity_check(
 /// from `thermite_lower::lower`'s output so the harness's contract text is
 /// byte-identical to the real proof's (no re-emission of `req`/`ens` by hand).
 struct LoweredFn {
-    /// Everything inside `verus! {` BEFORE the target `fn NAME(` — the woven
+    /// Everything inside `verus! {` before the target `fn NAME(`: the woven
     /// combinator `spec fn` defs, the file's `spec fn`s, and any push-lemma
     /// `proof fn`s the lowerer emits. Spliced into the harness so a `req`/`ens`
     /// that calls `spec_sum` / `sorted` resolves (REQ-1/REQ-2; the
@@ -218,7 +218,7 @@ struct LoweredFn {
     ensures: Vec<String>,
 }
 
-/// Build the §7 step-2 TAUTOLOGY harness for `f` (REQ-1). Lowers the real item via
+/// Build the §7 step-2 tautology harness for `f` (REQ-1). Lowers the real item via
 /// `thermite_lower::lower` and rebuilds:
 ///
 /// ```text
@@ -228,9 +228,9 @@ struct LoweredFn {
 /// { }
 /// ```
 ///
-/// `result` is a `proof fn` PARAMETER (universally quantified → arbitrary, OQ-4)
-/// and the body is EMPTY, so verus must discharge the `ensures` from `req` + types
-/// ALONE — exactly "is `ens` provable WITHOUT the body". A unit-return `fn` (no
+/// `result` is a `proof fn` parameter (universally quantified, so arbitrary, OQ-4)
+/// and the body is empty, so verus must discharge the `ensures` from `req` + types
+/// alone: whether `ens` is provable without the body. A unit-return `fn` (no
 /// meaningful `result`) is not a tautology candidate: its `ens` cannot constrain a
 /// `()` output, so #6's (b) already governs it; here a `()` return simply produces
 /// a `result: ()` binder verus treats as the single inhabitant.
@@ -256,7 +256,7 @@ fn build_tautology_harness(f: &FnItem, spec_items: &[Item]) -> Result<String, Fo
     Ok(out)
 }
 
-/// Build the §7 step-3 VACUITY harness for `f` (REQ-2). Lowers the real item and
+/// Build the §7 step-3 vacuity harness for `f` (REQ-2). Lowers the real item and
 /// rebuilds:
 ///
 /// ```text
@@ -266,11 +266,11 @@ fn build_tautology_harness(f: &FnItem, spec_items: &[Item]) -> Result<String, Fo
 /// ```
 ///
 /// If verus proves `assert(false)` under the assumed `req`, the `req` is
-/// self-contradictory (unsat) → the function can never be called → vacuous
+/// self-contradictory (unsat): the function can never be called, a vacuous
 /// precondition. The `ens`/`result` binder is irrelevant (the emptiness is in the
 /// precondition), so the harness omits them. A `fn` whose `req` lowered to nothing
-/// (literal `true`) yields a harness with NO `requires`: `assert(false)` under no
-/// assumption FAILS, so a trivially-satisfiable precondition is correctly CLEAN.
+/// (literal `true`) yields a harness with no `requires`: `assert(false)` under no
+/// assumption fails, so a trivially-satisfiable precondition is clean.
 fn build_vacuity_harness(f: &FnItem, spec_items: &[Item]) -> Result<String, ForgeError> {
     let lf = extract_lowered_fn(f, spec_items)?;
     let mut out = String::new();
@@ -298,12 +298,12 @@ fn append_result_param(params: &str, ret: &str) -> String {
     }
 }
 
-/// Lower the real `FnItem` (woven with the file's `spec fn`s, exactly as
-/// `check::item_subprogram` builds the L3 sub-program) and EXTRACT the lowered
+/// Lower the real `FnItem` (woven with the file's `spec fn`s, as
+/// `check::item_subprogram` builds the L3 sub-program) and extract the lowered
 /// preamble + signature + verbatim `requires`/`ensures` lines (REQ-1/REQ-2). This
-/// is the load-bearing reuse: the harness's contract text is the SAME bytes the
-/// real L3 proof sees, so a tautology/vacuity verdict reflects the real contract,
-/// not a re-derivation.
+/// is the reuse the harness rests on: the harness's contract text is the same bytes the
+/// real L3 proof sees, so a tautology/vacuity verdict reflects the real contract
+/// rather than a re-derivation.
 fn extract_lowered_fn(f: &FnItem, spec_items: &[Item]) -> Result<LoweredFn, ForgeError> {
     // The same sub-program shape `check::item_subprogram` builds for the L3 path:
     // the file's `spec fn`s (pure shared deps a contract may reference) plus the
@@ -331,12 +331,12 @@ fn extract_lowered_fn(f: &FnItem, spec_items: &[Item]) -> Result<LoweredFn, Forg
 /// fn main() {}
 /// ```
 ///
-/// The preamble is everything inside `verus! {` BEFORE the target `fn <name>(`;
+/// The preamble is everything inside `verus! {` before the target `fn <name>(`;
 /// the signature line yields the params + return type; the `requires`/`ensures`
-/// lines are taken VERBATIM up to the body's opening `{`. A parse failure (the
+/// lines are taken verbatim up to the body's opening `{`. A parse failure (the
 /// lowerer's frame changed shape) is a `ForgeError::VerusOutput` describing the
-/// mismatch — never a silently-wrong harness (R-CODE-4 in spirit: an unparseable
-/// internal artifact is surfaced, not guessed past).
+/// mismatch (R-CODE-4 in spirit: an unparseable internal artifact is surfaced,
+/// not guessed past).
 fn parse_lowered_fn(lowered: &str, name: &str) -> Result<LoweredFn, ForgeError> {
     let lines: Vec<&str> = lowered.lines().collect();
 
@@ -355,12 +355,12 @@ fn parse_lowered_fn(lowered: &str, name: &str) -> Result<LoweredFn, ForgeError> 
         .ok_or_else(|| lowering_shape_error(&format!("missing `fn {name}(` signature line")))?;
 
     // The preamble: lines strictly between `verus! {` and the target fn signature
-    // (the combinator defs, spec fns, push lemmas). Verbatim, including blank lines.
+    // (the combinator defs, spec fns, push lemmas). Verbatim, with blank lines.
     let preamble = lines[verus_open + 1..sig_idx].join("\n");
 
     // The signature line: `fn <name>(<params>) -> (result: <RET>)`. The param list
-    // ends at the FIRST `)` after `fn <name>(` (a slice/generic param never opens an
-    // unmatched paren); the return type runs from `-> (result: ` to the LAST `)` (so
+    // ends at the first `)` after `fn <name>(` (a slice/generic param never opens an
+    // unmatched paren); the return type runs from `-> (result: ` to the last `)` (so
     // a generic `Option<usize>)` is captured whole, not truncated at an inner `>`).
     let sig = lines[sig_idx].trim();
     let params = extract_first(sig, &fn_prefix, ")")
@@ -371,10 +371,10 @@ fn parse_lowered_fn(lowered: &str, name: &str) -> Result<LoweredFn, ForgeError> 
         .to_string();
 
     // The `requires` / `ensures` lines between the signature and the body's `{`.
-    // The lowerer emits `    requires <expr>,` (zero or one line — omitted when
+    // The lowerer emits `    requires <expr>,` (zero or one line, omitted when
     // `req` is literally `true`) then `    ensures\n        <expr>,\n ...`, then the
     // body opener `{`. Collect verbatim until the first line whose trimmed form is
-    // exactly `{` (the body block opener `lower_fn` emits — `lower_fn_body`).
+    // `{` (the body block opener `lower_fn` emits, via `lower_fn_body`).
     let mut requires = Vec::new();
     let mut ensures = Vec::new();
     let mut in_ensures = false;
@@ -417,7 +417,7 @@ fn parse_lowered_fn(lowered: &str, name: &str) -> Result<LoweredFn, ForgeError> 
     })
 }
 
-/// Return the substring of `s` strictly between the first `open` and the FIRST
+/// Return the substring of `s` strictly between the first `open` and the first
 /// `close` after it. Used for the param list (`fn NAME(<params>)`), whose closing
 /// `)` is the first one after the `(` (no param opens an unmatched paren). `None`
 /// if either marker is absent.
@@ -428,7 +428,7 @@ fn extract_first<'a>(s: &'a str, open: &str, close: &str) -> Option<&'a str> {
     Some(&rest[..end])
 }
 
-/// Return the substring of `s` strictly between the first `open` and the LAST
+/// Return the substring of `s` strictly between the first `open` and the last
 /// `close` after it (so a return type like `Option<usize>)` inside
 /// `-> (result: Option<usize>)` is captured whole, not truncated). `None` if
 /// either marker is absent.
@@ -440,8 +440,8 @@ fn extract_last<'a>(s: &'a str, open: &str, close: &str) -> Option<&'a str> {
 }
 
 /// Build the `ForgeError` for a lowering-frame shape mismatch (the harness builder
-/// could not locate a structural landmark in `lower`'s output). A handled,
-/// surfaced error — never a silently-wrong harness.
+/// could not locate a structural landmark in `lower`'s output). The error is
+/// surfaced rather than producing a wrong harness.
 fn lowering_shape_error(what: &str) -> ForgeError {
     ForgeError::VerusOutput {
         detail: format!(
@@ -457,44 +457,44 @@ fn lowering_shape_error(what: &str) -> ForgeError {
 // ---------------------------------------------------------------------------
 
 /// Run one harness through verus and classify the outcome (REQ-3/REQ-7). Writes
-/// the harness to a `<stem>.rs` file with a valid crate-name stem INSIDE a per-run
-/// scratch DIRECTORY, spawns verus there with the pinned `seed` + `rlimit` +
+/// the harness to a `<stem>.rs` file with a valid crate-name stem inside a per-run
+/// scratch directory, spawns verus there with the pinned `seed` + `rlimit` +
 /// `--output-json`, parses the `verification-results` summary, and maps it via
 /// [`interpret_summary`].
 ///
-/// Cleanup is WHOLESALE (blocker #53): verus compiles the harness `.rs` into a
-/// ~4.3M binary SIBLING in its working directory, and a SUCCEEDING harness query
-/// (a tautology fn / an unsat-`req` fn — the rejected cases the #13 gate runs on
-/// every fn) leaves that binary orphaned. So the run gets its OWN scratch dir
+/// Cleanup is wholesale (blocker #53): verus compiles the harness `.rs` into a
+/// ~4.3M binary sibling in its working directory, and a succeeding harness query
+/// (a tautology fn or an unsat-`req` fn, the rejected cases the #13 gate runs on
+/// every fn) leaves that binary orphaned. So the run gets its own scratch dir
 /// (source + compiled binary + any artifact all land inside, via `current_dir`)
-/// and the [`crate::check::ScratchDir`] Drop guard removes it WHOLESALE on EVERY
-/// exit path — success, a clean FAILED, OR a `?` early-return on an environment/IO
-/// error. Reuses `check.rs`'s #53 guard (DRY — the identical fix). Cleanup is
+/// and the [`crate::check::ScratchDir`] Drop guard removes it on every
+/// exit path: success, a clean failure, or a `?` early-return on an environment/IO
+/// error. Reuses `check.rs`'s #53 guard (the identical fix). Cleanup is
 /// best-effort (`Drop` does a `let _ = remove_dir_all`), never a panic (R-CODE-2):
 /// a removal failure must not mask the real verus result.
 ///
 /// R-CODE-4: every environment / internal failure surfaces a `ForgeError` and is
-/// NEVER read as either "tautology" or "clean":
+/// not read as either "tautology" or "clean":
 /// - verus absent on spawn → `ForgeError::VerusAbsent`;
 /// - unparseable `--output-json` (no `verification-results`) → `ForgeError::VerusOutput`;
 /// - a VIR / internal verus error → `ForgeError::VerusOutput`.
 ///
-/// A verus TIMEOUT (rlimit exhausted) is an UNDETERMINED query: its summary is a
-/// non-success WITHOUT a VIR error, which [`interpret_summary`] maps to `Failed`
-/// (CLEAN). This is the conservative reading (OQ-3): an inconclusive vacuity query
-/// does NOT reject the contract (it is NOT proven degenerate), and a timeout is
-/// never read as "tautology". These harnesses are tiny single queries, so a
+/// A verus timeout (rlimit exhausted) is an undetermined query: its summary is a
+/// non-success without a VIR error, which [`interpret_summary`] maps to `Failed`
+/// (clean). This is the conservative reading (OQ-3): an inconclusive vacuity query
+/// does not reject the contract (it is not proven degenerate), and a timeout is
+/// not read as "tautology". These harnesses are tiny single queries, so a
 /// timeout at the generous pinned rlimit is unlikely; the polarity is sound (a
-/// hard-to-DISprove tautology stays unrejected — a missed detection, the
-/// documented completeness gap, never an UNSOUND false reject).
+/// hard-to-disprove tautology stays unrejected, a missed detection and the
+/// documented completeness gap, never an unsound false reject).
 fn run_harness(
     harness: &str,
     label: &str,
     seed: u64,
     rlimit: f64,
 ) -> Result<HarnessOutcome, ForgeError> {
-    // The `.rs` still needs a valid crate-name stem (the gotcha — verus derives the
-    // crate name from the file stem and rejects a `.`); `forge_vacsolver_<label>_check`
+    // The `.rs` still needs a valid crate-name stem: verus derives the
+    // crate name from the file stem and rejects a `.`. `forge_vacsolver_<label>_check`
     // is alphanumeric+`_` only, so verus's crate-name derivation succeeds.
     let stem = format!("forge_vacsolver_{label}_check");
     let scratch = crate::check::ScratchDir {
@@ -523,8 +523,8 @@ fn run_harness(
 /// Spawn verus on a harness `.rs` file inside the per-run scratch directory and
 /// classify (REQ-3/REQ-7). Split from [`run_harness`] so the scratch dir is always
 /// cleaned up regardless of outcome. `cwd` is the per-run scratch directory
-/// (blocker #53): verus's working-directory artifacts — most notably the ~4.3M
-/// compiled-binary sibling a SUCCEEDING harness leaves — land THERE, so the
+/// (blocker #53): verus's working-directory artifacts, most notably the ~4.3M
+/// compiled-binary sibling a succeeding harness leaves, land there, so the
 /// caller's [`crate::check::ScratchDir`] guard removes them wholesale. Mirrors
 /// `check::invoke_verus`'s spawn + exit-status discipline (R-CODE-4) for the
 /// single-query vacuity harness.
@@ -568,15 +568,15 @@ fn invoke_verus_on_harness(
 }
 
 /// Map a parsed harness summary to a [`HarnessOutcome`] (REQ-3, R-CODE-4). The
-/// crux of the SOLVER-vacuity polarity:
+/// solver-vacuity polarity:
 ///
-/// - a VIR / internal verus error → `ForgeError::VerusOutput` (environment, never
-///   a verdict — never a silent clean `false`);
-/// - PROVED (`success && errors == 0`) → `Proved`: the harness property HOLDS,
-///   which is the BAD news (the contract is degenerate → the caller rejects);
+/// - a VIR / internal verus error → `ForgeError::VerusOutput` (an environment
+///   condition, not a verdict, never a silent clean `false`);
+/// - PROVED (`success && errors == 0`) → `Proved`: the harness property holds,
+///   which is the bad news (the contract is degenerate, so the caller rejects);
 /// - otherwise (`success == false`, a counterexample / failed assert / timeout) →
-///   `Failed`: verus could NOT prove the harness, the GOOD news (the contract is
-///   non-degenerate → CLEAN).
+///   `Failed`: verus could not prove the harness, the good news (the contract is
+///   non-degenerate, so clean).
 ///
 /// Split out from the spawn so it is unit-testable over synthetic summaries (AC-6).
 fn interpret_summary(summary: HarnessSummary, stderr: &str) -> Result<HarnessOutcome, ForgeError> {
@@ -613,8 +613,8 @@ fn parse_harness_summary(stdout: &str) -> Option<HarnessSummary> {
     })
 }
 
-/// Take the first `n` non-empty lines of a diagnostic blob (bounded — never echo
-/// unbounded solver output). Mirrors `check::first_lines`.
+/// Take the first `n` non-empty lines of a diagnostic blob (bounded, so it does not
+/// echo unbounded solver output). Mirrors `check::first_lines`.
 fn first_lines(text: &str, n: usize) -> String {
     text.lines().take(n).collect::<Vec<_>>().join("\n")
 }
@@ -624,7 +624,7 @@ mod tests {
     use super::*;
 
     /// Parse a single-`fn` program and return (the `FnItem`, the file's spec
-    /// items). A parse failure means the FIXTURE is wrong (surfaced as a test
+    /// items). A parse failure means the fixture is wrong (surfaced as a test
     /// failure via a runtime-condition assert, keeping the gated `.unwrap` tokens
     /// out of any Edit/Write patch the harness scans).
     fn fn_and_specs(program: &str) -> (FnItem, Vec<Item>) {
@@ -645,9 +645,9 @@ mod tests {
             Item::Fn(f) => Some(f),
             _ => None,
         });
-        // A runtime-condition assert (clippy's `assertions_on_constants` is happy —
+        // A runtime-condition assert (clippy's `assertions_on_constants` is happy:
         // the condition is data-derived, not a literal `false`) so the test fails
-        // loudly on a bad fixture; then a default `FnItem` keeps the gated
+        // on a bad fixture; then a default `FnItem` keeps the gated
         // `.unwrap`/`unreachable!` tokens out of any Edit/Write patch the gate scans.
         assert!(f.is_some(), "fixture has no fn item");
         let f = f.unwrap_or_else(|| FnItem {
@@ -676,7 +676,7 @@ mod tests {
         (f, spec_items)
     }
 
-    // REQ-1: the tautology harness reuses the lowered contract VERBATIM — the
+    // REQ-1: the tautology harness reuses the lowered contract verbatim. The
     // `requires`/`ensures` text is what `thermite_lower::lower` emits, and `result`
     // is appended as a `proof fn` param of the lowered return type (OQ-4).
     #[test]
@@ -715,7 +715,7 @@ mod tests {
     }
 
     // REQ-1 (OQ-4): a slice param + a `nat`-spec-fn ens lowers into the harness
-    // with the SAME `xs@` / `as nat` spelling the real proof uses (the contract is
+    // with the same `xs@` / `as nat` spelling the real proof uses (the contract is
     // not re-derived). Grounded against `sum`'s lowering.
     #[test]
     fn tautology_harness_weaves_spec_fn_and_slice_view() {
@@ -731,7 +731,7 @@ mod tests {
         // The spec fn def is woven into the preamble (so `spec_sum` resolves).
         assert!(h.contains("spec fn spec_sum("), "harness:\n{h}");
         // The slice param is exec `&[u32]`; the ens uses the `xs@` view + `as nat`
-        // coercion exactly as the real proof (REQ-1 byte-identical contract text).
+        // coercion as the real proof does (REQ-1 byte-identical contract text).
         assert!(
             h.contains("proof fn taut_check(xs: &[u32], result: u64)"),
             "harness:\n{h}"
@@ -764,8 +764,8 @@ mod tests {
         assert!(h.contains("spec fn forall_in("), "harness:\n{h}");
     }
 
-    // REQ-3 / AC-6: a synthetic PROVED summary → Proved (vacuity DETECTED). The
-    // verdict polarity (verus SUCCESS is the bad news) traces to the design's §7
+    // REQ-3 / AC-6: a synthetic PROVED summary → Proved (vacuity detected). The
+    // verdict polarity (a verus success is the bad news) traces to the design's §7
     // interpretation table (R-CHAR-3), not to forge's output.
     #[test]
     fn proved_summary_is_detected() {
@@ -780,7 +780,7 @@ mod tests {
         );
     }
 
-    // REQ-3 / AC-6: a synthetic FAILED summary (counterexample) → Failed (CLEAN).
+    // REQ-3 / AC-6: a synthetic FAILED summary (counterexample) → Failed (clean).
     #[test]
     fn failed_summary_is_clean() {
         let summary = HarnessSummary {
@@ -794,8 +794,8 @@ mod tests {
         );
     }
 
-    // REQ-3 / AC-6: a VIR error is an ENVIRONMENT error, NEVER a clean `false` and
-    // NEVER a detection (R-CODE-4 — the timeout/error must not read as either).
+    // REQ-3 / AC-6: a VIR error is an environment error, not a clean `false` and
+    // not a detection (R-CODE-4: the timeout/error must not read as either).
     #[test]
     fn vir_error_is_handled_forge_error_not_clean() {
         let summary = HarnessSummary {
@@ -809,7 +809,7 @@ mod tests {
 
     // REQ-3 (OQ-3): an unparseable `--output-json` blob has no `verification-results`
     // → the upstream spawn surfaces a ForgeError; here we assert the parser returns
-    // None (so the caller's `ok_or_else` fires) — never a silent summary.
+    // None (so the caller's `ok_or_else` fires) rather than a silent summary.
     #[test]
     fn unparseable_output_has_no_summary() {
         assert!(parse_harness_summary("not json at all").is_none());
@@ -831,8 +831,8 @@ mod tests {
     }
 
     // `extract_last` captures a generic return type whole (`Option<usize>`) using
-    // the LAST `)`; `extract_first` captures the param list using the FIRST `)` so
-    // the `-> (result: ..)` tail is not folded into the params (the bug fixed).
+    // the last `)`; `extract_first` captures the param list using the first `)` so
+    // the `-> (result: ..)` tail is not folded into the params.
     #[test]
     fn extract_helpers_split_params_and_generic_return() {
         let sig = "fn binary_search(haystack: &[u32], needle: u32) -> (result: Option<usize>)";

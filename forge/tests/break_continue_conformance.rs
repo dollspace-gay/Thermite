@@ -1,44 +1,45 @@
-//! L3/L0/L1-grounding conformance for the `break` / `continue` LOOP-CONTROL
+//! L3/L0/L1-grounding conformance for the `break` / `continue` loop-control
 //! layer — crosslink #93 (cluster 3 of the primitive-completeness buildout).
 //!
-//! This test certifies, against the REAL `verus` binary, the GROUNDED
+//! This test certifies, against the real `verus` binary, the grounded
 //! verification semantics pinned in `.design/lower/verus-lowering.md` REQ-12 /
 //! AC-7 (and mirrored in `.design/syntax/{lexer.md,ast.md,parser.md}` #93):
 //!
-//!   - a TERMINATING `while`+`dec` whose `continue` preserves the invariant AND
+//!   - a terminating `while`+`dec` whose `continue` preserves the invariant and
 //!     decreases the measure certifies L3 (the continue is a loop back-edge that
 //!     re-establishes every `inv` and the `decreases` — REQ-12(a)(b));
-//!   - a `continue` that BREAKS the invariant is L0 ("loop invariant not
+//!   - a `continue` that breaks the invariant is L0 ("loop invariant not
 //!     satisfied … at this continue" — REQ-12(a));
-//!   - a `continue` that does NOT decrease the measure is L0 ("decreases not
-//!     satisfied at continue" — REQ-12(b)) — the back-edge owes the same
+//!   - a `continue` that does not decrease the measure is L0 ("decreases not
+//!     satisfied at continue" — REQ-12(b)): the back-edge owes the same
 //!     termination obligation as the implicit loop-end edge;
 //!   - a `break` early-exit certifies L3 when its post-loop fact follows from the
-//!     loop invariants that hold AT the break point (REQ-12(c) / OQ-5 policy
-//!     (ii): a v0.1 `inv` lowers to a PLAIN Verus `invariant`, checked at break);
-//!   - a `fx diverge` loop with BOTH `break` and `continue` (no `decreases`,
+//!     loop invariants that hold at the break point (REQ-12(c) / OQ-5 policy
+//!     (ii): a v0.1 `inv` lowers to a plain Verus `invariant`, checked at break);
+//!   - a `fx diverge` loop with both `break` and `continue` (no `decreases`,
 //!     `#[verifier::exec_allows_no_decreases_clause]`) verifies its invariants
-//!     and is STRUCTURALLY capped at L1 by the #88 diverge gate (REQ-12(d)) —
-//!     the editor's event loop now works WITHOUT the quit-flag hack;
-//!   - the in-loop STRUCTURAL rule (`parser.md` REQ-10): a `break;`/`continue;`
-//!     OUTSIDE any loop body is a structured `SyntaxError`, never a panic; a
-//!     `break;` nested inside an `if` WITHIN a loop is accepted.
+//!     and is structurally capped at L1 by the #88 diverge gate (REQ-12(d)):
+//!     the editor's event loop works without the quit-flag hack;
+//!   - the in-loop structural rule (`parser.md` REQ-10): a `break;`/`continue;`
+//!     outside any loop body is a structured `SyntaxError`, never a panic; a
+//!     `break;` nested inside an `if` within a loop is accepted.
 //!
-//! NON-VACUITY (R-DEFER-9 / `thermite-design.md` §7): the terminating L3 probes
+//! Non-vacuity (R-DEFER-9 / `thermite-design.md` §7): the terminating L3 probes
 //! observe the loop through a tight `ens result == <value>` pinned by a loop
 //! invariant, so the §7 mutation battery bites (a wrong body is killed); the §7
 //! vacuity gate (which rejects `ens true`) is respected. The L0 probes are L0
-//! because the obligation BITES at the continue (not because the contract is
-//! vacuous).
+//! because the obligation bites at the continue, not because the contract is
+//! vacuous.
 //!
-//! R-CHAR-3: the expected LEVELS trace to the design (`verus-lowering.md`
-//! Verification §`break`/`continue` — GROUNDED with real `verus 0.2026.05.24`:
+//! R-CHAR-3: the expected levels trace to the design (`verus-lowering.md`
+//! Verification §`break`/`continue` — grounded with real `verus 0.2026.05.24`:
 //! continue-ok → L3, bad-inv/bad-dec continue → L0, break-exit → L3, diverge
-//! loop → L1) and the expected VALUES are the program's own arithmetic
-//! constants; NEITHER is copied from forge's own output. Runs the BUILT `forge`
-//! binary; if verus is absent the verus-dependent probes SKIP LOUDLY (never
-//! panic on a missing solver), mirroring `operators_conformance.rs`. The
-//! PARSER-level structural-rule probes run unconditionally (no verus needed).
+//! loop → L1) and the expected values are the program's own arithmetic
+//! constants; neither is copied from forge's own output. Runs the built `forge`
+//! binary; if verus is absent the verus-dependent probes skip with a logged
+//! reason, rather than panic on a missing solver, mirroring
+//! `operators_conformance.rs`. The parser-level structural-rule probes run
+//! unconditionally (no verus needed).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -117,11 +118,11 @@ fn level(certs: &[Value], item: &str) -> String {
 //     (verus-lowering.md REQ-12(a)(b), AC-7 probe 1).
 // ---------------------------------------------------------------------------
 
-/// A loop that adds 2 to `c` per iteration, with the index advancing BEFORE the
-/// `continue` so the invariant `c == i * 2` AND the measure `n - i` both hold at
-/// the continue. The `continue` is load-bearing (it carries the +2 increment and
-/// the post-continue statement is dead). Tight `ens result == n * 2` (pinned by
-/// the invariant) → the §7 mutation battery bites → L3.
+/// A loop that adds 2 to `c` per iteration, with the index advancing before the
+/// `continue` so the invariant `c == i * 2` and the measure `n - i` both hold at
+/// the continue. The `continue` carries the +2 increment and the post-continue
+/// statement is dead. Tight `ens result == n * 2` (pinned by the invariant) → the
+/// §7 mutation battery bites → L3.
 #[test]
 fn continue_preserving_invariant_and_decreases_certifies_l3() {
     if !verus_present() {
@@ -161,10 +162,10 @@ fn continue_preserving_invariant_and_decreases_certifies_l3() {
 //     (verus-lowering.md REQ-12(a), AC-7 probe 2).
 // ---------------------------------------------------------------------------
 
-/// The same accumulator loop, but the `continue` fires BEFORE the matching index
-/// advance, so the invariant `c == i * 2` is FALSE at the continue. The
-/// invariant obligation BITES at the continue point → L0 (not an L3, not a
-/// vacuity pass). GROUNDED: "loop invariant not satisfied … at this continue".
+/// The same accumulator loop, but the `continue` fires before the matching index
+/// advance, so the invariant `c == i * 2` is false at the continue. The
+/// invariant obligation bites at the continue point → L0 (not an L3, not a
+/// vacuity pass). Grounded: "loop invariant not satisfied … at this continue".
 #[test]
 fn continue_breaking_invariant_is_l0() {
     if !verus_present() {
@@ -203,10 +204,10 @@ fn continue_breaking_invariant_is_l0() {
 //     (verus-lowering.md REQ-12(b), AC-7 probe 3).
 // ---------------------------------------------------------------------------
 
-/// A loop whose `continue;` re-enters WITHOUT advancing the loop variable `i`, so
-/// the measure `n - i` does NOT strictly decrease at the continue back-edge,
+/// A loop whose `continue;` re-enters without advancing the loop variable `i`, so
+/// the measure `n - i` does not strictly decrease at the continue back-edge,
 /// while the invariant `i <= n` still holds (isolating the decreases obligation).
-/// GROUNDED: "decreases not satisfied at continue" → L0.
+/// Grounded: "decreases not satisfied at continue" → L0.
 #[test]
 fn continue_not_decreasing_measure_is_l0() {
     if !verus_present() {
@@ -243,9 +244,9 @@ fn continue_not_decreasing_measure_is_l0() {
 // ---------------------------------------------------------------------------
 
 /// A loop whose body may `break` early; the post-break fact `result == 5` follows
-/// from the invariant `c == 5` that holds AT the break point (a v0.1 Thermite
-/// `inv` lowers to a PLAIN Verus `invariant`, which Verus checks at break too —
-/// REQ-12(c) / OQ-5 policy (ii)). The break exits cleanly; the `Stmt::Break`
+/// from the invariant `c == 5` that holds at the break point (a v0.1 Thermite
+/// `inv` lowers to a plain Verus `invariant`, which Verus checks at break too —
+/// REQ-12(c) / OQ-5 policy (ii)). The break exits; the `Stmt::Break`
 /// lowers to a native Verus `break;`. Tight `ens result == 5` → §7 bites → L3.
 #[test]
 fn break_early_exit_certifies_l3() {
@@ -284,14 +285,14 @@ fn break_early_exit_certifies_l3() {
 //     (verus-lowering.md REQ-12(d), AC-7 probe 5 — the editor pattern payoff).
 // ---------------------------------------------------------------------------
 
-/// The editor's event-loop shape: an `fx diverge` fn whose loop has NO real
-/// termination (the lowering suppresses the `decreases` and emits
+/// The editor's event-loop shape: an `fx diverge` fn whose loop has no
+/// termination measure (the lowering suppresses the `decreases` and emits
 /// `#[verifier::exec_allows_no_decreases_clause]`). Inside, a `continue` skips an
-/// iteration and a `break` exits cleanly on the quit key — NEITHER carries a
-/// decreases obligation (no measure). Verus verifies the loop INVARIANTS
-/// (partial correctness); forge STRUCTURALLY caps the fn at L1 (#88 diverge cap),
-/// NOT L0 — break/continue do not change the cap. This is the payoff: the editor
-/// event loop now works WITHOUT the quit-flag + `dec 1` hack.
+/// iteration and a `break` exits on the quit key; neither carries a
+/// decreases obligation (no measure). Verus verifies the loop invariants
+/// (partial correctness); forge caps the fn at L1 (#88 diverge cap),
+/// not L0 — break/continue do not change the cap. The editor
+/// event loop works without the quit-flag + `dec 1` hack.
 #[test]
 fn diverge_loop_with_break_and_continue_caps_at_l1() {
     if !verus_present() {
@@ -332,7 +333,7 @@ fn diverge_loop_with_break_and_continue_caps_at_l1() {
         Value::from(false),
         "the diverge cap is keyed on `fx diverge`, NOT a `#[boundary]`: {certs:?}"
     );
-    // The diverge cap is NOT a reject (the §7 mutation/strengthen gate is SKIPPED
+    // The diverge cap is not a reject (the §7 mutation/strengthen gate is skipped
     // for a diverge fn — `editor_runs.rs` precedent).
     assert!(
         cert_for(&certs, "event_loop")
@@ -353,7 +354,7 @@ fn diverge_loop_with_break_and_continue_caps_at_l1() {
 // (6) PARSER-level in-loop structural rule (parser.md REQ-10, AC-8). No verus.
 // ---------------------------------------------------------------------------
 
-/// A `break;` / `continue;` parsed OUTSIDE any loop body is a structured
+/// A `break;` / `continue;` parsed outside any loop body is a structured
 /// `SyntaxError::BreakContinueOutsideLoop`, never a panic (parser.md REQ-10,
 /// AC-8). The check is the parser's loop-depth counter (a structural rule,
 /// analogous to the mandatory-clause rule), not a verification rule.
@@ -391,7 +392,7 @@ fn break_or_continue_outside_a_loop_is_a_structured_error_not_a_panic() {
     );
 }
 
-/// A `break;` nested inside an `if` block that is itself INSIDE a loop body is
+/// A `break;` nested inside an `if` block that is itself inside a loop body is
 /// accepted (loop-depth > 0 — the counter is per-loop, not per-block), and the
 /// statement parses to a `Stmt::Break` in the loop body (parser.md REQ-10,
 /// AC-8). A `continue;` likewise.
@@ -457,14 +458,14 @@ fn break_and_continue_inside_a_loop_parse_cleanly_as_stmt_nodes() {
 }
 
 // ---------------------------------------------------------------------------
-// (7) NO REGRESSION: the corpus loops (no break/continue) still certify L3.
-//     (verus-lowering.md AC-7 "NO regression": sum/binary_search UNCHANGED.)
+// (7) No regression: the corpus loops (no break/continue) still certify L3.
+//     (verus-lowering.md AC-7 "no regression": sum/binary_search unchanged.)
 // ---------------------------------------------------------------------------
 
 /// `conformance/sum.th` and `conformance/binary_search.th` — whose loops use
-/// NEITHER break nor continue — still certify L3 after the `Stmt` ripple. The
+/// neither break nor continue — still certify L3 after the `Stmt` ripple. The
 /// `Stmt::Break`/`Continue` arms are layer-neutral leaves (no effect, no mutant,
-/// no spec-fn call), so a loop WITHOUT them lowers byte-identically.
+/// no spec-fn call), so a loop without them lowers byte-identically.
 #[test]
 fn corpus_loops_without_break_or_continue_still_certify_l3() {
     if !verus_present() {

@@ -11,13 +11,13 @@
 //!   - `goal.md` R-DEFER-9 (anti-Goodhart): "the design's §7 battery exists
 //!     precisely to catch this" — a contract that does not constrain its result
 //!     must not certify clean. A path that lets a weak contract certify L3
-//!     UNSCORED is a bypass = a hole.
+//!     unscored is a bypass = a hole.
 //!   - `.design/forge/mutation-scoring.md` REQ-5 (the floor gate) + REQ-7 (the
 //!     gate runs after L3, content-addressed through the proof cache).
 //!
-//! Both tests drive the BUILT `forge` binary (mirroring
-//! `mutation_conformance.rs`); both NEED verus and SKIP LOUDLY when it is absent,
-//! never panic. `unwrap`/`expect` are fine in `tests/` (not anti-pattern-gated).
+//! Both tests drive the built `forge` binary (mirroring
+//! `mutation_conformance.rs`); both need verus and skip with a logged note when it
+//! is absent, no panic. `unwrap`/`expect` are fine in `tests/` (not anti-pattern-gated).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -105,32 +105,32 @@ fn is_clean_l3(cert: &Value) -> bool {
 }
 
 // ----------------------------------------------------------------------------
-// DIVERGENCE 1 — the 0/0 escape: a WEAK contract certifies L3 UNSCORED.
+// DIVERGENCE 1 — the 0/0 escape: a weak contract certifies L3 unscored.
 //
 // Authority: `thermite-design.md` §7 step 4 (the floor gates a contract that
 // under-constrains its body) + `goal.md` R-DEFER-9 (a path that lets a weak
 // contract certify is a Goodhart hole).
 //
 // Program: `pick(xs: &[u32]) -> &[u32]  req xs.len() <= 10  ens result.len() <= 10
-//           fx pure { xs }`. The `ens` does NOT pin WHICH slice `result` is — a
-// body returning ANY slice with `len <= 10` (e.g. an empty slice) satisfies it,
-// so the contract under-constrains the result exactly the way §7's floor is
-// meant to catch. Yet `mutation::generate` emits ZERO mutants for it: the early-
-// return mutator is SKIPPED because `&[u32]` has no canonical zero
+//           fx pure { xs }`. The `ens` does not pin which slice `result` is: a
+// body returning any slice with `len <= 10` (e.g. an empty slice) satisfies it,
+// so the contract under-constrains the result the way §7's floor is
+// meant to catch. Yet `mutation::generate` emits zero mutants for it: the early-
+// return mutator is skipped because `&[u32]` has no canonical zero
 // (`mutation::zero_value_for` -> None), and the body `{ xs }` has no
 // Binary/IntLit/If site. With `scored == 0`, `MutationScore::kill_ratio` returns
 // 1.0 (`mutation.rs`), the floor is vacuously met, and the item certifies L3
 // with `mutants_killed: "0/0"`.
 //
-// Expected (authority): a contract that fails to constrain its result must NOT
-// certify clean L3 unscored — the floor must catch it (§7 / R-DEFER-9). The
-// early-return mutant should be generatable for ANY body so 0/0 is unreachable
+// Expected (authority): a contract that fails to constrain its result must not
+// certify clean L3 unscored; the floor must catch it (§7 / R-DEFER-9). The
+// early-return mutant should be generatable for any body so 0/0 is unreachable
 // for a real fn.
 //
-// Actual (fa55760): clean L3 certify, `mutants_killed: "0/0"`. UNGATED.
+// Actual (fa55760): clean L3 certify, `mutants_killed: "0/0"`, ungated.
 //
-// This test asserts the AUTHORITY's expectation (NOT a clean unscored L3) and
-// therefore FAILS against the current toolchain — pinning the divergence.
+// This test asserts the authority's expectation (not a clean unscored L3) and
+// therefore fails against the current toolchain, pinning the divergence.
 // Tracking: filed as a `-l blocker` crosslink issue (see report).
 // ----------------------------------------------------------------------------
 #[test]
@@ -154,10 +154,10 @@ fn divergence_weak_contract_escapes_floor_via_zero_scored_mutants() {
 
     let cert = cert_for(&certs, "pick");
 
-    // The AUTHORITY's expectation: §7's floor must catch a contract that
-    // under-constrains its result. A weak contract must NOT certify clean L3 with
-    // a vacuous `0/0` score. Either it is gated (`WeakContract`) OR it is scored
-    // with a real denominator — never an unscored clean certify.
+    // The authority's expectation: §7's floor must catch a contract that
+    // under-constrains its result. A weak contract must not certify clean L3 with
+    // a vacuous `0/0` score. Either it is gated (`WeakContract`) or it is scored
+    // with a real denominator, never an unscored clean certify.
     let mk = cert
         .get("contract_quality")
         .and_then(|q| q.get("mutants_killed"))
@@ -175,8 +175,8 @@ fn divergence_weak_contract_escapes_floor_via_zero_scored_mutants() {
 }
 
 // ----------------------------------------------------------------------------
-// DIVERGENCE 2 — the cache-bypass: a stale SAME-VERSION pre-gate cert is re-served
-// WITHOUT mutation gating.
+// DIVERGENCE 2 — the cache-bypass: a stale same-version pre-gate cert is re-served
+// without mutation gating.
 //
 // Authority: `.design/forge/mutation-scoring.md` REQ-7 (the gate runs on every
 // L3 proof; the proof cache makes re-runs cheap but must not let a stale verdict
@@ -184,24 +184,24 @@ fn divergence_weak_contract_escapes_floor_via_zero_scored_mutants() {
 // L3 for a weak contract is a bypass = a hole).
 //
 // The cache key (`cache::cache_key`) is (lowered_src, seed, verus_version,
-// THERMITE_VERSION). Commit fa55760 introduced the mutation gate but did NOT bump
-// `forge`'s version (still 0.1.0), and the gate's existence / the floor are NOT
-// in the key. So a cert stored by PRE-#12 forge (#5/#6/#13 all shipped at 0.1.0
-// and populate the SAME `target/` cache) for the weak-contract program `f` is an
-// L3-CLEAN cert under the identical key — and a post-#12 warm check serves it on
-// a HIT (`check::check_file_with_options`, line ~273) BEFORE the gate runs,
+// THERMITE_VERSION). Commit fa55760 introduced the mutation gate but did not bump
+// `forge`'s version (still 0.1.0), and the gate's existence / the floor are not
+// in the key. So a cert stored by pre-#12 forge (#5/#6/#13 all shipped at 0.1.0
+// and populate the same `target/` cache) for the weak-contract program `f` is an
+// L3-clean cert under the identical key, and a post-#12 warm check serves it on
+// a hit (`check::check_file_with_options`, line ~273) before the gate runs,
 // certifying the weak contract L3.
 //
-// This is genuinely reachable: any developer/CI with a proof cache populated by
+// This is reachable: any developer/CI with a proof cache populated by
 // pre-#12 forge at version 0.1.0 (the gate-introducing commit did not invalidate
 // the cache) bypasses the new gate. The fix is a cache-key version bump (or a
 // gate-version tag in the key) by the gate-introducing commit.
 //
-// The test simulates the pre-#12 cache entry (the gate is the ONLY new behavior
+// The test simulates the pre-#12 cache entry (the gate is the only new behavior
 // since #13; a pre-gate forge at the same version stored an L3-clean cert for `f`)
 // by planting an L3-clean cert at the main-item key, then runs a warm check. The
-// AUTHORITY's expectation is that the weak contract stays GATED; the current
-// toolchain serves the stale clean cert -> the test FAILS, pinning the bypass.
+// authority's expectation is that the weak contract stays gated; the current
+// toolchain serves the stale clean cert -> the test fails, pinning the bypass.
 // Tracking: filed as a `-l blocker` crosslink issue (see report).
 // ----------------------------------------------------------------------------
 #[test]
@@ -210,7 +210,7 @@ fn divergence_stale_same_version_cache_entry_bypasses_mutation_gate() {
         eprintln!("SKIP: verus absent — mutation scoring needs per-mutant proofs.");
         return;
     }
-    // The AC-2 weak-but-non-vacuous contract: a cold check GATES it `WeakContract`
+    // The AC-2 weak-but-non-vacuous contract: a cold check gates it `WeakContract`
     // (kill ratio 1/2 < 0.60), with the early-return-0 mutant surviving.
     let program = "fn f(a: u32, b: u32) -> u32\n  \
                    req a <= 10 && b <= 10\n  \
@@ -220,7 +220,7 @@ fn divergence_stale_same_version_cache_entry_bypasses_mutation_gate() {
     let cache_dir = unique_cache_dir();
     let _ = std::fs::remove_dir_all(&cache_dir);
 
-    // Cold run: confirm the gate fires (the cold verdict is the GROUND TRUTH the
+    // Cold run: confirm the gate fires (the cold verdict is the ground truth the
     // warm run must preserve). This populates the cache with the post-gate certs.
     let cold = run_check_in(&path, &cache_dir);
     let cold_cert = cert_for(&cold, "f");
@@ -234,11 +234,11 @@ fn divergence_stale_same_version_cache_entry_bypasses_mutation_gate() {
         "precondition: the weak contract must be GATED on a cold check; cert: {cold_cert}"
     );
 
-    // Locate the MAIN-ITEM cache entry (the `f` cert: the WeakContract L0 reject)
-    // and OVERWRITE it with the cert PRE-#12 forge would have stored under the
-    // SAME key (same lowered source, same seed, same verus+thermite version 0.1.0):
-    // an L3-CLEAN cert with the forward-declared `mutants_killed: "0/0"`. No
-    // production code is touched — we only model the stale same-version cache file.
+    // Locate the main-item cache entry (the `f` cert: the WeakContract L0 reject)
+    // and overwrite it with the cert pre-#12 forge would have stored under the
+    // same key (same lowered source, same seed, same verus+thermite version 0.1.0):
+    // an L3-clean cert with the forward-declared `mutants_killed: "0/0"`. No
+    // production code is touched; we only model the stale same-version cache file.
     let mut planted = false;
     for entry in std::fs::read_dir(&cache_dir).unwrap() {
         let p = entry.unwrap().path();
@@ -274,15 +274,15 @@ fn divergence_stale_same_version_cache_entry_bypasses_mutation_gate() {
         "could not find the main-item cache entry to model the pre-#12 stale cert"
     );
 
-    // Warm run: re-check the SAME program against the cache holding the stale
+    // Warm run: re-check the same program against the cache holding the stale
     // pre-#12 L3-clean cert.
     let warm = run_check_in(&path, &cache_dir);
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir_all(&cache_dir);
     let warm_cert = cert_for(&warm, "f");
 
-    // AUTHORITY (REQ-7 / R-DEFER-9): the weak contract's verdict must be IDENTICAL
-    // to the cold gate — a stale same-version cache entry must NOT let the weak
+    // Authority (REQ-7 / R-DEFER-9): the weak contract's verdict must be identical
+    // to the cold gate — a stale same-version cache entry must not let the weak
     // contract certify clean L3, bypassing the mutation gate.
     assert!(
         !is_clean_l3(warm_cert),

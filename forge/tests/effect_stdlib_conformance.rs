@@ -1,37 +1,37 @@
 //! Stage 3 effect-primitive stdlib cert oracle (`.design/basis/03-effect-stdlib.md`
 //! AC-1..AC-6 / REQ-1..REQ-7; `conformance/effect-stdlib/cases.json` +
-//! `conformance/effect_demo.th`). Drives the BUILT `forge` binary over the oracle
+//! `conformance/effect_demo.th`). Drives the built `forge` binary over the oracle
 //! programs and asserts the verified-effect-primitive pattern: a `#[boundary("os::…")]`
-//! effect primitive certifies L1 + boundary; a pure caller that handles BOTH `Option`
-//! arms composes THROUGH the assumed `ens` to L3 + `to_boundary`; the audit manifest
+//! effect primitive certifies L1 + boundary; a pure caller that handles both `Option`
+//! arms composes through the assumed `ens` to L3 + `to_boundary`; the audit manifest
 //! enumerates each primitive in the TCB; the `#57` seccomp sandbox derives the
 //! per-effect syscall allowlist.
 //!
-//! Stage 3 owns NO new validator/lower/vacuity/sandbox mechanism — outcome-coverage
-//! is EMERGENT (the doc's Resolution 1): `#16` boundary L1-short-circuit + `#52`
+//! Stage 3 owns no new validator/lower/vacuity/sandbox mechanism. Outcome-coverage
+//! is emergent (the doc's Resolution 1): `#16` boundary L1-short-circuit + `#52`
 //! verify-through + Stage-1b exhaustive-match + `#57` fx→syscall already compose.
-//! This file is therefore a CONFORMANCE DEMONSTRATION over the shipped pipeline; it
+//! This file is therefore a conformance demonstration over the shipped pipeline; it
 //! adds no `forge`/`thermite-lower` production code.
 //!
-//! THE MUTATION-FLOOR OQ (resolved here): `read_doubled`'s shape-only effect
+//! The mutation-floor OQ (resolved here): `read_doubled`'s shape-only effect
 //! contract (`Some(v) => v < 512`) is intrinsically mutation-survivable (a
 //! `return None` mutant satisfies it — you cannot pin a value read from the world),
-//! so at the DEFAULT 60% floor it is HONESTLY gated `WeakContract` (the
-//! `compose_through_weak_contract_at_default_floor` test pins this true reflection).
+//! so at the default 60% floor it is gated `WeakContract` (the
+//! `compose_through_weak_contract_at_default_floor` test pins this reflection).
 //! The L3 + `to_boundary` claim is therefore demonstrated at `--mutation-floor 0`
-//! (the documented relaxation), exactly as a real effect-reading program would be
-//! checked. The floor-0 flag MUST NOT leak to the pure corpus (`sum`/`binary_search`
+//! (the documented relaxation), as a real effect-reading program would be
+//! checked. The floor-0 flag does not leak to the pure corpus (`sum`/`binary_search`
 //! stay at the default floor — `corpus_unaffected_at_default_floor`). No
 //! mutation-exemption rule is added (it would be a soundness-adjacent new rule; the
-//! orchestrator/critic weigh that, not a silent add).
+//! orchestrator/critic weigh that rather than a silent add).
 //!
 //! Expected values trace to the golden `conformance/effect-stdlib/cases.json` +
 //! `conformance/effect_demo.th` + `.design/basis/03-effect-stdlib.md` (R-CHAR-3),
-//! NEVER copied from forge's own output. The `forge check`/`audit` cases run a real
-//! verus proof (the compose-through L3) so they SKIP LOUDLY if verus is absent; the
-//! sandbox case RUNS a seccomp-confined binary so it SKIPS LOUDLY without a
-//! `kill_process`-capable kernel (`unwrap`/`expect`/`panic!` are fine — `tests/` is
-//! not anti-pattern-gated).
+//! not copied from forge's own output. The `forge check`/`audit` cases run a real
+//! verus proof (the compose-through L3) so they skip with a diagnostic if verus is
+//! absent; the sandbox case runs a seccomp-confined binary so it skips with a
+//! diagnostic without a `kill_process`-capable kernel (`unwrap`/`expect`/`panic!` are
+//! fine — `tests/` is not anti-pattern-gated).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -57,7 +57,7 @@ fn cases() -> Value {
 
 /// `true` iff verus can be located — mirrors `composition_conformance.rs`. The
 /// compose-through L3 is a real verus proof, so the prover must be present; the
-/// boundary L1 cert resolves the verus version up-front for the proof cache.
+/// boundary L1 cert resolves the verus version up front for the proof cache.
 fn verus_present() -> bool {
     if let Ok(p) = std::env::var("VERUS_BIN") {
         if Path::new(&p).exists() {
@@ -78,7 +78,7 @@ fn verus_present() -> bool {
 }
 
 /// `true` iff this host's kernel offers the `kill_process` seccomp action — mirrors
-/// `sandbox_conformance.rs`. When absent the sandbox case SKIPS LOUD (OQ-3).
+/// `sandbox_conformance.rs`. When absent the sandbox case skips with a diagnostic (OQ-3).
 fn seccomp_kill_available() -> bool {
     std::fs::read_to_string("/proc/sys/kernel/seccomp/actions_avail")
         .map(|s| s.contains("kill_process"))
@@ -154,8 +154,8 @@ fn effect_demo() -> PathBuf {
 // AC-1a (boundary_primitive): read_small / now certify L1 + boundary + target +
 // fx. The body is the foreign syscall (assumed via external_body, contract
 // L1-enforced at the crossing); the closed-outcome `ens` (`match result { … }`)
-// is NOT vacuity-rejected (the boundary L1-short-circuits before the value-strength
-// gates) yet is not trivial (`ens true` would be rejected — see the now-trivial
+// is not vacuity-rejected (the boundary L1-short-circuits before the value-strength
+// gates) yet is not trivial (`ens true` would be rejected — the trivial
 // negative is covered by the shipped #16 oracle). Anchored to cases.json
 // `boundary_primitive`.
 // ---------------------------------------------------------------------------
@@ -193,7 +193,7 @@ fn boundary_primitives_certify_l1_boundary_target_fx() {
 
         let cert = find_cert(&certs, name);
         // REQ-1/REQ-7: the effect primitive certifies L1 (foreign body, no verus run
-        // on it) — never L3.
+        // on it), never L3.
         assert_eq!(
             cert["level"],
             Value::from(expect_level),
@@ -226,8 +226,8 @@ fn boundary_primitives_certify_l1_boundary_target_fx() {
             effects.iter().any(|e| e.contains(expect_fx)),
             "`{name}` declares the typed effect `{expect_fx}`: {effects:?}"
         );
-        // REQ-3: the closed-outcome `ens` is NOT vacuity-rejected (no reject cause)
-        // — the boundary short-circuits before the value-strength gates.
+        // REQ-3: the closed-outcome `ens` is not vacuity-rejected (no reject cause).
+        // The boundary short-circuits before the value-strength gates.
         assert!(
             cert.get("reject").map(|r| r.is_null()).unwrap_or(true),
             "`{name}`: a closed-set `ens` (match result {{…}}) is admitted, not vacuity-rejected"
@@ -236,8 +236,8 @@ fn boundary_primitives_certify_l1_boundary_target_fx() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-1b (compose_through): read_doubled handles BOTH Option arms and discharges its
-// own `ens` (Some(v)=>v<512) THROUGH read_small's assumed `ens` (Some(v)=>v<256 ⇒
+// AC-1b (compose_through): read_doubled handles both Option arms and discharges its
+// own `ens` (Some(v)=>v<512) through read_small's assumed `ens` (Some(v)=>v<256 ⇒
 // v+v<512) → L3 + to_boundary via read_small (#52 verify-through + #17). Demonstrated
 // at --mutation-floor 0 (the bound-style effect-caller contract is intrinsically
 // mutation-survivable — the OQ). Anchored to cases.json `compose_through`.
@@ -265,7 +265,7 @@ fn compose_through_certifies_l3_to_boundary_at_floor_zero() {
         "effect_demo.th certifies at --mutation-floor {floor}; stderr:\n{stderr}"
     );
     let cert = find_cert(&certs, item);
-    // REQ-3/REQ-4: the caller PROVES its ens on EVERY arm through the assumed contract.
+    // REQ-3/REQ-4: the caller proves its ens on every arm through the assumed contract.
     assert_eq!(
         cert["level"],
         Value::from(expect_level),
@@ -284,13 +284,13 @@ fn compose_through_certifies_l3_to_boundary_at_floor_zero() {
     );
 }
 
-// THE MUTATION-FLOOR OQ (resolved): at the DEFAULT floor, read_doubled's shape-only
-// effect contract is HONESTLY gated `WeakContract` — a `return None` mutant satisfies
-// `Some(v) => v < 512`, because you cannot pin a value READ FROM THE WORLD. This is a
-// TRUE reflection (the doc's "honest grounding caveat"), not a bug: the L3 demo above
-// runs at --mutation-floor 0 precisely because the bound-style effect-caller contract
+// The mutation-floor OQ (resolved): at the default floor, read_doubled's shape-only
+// effect contract is gated `WeakContract` — a `return None` mutant satisfies
+// `Some(v) => v < 512`, because you cannot pin a value read from the world. This is a
+// true reflection (the doc's grounding caveat), not a bug: the L3 demo above
+// runs at --mutation-floor 0 because the bound-style effect-caller contract
 // is mutation-survivable by necessity. Expected (L0 + WeakContract) from the design
-// doc's caveat, not forge output (R-CHAR-3). This is why floor-0 is the honest demo
+// doc's caveat, not forge output (R-CHAR-3). This is why floor-0 is the demo
 // and no mutation-exemption rule is silently added.
 #[test]
 fn compose_through_weak_contract_at_default_floor() {
@@ -298,10 +298,10 @@ fn compose_through_weak_contract_at_default_floor() {
         eprintln!("SKIP compose_through_weak_contract: verus not available.");
         return;
     }
-    // DEFAULT floor (no --mutation-floor flag): the #12 gate runs.
+    // Default floor (no --mutation-floor flag): the #12 gate runs.
     let (_code, certs, _stderr) = run_check_json(&effect_demo(), None);
     let cert = find_cert(&certs, "read_doubled");
-    // At the default floor the shape-only contract does NOT reach L3 — it is gated.
+    // At the default floor the shape-only contract does not reach L3 — it is gated.
     assert_ne!(
         cert["level"],
         Value::from("L3"),
@@ -321,8 +321,8 @@ fn compose_through_weak_contract_at_default_floor() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-5 (reject/missing_arm — handled-or-loud): a caller that drops the None arm of
-// read_small()'s Option is REJECTED. For a built-in Option this surfaces at verus as
+// AC-5 (reject/missing_arm — handled or surfaced): a caller that drops the None arm of
+// read_small()'s Option is rejected. For a built-in Option this surfaces at verus as
 // `E0004: non-exhaustive patterns: None not covered` (L0 + a failed obligation). The
 // failure/EOF outcome cannot be silently dropped. Anchored to cases.json
 // `reject.missing_arm`.
@@ -343,7 +343,7 @@ fn missing_arm_is_rejected_handled_or_loud() {
         .clone();
     let program = case["program"].as_str().expect("program");
     // The oracle pins "NonExhaustive"; verus emits "non-exhaustive patterns" (E0004).
-    // Match either spelling, case-insensitively — the LOUD non-exhaustive reject.
+    // Match either spelling, case-insensitively — the non-exhaustive reject.
     let expect = case["expect_error_contains"]
         .as_str()
         .expect("expect_error_contains")
@@ -356,14 +356,14 @@ fn missing_arm_is_rejected_handled_or_loud() {
 
     assert_ne!(code, Some(0), "a dropped Option arm does not certify");
     // Cluster C7 (`.design/basis/09-option-result.md` REQ-3, #95): `Option` is now a
-    // SEEDED built-in variant set, so a `match` over it that drops the `None` arm is
-    // caught LOUDLY at the VALIDATOR (`SpecError::NonExhaustiveMatch`) BEFORE lowering
-    // — the compile-time tooth the oracle's `why` names ("enforced at validation").
+    // seeded built-in variant set, so a `match` over it that drops the `None` arm is
+    // caught at the validator (`SpecError::NonExhaustiveMatch`) before lowering.
+    // This is the compile-time tooth the oracle's `why` names ("enforced at validation").
     // Pre-C7 `Option` was inert at the validator and the missing arm fell through to
     // verus's E0004; now it is a structured spec reject (exit 2, no per-item cert).
-    // Either surface is the LOUD reject the oracle pins (`expect_error_contains:
+    // Either surface is the reject the oracle pins (`expect_error_contains:
     // "NonExhaustive"`); accept whichever the toolchain emits — a validator Spec error
-    // in stderr (the C7 path) OR a verus E0004 in a failed obligation.
+    // in stderr (the C7 path) or a verus E0004 in a failed obligation.
     let validator_reject = stderr.to_lowercase().replace('-', "").contains(&expect);
     let verus_reject = certs.iter().any(|c| {
         c.get("item").and_then(|v| v.as_str()) == Some("bad")
@@ -390,8 +390,8 @@ fn missing_arm_is_rejected_handled_or_loud() {
 
 // ---------------------------------------------------------------------------
 // AC-4 (reject/overclaim_soundness — no manufactured guarantee): a caller claiming
-// its Some arm is `< 100` while read_small only guarantees `< 256` does NOT discharge
-// its `ens` through the boundary's assumed contract → L0 counterexample, NOT a false
+// its Some arm is `< 100` while read_small only guarantees `< 256` does not discharge
+// its `ens` through the boundary's assumed contract → an L0 counterexample, not a false
 // L3. The assumed `ens` is a floor the caller cannot exceed (R-DEFER-9). Anchored to
 // cases.json `reject.overclaim_soundness`.
 // ---------------------------------------------------------------------------
@@ -420,7 +420,7 @@ fn overclaim_soundness_is_a_counterexample_not_a_false_l3() {
     let _ = std::fs::remove_file(&path);
 
     let cert = find_cert(&certs, "liar");
-    // The decisive anti-cheat assertion: NOT laundered to a false L3.
+    // The decisive anti-cheat assertion: not laundered to a false L3.
     assert_ne!(
         cert["level"],
         Value::from("L3"),
@@ -467,12 +467,12 @@ fn audit_enumerates_primitives_in_the_tcb() {
         .map(|v| v.as_str().expect("name").to_string())
         .collect();
 
-    // `forge audit` runs the check pipeline at the DEFAULT mutation floor (it has no
+    // `forge audit` runs the check pipeline at the default mutation floor (it has no
     // --mutation-floor flag), so the shape-only read_doubled is WeakContract-gated →
-    // the project exits NON-ZERO (the honest gate, the OQ above). The audit STILL
+    // the project exits non-zero (the gate, the OQ above). The audit still
     // emits the full manifest + the TCB enumeration on stdout (the AC-2 deliverable is
     // the enumeration, independent of the project headline). Assert the manifest is
-    // emitted + the TCB enumerates the primitives — NOT that the project passed.
+    // emitted + the TCB enumerates the primitives, rather than that the project passed.
     let (code, manifest, stderr) = run_audit_json(&effect_demo());
     let manifest = manifest.unwrap_or_else(|| {
         panic!("forge audit --json must emit one JSON manifest even when a fn is gated; stderr:\n{stderr}")
@@ -527,9 +527,9 @@ fn audit_enumerates_primitives_in_the_tcb() {
 // AC-3 (sandbox): `forge build --entry` of a program declaring `fx time` derives the
 // #57 seccomp allowlist for that effect — including clock_gettime (syscall 228, per
 // the design doc's fx→syscall table); a `fx pure` probe attempting a denied syscall
-// is SIGSYS-killed (exit 159 = 128+31). The allowlist is fx-DERIVED and per-effect,
-// WITHOUT a live os:: link (v1; OQ-4). Anchored to cases.json `sandbox`. RUNS a
-// seccomp-confined binary, so SKIPS LOUD without a kill_process kernel (OQ-3).
+// is SIGSYS-killed (exit 159 = 128+31). The allowlist is fx-derived and per-effect,
+// without a live os:: link (v1; OQ-4). Anchored to cases.json `sandbox`. Runs a
+// seccomp-confined binary, so skips with a diagnostic without a kill_process kernel (OQ-3).
 // ---------------------------------------------------------------------------
 #[test]
 fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
@@ -589,7 +589,7 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
         .iter()
         .map(|n| n.as_i64().expect("syscall number"))
         .collect();
-    // REQ-5: the Time effect WIDENS the allowlist to include clock_gettime (228).
+    // REQ-5: the Time effect widens the allowlist to include clock_gettime (228).
     assert!(
         allow.contains(&CLOCK_GETTIME),
         "AC-3: `fx time` derives an allowlist including clock_gettime ({CLOCK_GETTIME}): {allow:?}"
@@ -600,7 +600,7 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
             .expect("artifact path in build manifest"),
     );
 
-    // The fx-time binary runs CLEAN under its derived filter (the entry stays within
+    // The fx-time binary runs clean under its derived filter (the entry stays within
     // its declared effects; no off-allowlist syscall).
     {
         use std::os::unix::process::ExitStatusExt;
@@ -620,8 +620,8 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
         let _ = std::fs::remove_dir_all(parent);
     }
 
-    // The KILL scream: a PURE filter (fx pure, 23 syscalls) denies the openat probe →
-    // SIGSYS, exit 159. This is the shipped #57 `pure_probe_killed` precedent, RUN
+    // The kill case: a pure filter (fx pure, 23 syscalls) denies the openat probe →
+    // SIGSYS, exit 159. This is the shipped #57 `pure_probe_killed` precedent, run
     // here to confirm the per-effect confinement teeth (a syscall outside the declared
     // fx is killed at the boundary).
     let sum = conformance_dir().join("sum.th");
@@ -664,9 +664,9 @@ fn sandbox_derives_fx_time_allowlist_and_kills_off_allowlist() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-7 (corpus unaffected): the pure corpus (`sum`) stays L3 END-TO-END at the
-// DEFAULT mutation floor — the floor-0 relaxation the effect caller needs MUST NOT
-// leak to the pure corpus. Run `sum` with NO --mutation-floor flag and assert it
+// AC-7 (corpus unaffected): the pure corpus (`sum`) stays L3 end-to-end at the
+// default mutation floor — the floor-0 relaxation the effect caller needs does not
+// leak to the pure corpus. Run `sum` with no --mutation-floor flag and assert it
 // stays L3 + end_to_end (no boundary, no WeakContract). Expected from
 // `.design/basis/03-effect-stdlib.md` AC-7, not forge output (R-CHAR-3).
 // ---------------------------------------------------------------------------
@@ -677,7 +677,7 @@ fn corpus_unaffected_at_default_floor() {
         return;
     }
     let sum = conformance_dir().join("sum.th");
-    // NO mutation_floor → the DEFAULT floor (the pure corpus is NOT relaxed).
+    // No mutation_floor → the default floor (the pure corpus is not relaxed).
     let (code, certs, stderr) = run_check_json(&sum, None);
     assert_eq!(
         code,
@@ -695,7 +695,7 @@ fn corpus_unaffected_at_default_floor() {
         Value::from(false),
         "the pure corpus reaches no boundary"
     );
-    // END-TO-END: no crossing in the closure → scope end_to_end (or absent).
+    // End-to-end: no crossing in the closure → scope end_to_end (or absent).
     let scope_is_e2e = match cert.get("assurance_scope") {
         None | Some(Value::Null) => true,
         Some(s) => s.get("kind").and_then(|v| v.as_str()) == Some("end_to_end"),

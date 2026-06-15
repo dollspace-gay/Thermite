@@ -1,26 +1,26 @@
-//! `forge/src/strengthen.rs` — §7 step 5 of the vacuity battery: STRENGTHENING
-//! PROBES (`thermite-design.md` §7 "template-based tightenings of `ens` … if a
+//! `forge/src/strengthen.rs` — §7 step 5 of the vacuity battery: strengthening
+//! probes (`thermite-design.md` §7 "template-based tightenings of `ens` … if a
 //! strictly stronger contract proves with no body change, Forge suggests it").
-//! Given a `fn` whose REAL body already proved **L3** but whose contract is WEAK
-//! (#12 mutation scoring found one or more SURVIVORS — behavior the `ens` does
-//! not pin), this module generates a FROZEN, DETERMINISTIC, BOUNDED set of
-//! CANDIDATE stronger `ens` clauses, VERIFIES each against the real body by
+//! Given a `fn` whose real body already proved L3 but whose contract is weak
+//! (#12 mutation scoring found one or more survivors: behavior the `ens` does
+//! not pin), this module generates a frozen, deterministic, bounded set of
+//! candidate stronger `ens` clauses, verifies each against the real body by
 //! reusing the existing verus driver (`check::run_verus`, threaded as a verify
-//! closure), and SURFACES the candidates that (a) VERIFY against the body AND (b)
-//! are strictly STRONGER than the current `ens` as adoptable [`Suggestion`]s.
+//! closure), and surfaces the candidates that (a) verify against the body and (b)
+//! are strictly stronger than the current `ens` as adoptable [`Suggestion`]s.
 //!
 //! Governing design: `.design/forge/strengthening-probes.md`.
 //!
-//! ## Advisory, never a gate
+//! ## Advisory only
 //!
-//! A probe NEVER changes the certification verdict (level/reject/the
-//! `contract_quality` oracle subset). It only ADDS suggestions to the additive,
-//! oracle-EXCLUDED `manifest::Certificate::strengthening` field + populates the
+//! A probe does not change the certification verdict (level/reject/the
+//! `contract_quality` oracle subset). It only adds suggestions to the additive,
+//! oracle-excluded `manifest::Certificate::strengthening` field + populates the
 //! reserved `suggested_move` slot with the headline. A `fn` that certified L3
 //! still certifies L3 with the same oracle subset, now carrying suggestions
 //! (REQ-4). This is the anti-Goodhart escape hatch (`goal.md` R-DEFER-9): the
-//! probe helps the agent climb OUT of a weak-but-true contract toward one that
-//! pins behavior — it never lets it certify a weaker one.
+//! probe helps the agent climb out of a weak-but-true contract toward one that
+//! pins behavior; it does not let it certify a weaker one.
 //!
 //! ## REQ status
 //!
@@ -44,9 +44,9 @@ use thermite_syntax::{BinOp, Clause, Expr, FnItem, Item, PrimType, Span, Type};
 use crate::cli::ForgeError;
 use crate::mutation::MutationScore;
 
-/// The FIXED budget on the number of candidate `ens` clauses generated per `fn`
+/// The fixed budget on the number of candidate `ens` clauses generated per `fn`
 /// (REQ-1, OQ-2). §7 says "budgeted" without a number; this is a documented
-/// `const` (R-CODE-5 — a fixed input, not wall-clock). Each candidate is a verus
+/// `const` (R-CODE-5: a fixed input, not wall-clock). Each candidate is a verus
 /// run (cheap on a #8 cache hit), so the cap bounds the probe's cost. The corpus
 /// `fn`s produce a handful of candidates (one spec-fn-equality per matching spec
 /// fn + a depth-1 grammar over ≤ 4 params + the survivor-derived bound),
@@ -56,7 +56,7 @@ use crate::mutation::MutationScore;
 pub const CANDIDATE_CAP: usize = 16;
 
 /// One generated candidate stronger `ens` clause (REQ-1). The `ens` is a real
-/// SpecTherm `Clause` (built from `thermite_syntax::{Expr, Clause}` — the same
+/// SpecTherm `Clause` (built from `thermite_syntax::{Expr, Clause}`, the same
 /// nodes the parser produces, so it round-trips through the lowerer unchanged).
 /// `kills_survivor` carries the #12 survivor description this candidate would
 /// kill, when the candidate is the survivor-derived family-3 tightening; it is
@@ -77,8 +77,8 @@ pub struct CandidateClause {
 /// One adoptable strengthening suggestion surfaced on a certificate (REQ-4). It
 /// is the §7 step-5 "consider strengthening `ens` with `<clause>` — it holds for
 /// your body and would kill survivor `<M>`" prompt, made concrete: the `clause`
-/// VERIFIES against the real body (so it is adoptable with NO body change) and is
-/// strictly STRONGER than the current `ens` (so it narrows the allowed outputs).
+/// verifies against the real body (so it is adoptable with no body change) and is
+/// strictly stronger than the current `ens` (so it narrows the allowed outputs).
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Suggestion {
     /// The adoptable `ens` clause's surface form (e.g. `result == a + b`). Pasting
@@ -116,11 +116,11 @@ fn result_equals(rhs: Expr) -> Clause {
 }
 
 /// Render a candidate `Expr` to its surface form (REQ-1/REQ-4). The grammar is
-/// FROZEN — candidates come ONLY from `generate_candidates`'s template, so this
-/// handles exactly those shapes (a path, an int literal, a depth-1 binary, a
+/// frozen: candidates come only from `generate_candidates`'s template, so this
+/// handles those shapes (a path, an int literal, a depth-1 binary, a
 /// `len()` method call, a spec-fn call). A shape outside the frozen grammar
-/// renders to a parenthesised debug-free fallback that never panics (R-CODE-2);
-/// it is never produced by the template.
+/// renders to a parenthesised debug-free fallback that does not panic (R-CODE-2);
+/// the template does not produce it.
 pub fn render_expr(e: &Expr) -> String {
     match e {
         Expr::Path(segs) => segs.join("::"),
@@ -153,15 +153,15 @@ pub fn render_expr(e: &Expr) -> String {
         }
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-5/REQ-8, #109):
         // a tuple projection `result.0` / a tuple construction `(a, b)` can appear
-        // in a strengthenable `ens` (the GROUNDED `ens result.0 == b`), so render
-        // both FAITHFULLY (the surface text a strengthening suggestion echoes)
+        // in a strengthenable `ens` (the grounded `ens result.0 == b`), so render
+        // both as their surface text (what a strengthening suggestion echoes)
         // rather than the `<unsupported>` placeholder.
         Expr::TupleProj { receiver, index } => format!("{}.{index}", render_expr(receiver)),
         Expr::Tuple(elems) => {
             let parts: Vec<String> = elems.iter().map(render_expr).collect();
             format!("({})", parts.join(", "))
         }
-        // The frozen template never emits another shape; render a safe, non-panic
+        // The frozen template emits no other shape; render a safe, non-panic
         // placeholder so the function is total (R-CODE-2). Discarded downstream.
         _ => "<unsupported>".to_string(),
     }
@@ -191,9 +191,9 @@ fn binop_token(op: BinOp) -> &'static str {
     }
 }
 
-/// Generate the FROZEN, DETERMINISTIC, BOUNDED candidate stronger-`ens` set of
+/// Generate the frozen, deterministic, bounded candidate stronger-`ens` set of
 /// `f` (REQ-1/REQ-6). A pure function of `f` + the file's `spec fn`s + the #12
-/// `survivor`, producing an ORDERED, CAPPED list in this FIXED family order:
+/// `survivor`, producing an ordered, capped list in this fixed family order:
 ///
 /// 1. **spec-fn equality** — for each `spec fn` `s` in `spec_items` whose
 ///    parameter types match `f`'s parameters (in order) and whose return type
@@ -271,7 +271,7 @@ pub fn generate_candidates(
         // frozen `{+, -, *}` set — `result == a + b`. Pairs in source order; the
         // operator set in a fixed order. Family-3 link: when the survivor is the
         // early `return 0` mutant, the `+` candidate (and any binary equality)
-        // KILLS it (`0 == a + b` is unprovable), so it carries the survivor link.
+        // kills it (`0 == a + b` is unprovable), so it carries the survivor link.
         for i in 0..scalar_params.len() {
             for j in (i + 1)..scalar_params.len() {
                 for op in [BinOp::Add, BinOp::Sub, BinOp::Mul] {
@@ -322,12 +322,12 @@ pub fn generate_candidates(
     candidates
 }
 
-/// Build a COPY of `f` whose `ens` is REPLACED by the single candidate clause
-/// (REQ-2). The body, `req`, and `fx` are UNCHANGED — only the postcondition is
-/// the candidate, so the verify step proves the candidate against the REAL body
-/// (the §7 step-5 "proves with no body change"). The candidate REPLACES the `ens`
+/// Build a copy of `f` whose `ens` is replaced by the single candidate clause
+/// (REQ-2). The body, `req`, and `fx` are unchanged: only the postcondition is
+/// the candidate, so the verify step proves the candidate against the real body
+/// (the §7 step-5 "proves with no body change"). The candidate replaces the `ens`
 /// (rather than conjoining) so the verify run is a clean test of the candidate
-/// alone; a candidate strictly stronger than the current `ens` that PROVES on its
+/// alone; a candidate strictly stronger than the current `ens` that proves on its
 /// own is adoptable as the strengthened `ens` (the grounding harness verified the
 /// candidate as the sole `ens`).
 pub fn candidate_fn(f: &FnItem, candidate: &CandidateClause) -> FnItem {
@@ -336,20 +336,20 @@ pub fn candidate_fn(f: &FnItem, candidate: &CandidateClause) -> FnItem {
     copy
 }
 
-/// `true` iff the candidate is STRICTLY STRONGER than the current `ens` (REQ-3,
-/// OQ-5). Two witnesses, NO extra implication solver query:
+/// `true` iff the candidate is strictly stronger than the current `ens` (REQ-3,
+/// OQ-5). Two witnesses, no extra implication solver query:
 ///
 /// 1. **survivor-kill** — the candidate carries a `kills_survivor` link and the
-///    survivor body does NOT verify the candidate (`survivor_killed == true`): the
-///    candidate REJECTS a body the current `ens` ACCEPTED, so it is provably
+///    survivor body does not verify the candidate (`survivor_killed == true`): the
+///    candidate rejects a body the current `ens` accepted, so it is provably
 ///    stronger on that witness.
 /// 2. **structural equality** — the candidate is an `result == <e>` equality while
-///    the current `ens` does NOT already pin `result` with an equality
-///    (`current_pins_result == false`): an equality strictly narrows a
+///    the current `ens` does not already pin `result` with an equality
+///    (`current_pins_result == false`): an equality narrows a
 ///    satisfiable range (an inequality / non-`result` `ens`).
 ///
-/// A candidate that is logically EQUAL to or WEAKER than the current `ens` (no
-/// survivor kill AND the current `ens` already pins `result`) is DISCARDED.
+/// A candidate that is logically equal to or weaker than the current `ens` (no
+/// survivor kill and the current `ens` already pins `result`) is discarded.
 pub fn is_strictly_stronger(
     candidate: &CandidateClause,
     current_pins_result: bool,
@@ -363,11 +363,11 @@ pub fn is_strictly_stronger(
     !current_pins_result
 }
 
-/// `true` iff the current `ens` already PINS `result` with an equality (REQ-3
-/// witness 2). When it does, a family-1/2 equality candidate is NOT strictly
+/// `true` iff the current `ens` already pins `result` with an equality (REQ-3
+/// witness 2). When it does, a family-1/2 equality candidate is not strictly
 /// stronger (the output is already pinned — `sum`'s `ens result == spec_sum(xs)`).
-/// A SHAPE test over the clause set: any `ens` of the form `result == <e>` (a
-/// top-level `BinOp::Eq` with `result` on either side). DETERMINISTIC, no solver.
+/// A shape test over the clause set: any `ens` of the form `result == <e>` (a
+/// top-level `BinOp::Eq` with `result` on either side). Deterministic, no solver.
 pub fn current_ens_pins_result(ens: &[Clause]) -> bool {
     ens.iter().any(|c| clause_is_result_equality(&c.expr))
 }
@@ -444,21 +444,21 @@ fn spec_fn_signature_matches(f: &FnItem, params: &[thermite_syntax::Param], ret:
 /// Run the strengthening probe over `f` (REQ-2/REQ-3/REQ-4). For each candidate
 /// (in the deterministic family order):
 ///
-/// 1. VERIFY the candidate against the REAL body via `verify_body` (the threaded
+/// 1. Verify the candidate against the real body via `verify_body` (the threaded
 ///    `check::run_verus` of the `item_subprogram` shape, content-addressed via the
-///    #8 cache). A candidate that does NOT verify is DISCARDED (no unadoptable
+///    #8 cache). A candidate that does not verify is discarded (no unadoptable
 ///    suggestion, R-DEFER-1). A `ForgeError` propagates (R-CODE-4).
 /// 2. For a candidate carrying a `kills_survivor` link, confirm the survivor-kill
-///    witness: VERIFY the candidate against the SURVIVOR body via `verify_survivor`
-///    — if it does NOT verify (`Proved == false`) the candidate KILLS the survivor
-///    (the strictly-stronger witness 1). If it DOES verify, the survivor is not
-///    actually killed, so the kill link is dropped.
-/// 3. KEEP the candidate iff it is [`is_strictly_stronger`] (witness 1 or 2).
+///    witness: verify the candidate against the survivor body via `verify_survivor`.
+///    If it does not verify (`Proved == false`) the candidate kills the survivor
+///    (the strictly-stronger witness 1). If it does verify, the survivor is not
+///    killed, so the kill link is dropped.
+/// 3. Keep the candidate iff it is [`is_strictly_stronger`] (witness 1 or 2).
 ///
-/// `verify_body` / `verify_survivor` return `Ok(true)` when verus PROVED the woven
+/// `verify_body` / `verify_survivor` return `Ok(true)` when verus proved the woven
 /// `fn`, `Ok(false)` on a non-`Proved` outcome (counterexample / timeout) or an
 /// un-lowerable fn (parallel to #12's drop), and `Err` on an environment failure.
-/// The result is the ordered list of adoptable [`Suggestion`]s (DETERMINISTIC,
+/// The result is the ordered list of adoptable [`Suggestion`]s (deterministic,
 /// REQ-6).
 pub fn probe(
     f: &FnItem,
@@ -472,14 +472,14 @@ pub fn probe(
     let mut suggestions = Vec::new();
 
     for candidate in &candidates {
-        // REQ-2: the candidate must VERIFY against the real body to be adoptable.
+        // REQ-2: the candidate must verify against the real body to be adoptable.
         let woven = candidate_fn(f, candidate);
         if !verify_body(&woven)? {
             continue;
         }
 
-        // REQ-3 witness 1: a survivor-linked candidate must actually KILL the
-        // survivor (the survivor body must NOT verify the candidate).
+        // REQ-3 witness 1: a survivor-linked candidate must kill the
+        // survivor (the survivor body must not verify the candidate).
         let survivor_killed = if candidate.kills_survivor.is_some() {
             !verify_survivor(candidate)?
         } else {
@@ -489,7 +489,7 @@ pub fn probe(
         if is_strictly_stronger(candidate, current_pins_result, survivor_killed) {
             suggestions.push(Suggestion {
                 clause: candidate.rendered.clone(),
-                // Carry the kill link ONLY when the kill was confirmed.
+                // Carry the kill link only when the kill was confirmed.
                 kills_survivor: if survivor_killed {
                     candidate.kills_survivor.clone()
                 } else {
@@ -572,7 +572,7 @@ mod tests {
         );
     }
 
-    // REQ-6 / AC-5: generate_candidates is a pure function — the same fn yields the
+    // REQ-6 / AC-5: generate_candidates is a pure function; the same fn yields the
     // byte-identical ordered candidate list every call.
     #[test]
     fn generate_candidates_is_deterministic() {
@@ -619,7 +619,7 @@ mod tests {
             rendered.contains(&"result == s(a, b)"),
             "family-1 spec-fn equality present: {rendered:?}"
         );
-        // Family 1 is FIRST in the fixed order.
+        // Family 1 is first in the fixed order.
         assert_eq!(
             rendered.first().copied(),
             Some("result == s(a, b)"),
@@ -628,12 +628,12 @@ mod tests {
     }
 
     // REQ-3 witness 2: an equality candidate is strictly stronger than an `ens`
-    // that does NOT pin result. Traces to REQ-3 (R-CHAR-3).
+    // that does not pin result. Traces to REQ-3 (R-CHAR-3).
     #[test]
     fn equality_is_stronger_than_non_pinning_ens() {
         let f = weak_fixture();
         let c = &generate_candidates(&f, &[], &early_zero_survivor())[0];
-        // The weak fixture's `ens result <= 1000000` does NOT pin result.
+        // The weak fixture's `ens result <= 1000000` does not pin result.
         assert!(!current_ens_pins_result(&f.contract.ens));
         assert!(
             is_strictly_stronger(c, false, false),
@@ -641,7 +641,7 @@ mod tests {
         );
     }
 
-    // REQ-3: a candidate is NOT strictly stronger when the current `ens` already
+    // REQ-3: a candidate is not strictly stronger when the current `ens` already
     // pins result and the candidate kills no survivor (the `sum` shape — already
     // exact-pinned).
     #[test]
@@ -668,23 +668,23 @@ mod tests {
         }
     }
 
-    // REQ-2/REQ-3 (probe end-to-end, no verus): with a verify closure that PROVES
-    // only `result == a + b` and a survivor-verify that REJECTS it (the kill), the
-    // probe surfaces exactly the strictly-stronger adoptable suggestion. The verify
+    // REQ-2/REQ-3 (probe end-to-end, no verus): with a verify closure that proves
+    // only `result == a + b` and a survivor-verify that rejects it (the kill), the
+    // probe surfaces the strictly-stronger adoptable suggestion. The verify
     // closures stand in for `check::run_verus` (the real driver is exercised by the
-    // conformance test); here the FILTER logic is the unit under test (R-CHAR-3 —
+    // conformance test); here the filter logic is the unit under test (R-CHAR-3:
     // the expected suggestion traces to the oracle, the verify polarity to REQ-2).
     #[test]
     fn probe_surfaces_only_verifying_strictly_stronger_candidate() {
         let f = weak_fixture();
         let score = early_zero_survivor();
-        // Body verify: PROVE only the exact `result == a + b`; reject everything
+        // Body verify: prove only the exact `result == a + b`; reject everything
         // else (the over-strong / wrong candidates do not hold for `{ a + b }`).
         let verify_body = |fk: &FnItem| -> Result<bool, ForgeError> {
             let ens = &fk.contract.ens[0].text;
             Ok(ens == "result == a + b")
         };
-        // Survivor verify: the early-return-0 body does NOT prove `result == a + b`
+        // Survivor verify: the early-return-0 body does not prove `result == a + b`
         // (0 == a + b is unprovable) → killed.
         let verify_survivor = |_c: &CandidateClause| -> Result<bool, ForgeError> { Ok(false) };
         let suggestions = probe(&f, &[], &score, verify_body, verify_survivor).expect("probe ok");
@@ -701,8 +701,8 @@ mod tests {
         );
     }
 
-    // AC-3: a candidate that does NOT verify against the body is NOT suggested (no
-    // unadoptable suggestions). With a verify closure that proves NOTHING, the
+    // AC-3: a candidate that does not verify against the body is not suggested (no
+    // unadoptable suggestions). With a verify closure that proves nothing, the
     // probe surfaces no suggestion.
     #[test]
     fn non_verifying_candidate_is_not_suggested() {
@@ -718,7 +718,7 @@ mod tests {
     }
 
     // REQ-4 (sum / AC-2 shape): an already-pinning `ens` with every candidate that
-    // verifies BUT is not strictly stronger yields NO suggestion. The verify
+    // verifies but is not strictly stronger yields no suggestion. The verify
     // closure proves the spec-fn-equality (which equals the current ens) but it is
     // not strictly stronger.
     #[test]
@@ -744,7 +744,7 @@ mod tests {
             equivalent: 0,
             survivor: None,
         };
-        // Verify EVERYTHING (the candidates all hold for the body), so the ONLY
+        // Verify everything (the candidates all hold for the body), so the only
         // filter that can reject them is strict-strength.
         let verify_body = |_fk: &FnItem| -> Result<bool, ForgeError> { Ok(true) };
         let verify_survivor = |_c: &CandidateClause| -> Result<bool, ForgeError> { Ok(true) };

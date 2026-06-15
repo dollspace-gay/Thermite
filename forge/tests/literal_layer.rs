@@ -1,26 +1,26 @@
-//! L3-grounding conformance for the LITERAL LAYER — crosslink #91 cluster 1.
+//! L3-grounding conformance for the literal layer — crosslink #91 cluster 1.
 //!
 //! Cluster 1 of the primitive-completeness buildout adds the missing string-escape
 //! forms (`\r`, `\0`, `\xNN` — the ANSI/control bytes the editor needs). This test
-//! certifies, against the REAL verus binary, that each escape decodes to its
+//! certifies, against the verus binary, that each escape decodes to its
 //! control byte and that byte flows end-to-end through the existing `String`
 //! literal lowering (`thermite-lower::lower` `Expr::StrLit` → byte-`push`) so that
 //! `"\x1b".byte_at(0) == 27`, `"\r".byte_at(0) == 13`, `"\0".byte_at(0) == 0`
 //! certify L3 (`.design/basis/07-strings.md` REQ-6 escape table + REQ-2 byte model,
 //! `thermite-design.md` §6 ladder: a fully-discharged real-verus proof is L3).
 //!
-//! NON-VACUITY (R-DEFER-9 / `thermite-design.md` §7): the control byte is observed
-//! through a `result == (n == <CODE>)` contract — body `LIT.byte_at(0) == n` — so a
-//! deliberately-wrong body (`return false`, or a different byte) is KILLED by the
-//! §7 mutation battery (the proof requires the literal byte to be EXACTLY the
-//! control code for all `n`). A naive `ens result == 0` for `\0` is correctly
-//! REJECTED by the same battery (the `return 0` mutant survives), which is why the
-//! grounding uses the equality-against-parameter form, not a bare constant `ens`.
+//! Non-vacuity (R-DEFER-9 / `thermite-design.md` §7): the control byte is observed
+//! through a `result == (n == <CODE>)` contract, body `LIT.byte_at(0) == n`, so a
+//! wrong body (`return false`, or a different byte) is killed by the
+//! §7 mutation battery (the proof requires the literal byte to be the
+//! control code for all `n`). A bare `ens result == 0` for `\0` is
+//! rejected by the same battery (the `return 0` mutant survives), which is why the
+//! grounding uses the equality-against-parameter form rather than a bare constant `ens`.
 //!
-//! R-CHAR-3: the expected BYTES are the ANSI/ASCII control-code symbolic constants
-//! (ESC == 27, CR == 13, NUL == 0), and the expected LEVELS trace to §6 (L3 == a
-//! discharged verus proof); NEITHER is copied from forge's own output. Runs the
-//! BUILT `forge` binary; if verus is absent it SKIPS LOUDLY (never panics on a
+//! R-CHAR-3: the expected bytes are the ANSI/ASCII control-code symbolic constants
+//! (ESC == 27, CR == 13, NUL == 0), and the expected levels trace to §6 (L3 == a
+//! discharged verus proof); neither is copied from forge's own output. Runs the
+//! built `forge` binary; if verus is absent it skips with a logged note (never panics on a
 //! missing solver), mirroring `string_l3_completeness.rs` / `divergence_strings.rs`.
 
 use std::path::{Path, PathBuf};
@@ -138,10 +138,10 @@ fn escape_cr_certifies_l3_byte_13() {
     );
 }
 
-/// `\0` (NUL) decodes to byte 0 and certifies L3 — via the equality-against-
-/// parameter form (a bare `ens result == 0` is correctly REJECTED by the §7
+/// `\0` (NUL) decodes to byte 0 and certifies L3 via the equality-against-
+/// parameter form. A bare `ens result == 0` is rejected by the §7
 /// battery because the `return 0` mutant survives; the non-vacuous form pins the
-/// literal byte to EXACTLY 0 for all `n`).
+/// literal byte to 0 for all `n`.
 #[test]
 fn escape_nul_certifies_l3_byte_0() {
     if !verus_present() {
@@ -159,9 +159,9 @@ fn escape_nul_certifies_l3_byte_0() {
     );
 }
 
-/// NON-VACUITY (R-DEFER-9) — the escape byte is LOAD-BEARING: a contract claiming
-/// the WRONG control code (`\x1b` == 99 instead of 27) does NOT certify L3. The
-/// proof requires the literal to decode to the EXACT byte; a wrong claim leaves the
+/// Non-vacuity (R-DEFER-9): the escape byte is load-bearing. A contract claiming
+/// the wrong control code (`\x1b` == 99 instead of 27) does not certify L3. The
+/// proof requires the literal to decode to the right byte; a wrong claim leaves the
 /// `ens` undischarged → not L3.
 #[test]
 fn escape_byte_is_load_bearing_wrong_code_not_l3() {

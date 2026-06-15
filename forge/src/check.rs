@@ -1,9 +1,9 @@
 //! `forge/src/check.rs` — the v0.1 `forge check` pipeline. It runs each `fn` /
 //! `spec fn` item in a `.th` file end-to-end through every shipped kernel
-//! component, invokes the REAL `verus` binary on the lowered source, parses
+//! component, invokes the `verus` binary on the lowered source, parses
 //! verus's output into per-obligation results (with counterexamples on failure),
-//! and assembles the structured certificate (`manifest.rs`). This is the FIRST
-//! LIVE cert-oracle: `forge check conformance/sum.th`'s deterministic certificate
+//! and assembles the structured certificate (`manifest.rs`). This is the first
+//! live cert-oracle: `forge check conformance/sum.th`'s deterministic certificate
 //! fields must match the golden `conformance/sum.cert.json`.
 //!
 //! Governing design: `.design/forge/check.md`. Pipeline order (the kernel's data
@@ -13,14 +13,14 @@
 //! parse → validate → check_effects → lower → run verus → parse output → Certificate
 //! ```
 //!
-//! **Signature note (R-SPEC-4 honored, not silently diverged).** The design doc
+//! Signature note (R-SPEC-4). The design doc
 //! `.design/forge/check.md` sketches `check_file(path, seed)`; the orchestrator's
 //! issue #5 manifest mandates `check_file(path) -> Result<Vec<Certificate>, _>`.
-//! These are reconciled WITHOUT a contract change: the pinned solver seed (§5.3)
+//! These are reconciled without a contract change: the pinned solver seed (§5.3)
 //! is sourced from the project lockfile when present and otherwise from
 //! [`DEFAULT_SOLVER_SEED`], so `check_file` keeps the issue's one-argument shape
 //! while still passing a deterministic seed to verus (REQ-7). No design field is
-//! redefined; the seed is INPUT-derived, not a new parameter on the contract.
+//! redefined; the seed is input-derived, not a new parameter on the contract.
 //!
 //! ## REQ status
 //!
@@ -68,7 +68,7 @@
 //! | solver-profiles REQ-5 (three-way classification) | SHIPPED | `classify_verus_outcome` is the deterministic three-way split: `Proved` (`success && errors==0` → L3, no profile) / `Timeout` (an error WITH a `profile::parse_profile` report present on stderr → attach the `SolverProfile`) / `Counterexample` (an error WITHOUT a profile → the #5 witness path, which ALSO absorbs the incompleteness-unknown FAST-`unknown` edge — OQ-1). Consumer: `assemble_certificate`. |
 //! | solver-profiles REQ-7 (timeout cert level, distinct) | SHIPPED | the `Timeout` outcome → `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the profile + a `profile::suggested_move` hint), DISTINCT from a counterexample-L0 (no profile, a `postcondition not satisfied` reason). v0.1 does not auto-degrade (#10). `--rlimit` is exposed via `cli.rs`; `check_file_with_rlimit` threads it; a non-default budget bypasses the proof cache (a timeout is never cached as proved). |
 //!
-//! ## #13 gate (SOLVER-backed tautology + vacuous-precondition checks, this iteration)
+//! ## #13 gate (solver-backed tautology + vacuous-precondition checks, this iteration)
 //!
 //! | REQ | Status | Evidence |
 //! |---|---|---|
@@ -106,26 +106,26 @@ use crate::profile::{self, SolverProfile};
 const THERMITE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The pinned default solver seed (§5.3) used when no project lockfile supplies
-/// one. Determinism (R-CODE-5) lives in the INPUT (this fixed seed + the
-/// toolchain version), not in wall-clock state.
+/// one. Determinism (R-CODE-5) is a property of the input: this fixed seed plus
+/// the toolchain version, never wall-clock state.
 pub const DEFAULT_SOLVER_SEED: u64 = 0;
 
 /// The pinned default verus `--rlimit` (SMT resource budget, roughly seconds) for
-/// the L3 path (#11; `.design/forge/solver-profiles.md` REQ-5). DETERMINISTIC
-/// (R-CODE-5 — a fixed input, not wall-clock) and GENEROUS: comfortably above
-/// verus's own default of `10` so the conformance corpus (`sum`, `binary_search`)
-/// still PROVES at `L3` (the cert-oracle is unperturbed). A LOW `--rlimit` (the
+/// the L3 path (#11; `.design/forge/solver-profiles.md` REQ-5). Deterministic
+/// (R-CODE-5 — a fixed input, not wall-clock) and set above verus's own default
+/// of `10` so the conformance corpus (`sum`, `binary_search`) still proves at
+/// `L3` (the cert-oracle is unperturbed). A low `--rlimit` (the
 /// `forge check --rlimit 1` test lever) forces the timeout path so the three-way
-/// classification is exercisable. Always paired with `--profile` so an rlimit-hit
-/// emits the Z3 instantiation report on STDERR (the timeout discriminator).
+/// classification is exercisable. Paired with `--profile` so an rlimit-hit
+/// emits the Z3 instantiation report on stderr (the timeout discriminator).
 pub const DEFAULT_RLIMIT: f64 = 30.0;
 
 /// Run the full v0.1 `forge check` pipeline for every `fn` / `spec fn` item in
 /// `path`, returning one [`Certificate`] per item in source order (REQ-1).
 ///
-/// Stages short-circuit into the EARLIEST failing stage's `ForgeError`. A verus
-/// obligation FAILURE is NOT an `Err`: it is a valid certificate describing the
-/// failure (level != L3, with per-obligation witnesses). Only an environment /
+/// Stages short-circuit into the earliest failing stage's `ForgeError`. A verus
+/// obligation failure is not an `Err`: it is a valid certificate describing the
+/// failure (level != L3, with per-obligation witnesses). An environment /
 /// internal failure (verus absent, unparseable output, IO) is an `Err`.
 pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
     check_file_with_rlimit(path, DEFAULT_RLIMIT)
@@ -142,12 +142,12 @@ pub struct CheckOptions {
     /// The verus `--rlimit` SMT resource budget (#11).
     pub rlimit: f64,
     /// The mutation kill-ratio floor (#12; `.design/forge/mutation-scoring.md`
-    /// REQ-5). An item that proves L3 but scores BELOW this floor does NOT certify
+    /// REQ-5). An item that proves L3 but scores below this floor does not certify
     /// (`WeakContract` reject). Default [`mutation::MUTATION_FLOOR`] (0.60).
     pub mutation_floor: f64,
-    /// The proof-backend ENGINE SELECTION (`.design/verified/proof-backends.md`
+    /// The proof-backend engine selection (`.design/verified/proof-backends.md`
     /// OQ-1 / REQ-8, increment (iii), #247). [`EngineSelection::Verus`] (the default)
-    /// is byte-identical to the SHIPPED Verus path; [`EngineSelection::Lean`] /
+    /// is byte-identical to the shipped Verus path; [`EngineSelection::Lean`] /
     /// [`EngineSelection::Auto`] add the Lean engine #2 (the `--engine` surface).
     pub engine: EngineSelection,
     /// The source-file path the interactive proof artifacts (`<file>.lean-proofs/
@@ -158,21 +158,21 @@ pub struct CheckOptions {
 }
 
 /// The `forge check --engine verus|lean|auto` surface (`.design/verified/
-/// proof-backends.md` OQ-1 DECISION / REQ-8, increment (iii), #247). The DECISION
-/// (recorded in the design's OQ-1 + the REQ-4/REQ-8 rows): `verus` is the DEFAULT
-/// (byte-identical to the shipped pipeline); `lean` runs the LeanEngine ONLY
-/// (exportable items discharged by Lean; non-exportable → honest skip reporting);
-/// `auto` runs Verus FIRST and, on a Verus Unknown/timeout, tries Lean (the §6
-/// ordering). Cert attribution (REQ-4) is populated whenever a NON-DEFAULT engine
+/// proof-backends.md` OQ-1 decision / REQ-8, increment (iii), #247). The decision
+/// (recorded in the design's OQ-1 + the REQ-4/REQ-8 rows): `verus` is the default
+/// (byte-identical to the shipped pipeline); `lean` runs the LeanEngine only
+/// (exportable items discharged by Lean; a non-exportable item is reported as a
+/// skip); `auto` runs Verus first and, on a Verus Unknown/timeout, tries Lean (the
+/// §6 ordering). Cert attribution (REQ-4) is populated whenever a non-default engine
 /// discharges.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EngineSelection {
-    /// `--engine verus` (DEFAULT): the SHIPPED Verus path, byte-identical.
+    /// `--engine verus` (default): the shipped Verus path, byte-identical.
     #[default]
     Verus,
-    /// `--engine lean`: the LeanEngine ONLY — exportable items are discharged by Lean
+    /// `--engine lean`: the LeanEngine only — exportable items are discharged by Lean
     /// (with the smaller trust base, attributed); a non-exportable item is reported as
-    /// an honest skip (the Lean engine `Unknown`, NOT a false verdict).
+    /// a skip (the Lean engine `Unknown`, not a false verdict).
     Lean,
     /// `--engine auto`: Verus first; on a Verus Unknown/timeout, try Lean (the §6
     /// ordering — Verus push-button common case, Lean as the smaller-base fallback).
@@ -193,9 +193,9 @@ impl Default for CheckOptions {
 /// `check_file` with an explicit verus `--rlimit` (#11;
 /// `.design/forge/solver-profiles.md` REQ-5). [`check_file`] delegates here with
 /// the pinned generous [`DEFAULT_RLIMIT`]; `cli::run_check` passes the
-/// `--rlimit <FLOAT>` flag value so a LOW budget forces the timeout path
-/// (TIMEOUT cert with a `SolverProfile`), exercising the three-way
-/// classification ([`classify_verus_outcome`]). The corpus PROVES at the default
+/// `--rlimit <FLOAT>` flag value so a low budget forces the timeout path
+/// (timeout cert with a `SolverProfile`), exercising the three-way
+/// classification ([`classify_verus_outcome`]). The corpus proves at the default
 /// rlimit, so the cert-oracle is unperturbed.
 pub fn check_file_with_rlimit(
     path: impl AsRef<Path>,
@@ -241,24 +241,24 @@ pub fn check_file_with_options(
     // split.
     thermite_lower::check_effects(&parsed.program).map_err(ForgeError::Effects)?;
 
-    // 4/5/6/7. PER-ITEM certification (`thermite-design.md` §5.3 — "proof
-    // results content-addressed and cached PER ITEM"; "an edit to `f` cannot
+    // 4/5/6/7. Per-item certification (`thermite-design.md` §5.3 — "proof
+    // results content-addressed and cached per item"; "an edit to `f` cannot
     // invalidate `g`'s certificate unless `g`'s contract references `f`'s").
-    // Each `fn` is lowered and verified in ISOLATION — a sub-program holding only
-    // THAT `fn` plus the file's `spec fn`s (pure shared dependencies its contract
+    // Each `fn` is lowered and verified in isolation — a sub-program holding only
+    // that `fn` plus the file's `spec fn`s (pure shared dependencies its contract
     // may reference) plus the combinator defs the lowerer emits. So verus's run
-    // yields only that item's obligations and its level is L3 iff THAT item's
+    // yields only that item's obligations and its level is L3 iff that item's
     // obligations all discharge, independent of any sibling's failure (§6 — the
-    // certificate lists EVERY function's OWN level; §5.1 — a counterexample
+    // certificate lists every function's own level; §5.1 — a counterexample
     // belongs to the item it is reported on, never a neighbor's).
     let seed = resolve_seed(path);
 
     // #8 proof cache (`.design/forge/proof-cache.md`): the verus version is
-    // captured ONCE per `check_file` invocation (REQ-5) so every item this run
-    // keys against the SAME prover, and the cache directory is resolved once. A
-    // missing/unreadable verus version is an ENVIRONMENT error, not a silent
-    // empty-string key (REQ-5) — so this resolves BEFORE the per-item loop and
-    // short-circuits the whole run if the prover version cannot be determined.
+    // captured once per `check_file` invocation (REQ-5) so every item this run
+    // keys against the same prover, and the cache directory is resolved once. A
+    // missing/unreadable verus version is an environment error (REQ-5), so this
+    // resolves before the per-item loop and short-circuits the whole run if the
+    // prover version cannot be determined.
     let verus_version = resolve_verus_version()?;
     let cache_dir = resolve_cache_dir();
 
@@ -274,30 +274,30 @@ pub fn check_file_with_options(
         .collect();
 
     // C11 (`.design/basis/12-mutual-recursion.md` REQ-2, crosslink #121/#113): the
-    // in-file `fn`s in a MUTUAL-recursion cycle (`a -> b -> a`, …) whose
-    // termination is NOT supplied — a cycle containing at least one non-`fx
-    // diverge` member that LACKS a `dec` measure. A dec-COMPLETE cycle (every
-    // member has `dec` or is `fx diverge`) is NOT in this set: it FALLS THROUGH to
+    // in-file `fn`s in a mutual-recursion cycle (`a -> b -> a`, …) whose
+    // termination is not supplied — a cycle containing at least one non-`fx
+    // diverge` member that lacks a `dec` measure. A dec-complete cycle (every
+    // member has `dec` or is `fx diverge`) is not in this set: it falls through to
     // the normal per-item lower/verus ladder, where the C9 source-order
     // single-`verus!`-block emission presents Verus a valid mutual-`decreases`
     // group → Verus proves it terminates → L3 (REQ-1/REQ-3). The validator's C9
-    // REQ-2 self-call rule (`block_calls_name`) catches only a DIRECT self-call,
+    // REQ-2 self-call rule (`block_calls_name`) catches only a direct self-call,
     // so a missing-`dec` mutual cycle would otherwise reach Verus and be rejected
     // with `recursive function must have a decreases clause`
     // (`encountered-vir-error`), which `classify_verus_outcome` maps to a
-    // `ForgeError::VerusOutput` environment ABORT (exit 2, EMPTY `--json` stdout,
-    // NO cert) — a CRASH in the design's sense (AC-3). We catch the missing-`dec`
-    // cycle HERE, BEFORE lowering / verus, and emit a `Certificate::rejected` per
+    // `ForgeError::VerusOutput` environment abort (exit 2, empty `--json` stdout,
+    // no cert) — a crash in the design's sense (AC-3). We catch the missing-`dec`
+    // cycle here, before lowering / verus, and emit a `Certificate::rejected` per
     // member (`Level::L0`, the `MutualRecursionMissingDecreases` cause) — the same
     // verdict-in-cert shape as the single-fn non-decreasing L0 cert, so `forge
-    // check` exits non-zero with a parseable cert array. Computed ONCE (a pure
+    // check` exits non-zero with a parseable cert array. Computed once (a pure
     // function of the program, R-CODE-5).
     let mutual_missing_dec_fns = mutual_recursion_cycle_fns(&parsed.program);
 
     let mut certs = Vec::with_capacity(parsed.program.items.len());
     for item in &parsed.program.items {
         // C11 REQ-2 mutual-recursion missing-`dec` reject (no false L3, no crash):
-        // a `fn` in a mutual cycle that lacks a complete `dec` group does NOT
+        // a `fn` in a mutual cycle that lacks a complete `dec` group does not
         // certify — it is rejected as a clean L0 cert verdict (never lowered / sent
         // to verus), so the rejection is a parseable cert, not the raw VIR-error
         // abort. A dec-complete cycle is absent from this set and proceeds below.
@@ -323,13 +323,13 @@ pub fn check_file_with_options(
             }
         }
 
-        // #193 OPEN-HOLE short-circuit (`.design/forge/goal-repl.md` REQ-5): a fn
-        // carrying ANY open body hole (`?N`) NEVER certifies — it is incomplete.
-        // It short-circuits HERE, BEFORE the #6 gate / lowering / verus (the SAME
+        // #193 open-hole short-circuit (`.design/forge/goal-repl.md` REQ-5): a fn
+        // carrying any open body hole (`?N`) never certifies — it is incomplete.
+        // It short-circuits here, before the #6 gate / lowering / verus (the same
         // short-circuit shape the vacuity gate uses for a rejected item), to a
-        // non-certified L0 cert with an `OpenHole` cause naming the FIRST open hole
-        // (the goal-state's open GOAL — the §5.1 `holes: ?N : body` line). A holed
-        // item never reaches verus, so it can never accidentally certify; `forge
+        // non-certified L0 cert with an `OpenHole` cause naming the first open hole
+        // (the goal-state's open goal — the §5.1 `holes: ?N : body` line). A holed
+        // item never reaches verus, so it cannot certify; `forge
         // fill` must close every hole before the item proceeds to the L3 path. The
         // detail names every open hole address so `forge goal`/`forge fill` can list
         // them (R-CODE-5 — a pure function of the fn's holes).
@@ -348,7 +348,7 @@ pub fn check_file_with_options(
             }
         }
 
-        // #6 gate: structural vacuity triage + `#[slag]` short-circuit run BEFORE
+        // #6 gate: structural vacuity triage + `#[slag]` short-circuit run before
         // the L3 proof ("a function does not certify until its contract
         // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),
         // so the gate applies only to `Item::Fn` — a `spec fn` proceeds to the
@@ -364,27 +364,27 @@ pub fn check_file_with_options(
                 }
                 // A valid `#[boundary]` (FFI) item certifies L1 to-the-boundary by
                 // fiat (`.design/boundary/ffi-boundary.md` REQ-5): the foreign body
-                // is unproven, so it NEVER enters L3/L2/mutation/strengthening; the
+                // is unproven, so it never enters L3/L2/mutation/strengthening; the
                 // L1 wrapper codegen is thermite-lower's `l1.rs` build-time job. No
                 // verus run — so a boundary-only file does not require the prover.
                 GateOutcome::BoundaryL1(cert) => {
                     certs.push(cert);
                     continue;
                 }
-                // A `fx diverge` item certifies L1 = PARTIAL correctness by the
+                // A `fx diverge` item certifies L1 = partial correctness by the
                 // structural cap (`.design/forge/check.md` REQ-8, `degrade-ladder.md`
                 // REQ-9): an event loop may not terminate, so it cannot claim
-                // L3-total. Like `BoundaryL1`/`SlagL1`, it NEVER reaches the L3
+                // L3-total. Like `BoundaryL1`/`SlagL1`, it never reaches the L3
                 // (verus-total) / mutation / strengthen path — so the §7 mutation
                 // gate that mis-rejects `run` at L0 (`WeakContract`, its loose
-                // `ens result <= 256` is met by `return 0`) is SKIPPED. The cap is
-                // HONEST (it claims LESS than L3, never more — R-DEFER-9) and
-                // diverge-ONLY (a non-diverge weak contract still bites at L0).
+                // `ens result <= 256` is met by `return 0`) is skipped. The cap
+                // claims less than L3, never more (R-DEFER-9), and is
+                // diverge-only (a non-diverge weak contract still bites at L0).
                 GateOutcome::DivergeL1(cert) => {
                     certs.push(cert);
                     continue;
                 }
-                // A triage / slag-validation reject: the item does NOT certify
+                // A triage / slag-validation reject: the item does not certify
                 // (verdict-in-cert, not a `ForgeError`; vacuity-triage.md REQ-5
                 // OQ-1). No lowering, no verus.
                 GateOutcome::Rejected(cert) => {
@@ -402,35 +402,35 @@ pub fn check_file_with_options(
         // REQ-2): weave the in-file `fn`s this item transitively references into
         // its §5.3 sub-program — regular fns with their real body, boundary/slag
         // fns as `#[verifier::external_body]` signatures — so `verus` resolves the
-        // callee and the caller proves THROUGH its contract (was an undefined-callee
-        // L0). EMPTY for a fn referencing only spec fns / combinators (the pure
+        // callee and the caller proves through its contract (was an undefined-callee
+        // L0). Empty for a fn referencing only spec fns / combinators (the pure
         // corpus), so the corpus cert + lowering are byte-stable (AC-4).
         let fn_deps = reachable_fn_deps(&parsed.program, item.name());
-        // #68: ALSO weave the `struct`/`enum` DECLARATIONS the checked item AND
+        // #68: also weave the `struct`/`enum` declarations the checked item and
         // its woven fn-deps reference (transitively closed over the ADT type
         // graph), so the per-item Verus emission has the type decls + their
         // `well_formed` invariants in scope (was an undefined-type L0).
         let mut referrers: Vec<&Item> = vec![item];
         referrers.extend(fn_deps.iter());
-        // #71: the spec-fn set woven into THIS item's sub-program. An `Item::Fn`
-        // keeps the WHOLE file's `spec_items` (the CAUTION: an exec fn's contract
+        // #71: the spec-fn set woven into this item's sub-program. An `Item::Fn`
+        // keeps the whole file's `spec_items` (an exec fn's contract
         // may reference any spec fn — e.g. `sum`'s `ens result == spec_sum(xs)` —
-        // so verus must resolve every one; this dep-weaving is UNCHANGED). An
-        // `Item::SpecFn` instead weaves only ITSELF + the spec fns it transitively
+        // so verus must resolve every one; this dep-weaving is unchanged). An
+        // `Item::SpecFn` instead weaves only itself + the spec fns it transitively
         // references (`reachable_spec_fn_deps`, which includes the start), so a
         // multi-spec-fn file no longer lowers every spec fn to byte-identical Verus
-        // (the cache-collision cause — the sub-program is now DISTINCT per spec fn).
+        // (the cache-collision cause — the sub-program is now distinct per spec fn).
         let item_spec_items: Vec<Item> = match item {
             Item::SpecFn(_) => reachable_spec_fn_deps(&parsed.program, item.name()),
             _ => spec_items.clone(),
         };
-        // For a checked `Item::SpecFn`, the ADT referrers are its OWN reachable
+        // For a checked `Item::SpecFn`, the ADT referrers are its own reachable
         // spec-fn set (which includes the spec fn itself), so its `enum`/`struct`
         // decls are present even though the file's full `spec_items` is no longer
-        // woven (#71). The `Item::Fn` path is UNCHANGED — its ADT referrers stay
+        // woven (#71). The `Item::Fn` path is unchanged — its ADT referrers stay
         // `[item] + fn_deps` exactly as before (the exec sub-program is byte-stable;
         // the corpus cert oracle is unperturbed). The Fn arm of `item_subprogram`
-        // still weaves the full `spec_items` (the CAUTION).
+        // still weaves the full `spec_items`.
         if matches!(item, Item::SpecFn(_)) {
             referrers.clear();
             referrers.extend(item_spec_items.iter());
@@ -440,21 +440,21 @@ pub fn check_file_with_options(
         let lowered = thermite_lower::lower(&sub).map_err(ForgeError::Lower)?;
 
         // #8 proof cache (`.design/forge/proof-cache.md` REQ-1/REQ-3): the lowered
-        // source is the item's content-address — the EXACT bytes verus checks
+        // source is the item's content-address — the bytes verus checks
         // (§5.3 isolated sub-program). The key composes it with the four
-        // verdict-determining inputs. Consult the cache BEFORE spawning verus.
+        // verdict-determining inputs. Consult the cache before spawning verus.
         //
-        // #11: the cache is keyed at the CANONICAL [`DEFAULT_RLIMIT`] budget only.
-        // A NON-default `--rlimit` (the timeout-forcing / exploratory lever) is a
-        // budget-dependent verdict (a TIMEOUT at `--rlimit 1` is NOT the cached
-        // `L3` proved at the generous default), so it BYPASSES the cache entirely
+        // #11: the cache is keyed at the canonical [`DEFAULT_RLIMIT`] budget only.
+        // A non-default `--rlimit` (the timeout-forcing / exploratory lever) is a
+        // budget-dependent verdict (a timeout at `--rlimit 1` is not the cached
+        // `L3` proved at the generous default), so it bypasses the cache entirely
         // — neither served from nor written to it. This keeps the cache key
         // (`cache::cache_key`, four inputs) unchanged while staying sound (a
         // timeout verdict is never cached as if proved).
-        // #12: a NON-default `--mutation-floor` (the AC-3 floor-flip lever) is also a
-        // verdict-changing knob NOT in the cache key (the same lowered source can
+        // #12: a non-default `--mutation-floor` (the AC-3 floor-flip lever) is also a
+        // verdict-changing knob not in the cache key (the same lowered source can
         // certify under a low floor and reject `WeakContract` under the default), so
-        // a non-default floor likewise BYPASSES the cache — neither served nor
+        // a non-default floor likewise bypasses the cache — neither served nor
         // written. The canonical-config run (default rlimit + default floor) is the
         // only one that populates / serves the shared `target/` cache, keeping the
         // four-input `cache::cache_key` unchanged while staying sound.
@@ -463,34 +463,34 @@ pub fn check_file_with_options(
         let key = cache::cache_key(&lowered, seed, &verus_version, THERMITE_VERSION);
         if use_cache {
             if let Some(stored) = cache::load(&cache_dir, &key) {
-                // HIT: skip verus entirely (REQ-3, AC-1 — the decisive solver-skip).
-                // The stored cert is the canonical fresh verify; mark it served from
+                // Hit: skip verus entirely (REQ-3, AC-1 — the solver-skip). The
+                // stored cert is the canonical fresh verify; mark it served from
                 // cache (`cached: true`) — provenance only, oracle fields unchanged
                 // (REQ-2: a hit is oracle-equal to a fresh verify). A #13
-                // SOLVER-vacuity reject was cached just like a proof verdict, so a
-                // HIT serves it WITHOUT re-running the two harness queries (the cache
+                // solver-vacuity reject was cached like a proof verdict, so a hit
+                // serves it without re-running the two harness queries (the cache
                 // hit is a verus-free path end-to-end).
                 certs.push(stored.with_cached(true));
                 continue;
             }
         }
 
-        // #13 SOLVER-vacuity gate (`.design/forge/solver-vacuity.md` REQ-5): on a
-        // cache MISS, AFTER #6's free structural triage passed (`ProceedToL3`,
-        // above) and BEFORE the item's own L3 proof (a contract that survives the
-        // syntactic checks may still be SEMANTICALLY degenerate — the §7
+        // #13 solver-vacuity gate (`.design/forge/solver-vacuity.md` REQ-5): on a
+        // cache miss, after #6's free structural triage passed (`ProceedToL3`,
+        // above) and before the item's own L3 proof (a contract that survives the
+        // syntactic checks may still be semantically degenerate — the §7
         // cheapest-first ordering). The two checks reuse the existing contract
         // lowering + verus driver to detect a semantic tautology (`ens` holds for
         // an arbitrary result) or an unsatisfiable precondition. A `Detected`
         // short-circuits to a non-certified `Certificate::rejected_vacuity`
-        // (verdict-in-cert, the matching `contract_quality` bool SOLVER-confirmed
-        // `true`) WITHOUT running the L3 proof on a known-degenerate contract; a
+        // (verdict-in-cert, the matching `contract_quality` bool solver-confirmed
+        // `true`) without running the L3 proof on a known-degenerate contract; a
         // `Clean` falls through to the existing L3 path where `graduate_triage_clean`
         // keeps both bools live-`false`, now solver-confirmed (REQ-6). An
         // environment / internal verus failure on a harness query surfaces a
-        // `ForgeError` (R-CODE-4), never a silent clean. The gate runs INSIDE the
-        // cache-miss branch so the deterministic #13 verdict is CACHED with the item
-        // (OQ-2): a later HIT serves the cached reject / clean cert without a verus
+        // `ForgeError` (R-CODE-4), never a silent clean. The gate runs inside the
+        // cache-miss branch so the deterministic #13 verdict is cached with the item
+        // (OQ-2): a later hit serves the cached reject / clean cert without a verus
         // spawn (the cache-hit verus-free invariant, proof-cache.md AC-1).
         if let Item::Fn(f) = item {
             if let crate::vacuity_solver::SolverVacuityVerdict::Detected { cause } =
@@ -510,9 +510,9 @@ pub fn check_file_with_options(
                     taut,
                     vac,
                 );
-                // A #13 reject is a SETTLED, deterministic verdict (a function of the
+                // A #13 reject is a settled, deterministic verdict (a function of the
                 // lowered contract + seed + versions), so it is cached like a
-                // counterexample cert: a re-check serves the HIT without re-running
+                // counterexample cert: a re-check serves the hit without re-running
                 // the harness queries. Best-effort store (a write failure never fails
                 // the verdict — R-CODE-2), at the canonical budget only.
                 if use_cache {
@@ -523,30 +523,30 @@ pub fn check_file_with_options(
             }
         }
 
-        // CLEAN (or a `spec fn`, which carries no contract to check): the solver
+        // Clean (or a `spec fn`, which carries no contract to check): the solver
         // runs the real L3 proof (REQ-3). Assemble the cert exactly as the
         // non-cached path always has.
         let verus = run_verus(&sub, &lowered, seed, rlimit)?;
         let cert = assemble_certificate(item, &verus);
 
-        // #10 AUTOMATIC DEGRADE LADDER (`.design/forge/degrade-ladder.md`, the
-        // DEFAULT `forge check` path). On a `VerusOutcome::Timeout` (verus could
-        // not PROVE within budget — INCONCLUSIVE) the v0.1 behavior was to emit the
-        // `VerusTimeout` L0 cert and STOP; #10 replaces that STOP with the ladder:
+        // #10 automatic degrade ladder (`.design/forge/degrade-ladder.md`, the
+        // default `forge check` path). On a `VerusOutcome::Timeout` (verus could
+        // not prove within budget — inconclusive) the v0.1 behavior was to emit the
+        // `VerusTimeout` L0 cert and stop; #10 replaces that stop with the ladder:
         // attempt L2 (kani) and, on an under-bound, drop to L1. A
-        // `VerusOutcome::Counterexample` (verus DISPROVED the contract — a real
-        // bug) is a HARD FAIL and NEVER degrades (REQ-2 anti-cheat); the ladder
-        // short-circuits it. The ladder runs ONLY for an `Item::Fn` (a `spec fn`
-        // carries no `req`/`ens` to bound-check at L2). An ENVIRONMENT failure on a
+        // `VerusOutcome::Counterexample` (verus disproved the contract — a real
+        // bug) is a hard fail and never degrades (REQ-2 anti-cheat); the ladder
+        // short-circuits it. The ladder runs only for an `Item::Fn` (a `spec fn`
+        // carries no `req`/`ens` to bound-check at L2). An environment failure on a
         // lower rung (kani absent / unparseable) propagates as a `ForgeError`
         // (REQ-8), never a silent degrade.
-        // proof-backends #204: mint the per-item backend-neutral obligation SET
-        // (`.design/verified/proof-backends.md` REQ-1/REQ-1.2) using the CORRECTED
+        // proof-backends #204: mint the per-item backend-neutral obligation set
+        // (`.design/verified/proof-backends.md` REQ-1/REQ-1.2) using the corrected
         // full-expression-position called-spec-fn closure (REQ-1.2 / #226: seed
         // `req ∪ ens ∪ body ∪ dec(item)`, closure-step over each reached spec-fn's
-        // `body ∪ dec`). The set is the CONTRACT obligation plus — when the closure
-        // is non-empty — the REGISTRY-TERMINATION obligation (conjoined item-wide,
-        // REQ-1.2). The Verus engine ADMITS every class (incl. RegistryTermination,
+        // `body ∪ dec`). The set is the contract obligation plus — when the closure
+        // is non-empty — the registry-termination obligation (conjoined item-wide,
+        // REQ-1.2). The Verus engine admits every class (incl. RegistryTermination,
         // REQ-1.2(a) — its dec-check is the common discharge path), confirmed via
         // the fragment gate; an unadmitted class would block certification per the
         // conjunction rule (the seam a narrower future engine keys on).
@@ -554,10 +554,10 @@ pub fn check_file_with_options(
         let evidence_key =
             crate::engine::engine_cache_key(crate::engine::EngineName::Verus, key.clone());
         // REQ-1.2(a) conjunction discharge: when the item carries a
-        // REGISTRY-TERMINATION obligation (a non-empty called-spec-fn closure), it
-        // is discharged ALONGSIDE the CONTRACT obligation by the SAME Verus run —
-        // the woven spec-fns in the per-item sub-program have ALREADY passed
-        // Verus's recursion/decreases check, so a `Proved` outcome certifies BOTH
+        // registry-termination obligation (a non-empty called-spec-fn closure), it
+        // is discharged alongside the contract obligation by the same Verus run —
+        // the woven spec-fns in the per-item sub-program have already passed
+        // Verus's recursion/decreases check, so a `Proved` outcome certifies both
         // classes (REQ-1.2(a), the common path). Its per-obligation evidence key
         // (the engine-discriminated address, §2(d)) participates in the item's
         // content address so a change to a reached spec-fn's measure invalidates
@@ -568,7 +568,7 @@ pub fn check_file_with_options(
             let _rt_key = crate::engine::VerusEngine.evidence_key(rt);
         }
         let cert = if let Item::Fn(f) = item {
-            // Route the L3 CONTRACT discharge through the Verus engine
+            // Route the L3 contract discharge through the Verus engine
             // (REQ-2/REQ-3/REQ-3.1). The contract obligation is the head of the set.
             ladder_for_timeout(
                 f,
@@ -585,7 +585,7 @@ pub fn check_file_with_options(
         // A non-slag `fn` that reached the L3 path passed triage — graduate the
         // §7.1 `contract_quality` bools to asserted live-`false` (REQ-6 / AC-7). A
         // `spec fn` carries no contract, so triage does not apply and the bools
-        // stay forward-declared. A TIMEOUT cert (`VerusTimeout`) is NOT graduated:
+        // stay forward-declared. A timeout cert (`VerusTimeout`) is not graduated:
         // its triage bools stay forward-declared (nothing about the contract's
         // syntactic quality was newly confirmed by a budget exhaustion).
         let cert = if matches!(item, Item::Fn(_)) && cert.reject.is_none() {
@@ -594,12 +594,12 @@ pub fn check_file_with_options(
             cert
         };
 
-        // #12 §7 step 4 — MUTATION SCORING, AFTER a successful L3 proof of the REAL
-        // body (`.design/forge/mutation-scoring.md` REQ-7). Reached ONLY on a
+        // #12 §7 step 4 — mutation scoring, after a successful L3 proof of the real
+        // body (`.design/forge/mutation-scoring.md` REQ-7). Reached only on a
         // `VerusOutcome::Proved` real body: the cert is `Level::L3` with no reject.
         // A non-proving item (counterexample / timeout / a `spec fn`) is never
-        // scored — §7's premise is "mutate a KNOWN-GOOD body". Each mutant's
-        // re-verify is content-addressed through the SAME proof cache (#8), so a
+        // scored — §7's premise is "mutate a known-good body". Each mutant's
+        // re-verify is content-addressed through the same proof cache (#8), so a
         // re-`forge check` re-scores from the cache cheaply. A sub-floor kill ratio
         // turns the cert into a `WeakContract` reject (verdict-in-cert); a met floor
         // graduates `mutants_killed`/`survivor` on the certified cert.
@@ -618,14 +618,14 @@ pub fn check_file_with_options(
                 )?;
                 let effects = effects_of(&f.contract.fx);
                 if score.meets_floor(options.mutation_floor) {
-                    // #14 §7 step 5 — STRENGTHENING PROBE
+                    // #14 §7 step 5 — strengthening probe
                     // (`.design/forge/strengthening-probes.md` REQ-5). The item is a
-                    // SETTLED L3-certified + scored item (level L3, no reject, a
+                    // settled L3-certified + scored item (level L3, no reject, a
                     // `MutationScore` produced), so the probe runs: it generates the
                     // frozen candidate stronger-`ens` set, verifies each against the
-                    // REAL body via the SAME `run_verus` + #8 cache, keeps the
+                    // real body via the same `run_verus` + #8 cache, keeps the
                     // verifying + strictly-stronger ones, and attaches them as
-                    // ADVISORY suggestions. The probe NEVER changes the verdict
+                    // advisory suggestions. The probe never changes the verdict
                     // (`with_strengthening` only adds the additive field + the
                     // `suggested_move` headline; `level`/`reject`/oracle subset
                     // untouched, REQ-4). An environment failure on a candidate verus
@@ -649,7 +649,7 @@ pub fn check_file_with_options(
                     // Sub-floor: the contract under-constrains the body. Below the
                     // floor a survivor is normally present (a < 1.0 ratio means ≥1
                     // mutant survived). The one exception is the 0/0 backstop (#48):
-                    // NO mutant could be scored (un-synthesizable return type) — a
+                    // no mutant could be scored (un-synthesizable return type) — a
                     // contract that cannot be mutation-validated has not met the §7
                     // bar, so it is gated with an explicit unscoreable prompt.
                     let survivor = score.survivor.clone().unwrap_or_else(|| {
@@ -675,9 +675,9 @@ pub fn check_file_with_options(
             cert
         };
 
-        // #11/#10: a TIMEOUT cert (budget-dependent, `VerusTimeout`) and any cert
-        // the #10 ladder produced by DEGRADING a timeout (`lowered_assurance`) are
-        // NEVER cached — they are not settled verdicts (a larger budget might prove
+        // #11/#10: a timeout cert (budget-dependent, `VerusTimeout`) and any cert
+        // the #10 ladder produced by degrading a timeout (`lowered_assurance`) are
+        // not cached — they are not settled verdicts (a larger budget might prove
         // the item at L3, so a degraded L2/L1 cert must not pollute the
         // canonical-budget cache as if it were the final word; degrade-ladder.md
         // "Why a Timeout cert is never cached as proved"). Only a settled cert
@@ -689,7 +689,7 @@ pub fn check_file_with_options(
             continue;
         }
         // Store the fresh verify under its content address for next time (REQ-3).
-        // The cache is best-effort: a write failure must NOT fail the verdict
+        // The cache is best-effort: a write failure must not fail the verdict
         // (which already stands) — degrade to "uncached," never to an error
         // (REQ-6, R-CODE-2). `store` persists the canonical `cached: false`. Only
         // at the canonical [`DEFAULT_RLIMIT`] (#11): a non-default budget's verdict
@@ -700,24 +700,23 @@ pub fn check_file_with_options(
         certs.push(cert.with_cached(false));
     }
 
-    // #17 §9 END-TO-END vs TO-THE-BOUNDARY classification
+    // #17 §9 end-to-end vs to-the-boundary classification
     // (`.design/forge/e2e-vs-boundary.md` REQ-1/REQ-2/REQ-3). Run the structural
-    // transitive-call-closure analysis ONCE over the whole file's program (it is a
+    // transitive-call-closure analysis once over the whole file's program (it is a
     // pure function of the parsed `Program`, R-CODE-5), then attach each fn's
-    // assurance scope to its certificate. ORTHOGONAL to the verdict (REQ-5): the
-    // scope is recorded ALONGSIDE the already-achieved level — a fn whose body
+    // assurance scope to its certificate. Orthogonal to the verdict (REQ-5): the
+    // scope is recorded alongside the already-achieved level — a fn whose body
     // SMT-proved at L3 but whose closure crosses a `#[boundary]`/`#[slag]` fn keeps
-    // `Level::L3` AND records `ToBoundary { via }`. The classification keys on the
-    // in-file `#[boundary]`/`#[slag]` NODE (the §9 composition rule), never a
+    // `Level::L3` and records `ToBoundary { via }`. The classification keys on the
+    // in-file `#[boundary]`/`#[slag]` node (the §9 composition rule), never a
     // sibling's verdict, so it does not perturb any oracle-stable level.
     let scopes = crate::closure::classify(&parsed.program);
     let certs = certs
         .into_iter()
         .map(|cert| match scopes.get(&cert.item) {
             Some(scope) => cert.with_assurance_scope(scope.clone()),
-            // A cert whose item has no node (defensive — every checked item is a
-            // node) keeps its `None` scope, which `oracle_subset` reads as
-            // end-to-end (the golden-stable default).
+            // A cert whose item has no node keeps its `None` scope, which
+            // `oracle_subset` reads as end-to-end (the golden-stable default).
             None => cert,
         })
         .collect();
@@ -728,20 +727,20 @@ pub fn check_file_with_options(
 /// REQ-4/REQ-5/REQ-8, increment (iii), #247). The Verus default path is
 /// [`check_file_with_options`]; this adds the Lean engine #2 surface:
 ///
-/// - **`auto`** (`.design/verified/proof-backends.md` §6 ordering): run Verus FIRST
-///   (the byte-identical base certs). For each item where Verus is INCONCLUSIVE (a
-///   degrade / timeout `lowered_assurance` / a non-L3 non-counterexample), TRY Lean —
-///   on a Lean `Proven` the cert is UPGRADED to L3 with the Lean attribution (the
-///   smaller base, REQ-4). A Verus `Proven` (L3, no reject) is KEPT as-is (Lean is not
-///   run — no Lean cost on the common case, no false disagreement). The DISAGREEMENT
-///   HALT (REQ-5) fires when BOTH engines produced a verdict on the same obligation
-///   and they CONTRADICT (Proven ⊕ Refuted) — a `ForgeError::SoundnessAlarm`.
-/// - **`lean`** (LeanEngine ONLY): each item is discharged by Lean. An EXPORTABLE,
-///   auto-tier item that Lean PROVES → an L3 cert with the Lean attribution; a
-///   tier-(c) item → the interactive replay (REQ-7); a NON-exportable item → an honest
+/// - `auto` (`.design/verified/proof-backends.md` §6 ordering): run Verus first
+///   (the byte-identical base certs). For each item where Verus is inconclusive (a
+///   degrade / timeout `lowered_assurance` / a non-L3 non-counterexample), try Lean:
+///   on a Lean `Proven` the cert is upgraded to L3 with the Lean attribution (the
+///   smaller base, REQ-4). A Verus `Proven` (L3, no reject) is kept as-is (Lean is not
+///   run — no Lean cost on the common case, no false disagreement). The disagreement
+///   halt (REQ-5) fires when both engines produced a verdict on the same obligation
+///   and they contradict (Proven ⊕ Refuted): a `ForgeError::SoundnessAlarm`.
+/// - `lean` (LeanEngine only): each item is discharged by Lean. An exportable,
+///   auto-tier item that Lean proves → an L3 cert with the Lean attribution; a
+///   tier-(c) item → the interactive replay (REQ-7); a non-exportable item → an
 ///   `Unverifiable` skip (Level::L0, no false verdict — the LeanEngine `Unknown`).
 ///
-/// Verus stays the SOLE engine for the §0.1 meta/battery queries (vacuity / mutation /
+/// Verus stays the sole engine for the §0.1 meta/battery queries (vacuity / mutation /
 /// strengthen) in v1 (OQ-5); the Lean mutation battery (REQ-9) runs only on the items
 /// the Lean engine discharges.
 pub fn check_file_with_engine(
@@ -756,9 +755,9 @@ pub fn check_file_with_engine(
         .unwrap_or_else(|| path.to_path_buf());
 
     // The Verus base certs (byte-identical to the default path). `auto` keeps a Verus
-    // `Proven`; `lean` ignores the Verus VERDICT (LeanEngine only) but reuses the same
+    // `Proven`; `lean` ignores the Verus verdict (LeanEngine only) but reuses the same
     // parse/validate/effect-check gate via this call (a parse/validate failure is the
-    // SAME `ForgeError` either way).
+    // same `ForgeError` either way).
     let base = check_file_with_options(
         path,
         CheckOptions {
@@ -782,7 +781,7 @@ pub fn check_file_with_engine(
     for cert in base {
         let item = match crate::lean_export::find_item(&parsed.program, &cert.item) {
             Some(i) => i,
-            // No matching node (defensive) — keep the base cert untouched.
+            // No matching node — keep the base cert untouched.
             None => {
                 out.push(cert);
                 continue;
@@ -811,10 +810,10 @@ fn lean_package_root() -> PathBuf {
         .join("lean")
 }
 
-/// Apply the Lean engine to ONE item's base Verus cert (`.design/verified/
+/// Apply the Lean engine to one item's base Verus cert (`.design/verified/
 /// proof-backends.md` OQ-1 / REQ-4/REQ-5/REQ-7). Returns the cert the `--engine`
 /// surface emits for the item, or a `ForgeError::SoundnessAlarm` on a Proven ⊕ Refuted
-/// disagreement (REQ-5). The Verus base cert's VERDICT (Proven / Refuted / Unknown) is
+/// disagreement (REQ-5). The Verus base cert's verdict (Proven / Refuted / Unknown) is
 /// reconstructed from its `level`/`reject` for the disagreement check + the `auto`
 /// inconclusive test.
 fn lean_engine_cert(
@@ -830,17 +829,17 @@ fn lean_engine_cert(
     match selection {
         EngineSelection::Verus => Ok(verus_cert),
         EngineSelection::Auto => {
-            // Verus FIRST: a Verus `Proven` (L3, no reject) is KEPT — Lean is not run
+            // Verus first: a Verus `Proven` (L3, no reject) is kept — Lean is not run
             // (no cost on the common case, no spurious disagreement). Only an
-            // INCONCLUSIVE Verus result (degrade / timeout / non-L3) tries Lean.
+            // inconclusive Verus result (degrade / timeout / non-L3) tries Lean.
             let verus_verdict = verus_verdict_of(&verus_cert);
             if matches!(verus_verdict, Verdict::Proven(_)) && verus_cert.reject.is_none() {
                 return Ok(verus_cert);
             }
-            // Verus inconclusive → TRY Lean (the §6 ordering). The DISAGREEMENT guard
-            // (REQ-5) fires only if Verus WITNESSED a refutation (Refuted) AND Lean
+            // Verus inconclusive → try Lean (the §6 ordering). The disagreement guard
+            // (REQ-5) fires only if Verus witnessed a refutation (Refuted) and Lean
             // proves — the real-unsoundness case. A Verus Unknown/timeout + a Lean
-            // Proven is BENIGN (Verus simply could not decide).
+            // Proven is benign (Verus could not decide).
             let lean_verdict = lean.discharge(obligation);
             if let Err(disagreement) = crate::engine::check_disagreement(
                 &obligation.item,
@@ -854,19 +853,19 @@ fn lean_engine_cert(
             match lean_verdict {
                 Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert, mutation_floor)),
                 // Lean could not discharge either — keep the Verus base cert (the
-                // honest degrade/timeout verdict stands).
+                // degrade/timeout verdict stands).
                 _ => Ok(verus_cert),
             }
         }
         EngineSelection::Lean => {
-            // LeanEngine ONLY: discharge the item by Lean. Tier-(c) → interactive
-            // replay; auto tiers → live lake; non-exportable → an honest skip.
+            // LeanEngine only: discharge the item by Lean. Tier-(c) → interactive
+            // replay; auto tiers → live lake; non-exportable → a skip.
             let (verdict, interactive) = if lean.admits_auto(obligation) {
                 (lean.discharge(obligation), false)
             } else {
                 // Not auto-exportable: try the interactive (tier-c) replay path; a
-                // non-tier-c non-exportable item is an honest Unverifiable skip. An
-                // interactive (replayed) proof carries the INTERACTIVE trust profile
+                // non-tier-c non-exportable item is an Unverifiable skip. An
+                // interactive (replayed) proof carries the interactive trust profile
                 // (the author is a reviewed step, REQ-7(ii)/OQ-4).
                 (lean.replay_interactive(source_file, obligation), true)
             };
@@ -876,8 +875,8 @@ fn lean_engine_cert(
                 }
                 Verdict::Proven(_) => Ok(lean_proven_cert(lean, &verus_cert, mutation_floor)),
                 Verdict::Refuted(_) => {
-                    // A Lean WITNESSED refutation (not produced by the current export
-                    // path, but total): an honest L0 reject, never a silent pass.
+                    // A Lean witnessed refutation (not produced by the current export
+                    // path, but total): an L0 reject, never a silent pass.
                     Ok(Certificate::rejected(
                         &verus_cert.item,
                         verus_cert.effects.clone(),
@@ -896,10 +895,10 @@ fn lean_engine_cert(
 
 /// Reconstruct an `engine::Verdict` from a Verus base cert (`.design/verified/
 /// proof-backends.md` REQ-5 — for the disagreement check + the `auto` inconclusive
-/// test). L3 + no reject = `Proven`; a counterexample reject (a WITNESSED
+/// test). L3 + no reject = `Proven`; a counterexample reject (a witnessed
 /// `postcondition not satisfied`) = `Refuted`; everything else (timeout / degrade /
 /// L0-no-witness) = `Unknown`. The `Refuted` reconstruction keys on a witnessing
-/// obligation location (REQ-3.1: a witness-LESS failure is `Unknown`, never `Refuted`).
+/// obligation location (REQ-3.1: a witness-less failure is `Unknown`, never `Refuted`).
 fn verus_verdict_of(cert: &Certificate) -> crate::engine::Verdict {
     use crate::engine::{CacheKey, Counterexample, Evidence, Reason, Verdict};
     let key = CacheKey {
@@ -909,8 +908,8 @@ fn verus_verdict_of(cert: &Certificate) -> crate::engine::Verdict {
     if cert.level == Level::L3 && cert.reject.is_none() {
         return Verdict::Proven(Evidence { verified: 1, key });
     }
-    // A WITNESSED counterexample (a failing obligation carrying a `--> span`) is a
-    // genuine refutation; a witness-LESS failure (timeout / fast-unknown) is Unknown
+    // A witnessed counterexample (a failing obligation carrying a `--> span`) is a
+    // genuine refutation; a witness-less failure (timeout / fast-unknown) is Unknown
     // (REQ-3.1 — refutation requires a witnessing input).
     let witnessed = cert.obligations.iter().any(|o| o.location.is_some());
     if witnessed {
@@ -926,11 +925,11 @@ fn verus_verdict_of(cert: &Certificate) -> crate::engine::Verdict {
 }
 
 /// Build the L3 cert a Lean `Proven` produces (`.design/verified/proof-backends.md`
-/// REQ-4/REQ-9): the item certifies at L3 (Lean kernel-checked) WITH the Lean engine
-/// ATTRIBUTION (the smaller trusted base — the auditor-visible refinement) AND the
-/// engine-generic mutation tally (REQ-9 — mutants re-discharged via the SAME Lean
+/// REQ-4/REQ-9): the item certifies at L3 (Lean kernel-checked) with the Lean engine
+/// attribution (the smaller trusted base — the auditor-visible refinement) and the
+/// engine-generic mutation tally (REQ-9 — mutants re-discharged via the same Lean
 /// path, the kill ratio + the "untested against lean" count). The `Level` is
-/// unchanged-meaning L3 ("proven for all inputs"); the attribution records WHICH
+/// unchanged-meaning L3 ("proven for all inputs"); the attribution records which
 /// engine + its base; the mutation qualifier is attached additively.
 fn lean_proven_cert(
     lean: &crate::engine::LeanEngine,
@@ -951,7 +950,7 @@ fn lean_proven_cert(
     .graduate_triage_clean()
     .with_engine_attribution(attribution);
     // REQ-9 engine-generic battery (the Lean path): re-discharge the frozen mutant set
-    // via the SAME Lean engine. The Verus-path battery (`mutation_score`) is untouched.
+    // via the same Lean engine. The Verus-path battery (`mutation_score`) is untouched.
     // Only an `Item::Fn` (the cert's item) is mutation-scored — a `spec fn` carries no
     // `ens`. A `spec fn` (no `ens`) has no mutation obligation, so it certifies on the
     // Lean kernel proof alone (no floor gate — there is nothing to mutate).
@@ -959,22 +958,22 @@ fn lean_proven_cert(
         return cert;
     };
     let tally = lean_mutation_score(lean, f);
-    // REQ-9/AC-7 (the floor GATES the Lean path — proof-backends.md §7, the #248 fix):
-    // the kill-ratio over the `attempted` denominator must MEET the mutation floor for
+    // REQ-9/AC-7 (the floor gates the Lean path — proof-backends.md §7, the #248 fix):
+    // the kill-ratio over the `attempted` denominator must meet the mutation floor for
     // the item to certify L3-via-Lean, mirroring the Verus path's `meets_floor` gate
     // (`mutation_score` → `WeakContract`). On the Lean-only path the #101 equivalence
-    // probe is OUTSIDE the Engine interface (a §0.1 verus meta-query, F3/OQ-5) and is
-    // NOT threaded, so the denominator = `attempted` with NO equivalence exclusion — an
-    // honesty the qualifier records. The SHIPPED 0/0 backstop (`kill_ratio() == 0.0` on
-    // an empty denominator) means an item that GENERATED mutants but attempted none
-    // against Lean (all untested) is below ANY positive floor → does NOT certify (it is
-    // an honest `WeakContract` reject, never a silent L3). A genuinely below-floor item
-    // (survivors the contract does not catch) likewise rejects.
+    // probe is outside the Engine interface (a §0.1 verus meta-query, F3/OQ-5) and is
+    // not threaded, so the denominator = `attempted` with no equivalence exclusion,
+    // which the qualifier records. The shipped 0/0 backstop (`kill_ratio() == 0.0` on
+    // an empty denominator) means an item that generated mutants but attempted none
+    // against Lean (all untested) is below any positive floor → does not certify (a
+    // `WeakContract` reject, never a silent L3). A below-floor item (survivors the
+    // contract does not catch) likewise rejects.
     if tally.meets_floor(mutation_floor) {
         cert.with_mutation_score(tally.qualifier(), None)
     } else {
         // Below the floor (or 0/0 with mutants generated): a `WeakContract`-style reject
-        // — the contract under-constrains the body, so the Lean kernel proof does NOT
+        // — the contract under-constrains the body, so the Lean kernel proof does not
         // license an L3 cert (proof-backends REQ-9/AC-7; the WeakContract mirror).
         Certificate::rejected_weak_contract(
             &base.item,
@@ -985,10 +984,10 @@ fn lean_proven_cert(
     }
 }
 
-/// Build the L3 cert a tier-(c) INTERACTIVE Lean proof produces (`.design/verified/
+/// Build the L3 cert a tier-(c) interactive Lean proof produces (`.design/verified/
 /// proof-backends.md` REQ-7(ii) / OQ-4): like [`lean_proven_cert`] but the attribution
-/// carries the INTERACTIVE trust profile (the human/agent proof author is a reviewed —
-/// not mechanized — step, ADDED to {Lean kernel + 3 axioms, EXP}). The auditor sees
+/// carries the interactive trust profile (the human/agent proof author is a reviewed,
+/// not mechanized, step, added to {Lean kernel + 3 axioms, EXP}). The auditor sees
 /// the extra reviewed-author item. No mutation tally on the interactive path (a
 /// recursive-registry obligation's mutants are tier-(c) too — "untested against
 /// lean-auto"; the §6 tier-(c) interactive battery is out of v1's auto scope).
@@ -1022,18 +1021,18 @@ fn lean_program(lean: &crate::engine::LeanEngine) -> &Program {
     lean.program()
 }
 
-/// Score the frozen mutant set of `f` against its own contract VIA THE LEAN ENGINE
+/// Score the frozen mutant set of `f` against its own contract via the Lean engine
 /// (`.design/verified/proof-backends.md` REQ-9, increment (iii), #247). The
-/// engine-generic battery: each mutant is attempted via the SAME Lean engine path; a
-/// mutant the Lean fragment ADMITS and that Lean does NOT prove (Refuted ∪
-/// Unknown-after-attempt) is KILLED; a mutant the fragment does NOT admit is "untested
-/// against lean" (reported, NEVER counted killed); a Lean-Proven mutant SURVIVED.
+/// engine-generic battery: each mutant is attempted via the same Lean engine path; a
+/// mutant the Lean fragment admits and that Lean does not prove (Refuted ∪
+/// Unknown-after-attempt) is killed; a mutant the fragment does not admit is "untested
+/// against lean" (reported, never counted killed); a Lean-Proven mutant survived.
 ///
-/// The #101 proven-equivalent exclusion is a §0.1 META-query OUTSIDE the Engine
+/// The #101 proven-equivalent exclusion is a §0.1 meta-query outside the Engine
 /// interface in v1 (it stays a direct verus query, F3/OQ-5); on the Lean-only path no
-/// verus run is threaded, so the tally reports the RAW survivor set honestly (a
+/// verus run is threaded, so the tally reports the raw survivor set (a
 /// survivor is reported, never silently excluded as equivalent without the verus
-/// probe). The Verus-path battery (`mutation_score`) keeps the SHIPPED #101 exclusion
+/// probe). The Verus-path battery (`mutation_score`) keeps the shipped #101 exclusion
 /// unchanged. Deterministic (R-CODE-5): the mutant set is a pure function of the AST.
 fn lean_mutation_score(
     lean: &crate::engine::LeanEngine,
@@ -1042,20 +1041,20 @@ fn lean_mutation_score(
     use crate::engine::Engine as _;
     let mut tally = crate::engine::LeanMutationTally::default();
     let base_program = lean_program(lean);
-    // The Lean-path caller threads the WHOLE program's items as `adt_deps`
+    // The Lean-path caller threads the whole program's items as `adt_deps`
     // (REQ-11) so the F-STRUCT-ZERO family resolves any struct return — the same
     // items the per-mutant Lean engine exports from (`program_with_mutant`).
     for mutant in crate::mutation::generate(f, 0, &base_program.items) {
-        // The LeanEngine exports the item by NAME from its stored program (the
-        // exporter re-fetches `o.item` from `self.program`), so to score a MUTANT we
-        // must build a per-mutant engine whose program carries the MUTANT body in
+        // The LeanEngine exports the item by name from its stored program (the
+        // exporter re-fetches `o.item` from `self.program`), so to score a mutant we
+        // must build a per-mutant engine whose program carries the mutant body in
         // place of the original `f` (else the engine would re-export the unchanged
         // original — every mutant would discharge identically, a false survivor).
         let mutant_program = program_with_mutant(base_program, &mutant.item);
         let mutant_engine =
             crate::engine::LeanEngine::new(mutant_program.clone(), lean_package_root());
-        // The mutant's CONTRACT obligation (the same closure the real item carries —
-        // a mutant body references the same spec-fns), over the MUTANT program.
+        // The mutant's contract obligation (the same closure the real item carries —
+        // a mutant body references the same spec-fns), over the mutant program.
         let called = reachable_spec_fn_names_full(&mutant_program, &mutant.item);
         let obligation = crate::obligation::Obligation::contract_for_fn(&mutant.item, called);
         // The Lean fragment's admission is the export-success + auto-tier test
@@ -1072,7 +1071,7 @@ fn lean_mutation_score(
             ))
         };
         let outcome = crate::engine::lean_mutant_outcome(admitted, &verdict);
-        // The #101 equivalence probe is a §0.1 verus meta-query OUTSIDE the engine
+        // The #101 equivalence probe is a §0.1 verus meta-query outside the engine
         // interface in v1 (not threaded on the Lean-only path) — report the raw
         // survivor (proven_equivalent = false), never a silent exclusion.
         tally.record(outcome, false);
@@ -1080,10 +1079,10 @@ fn lean_mutation_score(
     tally
 }
 
-/// Build a copy of `base` with the fn named `mutant.name` REPLACED by `mutant`
+/// Build a copy of `base` with the fn named `mutant.name` replaced by `mutant`
 /// (`.design/verified/proof-backends.md` REQ-9 — the per-mutant program the LeanEngine
-/// exports from). The LeanEngine resolves an obligation's item by NAME from its stored
-/// program, so a mutant must be swapped IN for the engine to discharge the MUTATED
+/// exports from). The LeanEngine resolves an obligation's item by name from its stored
+/// program, so a mutant must be swapped in for the engine to discharge the mutated
 /// body (not the original). The spec-fn deps are unchanged (a mutant keeps the
 /// original's signature + contract).
 fn program_with_mutant(base: &Program, mutant: &thermite_syntax::FnItem) -> Program {
@@ -1098,10 +1097,10 @@ fn program_with_mutant(base: &Program, mutant: &thermite_syntax::FnItem) -> Prog
     Program { items }
 }
 
-/// Build the honest Unverifiable-skip cert a Lean `Unknown` produces under `--engine
+/// Build the Unverifiable-skip cert a Lean `Unknown` produces under `--engine
 /// lean` (`.design/verified/proof-backends.md` OQ-1 — "non-exportable → honest
 /// Unverifiable/skip reporting"). Level::L0 with a structured reject naming the skip
-/// reason — NEVER a false `Proven`, NEVER a silent pass.
+/// reason, never a false `Proven` and never a silent pass.
 fn lean_unverifiable_cert(base: &Certificate, reason: &crate::engine::Reason) -> Certificate {
     let detail = match reason {
         crate::engine::Reason::VerusTimeout(d) | crate::engine::Reason::IncompleteUnknown(d) => {
@@ -1125,18 +1124,18 @@ fn lean_unverifiable_cert(base: &Certificate, reason: &crate::engine::Reason) ->
 
 /// Run the L2 (Kani bounded model check) pipeline for every `fn` item in `path`,
 /// returning one [`Certificate`] (at `Level::L2` on success) per `fn` in source
-/// order (`.design/lower/l2-kani.md` REQ-7). This is the EXPLICIT `--level l2`
-/// path: `forge check --level l2 <file>` runs it INSTEAD of the default L3 verus
-/// path (`check_file`). #9 does NOT wire L2 as an automatic fallback on a verus
-/// timeout (that is #10's `level_from_summary` change) — `--level l2` is a
-/// deliberate choice (REQ-7 / `goal.md` R-DEFER-4).
+/// order (`.design/lower/l2-kani.md` REQ-7). This is the explicit `--level l2`
+/// path: `forge check --level l2 <file>` runs it instead of the default L3 verus
+/// path (`check_file`). #9 does not wire L2 as an automatic fallback on a verus
+/// timeout (that is #10's `level_from_summary` change); `--level l2` is an
+/// explicit choice (REQ-7 / `goal.md` R-DEFER-4).
 ///
 /// Pipeline order (parallel to `check_file`): parse → validate → check_effects →
-/// PER ITEM (`thermite_lower::lower_l2` of the item's isolated sub-program) →
+/// per item (`thermite_lower::lower_l2` of the item's isolated sub-program) →
 /// `kani::run_kani` → an L2 `Certificate`. A `spec fn` carries no `req`/`ens`
 /// contract (§4.2), so it has no L2 obligation to discharge — it is a pure shared
 /// dependency woven into every `fn`'s sub-program (so a `fn` whose `ens` calls
-/// `spec_sum` lowers + checks), and produces NO certificate of its own. Stages
+/// `spec_sum` lowers + checks), and produces no certificate of its own. Stages
 /// short-circuit into the earliest failing stage's `ForgeError`; a reachable
 /// contract `assert!` failure is a valid non-L2 certificate, not an `Err` (the
 /// counterexample, §5.1).
@@ -1173,7 +1172,7 @@ pub fn check_l2_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeEr
         let Item::Fn(f) = item else {
             continue;
         };
-        // The explicit `--level l2` (kani) path does NOT weave the §9 composition
+        // The explicit `--level l2` (kani) path does not weave the §9 composition
         // deps: #52's external_body arm lives in the L3 `lower`, not `lower_l2`, and
         // the composition oracle (`conformance/composition`) is L3-only. A boundary
         // caller at L2 is out of #52's v0.1 scope, so this stays the prior shape
@@ -1202,13 +1201,12 @@ enum GateOutcome {
     BoundaryL1(Certificate),
     /// A `fx diverge` item (`.design/forge/check.md` REQ-8,
     /// `degrade-ladder.md` REQ-9): an event loop that may not terminate, so it
-    /// CANNOT claim L3-total — it caps at `Level::L1` = PARTIAL correctness and is
-    /// EXEMPT from the §7 mutation/strengthen gate (which validates a
+    /// cannot claim L3-total — it caps at `Level::L1` = partial correctness and is
+    /// exempt from the §7 mutation/strengthen gate (which validates a
     /// strong-functional `ens`, the wrong instrument for a partial-correctness
-    /// loop). The structural analog of [`GateOutcome::BoundaryL1`] — the cert is
-    /// built BEFORE any prover runs, keyed strictly on the `fx diverge`
-    /// declaration (the honesty gate, R-DEFER-9: a non-diverge fn never reaches
-    /// this arm).
+    /// loop). The structural analog of [`GateOutcome::BoundaryL1`]: the cert is
+    /// built before any prover runs, keyed strictly on the `fx diverge`
+    /// declaration (R-DEFER-9 — a non-diverge fn never reaches this arm).
     DivergeL1(Certificate),
     /// A triage / slag-validation reject: the item does not certify — the cert.
     Rejected(Certificate),
@@ -1217,7 +1215,7 @@ enum GateOutcome {
 }
 
 /// Run the #6 gate for one `fn` (slag-validate → triage → L1-vs-L3 fork). The two
-/// components COMPOSE per `.design/forge/slag.md`:
+/// components compose per `.design/forge/slag.md`:
 ///
 /// ```text
 /// #[slag]?  ──no──▶ triage(a,b,c,d)  ──reject──▶ Rejected
@@ -1236,11 +1234,11 @@ enum GateOutcome {
 fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
     let effects = effects_of(&f.contract.fx);
 
-    // #16 BOUNDARY (FFI) path, detected FIRST (`.design/boundary/ffi-boundary.md`
-    // REQ-5, §9): a `#[boundary("crate::path")]` fn's FOREIGN body is unproven, so
-    // it NEVER enters the L3 (verus) / L2 (kani) / mutation / strengthening paths —
-    // it certifies at L1 to-the-boundary. The §7.1 (a)/(b)/(c) triage STILL applies
-    // (slag-adjacent: it exempts PROVING the body, not STATING a non-vacuous
+    // #16 boundary (FFI) path, detected first (`.design/boundary/ffi-boundary.md`
+    // REQ-5, §9): a `#[boundary("crate::path")]` fn's foreign body is unproven, so
+    // it never enters the L3 (verus) / L2 (kani) / mutation / strengthening paths —
+    // it certifies at L1 to-the-boundary. The §7.1 (a)/(b)/(c) triage still applies
+    // (slag-adjacent: it exempts proving the body, not stating a non-vacuous
     // contract — a `#[boundary]` fn with `ens true` is still rejected). Rule (d) is
     // exempt (a foreign body's effects are trusted-by-fiat, OQ-4 — `triage` reads
     // `f.boundary` and skips (d)). The target's non-emptiness is validated here:
@@ -1281,7 +1279,7 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
     }
 
     if let Some(slag_attr) = f.slag.as_ref() {
-        // Slag path: validate the mandatory fields FIRST (it gates whether rule
+        // Slag path: validate the mandatory fields first (it gates whether rule
         // (d) is justified). Invalid fields → reject (the item does not certify).
         let meta = match crate::slag::validate(slag_attr) {
             Ok(meta) => meta,
@@ -1297,7 +1295,7 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
                 ));
             }
         };
-        // Valid fields: triage STILL applies (a)/(b)/(c) — slag exempts only (d)
+        // Valid fields: triage still applies (a)/(b)/(c) — slag exempts only (d)
         // (slag.md REQ-3, §8). `vacuity::triage` reads `f.slag` itself and skips
         // (d) because it is present.
         match crate::vacuity::triage(f) {
@@ -1318,29 +1316,28 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
             }
         }
     } else if fn_is_diverge(f) {
-        // #88 `fx diverge` PARTIAL-CORRECTNESS cap (`.design/forge/check.md`
-        // REQ-8, `degrade-ladder.md` REQ-9), MIRRORING the `#[boundary]`
+        // #88 `fx diverge` partial-correctness cap (`.design/forge/check.md`
+        // REQ-8, `degrade-ladder.md` REQ-9), mirroring the `#[boundary]`
         // short-circuit above. A diverge fn (effect row contains
         // `Effect::Diverge`, §4.1) is an event loop that may not terminate, so it
-        // cannot claim L3-TOTAL correctness — it caps at `Level::L1` = PARTIAL
-        // correctness and is EXEMPT from the §7 mutation/strengthen gate (which
+        // cannot claim L3-total correctness — it caps at `Level::L1` = partial
+        // correctness and is exempt from the §7 mutation/strengthen gate (which
         // validates a strong-functional `ens`, inapplicable to a partial-correctness
         // loop whose `ens` is inherently a weak shape — `run`'s `ens result <= 256`
         // is met by `return 0`, so the §7 battery would mis-reject it `WeakContract`
-        // at L0). The §7.1 (a)/(b)/(c) triage STILL applies (divergence exempts
-        // PROVING total correctness, not STATING a non-vacuous contract — a diverge
+        // at L0). The §7.1 (a)/(b)/(c) triage still applies (divergence exempts
+        // proving total correctness, not stating a non-vacuous contract — a diverge
         // fn with a vacuous `ens` is still rejected), exactly as for `#[boundary]`.
-        // The cap is built HERE, BEFORE any prover runs, keyed strictly on the
-        // `fx diverge` DECLARATION (the honesty gate, R-DEFER-9): it is NOT a
-        // verus-timeout degrade and NOT a counterexample (degrade-ladder.md REQ-9);
-        // it is a STRUCTURAL cap. We do NOT run verus on the diverge body: in the
-        // per-item sub-program `run`'s loop calls `backspace`/`insert_str` whose
-        // `req`s the loop invariant does not (and need not) re-establish, so verus
-        // would report a (spurious-for-partial-correctness) failure — the
-        // boundary-style L1-no-verus reading (`.design/forge/check.md` REQ-8
-        // reading (b), the explicitly-sanctioned fallback) is the honest and clean
-        // choice. The runtime contract checks (`thermite_lower::l1`) plus the proven
-        // edit core (`insert_str`/`backspace` are L3) carry the real assurance.
+        // The cap is built here, before any prover runs, keyed strictly on the
+        // `fx diverge` declaration (R-DEFER-9): it is a structural cap, not a
+        // verus-timeout degrade and not a counterexample (degrade-ladder.md REQ-9).
+        // Verus is not run on the diverge body: in the per-item sub-program `run`'s
+        // loop calls `backspace`/`insert_str` whose `req`s the loop invariant does
+        // not (and need not) re-establish, so verus would report a
+        // spurious-for-partial-correctness failure. The boundary-style L1-no-verus
+        // reading (`.design/forge/check.md` REQ-8 reading (b), the sanctioned
+        // fallback) applies. The runtime contract checks (`thermite_lower::l1`) plus
+        // the proven edit core (`insert_str`/`backspace` are L3) carry the assurance.
         match crate::vacuity::triage(f) {
             crate::vacuity::VacuityVerdict::Rejected { cause } => {
                 GateOutcome::Rejected(Certificate::rejected(
@@ -1377,33 +1374,32 @@ fn gate_fn(f: &thermite_syntax::FnItem) -> GateOutcome {
 }
 
 /// True iff `f`'s effect row contains `diverge` (§4.1: "divergence requires
-/// `fx diverge` in the row"). MIRRORS `thermite_lower`'s `fn_is_diverge` (the
-/// SINGLE source of truth for the §4.1 termination exemption in the lowerer); the
+/// `fx diverge` in the row"). Mirrors `thermite_lower`'s `fn_is_diverge` (the
+/// single source of truth for the §4.1 termination exemption in the lowerer); the
 /// two share the row-shape predicate so the #88 L1 cap and the #87 termination
-/// exemption fire on EXACTLY the same set of fns. Keyed on the SHAPE of the
+/// exemption fire on the same set of fns. Keyed on the shape of the
 /// effect row — a `pure` row never diverges; a `Set` row diverges iff it lists
-/// [`thermite_syntax::ast::Effect::Diverge`]. The honesty gate (R-DEFER-9): the
-/// cap is applied ONLY to a fn that LOUDLY declares `fx diverge`, never silently
-/// to a normal fn.
+/// [`thermite_syntax::ast::Effect::Diverge`]. The cap is applied only to a fn
+/// that declares `fx diverge`, never to a normal fn (R-DEFER-9).
 fn fn_is_diverge(f: &thermite_syntax::FnItem) -> bool {
     use thermite_syntax::ast::{Effect, EffectRow};
     matches!(&f.contract.fx, EffectRow::Set(es) if es.contains(&Effect::Diverge))
 }
 
-/// Build a `fx diverge` PARTIAL-CORRECTNESS L1 certificate (`.design/forge/check.md`
+/// Build a `fx diverge` partial-correctness L1 certificate (`.design/forge/check.md`
 /// REQ-8, `degrade-ladder.md` REQ-9). The diverge analog of
 /// [`Certificate::boundary_l1`] / [`Certificate::slag_l1`]: `Level::L1` (partial
 /// correctness — the loop runs under its runtime contract checks; termination +
-/// strong functional postcondition NOT claimed), `slag: false`, `boundary: false`,
+/// strong functional postcondition not claimed), `slag: false`, `boundary: false`,
 /// the §7.1 triage bools graduated to live-`false` (a diverge fn passes (a)/(b)/(c)
-/// before this is built), and a single DISCHARGED obligation recording the
-/// partial-correctness verdict (NOT a verus obligation — no proof was run on the
+/// before this is built), and a single discharged obligation recording the
+/// partial-correctness verdict (not a verus obligation — no proof was run on the
 /// non-terminating body). Mirrors the `boundary_l1` field layout exactly; the only
 /// cap-specific datum is the obligation note. Built inline here (rather than as a
 /// `manifest.rs` ctor) so the #88 fix stays within the authorized file manifest.
 fn diverge_l1_cert(item: String, effects: Vec<String>) -> Certificate {
     let mut cert = Certificate::boundary_l1(item, effects, String::new());
-    // Re-shape the boundary cert into the diverge cap: it is NOT a boundary fn
+    // Re-shape the boundary cert into the diverge cap: it is not a boundary fn
     // (its body is in-language and partially proven via the L3-proven edit ops it
     // calls), so clear the boundary flag/target and replace the obligation note.
     cert.boundary = false;
@@ -1418,14 +1414,14 @@ fn diverge_l1_cert(item: String, effects: Vec<String>) -> Certificate {
 /// Build the per-item sub-`Program` that isolates `item`'s verification (§5.3).
 ///
 /// - A `fn` is verified against itself, the file's `spec fn`s (the pure shared
-///   dependencies its contract may reference), AND the in-file `fn`s its body
-///   TRANSITIVELY references (`fn_deps`, the #52 §9 composition weaving). A
-///   regular reachable fn is woven with its REAL body (fully lowered + proved);
+///   dependencies its contract may reference), and the in-file `fn`s its body
+///   transitively references (`fn_deps`, the #52 §9 composition weaving). A
+///   regular reachable fn is woven with its real body (fully lowered + proved);
 ///   a `#[boundary]`/`#[slag]` reachable fn is woven as a
 ///   `#[verifier::external_body]` signature (`thermite_lower::lower`'s
 ///   composition arm), so `verus` resolves the foreign callee and the caller
-///   proves THROUGH its contract (§9). Its obligations stay its own (§5.3) — a
-///   sibling fn NOT in the closure never enters, so an unrelated sibling's
+///   proves through its contract (§9). Its obligations stay its own (§5.3) — a
+///   sibling fn not in the closure never enters, so an unrelated sibling's
 ///   failure cannot leak in.
 /// - A `spec fn` carries no `req`/`ens`/`fx` contract (`ast.rs` `SpecFnItem`,
 ///   §4.2): there is no L3 proof obligation to discharge, only well-formedness
@@ -1441,12 +1437,12 @@ fn item_subprogram(
     adt_deps: &[Item],
 ) -> Program {
     match item {
-        // The referenced `struct`/`enum` DECLARATIONS first (#68 — so verus has
-        // the type decls + their `well_formed` invariants in scope BEFORE any fn
+        // The referenced `struct`/`enum` declarations first (#68 — so verus has
+        // the type decls + their `well_formed` invariants in scope before any fn
         // that references them), then all pure spec-fn dependencies, then the
         // transitively reachable in-file `fn` dependencies (#52), then the item
         // itself last (so a forward reference resolves; the lowerer dedups
-        // combinator defs regardless of order). EMPTY `adt_deps` for a fn that
+        // combinator defs regardless of order). Empty `adt_deps` for a fn that
         // references no ADT (the pure scalar corpus), so the existing sub-program
         // is byte-stable (no regression).
         Item::Fn(_) => {
@@ -1456,43 +1452,43 @@ fn item_subprogram(
             items.push(item.clone());
             Program { items }
         }
-        // A checked spec fn's sub-program is DISTINCT + MINIMAL (#71): it weaves
-        // `item` PLUS only the spec fns `item` TRANSITIVELY references (`spec_items`
+        // A checked spec fn's sub-program is distinct + minimal (#71): it weaves
+        // `item` plus only the spec fns `item` transitively references (`spec_items`
         // here is the reachable spec-fn closure from `reachable_spec_fn_deps`, which
-        // INCLUDES `item` itself), NOT every `spec fn` in the file. Weaving all spec
-        // fns made every spec fn in a multi-spec-fn file lower to BYTE-IDENTICAL
+        // includes `item` itself), not every `spec fn` in the file. Weaving all spec
+        // fns made every spec fn in a multi-spec-fn file lower to byte-identical
         // Verus (the checked item was indistinguishable — it just rode along in the
         // full set), so the proof-cache content-address collided and the first
-        // item's cert was served for every sibling (the cert IDENTITY was a
+        // item's cert was served for every sibling (the cert identity was a
         // neighbor's, violating §6). With only the reachable deps, each spec fn's
         // sub-program differs by its own focused body → a distinct content-address
         // → a distinct, correctly-named cert. A spec fn that references no other
         // spec fn (the `list_fold.th` instances) gets a sub-program of just itself
-        // (+ its ADT decls) → three DISTINCT lowerings (different fold steps). A
-        // spec fn that DOES reference a sibling Y still includes Y (reachability),
+        // (+ its ADT decls) → three distinct lowerings (different fold steps). A
+        // spec fn that does reference a sibling Y still includes Y (reachability),
         // so verus resolves Y and mutual recursion still verifies (§4.2). A spec fn
         // has no `fn` dependencies to weave (§4.2), but a recursive fold over an ADT
-        // DOES reference the `enum` decl, so weave the referenced ADT decls first
+        // does reference the `enum` decl, so weave the referenced ADT decls first
         // (#68 — without `enum List` in scope the fold's lowering degrades to L0).
         Item::SpecFn(_) => {
             let mut items = adt_deps.to_vec();
             items.extend(spec_items.iter().cloned());
             Program { items }
         }
-        // A `struct`/`enum` whose `inv`/`well_formed` predicate NAMES a user
-        // `spec fn` must weave that spec fn's DEFINITION into its sub-program —
+        // A `struct`/`enum` whose `inv`/`well_formed` predicate names a user
+        // `spec fn` must weave that spec fn's definition into its sub-program —
         // exactly as the `Item::Fn` arm weaves the file's `spec_items` (#232).
-        // The stale "dead-in-1a: dies at the validator" premise was FALSE: a
+        // The stale "dead-in-1a: dies at the validator" premise was wrong: a
         // struct with an `inv` lowers to a `pub open spec fn well_formed` whose
-        // body calls the named spec fn, and live `forge check` DOES produce a
+        // body calls the named spec fn, and live `forge check` does produce a
         // cert for it (at L0 without the def — E0425 `cannot find function`).
         // Weave the referenced ADT decls first (#68 — type decls in scope), then
-        // the spec-fn deps (so the `well_formed` body resolves AND the per-item
+        // the spec-fn deps (so the `well_formed` body resolves and the per-item
         // `spec_fn_param_type_map` is non-empty, restoring the #229 REQ-5 cast
         // off the `as u64` fallback), then the item itself last (forward refs
         // resolve; the lowerer dedups regardless of order). An ADT carries no
         // `fn` dependency closure (a `well_formed` body calls only spec fns /
-        // combinators, §4.2), so `fn_deps` is intentionally unwoven here. EMPTY
+        // combinators, §4.2), so `fn_deps` is intentionally unwoven here. Empty
         // `adt_deps`/`spec_items` for an `inv`-free struct keeps the sub-program
         // the item alone (byte-stable for the no-invariant corpus).
         Item::Struct(_) | Item::Enum(_) => {
@@ -1507,12 +1503,12 @@ fn item_subprogram(
 /// The in-file `Item::Fn`s a fn named `start` transitively references — the §9
 /// composition dependencies woven into `start`'s sub-program (#52). Resolves
 /// `closure::reachable_in_file_fns` (the reused #17 call-graph walk) to the
-/// matching `Item::Fn` clones from `program`, in source order (DETERMINISTIC,
-/// R-CODE-5). EXCLUDES `start` itself and every `spec fn` (the latter is woven by
+/// matching `Item::Fn` clones from `program`, in source order (deterministic,
+/// R-CODE-5). Excludes `start` itself and every `spec fn` (the latter is woven by
 /// the separate `spec_items` set — no duplication). For a fn with no in-file fn
 /// references (e.g. the pure corpus `sum`, which calls only the `spec fn`
-/// `spec_sum`) this is EMPTY, so the §52 weaving is a no-op and no external_body
-/// is ever emitted (the AC-4 corpus-unaffected / honesty-gate invariant).
+/// `spec_sum`) this is empty, so the §52 weaving is a no-op and no external_body
+/// is emitted (the AC-4 corpus-unaffected invariant).
 fn reachable_fn_deps(program: &Program, start: &str) -> Vec<Item> {
     let names = crate::closure::reachable_in_file_fns(program, start);
     program
@@ -1523,56 +1519,55 @@ fn reachable_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         .collect()
 }
 
-/// The set of in-file `fn` names that participate in a MUTUAL-recursion cycle
-/// (`a -> b -> a`, `a -> b -> c -> a`, …, SCC size ≥ 2) WHOSE termination is NOT
+/// The set of in-file `fn` names that participate in a mutual-recursion cycle
+/// (`a -> b -> a`, `a -> b -> c -> a`, …, SCC size ≥ 2) whose termination is not
 /// supplied — i.e. a cycle containing at least one non-`fx diverge` member that
-/// LACKS a `dec` measure (`.design/basis/12-mutual-recursion.md` REQ-1/REQ-2,
-/// crosslink #121/#113). These are the ONLY mutual-cycle members `forge check`
+/// lacks a `dec` measure (`.design/basis/12-mutual-recursion.md` REQ-1/REQ-2,
+/// crosslink #121/#113). These are the only mutual-cycle members `forge check`
 /// rejects.
 ///
-/// A `fn` `f` is in a mutual cycle iff it is reachable from ITSELF THROUGH AT
-/// LEAST ONE OTHER `fn` (`g != f`, `g` reachable from `f` AND `f` reachable from
-/// `g` — the same SCC of size ≥ 2). This is the GENERALIZATION of the
-/// validator's DIRECT self-call rule (C9 REQ-2, `block_calls_name`) from a
+/// A `fn` `f` is in a mutual cycle iff it is reachable from itself through at
+/// least one other `fn` (`g != f`, `g` reachable from `f` and `f` reachable from
+/// `g` — the same SCC of size ≥ 2). This generalizes the
+/// validator's direct self-call rule (C9 REQ-2, `block_calls_name`) from a
 /// self-edge to a call-graph cycle.
 ///
-/// **C11 (the #121 refinement): the reject is CONDITIONAL on missing `dec`.** A
-/// mutual cycle where EVERY member carries a `dec` measure (or is `fx diverge`)
-/// is NO LONGER rejected here — it FALLS THROUGH to the normal per-item
+/// C11 (the #121 refinement): the reject is conditional on missing `dec`. A
+/// mutual cycle where every member carries a `dec` measure (or is `fx diverge`)
+/// is no longer rejected here — it falls through to the normal per-item
 /// lower/verus ladder, where the existing C9 source-order single-`verus!`-block
 /// emission (`lower`/`lower_fn`) presents Verus a valid mutual-`decreases` group.
 /// Verus discovers the recursive SCC from each member's emitted `decreases` and
 /// proves the group terminates (each cross-call strictly decreases the measure)
-/// → L3 (`12-mutual-recursion.md` REQ-1/REQ-3/REQ-4, GROUNDED: `is_even`/`is_odd`
+/// → L3 (`12-mutual-recursion.md` REQ-1/REQ-3/REQ-4, grounded: `is_even`/`is_odd`
 /// `dec n` cross `n-1` → `4 verified, 0 errors`). A dec-complete cycle whose
-/// measures DON'T decrease still reaches Verus and is rejected there as a clean
-/// `could not prove termination` L0 (the SAME shape as the single-fn
-/// non-decreasing L0, C9 REQ-4 / `12-mutual-recursion.md` AC-2) — the `decreases`
-/// is the only thing between the cycle and L0, exactly as for a self-recursive fn
-/// (R-DEFER-9 — no proof cheat). So this function returns a member ONLY when its
-/// cycle has a real, structural reason to reject pre-Verus: a member lacking
-/// `dec`.
+/// measures don't decrease still reaches Verus and is rejected there as a clean
+/// `could not prove termination` L0 (the same shape as the single-fn
+/// non-decreasing L0, C9 REQ-4 / `12-mutual-recursion.md` AC-2): the `decreases`
+/// is the only thing between the cycle and L0, as for a self-recursive fn
+/// (R-DEFER-9). So this function returns a member only when its cycle has a
+/// structural reason to reject pre-Verus: a member lacking `dec`.
 ///
 /// The reject this set drives (the per-item loop emits a `Certificate::rejected`,
-/// `Level::L0`, cause `MutualRecursionMissingDecreases`) fires BEFORE lowering /
-/// verus, so a missing-`dec` cycle is a clean CERTIFICATE verdict (a parseable
+/// `Level::L0`, cause `MutualRecursionMissingDecreases`) fires before lowering /
+/// verus, so a missing-`dec` cycle is a clean certificate verdict (a parseable
 /// cert array, exit non-zero — the verdict-in-cert shape, §5.1 / R-SPEC-3) rather
 /// than the raw Verus VIR-error abort (`recursive function must have a decreases
 /// clause`, `encountered-vir-error: true`) that `classify_verus_outcome` maps to
-/// a `ForgeError::VerusOutput` environment crash (exit 2, EMPTY `--json` stdout,
-/// NO certificate) — `12-mutual-recursion.md` AC-3.
+/// a `ForgeError::VerusOutput` environment crash (exit 2, empty `--json` stdout,
+/// no certificate) — `12-mutual-recursion.md` AC-3.
 ///
-/// A whole CLASS, not the one reported pair (`goal.md` "fix the cause … its whole
-/// class"): the membership test runs over EVERY `fn`, so ANY missing-`dec` mutual
-/// cycle of size ≥ 2 (pairs, 3-cycles, …) is caught — and when one member of a
-/// cycle lacks `dec`, the WHOLE non-diverge cycle is rejected (Verus would reject
-/// the entire recursive group; a clean per-member cert is the honest mirror).
-/// A `fx diverge` `fn` is EXEMPT from being a reject TRIGGER and is itself never
-/// rejected for missing `dec` (the #88 honesty exemption: a diverge fn lowers
-/// with `#[verifier::exec_allows_no_decreases_clause]` and is L1-capped — it
-/// never enters the termination check).
+/// A whole class, not the one reported pair (`goal.md` "fix the cause … its whole
+/// class"): the membership test runs over every `fn`, so any missing-`dec` mutual
+/// cycle of size ≥ 2 (pairs, 3-cycles, …) is caught, and when one member of a
+/// cycle lacks `dec`, the whole non-diverge cycle is rejected (Verus would reject
+/// the entire recursive group; a clean per-member cert mirrors that).
+/// A `fx diverge` `fn` is exempt from being a reject trigger and is itself never
+/// rejected for missing `dec` (the #88 exemption: a diverge fn lowers with
+/// `#[verifier::exec_allows_no_decreases_clause]` and is L1-capped, so it never
+/// enters the termination check).
 ///
-/// DETERMINISTIC (R-CODE-5): a pure function of the parsed `Program`, returning a
+/// Deterministic (R-CODE-5): a pure function of the parsed `Program`, returning a
 /// sorted `BTreeSet` (the `reachable_in_file_fns` walk is itself source-ordered +
 /// cycle-safe + bounded — `closure::CallGraph`).
 fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<String> {
@@ -1589,11 +1584,11 @@ fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<S
         })
         .collect();
 
-    // The full SCC (size ≥ 2) a member sits in, EXCLUDING itself: the set of
-    // OTHER fns `g` reachable from `f` AND from which `f` is reachable. Empty iff
+    // The full SCC (size ≥ 2) a member sits in, excluding itself: the set of
+    // other fns `g` reachable from `f` and from which `f` is reachable. Empty iff
     // `f` is not in a mutual cycle (a pure direct self-recursion `f -> f` has an
-    // empty SCC-minus-self — the witness `g` must be DISTINCT, so it is excluded,
-    // staying the C9 supported self-recursion case). Reuses ONLY the existing
+    // empty SCC-minus-self — the witness `g` must be distinct, so it is excluded,
+    // staying the C9 supported self-recursion case). Reuses only the existing
     // source-ordered, cycle-safe, bounded `reachable_in_file_fns` walk.
     let scc_minus_self = |f: &str| -> Vec<String> {
         crate::closure::reachable_in_file_fns(program, f)
@@ -1607,10 +1602,10 @@ fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<S
         let Item::Fn(f) = item else {
             continue;
         };
-        // The #88 diverge exemption: a `fx diverge` fn is honestly
+        // The #88 diverge exemption: a `fx diverge` fn is
         // non-terminating, lowers with `#[verifier::exec_allows_no_decreases_clause]`,
         // and is L1-capped — it never enters the termination check, so it is
-        // NEVER rejected for missing `dec` (mirrors the validator's
+        // never rejected for missing `dec` (mirrors the validator's
         // `block_calls_name` diverge skip + the single-fn diverge L1 cap).
         if fn_is_diverge(f) {
             continue;
@@ -1621,14 +1616,14 @@ fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<S
             // self-recursion (the C9 supported case) — never rejected here.
             continue;
         }
-        // C11 (REQ-2): reject `f` ONLY if its cycle is termination-INCOMPLETE —
+        // C11 (REQ-2): reject `f` only if its cycle is termination-incomplete —
         // i.e. at least one non-`fx diverge` member of the SCC (including `f`
-        // itself) LACKS a `dec` measure. A cycle where every non-diverge member
-        // carries `dec` falls THROUGH to the lower/verus ladder (REQ-1): Verus
+        // itself) lacks a `dec` measure. A cycle where every non-diverge member
+        // carries `dec` falls through to the lower/verus ladder (REQ-1): Verus
         // discovers the SCC from each member's emitted `decreases` and proves the
         // mutual-decreases group → L3. The whole non-diverge cycle is rejected
         // together when any member is missing `dec` (Verus rejects the entire
-        // recursive group; the clean per-member cert is the honest mirror).
+        // recursive group; the clean per-member cert mirrors that).
         let cycle_missing_dec = std::iter::once(f.name.clone())
             .chain(scc)
             .filter_map(|name| fns.get(name.as_str()).copied())
@@ -1641,19 +1636,19 @@ fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<S
 }
 
 /// The in-file `Item::SpecFn`s a spec fn named `start` transitively references —
-/// the spec-fn analog of [`reachable_fn_deps`], INCLUDING `start` itself (#71).
+/// the spec-fn analog of [`reachable_fn_deps`], including `start` itself (#71).
 ///
-/// A `spec fn`'s §5.3 sub-program must be DISTINCT and MINIMAL: it weaves `start`
-/// PLUS only the spec fns `start`'s body transitively calls — NOT every `spec fn`
+/// A `spec fn`'s §5.3 sub-program must be distinct and minimal: it weaves `start`
+/// plus only the spec fns `start`'s body transitively calls — not every `spec fn`
 /// in the file. Weaving all of them made every spec fn in a multi-spec-fn file
 /// (e.g. `len_list`/`sum_list`/`all_positive` in `conformance/list_fold.th`) lower
-/// to BYTE-IDENTICAL Verus, so the proof-cache content-address collided and the
-/// first item's certificate was served for every sibling (the cert IDENTITY was a
-/// neighbor's, violating §6 "the certificate lists EVERY function's level"). With
+/// to byte-identical Verus, so the proof-cache content-address collided and the
+/// first item's certificate was served for every sibling (the cert identity was a
+/// neighbor's, violating §6 "the certificate lists every function's level"). With
 /// only the transitive deps, each spec fn's sub-program differs (its own focused
 /// body) → a distinct content-address → a distinct, correctly-named certificate.
 ///
-/// `start` IS included in the result (unlike [`reachable_fn_deps`], which excludes
+/// `start` is included in the result (unlike [`reachable_fn_deps`], which excludes
 /// its own start because the checked fn is pushed separately): the `Item::SpecFn`
 /// arm of [`item_subprogram`] builds the whole spec-fn set from this result, so
 /// `start` must be in it. A spec fn that references no other spec fn (the
@@ -1663,17 +1658,17 @@ fn mutual_recursion_cycle_fns(program: &Program) -> std::collections::BTreeSet<S
 /// `start` over `Expr::Call`/`MethodCall` callee names that resolve to an in-file
 /// `Item::SpecFn`, transitively (cycle-safe via a visited set so a mutually- or
 /// self-recursive spec fn terminates), then return the matching `Item::SpecFn`
-/// clones in SOURCE order (DETERMINISTIC, R-CODE-5). A `spec fn` body can call only
+/// clones in source order (deterministic, R-CODE-5). A `spec fn` body can call only
 /// other spec fns / combinators (§4.2), so no `Item::Fn` is ever pulled in.
 ///
-/// **ONE closure, all callers (the #192 lesson; crosslink #237 closure
-/// unification).** The closure-WALK is the SAME `body ∪ dec` step the #226/#204
+/// One closure, all callers (the #192 lesson; crosslink #237 closure
+/// unification). The closure-walk is the same `body ∪ dec` step the #226/#204
 /// obligation closure uses ([`reachable_spec_fn_names_from_seed`]) — this fn
-/// delegates to it, seeded at `{start}`, then maps the reached NAMES back to their
-/// `Item::SpecFn` clones. The prior body-ONLY walk here was a DRIFT hazard: a spec
+/// delegates to it, seeded at `{start}`, then maps the reached names back to their
+/// `Item::SpecFn` clones. The prior body-only walk here was a drift hazard: a spec
 /// fn whose `dec` calls another spec fn (`dec t_size(n)`) had that dec-position dep
-/// DROPPED from the woven §5.3 sub-program, so the lowered Verus referenced an
-/// undefined fn and the item died E0425 — fail-CLOSED, but a completeness gap on
+/// dropped from the woven §5.3 sub-program, so the lowered Verus referenced an
+/// undefined fn and the item died E0425 — fail-closed, but a completeness gap on
 /// legitimate frozen-subset source. Walking `dec` too (via the shared closure)
 /// weaves the dec-position dep, so the sub-program is self-contained.
 fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
@@ -1687,12 +1682,12 @@ fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         })
         .collect();
 
-    // Seed the SHARED `body ∪ dec` closure at `{start}` (which is itself a spec
+    // Seed the shared `body ∪ dec` closure at `{start}` (which is itself a spec
     // fn): `reachable_spec_fn_names_from_seed` inserts `start` into `reached` on the
-    // first pop and then walks its `body ∪ dec` — so the result INCLUDES `start`
+    // first pop and then walks its `body ∪ dec` — so the result includes `start`
     // plus the transitive `body ∪ dec` deps, exactly the set this weaver needs. A
     // name with no in-file spec-fn decl is dropped (a combinator / scheme /
-    // cross-file callee — §4.2 PURE).
+    // cross-file callee — §4.2 pure).
     let mut seed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     seed.insert(start.to_string());
     let reached: std::collections::BTreeSet<String> =
@@ -1700,7 +1695,7 @@ fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
             .into_iter()
             .collect();
 
-    // Return the reached spec fns in SOURCE order (deterministic) so the lowered
+    // Return the reached spec fns in source order (deterministic) so the lowered
     // sub-program is byte-stable for a given program.
     program
         .items
@@ -1710,32 +1705,32 @@ fn reachable_spec_fn_deps(program: &Program, start: &str) -> Vec<Item> {
         .collect()
 }
 
-/// The per-item backend-neutral obligation SET (`.design/verified/
-/// proof-backends.md` REQ-1/REQ-1.2, #204). The CONTRACT certification obligation
+/// The per-item backend-neutral obligation set (`.design/verified/
+/// proof-backends.md` REQ-1/REQ-1.2, #204). The contract certification obligation
 /// (always present) plus, for an item whose full-expression-position called-spec-fn
-/// closure is non-empty, the REGISTRY-TERMINATION obligation (REQ-1.2, conjoined
+/// closure is non-empty, the registry-termination obligation (REQ-1.2, conjoined
 /// item-wide). The set is what the engine discharges; the conjunction rule (REQ-1.2)
-/// requires EVERY obligation in the set discharged for the item to certify.
+/// requires every obligation in the set discharged for the item to certify.
 struct ItemObligations {
-    /// The CONTRACT certification obligation (`.design/verified/proof-backends.md`
+    /// The contract certification obligation (`.design/verified/proof-backends.md`
     /// §1) — the head of the set; the L3 discharge routes through the engine on it.
     contract: crate::obligation::Obligation,
-    /// The REGISTRY-TERMINATION obligation (REQ-1.2), present iff the item's
+    /// The registry-termination obligation (REQ-1.2), present iff the item's
     /// called-spec-fn closure is non-empty. `None` for a spec-fn-free item.
     registry_termination: Option<crate::obligation::Obligation>,
 }
 
-/// Mint the per-item obligation SET (`.design/verified/proof-backends.md`
-/// REQ-1/REQ-1.2, #204), using the CORRECTED full-expression-position called-spec-fn
+/// Mint the per-item obligation set (`.design/verified/proof-backends.md`
+/// REQ-1/REQ-1.2, #204), using the corrected full-expression-position called-spec-fn
 /// closure (the #226 fix). For an `Item::Fn` the closure seeds at
 /// `req ∪ ens ∪ body ∪ dec`; for an `Item::SpecFn` at its own `body ∪ dec`; both
-/// step over each reached spec-fn's `body ∪ dec`. A non-empty closure ALSO mints
-/// the REGISTRY-TERMINATION obligation (REQ-1.2). An ADT item carries no
+/// step over each reached spec-fn's `body ∪ dec`. A non-empty closure also mints
+/// the registry-termination obligation (REQ-1.2). An ADT item carries no
 /// certification obligation in v1 (it has no contract / spec body), so it gets an
-/// empty CONTRACT obligation over an empty body (the engine never discharges it —
+/// empty contract obligation over an empty body (the engine never discharges it —
 /// an ADT dies at the validator before a cert is assembled), keeping the function
-/// total without a panic. The set asserts, via the engine FRAGMENT gate, that the
-/// Verus engine ADMITS every minted class (REQ-1.2(a)).
+/// total without a panic. The set asserts, via the engine fragment gate, that the
+/// Verus engine admits every minted class (REQ-1.2(a)).
 fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
     use crate::engine::Engine as _;
     use crate::obligation::{AstSlice, Obligation};
@@ -1749,7 +1744,7 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
             (Obligation::contract_for_spec_fn(s, called.clone()), called)
         }
         // An ADT item has no in-language certification obligation in v1 (it dies at
-        // the validator before a cert is assembled). Mint an empty CONTRACT
+        // the validator before a cert is assembled). Mint an empty contract
         // obligation so the function is total without a panic (R-APG-1); it is
         // never discharged.
         Item::Struct(_) | Item::Enum(_) => (
@@ -1766,15 +1761,15 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
             Vec::new(),
         ),
     };
-    // REQ-1.2: a non-empty called-spec-fn closure mints the REGISTRY-TERMINATION
+    // REQ-1.2: a non-empty called-spec-fn closure mints the registry-termination
     // obligation (the descent measures of every reached spec-fn). The `ast_slice`
-    // is the item's own body (the CONTRACT obligation's slice).
+    // is the item's own body (the contract obligation's slice).
     let registry_termination =
         Obligation::registry_termination(item.name(), contract.ast_slice.clone(), called);
-    // REQ-1.2(a) conjunction gate: the Verus engine must ADMIT every minted class
-    // (its dec-check is the common REGISTRY-TERMINATION discharge path). The Verus
+    // REQ-1.2(a) conjunction gate: the Verus engine must admit every minted class
+    // (its dec-check is the common registry-termination discharge path). The Verus
     // fragment admits the whole frozen subset, so this holds; a narrower future
-    // engine that did NOT admit a class would block the conjunction (the obligation
+    // engine that did not admit a class would block the conjunction (the obligation
     // would be an honest `Unknown`, never a silent skip). `debug_assert` records the
     // invariant without changing the release verdict (R-CODE-2 — no panic in prod).
     let engine = crate::engine::VerusEngine;
@@ -1794,7 +1789,7 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
     }
 }
 
-/// The CONTRACT certification obligation for one item, minted with the SAME #226
+/// The contract certification obligation for one item, minted with the same #226
 /// full-expression-position closure the check pipeline uses (`.design/forge/
 /// audit-manifest.md` REQ-8 / OQ-4). A thin `pub(crate)` re-export of
 /// [`mint_item_obligations`]`(program, item).contract` — the head of the per-item
@@ -1802,38 +1797,38 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
 /// `check::check_file_with_engine` Lean path passes `&obligations.contract`).
 ///
 /// The audit's Lean-fragment membership probe (`audit::LeanFragment`) needs the
-/// CONTRACT obligation to dry-run `lean_export::export_item`; it MUST be the
+/// contract obligation to dry-run `lean_export::export_item`; it must be the
 /// byte-identical #226 closure (`reachable_spec_fn_names_full` /
 /// `reachable_spec_fn_names_full_spec` → `Obligation::contract_for_fn` /
-/// `contract_for_spec_fn`), because `export_item`'s HARD GATE cross-checks the
+/// `contract_for_spec_fn`), because `export_item`'s hard gate cross-checks the
 /// obligation's `called` closure against the spec-calls in `req ∪ ens ∪ body ∪ dec`
 /// — a forked/weaker closure would yield spurious `IncompleteRegistry` refusals (or
 /// mask real ones — the Pin B/C/G bottom-poisoning surface). Re-implementing the
-/// closure is FORBIDDEN (REQ-8); this seam guarantees the audit and the
+/// closure is forbidden (REQ-8); this seam guarantees the audit and the
 /// `--engine lean` admission decision can never disagree (AC-9). The
-/// REGISTRY-TERMINATION obligation is engine-internal and not separately probed.
+/// registry-termination obligation is engine-internal and not separately probed.
 pub(crate) fn contract_obligation(program: &Program, item: &Item) -> crate::obligation::Obligation {
     mint_item_obligations(program, item).contract
 }
 
-/// The CORRECTED full-expression-position called-spec-fn closure for a checked
+/// The corrected full-expression-position called-spec-fn closure for a checked
 /// `fn` (`.design/verified/proof-backends.md` REQ-1.2 / §4, the #226 fix
-/// completing #224). Returns the spec-fn NAMES the per-item Obligation env
-/// (`obligation::Obligation::contract_for_fn`) and the REGISTRY-TERMINATION class
-/// (REQ-1.2) key on, in SOURCE order (deterministic, R-CODE-5).
+/// completing #224). Returns the spec-fn names the per-item Obligation env
+/// (`obligation::Obligation::contract_for_fn`) and the registry-termination class
+/// (REQ-1.2) key on, in source order (deterministic, R-CODE-5).
 ///
-/// **Why the existing `reachable_spec_fn_deps` is NOT enough (the #226 finding).**
-/// `reachable_spec_fn_deps` (the #71 weaving helper) seeds at a START spec-fn and
-/// its closure step walks `decl.body` ONLY — it never walks `decl.dec`, and for an
+/// Why the existing `reachable_spec_fn_deps` is not enough (the #226 finding).
+/// `reachable_spec_fn_deps` (the #71 weaving helper) seeds at a start spec-fn and
+/// its closure step walks `decl.body` only — it never walks `decl.dec`, and for an
 /// exec `fn` it does not even seed from the contract clauses. The §4 hard gate /
-/// REQ-1.2 require the FULL EXPRESSION-POSITION closure: the SEED is the spec-fn
-/// calls in `req ∪ ens ∪ body ∪ dec(item)` and the closure STEP walks each reached
+/// REQ-1.2 require the full expression-position closure: the seed is the spec-fn
+/// calls in `req ∪ ens ∪ body ∪ dec(item)` and the closure step walks each reached
 /// spec-fn's `body ∪ dec`. A `dec`-position spec-call (a `dec spec_size(t)` natural
 /// tree measure) or a body/ens-position one that the body-only closure dropped
 /// would leave the spec-fn absent from `R_item` — bottoming to the `intVal`
 /// Int-bottom `0` and faking a descent / certifying a wrong contract
 /// (`lean/Thermite/PinDecMeasure.lean` / `PinBodyRegistry.lean`). This function is
-/// the forge-side closure mirror increment (i) owns; it walks EVERY expression
+/// the forge-side closure mirror increment (i) owns; it walks every expression
 /// position.
 fn reachable_spec_fn_names_full(program: &Program, f: &thermite_syntax::FnItem) -> Vec<String> {
     let spec_decls: std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem> = program
@@ -1845,7 +1840,7 @@ fn reachable_spec_fn_names_full(program: &Program, f: &thermite_syntax::FnItem) 
         })
         .collect();
 
-    // SEED: the spec-fn calls in `req ∪ ens ∪ body ∪ dec(item)` (the full
+    // Seed: the spec-fn calls in `req ∪ ens ∪ body ∪ dec(item)` (the full
     // expression-position seed, #226).
     let mut seed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     collect_expr_spec_fn_calls(&f.contract.req.expr, &spec_decls, &mut seed);
@@ -1862,9 +1857,9 @@ fn reachable_spec_fn_names_full(program: &Program, f: &thermite_syntax::FnItem) 
     reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
 }
 
-/// The CORRECTED closure for a checked `spec fn` (`.design/verified/
-/// proof-backends.md` REQ-1.2): the SEED is the spec-fn's OWN `body ∪ dec`, and the
-/// closure STEP walks each reached spec-fn's `body ∪ dec`. Returns the reached
+/// The corrected closure for a checked `spec fn` (`.design/verified/
+/// proof-backends.md` REQ-1.2): the seed is the spec-fn's own `body ∪ dec`, and the
+/// closure step walks each reached spec-fn's `body ∪ dec`. Returns the reached
 /// spec-fn names in source order (deterministic). A spec fn carries no `req`/`ens`
 /// (§4.2), so the seed is `body ∪ dec` only.
 fn reachable_spec_fn_names_full_spec(
@@ -1885,11 +1880,11 @@ fn reachable_spec_fn_names_full_spec(
     reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
 }
 
-/// The transitive closure STEP shared by both seed builders (`.design/verified/
-/// proof-backends.md` REQ-1.2 / #226): from a SEED set of spec-fn names, close
-/// under "a reached spec-fn's OWN `body ∪ dec` may call further spec-fns" — the
-/// `dec` measure is walked TOO (the #226 correction over the body-only
-/// `reachable_spec_fn_deps`). Returns the reached names in SOURCE order
+/// The transitive closure step shared by both seed builders (`.design/verified/
+/// proof-backends.md` REQ-1.2 / #226): from a seed set of spec-fn names, close
+/// under "a reached spec-fn's own `body ∪ dec` may call further spec-fns" — the
+/// `dec` measure is walked too (the #226 correction over the body-only
+/// `reachable_spec_fn_deps`). Returns the reached names in source order
 /// (deterministic, R-CODE-5).
 fn reachable_spec_fn_names_from_seed(
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
@@ -1904,7 +1899,7 @@ fn reachable_spec_fn_names_from_seed(
         }
         if let Some(decl) = spec_decls.get(name.as_str()) {
             let mut callees: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-            // The closure STEP walks `body ∪ dec` (the #226 fix — NOT body-only).
+            // The closure step walks `body ∪ dec` (the #226 fix — not body-only).
             collect_block_spec_fn_calls(&decl.body, spec_decls, &mut callees);
             collect_expr_spec_fn_calls(&decl.dec.expr, spec_decls, &mut callees);
             for callee in callees {
@@ -1926,7 +1921,7 @@ fn reachable_spec_fn_names_from_seed(
 
 /// Collect the in-file spec-fn names a `Block` calls, walking statements + tail
 /// (#71). Only a callee name resolving to an in-file `Item::SpecFn` (`spec_decls`)
-/// is emitted — a combinator / scheme / cross-file callee is ignored (§4.2 PURE).
+/// is emitted — a combinator / scheme / cross-file callee is ignored (§4.2 pure).
 fn collect_block_spec_fn_calls(
     block: &thermite_syntax::Block,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
@@ -2026,7 +2021,7 @@ fn collect_expr_spec_fn_calls(
         Expr::Match { scrutinee, arms } => {
             collect_expr_spec_fn_calls(scrutinee, spec_decls, out);
             for arm in arms {
-                // A C10 match guard is an `Expr` that may CALL a spec fn
+                // A C10 match guard is an `Expr` that may call a spec fn
                 // (`.design/basis/11-ergonomics.md` REQ-3) — walk it too.
                 if let Some(guard) = &arm.guard {
                     collect_expr_spec_fn_calls(guard, spec_decls, out);
@@ -2076,30 +2071,30 @@ fn collect_expr_spec_fn_calls(
             }
         }
         Expr::TupleProj { receiver, .. } => collect_expr_spec_fn_calls(receiver, spec_decls, out),
-        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, so it calls no spec fn — the no-op leaf arm.
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::Path(_) | Expr::StrLit(_) => {}
     }
 }
 
-/// The in-file `Item::Struct`/`Item::Enum` DECLARATIONS the items in
+/// The in-file `Item::Struct`/`Item::Enum` declarations the items in
 /// `referrers` reference, transitively closed over the ADT type graph (#68 — the
 /// ADT-decl analog of `reachable_fn_deps`). `check::item_subprogram` weaves these
-/// FIRST into a checked item's §5.3 sub-program so the per-item Verus emission has
+/// first into a checked item's §5.3 sub-program so the per-item Verus emission has
 /// the type decls + their `well_formed` invariants in scope — without them a fn
 /// referencing `Account`/`Shape`/`List` lowers to Verus with no decl
 /// (`error[E0425]: cannot find type`), verus fails, and the item degrades to L0.
 ///
-/// `referrers` is the checked item PLUS every woven `fn` dependency (a regular
+/// `referrers` is the checked item plus every woven `fn` dependency (a regular
 /// fn-dep woven with its real body may itself reference an ADT — the whole
 /// dependency class must resolve, not just the checked item). The roots are
 /// collected from each referrer's signature types (param + return), contract
-/// clauses (`req`/`ens`/`dec`), and body; the closure then follows the FIELD types
+/// clauses (`req`/`ens`/`dec`), and body; the closure then follows the field types
 /// of each weaved struct/enum into the types they reference (a struct field of an
 /// ADT type, a recursive `Cons(u64, Box<List>)` occurrence). The walk is
 /// cycle-safe (a visited set keyed by type name, so the self-referential `List`
-/// terminates) and DETERMINISTIC (R-CODE-5): the result is returned in source
-/// order. EMPTY for a referrer set that names no ADT (the pure scalar corpus —
+/// terminates) and deterministic (R-CODE-5): the result is returned in source
+/// order. Empty for a referrer set that names no ADT (the pure scalar corpus —
 /// `sum`/`binary_search`), so the existing sub-program is byte-stable (AC-6).
 fn reachable_adt_deps(program: &Program, referrers: &[&Item]) -> Vec<Item> {
     // The set of in-file ADT type names → their declaring item, for resolution.
@@ -2119,7 +2114,7 @@ fn reachable_adt_deps(program: &Program, referrers: &[&Item]) -> Vec<Item> {
         collect_item_adt_refs(item, &adt_decls, &mut names);
     }
 
-    // Fixed-point over the type graph: a weaved struct/enum's FIELD types may
+    // Fixed-point over the type graph: a weaved struct/enum's field types may
     // reference further ADT decls (a struct field of an ADT type; the recursive
     // `Box<List>` occurrence). Cycle-safe via the `visited` set — the
     // self-referential `List` is entered once.
@@ -2141,7 +2136,7 @@ fn reachable_adt_deps(program: &Program, referrers: &[&Item]) -> Vec<Item> {
         }
     }
 
-    // Return the weaved decls in SOURCE order (deterministic), so the lowered
+    // Return the weaved decls in source order (deterministic), so the lowered
     // sub-program is byte-stable for a given program.
     program
         .items
@@ -2189,8 +2184,8 @@ fn collect_item_adt_refs(
     }
 }
 
-/// Collect the in-file ADT type names a struct/enum DECL references through its
-/// FIELD types (#68 transitive type graph): a struct field of an ADT type, a
+/// Collect the in-file ADT type names a struct/enum decl references through its
+/// field types (#68 transitive type graph): a struct field of an ADT type, a
 /// tuple/struct enum-variant payload of an ADT type, and the recursive `Box<T>`
 /// occurrence (`Cons(u64, Box<List>)`).
 fn collect_decl_field_adt_refs(
@@ -2266,7 +2261,7 @@ fn collect_type_adt_refs(
             collect_type_adt_refs(err, adt_decls, out);
         }
         // Cluster C12 (`.design/basis/13-map.md` REQ-5): a `Map<K, V>` reaches an
-        // in-file ADT in EITHER type argument (a `Map<u64, Account>` reaches
+        // in-file ADT in either type argument (a `Map<u64, Account>` reaches
         // `Account` — the #68 ADT weave so the value's decl is woven into the
         // per-item subprogram), so both the key and value are recursed, exactly as
         // `Result`'s two arguments. `Map` itself is a built-in, never an in-file ADT.
@@ -2275,7 +2270,7 @@ fn collect_type_adt_refs(
             collect_type_adt_refs(v, adt_decls, out);
         }
         // Cluster C9-B (`.design/basis/10-recursion-tuples.md` REQ-8, #109): a
-        // tuple type `(T, U, …)` reaches an in-file ADT in ANY element (a
+        // tuple type `(T, U, …)` reaches an in-file ADT in any element (a
         // `(Account, u64)` reaches `Account`), so every element is recursed.
         thermite_syntax::Type::Tuple(tys) => {
             for t in tys {
@@ -2283,7 +2278,7 @@ fn collect_type_adt_refs(
             }
         }
         // Basis Stage 7 (`.design/basis/07-strings.md` REQ-2): `String` is a
-        // built-in (NOT a user ADT) NULLARY type — no inner type to recurse into
+        // built-in (not a user ADT) nullary type — no inner type to recurse into
         // and never an in-file ADT decl, so it references no ADT (the no-op leaf
         // arm alongside `Prim`/`Unit`).
         thermite_syntax::Type::Prim(_)
@@ -2296,7 +2291,7 @@ fn collect_type_adt_refs(
 /// path (`Account { .. }`), an `Is` variant (`s is Circle`), a `Match` arm's
 /// `Pattern::Enum`/`Pattern::Struct` variant path — and recurse into every
 /// sub-expression so a nested reference is not missed. A `Path`/`Field`/method
-/// segment naming a VARIANT or the enclosing TYPE resolves through the
+/// segment naming a variant or the enclosing type resolves through the
 /// `adt_decls` map (the variant→enum resolution is handled by walking the
 /// pattern/`Is`/`StructLit` paths against the in-file ADT name set, plus the
 /// `enum`/`struct` names directly).
@@ -2307,8 +2302,8 @@ fn collect_expr_adt_refs(
 ) {
     use thermite_syntax::Expr;
     // A `path` segment list may name `Type::Variant` or a bare `Type`/`Variant`.
-    // Any segment resolving to an in-file ADT TYPE name is a direct reference;
-    // a bare VARIANT name is resolved to its enum by `resolve_variant_owner`.
+    // Any segment resolving to an in-file ADT type name is a direct reference;
+    // a bare variant name is resolved to its enum by `resolve_variant_owner`.
     let note_path = |segments: &[String], out: &mut std::collections::BTreeSet<String>| {
         for seg in segments {
             if adt_decls.contains_key(seg.as_str()) {
@@ -2395,7 +2390,7 @@ fn collect_expr_adt_refs(
             }
         }
         Expr::TupleProj { receiver, .. } => collect_expr_adt_refs(receiver, adt_decls, out),
-        // A string literal is a LEAF (`.design/basis/07-strings.md` REQ-1): no
+        // A string literal is a leaf (`.design/basis/07-strings.md` REQ-1): no
         // sub-expression, no path — it references no ADT (the no-op leaf arm).
         Expr::IntLit { .. } | Expr::BoolLit(_) | Expr::StrLit(_) => {}
     }
@@ -2512,11 +2507,11 @@ fn collect_pattern_adt_refs(
     }
 }
 
-/// Resolve a bare VARIANT name (`Circle`, `Cons`, `Nil`) to its declaring in-file
+/// Resolve a bare variant name (`Circle`, `Cons`, `Nil`) to its declaring in-file
 /// `enum` name (#68). The surface drops the enum qualifier in a `match` arm / `is`
 /// (`Circle(r)`, `s is Circle`), so a pattern/`Is` path segment is a variant, not
 /// the type — this maps it back to the `enum` decl that must be woven. Returns the
-/// FIRST declaring enum in source order (deterministic); `None` for a name that is
+/// first declaring enum in source order (deterministic); `None` for a name that is
 /// no declared variant (a binding, a combinator).
 fn resolve_variant_owner(
     name: &str,
@@ -2540,22 +2535,22 @@ fn resolve_seed(_path: &Path) -> u64 {
     DEFAULT_SOLVER_SEED
 }
 
-/// Resolve the verus version that keys the proof cache for THIS run
-/// (`.design/forge/proof-cache.md` REQ-5). Captured ONCE per `check_file` so
+/// Resolve the verus version that keys the proof cache for this run
+/// (`.design/forge/proof-cache.md` REQ-5). Captured once per `check_file` so
 /// every item keys against the same prover; a verus or thermite upgrade changes
 /// this string, the key, and forces a universal re-verify.
 ///
 /// Sourcing order (deterministic, R-CODE-5 — no wall-clock):
 /// 1. `VERUS_VERSION` env var, when set — the pinned/CI override. This is also
 ///    the hermetic-test seam: a test pins a fixed version so the key is stable
-///    even when the verus BINARY is later removed (the AC-1 decisive
+///    even when the verus binary is later removed (the AC-1 decisive
 ///    solver-skip test populates the cache, then removes verus from PATH; the
-///    pinned version keeps the key matching so the HIT is served WITHOUT a verus
+///    pinned version keeps the key matching so the hit is served without a verus
 ///    spawn).
 /// 2. otherwise `verus --version` stdout (the live binary's version).
 ///
-/// A missing/unreadable verus version (verus absent AND no `VERUS_VERSION`) is an
-/// ENVIRONMENT error (`ForgeError::VerusAbsent`), NOT a silent empty-string key
+/// A missing/unreadable verus version (verus absent and no `VERUS_VERSION`) is an
+/// environment error (`ForgeError::VerusAbsent`), not a silent empty-string key
 /// (REQ-5) — an empty key input would let two different provers collide.
 fn resolve_verus_version() -> Result<String, ForgeError> {
     if let Ok(pinned) = std::env::var("VERUS_VERSION") {
@@ -2611,30 +2606,30 @@ struct VerusResult {
     solver_time_ms: u64,
 }
 
-/// The THREE-WAY classification of one verus run (#11;
-/// `.design/forge/solver-profiles.md` REQ-5). DETERMINISTIC; the profile CONTENT
+/// The three-way classification of one verus run (#11;
+/// `.design/forge/solver-profiles.md` REQ-5). Deterministic; the profile content
 /// it attaches on a timeout is not (§5.3).
 ///
 /// `pub(crate)` so the backend-neutral Verus engine (`engine::VerusEngine::
 /// verdict_of`, `.design/verified/proof-backends.md` REQ-2/REQ-3.1, #204) reads
-/// it: the engine carries the VERDICT POLICY (the three-way map lifted to
+/// it: the engine carries the verdict policy (the three-way map lifted to
 /// `engine::Verdict`, with the REQ-3.1 fast-unknown remap) while `check.rs` keeps
 /// the `run_verus` I/O.
 #[derive(Debug, Clone)]
 pub(crate) enum VerusOutcome {
-    /// (a) PROVED: `success == true && errors == 0` → `Level::L3`, one discharged
-    /// summary obligation, NO profile.
+    /// (a) Proved: `success == true && errors == 0` → `Level::L3`, one discharged
+    /// summary obligation, no profile.
     Proved { verified: u64 },
-    /// (c) TIMEOUT / rlimit-exceeded: an error run WHOSE STDERR carries a
+    /// (c) Timeout / rlimit-exceeded: an error run whose stderr carries a
     /// `--profile` Z3 instantiation report (the timeout discriminator — `--profile`
-    /// reports ONLY on an rlimit-hit). Carries the parsed `SolverProfile`.
+    /// reports only on an rlimit-hit). Carries the parsed `SolverProfile`.
     Timeout {
         profile: SolverProfile,
         detail: String,
     },
-    /// (b) COUNTEREXAMPLE / the failure path: an error run WITHOUT a profile (the
+    /// (b) Counterexample / the failure path: an error run without a profile (the
     /// existing #5 witness path, e.g. `postcondition not satisfied`). This bucket
-    /// ALSO absorbs the incompleteness-unknown edge (an `unknown` returned FAST
+    /// also absorbs the incompleteness-unknown edge (an `unknown` returned fast
     /// without exhausting the rlimit → no profile → treated as the failure path,
     /// OQ-1), so a timeout is never silently reported as success (R-CODE-4).
     Counterexample { obligations: Vec<ObligationResult> },
@@ -2653,7 +2648,7 @@ struct VerusSummary {
 
 /// Compute a valid Rust crate stem from a source file path (REQ-2 / AC-4): the
 /// file stem with every non-alphanumeric character replaced by `_`, suffixed
-/// `_check`, guaranteeing NO `.` (verus derives the crate name from the file
+/// `_check`, guaranteeing no `.` (verus derives the crate name from the file
 /// stem and rejects a `.`). The grounded gotcha: `verus sum.verus.rs` →
 /// `invalid character '.' in crate name: sum.verus`.
 fn crate_stem(path: &Path) -> String {
@@ -2679,22 +2674,22 @@ fn crate_stem(path: &Path) -> String {
     stem
 }
 
-/// A per-run scratch DIRECTORY for one verus invocation, removed WHOLESALE on
+/// A per-run scratch directory for one verus invocation, removed wholesale on
 /// `Drop` (blocker #53). verus compiles the lowered `.rs` into a sibling binary
 /// (`<stem>`, no extension, ~4.3M) in its working directory; the v0.1 driver ran
-/// verus in the SHARED `std::env::temp_dir()` and cleaned ONLY the `.rs` source,
-/// so a verus run that ERRORED mid-compile orphaned the binary → unbounded `/tmp`
+/// verus in the shared `std::env::temp_dir()` and cleaned only the `.rs` source,
+/// so a verus run that errored mid-compile orphaned the binary → unbounded `/tmp`
 /// growth under sustained multi-agent fresh-verification (the ENOSPC seen during
-/// #18/#20). The fix: every verus run gets its OWN scratch dir (the `.rs` source,
-/// verus's compiled-binary sibling, and ANY other verus artifact all land
-/// inside), and this guard's `Drop` does a `remove_dir_all` that fires on EVERY
-/// exit path — success, a reported counterexample, OR a `?` early-return on an
+/// #18/#20). The fix: every verus run gets its own scratch dir (the `.rs` source,
+/// verus's compiled-binary sibling, and any other verus artifact all land
+/// inside), and this guard's `Drop` does a `remove_dir_all` that fires on every
+/// exit path — success, a reported counterexample, or a `?` early-return on an
 /// environment/IO error. Cleanup is best-effort (`let _ =`), never a panic
-/// (R-CODE-2): a removal failure must not mask the real verus result.
+/// (R-CODE-2): a removal failure must not mask the verus result.
 ///
 /// This mirrors the L2 (kani) driver's discipline, which already runs in a
-/// per-run scratch CRATE removed wholesale via `kani.rs::run_kani`'s
-/// `remove_dir_all(&crate_dir)` — so the kani path does NOT share this leak. The
+/// per-run scratch crate removed wholesale via `kani.rs::run_kani`'s
+/// `remove_dir_all(&crate_dir)`, so the kani path does not share this leak. The
 /// shared cause's class ("an external-tool invocation must run in a scratch dir
 /// removed wholesale, even on error") is now uniform across both rungs.
 pub(crate) struct ScratchDir {
@@ -2703,17 +2698,17 @@ pub(crate) struct ScratchDir {
 
 impl Drop for ScratchDir {
     fn drop(&mut self) {
-        // Best-effort wholesale removal: the `.rs` source AND verus's compiled
-        // binary AND any other artifact go together. A failure here NEVER fails
+        // Best-effort wholesale removal: the `.rs` source, verus's compiled
+        // binary, and any other artifact go together. A failure here never fails
         // the verdict (R-CODE-2) — degrade to "left on disk", never to a panic.
         let _ = std::fs::remove_dir_all(&self.path);
     }
 }
 
 /// Write the lowered source to a `.rs` file with a valid-crate-name stem (REQ-2)
-/// INSIDE a per-run scratch DIRECTORY, spawn verus there (`current_dir` is the
+/// inside a per-run scratch directory, spawn verus there (`current_dir` is the
 /// scratch dir, so verus's compiled-binary sibling lands inside it), parse
-/// the result, and remove the scratch dir WHOLESALE on every exit path
+/// the result, and remove the scratch dir wholesale on every exit path
 /// (blocker #53 — the `ScratchDir` Drop guard cleans even on a `?` early-return).
 /// Verus absent on spawn → `ForgeError::VerusAbsent` (REQ-6); a non-zero exit
 /// with parseable failure → a reported failure cert; unparseable output →
@@ -2747,7 +2742,7 @@ fn run_verus(
     let result = invoke_verus(&scratch.path, &tmp, seed, rlimit);
 
     // `scratch` drops at the end of this scope (and on the `?` above), removing
-    // the source + verus's compiled binary + everything WHOLESALE (blocker #53).
+    // the source + verus's compiled binary + everything wholesale (blocker #53).
     drop(scratch);
 
     result
@@ -2756,13 +2751,13 @@ fn run_verus(
 /// Spawn verus and parse its output. Split from `run_verus` so the scratch dir is
 /// always cleaned up regardless of outcome. `cwd` is the per-run scratch
 /// directory (blocker #53): verus's working-directory artifacts — most notably
-/// the ~4.3M compiled-binary sibling — land THERE, so the caller's `ScratchDir`
+/// the ~4.3M compiled-binary sibling — land there, so the caller's `ScratchDir`
 /// guard removes them wholesale.
 ///
-/// #11: ALWAYS passes `--profile` + the pinned `--rlimit <rlimit>`. `--profile`
-/// emits the Z3 instantiation report on STDERR ONLY when the rlimit is exceeded
+/// #11: always passes `--profile` + the pinned `--rlimit <rlimit>`. `--profile`
+/// emits the Z3 instantiation report on STDERR only when the rlimit is exceeded
 /// (the timeout discriminator); a clean proof / a fast counterexample emits no
-/// report, so its PRESENCE is the timeout signal that
+/// report, so its presence is the timeout signal that
 /// [`classify_verus_outcome`] keys on.
 fn invoke_verus(cwd: &Path, tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusResult, ForgeError> {
     let started = Instant::now();
@@ -2798,13 +2793,13 @@ fn invoke_verus(cwd: &Path, tmp: &Path, seed: u64, rlimit: f64) -> Result<VerusR
     })
 }
 
-/// Build a unique per-run scratch DIRECTORY path for one verus invocation
-/// (blocker #53). Uniqueness uses the process id + a monotonic counter — NOT
-/// wall-clock — so the path varies between concurrent runs without violating
-/// R-CODE-5 (determinism is a property of the CERTIFICATE, not the scratch path;
-/// §check.md REQ-2 "determinism is in the INPUT, not the path"). The directory
+/// Build a unique per-run scratch directory path for one verus invocation
+/// (blocker #53). Uniqueness uses the process id + a monotonic counter, not
+/// wall-clock, so the path varies between concurrent runs without violating
+/// R-CODE-5 (determinism is a property of the certificate, not the scratch path;
+/// §check.md REQ-2 "determinism is in the input, not the path"). The directory
 /// (not a bare `.rs` file) is what gets removed wholesale, taking the `.rs`
-/// source AND verus's compiled-binary sibling with it.
+/// source and verus's compiled-binary sibling with it.
 pub(crate) fn unique_scratch_dir(stem: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -2813,23 +2808,23 @@ pub(crate) fn unique_scratch_dir(stem: &str) -> PathBuf {
     std::env::temp_dir().join(format!("forge_{stem}_{pid}_{n}"))
 }
 
-/// Classify one verus run THREE ways DETERMINISTICALLY (#11;
+/// Classify one verus run three ways deterministically (#11;
 /// `.design/forge/solver-profiles.md` REQ-5). The JSON `verification-results`
 /// summary on stdout cannot tell a timeout from a counterexample (both report
-/// `success: false, errors: 1` — OQ-1), so the discriminator is the PRESENCE of
-/// a `--profile` Z3 instantiation report on STDERR (verus emits it ONLY on an
+/// `success: false, errors: 1` — OQ-1), so the discriminator is the presence of
+/// a `--profile` Z3 instantiation report on STDERR (verus emits it only on an
 /// rlimit-hit):
 ///
-/// - (a) PROVED (`success && errors == 0`) → [`VerusOutcome::Proved`] → `Level::L3`.
-/// - (c) error WITH a profile report present → [`VerusOutcome::Timeout`]: parse
+/// - (a) proved (`success && errors == 0`) → [`VerusOutcome::Proved`] → `Level::L3`.
+/// - (c) error with a profile report present → [`VerusOutcome::Timeout`]: parse
 ///   the `SolverProfile`, attach it (the cert is `Level::L0` + `VerusTimeout`).
-/// - (b) error WITHOUT a profile → [`VerusOutcome::Counterexample`] (the existing
-///   #5 witness path). This ALSO absorbs the documented incompleteness-unknown
-///   edge (an `unknown` returned FAST without exhausting the rlimit → no profile →
+/// - (b) error without a profile → [`VerusOutcome::Counterexample`] (the existing
+///   #5 witness path). This also absorbs the documented incompleteness-unknown
+///   edge (an `unknown` returned fast without exhausting the rlimit → no profile →
 ///   the failure path), so a timeout is never silently reported as success
 ///   (R-CODE-4 — degrade/report, do not treat as success).
 ///
-/// The classification is DETERMINISTIC; the profile CONTENT (instantiation
+/// The classification is deterministic; the profile content (instantiation
 /// counts) is not (§5.3). A VIR / internal error and unparseable output stay
 /// environment errors (`ForgeError::VerusOutput`), never a verification verdict.
 fn classify_verus_outcome(
@@ -2846,7 +2841,7 @@ fn classify_verus_outcome(
         ),
     })?;
 
-    // A VIR / internal verus error is NOT a verification failure — it is an
+    // A VIR / internal verus error is not a verification failure. It is an
     // environment/tooling failure (never swallowed, never treated as success).
     if summary.encountered_vir_error {
         return Err(ForgeError::VerusOutput {
@@ -2857,15 +2852,15 @@ fn classify_verus_outcome(
         });
     }
 
-    // (a) PROVED.
+    // (a) proved.
     if summary.success && summary.errors == 0 {
         return Ok(VerusOutcome::Proved {
             verified: summary.verified,
         });
     }
 
-    // (c) TIMEOUT: an error run whose stderr carries a `--profile` instantiation
-    // report. `--profile` reports ONLY on an rlimit-hit, so the report's PRESENCE
+    // (c) timeout: an error run whose stderr carries a `--profile` instantiation
+    // report. `--profile` reports only on an rlimit-hit, so the report's presence
     // is the timeout discriminator (REQ-5 / the doc's Architecture).
     if let Some(profile) = profile::parse_profile(stderr) {
         let detail = format!(
@@ -2876,7 +2871,7 @@ fn classify_verus_outcome(
         return Ok(VerusOutcome::Timeout { profile, detail });
     }
 
-    // (b) COUNTEREXAMPLE / the failure path (no profile report). Parse stderr for
+    // (b) counterexample / the failure path (no profile report). Parse stderr for
     // the per-obligation witnesses (the existing #5 path). If verus reported
     // errors but no structured witness is extractable, surface a single failure
     // carrying the raw stderr head (still a reported cert, never swallowed).
@@ -2928,7 +2923,7 @@ fn parse_summary(stdout: &str) -> Option<VerusSummary> {
 /// Each `error: <description>` line becomes an [`ObligationResult::failed`]; the
 /// following `--> file:line:col` line (if present) supplies its source location.
 /// Best-effort: a missing span yields a location-less result, an `error:` with
-/// no `-->` is still recorded (do NOT over-fit to one format).
+/// no `-->` is still recorded (do not over-fit to one format).
 fn parse_stderr_failures(stderr: &str) -> Vec<ObligationResult> {
     let lines: Vec<&str> = stderr.lines().collect();
     let mut out = Vec::new();
@@ -2975,20 +2970,20 @@ fn parse_span(line: &str) -> Option<String> {
     Some(format!("{base}:{loc}"))
 }
 
-/// Assemble one item's [`Certificate`] from THAT item's own verus result (REQ-1
+/// Assemble one item's [`Certificate`] from that item's own verus result (REQ-1
 /// final stage; §5.3 per-item). `verus` is the result of verifying `item`'s
 /// isolated sub-program (`item_subprogram`), so its outcome reflects only this
 /// item — never a sibling's. `item` is the item name; `effects` is the item's
 /// `fx` row (`spec fn`s are pure — they carry no `fx`).
 ///
-/// #11 — the THREE-WAY outcome maps to three certificate shapes:
+/// #11 — the three-way outcome maps to three certificate shapes:
 /// - [`VerusOutcome::Proved`] → `Level::L3`, one discharged summary obligation,
-///   NO profile.
+///   no profile.
 /// - [`VerusOutcome::Timeout`] → `Certificate::timeout` (`Level::L0` +
 ///   `RejectReason { cause: "VerusTimeout" }` + the `SolverProfile` + the
-///   profile-derived `suggested_move`), DISTINCT from a counterexample.
+///   profile-derived `suggested_move`), distinct from a counterexample.
 /// - [`VerusOutcome::Counterexample`] → `Level::L0` with the per-obligation
-///   witnesses (the existing #5 path), NO profile.
+///   witnesses (the existing #5 path), no profile.
 fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
     let effects = match item {
         Item::Fn(f) => effects_of(&f.contract.fx),
@@ -3034,23 +3029,23 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
     }
 }
 
-/// Drive the #10 automatic degrade ladder for ONE `fn` whose L3 verus run is in
+/// Drive the #10 automatic degrade ladder for one `fn` whose L3 verus run is in
 /// `outcome` (`.design/forge/degrade-ladder.md` REQ-1/REQ-2/REQ-3). `l3_cert` is
 /// the cert `assemble_certificate` already built from `outcome` (the L3 cert on
 /// `Proved`, the `VerusTimeout` cert on `Timeout`, the counterexample cert on
-/// `Counterexample`). Returns the ACHIEVED-level cert:
+/// `Counterexample`). Returns the achieved-level cert:
 ///
-/// - `Proved` → the L3 cert UNCHANGED (no degrade — the common path).
-/// - `Counterexample` → the counterexample cert UNCHANGED — HARD FAIL, NO L2/L1
+/// - `Proved` → the L3 cert unchanged (no degrade — the common path).
+/// - `Counterexample` → the counterexample cert unchanged; a hard fail, no L2/L1
 ///   rung is attempted (REQ-2 anti-cheat: the ladder short-circuits falsity).
-/// - `Timeout` → run the ladder: lower + kani the SAME item (L2); on a verified
-///   bound certify L2 + lowered-assurance; on an under-bound drop to L1 (a RECORDED
+/// - `Timeout` → run the ladder: lower + kani the same item (L2); on a verified
+///   bound certify L2 + lowered-assurance; on an under-bound drop to L1 (a recorded
 ///   `Level::L1` cert, OQ-3 (b) — `lower_l1`'s runtime-check emission stays a
-///   build-time concern); on an L2 counterexample HARD FAIL (REQ-2, 2nd rung).
+///   build-time concern); on an L2 counterexample a hard fail (REQ-2, 2nd rung).
 ///
-/// An ENVIRONMENT failure on a lower rung (kani absent, unparseable output,
-/// lowering failure) propagates as a `ForgeError` (REQ-8), NEVER a silent degrade.
-/// The L2/L1 closures are LAZY — they run ONLY on the timeout edge, so the common
+/// An environment failure on a lower rung (kani absent, unparseable output,
+/// lowering failure) propagates as a `ForgeError` (REQ-8), never a silent degrade.
+/// The L2/L1 closures are lazy — they run only on the timeout edge, so the common
 /// `Proved` path never spawns kani.
 fn ladder_for_timeout(
     f: &thermite_syntax::FnItem,
@@ -3060,19 +3055,19 @@ fn ladder_for_timeout(
     obligation: &crate::obligation::Obligation,
     evidence_key: crate::engine::CacheKey,
 ) -> Result<Certificate, ForgeError> {
-    // proof-backends #204: route the per-item L3 CERTIFICATION discharge through
+    // proof-backends #204: route the per-item L3 certification discharge through
     // the backend-neutral Verus engine (`engine::VerusEngine`,
     // `.design/verified/proof-backends.md` REQ-2/REQ-3/REQ-3.1). The engine maps
-    // the SHIPPED `VerusOutcome` to a backend-neutral `engine::Verdict` (the
-    // three-way `classify_verus_outcome` lifted, WITH the REQ-3.1 fast-unknown
-    // remap), then `verdict_ladder_action` maps the verdict to the SHIPPED
+    // the shipped `VerusOutcome` to a backend-neutral `engine::Verdict` (the
+    // three-way `classify_verus_outcome` lifted, with the REQ-3.1 fast-unknown
+    // remap), then `verdict_ladder_action` maps the verdict to the shipped
     // `degrade::L3Verdict` the ladder consumes (REQ-3: Proven→certify,
     // Unknown→degrade, Refuted→hard-fail). This is byte-identical to the prior
-    // direct `VerusOutcome → L3Verdict` map EXCEPT the REQ-3.1 delta: a witness-LESS
+    // direct `VerusOutcome → L3Verdict` map except the REQ-3.1 delta: a witness-less
     // `Counterexample` (the fast-`unknown` edge — no parsed `--> span`) now maps
-    // to `Unknown` → DEGRADE (was a hard fail). A WITNESSED countermodel still
+    // to `Unknown` → degrade (was a hard fail). A witnessed countermodel still
     // maps to `Refuted` → hard fail. The conformance corpus is unperturbed: every
-    // corpus item PROVES at L3, so no corpus item produces a `Counterexample` of
+    // corpus item proves at L3, so no corpus item produces a `Counterexample` of
     // either kind.
     use crate::engine::Engine as _;
     // REQ-8: select the first engine in the default ordering (Verus first; the Lean
@@ -3086,28 +3081,28 @@ fn ladder_for_timeout(
         // arm dispatches to it.
         Some(_) => crate::engine::VerusEngine,
     };
-    // REQ-2(a) FRAGMENT gate: the engine must ADMIT the obligation's class before
+    // REQ-2(a) fragment gate: the engine must admit the obligation's class before
     // it attempts a discharge. The Verus engine admits the whole frozen subset
     // (incl. RegistryTermination, REQ-1.2(a)), so this is always `true` today; it
     // is the REQ-3-compliant seam a narrower future engine keys on (an unadmitted
-    // obligation is an honest `Unknown`, NEVER a witness-less `Refuted`).
+    // obligation is an `Unknown`, never a witness-less `Refuted`).
     let verdict = if engine.fragment().admits(obligation) {
         engine.verdict_of(outcome, evidence_key)
     } else {
         engine.discharge(obligation)
     };
-    // REQ-2(c) TRUST PROFILE: the named base this engine would add on a `Proven`
+    // REQ-2(c) trust profile: the named base this engine would add on a `Proven`
     // (the §1 enumerable trusted base). Folded into the degrade-reason detail on an
     // `Unknown` so the auditor sees which engine's base was attempted before the
     // degrade (oracle-free — the cert's degrade reason is not in the cert oracle;
-    // per-obligation attribution as a cert FIELD is REQ-4, increment (iii)).
+    // per-obligation attribution as a cert field is REQ-4, increment (iii)).
     let trust = engine.trust_profile();
     // REQ-2(c): fold the engine's named trust base into a fast-`unknown` degrade
-    // reason so the auditor sees which engine's base was ATTEMPTED before the
+    // reason so the auditor sees which engine's base was attempted before the
     // degrade. This enriches only the REQ-3.1 incompleteness-`unknown` path (a
-    // genuine `Timeout` keeps its SHIPPED profile-derived reject below); it is
+    // genuine `Timeout` keeps its shipped profile-derived reject below); it is
     // oracle-free (the degrade reason is not in the cert oracle). Per-obligation
-    // attribution as a cert FIELD is REQ-4, increment (iii).
+    // attribution as a cert field is REQ-4, increment (iii).
     let verdict = match verdict {
         crate::engine::Verdict::Unknown(crate::engine::Reason::IncompleteUnknown(d)) => {
             crate::engine::Verdict::Unknown(crate::engine::Reason::IncompleteUnknown(format!(
@@ -3126,7 +3121,7 @@ fn ladder_for_timeout(
     let proved_cert = l3_cert.clone();
     let cx_cert = l3_cert;
     let l3 = crate::engine::verdict_ladder_action(&verdict, obligation.role, proved_cert, cx_cert);
-    // Preserve the SHIPPED `VerusTimeout` reason text on a genuine timeout (REQ-4
+    // Preserve the shipped `VerusTimeout` reason text on a genuine timeout (REQ-4
     // byte-identity): `verdict_ladder_action` synthesizes a generic reason, but the
     // assembled `Certificate::timeout` reject carries the profile-derived detail —
     // splice it back so the degrade reason on a timeout is unchanged.
@@ -3134,7 +3129,7 @@ fn ladder_for_timeout(
         (crate::degrade::L3Verdict::Timeout { reason: generic }, Some(reject))
             if reject.cause == "VerusTimeout" =>
         {
-            // A genuine timeout: keep the SHIPPED profile-derived reject text.
+            // A genuine timeout: keep the shipped profile-derived reject text.
             let _ = generic;
             crate::degrade::L3Verdict::Timeout { reason: reject }
         }
@@ -3147,7 +3142,7 @@ fn ladder_for_timeout(
 
     crate::degrade::run_ladder(
         l3,
-        // The L2 rung (lazy): lower the SAME item to a kani harness, run the real
+        // The L2 rung (lazy): lower the same item to a kani harness, run the real
         // kani binary, classify (the OQ-2 split). An environment failure → Err.
         || {
             let harness = thermite_lower::lower_l2(sub).map_err(ForgeError::Lower)?;
@@ -3157,11 +3152,11 @@ fn ladder_for_timeout(
             let cert = crate::kani::assemble_l2_certificate(&fname, effects, &l2);
             Ok(crate::degrade::L2Attempt { verdict, cert })
         },
-        // The L1 fallback rung (lazy): RECORD the achieved `Level::L1` (OQ-3 (b)).
-        // The contract's runtime-check EMISSION is `thermite_lower::lower_l1`'s
+        // The L1 fallback rung (lazy): record the achieved `Level::L1` (OQ-3 (b)).
+        // The contract's runtime-check emission is `thermite_lower::lower_l1`'s
         // build-time job, not the verdict-aggregator's — exactly the
         // `Certificate::slag_l1` precedent (records L1 without running a prover).
-        // `lower_l1` is invoked here only to CONFIRM the contract lowers to runtime
+        // `lower_l1` is invoked here only to confirm the contract lowers to runtime
         // checks (so the recorded L1 is real, never a fiat the build cannot honor);
         // a lowering failure is an environment error (REQ-8), never a silent drop.
         || {
@@ -3181,28 +3176,28 @@ fn ladder_for_timeout(
     )
 }
 
-/// Score the frozen mutant set of `f` against its OWN (unchanged) contract (#12
+/// Score the frozen mutant set of `f` against its own (unchanged) contract (#12
 /// §7 step 4; `.design/forge/mutation-scoring.md` REQ-3/REQ-4/REQ-5/REQ-7).
-/// Called from the per-item L3 path ONLY after `f`'s REAL body proved L3 (the
+/// Called from the per-item L3 path only after `f`'s real body proved L3 (the
 /// caller gates on `cert.level == L3 && reject.is_none()`).
 ///
 /// For each mutant (`mutation::generate`, the frozen + ordered + capped set):
 /// 1. weave it into the same per-item sub-program shape ([`item_subprogram`]) and
-///    lower via the existing `thermite_lower::lower`. A mutant that FAILS to lower
-///    is DROPPED from the denominator (not scored — OQ-5), never an `Err` that
+///    lower via the existing `thermite_lower::lower`. A mutant that fails to lower
+///    is dropped from the denominator (not scored — OQ-5), never an `Err` that
 ///    fails the gate.
-/// 2. content-address the lowered mutant via the SAME proof cache (#8;
-///    `cache::cache_key`/`load`/`store`) — a HIT serves the stored verdict without
+/// 2. content-address the lowered mutant via the same proof cache (#8;
+///    `cache::cache_key`/`load`/`store`) — a hit serves the stored verdict without
 ///    spawning verus, so a re-`forge check` re-scores cheaply (REQ-7). The cache
-///    is consulted ONLY at the canonical config (`use_cache`); a non-default
+///    is consulted only at the canonical config (`use_cache`); a non-default
 ///    rlimit / floor run bypasses it (the caller's invariant).
-/// 3. run the existing `run_verus` on a MISS and classify (REQ-4): a `Proved`
-///    mutant SURVIVED (the contract is too weak); a `Counterexample` / `Timeout`
-///    mutant is KILLED. An ENVIRONMENT / VIR failure surfaces a `ForgeError`
+/// 3. run the existing `run_verus` on a miss and classify (REQ-4): a `Proved`
+///    mutant survived (the contract is too weak); a `Counterexample` / `Timeout`
+///    mutant is killed. An environment / VIR failure surfaces a `ForgeError`
 ///    (R-CODE-4), never a silent kill or survive.
 ///
 /// Returns the [`mutation::MutationScore`] (`killed`/`scored` + the first
-/// surviving mutant's description). DETERMINISTIC (REQ-8): the mutant list is a
+/// surviving mutant's description). Deterministic (REQ-8): the mutant list is a
 /// pure function of the AST + the frozen table, and each mutant verdict is the
 /// same deterministic verus run the L3 path + cache rely on.
 #[allow(
@@ -3230,18 +3225,18 @@ fn mutation_score(
     let mut survivor: Option<String> = None;
 
     for mutant in mutants {
-        // Keep the mutant's `FnItem` so a SURVIVOR can be equivalence-checked
+        // Keep the mutant's `FnItem` so a survivor can be equivalence-checked
         // against the real body (#101); clone what the obligation needs before
         // moving the item into the sub-program.
         let mutant_item = mutant.item.clone();
         let item = Item::Fn(mutant.item);
-        // Weave the SAME §9 composition deps as the original `f` (#52) AND the
+        // Weave the same §9 composition deps as the original `f` (#52) and the
         // same #68 ADT decls: a mutant body still references the original's
         // boundary/regular callees + ADT types, so they must resolve in the
         // mutant's sub-program too (else every mutant fails to lower and the score
         // is the 0/0 backstop — a spurious `WeakContract` reject of an ADT fn).
         let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
-        // OQ-5: a mutant that fails to LOWER (structurally degenerate) is DROPPED
+        // OQ-5: a mutant that fails to lower (structurally degenerate) is dropped
         // from the denominator, never an `Err` that fails the whole gate.
         let lowered = match thermite_lower::lower(&sub) {
             Ok(s) => s,
@@ -3267,24 +3262,24 @@ fn mutation_score(
         };
 
         if crate::mutation::classify_mutant(proved) == crate::mutation::MutantOutcome::Killed {
-            // A KILLED mutant is distinguished by definition — never equivalence-
-            // checked (`.design/forge/equivalent-mutants.md` scope: OUT). It counts.
+            // A killed mutant is distinguished by definition — never equivalence-
+            // checked (`.design/forge/equivalent-mutants.md` scope: out). It counts.
             scored += 1;
             killed += 1;
             continue;
         }
 
-        // The mutant SURVIVED (verus proved it against the unchanged contract).
-        // Issue the per-survivor EQUIVALENCE QUERY (#101 REQ-1; #269 REQ-7): is the
-        // mutant body observably equal to the REAL body under `f`'s `req`, for ALL
-        // inputs (modulo callee contracts when the body is call-bearing — the SAME
-        // `fn_deps` closure woven above)? A VERIFIED query is a PROOF of
-        // equivalence → the survivor is a TRUE equivalent mutant (not contract
-        // weakness) and DROPS from the denominator (REQ-2). A counterexample /
-        // timeout / weak-callee-unprovable harness leaves it a COUNTED survivor
-        // (REQ-3/REQ-8); an un-renderable obligation ALSO leaves it counted but
+        // The mutant survived (verus proved it against the unchanged contract).
+        // Issue the per-survivor equivalence query (#101 REQ-1; #269 REQ-7): is the
+        // mutant body observably equal to the real body under `f`'s `req`, for all
+        // inputs (modulo callee contracts when the body is call-bearing — the same
+        // `fn_deps` closure woven above)? A verified query is a proof of
+        // equivalence → the survivor is a true equivalent mutant (not contract
+        // weakness) and drops from the denominator (REQ-2). A counterexample /
+        // timeout / weak-callee-unprovable harness leaves it a counted survivor
+        // (REQ-3/REQ-8); an un-renderable obligation also leaves it counted but
         // records the structured reason (REQ-9 — never a silent exclusion, never a
-        // silent collapse). EXCLUSION fires on `Proved` ALONE.
+        // silent collapse). Exclusion fires on `Proved` alone.
         let equiv = equivalence_proves_equal(
             f,
             mutant_item.body.as_ref(),
@@ -3297,12 +3292,12 @@ fn mutation_score(
         )?;
         match equiv {
             EquivOutcome::Proved => {
-                // REQ-2/REQ-4: excluded from BOTH the survivor set AND `scored`.
+                // REQ-2/REQ-4: excluded from both the survivor set and `scored`.
                 equivalent += 1;
                 continue;
             }
             EquivOutcome::NotProved => {
-                // A genuinely-DISTINGUISHING / unprovable survivor (REQ-3/REQ-8):
+                // A distinguishing / unprovable survivor (REQ-3/REQ-8):
                 // stays counted; the representative strengthening prompt if first.
                 scored += 1;
                 if survivor.is_none() {
@@ -3310,8 +3305,8 @@ fn mutation_score(
                 }
             }
             EquivOutcome::Unsupported(reason) => {
-                // REQ-9 (R-HONEST-3): the probe could NOT ask the question. The
-                // survivor STAYS counted (no proof) AND the structured reason is
+                // REQ-9 (R-HONEST-3): the probe could not ask the question. The
+                // survivor stays counted (no proof) and the structured reason is
                 // carried to the survivor transparency surface, so an operator
                 // distinguishes "proved distinguishing" from "the probe could not
                 // ask" — never a silent collapse into the distinguishing bucket.
@@ -3335,34 +3330,34 @@ fn mutation_score(
     })
 }
 
-/// The §7 equivalent-mutant EQUIVALENCE QUERY for one survivor
+/// The §7 equivalent-mutant equivalence query for one survivor
 /// (`.design/forge/equivalent-mutants.md` REQ-1, #101): lower the equivalence
-/// obligation (the `thermite_lower::lower_equivalence_obligation` SEAM — `under
+/// obligation (the `thermite_lower::lower_equivalence_obligation` seam — `under
 /// req, mutant_body == real_body` for all inputs), content-address it through the
-/// SAME #8 proof cache, and run the EXISTING `run_verus`. Returns `Ok(true)` iff
-/// verus PROVED the obligation (`0 errors` → the mutant is observably equivalent
-/// → REQ-2 exclude); `Ok(false)` on a counterexample, a timeout, OR an
+/// same #8 proof cache, and run the existing `run_verus`. Returns `Ok(true)` iff
+/// verus proved the obligation (`0 errors` → the mutant is observably equivalent
+/// → REQ-2 exclude); `Ok(false)` on a counterexample, a timeout, or an
 /// un-renderable obligation (a non-scalar / non-forced-output body the seam
 /// returns `Unsupported` for — OQ-1, the natural sound-but-incomplete fallback:
-/// no proof ⇒ the survivor STAYS counted, REQ-3). `Err` ONLY on an environment /
+/// no proof ⇒ the survivor stays counted, REQ-3). `Err` only on an environment /
 /// VIR failure (R-CODE-4 — never a silent equivalence).
 ///
-/// This is a NEW CALLER of the existing prover path, not a new prover (REQ-1):
+/// This is a new caller of the existing prover path, not a new prover (REQ-1):
 /// it reuses `lower_equivalence_obligation` (which reuses the L3 exec
 /// coercions — no hand-emitted Verus, R-CHAR-3), `cache::cache_key`/`load`/
 /// `store` (REQ-6, deterministic content-addressed verdict), and `run_verus`.
 ///
-/// CALL-FREE bodies (the shipped #101 corpus): the obligation is SELF-CONTAINED
+/// Call-free bodies (the shipped #101 corpus): the obligation is self-contained
 /// (the seam emits a whole `use vstd::prelude::*; verus! { .. } fn main() {}` unit
-/// over only scalar spec fns + a proof fn), so `fn_deps` is EMPTY and no §9
+/// over only scalar spec fns + a proof fn), so `fn_deps` is empty and no §9
 /// composition deps are woven.
 ///
-/// CALL-BEARING bodies (`.design/forge/equivalent-mutants.md` REQ-7, #269): the
-/// SAME `fn_deps` closure `mutation_score` weaves into each mutant's
+/// Call-bearing bodies (`.design/forge/equivalent-mutants.md` REQ-7, #269): the
+/// same `fn_deps` closure `mutation_score` weaves into each mutant's
 /// `item_subprogram` (the caller's `reachable_fn_deps`) is threaded into the seam,
-/// which emits an EXEC-position proof harness with the closure woven (boundary
+/// which emits an exec-position proof harness with the closure woven (boundary
 /// callees as external_body signatures, regular callees as full defs) — the
-/// equivalence query then runs with the SAME call-site semantics the caller's own
+/// equivalence query then runs with the same call-site semantics the caller's own
 /// L3 proof used (modulo callee contracts, §9). A weak callee contract that
 /// cannot pin `real == mutant` → `eq` unprovable → `Ok(false)` → counted survivor
 /// (REQ-8); an out-of-scope shape → `Unsupported` → `Ok(false)` + the reason is
@@ -3392,7 +3387,7 @@ fn equivalence_proves_equal(
     let obligation = match thermite_lower::lower_equivalence_obligation(f, body, fn_deps) {
         Ok(s) => s,
         // REQ-9: an un-renderable obligation (non-scalar / out-of-scope shape) is
-        // NO proof — the survivor STAYS counted — and the structured reason is
+        // no proof — the survivor stays counted — and the structured reason is
         // carried (never a silent collapse into the proved-distinguishing bucket).
         Err(e) => return Ok(EquivOutcome::Unsupported(e.to_string())),
     };
@@ -3404,7 +3399,7 @@ fn equivalence_proves_equal(
     let key = cache::cache_key(&obligation, seed, verus_version, THERMITE_VERSION);
     let proved = if use_cache {
         if let Some(stored) = cache::load(cache_dir, &key) {
-            // A cached cert: the equivalence query PROVED iff the stored cert is
+            // A cached cert: the equivalence query proved iff the stored cert is
             // L3 with no reject (the same `mutant_cert_is_survivor` polarity the
             // mutant kill-check caches — a `Proved` obligation is "survivor"-true).
             mutant_cert_is_survivor(&stored)
@@ -3423,10 +3418,10 @@ fn equivalence_proves_equal(
         let verus = run_verus(&label_program, &obligation, seed, rlimit)?;
         mutant_outcome_is_survivor(&verus.outcome)
     };
-    // The exclusion fires ONLY on a verus-PROVED `ensures` (REQ-2/REQ-3/REQ-8):
-    // a `Proved` obligation/harness is a TRUE equivalent → `Proved`; a
+    // The exclusion fires only on a verus-proved `ensures` (REQ-2/REQ-3/REQ-8):
+    // a `Proved` obligation/harness is a true equivalent → `Proved`; a
     // counterexample/timeout (including a weak-callee-unprovable harness) is
-    // NotProved → the survivor STAYS counted.
+    // NotProved → the survivor stays counted.
     Ok(if proved {
         EquivOutcome::Proved
     } else {
@@ -3435,52 +3430,52 @@ fn equivalence_proves_equal(
 }
 
 /// The outcome of a per-survivor equivalence query (`.design/forge/equivalent-
-/// mutants.md` REQ-2/REQ-3/REQ-8/REQ-9). EXCLUSION fires on `Proved` ALONE — a
-/// verus PROOF of the `ensures` (the call-free obligation's `mut == real` or the
-/// call-bearing harness's `eq`). Every other outcome keeps the survivor COUNTED;
+/// mutants.md` REQ-2/REQ-3/REQ-8/REQ-9). Exclusion fires on `Proved` alone — a
+/// verus proof of the `ensures` (the call-free obligation's `mut == real` or the
+/// call-bearing harness's `eq`). Every other outcome keeps the survivor counted;
 /// the variants distinguish "the prover found a distinguishing input / timed out"
-/// (`NotProved`) from "the probe could not even ASK the question" (`Unsupported`,
+/// (`NotProved`) from "the probe could not even ask the question" (`Unsupported`,
 /// carrying the structured reason — REQ-9, so an operator can tell a genuine
 /// contract weakness from an out-of-scope obligation shape, R-HONEST-3).
 #[derive(Debug, Clone)]
 enum EquivOutcome {
-    /// Verus PROVED equivalence (modulo callee contracts for a call-bearing body)
-    /// → the survivor is a TRUE equivalent mutant → dropped from the denominator.
+    /// Verus proved equivalence (modulo callee contracts for a call-bearing body)
+    /// → the survivor is a true equivalent mutant → dropped from the denominator.
     Proved,
-    /// Verus did NOT prove it (a distinguishing counterexample, a timeout, or a
-    /// weak-callee-unprovable harness) → the survivor STAYS counted (REQ-3/REQ-8).
+    /// Verus did not prove it (a distinguishing counterexample, a timeout, or a
+    /// weak-callee-unprovable harness) → the survivor stays counted (REQ-3/REQ-8).
     NotProved,
     /// The obligation could not be rendered (an out-of-scope body shape) → the
-    /// survivor STAYS counted AND the structured reason is recorded (REQ-9).
+    /// survivor stays counted and the structured reason is recorded (REQ-9).
     Unsupported(String),
 }
 
-/// Run the #14 §7 step-5 STRENGTHENING PROBE for `f`
+/// Run the #14 §7 step-5 strengthening probe for `f`
 /// (`.design/forge/strengthening-probes.md` REQ-2/REQ-3/REQ-4). Called from the
-/// per-item L3 path ONLY after `f`'s REAL body proved L3 AND its mutant set met
+/// per-item L3 path only after `f`'s real body proved L3 and its mutant set met
 /// the floor (the caller gates on `cert.level == L3 && reject.is_none()` + a
 /// produced `MutationScore`, REQ-5). It delegates the candidate template +
-/// verify/filter pipeline to `strengthen::probe`, threading TWO verify closures
-/// that reuse the EXISTING verus driver:
+/// verify/filter pipeline to `strengthen::probe`, threading two verify closures
+/// that reuse the existing verus driver:
 ///
-/// - `verify_body` — weave the candidate `ens` into a COPY of `f` (body
-///   UNCHANGED, `strengthen::candidate_fn`), build the SAME per-item sub-program
+/// - `verify_body` — weave the candidate `ens` into a copy of `f` (body
+///   unchanged, `strengthen::candidate_fn`), build the same per-item sub-program
 ///   (`item_subprogram`), lower (`thermite_lower::lower`), content-address (the #8
-///   cache), and `run_verus`. Returns `Ok(true)` iff verus PROVED the candidate
+///   cache), and `run_verus`. Returns `Ok(true)` iff verus proved the candidate
 ///   against the real body (the §7 "proves with no body change"); `Ok(false)` on a
-///   non-`Proved` outcome OR an un-lowerable woven fn (parallel to #12's drop), and
+///   non-`Proved` outcome or an un-lowerable woven fn (parallel to #12's drop), and
 ///   `Err` on an environment failure (R-CODE-4).
-/// - `verify_survivor` — verify the candidate `ens` against the SURVIVOR body (the
+/// - `verify_survivor` — verify the candidate `ens` against the survivor body (the
 ///   #12 mutant whose description is the recorded survivor). The survivor body
-///   comes from the SAME frozen mutator (`mutation::generate`), so the kill witness
+///   comes from the same frozen mutator (`mutation::generate`), so the kill witness
 ///   is the design's grounded `result == a + b` against `{ return 0; }`. Returns
-///   `Ok(true)` iff verus PROVED the candidate against the survivor body (NOT
-///   killed); `Ok(false)` when it did not (KILLED — the strictly-stronger witness).
+///   `Ok(true)` iff verus proved the candidate against the survivor body (not
+///   killed); `Ok(false)` when it did not (killed — the strictly-stronger witness).
 ///
 /// Returns the ordered, deterministic list of adoptable [`strengthen::Suggestion`]s
-/// (possibly empty — an honest absence, REQ-4). The probe introduces NO new prover
-/// invocation path; it is a new caller of `run_verus` (REQ-2 / the doc's "the probe
-/// introduces NO new prover invocation path, only a new caller of the existing one").
+/// (possibly empty, an absence the cert records, REQ-4). The probe introduces no new
+/// prover invocation path; it is a new caller of `run_verus` (REQ-2 / the doc's "the
+/// probe introduces no new prover invocation path, only a new caller of the existing one").
 #[allow(
     clippy::too_many_arguments,
     reason = "the L3-path seams (spec items, seed, rlimit, verus version, cache \
@@ -3500,8 +3495,8 @@ fn strengthen_certificate(
     cache_dir: &Path,
     use_cache: bool,
 ) -> Result<Vec<crate::strengthen::Suggestion>, ForgeError> {
-    // The SURVIVOR body the kill witness verifies against: the #12 mutant whose
-    // description matches the recorded survivor (the SAME frozen mutator). Resolved
+    // The survivor body the kill witness verifies against: the #12 mutant whose
+    // description matches the recorded survivor (the same frozen mutator). Resolved
     // once; reused for every survivor-linked candidate.
     let survivor_body: Option<thermite_syntax::FnItem> = score.survivor.as_ref().and_then(|desc| {
         crate::mutation::generate(f, seed, adt_deps)
@@ -3512,11 +3507,11 @@ fn strengthen_certificate(
 
     // A single content-addressed verify of a woven `fn` (the candidate `ens` over
     // a given body): lower the per-item sub-program, consult the #8 cache, else
-    // `run_verus` + store. Returns whether verus PROVED it (the cert is L3 with no
+    // `run_verus` + store. Returns whether verus proved it (the cert is L3 with no
     // reject). An un-lowerable woven fn is `Ok(false)` (parallel to #12's drop).
     let verify_woven = |woven: &thermite_syntax::FnItem| -> Result<bool, ForgeError> {
         let item = Item::Fn(woven.clone());
-        // The candidate weaves the SAME §9 composition deps as `f` (#52) AND the
+        // The candidate weaves the same §9 composition deps as `f` (#52) and the
         // same #68 ADT decls so a boundary/regular callee in `f`'s body + every
         // referenced ADT type resolves in the candidate too.
         let sub = item_subprogram(&item, spec_items, fn_deps, adt_deps);
@@ -3543,11 +3538,11 @@ fn strengthen_certificate(
         f,
         spec_items,
         score,
-        // verify_body: the candidate `ens` over the REAL body.
+        // verify_body: the candidate `ens` over the real body.
         |woven| verify_woven(woven),
-        // verify_survivor: the candidate `ens` over the SURVIVOR body. If the
+        // verify_survivor: the candidate `ens` over the survivor body. If the
         // survivor body could not be resolved (no recorded survivor), the candidate
-        // is treated as PROVING (not killed) so it is not credited a kill it cannot
+        // is treated as proving (not killed) so it is not credited a kill it cannot
         // witness — the structural-equality witness still applies.
         |candidate| match &survivor_body {
             Some(body) => {
@@ -3559,16 +3554,16 @@ fn strengthen_certificate(
     )
 }
 
-/// `true` iff a verus outcome on a MUTANT body is a SURVIVOR (REQ-4): verus
-/// PROVED the deliberately-wrong body (`VerusOutcome::Proved`). A counterexample
-/// or a timeout is KILLED (OQ-4 — an un-proved mutant is not a survivor).
+/// `true` iff a verus outcome on a mutant body is a survivor (REQ-4): verus
+/// proved the wrong body (`VerusOutcome::Proved`). A counterexample
+/// or a timeout is killed (OQ-4 — an un-proved mutant is not a survivor).
 fn mutant_outcome_is_survivor(outcome: &VerusOutcome) -> bool {
     matches!(outcome, VerusOutcome::Proved { .. })
 }
 
-/// `true` iff a CACHED mutant cert is a SURVIVOR (REQ-4). The stored cert is a
-/// full item cert: a `Level::L3` with no reject means verus PROVED the mutant (a
-/// survivor); anything else (a counterexample-L0, a timeout reject) is KILLED.
+/// `true` iff a cached mutant cert is a survivor (REQ-4). The stored cert is a
+/// full item cert: a `Level::L3` with no reject means verus proved the mutant (a
+/// survivor); anything else (a counterexample-L0, a timeout reject) is killed.
 fn mutant_cert_is_survivor(cert: &Certificate) -> bool {
     cert.level == Level::L3 && cert.reject.is_none()
 }
@@ -3578,16 +3573,16 @@ mod tests {
     use super::*;
     use crate::manifest::ObligationStatus;
 
-    // proof-backends #204 / REQ-1.2 / #226 — THE CLOSURE MIRROR: a spec-fn called
-    // ONLY from a `dec` MEASURE position reaches the per-item Obligation env's
+    // proof-backends #204 / REQ-1.2 / #226 — the closure mirror: a spec-fn called
+    // only from a `dec` measure position reaches the per-item Obligation env's
     // `spec_defs` (the corrected full-expression-position closure walks the dec
-    // measures, NOT body-only). A body-only closure (the SHIPPED
-    // `reachable_spec_fn_deps`) would DROP it, bottoming it to the `intVal`
+    // measures, not body-only). A body-only closure (the shipped
+    // `reachable_spec_fn_deps`) would drop it, bottoming it to the `intVal`
     // Int-bottom and faking a descent (`lean/Thermite/PinDecMeasure.lean`). Expected
     // from REQ-1.2's full-expression-position principle (R-CHAR-3).
     #[test]
     fn dec_position_spec_fn_reaches_obligation_env() {
-        // `measured` calls the spec fn `tree_size` ONLY from its own `dec` measure
+        // `measured` calls the spec fn `tree_size` only from its own `dec` measure
         // (`dec tree_size(xs)`), never from its body — the #226 measure-position
         // case. The full closure must still reach `tree_size`.
         let src = "\
@@ -3619,7 +3614,7 @@ fn measured(xs: &[u32]) -> u64
                  spec-fn dep (REQ-1.2/#226); got {full:?}"
             );
             // The minted Obligation carries it in `env.spec_defs` (the artifact
-            // reifies the closure), and the item gets a REGISTRY-TERMINATION
+            // reifies the closure), and the item gets a registry-termination
             // obligation.
             let obs = mint_item_obligations(&parsed.program, &Item::Fn(f.clone()));
             assert!(
@@ -3636,8 +3631,8 @@ fn measured(xs: &[u32]) -> u64
         }
     }
 
-    // proof-backends #204 / REQ-1.2: an item with NO spec-fn dependency gets NO
-    // REGISTRY-TERMINATION obligation (the class is assigned IFF the closure is
+    // proof-backends #204 / REQ-1.2: an item with no spec-fn dependency gets no
+    // registry-termination obligation (the class is assigned iff the closure is
     // non-empty). Expected from REQ-1.2's assignment condition (R-CHAR-3).
     #[test]
     fn spec_fn_free_item_has_no_registry_termination() {
@@ -3699,8 +3694,8 @@ fn measured(xs: &[u32]) -> u64
         );
     }
 
-    // AC-6 + REQ-4: a parseable FAILURE summary + stderr witness → a reported
-    // non-L3 cert (NOT an Err) carrying the failed obligation with its source
+    // AC-6 + REQ-4: a parseable failure summary + stderr witness → a reported
+    // non-L3 cert (not an Err) carrying the failed obligation with its source
     // location (the §5.1 counterexample). Anchored to the grounded broken-output
     // format (R-CHAR-3 — this is verus's real format, not forge's output).
     #[test]
@@ -3715,8 +3710,8 @@ fn measured(xs: &[u32]) -> u64
           }
         }"#;
         let stderr = "error: postcondition not satisfied\n --> /tmp/broken_check.rs:5:13\n  |\nerror: aborting due to 1 previous error\n";
-        // #11: a failure summary with NO profile report on stderr classifies as a
-        // COUNTEREXAMPLE (the failure path), NOT a timeout (AC-3, AC-4).
+        // #11: a failure summary with no profile report on stderr classifies as a
+        // counterexample (the failure path), not a timeout (AC-3, AC-4).
         let outcome = classify_verus_outcome(stdout, stderr, Some(1));
         assert!(
             matches!(outcome, Ok(VerusOutcome::Counterexample { .. })),
@@ -3743,7 +3738,7 @@ fn measured(xs: &[u32]) -> u64
         );
     }
 
-    // REQ-3 / AC-6: exit != 0 with UNparseable output → ForgeError::VerusOutput
+    // REQ-3 / AC-6: exit != 0 with unparseable output → ForgeError::VerusOutput
     // (never swallowed, never treated as success).
     #[test]
     fn unparseable_output_is_verus_output_error() {
@@ -3768,8 +3763,8 @@ fn measured(xs: &[u32]) -> u64
         assert!(matches!(r, Err(ForgeError::VerusOutput { .. })));
     }
 
-    // #11 / AC-3 / AC-4: a failure summary WHOSE STDERR carries a `--profile` Z3
-    // instantiation report classifies as a TIMEOUT (not a counterexample) and the
+    // #11 / AC-3 / AC-4: a failure summary whose STDERR carries a `--profile` Z3
+    // instantiation report classifies as a timeout (not a counterexample) and the
     // parsed `SolverProfile` is attached. The profile blob is the captured real
     // verus report (R-CHAR-3 — verus's format, not forge's). The classification
     // is the deterministic crux; the profile content is oracle-excluded.
@@ -3785,7 +3780,7 @@ fn measured(xs: &[u32]) -> u64
           }
         }"#;
         // The error: line is present (verus's JSON cannot tell timeout from
-        // counterexample, OQ-1); the PROFILE REPORT on stderr is the discriminator.
+        // counterexample, OQ-1); the profile report on stderr is the discriminator.
         let stderr = "\
 error: postcondition not satisfied
  --> /tmp/x_check.rs:9:9
@@ -3809,8 +3804,8 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
         }
     }
 
-    // #8 proof-cache AC-3 (LOCALITY) + AC-4 (DETERMINISM), exercised over the
-    // REAL `item_subprogram` → `thermite_lower::lower` → `cache::cache_key`
+    // #8 proof-cache AC-3 (locality) + AC-4 (determinism), exercised over the
+    // real `item_subprogram` → `thermite_lower::lower` → `cache::cache_key`
     // pipeline (not a re-implementation): in a two-item file `f`,`g` where `g`
     // does not reference `f`, editing `f`'s body leaves `g`'s key byte-identical
     // while `f`'s key changes. Expected behavior traces to
@@ -3862,18 +3857,18 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             g_v1.is_some() && f_v1.is_some(),
             "the two-item program must parse + lower (g_v1={g_v1:?}, f_v1={f_v1:?})"
         );
-        // DETERMINISM (AC-4): the same item over identical input yields the same key.
+        // Determinism (AC-4): the same item over identical input yields the same key.
         assert_eq!(
             key_of(src_v1, "g"),
             g_v1,
             "key is deterministic for unchanged input"
         );
-        // LOCALITY (AC-3): editing `f` does NOT change `g`'s key.
+        // Locality (AC-3): editing `f` does not change `g`'s key.
         assert_eq!(
             g_v1, g_v2,
             "g's key is invariant under an f-only edit (locality)"
         );
-        // INVALIDATION (AC-2): editing `f` DOES change `f`'s key.
+        // Invalidation (AC-2): editing `f` does change `f`'s key.
         assert_ne!(f_v1, f_v2, "f's key changes when f's contract changes");
     }
 

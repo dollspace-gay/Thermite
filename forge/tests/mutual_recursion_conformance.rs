@@ -1,55 +1,55 @@
 //! L3-grounding conformance for Cluster **C11** (crosslink **#121**, epic
-//! **#113**): MUTUAL recursion — a call-graph cycle of exec `fn`s (`a -> b -> a`,
+//! **#113**): mutual recursion — a call-graph cycle of exec `fn`s (`a -> b -> a`,
 //! `a -> b -> c -> a`, …) where every member carries a `dec` measure is a Verus
 //! mutual-`decreases` group and certifies **L3**
 //! (`.design/basis/12-mutual-recursion.md` REQ-1..4).
 //!
-//! C9 (#108) shipped direct self-recursion and cleanly **L0-rejected** any mutual
-//! cycle (`forge::check`'s `mutual_recursion_cycle_fns`, #110). C11 REFINES that
-//! blanket reject to CONDITIONAL: a cycle whose members all carry `dec` (or
-//! declare `fx diverge`) FALLS THROUGH to the normal per-item lower/verus ladder,
+//! C9 (#108) shipped direct self-recursion and L0-rejected any mutual
+//! cycle (`forge::check`'s `mutual_recursion_cycle_fns`, #110). C11 refines that
+//! blanket reject to conditional: a cycle whose members all carry `dec` (or
+//! declare `fx diverge`) falls through to the normal per-item lower/verus ladder,
 //! where the existing C9 source-order single-`verus!`-block emission presents
 //! Verus a valid mutual-decreases group → Verus proves termination across the
-//! cycle → L3. The reject fires ONLY when a non-diverge cycle member LACKS `dec`
+//! cycle → L3. The reject fires only when a non-diverge cycle member lacks `dec`
 //! (renamed cause `MutualRecursionMissingDecreases`).
 //!
-//! These run against the EXTERNAL truth the toolchain does not author for itself:
-//! the built `forge` binary's certificate ladder (`forge check`, real verus) —
+//! These run against the external truth the toolchain does not author for itself:
+//! the built `forge` binary's certificate ladder (`forge check`, real verus).
 //! R-CODE-4: the subprocess status is checked, never swallowed.
 //!
-//! Pins the C11 ACs (the GROUNDED forms from the design's Verification section,
+//! Pins the C11 ACs (the grounded forms from the design's Verification section,
 //! certified with real `verus 0.2026.05.24`):
 //!
-//!   * AC-1: an exec mutual PAIR `is_even(n)`/`is_odd(n)`, each `dec n`, each
-//!     cross-calling the other on `n - 1`, each with a NON-VACUOUS `ens`
-//!     (`result == (n % 2 == 0)` / `== (n % 2 == 1)`) → **L3** for BOTH (Verus
+//!   * AC-1: an exec mutual pair `is_even(n)`/`is_odd(n)`, each `dec n`, each
+//!     cross-calling the other on `n - 1`, each with a non-vacuous `ens`
+//!     (`result == (n % 2 == 0)` / `== (n % 2 == 1)`) → **L3** for both (Verus
 //!     proves the mutual-decreases group; the partner is woven into each member's
 //!     §5.3 sub-program by the existing `reachable_fn_deps`).
-//!   * AC-2: a mutual pair whose cross-call does NOT decrease the measure
+//!   * AC-2: a mutual pair whose cross-call does not decrease the measure
 //!     (`ping(n)` calls `pong(n)`, both `dec n`) → **L0** ("could not prove
-//!     termination" — the decreases BITES, the SAME shape as the single-fn
+//!     termination" — the decreases bites, the same shape as the single-fn
 //!     non-decreasing L0).
-//!   * AC-3: a mutual pair where one member LACKS `dec` (and is not `fx diverge`)
+//!   * AC-3: a mutual pair where one member lacks `dec` (and is not `fx diverge`)
 //!     → **L0** rejected at `forge::check` with cause
 //!     `MutualRecursionMissingDecreases` (a clean cert verdict, never the raw
-//!     Verus VIR-error abort); the WHOLE non-diverge cycle is rejected.
-//!   * AC-4: a `fx diverge` mutual cycle → **L1** (the #88 honesty exemption — a
+//!     Verus VIR-error abort); the whole non-diverge cycle is rejected.
+//!   * AC-4: a `fx diverge` mutual cycle → **L1** (the #88 honesty exemption: a
 //!     diverge member is never rejected for missing `dec`).
 //!   * AC-5: a 3-cycle `step_a -> step_b -> step_c -> step_a`, each `dec n` cross
 //!     `n - 1` → **L3** for all three (v1 is n-cycles, not pairs-only).
 //!
-//! NON-VACUITY (R-DEFER-9 / `thermite-design.md` §7): the AC-1 `ens` is tied to
-//! `n % 2` (a wrong body cannot satisfy it), and the `dec` is the ONLY thing
-//! between the cycle and L0 — remove it from a member → the missing-dec reject
+//! Non-vacuity (R-DEFER-9 / `thermite-design.md` §7): the AC-1 `ens` is tied to
+//! `n % 2` (a wrong body cannot satisfy it), and the `dec` is the only thing
+//! between the cycle and L0. Remove it from a member → the missing-dec reject
 //! (AC-3); weaken it (cross-call on `n`) → Verus termination failure (AC-2). A
 //! non-terminating mutual cycle cannot be laundered to L3.
 //!
-//! R-CHAR-3: the expected LEVELS trace to the design (L3 == a discharged Verus
+//! R-CHAR-3: the expected levels trace to the design (L3 == a discharged Verus
 //! mutual-`decreases` proof; L0 == "could not prove termination" / the
 //! missing-dec reject; L1 == the `fx diverge` cap) —
 //! `.design/basis/12-mutual-recursion.md` REQ-1..4 + Verification + AC-1..AC-5 —
-//! NEITHER copied from forge's own output. Runs the BUILT `forge` binary; if
-//! verus is absent the L3/L0-verus cases SKIP LOUDLY (never panic on a missing
+//! neither copied from forge's own output. Runs the built `forge` binary; if
+//! verus is absent the L3/L0-verus cases skip with a logged note (never panic on a missing
 //! solver), mirroring `recursion_conformance.rs`.
 
 use std::path::{Path, PathBuf};
@@ -133,8 +133,8 @@ fn reject_cause(certs: &[Value], item: &str) -> String {
         .to_string()
 }
 
-// AC-1 (GROUNDED): the dec-complete mutual pair. Each member `dec n`, cross-calls
-// the other on `n - 1`, NON-VACUOUS `ens` tied to `n % 2`. Verus proves the
+// AC-1 (grounded): the dec-complete mutual pair. Each member `dec n`, cross-calls
+// the other on `n - 1`, non-vacuous `ens` tied to `n % 2`. Verus proves the
 // mutual-decreases group → L3 (raw verus `2 verified, 0 errors`).
 const EVEN_ODD_L3: &str = "fn is_even(n: u64) -> bool\n  \
     req n <= 1000\n  ens result == (n % 2 == 0)\n  fx pure\n  dec n\n\
@@ -143,9 +143,9 @@ const EVEN_ODD_L3: &str = "fn is_even(n: u64) -> bool\n  \
     req n <= 1000\n  ens result == (n % 2 == 1)\n  fx pure\n  dec n\n\
     {\n  if n == 0 { false } else { is_even(n - 1) }\n}\n";
 
-// AC-2 (GROUNDED): both members `dec n`, but the cross-call does NOT decrease
+// AC-2 (grounded): both members `dec n`, but the cross-call does not decrease
 // (`ping(n)` calls `pong(n)`, not `pong(n - 1)`). Reaches Verus (every member
-// HAS `dec`, so NOT caught by the missing-dec reject) → "could not prove
+// has `dec`, so it is not caught by the missing-dec reject) → "could not prove
 // termination" → L0.
 const PING_PONG_NONDECREASING: &str = "fn ping(n: u64) -> u64\n  \
     req n <= 1000\n  ens result == n\n  fx pure\n  dec n\n\
@@ -154,9 +154,9 @@ const PING_PONG_NONDECREASING: &str = "fn ping(n: u64) -> u64\n  \
     req n <= 1000\n  ens result == n\n  fx pure\n  dec n\n\
     {\n  if n == 0 { 0 } else { ping(n) }\n}\n";
 
-// AC-3 (GROUNDED): `is_even` LACKS `dec` (and is not `fx diverge`); `is_odd` has
-// it. The cycle is termination-INCOMPLETE → rejected at `forge::check` (BEFORE
-// verus) with cause `MutualRecursionMissingDecreases`. The WHOLE non-diverge
+// AC-3 (grounded): `is_even` lacks `dec` (and is not `fx diverge`); `is_odd` has
+// it. The cycle is termination-incomplete → rejected at `forge::check` (before
+// verus) with cause `MutualRecursionMissingDecreases`. The whole non-diverge
 // cycle is rejected (both members), since Verus would reject the entire group.
 const EVEN_ODD_MISSING_DEC: &str = "fn is_even(n: u64) -> bool\n  \
     req n <= 1000\n  ens result == (n % 2 == 0)\n  fx pure\n\
@@ -165,7 +165,7 @@ const EVEN_ODD_MISSING_DEC: &str = "fn is_even(n: u64) -> bool\n  \
     req n <= 1000\n  ens result == (n % 2 == 1)\n  fx pure\n  dec n\n\
     {\n  if n == 0 { false } else { is_even(n - 1) }\n}\n";
 
-// AC-4: a `fx diverge` mutual cycle. Both members are honestly non-terminating
+// AC-4: a `fx diverge` mutual cycle. Both members are non-terminating
 // (cross-call on `n + 1`, no `dec`) → the #88 exemption: never rejected for
 // missing `dec`, lowered with `#[verifier::exec_allows_no_decreases_clause]`,
 // L1-capped (partial correctness).
@@ -176,7 +176,7 @@ const DIVERGE_CYCLE_L1: &str = "fn loop_a(n: u64) -> u64\n  \
     req true\n  ens result == 0\n  fx diverge\n\
     {\n  if n == 0 { 0 } else { loop_a(n + 1) }\n}\n";
 
-// AC-5 (GROUNDED): a 3-cycle `step_a -> step_b -> step_c -> step_a`, each member
+// AC-5 (grounded): a 3-cycle `step_a -> step_b -> step_c -> step_a`, each member
 // `dec n` cross-calling on `n - 1`. Verus proves the mutual-decreases group for
 // the whole SCC → L3 for all three (v1 is n-cycles, not pairs-only).
 const THREE_CYCLE_L3: &str = "fn step_a(n: u64) -> u64\n  \
@@ -214,8 +214,8 @@ fn dec_complete_mutual_pair_certifies_l3() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-2 (REQ-2/REQ-4): both members have `dec` but the cycle does NOT decrease
-// → L0 (Verus "could not prove termination" — the decreases BITES).
+// AC-2 (REQ-2/REQ-4): both members have `dec` but the cycle does not decrease
+// → L0 (Verus "could not prove termination" — the decreases bites).
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -239,13 +239,13 @@ fn nondecreasing_mutual_cycle_is_l0() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-3 (REQ-2): a member LACKS `dec` → clean L0 reject (the REFINED cause), the
-// whole non-diverge cycle, BEFORE verus.
+// AC-3 (REQ-2): a member lacks `dec` → clean L0 reject (the refined cause), the
+// whole non-diverge cycle, before verus.
 // ---------------------------------------------------------------------------
 
 #[test]
 fn mutual_cycle_missing_dec_is_rejected_l0() {
-    // No verus needed — this is rejected at `forge::check` BEFORE lowering.
+    // No verus needed — this is rejected at `forge::check` before lowering.
     let certs = check_program("evenodd_nodec", EVEN_ODD_MISSING_DEC);
     for item in ["is_even", "is_odd"] {
         assert_eq!(

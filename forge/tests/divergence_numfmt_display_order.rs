@@ -1,15 +1,15 @@
-//! acto-critic divergence test for cluster C4 (#94): `u64_to_string` DISPLAY ORDER.
+//! acto-critic divergence test for cluster C4 (#94): `u64_to_string` display order.
 //!
-//! Commit `a6b598c` shipped a GENUINE round-trip proof for `n.to_string()`
-//! (`parse_le(result@) == n`, L3, no proof cheat) — but the produced byte sequence
-//! is built **LSB-first and is NEVER reversed**, so the formatter emits the digits
-//! of a number in REVERSED order. `42` materializes as the bytes `[50, 52]`
-//! (ASCII `'2'`, `'4'`) — which, read as a human / terminal decimal (MSB-first),
+//! Commit `a6b598c` shipped a round-trip proof for `n.to_string()`
+//! (`parse_le(result@) == n`, L3, no proof cheat), but the produced byte sequence
+//! is built LSB-first and is not reversed, so the formatter emits the digits
+//! of a number in reversed order. `42` materializes as the bytes `[50, 52]`
+//! (ASCII `'2'`, `'4'`) which, read as a human / terminal decimal (MSB-first),
 //! reads "24", not "42".
 //!
 //! This is a "proven-but-wrong-output" gap. The round-trip `ens` is satisfied
 //! because `parse_le` is itself LSB-first, so a reversed byte sequence still parses
-//! back to `n`; the proof is real, but the OUTPUT is unusable for the design's
+//! back to `n`; the proof holds, but the output is unusable for the design's
 //! stated purpose.
 //!
 //! AUTHORITY — `.design/basis/07-strings.md` REQ-8 (`u64_to_string` … REQ-8 prose):
@@ -19,16 +19,16 @@
 //! The Summary names the consumers: the editor's "ANSI cursor coordinates —
 //! `ESC[<row>;<col>H` needs `u64`→decimal text" and "a number formatter /
 //! calculator". A reversed decimal makes `ESC[<col>H` address the wrong column and
-//! a calculator print "24" for 42 — the acceptance programs CANNOT use it.
+//! a calculator print "24" for 42 — the acceptance programs cannot use it.
 //!
 //! Per REQ-8 the displayed bytes are MSB-first: `42` → `[52, 50]` (`'4'` then
 //! `'2'`). The ASCII codes are the design constant (`'0'` == 48, REQ-6 escape
-//! table / the `+ 48u8` digit convention), NOT copied from forge's own output
+//! table / the `+ 48u8` digit convention), not copied from forge's own output
 //! (`goal.md` R-CHAR-3). The shipped `parse_be(reverse(s)) == parse_le(s)` bridge
-//! lemma is the DISPLAY contract REQ-8 names but the formatter does not apply.
+//! lemma is the display contract REQ-8 names but the formatter does not apply.
 //!
-//! FIX DIRECTION (for the generator, NOT this critic): build MSB-first with a
-//! `parse_be` round-trip, OR reverse the LSB-first buffer before returning and
+//! Fix direction (for the generator, not this critic): build MSB-first with a
+//! `parse_be` round-trip, or reverse the LSB-first buffer before returning and
 //! carry the proved `parse_be(reverse(s)) == parse_le(s)` bridge. State only.
 
 use std::path::PathBuf;

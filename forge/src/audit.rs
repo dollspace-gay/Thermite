@@ -1,22 +1,22 @@
-//! `forge/src/audit.rs` — the AUDIT MANIFEST v1, the project-level TRUST
-//! DELIVERABLE (`thermite-design.md` §6/§8/§9, issue #15). `thermite-design.md`
+//! `forge/src/audit.rs` — the audit manifest v1, the project-level trust
+//! deliverable (`thermite-design.md` §6/§8/§9, issue #15). `thermite-design.md`
 //! §6: "The certificate attached to a build artifact lists every function's
 //! level, every `#[slag]` block, and the contract-quality scores from §7. This
 //! manifest **is** the deliverable's trust statement." This module is that
-//! aggregate manifest — a STABLE, versioned project-level document
+//! aggregate manifest — a stable, versioned project-level document
 //! ([`AuditManifest`], `manifest_version: "v1"`) emitted by `forge audit <file>`.
 //!
 //! Governing design: `.design/forge/audit-manifest.md`.
 //!
-//! The manifest is a PURE PROJECTION of the per-fn [`Certificate`] collection
+//! The manifest is a pure projection of the per-fn [`Certificate`] collection
 //! `forge check` already produced (`manifest.rs`), the project
 //! [`AssuranceManifest`] aggregate (`manifest.rs`, #10/#17), and the toolchain
-//! identity (verus version + thermite version). It computes NO verdict — it never
-//! re-runs verus, re-scores mutants, or re-classifies a closure (REQ-4). Its
-//! centerpiece is the §9 ENUMERABLE TRUSTED COMPUTING BASE ([`Tcb`]): exactly
+//! identity (verus version + thermite version). It computes no verdict: it never
+//! re-runs verus, re-scores mutants, or re-classifies a closure (REQ-4). It
+//! reports the §9 enumerable trusted computing base ([`Tcb`]): exactly
 //! (every `#[slag]` block ∪ every `#[boundary]` contract ∪ the toolchain itself).
 //! `grep slag` over a codebase and this TCB section are the same complete
-//! inventory of fiat-trusted code (§8) — nothing fiat-trusted is omitted
+//! inventory of fiat-trusted code (§8); nothing fiat-trusted is omitted
 //! (R-DEFER-9).
 //!
 //! ## REQ status
@@ -47,12 +47,12 @@ use crate::manifest::{
 };
 
 /// The stable format tag for the v1 audit manifest schema (REQ-1, R-SPEC-2). A
-/// downstream consumer pins this and evolves the format ADDITIVELY (a new field
-/// must `#[serde(default)]` so a v1 document keeps deserializing — the per-cert
+/// downstream consumer pins this and evolves the format additively (a new field
+/// takes `#[serde(default)]` so a v1 document keeps deserializing — the per-cert
 /// `Certificate` additive-field precedent).
 pub const MANIFEST_VERSION: &str = "v1";
 
-/// The PROJECT-LEVEL audit manifest v1 — the §6/§8/§9 TRUST DELIVERABLE (REQ-1).
+/// The project-level audit manifest v1 — the §6/§8/§9 trust deliverable (REQ-1).
 ///
 /// A single stable, versioned document aggregating the per-fn certificates
 /// `forge check` produced. Three sections:
@@ -61,7 +61,7 @@ pub const MANIFEST_VERSION: &str = "v1";
 /// - [`AuditManifest::project_assurance`] — the project headline (#10/#17).
 /// - [`AuditManifest::tcb`] — the §9 enumerable trusted computing base.
 ///
-/// PURE PROJECTION (REQ-4): built by [`AuditManifest::from_certificates`] from a
+/// A pure projection (REQ-4): built by [`AuditManifest::from_certificates`] from a
 /// settled cert collection; it re-derives no verdict.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditManifest {
@@ -73,9 +73,9 @@ pub struct AuditManifest {
     pub functions: Vec<FunctionRow>,
     /// The project-level trust headline embedding [`AssuranceManifest`] (REQ-5).
     pub project_assurance: ProjectAssuranceSection,
-    /// The §9 enumerable trusted computing base (REQ-3) — the manifest centerpiece.
+    /// The §9 enumerable trusted computing base (REQ-3).
     pub tcb: Tcb,
-    /// The #274 LEAN-FRAGMENT MEMBERSHIP section (REQ-7) — one informational row per
+    /// The #274 lean-fragment membership section (REQ-7) — one informational row per
     /// [`AuditManifest::functions`] row answering "would `--engine lean` attempt this
     /// item, and if not, what is the structured refusal". `#[serde(default)]` so a
     /// pre-amendment v1 document (no `lean_fragment` key) still deserializes (AC-5/
@@ -92,7 +92,7 @@ fn default_manifest_version() -> String {
 }
 
 /// One function's row in the audit manifest (REQ-1) — the verdict-and-trust-
-/// relevant PROJECTION of that fn's [`Certificate`]. A pure copy of cert fields;
+/// relevant projection of that fn's [`Certificate`]. A pure copy of cert fields;
 /// no recomputation (REQ-4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionRow {
@@ -106,7 +106,7 @@ pub struct FunctionRow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assurance_scope: Option<AssuranceScope>,
     /// The §7 contract-quality battery block (presence/shape asserted by the
-    /// oracle; the version-sensitive `mutants_killed`/`survivor` ratio is NOT —
+    /// oracle; the version-sensitive `mutants_killed`/`survivor` ratio is not —
     /// OQ-2). A copy of `Certificate::contract_quality`.
     pub contract_quality: ContractQuality,
     /// The §8 fiat-trust flag — `true` iff this fn is a valid `#[slag]` block.
@@ -120,7 +120,7 @@ pub struct FunctionRow {
 }
 
 impl FunctionRow {
-    /// Project one [`Certificate`] to its audit row (REQ-1, REQ-4) — a pure copy.
+    /// Project one [`Certificate`] to its audit row (REQ-1, REQ-4) — a copy.
     fn from_certificate(cert: &Certificate) -> Self {
         FunctionRow {
             name: cert.item.clone(),
@@ -142,7 +142,7 @@ pub struct ProjectAssuranceSection {
     /// The project headline: `Certified(min)` when every fn certifies, else
     /// `Failed` (§5.2). The embedded `manifest::ProjectAssurance`.
     pub level: ProjectAssurance,
-    /// The §9 project scope: END-TO-END iff every fn is, else TO-THE-BOUNDARY
+    /// The §9 project scope: end-to-end iff every fn is, else to-the-boundary
     /// listing the reached crossings. The embedded `manifest::ProjectScope`.
     pub scope: ProjectScope,
     /// The fns reached by an automatic degrade below L3 (#10) — the names whose
@@ -171,10 +171,9 @@ impl ProjectAssuranceSection {
     }
 }
 
-/// The §9 ENUMERABLE TRUSTED COMPUTING BASE (REQ-3) — the manifest centerpiece
-/// and the R-DEFER-9 honesty surface. `thermite-design.md` §9: the TCB is
+/// The §9 enumerable trusted computing base (REQ-3). `thermite-design.md` §9: the TCB is
 /// "exactly (slag blocks ∪ boundary contracts ∪ the toolchain itself)". For a
-/// pure-Thermite project the slag and boundary lists are EMPTY and only the
+/// pure-Thermite project the slag and boundary lists are empty and only the
 /// [`Toolchain`] remains — the §9 "verified, period" state, mechanically
 /// witnessed (the irreducible base every artifact trusts).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,7 +182,7 @@ pub struct Tcb {
     pub slag_blocks: Vec<SlagBlock>,
     /// Every `#[boundary]` contract: name + foreign target + enforced req/ens/fx.
     pub boundary_contracts: Vec<BoundaryContract>,
-    /// The toolchain identity — ALWAYS present (the irreducible residue).
+    /// The toolchain identity — always present (the irreducible residue).
     pub toolchain: Toolchain,
 }
 
@@ -191,7 +190,7 @@ impl Tcb {
     /// Enumerate the §9 TCB from the cert collection + parsed program + toolchain
     /// identity (REQ-3, REQ-4). Keys on the per-fn `slag`/`boundary` cert flags
     /// (set by `Certificate::slag_l1`/`boundary_l1`) and their metadata — never on
-    /// re-parsing or re-classifying. EVERY fiat-trusted fn appears: a `cert.slag`
+    /// re-parsing or re-classifying. Every fiat-trusted fn appears: a `cert.slag`
     /// becomes a [`SlagBlock`], a `cert.boundary` a [`BoundaryContract`]. The
     /// enforced `req`/`ens`/`fx` of a boundary contract is looked up in `program`
     /// (the cert carries only the target). Source order (deterministic, REQ-6).
@@ -204,7 +203,7 @@ impl Tcb {
                 // present + non-empty by `slag::validate` before `slag_l1`). A
                 // valid slag cert always carries it; an absent one is recorded as
                 // an explicit "<unspecified>" rather than dropped (R-DEFER-9 — the
-                // block still appears in the TCB even if metadata were missing).
+                // block still appears in the TCB even if metadata are missing).
                 let (reason, owner, review) = match &cert.slag_meta {
                     Some(meta) => (meta.reason.clone(), meta.owner.clone(), meta.review.clone()),
                     None => (
@@ -280,7 +279,7 @@ pub struct BoundaryContract {
     pub fx: Vec<String>,
 }
 
-/// The TOOLCHAIN identity — the irreducible §9 TCB residue (REQ-3). Every
+/// The toolchain identity — the irreducible §9 TCB residue (REQ-3). Every
 /// artifact trusts the prover that produced its certificates; omitting this would
 /// make a pure project's TCB falsely appear empty (`audit-manifest.md` "Why the
 /// toolchain identity is part of the TCB"). The two strings are the same the
@@ -314,7 +313,7 @@ impl Toolchain {
 }
 
 /// Resolve the `verus` version string for the toolchain identity (REQ-3,
-/// R-CODE-5). The DETERMINISTIC sourcing order mirrors the proof cache's
+/// R-CODE-5). The deterministic sourcing order mirrors the proof cache's
 /// `check::resolve_verus_version` so the TCB toolchain identity and the cache
 /// provenance agree (`audit-manifest.md` "Why the toolchain identity is part of
 /// the TCB"):
@@ -324,10 +323,10 @@ impl Toolchain {
 ///    corpus manifest reproducible);
 /// 2. otherwise `verus --version` stdout (the live binary's version).
 ///
-/// A missing/unreadable verus version (verus absent AND no `VERUS_VERSION`) is an
-/// ENVIRONMENT error (`ForgeError::VerusAbsent`), NEVER a silent empty-string TCB
-/// entry (R-DEFER-9 — the toolchain MUST be honestly identified). `forge audit`
-/// runs the check pipeline (which already requires verus), so this never adds a
+/// A missing/unreadable verus version (verus absent and no `VERUS_VERSION`) is an
+/// environment error (`ForgeError::VerusAbsent`), not an empty-string TCB
+/// entry (R-DEFER-9 — the toolchain is identified explicitly). `forge audit`
+/// runs the check pipeline (which already requires verus), so this adds no
 /// requirement the audit did not already have.
 pub fn resolve_verus_version() -> Result<String, ForgeError> {
     if let Ok(pinned) = std::env::var("VERUS_VERSION") {
@@ -359,22 +358,22 @@ pub fn resolve_verus_version() -> Result<String, ForgeError> {
     Ok(version)
 }
 
-/// The #274 LEAN-FRAGMENT MEMBERSHIP section (REQ-7) — an INFORMATIONAL,
+/// The #274 lean-fragment membership section (REQ-7) — an informational,
 /// additive `AuditManifest` section reporting, per checked item, whether
 /// `--engine lean` would attempt it and (if not) the structured refusal class.
 ///
-/// The membership decision is the SHIPPED dry-run `lean_export::export_item` over
-/// the item's #226 CONTRACT obligation (REQ-8) — the SAME decision procedure
+/// The membership decision is the shipped dry-run `lean_export::export_item` over
+/// the item's #226 contract obligation (REQ-8) — the same decision procedure
 /// `--engine lean` makes (`LeanEngine::export` → `export_item`; a refusal maps to
-/// the engine's `Unknown` honest skip). It is a PURE function of the parsed program
+/// the engine's `Unknown` skip). It is a pure function of the parsed program
 /// (`export_item` is fs/process/env-free; the lake/scratch side effects live
-/// downstream in `LeanEngine::discharge`, never reached here): NO lake, NO scratch
-/// file, NO `lean/` toolchain — same input file ⇒ byte-identical section (REQ-6
-/// extended, AC-4/AC-10). The section gates NOTHING (REQ-10).
+/// downstream in `LeanEngine::discharge`, never reached here): no lake, no scratch
+/// file, no `lean/` toolchain — same input file ⇒ byte-identical section (REQ-6
+/// extended, AC-4/AC-10). The section gates nothing (REQ-10).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeanFragment {
     /// One membership row per [`AuditManifest::functions`] row, in source order
-    /// (so it covers checked `fn`s AND `spec fn`s — both receive certs and both are
+    /// (so it covers checked `fn`s and `spec fn`s — both receive certs and both are
     /// `export_item` subjects). `#[serde(default)]` so an empty/absent section
     /// deserializes (AC-11).
     #[serde(default)]
@@ -383,13 +382,13 @@ pub struct LeanFragment {
 
 impl LeanFragment {
     /// Probe each checked item's Lean-fragment membership (REQ-7, REQ-8). For every
-    /// `cert` (in source order) mint the #226 CONTRACT obligation via the shipped
-    /// `check::contract_obligation` seam (NO closure fork — the byte-identical
+    /// `cert` (in source order) mint the #226 contract obligation via the shipped
+    /// `check::contract_obligation` seam (no closure fork — the byte-identical
     /// pipeline closure, the AC-9 agreement guarantee) and dry-run
     /// `lean_export::export_item` over it; map `Ok`/`Err` to a [`LeanFragmentRow`].
-    /// An item absent from `program` (defensive; the certs come from the same parsed
+    /// An item absent from `program` (the certs come from the same parsed
     /// file) reports `exportable: false` with the engine's own "item not found"
-    /// marker class (`OutOfFragment`, mirroring `LeanEngine::export`). PURE — no
+    /// marker class (`OutOfFragment`, mirroring `LeanEngine::export`). Pure — no
     /// lake, no fs, no process (REQ-8).
     fn from_certificates(certs: &[Certificate], program: &Program) -> Self {
         let functions = certs
@@ -409,29 +408,29 @@ pub struct LeanFragmentRow {
     /// The item name (matches the `functions` row).
     pub name: String,
     /// `true` iff `export_item` returned `Ok(ExportedObligation)` — `--engine lean`
-    /// would export this item's CONTRACT obligation.
+    /// would export this item's contract obligation.
     pub exportable: bool,
     /// The coarse attempt class (REQ-7):
     /// - `"auto"` — exportable AND [`ExportTier::is_auto`](crate::lean_export::ExportTier::is_auto) (tiers (a)/(b)):
     ///   `--engine lean` would export AND lake-invoke the auto battery;
     /// - `"interactive"` — exportable AND `RecursiveInteractive` (tier (c)):
-    ///   `--engine lean` exports but does NOT invoke lake (returns `Unknown`);
-    /// - `"none"` — refused: `--engine lean` honestly skips (`Verdict::Unknown`).
+    ///   `--engine lean` exports but does not invoke lake (returns `Unknown`);
+    /// - `"none"` — refused: `--engine lean` skips (`Verdict::Unknown`).
     pub tier: String,
     /// The fine-grained shipped tag ([`ExportTier::tag`](crate::lean_export::ExportTier::tag):
     /// `"fuel-free-auto"`/`"static-unfold-auto"`/`"recursive-interactive"`); present
     /// iff `exportable` (`#[serde(skip_serializing_if)]`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tier_tag: Option<String>,
-    /// The structured refusal (REQ-9); present iff NOT exportable
+    /// The structured refusal (REQ-9); present iff not exportable
     /// (`#[serde(skip_serializing_if)]`). `class` is the stable machine surface
     /// (the `ExportRefusal` variant name); `reason` is its `Display`, verbatim.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refusal: Option<LeanRefusal>,
 }
 
-/// The coarse `tier` string for a refused row (REQ-7) — `--engine lean` honestly
-/// skips an item it cannot export.
+/// The coarse `tier` string for a refused row (REQ-7) — `--engine lean` skips an
+/// item it cannot export.
 const TIER_NONE: &str = "none";
 /// The coarse `tier` string for an exportable AUTO-tier row (REQ-7) — tiers (a)/(b).
 const TIER_AUTO: &str = "auto";
@@ -440,16 +439,16 @@ const TIER_INTERACTIVE: &str = "interactive";
 
 impl LeanFragmentRow {
     /// Probe one item's Lean-fragment membership via the shipped dry-run
-    /// `export_item` (REQ-7, REQ-8). Mints the #226 CONTRACT obligation through the
-    /// `check::contract_obligation` seam (the byte-identical pipeline closure — NO
-    /// fork) and classifies the result. PURE: `export_item` builds strings only (no
+    /// `export_item` (REQ-7, REQ-8). Mints the #226 contract obligation through the
+    /// `check::contract_obligation` seam (the byte-identical pipeline closure — no
+    /// fork) and classifies the result. Pure: `export_item` builds strings only (no
     /// fs/process/env), so this row is a deterministic function of `(name, program)`
     /// (REQ-6/AC-4). An item not in `program` reports the engine's "item not found"
     /// `OutOfFragment` marker (mirrors `LeanEngine::export`).
     fn probe(name: &str, program: &Program) -> Self {
         let Some(item) = lean_export::find_item(program, name) else {
-            // Defensive (the certs come from the same parsed file): mirror the
-            // engine's own "item not found" skip rather than drop the row.
+            // The certs come from the same parsed file: mirror the engine's own
+            // "item not found" skip rather than drop the row.
             return LeanFragmentRow {
                 name: name.to_string(),
                 exportable: false,
@@ -462,9 +461,9 @@ impl LeanFragmentRow {
                 }),
             };
         };
-        // Mint the #226 CONTRACT obligation via the shipped seam — the SAME closure
-        // the check pipeline / `--engine lean` use (REQ-8; NO fork). Dry-run
-        // `export_item` over it: the membership decision IS the engine's.
+        // Mint the #226 contract obligation via the shipped seam — the same closure
+        // the check pipeline / `--engine lean` use (REQ-8; no fork). Dry-run
+        // `export_item` over it: the membership decision is the engine's.
         let obligation = crate::check::contract_obligation(program, item);
         match lean_export::export_item(&obligation, program, item) {
             Ok(exported) => {
@@ -496,11 +495,10 @@ impl LeanFragmentRow {
 }
 
 /// A structured Lean-export refusal in a membership row (REQ-9) — the post-(v)
-/// §4.2.5 LOUD inventory surfaced in the trust document. `class` is the STABLE
+/// §4.2.5 inventory surfaced in the trust document. `class` is the stable
 /// machine surface (the `ExportRefusal` variant name, an enum-stable string);
-/// `reason` is the refusal's `Display` rendering, VERBATIM (a human diagnostic,
-/// co-evolving with the exporter — OQ-5). Never a paraphrase, never a silent
-/// omission.
+/// `reason` is the refusal's `Display` rendering, verbatim (a human diagnostic,
+/// co-evolving with the exporter — OQ-5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeanRefusal {
     /// The `ExportRefusal` variant name — the stable machine surface:
@@ -511,10 +509,9 @@ pub struct LeanRefusal {
     pub reason: String,
 }
 
-/// The STABLE machine-surface variant name of an [`ExportRefusal`] (REQ-9). A total
+/// The stable machine-surface variant name of an [`ExportRefusal`] (REQ-9). A total
 /// match over the post-(v) inventory `pub enum ExportRefusal in lean_export.rs` — a
-/// future variant is a compile error here (the closed-enum discipline), never a
-/// silently-dropped class.
+/// future variant is a compile error here (the closed-enum discipline).
 fn refusal_class_name(refusal: &ExportRefusal) -> &'static str {
     match refusal {
         ExportRefusal::OutOfFragment(_) => "OutOfFragment",
@@ -529,7 +526,7 @@ fn refusal_class_name(refusal: &ExportRefusal) -> &'static str {
 
 impl AuditManifest {
     /// Build the v1 audit manifest from a settled certificate collection (REQ-1,
-    /// REQ-4) — a PURE PROJECTION. Aggregates:
+    /// REQ-4) — a pure projection. Aggregates:
     ///
     /// - `functions` — each cert projected to a [`FunctionRow`] (REQ-1).
     /// - `project_assurance` — the [`AssuranceManifest::aggregate`] over `certs`
@@ -537,7 +534,7 @@ impl AuditManifest {
     /// - `tcb` — the §9 enumerable TCB (REQ-3): every slag ∪ every boundary ∪ the
     ///   `toolchain`.
     ///
-    /// It re-runs NO verus, re-scores NO mutants, re-classifies NO closure: every
+    /// It re-runs no verus, re-scores no mutants, re-classifies no closure: every
     /// field traces to a cert field, the assurance aggregate, the program's
     /// boundary contracts, or the two version strings (REQ-4, REQ-6). `program`
     /// supplies the boundary contracts' `req`/`ens`/`fx` text (the cert carries
@@ -566,7 +563,7 @@ impl AuditManifest {
 
 /// Look up a fn's [`Contract`] in the parsed program by name (REQ-3). Returns the
 /// contract of the matching `Item::Fn`, or `None` (a `spec fn` carries no
-/// contract, and a name with no node has none). Pure read of the parsed AST — no
+/// contract, and a name with no node has none). A read of the parsed AST — no
 /// re-parsing, no re-verification.
 fn lookup_contract<'a>(program: &'a Program, name: &str) -> Option<&'a Contract> {
     program.items.iter().find_map(|item| match item {
@@ -698,7 +695,7 @@ mod tests {
 
     // REQ-7/REQ-8 (AC-7): a pure-int-tail specCall-free body probes exportable
     // tier=auto (fuel-free-auto) — the membership decision is the shipped dry-run
-    // export, with NO verus run (the probe is pure). Expected from the §6.1 tier (a)
+    // export, with no verus run (the probe is pure). Expected from the §6.1 tier (a)
     // definition (R-CHAR-3), not forge stdout.
     #[test]
     fn probe_pure_int_tail_is_auto() {
@@ -741,10 +738,10 @@ mod tests {
         );
     }
 
-    // REQ-8 (AC-9): the probe row EQUALS what `export_item` returns for that item's
-    // CONTRACT obligation minted via the SAME `check::contract_obligation` seam — the
-    // report and the `--engine lean` admission decision can never disagree. Covers an
-    // exportable item AND a refused (boundary) item.
+    // REQ-8 (AC-9): the probe row equals what `export_item` returns for that item's
+    // contract obligation minted via the same `check::contract_obligation` seam — the
+    // report and the `--engine lean` admission decision agree. Covers an
+    // exportable item and a refused (boundary) item.
     #[test]
     fn probe_agrees_with_direct_export_item() {
         for (name, src) in [
@@ -782,7 +779,7 @@ mod tests {
                 }
                 Err(refusal) => {
                     assert!(!row.exportable, "row agrees: refused");
-                    // The row's refusal EQUALS the direct export_item refusal,
+                    // The row's refusal equals the direct export_item refusal,
                     // field-for-field (stable class + verbatim Display reason).
                     assert_eq!(
                         row.refusal,
@@ -797,8 +794,8 @@ mod tests {
         }
     }
 
-    // REQ-10 (AC-11): a PRE-AMENDMENT v1 document (no `lean_fragment` key) still
-    // deserializes into the TYPED `AuditManifest` — the `#[serde(default)]` additive
+    // REQ-10 (AC-11): a pre-amendment v1 document (no `lean_fragment` key) still
+    // deserializes into the typed `AuditManifest` — the `#[serde(default)]` additive
     // discipline (the new section defaults to an empty `LeanFragment`).
     #[test]
     fn pre_amendment_v1_deserializes_into_typed_manifest() {
@@ -829,10 +826,10 @@ mod tests {
         );
     }
 
-    // REQ-9 (AC-7) — the sum.th HAND-TRACE VERDICT, pinned in-crate: BOTH rows refuse
-    // OutOfFragment but NOT for the spec-calling-inv reason the doc narrative grounded
+    // REQ-9 (AC-7) — the sum.th hand-trace verdict, pinned in-crate: both rows refuse
+    // OutOfFragment but not for the spec-calling-inv reason the doc narrative grounded
     // — `sum` is the recursive-registry contract over a while body; `spec_sum` is the
-    // slice-pattern match body. The probe needs no verus (pure). The exact verbatim
+    // slice-pattern match body. The probe needs no verus (pure). The verbatim
     // reasons are hand-derived from the exporter (R-CHAR-3) — see cases.json.
     #[test]
     fn probe_sum_th_refusals_are_hand_traced() {

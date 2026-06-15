@@ -1,33 +1,33 @@
-//! The LIVE oracle test for forge's STRENGTHENING PROBES (issue #14,
-//! `thermite-design.md` §7 step 5). It drives the BUILT `forge` binary (same as
+//! The live oracle test for forge's strengthening probes (issue #14,
+//! `thermite-design.md` §7 step 5). It drives the built `forge` binary (same as
 //! `mutation_conformance.rs`) and asserts the emitted certificate against the
-//! hand-derived oracle `conformance/strengthening/cases.json` (R-CHAR-3 —
+//! hand-derived oracle `conformance/strengthening/cases.json` (R-CHAR-3:
 //! expected outcomes trace to §7 / the oracle, never to forge's own output).
 //!
-//! Strengthening probes issue REAL verus queries per candidate (a suggestion is
-//! surfaced only if it VERIFIES against the real body AND kills the #12 survivor),
-//! so EVERY case here needs verus. The verus-needing cases SKIP LOUDLY when verus
-//! is absent (mirroring `mutation_conformance.rs`), never panic.
+//! Strengthening probes issue real verus queries per candidate (a suggestion is
+//! surfaced only if it verifies against the real body and kills the #12 survivor),
+//! so every case here needs verus. The verus-needing cases skip with an eprintln
+//! when verus is absent (mirroring `mutation_conformance.rs`) rather than panic.
 //!
-//! The oracle is QUALITATIVE (R-CHAR-3 / `.design/forge/strengthening-probes.md`
-//! AC anchors): the suggestion set is verus-version-sensitive (oracle-EXCLUDED),
-//! so the CHECKABLE properties are presence/absence + adoptability:
+//! The oracle is qualitative (R-CHAR-3 / `.design/forge/strengthening-probes.md`
+//! AC anchors): the suggestion set is verus-version-sensitive (oracle-excluded),
+//! so the checkable properties are presence/absence + adoptability:
 //!   - `weak_loose_bound` (AC-1): a weak contract (checked under a LOW
 //!     `--mutation-floor` so it reaches the probe as an L3-certified item) emits
 //!     ≥1 suggestion whose clause is `result == a + b` (the oracle
 //!     `expect_suggestion`) and that records the killed survivor;
 //!   - `corpus_sum` (AC-2): the corpus `sum` (already exact-pinned `ens result ==
-//!     spec_sum(xs)`) emits NO strengthening suggestion AND still certifies L3 with
+//!     spec_sum(xs)`) emits no strengthening suggestion and still certifies L3 with
 //!     its verdict unchanged (the oracle subset unperturbed, AC-4);
 //!   - `weak_loose_bound` under the probe leaves the verdict (level/reject)
-//!     IDENTICAL to the same fixture checked WITHOUT reaching the probe (AC-4 —
+//!     identical to the same fixture checked without reaching the probe (AC-4:
 //!     advisory, the probe never changes the verdict);
 //!   - determinism (AC-5): the same fn checked twice yields the identical
 //!     suggestion set.
 //!
 //! `forge` is a pure `bin` crate (no `lib.rs`), so the `strengthen`/`manifest`
 //! types are not importable here; the assertions read the cert's JSON fields
-//! directly. `unwrap`/`expect` are fine here — `tests/` is not anti-pattern-gated.
+//! directly. `unwrap`/`expect` are fine here, since `tests/` is not anti-pattern-gated.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -177,11 +177,11 @@ fn weak_contract_emits_verifying_strictly_stronger_suggestion() {
     }
     let oracle = read_oracle();
     for case in &oracle.has_suggestion {
-        // The weak fixture is GATED `WeakContract` under the default floor (the
+        // The weak fixture is gated `WeakContract` under the default floor (the
         // early-return-0 mutant survives). To reach the §7 step-5 probe it must
-        // CERTIFY L3, so check it under a LOW `--mutation-floor` (REQ-5 — the probe
-        // runs on an L3-certified + scored item). This is a test LEVER, not a
-        // conformance edit (R-CHAR-3 — the oracle is untouched).
+        // certify L3, so check it under a low `--mutation-floor` (REQ-5: the probe
+        // runs on an L3-certified + scored item). This is a test lever, not a
+        // conformance edit (R-CHAR-3: the oracle is untouched).
         let path = write_temp(&case.name, &case.program);
         let (code, certs) = run_check_json(&path, &["--mutation-floor", "0.0"]);
         let _ = std::fs::remove_file(&path);
@@ -203,8 +203,8 @@ fn weak_contract_emits_verifying_strictly_stronger_suggestion() {
             case.name
         );
 
-        // AC-1: ≥1 suggestion, and it INCLUDES the oracle `expect_suggestion`
-        // (`result == a + b`) — a clause that VERIFIES against the body (the probe
+        // AC-1: ≥1 suggestion, and it includes the oracle `expect_suggestion`
+        // (`result == a + b`), a clause that verifies against the body (the probe
         // only surfaces verifying candidates) and is strictly stronger.
         let clauses = suggestion_clauses(cert);
         assert!(
@@ -241,7 +241,7 @@ fn weak_contract_emits_verifying_strictly_stronger_suggestion() {
     }
 }
 
-// ---- AC-2: the corpus `sum` -> NO suggestion (already exact-pinned) ----------
+// ---- AC-2: the corpus `sum` -> no suggestion (already exact-pinned) ----------
 
 #[test]
 fn corpus_sum_emits_no_suggestion_and_certifies_l3() {
@@ -268,7 +268,7 @@ fn corpus_sum_emits_no_suggestion_and_certifies_l3() {
         );
         let cert = cert_for(&certs, item_name);
 
-        // AC-2 / AC-4: the verdict is UNCHANGED — still L3, not rejected.
+        // AC-2 / AC-4: the verdict is unchanged, still L3, not rejected.
         assert_eq!(
             cert.get("level").and_then(|l| l.as_str()),
             Some("L3"),
@@ -281,7 +281,7 @@ fn corpus_sum_emits_no_suggestion_and_certifies_l3() {
             case.name
         );
 
-        // AC-2: NO strengthening suggestion (already exact-pinned).
+        // AC-2: no strengthening suggestion (already exact-pinned).
         let clauses = suggestion_clauses(cert);
         assert!(
             clauses.is_empty(),
@@ -291,7 +291,7 @@ fn corpus_sum_emits_no_suggestion_and_certifies_l3() {
     }
 }
 
-// ---- AC-4: ADVISORY — the probe never changes the verdict --------------------
+// ---- AC-4: advisory — the probe never changes the verdict --------------------
 
 #[test]
 fn probe_never_changes_the_verdict() {
@@ -301,9 +301,9 @@ fn probe_never_changes_the_verdict() {
     }
     let oracle = read_oracle();
     // For the corpus `sum`: its oracle subset (item, level, effects, slag) is the
-    // SAME whether or not a probe runs (the probe touches only the additive
+    // same whether or not a probe runs (the probe touches only the additive
     // `strengthening` field). Compare the deterministic verdict fields against the
-    // GOLDEN cert (R-CHAR-3 — the anchor is the golden, not forge's output).
+    // golden cert (R-CHAR-3: the anchor is the golden, not forge's output).
     let golden_src = std::fs::read_to_string(corpus_dir().join("sum.cert.json"))
         .expect("read golden sum.cert.json");
     let golden: Value = serde_json::from_str(&golden_src).expect("parse golden");
@@ -326,7 +326,7 @@ fn probe_never_changes_the_verdict() {
     );
 
     // For the weak fixture: the level/reject under the probe (low floor) is the
-    // same L3 verdict — the probe added suggestions, not a verdict change.
+    // same L3 verdict; the probe added suggestions, not a verdict change.
     for case in &oracle.has_suggestion {
         let path = write_temp(&case.name, &case.program);
         let (code, certs) = run_check_json(&path, &["--mutation-floor", "0.0"]);

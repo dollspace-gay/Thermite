@@ -1,44 +1,44 @@
-//! `forge/tests/divergence_251_macro_poison.rs` — DIVERGENCE pin (ref #251, #250).
+//! `forge/tests/divergence_251_macro_poison.rs` — divergence pin (ref #251, #250).
 //!
-//! Divergence class: PROOF CHEAT (R-DEFER-9) — the interactive Lean replay certifies
-//! L3 from a proof of a TRIVIALLY-TRUE re-elaboration of the obligation, not the
+//! Divergence class: proof cheat (R-DEFER-9). The interactive Lean replay certifies
+//! L3 from a proof of a trivially-true re-elaboration of the obligation, not the
 //! obligation itself. Authority: `.design/verified/proof-backends.md` REQ-6 (the proof
-//! must PROVE the obligation, not an arbitrary proposition) / REQ-4 / §1 (the enumerable
-//! trusted base is EXACTLY `{Lean kernel + propext, Classical.choice, Quot.sound[,
-//! author]}`); `thermite-design.md` §1 (trust is an ENUMERABLE base "a skeptical third
+//! must prove the obligation, not an arbitrary proposition) / REQ-4 / §1 (the enumerable
+//! trusted base is `{Lean kernel + propext, Classical.choice, Quot.sound[,
+//! author]}`); `thermite-design.md` §1 (trust is an enumerable base "a skeptical third
 //! party can audit in minutes"); goal.md R-DEFER-9 (an obligation discharged by weakening
-//! it to vacuity is a cheat, NEVER Proven).
+//! it to vacuity is a cheat, never Proven).
 //!
-//! The #250 fix (`engine::reconstruct_replay`, commit 2367628c) RECONSTRUCTS the replay
-//! file from the canonical exporter source, splicing in the author's extracted PROOF term
-//! plus their HELPER lemmas (`engine::author_helpers`) BEFORE the canonical theorem. It
+//! The #250 fix (`engine::reconstruct_replay`, commit 2367628c) reconstructs the replay
+//! file from the canonical exporter source, splicing in the author's extracted proof term
+//! plus their helper lemmas (`engine::author_helpers`) before the canonical theorem. It
 //! argues the statement, name, and `#print axioms` target are then "the same generator-
-//! emitted declaration BY CONSTRUCTION". This pin shows that argument is INCOMPLETE: the
-//! splice is purely TEXTUAL and `author_helpers` keeps ANY non-`#`, non-preamble line,
+//! emitted declaration BY CONSTRUCTION". This pin shows that argument is incomplete: the
+//! splice is purely textual and `author_helpers` keeps any non-`#`, non-preamble line,
 //! including a Lean 4 `notation`/`macro`/`macro_rules` command. A helper
 //!
 //!     notation:max "Thermite.stabilizesProp" => (fun (_ : Thermite.Expr) (_ : Thermite.Env) => True)
 //!
-//! spliced before the (byte-identical) canonical statement RE-ELABORATES the obligation's
+//! spliced before the (byte-identical) canonical statement re-elaborates the obligation's
 //! `Thermite.stabilizesProp <ens> (…)` conclusion to `True`. The author proves the
-//! trivial proposition (`by intro _ _; trivial`); `#print axioms` reports a CLEAN base (no
-//! axioms — `True` rests on nothing); `statements_match` passes (the statement BYTES are
+//! trivial proposition (`by intro _ _; trivial`); `#print axioms` reports a clean base (no
+//! axioms — `True` rests on nothing); `statements_match` passes (the statement bytes are
 //! the canonical ones — the check is textual, run before elaboration). forge certifies the
 //! item at L3 from a proof of `True`.
 //!
 //! Verified live (Lean): the notation poison makes the tier-(c) statement shape elaborate
 //! to a trivially-provable prop with `'…' does not depend on any axioms`. This is the
-//! THIRD bypass generation (#248 allowlist anchor, #249/#250 same-short-name decoy, now
-//! the splice itself). The likely fix shape: a COMMAND ALLOWLIST in the splice — helpers
+//! third bypass generation (#248 allowlist anchor, #249/#250 same-short-name decoy, now
+//! the splice itself). The likely fix shape: a command allowlist in the splice — helpers
 //! may declare only `theorem`/`lemma`/`def`/`example` with non-obligation names; reject
 //! `notation`/`macro`/`macro_rules`/`syntax`/`infix`/`open`/`set_option`/`attribute`.
 //!
-//! Expected (authority, NOT forge's own output, R-CHAR-3): item `f` must NOT certify at
-//! L3 — a proof whose statement has been re-elaborated to `True` by a spliced notation is
-//! NOT a discharge of the obligation (REQ-6 / R-DEFER-9). This test FAILS against commit
+//! Expected (authority, not forge's own output, R-CHAR-3): item `f` does not certify at
+//! L3. A proof whose statement has been re-elaborated to `True` by a spliced notation is
+//! not a discharge of the obligation (REQ-6 / R-DEFER-9). This test fails against commit
 //! 2367628c (forge emits L3).
 //!
-//! LIVE: gated on `lake` (the interactive replay invokes `lake env lean`).
+//! Live: gated on `lake` (the interactive replay invokes `lake env lean`).
 
 use serde_json::Value;
 use std::path::PathBuf;
@@ -62,7 +62,7 @@ fn lake_present() -> bool {
 }
 
 // The recursive-int spec-fn item: `r : int -> int` (recursive) is called in `f`'s ens,
-// so `f`'s obligation is tier-(c) RecursiveInteractive — it routes through
+// so `f`'s obligation is tier-(c) RecursiveInteractive; it routes through
 // `LeanEngine::replay_interactive` under `--engine lean`. Shape mirrors the shipped
 // fixture `engine::tests::recursive_registry_is_interactive_unknown` and the #249/#250
 // pin (`forge/tests/divergence_249_axiom_mask.rs`).
@@ -70,25 +70,25 @@ const TH_SRC: &str = "spec fn r(x: int) -> int\n  dec x\n{\n  r(x)\n}\n\n\
                       fn f(x: u32) -> u32\n  req true\n  ens result as int == r(x as int)\n  \
                       fx pure\n{\n  x\n}\n";
 
-// Transform the EMITTED tier-(c) skeleton into the macro-poison proof file: preserve the
+// Transform the emitted tier-(c) skeleton into the macro-poison proof file: preserve the
 // evidence-key header + imports + `def R_item` (the staleness gate reads the author
 // file's header; a fresh key → it passes), splice a `notation` helper that redefines
-// `Thermite.stabilizesProp` to the constant-`True` predicate, then re-state the CANONICAL
-// theorem statement BYTE-VERBATIM (so `statements_match` passes) and prove the now-trivial
+// `Thermite.stabilizesProp` to the constant-`True` predicate, then re-state the canonical
+// theorem statement byte-verbatim (so `statements_match` passes) and prove the now-trivial
 // goal with `by intro _ _; trivial`. The splice keeps the notation line verbatim, emits it
 // before the canonical theorem, and the obligation's conclusion re-elaborates to `True`.
 fn build_macro_poison_proof(skeleton: &str) -> Option<String> {
     let ti = skeleton.find("theorem thermite_obligation_f")?;
     let mut preamble = &skeleton[..ti];
     // Drop the trailing doc comment so the spliced `notation` sits between the imports/
-    // `R_item` and the theorem (a doc comment must immediately precede a declaration).
+    // `R_item` and the theorem (a doc comment immediately precedes a declaration).
     if let Some(dc) = preamble.rfind("/--") {
         preamble = &preamble[..dc];
     }
     let thm = &skeleton[ti..];
     let byp = thm.find(":= by")?;
-    // The statement THROUGH `:=` (exactly what `canonical_theorem_statement` binds and
-    // what the reconstruction emits verbatim) — kept byte-identical so the textual
+    // The statement through `:=` (what `canonical_theorem_statement` binds and
+    // what the reconstruction emits verbatim), kept byte-identical so the textual
     // `statements_match` cross-check passes.
     let stmt_through_assign = &thm[..byp + ":=".len()];
     Some(format!(
@@ -134,7 +134,7 @@ fn divergence_interactive_notation_poison_reelaborates_obligation_to_true() {
     let th = dir.join("div.th");
     assert!(std::fs::write(&th, TH_SRC).is_ok(), "source writable");
 
-    // Call 1: ABSENT artifact → forge EMITS the tier-(c) skeleton beside the source.
+    // Call 1: absent artifact → forge emits the tier-(c) skeleton beside the source.
     let emit = Command::new(forge_bin())
         .arg("check")
         .arg(&th)
@@ -153,7 +153,7 @@ fn divergence_interactive_notation_poison_reelaborates_obligation_to_true() {
     );
     let skeleton = skeleton.unwrap_or_default();
 
-    // Author the macro-poison proof over the FRESH key + the byte-verbatim canonical
+    // Author the macro-poison proof over the fresh key + the byte-verbatim canonical
     // statement.
     let poison = build_macro_poison_proof(&skeleton);
     assert!(
@@ -166,7 +166,7 @@ fn divergence_interactive_notation_poison_reelaborates_obligation_to_true() {
         "macro-poison proof artifact writable"
     );
 
-    // Call 2: PRESENT artifact → forge reconstructs + replays it (lake) and emits the
+    // Call 2: present artifact → forge reconstructs + replays it (lake) and emits the
     // item's cert.
     let replay = Command::new(forge_bin())
         .arg("check")
@@ -188,13 +188,13 @@ fn divergence_interactive_notation_poison_reelaborates_obligation_to_true() {
         "the replay run emitted a cert for item `f`; got JSON: {stdout}"
     );
 
-    // AUTHORITY (`.design/verified/proof-backends.md` REQ-6 / REQ-4 / §1,
+    // Authority (`.design/verified/proof-backends.md` REQ-6 / REQ-4 / §1,
     // `thermite-design.md` §1, R-DEFER-9): the author's spliced `notation` redefines
     // `Thermite.stabilizesProp` to the constant-`True` predicate, so the obligation's
-    // conclusion re-elaborates to `True`. A proof of `True` is NOT a discharge of the
+    // conclusion re-elaborates to `True`. A proof of `True` is not a discharge of the
     // obligation, and the enumerable trusted base the cert would list (it lists none —
-    // `True` rests on no axioms) is a FICTION: the real obligation was never proven.
-    // Such a re-elaboration cheat is NEVER Proven → item `f` must NOT certify at L3.
+    // `True` rests on no axioms) is a fiction: the real obligation was never proven.
+    // Such a re-elaboration cheat is never Proven → item `f` does not certify at L3.
     // forge (commit 2367628c) emits "L3" — the divergence.
     assert_ne!(
         level.as_deref(),

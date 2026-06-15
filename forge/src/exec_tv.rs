@@ -1,46 +1,46 @@
-//! `forge/src/exec_tv.rs` — the EXEC-POSITION (BODY) TRANSLATION-VALIDATION check
+//! `forge/src/exec_tv.rs` — the exec-position (body) translation-validation check
 //! phase (`.design/verified/exec-tv.md` REQ-5; epic crosslink #151, blockers #154 +
 //! #156).
 //!
 //! Step-1 contract-TV (`forge/src/contract_tv.rs`) certifies that the emitted Verus
-//! CONTRACT (`req`/`ens`/`inv`/`dec`) MEANS the same as the source contract. It does
-//! NOT cover the EXEC BODY — where the #122 (`(n - 1) as nat` paren) and #146
-//! (`x as u32 < 33` cast-`<` mis-parse) infidelity classes GENERALLY live. This
-//! phase closes that gap for PURE EXEC-POSITION EXPRESSIONS (step 2.1): for each
+//! contract (`req`/`ens`/`inv`/`dec`) means the same as the source contract. It does
+//! not cover the exec body, where the #122 (`(n - 1) as nat` paren) and #146
+//! (`x as u32 < 33` cast-`<` mis-parse) infidelity classes generally live. This
+//! phase closes that gap for pure exec-position expressions (step 2.1): for each
 //! such expr it computes
 //!
 //!   `P_production = thermite_lower::lower_exec_expr(expr)`             (the artifact under test)
-//!   `reference    = thermite_tv::exec_ref_value(expr, …)`             (the INDEPENDENT bounded reference)
+//!   `reference    = thermite_tv::exec_ref_value(expr, …)`             (the independent bounded reference)
 //!
-//! wraps them as the EXEC-FN obligation `fn tv_exec_wrap(..) ensures result ==
+//! wraps them as the exec-fn obligation `fn tv_exec_wrap(..) ensures result ==
 //! <reference> { <P_production> }` (`thermite_tv::exec_equivalence_obligation`), and
-//! discharges it through `verus`. VERIFIED ⟺ the exec lowering of that expr is
-//! FAITHFUL (it computes the bounded reference VALUE for all inputs); a
+//! discharges it through `verus`. Verified ⟺ the exec lowering of that expr is
+//! faithful (it computes the bounded reference value for all inputs); a
 //! `postcondition not satisfied` / type / parse error ⟺ a real exec-lowering
-//! INFIDELITY (the off-corpus #122/#146/overflow/off-by-one classes). It is exposed
-//! as `forge exec-tv <file>` — a SEPARATE opt-in deeper audit (like `forge tv`), NOT
+//! infidelity (the off-corpus #122/#146/overflow/off-by-one classes). It is exposed
+//! as `forge exec-tv <file>`, a separate opt-in deeper audit (like `forge tv`), not
 //! folded into `forge check`.
 //!
-//! `thermite-tv` stays INDEPENDENT of `thermite-lower` (the N-version boundary,
-//! AC-6): this forge module is the ONLY place the two exec encoders meet.
+//! `thermite-tv` stays independent of `thermite-lower` (the N-version boundary,
+//! AC-6): this forge module is the one place the two exec encoders meet.
 //!
-//! ## Two runs (both surfaced; the GENERATED run is primary)
+//! ## Two runs (both surfaced; the generated run is primary)
 //!
-//! - **The generated run ([`run_generated`], PRIMARY):** over
-//!   `thermite_tv::gen_exec_exprs` — the off-corpus #122/#146 regression guard
-//!   (REQ-3). Each generated `ExecClause` carries an ADEQUATE FRAME (every base
-//!   scalar `<= 1000`, an index `< xs.len()`), so the FAITHFUL lowerer makes ALL
-//!   `Faithful`; ANY `Divergent`/`Unverifiable` is a REAL off-corpus exec-lowering
-//!   infidelity (surfaced loudly + a blocker). Reports the construct coverage
-//!   (cast-`<` / arith / cast / index).
-//! - **The corpus body-expr check ([`exec_tv_file`], BEST-EFFORT):** over the pure
-//!   exec EXPRESSIONS of each corpus fn whose var-frame is DERIVABLE (a `let`-RHS, a
-//!   tail/`return` expr — the in-scope vars + their exec types known from the
-//!   surrounding params/lets). Statements / loops / mutation are OUT OF SCOPE (step
-//!   2.2) and SKIPPED honestly (loudly, never silent-pass). It is ACCEPTABLE that
-//!   corpus coverage is partial — the var-frame derivation is hard for arbitrary
-//!   bodies (an arithmetic expr's adequate overflow frame is not always derivable
-//!   from the source `req`/`inv` text); the generated run is the primary value.
+//! - The generated run ([`run_generated`], primary): over
+//!   `thermite_tv::gen_exec_exprs`, the off-corpus #122/#146 regression guard
+//!   (REQ-3). Each generated `ExecClause` carries an adequate frame (every base
+//!   scalar `<= 1000`, an index `< xs.len()`), so the faithful lowerer makes every
+//!   clause `Faithful`; a `Divergent`/`Unverifiable` is an off-corpus
+//!   exec-lowering infidelity (surfaced, with a blocker). Reports the construct
+//!   coverage (cast-`<` / arith / cast / index).
+//! - The corpus body-expr check ([`exec_tv_file`], best-effort): over the pure
+//!   exec expressions of each corpus fn whose var-frame is derivable (a `let`-RHS, a
+//!   tail/`return` expr; the in-scope vars and their exec types known from the
+//!   surrounding params/lets). Statements / loops / mutation are out of scope (step
+//!   2.2) and skipped. Corpus coverage is partial: the var-frame
+//!   derivation is hard for arbitrary bodies (an arithmetic expr's adequate overflow
+//!   frame is not always derivable from the source `req`/`inv` text), and the
+//!   generated run is the primary value.
 //!
 //! ## REQ status
 //!
@@ -60,17 +60,15 @@ use crate::check::{unique_scratch_dir, ScratchDir, DEFAULT_RLIMIT, DEFAULT_SOLVE
 use crate::cli::ForgeError;
 
 /// One exec expr's TV verdict (REQ-5; the four-way classification, reported
-/// DISTINCTLY so Unverifiable / Skipped never masks an infidelity). `Faithful` ⟺
-/// the obligation VERIFIED (the exec lowering of this expr means the bounded
-/// reference VALUE); `Divergent` ⟺ verus found a counterexample / the production
-/// text did not compile/parse (a REAL exec-lowering infidelity — the payoff,
-/// surfaced loudly); `Unverifiable` ⟺ the obligation did NOT discharge for a
-/// non-infidelity reason (verus absent, or an inadequate frame so verus could not
-/// prove the postcondition without a wrap/overflow bound) — reported DISTINCTLY,
-/// NEVER as Faithful; `Skipped` ⟺ the expr / statement is out of the pure-exec
-/// step-2.1 subset (a statement, a loop, a non-derivable frame, an
-/// `exec_ref_value`/`lower_exec_expr` Unsupported) — honest, never masking
-/// infidelity.
+/// distinctly so Unverifiable / Skipped does not mask an infidelity). `Faithful` ⟺
+/// the obligation verified (the exec lowering of this expr means the bounded
+/// reference value); `Divergent` ⟺ verus found a counterexample or the production
+/// text did not compile/parse (an exec-lowering infidelity); `Unverifiable` ⟺ the
+/// obligation did not discharge for a non-infidelity reason (verus absent, or an
+/// inadequate frame so verus could not prove the postcondition without a
+/// wrap/overflow bound), reported distinctly, not as Faithful; `Skipped` ⟺ the
+/// expr / statement is out of the pure-exec step-2.1 subset (a statement, a loop, a
+/// non-derivable frame, an `exec_ref_value`/`lower_exec_expr` Unsupported).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecVerdict {
     Faithful,
@@ -89,8 +87,8 @@ pub struct ExecResult {
 }
 
 /// The aggregate exec-TV report for one run (REQ-5). `divergent` is the headline: 0
-/// divergent over the generated run is the off-corpus faithfulness AC; any
-/// divergence is a real exec-lowering finding.
+/// divergent over the generated run is the off-corpus faithfulness AC; a
+/// divergence is an exec-lowering finding.
 #[derive(Debug, Clone, Default)]
 pub struct ExecTvReport {
     pub results: Vec<ExecResult>,
@@ -130,14 +128,14 @@ impl ExecCounts {
 }
 
 /// The off-corpus construct-coverage breakdown the generated run reports (REQ-3 /
-/// AC-7 — the #122/#146 regression-guard surface; reported so the guard is provably
-/// non-vacuous). A clause contributes to MULTIPLE buckets (an indexed expr also
+/// AC-7 — the #122/#146 regression-guard surface; reported so the guard is
+/// non-vacuous). A clause contributes to multiple buckets (an indexed expr also
 /// casts).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ExecConstructCoverage {
     pub arith: usize,
     pub casts: usize,
-    /// A `Cast` LEFT operand of a `<`-leading op (`<`/`<=`/`<<`) — the #146 class.
+    /// A `Cast` left operand of a `<`-leading op (`<`/`<=`/`<<`), the #146 class.
     pub cast_lt: usize,
     pub index: usize,
     pub shifts: usize,
@@ -188,15 +186,15 @@ fn tally_construct(e: &Expr, c: &mut ExecConstructCoverage) {
     }
 }
 
-// ---- the generated run (PRIMARY) -------------------------------------------
+// ---- the generated run (primary) -------------------------------------------
 
-/// Run the OFF-CORPUS generated exec-TV run (REQ-3 / REQ-5; the PRIMARY value, the
+/// Run the off-corpus generated exec-TV run (REQ-3 / REQ-5; the primary value, the
 /// #122/#146 off-corpus regression guard). Generates `n` well-framed exec exprs
 /// deterministically from `seed` (`thermite_tv::gen_exec_exprs`), lowers each via
-/// `thermite_lower::lower_exec_expr`, builds + discharges the exec-fn obligation
-/// against the carried ADEQUATE frame, and reports. The lowerer is faithful + the
-/// frames are adequate, so ALL should VERIFY; ANY `Divergent`/`Unverifiable` is a
-/// real off-corpus exec-lowering infidelity / framing hole (surfaced loudly).
+/// `thermite_lower::lower_exec_expr`, builds and discharges the exec-fn obligation
+/// against the carried adequate frame, and reports. The lowerer is faithful and the
+/// frames are adequate, so all should verify; a `Divergent`/`Unverifiable` is an
+/// off-corpus exec-lowering infidelity / framing hole (surfaced).
 pub fn run_generated(
     seed: u64,
     n: usize,
@@ -207,14 +205,14 @@ pub fn run_generated(
     let mut report = ExecTvReport::default();
     for (i, clause) in clauses.iter().enumerate() {
         let label = format!("gen#{i}");
-        // P_production — the REAL exec lowering of the generated expr (the artifact
+        // P_production — the exec lowering of the generated expr (the artifact
         // under test, the eventual non-test consumer of `lower_exec_expr`).
         let p_production = match thermite_lower::lower_exec_expr(&clause.expr) {
             Ok(p) => p,
             Err(e) => {
-                // A generated expr the EXEC lowering does not compile is a real
-                // infidelity (the generator only emits the in-scope exec subset) —
-                // Divergent, NOT Skipped (a non-compiling production is exactly the
+                // A generated expr the exec lowering does not compile is an
+                // infidelity (the generator only emits the in-scope exec subset):
+                // Divergent, not Skipped (a non-compiling production is the
                 // #122/#146 catch shape).
                 report.results.push(ExecResult {
                     label,
@@ -232,9 +230,9 @@ pub fn run_generated(
         let program = match exec_equivalence_obligation(&clause.expr, &p_production, &frame) {
             Ok(prog) => prog,
             Err(e) => {
-                // The independent reference does not cover the generated expr —
-                // honest Skipped (the generator stays within the encoder's subset,
-                // so this is not expected; reported, never a false faithful).
+                // The independent reference does not cover the generated expr:
+                // Skipped (the generator stays within the encoder's subset, so this
+                // is not expected; reported, not a false faithful).
                 report.results.push(ExecResult {
                     label,
                     verdict: ExecVerdict::Skipped {
@@ -268,16 +266,15 @@ fn clause_frame(clause: &thermite_tv::ExecClause) -> ExecObligationFrame {
     }
 }
 
-// ---- the corpus body-expr check (BEST-EFFORT) ------------------------------
+// ---- the corpus body-expr check (best-effort) ------------------------------
 
-/// Run the corpus body-expr exec-TV check over a `.th` file (REQ-5; BEST-EFFORT,
-/// honest coverage). For each `fn` item, extract the pure exec EXPRESSIONS whose
-/// var-frame is DERIVABLE (the RHS of a typed `let`, the body tail / a `return`
-/// expr) and TV-check each. Statements / loops / mutation are OUT OF SCOPE (step
-/// 2.2) and SKIPPED honestly. It is ACCEPTABLE that coverage is partial (an
-/// arithmetic expr's adequate overflow frame is not always derivable from the
-/// source `req`/`inv` text — such an expr is honestly Unverifiable, NEVER a false
-/// Faithful).
+/// Run the corpus body-expr exec-TV check over a `.th` file (REQ-5; best-effort).
+/// For each `fn` item, extract the pure exec expressions whose var-frame is
+/// derivable (the RHS of a typed `let`, the body tail / a `return` expr) and
+/// TV-check each. Statements / loops / mutation are out of scope (step 2.2) and
+/// skipped. Coverage is partial: an arithmetic expr's adequate overflow frame is
+/// not always derivable from the source `req`/`inv` text. Such an expr is
+/// Unverifiable, not a false Faithful.
 pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport, ForgeError> {
     let src = std::fs::read_to_string(path).map_err(|e| ForgeError::Io {
         path: path.display().to_string(),
@@ -292,7 +289,7 @@ pub fn exec_tv_file(path: &Path, seed: u64, rlimit: f64) -> Result<ExecTvReport,
     for item in &parsed.program.items {
         match item {
             Item::Fn(f) => exec_tv_fn(f, seed, rlimit, &mut report),
-            // A `spec fn` body lowers in SPEC context (not exec) — out of scope for
+            // A `spec fn` body lowers in spec context (not exec), out of scope for
             // exec-TV; a struct/enum has no exec body.
             Item::SpecFn(_) | Item::Struct(_) | Item::Enum(_) => {}
         }
@@ -312,7 +309,7 @@ struct ExecEnv {
 impl ExecEnv {
     fn bind(&mut self, name: &str, ty_str: String, is_slice: bool) {
         // A re-`let` of the same name keeps the first binding (v0.1 corpus locals are
-        // not re-typed); dedup so the obligation signature is well-formed.
+        // not re-typed); deduplicate so the obligation signature is well-formed.
         if self.params.iter().any(|p| p.name == name) {
             return;
         }
@@ -323,29 +320,29 @@ impl ExecEnv {
         }
     }
 
-    /// The names this env declares (the obligation can reference exactly these).
+    /// The names this env declares (the obligation can reference these).
     fn declares(&self, name: &str) -> bool {
         self.params.iter().any(|p| p.name == name)
     }
 }
 
 /// TV the derivable pure exec exprs of one fn body (REQ-5, best-effort). Builds the
-/// param env from the signature, then walks the TOP-LEVEL block: a typed `let x: T =
+/// param env from the signature, then walks the top-level block: a typed `let x: T =
 /// rhs` checks `rhs` at ret_type `T` and binds `x`; the body tail / a top-level
 /// `return e` checks `e` at the fn return type. Nested-block statements (loop / if
-/// bodies) + assignments + untyped lets are SKIPPED honestly (loudly).
+/// bodies), assignments, and untyped lets are skipped.
 fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
     let Some(body) = &f.body else {
         return; // a boundary fn has no in-language body.
     };
 
-    // #193/#195 OPEN-HOLE gate (`.design/forge/goal-repl.md` REQ-5; the four-way's
-    // out-of-subset class): a fn carrying ANY open body hole (`?N`) is INCOMPLETE —
-    // a hole is recorded on `FnItem.holes`, NOT in the `Stmt` stream, so checking the
-    // body's exprs here would lower a hole-stripped body and fabricate `Faithful` for
+    // #193/#195 open-hole gate (`.design/forge/goal-repl.md` REQ-5; the four-way's
+    // out-of-subset class): a fn carrying any open body hole (`?N`) is incomplete.
+    // A hole is recorded on `FnItem.holes`, not in the `Stmt` stream, so checking the
+    // body's exprs here would lower a hole-stripped body and report `Faithful` for
     // the tail expr of an unfinished body. An incomplete body is not checkable, so it
-    // is Skipped HONESTLY with the OpenHole reason (NEVER Faithful — R-HONEST-3) BEFORE
-    // any expr lowers, mirroring `check`'s `OpenHole` reject (the SHARED
+    // is Skipped with the OpenHole reason (not Faithful, R-HONEST-3) before any
+    // expr lowers, mirroring `check`'s `OpenHole` reject (the shared
     // `goal_repl::open_hole_reason`, the #192 single-copy lesson).
     if let Some(reason) = crate::goal_repl::open_hole_reason(f) {
         report.results.push(ExecResult {
@@ -396,7 +393,7 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
                 }
             }
             Stmt::Let { name, ty: None, .. } => {
-                // An UNTYPED let — the ret type is not derivable from source; honest
+                // An untyped let: the ret type is not derivable from source, so a
                 // Skip (never an inferred guess).
                 let_no += 1;
                 report.results.push(ExecResult {
@@ -414,8 +411,8 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
                 check_return_like(e, &label, &f.ret, &env, f, seed, rlimit, report);
             }
             // A loop / if / assignment / break / continue / bare-expr statement is
-            // OUT OF SCOPE for step 2.1 (statements/loops/mutation are step 2.2) —
-            // SKIPPED honestly (loudly), never silent-pass.
+            // out of scope for step 2.1 (statements/loops/mutation are step 2.2)
+            // and skipped.
             Stmt::Loop(_) => report.results.push(ExecResult {
                 label: format!("{}.loop", f.name),
                 verdict: ExecVerdict::Skipped {
@@ -441,15 +438,15 @@ fn exec_tv_fn(f: &FnItem, seed: u64, rlimit: f64, report: &mut ExecTvReport) {
         }
     }
 
-    // The body TAIL expr (the fn's value — `sum`'s final `acc`).
+    // The body tail expr (the fn's value — `sum`'s final `acc`).
     if let Some(tail) = &body.tail {
         let label = format!("{}.tail", f.name);
         check_return_like(tail, &label, &f.ret, &env, f, seed, rlimit, report);
     }
 }
 
-/// Check a tail / `return` expr at the fn return type, or honestly Skip if the
-/// return type is not exec-frame-spellable.
+/// Check a tail / `return` expr at the fn return type, or Skip if the return type
+/// is not exec-frame-spellable.
 #[allow(
     clippy::too_many_arguments,
     reason = "a corpus expr's TV genuinely needs the expr + its label + the return \
@@ -482,8 +479,8 @@ fn check_return_like(
 
 /// TV one corpus exec expr at a derived `ret_ty` (REQ-5, best-effort). Checks the
 /// expr is in the pure-exec subset, frames it from the env (referenced vars must all
-/// be declared; else honest Skip), lowers it via `lower_exec_expr`, builds + (when
-/// the frame is adequate) discharges the obligation, and classifies.
+/// be declared; else Skip), lowers it via `lower_exec_expr`, builds and (when the
+/// frame is adequate) discharges the obligation, and classifies.
 #[allow(
     clippy::too_many_arguments,
     reason = "see `check_return_like` — the genuine per-expr fan-in"
@@ -500,7 +497,7 @@ fn check_corpus_expr(
 ) {
     // The expr's free vars must all be declared in the env (a derivable frame). An
     // undeclared free var (a local bound by an out-of-scope construct, a richer-typed
-    // param) → honest Skip (non-derivable frame), never a guessed binding.
+    // param) → Skip (non-derivable frame), not a guessed binding.
     let mut referenced = Vec::new();
     collect_free_paths(e, &mut referenced);
     for name in &referenced {
@@ -519,9 +516,9 @@ fn check_corpus_expr(
         }
     }
 
-    // P_production — the REAL exec lowering. A construct the exec lowering does not
-    // cover (a method call, a spec-only form) → honest Skip (out of the pure-exec
-    // subset), NOT a faithfulness verdict.
+    // P_production — the exec lowering. A construct the exec lowering does not
+    // cover (a method call, a spec-only form) → Skip (out of the pure-exec subset),
+    // not a faithfulness verdict.
     let p_production = match thermite_lower::lower_exec_expr(e) {
         Ok(p) => p,
         Err(err) => {
@@ -538,14 +535,14 @@ fn check_corpus_expr(
         }
     };
 
-    // The fn's source `req` is the BEST available overflow/index frame. It is
-    // included ONLY when every var it references is env-declared (else its text
-    // would reference an undeclared param and the obligation would not compile — a
-    // FRAMING failure, not an infidelity). When included, its referenced vars JOIN
-    // the obligation params so the `requires` typechecks. A `req` that cannot be
-    // included is dropped (the expr is then checked with NO frame — adequate for a
+    // The fn's source `req` is the best available overflow/index frame. It is
+    // included only when every var it references is env-declared (else its text
+    // would reference an undeclared param and the obligation would not compile, a
+    // framing failure rather than an infidelity). When included, its referenced vars
+    // join the obligation params so the `requires` typechecks. A `req` that cannot be
+    // included is dropped (the expr is then checked with no frame, adequate for a
     // total expr like a literal/comparison; an arithmetic expr without an adequate
-    // bound discharges Unverifiable, honestly, NOT Faithful).
+    // bound discharges Unverifiable, not Faithful).
     let req_text = corpus_req(f);
     let req = match &req_text {
         Some(text) => {
@@ -559,7 +556,7 @@ fn check_corpus_expr(
         None => None,
     };
 
-    // The obligation params: every var the EXPR references, plus every var the
+    // The obligation params: every var the expr references, plus every var the
     // (included) `req` references — declared from the env at its exec type.
     let mut needed: Vec<String> = referenced.clone();
     if let Some((_, req_vars)) = &req {
@@ -590,8 +587,8 @@ fn check_corpus_expr(
     let program = match exec_equivalence_obligation(e, &p_production, &frame) {
         Ok(prog) => prog,
         Err(err) => {
-            // The independent reference does not cover the expr → honest Skip (out of
-            // the pure-exec subset; e.g. a method call / Vec-String accessor), NOT a
+            // The independent reference does not cover the expr → Skip (out of the
+            // pure-exec subset; e.g. a method call / Vec-String accessor), not a
             // faithfulness verdict.
             report.results.push(ExecResult {
                 label: label.to_string(),
@@ -610,13 +607,13 @@ fn check_corpus_expr(
     });
 }
 
-/// Extract the candidate IDENTIFIERS a `req` text references (a heuristic over the
+/// Extract the candidate identifiers a `req` text references (a heuristic over the
 /// verbatim source: alphanumeric/`_` runs starting with a letter/`_`, excluding the
 /// dotted `.len()`-style method tail and numeric literals). A bare ident that is an
 /// env param is a referenced var; anything else (a keyword, a method name, a
-/// `u32::MAX`-style path segment) is harmlessly NOT an env param, so the all-declared
-/// gate drops the `req` if it mentions any non-param ident. Only the LEADING segment
-/// of a dotted access (`xs.len()` → `xs`) is a var; `.len`/`.MAX` tails are dropped.
+/// `u32::MAX`-style path segment) is not an env param, so the all-declared gate drops
+/// the `req` if it mentions any non-param ident. Only the leading segment of a dotted
+/// access (`xs.len()` → `xs`) is a var; `.len`/`.MAX` tails are dropped.
 fn collect_text_idents(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let bytes: Vec<char> = text.chars().collect();
@@ -646,10 +643,10 @@ fn collect_text_idents(text: &str) -> Vec<String> {
 }
 
 /// The corpus fn's source `req` text as the obligation's enclosing `requires` (the
-/// best available frame). `req true` → no requires (an empty frame). NB this is the
-/// CONTRACT `req`, which may NOT adequately bound an exec arithmetic expr's overflow
+/// best available frame). `req true` → no requires (an empty frame). This is the
+/// contract `req`, which may not adequately bound an exec arithmetic expr's overflow
 /// (the source bound for `acc + xs[i]` lives in a loop `inv`, not the `req`); such an
-/// expr then discharges Unverifiable (honest), never Faithful.
+/// expr then discharges Unverifiable, not Faithful.
 fn corpus_req(f: &FnItem) -> Option<String> {
     let text = f.contract.req.text.trim();
     if text.is_empty() || text == "true" {
@@ -691,7 +688,7 @@ fn collect_free_paths(e: &Expr, out: &mut Vec<String>) {
 /// The exec value-type spelling for a body var/return type, plus whether it is a
 /// slice (`&[u32]` → indexed element-wise). `None` for a type outside the exec frame
 /// sublanguage (Map/Option/struct/String/…) — an expr over such a var is Skipped
-/// (non-derivable frame), honest.
+/// (non-derivable frame).
 fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
     match ty {
         Type::Prim(PrimType::U32) => Some(("u32".to_string(), false)),
@@ -716,14 +713,14 @@ fn exec_type_spelling(ty: &Type) -> Option<(String, bool)> {
 
 // ---- verus discharge (mirrors contract_tv::discharge) -----------------------
 
-/// Discharge one exec obligation PROGRAM through `verus`, classifying the verdict
-/// (REQ-5 — VERIFIED ⟺ Faithful; a GENUINE counterexample (errors, NO rlimit signal) /
+/// Discharge one exec obligation program through `verus`, classifying the verdict
+/// (REQ-5 — verified ⟺ Faithful; a counterexample (errors, no rlimit signal) /
 /// compile-parse abort ⟺ Divergent; a Verus/Z3 rlimit timeout / verus-absent /
 /// inadequate-frame non-discharge ⟺ Unverifiable). An `errors >= 1` run carrying a
-/// rlimit signal degrades to Unverifiable AHEAD of the Divergent arm (the #189-class
+/// rlimit signal degrades to Unverifiable ahead of the Divergent arm (the #189-class
 /// gate via the shared `crate::tv_signal::is_rlimit_signal`; #192), so a solver-budget
-/// timeout is never fabricated into an exec-lowering infidelity (R-HONEST-3 / R-CODE-4).
-/// Runs in a per-run scratch dir removed wholesale on EVERY exit path (blocker #53,
+/// timeout is not mapped to an exec-lowering infidelity (R-HONEST-3 / R-CODE-4).
+/// Runs in a per-run scratch dir removed wholesale on every exit path (blocker #53,
 /// reusing `crate::check::ScratchDir`).
 fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict {
     let stem = sanitize_stem(label);
@@ -742,7 +739,7 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
         };
     }
 
-    // The pinned `--rlimit` + `smt.random_seed` keep the discharge DETERMINISTIC
+    // The pinned `--rlimit` + `smt.random_seed` keep the discharge deterministic
     // (R-CODE-5), matching `forge check`'s / `forge tv`'s verus config.
     let output = Command::new("verus")
         .arg("--rlimit")
@@ -756,9 +753,8 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
     let output = match output {
         Ok(o) => o,
         Err(_) => {
-            // verus absent / spawn failure → Unverifiable (surfaced, never a silent
-            // pass — R-CODE-4). NOT Divergent (that is reserved for a real infidelity
-            // that DID reach verus).
+            // verus absent / spawn failure → Unverifiable (surfaced, R-CODE-4). Not
+            // Divergent (that is reserved for an infidelity that reached verus).
             return ExecVerdict::Unverifiable {
                 reason: "verus could not be spawned (absent on PATH or spawn failure)".to_string(),
             };
@@ -767,16 +763,16 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
     let mut combined = String::from_utf8_lossy(&output.stdout).to_string();
     combined.push_str(&String::from_utf8_lossy(&output.stderr));
 
-    // A Verus/Z3 RESOURCE-LIMIT (rlimit) exhaustion / timeout: verus prints an rlimit
+    // A Verus/Z3 resource-limit (rlimit) exhaustion / timeout: verus prints an rlimit
     // diagnostic (`rlimit exceeded` / `Resource limit (rlimit) exceeded` / z3's own
-    // `max. resource limit exceeded`) AND a results line counting the exhausted
-    // obligation as an error. That is a DISCHARGE failure (the solver ran out of
-    // budget), NOT a value mismatch — the #189-class hardening (the #192 root-cause fix:
-    // the SHARED `crate::tv_signal::is_rlimit_signal` discriminator, mirroring body_tv /
-    // contract_tv). An rlimit-hit error run is routed to Unverifiable, NEVER the
-    // `errors >= 1` Divergent arm, so a genuine solver-budget timeout is never fabricated
-    // into an exec-lowering infidelity (R-HONEST-3 / R-CODE-4 — a timeout degrades + is
-    // reported, never a false finding).
+    // `max. resource limit exceeded`) and a results line counting the exhausted
+    // obligation as an error. That is a discharge failure (the solver ran out of
+    // budget), not a value mismatch: the #189-class hardening (the #192 root-cause fix:
+    // the shared `crate::tv_signal::is_rlimit_signal` discriminator, mirroring body_tv /
+    // contract_tv). An rlimit-hit error run is routed to Unverifiable, not the
+    // `errors >= 1` Divergent arm, so a solver-budget timeout is not mapped to
+    // an exec-lowering infidelity (R-HONEST-3 / R-CODE-4: a timeout degrades and is
+    // reported).
     let rlimit_hit = crate::tv_signal::is_rlimit_signal(&combined);
 
     match parse_results(&combined) {
@@ -784,9 +780,9 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
         Some((verified, errors)) if errors == 0 && verified >= 1 && output.status.success() => {
             ExecVerdict::Faithful
         }
-        // An error run that is REALLY an rlimit exhaustion → Unverifiable, never
-        // Divergent (the #189-class mapping fix; this arm precedes the Divergent arm,
-        // mirroring body_tv::run_obligation / contract_tv::discharge).
+        // An error run that is an rlimit exhaustion → Unverifiable, not Divergent
+        // (the #189-class mapping fix; this arm precedes the Divergent arm, mirroring
+        // body_tv::run_obligation / contract_tv::discharge).
         Some((_verified, errors)) if errors >= 1 && rlimit_hit => {
             let _ = errors;
             ExecVerdict::Unverifiable {
@@ -797,8 +793,9 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
                 ),
             }
         }
-        // A results line with errors (NO rlimit signal) ⟺ a postcondition counterexample
-        // — the production exec value differs from the bounded reference: a REAL infidelity.
+        // A results line with errors (no rlimit signal) ⟺ a postcondition
+        // counterexample: the production exec value differs from the bounded
+        // reference, an infidelity.
         Some((_verified, errors)) if errors >= 1 => ExecVerdict::Divergent {
             detail: format!(
                 "verus found {errors} error(s) on the exec equivalence obligation — \
@@ -807,11 +804,11 @@ fn discharge(program: &str, label: &str, seed: u64, rlimit: f64) -> ExecVerdict 
                  the off-corpus exec-lowering infidelity finding)"
             ),
         },
-        // NO parseable results line. If verus exited NON-SUCCESS, the production text
-        // failed to COMPILE/PARSE (the #122 `E0308` / #146 `expected ','` catch shapes
-        // abort before verification) → a REAL infidelity (Divergent). If verus exited
-        // SUCCESS with no results line, the obligation did not discharge cleanly →
-        // Unverifiable (honest, never a false Faithful).
+        // No parseable results line. If verus exited non-success, the production text
+        // failed to compile/parse (the #122 `E0308` / #146 `expected ','` catch shapes
+        // abort before verification) → an infidelity (Divergent). If verus exited
+        // success with no results line, the obligation did not discharge →
+        // Unverifiable, not Faithful.
         _ => {
             if !output.status.success() {
                 ExecVerdict::Divergent {
@@ -877,7 +874,7 @@ fn sanitize_stem(label: &str) -> String {
 }
 
 /// Render an [`ExecTvReport`] as a human summary (REQ-5; `forge exec-tv` text
-/// output). One line per expr + the headline counts (the reported integers, the
+/// output). One line per expr plus the headline counts (the reported integers, the
 /// four-way classification surfaced distinctly).
 pub fn render_report(report: &ExecTvReport, header: &str) -> String {
     let mut out = String::new();
@@ -908,7 +905,7 @@ pub fn render_report(report: &ExecTvReport, header: &str) -> String {
 }
 
 /// Render the off-corpus construct coverage line (REQ-3 / AC-7 — the #122/#146
-/// regression-guard surface, reported so the guard is provably non-vacuous).
+/// regression-guard surface, reported so the guard is non-vacuous).
 pub fn render_coverage(cov: &ExecConstructCoverage) -> String {
     format!(
         "  construct coverage: cast-`<`={}, arith={}, casts={}, index={}, shifts={}, bitops={}\n",
@@ -927,35 +924,34 @@ pub const EXEC_TV_GENERATED_DEFAULT_N: usize = 200;
 // ---- the forge-level Divergent teeth (REQ-5; blocker #157) -----------------
 //
 // The obligation-layer teeth (`thermite-tv/tests/exec_teeth.rs` E1-E4) prove a
-// WRONG `P_production` -> a real verus error. They do NOT exercise the FORGE-level
-// step that MAPS that verus error to `ExecVerdict::Divergent`: `discharge`'s
+// wrong `P_production` -> a real verus error. They do not exercise the forge-level
+// step that maps that verus error to `ExecVerdict::Divergent`: `discharge`'s
 // four-way classification. Over the generated/corpus space the faithful lowerer
-// never produces a Divergent, so the Divergent ARM had NO direct test coverage.
+// never produces a Divergent, so the Divergent arm had no direct test coverage.
 //
-// This module is the end-to-end teeth for the FORGE classification: it builds a
-// REAL exec obligation with a DELIBERATELY-WRONG production (the same E1/E3
-// infidelity shapes the obligation layer pins), discharges it through the ACTUAL
-// `discharge` fn, and asserts the verdict. It covers BOTH Divergent triggers
-// (postcondition-counterexample AND non-compile) plus the positive control
-// (faithful -> Faithful) and the degenerate boundary (no obligation ->
-// Unverifiable, NOT Divergent -- the masking path the four-way classification must
-// keep distinct).
+// This module is the end-to-end teeth for the forge classification: it builds a
+// real exec obligation with a wrong production (the same E1/E3 infidelity shapes
+// the obligation layer pins), discharges it through the actual `discharge` fn, and
+// asserts the verdict. It covers both Divergent triggers (postcondition-
+// counterexample and non-compile) plus the positive control (faithful -> Faithful)
+// and the degenerate boundary (no obligation -> Unverifiable, not Divergent -- the
+// masking path the four-way classification must keep distinct).
 //
-// TEST-ONLY: no production-logic change. `discharge` is a private sibling fn,
-// reachable here via `super::` (a child mod sees the parent's private items), so
-// NO visibility tweak is needed either. The teeth are GENUINE: a real wrong
-// production -> a real verus error -> the real `discharge` mapping, never a mocked
-// verdict. Mirrors `thermite-tv/tests/exec_teeth.rs`'s skip-loudly verus gate --
-// `discharge` spawns a bare `verus`, so the test gates on the same PATH-resolvable
-// binary and SKIPS LOUDLY when it is genuinely absent.
+// Test-only: no production-logic change. `discharge` is a private sibling fn,
+// reachable here via `super::` (a child mod sees the parent's private items), so no
+// visibility tweak is needed either. The teeth run a real wrong production -> a real
+// verus error -> the real `discharge` mapping, not a mocked verdict. Mirrors
+// `thermite-tv/tests/exec_teeth.rs`'s verus gate -- `discharge` spawns a
+// bare `verus`, so the test gates on the same PATH-resolvable binary and reports a
+// skip when it is absent.
 #[cfg(test)]
 mod divergent_teeth {
     use super::*;
     use thermite_syntax::ast::BinOp;
 
-    /// `true` iff a bare `verus` is spawnable (the SAME resolution `discharge`
-    /// uses -- `Command::new("verus")`, i.e. PATH). SKIP LOUDLY otherwise so the
-    /// teeth never silently pass when the discharge cannot reach a solver.
+    /// `true` iff a bare `verus` is spawnable (the same resolution `discharge`
+    /// uses -- `Command::new("verus")`, i.e. PATH). Skip otherwise so the
+    /// teeth do not pass when the discharge cannot reach a solver.
     fn verus_on_path() -> bool {
         Command::new("verus").arg("--version").output().is_ok()
     }
@@ -985,7 +981,7 @@ mod divergent_teeth {
 
     /// The E3 source `a + b` with the no-overflow frame `a + b <= 0xFFFF` (the
     /// faithful checked add is total, so a counterexample on a wrong production is
-    /// a VALUE difference). Reused for both the positive control + the
+    /// a value difference). Reused for both the positive control and the
     /// postcondition-counterexample Divergent trigger.
     fn e3_source() -> Expr {
         bin(BinOp::Add, path("a"), path("b"))
@@ -1003,10 +999,10 @@ mod divergent_teeth {
         }
     }
 
-    /// POSITIVE CONTROL: a FAITHFUL production (`a + b`, the exact lowering of the
-    /// source) -> the forge classification is `ExecVerdict::Faithful`. Without this,
-    /// a `discharge` that returned Divergent unconditionally would pass the
-    /// Divergent assertions vacuously.
+    /// Positive control: a faithful production (`a + b`, the lowering of the source)
+    /// -> the forge classification is `ExecVerdict::Faithful`. Without this, a
+    /// `discharge` that returned Divergent unconditionally would pass the Divergent
+    /// assertions vacuously.
     #[test]
     fn faithful_production_classifies_faithful() {
         if !verus_on_path() {
@@ -1026,8 +1022,8 @@ mod divergent_teeth {
         );
     }
 
-    /// DIVERGENT trigger #1 (postcondition counterexample): a production that
-    /// TYPECHECKS but computes the WRONG value (`a.wrapping_sub(b)` for source
+    /// Divergent trigger #1 (postcondition counterexample): a production that
+    /// typechecks but computes the wrong value (`a.wrapping_sub(b)` for source
     /// `a + b`) -> verus finds a counterexample on `ensures result == (a + b)` ->
     /// `discharge` maps `errors >= 1` to `ExecVerdict::Divergent`. This is the arm
     /// `Some((_v, errors)) if errors >= 1` of the four-way classification.
@@ -1050,9 +1046,9 @@ mod divergent_teeth {
         );
     }
 
-    /// DIVERGENT trigger #2 (non-compile): the #122 paren-drop production
+    /// Divergent trigger #2 (non-compile): the #122 paren-drop production
     /// `n - 1 as u8` (= `n - (1 as u8)`, a `u64 - u8` type mix) for source
-    /// `(n - 1) as u8` -> verus ABORTS with `E0308`/`mismatched types` BEFORE
+    /// `(n - 1) as u8` -> verus aborts with `E0308`/`mismatched types` before
     /// verification (no parseable results line, non-success exit) -> `discharge`
     /// maps the `!status.success()` no-results branch to `ExecVerdict::Divergent`.
     /// This is the `_ => if !output.status.success()` arm of the classification.
@@ -1087,13 +1083,13 @@ mod divergent_teeth {
         );
     }
 
-    /// The DIVERGENT-vs-UNVERIFIABLE boundary (the critic's masking-path concern):
-    /// a DEGENERATE program with ZERO exec obligations verifies as `0 verified,
+    /// The Divergent-vs-Unverifiable boundary (the critic's masking-path concern):
+    /// a degenerate program with zero exec obligations verifies as `0 verified,
     /// 0 errors` (verus succeeds, but no obligation reached a faithfulness verdict)
-    /// -> `discharge` maps it to `ExecVerdict::Unverifiable`, NEVER `Divergent` and
-    /// NEVER `Faithful`. This pins the `_ => if status.success()` arm so the
-    /// non-infidelity no-discharge case stays DISTINCT from a real Divergent
-    /// (errors >= 1) / a real Faithful (verified >= 1).
+    /// -> `discharge` maps it to `ExecVerdict::Unverifiable`, not `Divergent` and
+    /// not `Faithful`. This pins the `_ => if status.success()` arm so the
+    /// non-infidelity no-discharge case stays distinct from a Divergent
+    /// (errors >= 1) / a Faithful (verified >= 1).
     #[test]
     fn degenerate_no_obligation_classifies_unverifiable() {
         if !verus_on_path() {
@@ -1103,10 +1099,10 @@ mod divergent_teeth {
             );
             return;
         }
-        // A well-formed verus program with NO proof/exec obligation: verus reports
+        // A well-formed verus program with no proof/exec obligation: verus reports
         // `0 verified, 0 errors` and exits success -- neither verified >= 1
         // (Faithful) nor errors >= 1 (Divergent), so the four-way classification
-        // must report Unverifiable (distinct, never masked as either).
+        // reports Unverifiable (distinct).
         let degenerate = "use vstd::prelude::*;\nverus! {\n}\nfn main() {}\n";
         let verdict = discharge(degenerate, "teeth.degenerate", SEED, RLIMIT);
         assert!(
@@ -1116,22 +1112,22 @@ mod divergent_teeth {
         );
     }
 
-    /// THE #192/#189-class GATE (the missing-gate fix): `discharge` adds an
-    /// `errors >= 1 && rlimit_hit -> Unverifiable` arm AHEAD of the Divergent arm, so
+    /// The #192/#189-class gate (the missing-gate fix): `discharge` adds an
+    /// `errors >= 1 && rlimit_hit -> Unverifiable` arm ahead of the Divergent arm, so
     /// a Verus/Z3 solver-budget timeout (an error run carrying a rlimit signal) is
-    /// NEVER fabricated into an exec-lowering infidelity. exec_tv previously had NO
-    /// rlimit gate at all (every `errors >= 1` run -> Divergent unconditionally — the
+    /// not mapped to an exec-lowering infidelity. exec_tv previously had no
+    /// rlimit gate at all (every `errors >= 1` run -> Divergent unconditionally, the
     /// same #189 class body_tv/contract_tv fixed); #192 centralizes the discriminator
     /// in `crate::tv_signal::is_rlimit_signal` and consumes it here.
     ///
-    /// HAND-DERIVED (R-CHAR-3): a real Z3 rlimit exhaustion is not deterministically
-    /// forcible, so this pins the discriminator that DRIVES the gate (the same seam
+    /// Hand-derived (R-CHAR-3): a Z3 rlimit exhaustion is not deterministically
+    /// forcible, so this pins the discriminator that drives the gate (the same seam
     /// body_tv / contract_tv pin). The full phrase set is detected (verus's two
-    /// phrasings + z3's own `max. resource limit exceeded`); a genuine
-    /// `postcondition not satisfied` counterexample is NOT (it stays in the Divergent
-    /// class). The `discharge` source routes `errors >= 1 && rlimit_hit` to
-    /// Unverifiable AHEAD of the `errors >= 1` Divergent arm, so the discriminator
-    /// firing is exactly the gate firing.
+    /// phrasings + z3's own `max. resource limit exceeded`); a `postcondition not
+    /// satisfied` counterexample is not (it stays in the Divergent class). The
+    /// `discharge` source routes `errors >= 1 && rlimit_hit` to Unverifiable ahead of
+    /// the `errors >= 1` Divergent arm, so the discriminator firing is the gate
+    /// firing.
     #[test]
     fn rlimit_signal_is_detected_counterexample_is_not() {
         use crate::tv_signal::is_rlimit_signal;
@@ -1144,7 +1140,7 @@ mod divergent_teeth {
             is_rlimit_signal("error: rlimit exceeded; consider raising the budget"),
             "a bare `rlimit exceeded` output MUST be detected as a timeout signal"
         );
-        // The distributed z3 binary's OWN resourceout literal (#192 — the shared
+        // The distributed z3 binary's own resourceout literal (#192 — the shared
         // discriminator): `resource limit exceeded` with no `rlimit` token.
         assert!(
             is_rlimit_signal("unknown: max. resource limit exceeded\n0 verified, 1 errors"),

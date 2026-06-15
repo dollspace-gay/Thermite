@@ -1,27 +1,27 @@
 //! Conformance test for `forge build`'s runtime effect sandbox (issue #57) against
-//! the EXTERNAL truth: the real `rustc` compiler + the real Linux seccomp kernel +
-//! the hand-derived oracle `conformance/sandbox/cases.json`
+//! the external truth: the real `rustc` compiler, the real Linux seccomp kernel,
+//! and the hand-derived oracle `conformance/sandbox/cases.json`
 //! (`.design/forge/runtime-sandbox.md`).
 //!
-//! `forge build --entry` injects (ON BY DEFAULT) a seccomp-bpf filter-install
-//! prelude into the generated `main`, BEFORE the entry runs; the allowlist is the
-//! entry's transitive `fx` projection. A syscall off the allowlist → `SIGSYS` →
-//! the process is killed (exit 159 = 128+SIGSYS(31)). PURE Thermite has no I/O
-//! surface, so the kill is DEMONSTRATED via `--sandbox-self-test` (an `openat`
-//! probe AFTER the filter): denied under a `pure` filter, allowed under `read(_)`.
+//! `forge build --entry` injects (on by default) a seccomp-bpf filter-install
+//! prelude into the generated `main`, before the entry runs; the allowlist is the
+//! entry's transitive `fx` projection. A syscall off the allowlist raises `SIGSYS`
+//! and the process is killed (exit 159 = 128+SIGSYS(31)). Pure Thermite has no I/O
+//! surface, so the kill is demonstrated via `--sandbox-self-test` (an `openat`
+//! probe after the filter): denied under a `pure` filter, allowed under `read(_)`.
 //!
-//! Verification is by EXECUTION (the design's AC-1..AC-3 + the critical
-//! panic-not-killed interaction): build each fixture through the REAL CLI, RUN the
+//! Verification is by execution (the design's AC-1..AC-3 plus the
+//! panic-not-killed interaction): build each fixture through the real CLI, run the
 //! produced binary, and assert the exit code / output. Expected values
 //! (exit 0 + `6`; exit 159; exit 101 + `[ens]`) trace to the oracle / the §4.1
 //! mechanism, never copied from toolchain output (R-CHAR-3).
 //!
-//! These tests RUN binaries and need a Linux seccomp kernel with `kill_process`.
-//! When seccomp is unavailable (a non-Linux host, an old kernel) they SKIP LOUD
-//! (an eprintln) rather than fail — the install is host-kernel-dependent
+//! These tests run binaries and need a Linux seccomp kernel with `kill_process`.
+//! When seccomp is unavailable (a non-Linux host, an old kernel) they skip with an
+//! eprintln rather than fail; the install is host-kernel-dependent
 //! (`.design/forge/runtime-sandbox.md` Verification, OQ-3). `unwrap`/`expect`/
-//! `panic!` are fine here — `tests/` is not anti-pattern-gated. The `forge` binary
-//! is invoked as a subprocess so the whole `forge build --entry --sandbox …`
+//! `panic!` are fine here, since `tests/` is not anti-pattern-gated. The `forge`
+//! binary is invoked as a subprocess so the whole `forge build --entry --sandbox …`
 //! surface is exercised end-to-end.
 
 use std::path::{Path, PathBuf};
@@ -39,8 +39,9 @@ fn forge_bin() -> PathBuf {
 }
 
 /// `true` iff this host's kernel offers the `kill_process` seccomp action (the
-/// REQ-1 mechanism). When absent the seccomp tests SKIP LOUD (OQ-3). The probe
-/// crate's grounding (`.design/forge/runtime-sandbox.md`) read this same file.
+/// REQ-1 mechanism). When absent the seccomp tests skip with an eprintln (OQ-3).
+/// The probe crate's grounding (`.design/forge/runtime-sandbox.md`) read this same
+/// file.
 fn seccomp_kill_available() -> bool {
     std::fs::read_to_string("/proc/sys/kernel/seccomp/actions_avail")
         .map(|s| s.contains("kill_process"))
@@ -75,7 +76,7 @@ fn artifact_path_from_json(stdout: &str) -> PathBuf {
 /// The exit code is the process's: `Some(code)` for a normal exit, `None` for a
 /// signal-terminated process. Bash reports a signal-killed process as `128 +
 /// signal`; we read the raw exit code via `ExitStatus::code()` and the signal via
-/// the unix extension so the `159` / `101` distinction (kill vs panic) is exact.
+/// the unix extension to distinguish `159` (kill) from `101` (panic).
 fn run_artifact(path: &Path) -> (Option<i32>, Option<i32>, String) {
     use std::os::unix::process::ExitStatusExt;
     let out = Command::new(path)
@@ -114,7 +115,7 @@ const PANIC_EXIT: i32 = 101;
 // ---- oracle `pure_runs_clean` (AC-1) ----------------------------------------
 //
 // `forge build conformance/sum.th --entry sum --sandbox` → the pure seccomp filter
-// allows the baseline (run + print + exit), so the sandboxed binary runs CLEAN:
+// allows the baseline (run + print + exit), so the sandboxed binary runs clean:
 // prints `6` (sum(&[1,2,3]) == 6, hand-derived from Appendix A's spec_sum), exit 0.
 // The sandbox does not impede a program that stays within its declared (empty I/O)
 // effects.
@@ -142,7 +143,7 @@ fn pure_runs_clean() {
     );
 
     // The manifest records the installed pure allowlist (REQ-5) and that it
-    // EXCLUDES openat (257) — a pure filter denies file I/O.
+    // excludes openat (257): a pure filter denies file I/O.
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("manifest JSON");
     assert_eq!(
         v["sandbox"]["installed"], true,
@@ -176,9 +177,9 @@ fn pure_runs_clean() {
 // ---- oracle `probe_killed` (AC-2) -------------------------------------------
 //
 // `--entry sum --sandbox --sandbox-self-test` → the openat probe (a disallowed I/O
-// syscall under sum's PURE filter) is KILLED by seccomp → SIGSYS, exit 159
-// (128+31). Demonstrates the filter ENFORCES: a syscall outside the declared fx is
-// killed at the boundary (§4.1).
+// syscall under sum's pure filter) is killed by seccomp → SIGSYS, exit 159
+// (128+31). The filter enforces the boundary: a syscall outside the declared fx is
+// killed (§4.1).
 
 #[test]
 fn probe_killed() {
@@ -209,7 +210,7 @@ fn probe_killed() {
         "AC-2: the openat probe under the PURE filter must be KILLED by SIGSYS (signal 31 / \
          exit 159); got code={code:?} signal={signal:?}\n{output}"
     );
-    // The kill happens BEFORE the entry call → no `6` output.
+    // The kill happens before the entry call, so there is no `6` output.
     assert!(
         !output.contains('6'),
         "AC-2: the kill precedes the entry call (no entry output):\n{output}"
@@ -220,9 +221,8 @@ fn probe_killed() {
 // ---- oracle `probe_allowed_when_fx_widens` (AC-3) ---------------------------
 //
 // The `rf` fixture (`fx read(src)`) `--entry rf --sandbox --sandbox-self-test` →
-// the allowlist WIDENS to include openat, so the SAME probe is ALLOWED (no kill) →
-// exit 0. Confirms the allowlist is fx-DERIVED (read → openat permitted), not a
-// constant.
+// the allowlist widens to include openat, so the same probe is allowed (no kill) →
+// exit 0. The allowlist is fx-derived (read → openat permitted), not a constant.
 
 #[test]
 fn probe_allowed_when_fx_widens() {
@@ -245,7 +245,7 @@ fn probe_allowed_when_fx_widens() {
     ]);
     assert!(ok, "the rf probe build must compile:\n{stdout}\n{stderr}");
 
-    // REQ-2/REQ-3: the read fx widened the allowlist to include openat (257).
+    // REQ-2/REQ-3: the read fx widens the allowlist to include openat (257).
     let v: serde_json::Value = serde_json::from_str(&stdout).expect("manifest JSON");
     assert_eq!(
         v["sandbox"]["transitive_fx"],
@@ -274,13 +274,13 @@ fn probe_allowed_when_fx_widens() {
     let _ = std::fs::remove_file(&fixture);
 }
 
-// ---- CRITICAL: a contract violation still PANICS, not seccomp-killed --------
+// ---- a contract violation panics rather than being seccomp-killed -----------
 //
 // A `bad` program (`ens result == x`, body `x + 1`) `--entry bad --sandbox` → run
-// → exit 101 + an `[ens]` contract-violation panic (NOT exit 159 / SIGSYS). This is
-// the key correctness interaction: the pure baseline allowlist MUST include the
+// → exit 101 + an `[ens]` contract-violation panic (not exit 159 / SIGSYS). This is
+// the key correctness interaction: the pure baseline allowlist includes the
 // panic/abort path (write + exit_group + rt_sigreturn), so a violated contract
-// PANICS (the §4.1 enforcement the user sees) rather than being silently
+// panics (the §4.1 enforcement the user sees) rather than being silently
 // seccomp-killed. A SIGSYS here would mean the baseline is broken.
 
 #[test]
@@ -307,7 +307,7 @@ fn contract_violation_panics_not_killed() {
     let artifact = artifact_path_from_json(&stdout);
 
     let (code, signal, output) = run_artifact(&artifact);
-    // It must NOT be seccomp-killed: the baseline allows the panic/abort path.
+    // It must not be seccomp-killed: the baseline allows the panic/abort path.
     assert_ne!(
         signal,
         Some(SIGSYS),
@@ -382,10 +382,10 @@ fn no_sandbox_omits_prelude() {
 
 // ---- AC-6 (#106): the `fx term` grant adds ioctl:16; a non-term excludes it ----
 //
-// A `term` entry's transitive fx → the manifest-recorded seccomp allowlist INCLUDES
+// A `term` entry's transitive fx → the manifest-recorded seccomp allowlist includes
 // `ioctl`:16 (the termios raw-mode boundary syscall); a `pure`/`read`/`write` entry's
-// allowlist EXCLUDES it (the grant is SCOPED to the `term` effect, not folded into
-// `write`). Expected from runtime-sandbox.md REQ-7 (`TERM_SYSCALLS={ioctl:16}`) — a
+// allowlist excludes it (the grant is scoped to the `term` effect, not folded into
+// `write`). Expected from runtime-sandbox.md REQ-7 (`TERM_SYSCALLS={ioctl:16}`), a
 // design constant, never forge's own output (R-CHAR-3).
 
 #[test]
@@ -417,7 +417,7 @@ fn term_grant_adds_ioctl_to_the_recorded_allowlist() {
     cleanup(&artifact);
     let _ = std::fs::remove_file(&term_fixture);
 
-    // A pure / write entry's allowlist EXCLUDES ioctl — the grant is fx-DERIVED.
+    // A pure / write entry's allowlist excludes ioctl: the grant is fx-derived.
     let write_fixture_path = write_fixture(
         "wf",
         "fn wf(x: u32) -> u32 req x < 100 ens result <= x fx write(out) { x }\n",

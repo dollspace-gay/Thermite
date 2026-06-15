@@ -1,28 +1,28 @@
 //! acto-critic divergence tests for `forge check` on the bounded-`String` corpus
 //! (commit `b8c3bf7`, Basis Stage 7 / issue #79).
 //!
-//! Each test pins a divergence (or CONFIRMS a genuine guarantee) between the LIVE
+//! Each test pins a divergence (or confirms a genuine guarantee) between the live
 //! per-item `forge check` certificate and the authority chain
 //! (`.design/basis/07-strings.md`, the hand-derived oracle
 //! `conformance/string/cases.json`, `thermite-design.md` §6/§7). Expected values
-//! trace to the oracle / design, NEVER to forge's own output (`goal.md` R-CHAR-3).
+//! trace to the oracle / design, not to forge's own output (`goal.md` R-CHAR-3).
 //!
-//! These run the BUILT `forge` binary end-to-end (verus-backed). If verus is
-//! absent they SKIP LOUDLY (never panic on a missing solver), matching
+//! These run the built `forge` binary end-to-end (verus-backed). If verus is
+//! absent they skip with an eprintln (never panic on a missing solver), matching
 //! `divergence_collections.rs` / `divergence_forge.rs`.
 //!
-//! ROOT CAUSE (the headline pinned below): the builder's `string_conformance.rs`
-//! tests exercise only WHOLE-PROGRAM `thermite_lower::lower` + a direct `verus`
-//! run plus the raw `cases.json` text — they NEVER run the per-item
+//! Root cause (the headline pinned below): the builder's `string_conformance.rs`
+//! tests exercise only whole-program `thermite_lower::lower` + a direct `verus`
+//! run plus the raw `cases.json` text; they never run the per-item
 //! `forge::check::check_file` ladder. On that real path `join` (a `String` return)
-//! PROVES at verus (the golden `tests/golden/lower/string_demo.verus.rs` is
-//! `11 verified, 0 errors`), but #12 MUTATION SCORING cannot synthesize an
+//! proves at verus (the golden `tests/golden/lower/string_demo.verus.rs` is
+//! `11 verified, 0 errors`), but #12 mutation scoring cannot synthesize an
 //! early-return mutant for a `Type::String` return type: `forge::mutation::
 //! early_return_value` has a `Type::Vec` arm (#74) and a `Type::Ref`-slice arm
-//! (#48) but NO `Type::String` arm, and `zero_value_for` has no `String` case, so
-//! `join`'s body (`a.concat(b)`, no binop / off-by-one / branch site) yields ZERO
+//! (#48) but no `Type::String` arm, and `zero_value_for` has no `String` case, so
+//! `join`'s body (`a.concat(b)`, no binop / off-by-one / branch site) yields zero
 //! mutants → `0/0` → the #48 anti-Goodhart backstop gates it `WeakContract` →
-//! `Level::L0`. The oracle says `join` → L3 alloc. This is the EXACT #74 class
+//! `Level::L0`. The oracle says `join` → L3 alloc. This is the #74 class
 //! (the `Type::Vec` mutation-synthesis gap), unfixed for `Type::String`.
 
 use std::path::{Path, PathBuf};
@@ -91,19 +91,19 @@ fn cert_for<'a>(certs: &'a [Value], item: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no cert for `{item}` in {certs:?}"))
 }
 
-/// DIVERGENCE (THE HEADLINE) — `join` (a `String`-returning `concat`) PROVES at
+/// Divergence (the headline): `join` (a `String`-returning `concat`) proves at
 /// verus (L3) on the per-item path, but the #12 mutation scorer cannot synthesize
 /// a mutant for its `Type::String` return type (`0/0`), so the #48 backstop gates
 /// the L3-proved cert to a `WeakContract` reject → `Level::L0`.
 ///
-/// AUTHORITY: `conformance/string/cases.json` (the hand-derived R-CHAR-3 oracle) —
+/// Authority: `conformance/string/cases.json` (the hand-derived R-CHAR-3 oracle) —
 /// `{ "name": "join", "level": "L3", "effects": ["alloc"] }` ("concat: req
 /// a.len()+b.len() <= 1_000_000; ens result.len() == a.len()+b.len() by concat's
 /// spec. fx alloc ... L3."). Also `.design/basis/07-strings.md` AC-3 ("`forge
 /// check` certifies `join` L3 with `effects: [alloc]`") and REQ-4 (the bounded
-/// `concat` with the length identity). The verus proof DOES succeed — the golden
-/// `tests/golden/lower/string_demo.verus.rs` is `11 verified, 0 errors` — so the
-/// L0 is NOT a verus/composition failure; it is the mutation-gate divergence.
+/// `concat` with the length identity). The verus proof succeeds (the golden
+/// `tests/golden/lower/string_demo.verus.rs` is `11 verified, 0 errors`), so the
+/// L0 is not a verus/composition failure; it is the mutation-gate divergence.
 ///
 /// Tracking: #80
 #[test]
@@ -114,7 +114,7 @@ fn divergence_join_l3_not_mutation_gated_l0() {
     }
     let certs = check_json_file(&corpus_path("string_demo.th"));
     let join = cert_for(&certs, "join");
-    // ORACLE (cases.json): join certifies L3 with fx alloc.
+    // Oracle (cases.json): join certifies L3 with fx alloc.
     assert_eq!(
         join["level"],
         "L3",
@@ -139,13 +139,13 @@ fn divergence_join_l3_not_mutation_gated_l0() {
     );
 }
 
-/// CONFIRMATION (NOT a divergence — this MUST pass today) — `greeting_len` /
-/// `first_byte` / `literal_len` certify exactly as the oracle says. This pins that
-/// the three non-`String`-return string items are honest on the live ladder (only
+/// Confirmation (not a divergence; this passes today): `greeting_len` /
+/// `first_byte` / `literal_len` certify as the oracle says. This pins that
+/// the three non-`String`-return string items behave on the live ladder (only
 /// `join`, the `String`-return, is mutation-gate-broken), so the headline test
 /// isolates the `Type::String` gap rather than a whole-stage failure.
 ///
-/// AUTHORITY: `conformance/string/cases.json` — greeting_len/first_byte L3 pure;
+/// Authority: `conformance/string/cases.json` — greeting_len/first_byte L3 pure;
 /// literal_len L3 alloc.
 #[test]
 fn confirm_string_non_join_items_certify_per_oracle() {
@@ -174,23 +174,22 @@ fn confirm_string_non_join_items_certify_per_oracle() {
     assert_eq!(ll["effects"], serde_json::json!(["alloc"]));
 }
 
-/// CONFIRMATION (NOT a divergence — this MUST pass today) — the no-OOB `byte_at`
-/// is GENUINELY bounds-checked (the editor's core safety, R-DEFER-9 non-vacuity),
+/// Confirmation (not a divergence; this passes today): the no-OOB `byte_at`
+/// is bounds-checked (the editor's core safety, R-DEFER-9 non-vacuity),
 /// not a no-op laundered to L3:
 ///   (1) `first_byte` (`req s.len() > 0` discharges `byte_at(0)`'s `0 < len`) -> L3;
-///   (2) the OOB negative — `byte_at(0)` with NO `req s.len() > 0` — leaves
-///       `byte_at`'s `i < len` precondition undischarged -> verus FAILS -> L0;
-///   (3) an OFF-BY-ONE bound — `req i <= s.len()` then `s.byte_at(i)` — still
-///       leaves `i < len` undischarged (`i == len` is OOB) -> verus FAILS -> L0.
+///   (2) the OOB negative — `byte_at(0)` with no `req s.len() > 0` — leaves
+///       `byte_at`'s `i < len` precondition undischarged -> verus fails -> L0;
+///   (3) an off-by-one bound — `req i <= s.len()` then `s.byte_at(i)` — still
+///       leaves `i < len` undischarged (`i == len` is OOB) -> verus fails -> L0.
 /// The (2)/(3) L0s are verus `precondition not satisfied` failures (a genuine
-/// bounds-check), NOT a mutation-gate / no-op. This is NOT `#[ignore]`d — it passes
-/// against `b8c3bf7` (the honest behavior); if a future change launders the bound
-/// it goes red.
+/// bounds-check), not a mutation-gate / no-op. This is not `#[ignore]`d; it passes
+/// against `b8c3bf7`. If a future change launders the bound it goes red.
 ///
-/// AUTHORITY: `conformance/string/cases.json` — `first_byte` -> L3/pure; the
+/// Authority: `conformance/string/cases.json` — `first_byte` -> L3/pure; the
 /// `reject` entry `oob_byte_at_no_req` -> L0 ("a missing bound is caught, not
 /// laundered to L3"). `.design/basis/07-strings.md` AC-2/AC-4 (the no-OOB `byte_at`
-/// is real; the unguarded form FAILS verus).
+/// is real; the unguarded form fails verus).
 #[test]
 fn confirm_byte_at_bound_is_load_bearing() {
     if !verus_present() {
@@ -207,8 +206,8 @@ fn confirm_byte_at_bound_is_load_bearing() {
 
     // (2) the OOB negative — the oracle's `oob_byte_at_no_req.program` (R-CHAR-3):
     //     no `req s.len() > 0` -> byte_at's `0 < len` undischarged -> L0.
-    // (3) an OFF-BY-ONE bound `req i <= s.len()` -> `i < len` undischarged
-    //     (`i == len` is OOB) -> L0 (the bound is genuinely load-bearing).
+    // (3) an off-by-one bound `req i <= s.len()` -> `i < len` undischarged
+    //     (`i == len` is OOB) -> L0 (the bound is load-bearing).
     let fixture = std::env::temp_dir().join(format!("forge_div_str_oob_{}.th", std::process::id()));
     std::fs::write(
         &fixture,

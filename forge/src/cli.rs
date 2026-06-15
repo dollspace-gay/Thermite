@@ -1,8 +1,8 @@
 //! `forge/src/cli.rs` — the command surface of the `forge` driver. It parses
-//! `argv` with a minimal hand-rolled matcher (REQ-2, NOT a derive macro),
+//! `argv` with a minimal hand-rolled matcher (REQ-2, not a derive macro),
 //! dispatches `forge new <name>` and `forge check [<file>] [--json]`, renders the
 //! certificate as human-readable text or (under `--json`) the §5.1 structured
-//! JSON, and owns [`ForgeError`] — the BOUNDARY error that aggregates each driven
+//! JSON, and owns [`ForgeError`] — the boundary error that aggregates each driven
 //! crate's error (`thermite_syntax::SyntaxError`, `thermite_spec::SpecError`,
 //! `thermite_lower::LowerError`) plus driver-native verus/io/usage variants.
 //!
@@ -47,19 +47,19 @@ use crate::repair::{self, RepairItem, RepairOutcome, RepairReport};
 use crate::review::{self, ReviewArtifact};
 use crate::sandbox::SandboxMode;
 
-/// Exit code: a reported verification FAILURE (the certificate is a valid
+/// Exit code: a reported verification failure (the certificate is a valid
 /// document describing failed obligations). Distinct from an environment error
 /// (REQ-5).
 pub const EXIT_VERIFICATION_FAILURE: u8 = 1;
 /// Exit code: an environment / usage / IO error (verus absent, bad argv,
-/// unreadable file). A failed proof and a missing solver are NOT the same
+/// unreadable file). A failed proof and a missing solver are not the same
 /// outcome (REQ-5, R-CODE-4).
 pub const EXIT_ENVIRONMENT: u8 = 2;
 
-/// The boundary error type (REQ-3): the workspace's first AGGREGATING error. It
-/// WRAPS each driven crate's error (which keeps its own type per the leaf-first
-/// DAG) and adds driver-native verus/io/usage variants. It does NOT replace the
-/// per-crate errors; it composes them at the driver boundary.
+/// The boundary error type (REQ-3): the workspace's first aggregating error. It
+/// wraps each driven crate's error (which keeps its own type per the leaf-first
+/// DAG) and adds driver-native verus/io/usage variants. It composes the
+/// per-crate errors at the driver boundary rather than replacing them.
 #[derive(Debug)]
 pub enum ForgeError {
     /// Parse stage failed (`thermite_syntax`).
@@ -70,7 +70,7 @@ pub enum ForgeError {
     Effects(Vec<LowerError>),
     /// Lowering failed (`thermite_lower::lower`).
     Lower(LowerError),
-    /// The `verus` binary was not found on `PATH` — an ENVIRONMENT error, NOT a
+    /// The `verus` binary was not found on `PATH` — an environment error, not a
     /// verification failure (REQ-6 / `.design/forge/check.md` REQ-6).
     VerusAbsent { binary: String },
     /// Spawning `verus` failed for a reason other than absence (e.g. permission).
@@ -79,8 +79,8 @@ pub enum ForgeError {
     /// or it reported an internal (VIR) error (never swallowed, REQ-3 /
     /// R-CODE-4).
     VerusOutput { detail: String },
-    /// The `cargo kani` / kani binary was not found on `PATH` — an ENVIRONMENT
-    /// error, NOT a verification failure (`.design/lower/l2-kani.md` REQ-8). The
+    /// The `cargo kani` / kani binary was not found on `PATH` — an environment
+    /// error, not a verification failure (`.design/lower/l2-kani.md` REQ-8). The
     /// L2 parallel of `VerusAbsent`.
     KaniAbsent { binary: String },
     /// Spawning kani failed for a reason other than absence (e.g. permission).
@@ -91,15 +91,15 @@ pub enum ForgeError {
     /// (never swallowed, `.design/lower/l2-kani.md` REQ-5 / R-CODE-4). The L2
     /// parallel of `VerusOutput`.
     KaniOutput { detail: String },
-    /// The `rustc` compiler was not found on `PATH` — an ENVIRONMENT error, NOT a
+    /// The `rustc` compiler was not found on `PATH` — an environment error, not a
     /// verification/build failure (`.design/forge/build.md` REQ-2). The `forge
     /// build` parallel of `VerusAbsent`.
     RustcAbsent { binary: String },
     /// Spawning `rustc` failed for a reason other than absence (e.g. permission).
     /// The `forge build` parallel of `VerusSpawn`.
     RustcSpawn { source: std::io::Error },
-    /// `rustc` ran but exited NON-ZERO (a real lowering/codegen failure, not a
-    /// runtime contract violation — a violating body still COMPILES), or produced
+    /// `rustc` ran but exited non-zero (a real lowering/codegen failure, not a
+    /// runtime contract violation — a violating body still compiles), or produced
     /// no version string. Its stderr is surfaced (never swallowed, R-CODE-4 /
     /// `.design/forge/build.md` REQ-2 / AC-7). The `forge build` parallel of
     /// `VerusOutput`.
@@ -110,16 +110,16 @@ pub enum ForgeError {
         source: std::io::Error,
     },
     /// The `--reviewer <cmd>` external reviewer command was not found (`ENOENT`) —
-    /// an ENVIRONMENT error (issue #19; `.design/forge/spec-review.md` REQ-7,
-    /// OQ-1). The spec-intent verdict is the EXTERNAL reviewer's; an absent
+    /// an environment error (issue #19; `.design/forge/spec-review.md` REQ-7,
+    /// OQ-1). The spec-intent verdict is the external reviewer's; an absent
     /// reviewer is reported, never a panic and never a fabricated `aligned`.
     ReviewerAbsent { cmd: String },
     /// Spawning the `--reviewer <cmd>` failed for a reason other than absence, or
     /// writing the artifact to its stdin failed (issue #19). The reviewer parallel
     /// of `VerusSpawn`.
     ReviewerSpawn { cmd: String, source: std::io::Error },
-    /// The `--reviewer <cmd>` ran but exited NON-ZERO (issue #19). Its stderr is
-    /// surfaced (never swallowed, R-CODE-4); forge does NOT fabricate a verdict.
+    /// The `--reviewer <cmd>` ran but exited non-zero (issue #19). Its stderr is
+    /// surfaced (never swallowed, R-CODE-4); forge does not fabricate a verdict.
     ReviewerFailed {
         cmd: String,
         code: Option<i32>,
@@ -132,12 +132,12 @@ pub enum ForgeError {
     /// A usage error: missing/unknown verb, missing positional, bad flag, or a
     /// `forge new` target that already exists.
     Usage(String),
-    /// A SOUNDNESS ALARM (`.design/verified/proof-backends.md` REQ-5, #247): two
-    /// engines DISAGREED on the SAME certification obligation — one returned `Proven`
-    /// and another a WITNESSED `Refuted` (a counterexample). This is NOT a verification
-    /// failure (a reported certificate) — it is a HARD HALT: one engine (or the
+    /// A soundness alarm (`.design/verified/proof-backends.md` REQ-5, #247): two
+    /// engines disagreed on the same certification obligation — one returned `Proven`
+    /// and another a witnessed `Refuted` (a counterexample). This is a hard halt, not
+    /// a verification failure (a reported certificate): one engine (or the
     /// exporter/lowering, or `S` itself) is unsound, and silently proceeding would
-    /// launder unsoundness into a certificate. The toolchain NEVER picks the favorable
+    /// launder unsoundness into a certificate. The toolchain does not pick the favorable
     /// `Proven`. Carries the structured `engine::Disagreement` (both engines, the item,
     /// and the refuting counterexample). Surfaced under `--engine auto` (a Verus and a
     /// Lean verdict on the same obligation).
@@ -229,8 +229,8 @@ impl std::error::Error for ForgeError {}
 
 impl ForgeError {
     /// The exit code class for this error (REQ-5). Every `ForgeError` is an
-    /// environment/usage/IO outcome — a verification FAILURE is NOT a
-    /// `ForgeError` (it is a reported certificate). So every variant maps to
+    /// environment/usage/IO outcome — a verification failure is a reported
+    /// certificate, not a `ForgeError`. So every variant maps to
     /// [`EXIT_ENVIRONMENT`].
     fn exit_code(&self) -> u8 {
         EXIT_ENVIRONMENT
@@ -251,22 +251,22 @@ enum Command {
         level: CheckLevel,
         /// The verus `--rlimit` (SMT resource budget, roughly seconds) for the
         /// L3 path (#11; `.design/forge/solver-profiles.md` REQ-5). Defaults to
-        /// the generous pinned [`DEFAULT_RLIMIT`]; a LOW value forces the timeout
+        /// the generous pinned [`DEFAULT_RLIMIT`]; a low value forces the timeout
         /// path so the three-way classification is testable.
         rlimit: f64,
         /// The mutation kill-ratio floor (#12; `.design/forge/mutation-scoring.md`
         /// REQ-5). Defaults to [`MUTATION_FLOOR`] (0.60); an item that proves L3
-        /// but scores below this floor does NOT certify (`WeakContract` reject). A
-        /// LOW value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
+        /// but scores below this floor does not certify (`WeakContract` reject). A
+        /// low value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
         mutation_floor: f64,
-        /// The proof-backend ENGINE (`--engine verus|lean|auto`; `.design/verified/
-        /// proof-backends.md` OQ-1, #247). `verus` (DEFAULT) is byte-identical; `lean`
-        /// runs the LeanEngine ONLY (exportable items discharged by Lean, attributed);
+        /// The proof-backend engine (`--engine verus|lean|auto`; `.design/verified/
+        /// proof-backends.md` OQ-1, #247). `verus` (the default) is byte-identical; `lean`
+        /// runs the LeanEngine only (exportable items discharged by Lean, attributed);
         /// `auto` runs Verus first and tries Lean on a Verus Unknown/timeout.
         engine: check::EngineSelection,
     },
-    /// `forge audit <file> [--json]` — emit the project AUDIT MANIFEST v1 (issue
-    /// #15; `.design/forge/audit-manifest.md` REQ-2). Runs the SAME check pipeline
+    /// `forge audit <file> [--json]` — emit the project audit manifest v1 (issue
+    /// #15; `.design/forge/audit-manifest.md` REQ-2). Runs the same check pipeline
     /// `forge check` runs at the pinned default config (no extra verification),
     /// aggregates the cert collection into an `AuditManifest`, and emits it as the
     /// stable `--json` document or a human summary. The default-config path is the
@@ -274,9 +274,9 @@ enum Command {
     Audit { file: PathBuf, json: bool },
     /// `forge repair <file> [item]` — the background L1/L2 → L3 upgrade loop
     /// (issue #18; `.design/forge/proof-repair.md` REQ-1). Re-derives the per-item
-    /// certs at the default budget, finds the SUB-L3 items, and for a TIMEOUT item
-    /// ONLY escalates the verus `--rlimit` along the frozen bounded ladder
-    /// (`repair::REPAIR_LADDER`) to try to recover L3 — NEVER retrying a
+    /// certs at the default budget, finds the sub-L3 items, and for a timeout item
+    /// only escalates the verus `--rlimit` along the frozen bounded ladder
+    /// (`repair::REPAIR_LADDER`) to try to recover L3, never retrying a
     /// counterexample / reject (the anti-cheat, REQ-2). A one-shot re-runnable pass
     /// (OQ-4: daemon/orchestration is #20). The optional `item` restricts repair to
     /// a single function.
@@ -285,17 +285,17 @@ enum Command {
         item: Option<String>,
         json: bool,
     },
-    /// `forge review <file> [item] [--json] [--reviewer <cmd>]` — the PLUGGABLE
-    /// SPEC-INTENT REVIEW SLOT (issue #19; `.design/forge/spec-review.md` REQ-7,
-    /// §7 line 227). Runs the SAME default-config check pipeline `forge check` /
-    /// `forge audit` run (the battery verdict — no extra verification), extracts
-    /// the PRE-SCREENED declarative spec layer (per battery-passing fn: `req`/`ens`/
-    /// `fx` + the directly-referenced `spec fn` declarations, NO bodies) + an "is
+    /// `forge review <file> [item] [--json] [--reviewer <cmd>]` — the pluggable
+    /// spec-intent review slot (issue #19; `.design/forge/spec-review.md` REQ-7,
+    /// §7 line 227). Runs the same default-config check pipeline `forge check` /
+    /// `forge audit` run (the battery verdict, no extra verification), extracts
+    /// the pre-screened declarative spec layer (per battery-passing fn: `req`/`ens`/
+    /// `fx` + the directly-referenced `spec fn` declarations, no bodies) + an "is
     /// this what you meant?" prompt, and emits the artifact (`--json` machine form
-    /// or human). An OPTIONAL `[item]` restricts the artifact to one fn. With
-    /// `--reviewer <cmd>` it pipes the artifact to the EXTERNAL reviewer's stdin,
+    /// or human). An optional `[item]` restricts the artifact to one fn. With
+    /// `--reviewer <cmd>` it pipes the artifact to the external reviewer's stdin,
     /// reads the `ReviewVerdict` JSON from its stdout, and writes a separate
-    /// `<file>.review.json` record (forge NEVER fabricates `aligned` — OQ-1/OQ-2).
+    /// `<file>.review.json` record (forge does not fabricate `aligned` — OQ-1/OQ-2).
     Review {
         file: PathBuf,
         item: Option<String>,
@@ -309,7 +309,7 @@ enum Command {
     /// calls `fn` with deterministic synthesized inputs (REQ-3), so the always-active
     /// `thermite_check!`s are observable at runtime (the #57 hook). `--out <PATH>` /
     /// `-o <PATH>` (#128; REQ-7) places the compiled artifact at a user-named,
-    /// runnable path (`./<PATH>`) instead of the awkward /tmp output path.
+    /// runnable path (`./<PATH>`) instead of the /tmp output path.
     Build {
         file: PathBuf,
         entry: Option<String>,
@@ -327,83 +327,83 @@ enum Command {
         /// `--target std|kernel` (#197; `.design/build/kernel-target.md` REQ-1): the
         /// codegen profile. The default ([`BuildTarget::Std`]) is the unchanged
         /// hosted build; `--target kernel` emits a freestanding `no_std + alloc`
-        /// LIBRARY rlib (no `main`/seccomp, `panic=abort`) and refuses ambient-syscall
+        /// library rlib (no `main`/seccomp, `panic=abort`) and refuses ambient-syscall
         /// `fx` rows. `--target kernel` + `--entry` is a usage error.
         target: BuildTarget,
     },
-    /// `forge tv <file> [--generated [N]] [--json]` — the CONTRACT-FAITHFULNESS
-    /// TRANSLATION-VALIDATION deeper audit (epic #139, #144;
-    /// `.design/verified/contract-tv.md` REQ-5). A SEPARATE opt-in command (NOT
-    /// folded into `forge check`, which stays fast): for each `req`/`ens`/loop-
+    /// `forge tv <file> [--generated [N]] [--json]` — the contract-faithfulness
+    /// translation-validation deeper audit (epic #139, #144;
+    /// `.design/verified/contract-tv.md` REQ-5). A separate opt-in command, not
+    /// folded into `forge check` (which stays fast): for each `req`/`ens`/loop-
     /// `inv`/`dec` clause it discharges the per-clause Z3 equivalence obligation
-    /// `P_production <==> P_reference` (the production lowering vs the INDEPENDENT
+    /// `P_production <==> P_reference` (the production lowering vs the independent
     /// `thermite-tv` reference encoder) through verus, reporting each clause
-    /// faithful or DIVERGENT (a real lowering-fidelity finding). `--generated [N]`
-    /// ALSO runs the off-corpus generated clause space (REQ-3, the corpus-bound
+    /// faithful or divergent (a real lowering-fidelity finding). `--generated [N]`
+    /// also runs the off-corpus generated clause space (REQ-3, the corpus-bound
     /// escape; default N = [`TV_GENERATED_DEFAULT_N`]).
     Tv {
         file: PathBuf,
         json: bool,
-        /// `--generated [N]` — ALSO run the off-corpus generated TV space (REQ-3).
+        /// `--generated [N]` — also run the off-corpus generated TV space (REQ-3).
         /// `Some(n)` requests `n` generated clauses; `None` skips the generated run.
         generated: Option<usize>,
     },
-    /// `forge exec-tv <file> [--generated [N]] [--json]` — the EXEC-POSITION (body)
-    /// TRANSLATION-VALIDATION deeper audit (epic #151, #154/#156;
-    /// `.design/verified/exec-tv.md` REQ-5). A SEPARATE opt-in command (like `forge
-    /// tv`, NOT folded into `forge check`): the GENERATED run (PRIMARY) discharges
+    /// `forge exec-tv <file> [--generated [N]] [--json]` — the exec-position (body)
+    /// translation-validation deeper audit (epic #151, #154/#156;
+    /// `.design/verified/exec-tv.md` REQ-5). A separate opt-in command (like `forge
+    /// tv`, not folded into `forge check`): the generated run (the primary one) discharges
     /// the exec-fn obligation `result == <bounded exec reference>` over N
     /// deterministically generated, well-framed exec exprs (the off-corpus #122/#146
-    /// regression guard); the CORPUS body-expr check (best-effort) TV-checks the
-    /// derivable-frame body exprs (a `let`-RHS / tail / `return`), SKIPPING
-    /// statements/loops/mutation honestly. Each expr is Faithful / DIVERGENT /
+    /// regression guard); the corpus body-expr check (best-effort) TV-checks the
+    /// derivable-frame body exprs (a `let`-RHS / tail / `return`), skipping
+    /// statements/loops/mutation. Each expr is Faithful / Divergent /
     /// Unverifiable / Skipped. `--generated [N]` sets N (default
-    /// [`crate::exec_tv::EXEC_TV_GENERATED_DEFAULT_N`]); the generated run is ON BY DEFAULT
+    /// [`crate::exec_tv::EXEC_TV_GENERATED_DEFAULT_N`]); the generated run is on by default
     /// (it is the primary value) unless `--no-generated` is passed.
     ExecTv {
         file: PathBuf,
         json: bool,
         /// `--generated [N]` / the default — the off-corpus generated exec run
-        /// (REQ-3, PRIMARY). `Some(n)` runs `n` generated exprs; `None` (via
+        /// (REQ-3, the primary one). `Some(n)` runs `n` generated exprs; `None` (via
         /// `--no-generated`) runs only the corpus body-expr check.
         generated: Option<usize>,
     },
-    /// `forge body-tv <file> [--json]` — the EXEC-BODY (statement / state-refinement)
-    /// TRANSLATION-VALIDATION deeper audit (epic #169, blocker #162;
+    /// `forge body-tv <file> [--json]` — the exec-body (statement / state-refinement)
+    /// translation-validation deeper audit (epic #169, blocker #162;
     /// `.design/verified/exec-stmt-tv.md` REQ-5 + `.design/verified/loop-tv.md`
-    /// REQ-5). The STATE analogue of `forge exec-tv` (which checks a single
-    /// body-position VALUE): for each checked fn body it runs the straight-line body
+    /// REQ-5). The state analogue of `forge exec-tv` (which checks a single
+    /// body-position value): for each checked fn body it runs the straight-line body
     /// state-refinement TV (`fn tv_body_wrap(..) ensures result == <body_ref_state>
     /// { <production lower_exec_body> }`) — or, when the body's last statement is a v1
     /// frozen-subset `while` loop, the three per-run loop obligations (entry /
     /// preservation / exit) — discharging each through `verus`. Each body is Faithful
-    /// / DIVERGENT / Unverifiable / Skipped (an out-of-v1 loop / non-scalar mutation /
-    /// mid-body return / non-derivable frame is Skipped HONESTLY, never masking an
-    /// infidelity — R-HONEST-3). A SEPARATE opt-in command (like `forge tv` / `forge
-    /// exec-tv`, NOT folded into `forge check`), run at the pinned default verus
+    /// / Divergent / Unverifiable / Skipped (an out-of-v1 loop / non-scalar mutation /
+    /// mid-body return / non-derivable frame is Skipped rather than masking an
+    /// infidelity — R-HONEST-3). A separate opt-in command (like `forge tv` / `forge
+    /// exec-tv`, not folded into `forge check`), run at the pinned default verus
     /// config.
     BodyTv { file: PathBuf, json: bool },
-    /// `forge goal <file> [item]` — print the §5.1 GOAL STATE for an item (or every
+    /// `forge goal <file> [item]` — print the §5.1 goal state for an item (or every
     /// item) of `file` (#193 increment (i); `.design/forge/goal-repl.md` REQ-2). A
-    /// pure VIEW over the SHIPPED `check::check_file` cert collection + the re-parsed
-    /// AST contract (given/want); adds NO verification. An OPTIONAL second positional
-    /// restricts the render to one item. Holes (`?N`) are increment (iii) — NOT in
+    /// pure view over the shipped `check::check_file` cert collection + the re-parsed
+    /// AST contract (given/want); adds no verification. An optional second positional
+    /// restricts the render to one item. Holes (`?N`) are increment (iii), not in
     /// this verb yet.
     Goal { file: PathBuf, item: Option<String> },
     /// `forge battery <file> [item]` — print the §7 anti-Goodhart battery (vacuity
     /// triage + solver vacuity + mutation kill-ratio) for an item (or every item) of
-    /// `file` (#193 increment (i); `.design/forge/goal-repl.md` REQ-1). A pure VIEW
-    /// over each cert's `contract_quality` block — the verdicts the gate ALREADY
-    /// computed inside `check_file` (AC-1: a view, never a re-derivation). An OPTIONAL
+    /// `file` (#193 increment (i); `.design/forge/goal-repl.md` REQ-1). A pure view
+    /// over each cert's `contract_quality` block — the verdicts the gate already
+    /// computed inside `check_file` (AC-1: a view, never a re-derivation). An optional
     /// second positional restricts the render to one item.
     Battery { file: PathBuf, item: Option<String> },
     /// `forge edit <file> <addr> --replace <code>` — a semantic edit by address
     /// (#193 increment (ii); `.design/forge/goal-repl.md` REQ-3). Resolves the
     /// stable semantic address (`thermite_syntax::address::resolve`), splices the
-    /// `--replace <code>` SOURCE TEXT at the addressed node's byte span IN THE FILE,
-    /// re-emits, re-checks the affected item, and prints the new GOAL STATE. v1 edits
+    /// `--replace <code>` source text at the addressed node's byte span in the file,
+    /// re-emits, re-checks the affected item, and prints the new goal state. v1 edits
     /// a loop `inv`/`dec` clause (the addressable forms semantic-addressing pins); a
-    /// bad address is an honest structured error, never a panic.
+    /// bad address is a structured error, never a panic.
     Edit {
         file: PathBuf,
         addr: String,
@@ -412,10 +412,10 @@ enum Command {
     /// `forge fill <file> <hole-addr> <code>` — fill a body hole `?N` (#193
     /// increment (iii); `.design/forge/goal-repl.md` REQ-6). A specialization of
     /// `edit` whose address names a `?N` hole (`<fn>.?N`): splices the `<code>`
-    /// SOURCE TEXT at the hole's span IN THE FILE, re-emits, re-checks the affected
-    /// item, and prints the new GOAL STATE (which may surface NEW holes the filled
-    /// code introduces — the §5.1 fill loop). The two positionals AFTER the file are
-    /// the hole address and the fill code; a non-hole address is an honest error
+    /// source text at the hole's span in the file, re-emits, re-checks the affected
+    /// item, and prints the new goal state (which may surface new holes the filled
+    /// code introduces — the §5.1 fill loop). The two positionals after the file are
+    /// the hole address and the fill code; a non-hole address is a structured error
     /// (use `forge edit` for non-hole nodes).
     Fill {
         file: PathBuf,
@@ -430,8 +430,8 @@ enum Command {
 pub const TV_GENERATED_DEFAULT_N: usize = 200;
 
 /// The assurance rung `forge check` targets (`.design/lower/l2-kani.md` REQ-7,
-/// OQ-1: the `--level l2` flag). The DEFAULT stays `L3` (the verus path); `--level
-/// l2` is an EXPLICIT choice that runs the Kani bounded model check INSTEAD —
+/// OQ-1: the `--level l2` flag). The default stays `L3` (the verus path); `--level
+/// l2` is an explicit choice that runs the Kani bounded model check instead,
 /// never an automatic degrade (that is #10).
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum CheckLevel {
@@ -480,7 +480,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         // `.design/forge/solver-profiles.md` REQ-5). The value is a
                         // separate token; a missing or non-numeric value is a Usage
                         // error, never a silent default (the test lever that forces
-                        // the timeout path uses a LOW value).
+                        // the timeout path uses a low value).
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
                                 "`--rlimit` requires a FLOAT value (the verus SMT resource budget)"
@@ -501,7 +501,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         // `--mutation-floor <FLOAT>` — the §7 step-4 kill-ratio floor
                         // (#12; `.design/forge/mutation-scoring.md` REQ-5). The value
                         // is a separate token; a missing / non-numeric / out-of-[0,1]
-                        // value is a Usage error, never a silent default. A LOW value
+                        // value is a Usage error, never a silent default. A low value
                         // (e.g. `0.2`) flips a weak contract back to certified (AC-3).
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
@@ -546,7 +546,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         };
                     }
                     "--level" => {
-                        // `--level l2|l3` — an EXPLICIT rung choice (REQ-7). The
+                        // `--level l2|l3` — an explicit rung choice (REQ-7). The
                         // value is a separate token (`--level l2`); a missing or
                         // unknown value is a Usage error, never a silent default.
                         let value = iter.next().ok_or_else(|| {
@@ -596,8 +596,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // `forge audit <file> [--json]` (#15; `.design/forge/audit-manifest.md`
             // REQ-2). The canonical audit deliverable runs at the pinned default
             // config (OQ-3 — the reproducible trust statement), so this verb takes
-            // ONLY the file + `--json`; the exploratory `--rlimit`/`--mutation-floor`
-            // levers are NOT exposed here (the default-config path is the contract).
+            // only the file + `--json`; the exploratory `--rlimit`/`--mutation-floor`
+            // levers are not exposed here (the default-config path is the contract).
             let mut file: Option<PathBuf> = None;
             let mut json = false;
             for arg in iter {
@@ -623,10 +623,10 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
         "repair" => {
             // `forge repair <file> [item] [--json]` (#18;
             // `.design/forge/proof-repair.md` REQ-1). The first positional is the
-            // file (required); an OPTIONAL second positional restricts repair to a
+            // file (required); an optional second positional restricts repair to a
             // single item. Like `forge audit`, it runs at the pinned default budget
-            // (the exploratory `--rlimit`/`--mutation-floor` levers are NOT exposed
-            // — the ESCALATION ladder is the frozen `repair::REPAIR_LADDER`, REQ-3).
+            // (the exploratory `--rlimit`/`--mutation-floor` levers are not exposed;
+            // the escalation ladder is the frozen `repair::REPAIR_LADDER`, REQ-3).
             let mut file: Option<PathBuf> = None;
             let mut item: Option<String> = None;
             let mut json = false;
@@ -658,10 +658,10 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
         "review" => {
             // `forge review <file> [item] [--json] [--reviewer <cmd>]` (#19;
             // `.design/forge/spec-review.md` REQ-7). The first positional is the
-            // file (required); an OPTIONAL second positional restricts the artifact
-            // to a single item. Like `forge audit`, the EXTRACTION runs at the
+            // file (required); an optional second positional restricts the artifact
+            // to a single item. Like `forge audit`, the extraction runs at the
             // pinned default budget (the exploratory `--rlimit`/`--mutation-floor`
-            // levers are NOT exposed — the §7 "the certificate includes the spec
+            // levers are not exposed — the §7 "the certificate includes the spec
             // layer" framing). `--reviewer <cmd>` names the external reviewer
             // command (its value is a separate token; a missing value is a Usage
             // error). Without it, forge emits only the artifact (the reviewer is
@@ -720,7 +720,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // the file (required in v0.1). `--entry <fn>` names the fn the generated
             // deterministic runner exercises (a missing value is a Usage error);
             // without it the default library (`rlib`) is produced. The #57 sandbox is
-            // ON BY DEFAULT for `--entry`; `--no-sandbox` opts out; `--sandbox` is the
+            // on by default for `--entry`; `--no-sandbox` opts out; `--sandbox` is the
             // explicit-default form; `--sandbox-self-test` injects the `openat` probe.
             // `--out <PATH>` / `-o <PATH>` (#128; `.design/forge/build.md` REQ-7) places
             // the compiled artifact at a user-named, runnable path (a missing value is a
@@ -770,7 +770,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     "--out" | "-o" => {
                         // `--out <PATH>` / `-o <PATH>` (#128; REQ-7). The value is a
                         // separate token; a missing value is a Usage error, never a
-                        // silent default. The artifact is COPIED to `<PATH>` (executable)
+                        // silent default. The artifact is copied to `<PATH>` (executable)
                         // so `./<PATH>` runs directly.
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
@@ -819,7 +819,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // `forge tv <file> [--generated [N]] [--json]` (#144;
             // `.design/verified/contract-tv.md` REQ-5). The first positional is the
             // file (required). `--generated` opts into the off-corpus generated run
-            // (REQ-3); an OPTIONAL numeric token after it sets N (else the default).
+            // (REQ-3); an optional numeric token after it sets N (else the default).
             // Like the other deeper-audit verbs, it runs at the pinned default
             // verus config (the deterministic budget) — no exploratory levers.
             let mut file: Option<PathBuf> = None;
@@ -830,7 +830,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 match arg.as_str() {
                     "--json" => json = true,
                     "--generated" => {
-                        // An OPTIONAL numeric token immediately after `--generated`
+                        // An optional numeric token immediately after `--generated`
                         // sets N; otherwise the default. A non-numeric next token is
                         // a separate arg (e.g. another flag), not N.
                         let n = match iter.peek().and_then(|t| t.parse::<usize>().ok()) {
@@ -869,9 +869,9 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
         "exec-tv" => {
             // `forge exec-tv <file> [--generated [N]] [--no-generated] [--json]`
             // (#154/#156; `.design/verified/exec-tv.md` REQ-5). The first positional
-            // is the file (required). The off-corpus generated run is the PRIMARY
-            // value, so it is ON BY DEFAULT (default N); `--generated N` overrides N;
-            // `--no-generated` runs ONLY the corpus body-expr check. Like the other
+            // is the file (required). The off-corpus generated run is the primary
+            // value, so it is on by default (default N); `--generated N` overrides N;
+            // `--no-generated` runs only the corpus body-expr check. Like the other
             // deeper-audit verbs, it runs at the pinned default verus config.
             let mut file: Option<PathBuf> = None;
             let mut json = false;
@@ -882,7 +882,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                     "--json" => json = true,
                     "--no-generated" => generated = None,
                     "--generated" => {
-                        // An OPTIONAL numeric token immediately after sets N; else
+                        // An optional numeric token immediately after sets N; else
                         // the default. A non-numeric next token is a separate arg.
                         let n = match iter.peek().and_then(|t| t.parse::<usize>().ok()) {
                             Some(parsed) => {
@@ -923,7 +923,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // `forge body-tv <file> [--json]` (#162; `.design/verified/exec-stmt-tv.md`
             // REQ-5 + `.design/verified/loop-tv.md` REQ-5). The first positional is the
             // file (required). Like the other deeper-audit verbs, it runs at the pinned
-            // default verus config (the deterministic budget) — no exploratory levers,
+            // default verus config (the deterministic budget): no exploratory levers,
             // no generated run (the body-state TV is over the corpus item bodies).
             let mut file: Option<PathBuf> = None;
             let mut json = false;
@@ -952,7 +952,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
         "goal" | "battery" => {
             // `forge goal <file> [item]` / `forge battery <file> [item]` (#193
             // increment (i); `.design/forge/goal-repl.md` REQ-1/REQ-2). The first
-            // positional is the file (required); an OPTIONAL second positional
+            // positional is the file (required); an optional second positional
             // restricts the render to one item. Pure views — no flags.
             let mut file: Option<PathBuf> = None;
             let mut item: Option<String> = None;
@@ -988,7 +988,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // `forge edit <file> <addr> --replace <code>` (#193 increment (ii);
             // `.design/forge/goal-repl.md` REQ-3). Two required positionals (the
             // file then the semantic address) + the required `--replace <code>`
-            // flag (the replacement SOURCE TEXT, a separate token). A missing
+            // flag (the replacement source text, a separate token). A missing
             // positional / a missing `--replace` value is a Usage error.
             let mut file: Option<PathBuf> = None;
             let mut addr: Option<String> = None;
@@ -1049,7 +1049,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
         "fill" => {
             // `forge fill <file> <hole-addr> <code>` (#193 increment (iii);
             // `.design/forge/goal-repl.md` REQ-6). Three required positionals: the
-            // file, the `<fn>.?N` hole address, and the fill code (a single token —
+            // file, the `<fn>.?N` hole address, and the fill code (a single token;
             // the shell quotes multi-word code, like `edit`'s `--replace` value).
             // A missing positional is a Usage error.
             let mut file: Option<PathBuf> = None;
@@ -1099,7 +1099,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
     }
 }
 
-/// The usage banner (REQ-1: the v0.1 verb subset only).
+/// The usage banner (REQ-1: the v0.1 verb subset).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
      [--mutation-floor <FLOAT>] [--engine verus|lean|auto] | forge audit <file> [--json] | \
@@ -1114,7 +1114,7 @@ fn usage_text() -> &'static str {
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
 /// dispatches, renders, and maps the outcome to an `ExitCode` (REQ-5). This is
-/// the ONLY function that touches `std::env::args` / `ExitCode`.
+/// the only function that touches `std::env::args` / `ExitCode`.
 pub fn run() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match dispatch(&args) {
@@ -1188,13 +1188,13 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
     }
 }
 
-/// Run `forge goal <file> [item]`: print the §5.1 GOAL STATE (#193 increment (i);
-/// `.design/forge/goal-repl.md` REQ-2). A pure VIEW over the SHIPPED
+/// Run `forge goal <file> [item]`: print the §5.1 goal state (#193 increment (i);
+/// `.design/forge/goal-repl.md` REQ-2). A pure view over the shipped
 /// `check::check_file` cert collection — given/want from the re-parsed contract,
 /// per-obligation status with counterexamples from the cert's `obligations`.
 ///
 /// Exit code: a render is a successful query (SUCCESS) — the verdict (discharged /
-/// open obligation) lives IN the rendered goal state, not in the exit code (the
+/// open obligation) lives in the rendered goal state, not in the exit code (the
 /// goal REPL is a view, not a gate). An environment failure (verus absent, file
 /// unreadable, parse failure) propagates as a `ForgeError`.
 fn run_goal(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> {
@@ -1204,9 +1204,9 @@ fn run_goal(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> {
 }
 
 /// Run `forge battery <file> [item]`: print the §7 anti-Goodhart battery (#193
-/// increment (i); `.design/forge/goal-repl.md` REQ-1). A pure VIEW over each
+/// increment (i); `.design/forge/goal-repl.md` REQ-1). A pure view over each
 /// cert's `contract_quality` block — the vacuity + mutation verdicts the gate
-/// ALREADY computed inside `check_file` (AC-1: a view, never a re-derivation).
+/// already computed inside `check_file` (AC-1: a view, never a re-derivation).
 ///
 /// Exit code: a render is a successful query (SUCCESS); an environment failure
 /// propagates as a `ForgeError`.
@@ -1219,8 +1219,8 @@ fn run_battery(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> 
 /// Run `forge edit <file> <addr> --replace <code>`: a semantic edit by address
 /// (#193 increment (ii); `.design/forge/goal-repl.md` REQ-3). Resolves the address
 /// via `thermite_syntax::address::resolve`, splices the replacement source text at
-/// the addressed node's span IN THE FILE, re-emits, re-checks the affected item,
-/// and prints the new GOAL STATE.
+/// the addressed node's span in the file, re-emits, re-checks the affected item,
+/// and prints the new goal state.
 ///
 /// Exit code: a successful edit + re-check is SUCCESS (the new goal state is the
 /// output). A bad/unresolvable address, a re-parse failure after the splice, or an
@@ -1233,11 +1233,11 @@ fn run_edit(file: &Path, addr: &str, replace: &str) -> Result<ExitCode, ForgeErr
 }
 
 /// Run `forge fill <file> <hole-addr> <code>`: fill a body hole `?N` and print the
-/// new GOAL STATE (#193 increment (iii); `.design/forge/goal-repl.md` REQ-6). The
+/// new goal state (#193 increment (iii); `.design/forge/goal-repl.md` REQ-6). The
 /// fill splices the code at the hole's span, re-checks the affected item, and
-/// renders the new goal state (the §5.1 loop — which may surface NEW holes the fill
+/// renders the new goal state (the §5.1 loop, which may surface new holes the fill
 /// introduced). Exit code SUCCESS: a fill is a view-producing query (the verdict
-/// lives IN the rendered goal state, like `goal`); a bad/unresolvable hole address,
+/// lives in the rendered goal state, like `goal`); a bad/unresolvable hole address,
 /// a non-hole target, or a re-parse failure after the splice propagates as a
 /// `ForgeError`.
 fn run_fill(file: &Path, addr: &str, code: &str) -> Result<ExitCode, ForgeError> {
@@ -1257,8 +1257,8 @@ fn run_check(
     mutation_floor: f64,
     engine: check::EngineSelection,
 ) -> Result<ExitCode, ForgeError> {
-    // The DEFAULT (no flag) stays the L3 verus path; `--level l2` is an EXPLICIT
-    // choice that runs the Kani bounded model check instead — never an automatic
+    // The default (no flag) stays the L3 verus path; `--level l2` is an explicit
+    // choice that runs the Kani bounded model check instead, never an automatic
     // degrade (`.design/lower/l2-kani.md` REQ-7; #10 owns the auto-degrade). The
     // `--rlimit` (#11) tunes the L3 verus resource budget; the L2 Kani path does
     // not consume it.
@@ -1266,7 +1266,7 @@ fn run_check(
     // proof-backends OQ-1 (#247): `--engine verus|lean|auto`. `verus` (the default)
     // keeps the byte-identical path below; `lean`/`auto` route through
     // `check::check_file_with_engine` (the LeanEngine surface — exportable items
-    // discharged by Lean with attribution; the disagreement HALT on `auto`).
+    // discharged by Lean with attribution; the disagreement halt on `auto`).
     let certs = match (level, engine) {
         // The canonical config (default rlimit + default mutation floor #12) routes
         // through `check_file` (the public default entry, the only one that serves /
@@ -1287,9 +1287,9 @@ fn run_check(
             },
         )?,
         // `--engine lean` / `--engine auto`: the proof-backends increment-(iii) Lean
-        // surface (OQ-1). A genuine ENGINE DISAGREEMENT (Verus Proven ⊕ Lean Refuted,
-        // or vice versa, on the SAME obligation) HALTS as a `ForgeError::SoundnessAlarm`
-        // — never resolved by preference (REQ-5).
+        // surface (OQ-1). A genuine engine disagreement (Verus Proven ⊕ Lean Refuted,
+        // or vice versa, on the same obligation) halts as a `ForgeError::SoundnessAlarm`,
+        // never resolved by preference (REQ-5).
         (CheckLevel::L3, sel) => check::check_file_with_engine(
             file,
             CheckOptions {
@@ -1302,11 +1302,11 @@ fn run_check(
         (CheckLevel::L2, _) => check::check_l2_file(file)?,
     };
 
-    // #10 the project-level ASSURANCE MANIFEST (`.design/forge/degrade-ladder.md`
+    // #10 the project-level assurance manifest (`.design/forge/degrade-ladder.md`
     // REQ-5/REQ-6, OQ-4 reading (b) — a render-time aggregate over the per-fn cert
-    // collection, NOT a separately-materialized schema object). The headline is the
-    // MIN over functions (a single L1 fn caps the project at L1; a single
-    // hard-failed fn is a project FAILURE). Computed for both renderings.
+    // collection, not a separately-materialized schema object). The headline is the
+    // min over functions (a single L1 fn caps the project at L1; a single
+    // hard-failed fn is a project failure). Computed for both renderings.
     let manifest = AssuranceManifest::aggregate(&certs);
 
     if json {
@@ -1326,12 +1326,12 @@ fn run_check(
         print!("{}", render_assurance(&manifest));
     }
 
-    // Aggregate outcome (REQ-5): every item must CERTIFY. An item certifies iff
-    // it carries no `reject` cause AND its level is a certified rung — `L3` (the
-    // verus path), `L2` (a bounded check, #9/#10 degrade), OR `L1` (a valid
+    // Aggregate outcome (REQ-5): every item must certify. An item certifies iff
+    // it carries no `reject` cause and its level is a certified rung — `L3` (the
+    // verus path), `L2` (a bounded check, #9/#10 degrade), or `L1` (a valid
     // `#[slag]` item / #10 degrade). A `#6` triage / slag-validation reject
     // (`Level::L0` + a `reject` cause) is a reported contract-certification
-    // FAILURE — non-zero, but a valid cert document on stdout (verdict-in-cert).
+    // failure — non-zero, but a valid cert document on stdout (verdict-in-cert).
     // The #10 assurance aggregate's `Failed` headline and this all-certified check
     // agree (both use `manifest::cert_certifies`).
     let all_certified = matches!(manifest.project, ProjectAssurance::Certified(_));
@@ -1342,10 +1342,10 @@ fn run_check(
     }
 }
 
-/// Run `forge audit`: emit the project AUDIT MANIFEST v1 (#15;
-/// `.design/forge/audit-manifest.md` REQ-2). Runs the SAME check pipeline
+/// Run `forge audit`: emit the project audit manifest v1 (#15;
+/// `.design/forge/audit-manifest.md` REQ-2). Runs the same check pipeline
 /// `forge check` runs at the pinned default config (`CheckOptions::default` via
-/// `check::check_file` — NO extra verification, NO re-derivation), parses the file
+/// `check::check_file` — no extra verification, no re-derivation), parses the file
 /// once for the boundary contracts' enforced `req`/`ens`/`fx` (the cert carries
 /// only the target), resolves the toolchain identity, builds the
 /// [`AuditManifest`] (a pure projection), and emits it as the stable `--json`
@@ -1353,7 +1353,7 @@ fn run_check(
 /// The exit code mirrors `forge check`'s project headline (REQ-5): a fully-
 /// certified project exits 0, else a verification-failure exit.
 fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
-    // The SAME default pipeline `forge check` runs (REQ-4 — aggregation, never
+    // The same default pipeline `forge check` runs (REQ-4 — aggregation, never
     // re-derivation): `check_file` is the canonical default-config entry (the only
     // one that serves / populates the shared proof cache). The audit re-runs no
     // verus, re-scores no mutants — it projects the cert collection this returns.
@@ -1409,13 +1409,13 @@ fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
 /// Run `forge repair`: the background L1/L2 → L3 upgrade loop (#18;
 /// `.design/forge/proof-repair.md` REQ-1/REQ-6). Drives `repair::repair_file`
 /// (re-derive the sub-L3 certs at the default budget, escalate the bounded ladder
-/// for TIMEOUT items ONLY, report the rest), then renders the per-item repair
+/// for timeout items only, report the rest), then renders the per-item repair
 /// report. A one-shot, deterministic, re-runnable pass (OQ-4 reading (a)).
 ///
 /// The exit code (REQ-5 parallel): SUCCESS iff every repaired item upgraded to L3
-/// AND no item remains a hard fail (a no-op corpus is vacuously success); else the
+/// and no item remains a hard fail (a no-op corpus is vacuously success); else the
 /// verification-failure code (a still-sub-L3 or not-repairable item means the
-/// project does not fully certify). An ENVIRONMENT failure (verus absent /
+/// project does not fully certify). An environment failure (verus absent /
 /// unparseable) propagates as a `ForgeError` (REQ-7), never a silent success.
 fn run_repair(file: &Path, item: Option<&str>, json: bool) -> Result<ExitCode, ForgeError> {
     let report = repair::repair_file(file, item)?;
@@ -1441,19 +1441,19 @@ fn run_repair(file: &Path, item: Option<&str>, json: bool) -> Result<ExitCode, F
     }
 }
 
-/// Run `forge review`: the PLUGGABLE SPEC-INTENT REVIEW SLOT (#19;
+/// Run `forge review`: the pluggable spec-intent review slot (#19;
 /// `.design/forge/spec-review.md` REQ-5/REQ-7, §7 line 227). Extracts the
-/// pre-screened declarative spec-layer ARTIFACT (`review::review_file` — a pure
+/// pre-screened declarative spec-layer artifact (`review::review_file` — a pure
 /// projection of the battery cert collection + the parsed contract surface, no
 /// bodies), emits it (`--json` machine form or human), and — with `--reviewer
-/// <cmd>` — pipes it to the EXTERNAL reviewer, reads the `ReviewVerdict` JSON from
-/// its stdout, and writes a SEPARATE `<file>.review.json` record (OQ-2: the verdict
-/// is the reviewer's, never a `Certificate` field; forge NEVER fabricates
+/// <cmd>` — pipes it to the external reviewer, reads the `ReviewVerdict` JSON from
+/// its stdout, and writes a separate `<file>.review.json` record (OQ-2: the verdict
+/// is the reviewer's, never a `Certificate` field; forge does not fabricate
 /// `aligned`).
 ///
-/// Exit code: the EXTRACTION succeeding is a SUCCESS (the artifact is a valid
-/// document — surfacing a battery-failing fn is not a forge failure, it is the
-/// artifact's content). An ENVIRONMENT failure (verus absent for the pre-screen, a
+/// Exit code: the extraction succeeding is a SUCCESS (the artifact is a valid
+/// document — surfacing a battery-failing fn is the artifact's content, not a forge
+/// failure). An environment failure (verus absent for the pre-screen, a
 /// `--reviewer` cmd absent/failing/garbage, an IO error) propagates as a
 /// `ForgeError` (the environment exit code), never a silent success.
 fn run_review(
@@ -1463,15 +1463,15 @@ fn run_review(
     reviewer: Option<&str>,
 ) -> Result<ExitCode, ForgeError> {
     // The pre-screened spec-layer artifact (REQ-1/REQ-2/REQ-6) — the deterministic
-    // pure projection. Runs the SAME default-config check pipeline `forge check`
+    // pure projection. Runs the same default-config check pipeline `forge check`
     // runs (the battery verdict), then projects; it re-runs no verus.
     let artifact = review::review_file(file, item)?;
 
     if let Some(cmd) = reviewer {
-        // The PLUGGABLE INTEGRATION (REQ-7, OQ-1): pipe the artifact JSON to the
+        // The pluggable integration (REQ-7, OQ-1): pipe the artifact JSON to the
         // external reviewer's stdin, read the `ReviewVerdict` JSON from its stdout
         // (the reviewer's judgment — forge never fabricates `aligned`), and write
-        // the SEPARATE `<file>.review.json` record. A spawn/exit/parse failure is a
+        // the separate `<file>.review.json` record. A spawn/exit/parse failure is a
         // `ForgeError` (handled above by `?`), never a panic.
         let verdicts = review::run_reviewer(cmd, &artifact)?;
         let record = review::attach_verdicts(&file.display().to_string(), verdicts);
@@ -1513,16 +1513,16 @@ fn run_review(
 /// hook — and the reproducibility block) as human text or (under `--json`) the
 /// structured document.
 ///
-/// The #57 runtime sandbox is ON BY DEFAULT for `--entry` (`SandboxConfig::default`);
+/// The #57 runtime sandbox is on by default for `--entry` (`SandboxConfig::default`);
 /// `--no-sandbox` opts out and `--sandbox-self-test` injects the `openat` probe. The
 /// installed allowlist is recorded in `BuildManifest::sandbox`.
 ///
 /// `--out <PATH>` (`-o`) (#128; REQ-7) places the compiled artifact at a user-named,
-/// executable path (overwriting), so a built binary is a real `./<PATH>` run directly;
+/// executable path (overwriting), so a built binary runs directly as `./<PATH>`;
 /// `None` keeps the existing stable /tmp output path. The reported
-/// `BuildManifest::artifact` is the FINAL path (`<PATH>` when `--out`).
+/// `BuildManifest::artifact` is the final path (`<PATH>` when `--out`).
 ///
-/// `forge build` does NOT itself RUN the produced `--entry` executable: running is
+/// `forge build` does not itself run the produced `--entry` executable: running is
 /// left to the consumer / the conformance test (which exercises the runtime
 /// `thermite_check!` + seccomp behavior directly). This keeps `forge build` a pure
 /// build-and-report step; observing the runtime check fire / the seccomp kill is the
@@ -1553,21 +1553,21 @@ fn run_build(
     Ok(ExitCode::SUCCESS)
 }
 
-/// Run `forge tv`: the CONTRACT-FAITHFULNESS TRANSLATION-VALIDATION deeper audit
+/// Run `forge tv`: the contract-faithfulness translation-validation deeper audit
 /// (#144; `.design/verified/contract-tv.md` REQ-5). Discharges the per-clause Z3
 /// equivalence obligation (`P_production <==> P_reference`) over every
-/// `req`/`ens`/loop-`inv`/`dec` clause of the file (the CORPUS run,
+/// `req`/`ens`/loop-`inv`/`dec` clause of the file (the corpus run,
 /// `contract_tv::tv_file`) and — with `--generated` — over the off-corpus
 /// generated clause space (REQ-3, `contract_tv::run_generated`). Reports each
-/// clause faithful / DIVERGENT / skipped, the headline counts, and (for the
+/// clause faithful / divergent / skipped, the headline counts, and (for the
 /// generated run) confirms the lowerer is faithful off-corpus.
 ///
-/// Exit code: a clean audit (no DIVERGENT clause) exits 0; ANY divergent clause is
-/// a real lowering-fidelity FINDING surfaced as a verification-failure exit (the
+/// Exit code: a clean audit (no divergent clause) exits 0; any divergent clause is
+/// a real lowering-fidelity finding surfaced as a verification-failure exit (the
 /// meaning-mismatch verdict, distinct from `forge check`'s obligation verdict). An
 /// environment failure (file unreadable, parse failure) propagates as a
 /// `ForgeError` (the environment exit). A verus-absent run reports `unverifiable`
-/// clauses (surfaced, never a silent pass — R-CODE-4) and does NOT fail the exit.
+/// clauses (surfaced, never a silent pass — R-CODE-4) and does not fail the exit.
 fn run_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode, ForgeError> {
     use crate::contract_tv::{self, TV_DEFAULT_RLIMIT, TV_DEFAULT_SEED};
 
@@ -1606,8 +1606,8 @@ fn run_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode,
         }
     }
 
-    // Any DIVERGENT clause (corpus OR generated) is a real lowering-fidelity finding
-    // → verification-failure exit (surfaced loudly). A clean audit exits 0.
+    // Any divergent clause (corpus or generated) is a real lowering-fidelity finding
+    // → verification-failure exit. A clean audit exits 0.
     let divergent = corpus_counts.divergent + gen_counts.map(|c| c.divergent).unwrap_or(0);
     if divergent == 0 {
         Ok(ExitCode::SUCCESS)
@@ -1616,27 +1616,27 @@ fn run_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode,
     }
 }
 
-/// Run `forge exec-tv`: the EXEC-POSITION (body) TRANSLATION-VALIDATION deeper audit
-/// (#154/#156; `.design/verified/exec-tv.md` REQ-5). The GENERATED run (PRIMARY)
+/// Run `forge exec-tv`: the exec-position (body) translation-validation deeper audit
+/// (#154/#156; `.design/verified/exec-tv.md` REQ-5). The generated run (the primary one)
 /// discharges the exec-fn obligation `result == <bounded exec reference>` over N
 /// deterministically generated, well-framed exec exprs (`exec_tv::run_generated` —
-/// the off-corpus #122/#146 regression guard); the CORPUS body-expr check
+/// the off-corpus #122/#146 regression guard); the corpus body-expr check
 /// (best-effort) TV-checks the derivable-frame body exprs (`exec_tv::exec_tv_file`),
-/// SKIPPING statements/loops/mutation honestly. Reports each expr Faithful /
-/// DIVERGENT / Unverifiable / Skipped, the headline counts, and the generated run's
+/// skipping statements/loops/mutation. Reports each expr Faithful /
+/// Divergent / Unverifiable / Skipped, the headline counts, and the generated run's
 /// construct coverage.
 ///
-/// Exit code: a clean audit (no DIVERGENT expr) exits 0; ANY divergent expr is a
-/// real exec-lowering FINDING surfaced as a verification-failure exit (the off-corpus
+/// Exit code: a clean audit (no divergent expr) exits 0; any divergent expr is a
+/// real exec-lowering finding surfaced as a verification-failure exit (the off-corpus
 /// #122/#146 catch). An environment failure (file unreadable, parse failure)
 /// propagates as a `ForgeError`. A verus-absent run reports `unverifiable` exprs
-/// (surfaced, never a silent pass — R-CODE-4) and does NOT fail the exit.
+/// (surfaced, never a silent pass — R-CODE-4) and does not fail the exit.
 fn run_exec_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<ExitCode, ForgeError> {
     use crate::exec_tv::{self, EXEC_TV_DEFAULT_RLIMIT, EXEC_TV_DEFAULT_SEED};
 
-    // The corpus body-expr check (best-effort, honest coverage).
+    // The corpus body-expr check (best-effort coverage).
     let corpus = exec_tv::exec_tv_file(file, EXEC_TV_DEFAULT_SEED, EXEC_TV_DEFAULT_RLIMIT)?;
-    // The generated run (PRIMARY) — on by default unless `--no-generated`.
+    // The generated run (the primary one) — on by default unless `--no-generated`.
     let generated_run = match generated {
         Some(n) => Some(exec_tv::run_generated(
             EXEC_TV_DEFAULT_SEED,
@@ -1675,8 +1675,8 @@ fn run_exec_tv(file: &Path, json: bool, generated: Option<usize>) -> Result<Exit
         );
     }
 
-    // Any DIVERGENT expr (corpus OR generated) is a real exec-lowering finding →
-    // verification-failure exit (surfaced loudly). A clean audit exits 0.
+    // Any divergent expr (corpus or generated) is a real exec-lowering finding →
+    // verification-failure exit. A clean audit exits 0.
     let divergent = corpus_counts.divergent + gen_counts.map(|c| c.divergent).unwrap_or(0);
     if divergent == 0 {
         Ok(ExitCode::SUCCESS)
@@ -1751,22 +1751,22 @@ fn exec_tv_report_json(
     })
 }
 
-/// Run `forge body-tv`: the EXEC-BODY (statement / state-refinement)
-/// TRANSLATION-VALIDATION deeper audit (#162; `.design/verified/exec-stmt-tv.md`
+/// Run `forge body-tv`: the exec-body (statement / state-refinement)
+/// translation-validation deeper audit (#162; `.design/verified/exec-stmt-tv.md`
 /// REQ-5 + `.design/verified/loop-tv.md` REQ-5). For each checked fn body it
 /// discharges the body state-refinement obligation (straight-line) or the three
 /// per-run loop obligations (a v1 `while` loop) through verus
-/// (`body_tv::body_tv_file`), reporting each body Faithful / DIVERGENT / Unverifiable
+/// (`body_tv::body_tv_file`), reporting each body Faithful / Divergent / Unverifiable
 /// / Skipped (an out-of-v1 loop / non-scalar mutation / mid-body return / non-derivable
-/// frame is Skipped HONESTLY — never masking an infidelity).
+/// frame is Skipped rather than masking an infidelity).
 ///
-/// Exit code: a clean audit (no DIVERGENT body) exits 0; ANY divergent body is a real
-/// body-lowering state-transformation FINDING surfaced as a verification-failure exit
+/// Exit code: a clean audit (no divergent body) exits 0; any divergent body is a real
+/// body-lowering state-transformation finding surfaced as a verification-failure exit
 /// (the meaning-mismatch verdict, distinct from `forge check`'s obligation verdict —
-/// the SAME convention `forge tv` / `forge exec-tv` use). An environment failure (file
+/// the same convention `forge tv` / `forge exec-tv` use). An environment failure (file
 /// unreadable, parse failure) propagates as a `ForgeError` (the environment exit). A
 /// verus-absent run reports `unverifiable` bodies (surfaced, never a silent pass —
-/// R-CODE-4) and does NOT fail the exit (a Skipped / Unverifiable is zero, only a
+/// R-CODE-4) and does not fail the exit (a Skipped / Unverifiable is zero, only a
 /// Divergent is nonzero).
 fn run_body_tv(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
     use crate::body_tv::{self, BODY_TV_DEFAULT_RLIMIT, BODY_TV_DEFAULT_SEED};
@@ -1787,9 +1787,9 @@ fn run_body_tv(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
         );
     }
 
-    // Any DIVERGENT body is a real body-lowering state-transformation finding →
-    // verification-failure exit (surfaced loudly). A clean audit (Faithful / Skipped /
-    // Unverifiable only) exits 0 (the SAME convention `forge exec-tv` uses).
+    // Any divergent body is a real body-lowering state-transformation finding →
+    // verification-failure exit. A clean audit (Faithful / Skipped /
+    // Unverifiable only) exits 0 (the same convention `forge exec-tv` uses).
     if counts.divergent == 0 {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -1931,7 +1931,7 @@ fn render_build(manifest: &BuildManifest) -> String {
 }
 
 /// The `<file>.review.json` record path for a reviewed `<file>` (#19; REQ-4, OQ-2 —
-/// a SEPARATE document keyed by the reviewed file). `conformance/sum.th` →
+/// a separate document keyed by the reviewed file). `conformance/sum.th` →
 /// `conformance/sum.th.review.json`.
 fn review_record_path(file: &Path) -> PathBuf {
     let mut name = file
@@ -1942,12 +1942,12 @@ fn review_record_path(file: &Path) -> PathBuf {
     file.with_file_name(name)
 }
 
-/// Render the spec-intent review ARTIFACT as human-readable text (#19;
+/// Render the spec-intent review artifact as human-readable text (#19;
 /// `.design/forge/spec-review.md` REQ-5, §7 — the human half of the dual emission;
 /// the `--json` form is the critic-model surface). Per intent-reviewable fn: its
-/// declarative spec layer (req/ens/fx plus referenced spec-fn declarations, NO
+/// declarative spec layer (req/ens/fx plus referenced spec-fn declarations, no
 /// bodies) and the "is this what you meant?" prompt; then the battery-failing fns
-/// flagged with their cause (NOT surfaced for intent review, R-DEFER-9).
+/// flagged with their cause (not surfaced for intent review, R-DEFER-9).
 fn render_review(artifact: &ReviewArtifact) -> String {
     let mut out = String::new();
     out.push_str(&format!(
@@ -2086,7 +2086,7 @@ fn render_repair_item(item: &RepairItem) -> String {
     }
 }
 
-/// Render the AUDIT MANIFEST v1 as a human-readable summary (#15;
+/// Render the audit manifest v1 as a human-readable summary (#15;
 /// `.design/forge/audit-manifest.md` REQ-2, OQ-1 — the human shape is a rendering
 /// detail; the `--json` document is the stable contract). Three sections: the
 /// per-fn table, the project assurance, and the §8/§9 greppable TCB inventory.
@@ -2144,7 +2144,7 @@ fn render_audit(manifest: &AuditManifest) -> String {
         ));
     }
 
-    // The §9 ENUMERABLE TCB — slag ∪ boundary ∪ toolchain. The §8 "`grep slag` is
+    // The §9 enumerable TCB — slag ∪ boundary ∪ toolchain. The §8 "`grep slag` is
     // the complete inventory" framing → a line-oriented, greppable section.
     out.push_str("tcb (trusted computing base):\n");
     if manifest.tcb.slag_blocks.is_empty() && manifest.tcb.boundary_contracts.is_empty() {
@@ -2173,10 +2173,10 @@ fn render_audit(manifest: &AuditManifest) -> String {
         manifest.tcb.toolchain.verus, manifest.tcb.toolchain.thermite
     ));
 
-    // The #274 LEAN-FRAGMENT MEMBERSHIP section (REQ-7) — a line-oriented, greppable
+    // The #274 lean-fragment membership section (REQ-7) — a line-oriented, greppable
     // capability statement (the OQ-1 precedent): per item, whether `--engine lean`
     // would attempt it and (if not) the structured refusal class + verbatim reason.
-    // ALWAYS emitted (the probe is pure, no Lean toolchain needed); informational —
+    // Always emitted (the probe is pure, no Lean toolchain needed); informational —
     // it gates nothing (REQ-10). The level pairs each membership row with its `level`
     // from the `functions` rows (same name, same source order).
     out.push_str("lean fragment:\n");
@@ -2207,11 +2207,11 @@ fn render_audit(manifest: &AuditManifest) -> String {
     out
 }
 
-/// Render the #10 project ASSURANCE MANIFEST as human-readable text
+/// Render the #10 project assurance manifest as human-readable text
 /// (`.design/forge/degrade-ladder.md` REQ-5/REQ-6, §5.2 "displayed on every
 /// build"). The project headline (the min-over-functions, or `FAILED` when any fn
 /// does not certify) plus, when any function was an automatic degrade, the per-fn
-/// lowered-assurance flags. The headline goes LAST so it is the final line a reader
+/// lowered-assurance flags. The headline goes last so it is the final line a reader
 /// (or an agent) sees.
 fn render_assurance(manifest: &AssuranceManifest) -> String {
     let mut out = String::new();
@@ -2325,8 +2325,8 @@ fn level_str(level: Level) -> &'static str {
 
 /// `forge new <name>` (REQ-7): create a minimal v0.1 project skeleton — a
 /// manifest, a lockfile carrying the pinned solver seed (§5.3), and a skill pin
-/// (Appendix B). Refuses to overwrite a non-empty target (a structured error,
-/// not a clobber).
+/// (Appendix B). Refuses to overwrite a non-empty target with a structured error
+/// rather than clobbering it.
 pub fn scaffold_project(target: &Path) -> Result<(), ForgeError> {
     if target.exists() {
         let non_empty = target.is_file()
@@ -2420,9 +2420,9 @@ mod tests {
     }
 
     // #11 (`.design/forge/solver-profiles.md` REQ-5): `--rlimit <FLOAT>` parses
-    // into the `Check.rlimit`; the DEFAULT (no flag) is the pinned generous
+    // into the `Check.rlimit`; the default (no flag) is the pinned generous
     // `DEFAULT_RLIMIT`; a missing / non-numeric / non-positive value is a Usage
-    // error (the test lever for the timeout path uses a LOW value like `1`).
+    // error (the test lever for the timeout path uses a low value like `1`).
     #[test]
     fn parses_rlimit_flag() {
         assert_eq!(
@@ -2464,9 +2464,9 @@ mod tests {
     }
 
     // #12 (`.design/forge/mutation-scoring.md` REQ-5): `--mutation-floor <FLOAT>`
-    // parses into `Check.mutation_floor`; the DEFAULT (no flag) is `MUTATION_FLOOR`
+    // parses into `Check.mutation_floor`; the default (no flag) is `MUTATION_FLOOR`
     // (0.60); a missing / non-numeric / out-of-[0,1] value is a Usage error (the
-    // AC-3 floor-flip lever uses a LOW value like `0.2`).
+    // AC-3 floor-flip lever uses a low value like `0.2`).
     #[test]
     fn parses_mutation_floor_flag() {
         assert_eq!(
@@ -2506,7 +2506,7 @@ mod tests {
     }
 
     // REQ-7 (`.design/lower/l2-kani.md`): `--level l2` selects the Kani path; the
-    // DEFAULT (no flag) is L3; an unknown / missing value is a Usage error.
+    // default (no flag) is L3; an unknown / missing value is a Usage error.
     #[test]
     fn parses_level_flag() {
         assert_eq!(
@@ -2541,8 +2541,8 @@ mod tests {
         ));
     }
 
-    // #57 (`.design/forge/runtime-sandbox.md` REQ-4/REQ-6): the sandbox is ON BY
-    // DEFAULT for `forge build` (no flag → SandboxMode::On, no self-test);
+    // #57 (`.design/forge/runtime-sandbox.md` REQ-4/REQ-6): the sandbox is on by
+    // default for `forge build` (no flag → SandboxMode::On, no self-test);
     // `--no-sandbox` opts out; `--sandbox-self-test` injects the probe.
     #[test]
     fn parses_build_sandbox_flags() {

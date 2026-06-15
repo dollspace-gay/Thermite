@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: c5839a92c3fc572ce9b1877f229e73399f3a58ff (re-pinned 2026-06-15: `thermite-tv/src/lib.rs` REQ-5 status row corrected to SHIPPED to match the forge plug-in implementation; no contract-TV behavior change; PR #18)
+audited-sha: 1e9a3dfeb41394364f73b6580b9f30025937eac6 (re-pinned 2026-06-15: `thermite-tv/src/lib.rs` REQ-5 status copy replaced with a generated canonical registry reference after stage-1 registry entries; no contract-TV behavior change; RFC #17)
 governs: thermite-tv/src/ref_encode.rs, thermite-tv/src/obligation.rs, forge/src/contract_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated twice: code → spec → spec-intent)

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 3f6783069ff87306d06e9a2f7cac595ac0a57a54 (re-pinned 2026-06-15: registry-declared status policy, tracker-neutral references, contributors, and generated-region checking landed; RFC #17)
+audited-sha: 1e9a3dfeb41394364f73b6580b9f30025937eac6 (re-pinned 2026-06-15: legacy mapping records, source-comment reference_list generation, and the first REQ-5 replacement region landed after stage-1 registry entries; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

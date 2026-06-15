@@ -19,13 +19,26 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
 - REQ-1 (**verdict plumbing**, plan item 1): The seven-verdict vocabulary —
   `Proved`, `Counterexample`, `RealWitness`, `CovenantRefuted`,
   `Stuck(goals)`, `KernelBudget`, `Timeout` — becomes the closed
-  certificate-level outcome set. The engine-level
+  certificate-level outcome set, a **separate cert-level enum**, not arms
+  of `engine::Verdict`. The engine-level
   `Verdict { Proven, Refuted, Unknown(Reason) }` in `forge/src/engine.rs`
-  maps total-functionally into it (no `Unknown` survives to a
-  certificate). `KernelBudget` (elaboration/normalization budget, Q4
+  supplies only three of the seven: `Proved`/`Counterexample`/`Timeout`
+  map total-functionally from it (no `Unknown` survives to a
+  certificate). The other four — `RealWitness`, `CovenantRefuted`,
+  `Stuck`, `KernelBudget` — have **no engine-level source** and are
+  produced **upstream at the forge orchestration layer** (the relax
+  route, the covenant check, the battery, and the budget wrapper,
+  respectively); AC-1's exhaustiveness is therefore over the cert enum's
+  construction sites, not a wildcard-free match on the 3-arm engine type.
+  `KernelBudget` (elaboration/normalization budget, Q4
   default 30s per clause) gets its own shared discriminator alongside the
   existing solver-rlimit one in `forge/src/tv_signal.rs`
-  (`is_rlimit_signal`), in the same one-shared-helper pattern. Certificate
+  (`is_rlimit_signal`), in the same one-shared-helper pattern — **pending
+  a signal probe** (Q-KBSIGNAL): whether the toolchain emits a textually
+  distinct kernel/elaboration-budget signal vs solver rlimit is
+  unverified, and if it does not, the discriminator is a forge-side
+  elaboration wall-clock/timeout wrapper at the Q4 budget, not
+  output-text matching. Certificate
   JSON goes to schema v2 with per-clause `engine`/`trust`/`verdict`
   fields, additive over the existing `Certificate` struct
   (`forge/src/manifest.rs`) so v1 oracle stability is preserved. The
@@ -34,15 +47,29 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   (`forge/src/degrade.rs`: closure-instrumented non-invocation tests like
   `counterexample_never_degrades`).
 - REQ-2 (**exporter hardening**, plan item 2): `forge/src/lean_export.rs`
-  becomes the forge's front door. The per-item axiom gate
-  (`#print axioms` ⊆ {propext, Classical.choice, Quot.sound}) runs as a
-  *certifying* step on every forge-discharged item, not an audit-time
-  step. All existing refusal paths are preserved and tested
-  (`ExportRefusal`: `IncompleteRegistry` as the hard gate,
-  `OutOfFragment`, `OpenHole`, …). The work includes the audit-F10
-  re-inspection pass and a new correspondence-doc table for the exporter
-  surface (extending `.design/verified/rust-lean-correspondence.md`'s
-  drift-tripwire discipline via the shipped doc-drift gate).
+  becomes the forge's front door. The exporter's structural soundness
+  gates are **already shipped** and pinned as the EXP drift tripwire
+  (`.design/verified/rust-lean-correspondence.md` Table 4): the
+  `IncompleteRegistry` hard gate on undefined callees, the bool-result
+  class (Pin H), tier-(b) capture-safety, and the full structured
+  `ExportRefusal` inventory (`IncompleteRegistry`, `OutOfFragment`,
+  `NotPureContract`, `NonIntResult`, `OpenHole`, `LoopBody`,
+  `OptResResult`) — #243/#244/#245/#246, #253, #264. The genuinely-new
+  work is twofold. (a) **Axiom-gate hoist**: the per-item axiom gate
+  (`#print axioms` ⊆ {propext, Classical.choice, Quot.sound}) — today the
+  `STANDARD_AXIOM_ALLOWLIST` check in `engine.rs` that runs *only* on the
+  interactive replay tier — becomes a shared *certifying* step on every
+  Lean discharge path, including the auto tiers (a)/(b), which currently
+  return `Unknown` on export failure with no axiom check. All existing
+  `ExportRefusal` paths are preserved, each gains a test, and the refusal
+  class becomes visible at certificate level (today the auto path drops
+  it into `Unknown`). (b) **Correspondence table**: author the new
+  exporter-surface correspondence table under `.design/verified/`
+  (extending the Table-4 drift-tripwire discipline) and repoint the
+  *existing* doc-drift route at it — the doc-drift gate is built and
+  already routes `forge/src/lean_export.rs` (#258,
+  `tooling/spec-routes.toml`), so AC-6 is authoring a table + pinning its
+  `audited-sha`, not building the gate.
 - REQ-3 (**surface syntax**, plan item 3): `thermite-syntax` parses
   `prop fn`, `lemma name(args) req … ens … proof { … }`,
   `proof for f { ens#k by { … } }`, `?pN` proof holes,
@@ -56,7 +83,13 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   the existing `open_hole_reason` path. Semantic addressing
   (`thermite-syntax/src/address.rs`) extends to proof blocks so
   `forge fill` can target `?pN`. Syntax is always-on (no feature flag);
-  gating is forge-side via holes and routing.
+  gating is forge-side via holes and routing. **Grounding decisions**
+  (Q-DECWF): the lexer is ASCII-only (`lex_punct` handles no multibyte
+  operators), so `dec wf` ships with an **ASCII relation spelling**
+  (`dec wf <rel>`), not the Unicode `⟨⟩` form, to avoid adding UTF-8
+  operator lexing; and the refinement-type sugar desugars in a **new
+  post-parse pass** (none exists in `thermite-syntax` today) so downstream
+  stages see only the v1 clause shapes plus the new item kinds.
 - REQ-4 (**covenant engine**, plan item 4): `inhabit` witnesses are
   type-checked and *executed* against `req`; `falsify` rides the
   SplitMix64 generator (`thermite-tv/src/gen.rs`) aimed at the executable
@@ -68,6 +101,14 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   closure-instrumented style, not a convention. Q3 defaults adopted:
   `falsify 50_000` fixed-seed when unstated; witnesses may be
   generator-synthesized but at least one must be author-stated.
+  **Foundation dependency**: `Engine::discharge(&self, o)` takes no
+  covenant today, so making covenant-before-burn structural is a
+  cross-cutting `Engine`-trait signature change rippling through
+  `VerusEngine`/`LeanEngine` and every call site (`check.rs`,
+  `contract_tv.rs`, `exec_tv.rs`, `body_tv.rs`); it lands with the
+  foundation (REQ-1/REQ-2) so the call sites are touched once, not twice.
+  `CovenantRefuted` is wired as a `Counterexample`-class hard fail in
+  `degrade.rs`'s `LadderAction` (the same never-degrades treatment).
 - REQ-5 (**frozen battery**, plan item 5): the tactic allowlist (`omega`,
   `simp`, `nlinarith`, `induction`, `decide`, `calc`, `exact`, `from`,
   `push_neg`) and the frozen simp set ship as a registry data file
@@ -87,9 +128,14 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   unchanged — only the kill check changes, from per-mutant solver run to
   "does the existing proof term still typecheck", decidable per mutant;
   survivors keep counting against the floor (Budd–Angluin). (c) The
-  definition-tower budget (Q2 default: depth 4 / 40 definitions) plus
-  `forge audit --meaning` printing the unfolded tower with its hash
-  pinned in the certificate.
+  definition-tower budget (Q2 default: depth 4 / 40 definitions),
+  enforced as a **certify-time gate** on the discharge path — a tower
+  deeper than the budget yields a refusal/failed certificate. The gating
+  does **not** live in `forge audit`, whose "gates nothing" projection
+  invariant is shipped (#274, `audit-manifest.md` REQ-10):
+  `forge audit --meaning` is the read-only companion, printing the
+  unfolded tower and pinning its hash in the certificate, gating nothing
+  itself.
 - REQ-7 (**`forge goal --proof` / `forge fill` UX**, plan item 7): the
   goal REPL (`forge/src/goal_repl.rs`) grows a proof view — forge-routed
   goals rendered with hypotheses in scope — and `fill_hole` accepts `?pN`
@@ -97,14 +143,22 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
   certificate, per the RFC-1 §9 L3 certificate shape.
 - REQ-8 (**relax routing**, plan item 8): the `relaxable` syntactic check
   (universally quantified, polynomial atoms, no div/mod/shifts/casts in
-  atoms); nlsat invocation as an engine route recorded via the existing
-  engine-attribution mechanism (`Certificate::with_engine_attribution`);
-  the integrality check on real countermodels (Q8 default: rounding +
-  radius-2 ℤⁿ box, 1s budget); `RealWitness` escalation carrying the raw
-  real point to the forge as proof-search guidance. The spine lemmas
-  `r_relax_sound` + `rencode_sound` (metatheory §7) land in a
-  Mathlib-importing island module with the axiom probe extended to cover
-  them — this sub-item is independent and can land first.
+  atoms) — narrowing the fragment predicate, which today admits all
+  classes (`Fragment::admits()`) under a `[Verus]`-only
+  `default_engines()`; a **new `EngineName::Nlsat`** `Engine` impl issuing
+  a direct Z3 `nlsat`-tactic (QF_NRA) query (Q-NLSAT — today Z3 is reached
+  only through Verus, never as a real-arithmetic query), recorded via the
+  existing engine-attribution mechanism
+  (`Certificate::with_engine_attribution`); the integrality check on real
+  countermodels (Q8 default: rounding + radius-2 ℤⁿ box, 1s budget);
+  `RealWitness` (a **new cert-verdict variant** carrying the raw real
+  point — the 3-arm engine `Verdict`/`Counterexample` cannot) escalates to
+  the forge as proof-search guidance. The spine lemmas `r_relax_sound` +
+  `rencode_sound` (metatheory §7) land in a Mathlib-importing island
+  module — low-friction, since full Mathlib is already pinned via the
+  `lean-smt` dependency (toolchain v4.29.0), so the island reuses the
+  existing toolchain — with the axiom probe extended to cover them; this
+  sub-item is independent and can land first.
 - REQ-9 (**lemma library mechanics**, plan item 9): per-project lemma
   namespace (Q1); citations resolve against certified lemmas only
   (`simp [melems_cons]` fails if `melems_cons` lacks a certificate);
@@ -125,14 +179,21 @@ Q-register defaults (Q1–Q4, Q6–Q8) adopted inline. Umbrella:
 
 ## Acceptance Criteria
 
-- [ ] AC-1: A single seven-variant verdict enum exists in `forge/src`
-  with serde round-trip tests; a total mapping from
-  `engine::Verdict` is exhaustively match-tested (no wildcard arm, no
-  path yielding a certificate without one of the seven). (REQ-1)
+- [ ] AC-1: A single seven-variant cert-level verdict enum exists in
+  `forge/src` with serde round-trip tests; `Proved`/`Counterexample`/
+  `Timeout` are produced by an exhaustively match-tested mapping from
+  `engine::Verdict` (no wildcard arm), and `RealWitness`/`CovenantRefuted`/
+  `Stuck`/`KernelBudget` are produced at their upstream construction sites
+  (relax route / covenant check / battery / budget wrapper); every path
+  yielding a certificate yields one of the seven, and no `Unknown`
+  survives. (REQ-1)
 - [ ] AC-2: `tv_signal.rs` (or its successor module) distinguishes
-  kernel-budget exhaustion from solver rlimit with two discriminators
-  and a negative test proving neither matches the other's signal text.
-  (REQ-1)
+  kernel-budget exhaustion from solver rlimit with two discriminators and
+  a negative test proving the two cannot be confused. If the probe
+  (Q-KBSIGNAL) finds no textually distinct kernel-budget signal, the
+  kernel discriminator is a forge-side elaboration-timeout wrapper at the
+  Q4 budget, and the negative test asserts the wrapper fires independently
+  of the rlimit signal text. (REQ-1)
 - [ ] AC-3: Hermetic tests assert, with instrumented closures, that
   `CovenantRefuted` and `Counterexample` never invoke any lower-ladder
   or retry path, and that no code path constructs `Proved` from a
@@ -290,6 +351,35 @@ in the program plan §6 (tokens per discharged L3 clause) consumes
 `authoring_tokens` where present and falls back to `proof_tokens` as a
 proxy, with the dashboard labeling which it is.
 
+### Q-KBSIGNAL: Is kernel/elaboration-budget exhaustion textually distinguishable from solver rlimit? (probe pending)
+
+**Decision:** a prerequisite probe at the head of the foundation. `tv_signal.rs`
+has only `is_rlimit_signal`; both kernel-budget and solver-rlimit exhaustion
+currently fall into `Reason::VerusTimeout`. If Verus/Lean emit a distinct
+kernel-budget signal string, the second discriminator follows the
+one-shared-helper pattern (AC-2). If not, `KernelBudget` is detected by a
+forge-side elaboration wall-clock/timeout wrapper at the Q4 budget (30s/clause),
+not output-text matching. Either way `KernelBudget` is produced upstream as a
+cert-level verdict, never derived from the 3-arm `engine::Verdict`.
+
+### Q-DECWF: `dec wf` relation spelling — ASCII or Unicode? (resolved)
+
+**Decision:** ASCII. The lexer (`thermite-syntax`'s `lex_punct`) is ASCII-only
+and handles no multibyte operators, so `dec wf` ships as `dec wf <rel>`, not the
+Unicode `⟨⟩` form, avoiding a UTF-8 operator-lexing subtask. Relatedly, the
+refinement-type sugar (`x: T{P}`) desugars in a new post-parse pass — none exists
+in `thermite-syntax` today — so downstream stages see only v1 clause shapes.
+
+### Q-NLSAT: How is nlsat invoked? (resolved)
+
+**Decision:** a new `EngineName::Nlsat` `Engine` impl issuing a direct Z3
+`nlsat`-tactic (QF_NRA) query. Today nlsat is unreachable as a route
+(`Fragment::admits()` returns all classes, `default_engines()` is `[Verus]`, Z3
+is reached only transitively through Verus), so this adds the narrowing
+`relaxable` fragment predicate + conditional dispatch + the integrality check
+(Q8: rounding + radius-2 ℤⁿ box, 1s budget). Attribution and certificate
+plumbing reuse `Certificate::with_engine_attribution` unchanged.
+
 ## Out of Scope
 
 - The stratified cage: classifier, sort graph, restratify, `Strat/`
@@ -309,3 +399,16 @@ proxy, with the dashboard labeling which it is.
 *Stage-1 spec · child of `.design/thermite2-program.md` (REQ-3) ·
 sources: RFC-1 §4/§5/§8/§9/§10/§12, program plan §2/§5, metatheory §7 ·
 gate: G1 · baseline `dollspace-gay/Thermite @ c46da3ac`.*
+
+*Amendment (2026-06-15, grounding pass against HEAD ~`7f27424c`, driven by a
+`crosslink kickoff plan` gap analysis + a git-history sweep): dropped the phantom
+"audit-F10" reference and reframed REQ-2 (exporter soundness gates already
+shipped #243–#246/#253/#264; new work = axiom-gate hoist to all tiers +
+correspondence table on the already-built doc-drift route); reconciled REQ-6c
+with the shipped "audit gates nothing" invariant (#274 — gating at certify time,
+`forge audit --meaning` read-only); clarified REQ-1/AC-1/AC-2 (separate cert-level
+verdict enum; four verdicts produced upstream, not mapped from the 3-arm
+`engine::Verdict`); recorded covenant as a foundation `Engine`-signature change
+(REQ-4); resolved Q-DECWF (ASCII `dec wf`), Q-NLSAT (new `EngineName::Nlsat`,
+direct Z3 nlsat tactic), and opened Q-KBSIGNAL (kernel-budget signal probe +
+timeout-wrapper fallback). REQ/AC IDs and structure unchanged.*

@@ -275,10 +275,15 @@ pub fn parse(src: &str) -> ParseResult {
     let (tokens, lex_errors) = tokenize(src);
     let mut parser = Parser::new(src, tokens, lex_errors);
     parser.parse_program();
+    let mut program = Program {
+        items: parser.items,
+    };
+    // Post-parse desugaring pass (`.design/stage1-forge-tier.md` REQ-3): fold the
+    // refinement-type sugar (`x: T{P}` / `-> T{P}`) into the v1 `req`/`ens` clause
+    // shapes so downstream stages see only v1 contracts plus the new item kinds.
+    crate::desugar::desugar(&mut program);
     ParseResult {
-        program: Program {
-            items: parser.items,
-        },
+        program,
         errors: parser.errors,
     }
 }
@@ -738,9 +743,25 @@ impl<'a> Parser<'a> {
     ) -> PResult<Item> {
         self.consume(&TokKind::Fn, "`fn`")?;
         let name = self.take_ident("a function name")?;
-        let params = self.parse_params()?;
+        // Refinement-type sugar (`.design/stage1-forge-tier.md` REQ-3): a refined
+        // parameter `x: T{P}` / return `-> T{P}` records its predicate here; the
+        // post-parse `desugar` pass folds them into `req`/`ens`. Only a `fn`
+        // collects refinements (it carries the v1 contract); `spec fn`/`prop fn`/
+        // `lemma` params parse without (a `{` after their param type is an error).
+        let mut refinements: Vec<Refinement> = Vec::new();
+        let params = self.parse_params_inner(Some(&mut refinements))?;
         self.consume(&TokKind::Arrow, "`->`")?;
         let ret = self.parse_type()?;
+        // A return refinement `-> T{P}` (REQ-3): the `{` here is unambiguously a
+        // refinement, not the body — the mandatory contract (`req`…) parses next,
+        // and the body `{` only follows `fx`.
+        if self.check(&TokKind::LBrace) {
+            let pred = self.parse_refinement_clause()?;
+            refinements.push(Refinement {
+                target: RefinementTarget::Result,
+                pred,
+            });
+        }
         let contract = self.parse_contract(&name)?;
         // The optional `dec <measure>` termination clause of a recursive exec `fn`
         // (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). It parses after the
@@ -815,6 +836,7 @@ impl<'a> Parser<'a> {
             dec,
             body,
             holes,
+            refinements,
             span,
         }))
     }
@@ -1223,7 +1245,23 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Parse a `(name: Type, …)` parameter list (no refinements). Used by `spec
+    /// fn`/`prop fn`/`lemma`, where a refinement `{P}` after a param type is not
+    /// accepted (a stray `{` there surfaces as the normal `,`/`)` parse error).
     fn parse_params(&mut self) -> PResult<Vec<Param>> {
+        self.parse_params_inner(None)
+    }
+
+    /// Parse a `(name: Type[{P}], …)` parameter list. When `refinements` is
+    /// `Some`, a refinement-type sugar `{P}` after a parameter's type
+    /// (`.design/stage1-forge-tier.md` REQ-3) is parsed and recorded against that
+    /// parameter (folded into `req` by the post-parse desugar pass); when `None`,
+    /// no refinement is consumed (a `{` then is a normal unexpected token). Only a
+    /// `fn` passes `Some` (it carries the v1 contract the predicate folds into).
+    fn parse_params_inner(
+        &mut self,
+        mut refinements: Option<&mut Vec<Refinement>>,
+    ) -> PResult<Vec<Param>> {
         self.consume(&TokKind::LParen, "`(`")?;
         let mut params = Vec::new();
         if !self.check(&TokKind::RParen) {
@@ -1231,6 +1269,16 @@ impl<'a> Parser<'a> {
                 let name = self.take_ident("a parameter name")?;
                 self.consume(&TokKind::Colon, "`:`")?;
                 let ty = self.parse_type()?;
+                // A refinement `x: T{P}` (only when the caller collects them).
+                if let Some(refs) = refinements.as_deref_mut() {
+                    if self.check(&TokKind::LBrace) {
+                        let pred = self.parse_refinement_clause()?;
+                        refs.push(Refinement {
+                            target: RefinementTarget::Param(name.clone()),
+                            pred,
+                        });
+                    }
+                }
                 params.push(Param { name, ty });
                 if !self.eat(&TokKind::Comma) {
                     break;
@@ -1242,6 +1290,23 @@ impl<'a> Parser<'a> {
         }
         self.consume(&TokKind::RParen, "`)`")?;
         Ok(params)
+    }
+
+    /// Parse a refinement predicate `{ P }` (`.design/stage1-forge-tier.md` REQ-3):
+    /// the brace-delimited contract-position expression of an `x: T{P}` / `-> T{P}`
+    /// refinement. Captured as a [`Clause`] (parsed expr + verbatim text + span) so
+    /// the desugar pass can fold it into `req`/`ens` with faithful text. The
+    /// predicate is a no-struct-literal head (like a clause), so a trailing
+    /// `Name { … }` is not mis-read as a struct literal.
+    fn parse_refinement_clause(&mut self) -> PResult<Clause> {
+        self.consume(&TokKind::LBrace, "`{` to open a refinement predicate")?;
+        let start = self.peek_span();
+        let expr = self.with_no_struct_literal(Self::parse_expr)?;
+        let end = self.prev_span();
+        self.consume(&TokKind::RBrace, "`}` to close the refinement predicate")?;
+        let span = start.to(end);
+        let text = self.span_text(span);
+        Ok(Clause { expr, text, span })
     }
 
     /// Parse the mandatory contract `req` then `ens`+ then `fx`, in that exact

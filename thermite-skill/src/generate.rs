@@ -732,6 +732,7 @@ fn item_inventory() -> Vec<Item> {
             // for this representative complete skill-inventory item (the additive
             // `FnItem.holes` ripple — a skill example is never a holed item).
             holes: Vec::new(),
+            refinements: Vec::new(),
             span,
         }),
         Item::SpecFn(SpecFnItem {

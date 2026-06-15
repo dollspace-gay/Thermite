@@ -423,7 +423,44 @@ pub struct FnItem {
     /// `match Stmt` stay untouched. The parser records a hole here when it sees a
     /// `?N` in fn-body statement position (`parser.md` REQ-11).
     pub holes: Vec<Hole>,
+    /// TRANSIENT refinement-type sugar (`.design/stage1-forge-tier.md` REQ-3): the
+    /// `x: T{P}` parameter refinements and the `-> T{P}` return refinement the
+    /// parser captured on this fn, BEFORE the post-parse desugar pass folds them
+    /// into the contract. The pass [`crate::desugar::desugar_refinements`] runs at
+    /// the end of [`crate::parse`] and (a) folds each parameter refinement into the
+    /// `req` clause (`req && P` — so a caller automatically owes the refinement as a
+    /// call-site obligation, Verus-checked), (b) appends each return refinement as
+    /// an `ens` clause, then (c) CLEARS this vec. So in every `parse()` output this
+    /// is EMPTY — downstream stages (`thermite-spec` validation, lowering) see only
+    /// the v1 `req`/`ens` clause shapes (REQ-3 "downstream sees only v1 clause
+    /// shapes plus the new item kinds"). It is `Vec::new()` on every non-refined
+    /// `FnItem` literal, mirroring the `holes: Vec::new()` / `dec: None` additive
+    /// precedent.
+    pub refinements: Vec<Refinement>,
     pub span: Span,
+}
+
+/// A refinement-type sugar predicate captured on a [`FnItem`]
+/// (`.design/stage1-forge-tier.md` REQ-3), BEFORE the post-parse desugar pass folds
+/// it into the contract. A `x: T{P}` parameter refinement targets the parameter;
+/// a `-> T{P}` return refinement targets the result. TRANSIENT: present only
+/// between parsing and [`crate::desugar::desugar_refinements`], which folds it into
+/// `req`/`ens` and clears it (so it never reaches downstream stages).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refinement {
+    pub target: RefinementTarget,
+    /// The refinement predicate `P` (a contract-position expression over the
+    /// parameter, or over `result` for a return refinement), as a [`Clause`].
+    pub pred: Clause,
+}
+
+/// What a [`Refinement`] constrains (`.design/stage1-forge-tier.md` REQ-3): a named
+/// parameter (`x: T{P}` → folds into `req`) or the function result (`-> T{P}` →
+/// folds into `ens`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RefinementTarget {
+    Param(Ident),
+    Result,
 }
 
 /// An open body hole `?N` (`.design/forge/goal-repl.md` REQ-4, #193). A hole is a

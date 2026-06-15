@@ -671,6 +671,7 @@ mod tests {
                 tail: None,
             }),
             holes: Vec::new(),
+            refinements: Vec::new(),
             span: thermite_syntax::Span::new(0, 0),
         });
         (f, spec_items)

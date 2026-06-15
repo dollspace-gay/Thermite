@@ -106,6 +106,105 @@ comment_prefix = "//! "
 title = "Lower Crate Scaffold Status References"
 
 [[view]]
+name = "thermite-lower-verus-lowering-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-verus-lowering-status"
+comment_prefix = "//! "
+title = "Verus Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-boundary-composition-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-boundary-composition-status"
+comment_prefix = "//! "
+title = "Boundary Composition Canonical Status References"
+
+[[view]]
+name = "thermite-lower-adt-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-adt-status"
+comment_prefix = "//! "
+title = "ADT Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-recursion-schemes-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-recursion-schemes-status"
+comment_prefix = "//! "
+title = "Recursion Scheme Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-collections-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-collections-status"
+comment_prefix = "//! "
+title = "Collections Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-vec-completeness-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-vec-completeness-status"
+comment_prefix = "//! "
+title = "Vec Completeness Canonical Status References"
+
+[[view]]
+name = "thermite-lower-string-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-string-status"
+comment_prefix = "//! "
+title = "String Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-map-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-map-status"
+comment_prefix = "//! "
+title = "Map Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-option-result-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-option-result-status"
+comment_prefix = "//! "
+title = "Option/Result Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-recursion-tuples-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-recursion-tuples-status"
+comment_prefix = "//! "
+title = "Recursion/Tuple Lowering Canonical Status References"
+
+[[view]]
+name = "thermite-lower-ergonomics-status"
+path = "thermite-lower/src/lower.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-ergonomics-status"
+comment_prefix = "//! "
+title = "Ergonomics Lowering Canonical Status References"
+
+[[view]]
 name = "thermite-spec-lib-combinators-status"
 path = "thermite-spec/src/lib.rs"
 kind = "reference_list"
@@ -113,6 +212,15 @@ mode = "region"
 region = "thermite-spec-lib-combinators-status"
 comment_prefix = "//! "
 title = "SpecTherm Combinator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-string-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-string-status"
+comment_prefix = "//! "
+title = "String Validator Canonical Status References"
 
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
@@ -338,6 +446,405 @@ id = "REQ-SPEC-VALIDATOR-FLAT-CLOSURE"
 replacement_view = "thermite-spec-lib-combinators-status"
 note = "Spec crate-root validator summary row replaced by a generated reference to the validator owner."
 
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-1 (file frame + `fn`/`spec fn` signature)"
+id = "REQ-LOWER-VERUS-FRAME"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer Verus frame row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-2 (type lowering)"
+id = "REQ-LOWER-VERUS-TYPE-LOWERING"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer type-lowering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-3 (expression lowering — exec)"
+id = "REQ-LOWER-VERUS-EXEC-EXPR"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer exec-expression row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-4 (statement + loop lowering)"
+id = "REQ-LOWER-VERUS-STMT-LOOP"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer statement/loop row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-5 (spec-context `Seq` lowering)"
+id = "REQ-LOWER-VERUS-SPEC-SEQ"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer spec-context row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-6 (combinator Verus(L3) defs)"
+id = "REQ-LOWER-VERUS-COMBINATOR-DEFS"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer combinator-definition row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-7 (proof-aid emission, shape-keyed)"
+id = "REQ-LOWER-VERUS-PROOF-AIDS"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer proof-aid row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-8 (golden-file contract — VERIFY)"
+id = "REQ-LOWER-VERUS-GOLDEN-VERIFY"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer golden-verification row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-9 (`LowerError`, no panics)"
+id = "REQ-LOWER-VERUS-ERRORS"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Lowerer error-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-EQ (equivalent-mutant equivalence-obligation seam, #101)"
+id = "REQ-LOWER-VERUS-EQUIV-OBLIGATION"
+replacement_view = "thermite-lower-verus-lowering-status"
+note = "Equivalent-mutant lowering seam row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "composition REQ-1 (assumable-signature emission, boundary/slag only)"
+id = "REQ-LOWER-BOUNDARY-EXTERNAL-BODY"
+replacement_view = "thermite-lower-boundary-composition-status"
+note = "Boundary-composition row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-8 (struct → Verus struct; type-invariant → enforced predicate)"
+id = "REQ-LOWER-ADT-STRUCT"
+replacement_view = "thermite-lower-adt-status"
+note = "ADT struct-lowering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-9 (enum → Verus enum; `match` → Verus `match`; `is` → variant test)"
+id = "REQ-LOWER-ADT-ENUM"
+replacement_view = "thermite-lower-adt-status"
+note = "ADT enum-lowering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-10 (recursive type → Verus recursive enum; `Box`; structural `decreases`)"
+id = "REQ-LOWER-ADT-RECURSIVE"
+replacement_view = "thermite-lower-adt-status"
+note = "Recursive ADT row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-11 (`LowerError`/no panics)"
+id = "REQ-LOWER-ADT-ERRORS"
+replacement_view = "thermite-lower-adt-status"
+note = "ADT error-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-12 (handled-or-loud — compile-time tooth)"
+id = "REQ-LOWER-ADT-HANDLED-LOUD"
+replacement_view = "thermite-lower-adt-status"
+note = "ADT handled-or-loud row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-6 (scheme → generated Verus recursive `spec fn` + `decreases <value>`)"
+id = "REQ-LOWER-SCHEME-SPEC-FNS"
+replacement_view = "thermite-lower-recursion-schemes-status"
+note = "Recursion-scheme generated-spec-fn row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-7 (induction-discharged-once — the multiplier)"
+id = "REQ-LOWER-SCHEME-INDUCTION-LAW"
+replacement_view = "thermite-lower-recursion-schemes-status"
+note = "Recursion-scheme induction-law row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-9 (`LowerError` extension, no panics)"
+id = "REQ-LOWER-SCHEME-ERRORS"
+replacement_view = "thermite-lower-recursion-schemes-status"
+note = "Recursion-scheme error-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-3 (exec form — MONOMORPHIZED, OQ-2)"
+id = "REQ-LOWER-SCHEME-EXEC-MONOMORPH"
+replacement_view = "thermite-lower-recursion-schemes-status"
+note = "Deferred recursion-scheme exec mirror row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-5 (`Vec<T>` → vstd-`Vec` newtype; push/get/len; `fx alloc`; backing-agnostic)"
+id = "REQ-LOWER-COLLECTIONS-VEC"
+replacement_view = "thermite-lower-collections-status"
+note = "Collections Vec row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-6 (`Map<K,V>` → vstd `Map` wrapper)"
+id = "REQ-LOWER-COLLECTIONS-MAP-VSTD"
+replacement_view = "thermite-lower-collections-status"
+note = "Deferred vstd-Map collections row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-7 (`LowerError` extension, no panics)"
+id = "REQ-LOWER-COLLECTIONS-ERRORS"
+replacement_view = "thermite-lower-collections-status"
+note = "Collections error-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-8 (`pop_last`/`last`/`insert`/`remove`/`contains` — tuple-free missing ops)"
+id = "REQ-LOWER-VEC-OPS"
+replacement_view = "thermite-lower-vec-completeness-status"
+note = "Vec operation-completeness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-9 (`Vec<T>` non-Copy elements — `Vec<String>`/`Vec<struct>`/nested via borrow-`get`)"
+id = "REQ-LOWER-VEC-NONCOPY"
+replacement_view = "thermite-lower-vec-completeness-status"
+note = "Vec non-Copy element row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-10 (element-type wrapper/decl woven before the `TVec` — #68/#86 pattern)"
+id = "REQ-LOWER-VEC-ELEM-WEAVE"
+replacement_view = "thermite-lower-vec-completeness-status"
+note = "Vec wrapper-weaving row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-11 (`Vec::new()`-no-param wrapper-reachability fix — the #86 analog)"
+id = "REQ-LOWER-VEC-NEW-REACHABILITY"
+replacement_view = "thermite-lower-vec-completeness-status"
+note = "Vec::new reachability row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-12 (`last`/`contains` in `BUILTIN_METHODS`; non-Copy `tvec_name` extension; no panics)"
+id = "REQ-LOWER-VEC-METHOD-CAGE"
+replacement_view = "thermite-lower-vec-completeness-status"
+note = "Vec method-cage row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-4 (`Map<K,V>` → Vec-of-pairs `TMap` wrapper + spec view; `insert`/`get`/`contains_key`/`len`; `fx alloc`)"
+id = "REQ-LOWER-MAP-WRAPPER"
+replacement_view = "thermite-lower-map-status"
+note = "Bounded Map wrapper row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-5 (`Type::Map` exhaustive-match ripple)"
+id = "REQ-LOWER-MAP-RIPPLE"
+replacement_view = "thermite-lower-map-status"
+note = "Map exhaustive-ripple row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-6 (`LowerError` extension, no panics)"
+id = "REQ-LOWER-MAP-ERRORS"
+replacement_view = "thermite-lower-map-status"
+note = "Map error-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-4 (`Option`/`Result` → Verus types; construct/match/`is`/spec-match lower)"
+id = "REQ-LOWER-OPTRES-TYPES"
+replacement_view = "thermite-lower-option-result-status"
+note = "Option/Result lowering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-5 (`parse_u64` emission)"
+id = "REQ-LOWER-OPTRES-PARSE"
+replacement_view = "thermite-lower-option-result-status"
+note = "Option/Result parse_u64 row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-3 (`fn` `decreases` lowering)"
+id = "REQ-LOWER-RECURSION-DECREASES"
+replacement_view = "thermite-lower-recursion-tuples-status"
+note = "Plain-fn recursion decreases row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-4 (termination bites)"
+id = "REQ-LOWER-RECURSION-TERMINATION"
+replacement_view = "thermite-lower-recursion-tuples-status"
+note = "Plain-fn termination-tooth row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-1/REQ-2/REQ-5 (tuple destructure / `for` / `if let`-`while let`)"
+id = "REQ-LOWER-ERGONOMICS-DESUGAR"
+replacement_view = "thermite-lower-ergonomics-status"
+note = "Ergonomics desugar row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-3 (match guard lowering)"
+id = "REQ-LOWER-ERGONOMICS-GUARD"
+replacement_view = "thermite-lower-ergonomics-status"
+note = "Match-guard lowering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-4 (or-pattern lowering)"
+id = "REQ-LOWER-ERGONOMICS-OR-PATTERN"
+replacement_view = "thermite-lower-ergonomics-status"
+note = "Or-pattern lowering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-4 (String-SCANNING `spec fn` — `byte_at`/`len` over a `&String` param; #126)"
+id = "REQ-STRING-SPEC-SCANNING"
+replacement_view = "thermite-lower-string-status"
+note = "String spec-scanning lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`)"
+id = "REQ-STRING-BYTE-BUILDER"
+replacement_view = "thermite-lower-string-status"
+note = "String byte-builder lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`)"
+id = "REQ-STRING-U64-TO-STRING"
+replacement_view = "thermite-lower-string-status"
+note = "String decimal-formatting lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL)"
+id = "REQ-STRING-PARSE-U64"
+replacement_view = "thermite-lower-string-status"
+note = "String parse_u64 lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`)"
+id = "REQ-STRING-SUBSTRING-PREDICATES"
+replacement_view = "thermite-lower-string-status"
+note = "String substring-predicate lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`)"
+id = "REQ-STRING-FIND"
+replacement_view = "thermite-lower-string-status"
+note = "String find lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`)"
+id = "REQ-STRING-SPLIT"
+replacement_view = "thermite-lower-string-status"
+note = "String split lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`)"
+id = "REQ-STRING-TRIM"
+replacement_view = "thermite-lower-string-status"
+note = "String trim lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-18 (canonical `Seq<u8>` recursive def + the FOUR prove-once bridge lemmas)"
+id = "REQ-STRING-BYTES-EQ-DEFS"
+replacement_view = "thermite-lower-string-status"
+note = "bytes_eq definition/lemma lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-19 (`program_uses_bytes_eq` gate + the contract-keyed `lemma_bytes_eq_bridge()` citation)"
+id = "REQ-STRING-BYTES-EQ-GATE"
+replacement_view = "thermite-lower-string-status"
+note = "bytes_eq gate/citation lowerer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/lower.rs"
+label = "REQ-20 (`bytes_eq` L1 exec twin — the #104 build-side mirror)"
+id = "REQ-STRING-BYTES-EQ-L1"
+replacement_view = "thermite-lower-string-status"
+note = "bytes_eq L1 mirror row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`)"
+id = "REQ-STRING-BYTE-BUILDER"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String byte-builder validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`)"
+id = "REQ-STRING-U64-TO-STRING"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String decimal-formatting validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud)"
+id = "REQ-STRING-PARSE-U64"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String parse_u64 validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`)"
+id = "REQ-STRING-SUBSTRING-PREDICATES"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String substring-predicate validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`)"
+id = "REQ-STRING-FIND"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String find validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`)"
+id = "REQ-STRING-SPLIT"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String split validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`)"
+id = "REQ-STRING-TRIM"
+replacement_view = "thermite-spec-validator-string-status"
+note = "String trim validator row replaced by a generated reference to the shared string requirement."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-17 (`bytes_eq` — REGISTERED built-in spec predicate; surface + cage; NO skill entry)"
+id = "REQ-STRING-BYTES-EQ-CAGE"
+replacement_view = "thermite-spec-validator-string-status"
+note = "bytes_eq validator cage row replaced by a generated canonical reference."
+
 [[requirement]]
 id = "REQ-REG-1"
 title = "Stable requirement identity and ownership"
@@ -467,6 +974,1306 @@ note = "generated source-comment reference-list view"
 kind = "issue"
 target = "github:dollspace-gay/Thermite#17"
 note = "RFC tracking the full migration plan"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-FRAME"
+title = "Verus file frame and function signatures"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The L3 lowerer emits the Verus prelude/frame and lowers both exec `fn` and `spec fn` signatures into the generated Rust source."
+aliases = ["thermite-lower/src/lower.rs REQ-1 (file frame + `fn`/`spec fn` signature)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower"
+note = "L3 lowering entrypoint that emits the file frame"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_fn"
+note = "exec function signature/body lowering"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_spec_fn"
+note = "spec function signature/body lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "real Verus conformance for emitted lowerings"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-TYPE-LOWERING"
+title = "Verus type lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Thermite surface types lower to the corresponding Verus/Rust representation through one typed lowering path."
+aliases = ["thermite-lower/src/lower.rs REQ-2 (type lowering)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_type"
+note = "type lowering function"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "corpus type-lowering substrings and Verus checks"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-EXEC-EXPR"
+title = "Exec-expression lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Exec-position Thermite expressions lower through the exec context and are consumed by lowered function bodies and blocks."
+aliases = ["thermite-lower/src/lower.rs REQ-3 (expression lowering — exec)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_expr"
+note = "expression lowerer parameterized by context"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_block_with_fn_aids"
+note = "exec body/block consumer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "exec lowering verified against corpus"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-STMT-LOOP"
+title = "Statement and loop lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Statements, blocks, and loops lower into Verus syntax while preserving invariants and decreases clauses."
+aliases = ["thermite-lower/src/lower.rs REQ-4 (statement + loop lowering)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_stmt"
+note = "statement lowerer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_loop"
+note = "loop invariant/decreases lowerer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "loop and statement conformance"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-SPEC-SEQ"
+title = "Spec-context Seq lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Spec-position lowering switches slice and string views into Verus spec representations such as `Seq` and `@` views."
+aliases = ["thermite-lower/src/lower.rs REQ-5 (spec-context `Seq` lowering)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_spec_fn_body"
+note = "spec function body lowering path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_spec_fn_ret"
+note = "spec return/body expression path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "spec-context corpus verification"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-COMBINATOR-DEFS"
+title = "Combinator Verus definitions"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The L3 lowerer emits Verus definitions for the frozen SpecTherm combinator registry entries used by a program."
+aliases = ["thermite-lower/src/lower.rs REQ-6 (combinator Verus(L3) defs)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-spec/src/combinators.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_combinator_defs"
+note = "combinator definition emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CombinatorSig"
+note = "registry entry carrying Verus L3 definitions"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/combinators_conformance.rs"
+note = "registry conformance oracle"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-PROOF-AIDS"
+title = "Shape-keyed proof-aid emission"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Proof aids are emitted from AST and contract shape rather than program identity, including bounded-multiply, precondition lifting, extensionality, and coverage splits."
+aliases = ["thermite-lower/src/lower.rs REQ-7 (proof-aid emission, shape-keyed)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/req_bounded_mul_aid.rs", "forge/tests/req_bounded_mul_conformance.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "push_lemma_for"
+note = "shape-keyed lemma emission site"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "req_bounded_mul_asserts"
+note = "bounded multiplication proof-aid detector"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/req_bounded_mul_aid.rs"
+note = "local proof-aid oracle"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/req_bounded_mul_conformance.rs"
+note = "live forge/Verus conformance"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-GOLDEN-VERIFY"
+title = "Golden-file verification contract"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Lowered corpus output is verified by real Verus golden/conformance tests rather than by string generation alone."
+aliases = ["thermite-lower/src/lower.rs REQ-8 (golden-file contract — VERIFY)"]
+contributors = [".design/lower/verus-lowering.md", "thermite-lower/tests/lower_conformance.rs", "tests/golden/lower"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "tests/golden/lower/sum.verus.rs"
+note = "golden Verus output"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tests/golden/lower/binary_search.verus.rs"
+note = "golden Verus output"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "golden output is verified"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-ERRORS"
+title = "LowerError and no-panic discipline"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The L3 lowerer reports unsupported or invalid lowering shapes through `LowerError` instead of panicking."
+aliases = ["thermite-lower/src/lower.rs REQ-9 (`LowerError`, no panics)"]
+contributors = [".design/lower/verus-lowering.md", "tooling/anti-pattern-gate.py"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "lowering error type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Unsupported"
+note = "structured unsupported-construct variant"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "workspace anti-pattern/no-panic gate"
+
+[[requirement]]
+id = "REQ-LOWER-VERUS-EQUIV-OBLIGATION"
+title = "Equivalent-mutant equivalence obligation seam"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The lowerer can render a survivor mutant and the original body into a grounded Verus equivalence obligation for mutation scoring."
+aliases = ["thermite-lower/src/lower.rs REQ-EQ (equivalent-mutant equivalence-obligation seam, #101)"]
+contributors = [".design/forge/equivalent-mutants.md", ".design/lower/verus-lowering.md", "thermite-lower/tests/equivalence_obligation.rs"]
+generated_to = ["status", "thermite-lower-verus-lowering-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_equivalence_obligation"
+note = "equivalence obligation renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "coerce_obligation_expr"
+note = "grounded return-value coercion helper"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/equivalence_obligation.rs"
+note = "real Verus equivalence-obligation test"
+
+[[requirement]]
+id = "REQ-LOWER-BOUNDARY-EXTERNAL-BODY"
+title = "Boundary/slag assumable-signature emission"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Only syntactic boundary or slag functions lower through the Verus external-body arm; regular functions keep their proved bodies."
+aliases = ["thermite-lower/src/lower.rs composition REQ-1 (assumable-signature emission, boundary/slag only)"]
+contributors = [".design/lower/boundary-composition.md", "thermite-lower/tests/boundary_gate_verified.rs", "forge/tests/composition_conformance.rs"]
+generated_to = ["status", "thermite-lower-boundary-composition-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_external_body_fn"
+note = "external-body emission arm"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "should_emit_external_body"
+note = "verified boundary/slag dispatch predicate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/boundary_gate_verified.rs"
+note = "observable dispatch test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/composition_conformance.rs"
+note = "forge composition conformance"
+
+[[requirement]]
+id = "REQ-LOWER-ADT-STRUCT"
+title = "ADT struct lowering with invariants"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Struct items lower to Verus structs with public fields and a `well_formed` predicate threaded into relevant signatures."
+aliases = ["thermite-lower/src/lower.rs REQ-8 (struct → Verus struct; type-invariant → enforced predicate)"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_struct"
+note = "struct lowering arm"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_inv_expr"
+note = "type-invariant predicate lowerer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs"
+note = "bank-account invariant conformance"
+
+[[requirement]]
+id = "REQ-LOWER-ADT-ENUM"
+title = "ADT enum, match, and variant-test lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Enum items, enum-qualified matches, and `is` discriminant tests lower to Verus-native constructs."
+aliases = ["thermite-lower/src/lower.rs REQ-9 (enum → Verus enum; `match` → Verus `match`; `is` → variant test)"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_enum"
+note = "enum lowering arm"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match"
+note = "match lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs"
+note = "shape enum conformance"
+
+[[requirement]]
+id = "REQ-LOWER-ADT-RECURSIVE"
+title = "Recursive ADT and structural decreases lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Recursive ADTs lower with boxed recursive occurrences and structurally decreasing spec functions over the datatype value."
+aliases = ["thermite-lower/src/lower.rs REQ-10 (recursive type → Verus recursive enum; `Box`; structural `decreases`)"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_enum"
+note = "recursive enum emission"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "spec_dec"
+note = "structural decreases renderer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs"
+note = "recursive list_sum conformance"
+
+[[requirement]]
+id = "REQ-LOWER-ADT-ERRORS"
+title = "ADT lowering error discipline"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "ADT lowering reuses structured `LowerError` handling and does not introduce panics for unsupported ADT shapes."
+aliases = ["thermite-lower/src/lower.rs REQ-11 (`LowerError`/no panics)"]
+contributors = [".design/basis/01-adts.md", "tooling/anti-pattern-gate.py"]
+generated_to = ["status", "thermite-lower-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "shared lowerer error type"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "workspace anti-pattern/no-panic gate"
+
+[[requirement]]
+id = "REQ-LOWER-ADT-HANDLED-LOUD"
+title = "ADT handled-or-loud compile-time tooth"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Accepted ADT matches lower every arm, while non-exhaustive matches are rejected by validation before L3 lowering."
+aliases = ["thermite-lower/src/lower.rs REQ-12 (handled-or-loud — compile-time tooth)"]
+contributors = [".design/basis/01-adts.md", "thermite-spec/src/validator.rs", "thermite-spec/tests/adt_validate.rs"]
+generated_to = ["status", "thermite-lower-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "NonExhaustiveMatch"
+note = "validator tooth for unmatched ADT cases"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match"
+note = "accepted matches emit all arms"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/adt_validate.rs"
+note = "match exhaustiveness validation"
+
+[[requirement]]
+id = "REQ-LOWER-SCHEME-SPEC-FNS"
+title = "Generated Verus scheme spec functions"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "ADT scheme uses lower to generated recursive Verus spec functions with explicit decreases and typed closure steps."
+aliases = ["thermite-lower/src/lower.rs REQ-6 (scheme → generated Verus recursive `spec fn` + `decreases <value>`)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-lower/tests/adt_schemes_conformance.rs"]
+generated_to = ["status", "thermite-lower-recursion-schemes-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_scheme_defs"
+note = "scheme definition emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_scheme_call"
+note = "scheme-call lowering path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_schemes_conformance.rs"
+note = "list-fold scheme conformance"
+
+[[requirement]]
+id = "REQ-LOWER-SCHEME-INDUCTION-LAW"
+title = "Generated induction law for fold bounds"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The lowerer emits a reusable fold-bound law once per relevant ADT so individual instances cite the law instead of redoing induction."
+aliases = ["thermite-lower/src/lower.rs REQ-7 (induction-discharged-once — the multiplier)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-lower/tests/adt_schemes_conformance.rs"]
+generated_to = ["status", "thermite-lower-recursion-schemes-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_fold_bound_law"
+note = "generated induction law"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_schemes_conformance.rs"
+note = "law citation and negative-control tests"
+
+[[requirement]]
+id = "REQ-LOWER-SCHEME-ERRORS"
+title = "Scheme lowering error discipline"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Scheme lowering reports unresolved or unsupported scheme shapes through structured `LowerError` paths."
+aliases = ["thermite-lower/src/lower.rs REQ-9 (`LowerError` extension, no panics)"]
+contributors = [".design/basis/02-recursion-schemes.md", "tooling/anti-pattern-gate.py"]
+generated_to = ["status", "thermite-lower-recursion-schemes-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_scheme_uses"
+note = "fallible scheme-use collector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "shared lowerer error type"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "workspace anti-pattern/no-panic gate"
+
+[[requirement]]
+id = "REQ-LOWER-SCHEME-EXEC-MONOMORPH"
+title = "Monomorphized exec scheme mirror"
+owner = "thermite-lower/src/lower.rs"
+status = "not_started"
+scope = "lower"
+summary = "The shipped scheme path covers verified spec schemes; a monomorphized exec mirror remains outside the current implementation."
+remaining_scope = "Add an inlined, decreases-bearing exec scheme mirror when a corpus exec function folds an ADT; epic #62 Stage 2c owns this follow-up."
+aliases = ["thermite-lower/src/lower.rs REQ-3 (exec form — MONOMORPHIZED, OQ-2)"]
+contributors = [".design/basis/02-recursion-schemes.md"]
+blockers = ["github:dollspace-gay/Thermite#62"]
+generated_to = ["status", "thermite-lower-recursion-schemes-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/basis/02-recursion-schemes.md"
+note = "deferred exec mirror design"
+
+[[requirement]]
+id = "REQ-LOWER-COLLECTIONS-VEC"
+title = "Vec wrapper lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`Vec<T>` lowers to a bounded Verus `TVec` wrapper with capacity, length, get, and push contracts."
+aliases = ["thermite-lower/src/lower.rs REQ-5 (`Vec<T>` → vstd-`Vec` newtype; push/get/len; `fx alloc`; backing-agnostic)"]
+contributors = [".design/basis/04-collections.md", "thermite-lower/tests/collections_conformance.rs"]
+generated_to = ["status", "thermite-lower-collections-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_vec_wrappers"
+note = "Vec wrapper emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tvec_name"
+note = "surface Vec to wrapper-name mapping"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/collections_conformance.rs"
+note = "Vec get/push real-Verus conformance"
+
+[[requirement]]
+id = "REQ-LOWER-COLLECTIONS-MAP-VSTD"
+title = "Deferred vstd Map wrapper"
+owner = "thermite-lower/src/lower.rs"
+status = "not_started"
+scope = "lower"
+summary = "The original thin vstd::map-backed collection wrapper remains deferred; bounded Vec-of-pairs Map lowering is tracked separately."
+remaining_scope = "Either amend the design to point at the shipped bounded `TMap` wrapper or add the original vstd::map-backed wrapper in a future Stage 4 follow-up."
+aliases = ["thermite-lower/src/lower.rs REQ-6 (`Map<K,V>` → vstd `Map` wrapper)"]
+contributors = [".design/basis/04-collections.md", ".design/basis/13-map.md"]
+blockers = ["github:dollspace-gay/Thermite#62"]
+generated_to = ["status", "thermite-lower-collections-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/basis/04-collections.md"
+note = "original deferred vstd Map row"
+
+[[requirement]]
+id = "REQ-LOWER-COLLECTIONS-ERRORS"
+title = "Collections lowering error discipline"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Collection lowering reuses structured `LowerError` handling for unsupported element or collection shapes."
+aliases = ["thermite-lower/src/lower.rs REQ-7 (`LowerError` extension, no panics)"]
+contributors = [".design/basis/04-collections.md", "tooling/anti-pattern-gate.py"]
+generated_to = ["status", "thermite-lower-collections-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "shared lowerer error type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tvec_name"
+note = "unsupported Vec element types report structured errors"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "workspace anti-pattern/no-panic gate"
+
+[[requirement]]
+id = "REQ-LOWER-VEC-OPS"
+title = "Vec tuple-free operation completeness"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The bounded `TVec` wrapper emits pop_last, last, insert, remove, and contains with load-bearing contracts and invariants."
+aliases = ["thermite-lower/src/lower.rs REQ-8 (`pop_last`/`last`/`insert`/`remove`/`contains` — tuple-free missing ops)"]
+contributors = [".design/basis/04-collections.md", "forge/tests/vec_completeness_conformance.rs"]
+generated_to = ["status", "thermite-lower-vec-completeness-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_one_vec_wrapper"
+note = "per-element Vec operation emitter"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/vec_completeness_conformance.rs"
+note = "operation completeness conformance"
+
+[[requirement]]
+id = "REQ-LOWER-VEC-NONCOPY"
+title = "Vec non-Copy element support"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`Vec<String>`, `Vec<struct>`, and nested Vec element types use borrowed accessors where by-value moves would be unsound."
+aliases = ["thermite-lower/src/lower.rs REQ-9 (`Vec<T>` non-Copy elements — `Vec<String>`/`Vec<struct>`/nested via borrow-`get`)"]
+contributors = [".design/basis/04-collections.md", "forge/tests/vec_completeness_conformance.rs"]
+generated_to = ["status", "thermite-lower-vec-completeness-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "elem_is_copy"
+note = "Copy/non-Copy element classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tvec_name"
+note = "non-Copy and nested Vec wrapper naming"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/vec_completeness_conformance.rs"
+note = "Vec<String>, Vec<struct>, and nested Vec conformance"
+
+[[requirement]]
+id = "REQ-LOWER-VEC-ELEM-WEAVE"
+title = "Vec element wrapper weaving"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Nested and element-dependent wrappers are discovered and emitted before the `TVec` wrappers that reference them."
+aliases = ["thermite-lower/src/lower.rs REQ-10 (element-type wrapper/decl woven before the `TVec` — #68/#86 pattern)"]
+contributors = [".design/basis/04-collections.md", "forge/tests/vec_completeness_conformance.rs"]
+generated_to = ["status", "thermite-lower-vec-completeness-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_vec_elem_types"
+note = "Vec element reachability collector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "note_vec_elems"
+note = "inner-first nested Vec note path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/vec_completeness_conformance.rs"
+note = "element wrapper/decl conformance"
+
+[[requirement]]
+id = "REQ-LOWER-VEC-NEW-REACHABILITY"
+title = "Vec::new wrapper reachability"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Body-local `Vec::new()` declarations are included in wrapper reachability and lower to wrapper constructors."
+aliases = ["thermite-lower/src/lower.rs REQ-11 (`Vec::new()`-no-param wrapper-reachability fix — the #86 analog)"]
+contributors = [".design/basis/04-collections.md", "forge/tests/vec_completeness_conformance.rs"]
+generated_to = ["status", "thermite-lower-vec-completeness-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "is_vec_new"
+note = "Vec::new detection"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "note_block_vec_elems"
+note = "body-local Vec reachability path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/vec_completeness_conformance.rs"
+note = "local Vec::new conformance"
+
+[[requirement]]
+id = "REQ-LOWER-VEC-METHOD-CAGE"
+title = "Vec contract method cage integration"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The lowerer and validator align on `last` and `contains` as contract-visible Vec methods while mutators stay exec-only."
+aliases = ["thermite-lower/src/lower.rs REQ-12 (`last`/`contains` in `BUILTIN_METHODS`; non-Copy `tvec_name` extension; no panics)"]
+contributors = [".design/basis/04-collections.md", "thermite-spec/src/validator.rs", "forge/tests/vec_completeness_conformance.rs"]
+generated_to = ["status", "thermite-lower-vec-completeness-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BUILTIN_METHODS"
+note = "validator contract-method allowlist"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_one_vec_wrapper"
+note = "Vec method implementation emission"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/vec_completeness_conformance.rs"
+note = "contract-visible method conformance"
+
+[[requirement]]
+id = "REQ-LOWER-MAP-WRAPPER"
+title = "Bounded Map wrapper lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`Map<K,V>` lowers to a bounded Vec-of-pairs `TMap` wrapper with spec views, get, contains_key, len, and insert contracts."
+aliases = ["thermite-lower/src/lower.rs REQ-4 (`Map<K,V>` → Vec-of-pairs `TMap` wrapper + spec view; `insert`/`get`/`contains_key`/`len`; `fx alloc`)"]
+contributors = [".design/basis/13-map.md", "forge/tests/map_conformance.rs"]
+generated_to = ["status", "thermite-lower-map-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_map_wrappers"
+note = "Map wrapper emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tmap_name"
+note = "Map type to wrapper-name mapping"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/map_conformance.rs"
+note = "bounded Map conformance"
+
+[[requirement]]
+id = "REQ-LOWER-MAP-RIPPLE"
+title = "Type::Map exhaustive-match ripple"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "The `Type::Map` node is handled across lowerer, L1, L2, forge rendering/review, and skill-generation match surfaces."
+aliases = ["thermite-lower/src/lower.rs REQ-5 (`Type::Map` exhaustive-match ripple)"]
+contributors = [".design/basis/13-map.md", "thermite-lower/src/l1.rs", "forge/src/check.rs", "thermite-skill/src/generate.rs"]
+generated_to = ["status", "thermite-lower-map-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_map_runtime_l1"
+note = "L1 runnable Map mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tmap_name"
+note = "L3 Map wrapper name path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/map_conformance.rs"
+note = "Map ripple conformance through build/check"
+
+[[requirement]]
+id = "REQ-LOWER-MAP-ERRORS"
+title = "Map lowering error discipline"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Unsupported Map key/value shapes report structured `LowerError` results instead of panics."
+aliases = ["thermite-lower/src/lower.rs REQ-6 (`LowerError` extension, no panics)"]
+contributors = [".design/basis/13-map.md", "tooling/anti-pattern-gate.py"]
+generated_to = ["status", "thermite-lower-map-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tmap_name"
+note = "unsupported Map type path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "shared lowerer error type"
+
+[[requirement.evidence]]
+kind = "file"
+target = "tooling/anti-pattern-gate.py"
+note = "workspace anti-pattern/no-panic gate"
+
+[[requirement]]
+id = "REQ-LOWER-OPTRES-TYPES"
+title = "Option/Result Verus type lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Option and Result lower to Verus-native generic types and preserve construct, match, `is`, and spec-match behavior."
+aliases = ["thermite-lower/src/lower.rs REQ-4 (`Option`/`Result` → Verus types; construct/match/`is`/spec-match lower)"]
+contributors = [".design/basis/09-option-result.md", "forge/tests/option_result_conformance.rs"]
+generated_to = ["status", "thermite-lower-option-result-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_type"
+note = "Option/Result type arms"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "qualify_variant_path"
+note = "built-in variant qualification behavior"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/option_result_conformance.rs"
+note = "Option/Result L3 conformance"
+
+[[requirement]]
+id = "REQ-LOWER-OPTRES-PARSE"
+title = "parse_u64 emission for Option results"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`parse_u64` support emits the shared parse definitions and returns `Option<u64>` with handled-or-loud failure arms."
+aliases = ["thermite-lower/src/lower.rs REQ-5 (`parse_u64` emission)"]
+contributors = [".design/basis/09-option-result.md", ".design/basis/07-strings.md", "forge/tests/option_result_conformance.rs"]
+generated_to = ["status", "thermite-lower-option-result-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_parse_defs"
+note = "parse_u64 definition emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "program_uses_parse"
+note = "conditional parse definition gate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/option_result_conformance.rs"
+note = "parse_u64 real-Verus conformance"
+
+[[requirement]]
+id = "REQ-LOWER-RECURSION-DECREASES"
+title = "Plain fn decreases lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Plain recursive `fn` items emit their `decreases` clause in the same lowering position as recursive spec functions, with diverge exemptions capped outside L3."
+aliases = ["thermite-lower/src/lower.rs REQ-3 (`fn` `decreases` lowering)"]
+contributors = [".design/basis/10-recursion-tuples.md", "forge/tests/recursion_conformance.rs"]
+generated_to = ["status", "thermite-lower-recursion-tuples-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_fn"
+note = "plain fn signature/decreases path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fn_is_diverge"
+note = "diverge recursion exemption predicate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/recursion_conformance.rs"
+note = "recursive fn conformance"
+
+[[requirement]]
+id = "REQ-LOWER-RECURSION-TERMINATION"
+title = "Plain fn termination tooth"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Termination is enforced end-to-end: decreasing recursive functions certify, non-decreasing recursion fails, and no-decreases recursion is rejected before L3 except for diverge."
+aliases = ["thermite-lower/src/lower.rs REQ-4 (termination bites)"]
+contributors = [".design/basis/10-recursion-tuples.md", "forge/tests/recursion_conformance.rs", "thermite-spec/src/validator.rs"]
+generated_to = ["status", "thermite-lower-recursion-tuples-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MissingDecreases"
+note = "validator rejection for direct self-recursion without decreases"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/recursion_conformance.rs"
+note = "termination positive and negative controls"
+
+[[requirement]]
+id = "REQ-LOWER-ERGONOMICS-DESUGAR"
+title = "Ergonomic surface desugar lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Tuple destructuring, `for`, `if let`, and `while let` desugar into already-shipped lowerer constructs without adding new lowerer nodes."
+aliases = ["thermite-lower/src/lower.rs REQ-1/REQ-2/REQ-5 (tuple destructure / `for` / `if let`-`while let`)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-lower-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_loop"
+note = "for/while-let target lowering"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match"
+note = "if-let target lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "ergonomic desugar conformance"
+
+[[requirement]]
+id = "REQ-LOWER-ERGONOMICS-GUARD"
+title = "Match guard lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Match arms with guards emit Verus-native guarded arms, and guard expressions participate in combinator/effect walks."
+aliases = ["thermite-lower/src/lower.rs REQ-3 (match guard lowering)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-lower-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match"
+note = "guarded match emission"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "guarded match conformance"
+
+[[requirement]]
+id = "REQ-LOWER-ERGONOMICS-OR-PATTERN"
+title = "Or-pattern lowering"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Or-patterns lower to Verus-native pattern alternatives and have honest exhaustive-match arms in L3 and L1 lowerers."
+aliases = ["thermite-lower/src/lower.rs REQ-4 (or-pattern lowering)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-lower-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_pattern"
+note = "or-pattern emission"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_pattern_exec"
+note = "L1 pattern mirror"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "or-pattern conformance"
+
+[[requirement]]
+id = "REQ-STRING-SPEC-SCANNING"
+title = "String-scanning spec functions"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Spec functions over `String`/`&String` parameters lower string accessors into spec byte-view operations and cast recursive call arguments to the declared parameter type."
+aliases = ["thermite-lower/src/lower.rs REQ-4 (String-SCANNING `spec fn` — `byte_at`/`len` over a `&String` param; #126)"]
+contributors = [".design/basis/07-strings.md", "forge/tests/spec_fn_string_param.rs", "forge/tests/editor_runs.rs"]
+generated_to = ["status", "thermite-lower-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_spec_fn_body"
+note = "String-aware spec function body path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "string_param_names"
+note = "String parameter discovery"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/spec_fn_string_param.rs"
+note = "String-scanning spec function conformance"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/editor_runs.rs"
+note = "editor string-scanning conformance"
+
+[[requirement]]
+id = "REQ-STRING-BYTE-BUILDER"
+title = "String byte-builder operations"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`String::from_byte` and `push_byte` are validated as contract-visible byte-builder operations and lower to verified allocation-backed string constructors."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`)",
+  "thermite-spec/src/validator.rs REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`)",
+]
+contributors = [".design/basis/07-strings.md", "thermite-spec/src/validator.rs", "forge/tests/string_format_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_wrapper"
+note = "byte-builder lowering"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BUILTIN_METHODS"
+note = "validator admits push_byte in contracts"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/string_format_conformance.rs"
+note = "byte-builder L3 conformance"
+
+[[requirement]]
+id = "REQ-STRING-U64-TO-STRING"
+title = "u64 decimal formatting with round-trip contract"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`u64_to_string` and `to_string` support emit the decimal formatter, round-trip spec functions, and validator cage entries needed for contracts to name them."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`)",
+  "thermite-spec/src/validator.rs REQ-8 (`u64_to_string` — decimal formatting, ROUND-TRIP contract; `fx alloc`)",
+]
+contributors = [".design/basis/07-strings.md", "thermite-spec/src/validator.rs", "forge/tests/string_format_conformance.rs", "forge/tests/divergence_numfmt_display_order.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_numfmt_defs"
+note = "decimal formatter and round-trip spec emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "GENERATED_SPEC_FNS"
+note = "validator admits generated parse/format spec functions"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/string_format_conformance.rs"
+note = "formatting L3 conformance"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/divergence_numfmt_display_order.rs"
+note = "MSB-first display regression tooth"
+
+[[requirement]]
+id = "REQ-STRING-PARSE-U64"
+title = "parse_u64 handled-or-loud parser"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`parse_u64` emits parser spec functions and an `Option<u64>` exec parser whose success arm carries the round-trip witness while failures are explicit `None`."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL)",
+  "thermite-spec/src/validator.rs REQ-9 (`parse_u64` — `String`→`u64`, PARTIAL / handled-or-loud)",
+]
+contributors = [".design/basis/07-strings.md", ".design/basis/09-option-result.md", "thermite-spec/src/validator.rs", "forge/tests/option_result_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_parse_defs"
+note = "parse_u64 definition emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "program_uses_parse"
+note = "conditional parse definition gate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/option_result_conformance.rs"
+note = "parse_u64 L3 conformance"
+
+[[requirement]]
+id = "REQ-STRING-SUBSTRING-PREDICATES"
+title = "String substring predicates"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`contains`, `starts_with`, and `ends_with` are validated as contract-visible string predicates and lower to verified byte-scan methods plus spec predicates."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`)",
+  "thermite-spec/src/validator.rs REQ-13 (`contains`/`starts_with`/`ends_with` — boolean substring predicates; `pure`)",
+]
+contributors = [".design/basis/07-strings.md", "thermite-spec/src/validator.rs", "forge/tests/string_search_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_search_methods"
+note = "substring predicate method emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_search_defs"
+note = "substring predicate spec emitter"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/string_search_conformance.rs"
+note = "substring predicate conformance"
+
+[[requirement]]
+id = "REQ-STRING-FIND"
+title = "String find operation"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`find` is validated as a contract-visible string method and lowers to an `Option<u64>` first-occurrence scan tied to the substring spec predicates."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`)",
+  "thermite-spec/src/validator.rs REQ-14 (`find` — first occurrence → `Option<u64>`; `pure`)",
+]
+contributors = [".design/basis/07-strings.md", "thermite-spec/src/validator.rs", "forge/tests/string_search_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_search_methods"
+note = "find method emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BUILTIN_METHODS"
+note = "validator admits find in contracts"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/string_search_conformance.rs"
+note = "find conformance"
+
+[[requirement]]
+id = "REQ-STRING-SPLIT"
+title = "String split operation"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`split` is validated as a contract-visible allocation operation and lowers to a bounded `Vec<String>` splitter with count and separator-free spec support."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`)",
+  "thermite-spec/src/validator.rs REQ-15 (`split` — split on a separator byte → `Vec<String>`; `fx alloc`)",
+]
+contributors = [".design/basis/07-strings.md", "thermite-spec/src/validator.rs", "forge/tests/string_search_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_search_methods"
+note = "split method emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_vec_elem_types"
+note = "Vec<String> wrapper reachability"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/string_search_conformance.rs"
+note = "split conformance"
+
+[[requirement]]
+id = "REQ-STRING-TRIM"
+title = "String trim operation"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`trim` is validated as a contract-visible allocation operation and lowers to verified leading/trailing ASCII whitespace stripping."
+aliases = [
+  "thermite-lower/src/lower.rs REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`)",
+  "thermite-spec/src/validator.rs REQ-16 (`trim` — strip leading/trailing ASCII whitespace → `String`; `fx alloc`)",
+]
+contributors = [".design/basis/07-strings.md", "thermite-spec/src/validator.rs", "forge/tests/string_search_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_search_methods"
+note = "trim method emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "GENERATED_SPEC_FNS"
+note = "validator admits `is_space`"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/string_search_conformance.rs"
+note = "trim conformance"
+
+[[requirement]]
+id = "REQ-STRING-BYTES-EQ-DEFS"
+title = "bytes_eq Seq definition and bridge lemmas"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "`bytes_eq` support emits the low-peel `Seq<u8>` definition plus the prove-once pointwise/subrange bridge lemmas."
+aliases = ["thermite-lower/src/lower.rs REQ-18 (canonical `Seq<u8>` recursive def + the FOUR prove-once bridge lemmas)"]
+contributors = [".design/basis/07-strings.md", "thermite-lower/tests/bytes_eq_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_bytes_eq_defs"
+note = "bytes_eq definition and lemma emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "byteview_string_operand"
+note = "String operand byte-view lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/bytes_eq_conformance.rs"
+note = "bytes_eq real-Verus conformance"
+
+[[requirement]]
+id = "REQ-STRING-BYTES-EQ-GATE"
+title = "bytes_eq gate and bridge citation"
+owner = "thermite-lower/src/lower.rs"
+status = "shipped"
+scope = "lower"
+summary = "Programs that mention `bytes_eq` conditionally emit its definitions and cite the quantified bridge lemma from contract-keyed proof blocks."
+aliases = ["thermite-lower/src/lower.rs REQ-19 (`program_uses_bytes_eq` gate + the contract-keyed `lemma_bytes_eq_bridge()` citation)"]
+contributors = [".design/basis/07-strings.md", "thermite-lower/tests/bytes_eq_conformance.rs"]
+generated_to = ["status", "thermite-lower-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "program_uses_bytes_eq"
+note = "conditional bytes_eq emission gate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fn_contract_names_bytes_eq"
+note = "contract-keyed bridge-citation detector"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/bytes_eq_conformance.rs"
+note = "bridge-citation conformance"
+
+[[requirement]]
+id = "REQ-STRING-BYTES-EQ-L1"
+title = "bytes_eq L1 exec twin"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "The L1 runtime path emits a bounds-checked executable `bytes_eq` twin so contracts that check in L3 also build and run."
+aliases = ["thermite-lower/src/lower.rs REQ-20 (`bytes_eq` L1 exec twin — the #104 build-side mirror)"]
+contributors = [".design/basis/07-strings.md", "thermite-lower/src/lower.rs", "thermite-lower/tests/divergence_bytes_eq_l1_empty_window.rs"]
+generated_to = ["status", "thermite-lower-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_runtime_l1"
+note = "L1 string runtime emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "string_arg_count_l1"
+note = "bytes_eq L1 String-argument arity"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/divergence_bytes_eq_l1_empty_window.rs"
+note = "L1 bytes_eq edge-case regression"
+
+[[requirement]]
+id = "REQ-STRING-BYTES-EQ-CAGE"
+title = "bytes_eq validator cage entry"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "`bytes_eq` is admitted as a generated built-in spec predicate rather than as a combinator registry entry, preserving the skill budget and the five-argument surface."
+aliases = ["thermite-spec/src/validator.rs REQ-17 (`bytes_eq` — REGISTERED built-in spec predicate; surface + cage; NO skill entry)"]
+contributors = [".design/basis/07-strings.md", "thermite-lower/src/lower.rs", "thermite-lower/tests/bytes_eq_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-string-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "GENERATED_SPEC_FNS"
+note = "validator admits bytes_eq as generated spec fn"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_bytes_eq_defs"
+note = "lowerer materializes admitted predicate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/bytes_eq_conformance.rs"
+note = "bytes_eq surface/cage conformance"
 
 # ---------------------------------------------------------------------
 # Stage 1 — the forge tier (REQ cluster, .design/stage1-forge-tier.md).

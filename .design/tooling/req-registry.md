@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: bulk crate-root and spec summary rows now have stable IDs and generated source-comment regions; RFC #17)
+audited-sha: 823ee97f7d64d0a179fb2a8585efda9ec5b97220 (re-pinned 2026-06-15: lowerer/validator status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: bulk crate-root and spec summary rows now have stable IDs and generated source-comment regions; RFC #17))
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b58a14639edc472f2b4ed980bc9ceb7b0ef6125 (re-pinned 2026-06-15: forge scaffold rows now have path-qualified stable IDs and a generated source-comment region; RFC #17)
+audited-sha: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: bulk crate-root and spec summary rows now have stable IDs and generated source-comment regions; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -49,7 +49,10 @@ follow-on forge exec-TV slice splits the exact `REQ-5 (forge plug-in point)`
 label collision by giving `forge/src/exec_tv.rs` its own stable owner ID and
 generated source-comment region. The next scaffold slice starts the crate-root
 turnover by replacing `forge/src/main.rs`'s workspace scaffold rows with
-path-qualified generated references.
+path-qualified generated references. After that pilot, the turnover widened to
+bulk owner clusters: the remaining scaffold crate roots now migrate together,
+and `thermite-spec/src/lib.rs`'s combinator/validator summary copy links to
+stable owners instead of repeating local status prose.
 
 ## Design Decisions
 
@@ -211,6 +214,10 @@ required for the default gate to pass.
    point a distinct stable owner ID. The scaffold turnover then starts at
    `forge/src/main.rs`, where globally named workspace rows become
    path-qualified stable IDs before the sibling library crate roots are migrated.
+   Subsequent turnover should batch by coherent duplicate families rather than
+   one row at a time: the syntax/spec/lower scaffold roots, then component
+   summary copies such as `thermite-spec/src/lib.rs`'s combinator/validator
+   table, then remaining cross-layer exact-label collisions.
 6. Tighten the bridge: fail on unmapped legacy rows once migration coverage is
    high enough to make that signal useful.
 

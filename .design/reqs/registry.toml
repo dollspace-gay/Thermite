@@ -58,6 +58,34 @@ id = "REQ-TV-CONTRACT-FORGE-PLUGIN"
 replacement_view = "thermite-tv-contract-tv-status"
 note = "Secondary source-comment status copy replaced by a generated reference to the forge-owned canonical entry."
 
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-1 (independent reference encoder)"
+id = "REQ-TV-CONTRACT-REF-ENCODER"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the reference-encoder owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-2 (per-clause Z3 equivalence obligation + discharge)"
+id = "REQ-TV-CONTRACT-OBLIGATION"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the obligation owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-3 (off-corpus generator)"
+id = "REQ-TV-CONTRACT-GENERATOR"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the generator owner."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/lib.rs"
+label = "REQ-4 (the teeth — R-CHAR-3)"
+id = "REQ-TV-CONTRACT-TEETH"
+replacement_view = "thermite-tv-contract-tv-status"
+note = "Crate-level contract-TV summary row replaced by a generated reference to the teeth-test owner."
+
 [[requirement]]
 id = "REQ-REG-1"
 title = "Stable requirement identity and ownership"
@@ -310,6 +338,105 @@ target = "CovenantRecord"
 kind = "symbol"
 target = "CovenantRefuted"
 note = "the Counterexample-class hard-fail ladder arm (degrade.rs)"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-REF-ENCODER"
+title = "Contract-TV independent reference encoder"
+owner = "thermite-tv/src/ref_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The contract-position reference encoder independently encodes the SpecTherm contract sublanguage without depending on production lowering."
+aliases = ["REQ-1 (independent reference encoder)"]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/obligation.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ref_contract_pred"
+note = "reference contract predicate encoder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/teeth.rs"
+note = "F1-F4 contract-TV teeth discharge the reference side under real verus"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/ref_encode.rs"
+note = "owner implementation"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-OBLIGATION"
+title = "Contract-TV per-clause Z3 equivalence obligation"
+owner = "thermite-tv/src/obligation.rs"
+status = "shipped"
+scope = "verified"
+summary = "Each contract clause lowers into a self-contained equivalence obligation comparing production lowering with the independent reference encoding."
+aliases = ["REQ-2 (per-clause Z3 equivalence obligation + discharge)"]
+contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/ref_encode.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "equivalence_obligation"
+note = "per-clause contract-TV obligation emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationFrame"
+note = "obligation parameter and frame model"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/teeth.rs"
+note = "teeth test discharges faithful and infidel obligations"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-GENERATOR"
+title = "Contract-TV off-corpus generator"
+owner = "thermite-tv/src/gen.rs"
+status = "shipped"
+scope = "verified"
+summary = "The off-corpus contract generator deterministically emits well-typed contract-position clauses over the frozen TV sublanguage."
+aliases = ["REQ-3 (off-corpus generator)"]
+contributors = ["thermite-tv/src/lib.rs", "forge/src/contract_tv.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate_clauses"
+note = "deterministic contract-position generator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/contract_tv_conformance.rs"
+note = "forge off-corpus contract-TV conformance run"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-tv/src/gen.rs"
+note = "owner implementation"
+
+[[requirement]]
+id = "REQ-TV-CONTRACT-TEETH"
+title = "Contract-TV teeth"
+owner = "thermite-tv/tests/teeth.rs"
+status = "shipped"
+scope = "verified"
+summary = "The contract-TV teeth suite proves faithful clauses verify and representative infidel clauses produce real Verus counterexamples."
+aliases = ["REQ-4 (the teeth — R-CHAR-3)"]
+contributors = ["thermite-tv/src/lib.rs"]
+generated_to = ["status", "thermite-tv-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/teeth.rs"
+note = "F1-F4 contract-TV teeth"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "f3_byteview_infidel_caught"
+note = "representative F3 teeth case"
 
 [[requirement]]
 id = "REQ-TV-CONTRACT-FORGE-PLUGIN"

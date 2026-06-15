@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1e9a3dfeb41394364f73b6580b9f30025937eac6 (re-pinned 2026-06-15: legacy mapping records, source-comment reference_list generation, and the first REQ-5 replacement region landed after stage-1 registry entries; RFC #17)
+audited-sha: 43a0ac4a1afb259b34ade9528f6b169ff1e6ec42 (re-pinned 2026-06-15: contract-TV crate summary rows now map to stable owner IDs and render through the canonical source-comment region; RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
@@ -36,10 +36,13 @@ or CI integrations can be thin adapters over the same file. Source comments
 should keep stable invariants and non-obvious mechanisms; volatile status,
 evidence, blockers, and migration state belong in registry data and generated
 views.
-This slice adds the first reviewed legacy mapping and replacement region: the
-secondary `thermite-tv/src/lib.rs` copy of `REQ-5 (forge plug-in point)` now
-renders a generated reference to the forge-owned stable registry entry instead
-of restating volatile status/evidence prose by hand.
+The migration is now proceeding by reviewed owner clusters. The first slice
+replaced the secondary `thermite-tv/src/lib.rs` copy of `REQ-5 (forge plug-in
+point)` with a generated reference to the forge-owned stable registry entry. The
+second slice turns the whole contract-TV crate-level summary in
+`thermite-tv/src/lib.rs` into generated references to the stable owners in
+`ref_encode.rs`, `obligation.rs`, `gen.rs`, `tests/teeth.rs`, and
+`forge/src/contract_tv.rs`.
 
 ## Design Decisions
 
@@ -191,9 +194,10 @@ required for the default gate to pass.
 4. Add canonical registry records plus `[[legacy_mapping]]` records for migrated
    requirements.
 5. Replace repeated source-comment status copies with generated regions or
-   links. The first pilot is `thermite-tv/src/lib.rs`'s secondary
-   `REQ-5 (forge plug-in point)` row, which now references the forge-owned
-   canonical entry.
+   links. The first pilot was `thermite-tv/src/lib.rs`'s secondary
+   `REQ-5 (forge plug-in point)` row. The next turnover extends that same
+   generated region to the full contract-TV crate summary rows, so the crate root
+   links to owner entries instead of carrying copied status/evidence prose.
 6. Tighten the bridge: fail on unmapped legacy rows once migration coverage is
    high enough to make that signal useful.
 

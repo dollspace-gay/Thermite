@@ -47,7 +47,9 @@ exec-TV crate-level summary, rendering links to the stable owners in
 `exec_encode.rs`, `obligation.rs`, `gen.rs`, and `tests/exec_teeth.rs`. The
 follow-on forge exec-TV slice splits the exact `REQ-5 (forge plug-in point)`
 label collision by giving `forge/src/exec_tv.rs` its own stable owner ID and
-generated source-comment region.
+generated source-comment region. The next scaffold slice starts the crate-root
+turnover by replacing `forge/src/main.rs`'s workspace scaffold rows with
+path-qualified generated references.
 
 ## Design Decisions
 
@@ -206,7 +208,9 @@ required for the default gate to pass.
    following turnover adds a sibling generated region for the exec-TV crate
    summary rows. The next forge exec-TV turnover removes the remaining exact
    `REQ-5 (forge plug-in point)` collision by assigning the exec integration
-   point a distinct stable owner ID.
+   point a distinct stable owner ID. The scaffold turnover then starts at
+   `forge/src/main.rs`, where globally named workspace rows become
+   path-qualified stable IDs before the sibling library crate roots are migrated.
 6. Tighten the bridge: fail on unmapped legacy rows once migration coverage is
    high enough to make that signal useful.
 

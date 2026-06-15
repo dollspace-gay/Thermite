@@ -18,7 +18,7 @@
 //! | REQ-1 (workspace topology) | SHIPPED | sole `bin` member; `[[bin]]` in `forge/Cargo.toml`. |
 //! | REQ-2 (dependency DAG, leaf-first) | SHIPPED | path deps on all three libs + `thermite-skill`; `check.rs` drives `parse`/`validate`/`check_effects`/`lower`. |
 //! | REQ-3 (Result discipline; error type) | SHIPPED | `ForgeError` born in `cli.rs`; `main` returns `ExitCode` from `cli::run`; no `unwrap`/`expect`/`panic!`. |
-//! | REQ-6 (clean compile) | SHIPPED | gauntlet green; the anti-pattern gate passes (no placeholder macros). |
+//! | REQ-6 (clean compile) | SHIPPED | `cargo build --workspace` is green; `tooling/anti-pattern-gate.py` passes (no placeholder macros). |
 
 mod audit;
 mod body_tv;

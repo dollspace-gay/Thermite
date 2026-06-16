@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: abf1d3836f12c39e778b8eb383e3d0c3fa4f484d (re-pinned 2026-06-15: syntax AST status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 823ee97f7d64d0a179fb2a8585efda9ec5b97220 (re-pinned 2026-06-15: lowerer/validator status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned: the #281 L1 empty-window twin fix — claim-neutral for this doc / the REQ-20 truth for l1-runtime-checks)))
+audited-sha: 23961b736a0d8f8dd276cb76251447ca5037c2d8 (re-pinned 2026-06-15: syntax parser status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: abf1d3836f12c39e778b8eb383e3d0c3fa4f484d (re-pinned 2026-06-15: syntax AST status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 823ee97f7d64d0a179fb2a8585efda9ec5b97220 (re-pinned 2026-06-15: lowerer/validator status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned: the #281 L1 empty-window twin fix — claim-neutral for this doc / the REQ-20 truth for l1-runtime-checks))))
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

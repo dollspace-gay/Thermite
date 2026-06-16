@@ -21,13 +21,17 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (mandatory-field validation) | SHIPPED | `pub fn validate(&SlagAttr) -> Result<SlagMeta, SlagError>` checks each of `reason`/`owner`/`review` is `Some` and non-empty after `trim`; `None` → `SlagError::MissingField`, empty/whitespace → `SlagError::EmptyField`. Consumer: `check::check_file`. |
-//! | REQ-2 (L3-exempt / L1-enforced / `slag: true`) | SHIPPED | a valid slag item is NOT lowered/verified by `check::check_file`; `Certificate::slag_l1` (manifest.rs) emits `Level::L1`, `slag: true`, the metadata, and a fiat-trusted discharged obligation (no verus run). |
-//! | REQ-3 (slag justifies maximal `fx`) | SHIPPED | `vacuity::triage` reads `item.slag` and skips rule (d) when present; this module's `validate` gates whether that skip is honored (a slag item with INVALID fields is rejected before triage). |
-//! | REQ-4 (audit visibility — cert metadata) | SHIPPED | `validate` returns `SlagMeta { reason, owner, review }`; `Certificate.slag_meta` (manifest.rs additive field) carries it into the cert; `cli::render_human` prints it. |
-//! | REQ-5 (typed verdict + check integration) | SHIPPED | `SlagError` + `Result<SlagMeta, SlagError>`; `check::check_file` runs validate → triage(a/b/c) → `Certificate::slag_l1` short-circuit (no verus); a `slag.is_none()` item is untouched (normal L3 path). |
+//! <!-- generated:reqs view=forge-slag-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-SLAG-AUDIT-METADATA | shipped | `forge/src/slag.rs` | Slag metadata is audit-visible |  |
+//! | REQ-FORGE-SLAG-FIELDS | shipped | `forge/src/slag.rs` | Slag mandatory field validation |  |
+//! | REQ-FORGE-SLAG-L1-CERT | shipped | `forge/src/slag.rs` | Slag items certify at L1 without L3 proof |  |
+//! | REQ-FORGE-SLAG-MAXIMAL-FX | shipped | `forge/src/slag.rs` | Slag justifies maximal effect rows |  |
+//! | REQ-FORGE-SLAG-TYPED-INTEGRATION | shipped | `forge/src/slag.rs` | Typed slag verdict and check integration |  |
+//! <!-- /generated:reqs -->
 
 use std::fmt;
 

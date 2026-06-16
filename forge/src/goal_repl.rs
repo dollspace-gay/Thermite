@@ -23,15 +23,19 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`forge battery [item]` — battery view) | SHIPPED | `pub fn render_battery` reads each cert's `contract_quality` (tautology / vacuous_precondition / mutants_killed / survivor) — the §7 verdicts the gate ALREADY computed and serialized; a VIEW, no re-derivation, no accessor. Consumer: `cli::run_battery`. Verified: `tests/goal_repl.rs::battery_view_matches_check_verdicts` — the non-vacuous booleans anchored to `conformance/sum.cert.json` (oracle fields), the kill-ratio asserted CROSS-VERB (the ratio is oracle-EXCLUDED — `conformance/README.md`; the golden `17/18` is illustrative, R-CHAR-3). |
-//! | REQ-2 (`forge goal <item>` — goal-state render) | SHIPPED | `pub fn render_goal` renders the §5.1 four-part view: `given` (the `req` clause text) / `want` (the `ens` clause texts) / per-obligation status with the failed obligation's concrete witness (`ObligationResult.diagnostic` + `location`, never an adjective — §5.1 property 2); a clean cert renders `ALL GOALS DISCHARGED`. Holes (`?N`) NOT-STARTED (increment iii). Consumer: `cli::run_goal`. Verified: `tests/goal_repl.rs` discharged + counterexample shapes. |
-//! | REQ-3 (`forge edit <addr> --replace`) | SHIPPED | `pub fn edit_file` resolves the address via `thermite_syntax::address::resolve`, finds the addressed `inv`/`dec`/`loop`/`fn` node's byte span by walking the AST (`span_of_address`), splices the replacement SOURCE TEXT at that span, writes the file, re-parses, and re-checks the item. A bad address → `ForgeError::Usage` carrying the structured `AddressError` (never a panic). Consumer: `cli::run_edit`. Verified: `tests/goal_repl.rs` splice round-trip + bad-address. |
-//! | REQ-4 (body-position hole `?N` — parser) | SHIPPED | the `?N` lexer token (`TokKind::Hole`) + parser acceptance in fn-body statement position (`thermite_syntax`, #193) + the `<fn>.?N` address (`AddrKind::Hole`). This module CONSUMES it: `render_goal_item` renders the §5.1 `holes:` section from `holes_of(program, item)` (the `FnItem.holes` the parser recorded); `span_of_address`'s `AddrKind::Hole` arm finds a hole's `?N` span. Verified: `forge/tests/goal_repl_fill.rs` (a `body = ?0` fn → `forge goal` shows the open hole). |
-//! | REQ-5 (open-hole validator) | SHIPPED | `forge::check`'s per-item loop short-circuits a holed `FnItem` (any `f.holes`) to a non-certified `Certificate::rejected` with an `OpenHole` cause naming every `<fn>.?N` BEFORE the gate / lowering / verus (the same short-circuit shape the vacuity gate uses) — a holed item NEVER reaches verus, never certifies. `render_goal` surfaces it as the §5.1 open GOAL. Verified: `forge/tests/goal_repl_fill.rs` (a holed item is L0 `OpenHole`, no lowering). |
-//! | REQ-6 (`forge fill <addr> <code>`) | SHIPPED | `pub fn fill_hole` — a SPECIALIZATION of `edit_file` whose address names a `?N` hole: it resolves the `<fn>.?N` address (a non-hole address is an honest Usage error directing to `edit`), splices `code` at the hole's `?N` span (reusing the increment-(ii) splice machinery), re-emits, re-parses, re-checks, and renders the new goal state (which may surface NEW holes the fill introduced — the §5.1 loop). Consumer: `cli::run_fill`. Verified: `forge/tests/goal_repl_fill.rs` (fill closes the hole → re-goal shows discharged; fill introducing new holes → re-goal lists them) + the §5.1 dialogue golden (`conformance/goal/binary_search.dialogue.json`, AC-6). |
-//! | REQ-7 (determinism + Result discipline) | SHIPPED | every entry (incl. `fill_hole`) returns `Result<_, ForgeError>`; the render is a pure function of the cert collection + AST and the splice a pure function of the span + replacement text (R-CODE-5); a bad address / unresolvable node / non-hole fill target is a structured error, never a panic (R-CODE-2). |
+//! <!-- generated:reqs view=forge-goal-repl-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-GOAL-BATTERY-VIEW | shipped | `forge/src/goal_repl.rs` | forge battery view |  |
+//! | REQ-FORGE-GOAL-DETERMINISM | shipped | `forge/src/goal_repl.rs` | Goal REPL determinism and result discipline |  |
+//! | REQ-FORGE-GOAL-EDIT | shipped | `forge/src/goal_repl.rs` | forge edit semantic-address splice |  |
+//! | REQ-FORGE-GOAL-FILL | shipped | `forge/src/goal_repl.rs` | forge fill hole splice loop |  |
+//! | REQ-FORGE-GOAL-GOAL-VIEW | shipped | `forge/src/goal_repl.rs` | forge goal state render |  |
+//! | REQ-FORGE-GOAL-HOLE-PARSER-CONSUMER | shipped | `forge/src/goal_repl.rs` | Body-position hole rendering and addressing |  |
+//! | REQ-FORGE-GOAL-OPEN-HOLE-VALIDATOR | shipped | `forge/src/goal_repl.rs` | Open-hole validator integration |  |
+//! <!-- /generated:reqs -->
 
 use std::path::Path;
 

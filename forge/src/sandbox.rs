@@ -52,15 +52,19 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (seccomp prelude install via raw libc `prctl`) | SHIPPED | `pub fn emit_sandbox_prelude` emits a `sock_filter[]` program (arch-guard + per-syscall `BPF_JEQ` → `SECCOMP_RET_ALLOW`, default `SECCOMP_RET_KILL_PROCESS`) installed via `prctl(PR_SET_NO_NEW_PRIVS)` + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`, raw `extern "C"` (no libc crate). Consumer: `build::synthesize_entry_main`. Verified by `sandbox_conformance::pure_runs_clean` / `probe_killed`. |
-//! | REQ-2 (transitive-`fx` derivation via `closure.rs`) | SHIPPED | `pub fn transitive_fx` unions `manifest::effects_of` over `{entry} ∪ closure::reachable_in_file_fns(program, entry)`. Consumer: `build::synthesize_entry_main` + `build::build_file` (the `BuildManifest::sandbox` record). Verified by `sandbox_conformance::probe_allowed_when_fx_widens` (the `read` fx widens the allowlist). |
-//! | REQ-3 (`fx` → syscall allowlist mapping) | SHIPPED | `pub fn syscall_allowlist` maps each token to the pinned x86_64 set ([the table](#the-fx--syscall-table)); `pure` baseline excludes `openat`, `read(_)` adds it. Consumer: `emit_sandbox_prelude` (via `build::synthesize_entry_main`). Verified by `sandbox_conformance::probe_killed` (no openat) vs `probe_allowed_when_fx_widens` (openat) + unit `pure_baseline_excludes_io_syscalls`. |
-//! | REQ-4 (sandbox-on-by-default for `--entry`, `--no-sandbox` opt-out) | SHIPPED | `build::synthesize_entry_main` injects the prelude FIRST when `SandboxMode::On` (`build::SandboxConfig::default` = on); `--no-sandbox` → `SandboxMode::Off` (no prelude); a library build emits no `main` at all. Consumer: `cli::run_build` (the `--sandbox`/`--no-sandbox` flags). Verified by `sandbox_conformance::no_sandbox_omits_prelude` + `cli::tests::parses_build_sandbox_flags`. |
-//! | REQ-5 (reproducible prelude + manifest record) | SHIPPED | `emit_sandbox_prelude` is byte-deterministic (sorted allowlist); the `build::BuildManifest::sandbox` (`SandboxRecord`) field records the installed allowlist. Verified by unit `prelude_installs_and_is_deterministic` + `sandbox_conformance::pure_runs_clean` (the recorded allowlist excludes openat). |
-//! | REQ-6 (demonstrable enforcement — probe + clean pure run) | SHIPPED | `pub fn emit_probe` injects (under `--sandbox-self-test`, AFTER the filter) a raw `syscall(SYS_openat, ...)`. Consumer: `build::synthesize_entry_main`. Verified by `sandbox_conformance::probe_killed` (exit 159) vs `probe_allowed_when_fx_widens` (exit 0). |
-//! | REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106) | SHIPPED | `TERM_SYSCALLS = &[16 /* ioctl */]` + the `"term" => TERM_SYSCALLS` arm in `syscall_allowlist`; the §4.1 `Effect::Term` atom (`thermite_syntax::ast::Effect::Term`, parsed as `fx term`) flows through `manifest::effects_of` → `transitive_fx` → the allowlist, so a `term` program's allowlist INCLUDES `ioctl`:16 and a non-`term` one EXCLUDES it (scoped to the effect). The `examples/editor/editor.th` `run` entry now declares `fx term` (its `raw_mode_on`/`raw_mode_off` boundaries) and builds+runs FULLY sandboxed (NO `--no-sandbox`). Consumer: `syscall_allowlist` (via `build::synthesize_entry_main`). Verified by `tests::term_grants_ioctl_scoped_to_the_effect` + `verus_anchor` (the term bit is non-io, `widen(8)==0`, so the proved io_allow bitset is unaffected over all 512 masks) + `editor_runs.rs` (the editor sandboxed, exit 0). The grant is `ioctl`-BROAD (OQ-5). |
+//! <!-- generated:reqs view=forge-sandbox-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-SANDBOX-DEFAULT-ON | shipped | `forge/src/sandbox.rs` | Sandbox enabled by default for entry builds |  |
+//! | REQ-FORGE-SANDBOX-MANIFEST | shipped | `forge/src/sandbox.rs` | Reproducible prelude and manifest record |  |
+//! | REQ-FORGE-SANDBOX-PRELUDE | shipped | `forge/src/sandbox.rs` | Seccomp prelude installation |  |
+//! | REQ-FORGE-SANDBOX-PROBE | shipped | `forge/src/sandbox.rs` | Sandbox self-test probe enforcement |  |
+//! | REQ-FORGE-SANDBOX-SYSCALL-MAP | shipped | `forge/src/sandbox.rs` | Effect row to syscall allowlist mapping |  |
+//! | REQ-FORGE-SANDBOX-TERM-IOCTL | shipped | `forge/src/sandbox.rs` | Term effect grants scoped ioctl |  |
+//! | REQ-FORGE-SANDBOX-TRANSITIVE-FX | shipped | `forge/src/sandbox.rs` | Transitive effect derivation for sandbox |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeSet;
 

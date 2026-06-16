@@ -35,22 +35,30 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (degrade state machine L3→L2→L1) | SHIPPED | `pub fn run_ladder` runs the rungs in order: `L3Verdict::Proved` → certify L3; `Timeout` → `attempt_l2` closure → `L2Verdict::Verified` certify L2 (+ lowered-assurance + bound) / `UnderBound` → `attempt_l1` closure → certify L1 (+ lowered-assurance). Consumer: `check::check_file_with_options`'s default per-item path (`degrade::ladder_l3_timeout`). |
-//! | REQ-2 (anti-cheat: a counterexample NEVER degrades) | SHIPPED | `run_ladder` matches `L3Verdict::Counterexample` → returns the supplied hard-fail cert with NO `attempt_l2`/`attempt_l1` call (the closures are not invoked); an `L2Verdict::Counterexample` from `attempt_l2` → returns the L2 counterexample cert with NO `attempt_l1` call. Hermetic test `counterexample_never_degrades` + `l2_counterexample_never_drops_to_l1`. |
-//! | REQ-3 (L1 fallback rung) | SHIPPED | `run_ladder` on `L2Verdict::UnderBound` calls `attempt_l1`, which in the live path (`check::degrade_l1_cert`) records `Level::L1` (`lower_l1` exists; emission is build-time, OQ-3 (b)). Test `l2_under_bound_drops_to_l1`. |
-//! | REQ-4 (lowered-assurance flag + degrade reason) | SHIPPED | the L2 and L1 certs `run_ladder` returns are `Certificate::into_degraded(reason)` — `lowered_assurance = true` + the `VerusTimeout` degrade reason (`manifest.rs`). Test `degraded_l2_carries_flag_and_reason`. |
-//! | REQ-5 (assurance manifest — per-fn aggregate) | SHIPPED | `manifest::AssuranceManifest::aggregate(&[Certificate])` (per-fn `FunctionAssurance` rows + the project headline); consumer `cli::run_check`. |
-//! | REQ-6 (min-over-functions project assurance) | SHIPPED | `AssuranceManifest::aggregate` headline = `ProjectAssurance::Certified(min over levels)` via `Level`'s `Ord` (`L0<L1<L2<L3`), or `Failed` if any fn does not certify. Test `aggregate_is_min_over_functions` + `hard_fail_caps_project_at_failure`. |
-//! | REQ-7 (determinism) | SHIPPED | `run_ladder` is a pure function of its verdict + closures; `aggregate` is a pure function of the cert collection; no wall-clock / unseeded input enters the verdict (R-CODE-5). Test `ladder_is_deterministic`. |
-//! | REQ-8 (subprocess failures never silently degrade) | SHIPPED | `attempt_l2` / `attempt_l1` return `Result<_, ForgeError>`; an environment failure propagates as the `Err` (the `?` in `run_ladder`), NEVER a degrade — only a classified `Timeout`/`UnderBound` verdict takes a degrade edge. Test `l2_environment_error_is_not_a_degrade`. |
+//! <!-- generated:reqs view=forge-degrade-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-DEGRADE-ASSURANCE-MANIFEST | shipped | `forge/src/degrade.rs` | Per-function assurance manifest aggregate |  |
+//! | REQ-FORGE-DEGRADE-DETERMINISM | shipped | `forge/src/degrade.rs` | Deterministic degrade and aggregate decisions |  |
+//! | REQ-FORGE-DEGRADE-L1-FALLBACK | shipped | `forge/src/degrade.rs` | L1 fallback rung after L2 under-bound |  |
+//! | REQ-FORGE-DEGRADE-LADDER | shipped | `forge/src/degrade.rs` | L3-to-L2-to-L1 degrade state machine |  |
+//! | REQ-FORGE-DEGRADE-LOWERED-FLAG | shipped | `forge/src/degrade.rs` | Lowered-assurance flag and degrade reason |  |
+//! | REQ-FORGE-DEGRADE-MIN-LEVEL | shipped | `forge/src/degrade.rs` | Project assurance is min-over-functions |  |
+//! | REQ-FORGE-DEGRADE-NO-COUNTEREXAMPLE | shipped | `forge/src/degrade.rs` | Counterexamples never degrade |  |
+//! | REQ-FORGE-DEGRADE-SUBPROCESS-ERRORS | shipped | `forge/src/degrade.rs` | Subprocess failures never silently degrade |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #17 extension (the §9 project assurance-scope claim, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | e2e-vs-boundary REQ-4 (project END-TO-END iff every fn is) | SHIPPED | `manifest::AssuranceManifest::aggregate` now also computes `manifest::ProjectScope` (via `project_scope`): `EndToEnd` iff every cert's `assurance_scope` is end-to-end (a `None` reads end-to-end — the golden default), else `ToBoundary { crossings }` listing the reached `#[boundary]`/`#[slag]` fns (sorted + deduplicated, deterministic). ORTHOGONAL to the min-over-functions `project` level headline. Consumer: `cli::run_check` (the manifest it aggregates + renders). Tests `aggregate_project_scope_*` below. |
+//! <!-- generated:reqs view=forge-degrade-e2e-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-DEGRADE-PROJECT-SCOPE | shipped | `forge/src/degrade.rs` | Project scope is end-to-end iff every function is |  |
+//! <!-- /generated:reqs -->
 
 use crate::cli::ForgeError;
 use crate::kani::L2Verdict;

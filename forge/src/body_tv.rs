@@ -57,10 +57,14 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | exec-stmt-tv REQ-5 (forge `body_tv` plug-in point) | SHIPPED | `pub fn body_tv_file` walks each fn body; a STRAIGHT-LINE body lowers via `thermite_lower::lower_exec_body` + builds `thermite_tv::body_equivalence_obligation` + discharges through `verus` (the `discharge` helper, reusing `crate::check::ScratchDir` / #53). The four-way `BodyVerdict` (Faithful / Divergent / Unverifiable / Skipped) is REPORTED DISTINCTLY (R-HONEST-3). Non-test consumer: `cli::run_body_tv` (the `forge body-tv <file>` subcommand) — nonzero exit on Divergent, zero on Faithful/Skipped/Unverifiable. Verified by `forge/tests/body_tv.rs` (faithful straight-line → Faithful, mutated → Divergent, out-of-subset → Skipped) under real verus. This closes the `lower_exec_body` consumer loop (R-DEFER-1). |
-//! | loop-tv REQ-5 (the forge `body_tv` loop wiring — increment 2.2.2-iii) | SHIPPED | `body_tv_file` recognizes a v1 frozen-subset `while` loop as the body's last statement and discharges the THREE per-run obligations via `thermite_tv::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}` (`loop_body_tv` / `discharge_loop`); all-three-VERIFY → Faithful, any counterexample → Divergent, an OUT-of-v1 loop (`loop`-kind / `break` / mid-body `return` / nested / non-scalar / weak `inv`) → an honest `Unsupported` → Skipped with reason (NEVER Faithful, R-HONEST-3). Verified by `forge/tests/body_tv.rs` (faithful `while` → Faithful all three; broken-invariant → Divergent; `binary_search.th`'s `loop`-kind body → Skipped-with-reason). **#192:** the rlimit discriminator `run_obligation` consumes is now the SHARED `crate::tv_signal::is_rlimit_signal` (the #189 phrase set, centralized as the SOLE copy across the three TV phases — body_tv was the authority the drifted contract_tv / missing exec_tv copies are now unified onto). |
+//! <!-- generated:reqs view=forge-body-tv-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-BODY-TV-LOOP | shipped | `forge/src/body_tv.rs` | Forge body-TV loop obligation wiring |  |
+//! | REQ-FORGE-BODY-TV-PLUGIN | shipped | `forge/src/body_tv.rs` | Forge body-TV straight-line plugin point |  |
+//! <!-- /generated:reqs -->
 
 use std::path::Path;
 use std::process::Command;

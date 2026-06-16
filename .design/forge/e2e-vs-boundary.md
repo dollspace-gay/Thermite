@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — #17 SHIPPED post-pin; the all-NOT-STARTED REQ table flipped to SHIPPED with current-tree evidence, greenfield Summary corrected, #262)
+audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — #17 SHIPPED post-pin; the all-NOT-STARTED REQ table flipped to SHIPPED with current-tree evidence, greenfield Summary corrected, #262))
 governs: forge/src/closure.rs
 thesis-refs:
   - thermite-design.md §9

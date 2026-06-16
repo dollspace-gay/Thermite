@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-audited 2026-06-12: amended — tv_signal.rs added to governs + the #189/#192/#195 verdict hardenings recorded; REQ-4 corrected to SHIPPED (loop-TV built under loop-tv.md), #262)
+audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-audited 2026-06-12: amended — tv_signal.rs added to governs + the #189/#192/#195 verdict hardenings recorded; REQ-4 corrected to SHIPPED (loop-TV built under loop-tv.md), #262))
 governs: thermite-tv/src/exec_stmt_encode.rs, thermite-tv/src/obligation.rs, thermite-lower/src/lower.rs, forge/src/body_tv.rs, forge/src/tv_signal.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)

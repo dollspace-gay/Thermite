@@ -29,19 +29,27 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-4 (`run_kani` invocation — real binary, temp crate, exit status) | SHIPPED | `pub fn run_kani` writes a temp cargo crate (`write_kani_crate`, no-`.` stem via `crate_stem`), spawns `cargo-kani`, captures exit status; ENOENT → `ForgeError::KaniAbsent`, other spawn failure → `KaniSpawn`; temp crate removed best-effort. Consumer: `check::check_l2_file` (`check.rs`). |
-//! | REQ-5 (Kani output → L2-or-counterexample) | SHIPPED | `parse_kani_output` keys on `VERIFICATION:- SUCCESSFUL`/`FAILED` + `Failed Checks:`/`File:`; success → `Level::L2` w/ bound obligation, failure → per-`ObligationResult::failed` witnesses, no summary → `KaniOutput`. Pure tests `success_terse_is_l2`/`failure_terse_is_counterexample`/`under_bound_is_reported_failure`/`no_summary_is_kani_output_error`. |
-//! | REQ-6 (the L2 "up to bound" caveat) | SHIPPED | `run_kani` takes the `bound` string (`thermite_lower::bound_string`) and records it on the discharged obligation + the cert (`Level::L2`, programmatically distinct from L3). `bound_recorded_on_l2_cert` (AC-6). |
-//! | REQ-8 (Kani-absent = structured error) | SHIPPED | spawn `ErrorKind::NotFound` → `ForgeError::KaniAbsent`, never a silent success; `run_kani_with_absent_binary_is_kani_absent` (AC-7, points `KANI_BIN` at a non-existent binary). |
-//! | REQ-9 (determinism) | SHIPPED | the bound is the fixed input (`l2.rs` `SLICE_BOUND`); the temp crate path uses pid + a monotonic counter (not wall-clock); `solver_time_ms` is the only wall-clock field, excluded from the cert oracle (`manifest::Certificate::oracle_subset`). |
+//! <!-- generated:reqs view=forge-kani-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-KANI-ABSENT | shipped | `forge/src/kani.rs` | Kani absence is a structured error |  |
+//! | REQ-FORGE-KANI-BOUND-CAVEAT | shipped | `forge/src/kani.rs` | L2 certificate records bounded caveat |  |
+//! | REQ-FORGE-KANI-DETERMINISM | shipped | `forge/src/kani.rs` | Deterministic Kani verdict fields |  |
+//! | REQ-FORGE-KANI-PARSE-OUTPUT | shipped | `forge/src/kani.rs` | Kani output becomes L2 or counterexample |  |
+//! | REQ-FORGE-KANI-RUNNER | shipped | `forge/src/kani.rs` | Kani runner invocation and temp crate |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #10 gate (the L2 under-bound-vs-counterexample split for the degrade ladder, OQ-2)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | degrade-ladder OQ-2 (split the L2 `FAILED` bucket) | SHIPPED | `pub fn classify_l2_outcome` maps an `L2Result` to `enum L2Verdict { Verified, UnderBound, Counterexample }`: a `Level::L2` result is `Verified`; a `Level::L0` failure whose EVERY failed obligation is an `is_under_bound_failure` (kani's BOILERPLATE `unwinding assertion` text ONLY) is `UnderBound` (the L2 analog of a timeout → degrade to L1); ANY real property failure (`assertion failed: <ens>`, even when the ens clause merely CONTAINS the substring `unwind`) OR an ambiguous/empty-witness failure is a `Counterexample` (hard fail, CONSERVATIVE per R-DEFER-9 — blocker #51). Consumer: `degrade::run_ladder` (`degrade.rs`). Tests `classify_l2_{successful_is_verified, unwinding_assertion_is_under_bound, real_assertion_is_counterexample, assertion_with_unwind_substring_is_counterexample, mixed_failure_is_counterexample, ambiguous_failure_is_counterexample}`. |
+//! <!-- generated:reqs view=forge-kani-degrade-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-KANI-DEGRADE-SPLIT | shipped | `forge/src/kani.rs` | L2 failed bucket split for degrade ladder |  |
+//! <!-- /generated:reqs -->
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

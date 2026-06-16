@@ -866,6 +866,132 @@ region = "forge-review-ergonomics-status"
 comment_prefix = "//! "
 title = "Forge Review Ergonomics Canonical Status References"
 
+[[view]]
+name = "forge-degrade-status"
+path = "forge/src/degrade.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-degrade-status"
+comment_prefix = "//! "
+title = "Forge Degrade Ladder Canonical Status References"
+
+[[view]]
+name = "forge-degrade-e2e-status"
+path = "forge/src/degrade.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-degrade-e2e-status"
+comment_prefix = "//! "
+title = "Forge Degrade Assurance Scope Canonical Status References"
+
+[[view]]
+name = "forge-closure-status"
+path = "forge/src/closure.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-closure-status"
+comment_prefix = "//! "
+title = "Forge Assurance Closure Canonical Status References"
+
+[[view]]
+name = "forge-closure-ergonomics-status"
+path = "forge/src/closure.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-closure-ergonomics-status"
+comment_prefix = "//! "
+title = "Forge Closure Ergonomics Canonical Status References"
+
+[[view]]
+name = "forge-goal-repl-status"
+path = "forge/src/goal_repl.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-goal-repl-status"
+comment_prefix = "//! "
+title = "Forge Goal REPL Canonical Status References"
+
+[[view]]
+name = "forge-sandbox-status"
+path = "forge/src/sandbox.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-sandbox-status"
+comment_prefix = "//! "
+title = "Forge Runtime Sandbox Canonical Status References"
+
+[[view]]
+name = "forge-kani-status"
+path = "forge/src/kani.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-kani-status"
+comment_prefix = "//! "
+title = "Forge Kani L2 Canonical Status References"
+
+[[view]]
+name = "forge-kani-degrade-status"
+path = "forge/src/kani.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-kani-degrade-status"
+comment_prefix = "//! "
+title = "Forge Kani Degrade Split Canonical Status References"
+
+[[view]]
+name = "forge-slag-status"
+path = "forge/src/slag.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-slag-status"
+comment_prefix = "//! "
+title = "Forge Slag Canonical Status References"
+
+[[view]]
+name = "forge-effect-wrappers-status"
+path = "forge/src/effect_wrappers.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-effect-wrappers-status"
+comment_prefix = "//! "
+title = "Forge Effect Wrapper Canonical Status References"
+
+[[view]]
+name = "forge-body-tv-status"
+path = "forge/src/body_tv.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-body-tv-status"
+comment_prefix = "//! "
+title = "Forge Body-TV Canonical Status References"
+
+[[view]]
+name = "forge-obligation-status"
+path = "forge/src/obligation.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-obligation-status"
+comment_prefix = "//! "
+title = "Forge Obligation Canonical Status References"
+
+[[view]]
+name = "forge-contract-tv-status"
+path = "forge/src/contract_tv.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-contract-tv-status"
+comment_prefix = "//! "
+title = "Forge Contract-TV Canonical Status References"
+
+[[view]]
+name = "forge-tv-signal-status"
+path = "forge/src/tv_signal.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-tv-signal-status"
+comment_prefix = "//! "
+title = "Forge TV Signal Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -3468,6 +3594,356 @@ path = "forge/src/review.rs"
 label = "REQ-3 (MatchArm.guard ripple)"
 id = "REQ-FORGE-REVIEW-MATCH-GUARD"
 replacement_view = "forge-review-ergonomics-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-1 (degrade state machine L3→L2→L1)"
+id = "REQ-FORGE-DEGRADE-LADDER"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-2 (anti-cheat: a counterexample NEVER degrades)"
+id = "REQ-FORGE-DEGRADE-NO-COUNTEREXAMPLE"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-3 (L1 fallback rung)"
+id = "REQ-FORGE-DEGRADE-L1-FALLBACK"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-4 (lowered-assurance flag + degrade reason)"
+id = "REQ-FORGE-DEGRADE-LOWERED-FLAG"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-5 (assurance manifest — per-fn aggregate)"
+id = "REQ-FORGE-DEGRADE-ASSURANCE-MANIFEST"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-6 (min-over-functions project assurance)"
+id = "REQ-FORGE-DEGRADE-MIN-LEVEL"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-7 (determinism)"
+id = "REQ-FORGE-DEGRADE-DETERMINISM"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "REQ-8 (subprocess failures never silently degrade)"
+id = "REQ-FORGE-DEGRADE-SUBPROCESS-ERRORS"
+replacement_view = "forge-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/degrade.rs"
+label = "e2e-vs-boundary REQ-4 (project END-TO-END iff every fn is)"
+id = "REQ-FORGE-DEGRADE-PROJECT-SCOPE"
+replacement_view = "forge-degrade-e2e-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-1 (transitive call closure, cycle-safe + bounded)"
+id = "REQ-FORGE-CLOSURE-CALLGRAPH"
+replacement_view = "forge-closure-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-2 (END-TO-END vs TO-THE-BOUNDARY rule)"
+id = "REQ-FORGE-CLOSURE-SCOPE-RULE"
+replacement_view = "forge-closure-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-3 (per-fn additive cert field)"
+id = "REQ-FORGE-CLOSURE-CERT-FIELD"
+replacement_view = "forge-closure-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-4 (project-level claim)"
+id = "REQ-FORGE-CLOSURE-PROJECT-CLAIM"
+replacement_view = "forge-closure-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-5 (scope ⊥ level)"
+id = "REQ-FORGE-CLOSURE-SCOPE-ORTHOGONAL"
+replacement_view = "forge-closure-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-6 (determinism)"
+id = "REQ-FORGE-CLOSURE-DETERMINISM"
+replacement_view = "forge-closure-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/closure.rs"
+label = "REQ-3 (MatchArm.guard ripple)"
+id = "REQ-FORGE-CLOSURE-MATCH-GUARD"
+replacement_view = "forge-closure-ergonomics-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-1 (`forge battery [item]` — battery view)"
+id = "REQ-FORGE-GOAL-BATTERY-VIEW"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-2 (`forge goal <item>` — goal-state render)"
+id = "REQ-FORGE-GOAL-GOAL-VIEW"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-3 (`forge edit <addr> --replace`)"
+id = "REQ-FORGE-GOAL-EDIT"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-4 (body-position hole `?N` — parser)"
+id = "REQ-FORGE-GOAL-HOLE-PARSER-CONSUMER"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-5 (open-hole validator)"
+id = "REQ-FORGE-GOAL-OPEN-HOLE-VALIDATOR"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-6 (`forge fill <addr> <code>`)"
+id = "REQ-FORGE-GOAL-FILL"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/goal_repl.rs"
+label = "REQ-7 (determinism + Result discipline)"
+id = "REQ-FORGE-GOAL-DETERMINISM"
+replacement_view = "forge-goal-repl-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-1 (seccomp prelude install via raw libc `prctl`)"
+id = "REQ-FORGE-SANDBOX-PRELUDE"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-2 (transitive-`fx` derivation via `closure.rs`)"
+id = "REQ-FORGE-SANDBOX-TRANSITIVE-FX"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-3 (`fx` → syscall allowlist mapping)"
+id = "REQ-FORGE-SANDBOX-SYSCALL-MAP"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-4 (sandbox-on-by-default for `--entry`, `--no-sandbox` opt-out)"
+id = "REQ-FORGE-SANDBOX-DEFAULT-ON"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-5 (reproducible prelude + manifest record)"
+id = "REQ-FORGE-SANDBOX-MANIFEST"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-6 (demonstrable enforcement — probe + clean pure run)"
+id = "REQ-FORGE-SANDBOX-PROBE"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/sandbox.rs"
+label = "REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106)"
+id = "REQ-FORGE-SANDBOX-TERM-IOCTL"
+replacement_view = "forge-sandbox-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/kani.rs"
+label = "REQ-4 (`run_kani` invocation — real binary, temp crate, exit status)"
+id = "REQ-FORGE-KANI-RUNNER"
+replacement_view = "forge-kani-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/kani.rs"
+label = "REQ-5 (Kani output → L2-or-counterexample)"
+id = "REQ-FORGE-KANI-PARSE-OUTPUT"
+replacement_view = "forge-kani-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/kani.rs"
+label = "REQ-6 (the L2 \"up to bound\" caveat)"
+id = "REQ-FORGE-KANI-BOUND-CAVEAT"
+replacement_view = "forge-kani-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/kani.rs"
+label = "REQ-8 (Kani-absent = structured error)"
+id = "REQ-FORGE-KANI-ABSENT"
+replacement_view = "forge-kani-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/kani.rs"
+label = "REQ-9 (determinism)"
+id = "REQ-FORGE-KANI-DETERMINISM"
+replacement_view = "forge-kani-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/kani.rs"
+label = "degrade-ladder OQ-2 (split the L2 `FAILED` bucket)"
+id = "REQ-FORGE-KANI-DEGRADE-SPLIT"
+replacement_view = "forge-kani-degrade-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/slag.rs"
+label = "REQ-1 (mandatory-field validation)"
+id = "REQ-FORGE-SLAG-FIELDS"
+replacement_view = "forge-slag-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/slag.rs"
+label = "REQ-2 (L3-exempt / L1-enforced / `slag: true`)"
+id = "REQ-FORGE-SLAG-L1-CERT"
+replacement_view = "forge-slag-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/slag.rs"
+label = "REQ-3 (slag justifies maximal `fx`)"
+id = "REQ-FORGE-SLAG-MAXIMAL-FX"
+replacement_view = "forge-slag-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/slag.rs"
+label = "REQ-4 (audit visibility — cert metadata)"
+id = "REQ-FORGE-SLAG-AUDIT-METADATA"
+replacement_view = "forge-slag-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/slag.rs"
+label = "REQ-5 (typed verdict + check integration)"
+id = "REQ-FORGE-SLAG-TYPED-INTEGRATION"
+replacement_view = "forge-slag-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/effect_wrappers.rs"
+label = "REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies)"
+id = "REQ-FORGE-EFFECT-WRAPPERS-STDLIB"
+replacement_view = "forge-effect-wrappers-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/effect_wrappers.rs"
+label = "REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets)"
+id = "REQ-FORGE-EFFECT-WRAPPERS-LINK"
+replacement_view = "forge-effect-wrappers-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/effect_wrappers.rs"
+label = "REQ-3 (a verified program COMPILES + RUNS + does real I/O)"
+id = "REQ-FORGE-EFFECT-WRAPPERS-RUNNABLE"
+replacement_view = "forge-effect-wrappers-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/body_tv.rs"
+label = "exec-stmt-tv REQ-5 (forge `body_tv` plug-in point)"
+id = "REQ-FORGE-BODY-TV-PLUGIN"
+replacement_view = "forge-body-tv-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/body_tv.rs"
+label = "loop-tv REQ-5 (the forge `body_tv` loop wiring — increment 2.2.2-iii)"
+id = "REQ-FORGE-BODY-TV-LOOP"
+replacement_view = "forge-body-tv-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/obligation.rs"
+label = "REQ-1 (the backend-neutral Obligation artifact)"
+id = "REQ-FORGE-OBLIGATION-ARTIFACT"
+replacement_view = "forge-obligation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/obligation.rs"
+label = "REQ-1.2 (the REGISTRY-TERMINATION class + the full-expression-position closure)"
+id = "REQ-FORGE-OBLIGATION-REGISTRY-TERMINATION"
+replacement_view = "forge-obligation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/contract_tv.rs"
+label = "REQ-5 (forge plug-in point)"
+id = "REQ-FORGE-CONTRACT-TV-PLUGIN"
+replacement_view = "forge-contract-tv-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/tv_signal.rs"
+label = "exec-stmt-tv REQ-5 (the rlimit discriminator — a Verus/Z3 timeout is Unverifiable, NEVER Divergent; R-HONEST-3 / R-CODE-4)"
+id = "REQ-FORGE-TV-SIGNAL-RLIMIT"
+replacement_view = "forge-tv-signal-status"
 note = "Source-comment status row replaced by a generated canonical reference."
 
 [[requirement]]
@@ -12425,3 +12901,1303 @@ note = "review consumer"
 kind = "file"
 target = "forge/src/review.rs"
 note = "guard walk implementation"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-LADDER"
+title = "L3-to-L2-to-L1 degrade state machine"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "The default check path tries L3 first, then degrades inconclusive timeouts to L2 and under-bound L2 results to L1."
+aliases = ["forge/src/degrade.rs REQ-1 (degrade state machine L3→L2→L1)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_ladder"
+note = "degrade ladder driver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "L3Verdict"
+note = "L3 classified input"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "L2Verdict"
+note = "L2 classified input"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-NO-COUNTEREXAMPLE"
+title = "Counterexamples never degrade"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "Counterexamples from L3 or L2 are returned as hard failures without invoking lower-assurance closures."
+aliases = ["forge/src/degrade.rs REQ-2 (anti-cheat: a counterexample NEVER degrades)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "counterexample_never_degrades"
+note = "L3 anti-cheat test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "l2_counterexample_never_drops_to_l1"
+note = "L2 anti-cheat test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_ladder"
+note = "hard-fail branch"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-L1-FALLBACK"
+title = "L1 fallback rung after L2 under-bound"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "An L2 under-bound outcome invokes the L1 fallback closure and records an L1 certificate in the live path."
+aliases = ["forge/src/degrade.rs REQ-3 (L1 fallback rung)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_ladder"
+note = "fallback caller"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "degrade_l1_cert"
+note = "live L1 cert path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "l2_under_bound_drops_to_l1"
+note = "fallback test"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-LOWERED-FLAG"
+title = "Lowered-assurance flag and degrade reason"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "Lower-rung certificates carry `lowered_assurance` plus the structured timeout degrade reason."
+aliases = ["forge/src/degrade.rs REQ-4 (lowered-assurance flag + degrade reason)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::into_degraded"
+note = "degrade stamp"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RejectReason"
+note = "degrade reason payload"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "degraded_l2_carries_flag_and_reason"
+note = "flag/reason test"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-ASSURANCE-MANIFEST"
+title = "Per-function assurance manifest aggregate"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "The project assurance manifest aggregates per-function certificate rows for the CLI and audit surfaces."
+aliases = ["forge/src/degrade.rs REQ-5 (assurance manifest — per-fn aggregate)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "assurance aggregate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "FunctionAssurance"
+note = "per-function row"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_assurance"
+note = "CLI consumer"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-MIN-LEVEL"
+title = "Project assurance is min-over-functions"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "The project headline is certified at the minimum function level, or failed if any function is non-certifying."
+aliases = ["forge/src/degrade.rs REQ-6 (min-over-functions project assurance)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ProjectAssurance::Certified"
+note = "certified headline"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_is_min_over_functions"
+note = "min-level test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "hard_fail_caps_project_at_failure"
+note = "failure cap test"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-DETERMINISM"
+title = "Deterministic degrade and aggregate decisions"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "The ladder decision and assurance aggregate are pure functions of classified inputs and certificate collections."
+aliases = ["forge/src/degrade.rs REQ-7 (determinism)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ladder_is_deterministic"
+note = "determinism test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_ladder"
+note = "pure ladder driver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "pure aggregate"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-SUBPROCESS-ERRORS"
+title = "Subprocess failures never silently degrade"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "L2 and L1 environment errors propagate as `ForgeError` rather than becoming lower-assurance certificates."
+aliases = ["forge/src/degrade.rs REQ-8 (subprocess failures never silently degrade)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "error boundary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "l2_environment_error_is_not_a_degrade"
+note = "environment-error test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_ladder"
+note = "fallible ladder"
+
+[[requirement]]
+id = "REQ-FORGE-DEGRADE-PROJECT-SCOPE"
+title = "Project scope is end-to-end iff every function is"
+owner = "forge/src/degrade.rs"
+status = "shipped"
+scope = "forge"
+summary = "The assurance aggregate computes project scope from per-function assurance scopes, listing crossings when any function reaches a boundary."
+aliases = ["forge/src/degrade.rs e2e-vs-boundary REQ-4 (project END-TO-END iff every fn is)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-degrade-e2e-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "project_scope"
+note = "project scope aggregate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ProjectScope"
+note = "scope enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_project_scope"
+note = "scope tests"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-CALLGRAPH"
+title = "Cycle-safe transitive call closure"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "Assurance closure builds a bounded in-file call graph and walks it cycle-safely to find boundary crossings."
+aliases = ["forge/src/closure.rs REQ-1 (transitive call closure, cycle-safe + bounded)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/src/closure.rs"]
+generated_to = ["status", "forge-closure-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify"
+note = "assurance classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CallGraph::from_program"
+note = "call graph builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reach_crossing"
+note = "cycle-safe DFS"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-SCOPE-RULE"
+title = "End-to-end versus to-boundary rule"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "Functions classify as end-to-end unless their closure reaches a boundary or slag crossing, with the first crossing recorded."
+aliases = ["forge/src/closure.rs REQ-2 (END-TO-END vs TO-THE-BOUNDARY rule)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/src/closure.rs"]
+generated_to = ["status", "forge-closure-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceScope::EndToEnd"
+note = "end-to-end result"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceScope::ToBoundary"
+note = "to-boundary result"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify"
+note = "classification entry"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-CERT-FIELD"
+title = "Per-function assurance scope certificate field"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "Closure classification populates the additive per-function `assurance_scope` certificate field."
+aliases = ["forge/src/closure.rs REQ-3 (per-fn additive cert field)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/src/manifest.rs"]
+generated_to = ["status", "forge-closure-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceScope"
+note = "certificate scope type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::assurance_scope"
+note = "certificate field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_options"
+note = "field attachment caller"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-PROJECT-CLAIM"
+title = "Closure feeds project-level assurance scope"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "Project assurance derives its end-to-end or to-boundary claim from per-function closure classifications."
+aliases = ["forge/src/closure.rs REQ-4 (project-level claim)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/src/degrade.rs"]
+generated_to = ["status", "forge-closure-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "project aggregate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ProjectScope"
+note = "project scope"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "project_scope"
+note = "scope computation"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-SCOPE-ORTHOGONAL"
+title = "Assurance scope is orthogonal to level"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "Closure classification reads only syntax and call graph crossings, attaching scope alongside the achieved assurance level."
+aliases = ["forge/src/closure.rs REQ-5 (scope ⊥ level)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/src/closure.rs"]
+generated_to = ["status", "forge-closure-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify"
+note = "level-independent classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Level"
+note = "orthogonal assurance level"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceScope"
+note = "orthogonal scope"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-DETERMINISM"
+title = "Deterministic assurance closure results"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "Closure classification uses sorted maps and source-order DFS so scope results are deterministic for a parsed program."
+aliases = ["forge/src/closure.rs REQ-6 (determinism)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/src/closure.rs"]
+generated_to = ["status", "forge-closure-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BTreeMap"
+note = "stable result map"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BTreeSet"
+note = "visited set"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classifying the same program twice yields identical scopes"
+note = "determinism test text"
+
+[[requirement]]
+id = "REQ-FORGE-CLOSURE-MATCH-GUARD"
+title = "Closure walks match-arm guards"
+owner = "forge/src/closure.rs"
+status = "shipped"
+scope = "forge"
+summary = "The call graph walker includes match-arm guards so guard calls can affect assurance closure and reachable function sets."
+aliases = ["forge/src/closure.rs REQ-3 (MatchArm.guard ripple)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/src/closure.rs"]
+generated_to = ["status", "forge-closure-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "walk_expr"
+note = "expression call walker"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reachable_in_file_fns"
+note = "reachable function consumer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify"
+note = "closure consumer"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-BATTERY-VIEW"
+title = "forge battery view"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "The battery view renders contract-quality fields already computed by forge check without re-deriving them."
+aliases = ["forge/src/goal_repl.rs REQ-1 (`forge battery [item]` — battery view)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl.rs"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_battery"
+note = "battery renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "contract_quality"
+note = "certificate quality source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "battery_view_matches_check_verdicts"
+note = "battery view test"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-GOAL-VIEW"
+title = "forge goal state render"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "The goal view renders given, want, obligation status, counterexample details, and open holes from existing certificates and AST text."
+aliases = ["forge/src/goal_repl.rs REQ-2 (`forge goal <item>` — goal-state render)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl.rs"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_goal"
+note = "goal renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_goal_item"
+note = "per-item goal renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationResult"
+note = "obligation detail source"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-EDIT"
+title = "forge edit semantic-address splice"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "The edit verb resolves a semantic address, splices replacement source at the target span, re-parses, and re-checks."
+aliases = ["forge/src/goal_repl.rs REQ-3 (`forge edit <addr> --replace`)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl.rs"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "edit_file"
+note = "edit entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "address::resolve"
+note = "semantic address resolver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "span_of_address"
+note = "editable span lookup"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-HOLE-PARSER-CONSUMER"
+title = "Body-position hole rendering and addressing"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "Goal rendering consumes parser-recorded body holes and the hole address arm to expose open proof/edit targets."
+aliases = ["forge/src/goal_repl.rs REQ-4 (body-position hole `?N` — parser)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl_fill.rs"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "holes_of"
+note = "hole collector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AddrKind::Hole"
+note = "hole address kind"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_goal_item"
+note = "hole renderer"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-OPEN-HOLE-VALIDATOR"
+title = "Open-hole validator integration"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "The check path rejects holed items before lowering, and goal rendering surfaces the open-hole cause."
+aliases = ["forge/src/goal_repl.rs REQ-5 (open-hole validator)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl_fill.rs", "forge/src/check.rs"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "OpenHole"
+note = "open-hole reject cause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::rejected"
+note = "non-certified hole cert"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/goal_repl_fill.rs"
+note = "hole validation tests"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-FILL"
+title = "forge fill hole splice loop"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "The fill verb specializes edit for hole addresses, splices code into the hole span, re-checks, and renders the next goal state."
+aliases = ["forge/src/goal_repl.rs REQ-6 (`forge fill <addr> <code>`)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl_fill.rs", "conformance/goal/binary_search.dialogue.json"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fill_hole"
+note = "hole fill entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "edit_file"
+note = "shared splice machinery"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/goal/binary_search.dialogue.json"
+note = "goal dialogue oracle"
+
+[[requirement]]
+id = "REQ-FORGE-GOAL-DETERMINISM"
+title = "Goal REPL determinism and result discipline"
+owner = "forge/src/goal_repl.rs"
+status = "shipped"
+scope = "forge"
+summary = "Goal REPL views and splices are deterministic and fallible paths return structured `ForgeError` values instead of panicking."
+aliases = ["forge/src/goal_repl.rs REQ-7 (determinism + Result discipline)"]
+contributors = [".design/forge/goal-repl.md", "forge/tests/goal_repl.rs"]
+generated_to = ["status", "forge-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "error boundary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_goal"
+note = "deterministic view"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "splice"
+note = "deterministic source splice"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-PRELUDE"
+title = "Seccomp prelude installation"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "The sandbox module emits a raw-libc seccomp BPF prelude that installs an allowlist before the generated entry runs."
+aliases = ["forge/src/sandbox.rs REQ-1 (seccomp prelude install via raw libc `prctl`)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/tests/sandbox_conformance.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_sandbox_prelude"
+note = "seccomp prelude emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SECCOMP_RET_KILL_PROCESS"
+note = "default kill action"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/sandbox_conformance.rs"
+note = "sandbox conformance"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-TRANSITIVE-FX"
+title = "Transitive effect derivation for sandbox"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "Sandbox effect rows are derived from the entry plus its in-file reachable functions using the closure walker."
+aliases = ["forge/src/sandbox.rs REQ-2 (transitive-`fx` derivation via `closure.rs`)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/src/closure.rs", "forge/tests/sandbox_conformance.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "transitive_fx"
+note = "transitive effect derivation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reachable_in_file_fns"
+note = "closure walker"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "effects_of"
+note = "effect extraction"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-SYSCALL-MAP"
+title = "Effect row to syscall allowlist mapping"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "Effect tokens map to a pinned x86_64 syscall allowlist with pure baseline and effect-specific widening."
+aliases = ["forge/src/sandbox.rs REQ-3 (`fx` → syscall allowlist mapping)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/tests/sandbox_conformance.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "syscall_allowlist"
+note = "allowlist mapper"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "READ_SYSCALLS"
+note = "read widening table"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "pure_baseline_excludes_io_syscalls"
+note = "baseline test"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-DEFAULT-ON"
+title = "Sandbox enabled by default for entry builds"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "Entry builds install the sandbox by default, with CLI flags allowing explicit opt-out or self-test probes."
+aliases = ["forge/src/sandbox.rs REQ-4 (sandbox-on-by-default for `--entry`, `--no-sandbox` opt-out)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/tests/sandbox_conformance.rs", "forge/src/build.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SandboxMode::On"
+note = "default sandbox mode"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SandboxConfig::default"
+note = "entry sandbox default"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parses_build_sandbox_flags"
+note = "CLI flag test"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-MANIFEST"
+title = "Reproducible prelude and manifest record"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "The emitted prelude is byte-deterministic and the build manifest records the installed sandbox allowlist."
+aliases = ["forge/src/sandbox.rs REQ-5 (reproducible prelude + manifest record)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/tests/sandbox_conformance.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_sandbox_prelude"
+note = "deterministic emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SandboxRecord"
+note = "manifest sandbox record"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "prelude_installs_and_is_deterministic"
+note = "determinism test"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-PROBE"
+title = "Sandbox self-test probe enforcement"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "The self-test probe emits an out-of-policy syscall after filter installation so tests can demonstrate kill versus widened allow."
+aliases = ["forge/src/sandbox.rs REQ-6 (demonstrable enforcement — probe + clean pure run)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/tests/sandbox_conformance.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_probe"
+note = "self-test probe emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "probe_killed"
+note = "deny enforcement test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "probe_allowed_when_fx_widens"
+note = "allow widening test"
+
+[[requirement]]
+id = "REQ-FORGE-SANDBOX-TERM-IOCTL"
+title = "Term effect grants scoped ioctl"
+owner = "forge/src/sandbox.rs"
+status = "shipped"
+scope = "forge"
+summary = "The `term` effect maps to the scoped ioctl grant without changing the verified I/O bitset widening semantics."
+aliases = ["forge/src/sandbox.rs REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106)"]
+contributors = [".design/forge/runtime-sandbox.md", "forge/tests/sandbox_conformance.rs", "forge/tests/editor_runs.rs"]
+generated_to = ["status", "forge-sandbox-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "TERM_SYSCALLS"
+note = "term syscall table"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "term_grants_ioctl_scoped_to_the_effect"
+note = "term grant test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/editor_runs.rs"
+note = "sandboxed editor run"
+
+[[requirement]]
+id = "REQ-FORGE-KANI-RUNNER"
+title = "Kani runner invocation and temp crate"
+owner = "forge/src/kani.rs"
+status = "shipped"
+scope = "forge"
+summary = "The L2 driver writes a temporary Cargo crate, invokes the real Kani binary, checks exit status, and cleans up best-effort."
+aliases = ["forge/src/kani.rs REQ-4 (`run_kani` invocation — real binary, temp crate, exit status)"]
+contributors = [".design/lower/l2-kani.md", "forge/tests/l2_check.rs"]
+generated_to = ["status", "forge-kani-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_kani"
+note = "Kani runner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "write_kani_crate"
+note = "temp crate writer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "invoke_kani"
+note = "subprocess invocation"
+
+[[requirement]]
+id = "REQ-FORGE-KANI-PARSE-OUTPUT"
+title = "Kani output becomes L2 or counterexample"
+owner = "forge/src/kani.rs"
+status = "shipped"
+scope = "forge"
+summary = "Kani terse output parses into either an L2 certificate with discharged bound or L0 failed obligations carrying counterexample details."
+aliases = ["forge/src/kani.rs REQ-5 (Kani output → L2-or-counterexample)"]
+contributors = [".design/lower/l2-kani.md", "forge/tests/l2_check.rs"]
+generated_to = ["status", "forge-kani-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_kani_output"
+note = "Kani output parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationResult::failed"
+note = "counterexample witness"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "success_terse_is_l2"
+note = "success parse test"
+
+[[requirement]]
+id = "REQ-FORGE-KANI-BOUND-CAVEAT"
+title = "L2 certificate records bounded caveat"
+owner = "forge/src/kani.rs"
+status = "shipped"
+scope = "forge"
+summary = "Successful Kani results record the slice and unwind bound on the discharged obligation and L2 certificate."
+aliases = ["forge/src/kani.rs REQ-6 (the L2 \"up to bound\" caveat)"]
+contributors = [".design/lower/l2-kani.md", "forge/tests/l2_check.rs"]
+generated_to = ["status", "forge-kani-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "bound_string"
+note = "L2 bound source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "bound_recorded_on_l2_cert"
+note = "bound-recording test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Level::L2"
+note = "bounded level"
+
+[[requirement]]
+id = "REQ-FORGE-KANI-ABSENT"
+title = "Kani absence is a structured error"
+owner = "forge/src/kani.rs"
+status = "shipped"
+scope = "forge"
+summary = "A missing Kani binary reports `ForgeError::KaniAbsent` rather than a panic or false success."
+aliases = ["forge/src/kani.rs REQ-8 (Kani-absent = structured error)"]
+contributors = [".design/lower/l2-kani.md", "forge/tests/l2_check.rs"]
+generated_to = ["status", "forge-kani-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError::KaniAbsent"
+note = "absent-binary error"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_kani_with_absent_binary_is_kani_absent"
+note = "absence test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "KANI_BIN"
+note = "test seam"
+
+[[requirement]]
+id = "REQ-FORGE-KANI-DETERMINISM"
+title = "Deterministic Kani verdict fields"
+owner = "forge/src/kani.rs"
+status = "shipped"
+scope = "forge"
+summary = "The L2 bound is fixed input and temp crate naming avoids wall-clock verdict inputs while solver time remains oracle-excluded."
+aliases = ["forge/src/kani.rs REQ-9 (determinism)"]
+contributors = [".design/lower/l2-kani.md", "forge/tests/l2_check.rs"]
+generated_to = ["status", "forge-kani-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "unique_crate_dir"
+note = "deterministic temp naming discipline"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "solver_time_ms"
+note = "oracle-excluded timing field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SLICE_BOUND"
+note = "fixed L2 bound"
+
+[[requirement]]
+id = "REQ-FORGE-KANI-DEGRADE-SPLIT"
+title = "L2 failed bucket split for degrade ladder"
+owner = "forge/src/kani.rs"
+status = "shipped"
+scope = "forge"
+summary = "Kani failures classify into verified, under-bound, or real counterexample so only under-bound results degrade to L1."
+aliases = ["forge/src/kani.rs degrade-ladder OQ-2 (split the L2 `FAILED` bucket)"]
+contributors = [".design/forge/degrade-ladder.md", ".design/lower/l2-kani.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-kani-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify_l2_outcome"
+note = "L2 failure classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "L2Verdict::UnderBound"
+note = "under-bound degrade trigger"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "is_under_bound_failure"
+note = "under-bound discriminator"
+
+[[requirement]]
+id = "REQ-FORGE-SLAG-FIELDS"
+title = "Slag mandatory field validation"
+owner = "forge/src/slag.rs"
+status = "shipped"
+scope = "forge"
+summary = "Slag validation requires reason, owner, and review fields to be present and non-empty after trimming."
+aliases = ["forge/src/slag.rs REQ-1 (mandatory-field validation)"]
+contributors = [".design/forge/slag.md", "forge/tests/vacuity_slag_conformance.rs", "conformance/slag/slag.json"]
+generated_to = ["status", "forge-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate"
+note = "slag validator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagError::MissingField"
+note = "missing-field error"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagError::EmptyField"
+note = "empty-field error"
+
+[[requirement]]
+id = "REQ-FORGE-SLAG-L1-CERT"
+title = "Slag items certify at L1 without L3 proof"
+owner = "forge/src/slag.rs"
+status = "shipped"
+scope = "forge"
+summary = "A valid slag item bypasses L3 verification and emits an L1 certificate carrying slag metadata."
+aliases = ["forge/src/slag.rs REQ-2 (L3-exempt / L1-enforced / `slag: true`)"]
+contributors = [".design/forge/slag.md", "forge/src/manifest.rs", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::slag_l1"
+note = "slag L1 cert constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Level::L1"
+note = "slag assurance level"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagMeta"
+note = "validated metadata"
+
+[[requirement]]
+id = "REQ-FORGE-SLAG-MAXIMAL-FX"
+title = "Slag justifies maximal effect rows"
+owner = "forge/src/slag.rs"
+status = "shipped"
+scope = "forge"
+summary = "A valid slag attribute is the justification that lets structural vacuity triage skip only the maximal-effect rule."
+aliases = ["forge/src/slag.rs REQ-3 (slag justifies maximal `fx`)"]
+contributors = [".design/forge/slag.md", ".design/forge/vacuity-triage.md", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "vacuity::triage"
+note = "vacuity consumer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fx_maximal_without_slag"
+note = "maximal-fx rule"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate"
+note = "valid slag gate"
+
+[[requirement]]
+id = "REQ-FORGE-SLAG-AUDIT-METADATA"
+title = "Slag metadata is audit-visible"
+owner = "forge/src/slag.rs"
+status = "shipped"
+scope = "forge"
+summary = "Validated slag reason, owner, and review metadata are carried into certificates and rendered for audit surfaces."
+aliases = ["forge/src/slag.rs REQ-4 (audit visibility — cert metadata)"]
+contributors = [".design/forge/slag.md", "forge/src/audit.rs", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagMeta"
+note = "metadata payload"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::slag_meta"
+note = "certificate metadata field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_human"
+note = "human cert renderer"
+
+[[requirement]]
+id = "REQ-FORGE-SLAG-TYPED-INTEGRATION"
+title = "Typed slag verdict and check integration"
+owner = "forge/src/slag.rs"
+status = "shipped"
+scope = "forge"
+summary = "Slag validation returns typed errors and the check path short-circuits valid slag items to L1 while leaving non-slag items on the normal path."
+aliases = ["forge/src/slag.rs REQ-5 (typed verdict + check integration)"]
+contributors = [".design/forge/slag.md", "forge/src/check.rs", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagError"
+note = "typed slag error"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_options"
+note = "check integration"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::slag_l1"
+note = "valid slag short-circuit"
+
+[[requirement]]
+id = "REQ-FORGE-EFFECT-WRAPPERS-STDLIB"
+title = "Real std syscall wrapper table"
+owner = "forge/src/effect_wrappers.rs"
+status = "shipped"
+scope = "forge"
+summary = "The inline wrapper table provides trusted real-std bodies for runnable boundary targets such as time, stdin/stdout, terminal, and file wrappers."
+aliases = ["forge/src/effect_wrappers.rs REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies)"]
+contributors = [".design/basis/08-runnable-effect-link.md", "forge/tests/effect_link_conformance.rs", "forge/tests/editor_runs.rs"]
+generated_to = ["status", "forge-effect-wrappers-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "WRAPPERS"
+note = "wrapper source table"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_mod_os"
+note = "module emitter consumer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/effect_link_conformance.rs"
+note = "effect link conformance"
+
+[[requirement]]
+id = "REQ-FORGE-EFFECT-WRAPPERS-LINK"
+title = "forge build links mod os from boundary targets"
+owner = "forge/src/effect_wrappers.rs"
+status = "shipped"
+scope = "forge"
+summary = "Build source emission prepends a deterministic `mod os` containing exactly the wrappers referenced by reachable boundary targets."
+aliases = ["forge/src/effect_wrappers.rs REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets)"]
+contributors = [".design/basis/08-runnable-effect-link.md", "forge/src/build.rs", "forge/tests/effect_link_conformance.rs"]
+generated_to = ["status", "forge-effect-wrappers-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_mod_os"
+note = "deterministic module emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reachable_boundary_targets"
+note = "boundary-target source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emits_only_named_wrappers"
+note = "wrapper selection test"
+
+[[requirement]]
+id = "REQ-FORGE-EFFECT-WRAPPERS-RUNNABLE"
+title = "Verified effect program compiles and runs real I/O"
+owner = "forge/src/effect_wrappers.rs"
+status = "shipped"
+scope = "forge"
+summary = "The linked wrapper module lets verified boundary programs compile, execute, and perform the declared host I/O under sandbox confinement."
+aliases = ["forge/src/effect_wrappers.rs REQ-3 (a verified program COMPILES + RUNS + does real I/O)"]
+contributors = [".design/basis/08-runnable-effect-link.md", "forge/tests/effect_link_conformance.rs"]
+generated_to = ["status", "forge-effect-wrappers-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "elapsed_ok_builds_and_runs"
+note = "runnable effect-link test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "os::now"
+note = "time wrapper target"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/effect-link/cases.json"
+note = "effect-link oracle"
+
+[[requirement]]
+id = "REQ-FORGE-BODY-TV-PLUGIN"
+title = "Forge body-TV straight-line plugin point"
+owner = "forge/src/body_tv.rs"
+status = "shipped"
+scope = "forge"
+summary = "The body-TV command lowers straight-line bodies, builds independent state-refinement obligations, discharges them with Verus, and reports four distinct verdicts."
+aliases = ["forge/src/body_tv.rs exec-stmt-tv REQ-5 (forge `body_tv` plug-in point)"]
+contributors = [".design/verified/exec-stmt-tv.md", "forge/tests/body_tv.rs"]
+generated_to = ["status", "forge-body-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "body_tv_file"
+note = "body-TV command engine"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "body_equivalence_obligation"
+note = "reference obligation builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BodyVerdict"
+note = "four-way verdict"
+
+[[requirement]]
+id = "REQ-FORGE-BODY-TV-LOOP"
+title = "Forge body-TV loop obligation wiring"
+owner = "forge/src/body_tv.rs"
+status = "shipped"
+scope = "forge"
+summary = "Body-TV recognizes frozen while loops and discharges entry, preservation, and exit obligations without turning out-of-subset loops into false faithful results."
+aliases = ["forge/src/body_tv.rs loop-tv REQ-5 (the forge `body_tv` loop wiring — increment 2.2.2-iii)"]
+contributors = [".design/verified/exec-stmt-tv.md", "forge/tests/body_tv.rs"]
+generated_to = ["status", "forge-body-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_body_tv"
+note = "loop TV driver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_entry_obligation"
+note = "entry obligation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_preservation_obligation"
+note = "preservation obligation"
+
+[[requirement]]
+id = "REQ-FORGE-OBLIGATION-ARTIFACT"
+title = "Backend-neutral obligation artifact"
+owner = "forge/src/obligation.rs"
+status = "shipped"
+scope = "forge"
+summary = "The proof backend interface consumes a prover-neutral obligation record carrying AST slices and typed Thermite environment data rather than Verus strings."
+aliases = ["forge/src/obligation.rs REQ-1 (the backend-neutral Obligation artifact)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/engine.rs"]
+generated_to = ["status", "forge-obligation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Obligation"
+note = "backend-neutral obligation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationClass"
+note = "obligation class enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationEnv"
+note = "typed obligation environment"
+
+[[requirement]]
+id = "REQ-FORGE-OBLIGATION-REGISTRY-TERMINATION"
+title = "Registry-termination class and full-position closure"
+owner = "forge/src/obligation.rs"
+status = "shipped"
+scope = "forge"
+summary = "Registry-termination obligations are minted when the full req/ens/body/dec called-spec-function closure is non-empty."
+aliases = ["forge/src/obligation.rs REQ-1.2 (the REGISTRY-TERMINATION class + the full-expression-position closure)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/check.rs"]
+generated_to = ["status", "forge-obligation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationClass::RegistryTermination"
+note = "registry-termination class"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reachable_spec_fn_names_full"
+note = "full-position closure"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "dec_position_spec_fn_reaches_obligation_env"
+note = "closure regression test"
+
+[[requirement]]
+id = "REQ-FORGE-CONTRACT-TV-PLUGIN"
+title = "Forge contract-TV plugin point"
+owner = "forge/src/contract_tv.rs"
+status = "shipped"
+scope = "forge"
+summary = "The contract-TV command builds production and independent reference obligations for corpus and generated clauses, then discharges them through Verus with honest verdicts."
+aliases = ["forge/src/contract_tv.rs REQ-5 (forge plug-in point)"]
+contributors = [".design/verified/contract-tv.md", "forge/tests/contract_tv_conformance.rs"]
+generated_to = ["status", "forge-contract-tv-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tv_file"
+note = "contract-TV corpus phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_generated"
+note = "off-corpus phase"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "equivalence_obligation"
+note = "contract-TV obligation builder"
+
+[[requirement]]
+id = "REQ-FORGE-TV-SIGNAL-RLIMIT"
+title = "Shared TV rlimit discriminator"
+owner = "forge/src/tv_signal.rs"
+status = "shipped"
+scope = "forge"
+summary = "All forge TV phases share one Verus/Z3 resource-limit discriminator so timeout-like runs report unverifiable rather than divergent."
+aliases = ["forge/src/tv_signal.rs exec-stmt-tv REQ-5 (the rlimit discriminator — a Verus/Z3 timeout is Unverifiable, NEVER Divergent; R-HONEST-3 / R-CODE-4)"]
+contributors = [".design/verified/exec-stmt-tv.md", "forge/tests/divergence_rlimit_phrase_drift.rs"]
+generated_to = ["status", "forge-tv-signal-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "is_rlimit_signal"
+note = "shared rlimit discriminator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "contract_tv::discharge"
+note = "contract-TV consumer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "body_tv::run_obligation"
+note = "body-TV consumer"

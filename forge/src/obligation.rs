@@ -33,10 +33,14 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (the backend-neutral Obligation artifact) | SHIPPED | `pub struct Obligation { item, class, role, ast_slice, env }` + `pub enum ObligationClass`/`ObligationRole` + `pub struct ObligationEnv`/`ObligationParam` here, prover-neutral (the `ast_slice` is an `AstSlice` of `thermite-syntax` nodes; the env carries Thermite `Type`s + coercion flags, NO Verus strings). Non-test consumer: `engine::VerusEngine::discharge`/`evidence_key` (`engine.rs`) consume an `&Obligation`, and `check::obligation_for_item` mints one per checked item on the live L3 path. |
-//! | REQ-1.2 (the REGISTRY-TERMINATION class + the full-expression-position closure) | SHIPPED (class assignment + corrected closure) | `ObligationClass::RegistryTermination` is minted for an item whose called-spec-fn set (the corrected `req ∪ ens ∪ body ∪ dec(item)` seed, closure-step over each reached spec-fn's `body ∪ dec` — `check::reachable_spec_fn_names_full`) is non-empty; the Lean-path well-foundedness DISCHARGE is increment (ii), NOT-STARTED. The corrected closure walks the dec measures (was body-only). |
+//! <!-- generated:reqs view=forge-obligation-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-OBLIGATION-ARTIFACT | shipped | `forge/src/obligation.rs` | Backend-neutral obligation artifact |  |
+//! | REQ-FORGE-OBLIGATION-REGISTRY-TERMINATION | shipped | `forge/src/obligation.rs` | Registry-termination class and full-position closure |  |
+//! <!-- /generated:reqs -->
 //!
 //! The auxiliary OVERFLOW / TERMINATION classes and the multi-class minting of one
 //! item's full obligation set are part of the per-class rendering increment (ii)

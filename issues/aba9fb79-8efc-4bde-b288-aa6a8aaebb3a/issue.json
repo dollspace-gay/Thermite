@@ -2,11 +2,12 @@
   "uuid": "aba9fb79-8efc-4bde-b288-aa6a8aaebb3a",
   "display_id": 295,
   "title": "build: rlib not byte-identical across same-input builds on macOS (rebuilt_library_is_byte_identical)",
-  "status": "open",
+  "status": "closed",
   "priority": "medium",
   "created_by": "lSoG",
   "created_at": "2026-06-15T23:08:51.011024Z",
-  "updated_at": "2026-06-15T23:08:52.836156Z",
+  "updated_at": "2026-06-16T15:23:41.839826Z",
+  "closed_at": "2026-06-16T15:23:41.839826Z",
   "labels": [
     "bug"
   ]

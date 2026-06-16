@@ -1,0 +1,8 @@
+{
+  "uuid": "5e4c89d3-f6e7-416e-8770-189765a27fa9",
+  "issue_uuid": "ba82d461-0fba-45ea-a679-054d6b340e53",
+  "author": "tE8X",
+  "content": "Plan (2c, REQ-5 frozen battery): (1) NEW forge/src/battery.rs — static frozen REGISTRY of 9 tactics (omega,simp,nlinarith,induction,decide,calc,exact,from,push_neg) + the frozen simp set (the 10 simp-only lemmas the auto battery emits), golden-pinned at conformance/battery/registry.json, modeled on the thermite-spec combinators REGISTRY. (2) A verbatim-proof-text citation scanner + enforce() gate returning a named BatteryViolation (unlisted tactic OR unlisted simp lemma), wired into check.rs forge-item handling as a HARD reject cert (mirrors the covenant refusal), before any discharge. (3) Stuck producer: cert_verdict_for_lean detects unsolved-goals residual -> CertVerdict Stuck{goals,hint} with the missing-simp-bridge heuristic, instead of Timeout. Tests: battery_conformance golden, unlisted-tactic + unlisted-simp-lemma refusal end-to-end, Stuck-on-merge-example carries residual + melems bridge hint. Registry: REQ-S1-5 typed evidence, --write status. Touched routed file check.rs (proof-backends.md) -> re-pin. NO lean_export.rs touch (avoids F10 re-audit). Commit per sub-unit.",
+  "created_at": "2026-06-16T18:46:59.106008Z",
+  "kind": "plan"
+}

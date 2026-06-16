@@ -4439,6 +4439,10 @@ mod tests {
     // other `live_*` engine tests; the CI lean job is authoritative).
     #[test]
     fn live_forge_lemma_discharges_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live forge-lemma discharge test not run.");
+            return;
+        }
         let src = "lemma merge_advance(i: u64, n: u64) req i < n ens i + 1 <= n \
                    proof { simp [Thermite.denote, Thermite.Env.bindInt, Thermite.intVal, \
                    Thermite.arithDenote]; omega }";

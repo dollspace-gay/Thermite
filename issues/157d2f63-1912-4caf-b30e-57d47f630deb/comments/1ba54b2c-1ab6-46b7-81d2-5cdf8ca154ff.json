@@ -1,0 +1,8 @@
+{
+  "uuid": "1ba54b2c-1ab6-46b7-81d2-5cdf8ca154ff",
+  "issue_uuid": "157d2f63-1912-4caf-b30e-57d47f630deb",
+  "author": "BMF7",
+  "content": "Plan: REQ-4 covenant engine (2b). Binding convention confirmed from the 2a test forge_items.rs:240 — a freestanding 'witness { inhabit(...); falsify N; }' block covenants the immediately-PRECEDING fn (inhabit tuple maps positionally to params). No in-Rust Expr evaluator exists today (all TV goes through Verus/Z3), so 2b builds one. Sub-units, committed in order: (1) covenant_eval.rs — a pure scalar (int/bool) executable-semantics evaluator over Expr/Block with honest Unsupported errors (mirrors exec_encode RefEncodeError); (2) covenant producer — bind witness->fn, populate CovenantRecord, type-check+EXECUTE each inhabit against req (a witness failing req = loud covenant error, never dropped); (3) falsify — SplitMix64 Rng generates inputs; an input satisfying req whose body violates ens => CovenantRefuted + concrete counterexample; (4) covenant-before-burn STRUCTURAL on the L3 path (closure-instrumented degrade-style test; forge-routed item missing an author witness refused before burn, named); (5) cert covenant evidence block (schema-v2 additive, oracle-included: witness count, falsify gen/refuted, seed; v1 oracle byte-identical) + new forge-tier goldens; (6) flip REQ-S1-4 partial->shipped + regen status view. Gauntlet per commit; the 7 v1 goldens stay byte-identical.",
+  "created_at": "2026-06-16T15:31:09.025656Z",
+  "kind": "plan"
+}

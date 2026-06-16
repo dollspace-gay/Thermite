@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: ab274e9e98f76df5ec22dcce92426927fe7cb385 (re-pinned 2026-06-16: RFC closeout hardening adds reqs facade, command evidence checks, optional live issue blocker validation, and marks source turnover complete; RFC #17)  (prior: 543b506ef7ee64e2da0528505dae226c84761bd1)
+audited-sha: 554c5f511506b85d8ec07b1bb8ea903ab491abde (re-pinned 2026-06-16, user-authorized: merge of current main into the forge-tier increment-2a branch; the only change to this doc's governed files (registry.toml/status.md) on this branch is the additive REQ-S1-3 registration + the regenerated views — the registry tooling/schema this doc governs is unchanged; prior main pin ab274e9e98f76df5ec22dcce92426927fe7cb385, RFC #17)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

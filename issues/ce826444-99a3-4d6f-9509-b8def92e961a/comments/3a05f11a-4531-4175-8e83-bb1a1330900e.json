@@ -1,0 +1,8 @@
+{
+  "uuid": "3a05f11a-4531-4175-8e83-bb1a1330900e",
+  "issue_uuid": "ce826444-99a3-4d6f-9509-b8def92e961a",
+  "author": "BMF7",
+  "content": "Failing test at forge/tests/divergence_covenant_out_of_range_witness.rs::out_of_range_witness_must_not_manufacture_a_false_covenant_refutation demonstrates the divergence. Authority: .design/stage1-forge-tier.md REQ-4/AC-8 (a CovenantRefuted is owed only for a req-satisfying INPUT). Root cause: forge/src/covenant_engine.rs bind_params checks only ParamKind Int-vs-Bool, never the parameter integer width, so inhabit (4294967296) for a u32 param is accepted; the truncating-cast body (x as u32 -> 0) makes ens result==x false and manufactures a false CovenantRefuted with the out-of-domain counterexample (4294967296). Control with in-range witness (5) validates. GENERATOR MUST FIX (width-check the author witness against the param type).",
+  "created_at": "2026-06-16T16:27:44.410561Z",
+  "kind": "observation"
+}

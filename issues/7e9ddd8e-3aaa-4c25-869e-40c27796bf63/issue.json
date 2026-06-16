@@ -1,0 +1,10 @@
+{
+  "uuid": "7e9ddd8e-3aaa-4c25-869e-40c27796bf63",
+  "display_id": 296,
+  "title": "doc-drift: re-pin 36 routed design docs to branch HEAD (CI checks gate)",
+  "status": "open",
+  "priority": "medium",
+  "created_by": "lSoG",
+  "created_at": "2026-06-16T07:29:29.895226Z",
+  "updated_at": "2026-06-16T07:29:29.895226Z"
+}

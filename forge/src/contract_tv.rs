@@ -35,9 +35,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-5 (forge plug-in point) | SHIPPED | `pub fn tv_file` (the corpus phase) + `pub fn run_generated` (the off-corpus phase) here; both compute `P_production` via `thermite_lower::lower_contract_expr`, build the obligation via `thermite_tv::equivalence_obligation`, and discharge it through `verus` (the `discharge` helper, reusing the `crate::check::ScratchDir`/#53 cleanup). Non-test consumer: `cli::run_tv` (the `forge tv <file>` subcommand). A TV counterexample is surfaced as a per-clause DIVERGENT verdict (a meaning-mismatch finding, distinct from the contract-too-weak mutation signal). Verified by `forge/tests/contract_tv_conformance.rs` (corpus 0-divergent + the 200-clause off-corpus run) under real verus. **#228 (ref #225/#227) — production-column = real signature artifact + true-width frame:** `tv_file`/`run_generated` now derive the program-wide `thermite_lower::spec_fn_param_type_map` and THREAD it into `lower_contract_expr`, so a spec-call arithmetic arg narrows to the callee's DECLARED param type (`s_dec((n - 1) as u32)`) verbatim as the signature path (contract-tv.md REQ-2), not the `as u64` fallback. `SpecType::BoundedInt(width)` types each bounded-int param at its declared width so Z3 reasons over the true domain. Corpus byte-stable (no corpus spec fn takes a bare scalar param, so the cast never fires there; compose_demo/sum/binary_search stay all-Faithful). Honest split (binary constraint, `ref_encode.rs` UNCHANGED): a bare-path spec-call arg → Faithful; an arithmetic arg to a `u32`/`usize`-param callee → honest Unverifiable (the reference's bare `int` arg does not typecheck against the `u32` param — a genuinely unprovable equivalence, NEVER a forced Faithful). **#150 whole-corpus totality:** `signature_frame` now binds the three previously-Skipped construct classes — `String`→`&TString` (`SpecType::Strng`, threaded as production's `strings`), `Map<K,V>`→`TMap…` (`SpecType::Map`, with the `well_formed()` `requires` weave), `Option`/`Result` params + result natively (`SpecType::Opt`/`Res`) — so the C7 `match`-in-ens, the String byte-view, and the Map/Option signature clauses all reach verus + discharge. binary_search 6/6, map_kv 8/8, string_demo 8/8, sum 7/7 — all Checked + Faithful, 0 skipped/unverifiable; the 200-clause off-corpus run is TOTAL (0 skipped, the byte-view now over a `&TString` receiver `t`). **#192 (ref #166, #189):** the rlimit gate's discriminator is now the SHARED `crate::tv_signal::is_rlimit_signal` (the prior private copy had DROPPED z3's `resource limit exceeded` phrase — a Z3-phrased resourceout on an errors>=1 run was fabricated into `Divergent`); `discharge`'s `errors >= 1 && rlimit_hit -> Unverifiable` arm now consumes the shared full-phrase-set discriminator. |
+//! <!-- generated:reqs view=forge-contract-tv-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CONTRACT-TV-PLUGIN | shipped | `forge/src/contract_tv.rs` | Forge contract-TV plugin point |  |
+//! <!-- /generated:reqs -->
 
 use std::path::Path;
 use std::process::Command;

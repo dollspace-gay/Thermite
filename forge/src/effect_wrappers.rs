@@ -38,11 +38,15 @@
 //!
 //! ## REQ status (`.design/basis/08-runnable-effect-link.md`)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the [`WRAPPERS`] table holds a real `std` body for each v1 target: `os::now` (`SystemTime::now()`), `os::read_byte`/`os::read_key`/`os::read_line` (`std::io::stdin().read`/`read_line`), `os::key_str` (a keystroke byte → a bounded 1-byte `TString`, the editor's host glue the surface lacks), `os::write`/`os::print` (`std::io::stdout().write_all`), the editor's terminal-control + render boundaries `os::raw_mode_on`/`os::raw_mode_off`/`os::read_key_raw`/`os::write_frame` (#90), and the editor's file-LOAD/SAVE boundaries `os::read_file` (`std::fs::read` of the fixed `THERMITE_EDITOR_FILE`/`/tmp` path → empty `TString` on error) / `os::write_file` (`std::fs::write`, 0/1 status, #125). Consumer: [`emit_mod_os`] (emitted into the generated crate by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `effect_wrappers::tests::{read_key_wrapper_mirrors_read_byte_eof_sentinel,key_str_wrapper_is_bounded_one_byte_string,read_file_wrapper_is_total_empty_on_error,write_file_wrapper_is_total_status_arm}` (the editor's terminal-I/O + file-I/O wrappers) + the runnable editor `forge/tests/editor_runs.rs` (the linked `os::read_key_raw`/`os::write_frame`/`os::read_file`/`os::write_file` build + run with piped multi-line keystrokes + a save). |
-//! | REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets) | SHIPPED | [`emit_mod_os`] assembles a `mod os { … }` carrying EXACTLY the wrappers in the given target set (sorted, deterministic); `build::reachable_boundary_targets` keys it off the program's `#[boundary]` fns; `build::emit_source` prepends it. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (rustc exit 0, no `E0433`) + `effect_wrappers::tests::emits_only_named_wrappers`. |
-//! | REQ-3 (a verified program COMPILES + RUNS + does real I/O) | SHIPPED | the linked `os::now` wrapper does a real `clock_gettime` → `elapsed_ok()` prints a live Unix timestamp. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (run exit 0, output is a u64 < 4_000_000_000). |
+//! <!-- generated:reqs view=forge-effect-wrappers-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-EFFECT-WRAPPERS-LINK | shipped | `forge/src/effect_wrappers.rs` | forge build links mod os from boundary targets |  |
+//! | REQ-FORGE-EFFECT-WRAPPERS-RUNNABLE | shipped | `forge/src/effect_wrappers.rs` | Verified effect program compiles and runs real I/O |  |
+//! | REQ-FORGE-EFFECT-WRAPPERS-STDLIB | shipped | `forge/src/effect_wrappers.rs` | Real std syscall wrapper table |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeSet;
 

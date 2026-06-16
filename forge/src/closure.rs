@@ -45,14 +45,18 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (transitive call closure, cycle-safe + bounded) | SHIPPED | `pub fn classify` builds `CallGraph::from_program` (walks `Expr::Call`/`MethodCall` via `collect_calls`/`walk_expr`/`walk_block`, resolving in-file callees by name; a `spec fn` / combinator / unresolved callee is PURE), then `reach_crossing` does a cycle-safe DFS (a `visited` `BTreeSet` keyed by name; a self/mutual-recursive node is touched once). Consumer: `check::check_file_with_options` (attaches each cert's `assurance_scope`). |
-//! | REQ-2 (END-TO-END vs TO-THE-BOUNDARY rule) | SHIPPED | `classify` maps each `Item::Fn` to `AssuranceScope::EndToEnd` iff `reach_crossing` finds NO `#[boundary]`/`#[slag]` fn in its closure, else `AssuranceScope::ToBoundary { via }` recording the first reached crossing. A `#[boundary]`/`#[slag]` fn is itself the crossing (`via` is itself). |
-//! | REQ-3 (per-fn additive cert field) | SHIPPED | `AssuranceScope` (in `manifest.rs`) is the additive `Certificate::assurance_scope` field; this module produces the value, `check.rs` attaches it. |
-//! | REQ-4 (project-level claim) | SHIPPED | `degrade.rs`'s `AssuranceManifest::aggregate` computes `ProjectScope` from the per-fn scopes (END-TO-END iff every fn is). |
-//! | REQ-5 (scope ⊥ level) | SHIPPED | `classify` reads only the call graph (`#[boundary]`/`#[slag]` syntactic flags) — never a cert `Level`; `check.rs` attaches the scope ALONGSIDE the achieved level, so an L3 fn whose closure crosses a boundary is `ToBoundary` at `Level::L3`. |
-//! | REQ-6 (determinism) | SHIPPED | `classify` returns a `BTreeMap<String, AssuranceScope>` (sorted, stable); the `via` crossing is the FIRST reached in source-order DFS (`reach_crossing` iterates callees in source order, visited-guarded). A pure function of the `Program` — no wall-clock / unordered map in the verdict (R-CODE-5). |
+//! <!-- generated:reqs view=forge-closure-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CLOSURE-CALLGRAPH | shipped | `forge/src/closure.rs` | Cycle-safe transitive call closure |  |
+//! | REQ-FORGE-CLOSURE-CERT-FIELD | shipped | `forge/src/closure.rs` | Per-function assurance scope certificate field |  |
+//! | REQ-FORGE-CLOSURE-DETERMINISM | shipped | `forge/src/closure.rs` | Deterministic assurance closure results |  |
+//! | REQ-FORGE-CLOSURE-PROJECT-CLAIM | shipped | `forge/src/closure.rs` | Closure feeds project-level assurance scope |  |
+//! | REQ-FORGE-CLOSURE-SCOPE-ORTHOGONAL | shipped | `forge/src/closure.rs` | Assurance scope is orthogonal to level |  |
+//! | REQ-FORGE-CLOSURE-SCOPE-RULE | shipped | `forge/src/closure.rs` | End-to-end versus to-boundary rule |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #52 reuse note (`.design/lower/boundary-composition.md`)
 //!
@@ -66,9 +70,13 @@
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `walk_expr`'s `Expr::Match` arm walks `arm.guard` (a guard may CALL a fn — its callee crosses into the call graph / closure surface). `Pattern::Or` needs no closure arm (the call-graph walk is over expressions). Consumer: `classify` / `reachable_in_file_fns`. |
+//! <!-- generated:reqs view=forge-closure-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CLOSURE-MATCH-GUARD | shipped | `forge/src/closure.rs` | Closure walks match-arm guards |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::{BTreeMap, BTreeSet};
 

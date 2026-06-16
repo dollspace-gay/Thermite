@@ -1,0 +1,8 @@
+{
+  "uuid": "0e60a78a-9477-4e26-ab62-e3b17917f89e",
+  "issue_uuid": "ba82d461-0fba-45ea-a679-054d6b340e53",
+  "author": "tE8X",
+  "content": "Done (2c, REQ-5 frozen battery), 3 commits on the branch. (1) forge/src/battery.rs — frozen REGISTRY: 9-tactic allowlist + 10 simp lemmas (the auto-battery simp-only set), golden-pinned at conformance/battery/registry.json (combinator-oracle pattern). Citation scanner + enforce() elaboration gate wired into check.rs forge-item handling -> hard L0 reject (BatteryUnlistedTactic / BatteryUnlistedSimpLemma), named. (2) verdict.rs cert_verdict_for_lean: unsolved-goals residual -> CertVerdict::Stuck{goals,hint} with the missing-simp-bridge heuristic, never Proved/Timeout. (3) REQ-S1-5 registered shipped + status regen; 8 governed docs re-pinned (the 2b gap closed). AC-9 all met & tested: registry file exists (golden conformance test); unlisted tactic refused named + unlisted simp lemma refused named (12 hermetic unit tests + 3 binary-surface tests); Stuck on the merge example carries residual + melems_cons bridge hint. Gauntlet: cargo test -p forge 337 passed (only the 8 known Lean-spine-not-built env tests fail, incl the byte-identity oracle which PASSES); clippy -p forge --all-targets -D warnings clean; fmt clean; doc-drift 0-drift; req-registry --check clean (436 reqs); conformance v1 certs byte-identical. No lean_export.rs touch (avoided F10 re-audit). git push blocked by policy — orchestrator to push + open PR.",
+  "created_at": "2026-06-16T19:07:06.775769Z",
+  "kind": "result"
+}

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — greenfield Summary fixed + post-pin currency note (basis/C7-C12/#193 parse surface, resync set, ladder threading), #262)
+audited-sha: 23961b736a0d8f8dd276cb76251447ca5037c2d8 (re-pinned 2026-06-15: syntax parser status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — greenfield Summary fixed + post-pin currency note (basis/C7-C12/#193 parse surface, resync set, ladder threading), #262))
 governs: thermite-syntax/src/parser.rs
 thesis-refs:
   - thermite-design.md §4.1

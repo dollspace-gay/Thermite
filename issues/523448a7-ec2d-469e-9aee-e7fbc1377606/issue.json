@@ -1,0 +1,10 @@
+{
+  "uuid": "523448a7-ec2d-469e-9aee-e7fbc1377606",
+  "display_id": 298,
+  "title": "Divergence: covenant_eval::eval_stmts manufactures a false CovenantRefuted on a statement-position if/else with branch tails (REQ-4 / AC-8)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "BMF7",
+  "created_at": "2026-06-16T16:10:00.402222Z",
+  "updated_at": "2026-06-16T16:10:00.402222Z"
+}

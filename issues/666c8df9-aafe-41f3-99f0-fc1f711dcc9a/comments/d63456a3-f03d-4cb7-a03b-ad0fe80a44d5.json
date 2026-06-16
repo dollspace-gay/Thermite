@@ -1,0 +1,8 @@
+{
+  "uuid": "d63456a3-f03d-4cb7-a03b-ad0fe80a44d5",
+  "issue_uuid": "666c8df9-aafe-41f3-99f0-fc1f711dcc9a",
+  "author": "qkbt",
+  "content": "Defense (a) arbitrary-result re-elaboration DEFERRED at a clean sub-unit boundary (kickoff sanctions stop-at-boundary). Rationale: (a) is the L3 re-elaboration counterpart of vacuity_solver's build_tautology_harness — it must substitute an opaque result into the Lean PROOF TERM and re-elaborate via lake. That is deep Lean-discharge-path / exporter work (lean_export.rs is 4305 lines of bodyDenote/intVal semantics) that cannot be executed even ONCE locally (no built Lean spine — lean-smt can't be cloned here), and the substrate note forbids building a new elaborator. Shipping unverified, security-critical anti-Goodhart Lean emission blind would risk a soundness hole worse than deferring; no-stubs rule forbids a half-built builder. Note: body-ignoring ens is already rejected for forge-routed items at the EXISTING Verus §7 solver-vacuity gate (build_tautology_harness → SemanticTautology) which runs before any L3/forge discharge — so the tautology defense is not absent at the system level; (a) is its Lean re-elaboration counterpart, to be completed by a session with a built Lean spine + CI lean job.",
+  "created_at": "2026-06-16T20:18:37.703339Z",
+  "kind": "decision"
+}

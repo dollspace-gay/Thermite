@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262)
+audited-sha: 80074948185b77b95006d034e461a338b1ce6b37 (re-pinned 2026-06-16: forge quality status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262))
 governs: forge/src/profile.rs
 thesis-refs:
   - thermite-design.md §5.1

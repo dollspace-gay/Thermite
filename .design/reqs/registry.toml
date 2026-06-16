@@ -75,6 +75,78 @@ comment_prefix = "//! "
 title = "Forge Exec-TV Canonical Status References"
 
 [[view]]
+name = "forge-manifest-core-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-core-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Core Canonical Status References"
+
+[[view]]
+name = "forge-manifest-slag-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-slag-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Slag/Triage Canonical Status References"
+
+[[view]]
+name = "forge-manifest-cache-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-cache-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Proof Cache Canonical Status References"
+
+[[view]]
+name = "forge-manifest-solver-profile-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-solver-profile-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Solver Profile Canonical Status References"
+
+[[view]]
+name = "forge-manifest-solver-vacuity-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-solver-vacuity-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Solver Vacuity Canonical Status References"
+
+[[view]]
+name = "forge-manifest-boundary-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-boundary-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Boundary Canonical Status References"
+
+[[view]]
+name = "forge-manifest-degrade-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-degrade-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Degrade Canonical Status References"
+
+[[view]]
+name = "forge-manifest-e2e-status"
+path = "forge/src/manifest.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-manifest-e2e-status"
+comment_prefix = "//! "
+title = "Certificate Manifest Assurance Scope Canonical Status References"
+
+[[view]]
 name = "forge-main-scaffold-status"
 path = "forge/src/main.rs"
 kind = "reference_list"
@@ -521,6 +593,160 @@ label = "REQ-5 (forge plug-in point)"
 id = "REQ-TV-EXEC-FORGE-PLUGIN"
 replacement_view = "forge-exec-tv-status"
 note = "Exec-TV forge integration row split from the contract-TV REQ-5 label and replaced by a generated canonical owner reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-1 (stable schema, Appendix A)"
+id = "REQ-FORGE-MANIFEST-SCHEMA"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest core schema row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-2 (fields #5 produces now)"
+id = "REQ-FORGE-MANIFEST-PRODUCED-FIELDS"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest produced-fields row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-3 (forward-declared fields)"
+id = "REQ-FORGE-MANIFEST-FORWARD-DECLARED"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest forward-declared field row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-4 (`suggested_move` reserved)"
+id = "REQ-FORGE-MANIFEST-SUGGESTED-MOVE-RESERVED"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest suggested_move reservation row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-5 (per-obligation results)"
+id = "REQ-FORGE-MANIFEST-OBLIGATIONS"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest per-obligation row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-6 (`solver_time_ms` excluded)"
+id = "REQ-FORGE-MANIFEST-SOLVER-TIME-ORACLE"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest solver-time oracle row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "REQ-7 (serde_json serialization)"
+id = "REQ-FORGE-MANIFEST-SERDE"
+replacement_view = "forge-manifest-core-status"
+note = "Certificate manifest serde row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`SlagMeta` (cert metadata)"
+id = "REQ-FORGE-MANIFEST-SLAG-META"
+replacement_view = "forge-manifest-slag-status"
+note = "Slag metadata schema row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`RejectReason` (verdict-in-cert)"
+id = "REQ-FORGE-MANIFEST-REJECT-REASON"
+replacement_view = "forge-manifest-slag-status"
+note = "Verdict-in-cert reject reason row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`cached: bool` (cache provenance)"
+id = "REQ-FORGE-MANIFEST-CACHE-PROVENANCE"
+replacement_view = "forge-manifest-cache-status"
+note = "Proof-cache provenance row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`solver_profile: Option<SolverProfile>`"
+id = "REQ-FORGE-MANIFEST-SOLVER-PROFILE"
+replacement_view = "forge-manifest-solver-profile-status"
+note = "Solver-profile timeout slot row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`suggested_move` populated"
+id = "REQ-FORGE-MANIFEST-SUGGESTED-MOVE-PROFILE"
+replacement_view = "forge-manifest-solver-profile-status"
+note = "Solver-profile suggested_move population row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`Certificate::rejected_vacuity`"
+id = "REQ-FORGE-MANIFEST-SOLVER-VACUITY-REJECT"
+replacement_view = "forge-manifest-solver-vacuity-status"
+note = "Solver-vacuity reject producer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`boundary: bool` (FFI verdict flag)"
+id = "REQ-FORGE-MANIFEST-BOUNDARY-FLAG"
+replacement_view = "forge-manifest-boundary-status"
+note = "Boundary verdict flag row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`boundary_target: Option<String>` (foreign path)"
+id = "REQ-FORGE-MANIFEST-BOUNDARY-TARGET"
+replacement_view = "forge-manifest-boundary-status"
+note = "Boundary target diagnostic row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`Certificate::boundary_l1`"
+id = "REQ-FORGE-MANIFEST-BOUNDARY-L1"
+replacement_view = "forge-manifest-boundary-status"
+note = "Boundary L1 certificate constructor row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`lowered_assurance: bool` (degrade flag)"
+id = "REQ-FORGE-MANIFEST-DEGRADE-FLAG"
+replacement_view = "forge-manifest-degrade-status"
+note = "Degrade flag row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`degrade_reason: Option<RejectReason>`"
+id = "REQ-FORGE-MANIFEST-DEGRADE-REASON"
+replacement_view = "forge-manifest-degrade-status"
+note = "Degrade reason row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`Level: Ord` (ladder ordering)"
+id = "REQ-FORGE-MANIFEST-LEVEL-ORD"
+replacement_view = "forge-manifest-degrade-status"
+note = "Ladder level ordering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`AssuranceManifest` + `ProjectAssurance` (the aggregate)"
+id = "REQ-FORGE-MANIFEST-ASSURANCE-AGGREGATE"
+replacement_view = "forge-manifest-degrade-status"
+note = "Assurance aggregate row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`AssuranceScope` (per-fn §9 scope)"
+id = "REQ-FORGE-MANIFEST-ASSURANCE-SCOPE"
+replacement_view = "forge-manifest-e2e-status"
+note = "Per-function assurance scope row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/manifest.rs"
+label = "`ProjectScope` (project §9 claim)"
+id = "REQ-FORGE-MANIFEST-PROJECT-SCOPE"
+replacement_view = "forge-manifest-e2e-status"
+note = "Project assurance scope row replaced by a generated canonical reference."
 
 [[legacy_mapping]]
 path = "forge/src/main.rs"
@@ -5258,3 +5484,530 @@ note = "or-pattern catch-all detector"
 kind = "test"
 target = "forge/tests/ergonomics_conformance.rs"
 note = "or-pattern exhaustiveness conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SCHEMA"
+title = "Stable certificate schema"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`Certificate` materializes the stable Appendix A schema in deterministic field order for `forge check` output."
+aliases = ["forge/src/manifest.rs REQ-1 (stable schema, Appendix A)"]
+contributors = [".design/forge/certificate-manifest.md", "forge/src/check.rs"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate"
+note = "certificate schema struct"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "schema_matches_appendix_a"
+note = "in-module schema-order test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-PRODUCED-FIELDS"
+title = "Produced certificate fields"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`Certificate::new` fills item, level, effects, slag, and obligations from pipeline data, while `effects_of` maps syntax effect rows into manifest tokens."
+aliases = ["forge/src/manifest.rs REQ-2 (fields #5 produces now)"]
+contributors = [".design/forge/certificate-manifest.md", "forge/src/check.rs"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::new"
+note = "primary certificate constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "effects_of"
+note = "effect-row to manifest-token projection"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "effects_of_covers_every_variant"
+note = "effect projection coverage test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-FORWARD-DECLARED"
+title = "Forward-declared quality fields"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`ContractQuality::forward_declared` reserves Appendix A quality fields while keeping forward-declared values out of the oracle subset."
+aliases = ["forge/src/manifest.rs REQ-3 (forward-declared fields)"]
+contributors = [".design/forge/certificate-manifest.md", ".design/forge/vacuity-triage.md", ".design/forge/mutation-scoring.md"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ContractQuality::forward_declared"
+note = "reserved quality-field constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "oracle_ignores_forward_declared_and_time"
+note = "oracle exclusion test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SUGGESTED-MOVE-RESERVED"
+title = "Reserved suggested move slot"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`suggested_move` is reserved as an omitted `None` in baseline certificates until a producer such as solver profiles populates it."
+aliases = ["forge/src/manifest.rs REQ-4 (`suggested_move` reserved)"]
+contributors = [".design/forge/certificate-manifest.md", ".design/forge/proof-repair.md"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SuggestedMove"
+note = "reserved hint type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "suggested_move_is_reserved_absence"
+note = "reserved-absence serialization test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-OBLIGATIONS"
+title = "Per-obligation certificate results"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "Certificates carry structured per-obligation results with discharged/failed status, location, and diagnostic fields for CLI rendering."
+aliases = ["forge/src/manifest.rs REQ-5 (per-obligation results)"]
+contributors = [".design/forge/certificate-manifest.md", ".design/forge/goal-repl.md"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationResult"
+note = "per-obligation result row"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ObligationStatus"
+note = "obligation status enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "obligation_results_present"
+note = "in-module obligation serialization test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SOLVER-TIME-ORACLE"
+title = "solver_time_ms oracle exclusion"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`solver_time_ms` remains present for diagnostics but is excluded from `Certificate::oracle_subset` with other non-deterministic fields."
+aliases = ["forge/src/manifest.rs REQ-6 (`solver_time_ms` excluded)"]
+contributors = [".design/forge/certificate-manifest.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::oracle_subset"
+note = "deterministic certificate subset"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "oracle_ignores_forward_declared_and_time"
+note = "solver time exclusion test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SERDE"
+title = "Certificate serde serialization"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "Certificate schema types derive serde serialization/deserialization and keep deterministic output order from struct declarations."
+aliases = ["forge/src/manifest.rs REQ-7 (serde_json serialization)"]
+contributors = [".design/forge/certificate-manifest.md", "conformance/sum.cert.json"]
+generated_to = ["status", "forge-manifest-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Serialize"
+note = "serde serialization derive/import"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "serialization_is_deterministic"
+note = "deterministic serialization test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/sum.cert.json"
+note = "golden certificate JSON"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SLAG-META"
+title = "Slag certificate metadata"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`SlagMeta` and the additive `slag_meta` field carry validated slag reason, owner, and review metadata on L1 slag certificates."
+aliases = ["forge/src/manifest.rs `SlagMeta` (cert metadata)"]
+contributors = [".design/forge/slag.md", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-manifest-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagMeta"
+note = "slag metadata schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::slag_l1"
+note = "slag L1 certificate constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "slag_l1_cert_shape"
+note = "in-module slag certificate shape test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-REJECT-REASON"
+title = "Verdict-in-certificate reject reason"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`RejectReason` and `Certificate.reject` encode triage, slag, and other non-certified verdicts in the certificate rather than as forge errors."
+aliases = ["forge/src/manifest.rs `RejectReason` (verdict-in-cert)"]
+contributors = [".design/forge/vacuity-triage.md", ".design/forge/slag.md"]
+generated_to = ["status", "forge-manifest-slag-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RejectReason"
+note = "structured rejection reason"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::rejected"
+note = "non-certified certificate constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "rejected_cert_carries_cause_and_is_not_l3"
+note = "rejected certificate shape test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-CACHE-PROVENANCE"
+title = "Proof cache provenance flag"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`cached` records proof-cache provenance without changing the certificate oracle subset."
+aliases = ["forge/src/manifest.rs `cached: bool` (cache provenance)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-manifest-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::with_cached"
+note = "cache provenance setter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cached_field_is_additive_and_oracle_excluded"
+note = "cache provenance oracle test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SOLVER-PROFILE"
+title = "Solver profile timeout slot"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`solver_profile` stores a parsed timeout profile only on timeout certificates and remains diagnostic/oracle-excluded."
+aliases = ["forge/src/manifest.rs `solver_profile: Option<SolverProfile>`"]
+contributors = [".design/forge/solver-profiles.md", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-manifest-solver-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "solver_profile"
+note = "certificate timeout profile field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::timeout"
+note = "timeout certificate constructor"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/profile_conformance.rs"
+note = "solver profile conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SUGGESTED-MOVE-PROFILE"
+title = "Profile-populated suggested move"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "Timeout certificates can populate the reserved `suggested_move` slot from solver-profile proof-repair hints."
+aliases = ["forge/src/manifest.rs `suggested_move` populated"]
+contributors = [".design/forge/solver-profiles.md", ".design/forge/proof-repair.md", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-manifest-solver-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::timeout"
+note = "timeout certificate accepts suggested move"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SuggestedMove"
+note = "profile-derived proof-repair hint type"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/profile_conformance.rs"
+note = "profile prompt conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-SOLVER-VACUITY-REJECT"
+title = "Solver-vacuity reject certificate"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`Certificate::rejected_vacuity` produces an L0 reject and sets the corresponding solver-confirmed contract-quality bit."
+aliases = ["forge/src/manifest.rs `Certificate::rejected_vacuity`"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs"]
+generated_to = ["status", "forge-manifest-solver-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::rejected_vacuity"
+note = "solver-vacuity reject constructor"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/solver_vacuity_conformance.rs"
+note = "solver-vacuity certificate conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-BOUNDARY-FLAG"
+title = "Boundary verdict flag"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`boundary` marks a certificate as an FFI boundary verdict and joins the oracle subset as a verdict-relevant flag."
+aliases = ["forge/src/manifest.rs `boundary: bool` (FFI verdict flag)"]
+contributors = [".design/boundary/ffi-boundary.md", "forge/tests/boundary_conformance.rs"]
+generated_to = ["status", "forge-manifest-boundary-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "boundary"
+note = "certificate boundary flag field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::boundary_l1"
+note = "boundary certificate constructor sets flag"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/boundary_conformance.rs"
+note = "boundary certificate conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-BOUNDARY-TARGET"
+title = "Boundary target diagnostic field"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`boundary_target` records the foreign path for boundary certificates while remaining diagnostic and oracle-excluded."
+aliases = ["forge/src/manifest.rs `boundary_target: Option<String>` (foreign path)"]
+contributors = [".design/boundary/ffi-boundary.md", "forge/tests/boundary_conformance.rs"]
+generated_to = ["status", "forge-manifest-boundary-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "boundary_target"
+note = "certificate boundary target field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::boundary_l1"
+note = "boundary certificate constructor records target"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/boundary_conformance.rs"
+note = "boundary target conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-BOUNDARY-L1"
+title = "Boundary L1 certificate constructor"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`Certificate::boundary_l1` builds a no-Verus L1 boundary certificate with discharged boundary obligation and live triage-clean bits."
+aliases = ["forge/src/manifest.rs `Certificate::boundary_l1`"]
+contributors = [".design/boundary/ffi-boundary.md", "forge/tests/boundary_conformance.rs"]
+generated_to = ["status", "forge-manifest-boundary-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::boundary_l1"
+note = "boundary L1 constructor"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/boundary_conformance.rs"
+note = "boundary L1 conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-DEGRADE-FLAG"
+title = "Lowered assurance flag"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`lowered_assurance` qualifies a timeout-degraded certificate as lower-rung assurance rather than a direct L3 proof."
+aliases = ["forge/src/manifest.rs `lowered_assurance: bool` (degrade flag)"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-manifest-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lowered_assurance"
+note = "degrade provenance flag"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::into_degraded"
+note = "degrade qualifier setter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "into_degraded_stamps_flag_and_reason"
+note = "degrade flag/reason test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-DEGRADE-REASON"
+title = "Degrade reason field"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`degrade_reason` carries the timeout reason from the failed L3 attempt on lowered-assurance certificates."
+aliases = ["forge/src/manifest.rs `degrade_reason: Option<RejectReason>`"]
+contributors = [".design/forge/degrade-ladder.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-manifest-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "degrade_reason"
+note = "diagnostic degrade reason field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "degrade_fields_are_additive"
+note = "degrade additive-field test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-LEVEL-ORD"
+title = "Level ladder ordering"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`Level` derives ordinal order with declaration order `L0 < L1 < L2 < L3` for ladder aggregation."
+aliases = ["forge/src/manifest.rs `Level: Ord` (ladder ordering)"]
+contributors = [".design/forge/degrade-ladder.md"]
+generated_to = ["status", "forge-manifest-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Level"
+note = "assurance ladder enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "level_ord_is_the_ladder_ordering"
+note = "level ordering test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-ASSURANCE-AGGREGATE"
+title = "Assurance manifest aggregate"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`AssuranceManifest::aggregate` computes per-function assurance rows and the project headline, with rejected/non-certified certificates capping the project at failure."
+aliases = ["forge/src/manifest.rs `AssuranceManifest` + `ProjectAssurance` (the aggregate)"]
+contributors = [".design/forge/degrade-ladder.md", ".design/verified/self-verification.md", "forge/tests/degrade_conformance.rs"]
+generated_to = ["status", "forge-manifest-degrade-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "project assurance aggregator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ProjectAssurance"
+note = "project headline enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_project_min_matches_proved_aggregate_level_over_all_level_lists"
+note = "Verus-anchored aggregate equivalence test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-ASSURANCE-SCOPE"
+title = "Per-function assurance scope"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`AssuranceScope` records whether a function is end-to-end or verified to a boundary, normalized into the oracle subset as a verdict-relevant bit."
+aliases = ["forge/src/manifest.rs `AssuranceScope` (per-fn §9 scope)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/tests/composition_basis_conformance.rs"]
+generated_to = ["status", "forge-manifest-e2e-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceScope"
+note = "per-function scope enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::with_assurance_scope"
+note = "certificate scope setter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "assurance_scope_is_additive_normalized_and_golden_stable"
+note = "scope oracle normalization test"
+
+[[requirement]]
+id = "REQ-FORGE-MANIFEST-PROJECT-SCOPE"
+title = "Project assurance scope"
+owner = "forge/src/manifest.rs"
+status = "shipped"
+scope = "forge"
+summary = "`ProjectScope` aggregates per-function scope claims into an end-to-end or to-the-boundary project claim orthogonal to the level headline."
+aliases = ["forge/src/manifest.rs `ProjectScope` (project §9 claim)"]
+contributors = [".design/forge/e2e-vs-boundary.md", "forge/tests/composition_basis_conformance.rs"]
+generated_to = ["status", "forge-manifest-e2e-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ProjectScope"
+note = "project scope enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "project_scope"
+note = "scope aggregator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/composition_basis_conformance.rs"
+note = "to-boundary project scope conformance"

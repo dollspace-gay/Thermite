@@ -16,65 +16,97 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (stable schema, Appendix A) | SHIPPED | `struct Certificate { item, level, solver_time_ms, contract_quality, effects, slag, obligations, suggested_move }` mirrors Appendix A field order; consumed by `check::check_file` in `check.rs`. |
-//! | REQ-2 (fields #5 produces now) | SHIPPED | `Certificate::new` sets `item`/`level`/`effects`/`slag`/`obligations` from real pipeline data; `effects_of` maps `EffectRow` to the `["pure"]` row; called by `check::assemble_certificate`. |
-//! | REQ-3 (forward-declared fields) | SHIPPED | `ContractQuality::forward_declared` returns honest non-asserted #5 values (`tautology=false`, `vacuous_precondition=false`, `mutants_killed="0/0"`, `survivor=None`); `oracle_subset` excludes them. #6 graduates the two §7.1 bools to LIVE `false` via `Certificate::graduate_triage_clean`, consumed by `check::check_file` on a triage-passing item; `mutants_killed`/`survivor` stay #12-forward-declared. |
-//! | REQ-4 (`suggested_move` reserved) | SHIPPED | `Certificate::new` sets `suggested_move: None`; `SuggestedMove` is the reserved (currently un-constructed in production) slot type, serialized as `null`/omitted. |
-//! | REQ-5 (per-obligation results) | SHIPPED | `struct ObligationResult { name, status, location, diagnostic }` + `enum ObligationStatus`; the `obligations` field; consumed by `check::assemble_certificate` + `cli::render_human`. |
-//! | REQ-6 (`solver_time_ms` excluded) | SHIPPED | `solver_time_ms: u64` present (Appendix A); `Certificate::oracle_subset` omits it (and `contract_quality`), and `cli::render_human` labels it non-deterministic. |
-//! | REQ-7 (serde_json serialization) | SHIPPED | `#[derive(Serialize, Deserialize)]`; `Level` serializes to `"L0".."L3"`; `cli::run_check` serializes via `serde_json::to_string_pretty`; deterministic field order from struct declaration order. |
+//! <!-- generated:reqs view=forge-manifest-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-FORWARD-DECLARED | shipped | `forge/src/manifest.rs` | Forward-declared quality fields |  |
+//! | REQ-FORGE-MANIFEST-OBLIGATIONS | shipped | `forge/src/manifest.rs` | Per-obligation certificate results |  |
+//! | REQ-FORGE-MANIFEST-PRODUCED-FIELDS | shipped | `forge/src/manifest.rs` | Produced certificate fields |  |
+//! | REQ-FORGE-MANIFEST-SCHEMA | shipped | `forge/src/manifest.rs` | Stable certificate schema |  |
+//! | REQ-FORGE-MANIFEST-SERDE | shipped | `forge/src/manifest.rs` | Certificate serde serialization |  |
+//! | REQ-FORGE-MANIFEST-SOLVER-TIME-ORACLE | shipped | `forge/src/manifest.rs` | solver_time_ms oracle exclusion |  |
+//! | REQ-FORGE-MANIFEST-SUGGESTED-MOVE-RESERVED | shipped | `forge/src/manifest.rs` | Reserved suggested move slot |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #6 additive schema (slag-triage, this iteration)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `SlagMeta` (cert metadata) | SHIPPED | `struct SlagMeta { reason, owner, review }`; `Certificate.slag_meta: Option<SlagMeta>` (additive, `skip_serializing_if`); produced by `slag::validate`, set by `Certificate::slag_l1`, consumed by `check::check_file` for a valid `#[slag]` item (`slag.md` REQ-4, OQ-1 ratified). |
-//! | `RejectReason` (verdict-in-cert) | SHIPPED | `struct RejectReason { cause, detail }`; `Certificate.reject: Option<RejectReason>` (additive); a triage / slag reject is `Certificate::rejected` (`Level::L0` + cause), consumed by `check::check_file` + `cli::run_check` (exit non-zero) (`vacuity-triage.md` REQ-5, OQ-1: verdict-in-cert NOT a `ForgeError`). |
+//! <!-- generated:reqs view=forge-manifest-slag-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-REJECT-REASON | shipped | `forge/src/manifest.rs` | Verdict-in-certificate reject reason |  |
+//! | REQ-FORGE-MANIFEST-SLAG-META | shipped | `forge/src/manifest.rs` | Slag certificate metadata |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #8 additive schema (proof-cache provenance, this iteration)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `cached: bool` (cache provenance) | SHIPPED | `Certificate.cached: bool` (additive, `#[serde(default)]` so the frozen golden `sum.cert.json` still deserializes); set by `Certificate::with_cached`, consumed by `check::check_file` (`true` on a HIT, `false` on a fresh verify) and `cache::store` (cleared before persisting). EXCLUDED from `oracle_subset` — a hit and a fresh verify compare oracle-EQUAL (`proof-cache.md` REQ-7/REQ-2). |
+//! <!-- generated:reqs view=forge-manifest-cache-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-CACHE-PROVENANCE | shipped | `forge/src/manifest.rs` | Proof cache provenance flag |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #11 additive schema (solver-profile timeout slot, this iteration)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `solver_profile: Option<SolverProfile>` | SHIPPED | `Certificate.solver_profile` (additive, `#[serde(default, skip_serializing_if)]` so the frozen golden `sum.cert.json` still deserializes — R-SPEC-2). `Some` ONLY on a timeout cert built by `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the parsed profile + a profile-derived `suggested_move`); `None` on a proved cert and a counterexample cert. Produced by `profile::parse_profile`/`profile::suggested_move`, set by `check::classify_verus_outcome`. DIAGNOSTIC + non-deterministic (§5.3): EXCLUDED from `oracle_subset` (`.design/forge/solver-profiles.md` REQ-6/REQ-7). |
-//! | `suggested_move` populated | SHIPPED | the reserved #5 slot is now CONSTRUCTED in production on a timeout cert (`Certificate::timeout`) from `profile::suggested_move` — the §5.1 "trigger hints" content. Still `None` on every non-timeout cert. |
+//! <!-- generated:reqs view=forge-manifest-solver-profile-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-SOLVER-PROFILE | shipped | `forge/src/manifest.rs` | Solver profile timeout slot |  |
+//! | REQ-FORGE-MANIFEST-SUGGESTED-MOVE-PROFILE | shipped | `forge/src/manifest.rs` | Profile-populated suggested move |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #13 producer (SOLVER-vacuity reject sets a `contract_quality` bool true)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `Certificate::rejected_vacuity` | SHIPPED | builds a `Level::L0` reject cert (like `Certificate::rejected`) that ALSO sets the SOLVER-confirmed `contract_quality.{tautology,vacuous_precondition}` bool the detection corresponds to (`.design/forge/solver-vacuity.md` REQ-6, OQ-1). NO schema change (R-SPEC-2) — it only makes the EXISTING Appendix A bools' `true` real (solver-confirmed) rather than #6's syntactic `false`. Produced by `vacuity_solver::solver_vacuity_check`, consumed by `check::check_file`. |
+//! <!-- generated:reqs view=forge-manifest-solver-vacuity-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-SOLVER-VACUITY-REJECT | shipped | `forge/src/manifest.rs` | Solver-vacuity reject certificate |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #16 additive schema (boundary-fn FFI cert — `.design/boundary/ffi-boundary.md`)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `boundary: bool` (FFI verdict flag) | SHIPPED | `Certificate.boundary` (additive, `#[serde(default)]` so the frozen golden `conformance/sum.cert.json` — which omits it, defaulting `false` — still deserializes, R-SPEC-2). `true` ONLY on a boundary-fn cert built by `Certificate::boundary_l1`. VERDICT-relevant (qualifies the L1 as "to-the-boundary, foreign body unproven") and feeds #15 (TCB enumeration) / #17 (verified-to-the-boundary): joins `slag` in `oracle_subset`. Set by `check::gate_fn`. |
-//! | `boundary_target: Option<String>` (foreign path) | SHIPPED | `Certificate.boundary_target` (additive, `#[serde(default, skip_serializing_if = "Option::is_none")]`). `Some(crate::path)` ONLY on a boundary cert (the foreign target the L1 wrapper calls); `None` otherwise. DIAGNOSTIC (the #15 audit hook's prose half): oracle-EXCLUDED. |
-//! | `Certificate::boundary_l1` | SHIPPED | builds the boundary cert: `Level::L1`, `boundary: true`, `boundary_target: Some(target)`, one discharged obligation ("contract enforced at L1 (boundary); foreign body trusted by fiat"), NO verus run, `graduate_triage_clean()` (a boundary fn still passes §7.1 (a)/(b)/(c)). Modeled on `Certificate::slag_l1`. Consumed by `check::gate_fn`. |
+//! <!-- generated:reqs view=forge-manifest-boundary-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-BOUNDARY-FLAG | shipped | `forge/src/manifest.rs` | Boundary verdict flag |  |
+//! | REQ-FORGE-MANIFEST-BOUNDARY-L1 | shipped | `forge/src/manifest.rs` | Boundary L1 certificate constructor |  |
+//! | REQ-FORGE-MANIFEST-BOUNDARY-TARGET | shipped | `forge/src/manifest.rs` | Boundary target diagnostic field |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #10 additive schema (the degrade ladder + assurance aggregate, this iteration)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `lowered_assurance: bool` (degrade flag) | SHIPPED | `Certificate.lowered_assurance` (additive, `#[serde(default)]` so the frozen golden `sum.cert.json` still deserializes — R-SPEC-2). `true` ONLY on a cert the #10 ladder produced by degrading a verus TIMEOUT to L2/L1; set by `Certificate::into_degraded`, produced by `degrade::run_ladder`, consumed by `check::ladder_for_timeout` + `cli::render_assurance`. VERDICT-relevant (it qualifies the level as "lowered, not proved") so NOT oracle-excluded; the corpus never degrades so the golden keeps the default `false`. |
-//! | `degrade_reason: Option<RejectReason>` | SHIPPED | `Certificate.degrade_reason` (additive, `#[serde(default, skip_serializing_if)]`). `Some` ONLY on a `lowered_assurance` cert — the `VerusTimeout` reason carried from the timed-out L3 attempt (REQ-4). Set by `Certificate::into_degraded`; DIAGNOSTIC, EXCLUDED from `oracle_subset`. |
-//! | `Level: Ord` (ladder ordering) | SHIPPED | `#[derive(PartialOrd, Ord)]` on `enum Level` makes the declaration order `L0 < L1 < L2 < L3` the `Ord` the aggregate's min-over-functions uses (`.design/forge/degrade-ladder.md` REQ-6). |
-//! | `AssuranceManifest` + `ProjectAssurance` (the aggregate) | SHIPPED | `AssuranceManifest::aggregate(&[Certificate])` computes the per-fn `FunctionAssurance` rows + the project headline `ProjectAssurance::{Certified(min), Failed}` (REQ-5/REQ-6); a non-certifying fn (`cert_certifies` false) caps the project at `Failed` (a non-rung, REQ-2). Render-time aggregate (OQ-4 (b)). Consumed by `cli::run_check`/`render_assurance`. VERUS-ANCHORED (epic #60, REQ-10 / `.design/verified/self-verification.md` Target D): the project-level min-over-functions is anchored to the proved fold-min `thermite_verified::aggregate_level` (D1: ≤ every fn — the §5.2 no-over-claim bound; D2: attained == exactly the min) by the in-module `tests::verus_anchor` block (Option B, forge binary-only) enumerating ALL `Level` lists up to length 4 (341 lists), asserting `aggregate(certs).project == Certified(proved_min)` AND headline ≤ every level. |
+//! <!-- generated:reqs view=forge-manifest-degrade-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-ASSURANCE-AGGREGATE | shipped | `forge/src/manifest.rs` | Assurance manifest aggregate |  |
+//! | REQ-FORGE-MANIFEST-DEGRADE-FLAG | shipped | `forge/src/manifest.rs` | Lowered assurance flag |  |
+//! | REQ-FORGE-MANIFEST-DEGRADE-REASON | shipped | `forge/src/manifest.rs` | Degrade reason field |  |
+//! | REQ-FORGE-MANIFEST-LEVEL-ORD | shipped | `forge/src/manifest.rs` | Level ladder ordering |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #17 additive schema (the §9 end-to-end vs to-the-boundary scope, this iteration)
 //!
-//! | Field/symbol | Status | Evidence |
-//! |---|---|---|
-//! | `AssuranceScope` (per-fn §9 scope) | SHIPPED | `enum AssuranceScope { EndToEnd, ToBoundary { via } }` (`.design/forge/e2e-vs-boundary.md` REQ-2/REQ-3); `Certificate.assurance_scope: Option<AssuranceScope>` (additive, `#[serde(default, skip_serializing_if = "Option::is_none")]` so the frozen golden `conformance/sum.cert.json` — which omits it — still deserializes, defaulting `None`, mirroring the `boundary_target`/`solver_profile` precedents, R-SPEC-2). Produced by `closure::classify`, set by `Certificate::with_assurance_scope`, consumed by `check::check_file_with_options`. VERDICT-RELEVANT (§9 / R-DEFER-9) so it JOINS `oracle_subset` — NORMALIZED to a bool (`scope_is_end_to_end`): `None` and `Some(EndToEnd)` are oracle-EQUAL (golden stays stable) while `Some(ToBoundary)` is oracle-visible; the `via` crossing name is diagnostic, oracle-EXCLUDED. ORTHOGONAL to `level` (REQ-5). |
-//! | `ProjectScope` (project §9 claim) | SHIPPED | `enum ProjectScope { EndToEnd, ToBoundary { crossings } }` + `AssuranceManifest.scope`; `AssuranceManifest::aggregate` computes it (`project_scope`): END-TO-END iff every cert is end-to-end, else TO-THE-BOUNDARY listing the reached crossings (sorted + deduplicated, deterministic — REQ-4/REQ-6). ORTHOGONAL to the `project` level headline. Consumed by `cli::run_check`. |
+//! <!-- generated:reqs view=forge-manifest-e2e-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MANIFEST-ASSURANCE-SCOPE | shipped | `forge/src/manifest.rs` | Per-function assurance scope |  |
+//! | REQ-FORGE-MANIFEST-PROJECT-SCOPE | shipped | `forge/src/manifest.rs` | Project assurance scope |  |
+//! <!-- /generated:reqs -->
 
 use serde::{Deserialize, Serialize};
 use thermite_syntax::{Effect, EffectRow};

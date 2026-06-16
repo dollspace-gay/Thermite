@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5e8b29013f65e22573a6caba363f2571bcce949f (re-pinned 2026-06-15: forge check status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — stale GREENFIELD line, per-item Vec<Certificate> signature, dead parse_verus_output/level_from_summary cites, test-name fixes, engine-routing/hole-gate amendment, #262)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes))
+audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

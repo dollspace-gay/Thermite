@@ -40,6 +40,27 @@ fn forge_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_forge"))
 }
 
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
+/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
+/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// The build+run tests SKIP with an explicit warning on any non-Linux platform —
+/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// `verus_present()` skip precedent (a missing capability is a logged skip, not a
+/// panic, R-CODE-4).
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+    );
+    false
+}
+
 /// Divergence (highest value) — `n.to_string()` emits the decimal digits of `n` in
 /// reversed order: `42` builds to `[50, 52]` (`'2','4'` == "24"), not the
 /// human-readable MSB-first `[52, 50]` (`'4','2'` == "42") REQ-8 mandates.
@@ -55,6 +76,9 @@ fn forge_bin() -> PathBuf {
 /// Tracking: #96.
 #[test]
 fn divergence_to_string_display_order_msb_first() {
+    if !linux_build_run_supported("divergence_to_string_display_order_msb_first") {
+        return;
+    }
     // REQ-8 (blocker #96): the surface round-trip is the MSB-first `parse_be` — the
     // displayed bytes round-trip against a big-endian parse. `u64_to_string` now
     // reverses the LSB construction buffer, carrying the proof via the

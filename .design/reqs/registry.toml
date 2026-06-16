@@ -6678,9 +6678,11 @@ note = "bytes_eq surface/cage conformance"
 # Stage 1 — the forge tier (REQ cluster, .design/stage1-forge-tier.md).
 # The increments landed in this stage: REQ-8a (relax spine lemmas), REQ-1
 # (verdict plumbing), REQ-2 (exporter hardening), all SHIPPED; REQ-4 (covenant)
-# PARTIAL — the foundation signature/record landed, the covenant logic is 2b.
-# The remaining stage-1 clusters (REQ-3 surface syntax, REQ-5 battery, REQ-6
-# anti-Goodhart, REQ-7 goal/fill, REQ-8b relax route, REQ-9 lemma library,
+# PARTIAL — the foundation signature/record landed, the covenant logic is 2b;
+# REQ-3 (surface syntax) PARTIAL — increment 2a parsed + addressed + round-tripped
+# the forge-tier surface (parser/AST/addressing/hole-gating), its semantic
+# consumers are later increments. The remaining stage-1 clusters (REQ-5 battery,
+# REQ-6 anti-Goodhart, REQ-7 goal/fill, REQ-8b relax route, REQ-9 lemma library,
 # REQ-10 gate G1) are not started here and are intentionally not yet registered.
 # ---------------------------------------------------------------------
 
@@ -6796,6 +6798,57 @@ target = "CovenantRecord"
 kind = "symbol"
 target = "CovenantRefuted"
 note = "the Counterexample-class hard-fail ladder arm (degrade.rs)"
+
+[[requirement]]
+id = "REQ-S1-3"
+title = "Forge-tier surface syntax"
+owner = ".design/stage1-forge-tier.md"
+status = "partial"
+scope = "syntax"
+summary = "thermite-syntax parses the forge-tier surface forms beside `fn` — `prop fn`, `lemma … req … ens … proof { … }`, `proof for f { ens#k by { … } }`, `witness { inhabit (…); falsify N; }`, `?pN` proof holes, refinement-type sugar `x: T{P}` (folded to req/ens in a NEW post-parse desugar pass), and the ASCII `dec lex(…)` / `dec wf <rel>` measures (Q-DECWF, no Unicode operator lexing) — into the AST (grouped under one additive `Item::Forge` variant), with semantic addressing (`f.proof.ens#k`, the `?pN` form, `witness#N`) and the hole-gating surface (an open `?pN` blocks build + certification). Proof-block tactic content is captured VERBATIM (not structurally parsed — that is the frozen battery, REQ-5). Always-on, no feature flag; gating is forge-side via holes/routing. Byte-stable: no conformance `.th` uses the new syntax, so the oracle is unchanged."
+remaining_scope = "Surface only — the SEMANTIC consumers of the parsed forms are later increments and are NOT built here: covenant inhabit/falsify execution (increment 2b, REQ-S1-4), the frozen tactic battery that parses proof-block content (2c, REQ-5), anti-Goodhart re-elaboration (2d, REQ-6), the goal/fill proof view that fills `?pN` (2e, REQ-7), the relax engine (2f, REQ-8b), and the lemma-library mechanics that consume `lemma`/`proof`/`dec wf` (3, REQ-9). The forge dispatches every `Item::Forge` through an inert arm today (no v1 cert/lowering consumer), EXCEPT the AC-7 open-`?pN` build/cert refusal which is wired."
+aliases = ["surface syntax", "forge-tier syntax", "prop fn", "lemma", "proof for", "witness", "?pN proof holes", "refinement sugar", "dec wf", "dec lex", "REQ-3"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/src/parser.rs"
+note = "forge-item productions, proof-block scanner, dec lex/wf, refinement capture"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeItem"
+note = "the grouped Item::Forge AST (PropFn/Lemma/Proof/Witness)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "desugar_refinements"
+note = "the new post-parse refinement desugar pass (x: T{P} -> req/ens)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_dec_clause"
+note = "dec lex(...) (registry-free call) + dec wf <rel> (ASCII, Q-DECWF)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "open_proof_hole_reason"
+note = "AC-7: an open ?pN blocks build + certification (check.rs/build.rs)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/forge_items.rs"
+note = "parse + AST + address round-trip for prop fn/lemma/proof/witness/?pN"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/refinement_sugar.rs"
+note = "refinement-type sugar desugar pass"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/dec_forms.rs"
+note = "dec lex(...) / dec wf <rel> measure forms"
 
 [[requirement]]
 id = "REQ-TV-CONTRACT-REF-ENCODER"

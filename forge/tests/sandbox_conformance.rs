@@ -107,6 +107,27 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
     path
 }
 
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
+/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
+/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// The build+run tests SKIP with an explicit warning on any non-Linux platform —
+/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// `verus_present()` skip precedent (a missing capability is a logged skip, not a
+/// panic, R-CODE-4).
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+    );
+    false
+}
+
 /// SIGSYS = 31; a process killed by it reports raw signal 31 / shell exit 159.
 const SIGSYS: i32 = 31;
 /// A Rust panic (the `[ens]` L1 contract violation) aborts with process exit 101.
@@ -390,6 +411,9 @@ fn no_sandbox_omits_prelude() {
 
 #[test]
 fn term_grant_adds_ioctl_to_the_recorded_allowlist() {
+    if !linux_build_run_supported("term_grant_adds_ioctl_to_the_recorded_allowlist") {
+        return;
+    }
     // Manifest-only (no run): inspect the recorded allowlist. No seccomp needed.
     let term_fixture = write_fixture(
         "tf",

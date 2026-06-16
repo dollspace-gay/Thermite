@@ -2176,6 +2176,16 @@ pub fn export_item(
                 "ADT item (no in-language certification obligation in v1)".to_string(),
             ))
         }
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 Lean-export consumer
+        // yet (increments 2b-3). Mirrors the inert ADT-decl arm: a structured
+        // `OutOfFragment` refusal (never a panic) — no v1 certification obligation.
+        Item::Forge(_) => {
+            return Err(ExportRefusal::OutOfFragment(
+                "forge-tier item (parse-only in increment 2a; no in-language \
+                 certification obligation until increments 2b-3)"
+                    .to_string(),
+            ))
+        }
     };
 
     // The env coercion frame (sorts free names).

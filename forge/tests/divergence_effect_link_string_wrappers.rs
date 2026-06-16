@@ -94,8 +94,32 @@ fn write_fixture(name: &str, src: &str) -> PathBuf {
     p
 }
 
+/// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
+/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
+/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// The build+run tests SKIP with an explicit warning on any non-Linux platform —
+/// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
+/// `verus_present()` skip precedent (a missing capability is a logged skip, not a
+/// panic, R-CODE-4).
+fn linux_build_run_supported(test: &str) -> bool {
+    if cfg!(target_os = "linux") {
+        return true;
+    }
+    eprintln!(
+        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
+         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
+         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
+         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+    );
+    false
+}
+
 #[test]
 fn print_wrapper_builds_and_runs() {
+    if !linux_build_run_supported("print_wrapper_builds_and_runs") {
+        return;
+    }
     // AUTHORITY (08-runnable-effect-link.md REQ-1): "os::write/os::print
     // (std::io::stdout().write_all, Stage 7 String arg). Each wrapper's signature
     // MATCHES the #[boundary] primitive it backs"; REQ-3: it COMPILES + RUNS.
@@ -124,6 +148,9 @@ fn print_wrapper_builds_and_runs() {
 
 #[test]
 fn read_line_wrapper_builds() {
+    if !linux_build_run_supported("read_line_wrapper_builds") {
+        return;
+    }
     // AUTHORITY (08-runnable-effect-link.md REQ-1): "os::read_byte/os::read_line
     // (std::io::stdin().read/read_line, the latter over Stage 7 String)".
     let fixture = write_fixture("read_line", READ_LINE_DEMO);

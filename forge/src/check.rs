@@ -385,6 +385,30 @@ pub fn check_file_with_options(
             }
         }
 
+        // Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3) have no
+        // v1 certification consumer yet (covenant 2b, battery 2c, proof view 2e,
+        // library 3): they are SKIPPED here (no v1 cert), so a hole-free forge item
+        // emits no certificate. EXCEPT (AC-7): a forge item carrying any open `?pN`
+        // proof hole is incomplete and must NOT certify — it short-circuits to a
+        // non-certified `OpenHole` cert through the shared `open_proof_hole_reason`
+        // path (the proof-tier mirror of the `?N` body-hole short-circuit above),
+        // before any lowering/verus. No corpus item is forge-tier, so this is a
+        // no-op on the conformance oracle.
+        if let Item::Forge(forge) = item {
+            if let Some(detail) = crate::goal_repl::open_proof_hole_reason(forge) {
+                certs.push(Certificate::rejected(
+                    item.name().to_string(),
+                    vec!["pure".to_string()],
+                    false,
+                    RejectReason {
+                        cause: "OpenHole".to_string(),
+                        detail,
+                    },
+                ));
+            }
+            continue;
+        }
+
         // #6 gate: structural vacuity triage + `#[slag]` short-circuit run before
         // the L3 proof ("a function does not certify until its contract
         // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),
@@ -1559,6 +1583,16 @@ fn item_subprogram(
             items.push(item.clone());
             Program { items }
         }
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 sub-program/cert
+        // consumer yet (increments 2b-3); the item carries no v1 lowering output, so
+        // its sub-program is the item alone (inert — lowers to nothing), mirroring
+        // the non-fn ADT-decl path's self-contained weave.
+        Item::Forge(_) => {
+            let mut items = adt_deps.to_vec();
+            items.extend(spec_items.iter().cloned());
+            items.push(item.clone());
+            Program { items }
+        }
     }
 }
 
@@ -1809,7 +1843,11 @@ fn mint_item_obligations(program: &Program, item: &Item) -> ItemObligations {
         // the validator before a cert is assembled). Mint an empty contract
         // obligation so the function is total without a panic (R-APG-1); it is
         // never discharged.
-        Item::Struct(_) | Item::Enum(_) => (
+        // A forge-tier item (stage1-forge-tier.md REQ-3) likewise has no in-language
+        // certification obligation in v1 (no v1 consumer until increments 2b-3); mint
+        // the same empty contract obligation as the ADT-decl arm so the function stays
+        // total without a panic (R-APG-1) — it is never discharged.
+        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => (
             Obligation {
                 item: item.name().to_string(),
                 class: crate::obligation::ObligationClass::Contract,
@@ -2242,7 +2280,9 @@ fn collect_item_adt_refs(
         }
         // A struct/enum decl's own field types are followed by the type-graph
         // fixed point (`collect_decl_field_adt_refs`), not here.
-        Item::Struct(_) | Item::Enum(_) => {}
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 ADT-ref consumer yet
+        // (increments 2b-3); references no in-file ADT here, mirroring the ADT-decl arm.
+        Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {}
     }
 }
 
@@ -2278,7 +2318,9 @@ fn collect_decl_field_adt_refs(
                 }
             }
         }
-        Item::Fn(_) | Item::SpecFn(_) => {}
+        // Forge-tier item (stage1-forge-tier.md REQ-3): not an ADT decl → no field
+        // type graph to follow (increments 2b-3); inert, mirroring the non-decl arm.
+        Item::Fn(_) | Item::SpecFn(_) | Item::Forge(_) => {}
     }
 }
 
@@ -3056,6 +3098,10 @@ fn assemble_certificate(item: &Item, verus: &VerusResult) -> Certificate {
         // same empty-effect value as a `spec fn`). Dead-in-1a: an ADT item dies
         // at the validator before a certificate is ever assembled for it.
         Item::Struct(_) | Item::Enum(_) => vec!["pure".to_string()],
+        // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 cert consumer yet
+        // (increments 2b-3); declares no `fx` row → the same neutral `pure`
+        // projection as a `spec fn`/ADT decl, mirroring the inert ADT-decl arm.
+        Item::Forge(_) => vec!["pure".to_string()],
     };
     match &verus.outcome {
         VerusOutcome::Proved { verified } => Certificate::new(

@@ -147,6 +147,17 @@ pub enum SyntaxError {
     /// an expression, or a signature is a structural parse error (`number` is the
     /// verbatim hole number written).
     HoleOutsideFnBody { number: u32, span: Span },
+    /// A proof hole `?pN` parsed OUTSIDE a proof block
+    /// (`.design/stage1-forge-tier.md` REQ-3, AC-7). The forge-tier scope pin:
+    /// proof holes are valid only inside a `lemma`/`proof`-item proof block; a
+    /// `?pN` in fn-body statement position, a clause, an expression, or a signature
+    /// is a structural parse error (`number` is the verbatim hole number written).
+    ProofHoleOutsideProofBlock { number: u32, span: Span },
+    /// A body hole `?N` parsed INSIDE a proof block
+    /// (`.design/stage1-forge-tier.md` REQ-3). A proof block admits only proof
+    /// holes `?pN`; a body hole `?N` there is the mirror error of
+    /// `ProofHoleOutsideProofBlock` (`number` is the verbatim hole number written).
+    BodyHoleInProofBlock { number: u32, span: Span },
 }
 
 /// The maximum recursive-descent nesting depth the parser will follow before
@@ -197,7 +208,9 @@ impl SyntaxError {
             | SyntaxError::UnexpectedEof { span, .. }
             | SyntaxError::ExpressionTooDeep { span, .. }
             | SyntaxError::BreakContinueOutsideLoop { span, .. }
-            | SyntaxError::HoleOutsideFnBody { span, .. } => *span,
+            | SyntaxError::HoleOutsideFnBody { span, .. }
+            | SyntaxError::ProofHoleOutsideProofBlock { span, .. }
+            | SyntaxError::BodyHoleInProofBlock { span, .. } => *span,
         }
     }
 }
@@ -252,6 +265,19 @@ impl std::fmt::Display for SyntaxError {
                  clause, or an expression)",
                 span.start
             ),
+            SyntaxError::ProofHoleOutsideProofBlock { number, span } => write!(
+                f,
+                "proof hole `?p{number}` outside a proof block at byte {} (a `?pN` hole \
+                 is valid only inside a `lemma`/`proof`-item proof block, not in a \
+                 fn body, a clause, or an expression)",
+                span.start
+            ),
+            SyntaxError::BodyHoleInProofBlock { number, span } => write!(
+                f,
+                "body hole `?{number}` inside a proof block at byte {} (a proof block \
+                 admits only proof holes `?pN`)",
+                span.start
+            ),
         }
     }
 }
@@ -279,10 +305,15 @@ pub fn parse(src: &str) -> ParseResult {
     let (tokens, lex_errors) = tokenize(src);
     let mut parser = Parser::new(src, tokens, lex_errors);
     parser.parse_program();
+    let mut program = Program {
+        items: parser.items,
+    };
+    // Post-parse desugaring pass (`.design/stage1-forge-tier.md` REQ-3): fold the
+    // refinement-type sugar (`x: T{P}` / `-> T{P}`) into the v1 `req`/`ens` clause
+    // shapes so downstream stages see only v1 contracts plus the new item kinds.
+    crate::desugar::desugar(&mut program);
     ParseResult {
-        program: Program {
-            items: parser.items,
-        },
+        program,
         errors: parser.errors,
     }
 }
@@ -586,6 +617,36 @@ impl<'a> Parser<'a> {
             return self.parse_enum(start_span);
         }
 
+        // Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3), led by
+        // CONTEXTUAL identifiers (not reserved keywords — like `for`/`Box`/`Vec`,
+        // so they never collide with an existing program identifier): `prop fn`,
+        // `lemma`, `proof for`, `witness`. The match peeks (and looks one ahead for
+        // `prop fn`) without consuming, so a plain identifier named e.g. `proof`
+        // used elsewhere is unaffected. None takes a leading attribute.
+        let forge_kind: Option<&'static str> = match self.peek() {
+            TokKind::Ident(w) if w == "prop" && matches!(self.peek_nth(1), TokKind::Fn) => {
+                Some("prop")
+            }
+            TokKind::Ident(w) if w == "lemma" => Some("lemma"),
+            TokKind::Ident(w) if w == "proof" => Some("proof"),
+            TokKind::Ident(w) if w == "witness" => Some("witness"),
+            _ => None,
+        };
+        if let Some(kind) = forge_kind {
+            if attr.is_some() {
+                return Err(self.unexpected(
+                    "a forge-tier item (`prop fn`/`lemma`/`proof`/`witness`) takes no attribute",
+                ));
+            }
+            let forge = match kind {
+                "prop" => ForgeItem::PropFn(self.parse_prop_fn(start_span)?),
+                "lemma" => ForgeItem::Lemma(self.parse_lemma(start_span)?),
+                "proof" => ForgeItem::Proof(self.parse_proof_item(start_span)?),
+                _ => ForgeItem::Witness(self.parse_witness(start_span)?),
+            };
+            return Ok(Item::Forge(forge));
+        }
+
         if self.check(&TokKind::Spec) {
             // Neither `#[slag]` nor `#[boundary]` attaches to a `spec fn`
             // (surface-grammar Item; ffi-boundary.md "#[boundary] is NOT valid on
@@ -712,9 +773,25 @@ impl<'a> Parser<'a> {
     ) -> PResult<Item> {
         self.consume(&TokKind::Fn, "`fn`")?;
         let name = self.take_ident("a function name")?;
-        let params = self.parse_params()?;
+        // Refinement-type sugar (`.design/stage1-forge-tier.md` REQ-3): a refined
+        // parameter `x: T{P}` / return `-> T{P}` records its predicate here; the
+        // post-parse `desugar` pass folds them into `req`/`ens`. Only a `fn`
+        // collects refinements (it carries the v1 contract); `spec fn`/`prop fn`/
+        // `lemma` params parse without (a `{` after their param type is an error).
+        let mut refinements: Vec<Refinement> = Vec::new();
+        let params = self.parse_params_inner(Some(&mut refinements))?;
         self.consume(&TokKind::Arrow, "`->`")?;
         let ret = self.parse_type()?;
+        // A return refinement `-> T{P}` (REQ-3): the `{` here is unambiguously a
+        // refinement, not the body — the mandatory contract (`req`…) parses next,
+        // and the body `{` only follows `fx`.
+        if self.check(&TokKind::LBrace) {
+            let pred = self.parse_refinement_clause()?;
+            refinements.push(Refinement {
+                target: RefinementTarget::Result,
+                pred,
+            });
+        }
         let contract = self.parse_contract(&name)?;
         // The optional `dec <measure>` termination clause of a recursive exec `fn`
         // (`.design/basis/10-recursion-tuples.md` REQ-1, C9-A). It parses after the
@@ -725,7 +802,7 @@ impl<'a> Parser<'a> {
         // `fx diverge`) is a validator error (REQ-2), not a parse error: the
         // grammar admits it; the cage rejects it.
         let dec = if self.check(&TokKind::Dec) {
-            Some(self.parse_clause(&TokKind::Dec)?)
+            Some(self.parse_dec_clause()?)
         } else {
             None
         };
@@ -789,6 +866,7 @@ impl<'a> Parser<'a> {
             dec,
             body,
             holes,
+            refinements,
             span,
         }))
     }
@@ -808,7 +886,7 @@ impl<'a> Parser<'a> {
                 span: self.peek_span(),
             });
         }
-        let dec = self.parse_clause(&TokKind::Dec)?;
+        let dec = self.parse_dec_clause()?;
         let body = self.parse_block()?;
         let span = start_span.to(self.prev_span());
         Ok(Item::SpecFn(SpecFnItem {
@@ -930,7 +1008,290 @@ impl<'a> Parser<'a> {
         }))
     }
 
+    // ---- Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3) -------
+
+    /// Parse a `prop fn NAME(params) -> TYPE [dec <measure>] { body }` proposition
+    /// definition (REQ-3). Mirrors `parse_spec_fn` (it is a forge-tier definition,
+    /// not an exec fn): the body is parsed WITHOUT entering an exec-fn-body scope,
+    /// so a `?N` body hole in a prop fn body is rejected (`HoleOutsideFnBody`), the
+    /// same as a `spec fn` body. The optional `dec` accepts the same measure surface
+    /// the other `dec` positions do (`dec <expr>` / `dec lex(…)` / `dec wf <rel>`).
+    fn parse_prop_fn(&mut self, start_span: Span) -> PResult<PropFnItem> {
+        self.expect_contextual("prop")?;
+        self.consume(&TokKind::Fn, "`fn`")?;
+        let name = self.take_ident("a prop fn name")?;
+        let params = self.parse_params()?;
+        self.consume(&TokKind::Arrow, "`->`")?;
+        let ret = self.parse_type()?;
+        let dec = if self.check(&TokKind::Dec) {
+            Some(self.parse_dec_clause()?)
+        } else {
+            None
+        };
+        let body = self.parse_block()?;
+        let span = start_span.to(self.prev_span());
+        Ok(PropFnItem {
+            name,
+            params,
+            ret,
+            dec,
+            body,
+            span,
+        })
+    }
+
+    /// Parse a `lemma NAME(params) req CLAUSE ens CLAUSE+ proof { … }` item
+    /// (REQ-3). The `req`/`ens` cardinality mirrors a `fn` contract (exactly one
+    /// `req`, one-or-more `ens`) but a lemma carries no `fx` row — it is pure proof.
+    /// The `proof { … }` block is captured verbatim (its tactic content is the
+    /// frozen battery, increment 2c) with its `?pN` proof holes extracted.
+    fn parse_lemma(&mut self, start_span: Span) -> PResult<LemmaItem> {
+        self.expect_contextual("lemma")?;
+        let name = self.take_ident("a lemma name")?;
+        let params = self.parse_params()?;
+        // `req` — exactly one, first (the lemma's hypothesis).
+        if !self.check(&TokKind::Req) {
+            return Err(SyntaxError::MissingClause {
+                item: name.clone(),
+                clause: "req".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let req = self.parse_clause(&TokKind::Req)?;
+        // `ens` — one or more (the lemma's conclusions).
+        if !self.check(&TokKind::Ens) {
+            return Err(SyntaxError::MissingClause {
+                item: name.clone(),
+                clause: "ens".to_string(),
+                span: self.peek_span(),
+            });
+        }
+        let mut ens = Vec::new();
+        while self.check(&TokKind::Ens) {
+            ens.push(self.parse_clause(&TokKind::Ens)?);
+        }
+        // `proof { … }` — mandatory.
+        if !self.eat_contextual("proof") {
+            return Err(self.unexpected("`proof { … }` to discharge the lemma"));
+        }
+        let proof = self.scan_proof_block()?;
+        let span = start_span.to(self.prev_span());
+        Ok(LemmaItem {
+            name,
+            params,
+            req,
+            ens,
+            proof,
+            span,
+        })
+    }
+
+    /// Parse a `proof for f { CLAUSE by { … } … }` item (REQ-3): a proof discharging
+    /// specific contract clauses (`ens#k`) of an existing function `f`. Each
+    /// obligation is a [`ClauseSelector`] + a `by { … }` proof block (with `?pN`
+    /// proof holes). The clauses are resolved against `f` by the proof view
+    /// (increment 2e); here they are parsed + addressed (`f.proof.ens#k`).
+    fn parse_proof_item(&mut self, start_span: Span) -> PResult<ProofItem> {
+        self.expect_contextual("proof")?;
+        self.expect_contextual("for")?;
+        let target = self.take_ident("the target function name of `proof for`")?;
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut obligations = Vec::new();
+        while !self.check(&TokKind::RBrace) && !self.at_eof() {
+            let ob_start = self.peek_span();
+            let clause = self.parse_clause_selector()?;
+            if !self.eat_contextual("by") {
+                return Err(self.unexpected("`by { … }` to discharge the clause"));
+            }
+            let proof = self.scan_proof_block()?;
+            let ob_span = ob_start.to(self.prev_span());
+            obligations.push(ProofObligation {
+                clause,
+                proof,
+                span: ob_span,
+            });
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        let span = start_span.to(self.prev_span());
+        Ok(ProofItem {
+            target,
+            obligations,
+            span,
+        })
+    }
+
+    /// Parse a clause selector `ens#k` / `req` / `inv#k` (REQ-3): the clause family
+    /// keyword (a reserved keyword, accepted by kind) plus an optional `#k` ordinal.
+    fn parse_clause_selector(&mut self) -> PResult<ClauseSelector> {
+        let keyword = if self.eat(&TokKind::Ens) {
+            "ens".to_string()
+        } else if self.eat(&TokKind::Req) {
+            "req".to_string()
+        } else if self.eat(&TokKind::Inv) {
+            "inv".to_string()
+        } else {
+            return Err(self.unexpected("a clause family (`ens`/`req`/`inv`)"));
+        };
+        let index = if self.eat(&TokKind::Hash) {
+            match self.peek().clone() {
+                TokKind::Int { value, .. } => {
+                    self.bump();
+                    Some(value as u32)
+                }
+                _ => return Err(self.unexpected("a clause ordinal `#k` after `#`")),
+            }
+        } else {
+            None
+        };
+        Ok(ClauseSelector { keyword, index })
+    }
+
+    /// Parse a `witness { inhabit (…); falsify N; }` covenant witness block
+    /// (REQ-3/REQ-4). Surface only: `inhabit` records an author-stated witness tuple
+    /// of expressions, `falsify` records the generator budget. The covenant LOGIC
+    /// (type-check + execute against `req`, run the generator) is increment 2b.
+    fn parse_witness(&mut self, start_span: Span) -> PResult<WitnessBlock> {
+        self.expect_contextual("witness")?;
+        self.consume(&TokKind::LBrace, "`{`")?;
+        let mut inhabits = Vec::new();
+        let mut falsifies = Vec::new();
+        while !self.check(&TokKind::RBrace) && !self.at_eof() {
+            let dir_start = self.peek_span();
+            if self.eat_contextual("inhabit") {
+                self.consume(&TokKind::LParen, "`(`")?;
+                let mut args = Vec::new();
+                if !self.check(&TokKind::RParen) {
+                    loop {
+                        args.push(self.parse_expr()?);
+                        if !self.eat(&TokKind::Comma) {
+                            break;
+                        }
+                        if self.check(&TokKind::RParen) {
+                            break;
+                        }
+                    }
+                }
+                self.consume(&TokKind::RParen, "`)`")?;
+                self.consume(&TokKind::Semi, "`;` to end the `inhabit` directive")?;
+                let span = dir_start.to(self.prev_span());
+                inhabits.push(Inhabit { args, span });
+            } else if self.eat_contextual("falsify") {
+                let budget = match self.peek().clone() {
+                    TokKind::Int { value, .. } => {
+                        self.bump();
+                        value as u64
+                    }
+                    _ => return Err(self.unexpected("a `falsify` budget integer")),
+                };
+                self.consume(&TokKind::Semi, "`;` to end the `falsify` directive")?;
+                let span = dir_start.to(self.prev_span());
+                falsifies.push(Falsify { budget, span });
+            } else {
+                return Err(self.unexpected("`inhabit (…);` or `falsify N;` in a `witness` block"));
+            }
+        }
+        self.consume(&TokKind::RBrace, "`}`")?;
+        let span = start_span.to(self.prev_span());
+        Ok(WitnessBlock {
+            inhabits,
+            falsifies,
+            span,
+        })
+    }
+
+    /// Scan a forge-tier proof block `{ … }` (REQ-3) WITHOUT structurally parsing
+    /// its tactic content (the frozen tactic battery is increment 2c, REQ-5).
+    /// Captures the verbatim inner source `text` plus the open proof holes (`?pN`,
+    /// [`HoleContext::Proof`]) in document order, tracking brace depth so nested
+    /// `{ … }` (e.g. a `by { … }` or `calc` sub-block) are spanned correctly. A body
+    /// hole `?N` inside a proof block is a structured `SyntaxError::BodyHoleInProofBlock`
+    /// (a proof block admits only proof holes). An unterminated block is a structured
+    /// error, never a panic (REQ-4 Result discipline).
+    fn scan_proof_block(&mut self) -> PResult<ProofBlock> {
+        let open = self.consume(&TokKind::LBrace, "`{` to open the proof block")?;
+        let inner_start = open.span.end();
+        let mut depth = 1usize;
+        let mut holes = Vec::new();
+        loop {
+            if self.at_eof() {
+                return Err(self.unexpected("`}` to close the proof block"));
+            }
+            // Clone the token kind so the borrow is released before `bump` (proof
+            // blocks are small; the clone is not on a hot path).
+            match self.peek().clone() {
+                TokKind::LBrace => {
+                    self.bump();
+                    depth += 1;
+                }
+                TokKind::RBrace => {
+                    let close = self.bump();
+                    depth -= 1;
+                    if depth == 0 {
+                        let inner = Span::new(inner_start, close.span.start - inner_start);
+                        let text = self.span_text(inner);
+                        let span = Span::new(open.span.start, close.span.end() - open.span.start);
+                        return Ok(ProofBlock { text, holes, span });
+                    }
+                }
+                TokKind::Hole { number, proof } => {
+                    let tok = self.bump();
+                    if proof {
+                        holes.push(Hole {
+                            number,
+                            span: tok.span,
+                            context: HoleContext::Proof,
+                        });
+                    } else {
+                        return Err(SyntaxError::BodyHoleInProofBlock {
+                            number,
+                            span: tok.span,
+                        });
+                    }
+                }
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+    }
+
+    /// Consume a contextual-keyword identifier (a non-reserved word matched by
+    /// name, like `for`/`Box`/`Vec`), returning whether it was present.
+    fn eat_contextual(&mut self, word: &str) -> bool {
+        if matches!(self.peek(), TokKind::Ident(w) if w == word) {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Consume a required contextual-keyword identifier or produce a `SyntaxError`.
+    fn expect_contextual(&mut self, word: &str) -> PResult<()> {
+        if self.eat_contextual(word) {
+            Ok(())
+        } else {
+            Err(self.unexpected(&format!("`{word}`")))
+        }
+    }
+
+    /// Parse a `(name: Type, …)` parameter list (no refinements). Used by `spec
+    /// fn`/`prop fn`/`lemma`, where a refinement `{P}` after a param type is not
+    /// accepted (a stray `{` there surfaces as the normal `,`/`)` parse error).
     fn parse_params(&mut self) -> PResult<Vec<Param>> {
+        self.parse_params_inner(None)
+    }
+
+    /// Parse a `(name: Type[{P}], …)` parameter list. When `refinements` is
+    /// `Some`, a refinement-type sugar `{P}` after a parameter's type
+    /// (`.design/stage1-forge-tier.md` REQ-3) is parsed and recorded against that
+    /// parameter (folded into `req` by the post-parse desugar pass); when `None`,
+    /// no refinement is consumed (a `{` then is a normal unexpected token). Only a
+    /// `fn` passes `Some` (it carries the v1 contract the predicate folds into).
+    fn parse_params_inner(
+        &mut self,
+        mut refinements: Option<&mut Vec<Refinement>>,
+    ) -> PResult<Vec<Param>> {
         self.consume(&TokKind::LParen, "`(`")?;
         let mut params = Vec::new();
         if !self.check(&TokKind::RParen) {
@@ -938,6 +1299,16 @@ impl<'a> Parser<'a> {
                 let name = self.take_ident("a parameter name")?;
                 self.consume(&TokKind::Colon, "`:`")?;
                 let ty = self.parse_type()?;
+                // A refinement `x: T{P}` (only when the caller collects them).
+                if let Some(refs) = refinements.as_deref_mut() {
+                    if self.check(&TokKind::LBrace) {
+                        let pred = self.parse_refinement_clause()?;
+                        refs.push(Refinement {
+                            target: RefinementTarget::Param(name.clone()),
+                            pred,
+                        });
+                    }
+                }
                 params.push(Param { name, ty });
                 if !self.eat(&TokKind::Comma) {
                     break;
@@ -949,6 +1320,23 @@ impl<'a> Parser<'a> {
         }
         self.consume(&TokKind::RParen, "`)`")?;
         Ok(params)
+    }
+
+    /// Parse a refinement predicate `{ P }` (`.design/stage1-forge-tier.md` REQ-3):
+    /// the brace-delimited contract-position expression of an `x: T{P}` / `-> T{P}`
+    /// refinement. Captured as a [`Clause`] (parsed expr + verbatim text + span) so
+    /// the desugar pass can fold it into `req`/`ens` with faithful text. The
+    /// predicate is a no-struct-literal head (like a clause), so a trailing
+    /// `Name { … }` is not mis-read as a struct literal.
+    fn parse_refinement_clause(&mut self) -> PResult<Clause> {
+        self.consume(&TokKind::LBrace, "`{` to open a refinement predicate")?;
+        let start = self.peek_span();
+        let expr = self.with_no_struct_literal(Self::parse_expr)?;
+        let end = self.prev_span();
+        self.consume(&TokKind::RBrace, "`}` to close the refinement predicate")?;
+        let span = start.to(end);
+        let text = self.span_text(span);
+        Ok(Clause { expr, text, span })
     }
 
     /// Parse the mandatory contract `req` then `ens`+ then `fx`, in that exact
@@ -1024,6 +1412,68 @@ impl<'a> Parser<'a> {
         let span = start.to(end);
         let text = self.span_text(span);
         Ok(Clause { expr, text, span })
+    }
+
+    /// Parse a `dec <measure>` clause, supporting the forge-tier measure forms
+    /// (`.design/stage1-forge-tier.md` REQ-3, Q-DECWF). Consumes the `dec` keyword,
+    /// then:
+    /// - `dec wf <rel>` — a WELL-FOUNDED relation (ASCII spelling per Q-DECWF, NOT
+    ///   the Unicode `⟨⟩` — the lexer stays ASCII-only). Since `wf <rel>` is two
+    ///   tokens (not one expression), it is normalized to the registry-free call
+    ///   `wf(<rel>)` so a downstream consumer keys on the `wf` callee. A bare `wf`
+    ///   NOT followed by an expression (a `{` body, a clause keyword, EOF) is an
+    ///   ordinary measure named `wf` (the v1 reading), handled by the plain path.
+    /// - `dec lex(<e>, …)` — a LEXICOGRAPHIC tuple. `lex` is a contextual ident, so
+    ///   `lex(...)` is ALREADY an ordinary `Expr::Call` (registry-free, like the
+    ///   `forall_in`/`sorted` combinators) — no special parse; the plain path
+    ///   captures it and a downstream consumer keys on the `lex` callee.
+    /// - `dec <expr>` — the v1 plain measure (`dec n`, `dec hi - i`), unchanged.
+    fn parse_dec_clause(&mut self) -> PResult<Clause> {
+        self.consume(&TokKind::Dec, "`dec`")?;
+        let start = self.peek_span();
+        // `dec wf <rel>`: the `wf` marker followed by a relation expression.
+        if matches!(self.peek(), TokKind::Ident(w) if w == "wf") && self.nth_starts_expr(1) {
+            self.bump(); // consume `wf`
+            let rel = self.with_no_struct_literal(Self::parse_expr)?;
+            let end = self.prev_span();
+            let span = start.to(end);
+            let text = self.span_text(span);
+            // Normalize to the registry-free `wf(<rel>)` call (REQ-3) so the v1
+            // clause shape downstream is an ordinary `Expr::Call`.
+            let expr = Expr::Call {
+                callee: Box::new(Expr::Path(vec!["wf".to_string()])),
+                args: vec![rel],
+            };
+            return Ok(Clause { expr, text, span });
+        }
+        // `dec <expr>` (incl. `dec lex(...)` as an ordinary call) — the same
+        // no-struct-literal head as `parse_clause` (a trailing `{` is the body).
+        let expr = self.with_no_struct_literal(Self::parse_expr)?;
+        let end = self.prev_span();
+        let span = start.to(end);
+        let text = self.span_text(span);
+        Ok(Clause { expr, text, span })
+    }
+
+    /// True if the token `n` ahead of the cursor can begin an expression — used to
+    /// distinguish `dec wf <rel>` (the well-founded form) from a bare measure named
+    /// `wf` (`dec wf` followed by a `{` body / clause keyword / end). A negative
+    /// check: the listed tokens never start an expression in `dec` position.
+    fn nth_starts_expr(&self, n: usize) -> bool {
+        !matches!(
+            self.peek_nth(n),
+            TokKind::LBrace
+                | TokKind::RBrace
+                | TokKind::RParen
+                | TokKind::Semi
+                | TokKind::Comma
+                | TokKind::Eof
+                | TokKind::Req
+                | TokKind::Ens
+                | TokKind::Fx
+                | TokKind::Inv
+                | TokKind::Dec
+        )
     }
 
     fn parse_effect_row(&mut self) -> PResult<EffectRow> {
@@ -1126,7 +1576,9 @@ impl<'a> Parser<'a> {
                 // clause / signature position is unreachable here; those are parsed
                 // by `parse_primary`/`parse_clause`, where `TokKind::Hole` is not a
                 // primary, so it surfaces as a normal "unexpected token" parse error.
-                TokKind::Hole(_) => self.parse_hole()?,
+                // A proof hole `?pN` in fn-body position is rejected by `parse_hole`
+                // (ProofHoleOutsideProofBlock — proof holes live only in proof blocks).
+                TokKind::Hole { .. } => self.parse_hole()?,
                 // `if let P = e { T } else { E }` — the C10 ergonomic (REQ-5),
                 // distinguished by a `let` after `if`. It desugars to the SHIPPED
                 // `Expr::Match { e, [P => T, _ => E] }`. In tail position (an `else`
@@ -1527,7 +1979,7 @@ impl<'a> Parser<'a> {
                 span: self.peek_span(),
             });
         }
-        let dec = self.parse_clause(&TokKind::Dec)?;
+        let dec = self.parse_dec_clause()?;
         self.loop_depth += 1;
         let body_result = self.parse_block();
         self.loop_depth -= 1;
@@ -1584,8 +2036,8 @@ impl<'a> Parser<'a> {
     /// `Ok(())` — `parse_block` pushes nothing into `stmts`.
     fn parse_hole(&mut self) -> PResult<()> {
         let span = self.peek_span();
-        let number = match self.peek() {
-            TokKind::Hole(n) => *n,
+        let (number, proof) = match self.peek() {
+            TokKind::Hole { number, proof } => (*number, *proof),
             // Unreachable: the caller dispatches here only on a `TokKind::Hole`.
             // A structured error (no panic, R-CODE-2) keeps the parser total.
             other => {
@@ -1596,11 +2048,23 @@ impl<'a> Parser<'a> {
                 });
             }
         };
-        self.bump(); // consume the `?N` token
+        // Consume the `?N`/`?pN` token. A proof hole `?pN` is never valid in
+        // fn-body statement position: proof holes live only inside a proof block
+        // (`.design/stage1-forge-tier.md` REQ-3, AC-7). The proof-block scanner
+        // (`scan_proof_block`) collects them there; reaching one here means it sits
+        // outside any proof block.
+        self.bump();
+        if proof {
+            return Err(SyntaxError::ProofHoleOutsideProofBlock { number, span });
+        }
         if self.fn_body_depth == 0 {
             return Err(SyntaxError::HoleOutsideFnBody { number, span });
         }
-        self.pending_holes.push(Hole { number, span });
+        self.pending_holes.push(Hole {
+            number,
+            span,
+            context: HoleContext::Body,
+        });
         Ok(())
     }
 
@@ -1687,7 +2151,7 @@ impl<'a> Parser<'a> {
                 span: self.peek_span(),
             });
         }
-        let dec = self.parse_clause(&TokKind::Dec)?;
+        let dec = self.parse_dec_clause()?;
         if self.check(&TokKind::Dec) {
             // A second `dec` violates the exactly-one cardinality.
             return Err(SyntaxError::ClauseOrder {
@@ -2654,7 +3118,13 @@ fn describe(kind: &TokKind) -> String {
         TokKind::Int { value, .. } => format!("integer `{value}`"),
         TokKind::Bool(b) => format!("`{b}`"),
         TokKind::Str(s) => format!("string {s:?}"),
-        TokKind::Hole(n) => format!("hole `?{n}`"),
+        TokKind::Hole { number, proof } => {
+            if *proof {
+                format!("proof hole `?p{number}`")
+            } else {
+                format!("hole `?{number}`")
+            }
+        }
         TokKind::Eof => "end of input".to_string(),
         other => format!("`{}`", token_text(other)),
     }
@@ -2686,6 +3156,7 @@ fn token_text(kind: &TokKind) -> &'static str {
         TokKind::Enum => "enum",
         TokKind::Is => "is",
         TokKind::HashBracket => "#[",
+        TokKind::Hash => "#",
         TokKind::Arrow => "->",
         TokKind::FatArrow => "=>",
         TokKind::EqEq => "==",
@@ -2724,10 +3195,10 @@ fn token_text(kind: &TokKind) -> &'static str {
         | TokKind::Int { .. }
         | TokKind::Bool(_)
         | TokKind::Str(_)
-        // A `?N` hole has no fixed surface text (the number varies); `describe`
-        // formats it dynamically (#193). It is listed here only to keep this match
-        // exhaustive without a `_` wildcard (R-APG-1).
-        | TokKind::Hole(_)
+        // A `?N`/`?pN` hole has no fixed surface text (the number varies);
+        // `describe` formats it dynamically (#193 / forge-tier REQ-3). It is listed
+        // here only to keep this match exhaustive without a `_` wildcard (R-APG-1).
+        | TokKind::Hole { .. }
         | TokKind::Eof => "<token>",
     }
 }

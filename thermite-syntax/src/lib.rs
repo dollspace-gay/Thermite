@@ -40,14 +40,17 @@
 
 pub mod address;
 pub mod ast;
+pub mod desugar;
 pub mod lexer;
 pub mod parser;
 
 pub use address::{addresses_of, resolve, AddrKind, AddressEntry, AddressError};
 pub use ast::{
-    BinOp, Block, BoundaryAttr, Clause, Contract, Effect, EffectRow, EnumItem, Expr, FieldDef,
-    FnItem, Hole, IndexArg, Item, LoopKind, LoopNode, MatchArm, Param, Pattern, PrimType, Program,
-    SlagAttr, SlicePat, SpecFnItem, Stmt, StructItem, Type, UnaryOp, VariantDef, VariantShape,
+    BinOp, Block, BoundaryAttr, Clause, ClauseSelector, Contract, Effect, EffectRow, EnumItem,
+    Expr, Falsify, FieldDef, FnItem, ForgeItem, Hole, HoleContext, IndexArg, Inhabit, Item,
+    LemmaItem, LoopKind, LoopNode, MatchArm, Param, Pattern, PrimType, Program, ProofBlock,
+    ProofItem, ProofObligation, PropFnItem, Refinement, RefinementTarget, SlagAttr, SlicePat,
+    SpecFnItem, Stmt, StructItem, Type, UnaryOp, VariantDef, VariantShape, WitnessBlock,
 };
 pub use lexer::{tokenize, Span, TokKind, Token};
 pub use parser::{parse, ParseResult, SyntaxError};

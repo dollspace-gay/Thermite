@@ -146,6 +146,23 @@ pub fn lower_l2(program: &Program) -> Result<String, LowerError> {
                     span: e.span,
                 })
             }
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 L2 Kani consumer
+            // yet (increments 2b-3). Mirrors the inert ADT-decl arms: a structured
+            // `Unsupported` (never a panic) — a forge item never degrades to L2.
+            Item::Forge(forge) => {
+                let span = match forge {
+                    thermite_syntax::ast::ForgeItem::PropFn(p) => p.span,
+                    thermite_syntax::ast::ForgeItem::Lemma(l) => l.span,
+                    thermite_syntax::ast::ForgeItem::Proof(p) => p.span,
+                    thermite_syntax::ast::ForgeItem::Witness(w) => w.span,
+                };
+                return Err(LowerError::Unsupported {
+                    what: "forge-tier item L2 Kani harness (parse-only in increment 2a; \
+                           the forge L2/L3 consumers land in increments 2b-3)"
+                        .to_string(),
+                    span,
+                });
+            }
         }
     }
 
@@ -405,6 +422,10 @@ pub fn bound_string(program: &Program) -> String {
             // item has no loop body to unwind-bound → contributes nothing
             // (neutral value `None`). Dead-in-1a (gated at the validator).
             Item::Struct(_) | Item::Enum(_) => None,
+            // Forge-tier item (stage1-forge-tier.md REQ-3): no v1 L2 consumer yet
+            // (increments 2b-3); no loop body to unwind-bound → contributes nothing
+            // (neutral `None`), mirroring the inert ADT-decl arm.
+            Item::Forge(_) => None,
         })
         .max()
         .unwrap_or(SLICE_BOUND + 1);

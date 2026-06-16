@@ -261,12 +261,14 @@ fn check_parse_facts(facts_file: &str) {
                 assert_eq!(Some(true), fact.has_dec, "{} has_dec", fact.name);
             }
             // The existing `sum`/`binary_search` fixtures contain only `fn`/
-            // `spec fn`; the basis ADT item kinds (`.design/basis/01-adts.md`)
-            // never appear here. Additive arm so this exhaustive `match`
-            // compiles; ADT items are asserted by `tests/adt_parse.rs`.
-            Item::Struct(_) | Item::Enum(_) => {
+            // `spec fn`; the basis ADT item kinds (`.design/basis/01-adts.md`) and
+            // the Stage-1 forge-tier items (`.design/stage1-forge-tier.md` REQ-3)
+            // never appear here. Additive arm so this exhaustive `match` compiles;
+            // ADT items are asserted by `tests/adt_parse.rs`, forge items by
+            // `tests/forge_items.rs`.
+            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
                 panic!(
-                    "{}: unexpected ADT item in the non-ADT corpus fixture",
+                    "{}: unexpected non-(spec)fn item in the corpus fixture",
                     fact.name
                 )
             }
@@ -362,9 +364,12 @@ fn recover_per_item() {
             }
             Item::SpecFn(_) => panic!("`ok` should be a fn"),
             // The recovery fixture's recovered item is a `fn`; ADT item kinds
-            // (`.design/basis/01-adts.md`) do not appear. Additive arm so this
-            // exhaustive `match` compiles.
-            Item::Struct(_) | Item::Enum(_) => panic!("`ok` should be a fn, not an ADT item"),
+            // (`.design/basis/01-adts.md`) and forge-tier items
+            // (`.design/stage1-forge-tier.md` REQ-3) do not appear. Additive arm so
+            // this exhaustive `match` compiles.
+            Item::Struct(_) | Item::Enum(_) | Item::Forge(_) => {
+                panic!("`ok` should be a fn, not an ADT/forge item")
+            }
         }
     }
 }

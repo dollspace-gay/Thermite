@@ -8,6 +8,7 @@ governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
   - tooling/req-registry.py
+  - tooling/reqs
   - tooling/req-status.py (legacy bridge only)
   - tooling/spec-routes.toml entries for this registry
   - Makefile req-registry targets
@@ -36,23 +37,10 @@ or CI integrations can be thin adapters over the same file. Source comments
 should keep stable invariants and non-obvious mechanisms; volatile status,
 evidence, blockers, and migration state belong in registry data and generated
 views.
-The migration is now proceeding by reviewed owner clusters. The first slice
-replaced the secondary `thermite-tv/src/lib.rs` copy of `REQ-5 (forge plug-in
-point)` with a generated reference to the forge-owned stable registry entry. The
-second slice turns the whole contract-TV crate-level summary in
-`thermite-tv/src/lib.rs` into generated references to the stable owners in
-`ref_encode.rs`, `obligation.rs`, `gen.rs`, `tests/teeth.rs`, and
-`forge/src/contract_tv.rs`. The next slice does the same for the adjacent
-exec-TV crate-level summary, rendering links to the stable owners in
-`exec_encode.rs`, `obligation.rs`, `gen.rs`, and `tests/exec_teeth.rs`. The
-follow-on forge exec-TV slice splits the exact `REQ-5 (forge plug-in point)`
-label collision by giving `forge/src/exec_tv.rs` its own stable owner ID and
-generated source-comment region. The next scaffold slice starts the crate-root
-turnover by replacing `forge/src/main.rs`'s workspace scaffold rows with
-path-qualified generated references. After that pilot, the turnover widened to
-bulk owner clusters: the remaining scaffold crate roots now migrate together,
-and `thermite-spec/src/lib.rs`'s combinator/validator summary copy links to
-stable owners instead of repeating local status prose.
+The source-comment turnover is complete for the hand-maintained REQ status rows:
+source files now carry generated regions or links back to canonical owner rows,
+and `tooling/req-status.py` remains only as a compatibility tripwire that should
+stay quiet when no legacy rows are reintroduced.
 
 ## Design Decisions
 
@@ -70,7 +58,8 @@ stable owners instead of repeating local status prose.
    `file`, `doc`, and `test` targets must resolve as paths; `symbol` targets
    must resolve in repo text; `issue` targets use tracker-neutral references
    (`github:owner/repo#N`, `crosslink:144`, `req:REQ-ID`, or a URI); `command`
-   targets are recorded but not executed by this gate.
+   targets must parse, resolve their executable, and resolve repo-path
+   arguments. Commands are not executed by this gate.
 5. **Status policy is registry-declared.** The checker does not hard-code
    Thermite's status vocabulary. Top-level `[[status]]` records declare accepted
    status names and their generic validation rules: required evidence kind sets,
@@ -82,12 +71,11 @@ stable owners instead of repeating local status prose.
    hand-authored. Source-comment regions use a declared `comment_prefix`, such
    as `//! ` for Rust module docs, so generated content stays syntactically valid
    in its target file.
-7. **Legacy comment rows are bridged, not bulk-converted blindly.** The existing
-   source-comment rows need reviewed stable-ID mappings. `[[legacy_mapping]]`
-   records bind a specific old `(path, label)` pair to a canonical ID and the
-   replacement generated view. Until migration coverage is high enough to make
-   stronger enforcement useful, `req-status.py` remains as the contradiction
-   tripwire.
+7. **Legacy comment rows are bridged, not bulk-converted blindly.** Reviewed
+   `[[legacy_mapping]]` records bind each old `(path, label)` pair to a
+   canonical ID and replacement generated view. With the current turnover done,
+   those mappings serve as audit history and `req-status.py` remains as the
+   contradiction tripwire for accidental reintroduction.
 
 ## Registry Schema v1
 
@@ -156,7 +144,20 @@ Evidence fields:
 
 Tracker references are structurally checked offline. A live adapter may later
 resolve open/closed state for a specific tracker, but no tracker credentials are
-required for the default gate to pass.
+required for the default gate to pass. The first live adapter is optional:
+`tooling/reqs check --live-issues` asks `gh` to resolve GitHub issue references
+and fails if any blocker resolves closed.
+
+## CLI
+
+- `tooling/reqs check`: validate the registry and fail if generated regions are
+  stale.
+- `tooling/reqs render`: rewrite generated views and regions from the registry.
+- `tooling/reqs query`: print the normalized registry inventory; add `--json`
+  for machine-readable output.
+
+The historical flags remain valid through `python3 tooling/req-registry.py` for
+scripts that have not switched to the facade.
 
 ## Requirements
 
@@ -168,15 +169,17 @@ required for the default gate to pass.
   by the checker.
 - **REQ-REG-3 (typed evidence validation):** evidence references are mechanically
   checked at the level this gate can honestly validate: path existence, symbol
-  occurrence, tracker-neutral ref shape, and `req:` blocker resolution.
+  occurrence, command parseability and executable/path resolution,
+  tracker-neutral ref shape, and `req:` blocker resolution.
 - **REQ-REG-4 (generated status regions):** generated markdown views are rendered
   deterministically from the registry into marked regions, and CI fails when
   checked-in output is stale.
 - **REQ-REG-5 (legacy source-comment bridge):** `tooling/req-status.py` remains
-  active until the repeated source-comment status rows are mapped to stable IDs.
+  active as a compatibility tripwire after the repeated source-comment status
+  rows have been mapped to stable IDs.
 - **REQ-REG-6 (generated-region migration):** hand-maintained source status
-  copies are replaced doc-by-doc with generated source-comment regions or links
-  after each stable-ID mapping is reviewed.
+  copies have been replaced with generated source-comment regions or links after
+  each stable-ID mapping was reviewed.
 
 ## Acceptance Criteria
 
@@ -189,12 +192,16 @@ required for the default gate to pass.
   blocker; `req:REQ-ID` blockers must resolve to a known registry ID.
 - AC-6: `--check` fails when a generated region differs from renderer output.
 - AC-7: `--write` rewrites the generated view deterministically.
-- AC-8: `python3 tooling/req-registry.py --check` is wired into Makefile and CI.
+- AC-8: `tooling/reqs check` is wired into Makefile and CI.
 - AC-9: `reference_list` views can render into Rust doc-comment regions with a
   declared `comment_prefix`.
 - AC-10: a legacy mapping fails if its canonical ID or replacement view does not
   resolve; once the old label is removed, the replacement generated region must
   be present in the same file.
+- AC-11: command evidence fails if its shell syntax, executable, or repo-path
+  arguments do not resolve.
+- AC-12: `tooling/reqs check --live-issues` fails when a GitHub blocker resolves
+  closed through the optional `gh` adapter.
 
 ## Migration Plan
 
@@ -204,29 +211,18 @@ required for the default gate to pass.
 4. Add canonical registry records plus `[[legacy_mapping]]` records for migrated
    requirements.
 5. Replace repeated source-comment status copies with generated regions or
-   links. The first pilot was `thermite-tv/src/lib.rs`'s secondary
-   `REQ-5 (forge plug-in point)` row. The next turnover extends that same
-   generated region to the full contract-TV crate summary rows, so the crate root
-   links to owner entries instead of carrying copied status/evidence prose. The
-   following turnover adds a sibling generated region for the exec-TV crate
-   summary rows. The next forge exec-TV turnover removes the remaining exact
-   `REQ-5 (forge plug-in point)` collision by assigning the exec integration
-   point a distinct stable owner ID. The scaffold turnover then starts at
-   `forge/src/main.rs`, where globally named workspace rows become
-   path-qualified stable IDs before the sibling library crate roots are migrated.
-   Subsequent turnover should batch by coherent duplicate families rather than
-   one row at a time: the syntax/spec/lower scaffold roots, then component
-   summary copies such as `thermite-spec/src/lib.rs`'s combinator/validator
-   table, then remaining cross-layer exact-label collisions.
-6. Tighten the bridge: fail on unmapped legacy rows once migration coverage is
-   high enough to make that signal useful.
+   links. This is complete for the legacy rows covered by the registry turnover.
+6. Keep the bridge tight: `req-status.py` should stay green and any reintroduced
+   hand-maintained source status row should be treated as a regression to map or
+   remove.
 
 ## Known Limits
 
 This registry does not prove semantic adequacy. A symbol can exist without being
-the right symbol; a command can be recorded without being executed by this gate;
-a tracker ref can be parseable without being open. Those checks require later
-integration with Rust item indexing, CI job metadata, or tracker adapters.
+the right symbol; a command can resolve without being executed by this gate; a
+tracker ref can be parseable without being live-resolved unless
+`--live-issues` is explicitly enabled. Stronger checks require later integration
+with Rust item indexing, CI job metadata, or additional tracker adapters.
 Legacy mappings are likewise structural: they prove that a reviewed old label
 points at a stable ID and that a replacement region exists, not that the human
 ID assignment was semantically perfect. Schema v1 deliberately keeps those as

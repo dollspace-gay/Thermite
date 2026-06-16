@@ -5283,7 +5283,7 @@ title = "Typed evidence validation"
 owner = "tooling/req-registry.py"
 status = "shipped"
 scope = "tooling"
-summary = "Evidence entries carry an explicit kind and target; path, symbol, issue, and blocker references are validated mechanically."
+summary = "Evidence entries carry an explicit kind and target; path, symbol, command, issue, and blocker references are validated mechanically."
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -5300,6 +5300,16 @@ note = "path evidence must resolve"
 kind = "test"
 target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_blocked_requires_issue_blocker"
 note = "future status blockers are typed"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_command_evidence_rejects_unresolved_executable"
+note = "command evidence must parse and resolve its executable"
+
+[[requirement.evidence]]
+kind = "test"
+target = "tooling/tests/test_req_registry.py::ReqRegistryOracleTest.test_live_issue_adapter_rejects_closed_github_blocker"
+note = "optional live issue adapter catches closed blockers"
 
 [[requirement]]
 id = "REQ-REG-4"
@@ -5322,19 +5332,17 @@ note = "stale generated output is a failing condition"
 
 [[requirement.evidence]]
 kind = "command"
-target = "python3 tooling/req-registry.py --check"
+target = "tooling/reqs check"
 note = "CI-facing generated-view check"
 
 [[requirement]]
 id = "REQ-REG-5"
 title = "Legacy source-comment bridge"
 owner = "tooling/req-status.py"
-status = "partial"
+status = "shipped"
 scope = "tooling"
-summary = "The existing source-comment lint remains as a bridge while repeated `//!` REQ rows are mapped to stable registry IDs."
-remaining_scope = "Migrate the remaining legacy source-comment rows into stable registry IDs, then replace hand-maintained tables with generated regions or links."
+summary = "The existing source-comment lint remains as a compatibility bridge and now verifies that no hand-maintained legacy source REQ status rows remain."
 contributors = ["tooling/req-registry.py"]
-blockers = ["github:dollspace-gay/Thermite#17"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
@@ -5351,11 +5359,9 @@ note = "legacy row lint stays green during migration"
 id = "REQ-REG-6"
 title = "Generated-region migration"
 owner = "tooling/req-registry.py"
-status = "partial"
+status = "shipped"
 scope = "tooling"
-summary = "Source comments should eventually carry stable invariants only; volatile status tables should be generated or linked from canonical status views."
-remaining_scope = "Migrate source comments doc-by-doc after each stable-ID mapping is reviewed."
-blockers = ["github:dollspace-gay/Thermite#17"]
+summary = "Hand-maintained source-comment status tables have been replaced by generated regions or links declared from the canonical registry."
 generated_to = ["status"]
 
 [[requirement.evidence]]

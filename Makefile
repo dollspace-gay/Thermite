@@ -31,7 +31,7 @@ gauntlet:
 	cargo clippy --workspace --all-targets -- -D warnings
 	cargo fmt --all --check
 	python3 tooling/req-status.py
-	python3 tooling/req-registry.py --check
+	tooling/reqs check
 
 check:
 	cargo build --workspace
@@ -74,7 +74,7 @@ req-status-test:
 # Canonical REQ registry + generated status views. `--check` validates the
 # machine-readable registry and fails if checked-in generated views are stale.
 req-registry:
-	@python3 tooling/req-registry.py --check
+	@tooling/reqs check
 
 req-registry-test:
 	@python3 -m unittest discover -s tooling/tests -v

@@ -40,7 +40,10 @@
 use std::path::Path;
 
 use thermite_syntax::address::{self, AddrKind, AddressError};
-use thermite_syntax::{Block, Contract, Item, Program, Span, Stmt};
+use thermite_syntax::{
+    Block, Clause, ClauseSelector, Contract, FnItem, ForgeItem, Item, LemmaItem, Param, Program,
+    ProofItem, Span, Stmt, Type,
+};
 
 use crate::check;
 use crate::cli::ForgeError;
@@ -76,6 +79,253 @@ pub fn render_battery(file: &Path, item: Option<&str>) -> Result<String, ForgeEr
         out.push_str(&render_battery_item(cert));
     }
     Ok(out)
+}
+
+/// Render the §5.1 PROOF VIEW (`.design/stage1-forge-tier.md` REQ-7 / AC-11) for the
+/// forge-routed goals in `file`, optionally restricted to one `item`. A forge-routed
+/// goal is a `lemma` or a `proof for f` obligation — a goal the forge discharges at L3.
+/// Unlike [`render_goal`] (the v1 exec-fn goal state) the proof view renders the goal
+/// WITH ITS HYPOTHESES IN SCOPE: the typed parameter binders + the `req` precondition
+/// the proof may assume, then the `⊢ goal` to discharge, then any open `?pN` proof
+/// holes (the `forge fill` operands). The hypothesis context is derived structurally
+/// from the contract — the same data the Lean discharge binds (params as free inputs,
+/// `req` as the assumed precondition) — so the view needs no live elaborator. Adds no
+/// verification (a pure view over the parsed program, R-CODE-5). A file with no
+/// forge-routed goal (or a named `item` that is not one) is a structured Usage error,
+/// not an empty render.
+pub fn render_proof(file: &Path, item: Option<&str>) -> Result<String, ForgeError> {
+    let program = parse_program(file)?;
+
+    let mut out = String::new();
+    let mut matched = false;
+    for it in &program.items {
+        let Item::Forge(forge) = it else { continue };
+        match forge {
+            // A `lemma` is a self-contained forge-routed goal: its `req`/params are the
+            // hypotheses, its `ens` clause(s) the goal(s), its proof block the discharge.
+            ForgeItem::Lemma(l) if item.is_none_or(|name| name == l.name) => {
+                out.push_str(&render_lemma_proof(l));
+                matched = true;
+            }
+            // A `proof for f` obligation discharges a specific `ens#k` clause of `f`'s
+            // contract; the hypotheses are `f`'s params + `req` (resolved from `f`).
+            ForgeItem::Proof(p) if item.is_none_or(|name| name == p.target) => {
+                out.push_str(&render_proof_for(p, &program));
+                matched = true;
+            }
+            // A `prop fn` is a definition and a `witness` is a covenant block — neither
+            // is a goal-with-hypotheses, so neither is a proof-view target (REQ-7).
+            _ => {}
+        }
+    }
+
+    if !matched {
+        let forge_goals: Vec<&str> = program
+            .items
+            .iter()
+            .filter_map(|it| match it {
+                Item::Forge(ForgeItem::Lemma(l)) => Some(l.name.as_str()),
+                Item::Forge(ForgeItem::Proof(p)) => Some(p.target.as_str()),
+                _ => None,
+            })
+            .collect();
+        return Err(ForgeError::Usage(match item {
+            Some(name) => format!(
+                "no forge-routed goal named `{name}` in this file; `forge goal --proof` renders \
+                 `lemma`/`proof for` goals, and the file declares: [{}]",
+                forge_goals.join(", ")
+            ),
+            None => "this file declares no forge-routed goal (`lemma` / `proof for f`); \
+                     `forge goal --proof` is the proof view for forge-tier items (REQ-7)"
+                .to_string(),
+        }));
+    }
+    Ok(out)
+}
+
+/// Render one `lemma`'s proof view (REQ-7): its parameters + `req` as the hypotheses
+/// in scope, each `ens` clause as a goal, and the proof block's open `?pN` holes as
+/// the `forge fill` operands.
+fn render_lemma_proof(l: &LemmaItem) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "PROOF VIEW — {} (lemma, forge-routed \u{2192} L3)\n",
+        l.name
+    ));
+    out.push_str(&render_hypotheses(&l.params, &l.req));
+
+    // Each `ens` clause is a goal the proof must discharge.
+    for (i, ens) in l.ens.iter().enumerate() {
+        let tag = if l.ens.len() > 1 {
+            format!(" #{}", i + 1)
+        } else {
+            String::new()
+        };
+        out.push_str(&format!("  \u{22a2} goal{tag}: {}\n", ens.text));
+    }
+
+    render_proof_holes(
+        &mut out,
+        &l.proof.holes,
+        &format!("{}.proof", l.name),
+        l.proof.text.trim().is_empty(),
+    );
+    out
+}
+
+/// Render the proof view for a `proof for f` item (REQ-7): one block per obligation,
+/// each resolving its `ens#k` goal against `f`'s contract and binding `f`'s
+/// params + `req` as the hypotheses in scope. A `proof for` whose target `f` is not a
+/// `fn` in the file (or whose clause selector resolves no clause) renders an honest
+/// "unresolved" note rather than a fabricated goal (R-CODE-2 — surface the gap).
+fn render_proof_for(p: &ProofItem, program: &Program) -> String {
+    let mut out = String::new();
+    let target_fn = fn_of(program, &p.target);
+
+    for ob in &p.obligations {
+        let clause_label = clause_label(&ob.clause);
+        out.push_str(&format!(
+            "PROOF VIEW — proof for {}.{} (forge-routed \u{2192} L3)\n",
+            p.target, clause_label
+        ));
+
+        match target_fn {
+            Some(f) => {
+                out.push_str(&render_hypotheses(&f.params, &f.contract.req));
+                match resolve_clause(&f.contract, &ob.clause) {
+                    Some(goal) => {
+                        out.push_str(&format!("  \u{22a2} goal: {}\n", goal.text));
+                    }
+                    None => out.push_str(&format!(
+                        "  \u{22a2} goal: <unresolved — `{}` names no clause of `{}`'s contract>\n",
+                        clause_label, p.target
+                    )),
+                }
+            }
+            None => out.push_str(&format!(
+                "  hypotheses in scope: <unresolved — `proof for {}` names no `fn` in this file>\n",
+                p.target
+            )),
+        }
+
+        render_proof_holes(
+            &mut out,
+            &ob.proof.holes,
+            &format!("{}.proof.{}", p.target, clause_label),
+            ob.proof.text.trim().is_empty(),
+        );
+    }
+    out
+}
+
+/// Render the "hypotheses in scope" section shared by the lemma + proof-for views
+/// (REQ-7): one typed binder per parameter, then the `req` precondition as an assumed
+/// hypothesis (`h_req`) — omitted when `req` is the trivial `true` (it assumes
+/// nothing). The same context the Lean discharge binds: params as free inputs, `req`
+/// as the assumption.
+fn render_hypotheses(params: &[Param], req: &Clause) -> String {
+    let mut out = String::from("  hypotheses in scope:\n");
+    if params.is_empty() {
+        out.push_str("    (no parameters)\n");
+    }
+    for p in params {
+        out.push_str(&format!("    {} : {}\n", p.name, type_spelling(&p.ty)));
+    }
+    if req.text.trim() != "true" {
+        out.push_str(&format!(
+            "    h_req : {}    (the `req` precondition, assumed)\n",
+            req.text
+        ));
+    }
+    out
+}
+
+/// Render the open `?pN` proof holes as the `forge fill` operands (REQ-7 / AC-11), or
+/// — when the proof block is non-empty with no open hole — a "proof authored"
+/// committed line. An empty hole-free proof block is an honest "no proof yet" note.
+fn render_proof_holes(
+    out: &mut String,
+    holes: &[thermite_syntax::Hole],
+    block_addr: &str,
+    empty: bool,
+) {
+    if !holes.is_empty() {
+        out.push_str("  proof holes:\n");
+        for hole in holes {
+            out.push_str(&format!(
+                "    ?p{n} : open — fill with `forge fill {block_addr}.?p{n} \"<tactics>\"`\n",
+                n = hole.number,
+            ));
+        }
+    } else if empty {
+        out.push_str("  proof: <empty — author tactics or open a `?pN` hole>\n");
+    } else {
+        out.push_str("  proof: authored (no open holes) \u{2713}\n");
+    }
+}
+
+/// The clause-selector's address label (`ens#k` / `req`), the spelling
+/// `address.rs` uses for the `f.proof.<clause>` address (REQ-3).
+fn clause_label(sel: &ClauseSelector) -> String {
+    match sel.index {
+        Some(k) => format!("{}#{}", sel.keyword, k),
+        None => sel.keyword.clone(),
+    }
+}
+
+/// Resolve a [`ClauseSelector`] against a function's contract (REQ-7). `req` names the
+/// (single) precondition; `ens#k` names the `k`-th ensures clause 0-based in source
+/// order (`ens#0` is the FIRST `ens` — the convention the forge-tier proof-obligation
+/// corpus already uses, `thermite-syntax/tests/forge_items.rs`: `ens#0 by { … } ens#1
+/// by { … }`). Returns `None` for an out-of-range / unknown selector (rendered as an
+/// honest "unresolved" goal rather than a fabricated one).
+fn resolve_clause<'c>(contract: &'c Contract, sel: &ClauseSelector) -> Option<&'c Clause> {
+    match sel.keyword.as_str() {
+        "req" => Some(&contract.req),
+        "ens" => contract.ens.get(sel.index? as usize),
+        _ => None,
+    }
+}
+
+/// The named `fn` item in `program`, if any (the `proof for f` target lookup).
+fn fn_of<'p>(program: &'p Program, name: &str) -> Option<&'p FnItem> {
+    program.items.iter().find_map(|i| match i {
+        Item::Fn(f) if f.name == name => Some(f),
+        _ => None,
+    })
+}
+
+/// A human-readable spelling of a [`Type`] for the proof-view hypothesis binders
+/// (REQ-7). Total over the `Type` enum (every variant has a spelling), deterministic
+/// (R-CODE-5). A render helper only — it has no semantic role.
+fn type_spelling(ty: &Type) -> String {
+    use thermite_syntax::PrimType;
+    match ty {
+        Type::Prim(PrimType::U32) => "u32".to_string(),
+        Type::Prim(PrimType::U64) => "u64".to_string(),
+        Type::Prim(PrimType::Usize) => "usize".to_string(),
+        Type::Prim(PrimType::Bool) => "bool".to_string(),
+        Type::Unit => "()".to_string(),
+        Type::Ref { mutable, inner } => {
+            let m = if *mutable { "mut " } else { "" };
+            format!("&{m}{}", type_spelling(inner))
+        }
+        Type::Slice(inner) => format!("[{}]", type_spelling(inner)),
+        Type::Generic { name, arg } => format!("{name}<{}>", type_spelling(arg)),
+        Type::Named(name) => name.clone(),
+        Type::Box(inner) => format!("Box<{}>", type_spelling(inner)),
+        Type::Vec(inner) => format!("Vec<{}>", type_spelling(inner)),
+        Type::String => "String".to_string(),
+        Type::Option(inner) => format!("Option<{}>", type_spelling(inner)),
+        Type::Result(ok, err) => {
+            format!("Result<{}, {}>", type_spelling(ok), type_spelling(err))
+        }
+        Type::Map(k, val) => format!("Map<{}, {}>", type_spelling(k), type_spelling(val)),
+        Type::Tuple(elems) => {
+            let parts: Vec<String> = elems.iter().map(type_spelling).collect();
+            format!("({})", parts.join(", "))
+        }
+    }
 }
 
 /// Resolve `addr` against `file`, splice the replacement source text at the
@@ -739,5 +989,118 @@ mod tests {
         // from span_of_address (a clean miss, not a panic).
         let spec_program = parse_ok("spec fn m(n: u32) -> u32 dec n { n }");
         assert!(span_of_address(&spec_program, "m").is_none());
+    }
+
+    /// Extract the first `ForgeItem` from a parsed program (test helper).
+    fn first_forge(program: &Program) -> &ForgeItem {
+        program
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Forge(f) => Some(f),
+                _ => None,
+            })
+            .expect("a forge item")
+    }
+
+    // REQ-7 / AC-11: the proof view renders a lemma's hypotheses in scope (its typed
+    // params), the `⊢ goal` (the `ens`), and an open `?pN` hole as the `forge fill`
+    // operand. A non-trivial `req` is bound as `h_req`.
+    #[test]
+    fn proof_view_renders_lemma_hypotheses_goal_and_holes() {
+        let program = parse_ok("lemma le_id(a: u64, b: u64) req a <= b ens a <= b proof { ?p0 }");
+        let ForgeItem::Lemma(l) = first_forge(&program) else {
+            panic!("expected a lemma");
+        };
+        let r = render_lemma_proof(l);
+        assert!(
+            r.contains("PROOF VIEW — le_id (lemma, forge-routed \u{2192} L3)"),
+            "{r}"
+        );
+        assert!(r.contains("a : u64"), "typed param binder: {r}");
+        assert!(r.contains("b : u64"), "typed param binder: {r}");
+        assert!(
+            r.contains("h_req : a <= b"),
+            "the `req` precondition is in scope as a hypothesis: {r}"
+        );
+        assert!(
+            r.contains("\u{22a2} goal: a <= b"),
+            "the `ens` is the goal: {r}"
+        );
+        assert!(
+            r.contains("?p0 : open — fill with `forge fill le_id.proof.?p0 \"<tactics>\"`"),
+            "the open proof hole is the fill operand: {r}"
+        );
+    }
+
+    // REQ-7: a `req true` lemma assumes nothing — no `h_req` line; a hole-free authored
+    // proof shows the committed line.
+    #[test]
+    fn proof_view_omits_trivial_req_and_marks_authored() {
+        let program = parse_ok("lemma add_id(a: u64) req true ens a == a proof { omega }");
+        let ForgeItem::Lemma(l) = first_forge(&program) else {
+            panic!("expected a lemma");
+        };
+        let r = render_lemma_proof(l);
+        assert!(!r.contains("h_req"), "`req true` assumes nothing: {r}");
+        assert!(r.contains("\u{22a2} goal: a == a"), "{r}");
+        assert!(r.contains("proof: authored (no open holes)"), "{r}");
+    }
+
+    // REQ-7 / AC-11: a `proof for f` obligation resolves its `ens#k` goal against `f`'s
+    // contract (0-based: `ens#0` is the first `ens`) and binds `f`'s params + `req` as
+    // the hypotheses in scope; the `?pN` hole names the `f.proof.ens#k.?pN` fill operand.
+    #[test]
+    fn proof_view_proof_for_resolves_clause_against_target_contract() {
+        let src = "fn maxv(x: u64, y: u64) -> u64 req true ens result >= x ens result >= y \
+                   fx pure { if x > y { x } else { y } }\n\
+                   proof for maxv { ens#1 by { ?p0 } }";
+        let program = parse_ok(src);
+        let ForgeItem::Proof(p) = program
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Forge(f @ ForgeItem::Proof(_)) => Some(f),
+                _ => None,
+            })
+            .expect("a proof-for item")
+        else {
+            panic!("expected a proof-for");
+        };
+        let r = render_proof_for(p, &program);
+        assert!(
+            r.contains("PROOF VIEW — proof for maxv.ens#1 (forge-routed \u{2192} L3)"),
+            "{r}"
+        );
+        assert!(
+            r.contains("x : u64") && r.contains("y : u64"),
+            "f's params bound: {r}"
+        );
+        // `ens#1` is the SECOND ens clause (0-based), `result >= y`.
+        assert!(
+            r.contains("\u{22a2} goal: result >= y"),
+            "ens#1 resolves to the second ens clause: {r}"
+        );
+        assert!(
+            r.contains("forge fill maxv.proof.ens#1.?p0"),
+            "the proof-hole fill operand: {r}"
+        );
+    }
+
+    // REQ-7 / R-CODE-2: a `proof for` whose clause selector is out of range renders an
+    // honest "unresolved" goal, never a fabricated one or a panic.
+    #[test]
+    fn proof_view_proof_for_out_of_range_clause_is_unresolved() {
+        let src = "fn f(n: u32) -> u32 req true ens result == n fx pure { n }\n\
+                   proof for f { ens#9 by { omega } }";
+        let program = parse_ok(src);
+        let ForgeItem::Proof(p) = first_forge(&program) else {
+            panic!("expected a proof-for");
+        };
+        let r = render_proof_for(p, &program);
+        assert!(
+            r.contains("unresolved"),
+            "out-of-range clause is unresolved: {r}"
+        );
     }
 }

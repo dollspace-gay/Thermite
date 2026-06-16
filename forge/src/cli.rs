@@ -403,8 +403,14 @@ enum Command {
     /// pure view over the shipped `check::check_file` cert collection + the re-parsed
     /// AST contract (given/want); adds no verification. An optional second positional
     /// restricts the render to one item. Holes (`?N`) are increment (iii), not in
-    /// this verb yet.
-    Goal { file: PathBuf, item: Option<String> },
+    /// this verb yet. `--proof` switches to the forge-tier PROOF VIEW
+    /// (`.design/stage1-forge-tier.md` REQ-7): forge-routed goals (`lemma` / `proof
+    /// for f`) rendered with their hypotheses in scope + open `?pN` proof holes.
+    Goal {
+        file: PathBuf,
+        item: Option<String>,
+        proof: bool,
+    },
     /// `forge battery <file> [item]` — print the §7 anti-Goodhart battery (vacuity
     /// triage + solver vacuity + mutation kill-ratio) for an item (or every item) of
     /// `file` (#193 increment (i); `.design/forge/goal-repl.md` REQ-1). A pure view
@@ -982,8 +988,11 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // restricts the render to one item. Pure views — no flags.
             let mut file: Option<PathBuf> = None;
             let mut item: Option<String> = None;
+            let mut proof = false;
             for arg in iter {
                 match arg.as_str() {
+                    // `--proof` is the forge-tier proof view, a `goal`-only flag (REQ-7).
+                    "--proof" if verb == "goal" => proof = true,
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -1005,7 +1014,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                 ForgeError::Usage(format!("`forge {verb}` requires a <file> [item]"))
             })?;
             if verb == "goal" {
-                Ok(Command::Goal { file, item })
+                Ok(Command::Goal { file, item, proof })
             } else {
                 Ok(Command::Battery { file, item })
             }
@@ -1135,8 +1144,9 @@ fn usage_text() -> &'static str {
      [--out <PATH>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv \
      <file> \
      [--generated [N]] [--json] | forge exec-tv <file> [--generated [N]] [--no-generated] \
-     [--json] | forge body-tv <file> [--json] | forge goal <file> [item] | forge battery <file> \
-     [item] | forge edit <file> <addr> --replace <code> | forge fill <file> <hole-addr> <code>"
+     [--json] | forge body-tv <file> [--json] | forge goal <file> [item] [--proof] | forge \
+     battery <file> [item] | forge edit <file> <addr> --replace <code> | forge fill <file> \
+     <hole-addr> <code>"
 }
 
 /// The entry boundary (`.design/forge/cli.md` Architecture): reads `argv`,
@@ -1208,7 +1218,7 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             generated,
         } => run_exec_tv(&file, json, generated),
         Command::BodyTv { file, json } => run_body_tv(&file, json),
-        Command::Goal { file, item } => run_goal(&file, item.as_deref()),
+        Command::Goal { file, item, proof } => run_goal(&file, item.as_deref(), proof),
         Command::Battery { file, item } => run_battery(&file, item.as_deref()),
         Command::Edit {
             file,
@@ -1228,8 +1238,14 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
 /// open obligation) lives in the rendered goal state, not in the exit code (the
 /// goal REPL is a view, not a gate). An environment failure (verus absent, file
 /// unreadable, parse failure) propagates as a `ForgeError`.
-fn run_goal(file: &Path, item: Option<&str>) -> Result<ExitCode, ForgeError> {
-    let rendered = goal_repl::render_goal(file, item)?;
+fn run_goal(file: &Path, item: Option<&str>, proof: bool) -> Result<ExitCode, ForgeError> {
+    // `--proof` switches to the forge-tier proof view (REQ-7): forge-routed goals with
+    // their hypotheses in scope. Without it, the v1 exec-fn goal state.
+    let rendered = if proof {
+        goal_repl::render_proof(file, item)?
+    } else {
+        goal_repl::render_goal(file, item)?
+    };
     print!("{rendered}");
     Ok(ExitCode::SUCCESS)
 }

@@ -33,6 +33,8 @@ mod cli;
 mod closure;
 mod contract_tv;
 mod covenant;
+mod covenant_engine;
+mod covenant_eval;
 mod degrade;
 mod effect_wrappers;
 mod engine;

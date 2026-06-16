@@ -547,6 +547,21 @@ pub struct Certificate {
     /// unchanged — REQ-4 "honest-min aggregation unchanged").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_attribution: Option<crate::engine::EngineAttribution>,
+    /// The covenant evidence block (`.design/stage1-forge-tier.md` REQ-4, increment
+    /// 2b; Q-ORACLE). `Some` only on a forge-routed item carrying a `witness` block —
+    /// the author witness count, the deterministic `falsify` generated/refuted counts,
+    /// and the fixed seed (all reproducible, so the block joins the cert oracle and
+    /// cannot drift silently: weakening a falsify budget or dropping a witness changes
+    /// these numbers). `None` on every v1 item (no covenant declared), and
+    /// `#[serde(default, skip_serializing_if = "Option::is_none")]` so the 7 frozen v1
+    /// golden certs (which omit it) serialize BYTE-IDENTICALLY (R-SPEC-2, additive only),
+    /// mirroring the `engine_attribution`/`assurance_scope` additive precedents. Per
+    /// Q-ORACLE the covenant record is verdict-relevant evidence (a refuted covenant is
+    /// a hard fail; a validated one is the proof-search precondition), so it joins the
+    /// `oracle_subset` — `None` for both a fresh v1 cert and the golden, so the v1
+    /// oracle stays byte-identical while a forge-tier covenant block is oracle-visible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covenant_evidence: Option<crate::covenant_engine::CovenantEvidence>,
 }
 
 impl Certificate {
@@ -581,6 +596,7 @@ impl Certificate {
             boundary_target: None,
             assurance_scope: None,
             engine_attribution: None,
+            covenant_evidence: None,
         }
     }
 
@@ -627,6 +643,7 @@ impl Certificate {
             boundary_target: None,
             assurance_scope: None,
             engine_attribution: None,
+            covenant_evidence: None,
         }
     }
 
@@ -685,6 +702,7 @@ impl Certificate {
             boundary_target: None,
             assurance_scope: None,
             engine_attribution: None,
+            covenant_evidence: None,
         }
         .graduate_triage_clean()
     }
@@ -724,6 +742,7 @@ impl Certificate {
             boundary_target: Some(target),
             assurance_scope: None,
             engine_attribution: None,
+            covenant_evidence: None,
         }
         .graduate_triage_clean()
     }
@@ -762,6 +781,7 @@ impl Certificate {
             boundary_target: None,
             assurance_scope: None,
             engine_attribution: None,
+            covenant_evidence: None,
         }
     }
 
@@ -918,13 +938,81 @@ impl Certificate {
         self
     }
 
+    /// Attach the covenant evidence block to a validated forge-tier certificate
+    /// (`.design/stage1-forge-tier.md` REQ-4, increment 2b; Q-ORACLE). Set on a
+    /// covenant-routed item whose covenant validated (the L3 burn ran behind the
+    /// covenant-before-burn gate); the evidence joins the cert oracle. A v1 item never
+    /// calls this, so its `covenant_evidence` stays `None` and its cert is byte-stable.
+    #[must_use]
+    pub fn with_covenant_evidence(
+        mut self,
+        evidence: crate::covenant_engine::CovenantEvidence,
+    ) -> Self {
+        self.covenant_evidence = Some(evidence);
+        self
+    }
+
+    /// Build a non-certified certificate for a covenant `falsify` refutation
+    /// (`.design/stage1-forge-tier.md` REQ-4, increment 2b; AC-8). The covenant's
+    /// executable semantics found a `req`-satisfying input whose body violates `ens` —
+    /// a [`crate::verdict::CertVerdict::CovenantRefuted`] hard fail, the same
+    /// never-degrades treatment as a `Counterexample` (`Level::L0`, never a lowered
+    /// rung). Carries the structured `CovenantRefuted` reason naming the concrete
+    /// counterexample + the deterministic seed, a single failed obligation, and the
+    /// covenant evidence block (`falsify_refuted == 1`). The burn never ran (the gate
+    /// short-circuited before proof search), so there is no proof/profile material.
+    pub fn covenant_refuted(
+        item: impl Into<String>,
+        effects: Vec<String>,
+        counterexample: &crate::verdict::CovenantCounterexample,
+        evidence: crate::covenant_engine::CovenantEvidence,
+    ) -> Self {
+        let item = item.into();
+        let reason = RejectReason {
+            cause: "CovenantRefuted".to_string(),
+            detail: format!(
+                "the covenant `falsify` run refuted `{item}`: the input {} satisfies `req` \
+                 but the executable body violates `ens` (deterministic, seed {:#x}) — a hard \
+                 fail, never degraded (REQ-4 / AC-8)",
+                counterexample.input, counterexample.seed
+            ),
+        };
+        let obligation = ObligationResult::failed(
+            "covenant refuted: ens violated on a req-satisfying input",
+            None,
+            Some(format!("counterexample: {}", counterexample.input)),
+        );
+        Certificate {
+            item,
+            level: Level::L0,
+            solver_time_ms: 0,
+            contract_quality: ContractQuality::forward_declared(),
+            effects,
+            slag: false,
+            slag_meta: None,
+            reject: Some(reason),
+            obligations: vec![obligation],
+            cached: false,
+            solver_profile: None,
+            suggested_move: None,
+            lowered_assurance: false,
+            degrade_reason: None,
+            strengthening: Vec::new(),
+            boundary: false,
+            boundary_target: None,
+            assurance_scope: None,
+            engine_attribution: None,
+            covenant_evidence: Some(evidence),
+        }
+    }
+
     /// The deterministic, currently-producible oracle subset (REQ-3/REQ-6,
     /// `.design/forge/check.md` AC-1; ffi-boundary.md REQ-5/AC-2; e2e-vs-boundary.md
-    /// REQ-3): `(item, level, effects, slag, boundary, end_to_end)`. The
-    /// forward-declared `contract_quality.*` and the non-deterministic
-    /// `solver_time_ms` are excluded by being absent from this tuple.
-    /// `boundary` joins because it is verdict-relevant (an L1 "to-the-boundary" is
-    /// distinct from a proved/runtime L1); `boundary_target` is diagnostic and
+    /// REQ-3; stage1-forge-tier.md REQ-4): `(item, level, effects, slag, boundary,
+    /// end_to_end, covenant_evidence)`. The forward-declared `contract_quality.*` and
+    /// the non-deterministic `solver_time_ms` are excluded by being absent from this
+    /// tuple. `boundary` joins because it is verdict-relevant (an L1 "to-the-boundary"
+    /// is distinct from a proved/runtime L1); `boundary_target` is diagnostic and
     /// stays excluded (parallel to `slag_meta`).
     ///
     /// `end_to_end` is the §9 assurance-scope bit (#17), normalized via
@@ -935,7 +1023,23 @@ impl Certificate {
     /// — a to-the-boundary guarantee is distinguished). The `via`
     /// crossing name is diagnostic detail and stays excluded (parallel to
     /// `boundary_target`).
-    pub fn oracle_subset(&self) -> (&str, Level, &[String], bool, bool, bool) {
+    ///
+    /// `covenant_evidence` is the REQ-4 forge-tier covenant block (Q-ORACLE): `None`
+    /// for every v1 item (the golden default — no covenant declared) and `None` for a
+    /// fresh v1 cert, so the v1 oracle stays byte-identical; a forge-routed item's
+    /// deterministic witness/falsify counts + seed are oracle-visible (REQ-4: the
+    /// covenant cannot drift silently).
+    pub fn oracle_subset(
+        &self,
+    ) -> (
+        &str,
+        Level,
+        &[String],
+        bool,
+        bool,
+        bool,
+        Option<crate::covenant_engine::CovenantEvidence>,
+    ) {
         (
             &self.item,
             self.level,
@@ -943,6 +1047,7 @@ impl Certificate {
             self.slag,
             self.boundary,
             scope_is_end_to_end(&self.assurance_scope),
+            self.covenant_evidence,
         )
     }
 }

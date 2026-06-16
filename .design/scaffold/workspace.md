@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed file is the additive `mod battery;` declaration in main.rs — net-additive, the workspace topology this doc governs is unchanged.)
+audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: the only change to this doc's governed file is the additive `mod meaning;` declaration in main.rs — net-additive, the workspace topology this doc governs is unchanged.)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

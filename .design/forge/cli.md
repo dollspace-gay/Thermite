@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: cli.rs destructures the new 7-tuple oracle_subset (the additive covenant_evidence element); the CLI verbs/behavior this doc governs are unchanged.)
+audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: cli.rs adds the read-only `forge audit --meaning` companion (prints the unfolded definition tower + hash; gates nothing, #274) and destructures the 8-tuple oracle_subset (the additive meaning_audit element); the CLI verbs/behavior this doc governs are unchanged.)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

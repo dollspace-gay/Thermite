@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed files is the additive forge-item battery gate in check.rs — an orthogonal elaboration-time refusal landed before the inert forge-item skip, owned by .design/stage1-forge-tier.md REQ-5 / registry REQ-S1-5; net-additive, the v1 behavior this doc governs is unchanged.)
+audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: the only change to this doc's governed file (check.rs) is the additive certify-time definition-tower budget gate (gate_definition_tower) on the forge/Lean discharge path, owned by .design/stage1-forge-tier.md REQ-6 / registry REQ-S1-6 — orthogonal to what this doc governs; the Verus default path is untouched and the gate is not in forge audit (#274), so the v1 behavior is unchanged.)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

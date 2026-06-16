@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed files is the additive forge-item battery gate in check.rs — an orthogonal elaboration-time refusal landed before the inert forge-item skip, owned by .design/stage1-forge-tier.md REQ-5 / registry REQ-S1-5; net-additive, the v1 behavior this doc governs is unchanged.)
+audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: the only change to this doc's governed file (check.rs) is the additive certify-time definition-tower budget gate on the forge/Lean discharge path (REQ-S1-6); the engine/obligation/exporter discharge behavior this doc governs is unchanged.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

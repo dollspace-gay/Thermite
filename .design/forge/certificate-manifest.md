@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b, covenant engine REQ-4: manifest.rs gains the additive schema-v2 covenant_evidence: Option<CovenantEvidence> field, oracle-included per Q-ORACLE (the same additive discipline as REQ-5's engine/trust/verdict block); None for v1 items, so oracle_subset and the 7 golden certs stay byte-identical — CI-verified by schema_v2_additive_leaves_all_seven_goldens_byte_identical + check_conformance.)
+audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: manifest.rs gains the additive meaning_audit: Option<MeaningAudit> field (the definition-tower hash + depth + count), oracle-included per Q-ORACLE (same additive discipline as 2b's covenant_evidence); None for v1 items, so oracle_subset and the 7 golden certs stay byte-identical — CI-verified by schema_v2_additive_leaves_all_seven_goldens_byte_identical + check_conformance.)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

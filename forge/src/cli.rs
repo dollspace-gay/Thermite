@@ -2261,7 +2261,8 @@ fn render_human(cert: &Certificate) -> String {
     // item / level / effects / slag — the fields the cert-oracle compares — are
     // rendered first, then the non-deterministic `solver_time_ms` labelled as
     // such so a reader does not mistake it for an oracle field.
-    let (item, level, effects, slag, boundary, _scope_end_to_end) = cert.oracle_subset();
+    let (item, level, effects, slag, boundary, _scope_end_to_end, _covenant_evidence) =
+        cert.oracle_subset();
     let mut out = String::new();
     out.push_str(&format!("item: {item}\n"));
     out.push_str(&format!("level: {}\n", level_str(level)));

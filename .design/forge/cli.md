@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab (re-pinned 2026-06-16: forge workflow status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — full re-author from greenfield-era text to the shipped 13-verb surface, #262)  (re-pinned 2026-06-12: #274 — the lean_fragment membership report added a pub(crate) contract_obligation seam in check.rs (a re-export of mint_item_obligations(...).contract, no closure fork) + a render_audit lean-fragment section in cli.rs; claim-neutral for this doc, no REQ changes))
+audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: cli.rs destructures the new 7-tuple oracle_subset (the additive covenant_evidence element); the CLI verbs/behavior this doc governs are unchanged.)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

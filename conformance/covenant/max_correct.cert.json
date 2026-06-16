@@ -1,0 +1,32 @@
+{
+  "item": "maxv",
+  "level": "L3",
+  "solver_time_ms": 240,
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false,
+    "mutants_killed": "4/4"
+  },
+  "effects": [
+    "pure"
+  ],
+  "slag": false,
+  "obligations": [
+    {
+      "name": "1 obligations discharged",
+      "status": "discharged"
+    }
+  ],
+  "cached": true,
+  "lowered_assurance": false,
+  "boundary": false,
+  "assurance_scope": {
+    "kind": "end_to_end"
+  },
+  "covenant_evidence": {
+    "witness_count": 2,
+    "falsify_generated": 2002,
+    "falsify_refuted": 0,
+    "seed": 6840123409045700830
+  }
+}

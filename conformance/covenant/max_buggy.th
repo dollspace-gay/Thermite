@@ -1,0 +1,15 @@
+// A PLANTED-BUG forge-tier item (`.design/stage1-forge-tier.md` REQ-4 / AC-8):
+// `maxv` claims `ens result >= x && result >= y` but the body always returns `x`,
+// so the postcondition is violated whenever `y > x`. The author `inhabit`
+// witnesses both satisfy the (true) precondition AND happen to satisfy `ens`
+// (`x >= y` in each), so the covenant's `falsify` run — riding the SplitMix64
+// generator over the executable semantics — is what surfaces a `y > x`
+// counterexample. The item dies as `CovenantRefuted` BEFORE any L3 proof search
+// (covenant-before-burn), with the concrete counterexample in the certificate.
+fn maxv(x: u64, y: u64) -> u64
+    req true
+    ens result >= x && result >= y
+    fx pure
+{ x }
+
+witness { inhabit (5, 5); inhabit (9, 2); falsify 5000; }

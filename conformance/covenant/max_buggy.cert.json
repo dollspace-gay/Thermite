@@ -1,0 +1,37 @@
+{
+  "item": "maxv",
+  "level": "L0",
+  "solver_time_ms": 0,
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false,
+    "mutants_killed": "0/0"
+  },
+  "effects": [
+    "pure"
+  ],
+  "slag": false,
+  "reject": {
+    "cause": "CovenantRefuted",
+    "detail": "the covenant `falsify` run refuted `maxv`: the input (13802602735302546103, 13855084867665406727) satisfies `req` but the executable body violates `ens` (deterministic, seed 0x5eed00000000c0de) — a hard fail, never degraded (REQ-4 / AC-8)"
+  },
+  "obligations": [
+    {
+      "name": "covenant refuted: ens violated on a req-satisfying input",
+      "status": "failed",
+      "diagnostic": "counterexample: (13802602735302546103, 13855084867665406727)"
+    }
+  ],
+  "cached": false,
+  "lowered_assurance": false,
+  "boundary": false,
+  "assurance_scope": {
+    "kind": "end_to_end"
+  },
+  "covenant_evidence": {
+    "witness_count": 2,
+    "falsify_generated": 4,
+    "falsify_refuted": 1,
+    "seed": 6840123409045700830
+  }
+}

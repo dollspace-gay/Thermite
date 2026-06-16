@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 9cdd236f2b428913cc7ca9dd2fa7f08cc352d4fa (re-pinned 2026-06-15: forge manifest status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262))
+audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b, covenant engine REQ-4: manifest.rs gains the additive schema-v2 covenant_evidence: Option<CovenantEvidence> field, oracle-included per Q-ORACLE (the same additive discipline as REQ-5's engine/trust/verdict block); None for v1 items, so oracle_subset and the 7 golden certs stay byte-identical — CI-verified by schema_v2_additive_leaves_all_seven_goldens_byte_identical + check_conformance.)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

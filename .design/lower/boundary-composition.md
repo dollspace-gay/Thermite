@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed files is the additive forge-item battery gate in check.rs — an orthogonal elaboration-time refusal landed before the inert forge-item skip, owned by .design/stage1-forge-tier.md REQ-5 / registry REQ-S1-5; net-additive, the v1 behavior this doc governs is unchanged.)
+audited-sha: 82cf268ee579140a87831fe019ece87d9fb7e80f (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6a: the only change to this doc's governed file (check.rs) is the additive certify-time gate_arbitrary_result_tautology on the forge/Lean path (REQ-S1-6) — a body-ignoring ens that re-elaborates for an arbitrary result is refused; orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9

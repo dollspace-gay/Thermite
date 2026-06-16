@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed files is the additive REQ-S1-5 entry in registry.toml + the regenerated status.md view — net-additive, the registry mechanics this doc governs are unchanged.)
+audited-sha: 1660924299e13f2b47733c4a2d75b6f29709d450 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6: the only change to this doc's governed files is the additive REQ-S1-6 entry in registry.toml + the regenerated status.md view — net-additive, the registry mechanics this doc governs are unchanged.)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

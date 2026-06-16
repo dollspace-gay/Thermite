@@ -562,6 +562,21 @@ pub struct Certificate {
     /// oracle stays byte-identical while a forge-tier covenant block is oracle-visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub covenant_evidence: Option<crate::covenant_engine::CovenantEvidence>,
+    /// The meaning-audit block: the definition-tower hash + depth + definition count
+    /// (`.design/stage1-forge-tier.md` REQ-6c, increment 2d; Q-ORACLE). `Some` only on
+    /// a forge-tier item whose contract was tower-audited at certify time (the
+    /// `--engine` discharge path): the certify-time gate refuses an over-budget tower
+    /// (a `DefinitionTowerBudget` reject) and pins the unfolded-tower hash on a
+    /// within-budget cert, so a reader can confirm the certified meaning is the one in
+    /// front of them — a changed definition anywhere in the tower changes the hash.
+    /// Per Q-ORACLE the meaning-audit hash is verdict-relevant evidence (it cannot
+    /// drift silently), so it joins the `oracle_subset`. `None` for every v1 item (the
+    /// default Verus corpus never tower-audits), and `#[serde(default,
+    /// skip_serializing_if = "Option::is_none")]` so the 7 frozen v1 golden certs
+    /// (which omit it) serialize BYTE-IDENTICALLY (R-SPEC-2, additive only), mirroring
+    /// the `covenant_evidence`/`engine_attribution` additive precedents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meaning_audit: Option<crate::meaning::MeaningAudit>,
 }
 
 impl Certificate {
@@ -597,6 +612,7 @@ impl Certificate {
             assurance_scope: None,
             engine_attribution: None,
             covenant_evidence: None,
+            meaning_audit: None,
         }
     }
 
@@ -644,6 +660,7 @@ impl Certificate {
             assurance_scope: None,
             engine_attribution: None,
             covenant_evidence: None,
+            meaning_audit: None,
         }
     }
 
@@ -703,6 +720,7 @@ impl Certificate {
             assurance_scope: None,
             engine_attribution: None,
             covenant_evidence: None,
+            meaning_audit: None,
         }
         .graduate_triage_clean()
     }
@@ -743,6 +761,7 @@ impl Certificate {
             assurance_scope: None,
             engine_attribution: None,
             covenant_evidence: None,
+            meaning_audit: None,
         }
         .graduate_triage_clean()
     }
@@ -782,6 +801,7 @@ impl Certificate {
             assurance_scope: None,
             engine_attribution: None,
             covenant_evidence: None,
+            meaning_audit: None,
         }
     }
 
@@ -952,6 +972,45 @@ impl Certificate {
         self
     }
 
+    /// Pin the definition-tower meaning audit on a forge-tier certificate
+    /// (`.design/stage1-forge-tier.md` REQ-6c, increment 2d; Q-ORACLE). Set at certify
+    /// time on a within-budget forge/Lean-discharged item: the unfolded-tower hash +
+    /// depth + count join the cert oracle, so a reader can confirm the certified
+    /// meaning. A v1 item never calls this, so its `meaning_audit` stays `None` and its
+    /// cert is byte-stable. (An over-budget tower never reaches here — it is refused by
+    /// [`Certificate::rejected_over_budget_tower`].)
+    #[must_use]
+    pub fn with_meaning_audit(mut self, audit: crate::meaning::MeaningAudit) -> Self {
+        self.meaning_audit = Some(audit);
+        self
+    }
+
+    /// Build a non-certified certificate for an over-budget definition tower
+    /// (`.design/stage1-forge-tier.md` REQ-6c, increment 2d; AC-10). The forge-tier
+    /// item's contract unfolds a definition tower deeper or wider than the Q2 default
+    /// budget (depth 4 / 40 definitions) — a Goodhart move (hiding the real claim
+    /// behind an unreadable tower), refused at certify time. Like
+    /// [`Certificate::rejected`] (`Level::L0`, the structured `DefinitionTowerBudget`
+    /// cause, one failed obligation naming it), but it ALSO pins the unfolded-tower
+    /// hash (`meaning_audit`) so the refusal carries the same auditable meaning record
+    /// the cert would have pinned had it certified (AC-10: the certificate pins the
+    /// unfolded tower hash even on the refusal).
+    #[must_use]
+    pub fn rejected_over_budget_tower(
+        item: impl Into<String>,
+        effects: Vec<String>,
+        detail: String,
+        audit: crate::meaning::MeaningAudit,
+    ) -> Self {
+        let reason = RejectReason {
+            cause: "DefinitionTowerBudget".to_string(),
+            detail,
+        };
+        let mut cert = Certificate::rejected(item, effects, false, reason);
+        cert.meaning_audit = Some(audit);
+        cert
+    }
+
     /// Build a non-certified certificate for a covenant `falsify` refutation
     /// (`.design/stage1-forge-tier.md` REQ-4, increment 2b; AC-8). The covenant's
     /// executable semantics found a `req`-satisfying input whose body violates `ens` —
@@ -1003,6 +1062,7 @@ impl Certificate {
             assurance_scope: None,
             engine_attribution: None,
             covenant_evidence: Some(evidence),
+            meaning_audit: None,
         }
     }
 
@@ -1029,6 +1089,19 @@ impl Certificate {
     /// fresh v1 cert, so the v1 oracle stays byte-identical; a forge-routed item's
     /// deterministic witness/falsify counts + seed are oracle-visible (REQ-4: the
     /// covenant cannot drift silently).
+    ///
+    /// `meaning_audit` is the REQ-6c definition-tower hash + depth + count (Q-ORACLE:
+    /// the meaning-audit hash joins the oracle subset): `None` for every v1 item (the
+    /// golden default — no tower audit on the Verus path) and `None` for a fresh v1
+    /// cert, so the v1 oracle stays byte-identical; a forge-tier item's unfolded-tower
+    /// hash is oracle-visible (REQ-6c: the certified meaning cannot drift silently).
+    #[allow(
+        clippy::type_complexity,
+        reason = "the oracle subset is deliberately a flat positional tuple of the \
+                  verdict-relevant fields (item/level/effects/slag/boundary/end_to_end/\
+                  covenant/meaning) — a named struct would obscure that this IS the exact \
+                  comparison surface the cert oracle compares; the tuple is the contract."
+    )]
     pub fn oracle_subset(
         &self,
     ) -> (
@@ -1039,6 +1112,7 @@ impl Certificate {
         bool,
         bool,
         Option<crate::covenant_engine::CovenantEvidence>,
+        Option<crate::meaning::MeaningAudit>,
     ) {
         (
             &self.item,
@@ -1048,6 +1122,7 @@ impl Certificate {
             self.boundary,
             scope_is_end_to_end(&self.assurance_scope),
             self.covenant_evidence,
+            self.meaning_audit.clone(),
         )
     }
 }

@@ -975,9 +975,124 @@ pub fn check_file_with_engine(
             selection,
             options.mutation_floor,
         )?;
+        // REQ-6c anti-Goodhart (increment 2d): the certify-time definition-tower
+        // budget gate on the forge/Lean discharge path. A forge-tier cert (a
+        // non-default engine discharged it) whose contract unfolds a tower deeper /
+        // wider than the Q2 budget is refused here, at certify time — never in
+        // `forge audit` (its "gates nothing" invariant is shipped, #274). A
+        // within-budget forge-tier cert pins the unfolded-tower hash. The Verus
+        // default path (no engine attribution) is untouched, so the v1 goldens stay
+        // byte-identical.
+        let new_cert = gate_definition_tower(new_cert, &parsed.program, &src, item);
+        // REQ-6a anti-Goodhart (increment 2d): the certify-time arbitrary-result
+        // re-elaboration tautology gate on the forge/Lean discharge path. A forge-tier
+        // cert whose contract's `ens` still elaborates for an ARBITRARY result (the
+        // `ens` says nothing about the body) is refused here, at certify time — the L3
+        // counterpart of the Verus §7 solver-vacuity tautology check.
+        let new_cert = gate_arbitrary_result_tautology(new_cert, &lean, &obligations.contract);
         out.push(new_cert);
     }
     Ok(out)
+}
+
+/// The REQ-6c certify-time definition-tower budget gate (increment 2d;
+/// `.design/stage1-forge-tier.md` REQ-6 / AC-10). Applied to a freshly-produced cert
+/// on the forge/Lean discharge path:
+///
+/// - a v1 / Verus-path cert (no `engine_attribution`) is returned UNCHANGED — the
+///   gate is a forge-tier gate, so the v1 goldens stay byte-identical;
+/// - a non-`fn` item (a `spec fn` has no contract to root a tower) is returned
+///   unchanged;
+/// - a forge-tier cert whose contract tower exceeds the Q2 budget (depth 4 / 40
+///   definitions) is REFUSED — replaced with a `DefinitionTowerBudget` reject cert
+///   that still pins the unfolded-tower hash (AC-10);
+/// - a within-budget forge-tier cert keeps its verdict and gains the pinned
+///   `meaning_audit` (the unfolded-tower hash + depth + count).
+///
+/// Read-only / pure (no prover): the tower is a projection of the AST + source
+/// (`meaning::build_tower`), exactly the same artifact `forge audit --meaning` prints.
+fn gate_definition_tower(
+    cert: Certificate,
+    program: &Program,
+    src: &str,
+    item: &Item,
+) -> Certificate {
+    // The gate is forge-tier-only: a cert with no engine attribution is the v1 Verus
+    // path (or an honest skip), left byte-identical.
+    if cert.engine_attribution.is_none() {
+        return cert;
+    }
+    // Only a `fn` carries a `req`/`ens` contract that roots a meaning tower.
+    let Item::Fn(f) = item else {
+        return cert;
+    };
+    let tower = crate::meaning::build_tower(program, src, f);
+    match tower.over_budget_detail() {
+        Some(detail) => Certificate::rejected_over_budget_tower(
+            &cert.item,
+            cert.effects.clone(),
+            detail,
+            tower.meaning_audit(),
+        ),
+        None => cert.with_meaning_audit(tower.meaning_audit()),
+    }
+}
+
+/// The REQ-6a certify-time arbitrary-result re-elaboration tautology gate (increment
+/// 2d; `.design/stage1-forge-tier.md` REQ-6 / AC-10 — anti-Goodhart defense (a)).
+/// Applied to a freshly-produced cert on the forge/Lean discharge path, beside
+/// [`gate_definition_tower`]:
+///
+/// - a v1 / Verus-path cert (no `engine_attribution`) or an already-rejected /
+///   non-L3 cert is returned UNCHANGED — the gate is a forge-tier certify gate, so
+///   the v1 goldens stay byte-identical and an item that did not certify is not
+///   re-judged;
+/// - otherwise the obligation is re-elaborated with an ARBITRARY result
+///   ([`crate::engine::LeanEngine::arbitrary_result_reelaboration`]). If the `ens`
+///   still kernel-accepts for an arbitrary result, it is a body-ignoring tautology →
+///   the cert is REFUSED (`SemanticTautology`, the same `contract_quality.tautology`
+///   bool the Verus §7 gate sets). `Clean`/`Skipped` keep the cert (the gate only
+///   ever rejects a proven tautology — the safe completeness direction).
+fn gate_arbitrary_result_tautology(
+    cert: Certificate,
+    lean: &crate::engine::LeanEngine,
+    obligation: &crate::obligation::Obligation,
+) -> Certificate {
+    // Forge-tier-only, and only a still-certifying cert: a Verus-path cert (no
+    // attribution), an honest skip, or an already-rejected/non-L3 cert is left as-is.
+    if cert.engine_attribution.is_none() || cert.reject.is_some() || cert.level != Level::L3 {
+        return cert;
+    }
+    match lean.arbitrary_result_reelaboration(obligation) {
+        crate::engine::ArbitraryResultOutcome::Tautology => {
+            // The `ens` holds for an arbitrary result → a body-ignoring semantic
+            // tautology. Refuse with the SemanticTautology cause + the
+            // `contract_quality.tautology` bool (the L3 mirror of the Verus §7 gate's
+            // `rejected_vacuity`).
+            Certificate::rejected_vacuity(
+                &cert.item,
+                cert.effects.clone(),
+                crate::manifest::RejectReason {
+                    cause: "SemanticTautology".to_string(),
+                    detail: format!(
+                        "the arbitrary-result re-elaboration proved `{}`'s `ens` for an \
+                         ARBITRARY result — the contract says nothing about what the body \
+                         computes (a body-ignoring tautology), so the L3 proof does not \
+                         license a certificate (REQ-6a anti-Goodhart; the Lean counterpart \
+                         of the §7 solver-vacuity tautology check)",
+                        cert.item
+                    ),
+                },
+                true,
+                false,
+            )
+        }
+        // Clean (the ens constrains the result) or Skipped (the check could not run —
+        // export refusal / tier-(c) / lake absent): keep the cert. The gate only ever
+        // rejects a PROVEN tautology, never on an inconclusive run (R-CODE-4).
+        crate::engine::ArbitraryResultOutcome::Clean
+        | crate::engine::ArbitraryResultOutcome::Skipped(_) => cert,
+    }
 }
 
 /// The `lean/` package root for the Lean engine (`.design/verified/proof-backends.md`
@@ -1215,6 +1330,42 @@ fn lean_program(lean: &crate::engine::LeanEngine) -> &Program {
     lean.program()
 }
 
+/// The SHARED mutant catalogue the L3 re-elaboration mutation battery scores
+/// (`.design/stage1-forge-tier.md` REQ-6 / AC-10, increment 2d — anti-Goodhart defense
+/// (b)). The L3 counterpart of the shipped Verus mutation gate (`mutation_score`, #12):
+/// it reuses the FROZEN mutation operator catalogue [`crate::mutation::generate`]
+/// UNCHANGED — the same operator families and the same `MUTANT_CAP` = 64 deterministic
+/// order-prefix `generate` applies internally. The catalogue is SHARED, never forked
+/// (AC-10 pins this with a test: the re-elaboration battery's mutant set IS
+/// `mutation::generate`'s, so a future fork breaks the test).
+///
+/// Only the KILL CHECK differs from the Verus gate, exactly as REQ-6b specifies: the
+/// Verus gate runs a per-mutant Verus SOLVER search; the L3 path RE-ELABORATES the
+/// mutant's obligation through the existing Lean discharge path
+/// ([`lean_mutation_score`] → [`crate::engine::LeanEngine::discharge`], which exports
+/// the obligation and runs lake) — a decidable per-mutant type-check, not a search
+/// (the substrate note: drive the existing elaborator, do not build a new one). A
+/// mutant the proof still elaborates against survived (the contract under-constrains
+/// the body); one it fails is killed. Survivors keep counting against the floor (the
+/// Budd–Angluin floor gate, [`crate::engine::LeanMutationTally::meets_floor`]).
+///
+/// Performance (the flagged REQ-6a/b risk): up to `MUTANT_CAP` = 64 re-elaborations
+/// per item. Each is ONE lake elaboration (no proof search), and the battery is a
+/// POST-proof QUALITY gate — exactly parallel to the shipped Verus `mutation_score`,
+/// which already runs up to 64 verus runs per item AFTER the L3 proof. It is NOT inside
+/// the per-clause [`crate::engine`] `KernelBudget` (Q4 30s/clause), which bounds the
+/// discharge of ONE clause's proof, not the post-proof mutation battery. So the 64
+/// re-typechecks do not exceed the per-clause budget (they are not within it); the
+/// `MUTANT_CAP` budget is the same bound the Verus gate already lives under.
+pub(crate) fn reelaboration_mutants(
+    f: &thermite_syntax::FnItem,
+    adt_deps: &[Item],
+) -> Vec<crate::mutation::Mutant> {
+    // The SHARED frozen catalogue (REQ-6b / AC-10 — not a fork). `generate` applies the
+    // `MUTANT_CAP` 64 order-prefix internally, so the returned set is already bounded.
+    crate::mutation::generate(f, 0, adt_deps)
+}
+
 /// Score the frozen mutant set of `f` against its own contract via the Lean engine
 /// (`.design/verified/proof-backends.md` REQ-9, increment (iii), #247). The
 /// engine-generic battery: each mutant is attempted via the same Lean engine path; a
@@ -1237,8 +1388,12 @@ fn lean_mutation_score(
     let base_program = lean_program(lean);
     // The Lean-path caller threads the whole program's items as `adt_deps`
     // (REQ-11) so the F-STRUCT-ZERO family resolves any struct return — the same
-    // items the per-mutant Lean engine exports from (`program_with_mutant`).
-    for mutant in crate::mutation::generate(f, 0, &base_program.items) {
+    // items the per-mutant Lean engine exports from (`program_with_mutant`). The mutant
+    // set is the SHARED frozen catalogue via `reelaboration_mutants` (REQ-6b / AC-10:
+    // the L3 re-elaboration battery reuses `mutation::generate`, never a fork) — the
+    // per-mutant kill check below is the re-elaboration (export → lake type-check), not
+    // a Verus solver run.
+    for mutant in reelaboration_mutants(f, &base_program.items) {
         // The LeanEngine exports the item by name from its stored program (the
         // exporter re-fetches `o.item` from `self.program`), so to score a mutant we
         // must build a per-mutant engine whose program carries the mutant body in
@@ -2140,7 +2295,7 @@ fn reachable_spec_fn_names_from_seed(
 /// Collect the in-file spec-fn names a `Block` calls, walking statements + tail
 /// (#71). Only a callee name resolving to an in-file `Item::SpecFn` (`spec_decls`)
 /// is emitted — a combinator / scheme / cross-file callee is ignored (§4.2 pure).
-fn collect_block_spec_fn_calls(
+pub(crate) fn collect_block_spec_fn_calls(
     block: &thermite_syntax::Block,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
     out: &mut std::collections::BTreeSet<String>,
@@ -2199,7 +2354,7 @@ fn collect_stmt_spec_fn_calls(
 /// leading `Path` segment names an in-file spec fn, an `Expr::MethodCall` whose
 /// method name does, and every nested sub-expression (a call argument, a closure
 /// body, a match arm — so a spec-fn call inside a scheme step closure is found).
-fn collect_expr_spec_fn_calls(
+pub(crate) fn collect_expr_spec_fn_calls(
     expr: &thermite_syntax::Expr,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
     out: &mut std::collections::BTreeSet<String>,
@@ -3798,6 +3953,65 @@ fn mutant_cert_is_survivor(cert: &Certificate) -> bool {
 mod tests {
     use super::*;
     use crate::manifest::ObligationStatus;
+
+    // REQ-6 / AC-10 (increment 2d, anti-Goodhart defense (b)): the L3 re-elaboration
+    // mutation battery reuses the FROZEN mutation operator catalogue
+    // `mutation::generate` — the catalogue is SHARED, not forked. This test pins that
+    // contract: the mutant set the re-elaboration seam (`reelaboration_mutants`, the
+    // set `lean_mutation_score` re-elaborates per mutant) scores is byte-for-byte
+    // `mutation::generate`'s — same families, same order, same descriptions, same
+    // `MUTANT_CAP` bound. A future fork of the operator set into a second catalogue
+    // would break this assertion.
+    #[test]
+    fn reelaboration_mutation_shares_the_frozen_catalogue_not_forked() {
+        let src = "\
+fn to_1based(x: u32) -> u32
+  req x < 1000
+  ens result == x + 1
+  fx pure
+{ x + 1 }
+";
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture must parse: {:?}", parsed.errors);
+        let f = parsed
+            .program
+            .items
+            .iter()
+            .find_map(|i| match i {
+                Item::Fn(f) if f.name == "to_1based" => Some(f.clone()),
+                _ => None,
+            })
+            .expect("fixture has fn to_1based");
+
+        // The re-elaboration battery's catalogue IS `mutation::generate` (the SHARED
+        // frozen set), not a fork.
+        let shared = reelaboration_mutants(&f, &parsed.program.items);
+        let frozen = crate::mutation::generate(&f, 0, &parsed.program.items);
+        assert!(
+            !shared.is_empty(),
+            "the fixture must produce mutants to score"
+        );
+        assert_eq!(
+            shared.len(),
+            frozen.len(),
+            "the re-elaboration catalogue is the SAME size as mutation::generate (shared, not forked)"
+        );
+        for (a, b) in shared.iter().zip(frozen.iter()) {
+            assert_eq!(
+                a.desc, b.desc,
+                "the re-elaboration battery scores the SAME mutant (same operator family, \
+                 same deterministic order) as mutation::generate — not a forked catalogue"
+            );
+        }
+        // The `MUTANT_CAP` = 64 budget is honored at the shared catalogue source (the
+        // ≤64 re-typecheck bound the REQ-6a/b perf note depends on).
+        assert!(
+            shared.len() <= crate::mutation::MUTANT_CAP,
+            "the shared catalogue is bounded by MUTANT_CAP ({} > {})",
+            shared.len(),
+            crate::mutation::MUTANT_CAP
+        );
+    }
 
     // proof-backends #204 / REQ-1.2 / #226 — the closure mirror: a spec-fn called
     // only from a `dec` measure position reaches the per-item Obligation env's

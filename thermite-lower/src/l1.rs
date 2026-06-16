@@ -32,38 +32,54 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (L1 check-emission entry point) | SHIPPED | `pub fn lower_l1`; emits each `FnItem` with `req` on entry, loop `inv` per iteration, `ens` against bound `result` on exit; verified by `sum_l1_compiles_and_runs` (compile+run via `rustc`). #88 blocker 2 (ens-after-move CLASS): `lower_fn_l1` snapshots each non-Copy param an `ens` references (`type_is_non_copy_l1` + `expr_references_ident`) into a `<p>__pre` `.clone()` BEFORE the body, and lowers the `ens` against the snapshot (`rename_params_in_expr`) — so a param moved into the result and then named in `ens` (`move_left`'s `ens result.text.len() == b.text.len()`, `insert_str`'s `+ ins.len()`) no longer rustc-`E0382`s. `TString`/struct/enum all `#[derive(Clone)]`. #88 blocker 3 (empty-literal → `TString`): `lower_expr_exec`'s `Expr::StrLit` materializes an owned `TString` (the `Vec<u8>` byte-push, mirroring `lower.rs`'s L3 form, #82) NOT a Rust `&str`, so `Buffer { text: "", .. }` in struct-lit field position no longer rustc-`E0308`s. Verified: `forge/tests/editor_runs.rs` (the editor builds + runs with piped keystrokes). |
-//! | REQ-2 (always-active check primitive) | SHIPPED | `emit_check_macro` writes the `thermite_check!` macro + `thermite_contract_violation` handler (NOT `debug_assert!`); `no_debug_assert_in_emission` (AC-2) + `negative_fixture_fires_violation`. |
-//! | REQ-3 (combinator L1 executable forms) | SHIPPED | `emit_combinator_l1_defs` reads `thermite_spec::CombinatorSig.l1`; a combinator call lowers via `lower_expr_exec`; unit-tested by `combinator_l1_forms_run` (AC-3). |
-//! | REQ-4 (`spec fn` → executable fn) | SHIPPED | `lower_spec_fn_l1`/`slice_fold_body_l1` emit the slice-length-branch recursion over `&[u32]`; verified by `sum_l1_compiles_and_runs` (AC-4: `spec_sum(&[1,2,3]) == 6` in the positive harness). |
-//! | REQ-5 (`dec`/termination L1 scope) | SHIPPED | `lower_loop_l1` emits `inv` checks only, no `dec` runtime check (OQ-3); `no_syscall_sandbox_and_no_dec_guarantee` (AC-5). |
-//! | REQ-6 (golden L1 contract) | SHIPPED | `tests/golden/l1/sum.l1.rs` compiles+runs; emitted output is execution-equivalent (compiles, runs, `sum(&[1,2,3])==6`, checks fire) — `sum_l1_compiles_and_runs`. |
-//! | REQ-7 (`fx`/effect at L1 deferred to #21) | SHIPPED | no `fx` runtime check emitted; `no_syscall_sandbox_and_no_dec_guarantee` (AC-5) confirms no sandbox scaffolding. |
+//! <!-- generated:reqs view=thermite-lower-l1-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-LOWER-L1-CHECK-EMISSION | shipped | `thermite-lower/src/l1.rs` | L1 runtime check emission entry |  |
+//! | REQ-LOWER-L1-CHECK-MACRO | shipped | `thermite-lower/src/l1.rs` | Always-active L1 check primitive |  |
+//! | REQ-LOWER-L1-COMBINATORS | shipped | `thermite-lower/src/l1.rs` | Combinator L1 executable forms |  |
+//! | REQ-LOWER-L1-DEC-SCOPE | shipped | `thermite-lower/src/l1.rs` | L1 termination-scope honesty |  |
+//! | REQ-LOWER-L1-EFFECT-SCOPE | shipped | `thermite-lower/src/l1.rs` | L1 effect-scope boundary |  |
+//! | REQ-LOWER-L1-GOLDEN | shipped | `thermite-lower/src/l1.rs` | Golden L1 contract executable |  |
+//! | REQ-LOWER-L1-SPEC-FN | shipped | `thermite-lower/src/l1.rs` | Spec function executable lowering |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Basis Stage 1c ADT arm (`.design/basis/01-adts.md`)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-8 (struct → L1 struct + always-active invariant check) | SHIPPED | `lower_struct_l1` emits a plain Rust `struct` + `fn well_formed(&self) -> bool` (the inv via `lower_inv_expr_l1`, `self.field`); `lower_fn_l1` weaves `<param>.well_formed()` (req-class) + `result.well_formed()` (ens-class) `thermite_check!`s for invariant-bearing struct params/returns — handled-or-loud at run time (§6 L1 rung). Consumer: `lower_l1`. Verified: `tests/adt_lower_conformance.rs::bank_account_l1_compiles_and_runs` (rustc compile+run, positive 150/0) + `bank_account_l1_req_check_fires` (an overflowing deposit ABORTS at the `[req]` check). |
-//! | REQ-9 (enum/match/`is` → L1 enum/match/`matches!`) | SHIPPED | `lower_enum_l1` emits a plain Rust `enum`; `lower_match_exec`/`lower_pattern_exec` emit ENUM-QUALIFIED arms (`qualify_variant_path_l1`) incl. `Pattern::Struct`; `Expr::Is`→`matches!(s, Enum::Variant { .. })`. Consumer: `lower_l1`/`lower_fn_l1`. Verified: `shape_l1_compiles_and_runs` (Circle→true/Rect→false) + `shape_l1_ens_check_fires_on_a_lying_body` (a lying body ABORTS at the `[ens]` check). |
-//! | REQ-10 (recursive type → L1 `Box`; deref) | SHIPPED | `lower_type` emits `Box<List>`; `Expr::Deref`→`*t`; an ADT-fold `spec fn` lowers to a real recursive Rust fn through the fallback `lower_block_inner`. Consumer: `lower_l1` (`Item::SpecFn`/`Item::Enum`). Verified by the workspace `cargo test` (the `list_sum` L1 lowering compiles in the corpus pipeline). |
-//! | REQ-11 (`LowerError`/no panics) | SHIPPED | the L1 ADT arms reuse `LowerError`; no `unwrap`/`expect`/`panic!` added (the emitted program's `thermite_contract_violation` panic is the GENERATED program's intended L1 abort, not a toolchain panic). |
+//! <!-- generated:reqs view=thermite-lower-l1-adt-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-LOWER-L1-ENUM-MATCH | shipped | `thermite-lower/src/l1.rs` | L1 enum, match, and is lowering |  |
+//! | REQ-LOWER-L1-ERRORS | shipped | `thermite-lower/src/l1.rs` | L1 LowerError and no toolchain panics |  |
+//! | REQ-LOWER-L1-RECURSIVE-BOX | shipped | `thermite-lower/src/l1.rs` | L1 recursive type Box and deref |  |
+//! | REQ-LOWER-L1-STRUCT-INVARIANTS | shipped | `thermite-lower/src/l1.rs` | L1 struct invariants |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## C5/C7 build-side exec twins (`.design/basis/07-strings.md` REQ-9/REQ-13..16, `09-option-result.md` REQ-5; issue #104)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | C5/C7 contract spec-fn EXEC twins (the build/runtime mirror of the L3 spec fns) | SHIPPED | `forge build` lowers EVERY fn to L1 (always-active runtime `thermite_check!`s), so a contract NAMING a generated spec fn needs a runnable exec twin to evaluate the check. `emit_string_runtime_l1` emits the C5 twins (`occurs_at`/`contains_sub`/`count_sep`/`sep_free`, gated on `program_uses_string_search`) + the C7 twins (`is_digit`/`all_digits`/the free `parse_u64`/`parse_be`, gated on `program_uses_parse`, `parse_be` deduped against the C4 numfmt round-trip), each computing the SAME value as its spec body over the runtime `TString` (`Vec<u8>`) — NO verus proof (the L1 path is runtime-checked, not verified). `lower_expr_exec`'s `Expr::Call` arm `.clone()`s the leading string args (`string_arg_count_l1`, the by-value/`&`-snapshot ambiguity). The `Vec<String>` (`TVecTString`) exec `len() -> u64` is emitted by `emit_vec_runtime_l1` (every `TVec*` wrapper). Consumer: `lower_l1`. Verified: `forge/tests/acceptance_programs.rs::calculator_string_parse_builds_and_runs_end_to_end` (the full `calc.th` builds + RUNS, 2+3→Some(5), 100+200→Some(300)) + `parser_builds_and_runs_end_to_end` (the full `parse_lines.th` builds + RUNS, a,b,c→3 pieces); the formatter (C4) is unaffected + `forge check` is unchanged (L3). |
+//! <!-- generated:reqs view=thermite-lower-l1-runtime-twins-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-LOWER-L1-RUNTIME-TWINS | shipped | `thermite-lower/src/l1.rs` | L1 string and parse runtime twins |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics L1 mirror (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (match guard L1) | SHIPPED | `lower_match_exec` emits the Rust-native guarded arm `pat if <g> => body` when `arm.guard.is_some()` (the exec mirror of `lower.rs::lower_match`); `rename_params_in_expr` + `collect_combinators_in_expr` walk the guard `Expr`. Consumer: `lower_l1`/`lower_fn_l1`. The runnable L1 path of a guarded match builds + runs (workspace `cargo test`). |
-//! | REQ-4 (or-pattern L1) | SHIPPED | `lower_pattern_exec` += a `Pattern::Or` arm emitting `p0 \| p1 \| …` (each alternative enum-qualified) — the exec mirror of `lower.rs::lower_pattern`. The new variant's L1 ripple is closed (no `_`/panic). Consumer: `lower_match_exec`. |
-//! | REQ-1/2/5 (pure-desugar — runnable path) | SHIPPED | The parser-desugared `Expr::TupleProj`/`LoopNode`(`While`)/`Expr::Match`/`Expr::Is` lower at L1 through the SHIPPED `lower_expr_exec`/`lower_loop_l1`/`lower_match_exec` arms unchanged — the `for`/destructure/`if let`/`while let` runnable forms need no new L1 arm. |
+//! <!-- generated:reqs view=thermite-lower-l1-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-LOWER-L1-ERGONOMICS-DESUGAR | shipped | `thermite-lower/src/l1.rs` | L1 pure-desugar runnable path |  |
+//! | REQ-LOWER-L1-MATCH-GUARD | shipped | `thermite-lower/src/l1.rs` | L1 match guard lowering |  |
+//! | REQ-LOWER-L1-OR-PATTERN | shipped | `thermite-lower/src/l1.rs` | L1 or-pattern lowering |  |
+//! <!-- /generated:reqs -->
 
 use std::fmt::Write as _;
 

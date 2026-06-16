@@ -507,6 +507,42 @@ comment_prefix = "//! "
 title = "Ergonomics Lowering Canonical Status References"
 
 [[view]]
+name = "thermite-lower-l1-core-status"
+path = "thermite-lower/src/l1.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-l1-core-status"
+comment_prefix = "//! "
+title = "L1 Runtime Check Core Canonical Status References"
+
+[[view]]
+name = "thermite-lower-l1-adt-status"
+path = "thermite-lower/src/l1.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-l1-adt-status"
+comment_prefix = "//! "
+title = "L1 ADT Runtime Canonical Status References"
+
+[[view]]
+name = "thermite-lower-l1-runtime-twins-status"
+path = "thermite-lower/src/l1.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-l1-runtime-twins-status"
+comment_prefix = "//! "
+title = "L1 Runtime Twin Canonical Status References"
+
+[[view]]
+name = "thermite-lower-l1-ergonomics-status"
+path = "thermite-lower/src/l1.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-l1-ergonomics-status"
+comment_prefix = "//! "
+title = "L1 Ergonomics Mirror Canonical Status References"
+
+[[view]]
 name = "thermite-spec-lib-combinators-status"
 path = "thermite-spec/src/lib.rs"
 kind = "reference_list"
@@ -1094,6 +1130,111 @@ label = "REQ-6 (scaffold compiles clean)"
 id = "REQ-SCAFFOLD-LOWER-COMPILE"
 replacement_view = "thermite-lower-scaffold-status"
 note = "Lower crate-root clean-compile row replaced by a generated reference to a path-qualified stable owner ID."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-1 (L1 check-emission entry point)"
+id = "REQ-LOWER-L1-CHECK-EMISSION"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 runtime check-emission row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-2 (always-active check primitive)"
+id = "REQ-LOWER-L1-CHECK-MACRO"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 always-active check primitive row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-3 (combinator L1 executable forms)"
+id = "REQ-LOWER-L1-COMBINATORS"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 combinator executable-forms row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-4 (`spec fn` → executable fn)"
+id = "REQ-LOWER-L1-SPEC-FN"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 spec-fn executable row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-5 (`dec`/termination L1 scope)"
+id = "REQ-LOWER-L1-DEC-SCOPE"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 termination-scope row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-6 (golden L1 contract)"
+id = "REQ-LOWER-L1-GOLDEN"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 golden-contract row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-7 (`fx`/effect at L1 deferred to #21)"
+id = "REQ-LOWER-L1-EFFECT-SCOPE"
+replacement_view = "thermite-lower-l1-core-status"
+note = "L1 effect-scope row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-8 (struct → L1 struct + always-active invariant check)"
+id = "REQ-LOWER-L1-STRUCT-INVARIANTS"
+replacement_view = "thermite-lower-l1-adt-status"
+note = "L1 struct invariant row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-9 (enum/match/`is` → L1 enum/match/`matches!`)"
+id = "REQ-LOWER-L1-ENUM-MATCH"
+replacement_view = "thermite-lower-l1-adt-status"
+note = "L1 enum/match row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-10 (recursive type → L1 `Box`; deref)"
+id = "REQ-LOWER-L1-RECURSIVE-BOX"
+replacement_view = "thermite-lower-l1-adt-status"
+note = "L1 recursive-type row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-11 (`LowerError`/no panics)"
+id = "REQ-LOWER-L1-ERRORS"
+replacement_view = "thermite-lower-l1-adt-status"
+note = "L1 LowerError/no-panic row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "C5/C7 contract spec-fn EXEC twins (the build/runtime mirror of the L3 spec fns)"
+id = "REQ-LOWER-L1-RUNTIME-TWINS"
+replacement_view = "thermite-lower-l1-runtime-twins-status"
+note = "L1 string/Option/Result runtime-twin row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-3 (match guard L1)"
+id = "REQ-LOWER-L1-MATCH-GUARD"
+replacement_view = "thermite-lower-l1-ergonomics-status"
+note = "L1 match-guard row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-4 (or-pattern L1)"
+id = "REQ-LOWER-L1-OR-PATTERN"
+replacement_view = "thermite-lower-l1-ergonomics-status"
+note = "L1 or-pattern row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l1.rs"
+label = "REQ-1/2/5 (pure-desugar — runnable path)"
+id = "REQ-LOWER-L1-ERGONOMICS-DESUGAR"
+replacement_view = "thermite-lower-l1-ergonomics-status"
+note = "L1 pure-desugar runnable-path row replaced by a generated canonical reference."
 
 [[legacy_mapping]]
 path = "thermite-spec/src/lib.rs"
@@ -6818,3 +6959,393 @@ note = "walks match-arm guards for spec calls"
 kind = "test"
 target = "forge/tests/ergonomics_conformance.rs"
 note = "ergonomics conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-CHECK-EMISSION"
+title = "L1 runtime check emission entry"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_l1` emits runnable Rust with entry `req`, loop `inv`, and exit `ens` checks woven into each function, including non-Copy `ens` snapshot handling and string literal materialization."
+aliases = ["thermite-lower/src/l1.rs REQ-1 (L1 check-emission entry point)"]
+contributors = [".design/lower/l1-runtime-checks.md", "thermite-lower/tests/l1_conformance.rs", "forge/tests/editor_runs.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l1"
+note = "public L1 runtime-check lowering entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_fn_l1"
+note = "weaves req/ens and body checks"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "L1 compile/run and violation conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-CHECK-MACRO"
+title = "Always-active L1 check primitive"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`emit_check_macro` emits the always-active `thermite_check!` macro and violation handler, avoiding release-stripped `debug_assert!`."
+aliases = ["thermite-lower/src/l1.rs REQ-2 (always-active check primitive)"]
+contributors = [".design/lower/l1-runtime-checks.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_check_macro"
+note = "emits thermite_check! and violation handler"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_check"
+note = "emits per-clause check call"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "no_debug_assert_in_emission"
+note = "always-active check regression test"
+
+[[requirement]]
+id = "REQ-LOWER-L1-COMBINATORS"
+title = "Combinator L1 executable forms"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`emit_combinator_l1_defs` collects referenced SpecTherm combinators and emits each registry-provided executable L1 body in deterministic source order."
+aliases = ["thermite-lower/src/l1.rs REQ-3 (combinator L1 executable forms)"]
+contributors = [".design/lower/l1-runtime-checks.md", ".design/spec/spectherm-combinators.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_combinator_l1_defs"
+note = "emits registry L1 combinator bodies"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_combinators_in_expr"
+note = "collects combinator references from contracts/spec positions"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "combinator_l1_forms_run"
+note = "concrete L1 combinator execution test"
+
+[[requirement]]
+id = "REQ-LOWER-L1-SPEC-FN"
+title = "Spec function executable lowering"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_spec_fn_l1` emits executable Rust functions for `spec fn`s, including the slice head-fold shape used by the sum golden."
+aliases = ["thermite-lower/src/l1.rs REQ-4 (`spec fn` → executable fn)"]
+contributors = [".design/lower/l1-runtime-checks.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_spec_fn_l1"
+note = "spec-fn executable lowering entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "slice_fold_body_l1"
+note = "sum-style recursive slice fold lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "spec_sum compile/run conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-DEC-SCOPE"
+title = "L1 termination-scope honesty"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_loop_l1` emits invariant checks but no runtime `dec` guarantee, keeping termination as an L3/L2 obligation rather than overclaiming at L1."
+aliases = ["thermite-lower/src/l1.rs REQ-5 (`dec`/termination L1 scope)"]
+contributors = [".design/lower/l1-runtime-checks.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_loop_l1"
+note = "loop lowering with invariant checks"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "no_syscall_sandbox_and_no_dec_guarantee"
+note = "scope-honesty regression test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "no runtime dec guarantee conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-GOLDEN"
+title = "Golden L1 contract executable"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "The hand-authored `tests/golden/l1/sum.l1.rs` reference compiles and runs in the same shape as the emitted L1 `sum` path, with checks firing on negative fixtures."
+aliases = ["thermite-lower/src/l1.rs REQ-6 (golden L1 contract)"]
+contributors = [".design/lower/l1-runtime-checks.md", "tests/golden/l1/sum.l1.rs", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "tests/golden/l1/sum.l1.rs"
+note = "hand-authored L1 golden reference"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "sum_l1_compiles_and_runs"
+note = "golden compile/run conformance"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "negative_fixture_fires_violation"
+note = "negative fixture fires L1 violation"
+
+[[requirement]]
+id = "REQ-LOWER-L1-EFFECT-SCOPE"
+title = "L1 effect-scope boundary"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "The v0.1 L1 path emits no runtime `fx`/syscall sandbox, leaving effect enforcement to compile-time subsumption and the deferred runtime sandbox work."
+aliases = ["thermite-lower/src/l1.rs REQ-7 (`fx`/effect at L1 deferred to #21)"]
+contributors = [".design/lower/l1-runtime-checks.md", ".design/lower/effect-subsumption.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l1"
+note = "L1 lowerer emits no fx runtime sandbox"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "no_syscall_sandbox_and_no_dec_guarantee"
+note = "no runtime sandbox regression test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "effect-scope conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-STRUCT-INVARIANTS"
+title = "L1 struct invariants"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_struct_l1` emits plain Rust structs with `well_formed` predicates, and `lower_fn_l1` weaves always-active checks for invariant-bearing struct params and returns."
+aliases = ["thermite-lower/src/l1.rs REQ-8 (struct → L1 struct + always-active invariant check)"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_struct_l1"
+note = "struct and well_formed emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "invariant_struct_names"
+note = "invariant-bearing struct detector"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs"
+note = "struct invariant L1 conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-ENUM-MATCH"
+title = "L1 enum, match, and is lowering"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_enum_l1`, `lower_match_exec`, and `lower_pattern_exec` emit plain Rust enums, qualified match arms, struct patterns, and `matches!` checks."
+aliases = ["thermite-lower/src/l1.rs REQ-9 (enum/match/`is` → L1 enum/match/`matches!`)"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_enum_l1"
+note = "enum emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match_exec"
+note = "exec match lowering"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs"
+note = "enum/match L1 conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-RECURSIVE-BOX"
+title = "L1 recursive type Box and deref"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "L1 type/expression lowering emits recursive ADT boxes and dereferences so recursive enum/spec-fn runtime paths compile and run."
+aliases = ["thermite-lower/src/l1.rs REQ-10 (recursive type → L1 `Box`; deref)"]
+contributors = [".design/basis/01-adts.md", "thermite-lower/tests/adt_lower_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_type"
+note = "L1 type lowering includes Box"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr::Deref"
+note = "deref expression lowering arm"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/adt_lower_conformance.rs"
+note = "recursive ADT L1 conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-ERRORS"
+title = "L1 LowerError and no toolchain panics"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "L1 lowering returns `Result<String, LowerError>` for unsupported inputs; generated-program contract aborts are separate from toolchain panics."
+aliases = ["thermite-lower/src/l1.rs REQ-11 (`LowerError`/no panics)"]
+contributors = [".design/lower/l1-runtime-checks.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "shared lowerer error type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l1"
+note = "fallible L1 lowering entry"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "LowerError/no-panic conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-RUNTIME-TWINS"
+title = "L1 string and parse runtime twins"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`emit_string_runtime_l1` and related L1 runtime emitters provide executable twins for string-search, parse, and vector-string helpers needed by runtime contract checks."
+aliases = ["thermite-lower/src/l1.rs C5/C7 contract spec-fn EXEC twins (the build/runtime mirror of the L3 spec fns)"]
+contributors = [".design/basis/07-strings.md", ".design/basis/09-option-result.md", "forge/tests/acceptance_programs.rs"]
+generated_to = ["status", "thermite-lower-l1-runtime-twins-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_string_runtime_l1"
+note = "string/search/parse runtime twin emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_vec_runtime_l1"
+note = "Vec runtime wrapper emitter including TVecTString len"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/acceptance_programs.rs"
+note = "string parse/search build-and-run conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L1-MATCH-GUARD"
+title = "L1 match guard lowering"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_match_exec` emits Rust-native guarded match arms and the L1 support walkers descend into guard expressions."
+aliases = ["thermite-lower/src/l1.rs REQ-3 (match guard L1)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-lower/src/lower.rs"]
+generated_to = ["status", "thermite-lower-l1-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match_exec"
+note = "emits guarded arms"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "rename_params_in_expr"
+note = "renames snapshot params inside guards"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_combinators_in_expr"
+note = "walks guards for combinator references"
+
+[[requirement]]
+id = "REQ-LOWER-L1-OR-PATTERN"
+title = "L1 or-pattern lowering"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_pattern_exec` emits Rust `|` or-patterns with enum-qualified alternatives, closing the L1 ripple for `Pattern::Or`."
+aliases = ["thermite-lower/src/l1.rs REQ-4 (or-pattern L1)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-lower/src/lower.rs"]
+generated_to = ["status", "thermite-lower-l1-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_pattern_exec"
+note = "emits exec patterns including Pattern::Or"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Pattern::Or"
+note = "or-pattern AST variant"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "L1 lowering test suite"
+
+[[requirement]]
+id = "REQ-LOWER-L1-ERGONOMICS-DESUGAR"
+title = "L1 pure-desugar runnable path"
+owner = "thermite-lower/src/l1.rs"
+status = "shipped"
+scope = "lower"
+summary = "Parser-desugared tuple destructuring, `for`, `if let`, and `while let` forms reach L1 through already-shipped expression, loop, match, and `is` lowering arms."
+aliases = ["thermite-lower/src/l1.rs REQ-1/2/5 (pure-desugar — runnable path)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-lower/src/lower.rs", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-lower-l1-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_expr_exec"
+note = "exec expression lowering for desugared forms"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_loop_l1"
+note = "runtime loop lowering for desugared loops"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "L1 runnable path conformance"

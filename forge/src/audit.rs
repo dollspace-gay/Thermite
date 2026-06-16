@@ -21,18 +21,22 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (AuditManifest v1 schema + version tag) | SHIPPED | `struct AuditManifest { manifest_version, functions, project_assurance, tcb }`; `manifest_version` defaults to [`MANIFEST_VERSION`] (`"v1"`); additive evolution via `#[serde(default)]` on `manifest_version` (the per-cert precedent). Built by `AuditManifest::from_certificates`; consumed by `cli::run_audit` (`--json` + human render). |
-//! | REQ-2 (`forge audit <file>` command) | SHIPPED | `cli::run_audit` runs `check::check_file(file)` (the default-config entry, the SAME pipeline `forge check` runs at `CheckOptions::default` — no extra verification, OQ-3), parses the file once for the boundary contracts, builds the manifest via `AuditManifest::from_certificates`, and emits `--json` or the human summary. Dispatched by `cli::parse_args`'s `audit` verb. |
-//! | REQ-3 (TCB = slag ∪ boundary ∪ toolchain) | SHIPPED | `Tcb::from_certificates` enumerates EVERY `cert.slag` fn (`SlagBlock` with reason/owner/review from `Certificate::slag_meta`), EVERY `cert.boundary` fn (`BoundaryContract` with `boundary_target` + the `req`/`ens`/`fx` looked up in the parsed program), and the [`Toolchain`] identity (always present — the irreducible residue). |
-//! | REQ-4 (aggregation, never re-derivation) | SHIPPED | `AuditManifest::from_certificates` reads ONLY the cert collection + `AssuranceManifest::aggregate(&certs)` + the two version strings + the parsed program (for boundary contract text); it owns no prover invocation. |
-//! | REQ-5 (project assurance embedded) | SHIPPED | `AuditManifest.project_assurance: ProjectAssuranceSection` embeds `AssuranceManifest::aggregate` — the `ProjectAssurance` headline, the `ProjectScope`, and the lowered-assurance fn list (from `FunctionAssurance.lowered_assurance`). |
-//! | REQ-6 (determinism) | SHIPPED | the manifest is a pure function of the cert collection + program + the two pinned version strings; no wall-clock, no unordered iteration (`functions` in cert/source order; `Tcb` lists in source order). The non-deterministic `solver_time_ms` is structurally absent; the version-sensitive `mutants_killed`/`survivor` are carried in `FunctionRow.contract_quality` (shape-asserted by the oracle, not the ratio — OQ-2). |
-//! | REQ-7 (#274 — `lean_fragment` membership section) | SHIPPED | `struct LeanFragment { functions: Vec<LeanFragmentRow> }` is the additive fourth section on `AuditManifest` (`#[serde(default)]`); `LeanFragment::from_certificates` builds one [`LeanFragmentRow`] per cert in source order via `LeanFragmentRow::probe`. `manifest_version` stays `"v1"`. Consumer: `AuditManifest::from_certificates` (the audit assembly) + `cli::render_audit`'s `lean fragment:` section. Oracle: `audit_conformance.rs::lean_fragment_sum`/`lean_fragment_tier_auto`/`lean_fragment_tier_interactive` (one row per fn, source order). |
-//! | REQ-8 (#274 — probe = shipped dry-run export, side-effect-free) | SHIPPED | `LeanFragmentRow::probe` mints the #226 CONTRACT obligation via the shipped `check::contract_obligation` seam (a `pub(crate)` re-export of `mint_item_obligations(...).contract` — NO closure fork) and dry-runs `lean_export::export_item`; `export_item` is fs/process/env-free (the lake/scratch side effects live downstream in `LeanEngine::discharge`, never reached). Oracle: `probe_agrees_with_direct_export_item` (the row ≡ direct `export_item` result — AC-9) + `lean_fragment_present_without_lake` (AC-10, no lean toolchain). |
-//! | REQ-9 (#274 — refusal classes surfaced verbatim) | SHIPPED | a non-exportable [`LeanFragmentRow`] carries `refusal: Some(LeanRefusal { class, reason })`; `class` is the stable `ExportRefusal` variant name (`refusal_class_name`, a total match over the post-(v) inventory) and `reason` is the verbatim `Display`. Oracle: `lean_fragment_refusal_optres`/`_loop`/`_boundary` (verbatim `class` + `reason` across `OptResResult`/`LoopBody`/`NotPureContract`) + `probe_sum_th_refusals_are_hand_traced` (the hand-traced `OutOfFragment` reasons for `sum`/`spec_sum`). |
-//! | REQ-10 (#274 — informational only, zero default-path byte impact) | SHIPPED | the section gates nothing — `cli::run_audit`'s exit code keys on `project_assurance` ONLY (unchanged); the `Certificate` schema is untouched (`engine_attribution` stays `None` on the default path); `#[serde(default)]` on `lean_fragment` keeps a pre-amendment v1 document parsing. Oracle: `pre_amendment_v1_deserializes_into_typed_manifest` (AC-11 additive) + the existing `corpus_empty_tcb`/`slag_boundary_tcb` exit codes unchanged. |
+//! <!-- generated:reqs view=forge-audit-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-AUDIT-COMMAND | shipped | `forge/src/audit.rs` | forge audit command projection |  |
+//! | REQ-FORGE-AUDIT-DETERMINISM | shipped | `forge/src/audit.rs` | Deterministic audit manifest projection |  |
+//! | REQ-FORGE-AUDIT-INFORMATIONAL | shipped | `forge/src/audit.rs` | Lean fragment audit section is informational |  |
+//! | REQ-FORGE-AUDIT-LEAN-FRAGMENT | shipped | `forge/src/audit.rs` | Audit Lean fragment membership section |  |
+//! | REQ-FORGE-AUDIT-LEAN-PROBE | shipped | `forge/src/audit.rs` | Side-effect-free Lean fragment probe |  |
+//! | REQ-FORGE-AUDIT-LEAN-REFUSALS | shipped | `forge/src/audit.rs` | Verbatim Lean refusal classes |  |
+//! | REQ-FORGE-AUDIT-PROJECT-ASSURANCE | shipped | `forge/src/audit.rs` | Embedded project assurance section |  |
+//! | REQ-FORGE-AUDIT-PURE-PROJECTION | shipped | `forge/src/audit.rs` | Audit aggregation without re-derivation |  |
+//! | REQ-FORGE-AUDIT-SCHEMA | shipped | `forge/src/audit.rs` | AuditManifest v1 schema and version tag |  |
+//! | REQ-FORGE-AUDIT-TCB | shipped | `forge/src/audit.rs` | Audit TCB inventory |  |
+//! <!-- /generated:reqs -->
 
 use std::process::Command;
 

@@ -1,0 +1,8 @@
+{
+  "uuid": "11214617-fd86-4322-99ae-6285b25f72a7",
+  "issue_uuid": "b9fe03ea-87be-4968-a1b2-586cecace14d",
+  "author": "BMF7",
+  "content": "Completed REQ-4 covenant engine (increment 2b): executable-semantics evaluator + inhabit/falsify producer + structural covenant-before-burn gate + oracle-included cert evidence block + AC-8 conformance goldens + REQ-S1-4 flipped to shipped. ACToR critic loop converged after fixing 5 divergences (#298-#302). Gauntlet green (clippy/fmt clean; 325 forge tests pass; 7 engine::tests Lean-spine env failures are not a regression; conformance 7/7 + covenant 3/3 with verus). 13 commits. Caveat: git push is blocked for the agent — branch ready for a human to push + open the PR.",
+  "created_at": "2026-06-16T16:59:34.263692Z",
+  "kind": "handoff"
+}

@@ -13,15 +13,19 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (address grammar) | SHIPPED | `Address` segments = function name + `loop#N`/`inv#M`/`dec`; `parse_address` + `Display`. |
-//! | REQ-2 (loop numbering) | SHIPPED | `addresses_of` numbers loops 1-based in source order, `while`+`loop` shared. |
-//! | REQ-3 (inv numbering) | SHIPPED | per-loop 1-based `inv#M` in source order; `tests/conformance.rs` asserts `inv#2`/`inv#3`. |
-//! | REQ-4 (dec address) | SHIPPED | each loop's single `dec` is `<loop>.dec` (no ordinal). |
-//! | REQ-5 (stability under unrelated edits) | SHIPPED | numbering reads only the enclosing item; `tests/conformance.rs` stability fixture. |
-//! | REQ-6 (deterministic + bidirectional) | SHIPPED | `addresses_of` (node->addr) + `resolve` (addr->node); bad addr -> `AddressError`, no panic. |
-//! | goal-repl REQ-4 (`<fn>.?N` hole address, #193) | SHIPPED | `addresses_of` emits a `AddrKind::Hole` entry `<fn>.?N` per `FnItem.holes` member (verbatim surface number, document order); `validate_segments` accepts a `?N` segment (a bare `?`/non-digit is `Malformed`). The operand of `forge fill <fn>.?N <code>`. Resolves through the same `resolve` path (a `<fn>.?9` for an absent hole → `NotFound`, never a panic). Consumer: `forge::goal_repl::fill_hole`. |
+//! <!-- generated:reqs view=thermite-syntax-address-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-ADDRESS-DEC | shipped | `thermite-syntax/src/address.rs` | Semantic address dec segment |  |
+//! | REQ-SYNTAX-ADDRESS-DETERMINISTIC-RESOLVE | shipped | `thermite-syntax/src/address.rs` | Semantic address bidirectional resolution |  |
+//! | REQ-SYNTAX-ADDRESS-GRAMMAR | shipped | `thermite-syntax/src/address.rs` | Semantic address grammar |  |
+//! | REQ-SYNTAX-ADDRESS-HOLES | shipped | `thermite-syntax/src/address.rs` | Semantic address holes |  |
+//! | REQ-SYNTAX-ADDRESS-INV-NUMBERING | shipped | `thermite-syntax/src/address.rs` | Semantic address invariant numbering |  |
+//! | REQ-SYNTAX-ADDRESS-LOOP-NUMBERING | shipped | `thermite-syntax/src/address.rs` | Semantic address loop numbering |  |
+//! | REQ-SYNTAX-ADDRESS-STABILITY | shipped | `thermite-syntax/src/address.rs` | Semantic address stability |  |
+//! <!-- /generated:reqs -->
 
 use crate::ast::{Block, Item, LoopNode, Program, Stmt};
 use std::fmt;

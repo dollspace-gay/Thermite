@@ -67,10 +67,14 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (frozen kernel exec-statement subset v1) | SHIPPED | the IN/OUT subset is PINNED IN CODE here: [`body_ref_state`] ADMITS exactly `Stmt::Let`/`Assign`/`If`/`Expr`/tail-`Return` + `Block` sequencing/tail, and HONESTLY REJECTS (an `Unsupported` `Err`) `Stmt::Loop`/`Break`/`Continue` (2.2.2), a mid-`if`-branch early return, `match`-stmt, non-scalar mutation, and a re-shadow — the design-amendment-gated stable set; non-test consumer `crate::obligation::body_equivalence_obligation`; verified by `thermite-tv/tests/body_teeth.rs` B1-B4 (faithful VERIFIES, infidel CAUGHT) + the in-module honest-skip tests. |
-//! | REQ-2 (operational-semantics reference state-denotation — independent) | SHIPPED | `pub fn body_ref_state` here — the big-step state-transformer (let/assign substitution-threading, mutation-ORDER sensitivity, `if`-branch composition, multi-cell TUPLE projection), composing `crate::exec_encode::exec_ref_value` on each env-substituted RHS / condition / tail; non-test consumer `crate::obligation::body_equivalence_obligation`; verified by `tests/body_teeth.rs` B1-B4 against real verus (B2 the mutation-ORDER teeth, B4 the multi-cell tuple). Deps `thermite-syntax` + `thermite-spec` ONLY (`Cargo.toml`, AC-6) — no `thermite-lower`. |
+//! <!-- generated:reqs view=thermite-tv-exec-stmt-body-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-BODY-STATE-DENOTATION | shipped | `thermite-tv/src/exec_stmt_encode.rs` | Body-TV operational state denotation |  |
+//! | REQ-TV-BODY-STMT-SUBSET | shipped | `thermite-tv/src/exec_stmt_encode.rs` | Body-TV straight-line statement subset |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Loop extension — step 2.2.2-i (`.design/verified/loop-tv.md`; epic #169, blocker #163)
 //!
@@ -90,10 +94,14 @@
 //! honest [`RefEncodeError::Unsupported`] (R-HONEST-3 — Skipped, never silently
 //! Faithful).
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | loop-REQ-1 (loop surface + v1 frozen loop subset) | SHIPPED | the v1 IN/OUT subset is PINNED IN CODE: [`loop_ref_obligations`] (+ [`recognize_v1_loop`]) ADMITS exactly a single `while <cond>` with non-empty `invs` + `dec` + a straight-line scalar body as the LAST statement before the tail, and HONESTLY REJECTS (an `Unsupported` `Err`) the `loop`-kind, `break`/`continue`, a mid-body `return`, a nested loop, non-scalar state, and a trivially-weak `inv` (`inv true`) — the design-amendment-gated stable set; non-test consumer `crate::obligation::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}`; verified by `thermite-tv/tests/loop_teeth.rs` L1 (faithful VERIFIES) + L4 (each OUT form Skipped). |
-//! | loop-REQ-2 (the three per-run loop obligations) | SHIPPED | `pub fn loop_ref_obligations` here returns [`LoopObligations`] carrying the three reference pieces (`entry_pred` = `inv[cells:=entry]`; `cond` + `inv` for the preservation step's `requires`/`ensures` over the SHIPPED [`body_ref_state`] step; `after_loop` = `inv ∧ ¬cond` over the opaque cells); the per-cond/inv VALUE encoding REUSES [`exec_ref_value`] on the env-substituted [`Expr`] (independence preserved — no `thermite-lower` dep). The three Verus-unit emitters are `crate::obligation::{loop_entry_obligation, loop_preservation_obligation, loop_exit_obligation}`; verified by `tests/loop_teeth.rs` L1–L4 against real verus (L1 all three VERIFY, L2 broken-preservation CAUGHT, L3 wrong-exit CAUGHT, L4 weak-inv/loop-kind/break/return Skipped). |
+//! <!-- generated:reqs view=thermite-tv-exec-stmt-loop-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-LOOP-REFERENCE-PIECES | shipped | `thermite-tv/src/exec_stmt_encode.rs` | Loop-TV reference obligation pieces |  |
+//! | REQ-TV-LOOP-STMT-SUBSET | shipped | `thermite-tv/src/exec_stmt_encode.rs` | Loop-TV v1 loop subset recognizer |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;

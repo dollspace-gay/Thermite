@@ -75,19 +75,23 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (self-verification architecture) | SHIPPED | the `verus!{}` body in `verus_core` (verified by `verus`, Thermite's L3 rung §6); mechanism (c) recorded (b empirically infeasible); verified by `tests/verus_verify.rs` (`verus --no-cheating` → 0 errors). |
-//! | REQ-2 (remaining Tier-1 targets + porting pattern) | SHIPPED | epic #60. The FINITE-domain Tier-1 fns are now EXHAUSTED: the boundary gate (REQ-9), the project-level min (REQ-10), and the mutation floor (REQ-11) are ported + anchored via mechanism (c). The remaining soundness-relevant fns (`cache_key` — SHA-256, a cryptographic assumption; `triage`/`generate` — AST-walks over unbounded programs; `is_strictly_stronger` — structural contract comparison) are categorically OUT of the finite-domain fragment (the HONEST Tier-1 coverage boundary, `.design/verified/self-verification.md` "Tier-1 coverage boundary"), not deferred. |
-//! | REQ-3 (Tier-2/Tier-3 boundaries) | SHIPPED | this crate has NO I/O and NO `external_body` — the Tier-1 cores (`subsumes`/`ladder_action`/`io_allow`) carry real `ensures`, no Tier-3 floor is reached. AC-5: a grep shows zero `external_body`/`external` in `src/`. |
-//! | REQ-4 (honesty — genuine proof) | SHIPPED | `verus --no-cheating` (no `assume`/`admit`/`external_body`); the `ensures result == spec_subsumes(..)` is non-vacuous (negating the body → `7 verified, 1 errors`, `tests/verus_verify.rs::broken_subsumes_fails_verification`). The REQ-7 anti-cheat `ensures` and the REQ-8 `pure_has_no_io`/`monotone` lemmas are each non-vacuous (the equivalence tests catch a broken mirror; a mutated verus spec fails — Grounding A/B). |
-//! | REQ-5 (FIRST increment — `subsumes` verified + delegated/matched) | SHIPPED | `verus_core::subsumes` proved; `subsumes_masks` (plain mirror) consumed by `thermite_lower::effects::subsumes`; the lattice laws (reflexive / Pure-subsumes-only-Pure / top-subsumes-all) are three `proof fn`s; the 14 `effects` tests still pass (behavior preserved). |
-//! | REQ-6 (CI-able verus-verify gauntlet step) | SHIPPED | `tests/verus_verify.rs` runs the real `verus --no-cheating src/lib.rs` (skip-loud if verus absent, like `lower_conformance`) and asserts `verified, 0 errors`; a core fn that fails to verify is a HARD test failure (R-DEFER-6). |
-//! | REQ-7 (degrade anti-cheat verified + anchored) | SHIPPED | `verus_core::ladder_action_l3`/`ladder_action_l2` proved (the anti-cheat `ensures` `l3_is_counterexample(v) ==> (r is HardFail) && !is_degrade(r)` + the L2 analog + the global `anti_cheat_holds_for_all_verdicts` proof); the plain mirrors [`ladder_action_l3_tag`]/[`ladder_action_l2_tag`] are consumed by `forge::degrade::ladder_action_l3`/`ladder_action_l2` (its in-module `verus_anchor` equivalence test); `run_ladder` BRANCHES on the proved decision. |
-//! | REQ-8 (seccomp allowlist soundness verified + anchored) | SHIPPED | `verus_core::io_allow` proved over the 9-atom u16 fx-mask (`pure_has_no_io`, `non_widening_atoms_have_no_io`, `monotone`, `io_allow_within_io_bits`); the plain mirror [`io_allow`] is anchored to `forge::sandbox::syscall_allowlist` over all 512 fx-masks by the `sandbox::verus_anchor` test (the 5 sensitive syscalls only, OQ-6). The #106 `Term` atom (bit 8) is non-widening (`widen(8)==0`) — a terminal-control `ioctl` grant, NOT io-sensitive (REQ-7/OQ-5). |
-//! | REQ-9 (boundary HONESTY gate — Target C) | SHIPPED | `verus_core::should_emit_external_body` proved (`r == has_boundary \|\| has_slag` + the §9 corollary `(!has_boundary && !has_slag) ==> !r` + the global `regular_fn_never_external_body` proof); the plain mirror [`should_emit_external_body`] is consumed by `thermite_lower::lower::lower_fn`'s gate, anchored by the OBSERVABLE-dispatch test `thermite-lower/tests/boundary_gate_verified.rs` (emitted `#[verifier::external_body]` IFF the proved predicate, over the 4 (boundary,slag) combos). |
-//! | REQ-10 (project LEVEL AGGREGATION — Target D) | SHIPPED | `verus_core::aggregate_level` (the `Seq<Level>` fold-min seeded at L3) proved with `aggregate_le_all` (D1: ≤ every fn) + `aggregate_is_attained` (D2: == the min); the plain mirror [`aggregate_level`] (+ [`Level`]/[`min2`]/[`rank`]) anchors `forge::manifest::AssuranceManifest::aggregate` over all 341 `Level` lists (len 0..=4) by `manifest::tests::verus_anchor`. |
-//! | REQ-11 (mutation FLOOR gate — Target E, #48) | SHIPPED | `verus_core::meets_floor_60` (INTEGER cross-multiply `scored > 0 && killed*100 >= scored*60`, `u128` widening, NO float) proved with the #48 `scored == 0 ==> !r` `ensures` + the global `zero_scored_never_passes` proof; the plain mirror [`meets_floor_60`] anchors `forge::mutation::MutationScore::meets_floor` over the `0..=20 × 0..=20` f64↔integer grid by `mutation::tests::verus_anchor` (OQ-E: 0 divergences — the cross-multiply is the exact rational test). |
+//! <!-- generated:reqs view=thermite-verified-self-verification-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-VERIFIED-AGGREGATE-LEVEL | shipped | `thermite-verified/src/lib.rs` | Verified project level aggregation |  |
+//! | REQ-VERIFIED-BOUNDARY-HONESTY | shipped | `thermite-verified/src/lib.rs` | Verified boundary honesty gate |  |
+//! | REQ-VERIFIED-CI-GAUNTLET | shipped | `thermite-verified/src/lib.rs` | Verus verification gauntlet |  |
+//! | REQ-VERIFIED-DEGRADE-ANTICHEAT | shipped | `thermite-verified/src/lib.rs` | Verified degrade anti-cheat |  |
+//! | REQ-VERIFIED-HONESTY | shipped | `thermite-verified/src/lib.rs` | Genuine Verus proof honesty |  |
+//! | REQ-VERIFIED-MUTATION-FLOOR | shipped | `thermite-verified/src/lib.rs` | Verified mutation floor gate |  |
+//! | REQ-VERIFIED-SANDBOX-ALLOWLIST | shipped | `thermite-verified/src/lib.rs` | Verified sandbox allowlist |  |
+//! | REQ-VERIFIED-SELF-VERIFICATION-ARCHITECTURE | shipped | `thermite-verified/src/lib.rs` | Self-verification architecture |  |
+//! | REQ-VERIFIED-SUBSUMES | shipped | `thermite-verified/src/lib.rs` | Verified effect subsumption |  |
+//! | REQ-VERIFIED-TIER-BOUNDARIES | shipped | `thermite-verified/src/lib.rs` | Verified tier boundaries |  |
+//! | REQ-VERIFIED-TIER1-COVERAGE | shipped | `thermite-verified/src/lib.rs` | Tier-1 coverage and porting pattern |  |
+//! <!-- /generated:reqs -->
 
 /// The number of atomic effect kinds (`thermite_syntax::ast::Effect` →
 /// `thermite_lower::effects::EffectKind`): Read=0, Write=1, Net=2, Alloc=3,

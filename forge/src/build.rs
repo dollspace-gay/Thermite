@@ -41,25 +41,33 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (build pipeline: lower_l1 → emit → rustc → artifact) | SHIPPED | `pub fn build_file` runs `parse`/`validate`/`check_effects` (the `check_file` front), `thermite_lower::lower_l1`, writes a crate, invokes `rustc` (`invoke_rustc`); short-circuits into `ForgeError`. Consumer: `cli::run_build`. Verified by `build_conformance::sum_runs`. |
-//! | REQ-2 (rustc invocation: exit-checked, crate-name gotcha, scratch cleanup) | SHIPPED | `invoke_rustc` passes `--crate-name` (no `.` — `crate_name_for`), `--edition 2021`, checks `status.success()` → `ForgeError::RustcOutput`; spawn ENOENT → `ForgeError::RustcAbsent`; the `check::ScratchDir` Drop guard removes the crate dir wholesale. |
-//! | REQ-3 (artifact form: library + optional `--entry` runner) | SHIPPED | `build_file(path, None)` → `CrateType::Rlib`; `build_file(path, Some(fn))` → `CrateType::Bin` with `synthesize_entry_main`'s deterministic runner. Verified by `sum_runs` (exe prints `6`). |
-//! | REQ-4 (L1 checks baked in, all profiles) | SHIPPED | the artifact is `lower_l1`'s output verbatim (the always-active `thermite_check!`, NOT `debug_assert!`); `build_file` never strips it. Verified by `ens_violation_fires_at_runtime` (the runtime check fires). |
-//! | REQ-5 (build manifest: path, level, fx rows, reproducibility) | SHIPPED | `BuildManifest` composes the artifact path + `CrateType`, the achieved assurance string, the per-fn `fx` rows (`effects_of`), and the `Reproducibility` block (pinned rustc identity + `SOURCE_DATE_EPOCH`). Consumer: `cli::run_build` (human + `--json`). |
-//! | REQ-6 (#57 hook: runnable exe + fx rows + the seccomp sandbox) | SHIPPED | the `--entry` runnable binary (REQ-3) + `BuildManifest::functions` `fx` rows (e.g. `sum` → `["pure"]`); `synthesize_entry_main` now injects the #57 `sandbox::emit_sandbox_prelude` (the fx-derived seccomp filter) as the FIRST statements of the generated `main` (`SandboxConfig`, on by default for `--entry`), recording the installed allowlist in `BuildManifest::sandbox`. Verified by `sum_runs` (`fx == ["pure"]`) + `sandbox_conformance` (pure runs clean, the openat probe killed/allowed). |
-//! | REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path) | SHIPPED | `build_file(.., out: Option<&Path>)` copies the stable /tmp artifact to `<PATH>` via `place_artifact` (overwrite + `chmod +x` so `./<PATH>` runs directly; #128), reports `<PATH>` as `BuildManifest::artifact`; `None` keeps the existing /tmp path unchanged; a bad `<PATH>` → `ForgeError::Io`. Consumer: `cli::run_build` (threads the `--out`/`-o` flag). Verified by `build_conformance::out_places_runnable_binary`. |
+//! <!-- generated:reqs view=forge-build-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-BUILD-ARTIFACT-FORM | shipped | `forge/src/build.rs` | Library and entry-runner artifact forms |  |
+//! | REQ-FORGE-BUILD-ENTRY-SANDBOX | shipped | `forge/src/build.rs` | Entry binary sandbox hook |  |
+//! | REQ-FORGE-BUILD-L1-CHECKS | shipped | `forge/src/build.rs` | L1 checks baked into build artifacts |  |
+//! | REQ-FORGE-BUILD-MANIFEST | shipped | `forge/src/build.rs` | Build manifest with artifact, assurance, effects, and reproducibility |  |
+//! | REQ-FORGE-BUILD-OUT-PATH | shipped | `forge/src/build.rs` | User-named build output path |  |
+//! | REQ-FORGE-BUILD-PIPELINE | shipped | `forge/src/build.rs` | Build pipeline to rustc artifact |  |
+//! | REQ-FORGE-BUILD-RUSTC | shipped | `forge/src/build.rs` | Checked rustc invocation and scratch cleanup |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## `.design/build/kernel-target.md` REQ status (`forge build --target kernel`, #197)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`--target kernel` verb fork) | SHIPPED | `enum BuildTarget` (`Std`/`Kernel`) threaded `cli::run_build` → `build::build_file` → `emit_source` → `invoke_rustc`; `cli.rs` parses `--target std\|kernel` (default `Std`). Consumer: `cli::run_build`. Verified by `cli::tests::parses_build_target_flag` + `kernel_target::pure_fn_builds_no_std_kernel_rlib`; the std default is byte-unchanged (`default_target_source_is_byte_identical_to_no_target_flag` + the unaffected `build_conformance` suite, AC-4). |
-//! | REQ-2 (`no_std + alloc` emission profile) | SHIPPED | `emit_source` prepends `KERNEL_PRELUDE` (`#![no_std]` + `extern crate alloc;` + `use alloc::vec::Vec;`) under `BuildTarget::Kernel`, REUSING `lower_l1`'s output verbatim, emits NO `synthesize_entry_main`; `invoke_rustc` forces `--crate-type=rlib` + `-C panic=abort` (kernel is never a bin). OQ-3 resolved: the L1 emission carries NO `std::`-qualified path (bare `Vec`/`Vec::new()`; surface `String` is the `use TString as String;` alias), so the prelude imports only `Vec`. Consumer: `cli::run_build`. Verified by `kernel_target::pure_fn_builds_no_std_kernel_rlib` (rustc exit 0, freestanding compile) + `pure_and_alloc_fx_fns_build_for_kernel` (an `alloc`-fx string program). |
-//! | REQ-3 (ambient-syscall `fx` reject) | SHIPPED | `reject_ambient_fx_for_kernel` scans EVERY `Item::Fn`'s `sandbox::transitive_fx` for `KERNEL_REJECTED_FX` (`read`/`write`/`net`/`term`/`time`/`rand` — `time`/`rand` joined the reject set in #198, their std-bodied effect wrappers leak into `#![no_std]`) → a NAMED-effect `ForgeError::Usage` (nonzero exit, NO artifact) BEFORE codegen; `--target kernel` + `--entry` is likewise a `ForgeError::Usage`. Consumer: `build_file`. Verified by `kernel_target::ambient_read_fx_fn_is_refused` + `ambient_write_net_term_fx_refuse_identically` + `kernel_target_with_entry_is_usage_error` + `divergence_kernel_time_boundary` (the `fx time` boundary refused naming `time`); `pure`/`alloc` admit (`pure_and_alloc_fx_fns_build_for_kernel`). |
-//! | REQ-4 (L1 runtime checks in the kernel profile) | SHIPPED | `lower_l1`'s `thermite_check!` / `thermite_contract_violation` (`panic!`) is emitted UNCHANGED (NOT stripped, NOT `debug_assert!`); under `#![no_std]` / `panic=abort` it routes to the host `#[panic_handler]` (OQ-1: forge emits neither handler nor allocator — the test harness supplies the stand-in). Consumer: `emit_source` (no strip). Verified by `kernel_target::l1_checks_emitted_verbatim_in_kernel_source` (the macro + handler + `panic!` present, no `debug_assert!`, compiles with a test `#[panic_handler]`). |
-//! | REQ-5 (L3 verification path identical) | SHIPPED | `--target kernel` touches ONLY `build.rs`/`cli.rs` (the rustc codegen side); NO edit to `check.rs` or the L3 lowering. The existing `forge check` suites (`check_conformance`, `string_l3_completeness`, …) are unchanged and stay green. Verified: no `check.rs` diff in the increment + the full `cargo test -p forge` green. |
+//! <!-- generated:reqs view=forge-build-kernel-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-BUILD-KERNEL-FX-REJECT | shipped | `forge/src/build.rs` | Kernel ambient syscall effect rejection |  |
+//! | REQ-FORGE-BUILD-KERNEL-L1-CHECKS | shipped | `forge/src/build.rs` | Kernel profile preserves L1 runtime checks |  |
+//! | REQ-FORGE-BUILD-KERNEL-L3-UNCHANGED | shipped | `forge/src/build.rs` | Kernel target leaves L3 verification unchanged |  |
+//! | REQ-FORGE-BUILD-KERNEL-NOSTD | shipped | `forge/src/build.rs` | Kernel no_std plus alloc emission profile |  |
+//! | REQ-FORGE-BUILD-KERNEL-TARGET | shipped | `forge/src/build.rs` | Kernel build target selection |  |
+//! <!-- /generated:reqs -->
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

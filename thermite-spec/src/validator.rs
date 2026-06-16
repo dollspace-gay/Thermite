@@ -10,12 +10,16 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (validator accept rule) | SHIPPED | `pub fn validate` collects `spec fn` names then walks `Contract.req`/`ens`, `LoopNode.invs`/`dec`, `SpecFnItem.body`; accepts registered combinators (via `combinators::lookup`), declared spec-fn calls, and grammar built-ins. Every `accept.json` case validates clean (`tests/combinators_conformance.rs`). |
-//! | REQ-4 (reject cases, structured `SpecError`) | SHIPPED | `enum SpecError` with `UnknownCombinator`/`WrongArity`/`WrongArgKind`/`ForbiddenCall`/`ExpressionTooDeep`; `validate` returns `Result<(), Vec<SpecError>>`, never panics. Every `reject.json` case yields the expected cause. |
-//! | REQ-5 (bounded recursion — no overflow) | SHIPPED | a single `MAX_RECURSION_DEPTH` guard wraps EVERY recursive descent (`walk_expr`, closure bodies, match arms, index args, if/block tails) via `descend`; deep input yields `ExpressionTooDeep`, never an overflow (`validate_never_panics`). |
-//! | REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers) | SHIPPED | `check_arg_kind`'s `Pred` arm sets `Validator::in_combinator_closure` for the whole closure-body descent (kept set through all nested sub-expressions/closures); while set, `walk_call` rejects any callee resolving via `combinators::lookup` with `SpecError::NestedCombinator`, while a declared `spec fn` call stays accepted. Consumer: `validate` → `walk_clause`/`walk_block` reach `walk_call`. Verification: `reject.json` `nested_combinator_in_closure` → `NestedCombinator`; `accept.json` `named_spec_fn_in_closure` → `Ok`; the flat corpus closures stay `Ok` (`tests/combinators_conformance.rs`). |
+//! <!-- generated:reqs view=thermite-spec-validator-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-ACCEPT | shipped | `thermite-spec/src/validator.rs` | Validator accept rule |  |
+//! | REQ-SPEC-VALIDATOR-DEPTH | shipped | `thermite-spec/src/validator.rs` | Validator bounded recursion |  |
+//! | REQ-SPEC-VALIDATOR-FLAT-CLOSURE | shipped | `thermite-spec/src/validator.rs` | Validator flat closure fragment |  |
+//! | REQ-SPEC-VALIDATOR-REJECT | shipped | `thermite-spec/src/validator.rs` | Validator reject cases |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Basis Stage 1b — the real ADT validator (`.design/basis/01-adts.md`)
 //!
@@ -25,13 +29,17 @@
 //! oracle `conformance/adt-validate/cases.json` (R-CHAR-3) via
 //! `tests/adt_validate.rs`. Lowering stays gated (Stage 1c, thermite-lower).
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-5 (exhaustiveness — `NonExhaustiveMatch`/`UnreachableArm`) | SHIPPED | declaration pre-pass `Validator::new` collects `enums` (name → variant order) + `variant_to_enum`; `check_match_exhaustiveness` (reached from both the caged `walk_expr_inner` `Match` arm AND the exec-body `scan_expr_for_loops` `Match` arm) infers the matched enum from arm patterns (`variant_pattern_name`), then emits `NonExhaustiveMatch { missing }` (declaration order), `UnreachableArm` (variant twice / arm after wildcard), `UnknownVariant` (undeclared variant in a pattern). Slice/`Option` matches are inert (no regression). Consumer: `validate`. Verification: `tests/adt_validate.rs` `non_exhaustive_match` → `missing:[Rect]`; `unreachable_redundant_arm` → `UnreachableArm`; `unknown_variant_pattern` → `UnknownVariant{Square}`; `shape`/`list_sum` accept. |
-//! | REQ-6 (well-formed field/variant access + `is`) | SHIPPED | pre-pass collects `struct_fields` (every `struct`/struct-variant field). `check_field` (on `Expr::Field` + `Expr::StructLit` fields, both walks) → `UnknownField` for an undeclared field (inert when no struct declared). `check_variant_ref` (on `Expr::Is`, both walks) → `UnknownVariant` for an undeclared variant. Consumer: `validate`. Verification: `unknown_field` → `UnknownField{bogus}`; `unknown_variant_is` → `UnknownVariant{Triangle}`; `bank_account`/`shape` accept. |
-//! | REQ-2 (variant names UpperCamelCase — `InvalidVariantCasing`) | SHIPPED | #66. The declaration pre-pass `Validator::new` rejects any `enum` variant whose first char is not `is_ascii_uppercase()` with `SpecError::InvalidVariantCasing { name, span }`, seeded into the error list BEFORE the body/contract walk. This is load-bearing for soundness: the parser disambiguates a single-segment arm pattern by first-letter case (uppercase → `Pattern::Enum`, lowercase → `Pattern::Binding`), so forbidding lowercase variants makes that split sound — a lowercase pattern ident is unambiguously a binding (no lowercase variant can exist), closing the #66 bypass where a lowercase variant masqueraded as a catch-all and masked a non-exhaustive `match`. Consumer: `validate`. Verification: `tests/divergence_adt_validate.rs` `divergence_lowercase_variant_bypasses_exhaustiveness` → `InvalidVariantCasing{foo}`, `divergence_lowercase_arm_masks_unhandled_variant` → `InvalidVariantCasing{tri}`; `exhaustiveness_intact_uppercase_nonexhaustive` confirms uppercase enums still get `NonExhaustiveMatch`. |
-//! | REQ-7 (ADT predicates fit the cage — flat built-ins) | SHIPPED | `Expr::Match`/`Field`/`Is`/`Deref` are FLAT built-ins in `walk_expr_inner` — they recurse operands without setting `in_combinator_closure` and without resolving as combinators, so they are admitted unchanged inside a combinator predicate-closure body (the existing caged-flat walk). No recursive scheme exists yet to nest (forward-declared; schemes are Stage 2). Verification: the combinator cage tests (`tests/combinators_conformance.rs`) stay green. |
-//! | 1a GATE (`SpecError::UnsupportedAdt`) | RETIRED for well-formed ADTs | the variant is RETAINED (downstream `forge`/`thermite-lower` reference it by name in comments and it screams for a future un-checkable ADT form) but has NO live emitter in 1b: `run`'s `Item::Struct` now cages the `inv` clause, `Item::Enum` is a no-op, and `walk_expr_inner`'s `Expr::StructLit`/`Expr::Is`/`Expr::Deref` arms validate-or-accept. A well-formed ADT no longer dies at the gate. |
+//! <!-- generated:reqs view=thermite-spec-validator-adt-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-ADT-CAGE | shipped | `thermite-spec/src/validator.rs` | ADT predicates admitted as flat cage built-ins |  |
+//! | REQ-SPEC-VALIDATOR-ADT-EXHAUSTIVENESS | shipped | `thermite-spec/src/validator.rs` | ADT match exhaustiveness validation |  |
+//! | REQ-SPEC-VALIDATOR-ADT-UNSUPPORTED-GATE | retired | `thermite-spec/src/validator.rs` | Retired unsupported ADT gate |  |
+//! | REQ-SPEC-VALIDATOR-ADT-VARIANT-CASING | shipped | `thermite-spec/src/validator.rs` | UpperCamelCase variant validation |  |
+//! | REQ-SPEC-VALIDATOR-ADT-WELLFORMED | shipped | `thermite-spec/src/validator.rs` | ADT field and variant well-formedness |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Basis Stage 2b — recursion-scheme recognition + the flat-step cage (`.design/basis/02-recursion-schemes.md`)
 //!
@@ -41,32 +49,48 @@
 //! cage). Verified against the oracle `conformance/adt-schemes/cases.json`
 //! (R-CHAR-3) via `thermite-spec/tests/scheme_validate.rs`.
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (scheme set recognized as named primitives) | SHIPPED | `walk_call` resolves a callee `Path` against `schemes::lookup` FIRST; a registered scheme call is checked by `check_scheme` (total arity = `SchemeSig::total_arity`) and ACCEPTED at top level. Consumer: `validate` → `walk_call`. Verification: `scheme_validate.rs` `list_fold_validates` (the `fold`/`for_all` calls of `conformance/list_fold.th` validate clean); `unknown_scheme` → `UnknownCombinator` (an unregistered callee like `frobnicate` is neither scheme/combinator/spec-fn). |
-//! | REQ-2 (flat step closure — arity + no nested scheme) | SHIPPED | `check_scheme` requires the trailing arg to be an `Expr::Closure` whose param count matches `SchemeSig::step_shape.arity()` (`SchemeStepShape` otherwise) and walks the step body in `in_scheme_step` mode; while set, `walk_call` rejects a registered scheme OR combinator callee with `SpecError::NestedScheme`. Consumer: `validate`. Verification: `scheme_validate.rs` `nested_scheme_in_step` → `NestedScheme` (a `fold` inside a `fold` step). |
-//! | REQ-4 (cage bridge — named structural quantification; nested-scheme reject) | SHIPPED | a top-level `for_all`/`fold` scheme call is ACCEPTED as a named-composition leaf (mirroring the combinator-call accept, REQ-6); a scheme nested in a step / a combinator closure is `NestedScheme`. The scheme accept JOINS the combinator-call accept in `walk_call`; the caged-flat walk (`walk_expr_inner`, Stage 1 REQ-7) is unchanged. Verification: `scheme_validate.rs` `list_fold_validates` + `nested_scheme_in_step`. |
-//! | REQ-9 (`SpecError` extension, no panics) | SHIPPED | `SpecError::{NestedScheme, SchemeWrongArity, SchemeStepShape}` are span-bearing variants; `validate` returns `Result<(), Vec<SpecError>>`, never panics. The structural-`dec` reject (REQ-5) reuses Stage 1's recursive-`spec fn` `dec` diagnostic (a generated `fold_<e>` is checked exactly as a hand-written recursive `spec fn` — `thermite-lower`). |
+//! <!-- generated:reqs view=thermite-spec-validator-scheme-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-SCHEME-CAGE | shipped | `thermite-spec/src/validator.rs` | Recursion scheme cage bridge |  |
+//! | REQ-SPEC-VALIDATOR-SCHEME-ERRORS | shipped | `thermite-spec/src/validator.rs` | Recursion scheme validator errors |  |
+//! | REQ-SPEC-VALIDATOR-SCHEME-FLAT-STEP | shipped | `thermite-spec/src/validator.rs` | Recursion scheme flat step validation |  |
+//! | REQ-SPEC-VALIDATOR-SCHEME-RECOGNITION | shipped | `thermite-spec/src/validator.rs` | Recursion scheme recognition |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — 04-collections.md (Basis Stage 4, issue #73)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (capacity + operation contracts fit the §4.2 cage) | SHIPPED | the bounded-`Vec` operation contracts are FLAT built-ins: `v.len()` (already in `BUILTIN_METHODS`) and the no-OOB accessor `get` ADDED to `BUILTIN_METHODS` so `ens result == v.get(i)` (`conformance/vec_demo.th` `checked_get`) validates inside the cage; the capacity bound `v.len() < CAP` / `result.len() == v.len() + 1` (`push_one`) are flat comparisons over the `len` built-in. The caged-flat walk (`walk_expr_inner`'s `MethodCall` arm) is UNCHANGED — a Vec `len`/`get` is the same flat built-in as a slice `len`. `push`/`pop` are EXEC-only (never in a contract), so the cage does not admit them. Consumer: `validate` → `walk_expr_inner`. Verification: `thermite-lower/tests/collections_conformance.rs` (the contracts validate clean + real verus L3). |
-//! | REQ-4 (element invariant via named `spec fn`) | NOT-STARTED | epic **#62** Stage 4 (v1.1). The element invariant (`forall_in(v, |e| inv(e))` as a named `spec fn`, preserved across `push`) reuses the existing named-`spec fn` accept path UNCHANGED — but the v1 corpus oracle (`conformance/vec_demo.th`) exercises only the capacity contract + no-OOB get; no `Vec<Account>` element-invariant program is in the corpus, so this REQ is deferred to a Stage-4 follow-up (the GROUNDED `all_elems_inv` form is design-confirmed feasible, not yet corpus-exercised). |
-//! | REQ-12 (`last`/`contains` in `BUILTIN_METHODS`) | SHIPPED | #98 cluster C6. `last` and `contains` ADDED to `BUILTIN_METHODS` so an `ens result == v.last()` / `ens result == v.contains(x)` validates inside the §4.2 cage exactly as the no-OOB `get` does (the lowerer maps spec-position `v.last()` to the wrapper's `spec_get((len-1) as int)`; `contains`'s `exists`-meaning is PROVED by the exec `ens`'s linear-scan invariant, R-DEFER-9). `pop_last`/`insert`/`remove` stay EXEC-only (`&mut` mutators, never in a contract). The caged-flat walk (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED. Consumer: `pub fn validate` → `walk_expr_inner`. Verification: `forge/tests/vec_completeness_conformance.rs` (the C6 ops certify L3) + `cargo test -p thermite-spec`. |
+//! <!-- generated:reqs view=thermite-spec-validator-collections-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-LOWER-VEC-METHOD-CAGE | shipped | `thermite-lower/src/lower.rs` | Vec contract method cage integration |  |
+//! | REQ-SPEC-VALIDATOR-COLLECTIONS-CAGE | shipped | `thermite-spec/src/validator.rs` | Vec contract cage admission |  |
+//! | REQ-SPEC-VALIDATOR-COLLECTIONS-ELEM-INVARIANT | not_started | `thermite-spec/src/validator.rs` | Deferred Vec element invariant validation | Add a corpus `Vec<Account>`/element-invariant program and validator oracle coverage in the Stage 4 follow-up.<br>blockers: github:dollspace-gay/Thermite#62 |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — 13-map.md cluster C12 (bounded verified Map<K,V>, issue #114/#123)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (`contains_key` cage admission; capacity/op contracts in §4.2) | SHIPPED | `contains_key` ADDED to `BUILTIN_METHODS` so an `ens result == m.contains_key(k)` (`conformance/map_kv.th` `has_key`) validates inside the §4.2 cage as a FLAT built-in exactly as the `Vec` `contains` / no-OOB `get` — the lowerer maps spec-position `m.contains_key(k)` to the wrapper's `spec_contains_key(k)`. `insert` stays EXEC-only (`&mut` mutator, never in a contract, like `push`); `get`/`len` were already present. The round-trip / absent→None contracts are the C7 spec-`match`-in-`ens` over `get`'s `Option` result (the admitted flat-`match` cage rule, 01-adts REQ-7), UNCHANGED. The caged-flat walk (`walk_expr_inner`'s `MethodCall` allowlist arm) is UNCHANGED. Consumer: `pub fn validate` → `walk_expr_inner`. Verification: `forge/tests/map_conformance.rs::ac3_..._certifies_l3` (`has_key` L3, the mutation-strong contains_key contract) + `cargo test -p thermite-spec`. |
+//! <!-- generated:reqs view=thermite-spec-validator-map-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-MAP-CAGE | shipped | `thermite-spec/src/validator.rs` | Map contract cage admission |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — 06-provenance-and-sinks.md (Basis Stage 6, issue #76 / blocker #77)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-8 (`#[sealed]` abstraction barrier — the door is the only mint) | SHIPPED | epic **#62** Stage 6 (#77). The declaration pre-pass `Validator::new` collects `sealed_structs` (every `Item::Struct` with `sealed == true`, alongside `struct_fields`). The new span-bearing `SpecError::SealedConstruction { name, span }` variant is emitted by `check_sealed_construction`, called from BOTH `Expr::StructLit` walk arms (the exec-body `scan_expr_for_loops` AND the caged `walk_expr_inner`): any struct literal whose `path` resolves to a `#[sealed]` struct is REJECTED, so a `#[sealed]` clean/capability type (`Sql`/`Public`/`Authorized`) is obtainable ONLY as a `#[boundary]` door's return (the door body is foreign/`external_body`, no in-language `StructLit`). Inert when no `#[sealed]` struct is declared (the non-IFC corpus is UNCHANGED). Consumer: `pub fn validate` → `forge::check::check_file` (a `ForgeError::Spec`, exit non-zero, no L3 cert). Verification: `thermite-spec/tests/sealed_validate.rs` (the launder rejects with `SealedConstruction{Sql}`; the safe doored path + a plain/no-sealed struct validate clean); `forge/tests/divergence_provenance.rs` (the 3 #77 bypass tests, UN-IGNORED, REJECT on all three axes); `forge/tests/provenance_conformance.rs` unchanged (safe paths L3, naive careless L0). |
+//! <!-- generated:reqs view=thermite-spec-validator-provenance-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-SEALED-CONSTRUCTION | shipped | `thermite-spec/src/validator.rs` | Sealed construction validator barrier |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — 07-strings.md (Basis Stage 7 cluster C4, issue #94)
 //!
@@ -87,22 +111,34 @@
 //!
 //! ## REQ status — 09-option-result.md (Cluster C7, built-in Option/Result, issue #95)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (built-in-variant registry + spec-`match`-in-`ens` payload projection) | SHIPPED | `Validator::new` SEEDS the built-in variants `Some`/`None`→enum `Option` and `Ok`/`Err`→enum `Result` into `enums`/`variant_to_enum` (order `[Some, None]`/`[Ok, Err]`), AFTER the user pre-pass (a user re-decl wins via `or_insert`). With them registered, `Some(v)`/`Ok(v)` construction is accepted (the exec-body walk recurses `Call`/`Path`, no `UnknownVariant`), `match` over them is exhaustiveness-checked (`check_match_exhaustiveness` now infers `Option`/`Result` — both arms or a `Wildcard` required), and `r is Some` (`check_variant_ref`) accepts. The spec-`match`-in-`ens` payload projection needs NO new cage rule — `walk_expr_inner`'s `Match` arm already admits a flat `match` as a built-in (01-adts REQ-7), so `match result { Some(v) => <flat pred>, None => true }` in an `ens` is an accepted flat predicate. `GENERATED_SPEC_FNS` += `all_digits`/`is_digit`. Consumer: `pub fn validate`. Verified: `forge/tests/option_result_conformance.rs` (AC-1/AC-2 L3 construct + payload `ens`; AC-3 the broken payload REJECTED, non-vacuous). |
+//! <!-- generated:reqs view=thermite-spec-validator-option-result-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-OPTRES-BUILTINS | shipped | `thermite-spec/src/validator.rs` | Option and Result built-in validator registry |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — 10-recursion-tuples.md (Cluster C9-A, plain-`fn` recursion, issue #108)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-2 (`dec` mandatory for a recursive `fn`; the self-call validator rule) | SHIPPED | `run`'s `Item::Fn` arm detects a DIRECT self-call (`block_calls_name(body, &f.name)` — a free call whose callee path's last segment is the fn's own name, walked over every statement/expression) and, when `f.dec.is_none() && !fn_is_diverge(f)`, pushes the span-bearing `SpecError::MissingDecreases { name, span }` — the surface mirror of the Verus rule "recursive function must have a decreases clause", so a non-terminating fn never reaches an L3 cert (R-DEFER-9). The `fx diverge` exemption is honored by `fn_is_diverge` (mirroring `thermite-lower`'s — the single §4.1 truth): a diverge fn recurses WITHOUT `dec` and is L1-capped (#88). Mutual recursion (REQ-6) is OUT of v1 — a pair that calls EACH OTHER (no direct self-call) is not flagged here; it reaches Verus and is rejected there (no false L3, no crash). Consumer: `pub fn validate` → `forge::check`. Verified: `forge/tests/recursion_conformance.rs::self_call_without_dec_is_structured_error` (the MissingDecreases reject) + `diverge_recursion_without_dec_is_l1`. |
+//! <!-- generated:reqs view=thermite-spec-validator-recursion-tuples-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-RECURSION-DECREASES | shipped | `thermite-spec/src/validator.rs` | Recursive fn decreases validation |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## REQ status — 11-ergonomics.md (Cluster C10, binding/control-flow ergonomics, issue #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (match guards — exhaustiveness down-weight) | SHIPPED | `check_match_exhaustiveness` reads `arm.guard.is_some()`: a GUARDED arm is NEVER a catch-all and NEVER marks its variant `covered` (the guard may fail), so a guarded-only `Some` arm leaves `Some` uncovered → `SpecError::NonExhaustiveMatch` (the GROUNDED Verus rule: a guarded-only arm is non-exhaustive). When NO arm names a declared variant (so the enum cannot be inferred from the patterns — e.g. a guarded CATCH-ALL `match m { _ if cond => 0 }`), a match whose EVERY arm is guarded covers nothing unconditionally and is `NonExhaustiveMatch`; an UNGUARDED catch-all (`match m { _ => 0 }`) still completes the match (accepted, #120). A guard `Expr` is also walked by `walk_expr`/`scan_expr_for_loops` (an unknown field/variant in a guard is flagged). Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req3_guarded_only_arm_is_non_exhaustive` + `thermite-spec/tests/divergence_c10_guarded_catchall.rs`. |
-//! | REQ-4 (or-patterns — exhaustiveness via union) | SHIPPED | `collect_covered_variants` counts EACH alternative of a `Pattern::Or` toward the covered-variant set (union); `pattern_is_catch_all` treats an `Or` containing a `_`/binding as a catch-all. So `Some(_) \| None` is EXHAUSTIVE over `Option`-like enums; an `Or` over a strict subset still leaves the rest `NonExhaustiveMatch`. `variant_pattern_name` resolves the matched enum from the first variant-naming alternative. Consumer: `pub fn validate`. Verified: `forge/tests/ergonomics_conformance.rs::req4_or_pattern_exhaustive_via_union`. |
+//! <!-- generated:reqs view=thermite-spec-validator-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-VALIDATOR-ERGONOMICS-GUARD | shipped | `thermite-spec/src/validator.rs` | Match guard exhaustiveness validation |  |
+//! | REQ-SPEC-VALIDATOR-ERGONOMICS-OR-PATTERN | shipped | `thermite-spec/src/validator.rs` | Or-pattern exhaustiveness validation |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;

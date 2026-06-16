@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #281 L1 empty-window twin fix — claim-neutral for this doc / the REQ-20 truth for l1-runtime-checks)
+audited-sha: 656088f817c783e15dfbde57f581ec19fc4d3867 (re-pinned 2026-06-15: L1 status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #281 L1 empty-window twin fix — claim-neutral for this doc / the REQ-20 truth for l1-runtime-checks))
 governs: thermite-lower/src/l1.rs
 thesis-refs:
   - thermite-design.md §4.2

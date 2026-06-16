@@ -24,70 +24,106 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (pipeline orchestration) | SHIPPED | `pub fn check_file` runs `thermite_syntax::parse` → `thermite_spec::validate` → `thermite_lower::check_effects`, then PER ITEM (§5.3) `item_subprogram` → `thermite_lower::lower` → `run_verus` → `parse_verus_output` → `Certificate`; each stage short-circuits into a `ForgeError`. Consumer: `cli::run` (`cli.rs`). |
-//! | REQ-2 (verus invocation, temp file, crate-name gotcha) | SHIPPED | `run_verus` writes a `<stem>.rs` file (no `.` in the stem — `crate_stem`) INSIDE a per-run scratch DIR (`unique_scratch_dir`), spawns `verus --output-json --smt-option smt.random_seed=<seed>` with `current_dir` = the scratch dir, and removes the scratch dir WHOLESALE via the `ScratchDir` Drop guard on EVERY exit path (source + verus's compiled-binary sibling go together — blocker #53). |
-//! | REQ-3 (exit-status checked, never swallow) | SHIPPED | `run_verus` returns exit status; `parse_verus_output` makes a parseable failure a reported cert and an unparseable/internal failure `ForgeError::VerusOutput`; spawn ENOENT → `ForgeError::VerusAbsent`. |
-//! | REQ-4 (verus output → per-obligation + counterexamples) | SHIPPED | `parse_verus_output` reads the JSON `verification-results` summary for level and parses stderr `error:` + `--> file:line:col` into `ObligationResult::failed` witnesses. |
-//! | REQ-5 (level determination, v0.1) | SHIPPED | `level_from_summary`: `Level::L3` iff `success && errors == 0`, else the run is a reported non-L3 failure. |
-//! | REQ-6 (verus-absent = environment error) | SHIPPED | `run_verus` maps spawn `ErrorKind::NotFound` to `ForgeError::VerusAbsent`. |
-//! | REQ-7 (determinism) | SHIPPED | pinned seed (`DEFAULT_SOLVER_SEED` / lockfile) passed to verus; `solver_time_ms` is the only wall-clock field and is excluded from the oracle (`manifest::Certificate::oracle_eq`). |
+//! <!-- generated:reqs view=forge-check-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-DETERMINISM | shipped | `forge/src/check.rs` | Deterministic check inputs |  |
+//! | REQ-FORGE-CHECK-EXIT-STATUS | shipped | `forge/src/check.rs` | Verus exit-status discipline |  |
+//! | REQ-FORGE-CHECK-LEVEL-DETERMINATION | shipped | `forge/src/check.rs` | L3 level determination |  |
+//! | REQ-FORGE-CHECK-OBLIGATION-WITNESSES | shipped | `forge/src/check.rs` | Per-obligation Verus witnesses |  |
+//! | REQ-FORGE-CHECK-PIPELINE | shipped | `forge/src/check.rs` | Check pipeline orchestration |  |
+//! | REQ-FORGE-CHECK-VERUS-ABSENT | shipped | `forge/src/check.rs` | Verus-absent environment error |  |
+//! | REQ-FORGE-CHECK-VERUS-SCRATCH | shipped | `forge/src/check.rs` | Verus invocation scratch discipline |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #6 gate (structural vacuity triage + `#[slag]`, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | vacuity-triage REQ-6 (gate BEFORE L3) | SHIPPED | `gate_fn` runs `vacuity::triage` on each `Item::Fn` BEFORE `thermite_lower::lower` + `run_verus`; a `VacuityVerdict::Rejected` short-circuits to a non-certified `Certificate::rejected` (no lowering, no verus); a pass calls `Certificate::graduate_triage_clean` (the two §7.1 `contract_quality` bools go live-`false`). |
-//! | slag REQ-2/REQ-5 (L1 short-circuit) | SHIPPED | `gate_fn` for a `slag.is_some()` item runs `slag::validate` (invalid → `Certificate::rejected`), then `vacuity::triage` (a/b/c — slag exempts (d) inside `triage`), then `Certificate::slag_l1` (`Level::L1`, `slag: true`, `slag_meta`) WITHOUT invoking verus. |
+//! <!-- generated:reqs view=forge-check-triage-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-SLAG-L1 | shipped | `forge/src/check.rs` | Slag L1 short-circuit |  |
+//! | REQ-FORGE-CHECK-VACUITY-GATE | shipped | `forge/src/check.rs` | Structural vacuity gate before L3 |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #16 gate (boundary-fn FFI L1 path, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | ffi REQ-5/REQ-7 (route boundary fns to L1 EARLY) | SHIPPED | `gate_fn` detects `f.boundary.is_some()` FIRST (before the slag/non-slag forks): validates a non-empty target, runs `vacuity::triage` (a)/(b)/(c) (rule (d) exempt — `triage` reads `f.boundary`), then `Certificate::boundary_l1` (`Level::L1`, `boundary: true`, `boundary_target`, NO verus). The per-item loop's `GateOutcome::BoundaryL1` short-circuits like `SlagL1` — a boundary fn NEVER reaches the L3 (verus) / L2 (kani) / #12 mutation / #14 strengthen paths, so `g` calling `f` sees only `f`'s contract (§9 composition independence, REQ-7). |
+//! <!-- generated:reqs view=forge-check-boundary-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-BOUNDARY-L1 | shipped | `forge/src/check.rs` | Boundary L1 short-circuit |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #88 gate (`fx diverge` → L1 partial-correctness cap, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | check.md REQ-8 (`fx diverge` caps at L1, mutation/strengthen exempt — the #16 mirror) | SHIPPED | `fn_is_diverge` (the row-shape predicate mirroring `thermite_lower`'s) routes a non-boundary, non-slag `fx diverge` fn (the editor's `run`) in `gate_fn` to `GateOutcome::DivergeL1(diverge_l1_cert(..))` — `Level::L1`, `slag: false`, `boundary: false`, the partial-correctness discharged obligation, the §7.1 (a)/(b)/(c) triage STILL applied (a vacuous-`ens` diverge fn still rejects). The per-item loop's `GateOutcome::DivergeL1` short-circuits like `BoundaryL1`/`SlagL1` (no verus, no #12 mutation, no #14 strengthen) — so `run` NEVER reaches the §7 gate that mis-rejected it `WeakContract` at L0. Boundary-style L1-no-verus (check.md REQ-8 reading (b)): the per-item sub-program's diverge body would fail verus (the loop callees' `req`s are not re-established by the loop invariant — spurious for partial correctness), so the cap skips verus; the real assurance is the L1 runtime checks + the L3-proven edit core. DIVERGE-ONLY (R-DEFER-9): a non-diverge weak contract still rejects L0 `WeakContract`; a non-diverge non-decreasing `dec` still fails verus termination. Verified: `forge/tests/editor_runs.rs` (run L1, edit core L3, build+run; non-diverge regressions). |
+//! <!-- generated:reqs view=forge-check-diverge-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-DIVERGE-L1 | shipped | `forge/src/check.rs` | Diverge L1 partial-correctness cap |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #8 gate (per-item content-addressed proof cache, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | proof-cache REQ-3 (lookup-then-store, per item) | SHIPPED | `check_file`'s L3 path computes `cache::cache_key(&lowered, seed, &verus_version, &thermite_version)` and `cache::load`s BEFORE `run_verus`: a HIT returns the stored cert via `Certificate::with_cached(true)` (verus SKIPPED); a MISS runs verus, assembles + `graduate_triage_clean`s the cert, `cache::store`s it, and returns `with_cached(false)`. |
-//! | proof-cache REQ-5 (version-keyed) | SHIPPED | `resolve_verus_version` captures the verus version ONCE per `check_file` (the `VERUS_VERSION` pin, else `verus --version`) and `THERMITE_VERSION = env!("CARGO_PKG_VERSION")` feeds the key — a version change forces a universal MISS. |
+//! <!-- generated:reqs view=forge-check-cache-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-CACHE-LOOKUP-STORE | shipped | `forge/src/check.rs` | Per-item proof cache lookup and store |  |
+//! | REQ-FORGE-CHECK-CACHE-VERSION-KEY | shipped | `forge/src/check.rs` | Version-keyed proof cache |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #11 gate (solver profiles as proof-repair prompts, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | solver-profiles REQ-2 (capture on rlimit-hit) | SHIPPED | `invoke_verus` ALWAYS passes `--profile` + `--rlimit <rlimit>` (the pinned generous `DEFAULT_RLIMIT = 30.0`, so the corpus still PROVES L3); `--profile` emits the Z3 instantiation report on STDERR ONLY on an rlimit-hit. |
-//! | solver-profiles REQ-5 (three-way classification) | SHIPPED | `classify_verus_outcome` is the deterministic three-way split: `Proved` (`success && errors==0` → L3, no profile) / `Timeout` (an error WITH a `profile::parse_profile` report present on stderr → attach the `SolverProfile`) / `Counterexample` (an error WITHOUT a profile → the #5 witness path, which ALSO absorbs the incompleteness-unknown FAST-`unknown` edge — OQ-1). Consumer: `assemble_certificate`. |
-//! | solver-profiles REQ-7 (timeout cert level, distinct) | SHIPPED | the `Timeout` outcome → `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the profile + a `profile::suggested_move` hint), DISTINCT from a counterexample-L0 (no profile, a `postcondition not satisfied` reason). v0.1 does not auto-degrade (#10). `--rlimit` is exposed via `cli.rs`; `check_file_with_rlimit` threads it; a non-default budget bypasses the proof cache (a timeout is never cached as proved). |
+//! <!-- generated:reqs view=forge-check-solver-profile-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-OUTCOME-CLASSIFICATION | shipped | `forge/src/check.rs` | Three-way Verus outcome classification |  |
+//! | REQ-FORGE-CHECK-PROFILE-CAPTURE | shipped | `forge/src/check.rs` | Solver profile capture on rlimit hit |  |
+//! | REQ-FORGE-CHECK-TIMEOUT-CERT | shipped | `forge/src/check.rs` | Distinct timeout certificate path |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #13 gate (solver-backed tautology + vacuous-precondition checks, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | solver-vacuity REQ-5 (gate AFTER #6, before L3) | SHIPPED | `check_file_with_rlimit`'s per-item loop calls `vacuity_solver::solver_vacuity_check(f, &spec_items, seed, rlimit)` AFTER `gate_fn` returns `ProceedToL3` and BEFORE the L3 lower/`run_verus`; a `Detected` short-circuits to `Certificate::rejected_vacuity` (verdict-in-cert, no L3 proof) and a `Clean` falls through to the existing L3 path. |
-//! | solver-vacuity REQ-6 (graduate the two bools to solver-confirmed) | SHIPPED | a `SemanticTautology` detection sets `contract_quality.tautology = true`, a `VacuousPrecondition` sets `vacuous_precondition = true` (via `Certificate::rejected_vacuity`); a `Clean` reaches the L3 path whose `graduate_triage_clean` keeps both live-`false`, now solver-confirmed. |
-//! | solver-vacuity REQ-3/REQ-7 (R-CODE-4 + determinism) | SHIPPED | a harness environment/internal verus failure propagates as a `ForgeError` from `solver_vacuity_check` (the `?`), never a silent clean; the two queries run under the same pinned `seed` + `rlimit` as the L3 path. |
+//! <!-- generated:reqs view=forge-check-solver-vacuity-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-SOLVER-VACUITY-FAILURES | shipped | `forge/src/check.rs` | Solver-vacuity failure discipline |  |
+//! | REQ-FORGE-CHECK-SOLVER-VACUITY-GATE | shipped | `forge/src/check.rs` | Solver-vacuity gate before L3 |  |
+//! | REQ-FORGE-CHECK-SOLVER-VACUITY-QUALITY | shipped | `forge/src/check.rs` | Solver-confirmed contract-quality bits |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #10 gate (the automatic L3→L2→L1 degrade ladder, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | degrade-ladder REQ-1/REQ-2/REQ-3 (wire the default path → the ladder) | SHIPPED | `check_file_with_options`'s per-item L3 path calls `ladder_for_timeout(f, &sub, &verus.outcome, cert)` after `assemble_certificate`: it maps the `VerusOutcome` to a `degrade::L3Verdict` and runs `degrade::run_ladder` with LIVE L2 (`lower_l2`→`run_kani`→`classify_l2_outcome`) + L1 (`lower_l1` record, OQ-3 (b)) closures. A `Proved` is unchanged (no degrade); a `Counterexample` short-circuits to a hard fail with NO L2/L1 (REQ-2 anti-cheat); a `Timeout` degrades. The EXPLICIT `--level l2` path (`check_l2_file`) is UNCHANGED. |
-//! | degrade-ladder REQ-8 (subprocess failures never silently degrade) | SHIPPED | the ladder's L2/L1 closures return `Result`; a `ForgeError` (kani absent, lowering failure) propagates via the `?` in `run_ladder` and out of `ladder_for_timeout`, NEVER a degrade. A degraded cert (`lowered_assurance`) is NEVER cached (budget-dependent, parallel to the `VerusTimeout` no-cache rule). |
+//! <!-- generated:reqs view=forge-check-degrade-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-DEGRADE-FAILURES | shipped | `forge/src/check.rs` | Degrade subprocess failure discipline |  |
+//! | REQ-FORGE-CHECK-DEGRADE-LADDER | shipped | `forge/src/check.rs` | Default path degrade ladder |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3/REQ-4 (Pattern::Or + MatchArm.guard ripple) | SHIPPED | `collect_pattern_adt_refs` gains a `Pattern::Or` arm (walks each alternative for ADT refs — no `_`/panic); `collect_expr_adt_refs`/`collect_expr_spec_fn_calls` walk `arm.guard` (a guard may reference an ADT / call a spec fn). The pure-desugar features (REQ-1/2/5) reach `check` as the SHIPPED desugared nodes, so the ADT-ref / spec-fn-call collection is unchanged for them. Consumer: `check_file`. |
+//! <!-- generated:reqs view=forge-check-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CHECK-ERGONOMICS-DEPS | shipped | `forge/src/check.rs` | Ergonomics dependency walker ripple |  |
+//! <!-- /generated:reqs -->
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

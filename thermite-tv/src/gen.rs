@@ -50,9 +50,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (off-corpus generator) | SHIPPED | `pub fn generate_clauses` here — a DETERMINISTIC (SplitMix64-seeded, no `rand`/clock, R-CODE-5) generator of well-typed `bool`-valued contract-position `Expr`s over the frozen sublanguage (comparisons over all `BinOp`s, logical connectives incl. nesting, the 8 combinators with the correct arg KINDS per `thermite_spec::lookup(_).arg_kinds`, `spec_sum` calls, `result`/`old(acc)`, byte-view method calls, casts). Non-test consumer: the forge off-corpus run `forge::contract_tv::run_generated` (lowers each via `thermite_lower::lower_contract_expr` → TV-checks via `equivalence_obligation`). Pure generation in the INDEPENDENT crate — no `thermite-lower` dep (AC-6 intact). Coverage + reproducibility asserted in `tests` + `forge/tests/contract_tv_conformance.rs` (AC-7). **#150 String byte-view off-corpus coverage:** `gen_byteview_cmp` now emits `t.byte_at(i)`/`t.len()` over the `String`/`&TString` receiver `t` (`STRING_NAME`), so the off-corpus run dispatches BOTH columns to the wrapper SPEC fns (`t.spec_byte_at(i as int)`/`t.spec_len()`) and the byte-view is CHECKED (no longer an honest Skip) — the generated run is now TOTAL (0 skipped). |
+//! <!-- generated:reqs view=thermite-tv-gen-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-CONTRACT-GENERATOR | shipped | `thermite-tv/src/gen.rs` | Contract-TV off-corpus generator |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeSet;
 

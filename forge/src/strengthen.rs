@@ -24,20 +24,28 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (frozen deterministic bounded candidate template) | SHIPPED | `pub fn generate_candidates` is a pure function of the `FnItem` + the file's `spec fn`s + the #12 survivor, producing an ORDERED list in the fixed family order (spec-fn equality, result-equals-input-expression, survivor-derived tighter bound), capped by `pub const CANDIDATE_CAP`. Consumer: `pub fn probe` (this file) + `check::strengthen_certificate` in `check.rs`. |
-//! | REQ-2 (verify each candidate vs the REAL body, reuse `run_verus`) | SHIPPED | `pub fn probe` weaves each candidate `ens` into a COPY of `f` (`candidate_fn`, body UNCHANGED) and calls the threaded `verify` closure (which is `check::run_verus` of the `item_subprogram` shape, content-addressed via the #8 cache). A candidate verus PROVES → HOLDS; a non-`Proved` candidate is DISCARDED. A `ForgeError` from `verify` propagates (R-CODE-4). Consumer: `check::strengthen_certificate`. |
-//! | REQ-3 (strictly-stronger filter) | SHIPPED | `pub fn is_strictly_stronger` keeps a verifying candidate only if it KILLS the survivor (the `verify`-against-survivor-body witness — `CandidateClause::kills_survivor` set, the survivor body does NOT verify the candidate) OR adds an equality on `result` the current `ens` lacks (`current_ens_pins_result` is `false`). No extra implication solver query (OQ-5). Consumer: `pub fn probe`. |
-//! | REQ-4 (advisory placement — additive cert field, not a gate) | SHIPPED | `pub fn probe` returns `Vec<Suggestion>`; `check::strengthen_certificate` attaches them via `Certificate::with_strengthening` (the additive `strengthening` field + the `suggested_move` headline). The `level`/`reject`/oracle subset are untouched (REQ-4). |
-//! | REQ-5 (consumes #12 survivors; runs on a settled L3 + scored item) | SHIPPED | `check::check_file_with_options` calls `check::strengthen_certificate` AFTER mutation scoring, ONLY when the item is `Level::L3` with `reject.is_none()` and a `MutationScore` was produced; the `MutationScore.survivor` feeds family-3 candidate generation. |
-//! | REQ-6 (determinism — same fn ⇒ same suggestions) | SHIPPED | `generate_candidates` is a pure function of the AST + spec fns + survivor + frozen template, so the candidate list is byte-stable; each candidate's verus verdict is the same deterministic pinned-seed/rlimit run + #8 cache the L3 path uses. The suggestions are DIAGNOSTIC + verus-version-sensitive, so oracle-EXCLUDED. |
+//! <!-- generated:reqs view=forge-strengthen-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-STRENGTHEN-ADVISORY-CERT | shipped | `forge/src/strengthen.rs` | Strengthening suggestions are advisory certificate fields |  |
+//! | REQ-FORGE-STRENGTHEN-CANDIDATES | shipped | `forge/src/strengthen.rs` | Frozen bounded strengthening candidate template |  |
+//! | REQ-FORGE-STRENGTHEN-DETERMINISM | shipped | `forge/src/strengthen.rs` | Deterministic strengthening suggestions |  |
+//! | REQ-FORGE-STRENGTHEN-MUTATION-INPUT | shipped | `forge/src/strengthen.rs` | Strengthening consumes mutation survivors after L3 |  |
+//! | REQ-FORGE-STRENGTHEN-STRICTER-FILTER | shipped | `forge/src/strengthen.rs` | Strictly-stronger strengthening filter |  |
+//! | REQ-FORGE-STRENGTHEN-VERIFY-CANDIDATES | shipped | `forge/src/strengthen.rs` | Strengthening candidates verify against the real body |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3/REQ-4 (NO strengthen change needed) | SHIPPED | `render_expr` is a frozen-template `ens`-shape renderer over the strengthenable family (binary/method/call/tuple/projection) with a safe non-panic `_` placeholder for any other shape — it does not match `Pattern` and never renders a `match` arm, so neither the `MatchArm.guard` field nor the `Pattern::Or` variant ripples here (the template never emits a guard/or-pattern). Consumer: `generate_candidates`. |
+//! <!-- generated:reqs view=forge-strengthen-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-STRENGTHEN-NO-ERGONOMICS-RIPPLE | shipped | `forge/src/strengthen.rs` | Strengthening renderer needs no match-pattern ripple |  |
+//! <!-- /generated:reqs -->
 
 use thermite_syntax::{BinOp, Clause, Expr, FnItem, Item, PrimType, Span, Type};
 

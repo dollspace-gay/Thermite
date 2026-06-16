@@ -22,16 +22,20 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (cache-key composition — verdict-determining inputs) | SHIPPED | `pub fn cache_key(lowered_src, seed, verus_version, thermite_version) -> String` hashes the four args PLUS the `CHECK_SCHEMA_VERSION` check-logic version (blocker #49), each DOMAIN-TAGGED + LENGTH-PREFIXED (`field`), into a lowercase-hex sha256 content address. Consumer: `check::check_file`. |
-//! | REQ-2 (soundness-completeness invariant — hit == fresh verify) | SHIPPED | `cache_key` captures every verdict-determining input (the four args); `store` clears `cached` before persisting and `load` returns the stored cert unchanged, so `check::check_file`'s `with_cached(true)` HIT is oracle-equal to the fresh verify it was stored from. Verified by `key_changes_when_any_input_changes` + `check::check_file`'s `with_cached` wiring. |
-//! | REQ-3 (lookup-then-store flow, per item) | SHIPPED | `pub fn load(cache_dir, key) -> Option<Certificate>` consulted BEFORE `run_verus`; `pub fn store(cache_dir, key, cert)` after a MISS. Consumer: `check::check_file`'s per-item L3 path. |
-//! | REQ-4 (locality — per-item) | SHIPPED | the key is over the item's OWN `item_subprogram` lowered source (`check.rs`), so an edit to a sibling leaves this item's key byte-identical. Verified by `check::tests::cache_key_is_local_to_the_item`. |
-//! | REQ-5 (version-keyed invalidation) | SHIPPED | `verus_version` + `thermite_version` (`env!("CARGO_PKG_VERSION")`, sourced in `check.rs`) are key inputs; a version change forces a universal MISS. Verified by `key_changes_when_any_input_changes`. |
-//! | REQ-6 (cache location + format — gitignore-able) | SHIPPED | `pub fn default_cache_dir() -> PathBuf` = `target/thermite-proof-cache/` (under the already-ignored `target/`); one `<hex-key>.json` per key; `store` writes atomically (temp + rename); a corrupt/unreadable entry → `load` returns `None` (MISS, never an error). Consumer: `check::check_file`. |
-//! | REQ-7 (additive `cached: bool` field) | SHIPPED | `manifest::Certificate::cached` (`#[serde(default)]`, oracle-excluded); `store` persists `cached: false` (a stored cert is the canonical fresh verify), `check::check_file` sets `with_cached(true)` on the HIT it returns. |
-//! | REQ-8 (bit-reproducible deterministic cert) | SHIPPED | `cache_key` is a PURE function of its four inputs (no wall-clock, no ambient state, R-CODE-5); `load`/`store` round-trip the cert's deterministic fields byte-for-byte. Verified by `cache_key_is_pure` + `round_trip_load_store`. |
+//! <!-- generated:reqs view=forge-cache-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CACHE-CACHED-FIELD | shipped | `forge/src/cache.rs` | Additive cached certificate field |  |
+//! | REQ-FORGE-CACHE-DETERMINISM | shipped | `forge/src/cache.rs` | Deterministic proof cache round trip |  |
+//! | REQ-FORGE-CACHE-HIT-FRESH-INVARIANT | shipped | `forge/src/cache.rs` | Proof cache hit equals fresh verify |  |
+//! | REQ-FORGE-CACHE-KEY | shipped | `forge/src/cache.rs` | Proof cache key composition |  |
+//! | REQ-FORGE-CACHE-LOCALITY | shipped | `forge/src/cache.rs` | Proof cache per-item locality |  |
+//! | REQ-FORGE-CACHE-LOOKUP-STORE | shipped | `forge/src/cache.rs` | Proof cache lookup then store flow |  |
+//! | REQ-FORGE-CACHE-STORAGE | shipped | `forge/src/cache.rs` | Proof cache location and JSON storage |  |
+//! | REQ-FORGE-CACHE-VERSION-KEY | shipped | `forge/src/cache.rs` | Proof cache version-keyed invalidation |  |
+//! <!-- /generated:reqs -->
 
 use std::path::{Path, PathBuf};
 

@@ -30,15 +30,19 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (tautology harness builder) | SHIPPED | `build_tautology_harness` lowers the real `FnItem` (+ spec fns) via `thermite_lower::lower`, extracts the verbatim `requires`/`ensures` + the lowered param list / return type (`extract_lowered_fn`), and rebuilds `proof fn taut_check(<params>, result: <RET>) requires ..; ensures ..; { }`. Consumer: `solver_vacuity_check` → `check::check_file`. Grounded: PROVES on `result >= 0`/`u32`, FAILS on `sum`'s ens. |
-//! | REQ-2 (vacuity harness builder) | SHIPPED | `build_vacuity_harness` reuses the same extraction and rebuilds `proof fn vac_check(<params>) requires ..; { assert(false); }`. Consumer: `solver_vacuity_check` → `check::check_file`. Grounded: PROVES on `x>5 && x<3`, FAILS on `sum`'s req. |
-//! | REQ-3 (verdict interpretation, R-CODE-4) | SHIPPED | `interpret_summary` maps a `HarnessSummary`: PROVED (`success && errors==0`) → `Proved` (DETECTED); FAILED → `Failed` (CLEAN); VIR error → `ForgeError::VerusOutput`. `run_harness` surfaces verus-absent / unparseable output as a `ForgeError`, NEVER a silent clean `false`. |
-//! | REQ-4 (value-add over #6) | SHIPPED | the `semantic_tautology` / `vacuous_precondition` fixtures PASS `vacuity::triage` (no #6 syntactic cause) yet `solver_vacuity_check` rejects them — asserted by `forge/tests/solver_vacuity_conformance.rs` against `conformance/solver-vacuity/cases.json`. |
-//! | REQ-5 (gate wiring, verdict-in-cert) | SHIPPED | `solver_vacuity_check` is the single entry `check::check_file` calls after #6 triage / before L3 (inside the cache-miss branch); a `Detected` → `Certificate::rejected_vacuity` (`Level::L0` + the `SemanticTautology`/`VacuousPrecondition` cause + the matching `contract_quality` bool true); a `Clean` proceeds to L3. |
-//! | REQ-6 (graduate the two bools to solver-confirmed) | SHIPPED | a `Detected` sets the matching `contract_quality` bool `true` on the reject cert via `Certificate::rejected_vacuity`; a `Clean` proceeds to the L3 path whose `graduate_triage_clean` keeps both bools live-`false` (now solver-confirmed). |
-//! | REQ-7 (determinism + one query/check) | SHIPPED | `run_harness` passes the pinned `seed` + `rlimit` to verus (`check::DEFAULT_SOLVER_SEED`/`DEFAULT_RLIMIT`); the verdict is deterministic for a fixed toolchain + seed (R-CODE-5). At most two verus queries per `fn` (vacuity then tautology, short-circuiting on the first detection) — the documented §11 accepted cost. |
+//! <!-- generated:reqs view=forge-solver-vacuity-owner-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-SOLVER-VACUITY-CHECK-GATE | shipped | `forge/src/vacuity_solver.rs` | Solver vacuity gate records certificate rejects |  |
+//! | REQ-FORGE-SOLVER-VACUITY-DETERMINISM | shipped | `forge/src/vacuity_solver.rs` | Solver vacuity deterministic query budget |  |
+//! | REQ-FORGE-SOLVER-VACUITY-HARNESS | shipped | `forge/src/vacuity_solver.rs` | Solver vacuous-precondition harness builder |  |
+//! | REQ-FORGE-SOLVER-VACUITY-QUALITY-FIELDS | shipped | `forge/src/vacuity_solver.rs` | Solver vacuity graduates quality fields |  |
+//! | REQ-FORGE-SOLVER-VACUITY-TAUTOLOGY-HARNESS | shipped | `forge/src/vacuity_solver.rs` | Solver tautology harness builder |  |
+//! | REQ-FORGE-SOLVER-VACUITY-VALUE-ADD | shipped | `forge/src/vacuity_solver.rs` | Solver vacuity catches semantic cases missed by triage |  |
+//! | REQ-FORGE-SOLVER-VACUITY-VERDICT | shipped | `forge/src/vacuity_solver.rs` | Solver vacuity verdict interpretation |  |
+//! <!-- /generated:reqs -->
 
 use std::path::Path;
 use std::process::Command;

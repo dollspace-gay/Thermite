@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262)
+audited-sha: 9cdd236f2b428913cc7ca9dd2fa7f08cc352d4fa (re-pinned 2026-06-15: forge manifest status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: a2db0d8a82ae573cd114387d903ab8f3093dc840 (re-audited 2026-06-12: amended — stale GREENFIELD line, oracle-comparison shape, dead parse_verus_output cite; additive-schema/engine_attribution amendment added, #262))
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

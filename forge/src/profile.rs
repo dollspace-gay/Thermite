@@ -35,15 +35,19 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`SolverProfile` schema) | SHIPPED | `pub struct SolverProfile { total_instantiations, quantifiers: Vec<QuantifierProfile> }` + `pub struct QuantifierProfile { trigger, instantiations, pct_of_total, cost, cost_x_instantiations, span }`. Consumer: `check::classify_verus_outcome` attaches it on a timeout. Oracle-EXCLUDED (`manifest::Certificate::oracle_subset` omits `solver_profile`). |
-//! | REQ-2 (profile capture on rlimit-hit) | SHIPPED | `check::invoke_verus` always passes `--profile` + the pinned `--rlimit`; the profiler report lands on STDERR and is parsed by `parse_profile`. The capture is the verus stderr blob (no separate spawn — the single `--profile` run carries it on an rlimit-hit, the cheapest correct path, OQ-3). |
-//! | REQ-3 (parse the Z3 report) | SHIPPED | `pub fn parse_profile(stderr) -> Option<SolverProfile>` parses the `Observed N total instantiations` line + each `Cost * Instantiations:` block + its `--> file:line:col` span + the selected-trigger source line; tolerant (returns `None` when no report present). Consumer: `check::classify_verus_outcome`. |
-//! | REQ-4 (render proof-repair prompts) | SHIPPED | `pub fn render_prompts(&SolverProfile) -> Vec<SuggestedMove>` + `pub fn suggested_move(&SolverProfile) -> Option<SuggestedMove>` name the top quantifier's trigger + share with a trigger-loop hint when one quantifier dominates. Deterministic. Consumer: `check::classify_verus_outcome` populates `Certificate.suggested_move`. |
-//! | REQ-5 (three-way classification) | SHIPPED (in `check.rs`) | `check::classify_verus_outcome` is the timeout-vs-counterexample-vs-success split; this module supplies the `SolverProfile` it attaches on the timeout branch. |
-//! | REQ-6 (additive cert slot, oracle-excluded) | SHIPPED (in `manifest.rs`) | `Certificate.solver_profile: Option<SolverProfile>` (additive, skip-if-none) + the reserved `suggested_move`; both excluded from `oracle_subset`. This module defines `SolverProfile`. |
-//! | REQ-7 (timeout cert level, distinct) | SHIPPED (in `check.rs`) | a timeout cert is `Certificate::timeout` (`Level::L0` + `RejectReason { cause: "VerusTimeout" }` + the profile), distinct from a counterexample-L0 (no profile, a `postcondition not satisfied` reason). |
+//! <!-- generated:reqs view=forge-profile-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-PROFILE-CAPTURE | shipped | `forge/src/profile.rs` | Solver profile capture on rlimit hit |  |
+//! | REQ-FORGE-PROFILE-CERT-FIELD | shipped | `forge/src/profile.rs` | Oracle-excluded solver profile certificate slot |  |
+//! | REQ-FORGE-PROFILE-CLASSIFICATION | shipped | `forge/src/profile.rs` | Timeout classification consumes solver profiles |  |
+//! | REQ-FORGE-PROFILE-PARSE | shipped | `forge/src/profile.rs` | Z3 profile report parser |  |
+//! | REQ-FORGE-PROFILE-PROMPTS | shipped | `forge/src/profile.rs` | Render proof-repair prompts from solver profile |  |
+//! | REQ-FORGE-PROFILE-SCHEMA | shipped | `forge/src/profile.rs` | Solver profile schema |  |
+//! | REQ-FORGE-PROFILE-TIMEOUT-CERT | shipped | `forge/src/profile.rs` | Timeout certificate is distinct from counterexample |  |
+//! <!-- /generated:reqs -->
 
 use serde::{Deserialize, Serialize};
 

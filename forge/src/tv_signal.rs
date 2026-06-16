@@ -31,9 +31,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | exec-stmt-tv REQ-5 (the rlimit discriminator — a Verus/Z3 timeout is Unverifiable, NEVER Divergent; R-HONEST-3 / R-CODE-4) | SHIPPED | `pub(crate) fn is_rlimit_signal` here is the SOLE discriminator. Non-test consumers: `contract_tv::discharge`, `body_tv::run_obligation`, `exec_tv::discharge` (all three TV-phase verus-discharge paths route an `errors >= 1` rlimit-hit run to their Unverifiable-equivalent verdict AHEAD of the Divergent arm). Verified by the `discriminator` unit tests here (each phrase detected; `postcondition not satisfied`/`assertion failed` NOT detected) + the per-phase `divergent_teeth` (rlimit → not Divergent) + `forge/tests/divergence_rlimit_phrase_drift.rs` (phrase parity + the z3 `max. resource limit exceeded` literal caught). |
+//! <!-- generated:reqs view=forge-tv-signal-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-TV-SIGNAL-RLIMIT | shipped | `forge/src/tv_signal.rs` | Shared TV rlimit discriminator |  |
+//! <!-- /generated:reqs -->
 
 /// `true` iff the combined verus output carries a Verus/Z3 resource-limit (rlimit)
 /// exhaustion / timeout signal (case-insensitive). Such an error run is a discharge

@@ -12,21 +12,29 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (ens-is-true reject (a)) | SHIPPED | `ens_is_trivially_true` over `Expr::BoolLit(true)` (all clauses) or any clause being a syntactic identity `Eq`/`Le`/`Ge` (`identity_clause`); consumer `triage` → `check::check_file`. |
-//! | REQ-2 (ens-omits-result reject (b)) | SHIPPED | `ens_omits_result`: `ret != Type::Unit` AND no `ens` clause `Expr` tree contains a `result` path (`mentions_result`, bounded `expr_mentions_result`); consumer `triage`. |
-//! | REQ-3 (ens-implied-by-req reject (c)) | SHIPPED | `ens_implied_by_req`: `flatten_and` of `req`'s left-associative `&&` chain, then every `ens` clause `PartialEq`-equal to `req` whole or a conjunct; consumer `triage`. |
-//! | REQ-4 (maximal-fx-without-slag reject (d)) | SHIPPED | `fx_maximal_without_slag`: `slag.is_none()` AND `boundary.is_none()` (a `#[boundary]` fn is slag-adjacent — ffi-boundary.md §9/OQ-4 — and exempt from (d) like `#[slag]`) AND `effect_row_is_maximal` (the 8 broad `Effect` kinds in a `Set`; #106 `term` is a narrow grant, excluded); consumer `triage`. |
-//! | REQ-5 (`VacuityVerdict` + typed cause) | SHIPPED | `pub enum VacuityVerdict { Passed, Rejected { cause } }` + `pub enum VacuityCause`; `VacuityCause::tag`/`detail` feed `manifest::RejectReason`; consumed by `check::check_file` (OQ-1: verdict-in-cert, not a `ForgeError`). |
-//! | REQ-6 (forge-check gate + `contract_quality`) | SHIPPED | `triage` runs in `check::check_file` BEFORE `lower`/`run_verus`; a pass graduates `contract_quality.{tautology,vacuous_precondition}` to live-`false` via `Certificate::graduate_triage_clean`. |
-//! | REQ-7 (slag exempts proving, not stating) | SHIPPED | `triage` takes `slag: Option<&SlagAttr>` and gates ONLY rule (d) on it; (a)/(b)/(c) always run, so a slag fn with a vacuous contract is still `Rejected`. |
+//! <!-- generated:reqs view=forge-vacuity-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-VACUITY-CHECK-GATE | shipped | `forge/src/vacuity.rs` | Structural vacuity gate in forge check |  |
+//! | REQ-FORGE-VACUITY-ENS-IMPLIED-BY-REQ | shipped | `forge/src/vacuity.rs` | Structural reject for req-implied ensures |  |
+//! | REQ-FORGE-VACUITY-ENS-OMITS-RESULT | shipped | `forge/src/vacuity.rs` | Structural reject for result-free ensures |  |
+//! | REQ-FORGE-VACUITY-ENS-TRUE | shipped | `forge/src/vacuity.rs` | Structural reject for trivially true ensures |  |
+//! | REQ-FORGE-VACUITY-MAXIMAL-FX-SLAG | shipped | `forge/src/vacuity.rs` | Structural reject for unjustified maximal effects |  |
+//! | REQ-FORGE-VACUITY-SLAG-SCOPE | shipped | `forge/src/vacuity.rs` | Slag exempts proving but not stating |  |
+//! | REQ-FORGE-VACUITY-TYPED-CAUSE | shipped | `forge/src/vacuity.rs` | Typed structural vacuity verdict and cause |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `expr_mentions_result`'s `Expr::Match` arm checks `arm.guard` for a `result` mention — a contract that mentions `result` ONLY through a match guard is still NON-vacuous (the §7 gate is not fooled). `Pattern::Or` needs no vacuity arm. Consumer: `triage`. |
+//! <!-- generated:reqs view=forge-vacuity-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-VACUITY-MATCH-GUARD | shipped | `forge/src/vacuity.rs` | Vacuity scans match-arm guards for result |  |
+//! <!-- /generated:reqs -->
 
 use thermite_syntax::{BinOp, Effect, EffectRow, Expr, FnItem, SlagAttr, Type};
 

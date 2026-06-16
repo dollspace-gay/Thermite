@@ -17,58 +17,88 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (recursive descent) | SHIPPED | one fn per grammar family (`parse_item`/`parse_contract`/`parse_block`/`parse_expr_bp`/...); accepts both corpus programs (tests). |
-//! | REQ-2 (mandatory-clause enforcement) | SHIPPED | `parse_contract` requires `req`->`ens`+->`fx` in order; `parse_loop` requires `inv`+->one `dec`; absence/misorder -> `SyntaxError`. |
-//! | REQ-3 (per-item recovery) | SHIPPED | `parse_program` resyncs via `resync_to_item_boundary`; `recover_per_item` fixture passes. |
-//! | REQ-4 (Result / no panic) | SHIPPED | `ParseResult { program, errors }`; `enum SyntaxError`; no panicking constructs in this file. |
-//! | REQ-5 (round-trip fidelity) | SHIPPED | `tests/conformance.rs` asserts `sum`/`binary_search` facts with 0 diagnostics. |
-//! | REQ-6 (one call syntax) | SHIPPED | postfix `.` -> `MethodCall`/`Field`, free `f(args)` -> `Call`, `::` -> `Path` (never method dispatch). |
-//! | REQ-7 (addressing substrate) | SHIPPED | loops/`inv`s kept in source order in the AST; numbered by `address.rs`. |
-//! | REQ-8 (operator tiers `% << >> & \| ^ !`, #92) | SHIPPED | `parse_mul`+`%`→`Rem`; new tiers `parse_shift`/`parse_bitand`/`parse_bitxor`/`parse_bitor` (threaded `parse_is`→`parse_bitor`→…→`parse_add`, `is` above the bitwise tiers); `parse_unary` builds the prefix `!`→`Unary { Not }`. Binary `&`/`\|` vs prefix ref/closure disambiguated by position. Tests `tests/operators_parse.rs`. |
-//! | REQ-9 (partiality not a parse concern, #92) | SHIPPED | `parse_mul`/`parse_shift` build the `Binary` node UNCONDITIONALLY — no `req` injection; the div-by-zero / shift-bound obligation is a §7 proof obligation (`ast.md` REQ-11), GROUNDED L0-without/L3-with in `forge/tests/operators_conformance.rs`. |
+//! <!-- generated:reqs view=thermite-syntax-parser-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-PARSER-ADDRESSING | shipped | `thermite-syntax/src/parser.rs` | Parser addressing substrate |  |
+//! | REQ-SYNTAX-PARSER-CALL-SYNTAX | shipped | `thermite-syntax/src/parser.rs` | One call-syntax parser |  |
+//! | REQ-SYNTAX-PARSER-MANDATORY-CLAUSES | shipped | `thermite-syntax/src/parser.rs` | Mandatory clause enforcement |  |
+//! | REQ-SYNTAX-PARSER-OPERATOR-TIERS | shipped | `thermite-syntax/src/parser.rs` | Operator precedence parser tiers |  |
+//! | REQ-SYNTAX-PARSER-PARTIALITY | shipped | `thermite-syntax/src/parser.rs` | Partial operators stay parse-only |  |
+//! | REQ-SYNTAX-PARSER-RECOVERY | shipped | `thermite-syntax/src/parser.rs` | Per-item parse recovery |  |
+//! | REQ-SYNTAX-PARSER-RECURSIVE-DESCENT | shipped | `thermite-syntax/src/parser.rs` | Recursive-descent parser structure |  |
+//! | REQ-SYNTAX-PARSER-RESULT | shipped | `thermite-syntax/src/parser.rs` | Diagnostics-bearing parser result |  |
+//! | REQ-SYNTAX-PARSER-ROUNDTRIP | shipped | `thermite-syntax/src/parser.rs` | Corpus round-trip parse fidelity |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #193 body-position holes (`.design/forge/goal-repl.md` REQ-4)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | goal-repl REQ-4 (parser accepts `?N` in fn-body statement position ONLY) | SHIPPED | `parse_block`'s statement dispatch gains a `TokKind::Hole(_)` arm → `parse_hole`, which records the hole (`Hole { number, span }`) on `self.pending_holes` (document order, pulled into `FnItem.holes` by `parse_fn`) and emits NO `Stmt`. The fn-body scope is `self.fn_body_depth` (incremented around the exec-fn body parse in `parse_fn`, NOT around a `spec fn` body): a `?N` at depth 0 (a `spec fn` body, a clause, an expr) is a structural `SyntaxError::HoleOutsideFnBody` (the v1 scope pin); a `?N` in expression / clause / signature position is not a primary, so it surfaces as a normal unexpected-token error. A holed fn parses CLEAN (a well-formed holed AST); it never lowers (`forge check` short-circuits it, `goal-repl.md` REQ-5). Verified: `forge/tests/goal_repl_fill.rs` (a `body = ?0` fn parses to `holes: [?0]`; a `spec fn` hole / nested-block hole behavior). |
+//! <!-- generated:reqs view=thermite-syntax-parser-goal-repl-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-PARSER-HOLE-SCOPE | shipped | `thermite-syntax/src/parser.rs` | Goal REPL hole parser scope |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C7 — Option/Result type parsing (`.design/basis/09-option-result.md`, #95)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`Option<T>` parse) | SHIPPED | `parse_type`'s `"Option"` contextual-ident arm builds `Type::Option(Box<Type>)` (mirroring the `Box`/`Vec` arms) — `Option` STOPS being a string-named `Generic`. Verified: `forge/tests/option_result_conformance.rs::ac1_...`. |
-//! | REQ-2 (`Result<T, E>` two-arg parse) | SHIPPED | `parse_type`'s `"Result"` arm parses `<T, E>` — the FIRST two-type-argument type in the grammar (a `Comma` + a second `parse_type` + `Gt`), building `Type::Result(Box<Type>, Box<Type>)`. The single-arg `Generic` could not (it died at the comma). Verified: `forge/tests/option_result_conformance.rs::ac2_...` (`Result<u64, ParseErr>` parses). |
+//! <!-- generated:reqs view=thermite-syntax-parser-option-result-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-OPTRES-OPTION | shipped | `thermite-syntax/src/ast.rs` | Option type surface AST |  |
+//! | REQ-SYNTAX-OPTRES-RESULT | shipped | `thermite-syntax/src/ast.rs` | Result type surface AST |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C9-A — plain-`fn` recursion `dec` clause (`.design/basis/10-recursion-tuples.md`, #108)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`fn` `dec` clause parse) | SHIPPED | `parse_fn` parses an OPTIONAL trailing `dec <expr>` clause AFTER the contract (`req`/`ens`/`fx`) and BEFORE the body — the OQ-4 byte-stable slot mirroring the loop order (`inv`s then `dec`). Reuses `parse_clause(&TokKind::Dec)` (the same `dec` parse `parse_spec_fn`/`parse_loop` use). Absent → `FnItem.dec = None` (the `req`/`ens`/`fx` parse is UNCHANGED for every non-recursive fn). Consumer: `thermite-lower::lower::lower_fn`. Verified: `forge/tests/recursion_conformance.rs` (a recursive `count_down` with `dec n` parses + certifies L3). |
+//! <!-- generated:reqs view=thermite-syntax-parser-recursion-tuples-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-RECURSION-DEC | shipped | `thermite-syntax/src/ast.rs` | Plain function decreases clause AST |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — binding/control-flow ergonomics parse (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (tuple destructure parse) | SHIPPED | `parse_let` returns `Vec<Stmt>`; a `(` after `let [mut]` routes to `parse_let_tuple_destructure`, desugaring `let (x, y) = e;` to `let __td<n> = e;` + per-element `let x = __td<n>.0;` (reusing `Expr::TupleProj`). `_` drops an element. Consumer: `lower_stmt` (the projection `let`s lower today). |
-//! | REQ-2 (`for i in 0..n` parse) | SHIPPED | `parse_for` (dispatched on the contextual `for` ident at statement head) desugars `for i in lo..hi inv … { B }` to `let mut i = lo;` + `LoopNode { While(i < hi), invs, dec: hi - i, body: B ++ [i = i + 1;] }`. `for`/`in` are NOT reserved (matched by name). The user `inv` is mandatory; the `dec` is AUTO-synthesized (`hi - i`), and a user `dec` on a `for` is rejected. Consumer: `lower_loop`. |
-//! | REQ-3 (match guard parse) | SHIPPED | `parse_match` parses an optional `if <cond>` (a no-struct-literal head) before `=>` into `MatchArm.guard`. Consumer: `lower_match`/`check_match_exhaustiveness`. |
-//! | REQ-4 (or-pattern parse) | SHIPPED | `parse_pattern` parses a `\|`-joined alternation into a flat `Pattern::Or(Vec<Pattern>)` (a single alternative stays the bare pattern — byte-stable). Consumer: `lower_pattern`/`check_match_exhaustiveness`. |
-//! | REQ-5 (`if let`/`while let` parse) | SHIPPED | `parse_if_let` (dispatched on `if` followed by `let` via `peek_nth`) desugars to `Expr::Match { e, [P => T, _ => E] }` (value form, mandatory `else`); `parse_while_let` desugars `while let Variant(_) = e inv … dec … { B }` to a `LoopNode { While(e is Variant), … }` (the canonical `while (cond)` form). Consumer: `lower_match`/`lower_loop`. |
+//! <!-- generated:reqs view=thermite-syntax-parser-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-ERGONOMICS-FOR | shipped | `thermite-syntax/src/parser.rs` | For-loop desugar |  |
+//! | REQ-SYNTAX-ERGONOMICS-IF-WHILE-LET | shipped | `thermite-syntax/src/parser.rs` | If-let and while-let desugars |  |
+//! | REQ-SYNTAX-ERGONOMICS-MATCH-GUARD | shipped | `thermite-syntax/src/ast.rs` | Match guard surface AST |  |
+//! | REQ-SYNTAX-ERGONOMICS-OR-PATTERN | shipped | `thermite-syntax/src/ast.rs` | Or-pattern surface AST |  |
+//! | REQ-SYNTAX-ERGONOMICS-TUPLE-DESTRUCTURE | shipped | `thermite-syntax/src/parser.rs` | Tuple destructuring desugar |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #16 boundary-fn parser extension (`.design/boundary/ffi-boundary.md`)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
+//! <!-- generated:reqs view=thermite-syntax-parser-ffi-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-PARSER-BOUNDARY-FN | shipped | `thermite-syntax/src/parser.rs` | Boundary function parser extension |  |
+//! <!-- /generated:reqs -->
+//!
 //! ## Basis Stage 4 — bounded-collection type parse (`.design/basis/04-collections.md`)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`Vec<T>` type spelling) | SHIPPED | `parse_type` matches the contextual `Vec` ident (mirroring `Box`): `Vec<u64>` → `Type::Vec(Box::new(Type::Prim(U64)))` (`conformance/vec_demo.th`, asserted by `thermite-lower/tests/collections_conformance.rs`). The `push`/`pop`/`get`/`len` operations are ordinary postfix `.m(args)` `MethodCall`s already parsed by `parse_postfix` (REQ-6) — no new surface. |
+//! <!-- generated:reqs view=thermite-syntax-parser-collections-status -->
+//! Source: `.design/reqs/registry.toml`
 //!
-//! | ffi REQ-1/REQ-3 | SHIPPED | `parse_attribute` generalizes `parse_slag` (dispatch on the `#[` attribute name: `slag` -> `SlagAttr`, `boundary` -> `BoundaryAttr` reading one positional `(` STRING `)`); `parse_item` routes a `boundary` attribute into `parse_fn` (and rejects `#[boundary]` on a `spec fn`). `parse_fn` gains a `Semi`-terminated bodyless path GATED on `boundary.is_some()` (OQ-2): `#[boundary]` REQUIRES the `;` body, a fn with NO `#[boundary]` REQUIRES the `{ }` body — a bodyless non-`#[boundary]` fn is a clear `SyntaxError`, never silently a boundary fn. |
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-COLLECTIONS-VEC | shipped | `thermite-syntax/src/ast.rs` | Vec type surface AST |  |
+//! | REQ-SYNTAX-MAP-METHODS | shipped | `thermite-syntax/src/ast.rs` | Map operations as method calls |  |
+//! | REQ-SYNTAX-MAP-TYPE | shipped | `thermite-syntax/src/ast.rs` | Map type surface AST |  |
+//! <!-- /generated:reqs -->
 
 use crate::ast::*;
 use crate::lexer::{tokenize, Span, TokKind, Token};

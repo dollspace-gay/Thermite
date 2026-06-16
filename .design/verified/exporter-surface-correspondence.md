@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 governs: forge/src/lean_export.rs
-audited-sha: b60b75a49a3d8de99a4b7ed98fe42124e1b808fb (pinned at the last-touch commit — the
+audited-sha: 543b506ef7ee64e2da0528505dae226c84761bd1 (re-pinned 2026-06-16: final source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: b60b75a49a3d8de99a4b7ed98fe42124e1b808fb (pinned at the last-touch commit — the)
              tone-pass that closed increment 0; increment 1 does NOT modify lean_export.rs,
              so this pin stays valid after the foundation commit)
 thesis-refs:

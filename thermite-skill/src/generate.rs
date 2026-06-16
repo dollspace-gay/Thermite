@@ -27,27 +27,35 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`generate()` API + canonical sections) | SHIPPED | `pub fn generate` concatenates `render_grammar`/`render_combinators`/`render_schemes`/`render_forge`/`render_ladder`/`render_slag` in §10 order; consumed by `main::run` (the `--emit`/`--check-budget` bin) and the freshness/coverage tests. |
-//! | REQ-2 (combinator section machine-rendered from `all()`) | SHIPPED | `render_combinators` iterates `thermite_spec::all()`, renders each entry's surface signature from `name`/`arity`/`arg_kinds`/`result` + one example from `example_for`; consumed by `generate`. Verified: `combinator_coverage` asserts every `all()` name + an example marker appears. |
-//! | REQ-3 (curated PROSE sections — narrowed to irreducible prose) | SHIPPED | `render_forge`/`render_ladder`/`render_slag` + the framing/scaffolding in `render_grammar` return compiled-in strings sourced from §5.1/§6/§8/§4.2; consumed by `generate`. The structural inventory moved to REQ-9/REQ-10. Verified: `grammar_forge_slag_coverage`, `ladder_coverage`. |
-//! | REQ-4 (deterministic token count + ≤ 6,000 gate) | SHIPPED | `pub fn token_count` = `(chars*2).div_ceil(7)` (ceil(chars/3.5), integer, deterministic); `SKILL_TOKEN_BUDGET = 6000`; consumed by `main::run` (`--check-budget`) and `budget_gate`. |
-//! | REQ-5 (committed `THERMITE.skill.md` + up-to-date check) | SHIPPED | the repo-root `THERMITE.skill.md` is `generate()`'s output; `committed_skill_is_fresh` asserts the committed bytes `== generate()`. |
-//! | REQ-6 (`thermite-skill` bin — `--emit`/`--check-budget`) | SHIPPED — see `main.rs` | `main::run` dispatches `--emit`→`generate()` and `--check-budget`→`token_count(generate())`; consumes both `generate` and `token_count`. |
-//! | REQ-7 (CI `--check-budget` step) | SHIPPED — see `.github/workflows/ci.yml` | the `cargo run -p thermite-skill -- --check-budget` step in `ci.yml` runs the gate in CI. |
-//! | REQ-8 (compiler-enforced no-staleness GUARANTEE) | SHIPPED | the surface inventory is rendered ONLY by registry iteration (`render_combinators`/`render_schemes`) or exhaustive `match` (`render_type_arm`/`render_expr_arm`/`render_item_arm`/`render_pattern_arm`/`render_effect_arm`/`render_binop_arm`/`render_prim_arm`, NO `_` arm) — a new variant FAILS TO COMPILE; a new registry entry auto-renders. Consumed by `render_grammar`/`render_schemes` in `generate`. Verified: `surface_construct_coverage` (output) + the no-`_` structural invariant (compile-forced). |
-//! | REQ-9 (recursion-scheme section registry-driven from `schemes::all()`) | SHIPPED | `render_schemes` iterates `thermite_spec::schemes::all()`, renders each `SchemeSig`'s call shape (`scrutinee_args`+`step_shape`) + result + one `scheme_example_for`; consumed by `generate`. Verified: `every_scheme_appears_with_an_example`. This is `thermite-skill`'s non-test consumer of `schemes::all()` (R-DEFER-1). |
-//! | REQ-10 (type/expr/item/pattern/effect grammar exhaustive-match-driven) | SHIPPED | `render_{type,expr,item,pattern,effect,binop,prim}_arm` are exhaustive `match`es with NO `_` arm over `thermite_syntax::{Type,Expr,Item,Pattern,Effect,BinOp,PrimType}`; driven over per-variant inventories (`type_inventory` etc.) by `render_grammar`. Verified: `surface_construct_coverage`. |
-//! | REQ-11 (prose curated + freshness-tested; forge command list the honest exception) | SHIPPED | the irreducible prose stays curated in `render_grammar`'s framing/`render_forge`/`render_ladder`/`render_slag`; the forge verb LIST stays a curated table (forge's `Command` is private + forge→thermite-skill dep, OQ-5), kept honest by `committed_skill_is_fresh` (REQ-5) + `grammar_forge_slag_coverage` (AC-4). |
+//! <!-- generated:reqs view=thermite-skill-generator-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SKILL-GENERATOR-BIN | shipped | `thermite-skill/src/generate.rs` | Skill generator CLI |  |
+//! | REQ-SKILL-GENERATOR-BUDGET | shipped | `thermite-skill/src/generate.rs` | Deterministic skill token budget |  |
+//! | REQ-SKILL-GENERATOR-CANONICAL-SECTIONS | shipped | `thermite-skill/src/generate.rs` | Skill generator canonical sections |  |
+//! | REQ-SKILL-GENERATOR-CI-BUDGET | shipped | `thermite-skill/src/generate.rs` | CI skill budget gate |  |
+//! | REQ-SKILL-GENERATOR-COMBINATOR-SECTION | shipped | `thermite-skill/src/generate.rs` | Combinator section from registry |  |
+//! | REQ-SKILL-GENERATOR-COMMITTED-FRESH | shipped | `thermite-skill/src/generate.rs` | Committed skill freshness |  |
+//! | REQ-SKILL-GENERATOR-CURATED-PROSE | shipped | `thermite-skill/src/generate.rs` | Curated prose sections |  |
+//! | REQ-SKILL-GENERATOR-GRAMMAR-EXHAUSTIVE | shipped | `thermite-skill/src/generate.rs` | Exhaustive grammar inventory |  |
+//! | REQ-SKILL-GENERATOR-NO-STALENESS | shipped | `thermite-skill/src/generate.rs` | Compiler-enforced skill surface freshness |  |
+//! | REQ-SKILL-GENERATOR-PROSE-FRESHNESS | shipped | `thermite-skill/src/generate.rs` | Curated prose freshness |  |
+//! | REQ-SKILL-GENERATOR-SCHEMES | shipped | `thermite-skill/src/generate.rs` | Scheme section from registry |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics skill arms (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1/2/5 (tuple destructure / `for` / `if let`-`while let` teaching) | SHIPPED | the PURE-DESUGAR ergonomics add NO AST node, so the exhaustive-match inventory cannot auto-render them; `render_grammar`'s statement section gains a curated "Binding / control-flow ergonomics" prose block teaching all five (the desugarings, the `for` AUTO-`dec`, the guard-doesn't-complete rule, the or-pattern union, the `while let` → `while (cond)`). Kept fresh by `committed_skill_is_fresh`. |
-//! | REQ-3 (match guard arm) | SHIPPED | `render_expr_arm`'s `Expr::Match` fragment now teaches `Pat [if C] => EXPR` + "a guard does NOT complete a match". Auto-rendered. |
-//! | REQ-4 (or-pattern arm) | SHIPPED | `render_pattern_arm` += a `Pattern::Or` arm (`p0 \| p1 \| ..`, "covers their union") + `pattern_inventory` += `Pattern::Or(Vec::new())` — the compiler-forced no-staleness GUARANTEE (REQ-8) auto-renders it. Verified: `surface_construct_coverage`. |
+//! <!-- generated:reqs view=thermite-skill-generator-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SKILL-ERGONOMICS-DESUGAR | shipped | `thermite-skill/src/generate.rs` | Skill text for pure-desugar ergonomics |  |
+//! | REQ-SKILL-ERGONOMICS-MATCH-GUARD | shipped | `thermite-skill/src/generate.rs` | Skill match-guard arm |  |
+//! | REQ-SKILL-ERGONOMICS-OR-PATTERN | shipped | `thermite-skill/src/generate.rs` | Skill or-pattern arm |  |
+//! <!-- /generated:reqs -->
 
 use thermite_spec::schemes::{SchemeResult, SchemeSig, StepShape};
 use thermite_spec::{ArgKind, CombinatorSig, ResultKind};

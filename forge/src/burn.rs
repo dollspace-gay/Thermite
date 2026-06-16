@@ -56,13 +56,6 @@ pub struct BurnReceipt {
     pub cited_lemmas: Vec<String>,
 }
 
-#[allow(
-    dead_code,
-    reason = "REQ-7 burn-receipt foundation (increment 2e): the proof-view discharge \
-              path (check.rs) attaches the receipt via Certificate::with_burn; this \
-              module defines the schema + the deterministic computation, mirroring the \
-              verdict.rs foundation-then-consume precedent."
-)]
 impl BurnReceipt {
     /// Build the burn receipt for a committed proof block from its verbatim source
     /// text (REQ-7 / AC-11). `proof_tokens` is the project lexer's token count over
@@ -82,6 +75,13 @@ impl BurnReceipt {
     /// Attach the optional LLM authoring-token count (Q-BURN), returning the receipt
     /// with `authoring_tokens` set. Called by an authoring harness that tracked the
     /// spend; absent on a receipt minted purely from the committed text.
+    #[allow(
+        dead_code,
+        reason = "Q-BURN authoring-token setter: production `forge` mints the receipt \
+                  from the committed proof text (`for_proof_text`); this opt-in setter is \
+                  for an authoring harness that supplies the LLM spend (absent until one \
+                  does), exercised by the burn::tests round-trip."
+    )]
     #[must_use]
     pub fn with_authoring_tokens(mut self, authoring_tokens: u64) -> Self {
         self.authoring_tokens = Some(authoring_tokens);
@@ -98,11 +98,6 @@ impl BurnReceipt {
 /// lexable) do not perturb determinism — the emitted token sequence is a pure
 /// function of the bytes, so a skeptic re-running the same lexer gets the same count.
 /// Deterministic (R-CODE-5).
-#[allow(
-    dead_code,
-    reason = "REQ-7 burn-receipt foundation: reached via for_proof_text once the \
-              proof-view discharge path consumes it (increment 2e)."
-)]
 fn proof_token_count(proof_text: &str) -> usize {
     let (tokens, _errors) = thermite_syntax::tokenize(proof_text);
     tokens
@@ -116,11 +111,6 @@ fn proof_token_count(proof_text: &str) -> usize {
 /// document order (RFC-1 §9 "lemmas cited"). Tactic heads (`omega`, `simp`, …) are
 /// tactics, not lemmas, so they are not cited lemmas; the only lemma citations the
 /// scanner surfaces are the simp-set members the proof named. Deterministic.
-#[allow(
-    dead_code,
-    reason = "REQ-7 burn-receipt foundation: reached via for_proof_text once the \
-              proof-view discharge path consumes it (increment 2e)."
-)]
 fn cited_lemmas(proof_text: &str) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
@@ -180,6 +170,30 @@ mod tests {
         assert_eq!(
             with.proof_tokens, bare.proof_tokens,
             "deterministic fields untouched"
+        );
+    }
+
+    // Q-BURN / Q-ORACLE: the burn receipt is ORACLE-EXCLUDED — a cert carrying a burn
+    // receipt and the same cert without it compare oracle-EQUAL, so re-authoring a proof
+    // (which changes the receipt) never perturbs the cert oracle / breaks golden stability.
+    #[test]
+    fn burn_is_oracle_excluded() {
+        use crate::manifest::{Certificate, Level, ObligationResult};
+        let base = Certificate::new(
+            "merge_advance",
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![ObligationResult::discharged("x")],
+        );
+        let with_burn = base
+            .clone()
+            .with_burn(BurnReceipt::for_proof_text("simp [Thermite.denote]; omega"));
+        assert_ne!(base.burn, with_burn.burn, "the burn field itself differs");
+        assert_eq!(
+            base.oracle_subset(),
+            with_burn.oracle_subset(),
+            "the burn receipt is oracle-excluded (Q-BURN): the oracle subset is unchanged"
         );
     }
 

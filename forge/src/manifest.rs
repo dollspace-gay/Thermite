@@ -1011,12 +1011,6 @@ impl Certificate {
     /// changing the claim), so only this field changes — the verdict and the
     /// `oracle_subset` are untouched. A v1 item never calls this, so its `burn` stays
     /// `None` and its cert is byte-stable.
-    #[allow(
-        dead_code,
-        reason = "REQ-7 burn-receipt foundation (increment 2e): the proof-view \
-                  discharge path (check.rs) calls this once it attaches the receipt; \
-                  the foundation defines the constructor + the additive field."
-    )]
     #[must_use]
     pub fn with_burn(mut self, receipt: crate::burn::BurnReceipt) -> Self {
         self.burn = Some(receipt);

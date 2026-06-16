@@ -1,0 +1,24 @@
+// The merge example (`.design/stage1-forge-tier.md` REQ-7 / AC-11, increment 2e).
+//
+// A forge-tier `lemma` capturing a merge-loop PROGRESS obligation: when a read index
+// `i` is strictly below its run length `n`, advancing it stays in bounds (`i + 1 <= n`).
+// This is the kind of out-of-cage arithmetic side-condition a merge's loop invariant
+// leans on. A `lemma` is forge-tier — out of the v1 combinator cage — so it does NOT
+// degrade down the ladder: it ESCALATES UP TO THE FORGE (the G1 headline), discharged at
+// L3 by the Lean engine with an author-authored, frozen-battery proof (`simp` over the
+// frozen denotation simp-set + `omega`), kernel-accepted and certify-time axiom-gated.
+//
+// The proof is denoted against the kernel-proven spine (`Thermite.denote`), so the u64
+// overflow semantics are modeled faithfully — `i < n` rules out the `i + 1` overflow, and
+// `omega` closes the bounded-integer goal. `forge check --engine lean conformance/forge/
+// merge.th` certifies this L3 and the certificate carries the BURN RECEIPT (the committed
+// proof's lexer-token count + the cited frozen simp-lemmas).
+//
+// The matching `forge goal --proof` view + `forge fill <…>.proof.?p0 "<tactics>"` fill
+// loop are exercised over a holed copy of this lemma in `forge/tests/proof_fill.rs` and
+// `forge/tests/merge_example.rs` (AC-11: the proof view renders the hypotheses in scope,
+// the fill closes the `?p0` goal, the re-check certifies + surfaces the burn receipt).
+lemma merge_advance(i: u64, n: u64)
+    req i < n
+    ens i + 1 <= n
+    proof { simp [Thermite.denote, Thermite.Env.bindInt, Thermite.intVal, Thermite.arithDenote]; omega }

@@ -439,7 +439,11 @@ pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeErr
 /// The re-check runs the same `check::check_file` the body-hole path runs.
 fn render_proof_after_fill(file: &Path, root: &str) -> Result<String, ForgeError> {
     let mut out = render_proof(file, Some(root))?;
-    for cert in check::check_file(file)? {
+    // The forge-tier re-check runs on the LEAN path (`check_file_lean`): a closed
+    // forge-tier goal certifies + carries the burn receipt there (REQ-7 / AC-11), where
+    // the Verus-only default `check_file` would skip the lemma. The frozen-battery
+    // refusal + open-hole short-circuit still fire (they are on the shared base path).
+    for cert in check::check_file_lean(file)? {
         if cert.item == root {
             out.push_str(&render_proof_cert_status(&cert));
         }

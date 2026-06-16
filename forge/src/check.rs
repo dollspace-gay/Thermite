@@ -423,6 +423,28 @@ pub fn check_file_with_options(
                         detail,
                     },
                 ));
+                continue;
+            }
+            // Stage-1 forge tier — the frozen battery (`.design/stage1-forge-tier.md`
+            // REQ-5 / AC-9, increment 2c), the elaboration-time gate. A `lemma`/`proof`
+            // block's VERBATIM tactic content (captured by 2a) is scanned against the
+            // frozen tactic allowlist + the frozen simp set; a proof citing an unlisted
+            // tactic OR an unlisted simp lemma is REFUSED — named — never warned (the
+            // proof-tier mirror of the `thermite_spec::validate` contract cage / the
+            // covenant refusal). The refusal lands its non-certified L0 cert before any
+            // discharge. A clean proof block falls through to the inert forge-item skip
+            // (no v1 cert consumer yet — proof-view discharge is 2e). No conformance `.th`
+            // is forge-tier, so this is a no-op on the v1 oracle.
+            if let Err(violation) = crate::battery::enforce_forge_item(forge) {
+                certs.push(Certificate::rejected(
+                    violation.item().to_string(),
+                    vec!["pure".to_string()],
+                    false,
+                    RejectReason {
+                        cause: violation.cause().to_string(),
+                        detail: violation.detail(),
+                    },
+                ));
             }
             continue;
         }

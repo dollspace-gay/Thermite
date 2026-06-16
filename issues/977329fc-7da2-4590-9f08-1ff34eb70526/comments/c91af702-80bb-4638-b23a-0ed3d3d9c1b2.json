@@ -1,0 +1,8 @@
+{
+  "uuid": "c91af702-80bb-4638-b23a-0ed3d3d9c1b2",
+  "issue_uuid": "977329fc-7da2-4590-9f08-1ff34eb70526",
+  "author": "Ck2B",
+  "content": "Result (2e REQ-7 COMPLETE — approach B): all 6 sub-units landed + committed, full gauntlet green locally (cargo test -p forge 0 failures w/ Verus 0.2026.05.24 + Z3 + built Lean spine; clippy -D warnings clean; fmt clean; doc-drift 0; req-registry clean; 7 v1 golden certs byte-identical).\n(1) burn.rs BurnReceipt + oracle-EXCLUDED Certificate.burn [abe1c41f].\n(2) forge goal --proof proof view (hypotheses in scope) [a662847c].\n(3) forge fill ?pN (splice + recheck + battery refusal + §5.1 loop) [a520c7a3].\n(4) standalone lemma Lean discharge: export_lemma (forall params, req->ens over the denotation spine, fn-framing minus body/result so u64 overflow is faithful) + discharge_source (lake + same #print-axioms gate) + discharge_forge_lemma->lean_lemma_proven_cert (Proven->L3+burn; else honest non-cert). Lean path only; default Verus check_file untouched [76be6272].\n(5) conformance/forge/merge.th (i<n -> i+1<=n) + merge_example.rs: AC-11 verified end-to-end — proof view renders hypotheses, forge fill ?p0 closes the goal, the cert certifies L3 with burn {proof_tokens:22, cited_lemmas:[...]} [76be6272].\n(6) REQ-S1-7 registered shipped + status regen [8978ecc9]. Doc re-pins [93fe9667, c41f916e].\ngit push is blocked for the agent — orchestrator pushes + opens the PR. CI lean job is the authoritative gate for the live discharge legs (verified locally against the built spine).",
+  "created_at": "2026-06-16T23:03:30.773225Z",
+  "kind": "result"
+}

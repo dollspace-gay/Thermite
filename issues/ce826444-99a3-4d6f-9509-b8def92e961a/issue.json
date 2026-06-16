@@ -1,0 +1,10 @@
+{
+  "uuid": "ce826444-99a3-4d6f-9509-b8def92e961a",
+  "display_id": 300,
+  "title": "Divergence: forge covenant bind_params accepts out-of-range int witness -> false CovenantRefuted",
+  "status": "open",
+  "priority": "high",
+  "created_by": "BMF7",
+  "created_at": "2026-06-16T16:27:30.835265Z",
+  "updated_at": "2026-06-16T16:27:30.835265Z"
+}

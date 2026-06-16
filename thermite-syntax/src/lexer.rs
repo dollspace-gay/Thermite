@@ -12,19 +12,23 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (token set) | SHIPPED | `enum TokKind` enumerates exactly keywords/ident/int/bool/punct/slag/eof; consumed by `parser.rs`. |
-//! | REQ-2 (keywords closed set) | SHIPPED | `keyword_kind` maps the reserved words; effect/slag names fall through to `Ident`. The basis ADT stage (`.design/basis/01-adts.md` REQ-1/REQ-2/REQ-6) reserves `struct`/`enum`/`is` here; `Box` stays a contextual identifier matched by name in `parser::parse_type` (the `Generic` path, like `Option`), so it is NOT reserved. |
-//! | REQ-3 — VALUE (int literals with `_` stripped) | SHIPPED | `lex_int` strips `_` and accumulates `value`; `1_000_000` → value `1000000` (test `int_literal_underscores_strip_to_value` in `tests/conformance.rs`). |
-//! | REQ-3 — RAW (verbatim source slice on the token, #37) | SHIPPED | `lex_int` ALSO captures the verbatim digit+`_` run as `raw` (`source[i..last_digit]`); `TokKind::Int { value, raw }` so `1_000_000` lexes to value `1000000` AND raw `"1_000_000"` (test `int_literal_preserves_raw`). Consumer: `parse_primary`/pattern-literal in `parser.rs`. |
-//! | REQ-4 (`#[slag]` tokenization) | SHIPPED | `#[` token + string literals via `lex_string`; consumed by `parse_slag`. The `lex_string` escape table (`.design/basis/07-strings.md` REQ-6, #91 cluster 1) decodes `\n`/`\t`/`\r`/`\0`/`\"`/`\\` + `\xNN` (`0x00..=0x7F`) to their BYTES; an unknown/malformed/high-byte escape is a STRUCTURED `SyntaxError` (not the old silent `other as char` swallow), recovering past the close-quote. Verified by `tests/string_escapes.rs` + `forge/tests/literal_layer.rs` (`"\x1b".byte_at(0) == 27` L3). |
-//! | REQ-3 — HEX/BINARY (radix spellings, #92) | SHIPPED | `lex_int` dispatches on `0x`/`0X`/`0b`/`0B` (`radix_digit`) into the SAME `TokKind::Int`: `0x1b`→27, `0b101`→5, `0xFF_FF`→65535, verbatim raw preserved (#37). A bare `0x`/`0b2` is a `SyntaxError`. Tests `tests/operators_parse.rs`. The radix is a surface spelling only — every downstream `Int` consumer sees a plain `u128`. |
-//! | REQ-9 (char literals → byte `u8` via `Int` token, #91/#92) | SHIPPED | the `'` branch in `tokenize` → `lex_char` produces `TokKind::Int { value: <byte>, raw }` (NO new token kind / Expr variant): `'A'`→65, `'\n'`→10, `'\x1b'`→27. A multi-byte/non-ASCII/empty/unterminated char (or `\xNN >= 0x80`) is a structured `SyntaxError` (never a panic). GROUNDED: `'A'`==65 certifies L3 (`forge/tests/operators_conformance.rs`). |
-//! | REQ-5 (comments + whitespace insignificant) | SHIPPED | `skip_trivia` consumes `[ \t\r\n]+` and `//`-to-EOL, emitting nothing. |
-//! | REQ-6 (maximal munch operators) | SHIPPED | `lex_punct` tries 2-char operators before 1-char (`<=`, `==`, `->`, `::`, `..`, `#[`, and the #92 shifts `<<`/`>>`); the single-char branch adds `%`→`Percent` / `^`→`Caret` (#92). |
-//! | REQ-7 (spans) | SHIPPED | every `Token` carries a `Span { start, len }`; used by parser diagnostics + addressing. |
-//! | REQ-8 (Result discipline) | SHIPPED | `tokenize` returns `(Vec<Token>, Vec<SyntaxError>)`; stray chars become diagnostics, no panic. |
+//! <!-- generated:reqs view=thermite-syntax-lexer-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SYNTAX-LEXER-CHAR-BYTE | shipped | `thermite-syntax/src/lexer.rs` | Lexer char literals as byte ints |  |
+//! | REQ-SYNTAX-LEXER-INT-RADIX | shipped | `thermite-syntax/src/lexer.rs` | Lexer hexadecimal and binary integer spellings |  |
+//! | REQ-SYNTAX-LEXER-INT-RAW | shipped | `thermite-syntax/src/lexer.rs` | Lexer integer literal raw spelling |  |
+//! | REQ-SYNTAX-LEXER-INT-VALUE | shipped | `thermite-syntax/src/lexer.rs` | Lexer integer literal value |  |
+//! | REQ-SYNTAX-LEXER-KEYWORDS | shipped | `thermite-syntax/src/lexer.rs` | Lexer reserved keyword set |  |
+//! | REQ-SYNTAX-LEXER-MAXIMAL-MUNCH | shipped | `thermite-syntax/src/lexer.rs` | Lexer maximal-munch punctuation |  |
+//! | REQ-SYNTAX-LEXER-RESULT-DISCIPLINE | shipped | `thermite-syntax/src/lexer.rs` | Lexer structured diagnostics |  |
+//! | REQ-SYNTAX-LEXER-SLAG-STRINGS | shipped | `thermite-syntax/src/lexer.rs` | Lexer slag and string tokenization |  |
+//! | REQ-SYNTAX-LEXER-SPANS | shipped | `thermite-syntax/src/lexer.rs` | Lexer source spans |  |
+//! | REQ-SYNTAX-LEXER-TOKEN-SET | shipped | `thermite-syntax/src/lexer.rs` | Lexer token set |  |
+//! | REQ-SYNTAX-LEXER-TRIVIA | shipped | `thermite-syntax/src/lexer.rs` | Lexer trivia skipping |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## `?N` hole token (`.design/forge/goal-repl.md` REQ-4, #193)
 //!

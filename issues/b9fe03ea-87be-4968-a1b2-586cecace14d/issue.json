@@ -6,5 +6,8 @@
   "priority": "high",
   "created_by": "BMF7",
   "created_at": "2026-06-16T16:48:03.075799Z",
-  "updated_at": "2026-06-16T16:48:03.075799Z"
+  "updated_at": "2026-06-16T16:48:05.125051Z",
+  "labels": [
+    "blocker"
+  ]
 }

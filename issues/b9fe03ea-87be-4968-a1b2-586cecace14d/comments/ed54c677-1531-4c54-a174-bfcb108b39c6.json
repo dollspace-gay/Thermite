@@ -1,0 +1,8 @@
+{
+  "uuid": "ed54c677-1531-4c54-a174-bfcb108b39c6",
+  "issue_uuid": "b9fe03ea-87be-4968-a1b2-586cecace14d",
+  "author": "BMF7",
+  "content": "Failing test at forge/tests/divergence_covenant_bitwise_not_integer.rs::covenant_admits_integer_bitwise_not_in_its_fragment demonstrates the divergence. Authority: .design/syntax/ast.md REQ-10/OQ-4 (integer ! is bitwise-not, Verus-native, certifies under Verus type-directed !). covenant_eval.rs eval_expr's UnaryOp::Not arm only handles Value::Bool(!v.as_bool()?); an integer operand errors Type, which analyze_covenant maps to CovenantUnsupportedItem -> L0 refusal before burn. Same item without a witness block certifies L3. Fix: extend the Not arm to bitwise-not on Value::Int under the i128 model (truncation is the documented agreement model).",
+  "created_at": "2026-06-16T16:48:17.501512Z",
+  "kind": "observation"
+}

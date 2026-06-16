@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 39967df868c4a228894efdd48f136358db23e49d (re-pinned 2026-06-15: batch source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — #10 degrade ladder shipped since (scope-boundary now historical), run_kani 3-arg signature, #51 classify_l2_outcome note, #262))
+audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 39967df868c4a228894efdd48f136358db23e49d (re-pinned 2026-06-15: batch source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — #10 degrade ladder shipped since (scope-boundary now historical), run_kani 3-arg signature, #51 classify_l2_outcome note, #262)))
 governs: thermite-lower/src/l2.rs, forge/src/kani.rs
 thesis-refs:
   - thermite-design.md §6

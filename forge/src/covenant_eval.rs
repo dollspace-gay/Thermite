@@ -383,21 +383,22 @@ fn eval_stmts(stmts: &[Stmt], env: &mut Env) -> Result<Option<Value>, CovenantEv
                 }
             },
             Stmt::If { cond, then, else_ } => {
+                // A STATEMENT-position `if/else` (the parser only emits `Stmt::If` here;
+                // a tail-position `if/else` is an `Expr::If` handled by `eval_block`'s
+                // tail). Its VALUE is discarded — Rust/Verus semantics — so a branch's
+                // tail expression does NOT short-circuit the enclosing block; only a
+                // `return` STATEMENT inside the taken branch does (`eval_stmts` returns
+                // `Some`). Evaluating the branch tail as a block return was a bug that
+                // manufactured a false refutation on e.g. `{ if c { x } else { x } 0 }`
+                // (which returns `0`, not `x`).
                 let branch_returned = if eval_expr(cond, env)?.as_bool()? {
                     eval_stmts(&then.stmts, env)?
-                        .map(Ok)
-                        .or_else(|| then.tail.as_ref().map(|t| eval_expr(t, env)))
-                        .transpose()?
                 } else if let Some(else_block) = else_ {
                     eval_stmts(&else_block.stmts, env)?
-                        .map(Ok)
-                        .or_else(|| else_block.tail.as_ref().map(|t| eval_expr(t, env)))
-                        .transpose()?
                 } else {
                     None
                 };
-                // A branch whose statements `return` (or whose tail value is taken as a
-                // statement-position `if` value) short-circuits the enclosing block.
+                // Only an actual `return` inside the taken branch short-circuits.
                 if let Some(v) = branch_returned {
                     return Ok(Some(v));
                 }
@@ -571,6 +572,28 @@ mod tests {
             eval_block(f.body.as_ref().expect("body"), &small),
             Ok(Value::Int(3))
         );
+    }
+
+    #[test]
+    fn stmt_position_if_value_is_discarded_not_an_early_return() {
+        // A STATEMENT-position `if/else` value is DISCARDED (Rust/Verus semantics): the
+        // body returns the trailing tail `0`, NOT the taken branch's tail `x`. A bug here
+        // (taking the branch tail as a block return) manufactures a false refutation on a
+        // correct item — the divergence the critic pinned (#298).
+        let f = parse_fn(
+            "fn alwayszero(x: u64) -> u64 req true ens result == 0 fx pure \
+             { if x > 0 { x } else { x } 0 }",
+        );
+        for x in [0_i128, 1, 99, i128::from(u64::MAX)] {
+            assert_eq!(
+                eval_block(
+                    f.body.as_ref().expect("body"),
+                    &env(&[("x", Value::Int(x))])
+                ),
+                Ok(Value::Int(0)),
+                "the statement-position if value is discarded; the body returns 0 for x={x}"
+            );
+        }
     }
 
     #[test]

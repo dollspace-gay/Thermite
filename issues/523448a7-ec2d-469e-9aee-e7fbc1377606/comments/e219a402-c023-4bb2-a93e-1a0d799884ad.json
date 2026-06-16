@@ -1,0 +1,8 @@
+{
+  "uuid": "e219a402-c023-4bb2-a93e-1a0d799884ad",
+  "issue_uuid": "523448a7-ec2d-469e-9aee-e7fbc1377606",
+  "author": "BMF7",
+  "content": "Failing test committed at a3e2d067 (forge/tests/divergence_covenant_stmt_if_false_refutation.rs). Verified FAIL under verus; the control fixture passes, isolating the divergence to the Stmt::If evaluation.",
+  "created_at": "2026-06-16T16:11:36.681001Z",
+  "kind": "observation"
+}

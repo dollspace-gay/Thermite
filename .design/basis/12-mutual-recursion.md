@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: the only change to this doc's governed file (check.rs) is the additive certify-time definition-tower budget gate (gate_definition_tower) on the forge/Lean discharge path, owned by .design/stage1-forge-tier.md REQ-6 / registry REQ-S1-6 — orthogonal to what this doc governs; the Verus default path is untouched and the gate is not in forge audit (#274), so the v1 behavior is unchanged.)
+audited-sha: 5dd9f5cee8544b74c6b8c3aaa7b58089692d0f56 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6b: the only change to this doc's governed file (check.rs) is the additive `reelaboration_mutants` seam — the L3 re-elaboration mutation battery reuses the SHARED frozen mutation::generate catalogue (REQ-S1-6, AC-10: not forked), with the per-mutant kill check re-elaborating via the existing Lean discharge path; orthogonal to what this doc governs, the v1 behavior is unchanged.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

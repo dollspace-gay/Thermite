@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: the only change to this doc's governed file (check.rs) is the additive certify-time definition-tower budget gate on the forge/Lean discharge path (REQ-S1-6); the engine/obligation/exporter discharge behavior this doc governs is unchanged.)
+audited-sha: 5dd9f5cee8544b74c6b8c3aaa7b58089692d0f56 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6b: the only change to this doc's governed file (check.rs) is the additive `reelaboration_mutants` shared-catalogue seam threaded into lean_mutation_score's per-mutant loop (REQ-S1-6, AC-10) — an identity refactor of the catalogue source; the REQ-9 Lean mutation battery behavior this doc governs is unchanged.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

@@ -6776,28 +6776,48 @@ note = "the inspection-tier exporter-surface correspondence table"
 
 [[requirement]]
 id = "REQ-S1-4"
-title = "Covenant engine — discharge signature + record"
+title = "Covenant engine — inhabit/falsify producer + before-burn gate"
 owner = ".design/stage1-forge-tier.md"
-status = "partial"
+status = "shipped"
 scope = "forge"
-summary = "The foundation lands the CovenantRecord type and the non-optional &CovenantRecord parameter on Engine::discharge, threaded through VerusEngine, LeanEngine, and every call site (covenant-before-burn as a type-level seam, not a runtime convention), plus the CovenantRefuted Counterexample-class hard-fail arm in the degrade ladder."
-remaining_scope = "The covenant LOGIC is increment 2b: inhabit witnesses type-checked + executed against req, the falsify generator run (Q3 fixed-seed 50_000) against the executable semantics, the covenant-before-burn enforcement, and the CovenantRefuted producer. Today every program carries CovenantRecord::none() — the witness surface syntax is REQ-3, not yet present."
+summary = "The covenant engine (increment 2b) consumes the foundation's discharge-threaded CovenantRecord and the 2a-parsed witness block: a forge-routed fn's author inhabit witnesses are type-checked and EXECUTED against req (a witness not satisfying req is a loud covenant error, never dropped), and the falsify run rides the thermite-tv SplitMix64 Rng over the item's executable semantics (a deterministic in-Rust evaluator, the dual of exec_ref_value) — a req-satisfying input whose body violates ens is CovenantRefuted with the concrete counterexample, the never-degrades hard-fail treatment. Covenant-before-burn is enforced structurally (R-COV-1): covenant_gate invokes the L3 burn closure ONLY on a validated covenant (closure-instrumented), and a forge-routed item missing an author witness is refused before burn, named. The deterministic covenant evidence block (witness count, falsify generated/refuted counts, fixed seed; Q3 default falsify 50_000 when unstated) is oracle-included in the certificate (Q-ORACLE); v1 items carry no covenant, so the 7 v1 golden certs stay byte-identical."
 aliases = ["covenant engine", "covenant-before-burn", "REQ-4"]
 generated_to = ["status"]
 
 [[requirement.evidence]]
 kind = "file"
 target = "forge/src/covenant.rs"
-note = "the CovenantRecord type"
+note = "the CovenantRecord type (foundation)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/covenant_eval.rs"
+note = "the executable-semantics evaluator (the falsify/inhabit interpreter)"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/covenant_engine.rs"
+note = "the producer + falsify driver + the covenant-before-burn gate"
 
 [[requirement.evidence]]
 kind = "symbol"
-target = "CovenantRecord"
+target = "analyze_covenant"
+note = "inhabit-against-req execution + the falsify run"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "covenant_gate"
+note = "the structural covenant-before-burn gate (R-COV-1)"
 
 [[requirement.evidence]]
 kind = "symbol"
 target = "CovenantRefuted"
 note = "the Counterexample-class hard-fail ladder arm (degrade.rs)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/covenant_conformance.rs"
+note = "AC-8 cert-oracle — planted-bug CovenantRefuted, no-witness refusal, correct L3"
 
 [[requirement]]
 id = "REQ-S1-3"

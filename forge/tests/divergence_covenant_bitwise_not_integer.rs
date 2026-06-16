@@ -153,7 +153,7 @@ fn covenant_admits_integer_bitwise_not_in_its_fragment() {
          refusing the item as CovenantUnsupportedItem (L0): {cert}"
     );
     assert!(
-        cert.get("covenant_evidence").map_or(false, |e| !e.is_null()),
+        cert.get("covenant_evidence").is_some_and(|e| !e.is_null()),
         "DIVERGENCE: a validated covenant on an integer-`!` item must record covenant \
          evidence; got none (the item was refused before burn): {cert}"
     );

@@ -29,12 +29,14 @@
 //!
 //! Integers are evaluated as mathematical `i128`, wide enough to hold every `u64`,
 //! with `as` casts modelling the truncating bit-width semantics (`x as u32` reduces
-//! mod 2³²). Arithmetic does NOT trap on a `u64` wrap: the covenant checks the
-//! AGREEMENT between the body's computed value and what `ens` asserts, and it
-//! evaluates BOTH sides under the same `i128` semantics, so an overflow can never
-//! manufacture a spurious refutation. Overflow-class lowering infidelity (a wrong
-//! `wrapping_sub`) is the exec-TV / L3 surface (`forge/src/exec_tv.rs`), not the
-//! covenant's discrimination target. A genuine runtime trap with no `ens` bearing —
+//! mod 2³²). Arithmetic, shifts, and bitwise ops (including the type-directed integer
+//! `!`) do NOT truncate to the operand width: the covenant checks the AGREEMENT between
+//! the body's computed value and what `ens` asserts, and it evaluates BOTH sides under
+//! the same `i128` semantics, so a width-truncation difference (an overflowing `*`, a
+//! `<<` past the width, a `!` complement) on one side that the other side also computes
+//! identically can never manufacture a spurious refutation. The absolute width-truncated
+//! value (the exec-TV / L3 surface, `forge/src/exec_tv.rs`) is not the covenant's
+//! discrimination target — only the body-vs-`ens` agreement is. A genuine runtime trap with no `ens` bearing —
 //! a divide-by-zero / shift-out-of-range — is a [`CovenantEvalError::Trap`]: the
 //! `falsify` driver treats a trapped input as not-evaluated (skipped), not a hit
 //! (REQ-4: a hit is an `ens` violation on a `req`-satisfying input, `req` is expected
@@ -196,9 +198,17 @@ pub fn eval_expr(expr: &Expr, env: &Env) -> Result<Value, CovenantEvalError> {
         Expr::Unary { op, expr } => {
             let v = eval_expr(expr, env)?;
             match op {
-                // `!` is logical-not on a bool; bitwise-not on an integer is outside
-                // the covenant fragment (the contract/predicate `!` is always logical).
-                UnaryOp::Not => Ok(Value::Bool(!v.as_bool()?)),
+                // `!` is type-directed (ast.md REQ-10 / OQ-4, the single `UnaryOp::Not`):
+                // logical-not on a `bool`, bitwise-not on an integer. The integer case
+                // uses the same `i128` agreement model as the other bitwise/arithmetic
+                // ops (the body and `ens` evaluate `!` identically, so a covenant on
+                // `ens result == !x` validates; absolute width-truncated bitwise values
+                // are the agreement-model caveat documented for arithmetic, not a
+                // covenant discrimination target).
+                UnaryOp::Not => match v {
+                    Value::Bool(b) => Ok(Value::Bool(!b)),
+                    Value::Int(n) => Ok(Value::Int(!n)),
+                },
             }
         }
         Expr::Binary { op, lhs, rhs } => eval_binary(*op, lhs, rhs, env),
@@ -660,6 +670,36 @@ mod tests {
             ),
             Ok(Value::Int(1)),
             "a legal `let mut` reassignment threads the mutation"
+        );
+    }
+
+    #[test]
+    fn integer_bitwise_not_uses_the_i128_agreement_model() {
+        // `!` is type-directed (ast.md REQ-10): bitwise-not on an integer, logical-not on
+        // a bool. The integer case uses the i128 agreement model the other bitwise ops
+        // use — a body `!x` and `ens result == !x` evaluate `!` identically, so a covenant
+        // on a `!`-using item validates rather than being wrongly refused (#302).
+        let f = parse_fn("fn flip(x: u64) -> u64 req true ens result == !x fx pure { !x }");
+        let e = env(&[("x", Value::Int(5))]);
+        let result = eval_block(f.body.as_ref().expect("body"), &e).expect("body evals");
+        assert_eq!(result, Value::Int(!5_i128));
+        let mut ens_env = e.clone();
+        ens_env.insert("result".to_string(), result);
+        assert_eq!(
+            eval_expr(&f.contract.ens[0].expr, &ens_env),
+            Ok(Value::Bool(true)),
+            "body `!x` agrees with `ens result == !x`"
+        );
+        // Logical `!` on a bool is unaffected.
+        assert_eq!(
+            eval_expr(
+                &parse_fn("fn p(b: bool) -> bool req true ens result == !b fx pure { b }")
+                    .contract
+                    .ens[0]
+                    .expr,
+                &env(&[("b", Value::Bool(true)), ("result", Value::Bool(false))]),
+            ),
+            Ok(Value::Bool(true))
         );
     }
 

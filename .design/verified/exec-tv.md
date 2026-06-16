@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 3ba219b78e988e8a47dc1028670ad39fe1698f5b (re-pinned 2026-06-15: `forge/src/exec_tv.rs` REQ-5 status now renders from the canonical registry as the exec-TV forge owner; no TV behavior change; RFC #17)
+audited-sha: 543b506ef7ee64e2da0528505dae226c84761bd1 (re-pinned 2026-06-16: final source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 3ba219b78e988e8a47dc1028670ad39fe1698f5b (re-pinned 2026-06-15: `forge/src/exec_tv.rs` REQ-5 status now renders from the canonical registry as the exec-TV forge owner; no TV behavior change; RFC #17))
 governs: thermite-tv/src/exec_encode.rs, thermite-tv/src/obligation.rs, thermite-tv/src/gen.rs, forge/src/exec_tv.rs
 thesis-refs:
   - thermite-design.md §1 (trust relocated: code → spec → spec-intent)

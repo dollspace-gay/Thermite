@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — greenfield Summary fixed, #26 resolution recorded, the #193 `<fn>.?N` hole segment + the ADT-items-not-addressable fact recorded against REQ-1, #262)
+audited-sha: 39967df868c4a228894efdd48f136358db23e49d (re-pinned 2026-06-15: batch source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — greenfield Summary fixed, #26 resolution recorded, the #193 `<fn>.?N` hole segment + the ADT-items-not-addressable fact recorded against REQ-1, #262))
 governs: thermite-syntax/src/address.rs
 thesis-refs:
   - thermite-design.md §4.3

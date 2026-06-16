@@ -25,6 +25,7 @@
 //! <!-- /generated:reqs -->
 
 mod audit;
+mod battery;
 mod body_tv;
 mod build;
 mod cache;

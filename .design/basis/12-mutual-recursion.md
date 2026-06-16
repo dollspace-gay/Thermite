@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b, covenant engine REQ-4: the only change to this doc's governed files is the additive covenant pre-stage call in check.rs — an orthogonal gate before the L3 burn, owned by .design/stage1-forge-tier.md REQ-4 / registry REQ-S1-4; net-additive, the v1 behavior this doc governs is unchanged.)
+audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed files is the additive forge-item battery gate in check.rs — an orthogonal elaboration-time refusal landed before the inert forge-item skip, owned by .design/stage1-forge-tier.md REQ-5 / registry REQ-S1-5; net-additive, the v1 behavior this doc governs is unchanged.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

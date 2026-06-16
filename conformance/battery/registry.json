@@ -1,0 +1,27 @@
+{
+  "note": "Hand-derived from .design/stage1-forge-tier.md REQ-5 + AC-9 — the FROZEN forge-tier proof battery. Two closed sets: the tactic allowlist an author `proof { … }` / `lemma … proof { … }` block (the 2a verbatim-captured surface) may cite, and the simp-lemma set a `simp [ … ]` citation in those blocks may name. The simp set is the EXACT `simp only [ … ]` list the generated auto battery emits (forge/src/lean_export.rs `auto_tactic_battery`), the single auditable source of what the frozen battery knows how to rewrite; a citation outside it is an unlisted simp lemma (refused at elaboration), and a residual goal mentioning a symbol the set does not normalize is the `missing simp bridge` Stuck hint (RFC-1 §8). Modeled byte-for-byte on the combinator oracle (tests/golden/combinators/registry.json, R-CHAR-3): the registry is FROZEN — adding/removing/changing an entry is a design-doc amendment, not a code-local choice.",
+  "frozen": true,
+  "tactics": [
+    { "name": "omega",     "source": ".design/stage1-forge-tier.md REQ-5 — linear-integer-arithmetic decision procedure" },
+    { "name": "simp",      "source": ".design/stage1-forge-tier.md REQ-5 — simplifier (with the frozen simp set)" },
+    { "name": "nlinarith", "source": ".design/stage1-forge-tier.md REQ-5 — nonlinear arithmetic" },
+    { "name": "induction", "source": ".design/stage1-forge-tier.md REQ-5 — structural induction" },
+    { "name": "decide",    "source": ".design/stage1-forge-tier.md REQ-5 — decidable-proposition kernel evaluation" },
+    { "name": "calc",      "source": ".design/stage1-forge-tier.md REQ-5 — calculational proof block" },
+    { "name": "exact",     "source": ".design/stage1-forge-tier.md REQ-5 — close by an exact term" },
+    { "name": "from",      "source": ".design/stage1-forge-tier.md REQ-5 — `show … from …` / `suffices … from …` term step" },
+    { "name": "push_neg",  "source": ".design/stage1-forge-tier.md REQ-5 — negation normalization" }
+  ],
+  "simp_lemmas": [
+    { "name": "Thermite.Env.bindInt",          "source": "auto_tactic_battery `simp only` — environment integer binding" },
+    { "name": "Thermite.intVal",               "source": "auto_tactic_battery `simp only` — integer-expression denotation" },
+    { "name": "Thermite.denote",               "source": "auto_tactic_battery `simp only` — top-level expression denotation" },
+    { "name": "Thermite.arithDenote",          "source": "auto_tactic_battery `simp only` — arithmetic-op denotation" },
+    { "name": "Thermite.castDenote",           "source": "auto_tactic_battery `simp only` — cast denotation" },
+    { "name": "Thermite.seqIdx",               "source": "auto_tactic_battery `simp only` — sequence index" },
+    { "name": "Thermite.seqSub",               "source": "auto_tactic_battery `simp only` — sequence subslice" },
+    { "name": "Thermite.scrutVal",             "source": "auto_tactic_battery `simp only` — match-scrutinee value" },
+    { "name": "Thermite.OptResVal.isVariant",  "source": "auto_tactic_battery `simp only` — Option/Result variant test" },
+    { "name": "Thermite.OptResVal.variant",    "source": "auto_tactic_battery `simp only` — Option/Result variant projection" }
+  ]
+}

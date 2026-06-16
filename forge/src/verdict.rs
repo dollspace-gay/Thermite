@@ -182,13 +182,20 @@ fn reason_detail(reason: &Reason) -> String {
     }
 }
 
-/// Produce the cert verdict for a Lean discharge (REQ-1b, the KernelBudget upstream
-/// construction site, Q-KBSIGNAL). A Lean elaboration/kernel-budget exhaustion carries
-/// a textually-distinct signal ([`crate::tv_signal::is_kernel_budget_signal`]) that the
-/// Z3 rlimit text never matches and vice-versa (the negative test in `tv_signal`), so a
-/// budget exhaustion is classed `KernelBudget` UPSTREAM — never routed through the
-/// 3-arm [`CertVerdict::from_engine_verdict`] map (which would mis-call it `Timeout`).
-/// Any other Lean outcome maps through the total engine map.
+/// Produce the cert verdict for a Lean discharge (REQ-1b/REQ-5, the KernelBudget + Stuck
+/// upstream construction sites). The classification order, each distinct from the others:
+///
+/// 1. A Lean elaboration/kernel-budget exhaustion carries a textually-distinct signal
+///    ([`crate::tv_signal::is_kernel_budget_signal`]) that the Z3 rlimit text never
+///    matches and vice-versa (the negative test in `tv_signal`), so a budget exhaustion
+///    is classed `KernelBudget` UPSTREAM — never routed through the 3-arm
+///    [`CertVerdict::from_engine_verdict`] map (which would mis-call it `Timeout`).
+/// 2. A proof that ELABORATED but left a residual goal ("unsolved goals", REQ-5/2c) is
+///    [`CertVerdict::Stuck`] — the residual goal(s) + the frozen-battery missing-bridge
+///    hint ([`crate::battery::stuck_from_lake_output`]) — never silently `Proved` and
+///    never the solver `Timeout` the 3-arm map would assign (a tactic that ran but did
+///    not close is not an rlimit event).
+/// 3. Any other Lean outcome maps through the total engine map.
 #[must_use]
 pub fn cert_verdict_for_lean(lake_output: &str, engine_verdict: &Verdict) -> CertVerdict {
     if crate::tv_signal::is_kernel_budget_signal(lake_output) {
@@ -204,10 +211,18 @@ pub fn cert_verdict_for_lean(lake_output: &str, engine_verdict: &Verdict) -> Cer
             .chars()
             .take(300)
             .collect();
-        CertVerdict::KernelBudget { detail: head }
-    } else {
-        CertVerdict::from_engine_verdict(engine_verdict)
+        return CertVerdict::KernelBudget { detail: head };
     }
+    // REQ-5/2c: a residual-goal failure is `Stuck` (it elaborated, the battery did not
+    // close it), carrying the residual + the missing-bridge hint — never `Proved`, never
+    // mapped to the solver `Timeout`.
+    if let Some(stuck) = crate::battery::stuck_from_lake_output(lake_output) {
+        return CertVerdict::Stuck {
+            goals: stuck.goals,
+            hint: stuck.hint,
+        };
+    }
+    CertVerdict::from_engine_verdict(engine_verdict)
 }
 
 #[cfg(test)]
@@ -277,8 +292,9 @@ mod tests {
     }
 
     /// A Lean kernel/elaboration-budget exhaustion is produced UPSTREAM as
-    /// `KernelBudget`, NOT mapped to `Timeout` (Q-KBSIGNAL). A non-budget Lean failure
-    /// falls through to the total engine map.
+    /// `KernelBudget`, NOT mapped to `Timeout` (Q-KBSIGNAL). A residual-goal failure is
+    /// `Stuck` (REQ-5/2c), and only a budget-less, residual-less incompleteness falls
+    /// through to the total engine map as `Timeout`.
     #[test]
     fn lean_kernel_budget_is_upstream_not_timeout() {
         let budget_out = "error: (deterministic) timeout at `isDefEq`, maximum number of \
@@ -289,13 +305,23 @@ mod tests {
         );
         assert_eq!(v.kind(), "KernelBudget");
 
-        // A genuine tactic failure (no budget signal) is the engine map's image.
-        let tactic_fail = "error: unsolved goals\n  ⊢ a ≤ b";
+        // A tactic that elaborated but left a residual goal is `Stuck` (REQ-5), not the
+        // solver `Timeout` the 3-arm map would assign.
+        let residual = "error: unsolved goals\n  ⊢ a ≤ b";
         let v2 = cert_verdict_for_lean(
-            tactic_fail,
+            residual,
             &Verdict::Unknown(Reason::IncompleteUnknown("unsolved goals".to_string())),
         );
-        assert_eq!(v2.kind(), "Timeout");
+        assert_eq!(v2.kind(), "Stuck");
+
+        // A budget-less, residual-less incompleteness (a genuine rlimit/`unknown`) is the
+        // engine map's `Timeout` image.
+        let rlimit = "error: rlimit exceeded; resource limit reached";
+        let v3 = cert_verdict_for_lean(
+            rlimit,
+            &Verdict::Unknown(Reason::VerusTimeout("rlimit exceeded".to_string())),
+        );
+        assert_eq!(v3.kind(), "Timeout");
     }
 
     /// serde round-trips for ALL SEVEN variants (REQ-1 / AC-1): each serializes to a

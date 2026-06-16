@@ -6820,6 +6820,41 @@ target = "forge/tests/covenant_conformance.rs"
 note = "AC-8 cert-oracle — planted-bug CovenantRefuted, no-witness refusal, correct L3"
 
 [[requirement]]
+id = "REQ-S1-5"
+title = "Frozen tactic/simp battery — elaboration gate + Stuck hints"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The frozen forge-tier proof battery (increment 2c) consumes the 2a-captured verbatim proof blocks. The tactic allowlist (omega, simp, nlinarith, induction, decide, calc, exact, from, push_neg) and the frozen simp set (the exact simp-only lemmas the auto battery emits) ship as a single static, auditable, byte-deterministic REGISTRY DATA FILE modeled on the combinator registry, golden-pinned at conformance/battery/registry.json. A deterministic citation scanner parses the tactic heads + simp-lemma citations inside a proof block; the enforce gate is the elaboration-time cage (the thermite_spec::validate proof-tier mirror): a proof citing an unlisted tactic OR an unlisted simp lemma is REFUSED — named — never warned, landing a hard L0 reject cert (BatteryUnlistedTactic / BatteryUnlistedSimpLemma) before any discharge. Stuck verdicts carry battery hints: a Lean discharge that elaborates but leaves a residual goal is CertVerdict::Stuck with the residual goal(s) + the missing-simp-bridge heuristic (RFC-1 §8), never silently Proved and never mis-classed as the solver Timeout. No v1 corpus item is forge-tier, so the battery is a no-op on the 7 v1 golden certs (byte-identical)."
+aliases = ["frozen battery", "tactic battery", "simp battery", "Stuck hints", "REQ-5"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/battery.rs"
+note = "the frozen REGISTRY (tactic allowlist + simp set), the citation scanner, the enforce gate, the Stuck producer"
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/battery/registry.json"
+note = "the hand-derived golden oracle the frozen battery is pinned against (AC-9 — the registry file exists)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "enforce"
+note = "the elaboration-time gate refusing an unlisted tactic/simp lemma, named (R-BAT-1)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "stuck_from_lake_output"
+note = "the residual-goal + missing-simp-bridge Stuck producer (RFC-1 §8)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/battery_conformance.rs"
+note = "AC-9 binary surface — unlisted-tactic + unlisted-simp-lemma refusal named in the cert"
+
+[[requirement]]
 id = "REQ-S1-3"
 title = "Forge-tier surface syntax"
 owner = ".design/stage1-forge-tier.md"

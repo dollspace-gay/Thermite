@@ -134,7 +134,7 @@ fn out_of_range_witness_must_not_manufacture_a_false_covenant_refutation() {
     // witness, not of the contract or the body.
     let control = first_cert(INRANGE_WITNESS, "inrange");
     assert!(
-        control.get("reject").map_or(true, |r| r.is_null()),
+        control.get("reject").is_none_or(|r| r.is_null()),
         "control (in-range witness `5`): the item is sound for every u32, it must NOT be \
          rejected, got {control}"
     );

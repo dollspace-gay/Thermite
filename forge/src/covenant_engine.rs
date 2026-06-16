@@ -343,18 +343,37 @@ fn bind_params(
     }
     let mut env = Env::new();
     for ((param, kind), val) in params.iter().zip(kinds).zip(vals) {
-        let ok = matches!(
-            (kind, val),
-            (ParamKind::Int(_), Value::Int(_)) | (ParamKind::Bool, Value::Bool(_))
-        );
-        if !ok {
-            return Err(CovenantError::WitnessTypeMismatch {
-                item: item.to_string(),
-                detail: format!(
-                    "parameter `{}` expects {:?}, witness supplies {:?}",
-                    param.name, kind, val
-                ),
-            });
+        match (kind, val) {
+            (ParamKind::Int(width), Value::Int(n)) => {
+                // Width-check the witness against the parameter's integer type: a value
+                // outside `0..=width.max` is not an inhabitant of the parameter type, so
+                // it is an ill-typed witness, NOT a `req`-satisfying input (without this,
+                // an out-of-range author witness like `inhabit (4294967296)` for a `u32`
+                // truncates and manufactures a false CovenantRefuted on a sound item).
+                // Generated inputs are always in-range (`gen_value` caps at the max), so
+                // this only ever rejects an author witness.
+                let max = i128::try_from(width.max_value()).unwrap_or(i128::MAX);
+                if *n < 0 || *n > max {
+                    return Err(CovenantError::WitnessTypeMismatch {
+                        item: item.to_string(),
+                        detail: format!(
+                            "parameter `{}` is {width:?} (range 0..={max}), witness supplies \
+                             out-of-range {n}",
+                            param.name
+                        ),
+                    });
+                }
+            }
+            (ParamKind::Bool, Value::Bool(_)) => {}
+            _ => {
+                return Err(CovenantError::WitnessTypeMismatch {
+                    item: item.to_string(),
+                    detail: format!(
+                        "parameter `{}` expects {kind:?}, witness supplies {val:?}",
+                        param.name
+                    ),
+                });
+            }
         }
         env.insert(param.name.clone(), *val);
     }
@@ -752,6 +771,31 @@ mod tests {
             }
             other => panic!("expected UnsupportedItem, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn out_of_range_author_witness_is_a_type_mismatch_not_a_refutation() {
+        // `inhabit (4294967296)` (= 2^32) for a `u32` param is not a `u32` inhabitant —
+        // an ill-typed witness (WitnessTypeMismatch), NOT a `req`-satisfying input. Without
+        // the width check the truncating model would compute result 0 and manufacture a
+        // false CovenantRefuted on a sound item (#300).
+        let src = "fn idu(x: u32) -> u32 req true ens result == x fx pure { x } \
+                   witness { inhabit (4294967296); falsify 10; }";
+        let (f, w) = parse_covenant(src);
+        match analyze_covenant(&f, &w) {
+            CovenantAnalysis::Error(CovenantError::WitnessTypeMismatch { item, .. }) => {
+                assert_eq!(item, "idu");
+            }
+            other => panic!("expected WitnessTypeMismatch, got {other:?}"),
+        }
+        // An in-range witness validates (the item is sound for every real u32).
+        let ok = "fn idu(x: u32) -> u32 req true ens result == x fx pure { x } \
+                  witness { inhabit (5); falsify 10; }";
+        let (f2, w2) = parse_covenant(ok);
+        assert!(matches!(
+            analyze_covenant(&f2, &w2),
+            CovenantAnalysis::Validated { .. }
+        ));
     }
 
     // R-COV-1, the closure-instrumented covenant-before-burn invariant (the degrade.rs

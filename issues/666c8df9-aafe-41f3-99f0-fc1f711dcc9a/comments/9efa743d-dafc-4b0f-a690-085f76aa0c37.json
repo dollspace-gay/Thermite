@@ -1,0 +1,8 @@
+{
+  "uuid": "9efa743d-dafc-4b0f-a690-085f76aa0c37",
+  "issue_uuid": "666c8df9-aafe-41f3-99f0-fc1f711dcc9a",
+  "author": "qkbt",
+  "content": "REQ-6 anti-Goodhart at L3: three defenses, one commit per sub-unit. (c) definition-tower budget FIRST (self-contained, fully local-testable): new forge/src/meaning.rs (DefinitionTower over the spec-fn meaning closure rooted at req-union-ens; Q2 budget depth 4 / 40 defs; sha256 tower hash; unfolded render). MeaningAudit cert field (oracle-included per Q-ORACLE, None for v1 so goldens stay byte-identical, mirrors covenant_evidence). Certify-time gate threaded in check_file_with_engine (forge/Lean discharge path, NOT Verus default, NOT forge audit which stays gating-nothing #274). forge audit --meaning = read-only printer. (b) re-elaboration mutation: reuse mutation::generate + MUTANT_CAP, kill check becomes re-typecheck the existing proof term per mutant; catalogue-shared assertion. (a) arbitrary-result re-elab tautology beside vacuity_solver; body-ignoring-ens fixture. Then REQ-S1-6 registry + doc-drift re-pin + gauntlet. Lean-spine cases skip locally (CI-only).",
+  "created_at": "2026-06-16T19:54:11.446657Z",
+  "kind": "plan"
+}

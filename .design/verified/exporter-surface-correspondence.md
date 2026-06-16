@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 governs: forge/src/lean_export.rs
-audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
+audited-sha: 82cf268ee579140a87831fe019ece87d9fb7e80f (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6a: re-inspected the exporter surface for the new emit_theorem ResultMode. Table EXP-4 gains the `result` binding-mode subsection — the Arbitrary mode (export_arbitrary_result_harness) reuses the exact auto-tier machinery and changes ONLY the result binder (a fresh (r:Int) vs the body denotation). The existing arms' correspondence is unchanged: the Arbitrary goal is strictly WEAKER (∀ r), a tautology detector, not a new soundness claim.)
              tone-pass that closed increment 0; increment 1 does NOT modify lean_export.rs,
              so this pin stays valid after the foundation commit)
 thesis-refs:
@@ -167,6 +167,21 @@ independent directions, both enforced before any emission.
 The auto tactic battery (`auto_tactic_battery`): `intro hreq; simp only [Thermite.Env.bindInt, …]; first | decide | omega | simp_all | exact hreq | (revert hreq; decide) | (revert hreq; omega)`. This is the §6.1(a)/(b) z3-demotion battery; a closed-form QF goal is `decide`d, a linear-arith goal falls to `omega`.
 
 `tier_of` detects tier (a) by checking `any_spec_call` across all four expression positions (`req`, `ens`, `body`, `dec`); if none, tier (a). If spec-calls are present, `registry_is_recursive` does a DFS cycle detection over the call graph (`callees` via `collect_block_calls`/`collect_expr_calls`) — a back edge is a cycle (tier (c)); otherwise tier (b).
+
+### The `result` binding mode (REQ-6a, increment 2d — anti-Goodhart defense (a))
+
+`emit_theorem` takes a `ResultMode` (`forge/src/lean_export.rs`). The shipped mode is
+`BodyDenotation` — the auto-tier rows above, where `result` binds to the body's stabilized
+value `(Thermite.intVal 0 body {v with specs:=R_item})`. The `Arbitrary` mode
+(`export_arbitrary_result_harness`) is identical EXCEPT it adds a fresh `(r : Int)` theorem
+binder and binds `result` to that `r`, dropping the body denotation:
+
+| mode | theorem (auto tiers (a)/(b)) | correspondence / soundness |
+|---|---|---|
+| `BodyDenotation` (shipped) | `… .bindInt "result" (Thermite.intVal 0 body {v with specs:=R_item})` | the rows above — `result` is what the body computes |
+| `Arbitrary` (REQ-6a) | `theorem T (v : Thermite.Env) (r : Int) : … → Thermite.denote 0 ens (….bindInt "result" r) := by {battery}` | the goal is `∀ r, req → ens@r` — the `ens` for an ARBITRARY result. If it kernel-accepts, the `ens` holds independent of the body → a body-ignoring tautology, which `check::gate_arbitrary_result_tautology` REJECTS (`SemanticTautology`). NOT a certification obligation — a tautology DETECTOR; the existing tiers' soundness correspondence is unchanged, since the `Arbitrary` goal is strictly WEAKER (∀ r) than the real obligation (`r` = the body value), so its acceptance is sound to read as "the contract over-claims nothing about the result". The Lean counterpart of `vacuity_solver.rs::build_tautology_harness`'s arbitrary `result` proof-fn param. |
+
+`Arbitrary` mode is the pure-contract auto path only in increment 2d; a straight-line/while-body item is a structured `OutOfFragment` skip (the result-substitution on `bodyDenote`/`stateOf` is a residual). The battery, `R_item`, and `req`/`ens` encoding are byte-identical to the real obligation — only the `result` binder differs.
 
 ---
 

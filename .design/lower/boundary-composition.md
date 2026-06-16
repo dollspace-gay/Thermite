@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 5dd9f5cee8544b74c6b8c3aaa7b58089692d0f56 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6b: the only change to this doc's governed file (check.rs) is the additive `reelaboration_mutants` seam — the L3 re-elaboration mutation battery reuses the SHARED frozen mutation::generate catalogue (REQ-S1-6, AC-10: not forked), with the per-mutant kill check re-elaborating via the existing Lean discharge path; orthogonal to what this doc governs, the v1 behavior is unchanged.)
+audited-sha: 82cf268ee579140a87831fe019ece87d9fb7e80f (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6a: the only change to this doc's governed file (check.rs) is the additive certify-time gate_arbitrary_result_tautology on the forge/Lean path (REQ-S1-6) — a body-ignoring ens that re-elaborates for an arbitrary result is refused; orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9

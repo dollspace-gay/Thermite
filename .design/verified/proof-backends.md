@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 5dd9f5cee8544b74c6b8c3aaa7b58089692d0f56 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6b: the only change to this doc's governed file (check.rs) is the additive `reelaboration_mutants` shared-catalogue seam threaded into lean_mutation_score's per-mutant loop (REQ-S1-6, AC-10) — an identity refactor of the catalogue source; the REQ-9 Lean mutation battery behavior this doc governs is unchanged.)
+audited-sha: 82cf268ee579140a87831fe019ece87d9fb7e80f (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6a: additive arbitrary-result re-elaboration tautology check — lean_export.rs gains ResultMode + export_arbitrary_result_harness (export_item stays a thin wrapper, all callers unchanged), engine.rs gains LeanEngine::arbitrary_result_reelaboration driving the existing #print-axioms+run_lake path, check.rs the certify-time gate (REQ-S1-6). The shipped discharge/exporter soundness behavior this doc governs is unchanged — the Arbitrary harness is a tautology DETECTOR, not a certification obligation.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

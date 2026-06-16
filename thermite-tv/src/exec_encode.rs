@@ -39,9 +39,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (exec-expr reference encoder — independent, EXEC semantics) | SHIPPED | `pub fn exec_ref_value` here; non-test consumer `thermite_tv::obligation::exec_equivalence_obligation` (`obligation.rs`); verified by `thermite-tv/tests/exec_teeth.rs` E1–E4 against real verus (faithful VERIFIES, infidel CAUGHT). Bounded-typed (no `nat`/`int` coercion — the cast target is the source cast's target, the arithmetic stays at the operand type), independent of `lower_expr` (deps `thermite-syntax` + `thermite-spec` ONLY, `Cargo.toml`, AC-6). |
+//! <!-- generated:reqs view=thermite-tv-exec-encode-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-EXEC-REF-ENCODER | shipped | `thermite-tv/src/exec_encode.rs` | Exec-TV independent reference encoder |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeSet;
 use std::fmt;

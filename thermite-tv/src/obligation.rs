@@ -28,9 +28,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-2 (per-clause Z3 equivalence obligation + discharge) | SHIPPED | `pub fn equivalence_obligation` + `pub struct ObligationFrame`/`ParamDecl` here; non-test consumer `thermite_tv::lib` re-export → `tests/teeth.rs` discharges F1–F4 through real verus (faithful VERIFIES, infidel COUNTEREXAMPLE). The reference side is `ref_encode::ref_contract_pred` (REQ-1); the production side is the verbatim `p_production` argument (the artifact under test). |
+//! <!-- generated:reqs view=thermite-tv-obligation-contract-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-CONTRACT-OBLIGATION | shipped | `thermite-tv/src/obligation.rs` | Contract-TV per-clause Z3 equivalence obligation |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## EXEC-position extension (`.design/verified/exec-tv.md` REQ-2; epic #151)
 //!
@@ -44,9 +48,13 @@
 //! REQ-1); the production side is the verbatim `p_production`
 //! (`thermite_lower::lower_exec_expr`, the artifact under test).
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-2 (exec-fn-wrapped equivalence obligation + discharge) | SHIPPED | `pub fn exec_equivalence_obligation` + `pub struct ExecObligationFrame`/`ExecParamDecl` here; non-test consumer `thermite_tv::lib` re-export → `tests/exec_teeth.rs` discharges E1–E4 through real verus (faithful VERIFIES, infidel CAUGHT). Emits the EXEC-FN form (`exec-tv.md` Architecture), discharged through the existing verus path. |
+//! <!-- generated:reqs view=thermite-tv-obligation-exec-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-EXEC-OBLIGATION | shipped | `thermite-tv/src/obligation.rs` | Exec-TV fn-wrapped equivalence obligation |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## LOOP-position extension — step 2.2.2-i (`.design/verified/loop-tv.md`; epic #169)
 //!
@@ -65,9 +73,13 @@
 //! AC-5); a loop out of v1 is an honest `Unsupported` from `loop_ref_obligations`
 //! (Skipped, never silently Faithful, R-HONEST-3).
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | loop-REQ-2 (the three per-run loop obligations + discharge) | SHIPPED | `pub fn loop_entry_obligation` / `loop_preservation_obligation` / `loop_exit_obligation` + `pub struct LoopObligationFrame`/`LoopParamDecl` here; each emits a self-contained Verus unit (ENTRY `proof fn { assert(inv[cells:=entry]); }`; PRESERVATION `fn tv_loop_step(cells, inputs) requires inv && cond, ensures result.i == <step_i>, <inv_at_step> { <p_production> }`; EXIT `proof fn tv_loop_exit(cells, inputs) requires inv && (!cond) { assert(<claimed_after_loop>); }`); non-test consumer `thermite_tv::lib` re-export → `tests/loop_teeth.rs` L1–L4 discharge through real verus (L1 all three VERIFY, L2 broken-preservation + L3 wrong-exit CAUGHT, L4 OUT-of-v1 Skipped). The single-step REUSES `loop_ref_obligations`/`body_ref_state` (AC-5); discharged through the existing verus path. |
+//! <!-- generated:reqs view=thermite-tv-obligation-loop-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-LOOP-OBLIGATIONS | shipped | `thermite-tv/src/obligation.rs` | Loop-TV per-run obligation emitters |  |
+//! <!-- /generated:reqs -->
 
 use thermite_syntax::ast::{Block, Expr};
 

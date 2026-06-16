@@ -992,6 +992,114 @@ region = "forge-tv-signal-status"
 comment_prefix = "//! "
 title = "Forge TV Signal Canonical Status References"
 
+[[view]]
+name = "thermite-spec-combinators-status"
+path = "thermite-spec/src/combinators.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-combinators-status"
+comment_prefix = "//! "
+title = "Thermite Spec Combinator Registry Canonical Status References"
+
+[[view]]
+name = "thermite-spec-schemes-status"
+path = "thermite-spec/src/schemes.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-schemes-status"
+comment_prefix = "//! "
+title = "Thermite Spec Recursion Scheme Registry Canonical Status References"
+
+[[view]]
+name = "thermite-tv-ref-encode-status"
+path = "thermite-tv/src/ref_encode.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-ref-encode-status"
+comment_prefix = "//! "
+title = "Thermite TV Contract Reference Encoder Canonical Status References"
+
+[[view]]
+name = "thermite-tv-exec-encode-status"
+path = "thermite-tv/src/exec_encode.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-exec-encode-status"
+comment_prefix = "//! "
+title = "Thermite TV Exec Reference Encoder Canonical Status References"
+
+[[view]]
+name = "thermite-tv-gen-status"
+path = "thermite-tv/src/gen.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-gen-status"
+comment_prefix = "//! "
+title = "Thermite TV Generator Canonical Status References"
+
+[[view]]
+name = "thermite-tv-obligation-contract-status"
+path = "thermite-tv/src/obligation.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-obligation-contract-status"
+comment_prefix = "//! "
+title = "Thermite TV Contract Obligation Canonical Status References"
+
+[[view]]
+name = "thermite-tv-obligation-exec-status"
+path = "thermite-tv/src/obligation.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-obligation-exec-status"
+comment_prefix = "//! "
+title = "Thermite TV Exec Obligation Canonical Status References"
+
+[[view]]
+name = "thermite-tv-obligation-loop-status"
+path = "thermite-tv/src/obligation.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-obligation-loop-status"
+comment_prefix = "//! "
+title = "Thermite TV Loop Obligation Canonical Status References"
+
+[[view]]
+name = "thermite-tv-exec-stmt-body-status"
+path = "thermite-tv/src/exec_stmt_encode.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-exec-stmt-body-status"
+comment_prefix = "//! "
+title = "Thermite TV Body Statement Canonical Status References"
+
+[[view]]
+name = "thermite-tv-exec-stmt-loop-status"
+path = "thermite-tv/src/exec_stmt_encode.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-tv-exec-stmt-loop-status"
+comment_prefix = "//! "
+title = "Thermite TV Loop Statement Canonical Status References"
+
+[[view]]
+name = "forge-engine-status"
+path = "forge/src/engine.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-engine-status"
+comment_prefix = "//! "
+title = "Forge Proof Engine Canonical Status References"
+
+[[view]]
+name = "forge-lean-export-status"
+path = "forge/src/lean_export.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-lean-export-status"
+comment_prefix = "//! "
+title = "Forge Lean Exporter Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -3946,6 +4054,230 @@ id = "REQ-FORGE-TV-SIGNAL-RLIMIT"
 replacement_view = "forge-tv-signal-status"
 note = "Source-comment status row replaced by a generated canonical reference."
 
+[[legacy_mapping]]
+path = "thermite-spec/src/combinators.rs"
+label = "REQ-1 (frozen combinator set)"
+id = "REQ-SPEC-COMBINATORS-FROZEN"
+replacement_view = "thermite-spec-combinators-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/combinators.rs"
+label = "REQ-2 (registry data shape — structural facet)"
+id = "REQ-SPEC-COMBINATORS-SHAPE"
+replacement_view = "thermite-spec-combinators-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/combinators.rs"
+label = "REQ-6 (combinator Verus(L3) bodies — lowering facet)"
+id = "REQ-SPEC-COMBINATORS-VERUS-L3"
+replacement_view = "thermite-spec-combinators-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/combinators.rs"
+label = "REQ-3 (combinator L1 executable forms — lowering facet)"
+id = "REQ-SPEC-COMBINATORS-L1"
+replacement_view = "thermite-spec-combinators-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/schemes.rs"
+label = "REQ-1 (the scheme set as named primitives; AST = `Expr::Call` + registry)"
+id = "REQ-SPEC-SCHEMES-FROZEN"
+replacement_view = "thermite-spec-schemes-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/schemes.rs"
+label = "REQ-2 (the step — flat per-node closure; step arity by scheme)"
+id = "REQ-SPEC-SCHEMES-FLAT-STEP"
+replacement_view = "thermite-spec-schemes-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/ref_encode.rs"
+label = "REQ-1 (independent reference encoder)"
+id = "REQ-TV-CONTRACT-REF-ENCODER"
+replacement_view = "thermite-tv-ref-encode-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/exec_encode.rs"
+label = "REQ-1 (exec-expr reference encoder — independent, EXEC semantics)"
+id = "REQ-TV-EXEC-REF-ENCODER"
+replacement_view = "thermite-tv-exec-encode-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/gen.rs"
+label = "REQ-3 (off-corpus generator)"
+id = "REQ-TV-CONTRACT-GENERATOR"
+replacement_view = "thermite-tv-gen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/obligation.rs"
+label = "REQ-2 (per-clause Z3 equivalence obligation + discharge)"
+id = "REQ-TV-CONTRACT-OBLIGATION"
+replacement_view = "thermite-tv-obligation-contract-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/obligation.rs"
+label = "REQ-2 (exec-fn-wrapped equivalence obligation + discharge)"
+id = "REQ-TV-EXEC-OBLIGATION"
+replacement_view = "thermite-tv-obligation-exec-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/obligation.rs"
+label = "loop-REQ-2 (the three per-run loop obligations + discharge)"
+id = "REQ-TV-LOOP-OBLIGATIONS"
+replacement_view = "thermite-tv-obligation-loop-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/exec_stmt_encode.rs"
+label = "REQ-1 (frozen kernel exec-statement subset v1)"
+id = "REQ-TV-BODY-STMT-SUBSET"
+replacement_view = "thermite-tv-exec-stmt-body-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/exec_stmt_encode.rs"
+label = "REQ-2 (operational-semantics reference state-denotation — independent)"
+id = "REQ-TV-BODY-STATE-DENOTATION"
+replacement_view = "thermite-tv-exec-stmt-body-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/exec_stmt_encode.rs"
+label = "loop-REQ-1 (loop surface + v1 frozen loop subset)"
+id = "REQ-TV-LOOP-STMT-SUBSET"
+replacement_view = "thermite-tv-exec-stmt-loop-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-tv/src/exec_stmt_encode.rs"
+label = "loop-REQ-2 (the three per-run loop obligations)"
+id = "REQ-TV-LOOP-REFERENCE-PIECES"
+replacement_view = "thermite-tv-exec-stmt-loop-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-2 (the Engine interface — 4 slots)"
+id = "REQ-FORGE-ENGINE-INTERFACE"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-3 (discharge discipline — Unknown degrades, Refuted hard-fails)"
+id = "REQ-FORGE-ENGINE-DISCHARGE-DISCIPLINE"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-3.1 (the fast-unknown remap)"
+id = "REQ-FORGE-ENGINE-FAST-UNKNOWN"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-8 (engine ordering hook)"
+id = "REQ-FORGE-ENGINE-ORDERING"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-4 (certificate attribution — per-obligation {engine, trust_profile})"
+id = "REQ-FORGE-ENGINE-ATTRIBUTION"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-5 (engine disagreement = soundness alarm)"
+id = "REQ-FORGE-ENGINE-DISAGREEMENT"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-7 (interactive proofs — skeleton emit + replay with staleness gate + sorry detection)"
+id = "REQ-FORGE-ENGINE-INTERACTIVE-REPLAY"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/engine.rs"
+label = "REQ-9 (engine-generic mutation battery — the Lean path)"
+id = "REQ-FORGE-ENGINE-LEAN-MUTATION"
+replacement_view = "forge-engine-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-6 (the Lean exporter — emit source instantiating `S`; the hard gate; EXP arm-by-arm)"
+id = "REQ-FORGE-LEAN-EXPORTER"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-7 (Lean discharge modes — AUTO tiers (a)/(b) fuel-free; tier (c) interactive)"
+id = "REQ-FORGE-LEAN-DISCHARGE-MODES"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-10.3 (the env→State correspondence emission — `stateOf`/`InRangeParams`/per-param `rfl`-lemmas)"
+id = "REQ-FORGE-LEAN-STATE-CORRESPONDENCE"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-10.4 (the HYPOTHESIZE obligation + the conjoined OVERFLOW theorem)"
+id = "REQ-FORGE-LEAN-BODY-THEOREMS"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-10.6 (the loop-class STRUCTURED refusal narrowed out of `NotPureContract`)"
+id = "REQ-FORGE-LEAN-STRUCTURED-REFUSAL"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-11.4 (the while-body widening — the (v) recognizer + `Inv_item`/`mu_item` + the FIVE per-item obligations + the TWO composed theorems + the loop battery)"
+id = "REQ-FORGE-LEAN-WHILE-BODY"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-11.5 (the §4.2.5 refusal inventory stays LOUD)"
+id = "REQ-FORGE-LEAN-REFUSAL-INVENTORY"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/lean_export.rs"
+label = "REQ-11.7 (the REQ-9 mutation-accounting delta)"
+id = "REQ-FORGE-LEAN-MUTATION-ACCOUNTING"
+replacement_view = "forge-lean-export-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
 [[requirement]]
 id = "REQ-SYNTAX-AST-ITEMS"
 title = "Function item AST nodes"
@@ -6468,7 +6800,7 @@ scope = "verified"
 summary = "The contract-position reference encoder independently encodes the SpecTherm contract sublanguage without depending on production lowering."
 aliases = ["REQ-1 (independent reference encoder)"]
 contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/obligation.rs"]
-generated_to = ["status", "thermite-tv-contract-tv-status"]
+generated_to = ["status", "thermite-tv-contract-tv-status", "thermite-tv-ref-encode-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -6484,7 +6816,6 @@ note = "F1-F4 contract-TV teeth discharge the reference side under real verus"
 kind = "file"
 target = "thermite-tv/src/ref_encode.rs"
 note = "owner implementation"
-
 [[requirement]]
 id = "REQ-TV-CONTRACT-OBLIGATION"
 title = "Contract-TV per-clause Z3 equivalence obligation"
@@ -6494,7 +6825,7 @@ scope = "verified"
 summary = "Each contract clause lowers into a self-contained equivalence obligation comparing production lowering with the independent reference encoding."
 aliases = ["REQ-2 (per-clause Z3 equivalence obligation + discharge)"]
 contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/ref_encode.rs"]
-generated_to = ["status", "thermite-tv-contract-tv-status"]
+generated_to = ["status", "thermite-tv-contract-tv-status", "thermite-tv-obligation-contract-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -6510,7 +6841,6 @@ note = "obligation parameter and frame model"
 kind = "test"
 target = "thermite-tv/tests/teeth.rs"
 note = "teeth test discharges faithful and infidel obligations"
-
 [[requirement]]
 id = "REQ-TV-CONTRACT-GENERATOR"
 title = "Contract-TV off-corpus generator"
@@ -6520,7 +6850,7 @@ scope = "verified"
 summary = "The off-corpus contract generator deterministically emits well-typed contract-position clauses over the frozen TV sublanguage."
 aliases = ["REQ-3 (off-corpus generator)"]
 contributors = ["thermite-tv/src/lib.rs", "forge/src/contract_tv.rs"]
-generated_to = ["status", "thermite-tv-contract-tv-status"]
+generated_to = ["status", "thermite-tv-contract-tv-status", "thermite-tv-gen-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -6536,7 +6866,6 @@ note = "forge off-corpus contract-TV conformance run"
 kind = "file"
 target = "thermite-tv/src/gen.rs"
 note = "owner implementation"
-
 [[requirement]]
 id = "REQ-TV-CONTRACT-TEETH"
 title = "Contract-TV teeth"
@@ -6601,7 +6930,7 @@ aliases = [
   "REQ-1 (exec-expr reference encoder — independent, EXEC semantics)",
 ]
 contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/obligation.rs"]
-generated_to = ["status", "thermite-tv-exec-tv-status"]
+generated_to = ["status", "thermite-tv-exec-tv-status", "thermite-tv-exec-encode-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -6617,7 +6946,6 @@ note = "E1-E4 exec teeth discharge the reference side under real verus"
 kind = "file"
 target = "thermite-tv/src/exec_encode.rs"
 note = "owner implementation"
-
 [[requirement]]
 id = "REQ-TV-EXEC-OBLIGATION"
 title = "Exec-TV fn-wrapped equivalence obligation"
@@ -6630,7 +6958,7 @@ aliases = [
   "REQ-2 (exec-fn-wrapped equivalence obligation + discharge)",
 ]
 contributors = ["thermite-tv/src/lib.rs", "thermite-tv/src/exec_encode.rs"]
-generated_to = ["status", "thermite-tv-exec-tv-status"]
+generated_to = ["status", "thermite-tv-exec-tv-status", "thermite-tv-obligation-exec-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -6646,7 +6974,6 @@ note = "exec obligation frame model"
 kind = "test"
 target = "thermite-tv/tests/exec_teeth.rs"
 note = "teeth test discharges faithful and infidel exec obligations"
-
 [[requirement]]
 id = "REQ-TV-EXEC-GENERATOR"
 title = "Exec-TV off-corpus generator"
@@ -7070,7 +7397,7 @@ scope = "spec"
 summary = "The SpecTherm combinator registry exposes the frozen v0.1 combinator set consumed by validation and lowering."
 aliases = ["thermite-spec/src/lib.rs REQ-1 (frozen combinator set)"]
 contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
-generated_to = ["status", "thermite-spec-lib-combinators-status"]
+generated_to = ["status", "thermite-spec-lib-combinators-status", "thermite-spec-combinators-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -7086,7 +7413,6 @@ note = "registry lookup consumed by the validator"
 kind = "test"
 target = "thermite-spec/tests/combinators_conformance.rs"
 note = "registry oracle conformance"
-
 [[requirement]]
 id = "REQ-SPEC-COMBINATORS-SHAPE"
 title = "Combinator registry data shape"
@@ -7096,7 +7422,7 @@ scope = "spec"
 summary = "Each combinator registry entry carries the structural signature the validator needs: name, arity, argument kinds, and result kind."
 aliases = ["thermite-spec/src/lib.rs REQ-2 (registry data shape)"]
 contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
-generated_to = ["status", "thermite-spec-lib-combinators-status"]
+generated_to = ["status", "thermite-spec-lib-combinators-status", "thermite-spec-combinators-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -7112,7 +7438,6 @@ note = "argument-kind vocabulary"
 kind = "symbol"
 target = "ResultKind"
 note = "result-kind vocabulary"
-
 [[requirement]]
 id = "REQ-SPEC-VALIDATOR-ACCEPT"
 title = "Validator accept rule"
@@ -14201,3 +14526,653 @@ note = "contract-TV consumer"
 kind = "symbol"
 target = "body_tv::run_obligation"
 note = "body-TV consumer"
+
+[[requirement]]
+id = "REQ-SPEC-COMBINATORS-VERUS-L3"
+title = "Combinator Verus L3 bodies"
+owner = "thermite-spec/src/combinators.rs"
+status = "shipped"
+scope = "spec"
+summary = "The combinator registry carries frozen Verus spec-function bodies that the lowerer emits as the L3 ground truth for bounded combinators."
+aliases = ["thermite-spec/src/combinators.rs REQ-6 (combinator Verus(L3) bodies — lowering facet)"]
+contributors = [".design/lower/verus-lowering.md", ".design/spec/spectherm-combinators.md", "thermite-lower/tests/lower_conformance.rs"]
+generated_to = ["status", "thermite-spec-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verus_l3"
+note = "registry-provided Verus L3 body field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_combinator_defs"
+note = "lowerer consumer of the registry bodies"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/lower_conformance.rs"
+note = "real-Verus corpus checks for combinator bodies"
+
+[[requirement]]
+id = "REQ-SPEC-COMBINATORS-L1"
+title = "Combinator executable L1 forms"
+owner = "thermite-spec/src/combinators.rs"
+status = "shipped"
+scope = "spec"
+summary = "The combinator registry carries executable Rust L1 runtime-check bodies mirroring the frozen L3 combinator meanings."
+aliases = ["thermite-spec/src/combinators.rs REQ-3 (combinator L1 executable forms — lowering facet)"]
+contributors = [".design/lower/l1-runtime-checks.md", ".design/spec/spectherm-combinators.md", "thermite-lower/tests/l1_conformance.rs"]
+generated_to = ["status", "thermite-spec-combinators-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CombinatorSig"
+note = "registry entry carrying the executable L1 body field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_combinator_l1_defs"
+note = "L1 lowerer consumer of registry bodies"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l1_conformance.rs"
+note = "concrete executable L1 combinator checks"
+
+[[requirement]]
+id = "REQ-SPEC-SCHEMES-FROZEN"
+title = "Frozen recursion scheme set"
+owner = "thermite-spec/src/schemes.rs"
+status = "shipped"
+scope = "spec"
+summary = "The recursion-scheme registry exposes the closed set of named schemes and deterministic generated-name metadata consumed by validation and lowering."
+aliases = ["thermite-spec/src/schemes.rs REQ-1 (the scheme set as named primitives; AST = `Expr::Call` + registry)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-spec/tests/scheme_validate.rs", "thermite-lower/tests/adt_schemes_conformance.rs"]
+generated_to = ["status", "thermite-spec-schemes-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "REGISTRY"
+note = "static frozen recursion-scheme table"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lookup"
+note = "scheme lookup consumed by validator and lowerer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generated_fn_name"
+note = "deterministic generated scheme function naming"
+
+[[requirement]]
+id = "REQ-SPEC-SCHEMES-FLAT-STEP"
+title = "Recursion scheme flat step signature"
+owner = "thermite-spec/src/schemes.rs"
+status = "shipped"
+scope = "spec"
+summary = "Each recursion scheme declares the non-step argument count and step-closure shape used to enforce flat per-node closures."
+aliases = ["thermite-spec/src/schemes.rs REQ-2 (the step — flat per-node closure; step arity by scheme)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-spec/src/validator.rs", "thermite-spec/tests/scheme_validate.rs"]
+generated_to = ["status", "thermite-spec-schemes-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SchemeSig"
+note = "scheme registry entry shape"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "StepShape"
+note = "step-closure parameter shape vocabulary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_scheme"
+note = "validator consumer of step shape and arity"
+
+[[requirement]]
+id = "REQ-TV-BODY-STMT-SUBSET"
+title = "Body-TV straight-line statement subset"
+owner = "thermite-tv/src/exec_stmt_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The body-TV reference state encoder pins the admitted straight-line statement subset and loudly rejects out-of-v1 constructs."
+aliases = ["thermite-tv/src/exec_stmt_encode.rs REQ-1 (frozen kernel exec-statement subset v1)"]
+contributors = [".design/verified/exec-stmt-tv.md", "thermite-tv/tests/body_teeth.rs", "thermite-tv/tests/divergence_ac4_if_stmt_mutation.rs"]
+generated_to = ["status", "thermite-tv-exec-stmt-body-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "body_ref_state"
+note = "straight-line body reference entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RefEncodeError::Unsupported"
+note = "honest out-of-subset rejection"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/body_teeth.rs"
+note = "body-TV faithful and infidel teeth"
+
+[[requirement]]
+id = "REQ-TV-BODY-STATE-DENOTATION"
+title = "Body-TV operational state denotation"
+owner = "thermite-tv/src/exec_stmt_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The body-TV reference encoder threads let, assignment, if-branch composition, and tuple projection into an independent final-state denotation."
+aliases = ["thermite-tv/src/exec_stmt_encode.rs REQ-2 (operational-semantics reference state-denotation — independent)"]
+contributors = [".design/verified/exec-stmt-tv.md", "thermite-tv/tests/body_teeth.rs", "thermite-tv/src/exec_encode.rs"]
+generated_to = ["status", "thermite-tv-exec-stmt-body-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "body_ref_state"
+note = "state-denotation entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "body_ref_state_ensures"
+note = "obligation-facing equality builder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/body_teeth.rs"
+note = "B1-B4 operational semantics teeth"
+
+[[requirement]]
+id = "REQ-TV-LOOP-STMT-SUBSET"
+title = "Loop-TV v1 loop subset recognizer"
+owner = "thermite-tv/src/exec_stmt_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The loop-TV reference layer recognizes the single-while v1 subset and returns structured unsupported results for every out-of-v1 loop shape."
+aliases = ["thermite-tv/src/exec_stmt_encode.rs loop-REQ-1 (loop surface + v1 frozen loop subset)"]
+contributors = [".design/verified/loop-tv.md", "thermite-tv/tests/loop_teeth.rs", "forge/tests/body_tv.rs"]
+generated_to = ["status", "thermite-tv-exec-stmt-loop-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "recognize_v1_loop"
+note = "v1 loop shape recognizer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_ref_obligations"
+note = "loop reference entry"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/loop_teeth.rs"
+note = "loop subset and skip matrix"
+
+[[requirement]]
+id = "REQ-TV-LOOP-REFERENCE-PIECES"
+title = "Loop-TV reference obligation pieces"
+owner = "thermite-tv/src/exec_stmt_encode.rs"
+status = "shipped"
+scope = "verified"
+summary = "The loop-TV reference layer computes entry, preservation, and exit reference pieces by reusing the body state denotation and exec-value encoder."
+aliases = ["thermite-tv/src/exec_stmt_encode.rs loop-REQ-2 (the three per-run loop obligations)"]
+contributors = [".design/verified/loop-tv.md", "thermite-tv/src/obligation.rs", "thermite-tv/tests/loop_teeth.rs"]
+generated_to = ["status", "thermite-tv-exec-stmt-loop-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LoopObligations"
+note = "entry preservation exit reference record"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_ref_obligations"
+note = "reference piece producer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-tv/tests/loop_teeth.rs"
+note = "hand-derived loop reference checks"
+
+[[requirement]]
+id = "REQ-TV-LOOP-OBLIGATIONS"
+title = "Loop-TV per-run obligation emitters"
+owner = "thermite-tv/src/obligation.rs"
+status = "shipped"
+scope = "verified"
+summary = "The loop-TV obligation layer emits the entry, preservation, and exit Verus units discharged by the existing verification path."
+aliases = ["thermite-tv/src/obligation.rs loop-REQ-2 (the three per-run loop obligations + discharge)"]
+contributors = [".design/verified/loop-tv.md", "thermite-tv/src/exec_stmt_encode.rs", "thermite-tv/tests/loop_teeth.rs"]
+generated_to = ["status", "thermite-tv-obligation-loop-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_entry_obligation"
+note = "entry obligation emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_preservation_obligation"
+note = "preservation obligation emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "loop_exit_obligation"
+note = "exit obligation emitter"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-INTERFACE"
+title = "Backend-neutral proof engine interface"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Forge exposes a backend-neutral proof engine trait with fragment, discharge, trust-profile, and evidence-key slots."
+aliases = ["forge/src/engine.rs REQ-2 (the Engine interface — 4 slots)"]
+contributors = [".design/verified/proof-backends.md", "forge/tests/engine_interface.rs", "forge/tests/engine_attribution.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Engine"
+note = "engine trait"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VerusEngine"
+note = "Verus implementation behind the trait"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanEngine"
+note = "Lean engine implementation"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-DISCHARGE-DISCIPLINE"
+title = "Engine verdict ladder discipline"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Engine verdicts map to the degrade ladder so Proven certifies, Unknown degrades, and Refuted hard-fails."
+aliases = ["forge/src/engine.rs REQ-3 (discharge discipline — Unknown degrades, Refuted hard-fails)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/degrade.rs", "forge/tests/engine_interface.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verdict_ladder_action"
+note = "engine verdict to ladder action map"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Verdict"
+note = "engine verdict enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verdict_ladder_action_follows_req3"
+note = "discipline regression test"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-FAST-UNKNOWN"
+title = "Verus fast-unknown remap"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Witnessless SMT unknown-like Verus failures remap to Unknown while witnessed countermodels and frontend type errors remain Refuted."
+aliases = ["forge/src/engine.rs REQ-3.1 (the fast-unknown remap)"]
+contributors = [".design/verified/proof-backends.md", "forge/tests/engine_interface.rs", "forge/src/check.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "counterexample_is_incompleteness_unknown"
+note = "narrow SMT unknown discriminator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "witnessless_counterexample_remaps_to_unknown"
+note = "unknown remap test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "type_error_counterexample_stays_refuted"
+note = "frontend error stays refuted"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-ORDERING"
+title = "Proof engine ordering hook"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Forge exposes deterministic proof-engine ordering, with Verus as the default rung and Lean as an explicit engine path."
+aliases = ["forge/src/engine.rs REQ-8 (engine ordering hook)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/check.rs", "forge/tests/engine_interface.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "default_engines"
+note = "ordered engine list"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EngineName"
+note = "stable engine discriminator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_engine"
+note = "engine-selecting check path"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-ATTRIBUTION"
+title = "Certificate engine attribution"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Non-default engine discharges can attach the engine name and trust profile to certificates without perturbing default Verus goldens."
+aliases = ["forge/src/engine.rs REQ-4 (certificate attribution — per-obligation {engine, trust_profile})"]
+contributors = [".design/verified/proof-backends.md", "forge/src/manifest.rs", "forge/tests/engine_attribution.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EngineAttribution"
+note = "certificate attribution payload"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "attribution_for"
+note = "attribution builder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/engine_attribution.rs"
+note = "attribution serialization and check-path tests"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-DISAGREEMENT"
+title = "Engine disagreement soundness alarm"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "A Proven versus witnessed Refuted disagreement between engines is a structured soundness alarm, never resolved by preference."
+aliases = ["forge/src/engine.rs REQ-5 (engine disagreement = soundness alarm)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/cli.rs", "forge/tests/engine_attribution.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_disagreement"
+note = "multi-engine disagreement guard"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Disagreement"
+note = "soundness alarm payload"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/engine_attribution.rs"
+note = "Proven versus Refuted alarm tests"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-INTERACTIVE-REPLAY"
+title = "Interactive Lean proof replay"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Interactive Lean proofs use deterministic skeleton paths, evidence-key staleness checks, sorry detection, and proof-term-only replay reconstruction."
+aliases = ["forge/src/engine.rs REQ-7 (interactive proofs — skeleton emit + replay with staleness gate + sorry detection)"]
+contributors = [".design/verified/proof-backends.md", "forge/tests/lean_engine.rs", "forge/tests/divergence_252_indented_command_escape.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "interactive_proof_path"
+note = "deterministic interactive proof artifact path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "replay_interactive"
+note = "interactive replay entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "proof_term_command_token"
+note = "proof-term command escape belt"
+
+[[requirement]]
+id = "REQ-FORGE-ENGINE-LEAN-MUTATION"
+title = "Lean engine mutation accounting"
+owner = "forge/src/engine.rs"
+status = "shipped"
+scope = "forge"
+summary = "Lean mutation scoring counts only admitted Lean-fragment mutants and treats Refuted or attempted Unknown outcomes as killed without inflating untested cases."
+aliases = ["forge/src/engine.rs REQ-9 (engine-generic mutation battery — the Lean path)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/check.rs", "forge/tests/engine_attribution.rs"]
+generated_to = ["status", "forge-engine-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lean_mutant_outcome"
+note = "Lean mutant classification"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanMutationTally"
+note = "attempted/killed accounting"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lean_mutant_outcome_follows_req9"
+note = "mutation accounting unit test"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-EXPORTER"
+title = "Lean exporter and registry hard gate"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "The Lean exporter serializes admitted Thermite obligations into the Lean spine with arm-by-arm expression encoding and a hard complete-registry gate."
+aliases = ["forge/src/lean_export.rs REQ-6 (the Lean exporter — emit source instantiating `S`; the hard gate; EXP arm-by-arm)"]
+contributors = [".design/verified/proof-backends.md", ".design/verified/rust-lean-correspondence.md", "forge/tests/lean_engine.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_item"
+note = "Lean export entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_registry"
+note = "R_item registry builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "encode_expr"
+note = "arm-by-arm Lean expression encoder"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-DISCHARGE-MODES"
+title = "Lean discharge mode tiers"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "Lean export classifies obligations into fuel-free auto, static-unfold auto, or recursive interactive tiers before discharge."
+aliases = ["forge/src/lean_export.rs REQ-7 (Lean discharge modes — AUTO tiers (a)/(b) fuel-free; tier (c) interactive)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/engine.rs", "forge/tests/lean_engine.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tier_of"
+note = "Lean export tier classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExportTier"
+note = "Lean tier enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "auto_tactic_battery"
+note = "auto-tier tactic battery"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-STATE-CORRESPONDENCE"
+title = "Lean exec-body state correspondence"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "Straight-line exec-body export emits stateOf, InRangeParams, and per-parameter correspondence lemmas over the Lean Exec state model."
+aliases = ["forge/src/lean_export.rs REQ-10.3 (the env→State correspondence emission — `stateOf`/`InRangeParams`/per-param `rfl`-lemmas)"]
+contributors = [".design/verified/proof-backends.md", ".design/verified/exporter-surface-correspondence.md", "forge/src/engine.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_straight_line_body"
+note = "straight-line body export path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_state_of"
+note = "stateOf and correspondence lemma emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "live_straight_line_body_is_proven"
+note = "live straight-line body proof test"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-BODY-THEOREMS"
+title = "Lean exec-body contract and overflow theorems"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "Straight-line exec-body export emits both the hypothesize-contract theorem and the conjoined overflow/convergence theorem in the same Lean file."
+aliases = ["forge/src/lean_export.rs REQ-10.4 (the HYPOTHESIZE obligation + the conjoined OVERFLOW theorem)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/engine.rs", "forge/tests/lean_engine.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_body_theorems"
+note = "body theorem emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "exec_body_tactic_battery"
+note = "contract theorem tactic battery"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "live_always_overflow_body_is_not_proven"
+note = "overflow-vacuity regression"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-STRUCTURED-REFUSAL"
+title = "Lean exec-body structured refusals"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "Unsupported exec-body forms narrow to structured export refusals that the Lean engine reports as Unknown skips rather than verdicts."
+aliases = ["forge/src/lean_export.rs REQ-10.6 (the loop-class STRUCTURED refusal narrowed out of `NotPureContract`)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/engine.rs", "forge/tests/lean_engine.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "encode_exec_stmt"
+note = "exec statement encoder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ExportRefusal::LoopBody"
+note = "structured loop-body refusal"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "while_body_item_refuses_export"
+note = "structured refusal regression"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-WHILE-BODY"
+title = "Lean while-body export and composed theorems"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "The Lean exporter recognizes v1 while bodies and emits loop invariants, measure, five per-item obligations, and two composed theorem targets."
+aliases = ["forge/src/lean_export.rs REQ-11.4 (the while-body widening — the (v) recognizer + `Inv_item`/`mu_item` + the FIVE per-item obligations + the TWO composed theorems + the loop battery)"]
+contributors = [".design/verified/proof-backends.md", ".design/verified/loop-tv.md", "forge/tests/lean_while.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_while_body"
+note = "while-body export entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "recognize_while_body"
+note = "v1 while-body recognizer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/lean_while.rs"
+note = "Lean while-body live conformance"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-REFUSAL-INVENTORY"
+title = "Lean while refusal inventory"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "The Lean exporter keeps every out-of-v1 while shape in a loud structured refusal inventory."
+aliases = ["forge/src/lean_export.rs REQ-11.5 (the §4.2.5 refusal inventory stays LOUD)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/engine.rs", "forge/tests/lean_while.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "recognize_while_body"
+note = "while refusal classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "while_refusal_inventory_is_structured"
+note = "structured refusal inventory test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/lean_while.rs"
+note = "refusal matrix integration test"
+
+[[requirement]]
+id = "REQ-FORGE-LEAN-MUTATION-ACCOUNTING"
+title = "Lean while mutation accounting delta"
+owner = "forge/src/lean_export.rs"
+status = "shipped"
+scope = "forge"
+summary = "Widening the Lean while-body fragment makes in-grammar while-body mutants attempted while out-of-grammar mutants remain untested."
+aliases = ["forge/src/lean_export.rs REQ-11.7 (the REQ-9 mutation-accounting delta)"]
+contributors = [".design/verified/proof-backends.md", "forge/src/engine.rs", "forge/tests/lean_while.rs"]
+generated_to = ["status", "forge-lean-export-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check::lean_mutation_score"
+note = "Lean mutation consumer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanEngine::admits_auto"
+note = "mutant admission check"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lean_mutant_outcome"
+note = "Lean mutation result classification"

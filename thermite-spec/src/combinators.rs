@@ -20,12 +20,16 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (frozen combinator set) | SHIPPED | `static REGISTRY: [CombinatorSig; 8]` — the 8 frozen combinators; consumed by `validator::validate` via `lookup`; asserted field-for-field against `tests/golden/combinators/registry.json` in `tests/combinators_conformance.rs`. |
-//! | REQ-2 (registry data shape — structural facet) | SHIPPED | `struct CombinatorSig { name, arity, arg_kinds, result }`, `enum ArgKind { Slice, Index, Pred, Value }`, `enum ResultKind { Bool, Usize }`; static table + `lookup(name)`. Lowering facet is #4 scope (named seam above). |
-//! | REQ-6 (combinator Verus(L3) bodies — lowering facet) | SHIPPED — verus-lowering.md REQ-6 | `CombinatorSig.verus_l3` carries each combinator's frozen Verus `spec fn` definition (frozen `#[trigger]`); consumed by `thermite-lower::lower::emit_combinator_defs` (the #4 consumer that closes the OQ-2 seam, R-DEFER-1). The four corpus forms verify in `thermite-lower/tests/lower_conformance.rs` via real `verus`. |
-//! | REQ-3 (combinator L1 executable forms — lowering facet) | SHIPPED — l1-runtime-checks.md REQ-3 | `CombinatorSig.l1` carries each combinator's frozen runnable Rust `fn` (a real `&[u32]` loop, no `vstd`/`Seq`), mirroring the `verus_l3` seam (OQ-2). Consumed by `thermite_lower::l1::lower_l1`/`emit_combinator_l1_defs` (the #4 L1 consumer, R-DEFER-1); each form unit-tested over concrete slices in `thermite-lower/tests/l1_conformance.rs` (AC-3). |
+//! <!-- generated:reqs view=thermite-spec-combinators-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-COMBINATORS-FROZEN | shipped | `thermite-spec/src/combinators.rs` | Frozen combinator set |  |
+//! | REQ-SPEC-COMBINATORS-L1 | shipped | `thermite-spec/src/combinators.rs` | Combinator executable L1 forms |  |
+//! | REQ-SPEC-COMBINATORS-SHAPE | shipped | `thermite-spec/src/combinators.rs` | Combinator registry data shape |  |
+//! | REQ-SPEC-COMBINATORS-VERUS-L3 | shipped | `thermite-spec/src/combinators.rs` | Combinator Verus L3 bodies |  |
+//! <!-- /generated:reqs -->
 
 /// The kind of a positional argument a combinator expects (REQ-2). The validator
 /// uses these to check each call argument's shape against the registry entry.

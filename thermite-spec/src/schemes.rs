@@ -27,10 +27,14 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (the scheme set as named primitives; AST = `Expr::Call` + registry) | SHIPPED | `static REGISTRY: [SchemeSig; 5]` — the 5 frozen schemes (`fold`/`map`/`for_all`/`exists`/`traverse`); `lookup(name)` resolves a callee `Path` to its `SchemeSig`; consumed by `validator::validate` (the scheme-call accept) and `thermite_lower::lower` (the generated-fn name via `generated_fn_name`). Asserted against `conformance/adt-schemes/cases.json` in `thermite-spec/tests/scheme_validate.rs`. |
-//! | REQ-2 (the step — flat per-node closure; step arity by scheme) | SHIPPED | `SchemeSig.step_arity` (2 for `fold`/`traverse`, 1 for `map`/`for_all`/`exists`) + `SchemeSig.scrutinee_args` (the non-step positional args before the step); `validator` checks the step closure's param count against `step_arity` and the total call arity, and rejects a nested scheme in the step body. |
+//! <!-- generated:reqs view=thermite-spec-schemes-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-SPEC-SCHEMES-FLAT-STEP | shipped | `thermite-spec/src/schemes.rs` | Recursion scheme flat step signature |  |
+//! | REQ-SPEC-SCHEMES-FROZEN | shipped | `thermite-spec/src/schemes.rs` | Frozen recursion scheme set |  |
+//! <!-- /generated:reqs -->
 
 /// The accumulator/result kind a scheme yields (REQ-1/REQ-3). Keyed by the
 /// lowerer to pick the generated `spec fn`'s return type (`nat` for `fold`,

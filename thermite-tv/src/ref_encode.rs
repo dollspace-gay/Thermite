@@ -30,9 +30,13 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (independent reference encoder) | SHIPPED | `pub fn ref_contract_pred` here; non-test consumer `thermite_tv::obligation::equivalence_obligation` (`obligation.rs`); verified by `thermite-tv/tests/teeth.rs` F1–F4 against real verus (faithful VERIFIES, infidel COUNTEREXAMPLE). Depends on `thermite-syntax` + `thermite-spec` ONLY — no `thermite-lower` (`Cargo.toml`), so the independence is a compile constraint (AC-6). **#150 coverage extension:** `encode_match`/`encode_pattern` independently encode an `Expr::Match`-in-ens (the C7 payload-in-contract `Some/None/Ok/Err` match, mirroring production's `lower_match` shape); `encode_string_byteview` (keyed on the `string_bound` receiver set) re-implements production's `recv_is_string` byte-view rewrite (`.len()`→`spec_len()`, `.byte_at(i)`→`spec_byte_at(<i>)`); `encode_map_accessor` (keyed on `map_bound`) rewrites `.contains_key(k)`→`spec_contains_key(k)` / `.len()`→`len()`; `encode_len_receiver` keeps a plain slice `.len()` BARE (matching production's un-viewed slice `.len()`). Non-test consumer: `forge::contract_tv::tv_file` (the corpus phase, via `equivalence_obligation`). GROUNDED under real verus: binary_search Option-match-ens + string_demo byte-view + map_kv `contains_key`/`is None` all Checked + Faithful (`forge/tests/contract_tv_conformance.rs`). |
+//! <!-- generated:reqs view=thermite-tv-ref-encode-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-TV-CONTRACT-REF-ENCODER | shipped | `thermite-tv/src/ref_encode.rs` | Contract-TV independent reference encoder |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeSet;
 use std::fmt;

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: additive forge-tier LEMMA discharge — lean_export.rs gains export_lemma (the `∀ params, req → ens` theorem over the denotation spine, the fn-contract framing minus body/result), engine.rs gains LeanEngine::discharge_source (runs a ready-made source through lake + the SAME #print-axioms certify-time gate every Lean path runs), check.rs the discharge_forge_lemma → cert wiring (Proven → L3 + burn; else honest non-cert). The shipped fn/spec-fn discharge + exporter soundness this doc governs is unchanged — a clean lemma is a new self-contained obligation class on the existing axiom-gated lake path, not a change to the existing obligations.)
+audited-sha: f664b3335eb7302419187fcbc02e568dfc2a7657 (re-pinned 2026-06-16 for the 2e lake-guard test fix, claim-neutral: the only intervening change to this doc's governed source is adding the `lake_present()` skip-guard to the `live_forge_lemma_discharges_proven` test in engine.rs — a test-gating change, no production-path or REQ change.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

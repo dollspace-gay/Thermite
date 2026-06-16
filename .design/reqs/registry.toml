@@ -88,6 +88,87 @@ comment_prefix = "//! "
 title = "Syntax Crate Scaffold Status References"
 
 [[view]]
+name = "thermite-syntax-ast-core-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-core-status"
+comment_prefix = "//! "
+title = "Syntax AST Core Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-ffi-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-ffi-status"
+comment_prefix = "//! "
+title = "Syntax AST Boundary Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-goal-repl-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-goal-repl-status"
+comment_prefix = "//! "
+title = "Syntax AST Goal REPL Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-adt-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-adt-status"
+comment_prefix = "//! "
+title = "Syntax AST ADT Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-collections-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-collections-status"
+comment_prefix = "//! "
+title = "Syntax AST Collections Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-option-result-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-option-result-status"
+comment_prefix = "//! "
+title = "Syntax AST Option/Result Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-recursion-tuples-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-recursion-tuples-status"
+comment_prefix = "//! "
+title = "Syntax AST Recursion/Tuples Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-map-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-map-status"
+comment_prefix = "//! "
+title = "Syntax AST Map Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-ast-ergonomics-status"
+path = "thermite-syntax/src/ast.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-ast-ergonomics-status"
+comment_prefix = "//! "
+title = "Syntax AST Ergonomics Canonical Status References"
+
+[[view]]
 name = "thermite-spec-scaffold-status"
 path = "thermite-spec/src/lib.rs"
 kind = "reference_list"
@@ -844,6 +925,955 @@ label = "REQ-17 (`bytes_eq` — REGISTERED built-in spec predicate; surface + ca
 id = "REQ-STRING-BYTES-EQ-CAGE"
 replacement_view = "thermite-spec-validator-string-status"
 note = "bytes_eq validator cage row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 (item nodes)"
+id = "REQ-SYNTAX-AST-ITEMS"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Core AST item row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-2 (contract node, mandatory fields)"
+id = "REQ-SYNTAX-AST-CONTRACT"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Core AST contract row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-3 (slag attribute node)"
+id = "REQ-SYNTAX-AST-SLAG"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Core AST slag row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "ffi REQ-2 (AST shape)"
+id = "REQ-SYNTAX-AST-BOUNDARY"
+replacement_view = "thermite-syntax-ast-ffi-status"
+note = "Boundary AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-4 (block + statement nodes)"
+id = "REQ-SYNTAX-AST-BLOCK-STMT"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Core AST block/statement row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-5 (loop nodes, addressable)"
+id = "REQ-SYNTAX-AST-LOOPS"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Core AST loop row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-6 — VALUE (expression nodes incl. `IntLit` value)"
+id = "REQ-SYNTAX-AST-EXPRS"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Core AST expression row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-6 — RAW (`IntLit` verbatim raw on the Expr, #37)"
+id = "REQ-SYNTAX-AST-INTLIT-RAW"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Int literal raw row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-7 (pattern/type/effect nodes)"
+id = "REQ-SYNTAX-AST-PATTERN-TYPE-EFFECT"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Pattern/type/effect row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-8 (addressable nodes)"
+id = "REQ-SYNTAX-AST-ADDRESSABLE"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Addressability row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-9 (spans + boundary stability)"
+id = "REQ-SYNTAX-AST-SPANS"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Span stability row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-6 — CHAR/HEX/BIN reuse `IntLit` (#91/#92)"
+id = "REQ-SYNTAX-AST-INTLIT-RAW"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Alternate integer literal forms now map to the canonical IntLit raw/value node."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-10 (binary + unary operator set, #92)"
+id = "REQ-SYNTAX-AST-OPERATORS"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Operator AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-11 (partial-operator obligations, #92)"
+id = "REQ-SYNTAX-AST-PARTIAL-OPS"
+replacement_view = "thermite-syntax-ast-core-status"
+note = "Partial-operator surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "goal-repl REQ-4 (AST hole node)"
+id = "REQ-SYNTAX-AST-HOLES"
+replacement_view = "thermite-syntax-ast-goal-repl-status"
+note = "Goal REPL hole AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 SURFACE (struct items + `inv` clause)"
+id = "REQ-SYNTAX-ADT-STRUCT"
+replacement_view = "thermite-syntax-ast-adt-status"
+note = "ADT struct surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-2 SURFACE (enum items + struct-lit construction)"
+id = "REQ-SYNTAX-ADT-ENUM"
+replacement_view = "thermite-syntax-ast-adt-status"
+note = "ADT enum surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-3 SURFACE (recursive `Box<T>` type)"
+id = "REQ-SYNTAX-ADT-BOX"
+replacement_view = "thermite-syntax-ast-adt-status"
+note = "ADT recursive Box type row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-4 SURFACE (`match` over enum/struct patterns + binding)"
+id = "REQ-SYNTAX-ADT-MATCH"
+replacement_view = "thermite-syntax-ast-adt-status"
+note = "ADT match surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-6 SURFACE (`Expr::Is` + `is` operator)"
+id = "REQ-SYNTAX-ADT-IS"
+replacement_view = "thermite-syntax-ast-adt-status"
+note = "ADT is-operator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "deref `*t` (REQ-3/REQ-4 surface)"
+id = "REQ-SYNTAX-ADT-DEREF"
+replacement_view = "thermite-syntax-ast-adt-status"
+note = "ADT deref surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 SURFACE (`Vec<T>` type node)"
+id = "REQ-SYNTAX-COLLECTIONS-VEC"
+replacement_view = "thermite-syntax-ast-collections-status"
+note = "Vec surface AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-2 (`Map<K,V>` type)"
+id = "REQ-SYNTAX-MAP-TYPE"
+replacement_view = "thermite-syntax-ast-collections-status"
+note = "Original Stage-4 Map placeholder row now resolves to the shipped C12 Map AST requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 SURFACE (`Option<T>` type node)"
+id = "REQ-SYNTAX-OPTRES-OPTION"
+replacement_view = "thermite-syntax-ast-option-result-status"
+note = "Option surface AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-2 SURFACE (`Result<T, E>` two-arg type node)"
+id = "REQ-SYNTAX-OPTRES-RESULT"
+replacement_view = "thermite-syntax-ast-option-result-status"
+note = "Result surface AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 (`fn` `dec` clause — AST)"
+id = "REQ-SYNTAX-RECURSION-DEC"
+replacement_view = "thermite-syntax-ast-recursion-tuples-status"
+note = "Recursive fn dec AST row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection — AST)"
+id = "REQ-SYNTAX-TUPLES-NODES"
+replacement_view = "thermite-syntax-ast-recursion-tuples-status"
+note = "Tuple node row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-7 (tuple arity — n-tuples, ≥ 2)"
+id = "REQ-SYNTAX-TUPLES-ARITY"
+replacement_view = "thermite-syntax-ast-recursion-tuples-status"
+note = "Tuple arity row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 SURFACE (`Map<K,V>` two-arg type node)"
+id = "REQ-SYNTAX-MAP-TYPE"
+replacement_view = "thermite-syntax-ast-map-status"
+note = "Map surface type row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-2 SURFACE (`Map` ops are `Expr::MethodCall`)"
+id = "REQ-SYNTAX-MAP-METHODS"
+replacement_view = "thermite-syntax-ast-map-status"
+note = "Map method-call row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-1 (tuple destructuring `let (x,y)=e`)"
+id = "REQ-SYNTAX-ERGONOMICS-TUPLE-DESTRUCTURE"
+replacement_view = "thermite-syntax-ast-ergonomics-status"
+note = "Tuple-destructure surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-2 (`for i in 0..n` loop)"
+id = "REQ-SYNTAX-ERGONOMICS-FOR"
+replacement_view = "thermite-syntax-ast-ergonomics-status"
+note = "For-loop desugar row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-3 (match guards `x if cond =>`)"
+id = "REQ-SYNTAX-ERGONOMICS-MATCH-GUARD"
+replacement_view = "thermite-syntax-ast-ergonomics-status"
+note = "Match-guard surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-4 (or-patterns `1 \\| 2 =>`)"
+id = "REQ-SYNTAX-ERGONOMICS-OR-PATTERN"
+replacement_view = "thermite-syntax-ast-ergonomics-status"
+note = "Or-pattern surface row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/ast.rs"
+label = "REQ-5 (`if let` / `while let`)"
+id = "REQ-SYNTAX-ERGONOMICS-IF-WHILE-LET"
+replacement_view = "thermite-syntax-ast-ergonomics-status"
+note = "If-let/while-let surface row replaced by a generated canonical reference."
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-ITEMS"
+title = "Function item AST nodes"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The syntax AST represents top-level exec and spec functions as typed item variants consumed by the parser and downstream stages."
+aliases = ["thermite-syntax/src/ast.rs REQ-1 (item nodes)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Item"
+note = "top-level item enum"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "parser conformance covers item construction"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-CONTRACT"
+title = "Mandatory contract AST node"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Contract` keeps `req`, non-empty `ens`, and `fx` structurally present so mandatory function contracts are not optional in the AST."
+aliases = ["thermite-syntax/src/ast.rs REQ-2 (contract node, mandatory fields)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Contract"
+note = "mandatory contract structure"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_contract"
+note = "parser presence checks"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-SLAG"
+title = "Slag attribute AST node"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`SlagAttr` records verifier-debt metadata on functions without weakening the mandatory contract shape."
+aliases = ["thermite-syntax/src/ast.rs REQ-3 (slag attribute node)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagAttr"
+note = "slag attribute node"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_slag_body"
+note = "slag parser arm"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-BOUNDARY"
+title = "Boundary function AST shape"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`BoundaryAttr` and the optional `FnItem.body` encode foreign boundary functions as typed AST shape rather than a copied status convention."
+aliases = ["thermite-syntax/src/ast.rs ffi REQ-2 (AST shape)"]
+contributors = [".design/boundary/ffi-boundary.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/boundary_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-ffi-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BoundaryAttr"
+note = "boundary attribute node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/boundary_parse.rs"
+note = "boundary parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-BLOCK-STMT"
+title = "Block and statement AST nodes"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Executable bodies are represented as `Block` plus `Stmt`, with statement position explicit for lets, assignments, returns, branches, loops, and expression statements."
+aliases = ["thermite-syntax/src/ast.rs REQ-4 (block + statement nodes)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Block"
+note = "block AST node"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Stmt"
+note = "statement AST enum"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-LOOPS"
+title = "Addressable loop AST nodes"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`LoopNode` carries loop kind, invariants, decreases clause, body, and span so loops are structurally addressable downstream."
+aliases = ["thermite-syntax/src/ast.rs REQ-5 (loop nodes, addressable)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs", "thermite-syntax/src/address.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LoopNode"
+note = "loop AST node"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "surface_keyword"
+note = "loop address/fact surface support"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-EXPRS"
+title = "Expression AST nodes"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Expr` covers calls, method calls, fields, paths, literals, closures, matches, conditionals, operators, indexing, casts, and references as typed AST variants."
+aliases = ["thermite-syntax/src/ast.rs REQ-6 - VALUE (expression nodes incl. `IntLit` value)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr"
+note = "expression AST enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_expr_bp"
+note = "expression parser"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-INTLIT-RAW"
+title = "Integer literal value and raw spelling"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Expr::IntLit` keeps both numeric value and raw spelling, including decimal separators and char/hex/binary forms, without adding alternate literal AST variants."
+aliases = [
+  "thermite-syntax/src/ast.rs REQ-6 - RAW (`IntLit` verbatim raw on the Expr, #37)",
+  "thermite-syntax/src/ast.rs REQ-6 - CHAR/HEX/BIN reuse `IntLit` (#91/#92)",
+]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/operators_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "IntLit"
+note = "integer literal AST variant"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/operators_parse.rs"
+note = "char/hex/binary literals parse to IntLit"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-PATTERN-TYPE-EFFECT"
+title = "Pattern, type, and effect AST nodes"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Pattern`, `Type`, and `EffectRow` provide typed AST surfaces for matching, annotations, and effect rows."
+aliases = ["thermite-syntax/src/ast.rs REQ-7 (pattern/type/effect nodes)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Pattern"
+note = "pattern AST enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EffectRow"
+note = "effect row AST enum"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-ADDRESSABLE"
+title = "AST addressability hooks"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Items, loops, and clauses carry stable order and text/span hooks used by semantic addressing."
+aliases = ["thermite-syntax/src/ast.rs REQ-8 (addressable nodes)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/src/address.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Clause"
+note = "verbatim addressable clause text"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/src/address.rs"
+note = "semantic address consumer"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-SPANS"
+title = "Span-bearing AST boundary stability"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Addressable syntax nodes retain source spans, and clauses retain verbatim text, so downstream facts can remain stable across boundary handoffs."
+aliases = ["thermite-syntax/src/ast.rs REQ-9 (spans + boundary stability)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/address.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Span"
+note = "source span type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Clause"
+note = "span and verbatim text carrier"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-OPERATORS"
+title = "Binary and unary operator AST set"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`BinOp`, `UnaryOp`, and `Expr::Unary` represent the shipped integer, logical, and bitwise operator surface without wildcard-only downstream handling."
+aliases = ["thermite-syntax/src/ast.rs REQ-10 (binary + unary operator set, #92)"]
+contributors = [".design/syntax/ast.md", "thermite-syntax/src/parser.rs", "forge/tests/operators_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BinOp"
+note = "binary operator enum"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/operators_conformance.rs"
+note = "operator conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-PARTIAL-OPS"
+title = "Partial operator proof obligations"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Partial integer operators are represented as ordinary AST operators and lower to bare Verus operators so division and shift obligations remain verifier-visible."
+aliases = ["thermite-syntax/src/ast.rs REQ-11 (partial-operator obligations, #92)"]
+contributors = ["thermite-lower/src/lower.rs", "thermite-lower/src/l1.rs", "forge/tests/operators_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BinOp::Rem"
+note = "partial remainder operator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/operators_conformance.rs"
+note = "partial-operator positive and negative controls"
+
+[[requirement]]
+id = "REQ-SYNTAX-AST-HOLES"
+title = "Goal REPL body hole AST nodes"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Hole` and `FnItem.holes` record body-position `?N` placeholders in document order without adding a statement variant."
+aliases = ["thermite-syntax/src/ast.rs goal-repl REQ-4 (AST hole node)"]
+contributors = [".design/forge/goal-repl.md", "thermite-syntax/src/parser.rs", "forge/tests/goal_repl_fill.rs"]
+generated_to = ["status", "thermite-syntax-ast-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Hole"
+note = "hole AST node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/goal_repl_fill.rs"
+note = "hole fill conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADT-STRUCT"
+title = "ADT struct surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`StructItem` and `FieldDef` represent product types and optional invariant clauses at the syntax boundary."
+aliases = ["thermite-syntax/src/ast.rs REQ-1 SURFACE (struct items + `inv` clause)"]
+contributors = [".design/basis/01-adts.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/adt_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "StructItem"
+note = "struct item AST"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/adt_parse.rs"
+note = "ADT parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADT-ENUM"
+title = "ADT enum and struct literal surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`EnumItem`, `VariantDef`, `VariantShape`, and `Expr::StructLit` represent sum types and brace construction at the syntax boundary."
+aliases = ["thermite-syntax/src/ast.rs REQ-2 SURFACE (enum items + struct-lit construction)"]
+contributors = [".design/basis/01-adts.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/adt_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VariantShape"
+note = "enum variant payload shape"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/adt_parse.rs"
+note = "enum and struct literal parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADT-BOX"
+title = "Recursive Box type surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Type::Box` gives recursive ADT references a dedicated type node instead of a stringly generic."
+aliases = ["thermite-syntax/src/ast.rs REQ-3 SURFACE (recursive `Box<T>` type)"]
+contributors = [".design/basis/01-adts.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/adt_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Type::Box"
+note = "recursive box type node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/adt_parse.rs"
+note = "recursive list parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADT-MATCH"
+title = "ADT match pattern surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Enum, struct, wildcard, binding, literal, and rest patterns give ADT matches enough syntax structure for later validation and lowering."
+aliases = ["thermite-syntax/src/ast.rs REQ-4 SURFACE (`match` over enum/struct patterns + binding)"]
+contributors = [".design/basis/01-adts.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/adt_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MatchArm"
+note = "match arm AST node"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Pattern::Struct"
+note = "struct pattern shape"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADT-IS"
+title = "ADT `is` operator surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Expr::Is` records variant-discrimination tests as a dedicated AST node for validator and lowerer consumers."
+aliases = ["thermite-syntax/src/ast.rs REQ-6 SURFACE (`Expr::Is` + `is` operator)"]
+contributors = [".design/basis/01-adts.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/adt_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr::Is"
+note = "variant-discrimination expression"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/adt_parse.rs"
+note = "`is` parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADT-DEREF"
+title = "Box dereference surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Expr::Deref` represents prefix `*` over boxed values as its own AST node for recursive ADT programs."
+aliases = ["thermite-syntax/src/ast.rs deref `*t` (REQ-3/REQ-4 surface)"]
+contributors = [".design/basis/01-adts.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/adt_parse.rs"]
+generated_to = ["status", "thermite-syntax-ast-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr::Deref"
+note = "box dereference expression"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/adt_parse.rs"
+note = "list dereference parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-COLLECTIONS-VEC"
+title = "Vec type surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Type::Vec` represents bounded collection element types with a dedicated syntax node while operations reuse method calls."
+aliases = ["thermite-syntax/src/ast.rs REQ-1 SURFACE (`Vec<T>` type node)"]
+contributors = [".design/basis/04-collections.md", "thermite-syntax/src/parser.rs", "thermite-lower/tests/collections_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-collections-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Type::Vec"
+note = "Vec type node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/collections_conformance.rs"
+note = "collection conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-OPTRES-OPTION"
+title = "Option type surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Type::Option` represents `Option<T>` as a dedicated single-argument type node while constructors reuse calls and paths."
+aliases = ["thermite-syntax/src/ast.rs REQ-1 SURFACE (`Option<T>` type node)"]
+contributors = [".design/basis/09-option-result.md", "thermite-syntax/src/parser.rs", "forge/tests/option_result_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-option-result-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Type::Option"
+note = "Option type node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/option_result_conformance.rs"
+note = "Option conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-OPTRES-RESULT"
+title = "Result type surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Type::Result` represents `Result<T, E>` as a dedicated two-argument type node."
+aliases = ["thermite-syntax/src/ast.rs REQ-2 SURFACE (`Result<T, E>` two-arg type node)"]
+contributors = [".design/basis/09-option-result.md", "thermite-syntax/src/parser.rs", "forge/tests/option_result_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-option-result-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Type::Result"
+note = "Result type node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/option_result_conformance.rs"
+note = "Result conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-RECURSION-DEC"
+title = "Plain function decreases clause AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`FnItem.dec` records the optional decreases clause for recursive exec functions while keeping non-recursive functions byte-stable."
+aliases = ["thermite-syntax/src/ast.rs REQ-1 (`fn` `dec` clause - AST)"]
+contributors = [".design/basis/10-recursion-tuples.md", "thermite-syntax/src/parser.rs", "forge/tests/recursion_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-recursion-tuples-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "FnItem.dec"
+note = "optional exec function decreases clause"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/recursion_conformance.rs"
+note = "recursive fn conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-TUPLES-NODES"
+title = "Tuple type, expression, and projection AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Type::Tuple`, `Expr::Tuple`, and `Expr::TupleProj` represent tuple construction, annotation, and numeric projection as dedicated syntax nodes."
+aliases = ["thermite-syntax/src/ast.rs REQ-5 (`Type::Tuple` + `Expr::Tuple` + projection - AST)"]
+contributors = [".design/basis/10-recursion-tuples.md", "thermite-syntax/src/parser.rs", "forge/tests/tuples_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-recursion-tuples-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr::TupleProj"
+note = "tuple projection expression"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/tuples_conformance.rs"
+note = "tuple conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-TUPLES-ARITY"
+title = "Tuple arity disambiguation"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Tuple syntax carries arity two or greater, while unit and grouped one-tuples stay distinct syntax forms."
+aliases = ["thermite-syntax/src/ast.rs REQ-7 (tuple arity - n-tuples, >= 2)"]
+contributors = [".design/basis/10-recursion-tuples.md", "thermite-syntax/src/parser.rs", "forge/tests/tuples_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-recursion-tuples-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Type::Tuple"
+note = "tuple type node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/tuples_conformance.rs"
+note = "tuple arity disambiguation conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-MAP-TYPE"
+title = "Map type surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Type::Map` represents `Map<K, V>` as a dedicated two-argument type node, superseding the earlier Stage-4 placeholder."
+aliases = [
+  "thermite-syntax/src/ast.rs REQ-2 (`Map<K,V>` type)",
+  "thermite-syntax/src/ast.rs REQ-1 SURFACE (`Map<K,V>` two-arg type node)",
+]
+contributors = [".design/basis/04-collections.md", ".design/basis/13-map.md", "thermite-syntax/src/parser.rs", "forge/tests/map_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-collections-status", "thermite-syntax-ast-map-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Type::Map"
+note = "Map type node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/map_conformance.rs"
+note = "Map conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-MAP-METHODS"
+title = "Map operations as method calls"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Map operations reuse `Expr::MethodCall`, so `insert`, `get`, `contains_key`, and `len` add no new expression node."
+aliases = ["thermite-syntax/src/ast.rs REQ-2 SURFACE (`Map` ops are `Expr::MethodCall`)"]
+contributors = [".design/basis/13-map.md", "thermite-syntax/src/parser.rs", "forge/tests/map_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-map-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr::MethodCall"
+note = "shared method-call expression"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/map_conformance.rs"
+note = "Map operation conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ERGONOMICS-TUPLE-DESTRUCTURE"
+title = "Tuple destructuring desugar"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Tuple destructuring in `let` position desugars to a temporary plus tuple projections rather than adding a new statement node."
+aliases = ["thermite-syntax/src/ast.rs REQ-1 (tuple destructuring `let (x,y)=e`)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_let_tuple_destructure"
+note = "tuple destructuring parser desugar"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "ergonomic desugar conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ERGONOMICS-FOR"
+title = "For-loop desugar"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`for i in lo..hi` desugars into existing `let` and `LoopNode` forms with a synthesized decreases clause."
+aliases = ["thermite-syntax/src/ast.rs REQ-2 (`for i in 0..n` loop)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_for"
+note = "for-loop parser desugar"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "for-loop conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ERGONOMICS-MATCH-GUARD"
+title = "Match guard surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`MatchArm.guard` records optional guarded match arms while preserving unguarded arms as `None`."
+aliases = ["thermite-syntax/src/ast.rs REQ-3 (match guards `x if cond =>`)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/parser.rs", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MatchArm.guard"
+note = "optional match guard"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "match guard conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ERGONOMICS-OR-PATTERN"
+title = "Or-pattern surface AST"
+owner = "thermite-syntax/src/ast.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`Pattern::Or` represents pipe-joined pattern alternatives as a flat pattern node consumed by validator and lowerer arms."
+aliases = ["thermite-syntax/src/ast.rs REQ-4 (or-patterns `1 \\| 2 =>`)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/parser.rs", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Pattern::Or"
+note = "or-pattern AST node"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "or-pattern conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ERGONOMICS-IF-WHILE-LET"
+title = "If-let and while-let desugars"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`if let` and `while let` lower in the parser into existing match and loop AST shapes instead of new syntax nodes."
+aliases = ["thermite-syntax/src/ast.rs REQ-5 (`if let` / `while let`)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_if_let"
+note = "if-let parser desugar"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_while_let"
+note = "while-let parser desugar"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "if-let and while-let conformance"
 
 [[requirement]]
 id = "REQ-REG-1"

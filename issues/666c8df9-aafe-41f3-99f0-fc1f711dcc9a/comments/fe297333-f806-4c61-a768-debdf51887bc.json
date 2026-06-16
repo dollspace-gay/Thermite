@@ -1,0 +1,8 @@
+{
+  "uuid": "fe297333-f806-4c61-a768-debdf51887bc",
+  "issue_uuid": "666c8df9-aafe-41f3-99f0-fc1f711dcc9a",
+  "author": "qkbt",
+  "content": "DECISION: HOLD the 2d PR until defense (a) lands — ship all three REQ-6 defenses + REQ-S1-6 registry in ONE atomic PR (not a partial merge). Branch must be RESUMED on a Lean-spine-capable host to finish: (a) arbitrary-result re-elaboration (L3 counterpart of build_tautology_harness, driving the existing lake path; AC-10 body-ignoring-ens fixture) + REQ-S1-6 registry registration. (c) and (b) remain committed on the branch (d4a1b50c/31326dcb, 5dd9f5ce/ddfad01e). .kickoff-status updated to HOLD with the concrete resume checklist.",
+  "created_at": "2026-06-16T20:26:22.804673Z",
+  "kind": "decision"
+}

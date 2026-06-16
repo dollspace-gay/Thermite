@@ -1,0 +1,10 @@
+{
+  "uuid": "000c5ec5-54ae-43d8-86b3-6ba8dee717b1",
+  "display_id": 299,
+  "title": "Divergence: forge covenant_eval::eval_stmts silently accepts assignment to an immutable `let` binding (drops Stmt::Let.mutable)",
+  "status": "open",
+  "priority": "high",
+  "created_by": "BMF7",
+  "created_at": "2026-06-16T16:19:21.050856Z",
+  "updated_at": "2026-06-16T16:19:21.050856Z"
+}

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — greenfield Summary fixed + the post-v0.1 node-growth amendment superseding the REQ-1/REQ-6/REQ-7 "exactly" lists, #262)
+audited-sha: abf1d3836f12c39e778b8eb383e3d0c3fa4f484d (re-pinned 2026-06-15: syntax AST status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — greenfield Summary fixed + the post-v0.1 node-growth amendment superseding the REQ-1/REQ-6/REQ-7 "exactly" lists, #262))
 governs: thermite-syntax/src/ast.rs
 thesis-refs:
   - thermite-design.md §4.1

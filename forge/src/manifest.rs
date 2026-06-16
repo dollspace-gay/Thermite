@@ -577,6 +577,19 @@ pub struct Certificate {
     /// the `covenant_evidence`/`engine_attribution` additive precedents.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meaning_audit: Option<crate::meaning::MeaningAudit>,
+    /// The L3 burn receipt (`.design/stage1-forge-tier.md` REQ-7, increment 2e; RFC-1
+    /// §9; Q-BURN). `Some` only on a forge-tier item whose proof closed a goal (the
+    /// proof-view discharge path): the committed-proof lexer-token count, the optional
+    /// authoring spend, and the lemmas the proof cited. Per Q-ORACLE / Q-BURN the burn
+    /// receipt is verdict-IRRELEVANT (re-authoring a proof legitimately changes the
+    /// token count and authoring spend without changing what was proven), so it is
+    /// EXCLUDED from [`Certificate::oracle_subset`] — exactly like `solver_time_ms`.
+    /// `None` for every v1 item (no forge-tier burn), and `#[serde(default,
+    /// skip_serializing_if = "Option::is_none")]` so the 7 frozen v1 golden certs
+    /// (which omit it) serialize BYTE-IDENTICALLY (R-SPEC-2, additive only), mirroring
+    /// the `meaning_audit`/`covenant_evidence` additive precedents.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub burn: Option<crate::burn::BurnReceipt>,
 }
 
 impl Certificate {
@@ -613,6 +626,7 @@ impl Certificate {
             engine_attribution: None,
             covenant_evidence: None,
             meaning_audit: None,
+            burn: None,
         }
     }
 
@@ -661,6 +675,7 @@ impl Certificate {
             engine_attribution: None,
             covenant_evidence: None,
             meaning_audit: None,
+            burn: None,
         }
     }
 
@@ -721,6 +736,7 @@ impl Certificate {
             engine_attribution: None,
             covenant_evidence: None,
             meaning_audit: None,
+            burn: None,
         }
         .graduate_triage_clean()
     }
@@ -762,6 +778,7 @@ impl Certificate {
             engine_attribution: None,
             covenant_evidence: None,
             meaning_audit: None,
+            burn: None,
         }
         .graduate_triage_clean()
     }
@@ -802,6 +819,7 @@ impl Certificate {
             engine_attribution: None,
             covenant_evidence: None,
             meaning_audit: None,
+            burn: None,
         }
     }
 
@@ -985,6 +1003,26 @@ impl Certificate {
         self
     }
 
+    /// Attach the L3 burn receipt to a forge-tier certificate whose proof closed a
+    /// goal (`.design/stage1-forge-tier.md` REQ-7, increment 2e; RFC-1 §9). Set on the
+    /// proof-view discharge path: the committed-proof token count + cited lemmas (and
+    /// the optional authoring spend) join the cert as auditable burn evidence. Per
+    /// Q-BURN the receipt is oracle-EXCLUDED (re-authoring a proof changes it without
+    /// changing the claim), so only this field changes — the verdict and the
+    /// `oracle_subset` are untouched. A v1 item never calls this, so its `burn` stays
+    /// `None` and its cert is byte-stable.
+    #[allow(
+        dead_code,
+        reason = "REQ-7 burn-receipt foundation (increment 2e): the proof-view \
+                  discharge path (check.rs) calls this once it attaches the receipt; \
+                  the foundation defines the constructor + the additive field."
+    )]
+    #[must_use]
+    pub fn with_burn(mut self, receipt: crate::burn::BurnReceipt) -> Self {
+        self.burn = Some(receipt);
+        self
+    }
+
     /// Build a non-certified certificate for an over-budget definition tower
     /// (`.design/stage1-forge-tier.md` REQ-6c, increment 2d; AC-10). The forge-tier
     /// item's contract unfolds a definition tower deeper or wider than the Q2 default
@@ -1063,6 +1101,7 @@ impl Certificate {
             engine_attribution: None,
             covenant_evidence: Some(evidence),
             meaning_audit: None,
+            burn: None,
         }
     }
 
@@ -1095,6 +1134,12 @@ impl Certificate {
     /// golden default — no tower audit on the Verus path) and `None` for a fresh v1
     /// cert, so the v1 oracle stays byte-identical; a forge-tier item's unfolded-tower
     /// hash is oracle-visible (REQ-6c: the certified meaning cannot drift silently).
+    ///
+    /// The REQ-7 `burn` receipt (increment 2e) is deliberately ABSENT from this tuple
+    /// (Q-BURN): re-authoring a proof legitimately changes its committed-token count +
+    /// authoring spend without changing what was proven, so it is oracle-excluded like
+    /// `solver_time_ms` — a forge-tier cert and the same cert with its `burn` stripped
+    /// compare oracle-equal.
     #[allow(
         clippy::type_complexity,
         reason = "the oracle subset is deliberately a flat positional tuple of the \

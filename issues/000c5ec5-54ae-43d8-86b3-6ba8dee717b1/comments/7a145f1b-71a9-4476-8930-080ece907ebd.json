@@ -1,0 +1,8 @@
+{
+  "uuid": "7a145f1b-71a9-4476-8930-080ece907ebd",
+  "issue_uuid": "000c5ec5-54ae-43d8-86b3-6ba8dee717b1",
+  "author": "BMF7",
+  "content": "Failing test at forge/tests/divergence_covenant_assign_to_immutable.rs::assignment_to_immutable_let_is_not_a_silent_clean_covenant demonstrates the divergence. covenant_eval.rs eval_stmts destructures `Stmt::Let { name, init, .. }` (drops the `mutable` flag, ast.rs Stmt::Let { mutable: bool }) and its Stmt::Assign arm re-inserts the target name unconditionally, so `let r = 0; r = 1;` is accepted as a valid mutation and the body evaluates to a concrete value. Verus rejects the same body (error[E0384]: cannot assign twice to immutable variable). The covenant reports a clean validated falsify run (falsify_generated 1001, falsify_refuted 0) identical to the `let mut` control on a body that does not compile — a silent wrong value, which covenant_eval.rs module docs (R-CODE-2/R-APG-1) and REQ-4 forbid. Authority: .design/stage1-forge-tier.md REQ-4; covenant_eval.rs module faithfulness contract.",
+  "created_at": "2026-06-16T16:19:36.787269Z",
+  "kind": "observation"
+}

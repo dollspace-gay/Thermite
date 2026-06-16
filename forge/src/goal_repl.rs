@@ -367,16 +367,23 @@ pub fn edit_file(file: &Path, addr: &str, replacement: &str) -> Result<String, F
     render_goal(file, Some(root))
 }
 
-/// Fill the hole named by `addr` (a `<fn>.?N` address) with `code`, re-check the
-/// affected item, and return the new goal state render (REQ-6; the §5.1 fill loop).
-/// `forge fill` is a specialization of `edit` whose address names a hole: it splices
-/// the replacement source at the `?N` token's span (reusing the increment-(ii)
-/// splice machinery), re-parses, and re-checks. The filled `code` may itself
-/// contain new holes (`?1 ?2`), which the re-parse records and the new goal state
-/// surfaces (the §5.1 dialogue's "fill ?0 … introducing ?1 ?2"). A non-hole address
-/// (a `loop`/`inv`/`dec`/`fn`, an `edit` target rather than a `fill` target) is a
-/// `ForgeError::Usage` (use `forge edit` for those); a bad/unresolvable hole address
-/// is a structured error, not a panic (R-CODE-2).
+/// Fill the hole named by `addr` with `code`, re-check the affected item, and return
+/// the new state render (REQ-6 / `.design/stage1-forge-tier.md` REQ-7; the §5.1 fill
+/// loop). `forge fill` is a specialization of `edit` whose address names a hole: it
+/// splices the replacement source at the hole token's span (reusing the increment-(ii)
+/// splice machinery), re-parses, and re-checks. Two hole kinds:
+///
+/// - a BODY hole `<fn>.?N` (#193): splices into a `fn` body, re-renders the goal state.
+/// - a PROOF hole `<lemma>.proof.?pN` / `<fn>.proof.<clause>.?pN` (stage-1 REQ-7, 2e):
+///   splices into a forge-tier proof block, re-renders the PROOF VIEW + the re-check
+///   verdict (the frozen battery refuses an unlisted tactic — REQ-5/2c — and the
+///   discharge produces the forge-tier cert with the burn receipt — REQ-7).
+///
+/// The filled `code` may itself contain new holes, which the re-parse records and the
+/// new view surfaces (the §5.1 "fill ?0 … introducing ?1 ?2"). A non-hole address (a
+/// `loop`/`inv`/`dec`/`fn`/`prop fn` node, an `edit` target rather than a `fill`
+/// target) is a `ForgeError::Usage` (use `forge edit` for those); a bad/unresolvable
+/// hole address is a structured error, not a panic (R-CODE-2).
 pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeError> {
     let src = read_file(file)?;
     let program = parse_program(file)?;
@@ -384,34 +391,85 @@ pub fn fill_hole(file: &Path, addr: &str, code: &str) -> Result<String, ForgeErr
     // Resolve the address (bad address → structured AddressError, not a panic).
     let entry = address::resolve(&program, addr).map_err(address_usage)?;
 
-    // `fill` targets a hole only; a non-hole address is the `edit` surface. Reject
-    // it with an actionable message rather than silently splicing (the two verbs
-    // have distinct contracts, REQ-3 vs REQ-6).
-    if entry.kind != AddrKind::Hole {
-        return Err(ForgeError::Usage(format!(
-            "address `{addr}` is not a hole (it names a {:?} node); `forge fill` targets a `?N` \
-             body hole — use `forge edit {addr} --replace <code>` to splice a non-hole node",
-            entry.kind
-        )));
-    }
+    // `fill` targets a hole only — a body `?N` or a proof `?pN`. A non-hole address is
+    // the `edit` surface; reject it with an actionable message rather than silently
+    // splicing (the two verbs have distinct contracts, REQ-3 vs REQ-6/REQ-7).
+    let is_proof_hole = match entry.kind {
+        AddrKind::Hole => false,
+        AddrKind::ProofHole => true,
+        other => {
+            return Err(ForgeError::Usage(format!(
+                "address `{addr}` is not a hole (it names a {other:?} node); `forge fill` targets \
+                 a `?N` body hole or a `?pN` proof hole — use `forge edit {addr} --replace \
+                 <code>` to splice a non-hole node"
+            )));
+        }
+    };
 
-    // The hole's `?N` token span is the splice target (mirroring `edit`'s span walk).
+    // The hole token's span is the splice target (mirroring `edit`'s span walk; the
+    // `?pN` proof-hole span resolves through the same `span_of_address`).
     let span = span_of_address(&program, addr).ok_or_else(|| {
         ForgeError::Usage(format!(
-            "hole address `{addr}` resolves but names no `?N` span (internal: the hole is recorded \
-             on its fn but its span was not found)"
+            "hole address `{addr}` resolves but names no hole span (internal: the hole is recorded \
+             on its item but its span was not found)"
         ))
     })?;
 
-    // Splice the fill code at the hole's `?N` position (the pure splice, R-CODE-5),
-    // re-emit in place, then re-check the affected item. The new goal state may
-    // surface new holes the filled code introduced (§5.1). A re-parse failure after
-    // the splice (malformed fill code) is a reported error, not swallowed.
+    // Splice the fill code at the hole's position (the pure splice, R-CODE-5), re-emit
+    // in place, then re-check the affected item. A re-parse failure after the splice
+    // (malformed fill code) is a reported error, not swallowed.
     let spliced = splice(&src, span, code);
     write_file(file, &spliced)?;
+    // Surface a malformed-fill parse error here rather than as a confusing downstream
+    // render failure (the filled code may not parse).
+    let _ = parse_program(file)?;
 
     let root = address_root(addr);
-    render_goal(file, Some(root))
+    if is_proof_hole {
+        render_proof_after_fill(file, root)
+    } else {
+        render_goal(file, Some(root))
+    }
+}
+
+/// Re-render after a `?pN` proof-hole fill (REQ-7): the updated proof view (remaining
+/// open holes the fill introduced, or the authored-no-holes line), then the re-check
+/// verdict for the affected item — a frozen-battery refusal (REQ-5/2c: "cite-unlisted
+/// → refused") or the forge-tier discharge cert (carrying the burn receipt, REQ-7).
+/// The re-check runs the same `check::check_file` the body-hole path runs.
+fn render_proof_after_fill(file: &Path, root: &str) -> Result<String, ForgeError> {
+    let mut out = render_proof(file, Some(root))?;
+    for cert in check::check_file(file)? {
+        if cert.item == root {
+            out.push_str(&render_proof_cert_status(&cert));
+        }
+    }
+    Ok(out)
+}
+
+/// The re-check status line for a forge-tier item after a proof-hole fill (REQ-7): a
+/// reject (the frozen-battery refusal or an open-proof-hole short-circuit) names its
+/// cause; a certified discharge names its level + the burn receipt (committed proof
+/// tokens + cited lemmas) the cert now carries.
+fn render_proof_cert_status(cert: &Certificate) -> String {
+    if let Some(reject) = &cert.reject {
+        return format!(
+            "  re-check: NOT CERTIFIED — {} ({})\n",
+            reject.cause, reject.detail
+        );
+    }
+    let mut out = format!("  re-check: certified {} \u{2713}\n", level_str(cert.level));
+    if let Some(burn) = &cert.burn {
+        out.push_str(&format!("  burn: {} proof token(s)", burn.proof_tokens));
+        if !burn.cited_lemmas.is_empty() {
+            out.push_str(&format!("; cited lemmas: {}", burn.cited_lemmas.join(", ")));
+        }
+        if let Some(authoring) = burn.authoring_tokens {
+            out.push_str(&format!("; authoring tokens: {authoring}"));
+        }
+        out.push('\n');
+    }
+    out
 }
 
 /// Render one item's goal state (REQ-2; §5.1). The `given` is the `req` clause
@@ -694,6 +752,14 @@ fn holes_of<'p>(program: &'p Program, item: &str) -> &'p [thermite_syntax::Hole]
 /// resolves but names no v1-editable span.
 fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
     let entry_kind = address::resolve(program, addr).ok()?.kind;
+
+    // A `?pN` proof hole lives on a forge-tier item (a `lemma`'s proof block or a
+    // `proof for f` obligation's block), NOT on a `fn`, so it dispatches before the
+    // `fn` lookup below (stage1-forge-tier.md REQ-7, increment 2e).
+    if entry_kind == AddrKind::ProofHole {
+        return proof_hole_span(program, addr);
+    }
+
     let mut segs = addr.split('.');
     let root = segs.next()?;
 
@@ -733,12 +799,63 @@ fn span_of_address(program: &Program, addr: &str) -> Option<Span> {
                 .map(|h| h.span)
         }
         AddrKind::SpecFn => None,
-        // Forge-tier address kinds (stage1-forge-tier.md REQ-3): a `prop fn`/`lemma`/
-        // `witness`/proof-obligation root and an open proof hole `?pN` have no v1
-        // editable-span splice target yet (their consumers are increments 2b-3/2e);
-        // resolve-but-no-span, mirroring the inert `SpecFn => None` arm.
+        // A `ProofHole` is handled by the early dispatch above; a `Forge` root (a
+        // `prop fn`/`lemma`/`proof`/`witness` node) has no `edit`-able span (its
+        // consumers are the proof-view 2e / library 3) — resolve-but-no-span, mirroring
+        // the inert `SpecFn => None` arm.
         AddrKind::Forge | AddrKind::ProofHole => None,
     }
+}
+
+/// Resolve a `?pN` proof-hole address to the hole token's byte span (stage1-forge-tier.md
+/// REQ-7, increment 2e — the `forge fill` splice target). A proof hole lives on a
+/// forge-tier item: a `lemma`'s proof block (`<lemma>.proof.?pN`) or a `proof for f`
+/// obligation's block (`<f>.proof.<clause>.?pN`). Walks the same forge items
+/// `address::collect_forge_addresses` enumerates, matching the clause label + hole
+/// number, and returns the matched hole's span. `None` for an address that resolves
+/// but names no recorded hole (a clean miss, never a panic — R-CODE-2).
+fn proof_hole_span(program: &Program, addr: &str) -> Option<Span> {
+    let segs: Vec<&str> = addr.split('.').collect();
+    // `<root> . proof . ?pN`            (lemma — 3 segments)
+    // `<root> . proof . <clause> . ?pN` (proof-for — 4 segments)
+    let root = *segs.first()?;
+    if *segs.get(1)? != "proof" {
+        return None;
+    }
+    let hole_seg = *segs.last()?;
+    let number: u32 = hole_seg.strip_prefix("?p")?.parse().ok()?;
+
+    for it in &program.items {
+        let Item::Forge(forge) = it else { continue };
+        match forge {
+            // A lemma: `<lemma>.proof.?pN` — exactly 3 segments, no clause.
+            ForgeItem::Lemma(l) if l.name == root && segs.len() == 3 => {
+                return l
+                    .proof
+                    .holes
+                    .iter()
+                    .find(|h| h.number == number)
+                    .map(|h| h.span);
+            }
+            // A proof-for: `<f>.proof.<clause>.?pN` — 4 segments; the clause segment
+            // selects the obligation by its label (`ens#k`/`req`).
+            ForgeItem::Proof(p) if p.target == root && segs.len() == 4 => {
+                let clause_seg = segs[2];
+                for ob in &p.obligations {
+                    if clause_label(&ob.clause) == clause_seg {
+                        return ob
+                            .proof
+                            .holes
+                            .iter()
+                            .find(|h| h.number == number)
+                            .map(|h| h.span);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Find the `loop_index`-th (1-based) loop in `body`, in the same source-order /
@@ -1085,6 +1202,27 @@ mod tests {
             r.contains("forge fill maxv.proof.ens#1.?p0"),
             "the proof-hole fill operand: {r}"
         );
+    }
+
+    // REQ-7 / AC-11: a `?pN` proof-hole address resolves to the hole token's span —
+    // the `forge fill` splice target — for both a lemma and a proof-for obligation.
+    #[test]
+    fn proof_hole_span_resolves_lemma_and_proof_for() {
+        // Lemma: `l.proof.?p0` spans the `?p0` token in the proof block.
+        let lemma_src = "lemma l(a: u64) req true ens a == a proof { ?p0 }";
+        let lp = parse_ok(lemma_src);
+        let span = span_of_address(&lp, "l.proof.?p0").expect("lemma proof-hole span");
+        assert_eq!(&lemma_src[span.start..span.end()], "?p0");
+
+        // Proof-for: `f.proof.ens#0.?p1` spans the `?p1` token in that obligation.
+        let pf_src = "fn f(n: u32) -> u32 req true ens result == n fx pure { n }\n\
+                      proof for f { ens#0 by { ?p1 } }";
+        let pf = parse_ok(pf_src);
+        let span2 = span_of_address(&pf, "f.proof.ens#0.?p1").expect("proof-for hole span");
+        assert_eq!(&pf_src[span2.start..span2.end()], "?p1");
+
+        // A resolvable forge root that is not a hole has no fill span (clean miss).
+        assert!(span_of_address(&lp, "l").is_none());
     }
 
     // REQ-7 / R-CODE-2: a `proof for` whose clause selector is out of range renders an

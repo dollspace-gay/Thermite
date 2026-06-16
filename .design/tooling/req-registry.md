@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 23961b736a0d8f8dd276cb76251447ca5037c2d8 (re-pinned 2026-06-15: syntax parser status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: abf1d3836f12c39e778b8eb383e3d0c3fa4f484d (re-pinned 2026-06-15: syntax AST status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 823ee97f7d64d0a179fb2a8585efda9ec5b97220 (re-pinned 2026-06-15: lowerer/validator status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: bulk crate-root and spec summary rows now have stable IDs and generated source-comment regions; RFC #17))))
+audited-sha: d18d0251237daee1b776bac41b2c9f4535e2ac03 (re-pinned 2026-06-15: spec validator status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 23961b736a0d8f8dd276cb76251447ca5037c2d8 (re-pinned 2026-06-15: syntax parser status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: abf1d3836f12c39e778b8eb383e3d0c3fa4f484d (re-pinned 2026-06-15: syntax AST status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 823ee97f7d64d0a179fb2a8585efda9ec5b97220 (re-pinned 2026-06-15: lowerer/validator status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: b1c296a51f480807abbba16b2430f45f33d8fe49 (re-pinned 2026-06-15: bulk crate-root and spec summary rows now have stable IDs and generated source-comment regions; RFC #17)))))
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

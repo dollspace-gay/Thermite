@@ -13,6 +13,11 @@ final = true
 required_evidence_any = ["file", "symbol", "test"]
 
 [[status]]
+name = "retired"
+final = true
+required_evidence_any = ["file", "symbol", "test"]
+
+[[status]]
 name = "partial"
 final = false
 required_evidence_any = ["file", "symbol", "test"]
@@ -358,6 +363,60 @@ comment_prefix = "//! "
 title = "SpecTherm Combinator Canonical Status References"
 
 [[view]]
+name = "thermite-spec-validator-core-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-core-status"
+comment_prefix = "//! "
+title = "Spec Validator Core Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-adt-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-adt-status"
+comment_prefix = "//! "
+title = "ADT Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-scheme-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-scheme-status"
+comment_prefix = "//! "
+title = "Recursion Scheme Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-collections-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-collections-status"
+comment_prefix = "//! "
+title = "Collections Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-map-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-map-status"
+comment_prefix = "//! "
+title = "Map Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-provenance-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-provenance-status"
+comment_prefix = "//! "
+title = "Provenance Validator Canonical Status References"
+
+[[view]]
 name = "thermite-spec-validator-string-status"
 path = "thermite-spec/src/validator.rs"
 kind = "reference_list"
@@ -365,6 +424,33 @@ mode = "region"
 region = "thermite-spec-validator-string-status"
 comment_prefix = "//! "
 title = "String Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-option-result-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-option-result-status"
+comment_prefix = "//! "
+title = "Option/Result Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-recursion-tuples-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-recursion-tuples-status"
+comment_prefix = "//! "
+title = "Recursion/Tuple Validator Canonical Status References"
+
+[[view]]
+name = "thermite-spec-validator-ergonomics-status"
+path = "thermite-spec/src/validator.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-spec-validator-ergonomics-status"
+comment_prefix = "//! "
+title = "Ergonomics Validator Canonical Status References"
 
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
@@ -935,6 +1021,132 @@ note = "bytes_eq L1 mirror row replaced by a generated canonical reference."
 
 [[legacy_mapping]]
 path = "thermite-spec/src/validator.rs"
+label = "REQ-3 (validator accept rule)"
+id = "REQ-SPEC-VALIDATOR-ACCEPT"
+replacement_view = "thermite-spec-validator-core-status"
+note = "Validator core accept-rule row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-4 (reject cases, structured `SpecError`)"
+id = "REQ-SPEC-VALIDATOR-REJECT"
+replacement_view = "thermite-spec-validator-core-status"
+note = "Validator core reject/error row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-5 (bounded recursion — no overflow)"
+id = "REQ-SPEC-VALIDATOR-DEPTH"
+replacement_view = "thermite-spec-validator-core-status"
+note = "Validator core recursion-depth row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers)"
+id = "REQ-SPEC-VALIDATOR-FLAT-CLOSURE"
+replacement_view = "thermite-spec-validator-core-status"
+note = "Validator core flat-closure row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-5 (exhaustiveness — `NonExhaustiveMatch`/`UnreachableArm`)"
+id = "REQ-SPEC-VALIDATOR-ADT-EXHAUSTIVENESS"
+replacement_view = "thermite-spec-validator-adt-status"
+note = "ADT validator exhaustiveness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-6 (well-formed field/variant access + `is`)"
+id = "REQ-SPEC-VALIDATOR-ADT-WELLFORMED"
+replacement_view = "thermite-spec-validator-adt-status"
+note = "ADT validator well-formedness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-2 (variant names UpperCamelCase — `InvalidVariantCasing`)"
+id = "REQ-SPEC-VALIDATOR-ADT-VARIANT-CASING"
+replacement_view = "thermite-spec-validator-adt-status"
+note = "ADT variant-casing validator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-7 (ADT predicates fit the cage — flat built-ins)"
+id = "REQ-SPEC-VALIDATOR-ADT-CAGE"
+replacement_view = "thermite-spec-validator-adt-status"
+note = "ADT cage-admission row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "1a GATE (`SpecError::UnsupportedAdt`)"
+id = "REQ-SPEC-VALIDATOR-ADT-UNSUPPORTED-GATE"
+replacement_view = "thermite-spec-validator-adt-status"
+note = "Retired ADT unsupported-gate row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-1 (scheme set recognized as named primitives)"
+id = "REQ-SPEC-VALIDATOR-SCHEME-RECOGNITION"
+replacement_view = "thermite-spec-validator-scheme-status"
+note = "Recursion-scheme validator recognition row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-2 (flat step closure — arity + no nested scheme)"
+id = "REQ-SPEC-VALIDATOR-SCHEME-FLAT-STEP"
+replacement_view = "thermite-spec-validator-scheme-status"
+note = "Recursion-scheme flat-step validator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-4 (cage bridge — named structural quantification; nested-scheme reject)"
+id = "REQ-SPEC-VALIDATOR-SCHEME-CAGE"
+replacement_view = "thermite-spec-validator-scheme-status"
+note = "Recursion-scheme cage-bridge row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-9 (`SpecError` extension, no panics)"
+id = "REQ-SPEC-VALIDATOR-SCHEME-ERRORS"
+replacement_view = "thermite-spec-validator-scheme-status"
+note = "Recursion-scheme validator error row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-3 (capacity + operation contracts fit the §4.2 cage)"
+id = "REQ-SPEC-VALIDATOR-COLLECTIONS-CAGE"
+replacement_view = "thermite-spec-validator-collections-status"
+note = "Collections validator cage row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-4 (element invariant via named `spec fn`)"
+id = "REQ-SPEC-VALIDATOR-COLLECTIONS-ELEM-INVARIANT"
+replacement_view = "thermite-spec-validator-collections-status"
+note = "Deferred element-invariant validator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-12 (`last`/`contains` in `BUILTIN_METHODS`)"
+id = "REQ-LOWER-VEC-METHOD-CAGE"
+replacement_view = "thermite-spec-validator-collections-status"
+note = "Vec method-cage validator copy replaced by a generated reference to the canonical lowerer-owned row."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-3 (`contains_key` cage admission; capacity/op contracts in §4.2)"
+id = "REQ-SPEC-VALIDATOR-MAP-CAGE"
+replacement_view = "thermite-spec-validator-map-status"
+note = "Map validator cage row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-8 (`#[sealed]` abstraction barrier — the door is the only mint)"
+id = "REQ-SPEC-VALIDATOR-SEALED-CONSTRUCTION"
+replacement_view = "thermite-spec-validator-provenance-status"
+note = "Sealed-construction validator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
 label = "REQ-7 (`push_byte`/`from_byte` — verified byte-builder; `fx alloc`)"
 id = "REQ-STRING-BYTE-BUILDER"
 replacement_view = "thermite-spec-validator-string-status"
@@ -988,6 +1200,34 @@ label = "REQ-17 (`bytes_eq` — REGISTERED built-in spec predicate; surface + ca
 id = "REQ-STRING-BYTES-EQ-CAGE"
 replacement_view = "thermite-spec-validator-string-status"
 note = "bytes_eq validator cage row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-3 (built-in-variant registry + spec-`match`-in-`ens` payload projection)"
+id = "REQ-SPEC-VALIDATOR-OPTRES-BUILTINS"
+replacement_view = "thermite-spec-validator-option-result-status"
+note = "Option/Result validator built-in row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-2 (`dec` mandatory for a recursive `fn`; the self-call validator rule)"
+id = "REQ-SPEC-VALIDATOR-RECURSION-DECREASES"
+replacement_view = "thermite-spec-validator-recursion-tuples-status"
+note = "Plain-recursion validator decreases row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-3 (match guards — exhaustiveness down-weight)"
+id = "REQ-SPEC-VALIDATOR-ERGONOMICS-GUARD"
+replacement_view = "thermite-spec-validator-ergonomics-status"
+note = "Match-guard validator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-spec/src/validator.rs"
+label = "REQ-4 (or-patterns — exhaustiveness via union)"
+id = "REQ-SPEC-VALIDATOR-ERGONOMICS-OR-PATTERN"
+replacement_view = "thermite-spec-validator-ergonomics-status"
+note = "Or-pattern validator row replaced by a generated canonical reference."
 
 [[legacy_mapping]]
 path = "thermite-syntax/src/ast.rs"
@@ -3154,7 +3394,7 @@ scope = "lower"
 summary = "The lowerer and validator align on `last` and `contains` as contract-visible Vec methods while mutators stay exec-only."
 aliases = ["thermite-lower/src/lower.rs REQ-12 (`last`/`contains` in `BUILTIN_METHODS`; non-Copy `tvec_name` extension; no panics)"]
 contributors = [".design/basis/04-collections.md", "thermite-spec/src/validator.rs", "forge/tests/vec_completeness_conformance.rs"]
-generated_to = ["status", "thermite-lower-vec-completeness-status"]
+generated_to = ["status", "thermite-lower-vec-completeness-status", "thermite-spec-validator-collections-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -4548,9 +4788,9 @@ owner = "thermite-spec/src/validator.rs"
 status = "shipped"
 scope = "spec"
 summary = "The validator accepts registered combinators, declared spec-function calls, and the flat grammar built-ins allowed by the SpecTherm cage."
-aliases = ["thermite-spec/src/lib.rs REQ-3 (validator accept rule)"]
+aliases = ["thermite-spec/src/lib.rs REQ-3 (validator accept rule)", "thermite-spec/src/validator.rs REQ-3 (validator accept rule)"]
 contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
-generated_to = ["status", "thermite-spec-lib-combinators-status"]
+generated_to = ["status", "thermite-spec-lib-combinators-status", "thermite-spec-validator-core-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -4569,9 +4809,9 @@ owner = "thermite-spec/src/validator.rs"
 status = "shipped"
 scope = "spec"
 summary = "The validator rejects unknown combinators, wrong arity/kind, forbidden calls, and excessive expression depth with structured errors."
-aliases = ["thermite-spec/src/lib.rs REQ-4 (reject cases, structured `SpecError`)"]
+aliases = ["thermite-spec/src/lib.rs REQ-4 (reject cases, structured `SpecError`)", "thermite-spec/src/validator.rs REQ-4 (reject cases, structured `SpecError`)"]
 contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
-generated_to = ["status", "thermite-spec-lib-combinators-status"]
+generated_to = ["status", "thermite-spec-lib-combinators-status", "thermite-spec-validator-core-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -4590,9 +4830,9 @@ owner = "thermite-spec/src/validator.rs"
 status = "shipped"
 scope = "spec"
 summary = "The validator bounds every recursive descent through a shared recursion-depth guard."
-aliases = ["thermite-spec/src/lib.rs REQ-5 (bounded recursion)"]
+aliases = ["thermite-spec/src/lib.rs REQ-5 (bounded recursion)", "thermite-spec/src/validator.rs REQ-5 (bounded recursion — no overflow)"]
 contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
-generated_to = ["status", "thermite-spec-lib-combinators-status"]
+generated_to = ["status", "thermite-spec-lib-combinators-status", "thermite-spec-validator-core-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -4611,9 +4851,9 @@ owner = "thermite-spec/src/validator.rs"
 status = "shipped"
 scope = "spec"
 summary = "Combinator predicate closures stay flat: nested registered combinator calls are rejected while declared spec-function calls remain allowed."
-aliases = ["thermite-spec/src/lib.rs REQ-6 (flat-closure-fragment rule)"]
+aliases = ["thermite-spec/src/lib.rs REQ-6 (flat-closure-fragment rule)", "thermite-spec/src/validator.rs REQ-6 (flat-closure-fragment rule — no anonymous nested quantifiers)"]
 contributors = ["thermite-spec/src/lib.rs", ".design/spec/spectherm-combinators.md"]
-generated_to = ["status", "thermite-spec-lib-combinators-status"]
+generated_to = ["status", "thermite-spec-lib-combinators-status", "thermite-spec-validator-core-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -4624,3 +4864,397 @@ note = "validator mode flag for combinator predicate closure bodies"
 kind = "test"
 target = "thermite-spec/tests/combinators_conformance.rs"
 note = "nested combinator rejection and named spec-fn accept cases"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ADT-EXHAUSTIVENESS"
+title = "ADT match exhaustiveness validation"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "The validator pre-pass records enum variants and rejects non-exhaustive or unreachable match arms before lowering."
+aliases = ["thermite-spec/src/validator.rs REQ-5 (exhaustiveness — `NonExhaustiveMatch`/`UnreachableArm`)"]
+contributors = [".design/basis/01-adts.md", "thermite-spec/tests/adt_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_match_exhaustiveness"
+note = "match exhaustiveness and unreachable-arm checker"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "NonExhaustiveMatch"
+note = "structured missing-variant diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/adt_validate.rs"
+note = "ADT validation positive and negative cases"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ADT-WELLFORMED"
+title = "ADT field and variant well-formedness"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Declared struct fields and enum variants are checked for field access, struct literals, variant patterns, and `is` tests."
+aliases = ["thermite-spec/src/validator.rs REQ-6 (well-formed field/variant access + `is`)"]
+contributors = [".design/basis/01-adts.md", "thermite-spec/tests/adt_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_field"
+note = "field access and struct literal field validator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_variant_ref"
+note = "variant reference validator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/adt_validate.rs"
+note = "unknown field and unknown variant tests"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ADT-VARIANT-CASING"
+title = "UpperCamelCase variant validation"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Enum variants must be uppercase-initial so parser pattern disambiguation cannot mask a non-exhaustive match."
+aliases = ["thermite-spec/src/validator.rs REQ-2 (variant names UpperCamelCase — `InvalidVariantCasing`)"]
+contributors = [".design/basis/01-adts.md", "thermite-spec/tests/divergence_adt_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "InvalidVariantCasing"
+note = "structured variant-casing diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/divergence_adt_validate.rs"
+note = "lowercase variant bypass regression tests"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ADT-CAGE"
+title = "ADT predicates admitted as flat cage built-ins"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "`match`, field access, variant tests, and dereference are treated as flat built-ins inside SpecTherm cage positions."
+aliases = ["thermite-spec/src/validator.rs REQ-7 (ADT predicates fit the cage — flat built-ins)"]
+contributors = [".design/basis/01-adts.md", "thermite-spec/tests/combinators_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "walk_expr_inner"
+note = "caged expression walk admits ADT flat forms"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/combinators_conformance.rs"
+note = "flat cage conformance stays accepted"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ADT-UNSUPPORTED-GATE"
+title = "Retired unsupported ADT gate"
+owner = "thermite-spec/src/validator.rs"
+status = "retired"
+scope = "spec"
+summary = "`SpecError::UnsupportedAdt` remains as a structured fallback variant, but well-formed ADTs no longer emit it after Stage 1b validation shipped."
+aliases = ["thermite-spec/src/validator.rs 1a GATE (`SpecError::UnsupportedAdt`)"]
+contributors = [".design/basis/01-adts.md"]
+generated_to = ["status", "thermite-spec-validator-adt-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "UnsupportedAdt"
+note = "retained fallback diagnostic variant"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-SCHEME-RECOGNITION"
+title = "Recursion scheme recognition"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Registered recursion schemes resolve before combinators and are accepted at top level with their declared arity."
+aliases = ["thermite-spec/src/validator.rs REQ-1 (scheme set recognized as named primitives)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-spec/tests/scheme_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-scheme-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_scheme"
+note = "scheme validator entrypoint"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "schemes::lookup"
+note = "registered scheme lookup"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/scheme_validate.rs"
+note = "scheme recognition conformance"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-SCHEME-FLAT-STEP"
+title = "Recursion scheme flat step validation"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Scheme calls require a trailing closure with the scheme's step arity and reject nested scheme/combinator calls inside that step."
+aliases = ["thermite-spec/src/validator.rs REQ-2 (flat step closure — arity + no nested scheme)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-spec/tests/scheme_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-scheme-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "in_scheme_step"
+note = "validator mode flag for scheme step closures"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SchemeStepShape"
+note = "structured step-shape diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/scheme_validate.rs"
+note = "nested scheme rejection tests"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-SCHEME-CAGE"
+title = "Recursion scheme cage bridge"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Top-level structural scheme calls are accepted as named composition leaves, while nested structural quantification is rejected."
+aliases = ["thermite-spec/src/validator.rs REQ-4 (cage bridge — named structural quantification; nested-scheme reject)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-spec/tests/scheme_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-scheme-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "walk_call"
+note = "shared call validator for combinators, spec fns, and schemes"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "NestedScheme"
+note = "nested structural quantifier diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/scheme_validate.rs"
+note = "top-level scheme accept and nested scheme reject cases"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-SCHEME-ERRORS"
+title = "Recursion scheme validator errors"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Scheme validation extends `SpecError` with nested-scheme, arity, and step-shape diagnostics without introducing panics."
+aliases = ["thermite-spec/src/validator.rs REQ-9 (`SpecError` extension, no panics)"]
+contributors = [".design/basis/02-recursion-schemes.md", "thermite-spec/tests/scheme_validate.rs"]
+generated_to = ["status", "thermite-spec-validator-scheme-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SchemeWrongArity"
+note = "structured scheme arity diagnostic"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SchemeStepShape"
+note = "structured scheme step-shape diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/scheme_validate.rs"
+note = "scheme diagnostic tests"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-COLLECTIONS-CAGE"
+title = "Vec contract cage admission"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "The validator admits bounded Vec capacity and accessor contracts through the flat `BUILTIN_METHODS` method cage."
+aliases = ["thermite-spec/src/validator.rs REQ-3 (capacity + operation contracts fit the §4.2 cage)"]
+contributors = [".design/basis/04-collections.md", "thermite-lower/tests/collections_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-collections-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BUILTIN_METHODS"
+note = "contract-visible method allowlist"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/collections_conformance.rs"
+note = "Vec contracts validate and certify"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-COLLECTIONS-ELEM-INVARIANT"
+title = "Deferred Vec element invariant validation"
+owner = "thermite-spec/src/validator.rs"
+status = "not_started"
+scope = "spec"
+summary = "Vec element invariants through named spec functions are design-confirmed but not exercised by the v1 corpus."
+remaining_scope = "Add a corpus `Vec<Account>`/element-invariant program and validator oracle coverage in the Stage 4 follow-up."
+aliases = ["thermite-spec/src/validator.rs REQ-4 (element invariant via named `spec fn`)"]
+contributors = [".design/basis/04-collections.md"]
+blockers = ["github:dollspace-gay/Thermite#62"]
+generated_to = ["status", "thermite-spec-validator-collections-status"]
+
+[[requirement.evidence]]
+kind = "doc"
+target = ".design/basis/04-collections.md"
+note = "deferred element-invariant follow-up"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-MAP-CAGE"
+title = "Map contract cage admission"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "`contains_key`, `get`, and `len` Map contracts validate through the flat method cage while mutating `insert` remains exec-only."
+aliases = ["thermite-spec/src/validator.rs REQ-3 (`contains_key` cage admission; capacity/op contracts in §4.2)"]
+contributors = [".design/basis/13-map.md", "forge/tests/map_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-map-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BUILTIN_METHODS"
+note = "contains_key contract-method allowlist"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/map_conformance.rs"
+note = "Map contains_key contract conformance"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-SEALED-CONSTRUCTION"
+title = "Sealed construction validator barrier"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Struct literals constructing `#[sealed]` clean/capability types are rejected so only boundary doors can mint them."
+aliases = ["thermite-spec/src/validator.rs REQ-8 (`#[sealed]` abstraction barrier — the door is the only mint)"]
+contributors = [".design/basis/06-provenance-and-sinks.md", "thermite-spec/tests/sealed_validate.rs", "forge/tests/divergence_provenance.rs"]
+generated_to = ["status", "thermite-spec-validator-provenance-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_sealed_construction"
+note = "sealed struct-literal rejection"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SealedConstruction"
+note = "structured sealed-construction diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/sealed_validate.rs"
+note = "sealed construction validator tests"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-OPTRES-BUILTINS"
+title = "Option and Result built-in validator registry"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "The validator seeds Option/Result built-in variants for construction, exhaustiveness, `is`, and spec-match payload contracts."
+aliases = ["thermite-spec/src/validator.rs REQ-3 (built-in-variant registry + spec-`match`-in-`ens` payload projection)"]
+contributors = [".design/basis/09-option-result.md", "forge/tests/option_result_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-option-result-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "builtin_enums"
+note = "Option/Result built-in variant registry"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/option_result_conformance.rs"
+note = "Option/Result validator and L3 conformance"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-RECURSION-DECREASES"
+title = "Recursive fn decreases validation"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Direct self-recursive functions without `dec` are rejected before L3 unless they explicitly declare `fx diverge`."
+aliases = ["thermite-spec/src/validator.rs REQ-2 (`dec` mandatory for a recursive `fn`; the self-call validator rule)"]
+contributors = [".design/basis/10-recursion-tuples.md", "forge/tests/recursion_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-recursion-tuples-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "block_calls_name"
+note = "direct self-call detector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MissingDecreases"
+note = "structured missing-decreases diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/recursion_conformance.rs"
+note = "recursive fn decreases validation"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ERGONOMICS-GUARD"
+title = "Match guard exhaustiveness validation"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Guarded match arms are not counted as unconditional coverage, and guard expressions are still validated for field/variant errors."
+aliases = ["thermite-spec/src/validator.rs REQ-3 (match guards — exhaustiveness down-weight)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/tests/ergonomics_conformance.rs", "thermite-spec/tests/divergence_c10_guarded_catchall.rs"]
+generated_to = ["status", "thermite-spec-validator-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_match_exhaustiveness"
+note = "guard-aware coverage checker"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-spec/tests/divergence_c10_guarded_catchall.rs"
+note = "guarded catch-all divergence regression"
+
+[[requirement]]
+id = "REQ-SPEC-VALIDATOR-ERGONOMICS-OR-PATTERN"
+title = "Or-pattern exhaustiveness validation"
+owner = "thermite-spec/src/validator.rs"
+status = "shipped"
+scope = "spec"
+summary = "Or-pattern alternatives contribute their union of covered variants and catch-all alternatives close the matched enum."
+aliases = ["thermite-spec/src/validator.rs REQ-4 (or-patterns — exhaustiveness via union)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/tests/ergonomics_conformance.rs"]
+generated_to = ["status", "thermite-spec-validator-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_covered_variants"
+note = "or-pattern variant coverage collector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "pattern_is_catch_all"
+note = "or-pattern catch-all detector"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/ergonomics_conformance.rs"
+note = "or-pattern exhaustiveness conformance"

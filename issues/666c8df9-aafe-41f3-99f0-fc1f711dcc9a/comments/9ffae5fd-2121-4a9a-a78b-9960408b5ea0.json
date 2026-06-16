@@ -1,0 +1,8 @@
+{
+  "uuid": "9ffae5fd-2121-4a9a-a78b-9960408b5ea0",
+  "issue_uuid": "666c8df9-aafe-41f3-99f0-fc1f711dcc9a",
+  "author": "qkbt",
+  "content": "Increment 2d PARTIAL — 2 of 3 REQ-6 defenses shipped, repo clean. SHIPPED: (c) definition-tower budget [d4a1b50c +doc-drift 31326dcb] — meaning.rs, Certificate.meaning_audit (oracle-included per Q-ORACLE, None for v1 → goldens byte-identical), certify-time gate in check_file_with_engine (forge/Lean path only; NOT forge audit, #274), forge audit --meaning read-only printer, 7 unit tests incl AC-10 over-budget refusal + hash-pin. (b) re-elaboration mutation [5dd9f5ce +doc-drift ddfad01e] — reelaboration_mutants shared-catalogue seam (reuses mutation::generate+MUTANT_CAP, AC-10 not-forked test), re-elaboration kill check via existing Lean discharge path, killed/scored in cert, perf risk resolved (post-proof gate, not in per-clause KernelBudget). DEFERRED: (a) arbitrary-result re-elaboration (see decision) + REQ-S1-6 registry registration (NOT registered — REQ-6 not fully shipped, honest binary classification). Gauntlet on HEAD: clippy -D clean, fmt clean, doc-drift 0-drift, req-registry clean, meaning(7)+AC-10(1)+conformance byte-identical pass; 7 engine::tests Lean-spine cases skip locally (environmental, CI covers).",
+  "created_at": "2026-06-16T20:18:40.061713Z",
+  "kind": "result"
+}

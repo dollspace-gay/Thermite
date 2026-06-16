@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — shipped-status Summary + the #53 scratch-dir cleanup note, #262; amended 2026-06-12 — the SPEC-TIGHTNESS SIGNAL REQ family (REQ-8..REQ-13, NOT-STARTED, #271) + the #275 ADT-harness grounded finding)
+audited-sha: 80074948185b77b95006d034e461a338b1ce6b37 (re-pinned 2026-06-16: forge quality status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — shipped-status Summary + the #53 scratch-dir cleanup note, #262; amended 2026-06-12 — the SPEC-TIGHTNESS SIGNAL REQ family (REQ-8..REQ-13, NOT-STARTED, #271) + the #275 ADT-harness grounded finding))
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7

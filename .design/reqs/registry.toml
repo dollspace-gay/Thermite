@@ -767,6 +767,105 @@ region = "forge-cli-assurance-status"
 comment_prefix = "//! "
 title = "Forge CLI Assurance Canonical Status References"
 
+[[view]]
+name = "forge-mutation-status"
+path = "forge/src/mutation.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-mutation-status"
+comment_prefix = "//! "
+title = "Forge Mutation Scoring Canonical Status References"
+
+[[view]]
+name = "forge-mutation-ergonomics-status"
+path = "forge/src/mutation.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-mutation-ergonomics-status"
+comment_prefix = "//! "
+title = "Forge Mutation Ergonomics Canonical Status References"
+
+[[view]]
+name = "forge-vacuity-status"
+path = "forge/src/vacuity.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-vacuity-status"
+comment_prefix = "//! "
+title = "Forge Structural Vacuity Canonical Status References"
+
+[[view]]
+name = "forge-vacuity-ergonomics-status"
+path = "forge/src/vacuity.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-vacuity-ergonomics-status"
+comment_prefix = "//! "
+title = "Forge Vacuity Ergonomics Canonical Status References"
+
+[[view]]
+name = "forge-solver-vacuity-owner-status"
+path = "forge/src/vacuity_solver.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-solver-vacuity-owner-status"
+comment_prefix = "//! "
+title = "Forge Solver Vacuity Canonical Status References"
+
+[[view]]
+name = "forge-strengthen-status"
+path = "forge/src/strengthen.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-strengthen-status"
+comment_prefix = "//! "
+title = "Forge Strengthening Probe Canonical Status References"
+
+[[view]]
+name = "forge-strengthen-ergonomics-status"
+path = "forge/src/strengthen.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-strengthen-ergonomics-status"
+comment_prefix = "//! "
+title = "Forge Strengthening Ergonomics Canonical Status References"
+
+[[view]]
+name = "forge-profile-status"
+path = "forge/src/profile.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-profile-status"
+comment_prefix = "//! "
+title = "Forge Solver Profile Canonical Status References"
+
+[[view]]
+name = "forge-repair-status"
+path = "forge/src/repair.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-repair-status"
+comment_prefix = "//! "
+title = "Forge Proof Repair Canonical Status References"
+
+[[view]]
+name = "forge-review-status"
+path = "forge/src/review.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-review-status"
+comment_prefix = "//! "
+title = "Forge Spec Review Canonical Status References"
+
+[[view]]
+name = "forge-review-ergonomics-status"
+path = "forge/src/review.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-review-ergonomics-status"
+comment_prefix = "//! "
+title = "Forge Review Ergonomics Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -2998,6 +3097,377 @@ path = "forge/src/cli.rs"
 label = "REQ-7 (`forge new` scaffold)"
 id = "REQ-FORGE-CLI-NEW-SCAFFOLD"
 replacement_view = "forge-cli-assurance-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-1 (frozen deterministic mutator set)"
+id = "REQ-FORGE-MUTATION-FROZEN-SET"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-2 (deterministic order + seed + cap)"
+id = "REQ-FORGE-MUTATION-ORDER-CAP"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-3 (re-lower + re-verify vs same contract)"
+id = "REQ-FORGE-MUTATION-SAME-CONTRACT"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-4 (KILLED vs SURVIVED)"
+id = "REQ-FORGE-MUTATION-POLARITY"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-5 (kill ratio + floor gate, default 60%)"
+id = "REQ-FORGE-MUTATION-FLOOR-GATE"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-6 (graduate `mutants_killed`/`survivor`)"
+id = "REQ-FORGE-MUTATION-CERT-FIELDS"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-7 (gate AFTER L3, reuse proof cache)"
+id = "REQ-FORGE-MUTATION-AFTER-L3-CACHE"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-8 (deterministic kill ratio)"
+id = "REQ-FORGE-MUTATION-DETERMINISM"
+replacement_view = "forge-mutation-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/mutation.rs"
+label = "REQ-3 (MatchArm.guard ripple)"
+id = "REQ-FORGE-MUTATION-MATCH-GUARD"
+replacement_view = "forge-mutation-ergonomics-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-1 (ens-is-true reject (a))"
+id = "REQ-FORGE-VACUITY-ENS-TRUE"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-2 (ens-omits-result reject (b))"
+id = "REQ-FORGE-VACUITY-ENS-OMITS-RESULT"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-3 (ens-implied-by-req reject (c))"
+id = "REQ-FORGE-VACUITY-ENS-IMPLIED-BY-REQ"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-4 (maximal-fx-without-slag reject (d))"
+id = "REQ-FORGE-VACUITY-MAXIMAL-FX-SLAG"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-5 (`VacuityVerdict` + typed cause)"
+id = "REQ-FORGE-VACUITY-TYPED-CAUSE"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-6 (forge-check gate + `contract_quality`)"
+id = "REQ-FORGE-VACUITY-CHECK-GATE"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-7 (slag exempts proving, not stating)"
+id = "REQ-FORGE-VACUITY-SLAG-SCOPE"
+replacement_view = "forge-vacuity-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity.rs"
+label = "REQ-3 (MatchArm.guard ripple)"
+id = "REQ-FORGE-VACUITY-MATCH-GUARD"
+replacement_view = "forge-vacuity-ergonomics-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-1 (tautology harness builder)"
+id = "REQ-FORGE-SOLVER-VACUITY-TAUTOLOGY-HARNESS"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-2 (vacuity harness builder)"
+id = "REQ-FORGE-SOLVER-VACUITY-HARNESS"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-3 (verdict interpretation, R-CODE-4)"
+id = "REQ-FORGE-SOLVER-VACUITY-VERDICT"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-4 (value-add over #6)"
+id = "REQ-FORGE-SOLVER-VACUITY-VALUE-ADD"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-5 (gate wiring, verdict-in-cert)"
+id = "REQ-FORGE-SOLVER-VACUITY-CHECK-GATE"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-6 (graduate the two bools to solver-confirmed)"
+id = "REQ-FORGE-SOLVER-VACUITY-QUALITY-FIELDS"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/vacuity_solver.rs"
+label = "REQ-7 (determinism + one query/check)"
+id = "REQ-FORGE-SOLVER-VACUITY-DETERMINISM"
+replacement_view = "forge-solver-vacuity-owner-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-1 (frozen deterministic bounded candidate template)"
+id = "REQ-FORGE-STRENGTHEN-CANDIDATES"
+replacement_view = "forge-strengthen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-2 (verify each candidate vs the REAL body, reuse `run_verus`)"
+id = "REQ-FORGE-STRENGTHEN-VERIFY-CANDIDATES"
+replacement_view = "forge-strengthen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-3 (strictly-stronger filter)"
+id = "REQ-FORGE-STRENGTHEN-STRICTER-FILTER"
+replacement_view = "forge-strengthen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-4 (advisory placement — additive cert field, not a gate)"
+id = "REQ-FORGE-STRENGTHEN-ADVISORY-CERT"
+replacement_view = "forge-strengthen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-5 (consumes #12 survivors; runs on a settled L3 + scored item)"
+id = "REQ-FORGE-STRENGTHEN-MUTATION-INPUT"
+replacement_view = "forge-strengthen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-6 (determinism — same fn ⇒ same suggestions)"
+id = "REQ-FORGE-STRENGTHEN-DETERMINISM"
+replacement_view = "forge-strengthen-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/strengthen.rs"
+label = "REQ-3/REQ-4 (NO strengthen change needed)"
+id = "REQ-FORGE-STRENGTHEN-NO-ERGONOMICS-RIPPLE"
+replacement_view = "forge-strengthen-ergonomics-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-1 (`SolverProfile` schema)"
+id = "REQ-FORGE-PROFILE-SCHEMA"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-2 (profile capture on rlimit-hit)"
+id = "REQ-FORGE-PROFILE-CAPTURE"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-3 (parse the Z3 report)"
+id = "REQ-FORGE-PROFILE-PARSE"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-4 (render proof-repair prompts)"
+id = "REQ-FORGE-PROFILE-PROMPTS"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-5 (three-way classification)"
+id = "REQ-FORGE-PROFILE-CLASSIFICATION"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-6 (additive cert slot, oracle-excluded)"
+id = "REQ-FORGE-PROFILE-CERT-FIELD"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/profile.rs"
+label = "REQ-7 (timeout cert level, distinct)"
+id = "REQ-FORGE-PROFILE-TIMEOUT-CERT"
+replacement_view = "forge-profile-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-1 (`forge repair [item]` upgrade loop)"
+id = "REQ-FORGE-REPAIR-UPGRADE-LOOP"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-2 (anti-cheat: only a TIMEOUT is retried)"
+id = "REQ-FORGE-REPAIR-TIMEOUT-ONLY"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-3 (bounded escalation ladder)"
+id = "REQ-FORGE-REPAIR-BOUNDED-LADDER"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-4 (cache-backed re-verify)"
+id = "REQ-FORGE-REPAIR-UNCACHED-VERIFY"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-5 (determinism of the achieved level)"
+id = "REQ-FORGE-REPAIR-DETERMINISM"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-6 (the repair report)"
+id = "REQ-FORGE-REPAIR-REPORT"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/repair.rs"
+label = "REQ-7 (subprocess failure is an error, never an upgrade)"
+id = "REQ-FORGE-REPAIR-SUBPROCESS-FAILURE"
+replacement_view = "forge-repair-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-1 (spec-layer extraction, no bodies)"
+id = "REQ-FORGE-REVIEW-SPEC-LAYER"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-2 (pre-screening — only battery-passing)"
+id = "REQ-FORGE-REVIEW-PRE-SCREEN"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-3 (per-contract intent prompt)"
+id = "REQ-FORGE-REVIEW-INTENT-PROMPT"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-4 (pluggable verdict slot — separate record)"
+id = "REQ-FORGE-REVIEW-VERDICT-RECORD"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-5 (dual emission machine + human)"
+id = "REQ-FORGE-REVIEW-DUAL-EMISSION"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-6 (determinism, R-CODE-5)"
+id = "REQ-FORGE-REVIEW-DETERMINISM"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-7 (`forge review [item]` command + dispatch + --reviewer)"
+id = "REQ-FORGE-REVIEW-COMMAND"
+replacement_view = "forge-review-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/review.rs"
+label = "REQ-3 (MatchArm.guard ripple)"
+id = "REQ-FORGE-REVIEW-MATCH-GUARD"
+replacement_view = "forge-review-ergonomics-status"
 note = "Source-comment status row replaced by a generated canonical reference."
 
 [[requirement]]
@@ -10577,3 +11047,1381 @@ note = "non-empty target error"
 kind = "test"
 target = "forge/tests/acceptance_programs.rs"
 note = "forge command surface regression coverage"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-FROZEN-SET"
+title = "Frozen deterministic mutator set"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "The mutation scorer enumerates a fixed family of body mutations in source order while leaving the original contract untouched."
+aliases = ["forge/src/mutation.rs REQ-1 (frozen deterministic mutator set)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs", "conformance/mutation/cases.json"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "mutant enumerator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "flip_binop"
+note = "operator-flip family"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "early_return_value"
+note = "early-return family"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-ORDER-CAP"
+title = "Deterministic mutant order, seed, and cap"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "Mutants are selected in deterministic preorder under the fixed `MUTANT_CAP`, with the solver seed threaded by the caller."
+aliases = ["forge/src/mutation.rs REQ-2 (deterministic order + seed + cap)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MUTANT_CAP"
+note = "fixed mutant budget"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "deterministic enumeration"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "DEFAULT_SOLVER_SEED"
+note = "caller seed source"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-SAME-CONTRACT"
+title = "Mutants re-verify against the original contract"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "Each mutant changes only the function body, then the check path re-lowers and re-verifies it against the original requirements and ensures."
+aliases = ["forge/src/mutation.rs REQ-3 (re-lower + re-verify vs same contract)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "mutates cloned function body"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "mutation_score"
+note = "re-lower and re-verify consumer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "item_subprogram"
+note = "per-mutant subprogram weaving"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-POLARITY"
+title = "Killed versus survived mutant polarity"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "A proved mutant is classified as survived, while an unproved mutant is classified as killed because the contract caught the wrong body."
+aliases = ["forge/src/mutation.rs REQ-4 (KILLED vs SURVIVED)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify_mutant"
+note = "polarity classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MutantOutcome"
+note = "mutant outcome enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "mutation_score"
+note = "classification consumer"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-FLOOR-GATE"
+title = "Mutation kill-ratio floor gate"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "`MutationScore` computes the kill ratio, treats 0/0 as below floor, and gates certification against the configurable default mutation floor."
+aliases = ["forge/src/mutation.rs REQ-5 (kill ratio + floor gate, default 60%)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs", "thermite-verified"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MutationScore::meets_floor"
+note = "floor predicate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MUTATION_FLOOR"
+note = "default floor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "meets_floor_60"
+note = "verified integer anchor"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-CERT-FIELDS"
+title = "Mutation result certificate fields"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "Mutation scoring graduates the certificate quality fields with a `K/N` killed string and representative surviving mutant prompt."
+aliases = ["forge/src/mutation.rs REQ-6 (graduate `mutants_killed`/`survivor`)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MutationScore::mutants_killed_string"
+note = "K/N formatter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::with_mutation_score"
+note = "certificate field graduation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::rejected_weak_contract"
+note = "weak-contract reject path"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-AFTER-L3-CACHE"
+title = "Mutation gate runs after L3 and reuses proof cache"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "Mutation scoring runs only after the real body proves and content-addresses each mutant through the same proof-cache machinery."
+aliases = ["forge/src/mutation.rs REQ-7 (gate AFTER L3, reuse proof cache)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs", ".design/forge/proof-cache.md"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "mutation_score"
+note = "post-L3 mutation scorer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_key"
+note = "mutant cache key"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "store"
+note = "proof-cache store"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-DETERMINISM"
+title = "Deterministic mutation kill ratio"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "The mutant list and reported kill ratio are deterministic functions of the AST, frozen table, pinned solver run, and cache state."
+aliases = ["forge/src/mutation.rs REQ-8 (deterministic kill ratio)"]
+contributors = [".design/forge/mutation-scoring.md", "forge/tests/mutation_conformance.rs"]
+generated_to = ["status", "forge-mutation-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "pure mutant generation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MutationScore"
+note = "deterministic result structure"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/mutation_conformance.rs"
+note = "mutation conformance"
+
+[[requirement]]
+id = "REQ-FORGE-MUTATION-MATCH-GUARD"
+title = "Mutation scans match-arm guards"
+owner = "forge/src/mutation.rs"
+status = "shipped"
+scope = "forge"
+summary = "Mutation scanning and application thread through match-arm guards so guard expressions are scoreable mutation targets."
+aliases = ["forge/src/mutation.rs REQ-3 (MatchArm.guard ripple)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/src/mutation.rs"]
+generated_to = ["status", "forge-mutation-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "scan_expr"
+note = "guard scan"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "apply_expr"
+note = "guard rebuild"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "mutation_score"
+note = "mutation consumer"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-ENS-TRUE"
+title = "Structural reject for trivially true ensures"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "Structural vacuity triage rejects literal true or identity postconditions before any solver work."
+aliases = ["forge/src/vacuity.rs REQ-1 (ens-is-true reject (a))"]
+contributors = [".design/forge/vacuity-triage.md", "forge/tests/vacuity_slag_conformance.rs", "conformance/vacuity/triage.json"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ens_is_trivially_true"
+note = "trivial-ens detector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "identity_clause"
+note = "identity-clause detector"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/vacuity/triage.json"
+note = "triage oracle"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-ENS-OMITS-RESULT"
+title = "Structural reject for result-free ensures"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "A non-unit function whose postcondition never mentions `result` is structurally rejected as vacuous."
+aliases = ["forge/src/vacuity.rs REQ-2 (ens-omits-result reject (b))"]
+contributors = [".design/forge/vacuity-triage.md", "forge/tests/vacuity_slag_conformance.rs", "conformance/vacuity/triage.json"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ens_omits_result"
+note = "result-mention detector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "expr_mentions_result"
+note = "bounded expression walk"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/vacuity/triage.json"
+note = "triage oracle"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-ENS-IMPLIED-BY-REQ"
+title = "Structural reject for req-implied ensures"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "Ensures clauses equal to the whole precondition or one of its conjunctions are rejected by structural triage."
+aliases = ["forge/src/vacuity.rs REQ-3 (ens-implied-by-req reject (c))"]
+contributors = [".design/forge/vacuity-triage.md", "forge/tests/vacuity_slag_conformance.rs", "conformance/vacuity/triage.json"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ens_implied_by_req"
+note = "req-implied detector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "flatten_and"
+note = "precondition conjunction flattening"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/vacuity/triage.json"
+note = "triage oracle"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-MAXIMAL-FX-SLAG"
+title = "Structural reject for unjustified maximal effects"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "A maximal effect row without slag or boundary justification is rejected by structural triage."
+aliases = ["forge/src/vacuity.rs REQ-4 (maximal-fx-without-slag reject (d))"]
+contributors = [".design/forge/vacuity-triage.md", ".design/forge/slag.md", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fx_maximal_without_slag"
+note = "maximal-fx detector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "effect_row_is_maximal"
+note = "effect-row predicate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/vacuity/triage.json"
+note = "triage oracle"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-TYPED-CAUSE"
+title = "Typed structural vacuity verdict and cause"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "Structural triage reports typed verdicts and cause tags that feed certificate reject diagnostics rather than raising driver errors."
+aliases = ["forge/src/vacuity.rs REQ-5 (`VacuityVerdict` + typed cause)"]
+contributors = [".design/forge/vacuity-triage.md", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VacuityVerdict"
+note = "triage verdict enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VacuityCause::tag"
+note = "stable cause tag"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RejectReason"
+note = "certificate reject payload"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-CHECK-GATE"
+title = "Structural vacuity gate in forge check"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "`forge check` runs structural triage before lowering and graduates clean contract-quality flags on the path that proceeds."
+aliases = ["forge/src/vacuity.rs REQ-6 (forge-check gate + `contract_quality`)"]
+contributors = [".design/forge/vacuity-triage.md", "forge/src/check.rs", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "triage"
+note = "structural gate entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_options"
+note = "forge check integration"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::graduate_triage_clean"
+note = "clean quality graduation"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-SLAG-SCOPE"
+title = "Slag exempts proving but not stating"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "Slag only exempts the maximal-effect rule; trivial, result-free, or req-implied contracts still reject."
+aliases = ["forge/src/vacuity.rs REQ-7 (slag exempts proving, not stating)"]
+contributors = [".design/forge/vacuity-triage.md", ".design/forge/slag.md", "forge/tests/vacuity_slag_conformance.rs"]
+generated_to = ["status", "forge-vacuity-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "triage"
+note = "slag-aware triage"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagAttr"
+note = "slag input"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/vacuity_slag_conformance.rs"
+note = "slag/vacuity conformance"
+
+[[requirement]]
+id = "REQ-FORGE-VACUITY-MATCH-GUARD"
+title = "Vacuity scans match-arm guards for result"
+owner = "forge/src/vacuity.rs"
+status = "shipped"
+scope = "forge"
+summary = "The result-mention walk includes match-arm guards so a contract that mentions `result` only in a guard is not falsely rejected."
+aliases = ["forge/src/vacuity.rs REQ-3 (MatchArm.guard ripple)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/src/vacuity.rs"]
+generated_to = ["status", "forge-vacuity-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "expr_mentions_result"
+note = "result mention walk"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "triage"
+note = "vacuity consumer"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/vacuity.rs"
+note = "guard arm implementation"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-TAUTOLOGY-HARNESS"
+title = "Solver tautology harness builder"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "The solver-vacuity layer builds a tautology harness by reusing lowerer output and checking arbitrary-result postcondition validity."
+aliases = ["forge/src/vacuity_solver.rs REQ-1 (tautology harness builder)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs", "conformance/solver-vacuity/cases.json"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_tautology_harness"
+note = "tautology harness builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "extract_lowered_fn"
+note = "lowered contract extractor"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/solver_vacuity_conformance.rs"
+note = "solver-vacuity conformance"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-HARNESS"
+title = "Solver vacuous-precondition harness builder"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "The solver-vacuity layer builds an unsatisfiable-precondition harness that proves `assert(false)` under the item requirements."
+aliases = ["forge/src/vacuity_solver.rs REQ-2 (vacuity harness builder)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs", "conformance/solver-vacuity/cases.json"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_vacuity_harness"
+note = "vacuity harness builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "extract_lowered_fn"
+note = "lowered contract extractor"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/solver-vacuity/cases.json"
+note = "solver-vacuity oracle"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-VERDICT"
+title = "Solver vacuity verdict interpretation"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "Harness summaries classify proved harnesses as detected vacuity, failed harnesses as clean, and malformed or environment outcomes as forge errors."
+aliases = ["forge/src/vacuity_solver.rs REQ-3 (verdict interpretation, R-CODE-4)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "interpret_summary"
+note = "harness summary classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_harness"
+note = "verus harness runner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError::VerusOutput"
+note = "malformed-output error"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-VALUE-ADD"
+title = "Solver vacuity catches semantic cases missed by triage"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "Semantic tautology and unsatisfiable-precondition fixtures pass structural triage but are rejected by solver-backed vacuity."
+aliases = ["forge/src/vacuity_solver.rs REQ-4 (value-add over #6)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs", "conformance/solver-vacuity/cases.json"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "solver_vacuity_check"
+note = "solver-backed gate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "conformance/solver-vacuity/cases.json"
+note = "semantic-vacuity oracle"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/divergence_solver_vacuity.rs"
+note = "divergence coverage"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-CHECK-GATE"
+title = "Solver vacuity gate records certificate rejects"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "`forge check` runs solver vacuity after structural triage and before L3, recording detected causes as L0 certificate rejects."
+aliases = ["forge/src/vacuity_solver.rs REQ-5 (gate wiring, verdict-in-cert)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/src/check.rs", "forge/tests/solver_vacuity_conformance.rs"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "solver_vacuity_check"
+note = "solver-vacuity entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::rejected_vacuity"
+note = "certificate reject constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_options"
+note = "forge check integration"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-QUALITY-FIELDS"
+title = "Solver vacuity graduates quality fields"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "Detected semantic vacuity sets the matching contract-quality boolean, while clean solver checks keep both booleans live-false on the L3 path."
+aliases = ["forge/src/vacuity_solver.rs REQ-6 (graduate the two bools to solver-confirmed)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SolverVacuityCause"
+note = "quality-field cause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::rejected_vacuity"
+note = "sets detected quality field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::graduate_triage_clean"
+note = "clean quality path"
+
+[[requirement]]
+id = "REQ-FORGE-SOLVER-VACUITY-DETERMINISM"
+title = "Solver vacuity deterministic query budget"
+owner = "forge/src/vacuity_solver.rs"
+status = "shipped"
+scope = "forge"
+summary = "Harness runs use pinned seed and rlimit inputs and short-circuit after the first detected vacuity, bounding the query count."
+aliases = ["forge/src/vacuity_solver.rs REQ-7 (determinism + one query/check)"]
+contributors = [".design/forge/solver-vacuity.md", "forge/tests/solver_vacuity_conformance.rs"]
+generated_to = ["status", "forge-solver-vacuity-owner-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_harness"
+note = "pinned harness runner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "DEFAULT_SOLVER_SEED"
+note = "seed source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "DEFAULT_RLIMIT"
+note = "rlimit source"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-CANDIDATES"
+title = "Frozen bounded strengthening candidate template"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "Strengthening probes generate an ordered, capped set of candidate ensures clauses from the item, spec functions, and mutation survivor."
+aliases = ["forge/src/strengthen.rs REQ-1 (frozen deterministic bounded candidate template)"]
+contributors = [".design/forge/strengthening-probes.md", "forge/tests/strengthening_conformance.rs", "conformance/strengthening/cases.json"]
+generated_to = ["status", "forge-strengthen-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate_candidates"
+note = "candidate generator"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CANDIDATE_CAP"
+note = "candidate budget"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/strengthening_conformance.rs"
+note = "strengthening conformance"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-VERIFY-CANDIDATES"
+title = "Strengthening candidates verify against the real body"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "Each candidate is woven into a copy of the real function and kept only when the threaded verifier proves it against the unchanged body."
+aliases = ["forge/src/strengthen.rs REQ-2 (verify each candidate vs the REAL body, reuse `run_verus`)"]
+contributors = [".design/forge/strengthening-probes.md", "forge/tests/strengthening_conformance.rs"]
+generated_to = ["status", "forge-strengthen-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "probe"
+note = "candidate verification pipeline"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "candidate_fn"
+note = "candidate weaving"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_verus"
+note = "shared verifier seam"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-STRICTER-FILTER"
+title = "Strictly-stronger strengthening filter"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "A verifying candidate is suggested only when it kills the survivor or adds a result equality missing from the current ensures."
+aliases = ["forge/src/strengthen.rs REQ-3 (strictly-stronger filter)"]
+contributors = [".design/forge/strengthening-probes.md", "forge/tests/strengthening_conformance.rs"]
+generated_to = ["status", "forge-strengthen-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "is_strictly_stronger"
+note = "strictness filter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "current_ens_pins_result"
+note = "result equality check"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CandidateClause::kills_survivor"
+note = "survivor-kill witness"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-ADVISORY-CERT"
+title = "Strengthening suggestions are advisory certificate fields"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "Strengthening suggestions attach only additive oracle-excluded certificate fields and do not alter the achieved level or reject status."
+aliases = ["forge/src/strengthen.rs REQ-4 (advisory placement — additive cert field, not a gate)"]
+contributors = [".design/forge/strengthening-probes.md", "forge/tests/strengthening_conformance.rs"]
+generated_to = ["status", "forge-strengthen-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Suggestion"
+note = "strengthening suggestion payload"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::with_strengthening"
+note = "additive certificate attachment"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "suggested_move"
+note = "headline suggestion field"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-MUTATION-INPUT"
+title = "Strengthening consumes mutation survivors after L3"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "The strengthening probe runs after a settled L3 mutation-scored item and uses the mutation survivor as candidate-generation input."
+aliases = ["forge/src/strengthen.rs REQ-5 (consumes #12 survivors; runs on a settled L3 + scored item)"]
+contributors = [".design/forge/strengthening-probes.md", ".design/forge/mutation-scoring.md", "forge/tests/strengthening_conformance.rs"]
+generated_to = ["status", "forge-strengthen-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "strengthen_certificate"
+note = "check integration"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MutationScore"
+note = "survivor source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_options"
+note = "post-L3 caller"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-DETERMINISM"
+title = "Deterministic strengthening suggestions"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "The candidate list and suggestion order are pure functions of the AST, spec functions, survivor, frozen template, and deterministic verifier results."
+aliases = ["forge/src/strengthen.rs REQ-6 (determinism — same fn ⇒ same suggestions)"]
+contributors = [".design/forge/strengthening-probes.md", "forge/tests/strengthening_conformance.rs"]
+generated_to = ["status", "forge-strengthen-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate_candidates_is_deterministic"
+note = "determinism unit test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate_candidates"
+note = "pure candidate generation"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/strengthening_conformance.rs"
+note = "strengthening conformance"
+
+[[requirement]]
+id = "REQ-FORGE-STRENGTHEN-NO-ERGONOMICS-RIPPLE"
+title = "Strengthening renderer needs no match-pattern ripple"
+owner = "forge/src/strengthen.rs"
+status = "shipped"
+scope = "forge"
+summary = "The strengthening renderer covers only the frozen candidate expression family and safely falls back for shapes outside that family."
+aliases = ["forge/src/strengthen.rs REQ-3/REQ-4 (NO strengthen change needed)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/src/strengthen.rs"]
+generated_to = ["status", "forge-strengthen-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_expr"
+note = "candidate expression renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate_candidates"
+note = "candidate family source"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/strengthen.rs"
+note = "no match-pattern candidate source"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-SCHEMA"
+title = "Solver profile schema"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "Solver profile diagnostics are structured as total instantiations plus ranked quantifier profile rows."
+aliases = ["forge/src/profile.rs REQ-1 (`SolverProfile` schema)"]
+contributors = [".design/forge/solver-profiles.md", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SolverProfile"
+note = "profile schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "QuantifierProfile"
+note = "quantifier row schema"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/profile_conformance.rs"
+note = "profile conformance"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-CAPTURE"
+title = "Solver profile capture on rlimit hit"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "The check driver invokes Verus with profiling under the pinned rlimit and lets this module parse the stderr report on timeout."
+aliases = ["forge/src/profile.rs REQ-2 (profile capture on rlimit-hit)"]
+contributors = [".design/forge/solver-profiles.md", "forge/src/check.rs", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "invoke_verus"
+note = "profile-enabled Verus invocation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_profile"
+note = "profile parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "DEFAULT_RLIMIT"
+note = "pinned rlimit"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-PARSE"
+title = "Z3 profile report parser"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "The parser extracts observed instantiations, cost blocks, spans, and selected triggers from Verus/Z3 profile stderr."
+aliases = ["forge/src/profile.rs REQ-3 (parse the Z3 report)"]
+contributors = [".design/forge/solver-profiles.md", "forge/tests/profile_conformance.rs", "tests/golden/profile/connectivity.profile.txt"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_profile"
+note = "profile parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_total_instantiations"
+note = "total parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_quantifier_blocks"
+note = "quantifier block parser"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-PROMPTS"
+title = "Render proof-repair prompts from solver profile"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "Profile rendering turns ranked quantifier data into deterministic suggested proof-repair moves and trigger-loop hints."
+aliases = ["forge/src/profile.rs REQ-4 (render proof-repair prompts)"]
+contributors = [".design/forge/solver-profiles.md", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_prompts"
+note = "prompt renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "suggested_move"
+note = "headline prompt selector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SuggestedMove"
+note = "certificate prompt payload"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-CLASSIFICATION"
+title = "Timeout classification consumes solver profiles"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "`classify_verus_outcome` uses parsed profile presence as part of the success, counterexample, and timeout split."
+aliases = ["forge/src/profile.rs REQ-5 (three-way classification)"]
+contributors = [".design/forge/solver-profiles.md", "forge/src/check.rs", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify_verus_outcome"
+note = "three-way Verus classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_profile"
+note = "timeout profile parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VerusOutcome"
+note = "classified outcome enum"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-CERT-FIELD"
+title = "Oracle-excluded solver profile certificate slot"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "Certificates carry solver profile and suggested-move diagnostics as additive oracle-excluded fields."
+aliases = ["forge/src/profile.rs REQ-6 (additive cert slot, oracle-excluded)"]
+contributors = [".design/forge/solver-profiles.md", "forge/src/manifest.rs", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::solver_profile"
+note = "profile certificate field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "suggested_move"
+note = "suggested move field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "oracle_subset"
+note = "oracle exclusion"
+
+[[requirement]]
+id = "REQ-FORGE-PROFILE-TIMEOUT-CERT"
+title = "Timeout certificate is distinct from counterexample"
+owner = "forge/src/profile.rs"
+status = "shipped"
+scope = "forge"
+summary = "A Verus timeout certificate is L0 with `VerusTimeout` and profile diagnostics, distinct from a counterexample certificate."
+aliases = ["forge/src/profile.rs REQ-7 (timeout cert level, distinct)"]
+contributors = [".design/forge/solver-profiles.md", "forge/src/check.rs", "forge/tests/profile_conformance.rs"]
+generated_to = ["status", "forge-profile-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::timeout"
+note = "timeout certificate constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "VerusTimeout"
+note = "timeout reject cause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify_verus_outcome"
+note = "timeout classifier"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-UPGRADE-LOOP"
+title = "forge repair upgrade loop"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "`forge repair` classifies sub-L3 certificates and escalates timeout items along the repair ladder until one proves L3 or remains sub-L3."
+aliases = ["forge/src/repair.rs REQ-1 (`forge repair [item]` upgrade loop)"]
+contributors = [".design/forge/proof-repair.md", "forge/tests/repair_conformance.rs", "conformance/repair/cases.json"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "repair_file"
+note = "repair command engine"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify_sub_l3"
+note = "sub-L3 classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "escalate"
+note = "budget escalation loop"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-TIMEOUT-ONLY"
+title = "Proof repair retries only timeouts"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "Repair escalates only timeout inconclusiveness and reports counterexamples or rejects as not repairable without retrying."
+aliases = ["forge/src/repair.rs REQ-2 (anti-cheat: only a TIMEOUT is retried)"]
+contributors = [".design/forge/proof-repair.md", "forge/tests/repair_conformance.rs", "conformance/repair/cases.json"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "classify_sub_l3"
+note = "timeout-only gate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SubL3Status::NotRepairable"
+note = "hard-fail classification"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/repair_conformance.rs"
+note = "repair anti-cheat conformance"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-BOUNDED-LADDER"
+title = "Bounded proof-repair escalation ladder"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "Repair uses a frozen finite `REPAIR_LADDER` of rlimit multipliers and terminates after the cap."
+aliases = ["forge/src/repair.rs REQ-3 (bounded escalation ladder)"]
+contributors = [".design/forge/proof-repair.md", "forge/tests/repair_conformance.rs"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "REPAIR_LADDER"
+note = "fixed budget ladder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "escalate"
+note = "bounded loop"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "escalation_is_bounded_and_terminates"
+note = "boundedness unit test"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-UNCACHED-VERIFY"
+title = "Proof repair uses non-default re-verify budgets"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "Each repair rung calls the check path at an escalated non-default budget, keeping budget-dependent outcomes out of canonical proof-cache hits."
+aliases = ["forge/src/repair.rs REQ-4 (cache-backed re-verify)"]
+contributors = [".design/forge/proof-repair.md", "forge/src/check.rs"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file_with_rlimit"
+note = "non-default rlimit check path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "escalate"
+note = "repair rung driver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "DEFAULT_RLIMIT"
+note = "canonical budget baseline"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-DETERMINISM"
+title = "Deterministic proof-repair achieved level"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "The repair result is a deterministic function of the fixed ladder and deterministic per-rung verifier classifications."
+aliases = ["forge/src/repair.rs REQ-5 (determinism of the achieved level)"]
+contributors = [".design/forge/proof-repair.md", "forge/tests/repair_conformance.rs"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "REPAIR_LADDER"
+note = "fixed ladder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "escalation_is_deterministic"
+note = "determinism unit test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RepairOutcome"
+note = "reported outcome"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-REPORT"
+title = "Proof repair report shape"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "Repair emits a structured report of upgraded, still-sub-L3, or not-repairable items, omitting already-L3 no-op items."
+aliases = ["forge/src/repair.rs REQ-6 (the repair report)"]
+contributors = [".design/forge/proof-repair.md", "forge/tests/repair_conformance.rs"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RepairReport"
+note = "repair report schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "RepairOutcome"
+note = "repair outcome enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_repair"
+note = "CLI report renderer"
+
+[[requirement]]
+id = "REQ-FORGE-REPAIR-SUBPROCESS-FAILURE"
+title = "Proof repair subprocess failures are errors"
+owner = "forge/src/repair.rs"
+status = "shipped"
+scope = "forge"
+summary = "Verifier subprocess failures propagate as `ForgeError` and are never treated as successful repair or still-sub-L3 verdicts."
+aliases = ["forge/src/repair.rs REQ-7 (subprocess failure is an error, never an upgrade)"]
+contributors = [".design/forge/proof-repair.md", "forge/tests/repair_conformance.rs"]
+generated_to = ["status", "forge-repair-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "repair error boundary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "environment_error_propagates"
+note = "subprocess failure unit test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "escalate"
+note = "fallible escalation loop"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-SPEC-LAYER"
+title = "Spec-review extracts declarations without bodies"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "Spec review projects contract clauses and referenced spec function declarations without reading function or spec-function bodies."
+aliases = ["forge/src/review.rs REQ-1 (spec-layer extraction, no bodies)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs", "conformance/review/cases.json"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "review_file"
+note = "review artifact producer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SpecLayer::extract"
+note = "spec-layer projection"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "referenced_spec_fns"
+note = "referenced declaration resolver"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-PRE-SCREEN"
+title = "Spec-review pre-screens battery-passing contracts"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "Only reject-free certified contracts become intent-reviewable; battery failures are flagged separately with their mechanical cause."
+aliases = ["forge/src/review.rs REQ-2 (pre-screening — only battery-passing)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs", "conformance/review/cases.json"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "is_intent_reviewable"
+note = "pre-screen predicate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cert_certifies"
+note = "certified-rung predicate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/review_conformance.rs"
+note = "review conformance"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-INTENT-PROMPT"
+title = "Per-contract intent-review prompt"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "Intent reviews include a deterministic prompt naming the item and asking the external reviewer for spec-intent alignment."
+aliases = ["forge/src/review.rs REQ-3 (per-contract intent prompt)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "IntentReview::prompt"
+note = "prompt builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "IntentReview::new"
+note = "intent review constructor"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_review"
+note = "human review renderer"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-VERDICT-RECORD"
+title = "Review verdicts are separate records"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "External review verdicts attach to a separate review record rather than mutating mechanical certificates."
+aliases = ["forge/src/review.rs REQ-4 (pluggable verdict slot — separate record)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs", "conformance/review/cases.json"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ReviewVerdict"
+note = "external verdict payload"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ReviewRecord"
+note = "separate record schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "attach_verdicts"
+note = "verdict attachment"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-DUAL-EMISSION"
+title = "Spec-review emits machine and human forms"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "The review artifact serializes for machine consumers while the CLI renders a human-readable review view."
+aliases = ["forge/src/review.rs REQ-5 (dual emission machine + human)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ReviewArtifact"
+note = "machine artifact"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_review"
+note = "human renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_review"
+note = "CLI command"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-DETERMINISM"
+title = "Spec-review extraction is deterministic"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "Review extraction is a pure projection of parsed program and certificates, with sorted and deduplicated referenced spec functions."
+aliases = ["forge/src/review.rs REQ-6 (determinism, R-CODE-5)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "review_file"
+note = "pure extraction entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "referenced_spec_fns"
+note = "sorted references"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/review_conformance.rs"
+note = "determinism conformance"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-COMMAND"
+title = "forge review command and reviewer dispatch"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "The CLI dispatches `forge review`, supports an external reviewer command, and reports reviewer failures through `ForgeError` without panics."
+aliases = ["forge/src/review.rs REQ-7 (`forge review [item]` command + dispatch + --reviewer)"]
+contributors = [".design/forge/spec-review.md", "forge/tests/review_conformance.rs"]
+generated_to = ["status", "forge-review-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_args"
+note = "review verb parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_review"
+note = "review command runner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_reviewer"
+note = "external reviewer shell-out"
+
+[[requirement]]
+id = "REQ-FORGE-REVIEW-MATCH-GUARD"
+title = "Spec-review walks match-arm guards"
+owner = "forge/src/review.rs"
+status = "shipped"
+scope = "forge"
+summary = "Spec-review callee collection walks match-arm guards so guard calls are included in the reviewed spec surface."
+aliases = ["forge/src/review.rs REQ-3 (MatchArm.guard ripple)"]
+contributors = [".design/basis/11-ergonomics.md", "forge/src/review.rs"]
+generated_to = ["status", "forge-review-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_callee_names"
+note = "callee collector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "review_file"
+note = "review consumer"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/review.rs"
+note = "guard walk implementation"

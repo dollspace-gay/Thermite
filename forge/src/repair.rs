@@ -31,15 +31,19 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (`forge repair [item]` upgrade loop) | SHIPPED | `pub fn repair_file` runs `check::check_file_with_rlimit(path, DEFAULT_RLIMIT)`, classifies each cert via `classify_sub_l3`, and for a `SubL3Status::Timeout` drives `escalate` along [`REPAIR_LADDER`], upgrading to L3 on the first rung that PROVES (recording the budget) else surfacing the prompt. Consumer: `cli::run_repair` (`cli.rs`). |
-//! | REQ-2 (anti-cheat: only a TIMEOUT is retried) | SHIPPED | `classify_sub_l3` returns `Timeout` ONLY for a `VerusTimeout` reject / a `lowered_assurance` (`VerusTimeout` degrade) cert; a counterexample / vacuity / weak-contract reject / un-discharged `L0` returns `NotRepairable`. `escalate` is called ONLY on `Timeout` (gated in `repair_item`), so the escalation closure NEVER runs for a non-timeout. Tests `counterexample_is_never_retried` + `rejects_are_never_retried`. |
-//! | REQ-3 (bounded escalation ladder) | SHIPPED | [`REPAIR_LADDER`] is a frozen `[f64; 4]` of `--rlimit` multipliers (`2,4,8,16`); `escalate` iterates it in order and STOPS at the cap, so it ALWAYS terminates per item (a never-proving timeout makes exactly `REPAIR_LADDER.len()` attempts). Test `escalation_is_bounded_and_terminates`. |
-//! | REQ-4 (cache-backed re-verify) | SHIPPED | each rung calls `check::check_file_with_rlimit` at a NON-default (escalated) budget, which `check.rs` documents bypasses the cache (a budget-dependent verdict is never cached as the canonical proof); per OQ-2 reading (a), escalated verifies are uncached in the v0.5 kernel. |
-//! | REQ-5 (determinism of the achieved level) | SHIPPED | [`REPAIR_LADDER`] is a const + the per-rung verdict is the deterministic `check::classify_verus_outcome` under the pinned seed, so the achieved level + the recorded winning budget are a deterministic function of the item + the ladder (R-CODE-5). Test `escalation_is_deterministic`. |
-//! | REQ-6 (the repair report) | SHIPPED | `pub struct RepairReport { items: Vec<RepairItem> }` with `enum RepairOutcome { UpgradedToL3 { budget }, StillSubL3 { level, prompt }, NotRepairable { reason } }`; an already-L3 item is a NO-OP (not in `items`). Consumer: `cli::run_repair` + `cli::render_repair`. |
-//! | REQ-7 (subprocess failure is an error, never an upgrade) | SHIPPED | `escalate`'s verifier closure returns `Result<RepairVerdict, ForgeError>`; an environment failure (`VerusAbsent`/`VerusOutput`) propagates via the `?` out of `repair_file`, NEVER a still-sub-L3 verdict and NEVER a silent upgrade (R-CODE-4). Test `environment_error_propagates`. |
+//! <!-- generated:reqs view=forge-repair-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-REPAIR-BOUNDED-LADDER | shipped | `forge/src/repair.rs` | Bounded proof-repair escalation ladder |  |
+//! | REQ-FORGE-REPAIR-DETERMINISM | shipped | `forge/src/repair.rs` | Deterministic proof-repair achieved level |  |
+//! | REQ-FORGE-REPAIR-REPORT | shipped | `forge/src/repair.rs` | Proof repair report shape |  |
+//! | REQ-FORGE-REPAIR-SUBPROCESS-FAILURE | shipped | `forge/src/repair.rs` | Proof repair subprocess failures are errors |  |
+//! | REQ-FORGE-REPAIR-TIMEOUT-ONLY | shipped | `forge/src/repair.rs` | Proof repair retries only timeouts |  |
+//! | REQ-FORGE-REPAIR-UNCACHED-VERIFY | shipped | `forge/src/repair.rs` | Proof repair uses non-default re-verify budgets |  |
+//! | REQ-FORGE-REPAIR-UPGRADE-LOOP | shipped | `forge/src/repair.rs` | forge repair upgrade loop |  |
+//! <!-- /generated:reqs -->
 
 use crate::check::{self, DEFAULT_RLIMIT};
 use crate::cli::ForgeError;

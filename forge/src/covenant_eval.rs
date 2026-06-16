@@ -46,7 +46,7 @@
 //! state — so a covenant's witness/falsify evidence is reproducible (Q-ORACLE: the
 //! covenant evidence joins the deterministic forge-tier cert oracle).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use thermite_syntax::ast::{BinOp, Block, Expr, PrimType, Stmt, Type, UnaryOp};
@@ -340,7 +340,12 @@ fn cast_width(ty: &Type) -> Result<Option<IntWidth>, CovenantEvalError> {
 /// fragment (honest Unsupported).
 pub fn eval_block(block: &Block, env: &Env) -> Result<Value, CovenantEvalError> {
     let mut local = env.clone();
-    if let Some(v) = eval_stmts(&block.stmts, &mut local)? {
+    // The names a `let mut` introduced — the only names a `Stmt::Assign` may reassign
+    // (Rust/Verus reject assignment to an immutable binding, E0384). Params + plain
+    // `let` bindings are absent, so reassigning one is an honest error, not a silent
+    // mutation (the covenant-eval faithfulness contract).
+    let mut mutable = BTreeSet::new();
+    if let Some(v) = eval_stmts(&block.stmts, &mut local, &mut mutable)? {
         // An early `return` inside the statement stream supplies the block's value.
         return Ok(v);
     }
@@ -352,20 +357,49 @@ pub fn eval_block(block: &Block, env: &Env) -> Result<Value, CovenantEvalError> 
     }
 }
 
-/// Run a statement stream, threading the environment (REQ-4). Returns `Ok(Some(v))` if
-/// a `return e` (or a returning `if`) short-circuits the block to value `v`, else
-/// `Ok(None)` (fall through to the block tail).
-fn eval_stmts(stmts: &[Stmt], env: &mut Env) -> Result<Option<Value>, CovenantEvalError> {
+/// Run a statement stream, threading the environment + the set of mutable (`let mut`)
+/// binding names (REQ-4). Returns `Ok(Some(v))` if a `return e` (or a returning `if`)
+/// short-circuits the block to value `v`, else `Ok(None)` (fall through to the block
+/// tail).
+fn eval_stmts(
+    stmts: &[Stmt],
+    env: &mut Env,
+    mutable: &mut BTreeSet<String>,
+) -> Result<Option<Value>, CovenantEvalError> {
     for stmt in stmts {
         match stmt {
-            Stmt::Let { name, init, .. } => {
+            Stmt::Let {
+                mutable: is_mut,
+                name,
+                init,
+                ..
+            } => {
                 let v = eval_expr(init, env)?;
                 env.insert(name.clone(), v);
+                // Track mutability so a later `Stmt::Assign` can tell a legal `let mut`
+                // reassignment from an illegal immutable reassignment. A `let` (no `mut`)
+                // that re-binds an existing name is shadowing, not mutation — drop any
+                // stale mutable mark so the new immutable binding is honoured.
+                if *is_mut {
+                    mutable.insert(name.clone());
+                } else {
+                    mutable.remove(name);
+                }
             }
             Stmt::Assign { target, value } => match target {
                 Expr::Path(segments) if segments.len() == 1 => {
+                    let name = &segments[0];
+                    if !mutable.contains(name) {
+                        // Assignment to a param or a non-`mut` `let` binding — invalid
+                        // executable code (Verus E0384). Surface it loudly rather than
+                        // silently threading the mutation (the faithfulness contract).
+                        return Err(CovenantEvalError::Unsupported(format!(
+                            "assignment to immutable binding `{name}` (a covenant body must \
+                             declare `let mut {name}` to reassign; Verus rejects this as E0384)"
+                        )));
+                    }
                     let v = eval_expr(value, env)?;
-                    env.insert(segments[0].clone(), v);
+                    env.insert(name.clone(), v);
                 }
                 other => {
                     return Err(CovenantEvalError::Unsupported(format!(
@@ -392,9 +426,9 @@ fn eval_stmts(stmts: &[Stmt], env: &mut Env) -> Result<Option<Value>, CovenantEv
                 // manufactured a false refutation on e.g. `{ if c { x } else { x } 0 }`
                 // (which returns `0`, not `x`).
                 let branch_returned = if eval_expr(cond, env)?.as_bool()? {
-                    eval_stmts(&then.stmts, env)?
+                    eval_stmts(&then.stmts, env, mutable)?
                 } else if let Some(else_block) = else_ {
-                    eval_stmts(&else_block.stmts, env)?
+                    eval_stmts(&else_block.stmts, env, mutable)?
                 } else {
                     None
                 };
@@ -594,6 +628,39 @@ mod tests {
                 "the statement-position if value is discarded; the body returns 0 for x={x}"
             );
         }
+    }
+
+    #[test]
+    fn assignment_to_immutable_binding_is_a_loud_error_let_mut_works() {
+        // Assignment to a non-`mut` `let` binding is invalid executable code (Verus
+        // E0384) — an honest error, never a silent mutation (#299, the faithfulness
+        // contract). The only textual difference from the legal control is `mut`.
+        let immutable = parse_fn(
+            "fn setone(x: u64) -> u64 req true ens result == 1 fx pure \
+             { let r = 0; if x > 0 { r = 1; } else { r = 1; } r }",
+        );
+        let r = eval_block(
+            immutable.body.as_ref().expect("body"),
+            &env(&[("x", Value::Int(0))]),
+        );
+        assert!(
+            matches!(r, Err(CovenantEvalError::Unsupported(ref m)) if m.contains("immutable")),
+            "assigning to a non-mut binding must be a loud Unsupported, not a silent value: {r:?}"
+        );
+
+        // The `let mut` control evaluates the mutation legally.
+        let mutable = parse_fn(
+            "fn setone(x: u64) -> u64 req true ens result == 1 fx pure \
+             { let mut r = 0; if x > 0 { r = 1; } else { r = 1; } r }",
+        );
+        assert_eq!(
+            eval_block(
+                mutable.body.as_ref().expect("body"),
+                &env(&[("x", Value::Int(0))])
+            ),
+            Ok(Value::Int(1)),
+            "a legal `let mut` reassignment threads the mutation"
+        );
     }
 
     #[test]

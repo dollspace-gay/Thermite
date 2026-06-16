@@ -6855,6 +6855,61 @@ target = "forge/tests/battery_conformance.rs"
 note = "AC-9 binary surface — unlisted-tactic + unlisted-simp-lemma refusal named in the cert"
 
 [[requirement]]
+id = "REQ-S1-6"
+title = "Anti-Goodhart at L3 — re-elaboration + definition-tower budget"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "Three anti-Goodhart defenses on the forge-tier (L3) discharge path (increment 2d), each a CERTIFY-TIME gate on the --engine lean/auto route (the Verus default path is untouched, so the 7 v1 golden certs stay byte-identical; none lives in `forge audit`, whose gates-nothing projection invariant is preserved, #274). (a) ARBITRARY-RESULT RE-ELABORATION (tautology): the L3 counterpart of vacuity_solver::build_tautology_harness. `export_arbitrary_result_harness` re-emits the obligation theorem with `result` bound to a fresh universally-quantified `(r : Int)` instead of the body's stabilized value (byte-identical req/ens/R_item otherwise — only the result binder differs), and DRIVES THE EXISTING discharge path (the same #print-axioms probe + run_lake; no new elaborator). If the `ens` still kernel-accepts for an arbitrary result it is a body-ignoring tautology → `gate_arbitrary_result_tautology` refuses (SemanticTautology + contract_quality.tautology). Polarity mirrors the Verus harness: proves → reject; elaboration failure → clean (the safe completeness gap); env/refusal → skip (never rejects). (b) RE-ELABORATION MUTATION: the L3 counterpart of the Verus mutation gate. `reelaboration_mutants` reuses the FROZEN mutation::generate operator catalogue + MUTANT_CAP 64 UNCHANGED — the catalogue is SHARED, never forked (pinned by a test) — and the per-mutant kill check is a re-elaboration through the existing Lean discharge path (a decidable type-check, not a Verus solver run); survivors count against the floor (Budd-Angluin), killed/scored reported in the certificate. The ≤64 re-typechecks are a post-proof quality gate (parallel to the shipped Verus mutation_score), NOT inside the per-clause KernelBudget. (c) DEFINITION-TOWER BUDGET (Q2 default depth 4 / 40 definitions): `meaning::build_tower` computes the contract's spec-fn meaning tower (rooted at req∪ens, cycle-guarded depth); `gate_definition_tower` refuses an over-budget tower at certify time (DefinitionTowerBudget) and pins the unfolded-tower hash (Certificate.meaning_audit, oracle-included per Q-ORACLE, None for v1). `forge audit --meaning` is the read-only companion printing the tower + hash, gating nothing."
+aliases = ["anti-Goodhart", "re-elaboration", "arbitrary-result re-elaboration", "re-elaboration mutation", "definition-tower budget", "meaning audit", "forge audit --meaning", "REQ-6"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/meaning.rs"
+note = "defense (c): the DefinitionTower model, the Q2 budget (TOWER_DEPTH_BUDGET 4 / TOWER_DEFINITION_BUDGET 40), the sha256 unfolded-tower hash, the budget verdict + render"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "gate_definition_tower"
+note = "defense (c): the certify-time tower-budget gate on the forge/Lean path (over-budget → refusal pinning the hash; within-budget → meaning_audit pinned). AC-10 tower clause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_arbitrary_result_harness"
+note = "defense (a): re-emits the obligation theorem with `result` bound to a fresh (r : Int) — the Lean counterpart of build_tautology_harness, driving the existing discharge path"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "arbitrary_result_reelaboration"
+note = "defense (a): runs the arbitrary-result harness through the existing #print-axioms + run_lake path; proves → Tautology, fails → Clean, env/refusal → Skipped"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "gate_arbitrary_result_tautology"
+note = "defense (a): the certify-time tautology gate — a body-ignoring ens that re-elaborates for an arbitrary result is refused (SemanticTautology). AC-10 body-ignoring-ens clause"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reelaboration_mutants"
+note = "defense (b): the SHARED frozen-catalogue seam (= mutation::generate + MUTANT_CAP), re-elaborated per mutant via the existing Lean discharge path; killed/scored reported in the cert"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/engine.rs"
+note = "AC-10 (a): live_arbitrary_result_rejects_body_ignoring_ens (Tautology) + live_arbitrary_result_clean_for_body_constraining_ens (Clean), verified against the built Lean spine"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/check.rs"
+note = "AC-10 (b): reelaboration_mutation_shares_the_frozen_catalogue_not_forked — the re-elaboration battery's mutant set IS mutation::generate's (shared, not forked)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/meaning.rs"
+note = "AC-10 (c): over_depth_tower_is_refused + within_budget_tower_pins_a_stable_hash, and the body-ignoring-vs-constraining tower tests"
+
+[[requirement]]
 id = "REQ-S1-3"
 title = "Forge-tier surface syntax"
 owner = ".design/stage1-forge-tier.md"

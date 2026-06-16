@@ -1,0 +1,8 @@
+{
+  "uuid": "60ba0688-8d60-4793-9261-d4339b38e5e2",
+  "issue_uuid": "977329fc-7da2-4590-9f08-1ff34eb70526",
+  "author": "Ck2B",
+  "content": "Result (2e REQ-7, partial — stopped at a clean sub-unit boundary): LANDED + committed + gauntlet-green (full forge suite 0 failures w/ local Verus 0.2026.05.24 + Z3 + Lean spine; clippy/fmt clean; doc-drift 0; req-registry clean):\n(1) burn.rs BurnReceipt {proof_tokens=lexer-token count, authoring_tokens?, cited_lemmas} + additive oracle-EXCLUDED Certificate.burn (7 v1 goldens byte-identical) [abe1c41f].\n(2) forge goal --proof proof view: forge-routed goals (lemma / proof-for) with hypotheses in scope (params+req), resolved ens#k goal, ?pN fill operands [a662847c].\n(3) forge fill accepts ?pN proof holes: span_of_address+proof_hole_span resolve the splice target; fill_hole splices+rechecks (battery refuses unlisted tactic, surfaced named) + re-presents proof view; §5.1 fill loop works [a520c7a3]. Doc re-pin [93fe9667].\nREMAINING (approach B, soundness-critical Lean metatheory — deferred to a fresh-budget session): (4) standalone lemma/proof-for Lean discharge -> Certificate with burn attached (emit kernel-accepted theorem for the lemma proposition / thread proof-for tactics into the fn-Lean discharge; on Proven -> L3 cert .with_burn(BurnReceipt::for_proof_text(committed_proof)); honest skip otherwise). (5) merge example conformance + golden. (6) register REQ-S1-7 shipped. Burn API carries an #[allow(dead_code)] foundation annotation to remove when (4) consumes it. NOT marking REQ-7 shipped — increment incomplete.",
+  "created_at": "2026-06-16T22:15:56.900974Z",
+  "kind": "result"
+}

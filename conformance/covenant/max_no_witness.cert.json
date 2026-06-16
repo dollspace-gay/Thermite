@@ -1,0 +1,31 @@
+{
+  "item": "maxv",
+  "level": "L0",
+  "solver_time_ms": 0,
+  "contract_quality": {
+    "tautology": false,
+    "vacuous_precondition": false,
+    "mutants_killed": "0/0"
+  },
+  "effects": [
+    "pure"
+  ],
+  "slag": false,
+  "reject": {
+    "cause": "CovenantNoAuthorWitness",
+    "detail": "the covenant on `maxv` declares no author `inhabit` witness; a forge-routed item must carry at least one author-stated witness (REQ-4) — refused before burn"
+  },
+  "obligations": [
+    {
+      "name": "CovenantNoAuthorWitness",
+      "status": "failed",
+      "diagnostic": "the covenant on `maxv` declares no author `inhabit` witness; a forge-routed item must carry at least one author-stated witness (REQ-4) — refused before burn"
+    }
+  ],
+  "cached": false,
+  "lowered_assurance": false,
+  "boundary": false,
+  "assurance_scope": {
+    "kind": "end_to_end"
+  }
+}

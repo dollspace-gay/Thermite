@@ -1,0 +1,13 @@
+// A forge-routed item whose `witness` block carries NO author `inhabit` witness
+// (only a `falsify` budget) — REFUSED before burn, named (`.design/stage1-forge-tier.md`
+// REQ-4 / AC-8, R-COV-1): a forge-routed item must carry at least one author-stated
+// witness; a generator-synthesized input may augment but cannot be the only one. The
+// item never reaches the L3 proof search — it dies with a named CovenantNoAuthorWitness
+// rejection.
+fn maxv(x: u64, y: u64) -> u64
+    req true
+    ens result >= x && result >= y
+    fx pure
+{ if x > y { x } else { y } }
+
+witness { falsify 10; }

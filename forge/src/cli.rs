@@ -273,13 +273,20 @@ enum Command {
         /// `auto` runs Verus first and tries Lean on a Verus Unknown/timeout.
         engine: check::EngineSelection,
     },
-    /// `forge audit <file> [--json]` — emit the project audit manifest v1 (issue
-    /// #15; `.design/forge/audit-manifest.md` REQ-2). Runs the same check pipeline
-    /// `forge check` runs at the pinned default config (no extra verification),
-    /// aggregates the cert collection into an `AuditManifest`, and emits it as the
-    /// stable `--json` document or a human summary. The default-config path is the
-    /// reproducible trust statement (OQ-3).
-    Audit { file: PathBuf, json: bool },
+    /// `forge audit <file> [--json] [--meaning]` — emit the project audit manifest v1
+    /// (issue #15; `.design/forge/audit-manifest.md` REQ-2). Runs the same check
+    /// pipeline `forge check` runs at the pinned default config (no extra
+    /// verification), aggregates the cert collection into an `AuditManifest`, and
+    /// emits it as the stable `--json` document or a human summary. The default-config
+    /// path is the reproducible trust statement (OQ-3). `--meaning` (REQ-6c, increment
+    /// 2d) additionally prints each `fn`'s unfolded definition tower, the pinned hash,
+    /// and the Q2 budget status — a READ-ONLY companion that gates nothing (the budget
+    /// gate is certify-time, in `forge check`; #274 "audit gates nothing").
+    Audit {
+        file: PathBuf,
+        json: bool,
+        meaning: bool,
+    },
     /// `forge repair <file> [item]` — the background L1/L2 → L3 upgrade loop
     /// (issue #18; `.design/forge/proof-repair.md` REQ-1). Re-derives the per-item
     /// certs at the default budget, finds the sub-L3 items, and for a timeout item
@@ -608,9 +615,16 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             // levers are not exposed here (the default-config path is the contract).
             let mut file: Option<PathBuf> = None;
             let mut json = false;
+            let mut meaning = false;
             for arg in iter {
                 match arg.as_str() {
                     "--json" => json = true,
+                    // `--meaning` (REQ-6c, increment 2d): the read-only definition-tower
+                    // companion — print each fn's unfolded meaning tower + the pinned
+                    // hash + the Q2 budget status. It GATES NOTHING (the budget gate is
+                    // certify-time, in `forge check`, not here — #274 "audit gates
+                    // nothing"): `forge audit --meaning` never changes the exit code.
+                    "--meaning" => meaning = true,
                     flag if flag.starts_with("--") => {
                         return Err(ForgeError::Usage(format!("unknown flag `{flag}`")));
                     }
@@ -626,7 +640,11 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
             }
             let file = file
                 .ok_or_else(|| ForgeError::Usage("`forge audit` requires a <file>".to_string()))?;
-            Ok(Command::Audit { file, json })
+            Ok(Command::Audit {
+                file,
+                json,
+                meaning,
+            })
         }
         "repair" => {
             // `forge repair <file> [item] [--json]` (#18;
@@ -1110,7 +1128,8 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 /// The usage banner (REQ-1: the v0.1 verb subset).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>] [--engine verus|lean|auto] | forge audit <file> [--json] | \
+     [--mutation-floor <FLOAT>] [--engine verus|lean|auto] | forge audit <file> [--json] \
+     [--meaning] | \
      forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
      [--out <PATH>] [--target std|kernel] [--json] [--no-sandbox] [--sandbox-self-test] | forge tv \
@@ -1151,7 +1170,11 @@ fn dispatch(args: &[String]) -> Result<ExitCode, ForgeError> {
             mutation_floor,
             engine,
         } => run_check(&file, json, level, rlimit, mutation_floor, engine),
-        Command::Audit { file, json } => run_audit(&file, json),
+        Command::Audit {
+            file,
+            json,
+            meaning,
+        } => run_audit(&file, json, meaning),
         Command::Repair { file, item, json } => run_repair(&file, item.as_deref(), json),
         Command::Review {
             file,
@@ -1360,7 +1383,7 @@ fn run_check(
 /// document or a human summary (OQ-1 — the JSON is the oracle-asserted surface).
 /// The exit code mirrors `forge check`'s project headline (REQ-5): a fully-
 /// certified project exits 0, else a verification-failure exit.
-fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
+fn run_audit(file: &Path, json: bool, meaning: bool) -> Result<ExitCode, ForgeError> {
     // The same default pipeline `forge check` runs (REQ-4 — aggregation, never
     // re-derivation): `check_file` is the canonical default-config entry (the only
     // one that serves / populates the shared proof cache). The audit re-runs no
@@ -1399,6 +1422,21 @@ fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
         print!("{}", render_audit(&manifest));
     }
 
+    // REQ-6c (increment 2d): the `--meaning` read-only companion — print each fn's
+    // unfolded definition tower + the pinned hash + the Q2 budget status. It GATES
+    // NOTHING (#274 "audit gates nothing"; the budget gate is certify-time in
+    // `forge check`): the exit code below is the manifest headline, unchanged by this
+    // print. In `--json` mode it goes to stderr so the stdout JSON stays a valid v1
+    // document; in human mode it appends to the stdout report.
+    if meaning {
+        let rendered = render_meaning(&parsed.program, &src);
+        if json {
+            eprint!("{rendered}");
+        } else {
+            print!("{rendered}");
+        }
+    }
+
     // The audit exit code mirrors `forge check`'s project headline: the manifest is
     // a projection, so a fully-certified project exits 0 and a project with a
     // non-certifying fn exits with the verification-failure code (the headlines
@@ -1412,6 +1450,30 @@ fn run_audit(file: &Path, json: bool) -> Result<ExitCode, ForgeError> {
     } else {
         Ok(ExitCode::from(EXIT_VERIFICATION_FAILURE))
     }
+}
+
+/// Render the `forge audit --meaning` read-only companion section (REQ-6c, increment
+/// 2d): each `fn`'s unfolded definition tower + the pinned hash + the Q2 budget
+/// status, in source order. A pure projection of the parsed AST + source
+/// (`meaning::build_tower`) — it re-runs no prover and GATES NOTHING (the budget gate
+/// is certify-time, in `forge check`; #274 "audit gates nothing"). A `spec fn` / ADT
+/// has no contract to root a tower, so only `fn` items are shown.
+fn render_meaning(program: &thermite_syntax::Program, src: &str) -> String {
+    use thermite_syntax::Item;
+    let mut out = String::from("\n=== meaning towers (REQ-6c; read-only, gates nothing) ===\n");
+    let mut any = false;
+    for item in &program.items {
+        if let Item::Fn(f) = item {
+            any = true;
+            let tower = crate::meaning::build_tower(program, src, f);
+            out.push_str(&tower.render());
+            out.push('\n');
+        }
+    }
+    if !any {
+        out.push_str("(no fn items)\n");
+    }
+    out
 }
 
 /// Run `forge repair`: the background L1/L2 → L3 upgrade loop (#18;
@@ -2261,7 +2323,7 @@ fn render_human(cert: &Certificate) -> String {
     // item / level / effects / slag — the fields the cert-oracle compares — are
     // rendered first, then the non-deterministic `solver_time_ms` labelled as
     // such so a reader does not mistake it for an oracle field.
-    let (item, level, effects, slag, boundary, _scope_end_to_end, _covenant_evidence) =
+    let (item, level, effects, slag, boundary, _scope_end_to_end, _covenant_evidence, _meaning) =
         cert.oracle_subset();
     let mut out = String::new();
     out.push_str(&format!("item: {item}\n"));

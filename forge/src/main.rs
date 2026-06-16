@@ -44,6 +44,7 @@ mod goal_repl;
 mod kani;
 mod lean_export;
 mod manifest;
+mod meaning;
 mod mutation;
 mod obligation;
 mod profile;

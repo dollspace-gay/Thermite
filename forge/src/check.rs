@@ -975,9 +975,61 @@ pub fn check_file_with_engine(
             selection,
             options.mutation_floor,
         )?;
+        // REQ-6c anti-Goodhart (increment 2d): the certify-time definition-tower
+        // budget gate on the forge/Lean discharge path. A forge-tier cert (a
+        // non-default engine discharged it) whose contract unfolds a tower deeper /
+        // wider than the Q2 budget is refused here, at certify time — never in
+        // `forge audit` (its "gates nothing" invariant is shipped, #274). A
+        // within-budget forge-tier cert pins the unfolded-tower hash. The Verus
+        // default path (no engine attribution) is untouched, so the v1 goldens stay
+        // byte-identical.
+        let new_cert = gate_definition_tower(new_cert, &parsed.program, &src, item);
         out.push(new_cert);
     }
     Ok(out)
+}
+
+/// The REQ-6c certify-time definition-tower budget gate (increment 2d;
+/// `.design/stage1-forge-tier.md` REQ-6 / AC-10). Applied to a freshly-produced cert
+/// on the forge/Lean discharge path:
+///
+/// - a v1 / Verus-path cert (no `engine_attribution`) is returned UNCHANGED — the
+///   gate is a forge-tier gate, so the v1 goldens stay byte-identical;
+/// - a non-`fn` item (a `spec fn` has no contract to root a tower) is returned
+///   unchanged;
+/// - a forge-tier cert whose contract tower exceeds the Q2 budget (depth 4 / 40
+///   definitions) is REFUSED — replaced with a `DefinitionTowerBudget` reject cert
+///   that still pins the unfolded-tower hash (AC-10);
+/// - a within-budget forge-tier cert keeps its verdict and gains the pinned
+///   `meaning_audit` (the unfolded-tower hash + depth + count).
+///
+/// Read-only / pure (no prover): the tower is a projection of the AST + source
+/// (`meaning::build_tower`), exactly the same artifact `forge audit --meaning` prints.
+fn gate_definition_tower(
+    cert: Certificate,
+    program: &Program,
+    src: &str,
+    item: &Item,
+) -> Certificate {
+    // The gate is forge-tier-only: a cert with no engine attribution is the v1 Verus
+    // path (or an honest skip), left byte-identical.
+    if cert.engine_attribution.is_none() {
+        return cert;
+    }
+    // Only a `fn` carries a `req`/`ens` contract that roots a meaning tower.
+    let Item::Fn(f) = item else {
+        return cert;
+    };
+    let tower = crate::meaning::build_tower(program, src, f);
+    match tower.over_budget_detail() {
+        Some(detail) => Certificate::rejected_over_budget_tower(
+            &cert.item,
+            cert.effects.clone(),
+            detail,
+            tower.meaning_audit(),
+        ),
+        None => cert.with_meaning_audit(tower.meaning_audit()),
+    }
 }
 
 /// The `lean/` package root for the Lean engine (`.design/verified/proof-backends.md`
@@ -2140,7 +2192,7 @@ fn reachable_spec_fn_names_from_seed(
 /// Collect the in-file spec-fn names a `Block` calls, walking statements + tail
 /// (#71). Only a callee name resolving to an in-file `Item::SpecFn` (`spec_decls`)
 /// is emitted — a combinator / scheme / cross-file callee is ignored (§4.2 pure).
-fn collect_block_spec_fn_calls(
+pub(crate) fn collect_block_spec_fn_calls(
     block: &thermite_syntax::Block,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
     out: &mut std::collections::BTreeSet<String>,
@@ -2199,7 +2251,7 @@ fn collect_stmt_spec_fn_calls(
 /// leading `Path` segment names an in-file spec fn, an `Expr::MethodCall` whose
 /// method name does, and every nested sub-expression (a call argument, a closure
 /// body, a match arm — so a spec-fn call inside a scheme step closure is found).
-fn collect_expr_spec_fn_calls(
+pub(crate) fn collect_expr_spec_fn_calls(
     expr: &thermite_syntax::Expr,
     spec_decls: &std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem>,
     out: &mut std::collections::BTreeSet<String>,

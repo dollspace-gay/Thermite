@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Oracle tests for tooling/req-registry.py."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ from pathlib import Path
 
 
 GATE = Path(__file__).resolve().parents[1] / "req-registry.py"
+REQS = Path(__file__).resolve().parents[1] / "reqs"
 
 
 class Fixture:
@@ -73,10 +75,19 @@ class Fixture:
             """
         )
 
-    def run(self, *args):
+    def run(self, *args, env=None):
         return subprocess.run(
             [sys.executable, str(GATE), "--root", str(self.root), *args],
             capture_output=True,
+            env=env,
+            text=True,
+        )
+
+    def reqs(self, *args, env=None):
+        return subprocess.run(
+            [str(REQS), *args, "--root", str(self.root)],
+            capture_output=True,
+            env=env,
             text=True,
         )
 
@@ -100,6 +111,19 @@ class ReqRegistryOracleTest(unittest.TestCase):
         check_res = self.fx.run("--check")
         self.assertEqual(check_res.returncode, 0, check_res.stdout + check_res.stderr)
         self.assertIn("REQ registry clean: 1 requirement(s), 1 view(s)", check_res.stdout)
+
+    def test_reqs_facade_supports_check_render_query(self):
+        self.fx.valid_registry()
+
+        render_res = self.fx.reqs("render")
+        self.assertEqual(render_res.returncode, 0, render_res.stdout + render_res.stderr)
+
+        check_res = self.fx.reqs("check")
+        self.assertEqual(check_res.returncode, 0, check_res.stdout + check_res.stderr)
+
+        query_res = self.fx.reqs("query")
+        self.assertEqual(query_res.returncode, 0, query_res.stdout + query_res.stderr)
+        self.assertIn("SHIPPED  REQ-TEST-1  src/lib.rs", query_res.stdout)
 
     def test_rejects_duplicate_requirement_id(self):
         self.fx.valid_registry(
@@ -239,6 +263,60 @@ class ReqRegistryOracleTest(unittest.TestCase):
 
         self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
         self.assertIn("BAD-EVIDENCE-TARGET", res.stdout)
+
+    def test_command_evidence_rejects_unresolved_executable(self):
+        self.fx.valid_registry(
+            """
+            [[requirement]]
+            id = "REQ-TEST-2"
+            title = "Missing command"
+            owner = "src/lib.rs"
+            status = "shipped"
+            scope = "tooling"
+            generated_to = ["status"]
+
+            [[requirement.evidence]]
+            kind = "file"
+            target = "src/lib.rs"
+
+            [[requirement.evidence]]
+            kind = "command"
+            target = "definitely-missing-thermite-reqs-command --flag"
+            """
+        )
+
+        res = self.fx.run()
+
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("BAD-EVIDENCE-TARGET", res.stdout)
+        self.assertIn("command executable does not resolve on PATH", res.stdout)
+
+    def test_live_issue_adapter_rejects_closed_github_blocker(self):
+        self.fx.valid_registry(
+            """
+            [[requirement]]
+            id = "REQ-TEST-2"
+            title = "Closed blocker"
+            owner = "src/lib.rs"
+            status = "blocked"
+            scope = "tooling"
+            blockers = ["github:dollspace-gay/Thermite#17"]
+            remaining_scope = "Waiting on tracker work."
+            generated_to = ["status"]
+            """
+        )
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text("#!/bin/sh\nprintf '{\"state\":\"CLOSED\"}\\n'\n", encoding="utf-8")
+        gh.chmod(0o755)
+        env = os.environ.copy()
+        env["PATH"] = f"{bin_dir}:{env['PATH']}"
+
+        res = self.fx.run("--live-issues", env=env)
+
+        self.assertEqual(res.returncode, 1, res.stdout + res.stderr)
+        self.assertIn("CLOSED-BLOCKER", res.stdout)
 
     def test_req_blocker_resolves_to_registry_id(self):
         self.fx.valid_registry(

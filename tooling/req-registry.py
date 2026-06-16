@@ -10,9 +10,12 @@ comment tables are legacy input until they are migrated.
 
 Usage:
 
+    tooling/reqs check [--root <repo>]
+    tooling/reqs render [--root <repo>]
+    tooling/reqs query [--root <repo>] [--json]
+
     python3 tooling/req-registry.py [--root <repo>] [--check] [--write]
     python3 tooling/req-registry.py --inventory
-    python3 tooling/req-registry.py --json
 """
 
 from __future__ import annotations
@@ -20,7 +23,10 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
+import shutil
 import sys
+import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -181,6 +187,11 @@ def path_exists(root: Path, target: str) -> bool:
     return bool(token) and (root / token).exists()
 
 
+def repo_or_abs_path_exists(root: Path, target: str) -> bool:
+    path = Path(target)
+    return path.exists() if path.is_absolute() else (root / path).exists()
+
+
 def symbol_exists(haystack: str, target: str) -> bool:
     identifiers = re.findall(r"[A-Za-z_][A-Za-z0-9_]*", target)
     for ident in reversed(identifiers):
@@ -189,6 +200,84 @@ def symbol_exists(haystack: str, target: str) -> bool:
         if re.search(rf"(?<![A-Za-z0-9_]){re.escape(ident)}(?![A-Za-z0-9_])", haystack):
             return True
     return False
+
+
+def command_path_candidate(token: str) -> str:
+    token = target_path_part(token)
+    if not token or token.startswith("-"):
+        return ""
+    if token in {".", ".."}:
+        return token
+    if "/" in token:
+        return token
+    suffix = Path(token).suffix
+    if suffix in SOURCE_SUFFIXES or suffix in {".lock", ".txt"}:
+        return token
+    return ""
+
+
+def command_detail(root: Path, target: str) -> str | None:
+    if not target.strip():
+        return "command evidence target must be non-empty"
+    try:
+        argv = shlex.split(target)
+    except ValueError as exc:
+        return f"command evidence target is not shell-parseable: {exc}"
+    if not argv:
+        return "command evidence target must include an executable"
+
+    executable = argv[0]
+    if "/" in executable or executable.startswith("."):
+        if not repo_or_abs_path_exists(root, executable):
+            return f"command executable path does not resolve: {executable}"
+    elif shutil.which(executable) is None:
+        return f"command executable does not resolve on PATH: {executable}"
+
+    for token in argv[1:]:
+        candidate = command_path_candidate(token)
+        if candidate and not repo_or_abs_path_exists(root, candidate):
+            return f"command path argument does not resolve: {candidate}"
+    return None
+
+
+def github_ref_parts(ref: str) -> tuple[str, str] | None:
+    if not GITHUB_REF_RE.match(ref):
+        return None
+    repo, number = ref.removeprefix("github:").rsplit("#", 1)
+    return repo, number
+
+
+def live_github_issue_state(ref: str) -> str:
+    parts = github_ref_parts(ref)
+    if parts is None:
+        raise EnvironmentError3(f"not a GitHub issue reference: {ref}")
+    if shutil.which("gh") is None:
+        raise EnvironmentError3(
+            "live issue validation requested but `gh` is not available on PATH"
+        )
+
+    repo, number = parts
+    result = subprocess.run(
+        ["gh", "issue", "view", number, "--repo", repo, "--json", "state"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "unknown gh failure"
+        raise EnvironmentError3(f"live issue validation failed for {ref}: {detail}")
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise EnvironmentError3(
+            f"live issue validation returned invalid JSON for {ref}: {exc}"
+        ) from exc
+    state = str(payload.get("state", "")).upper()
+    if state not in {"OPEN", "CLOSED"}:
+        raise EnvironmentError3(
+            f"live issue validation returned unknown state for {ref}: {state or '<empty>'}"
+        )
+    return state
 
 
 def reference_detail(ref: str, req_ids: set[str]) -> str | None:
@@ -459,7 +548,7 @@ def load_registry(root: Path, relpath: str = REGISTRY_RELPATH) -> Registry:
     )
 
 
-def validate_registry(root: Path, registry: Registry) -> list[Issue]:
+def validate_registry(root: Path, registry: Registry, *, live_issues: bool = False) -> list[Issue]:
     issues = list(registry.parse_issues)
     haystack = searchable_text(root)
 
@@ -733,6 +822,16 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                         detail,
                     )
                 )
+            elif live_issues and github_ref_parts(blocker) is not None:
+                state = live_github_issue_state(blocker)
+                if state != "OPEN":
+                    issues.append(
+                        Issue(
+                            "CLOSED-BLOCKER",
+                            req.id,
+                            f"blocker `{blocker}` resolved {state.lower()}",
+                        )
+                    )
 
         for ev in req.evidence:
             if ev.kind not in VALID_EVIDENCE_KINDS:
@@ -770,14 +869,18 @@ def validate_registry(root: Path, registry: Registry) -> list[Issue]:
                             detail,
                         )
                     )
-            if ev.kind == "command" and not ev.target.strip():
-                issues.append(
-                    Issue(
-                        "BAD-EVIDENCE-TARGET",
-                        req.id,
-                        "command evidence target must be non-empty",
+                elif live_issues and github_ref_parts(ev.target) is not None:
+                    live_github_issue_state(ev.target)
+            if ev.kind == "command":
+                detail = command_detail(root, ev.target)
+                if detail is not None:
+                    issues.append(
+                        Issue(
+                            "BAD-EVIDENCE-TARGET",
+                            req.id,
+                            detail,
+                        )
                     )
-                )
 
     return sorted(issues, key=lambda issue: (issue.item, issue.kind, issue.detail))
 
@@ -1058,6 +1161,21 @@ def registry_json(registry: Registry, issues: list[Issue]) -> str:
     )
 
 
+def normalize_argv(argv: list[str]) -> list[str]:
+    if not argv:
+        return argv
+    command, rest = argv[0], argv[1:]
+    if command == "check":
+        return ["--check", *rest]
+    if command == "render":
+        return ["--write", *rest]
+    if command == "query":
+        if "--inventory" not in rest and "--json" not in rest:
+            return ["--inventory", *rest]
+        return rest
+    return argv
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=".", help="repo root to scan")
@@ -1066,12 +1184,17 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--write", action="store_true", help="rewrite generated views")
     parser.add_argument("--inventory", action="store_true", help="print normalized inventory")
     parser.add_argument("--json", action="store_true", help="emit JSON")
-    args = parser.parse_args(argv)
+    parser.add_argument(
+        "--live-issues",
+        action="store_true",
+        help="resolve GitHub issue refs with gh; closed blockers fail",
+    )
+    args = parser.parse_args(normalize_argv(argv))
 
     root = Path(args.root).resolve()
     try:
         registry = load_registry(root, args.registry)
-        issues = validate_registry(root, registry)
+        issues = validate_registry(root, registry, live_issues=args.live_issues)
         rendered = render_views(registry)
 
         if args.write and not issues:

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7 burn-receipt foundation: manifest.rs gains the additive burn: Option<BurnReceipt> field, oracle-EXCLUDED per Q-BURN (re-authoring a proof changes its token count without changing the claim — like solver_time_ms), so oracle_subset is UNCHANGED and the 7 golden certs stay byte-identical — verified by sum_cert_oracle_byte_identical_after_lean_exporter + check_conformance. Net-additive, no v1 schema/behavior removed.)
+audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: manifest.rs's additive oracle-EXCLUDED burn field is now CONSUMED by the forge-tier lemma discharge (Certificate::with_burn on a Proven lemma cert) — still NOT in oracle_subset per Q-BURN, so oracle_subset is UNCHANGED and the 7 golden certs stay byte-identical (sum_cert_oracle_byte_identical_after_lean_exporter + check_conformance + burn_is_oracle_excluded). Net-additive.)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

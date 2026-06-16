@@ -10,21 +10,29 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (command surface) | SHIPPED | `run` matches `new`/`check`; an unknown verb → `ForgeError::Usage`; the other Appendix B verbs are out of #5. Consumer: `main::main`. |
-//! | REQ-2 (hand-rolled arg parsing) | SHIPPED | `parse_args` is a `match` over the verb + positionals + the `--json` / `--level` / `--rlimit` flags; no `clap` dependency in `forge/Cargo.toml`. The #11 `--rlimit <FLOAT>` flag tunes the verus SMT resource budget (default `check::DEFAULT_RLIMIT`); a low value forces the timeout path (`run_check` → `check::check_file_with_rlimit`). |
-//! | REQ-3 (`ForgeError` aggregation) | SHIPPED | `enum ForgeError` wraps `Vec<SyntaxError>`/`Vec<SpecError>`/`Vec<LowerError>`/`LowerError` and carries `VerusAbsent`/`VerusSpawn`/`VerusOutput`/`Io`/`Usage`; `Display` forwards each inner error's diagnostic (no information lost). |
-//! | REQ-4 (human + `--json` output) | SHIPPED | `render_human` / `serde_json::to_string_pretty` of the cert array; `run_check` picks the rendering from `--json`; diagnostics go to stderr so `--json` stdout is a clean document. |
-//! | REQ-5 (typed exit codes) | SHIPPED | `run_check` maps the #10 `AssuranceManifest::aggregate` headline to an `ExitCode`: `ProjectAssurance::Certified(_)` (every item certified at `L3`/`L2`/`L1` with no `reject`, via `manifest::cert_certifies`) → 0; `ProjectAssurance::Failed` (any #6 triage / slag reject, un-discharged proof, or counterexample) → `EXIT_VERIFICATION_FAILURE`; environment/usage/IO → `EXIT_ENVIRONMENT`. |
+//! <!-- generated:reqs view=forge-cli-core-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CLI-COMMAND-SURFACE | shipped | `forge/src/cli.rs` | Forge CLI command surface |  |
+//! | REQ-FORGE-CLI-ERROR-AGGREGATION | shipped | `forge/src/cli.rs` | ForgeError aggregation boundary |  |
+//! | REQ-FORGE-CLI-EXIT-CODES | shipped | `forge/src/cli.rs` | Forge typed exit codes |  |
+//! | REQ-FORGE-CLI-HAND-PARSER | shipped | `forge/src/cli.rs` | Hand-rolled Forge argument parser |  |
+//! | REQ-FORGE-CLI-OUTPUT | shipped | `forge/src/cli.rs` | Forge human and JSON output |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## #10 gate (the project assurance display, this iteration)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | degrade-ladder REQ-5/REQ-6 (display the project assurance) | SHIPPED | `run_check` computes `manifest::AssuranceManifest::aggregate(&certs)` and `render_assurance` prints the project headline (the min-over-functions, or `FAILED` when any fn does not certify) + the per-fn `lowered-assurance` flags (§5.2 "displayed on every build"). The headline also drives the exit code (REQ-5). |
-//! | REQ-6 (no panics; Result discipline) | SHIPPED | every fallible path returns `Result<_, ForgeError>`; no `unwrap`/`expect`/`panic!` outside `#[cfg(test)]`; verus exit status inspected in `check.rs`. |
-//! | REQ-7 (`forge new` scaffold) | SHIPPED | `scaffold_project` writes `forge.toml` + `forge.lock` (pinned seed, §5.3) + `THERMITE.skill.pin`; refuses a non-empty target (`ForgeError::Usage`). |
+//! <!-- generated:reqs view=forge-cli-assurance-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-CLI-ASSURANCE-DISPLAY | shipped | `forge/src/cli.rs` | Project assurance display |  |
+//! | REQ-FORGE-CLI-NEW-SCAFFOLD | shipped | `forge/src/cli.rs` | forge new scaffold |  |
+//! | REQ-FORGE-CLI-RESULT-DISCIPLINE | shipped | `forge/src/cli.rs` | Forge CLI result discipline |  |
+//! <!-- /generated:reqs -->
 
 use std::fmt;
 use std::path::{Path, PathBuf};

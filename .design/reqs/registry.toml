@@ -713,6 +713,60 @@ region = "thermite-lower-effects-status"
 comment_prefix = "//! "
 title = "Effect Subsumption Canonical Status References"
 
+[[view]]
+name = "forge-build-core-status"
+path = "forge/src/build.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-build-core-status"
+comment_prefix = "//! "
+title = "Forge Build Core Canonical Status References"
+
+[[view]]
+name = "forge-build-kernel-status"
+path = "forge/src/build.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-build-kernel-status"
+comment_prefix = "//! "
+title = "Forge Build Kernel Target Canonical Status References"
+
+[[view]]
+name = "forge-audit-status"
+path = "forge/src/audit.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-audit-status"
+comment_prefix = "//! "
+title = "Forge Audit Canonical Status References"
+
+[[view]]
+name = "forge-cache-status"
+path = "forge/src/cache.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-cache-status"
+comment_prefix = "//! "
+title = "Proof Cache Canonical Status References"
+
+[[view]]
+name = "forge-cli-core-status"
+path = "forge/src/cli.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-cli-core-status"
+comment_prefix = "//! "
+title = "Forge CLI Core Canonical Status References"
+
+[[view]]
+name = "forge-cli-assurance-status"
+path = "forge/src/cli.rs"
+kind = "reference_list"
+mode = "region"
+region = "forge-cli-assurance-status"
+comment_prefix = "//! "
+title = "Forge CLI Assurance Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -2679,6 +2733,272 @@ label = "REQ-6 (runtime sandbox deferred to #21)"
 id = "REQ-LOWER-EFFECTS-SANDBOX-SCOPE"
 replacement_view = "thermite-lower-effects-status"
 note = "Effect runtime-sandbox scope row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-1 (build pipeline: lower_l1 → emit → rustc → artifact)"
+id = "REQ-FORGE-BUILD-PIPELINE"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-2 (rustc invocation: exit-checked, crate-name gotcha, scratch cleanup)"
+id = "REQ-FORGE-BUILD-RUSTC"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-3 (artifact form: library + optional `--entry` runner)"
+id = "REQ-FORGE-BUILD-ARTIFACT-FORM"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-4 (L1 checks baked in, all profiles)"
+id = "REQ-FORGE-BUILD-L1-CHECKS"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-5 (build manifest: path, level, fx rows, reproducibility)"
+id = "REQ-FORGE-BUILD-MANIFEST"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-6 (#57 hook: runnable exe + fx rows + the seccomp sandbox)"
+id = "REQ-FORGE-BUILD-ENTRY-SANDBOX"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path)"
+id = "REQ-FORGE-BUILD-OUT-PATH"
+replacement_view = "forge-build-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-1 (`--target kernel` verb fork)"
+id = "REQ-FORGE-BUILD-KERNEL-TARGET"
+replacement_view = "forge-build-kernel-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-2 (`no_std + alloc` emission profile)"
+id = "REQ-FORGE-BUILD-KERNEL-NOSTD"
+replacement_view = "forge-build-kernel-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-3 (ambient-syscall `fx` reject)"
+id = "REQ-FORGE-BUILD-KERNEL-FX-REJECT"
+replacement_view = "forge-build-kernel-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-4 (L1 runtime checks in the kernel profile)"
+id = "REQ-FORGE-BUILD-KERNEL-L1-CHECKS"
+replacement_view = "forge-build-kernel-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/build.rs"
+label = "REQ-5 (L3 verification path identical)"
+id = "REQ-FORGE-BUILD-KERNEL-L3-UNCHANGED"
+replacement_view = "forge-build-kernel-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-1 (AuditManifest v1 schema + version tag)"
+id = "REQ-FORGE-AUDIT-SCHEMA"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-2 (`forge audit <file>` command)"
+id = "REQ-FORGE-AUDIT-COMMAND"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-3 (TCB = slag ∪ boundary ∪ toolchain)"
+id = "REQ-FORGE-AUDIT-TCB"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-4 (aggregation, never re-derivation)"
+id = "REQ-FORGE-AUDIT-PURE-PROJECTION"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-5 (project assurance embedded)"
+id = "REQ-FORGE-AUDIT-PROJECT-ASSURANCE"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-6 (determinism)"
+id = "REQ-FORGE-AUDIT-DETERMINISM"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-7 (#274 — `lean_fragment` membership section)"
+id = "REQ-FORGE-AUDIT-LEAN-FRAGMENT"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-8 (#274 — probe = shipped dry-run export, side-effect-free)"
+id = "REQ-FORGE-AUDIT-LEAN-PROBE"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-9 (#274 — refusal classes surfaced verbatim)"
+id = "REQ-FORGE-AUDIT-LEAN-REFUSALS"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/audit.rs"
+label = "REQ-10 (#274 — informational only, zero default-path byte impact)"
+id = "REQ-FORGE-AUDIT-INFORMATIONAL"
+replacement_view = "forge-audit-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-1 (cache-key composition — verdict-determining inputs)"
+id = "REQ-FORGE-CACHE-KEY"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-2 (soundness-completeness invariant — hit == fresh verify)"
+id = "REQ-FORGE-CACHE-HIT-FRESH-INVARIANT"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-3 (lookup-then-store flow, per item)"
+id = "REQ-FORGE-CACHE-LOOKUP-STORE"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-4 (locality — per-item)"
+id = "REQ-FORGE-CACHE-LOCALITY"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-5 (version-keyed invalidation)"
+id = "REQ-FORGE-CACHE-VERSION-KEY"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-6 (cache location + format — gitignore-able)"
+id = "REQ-FORGE-CACHE-STORAGE"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-7 (additive `cached: bool` field)"
+id = "REQ-FORGE-CACHE-CACHED-FIELD"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cache.rs"
+label = "REQ-8 (bit-reproducible deterministic cert)"
+id = "REQ-FORGE-CACHE-DETERMINISM"
+replacement_view = "forge-cache-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-1 (command surface)"
+id = "REQ-FORGE-CLI-COMMAND-SURFACE"
+replacement_view = "forge-cli-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-2 (hand-rolled arg parsing)"
+id = "REQ-FORGE-CLI-HAND-PARSER"
+replacement_view = "forge-cli-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-3 (`ForgeError` aggregation)"
+id = "REQ-FORGE-CLI-ERROR-AGGREGATION"
+replacement_view = "forge-cli-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-4 (human + `--json` output)"
+id = "REQ-FORGE-CLI-OUTPUT"
+replacement_view = "forge-cli-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-5 (typed exit codes)"
+id = "REQ-FORGE-CLI-EXIT-CODES"
+replacement_view = "forge-cli-core-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "degrade-ladder REQ-5/REQ-6 (display the project assurance)"
+id = "REQ-FORGE-CLI-ASSURANCE-DISPLAY"
+replacement_view = "forge-cli-assurance-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-6 (no panics; Result discipline)"
+id = "REQ-FORGE-CLI-RESULT-DISCIPLINE"
+replacement_view = "forge-cli-assurance-status"
+note = "Source-comment status row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "forge/src/cli.rs"
+label = "REQ-7 (`forge new` scaffold)"
+id = "REQ-FORGE-CLI-NEW-SCAFFOLD"
+replacement_view = "forge-cli-assurance-status"
+note = "Source-comment status row replaced by a generated canonical reference."
 
 [[requirement]]
 id = "REQ-SYNTAX-AST-ITEMS"
@@ -9269,3 +9589,991 @@ note = "pattern inventory includes Pattern::Or"
 kind = "symbol"
 target = "surface_construct_coverage"
 note = "surface inventory coverage test"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-PIPELINE"
+title = "Build pipeline to rustc artifact"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`build_file` runs parse, validation, effect checking, L1 lowering, scratch-crate emission, rustc invocation, and artifact survival as the hosted build pipeline."
+aliases = ["forge/src/build.rs REQ-1 (build pipeline: lower_l1 → emit → rustc → artifact)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_file"
+note = "build pipeline entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "invoke_rustc"
+note = "rustc invocation"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/build_conformance.rs"
+note = "build pipeline conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-RUSTC"
+title = "Checked rustc invocation and scratch cleanup"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`invoke_rustc` uses a sanitized crate name, checks rustc exit status, reports spawn/output errors, and relies on scratch-directory cleanup."
+aliases = ["forge/src/build.rs REQ-2 (rustc invocation: exit-checked, crate-name gotcha, scratch cleanup)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "invoke_rustc"
+note = "rustc subprocess wrapper"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "crate_name_for"
+note = "sanitized crate-name helper"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ScratchDir"
+note = "scratch cleanup guard"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-ARTIFACT-FORM"
+title = "Library and entry-runner artifact forms"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`build_file` emits an rlib by default and a deterministic runnable binary when an entry function is requested."
+aliases = ["forge/src/build.rs REQ-3 (artifact form: library + optional `--entry` runner)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_file"
+note = "artifact form dispatcher"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "synthesize_entry_main"
+note = "entry runner synthesis"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/build_conformance.rs"
+note = "artifact form conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-L1-CHECKS"
+title = "L1 checks baked into build artifacts"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "Build artifacts preserve `lower_l1` output and its always-active runtime contract checks instead of stripping them or converting them to debug-only assertions."
+aliases = ["forge/src/build.rs REQ-4 (L1 checks baked in, all profiles)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_file"
+note = "build pipeline preserves L1 output"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l1"
+note = "L1 runtime-check lowerer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/build_conformance.rs"
+note = "runtime check conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-MANIFEST"
+title = "Build manifest with artifact, assurance, effects, and reproducibility"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`BuildManifest` records artifact identity, crate type, L1 assurance, per-function effect rows, sandbox metadata, and reproducibility inputs."
+aliases = ["forge/src/build.rs REQ-5 (build manifest: path, level, fx rows, reproducibility)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BuildManifest"
+note = "build manifest schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "effects_of"
+note = "per-function effect row source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SOURCE_DATE_EPOCH"
+note = "pinned reproducibility input"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-ENTRY-SANDBOX"
+title = "Entry binary sandbox hook"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "Entry builds synthesize a runnable `main`, include per-function effect rows, inject the sandbox prelude, and record the installed sandbox allowlist."
+aliases = ["forge/src/build.rs REQ-6 (#57 hook: runnable exe + fx rows + the seccomp sandbox)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "synthesize_entry_main"
+note = "entry main synthesis"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_sandbox_prelude"
+note = "sandbox prelude injection"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/sandbox_conformance.rs"
+note = "sandbox conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-OUT-PATH"
+title = "User-named build output path"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`place_artifact` copies the built artifact to a requested path, makes it executable, reports that path, and treats output placement failures as I/O errors."
+aliases = ["forge/src/build.rs REQ-7 (`--out <PATH>`: place the artifact at a user-named runnable path)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "place_artifact"
+note = "output placement helper"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_file"
+note = "threads optional output path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/build_conformance.rs"
+note = "--out conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-KERNEL-TARGET"
+title = "Kernel build target selection"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`BuildTarget` is threaded from CLI parsing through build emission and rustc invocation, with `Std` as the default and `Kernel` as the no-std fork."
+aliases = ["forge/src/build.rs REQ-1 (`--target kernel` verb fork)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-kernel-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BuildTarget"
+note = "build target enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "build_file"
+note = "build target consumer"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_target.rs"
+note = "kernel target conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-KERNEL-NOSTD"
+title = "Kernel no_std plus alloc emission profile"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "Kernel builds prepend the no-std/alloc prelude, reuse L1 output verbatim, avoid entry-main synthesis, and force rlib plus panic-abort rustc options."
+aliases = ["forge/src/build.rs REQ-2 (`no_std + alloc` emission profile)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-kernel-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "KERNEL_PRELUDE"
+note = "kernel prelude source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_source"
+note = "source emission profile"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_target.rs"
+note = "no_std kernel build conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-KERNEL-FX-REJECT"
+title = "Kernel ambient syscall effect rejection"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "`reject_ambient_fx_for_kernel` rejects kernel builds whose transitive effects require hosted ambient syscalls or an entry binary."
+aliases = ["forge/src/build.rs REQ-3 (ambient-syscall `fx` reject)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-kernel-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "reject_ambient_fx_for_kernel"
+note = "kernel effect rejection gate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "KERNEL_REJECTED_FX"
+note = "kernel rejected effect set"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_target.rs"
+note = "kernel effect rejection conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-KERNEL-L1-CHECKS"
+title = "Kernel profile preserves L1 runtime checks"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "Kernel source emission preserves `thermite_check!` and contract-violation panic paths, leaving panic handler and allocator ownership to the host harness."
+aliases = ["forge/src/build.rs REQ-4 (L1 runtime checks in the kernel profile)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-kernel-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_source"
+note = "kernel source emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "thermite_contract_violation"
+note = "runtime violation path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/kernel_target.rs"
+note = "kernel L1 check conformance"
+
+[[requirement]]
+id = "REQ-FORGE-BUILD-KERNEL-L3-UNCHANGED"
+title = "Kernel target leaves L3 verification unchanged"
+owner = "forge/src/build.rs"
+status = "shipped"
+scope = "forge"
+summary = "The kernel target is confined to build/codegen surfaces and does not alter the `forge check` L3 verification path."
+aliases = ["forge/src/build.rs REQ-5 (L3 verification path identical)"]
+contributors = [".design/forge/build.md", ".design/build/kernel-target.md", "forge/tests/build_conformance.rs", "forge/tests/kernel_target.rs"]
+generated_to = ["status", "forge-build-kernel-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/build.rs"
+note = "kernel target owner"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/check.rs"
+note = "L3 path owner left separate"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/check_conformance.rs"
+note = "existing check path conformance"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-SCHEMA"
+title = "AuditManifest v1 schema and version tag"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "`AuditManifest` is the stable v1 project trust document with version, function rows, project assurance, and TCB sections."
+aliases = ["forge/src/audit.rs REQ-1 (AuditManifest v1 schema + version tag)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AuditManifest"
+note = "audit manifest schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MANIFEST_VERSION"
+note = "stable v1 tag"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/audit_conformance.rs"
+note = "audit manifest conformance"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-COMMAND"
+title = "forge audit command projection"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "`run_audit` reuses the normal check pipeline, parses the program once for boundary metadata, builds `AuditManifest`, and renders JSON or human output."
+aliases = ["forge/src/audit.rs REQ-2 (`forge audit <file>` command)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_audit"
+note = "CLI audit entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AuditManifest::from_certificates"
+note = "audit assembly"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/audit_conformance.rs"
+note = "audit command conformance"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-TCB"
+title = "Audit TCB inventory"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "`Tcb::from_certificates` enumerates slag blocks, boundary contracts, and the toolchain identity as the complete trusted computing base."
+aliases = ["forge/src/audit.rs REQ-3 (TCB = slag ∪ boundary ∪ toolchain)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Tcb::from_certificates"
+note = "TCB assembly"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SlagBlock"
+note = "slag TCB row"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BoundaryContract"
+note = "boundary TCB row"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-PURE-PROJECTION"
+title = "Audit aggregation without re-derivation"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "Audit manifest assembly is a pure projection over settled certificates, aggregate assurance, toolchain identity, and parsed boundary contract text."
+aliases = ["forge/src/audit.rs REQ-4 (aggregation, never re-derivation)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AuditManifest::from_certificates"
+note = "pure audit projection"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "project assurance source"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/audit.rs"
+note = "audit owner"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-PROJECT-ASSURANCE"
+title = "Embedded project assurance section"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "The audit manifest embeds the project assurance headline, project scope, and lowered-assurance rows from the certificate aggregate."
+aliases = ["forge/src/audit.rs REQ-5 (project assurance embedded)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ProjectAssuranceSection"
+note = "audit project assurance schema"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "aggregate source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "FunctionAssurance"
+note = "per-function assurance row"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-DETERMINISM"
+title = "Deterministic audit manifest projection"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "Audit output is a pure, ordered function of certificates, program, and pinned version strings, excluding nondeterministic solver-time fields from the manifest."
+aliases = ["forge/src/audit.rs REQ-6 (determinism)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AuditManifest::from_certificates"
+note = "deterministic assembly"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "FunctionRow"
+note = "ordered function row schema"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/audit_conformance.rs"
+note = "audit determinism/oracle tests"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-LEAN-FRAGMENT"
+title = "Audit Lean fragment membership section"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "`LeanFragment` adds source-ordered Lean exportability rows to the audit manifest without changing the v1 manifest version."
+aliases = ["forge/src/audit.rs REQ-7 (#274 — `lean_fragment` membership section)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanFragment"
+note = "Lean fragment section"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanFragment::from_certificates"
+note = "Lean fragment builder"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/audit_conformance.rs"
+note = "Lean fragment audit conformance"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-LEAN-PROBE"
+title = "Side-effect-free Lean fragment probe"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "`LeanFragmentRow::probe` mints the shipped contract obligation and dry-runs the Lean exporter without filesystem, process, or environment side effects."
+aliases = ["forge/src/audit.rs REQ-8 (#274 — probe = shipped dry-run export, side-effect-free)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanFragmentRow::probe"
+note = "Lean probe entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_item"
+note = "dry-run export target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "probe_agrees_with_direct_export_item"
+note = "probe equivalence test"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-LEAN-REFUSALS"
+title = "Verbatim Lean refusal classes"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "Non-exportable Lean fragment rows surface stable `ExportRefusal` class names and verbatim reasons for audit consumers."
+aliases = ["forge/src/audit.rs REQ-9 (#274 — refusal classes surfaced verbatim)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "refusal_class_name"
+note = "stable refusal class mapper"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LeanRefusal"
+note = "refusal payload schema"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/audit_conformance.rs"
+note = "Lean refusal conformance"
+
+[[requirement]]
+id = "REQ-FORGE-AUDIT-INFORMATIONAL"
+title = "Lean fragment audit section is informational"
+owner = "forge/src/audit.rs"
+status = "shipped"
+scope = "forge"
+summary = "The Lean fragment section gates nothing, leaves certificate schema unchanged, and preserves pre-amendment v1 document deserialization."
+aliases = ["forge/src/audit.rs REQ-10 (#274 — informational only, zero default-path byte impact)"]
+contributors = [".design/forge/audit-manifest.md", "forge/tests/audit_conformance.rs"]
+generated_to = ["status", "forge-audit-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_audit"
+note = "audit exit-code owner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "pre_amendment_v1_deserializes_into_typed_manifest"
+note = "additive compatibility test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/audit_conformance.rs"
+note = "audit compatibility conformance"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-KEY"
+title = "Proof cache key composition"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "`cache_key` hashes all verdict-determining inputs plus the check schema version with domain tags and length prefixes into the proof-cache content address."
+aliases = ["forge/src/cache.rs REQ-1 (cache-key composition — verdict-determining inputs)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_key"
+note = "proof cache key function"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "CHECK_SCHEMA_VERSION"
+note = "verdict-affecting check schema input"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/cache_conformance.rs"
+note = "proof cache conformance"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-HIT-FRESH-INVARIANT"
+title = "Proof cache hit equals fresh verify"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "Cache hits preserve the stored settled certificate semantics and only mark returned certificates as cached, making a hit oracle-equivalent to the fresh verify it replaced."
+aliases = ["forge/src/cache.rs REQ-2 (soundness-completeness invariant — hit == fresh verify)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_key"
+note = "captures verdict inputs"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "with_cached"
+note = "hit marker"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "key_changes_when_any_input_changes"
+note = "cache-key input test"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-LOOKUP-STORE"
+title = "Proof cache lookup then store flow"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "`load` is consulted before the solver and `store` persists settled certificates after misses on the per-item L3 path."
+aliases = ["forge/src/cache.rs REQ-3 (lookup-then-store flow, per item)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "load"
+note = "cache lookup"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "store"
+note = "cache store"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_file"
+note = "proof cache consumer"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-LOCALITY"
+title = "Proof cache per-item locality"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "Cache keys are based on the owning item subprogram rather than sibling items, preserving proof-cache locality under unrelated edits."
+aliases = ["forge/src/cache.rs REQ-4 (locality — per-item)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "item_subprogram"
+note = "per-item source builder"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_key_is_local_to_the_item"
+note = "locality regression test"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/check.rs"
+note = "subprogram owner"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-VERSION-KEY"
+title = "Proof cache version-keyed invalidation"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "Verus version and Thermite version are cache-key inputs so toolchain changes force misses instead of reusing old certificates."
+aliases = ["forge/src/cache.rs REQ-5 (version-keyed invalidation)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_key"
+note = "version-keyed cache address"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "resolve_verus_version"
+note = "Verus version source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "THERMITE_VERSION"
+note = "Thermite version source"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-STORAGE"
+title = "Proof cache location and JSON storage"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "The proof cache lives under `target/thermite-proof-cache`, stores one JSON file per key, writes atomically, and treats damaged entries as misses."
+aliases = ["forge/src/cache.rs REQ-6 (cache location + format — gitignore-able)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "default_cache_dir"
+note = "cache directory resolver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "store"
+note = "atomic JSON writer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "load"
+note = "damaged-entry miss behavior"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-CACHED-FIELD"
+title = "Additive cached certificate field"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "Stored certificates remain canonical fresh results, while returned cache hits set the additive `Certificate::cached` marker for observability."
+aliases = ["forge/src/cache.rs REQ-7 (additive `cached: bool` field)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::cached"
+note = "cached marker field"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "store"
+note = "persists canonical fresh cert"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "with_cached"
+note = "marks returned cache hits"
+
+[[requirement]]
+id = "REQ-FORGE-CACHE-DETERMINISM"
+title = "Deterministic proof cache round trip"
+owner = "forge/src/cache.rs"
+status = "shipped"
+scope = "forge"
+summary = "Cache keys are pure functions of explicit inputs and cache load/store round-trips deterministic certificate fields byte-for-byte."
+aliases = ["forge/src/cache.rs REQ-8 (bit-reproducible deterministic cert)"]
+contributors = [".design/forge/proof-cache.md", "forge/tests/cache_conformance.rs"]
+generated_to = ["status", "forge-cache-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_key_is_pure"
+note = "cache key purity test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "round_trip_load_store"
+note = "cache round-trip test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/cache_conformance.rs"
+note = "cache conformance"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-COMMAND-SURFACE"
+title = "Forge CLI command surface"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "The top-level CLI dispatches supported verbs and reports unknown verbs as usage errors through the forge error boundary."
+aliases = ["forge/src/cli.rs REQ-1 (command surface)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run"
+note = "top-level CLI dispatcher"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError::Usage"
+note = "unknown-verb error"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/main.rs"
+note = "CLI entry consumer"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-HAND-PARSER"
+title = "Hand-rolled Forge argument parser"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "`parse_args` manually matches verbs, positionals, and flags without a CLI derive dependency, including JSON, level, and rlimit options."
+aliases = ["forge/src/cli.rs REQ-2 (hand-rolled arg parsing)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_args"
+note = "hand-written parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "DEFAULT_RLIMIT"
+note = "default rlimit source"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/Cargo.toml"
+note = "no clap dependency surface"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-ERROR-AGGREGATION"
+title = "ForgeError aggregation boundary"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "`ForgeError` wraps driven-crate diagnostics plus driver-native environment, I/O, and usage errors while preserving display details."
+aliases = ["forge/src/cli.rs REQ-3 (`ForgeError` aggregation)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "CLI error aggregate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fmt::Display for ForgeError"
+note = "display implementation"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/cli.rs"
+note = "error owner"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-OUTPUT"
+title = "Forge human and JSON output"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "`run_check` selects human rendering or clean pretty JSON stdout, keeping diagnostics on stderr."
+aliases = ["forge/src/cli.rs REQ-4 (human + `--json` output)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_human"
+note = "human certificate renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_check"
+note = "check command renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "serde_json::to_string_pretty"
+note = "JSON renderer"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-EXIT-CODES"
+title = "Forge typed exit codes"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "`run_check` maps certified projects, verification failures, and environment/usage errors to distinct exit-code classes."
+aliases = ["forge/src/cli.rs REQ-5 (typed exit codes)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_check"
+note = "exit-code dispatcher"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EXIT_VERIFICATION_FAILURE"
+note = "verification failure code"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EXIT_ENVIRONMENT"
+note = "environment/usage code"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-ASSURANCE-DISPLAY"
+title = "Project assurance display"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "`render_assurance` displays the project assurance headline, min-over-functions result, and lowered-assurance flags computed from the certificate aggregate."
+aliases = ["forge/src/cli.rs degrade-ladder REQ-5/REQ-6 (display the project assurance)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-assurance-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_assurance"
+note = "project assurance renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AssuranceManifest::aggregate"
+note = "project assurance source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_assurance_shows_headline_and_lowered_flags"
+note = "display regression test"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-RESULT-DISCIPLINE"
+title = "Forge CLI result discipline"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "CLI fallible paths return `Result<_, ForgeError>` and avoid production panics while subprocess exit status is inspected by the driver."
+aliases = ["forge/src/cli.rs REQ-6 (no panics; Result discipline)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-assurance-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError"
+note = "fallible error boundary"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_check"
+note = "fallible check command"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/check.rs"
+note = "verus status inspection owner"
+
+[[requirement]]
+id = "REQ-FORGE-CLI-NEW-SCAFFOLD"
+title = "forge new scaffold"
+owner = "forge/src/cli.rs"
+status = "shipped"
+scope = "forge"
+summary = "`scaffold_project` creates the forge project files with pinned seed/skill state and refuses non-empty targets with a usage error."
+aliases = ["forge/src/cli.rs REQ-7 (`forge new` scaffold)"]
+contributors = [".design/forge/cli.md", ".design/forge/degrade-ladder.md", "forge/tests/check_conformance.rs"]
+generated_to = ["status", "forge-cli-assurance-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "scaffold_project"
+note = "new-project scaffold entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ForgeError::Usage"
+note = "non-empty target error"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/acceptance_programs.rs"
+note = "forge command surface regression coverage"

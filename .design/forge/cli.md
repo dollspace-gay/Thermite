@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: cli.rs adds the read-only `forge audit --meaning` companion (prints the unfolded definition tower + hash; gates nothing, #274) and destructures the 8-tuple oracle_subset (the additive meaning_audit element); the CLI verbs/behavior this doc governs are unchanged.)
+audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: cli.rs adds the `--proof` flag on `forge goal` (the forge-tier proof view, goal-only), routing to goal_repl::render_proof; the v1 CLI verbs/behavior this doc governs are unchanged — net-additive, a new opt-in flag on an existing verb.)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

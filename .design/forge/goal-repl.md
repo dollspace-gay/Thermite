@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
+audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: goal_repl.rs gains the forge-tier proof view (render_proof) + the ?pN proof-hole fill path (fill_hole now accepts ProofHole addresses, span_of_address resolves them via proof_hole_span). Net-additive — the v1 verbs (goal/battery/edit/fill on body holes) this doc governs are unchanged; the new forge-tier proof-view/fill surface is specified in .design/stage1-forge-tier.md / REQ-7 / AC-11.)
 governs: forge/src/goal_repl.rs, forge/src/cli.rs (verb dispatch), thermite-syntax/src/parser.rs (hole token)
 thesis-refs:
   - thermite-design.md §5

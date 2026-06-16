@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: d4a1b50c2e68322ec1057716771b2d499ff2a179 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6c: manifest.rs gains the additive meaning_audit: Option<MeaningAudit> field (the definition-tower hash + depth + count), oracle-included per Q-ORACLE (same additive discipline as 2b's covenant_evidence); None for v1 items, so oracle_subset and the 7 golden certs stay byte-identical — CI-verified by schema_v2_additive_leaves_all_seven_goldens_byte_identical + check_conformance.)
+audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7 burn-receipt foundation: manifest.rs gains the additive burn: Option<BurnReceipt> field, oracle-EXCLUDED per Q-BURN (re-authoring a proof changes its token count without changing the claim — like solver_time_ms), so oracle_subset is UNCHANGED and the 7 golden certs stay byte-identical — verified by sum_cert_oracle_byte_identical_after_lean_exporter + check_conformance. Net-additive, no v1 schema/behavior removed.)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

@@ -44,21 +44,29 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (spec-layer extraction, no bodies) | SHIPPED | `pub fn review_file` → [`ReviewArtifact`]; [`SpecLayer::extract`] projects `FnItem.contract` (`req`/`ens`/`fx` verbatim `Clause.text`) + [`referenced_spec_fns`] (the directly-referenced `SpecFnItem` declarations: name/params/ret/`dec`, NO body). `FnItem.body`/`SpecFnItem.body` are never read. Consumer: `cli::run_review`. |
-//! | REQ-2 (pre-screening — only battery-passing) | SHIPPED | [`is_intent_reviewable`] (= `manifest::cert_certifies`: reject-free + certified rung) partitions certs; a `reject.is_some()` cert becomes a [`BatteryFailing`] flag carrying `reject.cause`, NOT an [`IntentReview`]. Consumer: `review_file`. |
-//! | REQ-3 (per-contract intent prompt) | SHIPPED | [`IntentReview::prompt`] names the item + frames the only-open-question as spec-intent alignment; built in [`IntentReview::new`]. Consumer: `cli::render_review`. |
-//! | REQ-4 (pluggable verdict slot — separate record) | SHIPPED | [`ReviewVerdict { item, aligned, note }`] + [`ReviewRecord`] (the separate `*.review.json` document); attached by [`attach_verdicts`], written to `<file>.review.json` by `cli::run_review`. NEVER a `Certificate` field (the cert's `oracle_subset` is untouched). |
-//! | REQ-5 (dual emission machine + human) | SHIPPED | [`ReviewArtifact`] derives `Serialize` (the `--json` machine form); `cli::render_review` is the human form. Consumer: `cli::run_review`. |
-//! | REQ-6 (determinism, R-CODE-5) | SHIPPED | [`review_file`] is a pure projection of the parsed program + the cert collection; spec-fn references are resolved into a sorted-deduplicated set ([`referenced_spec_fns`]); no wall-clock, no model call. The EXTRACTION is byte-identical across runs. |
-//! | REQ-7 (`forge review [item]` command + dispatch + --reviewer) | SHIPPED | `cli::parse_args`'s `review` verb + `cli::run_review`; [`run_reviewer`] is the `--reviewer <cmd>` shell-out (artifact → stdin, `ReviewVerdict` ← stdout); a spawn/parse failure is a `ForgeError`, never a panic. |
+//! <!-- generated:reqs view=forge-review-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-REVIEW-COMMAND | shipped | `forge/src/review.rs` | forge review command and reviewer dispatch |  |
+//! | REQ-FORGE-REVIEW-DETERMINISM | shipped | `forge/src/review.rs` | Spec-review extraction is deterministic |  |
+//! | REQ-FORGE-REVIEW-DUAL-EMISSION | shipped | `forge/src/review.rs` | Spec-review emits machine and human forms |  |
+//! | REQ-FORGE-REVIEW-INTENT-PROMPT | shipped | `forge/src/review.rs` | Per-contract intent-review prompt |  |
+//! | REQ-FORGE-REVIEW-PRE-SCREEN | shipped | `forge/src/review.rs` | Spec-review pre-screens battery-passing contracts |  |
+//! | REQ-FORGE-REVIEW-SPEC-LAYER | shipped | `forge/src/review.rs` | Spec-review extracts declarations without bodies |  |
+//! | REQ-FORGE-REVIEW-VERDICT-RECORD | shipped | `forge/src/review.rs` | Review verdicts are separate records |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `collect_callee_names`'s `Expr::Match` arm walks `arm.guard` (a guard may CALL a fn — its callees are part of the review surface). `Pattern::Or` needs no review arm (review walks expressions, not patterns). Consumer: `review_file`. |
+//! <!-- generated:reqs view=forge-review-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-REVIEW-MATCH-GUARD | shipped | `forge/src/review.rs` | Spec-review walks match-arm guards |  |
+//! <!-- /generated:reqs -->
 
 use std::io::Write;
 use std::path::Path;

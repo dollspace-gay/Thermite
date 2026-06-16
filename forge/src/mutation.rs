@@ -23,22 +23,30 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (frozen deterministic mutator set) | SHIPPED | `pub fn generate` walks a `FnItem.body` in source order and applies the FIXED families: operator flips (`flip_binop`), off-by-ones (`IntLit n`→`n+1`/`n-1`, skip `n-1` at 0), early returns (`return <value>` via `early_return_value` at body head — scalar zero via `zero_value_for`, OR the empty-slice literal `&[]`/`&mut []` for a reference-to-slice return so EVERY real body is scored, #48), branch swaps (negate `if`/`Expr::If` cond, else swap arms). Consumer: `check::mutation_score` in `check.rs`. |
-//! | REQ-2 (deterministic order + seed + cap) | SHIPPED | a pre-order walk in a fixed family order, capped by `pub const MUTANT_CAP`; selection is the first `MUTANT_CAP` mutants in enumeration order. The seam takes the pinned `check::DEFAULT_SOLVER_SEED` (recorded in the run; the enumeration is seed-stable). Consumer: `check::mutation_score`. |
-//! | REQ-3 (re-lower + re-verify vs same contract) | SHIPPED | `pub fn generate` clones the original `FnItem` and mutates only `body`; `check::mutation_score` weaves each mutant via `item_subprogram` + `thermite_lower::lower` and runs the existing `run_verus`. The `req`/`ens`/`inv`/`dec` are the original's, unchanged. |
-//! | REQ-4 (KILLED vs SURVIVED) | SHIPPED | `pub fn classify_mutant` maps a `MutantOutcome`: `Proved` → SURVIVED, `Killed` (counterexample / timeout) → KILLED; a lowering failure is DROPPED (not scored). Consumer: `check::mutation_score`. |
-//! | REQ-5 (kill ratio + floor gate, default 60%) | SHIPPED | `pub struct MutationScore` carries `killed`/`scored`/`survivor`; `pub fn MutationScore::kill_ratio` + `pub const MUTATION_FLOOR: f64 = 0.60`; `pub fn MutationScore::meets_floor`. A `0/0` score (no scoreable mutant) is BELOW the floor (`kill_ratio == 0.0`), not a vacuous pass — a contract that cannot be mutation-validated is gated `WeakContract` (#48, anti-Goodhart). The `cli` `--mutation-floor <FLOAT>` lever threads a non-default floor. Consumer: `check::mutation_score` + the floor gate in `check::check_file_with_options`. VERUS-ANCHORED (epic #60, REQ-11 / `.design/verified/self-verification.md` Target E): the f64 `meets_floor(0.60)` is anchored to the proved INTEGER cross-multiply `thermite_verified::meets_floor_60` (the #48 `scored == 0 ⟹ !pass` is verus-proved integer-only) by the in-module `tests::verus_anchor` f64↔integer grid (`0..=20 × 0..=20`, Option B); the grid AGREES on every cell (OQ-E: 0 divergences — the cross-multiply is the exact rational test, the f64 boundary is conformance-tested not masked). |
-//! | REQ-6 (graduate `mutants_killed`/`survivor`) | SHIPPED | `MutationScore::mutants_killed_string` builds the `"K/N"` form; `check` sets it via `Certificate::with_mutation_score` / `Certificate::rejected_weak_contract`. |
-//! | REQ-7 (gate AFTER L3, reuse proof cache) | SHIPPED | `check::mutation_score` runs only on a `VerusOutcome::Proved` real body and content-addresses each mutant via `cache::cache_key`/`load`/`store`. |
-//! | REQ-8 (deterministic kill ratio) | SHIPPED | `generate` is a pure function of the AST + the frozen table; each mutant verdict is the deterministic verus run the L3 path + cache rely on, so `mutants_killed` is deterministic (asserted by the same-input-twice conformance double-run). `mutants_killed`/`survivor` stay oracle-EXCLUDED (OQ-1). |
+//! <!-- generated:reqs view=forge-mutation-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MUTATION-AFTER-L3-CACHE | shipped | `forge/src/mutation.rs` | Mutation gate runs after L3 and reuses proof cache |  |
+//! | REQ-FORGE-MUTATION-CERT-FIELDS | shipped | `forge/src/mutation.rs` | Mutation result certificate fields |  |
+//! | REQ-FORGE-MUTATION-DETERMINISM | shipped | `forge/src/mutation.rs` | Deterministic mutation kill ratio |  |
+//! | REQ-FORGE-MUTATION-FLOOR-GATE | shipped | `forge/src/mutation.rs` | Mutation kill-ratio floor gate |  |
+//! | REQ-FORGE-MUTATION-FROZEN-SET | shipped | `forge/src/mutation.rs` | Frozen deterministic mutator set |  |
+//! | REQ-FORGE-MUTATION-ORDER-CAP | shipped | `forge/src/mutation.rs` | Deterministic mutant order, seed, and cap |  |
+//! | REQ-FORGE-MUTATION-POLARITY | shipped | `forge/src/mutation.rs` | Killed versus survived mutant polarity |  |
+//! | REQ-FORGE-MUTATION-SAME-CONTRACT | shipped | `forge/src/mutation.rs` | Mutants re-verify against the original contract |  |
+//! <!-- /generated:reqs -->
 //!
 //! ## Cluster C10 — ergonomics ripple (`.design/basis/11-ergonomics.md`, #112)
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-3 (MatchArm.guard ripple) | SHIPPED | `scan_expr`'s `Expr::Match` arm scans `arm.guard` (a guard is a mutable sub-expression — a guard mutant must be scoreable); `apply_expr`'s `Expr::Match` rebuild threads the mutation through `arm.guard`. `Pattern::Or` needs no mutation arm (mutation walks expressions, not patterns). Consumer: `mutation_score`. |
+//! <!-- generated:reqs view=forge-mutation-ergonomics-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-FORGE-MUTATION-MATCH-GUARD | shipped | `forge/src/mutation.rs` | Mutation scans match-arm guards |  |
+//! <!-- /generated:reqs -->
 
 use thermite_syntax::{BinOp, Block, Expr, FnItem, Item, PrimType, Stmt, StructItem, Type};
 

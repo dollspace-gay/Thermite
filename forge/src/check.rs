@@ -984,6 +984,12 @@ pub fn check_file_with_engine(
         // default path (no engine attribution) is untouched, so the v1 goldens stay
         // byte-identical.
         let new_cert = gate_definition_tower(new_cert, &parsed.program, &src, item);
+        // REQ-6a anti-Goodhart (increment 2d): the certify-time arbitrary-result
+        // re-elaboration tautology gate on the forge/Lean discharge path. A forge-tier
+        // cert whose contract's `ens` still elaborates for an ARBITRARY result (the
+        // `ens` says nothing about the body) is refused here, at certify time — the L3
+        // counterpart of the Verus §7 solver-vacuity tautology check.
+        let new_cert = gate_arbitrary_result_tautology(new_cert, &lean, &obligations.contract);
         out.push(new_cert);
     }
     Ok(out)
@@ -1029,6 +1035,63 @@ fn gate_definition_tower(
             tower.meaning_audit(),
         ),
         None => cert.with_meaning_audit(tower.meaning_audit()),
+    }
+}
+
+/// The REQ-6a certify-time arbitrary-result re-elaboration tautology gate (increment
+/// 2d; `.design/stage1-forge-tier.md` REQ-6 / AC-10 — anti-Goodhart defense (a)).
+/// Applied to a freshly-produced cert on the forge/Lean discharge path, beside
+/// [`gate_definition_tower`]:
+///
+/// - a v1 / Verus-path cert (no `engine_attribution`) or an already-rejected /
+///   non-L3 cert is returned UNCHANGED — the gate is a forge-tier certify gate, so
+///   the v1 goldens stay byte-identical and an item that did not certify is not
+///   re-judged;
+/// - otherwise the obligation is re-elaborated with an ARBITRARY result
+///   ([`crate::engine::LeanEngine::arbitrary_result_reelaboration`]). If the `ens`
+///   still kernel-accepts for an arbitrary result, it is a body-ignoring tautology →
+///   the cert is REFUSED (`SemanticTautology`, the same `contract_quality.tautology`
+///   bool the Verus §7 gate sets). `Clean`/`Skipped` keep the cert (the gate only
+///   ever rejects a proven tautology — the safe completeness direction).
+fn gate_arbitrary_result_tautology(
+    cert: Certificate,
+    lean: &crate::engine::LeanEngine,
+    obligation: &crate::obligation::Obligation,
+) -> Certificate {
+    // Forge-tier-only, and only a still-certifying cert: a Verus-path cert (no
+    // attribution), an honest skip, or an already-rejected/non-L3 cert is left as-is.
+    if cert.engine_attribution.is_none() || cert.reject.is_some() || cert.level != Level::L3 {
+        return cert;
+    }
+    match lean.arbitrary_result_reelaboration(obligation) {
+        crate::engine::ArbitraryResultOutcome::Tautology => {
+            // The `ens` holds for an arbitrary result → a body-ignoring semantic
+            // tautology. Refuse with the SemanticTautology cause + the
+            // `contract_quality.tautology` bool (the L3 mirror of the Verus §7 gate's
+            // `rejected_vacuity`).
+            Certificate::rejected_vacuity(
+                &cert.item,
+                cert.effects.clone(),
+                crate::manifest::RejectReason {
+                    cause: "SemanticTautology".to_string(),
+                    detail: format!(
+                        "the arbitrary-result re-elaboration proved `{}`'s `ens` for an \
+                         ARBITRARY result — the contract says nothing about what the body \
+                         computes (a body-ignoring tautology), so the L3 proof does not \
+                         license a certificate (REQ-6a anti-Goodhart; the Lean counterpart \
+                         of the §7 solver-vacuity tautology check)",
+                        cert.item
+                    ),
+                },
+                true,
+                false,
+            )
+        }
+        // Clean (the ens constrains the result) or Skipped (the check could not run —
+        // export refusal / tier-(c) / lake absent): keep the cert. The gate only ever
+        // rejects a PROVEN tautology, never on an inconclusive run (R-CODE-4).
+        crate::engine::ArbitraryResultOutcome::Clean
+        | crate::engine::ArbitraryResultOutcome::Skipped(_) => cert,
     }
 }
 

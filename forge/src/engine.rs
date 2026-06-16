@@ -856,6 +856,107 @@ impl LeanEngine {
         matches!(self.export(o), Ok(e) if e.tier.is_auto())
     }
 
+    /// Run the REQ-6a arbitrary-result re-elaboration tautology check on an obligation
+    /// (`.design/stage1-forge-tier.md` REQ-6 / AC-10, increment 2d — anti-Goodhart
+    /// defense (a)). The L3 counterpart of `vacuity_solver.rs::build_tautology_harness`:
+    /// it exports the SAME obligation with `result` bound to a fresh universally-
+    /// quantified `(r : Int)` instead of the body denotation
+    /// ([`crate::lean_export::export_arbitrary_result_harness`]), then DRIVES THE
+    /// EXISTING discharge path — the same `#print axioms` probe + [`Self::run_lake`] a
+    /// normal obligation uses (no new elaborator, per the substrate note).
+    ///
+    /// The polarity mirrors the Verus harness exactly:
+    /// - lake kernel-accepts the harness ([`Verdict::Proven`]) → the `ens` holds for an
+    ///   ARBITRARY result, so the contract says nothing about what the body computes: a
+    ///   body-ignoring **tautology** → [`ArbitraryResultOutcome::Tautology`] (reject).
+    /// - lake fails to elaborate (an elaboration/tactic failure, not a countermodel) →
+    ///   the `ens` genuinely constrains the result → [`ArbitraryResultOutcome::Clean`].
+    ///   A true tautology the auto battery cannot close is a missed detection (the SAFE
+    ///   completeness gap — never an unsound false reject), exactly as the Verus harness.
+    /// - the harness is not exportable on the auto path (a refusal / a tier-(c)
+    ///   recursive obligation / lake absent / the axiom gate) → [`ArbitraryResultOutcome::
+    ///   Skipped`] — the check could not run, so it NEVER rejects (the item keeps its
+    ///   real proof; the tautology gate is an additional layer, not a replacement).
+    #[must_use]
+    pub fn arbitrary_result_reelaboration(&self, o: &Obligation) -> ArbitraryResultOutcome {
+        let item = match find_item(&self.program, &o.item) {
+            Some(i) => i,
+            None => {
+                return ArbitraryResultOutcome::Skipped(format!(
+                    "item `{}` not found in the program",
+                    o.item
+                ));
+            }
+        };
+        // Export the arbitrary-result harness (same registry / req / ens as the real
+        // obligation; only `result` is the fresh `(r : Int)` binder). A refusal is an
+        // honest skip (not exportable on the auto path), never a reject.
+        let harness =
+            match crate::lean_export::export_arbitrary_result_harness(o, &self.program, item) {
+                Ok(e) => e,
+                Err(refusal) => {
+                    return ArbitraryResultOutcome::Skipped(format!(
+                        "the arbitrary-result harness is not exportable on the auto path \
+                     (an honest skip, not a verdict): {refusal}"
+                    ));
+                }
+            };
+        // Tier-(c) recursive obligations are interactive-only — the auto battery does
+        // not attempt them, so the tautology check is "untested" (Skipped), never a
+        // reject (mirrors `discharge`'s tier-(c) skip).
+        if !harness.tier.is_auto() {
+            return ArbitraryResultOutcome::Skipped(format!(
+                "tier ({}) recursive obligation is interactive-only; the arbitrary-result \
+                 re-elaboration is the auto path only",
+                harness.tier.tag()
+            ));
+        }
+        // Append the obligation theorem's `#print axioms` probe (the same gate the real
+        // discharge runs) and drive lake exactly as a normal obligation.
+        let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(&o.item));
+        let probed = format!("{}\n\n#print axioms {thm_name}\n", harness.source);
+        let pid = std::process::id();
+        let nonce = NEXT_REPLAY_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let safe = proof_thm_sanitize(&o.item);
+        let scratch =
+            std::env::temp_dir().join(format!("forge_lean_taut_{safe}_{pid}_{nonce}.lean"));
+        if let Err(e) = std::fs::write(&scratch, &probed) {
+            return ArbitraryResultOutcome::Skipped(format!(
+                "could not write the arbitrary-result harness scratch file: {e}"
+            ));
+        }
+        let key = self.evidence_key(o);
+        let verdict = self.run_lake(&scratch, &o.item, &probed, 1, key);
+        let _ = std::fs::remove_file(&scratch);
+        match verdict {
+            // The harness kernel-accepted for an ARBITRARY result → body-ignoring ens.
+            Verdict::Proven(_) => ArbitraryResultOutcome::Tautology,
+            // A genuine elaboration/tactic failure (the auto battery could not close the
+            // arbitrary-result goal) → the ens constrains the result → clean. An env /
+            // spawn / axiom-gate condition is a skip (the check could not run), never a
+            // claim of clean (R-CODE-4: an undetermined run is not read as a verdict).
+            Verdict::Unknown(Reason::IncompleteUnknown(detail))
+                if detail.contains("did not kernel-accept") =>
+            {
+                ArbitraryResultOutcome::Clean
+            }
+            Verdict::Unknown(reason) => ArbitraryResultOutcome::Skipped(format!(
+                "the arbitrary-result harness run was inconclusive (env/spawn/axiom-gate, \
+                 not an elaboration failure): {}",
+                match reason {
+                    Reason::VerusTimeout(d) | Reason::IncompleteUnknown(d) => d,
+                }
+            )),
+            // The Lean engine never produces a witnessed `Refuted` (a tactic failure is
+            // Unknown, not a countermodel, REQ-3) — defensively a skip, never a reject.
+            Verdict::Refuted(_) => ArbitraryResultOutcome::Skipped(
+                "the arbitrary-result harness returned a (spurious) Refuted — treated as \
+                 inconclusive (the Lean engine maps tactic failures to Unknown)"
+                    .to_string(),
+            ),
+        }
+    }
+
     /// Replay (or emit) a tier-(c) item's interactive proof artifact
     /// (`.design/verified/proof-backends.md` REQ-7(ii) / §6 tier (c)). The artifact
     /// lives at [`interactive_proof_path`] (`<source_file>.lean-proofs/<item>.lean`):
@@ -1965,6 +2066,23 @@ pub fn trust_profile_interactive() -> TrustProfile {
 // never counted killed. The Verus-path battery (`check::mutation_score`) is untouched.
 // ============================================================================
 
+/// The outcome of the REQ-6a arbitrary-result re-elaboration tautology check
+/// (`.design/stage1-forge-tier.md` REQ-6 / AC-10, increment 2d — anti-Goodhart defense
+/// (a)). Produced by [`LeanEngine::arbitrary_result_reelaboration`]. Only `Tautology`
+/// licenses a reject; `Clean`/`Skipped` never reject (the safe completeness direction).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ArbitraryResultOutcome {
+    /// The harness kernel-accepted for an arbitrary `result` → the `ens` is body-ignoring
+    /// (a semantic tautology over the Lean discharge domain) → the discharge gate rejects.
+    Tautology,
+    /// The harness failed to elaborate for an arbitrary `result` → the `ens` genuinely
+    /// constrains the result → clean (the contract is not a body-ignoring tautology).
+    Clean,
+    /// The check could not run (export refusal / tier-(c) interactive / lake absent /
+    /// axiom-gate) — an honest skip that NEVER rejects. Carries the reason.
+    Skipped(String),
+}
+
 /// The outcome of attempting one mutant against the Lean engine (`.design/verified/
 /// proof-backends.md` REQ-9). The engine-generic kill semantics: a mutant is killed if
 /// the Lean engine `Refuted`s it or returns `Unknown` after attempting it (the mutant
@@ -2545,6 +2663,53 @@ mod tests {
         assert!(
             matches!(v, Verdict::Proven(_)),
             "a CORRECT scalar contract must be Proven LIVE: {v:?}"
+        );
+    }
+
+    // REQ-6 / AC-10 (increment 2d, anti-Goodhart defense (a)): the arbitrary-result
+    // re-elaboration REJECTS a body-ignoring `ens`. `ens x > 0` (given `req x > 0`)
+    // says nothing about `result` — it holds for an ARBITRARY result, so the harness
+    // (which binds `result` to a fresh `r : Int`) kernel-accepts → `Tautology`. (LIVE:
+    // needs the built Lean spine; skips if lake is absent, like the sibling live tests.)
+    #[test]
+    fn live_arbitrary_result_rejects_body_ignoring_ens() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live arbitrary-result tautology test not run.");
+            return;
+        }
+        let src = "fn f(x: u32) -> u32 req x > 0 ens x > 0 fx pure { x }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "f", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+        let outcome = engine.arbitrary_result_reelaboration(&o);
+        assert_eq!(
+            outcome,
+            ArbitraryResultOutcome::Tautology,
+            "a body-ignoring `ens x > 0` must re-elaborate for an arbitrary result \
+             (tautology): {outcome:?}"
+        );
+    }
+
+    // REQ-6 / AC-10 (increment 2d): the contrast — a body-CONSTRAINING `ens` is Clean.
+    // `ens result == x + 1` does NOT hold for an arbitrary result (only for `r = x+1`),
+    // so the arbitrary-result harness fails to elaborate → `Clean` (the gate does NOT
+    // reject a genuine, body-pinning contract).
+    #[test]
+    fn live_arbitrary_result_clean_for_body_constraining_ens() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live arbitrary-result clean test not run.");
+            return;
+        }
+        let src = "fn g(x: u32) -> u32 req x < 100 ens result == x + 1 fx pure { x + 1 }";
+        let p = parse_program(src);
+        let o = fn_obligation(&p, "g", vec![]);
+        let engine = LeanEngine::new(p, lean_root());
+        let outcome = engine.arbitrary_result_reelaboration(&o);
+        assert_eq!(
+            outcome,
+            ArbitraryResultOutcome::Clean,
+            "a body-constraining `ens result == x + 1` must NOT re-elaborate for an \
+             arbitrary result (clean): {outcome:?}"
         );
     }
 

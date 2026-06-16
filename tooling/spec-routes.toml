@@ -921,6 +921,12 @@ reference = []
 conformance_ops = []
 
 [[route]]
+crate_pattern = "tooling/reqs"
+design = ".design/tooling/req-registry.md"
+reference = []
+conformance_ops = []
+
+[[route]]
 crate_pattern = "tooling/tests/test_req_registry.py"
 design = ".design/tooling/req-registry.md"
 reference = []

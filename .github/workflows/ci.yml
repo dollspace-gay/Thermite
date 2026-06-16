@@ -58,7 +58,7 @@ jobs:
       - name: req-status lint (source-comment status consistency)
         run: python3 tooling/req-status.py
       - name: req-registry gate (canonical status inventory)
-        run: python3 tooling/req-registry.py --check
+        run: tooling/reqs check
 
       - name: Rust build cache
         uses: Swatinem/rust-cache@v2

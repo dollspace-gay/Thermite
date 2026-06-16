@@ -826,6 +826,50 @@ impl Engine for LeanEngine {
 }
 
 impl LeanEngine {
+    /// Discharge a ready-made exported Lean SOURCE that was NOT minted from an
+    /// [`Obligation`] — the forge-tier `lemma` path (`.design/stage1-forge-tier.md`
+    /// REQ-7, increment 2e). The lemma exporter ([`crate::lean_export::export_lemma`])
+    /// produces a self-contained file (preamble + `R_item` + the
+    /// `thermite_obligation_<lemma>` theorem proved by the author's frozen-battery
+    /// tactics); this appends the SAME certify-time axiom probe (`#print axioms
+    /// thermite_obligation_<lemma>`) the auto [`Engine::discharge`] path appends, writes
+    /// a scratch file, runs lake, and gates `Proven` on the axiom report via the SAME
+    /// [`certify_lean_axioms`] gate (a surviving `sorry` / smuggled axiom / lake failure
+    /// is an honest `Unknown`, never `Proven`). Lean-absent → `Unknown` (a skip). The
+    /// evidence key binds the source + toolchain + spine content so a bump forces a
+    /// miss.
+    pub(crate) fn discharge_source(&self, source: &str, item: &str) -> Verdict {
+        use sha2::{Digest, Sha256};
+        let thm_name = format!("thermite_obligation_{}", proof_thm_sanitize(item));
+        let probed_source = format!("{source}\n\n#print axioms {thm_name}\n");
+
+        let mut h = Sha256::new();
+        h.update(b"thermite-lean-lemma-evidence-v1");
+        h.update(item.as_bytes());
+        h.update(probed_source.as_bytes());
+        h.update(self.toolchain_rev().as_bytes());
+        h.update(self.spine_content_hash().as_bytes());
+        let content_address: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        let key = CacheKey {
+            engine: self.name,
+            content_address,
+        };
+
+        let pid = std::process::id();
+        let nonce = NEXT_REPLAY_NONCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let safe = proof_thm_sanitize(item);
+        let scratch =
+            std::env::temp_dir().join(format!("forge_lean_lemma_{pid}_{safe}_{nonce}.lean"));
+        if let Err(e) = std::fs::write(&scratch, &probed_source) {
+            return Verdict::Unknown(Reason::IncompleteUnknown(format!(
+                "could not write the exported forge-tier lemma to a scratch file: {e}"
+            )));
+        }
+        let verdict = self.run_lake(&scratch, item, &probed_source, 1, key);
+        let _ = std::fs::remove_file(&scratch);
+        verdict
+    }
+
     /// Write the exported Lean source to a deterministic scratch file in the system
     /// temp dir (`.design/verified/proof-backends.md` REQ-7, "export → write to a
     /// scratch dir"). The file name is keyed on the item + the process id so
@@ -4385,5 +4429,50 @@ mod tests {
             "the qualifier names the untested count: {}",
             t.qualifier()
         );
+    }
+
+    // REQ-7 (increment 2e): the forge-tier `lemma` discharge — `export_lemma` emits a
+    // self-contained theorem (the pure `∀ params, req → ens` proposition over the
+    // denotation spine) proved by the author's frozen-battery tactics; `discharge_source`
+    // runs lake + the certify-time axiom gate. A clean merge-flavored arithmetic lemma
+    // kernel-accepts and PROVES (needs the built Lean spine — skipped without it, like the
+    // other `live_*` engine tests; the CI lean job is authoritative).
+    #[test]
+    fn live_forge_lemma_discharges_proven() {
+        if !lake_present() {
+            eprintln!("SKIP: lake not present — live forge-lemma discharge test not run.");
+            return;
+        }
+        let src = "lemma merge_advance(i: u64, n: u64) req i < n ens i + 1 <= n \
+                   proof { simp [Thermite.denote, Thermite.Env.bindInt, Thermite.intVal, \
+                   Thermite.arithDenote]; omega }";
+        let p = parse_program(src);
+        let l = p
+            .items
+            .iter()
+            .find_map(|i| match i {
+                thermite_syntax::Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) => Some(l),
+                _ => None,
+            })
+            .expect("a lemma");
+        let exported = crate::lean_export::export_lemma(l, &[], &p).expect("export the lemma");
+        // The emitted theorem is the pure proposition over the spine (no body/result).
+        assert!(
+            exported
+                .source
+                .contains("theorem thermite_obligation_merge_advance (v : Thermite.Env)"),
+            "the canonical theorem name anchors the axiom probe: {}",
+            exported.source
+        );
+        assert!(
+            !exported.source.contains("bindInt \"result\""),
+            "a lemma has no `result` binding (unlike a fn-contract theorem): {}",
+            exported.source
+        );
+        let engine = LeanEngine::new(p.clone(), lean_root());
+        match engine.discharge_source(&exported.source, "merge_advance") {
+            Verdict::Proven(_) => {}
+            other => panic!("the merge lemma must discharge Proven against the spine: {other:?}"),
+        }
     }
 }

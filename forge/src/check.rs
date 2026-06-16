@@ -168,6 +168,26 @@ pub fn check_file(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError
     check_file_with_rlimit(path, DEFAULT_RLIMIT)
 }
 
+/// Run the check pipeline on the Lean engine path (`.design/stage1-forge-tier.md` REQ-7,
+/// increment 2e): the Verus base plus the forge-tier LEMMA discharge (the forge tier's
+/// self-contained goals certify here, carrying the burn receipt on `Proven`). The
+/// convenience entry `forge fill`'s proof-hole re-check uses so a closed forge-tier goal
+/// surfaces its certifying verdict + burn receipt directly (AC-11), rather than the
+/// Verus-only default `check_file` which skips a forge-tier lemma. `source_file` is the
+/// checked path (the interactive-replay artifact location, unused for an in-`.th` lemma
+/// proof). Lean-absent → the lemma is an honest non-certified skip (never a false L3).
+pub fn check_file_lean(path: impl AsRef<Path>) -> Result<Vec<Certificate>, ForgeError> {
+    let path = path.as_ref();
+    check_file_with_engine(
+        path,
+        CheckOptions {
+            engine: EngineSelection::Lean,
+            source_file: Some(path.to_path_buf()),
+            ..CheckOptions::default()
+        },
+    )
+}
+
 /// The tunable knobs `cli` threads into the per-item L3 pipeline (the verus
 /// resource budget #11, and the mutation kill-ratio floor #12). A single struct
 /// keeps the public `check_file*` entries stable while the cli passes both levers
@@ -966,6 +986,16 @@ pub fn check_file_with_engine(
                 continue;
             }
         };
+        // A forge-tier item's base cert (a `lemma`/`proof for` OpenHole / Battery* reject)
+        // is NOT a fn-contract obligation — the fn-Lean re-discharge below would mint an
+        // empty forge obligation and clobber the reject with a `LeanUnverifiable` skip
+        // (REQ-7, increment 2e). Keep the base reject untouched; a CLEAN forge `lemma`
+        // (absent from `base`, the base path skips it) is discharged by the dedicated
+        // forge-lemma pass after this loop.
+        if matches!(item, Item::Forge(_)) {
+            out.push(cert);
+            continue;
+        }
         let obligations = mint_item_obligations(&parsed.program, item);
         let new_cert = lean_engine_cert(
             &lean,
@@ -991,6 +1021,24 @@ pub fn check_file_with_engine(
         // counterpart of the Verus §7 solver-vacuity tautology check.
         let new_cert = gate_arbitrary_result_tautology(new_cert, &lean, &obligations.contract);
         out.push(new_cert);
+    }
+
+    // Stage-1 forge-tier LEMMA discharge (`.design/stage1-forge-tier.md` REQ-7, increment
+    // 2e). A `lemma` is a forge-tier item with NO Verus base cert (the base path skips a
+    // clean forge item, REQ-3) — it is the forge tier's self-contained goal, discharged
+    // ONLY by the Lean engine. So here, on the Lean path, each clean `lemma` is
+    // discharged via `export_lemma` + `discharge_source` and its cert (carrying the burn
+    // receipt on `Proven`, REQ-7 / AC-11) is appended. A holed / battery-refused lemma
+    // already carries its non-certified cert from the base path (the `OpenHole` /
+    // `Battery*` reject), so it is present in `out` and NOT re-discharged here. The
+    // default Verus path (`check_file`) never enters this function, so a clean lemma is
+    // still skipped there (the v1 oracle + the 2c default-path behavior are untouched).
+    for item in &parsed.program.items {
+        if let Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) = item {
+            if !out.iter().any(|c| c.item == l.name) {
+                out.push(discharge_forge_lemma(l, &parsed.program, &lean));
+            }
+        }
     }
     Ok(out)
 }
@@ -1321,6 +1369,111 @@ fn lean_interactive_proven_cert(
     )
     .graduate_triage_clean()
     .with_engine_attribution(attribution)
+}
+
+/// Discharge a clean (hole-free, battery-clean) forge-tier `lemma` via the Lean engine
+/// and emit its certificate (`.design/stage1-forge-tier.md` REQ-7, increment 2e). A
+/// `lemma` is the forge tier's self-contained goal: [`crate::lean_export::export_lemma`]
+/// emits the `∀ params, req → ens` theorem proved by the author's frozen-battery tactics,
+/// and [`crate::engine::LeanEngine::discharge_source`] runs lake + the SAME certify-time
+/// axiom gate every Lean path runs. On `Proven` the lemma certifies L3 (kernel-accepted,
+/// the INTERACTIVE trust profile — the proof is author-authored), and the cert carries
+/// the BURN RECEIPT (the committed proof's lexer-token count + cited lemmas, REQ-7 /
+/// AC-11). An export refusal (out-of-fragment / incomplete registry) or a non-`Proven`
+/// verdict (lake failure / surviving `sorry` / axiom-gate refusal / Lean absent) is an
+/// HONEST non-certified L0 cert naming the cause — never a false L3, and no burn receipt
+/// (nothing was burned to a proof). A `lemma` is a proposition, not a refutable body, so
+/// a `Refuted` verdict is treated as a non-proof skip.
+fn discharge_forge_lemma(
+    l: &thermite_syntax::LemmaItem,
+    program: &Program,
+    lean: &crate::engine::LeanEngine,
+) -> Certificate {
+    use crate::engine::Verdict;
+    let effects = vec!["pure".to_string()];
+    let called = reachable_spec_fn_names_full_lemma(program, l);
+    let exported = match crate::lean_export::export_lemma(l, &called, program) {
+        Ok(e) => e,
+        Err(refusal) => {
+            return Certificate::rejected(
+                l.name.clone(),
+                effects,
+                false,
+                RejectReason {
+                    cause: "LeanExportRefusal".to_string(),
+                    detail: format!(
+                        "the forge-tier lemma `{}` is not Lean-exportable (an honest skip, \
+                         not a verdict): {refusal}",
+                        l.name
+                    ),
+                },
+            );
+        }
+    };
+    match lean.discharge_source(&exported.source, &l.name) {
+        Verdict::Proven(_) => lean_lemma_proven_cert(lean, l),
+        Verdict::Unknown(reason) => Certificate::rejected(
+            l.name.clone(),
+            effects,
+            false,
+            RejectReason {
+                cause: "LeanUnknown".to_string(),
+                detail: format!(
+                    "the forge-tier lemma `{}` did not discharge to a kernel-accepted proof \
+                     (NOT certified, no burn receipt): {reason:?}",
+                    l.name
+                ),
+            },
+        ),
+        Verdict::Refuted(_) => Certificate::rejected(
+            l.name.clone(),
+            effects,
+            false,
+            RejectReason {
+                cause: "LeanUnknown".to_string(),
+                detail: format!(
+                    "the forge-tier lemma `{}` proof did not close (a lemma is a proposition, \
+                     not a refutable body); NOT certified",
+                    l.name
+                ),
+            },
+        ),
+    }
+}
+
+/// The L3 cert a `Proven` forge-tier `lemma` produces (REQ-7, increment 2e): like
+/// [`lean_interactive_proven_cert`] (the INTERACTIVE trust profile — the proof is the
+/// author's frozen-battery tactics, a reviewed step) but built directly for the lemma
+/// (no fn base cert), and carrying the BURN RECEIPT minted from the committed proof text
+/// (the lexer-token count + cited lemmas, REQ-7 / AC-11 — oracle-excluded per Q-BURN, so
+/// it does not perturb the cert oracle).
+fn lean_lemma_proven_cert(
+    lean: &crate::engine::LeanEngine,
+    l: &thermite_syntax::LemmaItem,
+) -> Certificate {
+    use crate::engine::Engine as _;
+    let attribution = crate::engine::EngineAttribution {
+        engine: lean.name().tag().to_string(),
+        trust_profile: crate::engine::trust_profile_interactive().items,
+    };
+    Certificate::new(
+        l.name.clone(),
+        Level::L3,
+        vec!["pure".to_string()],
+        0,
+        vec![crate::manifest::ObligationResult::discharged(
+            "forge-tier lemma discharged by an author-authored frozen-battery Lean proof \
+             (kernel-accepted, sorry-free, axiom-gated; stage1-forge-tier.md REQ-7)",
+        )
+        .with_clause_attribution(
+            attribution.engine.clone(),
+            attribution.trust_profile.clone(),
+            crate::verdict::CertVerdict::Proved,
+        )],
+    )
+    .graduate_triage_clean()
+    .with_engine_attribution(attribution)
+    .with_burn(crate::burn::BurnReceipt::for_proof_text(&l.proof.text))
 }
 
 /// Borrow the Lean engine's parsed program (for the per-item + per-mutant obligation
@@ -2227,6 +2380,32 @@ fn reachable_spec_fn_names_full(program: &Program, f: &thermite_syntax::FnItem) 
         collect_expr_spec_fn_calls(&dec.expr, &spec_decls, &mut seed);
     }
 
+    reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
+}
+
+/// The full-expression-position spec-fn closure for a forge-tier `lemma`
+/// (`.design/stage1-forge-tier.md` REQ-7): the seed is the spec-fn calls in the lemma's
+/// `req ∪ ens` (a lemma has no body/dec — it is a pure proposition over its params), and
+/// the closure step walks each reached spec-fn's `body ∪ dec`. Mirrors
+/// [`reachable_spec_fn_names_full`] for the lemma's clause set, so `export_lemma`'s
+/// `R_item` is populated with exactly the spec-fns the lemma's claim denotes against.
+fn reachable_spec_fn_names_full_lemma(
+    program: &Program,
+    l: &thermite_syntax::LemmaItem,
+) -> Vec<String> {
+    let spec_decls: std::collections::BTreeMap<&str, &thermite_syntax::SpecFnItem> = program
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::SpecFn(s) => Some((s.name.as_str(), s)),
+            _ => None,
+        })
+        .collect();
+    let mut seed: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    collect_expr_spec_fn_calls(&l.req.expr, &spec_decls, &mut seed);
+    for ens in &l.ens {
+        collect_expr_spec_fn_calls(&ens.expr, &spec_decls, &mut seed);
+    }
     reachable_spec_fn_names_from_seed(&spec_decls, seed, program)
 }
 

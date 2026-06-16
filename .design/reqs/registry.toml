@@ -6910,6 +6910,71 @@ target = "forge/src/meaning.rs"
 note = "AC-10 (c): over_depth_tower_is_refused + within_budget_tower_pins_a_stable_hash, and the body-ignoring-vs-constraining tower tests"
 
 [[requirement]]
+id = "REQ-S1-7"
+title = "forge goal --proof / forge fill UX + burn receipts"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The forge-tier goal/fill UX (increment 2e) + the L3 burn receipt. (1) PROOF VIEW: `forge goal --proof` (the goal-only `--proof` flag) renders a forge-routed goal — a `lemma` or a `proof for f` obligation — WITH ITS HYPOTHESES IN SCOPE: the typed parameter binders + the `req` precondition the proof may assume (`h_req`, omitted when `req` is the trivial `true`), then the `⊢ goal` (a lemma's `ens`, or a proof-for's `ens#k` resolved 0-based against `f`'s contract), then the open `?pN` holes as the `forge fill` operands. The hypothesis context is derived structurally from the contract (the same data the Lean discharge binds — params as free inputs, `req` as the assumption), so the view needs no live elaborator. (2) FILL: `fill_hole` accepts the 2a `?pN` proof-hole addresses (a `<lemma>.proof.?pN` / `<f>.proof.<clause>.?pN`), not just body `?N`: `span_of_address`→`proof_hole_span` resolves the splice target on the forge item's proof block, the tactics are spliced + re-parsed (a malformed fill is reported), and the re-check (the Lean path) re-presents the proof view + the verdict — the 2c frozen battery refuses an unlisted tactic (cite-unlisted → refused, named), an open-hole short-circuit re-presents a hole the fill introduced (the §5.1 loop). (3) DISCHARGE + BURN: a clean (hole-free, battery-clean) `lemma` is the forge tier's self-contained goal — `export_lemma` emits the `∀ params, req → ens` theorem over the kernel-proven denotation spine (the SAME `encode_expr`/`build_registry`/`R_item` framing as the fn-contract path MINUS the body/result, so u64 overflow is modeled faithfully; a naive ℕ/ℤ encoding would be unsound), proved by the author's frozen-battery tactics; `discharge_source` runs lake + the SAME certify-time `#print axioms` gate every Lean path runs. On `Proven` it certifies L3 (the interactive trust profile — the proof is author-authored) and the certificate carries the BURN RECEIPT (`burn.proof_tokens` = the project lexer's token count over the committed proof text; `burn.cited_lemmas` = the frozen simp-lemma citations; an optional `burn.authoring_tokens` absent unless the harness supplies it). Per Q-BURN the receipt is ORACLE-EXCLUDED (re-authoring a proof changes its token count without changing the claim — like solver_time_ms), so it is NOT in `Certificate::oracle_subset` and the 7 v1 golden certs stay byte-identical. The lemma discharge lives on the Lean path only (`check_file_with_engine`/`check_file_lean`); the default Verus `check_file` is untouched (a forge-tier lemma has no Verus consumer). AC-11: the merge example (`conformance/forge/merge.th`, a merge-loop progress lemma `i < n → i + 1 <= n`) renders its hypotheses under `forge goal --proof`, `forge fill merge_advance.proof.?p0 \"<tactics>\"` closes it end to end, and the resulting certificate certifies L3 with the burn receipt (token count + cited lemmas)."
+aliases = ["forge goal --proof", "forge fill", "proof view", "burn receipt", "burn.proof_tokens", "hypotheses in scope", "?pN fill", "lemma discharge", "REQ-7"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/burn.rs"
+note = "the BurnReceipt {proof_tokens (lexer-token count of the committed proof text, Eof excluded), authoring_tokens?, cited_lemmas (frozen simp citations, deduped)} + the deterministic for_proof_text computation (Q-BURN). burn_is_oracle_excluded pins the oracle exclusion"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_proof"
+note = "(1) the proof view: forge-routed goals (lemma / proof-for) rendered with hypotheses in scope + the ⊢ goal + the ?pN fill operands (AC-11 render clause)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fill_hole"
+note = "(2) accepts the ?pN proof-hole addresses (not just body ?N): splices the tactics, re-checks (battery refusal / open-hole loop), re-presents the proof view + the discharge verdict + burn"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "proof_hole_span"
+note = "(2) resolves a ?pN proof-hole address to the hole token's byte span on the forge item's proof block — the forge fill splice target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "export_lemma"
+note = "(3) emits the forge-tier lemma's ∀ params, req → ens theorem over the denotation spine (the fn-contract framing minus body/result), proved by the author's frozen-battery tactics; the canonical thermite_obligation_<lemma> name anchors the axiom gate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "discharge_source"
+note = "(3) runs a ready-made exported Lean lemma source through lake + the SAME certify-time #print-axioms gate the auto path runs; surviving sorry / smuggled axiom / lake failure → honest Unknown, never Proven"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "discharge_forge_lemma"
+note = "(3) the forge-tier lemma discharge → certificate: Proven → L3 (interactive trust profile) + the burn receipt (Certificate::with_burn); refusal / non-Proven → an honest non-certified L0 cert, never a false L3"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Certificate::with_burn"
+note = "the additive, oracle-EXCLUDED burn: Option<BurnReceipt> field + setter; the burn stays out of oracle_subset (Q-BURN), so the v1 goldens are byte-identical"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/merge_example.rs"
+note = "AC-11 end to end: the proof view renders the merge goal's hypotheses; forge fill closes ?p0; the re-check certifies L3 + surfaces the burn receipt; conformance/forge/merge.th certifies L3 with burn via --engine lean (live-spine, lake-guarded)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/engine.rs"
+note = "live_forge_lemma_discharges_proven: the merge-flavored lemma export kernel-accepts + discharges Proven against the built spine (the canonical theorem name + no result binder asserted)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/proof_fill.rs"
+note = "the proof view + ?pN fill loop driven over the CLI: render hypotheses, close a hole + commit tactics, battery refusal of an unlisted tactic, new-hole re-presentation, non-hole honest error"
+
+[[requirement]]
 id = "REQ-S1-3"
 title = "Forge-tier surface syntax"
 owner = ".design/stage1-forge-tier.md"

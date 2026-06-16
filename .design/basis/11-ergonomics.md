@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 82cf268ee579140a87831fe019ece87d9fb7e80f (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6a: the only change to this doc's governed file (check.rs) is the additive certify-time gate_arbitrary_result_tautology on the forge/Lean path (REQ-S1-6) — a body-ignoring ens that re-elaborates for an arbitrary result is refused; orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
+audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file (check.rs) is the additive forge-tier LEMMA discharge on the Lean path (discharge_forge_lemma + the check_file_with_engine forge-lemma pass + the fn-re-loop forge-item skip that PRESERVES a forge reject, REQ-S1-7); orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
 governs: thermite-syntax/src/parser.rs
 governs: thermite-syntax/src/ast.rs
 governs: thermite-lower/src/lower.rs

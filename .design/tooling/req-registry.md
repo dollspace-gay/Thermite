@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 1660924299e13f2b47733c4a2d75b6f29709d450 (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6: the only change to this doc's governed files is the additive REQ-S1-6 entry in registry.toml + the regenerated status.md view — net-additive, the registry mechanics this doc governs are unchanged.)
+audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed files is the additive REQ-S1-7 entry in registry.toml + the regenerated status.md view — net-additive, the registry mechanics this doc governs are unchanged; req-registry.py --check is clean.)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

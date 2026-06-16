@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 82cf268ee579140a87831fe019ece87d9fb7e80f (re-pinned 2026-06-16 for stage-1 increment 2d, anti-Goodhart REQ-6a: additive arbitrary-result re-elaboration tautology check — lean_export.rs gains ResultMode + export_arbitrary_result_harness (export_item stays a thin wrapper, all callers unchanged), engine.rs gains LeanEngine::arbitrary_result_reelaboration driving the existing #print-axioms+run_lake path, check.rs the certify-time gate (REQ-S1-6). The shipped discharge/exporter soundness behavior this doc governs is unchanged — the Arbitrary harness is a tautology DETECTOR, not a certification obligation.)
+audited-sha: f664b3335eb7302419187fcbc02e568dfc2a7657 (re-pinned 2026-06-16 for the 2e lake-guard test fix, claim-neutral: the only intervening change to this doc's governed source is adding the `lake_present()` skip-guard to the `live_forge_lemma_discharges_proven` test in engine.rs — a test-gating change, no production-path or REQ change.)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

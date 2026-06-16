@@ -28,6 +28,7 @@ mod audit;
 mod battery;
 mod body_tv;
 mod build;
+mod burn;
 mod cache;
 mod check;
 mod cli;

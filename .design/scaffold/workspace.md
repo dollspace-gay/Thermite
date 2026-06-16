@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: main.rs adds the covenant_engine/covenant_eval module declarations (additive); the workspace scaffold this doc governs is unchanged.)
+audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed file is the additive `mod battery;` declaration in main.rs — net-additive, the workspace topology this doc governs is unchanged.)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

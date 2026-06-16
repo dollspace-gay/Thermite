@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 4a748bc98172c98cc39fb245996ab4143bdab08d (re-pinned 2026-06-16 for stage-1 increment 2b: REQ-S1-4 flipped partial->shipped + status.md regenerated (additive registry data); the registry tooling/schema this doc governs is unchanged.)
+audited-sha: a6b72816225a313356c2a9ef38e9d989328ec168 (re-pinned 2026-06-16 for stage-1 increment 2c, frozen battery REQ-5: the only change to this doc's governed files is the additive REQ-S1-5 entry in registry.toml + the regenerated status.md view — net-additive, the registry mechanics this doc governs are unchanged.)
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

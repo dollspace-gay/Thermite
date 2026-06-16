@@ -169,6 +169,69 @@ comment_prefix = "//! "
 title = "Syntax AST Ergonomics Canonical Status References"
 
 [[view]]
+name = "thermite-syntax-parser-core-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-core-status"
+comment_prefix = "//! "
+title = "Syntax Parser Core Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-parser-goal-repl-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-goal-repl-status"
+comment_prefix = "//! "
+title = "Syntax Parser Goal REPL Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-parser-option-result-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-option-result-status"
+comment_prefix = "//! "
+title = "Syntax Parser Option/Result Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-parser-recursion-tuples-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-recursion-tuples-status"
+comment_prefix = "//! "
+title = "Syntax Parser Recursion/Tuples Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-parser-ergonomics-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-ergonomics-status"
+comment_prefix = "//! "
+title = "Syntax Parser Ergonomics Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-parser-ffi-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-ffi-status"
+comment_prefix = "//! "
+title = "Syntax Parser Boundary Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-parser-collections-status"
+path = "thermite-syntax/src/parser.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-parser-collections-status"
+comment_prefix = "//! "
+title = "Syntax Parser Collections Canonical Status References"
+
+[[view]]
 name = "thermite-spec-scaffold-status"
 path = "thermite-spec/src/lib.rs"
 kind = "reference_list"
@@ -1171,6 +1234,146 @@ id = "REQ-SYNTAX-ERGONOMICS-IF-WHILE-LET"
 replacement_view = "thermite-syntax-ast-ergonomics-status"
 note = "If-let/while-let surface row replaced by a generated canonical reference."
 
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-1 (recursive descent)"
+id = "REQ-SYNTAX-PARSER-RECURSIVE-DESCENT"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Core recursive-descent parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-2 (mandatory-clause enforcement)"
+id = "REQ-SYNTAX-PARSER-MANDATORY-CLAUSES"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Mandatory-clause parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-3 (per-item recovery)"
+id = "REQ-SYNTAX-PARSER-RECOVERY"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Per-item parser recovery row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-4 (Result / no panic)"
+id = "REQ-SYNTAX-PARSER-RESULT"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Fallible parser result row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-5 (round-trip fidelity)"
+id = "REQ-SYNTAX-PARSER-ROUNDTRIP"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Parser round-trip fidelity row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-6 (one call syntax)"
+id = "REQ-SYNTAX-PARSER-CALL-SYNTAX"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "One-call-syntax parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-7 (addressing substrate)"
+id = "REQ-SYNTAX-PARSER-ADDRESSING"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Addressing substrate parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-8 (operator tiers `% << >> & \\| ^ !`, #92)"
+id = "REQ-SYNTAX-PARSER-OPERATOR-TIERS"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Operator-tier parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-9 (partiality not a parse concern, #92)"
+id = "REQ-SYNTAX-PARSER-PARTIALITY"
+replacement_view = "thermite-syntax-parser-core-status"
+note = "Partiality-not-parse-concern row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "goal-repl REQ-4 (parser accepts `?N` in fn-body statement position ONLY)"
+id = "REQ-SYNTAX-PARSER-HOLE-SCOPE"
+replacement_view = "thermite-syntax-parser-goal-repl-status"
+note = "Goal REPL parser scope row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-1 (`Option<T>` parse)"
+id = "REQ-SYNTAX-OPTRES-OPTION"
+replacement_view = "thermite-syntax-parser-option-result-status"
+note = "Option parser row replaced by a generated reference to the canonical Option surface requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-2 (`Result<T, E>` two-arg parse)"
+id = "REQ-SYNTAX-OPTRES-RESULT"
+replacement_view = "thermite-syntax-parser-option-result-status"
+note = "Result parser row replaced by a generated reference to the canonical Result surface requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-1 (`fn` `dec` clause parse)"
+id = "REQ-SYNTAX-RECURSION-DEC"
+replacement_view = "thermite-syntax-parser-recursion-tuples-status"
+note = "Recursive fn dec parser row replaced by a generated reference to the canonical recursion requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-1 (tuple destructure parse)"
+id = "REQ-SYNTAX-ERGONOMICS-TUPLE-DESTRUCTURE"
+replacement_view = "thermite-syntax-parser-ergonomics-status"
+note = "Tuple-destructure parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-2 (`for i in 0..n` parse)"
+id = "REQ-SYNTAX-ERGONOMICS-FOR"
+replacement_view = "thermite-syntax-parser-ergonomics-status"
+note = "For-loop parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-3 (match guard parse)"
+id = "REQ-SYNTAX-ERGONOMICS-MATCH-GUARD"
+replacement_view = "thermite-syntax-parser-ergonomics-status"
+note = "Match-guard parser row replaced by a generated reference to the canonical match-guard requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-4 (or-pattern parse)"
+id = "REQ-SYNTAX-ERGONOMICS-OR-PATTERN"
+replacement_view = "thermite-syntax-parser-ergonomics-status"
+note = "Or-pattern parser row replaced by a generated reference to the canonical or-pattern requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-5 (`if let`/`while let` parse)"
+id = "REQ-SYNTAX-ERGONOMICS-IF-WHILE-LET"
+replacement_view = "thermite-syntax-parser-ergonomics-status"
+note = "If-let/while-let parser row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "REQ-1 (`Vec<T>` type spelling)"
+id = "REQ-SYNTAX-COLLECTIONS-VEC"
+replacement_view = "thermite-syntax-parser-collections-status"
+note = "Vec parser row replaced by a generated reference to the canonical Vec surface requirement."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/parser.rs"
+label = "ffi REQ-1/REQ-3"
+id = "REQ-SYNTAX-PARSER-BOUNDARY-FN"
+replacement_view = "thermite-syntax-parser-ffi-status"
+note = "Boundary parser extension row replaced by a generated canonical reference."
+
 [[requirement]]
 id = "REQ-SYNTAX-AST-ITEMS"
 title = "Function item AST nodes"
@@ -1603,7 +1806,7 @@ scope = "syntax"
 summary = "`Type::Vec` represents bounded collection element types with a dedicated syntax node while operations reuse method calls."
 aliases = ["thermite-syntax/src/ast.rs REQ-1 SURFACE (`Vec<T>` type node)"]
 contributors = [".design/basis/04-collections.md", "thermite-syntax/src/parser.rs", "thermite-lower/tests/collections_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-collections-status"]
+generated_to = ["status", "thermite-syntax-ast-collections-status", "thermite-syntax-parser-collections-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1624,7 +1827,7 @@ scope = "syntax"
 summary = "`Type::Option` represents `Option<T>` as a dedicated single-argument type node while constructors reuse calls and paths."
 aliases = ["thermite-syntax/src/ast.rs REQ-1 SURFACE (`Option<T>` type node)"]
 contributors = [".design/basis/09-option-result.md", "thermite-syntax/src/parser.rs", "forge/tests/option_result_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-option-result-status"]
+generated_to = ["status", "thermite-syntax-ast-option-result-status", "thermite-syntax-parser-option-result-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1645,7 +1848,7 @@ scope = "syntax"
 summary = "`Type::Result` represents `Result<T, E>` as a dedicated two-argument type node."
 aliases = ["thermite-syntax/src/ast.rs REQ-2 SURFACE (`Result<T, E>` two-arg type node)"]
 contributors = [".design/basis/09-option-result.md", "thermite-syntax/src/parser.rs", "forge/tests/option_result_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-option-result-status"]
+generated_to = ["status", "thermite-syntax-ast-option-result-status", "thermite-syntax-parser-option-result-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1666,7 +1869,7 @@ scope = "syntax"
 summary = "`FnItem.dec` records the optional decreases clause for recursive exec functions while keeping non-recursive functions byte-stable."
 aliases = ["thermite-syntax/src/ast.rs REQ-1 (`fn` `dec` clause - AST)"]
 contributors = [".design/basis/10-recursion-tuples.md", "thermite-syntax/src/parser.rs", "forge/tests/recursion_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-recursion-tuples-status"]
+generated_to = ["status", "thermite-syntax-ast-recursion-tuples-status", "thermite-syntax-parser-recursion-tuples-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1732,7 +1935,7 @@ aliases = [
   "thermite-syntax/src/ast.rs REQ-1 SURFACE (`Map<K,V>` two-arg type node)",
 ]
 contributors = [".design/basis/04-collections.md", ".design/basis/13-map.md", "thermite-syntax/src/parser.rs", "forge/tests/map_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-collections-status", "thermite-syntax-ast-map-status"]
+generated_to = ["status", "thermite-syntax-ast-collections-status", "thermite-syntax-ast-map-status", "thermite-syntax-parser-collections-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1753,7 +1956,7 @@ scope = "syntax"
 summary = "Map operations reuse `Expr::MethodCall`, so `insert`, `get`, `contains_key`, and `len` add no new expression node."
 aliases = ["thermite-syntax/src/ast.rs REQ-2 SURFACE (`Map` ops are `Expr::MethodCall`)"]
 contributors = [".design/basis/13-map.md", "thermite-syntax/src/parser.rs", "forge/tests/map_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-map-status"]
+generated_to = ["status", "thermite-syntax-ast-map-status", "thermite-syntax-parser-collections-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1774,7 +1977,7 @@ scope = "syntax"
 summary = "Tuple destructuring in `let` position desugars to a temporary plus tuple projections rather than adding a new statement node."
 aliases = ["thermite-syntax/src/ast.rs REQ-1 (tuple destructuring `let (x,y)=e`)"]
 contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs", "forge/tests/ergonomics_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status", "thermite-syntax-parser-ergonomics-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1795,7 +1998,7 @@ scope = "syntax"
 summary = "`for i in lo..hi` desugars into existing `let` and `LoopNode` forms with a synthesized decreases clause."
 aliases = ["thermite-syntax/src/ast.rs REQ-2 (`for i in 0..n` loop)"]
 contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs", "forge/tests/ergonomics_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status", "thermite-syntax-parser-ergonomics-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1816,7 +2019,7 @@ scope = "syntax"
 summary = "`MatchArm.guard` records optional guarded match arms while preserving unguarded arms as `None`."
 aliases = ["thermite-syntax/src/ast.rs REQ-3 (match guards `x if cond =>`)"]
 contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/parser.rs", "forge/tests/ergonomics_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status", "thermite-syntax-parser-ergonomics-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1837,7 +2040,7 @@ scope = "syntax"
 summary = "`Pattern::Or` represents pipe-joined pattern alternatives as a flat pattern node consumed by validator and lowerer arms."
 aliases = ["thermite-syntax/src/ast.rs REQ-4 (or-patterns `1 \\| 2 =>`)"]
 contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/parser.rs", "forge/tests/ergonomics_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status", "thermite-syntax-parser-ergonomics-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1858,7 +2061,7 @@ scope = "syntax"
 summary = "`if let` and `while let` lower in the parser into existing match and loop AST shapes instead of new syntax nodes."
 aliases = ["thermite-syntax/src/ast.rs REQ-5 (`if let` / `while let`)"]
 contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs", "forge/tests/ergonomics_conformance.rs"]
-generated_to = ["status", "thermite-syntax-ast-ergonomics-status"]
+generated_to = ["status", "thermite-syntax-ast-ergonomics-status", "thermite-syntax-parser-ergonomics-status"]
 
 [[requirement.evidence]]
 kind = "symbol"
@@ -1874,6 +2077,262 @@ note = "while-let parser desugar"
 kind = "test"
 target = "forge/tests/ergonomics_conformance.rs"
 note = "if-let and while-let conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-RECURSIVE-DESCENT"
+title = "Recursive-descent parser structure"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The parser is a hand-written recursive-descent implementation with one fallible parser family per surface grammar area."
+aliases = ["thermite-syntax/src/parser.rs REQ-1 (recursive descent)"]
+contributors = [".design/syntax/parser.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_item"
+note = "top-level grammar family"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_expr"
+note = "expression grammar entry"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "corpus parser conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-MANDATORY-CLAUSES"
+title = "Mandatory clause enforcement"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Function contracts and loop clauses are required in grammar order and missing or misordered clauses become structured syntax errors."
+aliases = ["thermite-syntax/src/parser.rs REQ-2 (mandatory-clause enforcement)"]
+contributors = [".design/syntax/parser.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_contract"
+note = "req/ens/fx enforcement"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "MissingClause"
+note = "structured missing-clause diagnostic"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-RECOVERY"
+title = "Per-item parse recovery"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "A syntax error in one item is recovered at the next item boundary so later items can still parse and report facts."
+aliases = ["thermite-syntax/src/parser.rs REQ-3 (per-item recovery)"]
+contributors = [".design/syntax/parser.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "resync_to_item_boundary"
+note = "item-boundary recovery"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "recover_per_item fixture"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-RESULT"
+title = "Diagnostics-bearing parser result"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The public parser returns `ParseResult` with recovered diagnostics and uses structured `SyntaxError` values rather than panicking on invalid source."
+aliases = ["thermite-syntax/src/parser.rs REQ-4 (Result / no panic)"]
+contributors = [".design/syntax/parser.md", "thermite-syntax/tests/divergence_grammar.rs", "thermite-syntax/tests/divergence_reaudit.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ParseResult"
+note = "diagnostics-bearing parse output"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SyntaxError"
+note = "structured parse diagnostic enum"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-ROUNDTRIP"
+title = "Corpus round-trip parse fidelity"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The parser preserves the expected facts for canonical corpus programs without diagnostics."
+aliases = ["thermite-syntax/src/parser.rs REQ-5 (round-trip fidelity)"]
+contributors = [".design/syntax/parser.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "sum and binary_search fact assertions"
+
+[[requirement.evidence]]
+kind = "file"
+target = "conformance/parse/sum.facts.json"
+note = "sum parser fact oracle"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-CALL-SYNTAX"
+title = "One call-syntax parser"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Free calls, method calls, fields, and paths are disambiguated syntactically without method-dispatch registry knowledge."
+aliases = ["thermite-syntax/src/parser.rs REQ-6 (one call syntax)"]
+contributors = [".design/syntax/parser.md", ".design/syntax/surface-grammar.md"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_postfix"
+note = "method-call and field parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_path_expr"
+note = "free path/call parser"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-ADDRESSING"
+title = "Parser addressing substrate"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The parser preserves source order for loops and clauses so semantic addressing can number them deterministically."
+aliases = ["thermite-syntax/src/parser.rs REQ-7 (addressing substrate)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/src/address.rs", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_clause"
+note = "clause text/span capture"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-syntax/src/address.rs"
+note = "semantic address consumer"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-OPERATOR-TIERS"
+title = "Operator precedence parser tiers"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The parser has explicit precedence tiers for remainder, shifts, bitwise operators, and prefix `!`, with positional disambiguation for binary `&` and `|`."
+aliases = ["thermite-syntax/src/parser.rs REQ-8 (operator tiers `% << >> & \\| ^ !`, #92)"]
+contributors = [".design/syntax/parser.md", "thermite-syntax/tests/operators_parse.rs", "forge/tests/operators_conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_shift"
+note = "shift precedence tier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_bitor"
+note = "bitwise-or precedence tier"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/operators_parse.rs"
+note = "operator parse conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-PARTIALITY"
+title = "Partial operators stay parse-only"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The parser builds partial operator AST nodes without injecting preconditions; proof obligations remain a verifier/lowering concern."
+aliases = ["thermite-syntax/src/parser.rs REQ-9 (partiality not a parse concern, #92)"]
+contributors = [".design/syntax/parser.md", ".design/syntax/ast.md", "forge/tests/operators_conformance.rs"]
+generated_to = ["status", "thermite-syntax-parser-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_mul"
+note = "remainder parser arm"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_shift"
+note = "shift parser arm"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/operators_conformance.rs"
+note = "partial-operator L0/L3 controls"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-HOLE-SCOPE"
+title = "Goal REPL hole parser scope"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "The parser accepts `?N` holes only in exec function body statement position, records them in document order, and rejects holes outside that scope structurally."
+aliases = ["thermite-syntax/src/parser.rs goal-repl REQ-4 (parser accepts `?N` in fn-body statement position ONLY)"]
+contributors = [".design/forge/goal-repl.md", "thermite-syntax/src/ast.rs", "forge/tests/goal_repl_fill.rs"]
+generated_to = ["status", "thermite-syntax-parser-goal-repl-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_hole"
+note = "body-position hole parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "HoleOutsideFnBody"
+note = "out-of-scope hole diagnostic"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/goal_repl_fill.rs"
+note = "hole parse and fill conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-PARSER-BOUNDARY-FN"
+title = "Boundary function parser extension"
+owner = "thermite-syntax/src/parser.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`#[boundary]` parsing is attribute-dispatched, restricted to `fn`, and gates the semicolon-terminated bodyless function form."
+aliases = ["thermite-syntax/src/parser.rs ffi REQ-1/REQ-3"]
+contributors = [".design/boundary/ffi-boundary.md", "thermite-syntax/src/ast.rs", "thermite-syntax/tests/boundary_parse.rs"]
+generated_to = ["status", "thermite-syntax-parser-ffi-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_attribute"
+note = "attribute-name dispatch"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "parse_boundary_body"
+note = "boundary target parser"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/boundary_parse.rs"
+note = "boundary parser conformance"
 
 [[requirement]]
 id = "REQ-REG-1"

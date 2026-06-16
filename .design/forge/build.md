@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — stale GREENFIELD Summary + pre-pin #57 sandbox-installed REQ-6 corrected, post-pin kernel-target/open-hole drift noted, #262)
+audited-sha: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab (re-pinned 2026-06-16: forge workflow status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-audited 2026-06-12: amended — stale GREENFIELD Summary + pre-pin #57 sandbox-installed REQ-6 corrected, post-pin kernel-target/open-hole drift noted, #262))
 governs: forge/src/build.rs
 thesis-refs:
   - thermite-design.md §3

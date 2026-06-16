@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — shipped-status Summary; the #49 CHECK_SCHEMA_VERSION fifth key input (schema history 2–5), canonical-config-only caching, cached #13 rejects, and the engine-discriminated evidence-key wrapper, #262)
+audited-sha: 1cc9d97c6c5d7eab6109561834db77f2ef4b57ab (re-pinned 2026-06-16: forge workflow status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (re-pinned: the #269/#270 coordinated arc — the touched-file changes are exactly this doc's designed REQs / reviewed as claim-neutral)  (re-audited 2026-06-12: amended — shipped-status Summary; the #49 CHECK_SCHEMA_VERSION fifth key input (schema history 2–5), canonical-config-only caching, cached #13 rejects, and the engine-discriminated evidence-key wrapper, #262))
 governs: forge/src/cache.rs
 thesis-refs:
   - thermite-design.md §5.3

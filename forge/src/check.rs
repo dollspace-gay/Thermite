@@ -427,80 +427,6 @@ pub fn check_file_with_options(
             continue;
         }
 
-        // Stage-1 forge tier — the covenant engine (`.design/stage1-forge-tier.md`
-        // REQ-4, increment 2b). A forge-routed `fn` (one carrying a `witness` block)
-        // must pass its covenant BEFORE the L3 burn (R-COV-1, covenant-before-burn): its
-        // author `inhabit` witnesses are EXECUTED against `req` (a witness that does not
-        // satisfy `req` is a loud covenant error, never dropped), and a `falsify` run
-        // rides the SplitMix64 generator over the item's executable semantics searching
-        // for a `req`-satisfying input the body violates `ens` on. A malformed/absent
-        // covenant (no author witness, an ill-typed witness, an out-of-fragment item) is
-        // REFUSED — named — and a `falsify` hit is `CovenantRefuted` (a hard fail, the
-        // never-degrades treatment). BOTH short-circuit here (the `continue`), so the L3
-        // proof-search path is never reached without a validated covenant — the
-        // structural covenant-before-burn invariant (the closure-instrumented
-        // `covenant_engine::covenant_gate` pins it as a unit test). A VALIDATED covenant
-        // records its evidence and falls through to the normal burn (the record is in
-        // hand). A `fn` with no `witness` block is not covenant-routed and burns
-        // unchanged (no v1 corpus item carries one — a no-op on the v1 oracle).
-        if let Item::Fn(f) = item {
-            if let Some(witness) = covenant_bindings.get(&f.name) {
-                use crate::covenant_engine::{analyze_covenant, covenant_gate, CovenantGate};
-                let effects = effects_of(&f.contract.fx);
-                // Run the covenant analysis, then gate the burn STRUCTURALLY (R-COV-1):
-                // `covenant_gate` invokes the burn-authorization closure ONLY on a
-                // validated covenant, so reaching the L3 proof search (the fall-through
-                // below) implies a validated covenant in hand. The closure asserts the
-                // record is declared — the covenant-in-hand precondition — and the actual
-                // verus discharge is the gated fall-through, reached only when the gate
-                // returns `Burned`. The closure-instrumented `covenant_gate` unit test
-                // (`covenant_engine`) pins that the closure never runs on a refutation/
-                // refusal, so a refuted/malformed covenant can never reach proof search.
-                let gate = covenant_gate(analyze_covenant(f, witness), |record| {
-                    debug_assert!(
-                        record.declared,
-                        "covenant-before-burn (R-COV-1): the burn is authorized only with \
-                         a declared, validated covenant record in hand"
-                    );
-                });
-                match gate {
-                    CovenantGate::Refused { error } => {
-                        certs.push(Certificate::rejected(
-                            error.item().to_string(),
-                            effects,
-                            false,
-                            RejectReason {
-                                cause: error.cause().to_string(),
-                                detail: error.detail(),
-                            },
-                        ));
-                        continue;
-                    }
-                    CovenantGate::Refuted {
-                        counterexample,
-                        evidence,
-                    } => {
-                        certs.push(Certificate::covenant_refuted(
-                            f.name.clone(),
-                            effects,
-                            &counterexample,
-                            evidence,
-                        ));
-                        continue;
-                    }
-                    CovenantGate::Burned {
-                        result: (),
-                        evidence,
-                    } => {
-                        // The covenant validated and authorized the burn. Record its
-                        // evidence (attached to the post-burn cert below) and fall through
-                        // to the normal L3 proof search with the covenant in hand.
-                        covenant_evidence.insert(f.name.clone(), evidence);
-                    }
-                }
-            }
-        }
-
         // #6 gate: structural vacuity triage + `#[slag]` short-circuit run before
         // the L3 proof ("a function does not certify until its contract
         // certifies", §7). A `spec fn` carries no contract (ast.rs `SpecFnItem`),
@@ -548,6 +474,74 @@ pub fn check_file_with_options(
                 // the normal L3 path; the cert graduates the two §7.1
                 // `contract_quality` bools to live-`false` (REQ-6).
                 GateOutcome::ProceedToL3 => {}
+            }
+        }
+
+        // Stage-1 forge tier — the covenant engine (`.design/stage1-forge-tier.md`
+        // REQ-4, increment 2b), gating the L3 BURN. It runs AFTER the gate_fn
+        // short-circuits (`#[slag]`/`#[boundary]`/`fx diverge` certify L1 by fiat and a
+        // vacuity/weak-contract reject lands its L0 cert — none of these BURN, so the
+        // covenant, which gates the burn, does not pre-empt them: a proof-exempt slag
+        // item keeps `slag: true`/L1, slag.md REQ-2). A forge-routed `fn` (one carrying a
+        // `witness` block) that reaches HERE is on the L3 proof-search path and must pass
+        // its covenant first (R-COV-1, covenant-before-burn): author `inhabit` witnesses
+        // are EXECUTED against `req` (a witness not satisfying `req` is a loud covenant
+        // error, never dropped), and a `falsify` run rides the SplitMix64 generator over
+        // the item's executable semantics for a `req`-satisfying input the body violates
+        // `ens` on. A malformed/absent covenant is REFUSED — named — and a `falsify` hit
+        // is `CovenantRefuted` (a hard fail, never degraded); BOTH short-circuit here (the
+        // `continue`), so the L3 proof search below is never reached without a validated
+        // covenant (the closure-instrumented `covenant_engine::covenant_gate` pins the
+        // structural invariant as a unit test). A VALIDATED covenant records its evidence
+        // and falls through to the burn with the record in hand. A `fn` with no `witness`
+        // block is not covenant-routed and burns unchanged (no v1 corpus item carries one
+        // — a no-op on the v1 oracle).
+        if let Item::Fn(f) = item {
+            if let Some(witness) = covenant_bindings.get(&f.name) {
+                use crate::covenant_engine::{analyze_covenant, covenant_gate, CovenantGate};
+                let effects = effects_of(&f.contract.fx);
+                let gate = covenant_gate(analyze_covenant(f, witness), |record| {
+                    debug_assert!(
+                        record.declared,
+                        "covenant-before-burn (R-COV-1): the burn is authorized only with \
+                         a declared, validated covenant record in hand"
+                    );
+                });
+                match gate {
+                    CovenantGate::Refused { error } => {
+                        certs.push(Certificate::rejected(
+                            error.item().to_string(),
+                            effects,
+                            false,
+                            RejectReason {
+                                cause: error.cause().to_string(),
+                                detail: error.detail(),
+                            },
+                        ));
+                        continue;
+                    }
+                    CovenantGate::Refuted {
+                        counterexample,
+                        evidence,
+                    } => {
+                        certs.push(Certificate::covenant_refuted(
+                            f.name.clone(),
+                            effects,
+                            &counterexample,
+                            evidence,
+                        ));
+                        continue;
+                    }
+                    CovenantGate::Burned {
+                        result: (),
+                        evidence,
+                    } => {
+                        // The covenant validated and authorized the burn. Record its
+                        // evidence (attached to the post-burn cert below) and fall through
+                        // to the normal L3 proof search with the covenant in hand.
+                        covenant_evidence.insert(f.name.clone(), evidence);
+                    }
+                }
             }
         }
 

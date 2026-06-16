@@ -1,0 +1,8 @@
+{
+  "uuid": "296525d8-3103-4dcf-bb64-f8ba5671e41a",
+  "issue_uuid": "523448a7-ec2d-469e-9aee-e7fbc1377606",
+  "author": "BMF7",
+  "content": "Failing test at forge/tests/divergence_covenant_stmt_if_false_refutation.rs::stmt_position_if_value_must_be_discarded_not_a_false_refutation demonstrates the divergence. Root cause: forge/src/covenant_eval.rs eval_stmts Stmt::If arm reads the taken branch's then.tail/else_.tail and returns it as an early return of the enclosing block; the parser (thermite-syntax parser.rs TokKind::If arm) emits Stmt::If for a non-tail-position if/else even when its branches carry tail exprs. Rust/Verus executable semantics discard a statement-position if's value. Net effect: a correct item (alwayszero returning 0 via a discarded if/else, ens result==0) is falsely CovenantRefuted and blocked from the L3 burn, while the control body { 0 } burns to L3. Violates REQ-4 (falsify aimed at executable semantics) and the covenant_eval 'never a silent wrong value' contract.",
+  "created_at": "2026-06-16T16:10:14.981054Z",
+  "kind": "observation"
+}

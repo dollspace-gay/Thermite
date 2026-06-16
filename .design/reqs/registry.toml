@@ -641,6 +641,78 @@ region = "thermite-spec-validator-ergonomics-status"
 comment_prefix = "//! "
 title = "Ergonomics Validator Canonical Status References"
 
+[[view]]
+name = "thermite-skill-generator-core-status"
+path = "thermite-skill/src/generate.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-skill-generator-core-status"
+comment_prefix = "//! "
+title = "Skill Generator Core Canonical Status References"
+
+[[view]]
+name = "thermite-skill-generator-ergonomics-status"
+path = "thermite-skill/src/generate.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-skill-generator-ergonomics-status"
+comment_prefix = "//! "
+title = "Skill Generator Ergonomics Canonical Status References"
+
+[[view]]
+name = "thermite-verified-self-verification-status"
+path = "thermite-verified/src/lib.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-verified-self-verification-status"
+comment_prefix = "//! "
+title = "Self-Verification Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-address-status"
+path = "thermite-syntax/src/address.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-address-status"
+comment_prefix = "//! "
+title = "Semantic Addressing Canonical Status References"
+
+[[view]]
+name = "thermite-syntax-lexer-status"
+path = "thermite-syntax/src/lexer.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-syntax-lexer-status"
+comment_prefix = "//! "
+title = "Lexer Canonical Status References"
+
+[[view]]
+name = "thermite-lower-l2-core-status"
+path = "thermite-lower/src/l2.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-l2-core-status"
+comment_prefix = "//! "
+title = "L2 Kani Core Canonical Status References"
+
+[[view]]
+name = "thermite-lower-l2-ergonomics-status"
+path = "thermite-lower/src/l2.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-l2-ergonomics-status"
+comment_prefix = "//! "
+title = "L2 Kani Ergonomics Canonical Status References"
+
+[[view]]
+name = "thermite-lower-effects-status"
+path = "thermite-lower/src/effects.rs"
+kind = "reference_list"
+mode = "region"
+region = "thermite-lower-effects-status"
+comment_prefix = "//! "
+title = "Effect Subsumption Canonical Status References"
+
 [[legacy_mapping]]
 path = "thermite-tv/src/lib.rs"
 label = "REQ-5 (forge plug-in point)"
@@ -2215,6 +2287,398 @@ label = "ffi REQ-1/REQ-3"
 id = "REQ-SYNTAX-PARSER-BOUNDARY-FN"
 replacement_view = "thermite-syntax-parser-ffi-status"
 note = "Boundary parser extension row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-1 (`generate()` API + canonical sections)"
+id = "REQ-SKILL-GENERATOR-CANONICAL-SECTIONS"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator core row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-2 (combinator section machine-rendered from `all()`)"
+id = "REQ-SKILL-GENERATOR-COMBINATOR-SECTION"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator combinator row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-3 (curated PROSE sections — narrowed to irreducible prose)"
+id = "REQ-SKILL-GENERATOR-CURATED-PROSE"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator curated-prose row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-4 (deterministic token count + ≤ 6,000 gate)"
+id = "REQ-SKILL-GENERATOR-BUDGET"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator budget row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-5 (committed `THERMITE.skill.md` + up-to-date check)"
+id = "REQ-SKILL-GENERATOR-COMMITTED-FRESH"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator freshness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-6 (`thermite-skill` bin — `--emit`/`--check-budget`)"
+id = "REQ-SKILL-GENERATOR-BIN"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator binary row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-7 (CI `--check-budget` step)"
+id = "REQ-SKILL-GENERATOR-CI-BUDGET"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator CI budget row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-8 (compiler-enforced no-staleness GUARANTEE)"
+id = "REQ-SKILL-GENERATOR-NO-STALENESS"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator no-staleness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-9 (recursion-scheme section registry-driven from `schemes::all()`)"
+id = "REQ-SKILL-GENERATOR-SCHEMES"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator scheme row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-10 (type/expr/item/pattern/effect grammar exhaustive-match-driven)"
+id = "REQ-SKILL-GENERATOR-GRAMMAR-EXHAUSTIVE"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator grammar inventory row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-11 (prose curated + freshness-tested; forge command list the honest exception)"
+id = "REQ-SKILL-GENERATOR-PROSE-FRESHNESS"
+replacement_view = "thermite-skill-generator-core-status"
+note = "Skill generator prose freshness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-1/2/5 (tuple destructure / `for` / `if let`-`while let` teaching)"
+id = "REQ-SKILL-ERGONOMICS-DESUGAR"
+replacement_view = "thermite-skill-generator-ergonomics-status"
+note = "Skill ergonomics desugar row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-3 (match guard arm)"
+id = "REQ-SKILL-ERGONOMICS-MATCH-GUARD"
+replacement_view = "thermite-skill-generator-ergonomics-status"
+note = "Skill match-guard row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-skill/src/generate.rs"
+label = "REQ-4 (or-pattern arm)"
+id = "REQ-SKILL-ERGONOMICS-OR-PATTERN"
+replacement_view = "thermite-skill-generator-ergonomics-status"
+note = "Skill or-pattern row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-1 (self-verification architecture)"
+id = "REQ-VERIFIED-SELF-VERIFICATION-ARCHITECTURE"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification architecture row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-2 (remaining Tier-1 targets + porting pattern)"
+id = "REQ-VERIFIED-TIER1-COVERAGE"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification Tier-1 coverage row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-3 (Tier-2/Tier-3 boundaries)"
+id = "REQ-VERIFIED-TIER-BOUNDARIES"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification tier-boundary row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-4 (honesty — genuine proof)"
+id = "REQ-VERIFIED-HONESTY"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification honesty row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-5 (FIRST increment — `subsumes` verified + delegated/matched)"
+id = "REQ-VERIFIED-SUBSUMES"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification effect-subsumption row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-6 (CI-able verus-verify gauntlet step)"
+id = "REQ-VERIFIED-CI-GAUNTLET"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification CI gauntlet row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-7 (degrade anti-cheat verified + anchored)"
+id = "REQ-VERIFIED-DEGRADE-ANTICHEAT"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification degrade anti-cheat row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-8 (seccomp allowlist soundness verified + anchored)"
+id = "REQ-VERIFIED-SANDBOX-ALLOWLIST"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification sandbox allowlist row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-9 (boundary HONESTY gate — Target C)"
+id = "REQ-VERIFIED-BOUNDARY-HONESTY"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification boundary-honesty row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-10 (project LEVEL AGGREGATION — Target D)"
+id = "REQ-VERIFIED-AGGREGATE-LEVEL"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification aggregate-level row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-verified/src/lib.rs"
+label = "REQ-11 (mutation FLOOR gate — Target E, #48)"
+id = "REQ-VERIFIED-MUTATION-FLOOR"
+replacement_view = "thermite-verified-self-verification-status"
+note = "Self-verification mutation-floor row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "REQ-1 (address grammar)"
+id = "REQ-SYNTAX-ADDRESS-GRAMMAR"
+replacement_view = "thermite-syntax-address-status"
+note = "Semantic-address grammar row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "REQ-2 (loop numbering)"
+id = "REQ-SYNTAX-ADDRESS-LOOP-NUMBERING"
+replacement_view = "thermite-syntax-address-status"
+note = "Semantic-address loop-numbering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "REQ-3 (inv numbering)"
+id = "REQ-SYNTAX-ADDRESS-INV-NUMBERING"
+replacement_view = "thermite-syntax-address-status"
+note = "Semantic-address invariant-numbering row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "REQ-4 (dec address)"
+id = "REQ-SYNTAX-ADDRESS-DEC"
+replacement_view = "thermite-syntax-address-status"
+note = "Semantic-address dec row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "REQ-5 (stability under unrelated edits)"
+id = "REQ-SYNTAX-ADDRESS-STABILITY"
+replacement_view = "thermite-syntax-address-status"
+note = "Semantic-address stability row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "REQ-6 (deterministic + bidirectional)"
+id = "REQ-SYNTAX-ADDRESS-DETERMINISTIC-RESOLVE"
+replacement_view = "thermite-syntax-address-status"
+note = "Semantic-address bidirectional resolution row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/address.rs"
+label = "goal-repl REQ-4 (`<fn>.?N` hole address, #193)"
+id = "REQ-SYNTAX-ADDRESS-HOLES"
+replacement_view = "thermite-syntax-address-status"
+note = "Goal-REPL hole-address row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-1 (token set)"
+id = "REQ-SYNTAX-LEXER-TOKEN-SET"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer token-set row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-2 (keywords closed set)"
+id = "REQ-SYNTAX-LEXER-KEYWORDS"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer keyword row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-3 — VALUE (int literals with `_` stripped)"
+id = "REQ-SYNTAX-LEXER-INT-VALUE"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer integer-value row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-3 — RAW (verbatim source slice on the token, #37)"
+id = "REQ-SYNTAX-LEXER-INT-RAW"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer integer-raw row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-4 (`#[slag]` tokenization)"
+id = "REQ-SYNTAX-LEXER-SLAG-STRINGS"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer slag/string row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-3 — HEX/BINARY (radix spellings, #92)"
+id = "REQ-SYNTAX-LEXER-INT-RADIX"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer radix integer row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-9 (char literals → byte `u8` via `Int` token, #91/#92)"
+id = "REQ-SYNTAX-LEXER-CHAR-BYTE"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer char-literal row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-5 (comments + whitespace insignificant)"
+id = "REQ-SYNTAX-LEXER-TRIVIA"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer trivia row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-6 (maximal munch operators)"
+id = "REQ-SYNTAX-LEXER-MAXIMAL-MUNCH"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer maximal-munch row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-7 (spans)"
+id = "REQ-SYNTAX-LEXER-SPANS"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer spans row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-syntax/src/lexer.rs"
+label = "REQ-8 (Result discipline)"
+id = "REQ-SYNTAX-LEXER-RESULT-DISCIPLINE"
+replacement_view = "thermite-syntax-lexer-status"
+note = "Lexer result-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-1 (L2 harness-emission entry point)"
+id = "REQ-LOWER-L2-HARNESS"
+replacement_view = "thermite-lower-l2-core-status"
+note = "L2 harness row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-2 (type-driven bound inference)"
+id = "REQ-LOWER-L2-TYPE-BOUNDS"
+replacement_view = "thermite-lower-l2-core-status"
+note = "L2 type-bound row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-3 (unwind bounds for loops/recursion)"
+id = "REQ-LOWER-L2-UNWIND"
+replacement_view = "thermite-lower-l2-core-status"
+note = "L2 unwind-bound row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-6 (the \"up to bound\" caveat)"
+id = "REQ-LOWER-L2-BOUND-CAVEAT"
+replacement_view = "thermite-lower-l2-core-status"
+note = "L2 bounded-scope row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-9 (determinism)"
+id = "REQ-LOWER-L2-DETERMINISM"
+replacement_view = "thermite-lower-l2-core-status"
+note = "L2 determinism row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-1 (no panics; `LowerError`)"
+id = "REQ-LOWER-L2-ERRORS"
+replacement_view = "thermite-lower-l2-core-status"
+note = "L2 error-discipline row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/l2.rs"
+label = "REQ-1..5 (NO L2 change needed)"
+id = "REQ-LOWER-L2-ERGONOMICS-MIRROR"
+replacement_view = "thermite-lower-l2-ergonomics-status"
+note = "L2 ergonomics mirror row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/effects.rs"
+label = "REQ-1 (effect lattice)"
+id = "REQ-LOWER-EFFECTS-LATTICE"
+replacement_view = "thermite-lower-effects-status"
+note = "Effect lattice row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/effects.rs"
+label = "REQ-2 (subsumption accept relation)"
+id = "REQ-LOWER-EFFECTS-SUBSUMPTION"
+replacement_view = "thermite-lower-effects-status"
+note = "Effect subsumption row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/effects.rs"
+label = "REQ-3 (check entry point + call graph)"
+id = "REQ-LOWER-EFFECTS-CHECK"
+replacement_view = "thermite-lower-effects-status"
+note = "Effect checker row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/effects.rs"
+label = "REQ-4 (structured rejection, `LowerError`)"
+id = "REQ-LOWER-EFFECTS-ERROR"
+replacement_view = "thermite-lower-effects-status"
+note = "Effect error row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/effects.rs"
+label = "REQ-5 (maximal-row / slag boundary)"
+id = "REQ-LOWER-EFFECTS-MAXIMAL-ROW-BOUNDARY"
+replacement_view = "thermite-lower-effects-status"
+note = "Effect maximal-row boundary row replaced by a generated canonical reference."
+
+[[legacy_mapping]]
+path = "thermite-lower/src/effects.rs"
+label = "REQ-6 (runtime sandbox deferred to #21)"
+id = "REQ-LOWER-EFFECTS-SANDBOX-SCOPE"
+replacement_view = "thermite-lower-effects-status"
+note = "Effect runtime-sandbox scope row replaced by a generated canonical reference."
 
 [[requirement]]
 id = "REQ-SYNTAX-AST-ITEMS"
@@ -7349,3 +7813,1459 @@ note = "runtime loop lowering for desugared loops"
 kind = "test"
 target = "thermite-lower/tests/l1_conformance.rs"
 note = "L1 runnable path conformance"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-CANONICAL-SECTIONS"
+title = "Skill generator canonical sections"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "`generate` assembles the canonical skill file in the fixed section order from grammar, combinator, scheme, forge, ladder, and slag renderers."
+aliases = ["thermite-skill/src/generate.rs REQ-1 (`generate()` API + canonical sections)"]
+contributors = [".design/skill/skill-generator.md", "THERMITE.skill.md", "thermite-skill/src/main.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "canonical skill assembly entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_grammar"
+note = "first generated section"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-skill/src/generate.rs"
+note = "sections and freshness tests"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-COMBINATOR-SECTION"
+title = "Combinator section from registry"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "`render_combinators` iterates the SpecTherm combinator registry and renders each signature plus an example, preventing the skill combinator section from drifting from `all()`."
+aliases = ["thermite-skill/src/generate.rs REQ-2 (combinator section machine-rendered from `all()`)"]
+contributors = [".design/skill/skill-generator.md", ".design/spec/spectherm-combinators.md", "thermite-spec/src/combinators.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_combinators"
+note = "registry-driven combinator section renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "example_for"
+note = "per-combinator example source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "combinator_coverage"
+note = "coverage test"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-CURATED-PROSE"
+title = "Curated prose sections"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "The irreducible prose sections for forge usage, ladder semantics, slag, and grammar framing are compiled into deterministic renderers and covered by freshness tests."
+aliases = ["thermite-skill/src/generate.rs REQ-3 (curated PROSE sections — narrowed to irreducible prose)"]
+contributors = [".design/skill/skill-generator.md", "THERMITE.skill.md"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_forge"
+note = "forge prose renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_ladder"
+note = "ladder prose renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "grammar_forge_slag_coverage"
+note = "curated prose coverage test"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-BUDGET"
+title = "Deterministic skill token budget"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "`token_count` implements the deterministic conservative budget heuristic and `SKILL_TOKEN_BUDGET` fixes the 6000-token gate consumed by the CLI."
+aliases = ["thermite-skill/src/generate.rs REQ-4 (deterministic token count + ≤ 6,000 gate)"]
+contributors = [".design/skill/skill-generator.md", "thermite-skill/src/main.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "token_count"
+note = "deterministic token-count heuristic"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SKILL_TOKEN_BUDGET"
+note = "hard budget constant"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "budget_gate"
+note = "budget test"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-COMMITTED-FRESH"
+title = "Committed skill freshness"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "The committed `THERMITE.skill.md` is treated as generated output and tested against `generate()` so checked-in skill text cannot silently drift."
+aliases = ["thermite-skill/src/generate.rs REQ-5 (committed `THERMITE.skill.md` + up-to-date check)"]
+contributors = [".design/skill/skill-generator.md", "THERMITE.skill.md"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "THERMITE.skill.md"
+note = "committed generated skill"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "freshness source"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-skill/tests/skill.rs"
+note = "committed skill freshness test"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-BIN"
+title = "Skill generator CLI"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "The `thermite-skill` binary dispatches `--emit` to `generate()` and `--check-budget` to the budget gate."
+aliases = ["thermite-skill/src/generate.rs REQ-6 (`thermite-skill` bin — `--emit`/`--check-budget`)"]
+contributors = [".design/skill/skill-generator.md", "thermite-skill/src/main.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-skill/src/main.rs"
+note = "skill binary entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "generate"
+note = "--emit source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "token_count"
+note = "--check-budget source"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-CI-BUDGET"
+title = "CI skill budget gate"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "CI runs `cargo run -p thermite-skill -- --check-budget`, making the generated skill budget a must-pass gate."
+aliases = ["thermite-skill/src/generate.rs REQ-7 (CI `--check-budget` step)"]
+contributors = [".design/skill/skill-generator.md", ".github/workflows/ci.yml"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = ".github/workflows/ci.yml"
+note = "CI workflow containing the budget step"
+
+[[requirement.evidence]]
+kind = "command"
+target = "cargo run -p thermite-skill -- --check-budget"
+note = "budget gate command"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SKILL_TOKEN_BUDGET"
+note = "budget enforced by the command"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-NO-STALENESS"
+title = "Compiler-enforced skill surface freshness"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "Surface inventories are rendered from registries or exhaustive matches with no wildcard arm, so new syntax variants compile-force skill updates."
+aliases = ["thermite-skill/src/generate.rs REQ-8 (compiler-enforced no-staleness GUARANTEE)"]
+contributors = [".design/skill/skill-generator.md", "thermite-syntax/src/ast.rs", "thermite-spec/src/combinators.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_expr_arm"
+note = "exhaustive expression surface renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_pattern_arm"
+note = "exhaustive pattern surface renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "surface_construct_coverage"
+note = "surface inventory coverage test"
+
+[[requirement]]
+id = "REQ-VERIFIED-SELF-VERIFICATION-ARCHITECTURE"
+title = "Self-verification architecture"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "The soundness-critical Tier-1 pure core lives in a Verus-gated `verus!{}` body with cargo-compiled mirrors and exhaustive equivalence anchors where direct linking is not viable."
+aliases = ["thermite-verified/src/lib.rs REQ-1 (self-verification architecture)"]
+contributors = [".design/verified/self-verification.md", "thermite-verified/tests/verus_verify.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verus_core"
+note = "Verus-gated verified core module"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "subsumes_masks"
+note = "cargo-compiled mirror of verified effect subsumption"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-verified/tests/verus_verify.rs"
+note = "real Verus no-cheating verification test"
+
+[[requirement]]
+id = "REQ-VERIFIED-TIER1-COVERAGE"
+title = "Tier-1 coverage and porting pattern"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "Finite-domain Tier-1 targets are ported and anchored via the mechanism-c mirror pattern, while unbounded or cryptographic decisions are explicitly outside the finite fragment."
+aliases = ["thermite-verified/src/lib.rs REQ-2 (remaining Tier-1 targets + porting pattern)"]
+contributors = [".design/verified/self-verification.md", "thermite-verified/tests/verus_verify.rs", "thermite-lower/tests/effects_verified.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "should_emit_external_body"
+note = "boundary honesty Tier-1 target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_level"
+note = "project-level minimum Tier-1 target"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "meets_floor_60"
+note = "mutation floor Tier-1 target"
+
+[[requirement]]
+id = "REQ-VERIFIED-TIER-BOUNDARIES"
+title = "Verified tier boundaries"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "The verified crate contains no I/O or `external_body`; its Tier-1 cores carry real `ensures` clauses and do not reach the Tier-3 escape hatch."
+aliases = ["thermite-verified/src/lib.rs REQ-3 (Tier-2/Tier-3 boundaries)"]
+contributors = [".design/verified/self-verification.md", "thermite-verified/tests/verus_verify.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verus_core"
+note = "verified core has no runtime I/O path"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-verified/tests/verus_verify.rs"
+note = "Verus verification test over the crate"
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite-verified/src/lib.rs"
+note = "verified crate source"
+
+[[requirement]]
+id = "REQ-VERIFIED-HONESTY"
+title = "Genuine Verus proof honesty"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "The verified core is checked with `verus --no-cheating`, carries non-vacuous ensures, and has mutation-style teeth for the key proved properties."
+aliases = ["thermite-verified/src/lib.rs REQ-4 (honesty — genuine proof)"]
+contributors = [".design/verified/self-verification.md", "thermite-verified/tests/verus_verify.rs", "thermite-lower/tests/effects_verified.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "broken_subsumes_fails_verification"
+note = "non-vacuity test for the Verus proof"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verified_spec_is_not_vacuous"
+note = "mirror-spec non-vacuity test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-verified/tests/verus_verify.rs"
+note = "no-cheating Verus run"
+
+[[requirement]]
+id = "REQ-VERIFIED-SUBSUMES"
+title = "Verified effect subsumption"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "`subsumes_masks` mirrors the Verus-proved bitset subset decision and anchors the lowerer effect subsumption relation through exhaustive finite-domain tests."
+aliases = ["thermite-verified/src/lib.rs REQ-5 (FIRST increment — `subsumes` verified + delegated/matched)"]
+contributors = [".design/verified/self-verification.md", ".design/lower/effect-subsumption.md", "thermite-lower/tests/effects_verified.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "subsumes_masks"
+note = "verified effect-subsumption mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "spec_subsumes_mask"
+note = "plain-Rust spec mirror"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/effects_verified.rs"
+note = "exhaustive mirror/production equivalence"
+
+[[requirement]]
+id = "REQ-VERIFIED-CI-GAUNTLET"
+title = "Verus verification gauntlet"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "`tests/verus_verify.rs` invokes the real Verus driver with no cheating and fails hard if the verified core stops proving."
+aliases = ["thermite-verified/src/lib.rs REQ-6 (CI-able verus-verify gauntlet step)"]
+contributors = [".design/verified/self-verification.md", "thermite-verified/tests/verus_verify.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-verified/tests/verus_verify.rs"
+note = "Verus gauntlet test file"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "verified_core_passes_verus_no_cheating"
+note = "positive no-cheating gauntlet"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "run_verus"
+note = "real Verus subprocess driver"
+
+[[requirement]]
+id = "REQ-VERIFIED-DEGRADE-ANTICHEAT"
+title = "Verified degrade anti-cheat"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "The Verus core proves L3 and L2 counterexamples never take a degrade edge, and the plain Rust ladder-action mirrors are anchored to the production degrade ladder."
+aliases = ["thermite-verified/src/lib.rs REQ-7 (degrade anti-cheat verified + anchored)"]
+contributors = [".design/verified/self-verification.md", ".design/forge/degrade-ladder.md", "forge/src/degrade.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ladder_action_l3_tag"
+note = "L3 ladder-action mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "ladder_action_l2_tag"
+note = "L2 ladder-action mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "anti_cheat_holds_for_all_verdicts"
+note = "Verus anti-cheat proof"
+
+[[requirement]]
+id = "REQ-VERIFIED-SANDBOX-ALLOWLIST"
+title = "Verified sandbox allowlist"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "`io_allow` and `widen` mirror the Verus-proved syscall allowlist soundness relation over all nine effect atoms and five sensitive syscall bits."
+aliases = ["thermite-verified/src/lib.rs REQ-8 (seccomp allowlist soundness verified + anchored)"]
+contributors = [".design/verified/self-verification.md", ".design/forge/runtime-sandbox.md", "forge/src/sandbox.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "io_allow"
+note = "plain syscall allowlist mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "widen"
+note = "effect-atom to syscall-mask widening"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "io_allow_within_io_bits"
+note = "Verus deny-by-default proof"
+
+[[requirement]]
+id = "REQ-VERIFIED-BOUNDARY-HONESTY"
+title = "Verified boundary honesty gate"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "`should_emit_external_body` is proved equivalent to the boundary-or-slag predicate, with a corollary that regular functions never receive `external_body`."
+aliases = ["thermite-verified/src/lib.rs REQ-9 (boundary HONESTY gate — Target C)"]
+contributors = [".design/verified/self-verification.md", ".design/boundary/ffi-boundary.md", "thermite-lower/tests/boundary_gate_verified.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "should_emit_external_body"
+note = "boundary external-body predicate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "regular_fn_never_external_body"
+note = "Verus honesty corollary"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/boundary_gate_verified.rs"
+note = "observable lowering dispatch anchor"
+
+[[requirement]]
+id = "REQ-VERIFIED-AGGREGATE-LEVEL"
+title = "Verified project level aggregation"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "`aggregate_level` proves the project assurance headline is the minimum over per-function levels, bounded by every member and attained by some member when non-empty."
+aliases = ["thermite-verified/src/lib.rs REQ-10 (project LEVEL AGGREGATION — Target D)"]
+contributors = [".design/verified/self-verification.md", ".design/forge/certificate-manifest.md", "forge/src/manifest.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_level"
+note = "project-level fold-min mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_le_all"
+note = "Verus lower-bound proof"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "aggregate_is_attained"
+note = "Verus attained-min proof"
+
+[[requirement]]
+id = "REQ-VERIFIED-MUTATION-FLOOR"
+title = "Verified mutation floor gate"
+owner = "thermite-verified/src/lib.rs"
+status = "shipped"
+scope = "verified"
+summary = "`meets_floor_60` uses integer cross-multiplication and proves the zero-scored anti-Goodhart case never passes, then anchors forge's mutation floor mirror."
+aliases = ["thermite-verified/src/lib.rs REQ-11 (mutation FLOOR gate — Target E, #48)"]
+contributors = [".design/verified/self-verification.md", ".design/forge/mutation-scoring.md", "forge/src/mutation.rs"]
+generated_to = ["status", "thermite-verified-self-verification-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "meets_floor_60"
+note = "plain mutation-floor mirror"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "zero_scored_never_passes"
+note = "Verus zero-scored proof"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-verified/tests/verus_verify.rs"
+note = "Verus proof gauntlet"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-GRAMMAR"
+title = "Semantic address grammar"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Semantic addresses consist of an item name followed by `loop#N`, `inv#M`, `dec`, or hole segments, with parser and display support."
+aliases = ["thermite-syntax/src/address.rs REQ-1 (address grammar)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AddressEntry"
+note = "address entry carrier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate_segments"
+note = "address segment grammar validator"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "semantic address conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-LOOP-NUMBERING"
+title = "Semantic address loop numbering"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`addresses_of` numbers `while` and `loop` nodes in one 1-based source-order namespace per enclosing item."
+aliases = ["thermite-syntax/src/address.rs REQ-2 (loop numbering)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "addresses_of"
+note = "address enumeration entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "collect_block_loops"
+note = "loop address collector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "binary_search_addresses"
+note = "loop-address oracle test"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-INV-NUMBERING"
+title = "Semantic address invariant numbering"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Loop invariants receive 1-based `inv#M` addresses in source order under their owning loop address."
+aliases = ["thermite-syntax/src/address.rs REQ-3 (inv numbering)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_loop"
+note = "emits loop and invariant address entries"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AddressEntry"
+note = "stores invariant address text"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "inv#2/inv#3 conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-DEC"
+title = "Semantic address dec segment"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Each loop's termination metric resolves to a single `<loop>.dec` segment rather than an ordinal metric namespace."
+aliases = ["thermite-syntax/src/address.rs REQ-4 (dec address)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_loop"
+note = "emits dec address entries"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AddrKind::Dec"
+note = "dec address kind"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "semantic address oracle"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-STABILITY"
+title = "Semantic address stability"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Address numbering is computed from the enclosing item's block positions only, so unrelated item edits do not perturb an existing item's addresses."
+aliases = ["thermite-syntax/src/address.rs REQ-5 (stability under unrelated edits)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "addresses_of"
+note = "deterministic per-program address enumeration"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "address_stability_under_unrelated_edit"
+note = "stability regression test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "semantic addressing conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-DETERMINISTIC-RESOLVE"
+title = "Semantic address bidirectional resolution"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`addresses_of` and `resolve` provide deterministic node-to-address and address-to-node behavior, returning structured `AddressError`s for malformed or missing addresses."
+aliases = ["thermite-syntax/src/address.rs REQ-6 (deterministic + bidirectional)"]
+contributors = [".design/syntax/semantic-addressing.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "resolve"
+note = "address-to-node resolver"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AddressError"
+note = "structured resolution error"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "bidirectional address conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-ADDRESS-HOLES"
+title = "Semantic address holes"
+owner = "thermite-syntax/src/address.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`addresses_of` emits `<fn>.?N` entries for body holes and `validate_segments` accepts well-formed hole address segments for `forge fill`."
+aliases = ["thermite-syntax/src/address.rs goal-repl REQ-4 (`<fn>.?N` hole address, #193)"]
+contributors = [".design/forge/goal-repl.md", "forge/src/goal_repl.rs", "thermite-syntax/src/parser.rs"]
+generated_to = ["status", "thermite-syntax-address-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AddrKind::Hole"
+note = "hole address kind"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "validate_segments"
+note = "accepts ?N segments"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "fill_hole"
+note = "forge fill consumer"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-TOKEN-SET"
+title = "Lexer token set"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`TokKind` enumerates the closed token vocabulary consumed by the parser, including keywords, identifiers, literals, punctuation, slag markers, holes, and EOF."
+aliases = ["thermite-syntax/src/lexer.rs REQ-1 (token set)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/src/parser.rs", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "TokKind"
+note = "token-kind enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Token"
+note = "lexer token carrier"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "lexer/parser conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-KEYWORDS"
+title = "Lexer reserved keyword set"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`keyword_kind` maps the reserved keyword set while leaving effect names, slag fields, and contextual type names as identifiers where required."
+aliases = ["thermite-syntax/src/lexer.rs REQ-2 (keywords closed set)"]
+contributors = [".design/syntax/lexer.md", ".design/basis/01-adts.md", "thermite-syntax/src/parser.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "keyword_kind"
+note = "reserved-word classifier"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_word"
+note = "identifier/keyword scanner"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "keyword parsing conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-INT-VALUE"
+title = "Lexer integer literal value"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`lex_int` strips underscores and accumulates the numeric value for decimal integer literals."
+aliases = ["thermite-syntax/src/lexer.rs REQ-3 — VALUE (int literals with `_` stripped)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_int"
+note = "integer literal scanner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "int_literal_underscores_strip_to_value"
+note = "decimal underscore value test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "integer literal conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-INT-RAW"
+title = "Lexer integer literal raw spelling"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`lex_int` preserves the verbatim source spelling for integer tokens alongside the stripped numeric value."
+aliases = ["thermite-syntax/src/lexer.rs REQ-3 — RAW (verbatim source slice on the token, #37)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/tests/conformance.rs", "thermite-syntax/tests/divergence_intlit.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_int"
+note = "captures raw integer token text"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "int_literal_preserves_raw"
+note = "raw-spelling conformance test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/divergence_intlit.rs"
+note = "integer literal raw regression tests"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-SLAG-STRINGS"
+title = "Lexer slag and string tokenization"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`lex_punct` recognizes `#[` for slag attributes, and `lex_string` decodes the supported byte escapes with structured diagnostics for malformed or high-byte escapes."
+aliases = ["thermite-syntax/src/lexer.rs REQ-4 (`#[slag]` tokenization)"]
+contributors = [".design/syntax/lexer.md", ".design/basis/07-strings.md", "thermite-syntax/tests/string_escapes.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_string"
+note = "string literal scanner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_punct"
+note = "slag marker scanner"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/string_escapes.rs"
+note = "string escape conformance"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-INT-RADIX"
+title = "Lexer hexadecimal and binary integer spellings"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`lex_int` supports `0x`/`0X` and `0b`/`0B` spellings while preserving raw text and reporting malformed radix literals as structured syntax errors."
+aliases = ["thermite-syntax/src/lexer.rs REQ-3 — HEX/BINARY (radix spellings, #92)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/tests/operators_parse.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "radix_digit"
+note = "radix literal digit parser"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "hex_and_binary_literals_lex_to_decimal_value"
+note = "radix literal test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/operators_parse.rs"
+note = "operator/literal lexer tests"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-CHAR-BYTE"
+title = "Lexer char literals as byte ints"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`lex_char` emits ASCII and escaped character literals as `TokKind::Int` byte values and rejects empty, unterminated, multi-byte, or high-byte forms structurally."
+aliases = ["thermite-syntax/src/lexer.rs REQ-9 (char literals → byte `u8` via `Int` token, #91/#92)"]
+contributors = [".design/basis/07-strings.md", ".design/syntax/lexer.md", "thermite-syntax/tests/operators_parse.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_char"
+note = "char literal scanner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "char_literal_lexes_to_byte_value_int_token"
+note = "char literal token test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/operators_conformance.rs"
+note = "L3 grounding for char byte value"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-TRIVIA"
+title = "Lexer trivia skipping"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`skip_trivia` consumes whitespace and line comments without emitting tokens, keeping Thermite whitespace-insignificant."
+aliases = ["thermite-syntax/src/lexer.rs REQ-5 (comments + whitespace insignificant)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/tests/conformance.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "skip_trivia"
+note = "whitespace/comment skipper"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tokenize"
+note = "scanner entry that invokes trivia skipping"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/conformance.rs"
+note = "parse conformance with insignificant trivia"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-MAXIMAL-MUNCH"
+title = "Lexer maximal-munch punctuation"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`lex_punct` recognizes two-character operators before one-character tokens and includes the extended `%`, `^`, `<<`, and `>>` operator spellings."
+aliases = ["thermite-syntax/src/lexer.rs REQ-6 (maximal munch operators)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/tests/operators_parse.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lex_punct"
+note = "punctuation/operator scanner"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "shift_operators_are_one_token_each_maximal_munch"
+note = "maximal-munch regression test"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-syntax/tests/operators_parse.rs"
+note = "operator lexer tests"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-SPANS"
+title = "Lexer source spans"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "Every token carries a byte-offset `Span` used by parser diagnostics, raw literal capture, and semantic addressing."
+aliases = ["thermite-syntax/src/lexer.rs REQ-7 (spans)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/src/parser.rs", "thermite-syntax/src/address.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Span"
+note = "source span type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Token"
+note = "span-carrying token type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "int_literal_raw_matches_span_slice"
+note = "span/raw regression test"
+
+[[requirement]]
+id = "REQ-SYNTAX-LEXER-RESULT-DISCIPLINE"
+title = "Lexer structured diagnostics"
+owner = "thermite-syntax/src/lexer.rs"
+status = "shipped"
+scope = "syntax"
+summary = "`tokenize` returns tokens plus `SyntaxError`s, turning stray or malformed input into diagnostics rather than panics."
+aliases = ["thermite-syntax/src/lexer.rs REQ-8 (Result discipline)"]
+contributors = [".design/syntax/lexer.md", "thermite-syntax/tests/conformance.rs", "thermite-syntax/tests/operators_parse.rs"]
+generated_to = ["status", "thermite-syntax-lexer-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "tokenize"
+note = "fallible scanner entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SyntaxError"
+note = "structured diagnostic type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "stray_char_is_diagnostic_not_panic"
+note = "no-panic diagnostic regression test"
+
+[[requirement]]
+id = "REQ-LOWER-L2-HARNESS"
+title = "L2 Kani harness emission"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_l2` emits per-function Kani proof harnesses that reuse L1 executable lowering for spec functions, combinators, bodies, and contract assertions."
+aliases = ["thermite-lower/src/l2.rs REQ-1 (L2 harness-emission entry point)"]
+contributors = [".design/lower/l2-kani.md", "forge/src/kani.rs", "thermite-lower/tests/l2_conformance.rs"]
+generated_to = ["status", "thermite-lower-l2-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l2"
+note = "L2 source emission entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "emit_harness"
+note = "per-function Kani harness emitter"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/l2_conformance.rs"
+note = "L2 Kani conformance"
+
+[[requirement]]
+id = "REQ-LOWER-L2-TYPE-BOUNDS"
+title = "L2 type-driven symbolic bounds"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "`infer_symbolic_input` derives symbolic Kani inputs from parameter types rather than function names, including fixed-capacity slice arrays and scalar `kani::any()` values."
+aliases = ["thermite-lower/src/l2.rs REQ-2 (type-driven bound inference)"]
+contributors = [".design/lower/l2-kani.md", "thermite-lower/tests/l2_conformance.rs"]
+generated_to = ["status", "thermite-lower-l2-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "infer_symbolic_input"
+note = "type-driven symbolic input emitter"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SLICE_BOUND"
+note = "fixed slice capacity bound"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "bound_is_type_derived_not_name_derived"
+note = "type-bound regression test"
+
+[[requirement]]
+id = "REQ-LOWER-L2-UNWIND"
+title = "L2 loop and recursion unwind bounds"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "`unwind_bound` derives the Kani unwind value from loop shape, with while loops and unconditional loops using distinct deterministic bounds."
+aliases = ["thermite-lower/src/l2.rs REQ-3 (unwind bounds for loops/recursion)"]
+contributors = [".design/lower/l2-kani.md", "thermite-lower/tests/l2_conformance.rs"]
+generated_to = ["status", "thermite-lower-l2-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "unwind_bound"
+note = "loop-shape unwind-bound function"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "has_unconditional_loop"
+note = "unconditional-loop detector"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "unwind_bound_is_shape_keyed"
+note = "unwind-shape regression test"
+
+[[requirement]]
+id = "REQ-LOWER-L2-BOUND-CAVEAT"
+title = "L2 bounded-assurance caveat"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "`bound_string` records the slice and unwind bounds so L2 certificates remain distinguishable from unbounded L3 proofs."
+aliases = ["thermite-lower/src/l2.rs REQ-6 (the \"up to bound\" caveat)"]
+contributors = [".design/lower/l2-kani.md", "forge/src/kani.rs", "forge/src/manifest.rs"]
+generated_to = ["status", "thermite-lower-l2-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "bound_string"
+note = "human/cert bound string"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Level::L2"
+note = "manifest level distinguishing bounded assurance"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "bound_string_states_the_caveat"
+note = "bound caveat test"
+
+[[requirement]]
+id = "REQ-LOWER-L2-DETERMINISM"
+title = "L2 deterministic lowering"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "L2 lowering depends on fixed constants and AST-derived functions only, with no wall-clock, randomness, or unordered input in the emitted harnesses."
+aliases = ["thermite-lower/src/l2.rs REQ-9 (determinism)"]
+contributors = [".design/lower/l2-kani.md", "thermite-lower/tests/l2_conformance.rs"]
+generated_to = ["status", "thermite-lower-l2-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "SLICE_BOUND"
+note = "fixed deterministic bound"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "unwind_bound"
+note = "pure AST-derived bound"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lowering_is_deterministic"
+note = "determinism regression test"
+
+[[requirement]]
+id = "REQ-LOWER-L2-ERRORS"
+title = "L2 LowerError discipline"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "`lower_l2` returns `Result<String, LowerError>` and reports unlowerable constructs through structured errors rather than panics."
+aliases = ["thermite-lower/src/l2.rs REQ-1 (no panics; `LowerError`)"]
+contributors = [".design/lower/l2-kani.md", "thermite-lower/tests/l2_conformance.rs"]
+generated_to = ["status", "thermite-lower-l2-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l2"
+note = "fallible L2 lowering entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError"
+note = "shared lowerer error type"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "unlowerable_is_err_not_panic"
+note = "error-discipline regression test"
+
+[[requirement]]
+id = "REQ-LOWER-L2-ERGONOMICS-MIRROR"
+title = "L2 ergonomics mirror"
+owner = "thermite-lower/src/l2.rs"
+status = "shipped"
+scope = "lower"
+summary = "L2 requires no separate ergonomics arms because it reuses L1 lowering after parser desugaring and does not inspect `Pattern` or `MatchArm` directly."
+aliases = ["thermite-lower/src/l2.rs REQ-1..5 (NO L2 change needed)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-lower/src/l1.rs", "thermite-lower/tests/l2_conformance.rs"]
+generated_to = ["status", "thermite-lower-l2-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_spec_fn_l1"
+note = "reused L1 spec-fn lowering"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_match_exec"
+note = "reused match lowering with guards/or-patterns"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "lower_l2"
+note = "L2 lowering path"
+
+[[requirement]]
+id = "REQ-LOWER-EFFECTS-LATTICE"
+title = "Effect-row lattice"
+owner = "thermite-lower/src/effects.rs"
+status = "shipped"
+scope = "lower"
+summary = "`EffectKind` and `effects` project effect rows into the nine-atom powerset lattice used by subsumption and missing-atom reporting."
+aliases = ["thermite-lower/src/effects.rs REQ-1 (effect lattice)"]
+contributors = [".design/lower/effect-subsumption.md", "thermite-lower/tests/effects.rs"]
+generated_to = ["status", "thermite-lower-effects-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "EffectKind"
+note = "effect atom enum"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "effects"
+note = "effect-row atom projection"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/effects.rs"
+note = "effect lattice conformance"
+
+[[requirement]]
+id = "REQ-LOWER-EFFECTS-SUBSUMPTION"
+title = "Effect-row subsumption"
+owner = "thermite-lower/src/effects.rs"
+status = "shipped"
+scope = "lower"
+summary = "`subsumes` accepts exactly when the callee effect atoms are a subset of the caller row, delegating the bit-level subset decision to the verified core."
+aliases = ["thermite-lower/src/effects.rs REQ-2 (subsumption accept relation)"]
+contributors = [".design/lower/effect-subsumption.md", "thermite-verified/src/lib.rs", "thermite-lower/tests/effects_verified.rs"]
+generated_to = ["status", "thermite-lower-effects-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "subsumes"
+note = "effect-row accept relation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "thermite_verified::subsumes_masks"
+note = "verified bit-level subset decision"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/effects_verified.rs"
+note = "exhaustive verified mirror anchor"
+
+[[requirement]]
+id = "REQ-LOWER-EFFECTS-CHECK"
+title = "Effect checker entry and call graph"
+owner = "thermite-lower/src/effects.rs"
+status = "shipped"
+scope = "lower"
+summary = "`check_effects` builds a function-effect map and walks expression calls and method calls to enforce caller/callee subsumption."
+aliases = ["thermite-lower/src/effects.rs REQ-3 (check entry point + call graph)"]
+contributors = [".design/lower/effect-subsumption.md", "thermite-lower/tests/effects.rs", "thermite-lower/tests/divergence_effects.rs"]
+generated_to = ["status", "thermite-lower-effects-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_effects"
+note = "effect checker entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_expr"
+note = "expression call walker"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-lower/tests/effects.rs"
+note = "effect checker conformance"
+
+[[requirement]]
+id = "REQ-LOWER-EFFECTS-ERROR"
+title = "Effect checker structured rejection"
+owner = "thermite-lower/src/effects.rs"
+status = "shipped"
+scope = "lower"
+summary = "Subsumption violations produce `LowerError::EffectNotSubsumed` with caller, callee, missing atoms, and span information."
+aliases = ["thermite-lower/src/effects.rs REQ-4 (structured rejection, `LowerError`)"]
+contributors = [".design/lower/effect-subsumption.md", "thermite-lower/src/lower.rs", "thermite-lower/tests/effects.rs"]
+generated_to = ["status", "thermite-lower-effects-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LowerError::EffectNotSubsumed"
+note = "structured effect-subsumption error"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "missing_atoms"
+note = "missing effect atom computation"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "crafted_rejects"
+note = "structured rejection test"
+
+[[requirement]]
+id = "REQ-LOWER-EFFECTS-MAXIMAL-ROW-BOUNDARY"
+title = "Effect maximal-row boundary"
+owner = "thermite-lower/src/effects.rs"
+status = "shipped"
+scope = "lower"
+summary = "The lowerer effect checker enforces only compile-time subsumption; maximal-row and slag/vacuity policy remains owned by forge triage."
+aliases = ["thermite-lower/src/effects.rs REQ-5 (maximal-row / slag boundary)"]
+contributors = [".design/lower/effect-subsumption.md", ".design/forge/vacuity-triage.md", "forge/src/vacuity.rs"]
+generated_to = ["status", "thermite-lower-effects-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_effects"
+note = "subsumption-only checker"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "vacuity::triage"
+note = "forge-owned maximal-row/slag policy"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/vacuity.rs"
+note = "vacuity triage owner"
+
+[[requirement]]
+id = "REQ-LOWER-EFFECTS-SANDBOX-SCOPE"
+title = "Effect runtime sandbox scope"
+owner = "thermite-lower/src/effects.rs"
+status = "shipped"
+scope = "lower"
+summary = "`effects.rs` performs compile-time checking only and emits no runtime syscall sandbox or codegen scaffolding, leaving runtime enforcement to the sandbox design."
+aliases = ["thermite-lower/src/effects.rs REQ-6 (runtime sandbox deferred to #21)"]
+contributors = [".design/lower/effect-subsumption.md", ".design/forge/runtime-sandbox.md", "forge/src/sandbox.rs"]
+generated_to = ["status", "thermite-lower-effects-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "check_effects"
+note = "checker-only entry"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Result<(), Vec<LowerError>>"
+note = "checking result shape, no codegen output"
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/sandbox.rs"
+note = "runtime sandbox owner"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-SCHEMES"
+title = "Scheme section from registry"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "`render_schemes` iterates `thermite_spec::schemes::all()` and renders each scheme call shape, result, and example."
+aliases = ["thermite-skill/src/generate.rs REQ-9 (recursion-scheme section registry-driven from `schemes::all()`)"]
+contributors = [".design/skill/skill-generator.md", ".design/basis/02-recursion-schemes.md", "thermite-spec/src/schemes.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_schemes"
+note = "registry-driven scheme section renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "scheme_example_for"
+note = "per-scheme example source"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "scheme_coverage"
+note = "scheme coverage test"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-GRAMMAR-EXHAUSTIVE"
+title = "Exhaustive grammar inventory"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "Type, expression, item, pattern, effect, binary-operator, and primitive-type inventories are rendered through exhaustive per-variant match arms."
+aliases = ["thermite-skill/src/generate.rs REQ-10 (type/expr/item/pattern/effect grammar exhaustive-match-driven)"]
+contributors = [".design/skill/skill-generator.md", "thermite-syntax/src/ast.rs"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_type_arm"
+note = "type grammar renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_effect_arm"
+note = "effect grammar renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "renderers_are_exhaustive_no_wildcard"
+note = "no-wildcard invariant test"
+
+[[requirement]]
+id = "REQ-SKILL-GENERATOR-PROSE-FRESHNESS"
+title = "Curated prose freshness"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "The curated explanatory prose and forge verb list stay hand-authored but are guarded by committed-skill freshness and coverage checks."
+aliases = ["thermite-skill/src/generate.rs REQ-11 (prose curated + freshness-tested; forge command list the honest exception)"]
+contributors = [".design/skill/skill-generator.md", "THERMITE.skill.md"]
+generated_to = ["status", "thermite-skill-generator-core-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_forge"
+note = "curated forge command list"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "committed_skill_is_fresh"
+note = "freshness test"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "grammar_forge_slag_coverage"
+note = "curated prose coverage"
+
+[[requirement]]
+id = "REQ-SKILL-ERGONOMICS-DESUGAR"
+title = "Skill text for pure-desugar ergonomics"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "The grammar section teaches tuple destructuring, `for`, `if let`, `while let`, guards, and or-pattern interactions even when pure desugars add no AST node."
+aliases = ["thermite-skill/src/generate.rs REQ-1/2/5 (tuple destructure / `for` / `if let`-`while let` teaching)"]
+contributors = [".design/basis/11-ergonomics.md", "THERMITE.skill.md"]
+generated_to = ["status", "thermite-skill-generator-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_grammar"
+note = "curated ergonomics prose lives in the grammar section"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "committed_skill_is_fresh"
+note = "freshness guard"
+
+[[requirement.evidence]]
+kind = "test"
+target = "thermite-skill/tests/skill.rs"
+note = "skill freshness test"
+
+[[requirement]]
+id = "REQ-SKILL-ERGONOMICS-MATCH-GUARD"
+title = "Skill match-guard arm"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "`render_expr_arm` documents guarded match arms and the non-completeness rule for guards."
+aliases = ["thermite-skill/src/generate.rs REQ-3 (match guard arm)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs"]
+generated_to = ["status", "thermite-skill-generator-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_expr_arm"
+note = "match expression skill renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Expr::Match"
+note = "guarded match AST arm"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "surface_construct_coverage"
+note = "surface inventory coverage test"
+
+[[requirement]]
+id = "REQ-SKILL-ERGONOMICS-OR-PATTERN"
+title = "Skill or-pattern arm"
+owner = "thermite-skill/src/generate.rs"
+status = "shipped"
+scope = "skill"
+summary = "`render_pattern_arm` and `pattern_inventory` include `Pattern::Or`, rendering the `p0 | p1 | ..` grammar and coverage note."
+aliases = ["thermite-skill/src/generate.rs REQ-4 (or-pattern arm)"]
+contributors = [".design/basis/11-ergonomics.md", "thermite-syntax/src/ast.rs"]
+generated_to = ["status", "thermite-skill-generator-ergonomics-status"]
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "render_pattern_arm"
+note = "pattern grammar renderer"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "pattern_inventory"
+note = "pattern inventory includes Pattern::Or"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "surface_construct_coverage"
+note = "surface inventory coverage test"

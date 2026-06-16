@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale token/byte figures refreshed (2,560→5,988; 9,397→21,209 bytes) + the #257 --engine/kernel-trim currency note on REQ-11, #262)
+audited-sha: 39967df868c4a228894efdd48f136358db23e49d (re-pinned 2026-06-15: batch source status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: dff9ae866e3437af272a62e078993e66c1116460 (re-audited 2026-06-12: amended — stale token/byte figures refreshed (2,560→5,988; 9,397→21,209 bytes) + the #257 --engine/kernel-trim currency note on REQ-11, #262))
 governs: thermite-skill/src/generate.rs
 thesis-refs:
   - thermite-design.md §2.2

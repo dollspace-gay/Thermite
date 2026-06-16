@@ -25,14 +25,18 @@
 //!
 //! ## REQ status
 //!
-//! | REQ | Status | Evidence |
-//! |---|---|---|
-//! | REQ-1 (effect lattice) | SHIPPED | `enum EffectKind` (the 9 atoms, incl. the #106 `Term`) + `effects` (the powerset projection of an `EffectRow`); consumer `subsumes`/`missing_atoms`; asserted by `tests/effects.rs::lattice_law` (AC-1). |
-//! | REQ-2 (subsumption accept relation) | SHIPPED | `pub fn subsumes` (`effects(callee) ⊆ effects(caller)`, `Pure` subsumes only `Pure`); consumer `check_effects`; asserted by `lattice_law` + `crafted_accepts` (AC-1/AC-3). Epic #60: the bit-level subset test is DELEGATED to the Verus-verified `thermite_verified::subsumes_masks` (mechanism (c), the 9-atom `u16` bitset widened for #106); `effects::subsumes` is anchored to the `verus` proof by the exhaustive 262144-pair (512×512) equivalence test `tests/effects_verified.rs`. |
-//! | REQ-3 (check entry point + call graph) | SHIPPED | `pub fn check_effects` builds a name→`fx` map over `FnItem`s (`SpecFnItem`/combinators noted pure) and walks each body's `Expr` tree per `Call`/`MethodCall`; consumer `tests/effects.rs` + the #4 lowering pipeline surface; asserted by `corpus_accepts` (AC-2) + `crafted_rejects` (AC-4). |
-//! | REQ-4 (structured rejection, `LowerError`) | SHIPPED | `LowerError::EffectNotSubsumed { caller, callee, missing, span }` in `lower.rs`; produced by `check_effects`; `missing` = `effects(callee) \ effects(caller)`; asserted by `crafted_rejects` (AC-4). |
-//! | REQ-5 (maximal-row / slag boundary) | SHIPPED | boundary recorded — `check_effects` enforces subsumption only; maximal-row triage is forge's vacuity stage (#6), not here. No maximal-row judgement in this file. |
-//! | REQ-6 (runtime sandbox deferred to #21) | SHIPPED | boundary recorded — this file emits NO syscall sandbox / NO runtime scaffolding; it returns `Result<(), Vec<LowerError>>` and has no codegen path (AC-6). |
+//! <!-- generated:reqs view=thermite-lower-effects-status -->
+//! Source: `.design/reqs/registry.toml`
+//!
+//! | ID | Status | Owner | Title | Follow-up |
+//! |---|---|---|---|---|
+//! | REQ-LOWER-EFFECTS-CHECK | shipped | `thermite-lower/src/effects.rs` | Effect checker entry and call graph |  |
+//! | REQ-LOWER-EFFECTS-ERROR | shipped | `thermite-lower/src/effects.rs` | Effect checker structured rejection |  |
+//! | REQ-LOWER-EFFECTS-LATTICE | shipped | `thermite-lower/src/effects.rs` | Effect-row lattice |  |
+//! | REQ-LOWER-EFFECTS-MAXIMAL-ROW-BOUNDARY | shipped | `thermite-lower/src/effects.rs` | Effect maximal-row boundary |  |
+//! | REQ-LOWER-EFFECTS-SANDBOX-SCOPE | shipped | `thermite-lower/src/effects.rs` | Effect runtime sandbox scope |  |
+//! | REQ-LOWER-EFFECTS-SUBSUMPTION | shipped | `thermite-lower/src/effects.rs` | Effect-row subsumption |  |
+//! <!-- /generated:reqs -->
 
 use std::collections::BTreeMap;
 

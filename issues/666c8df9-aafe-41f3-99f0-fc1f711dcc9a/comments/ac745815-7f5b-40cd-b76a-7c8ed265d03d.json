@@ -1,0 +1,8 @@
+{
+  "uuid": "ac745815-7f5b-40cd-b76a-7c8ed265d03d",
+  "issue_uuid": "666c8df9-aafe-41f3-99f0-fc1f711dcc9a",
+  "author": "qkbt",
+  "content": "Defense (c) definition-tower budget SHIPPED (commit d4a1b50c + doc-drift chore 31326dcb). New forge/src/meaning.rs (DefinitionTower over the contract spec-fn meaning closure; Q2 budget depth 4 / 40 defs; sha256 unfolded-tower hash; 7 unit tests incl AC-10 over-budget refusal + within-budget hash-pin). Certificate.meaning_audit oracle-included per Q-ORACLE, None for v1 → 7 goldens byte-identical (CI-verified). Certify-time gate in check_file_with_engine (forge/Lean path only, Verus untouched, NOT in forge audit per #274). forge audit --meaning read-only printer. Gauntlet: 344 unit tests pass (7 engine::tests Lean-spine cases skip locally, environmental); clippy -D clean; fmt clean; conformance oracle byte-identical; doc-drift 0-drift (9 docs re-pinned); req-registry clean.",
+  "created_at": "2026-06-16T20:09:33.531651Z",
+  "kind": "result"
+}

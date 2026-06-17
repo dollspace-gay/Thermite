@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: the governed source additionally carries the per-clause hybrid `--engine forge` route — a NEW `EngineSelection::Forge` variant + the `forge_gate_*` helpers that route each `ens` clause to nlsat (L4) or the author-proof Lean discharge (L3 + burn) and assemble the min-level certificate. Net-additive: the existing `verus`/`lean`/`auto`/`nlsat` engine paths and the REQ-1..REQ-8 surfaces this doc governs are byte-identical/unchanged. prior: 90b8325951b0f625a693baf07776da39d0b95fbe)
+audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: the governed source additionally carries the per-clause hybrid `--engine forge` route — a NEW `EngineSelection::Forge` variant + the `forge_gate_*` helpers that route each `ens` clause to nlsat (L4) or the author-proof Lean discharge (L3 + burn) and assemble the min-level certificate. Net-additive: the existing `verus`/`lean`/`auto`/`nlsat` engine paths and the REQ-1..REQ-8 surfaces this doc governs are byte-identical/unchanged. prior: 90b8325951b0f625a693baf07776da39d0b95fbe)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 9171f7fc260242151432300c3ce7ec7bd3000d6e (re-pinned 2026-06-16: forge runtime status rows now render from canonical registry IDs; behavior unchanged; RFC #17)  (prior: 488103d4382815b85141d17bc01b60917ba744e7 (bootstrap pin: decision 4 — doc-last-touch, NOT verified-current; backlog #262))
-audited-content-sha256: 020b41dfe099ed2c8322f4b082b59476cc9e13c0d274c1bcac6306f250abca37
+audited-content-sha256: 41538b2db294602e23ef5079c9e3742029194ae020bb6766c6b6be83ed94c650
 governs: forge/src/sandbox.rs
 thesis-refs:
   - thermite-design.md §4.1
@@ -58,7 +58,8 @@ implements against; the seccomp mechanism is empirically grounded against real
   cycle-safe, source-order DFS `closure::classify` uses — never a duplicate walker.
 
 - **REQ-3 (`fx` → syscall allowlist mapping, pinned):** each `fx` token maps to a
-  fixed set of x86_64 syscall numbers (the [mapping table](#fx--syscall-allowlist-mapping)).
+  fixed set of target-architecture syscall numbers (the
+  [mapping table](#fx--syscall-allowlist-mapping)).
   `pure` → the minimal baseline a Rust binary needs to run, print, and exit (NO
   `openat`/`socket`). `read(_)`, `write(_)`, `net(_)`, `time`, `rand` ADD their
   syscalls; `alloc` is already in the baseline. The mapping is deterministic: the same
@@ -84,10 +85,11 @@ implements against; the seccomp mechanism is empirically grounded against real
 
 - **REQ-7 (the `term` terminal-control effect + the `ioctl` grant — issue #106):**
   the §4.1 effect lattice gains a DEDICATED terminal-control atom, surfaced as the
-  `fx term` token, whose syscall-allowlist widening is `{ioctl:16}` (the
+  `fx term` token, whose syscall-allowlist widening is the host-native `ioctl`
+  number (`16` on x86_64, `29` on aarch64; the
   [mapping table](#fx--syscall-allowlist-mapping) `TERM_SYSCALLS` row). A fn that
   reaches the terminal (the editor's `os::raw_mode_on`/`os::raw_mode_off`
-  `tcgetattr`/`tcsetattr` boundary, which issue the x86_64 `ioctl` syscall #16 with
+  `tcgetattr`/`tcsetattr` boundary, which issue the native `ioctl` syscall with
   the termios `TCGETS`/`TCSETS` cmds) declares `fx term`; its transitive caller's
   allowlist then INCLUDES `ioctl`, so the binary runs CONFINED (raw mode allowed,
   everything else still killed). A program WITHOUT `term` in its transitive `fx`
@@ -138,9 +140,9 @@ Tied to a `conformance/sandbox/cases.json` oracle the orchestrator authors (the 
 
 - **AC-6 (the `term` fx grants `ioctl`; a non-`term` program's `ioctl` → SIGSYS;
   the editor runs FULLY sandboxed — issue #106):** an entry whose transitive `fx`
-  includes `term` → the installed allowlist INCLUDES `ioctl`:16 (so a `tcgetattr`
+  includes `term` → the installed allowlist INCLUDES host-native `ioctl` (so a `tcgetattr`
   ioctl is ALLOWED); the SAME program with a `pure`/`read(_)`/`write(_)` (no `term`)
-  filter EXCLUDES `ioctl`:16 (so the editor's raw-mode `ioctl` is `SIGSYS`-killed,
+  filter EXCLUDES host-native `ioctl` (so the editor's raw-mode `ioctl` is `SIGSYS`-killed,
   exit 159 — the #106 bug as it stands TODAY). With `term` granted, the
   `examples/editor/editor.th` `run` entry builds WITH the sandbox (NOT
   `--no-sandbox`) and RUNS clean end-to-end on piped keystrokes: raw mode enters
@@ -171,10 +173,12 @@ must subsume every callee's row" — the union IS the entry's effective row).
 
 **2. The BPF filter (raw `libc`, no seccomp crate).** No `seccompiler`/`libseccomp`
 crate is cached offline; `libc` (cached, `0.2.x`) is. The prelude hand-builds a classic
-`sock_filter[]` program: load `seccomp_data.arch`, guard `AUDIT_ARCH_X86_64`, load
-`seccomp_data.nr`, then a `BPF_JEQ` per allowlisted syscall number → `SECCOMP_RET_ALLOW`,
-defaulting to `SECCOMP_RET_KILL_PROCESS`. Installed via `prctl(PR_SET_NO_NEW_PRIVS,1)`
-then `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &sock_fprog)`. This is grounded below.
+`sock_filter[]` program selected by Rust `#[cfg(target_arch = "...")]`: x86_64 guards
+`AUDIT_ARCH_X86_64`; aarch64 guards `AUDIT_ARCH_AARCH64`. Both branches then load
+`seccomp_data.nr`, emit a `BPF_JEQ` per allowlisted syscall number →
+`SECCOMP_RET_ALLOW`, and default to `SECCOMP_RET_KILL_PROCESS`. Installed via
+`prctl(PR_SET_NO_NEW_PRIVS,1)` then
+`prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, &sock_fprog)`. This is grounded below.
 
 **3. Injection point (the generated `main`).** `build::synthesize_entry_main` (in
 `build.rs`) already emits `fn main() { let r = entry(args); println!(…); }` for
@@ -186,21 +190,24 @@ between the prelude and the entry call only under `--sandbox-self-test`.
 
 ### `fx` → syscall allowlist mapping
 
-x86_64 syscall numbers. The baseline was derived empirically (a trivial Rust binary
-ran CLEAN under a kill-default filter with exactly this set; see Verification).
+x86_64 and aarch64 syscall numbers. The x86_64 baseline was derived empirically (a
+trivial Rust binary ran CLEAN under a kill-default filter with exactly this set; see
+Verification). The aarch64 numbers are the Linux `asm-generic/unistd.h` ABI values;
+the arm64 runtime baseline is deliberately called provisional until a native arm64
+executor runs the same conformance suite under `SECCOMP_RET_LOG`/kill.
 
-| `fx` token | adds (x86_64 syscall : nr) |
-|---|---|
-| **baseline** (always, incl. `pure`, `alloc`) | `read`:0, `write`:1, `close`:3, `mmap`:9, `mprotect`:10, `munmap`:11, `brk`:12, `rt_sigaction`:13, `rt_sigprocmask`:14, `rt_sigreturn`:15, `madvise`:28, `poll`:7, `sigaltstack`:131, `arch_prctl`:158, `gettid`:186, `futex`:202, `sched_getaffinity`:204, `set_tid_address`:218, `exit`:60, `exit_group`:231, `set_robust_list`:273, `prlimit64`:302, `rseq`:334 |
-| `read(_)` | `openat`:257, (`read`:0 already in baseline), `close`:3, `lseek`:8, `statx`:332, `newfstatat`:262 |
-| `write(_)` | `openat`:257, (`write`:1 already), `fsync`:74, `newfstatat`:262 |
-| `net(_)` | `socket`:41, `connect`:42, `sendto`:44, `recvfrom`:45, `setsockopt`:54, `getsockopt`:55 |
-| `alloc` | (already baseline: `mmap`/`munmap`/`brk`/`mprotect`) |
-| `time` | `clock_gettime`:228, `clock_nanosleep`:230 |
-| `rand` | `getrandom`:318 |
-| `term` (NEW, #106) | `ioctl`:16 (termios `TCGETS`/`TCSETS` — but seccomp can't filter the cmd; the whole `ioctl` is granted under `term`, OQ-5) |
-| `panic` | (baseline `write`+`exit_group`; panic unwinds + prints to stderr) |
-| `diverge` | (no added syscall; divergence is a non-termination effect) |
+| `fx` token | x86_64 adds | aarch64 adds |
+|---|---|---|
+| **baseline** (always, incl. `pure`, `alloc`) | `read`:0, `write`:1, `close`:3, `poll`:7, `mmap`:9, `mprotect`:10, `munmap`:11, `brk`:12, `rt_sigaction`:13, `rt_sigprocmask`:14, `rt_sigreturn`:15, `madvise`:28, `exit`:60, `sigaltstack`:131, `arch_prctl`:158, `gettid`:186, `futex`:202, `sched_getaffinity`:204, `set_tid_address`:218, `exit_group`:231, `set_robust_list`:273, `prlimit64`:302, `rseq`:334 | `close`:57, `read`:63, `write`:64, `exit`:93, `exit_group`:94, `set_tid_address`:96, `futex`:98, `set_robust_list`:99, `sched_getaffinity`:123, `sigaltstack`:132, `rt_sigaction`:134, `rt_sigprocmask`:135, `rt_sigreturn`:139, `gettid`:178, `brk`:214, `munmap`:215, `mmap`:222, `mprotect`:226, `madvise`:233, `prlimit64`:261, `rseq`:293 |
+| `read(_)` | `openat`:257, (`read`:0 already in baseline), `close`:3, `lseek`:8, `statx`:332, `newfstatat`:262 | `openat`:56, (`read`:63 already), `close`:57, `lseek`:62, `newfstatat`:79, `statx`:291 |
+| `write(_)` | `openat`:257, (`write`:1 already), `fsync`:74, `newfstatat`:262 | `openat`:56, (`write`:64 already), `newfstatat`:79, `fsync`:82 |
+| `net(_)` | `socket`:41, `connect`:42, `sendto`:44, `recvfrom`:45, `setsockopt`:54, `getsockopt`:55 | `socket`:198, `connect`:203, `sendto`:206, `recvfrom`:207, `setsockopt`:208, `getsockopt`:209 |
+| `alloc` | (already baseline: `mmap`/`munmap`/`brk`/`mprotect`) | (already baseline: `mmap`/`munmap`/`brk`/`mprotect`) |
+| `time` | `clock_gettime`:228, `clock_nanosleep`:230 | `clock_gettime`:113, `clock_nanosleep`:115 |
+| `rand` | `getrandom`:318 | `getrandom`:278 |
+| `term` (NEW, #106) | `ioctl`:16 (termios `TCGETS`/`TCSETS` — but seccomp can't filter the cmd; the whole `ioctl` is granted under `term`, OQ-5) | `ioctl`:29 (same scope caveat) |
+| `panic` | (baseline `write`+`exit_group`; panic unwinds + prints to stderr) | (baseline `write`+`exit_group`; panic unwinds + prints to stderr) |
+| `diverge` | (no added syscall; divergence is a non-termination effect) | (no added syscall; divergence is a non-termination effect) |
 
 > The baseline is a SUPERSET-of-minimum: it allows the syscalls the Rust runtime
 > startup/teardown + `println!` + the L1 `thermite_check!` panic path need. It pointedly
@@ -266,19 +273,19 @@ TCGETS-only filter would need an arg-inspecting filter (a future refinement, OQ-
 
 ## Grounding the #106 fix (real `forge`/`rustc`)
 
-Grounded on this Linux host (`rustc 1.95.0`, kernel `6.6.87.2-microsoft-WSL2`,
+Grounded on this x86_64 Linux host (`rustc 1.95.0`, kernel `6.6.87.2-microsoft-WSL2`,
 `/proc/sys/kernel/seccomp/actions_avail` ⊇ `kill_process`) against `forge` built from
 this tree. The atom is not yet implemented (no `Effect::Term`), so the grant was
-grounded by a PROBE — temporarily adding `16 // ioctl` to `WRITE_SYSCALLS` to prove
-`ioctl` is the EXACT missing syscall — then REVERTED (the tree is clean; the probe
-edit lived only during grounding). The PRINCIPLED landing is the dedicated `term`
-atom above (#132), but the grant's SHAPE (the one syscall, the kill→clean flip) is
-identical.
+grounded by a PROBE — temporarily adding the x86_64 `16 // ioctl` to
+`WRITE_SYSCALLS` to prove `ioctl` is the EXACT missing syscall — then REVERTED (the
+tree is clean; the probe edit lived only during grounding). The PRINCIPLED landing is
+the dedicated `term` atom above (#132), but the grant's SHAPE (the one syscall, the
+kill→clean flip) is identical.
 
 **(1) The editor SIGSYS-dies sandboxed TODAY (the #106 bug).** `forge build
 examples/editor/editor.th --entry run` (default sandbox) → transitive
 `fx = [alloc, diverge, pure, read(input), write(output)]`, allowlist EXCLUDES
-`ioctl`:16. Run with piped keystrokes (`printf 'ab\x11'`, Ctrl-Q):
+x86_64 `ioctl`:16. Run with piped keystrokes (`printf 'ab\x11'`, Ctrl-Q):
 
 ```
 Bad system call (core dumped)
@@ -290,9 +297,9 @@ before any frame is written. This is why `forge/tests/editor_runs.rs` builds the
 editor `--no-sandbox` today (the honest seam it documents).
 
 **(2) With `ioctl` granted, the editor runs FULLY sandboxed (exit 0).** The probe
-adds `ioctl`:16; rebuild + `forge build … --entry run` (default sandbox) → allowlist
-INCLUDES 16. Run `printf 'XY\x13\x11'` (insert X, Y; Ctrl-S save; Ctrl-Q quit) over
-the demo file `hello world`:
+adds x86_64 `ioctl`:16; rebuild + `forge build … --entry run` (default sandbox) →
+allowlist INCLUDES 16. Run `printf 'XY\x13\x11'` (insert X, Y; Ctrl-S save; Ctrl-Q
+quit) over the demo file `hello world`:
 
 ```
 === SANDBOXED run exit: 0 ===
@@ -309,7 +316,8 @@ the baseline). NO residual syscall gap (see the file-syscall note below).
 
 **(3) The grant is SCOPED — a non-`term` program's `ioctl` is still killed.** Under
 the probe (folded into `write` for grounding), a `pure` program's allowlist
-EXCLUDES `ioctl`:16, and a `read(src)` program's allowlist EXCLUDES `ioctl`:16:
+EXCLUDES x86_64 `ioctl`:16, and a `read(src)` program's allowlist EXCLUDES x86_64
+`ioctl`:16:
 
 ```
 pure:     ioctl(16) in allowlist: False   | fx: ['pure']
@@ -325,13 +333,13 @@ sandboxed editor run exits 159 again, confirming `ioctl` is the lone gating sysc
 
 **The file-open/write syscalls (read_file/write_file) are COVERED — no residual gap.**
 The editor's `os::read_file` declares `fx read(input)` and `os::write_file` declares
-`fx write(output)`. `read(_)` widens with `openat`:257 (+`read`:0 baseline) and
-`write(_)` widens with `openat`:257 (+`write`:1 baseline) — so the Ctrl-S save's
-`std::fs::write` (`openat` + `write`) and the initial `std::fs::read` load (`openat` +
-`read`) are ALREADY granted by the editor's existing `read`/`write` fx. GROUNDED in
-(2): the Ctrl-S save wrote `XYhello world` to the file under the sandbox with NO extra
-syscall gap. The ONLY missing syscall was `ioctl` (the termios boundary); no separate
-"file effect" is needed.
+`fx write(output)`. On the x86_64 grounding host, `read(_)` widens with `openat`:257
+(+`read`:0 baseline) and `write(_)` widens with `openat`:257 (+`write`:1 baseline) —
+so the Ctrl-S save's `std::fs::write` (`openat` + `write`) and the initial
+`std::fs::read` load (`openat` + `read`) are ALREADY granted by the editor's existing
+`read`/`write` fx. GROUNDED in (2): the Ctrl-S save wrote `XYhello world` to the file
+under the sandbox with NO extra syscall gap. The ONLY missing syscall was `ioctl` (the
+termios boundary); no separate "file effect" is needed.
 
 ## Verification
 
@@ -377,11 +385,13 @@ The discharging checks (post-implementation):
   a SIGSYS handler (the DISCOVER mode) could print the offending syscall for a crisper
   §5 message, at the cost of a handler in every binary. Decision deferred to the
   builder; the doc pins KILL_PROCESS as the default (simplest, matches §4.1 "killed").
-- **OQ-3 (architecture portability):** the filter pins `AUDIT_ARCH_X86_64`. A non-x86_64
-  Linux host (or non-Linux) needs a different table / a no-op `--no-sandbox` fallback.
-  v0.1 is x86_64-Linux only (documented limitation), `--no-sandbox` is the escape.
+- **OQ-3 (architecture portability):** shipped support covers native x86_64-Linux and
+  aarch64-Linux generated runners. Other Linux architectures and non-Linux hosts still
+  need a different table / a no-op `--no-sandbox` fallback. The aarch64 syscall
+  numbers are ABI-grounded, but the baseline membership still needs native arm64
+  runtime conformance before it is considered as empirically grounded as x86_64.
 - **OQ-5 (`ioctl`-broad vs `TCGETS`/`TCSETS`-only — #106):** the `term` grant is the
-  WHOLE `ioctl` syscall (#16, any cmd), because classic seccomp-bpf compares only
+  WHOLE native `ioctl` syscall (any cmd), because classic seccomp-bpf compares only
   `seccomp_data.nr` — it cannot gate `ioctl` by its `cmd` register without an
   arg-inspecting filter (a `BPF_JEQ` on the second arg, a v1.1 refinement). The honest
   v1 scope is therefore "`term` ⇒ any `ioctl`," DOCUMENTED in REQ-7 + the manifest's
@@ -411,8 +421,8 @@ cite) and the route above. This doc does NOT author the oracle or the route (R-D
 |---|---|---|
 | REQ-1 (seccomp prelude install via raw `libc` `prctl`) | SHIPPED | `sandbox::emit_sandbox_prelude` emits a `sock_filter[]` program (arch-guard + per-syscall `BPF_JEQ` → `SECCOMP_RET_ALLOW`, default `SECCOMP_RET_KILL_PROCESS`) installed via `prctl(PR_SET_NO_NEW_PRIVS)` + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`, raw `extern "C"` (no libc crate). Consumer: `build::synthesize_entry_main`. Verified by `sandbox_conformance::pure_runs_clean` + `probe_killed` (real seccomp kill, exit 159). |
 | REQ-2 (transitive-`fx` derivation via `closure.rs`) | SHIPPED | `sandbox::transitive_fx` unions `manifest::effects_of` over `{entry} ∪ closure::reachable_in_file_fns(program, entry)` (the #17 walker, never duplicated). Consumer: `build::synthesize_entry_main` + `build::build_file`. Verified by `sandbox_conformance::probe_allowed_when_fx_widens` (the `read` fx widens the allowlist → openat permitted). |
-| REQ-3 (`fx` → syscall allowlist mapping) | SHIPPED | `sandbox::syscall_allowlist` maps each token's leading verb to the pinned x86_64 set (the [mapping table](#fx--syscall-allowlist-mapping)); `pure` baseline excludes `openat`, `read(_)` adds it; sorted + deduped (deterministic). Verified by `probe_killed` (pure, no openat → kill) vs `probe_allowed_when_fx_widens` (read, openat → allowed). |
+| REQ-3 (`fx` → syscall allowlist mapping) | SHIPPED | `sandbox::syscall_allowlist_for_arch` maps each token's leading verb to the pinned x86_64 or aarch64 set (the [mapping table](#fx--syscall-allowlist-mapping)); `pure` baseline excludes `openat`, `read(_)` adds it; sorted + deduped (deterministic). The legacy `syscall_allowlist` remains the x86_64 wrapper for the Verus anchor. Verified by `probe_killed` (pure, no openat → kill) vs `probe_allowed_when_fx_widens` (read, openat → allowed) and `sandbox::tests::aarch64_allowlist_uses_native_syscall_numbers`. |
 | REQ-4 (sandbox-on-by-default for `--entry`, `--no-sandbox` opt-out) | SHIPPED | `build::SandboxConfig::default` is `SandboxMode::On`; `synthesize_entry_main` injects the prelude FIRST when on; `--no-sandbox` → `SandboxMode::Off` (no prelude); a library build emits no `main`. Consumer: `cli::run_build` (the `--sandbox`/`--no-sandbox` flags). Verified by `sandbox_conformance::no_sandbox_omits_prelude`. |
 | REQ-5 (reproducible prelude + manifest record) | SHIPPED | `emit_sandbox_prelude` is byte-deterministic (sorted allowlist); `build::BuildManifest::sandbox` (`SandboxRecord`) records the installed allowlist (the §9 audit surface). Verified by `sandbox::tests::prelude_installs_and_is_deterministic` + `sandbox_conformance::pure_runs_clean`. |
 | REQ-6 (demonstrable enforcement — probe + clean pure run) | SHIPPED | `sandbox::emit_probe` injects (under `--sandbox-self-test`, AFTER the filter) a raw `syscall(SYS_openat, ...)`. Consumer: `build::synthesize_entry_main`. Verified by `probe_killed` (exit 159 under pure) vs `probe_allowed_when_fx_widens` (exit 0 under read). The critical interaction — a contract violation still PANICS `[ens]` (exit 101), NOT seccomp-killed — is verified by `contract_violation_panics_not_killed` (the baseline allows the panic/abort path). |
-| REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106) | SHIPPED | blocker **#132** closed. `Effect::Term` in `thermite_syntax::ast::Effect` (parsed as `fx term` by `parser::parse_effect`); `EffectKind::Term` (bit 8) in `thermite_lower::effects` over the WIDENED 9-atom `u16` bitset (the proved subsumption bitset widened `u8`→`u16` in `thermite-verified`, `verus --no-cheating` → `27 verified, 0 errors`); `sandbox::TERM_SYSCALLS = &[16 /* ioctl */]` + the `"term" => TERM_SYSCALLS` arm in `syscall_allowlist`. The atom ripples through every `Effect`-exhaustive seam (`manifest::effect_token`, `lower::effect_atom_name`, `vacuity::effect_row_is_maximal`, `generate::render_effect_arm`/`effect_inventory`). The `examples/editor/editor.th` `run` entry's `raw_mode_on`/`raw_mode_off` declare `fx term`, so its transitive `fx` unions `term` and the allowlist INCLUDES `ioctl`:16 — the editor builds + runs FULLY sandboxed (NO `--no-sandbox`, exit 0: raw mode + edit + Ctrl-S save) via `forge/tests/editor_runs.rs`. The grant is SCOPED (a `pure`/`read`/`write`/`net` program's allowlist EXCLUDES `ioctl` — `sandbox::tests::term_grants_ioctl_scoped_to_the_effect` + `sandbox_conformance::term_grant_adds_ioctl_to_the_recorded_allowlist`). `term` (bit 8) is NON-io-sensitive (`widen(8)==0`), so the verus `io_allow` soundness bitset is unaffected over all 512 fx-masks (`sandbox::verus_anchor`, OQ-5 `ioctl`-broad). |
+| REQ-7 (the `term` terminal-control atom + the `ioctl` grant, #106) | SHIPPED | blocker **#132** closed. `Effect::Term` in `thermite_syntax::ast::Effect` (parsed as `fx term` by `parser::parse_effect`); `EffectKind::Term` (bit 8) in `thermite_lower::effects` over the WIDENED 9-atom `u16` bitset (the proved subsumption bitset widened `u8`→`u16` in `thermite-verified`, `verus --no-cheating` → `27 verified, 0 errors`); `sandbox::TERM_SYSCALLS = &[16 /* ioctl */]` and `TERM_AARCH64_SYSCALLS = &[29 /* ioctl */]` + the `"term"` widening arm in `syscall_allowlist_for_arch`. The atom ripples through every `Effect`-exhaustive seam (`manifest::effect_token`, `lower::effect_atom_name`, `vacuity::effect_row_is_maximal`, `generate::render_effect_arm`/`effect_inventory`). The `examples/editor/editor.th` `run` entry's `raw_mode_on`/`raw_mode_off` declare `fx term`, so its transitive `fx` unions `term` and the allowlist INCLUDES host-native `ioctl` — the editor builds + runs FULLY sandboxed (NO `--no-sandbox`, exit 0: raw mode + edit + Ctrl-S save) via `forge/tests/editor_runs.rs`. The grant is SCOPED (a `pure`/`read`/`write`/`net` program's allowlist EXCLUDES `ioctl` — `sandbox::tests::term_grants_ioctl_scoped_to_the_effect` + `sandbox_conformance::term_grant_adds_ioctl_to_the_recorded_allowlist`). `term` (bit 8) is NON-io-sensitive (`widen(8)==0`), so the verus `io_allow` soundness bitset is unaffected over all 512 fx-masks (`sandbox::verus_anchor`, OQ-5 `ioctl`-broad). |

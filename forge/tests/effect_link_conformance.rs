@@ -49,6 +49,11 @@ fn effect_link_demo() -> PathBuf {
 /// `true` iff this host's kernel offers the `kill_process` seccomp action (the #57
 /// mechanism). When absent the seccomp tests skip with a logged note (`runtime-sandbox.md` OQ-3).
 fn seccomp_kill_available() -> bool {
+    if !(cfg!(target_os = "linux")
+        && (cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64")))
+    {
+        return false;
+    }
     std::fs::read_to_string("/proc/sys/kernel/seccomp/actions_avail")
         .map(|s| s.contains("kill_process"))
         .unwrap_or(false)
@@ -149,6 +154,14 @@ fn find_cert<'a>(certs: &'a [Value], item: &str) -> &'a Value {
 
 // SIGSYS = 31; a process killed by it reports raw signal 31 / shell exit 159.
 const SIGSYS: i32 = 31;
+#[cfg(target_arch = "aarch64")]
+const EXPECT_CLOCK_GETTIME: i64 = 113;
+#[cfg(not(target_arch = "aarch64"))]
+const EXPECT_CLOCK_GETTIME: i64 = 228;
+#[cfg(target_arch = "aarch64")]
+const EXPECT_OPENAT: i64 = 56;
+#[cfg(not(target_arch = "aarch64"))]
+const EXPECT_OPENAT: i64 = 257;
 
 // ---------------------------------------------------------------------------
 // verify_unchanged (AC-4): forge check certifies identically before/after the link.
@@ -274,7 +287,7 @@ fn elapsed_ok_builds_and_runs() {
 
 // ---------------------------------------------------------------------------
 // sandbox_confines (AC-3): the linked os::now's clock_gettime is in the fx-time
-// allowlist (#57: baseline ∪ {clock_gettime 228, clock_nanosleep 230}), so the
+// allowlist (#57: baseline ∪ host-native time syscalls), so the
 // binary runs clean under the default sandbox (exit 0); a `--sandbox-self-test`
 // openat probe under the same `time` filter (openat not in the time allowlist) is
 // SIGSYS-killed (exit 159 = 128+31, the #57 pure_probe_killed precedent). The
@@ -290,8 +303,8 @@ fn sandbox_confines_the_linked_wrapper() {
     }
     let demo = effect_link_demo();
 
-    // (A) the default-sandboxed run: the fx-time allowlist includes clock_gettime
-    // (228), so the linked os::now runs clean and exits 0.
+    // (A) the default-sandboxed run: the fx-time allowlist includes host-native
+    // clock_gettime, so the linked os::now runs clean and exits 0.
     let (ok, stdout, stderr) =
         run_forge_build(&[demo.to_str().unwrap(), "--entry", "elapsed_ok", "--json"]);
     assert!(ok, "the sandboxed build must compile:\n{stdout}\n{stderr}");
@@ -307,12 +320,12 @@ fn sandbox_confines_the_linked_wrapper() {
         .map(|n| n.as_i64().unwrap())
         .collect();
     assert!(
-        allow.contains(&228),
-        "AC-3: the fx-time allowlist INCLUDES clock_gettime (228): {allow:?}"
+        allow.contains(&EXPECT_CLOCK_GETTIME),
+        "AC-3: the fx-time allowlist INCLUDES clock_gettime ({EXPECT_CLOCK_GETTIME}): {allow:?}"
     );
     assert!(
-        !allow.contains(&257),
-        "AC-3: the fx-time allowlist EXCLUDES openat (257) — a Time primitive cannot exceed \
+        !allow.contains(&EXPECT_OPENAT),
+        "AC-3: the fx-time allowlist EXCLUDES openat ({EXPECT_OPENAT}) — a Time primitive cannot exceed \
          Time syscalls: {allow:?}"
     );
     let artifact = artifact_path_from_json(&stdout);

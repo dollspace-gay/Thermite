@@ -15,16 +15,18 @@
 //!    #17 cycle-safe, source-order reachability `check::item_subprogram` consumes,
 //!    restricted to the entry's intra-file closure. A `#[boundary]`/`#[slag]` fn in
 //!    the closure contributes its declared `fx`, and is confined to that.
-//! 2. `fx` → syscall allowlist ([`syscall_allowlist`]): each `fx` token maps to
-//!    a fixed set of x86_64 syscall numbers ([the table](#the-fx--syscall-table));
+//! 2. `fx` → syscall allowlist ([`syscall_allowlist_for_arch`]): each `fx` token
+//!    maps to a fixed set of target-architecture syscall numbers ([the table](#the-fx--syscall-table));
 //!    `pure` is the minimal baseline (run + print + the panic/abort path), `read`/
-//!    `write`/`net`/`time`/`rand`/`term` widen (`term` → `ioctl`:16, #106).
-//!    Deterministic (sorted, deduped).
+//!    `write`/`net`/`time`/`rand`/`term` widen (`term` → `ioctl`, #106).
+//!    Deterministic (sorted, deduped). [`syscall_allowlist`] remains the x86_64
+//!    compatibility wrapper used by the existing verification anchor.
 //! 3. the BPF prelude ([`emit_sandbox_prelude`]): the Rust source that, as the
 //!    first statements of the generated `main`, builds a classic `sock_filter[]`
-//!    program (arch-guard for x86_64 → load `nr` → a `BPF_JEQ` per allowed syscall →
-//!    `SECCOMP_RET_ALLOW`, default `SECCOMP_RET_KILL_PROCESS`) and installs it via
-//!    `prctl(PR_SET_NO_NEW_PRIVS)` + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`.
+//!    program (cfg-selected arch guard for x86_64 or aarch64 → load `nr` → a
+//!    `BPF_JEQ` per allowed syscall → `SECCOMP_RET_ALLOW`, default
+//!    `SECCOMP_RET_KILL_PROCESS`) and installs it via `prctl(PR_SET_NO_NEW_PRIVS)`
+//!    + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`.
 //!
 //! ## The fx → syscall table
 //!
@@ -153,10 +155,95 @@ const TERM_SYSCALLS: &[u32] = &[
     16, // ioctl (termios TCGETS/TCSETS — the cmd cannot be filtered, OQ-5)
 ];
 
+/// The aarch64 syscall numbers use the Linux `asm-generic/unistd.h` numbering. The
+/// table mirrors the x86_64 effect-surface shape, but the runtime baseline still
+/// needs live arm64-Linux conformance before it should be treated as empirically
+/// maxed. In particular, arm64 has no `arch_prctl` or `poll` syscall; the table uses
+/// the syscalls available on native aarch64 Linux.
+const BASELINE_AARCH64_SYSCALLS: &[u32] = &[
+    57,  // close
+    63,  // read
+    64,  // write
+    93,  // exit
+    94,  // exit_group
+    96,  // set_tid_address
+    98,  // futex
+    99,  // set_robust_list
+    123, // sched_getaffinity
+    132, // sigaltstack
+    134, // rt_sigaction
+    135, // rt_sigprocmask
+    139, // rt_sigreturn
+    178, // gettid
+    214, // brk
+    215, // munmap
+    222, // mmap
+    226, // mprotect
+    233, // madvise
+    261, // prlimit64
+    293, // rseq
+];
+
+const READ_AARCH64_SYSCALLS: &[u32] = &[
+    56,  // openat
+    62,  // lseek
+    79,  // newfstatat
+    291, // statx
+];
+
+const WRITE_AARCH64_SYSCALLS: &[u32] = &[
+    56, // openat
+    79, // newfstatat
+    82, // fsync
+];
+
+const NET_AARCH64_SYSCALLS: &[u32] = &[
+    198, // socket
+    203, // connect
+    206, // sendto
+    207, // recvfrom
+    208, // setsockopt
+    209, // getsockopt
+];
+
+const TIME_AARCH64_SYSCALLS: &[u32] = &[
+    113, // clock_gettime
+    115, // clock_nanosleep
+];
+
+const RAND_AARCH64_SYSCALLS: &[u32] = &[
+    278, // getrandom
+];
+
+const TERM_AARCH64_SYSCALLS: &[u32] = &[
+    29, // ioctl
+];
+
 /// The x86_64 `openat` syscall number — the [`emit_probe`] self-test attempts it
 /// (`--sandbox-self-test`); denied under a `pure` filter (kill), allowed under
 /// `read`. Mirrors the `READ_SYSCALLS` `openat`:257 entry.
-const SYS_OPENAT: u32 = 257;
+const SYS_OPENAT_X86_64: u32 = 257;
+/// The aarch64 `openat` syscall number (`asm-generic/unistd.h`).
+const SYS_OPENAT_AARCH64: u32 = 56;
+/// Compatibility alias for x86_64-only tests and the Verus anchor.
+const SYS_OPENAT: u32 = SYS_OPENAT_X86_64;
+
+/// Seccomp architectures the generated runner can install natively.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeccompArch {
+    X86_64,
+    Aarch64,
+}
+
+impl SeccompArch {
+    pub fn host() -> Option<Self> {
+        match std::env::consts::ARCH {
+            "x86_64" => Some(Self::X86_64),
+            "aarch64" => Some(Self::Aarch64),
+            _ => None,
+        }
+    }
+}
 
 /// Whether a `forge build --entry` produces a sandboxed runner (REQ-4). On by
 /// default for `--entry` (the §4.1 default is enforcement, not opt-in); `--no-sandbox`
@@ -204,25 +291,42 @@ pub fn transitive_fx(program: &Program, entry: &str) -> BTreeSet<String> {
 /// carried ident is irrelevant. Returns
 /// the syscall numbers sorted and deduped — the same transitive `fx` yields the
 /// byte-identical allowlist (deterministic, R-CODE-5).
-pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
-    let mut set: BTreeSet<u32> = BASELINE_SYSCALLS.iter().copied().collect();
+fn baseline_syscalls(arch: SeccompArch) -> &'static [u32] {
+    match arch {
+        SeccompArch::X86_64 => BASELINE_SYSCALLS,
+        SeccompArch::Aarch64 => BASELINE_AARCH64_SYSCALLS,
+    }
+}
+
+fn widening_syscalls(arch: SeccompArch, verb: &str) -> &'static [u32] {
+    match (arch, verb) {
+        (SeccompArch::X86_64, "read") => READ_SYSCALLS,
+        (SeccompArch::X86_64, "write") => WRITE_SYSCALLS,
+        (SeccompArch::X86_64, "net") => NET_SYSCALLS,
+        (SeccompArch::X86_64, "time") => TIME_SYSCALLS,
+        (SeccompArch::X86_64, "rand") => RAND_SYSCALLS,
+        (SeccompArch::X86_64, "term") => TERM_SYSCALLS,
+        (SeccompArch::Aarch64, "read") => READ_AARCH64_SYSCALLS,
+        (SeccompArch::Aarch64, "write") => WRITE_AARCH64_SYSCALLS,
+        (SeccompArch::Aarch64, "net") => NET_AARCH64_SYSCALLS,
+        (SeccompArch::Aarch64, "time") => TIME_AARCH64_SYSCALLS,
+        (SeccompArch::Aarch64, "rand") => RAND_AARCH64_SYSCALLS,
+        (SeccompArch::Aarch64, "term") => TERM_AARCH64_SYSCALLS,
+        // "pure" / "alloc" / "panic" / "diverge" / any unknown → baseline-only.
+        _ => &[],
+    }
+}
+
+/// Map a transitive `fx` token set to the native syscall allowlist for `arch`
+/// (REQ-3): the baseline unioned with every widening token's added syscalls.
+/// Returns sorted and deduped numbers.
+pub fn syscall_allowlist_for_arch(transitive_fx: &BTreeSet<String>, arch: SeccompArch) -> Vec<u32> {
+    let mut set: BTreeSet<u32> = baseline_syscalls(arch).iter().copied().collect();
     for tok in transitive_fx {
         // The leading verb (before any `(`) selects the widening set; `pure`/
         // `alloc`/`panic`/`diverge` are baseline-only (no widening).
         let verb = tok.split('(').next().unwrap_or(tok);
-        let widen: &[u32] = match verb {
-            "read" => READ_SYSCALLS,
-            "write" => WRITE_SYSCALLS,
-            "net" => NET_SYSCALLS,
-            "time" => TIME_SYSCALLS,
-            "rand" => RAND_SYSCALLS,
-            // `term` (#106) widens with `ioctl`:16 for the termios raw-mode boundary
-            // (runtime-sandbox.md REQ-7). Scoped to the effect — only a `term`
-            // program's allowlist gains `ioctl`.
-            "term" => TERM_SYSCALLS,
-            // "pure" / "alloc" / "panic" / "diverge" / any unknown → baseline-only.
-            _ => &[],
-        };
+        let widen = widening_syscalls(arch, verb);
         for &nr in widen {
             set.insert(nr);
         }
@@ -230,39 +334,42 @@ pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
     set.into_iter().collect()
 }
 
-/// Emit the Rust source of the seccomp-bpf filter-install prelude for `allowlist`
-/// (REQ-1/REQ-3/REQ-5): a self-contained block that builds a classic `sock_filter[]`
-/// program (x86_64 arch-guard → load `nr` → a `BPF_JEQ` per allowed syscall →
-/// `SECCOMP_RET_ALLOW`, default `SECCOMP_RET_KILL_PROCESS`) and installs it via
-/// `prctl(PR_SET_NO_NEW_PRIVS)` + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`. The
-/// `prctl` is declared `extern "C"` (resolved against the std binary's already-linked
-/// libc — no libc crate dependency). Injected as the first statements of the
-/// generated `main` so the entry runs under the filter.
-///
-/// Byte-deterministic: `allowlist` is iterated in order (the caller passes the
-/// sorted [`syscall_allowlist`] output), so the same transitive `fx` yields the
-/// byte-identical prelude (REQ-5, R-CODE-5).
-pub fn emit_sandbox_prelude(allowlist: &[u32]) -> String {
+/// Map a transitive `fx` token set to the x86_64 syscall allowlist (REQ-3). This
+/// compatibility wrapper preserves the historical API used by the Verus anchor.
+pub fn syscall_allowlist(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
+    syscall_allowlist_for_arch(transitive_fx, SeccompArch::X86_64)
+}
+
+/// Map a transitive `fx` token set to the host architecture's manifest allowlist.
+/// Unsupported hosts fall back to the historical x86_64 table; sandboxed generated
+/// runners still reject unsupported compile targets in [`emit_sandbox_prelude`].
+pub fn syscall_allowlist_for_host(transitive_fx: &BTreeSet<String>) -> Vec<u32> {
+    match SeccompArch::host().unwrap_or(SeccompArch::X86_64) {
+        SeccompArch::X86_64 => syscall_allowlist(transitive_fx),
+        SeccompArch::Aarch64 => syscall_allowlist_for_arch(transitive_fx, SeccompArch::Aarch64),
+    }
+}
+
+fn emit_filter_lines(arch_label: &str, audit_arch_const: &str, allowlist: &[u32]) -> String {
     // The classic-BPF program. Each accepted-syscall comparison is a single
     // `BPF_JMP|BPF_JEQ|BPF_K` instruction: if `nr == <num>` jump to the ALLOW
     // return (jt), else fall through (jf=0) to the next comparison. After the last
     // comparison the program falls through to the KILL return. The header loads the
-    // arch then the syscall number; a non-x86_64 arch is killed (REQ-1, OQ-3).
+    // arch then the syscall number; a non-native arch is killed (REQ-1, OQ-3).
     //
     // `seccomp_data` layout (offsets): nr @ 0, arch @ 4.
     let mut filter_lines = String::new();
 
-    // Header: load arch, kill if not x86_64; load nr.
-    filter_lines.push_str(
-        "        // load seccomp_data.arch (offset 4); kill if not x86_64\n\
+    filter_lines.push_str(&format!(
+        "        // load seccomp_data.arch (offset 4); kill if not {arch_label}\n\
          \x20       BpfStmt(BPF_LD | BPF_W | BPF_ABS, 4),\n\
-         \x20       BpfJump(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 1, 0),\n\
+         \x20       BpfJump(BPF_JMP | BPF_JEQ | BPF_K, {audit_arch_const}, 1, 0),\n\
          \x20       BpfStmt(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),\n\
          \x20       // load seccomp_data.nr (offset 0)\n\
          \x20       BpfStmt(BPF_LD | BPF_W | BPF_ABS, 0),\n",
-    );
+    ));
 
-    // One JEQ per allowed syscall (jt=1 → jump over the fall-through to ALLOW).
+    // One JEQ per allowed syscall (jt=0 → execute the following ALLOW return).
     for &nr in allowlist {
         filter_lines.push_str(&format!(
             "        BpfJump(BPF_JMP | BPF_JEQ | BPF_K, {nr}, 0, 1),\n\
@@ -272,7 +379,28 @@ pub fn emit_sandbox_prelude(allowlist: &[u32]) -> String {
 
     // Default action: kill the whole process (a syscall off the allowlist → SIGSYS).
     filter_lines.push_str("        BpfStmt(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS),\n");
+    filter_lines
+}
 
+/// Emit the Rust source of the seccomp-bpf filter-install prelude for `transitive_fx`
+/// (REQ-1/REQ-3/REQ-5): a self-contained block that builds a cfg-selected classic
+/// `sock_filter[]` program (x86_64 or aarch64 arch-guard → load `nr` → a `BPF_JEQ`
+/// per allowed syscall → `SECCOMP_RET_ALLOW`, default
+/// `SECCOMP_RET_KILL_PROCESS`) and installs it via
+/// `prctl(PR_SET_NO_NEW_PRIVS)` + `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER)`. The
+/// `prctl` is declared `extern "C"` (resolved against the std binary's already-linked
+/// libc — no libc crate dependency). Injected as the first statements of the
+/// generated `main` so the entry runs under the filter.
+///
+/// Byte-deterministic: each per-arch allowlist is sorted by
+/// [`syscall_allowlist_for_arch`], so the same transitive `fx` yields the
+/// byte-identical prelude (REQ-5, R-CODE-5).
+pub fn emit_sandbox_prelude(transitive_fx: &BTreeSet<String>) -> String {
+    let x86_allowlist = syscall_allowlist_for_arch(transitive_fx, SeccompArch::X86_64);
+    let aarch64_allowlist = syscall_allowlist_for_arch(transitive_fx, SeccompArch::Aarch64);
+    let x86_filter_lines = emit_filter_lines("x86_64", "AUDIT_ARCH_X86_64", &x86_allowlist);
+    let aarch64_filter_lines =
+        emit_filter_lines("aarch64", "AUDIT_ARCH_AARCH64", &aarch64_allowlist);
     format!(
         r##"
 // ---- thermite #57 runtime effect sandbox (seccomp-bpf, fx-derived) ----------
@@ -282,7 +410,7 @@ pub fn emit_sandbox_prelude(allowlist: &[u32]) -> String {
 // Raw `extern "C"` prctl resolved against the std binary's linked libc (no libc
 // crate). Deterministic: the allowlist below is the sorted fx->syscall projection.
 {{
-    // classic-BPF opcodes / seccomp constants (x86_64 Linux).
+    // classic-BPF opcodes / seccomp constants (Linux).
     const BPF_LD: u16 = 0x00;
     const BPF_W: u16 = 0x00;
     const BPF_ABS: u16 = 0x20;
@@ -291,6 +419,7 @@ pub fn emit_sandbox_prelude(allowlist: &[u32]) -> String {
     const BPF_K: u16 = 0x00;
     const BPF_RET: u16 = 0x06;
     const AUDIT_ARCH_X86_64: u32 = 0xC000_003E;
+    const AUDIT_ARCH_AARCH64: u32 = 0xC000_00B7;
     const SECCOMP_RET_ALLOW: u32 = 0x7fff_0000;
     const SECCOMP_RET_KILL_PROCESS: u32 = 0x8000_0000;
     const PR_SET_NO_NEW_PRIVS: i32 = 38;
@@ -312,8 +441,16 @@ pub fn emit_sandbox_prelude(allowlist: &[u32]) -> String {
         fn prctl(option: i32, arg2: u64, arg3: u64, arg4: u64, arg5: u64) -> i32;
     }}
 
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    compile_error!("thermite #57 sandbox supports only x86_64 and aarch64 Linux runners");
+
+    #[cfg(target_arch = "x86_64")]
     static FILTER: &[SockFilter] = &[
-{filter_lines}    ];
+{x86_filter_lines}    ];
+
+    #[cfg(target_arch = "aarch64")]
+    static FILTER: &[SockFilter] = &[
+{aarch64_filter_lines}    ];
 
     // SAFETY: `prctl` is the documented Linux seccomp-install primitive; FILTER is a
     // valid, static, correctly-sized classic-BPF program and FILTER.len() fits u16
@@ -351,7 +488,13 @@ pub fn emit_probe() -> String {
 // -> SIGSYS -> the process is killed BEFORE the entry call (exit 159); under a
 // read(_) filter openat is allowlisted -> the probe returns and the entry runs.
 {{
+    #[cfg(target_arch = "x86_64")]
     const SYS_OPENAT: i64 = {SYS_OPENAT};
+    #[cfg(target_arch = "aarch64")]
+    const SYS_OPENAT: i64 = {SYS_OPENAT_AARCH64};
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    compile_error!("thermite #57 sandbox probe supports only x86_64 and aarch64 Linux runners");
+
     const AT_FDCWD: i64 = -100;
     extern "C" {{
         fn syscall(num: i64, ...) -> i64;
@@ -425,6 +568,35 @@ mod tests {
         assert_eq!(
             syscall_allowlist(&set(&["alloc", "panic", "diverge"])),
             syscall_allowlist(&set(&["pure"]))
+        );
+    }
+
+    // Issue #27: the aarch64 table is parallel to the x86_64 table but uses native
+    // Linux arm64 syscall numbers (`openat` 56, `ioctl` 29, `clock_gettime` 113).
+    #[test]
+    fn aarch64_allowlist_uses_native_syscall_numbers() {
+        let read = syscall_allowlist_for_arch(&set(&["read(src)"]), SeccompArch::Aarch64);
+        assert!(
+            read.contains(&56),
+            "read(_) allowlists aarch64 openat: {read:?}"
+        );
+        assert!(
+            !read.contains(&257),
+            "aarch64 read table must not leak x86_64 openat: {read:?}"
+        );
+
+        let time = syscall_allowlist_for_arch(&set(&["time"]), SeccompArch::Aarch64);
+        assert!(time.contains(&113), "time allowlists aarch64 clock_gettime");
+        assert!(
+            !time.contains(&228),
+            "aarch64 time table excludes x86_64 clock_gettime"
+        );
+
+        let term = syscall_allowlist_for_arch(&set(&["term"]), SeccompArch::Aarch64);
+        assert!(term.contains(&29), "term allowlists aarch64 ioctl");
+        assert!(
+            !term.contains(&16),
+            "aarch64 term table excludes x86_64 ioctl"
         );
     }
 
@@ -513,13 +685,13 @@ mod tests {
     }
 
     // REQ-1/REQ-5: the prelude installs the filter (PR_SET_SECCOMP) and is
-    // byte-deterministic over the same allowlist (R-CODE-5).
+    // byte-deterministic over the same transitive fx (R-CODE-5).
     #[test]
     fn prelude_installs_and_is_deterministic() {
-        let allow = syscall_allowlist(&set(&["pure"]));
-        let a = emit_sandbox_prelude(&allow);
-        let b = emit_sandbox_prelude(&allow);
-        assert_eq!(a, b, "REQ-5: same allowlist → byte-identical prelude");
+        let pure_fx = set(&["pure"]);
+        let a = emit_sandbox_prelude(&pure_fx);
+        let b = emit_sandbox_prelude(&pure_fx);
+        assert_eq!(a, b, "REQ-5: same transitive fx → byte-identical prelude");
         assert!(
             a.contains("PR_SET_SECCOMP") && a.contains("PR_SET_NO_NEW_PRIVS"),
             "REQ-1: the prelude installs the seccomp filter"
@@ -528,15 +700,28 @@ mod tests {
             a.contains("SECCOMP_RET_KILL_PROCESS"),
             "REQ-1: the default action is kill-process"
         );
-        // the pure prelude must not JEQ openat (257); a read prelude must.
+        assert!(
+            a.contains("AUDIT_ARCH_X86_64") && a.contains("AUDIT_ARCH_AARCH64"),
+            "issue #27: the prelude carries both supported arch guards"
+        );
+        // the pure prelude must not JEQ openat (257/56); a read prelude must for
+        // each cfg-selected architecture.
         assert!(
             !a.contains("BPF_JEQ | BPF_K, 257"),
             "pure prelude has no openat comparison"
         );
-        let read = emit_sandbox_prelude(&syscall_allowlist(&set(&["read(s)"])));
+        assert!(
+            !a.contains("BPF_JEQ | BPF_K, 56"),
+            "pure prelude has no aarch64 openat comparison"
+        );
+        let read = emit_sandbox_prelude(&set(&["read(s)"]));
         assert!(
             read.contains("BPF_JEQ | BPF_K, 257"),
-            "read prelude has an openat comparison"
+            "read prelude has an x86_64 openat comparison"
+        );
+        assert!(
+            read.contains("BPF_JEQ | BPF_K, 56"),
+            "read prelude has an aarch64 openat comparison"
         );
     }
 
@@ -546,6 +731,7 @@ mod tests {
         let p = emit_probe();
         assert!(p.contains("SYS_OPENAT") && p.contains("syscall"));
         assert!(p.contains(&SYS_OPENAT.to_string()));
+        assert!(p.contains(&SYS_OPENAT_AARCH64.to_string()));
     }
 }
 

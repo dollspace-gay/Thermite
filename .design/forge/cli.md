@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for stage-1 increment REQ-10 / AC-14, the G1 gate artifact: the only change to this doc's governed file (cli.rs) is the additive `--engine forge` value in the `--engine verus|lean|auto|nlsat|forge` parse (the G1 gate per-clause hybrid route); every other `--engine` value + flag parse is unchanged. prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
-audited-content-sha256: 5fffb8aab86e655ce6845a5932c65805c4635172f9b6a6b4a70f1548daa3b00f
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for umbrella REQ-7 / AC-12, the §6 metrics dashboard: the only change to this doc's governed file (cli.rs) is the additive `--metrics` flag in the `forge audit` parse + the `run_audit` body that prints the read-only §6 dashboard companion — gates nothing, #274; every other subcommand + flag parse is unchanged. prior: stage-1 REQ-10/AC-14 G1 gate `--engine forge` value)
+audited-content-sha256: 4e133a092811889aaeca5577bf409310533f7e3950ea7f69d721967fb06927a9
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

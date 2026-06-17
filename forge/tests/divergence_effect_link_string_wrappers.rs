@@ -14,26 +14,18 @@
 //!   - REQ status table marks REQ-1 SHIPPED with `os::write`/`os::print` "over
 //!     `TString`" and `os::read_line` "→ `TString`".
 //!
-//! The divergence: `forge/src/effect_wrappers.rs` `WRAPPERS` emits the
+//! Historical divergence: `forge/src/effect_wrappers.rs` `WRAPPERS` emits the
 //! `os::write`/`os::print`/`os::read_line` bodies referencing `super::TString`,
 //! and `thermite_lower::lower_l1` lowers a `String`-typed boundary fn's signature
 //! to the bare type name `TString` (`thermite-lower/src/l1.rs` `lower_type` arm
-//! `Type::String => Ok("TString")`). But neither `emit_mod_os` nor `lower_l1`
-//! emits a `struct TString` definition into the build-emitted crate (the `TString`
-//! struct lives only in the L3/Verus lowering, `thermite-lower/src/lower.rs`). So
-//! `forge build` of any program using `os::write`/`os::print`/`os::read_line`
-//! `rustc`-fails `error[E0425]: cannot find type \`TString\``.
+//! `Type::String => Ok("TString")`). Before L1 emitted the build-crate `TString`
+//! runtime, `forge build` of a program using `os::write`/`os::print`/`os::read_line`
+//! failed with `error[E0425]: cannot find type \`TString\``. This test now pins
+//! the fixed behavior.
 //!
-//! Three of the five wrappers REQ-1 enumerates (Write family + read_line) therefore
-//! do not "COMPILE + RUN + do real I/O" — REQ-1 / REQ-3 are NOT-STARTED for the
-//! Write/read_line families, contradicting the REQ-status "SHIPPED" claim.
-//!
-//! Reproduced live: `forge build print_demo.th --entry greet` →
+//! Original reproduction: `forge build print_demo.th --entry greet` →
 //!   `error[E0425]: cannot find type \`TString\` in module \`super\``
 //!   `error[E0425]: cannot find type \`TString\` in this scope`
-//!
-//! Tracking: blocker #N (filed by the critic; un-ignore when the build emits a
-//! `struct TString` or lowers `String` to a build-resolvable type).
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -128,8 +120,8 @@ fn print_wrapper_builds_and_runs() {
         run_forge_build(&[fixture.to_str().unwrap(), "--entry", "greet", "--json"]);
     let _ = std::fs::remove_file(&fixture);
 
-    // The link is broken: the emitted `pub fn print(s: super::TString)` (and the
-    // lowered `fn print(s: TString)`) reference an undefined `TString`.
+    // The emitted `pub fn print(s: super::TString)` wrapper and lowered
+    // `fn print(s: TString)` signature must both resolve.
     assert!(
         !stderr.contains("cannot find type `TString`")
             && !stdout.contains("cannot find type `TString`"),

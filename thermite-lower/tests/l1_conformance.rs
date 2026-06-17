@@ -189,6 +189,33 @@ fn corpus_lowers_ok_no_panic() {
 }
 
 #[test]
+fn string_runtime_emits_for_adt_field_without_direct_string_signature() {
+    let src = "struct Buf { text: String, cursor: u64 }\n\n\
+               fn make(n: u64) -> Buf\n  req true\n  ens result.cursor == n\n  fx pure\n\
+               {\n  Buf { text: String::new(), cursor: n }\n}\n";
+    let parsed = thermite_syntax::parse(src);
+    assert!(
+        parsed.errors.is_empty(),
+        "probe program must parse clean: {:?}",
+        parsed.errors
+    );
+    let emitted = thermite_lower::lower_l1(&parsed.program)
+        .unwrap_or_else(|e| panic!("L1 lowering failed: {e}"));
+    assert!(
+        emitted.contains("struct TString { data: Vec<u8> }"),
+        "a String-typed ADT field must trigger the L1 TString runtime:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("text: TString,"),
+        "the ADT field itself must lower to TString:\n{emitted}"
+    );
+    assert!(
+        emitted.contains("TString::new()"),
+        "String::new() call sites must still rewrite to the emitted TString runtime:\n{emitted}"
+    );
+}
+
+#[test]
 fn unsupported_construct_is_err_not_panic() {
     // A spec-fn body shaped as a slice match without a recursive tail call hits
     // the head-fold detector's `rec_name.is_empty()` guard and must return

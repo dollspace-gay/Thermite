@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8617c2b5d52a4f6cf606d2501dd3bf898a422bc3 (re-pinned 2026-06-17 for the #275 solver-vacuity fix to vacuity_solver.rs: REQ-1/REQ-2's harness builder now weaves the reachable struct/enum decls (reachable_adt_deps) so an ADT-returning/taking harness compiles, and reconstructs the requires/ensures regions verbatim so a multi-line match ens stays valid Verus; REQ-3's interpreter now maps the !success && errors==0 compile non-verdict (E0425) to a ForgeError instead of the clean Failed (the silent no-op that bypassed both anti-Goodhart checks on every ADT fn). The doc's REQ-1/REQ-3/REQ-11 prose was updated in this same commit to describe the shipped behavior; #275 is RESOLVED. prior: 92396428567edc6940a9e2845217f5ff4c2ea3c6)
+audited-sha: 90b8325951b0f625a693baf07776da39d0b95fbe (re-pinned 2026-06-17 after merging main into the #275 vacuity-fix branch: governed source carries #51's topology-stable doc-drift change + #275's ADT-deps/compile-error vacuity fix, both net-additive; the REQs this doc governs are unchanged.)
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7

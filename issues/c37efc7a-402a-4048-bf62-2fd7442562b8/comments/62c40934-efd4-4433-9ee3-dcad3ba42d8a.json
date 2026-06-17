@@ -1,0 +1,8 @@
+{
+  "uuid": "62c40934-efd4-4433-9ee3-dcad3ba42d8a",
+  "issue_uuid": "c37efc7a-402a-4048-bf62-2fd7442562b8",
+  "author": "uDNl",
+  "content": "Result: both normative deliverables shipped (REQ-8/AC-13), grounded in shipped code. (1) thermite2-semantics.md at repo root — the single normative Stage-1 semantics home: §1 ladder L0..L4 (L3 Verus/Z3 solver vs L4 kernel-grounded nlsat+spine-lemma, upward forge-escalation), §2 seven CertVerdict + never-converts-silently, §3 frozen-subset/cage + relaxable fragment, §4 div/rem + cast F2 corners stated once, §5 covenant inhabit/falsify + covenant-before-burn + trust profiles. Module headers that restated these now POINT at it: lean/Thermite/{Denote,Ast,Relax}.lean + thermite-lower/src/lower.rs (comment-only). (2) goal.md gains R-VERDICT-1/R-COV-1 (enforced now), R-GATE-1 (gate-time), R-SIDE-1/R-BV-1 (forward-looking candidates). Registered REQ-S1-11 (owner thermite2-program.md, shipped, typed evidence). 5 commits ef8ccde2..f5da8938. GAUNTLET: lake spine green, cargo build -p forge green, forge test binaries compile, doc-drift 0 (re-pinned 6 content-sha docs + 4 commit-pin docs governing lower.rs + req-registry.md), reqs check clean (442). No README headline flip (R-GATE-1 separate gate step), no cage change, no settings/hook-config staged. Push blocked — orchestrator pushes.",
+  "created_at": "2026-06-17T21:52:14.291511Z",
+  "kind": "result"
+}

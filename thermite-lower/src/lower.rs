@@ -20,6 +20,12 @@
 //! slice takes `Seq<T>` (not `&[T]`) and recurses on `xs.drop_first()`
 //! (verus-lowering.md REQ-5; the naive `&[u32]` spec-fn form fails `verus`).
 //!
+//! The source-level value conventions this context split realizes — casts are
+//! value-preserving in spec position and truncating in exec position (under the
+//! no-overflow source obligation), and `div`/`rem` are partial with a source-side
+//! divisor obligation — are stated normatively in `thermite2-semantics.md` §4 (the
+//! audit F2 corners). This module lowers them; the semantics doc is the authority.
+//!
 //! ## Proof aids are shape-keyed, not program-keyed (REQ-7)
 //!
 //! Where a corpus program does not verify from its bare annotations, the lowerer

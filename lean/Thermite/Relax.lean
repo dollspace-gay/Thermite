@@ -2,6 +2,11 @@
   Thermite/Relax.lean — the real-relaxation spine lemmas (REQ-8a, metatheory §7;
   `.design/stage1-forge-tier.md` REQ-8 / Q-NLSAT; epic G1).
 
+  Normative home: the relaxable-clause fragment, the L4 kernel-grounded rung, and the
+  `RealWitness` escalation are stated normatively in `thermite2-semantics.md` §3.2 and
+  §1; that doc is the authority a reader consults. This header carries the two spine
+  lemmas' statements and the Mathlib-island justification.
+
   Governing design: `.design/stage1-forge-tier.md` REQ-8 (the nlsat real-relaxation
   route) and its Q-NLSAT decision (a direct Z3 `nlsat`-tactic QF_NRA query). The relax
   route narrows a universally-quantified polynomial clause `∀ n : ℤ, 0 ≤ e(n)` to its

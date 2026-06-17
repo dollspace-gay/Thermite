@@ -6868,6 +6868,36 @@ target = "forge/src/engine.rs"
 note = "(4) the UNGATED structural RealWitness producer (classify_sat_real_only_model_is_real_witness): feeds classify_sat the √2 real countermodel directly → RealWitness, never a Counterexample — the AC-14 RealWitness-producer coverage that does not depend on z3"
 
 [[requirement]]
+id = "REQ-S1-11"
+title = "Governance normative deliverables — thermite2-semantics.md + the goal.md R-rules"
+owner = ".design/thermite2-program.md"
+status = "shipped"
+scope = "forge"
+summary = "The Stage-1 governance/normative deliverables (.design/thermite2-program.md REQ-8 / AC-13), grounded in the shipped code on main. (1) thermite2-semantics.md: the single authoritative home for the shipped Stage-1 forge-tier semantics, consolidating conventions that were scattered across module headers — the L0..L4 ladder with the L3 (Verus/Z3 SOLVER) vs L4 (KERNEL-GROUNDED: nlsat + spine-lemma) boundary and the upward forge-escalation (`manifest::Level`); the seven `CertVerdict` outcomes (Proved/Counterexample/RealWitness/CovenantRefuted/Stuck/KernelBudget/Timeout) + the never-converts-silently invariant (`verdict.rs`); the frozen-subset/cage fragment (`battery.rs`) + the relaxable-clause fragment (`relax.rs`); the div/rem (Lean `Int`, source-side divisor obligation) and cast (value-preserving spec vs truncating exec, the no-overflow source obligation) conventions stated ONCE as the audit F2 corners (`Denote.lean`/`Ast.lean`, `covenant_eval.rs`); the covenant (inhabit/falsify, covenant-before-burn, `covenant_engine.rs`) + the trust profiles (`engine::TrustProfile`, solver vs kernel-grounded). The module-header comments in lean/Thermite/ (Denote/Ast/Relax) and thermite-lower/ (lower.rs) that restated these conventions now POINT at the semantics doc rather than restating them (AC-13), with the triggered doc-drift re-pinned. (2) goal.md gains the five R-rule candidates: R-VERDICT-1 (never-converts-silently, enforced NOW in forge/src/verdict.rs), R-COV-1 (covenant-before-burn, enforced NOW in forge/src/covenant_engine.rs), R-GATE-1 (README/docs headline at gate time not merge time), R-SIDE-1 (stage-2 restratify Side obligation, forward-looking), R-BV-1 (stage-3 @bv shadow-flag parse gate, forward-looking). The README headline flip is NOT performed here — R-GATE-1 is a separate gate step (changes at gate time, not merge time)."
+aliases = ["thermite2-semantics.md", "AC-13", "REQ-8 governance", "governance deliverables", "normative deliverables", "R-rule candidates", "R-VERDICT-1", "R-COV-1", "R-GATE-1", "R-SIDE-1", "R-BV-1", "never-converts-silently"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "thermite2-semantics.md"
+note = "(1) the single normative Stage-1 semantics home: §1 ladder L0..L4 (L3 solver / L4 kernel-grounded + upward escalation), §2 the seven CertVerdict + never-converts-silently, §3 frozen-subset/cage + relaxable fragment, §4 the div/rem + cast F2 corners, §5 covenant + trust profiles — grounded in and quoting the shipped code"
+
+[[requirement.evidence]]
+kind = "file"
+target = "goal.md"
+note = "(2) the five R-rule candidates R-VERDICT-1 / R-COV-1 / R-GATE-1 / R-SIDE-1 / R-BV-1 with their normative statements + enforcing stage; the two forward-looking ones marked candidates for their owning stage; no other goal.md rule changed"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "from_engine_verdict"
+note = "R-VERDICT-1 enforced now (forge/src/verdict.rs): the total engine->cert map with no wildcard arm, Proved constructed only from Proven — the never-converts-silently invariant the semantics doc §2 fixes"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "covenant_gate"
+note = "R-COV-1 enforced now (forge/src/covenant_engine.rs): covenant-before-burn — the burn closure runs only on the Validated arm, the semantics doc §5.1 invariant"
+
+[[requirement]]
 id = "REQ-S1-1"
 title = "Seven-verdict certificate vocabulary"
 owner = ".design/stage1-forge-tier.md"

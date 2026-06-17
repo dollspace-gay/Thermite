@@ -4,7 +4,7 @@
 tier: 3-component
 status: draft
 audited-sha: f09f8ca376257cc1e2543b8ebc9fb771bffd04df (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: this doc's governed files (registry.toml, status.md) carry the additive REQ-S1-10 requirement entry + the regenerated status view, with REQ-S1-10's example restated from the isqrt-square-root characterization (non-trivial nlsat-earned L4 clauses) per the orchestrator's strengthening; req-registry.py --check is clean (441 requirements). prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
-audited-content-sha256: 1e9e96249858f3759a7ca0e63b8c1c6ea5be149120965fc39a50c344c68cbbf1
+audited-content-sha256: 268e91527f83a8017af4778c9ae10f29254ff5a003e321823f1b77686165c8f8
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md

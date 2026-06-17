@@ -231,6 +231,31 @@ pub struct ReviewArtifact {
     /// The battery-failing functions (flagged, not surfaced for intent review), in
     /// source order (REQ-2; R-DEFER-9).
     pub battery_failing: Vec<BatteryFailing>,
+    /// The BURNED forge-tier lemmas (`.design/stage1-forge-tier.md` REQ-9, increment 3):
+    /// each certified `lemma` surfaced with its burn receipt — exactly as a certified item
+    /// surfaces, so a reviewer sees the project's proven lemma library alongside the
+    /// reviewed fns. In source order. Omitted (empty) on the default Verus path / the v1
+    /// corpus (which discharge no forge lemma), and `#[serde(default,
+    /// skip_serializing_if)]` so a v1 review artifact serializes BYTE-IDENTICALLY (additive
+    /// only, mirroring the cert layer's additive discipline).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub burned_lemmas: Vec<BurnedLemma>,
+}
+
+/// One burned forge-tier lemma in the review artifact (`.design/stage1-forge-tier.md` REQ-9,
+/// increment 3) — a certified `lemma` surfaced like any certified item, carrying the burn
+/// receipt's auditable figures (the committed-proof token count + the lemmas it cited). A
+/// pure projection of the lemma's certificate; never fabricated.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BurnedLemma {
+    /// The lemma name (the certified item).
+    pub item: String,
+    /// The committed-proof lexer-token count from the burn receipt (REQ-7 / Q-BURN).
+    pub proof_tokens: usize,
+    /// The lemmas this lemma's proof cited (post-dedup-rewrite, REQ-9) — empty if it cited
+    /// none. Omitted when empty (mirrors the burn receipt's own field discipline).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cited_lemmas: Vec<String>,
 }
 
 /// The pluggable verdict slot (REQ-4, OQ-2) — the structured per-contract judgment
@@ -334,12 +359,22 @@ fn project_artifact(
 
     let mut intent_reviewable = Vec::new();
     let mut battery_failing = Vec::new();
+    let mut burned_lemmas = Vec::new();
 
     for cert in certs {
         if let Some(filter) = item_filter {
             if cert.item != filter {
                 continue;
             }
+        }
+        // A BURNED forge-tier lemma surfaces like any certified item (REQ-9, increment 3):
+        // a certified `lemma` (an L3 forge `lemma` item carrying a burn receipt) is added to
+        // the burned-lemmas partition with its receipt figures. It has no `fn` contract (a
+        // lemma is pure proof), so it would otherwise be skipped by the contract lookup
+        // below; handle it here, before that skip.
+        if let Some(burned) = burned_lemma_projection(program, cert) {
+            burned_lemmas.push(burned);
+            continue;
         }
         // A `spec fn` carries no `req`/`ens`/`fx` contract (§4.2) — it is a pure
         // shared dependency the reviewed `fn`s' spec layers reference, not an
@@ -376,7 +411,28 @@ fn project_artifact(
     ReviewArtifact {
         intent_reviewable,
         battery_failing,
+        burned_lemmas,
     }
+}
+
+/// Project a certified forge-tier `lemma` cert into a [`BurnedLemma`] (REQ-9, increment 3),
+/// or `None` if `cert` is not a burned lemma. A burned lemma is a `cert` whose item is a
+/// top-level `lemma` in `program`, that CERTIFIED ([`is_intent_reviewable`] — L3, no reject),
+/// and that carries a burn receipt (the proof closed a goal). The projection reads the
+/// receipt's auditable figures verbatim — pure, never fabricated (R-CODE-5).
+fn burned_lemma_projection(program: &Program, cert: &Certificate) -> Option<BurnedLemma> {
+    let is_lemma = program.items.iter().any(
+        |i| matches!(i, Item::Forge(thermite_syntax::ForgeItem::Lemma(l)) if l.name == cert.item),
+    );
+    if !is_lemma || !is_intent_reviewable(cert) {
+        return None;
+    }
+    let receipt = cert.burn.as_ref()?;
+    Some(BurnedLemma {
+        item: cert.item.clone(),
+        proof_tokens: receipt.proof_tokens,
+        cited_lemmas: receipt.cited_lemmas.clone(),
+    })
 }
 
 /// Look up a `fn`'s [`Contract`] in the parsed program by name (REQ-1). Returns the
@@ -921,5 +977,77 @@ mod tests {
         let artifact = project_artifact(&certs, &program, Some("sum"));
         assert_eq!(artifact.intent_reviewable.len(), 1);
         assert_eq!(artifact.intent_reviewable[0].item, "sum");
+    }
+
+    // REQ-9 (increment 3): a CERTIFIED forge-tier `lemma` carrying a burn receipt surfaces
+    // in the review artifact's `burned_lemmas` partition — "like any certified item" — with
+    // its proof-token count + cited lemmas; it is NOT mis-filed as a battery-failing fn (a
+    // lemma has no fn contract). A v1 program (no lemma) carries an empty partition.
+    #[test]
+    fn burned_lemma_surfaces_in_review() {
+        let program = parse_ok(
+            "lemma melems_cons(n: u32) req n > 0 ens n >= 1 proof { simp [Thermite.denote]; omega }",
+        );
+        let burned = Certificate::new(
+            "melems_cons",
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![crate::manifest::ObligationResult::discharged("melems_cons")],
+        )
+        .graduate_triage_clean()
+        .with_burn(crate::burn::BurnReceipt::for_proof_text(
+            "simp [Thermite.denote]; omega",
+        ));
+        let artifact = project_artifact(&[burned], &program, None);
+        assert_eq!(
+            artifact.burned_lemmas.len(),
+            1,
+            "the certified lemma surfaces"
+        );
+        assert_eq!(
+            artifact.battery_failing.len(),
+            0,
+            "a certified lemma is not a battery-failing fn"
+        );
+        assert_eq!(
+            artifact.intent_reviewable.len(),
+            0,
+            "a lemma is not a reviewed fn"
+        );
+        let l = &artifact.burned_lemmas[0];
+        assert_eq!(l.item, "melems_cons");
+        assert!(
+            l.proof_tokens > 0,
+            "the burn receipt's token count is carried"
+        );
+        assert_eq!(
+            l.cited_lemmas,
+            vec!["Thermite.denote".to_string()],
+            "the cited lemmas are carried from the burn receipt"
+        );
+    }
+
+    // REQ-9: an UNcertified lemma (a `reject` cert) does NOT surface as a burned lemma — only
+    // a certified item does (the "like any certified item" rule).
+    #[test]
+    fn uncertified_lemma_does_not_surface_as_burned() {
+        let program =
+            parse_ok("lemma bad(n: u32) req n > 0 ens n >= 1 proof { simp [Thermite.denote] }");
+        let rejected = Certificate::rejected(
+            "bad".to_string(),
+            vec!["pure".to_string()],
+            false,
+            RejectReason {
+                cause: "LeanUnknown".to_string(),
+                detail: "did not discharge".to_string(),
+            },
+        );
+        let artifact = project_artifact(&[rejected], &program, None);
+        assert_eq!(
+            artifact.burned_lemmas.len(),
+            0,
+            "an uncertified lemma does not surface"
+        );
     }
 }

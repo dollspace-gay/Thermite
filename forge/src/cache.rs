@@ -304,6 +304,139 @@ fn temp_sibling(cache_dir: &Path, key: &str) -> PathBuf {
     cache_dir.join(format!("{key}.{pid}.{n}.tmp"))
 }
 
+// ---- REQ-9 `dec wf` accessibility-proof cache (increment 3) -------------------------
+//
+// Stage-1 forge tier (`.design/stage1-forge-tier.md` REQ-9 / Q7 / AC-13): a `dec wf <rel>`
+// termination measure carries an ACCESSIBILITY obligation — the relation must be
+// well-founded on the recursion's carrier for the recursion to be admitted. That proof is
+// expensive and re-derivable, so — exactly like the per-item proof cache above — it is
+// content-addressed and cached by the (relation, carrier) pair, invalidated by the same
+// `CHECK_SCHEMA_VERSION` gate-set key (a gate change ⇒ a new key ⇒ a miss ⇒ a re-check). A
+// `dec wf` re-check on an unchanged (relation, carrier) HITS the cache (AC-13), skipping the
+// re-derivation — observable through [`load_accessibility`] returning the stored proof.
+
+/// Domain-separation tag for the accessibility cache key (REQ-9), distinct from the
+/// per-item proof cache's `DOMAIN`, so an accessibility key never collides with a proof
+/// key over the same bytes.
+const DOMAIN_ACCESSIBILITY: &[u8] = b"thermite.forge.wf-accessibility.v1";
+
+/// A cached `dec wf` accessibility proof (REQ-9 / Q7 / AC-13): the well-founded relation,
+/// the carrier it ranges over, and the discharged verdict (whether the relation was proved
+/// well-founded on the carrier — the accessibility obligation that admits the recursion).
+/// Content-addressed by [`accessibility_cache_key`] over (relation, carrier), schema-keyed
+/// like a [`Certificate`]. Additive + cache-only: never part of any cert's oracle subset.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AccessibilityProof {
+    /// The well-founded relation (the normalized `dec wf <rel>` relation text).
+    pub relation: String,
+    /// The carrier the relation ranges over — the recursing parameter's type (the
+    /// rendered type string), so the same relation over different carriers caches apart.
+    pub carrier: String,
+    /// The discharged accessibility verdict: `true` iff the relation was proved
+    /// well-founded on the carrier (the recursion is admitted). A `false` records a
+    /// settled non-accessibility (still cacheable — the obligation was decided).
+    pub well_founded: bool,
+    /// Whether this proof was served from the cache (REQ-9, mirroring `Certificate::cached`):
+    /// `true` on a hit, `false` on a fresh derivation. Set at serve time
+    /// ([`load_accessibility`] flags the hit); the stored form is canonical `false`.
+    #[serde(default)]
+    pub cached: bool,
+}
+
+impl AccessibilityProof {
+    /// A fresh accessibility proof for `(relation, carrier)` with verdict `well_founded`
+    /// (REQ-9). `cached` is `false` (a fresh derivation); a cache hit sets it `true` at
+    /// serve time.
+    #[must_use]
+    pub fn new(
+        relation: impl Into<String>,
+        carrier: impl Into<String>,
+        well_founded: bool,
+    ) -> Self {
+        AccessibilityProof {
+            relation: relation.into(),
+            carrier: carrier.into(),
+            well_founded,
+            cached: false,
+        }
+    }
+
+    /// Return this proof flagged as cache-served (REQ-9): the serve-time provenance flip,
+    /// mirroring `Certificate::with_cached`.
+    #[must_use]
+    pub fn with_cached(mut self, cached: bool) -> Self {
+        self.cached = cached;
+        self
+    }
+}
+
+/// The content-address cache key for a `dec wf` accessibility proof (REQ-9 / Q7): a
+/// lowercase-hex sha256 over the (relation, carrier) pair, domain-tagged + length-prefixed
+/// like [`cache_key`], plus the `CHECK_SCHEMA_VERSION` gate-set input (so an accessibility
+/// proof cached under one gate set is not re-served once the gate set changes — the same
+/// soundness guard the per-item cache uses). Pure (R-CODE-5): identical (relation, carrier)
+/// ⇒ identical key.
+#[must_use]
+pub fn accessibility_cache_key(relation: &str, carrier: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN_ACCESSIBILITY);
+    field(&mut hasher, b"relation", relation.as_bytes());
+    field(&mut hasher, b"carrier", carrier.as_bytes());
+    field(
+        &mut hasher,
+        b"check-schema",
+        &CHECK_SCHEMA_VERSION.to_le_bytes(),
+    );
+    hex_lower(&hasher.finalize())
+}
+
+/// The on-disk path for one accessibility cache entry (REQ-9): `<cache_dir>/wf-<key>.json`.
+/// The `wf-` prefix keeps the accessibility namespace visibly distinct from the per-item
+/// proof entries (`<key>.json`) in the same directory.
+fn accessibility_entry_path(cache_dir: &Path, key: &str) -> PathBuf {
+    cache_dir.join(format!("wf-{key}.json"))
+}
+
+/// Look up a cached [`AccessibilityProof`] by `key` under `cache_dir` (REQ-9 / AC-13).
+/// Returns `Some(proof)` (flagged `cached: true`) on a hit, `None` on a miss. A miss
+/// includes no file, an unreadable file, and a corrupt/unparseable file — a damaged cache
+/// degrades to re-derive, never to an error or a stale read (R-CODE-2), exactly like
+/// [`load`].
+#[must_use]
+pub fn load_accessibility(cache_dir: &Path, key: &str) -> Option<AccessibilityProof> {
+    let path = accessibility_entry_path(cache_dir, key);
+    let src = std::fs::read_to_string(&path).ok()?;
+    let proof = serde_json::from_str::<AccessibilityProof>(&src).ok()?;
+    // Provenance is set at serve time: the stored form is canonical `cached: false`, the
+    // served hit is `cached: true` (so a re-check can observe the hit, AC-13).
+    Some(proof.with_cached(true))
+}
+
+/// Store `proof` under `key` in `cache_dir` (REQ-9 / AC-13), persisting the canonical
+/// `cached: false` form so a future [`load_accessibility`] hit is equal to a fresh derive
+/// but for the serve-time `cached` flag. Atomic publish (temp sibling + rename), mirroring
+/// [`store`]; an IO failure is returned for the caller to degrade on (the cache is
+/// best-effort — a derivation that cannot be cached is still valid).
+pub fn store_accessibility(
+    cache_dir: &Path,
+    key: &str,
+    proof: &AccessibilityProof,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(cache_dir)?;
+    let canonical = proof.clone().with_cached(false);
+    let json = serde_json::to_string_pretty(&canonical)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let tmp = temp_sibling(cache_dir, &format!("wf-{key}"));
+    std::fs::write(&tmp, json.as_bytes())?;
+    match std::fs::rename(&tmp, accessibility_entry_path(cache_dir, key)) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,5 +569,101 @@ mod tests {
             "the proof cache lives under the ignored `target/`: {dir:?}"
         );
         assert!(dir.ends_with("thermite-proof-cache"));
+    }
+
+    // ---- REQ-9 `dec wf` accessibility cache (increment 3) ----------------------------
+
+    // REQ-9 / Q7: the accessibility key is a pure function of (relation, carrier); the same
+    // pair yields the same 64-char lowercase-hex key, a different pair a different key.
+    #[test]
+    fn accessibility_key_is_pure_and_pair_sensitive() {
+        let a = accessibility_cache_key("lt", "u32");
+        assert_eq!(
+            a,
+            accessibility_cache_key("lt", "u32"),
+            "pure: same pair, same key"
+        );
+        assert_eq!(a.len(), 64);
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        // Either component changing changes the key.
+        assert_ne!(
+            a,
+            accessibility_cache_key("gt", "u32"),
+            "relation participates"
+        );
+        assert_ne!(
+            a,
+            accessibility_cache_key("lt", "u64"),
+            "carrier participates"
+        );
+        // The accessibility key never collides with a same-text proof key (distinct domain).
+        assert_ne!(a, cache_key("lt", 0, "u32", "0.1.0"));
+    }
+
+    // REQ-9 / AC-13: a `dec wf` re-check HITS the cache — a stored accessibility proof is
+    // served (flagged `cached: true`) on the second look, observable via the cache layer;
+    // the stored form is canonical `cached: false`.
+    #[test]
+    fn accessibility_recheck_hits_the_cache() {
+        let dir = unique_test_dir("wf_hit");
+        let _ = std::fs::remove_dir_all(&dir);
+        let key = accessibility_cache_key("lt", "u32");
+        // A miss before any store (the first check derives).
+        assert!(
+            load_accessibility(&dir, &key).is_none(),
+            "empty cache is a MISS"
+        );
+        let proof = AccessibilityProof::new("lt", "u32", true);
+        store_accessibility(&dir, &key, &proof).expect("store");
+        // The re-check HITS — same (relation, carrier), served from the cache.
+        let hit = load_accessibility(&dir, &key).expect("HIT after store");
+        assert_eq!(hit.relation, "lt");
+        assert_eq!(hit.carrier, "u32");
+        assert!(hit.well_founded);
+        assert!(
+            hit.cached,
+            "a served hit is flagged cached:true (observable re-check)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // REQ-9: the accessibility cache is invalidated by the same `CHECK_SCHEMA_VERSION` gate
+    // key as the per-item cache — a schema bump changes the key, so a proof cached under the
+    // old schema is a MISS under the new (no stale accessibility past a gate change).
+    #[test]
+    fn accessibility_is_schema_invalidated() {
+        // The schema input is folded into the key, so a different schema ⇒ a different key.
+        // Re-derive the key bytes with the schema participating: two different relations
+        // sharing a schema differ, and the same pair across schemas would differ — pinned
+        // structurally by `accessibility_cache_key` feeding `CHECK_SCHEMA_VERSION`.
+        let k = accessibility_cache_key("lt", "u32");
+        // A hand-built key WITHOUT the schema field must differ from the real key (proving
+        // the schema participates — the invalidation lever).
+        let mut bare = Sha256::new();
+        bare.update(DOMAIN_ACCESSIBILITY);
+        field(&mut bare, b"relation", b"lt");
+        field(&mut bare, b"carrier", b"u32");
+        let bare = hex_lower(&bare.finalize());
+        assert_ne!(
+            k, bare,
+            "the schema version is a cache-key input (invalidation lever)"
+        );
+    }
+
+    // REQ-9 / R-CODE-2: a corrupt accessibility entry degrades to a MISS, never a stale read.
+    #[test]
+    fn corrupt_accessibility_entry_is_a_miss() {
+        let dir = unique_test_dir("wf_corrupt");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let key = accessibility_cache_key("lt", "u32");
+        std::fs::write(accessibility_entry_path(&dir, &key), b"{ not json").expect("write garbage");
+        assert!(
+            load_accessibility(&dir, &key).is_none(),
+            "corrupt entry is a MISS"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

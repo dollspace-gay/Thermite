@@ -367,6 +367,14 @@ pub fn check_file_with_options(
     // L3 burn (R-COV-1, covenant-before-burn). No v1 corpus item carries a `witness`
     // block, so the map is empty on the conformance corpus — a no-op on the v1 oracle.
     let covenant_bindings = crate::covenant_engine::witness_bindings(&parsed.program);
+    // Stage-1 forge tier — the per-project lemma namespace NAMES (`.design/stage1-forge-tier.md`
+    // REQ-9 / Q1, increment 3). The set of top-level `lemma` names, so the frozen-battery
+    // gate DEFERS a `simp [ … ]` citation that names a project lemma (instead of refusing it
+    // as an unlisted simp lemma): the certified-only resolution then decides it on the
+    // forge/Lean path once discharge settles certification. Empty on the v1 corpus (no
+    // project lemmas), so the frozen-battery gate is byte-identical there. Computed once
+    // (a pure function of the program, R-CODE-5).
+    let project_lemma_names = crate::lemma_library::project_lemma_names(&parsed.program);
     // The covenant evidence for each VALIDATED covenant, attached to the item's cert
     // after the burn (Q-ORACLE: the evidence joins the forge-tier cert oracle). A
     // refuted/refused covenant carries its own evidence (or none) on its short-circuit
@@ -462,7 +470,9 @@ pub fn check_file_with_options(
             // discharge. A clean proof block falls through to the inert forge-item skip
             // (no v1 cert consumer yet — proof-view discharge is 2e). No conformance `.th`
             // is forge-tier, so this is a no-op on the v1 oracle.
-            if let Err(violation) = crate::battery::enforce_forge_item(forge) {
+            if let Err(violation) =
+                crate::battery::enforce_forge_item_with_lemmas(forge, &project_lemma_names)
+            {
                 certs.push(Certificate::rejected(
                     violation.item().to_string(),
                     vec!["pure".to_string()],
@@ -1057,7 +1067,131 @@ pub fn check_file_with_engine(
             }
         }
     }
+
+    // Stage-1 forge tier — the REQ-9 lemma library mechanics (`.design/stage1-forge-tier.md`
+    // REQ-9 / AC-13, increment 3), the LAST stage-1 feature increment. Runs HERE, after the
+    // lemma discharge pass, because it reasons about settled certification status:
+    //   1. Certified-only citation resolution (AC-13): a forge item whose proof cites a
+    //      project lemma that did NOT certify is REFUSED, named — replacing its cert with an
+    //      `UncertifiedLemmaCitation` reject. (A frozen-spine / certified-project / unknown
+    //      citation is unaffected — `Unknown` is the frozen battery's concern, already gated.)
+    //   2. Dedup-on-burn citation rewrite (AC-13): a burn receipt's `cited_lemmas` are
+    //      rewritten to their canonical (first-certified, same-statement) lemma, so a
+    //      statement-hash duplicate is NOT stored as a copy — the citation points at the one
+    //      stored lemma. Oracle-excluded (the burn receipt is, Q-BURN), so this never perturbs
+    //      a cert's oracle subset / the v1 goldens.
+    // The default Verus path never enters this function, and the v1 corpus carries no project
+    // lemmas, so this is a no-op on the v1 oracle.
+    let library = crate::lemma_library::LemmaLibrary::build(&parsed.program, &out);
+    out = apply_lemma_library(out, &parsed.program, &library);
+
+    // Stage-1 forge tier — the REQ-9 `dec wf` accessibility cache (`.design/stage1-forge-tier.md`
+    // REQ-9 / Q7 / AC-13, increment 3). Write-through: for every item carrying a `dec wf <rel>`
+    // measure, cache its accessibility proof keyed by (relation, carrier), so a SUBSEQUENT
+    // `forge check` re-check on an unchanged (relation, carrier) HITS the cache (the
+    // cross-invocation hit the per-item proof cache uses, observable via the cache layer). The
+    // accessibility verdict is whether the item's recursion was admitted — its cert reached an
+    // L3 (non-rejected) rung. No v1 corpus item uses `dec wf`, so this is a no-op on the v1
+    // oracle (and the accessibility cache lives in its own `wf-` namespace, never perturbing a
+    // cert).
+    let wf_cache_dir = resolve_cache_dir();
+    crate::accessibility::cache_dec_wf_accessibility(
+        &wf_cache_dir,
+        &parsed.program.items,
+        |name| {
+            out.iter()
+                .any(|c| c.item == name && c.level == Level::L3 && c.reject.is_none())
+        },
+    );
     Ok(out)
+}
+
+/// Apply the REQ-9 lemma library to a settled cert collection (`.design/stage1-forge-tier.md`
+/// REQ-9 / AC-13, increment 3): the certified-only citation gate + the dedup-on-burn citation
+/// rewrite. A pure projection over the certs + the parsed program + the built `library` (no
+/// prover, no IO), so it is unit-testable and deterministic (R-CODE-5).
+///
+/// - For each forge `lemma`/`proof` item, its proof block(s) are re-scanned: a citation to an
+///   UNCERTIFIED project lemma replaces that item's cert with an `UncertifiedLemmaCitation`
+///   reject naming the lemma (AC-13.1). A clean cert is left as-is.
+/// - Every cert carrying a burn receipt has its `cited_lemmas` rewritten to the canonical
+///   dedup target (AC-13.2). The receipt stays oracle-excluded, so the oracle subset is
+///   unchanged.
+fn apply_lemma_library(
+    certs: Vec<Certificate>,
+    program: &Program,
+    library: &crate::lemma_library::LemmaLibrary,
+) -> Vec<Certificate> {
+    certs
+        .into_iter()
+        .map(|cert| {
+            // (1) Certified-only citation gate: a forge item citing an uncertified project
+            // lemma is refused, named (AC-13.1). Find the item's proof text by name.
+            if let Some(refusal) = uncertified_citation_for_item(program, library, &cert.item) {
+                return Certificate::rejected(
+                    refusal.item.clone(),
+                    cert.effects.clone(),
+                    false,
+                    RejectReason {
+                        cause: refusal.cause().to_string(),
+                        detail: refusal.detail(),
+                    },
+                );
+            }
+            // (2) Dedup-on-burn citation rewrite (AC-13.2): rewrite a burn receipt's cited
+            // lemmas to their canonical stored copy. Oracle-excluded, so the subset is intact.
+            match cert.burn.clone() {
+                Some(receipt) => {
+                    let rewritten = library.rewrite_citations(&receipt.cited_lemmas);
+                    if rewritten == receipt.cited_lemmas {
+                        cert
+                    } else {
+                        let mut new_receipt = receipt;
+                        new_receipt.cited_lemmas = rewritten;
+                        cert.with_burn(new_receipt)
+                    }
+                }
+                None => cert,
+            }
+        })
+        .collect()
+}
+
+/// The first uncertified-project-lemma citation made by the forge item named `item`, or
+/// `None` (REQ-9 / AC-13.1). Scans the matching `lemma`/`proof` item's proof block(s)
+/// through [`crate::lemma_library::enforce_citations`]; a non-forge item (a `fn`) makes no
+/// project-lemma citation in this sense, so it is `None`.
+fn uncertified_citation_for_item(
+    program: &Program,
+    library: &crate::lemma_library::LemmaLibrary,
+    item: &str,
+) -> Option<crate::lemma_library::UncertifiedCitation> {
+    for prog_item in &program.items {
+        let Item::Forge(forge) = prog_item else {
+            continue;
+        };
+        match forge {
+            thermite_syntax::ForgeItem::Lemma(l) if l.name == item => {
+                return crate::lemma_library::enforce_citations(library, &l.name, &l.proof.text)
+                    .err();
+            }
+            thermite_syntax::ForgeItem::Proof(p) if p.target == item => {
+                // A `proof for f` block's several `ens#k` obligations share f's local context
+                // (Q6); each obligation's proof is scanned, the FIRST uncertified citation
+                // refuses the whole item.
+                for ob in &p.obligations {
+                    if let Err(e) =
+                        crate::lemma_library::enforce_citations(library, &p.target, &ob.proof.text)
+                    {
+                        return Some(e);
+                    }
+                }
+                return None;
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The REQ-6c certify-time definition-tower budget gate (increment 2d;
@@ -4724,5 +4858,106 @@ note: Cost * Instantiations: 150 (Instantiated 10 times - 71% of the total, cost
             Some("forge_sum_check_1_0.rs:37:13".to_string())
         );
         assert_eq!(parse_span("not a span"), None);
+    }
+
+    // ---- REQ-9 lemma library wiring (`apply_lemma_library`, increment 3) --------------
+    //
+    // These exercise the check.rs glue HERMETICALLY (no lake / no verus): they feed
+    // `apply_lemma_library` a synthesized settled cert collection + a parsed program and
+    // assert the AC-13 transforms, exactly as the forge/Lean path applies them after the
+    // lemma discharge pass. The live end-to-end path is covered by the lake-guarded
+    // engine::tests; the pure resolution logic by lemma_library::tests.
+
+    fn certified_l3(item: &str) -> Certificate {
+        Certificate::new(
+            item,
+            Level::L3,
+            vec!["pure".to_string()],
+            0,
+            vec![crate::manifest::ObligationResult::discharged(item)],
+        )
+        .graduate_triage_clean()
+    }
+
+    // AC-13.1: a forge item citing an UNCERTIFIED project lemma has its cert REPLACED with
+    // an `UncertifiedLemmaCitation` reject naming the lemma — even if discharge gave it some
+    // other (non-final) cert first.
+    #[test]
+    fn apply_lemma_library_refuses_uncertified_citation_named() {
+        let src = "lemma melems_cons(n: u32) req n > 0 ens n >= 1 proof { omega }\n\
+                   lemma user(n: u32) req n > 0 ens n >= 1 proof { simp [melems_cons]; omega }";
+        let parsed = thermite_syntax::parse(src);
+        assert!(parsed.is_clean(), "fixture parses: {:?}", parsed.errors);
+        // `melems_cons` did NOT certify; `user` carries some placeholder cert.
+        let certs = vec![
+            Certificate::rejected(
+                "melems_cons".to_string(),
+                vec!["pure".to_string()],
+                false,
+                RejectReason {
+                    cause: "LeanUnknown".to_string(),
+                    detail: "did not discharge".to_string(),
+                },
+            ),
+            certified_l3("user"),
+        ];
+        let library = crate::lemma_library::LemmaLibrary::build(&parsed.program, &certs);
+        let out = apply_lemma_library(certs, &parsed.program, &library);
+        let user = out.iter().find(|c| c.item == "user").expect("user cert");
+        let reject = user.reject.as_ref().expect("user is refused");
+        assert_eq!(reject.cause, "UncertifiedLemmaCitation");
+        assert!(
+            reject.detail.contains("melems_cons"),
+            "the refusal names the lemma: {}",
+            reject.detail
+        );
+        assert_ne!(user.level, Level::L3, "a refused citation does not certify");
+    }
+
+    // AC-13.1 (converse): once the cited lemma certifies, the citing item's cert is left
+    // intact (no spurious refusal).
+    #[test]
+    fn apply_lemma_library_passes_certified_citation() {
+        let src = "lemma melems_cons(n: u32) req n > 0 ens n >= 1 proof { omega }\n\
+                   lemma user(n: u32) req n > 0 ens n >= 1 proof { simp [melems_cons]; omega }";
+        let parsed = thermite_syntax::parse(src);
+        let certs = vec![certified_l3("melems_cons"), certified_l3("user")];
+        let library = crate::lemma_library::LemmaLibrary::build(&parsed.program, &certs);
+        let out = apply_lemma_library(certs, &parsed.program, &library);
+        let user = out.iter().find(|c| c.item == "user").expect("user cert");
+        assert!(user.reject.is_none(), "a certified citation is not refused");
+        assert_eq!(user.level, Level::L3);
+    }
+
+    // AC-13.2: dedup-on-burn rewrites a burn receipt's citation to the canonical lemma; the
+    // rewrite is oracle-excluded (the burn receipt is), so the oracle subset is unchanged.
+    #[test]
+    fn apply_lemma_library_rewrites_burn_citation_to_canonical() {
+        let src = "lemma melems_cons(n: u32) req n > 0 ens n >= 1 proof { omega }\n\
+                   lemma melems_cons_dup(n: u32) req n > 0 ens n >= 1 proof { omega }\n\
+                   lemma user(n: u32) req n > 0 ens n >= 1 proof { simp [melems_cons_dup]; omega }";
+        let parsed = thermite_syntax::parse(src);
+        let user_before = certified_l3("user").with_burn(crate::burn::BurnReceipt::for_proof_text(
+            "simp [melems_cons_dup]; omega",
+        ));
+        let certs = vec![
+            certified_l3("melems_cons"),
+            certified_l3("melems_cons_dup"),
+            user_before.clone(),
+        ];
+        let library = crate::lemma_library::LemmaLibrary::build(&parsed.program, &certs);
+        let out = apply_lemma_library(certs, &parsed.program, &library);
+        let user = out.iter().find(|c| c.item == "user").expect("user cert");
+        let burn = user.burn.as_ref().expect("user carries a burn receipt");
+        assert_eq!(
+            burn.cited_lemmas,
+            vec!["melems_cons".to_string()],
+            "the duplicate citation is rewritten to the canonical stored lemma"
+        );
+        assert_eq!(
+            user.oracle_subset(),
+            user_before.oracle_subset(),
+            "the dedup rewrite is oracle-excluded (Q-BURN): the oracle subset is unchanged"
+        );
     }
 }

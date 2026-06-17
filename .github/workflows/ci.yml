@@ -168,6 +168,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # forge's audit/doc-drift conformance tests read git history
+          fetch-depth: 0
 
       - name: Install elan (Lean toolchain manager)
         run: |
@@ -197,3 +200,59 @@ jobs:
 
       - name: Lean spine build + axiom probe (lake build + #print axioms gate)
         run: bash scripts/lean-axiom-probe.sh
+
+      # Audit F4 (#309): the `test` shards above run WITHOUT the Lean spine, so every
+      # `lake`-gated live test (the end-to-end L3/L4 forge discharges, the seven-verdict
+      # live cases, the merge-class G1 cert) self-skips there and was only verified
+      # locally. This job is the one place the spine + lake exist, so it also installs
+      # Rust + Verus and runs the forge suite HERE, where those tests actually execute —
+      # the `lake_present()` guards take the RUN branch. (Redundant with the shards for
+      # the non-spine forge tests; can be filtered/sharded later — #309.)
+      - name: Install Rust toolchain (pinned)
+        uses: dtolnay/rust-toolchain@1.95.0
+
+      - name: Rust build cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: lean-spine-tests
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
+      - name: Cache Verus
+        uses: actions/cache@v4
+        with:
+          path: ~/verus-dist
+          key: verus-0.2026.05.24.ecee80a-x86-linux
+
+      - name: Install Verus (L3 verification gate — pinned to dev version)
+        run: |
+          set -euo pipefail
+          VERUS_VER="0.2026.05.24.ecee80a"
+          if ! find "$HOME/verus-dist" -type f -name verus 2>/dev/null | grep -q .; then
+            curl -fsSL -o /tmp/verus.zip \
+              "https://github.com/verus-lang/verus/releases/download/release/${VERUS_VER}/verus-${VERUS_VER}-x86-linux.zip"
+            mkdir -p "$HOME/verus-dist"
+            unzip -q /tmp/verus.zip -d "$HOME/verus-dist"
+          fi
+          VERUS_BIN_PATH="$(find "$HOME/verus-dist" -type f -name verus | head -1)"
+          test -n "$VERUS_BIN_PATH"
+          echo "VERUS_BIN=$VERUS_BIN_PATH" >> "$GITHUB_ENV"
+          echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
+          "$VERUS_BIN_PATH" --version
+
+      - name: Build the spine modules forge's --engine lean discharge imports
+        working-directory: lean
+        # The axiom probe builds only its own subset; forge's lean export imports
+        # `Thermite.Stabilize` / `Exec.Stmt` / `Exec.WhileBody` (NOT the root `Thermite`,
+        # which pulls the cvc5-FFI `SmtDemo`). Without these oleans on the search path the
+        # `--engine lean` auto-discharge fails with "unknown module prefix 'Thermite'" —
+        # which `engine_lean_attaches_smaller_trust_base_live` correctly catches.
+        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody
+
+      - name: forge tests WITH the spine (the lake-gated live tests run here, not skipped)
+        # lake is on PATH (elan), the spine modules forge imports are built, Verus is
+        # installed: the live `lake_present()`/spine-dependent tests take their RUN branch.
+        run: cargo nextest run -p forge

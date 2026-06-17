@@ -1,0 +1,50 @@
+// The G1 GATE example (`.design/stage1-forge-tier.md` REQ-10 / AC-14, the stage-1 gate's
+// centerpiece). A SINGLE `fn` whose certificate exhibits the forge tier end to end:
+// out-of-cage clauses no longer degrade DOWN the ladder — each ESCALATES to the engine
+// that grounds it, and the item certifies at the MIN over its clauses.
+//
+// `isqrt_class` is keyed on the INTEGER-SQUARE-ROOT characterization: its `req` states
+// that `r` is the integer sqrt of `n` — `r*r <= n < (r+1)*(r+1)` (the `r <= 10^8` guard
+// bounds the squared term to a non-overflowing range for the executable covenant; the
+// real relaxation is unaffected). Its two L4 clauses are NON-TRIVIAL nlsat-earned
+// consequences of that characterization — neither restates `req`; each needs the
+// real-arithmetic squeeze the [`NlsatEngine`] (Z3 nlsat, QF_NRA) decides:
+//
+//   * `ens#0  2*r <= n + 1`            — the LOWER squeeze: from `r*r <= n` and the real
+//                                         fact `(r-1)^2 >= 0` (so `2*r <= r*r + 1 <= n + 1`).
+//   * `ens#1  n < 2*r*r + 2*r + 1`     — the UPPER squeeze: from `n < (r+1)^2 = r*r+2*r+1`
+//                                         and `r*r >= 0` (so `n < r*r+2*r+1 <= 2*r*r+2*r+1`).
+//
+// Each is real-valid (QF_NRA-`unsat` over its negation) and, by the kernel-checked
+// `r_relax_sound`, integer-valid → certified at the kernel-grounded **L4**. (A skeptic can
+// confirm these are EARNED: `r <= n` — the naive guess — is NOT real-valid, since `0<r<1`
+// has `r > r*r`, so nlsat returns a `RealWitness`, never a false L4.)
+//
+//   * `ens#2  result*2 + (n + r) % 2 == n + r`
+//                                       — NOT relaxable (the `%` is not a polynomial atom —
+//                                         `relax::classify_fn` rejects it), so it routes to
+//                                         the Lean engine. It is the div/mod identity pinning
+//                                         `result` to the midpoint `(n+r)/2`; discharged at
+//                                         **L3** by the author-authored, frozen-battery proof
+//                                         (`simp` over the frozen denotation simp-set +
+//                                         `omega`), kernel-accepted and axiom-gated, carrying
+//                                         the BURN RECEIPT (proof tokens + cited simp-lemmas).
+//
+// The item level is the MIN over the clauses — **L3** (clauses L4, L4, L3). The `witness`
+// block makes `isqrt_class` covenant-routed (covenant-before-burn, R-COV-1), the definition
+// tower is pinned (MEANING AUDIT, anti-Goodhart), and the L3 clause is re-elaboration
+// MUTATION-scored. All four forge-tier evidence blocks populated — the AC-14 checklist, in
+// one certificate.
+fn isqrt_class(n: u64, r: u64) -> u64
+    req r <= 100000000 && r * r <= n && n < (r + 1) * (r + 1)
+    ens 2 * r <= n + 1
+    ens n < 2 * r * r + 2 * r + 1
+    ens result * 2 + (n + r) % 2 == n + r
+    fx pure
+{ (n + r) / 2 }
+
+witness { inhabit (0, 0); inhabit (4, 2); inhabit (15, 3); falsify 2000; }
+
+proof for isqrt_class {
+    ens#2 by { simp [Thermite.denote, Thermite.Env.bindInt, Thermite.intVal, Thermite.arithDenote]; omega }
+}

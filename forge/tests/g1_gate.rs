@@ -1,10 +1,11 @@
 //! The G1 gate cert-oracle (`.design/stage1-forge-tier.md` REQ-10 / AC-14): the
-//! merge-class example, end to end. `forge check --engine forge
-//! conformance/forge/merge_class.th` drives the PER-CLAUSE hybrid route — two relaxable
-//! polynomial side-conditions discharged by the nlsat relax route at L4, one non-relaxable
-//! (`%`) clause discharged at L3 by the author's `proof for` block — so the certificate
-//! exhibits clauses at **L4, L4, L3**, the item level is the MIN (**L3**), and all four
-//! forge-tier evidence blocks are populated:
+//! `isqrt_class` example, end to end. `forge check --engine forge
+//! conformance/forge/isqrt_class.th` drives the PER-CLAUSE hybrid route — two NON-TRIVIAL
+//! relaxable consequences of the integer-sqrt characterization (`r*r <= n < (r+1)^2`)
+//! discharged by the nlsat relax route at L4 (the real-arithmetic squeeze, NOT a restatement
+//! of `req`), one non-relaxable (`%`) clause discharged at L3 by the author's `proof for`
+//! block — so the certificate exhibits clauses at **L4, L4, L3**, the item level is the MIN
+//! (**L3**), and all four forge-tier evidence blocks are populated:
 //!
 //!   * `covenant_evidence` — from the `witness` block (covenant-before-burn),
 //!   * `engine_attribution` + per-clause `engine`/`trust` — the axiom-gate record,
@@ -14,7 +15,7 @@
 //! The route invokes z3 (nlsat, bundled with verus) and lake (the built Lean spine), so the
 //! test SKIPS when either is absent (mirroring the sibling live-spine tests); the CI lean
 //! job is the authoritative gate. The deterministic oracle fields are pinned against the
-//! committed golden `conformance/forge/merge_class.cert.json` (R-CHAR-3).
+//! committed golden `conformance/forge/isqrt_class.cert.json` (R-CHAR-3).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -69,7 +70,7 @@ fn lake_present() -> bool {
 }
 
 fn run_forge_gate() -> (Option<i32>, Vec<Value>) {
-    let th = repo_root().join("conformance/forge/merge_class.th");
+    let th = repo_root().join("conformance/forge/isqrt_class.th");
     let out = Command::new(forge_bin())
         .arg("check")
         .arg("--engine")
@@ -93,16 +94,18 @@ fn run_forge_gate() -> (Option<i32>, Vec<Value>) {
 }
 
 fn golden() -> Value {
-    let path = repo_root().join("conformance/forge/merge_class.cert.json");
+    let path = repo_root().join("conformance/forge/isqrt_class.cert.json");
     let src = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| panic!("read golden {}: {e}", path.display()));
     serde_json::from_str(&src).unwrap_or_else(|e| panic!("parse golden: {e}"))
 }
 
-/// AC-14 core: the merge-class example certifies L3 with clauses L4, L4, L3 (engine
-/// attribution nlsat / nlsat / lean) and all four evidence blocks present + populated.
+/// AC-14 core: the `isqrt_class` example certifies L3 with clauses L4, L4, L3 (engine
+/// attribution nlsat / nlsat / lean) and all four evidence blocks present + populated. The
+/// two L4 clauses are non-trivial nlsat-earned consequences of the integer-sqrt
+/// characterization (the real-arithmetic squeeze), not restatements of `req`.
 #[test]
-fn merge_class_certifies_l3_with_l4_l4_l3_clauses_and_four_evidence_blocks() {
+fn isqrt_class_certifies_l3_with_l4_l4_l3_clauses_and_four_evidence_blocks() {
     if !verus_present() || !lake_present() {
         eprintln!(
             "SKIP: verus (z3) and/or lake absent — the G1 gate per-clause hybrid route is not \
@@ -117,7 +120,7 @@ fn merge_class_certifies_l3_with_l4_l4_l3_clauses_and_four_evidence_blocks() {
     let golden = golden();
 
     // (1) Item level == L3 (the MIN over the clauses), == golden.
-    assert_eq!(cert["item"], Value::from("merge_class"));
+    assert_eq!(cert["item"], Value::from("isqrt_class"));
     assert_eq!(
         cert["level"],
         Value::from("L3"),

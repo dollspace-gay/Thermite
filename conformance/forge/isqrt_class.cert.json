@@ -1,5 +1,5 @@
 {
-  "item": "merge_class",
+  "item": "isqrt_class",
   "level": "L3",
   "solver_time_ms": 0,
   "contract_quality": {
@@ -13,7 +13,7 @@
   "slag": false,
   "obligations": [
     {
-      "name": "merge_class::ens#0: relaxable polynomial side-condition discharged by the nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
+      "name": "isqrt_class::ens#0: relaxable polynomial side-condition discharged by the nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
       "status": "discharged",
       "engine": "nlsat",
       "trust": [
@@ -26,7 +26,7 @@
       }
     },
     {
-      "name": "merge_class::ens#1: relaxable polynomial side-condition discharged by the nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
+      "name": "isqrt_class::ens#1: relaxable polynomial side-condition discharged by the nlsat relax route (QF_NRA-valid by the Z3 nlsat tactic; integer-valid by the kernel-checked r_relax_sound — L4 kernel-grounded; stage1-forge-tier.md REQ-8/REQ-10)",
       "status": "discharged",
       "engine": "nlsat",
       "trust": [
@@ -39,7 +39,7 @@
       }
     },
     {
-      "name": "merge_class::ens#2: non-relaxable clause discharged by an author-authored frozen-battery Lean proof (kernel-accepted, sorry-free, axiom-gated; stage1-forge-tier.md REQ-7/REQ-10)",
+      "name": "isqrt_class::ens#2: non-relaxable clause discharged by an author-authored frozen-battery Lean proof (kernel-accepted, sorry-free, axiom-gated; stage1-forge-tier.md REQ-7/REQ-10)",
       "status": "discharged",
       "engine": "lean-auto",
       "trust": [
@@ -70,8 +70,8 @@
     ]
   },
   "covenant_evidence": {
-    "witness_count": 2,
-    "falsify_generated": 30,
+    "witness_count": 3,
+    "falsify_generated": 22,
     "falsify_refuted": 0,
     "seed": 6840123409045700830
   },

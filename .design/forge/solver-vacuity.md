@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
+audited-sha: 8617c2b5d52a4f6cf606d2501dd3bf898a422bc3 (re-pinned 2026-06-17 for the #275 solver-vacuity fix to vacuity_solver.rs: REQ-1/REQ-2's harness builder now weaves the reachable struct/enum decls (reachable_adt_deps) so an ADT-returning/taking harness compiles, and reconstructs the requires/ensures regions verbatim so a multi-line match ens stays valid Verus; REQ-3's interpreter now maps the !success && errors==0 compile non-verdict (E0425) to a ForgeError instead of the clean Failed (the silent no-op that bypassed both anti-Goodhart checks on every ADT fn). The doc's REQ-1/REQ-3/REQ-11 prose was updated in this same commit to describe the shipped behavior; #275 is RESOLVED. prior: 92396428567edc6940a9e2845217f5ff4c2ea3c6)
 governs: forge/src/vacuity_solver.rs
 thesis-refs:
   - thermite-design.md §7

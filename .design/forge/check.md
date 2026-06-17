@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (check.rs) is the additive stage-1 increment 3 REQ-9 passes — apply_lemma_library (certified-only citation refusal + dedup-on-burn rewrite) and the dec wf accessibility write-through — both forge/Lean-path only; the default Verus path + v1 corpus are byte-identical (REQ-S1-9). prior: a728d95ca3dbd4fbbee1cb496c003f408d82f327)
+audited-sha: 8617c2b5d52a4f6cf606d2501dd3bf898a422bc3 (re-pinned 2026-06-17 for the #275 solver-vacuity fix: the only change to this doc's governed file (check.rs) is a single added argument (&adt_deps, already computed for the L3 sub-program at this same per-item loop point) threaded into the solver-vacuity gate call; the per-item check pipeline structure is otherwise unchanged, net-additive, the default Verus path + v1 corpus are byte-identical. prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
 governs: forge/src/check.rs
 thesis-refs:
   - thermite-design.md §5.1

@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (check.rs) is the additive stage-1 increment 3 REQ-9 lemma library mechanics (REQ-S1-9); no boundary-composition / item_subprogram weaving logic changed, net-additive, v1 behavior unchanged. prior: ddbbb3ccea18276103fc268297c4d9190a1ee385)
+audited-sha: 8617c2b5d52a4f6cf606d2501dd3bf898a422bc3 (re-pinned 2026-06-17 for the #275 solver-vacuity fix: the only change to this doc's governed file (check.rs) is a single added argument (&adt_deps, already computed for the L3 sub-program) threaded into the solver-vacuity gate call; no boundary-composition / item_subprogram weaving logic changed, net-additive, v1 behavior unchanged. prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
 governs: thermite-lower/src/lower.rs, forge/src/check.rs
 thesis-refs:
   - thermite-design.md §9

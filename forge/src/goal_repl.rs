@@ -959,6 +959,7 @@ fn level_str(level: Level) -> &'static str {
         Level::L1 => "L1",
         Level::L2 => "L2",
         Level::L3 => "L3",
+        Level::L4 => "L4",
     }
 }
 

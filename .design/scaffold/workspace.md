@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file is the additive `mod burn;` declaration in main.rs — net-additive, the workspace topology this doc governs is unchanged.)
+audited-sha: ddbbb3ccea18276103fc268297c4d9190a1ee385 (re-pinned 2026-06-17: after merging main #46 into 2f, the governed source carries #46's string-literal/L1-TString fixes (a728d95c-era pin predates the merge); CI's merge-ref sees them via history-simplification ordering. Net-additive, the REQs this doc governs are unchanged.)
 governs:
   - Cargo.toml (virtual workspace manifest)
   - rust-toolchain.toml

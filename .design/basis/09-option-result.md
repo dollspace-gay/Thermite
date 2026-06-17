@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: governed l1.rs changes are the ADT-aware TString runtime gate plus main's inert Item::Forge skip; Option/Result lowering and parse_u64 L1 exec twins are unchanged.)
+audited-sha: 87797224ba72e12a3734d93e3cb0300f20333bb4 (re-pinned 2026-06-16 after merging main #46 into 2f: governed source carries both #46's string-literal/L1-TString fixes and 2f's relax-route/L4 additions, both net-additive; the REQs this doc governs are unchanged.)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

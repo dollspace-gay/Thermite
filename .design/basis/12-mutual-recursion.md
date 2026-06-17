@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: the only change to this doc's governed file (check.rs) is the additive forge-tier LEMMA discharge on the Lean path (discharge_forge_lemma + the check_file_with_engine forge-lemma pass + the fn-re-loop forge-item skip that PRESERVES a forge reject, REQ-S1-7); orthogonal to what this doc governs, the Verus default path is untouched, v1 behavior unchanged.)
+audited-sha: ddbbb3ccea18276103fc268297c4d9190a1ee385 (re-pinned 2026-06-17: after merging main #46 into 2f, the governed source carries #46's string-literal/L1-TString fixes (a728d95c-era pin predates the merge); CI's merge-ref sees them via history-simplification ordering. Net-additive, the REQs this doc governs are unchanged.)
 governs: forge/src/check.rs
 governs: thermite-lower/src/lower.rs
 thesis-refs:

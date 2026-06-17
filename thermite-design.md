@@ -47,6 +47,7 @@ A Thermite artifact ships with a certificate: the implementation satisfies these
 │  Forge (toolchain + goal-state REPL)           │   the agent's actual interface
 ├────────────────────────────────────────────────┤
 │  Verification ladder                           │
+│   L4  kernel-grounded    (nlsat + spine lemma) │
 │   L3  SMT proof          (Verus/Z3)            │
 │   L2  bounded check      (Kani/CBMC)           │
 │   L1  runtime contracts  (active all profiles) │
@@ -196,6 +197,7 @@ Builds, formatting, codegen, and check results are bit-reproducible given the sa
 
 | Level | Mechanism | Guarantee | Termination of the check |
 |---|---|---|---|
+| **L4** | Kernel-grounded (nlsat real-relaxation + spine lemma) | Contract holds for **all** inputs, soundness witnessed by a kernel-checked lemma | Not guaranteed → forge escalation |
 | **L3** | SMT proof (Verus-derived) | Contract holds for **all** inputs | Not guaranteed → budget + downgrade |
 | **L2** | Bounded model check (Kani-derived) | Contract holds for all inputs **up to bound** | Guaranteed |
 | **L1** | Runtime contract checks | Violations **detected at the call site**, in every build profile (not just debug) | Guaranteed |
@@ -203,8 +205,9 @@ Builds, formatting, codegen, and check results are bit-reproducible given the sa
 
 Rules:
 
-- L3 is the default target for every function.
+- L3 is the default target for every function; **L4** is the kernel-grounded rung the Stage-1 forge tier adds above it (RFC-1 / GH #2).
 - Downgrades are automatic, logged, and surfaced in the build manifest; upgrades are a standing background task.
+- **Out-of-cage clauses escalate UP to the forge, they do not degrade down.** A clause outside the v1 combinator cage is no longer lowered by inspection down the L3→L2→L1 ladder; it routes UP to the forge, where the relax route (REQ-8) discharges a relaxable polynomial clause via a direct Z3 nlsat (QF_NRA) query and certifies it at the kernel-grounded **L4** — its trust profile is `solver(nlsat) + spine-lemma(kernel)`, the real→integer soundness bridge being the kernel-checked spine lemmas `r_relax_sound` + `rencode_sound` (`lean/Thermite/Relax.lean`). A clause true over ℤ but false over ℝ is not refuted: the route yields a `RealWitness` carrying the real point, escalated to the forge as goal metadata (never a counterexample). (Authority: RFC-1 / GH #2; `.design/stage1-forge-tier.md` REQ-8.)
 - The certificate attached to a build artifact lists every function's level, every `#[slag]` block, and the contract-quality scores from §7. This manifest **is** the deliverable's trust statement.
 - **`#[slag]`, the L0 row, and L1 enforcement.** The L0 row measures assurance about the *body*: nothing is proved about the implementation — it is trusted by fiat. But a `#[slag]` function's *contract* is still mandatory and is enforced at runtime (§8), so its certificate carries level **L1** with a `slag: true` flag — `L1` because the contract is L1-checked at the call site, `slag` because the body is unproven. The L0 row therefore names the body-proof aspect (recorded by the `slag` flag), never an unchecked contract: slag exempts *proving*, never *stating and checking*. (`fx` effect rows are likewise enforced — at compile time in v0.1, at the syscall boundary later — independent of the proof level.)
 

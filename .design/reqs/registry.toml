@@ -6717,6 +6717,46 @@ target = "scripts/lean-axiom-probe.sh"
 note = "the shared lake-build + #print-axioms gate, run by the Lean CI job and make audit check [1]"
 
 [[requirement]]
+id = "REQ-S1-8"
+title = "Relax routing — nlsat real-relaxation engine + L4 kernel-grounded rung"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The relax route (increment 2f, REQ-8b/8c): out-of-cage polynomial clauses no longer degrade DOWN the ladder — they escalate UP to the forge's kernel-grounded L4 rung. (1) RELAXABLE CLASSIFIER (`relax::classify_fn`): a contract is relaxable iff it is universally quantified over integer-scalar params + result and every clause atom is polynomial — variables, integer literals, `+`/`-`/`*`, comparisons, boolean connectives — with NO div/mod/shifts/casts (those are non-polynomial over ℝ / bit-level / carrier-changing, so the real relaxation would be unfaithful and the spine lemmas would not apply). (2) NLSAT ENGINE (`engine::NlsatEngine`, `EngineName::Nlsat`): a NEW Engine-trait impl issuing a DIRECT Z3 nlsat-tactic (QF_NRA) query (Q-NLSAT — the first real-arithmetic Z3 query as its own engine; today Z3 is reached only through Verus). The fragment is narrowed (`admits_relax` = the relaxable check, `admits_all_classes = false`), reached via the conditional `--engine nlsat` dispatch in check.rs (the default Verus path + `--engine lean|auto` untouched). The query asserts the negated contract `req ∧ ¬(⋀ ens)` over the reals (with an unsigned-domain ≥0 guard); `unsat` → real-valid → (by the kernel-checked `r_relax_sound`) integer-valid → certify L4. (3) INTEGRALITY CHECK (Q8): on `sat`, round the real model into a radius-2 ℤⁿ box and evaluate the integer clause; an integer falsifier is a genuine Counterexample, none is a real-only countermodel. (4) REALWITNESS: a clause true over ℤ but false over ℝ (e.g. `∀ n. n*n ≠ 2`) yields the CertVerdict::RealWitness verdict carrying the raw real point (√2), escalated to the forge as goal metadata — NEVER a Counterexample. Attribution reuses Certificate::with_engine_attribution (engine: nlsat; trust profile = solver(nlsat) + the kernel-checked spine lemmas). (5) L4 LADDER: manifest.rs::Level gains L4 (L0<L1<L2<L3<L4) — L3 is the Verus/Z3 SOLVER rung, L4 is KERNEL-GROUNDED; additive, so the v1 corpus stays L3 and oracle_subset is byte-identical. The v1 ladder docs (thermite-design.md, degrade-ladder.md) are reconciled to the new RFC-1/GH #2 ladder, and the divergence_249 pin's level language is re-anchored (a cheat is never Proved at any proven rung, L3 OR L4). AC-12: relaxable admits the isqrt postconditions + rejects a div clause; isqrt certifies L4 push-button with engine: nlsat; `∀ n. n*n≠2` yields RealWitness, never Counterexample; the axiom probe covers r_relax_sound + rencode_sound (REQ-S1-8A)."
+aliases = ["relax routing", "relaxable", "nlsat", "NlsatEngine", "QF_NRA", "RealWitness", "integrality check", "L4", "kernel-grounded", "REQ-8", "REQ-8b", "REQ-8c"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/relax.rs"
+note = "(1) the relaxable syntactic classifier (classify_fn / classify_clause — no div/mod/shifts/casts), the QF_NRA real-relaxation encoder (negated_contract_query, unsigned ≥0 guard), the integer evaluator (eval_contract_negation_over_ints — the integrality check); AC-12 unit tests admit isqrt + reject div/mod/shift/cast"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "NlsatEngine"
+note = "(2)/(3)/(4) the nlsat Engine impl: discharge_relax runs the direct Z3 nlsat QF_NRA query (Q-NLSAT); unsat→Proved (L4), sat→the radius-2 ℤⁿ box integrality check splitting Counterexample from RealWitness; trust_profile = solver(nlsat) + spine-lemma(kernel)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "nlsat_check"
+note = "(2)/(5) the --engine nlsat dispatch in check.rs: relaxable+unsat → L4 cert (engine: nlsat attribution, CertVerdict::Proved); sat-integer → L0 Counterexample; sat-real-only → L0 RealWitnessEscalation (RealWitness verdict); non-relaxable / z3-absent → honest skip"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "Level"
+note = "(5) manifest.rs::Level gains L4 (kernel-grounded, above L3): L0<L1<L2<L3<L4; additive, the v1 corpus stays L3 + oracle_subset byte-identical"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/tests/nlsat_relax_conformance.rs"
+note = "AC-12 end to end (z3-gated): isqrt certifies L4 push-button with engine: nlsat; ∀ n. n*n≠2 yields RealWitness carrying √2 never Counterexample; a div clause is a NotRelaxable skip"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/engine.rs"
+note = "AC-12 live (z3-gated): live_nlsat_isqrt_characterization_is_proved, live_nlsat_n_squared_ne_two_is_real_witness, live_nlsat_integer_counterexample_is_caught, nlsat_div_clause_is_not_relaxable"
+
+[[requirement]]
 id = "REQ-S1-1"
 title = "Seven-verdict certificate vocabulary"
 owner = ".design/stage1-forge-tier.md"

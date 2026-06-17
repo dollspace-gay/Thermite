@@ -267,7 +267,7 @@ enum Command {
         /// but scores below this floor does not certify (`WeakContract` reject). A
         /// low value (e.g. `0.2`) flips a weak contract back to certified (AC-3).
         mutation_floor: f64,
-        /// The proof-backend engine (`--engine verus|lean|auto`; `.design/verified/
+        /// The proof-backend engine (`--engine verus|lean|auto|nlsat`; `.design/verified/
         /// proof-backends.md` OQ-1, #247). `verus` (the default) is byte-identical; `lean`
         /// runs the LeanEngine only (exportable items discharged by Lean, attributed);
         /// `auto` runs Verus first and tries Lean on a Verus Unknown/timeout.
@@ -544,13 +544,15 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                         }
                     }
                     "--engine" => {
-                        // `--engine verus|lean|auto` — the proof-backend engine
-                        // selection (`.design/verified/proof-backends.md` OQ-1, #247).
-                        // The value is a separate token; a missing / unknown value is a
-                        // Usage error, never a silent default.
+                        // `--engine verus|lean|auto|nlsat` — the proof-backend engine
+                        // selection (`.design/verified/proof-backends.md` OQ-1, #247;
+                        // `nlsat` is the Stage-1 relax route, `.design/stage1-forge-tier.md`
+                        // REQ-8 / 2f). The value is a separate token; a missing / unknown
+                        // value is a Usage error, never a silent default.
                         let value = iter.next().ok_or_else(|| {
                             ForgeError::Usage(
-                                "`--engine` requires a value (`verus`, `lean`, or `auto`)"
+                                "`--engine` requires a value (`verus`, `lean`, `auto`, or \
+                                 `nlsat`)"
                                     .to_string(),
                             )
                         })?;
@@ -558,10 +560,11 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
                             "verus" => check::EngineSelection::Verus,
                             "lean" => check::EngineSelection::Lean,
                             "auto" => check::EngineSelection::Auto,
+                            "nlsat" => check::EngineSelection::Nlsat,
                             other => {
                                 return Err(ForgeError::Usage(format!(
                                     "unknown `--engine` value `{other}` (expected `verus`, \
-                                     `lean`, or `auto`)"
+                                     `lean`, `auto`, or `nlsat`)"
                                 )));
                             }
                         };
@@ -1137,7 +1140,7 @@ fn parse_args(args: &[String]) -> Result<Command, ForgeError> {
 /// The usage banner (REQ-1: the v0.1 verb subset).
 fn usage_text() -> &'static str {
     "usage: forge new <name> | forge check <file> [--json] [--level l2|l3] [--rlimit <FLOAT>] \
-     [--mutation-floor <FLOAT>] [--engine verus|lean|auto] | forge audit <file> [--json] \
+     [--mutation-floor <FLOAT>] [--engine verus|lean|auto|nlsat] | forge audit <file> [--json] \
      [--meaning] | \
      forge repair <file> [item] [--json] \
      | forge review <file> [item] [--json] [--reviewer <cmd>] | forge build <file> [--entry <fn>] \
@@ -2407,6 +2410,7 @@ fn level_str(level: Level) -> &'static str {
         Level::L1 => "L1",
         Level::L2 => "L2",
         Level::L3 => "L3",
+        Level::L4 => "L4",
     }
 }
 

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: shipped
-audited-sha: a520c7a3acbcbc8c2d99e8aba80c364b1f334f40 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: cli.rs adds the `--proof` flag on `forge goal` (the forge-tier proof view, goal-only), routing to goal_repl::render_proof; the v1 CLI verbs/behavior this doc governs are unchanged — net-additive, a new opt-in flag on an existing verb.)
+audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (cli.rs) is the additive --engine nlsat value + the L4 level_str arm (REQ-S1-8); the v1 CLI verbs/behavior this doc governs are unchanged — a new opt-in --engine value.)
 governs: forge/src/cli.rs
 thesis-refs:
   - thermite-design.md §5

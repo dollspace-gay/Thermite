@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8978ecc950df30b58c00fe6df06f1fc5b4c56691 (re-pinned 2026-06-16 for stage-1 increment 2e, REQ-7: manifest.rs's additive oracle-EXCLUDED burn field is now CONSUMED by the forge-tier lemma discharge (Certificate::with_burn on a Proven lemma cert) — still NOT in oracle_subset per Q-BURN, so oracle_subset is UNCHANGED and the 7 golden certs stay byte-identical (sum_cert_oracle_byte_identical_after_lean_exporter + check_conformance + burn_is_oracle_excluded). Net-additive.)
+audited-sha: a728d95ca3dbd4fbbee1cb496c003f408d82f327 (re-pinned 2026-06-16 for stage-1 increment 2f, REQ-8: the only change to this doc's governed file (manifest.rs) is the additive Level::L4 kernel-grounded rung (REQ-S1-8); the relax route is reached only via --engine nlsat, so the v1 corpus stays L3 and oracle_subset is byte-identical (check_conformance green).)
 governs: forge/src/manifest.rs
 thesis-refs:
   - thermite-design.md §5.1

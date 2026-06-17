@@ -1,0 +1,8 @@
+{
+  "uuid": "1806a73e-8b17-4c80-b738-4377a0d1b5fb",
+  "issue_uuid": "7abd8967-027f-4d47-9177-f12a127868cd",
+  "author": "SwiP",
+  "content": "Result: Fixed #275 (HIGH anti-Goodhart soundness hole). Two coupled defects in forge/src/vacuity_solver.rs: (1) the tautology/vacuity harness omitted reachable struct/enum decls -> ADT-fn harness failed E0425; (2) interpret_summary mapped success:false/errors:0 to Failed->Clean, so the E0425 read as a clean verdict and both checks no-op'd on every ADT fn. Fix: thread the L3 sub-program's reachable adt_deps into solver_vacuity_check->extract_lowered_fn (weave ADT decls first, mirror item_subprogram); split interpret_summary so !success&&errors==0 (compile/elaborate failure) is a loud ForgeError, never Failed->Clean (errors>=1 incl rlimit stays Failed/Clean; empirically confirmed vs verus --output-json); reconstruct requires/ensures verbatim so a multi-line match ens (binary_search) compiles (a latent harness bug the new compile-error detection surfaced). Tests (verus-guarded): ADT tautology->SemanticTautology, ADT unsat-req->VacuousPrecondition, good ADT fn->clean L3, interpret_summary(errors:0)->ForgeError. Gauntlet: cargo test -p forge verus-backed green (only lean-spine env failures, unchanged); clippy/fmt clean; doc-drift 0; req-registry clean; no corpus cert flips. 2 commits: 8617c2b5 (fix) + ab6ad609 (re-pin 7 docs).",
+  "created_at": "2026-06-17T13:43:09.425370Z",
+  "kind": "result"
+}

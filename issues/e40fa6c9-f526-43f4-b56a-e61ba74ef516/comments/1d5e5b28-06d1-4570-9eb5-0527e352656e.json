@@ -1,0 +1,8 @@
+{
+  "uuid": "1d5e5b28-06d1-4570-9eb5-0527e352656e",
+  "issue_uuid": "e40fa6c9-f526-43f4-b56a-e61ba74ef516",
+  "author": "qMPX",
+  "content": "Decision: routing reason DERIVED from already-emitted per-clause 'engine' field (verus/None->in-cage, nlsat->relaxable, lean-*->lemma) not a new cert field — adding a routing field would make forge golden isqrt_class.cert.json stale, violating 'goldens byte-identical'. 'engine' IS the routing telemetry; cert schema untouched => zero golden risk.",
+  "created_at": "2026-06-17T23:06:22.403859Z",
+  "kind": "decision"
+}

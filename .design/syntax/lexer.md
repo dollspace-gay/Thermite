@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
+audited-sha: 6b86f74476122cfddbdcf168d37a3561d2598054 (re-pinned 2026-06-16 for PR #46 after merging main: lex_string now rejects raw non-ASCII bytes with a structured SyntaxError while string contents remain Rust-String-backed; ASCII escapes and token classification are unchanged.)
 governs: thermite-syntax/src/lexer.rs
 thesis-refs:
   - thermite-design.md §4.3
@@ -39,8 +39,10 @@ This doc's REQs are SHIPPED (`thermite-syntax/src/lexer.rs`, issue #3 + the
   others: keywords, identifiers, integer literals (decimal/hex/binary AND the
   char-literal form, all carried by ONE `Int` token — REQ-3/REQ-9), the two
   bool literals, punctuation/operators, the `#[slag(...)]` attribute tokens,
-  and end-of-file. No string literals occur outside `#[slag]` field values (see
-  REQ-4). **No float, byte-string, or lifetime tokens exist** (§4.4 removes
+  and end-of-file. Double-quoted string literals are one general `Str` token:
+  `#[slag]` field values and expression string literals share the same lexer
+  path, and the parser decides which positions accept them (see REQ-4). **No
+  float, byte-string, or lifetime tokens exist** (§4.4 removes
   lifetimes; the corpus has no floats; byte-string literals are out of scope for
   v1). A **char literal `'A'` is NOT a distinct token kind** — it lexes to the
   SAME `TokKind::Int { value, raw }` token as a numeric literal, carrying the
@@ -118,8 +120,9 @@ This doc's REQs are SHIPPED (`thermite-syntax/src/lexer.rs`, issue #3 + the
   string literals (double-quoted) carry the decoded string content via the
   escape table (`.design/basis/07-strings.md` REQ-6: `\n`/`\t`/`\r`/`\0`/`\"`/
   `\\` + `\xNN` for the ASCII range `0x00..=0x7F`; a high-byte or malformed
-  escape is a STRUCTURED `SyntaxError`, not a silent swallow — high-byte awaits
-  the `Vec<u8>` content reshape). The lexer does not validate field names or
+  escape, or a raw non-ASCII literal byte, is a STRUCTURED `SyntaxError`, not a
+  silent swallow — high-byte awaits the `Vec<u8>` content reshape). The lexer
+  does not validate field names or
   required-field presence — that is the parser/forge (§8). Derived from §8.
 
 - **REQ-5 (comments + whitespace insignificant):** `//` to end-of-line is a
@@ -305,7 +308,7 @@ and GROUNDED in `verus-lowering.md` (#93) — see that doc's Verification sectio
 | REQ-3 — VALUE (int literals, `_` stripped) | SHIPPED | `lex_int` in `lexer.rs` strips `_` into `value`; test `int_literal_underscores_strip_to_value`. Consumer: `parse_primary`/pattern-literal in `parser.rs` (`TokKind::Int { value, .. } => Expr::IntLit { .. }`). |
 | REQ-3 — RAW (verbatim slice on the token, #37) | SHIPPED | `lex_int` captures `source[i..last_digit]` as `raw`; `TokKind::Int { value, raw }`; test `int_literal_preserves_raw`. Consumer: `parse_primary` in `parser.rs`. |
 | REQ-3 — HEX/BINARY (radix spellings, #92) | SHIPPED | `lex_int` in `lexer.rs` dispatches on the `0x`/`0X`/`0b`/`0B` prefix (`radix_digit`) into the SAME `TokKind::Int { value, raw }`; `0x1b`→27, `0b101`→5, `0xFF_FF`→65535 with verbatim raw (test `hex_and_binary_literals_lex_to_decimal_value` in `tests/operators_parse.rs`). A bare `0x`/`0b2` is a `SyntaxError` (test `malformed_literals_are_structured_diagnostics_not_panic`). GROUNDED: `0x1b`==27 / `0b101`==5 certify L3 (`forge/tests/operators_conformance.rs::char_hex_binary_literals_certify_exact_value_l3`). Consumer: `parse_primary` in `parser.rs`. |
-| REQ-4 (`#[slag]` tokenization) | SHIPPED | `HashBracket` token + `lex_string` (escape table) in `lexer.rs`; consumed by `parse_slag` in `parser.rs`. |
+| REQ-4 (`#[slag]` tokenization) | SHIPPED | `HashBracket` token + `lex_string` (escape table + raw non-ASCII rejection) in `lexer.rs`; consumed by `parse_slag` and expression string parsing in `parser.rs`. |
 | REQ-5 (comments + whitespace) | SHIPPED | `skip_trivia` in `lexer.rs` drops `[ \t\r\n]+` and `//`-EOL. |
 | REQ-6 (maximal-munch operators) | SHIPPED | `lex_punct` in `lexer.rs` adds `<<`→`Shl` / `>>`→`Shr` to the two-char-first branch and `%`→`Percent` / `^`→`Caret` to the single-char branch; `<<`/`>>` win over single `<`/`>` by munch (test `shift_operators_are_one_token_each_maximal_munch`, `percent_and_caret_lex_as_single_char_tokens`). Consumer: `parse_shift`/`parse_mul`/`parse_bitxor` in `parser.rs`. |
 | REQ-7 (spans) | SHIPPED | every `Token` in `lexer.rs` carries `Span { start, len }`; consumed by parser diagnostics + `address.rs`. |
@@ -321,7 +324,7 @@ and GROUNDED in `verus-lowering.md` (#93) — see that doc's Verification sectio
 - **OQ-2 (char literal type is `u8`, #91/#92):** REQ-9 pins a char literal's type
   to `u8` (the byte model). A future need for a wider char type (Unicode
   codepoints) is the same `Vec<u8>`/non-ASCII reshape that defers high-byte
-  escapes; in v1 a char IS a byte. Recorded; not a blocker. The validator/lower
+  string contents and escapes; in v1 a char IS a byte. Recorded; not a blocker. The validator/lower
   (downstream) must treat the resulting `IntLit` as `u8`-typed in a char context
   — flagged for the builder, owned by #92.
 - **OQ-3 (`break`/`continue` are labelless + value-less, #93):** Thermite has no

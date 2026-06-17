@@ -2,7 +2,7 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 87797224ba72e12a3734d93e3cb0300f20333bb4 (re-pinned 2026-06-16 after merging main #46 into 2f: governed source carries both #46's string-literal/L1-TString fixes and 2f's relax-route/L4 additions, both net-additive; the REQs this doc governs are unchanged.)
+audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed files (check.rs, review.rs) is the additive stage-1 increment 3 REQ-9 lemma library mechanics (REQ-S1-9); no Option/Result lowering or semantics changed, net-additive, v1 behavior unchanged. prior: 87797224ba72e12a3734d93e3cb0300f20333bb4)
 governs: thermite-syntax/src/ast.rs
 governs: thermite-syntax/src/parser.rs
 governs: thermite-spec/src/validator.rs

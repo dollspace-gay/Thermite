@@ -24,6 +24,7 @@
 //! | REQ-SCAFFOLD-FORGE-WORKSPACE | shipped | `forge/src/main.rs` | Forge workspace topology |  |
 //! <!-- /generated:reqs -->
 
+mod accessibility;
 mod audit;
 mod battery;
 mod body_tv;
@@ -44,6 +45,7 @@ mod exec_tv;
 mod goal_repl;
 mod kani;
 mod lean_export;
+mod lemma_library;
 mod manifest;
 mod meaning;
 mod mutation;

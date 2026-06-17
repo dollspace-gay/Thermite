@@ -6757,6 +6757,66 @@ target = "forge/src/engine.rs"
 note = "AC-12 live (z3-gated): live_nlsat_isqrt_characterization_is_proved, live_nlsat_n_squared_ne_two_is_real_witness, live_nlsat_integer_counterexample_is_caught, nlsat_div_clause_is_not_relaxable"
 
 [[requirement]]
+id = "REQ-S1-9"
+title = "Lemma library mechanics — namespace, certified-only citation, dedup-on-burn, dec wf accessibility cache"
+owner = ".design/stage1-forge-tier.md"
+status = "shipped"
+scope = "forge"
+summary = "The lemma library mechanics (increment 3, REQ-9 — the LAST stage-1 feature increment; it trails usage because it reasons about already-discharged lemma certificates). (1) PER-PROJECT LEMMA NAMESPACE (Q1): a project's top-level `lemma` items form a namespace (`lemma_library::LemmaLibrary`, built from the parsed program + the settled cert collection); ONLY a top-level `lemma` enters it, never a proof-local `have`/`let` binding, so the namespace is the SOLE cross-function citation surface (Q6: no cross-function sharing except via a lemma; a `proof for f` block's several `ens#k` obligations share that one function's local context, structurally enforced by building the namespace from top-level lemmas only). (2) CERTIFIED-ONLY CITATION RESOLUTION (AC-13): a `simp [ … ]` citation resolves against the frozen battery OR a CERTIFIED project lemma; a citation to a project lemma that did NOT certify is REFUSED, named (`lemma_library::enforce_citations` → `UncertifiedCitation`, cause `UncertifiedLemmaCitation`). The frozen-battery gate is taught to DEFER a project-lemma citation (`battery::enforce_with_project_lemmas`) so the certified-only resolution decides it on the forge/Lean path (`check::apply_lemma_library`, run after the lemma discharge pass). (3) DEDUP-ON-BURN BY STATEMENT HASH (Q1 / AC-13): `lemma_library::statement_hash` hashes a lemma's params + `req` + `ens` (NAME- and PROOF-excluded, span-free), so two identical-statement lemmas under different names are ONE proven fact — only the first (canonical) is stored and a citation to the duplicate is REWRITTEN to the canonical (`rewrite_citations`), applied to the burn receipt's `cited_lemmas` (oracle-excluded, so the v1 goldens stay byte-identical). (4) DEC WF ACCESSIBILITY CACHE (Q7 / AC-13): a `dec wf <rel>` measure's accessibility proof is content-addressed by the (relation, carrier) pair (`cache::accessibility_cache_key` + `AccessibilityProof` + `load_accessibility`/`store_accessibility`), invalidated by the same `CHECK_SCHEMA_VERSION` gate key as the per-item proof cache; a write-through pass (`accessibility::cache_dec_wf_accessibility`) populates it on the forge path so a `dec wf` re-check on an unchanged (relation, carrier) HITS the cache (the cross-invocation hit the per-item proof cache uses, observable via the cache layer). (5) REVIEW SURFACING: a certified `lemma` carrying a burn receipt surfaces in `forge review` like any certified item (`review::BurnedLemma`, the `burned_lemmas` partition + the human render). All additive: no v1 corpus item is forge-tier / uses `dec wf` / cites a project lemma, so the v1 oracle is untouched. AC-13: citing an uncertified lemma fails with the lemma named; burning a statement-hash duplicate rewrites the citation (two identical lemmas under different names → one stored); a dec wf re-check hits the accessibility cache."
+aliases = ["lemma library", "lemma library mechanics", "certified-only citation", "dedup-on-burn", "statement hash", "dec wf accessibility cache", "burned lemmas", "REQ-9"]
+generated_to = ["status"]
+
+[[requirement.evidence]]
+kind = "file"
+target = "forge/src/lemma_library.rs"
+note = "(1)/(2)/(3) the per-project lemma namespace (LemmaLibrary::build from top-level lemmas only — Q6), the statement hash (statement_hash — params+req+ens, name/proof-excluded, span-free), the certified-only citation resolution (resolve_citation / enforce_citations → UncertifiedCitation), and the dedup-on-burn citation rewrite (canonical_name / rewrite_citations / stored_lemmas)"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "LemmaLibrary"
+note = "(1) the per-project lemma namespace: name → (statement_hash, certified) + the statement-hash → canonical (first-certified) dedup map"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "enforce_citations"
+note = "(2) the certified-only citation gate (AC-13): a proof citing an uncertified project lemma is refused via UncertifiedCitation, naming the lemma"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "enforce_with_project_lemmas"
+note = "(2) the frozen-battery gate taught to DEFER a project-lemma citation (not refuse it as an unlisted simp lemma) so the REQ-9 certified-only resolution decides it"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "apply_lemma_library"
+note = "(2)/(3) the check.rs forge/Lean-path pass (after lemma discharge): the certified-only citation refusal + the dedup-on-burn citation rewrite over the settled cert collection"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "AccessibilityProof"
+note = "(4) the dec wf accessibility cache record (cache.rs): (relation, carrier, well_founded), content-addressed by accessibility_cache_key, CHECK_SCHEMA_VERSION-invalidated like a Certificate"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "cache_dec_wf_accessibility"
+note = "(4) the write-through pass (accessibility.rs): extracts (relation, carrier) of each dec wf measure and discharges-or-serves its accessibility proof through the cache so a re-check hits"
+
+[[requirement.evidence]]
+kind = "symbol"
+target = "BurnedLemma"
+note = "(5) the forge review surfacing (review.rs): a certified lemma with a burn receipt surfaces in the burned_lemmas partition like any certified item"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/lemma_library.rs"
+note = "AC-13 hermetic units: statement_hash excludes name+proof; uncertified-citation refusal names the lemma; dedup-on-burn rewrites the citation to the canonical (two identical lemmas under different names → one stored); only top-level lemmas in the namespace (Q6)"
+
+[[requirement.evidence]]
+kind = "test"
+target = "forge/src/cache.rs"
+note = "AC-13 hermetic units: the dec wf accessibility re-check HITS the cache (load after store, flagged cached:true); schema-invalidated; corrupt entry is a miss"
+
+[[requirement]]
 id = "REQ-S1-1"
 title = "Seven-verdict certificate vocabulary"
 owner = ".design/stage1-forge-tier.md"

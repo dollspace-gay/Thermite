@@ -490,7 +490,31 @@ fn find_word(s: &str, word: &str) -> Option<usize> {
 /// This is the HARD gate — a violation is a refusal, never a warning: `check.rs` runs it
 /// before a forge-tier item is admitted, the proof-tier mirror of the
 /// `thermite_spec::validate` contract cage.
+#[allow(
+    dead_code,
+    reason = "REQ-5 single-proof gate: the production caller (`check.rs`) goes through the \
+              project-lemma-aware `enforce_forge_item_with_lemmas`; this no-namespace \
+              convenience entry is exercised by battery::tests (the unlisted-tactic / \
+              unlisted-simp-lemma refusals) and is the natural single-block API."
+)]
 pub fn enforce(item: &str, proof_text: &str) -> Result<(), BatteryViolation> {
+    enforce_with_project_lemmas(item, proof_text, &std::collections::BTreeSet::new())
+}
+
+/// The frozen-battery gate, made aware of the per-project lemma namespace (REQ-9 / AC-13,
+/// increment 3). Identical to [`enforce`] EXCEPT a `simp [ … ]` citation that names a
+/// project lemma (`project_lemmas`) is NOT refused as an unlisted simp lemma — it is
+/// DEFERRED to the REQ-9 certified-only citation gate
+/// ([`crate::lemma_library::enforce_citations`]), which refuses it only if the lemma did
+/// not certify. The frozen battery still refuses a citation that is neither a frozen spine
+/// lemma NOR a project lemma (the closed-set discipline is unchanged), and tactic-head
+/// enforcement is untouched. With an empty `project_lemmas` set this is byte-identical to
+/// the pre-REQ-9 [`enforce`] (so the v1 corpus, which has no project lemmas, is a no-op).
+pub fn enforce_with_project_lemmas(
+    item: &str,
+    proof_text: &str,
+    project_lemmas: &std::collections::BTreeSet<String>,
+) -> Result<(), BatteryViolation> {
     for citation in scan_citations(proof_text) {
         match citation {
             Citation::Tactic(tactic) => {
@@ -502,7 +526,10 @@ pub fn enforce(item: &str, proof_text: &str) -> Result<(), BatteryViolation> {
                 }
             }
             Citation::SimpLemma(lemma) => {
-                if !is_allowed_simp_lemma(&lemma) {
+                // A project-lemma citation is resolved by REQ-9 (certified-only), not
+                // refused here; only a citation outside BOTH the frozen set and the
+                // project namespace is the unlisted-simp-lemma refusal.
+                if !is_allowed_simp_lemma(&lemma) && !project_lemmas.contains(&lemma) {
                     return Err(BatteryViolation::UnlistedSimpLemma {
                         item: item.to_string(),
                         lemma,
@@ -519,13 +546,26 @@ pub fn enforce(item: &str, proof_text: &str) -> Result<(), BatteryViolation> {
 /// `proof for f { ens#k by { … } … }` has one per obligation (checked in source order). A
 /// `prop fn` / `witness` block carries no proof to elaborate → `Ok(())`. This is the
 /// per-item elaboration gate `check.rs` runs before a forge-tier item is admitted.
-pub fn enforce_forge_item(item: &thermite_syntax::ast::ForgeItem) -> Result<(), BatteryViolation> {
+/// Enforce the frozen battery over every proof block a forge-tier item carries, made aware
+/// of the per-project lemma namespace (REQ-5 / REQ-9 / AC-9 / AC-13, increment 3): a `simp
+/// [ … ]` citation naming a project lemma is DEFERRED to the certified-only gate instead of
+/// being refused as an unlisted simp lemma (see [`enforce_with_project_lemmas`]). `check.rs`
+/// passes the project's lemma names here so a lemma-citing forge item passes the
+/// frozen-battery gate and the REQ-9 certified-only resolution decides it. An empty
+/// `project_lemmas` set reproduces the pre-REQ-9 behavior exactly (the v1 corpus has no
+/// project lemmas → a no-op on the v1 oracle). A `lemma … proof { … }` has one proof block;
+/// a `proof for f { ens#k by { … } … }` has one per obligation (checked in source order); a
+/// `prop fn` / `witness` carries no proof to elaborate → `Ok(())`.
+pub fn enforce_forge_item_with_lemmas(
+    item: &thermite_syntax::ast::ForgeItem,
+    project_lemmas: &std::collections::BTreeSet<String>,
+) -> Result<(), BatteryViolation> {
     use thermite_syntax::ast::ForgeItem;
     match item {
-        ForgeItem::Lemma(l) => enforce(&l.name, &l.proof.text),
+        ForgeItem::Lemma(l) => enforce_with_project_lemmas(&l.name, &l.proof.text, project_lemmas),
         ForgeItem::Proof(p) => {
             for ob in &p.obligations {
-                enforce(&p.target, &ob.proof.text)?;
+                enforce_with_project_lemmas(&p.target, &ob.proof.text, project_lemmas)?;
             }
             Ok(())
         }

@@ -3,7 +3,7 @@
 <!--
 tier: 3-component
 status: draft (v-next architecture — the obligation/engine interface; most REQs NOT-STARTED
-audited-sha: ddbbb3ccea18276103fc268297c4d9190a1ee385 (re-pinned 2026-06-17: after merging main #46 into 2f, the governed source carries #46's string-literal/L1-TString fixes (a728d95c-era pin predates the merge); CI's merge-ref sees them via history-simplification ordering. Net-additive, the REQs this doc governs are unchanged.)
+audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed file (check.rs) is the additive stage-1 increment 3 REQ-9 lemma library mechanics (REQ-S1-9); no proof-backend / engine-dispatch logic changed, net-additive, v1 behavior unchanged. prior: ddbbb3ccea18276103fc268297c4d9190a1ee385)
         behind build blockers. The SHIPPED substrates this builds on are quoted-code-grounded.)
 governs: forge/src/check.rs + forge/src/degrade.rs + forge/src/manifest.rs (the discharge
          pipeline, the ladder, the certificate this interface generalizes) and

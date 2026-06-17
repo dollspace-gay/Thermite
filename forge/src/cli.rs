@@ -2067,6 +2067,24 @@ fn render_review(artifact: &ReviewArtifact) -> String {
             out.push_str(&format!("  {} — {} ({})\n", b.item, b.cause, b.detail));
         }
     }
+    // Burned forge-tier lemmas surface like any certified item (REQ-9, increment 3): the
+    // project's proven lemma library, each with its burn receipt (token count + cited lemmas).
+    if !artifact.burned_lemmas.is_empty() {
+        out.push_str(
+            "\nburned lemmas (certified forge-tier proofs — the project lemma library):\n",
+        );
+        for l in &artifact.burned_lemmas {
+            let cited = if l.cited_lemmas.is_empty() {
+                String::new()
+            } else {
+                format!(", cites [{}]", l.cited_lemmas.join(", "))
+            };
+            out.push_str(&format!(
+                "  lemma {} — {} proof tokens{cited}\n",
+                l.item, l.proof_tokens
+            ));
+        }
+    }
     out
 }
 

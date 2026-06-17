@@ -2028,10 +2028,10 @@ fn string_arg_count_l1(name: &str) -> usize {
     }
 }
 
-/// True iff the program references the `String` type in any `fn`/`spec fn`
-/// parameter or return position, or materializes a string literal anywhere. Both
-/// require the build-crate `TString` definition (a literal lowers to a constructed
-/// `TString`, a `String`-typed boundary signature lowers to `TString`). Mirrors
+/// True iff the program references the `String` type in any lowered declaration
+/// position, or materializes a string literal anywhere. Both require the
+/// build-crate `TString` definition (a literal lowers to a constructed `TString`,
+/// a `String`-typed boundary/ADT signature lowers to `TString`). Mirrors
 /// `lower.rs::program_uses_string`'s gate so the emission is byte-stable for the
 /// non-`String` corpus (no `TString` emitted when nothing uses it).
 fn program_uses_string_l1(program: &Program) -> bool {
@@ -2057,17 +2057,40 @@ fn program_uses_string_l1(program: &Program) -> bool {
         }
     }
     for item in &program.items {
-        let (params, ret, body): (&[Param], &Type, Option<&Block>) = match item {
-            Item::Fn(f) => (&f.params, &f.ret, f.body.as_ref()),
-            Item::SpecFn(s) => (&s.params, &s.ret, Some(&s.body)),
-            Item::Struct(_) | Item::Enum(_) => continue,
-        };
-        if params.iter().any(|p| ty_is_string(&p.ty)) || ty_is_string(ret) {
-            return true;
-        }
-        if let Some(b) = body {
-            if block_has_str_lit_l1(b) {
-                return true;
+        match item {
+            Item::Fn(f) => {
+                if f.params.iter().any(|p| ty_is_string(&p.ty)) || ty_is_string(&f.ret) {
+                    return true;
+                }
+                if let Some(b) = &f.body {
+                    if block_has_str_lit_l1(b) {
+                        return true;
+                    }
+                }
+            }
+            Item::SpecFn(s) => {
+                if s.params.iter().any(|p| ty_is_string(&p.ty))
+                    || ty_is_string(&s.ret)
+                    || block_has_str_lit_l1(&s.body)
+                {
+                    return true;
+                }
+            }
+            Item::Struct(s) => {
+                if s.fields.iter().any(|field| ty_is_string(&field.ty)) {
+                    return true;
+                }
+            }
+            Item::Enum(e) => {
+                if e.variants.iter().any(|variant| match &variant.shape {
+                    VariantShape::Unit => false,
+                    VariantShape::Tuple(tys) => tys.iter().any(ty_is_string),
+                    VariantShape::Struct(fields) => {
+                        fields.iter().any(|field| ty_is_string(&field.ty))
+                    }
+                }) {
+                    return true;
+                }
             }
         }
     }

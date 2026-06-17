@@ -625,9 +625,10 @@ struct StringLexError {
     recover_to: usize,
 }
 
-/// Lex a double-quoted string literal (only used as a `#[slag]` field value —
-/// lexer.md REQ-4). Returns the token + next index, or an unterminated-string
-/// diagnostic.
+/// Lex a double-quoted string literal (lexer.md REQ-4). Returns the token + next
+/// index, or a structured diagnostic. v1 stores decoded content in a Rust
+/// `String`, so literal bytes must be ASCII single-byte values; raw high bytes
+/// await the future byte-buffer string representation.
 fn lex_string(bytes: &[u8], i: usize) -> Result<(Token, usize), StringLexError> {
     let n = bytes.len();
     let mut j = i + 1; // skip opening quote
@@ -704,6 +705,14 @@ fn lex_string(bytes: &[u8], i: usize) -> Result<(Token, usize), StringLexError> 
             return Err(StringLexError {
                 error: SyntaxError::stray_char(bad, Span::new(j, (j + 2).min(n) - j)),
                 recover_to: resume_past_string(bytes, j + 2),
+            });
+        }
+        if c >= 0x80 {
+            let bad_end = (j + utf8_char_len(c)).min(n);
+            let bad = String::from_utf8_lossy(&bytes[j..bad_end]).into_owned();
+            return Err(StringLexError {
+                error: SyntaxError::stray_char(bad, Span::new(j, bad_end - j)),
+                recover_to: resume_past_string(bytes, bad_end),
             });
         }
         content.push(c as char);

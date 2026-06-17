@@ -243,7 +243,16 @@ jobs:
           echo "$(dirname "$VERUS_BIN_PATH")" >> "$GITHUB_PATH"
           "$VERUS_BIN_PATH" --version
 
+      - name: Build the spine modules forge's --engine lean discharge imports
+        working-directory: lean
+        # The axiom probe builds only its own subset; forge's lean export imports
+        # `Thermite.Stabilize` / `Exec.Stmt` / `Exec.WhileBody` (NOT the root `Thermite`,
+        # which pulls the cvc5-FFI `SmtDemo`). Without these oleans on the search path the
+        # `--engine lean` auto-discharge fails with "unknown module prefix 'Thermite'" —
+        # which `engine_lean_attaches_smaller_trust_base_live` correctly catches.
+        run: lake build Thermite.Stabilize Thermite.Exec.Stmt Thermite.Exec.WhileBody
+
       - name: forge tests WITH the spine (the lake-gated live tests run here, not skipped)
-        # lake is on PATH (elan), the spine is built (lean/.lake/build), Verus is installed:
-        # the live `lake_present()`/spine-dependent tests take their RUN branch.
+        # lake is on PATH (elan), the spine modules forge imports are built, Verus is
+        # installed: the live `lake_present()`/spine-dependent tests take their RUN branch.
         run: cargo nextest run -p forge

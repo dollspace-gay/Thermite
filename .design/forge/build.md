@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: c135b797e2828f43a3073c8f83514d212cb7b593a32e7d5fce08ae099fe386fa
+audited-content-sha256: 7904c45b72a131cbb9e0da48849f593bcc5a93dfcd4d2acf49452f8beea1670f
 governs: forge/src/build.rs
 thesis-refs:
   - thermite-design.md §3
@@ -123,9 +123,10 @@ not this doc); see the Amendment below.
   in the build manifest (REQ-5) the syscall filter is derived from. SUPERSEDED IN
   PART by #57 shipping (`56c23565`, pre-pin — Amendment 2026-06-12): `forge build
   --entry` now also INSTALLS the sandbox itself. `fn synthesize_entry_main in
-  build.rs` injects `sandbox::emit_sandbox_prelude(&allowlist)` — allowlist =
-  `sandbox::syscall_allowlist(&sandbox::transitive_fx(program, &f.name))` — as the
-  FIRST statements of the generated `main`, ON BY DEFAULT (`SandboxConfig::default()`
+  build.rs` injects `sandbox::emit_sandbox_prelude(&transitive_fx)` — the emitter
+  derives cfg-gated native x86_64/aarch64 syscall allowlists from
+  `sandbox::transitive_fx(program, &f.name)` — as the FIRST statements of the generated
+  `main`, ON BY DEFAULT (`SandboxConfig::default()`
   → `SandboxMode::On`; `--no-sandbox` opts out), and records the result as
   `pub sandbox: SandboxRecord` on the `BuildManifest` (`installed` +
   `transitive_fx` + `syscall_allowlist`). The sandbox MECHANISM (`sandbox.rs`) is

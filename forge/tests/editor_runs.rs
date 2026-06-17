@@ -180,22 +180,23 @@ fn write_fixture(name: &str, body: &str) -> PathBuf {
 }
 
 /// `true` iff the `forge build --entry` runnable artifact can LINK + RUN here. The
-/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is x86_64-Linux ONLY (a raw
-/// `prctl` seccomp prelude with an `AUDIT_ARCH_X86_64` BPF guard), so the emitted
-/// runner does not link off Linux (`Undefined symbols: _prctl` on macOS/arm64).
+/// #57 runtime seccomp sandbox (`forge/src/sandbox.rs`) is native Linux only, with
+/// generated filters for x86_64 and aarch64. The emitted runner does not link off
+/// Linux (`Undefined symbols: _prctl` on macOS).
 /// The build+run tests SKIP with an explicit warning on any non-Linux platform —
 /// FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX CI. Mirrors the
 /// `verus_present()` skip precedent (a missing capability is a logged skip, not a
 /// panic, R-CODE-4).
 fn linux_build_run_supported(test: &str) -> bool {
-    if cfg!(target_os = "linux") {
+    if cfg!(target_os = "linux") && (cfg!(target_arch = "x86_64") || cfg!(target_arch = "aarch64"))
+    {
         return true;
     }
     eprintln!(
-        "SKIP {test}: the #57 runtime seccomp sandbox is x86_64-Linux ONLY (the \
-         `forge build --entry` runner emits a raw `prctl` seccomp prelude that does \
-         not link off Linux). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES LINUX \
-         CI; `cargo test` on this platform skips the runnable end-to-end twin."
+        "SKIP {test}: the #57 runtime seccomp sandbox supports x86_64/aarch64 Linux \
+         runners only (the `forge build --entry` runner emits a raw `prctl` seccomp \
+         prelude). FULL ACCEPTANCE OF THE BUILD+RUN PATH REQUIRES SUPPORTED LINUX CI; \
+         `cargo test` on this platform skips the runnable end-to-end twin."
     );
     false
 }

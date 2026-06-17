@@ -3,7 +3,7 @@
 tier: 3-component
 status: draft
 audited-sha: 92396428567edc6940a9e2845217f5ff4c2ea3c6 (re-pinned 2026-06-16, user-authorized: the only change to this doc's governed files since the prior pin is the additive stage-1 forge-tier increment 2a — the new Item::Forge surface + inert Item::Forge match arms, verified net-additive with no substantive removal of existing v1 logic (git log <main>..HEAD = the 8 forge commits); the v1 behavior this doc governs is unchanged, and the new forge-tier surface is specified in .design/stage1-forge-tier.md / REQ-S1-3)
-audited-content-sha256: dd778c62acb9efa69deb252357583a83b047df346178728cfcae520182548300
+audited-content-sha256: df347aac593e3f751d671d91af8a5bdd5c5d0ec1007017e86664c40b4f9c6ca2
 governs: forge/src/build.rs
 governs: forge/src/effect_wrappers.rs
 (the thermite-stdlib/src/effect/* paths this doc originally listed were never
@@ -349,8 +349,10 @@ forge audit <same program>  →  tcb: now -> os::now (…)   [UNCHANGED by the l
 Boundaries (what Stage 8 is NOT):
 - It does NOT change `forge check` (verification), the lowering of the boundary crossing,
   or the #57 allowlist derivation — those ship.
-- It is x86_64-Linux only (the #57 seccomp filter + the `os::` wrappers target
-  x86_64-Linux; cross-platform is future work, as `runtime-sandbox.md` / OQ-4 scope).
+- It is native Linux only for the confined-run guarantee: the #57 seccomp filter
+  supports x86_64 and aarch64 generated runners, while non-Linux remains future work
+  (`runtime-sandbox.md` / OQ-4 scope). The `os::` wrappers themselves use portable
+  `std` bodies.
 - `Net`/`Rand` wrappers are v1.1 (identical emit shape); `Alloc` needs no `os::`
   wrapper (the Rust allocator under the baseline allowlist).
 - The generated `main`'s input convention stays v0.1 fixed-literal (`build.md` OQ-1);
@@ -470,11 +472,12 @@ the repo tree (#53 — compiled binaries are large).
   (`03-effect-stdlib.md` OQ-5) still applies — use `Option`/`Result` or the sentinel,
   not a user enum, until that lowering is fixed.
 
-- **OQ-4 (cross-platform — x86_64-Linux only, as #57 scopes):** the `os::` wrappers use
-  `std` (portable) but the #57 seccomp filter is x86_64-Linux-specific, so the
-  confined-run guarantee (REQ-4) is x86_64-Linux only in v1. A non-Linux `forge build`
-  could emit the `mod os` + compile + run but without the seccomp confinement — out of
-  v1 scope (matches `runtime-sandbox.md`'s platform scope).
+- **OQ-4 (cross-platform — native Linux only, as #57 scopes):** the `os::` wrappers use
+  `std` (portable) but the #57 seccomp filter is Linux-specific and currently supports
+  x86_64/aarch64 generated runners, so the confined-run guarantee (REQ-4) is native
+  Linux only in v1. A non-Linux `forge build` could emit the `mod os` + compile + run
+  but without the seccomp confinement — out of v1 scope (matches
+  `runtime-sandbox.md`'s platform scope).
 
 ## Routes to add (orchestrator)
 
@@ -524,6 +527,6 @@ does NOT author the oracle, the golden, the routes, or the wrappers (R-DOC-1).
 | REQ-1 (the `os::<name>` wrapper stdlib — real `std` syscall bodies) | SHIPPED | the `WRAPPERS` table in `forge/src/effect_wrappers.rs` holds a real `std` body for each v1 target: `os::now` (`std::time::SystemTime::now().duration_since(UNIX_EPOCH).map(\|d\| d.as_secs())`), `os::read_byte`/`os::read_line` (`std::io::stdin().read`/`read_line`, the latter → `TString`), `os::write`/`os::print` (`std::io::stdout().write_all` over `TString`). Each handles its error arm honestly (the EOF sentinel 256 / a status code, no `unwrap`-panic). The table has since GROWN with the editor's wrappers (same shape, same TCB discipline): `os::read_key`/`os::key_str` (#87), `os::raw_mode_on`/`os::raw_mode_off`/`os::read_key_raw`/`os::write_frame` (#90), `os::read_file`/`os::write_file` (#125 — total, empty-`TString`/status-arm on error). Consumer: `effect_wrappers::emit_mod_os` (emitted by `build::emit_source`). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (the linked `os::now` runs a real `clock_gettime`) + `read_byte_links_and_runs_both_arms` (`A`→130, EOF→0) + the `effect_wrappers::tests` unit battery (11 tests, incl. `read_key_wrapper_mirrors_read_byte_eof_sentinel`/`key_str_wrapper_is_bounded_one_byte_string`/`read_file_wrapper_is_total_empty_on_error`/`write_file_wrapper_is_total_status_arm`) + the runnable editor `forge/tests/editor_runs.rs`. The OQ-2 packaging is the INLINE `forge/src/` table (the orchestrator's settled decision), NOT a `thermite-stdlib` crate. |
 | REQ-2 (`forge build` LINKS via emit-`mod os` keyed off boundary targets) | SHIPPED | `build::reachable_boundary_targets` collects the distinct `BoundaryAttr.target` over the program's `#[boundary]` `Item::Fn`s (every one is lowered with an `os::<name>(args)` crossing by `lower_l1`); `effect_wrappers::emit_mod_os` assembles a sorted, deterministic `mod os { … }` carrying EXACTLY those wrappers; `build::emit_source` PREPENDS it to `lower_l1`'s output, closing the GROUNDED `E0433`. Consumer: `build::emit_source` → `build::build_file` → `cli::run_build`. Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (rustc exit 0, no `E0433`) + `effect_wrappers::tests::{emits_only_named_wrappers,emission_is_sorted_deterministic}` (minimal-TCB keying + R-CODE-5 determinism). |
 | REQ-3 (a verified program COMPILES + RUNS + does real I/O) | SHIPPED | `forge build effect_link_demo.th --entry elapsed_ok` compiles + the binary RUNS the linked `os::now`'s real `clock_gettime` → prints `elapsed_ok() = <live Unix timestamp>` (e.g. `1780780684`), exit 0; `os::read_byte` over stdin → `doubled() = 130` (byte `A`) / `0` (EOF, the handled arm). Verified by `effect_link_conformance::elapsed_ok_builds_and_runs` (run exit 0, output a u64 in `(0, 4_000_000_000)`) + `read_byte_links_and_runs_both_arms`. THE UNLOCK: a verified Thermite program runs + does real I/O. |
-| REQ-4 (the linked wrapper is #57-seccomp-CONFINED) | SHIPPED | the linked `os::now` runs UNDER the SHIPPED #57 `sandbox::emit_sandbox_prelude` (installed FIRST in `synthesize_entry_main`'s `main`, UNCHANGED): the `time` allowlist INCLUDES `clock_gettime` (228) → the live `os::now` runs clean (exit 0), and EXCLUDES `openat` (257) → the `--sandbox-self-test` probe under the SAME `time` filter is `SIGSYS`-KILLED (exit 159). Verified by `effect_link_conformance::sandbox_confines_the_linked_wrapper` (the live-foreign-body confinement OQ-4 deferred, now real). The #57 allowlist derivation is verbatim. |
+| REQ-4 (the linked wrapper is #57-seccomp-CONFINED) | SHIPPED | the linked `os::now` runs UNDER the SHIPPED #57 `sandbox::emit_sandbox_prelude` (installed FIRST in `synthesize_entry_main`'s `main`, UNCHANGED): the `time` allowlist INCLUDES host-native `clock_gettime` (x86_64 228 / aarch64 113) → the live `os::now` runs clean (exit 0), and EXCLUDES host-native `openat` (x86_64 257 / aarch64 56) → the `--sandbox-self-test` probe under the SAME `time` filter is `SIGSYS`-KILLED (exit 159). Verified by `effect_link_conformance::sandbox_confines_the_linked_wrapper` (the live-foreign-body confinement OQ-4 deferred, now real). The #57 allowlist derivation is verbatim. |
 | REQ-5 (verification UNCHANGED — link is build-only) | SHIPPED | `forge check effect_link_demo.th --mutation-floor 0` certifies `now` at `L1` + `boundary` + `boundary_target os::now` + `fx time`, and `elapsed_ok` at `L3` + `assurance_scope to_boundary { via: now }` — IDENTICAL to the pre-link cert (the link lives in `build::emit_source` codegen + rustc; `forge check` never emits `mod os` or invokes rustc). Verified by `effect_link_conformance::verify_unchanged` (the before/after invariance now PINNED by the Stage-8 oracle). `forge check`/lowering-for-check is untouched. |
 | REQ-6 (the wrappers are the TRUSTED-by-fiat TCB — enumerated + confined) | SHIPPED | the linked `os::now` IS exactly the boundary the SHIPPED #15 `AuditManifest.tcb` enumerates (`boundary: now -> os::now (req=… ens=[result < 4000000000] fx=[time])`, the `forge check` cert's `boundary`/`boundary_target`/`effects` fields, PINNED by `verify_unchanged`) made RUNNABLE under the #57 confinement (REQ-4). `emit_mod_os` emits ONLY the wrappers the program names (minimal TCB), so the link does not enlarge the TCB beyond the enumerated boundaries. Verified by `effect_link_conformance::{verify_unchanged,sandbox_confines_the_linked_wrapper}` + `effect_wrappers::tests::emits_only_named_wrappers`. |

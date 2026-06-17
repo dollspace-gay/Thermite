@@ -201,8 +201,8 @@ pub struct SandboxRecord {
     pub installed: bool,
     /// The transitive `fx` tokens the allowlist was derived from (REQ-2), sorted.
     pub transitive_fx: Vec<String>,
-    /// The installed x86_64 syscall allowlist (REQ-3), sorted ascending. Empty when
-    /// no prelude was injected.
+    /// The installed host-architecture syscall allowlist (REQ-3), sorted ascending.
+    /// Empty when no prelude was injected.
     pub syscall_allowlist: Vec<u32>,
 }
 
@@ -380,7 +380,7 @@ pub fn build_file(
     let sandbox_record = match (entry, sandbox.mode) {
         (Some(name), SandboxMode::On) => {
             let fx = sandbox::transitive_fx(&program, name);
-            let allowlist = sandbox::syscall_allowlist(&fx);
+            let allowlist = sandbox::syscall_allowlist_for_host(&fx);
             SandboxRecord {
                 installed: true,
                 transitive_fx: fx.into_iter().collect(),
@@ -656,8 +656,7 @@ fn synthesize_entry_main(
     let prelude = match sandbox.mode {
         SandboxMode::On => {
             let fx = sandbox::transitive_fx(program, &f.name);
-            let allowlist = sandbox::syscall_allowlist(&fx);
-            sandbox::emit_sandbox_prelude(&allowlist)
+            sandbox::emit_sandbox_prelude(&fx)
         }
         SandboxMode::Off => String::new(),
     };

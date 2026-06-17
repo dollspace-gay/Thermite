@@ -3,8 +3,8 @@
 <!--
 tier: 3-component
 status: draft
-audited-sha: 8b4d2580b472d04fca2b14de5b6be52533a2d258 (re-pinned 2026-06-17 for stage-1 increment 3, REQ-9 lemma library: the only change to this doc's governed files (registry.toml, status.md) is the additive REQ-S1-9 requirement entry + the regenerated status view; req-registry.py --check is clean (REQ-S1-9). prior: ddbbb3ccea18276103fc268297c4d9190a1ee385)
-audited-content-sha256: 3cb4d9e10acd86912629cfb41ad558d68d931600f21b4d7b606b62800e1fce22
+audited-sha: 5ae0816c042debb01c70eb9b89c775837f0c0f24 (re-pinned 2026-06-17 for stage-1 REQ-10 / AC-14, the G1 gate artifact: the only change to this doc's governed files (registry.toml, status.md) is the additive REQ-S1-10 requirement entry + the regenerated status view; req-registry.py --check is clean (441 requirements). prior: 8b4d2580b472d04fca2b14de5b6be52533a2d258)
+audited-content-sha256: 521a270bb596e7ea89206d21e5ed8c1c7ade59e3992a268763d3df6cc19cf525
 governs:
   - .design/reqs/registry.toml
   - .design/reqs/status.md
